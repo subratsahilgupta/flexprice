@@ -457,7 +457,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 	// IMPORTANT: For recurring grants, expiry should be calculated from when the credit is actually granted,
 	// not from subscription start date. This ensures each grant has its own expiry timeline.
 	var expiryDate *time.Time
-	effectiveDate := cga.PeriodStart
+	effectiveDate := lo.FromPtr(cga.PeriodStart)
 
 	if grant.ExpirationType == types.CreditGrantExpiryTypeNever {
 		expiryDate = nil
@@ -466,19 +466,26 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 	if grant.ExpirationType == types.CreditGrantExpiryTypeDuration {
 		if grant.ExpirationDurationUnit != nil && grant.ExpirationDuration != nil && lo.FromPtr(grant.ExpirationDuration) > 0 {
 
+			duration := lo.FromPtr(grant.ExpirationDuration)
+
 			switch lo.FromPtr(grant.ExpirationDurationUnit) {
+
 			case types.CreditGrantExpiryDurationUnitDays:
-				expiry := effectiveDate.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration))
+				expiry := effectiveDate.Add(time.Duration(duration) * 24 * time.Hour)
 				expiryDate = lo.ToPtr(expiry)
+
 			case types.CreditGrantExpiryDurationUnitWeeks:
-				expiry := effectiveDate.AddDate(0, 0, lo.FromPtr(grant.ExpirationDuration)*7)
+				expiry := effectiveDate.Add(time.Duration(duration) * 7 * 24 * time.Hour)
 				expiryDate = lo.ToPtr(expiry)
+
 			case types.CreditGrantExpiryDurationUnitMonths:
-				expiry := effectiveDate.AddDate(0, lo.FromPtr(grant.ExpirationDuration), 0)
+				expiry := effectiveDate.AddDate(0, duration, 0)
 				expiryDate = lo.ToPtr(expiry)
+
 			case types.CreditGrantExpiryDurationUnitYears:
-				expiry := effectiveDate.AddDate(lo.FromPtr(grant.ExpirationDuration), 0, 0)
+				expiry := effectiveDate.AddDate(duration, 0, 0)
 				expiryDate = lo.ToPtr(expiry)
+
 			default:
 				return ierr.NewError("invalid expiration duration unit").
 					WithHint("Please provide a valid expiration duration unit").
@@ -491,9 +498,44 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 	}
 
 	if grant.ExpirationType == types.CreditGrantExpiryTypeBillingCycle {
-		// For billing cycle expiry, use the current period end when the grant is applied
-		// For recurring grants, this will be the period end for the current billing period
-		expiryDate = lo.ToPtr(subscription.CurrentPeriodEnd)
+
+		// Check if CGA period start is within current subscription period
+		// Start is inclusive, end is exclusive
+		if (effectiveDate.Equal(subscription.CurrentPeriodStart) || effectiveDate.After(subscription.CurrentPeriodStart)) &&
+			effectiveDate.Before(subscription.CurrentPeriodEnd) {
+			expiryDate = lo.ToPtr(subscription.CurrentPeriodEnd)
+		} else {
+
+			periods, err := types.CalculateBillingPeriods(
+				subscription.StartDate,
+				subscription.EndDate,
+				subscription.BillingAnchor,
+				subscription.BillingPeriodCount,
+				subscription.BillingPeriod,
+			)
+			if err != nil {
+				return err
+			}
+
+			// Find the period where CGA period start falls (start inclusive, end exclusive)
+			// Expected behavior: subPeriod.Start <= effectiveDate < subPeriod.End (start inclusive, end exclusive)
+			for _, subPeriod := range periods {
+				if (effectiveDate.Equal(subPeriod.Start) || effectiveDate.After(subPeriod.Start)) && effectiveDate.Before(subPeriod.End) {
+
+					s.Logger.Infow("found matching subscription period for CGA period start",
+						"cga_period_start", effectiveDate,
+						"subscription_period_start", subPeriod.Start,
+						"subscription_period_end", subPeriod.End,
+						"effective_date", effectiveDate,
+						"expiry_date", subPeriod.End,
+					)
+
+					expiryDate = lo.ToPtr(subPeriod.End)
+					break
+				}
+			}
+
+		}
 	}
 
 	// Prepare top-up request
@@ -522,7 +564,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 					"expiry_date", expiryDate)
 
 				cga.ApplicationStatus = types.ApplicationStatusSkipped
-				cga.FailureReason = lo.ToPtr("Expired")
+				cga.FailureReason = lo.ToPtr(fmt.Sprintf("Credit grant expired before application. Expiry date: %s, Current time: %s", expiryDate.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339)))
 				cga.AppliedAt = nil // Ensure applied_at is nil for skipped grants
 				if err := s.CreditGrantApplicationRepo.Update(txCtx, cga); err != nil {
 					return err
@@ -600,9 +642,10 @@ func (s *creditGrantService) handleCreditGrantFailure(
 	sentrySvc := sentry.NewSentryService(s.Config, s.Logger)
 	sentrySvc.CaptureException(err)
 
-	// Prepare status update
+	// Prepare status update with readable error message
 	cga.ApplicationStatus = types.ApplicationStatusFailed
-	cga.FailureReason = lo.ToPtr(err.Error())
+	errorMessage := fmt.Sprintf("%s: %s", hint, err.Error())
+	cga.FailureReason = lo.ToPtr(errorMessage)
 
 	// Update in DB (log secondary error but return original)
 	if updateErr := s.CreditGrantApplicationRepo.Update(ctx, cga); updateErr != nil {
@@ -828,6 +871,35 @@ func CalculateNextCreditGrantPeriod(grant creditgrant.CreditGrant, nextPeriodSta
 	}
 
 	return nextPeriodStart, nextPeriodEnd, nil
+}
+
+// CalculateCreditGrantPeriods calculates all billing periods for a credit grant from an initial period start until an end date.
+// This function decouples credit grant period calculations from subscription cron processing.
+// Parameters:
+//   - grant: The credit grant for which to calculate periods
+//   - initialPeriodStart: Start of the first period
+//   - endDate: Calculate periods until this date (typically grant end date or current time)
+//
+// Returns an array of Period structs and an error if calculation fails.
+func CalculateCreditGrantPeriods(
+	grant creditgrant.CreditGrant,
+	initialPeriodStart time.Time,
+	endDate *time.Time,
+) ([]types.Period, error) {
+	// Convert credit grant period to billing period
+	billingPeriod, err := types.GetBillingPeriodFromCreditGrantPeriod(lo.FromPtr(grant.Period))
+	if err != nil {
+		return nil, err
+	}
+
+	// Call the reusable period calculation function
+	return types.CalculateBillingPeriods(
+		initialPeriodStart,
+		endDate,
+		lo.FromPtr(grant.CreditGrantAnchor),
+		lo.FromPtr(grant.PeriodCount),
+		billingPeriod,
+	)
 }
 
 // generateIdempotencyKey creates a unique key for the credit grant application based on grant and period
