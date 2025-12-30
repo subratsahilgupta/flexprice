@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -559,6 +560,53 @@ func (s *temporalService) buildNomodInvoiceSyncInput(_ context.Context, tenantID
 	return nil, errors.NewError("invalid input for Nomod invoice sync workflow").
 		WithHint("Provide NomodInvoiceSyncWorkflowInput with invoice_id and customer_id").
 		Mark(errors.ErrValidation)
+}
+
+// ExecuteWorkflowSync executes a workflow synchronously and waits for completion
+func (s *temporalService) ExecuteWorkflowSync(
+	ctx context.Context,
+	workflowType types.TemporalWorkflowType,
+	params interface{},
+	timeoutSeconds int,
+) (interface{}, error) {
+	// Check if service is initialized
+	if s == nil {
+		return nil, errors.NewError("temporal service not initialized").
+			WithHint("Temporal service must be initialized before use").
+			Mark(errors.ErrInternal)
+	}
+
+	// Create a timeout context
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+
+	// Start the workflow
+	workflowRun, err := s.ExecuteWorkflow(timeoutCtx, workflowType, params)
+	if err != nil {
+		return nil, errors.WithError(err).
+			WithHint("Failed to start workflow for synchronous execution").
+			WithReportableDetails(map[string]interface{}{
+				"workflow_type": workflowType.String(),
+				"timeout":       timeoutSeconds,
+			}).
+			Mark(errors.ErrInternal)
+	}
+
+	// Wait for workflow completion and get result
+	var result models.CustomerOnboardingWorkflowResult
+	if err := workflowRun.Get(timeoutCtx, &result); err != nil {
+		return nil, errors.WithError(err).
+			WithHint("Workflow execution failed or timed out").
+			WithReportableDetails(map[string]interface{}{
+				"workflow_id":   workflowRun.GetID(),
+				"run_id":        workflowRun.GetRunID(),
+				"workflow_type": workflowType.String(),
+				"timeout":       timeoutSeconds,
+			}).
+			Mark(errors.ErrInternal)
+	}
+
+	return &result, nil
 }
 
 // validateTenantContext validates that the required tenant context fields are present

@@ -12,6 +12,7 @@ const (
 	// Workflow name - must match the function name
 	WorkflowCustomerOnboarding = "CustomerOnboardingWorkflow"
 	// Activity names - must match the registered method names
+	ActivityCreateCustomer     = "CreateCustomerActivity"
 	ActivityCreateWallet       = "CreateWalletActivity"
 	ActivityCreateSubscription = "CreateSubscriptionActivity"
 )
@@ -64,6 +65,13 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 
 		var err error
 		switch actionType {
+		case models.WorkflowActionCreateCustomer:
+			err = executeCreateCustomerAction(ctx, input, action, &actionResult)
+			// If customer creation succeeds, update the input.CustomerID for subsequent actions
+			if err == nil && actionResult.ResourceID != "" {
+				input.CustomerID = actionResult.ResourceID
+			}
+
 		case models.WorkflowActionCreateWallet:
 			err = executeCreateWalletAction(ctx, input, action, &actionResult)
 
@@ -127,6 +135,50 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 	return result, nil
 }
 
+// executeCreateCustomerAction executes the create customer action
+func executeCreateCustomerAction(
+	ctx workflow.Context,
+	input models.CustomerOnboardingWorkflowInput,
+	action models.WorkflowActionConfig,
+	actionResult *models.CustomerOnboardingActionResult,
+) error {
+	createCustomerAction, ok := action.(*models.CreateCustomerActionConfig)
+	if !ok {
+		return temporal.NewApplicationError("invalid action config type for create_customer", "InvalidActionConfig")
+	}
+
+	// Use ExternalCustomerID from input for customer creation
+	externalID := input.ExternalCustomerID
+	if externalID == "" {
+		return temporal.NewApplicationError("external_customer_id is required for create_customer action", "MissingExternalID")
+	}
+
+	// Use default_user_id from config if provided, otherwise leave empty (NULL in database)
+	userID := ""
+	if createCustomerAction.DefaultUserID != nil {
+		userID = *createCustomerAction.DefaultUserID
+	}
+
+	activityInput := models.CreateCustomerActivityInput{
+		ExternalID:    externalID,
+		Name:          externalID, // Use ExternalID as name per user decision
+		Email:         "",         // Leave empty per user decision
+		TenantID:      input.TenantID,
+		EnvironmentID: input.EnvironmentID,
+		UserID:        userID, // Use configured default_user_id or empty string
+	}
+
+	var activityResult models.CreateCustomerActivityResult
+	err := workflow.ExecuteActivity(ctx, ActivityCreateCustomer, activityInput).Get(ctx, &activityResult)
+	if err != nil {
+		return err
+	}
+
+	actionResult.ResourceID = activityResult.CustomerID
+	actionResult.ResourceType = "customer"
+	return nil
+}
+
 // executeCreateWalletAction executes the create wallet action
 func executeCreateWalletAction(
 	ctx workflow.Context,
@@ -172,6 +224,7 @@ func executeCreateSubscriptionAction(
 
 	activityInput := models.CreateSubscriptionActivityInput{
 		CustomerID:         input.CustomerID,
+		EventTimestamp:     input.EventTimestamp,
 		TenantID:           input.TenantID,
 		EnvironmentID:      input.EnvironmentID,
 		UserID:             input.UserID,

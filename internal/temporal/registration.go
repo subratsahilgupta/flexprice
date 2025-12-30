@@ -169,6 +169,7 @@ func buildWorkerConfig(
 		)
 		// Customer activities
 		activitiesList = append(activitiesList,
+			customerActivities.CreateCustomerActivity,
 			customerActivities.CreateWalletActivity,
 			customerActivities.CreateSubscriptionActivity,
 		)

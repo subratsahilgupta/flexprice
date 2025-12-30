@@ -9,18 +9,21 @@ import (
 
 // CustomerOnboardingWorkflowInput represents the input for the customer onboarding workflow
 type CustomerOnboardingWorkflowInput struct {
-	CustomerID     string         `json:"customer_id" validate:"required"`
-	TenantID       string         `json:"tenant_id" validate:"required"`
-	EnvironmentID  string         `json:"environment_id" validate:"required"`
-	UserID         string         `json:"user_id" validate:"required"`
-	WorkflowConfig WorkflowConfig `json:"workflow_config" validate:"required"`
+	CustomerID         string         `json:"customer_id,omitempty"`          // Optional - provided when customer exists
+	ExternalCustomerID string         `json:"external_customer_id,omitempty"` // Optional - used for auto-creation
+	EventTimestamp     *time.Time     `json:"event_timestamp,omitempty"`      // Optional - timestamp of the triggering event
+	TenantID           string         `json:"tenant_id" validate:"required"`
+	EnvironmentID      string         `json:"environment_id" validate:"required"`
+	UserID             string         `json:"user_id" validate:"required"`
+	WorkflowConfig     WorkflowConfig `json:"workflow_config" validate:"required"`
 }
 
 // Validate validates the customer onboarding workflow input
 func (c *CustomerOnboardingWorkflowInput) Validate() error {
-	if c.CustomerID == "" {
-		return ierr.NewError("customer_id is required").
-			WithHint("Please provide a valid customer ID").
+	// Either CustomerID or ExternalCustomerID must be provided
+	if c.CustomerID == "" && c.ExternalCustomerID == "" {
+		return ierr.NewError("either customer_id or external_customer_id is required").
+			WithHint("Please provide either an existing customer ID or external customer ID for auto-creation").
 			Mark(ierr.ErrValidation)
 	}
 	if c.TenantID == "" {
@@ -33,11 +36,7 @@ func (c *CustomerOnboardingWorkflowInput) Validate() error {
 			WithHint("Please provide a valid environment ID").
 			Mark(ierr.ErrValidation)
 	}
-	if c.UserID == "" {
-		return ierr.NewError("user_id is required").
-			WithHint("Please provide a valid user ID").
-			Mark(ierr.ErrValidation)
-	}
+	// user_id is optional - will be provided from workflow config's default_user_id
 	return c.WorkflowConfig.Validate()
 }
 
@@ -59,6 +58,54 @@ type CustomerOnboardingActionResult struct {
 	ResourceID   string         `json:"resource_id,omitempty"`
 	ResourceType string         `json:"resource_type,omitempty"`
 	Error        *string        `json:"error,omitempty"`
+}
+
+// CreateCustomerActivityInput represents the input for the create customer activity
+type CreateCustomerActivityInput struct {
+	ExternalID    string `json:"external_id" validate:"required"`
+	Name          string `json:"name" validate:"required"`
+	Email         string `json:"email,omitempty"`
+	TenantID      string `json:"tenant_id" validate:"required"`
+	EnvironmentID string `json:"environment_id" validate:"required"`
+	UserID        string `json:"user_id" validate:"required"`
+}
+
+// Validate validates the create customer activity input
+func (c *CreateCustomerActivityInput) Validate() error {
+	if c.ExternalID == "" {
+		return ierr.NewError("external_id is required").
+			WithHint("Please provide a valid external customer ID").
+			Mark(ierr.ErrValidation)
+	}
+	if c.Name == "" {
+		return ierr.NewError("name is required").
+			WithHint("Please provide a customer name").
+			Mark(ierr.ErrValidation)
+	}
+	if c.TenantID == "" {
+		return ierr.NewError("tenant_id is required").
+			WithHint("Please provide a valid tenant ID").
+			Mark(ierr.ErrValidation)
+	}
+	if c.EnvironmentID == "" {
+		return ierr.NewError("environment_id is required").
+			WithHint("Please provide a valid environment ID").
+			Mark(ierr.ErrValidation)
+	}
+	if c.UserID == "" {
+		return ierr.NewError("user_id is required").
+			WithHint("Please provide a valid user ID").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+// CreateCustomerActivityResult represents the result of the create customer activity
+type CreateCustomerActivityResult struct {
+	CustomerID string `json:"customer_id"`
+	ExternalID string `json:"external_id"`
+	Name       string `json:"name"`
+	Email      string `json:"email,omitempty"`
 }
 
 // CreateWalletActivityInput represents the input for the create wallet activity
@@ -87,11 +134,7 @@ func (c *CreateWalletActivityInput) Validate() error {
 			WithHint("Please provide a valid environment ID").
 			Mark(ierr.ErrValidation)
 	}
-	if c.UserID == "" {
-		return ierr.NewError("user_id is required").
-			WithHint("Please provide a valid user ID").
-			Mark(ierr.ErrValidation)
-	}
+	// user_id is optional - can be empty for automated/system operations
 	if c.WalletConfig == nil {
 		return ierr.NewError("wallet_config is required").
 			WithHint("Please provide wallet configuration").
@@ -113,6 +156,7 @@ type CreateWalletActivityResult struct {
 // CreateSubscriptionActivityInput represents the input for the create subscription activity
 type CreateSubscriptionActivityInput struct {
 	CustomerID         string                          `json:"customer_id" validate:"required"`
+	EventTimestamp     *time.Time                      `json:"event_timestamp,omitempty"` // Optional - timestamp of the triggering event
 	TenantID           string                          `json:"tenant_id" validate:"required"`
 	EnvironmentID      string                          `json:"environment_id" validate:"required"`
 	UserID             string                          `json:"user_id" validate:"required"`
@@ -136,11 +180,7 @@ func (c *CreateSubscriptionActivityInput) Validate() error {
 			WithHint("Please provide a valid environment ID").
 			Mark(ierr.ErrValidation)
 	}
-	if c.UserID == "" {
-		return ierr.NewError("user_id is required").
-			WithHint("Please provide a valid user ID").
-			Mark(ierr.ErrValidation)
-	}
+	// user_id is optional - can be empty for automated/system operations
 	if c.SubscriptionConfig == nil {
 		return ierr.NewError("subscription_config is required").
 			WithHint("Please provide subscription configuration").
