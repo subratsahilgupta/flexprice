@@ -849,7 +849,7 @@ func (s *featureUsageTrackingService) handleMissingCustomer(
 	var customerID string
 	for _, actionResult := range workflowResult.Results {
 		if actionResult.ActionType == workflowModels.WorkflowActionCreateCustomer &&
-			actionResult.Status == "completed" &&
+			actionResult.Status == workflowModels.WorkflowStatusCompleted &&
 			actionResult.ResourceID != "" {
 			customerID = actionResult.ResourceID
 			break

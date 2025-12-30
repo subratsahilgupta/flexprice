@@ -7,6 +7,23 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
+// WorkflowStatus represents the status of a workflow execution
+type WorkflowStatus string
+
+const (
+	WorkflowStatusCompleted WorkflowStatus = "completed"
+	WorkflowStatusFailed    WorkflowStatus = "failed"
+)
+
+// WorkflowResourceType represents the type of resource created by a workflow action
+type WorkflowResourceType string
+
+const (
+	WorkflowResourceTypeCustomer     WorkflowResourceType = "customer"
+	WorkflowResourceTypeWallet       WorkflowResourceType = "wallet"
+	WorkflowResourceTypeSubscription WorkflowResourceType = "subscription"
+)
+
 // CustomerOnboardingWorkflowInput represents the input for the customer onboarding workflow
 type CustomerOnboardingWorkflowInput struct {
 	CustomerID         string         `json:"customer_id,omitempty"`          // Optional - provided when customer exists
@@ -43,7 +60,7 @@ func (c *CustomerOnboardingWorkflowInput) Validate() error {
 // CustomerOnboardingWorkflowResult represents the result of the customer onboarding workflow
 type CustomerOnboardingWorkflowResult struct {
 	CustomerID      string                           `json:"customer_id"`
-	Status          string                           `json:"status"`
+	Status          WorkflowStatus                   `json:"status"`
 	CompletedAt     time.Time                        `json:"completed_at"`
 	ActionsExecuted int                              `json:"actions_executed"`
 	Results         []CustomerOnboardingActionResult `json:"results"`
@@ -52,12 +69,12 @@ type CustomerOnboardingWorkflowResult struct {
 
 // CustomerOnboardingActionResult represents the result of a single action in the workflow
 type CustomerOnboardingActionResult struct {
-	ActionType   WorkflowAction `json:"action_type"`
-	ActionIndex  int            `json:"action_index"`
-	Status       string         `json:"status"`
-	ResourceID   string         `json:"resource_id,omitempty"`
-	ResourceType string         `json:"resource_type,omitempty"`
-	Error        *string        `json:"error,omitempty"`
+	ActionType   WorkflowAction       `json:"action_type"`
+	ActionIndex  int                  `json:"action_index"`
+	Status       WorkflowStatus       `json:"status"`
+	ResourceID   string               `json:"resource_id,omitempty"`
+	ResourceType WorkflowResourceType `json:"resource_type,omitempty"`
+	Error        *string              `json:"error,omitempty"`
 }
 
 // CreateCustomerActivityInput represents the input for the create customer activity

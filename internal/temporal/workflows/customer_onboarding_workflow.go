@@ -84,12 +84,12 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 				"action_type", actionType,
 				"action_index", i)
 
-			actionResult.Status = "failed"
+			actionResult.Status = models.WorkflowStatusFailed
 			errorMsg := "unknown workflow action type: " + string(actionType)
 			actionResult.Error = &errorMsg
 			result.Results = append(result.Results, actionResult)
 
-			result.Status = "failed"
+			result.Status = models.WorkflowStatusFailed
 			result.CompletedAt = workflow.Now(ctx)
 			result.ErrorSummary = &errorMsg
 			return result, nil
@@ -102,18 +102,18 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 				"action_type", actionType,
 				"error", err)
 
-			actionResult.Status = "failed"
+			actionResult.Status = models.WorkflowStatusFailed
 			errorMsg := err.Error()
 			actionResult.Error = &errorMsg
 			result.Results = append(result.Results, actionResult)
 
-			result.Status = "failed"
+			result.Status = models.WorkflowStatusFailed
 			result.CompletedAt = workflow.Now(ctx)
 			result.ErrorSummary = &errorMsg
 			return result, nil
 		}
 
-		actionResult.Status = "completed"
+		actionResult.Status = models.WorkflowStatusCompleted
 		result.Results = append(result.Results, actionResult)
 		result.ActionsExecuted++
 
@@ -125,7 +125,7 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 	}
 
 	// All actions completed successfully
-	result.Status = "completed"
+	result.Status = models.WorkflowStatusCompleted
 	result.CompletedAt = workflow.Now(ctx)
 
 	logger.Info("Customer onboarding workflow completed successfully",
@@ -174,7 +174,7 @@ func executeCreateCustomerAction(
 	}
 
 	actionResult.ResourceID = activityResult.CustomerID
-	actionResult.ResourceType = "customer"
+	actionResult.ResourceType = models.WorkflowResourceTypeCustomer
 	return nil
 }
 
@@ -205,7 +205,7 @@ func executeCreateWalletAction(
 	}
 
 	actionResult.ResourceID = activityResult.WalletID
-	actionResult.ResourceType = "wallet"
+	actionResult.ResourceType = models.WorkflowResourceTypeWallet
 	return nil
 }
 
@@ -237,6 +237,6 @@ func executeCreateSubscriptionAction(
 	}
 
 	actionResult.ResourceID = activityResult.SubscriptionID
-	actionResult.ResourceType = "subscription"
+	actionResult.ResourceType = models.WorkflowResourceTypeSubscription
 	return nil
 }
