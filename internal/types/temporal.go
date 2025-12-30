@@ -18,6 +18,7 @@ const (
 	TemporalTaskQueueExport       TemporalTaskQueue = "export"
 	TemporalTaskQueueWorkflows    TemporalTaskQueue = "workflows"
 	TemporalTaskQueueSubscription TemporalTaskQueue = "subscription"
+	TemporalTaskQueueInvoice      TemporalTaskQueue = "invoice"
 )
 
 // String returns the string representation of the task queue
@@ -33,6 +34,7 @@ func (tq TemporalTaskQueue) Validate() error {
 		TemporalTaskQueueExport,
 		TemporalTaskQueueSubscription,
 		TemporalTaskQueueWorkflows,
+		TemporalTaskQueueInvoice,
 	}
 	if lo.Contains(allowedQueues, tq) {
 		return nil
@@ -110,7 +112,7 @@ func (w TemporalWorkflowType) TaskQueue() TemporalTaskQueue {
 	case TemporalProcessSubscriptionBillingWorkflow:
 		return TemporalTaskQueueSubscription
 	case TemporalProcessInvoiceWorkflow:
-		return TemporalTaskQueueSubscription
+		return TemporalTaskQueueInvoice
 	case TemporalCustomerOnboardingWorkflow:
 		return TemporalTaskQueueWorkflows
 	default:
@@ -152,6 +154,9 @@ func GetWorkflowsForTaskQueue(taskQueue TemporalTaskQueue) []TemporalWorkflowTyp
 		return []TemporalWorkflowType{
 			TemporalScheduleSubscriptionBillingWorkflow,
 			TemporalProcessSubscriptionBillingWorkflow,
+		}
+	case TemporalTaskQueueInvoice:
+		return []TemporalWorkflowType{
 			TemporalProcessInvoiceWorkflow,
 		}
 	case TemporalTaskQueueWorkflows:
@@ -170,6 +175,7 @@ func GetAllTaskQueues() []TemporalTaskQueue {
 		TemporalTaskQueuePrice,
 		TemporalTaskQueueExport,
 		TemporalTaskQueueSubscription,
+		TemporalTaskQueueInvoice,
 		TemporalTaskQueueWorkflows,
 	}
 }

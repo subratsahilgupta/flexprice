@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/temporal/models"
+	invoiceModels "github.com/flexprice/flexprice/internal/temporal/models/invoice"
 	subscriptionModels "github.com/flexprice/flexprice/internal/temporal/models/subscription"
 	"github.com/flexprice/flexprice/internal/temporal/worker"
 	"github.com/flexprice/flexprice/internal/types"
@@ -367,6 +368,8 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 		return s.buildNomodInvoiceSyncInput(ctx, tenantID, environmentID, params)
 	case types.TemporalCustomerOnboardingWorkflow:
 		return s.buildCustomerOnboardingInput(ctx, tenantID, environmentID, userID, params)
+	case types.TemporalProcessInvoiceWorkflow:
+		return s.buildProcessInvoiceInput(ctx, tenantID, environmentID, params)
 	default:
 		return nil, errors.NewError("unsupported workflow type").
 			WithHintf("Workflow type %s is not supported", workflowType.String()).
@@ -564,6 +567,37 @@ func (s *temporalService) buildNomodInvoiceSyncInput(_ context.Context, tenantID
 
 	return nil, errors.NewError("invalid input for Nomod invoice sync workflow").
 		WithHint("Provide NomodInvoiceSyncWorkflowInput with invoice_id and customer_id").
+		Mark(errors.ErrValidation)
+}
+
+// buildProcessInvoiceInput builds input for process invoice workflow
+func (s *temporalService) buildProcessInvoiceInput(_ context.Context, tenantID, environmentID string, params interface{}) (interface{}, error) {
+	// If already correct type, just ensure context is set
+	if input, ok := params.(invoiceModels.ProcessInvoiceWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return input, nil
+	}
+
+	// Handle pointer type as well
+	if input, ok := params.(*invoiceModels.ProcessInvoiceWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return *input, nil
+	}
+
+	// Handle string input (invoice ID)
+	invoiceID, ok := params.(string)
+	if ok && invoiceID != "" {
+		return invoiceModels.ProcessInvoiceWorkflowInput{
+			InvoiceID:     invoiceID,
+			TenantID:      tenantID,
+			EnvironmentID: environmentID,
+		}, nil
+	}
+
+	return nil, errors.NewError("invalid input for process invoice workflow").
+		WithHint("Provide ProcessInvoiceWorkflowInput with invoice_id, tenant_id, and environment_id").
 		Mark(errors.ErrValidation)
 }
 

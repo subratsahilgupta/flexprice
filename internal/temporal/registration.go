@@ -111,7 +111,7 @@ func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalServ
 
 	// Get all task queues and register workflows/activities for each
 	for _, taskQueue := range types.GetAllTaskQueues() {
-		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, hubspotQuoteSyncActivities, qbPriceSyncActivities, nomodInvoiceSyncActivities, customerActivities, subscriptionService, scheduleBillingActivities, billingActivities, invoiceActs)
+		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, hubspotQuoteSyncActivities, qbPriceSyncActivities, nomodInvoiceSyncActivities, customerActivities, scheduleBillingActivities, billingActivities, invoiceActs)
 		if err := registerWorker(temporalService, config); err != nil {
 			return fmt.Errorf("failed to register worker for task queue %s: %w", taskQueue, err)
 		}
@@ -134,7 +134,6 @@ func buildWorkerConfig(
 	qbPriceSyncActivities *qbActivities.QuickBooksPriceSyncActivities,
 	nomodInvoiceSyncActivities *nomodActivities.InvoiceSyncActivities,
 	customerActivities *customerActivities.CustomerActivities,
-	subscriptionService service.SubscriptionService,
 	scheduleBillingActivities *subscriptionActivities.SubscriptionActivities,
 	billingActivities *subscriptionActivities.BillingActivities,
 	invoiceActs *invoiceActivities.InvoiceActivities,
@@ -188,7 +187,6 @@ func buildWorkerConfig(
 			workflowsList,
 			subscriptionWorkflows.ScheduleSubscriptionBillingWorkflow,
 			subscriptionWorkflows.ProcessSubscriptionBillingWorkflow,
-			invoiceWorkflows.ProcessInvoiceWorkflow,
 		)
 		activitiesList = append(activitiesList,
 			// Schedule billing activities
@@ -199,11 +197,19 @@ func buildWorkerConfig(
 			billingActivities.CreateDraftInvoicesActivity,
 			billingActivities.UpdateCurrentPeriodActivity,
 			billingActivities.CheckCancellationActivity,
+			billingActivities.TriggerInvoiceWorkflowActivity,
+		)
+
+	case types.TemporalTaskQueueInvoice:
+		workflowsList = append(
+			workflowsList,
+			invoiceWorkflows.ProcessInvoiceWorkflow,
+		)
+		activitiesList = append(activitiesList,
 			// Invoice workflow activities
 			invoiceActs.FinalizeInvoiceActivity,
 			invoiceActs.SyncInvoiceToVendorActivity,
 			invoiceActs.AttemptInvoicePaymentActivity,
-			invoiceActs.TriggerInvoiceWorkflowActivity,
 		)
 
 	case types.TemporalTaskQueueWorkflows:

@@ -5,6 +5,7 @@ import (
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -107,7 +108,7 @@ func FromEnt(e *ent.Coupon) *Coupon {
 		Type:              types.CouponType(e.Type),
 		Cadence:           types.CouponCadence(e.Cadence),
 		DurationInPeriods: e.DurationInPeriods,
-		Currency:          *e.Currency,
+		Currency:          lo.FromPtrOr(e.Currency, ""),
 		EnvironmentID:     e.EnvironmentID,
 		Metadata:          &e.Metadata,
 		BaseModel: types.BaseModel{

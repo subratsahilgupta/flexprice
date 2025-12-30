@@ -159,31 +159,10 @@ func ProcessSubscriptionBillingWorkflow(
 		"invoice_count", len(createInvoicesOutput.InvoiceIDs))
 
 	// ================================================================================
-	// STEP 4: Cancellation Check
-	// ================================================================================
-	logger.Info("Step 4: Checking for subscription cancellation",
-		"subscription_id", input.SubscriptionID)
-	var cancelSubscriptionOutput subscriptionModels.CheckSubscriptionCancellationActivityOutput
-	cancelSubscriptionInput := subscriptionModels.CheckSubscriptionCancellationActivityInput{
-		SubscriptionID: input.SubscriptionID,
-		TenantID:       input.TenantID,
-		EnvironmentID:  input.EnvironmentID,
-		Period:         periodsOutput.Periods[len(periodsOutput.Periods)-1],
-	}
-
-	err = workflow.ExecuteActivity(ctx, ActivityCheckCancellation, cancelSubscriptionInput).Get(ctx, &cancelSubscriptionOutput)
-	if err != nil {
-		logger.Error("Failed to check subscription cancellation",
-			"error", err,
-			"subscription_id", input.SubscriptionID)
-		return nil, err
-	}
-
-	// ================================================================================
-	// STEP 5: Update Subscription Period
+	// STEP 4: Update Subscription Period
 	// ================================================================================
 
-	logger.Info("Step 5: Updating subscription period",
+	logger.Info("Step 4: Updating subscription period",
 		"subscription_id", input.SubscriptionID)
 
 	// Update to the new current period (last period from calculated periods)
@@ -200,6 +179,27 @@ func ProcessSubscriptionBillingWorkflow(
 	err = workflow.ExecuteActivity(ctx, ActivityUpdateCurrentPeriod, updateSubscriptionPeriodInput).Get(ctx, &updateSubscriptionPeriodOutput)
 	if err != nil {
 		logger.Error("Failed to update subscription period",
+			"error", err,
+			"subscription_id", input.SubscriptionID)
+		return nil, err
+	}
+
+	// ================================================================================
+	// STEP 5: Cancellation Check
+	// ================================================================================
+	logger.Info("Step 5: Checking for subscription cancellation",
+		"subscription_id", input.SubscriptionID)
+	var cancelSubscriptionOutput subscriptionModels.CheckSubscriptionCancellationActivityOutput
+	cancelSubscriptionInput := subscriptionModels.CheckSubscriptionCancellationActivityInput{
+		SubscriptionID: input.SubscriptionID,
+		TenantID:       input.TenantID,
+		EnvironmentID:  input.EnvironmentID,
+		Period:         lastPeriod,
+	}
+
+	err = workflow.ExecuteActivity(ctx, ActivityCheckCancellation, cancelSubscriptionInput).Get(ctx, &cancelSubscriptionOutput)
+	if err != nil {
+		logger.Error("Failed to check subscription cancellation",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
 		return nil, err

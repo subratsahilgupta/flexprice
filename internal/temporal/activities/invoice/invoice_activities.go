@@ -6,13 +6,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
 	invoiceModels "github.com/flexprice/flexprice/internal/temporal/models/invoice"
-	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
-)
-
-const (
-	// Workflow name for triggering invoice workflows
-	WorkflowProcessInvoice = "ProcessInvoiceWorkflow"
 )
 
 // InvoiceActivities contains all invoice-related activities
@@ -120,54 +114,4 @@ func (s *InvoiceActivities) AttemptInvoicePaymentActivity(
 	return &invoiceModels.PaymentActivityOutput{
 		Success: true,
 	}, nil
-}
-
-// TriggerInvoiceWorkflowActivity triggers invoice workflows for each invoice (fire-and-forget)
-// If triggering fails for any invoice, it logs the error and continues with the rest
-func (s *InvoiceActivities) TriggerInvoiceWorkflowActivity(
-	ctx context.Context,
-	input invoiceModels.TriggerInvoiceWorkflowActivityInput,
-) (*invoiceModels.TriggerInvoiceWorkflowActivityOutput, error) {
-	if err := input.Validate(); err != nil {
-		return nil, err
-	}
-
-	// Set context values
-	ctx = types.SetTenantID(ctx, input.TenantID)
-	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
-
-	temporalSvc := temporalService.GetGlobalTemporalService()
-
-	output := &invoiceModels.TriggerInvoiceWorkflowActivityOutput{
-		TriggeredCount: 0,
-		FailedCount:    0,
-		FailedInvoices: make([]string, 0),
-	}
-
-	for _, invoiceID := range input.InvoiceIDs {
-		_, err := temporalSvc.ExecuteWorkflow(
-			ctx,
-			WorkflowProcessInvoice,
-			invoiceModels.ProcessInvoiceWorkflowInput{
-				InvoiceID:     invoiceID,
-				TenantID:      input.TenantID,
-				EnvironmentID: input.EnvironmentID,
-			},
-		)
-		if err != nil {
-			s.logger.Errorw("failed to trigger invoice workflow",
-				"invoice_id", invoiceID,
-				"error", err)
-			output.FailedCount++
-			output.FailedInvoices = append(output.FailedInvoices, invoiceID)
-			// Continue with other invoices - don't fail the entire activity
-			continue
-		}
-
-		s.logger.Infow("triggered invoice workflow",
-			"invoice_id", invoiceID)
-		output.TriggeredCount++
-	}
-
-	return output, nil
 }
