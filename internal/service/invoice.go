@@ -123,10 +123,11 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		var idempKey string
 		if req.IdempotencyKey == nil {
 			params := map[string]interface{}{
-				"tenant_id":    types.GetTenantID(ctx),
-				"customer_id":  req.CustomerID,
-				"period_start": req.PeriodStart,
-				"period_end":   req.PeriodEnd,
+				"tenant_id":      types.GetTenantID(ctx),
+				"environment_id": types.GetEnvironmentID(ctx),
+				"customer_id":    req.CustomerID,
+				"period_start":   req.PeriodStart,
+				"period_end":     req.PeriodEnd,
 				// This will always create new idempotency key for the same invoice
 				// Hence commenting this out
 				// "timestamp":    time.Now().UTC(), // TODO: rethink this
