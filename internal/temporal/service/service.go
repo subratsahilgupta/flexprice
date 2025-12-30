@@ -567,6 +567,53 @@ func (s *temporalService) buildNomodInvoiceSyncInput(_ context.Context, tenantID
 		Mark(errors.ErrValidation)
 }
 
+// ExecuteWorkflowSync executes a workflow synchronously and waits for completion
+func (s *temporalService) ExecuteWorkflowSync(
+	ctx context.Context,
+	workflowType types.TemporalWorkflowType,
+	params interface{},
+	timeoutSeconds int,
+) (interface{}, error) {
+	// Check if service is initialized
+	if s == nil {
+		return nil, errors.NewError("temporal service not initialized").
+			WithHint("Temporal service must be initialized before use").
+			Mark(errors.ErrInternal)
+	}
+
+	// Create a timeout context
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+
+	// Start the workflow
+	workflowRun, err := s.ExecuteWorkflow(timeoutCtx, workflowType, params)
+	if err != nil {
+		return nil, errors.WithError(err).
+			WithHint("Failed to start workflow for synchronous execution").
+			WithReportableDetails(map[string]interface{}{
+				"workflow_type": workflowType.String(),
+				"timeout":       timeoutSeconds,
+			}).
+			Mark(errors.ErrInternal)
+	}
+
+	// Wait for workflow completion and get result
+	var result models.CustomerOnboardingWorkflowResult
+	if err := workflowRun.Get(timeoutCtx, &result); err != nil {
+		return nil, errors.WithError(err).
+			WithHint("Workflow execution failed or timed out").
+			WithReportableDetails(map[string]interface{}{
+				"workflow_id":   workflowRun.GetID(),
+				"run_id":        workflowRun.GetRunID(),
+				"workflow_type": workflowType.String(),
+				"timeout":       timeoutSeconds,
+			}).
+			Mark(errors.ErrInternal)
+	}
+
+	return &result, nil
+}
+
 // buildScheduleSubscriptionBillingWorkflowInput builds input for schedule subscription billing workflow
 func (s *temporalService) buildScheduleSubscriptionBillingWorkflowInput(_ context.Context, _, _, _ string, params interface{}) (interface{}, error) {
 	// If already correct type, return as-is

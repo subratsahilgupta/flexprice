@@ -190,8 +190,17 @@ func (s *customerService) CreateCustomer(ctx context.Context, req dto.CreateCust
 	// Publish webhook event for customer creation
 	s.publishWebhookEvent(ctx, types.WebhookEventCustomerCreated, cust.ID)
 
-	if err := s.handleCustomerOnboarding(ctx, cust); err != nil {
-		s.Logger.Errorw("failed to handle customer onboarding workflow", "customer_id", cust.ID, "error", err)
+	// Check if we should skip the customer onboarding workflow
+	// This flag is used when a customer is created via a workflow to prevent infinite loops
+	if !req.SkipOnboardingWorkflow {
+		if err := s.handleCustomerOnboarding(ctx, cust); err != nil {
+			s.Logger.Errorw("failed to handle customer onboarding workflow", "customer_id", cust.ID, "error", err)
+		}
+	} else {
+		s.Logger.Debugw("skipping customer onboarding workflow",
+			"customer_id", cust.ID,
+			"external_id", cust.ExternalID,
+			"reason", "skip_onboarding_workflow flag is true")
 	}
 
 	return &dto.CustomerResponse{Customer: cust}, nil

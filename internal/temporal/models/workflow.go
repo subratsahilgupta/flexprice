@@ -22,6 +22,7 @@ const (
 type WorkflowAction string
 
 const (
+	WorkflowActionCreateCustomer     WorkflowAction = "create_customer"
 	WorkflowActionCreateSubscription WorkflowAction = "create_subscription"
 	WorkflowActionCreateWallet       WorkflowAction = "create_wallet"
 )
@@ -36,8 +37,10 @@ type WorkflowActionConfig interface {
 
 // WorkflowActionParams contains common parameters that actions might need
 type WorkflowActionParams struct {
-	CustomerID string
-	Currency   string
+	CustomerID     string
+	Currency       string
+	EventTimestamp *time.Time // Optional - timestamp of the triggering event for subscription start date
+	DefaultUserID  *string    // Optional - user_id from config for created_by/updated_by fields
 	// Add more fields as needed for different action types
 }
 
@@ -86,6 +89,15 @@ func (c *WorkflowConfig) UnmarshalJSON(data []byte) error {
 		// Use utils.ToStruct to unmarshal into the appropriate concrete type
 		var action WorkflowActionConfig
 		switch actionType {
+		case WorkflowActionCreateCustomer:
+			customerAction, err := utils.ToStruct[CreateCustomerActionConfig](actionMap)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHintf("Failed to convert create_customer action: %v", err).
+					Mark(ierr.ErrValidation)
+			}
+			action = &customerAction
+
 		case WorkflowActionCreateWallet:
 			walletAction, err := utils.ToStruct[CreateWalletActionConfig](actionMap)
 			if err != nil {
@@ -110,6 +122,7 @@ func (c *WorkflowConfig) UnmarshalJSON(data []byte) error {
 				WithReportableDetails(map[string]any{
 					"action": actionType,
 					"allowed": []WorkflowAction{
+						WorkflowActionCreateCustomer,
 						WorkflowActionCreateWallet,
 						WorkflowActionCreateSubscription,
 					},
@@ -166,13 +179,80 @@ func (c WorkflowConfig) Validate() error {
 		return err
 	}
 
+	// Validate each action
 	for _, action := range c.Actions {
 		if err := action.Validate(); err != nil {
 			return err
 		}
 	}
 
+	// Enforce that create_customer action must be first if present
+	for i, action := range c.Actions {
+		if action.GetAction() == WorkflowActionCreateCustomer {
+			if i != 0 {
+				return ierr.NewError("create_customer action must be the first action in the workflow").
+					WithHint("Move create_customer action to the beginning of the actions array").
+					WithReportableDetails(map[string]interface{}{
+						"current_position":  i,
+						"required_position": 0,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+			// Only one create_customer action is allowed
+			break
+		}
+	}
+
 	return nil
+}
+
+// CreateCustomerActionConfig represents configuration for creating a customer action
+type CreateCustomerActionConfig struct {
+	Action        WorkflowAction `json:"action"`                    // Type discriminator - automatically set to "create_customer"
+	DefaultUserID *string        `json:"default_user_id,omitempty"` // Optional user_id to use for created_by/updated_by (defaults to NULL if not provided)
+	// Name and ExternalID will be provided at runtime from the event context
+	// Email is optional and left empty for auto-created customers
+}
+
+func (c *CreateCustomerActionConfig) Validate() error {
+	if err := validator.ValidateRequest(c); err != nil {
+		return err
+	}
+	// No additional validation needed - name and external_id come from runtime context
+	return nil
+}
+
+func (c *CreateCustomerActionConfig) GetAction() WorkflowAction {
+	return WorkflowActionCreateCustomer
+}
+
+// ToDTO converts the action config to CreateCustomerRequest DTO
+func (c *CreateCustomerActionConfig) ToDTO(params interface{}) (interface{}, error) {
+	// Type assert to get the parameters we need
+	actionParams, ok := params.(*WorkflowActionParams)
+	if !ok {
+		return nil, ierr.NewError("invalid parameters for create_customer action").
+			WithHint("Expected WorkflowActionParams").
+			Mark(ierr.ErrValidation)
+	}
+
+	// ExternalID must be provided in params
+	if actionParams.CustomerID == "" {
+		return nil, ierr.NewError("customer_id (external_id) is required for create_customer action").
+			WithHint("Provide external customer ID in WorkflowActionParams").
+			Mark(ierr.ErrValidation)
+	}
+
+	return &dto.CreateCustomerRequest{
+		ExternalID: actionParams.CustomerID,
+		Name:       actionParams.CustomerID,
+		Email:      "",
+		Metadata: map[string]string{
+			"created_by_workflow": "true",
+			"workflow_type":       "customer_onboarding",
+		},
+		SkipOnboardingWorkflow: true,
+	}, nil
 }
 
 // CreateWalletActionConfig represents configuration for creating a wallet action
@@ -226,6 +306,7 @@ type CreateSubscriptionActionConfig struct {
 	Action       WorkflowAction `json:"action"`
 	PlanID       string         `json:"plan_id,omitempty"`
 	BillingCycle string         `json:"billing_cycle,omitempty"`
+	StartDate    *time.Time     `json:"start_date,omitempty"` // Optional start_date, if provided takes highest priority
 }
 
 func (c *CreateSubscriptionActionConfig) Validate() error {
@@ -270,9 +351,22 @@ func (c *CreateSubscriptionActionConfig) ToDTO(params interface{}) (interface{},
 		}
 	}
 
-	// Default start date to current time
-	now := time.Now().UTC()
-	startDate := &now
+	// Start date priority:
+	// 1. Config start_date (if provided)
+	// 2. Event timestamp (if provided)
+	// 3. Current time (fallback)
+	var startDate *time.Time
+	if c.StartDate != nil {
+		// Use config start_date (highest priority)
+		startDate = c.StartDate
+	} else if actionParams.EventTimestamp != nil {
+		// Use event timestamp (second priority)
+		startDate = actionParams.EventTimestamp
+	} else {
+		// Use current time (fallback)
+		now := time.Now().UTC()
+		startDate = &now
+	}
 
 	return &dto.CreateSubscriptionRequest{
 		CustomerID:         actionParams.CustomerID,
