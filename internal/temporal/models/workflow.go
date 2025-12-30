@@ -251,6 +251,7 @@ func (c *CreateCustomerActionConfig) ToDTO(params interface{}) (interface{}, err
 			"created_by_workflow": "true",
 			"workflow_type":       "customer_onboarding",
 		},
+		SkipOnboardingWorkflow: true,
 	}, nil
 }
 

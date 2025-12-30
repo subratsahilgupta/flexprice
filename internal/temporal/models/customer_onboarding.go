@@ -14,7 +14,7 @@ type CustomerOnboardingWorkflowInput struct {
 	EventTimestamp     *time.Time     `json:"event_timestamp,omitempty"`      // Optional - timestamp of the triggering event
 	TenantID           string         `json:"tenant_id" validate:"required"`
 	EnvironmentID      string         `json:"environment_id" validate:"required"`
-	UserID             string         `json:"user_id" validate:"required"`
+	UserID             string         `json:"user_id,omitempty"`
 	WorkflowConfig     WorkflowConfig `json:"workflow_config" validate:"required"`
 }
 
@@ -67,7 +67,7 @@ type CreateCustomerActivityInput struct {
 	Email         string `json:"email,omitempty"`
 	TenantID      string `json:"tenant_id" validate:"required"`
 	EnvironmentID string `json:"environment_id" validate:"required"`
-	UserID        string `json:"user_id" validate:"required"`
+	UserID        string `json:"user_id,omitempty"`
 }
 
 // Validate validates the create customer activity input
@@ -92,11 +92,6 @@ func (c *CreateCustomerActivityInput) Validate() error {
 			WithHint("Please provide a valid environment ID").
 			Mark(ierr.ErrValidation)
 	}
-	if c.UserID == "" {
-		return ierr.NewError("user_id is required").
-			WithHint("Please provide a valid user ID").
-			Mark(ierr.ErrValidation)
-	}
 	return nil
 }
 
@@ -113,7 +108,7 @@ type CreateWalletActivityInput struct {
 	CustomerID    string                    `json:"customer_id" validate:"required"`
 	TenantID      string                    `json:"tenant_id" validate:"required"`
 	EnvironmentID string                    `json:"environment_id" validate:"required"`
-	UserID        string                    `json:"user_id" validate:"required"`
+	UserID        string                    `json:"user_id,omitempty"`
 	WalletConfig  *CreateWalletActionConfig `json:"wallet_config" validate:"required"`
 }
 
@@ -158,7 +153,7 @@ type CreateSubscriptionActivityInput struct {
 	EventTimestamp     *time.Time                      `json:"event_timestamp,omitempty"` // Optional - timestamp of the triggering event
 	TenantID           string                          `json:"tenant_id" validate:"required"`
 	EnvironmentID      string                          `json:"environment_id" validate:"required"`
-	UserID             string                          `json:"user_id" validate:"required"`
+	UserID             string                          `json:"user_id,omitempty"`
 	SubscriptionConfig *CreateSubscriptionActionConfig `json:"subscription_config" validate:"required"`
 }
 
