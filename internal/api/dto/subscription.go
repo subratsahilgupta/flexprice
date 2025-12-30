@@ -659,10 +659,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 					}).
 					Mark(ierr.ErrValidation)
 			}
-
-			if err := grant.Validate(); err != nil {
-				return err
-			}
 		}
 	}
 
@@ -1158,60 +1154,26 @@ func (r *OverrideLineItemRequest) Validate(
 			// Validate tiers if provided
 			if len(r.Tiers) > 0 {
 				for i, tier := range r.Tiers {
-					if tier.UnitAmount == "" {
-						return ierr.NewError("unit_amount is required when tiers are provided").
-							WithHint("Please provide a valid unit amount for each tier").
-							WithReportableDetails(map[string]interface{}{
-								"tier_index": i,
-							}).
-							Mark(ierr.ErrValidation)
-					}
-
-					// Validate tier unit amount is a valid decimal
-					tierUnitAmount, err := decimal.NewFromString(tier.UnitAmount)
-					if err != nil {
-						return ierr.NewError("invalid tier unit amount format").
-							WithHint("Tier unit amount must be a valid decimal number").
-							WithReportableDetails(map[string]interface{}{
-								"tier_index":  i,
-								"unit_amount": tier.UnitAmount,
-							}).
-							Mark(ierr.ErrValidation)
-					}
-
 					// Validate tier unit amount is not negative (allows zero)
-					if tierUnitAmount.IsNegative() {
+					if tier.UnitAmount.IsNegative() {
 						return ierr.NewError("tier unit amount cannot be negative").
 							WithHint("Tier unit amount cannot be negative").
 							WithReportableDetails(map[string]interface{}{
 								"tier_index":  i,
-								"unit_amount": tier.UnitAmount,
+								"unit_amount": tier.UnitAmount.String(),
 							}).
 							Mark(ierr.ErrValidation)
 					}
 
 					// Validate flat amount if provided
-					if tier.FlatAmount != nil {
-						flatAmount, err := decimal.NewFromString(*tier.FlatAmount)
-						if err != nil {
-							return ierr.NewError("invalid tier flat amount format").
-								WithHint("Tier flat amount must be a valid decimal number").
-								WithReportableDetails(map[string]interface{}{
-									"tier_index":  i,
-									"flat_amount": tier.FlatAmount,
-								}).
-								Mark(ierr.ErrValidation)
-						}
-
-						if flatAmount.IsNegative() {
-							return ierr.NewError("tier flat amount cannot be negative").
-								WithHint("Tier flat amount cannot be negative").
-								WithReportableDetails(map[string]interface{}{
-									"tier_index":  i,
-									"flat_amount": tier.FlatAmount,
-								}).
-								Mark(ierr.ErrValidation)
-						}
+					if tier.FlatAmount != nil && tier.FlatAmount.IsNegative() {
+						return ierr.NewError("tier flat amount cannot be negative").
+							WithHint("Tier flat amount cannot be negative").
+							WithReportableDetails(map[string]interface{}{
+								"tier_index":  i,
+								"flat_amount": tier.FlatAmount.String(),
+							}).
+							Mark(ierr.ErrValidation)
 					}
 				}
 			}
@@ -1223,23 +1185,8 @@ func (r *OverrideLineItemRequest) Validate(
 					Mark(ierr.ErrValidation)
 			}
 
-			if r.TransformQuantity.DivideBy <= 0 {
-				return ierr.NewError("transform_quantity.divide_by must be greater than 0 when billing model is PACKAGE").
-					WithHint("Please provide a valid number of units to set up package pricing override").
-					Mark(ierr.ErrValidation)
-			}
-
-			// Validate round type
-			if r.TransformQuantity.Round == "" {
-				r.TransformQuantity.Round = types.ROUND_UP // Default to rounding up
-			} else if r.TransformQuantity.Round != types.ROUND_UP && r.TransformQuantity.Round != types.ROUND_DOWN {
-				return ierr.NewError("invalid rounding type- allowed values are up and down").
-					WithHint("Please provide a valid rounding type for package pricing override").
-					WithReportableDetails(map[string]interface{}{
-						"round":   r.TransformQuantity.Round,
-						"allowed": []string{types.ROUND_UP, types.ROUND_DOWN},
-					}).
-					Mark(ierr.ErrValidation)
+			if err := r.TransformQuantity.Validate(); err != nil {
+				return err
 			}
 
 		case types.BILLING_MODEL_FLAT_FEE:
@@ -1261,20 +1208,8 @@ func (r *OverrideLineItemRequest) Validate(
 
 	// Validate transform quantity if provided (independent of billing model)
 	if r.TransformQuantity != nil {
-		if r.TransformQuantity.DivideBy <= 0 {
-			return ierr.NewError("transform_quantity.divide_by must be greater than 0").
-				WithHint("Transform quantity divide_by must be greater than 0").
-				Mark(ierr.ErrValidation)
-		}
-
-		if r.TransformQuantity.Round != "" && r.TransformQuantity.Round != types.ROUND_UP && r.TransformQuantity.Round != types.ROUND_DOWN {
-			return ierr.NewError("invalid rounding type- allowed values are up and down").
-				WithHint("Please provide a valid rounding type").
-				WithReportableDetails(map[string]interface{}{
-					"round":   r.TransformQuantity.Round,
-					"allowed": []string{types.ROUND_UP, types.ROUND_DOWN},
-				}).
-				Mark(ierr.ErrValidation)
+		if err := r.TransformQuantity.Validate(); err != nil {
+			return err
 		}
 	}
 
@@ -1415,5 +1350,29 @@ func (r *GetUpcomingCreditGrantApplicationsRequest) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+type Period struct {
+	Start time.Time
+	End   time.Time
+}
+
+func (p *Period) Validate() error {
+	if p.Start.IsZero() {
+		return ierr.NewError("start_date is required").
+			WithHint("Please provide a start date").
+			Mark(ierr.ErrValidation)
+	}
+	if p.End.IsZero() {
+		return ierr.NewError("end_date is required").
+			WithHint("Please provide an end date").
+			Mark(ierr.ErrValidation)
+	}
+	if p.Start.After(p.End) {
+		return ierr.NewError("start_date cannot be after end_date").
+			WithHint("Ensure the period start date is on or before the end date").
+			Mark(ierr.ErrValidation)
+	}
 	return nil
 }

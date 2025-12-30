@@ -17,6 +17,7 @@ import (
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 )
 
 const (
@@ -442,7 +443,7 @@ func (s *onboardingService) OnboardNewUserWithTenant(ctx context.Context, userID
 	}
 
 	// Send onboarding email
-	if err := s.sendOnboardingEmail(ctx, email, ""); err != nil {
+	if err := s.sendOnboardingEmail(ctx, email); err != nil {
 		// Log error but don't fail the onboarding process
 		s.Logger.Errorw("failed to send onboarding email",
 			"error", err,
@@ -676,7 +677,7 @@ func (s *onboardingService) createDefaultPrices(ctx context.Context, planRespons
 
 	// Starter Plan - Free tier
 	starterPriceReq := dto.CreatePriceRequest{
-		Amount:             "0",
+		Amount:             lo.ToPtr(decimal.Zero),
 		Currency:           "USD",
 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
 		EntityID:           starterPlan.ID,
@@ -699,7 +700,7 @@ func (s *onboardingService) createDefaultPrices(ctx context.Context, planRespons
 
 	// Basic Plan - $10/month
 	basicPriceReq := dto.CreatePriceRequest{
-		Amount:             "10",
+		Amount:             lo.ToPtr(decimal.NewFromInt(10)),
 		Currency:           "USD",
 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
 		EntityID:           basicPlan.ID,
@@ -722,7 +723,7 @@ func (s *onboardingService) createDefaultPrices(ctx context.Context, planRespons
 
 	// Pro Plan - $50/month
 	proPriceReq := dto.CreatePriceRequest{
-		Amount:             "50",
+		Amount:             lo.ToPtr(decimal.NewFromInt(50)),
 		Currency:           "USD",
 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
 		EntityID:           proPlan.ID,
@@ -829,7 +830,7 @@ func (s *onboardingService) createDefaultSubscriptions(ctx context.Context, cust
 }
 
 // sendOnboardingEmail sends a welcome email to a new user
-func (s *onboardingService) sendOnboardingEmail(ctx context.Context, toEmail, fromEmail string) error {
+func (s *onboardingService) sendOnboardingEmail(ctx context.Context, toEmail string) error {
 	// Create email client
 	emailClient := email.NewEmailClient(email.Config{
 		Enabled:     s.Config.Email.Enabled,
@@ -855,7 +856,7 @@ func (s *onboardingService) sendOnboardingEmail(ctx context.Context, toEmail, fr
 
 	// Send email using template
 	resp, err := emailSvc.SendEmailWithTemplate(ctx, email.SendEmailWithTemplateRequest{
-		FromAddress:  fromEmail,
+		FromAddress:  s.Config.Email.FromAddress,
 		ToAddress:    toEmail,
 		Subject:      "Welcome to Flexprice!",
 		TemplatePath: "welcome-email.html",

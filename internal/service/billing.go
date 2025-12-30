@@ -13,6 +13,8 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	priceDomain "github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -132,16 +134,26 @@ func (s *billingService) CalculateFixedCharges(
 		amount = proratedAmount
 
 		// Calculate price unit amount if price unit is available
-		var priceUnitAmount *decimal.Decimal
-		if item.PriceUnit != "" {
-			convertedAmount, err := s.PriceUnitRepo.ConvertToPriceUnit(ctx, item.PriceUnit, types.GetTenantID(ctx), types.GetEnvironmentID(ctx), amount)
+		var priceUnitAmount decimal.Decimal
+		if item.PriceUnit != nil {
+			priceUnit, err := s.PriceUnitRepo.GetByCode(ctx, lo.FromPtr(item.PriceUnit))
+			if err != nil {
+				s.Logger.Warnw("failed to get price unit",
+					"error", err,
+					"price_unit", lo.FromPtr(item.PriceUnit),
+					"subscription_id", sub.ID,
+					"line_item_id", item.ID)
+				continue
+			}
+
+			priceUnitAmount, err = priceunit.ConvertToPriceUnitAmount(ctx, amount, priceUnit.ConversionRate, priceUnit.BaseCurrency)
 			if err != nil {
 				s.Logger.Warnw("failed to convert amount to price unit",
 					"error", err,
-					"price_unit", item.PriceUnit,
-					"amount", amount)
-			} else {
-				priceUnitAmount = &convertedAmount
+					"price_unit", lo.FromPtr(item.PriceUnit),
+					"subscription_id", sub.ID,
+					"line_item_id", item.ID)
+				continue
 			}
 		}
 
@@ -151,8 +163,8 @@ func (s *billingService) CalculateFixedCharges(
 			PlanDisplayName: lo.ToPtr(item.PlanDisplayName),
 			PriceID:         lo.ToPtr(item.PriceID),
 			PriceType:       lo.ToPtr(string(item.PriceType)),
-			PriceUnit:       lo.ToPtr(item.PriceUnit),
-			PriceUnitAmount: priceUnitAmount,
+			PriceUnit:       item.PriceUnit,
+			PriceUnitAmount: lo.ToPtr(priceUnitAmount),
 			DisplayName:     lo.ToPtr(item.DisplayName),
 			Amount:          amount,
 			Quantity:        item.Quantity,
@@ -622,17 +634,25 @@ func (s *billingService) CalculateUsageCharges(
 				"price_id", item.PriceID)
 
 			// Calculate price unit amount if price unit is available
-			var priceUnitAmount *decimal.Decimal
-			if item.PriceUnit != "" {
-				convertedAmount, err := s.PriceUnitRepo.ConvertToPriceUnit(ctx, item.PriceUnit, types.GetTenantID(ctx), types.GetEnvironmentID(ctx), lineItemAmount)
+			var priceUnitAmount decimal.Decimal
+			if item.PriceUnit != nil {
+				priceUnit, err := s.PriceUnitRepo.GetByCode(ctx, lo.FromPtr(item.PriceUnit))
+				if err != nil {
+					s.Logger.Warnw("failed to get price unit",
+						"error", err,
+						"price_unit", lo.FromPtr(item.PriceUnit),
+						"amount", lineItemAmount)
+					continue
+				}
+				convertedAmount, err := priceunit.ConvertToPriceUnitAmount(ctx, lineItemAmount, priceUnit.ConversionRate, priceUnit.BaseCurrency)
 				if err != nil {
 					s.Logger.Warnw("failed to convert amount to price unit",
 						"error", err,
-						"price_unit", item.PriceUnit,
+						"price_unit", lo.FromPtr(item.PriceUnit),
 						"amount", lineItemAmount)
-				} else {
-					priceUnitAmount = &convertedAmount
+					continue
 				}
+				priceUnitAmount = convertedAmount
 			}
 
 			usageCharges = append(usageCharges, dto.CreateInvoiceLineItemRequest{
@@ -643,8 +663,8 @@ func (s *billingService) CalculateUsageCharges(
 				PriceID:          lo.ToPtr(item.PriceID),
 				MeterID:          lo.ToPtr(item.MeterID),
 				MeterDisplayName: lo.ToPtr(item.MeterDisplayName),
-				PriceUnit:        lo.ToPtr(item.PriceUnit),
-				PriceUnitAmount:  priceUnitAmount,
+				PriceUnit:        item.PriceUnit,
+				PriceUnitAmount:  lo.ToPtr(priceUnitAmount),
 				DisplayName:      displayName,
 				Amount:           lineItemAmount,
 				Quantity:         quantityForCalculation,
@@ -855,7 +875,7 @@ func (s *billingService) CalculateUsageChargesForPreview(
 
 				// Calculate cost using bucketed values
 				adjustedAmount := priceService.CalculateBucketedCost(ctx, matchingCharge.Price, bucketedValues)
-				matchingCharge.Amount = price.FormatAmountToFloat64WithPrecision(adjustedAmount, matchingCharge.Price.Currency)
+				matchingCharge.Amount = priceDomain.FormatAmountToFloat64WithPrecision(adjustedAmount, matchingCharge.Price.Currency)
 
 				// Update quantity to reflect the sum of all bucket maxes
 				totalBucketQuantity := decimal.Zero
@@ -865,7 +885,7 @@ func (s *billingService) CalculateUsageChargesForPreview(
 				matchingCharge.Quantity = totalBucketQuantity.InexactFloat64()
 				quantityForCalculation = totalBucketQuantity
 			} else if meter.IsBucketedSumMeter() && matchingCharge.Price != nil {
-				// Handle sum with bucket meters - similar to bucketed max but for sum aggregation
+				// Handle sum with bucket meters - uses optimized feature_usage table
 				// Get usage with bucketed values
 				usageRequest := &events.FeatureUsageParams{
 					PriceID: item.PriceID,
@@ -880,7 +900,7 @@ func (s *billingService) CalculateUsageChargesForPreview(
 					},
 				}
 
-				// Get usage data with buckets (reuse the same method as it handles windowed aggregation)
+				// Get usage data with buckets from feature_usage table (optimized, pre-aggregated)
 				usageResult, err := s.FeatureUsageRepo.GetUsageForMaxMetersWithBuckets(ctx, usageRequest)
 				if err != nil {
 					return nil, decimal.Zero, err
@@ -894,7 +914,7 @@ func (s *billingService) CalculateUsageChargesForPreview(
 
 				// Calculate cost using bucketed values (each bucket is priced independently)
 				adjustedAmount := priceService.CalculateBucketedCost(ctx, matchingCharge.Price, bucketedValues)
-				matchingCharge.Amount = price.FormatAmountToFloat64WithPrecision(adjustedAmount, matchingCharge.Price.Currency)
+				matchingCharge.Amount = priceDomain.FormatAmountToFloat64WithPrecision(adjustedAmount, matchingCharge.Price.Currency)
 
 				// Update quantity to reflect the sum of all bucket sums
 				totalBucketQuantity := decimal.Zero
@@ -1072,6 +1092,84 @@ func (s *billingService) CalculateUsageChargesForPreview(
 
 			// Add the amount to total usage cost
 			lineItemAmount := decimal.NewFromFloat(matchingCharge.Amount)
+
+			// Store commitment info separately
+			var commitmentInfo *types.CommitmentInfo
+
+			// Apply line-item commitment if configured
+			// Line item commitment takes precedence over subscription-level commitment
+			if item.HasCommitment() {
+				// Defensive check: skip commitment application if Price is nil
+				if matchingCharge.Price == nil {
+					s.Logger.Debugw("skipping commitment application due to missing price",
+						"subscription_id", sub.ID,
+						"line_item_id", item.ID,
+						"price_id", item.PriceID)
+				} else {
+					commitmentCalc := newCommitmentCalculator(s.Logger, priceService)
+
+					// Check if this is window-based commitment
+					if item.CommitmentWindowed {
+						// For window commitment, we need bucketed values
+						// Get meter to access bucket configuration
+						meter, ok := meterMap[item.MeterID]
+						if !ok {
+							return nil, decimal.Zero, ierr.NewError("meter not found for window commitment").
+								WithHint(fmt.Sprintf("Meter with ID %s not found", item.MeterID)).
+								WithReportableDetails(map[string]interface{}{
+									"meter_id":     item.MeterID,
+									"line_item_id": item.ID,
+								}).
+								Mark(ierr.ErrNotFound)
+						}
+
+						// Fetch bucketed usage values
+						usageRequest := &dto.GetUsageByMeterRequest{
+							MeterID:            item.MeterID,
+							PriceID:            item.PriceID,
+							ExternalCustomerID: customer.ExternalID,
+							StartTime:          item.GetPeriodStart(periodStart),
+							EndTime:            item.GetPeriodEnd(periodEnd),
+							WindowSize:         meter.Aggregation.BucketSize,
+							BillingAnchor:      &sub.BillingAnchor,
+						}
+
+						usageResult, err := eventService.GetUsageByMeter(ctx, usageRequest)
+						if err != nil {
+							return nil, decimal.Zero, err
+						}
+
+						// Extract bucket values
+						bucketedValues := make([]decimal.Decimal, len(usageResult.Results))
+						for i, result := range usageResult.Results {
+							bucketedValues[i] = result.Value
+						}
+
+						// Apply window-based commitment
+						adjustedAmount, info, err := commitmentCalc.applyWindowCommitmentToLineItem(
+							ctx, item, bucketedValues, matchingCharge.Price)
+						if err != nil {
+							return nil, decimal.Zero, err
+						}
+
+						lineItemAmount = adjustedAmount
+						matchingCharge.Amount = adjustedAmount.InexactFloat64()
+						commitmentInfo = info
+					} else {
+						// Non-window commitment: apply to aggregated usage cost
+						adjustedAmount, info, err := commitmentCalc.applyCommitmentToLineItem(
+							ctx, item, lineItemAmount, matchingCharge.Price)
+						if err != nil {
+							return nil, decimal.Zero, err
+						}
+
+						lineItemAmount = adjustedAmount
+						matchingCharge.Amount = adjustedAmount.InexactFloat64()
+						commitmentInfo = info
+					}
+				}
+			}
+
 			totalUsageCost = totalUsageCost.Add(lineItemAmount)
 
 			// Create metadata for the line item, including overage information if applicable
@@ -1110,17 +1208,27 @@ func (s *billingService) CalculateUsageChargesForPreview(
 				"price_id", item.PriceID)
 
 			// Calculate price unit amount if price unit is available
-			var priceUnitAmount *decimal.Decimal
-			if item.PriceUnit != "" {
-				convertedAmount, err := s.PriceUnitRepo.ConvertToPriceUnit(ctx, item.PriceUnit, types.GetTenantID(ctx), types.GetEnvironmentID(ctx), lineItemAmount)
+			var priceUnitAmount decimal.Decimal
+			if item.PriceUnit != nil {
+				// Get the price unit by code
+				priceUnit, err := s.PriceUnitRepo.GetByCode(ctx, lo.FromPtr(item.PriceUnit))
+				if err != nil {
+					s.Logger.Warnw("failed to get price unit",
+						"error", err,
+						"price_unit", lo.FromPtr(item.PriceUnit))
+					return nil, decimal.Zero, err
+				}
+
+				// Convert fiat currency amount to price unit amount
+				convertedAmount, err := priceunit.ConvertToPriceUnitAmount(ctx, lineItemAmount, priceUnit.ConversionRate, priceUnit.BaseCurrency)
 				if err != nil {
 					s.Logger.Warnw("failed to convert amount to price unit",
 						"error", err,
-						"price_unit", item.PriceUnit,
+						"price_unit", lo.FromPtr(item.PriceUnit),
 						"amount", lineItemAmount)
-				} else {
-					priceUnitAmount = &convertedAmount
+					return nil, decimal.Zero, err
 				}
+				priceUnitAmount = convertedAmount
 			}
 
 			usageCharges = append(usageCharges, dto.CreateInvoiceLineItemRequest{
@@ -1131,14 +1239,15 @@ func (s *billingService) CalculateUsageChargesForPreview(
 				PriceID:          lo.ToPtr(item.PriceID),
 				MeterID:          lo.ToPtr(item.MeterID),
 				MeterDisplayName: lo.ToPtr(item.MeterDisplayName),
-				PriceUnit:        lo.ToPtr(item.PriceUnit),
-				PriceUnitAmount:  priceUnitAmount,
+				PriceUnit:        item.PriceUnit,
+				PriceUnitAmount:  lo.ToPtr(priceUnitAmount),
 				DisplayName:      displayName,
 				Amount:           lineItemAmount,
 				Quantity:         quantityForCalculation,
 				PeriodStart:      lo.ToPtr(item.GetPeriodStart(periodStart)),
 				PeriodEnd:        lo.ToPtr(item.GetPeriodEnd(periodEnd)),
 				Metadata:         metadata,
+				CommitmentInfo:   commitmentInfo,
 			})
 		}
 	}
