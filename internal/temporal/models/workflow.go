@@ -245,8 +245,8 @@ func (c *CreateCustomerActionConfig) ToDTO(params interface{}) (interface{}, err
 
 	return &dto.CreateCustomerRequest{
 		ExternalID: actionParams.CustomerID,
-		Name:       actionParams.CustomerID, // Use ExternalID as name per user decision
-		Email:      "",                      // Leave empty per user decision
+		Name:       actionParams.CustomerID,
+		Email:      "",
 		Metadata: map[string]string{
 			"created_by_workflow": "true",
 			"workflow_type":       "customer_onboarding",

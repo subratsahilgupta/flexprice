@@ -51,7 +51,7 @@ func (a *CustomerActivities) CreateCustomerActivity(ctx context.Context, input m
 		Metadata: map[string]string{
 			"created_by_workflow": "true",
 		},
-		SkipOnboardingWorkflow: true, // Prevent infinite loop
+		SkipOnboardingWorkflow: true,
 	}
 
 	logger.Info("Creating customer via workflow",

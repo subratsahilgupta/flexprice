@@ -153,7 +153,6 @@ func executeCreateCustomerAction(
 		return temporal.NewApplicationError("external_customer_id is required for create_customer action", "MissingExternalID")
 	}
 
-	// Use default_user_id from config if provided, otherwise leave empty (NULL in database)
 	userID := ""
 	if createCustomerAction.DefaultUserID != nil {
 		userID = *createCustomerAction.DefaultUserID
@@ -161,11 +160,11 @@ func executeCreateCustomerAction(
 
 	activityInput := models.CreateCustomerActivityInput{
 		ExternalID:    externalID,
-		Name:          externalID, // Use ExternalID as name per user decision
-		Email:         "",         // Leave empty per user decision
+		Name:          externalID,
+		Email:         "",
 		TenantID:      input.TenantID,
 		EnvironmentID: input.EnvironmentID,
-		UserID:        userID, // Use configured default_user_id or empty string
+		UserID:        userID,
 	}
 
 	var activityResult models.CreateCustomerActivityResult

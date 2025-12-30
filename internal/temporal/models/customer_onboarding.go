@@ -134,7 +134,6 @@ func (c *CreateWalletActivityInput) Validate() error {
 			WithHint("Please provide a valid environment ID").
 			Mark(ierr.ErrValidation)
 	}
-	// user_id is optional - can be empty for automated/system operations
 	if c.WalletConfig == nil {
 		return ierr.NewError("wallet_config is required").
 			WithHint("Please provide wallet configuration").
@@ -180,7 +179,6 @@ func (c *CreateSubscriptionActivityInput) Validate() error {
 			WithHint("Please provide a valid environment ID").
 			Mark(ierr.ErrValidation)
 	}
-	// user_id is optional - can be empty for automated/system operations
 	if c.SubscriptionConfig == nil {
 		return ierr.NewError("subscription_config is required").
 			WithHint("Please provide subscription configuration").
