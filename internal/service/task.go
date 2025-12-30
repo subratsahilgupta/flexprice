@@ -1128,7 +1128,7 @@ func (f *FeaturesChunkProcessor) processFeature(ctx context.Context, featureReq 
 			maps.Copy(mergedMetadata, featureReq.Metadata)
 			updateReq.Metadata = lo.ToPtr(types.Metadata(mergedMetadata))
 
-			// Update the customer
+			// Update the feature
 			_, err := f.featureService.UpdateFeature(ctx, existingFeature.ID, updateReq)
 			if err != nil {
 				f.logger.Error("failed to update feature", "feature_id", existingFeature.ID, "error", err)
