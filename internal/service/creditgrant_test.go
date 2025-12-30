@@ -1461,12 +1461,12 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationOnetimeDay(
 	err = s.creditGrantService.ProcessCreditGrantApplication(s.GetContext(), expiredCGA.ID)
 	s.NoError(err) // Processing should succeed, but grant should be skipped
 
-	// Verify: Status is SKIPPED, failure reason is "Expired", applied_at is nil
+	// Verify: Status is SKIPPED, failure reason is "expired", applied_at is nil
 	processedApp, err := s.GetStores().CreditGrantApplicationRepo.Get(s.GetContext(), expiredCGA.ID)
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 	s.Nil(processedApp.AppliedAt, "AppliedAt should be nil for skipped grants")
 
 	// Verify: No credits are added to wallet
@@ -1530,7 +1530,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationRecurringWe
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 
 	// Verify: Next period application is still created (for recurring grants)
 	filter := &types.CreditGrantApplicationFilter{
@@ -1598,7 +1598,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationMonth() {
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 	s.Nil(processedApp.AppliedAt)
 }
 
@@ -1655,7 +1655,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationYear() {
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 	s.Nil(processedApp.AppliedAt)
 }
 
