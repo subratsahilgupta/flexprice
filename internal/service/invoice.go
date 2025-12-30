@@ -127,7 +127,9 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 				"customer_id":  req.CustomerID,
 				"period_start": req.PeriodStart,
 				"period_end":   req.PeriodEnd,
-				"timestamp":    time.Now().UTC(), // TODO: rethink this
+				// This will always create new idempotency key for the same invoice
+				// Hence commenting this out
+				// "timestamp":    time.Now().UTC(), // TODO: rethink this
 			}
 			scope := idempotency.ScopeOneOffInvoice
 			if req.SubscriptionID != nil {
