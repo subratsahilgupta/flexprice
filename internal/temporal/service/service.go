@@ -318,7 +318,7 @@ func (s *temporalService) ExecuteWorkflow(ctx context.Context, workflowType type
 		return nil, err
 	}
 
-	workflowID := s.generateWorkflowID(workflowType, params)
+	workflowID := s.generateWorkflowID(workflowType, input)
 	options := models.StartWorkflowOptions{
 		ID:        workflowID,
 		TaskQueue: workflowType.TaskQueueName(),
