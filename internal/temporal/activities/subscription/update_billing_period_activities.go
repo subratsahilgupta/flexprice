@@ -42,6 +42,7 @@ func (s *BillingActivities) CheckDraftSubscriptionActivity(
 	// Set context values
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	sub, err := s.serviceParams.SubRepo.Get(ctx, input.SubscriptionID)
 	if err != nil {
@@ -71,6 +72,7 @@ func (s *BillingActivities) CalculatePeriodsActivity(
 	// Set context values
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	subscriptionService := service.NewSubscriptionService(s.serviceParams)
 
@@ -100,6 +102,7 @@ func (s *BillingActivities) CreateDraftInvoicesActivity(
 	// Set context values
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	subscriptionService := service.NewSubscriptionService(s.serviceParams)
 
@@ -132,6 +135,7 @@ func (s *BillingActivities) UpdateCurrentPeriodActivity(
 	// Set context values
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	// Get the subscription
 	sub, err := s.serviceParams.SubRepo.Get(ctx, input.SubscriptionID)
@@ -176,6 +180,7 @@ func (s *BillingActivities) TriggerInvoiceWorkflowActivity(
 	// Set context values
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	temporalSvc := temporalService.GetGlobalTemporalService()
 
@@ -193,6 +198,7 @@ func (s *BillingActivities) TriggerInvoiceWorkflowActivity(
 				InvoiceID:     invoiceID,
 				TenantID:      input.TenantID,
 				EnvironmentID: input.EnvironmentID,
+				UserID:        input.UserID,
 			},
 		)
 		if err != nil {
@@ -225,6 +231,7 @@ func (s *BillingActivities) CheckCancellationActivity(
 	// Set context values
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	sub, err := s.serviceParams.SubRepo.Get(ctx, input.SubscriptionID)
 	if err != nil {

@@ -70,6 +70,7 @@ type CheckDraftSubscriptionActivityInput struct {
 	SubscriptionID string `json:"subscription_id"`
 	TenantID       string `json:"tenant_id"`
 	EnvironmentID  string `json:"environment_id"`
+	UserID         string `json:"user_id"`
 }
 
 // Validate validates the check draft subscription activity input
@@ -144,6 +145,7 @@ type CalculatePeriodsActivityInput struct {
 	SubscriptionID string    `json:"subscription_id"`
 	TenantID       string    `json:"tenant_id"`
 	EnvironmentID  string    `json:"environment_id"`
+	UserID         string    `json:"user_id"`
 	CurrentTime    time.Time `json:"current_time"`
 }
 
@@ -183,6 +185,7 @@ type CreateInvoicesActivityInput struct {
 	SubscriptionID string       `json:"subscription_id"`
 	TenantID       string       `json:"tenant_id"`
 	EnvironmentID  string       `json:"environment_id"`
+	UserID         string       `json:"user_id"`
 	Periods        []dto.Period `json:"periods"`
 }
 
@@ -216,6 +219,7 @@ type UpdateSubscriptionPeriodActivityInput struct {
 	SubscriptionID string    `json:"subscription_id"`
 	TenantID       string    `json:"tenant_id"`
 	EnvironmentID  string    `json:"environment_id"`
+	UserID         string    `json:"user_id"`
 	PeriodStart    time.Time `json:"period_start"`
 	PeriodEnd      time.Time `json:"period_end"`
 }
@@ -328,6 +332,7 @@ type CheckSubscriptionCancellationActivityInput struct {
 	SubscriptionID string     `json:"subscription_id"`
 	TenantID       string     `json:"tenant_id"`
 	EnvironmentID  string     `json:"environment_id"`
+	UserID         string     `json:"user_id"`
 	Period         dto.Period `json:"period"`
 }
 

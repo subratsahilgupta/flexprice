@@ -74,6 +74,7 @@ func ProcessSubscriptionBillingWorkflow(
 		SubscriptionID: input.SubscriptionID,
 		TenantID:       input.TenantID,
 		EnvironmentID:  input.EnvironmentID,
+		UserID:         input.UserID,
 	}
 	err := workflow.ExecuteActivity(ctx, ActivityCheckDraftSubscription, draftSubscriptionInput).Get(ctx, &draftSubscriptionOutput)
 	if err != nil {
@@ -104,6 +105,7 @@ func ProcessSubscriptionBillingWorkflow(
 		SubscriptionID: input.SubscriptionID,
 		TenantID:       input.TenantID,
 		EnvironmentID:  input.EnvironmentID,
+		UserID:         input.UserID,
 		CurrentTime:    now,
 	}
 
@@ -143,6 +145,7 @@ func ProcessSubscriptionBillingWorkflow(
 		SubscriptionID: input.SubscriptionID,
 		TenantID:       input.TenantID,
 		EnvironmentID:  input.EnvironmentID,
+		UserID:         input.UserID,
 		Periods:        completedPeriods,
 	}
 
@@ -172,6 +175,7 @@ func ProcessSubscriptionBillingWorkflow(
 		SubscriptionID: input.SubscriptionID,
 		TenantID:       input.TenantID,
 		EnvironmentID:  input.EnvironmentID,
+		UserID:         input.UserID,
 		PeriodStart:    lastPeriod.Start,
 		PeriodEnd:      lastPeriod.End,
 	}
@@ -194,6 +198,7 @@ func ProcessSubscriptionBillingWorkflow(
 		SubscriptionID: input.SubscriptionID,
 		TenantID:       input.TenantID,
 		EnvironmentID:  input.EnvironmentID,
+		UserID:         input.UserID,
 		Period:         lastPeriod,
 	}
 
@@ -220,6 +225,7 @@ func ProcessSubscriptionBillingWorkflow(
 			InvoiceIDs:    createInvoicesOutput.InvoiceIDs,
 			TenantID:      input.TenantID,
 			EnvironmentID: input.EnvironmentID,
+			UserID:        input.UserID,
 		}
 
 		err = workflow.ExecuteActivity(ctx, ActivityTriggerInvoiceWorkflow, triggerInput).Get(ctx, &triggerOutput)
