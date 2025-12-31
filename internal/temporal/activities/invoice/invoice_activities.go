@@ -38,6 +38,7 @@ func (s *InvoiceActivities) FinalizeInvoiceActivity(
 	// Set context values
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	invoiceService := service.NewInvoiceService(s.serviceParams)
 
@@ -68,6 +69,7 @@ func (s *InvoiceActivities) SyncInvoiceToVendorActivity(
 	// Set context values
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	invoiceService := service.NewInvoiceService(s.serviceParams)
 
@@ -98,6 +100,7 @@ func (s *InvoiceActivities) AttemptInvoicePaymentActivity(
 	// Set context values
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
 
 	invoiceService := service.NewInvoiceService(s.serviceParams)
 

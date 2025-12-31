@@ -13,6 +13,7 @@ type ProcessInvoiceWorkflowInput struct {
 	InvoiceID     string `json:"invoice_id"`
 	TenantID      string `json:"tenant_id"`
 	EnvironmentID string `json:"environment_id"`
+	UserID        string `json:"user_id"`
 }
 
 // Validate validates the process invoice workflow input
@@ -49,6 +50,7 @@ type FinalizeInvoiceActivityInput struct {
 	InvoiceID     string `json:"invoice_id"`
 	TenantID      string `json:"tenant_id"`
 	EnvironmentID string `json:"environment_id"`
+	UserID        string `json:"user_id"`
 }
 
 // Validate validates the finalize invoice activity input
@@ -83,6 +85,7 @@ type SyncInvoiceActivityInput struct {
 	InvoiceID     string `json:"invoice_id"`
 	TenantID      string `json:"tenant_id"`
 	EnvironmentID string `json:"environment_id"`
+	UserID        string `json:"user_id"`
 }
 
 // Validate validates the sync invoice activity input
@@ -117,6 +120,7 @@ type PaymentActivityInput struct {
 	InvoiceID     string `json:"invoice_id"`
 	TenantID      string `json:"tenant_id"`
 	EnvironmentID string `json:"environment_id"`
+	UserID        string `json:"user_id"`
 }
 
 // Validate validates the payment activity input
@@ -151,6 +155,7 @@ type TriggerInvoiceWorkflowActivityInput struct {
 	InvoiceIDs    []string `json:"invoice_ids"`
 	TenantID      string   `json:"tenant_id"`
 	EnvironmentID string   `json:"environment_id"`
+	UserID        string   `json:"user_id"`
 }
 
 // Validate validates the trigger invoice workflow activity input
