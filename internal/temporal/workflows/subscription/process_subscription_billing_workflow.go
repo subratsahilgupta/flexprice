@@ -3,6 +3,7 @@ package subscription
 import (
 	"time"
 
+	invoiceModels "github.com/flexprice/flexprice/internal/temporal/models/invoice"
 	subscriptionModels "github.com/flexprice/flexprice/internal/temporal/models/subscription"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
@@ -15,22 +16,21 @@ const (
 	ActivityCheckDraftSubscription = "CheckDraftSubscriptionActivity"
 	ActivityCheckPause             = "CheckPauseActivity"
 	ActivityCalculatePeriods       = "CalculatePeriodsActivity"
-	ActivityCreateInvoices         = "CreateInvoicesActivity"
+	ActivityCreateDraftInvoices    = "CreateDraftInvoicesActivity"
 	ActivityUpdateCurrentPeriod    = "UpdateCurrentPeriodActivity"
 	ActivityCheckCancellation      = "CheckCancellationActivity"
-	ActivitySyncInvoice            = "SyncInvoiceActivity"
-	ActivityAttemptPayment         = "AttemptPaymentActivity"
+	// Activity from invoice package
+	ActivityTriggerInvoiceWorkflow = "TriggerInvoiceWorkflowActivity"
 )
 
 // ProcessSubscriptionBillingWorkflow processes a subscription billing workflow
-// This workflow orchestrates the complete billing period processing:
-// 1. Check pause status and handle pause/resume
+// This workflow orchestrates the subscription billing period processing:
+// 1. Check if subscription is draft
 // 2. Calculate billing periods up to current time
-// 3. For each period (except the last), create invoice and check for cancellation
-// 4. Update subscription to new current period
-// 5. Check for final cancellation
-// 6. Sync invoices to external vendors (non-blocking)
-// 7. Attempt payment for invoices
+// 3. For each period (except the last), create draft invoice
+// 4. Check for cancellation
+// 5. Update subscription to new current period
+// 6. Trigger invoice workflows for processing (fire-and-forget)
 func ProcessSubscriptionBillingWorkflow(
 	ctx workflow.Context,
 	input subscriptionModels.ProcessSubscriptionBillingWorkflowInput,
@@ -129,9 +129,9 @@ func ProcessSubscriptionBillingWorkflow(
 		"periods_count", len(periodsOutput.Periods))
 
 	// ================================================================================
-	// STEP 3: Process Periods (Create Invoices)
+	// STEP 3: Create Draft Invoices (without finalization)
 	// ================================================================================
-	logger.Info("Step 3: Processing periods and creating invoices",
+	logger.Info("Step 3: Creating draft invoices",
 		"subscription_id", input.SubscriptionID,
 		"periods_to_process", len(periodsOutput.Periods)-1)
 
@@ -146,84 +146,23 @@ func ProcessSubscriptionBillingWorkflow(
 		Periods:        completedPeriods,
 	}
 
-	err = workflow.ExecuteActivity(ctx, ActivityCreateInvoices, createInvoicesInput).Get(ctx, &createInvoicesOutput)
+	err = workflow.ExecuteActivity(ctx, ActivityCreateDraftInvoices, createInvoicesInput).Get(ctx, &createInvoicesOutput)
 	if err != nil {
-		logger.Error("Failed to create invoice for period",
+		logger.Error("Failed to create draft invoices",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
 		return nil, err
 	}
 
-	// ================================================================================
-	// STEP 4: Sync Invoices to External Vendor
-	// ================================================================================
-	logger.Info("Step 4: Syncing invoices to external vendor",
-		"subscription_id", input.SubscriptionID)
-
-	var syncInvoicesOutput subscriptionModels.SyncInvoiceToExternalVendorActivityOutput
-	syncInvoicesInput := subscriptionModels.SyncInvoiceToExternalVendorActivityInput{
-		TenantID:      input.TenantID,
-		EnvironmentID: input.EnvironmentID,
-		InvoiceIDs:    createInvoicesOutput.InvoiceIDs,
-	}
-
-	err = workflow.ExecuteActivity(ctx, ActivitySyncInvoice, syncInvoicesInput).Get(ctx, &syncInvoicesOutput)
-	if err != nil {
-		logger.Error("Failed to sync invoice to external vendor",
-			"error", err,
-			"subscription_id", input.SubscriptionID)
-		return nil, err
-	}
+	logger.Info("Created draft invoices",
+		"subscription_id", input.SubscriptionID,
+		"invoice_count", len(createInvoicesOutput.InvoiceIDs))
 
 	// ================================================================================
-	// STEP 5: Attempt Payment for the invoices
+	// STEP 4: Update Subscription Period
 	// ================================================================================
 
-	logger.Info("Step 5: Attempting payment for invoices",
-		"subscription_id", input.SubscriptionID)
-
-	var attemptPaymentOutput subscriptionModels.AttemptPaymentActivityOutput
-	attemptPaymentInput := subscriptionModels.AttemptPaymentActivityInput{
-		SubscriptionID: input.SubscriptionID,
-		TenantID:       input.TenantID,
-		EnvironmentID:  input.EnvironmentID,
-		InvoiceIDs:     createInvoicesOutput.InvoiceIDs,
-	}
-
-	err = workflow.ExecuteActivity(ctx, ActivityAttemptPayment, attemptPaymentInput).Get(ctx, &attemptPaymentOutput)
-	if err != nil {
-		logger.Error("Failed to attempt payment for invoices",
-			"error", err,
-			"subscription_id", input.SubscriptionID)
-		return nil, err
-	}
-
-	// ================================================================================
-	// STEP 6: Cancellation Check
-	// ================================================================================
-	logger.Info("Step 6: Checking for subscription cancellation",
-		"subscription_id", input.SubscriptionID)
-	var cancelSubscriptionOutput subscriptionModels.CheckSubscriptionCancellationActivityOutput
-	cancelSubscriptionInput := subscriptionModels.CheckSubscriptionCancellationActivityInput{
-		SubscriptionID: input.SubscriptionID,
-		TenantID:       input.TenantID,
-		EnvironmentID:  input.EnvironmentID,
-		Period:         periodsOutput.Periods[len(periodsOutput.Periods)-1],
-	}
-
-	err = workflow.ExecuteActivity(ctx, ActivityCheckCancellation, cancelSubscriptionInput).Get(ctx, &cancelSubscriptionOutput)
-	if err != nil {
-		logger.Error("Failed to cancel subscription",
-			"error", err,
-			"subscription_id", input.SubscriptionID)
-		return nil, err
-	}
-
-	// ================================================================================
-	// STEP 7: Update Subscription Period
-	// ================================================================================
-
-	logger.Info("Step 7: Updating subscription period",
+	logger.Info("Step 4: Updating subscription period",
 		"subscription_id", input.SubscriptionID)
 
 	// Update to the new current period (last period from calculated periods)
@@ -243,6 +182,61 @@ func ProcessSubscriptionBillingWorkflow(
 			"error", err,
 			"subscription_id", input.SubscriptionID)
 		return nil, err
+	}
+
+	// ================================================================================
+	// STEP 5: Cancellation Check
+	// ================================================================================
+	logger.Info("Step 5: Checking for subscription cancellation",
+		"subscription_id", input.SubscriptionID)
+	var cancelSubscriptionOutput subscriptionModels.CheckSubscriptionCancellationActivityOutput
+	cancelSubscriptionInput := subscriptionModels.CheckSubscriptionCancellationActivityInput{
+		SubscriptionID: input.SubscriptionID,
+		TenantID:       input.TenantID,
+		EnvironmentID:  input.EnvironmentID,
+		Period:         lastPeriod,
+	}
+
+	err = workflow.ExecuteActivity(ctx, ActivityCheckCancellation, cancelSubscriptionInput).Get(ctx, &cancelSubscriptionOutput)
+	if err != nil {
+		logger.Error("Failed to check subscription cancellation",
+			"error", err,
+			"subscription_id", input.SubscriptionID)
+		return nil, err
+	}
+
+	// ================================================================================
+	// STEP 6: Trigger Invoice Workflows (fire-and-forget)
+	// ================================================================================
+
+	// Only trigger if there are invoices to process
+	if len(createInvoicesOutput.InvoiceIDs) > 0 {
+		logger.Info("Step 6: Triggering invoice workflows",
+			"subscription_id", input.SubscriptionID,
+			"invoice_count", len(createInvoicesOutput.InvoiceIDs))
+
+		var triggerOutput invoiceModels.TriggerInvoiceWorkflowActivityOutput
+		triggerInput := invoiceModels.TriggerInvoiceWorkflowActivityInput{
+			InvoiceIDs:    createInvoicesOutput.InvoiceIDs,
+			TenantID:      input.TenantID,
+			EnvironmentID: input.EnvironmentID,
+		}
+
+		err = workflow.ExecuteActivity(ctx, ActivityTriggerInvoiceWorkflow, triggerInput).Get(ctx, &triggerOutput)
+		if err != nil {
+			// Log error but don't fail the workflow - invoice workflows can be triggered manually
+			logger.Warn("Failed to trigger invoice workflows, but continuing",
+				"error", err,
+				"subscription_id", input.SubscriptionID)
+		} else {
+			logger.Info("Triggered invoice workflows",
+				"subscription_id", input.SubscriptionID,
+				"triggered_count", triggerOutput.TriggeredCount,
+				"failed_count", triggerOutput.FailedCount)
+		}
+	} else {
+		logger.Info("Step 6: No invoices to process, skipping invoice workflow triggers",
+			"subscription_id", input.SubscriptionID)
 	}
 
 	return &subscriptionModels.ProcessSubscriptionBillingWorkflowResult{

@@ -123,16 +123,23 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 		var idempKey string
 		if req.IdempotencyKey == nil {
 			params := map[string]interface{}{
-				"tenant_id":    types.GetTenantID(ctx),
-				"customer_id":  req.CustomerID,
-				"period_start": req.PeriodStart,
-				"period_end":   req.PeriodEnd,
-				"timestamp":    time.Now().UTC(), // TODO: rethink this
+				"tenant_id":      types.GetTenantID(ctx),
+				"environment_id": types.GetEnvironmentID(ctx),
+				"customer_id":    req.CustomerID,
+				"period_start":   req.PeriodStart,
+				"period_end":     req.PeriodEnd,
+				// Including a timestamp here would always generate a new idempotency key
+				// for the same invoice, so it is intentionally omitted.
+				// "timestamp":    time.Now().UTC(),
 			}
 			scope := idempotency.ScopeOneOffInvoice
 			if req.SubscriptionID != nil {
 				scope = idempotency.ScopeSubscriptionInvoice
 				params["subscription_id"] = req.SubscriptionID
+			} else {
+				// For one-off invoices, a timestamp is required to ensure uniqueness
+				// across repeated invoice creations.
+				params["timestamp"] = time.Now().UTC()
 			}
 			idempKey = s.idempGen.GenerateKey(scope, params)
 		} else {

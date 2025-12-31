@@ -6,7 +6,9 @@ import (
 
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
+	invoiceModels "github.com/flexprice/flexprice/internal/temporal/models/invoice"
 	subscriptionModels "github.com/flexprice/flexprice/internal/temporal/models/subscription"
+	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -85,9 +87,9 @@ func (s *BillingActivities) CalculatePeriodsActivity(
 	return output, nil
 }
 
-// CreateInvoicesActivity creates and finalizes an invoice for a specific billing period
-// This activity does NOT sync to external vendors or attempt payment - those are handled separately
-func (s *BillingActivities) CreateInvoicesActivity(
+// CreateDraftInvoicesActivity creates draft invoices for specific billing periods
+// This activity does NOT finalize, sync, or attempt payment - those are handled by ProcessInvoiceWorkflow
+func (s *BillingActivities) CreateDraftInvoicesActivity(
 	ctx context.Context,
 	input subscriptionModels.CreateInvoicesActivityInput,
 ) (*subscriptionModels.CreateInvoicesActivityOutput, error) {
@@ -100,7 +102,6 @@ func (s *BillingActivities) CreateInvoicesActivity(
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
 
 	subscriptionService := service.NewSubscriptionService(s.serviceParams)
-	invoiceService := service.NewInvoiceService(s.serviceParams)
 
 	invoices := make([]string, 0)
 	for _, period := range input.Periods {
@@ -111,12 +112,6 @@ func (s *BillingActivities) CreateInvoicesActivity(
 		// Skip nil invoices (zero-amount invoices)
 		if invoice != nil {
 			invoices = append(invoices, invoice.ID)
-		}
-	}
-
-	for _, invoice := range invoices {
-		if err := invoiceService.FinalizeInvoice(ctx, invoice); err != nil {
-			return nil, err
 		}
 	}
 
@@ -168,11 +163,12 @@ func (s *BillingActivities) UpdateCurrentPeriodActivity(
 	}, nil
 }
 
-// SyncInvoiceActivity syncs an invoice to external vendors (Stripe, etc.)
-func (s *BillingActivities) SyncInvoiceActivity(
+// TriggerInvoiceWorkflowActivity triggers invoice workflows for each invoice (fire-and-forget)
+// If triggering fails for any invoice, it logs the error and continues with the rest
+func (s *BillingActivities) TriggerInvoiceWorkflowActivity(
 	ctx context.Context,
-	input subscriptionModels.SyncInvoiceToExternalVendorActivityInput,
-) (*subscriptionModels.SyncInvoiceToExternalVendorActivityOutput, error) {
+	input invoiceModels.TriggerInvoiceWorkflowActivityInput,
+) (*invoiceModels.TriggerInvoiceWorkflowActivityOutput, error) {
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
@@ -181,43 +177,40 @@ func (s *BillingActivities) SyncInvoiceActivity(
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
 
-	invoiceService := service.NewInvoiceService(s.serviceParams)
+	temporalSvc := temporalService.GetGlobalTemporalService()
+
+	output := &invoiceModels.TriggerInvoiceWorkflowActivityOutput{
+		TriggeredCount: 0,
+		FailedCount:    0,
+		FailedInvoices: make([]string, 0),
+	}
 
 	for _, invoiceID := range input.InvoiceIDs {
-		if err := invoiceService.SyncInvoiceToExternalVendors(ctx, invoiceID); err != nil {
-			return nil, err
+		_, err := temporalSvc.ExecuteWorkflow(
+			ctx,
+			types.TemporalProcessInvoiceWorkflow,
+			invoiceModels.ProcessInvoiceWorkflowInput{
+				InvoiceID:     invoiceID,
+				TenantID:      input.TenantID,
+				EnvironmentID: input.EnvironmentID,
+			},
+		)
+		if err != nil {
+			s.logger.Errorw("failed to trigger invoice workflow",
+				"invoice_id", invoiceID,
+				"error", err)
+			output.FailedCount++
+			output.FailedInvoices = append(output.FailedInvoices, invoiceID)
+			// Continue with other invoices - don't fail the entire activity
+			continue
 		}
+
+		s.logger.Infow("triggered invoice workflow",
+			"invoice_id", invoiceID)
+		output.TriggeredCount++
 	}
 
-	return &subscriptionModels.SyncInvoiceToExternalVendorActivityOutput{
-		Success: true,
-	}, nil
-}
-
-// AttemptPaymentActivity attempts to collect payment for an invoice
-func (s *BillingActivities) AttemptPaymentActivity(
-	ctx context.Context,
-	input subscriptionModels.AttemptPaymentActivityInput,
-) (*subscriptionModels.AttemptPaymentActivityOutput, error) {
-	if err := input.Validate(); err != nil {
-		return nil, err
-	}
-
-	// Set context values
-	ctx = types.SetTenantID(ctx, input.TenantID)
-	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
-
-	// Initialize invoice service
-	invoiceService := service.NewInvoiceService(s.serviceParams)
-
-	for _, invoiceID := range input.InvoiceIDs {
-		if err := invoiceService.AttemptPayment(ctx, invoiceID); err != nil {
-			return nil, err
-		}
-	}
-	return &subscriptionModels.AttemptPaymentActivityOutput{
-		Success: true,
-	}, nil
+	return output, nil
 }
 
 // CheckCancellationActivity checks if a subscription should be cancelled and performs the cancellation
