@@ -3,7 +3,6 @@ package dto
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/price"
@@ -16,7 +15,7 @@ import (
 )
 
 type CreatePriceRequest struct {
-	Amount             string                   `json:"amount,omitempty"`
+	Amount             *decimal.Decimal         `json:"amount,omitempty" swaggertype:"string"`
 	Currency           string                   `json:"currency" validate:"required,len=3"`
 	EntityType         types.PriceEntityType    `json:"entity_type" validate:"required"`
 	EntityID           string                   `json:"entity_id" validate:"required"`
@@ -57,7 +56,7 @@ type CreatePriceRequest struct {
 }
 
 type PriceUnitConfig struct {
-	Amount         string            `json:"amount,omitempty"`
+	Amount         *decimal.Decimal  `json:"amount,omitempty" swaggertype:"string"`
 	PriceUnit      string            `json:"price_unit" validate:"required,len=3"`
 	PriceUnitTiers []CreatePriceTier `json:"price_unit_tiers,omitempty"`
 }
@@ -70,611 +69,11 @@ type CreatePriceTier struct {
 	UpTo *uint64 `json:"up_to"`
 
 	// unit_amount is the amount per unit for the given tier
-	UnitAmount string `json:"unit_amount" validate:"required"`
+	UnitAmount decimal.Decimal `json:"unit_amount" validate:"required" swaggertype:"string"`
 
 	// flat_amount is the flat amount for the given tier (optional)
 	// Applied on top of unit_amount*quantity. Useful for cases like "2.7$ + 5c"
-	FlatAmount *string `json:"flat_amount" validate:"omitempty"`
-}
-
-// TODO : add all price validations
-func (r *CreatePriceRequest) Validate() error {
-	var err error
-
-	// Validate entity type
-	err = r.EntityType.Validate()
-	if err != nil {
-		return err
-	}
-
-	if r.EntityID == "" {
-		return ierr.NewError("entity_id is required when entity_type is provided").
-			WithHint("Please provide an entity id").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Set default price unit type to FIAT if not provided
-	if r.PriceUnitType == "" {
-		r.PriceUnitType = types.PRICE_UNIT_TYPE_FIAT
-	}
-
-	// Set default value to Billing Period Count if not provided
-	if r.BillingPeriodCount == 0 {
-		r.BillingPeriodCount = 1
-	} else if r.BillingPeriodCount < 0 {
-		return ierr.NewError("invalid billing period count").
-			WithHint("Billing Period must be a valid positive number").
-			WithReportableDetails(map[string]interface{}{
-				"billing_period_count": r.BillingPeriodCount,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Base validations
-	amount := decimal.Zero
-	if r.Amount != "" {
-		amount, err = decimal.NewFromString(r.Amount)
-		if err != nil {
-			return ierr.NewError("invalid amount format").
-				WithHint("Amount must be a valid decimal number").
-				WithReportableDetails(map[string]interface{}{
-					"amount": r.Amount,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	// Validate price unit type
-	err = r.PriceUnitType.Validate()
-	if err != nil {
-		return err
-	}
-
-	// If price unit type is CUSTOM, price unit config is required
-	if r.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM && r.PriceUnitConfig == nil {
-		return ierr.NewError("price_unit_config is required when price_unit_type is CUSTOM").
-			WithHint("Please provide price unit configuration for custom pricing").
-			Mark(ierr.ErrValidation)
-	}
-
-	// If price unit type is FIAT, price unit config should not be provided
-	if r.PriceUnitType == types.PRICE_UNIT_TYPE_FIAT && r.PriceUnitConfig != nil {
-		return ierr.NewError("price_unit_config should not be provided when price_unit_type is FIAT").
-			WithHint("Price unit configuration is only allowed for custom pricing").
-			Mark(ierr.ErrValidation)
-	}
-
-	// If price unit config is provided, main amount can be empty (will be calculated from price unit)
-	// If no price unit config, main amount is required and must be non-negative
-	if r.PriceUnitConfig == nil && amount.LessThan(decimal.Zero) {
-		return ierr.NewError("amount cannot be negative when price_unit_config is not provided").
-			WithHint("Amount cannot be negative when not using price unit config").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Ensure currency is lowercase
-	r.Currency = strings.ToLower(r.Currency)
-
-	// Billing model validations
-	err = validator.ValidateRequest(r)
-	if err != nil {
-		return err
-	}
-
-	// valid input field types with available values
-
-	err = r.Type.Validate()
-	if err != nil {
-		return err
-	}
-
-	err = r.BillingCadence.Validate()
-	if err != nil {
-		return err
-	}
-
-	err = r.BillingModel.Validate()
-	if err != nil {
-		return err
-	}
-
-	err = r.BillingPeriod.Validate()
-	if err != nil {
-		return err
-	}
-
-	err = r.InvoiceCadence.Validate()
-	if err != nil {
-		return err
-	}
-
-	switch r.BillingModel {
-	case types.BILLING_MODEL_TIERED:
-		// Check for tiers in either regular tiers or price unit tiers
-		hasRegularTiers := len(r.Tiers) > 0
-		hasPriceUnitTiers := r.PriceUnitConfig != nil && len(r.PriceUnitConfig.PriceUnitTiers) > 0
-
-		if !hasRegularTiers && !hasPriceUnitTiers {
-			return ierr.NewError("tiers are required when billing model is TIERED").
-				WithHint("Price Tiers are required to set up tiered pricing").
-				Mark(ierr.ErrValidation)
-		}
-
-		if len(r.Tiers) > 0 && r.PriceUnitConfig != nil && len(r.PriceUnitConfig.PriceUnitTiers) > 0 {
-			return ierr.NewError("cannot provide both regular tiers and price unit tiers").
-				WithHint("Use either regular tiers or price unit tiers, not both").
-				Mark(ierr.ErrValidation)
-		}
-
-		if r.PriceUnitConfig != nil && r.PriceUnitConfig.PriceUnitTiers != nil {
-			for i, tier := range r.PriceUnitConfig.PriceUnitTiers {
-				if tier.UnitAmount == "" {
-					return ierr.NewError("unit_amount is required when tiers are provided").
-						WithHint("Please provide a valid unit amount").
-						Mark(ierr.ErrValidation)
-				}
-
-				// Validate tier unit amount is a valid decimal
-				tierUnitAmount, err := decimal.NewFromString(tier.UnitAmount)
-				if err != nil {
-					return ierr.NewError("invalid tier unit amount format").
-						WithHint("Tier unit amount must be a valid decimal number").
-						WithReportableDetails(map[string]interface{}{
-							"tier_index":  i,
-							"unit_amount": tier.UnitAmount,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-
-				// Validate tier unit amount is not negative (allows zero)
-				if tierUnitAmount.LessThan(decimal.Zero) {
-					return ierr.NewError("tier unit amount cannot be negative").
-						WithHint("Tier unit amount cannot be negative").
-						WithReportableDetails(map[string]interface{}{
-							"tier_index":  i,
-							"unit_amount": tier.UnitAmount,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-
-				// Validate flat amount if provided
-				if tier.FlatAmount != nil {
-					flatAmount, err := decimal.NewFromString(*tier.FlatAmount)
-					if err != nil {
-						return ierr.NewError("invalid tier flat amount format").
-							WithHint("Tier flat amount must be a valid decimal number").
-							WithReportableDetails(map[string]interface{}{
-								"tier_index":  i,
-								"flat_amount": tier.FlatAmount,
-							}).
-							Mark(ierr.ErrValidation)
-					}
-
-					if flatAmount.LessThan(decimal.Zero) {
-						return ierr.NewError("tier flat amount cannot be negative").
-							WithHint("Tier flat amount cannot be negative").
-							WithReportableDetails(map[string]interface{}{
-								"tier_index":  i,
-								"flat_amount": tier.FlatAmount,
-							}).
-							Mark(ierr.ErrValidation)
-					}
-				}
-			}
-		}
-
-	case types.BILLING_MODEL_PACKAGE:
-		if r.TransformQuantity == nil {
-			return ierr.NewError("transform_quantity is required when billing model is PACKAGE").
-				WithHint("Please provide the number of units to set up package pricing").
-				Mark(ierr.ErrValidation)
-		}
-
-		if r.TransformQuantity.DivideBy <= 0 {
-			return ierr.NewError("transform_quantity.divide_by must be greater than 0 when billing model is PACKAGE").
-				WithHint("Please provide a valid number of units to set up package pricing").
-				Mark(ierr.ErrValidation)
-		}
-
-		// Validate round type
-		if r.TransformQuantity.Round == "" {
-			r.TransformQuantity.Round = types.ROUND_UP // Default to rounding up
-		} else if r.TransformQuantity.Round != types.ROUND_UP && r.TransformQuantity.Round != types.ROUND_DOWN {
-			return ierr.NewError("invalid rounding type- allowed values are up and down").
-				WithHint("Please provide a valid rounding type for package pricing").
-				WithReportableDetails(map[string]interface{}{
-					"round":   r.TransformQuantity.Round,
-					"allowed": []string{types.ROUND_UP, types.ROUND_DOWN},
-				}).
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	switch r.Type {
-	case types.PRICE_TYPE_USAGE:
-		if r.MeterID == "" {
-			return ierr.NewError("meter_id is required when type is USAGE").
-				WithHint("Please select a metered feature to set up usage pricing").
-				Mark(ierr.ErrValidation)
-		}
-		if r.MinQuantity != nil {
-			return ierr.NewError("min_quantity cannot be set for usage pricing").
-				WithHint("min_quantity cannot be set for usage pricing").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	switch r.BillingCadence {
-	case types.BILLING_CADENCE_RECURRING:
-		if r.BillingPeriod == "" {
-			return ierr.NewError("billing_period is required when billing_cadence is RECURRING").
-				WithHint("Please select a billing period to set up recurring pricing").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	// Validate tiers if present
-	if len(r.Tiers) > 0 && r.BillingModel == types.BILLING_MODEL_TIERED {
-		for _, tier := range r.Tiers {
-			tierAmount, err := decimal.NewFromString(tier.UnitAmount)
-			if err != nil {
-				return ierr.WithError(err).
-					WithHint("Unit amount must be a valid decimal number").
-					WithReportableDetails(map[string]interface{}{
-						"unit_amount": tier.UnitAmount,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-
-			if tierAmount.LessThan(decimal.Zero) {
-				return ierr.WithError(err).
-					WithHint("Unit amount cannot be negative").
-					WithReportableDetails(map[string]interface{}{
-						"unit_amount": tier.UnitAmount,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-
-			if tier.FlatAmount != nil {
-				flatAmount, err := decimal.NewFromString(*tier.FlatAmount)
-				if err != nil {
-					return ierr.WithError(err).
-						WithHint("Flat amount must be a valid decimal number").
-						WithReportableDetails(map[string]interface{}{
-							"flat_amount": tier.FlatAmount,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-
-				if flatAmount.LessThan(decimal.Zero) {
-					return ierr.WithError(err).
-						WithHint("Flat amount cannot be negative").
-						WithReportableDetails(map[string]interface{}{
-							"flat_amount": tier.FlatAmount,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-			}
-		}
-	}
-
-	// trial period validations
-	// Trial period should be non-negative
-	if r.TrialPeriod < 0 {
-		return ierr.NewError("trial period must be non-negative").
-			WithHint("Please provide a non-negative trial period").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Trial period should only be set for recurring fixed prices
-	if r.TrialPeriod > 0 &&
-		r.BillingCadence != types.BILLING_CADENCE_RECURRING &&
-		r.Type != types.PRICE_TYPE_FIXED {
-		return ierr.NewError("trial period can only be set for recurring fixed prices").
-			WithHint("Trial period can only be set for recurring fixed prices").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Price unit config validations
-	if r.PriceUnitConfig != nil {
-		if r.PriceUnitConfig.PriceUnit == "" {
-			return ierr.NewError("price_unit is required when price_unit_config is provided").
-				WithHint("Please provide a valid price unit").
-				Mark(ierr.ErrValidation)
-		}
-
-		// Validate price unit format (3 characters)
-		if len(r.PriceUnitConfig.PriceUnit) != 3 {
-			return ierr.NewError("price_unit must be exactly 3 characters").
-				WithHint("Price unit must be a 3-character code (e.g., 'gbp', 'btc')").
-				WithReportableDetails(map[string]interface{}{
-					"price_unit": r.PriceUnitConfig.PriceUnit,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-
-		// Only validate amount if billing model is not TIERED
-		if r.BillingModel != types.BILLING_MODEL_TIERED {
-			if r.PriceUnitConfig.Amount == "" {
-				return ierr.NewError("amount is required when price_unit_config is provided and billing model is not TIERED").
-					WithHint("Please provide a valid amount").
-					Mark(ierr.ErrValidation)
-			}
-
-			// Validate price unit amount is a valid decimal
-			priceUnitAmount, err := decimal.NewFromString(r.PriceUnitConfig.Amount)
-			if err != nil {
-				return ierr.NewError("invalid price unit amount format").
-					WithHint("Price unit amount must be a valid decimal number").
-					WithReportableDetails(map[string]interface{}{
-						"amount": r.PriceUnitConfig.Amount,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-
-			// Validate price unit amount is not negative
-			if priceUnitAmount.LessThan(decimal.Zero) {
-				return ierr.NewError("price unit amount cannot be negative").
-					WithHint("Price unit amount cannot be negative").
-					WithReportableDetails(map[string]interface{}{
-						"amount": r.PriceUnitConfig.Amount,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-		}
-
-		// Validate that regular tiers and price unit tiers are not both provided
-		if len(r.Tiers) > 0 && r.PriceUnitConfig != nil && len(r.PriceUnitConfig.PriceUnitTiers) > 0 {
-			return ierr.NewError("cannot provide both regular tiers and price unit tiers").
-				WithHint("Use either regular tiers or price unit tiers, not both").
-				Mark(ierr.ErrValidation)
-		}
-
-		if r.PriceUnitConfig != nil && r.PriceUnitConfig.PriceUnitTiers != nil {
-			for i, tier := range r.PriceUnitConfig.PriceUnitTiers {
-				if tier.UnitAmount == "" {
-					return ierr.NewError("unit_amount is required when tiers are provided").
-						WithHint("Please provide a valid unit amount").
-						Mark(ierr.ErrValidation)
-				}
-
-				// Validate tier unit amount is a valid decimal
-				tierUnitAmount, err := decimal.NewFromString(tier.UnitAmount)
-				if err != nil {
-					return ierr.NewError("invalid tier unit amount format").
-						WithHint("Tier unit amount must be a valid decimal number").
-						WithReportableDetails(map[string]interface{}{
-							"tier_index":  i,
-							"unit_amount": tier.UnitAmount,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-
-				// Validate tier unit amount is not negative (allows zero)
-				if tierUnitAmount.LessThan(decimal.Zero) {
-					return ierr.NewError("tier unit amount cannot be negative").
-						WithHint("Tier unit amount cannot be negative").
-						WithReportableDetails(map[string]interface{}{
-							"tier_index":  i,
-							"unit_amount": tier.UnitAmount,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-
-				// Validate flat amount if provided
-				if tier.FlatAmount != nil {
-					flatAmount, err := decimal.NewFromString(*tier.FlatAmount)
-					if err != nil {
-						return ierr.NewError("invalid tier flat amount format").
-							WithHint("Tier flat amount must be a valid decimal number").
-							WithReportableDetails(map[string]interface{}{
-								"tier_index":  i,
-								"flat_amount": tier.FlatAmount,
-							}).
-							Mark(ierr.ErrValidation)
-					}
-
-					if flatAmount.LessThan(decimal.Zero) {
-						return ierr.NewError("tier flat amount cannot be negative").
-							WithHint("Tier flat amount cannot be negative").
-							WithReportableDetails(map[string]interface{}{
-								"tier_index":  i,
-								"flat_amount": tier.FlatAmount,
-							}).
-							Mark(ierr.ErrValidation)
-					}
-				}
-			}
-		}
-	}
-
-	if r.EntityType != "" {
-
-		if err := r.EntityType.Validate(); err != nil {
-			return err
-		}
-
-		if r.EntityID == "" {
-			return ierr.NewError("entity_id is required when entity_type is provided").
-				WithHint("Please provide an entity id").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	// validate the start and end date if present
-	if r.StartDate != nil && r.EndDate != nil {
-		if r.StartDate.After(*r.EndDate) {
-			return ierr.NewError("start date must be before end date").
-				WithHint("Start date must be before end date").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	// if price type is usage and entity type is addon, throw an error
-	if r.Type == types.PRICE_TYPE_USAGE && r.EntityType == types.PRICE_ENTITY_TYPE_ADDON {
-		return ierr.NewError("Usage based price cannot be added to an addon").
-			WithHint("Usage based price cannot be added to an addon").
-			Mark(ierr.ErrValidation)
-	}
-
-	return nil
-}
-
-func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*priceDomain.Price, error) {
-	// Ensure price unit type is set to FIAT if not provided
-	if r.PriceUnitType == "" {
-		r.PriceUnitType = types.PRICE_UNIT_TYPE_FIAT
-	}
-
-	amount := decimal.Zero
-	if r.Amount != "" {
-		var err error
-		amount, err = decimal.NewFromString(r.Amount)
-		if err != nil {
-			return nil, ierr.WithError(err).
-				WithHint("Amount must be a valid decimal number").
-				WithReportableDetails(map[string]interface{}{
-					"amount": r.Amount,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	// set the start date from either the request or the current time
-	var startDate *time.Time
-	if r.StartDate != nil {
-		startDate = r.StartDate
-	} else {
-		now := time.Now().UTC()
-		startDate = &now
-	}
-
-	metadata := make(priceDomain.JSONBMetadata)
-	if r.Metadata != nil {
-		metadata = priceDomain.JSONBMetadata(r.Metadata)
-	}
-
-	var transformQuantity priceDomain.JSONBTransformQuantity
-	if r.TransformQuantity != nil {
-		transformQuantity = priceDomain.JSONBTransformQuantity(*r.TransformQuantity)
-	}
-
-	var tiers priceDomain.JSONBTiers
-	if r.Tiers != nil {
-		priceTiers := make([]priceDomain.PriceTier, len(r.Tiers))
-		for i, tier := range r.Tiers {
-			unitAmount, err := decimal.NewFromString(tier.UnitAmount)
-			if err != nil {
-				return nil, ierr.WithError(err).
-					WithHint("Unit amount must be a valid decimal number").
-					WithReportableDetails(map[string]interface{}{
-						"unit_amount": tier.UnitAmount,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-
-			var flatAmount *decimal.Decimal
-			if tier.FlatAmount != nil {
-				parsed, err := decimal.NewFromString(*tier.FlatAmount)
-				if err != nil {
-					return nil, ierr.WithError(err).
-						WithHint("Unit amount must be a valid decimal number").
-						WithReportableDetails(map[string]interface{}{
-							"flat_amount": tier.FlatAmount,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-				flatAmount = &parsed
-			}
-
-			priceTiers[i] = priceDomain.PriceTier{
-				UpTo:       tier.UpTo,
-				UnitAmount: unitAmount,
-				FlatAmount: flatAmount,
-			}
-		}
-
-		tiers = priceDomain.JSONBTiers(priceTiers)
-	}
-
-	var priceUnitTiers priceDomain.JSONBTiers
-	if r.PriceUnitConfig != nil && r.PriceUnitConfig.PriceUnitTiers != nil {
-		priceTiers := make([]priceDomain.PriceTier, len(r.PriceUnitConfig.PriceUnitTiers))
-		for i, tier := range r.PriceUnitConfig.PriceUnitTiers {
-			unitAmount, err := decimal.NewFromString(tier.UnitAmount)
-			if err != nil {
-				return nil, ierr.WithError(err).
-					WithHint("Unit amount must be a valid decimal number").
-					WithReportableDetails(map[string]interface{}{
-						"unit_amount": tier.UnitAmount,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-
-			var flatAmount *decimal.Decimal
-			if tier.FlatAmount != nil {
-				parsed, err := decimal.NewFromString(*tier.FlatAmount)
-				if err != nil {
-					return nil, ierr.WithError(err).
-						WithHint("Unit amount must be a valid decimal number").
-						WithReportableDetails(map[string]interface{}{
-							"flat_amount": tier.FlatAmount,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-				flatAmount = &parsed
-			}
-
-			priceTiers[i] = priceDomain.PriceTier{
-				UpTo:       tier.UpTo,
-				UnitAmount: unitAmount,
-				FlatAmount: flatAmount,
-			}
-		}
-
-		priceUnitTiers = priceDomain.JSONBTiers(priceTiers)
-	}
-
-	var minQuantity *decimal.Decimal
-	if r.MinQuantity != nil {
-		minQuantityInt := int64(*r.MinQuantity)
-		minQuantity = lo.ToPtr(decimal.NewFromInt(minQuantityInt))
-	}
-
-	price := &priceDomain.Price{
-		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
-		Amount:             amount,
-		Currency:           r.Currency,
-		PriceUnitType:      r.PriceUnitType,
-		Type:               r.Type,
-		BillingPeriod:      r.BillingPeriod,
-		BillingPeriodCount: r.BillingPeriodCount,
-		BillingModel:       r.BillingModel,
-		BillingCadence:     r.BillingCadence,
-		InvoiceCadence:     r.InvoiceCadence,
-		TrialPeriod:        r.TrialPeriod,
-		MeterID:            r.MeterID,
-		LookupKey:          r.LookupKey,
-		Description:        r.Description,
-		Metadata:           metadata,
-		TierMode:           r.TierMode,
-		Tiers:              tiers,
-		PriceUnitTiers:     priceUnitTiers,
-		TransformQuantity:  transformQuantity,
-		EntityType:         r.EntityType,
-		DisplayName:        r.DisplayName,
-		EntityID:           r.EntityID,
-		MinQuantity:        minQuantity,
-		StartDate:          startDate,
-		ParentPriceID:      r.ParentPriceID,
-		EndDate:            r.EndDate,
-		EnvironmentID:      types.GetEnvironmentID(ctx),
-		BaseModel:          types.GetDefaultBaseModel(ctx),
-		GroupID:            r.GroupID,
-	}
-
-	price.DisplayAmount = price.GetDisplayAmount()
-	return price, nil
+	FlatAmount *decimal.Decimal `json:"flat_amount,omitempty" swaggertype:"string"`
 }
 
 type UpdatePriceRequest struct {
@@ -701,6 +100,421 @@ type UpdatePriceRequest struct {
 
 	// GroupID is the id of the group to update the price in
 	GroupID string `json:"group_id,omitempty"`
+}
+
+type PriceResponse struct {
+	*price.Price
+	Meter       *MeterResponse     `json:"meter,omitempty"`
+	Plan        *PlanResponse      `json:"plan,omitempty"`
+	Addon       *AddonResponse     `json:"addon,omitempty"`
+	Group       *GroupResponse     `json:"group,omitempty"`
+	PricingUnit *PriceUnitResponse `json:"pricing_unit,omitempty"`
+}
+
+// ListPricesResponse represents the response for listing prices
+type ListPricesResponse = types.ListResponse[*PriceResponse]
+
+// CreateBulkPriceRequest represents the request to create multiple prices in bulk
+type CreateBulkPriceRequest struct {
+	Items []CreatePriceRequest `json:"items" validate:"required,min=1,max=100"`
+}
+
+// CreateBulkPriceResponse represents the response for bulk price creation
+type CreateBulkPriceResponse struct {
+	Items []*PriceResponse `json:"items"`
+}
+
+// CostBreakup provides detailed information about cost calculation
+// including which tier was applied and the effective per unit cost
+type CostBreakup struct {
+	// EffectiveUnitCost is the per-unit cost based on the applicable tier
+	EffectiveUnitCost decimal.Decimal
+	// SelectedTierIndex is the index of the tier that was applied (-1 if no tiers)
+	SelectedTierIndex int
+	// TierUnitAmount is the unit amount of the selected tier
+	TierUnitAmount decimal.Decimal
+	// FinalCost is the total cost for the quantity
+	FinalCost decimal.Decimal
+}
+
+type DeletePriceRequest struct {
+	EndDate *time.Time `json:"end_date,omitempty"`
+}
+
+// Validate validates the tier structure
+func (t *CreatePriceTier) Validate() error {
+	// Validate unit amount (allows zero)
+	if t.UnitAmount.LessThan(decimal.Zero) {
+		return ierr.NewError("unit amount cannot be negative").
+			WithHint("Unit amount cannot be negative").
+			WithReportableDetails(map[string]interface{}{
+				"unit_amount": t.UnitAmount.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate flat amount if provided
+	if t.FlatAmount != nil && t.FlatAmount.LessThan(decimal.Zero) {
+		return ierr.NewError("flat amount cannot be negative").
+			WithHint("Flat amount cannot be negative").
+			WithReportableDetails(map[string]interface{}{
+				"flat_amount": t.FlatAmount.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+func (p *PriceUnitConfig) Validate() error {
+	if err := validator.ValidateRequest(p); err != nil {
+		return err
+	}
+
+	// Validate price unit tiers if present
+	if err := validateTiers(p.PriceUnitTiers, "price_unit_tiers"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Validate validates the create price request
+func (r *CreatePriceRequest) Validate() error {
+	if r.PriceUnitType == "" {
+		r.PriceUnitType = types.PRICE_UNIT_TYPE_FIAT
+	}
+
+	// 2. Basic field validations
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	// Set default billing period count
+	if r.BillingPeriodCount < 1 {
+		return ierr.NewError("billing period count must be greater than 0").
+			WithHint("Billing period count must be greater than 0").
+			WithReportableDetails(map[string]interface{}{
+				"billing_period_count": r.BillingPeriodCount,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// 3. Validate enum types
+	if err := r.Type.Validate(); err != nil {
+		return err
+	}
+	if err := r.BillingModel.Validate(); err != nil {
+		return err
+	}
+	if err := r.BillingCadence.Validate(); err != nil {
+		return err
+	}
+	if err := r.BillingPeriod.Validate(); err != nil {
+		return err
+	}
+	if err := r.InvoiceCadence.Validate(); err != nil {
+		return err
+	}
+
+	// 4. Validate entity fields
+	if err := r.EntityType.Validate(); err != nil {
+		return err
+	}
+
+	// 5. Validate mutual consistency between PriceUnitType and PriceUnitConfig
+	// This check must be outside any conditional to catch all invalid combinations
+	if r.PriceUnitConfig != nil && r.PriceUnitType != types.PRICE_UNIT_TYPE_CUSTOM {
+		return ierr.NewError("price_unit_type must be CUSTOM when price_unit_config is provided").
+			WithHint("Set price_unit_type to CUSTOM when using price_unit_config").
+			WithReportableDetails(map[string]interface{}{
+				"price_unit_type":       r.PriceUnitType,
+				"has_price_unit_config": true,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
+		if r.PriceUnitConfig == nil {
+			return ierr.NewError("price_unit_config is required when using custom pricing unit").
+				WithHint("Price unit config must be provided when using custom pricing units").
+				WithReportableDetails(map[string]interface{}{
+					"price_unit_type":       r.PriceUnitType,
+					"has_price_unit_config": false,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		if err := r.PriceUnitConfig.Validate(); err != nil {
+			return err
+		}
+
+		// Validate that tiers are not provided in both places
+		if len(r.Tiers) > 0 && len(r.PriceUnitConfig.PriceUnitTiers) > 0 {
+			return ierr.NewError("cannot provide both regular tiers and price unit tiers").
+				WithHint("For custom pricing units, use price_unit_config.price_unit_tiers only, not regular tiers").
+				WithReportableDetails(map[string]interface{}{
+					"tiers":            len(r.Tiers),
+					"price_unit_tiers": len(r.PriceUnitConfig.PriceUnitTiers),
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	// 6. Validate billing model specific requirements
+	switch r.BillingModel {
+	case types.BILLING_MODEL_TIERED:
+		// Validate tiers based on price type
+		if r.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
+			// CUSTOM: require price unit tiers
+			if len(r.PriceUnitConfig.PriceUnitTiers) == 0 {
+				return ierr.NewError("price_unit_tiers are required when billing model is TIERED and using custom pricing unit").
+					WithHint("Price unit tiers are required to set up tiered pricing with custom pricing units").
+					Mark(ierr.ErrValidation)
+			}
+			// Validate price unit tiers
+			if err := validateTiers(r.PriceUnitConfig.PriceUnitTiers, "price_unit_tiers"); err != nil {
+				return err
+			}
+		} else {
+			// FIAT: require regular tiers
+			if len(r.Tiers) == 0 {
+				return ierr.NewError("tiers are required when billing model is TIERED").
+					WithHint("Price tiers are required to set up tiered pricing").
+					Mark(ierr.ErrValidation)
+			}
+			// Validate regular tiers
+			if err := validateTiers(r.Tiers, "tiers"); err != nil {
+				return err
+			}
+		}
+
+	case types.BILLING_MODEL_PACKAGE:
+		if r.TransformQuantity == nil {
+			return ierr.NewError("transform_quantity is required when billing model is PACKAGE").
+				WithHint("Please provide the number of units to set up package pricing").
+				Mark(ierr.ErrValidation)
+		}
+		if err := r.TransformQuantity.Validate(); err != nil {
+			return err
+		}
+
+		if r.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
+			if r.PriceUnitConfig.Amount == nil {
+				return ierr.NewError("price_unit_config.amount is required when billing model is PACKAGE and using custom pricing unit").
+					WithHint("Price unit amount is required to set up package pricing with custom pricing units").
+					Mark(ierr.ErrValidation)
+			}
+		} else {
+			if r.Amount == nil {
+				return ierr.NewError("amount is required when billing model is PACKAGE and using fiat pricing unit").
+					WithHint("Amount is required to set up package pricing with fiat pricing units").
+					Mark(ierr.ErrValidation)
+			}
+		}
+	case types.BILLING_MODEL_FLAT_FEE:
+
+		if r.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
+			if r.PriceUnitConfig.Amount == nil {
+				return ierr.NewError("price_unit_config.amount is required when billing model is FLAT_FEE and using custom pricing unit").
+					WithHint("Price unit amount is required to set up flat fee pricing with custom pricing units").
+					Mark(ierr.ErrValidation)
+			}
+		} else {
+			if r.Amount == nil {
+				return ierr.NewError("amount is required when billing model is FLAT_FEE and using fiat pricing unit").
+					WithHint("Amount is required to set up flat fee pricing with fiat pricing units").
+					Mark(ierr.ErrValidation)
+			}
+		}
+
+	}
+
+	// 8. Validate price type specific requirements
+	switch r.Type {
+	case types.PRICE_TYPE_USAGE:
+		if r.MeterID == "" {
+			return ierr.NewError("meter_id is required when type is USAGE").
+				WithHint("Please select a metered feature to set up usage pricing").
+				Mark(ierr.ErrValidation)
+		}
+		if r.MinQuantity != nil {
+			return ierr.NewError("min_quantity cannot be set for usage pricing").
+				WithHint("min_quantity cannot be set for usage pricing").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	// 9. Validate billing cadence specific requirements
+	switch r.BillingCadence {
+	case types.BILLING_CADENCE_RECURRING:
+		if r.BillingPeriod == "" {
+			return ierr.NewError("billing_period is required when billing_cadence is RECURRING").
+				WithHint("Please select a billing period to set up recurring pricing").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	// 11. Validate trial period
+	if r.TrialPeriod < 0 {
+		return ierr.NewError("trial period must be non-negative").
+			WithHint("Please provide a non-negative trial period").
+			Mark(ierr.ErrValidation)
+	}
+	if r.TrialPeriod > 0 &&
+		r.BillingCadence != types.BILLING_CADENCE_RECURRING &&
+		r.Type != types.PRICE_TYPE_FIXED {
+		return ierr.NewError("trial period can only be set for recurring fixed prices").
+			WithHint("Trial period can only be set for recurring fixed prices").
+			Mark(ierr.ErrValidation)
+	}
+
+	// 12. Validate dates
+	if r.StartDate != nil && r.EndDate != nil {
+		if r.StartDate.After(*r.EndDate) {
+			return ierr.NewError("start date must be before end date").
+				WithHint("Start date must be before end date").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	// 13. Validate usage price cannot be added to addon
+	if r.Type == types.PRICE_TYPE_USAGE && r.EntityType == types.PRICE_ENTITY_TYPE_ADDON {
+		return ierr.NewError("Usage based price cannot be added to an addon").
+			WithHint("Usage based price cannot be added to an addon").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// ToPrice converts the request to a Price domain object
+// Service layer should handle price unit conversion BEFORE calling this method
+func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*priceDomain.Price, error) {
+
+	if r.PriceUnitType == "" {
+		r.PriceUnitType = types.PRICE_UNIT_TYPE_FIAT
+	}
+
+	startDate := r.StartDate
+	if startDate == nil {
+		now := time.Now().UTC()
+		startDate = &now
+	}
+
+	metadata := priceDomain.JSONBMetadata(r.Metadata)
+	if r.Metadata == nil {
+		metadata = make(priceDomain.JSONBMetadata)
+	}
+
+	// Initialize transformQuantity with default divide_by=1 if not provided
+	var transformQuantity priceDomain.JSONBTransformQuantity
+	if r.TransformQuantity != nil {
+		transformQuantity = priceDomain.JSONBTransformQuantity(*r.TransformQuantity)
+	} else {
+		// Default to divide_by=1 when TransformQuantity is not provided
+		transformQuantity = priceDomain.JSONBTransformQuantity{
+			DivideBy: 1,
+		}
+	}
+
+	var minQuantity *decimal.Decimal
+	if r.MinQuantity != nil {
+		minQuantityInt := int64(*r.MinQuantity)
+		minQuantity = lo.ToPtr(decimal.NewFromInt(minQuantityInt))
+	}
+
+	// Create price struct with common fields
+	price := &priceDomain.Price{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+		Amount:             lo.FromPtrOr(r.Amount, decimal.Zero),
+		Currency:           r.Currency,
+		PriceUnitType:      r.PriceUnitType,
+		Type:               r.Type,
+		BillingPeriod:      r.BillingPeriod,
+		BillingPeriodCount: r.BillingPeriodCount,
+		BillingModel:       r.BillingModel,
+		BillingCadence:     r.BillingCadence,
+		InvoiceCadence:     r.InvoiceCadence,
+		TrialPeriod:        r.TrialPeriod,
+		MeterID:            r.MeterID,
+		LookupKey:          r.LookupKey,
+		Description:        r.Description,
+		Metadata:           metadata,
+		TierMode:           r.TierMode,
+		TransformQuantity:  transformQuantity,
+		EntityType:         r.EntityType,
+		DisplayName:        r.DisplayName,
+		EntityID:           r.EntityID,
+		MinQuantity:        minQuantity,
+		StartDate:          startDate,
+		ParentPriceID:      r.ParentPriceID,
+		EndDate:            r.EndDate,
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+		GroupID:            r.GroupID,
+	}
+
+	// Set type-specific fields
+	if r.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
+
+		price.PriceUnit = lo.ToPtr(r.PriceUnitConfig.PriceUnit)
+
+		// Convert and set price unit tiers (original tiers for display)
+		if r.PriceUnitConfig.PriceUnitTiers != nil {
+			priceUnitTiers, err := r.convertTiers(r.PriceUnitConfig.PriceUnitTiers)
+			
+			if err != nil {
+				return nil, err
+			}
+			price.PriceUnitTiers = priceUnitTiers
+		}
+
+		// Set price unit amount
+		if r.PriceUnitConfig.Amount != nil {
+			price.PriceUnitAmount = r.PriceUnitConfig.Amount
+		}
+	} else {
+		// FIAT-specific fields
+		// Convert and set tiers (FIAT-specific)
+		tiers, err := r.convertTiers(r.Tiers)
+		if err != nil {
+			return nil, err
+		}
+		price.Tiers = tiers
+	}
+
+	price.DisplayAmount = price.GetDisplayAmount()
+
+	return price, nil
+}
+
+// convertTiers converts CreatePriceTier slice to priceDomain.JSONBTiers with optimized error handling
+func (r *CreatePriceRequest) convertTiers(tiers []CreatePriceTier) (priceDomain.JSONBTiers, error) {
+	if len(tiers) == 0 {
+		return nil, nil
+	}
+
+	priceTiers := make([]priceDomain.PriceTier, len(tiers))
+	for i, tier := range tiers {
+		priceTiers[i] = priceDomain.PriceTier{
+			UpTo:       tier.UpTo,
+			UnitAmount: tier.UnitAmount,
+			FlatAmount: tier.FlatAmount,
+		}
+	}
+
+	return priceDomain.JSONBTiers(priceTiers), nil
+}
+
+// createDecimalError creates a standardized decimal parsing error
+func (r *CreatePriceRequest) createDecimalError(hint, field, value string) error {
+	return ierr.NewError("invalid decimal format").
+		WithHint(hint).
+		WithReportableDetails(map[string]interface{}{
+			field: value,
+		}).
+		Mark(ierr.ErrValidation)
 }
 
 func (r *UpdatePriceRequest) Validate() error {
@@ -741,7 +555,6 @@ func (r *UpdatePriceRequest) ToCreatePriceRequest(existingPrice *price.Price) Cr
 	// Copy all non-critical, non-billing-model-specific fields from existing price
 	createReq.Currency = existingPrice.Currency
 	createReq.Type = existingPrice.Type
-	createReq.PriceUnitType = existingPrice.PriceUnitType
 	createReq.BillingPeriod = existingPrice.BillingPeriod
 	createReq.BillingPeriodCount = existingPrice.BillingPeriodCount
 	createReq.BillingCadence = existingPrice.BillingCadence
@@ -774,17 +587,19 @@ func (r *UpdatePriceRequest) ToCreatePriceRequest(existingPrice *price.Price) Cr
 	case types.BILLING_MODEL_FLAT_FEE:
 		// For FLAT_FEE, only amount is relevant
 		if r.Amount != nil {
-			createReq.Amount = r.Amount.String()
+			createReq.Amount = r.Amount
 		} else {
-			createReq.Amount = existingPrice.Amount.String()
+			existingAmount := existingPrice.Amount
+			createReq.Amount = &existingAmount
 		}
 
 	case types.BILLING_MODEL_PACKAGE:
 		// For PACKAGE, amount and transform_quantity are relevant
 		if r.Amount != nil {
-			createReq.Amount = r.Amount.String()
+			createReq.Amount = r.Amount
 		} else {
-			createReq.Amount = existingPrice.Amount.String()
+			existingAmount := existingPrice.Amount
+			createReq.Amount = &existingAmount
 		}
 
 		if r.TransformQuantity != nil {
@@ -809,12 +624,9 @@ func (r *UpdatePriceRequest) ToCreatePriceRequest(existingPrice *price.Price) Cr
 			for i, tier := range existingPrice.Tiers {
 				createReq.Tiers[i] = CreatePriceTier{
 					UpTo:       tier.UpTo,
-					UnitAmount: tier.UnitAmount.String(),
+					UnitAmount: tier.UnitAmount,
 				}
-				if tier.FlatAmount != nil {
-					flatAmountStr := tier.FlatAmount.String()
-					createReq.Tiers[i].FlatAmount = &flatAmountStr
-				}
+				createReq.Tiers[i].FlatAmount = tier.FlatAmount
 			}
 		}
 	}
@@ -842,28 +654,6 @@ func (r *UpdatePriceRequest) ToCreatePriceRequest(existingPrice *price.Price) Cr
 	// - New price will not have an end date unless explicitly set
 
 	return createReq
-}
-
-type PriceResponse struct {
-	*price.Price
-	PricingUnit *PriceUnitResponse `json:"pricing_unit,omitempty"`
-	Meter       *MeterResponse     `json:"meter,omitempty"`
-	Plan        *PlanResponse      `json:"plan,omitempty"`
-	Addon       *AddonResponse     `json:"addon,omitempty"`
-	Group       *GroupResponse     `json:"group,omitempty"`
-}
-
-// ListPricesResponse represents the response for listing prices
-type ListPricesResponse = types.ListResponse[*PriceResponse]
-
-// CreateBulkPriceRequest represents the request to create multiple prices in bulk
-type CreateBulkPriceRequest struct {
-	Items []CreatePriceRequest `json:"items" validate:"required,min=1,max=100"`
-}
-
-// CreateBulkPriceResponse represents the response for bulk price creation
-type CreateBulkPriceResponse struct {
-	Items []*PriceResponse `json:"items"`
 }
 
 // Validate validates the bulk price creation request
@@ -895,28 +685,32 @@ func (r *CreateBulkPriceRequest) Validate() error {
 	return nil
 }
 
-// CostBreakup provides detailed information about cost calculation
-// including which tier was applied and the effective per unit cost
-type CostBreakup struct {
-	// EffectiveUnitCost is the per-unit cost based on the applicable tier
-	EffectiveUnitCost decimal.Decimal
-	// SelectedTierIndex is the index of the tier that was applied (-1 if no tiers)
-	SelectedTierIndex int
-	// TierUnitAmount is the unit amount of the selected tier
-	TierUnitAmount decimal.Decimal
-	// FinalCost is the total cost for the quantity
-	FinalCost decimal.Decimal
-}
-
-type DeletePriceRequest struct {
-	EndDate *time.Time `json:"end_date,omitempty"`
-}
-
 func (r *DeletePriceRequest) Validate() error {
 	if r.EndDate != nil && r.EndDate.Before(time.Now().UTC()) {
 		return ierr.NewError("end date must be in the future").
 			WithHint("End date must be in the future").
 			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// validateTiers validates an array of tiers and returns an error if any tier is invalid
+func validateTiers(tiers []CreatePriceTier, fieldName string) error {
+	if len(tiers) == 0 {
+		return nil
+	}
+
+	for i, tier := range tiers {
+		if err := tier.Validate(); err != nil {
+			return ierr.WithError(err).
+				WithHint(fmt.Sprintf("%s at index %d is invalid", fieldName, i)).
+				WithReportableDetails(map[string]interface{}{
+					"tier_index": i,
+					"field_name": fieldName,
+				}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 
 	return nil

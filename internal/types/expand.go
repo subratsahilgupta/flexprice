@@ -67,6 +67,8 @@ var (
 			ExpandMeters:    {},
 			ExpandPriceUnit: {},
 			ExpandGroups:    {},
+			ExpandPlan:      {},
+			ExpandAddons:    {},
 		},
 	}
 

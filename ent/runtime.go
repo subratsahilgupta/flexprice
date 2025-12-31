@@ -1343,6 +1343,12 @@ func init() {
 	priceDescEntityType := priceFields[28].Descriptor()
 	// price.DefaultEntityType holds the default value on creation for the entity_type field.
 	price.DefaultEntityType = types.PriceEntityType(priceDescEntityType.Default.(string))
+	// price.EntityTypeValidator is a validator for the "entity_type" field. It is called by the builders before save.
+	price.EntityTypeValidator = priceDescEntityType.Validators[0].(func(string) error)
+	// priceDescEntityID is the schema descriptor for entity_id field.
+	priceDescEntityID := priceFields[29].Descriptor()
+	// price.EntityIDValidator is a validator for the "entity_id" field. It is called by the builders before save.
+	price.EntityIDValidator = priceDescEntityID.Validators[0].(func(string) error)
 	// priceDescStartDate is the schema descriptor for start_date field.
 	priceDescStartDate := priceFields[31].Descriptor()
 	// price.DefaultStartDate holds the default value on creation for the start_date field.
@@ -1396,26 +1402,6 @@ func init() {
 	priceunitDescConversionRate := priceunitFields[5].Descriptor()
 	// priceunit.DefaultConversionRate holds the default value on creation for the conversion_rate field.
 	priceunit.DefaultConversionRate = priceunitDescConversionRate.Default.(decimal.Decimal)
-	// priceunitDescPrecision is the schema descriptor for precision field.
-	priceunitDescPrecision := priceunitFields[6].Descriptor()
-	// priceunit.DefaultPrecision holds the default value on creation for the precision field.
-	priceunit.DefaultPrecision = priceunitDescPrecision.Default.(int)
-	// priceunit.PrecisionValidator is a validator for the "precision" field. It is called by the builders before save.
-	priceunit.PrecisionValidator = func() func(int) error {
-		validators := priceunitDescPrecision.Validators
-		fns := [...]func(int) error{
-			validators[0].(func(int) error),
-			validators[1].(func(int) error),
-		}
-		return func(precision int) error {
-			for _, fn := range fns {
-				if err := fn(precision); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-	}()
 	scheduledtaskMixin := schema.ScheduledTask{}.Mixin()
 	scheduledtaskMixinFields0 := scheduledtaskMixin[0].Fields()
 	_ = scheduledtaskMixinFields0

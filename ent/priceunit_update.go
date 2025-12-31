@@ -12,8 +12,8 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/priceunit"
-	"github.com/shopspring/decimal"
 )
 
 // PriceUnitUpdate is the builder for updating PriceUnit entities.
@@ -69,6 +69,18 @@ func (puu *PriceUnitUpdate) ClearUpdatedBy() *PriceUnitUpdate {
 	return puu
 }
 
+// SetMetadata sets the "metadata" field.
+func (puu *PriceUnitUpdate) SetMetadata(m map[string]string) *PriceUnitUpdate {
+	puu.mutation.SetMetadata(m)
+	return puu
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (puu *PriceUnitUpdate) ClearMetadata() *PriceUnitUpdate {
+	puu.mutation.ClearMetadata()
+	return puu
+}
+
 // SetName sets the "name" field.
 func (puu *PriceUnitUpdate) SetName(s string) *PriceUnitUpdate {
 	puu.mutation.SetName(s)
@@ -79,20 +91,6 @@ func (puu *PriceUnitUpdate) SetName(s string) *PriceUnitUpdate {
 func (puu *PriceUnitUpdate) SetNillableName(s *string) *PriceUnitUpdate {
 	if s != nil {
 		puu.SetName(*s)
-	}
-	return puu
-}
-
-// SetCode sets the "code" field.
-func (puu *PriceUnitUpdate) SetCode(s string) *PriceUnitUpdate {
-	puu.mutation.SetCode(s)
-	return puu
-}
-
-// SetNillableCode sets the "code" field if the given value is not nil.
-func (puu *PriceUnitUpdate) SetNillableCode(s *string) *PriceUnitUpdate {
-	if s != nil {
-		puu.SetCode(*s)
 	}
 	return puu
 }
@@ -111,58 +109,45 @@ func (puu *PriceUnitUpdate) SetNillableSymbol(s *string) *PriceUnitUpdate {
 	return puu
 }
 
-// SetBaseCurrency sets the "base_currency" field.
-func (puu *PriceUnitUpdate) SetBaseCurrency(s string) *PriceUnitUpdate {
-	puu.mutation.SetBaseCurrency(s)
+// AddPriceIDs adds the "prices" edge to the Price entity by IDs.
+func (puu *PriceUnitUpdate) AddPriceIDs(ids ...string) *PriceUnitUpdate {
+	puu.mutation.AddPriceIDs(ids...)
 	return puu
 }
 
-// SetNillableBaseCurrency sets the "base_currency" field if the given value is not nil.
-func (puu *PriceUnitUpdate) SetNillableBaseCurrency(s *string) *PriceUnitUpdate {
-	if s != nil {
-		puu.SetBaseCurrency(*s)
+// AddPrices adds the "prices" edges to the Price entity.
+func (puu *PriceUnitUpdate) AddPrices(p ...*Price) *PriceUnitUpdate {
+	ids := make([]string, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
 	}
-	return puu
-}
-
-// SetConversionRate sets the "conversion_rate" field.
-func (puu *PriceUnitUpdate) SetConversionRate(d decimal.Decimal) *PriceUnitUpdate {
-	puu.mutation.SetConversionRate(d)
-	return puu
-}
-
-// SetNillableConversionRate sets the "conversion_rate" field if the given value is not nil.
-func (puu *PriceUnitUpdate) SetNillableConversionRate(d *decimal.Decimal) *PriceUnitUpdate {
-	if d != nil {
-		puu.SetConversionRate(*d)
-	}
-	return puu
-}
-
-// SetPrecision sets the "precision" field.
-func (puu *PriceUnitUpdate) SetPrecision(i int) *PriceUnitUpdate {
-	puu.mutation.ResetPrecision()
-	puu.mutation.SetPrecision(i)
-	return puu
-}
-
-// SetNillablePrecision sets the "precision" field if the given value is not nil.
-func (puu *PriceUnitUpdate) SetNillablePrecision(i *int) *PriceUnitUpdate {
-	if i != nil {
-		puu.SetPrecision(*i)
-	}
-	return puu
-}
-
-// AddPrecision adds i to the "precision" field.
-func (puu *PriceUnitUpdate) AddPrecision(i int) *PriceUnitUpdate {
-	puu.mutation.AddPrecision(i)
-	return puu
+	return puu.AddPriceIDs(ids...)
 }
 
 // Mutation returns the PriceUnitMutation object of the builder.
 func (puu *PriceUnitUpdate) Mutation() *PriceUnitMutation {
 	return puu.mutation
+}
+
+// ClearPrices clears all "prices" edges to the Price entity.
+func (puu *PriceUnitUpdate) ClearPrices() *PriceUnitUpdate {
+	puu.mutation.ClearPrices()
+	return puu
+}
+
+// RemovePriceIDs removes the "prices" edge to Price entities by IDs.
+func (puu *PriceUnitUpdate) RemovePriceIDs(ids ...string) *PriceUnitUpdate {
+	puu.mutation.RemovePriceIDs(ids...)
+	return puu
+}
+
+// RemovePrices removes "prices" edges to Price entities.
+func (puu *PriceUnitUpdate) RemovePrices(p ...*Price) *PriceUnitUpdate {
+	ids := make([]string, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return puu.RemovePriceIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -208,24 +193,9 @@ func (puu *PriceUnitUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.name": %w`, err)}
 		}
 	}
-	if v, ok := puu.mutation.Code(); ok {
-		if err := priceunit.CodeValidator(v); err != nil {
-			return &ValidationError{Name: "code", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.code": %w`, err)}
-		}
-	}
 	if v, ok := puu.mutation.Symbol(); ok {
 		if err := priceunit.SymbolValidator(v); err != nil {
 			return &ValidationError{Name: "symbol", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.symbol": %w`, err)}
-		}
-	}
-	if v, ok := puu.mutation.BaseCurrency(); ok {
-		if err := priceunit.BaseCurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "base_currency", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.base_currency": %w`, err)}
-		}
-	}
-	if v, ok := puu.mutation.Precision(); ok {
-		if err := priceunit.PrecisionValidator(v); err != nil {
-			return &ValidationError{Name: "precision", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.precision": %w`, err)}
 		}
 	}
 	return nil
@@ -261,26 +231,62 @@ func (puu *PriceUnitUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if puu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(priceunit.FieldEnvironmentID, field.TypeString)
 	}
+	if value, ok := puu.mutation.Metadata(); ok {
+		_spec.SetField(priceunit.FieldMetadata, field.TypeJSON, value)
+	}
+	if puu.mutation.MetadataCleared() {
+		_spec.ClearField(priceunit.FieldMetadata, field.TypeJSON)
+	}
 	if value, ok := puu.mutation.Name(); ok {
 		_spec.SetField(priceunit.FieldName, field.TypeString, value)
-	}
-	if value, ok := puu.mutation.Code(); ok {
-		_spec.SetField(priceunit.FieldCode, field.TypeString, value)
 	}
 	if value, ok := puu.mutation.Symbol(); ok {
 		_spec.SetField(priceunit.FieldSymbol, field.TypeString, value)
 	}
-	if value, ok := puu.mutation.BaseCurrency(); ok {
-		_spec.SetField(priceunit.FieldBaseCurrency, field.TypeString, value)
+	if puu.mutation.PricesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   priceunit.PricesTable,
+			Columns: []string{priceunit.PricesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(price.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if value, ok := puu.mutation.ConversionRate(); ok {
-		_spec.SetField(priceunit.FieldConversionRate, field.TypeOther, value)
+	if nodes := puu.mutation.RemovedPricesIDs(); len(nodes) > 0 && !puu.mutation.PricesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   priceunit.PricesTable,
+			Columns: []string{priceunit.PricesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(price.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if value, ok := puu.mutation.Precision(); ok {
-		_spec.SetField(priceunit.FieldPrecision, field.TypeInt, value)
-	}
-	if value, ok := puu.mutation.AddedPrecision(); ok {
-		_spec.AddField(priceunit.FieldPrecision, field.TypeInt, value)
+	if nodes := puu.mutation.PricesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   priceunit.PricesTable,
+			Columns: []string{priceunit.PricesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(price.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, puu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -342,6 +348,18 @@ func (puuo *PriceUnitUpdateOne) ClearUpdatedBy() *PriceUnitUpdateOne {
 	return puuo
 }
 
+// SetMetadata sets the "metadata" field.
+func (puuo *PriceUnitUpdateOne) SetMetadata(m map[string]string) *PriceUnitUpdateOne {
+	puuo.mutation.SetMetadata(m)
+	return puuo
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (puuo *PriceUnitUpdateOne) ClearMetadata() *PriceUnitUpdateOne {
+	puuo.mutation.ClearMetadata()
+	return puuo
+}
+
 // SetName sets the "name" field.
 func (puuo *PriceUnitUpdateOne) SetName(s string) *PriceUnitUpdateOne {
 	puuo.mutation.SetName(s)
@@ -352,20 +370,6 @@ func (puuo *PriceUnitUpdateOne) SetName(s string) *PriceUnitUpdateOne {
 func (puuo *PriceUnitUpdateOne) SetNillableName(s *string) *PriceUnitUpdateOne {
 	if s != nil {
 		puuo.SetName(*s)
-	}
-	return puuo
-}
-
-// SetCode sets the "code" field.
-func (puuo *PriceUnitUpdateOne) SetCode(s string) *PriceUnitUpdateOne {
-	puuo.mutation.SetCode(s)
-	return puuo
-}
-
-// SetNillableCode sets the "code" field if the given value is not nil.
-func (puuo *PriceUnitUpdateOne) SetNillableCode(s *string) *PriceUnitUpdateOne {
-	if s != nil {
-		puuo.SetCode(*s)
 	}
 	return puuo
 }
@@ -384,58 +388,45 @@ func (puuo *PriceUnitUpdateOne) SetNillableSymbol(s *string) *PriceUnitUpdateOne
 	return puuo
 }
 
-// SetBaseCurrency sets the "base_currency" field.
-func (puuo *PriceUnitUpdateOne) SetBaseCurrency(s string) *PriceUnitUpdateOne {
-	puuo.mutation.SetBaseCurrency(s)
+// AddPriceIDs adds the "prices" edge to the Price entity by IDs.
+func (puuo *PriceUnitUpdateOne) AddPriceIDs(ids ...string) *PriceUnitUpdateOne {
+	puuo.mutation.AddPriceIDs(ids...)
 	return puuo
 }
 
-// SetNillableBaseCurrency sets the "base_currency" field if the given value is not nil.
-func (puuo *PriceUnitUpdateOne) SetNillableBaseCurrency(s *string) *PriceUnitUpdateOne {
-	if s != nil {
-		puuo.SetBaseCurrency(*s)
+// AddPrices adds the "prices" edges to the Price entity.
+func (puuo *PriceUnitUpdateOne) AddPrices(p ...*Price) *PriceUnitUpdateOne {
+	ids := make([]string, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
 	}
-	return puuo
-}
-
-// SetConversionRate sets the "conversion_rate" field.
-func (puuo *PriceUnitUpdateOne) SetConversionRate(d decimal.Decimal) *PriceUnitUpdateOne {
-	puuo.mutation.SetConversionRate(d)
-	return puuo
-}
-
-// SetNillableConversionRate sets the "conversion_rate" field if the given value is not nil.
-func (puuo *PriceUnitUpdateOne) SetNillableConversionRate(d *decimal.Decimal) *PriceUnitUpdateOne {
-	if d != nil {
-		puuo.SetConversionRate(*d)
-	}
-	return puuo
-}
-
-// SetPrecision sets the "precision" field.
-func (puuo *PriceUnitUpdateOne) SetPrecision(i int) *PriceUnitUpdateOne {
-	puuo.mutation.ResetPrecision()
-	puuo.mutation.SetPrecision(i)
-	return puuo
-}
-
-// SetNillablePrecision sets the "precision" field if the given value is not nil.
-func (puuo *PriceUnitUpdateOne) SetNillablePrecision(i *int) *PriceUnitUpdateOne {
-	if i != nil {
-		puuo.SetPrecision(*i)
-	}
-	return puuo
-}
-
-// AddPrecision adds i to the "precision" field.
-func (puuo *PriceUnitUpdateOne) AddPrecision(i int) *PriceUnitUpdateOne {
-	puuo.mutation.AddPrecision(i)
-	return puuo
+	return puuo.AddPriceIDs(ids...)
 }
 
 // Mutation returns the PriceUnitMutation object of the builder.
 func (puuo *PriceUnitUpdateOne) Mutation() *PriceUnitMutation {
 	return puuo.mutation
+}
+
+// ClearPrices clears all "prices" edges to the Price entity.
+func (puuo *PriceUnitUpdateOne) ClearPrices() *PriceUnitUpdateOne {
+	puuo.mutation.ClearPrices()
+	return puuo
+}
+
+// RemovePriceIDs removes the "prices" edge to Price entities by IDs.
+func (puuo *PriceUnitUpdateOne) RemovePriceIDs(ids ...string) *PriceUnitUpdateOne {
+	puuo.mutation.RemovePriceIDs(ids...)
+	return puuo
+}
+
+// RemovePrices removes "prices" edges to Price entities.
+func (puuo *PriceUnitUpdateOne) RemovePrices(p ...*Price) *PriceUnitUpdateOne {
+	ids := make([]string, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return puuo.RemovePriceIDs(ids...)
 }
 
 // Where appends a list predicates to the PriceUnitUpdate builder.
@@ -494,24 +485,9 @@ func (puuo *PriceUnitUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.name": %w`, err)}
 		}
 	}
-	if v, ok := puuo.mutation.Code(); ok {
-		if err := priceunit.CodeValidator(v); err != nil {
-			return &ValidationError{Name: "code", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.code": %w`, err)}
-		}
-	}
 	if v, ok := puuo.mutation.Symbol(); ok {
 		if err := priceunit.SymbolValidator(v); err != nil {
 			return &ValidationError{Name: "symbol", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.symbol": %w`, err)}
-		}
-	}
-	if v, ok := puuo.mutation.BaseCurrency(); ok {
-		if err := priceunit.BaseCurrencyValidator(v); err != nil {
-			return &ValidationError{Name: "base_currency", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.base_currency": %w`, err)}
-		}
-	}
-	if v, ok := puuo.mutation.Precision(); ok {
-		if err := priceunit.PrecisionValidator(v); err != nil {
-			return &ValidationError{Name: "precision", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.precision": %w`, err)}
 		}
 	}
 	return nil
@@ -564,26 +540,62 @@ func (puuo *PriceUnitUpdateOne) sqlSave(ctx context.Context) (_node *PriceUnit, 
 	if puuo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(priceunit.FieldEnvironmentID, field.TypeString)
 	}
+	if value, ok := puuo.mutation.Metadata(); ok {
+		_spec.SetField(priceunit.FieldMetadata, field.TypeJSON, value)
+	}
+	if puuo.mutation.MetadataCleared() {
+		_spec.ClearField(priceunit.FieldMetadata, field.TypeJSON)
+	}
 	if value, ok := puuo.mutation.Name(); ok {
 		_spec.SetField(priceunit.FieldName, field.TypeString, value)
-	}
-	if value, ok := puuo.mutation.Code(); ok {
-		_spec.SetField(priceunit.FieldCode, field.TypeString, value)
 	}
 	if value, ok := puuo.mutation.Symbol(); ok {
 		_spec.SetField(priceunit.FieldSymbol, field.TypeString, value)
 	}
-	if value, ok := puuo.mutation.BaseCurrency(); ok {
-		_spec.SetField(priceunit.FieldBaseCurrency, field.TypeString, value)
+	if puuo.mutation.PricesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   priceunit.PricesTable,
+			Columns: []string{priceunit.PricesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(price.FieldID, field.TypeString),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if value, ok := puuo.mutation.ConversionRate(); ok {
-		_spec.SetField(priceunit.FieldConversionRate, field.TypeOther, value)
+	if nodes := puuo.mutation.RemovedPricesIDs(); len(nodes) > 0 && !puuo.mutation.PricesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   priceunit.PricesTable,
+			Columns: []string{priceunit.PricesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(price.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
 	}
-	if value, ok := puuo.mutation.Precision(); ok {
-		_spec.SetField(priceunit.FieldPrecision, field.TypeInt, value)
-	}
-	if value, ok := puuo.mutation.AddedPrecision(); ok {
-		_spec.AddField(priceunit.FieldPrecision, field.TypeInt, value)
+	if nodes := puuo.mutation.PricesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   priceunit.PricesTable,
+			Columns: []string{priceunit.PricesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(price.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &PriceUnit{config: puuo.config}
 	_spec.Assign = _node.assignValues

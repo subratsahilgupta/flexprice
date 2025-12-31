@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/price"
 	"github.com/flexprice/flexprice/ent/priceunit"
 	"github.com/shopspring/decimal"
 )
@@ -111,6 +112,12 @@ func (puc *PriceUnitCreate) SetNillableEnvironmentID(s *string) *PriceUnitCreate
 	return puc
 }
 
+// SetMetadata sets the "metadata" field.
+func (puc *PriceUnitCreate) SetMetadata(m map[string]string) *PriceUnitCreate {
+	puc.mutation.SetMetadata(m)
+	return puc
+}
+
 // SetName sets the "name" field.
 func (puc *PriceUnitCreate) SetName(s string) *PriceUnitCreate {
 	puc.mutation.SetName(s)
@@ -149,24 +156,25 @@ func (puc *PriceUnitCreate) SetNillableConversionRate(d *decimal.Decimal) *Price
 	return puc
 }
 
-// SetPrecision sets the "precision" field.
-func (puc *PriceUnitCreate) SetPrecision(i int) *PriceUnitCreate {
-	puc.mutation.SetPrecision(i)
-	return puc
-}
-
-// SetNillablePrecision sets the "precision" field if the given value is not nil.
-func (puc *PriceUnitCreate) SetNillablePrecision(i *int) *PriceUnitCreate {
-	if i != nil {
-		puc.SetPrecision(*i)
-	}
-	return puc
-}
-
 // SetID sets the "id" field.
 func (puc *PriceUnitCreate) SetID(s string) *PriceUnitCreate {
 	puc.mutation.SetID(s)
 	return puc
+}
+
+// AddPriceIDs adds the "prices" edge to the Price entity by IDs.
+func (puc *PriceUnitCreate) AddPriceIDs(ids ...string) *PriceUnitCreate {
+	puc.mutation.AddPriceIDs(ids...)
+	return puc
+}
+
+// AddPrices adds the "prices" edges to the Price entity.
+func (puc *PriceUnitCreate) AddPrices(p ...*Price) *PriceUnitCreate {
+	ids := make([]string, len(p))
+	for i := range p {
+		ids[i] = p[i].ID
+	}
+	return puc.AddPriceIDs(ids...)
 }
 
 // Mutation returns the PriceUnitMutation object of the builder.
@@ -224,10 +232,6 @@ func (puc *PriceUnitCreate) defaults() {
 		v := priceunit.DefaultConversionRate
 		puc.mutation.SetConversionRate(v)
 	}
-	if _, ok := puc.mutation.Precision(); !ok {
-		v := priceunit.DefaultPrecision
-		puc.mutation.SetPrecision(v)
-	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -283,14 +287,6 @@ func (puc *PriceUnitCreate) check() error {
 	}
 	if _, ok := puc.mutation.ConversionRate(); !ok {
 		return &ValidationError{Name: "conversion_rate", err: errors.New(`ent: missing required field "PriceUnit.conversion_rate"`)}
-	}
-	if _, ok := puc.mutation.Precision(); !ok {
-		return &ValidationError{Name: "precision", err: errors.New(`ent: missing required field "PriceUnit.precision"`)}
-	}
-	if v, ok := puc.mutation.Precision(); ok {
-		if err := priceunit.PrecisionValidator(v); err != nil {
-			return &ValidationError{Name: "precision", err: fmt.Errorf(`ent: validator failed for field "PriceUnit.precision": %w`, err)}
-		}
 	}
 	return nil
 }
@@ -355,6 +351,10 @@ func (puc *PriceUnitCreate) createSpec() (*PriceUnit, *sqlgraph.CreateSpec) {
 		_spec.SetField(priceunit.FieldEnvironmentID, field.TypeString, value)
 		_node.EnvironmentID = value
 	}
+	if value, ok := puc.mutation.Metadata(); ok {
+		_spec.SetField(priceunit.FieldMetadata, field.TypeJSON, value)
+		_node.Metadata = value
+	}
 	if value, ok := puc.mutation.Name(); ok {
 		_spec.SetField(priceunit.FieldName, field.TypeString, value)
 		_node.Name = value
@@ -375,9 +375,21 @@ func (puc *PriceUnitCreate) createSpec() (*PriceUnit, *sqlgraph.CreateSpec) {
 		_spec.SetField(priceunit.FieldConversionRate, field.TypeOther, value)
 		_node.ConversionRate = value
 	}
-	if value, ok := puc.mutation.Precision(); ok {
-		_spec.SetField(priceunit.FieldPrecision, field.TypeInt, value)
-		_node.Precision = value
+	if nodes := puc.mutation.PricesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   priceunit.PricesTable,
+			Columns: []string{priceunit.PricesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(price.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

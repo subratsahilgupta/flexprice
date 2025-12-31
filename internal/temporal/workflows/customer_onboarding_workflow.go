@@ -12,6 +12,7 @@ const (
 	// Workflow name - must match the function name
 	WorkflowCustomerOnboarding = "CustomerOnboardingWorkflow"
 	// Activity names - must match the registered method names
+	ActivityCreateCustomer     = "CreateCustomerActivity"
 	ActivityCreateWallet       = "CreateWalletActivity"
 	ActivityCreateSubscription = "CreateSubscriptionActivity"
 )
@@ -64,6 +65,13 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 
 		var err error
 		switch actionType {
+		case models.WorkflowActionCreateCustomer:
+			err = executeCreateCustomerAction(ctx, input, action, &actionResult)
+			// If customer creation succeeds, update the input.CustomerID for subsequent actions
+			if err == nil && actionResult.ResourceID != "" {
+				input.CustomerID = actionResult.ResourceID
+			}
+
 		case models.WorkflowActionCreateWallet:
 			err = executeCreateWalletAction(ctx, input, action, &actionResult)
 
@@ -76,12 +84,12 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 				"action_type", actionType,
 				"action_index", i)
 
-			actionResult.Status = "failed"
+			actionResult.Status = models.WorkflowStatusFailed
 			errorMsg := "unknown workflow action type: " + string(actionType)
 			actionResult.Error = &errorMsg
 			result.Results = append(result.Results, actionResult)
 
-			result.Status = "failed"
+			result.Status = models.WorkflowStatusFailed
 			result.CompletedAt = workflow.Now(ctx)
 			result.ErrorSummary = &errorMsg
 			return result, nil
@@ -94,18 +102,18 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 				"action_type", actionType,
 				"error", err)
 
-			actionResult.Status = "failed"
+			actionResult.Status = models.WorkflowStatusFailed
 			errorMsg := err.Error()
 			actionResult.Error = &errorMsg
 			result.Results = append(result.Results, actionResult)
 
-			result.Status = "failed"
+			result.Status = models.WorkflowStatusFailed
 			result.CompletedAt = workflow.Now(ctx)
 			result.ErrorSummary = &errorMsg
 			return result, nil
 		}
 
-		actionResult.Status = "completed"
+		actionResult.Status = models.WorkflowStatusCompleted
 		result.Results = append(result.Results, actionResult)
 		result.ActionsExecuted++
 
@@ -117,7 +125,7 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 	}
 
 	// All actions completed successfully
-	result.Status = "completed"
+	result.Status = models.WorkflowStatusCompleted
 	result.CompletedAt = workflow.Now(ctx)
 
 	logger.Info("Customer onboarding workflow completed successfully",
@@ -125,6 +133,49 @@ func CustomerOnboardingWorkflow(ctx workflow.Context, input models.CustomerOnboa
 		"actions_executed", result.ActionsExecuted)
 
 	return result, nil
+}
+
+// executeCreateCustomerAction executes the create customer action
+func executeCreateCustomerAction(
+	ctx workflow.Context,
+	input models.CustomerOnboardingWorkflowInput,
+	action models.WorkflowActionConfig,
+	actionResult *models.CustomerOnboardingActionResult,
+) error {
+	createCustomerAction, ok := action.(*models.CreateCustomerActionConfig)
+	if !ok {
+		return temporal.NewApplicationError("invalid action config type for create_customer", "InvalidActionConfig")
+	}
+
+	// Use ExternalCustomerID from input for customer creation
+	externalID := input.ExternalCustomerID
+	if externalID == "" {
+		return temporal.NewApplicationError("external_customer_id is required for create_customer action", "MissingExternalID")
+	}
+
+	userID := ""
+	if createCustomerAction.DefaultUserID != nil {
+		userID = *createCustomerAction.DefaultUserID
+	}
+
+	activityInput := models.CreateCustomerActivityInput{
+		ExternalID:    externalID,
+		Name:          externalID,
+		Email:         "",
+		TenantID:      input.TenantID,
+		EnvironmentID: input.EnvironmentID,
+		UserID:        userID,
+	}
+
+	var activityResult models.CreateCustomerActivityResult
+	err := workflow.ExecuteActivity(ctx, ActivityCreateCustomer, activityInput).Get(ctx, &activityResult)
+	if err != nil {
+		return err
+	}
+
+	actionResult.ResourceID = activityResult.CustomerID
+	actionResult.ResourceType = models.WorkflowResourceTypeCustomer
+	return nil
 }
 
 // executeCreateWalletAction executes the create wallet action
@@ -154,7 +205,7 @@ func executeCreateWalletAction(
 	}
 
 	actionResult.ResourceID = activityResult.WalletID
-	actionResult.ResourceType = "wallet"
+	actionResult.ResourceType = models.WorkflowResourceTypeWallet
 	return nil
 }
 
@@ -172,6 +223,7 @@ func executeCreateSubscriptionAction(
 
 	activityInput := models.CreateSubscriptionActivityInput{
 		CustomerID:         input.CustomerID,
+		EventTimestamp:     input.EventTimestamp,
 		TenantID:           input.TenantID,
 		EnvironmentID:      input.EnvironmentID,
 		UserID:             input.UserID,
@@ -185,6 +237,6 @@ func executeCreateSubscriptionAction(
 	}
 
 	actionResult.ResourceID = activityResult.SubscriptionID
-	actionResult.ResourceType = "subscription"
+	actionResult.ResourceType = models.WorkflowResourceTypeSubscription
 	return nil
 }

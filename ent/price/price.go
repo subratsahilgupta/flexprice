@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -95,8 +96,26 @@ const (
 	FieldEndDate = "end_date"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// EdgeCostsheet holds the string denoting the costsheet edge name in mutations.
+	EdgeCostsheet = "costsheet"
+	// EdgePriceUnitEdge holds the string denoting the price_unit_edge edge name in mutations.
+	EdgePriceUnitEdge = "price_unit_edge"
 	// Table holds the table name of the price in the database.
 	Table = "prices"
+	// CostsheetTable is the table that holds the costsheet relation/edge.
+	CostsheetTable = "costsheets"
+	// CostsheetInverseTable is the table name for the Costsheet entity.
+	// It exists in this package in order to avoid circular dependency with the "costsheet" package.
+	CostsheetInverseTable = "costsheets"
+	// CostsheetColumn is the table column denoting the costsheet relation/edge.
+	CostsheetColumn = "price_costsheet"
+	// PriceUnitEdgeTable is the table that holds the price_unit_edge relation/edge.
+	PriceUnitEdgeTable = "prices"
+	// PriceUnitEdgeInverseTable is the table name for the PriceUnit entity.
+	// It exists in this package in order to avoid circular dependency with the "priceunit" package.
+	PriceUnitEdgeInverseTable = "price_units"
+	// PriceUnitEdgeColumn is the table column denoting the price_unit_edge relation/edge.
+	PriceUnitEdgeColumn = "price_unit_id"
 )
 
 // Columns holds all SQL columns for price fields.
@@ -195,6 +214,10 @@ var (
 	DefaultTrialPeriod int
 	// DefaultEntityType holds the default value on creation for the "entity_type" field.
 	DefaultEntityType types.PriceEntityType
+	// EntityTypeValidator is a validator for the "entity_type" field. It is called by the builders before save.
+	EntityTypeValidator func(string) error
+	// EntityIDValidator is a validator for the "entity_id" field. It is called by the builders before save.
+	EntityIDValidator func(string) error
 	// DefaultStartDate holds the default value on creation for the "start_date" field.
 	DefaultStartDate func() time.Time
 )
@@ -380,4 +403,39 @@ func ByEndDate(opts ...sql.OrderTermOption) OrderOption {
 // ByGroupID orders the results by the group_id field.
 func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
+}
+
+// ByCostsheetCount orders the results by costsheet count.
+func ByCostsheetCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newCostsheetStep(), opts...)
+	}
+}
+
+// ByCostsheet orders the results by costsheet terms.
+func ByCostsheet(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newCostsheetStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByPriceUnitEdgeField orders the results by price_unit_edge field.
+func ByPriceUnitEdgeField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newPriceUnitEdgeStep(), sql.OrderByField(field, opts...))
+	}
+}
+func newCostsheetStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(CostsheetInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, CostsheetTable, CostsheetColumn),
+	)
+}
+func newPriceUnitEdgeStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(PriceUnitEdgeInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, false, PriceUnitEdgeTable, PriceUnitEdgeColumn),
+	)
 }
