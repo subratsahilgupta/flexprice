@@ -318,14 +318,40 @@ func (s *temporalService) ExecuteWorkflow(ctx context.Context, workflowType type
 		return nil, err
 	}
 
-	// Create workflow options with centralized ID generation
+	workflowID := s.generateWorkflowID(workflowType, params)
 	options := models.StartWorkflowOptions{
-		ID:        types.GenerateWorkflowIDForType(workflowType.String()),
+		ID:        workflowID,
 		TaskQueue: workflowType.TaskQueueName(),
 	}
 
 	// Execute workflow using existing StartWorkflow method
 	return s.StartWorkflow(ctx, options, workflowType, input)
+}
+
+func (s *temporalService) generateWorkflowID(workflowType types.TemporalWorkflowType, params interface{}) string {
+	contextID := s.extractWorkflowContextID(workflowType, params)
+	if contextID != "" {
+		return types.GenerateWorkflowIDWithContext(workflowType.String(), contextID)
+	}
+	return types.GenerateWorkflowIDForType(workflowType.String())
+}
+
+// extractWorkflowContextID extracts the context ID (e.g., subscription_id, invoice_id) from params
+// for deterministic workflow ID generation. Returns empty string if no context ID is applicable.
+func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWorkflowType, params interface{}) string {
+	switch workflowType {
+	case types.TemporalProcessSubscriptionBillingWorkflow:
+		// Extract subscription ID from ProcessSubscriptionBillingWorkflowInput
+		if input, ok := params.(subscriptionModels.ProcessSubscriptionBillingWorkflowInput); ok {
+			return input.SubscriptionID
+		}
+	case types.TemporalProcessInvoiceWorkflow:
+		// Extract invoice ID from ProcessInvoiceWorkflowInput
+		if input, ok := params.(invoiceModels.ProcessInvoiceWorkflowInput); ok {
+			return input.InvoiceID
+		}
+	}
+	return ""
 }
 
 // buildWorkflowInput builds the appropriate input for the workflow type
