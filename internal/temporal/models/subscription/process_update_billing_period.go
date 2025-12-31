@@ -29,11 +29,6 @@ func (i *ProcessSubscriptionBillingWorkflowInput) Validate() error {
 			WithHint("Tenant ID is required").
 			Mark(ierr.ErrValidation)
 	}
-	if i.UserID == "" {
-		return ierr.NewError("user_id is required").
-			WithHint("User ID is required").
-			Mark(ierr.ErrValidation)
-	}
 	if i.EnvironmentID == "" {
 		return ierr.NewError("environment_id is required").
 			WithHint("Environment ID is required").
