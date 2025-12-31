@@ -52,6 +52,11 @@ type CreateCustomerRequest struct {
 	// metadata contains additional key-value pairs for storing extra information
 	Metadata map[string]string `json:"metadata,omitempty"`
 
+	// skip_onboarding_workflow when true, prevents the customer onboarding workflow from being triggered
+	// This is used internally when a customer is created via a workflow to prevent infinite loops
+	// Default: false
+	SkipOnboardingWorkflow bool `json:"skip_onboarding_workflow,omitempty"`
+
 	// tax_rate_overrides contains tax rate configurations to be linked to this customer
 	TaxRateOverrides []*TaxRateOverride `json:"tax_rate_overrides,omitempty"`
 

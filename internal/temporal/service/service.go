@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/temporal/models"
+	invoiceModels "github.com/flexprice/flexprice/internal/temporal/models/invoice"
 	subscriptionModels "github.com/flexprice/flexprice/internal/temporal/models/subscription"
 	"github.com/flexprice/flexprice/internal/temporal/worker"
 	"github.com/flexprice/flexprice/internal/types"
@@ -317,14 +318,40 @@ func (s *temporalService) ExecuteWorkflow(ctx context.Context, workflowType type
 		return nil, err
 	}
 
-	// Create workflow options with centralized ID generation
+	workflowID := s.generateWorkflowID(workflowType, input)
 	options := models.StartWorkflowOptions{
-		ID:        types.GenerateWorkflowIDForType(workflowType.String()),
+		ID:        workflowID,
 		TaskQueue: workflowType.TaskQueueName(),
 	}
 
 	// Execute workflow using existing StartWorkflow method
 	return s.StartWorkflow(ctx, options, workflowType, input)
+}
+
+func (s *temporalService) generateWorkflowID(workflowType types.TemporalWorkflowType, params interface{}) string {
+	contextID := s.extractWorkflowContextID(workflowType, params)
+	if contextID != "" {
+		return types.GenerateWorkflowIDWithContext(workflowType.String(), contextID)
+	}
+	return types.GenerateWorkflowIDForType(workflowType.String())
+}
+
+// extractWorkflowContextID extracts the context ID (e.g., subscription_id, invoice_id) from params
+// for deterministic workflow ID generation. Returns empty string if no context ID is applicable.
+func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWorkflowType, params interface{}) string {
+	switch workflowType {
+	case types.TemporalProcessSubscriptionBillingWorkflow:
+		// Extract subscription ID from ProcessSubscriptionBillingWorkflowInput
+		if input, ok := params.(subscriptionModels.ProcessSubscriptionBillingWorkflowInput); ok {
+			return input.SubscriptionID
+		}
+	case types.TemporalProcessInvoiceWorkflow:
+		// Extract invoice ID from ProcessInvoiceWorkflowInput
+		if input, ok := params.(invoiceModels.ProcessInvoiceWorkflowInput); ok {
+			return input.InvoiceID
+		}
+	}
+	return ""
 }
 
 // buildWorkflowInput builds the appropriate input for the workflow type
@@ -367,6 +394,8 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 		return s.buildNomodInvoiceSyncInput(ctx, tenantID, environmentID, params)
 	case types.TemporalCustomerOnboardingWorkflow:
 		return s.buildCustomerOnboardingInput(ctx, tenantID, environmentID, userID, params)
+	case types.TemporalProcessInvoiceWorkflow:
+		return s.buildProcessInvoiceInput(ctx, tenantID, environmentID, params)
 	default:
 		return nil, errors.NewError("unsupported workflow type").
 			WithHintf("Workflow type %s is not supported", workflowType.String()).
@@ -565,6 +594,84 @@ func (s *temporalService) buildNomodInvoiceSyncInput(_ context.Context, tenantID
 	return nil, errors.NewError("invalid input for Nomod invoice sync workflow").
 		WithHint("Provide NomodInvoiceSyncWorkflowInput with invoice_id and customer_id").
 		Mark(errors.ErrValidation)
+}
+
+// buildProcessInvoiceInput builds input for process invoice workflow
+func (s *temporalService) buildProcessInvoiceInput(_ context.Context, tenantID, environmentID string, params interface{}) (interface{}, error) {
+	// If already correct type, just ensure context is set
+	if input, ok := params.(invoiceModels.ProcessInvoiceWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return input, nil
+	}
+
+	// Handle pointer type as well
+	if input, ok := params.(*invoiceModels.ProcessInvoiceWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return *input, nil
+	}
+
+	// Handle string input (invoice ID)
+	invoiceID, ok := params.(string)
+	if ok && invoiceID != "" {
+		return invoiceModels.ProcessInvoiceWorkflowInput{
+			InvoiceID:     invoiceID,
+			TenantID:      tenantID,
+			EnvironmentID: environmentID,
+		}, nil
+	}
+
+	return nil, errors.NewError("invalid input for process invoice workflow").
+		WithHint("Provide ProcessInvoiceWorkflowInput with invoice_id, tenant_id, and environment_id").
+		Mark(errors.ErrValidation)
+}
+
+// ExecuteWorkflowSync executes a workflow synchronously and waits for completion
+func (s *temporalService) ExecuteWorkflowSync(
+	ctx context.Context,
+	workflowType types.TemporalWorkflowType,
+	params interface{},
+	timeoutSeconds int,
+) (interface{}, error) {
+	// Check if service is initialized
+	if s == nil {
+		return nil, errors.NewError("temporal service not initialized").
+			WithHint("Temporal service must be initialized before use").
+			Mark(errors.ErrInternal)
+	}
+
+	// Create a timeout context
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+
+	// Start the workflow
+	workflowRun, err := s.ExecuteWorkflow(timeoutCtx, workflowType, params)
+	if err != nil {
+		return nil, errors.WithError(err).
+			WithHint("Failed to start workflow for synchronous execution").
+			WithReportableDetails(map[string]interface{}{
+				"workflow_type": workflowType.String(),
+				"timeout":       timeoutSeconds,
+			}).
+			Mark(errors.ErrInternal)
+	}
+
+	// Wait for workflow completion and get result
+	var result models.CustomerOnboardingWorkflowResult
+	if err := workflowRun.Get(timeoutCtx, &result); err != nil {
+		return nil, errors.WithError(err).
+			WithHint("Workflow execution failed or timed out").
+			WithReportableDetails(map[string]interface{}{
+				"workflow_id":   workflowRun.GetID(),
+				"run_id":        workflowRun.GetRunID(),
+				"workflow_type": workflowType.String(),
+				"timeout":       timeoutSeconds,
+			}).
+			Mark(errors.ErrInternal)
+	}
+
+	return &result, nil
 }
 
 // buildScheduleSubscriptionBillingWorkflowInput builds input for schedule subscription billing workflow

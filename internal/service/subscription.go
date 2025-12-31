@@ -177,7 +177,46 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			EntityType:   types.SubscriptionLineItemEntityTypePlan,
 		})
 
-		// Apply subscription-specific overrides
+		// Convert line items
+		for _, item := range lineItems {
+			price, ok := priceMap[item.PriceID]
+			if !ok {
+				return nil, ierr.NewError("failed to get price %s: price not found").
+					WithHint("Ensure all prices are valid and available").
+					WithReportableDetails(map[string]interface{}{
+						"price_id": item.PriceID,
+					}).
+					Mark(ierr.ErrDatabase)
+			}
+
+			if price.Price.Type == types.PRICE_TYPE_USAGE && price.Meter != nil {
+				item.MeterID = price.Meter.ID
+				item.MeterDisplayName = price.Meter.Name
+				item.DisplayName = price.Meter.Name
+				item.Quantity = decimal.Zero
+			} else {
+				item.DisplayName = plan.Name
+				if item.Quantity.IsZero() {
+					item.Quantity = decimal.NewFromInt(1)
+				}
+			}
+
+			if item.ID == "" {
+				item.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
+			}
+
+			item.SubscriptionID = sub.ID
+			item.PriceType = price.Type
+			item.EntityID = plan.ID
+			item.EntityType = types.SubscriptionLineItemEntityTypePlan
+			item.PlanDisplayName = plan.Name
+			item.CustomerID = sub.CustomerID
+			item.Currency = sub.Currency
+			item.BillingPeriod = sub.BillingPeriod
+			item.InvoiceCadence = price.InvoiceCadence
+			item.TrialPeriod = price.TrialPeriod
+			// Set phase ID if phases exist
+		}
 		if firstPhaseID != "" {
 			item.SubscriptionPhaseID = &firstPhaseID
 		}
@@ -996,12 +1035,11 @@ func (s *subscriptionService) ProcessSubscriptionPriceOverrides(
 		// Create subscription-scoped price using price service
 		// Always preserve the original price's display name
 		createPriceReq := dto.CreatePriceRequest{
-			Amount:               originalPrice.Amount.String(),
+			Amount:               lo.ToPtr(originalPrice.Amount),
 			Currency:             originalPrice.Currency,
 			EntityType:           types.PRICE_ENTITY_TYPE_SUBSCRIPTION,
 			EntityID:             sub.ID,
 			Type:                 originalPrice.Type,
-			PriceUnitType:        originalPrice.PriceUnitType,
 			BillingPeriod:        originalPrice.BillingPeriod,
 			BillingPeriodCount:   originalPrice.BillingPeriodCount,
 			BillingModel:         originalPrice.BillingModel,
@@ -1023,12 +1061,9 @@ func (s *subscriptionService) ProcessSubscriptionPriceOverrides(
 			for i, tier := range originalPrice.Tiers {
 				createPriceReq.Tiers[i] = dto.CreatePriceTier{
 					UpTo:       tier.UpTo,
-					UnitAmount: tier.UnitAmount.String(),
+					UnitAmount: tier.UnitAmount,
 				}
-				if tier.FlatAmount != nil {
-					flatAmountStr := tier.FlatAmount.String()
-					createPriceReq.Tiers[i].FlatAmount = &flatAmountStr
-				}
+				createPriceReq.Tiers[i].FlatAmount = tier.FlatAmount
 			}
 		}
 
@@ -1040,7 +1075,7 @@ func (s *subscriptionService) ProcessSubscriptionPriceOverrides(
 
 		// Amount override
 		if override.Amount != nil {
-			createPriceReq.Amount = override.Amount.String()
+			createPriceReq.Amount = override.Amount
 		}
 
 		// Billing model override
@@ -3687,6 +3722,10 @@ func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, price
 		lineItem.Quantity = decimal.NewFromInt(1)
 	}
 
+	// Copy price unit fields from price to line item
+	lineItem.PriceUnitID = price.PriceUnitID
+	lineItem.PriceUnit = price.PriceUnit
+
 	return lineItem
 }
 
@@ -5289,7 +5328,7 @@ func (s *subscriptionService) CalculateBillingPeriods(ctx context.Context, subsc
 
 // Create Draft Invoice for Subscription
 func (s *subscriptionService) CreateDraftInvoiceForSubscription(ctx context.Context, subscriptionID string, period dto.Period) (*dto.InvoiceResponse, error) {
-	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	sub, _, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
 		return nil, err
 	}

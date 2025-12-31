@@ -29,11 +29,6 @@ func (i *ProcessSubscriptionBillingWorkflowInput) Validate() error {
 			WithHint("Tenant ID is required").
 			Mark(ierr.ErrValidation)
 	}
-	if i.UserID == "" {
-		return ierr.NewError("user_id is required").
-			WithHint("User ID is required").
-			Mark(ierr.ErrValidation)
-	}
 	if i.EnvironmentID == "" {
 		return ierr.NewError("environment_id is required").
 			WithHint("Environment ID is required").
@@ -70,6 +65,7 @@ type CheckDraftSubscriptionActivityInput struct {
 	SubscriptionID string `json:"subscription_id"`
 	TenantID       string `json:"tenant_id"`
 	EnvironmentID  string `json:"environment_id"`
+	UserID         string `json:"user_id"`
 }
 
 // Validate validates the check draft subscription activity input
@@ -144,6 +140,7 @@ type CalculatePeriodsActivityInput struct {
 	SubscriptionID string    `json:"subscription_id"`
 	TenantID       string    `json:"tenant_id"`
 	EnvironmentID  string    `json:"environment_id"`
+	UserID         string    `json:"user_id"`
 	CurrentTime    time.Time `json:"current_time"`
 }
 
@@ -183,6 +180,7 @@ type CreateInvoicesActivityInput struct {
 	SubscriptionID string       `json:"subscription_id"`
 	TenantID       string       `json:"tenant_id"`
 	EnvironmentID  string       `json:"environment_id"`
+	UserID         string       `json:"user_id"`
 	Periods        []dto.Period `json:"periods"`
 }
 
@@ -216,6 +214,7 @@ type UpdateSubscriptionPeriodActivityInput struct {
 	SubscriptionID string    `json:"subscription_id"`
 	TenantID       string    `json:"tenant_id"`
 	EnvironmentID  string    `json:"environment_id"`
+	UserID         string    `json:"user_id"`
 	PeriodStart    time.Time `json:"period_start"`
 	PeriodEnd      time.Time `json:"period_end"`
 }
@@ -328,6 +327,7 @@ type CheckSubscriptionCancellationActivityInput struct {
 	SubscriptionID string     `json:"subscription_id"`
 	TenantID       string     `json:"tenant_id"`
 	EnvironmentID  string     `json:"environment_id"`
+	UserID         string     `json:"user_id"`
 	Period         dto.Period `json:"period"`
 }
 

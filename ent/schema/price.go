@@ -5,6 +5,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
@@ -46,18 +47,22 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "numeric(25,15)",
 			}).
+			Immutable().
 			Default(decimal.Zero),
 
 		field.String("currency").
 			SchemaType(map[string]string{
 				"postgres": "varchar(3)",
 			}).
+			Immutable().
 			NotEmpty(),
 
 		field.String("display_amount").
 			SchemaType(map[string]string{
 				"postgres": "varchar(255)",
 			}).
+			Immutable().
+			Optional().
 			NotEmpty(),
 
 		// price_unit_type is the type of the price unit- Fiat, Custom
@@ -65,6 +70,7 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
+			Immutable().
 			NotEmpty().
 			Default(string(types.PRICE_UNIT_TYPE_FIAT)).
 			GoType(types.PriceUnitType("")),
@@ -74,6 +80,7 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
+			Immutable().
 			Optional().
 			Nillable(),
 		// price_unit is the code of the price unit
@@ -81,13 +88,16 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(3)",
 			}).
-			Optional(),
+			Immutable().
+			Optional().
+			Nillable(),
 
 		// price_unit_amount is the amount of the price unit
 		field.Other("price_unit_amount", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(25,15)",
 			}).
+			Immutable().
 			Optional().
 			Nillable().
 			Default(decimal.Zero),
@@ -97,16 +107,22 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(255)",
 			}).
+			Immutable().
 			Optional(),
 
 		// conversion_rate is the conversion rate of the price unit to the fiat currency
+		// amount in the fiat currency =  number of price units * conversion_rate (e.g. 1 BTC = 10000 USD)
+		// ex if conversion_rate is 1, then 1 USD = 1 BTC
+		// ex if conversion_rate is 2, then 1 USD = 0.5 BTC
+		// ex if conversion_rate is 0.5, then 1 USD = 2 BTC
 		field.Other("conversion_rate", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(25,15)",
 			}).
+			Immutable().
 			Optional().
 			Nillable().
-			Default(decimal.Zero),
+			Default(decimal.NewFromInt(1)), // 1 USD = 1 BTC
 
 		// min_quantity is the minimum quantity of the price
 		field.Other("min_quantity", decimal.Decimal{}).
@@ -121,6 +137,7 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
+			Immutable().
 			NotEmpty().
 			GoType(types.PriceType("")),
 
@@ -128,10 +145,12 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
+			Immutable().
 			NotEmpty().
 			GoType(types.BillingPeriod("")),
 
 		field.Int("billing_period_count").
+			Immutable().
 			NonNegative(),
 
 		field.String("billing_model").
@@ -139,12 +158,14 @@ func (Price) Fields() []ent.Field {
 				"postgres": "varchar(20)",
 			}).
 			NotEmpty().
+			Immutable().
 			GoType(types.BillingModel("")),
 
 		field.String("billing_cadence").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
+			Immutable().
 			NotEmpty().
 			GoType(types.BillingCadence("")),
 
@@ -164,25 +185,32 @@ func (Price) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
+			Immutable().
 			Optional().
 			Nillable(),
 
 		field.JSON("filter_values", map[string][]string{}).
 			Optional(),
+
 		field.String("tier_mode").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
+			Immutable().
 			Optional().
 			Nillable().
 			GoType(types.BillingTier("")),
+
 		field.JSON("tiers", []*types.PriceTier{}).
+			Immutable().
 			Optional(),
 
 		field.JSON("price_unit_tiers", []*types.PriceTier{}).
+			Immutable().
 			Optional(),
 
 		field.JSON("transform_quantity", types.TransformQuantity{}).
+			Immutable().
 			Optional(),
 
 		field.String("lookup_key").
@@ -197,15 +225,13 @@ func (Price) Fields() []ent.Field {
 		field.JSON("metadata", map[string]string{}).
 			Optional(),
 
-		// Price override fields
 		field.String("entity_type").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",
 			}).
 			Immutable().
-			Nillable().
+			NotEmpty().
 			Default(string(types.PRICE_ENTITY_TYPE_PLAN)).
-			Optional().
 			GoType(types.PriceEntityType("")),
 
 		field.String("entity_id").
@@ -213,8 +239,7 @@ func (Price) Fields() []ent.Field {
 				"postgres": "varchar(50)",
 			}).
 			Immutable().
-			Nillable().
-			Optional(),
+			NotEmpty(),
 
 		field.String("parent_price_id").
 			SchemaType(map[string]string{
@@ -244,7 +269,13 @@ func (Price) Fields() []ent.Field {
 
 // Edges of the Price.
 func (Price) Edges() []ent.Edge {
-	return nil
+	return []ent.Edge{
+		edge.To("costsheet", Costsheet.Type),
+		edge.To("price_unit_edge", PriceUnit.Type).
+			Field("price_unit_id").
+			Immutable().
+			Unique(),
+	}
 }
 
 // Indexes of the Price.

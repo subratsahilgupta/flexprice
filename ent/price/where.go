@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
@@ -917,6 +918,16 @@ func DisplayAmountHasPrefix(v string) predicate.Price {
 // DisplayAmountHasSuffix applies the HasSuffix predicate on the "display_amount" field.
 func DisplayAmountHasSuffix(v string) predicate.Price {
 	return predicate.Price(sql.FieldHasSuffix(FieldDisplayAmount, v))
+}
+
+// DisplayAmountIsNil applies the IsNil predicate on the "display_amount" field.
+func DisplayAmountIsNil() predicate.Price {
+	return predicate.Price(sql.FieldIsNull(FieldDisplayAmount))
+}
+
+// DisplayAmountNotNil applies the NotNil predicate on the "display_amount" field.
+func DisplayAmountNotNil() predicate.Price {
+	return predicate.Price(sql.FieldNotNull(FieldDisplayAmount))
 }
 
 // DisplayAmountEqualFold applies the EqualFold predicate on the "display_amount" field.
@@ -2339,16 +2350,6 @@ func EntityTypeHasSuffix(v types.PriceEntityType) predicate.Price {
 	return predicate.Price(sql.FieldHasSuffix(FieldEntityType, vc))
 }
 
-// EntityTypeIsNil applies the IsNil predicate on the "entity_type" field.
-func EntityTypeIsNil() predicate.Price {
-	return predicate.Price(sql.FieldIsNull(FieldEntityType))
-}
-
-// EntityTypeNotNil applies the NotNil predicate on the "entity_type" field.
-func EntityTypeNotNil() predicate.Price {
-	return predicate.Price(sql.FieldNotNull(FieldEntityType))
-}
-
 // EntityTypeEqualFold applies the EqualFold predicate on the "entity_type" field.
 func EntityTypeEqualFold(v types.PriceEntityType) predicate.Price {
 	vc := string(v)
@@ -2414,16 +2415,6 @@ func EntityIDHasPrefix(v string) predicate.Price {
 // EntityIDHasSuffix applies the HasSuffix predicate on the "entity_id" field.
 func EntityIDHasSuffix(v string) predicate.Price {
 	return predicate.Price(sql.FieldHasSuffix(FieldEntityID, v))
-}
-
-// EntityIDIsNil applies the IsNil predicate on the "entity_id" field.
-func EntityIDIsNil() predicate.Price {
-	return predicate.Price(sql.FieldIsNull(FieldEntityID))
-}
-
-// EntityIDNotNil applies the NotNil predicate on the "entity_id" field.
-func EntityIDNotNil() predicate.Price {
-	return predicate.Price(sql.FieldNotNull(FieldEntityID))
 }
 
 // EntityIDEqualFold applies the EqualFold predicate on the "entity_id" field.
@@ -2684,6 +2675,52 @@ func GroupIDEqualFold(v string) predicate.Price {
 // GroupIDContainsFold applies the ContainsFold predicate on the "group_id" field.
 func GroupIDContainsFold(v string) predicate.Price {
 	return predicate.Price(sql.FieldContainsFold(FieldGroupID, v))
+}
+
+// HasCostsheet applies the HasEdge predicate on the "costsheet" edge.
+func HasCostsheet() predicate.Price {
+	return predicate.Price(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, CostsheetTable, CostsheetColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasCostsheetWith applies the HasEdge predicate on the "costsheet" edge with a given conditions (other predicates).
+func HasCostsheetWith(preds ...predicate.Costsheet) predicate.Price {
+	return predicate.Price(func(s *sql.Selector) {
+		step := newCostsheetStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasPriceUnitEdge applies the HasEdge predicate on the "price_unit_edge" edge.
+func HasPriceUnitEdge() predicate.Price {
+	return predicate.Price(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, PriceUnitEdgeTable, PriceUnitEdgeColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasPriceUnitEdgeWith applies the HasEdge predicate on the "price_unit_edge" edge with a given conditions (other predicates).
+func HasPriceUnitEdgeWith(preds ...predicate.PriceUnit) predicate.Price {
+	return predicate.Price(func(s *sql.Selector) {
+		step := newPriceUnitEdgeStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

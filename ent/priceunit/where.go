@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/shopspring/decimal"
 )
@@ -123,11 +124,6 @@ func BaseCurrency(v string) predicate.PriceUnit {
 // ConversionRate applies equality check predicate on the "conversion_rate" field. It's identical to ConversionRateEQ.
 func ConversionRate(v decimal.Decimal) predicate.PriceUnit {
 	return predicate.PriceUnit(sql.FieldEQ(FieldConversionRate, v))
-}
-
-// Precision applies equality check predicate on the "precision" field. It's identical to PrecisionEQ.
-func Precision(v int) predicate.PriceUnit {
-	return predicate.PriceUnit(sql.FieldEQ(FieldPrecision, v))
 }
 
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
@@ -565,6 +561,16 @@ func EnvironmentIDContainsFold(v string) predicate.PriceUnit {
 	return predicate.PriceUnit(sql.FieldContainsFold(FieldEnvironmentID, v))
 }
 
+// MetadataIsNil applies the IsNil predicate on the "metadata" field.
+func MetadataIsNil() predicate.PriceUnit {
+	return predicate.PriceUnit(sql.FieldIsNull(FieldMetadata))
+}
+
+// MetadataNotNil applies the NotNil predicate on the "metadata" field.
+func MetadataNotNil() predicate.PriceUnit {
+	return predicate.PriceUnit(sql.FieldNotNull(FieldMetadata))
+}
+
 // NameEQ applies the EQ predicate on the "name" field.
 func NameEQ(v string) predicate.PriceUnit {
 	return predicate.PriceUnit(sql.FieldEQ(FieldName, v))
@@ -865,44 +871,27 @@ func ConversionRateLTE(v decimal.Decimal) predicate.PriceUnit {
 	return predicate.PriceUnit(sql.FieldLTE(FieldConversionRate, v))
 }
 
-// PrecisionEQ applies the EQ predicate on the "precision" field.
-func PrecisionEQ(v int) predicate.PriceUnit {
-	return predicate.PriceUnit(sql.FieldEQ(FieldPrecision, v))
+// HasPrices applies the HasEdge predicate on the "prices" edge.
+func HasPrices() predicate.PriceUnit {
+	return predicate.PriceUnit(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, PricesTable, PricesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
 }
 
-// PrecisionNEQ applies the NEQ predicate on the "precision" field.
-func PrecisionNEQ(v int) predicate.PriceUnit {
-	return predicate.PriceUnit(sql.FieldNEQ(FieldPrecision, v))
-}
-
-// PrecisionIn applies the In predicate on the "precision" field.
-func PrecisionIn(vs ...int) predicate.PriceUnit {
-	return predicate.PriceUnit(sql.FieldIn(FieldPrecision, vs...))
-}
-
-// PrecisionNotIn applies the NotIn predicate on the "precision" field.
-func PrecisionNotIn(vs ...int) predicate.PriceUnit {
-	return predicate.PriceUnit(sql.FieldNotIn(FieldPrecision, vs...))
-}
-
-// PrecisionGT applies the GT predicate on the "precision" field.
-func PrecisionGT(v int) predicate.PriceUnit {
-	return predicate.PriceUnit(sql.FieldGT(FieldPrecision, v))
-}
-
-// PrecisionGTE applies the GTE predicate on the "precision" field.
-func PrecisionGTE(v int) predicate.PriceUnit {
-	return predicate.PriceUnit(sql.FieldGTE(FieldPrecision, v))
-}
-
-// PrecisionLT applies the LT predicate on the "precision" field.
-func PrecisionLT(v int) predicate.PriceUnit {
-	return predicate.PriceUnit(sql.FieldLT(FieldPrecision, v))
-}
-
-// PrecisionLTE applies the LTE predicate on the "precision" field.
-func PrecisionLTE(v int) predicate.PriceUnit {
-	return predicate.PriceUnit(sql.FieldLTE(FieldPrecision, v))
+// HasPricesWith applies the HasEdge predicate on the "prices" edge with a given conditions (other predicates).
+func HasPricesWith(preds ...predicate.Price) predicate.PriceUnit {
+	return predicate.PriceUnit(func(s *sql.Selector) {
+		step := newPricesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

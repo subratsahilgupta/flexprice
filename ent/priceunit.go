@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -32,6 +33,8 @@ type PriceUnit struct {
 	UpdatedBy string `json:"updated_by,omitempty"`
 	// EnvironmentID holds the value of the "environment_id" field.
 	EnvironmentID string `json:"environment_id,omitempty"`
+	// Metadata holds the value of the "metadata" field.
+	Metadata map[string]string `json:"metadata,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// Code holds the value of the "code" field.
@@ -42,9 +45,28 @@ type PriceUnit struct {
 	BaseCurrency string `json:"base_currency,omitempty"`
 	// ConversionRate holds the value of the "conversion_rate" field.
 	ConversionRate decimal.Decimal `json:"conversion_rate,omitempty"`
-	// Precision holds the value of the "precision" field.
-	Precision    int `json:"precision,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the PriceUnitQuery when eager-loading is set.
+	Edges        PriceUnitEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// PriceUnitEdges holds the relations/edges for other nodes in the graph.
+type PriceUnitEdges struct {
+	// Prices holds the value of the prices edge.
+	Prices []*Price `json:"prices,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [1]bool
+}
+
+// PricesOrErr returns the Prices value or an error if the edge
+// was not loaded in eager-loading.
+func (e PriceUnitEdges) PricesOrErr() ([]*Price, error) {
+	if e.loadedTypes[0] {
+		return e.Prices, nil
+	}
+	return nil, &NotLoadedError{edge: "prices"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -52,10 +74,10 @@ func (*PriceUnit) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case priceunit.FieldMetadata:
+			values[i] = new([]byte)
 		case priceunit.FieldConversionRate:
 			values[i] = new(decimal.Decimal)
-		case priceunit.FieldPrecision:
-			values[i] = new(sql.NullInt64)
 		case priceunit.FieldID, priceunit.FieldTenantID, priceunit.FieldStatus, priceunit.FieldCreatedBy, priceunit.FieldUpdatedBy, priceunit.FieldEnvironmentID, priceunit.FieldName, priceunit.FieldCode, priceunit.FieldSymbol, priceunit.FieldBaseCurrency:
 			values[i] = new(sql.NullString)
 		case priceunit.FieldCreatedAt, priceunit.FieldUpdatedAt:
@@ -123,6 +145,14 @@ func (pu *PriceUnit) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				pu.EnvironmentID = value.String
 			}
+		case priceunit.FieldMetadata:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field metadata", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &pu.Metadata); err != nil {
+					return fmt.Errorf("unmarshal field metadata: %w", err)
+				}
+			}
 		case priceunit.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
@@ -153,12 +183,6 @@ func (pu *PriceUnit) assignValues(columns []string, values []any) error {
 			} else if value != nil {
 				pu.ConversionRate = *value
 			}
-		case priceunit.FieldPrecision:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field precision", values[i])
-			} else if value.Valid {
-				pu.Precision = int(value.Int64)
-			}
 		default:
 			pu.selectValues.Set(columns[i], values[i])
 		}
@@ -170,6 +194,11 @@ func (pu *PriceUnit) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (pu *PriceUnit) Value(name string) (ent.Value, error) {
 	return pu.selectValues.Get(name)
+}
+
+// QueryPrices queries the "prices" edge of the PriceUnit entity.
+func (pu *PriceUnit) QueryPrices() *PriceQuery {
+	return NewPriceUnitClient(pu.config).QueryPrices(pu)
 }
 
 // Update returns a builder for updating this PriceUnit.
@@ -216,6 +245,9 @@ func (pu *PriceUnit) String() string {
 	builder.WriteString("environment_id=")
 	builder.WriteString(pu.EnvironmentID)
 	builder.WriteString(", ")
+	builder.WriteString("metadata=")
+	builder.WriteString(fmt.Sprintf("%v", pu.Metadata))
+	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(pu.Name)
 	builder.WriteString(", ")
@@ -230,9 +262,6 @@ func (pu *PriceUnit) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("conversion_rate=")
 	builder.WriteString(fmt.Sprintf("%v", pu.ConversionRate))
-	builder.WriteString(", ")
-	builder.WriteString("precision=")
-	builder.WriteString(fmt.Sprintf("%v", pu.Precision))
 	builder.WriteByte(')')
 	return builder.String()
 }

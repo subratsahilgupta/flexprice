@@ -10,7 +10,9 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/flexprice/flexprice/ent/costsheet"
 	"github.com/flexprice/flexprice/ent/price"
+	"github.com/flexprice/flexprice/ent/priceunit"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -149,6 +151,14 @@ func (pc *PriceCreate) SetCurrency(s string) *PriceCreate {
 // SetDisplayAmount sets the "display_amount" field.
 func (pc *PriceCreate) SetDisplayAmount(s string) *PriceCreate {
 	pc.mutation.SetDisplayAmount(s)
+	return pc
+}
+
+// SetNillableDisplayAmount sets the "display_amount" field if the given value is not nil.
+func (pc *PriceCreate) SetNillableDisplayAmount(s *string) *PriceCreate {
+	if s != nil {
+		pc.SetDisplayAmount(*s)
+	}
 	return pc
 }
 
@@ -422,14 +432,6 @@ func (pc *PriceCreate) SetEntityID(s string) *PriceCreate {
 	return pc
 }
 
-// SetNillableEntityID sets the "entity_id" field if the given value is not nil.
-func (pc *PriceCreate) SetNillableEntityID(s *string) *PriceCreate {
-	if s != nil {
-		pc.SetEntityID(*s)
-	}
-	return pc
-}
-
 // SetParentPriceID sets the "parent_price_id" field.
 func (pc *PriceCreate) SetParentPriceID(s string) *PriceCreate {
 	pc.mutation.SetParentPriceID(s)
@@ -490,6 +492,40 @@ func (pc *PriceCreate) SetNillableGroupID(s *string) *PriceCreate {
 func (pc *PriceCreate) SetID(s string) *PriceCreate {
 	pc.mutation.SetID(s)
 	return pc
+}
+
+// AddCostsheetIDs adds the "costsheet" edge to the Costsheet entity by IDs.
+func (pc *PriceCreate) AddCostsheetIDs(ids ...string) *PriceCreate {
+	pc.mutation.AddCostsheetIDs(ids...)
+	return pc
+}
+
+// AddCostsheet adds the "costsheet" edges to the Costsheet entity.
+func (pc *PriceCreate) AddCostsheet(c ...*Costsheet) *PriceCreate {
+	ids := make([]string, len(c))
+	for i := range c {
+		ids[i] = c[i].ID
+	}
+	return pc.AddCostsheetIDs(ids...)
+}
+
+// SetPriceUnitEdgeID sets the "price_unit_edge" edge to the PriceUnit entity by ID.
+func (pc *PriceCreate) SetPriceUnitEdgeID(id string) *PriceCreate {
+	pc.mutation.SetPriceUnitEdgeID(id)
+	return pc
+}
+
+// SetNillablePriceUnitEdgeID sets the "price_unit_edge" edge to the PriceUnit entity by ID if the given value is not nil.
+func (pc *PriceCreate) SetNillablePriceUnitEdgeID(id *string) *PriceCreate {
+	if id != nil {
+		pc = pc.SetPriceUnitEdgeID(*id)
+	}
+	return pc
+}
+
+// SetPriceUnitEdge sets the "price_unit_edge" edge to the PriceUnit entity.
+func (pc *PriceCreate) SetPriceUnitEdge(p *PriceUnit) *PriceCreate {
+	return pc.SetPriceUnitEdgeID(p.ID)
 }
 
 // Mutation returns the PriceMutation object of the builder.
@@ -603,9 +639,6 @@ func (pc *PriceCreate) check() error {
 			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "Price.currency": %w`, err)}
 		}
 	}
-	if _, ok := pc.mutation.DisplayAmount(); !ok {
-		return &ValidationError{Name: "display_amount", err: errors.New(`ent: missing required field "Price.display_amount"`)}
-	}
 	if v, ok := pc.mutation.DisplayAmount(); ok {
 		if err := price.DisplayAmountValidator(v); err != nil {
 			return &ValidationError{Name: "display_amount", err: fmt.Errorf(`ent: validator failed for field "Price.display_amount": %w`, err)}
@@ -672,9 +705,25 @@ func (pc *PriceCreate) check() error {
 			return &ValidationError{Name: "tier_mode", err: fmt.Errorf(`ent: validator failed for field "Price.tier_mode": %w`, err)}
 		}
 	}
-	if v, ok := pc.mutation.EntityType(); ok {
+	if v, ok := pc.mutation.TransformQuantity(); ok {
 		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "transform_quantity", err: fmt.Errorf(`ent: validator failed for field "Price.transform_quantity": %w`, err)}
+		}
+	}
+	if _, ok := pc.mutation.EntityType(); !ok {
+		return &ValidationError{Name: "entity_type", err: errors.New(`ent: missing required field "Price.entity_type"`)}
+	}
+	if v, ok := pc.mutation.EntityType(); ok {
+		if err := price.EntityTypeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "entity_type", err: fmt.Errorf(`ent: validator failed for field "Price.entity_type": %w`, err)}
+		}
+	}
+	if _, ok := pc.mutation.EntityID(); !ok {
+		return &ValidationError{Name: "entity_id", err: errors.New(`ent: missing required field "Price.entity_id"`)}
+	}
+	if v, ok := pc.mutation.EntityID(); ok {
+		if err := price.EntityIDValidator(v); err != nil {
+			return &ValidationError{Name: "entity_id", err: fmt.Errorf(`ent: validator failed for field "Price.entity_id": %w`, err)}
 		}
 	}
 	return nil
@@ -760,13 +809,9 @@ func (pc *PriceCreate) createSpec() (*Price, *sqlgraph.CreateSpec) {
 		_spec.SetField(price.FieldPriceUnitType, field.TypeString, value)
 		_node.PriceUnitType = value
 	}
-	if value, ok := pc.mutation.PriceUnitID(); ok {
-		_spec.SetField(price.FieldPriceUnitID, field.TypeString, value)
-		_node.PriceUnitID = &value
-	}
 	if value, ok := pc.mutation.PriceUnit(); ok {
 		_spec.SetField(price.FieldPriceUnit, field.TypeString, value)
-		_node.PriceUnit = value
+		_node.PriceUnit = &value
 	}
 	if value, ok := pc.mutation.PriceUnitAmount(); ok {
 		_spec.SetField(price.FieldPriceUnitAmount, field.TypeOther, value)
@@ -850,11 +895,11 @@ func (pc *PriceCreate) createSpec() (*Price, *sqlgraph.CreateSpec) {
 	}
 	if value, ok := pc.mutation.EntityType(); ok {
 		_spec.SetField(price.FieldEntityType, field.TypeString, value)
-		_node.EntityType = &value
+		_node.EntityType = value
 	}
 	if value, ok := pc.mutation.EntityID(); ok {
 		_spec.SetField(price.FieldEntityID, field.TypeString, value)
-		_node.EntityID = &value
+		_node.EntityID = value
 	}
 	if value, ok := pc.mutation.ParentPriceID(); ok {
 		_spec.SetField(price.FieldParentPriceID, field.TypeString, value)
@@ -871,6 +916,39 @@ func (pc *PriceCreate) createSpec() (*Price, *sqlgraph.CreateSpec) {
 	if value, ok := pc.mutation.GroupID(); ok {
 		_spec.SetField(price.FieldGroupID, field.TypeString, value)
 		_node.GroupID = &value
+	}
+	if nodes := pc.mutation.CostsheetIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   price.CostsheetTable,
+			Columns: []string{price.CostsheetColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(costsheet.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := pc.mutation.PriceUnitEdgeIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   price.PriceUnitEdgeTable,
+			Columns: []string{price.PriceUnitEdgeColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(priceunit.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.PriceUnitID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

@@ -27,9 +27,6 @@ type PriceType string
 // PriceScope indicates whether a price is at the plan level or subscription level
 type PriceScope string
 
-// PriceUnitType is the type of the price unit- Fiat, Custom, Crypto
-type PriceUnitType string
-
 // PriceEntityType is the type of the entity that the price is associated with
 // i.e. PLAN, SUBSCRIPTION, ADDON, PRICE
 // If price is created for plan then it will have PLAN as entity type with entity id as plan id
@@ -66,6 +63,35 @@ func (p PriceEntityType) Validate() error {
 	return nil
 }
 
+// PriceUnitType is the type of the price unit ex FIAT, CUSTOM
+type PriceUnitType string
+
+const (
+	PRICE_UNIT_TYPE_FIAT   PriceUnitType = "FIAT"
+	PRICE_UNIT_TYPE_CUSTOM PriceUnitType = "CUSTOM"
+)
+
+func (p PriceUnitType) Validate() error {
+	allowed := []PriceUnitType{
+		PRICE_UNIT_TYPE_FIAT,
+		PRICE_UNIT_TYPE_CUSTOM,
+	}
+	if !lo.Contains(allowed, p) {
+		return ierr.NewError("invalid price unit type").
+			WithHint("Invalid price unit type").
+			WithReportableDetails(map[string]interface{}{
+				"price_unit_type": p,
+				"allowed":         allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+func (p PriceUnitType) String() string {
+	return string(p)
+}
+
 // Additional types needed for JSON fields
 type PriceTier struct {
 	// up_to is the quantity up to which this tier applies. It is null for the last tier.
@@ -83,14 +109,54 @@ type PriceTier struct {
 }
 
 type TransformQuantity struct {
-	DivideBy int    `json:"divide_by,omitempty"`
-	Round    string `json:"round,omitempty"`
+	DivideBy int       `json:"divide_by,omitempty"`
+	Round    RoundType `json:"round,omitempty"`
 }
 
+func (t *TransformQuantity) Validate() error {
+	if t == nil {
+		return nil
+	}
+
+	if t.DivideBy < 1 {
+		return ierr.NewError("transform_quantity.divide_by must be greater than or equal to 1").
+			WithHint("Transform quantity divide by must be greater than or equal to 1").
+			WithReportableDetails(map[string]interface{}{
+				"divide_by": t.DivideBy,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	if err := t.Round.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+type RoundType string
+
 const (
-	PRICE_UNIT_TYPE_FIAT   PriceUnitType = "FIAT"
-	PRICE_UNIT_TYPE_CUSTOM PriceUnitType = "CUSTOM"
+	// ROUND_UP rounds to the ceiling value ex 1.99 -> 2.00
+	ROUND_UP RoundType = "up"
+	// ROUND_DOWN rounds to the floor value ex 1.99 -> 1.00
+	ROUND_DOWN RoundType = "down"
 )
+
+func (r RoundType) Validate() error {
+	allowed := []RoundType{
+		ROUND_UP,
+		ROUND_DOWN,
+	}
+	if r != "" && !lo.Contains(allowed, r) {
+		return ierr.NewError("invalid rounding type").
+			WithHint("Invalid rounding type").
+			WithReportableDetails(map[string]interface{}{
+				"round_type": r,
+				"allowed":    allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
 
 const (
 	PRICE_TYPE_USAGE PriceType = "USAGE"
@@ -131,11 +197,6 @@ const (
 
 	// MAX_BILLING_AMOUNT is the maximum allowed billing amount (as a safeguard)
 	MAX_BILLING_AMOUNT = 1000000000000 // 1 trillion
-
-	// ROUND_UP rounds to the ceiling value ex 1.99 -> 2.00
-	ROUND_UP = "up"
-	// ROUND_DOWN rounds to the floor value ex 1.99 -> 1.00
-	ROUND_DOWN = "down"
 
 	// DEFAULT_FLOATING_PRECISION is the default floating point precision
 	DEFAULT_FLOATING_PRECISION = 2
@@ -255,23 +316,6 @@ func (p PriceScope) Validate() error {
 			WithReportableDetails(map[string]interface{}{
 				"price_scope": p,
 				"allowed":     allowed,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-	return nil
-}
-func (p PriceUnitType) Validate() error {
-	allowed := []PriceUnitType{
-		PRICE_UNIT_TYPE_FIAT,
-		PRICE_UNIT_TYPE_CUSTOM,
-	}
-
-	if p != "" && !lo.Contains(allowed, p) {
-		return ierr.NewError("invalid price unit type").
-			WithHint("Price unit type must be either FIAT or CUSTOM").
-			WithReportableDetails(map[string]interface{}{
-				"price_unit_type": p,
-				"allowed":         allowed,
 			}).
 			Mark(ierr.ErrValidation)
 	}

@@ -26,6 +26,69 @@ func NewCustomerActivities(serviceParams service.ServiceParams, logger *logger.L
 	}
 }
 
+// CreateCustomerActivity creates a customer based on external ID from the event
+func (a *CustomerActivities) CreateCustomerActivity(ctx context.Context, input models.CreateCustomerActivityInput) (*models.CreateCustomerActivityResult, error) {
+	logger := activity.GetLogger(ctx)
+	logger.Info("Starting CreateCustomerActivity", "external_customer_id", input.ExternalID)
+
+	// Validate input
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Set tenant_id, environment_id, and user_id in context for proper BaseModel creation
+	ctx = types.SetTenantID(ctx, input.TenantID)
+	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetUserID(ctx, input.UserID)
+
+	// Create customer service
+	customerService := service.NewCustomerService(a.serviceParams)
+
+	// Create customer request with metadata and skip workflow flag to prevent infinite loop
+	createCustomerReq := dto.CreateCustomerRequest{
+		ExternalID: input.ExternalID,
+		Name:       input.Name,
+		Metadata: map[string]string{
+			"created_by_workflow": "true",
+		},
+		SkipOnboardingWorkflow: true,
+	}
+
+	logger.Info("Creating customer via workflow",
+		"external_id", input.ExternalID,
+		"skip_onboarding_workflow", createCustomerReq.SkipOnboardingWorkflow)
+
+	// Create the customer
+	customerResp, err := customerService.CreateCustomer(ctx, createCustomerReq)
+
+	if err == nil {
+		logger.Info("Customer created successfully via workflow",
+			"customer_id", customerResp.ID,
+			"external_id", customerResp.ExternalID)
+	}
+
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to create customer").
+			WithReportableDetails(map[string]interface{}{
+				"external_id": input.ExternalID,
+				"name":        input.Name,
+			}).
+			Mark(ierr.ErrInternal)
+	}
+
+	logger.Info("Successfully created customer",
+		"customer_id", customerResp.ID,
+		"external_id", input.ExternalID,
+		"name", input.Name)
+
+	return &models.CreateCustomerActivityResult{
+		CustomerID: customerResp.ID,
+		ExternalID: customerResp.ExternalID,
+		Name:       customerResp.Name,
+	}, nil
+}
+
 // CreateWalletActivity creates a wallet for a customer based on workflow configuration
 func (a *CustomerActivities) CreateWalletActivity(ctx context.Context, input models.CreateWalletActivityInput) (*models.CreateWalletActivityResult, error) {
 	logger := activity.GetLogger(ctx)
@@ -134,8 +197,9 @@ func (a *CustomerActivities) CreateSubscriptionActivity(ctx context.Context, inp
 
 	// Convert workflow config to DTO
 	createSubReq, err := input.SubscriptionConfig.ToDTO(&models.WorkflowActionParams{
-		CustomerID: input.CustomerID,
-		Currency:   currency,
+		CustomerID:     input.CustomerID,
+		Currency:       currency,
+		EventTimestamp: input.EventTimestamp, // Pass event timestamp for subscription start date
 	})
 	if err != nil {
 		return nil, ierr.WithError(err).

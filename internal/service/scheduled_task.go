@@ -612,6 +612,8 @@ func (s *scheduledTaskService) getCronExpression(interval types.ScheduledTaskInt
 	switch interval {
 	case types.ScheduledTaskIntervalCustom:
 		return "*/10 * * * *" // Every 10 minutes (for testing, no buffer)
+	case types.ScheduledTaskIntervalEvery15Minutes:
+		return "*/15 * * * *" // Every 15 minutes
 	case types.ScheduledTaskIntervalHourly:
 		return "15 * * * *" // Every hour at 15 minutes past (e.g., 10:15, 11:15, 12:15)
 	case types.ScheduledTaskIntervalDaily:
@@ -698,9 +700,9 @@ func (s *scheduledTaskService) ScheduleUpdateBillingPeriod(ctx context.Context) 
 			},
 		},
 		TaskQueue:                string(types.TemporalTaskQueueSubscription),
-		WorkflowExecutionTimeout: 15 * time.Minute,
-		WorkflowRunTimeout:       15 * time.Minute,
-		WorkflowTaskTimeout:      15 * time.Minute,
+		WorkflowExecutionTimeout: 1 * time.Hour,
+		WorkflowRunTimeout:       1 * time.Hour,
+		WorkflowTaskTimeout:      1 * time.Hour,
 	}
 
 	scheduleOptions := models.CreateScheduleOptions{
