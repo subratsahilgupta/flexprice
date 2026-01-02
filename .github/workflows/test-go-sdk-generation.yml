@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      - develop  # Trigger on develop branch
+      - feat/speakeasy_sdk_pipeline  # Also trigger on feature branch
     paths:
       - 'docs/swagger/**'
       - '.speakeasy/**'
