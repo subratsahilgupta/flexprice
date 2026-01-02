@@ -14,7 +14,7 @@ and can be ignored. The file will compile correctly when copied to the SDK.
 */
 
 // nolint
-package gosdk
+package gosdktemp
 
 import (
 	"context"
