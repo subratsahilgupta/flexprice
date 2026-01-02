@@ -42,7 +42,7 @@ type CreditGrantApplication struct {
 	// AppliedAt holds the value of the "applied_at" field.
 	AppliedAt *time.Time `json:"applied_at,omitempty"`
 	// PeriodStart holds the value of the "period_start" field.
-	PeriodStart *time.Time `json:"period_start,omitempty"`
+	PeriodStart time.Time `json:"period_start,omitempty"`
 	// PeriodEnd holds the value of the "period_end" field.
 	PeriodEnd *time.Time `json:"period_end,omitempty"`
 	// ApplicationStatus holds the value of the "application_status" field.
@@ -171,8 +171,7 @@ func (cga *CreditGrantApplication) assignValues(columns []string, values []any) 
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field period_start", values[i])
 			} else if value.Valid {
-				cga.PeriodStart = new(time.Time)
-				*cga.PeriodStart = value.Time
+				cga.PeriodStart = value.Time
 			}
 		case creditgrantapplication.FieldPeriodEnd:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -301,10 +300,8 @@ func (cga *CreditGrantApplication) String() string {
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
-	if v := cga.PeriodStart; v != nil {
-		builder.WriteString("period_start=")
-		builder.WriteString(v.Format(time.ANSIC))
-	}
+	builder.WriteString("period_start=")
+	builder.WriteString(cga.PeriodStart.Format(time.ANSIC))
 	builder.WriteString(", ")
 	if v := cga.PeriodEnd; v != nil {
 		builder.WriteString("period_end=")

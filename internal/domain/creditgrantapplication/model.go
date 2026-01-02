@@ -16,7 +16,7 @@ type CreditGrantApplication struct {
 	SubscriptionID                  string                             `json:"subscription_id,omitempty" db:"subscription_id"`
 	ScheduledFor                    time.Time                          `json:"scheduled_for,omitempty" db:"scheduled_for"`
 	AppliedAt                       *time.Time                         `json:"applied_at,omitempty" db:"applied_at"`
-	PeriodStart                     *time.Time                         `json:"period_start,omitempty" db:"period_start"`
+	PeriodStart                     time.Time                          `json:"period_start,omitempty" db:"period_start"`
 	PeriodEnd                       *time.Time                         `json:"period_end,omitempty" db:"period_end"`
 	ApplicationStatus               types.ApplicationStatus            `json:"application_status,omitempty" db:"application_status"`
 	Credits                         decimal.Decimal                    `json:"credits,omitempty" db:"credits"`
