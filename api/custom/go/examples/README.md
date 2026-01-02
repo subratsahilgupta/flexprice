@@ -5,7 +5,7 @@ This is the Go client library for the FlexPrice API.
 ## Installation
 
 ```bash
-go get github.com/flexprice/go-sdk
+go get github.com/flexprice/go-sdk-temp
 ```
 
 ## Usage
@@ -22,7 +22,7 @@ import (
 	"os"
 	"time"
 
-	flexprice "github.com/flexprice/go-sdk"
+	flexprice "github.com/flexprice/go-sdk-temp"
 	"github.com/joho/godotenv"
 	"github.com/samber/lo"
 )

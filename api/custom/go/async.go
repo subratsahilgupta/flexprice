@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flexprice/go-sdk/models/components"
+	"github.com/flexprice/go-sdk-temp/models/components"
 )
 
 // Note: This file is meant to be included in the FlexPrice Go SDK
