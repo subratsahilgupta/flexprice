@@ -325,7 +325,7 @@ type CreateCreditGrantApplicationRequest struct {
 	CreditGrantID                   string                             `json:"credit_grant_id" binding:"required"`
 	SubscriptionID                  string                             `json:"subscription_id"`
 	ScheduledFor                    time.Time                          `json:"scheduled_for" binding:"required"`
-	PeriodStart                     *time.Time                         `json:"period_start"`
+	PeriodStart                     time.Time                          `json:"period_start" binding:"required"`
 	PeriodEnd                       *time.Time                         `json:"period_end"`
 	Credits                         decimal.Decimal                    `json:"credits" swaggertype:"string" binding:"required"`
 	ApplicationReason               types.CreditGrantApplicationReason `json:"application_reason"`
@@ -345,6 +345,11 @@ func (r *CreateCreditGrantApplicationRequest) Validate() error {
 			WithHint("Please provide a valid scheduled date").
 			Mark(errors.ErrValidation)
 	}
+	if r.PeriodStart.IsZero() {
+		return errors.NewError("period_start is required").
+			WithHint("Please provide a valid period start date").
+			Mark(errors.ErrValidation)
+	}
 	if r.Credits.IsNegative() {
 		return errors.NewError("credits cannot be negative").
 			WithHint("Please provide a non-negative credits amount").
@@ -359,8 +364,8 @@ func (r *CreateCreditGrantApplicationRequest) Validate() error {
 		return err
 	}
 
-	if r.PeriodEnd != nil && r.PeriodStart != nil {
-		if r.PeriodEnd.Before(*r.PeriodStart) {
+	if r.PeriodEnd != nil {
+		if r.PeriodEnd.Before(r.PeriodStart) {
 			return errors.NewError("period_end must be after period_start").
 				WithReportableDetails(map[string]interface{}{
 					"period_end":   r.PeriodEnd,

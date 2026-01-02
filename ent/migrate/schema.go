@@ -539,7 +539,7 @@ var (
 		{Name: "subscription_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "scheduled_for", Type: field.TypeTime},
 		{Name: "applied_at", Type: field.TypeTime, Nullable: true},
-		{Name: "period_start", Type: field.TypeTime, Nullable: true},
+		{Name: "period_start", Type: field.TypeTime},
 		{Name: "period_end", Type: field.TypeTime, Nullable: true},
 		{Name: "application_status", Type: field.TypeString, Default: "pending"},
 		{Name: "credits", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
