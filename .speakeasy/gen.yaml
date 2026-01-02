@@ -56,7 +56,7 @@ go:
   multipartArrayFormat: standard
   nullableOptionalWrapper: true
   outputModelSuffix: Output
-  packageName: github.com/flexprice/go-sdk
+  packageName: github.com/flexprice/go-sdk-temp
   respectRequiredFields: false
   responseFormat: flat
   sdkPackageName: ""
