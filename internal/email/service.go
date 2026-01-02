@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"os"
-	"path/filepath"
 
 	"go.uber.org/zap"
 )
@@ -158,16 +157,7 @@ func (s *Email) SendEmailWithTemplate(ctx context.Context, req SendEmailWithTemp
 
 // readTemplate reads an HTML template from the file system
 func (s *Email) readTemplate(templatePath string) (string, error) {
-	// If the path is relative, resolve it from the assets directory
-	if !filepath.IsAbs(templatePath) {
-		// Get the current working directory
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("failed to get working directory: %w", err)
-		}
-		templatePath = filepath.Join(cwd, "assets", "email-templates", templatePath)
-	}
-
+	templatePath = fmt.Sprintf("./assets/email-templates/%s", templatePath)
 	content, err := os.ReadFile(templatePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read template file: %w", err)
