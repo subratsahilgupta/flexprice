@@ -4,6 +4,7 @@ import (
 	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/samber/lo"
 )
 
 // NextBillingDate calculates the next billing date based on the current period start,
@@ -133,6 +134,78 @@ func NextBillingDate(currentPeriodStart, billingAnchor time.Time, unit int, peri
 	}
 
 	return nextDate, nil
+}
+
+// Period represents a billing period with start and end times
+type Period struct {
+	Start time.Time
+	End   time.Time
+}
+
+// CalculateBillingPeriods calculates all billing periods from an initial period start until an end date.
+// It uses the same logic as subscription period processing to generate periods consistently.
+// Parameters:
+//   - initialPeriodStart: Start of the first period
+//   - endDate: Calculate periods until this date (nil means no limit, but use with caution)
+//   - anchor: Billing anchor for period calculations
+//   - periodCount: Number of period units (e.g., 1 month, 2 weeks)
+//   - billingPeriod: Type of billing period (daily, weekly, monthly, etc.)
+//
+// Returns an array of Period structs and an error if calculation fails.
+// The function will stop generating periods when:
+//   - The current period end reaches or exceeds the endDate
+//   - The endDate is reached (when nextEnd equals currentEnd)
+func CalculateBillingPeriods(
+	initialPeriodStart time.Time,
+	endDate *time.Time,
+	anchor time.Time,
+	periodCount int,
+	billingPeriod BillingPeriod,
+) ([]Period, error) {
+	// Calculate the initial period end from the start date
+	initialPeriodEnd, err := NextBillingDate(initialPeriodStart, anchor, periodCount, billingPeriod, endDate)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start with initial period
+	var periods []Period
+	periods = append(periods, Period{
+		Start: initialPeriodStart,
+		End:   initialPeriodEnd,
+	})
+
+	currentEnd := initialPeriodEnd
+
+	// Generate periods but respect end date
+	// If endDate is nil, use current time
+	boundaryEnd := endDate
+	if boundaryEnd == nil {
+		boundaryEnd = lo.ToPtr(time.Now())
+	}
+
+	for currentEnd.Before(*boundaryEnd) {
+		nextStart := currentEnd
+		nextEnd, err := NextBillingDate(nextStart, anchor, periodCount, billingPeriod, endDate)
+		if err != nil {
+			return nil, err
+		}
+
+		periods = append(periods, Period{
+			Start: nextStart,
+			End:   nextEnd,
+		})
+
+		// In case of end date reached or next end is equal to current end, we break the loop
+		// nextEnd will be equal to currentEnd in case of end date reached
+		if nextEnd.Equal(currentEnd) {
+			break
+		}
+
+		currentEnd = nextEnd
+	}
+
+	return periods, nil
 }
 
 // PreviousBillingDate calculates the previous billing date by going backwards from the billing anchor

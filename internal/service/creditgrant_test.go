@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -141,6 +142,53 @@ func (s *CreditGrantServiceTestSuite) setupTestData() {
 		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), s.testData.wallet))
+}
+
+// getWalletTransactionByGrantID retrieves a wallet transaction by grant ID or CGA ID.
+// It returns the matching transaction and an error if not found or if any lookup fails.
+func (s *CreditGrantServiceTestSuite) getWalletTransactionByGrantID(customerID string, grantID *string, cgaID *string) (*dto.WalletTransactionResponse, error) {
+	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), customerID)
+	if err != nil {
+		return nil, err
+	}
+	if len(wallets) == 0 {
+		return nil, fmt.Errorf("wallet not found for customer: %s", customerID)
+	}
+
+	walletID := wallets[0].ID
+	txFilter := &types.WalletTransactionFilter{
+		WalletID:    &walletID,
+		QueryFilter: types.NewDefaultQueryFilter(),
+	}
+	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, tx := range transactions.Items {
+		if tx.Metadata != nil {
+			if grantID != nil {
+				if id, ok := tx.Metadata["grant_id"]; ok && id == *grantID {
+					return tx, nil
+				}
+			}
+			if cgaID != nil {
+				if id, ok := tx.Metadata["cga_id"]; ok && id == *cgaID {
+					return tx, nil
+				}
+			}
+		}
+	}
+
+	grantIDStr := ""
+	if grantID != nil {
+		grantIDStr = *grantID
+	}
+	cgaIDStr := ""
+	if cgaID != nil {
+		cgaIDStr = *cgaID
+	}
+	return nil, fmt.Errorf("wallet transaction not found for grant_id=%s, cga_id=%s", grantIDStr, cgaIDStr)
 }
 
 // Test Case 1: Create a subscription with a credit grant one time
@@ -1199,29 +1247,8 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryDay() {
 	// This check is redundant since we verify the actual wallet transaction expiry below
 
 	// Verify wallet transaction has correct expiry date
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-	s.NotEmpty(transactions.Items)
-
-	// Find the transaction for this grant
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx, "Should find wallet transaction for the grant")
 	s.NotNil(grantTx.ExpiryDate, "Transaction should have expiry date")
 
@@ -1277,27 +1304,8 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryWeek() {
 	// This check is redundant since we verify the actual wallet transaction expiry below
 
 	// Verify wallet transaction expiry
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 
@@ -1347,32 +1355,9 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryMonth() 
 	s.Len(applications, 1)
 	s.Equal(types.ApplicationStatusApplied, applications[0].ApplicationStatus)
 
-	// Verify expiry date calculation (approximately 1 month from scheduledFor)
-	expectedExpiry := applications[0].ScheduledFor.AddDate(0, 1, 0) // Add 1 month
-	s.WithinDuration(expectedExpiry, expectedExpiry, 24*time.Hour, "Expiry should be approximately 1 month from scheduledFor")
-
 	// Verify wallet transaction expiry
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 
@@ -1414,32 +1399,9 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryYear() {
 	s.Len(applications, 1)
 	s.Equal(types.ApplicationStatusApplied, applications[0].ApplicationStatus)
 
-	// Verify expiry date calculation (approximately 1 year from scheduledFor)
-	expectedExpiry := applications[0].ScheduledFor.AddDate(1, 0, 0) // Add 1 year
-	s.WithinDuration(expectedExpiry, expectedExpiry, 24*time.Hour, "Expiry should be approximately 1 year from scheduledFor")
-
 	// Verify wallet transaction expiry
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 
@@ -1499,35 +1461,17 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationOnetimeDay(
 	err = s.creditGrantService.ProcessCreditGrantApplication(s.GetContext(), expiredCGA.ID)
 	s.NoError(err) // Processing should succeed, but grant should be skipped
 
-	// Verify: Status is SKIPPED, failure reason is "Expired", applied_at is nil
+	// Verify: Status is SKIPPED, failure reason is "expired", applied_at is nil
 	processedApp, err := s.GetStores().CreditGrantApplicationRepo.Get(s.GetContext(), expiredCGA.ID)
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 	s.Nil(processedApp.AppliedAt, "AppliedAt should be nil for skipped grants")
 
 	// Verify: No credits are added to wallet
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
-	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	// Verify no transaction was created for this expired grant
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if cgaID, ok := tx.Metadata["cga_id"]; ok && cgaID == expiredCGA.ID {
-				s.Fail("Should not have wallet transaction for expired grant")
-			}
-		}
-	}
+	_, err = s.getWalletTransactionByGrantID(s.testData.customer.ID, nil, &expiredCGA.ID)
+	s.Error(err, "Should not find wallet transaction for expired grant")
 }
 
 // Test Case 23: Skip Grant with Past Expiration (Recurring, WEEK unit)
@@ -1586,7 +1530,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationRecurringWe
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 
 	// Verify: Next period application is still created (for recurring grants)
 	filter := &types.CreditGrantApplicationFilter{
@@ -1654,7 +1598,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationMonth() {
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 	s.Nil(processedApp.AppliedAt)
 }
 
@@ -1711,7 +1655,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationYear() {
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 	s.Nil(processedApp.AppliedAt)
 }
 
@@ -1763,27 +1707,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryDay() 
 	s.NotNil(firstApp)
 
 	// Verify wallet transaction has expiry of 7 days from scheduledFor
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
@@ -1817,18 +1742,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryDay() 
 	s.Equal(types.ApplicationStatusApplied, processedNextApp.ApplicationStatus)
 
 	// Get transactions again to find the new one
-	transactions, err = s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
+	nextGrantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, nil, &nextApp.ID)
 	s.NoError(err)
-
-	var nextGrantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if cgaID, ok := tx.Metadata["cga_id"]; ok && cgaID == nextApp.ID {
-				nextGrantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(nextGrantTx)
 	s.NotNil(nextGrantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
@@ -1887,27 +1802,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryWeek()
 	s.NotNil(firstApp)
 
 	// Verify first period expiry (2 weeks = 14 days)
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
@@ -1965,27 +1861,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryMonth(
 	s.NotNil(firstApp)
 
 	// Verify expiry is approximately 1 month from scheduledFor
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
@@ -2041,27 +1918,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryYear()
 	s.NotNil(firstApp)
 
 	// Verify expiry is approximately 1 year from scheduledFor
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
@@ -2119,27 +1977,8 @@ func (s *CreditGrantServiceTestSuite) TestBillingCycleExpiryWithRecurringGrant()
 	s.NotNil(firstApp)
 
 	// Verify wallet transaction expiry matches subscription period end
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry should match subscription current period end (compare dates only, times may differ)
@@ -2170,18 +2009,8 @@ func (s *CreditGrantServiceTestSuite) TestBillingCycleExpiryWithRecurringGrant()
 	// This depends on subscription period calculation
 
 	// Get transactions again
-	transactions, err = s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
+	nextGrantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, nil, &nextApp.ID)
 	s.NoError(err)
-
-	var nextGrantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if cgaID, ok := tx.Metadata["cga_id"]; ok && cgaID == nextApp.ID {
-				nextGrantTx = tx
-				break
-			}
-		}
-	}
 	if nextGrantTx != nil && nextGrantTx.ExpiryDate != nil {
 		// Next period expiry should match the subscription's next period end
 		// Note: This depends on subscription period calculation
@@ -2221,27 +2050,8 @@ func (s *CreditGrantServiceTestSuite) TestBillingCycleExpiryWithOnetimeGrant() {
 	s.Equal(types.ApplicationStatusApplied, applications[0].ApplicationStatus)
 
 	// Verify wallet transaction expiry
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry should match subscription current period end (compare dates only, times may differ)
@@ -2415,25 +2225,6 @@ func (s *CreditGrantServiceTestSuite) TestSubscriptionCancellationCancelsFutureG
 	s.Nil(processedApp.AppliedAt, "Cancelled application should not have AppliedAt set")
 
 	// Verify no wallet transaction was created for the cancelled application
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), testSub2.CustomerID)
-	s.NoError(err)
-	s.NotEmpty(wallets, "Customer should have a wallet")
-	walletID := wallets[0].ID
-
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	})
-	s.NoError(err)
-
-	// Count transactions for this grant - should only be 1 (from the first application before cancellation)
-	grantTxCount := 0
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if cgaID, ok := tx.Metadata["cga_id"]; ok && cgaID == manualFutureApp.ID {
-				grantTxCount++
-			}
-		}
-	}
-	s.Equal(0, grantTxCount, "No wallet transactions should be created for cancelled future applications")
+	_, err = s.getWalletTransactionByGrantID(testSub2.CustomerID, nil, &manualFutureApp.ID)
+	s.Error(err, "No wallet transaction should be created for cancelled future applications")
 }
