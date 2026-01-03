@@ -28,10 +28,7 @@ func copyCreditGrantApplication(cga *creditgrantapplication.CreditGrantApplicati
 	}
 
 	copy := *cga
-	if cga.PeriodStart != nil {
-		start := *cga.PeriodStart
-		copy.PeriodStart = &start
-	}
+	// PeriodStart is now time.Time (non-pointer), so it's already copied by value
 	if cga.PeriodEnd != nil {
 		end := *cga.PeriodEnd
 		copy.PeriodEnd = &end

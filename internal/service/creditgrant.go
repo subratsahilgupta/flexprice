@@ -236,7 +236,7 @@ func (s *creditGrantService) InitializeCreditGrantWorkflow(ctx context.Context, 
 		CreditGrantID:                   cg.ID,
 		SubscriptionID:                  lo.FromPtr(cg.SubscriptionID),
 		ScheduledFor:                    periodStart,
-		PeriodStart:                     lo.ToPtr(periodStart),
+		PeriodStart:                     periodStart,
 		PeriodEnd:                       periodEnd,
 		ApplicationReason:               applicationReason,
 		Credits:                         cg.Credits,
@@ -457,7 +457,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 	// IMPORTANT: For recurring grants, expiry should be calculated from when the credit is actually granted,
 	// not from subscription start date. This ensures each grant has its own expiry timeline.
 	var expiryDate *time.Time
-	effectiveDate := lo.FromPtr(cga.PeriodStart)
+	effectiveDate := cga.PeriodStart
 
 	if grant.ExpirationType == types.CreditGrantExpiryTypeNever {
 		expiryDate = nil
@@ -825,7 +825,7 @@ func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, gr
 		CreditGrantID:                   grant.ID,
 		SubscriptionID:                  subscription.ID,
 		ScheduledFor:                    nextPeriodStart,
-		PeriodStart:                     lo.ToPtr(nextPeriodStart),
+		PeriodStart:                     nextPeriodStart,
 		PeriodEnd:                       lo.ToPtr(nextPeriodEnd),
 		Credits:                         grant.Credits,
 		ApplicationReason:               types.ApplicationReasonRecurringCreditGrant,

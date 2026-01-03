@@ -470,7 +470,7 @@ func (s *CreditGrantServiceTestSuite) TestProcessScheduledCreditGrantApplication
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    s.testData.now.Add(-1 * time.Hour), // Scheduled for past (ready for processing)
-		PeriodStart:                     &nextPeriodStart,
+		PeriodStart:                     nextPeriodStart,
 		PeriodEnd:                       &nextPeriodEnd,
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonRecurringCreditGrant,
@@ -526,6 +526,7 @@ func (s *CreditGrantServiceTestSuite) TestCreditGrantApplicationDefaultProcessin
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    s.testData.now.Add(-10 * time.Minute), // Ready for processing
+		PeriodStart:                     s.testData.now.Add(-10 * time.Minute), // Required: set period_start
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonOnetimeCreditGrant,
 		SubscriptionStatusAtApplication: s.testData.subscription.SubscriptionStatus,
@@ -861,7 +862,7 @@ func (s *CreditGrantServiceTestSuite) TestWeeklyCreditGrantPeriodDates() {
 	s.NotNil(nextApp.PeriodEnd)
 
 	// Next period should start when current period ends
-	s.WithinDuration(*currentApp.PeriodEnd, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
 	// Next period should also be 7 days long
@@ -927,7 +928,7 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 	s.NotNil(currentApp.PeriodEnd)
 
 	// For monthly period, verify it's approximately 30 days (allowing for month variations)
-	periodDuration := currentApp.PeriodEnd.Sub(*currentApp.PeriodStart)
+	periodDuration := currentApp.PeriodEnd.Sub(currentApp.PeriodStart)
 	s.GreaterOrEqual(periodDuration.Hours(), float64(28*24), "Monthly period should be at least 28 days")
 	s.LessOrEqual(periodDuration.Hours(), float64(32*24), "Monthly period should be at most 32 days")
 
@@ -936,11 +937,11 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 	s.NotNil(nextApp.PeriodEnd)
 
 	// Next period should start when current period ends
-	s.WithinDuration(*currentApp.PeriodEnd, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
 	// Next period should also be approximately monthly
-	nextPeriodDuration := nextApp.PeriodEnd.Sub(*nextApp.PeriodStart)
+	nextPeriodDuration := nextApp.PeriodEnd.Sub(nextApp.PeriodStart)
 	s.GreaterOrEqual(nextPeriodDuration.Hours(), float64(28*24), "Next monthly period should be at least 28 days")
 	s.LessOrEqual(nextPeriodDuration.Hours(), float64(32*24), "Next monthly period should be at most 32 days")
 
@@ -1004,7 +1005,7 @@ func (s *CreditGrantServiceTestSuite) TestYearlyCreditGrantPeriodDates() {
 	s.NotNil(currentApp.PeriodEnd)
 
 	// For yearly period, verify it's approximately 365 days
-	periodDuration := currentApp.PeriodEnd.Sub(*currentApp.PeriodStart)
+	periodDuration := currentApp.PeriodEnd.Sub(currentApp.PeriodStart)
 	s.GreaterOrEqual(periodDuration.Hours(), float64(364*24), "Yearly period should be at least 364 days")
 	s.LessOrEqual(periodDuration.Hours(), float64(366*24), "Yearly period should be at most 366 days")
 
@@ -1013,11 +1014,11 @@ func (s *CreditGrantServiceTestSuite) TestYearlyCreditGrantPeriodDates() {
 	s.NotNil(nextApp.PeriodEnd)
 
 	// Next period should start when current period ends
-	s.WithinDuration(*currentApp.PeriodEnd, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
 	// Next period should also be approximately yearly
-	nextPeriodDuration := nextApp.PeriodEnd.Sub(*nextApp.PeriodStart)
+	nextPeriodDuration := nextApp.PeriodEnd.Sub(nextApp.PeriodStart)
 	s.GreaterOrEqual(nextPeriodDuration.Hours(), float64(364*24), "Next yearly period should be at least 364 days")
 	s.LessOrEqual(nextPeriodDuration.Hours(), float64(366*24), "Next yearly period should be at most 366 days")
 
@@ -1090,7 +1091,7 @@ func (s *CreditGrantServiceTestSuite) TestMultiplePeriodCountDates() {
 	s.NotNil(nextApp.PeriodEnd)
 
 	// Next period should start when current period ends
-	s.WithinDuration(*currentApp.PeriodEnd, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
 	// Next period should also be 14 days long
@@ -1101,11 +1102,11 @@ func (s *CreditGrantServiceTestSuite) TestMultiplePeriodCountDates() {
 	s.T().Logf("Bi-Weekly Grant - Current Period: %s to %s (Duration: %.1f days)",
 		currentApp.PeriodStart.Format("2006-01-02 15:04:05"),
 		currentApp.PeriodEnd.Format("2006-01-02 15:04:05"),
-		currentApp.PeriodEnd.Sub(*currentApp.PeriodStart).Hours()/24)
+		currentApp.PeriodEnd.Sub(currentApp.PeriodStart).Hours()/24)
 	s.T().Logf("Bi-Weekly Grant - Next Period: %s to %s (Duration: %.1f days)",
 		nextApp.PeriodStart.Format("2006-01-02 15:04:05"),
 		nextApp.PeriodEnd.Format("2006-01-02 15:04:05"),
-		nextApp.PeriodEnd.Sub(*nextApp.PeriodStart).Hours()/24)
+		nextApp.PeriodEnd.Sub(nextApp.PeriodStart).Hours()/24)
 }
 
 // Test Case 17: Test period dates alignment with credit grant creation date
@@ -1183,7 +1184,7 @@ func (s *CreditGrantServiceTestSuite) TestPeriodDatesAlignmentWithGrantCreationD
 	// The periods should be calculated based on the grant's creation date as anchor
 	// Current period should align with the grant creation date
 	expectedNextStart := *currentApp.PeriodEnd
-	s.WithinDuration(expectedNextStart, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(expectedNextStart, nextApp.PeriodStart, time.Minute,
 		"Next period should start exactly when current period ends")
 
 	// Log the alignment details
@@ -1197,7 +1198,7 @@ func (s *CreditGrantServiceTestSuite) TestPeriodDatesAlignmentWithGrantCreationD
 		nextApp.PeriodEnd.Format("2006-01-02 15:04:05"))
 
 	// Verify that periods don't overlap
-	s.True(currentApp.PeriodEnd.Before(*nextApp.PeriodEnd) || currentApp.PeriodEnd.Equal(*nextApp.PeriodStart),
+	s.True(currentApp.PeriodEnd.Before(*nextApp.PeriodEnd) || currentApp.PeriodEnd.Equal(nextApp.PeriodStart),
 		"Current period should end before or exactly when next period starts")
 }
 
@@ -1258,7 +1259,7 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryDay() {
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	s.NotNil(applications[0].PeriodStart, "PeriodStart should be set for subscription-scoped grants")
 	expectedPeriodStart := grantTx.ExpiryDate.AddDate(0, 0, -7) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedPeriodStart, *applications[0].PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
+	s.WithinDuration(expectedPeriodStart, applications[0].PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
 	// Also verify the expiry is 7 days from PeriodStart using AddDate()
 	expectedExpiryTime := applications[0].PeriodStart.AddDate(0, 0, 7)
 	s.WithinDuration(expectedExpiryTime, *grantTx.ExpiryDate, 24*time.Hour, "Expiry date should be 7 days from PeriodStart using AddDate()")
@@ -1315,7 +1316,7 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryWeek() {
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	s.NotNil(applications[0].PeriodStart, "PeriodStart should be set for subscription-scoped grants")
 	expectedPeriodStart := grantTx.ExpiryDate.AddDate(0, 0, -14) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedPeriodStart, *applications[0].PeriodStart, 24*time.Hour, "PeriodStart should be approximately 14 days before expiry")
+	s.WithinDuration(expectedPeriodStart, applications[0].PeriodStart, 24*time.Hour, "PeriodStart should be approximately 14 days before expiry")
 	// Also verify the expiry is 14 days from PeriodStart using AddDate()
 	expectedExpiryTime := applications[0].PeriodStart.AddDate(0, 0, 14) // 2 weeks = 14 days
 	s.WithinDuration(expectedExpiryTime, *grantTx.ExpiryDate, 24*time.Hour, "Expiry should be 14 days from PeriodStart using AddDate()")
@@ -1442,7 +1443,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationOnetimeDay(
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    pastScheduledFor,
-		PeriodStart:                     lo.ToPtr(pastScheduledFor), // PeriodStart is required for expiry calculation
+		PeriodStart:                     pastScheduledFor, // PeriodStart is required for expiry calculation
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonOnetimeCreditGrant,
 		SubscriptionStatusAtApplication: s.testData.subscription.SubscriptionStatus,
@@ -1505,7 +1506,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationRecurringWe
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    pastScheduledFor,
-		PeriodStart:                     lo.ToPtr(pastScheduledFor),
+		PeriodStart:                     pastScheduledFor,
 		PeriodEnd:                       lo.ToPtr(pastScheduledFor.Add(30 * 24 * time.Hour)),
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonRecurringCreditGrant,
@@ -1574,7 +1575,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationMonth() {
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    pastScheduledFor,
-		PeriodStart:                     lo.ToPtr(pastScheduledFor), // PeriodStart is required for expiry calculation
+		PeriodStart:                     pastScheduledFor, // PeriodStart is required for expiry calculation
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonOnetimeCreditGrant,
 		SubscriptionStatusAtApplication: s.testData.subscription.SubscriptionStatus,
@@ -1631,7 +1632,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationYear() {
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    pastScheduledFor,
-		PeriodStart:                     lo.ToPtr(pastScheduledFor), // PeriodStart is required for expiry calculation
+		PeriodStart:                     pastScheduledFor, // PeriodStart is required for expiry calculation
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonOnetimeCreditGrant,
 		SubscriptionStatusAtApplication: s.testData.subscription.SubscriptionStatus,
@@ -1717,7 +1718,7 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryDay() 
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	s.NotNil(firstApp.PeriodStart, "PeriodStart should be set for subscription-scoped grants")
 	expectedPeriodStart := grantTx.ExpiryDate.AddDate(0, 0, -7) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedPeriodStart, *firstApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
+	s.WithinDuration(expectedPeriodStart, firstApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
 	// Also verify the expiry is 7 days from PeriodStart using AddDate()
 	expectedExpiry := firstApp.PeriodStart.AddDate(0, 0, 7)
 	s.WithinDuration(expectedExpiry, *grantTx.ExpiryDate, 24*time.Hour, "First application expiry should be 7 days from PeriodStart using AddDate()")
@@ -1752,7 +1753,7 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryDay() 
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	s.NotNil(processedNextApp.PeriodStart, "PeriodStart should be set for subscription-scoped grants")
 	expectedNextPeriodStart := nextGrantTx.ExpiryDate.AddDate(0, 0, -7) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedNextPeriodStart, *processedNextApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
+	s.WithinDuration(expectedNextPeriodStart, processedNextApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
 	// Also verify the expiry is 7 days from PeriodStart using AddDate()
 	expectedNextExpiry := processedNextApp.PeriodStart.AddDate(0, 0, 7)
 	s.WithinDuration(expectedNextExpiry, *nextGrantTx.ExpiryDate, 24*time.Hour, "Next application expiry should be 7 days from its own PeriodStart using AddDate()")
@@ -1811,7 +1812,7 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryWeek()
 	// Calculate expected expiry: actual expiry - 14 days should equal PeriodStart (within tolerance)
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	expectedPeriodStart := grantTx.ExpiryDate.AddDate(0, 0, -14) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedPeriodStart, *firstApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 14 days before expiry")
+	s.WithinDuration(expectedPeriodStart, firstApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 14 days before expiry")
 	// Also verify the expiry is 14 days from PeriodStart using AddDate()
 	expectedExpiry := firstApp.PeriodStart.AddDate(0, 0, 14)
 	s.WithinDuration(expectedExpiry, *grantTx.ExpiryDate, 24*time.Hour, "First application expiry should be 2 weeks from PeriodStart using AddDate()")
@@ -1867,8 +1868,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryMonth(
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
 	effectiveDate := firstApp.ScheduledFor
-	if firstApp.PeriodStart != nil {
-		effectiveDate = *firstApp.PeriodStart
+	if !firstApp.PeriodStart.IsZero() {
+		effectiveDate = firstApp.PeriodStart
 	}
 	expectedExpiry := effectiveDate.AddDate(0, 1, 0) // Add 1 month
 	s.WithinDuration(expectedExpiry, *grantTx.ExpiryDate, 2*24*time.Hour, "First application expiry should be 1 month from PeriodStart")
@@ -1924,8 +1925,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryYear()
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
 	effectiveDate := firstApp.ScheduledFor
-	if firstApp.PeriodStart != nil {
-		effectiveDate = *firstApp.PeriodStart
+	if !firstApp.PeriodStart.IsZero() {
+		effectiveDate = firstApp.PeriodStart
 	}
 	expectedExpiry := effectiveDate.AddDate(1, 0, 0) // Add 1 year
 	s.WithinDuration(expectedExpiry, *grantTx.ExpiryDate, 2*24*time.Hour, "First application expiry should be 1 year from PeriodStart")
@@ -2201,7 +2202,7 @@ func (s *CreditGrantServiceTestSuite) TestSubscriptionCancellationCancelsFutureG
 		SubscriptionID:    testSub2.ID,
 		ApplicationStatus: types.ApplicationStatusPending,
 		ScheduledFor:      s.testData.now.Add(7 * 24 * time.Hour),
-		PeriodStart:       lo.ToPtr(s.testData.now.Add(7 * 24 * time.Hour)),
+		PeriodStart:       s.testData.now.Add(7 * 24 * time.Hour),
 		PeriodEnd:         lo.ToPtr(s.testData.now.Add(37 * 24 * time.Hour)),
 		Credits:           decimal.NewFromInt(75),
 		BaseModel:         types.GetDefaultBaseModel(s.GetContext()),

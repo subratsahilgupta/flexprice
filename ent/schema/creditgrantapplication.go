@@ -52,9 +52,7 @@ func (CreditGrantApplication) Fields() []ent.Field {
 
 		// Billing period context
 		field.Time("period_start").
-			Nillable().
-			Immutable().
-			Optional(),
+			Immutable(),
 
 		field.Time("period_end").
 			Nillable().

@@ -737,6 +737,9 @@ func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.Updat
 		if req.Description != "" {
 			existingPrice.Description = req.Description
 		}
+		if req.DisplayName != "" {
+			existingPrice.DisplayName = req.DisplayName
+		}
 		if req.Metadata != nil {
 			existingPrice.Metadata = req.Metadata
 		}

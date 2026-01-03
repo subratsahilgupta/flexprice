@@ -13,11 +13,7 @@ targets:
         target: go
         source: flexprice-api
         output: ./api/go
-        publish:
-            github:
-                owner: flexprice
-                repo: go-sdk-temp
-                tag: true
+        publish: {}
         codeSamples:
             registry:
                 location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-go-code-samples
