@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/auth"
@@ -169,4 +170,18 @@ func (s *supabaseAuth) AssignUserToTenant(ctx context.Context, userID string, te
 	)
 
 	return nil
+}
+
+// GenerateDashboardToken generates a customer dashboard token
+// Note: For Supabase, dashboard tokens use the same mechanism as Flexprice auth
+func (s *supabaseAuth) GenerateDashboardToken(customerID, externalCustomerID, tenantID, environmentID string, timeoutHours int) (string, time.Time, error) {
+	// Validate required parameters
+	// Not Implemented yet
+	return "", time.Time{}, nil
+}
+
+// ValidateDashboardToken validates a customer dashboard token
+func (s *supabaseAuth) ValidateDashboardToken(ctx context.Context, token string) (*auth.DashboardClaims, error) {
+	// Not Implemented yet
+	return nil, nil
 }

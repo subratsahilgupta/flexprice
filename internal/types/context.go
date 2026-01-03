@@ -21,6 +21,10 @@ const (
 	// Default values
 	DefaultTenantID = "00000000-0000-0000-0000-000000000000"
 	DefaultUserID   = "00000000-0000-0000-0000-000000000000"
+
+	// Dashboard context keys
+	CtxCustomerID         ContextKey = "ctx_customer_id"
+	CtxExternalCustomerID ContextKey = "ctx_external_customer_id"
 )
 
 func GetUserID(ctx context.Context) string {
@@ -66,6 +70,22 @@ func GetRoles(ctx context.Context) []string {
 	return []string{} // Empty roles = full access
 }
 
+// GetCustomerID returns the customer ID from the context
+func GetCustomerID(ctx context.Context) string {
+	if customerID, ok := ctx.Value(CtxCustomerID).(string); ok {
+		return customerID
+	}
+	return ""
+}
+
+// GetExternalCustomerID returns the external customer ID from the context
+func GetExternalCustomerID(ctx context.Context) string {
+	if externalCustomerID, ok := ctx.Value(CtxExternalCustomerID).(string); ok {
+		return externalCustomerID
+	}
+	return ""
+}
+
 // SetTenantID sets the tenant ID in the context
 func SetTenantID(ctx context.Context, tenantID string) context.Context {
 	return context.WithValue(ctx, CtxTenantID, tenantID)
@@ -79,6 +99,16 @@ func SetEnvironmentID(ctx context.Context, environmentID string) context.Context
 // SetUserID sets the user ID in the context
 func SetUserID(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, CtxUserID, userID)
+}
+
+// SetExternalCustomerID sets the external customer ID in context
+func SetExternalCustomerID(ctx context.Context, externalCustomerID string) context.Context {
+	return context.WithValue(ctx, CtxExternalCustomerID, externalCustomerID)
+}
+
+// SetCustomerID sets the customer ID in context
+func SetCustomerID(ctx context.Context, customerID string) context.Context {
+	return context.WithValue(ctx, CtxCustomerID, customerID)
 }
 
 // WithForceWriter returns a context that forces database operations to use the writer connection.

@@ -64,6 +64,7 @@ type ServiceParams struct {
 	AuthRepo                     auth.Repository
 	UserRepo                     user.Repository
 	EventRepo                    events.Repository
+	CostSheetUsageRepo           events.CostSheetUsageRepository
 	ProcessedEventRepo           events.ProcessedEventRepository
 	FeatureUsageRepo             events.FeatureUsageRepository
 	MeterRepo                    meter.Repository
@@ -130,6 +131,7 @@ func NewServiceParams(
 	authRepo auth.Repository,
 	userRepo user.Repository,
 	eventRepo events.Repository,
+	costSheetUsageRepo events.CostSheetUsageRepository,
 	processedEventRepo events.ProcessedEventRepository,
 	featureUsageRepo events.FeatureUsageRepository,
 	meterRepo meter.Repository,
@@ -185,6 +187,7 @@ func NewServiceParams(
 		AuthRepo:                     authRepo,
 		UserRepo:                     userRepo,
 		EventRepo:                    eventRepo,
+		CostSheetUsageRepo:           costSheetUsageRepo,
 		ProcessedEventRepo:           processedEventRepo,
 		FeatureUsageRepo:             featureUsageRepo,
 		MeterRepo:                    meterRepo,

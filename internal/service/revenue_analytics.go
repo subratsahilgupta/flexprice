@@ -14,15 +14,13 @@ type RevenueAnalyticsService = interfaces.RevenueAnalyticsService
 type revenueAnalyticsService struct {
 	ServiceParams
 	featureUsageTrackingService   FeatureUsageTrackingService
-	costsheetService              CostsheetService
 	costsheetUsageTrackingService CostSheetUsageTrackingService
 }
 
-func NewRevenueAnalyticsService(params ServiceParams, featureUsageTrackingService FeatureUsageTrackingService, costsheetService CostsheetService, costsheetUsageTrackingService CostSheetUsageTrackingService) RevenueAnalyticsService {
+func NewRevenueAnalyticsService(params ServiceParams, featureUsageTrackingService FeatureUsageTrackingService, costsheetUsageTrackingService CostSheetUsageTrackingService) RevenueAnalyticsService {
 	return &revenueAnalyticsService{
 		ServiceParams:                 params,
 		featureUsageTrackingService:   featureUsageTrackingService,
-		costsheetService:              costsheetService,
 		costsheetUsageTrackingService: costsheetUsageTrackingService,
 	}
 }

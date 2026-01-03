@@ -1,7 +1,8 @@
 package types
 
 const (
-	HeaderEnvironment   = "X-Environment-ID"
-	HeaderRequestID     = "X-Request-ID"
-	HeaderAuthorization = "Authorization"
+	HeaderEnvironment    = "X-Environment-ID"
+	HeaderRequestID      = "X-Request-ID"
+	HeaderAuthorization  = "Authorization"
+	HeaderDashboardToken = "X-Dashboard-Token"
 )
