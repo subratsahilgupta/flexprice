@@ -198,7 +198,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.GET("/wallets", handlers.Wallet.GetCustomerWallets)
 
 			// Customer Dashboard - Session creation (requires tenant auth)
-			customer.POST("/dashboard", handlers.CustomerDashboard.CreateSession)
+			customer.GET("/dashboard/:external_id", handlers.CustomerDashboard.CreateSession)
 
 		}
 

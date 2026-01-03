@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
@@ -150,9 +151,28 @@ func (f *flexpriceAuth) AssignUserToTenant(ctx context.Context, userID string, t
 
 // GenerateDashboardToken generates a JWT token for customer dashboard access
 // This token is specifically for customers (not users) and has a shorter expiration
-func (f *flexpriceAuth) GenerateDashboardToken(customerID, externalCustomerID, tenantID, environmentID string) (string, time.Time, error) {
-	// Dashboard tokens expire in 1 hour (standard for billing portals)
-	expiresAt := time.Now().Add(5 * time.Hour)
+func (f *flexpriceAuth) GenerateDashboardToken(customerID, externalCustomerID, tenantID, environmentID string, timeoutHours int) (string, time.Time, error) {
+	// Validate required parameters
+	customerID = strings.TrimSpace(customerID)
+	externalCustomerID = strings.TrimSpace(externalCustomerID)
+	tenantID = strings.TrimSpace(tenantID)
+	environmentID = strings.TrimSpace(environmentID)
+
+	if customerID == "" {
+		return "", time.Time{}, fmt.Errorf("missing required parameter: customerID")
+	}
+	if externalCustomerID == "" {
+		return "", time.Time{}, fmt.Errorf("missing required parameter: externalCustomerID")
+	}
+	if tenantID == "" {
+		return "", time.Time{}, fmt.Errorf("missing required parameter: tenantID")
+	}
+	if environmentID == "" {
+		return "", time.Time{}, fmt.Errorf("missing required parameter: environmentID")
+	}
+
+	// Dashboard tokens expire based on the provided timeout
+	expiresAt := time.Now().Add(time.Duration(timeoutHours) * time.Hour)
 
 	claims := jwt.MapClaims{
 		"customer_id":          customerID,
@@ -167,7 +187,9 @@ func (f *flexpriceAuth) GenerateDashboardToken(customerID, externalCustomerID, t
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signedToken, err := token.SignedString([]byte(f.AuthConfig.Secret))
 	if err != nil {
-		return "", time.Time{}, err
+		return "", time.Time{}, ierr.WithError(err).
+			WithHint("Failed to sign dashboard token").
+			Mark(ierr.ErrSystem)
 	}
 
 	return signedToken, expiresAt, nil
@@ -198,19 +220,42 @@ func (f *flexpriceAuth) ValidateDashboardToken(ctx context.Context, token string
 	}
 
 	// Verify token type
-	tokenType, _ := claims["token_type"].(string)
-	if tokenType != "dashboard" {
-		return nil, ierr.NewError("invalid token type").
-			WithHint("Token is not a dashboard token").
+	tokenType, ok := claims["token_type"].(string)
+	if !ok || tokenType != "dashboard" {
+		return nil, ierr.NewError("invalid token type claim").
+			WithHint("Token type claim is missing or not a dashboard token").
 			Mark(ierr.ErrPermissionDenied)
 	}
 
-	customerID, _ := claims["customer_id"].(string)
-	externalCustomerID, _ := claims["external_customer_id"].(string)
-	tenantID, _ := claims["tenant_id"].(string)
-	environmentID, _ := claims["environment_id"].(string)
+	customerID, ok := claims["customer_id"].(string)
+	if !ok {
+		return nil, ierr.NewError("invalid customer_id claim").
+			WithHint("customer_id claim is missing or has wrong type").
+			Mark(ierr.ErrPermissionDenied)
+	}
 
-	if customerID == "" || externalCustomerID == "" || tenantID == "" {
+	externalCustomerID, ok := claims["external_customer_id"].(string)
+	if !ok {
+		return nil, ierr.NewError("invalid external_customer_id claim").
+			WithHint("external_customer_id claim is missing or has wrong type").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	tenantID, ok := claims["tenant_id"].(string)
+	if !ok {
+		return nil, ierr.NewError("invalid tenant_id claim").
+			WithHint("tenant_id claim is missing or has wrong type").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	environmentID, ok := claims["environment_id"].(string)
+	if !ok {
+		return nil, ierr.NewError("invalid environment_id claim").
+			WithHint("environment_id claim is missing or has wrong type").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	if customerID == "" || externalCustomerID == "" || tenantID == "" || environmentID == "" {
 		return nil, ierr.NewError("missing required claims").
 			WithHint("Dashboard token is missing required claims").
 			Mark(ierr.ErrPermissionDenied)

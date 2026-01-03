@@ -199,20 +199,6 @@ func (r *UpdateCustomerRequest) Validate() error {
 	return nil
 }
 
-// CreateDashboardSessionRequest is the request to create a customer dashboard session
-type CreateDashboardSessionRequest struct {
-	ExternalCustomerID string `json:"external_customer_id" binding:"required"`
-	ReturnURL          string `json:"return_url,omitempty"`
-}
-
-// Validate validates the request
-func (r *CreateDashboardSessionRequest) Validate() error {
-	if r.ExternalCustomerID == "" {
-		return NewValidationError("external_customer_id", "external_customer_id is required")
-	}
-	return nil
-}
-
 // DashboardSessionResponse is the response containing the dashboard URL
 type DashboardSessionResponse struct {
 	URL       string    `json:"url"`

@@ -14,7 +14,7 @@ import (
 // CustomerDashboardService provides customer dashboard functionality
 type CustomerDashboardService interface {
 	// CreateDashboardSession creates a dashboard session URL for a customer
-	CreateDashboardSession(ctx context.Context, req dto.CreateDashboardSessionRequest) (*dto.DashboardSessionResponse, error)
+	CreateDashboardSession(ctx context.Context, extenalID string) (*dto.DashboardSessionResponse, error)
 	// GetCustomer returns customer info for the dashboard
 	GetCustomer(ctx context.Context) (*dto.CustomerResponse, error)
 	// UpdateCustomer updates customer info from the dashboard
@@ -56,38 +56,35 @@ func NewCustomerDashboardService(
 }
 
 // CreateDashboardSession creates a dashboard session for a customer
-func (s *customerDashboardService) CreateDashboardSession(ctx context.Context, req dto.CreateDashboardSessionRequest) (*dto.DashboardSessionResponse, error) {
-	if err := req.Validate(); err != nil {
-		return nil, err
-	}
+func (s *customerDashboardService) CreateDashboardSession(ctx context.Context, externalCustomerID string) (*dto.DashboardSessionResponse, error) {
 
 	// Look up the customer by external ID
-	customer, err := s.customerService.GetCustomerByLookupKey(ctx, req.ExternalCustomerID)
+	customer, err := s.customerService.GetCustomerByLookupKey(ctx, externalCustomerID)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Customer not found with the provided external_customer_id").
 			Mark(ierr.ErrNotFound)
 	}
 
-	// Generate the dashboard token using Flexprice Auth provider
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
 	// Get auth provider
 	authProvider := auth.NewFlexpriceAuth(s.ServiceParams.Config)
 
-	token, expiresAt, err := authProvider.GenerateDashboardToken(customer.ID, req.ExternalCustomerID, tenantID, environmentID)
+	// Generate dashboard token
+	token, expiresAt, err := authProvider.GenerateDashboardToken(
+		customer.ID,
+		customer.ExternalID,
+		customer.TenantID,
+		customer.EnvironmentID,
+		s.Config.CustomerDashboard.TokenTimeoutHours,
+	)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to generate dashboard token").
 			Mark(ierr.ErrSystem)
 	}
 
-	// Build the dashboard URL
-	dashboardURL := fmt.Sprintf("%s?token=%s", req.ReturnURL, token)
-	if req.ReturnURL == "" {
-		dashboardURL = token // Just return the token if no return URL
-	}
+	// Build dashboard URL
+	dashboardURL := fmt.Sprintf("%s?token=%s", s.Config.CustomerDashboard.URL, token)
 
 	return &dto.DashboardSessionResponse{
 		URL:       dashboardURL,

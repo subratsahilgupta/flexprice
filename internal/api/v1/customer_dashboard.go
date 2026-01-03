@@ -39,15 +39,14 @@ func NewCustomerDashboardHandler(
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /customer-dashboard/session [post]
+// @Router /customer-dashboard/:external_id [get]
 func (h *CustomerDashboardHandler) CreateSession(c *gin.Context) {
-	var req dto.CreateDashboardSessionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(ierr.WithError(err).Mark(ierr.ErrValidation))
+	externalID := c.Param("external_id")
+	if externalID == "" {
+		c.Error(ierr.NewError("external_id is required").Mark(ierr.ErrValidation))
 		return
 	}
-
-	response, err := h.dashboardService.CreateDashboardSession(c.Request.Context(), req)
+	response, err := h.dashboardService.CreateDashboardSession(c.Request.Context(), externalID)
 	if err != nil {
 		c.Error(err)
 		return

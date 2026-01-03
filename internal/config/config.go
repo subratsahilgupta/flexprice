@@ -46,6 +46,7 @@ type Configuration struct {
 	RBAC                       RBACConfig                       `mapstructure:"rbac" validate:"omitempty"`
 	OAuth                      OAuthConfig                      `mapstructure:"oauth" validate:"required"`
 	WalletBalanceAlert         WalletBalanceAlertConfig         `mapstructure:"wallet_balance_alert" validate:"required"`
+	CustomerDashboard          CustomerDashboardConfig          `mapstructure:"customer_dashboard" validate:"required"`
 }
 
 type CacheConfig struct {
@@ -263,6 +264,11 @@ type CostSheetUsageTrackingLazyConfig struct {
 	Topic         string `mapstructure:"topic" default:"events_lazy"`
 	RateLimit     int64  `mapstructure:"rate_limit" default:"1"`
 	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_costsheet_usage_tracking_service_lazy"`
+}
+
+type CustomerDashboardConfig struct {
+	URL               string `mapstructure:"url" validate:"required"`
+	TokenTimeoutHours int    `mapstructure:"token_timeout" validate:"required"`
 }
 
 func NewConfig() (*Configuration, error) {

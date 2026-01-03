@@ -216,3 +216,8 @@ oauth:
   # Staging: https://admin-dev.flexprice.io/tools/integrations/oauth/callback
   # Production: https://admin.flexprice.io/tools/integrations/oauth/callback
   redirect_uri: ""
+
+# Customer dashboard configuration
+customer_dashboard:
+  url: "https://localhost:3000"
+  token_timeout_hours: 1
