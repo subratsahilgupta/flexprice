@@ -36,6 +36,7 @@ jobs:
         uses: speakeasy-api/sdk-generation-action@v15
         with:
           speakeasy_api_key: ${{ secrets.SPEAKEASY_API_KEY }}
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate Go SDK version
         id: go_version
