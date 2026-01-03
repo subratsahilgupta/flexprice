@@ -26,7 +26,8 @@ targets:
         output: ./api/python
         publish:
             pypi:
-                token: ""
+                packageName: flexprice-sdk-test
+                token: $PYPI_TOKEN
         codeSamples:
             registry:
                 location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-python-code-samples
@@ -39,7 +40,9 @@ targets:
         output: ./api/javascript
         publish:
             npm:
-                token: ""
+                packageName: flexprice-sdk-test
+                access: public
+                token: $NPM_TOKEN
         codeSamples:
             registry:
                 location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-typescript-code-samples
