@@ -1,17 +1,20 @@
-name: Publish Go SDK to go-sdk-temp
+# DISABLED: This workflow is replaced by publish-sdks.yml which handles all 3 SDKs
+# To re-enable, remove the comments from the 'on:' section below
+
+name: Publish Go SDK to go-sdk-temp (DISABLED)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch_disabled:
     inputs:
       version:
         description: 'SDK Version (e.g. 1.0.5)'
         required: true
         default: ''
-  push:
-    branches:
-      - develop
-  release:
-    types: [published]
+  # push:
+  #   branches:
+  #     - develop
+  # release:
+  #   types: [published]
 
 permissions:
   contents: write
@@ -43,12 +46,43 @@ jobs:
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
           else
-            # Auto-generate version from date and commit for push events
-            VERSION="1.1.$(date +%Y%m%d).$(git rev-parse --short HEAD)"
+            # Auto-increment version on push to main/develop
+            echo "🔍 Fetching latest version from go-sdk-temp..."
+            
+            # Clone go-sdk-temp to get latest tags
+            git clone --depth 1 --no-checkout https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/go-sdk-temp.git /tmp/sdk-tags 2>/dev/null || true
+            cd /tmp/sdk-tags
+            
+            # Get latest tag (format: v2.X.Y)
+            LATEST_TAG=$(git tag -l "v2.*" --sort=-v:refname | head -n 1)
+            
+            if [ -z "$LATEST_TAG" ]; then
+              # No tags found, start at 2.0.0
+              VERSION="2.0.0"
+              echo "📦 No previous tags found, starting at ${VERSION}"
+            else
+              echo "📌 Latest tag: ${LATEST_TAG}"
+              
+              # Parse version (remove 'v' prefix)
+              CURRENT_VERSION="${LATEST_TAG#v}"
+              
+              # Extract major, minor, patch
+              MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+              MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+              PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+              
+              # Increment minor version, reset patch
+              NEW_MINOR=$((MINOR + 1))
+              VERSION="${MAJOR}.${NEW_MINOR}.0"
+              
+              echo "📦 Incrementing ${CURRENT_VERSION} → ${VERSION}"
+            fi
+            
+            cd $GITHUB_WORKSPACE
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "📦 Publishing Go SDK version: ${VERSION}"
+          echo "✅ Publishing Go SDK version: ${VERSION}"
           
       - name: Update version in gen.yaml
         run: |
@@ -149,3 +183,4 @@ jobs:
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "go get github.com/flexprice/go-sdk-temp@v${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+ 

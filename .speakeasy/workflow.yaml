@@ -13,9 +13,36 @@ targets:
         target: go
         source: flexprice-api
         output: ./api/go
+        publish: {}
         codeSamples:
             registry:
                 location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-go-code-samples
             labelOverride:
                 fixedValue: Go (SDK)
+            blocking: false
+    flexprice-python:
+        target: python
+        source: flexprice-api
+        output: ./api/python
+        publish:
+            pypi:
+                token: $PYPI_TOKEN
+        codeSamples:
+            registry:
+                location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-python-code-samples
+            labelOverride:
+                fixedValue: Python (SDK)
+            blocking: false
+    flexprice-typescript:
+        target: typescript
+        source: flexprice-api
+        output: ./api/javascript
+        publish:
+            npm:
+                token: $NPM_TOKEN
+        codeSamples:
+            registry:
+                location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-typescript-code-samples
+            labelOverride:
+                fixedValue: Typescript (SDK)
             blocking: false
