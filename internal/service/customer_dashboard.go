@@ -40,17 +40,20 @@ type CustomerDashboardService interface {
 
 type customerDashboardService struct {
 	ServiceParams
-	customerService CustomerService
+	customerService         CustomerService
+	revenueAnalyticsService RevenueAnalyticsService
 }
 
 // NewCustomerDashboardService creates a new customer dashboard service
 func NewCustomerDashboardService(
 	params ServiceParams,
 	customerService CustomerService,
+	revenueAnalyticsService RevenueAnalyticsService,
 ) CustomerDashboardService {
 	return &customerDashboardService{
-		ServiceParams:   params,
-		customerService: customerService,
+		ServiceParams:           params,
+		customerService:         customerService,
+		revenueAnalyticsService: revenueAnalyticsService,
 	}
 }
 
@@ -315,8 +318,7 @@ func (s *customerDashboardService) GetCostAnalytics(ctx context.Context, req dto
 	}
 
 	// Call the revenue analytics service which handles both cost and revenue analytics
-	revenueAnalyticsService := NewRevenueAnalyticsService(s.ServiceParams)
-	return revenueAnalyticsService.GetDetailedCostAnalytics(ctx, internalReq)
+	return s.revenueAnalyticsService.GetDetailedCostAnalytics(ctx, internalReq)
 }
 
 // GetUsageSummary returns usage summary for the dashboard customer

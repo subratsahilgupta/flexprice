@@ -13,11 +13,15 @@ type RevenueAnalyticsService = interfaces.RevenueAnalyticsService
 
 type revenueAnalyticsService struct {
 	ServiceParams
+	featureUsageTrackingService   FeatureUsageTrackingService
+	costsheetUsageTrackingService CostSheetUsageTrackingService
 }
 
-func NewRevenueAnalyticsService(params ServiceParams) RevenueAnalyticsService {
+func NewRevenueAnalyticsService(params ServiceParams, featureUsageTrackingService FeatureUsageTrackingService, costsheetUsageTrackingService CostSheetUsageTrackingService) RevenueAnalyticsService {
 	return &revenueAnalyticsService{
-		ServiceParams: params,
+		ServiceParams:                 params,
+		featureUsageTrackingService:   featureUsageTrackingService,
+		costsheetUsageTrackingService: costsheetUsageTrackingService,
 	}
 }
 
@@ -33,13 +37,9 @@ func (s *revenueAnalyticsService) GetDetailedCostAnalytics(
 			Mark(ierr.ErrValidation)
 	}
 
-	// Define services
-	featureUsageTrackingService := NewFeatureUsageTrackingService(s.ServiceParams, s.EventRepo, s.FeatureUsageRepo)
-	costsheetUsageTrackingService := NewCostSheetUsageTrackingService(s.ServiceParams, s.EventRepo, s.CostSheetUsageRepo)
-
 	// 1. Fetch cost analytics using the costsheet usage tracking service
 	var costAnalytics *dto.GetCostAnalyticsResponse
-	costAnalytics, err := costsheetUsageTrackingService.GetCostSheetUsageAnalytics(ctx, req)
+	costAnalytics, err := s.costsheetUsageTrackingService.GetCostSheetUsageAnalytics(ctx, req)
 	if err != nil {
 		s.Logger.Warnw("failed to fetch cost analytics", "error", err)
 		costAnalytics = nil
@@ -53,7 +53,7 @@ func (s *revenueAnalyticsService) GetDetailedCostAnalytics(
 		StartTime:          req.StartTime,
 		EndTime:            req.EndTime,
 	}
-	revenueAnalytics, err = featureUsageTrackingService.GetDetailedUsageAnalyticsV2(ctx, revenueReq)
+	revenueAnalytics, err = s.featureUsageTrackingService.GetDetailedUsageAnalyticsV2(ctx, revenueReq)
 	if err != nil {
 		s.Logger.Warnw("failed to fetch revenue analytics", "error", err)
 		revenueAnalytics = nil

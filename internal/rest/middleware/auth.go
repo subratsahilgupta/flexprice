@@ -138,7 +138,7 @@ func AuthenticateMiddleware(cfg *config.Configuration, secretService service.Sec
 // CustomerDashboardAuthMiddleware validates customer dashboard JWT tokens
 // It extracts the dashboard-specific claims and sets them in the context
 func CustomerDashboardAuthMiddleware(cfg *config.Configuration, logger *logger.Logger) gin.HandlerFunc {
-	authProvider := auth.NewProvider(cfg)
+	authProvider := auth.NewFlexpriceAuth(cfg)
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader(types.HeaderDashboardToken)
 		if authHeader == "" {
