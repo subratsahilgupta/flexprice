@@ -13,7 +13,11 @@ targets:
         target: go
         source: flexprice-api
         output: ./api/go
-        publish: {}
+        publish:
+            github:
+                owner: flexprice
+                repo: go-sdk-temp
+                tag: true
         codeSamples:
             registry:
                 location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-go-code-samples
@@ -26,7 +30,7 @@ targets:
         output: ./api/python
         publish:
             pypi:
-                token: ${{ secrets.PYPI_TOKEN }}
+                packageName: flexprice-sdk-test
         codeSamples:
             registry:
                 location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-python-code-samples
@@ -39,10 +43,11 @@ targets:
         output: ./api/javascript
         publish:
             npm:
-                token: ${{ secrets.NPM_TOKEN }}
+                packageName: flexprice-sdk-test
+                access: public
         codeSamples:
             registry:
                 location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-typescript-code-samples
             labelOverride:
-                fixedValue: Typescript (SDK)
+                fixedValue: TypeScript (SDK)
             blocking: false

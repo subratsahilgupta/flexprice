@@ -1,0 +1,55 @@
+# =================================
+# FlexPrice – Speakeasy .genignore
+# =================================
+# This file tells Speakeasy which files to preserve during SDK regeneration
+
+# ----------------
+# Go SDK
+# ----------------
+# Custom async batching client
+async.go
+
+# Custom helper functions
+helpers.go
+
+# Custom examples
+examples/
+
+# ----------------
+# Python SDK
+# ----------------
+# Async utilities (custom threading / batching)
+async_utils.py
+
+# Custom helpers
+utils/**
+extensions/**
+
+# ----------------
+# TypeScript SDK
+# ----------------
+# Custom portal / business logic
+src/apis/CustomerPortal.ts
+
+# Custom helpers
+src/utils/**
+src/extensions/**
+
+# ----------------
+# Shared / Docs
+# ----------------
+# Keep documentation intact
+README.md
+
+# License
+LICENSE
+
+# ----------------
+# Build artifacts (ignore)
+# ----------------
+node_modules/**
+dist/**
+__pycache__/**
+*.pyc
+.DS_Store
+
