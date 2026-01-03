@@ -2,33 +2,34 @@ speakeasyVersion: 1.680.11
 sources:
     flexprice-api:
         sourceNamespace: flexprice-api
-        sourceRevisionDigest: sha256:9ac45ae2cd1459d80a55ff3ed6050132d0c2a6c7dbf815fc15a2380eebd6635a
-        sourceBlobDigest: sha256:fd2f44137f6d991da27f5793cc2a2282139f0e15a4130d778f1122244654dc6f
+        sourceRevisionDigest: sha256:038fb757329ecadf37790c1134f995838e703e0bad216cc5a81a99b3ffa8432b
+        sourceBlobDigest: sha256:bb4b9ed078b71cb6aee4b72c3c6a831899049bd466c6cf9ec321108bacdfc01c
         tags:
             - latest
+            - speakeasy-sdk-regen-develop-1767440548
             - "1.0"
 targets:
     flexprice-go:
         source: flexprice-api
         sourceNamespace: flexprice-api
-        sourceRevisionDigest: sha256:9ac45ae2cd1459d80a55ff3ed6050132d0c2a6c7dbf815fc15a2380eebd6635a
-        sourceBlobDigest: sha256:fd2f44137f6d991da27f5793cc2a2282139f0e15a4130d778f1122244654dc6f
+        sourceRevisionDigest: sha256:038fb757329ecadf37790c1134f995838e703e0bad216cc5a81a99b3ffa8432b
+        sourceBlobDigest: sha256:bb4b9ed078b71cb6aee4b72c3c6a831899049bd466c6cf9ec321108bacdfc01c
         codeSamplesNamespace: flexprice-api-go-code-samples
-        codeSamplesRevisionDigest: sha256:66c93a21849586b159a149731cfa7c5ee5ad6e76e69fec8900baa76ab880e70f
+        codeSamplesRevisionDigest: sha256:91c0625e90452618c0547196da480a87d1dc81dca04f51b246e47ea685c6626a
     flexprice-python:
         source: flexprice-api
         sourceNamespace: flexprice-api
-        sourceRevisionDigest: sha256:9ac45ae2cd1459d80a55ff3ed6050132d0c2a6c7dbf815fc15a2380eebd6635a
-        sourceBlobDigest: sha256:fd2f44137f6d991da27f5793cc2a2282139f0e15a4130d778f1122244654dc6f
+        sourceRevisionDigest: sha256:038fb757329ecadf37790c1134f995838e703e0bad216cc5a81a99b3ffa8432b
+        sourceBlobDigest: sha256:bb4b9ed078b71cb6aee4b72c3c6a831899049bd466c6cf9ec321108bacdfc01c
         codeSamplesNamespace: flexprice-api-python-code-samples
-        codeSamplesRevisionDigest: sha256:13bccf0e4650186ef10e9926548f7abfc30a500f7599e8f79889441b16bd833d
+        codeSamplesRevisionDigest: sha256:bc69e55d3ee2e8e33983b22213ecf4e5be187d346cf917880aeef1cab5cdf229
     flexprice-typescript:
         source: flexprice-api
         sourceNamespace: flexprice-api
-        sourceRevisionDigest: sha256:9ac45ae2cd1459d80a55ff3ed6050132d0c2a6c7dbf815fc15a2380eebd6635a
-        sourceBlobDigest: sha256:fd2f44137f6d991da27f5793cc2a2282139f0e15a4130d778f1122244654dc6f
+        sourceRevisionDigest: sha256:038fb757329ecadf37790c1134f995838e703e0bad216cc5a81a99b3ffa8432b
+        sourceBlobDigest: sha256:bb4b9ed078b71cb6aee4b72c3c6a831899049bd466c6cf9ec321108bacdfc01c
         codeSamplesNamespace: flexprice-api-typescript-code-samples
-        codeSamplesRevisionDigest: sha256:e1a0ec9be74de826fff337f7e28be25e071c5b782a45658411b63a2f677c1ccf
+        codeSamplesRevisionDigest: sha256:67c4e902cb5fead71709be4a2c1cfe795d4e06f220f601da3f038500dca468fa
 workflow:
     workflowVersion: 1.0.0
     speakeasyVersion: latest
@@ -58,7 +59,7 @@ workflow:
             output: ./api/python
             publish:
                 pypi:
-                    token: ""
+                    token: $PYPI_TOKEN
             codeSamples:
                 registry:
                     location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-python-code-samples
@@ -71,7 +72,7 @@ workflow:
             output: ./api/javascript
             publish:
                 npm:
-                    token: ""
+                    token: $NPM_TOKEN
             codeSamples:
                 registry:
                     location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-typescript-code-samples
