@@ -1,4 +1,4 @@
-package flexprice
+package gosdktemp
 
 import (
 	"fmt"

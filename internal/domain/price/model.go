@@ -53,13 +53,13 @@ type Price struct {
 	PriceUnit *string `db:"price_unit" json:"price_unit,omitempty"`
 
 	// PriceUnitAmount is the amount of the price unit
-	PriceUnitAmount *decimal.Decimal `db:"price_unit_amount" json:"price_unit_amount,omitempty"`
+	PriceUnitAmount *decimal.Decimal `db:"price_unit_amount" json:"price_unit_amount,omitempty" swaggertype:"string"`
 
 	// DisplayPriceUnitAmount is the formatted amount of the price unit
 	DisplayPriceUnitAmount string `db:"display_price_unit_amount" json:"display_price_unit_amount,omitempty"`
 
 	// ConversionRate is the conversion rate of the price unit to the fiat currency
-	ConversionRate *decimal.Decimal `db:"conversion_rate" json:"conversion_rate,omitempty"`
+	ConversionRate *decimal.Decimal `db:"conversion_rate" json:"conversion_rate,omitempty" swaggertype:"string"`
 
 	Type types.PriceType `db:"type" json:"type"`
 
