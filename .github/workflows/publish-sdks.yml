@@ -21,6 +21,7 @@ jobs:
         with:
           speakeasy_api_key: ${{ secrets.SPEAKEASY_API_KEY }}
           github_access_token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
+          force: true
         env:
           PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
