@@ -5,10 +5,38 @@ import (
 	"context"
 	"fmt"
 	"html/template"
-	"os"
 
 	"go.uber.org/zap"
 )
+
+// emailTemplates stores email templates as string constants
+var emailTemplates = map[string]string{
+	"welcome-email.html": `<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>Welcome to Flexprice</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #333;">
+    <p>Hey!</p>
+    <p>This is Manish, founder of <a href="https://flexprice.io">Flexprice</a>.<br/>
+    Thanks for signing up.</p>
+    
+    <p>We're building an open-source metering and billing platform for AI and agentic-based companies. We help you launch & iterate pricing without any dev bottlenecks.<br/>
+    Please feel free to <strong>reply to this email</strong>, or you can book a quick 30-minute call with us: <a href="{{.calendar_url}}">{{.calendar_url}}</a></p>
+    
+    <p>Looking forward to hearing from you! 😊</p>
+    
+    <br/>
+    <br/>
+    
+    <p>Best,<br/>
+    Manish Choudhary<br/>
+    Co-founder & CEO, Flexprice
+    </p>
+</body>
+</html>`,
+}
 
 // EmailService handles email operations
 type Email struct {
@@ -95,7 +123,7 @@ func (s *Email) SendEmailWithTemplate(ctx context.Context, req SendEmailWithTemp
 		"template", req.TemplatePath,
 	)
 
-	// Read the template file
+	// Retrieve the template from in-memory store
 	htmlContent, err := s.readTemplate(req.TemplatePath)
 	if err != nil {
 		s.logger.Errorw("failed to read email template",
@@ -155,15 +183,13 @@ func (s *Email) SendEmailWithTemplate(ctx context.Context, req SendEmailWithTemp
 	}, nil
 }
 
-// readTemplate reads an HTML template from the file system
 func (s *Email) readTemplate(templatePath string) (string, error) {
-	templatePath = fmt.Sprintf("./assets/email-templates/%s", templatePath)
-	content, err := os.ReadFile(templatePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read template file: %w", err)
+	templateContent, exists := emailTemplates[templatePath]
+	if !exists {
+		return "", fmt.Errorf("template not found: %s", templatePath)
 	}
 
-	return string(content), nil
+	return templateContent, nil
 }
 
 // renderTemplate renders an HTML template using Go's html/template for safe HTML rendering
