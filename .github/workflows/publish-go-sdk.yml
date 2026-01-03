@@ -1,20 +1,10 @@
 # DISABLED: This workflow is replaced by publish-sdks.yml which handles all 3 SDKs
-# To re-enable, remove the comments from the 'on:' section below
+# To re-enable, remove this file or change the trigger back
 
 name: Publish Go SDK to go-sdk-temp (DISABLED)
 
-on:
-  workflow_dispatch_disabled:
-    inputs:
-      version:
-        description: 'SDK Version (e.g. 1.0.5)'
-        required: true
-        default: ''
-  # push:
-  #   branches:
-  #     - develop
-  # release:
-  #   types: [published]
+# Workflow disabled - no triggers defined
+on: []
 
 permissions:
   contents: write

@@ -117,8 +117,6 @@ jobs:
     name: Publish Go SDK to GitHub
     needs: generate-sdks
     runs-on: ubuntu-latest
-    needs: generate-sdks
-    runs-on: ubuntu-latest
     steps:
       - name: Download Go SDK artifact
         uses: actions/download-artifact@v4
