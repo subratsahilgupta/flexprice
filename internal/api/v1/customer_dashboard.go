@@ -105,19 +105,49 @@ func (h *CustomerDashboardHandler) UpdateCustomer(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// GetSubscriptions returns the customer's subscriptions
-// @Summary Get customer subscriptions
-// @Description Get all subscriptions for the authenticated customer
+// GetUsageSummary returns usage summary for the customer
+// @Summary Get customer usage summary
+// @Description Get usage summary for the authenticated customer's metered features
 // @Tags CustomerDashboard
+// @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Param filter query dto.GetCustomerUsageSummaryRequest false "Filter"
+// @Success 200 {object} dto.CustomerUsageSummaryResponse
+// @Failure 401 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /customer-dashboard/usage [get]
+func (h *CustomerDashboardHandler) GetUsageSummary(c *gin.Context) {
+	var req dto.GetCustomerUsageSummaryRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.Error(ierr.WithError(err).Mark(ierr.ErrValidation))
+		return
+	}
+
+	response, err := h.dashboardService.GetUsageSummary(c.Request.Context(), req)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// GetSubscriptions returns the customer's subscriptions
+// @Summary Get customer subscriptions
+// @Description Get all subscriptions for the authenticated customer with pagination
+// @Tags CustomerDashboard
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.DashboardPaginatedRequest true "Pagination request"
 // @Success 200 {object} dto.ListSubscriptionsResponse
 // @Failure 401 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /customer-dashboard/subscriptions [get]
+// @Router /customer-dashboard/subscriptions [post]
 func (h *CustomerDashboardHandler) GetSubscriptions(c *gin.Context) {
 	var req dto.DashboardPaginatedRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(ierr.WithError(err).Mark(ierr.ErrValidation))
 		return
 	}
@@ -133,17 +163,19 @@ func (h *CustomerDashboardHandler) GetSubscriptions(c *gin.Context) {
 
 // GetInvoices returns the customer's invoices
 // @Summary Get customer invoices
-// @Description Get all invoices for the authenticated customer
+// @Description Get all invoices for the authenticated customer with pagination
 // @Tags CustomerDashboard
+// @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Param request body dto.DashboardPaginatedRequest true "Pagination request"
 // @Success 200 {object} dto.ListInvoicesResponse
 // @Failure 401 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /customer-dashboard/invoices [get]
+// @Router /customer-dashboard/invoices [post]
 func (h *CustomerDashboardHandler) GetInvoices(c *gin.Context) {
 	var req dto.DashboardPaginatedRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(ierr.WithError(err).Mark(ierr.ErrValidation))
 		return
 	}
@@ -222,7 +254,7 @@ func (h *CustomerDashboardHandler) GetSubscription(c *gin.Context) {
 // @Success 200 {array} dto.WalletBalanceResponse
 // @Failure 401 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /customer-dashboard/wallets [get]
+// @Router /customer-dashboard/wallets [post]
 func (h *CustomerDashboardHandler) GetWallets(c *gin.Context) {
 	response, err := h.dashboardService.GetWallets(c.Request.Context())
 	if err != nil {

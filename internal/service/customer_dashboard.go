@@ -35,6 +35,8 @@ type CustomerDashboardService interface {
 	GetAnalytics(ctx context.Context, req dto.DashboardAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error)
 	// GetCostAnalytics returns cost analytics for the dashboard customer
 	GetCostAnalytics(ctx context.Context, req dto.DashboardCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error)
+	// GetUsageSummary returns usage summary for the dashboard customer
+	GetUsageSummary(ctx context.Context, req dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error)
 }
 
 type customerDashboardService struct {
@@ -135,11 +137,15 @@ func (s *customerDashboardService) GetSubscriptions(ctx context.Context, req dto
 
 	// Build query filter with pagination
 	queryFilter := types.NewDefaultQueryFilter()
+
+	// Set limit first
 	if req.Limit > 0 {
 		queryFilter.Limit = &req.Limit
 	}
+
+	// Then calculate offset using the correct limit
 	if req.Page > 0 {
-		limit := queryFilter.GetLimit()
+		limit := queryFilter.GetLimit() // Now this gets the user-provided limit
 		offset := (req.Page - 1) * limit
 		queryFilter.Offset = &offset
 	}
@@ -188,11 +194,15 @@ func (s *customerDashboardService) GetInvoices(ctx context.Context, req dto.Dash
 
 	// Build query filter with pagination
 	queryFilter := types.NewDefaultQueryFilter()
+
+	// Set limit first
 	if req.Limit > 0 {
 		queryFilter.Limit = &req.Limit
 	}
+
+	// Then calculate offset using the correct limit
 	if req.Page > 0 {
-		limit := queryFilter.GetLimit()
+		limit := queryFilter.GetLimit() // Now this gets the user-provided limit
 		offset := (req.Page - 1) * limit
 		queryFilter.Offset = &offset
 	}
@@ -236,16 +246,15 @@ func (s *customerDashboardService) GetInvoice(ctx context.Context, invoiceID str
 // GetWallets returns wallet balances for the dashboard customer
 func (s *customerDashboardService) GetWallets(ctx context.Context) ([]*dto.WalletBalanceResponse, error) {
 	customerID := types.GetCustomerID(ctx)
-	externalCustomerID := types.GetExternalCustomerID(ctx)
 	if customerID == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
 	}
 
 	walletService := NewWalletService(s.ServiceParams)
 
+	// Only pass ID - validation requires either ID or LookupKey, not both
 	getWalletsReq := &dto.GetCustomerWalletsRequest{
-		ID:        customerID,
-		LookupKey: externalCustomerID,
+		ID: customerID,
 	}
 	return walletService.GetCustomerWallets(ctx, getWalletsReq)
 }
@@ -339,4 +348,19 @@ func (s *customerDashboardService) GetCostAnalytics(ctx context.Context, req dto
 	}
 
 	return response, nil
+}
+
+// GetUsageSummary returns usage summary for the dashboard customer
+func (s *customerDashboardService) GetUsageSummary(ctx context.Context, req dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error) {
+	customerID := types.GetCustomerID(ctx)
+	if customerID == "" {
+		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
+	}
+
+	// Override any customer_id in the request with the authenticated customer_id
+	req.CustomerID = customerID
+
+	// Use billing service to get usage summary
+	billingService := NewBillingService(s.ServiceParams)
+	return billingService.GetCustomerUsageSummary(ctx, customerID, &req)
 }

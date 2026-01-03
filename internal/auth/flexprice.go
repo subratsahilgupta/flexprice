@@ -152,7 +152,7 @@ func (f *flexpriceAuth) AssignUserToTenant(ctx context.Context, userID string, t
 // This token is specifically for customers (not users) and has a shorter expiration
 func (f *flexpriceAuth) GenerateDashboardToken(customerID, externalCustomerID, tenantID, environmentID string) (string, time.Time, error) {
 	// Dashboard tokens expire in 1 hour (standard for billing portals)
-	expiresAt := time.Now().Add(1 * time.Hour)
+	expiresAt := time.Now().Add(5 * time.Hour)
 
 	claims := jwt.MapClaims{
 		"customer_id":          customerID,
