@@ -742,6 +742,8 @@ func (p *PricesChunkProcessor) ProcessChunk(ctx context.Context, chunk [][]strin
 			Metadata: make(map[string]string),
 		}
 
+		hasParsingError := false
+
 		// Map standard fields
 		for j, header := range headers {
 			if j >= len(record) {
@@ -825,19 +827,32 @@ func (p *PricesChunkProcessor) ProcessChunk(ctx context.Context, chunk [][]strin
 			case "tiers":
 				// Parse JSON array of tiers
 				var tiers []dto.CreatePriceTier
-				if err := json.Unmarshal([]byte(value), &tiers); err == nil {
-					priceReq.Tiers = tiers
+				if err := json.Unmarshal([]byte(value), &tiers); err != nil {
+					errors = append(errors, fmt.Sprintf("Record %d: failed to parse tiers JSON: %v", i, err))
+					failedRecords++
+					hasParsingError = true
+					break
 				}
+				priceReq.Tiers = tiers
 			case "price_unit_config_tiers":
 				// Parse JSON array of price unit config tiers
 				if priceReq.PriceUnitConfig == nil {
 					priceReq.PriceUnitConfig = &dto.PriceUnitConfig{}
 				}
 				var tiers []dto.CreatePriceTier
-				if err := json.Unmarshal([]byte(value), &tiers); err == nil {
-					priceReq.PriceUnitConfig.PriceUnitTiers = tiers
+				if err := json.Unmarshal([]byte(value), &tiers); err != nil {
+					errors = append(errors, fmt.Sprintf("Record %d: failed to parse price_unit_config_tiers JSON: %v", i, err))
+					failedRecords++
+					hasParsingError = true
+					break
 				}
+				priceReq.PriceUnitConfig.PriceUnitTiers = tiers
 			}
+		}
+
+		// Skip this record if there was a JSON parsing error
+		if hasParsingError {
+			continue
 		}
 
 		// Parse metadata fields (headers starting with "metadata.")
