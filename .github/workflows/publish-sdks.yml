@@ -28,8 +28,7 @@ jobs:
   generate-sdks:
     name: Generate All SDKs
     runs-on: ubuntu-latest
-    # Skip if commit message starts with "ci: regenerated" to prevent loops
-    if: ${{ !startsWith(github.event.head_commit.message, 'ci: regenerated') }}
+    if: "!startsWith(github.event.head_commit.message, 'ci: regenerated')"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
