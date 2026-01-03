@@ -55,7 +55,8 @@ type Handlers struct {
 	OAuth                    *v1.OAuthHandler
 
 	// Portal handlers
-	Onboarding *v1.OnboardingHandler
+	Onboarding        *v1.OnboardingHandler
+	CustomerDashboard *v1.CustomerDashboardHandler
 	// Cron jobs : TODO: move crons out of API based architecture
 	CronSubscription       *cron.SubscriptionHandler
 	CronWallet             *cron.WalletCronHandler
@@ -195,6 +196,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.GET("/:id/wallets", handlers.Wallet.GetWalletsByCustomerID)
 			customer.GET("/:id/invoices/summary", handlers.Invoice.GetCustomerInvoiceSummary)
 			customer.GET("/wallets", handlers.Wallet.GetCustomerWallets)
+
+			// Customer Dashboard - Session creation (requires tenant auth)
+			customer.POST("/dashboard", handlers.CustomerDashboard.CreateSession)
 
 		}
 
@@ -495,6 +499,17 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			webhookGroup.GET("/dashboard", handlers.Webhook.GetDashboardURL)
 		}
+	}
+
+	// Customer Dashboard - Customer-facing APIs (requires dashboard token)
+	customerDashboardAPI := router.Group("/v1/customer-dashboard")
+	customerDashboardAPI.Use(middleware.CustomerDashboardAuthMiddleware(cfg, logger))
+	customerDashboardAPI.Use(middleware.ErrorHandler())
+	{
+		customerDashboardAPI.GET("/info", handlers.CustomerDashboard.GetCustomer)
+		customerDashboardAPI.PUT("/info", handlers.CustomerDashboard.UpdateCustomer)
+		customerDashboardAPI.GET("/subscriptions", handlers.CustomerDashboard.GetSubscriptions)
+		customerDashboardAPI.GET("/invoices", handlers.CustomerDashboard.GetInvoices)
 	}
 
 	// Public webhook endpoints (no authentication required)

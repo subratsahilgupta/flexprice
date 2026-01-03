@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/auth"
@@ -38,6 +39,10 @@ type Provider interface {
 	Login(ctx context.Context, req AuthRequest, userAuthInfo *auth.Auth) (*AuthResponse, error)
 	ValidateToken(ctx context.Context, token string) (*auth.Claims, error)
 	AssignUserToTenant(ctx context.Context, userID string, tenantID string) error
+
+	// Customer Dashboard Token Management
+	GenerateDashboardToken(customerID, externalCustomerID, tenantID, environmentID string) (string, time.Time, error)
+	ValidateDashboardToken(ctx context.Context, token string) (*auth.DashboardClaims, error)
 }
 
 func NewProvider(cfg *config.Configuration) Provider {

@@ -134,3 +134,42 @@ func AuthenticateMiddleware(cfg *config.Configuration, secretService service.Sec
 		c.Next()
 	}
 }
+
+// CustomerDashboardAuthMiddleware validates customer dashboard JWT tokens
+// It extracts the dashboard-specific claims and sets them in the context
+func CustomerDashboardAuthMiddleware(cfg *config.Configuration, logger *logger.Logger) gin.HandlerFunc {
+	authProvider := auth.NewProvider(cfg)
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader(types.HeaderAuthorization)
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+			c.Abort()
+			return
+		}
+
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization header format"})
+			c.Abort()
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, err := authProvider.ValidateDashboardToken(c.Request.Context(), tokenString)
+		if err != nil {
+			logger.Errorw("failed to validate dashboard token", "error", err)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired dashboard token"})
+			c.Abort()
+			return
+		}
+
+		// Set dashboard-specific context values
+		ctx := c.Request.Context()
+		ctx = context.WithValue(ctx, types.CtxTenantID, claims.TenantID)
+		ctx = context.WithValue(ctx, types.CtxEnvironmentID, claims.EnvironmentID)
+		ctx = context.WithValue(ctx, types.CtxCustomerID, claims.CustomerID)
+		ctx = context.WithValue(ctx, types.CtxExternalCustomerID, claims.ExternalCustomerID)
+		c.Request = c.Request.WithContext(ctx)
+
+		c.Next()
+	}
+}

@@ -147,3 +147,79 @@ func (f *flexpriceAuth) AssignUserToTenant(ctx context.Context, userID string, t
 	// when creating a new user hence this case needs no implementation
 	return nil
 }
+
+// GenerateDashboardToken generates a JWT token for customer dashboard access
+// This token is specifically for customers (not users) and has a shorter expiration
+func (f *flexpriceAuth) GenerateDashboardToken(customerID, externalCustomerID, tenantID, environmentID string) (string, time.Time, error) {
+	// Dashboard tokens expire in 1 hour (standard for billing portals)
+	expiresAt := time.Now().Add(1 * time.Hour)
+
+	claims := jwt.MapClaims{
+		"customer_id":          customerID,
+		"external_customer_id": externalCustomerID,
+		"tenant_id":            tenantID,
+		"environment_id":       environmentID,
+		"token_type":           "dashboard",
+		"exp":                  expiresAt.Unix(),
+		"iat":                  time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signedToken, err := token.SignedString([]byte(f.AuthConfig.Secret))
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
+	return signedToken, expiresAt, nil
+}
+
+// ValidateDashboardToken validates a customer dashboard token and returns the claims
+func (f *flexpriceAuth) ValidateDashboardToken(ctx context.Context, token string) (*auth.DashboardClaims, error) {
+	parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ierr.NewError("unexpected signing method").
+				WithHint(fmt.Sprintf("unexpected signing method: %v", token.Header["alg"])).
+				Mark(ierr.ErrPermissionDenied)
+		}
+		return []byte(f.AuthConfig.Secret), nil
+	})
+
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Invalid dashboard token").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok || !parsedToken.Valid {
+		return nil, ierr.NewError("invalid token claims").
+			WithHint("Invalid token claims").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	// Verify token type
+	tokenType, _ := claims["token_type"].(string)
+	if tokenType != "dashboard" {
+		return nil, ierr.NewError("invalid token type").
+			WithHint("Token is not a dashboard token").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	customerID, _ := claims["customer_id"].(string)
+	externalCustomerID, _ := claims["external_customer_id"].(string)
+	tenantID, _ := claims["tenant_id"].(string)
+	environmentID, _ := claims["environment_id"].(string)
+
+	if customerID == "" || externalCustomerID == "" || tenantID == "" {
+		return nil, ierr.NewError("missing required claims").
+			WithHint("Dashboard token is missing required claims").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	return &auth.DashboardClaims{
+		CustomerID:         customerID,
+		ExternalCustomerID: externalCustomerID,
+		TenantID:           tenantID,
+		EnvironmentID:      environmentID,
+	}, nil
+}
