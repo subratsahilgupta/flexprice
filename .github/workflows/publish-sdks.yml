@@ -73,17 +73,18 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "📦 TypeScript SDK version: ${VERSION}"
 
-      - name: Update Go SDK version in gen.yaml
+      - name: Update SDK versions in gen.yaml
         run: |
-          sed -i "s/^    version: .*/    version: ${{ steps.go_version.outputs.version }}/" .speakeasy/gen.yaml
-
-      - name: Update Python SDK version in gen-python.yaml
-        run: |
-          sed -i "s/^    version: .*/    version: ${{ steps.python_version.outputs.version }}/" .speakeasy/gen-python.yaml
-
-      - name: Update TypeScript SDK version in gen-typescript.yaml
-        run: |
-          sed -i "s/^    version: .*/    version: ${{ steps.typescript_version.outputs.version }}/" .speakeasy/gen-typescript.yaml
+          # Update Go SDK version (line after "go:")
+          sed -i '/^go:/,/^  version:/ s/^  version: .*/  version: ${{ steps.go_version.outputs.version }}/' .speakeasy/gen.yaml
+          
+          # Update Python SDK version (line after "python:")
+          sed -i '/^python:/,/^  version:/ s/^  version: .*/  version: ${{ steps.python_version.outputs.version }}/' .speakeasy/gen.yaml
+          
+          # Update TypeScript SDK version (line after "typescript:")
+          sed -i '/^typescript:/,/^  version:/ s/^  version: .*/  version: ${{ steps.typescript_version.outputs.version }}/' .speakeasy/gen.yaml
+          
+          echo "✅ Updated versions in gen.yaml"
 
       - name: Generate SDKs
         env:
