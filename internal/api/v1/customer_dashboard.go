@@ -65,7 +65,7 @@ func (h *CustomerDashboardHandler) CreateSession(c *gin.Context) {
 // @Success 200 {object} dto.CustomerResponse
 // @Failure 401 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /customer-dashboard/me [get]
+// @Router /customer-dashboard/info [get]
 func (h *CustomerDashboardHandler) GetCustomer(c *gin.Context) {
 	response, err := h.dashboardService.GetCustomer(c.Request.Context())
 	if err != nil {
@@ -88,7 +88,7 @@ func (h *CustomerDashboardHandler) GetCustomer(c *gin.Context) {
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 401 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
-// @Router /customer-dashboard/me [put]
+// @Router /customer-dashboard/info [put]
 func (h *CustomerDashboardHandler) UpdateCustomer(c *gin.Context) {
 	var req dto.UpdateCustomerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

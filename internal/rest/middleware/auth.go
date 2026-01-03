@@ -147,14 +147,7 @@ func CustomerDashboardAuthMiddleware(cfg *config.Configuration, logger *logger.L
 			return
 		}
 
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid dashboard token format"})
-			c.Abort()
-			return
-		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, err := authProvider.ValidateDashboardToken(c.Request.Context(), tokenString)
+		claims, err := authProvider.ValidateDashboardToken(c.Request.Context(), authHeader)
 		if err != nil {
 			logger.Errorw("failed to validate dashboard token", "error", err)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired dashboard token"})
