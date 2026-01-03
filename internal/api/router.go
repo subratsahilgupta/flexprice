@@ -506,10 +506,29 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	customerDashboardAPI.Use(middleware.CustomerDashboardAuthMiddleware(cfg, logger))
 	customerDashboardAPI.Use(middleware.ErrorHandler())
 	{
+		// Customer specific
 		customerDashboardAPI.GET("/info", handlers.CustomerDashboard.GetCustomer)
 		customerDashboardAPI.PUT("/info", handlers.CustomerDashboard.UpdateCustomer)
+		customerDashboardAPI.GET("/usage", handlers.Customer.GetCustomerUsageSummary) // New route with query parameters (must come first!)
+
+		// Subscriptions
 		customerDashboardAPI.GET("/subscriptions", handlers.CustomerDashboard.GetSubscriptions)
+		customerDashboardAPI.GET("/subscriptions/:id", handlers.CustomerDashboard.GetSubscription)
+
+		// Invoices
 		customerDashboardAPI.GET("/invoices", handlers.CustomerDashboard.GetInvoices)
+		customerDashboardAPI.GET("/invoices/:id", handlers.CustomerDashboard.GetInvoice)
+
+		// Wallets
+		customerDashboardAPI.GET("/wallets", handlers.CustomerDashboard.GetWallets)
+		customerDashboardAPI.GET("/wallets/:id", handlers.CustomerDashboard.GetWallet)
+
+		// Analytics
+		customerDashboardAPI.POST("/analytics", handlers.CustomerDashboard.GetAnalytics)
+
+		// Cost Analytics
+		customerDashboardAPI.POST("/cost-analytics", handlers.CustomerDashboard.GetCostAnalytics)
+
 	}
 
 	// Public webhook endpoints (no authentication required)

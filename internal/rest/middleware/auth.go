@@ -140,15 +140,15 @@ func AuthenticateMiddleware(cfg *config.Configuration, secretService service.Sec
 func CustomerDashboardAuthMiddleware(cfg *config.Configuration, logger *logger.Logger) gin.HandlerFunc {
 	authProvider := auth.NewProvider(cfg)
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader(types.HeaderAuthorization)
+		authHeader := c.GetHeader(types.HeaderDashboardToken)
 		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Dashboard token required"})
 			c.Abort()
 			return
 		}
 
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization header format"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid dashboard token format"})
 			c.Abort()
 			return
 		}
