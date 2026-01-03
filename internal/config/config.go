@@ -268,7 +268,7 @@ type CostSheetUsageTrackingLazyConfig struct {
 
 type CustomerDashboardConfig struct {
 	URL               string `mapstructure:"url" validate:"required"`
-	TokenTimeoutHours int    `mapstructure:"token_timeout" validate:"required"`
+	TokenTimeoutHours int    `mapstructure:"token_timeout_hours" validate:"required"`
 }
 
 func NewConfig() (*Configuration, error) {
