@@ -1,0 +1,3 @@
+# Preserve custom files during SDK regeneration
+# Note: Removed examples/ to allow Speakeasy to regenerate it properly
+
