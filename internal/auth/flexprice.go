@@ -159,16 +159,24 @@ func (f *flexpriceAuth) GenerateDashboardToken(customerID, externalCustomerID, t
 	environmentID = strings.TrimSpace(environmentID)
 
 	if customerID == "" {
-		return "", time.Time{}, fmt.Errorf("missing required parameter: customerID")
+		return "", time.Time{}, ierr.NewError("missing required parameter: customerID").
+			WithHint("Customer ID is required").
+			Mark(ierr.ErrValidation)
 	}
 	if externalCustomerID == "" {
-		return "", time.Time{}, fmt.Errorf("missing required parameter: externalCustomerID")
+		return "", time.Time{}, ierr.NewError("missing required parameter: externalCustomerID").
+			WithHint("External Customer ID is required").
+			Mark(ierr.ErrValidation)
 	}
 	if tenantID == "" {
-		return "", time.Time{}, fmt.Errorf("missing required parameter: tenantID")
+		return "", time.Time{}, ierr.NewError("missing required parameter: tenantID").
+			WithHint("Tenant ID is required").
+			Mark(ierr.ErrValidation)
 	}
 	if environmentID == "" {
-		return "", time.Time{}, fmt.Errorf("missing required parameter: environmentID")
+		return "", time.Time{}, ierr.NewError("missing required parameter: environmentID").
+			WithHint("Environment ID is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	// Dashboard tokens expire based on the provided timeout
