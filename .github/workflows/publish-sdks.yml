@@ -1,32 +1,14 @@
-name: Publish SDKs (Go, Python, TypeScript)
+name: Generate & Publish SDKs
 
 on:
   push:
     branches:
       - develop
   workflow_dispatch:
-    inputs:
-      force:
-        description: Force regeneration
-        type: boolean
-        required: false
-        default: false
-      go_version:
-        description: 'Go SDK version (leave empty for auto: 2.0.YYYYMMDDHHMMSS)'
-        required: false
-        type: string
-      python_version:
-        description: 'Python SDK version (leave empty for auto: 2.0.0)'
-        required: false
-        type: string
-      typescript_version:
-        description: 'TypeScript SDK version (leave empty for auto: 2.0.0)'
-        required: false
-        type: string
 
 jobs:
-  generate-sdks:
-    name: Generate All SDKs
+  speakeasy:
+    name: Speakeasy SDK Generation & Publishing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -34,53 +16,7 @@ jobs:
         with:
           token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
 
-      - name: Generate Go SDK version
-        id: go_version
-        run: |
-          if [ -n "${{ github.event.inputs.go_version }}" ]; then
-            VERSION="${{ github.event.inputs.go_version }}"
-          else
-            VERSION="2.0.$(date -u +%Y%m%d%H%M%S)"
-          fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 Go SDK version: ${VERSION}"
-
-      - name: Generate Python SDK version
-        id: python_version
-        run: |
-          if [ -n "${{ github.event.inputs.python_version }}" ]; then
-            VERSION="${{ github.event.inputs.python_version }}"
-          else
-            VERSION="2.0.0"
-          fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 Python SDK version: ${VERSION}"
-
-      - name: Generate TypeScript SDK version
-        id: typescript_version
-        run: |
-          if [ -n "${{ github.event.inputs.typescript_version }}" ]; then
-            VERSION="${{ github.event.inputs.typescript_version }}"
-          else
-            VERSION="2.0.0"
-          fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "📦 TypeScript SDK version: ${VERSION}"
-
-      - name: Update SDK versions in gen.yaml
-        run: |
-          # Update Go SDK version (line after "go:")
-          sed -i '/^go:/,/^  version:/ s/^  version: .*/  version: ${{ steps.go_version.outputs.version }}/' .speakeasy/gen.yaml
-          
-          # Update Python SDK version (line after "python:")
-          sed -i '/^python:/,/^  version:/ s/^  version: .*/  version: ${{ steps.python_version.outputs.version }}/' .speakeasy/gen.yaml
-          
-          # Update TypeScript SDK version (line after "typescript:")
-          sed -i '/^typescript:/,/^  version:/ s/^  version: .*/  version: ${{ steps.typescript_version.outputs.version }}/' .speakeasy/gen.yaml
-          
-          echo "✅ Updated versions in gen.yaml"
-
-      - name: Setup Speakeasy and Generate SDKs
+      - name: Generate & Publish SDKs
         uses: speakeasy-api/sdk-generation-action@v15
         with:
           speakeasy_api_key: ${{ secrets.SPEAKEASY_API_KEY }}
@@ -88,89 +24,3 @@ jobs:
         env:
           PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Copy custom files to all SDKs
-        run: |
-          echo "🔍 Copying custom files to all generated SDKs..."
-          
-          # Copy Go custom files
-          echo "📦 Copying Go custom files..."
-          ./scripts/copy-custom-files.sh go || echo "⚠️ Warning: Go custom files copy had issues"
-          
-          # Copy Python custom files
-          echo "📦 Copying Python custom files..."
-          ./scripts/copy-custom-files.sh python || echo "⚠️ Warning: Python custom files copy had issues"
-          
-          # Copy JavaScript custom files  
-          echo "📦 Copying JavaScript custom files..."
-          ./scripts/copy-custom-files.sh javascript || echo "⚠️ Warning: JavaScript custom files copy had issues"
-          
-          echo "✅ All custom files copied"
-      
-      - name: Upload Speakeasy config
-        uses: actions/upload-artifact@v4
-        with:
-          name: speakeasy-config
-          path: .speakeasy/gen.yaml
-
-  publish-go:
-    name: Publish Go SDK to GitHub
-    needs: generate-sdks
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
-      
-      - name: Download Speakeasy config
-        uses: actions/download-artifact@v4
-        with:
-          name: speakeasy-config
-          path: config/
-
-      - name: Configure Git
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-
-      - name: Clone and update Go SDK repo
-        run: |
-          # Clone the SDK repository
-          git clone https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/go-sdk-temp.git /tmp/go-sdk
-          
-          cd /tmp/go-sdk
-          
-          # Remove all files except .git
-          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
-          
-          # Copy SDK files directly from workspace (bypasses .gitignore)
-          cp -r $GITHUB_WORKSPACE/api/go/* .
-          
-          # Copy LICENSE if it exists
-          if [ -f "$GITHUB_WORKSPACE/LICENSE" ]; then
-            cp $GITHUB_WORKSPACE/LICENSE .
-          fi
-          
-          # Stage all changes
-          git add -A
-          
-          # Check if there are changes to commit
-          if git diff --staged --quiet; then
-            echo "📭 No changes to commit"
-            exit 0
-          fi
-          
-          # Commit and push
-          git commit -m "chore: Update Go SDK via Speakeasy"
-          
-          # Get version from config
-          VERSION=$(grep -A 1 "^go:" $GITHUB_WORKSPACE/config/gen.yaml | grep "version:" | awk '{print $2}')
-          
-          # Create and push tag
-          git tag -a "v${VERSION}" -m "Release v${VERSION}"
-          git push origin main
-          git push origin "v${VERSION}"
-          
-          echo "✅ Go SDK v${VERSION} published successfully!"
-
