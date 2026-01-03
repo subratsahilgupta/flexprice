@@ -28,10 +28,7 @@ extensions/**
 # ----------------
 # TypeScript SDK
 # ----------------
-# Custom portal / business logic
-src/apis/CustomerPortal.ts
-
-# Custom helpers
+# Custom helpers (if you add any in the future)
 src/utils/**
 src/extensions/**
 
