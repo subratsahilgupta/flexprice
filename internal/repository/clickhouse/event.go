@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 
 	"log"
 	"strings"
@@ -26,6 +27,15 @@ type EventRepository struct {
 
 func NewEventRepository(store *clickhouse.ClickHouseStore, logger *logger.Logger) events.Repository {
 	return &EventRepository{store: store, logger: logger}
+}
+
+// safeDecimalFromFloat safely converts a float64 to decimal.Decimal.
+// It returns zero for NaN and Inf values to avoid panics from decimal.NewFromFloat.
+func safeDecimalFromFloat(f float64) decimal.Decimal {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return decimal.Zero
+	}
+	return decimal.NewFromFloat(f)
 }
 
 func (r *EventRepository) InsertEvent(ctx context.Context, event *events.Event) error {
@@ -281,8 +291,8 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 							}).
 							Mark(ierr.ErrDatabase)
 					}
-					total = decimal.NewFromFloat(totalFloat)
-					value = decimal.NewFromFloat(valueFloat)
+					total = safeDecimalFromFloat(totalFloat)
+					value = safeDecimalFromFloat(valueFloat)
 					// Set the overall max/sum as the result value
 					result.Value = total
 				} else {
@@ -297,7 +307,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 							}).
 							Mark(ierr.ErrDatabase)
 					}
-					value = decimal.NewFromFloat(floatValue)
+					value = safeDecimalFromFloat(floatValue)
 				}
 			case types.AggregationAvg, types.AggregationLatest, types.AggregationSumWithMultiplier, types.AggregationWeightedSum:
 				var floatValue float64
@@ -311,7 +321,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 						}).
 						Mark(ierr.ErrDatabase)
 				}
-				value = decimal.NewFromFloat(floatValue)
+				value = safeDecimalFromFloat(floatValue)
 
 				// For Latest aggregation, return 0 if negative
 				if params.AggregationType == types.AggregationLatest && value.LessThan(decimal.Zero) {
@@ -359,7 +369,7 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 						}).
 						Mark(ierr.ErrDatabase)
 				}
-				result.Value = decimal.NewFromFloat(value)
+				result.Value = safeDecimalFromFloat(value)
 
 				// For Latest aggregation, return 0 if negative
 				if params.AggregationType == types.AggregationLatest && result.Value.LessThan(decimal.Zero) {
@@ -465,7 +475,7 @@ func (r *EventRepository) GetUsageWithFilters(ctx context.Context, params *event
 					}).
 					Mark(ierr.ErrDatabase)
 			}
-			result.Value = decimal.NewFromFloat(value)
+			result.Value = safeDecimalFromFloat(value)
 		default:
 			err := ierr.NewError("unsupported aggregation type").
 				WithHint("The specified aggregation type is not supported").

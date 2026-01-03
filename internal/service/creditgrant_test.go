@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -141,6 +142,53 @@ func (s *CreditGrantServiceTestSuite) setupTestData() {
 		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), s.testData.wallet))
+}
+
+// getWalletTransactionByGrantID retrieves a wallet transaction by grant ID or CGA ID.
+// It returns the matching transaction and an error if not found or if any lookup fails.
+func (s *CreditGrantServiceTestSuite) getWalletTransactionByGrantID(customerID string, grantID *string, cgaID *string) (*dto.WalletTransactionResponse, error) {
+	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), customerID)
+	if err != nil {
+		return nil, err
+	}
+	if len(wallets) == 0 {
+		return nil, fmt.Errorf("wallet not found for customer: %s", customerID)
+	}
+
+	walletID := wallets[0].ID
+	txFilter := &types.WalletTransactionFilter{
+		WalletID:    &walletID,
+		QueryFilter: types.NewDefaultQueryFilter(),
+	}
+	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, tx := range transactions.Items {
+		if tx.Metadata != nil {
+			if grantID != nil {
+				if id, ok := tx.Metadata["grant_id"]; ok && id == *grantID {
+					return tx, nil
+				}
+			}
+			if cgaID != nil {
+				if id, ok := tx.Metadata["cga_id"]; ok && id == *cgaID {
+					return tx, nil
+				}
+			}
+		}
+	}
+
+	grantIDStr := ""
+	if grantID != nil {
+		grantIDStr = *grantID
+	}
+	cgaIDStr := ""
+	if cgaID != nil {
+		cgaIDStr = *cgaID
+	}
+	return nil, fmt.Errorf("wallet transaction not found for grant_id=%s, cga_id=%s", grantIDStr, cgaIDStr)
 }
 
 // Test Case 1: Create a subscription with a credit grant one time
@@ -422,7 +470,7 @@ func (s *CreditGrantServiceTestSuite) TestProcessScheduledCreditGrantApplication
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    s.testData.now.Add(-1 * time.Hour), // Scheduled for past (ready for processing)
-		PeriodStart:                     &nextPeriodStart,
+		PeriodStart:                     nextPeriodStart,
 		PeriodEnd:                       &nextPeriodEnd,
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonRecurringCreditGrant,
@@ -478,6 +526,7 @@ func (s *CreditGrantServiceTestSuite) TestCreditGrantApplicationDefaultProcessin
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    s.testData.now.Add(-10 * time.Minute), // Ready for processing
+		PeriodStart:                     s.testData.now.Add(-10 * time.Minute), // Required: set period_start
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonOnetimeCreditGrant,
 		SubscriptionStatusAtApplication: s.testData.subscription.SubscriptionStatus,
@@ -813,7 +862,7 @@ func (s *CreditGrantServiceTestSuite) TestWeeklyCreditGrantPeriodDates() {
 	s.NotNil(nextApp.PeriodEnd)
 
 	// Next period should start when current period ends
-	s.WithinDuration(*currentApp.PeriodEnd, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
 	// Next period should also be 7 days long
@@ -879,7 +928,7 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 	s.NotNil(currentApp.PeriodEnd)
 
 	// For monthly period, verify it's approximately 30 days (allowing for month variations)
-	periodDuration := currentApp.PeriodEnd.Sub(*currentApp.PeriodStart)
+	periodDuration := currentApp.PeriodEnd.Sub(currentApp.PeriodStart)
 	s.GreaterOrEqual(periodDuration.Hours(), float64(28*24), "Monthly period should be at least 28 days")
 	s.LessOrEqual(periodDuration.Hours(), float64(32*24), "Monthly period should be at most 32 days")
 
@@ -888,11 +937,11 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 	s.NotNil(nextApp.PeriodEnd)
 
 	// Next period should start when current period ends
-	s.WithinDuration(*currentApp.PeriodEnd, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
 	// Next period should also be approximately monthly
-	nextPeriodDuration := nextApp.PeriodEnd.Sub(*nextApp.PeriodStart)
+	nextPeriodDuration := nextApp.PeriodEnd.Sub(nextApp.PeriodStart)
 	s.GreaterOrEqual(nextPeriodDuration.Hours(), float64(28*24), "Next monthly period should be at least 28 days")
 	s.LessOrEqual(nextPeriodDuration.Hours(), float64(32*24), "Next monthly period should be at most 32 days")
 
@@ -956,7 +1005,7 @@ func (s *CreditGrantServiceTestSuite) TestYearlyCreditGrantPeriodDates() {
 	s.NotNil(currentApp.PeriodEnd)
 
 	// For yearly period, verify it's approximately 365 days
-	periodDuration := currentApp.PeriodEnd.Sub(*currentApp.PeriodStart)
+	periodDuration := currentApp.PeriodEnd.Sub(currentApp.PeriodStart)
 	s.GreaterOrEqual(periodDuration.Hours(), float64(364*24), "Yearly period should be at least 364 days")
 	s.LessOrEqual(periodDuration.Hours(), float64(366*24), "Yearly period should be at most 366 days")
 
@@ -965,11 +1014,11 @@ func (s *CreditGrantServiceTestSuite) TestYearlyCreditGrantPeriodDates() {
 	s.NotNil(nextApp.PeriodEnd)
 
 	// Next period should start when current period ends
-	s.WithinDuration(*currentApp.PeriodEnd, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
 	// Next period should also be approximately yearly
-	nextPeriodDuration := nextApp.PeriodEnd.Sub(*nextApp.PeriodStart)
+	nextPeriodDuration := nextApp.PeriodEnd.Sub(nextApp.PeriodStart)
 	s.GreaterOrEqual(nextPeriodDuration.Hours(), float64(364*24), "Next yearly period should be at least 364 days")
 	s.LessOrEqual(nextPeriodDuration.Hours(), float64(366*24), "Next yearly period should be at most 366 days")
 
@@ -1042,7 +1091,7 @@ func (s *CreditGrantServiceTestSuite) TestMultiplePeriodCountDates() {
 	s.NotNil(nextApp.PeriodEnd)
 
 	// Next period should start when current period ends
-	s.WithinDuration(*currentApp.PeriodEnd, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
 	// Next period should also be 14 days long
@@ -1053,11 +1102,11 @@ func (s *CreditGrantServiceTestSuite) TestMultiplePeriodCountDates() {
 	s.T().Logf("Bi-Weekly Grant - Current Period: %s to %s (Duration: %.1f days)",
 		currentApp.PeriodStart.Format("2006-01-02 15:04:05"),
 		currentApp.PeriodEnd.Format("2006-01-02 15:04:05"),
-		currentApp.PeriodEnd.Sub(*currentApp.PeriodStart).Hours()/24)
+		currentApp.PeriodEnd.Sub(currentApp.PeriodStart).Hours()/24)
 	s.T().Logf("Bi-Weekly Grant - Next Period: %s to %s (Duration: %.1f days)",
 		nextApp.PeriodStart.Format("2006-01-02 15:04:05"),
 		nextApp.PeriodEnd.Format("2006-01-02 15:04:05"),
-		nextApp.PeriodEnd.Sub(*nextApp.PeriodStart).Hours()/24)
+		nextApp.PeriodEnd.Sub(nextApp.PeriodStart).Hours()/24)
 }
 
 // Test Case 17: Test period dates alignment with credit grant creation date
@@ -1135,7 +1184,7 @@ func (s *CreditGrantServiceTestSuite) TestPeriodDatesAlignmentWithGrantCreationD
 	// The periods should be calculated based on the grant's creation date as anchor
 	// Current period should align with the grant creation date
 	expectedNextStart := *currentApp.PeriodEnd
-	s.WithinDuration(expectedNextStart, *nextApp.PeriodStart, time.Minute,
+	s.WithinDuration(expectedNextStart, nextApp.PeriodStart, time.Minute,
 		"Next period should start exactly when current period ends")
 
 	// Log the alignment details
@@ -1149,7 +1198,7 @@ func (s *CreditGrantServiceTestSuite) TestPeriodDatesAlignmentWithGrantCreationD
 		nextApp.PeriodEnd.Format("2006-01-02 15:04:05"))
 
 	// Verify that periods don't overlap
-	s.True(currentApp.PeriodEnd.Before(*nextApp.PeriodEnd) || currentApp.PeriodEnd.Equal(*nextApp.PeriodStart),
+	s.True(currentApp.PeriodEnd.Before(*nextApp.PeriodEnd) || currentApp.PeriodEnd.Equal(nextApp.PeriodStart),
 		"Current period should end before or exactly when next period starts")
 }
 
@@ -1199,29 +1248,8 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryDay() {
 	// This check is redundant since we verify the actual wallet transaction expiry below
 
 	// Verify wallet transaction has correct expiry date
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-	s.NotEmpty(transactions.Items)
-
-	// Find the transaction for this grant
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx, "Should find wallet transaction for the grant")
 	s.NotNil(grantTx.ExpiryDate, "Transaction should have expiry date")
 
@@ -1231,7 +1259,7 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryDay() {
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	s.NotNil(applications[0].PeriodStart, "PeriodStart should be set for subscription-scoped grants")
 	expectedPeriodStart := grantTx.ExpiryDate.AddDate(0, 0, -7) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedPeriodStart, *applications[0].PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
+	s.WithinDuration(expectedPeriodStart, applications[0].PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
 	// Also verify the expiry is 7 days from PeriodStart using AddDate()
 	expectedExpiryTime := applications[0].PeriodStart.AddDate(0, 0, 7)
 	s.WithinDuration(expectedExpiryTime, *grantTx.ExpiryDate, 24*time.Hour, "Expiry date should be 7 days from PeriodStart using AddDate()")
@@ -1277,27 +1305,8 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryWeek() {
 	// This check is redundant since we verify the actual wallet transaction expiry below
 
 	// Verify wallet transaction expiry
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 
@@ -1307,7 +1316,7 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryWeek() {
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	s.NotNil(applications[0].PeriodStart, "PeriodStart should be set for subscription-scoped grants")
 	expectedPeriodStart := grantTx.ExpiryDate.AddDate(0, 0, -14) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedPeriodStart, *applications[0].PeriodStart, 24*time.Hour, "PeriodStart should be approximately 14 days before expiry")
+	s.WithinDuration(expectedPeriodStart, applications[0].PeriodStart, 24*time.Hour, "PeriodStart should be approximately 14 days before expiry")
 	// Also verify the expiry is 14 days from PeriodStart using AddDate()
 	expectedExpiryTime := applications[0].PeriodStart.AddDate(0, 0, 14) // 2 weeks = 14 days
 	s.WithinDuration(expectedExpiryTime, *grantTx.ExpiryDate, 24*time.Hour, "Expiry should be 14 days from PeriodStart using AddDate()")
@@ -1347,32 +1356,9 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryMonth() 
 	s.Len(applications, 1)
 	s.Equal(types.ApplicationStatusApplied, applications[0].ApplicationStatus)
 
-	// Verify expiry date calculation (approximately 1 month from scheduledFor)
-	expectedExpiry := applications[0].ScheduledFor.AddDate(0, 1, 0) // Add 1 month
-	s.WithinDuration(expectedExpiry, expectedExpiry, 24*time.Hour, "Expiry should be approximately 1 month from scheduledFor")
-
 	// Verify wallet transaction expiry
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 
@@ -1414,32 +1400,9 @@ func (s *CreditGrantServiceTestSuite) TestOnetimeGrantWithDurationExpiryYear() {
 	s.Len(applications, 1)
 	s.Equal(types.ApplicationStatusApplied, applications[0].ApplicationStatus)
 
-	// Verify expiry date calculation (approximately 1 year from scheduledFor)
-	expectedExpiry := applications[0].ScheduledFor.AddDate(1, 0, 0) // Add 1 year
-	s.WithinDuration(expectedExpiry, expectedExpiry, 24*time.Hour, "Expiry should be approximately 1 year from scheduledFor")
-
 	// Verify wallet transaction expiry
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 
@@ -1480,7 +1443,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationOnetimeDay(
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    pastScheduledFor,
-		PeriodStart:                     lo.ToPtr(pastScheduledFor), // PeriodStart is required for expiry calculation
+		PeriodStart:                     pastScheduledFor, // PeriodStart is required for expiry calculation
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonOnetimeCreditGrant,
 		SubscriptionStatusAtApplication: s.testData.subscription.SubscriptionStatus,
@@ -1499,35 +1462,17 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationOnetimeDay(
 	err = s.creditGrantService.ProcessCreditGrantApplication(s.GetContext(), expiredCGA.ID)
 	s.NoError(err) // Processing should succeed, but grant should be skipped
 
-	// Verify: Status is SKIPPED, failure reason is "Expired", applied_at is nil
+	// Verify: Status is SKIPPED, failure reason is "expired", applied_at is nil
 	processedApp, err := s.GetStores().CreditGrantApplicationRepo.Get(s.GetContext(), expiredCGA.ID)
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 	s.Nil(processedApp.AppliedAt, "AppliedAt should be nil for skipped grants")
 
 	// Verify: No credits are added to wallet
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
-	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	// Verify no transaction was created for this expired grant
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if cgaID, ok := tx.Metadata["cga_id"]; ok && cgaID == expiredCGA.ID {
-				s.Fail("Should not have wallet transaction for expired grant")
-			}
-		}
-	}
+	_, err = s.getWalletTransactionByGrantID(s.testData.customer.ID, nil, &expiredCGA.ID)
+	s.Error(err, "Should not find wallet transaction for expired grant")
 }
 
 // Test Case 23: Skip Grant with Past Expiration (Recurring, WEEK unit)
@@ -1561,7 +1506,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationRecurringWe
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    pastScheduledFor,
-		PeriodStart:                     lo.ToPtr(pastScheduledFor),
+		PeriodStart:                     pastScheduledFor,
 		PeriodEnd:                       lo.ToPtr(pastScheduledFor.Add(30 * 24 * time.Hour)),
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonRecurringCreditGrant,
@@ -1586,7 +1531,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationRecurringWe
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 
 	// Verify: Next period application is still created (for recurring grants)
 	filter := &types.CreditGrantApplicationFilter{
@@ -1630,7 +1575,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationMonth() {
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    pastScheduledFor,
-		PeriodStart:                     lo.ToPtr(pastScheduledFor), // PeriodStart is required for expiry calculation
+		PeriodStart:                     pastScheduledFor, // PeriodStart is required for expiry calculation
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonOnetimeCreditGrant,
 		SubscriptionStatusAtApplication: s.testData.subscription.SubscriptionStatus,
@@ -1654,7 +1599,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationMonth() {
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 	s.Nil(processedApp.AppliedAt)
 }
 
@@ -1687,7 +1632,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationYear() {
 		CreditGrantID:                   creditGrantResp.CreditGrant.ID,
 		SubscriptionID:                  s.testData.subscription.ID,
 		ScheduledFor:                    pastScheduledFor,
-		PeriodStart:                     lo.ToPtr(pastScheduledFor), // PeriodStart is required for expiry calculation
+		PeriodStart:                     pastScheduledFor, // PeriodStart is required for expiry calculation
 		ApplicationStatus:               types.ApplicationStatusPending,
 		ApplicationReason:               types.ApplicationReasonOnetimeCreditGrant,
 		SubscriptionStatusAtApplication: s.testData.subscription.SubscriptionStatus,
@@ -1711,7 +1656,7 @@ func (s *CreditGrantServiceTestSuite) TestSkipGrantWithPastExpirationYear() {
 	s.NoError(err)
 	s.Equal(types.ApplicationStatusSkipped, processedApp.ApplicationStatus)
 	s.NotNil(processedApp.FailureReason)
-	s.Contains(*processedApp.FailureReason, "Expired")
+	s.Contains(*processedApp.FailureReason, "expired")
 	s.Nil(processedApp.AppliedAt)
 }
 
@@ -1763,27 +1708,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryDay() 
 	s.NotNil(firstApp)
 
 	// Verify wallet transaction has expiry of 7 days from scheduledFor
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
@@ -1792,7 +1718,7 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryDay() 
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	s.NotNil(firstApp.PeriodStart, "PeriodStart should be set for subscription-scoped grants")
 	expectedPeriodStart := grantTx.ExpiryDate.AddDate(0, 0, -7) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedPeriodStart, *firstApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
+	s.WithinDuration(expectedPeriodStart, firstApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
 	// Also verify the expiry is 7 days from PeriodStart using AddDate()
 	expectedExpiry := firstApp.PeriodStart.AddDate(0, 0, 7)
 	s.WithinDuration(expectedExpiry, *grantTx.ExpiryDate, 24*time.Hour, "First application expiry should be 7 days from PeriodStart using AddDate()")
@@ -1817,18 +1743,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryDay() 
 	s.Equal(types.ApplicationStatusApplied, processedNextApp.ApplicationStatus)
 
 	// Get transactions again to find the new one
-	transactions, err = s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
+	nextGrantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, nil, &nextApp.ID)
 	s.NoError(err)
-
-	var nextGrantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if cgaID, ok := tx.Metadata["cga_id"]; ok && cgaID == nextApp.ID {
-				nextGrantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(nextGrantTx)
 	s.NotNil(nextGrantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
@@ -1837,7 +1753,7 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryDay() 
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	s.NotNil(processedNextApp.PeriodStart, "PeriodStart should be set for subscription-scoped grants")
 	expectedNextPeriodStart := nextGrantTx.ExpiryDate.AddDate(0, 0, -7) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedNextPeriodStart, *processedNextApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
+	s.WithinDuration(expectedNextPeriodStart, processedNextApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 7 days before expiry")
 	// Also verify the expiry is 7 days from PeriodStart using AddDate()
 	expectedNextExpiry := processedNextApp.PeriodStart.AddDate(0, 0, 7)
 	s.WithinDuration(expectedNextExpiry, *nextGrantTx.ExpiryDate, 24*time.Hour, "Next application expiry should be 7 days from its own PeriodStart using AddDate()")
@@ -1887,27 +1803,8 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryWeek()
 	s.NotNil(firstApp)
 
 	// Verify first period expiry (2 weeks = 14 days)
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
@@ -1915,7 +1812,7 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryWeek()
 	// Calculate expected expiry: actual expiry - 14 days should equal PeriodStart (within tolerance)
 	// This accounts for any time normalization that might occur during database storage/retrieval
 	expectedPeriodStart := grantTx.ExpiryDate.AddDate(0, 0, -14) // Reverse calculate from actual expiry
-	s.WithinDuration(expectedPeriodStart, *firstApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 14 days before expiry")
+	s.WithinDuration(expectedPeriodStart, firstApp.PeriodStart, 24*time.Hour, "PeriodStart should be approximately 14 days before expiry")
 	// Also verify the expiry is 14 days from PeriodStart using AddDate()
 	expectedExpiry := firstApp.PeriodStart.AddDate(0, 0, 14)
 	s.WithinDuration(expectedExpiry, *grantTx.ExpiryDate, 24*time.Hour, "First application expiry should be 2 weeks from PeriodStart using AddDate()")
@@ -1965,33 +1862,14 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryMonth(
 	s.NotNil(firstApp)
 
 	// Verify expiry is approximately 1 month from scheduledFor
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
 	effectiveDate := firstApp.ScheduledFor
-	if firstApp.PeriodStart != nil {
-		effectiveDate = *firstApp.PeriodStart
+	if !firstApp.PeriodStart.IsZero() {
+		effectiveDate = firstApp.PeriodStart
 	}
 	expectedExpiry := effectiveDate.AddDate(0, 1, 0) // Add 1 month
 	s.WithinDuration(expectedExpiry, *grantTx.ExpiryDate, 2*24*time.Hour, "First application expiry should be 1 month from PeriodStart")
@@ -2041,33 +1919,14 @@ func (s *CreditGrantServiceTestSuite) TestRecurringGrantWithDurationExpiryYear()
 	s.NotNil(firstApp)
 
 	// Verify expiry is approximately 1 year from scheduledFor
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry is calculated from PeriodStart
 	effectiveDate := firstApp.ScheduledFor
-	if firstApp.PeriodStart != nil {
-		effectiveDate = *firstApp.PeriodStart
+	if !firstApp.PeriodStart.IsZero() {
+		effectiveDate = firstApp.PeriodStart
 	}
 	expectedExpiry := effectiveDate.AddDate(1, 0, 0) // Add 1 year
 	s.WithinDuration(expectedExpiry, *grantTx.ExpiryDate, 2*24*time.Hour, "First application expiry should be 1 year from PeriodStart")
@@ -2119,27 +1978,8 @@ func (s *CreditGrantServiceTestSuite) TestBillingCycleExpiryWithRecurringGrant()
 	s.NotNil(firstApp)
 
 	// Verify wallet transaction expiry matches subscription period end
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry should match subscription current period end (compare dates only, times may differ)
@@ -2170,18 +2010,8 @@ func (s *CreditGrantServiceTestSuite) TestBillingCycleExpiryWithRecurringGrant()
 	// This depends on subscription period calculation
 
 	// Get transactions again
-	transactions, err = s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
+	nextGrantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, nil, &nextApp.ID)
 	s.NoError(err)
-
-	var nextGrantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if cgaID, ok := tx.Metadata["cga_id"]; ok && cgaID == nextApp.ID {
-				nextGrantTx = tx
-				break
-			}
-		}
-	}
 	if nextGrantTx != nil && nextGrantTx.ExpiryDate != nil {
 		// Next period expiry should match the subscription's next period end
 		// Note: This depends on subscription period calculation
@@ -2221,27 +2051,8 @@ func (s *CreditGrantServiceTestSuite) TestBillingCycleExpiryWithOnetimeGrant() {
 	s.Equal(types.ApplicationStatusApplied, applications[0].ApplicationStatus)
 
 	// Verify wallet transaction expiry
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	grantTx, err := s.getWalletTransactionByGrantID(s.testData.customer.ID, &creditGrantResp.CreditGrant.ID, nil)
 	s.NoError(err)
-	s.NotEmpty(wallets)
-
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	s.NoError(err)
-
-	var grantTx *dto.WalletTransactionResponse
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID, ok := tx.Metadata["grant_id"]; ok && grantID == creditGrantResp.CreditGrant.ID {
-				grantTx = tx
-				break
-			}
-		}
-	}
 	s.NotNil(grantTx)
 	s.NotNil(grantTx.ExpiryDate)
 	// Expiry should match subscription current period end (compare dates only, times may differ)
@@ -2391,7 +2202,7 @@ func (s *CreditGrantServiceTestSuite) TestSubscriptionCancellationCancelsFutureG
 		SubscriptionID:    testSub2.ID,
 		ApplicationStatus: types.ApplicationStatusPending,
 		ScheduledFor:      s.testData.now.Add(7 * 24 * time.Hour),
-		PeriodStart:       lo.ToPtr(s.testData.now.Add(7 * 24 * time.Hour)),
+		PeriodStart:       s.testData.now.Add(7 * 24 * time.Hour),
 		PeriodEnd:         lo.ToPtr(s.testData.now.Add(37 * 24 * time.Hour)),
 		Credits:           decimal.NewFromInt(75),
 		BaseModel:         types.GetDefaultBaseModel(s.GetContext()),
@@ -2415,25 +2226,6 @@ func (s *CreditGrantServiceTestSuite) TestSubscriptionCancellationCancelsFutureG
 	s.Nil(processedApp.AppliedAt, "Cancelled application should not have AppliedAt set")
 
 	// Verify no wallet transaction was created for the cancelled application
-	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), testSub2.CustomerID)
-	s.NoError(err)
-	s.NotEmpty(wallets, "Customer should have a wallet")
-	walletID := wallets[0].ID
-
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	})
-	s.NoError(err)
-
-	// Count transactions for this grant - should only be 1 (from the first application before cancellation)
-	grantTxCount := 0
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if cgaID, ok := tx.Metadata["cga_id"]; ok && cgaID == manualFutureApp.ID {
-				grantTxCount++
-			}
-		}
-	}
-	s.Equal(0, grantTxCount, "No wallet transactions should be created for cancelled future applications")
+	_, err = s.getWalletTransactionByGrantID(testSub2.CustomerID, nil, &manualFutureApp.ID)
+	s.Error(err, "No wallet transaction should be created for cancelled future applications")
 }

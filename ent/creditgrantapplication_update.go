@@ -242,6 +242,11 @@ func (cgau *CreditGrantApplicationUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (cgau *CreditGrantApplicationUpdate) check() error {
+	if v, ok := cgau.mutation.ApplicationStatus(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "application_status", err: fmt.Errorf(`ent: validator failed for field "CreditGrantApplication.application_status": %w`, err)}
+		}
+	}
 	if v, ok := cgau.mutation.SubscriptionStatusAtApplication(); ok {
 		if err := creditgrantapplication.SubscriptionStatusAtApplicationValidator(string(v)); err != nil {
 			return &ValidationError{Name: "subscription_status_at_application", err: fmt.Errorf(`ent: validator failed for field "CreditGrantApplication.subscription_status_at_application": %w`, err)}
@@ -288,9 +293,6 @@ func (cgau *CreditGrantApplicationUpdate) sqlSave(ctx context.Context) (n int, e
 	}
 	if cgau.mutation.AppliedAtCleared() {
 		_spec.ClearField(creditgrantapplication.FieldAppliedAt, field.TypeTime)
-	}
-	if cgau.mutation.PeriodStartCleared() {
-		_spec.ClearField(creditgrantapplication.FieldPeriodStart, field.TypeTime)
 	}
 	if cgau.mutation.PeriodEndCleared() {
 		_spec.ClearField(creditgrantapplication.FieldPeriodEnd, field.TypeTime)
@@ -567,6 +569,11 @@ func (cgauo *CreditGrantApplicationUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (cgauo *CreditGrantApplicationUpdateOne) check() error {
+	if v, ok := cgauo.mutation.ApplicationStatus(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "application_status", err: fmt.Errorf(`ent: validator failed for field "CreditGrantApplication.application_status": %w`, err)}
+		}
+	}
 	if v, ok := cgauo.mutation.SubscriptionStatusAtApplication(); ok {
 		if err := creditgrantapplication.SubscriptionStatusAtApplicationValidator(string(v)); err != nil {
 			return &ValidationError{Name: "subscription_status_at_application", err: fmt.Errorf(`ent: validator failed for field "CreditGrantApplication.subscription_status_at_application": %w`, err)}
@@ -630,9 +637,6 @@ func (cgauo *CreditGrantApplicationUpdateOne) sqlSave(ctx context.Context) (_nod
 	}
 	if cgauo.mutation.AppliedAtCleared() {
 		_spec.ClearField(creditgrantapplication.FieldAppliedAt, field.TypeTime)
-	}
-	if cgauo.mutation.PeriodStartCleared() {
-		_spec.ClearField(creditgrantapplication.FieldPeriodStart, field.TypeTime)
 	}
 	if cgauo.mutation.PeriodEndCleared() {
 		_spec.ClearField(creditgrantapplication.FieldPeriodEnd, field.TypeTime)
