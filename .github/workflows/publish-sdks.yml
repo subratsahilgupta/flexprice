@@ -28,17 +28,13 @@ jobs:
   generate-sdks:
     name: Generate All SDKs
     runs-on: ubuntu-latest
+    # Skip if commit message starts with "ci: regenerated" to prevent loops
+    if: ${{ !startsWith(github.event.head_commit.message, 'ci: regenerated') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
-
-      - name: Setup Speakeasy
-        uses: speakeasy-api/sdk-generation-action@v15
-        with:
-          speakeasy_api_key: ${{ secrets.SPEAKEASY_API_KEY }}
-          github_access_token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
 
       - name: Generate Go SDK version
         id: go_version
@@ -86,12 +82,15 @@ jobs:
           
           echo "✅ Updated versions in gen.yaml"
 
-      - name: Generate SDKs
+      - name: Setup Speakeasy and Generate SDKs
+        uses: speakeasy-api/sdk-generation-action@v15
+        with:
+          speakeasy_api_key: ${{ secrets.SPEAKEASY_API_KEY }}
+          github_access_token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
+          mode: direct
         env:
           PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          speakeasy run
 
       - name: Copy custom files to all SDKs
         run: |
