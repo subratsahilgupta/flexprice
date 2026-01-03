@@ -13,7 +13,7 @@ import (
 // CustomerDashboardService provides customer dashboard functionality
 type CustomerDashboardService interface {
 	// CreateDashboardSession creates a dashboard session URL for a customer
-	CreateDashboardSession(ctx context.Context, extenalID string) (*dto.DashboardSessionResponse, error)
+	CreateDashboardSession(ctx context.Context, externalID string) (*dto.DashboardSessionResponse, error)
 	// GetCustomer returns customer info for the dashboard
 	GetCustomer(ctx context.Context) (*dto.CustomerResponse, error)
 	// UpdateCustomer updates customer info from the dashboard
@@ -55,10 +55,10 @@ func NewCustomerDashboardService(
 }
 
 // CreateDashboardSession creates a dashboard session for a customer
-func (s *customerDashboardService) CreateDashboardSession(ctx context.Context, externalCustomerID string) (*dto.DashboardSessionResponse, error) {
+func (s *customerDashboardService) CreateDashboardSession(ctx context.Context, externalID string) (*dto.DashboardSessionResponse, error) {
 
 	// Look up the customer by external ID
-	customer, err := s.customerService.GetCustomerByLookupKey(ctx, externalCustomerID)
+	customer, err := s.customerService.GetCustomerByLookupKey(ctx, externalID)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Customer not found with the provided external_customer_id").
