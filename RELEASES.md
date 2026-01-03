@@ -22,3 +22,15 @@ Based on:
 ### Generated
 - [python v2.0.0] api/python
 - [typescript v2.0.0] api/javascript
+
+## 2026-01-03 14:05:03
+### Changes
+Based on:
+- OpenAPI Doc  
+- Speakeasy CLI 1.680.11 (2.788.15) https://github.com/speakeasy-api/speakeasy
+### Generated
+- [python v2.0.0] api/python
+- [typescript v2.0.0] api/javascript
+### Releases
+- [PyPI v2.0.0] https://pypi.org/project/flexprice-sdk-test/2.0.0 - api/python
+- [NPM v2.0.0] https://www.npmjs.com/package/flexprice-sdk-test/v/2.0.0 - api/javascript

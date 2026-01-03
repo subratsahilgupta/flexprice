@@ -26,7 +26,6 @@ targets:
         output: ./api/python
         publish:
             pypi:
-                packageName: flexprice-sdk-test
                 token: $PYPI_TOKEN
         codeSamples:
             registry:
@@ -40,8 +39,6 @@ targets:
         output: ./api/javascript
         publish:
             npm:
-                packageName: flexprice-sdk-test
-                access: public
                 token: $NPM_TOKEN
         codeSamples:
             registry:

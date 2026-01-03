@@ -408,34 +408,30 @@ FlexPrice API: FlexPrice API Service
 <!-- Start SDK Installation [installation] -->
 ## SDK Installation
 
-> [!TIP]
-> To finish publishing your SDK to npm and others you must [run your first generation action](https://www.speakeasy.com/docs/github-setup#step-by-step-guide).
-
-
 The SDK can be installed with either [npm](https://www.npmjs.com/), [pnpm](https://pnpm.io/), [bun](https://bun.sh/) or [yarn](https://classic.yarnpkg.com/en/) package managers.
 
 ### NPM
 
 ```bash
-npm add https://gitpkg.now.sh/flexprice/flexprice/api/javascript
+npm add flexprice-sdk-test
 ```
 
 ### PNPM
 
 ```bash
-pnpm add https://gitpkg.now.sh/flexprice/flexprice/api/javascript
+pnpm add flexprice-sdk-test
 ```
 
 ### Bun
 
 ```bash
-bun add https://gitpkg.now.sh/flexprice/flexprice/api/javascript
+bun add flexprice-sdk-test
 ```
 
 ### Yarn
 
 ```bash
-yarn add https://gitpkg.now.sh/flexprice/flexprice/api/javascript
+yarn add flexprice-sdk-test
 ```
 <!-- End SDK Installation [installation] -->
 
