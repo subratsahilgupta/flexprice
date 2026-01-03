@@ -13,17 +13,11 @@ type RevenueAnalyticsService = interfaces.RevenueAnalyticsService
 
 type revenueAnalyticsService struct {
 	ServiceParams
-	featureUsageTrackingService   FeatureUsageTrackingService
-	costsheetService              CostsheetService
-	costsheetUsageTrackingService CostSheetUsageTrackingService
 }
 
-func NewRevenueAnalyticsService(params ServiceParams, featureUsageTrackingService FeatureUsageTrackingService, costsheetService CostsheetService, costsheetUsageTrackingService CostSheetUsageTrackingService) RevenueAnalyticsService {
+func NewRevenueAnalyticsService(params ServiceParams) RevenueAnalyticsService {
 	return &revenueAnalyticsService{
-		ServiceParams:                 params,
-		featureUsageTrackingService:   featureUsageTrackingService,
-		costsheetService:              costsheetService,
-		costsheetUsageTrackingService: costsheetUsageTrackingService,
+		ServiceParams: params,
 	}
 }
 
@@ -39,9 +33,13 @@ func (s *revenueAnalyticsService) GetDetailedCostAnalytics(
 			Mark(ierr.ErrValidation)
 	}
 
+	// Define services
+	featureUsageTrackingService := NewFeatureUsageTrackingService(s.ServiceParams, s.EventRepo, s.FeatureUsageRepo)
+	costsheetUsageTrackingService := NewCostSheetUsageTrackingService(s.ServiceParams, s.EventRepo, s.CostSheetUsageRepo)
+
 	// 1. Fetch cost analytics using the costsheet usage tracking service
 	var costAnalytics *dto.GetCostAnalyticsResponse
-	costAnalytics, err := s.costsheetUsageTrackingService.GetCostSheetUsageAnalytics(ctx, req)
+	costAnalytics, err := costsheetUsageTrackingService.GetCostSheetUsageAnalytics(ctx, req)
 	if err != nil {
 		s.Logger.Warnw("failed to fetch cost analytics", "error", err)
 		costAnalytics = nil
@@ -55,7 +53,7 @@ func (s *revenueAnalyticsService) GetDetailedCostAnalytics(
 		StartTime:          req.StartTime,
 		EndTime:            req.EndTime,
 	}
-	revenueAnalytics, err = s.featureUsageTrackingService.GetDetailedUsageAnalyticsV2(ctx, revenueReq)
+	revenueAnalytics, err = featureUsageTrackingService.GetDetailedUsageAnalyticsV2(ctx, revenueReq)
 	if err != nil {
 		s.Logger.Warnw("failed to fetch revenue analytics", "error", err)
 		revenueAnalytics = nil

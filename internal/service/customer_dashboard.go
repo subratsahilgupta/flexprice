@@ -8,7 +8,6 @@ import (
 	"github.com/flexprice/flexprice/internal/auth"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/shopspring/decimal"
 )
 
 // CustomerDashboardService provides customer dashboard functionality
@@ -315,36 +314,9 @@ func (s *customerDashboardService) GetCostAnalytics(ctx context.Context, req dto
 			Mark(ierr.ErrValidation)
 	}
 
-	// For now, return only revenue analytics (usage analytics)
-	// Full cost analytics requires CostSheetUsageRepository which is not available in ServiceParams
-	revenueReq := &dto.GetUsageAnalyticsRequest{
-		ExternalCustomerID: externalCustomerID,
-		FeatureIDs:         internalReq.FeatureIDs,
-		StartTime:          internalReq.StartTime,
-		EndTime:            internalReq.EndTime,
-	}
-
-	featureUsageTrackingService := NewFeatureUsageTrackingService(s.ServiceParams, s.EventRepo, s.FeatureUsageRepo)
-	revenueAnalytics, err := featureUsageTrackingService.GetDetailedUsageAnalyticsV2(ctx, revenueReq)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build response with revenue data only
-	response := &dto.GetDetailedCostAnalyticsResponse{
-		CostAnalytics: []dto.CostAnalyticItem{},
-		TotalCost:     decimal.Zero,
-		TotalRevenue:  revenueAnalytics.TotalCost, // TotalCost in usage analytics represents revenue
-		Margin:        revenueAnalytics.TotalCost, // Without cost data, margin equals revenue
-		MarginPercent: decimal.NewFromInt(100),    // 100% margin without cost data
-		ROI:           decimal.Zero,
-		ROIPercent:    decimal.Zero,
-		Currency:      revenueAnalytics.Currency,
-		StartTime:     internalReq.StartTime,
-		EndTime:       internalReq.EndTime,
-	}
-
-	return response, nil
+	// Call the revenue analytics service which handles both cost and revenue analytics
+	revenueAnalyticsService := NewRevenueAnalyticsService(s.ServiceParams)
+	return revenueAnalyticsService.GetDetailedCostAnalytics(ctx, internalReq)
 }
 
 // GetUsageSummary returns usage summary for the dashboard customer
