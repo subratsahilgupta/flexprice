@@ -1,0 +1,130 @@
+name: Speakeasy SDK Publishing
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'SDK Version'
+        required: true
+        default: ''
+      publish_npm:
+        description: 'Publish to npm'
+        type: boolean
+        default: true
+      publish_pypi:
+        description: 'Publish to PyPI'
+        type: boolean
+        default: true
+      publish_go:
+        description: 'Publish Go SDK'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  generate-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup Speakeasy
+        uses: speakeasy-api/sdk-generation-action@v15
+        with:
+          speakeasy_version: latest
+          
+      - name: Authenticate Speakeasy
+        env:
+          SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
+        run: |
+          speakeasy auth login --api-key $SPEAKEASY_API_KEY
+          
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          
+      - name: Update version in gen.yaml
+        run: |
+          sed -i "s/version: .*/version: ${{ env.VERSION }}/" .speakeasy/gen.yaml
+          
+      - name: Generate SDKs
+        run: |
+          speakeasy run
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+          
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          
+      - name: Install publishing tools
+        run: |
+          pip install build twine
+          
+      - name: Publish JavaScript SDK to npm
+        if: github.event.inputs.publish_npm != 'false'
+        working-directory: api/javascript
+        run: |
+          npm ci
+          npm run build
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+          
+      - name: Publish Python SDK to PyPI
+        if: github.event.inputs.publish_pypi != 'false'
+        working-directory: api/python
+        run: |
+          python -m build
+          python -m twine upload dist/* --username __token__ --password ${{ secrets.PYPI_API_TOKEN }}
+          
+      - name: Publish Go SDK to GitHub
+        if: github.event.inputs.publish_go != 'false'
+        run: |
+          # Clone Go SDK repo (TESTING: using go-sdk-temp)
+          git clone https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/go-sdk-temp.git /tmp/go-sdk
+          
+          # Copy files
+          rm -rf /tmp/go-sdk/*
+          cp -r api/go/* /tmp/go-sdk/
+          cp LICENSE /tmp/go-sdk/
+          
+          # Commit and tag
+          cd /tmp/go-sdk
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add .
+          git commit -m "Update SDK to version ${{ env.VERSION }}" || true
+          git tag -a "v${{ env.VERSION }}" -m "Version ${{ env.VERSION }}"
+          git push origin main
+          git push --tags
+          
+          echo "✓ Go SDK published to go-sdk-temp successfully"
+
+
+

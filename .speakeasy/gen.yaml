@@ -32,7 +32,7 @@ generation:
     generateNewTests: true
     skipResponseBodyAssertions: false
 go:
-  version: 1.1.2
+  version: 2.0.1
   additionalDependencies: {}
   baseErrorName: FlexPriceError
   clientServerStatusCodesAsErrors: true
@@ -62,3 +62,100 @@ go:
   sdkPackageName: ""
   templateVersion: v2
   unionStrategy: populated-fields
+python:
+  version: 2.0.0
+  additionalDependencies: {}
+  allowedRedefinedBuiltins:
+    - id
+    - object
+  asyncMode: both
+  author: FlexPrice
+  authors:
+    - Speakeasy
+  baseErrorName: FlexPriceError
+  clientServerStatusCodesAsErrors: true
+  constFieldCasing: upper
+  defaultErrorName: SDKError
+  description: Python SDK for FlexPrice API
+  enableCustomCodeRegions: false
+  enumFormat: enum
+  fixFlags:
+    asyncPaginationSep2025: false
+    responseRequiredSep2024: false
+  flattenGlobalSecurity: true
+  flattenRequests: false
+  flatteningOrder: parameters-first
+  imports:
+    option: openapi
+    paths:
+      callbacks: models/callbacks
+      errors: models/errors
+      operations: models/operations
+      shared: models/components
+      webhooks: models/webhooks
+  inferUnionDiscriminators: true
+  inputModelSuffix: Input
+  license: ""
+  maxMethodParams: 4
+  methodArguments: infer-optional-args
+  moduleName: ""
+  multipartArrayFormat: legacy
+  outputModelSuffix: Output
+  packageManager: poetry
+  packageName: flexprice-sdk-test
+  preApplyUnionDiscriminators: false
+  pytestFilterWarnings: []
+  pytestTimeout: 0
+  responseFormat: flat
+  sseFlatResponse: false
+  templateVersion: v2
+typescript:
+  version: 2.0.0
+  acceptHeaderEnum: true
+  additionalDependencies: {}
+  additionalPackageJSON: {}
+  additionalScripts: {}
+  alwaysIncludeInboundAndOutbound: false
+  author: FlexPrice
+  baseErrorName: FlexPriceError
+  clientServerStatusCodesAsErrors: true
+  constFieldsAlwaysOptional: false
+  defaultErrorName: SDKError
+  enableCustomCodeRegions: false
+  enableMCPServer: false
+  enableReactQuery: false
+  enumFormat: union
+  exportZodModelNamespace: false
+  flattenGlobalSecurity: true
+  flatteningOrder: parameters-first
+  formStringArrayEncodeMode: encoded-string
+  forwardCompatibleEnumsByDefault: false
+  forwardCompatibleUnionsByDefault: "false"
+  generateExamples: true
+  imports:
+    option: openapi
+    paths:
+      callbacks: models/callbacks
+      errors: models/errors
+      operations: models/operations
+      shared: models/components
+      webhooks: models/webhooks
+  inferUnionDiscriminators: true
+  inputModelSuffix: Input
+  jsonpath: legacy
+  laxMode: strict
+  maxMethodParams: 4
+  methodArguments: require-security-and-request
+  modelPropertyCasing: camel
+  moduleFormat: commonjs
+  multipartArrayFormat: legacy
+  outputModelSuffix: Output
+  packageName: flexprice-sdk-test
+  preApplyUnionDiscriminators: true
+  responseFormat: flat
+  sseFlatResponse: false
+  templateVersion: v2
+  unionStrategy: left-to-right
+  usageSDKInitImports: []
+  useIndexModules: true
+  zodVersion: v3
