@@ -28,7 +28,6 @@ jobs:
   generate-sdks:
     name: Generate All SDKs
     runs-on: ubuntu-latest
-    if: "!startsWith(github.event.head_commit.message, 'ci: regenerated')"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -86,7 +85,6 @@ jobs:
         with:
           speakeasy_api_key: ${{ secrets.SPEAKEASY_API_KEY }}
           github_access_token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
-          mode: direct
         env:
           PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -108,12 +106,6 @@ jobs:
           ./scripts/copy-custom-files.sh javascript || echo "⚠️ Warning: JavaScript custom files copy had issues"
           
           echo "✅ All custom files copied"
-
-      - name: Upload Go SDK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: go-sdk
-          path: api/go/
       
       - name: Upload Speakeasy config
         uses: actions/upload-artifact@v4
@@ -126,11 +118,10 @@ jobs:
     needs: generate-sdks
     runs-on: ubuntu-latest
     steps:
-      - name: Download Go SDK artifact
-        uses: actions/download-artifact@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          name: go-sdk
-          path: sdk/
+          token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
       
       - name: Download Speakeasy config
         uses: actions/download-artifact@v4
@@ -145,14 +136,21 @@ jobs:
 
       - name: Clone and update Go SDK repo
         run: |
-          git clone https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/go-sdk-temp.git repo
-          cd repo
+          # Clone the SDK repository
+          git clone https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/go-sdk-temp.git /tmp/go-sdk
+          
+          cd /tmp/go-sdk
           
           # Remove all files except .git
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           
-          # Copy new SDK files
-          cp -r ../sdk/* .
+          # Copy SDK files directly from workspace (bypasses .gitignore)
+          cp -r $GITHUB_WORKSPACE/api/go/* .
+          
+          # Copy LICENSE if it exists
+          if [ -f "$GITHUB_WORKSPACE/LICENSE" ]; then
+            cp $GITHUB_WORKSPACE/LICENSE .
+          fi
           
           # Stage all changes
           git add -A
@@ -166,13 +164,13 @@ jobs:
           # Commit and push
           git commit -m "chore: Update Go SDK via Speakeasy"
           
-          # Get version from gen.yaml
-          VERSION=$(grep -A 1 "^go:" ../config/gen.yaml | grep "version:" | awk '{print $2}')
+          # Get version from config
+          VERSION=$(grep -A 1 "^go:" $GITHUB_WORKSPACE/config/gen.yaml | grep "version:" | awk '{print $2}')
           
           # Create and push tag
           git tag -a "v${VERSION}" -m "Release v${VERSION}"
           git push origin main
           git push origin "v${VERSION}"
           
-          echo "✅ Go SDK published: v${VERSION}"
+          echo "✅ Go SDK v${VERSION} published successfully!"
 
