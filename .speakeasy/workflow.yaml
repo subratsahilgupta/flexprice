@@ -26,7 +26,7 @@ targets:
         output: ./api/python
         publish:
             pypi:
-                token: $PYPI_TOKEN
+                token: ${{ secrets.PYPI_TOKEN }}
         codeSamples:
             registry:
                 location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-python-code-samples
@@ -39,7 +39,7 @@ targets:
         output: ./api/javascript
         publish:
             npm:
-                token: $NPM_TOKEN
+                token: ${{ secrets.NPM_TOKEN }}
         codeSamples:
             registry:
                 location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-typescript-code-samples
