@@ -83,8 +83,10 @@ jobs:
         working-directory: api/javascript
         run: |
           echo "📝 Updating version in package.json..."
-          npm version ${{ env.VERSION }} --no-git-tag-version
+          # Use sed to update version directly
+          sed -i "s/\"version\": \".*\"/\"version\": \"${{ env.VERSION }}\"/" package.json
           echo "✓ Version updated to ${{ env.VERSION }}"
+          cat package.json | grep version
 
       - name: Install dependencies and build
         working-directory: api/javascript
