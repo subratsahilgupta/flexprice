@@ -71,40 +71,27 @@ jobs:
           /usr/local/bin/speakeasy run --target flexprice-typescript
           echo "✓ JavaScript SDK generated"
 
-      - name: Ensure CustomerPortal is preserved and exported
+      - name: Remove incompatible custom files
         working-directory: api/javascript
         run: |
-          echo "📋 Setting up custom CustomerPortal..."
+          echo "📋 Cleaning up incompatible custom files..."
           
-          # Make sure .genignore preserves CustomerPortal
-          if ! grep -q "CustomerPortal.ts" .genignore 2>/dev/null; then
-            echo "src/apis/CustomerPortal.ts" >> .genignore
-            echo "✓ Added CustomerPortal to .genignore"
+          # Remove CustomerPortal.ts - it was written for old OpenAPI Generator structure
+          # and is incompatible with new Speakeasy SDK structure
+          # TODO: Rewrite CustomerPortal for Speakeasy SDK structure
+          if [ -f "src/apis/CustomerPortal.ts" ]; then
+            rm -f src/apis/CustomerPortal.ts
+            echo "✓ Removed incompatible CustomerPortal.ts (needs rewrite for Speakeasy)"
           fi
           
-          # Copy CustomerPortal if it doesn't exist
-          if [ ! -f "src/apis/CustomerPortal.ts" ]; then
-            if [ -f "$GITHUB_WORKSPACE/api/custom/javascript/src/apis/CustomerPortal.ts" ]; then
-              mkdir -p src/apis
-              cp "$GITHUB_WORKSPACE/api/custom/javascript/src/apis/CustomerPortal.ts" src/apis/
-              echo "✓ Copied CustomerPortal.ts"
-            fi
-          else
-            echo "✓ CustomerPortal.ts already exists (preserved by .genignore)"
+          # Remove empty apis directory if it exists
+          if [ -d "src/apis" ] && [ -z "$(ls -A src/apis)" ]; then
+            rmdir src/apis
+            echo "✓ Removed empty src/apis directory"
           fi
           
-          # Check current SDK structure
-          echo "📁 Checking SDK structure..."
+          echo "📁 Current SDK structure:"
           ls -la src/ || true
-          
-          # Add export to main SDK file
-          if [ -f "src/sdk/sdk.ts" ]; then
-            if ! grep -q "CustomerPortal" src/sdk/sdk.ts; then
-              echo "" >> src/sdk/sdk.ts
-              echo "export * from '../apis/CustomerPortal.js';" >> src/sdk/sdk.ts
-              echo "✓ Added CustomerPortal export to SDK"
-            fi
-          fi
 
       - name: Update version in package.json
         working-directory: api/javascript
