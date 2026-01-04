@@ -52,7 +52,8 @@ jobs:
           
       - name: Update version in gen.yaml
         run: |
-          sed -i "s/^go:/go:\n  version: ${{ env.VERSION }}/" .speakeasy/gen.yaml || sed -i "/^go:/,/^[a-z]/s/version: .*/  version: ${{ env.VERSION }}/" .speakeasy/gen.yaml
+          # Update Go SDK version in gen.yaml
+          sed -i '/^go:/,/^[a-z]/ { /^  version:/ s/version: .*/version: ${{ env.VERSION }}/; }' .speakeasy/gen.yaml
           echo "✓ Updated Go SDK version to ${{ env.VERSION }}"
           
       - name: Generate Swagger
