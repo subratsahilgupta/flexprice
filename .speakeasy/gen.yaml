@@ -1,4 +1,5 @@
 configVersion: 2.0.0
+# Trigger republish with clean semver versions (2.0.0)
 generation:
   devContainers:
     enabled: true
