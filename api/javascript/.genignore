@@ -1,3 +1,5 @@
 # Preserve custom files during SDK regeneration
 # Note: Removed examples/ to allow Speakeasy to regenerate it properly
 
+# Preserve custom CustomerPortal during SDK regeneration
+src/apis/CustomerPortal.ts
