@@ -16,6 +16,7 @@ targets:
                 owner: flexprice
                 repo: go-sdk-temp
         codeSamples:
+            output: .speakeasy/code-samples-go.yaml
             labelOverride:
                 fixedValue: Go (SDK)
             blocking: false
@@ -28,6 +29,7 @@ targets:
                 packageName: flexprice-sdk-test
                 token: $PYPI_TOKEN
         codeSamples:
+            output: .speakeasy/code-samples-python.yaml
             labelOverride:
                 fixedValue: Python (SDK)
             blocking: false
@@ -41,6 +43,7 @@ targets:
                 access: public
                 token: $NPM_TOKEN
         codeSamples:
+            output: .speakeasy/code-samples-typescript.yaml
             labelOverride:
                 fixedValue: TypeScript (SDK)
             blocking: false
