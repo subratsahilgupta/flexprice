@@ -15,12 +15,12 @@ dependencies = [
 [tool.poetry]
 repository = "https://github.com/flexprice/flexprice.git"
 packages = [
-    { include = "flexprice_sdk_test", from = "src" }
+    { include = "flexprice_test_sdk", from = "src" }
 ]
-include = ["py.typed", "src/flexprice_sdk_test/py.typed"]
+include = ["py.typed", "src/flexprice_test_sdk/py.typed"]
 
 [tool.setuptools.package-data]
-"*" = ["py.typed", "src/flexprice_sdk_test/py.typed"]
+"*" = ["py.typed", "src/flexprice_test_sdk/py.typed"]
 
 [virtualenvs]
 in-project = true
