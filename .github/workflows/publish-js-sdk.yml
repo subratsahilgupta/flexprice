@@ -71,12 +71,39 @@ jobs:
           /usr/local/bin/speakeasy run --target flexprice-typescript
           echo "✓ JavaScript SDK generated"
 
-      - name: Copy custom files to SDK
+      - name: Ensure CustomerPortal is preserved and exported
+        working-directory: api/javascript
         run: |
-          echo "📋 Copying custom files..."
-          if [ -d "api/custom/javascript" ]; then
-            cp -r api/custom/javascript/* api/javascript/ 2>/dev/null || true
-            echo "✓ Copied custom files"
+          echo "📋 Setting up custom CustomerPortal..."
+          
+          # Make sure .genignore preserves CustomerPortal
+          if ! grep -q "CustomerPortal.ts" .genignore 2>/dev/null; then
+            echo "src/apis/CustomerPortal.ts" >> .genignore
+            echo "✓ Added CustomerPortal to .genignore"
+          fi
+          
+          # Copy CustomerPortal if it doesn't exist
+          if [ ! -f "src/apis/CustomerPortal.ts" ]; then
+            if [ -f "$GITHUB_WORKSPACE/api/custom/javascript/src/apis/CustomerPortal.ts" ]; then
+              mkdir -p src/apis
+              cp "$GITHUB_WORKSPACE/api/custom/javascript/src/apis/CustomerPortal.ts" src/apis/
+              echo "✓ Copied CustomerPortal.ts"
+            fi
+          else
+            echo "✓ CustomerPortal.ts already exists (preserved by .genignore)"
+          fi
+          
+          # Check current SDK structure
+          echo "📁 Checking SDK structure..."
+          ls -la src/ || true
+          
+          # Add export to main SDK file
+          if [ -f "src/sdk/sdk.ts" ]; then
+            if ! grep -q "CustomerPortal" src/sdk/sdk.ts; then
+              echo "" >> src/sdk/sdk.ts
+              echo "export * from '../apis/CustomerPortal.js';" >> src/sdk/sdk.ts
+              echo "✓ Added CustomerPortal export to SDK"
+            fi
           fi
 
       - name: Update version in package.json
