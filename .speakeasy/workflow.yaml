@@ -21,7 +21,6 @@ targets:
         output: ./api/python
         publish:
             pypi:
-                packageName: flexprice-sdk-test
                 token: $PYPI_TOKEN
     flexprice-typescript:
         target: typescript
@@ -29,6 +28,4 @@ targets:
         output: ./api/javascript
         publish:
             npm:
-                packageName: flexprice-sdk-test
-                access: public
                 token: $NPM_TOKEN
