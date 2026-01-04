@@ -74,9 +74,19 @@ jobs:
         run: |
           echo "📋 Copying custom files..."
           if [ -f "api/custom/python/async_utils.py" ]; then
-            mkdir -p api/python/src/flexprice_test_sdk
-            cp api/custom/python/async_utils.py api/python/src/flexprice_test_sdk/
+            mkdir -p api/python/src/flexprice_sdk_test
+            cp api/custom/python/async_utils.py api/python/src/flexprice_sdk_test/
             echo "✓ Copied async_utils.py"
+          fi
+
+      - name: Fix pyproject.toml README reference
+        working-directory: api/python
+        run: |
+          echo "📝 Fixing README reference in pyproject.toml..."
+          # Speakeasy generates README-PYPI.md reference but the file is README.md
+          if [ ! -f "README-PYPI.md" ] && [ -f "README.md" ]; then
+            sed -i 's/readme = "README-PYPI.md"/readme = "README.md"/' pyproject.toml
+            echo "✓ Fixed README reference to README.md"
           fi
 
       - name: Update version in pyproject.toml
