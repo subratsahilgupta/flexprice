@@ -79,15 +79,27 @@ jobs:
             echo "✓ Copied async_utils.py"
           fi
 
-      - name: Fix pyproject.toml README reference
+      - name: Fix pyproject.toml for Poetry packaging
         working-directory: api/python
         run: |
-          echo "📝 Fixing README reference in pyproject.toml..."
-          # Speakeasy generates README-PYPI.md reference but the file is README.md
+          echo "📝 Fixing pyproject.toml for proper packaging..."
+          
+          # Fix README reference
           if [ ! -f "README-PYPI.md" ] && [ -f "README.md" ]; then
             sed -i 's/readme = "README-PYPI.md"/readme = "README.md"/' pyproject.toml
             echo "✓ Fixed README reference to README.md"
           fi
+          
+          # Ensure [tool.poetry] section has repository field
+          if ! grep -q "^\[tool.poetry\]" pyproject.toml; then
+            echo "⚠️ [tool.poetry] section missing!"
+          elif ! grep -A5 "^\[tool.poetry\]" pyproject.toml | grep -q "^repository ="; then
+            # Add repository field after [tool.poetry]
+            sed -i '/^\[tool.poetry\]/a repository = "https://github.com/flexprice/flexprice.git"' pyproject.toml
+            echo "✓ Added repository field to [tool.poetry]"
+          fi
+          
+          echo "✓ pyproject.toml ready for packaging"
 
       - name: Update version in pyproject.toml
         working-directory: api/python
