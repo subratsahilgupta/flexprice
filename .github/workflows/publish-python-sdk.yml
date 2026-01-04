@@ -1,0 +1,132 @@
+name: Publish Python SDK to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'SDK Version (e.g. 2.0.5)'
+        required: true
+        default: ''
+  push:
+    branches:
+      - develop
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish-python-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Speakeasy CLI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/speakeasy-api/speakeasy/main/install.sh | sh
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            # Auto-generate version from date for push events
+            VERSION="2.0.$(date +%Y%m%d%H%M%S)"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "📦 Publishing Python SDK version: ${VERSION}"
+
+      - name: Update version in gen.yaml
+        run: |
+          sed -i '/^python:/,/^[a-z]/ { /^  version:/ s/version: .*/version: ${{ env.VERSION }}/; }' .speakeasy/gen.yaml
+          echo "✓ Updated Python SDK version to ${{ env.VERSION }}"
+
+      - name: Generate Swagger
+        run: |
+          if [ -f "Makefile" ] && grep -q "swagger" Makefile; then
+            echo "🔨 Generating Swagger..."
+            make swagger || echo "⚠️ Swagger generation skipped"
+          fi
+
+      - name: Generate Python SDK with Speakeasy
+        env:
+          SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
+        run: |
+          echo "🔨 Generating Python SDK..."
+          /usr/local/bin/speakeasy run --target flexprice-python
+          echo "✓ Python SDK generated"
+
+      - name: Copy custom files to SDK
+        run: |
+          echo "📋 Copying custom files..."
+          if [ -f "api/custom/python/async_utils.py" ]; then
+            mkdir -p api/python/src/flexprice_sdk_test
+            cp api/custom/python/async_utils.py api/python/src/flexprice_sdk_test/
+            echo "✓ Copied async_utils.py"
+          fi
+
+      - name: Update version in pyproject.toml
+        working-directory: api/python
+        run: |
+          echo "📝 Updating version in pyproject.toml..."
+          sed -i "s/^version = \".*\"/version = \"${{ env.VERSION }}\"/" pyproject.toml
+          echo "✓ Version updated to ${{ env.VERSION }}"
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies and build
+        working-directory: api/python
+        run: |
+          echo "🔨 Installing dependencies..."
+          poetry install
+          echo "🏗️ Building package..."
+          poetry build
+          echo "✓ Package built successfully"
+
+      - name: Verify package
+        working-directory: api/python
+        run: |
+          echo "🧪 Verifying package..."
+          ls -lh dist/
+          echo "✓ Package verified"
+
+      - name: Publish to PyPI
+        working-directory: api/python
+        env:
+          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          echo "🚀 Publishing to PyPI..."
+          poetry publish
+          echo "✅ Python SDK v${{ env.VERSION }} published successfully to PyPI!"
+          echo "🔗 Package: https://pypi.org/project/flexprice-sdk-test/"
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## ✅ Python SDK Published!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Package:** https://pypi.org/project/flexprice-sdk-test/" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Installation" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "pip install flexprice-sdk-test==${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
