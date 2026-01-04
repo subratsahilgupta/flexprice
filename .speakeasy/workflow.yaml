@@ -1,35 +1,36 @@
 workflowVersion: 1.0.0
 speakeasyVersion: latest
+
 sources:
-    flexprice-api:
-        inputs:
-            - location: ./docs/swagger/swagger-3-0.json
-        overlays:
-            - location: .speakeasy/overlays.yaml
+  flexprice-api:
+    inputs:
+      - location: ./docs/swagger/swagger-3-0.json
+    overlays:
+      - location: .speakeasy/overlays.yaml
+
 targets:
-    flexprice-go:
-        target: go
-        source: flexprice-api
-        output: ./api/go
-        publish:
-            github:
-                owner: flexprice
-                repo: go-sdk-temp
-                token: $SDK_DEPLOY_GIT_TOKEN
-    flexprice-python:
-        target: python
-        source: flexprice-api
-        output: ./api/python
-        publish:
-            pypi:
-                packageName: flexprice-sdk-test
-                token: $PYPI_TOKEN
-    flexprice-typescript:
-        target: typescript
-        source: flexprice-api
-        output: ./api/javascript
-        publish:
-            npm:
-                packageName: flexprice-sdk-test
-                access: public
-                token: $NPM_TOKEN
+  flexprice-go:
+    target: go
+    source: flexprice-api
+    output: ./api/go
+    publish:
+      github:
+        owner: flexprice
+        repo: go-sdk-temp
+
+  flexprice-python:
+    target: python
+    source: flexprice-api
+    output: ./api/python
+    publish:
+      pypi:
+        packageName: flexprice-sdk-test
+
+  flexprice-typescript:
+    target: typescript
+    source: flexprice-api
+    output: ./api/javascript
+    publish:
+      npm:
+        packageName: flexprice-sdk-test
+        access: public
