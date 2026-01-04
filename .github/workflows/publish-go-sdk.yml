@@ -44,7 +44,7 @@ jobs:
             VERSION="${VERSION#v}"
           else
             # Auto-generate version from date and commit for push events
-            VERSION="1.1.$(date +%Y%m%d).$(git rev-parse --short HEAD)"
+            VERSION="2.0.$(date +%Y%m%d%H%M%S)"
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
