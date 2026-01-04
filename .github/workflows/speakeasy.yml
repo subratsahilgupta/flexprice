@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - develop
-    paths:
-      - docs/swagger/**
-      - .speakeasy/**
   workflow_dispatch:
     inputs:
       force:
