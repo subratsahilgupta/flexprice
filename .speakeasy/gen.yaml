@@ -32,7 +32,7 @@ generation:
     generateNewTests: true
     skipResponseBodyAssertions: false
 go:
-  version: 2.0.2
+  version: 2.0.3
   additionalDependencies: {}
   baseErrorName: FlexPriceError
   clientServerStatusCodesAsErrors: true
@@ -63,7 +63,7 @@ go:
   templateVersion: v2
   unionStrategy: populated-fields
 python:
-  version: 2.0.2
+  version: 2.0.3
   additionalDependencies: {}
   allowedRedefinedBuiltins:
     - id
@@ -110,7 +110,7 @@ python:
   sseFlatResponse: false
   templateVersion: v2
 typescript:
-  version: 2.0.2
+  version: 2.0.3
   acceptHeaderEnum: true
   additionalDependencies: {}
   additionalPackageJSON: {}
