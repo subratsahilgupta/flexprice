@@ -6,7 +6,7 @@ sources:
         sourceBlobDigest: sha256:bb4b9ed078b71cb6aee4b72c3c6a831899049bd466c6cf9ec321108bacdfc01c
         tags:
             - latest
-            - speakeasy-sdk-regen-develop-1767518407
+            - speakeasy-sdk-regen-develop-1767519648
             - "1.0"
 targets:
     flexprice-go:
@@ -14,16 +14,22 @@ targets:
         sourceNamespace: flexprice-api
         sourceRevisionDigest: sha256:038fb757329ecadf37790c1134f995838e703e0bad216cc5a81a99b3ffa8432b
         sourceBlobDigest: sha256:bb4b9ed078b71cb6aee4b72c3c6a831899049bd466c6cf9ec321108bacdfc01c
+        codeSamplesNamespace: flexprice-api-go-code-samples
+        codeSamplesRevisionDigest: sha256:8b02b9bbceecc23bcebc71e65f418be2e2854e8481b18fa92b35f2d9098a19b9
     flexprice-python:
         source: flexprice-api
         sourceNamespace: flexprice-api
         sourceRevisionDigest: sha256:038fb757329ecadf37790c1134f995838e703e0bad216cc5a81a99b3ffa8432b
         sourceBlobDigest: sha256:bb4b9ed078b71cb6aee4b72c3c6a831899049bd466c6cf9ec321108bacdfc01c
+        codeSamplesNamespace: flexprice-api-python-code-samples
+        codeSamplesRevisionDigest: sha256:55abb502aa31977c0e8ad26363ec89280cfc56a69fab4a7c334a9b9d03a98ee2
     flexprice-typescript:
         source: flexprice-api
         sourceNamespace: flexprice-api
         sourceRevisionDigest: sha256:038fb757329ecadf37790c1134f995838e703e0bad216cc5a81a99b3ffa8432b
         sourceBlobDigest: sha256:bb4b9ed078b71cb6aee4b72c3c6a831899049bd466c6cf9ec321108bacdfc01c
+        codeSamplesNamespace: flexprice-api-typescript-code-samples
+        codeSamplesRevisionDigest: sha256:78ce40c7508b29f3729fc64a911bc1ed434b0906f113d75cf35517beace07153
 workflow:
     workflowVersion: 1.0.0
     speakeasyVersion: latest
@@ -41,6 +47,12 @@ workflow:
             source: flexprice-api
             output: ./api/go
             publish: {}
+            codeSamples:
+                registry:
+                    location: registry.speakeasyapi.dev/flexprice/develop-cw0/flexprice-api-go-code-samples
+                labelOverride:
+                    fixedValue: Go (SDK)
+                blocking: false
         flexprice-python:
             target: python
             source: flexprice-api
@@ -48,6 +60,12 @@ workflow:
             publish:
                 pypi:
                     token: ""
+            codeSamples:
+                registry:
+                    location: registry.speakeasyapi.dev/flexprice/develop-cw0/flexprice-api-python-code-samples
+                labelOverride:
+                    fixedValue: Python (SDK)
+                blocking: false
         flexprice-typescript:
             target: typescript
             source: flexprice-api
@@ -55,3 +73,9 @@ workflow:
             publish:
                 npm:
                     token: ""
+            codeSamples:
+                registry:
+                    location: registry.speakeasyapi.dev/flexprice/develop-cw0/flexprice-api-typescript-code-samples
+                labelOverride:
+                    fixedValue: Typescript (SDK)
+                blocking: false

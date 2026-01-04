@@ -14,6 +14,12 @@ targets:
         source: flexprice-api
         output: ./api/go
         publish: {}
+        codeSamples:
+            registry:
+                location: registry.speakeasyapi.dev/flexprice/develop-cw0/flexprice-api-go-code-samples
+            labelOverride:
+                fixedValue: Go (SDK)
+            blocking: false
     flexprice-python:
         target: python
         source: flexprice-api
@@ -21,6 +27,12 @@ targets:
         publish:
             pypi:
                 token: ""
+        codeSamples:
+            registry:
+                location: registry.speakeasyapi.dev/flexprice/develop-cw0/flexprice-api-python-code-samples
+            labelOverride:
+                fixedValue: Python (SDK)
+            blocking: false
     flexprice-typescript:
         target: typescript
         source: flexprice-api
@@ -28,3 +40,9 @@ targets:
         publish:
             npm:
                 token: ""
+        codeSamples:
+            registry:
+                location: registry.speakeasyapi.dev/flexprice/develop-cw0/flexprice-api-typescript-code-samples
+            labelOverride:
+                fixedValue: Typescript (SDK)
+            blocking: false
