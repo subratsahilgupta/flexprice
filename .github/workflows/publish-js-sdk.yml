@@ -1,4 +1,4 @@
-name: Publish Python SDK to PyPI
+name: Publish JavaScript SDK to npm
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ permissions:
   contents: write
 
 jobs:
-  publish-python-sdk:
+  publish-js-sdk:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -25,10 +25,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.11'
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install Speakeasy CLI
         run: |
@@ -48,12 +49,12 @@ jobs:
           fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "📦 Publishing Python SDK version: ${VERSION}"
+          echo "📦 Publishing JavaScript SDK version: ${VERSION}"
 
       - name: Update version in gen.yaml
         run: |
-          sed -i '/^python:/,/^[a-z]/ { /^  version:/ s/version: .*/version: ${{ env.VERSION }}/; }' .speakeasy/gen.yaml
-          echo "✓ Updated Python SDK version to ${{ env.VERSION }}"
+          sed -i '/^typescript:/,/^[a-z]/ { /^  version:/ s/version: .*/version: ${{ env.VERSION }}/; }' .speakeasy/gen.yaml
+          echo "✓ Updated TypeScript SDK version to ${{ env.VERSION }}"
 
       - name: Generate Swagger
         run: |
@@ -62,89 +63,83 @@ jobs:
             make swagger || echo "⚠️ Swagger generation skipped"
           fi
 
-      - name: Generate Python SDK with Speakeasy
+      - name: Generate JavaScript SDK with Speakeasy
         env:
           SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
         run: |
-          echo "🔨 Generating Python SDK..."
-          /usr/local/bin/speakeasy run --target flexprice-python
-          echo "✓ Python SDK generated"
+          echo "🔨 Generating JavaScript/TypeScript SDK..."
+          /usr/local/bin/speakeasy run --target flexprice-typescript
+          echo "✓ JavaScript SDK generated"
 
       - name: Copy custom files to SDK
         run: |
           echo "📋 Copying custom files..."
-          if [ -f "api/custom/python/async_utils.py" ]; then
-            mkdir -p api/python/src/flexprice_sdk_test
-            cp api/custom/python/async_utils.py api/python/src/flexprice_sdk_test/
-            echo "✓ Copied async_utils.py"
+          if [ -d "api/custom/javascript" ]; then
+            cp -r api/custom/javascript/* api/javascript/ 2>/dev/null || true
+            echo "✓ Copied custom files"
           fi
 
-      - name: Update version in pyproject.toml
-        working-directory: api/python
+      - name: Update version in package.json
+        working-directory: api/javascript
         run: |
-          echo "📝 Updating version in pyproject.toml..."
-          sed -i "s/^version = \".*\"/version = \"${{ env.VERSION }}\"/" pyproject.toml
+          echo "📝 Updating version in package.json..."
+          npm version ${{ env.VERSION }} --no-git-tag-version
           echo "✓ Version updated to ${{ env.VERSION }}"
 
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
       - name: Install dependencies and build
-        working-directory: api/python
+        working-directory: api/javascript
         run: |
           echo "🔨 Installing dependencies..."
-          poetry install
+          npm ci
           echo "🏗️ Building package..."
-          poetry build
+          npm run build
           echo "✓ Package built successfully"
 
       - name: Verify package
-        working-directory: api/python
+        working-directory: api/javascript
         run: |
           echo "🧪 Verifying package..."
-          ls -lh dist/
+          ls -lh
           echo "✓ Package verified"
 
-      - name: Publish to PyPI
-        working-directory: api/python
+      - name: Publish to npm
+        working-directory: api/javascript
         env:
-          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "🚀 Publishing to PyPI..."
-          poetry publish
-          echo "✅ Python SDK v${{ env.VERSION }} published successfully to PyPI!"
-          echo "🔗 Package: https://pypi.org/project/flexprice-sdk-test/"
+          echo "🚀 Publishing to npm..."
+          npm publish --access public
+          echo "✅ JavaScript SDK v${{ env.VERSION }} published successfully to npm!"
+          echo "🔗 Package: https://www.npmjs.com/package/flexprice-sdk-test"
 
-      - name: Clone python-sdk-temp repository
+      - name: Clone js-sdk-temp repository
         run: |
-          echo "📥 Cloning python-sdk-temp repository..."
-          git clone https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/python-sdk-temp.git /tmp/python-sdk
+          echo "📥 Cloning js-sdk-temp repository..."
+          git clone https://x-access-token:${{ secrets.SDK_DEPLOY_GIT_TOKEN }}@github.com/flexprice/js-sdk-temp.git /tmp/js-sdk
           echo "✓ Repository cloned"
 
-      - name: Copy SDK files to python-sdk-temp
+      - name: Copy SDK files to js-sdk-temp
         run: |
           echo "📁 Copying SDK files..."
 
-          cd /tmp/python-sdk
+          cd /tmp/js-sdk
 
           # Remove old files (except .git)
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
 
           # Copy SDK files
-          cp -r $GITHUB_WORKSPACE/api/python/* /tmp/python-sdk/
+          cp -r $GITHUB_WORKSPACE/api/javascript/* /tmp/js-sdk/
 
           # Copy LICENSE
           if [ -f "$GITHUB_WORKSPACE/LICENSE" ]; then
-            cp $GITHUB_WORKSPACE/LICENSE /tmp/python-sdk/
+            cp $GITHUB_WORKSPACE/LICENSE /tmp/js-sdk/
           fi
 
           echo "✓ Files copied"
 
-      - name: Commit and push to python-sdk-temp
+      - name: Commit and push to js-sdk-temp
         run: |
-          cd /tmp/python-sdk
+          cd /tmp/js-sdk
 
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
@@ -157,31 +152,31 @@ jobs:
 
           # Stage and commit
           git add .
-          git commit -m "Release Python SDK v${{ env.VERSION }}"
+          git commit -m "Release JavaScript SDK v${{ env.VERSION }}"
 
           # Create tag
-          git tag -a "v${{ env.VERSION }}" -m "Python SDK version ${{ env.VERSION }}"
+          git tag -a "v${{ env.VERSION }}" -m "JavaScript SDK version ${{ env.VERSION }}"
 
           # Push
           git push origin main
           git push origin "v${{ env.VERSION }}"
 
-          echo "✅ Python SDK v${{ env.VERSION }} pushed to repository!"
-          echo "🔗 Repository: https://github.com/flexprice/python-sdk-temp"
+          echo "✅ JavaScript SDK v${{ env.VERSION }} pushed to repository!"
+          echo "🔗 Repository: https://github.com/flexprice/js-sdk-temp"
           echo "🏷️ Tag: v${{ env.VERSION }}"
 
       - name: Summary
         if: success()
         run: |
-          echo "## ✅ Python SDK Published!" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ JavaScript SDK Published!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** v${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "**PyPI:** https://pypi.org/project/flexprice-sdk-test/" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository:** https://github.com/flexprice/python-sdk-temp" >> $GITHUB_STEP_SUMMARY
+          echo "**npm:** https://www.npmjs.com/package/flexprice-sdk-test" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** https://github.com/flexprice/js-sdk-temp" >> $GITHUB_STEP_SUMMARY
           echo "**Tag:** v${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Installation" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "pip install flexprice-sdk-test==${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "npm install flexprice-sdk-test@${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
