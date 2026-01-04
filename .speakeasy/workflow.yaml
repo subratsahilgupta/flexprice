@@ -6,8 +6,6 @@ sources:
             - location: ./docs/swagger/swagger-3-0.json
         overlays:
             - location: .speakeasy/overlays.yaml
-        registry:
-            location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api
 targets:
     flexprice-go:
         target: go
@@ -15,8 +13,6 @@ targets:
         output: ./api/go
         publish: {}
         codeSamples:
-            registry:
-                location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-go-code-samples
             labelOverride:
                 fixedValue: Go (SDK)
             blocking: false
@@ -28,8 +24,6 @@ targets:
             pypi:
                 token: $PYPI_TOKEN
         codeSamples:
-            registry:
-                location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-python-code-samples
             labelOverride:
                 fixedValue: Python (SDK)
             blocking: false
@@ -41,8 +35,6 @@ targets:
             npm:
                 token: $NPM_TOKEN
         codeSamples:
-            registry:
-                location: registry.speakeasyapi.dev/flexprice/staging-nyv/flexprice-api-typescript-code-samples
             labelOverride:
                 fixedValue: TypeScript (SDK)
             blocking: false
