@@ -29,7 +29,8 @@ jobs:
       force: ${{ github.event.inputs.force }}
       mode: direct
       target: flexprice-go
+      create_release: true
     secrets:
-      github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      github_access_token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
       speakeasy_api_key: ${{ secrets.SPEAKEASY_API_KEY }}
 

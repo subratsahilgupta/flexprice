@@ -15,12 +15,14 @@ targets:
             github:
                 owner: flexprice
                 repo: go-sdk-temp
+                token: $SDK_DEPLOY_GIT_TOKEN
     flexprice-python:
         target: python
         source: flexprice-api
         output: ./api/python
         publish:
             pypi:
+                packageName: flexprice-sdk-test
                 token: $PYPI_TOKEN
     flexprice-typescript:
         target: typescript
@@ -28,4 +30,6 @@ targets:
         output: ./api/javascript
         publish:
             npm:
+                packageName: flexprice-sdk-test
+                access: public
                 token: $NPM_TOKEN
