@@ -35,41 +35,51 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/speakeasy-api/speakeasy/main/install.sh | sh
 
-      - name: Bump version with Speakeasy
-        id: bump_version
-        env:
-          SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
+      - name: Get version
+        id: get_version
         run: |
-          # Ensure we're in the repo root where .speakeasy/ exists
-          cd $GITHUB_WORKSPACE
-          
-          # Debug: Show current directory and files
-          echo "📂 Current directory: $(pwd)"
-          echo "📋 Checking for .speakeasy files:"
-          ls -la .speakeasy/ || echo "⚠️  .speakeasy directory not found!"
-          
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # Manual version override
             VERSION="${{ github.event.inputs.version }}"
-            echo "🎯 Using manual version: $VERSION"
-            speakeasy bump -t typescript -v "$VERSION"
           elif [ "${{ github.event_name }}" == "release" ]; then
-            # Use release tag version
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
-            echo "🎯 Using release version: $VERSION"
-            speakeasy bump -t typescript -v "$VERSION"
           else
-            # Auto-bump patch version
-            echo "🔼 Auto-bumping patch version..."
-            speakeasy bump patch -t typescript
+            # Fetch latest version from npm and increment patch version
+            echo "📡 Fetching latest version from npm..."
+            LATEST_VERSION=$(npm view flexprice-sdk-test version 2>/dev/null || echo "")
+            
+            if [ -z "$LATEST_VERSION" ]; then
+              # No version found on npm, start with 2.0.0
+              VERSION="2.0.0"
+              echo "⚠️  No previous version found on npm, starting with $VERSION"
+            else
+              echo "Latest version: $LATEST_VERSION"
+              # Extract major, minor, patch
+              MAJOR=$(echo $LATEST_VERSION | cut -d. -f1)
+              MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
+              PATCH=$(echo $LATEST_VERSION | cut -d. -f3)
+              
+              # Check if PATCH is a valid number (not timestamp)
+              if [[ "$PATCH" =~ ^[0-9]{1,3}$ ]]; then
+                # Valid patch number (1-3 digits), increment it
+                NEW_PATCH=$((PATCH + 1))
+                VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+                echo "🔼 Incrementing patch version: $LATEST_VERSION → $VERSION"
+              else
+                # Patch is timestamp or invalid, reset to 2.0.0
+                VERSION="2.0.0"
+                echo "⚠️  Previous version uses timestamp format ($LATEST_VERSION), resetting to $VERSION"
+              fi
+            fi
           fi
-          
-          # Read the bumped version from gen.yaml
-          VERSION=$(grep -A 50 '^typescript:' .speakeasy/gen.yaml | grep -m 1 'version:' | awk '{print $2}')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "📦 Publishing JavaScript SDK version: ${VERSION}"
+
+      - name: Update version in gen.yaml
+        run: |
+          sed -i '/^typescript:/,/^[a-z]/ { /^  version:/ s/version: .*/version: ${{ env.VERSION }}/; }' .speakeasy/gen.yaml
+          echo "✓ Updated TypeScript SDK version to ${{ env.VERSION }}"
 
       - name: Generate Swagger
         run: |
