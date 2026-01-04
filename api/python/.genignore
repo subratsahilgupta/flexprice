@@ -2,8 +2,5 @@
 src/flexprice/async_utils.py
 examples/
 
-# Preserve pyproject.toml package configuration
-pyproject.toml
-
 
 
