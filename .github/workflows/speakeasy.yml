@@ -37,7 +37,7 @@ jobs:
           github_access_token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
           speakeasy_version: latest
           mode: direct
-          force: ${{ github.event.inputs.force || 'false' }}
+          force: ${{ github.event.inputs.force || 'true' }}
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
