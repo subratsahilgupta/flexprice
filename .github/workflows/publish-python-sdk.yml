@@ -74,8 +74,8 @@ jobs:
         run: |
           echo "📋 Copying custom files..."
           if [ -f "api/custom/python/async_utils.py" ]; then
-            mkdir -p api/python/src/flexprice_sdk_test
-            cp api/custom/python/async_utils.py api/python/src/flexprice_sdk_test/
+            mkdir -p api/python/src/flexprice_test_sdk
+            cp api/custom/python/async_utils.py api/python/src/flexprice_test_sdk/
             echo "✓ Copied async_utils.py"
           fi
 
