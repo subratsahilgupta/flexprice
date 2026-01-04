@@ -35,26 +35,33 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/speakeasy-api/speakeasy/main/install.sh | sh
 
-      - name: Get version
-        id: get_version
+      - name: Bump version with Speakeasy
+        id: bump_version
+        env:
+          SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Manual version override
             VERSION="${{ github.event.inputs.version }}"
+            echo "🎯 Using manual version: $VERSION"
+            /usr/local/bin/speakeasy bump -t flexprice-typescript -v "$VERSION"
           elif [ "${{ github.event_name }}" == "release" ]; then
+            # Use release tag version
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
+            echo "🎯 Using release version: $VERSION"
+            /usr/local/bin/speakeasy bump -t flexprice-typescript -v "$VERSION"
           else
-            # Auto-generate version from date for push events
-            VERSION="2.0.$(date +%Y%m%d%H%M%S)"
+            # Auto-bump patch version
+            echo "🔼 Auto-bumping patch version..."
+            /usr/local/bin/speakeasy bump patch -t flexprice-typescript
           fi
+          
+          # Read the bumped version from gen.yaml
+          VERSION=$(grep -A 50 '^typescript:' .speakeasy/gen.yaml | grep -m 1 'version:' | awk '{print $2}')
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "📦 Publishing JavaScript SDK version: ${VERSION}"
-
-      - name: Update version in gen.yaml
-        run: |
-          sed -i '/^typescript:/,/^[a-z]/ { /^  version:/ s/version: .*/version: ${{ env.VERSION }}/; }' .speakeasy/gen.yaml
-          echo "✓ Updated TypeScript SDK version to ${{ env.VERSION }}"
 
       - name: Generate Swagger
         run: |
