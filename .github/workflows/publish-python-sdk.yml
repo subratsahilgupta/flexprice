@@ -79,24 +79,15 @@ jobs:
             echo "✓ Copied async_utils.py"
           fi
 
-      - name: Fix pyproject.toml for Poetry packaging
+      - name: Fix pyproject.toml for proper packaging
         working-directory: api/python
         run: |
           echo "📝 Fixing pyproject.toml for proper packaging..."
           
-          # Fix README reference
+          # Fix README reference if needed
           if [ ! -f "README-PYPI.md" ] && [ -f "README.md" ]; then
-            sed -i 's/readme = "README-PYPI.md"/readme = "README.md"/' pyproject.toml
+            sed -i 's/readme = "README-PYPI.md"/readme = "README.md"/' pyproject.toml || true
             echo "✓ Fixed README reference to README.md"
-          fi
-          
-          # Ensure [tool.poetry] section has repository field
-          if ! grep -q "^\[tool.poetry\]" pyproject.toml; then
-            echo "⚠️ [tool.poetry] section missing!"
-          elif ! grep -A5 "^\[tool.poetry\]" pyproject.toml | grep -q "^repository ="; then
-            # Add repository field after [tool.poetry]
-            sed -i '/^\[tool.poetry\]/a repository = "https://github.com/flexprice/flexprice.git"' pyproject.toml
-            echo "✓ Added repository field to [tool.poetry]"
           fi
           
           echo "✓ pyproject.toml ready for packaging"
@@ -108,34 +99,37 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"${{ env.VERSION }}\"/" pyproject.toml
           echo "✓ Version updated to ${{ env.VERSION }}"
 
-      - name: Install Poetry
+      - name: Install build tools
         run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "📦 Installing build tools..."
+          pip install --upgrade build twine
+          echo "✓ Build tools installed"
 
-      - name: Install dependencies and build
+      - name: Build package
         working-directory: api/python
         run: |
-          echo "🔨 Installing dependencies..."
-          poetry install
-          echo "🏗️ Building package..."
-          poetry build
+          echo "🏗️ Building package with setuptools..."
+          python -m build
           echo "✓ Package built successfully"
 
-      - name: Verify package
+      - name: Verify package contents
         working-directory: api/python
         run: |
-          echo "🧪 Verifying package..."
+          echo "🧪 Verifying package contents..."
           ls -lh dist/
+          echo ""
+          echo "Checking wheel contents:"
+          unzip -l dist/*.whl | head -30 || true
           echo "✓ Package verified"
 
       - name: Publish to PyPI
         working-directory: api/python
         env:
-          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
           echo "🚀 Publishing to PyPI..."
-          poetry publish
+          python -m twine upload dist/*
           echo "✅ Python SDK v${{ env.VERSION }} published successfully to PyPI!"
           echo "🔗 Package: https://pypi.org/project/flexprice-sdk-test/"
 
