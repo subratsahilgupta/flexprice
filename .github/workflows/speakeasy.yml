@@ -1,0 +1,44 @@
+name: Generate & Publish SDKs
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - docs/swagger/**
+      - .speakeasy/**
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Force generation of SDKs
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+  statuses: write
+  id-token: write
+
+jobs:
+  generate-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
+
+      - name: Generate and Publish SDKs
+        uses: speakeasy-api/sdk-generation-action@v15
+        with:
+          speakeasy_api_key: ${{ secrets.SPEAKEASY_API_KEY }}
+          github_access_token: ${{ secrets.SDK_DEPLOY_GIT_TOKEN }}
+          speakeasy_version: latest
+          mode: direct
+          force: ${{ github.event.inputs.force || 'false' }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+
