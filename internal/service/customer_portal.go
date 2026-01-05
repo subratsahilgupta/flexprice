@@ -10,55 +10,59 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-// CustomerDashboardService provides customer dashboard functionality
-type CustomerDashboardService interface {
+// CustomerPortalService provides customer portal functionality
+type CustomerPortalService interface {
 	// CreateDashboardSession creates a dashboard session URL for a customer
-	CreateDashboardSession(ctx context.Context, externalID string) (*dto.DashboardSessionResponse, error)
+	CreatePortalSession(ctx context.Context, externalID string) (*dto.PortalSessionResponse, error)
 	// GetCustomer returns customer info for the dashboard
 	GetCustomer(ctx context.Context) (*dto.CustomerResponse, error)
 	// UpdateCustomer updates customer info from the dashboard
 	UpdateCustomer(ctx context.Context, req dto.UpdateCustomerRequest) (*dto.CustomerResponse, error)
 	// GetSubscriptions returns subscriptions for the dashboard customer
-	GetSubscriptions(ctx context.Context, req dto.DashboardPaginatedRequest) (*dto.ListSubscriptionsResponse, error)
+	GetSubscriptions(ctx context.Context, req dto.PortalPaginatedRequest) (*dto.ListSubscriptionsResponse, error)
 	// GetSubscription returns a specific subscription
 	GetSubscription(ctx context.Context, subscriptionID string) (*dto.SubscriptionResponse, error)
 	// GetInvoices returns invoices for the dashboard customer
-	GetInvoices(ctx context.Context, req dto.DashboardPaginatedRequest) (*dto.ListInvoicesResponse, error)
+	GetInvoices(ctx context.Context, req dto.PortalPaginatedRequest) (*dto.ListInvoicesResponse, error)
 	// GetInvoice returns a specific invoice
 	GetInvoice(ctx context.Context, invoiceID string) (*dto.InvoiceResponse, error)
 	// GetWallets returns wallet balances for the dashboard customer
 	GetWallets(ctx context.Context) ([]*dto.WalletBalanceResponse, error)
 	// GetWallet returns a specific wallet
 	GetWallet(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error)
+	// GetInvoicePDFUrl returns a presigned URL for an invoice PDF
+	GetInvoicePDFUrl(ctx context.Context, invoiceID string) (string, error)
+	// GetWalletTransactions returns wallet transactions for the dashboard customer
+	GetWalletTransactions(ctx context.Context, walletID string, filter *types.WalletTransactionFilter) (*dto.ListWalletTransactionsResponse, error)
 	// GetAnalytics returns usage analytics for the dashboard customer
-	GetAnalytics(ctx context.Context, req dto.DashboardAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error)
+	GetAnalytics(ctx context.Context, req dto.PortalAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error)
 	// GetCostAnalytics returns cost analytics for the dashboard customer
-	GetCostAnalytics(ctx context.Context, req dto.DashboardCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error)
+	GetCostAnalytics(ctx context.Context, req dto.PortalCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error)
 	// GetUsageSummary returns usage summary for the dashboard customer
 	GetUsageSummary(ctx context.Context, req dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error)
 }
 
-type customerDashboardService struct {
+type customerPortalService struct {
 	ServiceParams
 	customerService         CustomerService
 	revenueAnalyticsService RevenueAnalyticsService
 }
 
-// NewCustomerDashboardService creates a new customer dashboard service
-func NewCustomerDashboardService(
+// NewCustomerPortalService creates a new customer portal service
+func NewCustomerPortalService(
 	params ServiceParams,
 	customerService CustomerService,
 	revenueAnalyticsService RevenueAnalyticsService,
-) CustomerDashboardService {
-	return &customerDashboardService{
+) CustomerPortalService {
+	return &customerPortalService{
 		ServiceParams:           params,
 		customerService:         customerService,
 		revenueAnalyticsService: revenueAnalyticsService,
 	}
 }
 
-// CreateDashboardSession creates a dashboard session for a customer
-func (s *customerDashboardService) CreateDashboardSession(ctx context.Context, externalID string) (*dto.DashboardSessionResponse, error) {
+// CreatePortalSession creates a dashboard session for a customer
+func (s *customerPortalService) CreatePortalSession(ctx context.Context, externalID string) (*dto.PortalSessionResponse, error) {
 
 	// Look up the customer by external ID
 	customer, err := s.customerService.GetCustomerByLookupKey(ctx, externalID)
@@ -77,7 +81,7 @@ func (s *customerDashboardService) CreateDashboardSession(ctx context.Context, e
 		customer.ExternalID,
 		customer.TenantID,
 		customer.EnvironmentID,
-		s.Config.CustomerDashboard.TokenTimeoutHours,
+		s.Config.CustomerPortal.TokenTimeoutHours,
 	)
 	if err != nil {
 		return nil, ierr.WithError(err).
@@ -86,9 +90,9 @@ func (s *customerDashboardService) CreateDashboardSession(ctx context.Context, e
 	}
 
 	// Build dashboard URL
-	dashboardURL := fmt.Sprintf("%s?token=%s", s.Config.CustomerDashboard.URL, token)
+	dashboardURL := fmt.Sprintf("%s?token=%s", s.Config.CustomerPortal.URL, token)
 
-	return &dto.DashboardSessionResponse{
+	return &dto.PortalSessionResponse{
 		URL:       dashboardURL,
 		Token:     token,
 		ExpiresAt: expiresAt,
@@ -96,7 +100,7 @@ func (s *customerDashboardService) CreateDashboardSession(ctx context.Context, e
 }
 
 // GetCustomer returns customer info for the dashboard
-func (s *customerDashboardService) GetCustomer(ctx context.Context) (*dto.CustomerResponse, error) {
+func (s *customerPortalService) GetCustomer(ctx context.Context) (*dto.CustomerResponse, error) {
 
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
@@ -111,7 +115,7 @@ func (s *customerDashboardService) GetCustomer(ctx context.Context) (*dto.Custom
 }
 
 // UpdateCustomer updates customer info from the dashboard
-func (s *customerDashboardService) UpdateCustomer(ctx context.Context, req dto.UpdateCustomerRequest) (*dto.CustomerResponse, error) {
+func (s *customerPortalService) UpdateCustomer(ctx context.Context, req dto.UpdateCustomerRequest) (*dto.CustomerResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
@@ -126,7 +130,7 @@ func (s *customerDashboardService) UpdateCustomer(ctx context.Context, req dto.U
 }
 
 // GetSubscriptions returns subscriptions for the dashboard customer
-func (s *customerDashboardService) GetSubscriptions(ctx context.Context, req dto.DashboardPaginatedRequest) (*dto.ListSubscriptionsResponse, error) {
+func (s *customerPortalService) GetSubscriptions(ctx context.Context, req dto.PortalPaginatedRequest) (*dto.ListSubscriptionsResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
@@ -158,7 +162,7 @@ func (s *customerDashboardService) GetSubscriptions(ctx context.Context, req dto
 }
 
 // GetSubscription returns a specific subscription
-func (s *customerDashboardService) GetSubscription(ctx context.Context, subscriptionID string) (*dto.SubscriptionResponse, error) {
+func (s *customerPortalService) GetSubscription(ctx context.Context, subscriptionID string) (*dto.SubscriptionResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
@@ -183,7 +187,7 @@ func (s *customerDashboardService) GetSubscription(ctx context.Context, subscrip
 }
 
 // GetInvoices returns invoices for the dashboard customer
-func (s *customerDashboardService) GetInvoices(ctx context.Context, req dto.DashboardPaginatedRequest) (*dto.ListInvoicesResponse, error) {
+func (s *customerPortalService) GetInvoices(ctx context.Context, req dto.PortalPaginatedRequest) (*dto.ListInvoicesResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
@@ -215,7 +219,7 @@ func (s *customerDashboardService) GetInvoices(ctx context.Context, req dto.Dash
 }
 
 // GetInvoice returns a specific invoice
-func (s *customerDashboardService) GetInvoice(ctx context.Context, invoiceID string) (*dto.InvoiceResponse, error) {
+func (s *customerPortalService) GetInvoice(ctx context.Context, invoiceID string) (*dto.InvoiceResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
@@ -243,7 +247,7 @@ func (s *customerDashboardService) GetInvoice(ctx context.Context, invoiceID str
 }
 
 // GetWallets returns wallet balances for the dashboard customer
-func (s *customerDashboardService) GetWallets(ctx context.Context) ([]*dto.WalletBalanceResponse, error) {
+func (s *customerPortalService) GetWallets(ctx context.Context) ([]*dto.WalletBalanceResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
@@ -259,7 +263,7 @@ func (s *customerDashboardService) GetWallets(ctx context.Context) ([]*dto.Walle
 }
 
 // GetWallet returns a specific wallet
-func (s *customerDashboardService) GetWallet(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error) {
+func (s *customerPortalService) GetWallet(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
@@ -284,7 +288,7 @@ func (s *customerDashboardService) GetWallet(ctx context.Context, walletID strin
 }
 
 // GetAnalytics returns usage analytics for the dashboard customer
-func (s *customerDashboardService) GetAnalytics(ctx context.Context, req dto.DashboardAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error) {
+func (s *customerPortalService) GetAnalytics(ctx context.Context, req dto.PortalAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	externalCustomerID := types.GetExternalCustomerID(ctx)
 	if customerID == "" {
@@ -300,7 +304,7 @@ func (s *customerDashboardService) GetAnalytics(ctx context.Context, req dto.Das
 }
 
 // GetCostAnalytics returns cost analytics for the dashboard customer
-func (s *customerDashboardService) GetCostAnalytics(ctx context.Context, req dto.DashboardCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error) {
+func (s *customerPortalService) GetCostAnalytics(ctx context.Context, req dto.PortalCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	externalCustomerID := types.GetExternalCustomerID(ctx)
 	if customerID == "" {
@@ -322,7 +326,7 @@ func (s *customerDashboardService) GetCostAnalytics(ctx context.Context, req dto
 }
 
 // GetUsageSummary returns usage summary for the dashboard customer
-func (s *customerDashboardService) GetUsageSummary(ctx context.Context, req dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error) {
+func (s *customerPortalService) GetUsageSummary(ctx context.Context, req dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
 		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
@@ -334,4 +338,59 @@ func (s *customerDashboardService) GetUsageSummary(ctx context.Context, req dto.
 	// Use billing service to get usage summary
 	billingService := NewBillingService(s.ServiceParams)
 	return billingService.GetCustomerUsageSummary(ctx, customerID, &req)
+}
+
+// GetInvoicePDFUrl returns a presigned URL for an invoice PDF
+func (s *customerPortalService) GetInvoicePDFUrl(ctx context.Context, invoiceID string) (string, error) {
+	customerID := types.GetCustomerID(ctx)
+	if customerID == "" {
+		return "", ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
+	}
+
+	invoiceService := NewInvoiceService(s.ServiceParams)
+
+	// Get the invoice to verify ownership
+	req := dto.GetInvoiceWithBreakdownRequest{
+		ID: invoiceID,
+	}
+	invoice, err := invoiceService.GetInvoiceWithBreakdown(ctx, req)
+	if err != nil {
+		return "", err
+	}
+
+	// Verify it belongs to this customer
+	if invoice.CustomerID != customerID {
+		return "", ierr.NewError("invoice not found").
+			WithHint("Invoice does not belong to this customer").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Get the presigned URL
+	return invoiceService.GetInvoicePDFUrl(ctx, invoiceID)
+}
+
+// GetWalletTransactions returns transactions for a wallet with pagination
+func (s *customerPortalService) GetWalletTransactions(ctx context.Context, walletID string, filter *types.WalletTransactionFilter) (*dto.ListWalletTransactionsResponse, error) {
+	customerID := types.GetCustomerID(ctx)
+	if customerID == "" {
+		return nil, ierr.NewError("customer not found in context").Mark(ierr.ErrPermissionDenied)
+	}
+
+	walletService := NewWalletService(s.ServiceParams)
+
+	// First verify the wallet belongs to this customer by getting the wallet
+	wallet, err := walletService.GetWalletBalance(ctx, walletID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify it belongs to this customer
+	if wallet.CustomerID != customerID {
+		return nil, ierr.NewError("wallet not found").
+			WithHint("Wallet does not belong to this customer").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Get the transactions
+	return walletService.GetWalletTransactions(ctx, walletID, filter)
 }

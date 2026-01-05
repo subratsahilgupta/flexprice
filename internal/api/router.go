@@ -55,8 +55,8 @@ type Handlers struct {
 	OAuth                    *v1.OAuthHandler
 
 	// Portal handlers
-	Onboarding        *v1.OnboardingHandler
-	CustomerDashboard *v1.CustomerDashboardHandler
+	Onboarding     *v1.OnboardingHandler
+	CustomerPortal *v1.CustomerPortalHandler
 	// Cron jobs : TODO: move crons out of API based architecture
 	CronSubscription       *cron.SubscriptionHandler
 	CronWallet             *cron.WalletCronHandler
@@ -198,7 +198,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.GET("/wallets", handlers.Wallet.GetCustomerWallets)
 
 			// Customer Dashboard - Session creation (requires tenant auth)
-			customer.GET("/dashboard/:external_id", handlers.CustomerDashboard.CreateSession)
+			customer.GET("/portal/:external_id", handlers.CustomerPortal.CreateSession)
 
 		}
 
@@ -502,32 +502,34 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	}
 
 	// Customer Dashboard - Customer-facing APIs (requires dashboard token)
-	customerDashboardAPI := router.Group("/v1/customer-dashboard")
-	customerDashboardAPI.Use(middleware.SessionTokenAuthMiddleware(cfg, logger))
-	customerDashboardAPI.Use(middleware.ErrorHandler())
+	customerPortalAPI := router.Group("/v1/customer/portal")
+	customerPortalAPI.Use(middleware.SessionTokenAuthMiddleware(cfg, logger))
+	customerPortalAPI.Use(middleware.ErrorHandler())
 	{
 		// Customer specific
-		customerDashboardAPI.GET("/info", handlers.CustomerDashboard.GetCustomer)
-		customerDashboardAPI.PUT("/info", handlers.CustomerDashboard.UpdateCustomer)
-		customerDashboardAPI.GET("/usage", handlers.CustomerDashboard.GetUsageSummary)
+		customerPortalAPI.GET("/info", handlers.CustomerPortal.GetCustomer)
+		customerPortalAPI.PUT("/info", handlers.CustomerPortal.UpdateCustomer)
+		customerPortalAPI.GET("/usage", handlers.CustomerPortal.GetUsageSummary)
 
 		// Subscriptions
-		customerDashboardAPI.POST("/subscriptions", handlers.CustomerDashboard.GetSubscriptions)
-		customerDashboardAPI.GET("/subscriptions/:id", handlers.CustomerDashboard.GetSubscription)
+		customerPortalAPI.POST("/subscriptions", handlers.CustomerPortal.GetSubscriptions)
+		customerPortalAPI.GET("/subscriptions/:id", handlers.CustomerPortal.GetSubscription)
 
 		// Invoices
-		customerDashboardAPI.POST("/invoices", handlers.CustomerDashboard.GetInvoices)
-		customerDashboardAPI.GET("/invoices/:id", handlers.CustomerDashboard.GetInvoice)
+		customerPortalAPI.POST("/invoices", handlers.CustomerPortal.GetInvoices)
+		customerPortalAPI.GET("/invoices/:id", handlers.CustomerPortal.GetInvoice)
+		customerPortalAPI.GET("/invoices/:id/pdf", handlers.CustomerPortal.GetInvoicePDF)
 
 		// Wallets
-		customerDashboardAPI.POST("/wallets", handlers.CustomerDashboard.GetWallets)
-		customerDashboardAPI.GET("/wallets/:id", handlers.CustomerDashboard.GetWallet)
+		customerPortalAPI.POST("/wallets", handlers.CustomerPortal.GetWallets)
+		customerPortalAPI.GET("/wallets/:id", handlers.CustomerPortal.GetWallet)
+		customerPortalAPI.GET("/wallets/:id/transactions", handlers.CustomerPortal.GetWalletTransactions)
 
 		// Analytics
-		customerDashboardAPI.POST("/analytics", handlers.CustomerDashboard.GetAnalytics)
+		customerPortalAPI.POST("/analytics/revenue", handlers.CustomerPortal.GetAnalytics)
 
 		// Cost Analytics
-		customerDashboardAPI.POST("/cost-analytics", handlers.CustomerDashboard.GetCostAnalytics)
+		customerPortalAPI.POST("/analytics/cost", handlers.CustomerPortal.GetCostAnalytics)
 
 	}
 
