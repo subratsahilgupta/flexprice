@@ -55,6 +55,12 @@ jobs:
           echo "✓ Swagger generated successfully"
           echo "📄 Swagger file size: $(wc -c < docs/swagger/swagger-3-0.json) bytes"
           
+      - name: Clean Go SDK directory
+        run: |
+          echo "🧹 Cleaning old Go SDK files..."
+          rm -rf api/go
+          echo "✓ Cleaned api/go directory"
+          
       - name: Generate Go SDK with Speakeasy
         env:
           SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}

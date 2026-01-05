@@ -54,6 +54,12 @@ jobs:
           echo "✓ Swagger generated successfully"
           echo "📄 Swagger file size: $(wc -c < docs/swagger/swagger-3-0.json) bytes"
 
+      - name: Clean Python SDK directory
+        run: |
+          echo "🧹 Cleaning old Python SDK files..."
+          rm -rf api/python
+          echo "✓ Cleaned api/python directory"
+
       - name: Generate Python SDK with Speakeasy
         env:
           SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
