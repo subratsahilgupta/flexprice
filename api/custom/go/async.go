@@ -14,7 +14,7 @@ and can be ignored. The file will compile correctly when copied to the SDK.
 */
 
 // nolint
-package v2
+package gosdktemp
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flexprice/go-sdk-temp/v2/models/components"
+	"github.com/flexprice/go-sdk-temp/models/components"
 )
 
 // Note: This file is meant to be included in the FlexPrice Go SDK
