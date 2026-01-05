@@ -1463,7 +1463,9 @@ func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.W
 			if err != nil {
 				return err
 			}
-			timeReference = *invoice.PeriodEnd
+			if invoice.PeriodEnd != nil {
+				timeReference = lo.FromPtr(invoice.PeriodEnd)
+			}
 		}
 		credits, err = s.WalletRepo.FindEligibleCredits(ctx, req.WalletID, req.CreditAmount, 100, timeReference)
 		if err != nil {
