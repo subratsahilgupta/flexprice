@@ -72,7 +72,7 @@ func (s *customerDashboardService) CreateDashboardSession(ctx context.Context, e
 	authProvider := auth.NewFlexpriceAuth(s.ServiceParams.Config)
 
 	// Generate dashboard token
-	token, expiresAt, err := authProvider.GenerateDashboardToken(
+	token, expiresAt, err := authProvider.GenerateSessionToken(
 		customer.ID,
 		customer.ExternalID,
 		customer.TenantID,

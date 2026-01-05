@@ -503,7 +503,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 	// Customer Dashboard - Customer-facing APIs (requires dashboard token)
 	customerDashboardAPI := router.Group("/v1/customer-dashboard")
-	customerDashboardAPI.Use(middleware.CustomerDashboardAuthMiddleware(cfg, logger))
+	customerDashboardAPI.Use(middleware.SessionTokenAuthMiddleware(cfg, logger))
 	customerDashboardAPI.Use(middleware.ErrorHandler())
 	{
 		// Customer specific

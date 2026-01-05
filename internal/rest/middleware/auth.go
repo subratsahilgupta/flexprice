@@ -135,27 +135,27 @@ func AuthenticateMiddleware(cfg *config.Configuration, secretService service.Sec
 	}
 }
 
-// CustomerDashboardAuthMiddleware validates customer dashboard JWT tokens
+// SessionTokenAuthMiddleware validates session JWT tokens
 // It extracts the dashboard-specific claims and sets them in the context
-func CustomerDashboardAuthMiddleware(cfg *config.Configuration, logger *logger.Logger) gin.HandlerFunc {
+func SessionTokenAuthMiddleware(cfg *config.Configuration, logger *logger.Logger) gin.HandlerFunc {
 	authProvider := auth.NewFlexpriceAuth(cfg)
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader(types.HeaderDashboardToken)
+		authHeader := c.GetHeader(types.HeaderSessionToken)
 		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Dashboard token required"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session token required"})
 			c.Abort()
 			return
 		}
 
-		claims, err := authProvider.ValidateDashboardToken(c.Request.Context(), authHeader)
+		claims, err := authProvider.ValidateSessionToken(c.Request.Context(), authHeader)
 		if err != nil {
-			logger.Errorw("failed to validate dashboard token", "error", err)
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired dashboard token"})
+			logger.Errorw("failed to validate session token", "error", err)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session token"})
 			c.Abort()
 			return
 		}
 
-		// Set dashboard-specific context values
+		// Set session-specific context values
 		ctx := c.Request.Context()
 		ctx = context.WithValue(ctx, types.CtxTenantID, claims.TenantID)
 		ctx = context.WithValue(ctx, types.CtxEnvironmentID, claims.EnvironmentID)

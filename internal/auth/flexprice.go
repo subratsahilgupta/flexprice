@@ -149,9 +149,9 @@ func (f *flexpriceAuth) AssignUserToTenant(ctx context.Context, userID string, t
 	return nil
 }
 
-// GenerateDashboardToken generates a JWT token for customer dashboard access
+// GenerateSessionToken generates a JWT token for session access
 // This token is specifically for customers (not users) and has a shorter expiration
-func (f *flexpriceAuth) GenerateDashboardToken(customerID, externalCustomerID, tenantID, environmentID string, timeoutHours int) (string, time.Time, error) {
+func (f *flexpriceAuth) GenerateSessionToken(customerID, externalCustomerID, tenantID, environmentID string, timeoutHours int) (string, time.Time, error) {
 	// Validate required parameters
 	customerID = strings.TrimSpace(customerID)
 	externalCustomerID = strings.TrimSpace(externalCustomerID)
@@ -187,7 +187,6 @@ func (f *flexpriceAuth) GenerateDashboardToken(customerID, externalCustomerID, t
 		"external_customer_id": externalCustomerID,
 		"tenant_id":            tenantID,
 		"environment_id":       environmentID,
-		"token_type":           "dashboard",
 		"exp":                  expiresAt.Unix(),
 		"iat":                  time.Now().Unix(),
 	}
@@ -196,15 +195,15 @@ func (f *flexpriceAuth) GenerateDashboardToken(customerID, externalCustomerID, t
 	signedToken, err := token.SignedString([]byte(f.AuthConfig.Secret))
 	if err != nil {
 		return "", time.Time{}, ierr.WithError(err).
-			WithHint("Failed to sign dashboard token").
+			WithHint("Failed to sign session token").
 			Mark(ierr.ErrSystem)
 	}
 
 	return signedToken, expiresAt, nil
 }
 
-// ValidateDashboardToken validates a customer dashboard token and returns the claims
-func (f *flexpriceAuth) ValidateDashboardToken(ctx context.Context, token string) (*auth.DashboardClaims, error) {
+// ValidateSessionToken validates a session token and returns the claims
+func (f *flexpriceAuth) ValidateSessionToken(ctx context.Context, token string) (*auth.SessionClaims, error) {
 	parsedToken, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, ierr.NewError("unexpected signing method").
@@ -216,7 +215,7 @@ func (f *flexpriceAuth) ValidateDashboardToken(ctx context.Context, token string
 
 	if err != nil {
 		return nil, ierr.WithError(err).
-			WithHint("Invalid dashboard token").
+			WithHint("Invalid session token").
 			Mark(ierr.ErrPermissionDenied)
 	}
 
@@ -224,14 +223,6 @@ func (f *flexpriceAuth) ValidateDashboardToken(ctx context.Context, token string
 	if !ok || !parsedToken.Valid {
 		return nil, ierr.NewError("invalid token claims").
 			WithHint("Invalid token claims").
-			Mark(ierr.ErrPermissionDenied)
-	}
-
-	// Verify token type
-	tokenType, ok := claims["token_type"].(string)
-	if !ok || tokenType != "dashboard" {
-		return nil, ierr.NewError("invalid token type claim").
-			WithHint("Token type claim is missing or not a dashboard token").
 			Mark(ierr.ErrPermissionDenied)
 	}
 
@@ -265,11 +256,11 @@ func (f *flexpriceAuth) ValidateDashboardToken(ctx context.Context, token string
 
 	if customerID == "" || externalCustomerID == "" || tenantID == "" || environmentID == "" {
 		return nil, ierr.NewError("missing required claims").
-			WithHint("Dashboard token is missing required claims").
+			WithHint("Session token is missing required claims").
 			Mark(ierr.ErrPermissionDenied)
 	}
 
-	return &auth.DashboardClaims{
+	return &auth.SessionClaims{
 		CustomerID:         customerID,
 		ExternalCustomerID: externalCustomerID,
 		TenantID:           tenantID,

@@ -41,8 +41,8 @@ type Provider interface {
 	AssignUserToTenant(ctx context.Context, userID string, tenantID string) error
 
 	// Customer Dashboard Token Management
-	GenerateDashboardToken(customerID, externalCustomerID, tenantID, environmentID string, timeoutHours int) (string, time.Time, error)
-	ValidateDashboardToken(ctx context.Context, token string) (*auth.DashboardClaims, error)
+	GenerateSessionToken(customerID, externalCustomerID, tenantID, environmentID string, timeoutHours int) (string, time.Time, error)
+	ValidateSessionToken(ctx context.Context, token string) (*auth.SessionClaims, error)
 }
 
 func NewProvider(cfg *config.Configuration) Provider {
