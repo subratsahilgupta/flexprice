@@ -55,6 +55,12 @@ jobs:
           echo "✓ Swagger generated successfully"
           echo "📄 Swagger file size: $(wc -c < docs/swagger/swagger-3-0.json) bytes"
 
+      - name: Clean JavaScript SDK directory
+        run: |
+          echo "🧹 Cleaning old JavaScript SDK files..."
+          rm -rf api/javascript
+          echo "✓ Cleaned api/javascript directory"
+
       - name: Generate JavaScript SDK with Speakeasy
         env:
           SPEAKEASY_API_KEY: ${{ secrets.SPEAKEASY_API_KEY }}
