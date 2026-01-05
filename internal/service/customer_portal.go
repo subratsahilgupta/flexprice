@@ -12,33 +12,33 @@ import (
 
 // CustomerPortalService provides customer portal functionality
 type CustomerPortalService interface {
-	// CreateDashboardSession creates a dashboard session URL for a customer
+	// CreatePortalSession creates a portal session URL for a customer
 	CreatePortalSession(ctx context.Context, externalID string) (*dto.PortalSessionResponse, error)
-	// GetCustomer returns customer info for the dashboard
+	// GetCustomer returns customer info for the portal
 	GetCustomer(ctx context.Context) (*dto.CustomerResponse, error)
-	// UpdateCustomer updates customer info from the dashboard
+	// UpdateCustomer updates customer info from the portal
 	UpdateCustomer(ctx context.Context, req dto.UpdateCustomerRequest) (*dto.CustomerResponse, error)
-	// GetSubscriptions returns subscriptions for the dashboard customer
+	// GetSubscriptions returns subscriptions for the portal customer
 	GetSubscriptions(ctx context.Context, req dto.PortalPaginatedRequest) (*dto.ListSubscriptionsResponse, error)
 	// GetSubscription returns a specific subscription
 	GetSubscription(ctx context.Context, subscriptionID string) (*dto.SubscriptionResponse, error)
-	// GetInvoices returns invoices for the dashboard customer
+	// GetInvoices returns invoices for the portal customer
 	GetInvoices(ctx context.Context, req dto.PortalPaginatedRequest) (*dto.ListInvoicesResponse, error)
 	// GetInvoice returns a specific invoice
 	GetInvoice(ctx context.Context, invoiceID string) (*dto.InvoiceResponse, error)
-	// GetWallets returns wallet balances for the dashboard customer
+	// GetWallets returns wallet balances for the portal customer
 	GetWallets(ctx context.Context) ([]*dto.WalletBalanceResponse, error)
 	// GetWallet returns a specific wallet
 	GetWallet(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error)
 	// GetInvoicePDFUrl returns a presigned URL for an invoice PDF
 	GetInvoicePDFUrl(ctx context.Context, invoiceID string) (string, error)
-	// GetWalletTransactions returns wallet transactions for the dashboard customer
+	// GetWalletTransactions returns wallet transactions for the portal customer
 	GetWalletTransactions(ctx context.Context, walletID string, filter *types.WalletTransactionFilter) (*dto.ListWalletTransactionsResponse, error)
-	// GetAnalytics returns usage analytics for the dashboard customer
+	// GetAnalytics returns usage analytics for the portal customer
 	GetAnalytics(ctx context.Context, req dto.PortalAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error)
-	// GetCostAnalytics returns cost analytics for the dashboard customer
+	// GetCostAnalytics returns cost analytics for the portal customer
 	GetCostAnalytics(ctx context.Context, req dto.PortalCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error)
-	// GetUsageSummary returns usage summary for the dashboard customer
+	// GetUsageSummary returns usage summary for the portal customer
 	GetUsageSummary(ctx context.Context, req dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error)
 }
 
@@ -61,7 +61,7 @@ func NewCustomerPortalService(
 	}
 }
 
-// CreatePortalSession creates a dashboard session for a customer
+// CreatePortalSession creates a portal session for a customer
 func (s *customerPortalService) CreatePortalSession(ctx context.Context, externalID string) (*dto.PortalSessionResponse, error) {
 
 	// Look up the customer by external ID
@@ -75,7 +75,7 @@ func (s *customerPortalService) CreatePortalSession(ctx context.Context, externa
 	// Get auth provider
 	authProvider := auth.NewFlexpriceAuth(s.ServiceParams.Config)
 
-	// Generate dashboard token
+	// Generate portal token
 	token, expiresAt, err := authProvider.GenerateSessionToken(
 		customer.ID,
 		customer.ExternalID,
@@ -89,7 +89,7 @@ func (s *customerPortalService) CreatePortalSession(ctx context.Context, externa
 			Mark(ierr.ErrSystem)
 	}
 
-	// Build dashboard URL
+	// Build portal URL
 	dashboardURL := fmt.Sprintf("%s?token=%s", s.Config.CustomerPortal.URL, token)
 
 	return &dto.PortalSessionResponse{
@@ -99,7 +99,7 @@ func (s *customerPortalService) CreatePortalSession(ctx context.Context, externa
 	}, nil
 }
 
-// GetCustomer returns customer info for the dashboard
+// GetCustomer returns customer info for the portal
 func (s *customerPortalService) GetCustomer(ctx context.Context) (*dto.CustomerResponse, error) {
 
 	customerID := types.GetCustomerID(ctx)
@@ -114,7 +114,7 @@ func (s *customerPortalService) GetCustomer(ctx context.Context) (*dto.CustomerR
 	return customer, nil
 }
 
-// UpdateCustomer updates customer info from the dashboard
+// UpdateCustomer updates customer info from the portal
 func (s *customerPortalService) UpdateCustomer(ctx context.Context, req dto.UpdateCustomerRequest) (*dto.CustomerResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
@@ -129,7 +129,7 @@ func (s *customerPortalService) UpdateCustomer(ctx context.Context, req dto.Upda
 	return customer, nil
 }
 
-// GetSubscriptions returns subscriptions for the dashboard customer
+// GetSubscriptions returns subscriptions for the portal customer
 func (s *customerPortalService) GetSubscriptions(ctx context.Context, req dto.PortalPaginatedRequest) (*dto.ListSubscriptionsResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
@@ -186,7 +186,7 @@ func (s *customerPortalService) GetSubscription(ctx context.Context, subscriptio
 	return subscription, nil
 }
 
-// GetInvoices returns invoices for the dashboard customer
+// GetInvoices returns invoices for the portal customer
 func (s *customerPortalService) GetInvoices(ctx context.Context, req dto.PortalPaginatedRequest) (*dto.ListInvoicesResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
@@ -246,7 +246,7 @@ func (s *customerPortalService) GetInvoice(ctx context.Context, invoiceID string
 	return invoice, nil
 }
 
-// GetWallets returns wallet balances for the dashboard customer
+// GetWallets returns wallet balances for the portal customer
 func (s *customerPortalService) GetWallets(ctx context.Context) ([]*dto.WalletBalanceResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {
@@ -287,7 +287,7 @@ func (s *customerPortalService) GetWallet(ctx context.Context, walletID string) 
 	return wallet, nil
 }
 
-// GetAnalytics returns usage analytics for the dashboard customer
+// GetAnalytics returns usage analytics for the portal customer
 func (s *customerPortalService) GetAnalytics(ctx context.Context, req dto.PortalAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	externalCustomerID := types.GetExternalCustomerID(ctx)
@@ -303,7 +303,7 @@ func (s *customerPortalService) GetAnalytics(ctx context.Context, req dto.Portal
 	return featureUsageTrackingService.GetDetailedUsageAnalyticsV2(ctx, internalReq)
 }
 
-// GetCostAnalytics returns cost analytics for the dashboard customer
+// GetCostAnalytics returns cost analytics for the portal customer
 func (s *customerPortalService) GetCostAnalytics(ctx context.Context, req dto.PortalCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	externalCustomerID := types.GetExternalCustomerID(ctx)
@@ -325,7 +325,7 @@ func (s *customerPortalService) GetCostAnalytics(ctx context.Context, req dto.Po
 	return s.revenueAnalyticsService.GetDetailedCostAnalytics(ctx, internalReq)
 }
 
-// GetUsageSummary returns usage summary for the dashboard customer
+// GetUsageSummary returns usage summary for the portal customer
 func (s *customerPortalService) GetUsageSummary(ctx context.Context, req dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error) {
 	customerID := types.GetCustomerID(ctx)
 	if customerID == "" {

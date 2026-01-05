@@ -30,13 +30,13 @@ func NewCustomerPortalHandler(
 }
 
 // CreateSession creates a dashboard session for a customer
-// @Summary Create a customer dashboard session
+// @Summary Create a customer portal session
 // @Description Generate a dashboard URL/token for a customer to access their billing information
 // @Tags CustomerPortal
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body dto.CreateDashboardSessionRequest true "Dashboard session request"
+// @Param request body dto.CreatePortalSessionRequest true "Portal session request"
 // @Success 200 {object} dto.PortalSessionResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
