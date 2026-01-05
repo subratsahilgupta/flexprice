@@ -23,7 +23,7 @@ type Claims struct {
 }
 
 // DashboardClaims represents the claims in a customer dashboard JWT token
-type DashboardClaims struct {
+type SessionClaims struct {
 	ExternalCustomerID string // Required: external ID from tenant system
 	CustomerID         string // Required: internal Flexprice customer ID
 	TenantID           string
