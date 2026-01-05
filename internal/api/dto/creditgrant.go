@@ -215,6 +215,22 @@ func (r *CreateCreditGrantRequest) Validate() error {
 
 	}
 
+	if r.ConversionRate != nil {
+		if r.ConversionRate.GreaterThan(decimal.Zero) {
+			return errors.NewError("conversion_rate must be greater than zero").
+				WithHint("Please provide a positive conversion rate").
+				Mark(errors.ErrValidation)
+		}
+	}
+
+	if r.TopupConversionRate != nil {
+		if r.TopupConversionRate.GreaterThan(decimal.Zero) {
+			return errors.NewError("topup_conversion_rate must be greater than zero").
+				WithHint("Please provide a positive topup conversion rate").
+				Mark(errors.ErrValidation)
+		}
+	}
+
 	return nil
 }
 
