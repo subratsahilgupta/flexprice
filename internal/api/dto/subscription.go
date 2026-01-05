@@ -711,16 +711,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	if len(r.OverrideLineItems) > 0 {
 		priceIDsSeen := make(map[string]bool)
 		for i, override := range r.OverrideLineItems {
-			if err := override.Validate(nil, nil, r.PlanID); err != nil {
-				return ierr.NewError(fmt.Sprintf("invalid override line item at index %d", i)).
-					WithHint("Override line item validation failed").
-					WithReportableDetails(map[string]interface{}{
-						"index": i,
-						"error": err.Error(),
-					}).
-					Mark(ierr.ErrValidation)
-			}
-
 			// Check for duplicate price IDs
 			if priceIDsSeen[override.PriceID] {
 				return ierr.NewError(fmt.Sprintf("duplicate price_id in override line items at index %d", i)).
@@ -1132,28 +1122,37 @@ func (r *OverrideLineItemRequest) Validate(
 				Mark(ierr.ErrValidation)
 		}
 
-		// Quantity can only be set for fixed prices, not usage-based prices
-		if priceMap != nil {
-			if price, exists := priceMap[r.PriceID]; exists && price != nil {
-				if price.Type == types.PRICE_TYPE_USAGE && r.Quantity.GreaterThan(decimal.Zero) {
-					return ierr.NewError("quantity cannot be set for usage-based prices").
-						WithHint("Quantity overrides are only allowed for fixed prices. Usage-based prices track quantity automatically from meter events").
-						WithReportableDetails(map[string]interface{}{
-							"price_id":   r.PriceID,
-							"price_type": price.Type,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-			}
-		}
 	}
 
-	// Get original price early for billing model validations
-	var originalPrice *PriceResponse
-	if priceMap != nil {
-		if price, exists := priceMap[r.PriceID]; exists && price != nil {
-			originalPrice = price
-		}
+	// Get original price - it must be available for validation
+	if priceMap == nil {
+		return ierr.NewError("price map is required for validation").
+			WithHint("Price map must be provided to validate override requests").
+			WithReportableDetails(map[string]interface{}{
+				"price_id": r.PriceID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	originalPrice, exists := priceMap[r.PriceID]
+	if !exists || originalPrice == nil {
+		return ierr.NewError("original price not found").
+			WithHint("Could not find the original price for the specified price ID. The price must exist in the plan to create an override").
+			WithReportableDetails(map[string]interface{}{
+				"price_id": r.PriceID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Quantity can only be set for fixed prices, not usage-based prices
+	if r.Quantity != nil && originalPrice.Type == types.PRICE_TYPE_USAGE && r.Quantity.GreaterThan(decimal.Zero) {
+		return ierr.NewError("quantity cannot be set for usage-based prices").
+			WithHint("Quantity overrides are only allowed for fixed prices. Usage-based prices track quantity automatically from meter events").
+			WithReportableDetails(map[string]interface{}{
+				"price_id":   r.PriceID,
+				"price_type": originalPrice.Type,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Validate billing model if provided
@@ -1166,38 +1165,27 @@ func (r *OverrideLineItemRequest) Validate(
 		switch r.BillingModel {
 		case types.BILLING_MODEL_TIERED:
 			// Validate tiers based on original price's price unit type
-			if originalPrice != nil {
-				switch originalPrice.PriceUnitType {
-				case types.PRICE_UNIT_TYPE_CUSTOM:
-					// For CUSTOM price unit, require price_unit_tiers
-					if len(r.PriceUnitTiers) == 0 {
-						return ierr.NewError("price_unit_tiers are required when billing model is TIERED and using custom pricing unit").
-							WithHint("Price unit tiers are required to set up tiered pricing with custom pricing units").
-							WithReportableDetails(map[string]interface{}{
-								"price_id":        r.PriceID,
-								"price_unit_type": originalPrice.PriceUnitType,
-							}).
-							Mark(ierr.ErrValidation)
-					}
-				case types.PRICE_UNIT_TYPE_FIAT:
-					// For FIAT price unit, require tiers
-					if len(r.Tiers) == 0 {
-						return ierr.NewError("tiers are required when billing model is TIERED").
-							WithHint("Price tiers are required to set up tiered pricing").
-							WithReportableDetails(map[string]interface{}{
-								"price_id":        r.PriceID,
-								"price_unit_type": originalPrice.PriceUnitType,
-							}).
-							Mark(ierr.ErrValidation)
-					}
+			switch originalPrice.PriceUnitType {
+			case types.PRICE_UNIT_TYPE_CUSTOM:
+				// For CUSTOM price unit, require price_unit_tiers
+				if len(r.PriceUnitTiers) == 0 {
+					return ierr.NewError("price_unit_tiers are required when billing model is TIERED and using custom pricing unit").
+						WithHint("Price unit tiers are required to set up tiered pricing with custom pricing units").
+						WithReportableDetails(map[string]interface{}{
+							"price_id":        r.PriceID,
+							"price_unit_type": originalPrice.PriceUnitType,
+						}).
+						Mark(ierr.ErrValidation)
 				}
-			} else {
-				// If original price is not available, check for either tiers or price_unit_tiers
-				hasTiers := len(r.Tiers) > 0
-				hasPriceUnitTiers := len(r.PriceUnitTiers) > 0
-				if !hasTiers && !hasPriceUnitTiers {
-					return ierr.NewError("tiers or price_unit_tiers are required when billing model is TIERED").
-						WithHint("Please provide either tiers (for FIAT) or price_unit_tiers (for CUSTOM) for tiered pricing override").
+			case types.PRICE_UNIT_TYPE_FIAT:
+				// For FIAT price unit, require tiers
+				if len(r.Tiers) == 0 {
+					return ierr.NewError("tiers are required when billing model is TIERED").
+						WithHint("Price tiers are required to set up tiered pricing").
+						WithReportableDetails(map[string]interface{}{
+							"price_id":        r.PriceID,
+							"price_unit_type": originalPrice.PriceUnitType,
+						}).
 						Mark(ierr.ErrValidation)
 				}
 			}
@@ -1276,73 +1264,54 @@ func (r *OverrideLineItemRequest) Validate(
 			}
 
 			// Validate amount based on original price's price unit type
-			if originalPrice != nil {
-				switch originalPrice.PriceUnitType {
-				case types.PRICE_UNIT_TYPE_CUSTOM:
-					// For CUSTOM price unit, require price_unit_amount
-					if r.PriceUnitAmount == nil {
-						return ierr.NewError("price_unit_amount is required when billing model is PACKAGE and using custom pricing unit").
-							WithHint("Price unit amount is required to set up package pricing with custom pricing units").
-							WithReportableDetails(map[string]interface{}{
-								"price_id":        r.PriceID,
-								"price_unit_type": originalPrice.PriceUnitType,
-							}).
-							Mark(ierr.ErrValidation)
-					}
-				case types.PRICE_UNIT_TYPE_FIAT:
-					// For FIAT price unit, require amount
-					if r.Amount == nil {
-						return ierr.NewError("amount is required when billing model is PACKAGE and using fiat pricing unit").
-							WithHint("Amount is required to set up package pricing with fiat pricing units").
-							WithReportableDetails(map[string]interface{}{
-								"price_id":        r.PriceID,
-								"price_unit_type": originalPrice.PriceUnitType,
-							}).
-							Mark(ierr.ErrValidation)
-					}
+			switch originalPrice.PriceUnitType {
+			case types.PRICE_UNIT_TYPE_CUSTOM:
+				// For CUSTOM price unit, require price_unit_amount
+				if r.PriceUnitAmount == nil {
+					return ierr.NewError("price_unit_amount is required when billing model is PACKAGE and using custom pricing unit").
+						WithHint("Price unit amount is required to set up package pricing with custom pricing units").
+						WithReportableDetails(map[string]interface{}{
+							"price_id":        r.PriceID,
+							"price_unit_type": originalPrice.PriceUnitType,
+						}).
+						Mark(ierr.ErrValidation)
 				}
-			} else {
-				// If original price is not available, require either amount or price_unit_amount
-				if r.Amount == nil && r.PriceUnitAmount == nil {
-					return ierr.NewError("amount or price_unit_amount is required when billing model is PACKAGE").
-						WithHint("Please provide either amount (for FIAT) or price_unit_amount (for CUSTOM) for package pricing override").
+			case types.PRICE_UNIT_TYPE_FIAT:
+				// For FIAT price unit, require amount
+				if r.Amount == nil {
+					return ierr.NewError("amount is required when billing model is PACKAGE and using fiat pricing unit").
+						WithHint("Amount is required to set up package pricing with fiat pricing units").
+						WithReportableDetails(map[string]interface{}{
+							"price_id":        r.PriceID,
+							"price_unit_type": originalPrice.PriceUnitType,
+						}).
 						Mark(ierr.ErrValidation)
 				}
 			}
 
 		case types.BILLING_MODEL_FLAT_FEE:
 			// Validate amount based on original price's price unit type
-			if originalPrice != nil {
-				switch originalPrice.PriceUnitType {
-				case types.PRICE_UNIT_TYPE_CUSTOM:
-					// For CUSTOM price unit, require price_unit_amount
-					if r.PriceUnitAmount == nil {
-						return ierr.NewError("price_unit_amount is required when billing model is FLAT_FEE and using custom pricing unit").
-							WithHint("Price unit amount is required to set up flat fee pricing with custom pricing units").
-							WithReportableDetails(map[string]interface{}{
-								"price_id":        r.PriceID,
-								"price_unit_type": originalPrice.PriceUnitType,
-							}).
-							Mark(ierr.ErrValidation)
-					}
-				case types.PRICE_UNIT_TYPE_FIAT:
-					// For FIAT price unit, require amount
-					if r.Amount == nil {
-						return ierr.NewError("amount is required when billing model is FLAT_FEE and using fiat pricing unit").
-							WithHint("Amount is required to set up flat fee pricing with fiat pricing units").
-							WithReportableDetails(map[string]interface{}{
-								"price_id":        r.PriceID,
-								"price_unit_type": originalPrice.PriceUnitType,
-							}).
-							Mark(ierr.ErrValidation)
-					}
+			switch originalPrice.PriceUnitType {
+			case types.PRICE_UNIT_TYPE_CUSTOM:
+				// For CUSTOM price unit, require price_unit_amount
+				if r.PriceUnitAmount == nil {
+					return ierr.NewError("price_unit_amount is required when billing model is FLAT_FEE and using custom pricing unit").
+						WithHint("Price unit amount is required to set up flat fee pricing with custom pricing units").
+						WithReportableDetails(map[string]interface{}{
+							"price_id":        r.PriceID,
+							"price_unit_type": originalPrice.PriceUnitType,
+						}).
+						Mark(ierr.ErrValidation)
 				}
-			} else {
-				// If original price is not available, require either amount or price_unit_amount
-				// Note: quantity override is separate and optional
-				if r.Amount == nil && r.PriceUnitAmount == nil {
-					return ierr.NewError("amount or price_unit_amount is required when billing model is FLAT_FEE").
-						WithHint("Please provide either amount (for FIAT) or price_unit_amount (for CUSTOM) for flat fee pricing override").
+			case types.PRICE_UNIT_TYPE_FIAT:
+				// For FIAT price unit, require amount
+				if r.Amount == nil {
+					return ierr.NewError("amount is required when billing model is FLAT_FEE and using fiat pricing unit").
+						WithHint("Amount is required to set up flat fee pricing with fiat pricing units").
+						WithReportableDetails(map[string]interface{}{
+							"price_id":        r.PriceID,
+							"price_unit_type": originalPrice.PriceUnitType,
+						}).
 						Mark(ierr.ErrValidation)
 				}
 			}
@@ -1363,22 +1332,10 @@ func (r *OverrideLineItemRequest) Validate(
 		}
 	}
 
-	// If context is provided, do additional validation
-	if priceMap != nil && lineItemsByPriceID != nil && EntityId != "" {
-		// Validate that the price exists in the plan
-		_, exists := priceMap[r.PriceID]
-		if !exists {
-			return ierr.NewError("price not found in plan").
-				WithHint("Override price must be a valid price from the selected plan").
-				WithReportableDetails(map[string]interface{}{
-					"price_id": r.PriceID,
-					"plan_id":  EntityId,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-
+	// Additional context validation
+	if lineItemsByPriceID != nil && EntityId != "" {
 		// Validate that the line item exists for this price
-		_, exists = lineItemsByPriceID[r.PriceID]
+		_, exists := lineItemsByPriceID[r.PriceID]
 		if !exists {
 			return ierr.NewError("line item not found for price").
 				WithHint("Could not find line item for the specified price").
@@ -1387,31 +1344,29 @@ func (r *OverrideLineItemRequest) Validate(
 				}).
 				Mark(ierr.ErrInternal)
 		}
+	}
 
-		// Validate that override fields match the original price's PriceUnitType
-		if originalPrice, exists := priceMap[r.PriceID]; exists && originalPrice != nil {
-			switch originalPrice.PriceUnitType {
-			case types.PRICE_UNIT_TYPE_FIAT:
-				if r.PriceUnitAmount != nil || len(r.PriceUnitTiers) > 0 {
-					return ierr.NewError("cannot use custom price unit fields on a FIAT price").
-						WithHint("Price unit type cannot be changed during override. Use FIAT fields (amount or tiers) instead.").
-						WithReportableDetails(map[string]interface{}{
-							"price_id":        r.PriceID,
-							"price_unit_type": originalPrice.PriceUnitType,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-			case types.PRICE_UNIT_TYPE_CUSTOM:
-				if r.Amount != nil || len(r.Tiers) > 0 {
-					return ierr.NewError("cannot use FIAT fields on a CUSTOM price").
-						WithHint("Price unit type cannot be changed during override. Use price_unit_amount or price_unit_tiers instead.").
-						WithReportableDetails(map[string]interface{}{
-							"price_id":        r.PriceID,
-							"price_unit_type": originalPrice.PriceUnitType,
-						}).
-						Mark(ierr.ErrValidation)
-				}
-			}
+	// Validate that override fields match the original price's PriceUnitType
+	switch originalPrice.PriceUnitType {
+	case types.PRICE_UNIT_TYPE_FIAT:
+		if r.PriceUnitAmount != nil || len(r.PriceUnitTiers) > 0 {
+			return ierr.NewError("cannot use custom price unit fields on a FIAT price").
+				WithHint("Price unit type cannot be changed during override. Use FIAT fields (amount or tiers) instead.").
+				WithReportableDetails(map[string]interface{}{
+					"price_id":        r.PriceID,
+					"price_unit_type": originalPrice.PriceUnitType,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	case types.PRICE_UNIT_TYPE_CUSTOM:
+		if r.Amount != nil || len(r.Tiers) > 0 {
+			return ierr.NewError("cannot use FIAT fields on a CUSTOM price").
+				WithHint("Price unit type cannot be changed during override. Use price_unit_amount or price_unit_tiers instead.").
+				WithReportableDetails(map[string]interface{}{
+					"price_id":        r.PriceID,
+					"price_unit_type": originalPrice.PriceUnitType,
+				}).
+				Mark(ierr.ErrValidation)
 		}
 	}
 
