@@ -6,20 +6,21 @@
 # ----------------
 # Go SDK
 # ----------------
-# Custom async batching client
-async.go
-
-# Custom helper functions
-helpers.go
-
 # Custom examples
 examples/
+
+# NOTE: async.go and helpers.go are NOT in .genignore
+# They are copied AFTER generation by the Makefile target: speakeasy-copy-go-custom
+# This ensures they always have the correct package name and imports
 
 # ----------------
 # Python SDK
 # ----------------
 # Async utilities (custom threading / batching)
 async_utils.py
+
+# Custom examples
+examples/
 
 # Custom helpers
 utils/**
@@ -28,6 +29,9 @@ extensions/**
 # ----------------
 # TypeScript SDK
 # ----------------
+# Custom examples
+examples/
+
 # Custom helpers (if you add any in the future)
 src/utils/**
 src/extensions/**
