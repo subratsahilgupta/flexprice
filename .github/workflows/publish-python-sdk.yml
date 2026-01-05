@@ -67,6 +67,51 @@ jobs:
           echo "🔨 Generating Python SDK..."
           /usr/local/bin/speakeasy run --target flexprice-python
           echo "✓ Python SDK generated"
+          
+      - name: Verify Python SDK structure
+        run: |
+          echo "🔍 Verifying Python SDK structure..."
+          
+          if [ ! -d "api/python/src/flexprice_sdk_test" ]; then
+            echo "❌ ERROR: api/python/src/flexprice_sdk_test/ directory not found"
+            echo "Directory contents:"
+            ls -la api/python/
+            if [ -d "api/python/src" ]; then
+              echo "src/ contents:"
+              ls -la api/python/src/
+            fi
+            exit 1
+          fi
+          
+          if [ ! -f "api/python/src/flexprice_sdk_test/__init__.py" ]; then
+            echo "❌ ERROR: api/python/src/flexprice_sdk_test/__init__.py not found"
+            ls -la api/python/src/flexprice_sdk_test/
+            exit 1
+          fi
+          
+          echo "✓ Python SDK structure verified"
+          echo "📦 Package structure:"
+          ls -la api/python/src/flexprice_sdk_test/ | head -10
+          
+      - name: Fix build system configuration
+        working-directory: api/python
+        run: |
+          echo "🔧 Ensuring correct build system..."
+          
+          # Remove poetry.lock if it exists (causes build system confusion)
+          if [ -f "poetry.lock" ]; then
+            rm poetry.lock
+            echo "✓ Removed poetry.lock"
+          fi
+          
+          # Ensure pyproject.toml uses setuptools (not poetry)
+          if grep -q "poetry-core" pyproject.toml; then
+            echo "⚠️ Found poetry-core in pyproject.toml, fixing..."
+            sed -i 's/poetry-core/setuptools>=61.0/' pyproject.toml
+            sed -i 's/poetry\.core\.masonry\.api/setuptools.build_meta/' pyproject.toml
+          fi
+          
+          echo "✓ Build system configuration verified"
 
       - name: Copy custom files to SDK
         run: |
