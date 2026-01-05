@@ -67,6 +67,31 @@ jobs:
           echo "🔨 Generating Python SDK..."
           /usr/local/bin/speakeasy run --target flexprice-python
           echo "✓ Python SDK generated"
+          
+      - name: Verify Python SDK structure
+        run: |
+          echo "🔍 Verifying Python SDK structure..."
+          
+          if [ ! -d "api/python/src/flexprice_sdk_test" ]; then
+            echo "❌ ERROR: api/python/src/flexprice_sdk_test/ directory not found"
+            echo "Directory contents:"
+            ls -la api/python/
+            if [ -d "api/python/src" ]; then
+              echo "src/ contents:"
+              ls -la api/python/src/
+            fi
+            exit 1
+          fi
+          
+          if [ ! -f "api/python/src/flexprice_sdk_test/__init__.py" ]; then
+            echo "❌ ERROR: api/python/src/flexprice_sdk_test/__init__.py not found"
+            ls -la api/python/src/flexprice_sdk_test/
+            exit 1
+          fi
+          
+          echo "✓ Python SDK structure verified"
+          echo "📦 Package structure:"
+          ls -la api/python/src/flexprice_sdk_test/ | head -10
 
       - name: Copy custom files to SDK
         run: |
