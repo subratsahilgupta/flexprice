@@ -337,6 +337,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 						ExpirationDurationUnit: cg.ExpirationDurationUnit,
 						Metadata:               cg.Metadata,
 						PeriodCount:            cg.PeriodCount,
+						ConversionRate:         cg.ConversionRate,
+						TopupConversionRate:    cg.TopupConversionRate,
 					})
 				}
 			}

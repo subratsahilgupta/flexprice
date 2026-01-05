@@ -496,6 +496,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 		if grant.TopupConversionRate != nil {
 			walletReq.TopupConversionRate = grant.TopupConversionRate
 		}
+		s.Logger.Infof("wallet conversion rate: %s, wallet topup conversion rate: %s", walletReq.ConversionRate, walletReq.TopupConversionRate)
 
 		selectedWallet, err = walletService.CreateWallet(ctx, walletReq)
 		if err != nil {
