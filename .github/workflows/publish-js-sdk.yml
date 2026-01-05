@@ -1,15 +1,6 @@
 name: Publish JavaScript SDK to npm
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'SDK Version (e.g. 2.0.5)'
-        required: true
-        default: ''
-  push:
-    branches:
-      - develop
   release:
     types: [published]
 
@@ -35,43 +26,13 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/speakeasy-api/speakeasy/main/install.sh | sh
 
-      - name: Get version
+      - name: Get version from release tag
         id: get_version
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          elif [ "${{ github.event_name }}" == "release" ]; then
-            VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}"
-          else
-            # Fetch latest version from npm and increment patch version
-            echo "📡 Fetching latest version from npm..."
-            LATEST_VERSION=$(npm view flexprice-sdk-test version 2>/dev/null || echo "")
-            
-            if [ -z "$LATEST_VERSION" ]; then
-              # No version found on npm, start with 2.0.0
-              VERSION="2.0.0"
-              echo "⚠️  No previous version found on npm, starting with $VERSION"
-            else
-              echo "Latest version: $LATEST_VERSION"
-              # Extract major, minor, patch
-              MAJOR=$(echo $LATEST_VERSION | cut -d. -f1)
-              MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
-              PATCH=$(echo $LATEST_VERSION | cut -d. -f3)
-              
-              # Check if PATCH is a valid number (not timestamp)
-              if [[ "$PATCH" =~ ^[0-9]{1,3}$ ]]; then
-                # Valid patch number (1-3 digits), increment it
-                NEW_PATCH=$((PATCH + 1))
-                VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
-                echo "🔼 Incrementing patch version: $LATEST_VERSION → $VERSION"
-              else
-                # Patch is timestamp or invalid, reset to 2.0.0
-                VERSION="2.0.0"
-                echo "⚠️  Previous version uses timestamp format ($LATEST_VERSION), resetting to $VERSION"
-              fi
-            fi
-          fi
+          # Extract version from release tag (e.g., v1.0.48 -> 1.0.48)
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "📦 Publishing JavaScript SDK version: ${VERSION}"
@@ -83,10 +44,16 @@ jobs:
 
       - name: Generate Swagger
         run: |
-          if [ -f "Makefile" ] && grep -q "swagger" Makefile; then
-            echo "🔨 Generating Swagger..."
-            make swagger || echo "⚠️ Swagger generation skipped"
+          echo "🔨 Generating Swagger..."
+          make swagger
+          
+          if [ ! -f "docs/swagger/swagger-3-0.json" ]; then
+            echo "❌ ERROR: Swagger file not found at docs/swagger/swagger-3-0.json"
+            exit 1
           fi
+          
+          echo "✓ Swagger generated successfully"
+          echo "📄 Swagger file size: $(wc -c < docs/swagger/swagger-3-0.json) bytes"
 
       - name: Generate JavaScript SDK with Speakeasy
         env:

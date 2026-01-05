@@ -34,7 +34,6 @@ func NewCustomerDashboardHandler(
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
-// @Param request body dto.CreateDashboardSessionRequest true "Dashboard session request"
 // @Success 200 {object} dto.DashboardSessionResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
