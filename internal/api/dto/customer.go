@@ -199,8 +199,8 @@ func (r *UpdateCustomerRequest) Validate() error {
 	return nil
 }
 
-// DashboardSessionResponse is the response containing the dashboard URL
-type DashboardSessionResponse struct {
+// PortalSessionResponse is the response containing the portal URL
+type PortalSessionResponse struct {
 	URL       string    `json:"url"`
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`

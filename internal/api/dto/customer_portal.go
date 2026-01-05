@@ -6,9 +6,9 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-// DashboardAnalyticsRequest represents a request for usage analytics from the customer dashboard
+// PortalAnalyticsRequest represents a request for usage analytics from the customer portal
 // The ExternalCustomerID is implicitly derived from the authentication context
-type DashboardAnalyticsRequest struct {
+type PortalAnalyticsRequest struct {
 	FeatureIDs      []string            `json:"feature_ids,omitempty" example:"feat_123,feat_456"`
 	Sources         []string            `json:"sources,omitempty" example:"api,web"`
 	StartTime       time.Time           `json:"start_time,omitempty" example:"2024-01-01T00:00:00Z"`
@@ -19,9 +19,9 @@ type DashboardAnalyticsRequest struct {
 	PropertyFilters map[string][]string `json:"property_filters,omitempty"`
 }
 
-// ToInternalRequest converts the dashboard analytics request to an internal GetUsageAnalyticsRequest
+// ToInternalRequest converts the portal analytics request to an internal GetUsageAnalyticsRequest
 // with the customer ID injected from the authentication context
-func (r *DashboardAnalyticsRequest) ToInternalRequest(externalCustomerID string) *GetUsageAnalyticsRequest {
+func (r *PortalAnalyticsRequest) ToInternalRequest(externalCustomerID string) *GetUsageAnalyticsRequest {
 	return &GetUsageAnalyticsRequest{
 		ExternalCustomerID: externalCustomerID,
 		FeatureIDs:         r.FeatureIDs,
@@ -35,17 +35,17 @@ func (r *DashboardAnalyticsRequest) ToInternalRequest(externalCustomerID string)
 	}
 }
 
-// DashboardCostAnalyticsRequest represents a request for cost analytics from the customer dashboard
+// PortalCostAnalyticsRequest represents a request for cost analytics from the customer portal
 // The ExternalCustomerID is implicitly derived from the authentication context
-type DashboardCostAnalyticsRequest struct {
+type PortalCostAnalyticsRequest struct {
 	FeatureIDs []string  `json:"feature_ids,omitempty" example:"feat_123,feat_456"`
 	StartTime  time.Time `json:"start_time" binding:"required" example:"2024-01-01T00:00:00Z"`
 	EndTime    time.Time `json:"end_time" binding:"required" example:"2024-01-31T23:59:59Z"`
 }
 
-// ToInternalRequest converts the dashboard cost analytics request to an internal GetCostAnalyticsRequest
+// ToInternalRequest converts the portal cost analytics request to an internal GetCostAnalyticsRequest
 // with the customer ID injected from the authentication context
-func (r *DashboardCostAnalyticsRequest) ToInternalRequest(externalCustomerID string) *GetCostAnalyticsRequest {
+func (r *PortalCostAnalyticsRequest) ToInternalRequest(externalCustomerID string) *GetCostAnalyticsRequest {
 	return &GetCostAnalyticsRequest{
 		ExternalCustomerID: externalCustomerID,
 		FeatureIDs:         r.FeatureIDs,
@@ -54,8 +54,8 @@ func (r *DashboardCostAnalyticsRequest) ToInternalRequest(externalCustomerID str
 	}
 }
 
-// DashboardPaginatedRequest represents a paginated request from the customer dashboard
-type DashboardPaginatedRequest struct {
+// PortalPaginatedRequest represents a paginated request from the customer portal
+type PortalPaginatedRequest struct {
 	Page  int `form:"page" json:"page" example:"1"`
 	Limit int `form:"limit" json:"limit" example:"20"`
 }
