@@ -945,12 +945,10 @@ func (f *FeaturesChunkProcessor) ProcessChunk(ctx context.Context, chunk [][]str
 	// Process each record in the chunk
 	for i, record := range chunk {
 		processedRecords++
-
 		f.logger.Debugw("processing feature record",
 			"record_index", i,
 			"record", record,
 			"chunk_index", chunkIndex)
-
 		// Create feature request
 		featureReq := &dto.CreateFeatureRequest{
 			Metadata: make(map[string]string),
@@ -969,6 +967,10 @@ func (f *FeaturesChunkProcessor) ProcessChunk(ctx context.Context, chunk [][]str
 				continue
 			}
 			value := record[j]
+			// Skip empty values to avoid overwriting with empty strings
+			if value == "" {
+				continue
+			}
 			switch header {
 			case "name":
 				featureReq.Name = value
@@ -1022,7 +1024,6 @@ func (f *FeaturesChunkProcessor) ProcessChunk(ctx context.Context, chunk [][]str
 		if featureReq.Meter != nil && featureReq.Meter.ResetUsage == "" {
 			featureReq.Meter.ResetUsage = types.ResetUsageBillingPeriod
 		}
-
 		// Log parsed feature request for debugging
 		f.logger.Debugw("parsed feature request",
 			"record_index", i,
@@ -1030,7 +1031,6 @@ func (f *FeaturesChunkProcessor) ProcessChunk(ctx context.Context, chunk [][]str
 			"type", featureReq.Type,
 			"lookup_key", featureReq.LookupKey,
 			"has_meter", featureReq.Meter != nil)
-
 		// Validate the feature request
 		if err := featureReq.Validate(); err != nil {
 			f.logger.Errorw("feature validation failed",
