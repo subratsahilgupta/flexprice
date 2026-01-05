@@ -1148,6 +1148,14 @@ func (r *OverrideLineItemRequest) Validate(
 		}
 	}
 
+	// Get original price early for billing model validations
+	var originalPrice *PriceResponse
+	if priceMap != nil {
+		if price, exists := priceMap[r.PriceID]; exists && price != nil {
+			originalPrice = price
+		}
+	}
+
 	// Validate billing model if provided
 	if r.BillingModel != "" {
 		if err := r.BillingModel.Validate(); err != nil {
@@ -1157,14 +1165,41 @@ func (r *OverrideLineItemRequest) Validate(
 		// Billing model specific validations
 		switch r.BillingModel {
 		case types.BILLING_MODEL_TIERED:
-			// Check for tiers in either tier_mode or tiers
-			hasTierMode := r.TierMode != ""
-			hasTiers := len(r.Tiers) > 0
-
-			if !hasTierMode && !hasTiers {
-				return ierr.NewError("tier_mode or tiers are required when billing model is TIERED").
-					WithHint("Please provide either tier_mode or tiers for tiered pricing override").
-					Mark(ierr.ErrValidation)
+			// Validate tiers based on original price's price unit type
+			if originalPrice != nil {
+				switch originalPrice.PriceUnitType {
+				case types.PRICE_UNIT_TYPE_CUSTOM:
+					// For CUSTOM price unit, require price_unit_tiers
+					if len(r.PriceUnitTiers) == 0 {
+						return ierr.NewError("price_unit_tiers are required when billing model is TIERED and using custom pricing unit").
+							WithHint("Price unit tiers are required to set up tiered pricing with custom pricing units").
+							WithReportableDetails(map[string]interface{}{
+								"price_id":        r.PriceID,
+								"price_unit_type": originalPrice.PriceUnitType,
+							}).
+							Mark(ierr.ErrValidation)
+					}
+				case types.PRICE_UNIT_TYPE_FIAT:
+					// For FIAT price unit, require tiers
+					if len(r.Tiers) == 0 {
+						return ierr.NewError("tiers are required when billing model is TIERED").
+							WithHint("Price tiers are required to set up tiered pricing").
+							WithReportableDetails(map[string]interface{}{
+								"price_id":        r.PriceID,
+								"price_unit_type": originalPrice.PriceUnitType,
+							}).
+							Mark(ierr.ErrValidation)
+					}
+				}
+			} else {
+				// If original price is not available, check for either tiers or price_unit_tiers
+				hasTiers := len(r.Tiers) > 0
+				hasPriceUnitTiers := len(r.PriceUnitTiers) > 0
+				if !hasTiers && !hasPriceUnitTiers {
+					return ierr.NewError("tiers or price_unit_tiers are required when billing model is TIERED").
+						WithHint("Please provide either tiers (for FIAT) or price_unit_tiers (for CUSTOM) for tiered pricing override").
+						Mark(ierr.ErrValidation)
+				}
 			}
 
 			// Validate tier mode if provided
@@ -1174,7 +1209,7 @@ func (r *OverrideLineItemRequest) Validate(
 				}
 			}
 
-			// Validate tiers if provided
+			// Validate tiers if provided (for FIAT)
 			if len(r.Tiers) > 0 {
 				for i, tier := range r.Tiers {
 					// Validate tier unit amount is not negative (allows zero)
@@ -1201,7 +1236,35 @@ func (r *OverrideLineItemRequest) Validate(
 				}
 			}
 
+			// Validate price_unit_tiers if provided (for CUSTOM)
+			if len(r.PriceUnitTiers) > 0 {
+				for i, tier := range r.PriceUnitTiers {
+					// Validate tier unit amount is not negative (allows zero)
+					if tier.UnitAmount.IsNegative() {
+						return ierr.NewError("price unit tier unit amount cannot be negative").
+							WithHint("Price unit tier unit amount cannot be negative").
+							WithReportableDetails(map[string]interface{}{
+								"tier_index":  i,
+								"unit_amount": tier.UnitAmount.String(),
+							}).
+							Mark(ierr.ErrValidation)
+					}
+
+					// Validate flat amount if provided
+					if tier.FlatAmount != nil && tier.FlatAmount.IsNegative() {
+						return ierr.NewError("price unit tier flat amount cannot be negative").
+							WithHint("Price unit tier flat amount cannot be negative").
+							WithReportableDetails(map[string]interface{}{
+								"tier_index":  i,
+								"flat_amount": tier.FlatAmount.String(),
+							}).
+							Mark(ierr.ErrValidation)
+					}
+				}
+			}
+
 		case types.BILLING_MODEL_PACKAGE:
+			// TransformQuantity is always required for PACKAGE
 			if r.TransformQuantity == nil {
 				return ierr.NewError("transform_quantity is required when billing model is PACKAGE").
 					WithHint("Please provide the number of units to set up package pricing override").
@@ -1212,12 +1275,76 @@ func (r *OverrideLineItemRequest) Validate(
 				return err
 			}
 
+			// Validate amount based on original price's price unit type
+			if originalPrice != nil {
+				switch originalPrice.PriceUnitType {
+				case types.PRICE_UNIT_TYPE_CUSTOM:
+					// For CUSTOM price unit, require price_unit_amount
+					if r.PriceUnitAmount == nil {
+						return ierr.NewError("price_unit_amount is required when billing model is PACKAGE and using custom pricing unit").
+							WithHint("Price unit amount is required to set up package pricing with custom pricing units").
+							WithReportableDetails(map[string]interface{}{
+								"price_id":        r.PriceID,
+								"price_unit_type": originalPrice.PriceUnitType,
+							}).
+							Mark(ierr.ErrValidation)
+					}
+				case types.PRICE_UNIT_TYPE_FIAT:
+					// For FIAT price unit, require amount
+					if r.Amount == nil {
+						return ierr.NewError("amount is required when billing model is PACKAGE and using fiat pricing unit").
+							WithHint("Amount is required to set up package pricing with fiat pricing units").
+							WithReportableDetails(map[string]interface{}{
+								"price_id":        r.PriceID,
+								"price_unit_type": originalPrice.PriceUnitType,
+							}).
+							Mark(ierr.ErrValidation)
+					}
+				}
+			} else {
+				// If original price is not available, require either amount or price_unit_amount
+				if r.Amount == nil && r.PriceUnitAmount == nil {
+					return ierr.NewError("amount or price_unit_amount is required when billing model is PACKAGE").
+						WithHint("Please provide either amount (for FIAT) or price_unit_amount (for CUSTOM) for package pricing override").
+						Mark(ierr.ErrValidation)
+				}
+			}
+
 		case types.BILLING_MODEL_FLAT_FEE:
-			// For flat fee, amount is typically required unless quantity is being overridden
-			if r.Amount == nil && r.Quantity == nil {
-				return ierr.NewError("amount or quantity is required when billing model is FLAT_FEE").
-					WithHint("Please provide either amount or quantity for flat fee pricing override").
-					Mark(ierr.ErrValidation)
+			// Validate amount based on original price's price unit type
+			if originalPrice != nil {
+				switch originalPrice.PriceUnitType {
+				case types.PRICE_UNIT_TYPE_CUSTOM:
+					// For CUSTOM price unit, require price_unit_amount
+					if r.PriceUnitAmount == nil {
+						return ierr.NewError("price_unit_amount is required when billing model is FLAT_FEE and using custom pricing unit").
+							WithHint("Price unit amount is required to set up flat fee pricing with custom pricing units").
+							WithReportableDetails(map[string]interface{}{
+								"price_id":        r.PriceID,
+								"price_unit_type": originalPrice.PriceUnitType,
+							}).
+							Mark(ierr.ErrValidation)
+					}
+				case types.PRICE_UNIT_TYPE_FIAT:
+					// For FIAT price unit, require amount
+					if r.Amount == nil {
+						return ierr.NewError("amount is required when billing model is FLAT_FEE and using fiat pricing unit").
+							WithHint("Amount is required to set up flat fee pricing with fiat pricing units").
+							WithReportableDetails(map[string]interface{}{
+								"price_id":        r.PriceID,
+								"price_unit_type": originalPrice.PriceUnitType,
+							}).
+							Mark(ierr.ErrValidation)
+					}
+				}
+			} else {
+				// If original price is not available, require either amount or price_unit_amount
+				// Note: quantity override is separate and optional
+				if r.Amount == nil && r.PriceUnitAmount == nil {
+					return ierr.NewError("amount or price_unit_amount is required when billing model is FLAT_FEE").
+						WithHint("Please provide either amount (for FIAT) or price_unit_amount (for CUSTOM) for flat fee pricing override").
+						Mark(ierr.ErrValidation)
+				}
 			}
 		}
 	}
