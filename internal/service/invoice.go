@@ -2057,25 +2057,33 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 	totalDiscount, _ := inv.TotalDiscount.Round(precision).Float64()
 	totalTax, _ := inv.TotalTax.Round(precision).Float64()
 	total, _ := inv.Total.Round(precision).Float64()
+	amountPaid, _ := inv.AmountPaid.Round(precision).Float64()
+	amountRemaining, _ := inv.AmountRemaining.Round(precision).Float64()
 
 	// Convert to InvoiceData
 	data := &pdf.InvoiceData{
-		ID:            inv.ID,
-		InvoiceNumber: invoiceNum,
-		InvoiceStatus: string(inv.InvoiceStatus),
-		Currency:      types.GetCurrencySymbol(inv.Currency),
-		Precision:     types.GetCurrencyPrecision(inv.Currency),
-		AmountDue:     total,
-		Subtotal:      subtotal,
-		TotalDiscount: totalDiscount,
-		TotalTax:      totalTax,
-		BillingReason: inv.BillingReason,
-		Notes:         "",  // resolved from invoice metadata
-		VAT:           0.0, // resolved from invoice metadata
-		Biller:        s.getBillerInfo(tenant),
-		PeriodStart:   pdf.CustomTime{Time: lo.FromPtr(inv.PeriodStart)},
-		PeriodEnd:     pdf.CustomTime{Time: lo.FromPtr(inv.PeriodEnd)},
-		Recipient:     s.getRecipientInfo(customer),
+		ID:              inv.ID,
+		InvoiceNumber:   invoiceNum,
+		InvoiceStatus:   string(inv.InvoiceStatus),
+		Currency:        types.GetCurrencySymbol(inv.Currency),
+		Precision:       types.GetCurrencyPrecision(inv.Currency),
+		AmountDue:       total,
+		Subtotal:        subtotal,
+		TotalDiscount:   totalDiscount,
+		TotalTax:        totalTax,
+		BillingReason:   inv.BillingReason,
+		Notes:           "",  // resolved from invoice metadata
+		VAT:             0.0, // resolved from invoice metadata
+		Biller:          s.getBillerInfo(tenant),
+		PeriodStart:     pdf.CustomTime{Time: lo.FromPtr(inv.PeriodStart)},
+		PeriodEnd:       pdf.CustomTime{Time: lo.FromPtr(inv.PeriodEnd)},
+		Recipient:       s.getRecipientInfo(customer),
+		BillingPeriod:   lo.FromPtrOr(inv.BillingPeriod, ""),
+		Description:     inv.Description,
+		AmountPaid:      amountPaid,
+		AmountRemaining: amountRemaining,
+		PaymentStatus:   string(inv.PaymentStatus),
+		InvoiceType:     string(inv.InvoiceType),
 	}
 
 	// Convert dates

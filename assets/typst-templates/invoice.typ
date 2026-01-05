@@ -17,6 +17,12 @@
   subtotal: invoice-data.at("subtotal", default: 0),
   discount: invoice-data.at("total_discount", default: 0),
   tax: invoice-data.at("total_tax", default: 0),
+  billing-period: invoice-data.at("billing_period", default: ""),
+  description: invoice-data.at("description", default: ""),
+  amount-paid: invoice-data.at("amount_paid", default: 0),
+  amount-remaining: invoice-data.at("amount_remaining", default: 0),
+  payment-status: invoice-data.at("payment_status", default: ""),
+  invoice-type: invoice-data.at("invoice_type", default: ""),
   biller: (
     name: invoice-data.at("biller", default: (:)).at("name", default: ""),
     email: invoice-data.at("biller", default: (:)).at("email", default: ""),
