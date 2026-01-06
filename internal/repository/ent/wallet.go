@@ -45,6 +45,11 @@ func (r *walletRepository) CreateWallet(ctx context.Context, w *walletdomain.Wal
 	})
 	defer FinishSpan(span)
 
+	// Set environment ID from context if not already set
+	if w.EnvironmentID == "" {
+		w.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
+
 	walletBuilder := client.Wallet.Create().
 		SetID(w.ID).
 		SetTenantID(w.TenantID).
