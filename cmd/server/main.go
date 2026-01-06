@@ -236,6 +236,7 @@ func main() {
 			service.NewScheduledTaskService,
 			service.NewWalletPaymentService,
 			service.NewWalletBalanceAlertService,
+			service.NewCustomerPortalService,
 		),
 	)
 
@@ -310,6 +311,7 @@ func provideHandlers(
 	rbacService *rbac.RBACService,
 	oauthService service.OAuthService,
 	costsheetUsageTrackingService service.CostSheetUsageTrackingService,
+	customerPortalService service.CustomerPortalService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, featureUsageTrackingService, cfg, logger),
@@ -356,6 +358,7 @@ func provideHandlers(
 		RBAC:                     v1.NewRBACHandler(rbacService, userService, logger),
 		OAuth:                    v1.NewOAuthHandler(oauthService, cfg.OAuth.RedirectURI, logger),
 		CronKafkaLagMonitoring:   cron.NewKafkaLagMonitoringHandler(logger, eventService),
+		CustomerPortal:           v1.NewCustomerPortalHandler(customerPortalService, logger),
 	}
 }
 

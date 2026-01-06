@@ -55,7 +55,8 @@ type Handlers struct {
 	OAuth                    *v1.OAuthHandler
 
 	// Portal handlers
-	Onboarding *v1.OnboardingHandler
+	Onboarding     *v1.OnboardingHandler
+	CustomerPortal *v1.CustomerPortalHandler
 	// Cron jobs : TODO: move crons out of API based architecture
 	CronSubscription       *cron.SubscriptionHandler
 	CronWallet             *cron.WalletCronHandler
@@ -195,6 +196,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			customer.GET("/:id/wallets", handlers.Wallet.GetWalletsByCustomerID)
 			customer.GET("/:id/invoices/summary", handlers.Invoice.GetCustomerInvoiceSummary)
 			customer.GET("/wallets", handlers.Wallet.GetCustomerWallets)
+
+			// Customer Dashboard - Session creation (requires tenant auth)
+			customer.GET("/portal/:external_id", handlers.CustomerPortal.CreateSession)
 
 		}
 
@@ -409,14 +413,14 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 				apiKeys.DELETE("/:id", handlers.Secret.DeleteAPIKey)
 			}
 
-			// Integration routes
-			integrations := secrets.Group("/integrations")
-			{
-				integrations.GET("/linked", handlers.Secret.ListLinkedIntegrations)
-				integrations.POST("/:provider", handlers.Secret.CreateIntegration)
-				integrations.GET("/:provider", handlers.Secret.GetIntegration)
-				integrations.DELETE("/:id", handlers.Secret.DeleteIntegration)
-			}
+		// Integration routes
+		integrations := secrets.Group("/integrations")
+		{
+			integrations.GET("/linked", handlers.Secret.ListLinkedIntegrations)
+			integrations.POST("/create/:provider", handlers.Secret.CreateIntegration)
+			integrations.GET("/by-provider/:provider", handlers.Secret.GetIntegration)
+			integrations.DELETE("/:id", handlers.Secret.DeleteIntegration)
+		}
 		}
 
 		// Connection routes
@@ -495,6 +499,38 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 		{
 			webhookGroup.GET("/dashboard", handlers.Webhook.GetDashboardURL)
 		}
+	}
+
+	// Customer Dashboard - Customer-facing APIs (requires dashboard token)
+	customerPortalAPI := router.Group("/v1/customer/portal")
+	customerPortalAPI.Use(middleware.SessionTokenAuthMiddleware(cfg, logger))
+	customerPortalAPI.Use(middleware.ErrorHandler())
+	{
+		// Customer specific
+		customerPortalAPI.GET("/info", handlers.CustomerPortal.GetCustomer)
+		customerPortalAPI.PUT("/info", handlers.CustomerPortal.UpdateCustomer)
+		customerPortalAPI.GET("/usage", handlers.CustomerPortal.GetUsageSummary)
+
+		// Subscriptions
+		customerPortalAPI.POST("/subscriptions", handlers.CustomerPortal.GetSubscriptions)
+		customerPortalAPI.GET("/subscriptions/:id", handlers.CustomerPortal.GetSubscription)
+
+		// Invoices
+		customerPortalAPI.POST("/invoices", handlers.CustomerPortal.GetInvoices)
+		customerPortalAPI.GET("/invoices/:id", handlers.CustomerPortal.GetInvoice)
+		customerPortalAPI.GET("/invoices/:id/pdf", handlers.CustomerPortal.GetInvoicePDF)
+
+		// Wallets
+		customerPortalAPI.POST("/wallets", handlers.CustomerPortal.GetWallets)
+		customerPortalAPI.GET("/wallets/:id", handlers.CustomerPortal.GetWallet)
+		customerPortalAPI.GET("/wallets/:id/transactions", handlers.CustomerPortal.GetWalletTransactions)
+
+		// Analytics
+		customerPortalAPI.POST("/analytics/revenue", handlers.CustomerPortal.GetAnalytics)
+
+		// Cost Analytics
+		customerPortalAPI.POST("/analytics/cost", handlers.CustomerPortal.GetCostAnalytics)
+
 	}
 
 	// Public webhook endpoints (no authentication required)

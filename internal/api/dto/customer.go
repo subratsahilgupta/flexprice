@@ -2,6 +2,7 @@ package dto
 
 import (
 	"context"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -196,4 +197,11 @@ func (r *UpdateCustomerRequest) Validate() error {
 	}
 
 	return nil
+}
+
+// PortalSessionResponse is the response containing the portal URL
+type PortalSessionResponse struct {
+	URL       string    `json:"url"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
 }

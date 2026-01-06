@@ -1,0 +1,9 @@
+# Preserve custom files during SDK regeneration
+src/flexprice/async_utils.py
+examples/
+
+# Preserve pyproject.toml to maintain proper packaging configuration
+pyproject.toml
+
+
+

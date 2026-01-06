@@ -81,6 +81,7 @@ type UpdatePriceRequest struct {
 	// Non-critical fields (can be updated directly)
 	LookupKey     string            `json:"lookup_key,omitempty"`
 	Description   string            `json:"description,omitempty"`
+	DisplayName   string            `json:"display_name,omitempty"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
 	EffectiveFrom *time.Time        `json:"effective_from,omitempty"`
 
@@ -463,7 +464,7 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*priceDomain.Price, e
 		// Convert and set price unit tiers (original tiers for display)
 		if r.PriceUnitConfig.PriceUnitTiers != nil {
 			priceUnitTiers, err := r.convertTiers(r.PriceUnitConfig.PriceUnitTiers)
-			
+
 			if err != nil {
 				return nil, err
 			}
@@ -641,6 +642,11 @@ func (r *UpdatePriceRequest) ToCreatePriceRequest(existingPrice *price.Price) Cr
 		createReq.Description = r.Description
 	} else {
 		createReq.Description = existingPrice.Description
+	}
+	if r.DisplayName != "" {
+		createReq.DisplayName = r.DisplayName
+	} else {
+		createReq.DisplayName = existingPrice.DisplayName
 	}
 	if r.Metadata != nil {
 		createReq.Metadata = r.Metadata

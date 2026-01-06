@@ -22,6 +22,14 @@ type Claims struct {
 	Email    string
 }
 
+// DashboardClaims represents the claims in a customer dashboard JWT token
+type SessionClaims struct {
+	ExternalCustomerID string // Required: external ID from tenant system
+	CustomerID         string // Required: internal Flexprice customer ID
+	TenantID           string
+	EnvironmentID      string
+}
+
 func NewAuth(userID string, provider types.AuthProvider, token string) *Auth {
 	return &Auth{
 		UserID:    userID,

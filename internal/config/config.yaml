@@ -215,4 +215,9 @@ oauth:
   # Development: http://localhost:3000/tools/integrations/oauth/callback
   # Staging: https://admin-dev.flexprice.io/tools/integrations/oauth/callback
   # Production: https://admin.flexprice.io/tools/integrations/oauth/callback
-  redirect_uri: ""
+  redirect_uri: "http://localhost:3000/tools/integrations/oauth/callback"
+
+# Customer portal configuration
+customer_portal:
+  url: "http://localhost:3000"
+  token_timeout_hours: 1
