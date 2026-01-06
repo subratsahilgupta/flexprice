@@ -1093,7 +1093,7 @@ func (r *OverrideLineItemRequest) Validate(
 
 	// Validate amount if provided
 	if r.Amount != nil && r.Amount.IsNegative() {
-		return ierr.NewError("amount must be non-negative").
+		return ierr.NewError("invalid override line item: amount must be non-negative").
 			WithHint("Override amount cannot be negative").
 			WithReportableDetails(map[string]interface{}{
 				"amount": r.Amount.String(),
@@ -1136,7 +1136,7 @@ func (r *OverrideLineItemRequest) Validate(
 
 	originalPrice, exists := priceMap[r.PriceID]
 	if !exists || originalPrice == nil {
-		return ierr.NewError("original price not found").
+		return ierr.NewError("price not found in plan").
 			WithHint("Could not find the original price for the specified price ID. The price must exist in the plan to create an override").
 			WithReportableDetails(map[string]interface{}{
 				"price_id": r.PriceID,
@@ -1169,7 +1169,7 @@ func (r *OverrideLineItemRequest) Validate(
 			case types.PRICE_UNIT_TYPE_CUSTOM:
 				// For CUSTOM price unit, require price_unit_tiers
 				if len(r.PriceUnitTiers) == 0 {
-					return ierr.NewError("price_unit_tiers are required when billing model is TIERED and using custom pricing unit").
+					return ierr.NewError("invalid override line item: price_unit_tiers are required when billing model is TIERED and using custom pricing unit").
 						WithHint("Price unit tiers are required to set up tiered pricing with custom pricing units").
 						WithReportableDetails(map[string]interface{}{
 							"price_id":        r.PriceID,
@@ -1180,7 +1180,7 @@ func (r *OverrideLineItemRequest) Validate(
 			case types.PRICE_UNIT_TYPE_FIAT:
 				// For FIAT price unit, require tiers
 				if len(r.Tiers) == 0 {
-					return ierr.NewError("tiers are required when billing model is TIERED").
+					return ierr.NewError("invalid override line item: tiers are required when billing model is TIERED").
 						WithHint("Price tiers are required to set up tiered pricing").
 						WithReportableDetails(map[string]interface{}{
 							"price_id":        r.PriceID,
