@@ -1165,7 +1165,13 @@ func (r *OverrideLineItemRequest) Validate(
 		switch r.BillingModel {
 		case types.BILLING_MODEL_TIERED:
 			// Validate tiers based on original price's price unit type
-			switch originalPrice.PriceUnitType {
+			// Default to FIAT if PriceUnitType is empty (for backward compatibility)
+			priceUnitType := originalPrice.PriceUnitType
+			if priceUnitType == "" {
+				priceUnitType = types.PRICE_UNIT_TYPE_FIAT
+			}
+
+			switch priceUnitType {
 			case types.PRICE_UNIT_TYPE_CUSTOM:
 				// For CUSTOM price unit, require price_unit_tiers
 				if len(r.PriceUnitTiers) == 0 {
@@ -1189,7 +1195,7 @@ func (r *OverrideLineItemRequest) Validate(
 						Mark(ierr.ErrValidation)
 				}
 			default:
-				// Invalid or unknown price unit type
+				// Invalid or unknown price unit type (not empty, not FIAT, not CUSTOM)
 				return ierr.NewError("invalid override line item: invalid or unknown price unit type for tiered billing model").
 					WithHint("Price unit type must be either FIAT or CUSTOM for tiered billing model").
 					WithReportableDetails(map[string]interface{}{

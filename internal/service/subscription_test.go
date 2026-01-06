@@ -4523,6 +4523,31 @@ func (s *SubscriptionServiceSuite) TestPriceOverrideValidation() {
 			expectedError: "price_unit_amount must be non-negative",
 			description:   "Override with negative price_unit_amount should fail validation",
 		},
+		{
+			name: "invalid_override_tiered_with_invalid_price_unit_type",
+			override: dto.OverrideLineItemRequest{
+				PriceID:      "price-invalid-unit-type",
+				BillingModel: types.BILLING_MODEL_TIERED,
+				Tiers: []dto.CreatePriceTier{
+					{UpTo: nil, UnitAmount: decimal.NewFromFloat(10.00)},
+				},
+			},
+			priceMap: map[string]*dto.PriceResponse{
+				"price-invalid-unit-type": {
+					Price: &price.Price{
+						ID:            "price-invalid-unit-type",
+						Type:          types.PRICE_TYPE_FIXED,
+						PriceUnitType: types.PriceUnitType("INVALID_TYPE"), // Invalid price unit type
+						BillingModel:  types.BILLING_MODEL_FLAT_FEE,
+					},
+				},
+			},
+			lineItemsMap:  nil,
+			planID:        s.testData.plan.ID,
+			shouldSucceed: false,
+			expectedError: "invalid override line item",
+			description:   "TIERED billing model with invalid price unit type should fail validation",
+		},
 	}
 
 	for _, tc := range testCases {
