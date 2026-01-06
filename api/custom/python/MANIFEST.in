@@ -1,0 +1,4 @@
+# Include examples folder and all its contents
+recursive-include examples *
+include README.md
+

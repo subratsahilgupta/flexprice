@@ -150,6 +150,15 @@ jobs:
             echo "⏭️  Skipping: No utils found in api/custom/python/utils/"
           fi
           
+          # Copy MANIFEST.in if it exists (required for packaging non-Python files)
+          if [ -f "api/custom/python/MANIFEST.in" ]; then
+            cp api/custom/python/MANIFEST.in api/python/ 2>/dev/null || true
+            echo "✓ Copied MANIFEST.in (for packaging examples)"
+            COPIED=$((COPIED + 1))
+          else
+            echo "⏭️  Skipping: MANIFEST.in not found"
+          fi
+          
           if [ $COPIED -eq 0 ]; then
             echo "ℹ️  No custom files found to copy - SDK will use only Speakeasy-generated files"
           else
