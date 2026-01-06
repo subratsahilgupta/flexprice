@@ -275,6 +275,7 @@ func (s *SubscriptionServiceSuite) setupTestData() {
 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
 		EntityID:           s.testData.plan.ID,
 		Type:               types.PRICE_TYPE_USAGE,
+		PriceUnitType:      types.PRICE_UNIT_TYPE_FIAT,
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,
 		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
@@ -4361,11 +4362,13 @@ func (s *SubscriptionServiceSuite) TestPriceOverrideValidation() {
 				BillingModel: types.BILLING_MODEL_TIERED,
 				// Missing tiers
 			},
-			priceMap:      nil,
+			priceMap: map[string]*dto.PriceResponse{
+				s.testData.prices.storage.ID: {Price: s.testData.prices.storage},
+			},
 			lineItemsMap:  nil,
 			planID:        s.testData.plan.ID,
 			shouldSucceed: false,
-			expectedError: "tier_mode or tiers are required when billing model is TIERED",
+			expectedError: "invalid override line item",
 			description:   "TIERED billing model without tiers should fail validation",
 		},
 		{
@@ -4579,7 +4582,7 @@ func (s *SubscriptionServiceSuite) TestPriceOverrideEdgeCases() {
 		{
 			name: "override_with_very_large_quantity",
 			override: dto.OverrideLineItemRequest{
-				PriceID:  s.testData.prices.storage.ID,
+				PriceID:  s.testData.prices.fixedMonthly.ID,
 				Quantity: lo.ToPtr(decimal.NewFromFloat(999999.99)),
 			},
 			description:   "Should allow large quantity override",
@@ -4597,7 +4600,7 @@ func (s *SubscriptionServiceSuite) TestPriceOverrideEdgeCases() {
 		{
 			name: "override_with_decimal_quantity",
 			override: dto.OverrideLineItemRequest{
-				PriceID:  s.testData.prices.storage.ID,
+				PriceID:  s.testData.prices.fixedMonthly.ID,
 				Quantity: lo.ToPtr(decimal.NewFromFloat(0.5)),
 			},
 			description:   "Should allow decimal quantity",
@@ -4637,8 +4640,24 @@ func (s *SubscriptionServiceSuite) TestPriceOverrideEdgeCases() {
 
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
+			// Create priceMap for validation - provide it when priceID is not empty
+			// and we're not testing the empty price_id error case
+			var priceMap map[string]*dto.PriceResponse
+			if tc.override.PriceID != "" && tc.expectedError != "price_id is required for override line items" {
+				// Determine which price to use based on the priceID
+				var priceToUse *price.Price
+				if tc.override.PriceID == s.testData.prices.fixedMonthly.ID {
+					priceToUse = s.testData.prices.fixedMonthly
+				} else {
+					priceToUse = s.testData.prices.storage
+				}
+				priceMap = map[string]*dto.PriceResponse{
+					tc.override.PriceID: {Price: priceToUse},
+				}
+			}
+
 			// Test validation
-			err := tc.override.Validate(nil, nil, "")
+			err := tc.override.Validate(priceMap, nil, "")
 
 			if !tc.shouldSucceed {
 				s.Error(err, "Expected validation error for: %s", tc.description)
