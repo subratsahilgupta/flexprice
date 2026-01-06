@@ -1188,6 +1188,15 @@ func (r *OverrideLineItemRequest) Validate(
 						}).
 						Mark(ierr.ErrValidation)
 				}
+			default:
+				// Invalid or unknown price unit type
+				return ierr.NewError("invalid override line item: invalid or unknown price unit type for tiered billing model").
+					WithHint("Price unit type must be either FIAT or CUSTOM for tiered billing model").
+					WithReportableDetails(map[string]interface{}{
+						"price_id":        r.PriceID,
+						"price_unit_type": originalPrice.PriceUnitType,
+					}).
+					Mark(ierr.ErrValidation)
 			}
 
 			// Validate tier mode if provided
