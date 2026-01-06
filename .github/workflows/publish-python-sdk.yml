@@ -115,11 +115,45 @@ jobs:
 
       - name: Copy custom files to SDK
         run: |
-          echo "📋 Copying custom files..."
+          echo "📋 Copying custom files to Python SDK..."
+          
+          COPIED=0
+          
+          # Copy examples folder
+          if [ -d "api/custom/python/examples" ] && [ "$(ls -A api/custom/python/examples 2>/dev/null)" ]; then
+            mkdir -p api/python/examples
+            cp -r api/custom/python/examples/* api/python/examples/ 2>/dev/null || true
+            FILE_COUNT=$(ls -1 api/custom/python/examples 2>/dev/null | wc -l | tr -d ' ')
+            echo "✓ Copied examples folder ($FILE_COUNT files)"
+            COPIED=$((COPIED + 1))
+          else
+            echo "⏭️  Skipping: No examples found in api/custom/python/examples/"
+          fi
+          
+          # Copy async_utils.py if it exists
           if [ -f "api/custom/python/async_utils.py" ]; then
             mkdir -p api/python/src/flexprice_sdk_test
-            cp api/custom/python/async_utils.py api/python/src/flexprice_sdk_test/
+            cp api/custom/python/async_utils.py api/python/src/flexprice_sdk_test/ 2>/dev/null || true
             echo "✓ Copied async_utils.py"
+            COPIED=$((COPIED + 1))
+          else
+            echo "⏭️  Skipping: async_utils.py not found"
+          fi
+          
+          # Copy any other custom Python files
+          if [ -d "api/custom/python/utils" ] && [ "$(ls -A api/custom/python/utils 2>/dev/null)" ]; then
+            mkdir -p api/python/src/flexprice_sdk_test/utils
+            cp -r api/custom/python/utils/* api/python/src/flexprice_sdk_test/utils/ 2>/dev/null || true
+            echo "✓ Copied utils folder"
+            COPIED=$((COPIED + 1))
+          else
+            echo "⏭️  Skipping: No utils found in api/custom/python/utils/"
+          fi
+          
+          if [ $COPIED -eq 0 ]; then
+            echo "ℹ️  No custom files found to copy - SDK will use only Speakeasy-generated files"
+          else
+            echo "✅ Successfully copied $COPIED custom file(s)/folder(s)"
           fi
 
       - name: Fix pyproject.toml for proper packaging
