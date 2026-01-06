@@ -176,18 +176,11 @@ jobs:
             echo "✓ Fixed README reference to README.md"
           fi
           
-          # Add data-files configuration for examples
+          # Add include-package-data if examples exist
           if [ -d "examples" ] && [ "$(ls -A examples 2>/dev/null)" ]; then
-            # Check if [tool.setuptools.data-files] section exists
-            if ! grep -q "\[tool.setuptools.data-files\]" pyproject.toml; then
-              # Add data-files section after package-data
-              sed -i '/\[tool.setuptools.package-data\]/a\\n[tool.setuptools.data-files]\n"examples" = ["examples/**/*"]' pyproject.toml || true
-              echo "✓ Added examples to pyproject.toml data-files"
-            fi
-            
-            # Enable include-package-data if not present
             if ! grep -q "include-package-data" pyproject.toml; then
-              sed -i '/\[tool.setuptools\]/a include-package-data = true' pyproject.toml || true
+              # Add include-package-data on a new line after [tool.setuptools]
+              sed -i '/^\[tool\.setuptools\]/a\include-package-data = true' pyproject.toml
               echo "✓ Enabled include-package-data in pyproject.toml"
             fi
           fi
