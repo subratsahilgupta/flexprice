@@ -469,8 +469,8 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetUpdatedBy(types.GetUserID(ctx)).
 		SetTotal(inv.Total).
 		SetSubtotal(inv.Subtotal).
-		SetTotalDiscount(inv.TotalDiscount).
-		AddVersion(1) // Increment version atomically
+		SetTotalDiscount(inv.TotalDiscount)
+		// AddVersion(1) // Increment version atomically
 
 	// Execute update
 	n, err := query.Save(ctx)
