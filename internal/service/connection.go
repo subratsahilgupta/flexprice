@@ -356,6 +356,13 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 			"tenant_id", conn.TenantID,
 			"connection_id", conn.ID)
 
+		// Validate that Flexprice config has required credentials
+		if s.Config.FlexpriceS3Exports.AWSAccessKeyID == "" || s.Config.FlexpriceS3Exports.AWSSecretAccessKey == "" {
+			return nil, ierr.NewError("flexprice S3 exports not configured").
+				WithHint("FlexpriceS3Exports credentials are missing from configuration").
+				Mark(ierr.ErrSystem)
+		}
+
 		// Inject Flexprice credentials from config
 		conn.EncryptedSecretData.S3 = &types.S3ConnectionMetadata{
 			AWSAccessKeyID:     s.Config.FlexpriceS3Exports.AWSAccessKeyID,

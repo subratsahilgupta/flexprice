@@ -229,6 +229,7 @@ func (s *S3JobConfig) Validate() error {
 
 // ValidateForFlexpriceManaged validates only compression and encryption
 // Used before populating bucket/region from config
+// ValidateForFlexpriceManaged validates only compression and encryption for Flexprice-managed connections
 func (s *S3JobConfig) ValidateForFlexpriceManaged() error {
 	if s == nil {
 		return ierr.NewError("S3 job config is required").
@@ -236,7 +237,7 @@ func (s *S3JobConfig) ValidateForFlexpriceManaged() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	// Only validate compression and encryption
+	// Only validate compression and encryption (bucket/region will be populated from config)
 	if err := s.Compression.Validate(); err != nil {
 		return err
 	}

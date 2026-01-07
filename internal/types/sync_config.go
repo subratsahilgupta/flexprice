@@ -64,5 +64,12 @@ func (s *SyncConfig) Validate() error {
 		return ierr.NewError("quote inbound sync is not allowed").Mark(ierr.ErrValidation)
 	}
 
+	// Validate S3 export config if present
+	if s.S3 != nil {
+		if err := s.S3.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

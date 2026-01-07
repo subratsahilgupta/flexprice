@@ -67,11 +67,11 @@ type BucketConfig struct {
 }
 
 type FlexpriceS3ExportsConfig struct {
-	Bucket              string `mapstructure:"bucket" validate:"omitempty"`
-	Region              string `mapstructure:"region" validate:"omitempty"`
-	AWSAccessKeyID      string `mapstructure:"aws_access_key_id" validate:"omitempty"`
-	AWSSecretAccessKey  string `mapstructure:"aws_secret_access_key" validate:"omitempty"`
-	AWSSessionToken     string `mapstructure:"aws_session_token" validate:"omitempty"`
+	Bucket             string `mapstructure:"bucket" validate:"required"`
+	Region             string `mapstructure:"region" validate:"required"`
+	AWSAccessKeyID     string `mapstructure:"aws_access_key_id" validate:"required"`
+	AWSSecretAccessKey string `mapstructure:"aws_secret_access_key" validate:"required"`
+	AWSSessionToken    string `mapstructure:"aws_session_token,omitempty"`
 }
 
 type DeploymentConfig struct {

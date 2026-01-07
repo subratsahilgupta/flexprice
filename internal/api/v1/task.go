@@ -211,13 +211,13 @@ func (h *TaskHandler) GetTaskProcessingResult(c *gin.Context) {
 }
 
 // @Summary Download task export file
-// @Description Generate a presigned URL for downloading an exported file
+// @Description Generate a presigned URL for downloading a Flexprice-managed export file
 // @Tags Tasks
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Param id path string true "Task ID"
-// @Success 200 {object} dto.TaskDownloadURLResponse
+// @Success 200 {object} map[string]string
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
@@ -231,7 +231,6 @@ func (h *TaskHandler) DownloadTaskFile(c *gin.Context) {
 		return
 	}
 
-	// Generate presigned URL
 	downloadURL, err := h.service.GenerateDownloadURL(c.Request.Context(), id)
 	if err != nil {
 		h.log.Errorw("failed to generate download URL",
@@ -240,10 +239,6 @@ func (h *TaskHandler) DownloadTaskFile(c *gin.Context) {
 		c.Error(err)
 		return
 	}
-
-	h.log.Infow("generated download URL for task",
-		"task_id", id,
-		"expires_in", "30m")
 
 	c.JSON(http.StatusOK, gin.H{
 		"download_url": downloadURL,

@@ -94,6 +94,12 @@ func (s *scheduledTaskService) CreateScheduledTask(ctx context.Context, req dto.
 			"tenant_id", tenantID)
 
 		// For Flexprice-managed: validate only compression and encryption first
+		if req.JobConfig == nil {
+			return nil, ierr.NewError("job config is required for flexprice-managed S3").
+				WithHint("S3 job configuration must be provided").
+				Mark(ierr.ErrValidation)
+		}
+
 		if err := req.JobConfig.ValidateForFlexpriceManaged(); err != nil {
 			s.logger.Errorw("invalid job config for flexprice-managed S3", "error", err)
 			return nil, err
