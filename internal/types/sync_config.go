@@ -14,6 +14,8 @@ type SyncConfig struct {
 	// CRM sync (HubSpot, Salesforce, etc.)
 	Deal  *EntitySyncConfig `json:"deal,omitempty"`
 	Quote *EntitySyncConfig `json:"quote,omitempty"`
+	// S3 connection metadata (for Flexprice-managed S3 connections)
+	S3 *S3ExportConfig `json:"s3,omitempty"`
 }
 
 // EntitySyncConfig defines sync direction for an entity
