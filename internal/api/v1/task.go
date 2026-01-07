@@ -209,3 +209,43 @@ func (h *TaskHandler) GetTaskProcessingResult(c *gin.Context) {
 		"details":     workflowDetails,
 	})
 }
+
+// @Summary Download task export file
+// @Description Generate a presigned URL for downloading an exported file
+// @Tags Tasks
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Task ID"
+// @Success 200 {object} dto.TaskDownloadURLResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /tasks/{id}/download [get]
+func (h *TaskHandler) DownloadTaskFile(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("task ID is required").
+			WithHint("Task ID is required").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Generate presigned URL
+	downloadURL, err := h.service.GenerateDownloadURL(c.Request.Context(), id)
+	if err != nil {
+		h.log.Errorw("failed to generate download URL",
+			"error", err,
+			"task_id", id)
+		c.Error(err)
+		return
+	}
+
+	h.log.Infow("generated download URL for task",
+		"task_id", id,
+		"expires_in", "30m")
+
+	c.JSON(http.StatusOK, gin.H{
+		"download_url": downloadURL,
+	})
+}
