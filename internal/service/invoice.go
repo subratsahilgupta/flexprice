@@ -2480,6 +2480,8 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, fina
 		// STEP 3: Update invoice totals, metadata, and customer ID
 		// Use invoicing customer ID from the new invoice request (which uses sub.GetInvoicingCustomerID())
 		// This ensures backward compatibility - if subscription has invoicing customer ID, use it; otherwise use subscription customer ID
+		inv.Total = newInvoiceReq.Total
+		inv.Subtotal = newInvoiceReq.Subtotal
 		inv.CustomerID = newInvoiceReq.CustomerID
 		inv.AmountDue = newInvoiceReq.AmountDue
 		inv.AmountRemaining = newInvoiceReq.AmountDue.Sub(inv.AmountPaid)
