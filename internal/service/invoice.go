@@ -2990,7 +2990,7 @@ func (s *invoiceService) getFlexibleUsageBreakdownForInvoice(ctx context.Context
 
 	// Step 3: Make analytics requests for each period group
 	allAnalyticsItems := make([]dto.UsageAnalyticItem, 0)
-	eventPostProcessingService := NewEventPostProcessingService(s.ServiceParams, s.EventRepo, s.ProcessedEventRepo)
+	featureUsageTrackingService := NewFeatureUsageTrackingService(s.ServiceParams, s.EventRepo, s.FeatureUsageRepo)
 
 	for periodKey, lineItemsInPeriod := range periodGroups {
 		// Collect feature IDs for this period
@@ -3022,9 +3022,9 @@ func (s *invoiceService) getFlexibleUsageBreakdownForInvoice(ctx context.Context
 			"line_items_count", len(lineItemsInPeriod),
 			"group_by", groupBy)
 
-		analyticsResponse, err := eventPostProcessingService.GetDetailedUsageAnalytics(ctx, analyticsReq)
+		analyticsResponse, err := featureUsageTrackingService.GetDetailedUsageAnalytics(ctx, analyticsReq)
 		if err != nil {
-			s.Logger.Errorw("failed to get period-specific usage analytics",
+			s.Logger.Errorw("failed to get period-specific usag	e analytics",
 				"invoice_id", inv.ID,
 				"period_start", periodKey.Start.Format(time.RFC3339),
 				"period_end", periodKey.End.Format(time.RFC3339),
@@ -3150,6 +3150,10 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 
 			lineItemUsageBreakdown = append(lineItemUsageBreakdown, breakdownItem)
 		}
+
+		// Update the line item quantity and amount with totals from breakdown
+		lineItem.Quantity = totalUsageForLineItem
+		lineItem.Amount = totalLineItemCost
 
 		usageBreakdownResponse[lineItemID] = lineItemUsageBreakdown
 
