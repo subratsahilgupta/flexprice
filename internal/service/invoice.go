@@ -3094,24 +3094,8 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 		totalLineItemCost := lineItem.Amount
 
 		for _, analyticsItem := range analyticsItems {
-			// Calculate proportional cost based on usage
-			var cost string
-			if !totalLineItemCost.IsZero() && !totalUsageForLineItem.IsZero() {
-				proportionalCost := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(totalLineItemCost)
-				cost = proportionalCost.StringFixed(2)
-			} else {
-				cost = "0"
-			}
 
-			// Calculate percentage
-			var percentage string
-			if !totalUsageForLineItem.IsZero() {
-				pct := analyticsItem.TotalUsage.Div(totalUsageForLineItem).Mul(decimal.NewFromInt(100))
-				percentage = pct.StringFixed(2)
-			} else {
-				percentage = "0"
-			}
-
+			totalLineItemCost = totalLineItemCost.Add(analyticsItem.TotalCost)
 			// Build grouped_by map from the analytics item
 			groupedBy := make(map[string]string)
 			if analyticsItem.FeatureID != "" {
@@ -3129,7 +3113,7 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 
 			// Create usage breakdown item
 			breakdownItem := dto.UsageBreakdownItem{
-				Cost:      cost,
+				Cost:      analyticsItem.TotalCost.StringFixed(2),
 				GroupedBy: groupedBy,
 			}
 
@@ -3137,10 +3121,6 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 			if !analyticsItem.TotalUsage.IsZero() {
 				usageStr := analyticsItem.TotalUsage.StringFixed(2)
 				breakdownItem.Usage = &usageStr
-			}
-
-			if percentage != "0" {
-				breakdownItem.Percentage = &percentage
 			}
 
 			if analyticsItem.EventCount > 0 {
@@ -3188,9 +3168,48 @@ func (s *invoiceService) GetInvoiceWithBreakdown(ctx context.Context, req dto.Ge
 			return nil, err
 		}
 		invoice.WithUsageBreakdown(usageBreakdown)
+
+		// Recalculate invoice totals based on updated line item amounts
+		s.recalculateInvoiceTotals(invoice)
 	}
 
 	return invoice, nil
+}
+
+// recalculateInvoiceTotals recalculates invoice subtotal, total, amount_due and amount_remaining
+// based on updated line item amounts after usage breakdown calculation
+func (s *invoiceService) recalculateInvoiceTotals(inv *dto.InvoiceResponse) {
+	// Calculate new subtotal from line item amounts
+	newSubtotal := decimal.Zero
+	for _, lineItem := range inv.LineItems {
+		newSubtotal = newSubtotal.Add(lineItem.Amount)
+	}
+
+	// Update subtotal
+	inv.Subtotal = newSubtotal
+
+	// Calculate new total: subtotal - discount + tax
+	newTotal := newSubtotal.Sub(inv.TotalDiscount).Add(inv.TotalTax)
+	if newTotal.IsNegative() {
+		newTotal = decimal.Zero
+	}
+
+	// Update total and amount_due
+	inv.Total = newTotal
+	inv.AmountDue = newTotal
+
+	// Calculate amount_remaining: total - amount_paid
+	inv.AmountRemaining = newTotal.Sub(inv.AmountPaid)
+	if inv.AmountRemaining.IsNegative() {
+		inv.AmountRemaining = decimal.Zero
+	}
+
+	s.Logger.Debugw("recalculated invoice totals after usage breakdown",
+		"invoice_id", inv.ID,
+		"new_subtotal", newSubtotal.StringFixed(2),
+		"new_total", newTotal.StringFixed(2),
+		"amount_due", inv.AmountDue.StringFixed(2),
+		"amount_remaining", inv.AmountRemaining.StringFixed(2))
 }
 
 // getAppliedTaxesForPDF retrieves and formats applied tax data for PDF generation
