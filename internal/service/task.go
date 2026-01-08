@@ -1270,10 +1270,29 @@ func (s *taskService) GenerateDownloadURL(ctx context.Context, id string) (strin
 			Mark(ierr.ErrInternal)
 	}
 
-	// Create job config with the bucket and region from the file URL
+	// Determine the region based on connection type
+	var region string
+	if isFlexpriceManaged {
+		// For Flexprice-managed, use the region from config
+		region = s.Config.FlexpriceS3Exports.Region
+	} else {
+		// For customer-owned, use the region from scheduled task's job config
+		if scheduledTask.JobConfig == nil || scheduledTask.JobConfig.Region == "" {
+			return "", ierr.NewError("scheduled task job config region not configured").
+				WithHint("S3 region is required in job config for customer-owned exports").
+				WithReportableDetails(map[string]interface{}{
+					"task_id":           id,
+					"scheduled_task_id": t.ScheduledTaskID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+		region = scheduledTask.JobConfig.Region
+	}
+
+	// Create job config with the bucket and region
 	jobConfig := &types.S3JobConfig{
 		Bucket: bucket,
-		Region: s.Config.FlexpriceS3Exports.Region,
+		Region: region,
 	}
 
 	// Get S3 client configured with connection-specific credentials
