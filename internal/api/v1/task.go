@@ -211,7 +211,7 @@ func (h *TaskHandler) GetTaskProcessingResult(c *gin.Context) {
 }
 
 // @Summary Download task export file
-// @Description Generate a presigned URL for downloading a Flexprice-managed export file
+// @Description Generate a presigned URL for downloading an exported file (supports both Flexprice-managed and customer-owned S3)
 // @Tags Tasks
 // @Accept json
 // @Produce json

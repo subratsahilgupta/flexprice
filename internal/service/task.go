@@ -1228,7 +1228,7 @@ func (s *taskService) GenerateDownloadURL(ctx context.Context, id string) (strin
 			Mark(ierr.ErrNotFound)
 	}
 
-	// Get the connection and verify it's Flexprice-managed
+	// Get the connection to determine if it's Flexprice-managed
 	conn, err := s.ConnectionRepo.Get(ctx, scheduledTask.ConnectionID)
 	if err != nil {
 		s.Logger.Errorw("failed to get connection", "error", err, "connection_id", scheduledTask.ConnectionID)
@@ -1237,35 +1237,30 @@ func (s *taskService) GenerateDownloadURL(ctx context.Context, id string) (strin
 			Mark(ierr.ErrNotFound)
 	}
 
-	// Only support download for Flexprice-managed connections
-	if conn.SyncConfig == nil || conn.SyncConfig.S3 == nil || !conn.SyncConfig.S3.IsFlexpriceManaged {
-		return "", ierr.NewError("file download not supported").
-			WithHint("File download is only supported for Flexprice-managed S3 exports").
-			WithReportableDetails(map[string]interface{}{
-				"task_id":       id,
-				"connection_id": scheduledTask.ConnectionID,
-			}).
-			Mark(ierr.ErrInvalidOperation)
+	// Check if connection is Flexprice-managed
+	isFlexpriceManaged := conn.SyncConfig != nil && conn.SyncConfig.S3 != nil && conn.SyncConfig.S3.IsFlexpriceManaged
+
+	// For Flexprice-managed, verify bucket matches config
+	if isFlexpriceManaged {
+		if bucket != s.Config.FlexpriceS3Exports.Bucket {
+			s.Logger.Warnw("bucket mismatch for Flexprice-managed export",
+				"expected_bucket", s.Config.FlexpriceS3Exports.Bucket,
+				"actual_bucket", bucket,
+				"task_id", id)
+			return "", ierr.NewError("bucket mismatch").
+				WithHint("File URL bucket does not match Flexprice-managed configuration").
+				WithReportableDetails(map[string]interface{}{
+					"task_id":         id,
+					"expected_bucket": s.Config.FlexpriceS3Exports.Bucket,
+					"actual_bucket":   bucket,
+				}).
+				Mark(ierr.ErrValidation)
+		}
 	}
 
-	// Verify bucket matches the Flexprice-managed bucket for security
-	if bucket != s.Config.FlexpriceS3Exports.Bucket {
-		s.Logger.Warnw("bucket mismatch for Flexprice-managed export",
-			"expected_bucket", s.Config.FlexpriceS3Exports.Bucket,
-			"actual_bucket", bucket,
-			"task_id", id)
-		return "", ierr.NewError("bucket mismatch").
-			WithHint("File URL bucket does not match Flexprice-managed configuration").
-			WithReportableDetails(map[string]interface{}{
-				"task_id":         id,
-				"expected_bucket": s.Config.FlexpriceS3Exports.Bucket,
-				"actual_bucket":   bucket,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	s.Logger.Debugw("generating presigned URL for Flexprice-managed export",
-		"connection_id", scheduledTask.ConnectionID)
+	s.Logger.Debugw("generating presigned URL",
+		"connection_id", scheduledTask.ConnectionID,
+		"is_flexprice_managed", isFlexpriceManaged)
 
 	// Get the S3 integration which handles credential decryption
 	s3Integration, err := s.IntegrationFactory.GetS3Client(ctx)
@@ -1307,9 +1302,10 @@ func (s *taskService) GenerateDownloadURL(ctx context.Context, id string) (strin
 			Mark(ierr.ErrInternal)
 	}
 
-	s.Logger.Infow("successfully generated presigned URL for Flexprice-managed export",
+	s.Logger.Infow("successfully generated presigned URL",
 		"task_id", id,
-		"connection_id", scheduledTask.ConnectionID)
+		"connection_id", scheduledTask.ConnectionID,
+		"is_flexprice_managed", isFlexpriceManaged)
 
 	return result.URL, nil
 }
