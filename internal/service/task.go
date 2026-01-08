@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/task"
@@ -25,6 +27,7 @@ type TaskService interface {
 	ListTasks(ctx context.Context, filter *types.TaskFilter) (*dto.ListTasksResponse, error)
 	UpdateTaskStatus(ctx context.Context, id string, status types.TaskStatus) error
 	ProcessTaskWithStreaming(ctx context.Context, id string) error
+	GenerateDownloadURL(ctx context.Context, id string) (string, error)
 }
 
 type taskService struct {
@@ -1149,4 +1152,178 @@ func (f *FeaturesChunkProcessor) processFeature(ctx context.Context, featureReq 
 
 	f.logger.Info("created new feature", "lookup_key", featureReq.LookupKey)
 	return nil
+}
+
+// GenerateDownloadURL generates a presigned URL for downloading an exported file
+func (s *taskService) GenerateDownloadURL(ctx context.Context, id string) (string, error) {
+	// Get the task
+	t, err := s.TaskRepo.Get(ctx, id)
+	if err != nil {
+		return "", ierr.WithError(err).
+			WithHint("Failed to get task").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Check if task has a file
+	if t.FileURL == "" {
+		return "", ierr.NewError("task has no file").
+			WithHint("Task export has not completed yet or failed").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Parse S3 URL (format: s3://bucket/key)
+	s3URL := t.FileURL
+	if !strings.HasPrefix(s3URL, "s3://") {
+		return "", ierr.NewErrorf("invalid S3 URL format: %s", s3URL).
+			WithHint("File URL must start with s3://").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Remove s3:// prefix
+	s3Path := strings.TrimPrefix(s3URL, "s3://")
+
+	// Split into bucket and key
+	parts := strings.SplitN(s3Path, "/", 2)
+	if len(parts) != 2 {
+		return "", ierr.NewErrorf("invalid S3 URL format: %s", s3URL).
+			WithHint("File URL must be in format s3://bucket/key").
+			Mark(ierr.ErrValidation)
+	}
+
+	bucket := parts[0]
+	key := parts[1]
+
+	s.Logger.Infow("generating presigned URL for task file",
+		"task_id", id,
+		"bucket", bucket,
+		"key", key)
+
+	// Verify task has a scheduled task (export tasks must have connection credentials)
+	if t.ScheduledTaskID == "" {
+		return "", ierr.NewError("task has no scheduled_task_id").
+			WithHint("Cannot generate download URL for task without scheduled task").
+			WithReportableDetails(map[string]interface{}{
+				"task_id": id,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Get the scheduled task to find the connection
+	scheduledTask, err := s.ScheduledTaskRepo.Get(ctx, t.ScheduledTaskID)
+	if err != nil {
+		s.Logger.Errorw("failed to get scheduled task", "error", err, "scheduled_task_id", t.ScheduledTaskID)
+		return "", ierr.WithError(err).
+			WithHint("Failed to get scheduled task").
+			Mark(ierr.ErrNotFound)
+	}
+
+	if scheduledTask.ConnectionID == "" {
+		return "", ierr.NewError("scheduled task has no connection_id").
+			WithHint("Cannot generate download URL without connection").
+			WithReportableDetails(map[string]interface{}{
+				"task_id":           id,
+				"scheduled_task_id": t.ScheduledTaskID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Get the connection to determine if it's Flexprice-managed
+	conn, err := s.ConnectionRepo.Get(ctx, scheduledTask.ConnectionID)
+	if err != nil {
+		s.Logger.Errorw("failed to get connection", "error", err, "connection_id", scheduledTask.ConnectionID)
+		return "", ierr.WithError(err).
+			WithHint("Failed to get connection").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Check if connection is Flexprice-managed
+	isFlexpriceManaged := conn.SyncConfig != nil && conn.SyncConfig.S3 != nil && conn.SyncConfig.S3.IsFlexpriceManaged
+
+	// For Flexprice-managed, verify bucket matches config
+	if isFlexpriceManaged {
+		if bucket != s.Config.FlexpriceS3Exports.Bucket {
+			s.Logger.Warnw("bucket mismatch for Flexprice-managed export",
+				"expected_bucket", s.Config.FlexpriceS3Exports.Bucket,
+				"actual_bucket", bucket,
+				"task_id", id)
+			return "", ierr.NewError("bucket mismatch").
+				WithHint("File URL bucket does not match Flexprice-managed configuration").
+				WithReportableDetails(map[string]interface{}{
+					"task_id":         id,
+					"expected_bucket": s.Config.FlexpriceS3Exports.Bucket,
+					"actual_bucket":   bucket,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	s.Logger.Debugw("generating presigned URL",
+		"connection_id", scheduledTask.ConnectionID,
+		"is_flexprice_managed", isFlexpriceManaged)
+
+	// Get the S3 integration which handles credential decryption
+	s3Integration, err := s.IntegrationFactory.GetS3Client(ctx)
+	if err != nil {
+		s.Logger.Errorw("failed to get S3 integration", "error", err)
+		return "", ierr.WithError(err).
+			WithHint("Failed to initialize S3 integration").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Determine the region based on connection type
+	var region string
+	if isFlexpriceManaged {
+		// For Flexprice-managed, use the region from config
+		region = s.Config.FlexpriceS3Exports.Region
+	} else {
+		// For customer-owned, use the region from scheduled task's job config
+		if scheduledTask.JobConfig == nil || scheduledTask.JobConfig.Region == "" {
+			return "", ierr.NewError("scheduled task job config region not configured").
+				WithHint("S3 region is required in job config for customer-owned exports").
+				WithReportableDetails(map[string]interface{}{
+					"task_id":           id,
+					"scheduled_task_id": t.ScheduledTaskID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+		region = scheduledTask.JobConfig.Region
+	}
+
+	// Create job config with the bucket and region
+	jobConfig := &types.S3JobConfig{
+		Bucket: bucket,
+		Region: region,
+	}
+
+	// Get S3 client configured with connection-specific credentials
+	s3Client, _, err := s3Integration.GetS3Client(ctx, jobConfig, scheduledTask.ConnectionID)
+	if err != nil {
+		s.Logger.Errorw("failed to get S3 client with connection credentials", "error", err)
+		return "", ierr.WithError(err).
+			WithHint("Failed to get S3 client with connection credentials").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Generate presigned URL using connection credentials
+	awsS3Client := s3Client.GetAWSS3Client()
+	presigner := s3.NewPresignClient(awsS3Client)
+
+	result, err := presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}, s3.WithPresignExpires(30*time.Minute))
+
+	if err != nil {
+		s.Logger.Errorw("failed to generate presigned URL", "error", err)
+		return "", ierr.WithError(err).
+			WithHint("Failed to generate presigned URL").
+			Mark(ierr.ErrInternal)
+	}
+
+	s.Logger.Infow("successfully generated presigned URL",
+		"task_id", id,
+		"connection_id", scheduledTask.ConnectionID,
+		"is_flexprice_managed", isFlexpriceManaged)
+
+	return result.URL, nil
 }
