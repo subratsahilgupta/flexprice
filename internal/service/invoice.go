@@ -3093,6 +3093,10 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 		lineItemUsageBreakdown := make([]dto.UsageBreakdownItem, 0, len(analyticsItems))
 		totalLineItemCost := lineItem.Amount
 
+		if len(analyticsItems) > 0 {
+			totalLineItemCost = decimal.Zero
+		}
+
 		for _, analyticsItem := range analyticsItems {
 
 			totalLineItemCost = totalLineItemCost.Add(analyticsItem.TotalCost)
