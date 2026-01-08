@@ -1198,8 +1198,7 @@ func (s *taskService) GenerateDownloadURL(ctx context.Context, id string) (strin
 		"bucket", bucket,
 		"key", key)
 
-	// File download is ONLY supported for Flexprice-managed S3 exports
-	// Get task details and verify it has a scheduled task
+	// Verify task has a scheduled task (export tasks must have connection credentials)
 	if t.ScheduledTaskID == "" {
 		return "", ierr.NewError("task has no scheduled_task_id").
 			WithHint("Cannot generate download URL for task without scheduled task").
@@ -1271,13 +1270,13 @@ func (s *taskService) GenerateDownloadURL(ctx context.Context, id string) (strin
 			Mark(ierr.ErrInternal)
 	}
 
-	// Create job config with the bucket and region
+	// Create job config with the bucket and region from the file URL
 	jobConfig := &types.S3JobConfig{
 		Bucket: bucket,
 		Region: s.Config.FlexpriceS3Exports.Region,
 	}
 
-	// Get S3 client configured with the Flexprice-managed credentials
+	// Get S3 client configured with connection-specific credentials
 	s3Client, _, err := s3Integration.GetS3Client(ctx, jobConfig, scheduledTask.ConnectionID)
 	if err != nil {
 		s.Logger.Errorw("failed to get S3 client with connection credentials", "error", err)
@@ -1286,7 +1285,7 @@ func (s *taskService) GenerateDownloadURL(ctx context.Context, id string) (strin
 			Mark(ierr.ErrInternal)
 	}
 
-	// Generate presigned URL using the Flexprice-managed credentials
+	// Generate presigned URL using connection credentials
 	awsS3Client := s3Client.GetAWSS3Client()
 	presigner := s3.NewPresignClient(awsS3Client)
 
