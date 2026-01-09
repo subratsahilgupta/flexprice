@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -636,11 +635,14 @@ func (s *scheduledTaskService) triggerForceRun(ctx context.Context, taskID strin
 			"duration", endTime.Sub(startTime))
 	}
 
-	// Generate workflow ID for force run
-	workflowID := fmt.Sprintf("%s-export", types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TASK))
+	// Generate task ID and use it as workflow ID (they must be the same)
+	// This ensures the task record ID matches the Temporal workflow ID
+	exportTaskID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TASK)
+	workflowID := exportTaskID
 
 	s.logger.Infow("triggering force run export",
 		"workflow_id", workflowID,
+		"export_task_id", exportTaskID,
 		"scheduled_task_id", taskID,
 		"mode", mode)
 
