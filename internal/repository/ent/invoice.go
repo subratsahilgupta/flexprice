@@ -442,7 +442,7 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 			invoice.TenantID(types.GetTenantID(ctx)),
 			invoice.Status(string(types.StatusPublished)),
 			invoice.EnvironmentID(types.GetEnvironmentID(ctx)),
-			invoice.Version(inv.Version), // Version check for optimistic locking
+			// invoice.Version(inv.Version), // Version check for optimistic locking
 		)
 
 	// Set all fields
@@ -469,8 +469,8 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetUpdatedBy(types.GetUserID(ctx)).
 		SetTotal(inv.Total).
 		SetSubtotal(inv.Subtotal).
-		SetTotalDiscount(inv.TotalDiscount)
-		// AddVersion(1) // Increment version atomically
+		SetTotalDiscount(inv.TotalDiscount).
+		AddVersion(1) // Increment version atomically
 
 	// Execute update
 	n, err := query.Save(ctx)
