@@ -3024,7 +3024,7 @@ func (s *invoiceService) getFlexibleUsageBreakdownForInvoice(ctx context.Context
 
 		analyticsResponse, err := featureUsageTrackingService.GetDetailedUsageAnalytics(ctx, analyticsReq)
 		if err != nil {
-			s.Logger.Errorw("failed to get period-specific usag	e analytics",
+			s.Logger.Errorw("failed to get period-specific usage analytics",
 				"invoice_id", inv.ID,
 				"period_start", periodKey.Start.Format(time.RFC3339),
 				"period_end", periodKey.End.Format(time.RFC3339),
