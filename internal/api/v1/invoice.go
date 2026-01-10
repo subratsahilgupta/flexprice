@@ -79,10 +79,13 @@ func (h *InvoiceHandler) GetInvoice(c *gin.Context) {
 
 	groupByParams := c.QueryArray("group_by")
 
+	forceRealtimeRecalculation := c.Query("force_realtime_recalculation") == "true"
+
 	// Use the new service method that handles breakdown logic internally
 	req := dto.GetInvoiceWithBreakdownRequest{
-		ID:      id,
-		GroupBy: groupByParams,
+		ID:                         id,
+		GroupBy:                    groupByParams,
+		ForceRealtimeRecalculation: forceRealtimeRecalculation,
 	}
 
 	invoice, err := h.invoiceService.GetInvoiceWithBreakdown(c.Request.Context(), req)
