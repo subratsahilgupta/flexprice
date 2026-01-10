@@ -49,7 +49,7 @@ type InvoiceService interface {
 	RecalculateInvoice(ctx context.Context, id string, finalize bool) (*dto.InvoiceResponse, error)
 	RecalculateInvoiceAmounts(ctx context.Context, invoiceID string) error
 	CalculatePriceBreakdown(ctx context.Context, inv *dto.InvoiceResponse) (map[string][]dto.SourceUsageItem, error)
-	CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error)
+	CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string, forceRealtimeRecalculation bool) (map[string][]dto.UsageBreakdownItem, error)
 	GetInvoiceWithBreakdown(ctx context.Context, req dto.GetInvoiceWithBreakdownRequest) (*dto.InvoiceResponse, error)
 	TriggerCommunication(ctx context.Context, id string) error
 	HandleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error
@@ -2828,7 +2828,7 @@ func (s *invoiceService) generateProrationInvoiceDescription(cancellationType, c
 }
 
 // CalculateUsageBreakdown provides flexible usage breakdown with custom grouping
-func (s *invoiceService) CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error) {
+func (s *invoiceService) CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string, forceRuntimeRecalculation bool) (map[string][]dto.UsageBreakdownItem, error) {
 	s.Logger.Infow("calculating usage breakdown for invoice",
 		"invoice_id", inv.ID,
 		"period_start", inv.PeriodStart,
@@ -2859,12 +2859,12 @@ func (s *invoiceService) CalculateUsageBreakdown(ctx context.Context, inv *dto.I
 	}
 
 	// Use flexible grouping analytics call
-	return s.getFlexibleUsageBreakdownForInvoice(ctx, usageBasedLineItems, inv, groupBy)
+	return s.getFlexibleUsageBreakdownForInvoice(ctx, usageBasedLineItems, inv, groupBy, forceRuntimeRecalculation)
 }
 
 // getFlexibleUsageBreakdownForInvoice gets usage breakdown with flexible grouping for invoice line items
 // Groups line items by their billing periods for efficient analytics queries
-func (s *invoiceService) getFlexibleUsageBreakdownForInvoice(ctx context.Context, usageBasedLineItems []*dto.InvoiceLineItemResponse, inv *dto.InvoiceResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error) {
+func (s *invoiceService) getFlexibleUsageBreakdownForInvoice(ctx context.Context, usageBasedLineItems []*dto.InvoiceLineItemResponse, inv *dto.InvoiceResponse, groupBy []string, forceRuntimeRecalculation bool) (map[string][]dto.UsageBreakdownItem, error) {
 	// Step 1: Get customer external ID first
 	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
 	if err != nil {
@@ -3052,11 +3052,11 @@ func (s *invoiceService) getFlexibleUsageBreakdownForInvoice(ctx context.Context
 		"total_analytics_items", len(allAnalyticsItems))
 
 	// Step 5: Map results back to line items with flexible grouping
-	return s.mapFlexibleAnalyticsToLineItems(ctx, combinedResponse, lineItemToFeatureMap, lineItemMetadata, groupBy)
+	return s.mapFlexibleAnalyticsToLineItems(combinedResponse, lineItemToFeatureMap, lineItemMetadata, groupBy, forceRuntimeRecalculation)
 }
 
 // mapFlexibleAnalyticsToLineItems maps analytics response to line items with flexible grouping
-func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, analyticsResponse *dto.GetUsageAnalyticsResponse, lineItemToFeatureMap map[string]string, lineItemMetadata map[string]*dto.InvoiceLineItemResponse, groupBy []string) (map[string][]dto.UsageBreakdownItem, error) {
+func (s *invoiceService) mapFlexibleAnalyticsToLineItems(analyticsResponse *dto.GetUsageAnalyticsResponse, lineItemToFeatureMap map[string]string, lineItemMetadata map[string]*dto.InvoiceLineItemResponse, groupBy []string, forceRuntimeRecalculation bool) (map[string][]dto.UsageBreakdownItem, error) {
 	usageBreakdownResponse := make(map[string][]dto.UsageBreakdownItem)
 
 	// Step 1: Group analytics by feature_id for line item mapping
@@ -3091,15 +3091,12 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 
 		// Step 4: Calculate proportional costs for each group
 		lineItemUsageBreakdown := make([]dto.UsageBreakdownItem, 0, len(analyticsItems))
-		totalLineItemCost := lineItem.Amount
-
-		if len(analyticsItems) > 0 {
-			totalLineItemCost = decimal.Zero
-		}
-
+		totalUsageRevenue := decimal.Zero
 		for _, analyticsItem := range analyticsItems {
 
-			totalLineItemCost = totalLineItemCost.Add(analyticsItem.TotalCost)
+			if forceRuntimeRecalculation {
+				totalUsageRevenue = totalUsageRevenue.Add(analyticsItem.TotalCost)
+			}
 			// Build grouped_by map from the analytics item
 			groupedBy := make(map[string]string)
 			if analyticsItem.FeatureID != "" {
@@ -3137,8 +3134,11 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(ctx context.Context, an
 
 		// Update the line item quantity and amount with totals from breakdown
 		lineItem.Quantity = totalUsageForLineItem
-		lineItem.Amount = totalLineItemCost
+		if forceRuntimeRecalculation {
+			lineItem.Amount = totalUsageRevenue
+		}
 
+		// Assign to response
 		usageBreakdownResponse[lineItemID] = lineItemUsageBreakdown
 
 		s.Logger.Debugw("mapped flexible usage breakdown for line item",
@@ -3167,14 +3167,17 @@ func (s *invoiceService) GetInvoiceWithBreakdown(ctx context.Context, req dto.Ge
 	// Handle usage breakdown - prioritize group_by over expand_by_source for flexibility
 	if len(req.GroupBy) > 0 {
 		// Use flexible grouping
-		usageBreakdown, err := s.CalculateUsageBreakdown(ctx, invoice, req.GroupBy)
+		usageBreakdown, err := s.CalculateUsageBreakdown(ctx, invoice, req.GroupBy, req.ForceRuntimeRecalculation)
 		if err != nil {
 			return nil, err
 		}
 		invoice.WithUsageBreakdown(usageBreakdown)
 
 		// Recalculate invoice totals based on updated line item amounts
-		s.recalculateInvoiceTotals(invoice)
+
+		if req.ForceRuntimeRecalculation {
+			s.recalculateInvoiceTotals(invoice)
+		}
 	}
 
 	return invoice, nil
