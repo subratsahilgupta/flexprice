@@ -1562,7 +1562,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 	// Set transaction-specific fields based on transaction type
 	if req.Type == types.TransactionTypeCredit {
 		tx.TopupConversionRate = lo.ToPtr(w.TopupConversionRate)
-		tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditBalanceAfter)
+		tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditAmount)
 		if req.ExpiryDate != nil {
 			tx.ExpiryDate = types.ParseYYYYMMDDToDate(req.ExpiryDate)
 		}
