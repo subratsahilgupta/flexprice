@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -373,12 +374,15 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 		// Set bucket and region from config
 		conn.SyncConfig.S3.Bucket = s.Config.FlexpriceS3Exports.Bucket
 		conn.SyncConfig.S3.Region = s.Config.FlexpriceS3Exports.Region
-		conn.SyncConfig.S3.KeyPrefix = conn.TenantID // Tenant isolation via tenant_id as key prefix
+		// Tenant + Environment isolation: tenant_id/environment_id
+		conn.SyncConfig.S3.KeyPrefix = fmt.Sprintf("%s/%s", conn.TenantID, conn.EnvironmentID)
 
 		s.Logger.Infow("injected flexprice S3 credentials",
 			"bucket", conn.SyncConfig.S3.Bucket,
 			"region", conn.SyncConfig.S3.Region,
-			"key_prefix", conn.SyncConfig.S3.KeyPrefix)
+			"key_prefix", conn.SyncConfig.S3.KeyPrefix,
+			"tenant_id", conn.TenantID,
+			"environment_id", conn.EnvironmentID)
 	}
 
 	// Encrypt metadata
