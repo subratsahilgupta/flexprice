@@ -370,6 +370,11 @@ func (s *InMemoryWalletStore) CreateTransaction(ctx context.Context, tx *wallet.
 	return nil
 }
 
+// CreateWalletTransaction is an alias for CreateTransaction for backwards compatibility
+func (s *InMemoryWalletStore) CreateWalletTransaction(ctx context.Context, tx *wallet.Transaction) error {
+	return s.CreateTransaction(ctx, tx)
+}
+
 // UpdateWalletBalance updates the wallet's balance and credit balance
 func (s *InMemoryWalletStore) UpdateWalletBalance(ctx context.Context, walletID string, finalBalance, newCreditBalance decimal.Decimal) error {
 	w, err := s.GetWalletByID(ctx, walletID)
@@ -701,4 +706,46 @@ func (s *InMemoryWalletStore) GetCreditTopupsForExport(ctx context.Context, tena
 	}
 
 	return results[start:end], nil
+}
+
+// GetCreditsAvailableBreakdown retrieves the breakdown of available credits by type
+func (s *InMemoryWalletStore) GetCreditsAvailableBreakdown(ctx context.Context, walletID string) (*types.CreditBreakdown, error) {
+	// Get all completed credit transactions for this wallet
+	transactions, err := s.transactions.List(ctx, nil, func(ctx context.Context, t *wallet.Transaction, filter interface{}) bool {
+		if t == nil {
+			return false
+		}
+
+		return t.WalletID == walletID &&
+			t.Type == types.TransactionTypeCredit &&
+			t.TxStatus == types.TransactionStatusCompleted &&
+			t.CreditsAvailable.GreaterThanOrEqual(decimal.Zero) &&
+			t.Status == types.StatusPublished
+	}, nil)
+
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to retrieve credits breakdown").
+			WithReportableDetails(map[string]interface{}{
+				"wallet_id": walletID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	breakdown := &types.CreditBreakdown{
+		Purchased: decimal.Zero,
+		Free:      decimal.Zero,
+	}
+
+	// Sum up the credit amounts by type
+	for _, tx := range transactions {
+		switch tx.TransactionReason {
+		case types.TransactionReasonPurchasedCreditInvoiced, types.TransactionReasonPurchasedCreditDirect:
+			breakdown.Purchased = breakdown.Purchased.Add(tx.CreditAmount)
+		case types.TransactionReasonFreeCredit, types.TransactionReasonSubscriptionCredit:
+			breakdown.Free = breakdown.Free.Add(tx.CreditAmount)
+		}
+	}
+
+	return breakdown, nil
 }
