@@ -2117,7 +2117,7 @@ var (
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "transaction_status", Type: field.TypeString, Default: "pending", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "expiry_date", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamp"}},
-		{Name: "credits_available", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
+		{Name: "credits_available", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,9)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
 		{Name: "conversion_rate", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(10,5)"}},
 		{Name: "topup_conversion_rate", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(10,5)"}},

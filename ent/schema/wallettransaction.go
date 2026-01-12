@@ -103,7 +103,7 @@ func (WalletTransaction) Fields() []ent.Field {
 
 		field.Other("credits_available", decimal.Decimal{}).
 			SchemaType(map[string]string{
-				"postgres": "numeric(20,8)",
+				"postgres": "numeric(20,9)",
 			}).
 			Default(decimal.Zero),
 
