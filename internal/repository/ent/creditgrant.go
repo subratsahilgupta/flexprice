@@ -351,6 +351,7 @@ func (r *creditGrantRepository) Update(ctx context.Context, cg *domainCreditGran
 		SetScope(cg.Scope).
 		SetStatus(string(cg.Status)).
 		SetUpdatedAt(time.Now().UTC()).
+		SetNillableEndDate(cg.EndDate).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		SetMetadata(cg.Metadata)
 

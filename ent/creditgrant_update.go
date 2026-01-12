@@ -151,6 +151,26 @@ func (cgu *CreditGrantUpdate) ClearMetadata() *CreditGrantUpdate {
 	return cgu
 }
 
+// SetEndDate sets the "end_date" field.
+func (cgu *CreditGrantUpdate) SetEndDate(t time.Time) *CreditGrantUpdate {
+	cgu.mutation.SetEndDate(t)
+	return cgu
+}
+
+// SetNillableEndDate sets the "end_date" field if the given value is not nil.
+func (cgu *CreditGrantUpdate) SetNillableEndDate(t *time.Time) *CreditGrantUpdate {
+	if t != nil {
+		cgu.SetEndDate(*t)
+	}
+	return cgu
+}
+
+// ClearEndDate clears the value of the "end_date" field.
+func (cgu *CreditGrantUpdate) ClearEndDate() *CreditGrantUpdate {
+	cgu.mutation.ClearEndDate()
+	return cgu
+}
+
 // SetPlan sets the "plan" edge to the Plan entity.
 func (cgu *CreditGrantUpdate) SetPlan(p *Plan) *CreditGrantUpdate {
 	return cgu.SetPlanID(p.ID)
@@ -294,6 +314,9 @@ func (cgu *CreditGrantUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if cgu.mutation.StartDateCleared() {
 		_spec.ClearField(creditgrant.FieldStartDate, field.TypeTime)
+	}
+	if value, ok := cgu.mutation.EndDate(); ok {
+		_spec.SetField(creditgrant.FieldEndDate, field.TypeTime, value)
 	}
 	if cgu.mutation.EndDateCleared() {
 		_spec.ClearField(creditgrant.FieldEndDate, field.TypeTime)
@@ -499,6 +522,26 @@ func (cguo *CreditGrantUpdateOne) ClearMetadata() *CreditGrantUpdateOne {
 	return cguo
 }
 
+// SetEndDate sets the "end_date" field.
+func (cguo *CreditGrantUpdateOne) SetEndDate(t time.Time) *CreditGrantUpdateOne {
+	cguo.mutation.SetEndDate(t)
+	return cguo
+}
+
+// SetNillableEndDate sets the "end_date" field if the given value is not nil.
+func (cguo *CreditGrantUpdateOne) SetNillableEndDate(t *time.Time) *CreditGrantUpdateOne {
+	if t != nil {
+		cguo.SetEndDate(*t)
+	}
+	return cguo
+}
+
+// ClearEndDate clears the value of the "end_date" field.
+func (cguo *CreditGrantUpdateOne) ClearEndDate() *CreditGrantUpdateOne {
+	cguo.mutation.ClearEndDate()
+	return cguo
+}
+
 // SetPlan sets the "plan" edge to the Plan entity.
 func (cguo *CreditGrantUpdateOne) SetPlan(p *Plan) *CreditGrantUpdateOne {
 	return cguo.SetPlanID(p.ID)
@@ -672,6 +715,9 @@ func (cguo *CreditGrantUpdateOne) sqlSave(ctx context.Context) (_node *CreditGra
 	}
 	if cguo.mutation.StartDateCleared() {
 		_spec.ClearField(creditgrant.FieldStartDate, field.TypeTime)
+	}
+	if value, ok := cguo.mutation.EndDate(); ok {
+		_spec.SetField(creditgrant.FieldEndDate, field.TypeTime, value)
 	}
 	if cguo.mutation.EndDateCleared() {
 		_spec.ClearField(creditgrant.FieldEndDate, field.TypeTime)
