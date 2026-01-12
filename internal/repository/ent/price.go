@@ -670,3 +670,24 @@ func (r *priceRepository) ClearByGroupID(ctx context.Context, groupID string) er
 	}
 	return nil
 }
+
+func (r *priceRepository) GetByLookupKey(ctx context.Context, lookupKey string) (*domainPrice.Price, error) {
+	client := r.client.Reader(ctx)
+
+	price, err := client.Price.Query().
+		Where(price.LookupKey(lookupKey)).
+		Where(price.TenantID(types.GetTenantID(ctx)),
+			price.EnvironmentID(types.GetEnvironmentID(ctx)),
+			price.Status(string(types.StatusPublished)),
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get price by lookup key").
+			WithReportableDetails(map[string]interface{}{
+				"lookup_key": lookupKey,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+	return domainPrice.FromEnt(price), nil
+}

@@ -38,6 +38,8 @@ type PriceService interface {
 	// CalculateCostSheetPrice calculates the cost for a given price and quantity
 	// specifically for costsheet calculations
 	CalculateCostSheetPrice(ctx context.Context, price *price.Price, quantity decimal.Decimal) decimal.Decimal
+
+	GetByLookupKey(ctx context.Context, lookupKey string) (*dto.PriceResponse, error)
 }
 
 type priceService struct {
@@ -1454,4 +1456,19 @@ func (s *priceService) syncPriceToQuickBooksIfEnabled(ctx context.Context, price
 		"plan_id", planID,
 		"workflow_id", workflowRun.GetID(),
 		"run_id", workflowRun.GetRunID())
+}
+
+func (s *priceService) GetByLookupKey(ctx context.Context, lookupKey string) (*dto.PriceResponse, error) {
+	if lookupKey == "" {
+		return nil, ierr.NewError("lookup key is required").
+			WithHint("Lookup key is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	price, err := s.PriceRepo.GetByLookupKey(ctx, lookupKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.PriceResponse{Price: price}, nil
 }
