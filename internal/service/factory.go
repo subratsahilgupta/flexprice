@@ -47,6 +47,7 @@ import (
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/pubsub"
 	"github.com/flexprice/flexprice/internal/s3"
+	temporalClient "github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/types"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 )
@@ -75,6 +76,7 @@ type ServiceParams struct {
 	SubRepo                      subscription.Repository
 	SubscriptionLineItemRepo     subscription.LineItemRepository
 	SubscriptionPhaseRepo        subscription.SubscriptionPhaseRepository
+	SubScheduleRepo              subscription.SubscriptionScheduleRepository
 	WalletRepo                   wallet.Repository
 	TenantRepo                   tenant.Repository
 	InvoiceRepo                  invoice.Repository
@@ -120,6 +122,9 @@ type ServiceParams struct {
 	// PubSubs
 	WalletBalanceAlertPubSub types.WalletBalanceAlertPubSub
 	WebhookPubSub            pubsub.PubSub
+
+	// Temporal
+	TemporalClient temporalClient.TemporalClient
 }
 
 // Common service params
@@ -142,6 +147,7 @@ func NewServiceParams(
 	subRepo subscription.Repository,
 	subscriptionLineItemRepo subscription.LineItemRepository,
 	subscriptionPhaseRepo subscription.SubscriptionPhaseRepository,
+	subScheduleRepo subscription.SubscriptionScheduleRepository,
 	walletRepo wallet.Repository,
 	tenantRepo tenant.Repository,
 	invoiceRepo invoice.Repository,
@@ -178,6 +184,7 @@ func NewServiceParams(
 	integrationFactory *integration.Factory,
 	walletBalanceAlertPubSub types.WalletBalanceAlertPubSub,
 	webhookPubSub pubsub.PubSub,
+	temporalClient temporalClient.TemporalClient,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:                       logger,
@@ -198,6 +205,7 @@ func NewServiceParams(
 		SubRepo:                      subRepo,
 		SubscriptionLineItemRepo:     subscriptionLineItemRepo,
 		SubscriptionPhaseRepo:        subscriptionPhaseRepo,
+		SubScheduleRepo:              subScheduleRepo,
 		WalletRepo:                   walletRepo,
 		TenantRepo:                   tenantRepo,
 		InvoiceRepo:                  invoiceRepo,
@@ -234,5 +242,6 @@ func NewServiceParams(
 		IntegrationFactory:           integrationFactory,
 		WalletBalanceAlertPubSub:     walletBalanceAlertPubSub,
 		WebhookPubSub:                webhookPubSub,
+		TemporalClient:               temporalClient,
 	}
 }

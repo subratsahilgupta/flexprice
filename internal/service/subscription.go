@@ -1543,6 +1543,20 @@ func (s *subscriptionService) CancelSubscription(
 			return err
 		}
 
+		// Step 7a: Handle scheduling for end_of_period cancellation
+		if req.CancellationType == types.CancellationTypeEndOfPeriod {
+			// Cancel all pending schedules (especially plan changes) before creating cancellation schedule
+			if err := s.cancelAllPendingSchedules(ctx, subscription.ID); err != nil {
+				logger.Errorw("failed to cancel pending schedules", "error", err)
+				// Continue anyway - we still want to create the cancellation schedule
+			}
+
+			// Create the cancellation schedule
+			if err := s.createCancellationSchedule(ctx, subscription, req, effectiveDate); err != nil {
+				logger.Errorw("failed to create cancellation schedule", "error", err)
+			}
+		}
+
 		// Step 8: Void future credit grants
 		creditGrantService := NewCreditGrantService(s.ServiceParams)
 		err = creditGrantService.CancelFutureSubscriptionGrants(ctx, subscription.ID)
@@ -2586,6 +2600,16 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			return err
 		}
 
+		// Process pending plan changes at period end (only if subscription is still active)
+		if sub.SubscriptionStatus == types.SubscriptionStatusActive {
+			if err := s.processPendingPlanChanges(ctx, sub); err != nil {
+				s.Logger.Errorw("failed to process pending plan changes",
+					"subscription_id", sub.ID,
+					"error", err)
+				// Don't fail the entire period processing - just log the error
+			}
+		}
+
 		s.Logger.Infow("completed subscription period processing",
 			"subscription_id", sub.ID,
 			"original_period_start", periods[0].start,
@@ -2604,6 +2628,135 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			"subscription_id", sub.ID,
 			"error", err)
 		return err
+	}
+
+	return nil
+}
+
+// processPendingPlanChanges checks for and executes any pending plan change schedules
+func (s *subscriptionService) processPendingPlanChanges(
+	ctx context.Context,
+	sub *subscription.Subscription,
+) error {
+	// Check if there's a pending plan change schedule
+	schedule, err := s.SubScheduleRepo.GetPendingBySubscriptionAndType(
+		ctx,
+		sub.ID,
+		types.SubscriptionScheduleChangeTypePlanChange,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to check for pending plan change: %w", err)
+	}
+
+	// No pending schedule, nothing to do
+	if schedule == nil {
+		return nil
+	}
+
+	s.Logger.Infow("found pending plan change schedule, executing",
+		"schedule_id", schedule.ID,
+		"subscription_id", sub.ID,
+		"scheduled_at", schedule.ScheduledAt)
+
+	// Execute the plan change
+	changeService := NewSubscriptionChangeService(s.ServiceParams)
+	if err := s.executeScheduledPlanChange(ctx, schedule, changeService); err != nil {
+		return fmt.Errorf("failed to execute scheduled plan change: %w", err)
+	}
+
+	s.Logger.Infow("successfully executed plan change at period end",
+		"schedule_id", schedule.ID,
+		"subscription_id", sub.ID)
+
+	return nil
+}
+
+// executeScheduledPlanChange executes a scheduled plan change
+func (s *subscriptionService) executeScheduledPlanChange(
+	ctx context.Context,
+	schedule *subscription.SubscriptionSchedule,
+	changeService SubscriptionChangeService,
+) error {
+	// Get the plan change configuration
+	config, err := schedule.GetPlanChangeConfig()
+	if err != nil {
+		return fmt.Errorf("failed to parse plan change configuration: %w", err)
+	}
+
+	// Build change request from configuration
+	changeRequest := dto.SubscriptionChangeRequest{
+		TargetPlanID:       config.TargetPlanID,
+		ProrationBehavior:  config.ProrationBehavior,
+		BillingCadence:     config.BillingCadence,
+		BillingPeriod:      config.BillingPeriod,
+		BillingPeriodCount: config.BillingPeriodCount,
+		BillingCycle:       config.BillingCycle,
+		Metadata:           config.ChangeMetadata,
+	}
+
+	// Execute the change
+	response, err := changeService.ExecuteSubscriptionChangeInternal(ctx, schedule.SubscriptionID, changeRequest)
+	if err != nil {
+		// Mark schedule as failed
+		schedule.Status = types.ScheduleStatusFailed
+		schedule.ExecutedAt = lo.ToPtr(time.Now().UTC())
+		schedule.ErrorMessage = lo.ToPtr(err.Error())
+		_ = s.SubScheduleRepo.Update(ctx, schedule)
+		return err
+	}
+
+	// Mark schedule as completed
+	schedule.Status = types.ScheduleStatusExecuted
+	schedule.ExecutedAt = lo.ToPtr(time.Now().UTC())
+
+	// Set execution result
+	result := &subscription.PlanChangeResult{
+		OldSubscriptionID: response.OldSubscription.ID,
+		NewSubscriptionID: response.NewSubscription.ID,
+		ChangeType:        string(response.ChangeType),
+		EffectiveDate:     response.EffectiveDate,
+	}
+	if err := schedule.SetPlanChangeResult(result); err != nil {
+		s.Logger.Errorw("failed to set plan change result", "error", err)
+	}
+
+	if err := s.SubScheduleRepo.Update(ctx, schedule); err != nil {
+		s.Logger.Errorw("failed to update schedule status", "error", err)
+		return err
+	}
+
+	return nil
+}
+
+// cancelAllPendingSchedules cancels all pending schedules for a subscription
+func (s *subscriptionService) cancelAllPendingSchedules(ctx context.Context, subscriptionID string) error {
+	// Get all pending schedules for this subscription
+	schedules, err := s.SubScheduleRepo.GetBySubscriptionID(ctx, subscriptionID)
+	if err != nil {
+		return fmt.Errorf("failed to get schedules: %w", err)
+	}
+
+	// Cancel each pending schedule
+	for _, schedule := range schedules {
+		if schedule.Status == types.ScheduleStatusPending {
+			schedule.Status = types.ScheduleStatusCancelled
+			schedule.CancelledAt = lo.ToPtr(time.Now().UTC())
+			schedule.UpdatedBy = types.GetUserID(ctx)
+
+			if err := s.SubScheduleRepo.Update(ctx, schedule); err != nil {
+				s.Logger.Errorw("failed to cancel schedule",
+					"schedule_id", schedule.ID,
+					"schedule_type", schedule.ScheduleType,
+					"error", err)
+				// Continue to cancel other schedules
+				continue
+			}
+
+			s.Logger.Infow("cancelled pending schedule due to subscription cancellation",
+				"schedule_id", schedule.ID,
+				"schedule_type", schedule.ScheduleType,
+				"subscription_id", subscriptionID)
+		}
 	}
 
 	return nil
@@ -5366,4 +5519,61 @@ func (s *subscriptionService) CreateDraftInvoiceForSubscription(ctx context.Cont
 	}
 
 	return inv, nil
+}
+
+// createCancellationSchedule creates a subscription schedule entry for end_of_period cancellation
+func (s *subscriptionService) createCancellationSchedule(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	req *dto.CancelSubscriptionRequest,
+	effectiveDate time.Time,
+) error {
+	// Store original subscription state before cancellation
+	config := &subscription.CancellationConfiguration{
+		CancellationType:          req.CancellationType,
+		Reason:                    req.Reason,
+		ProrationBehavior:         req.ProrationBehavior,
+		OriginalCancelAtPeriodEnd: false, // Before cancellation, this was false
+		OriginalCancelAt:          nil,   // Before cancellation, this was nil
+		OriginalEndDate:           nil,   // Before cancellation, this was nil
+		OriginalCancelledAt:       nil,   // Before cancellation, this was nil
+	}
+
+	// Create the schedule entry
+	schedule := &subscription.SubscriptionSchedule{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_SCHEDULE),
+		SubscriptionID: sub.ID,
+		ScheduleType:   types.SubscriptionScheduleChangeTypeCancellation,
+		ScheduledAt:    effectiveDate,
+		Status:         types.ScheduleStatusPending,
+		TenantID:       sub.TenantID,
+		EnvironmentID:  sub.EnvironmentID,
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		CreatedBy:      types.GetUserID(ctx),
+		UpdatedBy:      types.GetUserID(ctx),
+		StatusColumn:   types.StatusPublished,
+	}
+
+	// Set the configuration
+	if err := schedule.SetCancellationConfig(config); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to serialize cancellation configuration").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Save to database
+	if err := s.SubScheduleRepo.Create(ctx, schedule); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to create cancellation schedule").
+			Mark(ierr.ErrDatabase)
+	}
+
+	s.Logger.Infow("cancellation schedule created",
+		"schedule_id", schedule.ID,
+		"subscription_id", sub.ID,
+		"scheduled_at", effectiveDate,
+		"reason", req.Reason)
+
+	return nil
 }
