@@ -68,6 +68,24 @@ func (CreditGrant) Fields() []ent.Field {
 			Default(decimal.Zero).
 			Immutable(),
 
+		// conversion_rate is used for converting the wallet credits to the currency during consumption
+		field.Other("conversion_rate", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(10,5)",
+			}).
+			Optional().
+			Nillable().
+			Immutable(),
+
+		// topup_conversion_rate is the conversion rate for the topup to the currency
+		field.Other("topup_conversion_rate", decimal.Decimal{}).
+			SchemaType(map[string]string{
+				"postgres": "numeric(10,5)",
+			}).
+			Optional().
+			Nillable().
+			Immutable(),
+
 		field.String("cadence").
 			GoType(types.CreditGrantCadence("")).
 			SchemaType(map[string]string{
@@ -128,7 +146,6 @@ func (CreditGrant) Fields() []ent.Field {
 
 		field.Time("end_date").
 			Optional().
-			Immutable().
 			Nillable(),
 
 		field.Time("credit_grant_anchor").

@@ -25,7 +25,7 @@ func (Task) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("id").
 			SchemaType(map[string]string{
-				"postgres": "varchar(50)",
+				"postgres": "varchar(100)",
 			}).
 			Unique().
 			Immutable(),

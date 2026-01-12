@@ -53,8 +53,8 @@ type CreditGrantService interface {
 	ProcessCreditGrantApplication(ctx context.Context, applicationID string) error
 
 	// CancelFutureSubscriptionGrants cancels all future credit grants for this subscription
-	// This is typically used when a subscription is cancelled
-	CancelFutureSubscriptionGrants(ctx context.Context, subscriptionID string) error
+	// Sets the grant end date to the effective cancellation date (defaults to now if not provided), then archives the grants
+	CancelFutureSubscriptionGrants(ctx context.Context, req dto.CancelFutureSubscriptionGrantsRequest) error
 
 	// ListCreditGrantApplications retrieves credit grant applications based on filter
 	ListCreditGrantApplications(ctx context.Context, filter *types.CreditGrantApplicationFilter) (*dto.ListCreditGrantApplicationsResponse, error)
@@ -104,6 +104,31 @@ func (s *creditGrantService) CreateCreditGrant(ctx context.Context, req dto.Crea
 
 	// Validate based on scope
 	switch req.Scope {
+	case types.CreditGrantScopePlan:
+		existingGrants, err := s.GetCreditGrantsByPlan(ctx, lo.FromPtr(req.PlanID))
+		if err != nil {
+			return nil, err
+		}
+
+		if len(existingGrants.Items) > 0 {
+			validationError := ierr.NewError("all credit grants for a plan must have the same conversion_rate and topup_conversion_rate").
+				WithHint("All credit grants for a plan must have the same conversion rates").
+				Mark(ierr.ErrValidation)
+
+			for _, existingGrant := range existingGrants.Items {
+				// Check if conversion_rate doesn't match
+				if (req.ConversionRate == nil) != (existingGrant.ConversionRate == nil) ||
+					(req.ConversionRate != nil && !req.ConversionRate.Equal(lo.FromPtr(existingGrant.ConversionRate))) {
+					return nil, validationError
+				}
+
+				// Check if topup_conversion_rate doesn't match
+				if (req.TopupConversionRate == nil) != (existingGrant.TopupConversionRate == nil) ||
+					(req.TopupConversionRate != nil && !req.TopupConversionRate.Equal(lo.FromPtr(existingGrant.TopupConversionRate))) {
+					return nil, validationError
+				}
+			}
+		}
 	case types.CreditGrantScopeSubscription:
 		// Validate subscription exists and is not cancelled (subscription_id presence is validated in DTO)
 		sub, err := s.SubRepo.Get(ctx, lo.FromPtr(req.SubscriptionID))
@@ -428,13 +453,31 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 
 	var selectedWallet *dto.WalletResponse
 	for _, w := range wallets {
-		if types.IsMatchingCurrency(w.Currency, subscription.Currency) {
-			selectedWallet = w
-			break
+		if !types.IsMatchingCurrency(w.Currency, subscription.Currency) {
+			continue
 		}
+
+		// Check conversion_rate if set in grant
+		if grant.ConversionRate != nil {
+			if !w.ConversionRate.Equal(lo.FromPtr(grant.ConversionRate)) {
+				continue
+			}
+		}
+
+		// Check topup_conversion_rate if set in grant
+		if grant.TopupConversionRate != nil {
+			if !w.TopupConversionRate.Equal(lo.FromPtr(grant.TopupConversionRate)) {
+				continue
+			}
+		}
+
+		// Found matching wallet
+		selectedWallet = w
+		break
 	}
 	if selectedWallet == nil {
-		// Create new wallet
+		// Create new wallet with conversion rates from grant (if provided)
+		// Wallet will handle defaults: ConversionRate defaults to 1, TopupConversionRate defaults to ConversionRate
 		walletReq := &dto.CreateWalletRequest{
 			Name:       "Subscription Wallet",
 			CustomerID: subscription.CustomerID,
@@ -445,6 +488,15 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 				},
 			},
 		}
+
+		// Set conversion rates only if provided in grant
+		if grant.ConversionRate != nil {
+			walletReq.ConversionRate = lo.FromPtr(grant.ConversionRate)
+		}
+		if grant.TopupConversionRate != nil {
+			walletReq.TopupConversionRate = grant.TopupConversionRate
+		}
+		s.Logger.Infof("wallet conversion rate: %s, wallet topup conversion rate: %s", walletReq.ConversionRate, walletReq.TopupConversionRate)
 
 		selectedWallet, err = walletService.CreateWallet(ctx, walletReq)
 		if err != nil {
@@ -1028,30 +1080,51 @@ func (s *creditGrantService) cancelFutureGrantApplications(ctx context.Context, 
 	return nil
 }
 
-func (s *creditGrantService) CancelFutureSubscriptionGrants(ctx context.Context, subscriptionID string) error {
-	// get all credit grants for this subscription
-	// use List with filter directly
+func (s *creditGrantService) CancelFutureSubscriptionGrants(ctx context.Context, req dto.CancelFutureSubscriptionGrantsRequest) error {
+	// Validate request
+	if err := req.Validate(); err != nil {
+		return err
+	}
+
+	// Default to now if no effective date provided
+	now := time.Now().UTC()
+	effective := now
+	if req.EffectiveDate != nil && !req.EffectiveDate.IsZero() {
+		effective = req.EffectiveDate.UTC()
+	}
+
+	// Get all credit grants for this subscription
 	filter := types.NewNoLimitCreditGrantFilter()
-	filter.SubscriptionIDs = []string{subscriptionID}
+	filter.SubscriptionIDs = []string{req.SubscriptionID}
 	filter.WithStatus(types.StatusPublished)
 
 	creditGrants, err := s.CreditGrantRepo.List(ctx, filter)
 	if err != nil {
-		s.Logger.Errorw("Failed to fetch credit grants for subscription", "subscription_id", subscriptionID, "error", err)
+		s.Logger.Errorw("Failed to fetch credit grants for subscription", "subscription_id", req.SubscriptionID, "error", err)
 		return err
 	}
 
-	for _, grant := range creditGrants {
-		if err := s.cancelFutureGrantApplications(ctx, grant); err != nil {
-			s.Logger.Errorw("Failed to void future applications", "grant_id", grant.ID, "error", err)
-			return err
-		}
+	if err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		for _, grant := range creditGrants {
+			grant.EndDate = lo.ToPtr(effective)
+			if _, err := s.CreditGrantRepo.Update(ctx, grant); err != nil {
+				s.Logger.Errorw("Failed to update credit grant end date", "grant_id", grant.ID, "error", err)
+				return err
+			}
+			s.Logger.Infow("Updated credit grant end date",
+				"grant_id", grant.ID,
+				"subscription_id", req.SubscriptionID,
+				"end_date", effective)
 
-		// archive the grant
-		if err := s.CreditGrantRepo.Delete(ctx, grant.ID); err != nil {
-			s.Logger.Errorw("Failed to archive credit grant", "grant_id", grant.ID, "error", err)
-			return err
+			// Delete (archive) the grant - this also cancels future applications
+			if err := s.DeleteCreditGrant(ctx, grant.ID); err != nil {
+				s.Logger.Errorw("Failed to delete credit grant", "grant_id", grant.ID, "error", err)
+				return err
+			}
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	return nil

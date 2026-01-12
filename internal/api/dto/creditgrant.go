@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	domainCreditGrantApplication "github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
 	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/samber/lo"
@@ -31,6 +32,18 @@ type CreateCreditGrantRequest struct {
 	CreditGrantAnchor      *time.Time                           `json:"-"`
 	StartDate              *time.Time                           `json:"-"`
 	EndDate                *time.Time                           `json:"-"`
+
+	// amount in the currency =  number of credits * conversion_rate
+	// ex if conversion_rate is 1, then 1 USD = 1 credit
+	// ex if conversion_rate is 2, then 1 USD = 0.5 credits
+	// ex if conversion_rate is 0.5, then 1 USD = 2 credits
+	ConversionRate *decimal.Decimal `json:"conversion_rate,omitempty" swaggertype:"string"`
+
+	// topup_conversion_rate is the conversion rate for the topup to the currency
+	// ex if topup_conversion_rate is 1, then 1 USD = 1 credit
+	// ex if topup_conversion_rate is 2, then 1 USD = 0.5 credits
+	// ex if topup_conversion_rate is 0.5, then 1 USD = 2 credits
+	TopupConversionRate *decimal.Decimal `json:"topup_conversion_rate,omitempty" swaggertype:"string"`
 }
 
 // UpdateCreditGrantRequest represents the request to update an existing credit grant
@@ -203,6 +216,22 @@ func (r *CreateCreditGrantRequest) Validate() error {
 
 	}
 
+	if r.ConversionRate != nil {
+		if r.ConversionRate.LessThanOrEqual(decimal.Zero) {
+			return errors.NewError("conversion_rate must be greater than zero").
+				WithHint("Please provide a positive conversion rate").
+				Mark(errors.ErrValidation)
+		}
+	}
+
+	if r.TopupConversionRate != nil {
+		if r.TopupConversionRate.LessThanOrEqual(decimal.Zero) {
+			return errors.NewError("topup_conversion_rate must be greater than zero").
+				WithHint("Please provide a positive topup conversion rate").
+				Mark(errors.ErrValidation)
+		}
+	}
+
 	return nil
 }
 
@@ -271,6 +300,14 @@ func (r *CreateCreditGrantRequest) ToCreditGrant(ctx context.Context) *creditgra
 	}
 	if len(r.Metadata) > 0 {
 		cg.Metadata = r.Metadata
+	}
+
+	// Set conversion rates if provided
+	if r.ConversionRate != nil {
+		cg.ConversionRate = r.ConversionRate
+	}
+	if r.TopupConversionRate != nil {
+		cg.TopupConversionRate = r.TopupConversionRate
 	}
 
 	return cg
@@ -398,4 +435,34 @@ func (r *CreateCreditGrantApplicationRequest) ToCreditGrantApplication(ctx conte
 		EnvironmentID:                   types.GetEnvironmentID(ctx),
 		BaseModel:                       types.GetDefaultBaseModel(ctx),
 	}
+}
+
+// CancelFutureSubscriptionGrantsRequest represents the request to cancel future credit grants for a subscription
+type CancelFutureSubscriptionGrantsRequest struct {
+	SubscriptionID string     `json:"subscription_id" binding:"required"`
+	EffectiveDate  *time.Time `json:"effective_date,omitempty"`
+}
+
+// Validate validates the cancel future subscription grants request
+func (r *CancelFutureSubscriptionGrantsRequest) Validate() error {
+
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	// EffectiveDate is optional - if not provided, it defaults to now in the implementation
+	// Only validate if it's provided
+	if r.EffectiveDate != nil && !r.EffectiveDate.IsZero() {
+		// Allow dates that are at or within 5 seconds of the current time
+		// This accounts for timing differences between date calculation and validation
+		now := time.Now().UTC()
+		tolerance := 5 * time.Second
+		if r.EffectiveDate.Before(now.Add(-tolerance)) {
+			return errors.NewError("effective_date must be at or after the current time (within tolerance)").
+				WithHint("Please provide a valid effective date that is not too far in the past").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
 }
