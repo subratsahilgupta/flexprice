@@ -1104,11 +1104,9 @@ func (s *creditGrantService) CancelFutureSubscriptionGrants(ctx context.Context,
 		return err
 	}
 
-	for _, grant := range creditGrants {
-		// Set end date to effective cancellation date (only if not already set or if new date is earlier)
-		shouldUpdateEndDate := grant.EndDate == nil || effective.Before(*grant.EndDate)
-		if shouldUpdateEndDate {
-			grant.EndDate = &effective
+	if err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		for _, grant := range creditGrants {
+			grant.EndDate = lo.ToPtr(effective)
 			if _, err := s.CreditGrantRepo.Update(ctx, grant); err != nil {
 				s.Logger.Errorw("Failed to update credit grant end date", "grant_id", grant.ID, "error", err)
 				return err
@@ -1117,13 +1115,16 @@ func (s *creditGrantService) CancelFutureSubscriptionGrants(ctx context.Context,
 				"grant_id", grant.ID,
 				"subscription_id", req.SubscriptionID,
 				"end_date", effective)
-		}
 
-		// Delete (archive) the grant - this also cancels future applications
-		if err := s.DeleteCreditGrant(ctx, grant.ID); err != nil {
-			s.Logger.Errorw("Failed to delete credit grant", "grant_id", grant.ID, "error", err)
-			return err
+			// Delete (archive) the grant - this also cancels future applications
+			if err := s.DeleteCreditGrant(ctx, grant.ID); err != nil {
+				s.Logger.Errorw("Failed to delete credit grant", "grant_id", grant.ID, "error", err)
+				return err
+			}
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	return nil
