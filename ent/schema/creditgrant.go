@@ -146,7 +146,6 @@ func (CreditGrant) Fields() []ent.Field {
 
 		field.Time("end_date").
 			Optional().
-			Immutable().
 			Nillable(),
 
 		field.Time("credit_grant_anchor").
