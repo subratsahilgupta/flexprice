@@ -1,4 +1,4 @@
-package subscription_schedules
+package service
 
 import (
 	"context"
@@ -11,46 +11,74 @@ import (
 	"go.uber.org/zap"
 )
 
-// SubscriptionChangeExecutor defines the interface for executing subscription changes
-type SubscriptionChangeExecutor interface {
-	ExecuteSubscriptionChangeInternal(ctx context.Context, subscriptionID string, req dto.SubscriptionChangeRequest) (*dto.SubscriptionChangeExecuteResponse, error)
+// SubscriptionScheduleService handles subscription schedule operations
+type SubscriptionScheduleService interface {
+	// SchedulePlanChange schedules a plan change at period end
+	SchedulePlanChange(ctx context.Context, subscriptionID string, config *subscription.PlanChangeConfiguration) (*subscription.SubscriptionSchedule, error)
+
+	// Cancel cancels a pending schedule
+	Cancel(ctx context.Context, scheduleID string) error
+
+	// CancelBySubscriptionAndType cancels a pending schedule by subscription ID and schedule type
+	CancelBySubscriptionAndType(ctx context.Context, subscriptionID string, scheduleType types.SubscriptionScheduleChangeType) error
+
+	// CancelPendingForSubscription cancels all pending schedules for a subscription
+	CancelPendingForSubscription(ctx context.Context, subscriptionID string) error
+
+	// Get retrieves a schedule by ID
+	Get(ctx context.Context, scheduleID string) (*subscription.SubscriptionSchedule, error)
+
+	// GetBySubscriptionID retrieves all schedules for a subscription
+	GetBySubscriptionID(ctx context.Context, subscriptionID string) ([]*subscription.SubscriptionSchedule, error)
+
+	// GetPendingBySubscriptionAndType retrieves a pending schedule by subscription ID and type
+	GetPendingBySubscriptionAndType(ctx context.Context, subscriptionID string, scheduleType types.SubscriptionScheduleChangeType) (*subscription.SubscriptionSchedule, error)
+
+	// List retrieves schedules based on filter
+	List(ctx context.Context, filter *types.SubscriptionScheduleFilter) ([]*subscription.SubscriptionSchedule, error)
+
+	// ExecuteSchedule executes a scheduled change (called by Temporal worker)
+	ExecuteSchedule(ctx context.Context, scheduleID string) error
+
+	// MarkAsExecuting updates schedule status to executing (called by Temporal worker)
+	MarkAsExecuting(ctx context.Context, scheduleID string) error
+
+	// MarkAsExecuted updates schedule status after successful execution
+	MarkAsExecuted(ctx context.Context, scheduleID string, result interface{}) error
+
+	// MarkAsFailed updates schedule status after failed execution
+	MarkAsFailed(ctx context.Context, scheduleID string, errorMsg string) error
 }
 
-// Service handles all subscription schedule operations
-type Service struct {
-	scheduleRepo     subscription.SubscriptionScheduleRepository
-	subscriptionRepo subscription.Repository
-	changeExecutor   SubscriptionChangeExecutor
-	logger           *zap.Logger
+type subscriptionScheduleService struct {
+	ServiceParams
+	changeService SubscriptionChangeService
 }
 
-// NewService creates a new subscription schedule service
-func NewService(
-	scheduleRepo subscription.SubscriptionScheduleRepository,
-	subscriptionRepo subscription.Repository,
-	logger *zap.Logger,
-) *Service {
-	return &Service{
-		scheduleRepo:     scheduleRepo,
-		subscriptionRepo: subscriptionRepo,
-		changeExecutor:   nil, // Will be set via SetChangeExecutor to avoid circular dependency
-		logger:           logger,
+// NewSubscriptionScheduleService creates a new subscription schedule service
+func NewSubscriptionScheduleService(
+	params ServiceParams,
+	changeService SubscriptionChangeService,
+) SubscriptionScheduleService {
+	return &subscriptionScheduleService{
+		ServiceParams: params,
+		changeService: changeService,
 	}
 }
 
-// SetChangeExecutor sets the subscription change executor (to avoid circular dependency)
-func (s *Service) SetChangeExecutor(executor SubscriptionChangeExecutor) {
-	s.changeExecutor = executor
-}
-
 // SchedulePlanChange schedules a plan change at period end
-func (s *Service) SchedulePlanChange(
+func (s *subscriptionScheduleService) SchedulePlanChange(
 	ctx context.Context,
 	subscriptionID string,
 	config *subscription.PlanChangeConfiguration,
 ) (*subscription.SubscriptionSchedule, error) {
+	logger := s.Logger.With(
+		zap.String("subscription_id", subscriptionID),
+		zap.String("target_plan_id", config.TargetPlanID),
+	)
+
 	// Get subscription to calculate period end
-	sub, err := s.subscriptionRepo.Get(ctx, subscriptionID)
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subscription: %w", err)
 	}
@@ -61,7 +89,7 @@ func (s *Service) SchedulePlanChange(
 	}
 
 	// Check for existing pending schedule
-	existing, err := s.scheduleRepo.GetPendingBySubscriptionAndType(
+	existing, err := s.SubScheduleRepo.GetPendingBySubscriptionAndType(
 		ctx,
 		subscriptionID,
 		types.SubscriptionScheduleChangeTypePlanChange,
@@ -95,67 +123,68 @@ func (s *Service) SchedulePlanChange(
 	}
 
 	// Save to database
-	if err := s.scheduleRepo.Create(ctx, schedule); err != nil {
+	if err := s.SubScheduleRepo.Create(ctx, schedule); err != nil {
 		return nil, fmt.Errorf("failed to create schedule: %w", err)
 	}
 
-	s.logger.Info("plan change scheduled in database",
+	logger.Info("plan change scheduled in database",
 		zap.String("schedule_id", schedule.ID),
-		zap.String("subscription_id", subscriptionID),
 		zap.Time("scheduled_at", schedule.ScheduledAt),
-		zap.String("target_plan_id", config.TargetPlanID),
 	)
 
 	return schedule, nil
 }
 
-// ScheduleCancellation creates a schedule for subscription cancellation
-
 // Cancel cancels a pending schedule
-func (s *Service) Cancel(ctx context.Context, scheduleID string) error {
-	schedule, err := s.scheduleRepo.Get(ctx, scheduleID)
-	if err != nil {
-		return fmt.Errorf("failed to get schedule: %w", err)
-	}
+func (s *subscriptionScheduleService) Cancel(ctx context.Context, scheduleID string) error {
+	// Execute in a transaction to ensure atomicity
+	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		schedule, err := s.SubScheduleRepo.Get(txCtx, scheduleID)
+		if err != nil {
+			return fmt.Errorf("failed to get schedule: %w", err)
+		}
 
-	if !schedule.CanBeCancelled() {
-		return fmt.Errorf("schedule cannot be cancelled (status: %s)", schedule.Status)
-	}
+		if !schedule.CanBeCancelled() {
+			return fmt.Errorf("schedule cannot be cancelled (status: %s)", schedule.Status)
+		}
 
-	// NEW: Restore subscription state based on schedule type
-	if err := s.restoreSubscriptionState(ctx, schedule); err != nil {
-		s.logger.Warn("failed to restore subscription state",
+		// Restore subscription state based on schedule type
+		if err := s.restoreSubscriptionState(txCtx, schedule); err != nil {
+			s.Logger.Error("failed to restore subscription state",
+				zap.String("schedule_id", scheduleID),
+				zap.Error(err),
+			)
+			return fmt.Errorf("failed to restore subscription state: %w", err)
+		}
+
+		now := time.Now()
+		schedule.Status = types.ScheduleStatusCancelled
+		schedule.CancelledAt = &now
+		schedule.UpdatedAt = now
+		schedule.UpdatedBy = types.GetUserID(txCtx)
+
+		if err := s.SubScheduleRepo.Update(txCtx, schedule); err != nil {
+			return fmt.Errorf("failed to cancel schedule: %w", err)
+		}
+
+		s.Logger.Info("schedule cancelled in database",
 			zap.String("schedule_id", scheduleID),
-			zap.Error(err),
+			zap.String("subscription_id", schedule.SubscriptionID),
+			zap.String("schedule_type", string(schedule.ScheduleType)),
 		)
-		// Don't fail cancellation if restoration fails (logged for investigation)
-	}
 
-	schedule.Status = types.ScheduleStatusCancelled
-	schedule.UpdatedAt = time.Now()
-	schedule.UpdatedBy = types.GetUserID(ctx)
-
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
-		return fmt.Errorf("failed to cancel schedule: %w", err)
-	}
-
-	s.logger.Info("schedule cancelled in database",
-		zap.String("schedule_id", scheduleID),
-		zap.String("subscription_id", schedule.SubscriptionID),
-		zap.String("schedule_type", string(schedule.ScheduleType)),
-	)
-
-	return nil
+		return nil
+	})
 }
 
 // CancelBySubscriptionAndType cancels a pending schedule by subscription ID and schedule type
-func (s *Service) CancelBySubscriptionAndType(
+func (s *subscriptionScheduleService) CancelBySubscriptionAndType(
 	ctx context.Context,
 	subscriptionID string,
 	scheduleType types.SubscriptionScheduleChangeType,
 ) error {
 	// Get the pending schedule for this subscription and type
-	schedule, err := s.scheduleRepo.GetPendingBySubscriptionAndType(ctx, subscriptionID, scheduleType)
+	schedule, err := s.SubScheduleRepo.GetPendingBySubscriptionAndType(ctx, subscriptionID, scheduleType)
 	if err != nil {
 		return fmt.Errorf("failed to get pending schedule: %w", err)
 	}
@@ -169,8 +198,8 @@ func (s *Service) CancelBySubscriptionAndType(
 }
 
 // CancelPendingForSubscription cancels all pending schedules for a subscription
-func (s *Service) CancelPendingForSubscription(ctx context.Context, subscriptionID string) error {
-	schedules, err := s.scheduleRepo.GetBySubscriptionID(ctx, subscriptionID)
+func (s *subscriptionScheduleService) CancelPendingForSubscription(ctx context.Context, subscriptionID string) error {
+	schedules, err := s.SubScheduleRepo.GetBySubscriptionID(ctx, subscriptionID)
 	if err != nil {
 		return fmt.Errorf("failed to get schedules: %w", err)
 	}
@@ -178,7 +207,7 @@ func (s *Service) CancelPendingForSubscription(ctx context.Context, subscription
 	for _, schedule := range schedules {
 		if schedule.CanBeCancelled() {
 			if err := s.Cancel(ctx, schedule.ID); err != nil {
-				s.logger.Warn("failed to cancel schedule",
+				s.Logger.Warn("failed to cancel schedule",
 					zap.String("schedule_id", schedule.ID),
 					zap.Error(err),
 				)
@@ -190,42 +219,42 @@ func (s *Service) CancelPendingForSubscription(ctx context.Context, subscription
 }
 
 // Get retrieves a schedule by ID
-func (s *Service) Get(ctx context.Context, scheduleID string) (*subscription.SubscriptionSchedule, error) {
-	return s.scheduleRepo.Get(ctx, scheduleID)
+func (s *subscriptionScheduleService) Get(ctx context.Context, scheduleID string) (*subscription.SubscriptionSchedule, error) {
+	return s.SubScheduleRepo.Get(ctx, scheduleID)
 }
 
 // GetBySubscriptionID retrieves all schedules for a subscription
-func (s *Service) GetBySubscriptionID(ctx context.Context, subscriptionID string) ([]*subscription.SubscriptionSchedule, error) {
-	return s.scheduleRepo.GetBySubscriptionID(ctx, subscriptionID)
+func (s *subscriptionScheduleService) GetBySubscriptionID(ctx context.Context, subscriptionID string) ([]*subscription.SubscriptionSchedule, error) {
+	return s.SubScheduleRepo.GetBySubscriptionID(ctx, subscriptionID)
 }
 
 // GetPendingBySubscriptionAndType retrieves a pending schedule by subscription ID and type
-func (s *Service) GetPendingBySubscriptionAndType(
+func (s *subscriptionScheduleService) GetPendingBySubscriptionAndType(
 	ctx context.Context,
 	subscriptionID string,
 	scheduleType types.SubscriptionScheduleChangeType,
 ) (*subscription.SubscriptionSchedule, error) {
-	return s.scheduleRepo.GetPendingBySubscriptionAndType(ctx, subscriptionID, scheduleType)
+	return s.SubScheduleRepo.GetPendingBySubscriptionAndType(ctx, subscriptionID, scheduleType)
 }
 
 // List retrieves schedules based on filter
-func (s *Service) List(ctx context.Context, filter *types.SubscriptionScheduleFilter) ([]*subscription.SubscriptionSchedule, error) {
-	return s.scheduleRepo.List(ctx, filter)
+func (s *subscriptionScheduleService) List(ctx context.Context, filter *types.SubscriptionScheduleFilter) ([]*subscription.SubscriptionSchedule, error) {
+	return s.SubScheduleRepo.List(ctx, filter)
 }
 
 // ExecuteSchedule executes a scheduled change (called by Temporal worker)
-func (s *Service) ExecuteSchedule(ctx context.Context, scheduleID string) error {
+func (s *subscriptionScheduleService) ExecuteSchedule(ctx context.Context, scheduleID string) error {
 	// Mark as executing
 	if err := s.MarkAsExecuting(ctx, scheduleID); err != nil {
 		return err
 	}
 
-	schedule, err := s.scheduleRepo.Get(ctx, scheduleID)
+	schedule, err := s.SubScheduleRepo.Get(ctx, scheduleID)
 	if err != nil {
 		return fmt.Errorf("failed to get schedule: %w", err)
 	}
 
-	// Validate it's still pending
+	// Validate it's still executing
 	if schedule.Status != types.ScheduleStatusExecuting {
 		return fmt.Errorf("schedule is not executing (status: %s)", schedule.Status)
 	}
@@ -258,7 +287,7 @@ func (s *Service) ExecuteSchedule(ctx context.Context, scheduleID string) error 
 }
 
 // executePlanChange executes a plan change schedule
-func (s *Service) executePlanChange(
+func (s *subscriptionScheduleService) executePlanChange(
 	ctx context.Context,
 	schedule *subscription.SubscriptionSchedule,
 ) (*subscription.PlanChangeResult, error) {
@@ -268,7 +297,7 @@ func (s *Service) executePlanChange(
 	}
 
 	// Get current subscription
-	sub, err := s.subscriptionRepo.Get(ctx, schedule.SubscriptionID)
+	sub, err := s.SubRepo.Get(ctx, schedule.SubscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subscription: %w", err)
 	}
@@ -286,20 +315,12 @@ func (s *Service) executePlanChange(
 		return nil, fmt.Errorf("subscription is already on target plan %s", config.TargetPlanID)
 	}
 
-	s.logger.Info("executing plan change",
+	s.Logger.Info("executing plan change",
 		zap.String("schedule_id", schedule.ID),
 		zap.String("subscription_id", schedule.SubscriptionID),
 		zap.String("from_plan", sub.PlanID),
 		zap.String("to_plan", config.TargetPlanID),
 	)
-
-	// Execute the subscription change if executor is available
-	if s.changeExecutor == nil {
-		s.logger.Warn("change executor not set, cannot execute plan change",
-			zap.String("schedule_id", schedule.ID),
-		)
-		return nil, fmt.Errorf("subscription change executor not configured")
-	}
 
 	// Build change request from configuration
 	changeRequest := dto.SubscriptionChangeRequest{
@@ -312,10 +333,10 @@ func (s *Service) executePlanChange(
 		Metadata:           config.ChangeMetadata,
 	}
 
-	// Execute the change
-	changeResponse, err := s.changeExecutor.ExecuteSubscriptionChangeInternal(ctx, schedule.SubscriptionID, changeRequest)
+	// Execute the change using the injected change service
+	changeResponse, err := s.changeService.ExecuteSubscriptionChangeInternal(ctx, schedule.SubscriptionID, changeRequest)
 	if err != nil {
-		s.logger.Error("failed to execute subscription change",
+		s.Logger.Error("failed to execute subscription change",
 			zap.String("schedule_id", schedule.ID),
 			zap.String("subscription_id", schedule.SubscriptionID),
 			zap.Error(err),
@@ -331,7 +352,7 @@ func (s *Service) executePlanChange(
 		EffectiveDate:     time.Now(),
 	}
 
-	s.logger.Info("plan change executed successfully",
+	s.Logger.Info("plan change executed successfully",
 		zap.String("schedule_id", schedule.ID),
 		zap.String("subscription_id", schedule.SubscriptionID),
 	)
@@ -339,11 +360,9 @@ func (s *Service) executePlanChange(
 	return result, nil
 }
 
-// executeCancellation executes a scheduled cancellation
-
 // MarkAsExecuting updates schedule status to executing (called by Temporal worker)
-func (s *Service) MarkAsExecuting(ctx context.Context, scheduleID string) error {
-	schedule, err := s.scheduleRepo.Get(ctx, scheduleID)
+func (s *subscriptionScheduleService) MarkAsExecuting(ctx context.Context, scheduleID string) error {
+	schedule, err := s.SubScheduleRepo.Get(ctx, scheduleID)
 	if err != nil {
 		return fmt.Errorf("failed to get schedule: %w", err)
 	}
@@ -355,12 +374,12 @@ func (s *Service) MarkAsExecuting(ctx context.Context, scheduleID string) error 
 	schedule.Status = types.ScheduleStatusExecuting
 	schedule.UpdatedAt = time.Now()
 
-	return s.scheduleRepo.Update(ctx, schedule)
+	return s.SubScheduleRepo.Update(ctx, schedule)
 }
 
 // MarkAsExecuted updates schedule status after successful execution
-func (s *Service) MarkAsExecuted(ctx context.Context, scheduleID string, result interface{}) error {
-	schedule, err := s.scheduleRepo.Get(ctx, scheduleID)
+func (s *subscriptionScheduleService) MarkAsExecuted(ctx context.Context, scheduleID string, result interface{}) error {
+	schedule, err := s.SubScheduleRepo.Get(ctx, scheduleID)
 	if err != nil {
 		return fmt.Errorf("failed to get schedule: %w", err)
 	}
@@ -374,13 +393,13 @@ func (s *Service) MarkAsExecuted(ctx context.Context, scheduleID string, result 
 	if schedule.ScheduleType == types.SubscriptionScheduleChangeTypePlanChange {
 		if planResult, ok := result.(*subscription.PlanChangeResult); ok {
 			if err := schedule.SetPlanChangeResult(planResult); err != nil {
-				s.logger.Warn("failed to store execution result", zap.Error(err))
+				s.Logger.Warn("failed to store execution result", zap.Error(err))
 			}
 		}
 	}
 
 	// Update database first
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
+	if err := s.SubScheduleRepo.Update(ctx, schedule); err != nil {
 		return err
 	}
 
@@ -388,8 +407,8 @@ func (s *Service) MarkAsExecuted(ctx context.Context, scheduleID string, result 
 }
 
 // MarkAsFailed updates schedule status after failed execution
-func (s *Service) MarkAsFailed(ctx context.Context, scheduleID string, errorMsg string) error {
-	schedule, err := s.scheduleRepo.Get(ctx, scheduleID)
+func (s *subscriptionScheduleService) MarkAsFailed(ctx context.Context, scheduleID string, errorMsg string) error {
+	schedule, err := s.SubScheduleRepo.Get(ctx, scheduleID)
 	if err != nil {
 		return fmt.Errorf("failed to get schedule: %w", err)
 	}
@@ -401,7 +420,7 @@ func (s *Service) MarkAsFailed(ctx context.Context, scheduleID string, errorMsg 
 	schedule.UpdatedAt = now
 
 	// Update database first
-	if err := s.scheduleRepo.Update(ctx, schedule); err != nil {
+	if err := s.SubScheduleRepo.Update(ctx, schedule); err != nil {
 		return err
 	}
 
@@ -409,15 +428,14 @@ func (s *Service) MarkAsFailed(ctx context.Context, scheduleID string, errorMsg 
 }
 
 // restoreSubscriptionState restores subscription to its pre-schedule state
-func (s *Service) restoreSubscriptionState(
+func (s *subscriptionScheduleService) restoreSubscriptionState(
 	ctx context.Context,
 	schedule *subscription.SubscriptionSchedule,
 ) error {
-
 	switch schedule.ScheduleType {
 	case types.SubscriptionScheduleChangeTypePlanChange:
 		// For plan change: just cancel schedule, subscription remains unchanged
-		s.logger.Info("plan change schedule cancelled, no state restoration needed",
+		s.Logger.Info("plan change schedule cancelled, no state restoration needed",
 			zap.String("schedule_id", schedule.ID),
 		)
 		return nil
@@ -433,7 +451,7 @@ func (s *Service) restoreSubscriptionState(
 }
 
 // restoreCancellationState restores subscription state when a cancellation schedule is cancelled
-func (s *Service) restoreCancellationState(
+func (s *subscriptionScheduleService) restoreCancellationState(
 	ctx context.Context,
 	schedule *subscription.SubscriptionSchedule,
 ) error {
@@ -443,13 +461,17 @@ func (s *Service) restoreCancellationState(
 		return fmt.Errorf("failed to parse cancellation configuration: %w", err)
 	}
 
+	// Enrich context with tenant and environment from the schedule
+	ctx = types.SetTenantID(ctx, schedule.TenantID)
+	ctx = types.SetEnvironmentID(ctx, schedule.EnvironmentID)
+
 	// Get the subscription
-	sub, err := s.subscriptionRepo.Get(ctx, schedule.SubscriptionID)
+	sub, err := s.SubRepo.Get(ctx, schedule.SubscriptionID)
 	if err != nil {
 		return fmt.Errorf("failed to get subscription: %w", err)
 	}
 
-	s.logger.Info("restoring subscription state after cancellation schedule cancellation",
+	s.Logger.Info("restoring subscription state after cancellation schedule cancellation",
 		zap.String("schedule_id", schedule.ID),
 		zap.String("subscription_id", sub.ID),
 		zap.Bool("current_cancel_at_period_end", sub.CancelAtPeriodEnd),
@@ -459,14 +481,13 @@ func (s *Service) restoreCancellationState(
 	sub.CancelAtPeriodEnd = config.OriginalCancelAtPeriodEnd
 	sub.CancelAt = config.OriginalCancelAt
 	sub.EndDate = config.OriginalEndDate
-	sub.CancelledAt = config.OriginalCancelledAt
 
 	// Update the subscription
-	if err := s.subscriptionRepo.Update(ctx, sub); err != nil {
+	if err := s.SubRepo.Update(ctx, sub); err != nil {
 		return fmt.Errorf("failed to restore subscription state: %w", err)
 	}
 
-	s.logger.Info("subscription state restored successfully",
+	s.Logger.Info("subscription state restored successfully",
 		zap.String("schedule_id", schedule.ID),
 		zap.String("subscription_id", sub.ID),
 		zap.Bool("restored_cancel_at_period_end", sub.CancelAtPeriodEnd),

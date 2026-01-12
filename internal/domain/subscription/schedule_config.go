@@ -85,9 +85,8 @@ type CancellationConfiguration struct {
 	ProrationBehavior types.ProrationBehavior `json:"proration_behavior"`
 	// Original subscription state to restore if cancelled
 	OriginalCancelAtPeriodEnd bool       `json:"original_cancel_at_period_end"`
-	OriginalCancelAt          *time.Time `json:"original_cancel_at,omitempty"`
-	OriginalEndDate           *time.Time `json:"original_end_date,omitempty"`
-	OriginalCancelledAt       *time.Time `json:"original_cancelled_at,omitempty"`
+	OriginalCancelAt          *time.Time `json:"original_cancel_at"` // No omitempty - need to store null
+	OriginalEndDate           *time.Time `json:"original_end_date"`  // No omitempty - need to store null
 }
 
 // CancellationResult represents the result of a cancellation execution

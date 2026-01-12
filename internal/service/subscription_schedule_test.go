@@ -1,4 +1,4 @@
-package subscription_schedules_test
+package service
 
 import (
 	"encoding/json"

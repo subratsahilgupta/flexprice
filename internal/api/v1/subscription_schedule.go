@@ -4,18 +4,18 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/service/subscription_schedules"
+	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
 // SubscriptionScheduleHandler handles subscription schedule HTTP requests
 type SubscriptionScheduleHandler struct {
-	scheduleService *subscription_schedules.Service
+	scheduleService service.SubscriptionScheduleService
 }
 
 // NewSubscriptionScheduleHandler creates a new subscription schedule handler
-func NewSubscriptionScheduleHandler(scheduleService *subscription_schedules.Service) *SubscriptionScheduleHandler {
+func NewSubscriptionScheduleHandler(scheduleService service.SubscriptionScheduleService) *SubscriptionScheduleHandler {
 	return &SubscriptionScheduleHandler{
 		scheduleService: scheduleService,
 	}
@@ -32,7 +32,7 @@ func NewSubscriptionScheduleHandler(scheduleService *subscription_schedules.Serv
 // @Failure 404 {object} dto.ErrorResponse
 // @Router /v1/subscription-schedules/{id} [get]
 func (h *SubscriptionScheduleHandler) GetSchedule(c *gin.Context) {
-	scheduleID := c.Param("id")
+	scheduleID := c.Param("schedule_id")
 
 	schedule, err := h.scheduleService.Get(c.Request.Context(), scheduleID)
 	if err != nil {

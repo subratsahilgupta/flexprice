@@ -1537,6 +1537,17 @@ func (s *subscriptionService) CancelSubscription(
 			}
 
 		}
+
+		// Step 6.5: Capture original state BEFORE modification (for end_of_period cancellations)
+		var originalState *subscriptionOriginalState
+		if req.CancellationType == types.CancellationTypeEndOfPeriod {
+			originalState = &subscriptionOriginalState{
+				CancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
+				CancelAt:          subscription.CancelAt,
+				EndDate:           subscription.EndDate,
+			}
+		}
+
 		// Step 7: Update subscription status
 		err = s.updateSubscriptionForCancellation(ctx, subscription, req.CancellationType, effectiveDate, req.Reason)
 		if err != nil {
@@ -1551,8 +1562,8 @@ func (s *subscriptionService) CancelSubscription(
 				// Continue anyway - we still want to create the cancellation schedule
 			}
 
-			// Create the cancellation schedule
-			if err := s.createCancellationSchedule(ctx, subscription, req, effectiveDate); err != nil {
+			// Create the cancellation schedule with original state
+			if err := s.createCancellationSchedule(ctx, subscription, req, effectiveDate, originalState); err != nil {
 				logger.Errorw("failed to create cancellation schedule", "error", err)
 			}
 		}
@@ -2544,6 +2555,11 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(period.end) {
 				sub.SubscriptionStatus = types.SubscriptionStatusCancelled
 				sub.EndDate = sub.CancelAt
+				sub.CancelledAt = sub.CancelAt // Set cancelled_at when actually cancelling
+				s.Logger.Infow("subscription cancelled at period end",
+					"subscription_id", sub.ID,
+					"cancel_at", sub.CancelAt,
+					"period_end", period.end)
 				break
 			}
 
@@ -2583,6 +2599,11 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		// Final cancellation check
 		if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(newPeriod.end) {
 			sub.SubscriptionStatus = types.SubscriptionStatusCancelled
+			sub.CancelledAt = sub.CancelAt // Set cancelled_at when actually cancelling
+			s.Logger.Infow("subscription cancelled at period end (final check)",
+				"subscription_id", sub.ID,
+				"cancel_at", sub.CancelAt,
+				"new_period_end", newPeriod.end)
 		}
 
 		// Check if the new period end matches the subscription end date
@@ -4359,9 +4380,6 @@ func (s *subscriptionService) updateSubscriptionForCancellation(
 ) error {
 	now := time.Now().UTC()
 
-	// Update cancellation fields
-	subscription.CancelledAt = &now
-
 	// Add cancellation metadata
 	if subscription.Metadata == nil {
 		subscription.Metadata = make(map[string]string)
@@ -4377,12 +4395,14 @@ func (s *subscriptionService) updateSubscriptionForCancellation(
 		subscription.CancelAt = &effectiveDate
 		subscription.CancelAtPeriodEnd = false
 		subscription.EndDate = &effectiveDate
+		subscription.CancelledAt = &now // Only set for immediate cancellations
 
 	case types.CancellationTypeEndOfPeriod:
 		// Don't change status immediately - will be cancelled at period end
 		subscription.CancelAtPeriodEnd = true
 		subscription.CancelAt = &effectiveDate
 		subscription.EndDate = &effectiveDate
+		// CancelledAt should NOT be set - will be set when actually cancelled at period end
 	default:
 		return ierr.NewError("invalid cancellation type").
 			WithHintf("Unsupported cancellation type: %s", cancellationType).
@@ -5521,22 +5541,30 @@ func (s *subscriptionService) CreateDraftInvoiceForSubscription(ctx context.Cont
 	return inv, nil
 }
 
+// subscriptionOriginalState holds the original subscription state before cancellation
+type subscriptionOriginalState struct {
+	CancelAtPeriodEnd bool
+	CancelAt          *time.Time
+	EndDate           *time.Time
+	// Note: CancelledAt is not tracked because it should never be set for end_of_period cancellations
+}
+
 // createCancellationSchedule creates a subscription schedule entry for end_of_period cancellation
 func (s *subscriptionService) createCancellationSchedule(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	req *dto.CancelSubscriptionRequest,
 	effectiveDate time.Time,
+	originalState *subscriptionOriginalState,
 ) error {
 	// Store original subscription state before cancellation
 	config := &subscription.CancellationConfiguration{
 		CancellationType:          req.CancellationType,
 		Reason:                    req.Reason,
 		ProrationBehavior:         req.ProrationBehavior,
-		OriginalCancelAtPeriodEnd: false, // Before cancellation, this was false
-		OriginalCancelAt:          nil,   // Before cancellation, this was nil
-		OriginalEndDate:           nil,   // Before cancellation, this was nil
-		OriginalCancelledAt:       nil,   // Before cancellation, this was nil
+		OriginalCancelAtPeriodEnd: originalState.CancelAtPeriodEnd,
+		OriginalCancelAt:          originalState.CancelAt,
+		OriginalEndDate:           originalState.EndDate,
 	}
 
 	// Create the schedule entry

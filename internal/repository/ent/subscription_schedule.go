@@ -147,6 +147,12 @@ func (r *subscriptionScheduleRepository) Update(ctx context.Context, schedule *d
 		builder.ClearExecutedAt()
 	}
 
+	if schedule.CancelledAt != nil {
+		builder.SetCancelledAt(*schedule.CancelledAt)
+	} else {
+		builder.ClearCancelledAt()
+	}
+
 	if schedule.ExecutionResult != nil {
 		var resultMap map[string]interface{}
 		if err := json.Unmarshal(schedule.ExecutionResult, &resultMap); err == nil {

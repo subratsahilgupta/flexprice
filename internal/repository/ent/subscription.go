@@ -172,8 +172,6 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 		SetSubscriptionStatus(sub.SubscriptionStatus).
 		SetCurrentPeriodStart(sub.CurrentPeriodStart).
 		SetCurrentPeriodEnd(sub.CurrentPeriodEnd).
-		SetNillableCancelledAt(sub.CancelledAt).
-		SetNillableCancelAt(sub.CancelAt).
 		SetPauseStatus(sub.PauseStatus).
 		SetCancelAtPeriodEnd(sub.CancelAtPeriodEnd).
 		SetPaymentBehavior(types.PaymentBehavior(sub.PaymentBehavior)).
@@ -182,8 +180,26 @@ func (r *subscriptionRepository) Update(ctx context.Context, sub *domainSub.Subs
 		SetNillableInvoicingCustomerID(sub.InvoicingCustomerID).
 		SetUpdatedAt(now).
 		SetUpdatedBy(types.GetUserID(ctx)).
-		SetNillableEndDate(sub.EndDate).
 		SetMetadata(sub.Metadata)
+
+	// Handle nullable date fields - explicitly clear if nil
+	if sub.CancelledAt != nil {
+		query.SetCancelledAt(*sub.CancelledAt)
+	} else {
+		query.ClearCancelledAt()
+	}
+
+	if sub.CancelAt != nil {
+		query.SetCancelAt(*sub.CancelAt)
+	} else {
+		query.ClearCancelAt()
+	}
+
+	if sub.EndDate != nil {
+		query.SetEndDate(*sub.EndDate)
+	} else {
+		query.ClearEndDate()
+	}
 
 	if sub.ActivePauseID != nil {
 		query.SetActivePauseID(*sub.ActivePauseID)
