@@ -1671,6 +1671,46 @@ func (s *PriceServiceSuite) TestGetByLookupKey() {
 		s.Contains(err.Error(), "not found")
 	})
 
+	s.Run("only_returns_active_prices_without_end_date", func() {
+		// Create an inactive price with an end date in the past (terminated price)
+		inactivePricePast := &price.Price{
+			ID:         "price-lookup-inactive-past",
+			Amount:     decimal.NewFromInt(200),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			LookupKey:  "inactive_lookup_key_past",
+			BaseModel:  types.GetDefaultBaseModel(s.ctx),
+			EndDate:    lo.ToPtr(time.Now().UTC().AddDate(0, 0, -1)), // End date in the past (inactive)
+		}
+		_ = s.priceRepo.Create(s.ctx, inactivePricePast)
+
+		// Try to retrieve inactive price by lookup key - should fail
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "inactive_lookup_key_past")
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "not found")
+
+		// Create an inactive price with an end date in the future (scheduled termination)
+		inactivePriceFuture := &price.Price{
+			ID:         "price-lookup-inactive-future",
+			Amount:     decimal.NewFromInt(300),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			LookupKey:  "inactive_lookup_key_future",
+			BaseModel:  types.GetDefaultBaseModel(s.ctx),
+			EndDate:    lo.ToPtr(time.Now().UTC().AddDate(0, 0, 1)), // End date in the future (inactive)
+		}
+		_ = s.priceRepo.Create(s.ctx, inactivePriceFuture)
+
+		// Try to retrieve inactive price with future end date by lookup key - should fail
+		resp, err = s.priceService.GetByLookupKey(s.ctx, "inactive_lookup_key_future")
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "not found")
+	})
+
 	s.Run("only_returns_published_prices", func() {
 		// Create a draft price with a lookup key
 		draftPrice := &price.Price{
@@ -1895,4 +1935,3 @@ func (s *PriceServiceSuite) TestGetByLookupKey() {
 		s.Equal("Premium pricing tier", resp.Price.Metadata["description"])
 	})
 }
-
