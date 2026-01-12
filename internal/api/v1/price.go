@@ -218,3 +218,32 @@ func (h *PriceHandler) DeletePrice(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "price deleted successfully"})
 }
+
+// @Summary Get price by lookup key
+// @Description Get price by lookup key
+// @Tags Prices
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param lookup_key path string true "Lookup key"
+// @Success 200 {object} dto.PriceResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /prices/lookup/{lookup_key} [get]
+func (h *PriceHandler) GetByLookupKey(c *gin.Context) {
+	lookupKey := c.Param("lookup_key")
+	if lookupKey == "" {
+		c.Error(ierr.NewError("lookup key is required").
+			WithHint("Lookup key is required").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.service.GetByLookupKey(c.Request.Context(), lookupKey)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
