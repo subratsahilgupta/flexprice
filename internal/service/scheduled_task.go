@@ -108,7 +108,7 @@ func (s *scheduledTaskService) CreateScheduledTask(ctx context.Context, req dto.
 		jobConfig = &types.S3JobConfig{
 			Bucket:      s.config.FlexpriceS3Exports.Bucket,
 			Region:      s.config.FlexpriceS3Exports.Region,
-			KeyPrefix:   tenantID, // Tenant isolation
+			KeyPrefix:   conn.SyncConfig.S3.KeyPrefix, // Tenant + Environment isolation
 			Compression: req.JobConfig.Compression,
 			Encryption:  req.JobConfig.Encryption,
 		}
@@ -125,6 +125,8 @@ func (s *scheduledTaskService) CreateScheduledTask(ctx context.Context, req dto.
 			"bucket", jobConfig.Bucket,
 			"region", jobConfig.Region,
 			"key_prefix", jobConfig.KeyPrefix,
+			"tenant_id", tenantID,
+			"environment_id", envID,
 			"compression", jobConfig.Compression,
 			"encryption", jobConfig.Encryption)
 

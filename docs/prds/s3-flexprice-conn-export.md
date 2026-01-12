@@ -234,7 +234,8 @@ func (s *connectionService) CreateConnection(ctx context.Context, req *dto.Creat
         // Set bucket and region from config
         conn.SyncConfig.S3.Bucket = s.Config.FlexpriceS3.Bucket
         conn.SyncConfig.S3.Region = s.Config.FlexpriceS3.Region
-        conn.SyncConfig.S3.KeyPrefix = tenantID // Tenant isolation
+        // Tenant + Environment isolation: tenant_id/environment_id
+        conn.SyncConfig.S3.KeyPrefix = fmt.Sprintf("%s/%s", tenantID, environmentID)
         
         s.Logger.Infow("creating flexprice-managed S3 connection",
             "tenant_id", tenantID,
@@ -255,22 +256,27 @@ func (s *connectionService) CreateConnection(ctx context.Context, req *dto.Creat
 ```
 s3://flexprice-dev-testing/
 ├── tenant-00000000-0000-0000-0000-000000000001/
-│   └── exports/  (key_prefix set during connection creation)
-│       ├── invoice-241215120000-241215130000.csv
-│       ├── invoice-241215130000-241215140000.csv
-│       ├── events-241215120000-241215130000.csv.gz
-│       └── credit_topups-241215120000-241215130000.csv
+│   └── env-00000000-0000-0000-0000-000000000001/  (environment isolation)
+│       ├── invoice/
+│       │   ├── invoice-241215120000-241215130000.csv
+│       │   └── invoice-241215130000-241215140000.csv
+│       ├── events/
+│       │   └── events-241215120000-241215130000.csv.gz
+│       └── credit_topups/
+│           └── credit_topups-241215120000-241215130000.csv
 └── tenant-00000000-0000-0000-0000-000000000002/
-    └── exports/
-        └── invoice-241215120000-241215130000.csv
+    └── env-00000000-0000-0000-0000-000000000002/
+        └── invoice/
+            └── invoice-241215120000-241215130000.csv
 ```
 
-**Path Pattern:** `{bucket}/{tenant_id}/{key_prefix}/{filename}`
+**Path Pattern:** `{bucket}/{tenant_id}/{environment_id}/{entity_type}/{filename}`
 
 **Key Points:**
-- `tenant_id` is automatically set as the primary directory during connection creation
-- `key_prefix` can be customized (default: "exports")
-- Existing S3 upload logic already handles this pattern correctly
+- `key_prefix` is automatically set to `{tenant_id}/{environment_id}` during connection creation
+- This provides both tenant AND environment isolation
+- Ensures multi-environment support (dev, staging, prod)
+- Existing S3 upload logic already handles this pattern correctly via KeyPrefix
 - No code changes needed in upload logic!
 
 ### 5. Download API
