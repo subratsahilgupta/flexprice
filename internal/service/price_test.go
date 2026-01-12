@@ -1622,3 +1622,277 @@ func (s *PriceServiceSuite) TestUpdatePrice_CustomPriceUnitValidation() {
 		// Note: The actual update creates a new price, so we verify the request was accepted
 	})
 }
+
+func (s *PriceServiceSuite) TestGetByLookupKey() {
+	// Create a plan first so that the price can reference it
+	plan := &plan.Plan{
+		ID:          "plan-1",
+		Name:        "Test Plan",
+		Description: "A test plan",
+		BaseModel:   types.GetDefaultBaseModel(s.ctx),
+	}
+	_ = s.planRepo.Create(s.ctx, plan)
+
+	s.Run("successful_lookup", func() {
+		// Create a price with a lookup key
+		price := &price.Price{
+			ID:         "price-lookup-1",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			LookupKey:  "test_lookup_key",
+			BaseModel:  types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Retrieve by lookup key
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "test_lookup_key")
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(price.ID, resp.Price.ID)
+		s.Equal(price.LookupKey, resp.Price.LookupKey)
+		s.Equal(price.Amount, resp.Price.Amount)
+	})
+
+	s.Run("empty_lookup_key", func() {
+		// Try to retrieve with empty lookup key
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "")
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "lookup key is required")
+	})
+
+	s.Run("non_existent_lookup_key", func() {
+		// Try to retrieve with non-existent lookup key
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "non_existent_key")
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "not found")
+	})
+
+	s.Run("only_returns_published_prices", func() {
+		// Create a draft price with a lookup key
+		draftPrice := &price.Price{
+			ID:         "price-lookup-draft",
+			Amount:     decimal.NewFromInt(200),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			LookupKey:  "draft_lookup_key",
+			BaseModel:  types.GetDefaultBaseModel(s.ctx),
+		}
+		// Change status to archived to test that only published prices are returned
+		draftPrice.Status = types.StatusArchived
+		_ = s.priceRepo.Create(s.ctx, draftPrice)
+
+		// Try to retrieve archived price by lookup key - should fail
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "draft_lookup_key")
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "not found")
+	})
+
+	s.Run("tenant_isolation", func() {
+		// Create a price in the current context
+		price := &price.Price{
+			ID:         "price-tenant-1",
+			Amount:     decimal.NewFromInt(300),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			LookupKey:  "tenant_lookup_key",
+			BaseModel:  types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Verify we can retrieve it in the same tenant
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "tenant_lookup_key")
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(price.ID, resp.Price.ID)
+	})
+
+	s.Run("environment_isolation", func() {
+		// Create a price in the current environment
+		price := &price.Price{
+			ID:         "price-env-1",
+			Amount:     decimal.NewFromInt(400),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			LookupKey:  "env_lookup_key",
+			BaseModel:  types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Verify we can retrieve it in the same environment
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "env_lookup_key")
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(price.ID, resp.Price.ID)
+	})
+
+	s.Run("lookup_key_with_special_characters", func() {
+		// Create a price with special characters in lookup key
+		price := &price.Price{
+			ID:         "price-special-chars",
+			Amount:     decimal.NewFromInt(500),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			LookupKey:  "test_lookup-key.v2",
+			BaseModel:  types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Retrieve by lookup key with special characters
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "test_lookup-key.v2")
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(price.ID, resp.Price.ID)
+		s.Equal(price.LookupKey, resp.Price.LookupKey)
+	})
+
+	s.Run("lookup_key_case_sensitivity", func() {
+		// Create a price with lowercase lookup key
+		price := &price.Price{
+			ID:         "price-case-test",
+			Amount:     decimal.NewFromInt(600),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			LookupKey:  "lowercase_key",
+			BaseModel:  types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.priceRepo.Create(s.ctx, price)
+
+		// Try to retrieve with uppercase - should fail (case-sensitive)
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "LOWERCASE_KEY")
+		s.Error(err)
+		s.Nil(resp)
+		s.Contains(err.Error(), "not found")
+
+		// Retrieve with exact case - should succeed
+		resp, err = s.priceService.GetByLookupKey(s.ctx, "lowercase_key")
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(price.ID, resp.Price.ID)
+	})
+
+	s.Run("lookup_key_with_different_price_types", func() {
+		// Create a meter for USAGE type price
+		testMeter := &meter.Meter{
+			ID:        "meter-lookup-1",
+			Name:      "Test Meter for Lookup",
+			EventName: "api_call",
+			Aggregation: meter.Aggregation{
+				Type: types.AggregationCount,
+			},
+			BaseModel: types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.meterRepo.CreateMeter(s.ctx, testMeter)
+
+		// Create a USAGE price with lookup key
+		usagePrice := &price.Price{
+			ID:           "price-usage-lookup",
+			Amount:       decimal.NewFromInt(700),
+			Currency:     "usd",
+			EntityType:   types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:     "plan-1",
+			Type:         types.PRICE_TYPE_USAGE,
+			MeterID:      "meter-lookup-1",
+			LookupKey:    "usage_price_key",
+			BillingModel: types.BILLING_MODEL_FLAT_FEE,
+			BaseModel:    types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.priceRepo.Create(s.ctx, usagePrice)
+
+		// Retrieve usage price by lookup key
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "usage_price_key")
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(usagePrice.ID, resp.Price.ID)
+		s.Equal(types.PRICE_TYPE_USAGE, resp.Price.Type)
+	})
+
+	s.Run("lookup_key_with_tiered_pricing", func() {
+		// Create a meter for tiered usage pricing
+		testMeter := &meter.Meter{
+			ID:        "meter-lookup-2",
+			Name:      "Test Meter for Tiered Lookup",
+			EventName: "data_transfer",
+			Aggregation: meter.Aggregation{
+				Type: types.AggregationSum,
+			},
+			BaseModel: types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.meterRepo.CreateMeter(s.ctx, testMeter)
+
+		// Create a tiered price with lookup key
+		upTo10 := uint64(10)
+		upTo20 := uint64(20)
+		tieredPrice := &price.Price{
+			ID:           "price-tiered-lookup",
+			Amount:       decimal.Zero,
+			Currency:     "usd",
+			EntityType:   types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:     "plan-1",
+			Type:         types.PRICE_TYPE_USAGE,
+			MeterID:      "meter-lookup-2",
+			LookupKey:    "tiered_price_key",
+			BillingModel: types.BILLING_MODEL_TIERED,
+			TierMode:     types.BILLING_TIER_SLAB,
+			Tiers: []price.PriceTier{
+				{
+					UpTo:       &upTo10,
+					UnitAmount: decimal.NewFromInt(50),
+				},
+				{
+					UpTo:       &upTo20,
+					UnitAmount: decimal.NewFromInt(40),
+				},
+				{
+					UnitAmount: decimal.NewFromInt(30),
+				},
+			},
+			BaseModel: types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.priceRepo.Create(s.ctx, tieredPrice)
+
+		// Retrieve tiered price by lookup key
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "tiered_price_key")
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(tieredPrice.ID, resp.Price.ID)
+		s.Equal(types.BILLING_MODEL_TIERED, resp.Price.BillingModel)
+		s.Len(resp.Price.Tiers, 3)
+	})
+
+	s.Run("lookup_key_with_metadata", func() {
+		// Create a price with metadata and lookup key
+		priceWithMeta := &price.Price{
+			ID:         "price-meta-lookup",
+			Amount:     decimal.NewFromInt(800),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			LookupKey:  "meta_price_key",
+			Metadata: price.JSONBMetadata{
+				"category":    "premium",
+				"description": "Premium pricing tier",
+			},
+			BaseModel: types.GetDefaultBaseModel(s.ctx),
+		}
+		_ = s.priceRepo.Create(s.ctx, priceWithMeta)
+
+		// Retrieve price with metadata by lookup key
+		resp, err := s.priceService.GetByLookupKey(s.ctx, "meta_price_key")
+		s.NoError(err)
+		s.NotNil(resp)
+		s.Equal(priceWithMeta.ID, resp.Price.ID)
+		s.Equal("premium", resp.Price.Metadata["category"])
+		s.Equal("Premium pricing tier", resp.Price.Metadata["description"])
+	})
+}
+
