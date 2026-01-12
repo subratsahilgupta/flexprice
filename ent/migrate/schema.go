@@ -1392,7 +1392,7 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{PricesColumns[1], PricesColumns[7], PricesColumns[31]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "status = 'published' AND lookup_key IS NOT NULL AND lookup_key != ''",
+					Where: "status = 'published' AND lookup_key IS NOT NULL AND lookup_key != '' AND end_date IS NULL",
 				},
 			},
 			{
