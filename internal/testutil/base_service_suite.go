@@ -129,7 +129,7 @@ func (s *BaseServiceTestSuite) SetupSuite() {
 	}
 
 	// Initialize cache
-	cache.Initialize(s.logger)
+	cache.Initialize(string(cache.CacheTypeInMemory), s.logger, nil)
 }
 
 func (s *BaseServiceTestSuite) setupDependencies() {
