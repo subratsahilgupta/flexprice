@@ -33,9 +33,9 @@ const (
 	EQUAL FilterOperatorType = "eq"
 
 	// string
-	CONTAINS     FilterOperatorType = "contains"
-	NOT_CONTAINS FilterOperatorType = "not_contains"
+	CONTAINS FilterOperatorType = "contains"
 	// TODO: add these operators
+	// NOT_CONTAINS FilterOperatorType = "NOT_CONTAINS"
 	// STARTS_WITH  FilterOperatorType = "STARTS_WITH"
 	// ENDS_WITH    FilterOperatorType = "ENDS_WITH"
 

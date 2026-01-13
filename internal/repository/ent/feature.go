@@ -456,6 +456,10 @@ func (o FeatureQueryOptions) applyEntityQueryOptions(ctx context.Context, f *typ
 		query = query.Where(feature.LookupKeyIn(f.LookupKeys...))
 	}
 
+	if f.NameContains != "" {
+		query = query.Where(feature.NameContainsFold(f.NameContains))
+	}
+
 	// Apply time range filters if specified
 	if f.TimeRangeFilter != nil {
 		if f.StartTime != nil {

@@ -161,10 +161,6 @@ func predicateFromFilter(f *types.FilterCondition, fi string) Predicate {
 		if v := valueString(f); v != nil {
 			return func(sel *sql.Selector) { sel.Where(sql.ContainsFold(fi, *v)) }
 		}
-	case types.NOT_CONTAINS:
-		if v := valueString(f); v != nil {
-			return func(sel *sql.Selector) { sel.Where(sql.Not(sql.ContainsFold(fi, *v))) }
-		}
 	case types.GREATER_THAN:
 		if num := valueNumber(f); num != nil {
 			return func(sel *sql.Selector) { sel.Where(sql.GT(fi, *num)) }
