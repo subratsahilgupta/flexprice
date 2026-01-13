@@ -252,6 +252,7 @@ func (r *CreateWalletRequest) Validate() error {
 // WalletResponse represents a wallet in API responses
 type WalletResponse struct {
 	*wallet.Wallet
+	CreditsAvailableBreakdown *types.CreditBreakdown `json:"credits_available_breakdown,omitempty"`
 }
 
 // ToWalletResponse converts domain Wallet to WalletResponse

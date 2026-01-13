@@ -97,35 +97,22 @@ func (h *WalletHandler) GetWalletsByCustomerID(c *gin.Context) {
 		return
 	}
 
-	// If expand is requested, convert to WalletBalanceResponse and add breakdown
+	// If expand is requested, add breakdown
 	if expand.Has(types.ExpandCreditsAvailableBreakdown) {
-		balanceResponses := make([]*dto.WalletBalanceResponse, len(wallets))
-		for i, w := range wallets {
-			// Get balance for this wallet
-			balance, err := h.walletService.GetWalletBalance(c.Request.Context(), w.ID)
-			if err != nil {
-				h.logger.Error("Failed to get wallet balance", "error", err, "wallet_id", w.ID)
-				c.Error(err)
-				return
-			}
-
-			// Get breakdown
-			breakdown, err := h.walletService.GetCreditsAvailableBreakdown(c.Request.Context(), w.ID)
+		for _, w := range wallets {
+			breakdown, err := h.walletService.GetCreditsAvailableBreakdown(c.Request.Context(), w.Wallet.ID)
 			if err != nil {
 				h.logger.Errorw("failed to get credits available breakdown",
 					"error", err,
-					"wallet_id", w.ID)
+					"wallet_id", w.Wallet.ID)
 				// Don't fail the request, just log the error and continue without breakdown
 			} else {
-				balance.CreditsAvailableBreakdown = breakdown
+				w.CreditsAvailableBreakdown = breakdown
 			}
-
-			balanceResponses[i] = balance
 		}
-		c.JSON(http.StatusOK, balanceResponses)
-	} else {
-		c.JSON(http.StatusOK, wallets)
 	}
+
+	c.JSON(http.StatusOK, wallets)
 }
 
 // GetCustomerWallets godoc
@@ -551,12 +538,21 @@ func (h *WalletHandler) ListWallets(c *gin.Context) {
 		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
 	}
 
-	// Support expand as query parameter
+	// Parse and validate expand parameter
+	var expand types.Expand
 	if expandParam := c.Query("expand"); expandParam != "" {
 		if filter.QueryFilter == nil {
 			filter.QueryFilter = types.NewDefaultQueryFilter()
 		}
 		filter.QueryFilter.Expand = &expandParam
+
+		expand = types.NewExpand(expandParam)
+		if !expand.IsEmpty() {
+			if err := expand.Validate(types.WalletBalanceExpandConfig); err != nil {
+				c.Error(err)
+				return
+			}
+		}
 	}
 
 	resp, err := h.walletService.GetWallets(c.Request.Context(), &filter)
@@ -570,6 +566,19 @@ func (h *WalletHandler) ListWallets(c *gin.Context) {
 	items := make([]*dto.WalletResponse, len(resp.Items))
 	for i, w := range resp.Items {
 		items[i] = dto.FromWallet(w)
+
+		// If expand is requested, add breakdown
+		if expand.Has(types.ExpandCreditsAvailableBreakdown) {
+			breakdown, err := h.walletService.GetCreditsAvailableBreakdown(c.Request.Context(), w.ID)
+			if err != nil {
+				h.logger.Errorw("failed to get credits available breakdown",
+					"error", err,
+					"wallet_id", w.ID)
+				// Don't fail the request, just log the error and continue without breakdown
+			} else {
+				items[i].CreditsAvailableBreakdown = breakdown
+			}
+		}
 	}
 
 	response := &types.ListResponse[*dto.WalletResponse]{
@@ -605,6 +614,18 @@ func (h *WalletHandler) ListWalletsByFilter(c *gin.Context) {
 		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
 	}
 
+	// Parse and validate expand parameter
+	var expand types.Expand
+	if filter.QueryFilter != nil && filter.QueryFilter.Expand != nil {
+		expand = types.NewExpand(*filter.QueryFilter.Expand)
+		if !expand.IsEmpty() {
+			if err := expand.Validate(types.WalletBalanceExpandConfig); err != nil {
+				c.Error(err)
+				return
+			}
+		}
+	}
+
 	resp, err := h.walletService.GetWallets(c.Request.Context(), &filter)
 	if err != nil {
 		h.logger.Error("Failed to list wallets", "error", err)
@@ -616,6 +637,19 @@ func (h *WalletHandler) ListWalletsByFilter(c *gin.Context) {
 	items := make([]*dto.WalletResponse, len(resp.Items))
 	for i, w := range resp.Items {
 		items[i] = dto.FromWallet(w)
+
+		// If expand is requested, add breakdown
+		if expand.Has(types.ExpandCreditsAvailableBreakdown) {
+			breakdown, err := h.walletService.GetCreditsAvailableBreakdown(c.Request.Context(), w.ID)
+			if err != nil {
+				h.logger.Errorw("failed to get credits available breakdown",
+					"error", err,
+					"wallet_id", w.ID)
+				// Don't fail the request, just log the error and continue without breakdown
+			} else {
+				items[i].CreditsAvailableBreakdown = breakdown
+			}
+		}
 	}
 
 	response := &types.ListResponse[*dto.WalletResponse]{
