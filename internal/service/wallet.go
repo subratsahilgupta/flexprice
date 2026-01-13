@@ -726,7 +726,6 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 			EnvironmentID:       w.EnvironmentID,
 			CreditBalanceBefore: w.CreditBalance,
 			CreditBalanceAfter:  balanceAfter,
-			// CreditsAvailable:    creditsAvailable,
 			Currency:            w.Currency,
 			TopupConversionRate: lo.ToPtr(w.TopupConversionRate),
 			ExpiryDate:          types.ParseYYYYMMDDToDate(req.ExpiryDate),
