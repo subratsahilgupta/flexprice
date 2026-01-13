@@ -695,14 +695,12 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 		// Step 1: Create wallet transaction (pending or completed based on setting)
 		txStatus := types.TransactionStatusPending
 		balanceAfter := w.CreditBalance
-		creditsAvailable := decimal.Zero
 		var description string
 
 		if autoCompleteEnabled {
 			// If auto-complete is enabled, create transaction as COMPLETED
 			txStatus = types.TransactionStatusCompleted
 			balanceAfter = w.CreditBalance.Add(req.CreditsToAdd)
-			creditsAvailable = req.CreditsToAdd
 			description = lo.Ternary(req.Description != "", req.Description, "Purchased credits - auto-completed")
 		} else {
 			description = lo.Ternary(req.Description != "", req.Description, "Purchased credits - pending payment")
@@ -731,11 +729,16 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 			EnvironmentID:       w.EnvironmentID,
 			CreditBalanceBefore: w.CreditBalance,
 			CreditBalanceAfter:  balanceAfter,
-			CreditsAvailable:    creditsAvailable,
 			Currency:            w.Currency,
 			TopupConversionRate: lo.ToPtr(w.TopupConversionRate),
 			ExpiryDate:          types.ParseYYYYMMDDToDate(req.ExpiryDate),
 			BaseModel:           types.GetDefaultBaseModel(ctx),
+		}
+
+		if tx.CreditBalanceBefore.LessThan(decimal.Zero) {
+			tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditBalanceAfter)
+		} else {
+			tx.CreditsAvailable = tx.CreditAmount
 		}
 
 		// Create the transaction
@@ -967,7 +970,12 @@ func (s *walletService) completePurchasedCreditTransaction(ctx context.Context, 
 		tx.TxStatus = types.TransactionStatusCompleted
 		tx.CreditBalanceBefore = w.CreditBalance
 		tx.CreditBalanceAfter = newCreditBalance
-		tx.CreditsAvailable = tx.CreditAmount
+
+		if tx.CreditBalanceBefore.LessThan(decimal.Zero) {
+			tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditBalanceAfter)
+		} else {
+			tx.CreditsAvailable = tx.CreditAmount
+		}
 		tx.UpdatedAt = time.Now().UTC()
 
 		// Update the transaction
