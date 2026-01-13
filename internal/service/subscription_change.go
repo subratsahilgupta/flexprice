@@ -181,7 +181,7 @@ func (s *subscriptionChangeService) ExecuteSubscriptionChange(
 		return s.scheduleChangeForPeriodEnd(ctx, subscriptionID, req)
 	}
 
-	// IMMEDIATE EXECUTION PATH (when change_at is "immediate" or null)
+	// IMMEDIATE EXECUTION PATH (when change_at is "immediate")
 	return s.ExecuteSubscriptionChangeInternal(ctx, subscriptionID, req)
 }
 
@@ -383,13 +383,11 @@ func (s *subscriptionChangeService) scheduleChangeForPeriodEnd(
 
 	// Return response indicating the change was scheduled
 	response := &dto.SubscriptionChangeExecuteResponse{
-		IsScheduled: true,
-		ScheduleID:  &schedule.ID,
-		ScheduledAt: &schedule.ScheduledAt,
-		ChangeType:  types.SubscriptionChangeTypeUpgrade, // Will be determined at execution time
-		Metadata:    req.Metadata,
-		// Note: OldSubscription, NewSubscription, etc. are not set for scheduled changes
-		// They will be populated when the change actually executes
+		IsScheduled:   true,
+		ScheduleID:    &schedule.ID,
+		ScheduledAt:   &schedule.ScheduledAt,
+		ChangeType:    types.SubscriptionChangeTypeUpgrade, // Will be determined at execution time
+		EffectiveDate: schedule.ScheduledAt,                // Scheduled execution time
 	}
 
 	return response, nil

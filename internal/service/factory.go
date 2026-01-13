@@ -47,7 +47,6 @@ import (
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/pubsub"
 	"github.com/flexprice/flexprice/internal/s3"
-	temporalClient "github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/types"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 )
@@ -122,9 +121,6 @@ type ServiceParams struct {
 	// PubSubs
 	WalletBalanceAlertPubSub types.WalletBalanceAlertPubSub
 	WebhookPubSub            pubsub.PubSub
-
-	// Temporal
-	TemporalClient temporalClient.TemporalClient
 }
 
 // Common service params
@@ -184,7 +180,6 @@ func NewServiceParams(
 	integrationFactory *integration.Factory,
 	walletBalanceAlertPubSub types.WalletBalanceAlertPubSub,
 	webhookPubSub pubsub.PubSub,
-	temporalClient temporalClient.TemporalClient,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:                       logger,
@@ -242,6 +237,5 @@ func NewServiceParams(
 		IntegrationFactory:           integrationFactory,
 		WalletBalanceAlertPubSub:     walletBalanceAlertPubSub,
 		WebhookPubSub:                webhookPubSub,
-		TemporalClient:               temporalClient,
 	}
 }

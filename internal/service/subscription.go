@@ -2555,11 +2555,16 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(period.end) {
 				sub.SubscriptionStatus = types.SubscriptionStatusCancelled
 				sub.EndDate = sub.CancelAt
-				sub.CancelledAt = sub.CancelAt // Set cancelled_at when actually cancelling
-				s.Logger.Infow("subscription cancelled at period end",
-					"subscription_id", sub.ID,
-					"cancel_at", sub.CancelAt,
-					"period_end", period.end)
+				sub.CancelledAt = sub.CancelAt // Set when actually cancelling
+
+				// Update the cancellation schedule status to executed
+				if err := s.MarkCancellationScheduleAsExecuted(ctx, sub.ID); err != nil {
+					s.Logger.Errorw("failed to mark cancellation schedule as executed",
+						"subscription_id", sub.ID,
+						"error", err)
+					// Don't fail the entire operation, just log the error
+				}
+
 				break
 			}
 
@@ -2599,11 +2604,6 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		// Final cancellation check
 		if sub.CancelAtPeriodEnd && sub.CancelAt != nil && !sub.CancelAt.After(newPeriod.end) {
 			sub.SubscriptionStatus = types.SubscriptionStatusCancelled
-			sub.CancelledAt = sub.CancelAt // Set cancelled_at when actually cancelling
-			s.Logger.Infow("subscription cancelled at period end (final check)",
-				"subscription_id", sub.ID,
-				"cancel_at", sub.CancelAt,
-				"new_period_end", newPeriod.end)
 		}
 
 		// Check if the new period end matches the subscription end date
@@ -2627,7 +2627,6 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 				s.Logger.Errorw("failed to process pending plan changes",
 					"subscription_id", sub.ID,
 					"error", err)
-				// Don't fail the entire period processing - just log the error
 			}
 		}
 
@@ -2779,6 +2778,43 @@ func (s *subscriptionService) cancelAllPendingSchedules(ctx context.Context, sub
 				"subscription_id", subscriptionID)
 		}
 	}
+
+	return nil
+}
+
+// MarkCancellationScheduleAsExecuted finds and marks the cancellation schedule as executed (public for use by Temporal activities)
+func (s *subscriptionService) MarkCancellationScheduleAsExecuted(ctx context.Context, subscriptionID string) error {
+	// Get the pending cancellation schedule for this subscription
+	schedule, err := s.SubScheduleRepo.GetPendingBySubscriptionAndType(
+		ctx,
+		subscriptionID,
+		types.SubscriptionScheduleChangeTypeCancellation,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get cancellation schedule: %w", err)
+	}
+
+	if schedule == nil {
+		s.Logger.Warnw("no pending cancellation schedule found",
+			"subscription_id", subscriptionID)
+		return nil
+	}
+
+	// Mark the schedule as executed
+	now := time.Now().UTC()
+	schedule.Status = types.ScheduleStatusExecuted
+	schedule.ExecutedAt = &now
+	schedule.UpdatedAt = now
+	schedule.UpdatedBy = types.GetUserID(ctx)
+
+	if err := s.SubScheduleRepo.Update(ctx, schedule); err != nil {
+		return fmt.Errorf("failed to update schedule status: %w", err)
+	}
+
+	s.Logger.Infow("marked cancellation schedule as executed",
+		"schedule_id", schedule.ID,
+		"subscription_id", subscriptionID,
+		"executed_at", now)
 
 	return nil
 }
@@ -4380,6 +4416,11 @@ func (s *subscriptionService) updateSubscriptionForCancellation(
 ) error {
 	now := time.Now().UTC()
 
+	// Update cancellation fields
+	// For immediate cancellations, cancelled_at is the time of the subscription cancellation
+	// For scheduled cancellations, cancelled_at is the time when the cancellation was scheduled (not when it will be executed)
+	subscription.CancelledAt = &now
+
 	// Add cancellation metadata
 	if subscription.Metadata == nil {
 		subscription.Metadata = make(map[string]string)
@@ -4395,14 +4436,12 @@ func (s *subscriptionService) updateSubscriptionForCancellation(
 		subscription.CancelAt = &effectiveDate
 		subscription.CancelAtPeriodEnd = false
 		subscription.EndDate = &effectiveDate
-		subscription.CancelledAt = &now // Only set for immediate cancellations
 
 	case types.CancellationTypeEndOfPeriod:
 		// Don't change status immediately - will be cancelled at period end
 		subscription.CancelAtPeriodEnd = true
 		subscription.CancelAt = &effectiveDate
-		subscription.EndDate = &effectiveDate
-		// CancelledAt should NOT be set - will be set when actually cancelled at period end
+		// EndDate should NOT be set - will be set when actually cancelled at period end
 	default:
 		return ierr.NewError("invalid cancellation type").
 			WithHintf("Unsupported cancellation type: %s", cancellationType).

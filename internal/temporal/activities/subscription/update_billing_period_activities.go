@@ -271,7 +271,21 @@ func (s *BillingActivities) CheckCancellationActivity(
 		sub.CancelledAt = cancelledAt
 
 		err := s.serviceParams.DB.WithTx(ctx, func(ctx context.Context) error {
-			return s.serviceParams.SubRepo.Update(ctx, sub)
+			// Update subscription
+			if err := s.serviceParams.SubRepo.Update(ctx, sub); err != nil {
+				return err
+			}
+
+			// Update the cancellation schedule status to executed
+			subscriptionService := service.NewSubscriptionService(s.serviceParams)
+			if err := subscriptionService.MarkCancellationScheduleAsExecuted(ctx, sub.ID); err != nil {
+				s.logger.Errorw("failed to mark cancellation schedule as executed",
+					"subscription_id", sub.ID,
+					"error", err)
+				// Don't fail the transaction, just log the error
+			}
+
+			return nil
 		})
 		if err != nil {
 			s.logger.Errorw("failed to cancel subscription",
