@@ -94,6 +94,9 @@ type WalletService interface {
 
 	// PublishWalletBalanceAlertEvent publishes a wallet balance alert event
 	PublishWalletBalanceAlertEvent(ctx context.Context, customerID string, forceCalculateBalance bool, walletID string)
+
+	// GetCreditsAvailableBreakdown retrieves the breakdown of available credits by type (purchased, free, other)
+	GetCreditsAvailableBreakdown(ctx context.Context, walletID string) (*types.CreditBreakdown, error)
 }
 
 type walletService struct {
@@ -2745,4 +2748,20 @@ func (s *walletService) checkAutoTopup(ctx context.Context, w *wallet.Wallet, on
 	)
 
 	return nil
+}
+
+// GetCreditsAvailableBreakdown retrieves the breakdown of available credits by type (purchased, free, other)
+func (s *walletService) GetCreditsAvailableBreakdown(ctx context.Context, walletID string) (*types.CreditBreakdown, error) {
+	if walletID == "" {
+		return nil, ierr.NewError("wallet_id is required").
+			WithHint("Wallet ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	breakdown, err := s.WalletRepo.GetCreditsAvailableBreakdown(ctx, walletID)
+	if err != nil {
+		return nil, err
+	}
+
+	return breakdown, nil
 }

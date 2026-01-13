@@ -1104,3 +1104,81 @@ func (o WalletTransactionQueryOptions) GetFieldResolver(st string) (string, erro
 	}
 	return fieldName, nil
 }
+
+// GetCreditsAvailableBreakdown retrieves the breakdown of available credits by type (purchased, free, other)
+func (r *walletRepository) GetCreditsAvailableBreakdown(ctx context.Context, walletID string) (*types.CreditBreakdown, error) {
+	span := StartRepositorySpan(ctx, "wallet", "get_credits_available_breakdown", map[string]interface{}{
+		"wallet_id": walletID,
+	})
+	defer FinishSpan(span)
+
+	tenantID := types.GetTenantID(ctx)
+	envID := types.GetEnvironmentID(ctx)
+
+	client := r.client.Reader(ctx)
+
+	// Use raw SQL for complex aggregation query
+	query := `
+		SELECT 
+			CASE 
+				WHEN transaction_reason IN ('PURCHASED_CREDIT_INVOICED', 'PURCHASED_CREDIT_DIRECT') THEN 'PURCHASED'
+				WHEN transaction_reason IN ('FREE_CREDIT_GRANT', 'SUBSCRIPTION_CREDIT_GRANT') THEN 'FREE'
+				ELSE 'OTHER'
+			END AS credit_type,
+			SUM(credits_available) AS total_credits_available
+		FROM wallet_transactions
+		WHERE tenant_id = $1
+			AND environment_id = $2
+			AND wallet_id = $3
+			AND type = 'credit'
+			AND transaction_status = 'completed'
+		GROUP BY credit_type
+		ORDER BY credit_type
+	`
+
+	rows, err := client.QueryContext(ctx, query, tenantID, envID, walletID)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to fetch credits available breakdown").
+			WithReportableDetails(map[string]interface{}{
+				"wallet_id": walletID,
+				"tenant_id": tenantID,
+				"env_id":    envID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	breakdown := &types.CreditBreakdown{
+		Purchased: decimal.Zero,
+		Free:      decimal.Zero,
+	}
+
+	for rows.Next() {
+		var creditType string
+		var total decimal.Decimal
+
+		err := rows.Scan(&creditType, &total)
+		if err != nil {
+			r.logger.Errorw("failed to scan credit breakdown row", "error", err)
+			continue
+		}
+
+		switch creditType {
+		case "PURCHASED":
+			breakdown.Purchased = total
+		case "FREE":
+			breakdown.Free = total
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to iterate credit breakdown rows").
+			Mark(ierr.ErrDatabase)
+	}
+
+	return breakdown, nil
+}
