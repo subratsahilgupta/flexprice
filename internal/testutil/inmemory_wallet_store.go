@@ -718,9 +718,7 @@ func (s *InMemoryWalletStore) GetCreditsAvailableBreakdown(ctx context.Context, 
 
 		return t.WalletID == walletID &&
 			t.Type == types.TransactionTypeCredit &&
-			t.TxStatus == types.TransactionStatusCompleted &&
-			t.CreditsAvailable.GreaterThanOrEqual(decimal.Zero) &&
-			t.Status == types.StatusPublished
+			t.TxStatus == types.TransactionStatusCompleted
 	}, nil)
 
 	if err != nil {
@@ -737,13 +735,13 @@ func (s *InMemoryWalletStore) GetCreditsAvailableBreakdown(ctx context.Context, 
 		Free:      decimal.Zero,
 	}
 
-	// Sum up the credit amounts by type
+	// Sum up the credits_available by type
 	for _, tx := range transactions {
 		switch tx.TransactionReason {
 		case types.TransactionReasonPurchasedCreditInvoiced, types.TransactionReasonPurchasedCreditDirect:
-			breakdown.Purchased = breakdown.Purchased.Add(tx.CreditAmount)
+			breakdown.Purchased = breakdown.Purchased.Add(tx.CreditsAvailable)
 		case types.TransactionReasonFreeCredit, types.TransactionReasonSubscriptionCredit:
-			breakdown.Free = breakdown.Free.Add(tx.CreditAmount)
+			breakdown.Free = breakdown.Free.Add(tx.CreditsAvailable)
 		}
 	}
 
