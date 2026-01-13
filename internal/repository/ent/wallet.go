@@ -1125,7 +1125,7 @@ func (r *walletRepository) GetCreditsAvailableBreakdown(ctx context.Context, wal
 				WHEN transaction_reason IN ('FREE_CREDIT_GRANT', 'SUBSCRIPTION_CREDIT_GRANT') THEN 'FREE'
 				ELSE 'OTHER'
 			END AS credit_type,
-			SUM(credit_amount) AS total_credits_available
+			SUM(credits_available) AS total_credits_available
 		FROM wallet_transactions
 		WHERE tenant_id = $1
 			AND environment_id = $2
