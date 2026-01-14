@@ -307,7 +307,12 @@ func (s *subscriptionScheduleService) executePlanChange(
 		return nil, fmt.Errorf("subscription is not active (status: %s)", sub.SubscriptionStatus)
 	}
 
-	if sub.CancelAtPeriodEnd || sub.CancelledAt != nil {
+	// Block plan changes if subscription is cancelled or scheduled for cancellation
+	// Check all cancellation indicators:
+	// - CancelledAt: subscription is already cancelled
+	// - CancelAtPeriodEnd: cancellation scheduled for period end
+	// - CancelAt: cancellation scheduled for a specific date
+	if sub.CancelAtPeriodEnd || sub.CancelledAt != nil || sub.CancelAt != nil {
 		return nil, fmt.Errorf("subscription is cancelled or scheduled for cancellation")
 	}
 

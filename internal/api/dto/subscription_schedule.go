@@ -98,9 +98,6 @@ func (r *CancelScheduleRequest) Validate() error {
 // CancelScheduleResponse represents the response after cancelling a schedule
 // @Description Confirmation of schedule cancellation
 type CancelScheduleResponse struct {
-	// schedule_id is the ID of the cancelled schedule
-	ScheduleID string `json:"schedule_id"`
-
 	// status is the new status (should be "cancelled")
 	Status types.ScheduleStatus `json:"status"`
 

@@ -103,12 +103,10 @@ func (h *SubscriptionScheduleHandler) CancelSchedule(c *gin.Context) {
 	}
 
 	var err error
-	var cancelledScheduleID string
 
 	// Mode 1: Cancel by schedule ID
 	if req.ScheduleID != nil {
-		cancelledScheduleID = *req.ScheduleID
-		err = h.scheduleService.Cancel(c.Request.Context(), cancelledScheduleID)
+		err = h.scheduleService.Cancel(c.Request.Context(), *req.ScheduleID)
 	} else {
 		// Mode 2: Cancel by subscription ID + schedule type
 		err = h.scheduleService.CancelBySubscriptionAndType(
@@ -116,20 +114,6 @@ func (h *SubscriptionScheduleHandler) CancelSchedule(c *gin.Context) {
 			*req.SubscriptionID,
 			*req.ScheduleType,
 		)
-		// Get the cancelled schedule ID for response
-		if err == nil {
-			// Fetch the schedule to get its ID
-			schedule, getErr := h.scheduleService.GetPendingBySubscriptionAndType(
-				c.Request.Context(),
-				*req.SubscriptionID,
-				*req.ScheduleType,
-			)
-			if getErr == nil && schedule != nil {
-				cancelledScheduleID = schedule.ID
-			} else {
-				cancelledScheduleID = "unknown"
-			}
-		}
 	}
 
 	if err != nil {
@@ -145,9 +129,8 @@ func (h *SubscriptionScheduleHandler) CancelSchedule(c *gin.Context) {
 	}
 
 	response := &dto.CancelScheduleResponse{
-		ScheduleID: cancelledScheduleID,
-		Status:     types.ScheduleStatusCancelled,
-		Message:    "Schedule cancelled successfully",
+		Status:  types.ScheduleStatusCancelled,
+		Message: "Schedule cancelled successfully",
 	}
 
 	c.JSON(http.StatusOK, response)

@@ -2721,7 +2721,13 @@ func (s *subscriptionService) executeScheduledPlanChange(
 		schedule.Status = types.ScheduleStatusFailed
 		schedule.ExecutedAt = lo.ToPtr(time.Now().UTC())
 		schedule.ErrorMessage = lo.ToPtr(err.Error())
-		_ = s.SubScheduleRepo.Update(ctx, schedule)
+		if updateErr := s.SubScheduleRepo.Update(ctx, schedule); updateErr != nil {
+			s.Logger.Errorw("failed to update schedule status to failed",
+				"schedule_id", schedule.ID,
+				"subscription_id", schedule.SubscriptionID,
+				"original_error", err,
+				"update_error", updateErr)
+		}
 		return err
 	}
 

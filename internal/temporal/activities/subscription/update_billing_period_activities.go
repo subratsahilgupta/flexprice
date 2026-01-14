@@ -362,6 +362,19 @@ func (s *BillingActivities) ProcessPendingPlanChangesActivity(
 		}, nil
 	}
 
+	// Guard: Check if schedule is due (scheduled_at <= now)
+	if schedule.ScheduledAt.After(time.Now()) {
+		s.logger.Infow("schedule not yet due, skipping execution",
+			"schedule_id", schedule.ID,
+			"subscription_id", sub.ID,
+			"scheduled_at", schedule.ScheduledAt,
+			"current_time", time.Now())
+		return &subscriptionModels.ProcessPendingPlanChangesActivityOutput{
+			Success:    true,
+			WasChanged: false,
+		}, nil
+	}
+
 	s.logger.Infow("found pending plan change schedule, executing",
 		"schedule_id", schedule.ID,
 		"subscription_id", sub.ID,
@@ -422,7 +435,42 @@ func (s *BillingActivities) executeScheduledPlanChange(
 		schedule.Status = types.ScheduleStatusFailed
 		schedule.ExecutedAt = lo.ToPtr(time.Now().UTC())
 		schedule.ErrorMessage = lo.ToPtr(err.Error())
-		_ = s.serviceParams.SubScheduleRepo.Update(ctx, schedule)
+		if updateErr := s.serviceParams.SubScheduleRepo.Update(ctx, schedule); updateErr != nil {
+			s.logger.Errorw("failed to update schedule status to failed",
+				"schedule_id", schedule.ID,
+				"subscription_id", schedule.SubscriptionID,
+				"original_error", err,
+				"update_error", updateErr)
+		}
+		return err
+	}
+
+	// Validate response is not nil and has required fields
+	if response == nil {
+		err := fmt.Errorf("subscription change returned nil response")
+		schedule.Status = types.ScheduleStatusFailed
+		schedule.ExecutedAt = lo.ToPtr(time.Now().UTC())
+		schedule.ErrorMessage = lo.ToPtr(err.Error())
+		if updateErr := s.serviceParams.SubScheduleRepo.Update(ctx, schedule); updateErr != nil {
+			s.logger.Errorw("failed to update schedule status to failed",
+				"schedule_id", schedule.ID,
+				"subscription_id", schedule.SubscriptionID,
+				"update_error", updateErr)
+		}
+		return err
+	}
+
+	if response.OldSubscription.ID == "" || response.NewSubscription.ID == "" {
+		err := fmt.Errorf("subscription change response missing required subscription IDs")
+		schedule.Status = types.ScheduleStatusFailed
+		schedule.ExecutedAt = lo.ToPtr(time.Now().UTC())
+		schedule.ErrorMessage = lo.ToPtr(err.Error())
+		if updateErr := s.serviceParams.SubScheduleRepo.Update(ctx, schedule); updateErr != nil {
+			s.logger.Errorw("failed to update schedule status to failed",
+				"schedule_id", schedule.ID,
+				"subscription_id", schedule.SubscriptionID,
+				"update_error", updateErr)
+		}
 		return err
 	}
 
