@@ -385,15 +385,11 @@ type SubscriptionScheduleChangeType string
 
 const (
 	SubscriptionScheduleChangeTypePlanChange   SubscriptionScheduleChangeType = "plan_change"
-	SubscriptionScheduleChangeTypeAddonChange  SubscriptionScheduleChangeType = "addon_change"
-	SubscriptionScheduleChangeTypePriceChange  SubscriptionScheduleChangeType = "price_change"
 	SubscriptionScheduleChangeTypeCancellation SubscriptionScheduleChangeType = "cancellation"
 )
 
 var SubscriptionScheduleChangeTypeValues = []SubscriptionScheduleChangeType{
 	SubscriptionScheduleChangeTypePlanChange,
-	SubscriptionScheduleChangeTypeAddonChange,
-	SubscriptionScheduleChangeTypePriceChange,
 	SubscriptionScheduleChangeTypeCancellation,
 }
 
@@ -404,7 +400,7 @@ func (s SubscriptionScheduleChangeType) String() string {
 func (s SubscriptionScheduleChangeType) Validate() error {
 	if s != "" && !lo.Contains(SubscriptionScheduleChangeTypeValues, s) {
 		return ierr.NewError("invalid subscription schedule change type").
-			WithHint("Subscription schedule change type must be plan_change, addon_change, or price_change").
+			WithHint("Subscription schedule change type must be plan_change or cancellation").
 			WithReportableDetails(map[string]any{
 				"allowed_values": SubscriptionScheduleChangeTypeValues,
 				"provided_value": s,
