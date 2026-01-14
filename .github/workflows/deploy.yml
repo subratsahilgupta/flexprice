@@ -3,7 +3,7 @@ name: Deploy to AWS Lambda
 
 on:
   push:
-    branches: [develop]
+    branches: [test-deploy]
 
 permissions:
   id-token: write
@@ -15,7 +15,7 @@ env:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v3
