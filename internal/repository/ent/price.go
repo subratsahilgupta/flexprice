@@ -679,6 +679,7 @@ func (r *priceRepository) GetByLookupKey(ctx context.Context, lookupKey string) 
 		Where(price.TenantID(types.GetTenantID(ctx)),
 			price.EnvironmentID(types.GetEnvironmentID(ctx)),
 			price.Status(string(types.StatusPublished)),
+			price.EndDateIsNil(),
 		).
 		Only(ctx)
 	if err != nil {

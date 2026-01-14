@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -54,6 +55,26 @@ func (t *Transaction) Validate() error {
 func (t Transaction) ApplyConversionRate(rate decimal.Decimal) Transaction {
 	t.Amount = t.CreditAmount.Mul(rate)
 	return t
+}
+
+// ComputeCreditsAvailable computes the credits available for a transaction
+func (t *Transaction) ComputeCreditsAvailable() (decimal.Decimal, error) {
+	if t.Type == types.TransactionTypeCredit {
+		if t.CreditBalanceBefore.LessThan(decimal.Zero) {
+			return decimal.Max(decimal.Zero, t.CreditBalanceAfter), nil
+		} else {
+			return t.CreditAmount, nil
+		}
+	} else if t.Type == types.TransactionTypeDebit {
+		return decimal.Zero, nil
+	}
+	// return error for the unknown transaction type
+	return decimal.Zero, ierr.NewError("invalid transaction type").
+		WithHint("Invalid transaction type").
+		WithReportableDetails(map[string]interface{}{
+			"transaction_type": t.Type,
+		}).
+		Mark(ierr.ErrInvalidOperation)
 }
 
 // ToEnt converts a domain transaction to an ent transaction

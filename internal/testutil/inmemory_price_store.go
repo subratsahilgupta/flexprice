@@ -317,7 +317,8 @@ func (s *InMemoryPriceStore) GetByLookupKey(ctx context.Context, lookupKey strin
 		if p.LookupKey == lookupKey &&
 			p.TenantID == tenantID &&
 			p.EnvironmentID == environmentID &&
-			p.Status == types.StatusPublished {
+			p.Status == types.StatusPublished &&
+			p.EndDate == nil { // Only return active prices (without end date)
 			foundPrice = p
 			break
 		}

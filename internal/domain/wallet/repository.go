@@ -35,4 +35,7 @@ type Repository interface {
 
 	// Export operations
 	GetCreditTopupsForExport(ctx context.Context, tenantID, envID string, startTime, endTime time.Time, limit, offset int) ([]*CreditTopupsExportData, error)
+
+	// Credit breakdown operations
+	GetCreditsAvailableBreakdown(ctx context.Context, walletID string) (*types.CreditBreakdown, error)
 }

@@ -94,6 +94,9 @@ type WalletService interface {
 
 	// PublishWalletBalanceAlertEvent publishes a wallet balance alert event
 	PublishWalletBalanceAlertEvent(ctx context.Context, customerID string, forceCalculateBalance bool, walletID string)
+
+	// GetCreditsAvailableBreakdown retrieves the breakdown of available credits by type (purchased, free, other)
+	GetCreditsAvailableBreakdown(ctx context.Context, walletID string) (*types.CreditBreakdown, error)
 }
 
 type walletService struct {
@@ -692,14 +695,12 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 		// Step 1: Create wallet transaction (pending or completed based on setting)
 		txStatus := types.TransactionStatusPending
 		balanceAfter := w.CreditBalance
-		creditsAvailable := decimal.Zero
 		var description string
 
 		if autoCompleteEnabled {
 			// If auto-complete is enabled, create transaction as COMPLETED
 			txStatus = types.TransactionStatusCompleted
 			balanceAfter = w.CreditBalance.Add(req.CreditsToAdd)
-			creditsAvailable = req.CreditsToAdd
 			description = lo.Ternary(req.Description != "", req.Description, "Purchased credits - auto-completed")
 		} else {
 			description = lo.Ternary(req.Description != "", req.Description, "Purchased credits - pending payment")
@@ -728,11 +729,18 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 			EnvironmentID:       w.EnvironmentID,
 			CreditBalanceBefore: w.CreditBalance,
 			CreditBalanceAfter:  balanceAfter,
-			CreditsAvailable:    creditsAvailable,
 			Currency:            w.Currency,
 			TopupConversionRate: lo.ToPtr(w.TopupConversionRate),
 			ExpiryDate:          types.ParseYYYYMMDDToDate(req.ExpiryDate),
 			BaseModel:           types.GetDefaultBaseModel(ctx),
+		}
+
+		// Compute credits available for the transaction
+		tx.CreditsAvailable, err = tx.ComputeCreditsAvailable()
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to compute credits available").
+				Mark(ierr.ErrInternal)
 		}
 
 		// Create the transaction
@@ -964,7 +972,15 @@ func (s *walletService) completePurchasedCreditTransaction(ctx context.Context, 
 		tx.TxStatus = types.TransactionStatusCompleted
 		tx.CreditBalanceBefore = w.CreditBalance
 		tx.CreditBalanceAfter = newCreditBalance
-		tx.CreditsAvailable = tx.CreditAmount
+
+		// Compute credits available for the transaction
+		tx.CreditsAvailable, err = tx.ComputeCreditsAvailable()
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to compute credits available").
+				Mark(ierr.ErrInternal)
+		}
+
 		tx.UpdatedAt = time.Now().UTC()
 
 		// Update the transaction
@@ -1559,22 +1575,22 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 		BaseModel:           types.GetDefaultBaseModel(ctx),
 	}
 
+	// Compute credits available for the transaction
+	tx.CreditsAvailable, err = tx.ComputeCreditsAvailable()
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to compute credits available").
+			Mark(ierr.ErrInternal)
+	}
+
 	// Set transaction-specific fields based on transaction type
 	if req.Type == types.TransactionTypeCredit {
 		tx.TopupConversionRate = lo.ToPtr(w.TopupConversionRate)
-
-		if tx.CreditBalanceBefore.LessThan(decimal.Zero) {
-			tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditBalanceAfter)
-		} else {
-			tx.CreditsAvailable = tx.CreditAmount
-		}
-
 		if req.ExpiryDate != nil {
 			tx.ExpiryDate = types.ParseYYYYMMDDToDate(req.ExpiryDate)
 		}
 	} else if req.Type == types.TransactionTypeDebit {
 		tx.ConversionRate = lo.ToPtr(w.ConversionRate)
-		tx.CreditsAvailable = decimal.Zero
 	}
 
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
@@ -2745,4 +2761,20 @@ func (s *walletService) checkAutoTopup(ctx context.Context, w *wallet.Wallet, on
 	)
 
 	return nil
+}
+
+// GetCreditsAvailableBreakdown retrieves the breakdown of available credits by type (purchased, free, other)
+func (s *walletService) GetCreditsAvailableBreakdown(ctx context.Context, walletID string) (*types.CreditBreakdown, error) {
+	if walletID == "" {
+		return nil, ierr.NewError("wallet_id is required").
+			WithHint("Wallet ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	breakdown, err := s.WalletRepo.GetCreditsAvailableBreakdown(ctx, walletID)
+	if err != nil {
+		return nil, err
+	}
+
+	return breakdown, nil
 }
