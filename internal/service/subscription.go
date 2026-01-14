@@ -2676,6 +2676,17 @@ func (s *subscriptionService) processPendingPlanChanges(
 		return nil
 	}
 
+	// Guard: Check if schedule is due (scheduled_at <= now)
+	now := time.Now().UTC()
+	if schedule.ScheduledAt.After(now) {
+		s.Logger.Infow("schedule not yet due, skipping execution",
+			"schedule_id", schedule.ID,
+			"subscription_id", sub.ID,
+			"scheduled_at", schedule.ScheduledAt,
+			"current_time", now)
+		return nil
+	}
+
 	s.Logger.Infow("found pending plan change schedule, executing",
 		"schedule_id", schedule.ID,
 		"subscription_id", sub.ID,
