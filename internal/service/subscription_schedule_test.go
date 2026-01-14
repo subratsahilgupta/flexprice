@@ -52,6 +52,7 @@ func TestSubscriptionSchedule_DomainHelpers(t *testing.T) {
 
 	t.Run("IsExpired returns true for past scheduled time", func(t *testing.T) {
 		schedule := &subscription.SubscriptionSchedule{
+			Status:      types.ScheduleStatusPending,
 			ScheduledAt: time.Now().Add(-1 * time.Hour),
 		}
 		assert.True(t, schedule.IsExpired())
@@ -74,9 +75,11 @@ func TestSubscriptionSchedule_DomainHelpers(t *testing.T) {
 	})
 
 	t.Run("DaysUntilExecution returns 0 for non-pending", func(t *testing.T) {
+		now := time.Now()
 		schedule := &subscription.SubscriptionSchedule{
 			Status:      types.ScheduleStatusExecuted,
 			ScheduledAt: time.Now().Add(48 * time.Hour),
+			ExecutedAt:  &now,
 		}
 		assert.Equal(t, 0, schedule.DaysUntilExecution())
 	})
@@ -121,7 +124,7 @@ func TestPlanChangeConfiguration_JSONB(t *testing.T) {
 
 		_, err := schedule.GetPlanChangeConfig()
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "not a plan change schedule")
+		assert.Contains(t, err.Error(), "invalid schedule type for this operation")
 	})
 }
 
