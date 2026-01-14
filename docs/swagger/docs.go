@@ -2952,6 +2952,11 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
+                        "name": "expand",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "name": "id",
                         "in": "query"
                     },
@@ -7165,6 +7170,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/portal/{external_id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Generate a dashboard URL/token for a customer to access their billing information",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "CustomerPortal"
+                ],
+                "summary": "Create a customer portal session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer External ID",
+                        "name": "external_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PortalSessionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/prices": {
             "get": {
                 "security": [
@@ -7424,6 +7484,55 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/dto.CreateBulkPriceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/prices/lookup/{lookup_key}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Get price by lookup key",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Prices"
+                ],
+                "summary": "Get price by lookup key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Lookup key",
+                        "name": "lookup_key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.PriceResponse"
                         }
                     },
                     "400": {
@@ -9624,13 +9733,15 @@ const docTemplate = `{
                         "enum": [
                             "EVENTS",
                             "PRICES",
-                            "CUSTOMERS"
+                            "CUSTOMERS",
+                            "FEATURES"
                         ],
                         "type": "string",
                         "x-enum-varnames": [
                             "EntityTypeEvents",
                             "EntityTypePrices",
-                            "EntityTypeCustomers"
+                            "EntityTypeCustomers",
+                            "EntityTypeFeatures"
                         ],
                         "name": "entity_type",
                         "in": "query"
@@ -10289,6 +10400,64 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/dto.TaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{id}/download": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Generate a presigned URL for downloading an exported file (supports both Flexprice-managed and customer-owned S3)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "Download task export file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "400": {
@@ -11389,6 +11558,12 @@ const docTemplate = `{
                         "collectionFormat": "csv",
                         "name": "wallet_ids",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Expand fields (e.g., credits_available_breakdown)",
+                        "name": "expand",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -11710,6 +11885,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Expand fields (e.g., credits_available_breakdown)",
+                        "name": "expand",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -13716,6 +13897,10 @@ const docTemplate = `{
                 "cadence": {
                     "$ref": "#/definitions/types.CreditGrantCadence"
                 },
+                "conversion_rate": {
+                    "description": "amount in the currency =  number of credits * conversion_rate\nex if conversion_rate is 1, then 1 USD = 1 credit\nex if conversion_rate is 2, then 1 USD = 0.5 credits\nex if conversion_rate is 0.5, then 1 USD = 2 credits",
+                    "type": "string"
+                },
                 "credits": {
                     "type": "string"
                 },
@@ -13750,6 +13935,10 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.CreditGrantScope"
                 },
                 "subscription_id": {
+                    "type": "string"
+                },
+                "topup_conversion_rate": {
+                    "description": "topup_conversion_rate is the conversion rate for the topup to the currency\nex if topup_conversion_rate is 1, then 1 USD = 1 credit\nex if topup_conversion_rate is 2, then 1 USD = 0.5 credits\nex if topup_conversion_rate is 0.5, then 1 USD = 2 credits",
                     "type": "string"
                 }
             }
@@ -15104,6 +15293,10 @@ const docTemplate = `{
                     "description": "price_unit is the code of the price unit to use for wallet creation\nIf provided, the price unit will be used to set the currency and conversion rate of the wallet:\n- currency: set to price unit's base_currency\n- conversion_rate: set to price unit's conversion_rate",
                     "type": "string"
                 },
+                "topup_conversion_rate": {
+                    "description": "topup_conversion_rate is the conversion rate for the topup to the currency\nex if topup_conversion_rate is 1, then 1 USD = 1 credit\nex if topup_conversion_rate is 2, then 1 USD = 0.5 credits\nex if topup_conversion_rate is 0.5, then 1 USD = 2 credits",
+                    "type": "string"
+                },
                 "wallet_type": {
                     "$ref": "#/definitions/types.WalletType"
                 }
@@ -15186,6 +15379,10 @@ const docTemplate = `{
                 "cadence": {
                     "$ref": "#/definitions/types.CreditGrantCadence"
                 },
+                "conversion_rate": {
+                    "description": "amount in the currency =  number of credits * conversion_rate\nex if conversion_rate is 1, then 1 USD = 1 credit\nex if conversion_rate is 2, then 1 USD = 0.5 credits\nex if conversion_rate is 0.5, then 1 USD = 2 credits",
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -15247,6 +15444,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tenant_id": {
+                    "type": "string"
+                },
+                "topup_conversion_rate": {
+                    "description": "topup_conversion_rate is the conversion rate for the topup to the currency\nex if topup_conversion_rate is 1, then 1 USD = 1 credit\nex if topup_conversion_rate is 2, then 1 USD = 0.5 credits\nex if topup_conversion_rate is 0.5, then 1 USD = 2 credits",
                     "type": "string"
                 },
                 "updated_at": {
@@ -17549,6 +17750,17 @@ const docTemplate = `{
                     "description": "PriceID references the plan price to override",
                     "type": "string"
                 },
+                "price_unit_amount": {
+                    "description": "PriceUnitAmount is the amount of the price unit (for CUSTOM type, FLAT_FEE/PACKAGE billing models)",
+                    "type": "string"
+                },
+                "price_unit_tiers": {
+                    "description": "PriceUnitTiers are the tiers for the price unit (for CUSTOM type, TIERED billing model)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreatePriceTier"
+                    }
+                },
                 "quantity": {
                     "description": "Quantity for this line item (optional)",
                     "type": "string"
@@ -17834,6 +18046,20 @@ const docTemplate = `{
                 }
             }
         },
+        "dto.PortalSessionResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.PriceResponse": {
             "type": "object",
             "properties": {
@@ -17860,7 +18086,7 @@ const docTemplate = `{
                 },
                 "conversion_rate": {
                     "description": "ConversionRate is the conversion rate of the price unit to the fiat currency",
-                    "type": "number"
+                    "type": "string"
                 },
                 "created_at": {
                     "type": "string"
@@ -17938,7 +18164,8 @@ const docTemplate = `{
                 },
                 "min_quantity": {
                     "description": "MinQuantity is the minimum quantity of the price",
-                    "type": "string"
+                    "type": "string",
+                    "x-nullable": true
                 },
                 "parent_price_id": {
                     "description": "ParentPriceID references the root price (always set for price lineage tracking)",
@@ -17953,7 +18180,7 @@ const docTemplate = `{
                 },
                 "price_unit_amount": {
                     "description": "PriceUnitAmount is the amount of the price unit",
-                    "type": "number"
+                    "type": "string"
                 },
                 "price_unit_id": {
                     "description": "PriceUnitID is the id of the price unit (for CUSTOM type)",
@@ -19943,6 +20170,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "display_name": {
+                    "type": "string"
+                },
                 "effective_from": {
                     "type": "string"
                 },
@@ -19958,6 +20188,17 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
+                    }
+                },
+                "price_unit_amount": {
+                    "description": "PriceUnitAmount is the price unit amount (for CUSTOM price unit type, FLAT_FEE/PACKAGE billing models)",
+                    "type": "string"
+                },
+                "price_unit_tiers": {
+                    "description": "PriceUnitTiers are the price unit tiers (for CUSTOM price unit type, TIERED billing model)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.CreatePriceTier"
                     }
                 },
                 "tier_mode": {
@@ -20423,6 +20664,9 @@ const docTemplate = `{
                 "credit_balance": {
                     "type": "string"
                 },
+                "credits_available_breakdown": {
+                    "$ref": "#/definitions/types.CreditBreakdown"
+                },
                 "currency": {
                     "type": "string"
                 },
@@ -20457,6 +20701,10 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.Status"
                 },
                 "tenant_id": {
+                    "type": "string"
+                },
+                "topup_conversion_rate": {
+                    "description": "topup_conversion_rate is the conversion rate for the topup to the currency\nex if topup_conversion_rate is 1, then 1 USD = 1 credit\nex if topup_conversion_rate is 2, then 1 USD = 0.5 credits\nex if topup_conversion_rate is 0.5, then 1 USD = 2 credits",
                     "type": "string"
                 },
                 "unpaid_invoices_amount": {
@@ -20498,13 +20746,20 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.WalletConfig"
                 },
                 "conversion_rate": {
+                    "description": "amount in the currency =  number of credits * conversion_rate\nex if conversion_rate is 1, then 1 USD = 1 credit\nex if conversion_rate is 2, then 1 USD = 0.5 credits\nex if conversion_rate is 0.5, then 1 USD = 2 credits",
                     "type": "string"
                 },
                 "created_at": {
                     "type": "string"
                 },
+                "created_by": {
+                    "type": "string"
+                },
                 "credit_balance": {
                     "type": "string"
+                },
+                "credits_available_breakdown": {
+                    "$ref": "#/definitions/types.CreditBreakdown"
                 },
                 "currency": {
                     "type": "string"
@@ -20513,6 +20768,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "description": {
+                    "type": "string"
+                },
+                "environment_id": {
                     "type": "string"
                 },
                 "id": {
@@ -20524,7 +20782,20 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "topup_conversion_rate": {
+                    "description": "topup_conversion_rate is the conversion rate for the topup to the currency\nex if topup_conversion_rate is 1, then 1 USD = 1 credit\nex if topup_conversion_rate is 2, then 1 USD = 0.5 credits\nex if topup_conversion_rate is 0.5, then 1 USD = 2 credits",
+                    "type": "string"
+                },
                 "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
                     "type": "string"
                 },
                 "wallet_status": {
@@ -20539,6 +20810,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "amount": {
+                    "type": "string"
+                },
+                "conversion_rate": {
+                    "description": "conversion_rate is the conversion rate for the transaction to the currency",
                     "type": "string"
                 },
                 "created_at": {
@@ -20602,6 +20877,10 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.Status"
                 },
                 "tenant_id": {
+                    "type": "string"
+                },
+                "topup_conversion_rate": {
+                    "description": "topup_conversion_rate is the conversion rate for the topup to the currency",
                     "type": "string"
                 },
                 "transaction_reason": {
@@ -21138,7 +21417,7 @@ const docTemplate = `{
                 },
                 "conversion_rate": {
                     "description": "ConversionRate is the conversion rate of the price unit to the fiat currency",
-                    "type": "number"
+                    "type": "string"
                 },
                 "created_at": {
                     "type": "string"
@@ -21210,7 +21489,8 @@ const docTemplate = `{
                 },
                 "min_quantity": {
                     "description": "MinQuantity is the minimum quantity of the price",
-                    "type": "string"
+                    "type": "string",
+                    "x-nullable": true
                 },
                 "parent_price_id": {
                     "description": "ParentPriceID references the root price (always set for price lineage tracking)",
@@ -21222,7 +21502,7 @@ const docTemplate = `{
                 },
                 "price_unit_amount": {
                     "description": "PriceUnitAmount is the amount of the price unit",
-                    "type": "number"
+                    "type": "string"
                 },
                 "price_unit_id": {
                     "description": "PriceUnitID is the id of the price unit (for CUSTOM type)",
@@ -22164,6 +22444,17 @@ const docTemplate = `{
                 "CouponTypePercentage"
             ]
         },
+        "types.CreditBreakdown": {
+            "type": "object",
+            "properties": {
+                "free": {
+                    "type": "string"
+                },
+                "purchased": {
+                    "type": "string"
+                }
+            }
+        },
         "types.CreditGrantApplicationReason": {
             "type": "string",
             "enum": [
@@ -22500,12 +22791,14 @@ const docTemplate = `{
             "enum": [
                 "EVENTS",
                 "PRICES",
-                "CUSTOMERS"
+                "CUSTOMERS",
+                "FEATURES"
             ],
             "x-enum-varnames": [
                 "EntityTypeEvents",
                 "EntityTypePrices",
-                "EntityTypeCustomers"
+                "EntityTypeCustomers",
+                "EntityTypeFeatures"
             ]
         },
         "types.FeatureFilter": {
@@ -22648,6 +22941,7 @@ const docTemplate = `{
             "enum": [
                 "eq",
                 "contains",
+                "not_contains",
                 "gt",
                 "lt",
                 "in",
@@ -22658,6 +22952,7 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "EQUAL",
                 "CONTAINS",
+                "NOT_CONTAINS",
                 "GREATER_THAN",
                 "LESS_THAN",
                 "IN",
@@ -23321,6 +23616,43 @@ const docTemplate = `{
                 "S3EncryptionTypeAwsKmsDsse"
             ]
         },
+        "types.S3ExportConfig": {
+            "type": "object",
+            "properties": {
+                "bucket": {
+                    "description": "S3 bucket name",
+                    "type": "string"
+                },
+                "compression": {
+                    "description": "Compression type: \"gzip\", \"none\" (default: \"none\")",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.S3CompressionType"
+                        }
+                    ]
+                },
+                "encryption": {
+                    "description": "Encryption type: \"AES256\", \"aws:kms\", \"aws:kms:dsse\" (default: \"AES256\")",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.S3EncryptionType"
+                        }
+                    ]
+                },
+                "is_flexprice_managed": {
+                    "description": "If true, use Flexprice-managed S3 credentials instead of user-provided",
+                    "type": "boolean"
+                },
+                "key_prefix": {
+                    "description": "Optional prefix for S3 keys (e.g., \"flexprice-exports/\")",
+                    "type": "string"
+                },
+                "region": {
+                    "description": "AWS region (e.g., \"us-west-2\")",
+                    "type": "string"
+                }
+            }
+        },
         "types.S3JobConfig": {
             "type": "object",
             "properties": {
@@ -23663,6 +23995,14 @@ const docTemplate = `{
                 },
                 "quote": {
                     "$ref": "#/definitions/types.EntitySyncConfig"
+                },
+                "s3": {
+                    "description": "S3 connection metadata (for Flexprice-managed S3 connections)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.S3ExportConfig"
+                        }
+                    ]
                 },
                 "subscription": {
                     "$ref": "#/definitions/types.EntitySyncConfig"
