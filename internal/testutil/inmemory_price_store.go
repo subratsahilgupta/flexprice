@@ -297,3 +297,42 @@ func (s *InMemoryPriceStore) ClearByGroupID(ctx context.Context, groupID string)
 	}
 	return nil
 }
+
+// GetByLookupKey retrieves a price by its lookup key
+func (s *InMemoryPriceStore) GetByLookupKey(ctx context.Context, lookupKey string) (*price.Price, error) {
+	if lookupKey == "" {
+		return nil, ierr.NewError("lookup key is required").
+			WithHint("Lookup key is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get tenant and environment from context
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	// Search through all prices
+	var foundPrice *price.Price
+	s.InMemoryStore.mu.RLock()
+	for _, p := range s.InMemoryStore.items {
+		if p.LookupKey == lookupKey &&
+			p.TenantID == tenantID &&
+			p.EnvironmentID == environmentID &&
+			p.Status == types.StatusPublished &&
+			p.EndDate == nil { // Only return active prices (without end date)
+			foundPrice = p
+			break
+		}
+	}
+	s.InMemoryStore.mu.RUnlock()
+
+	if foundPrice == nil {
+		return nil, ierr.NewError("price not found").
+			WithHintf("Price with lookup key '%s' was not found", lookupKey).
+			WithReportableDetails(map[string]interface{}{
+				"lookup_key": lookupKey,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	return foundPrice, nil
+}

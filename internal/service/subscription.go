@@ -1559,7 +1559,6 @@ func (s *subscriptionService) CancelSubscription(
 			// Cancel all pending schedules (especially plan changes) before creating cancellation schedule
 			if err := s.cancelAllPendingSchedules(ctx, subscription.ID); err != nil {
 				logger.Errorw("failed to cancel pending schedules", "error", err)
-				// Continue anyway - we still want to create the cancellation schedule
 			}
 
 			// Create the cancellation schedule with original state
@@ -1569,8 +1568,12 @@ func (s *subscriptionService) CancelSubscription(
 		}
 
 		// Step 8: Void future credit grants
+		// Step 8: Set credit grant end dates to effective cancellation date, then archive grants
 		creditGrantService := NewCreditGrantService(s.ServiceParams)
-		err = creditGrantService.CancelFutureSubscriptionGrants(ctx, subscription.ID)
+		err = creditGrantService.CancelFutureSubscriptionGrants(ctx, dto.CancelFutureSubscriptionGrantsRequest{
+			SubscriptionID: subscription.ID,
+			EffectiveDate:  &effectiveDate,
+		})
 		if err != nil {
 			return err
 		}

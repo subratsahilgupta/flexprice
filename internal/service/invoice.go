@@ -2480,6 +2480,8 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, fina
 		// STEP 3: Update invoice totals, metadata, and customer ID
 		// Use invoicing customer ID from the new invoice request (which uses sub.GetInvoicingCustomerID())
 		// This ensures backward compatibility - if subscription has invoicing customer ID, use it; otherwise use subscription customer ID
+		inv.Total = newInvoiceReq.Total
+		inv.Subtotal = newInvoiceReq.Subtotal
 		inv.CustomerID = newInvoiceReq.CustomerID
 		inv.AmountDue = newInvoiceReq.AmountDue
 		inv.AmountRemaining = newInvoiceReq.AmountDue.Sub(inv.AmountPaid)
@@ -2502,23 +2504,29 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string, fina
 		for i, lineItemReq := range newInvoiceReq.LineItems {
 
 			lineItem := &invoice.InvoiceLineItem{
-				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
-				InvoiceID:       inv.ID,
-				CustomerID:      inv.CustomerID,
-				EntityID:        lineItemReq.EntityID,
-				EntityType:      lineItemReq.EntityType,
-				PlanDisplayName: lineItemReq.PlanDisplayName,
-				PriceID:         lineItemReq.PriceID,
-				PriceType:       lineItemReq.PriceType,
-				DisplayName:     lineItemReq.DisplayName,
-				Amount:          lineItemReq.Amount,
-				Quantity:        lineItemReq.Quantity,
-				Currency:        inv.Currency,
-				PeriodStart:     lineItemReq.PeriodStart,
-				PeriodEnd:       lineItemReq.PeriodEnd,
-				Metadata:        lineItemReq.Metadata,
-				EnvironmentID:   inv.EnvironmentID,
-				BaseModel:       types.GetDefaultBaseModel(txCtx),
+				ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+				InvoiceID:        inv.ID,
+				CustomerID:       inv.CustomerID,
+				SubscriptionID:   inv.SubscriptionID,
+				EntityID:         lineItemReq.EntityID,
+				EntityType:       lineItemReq.EntityType,
+				PlanDisplayName:  lineItemReq.PlanDisplayName,
+				PriceID:          lineItemReq.PriceID,
+				PriceType:        lineItemReq.PriceType,
+				DisplayName:      lineItemReq.DisplayName,
+				MeterID:          lineItemReq.MeterID,
+				MeterDisplayName: lineItemReq.MeterDisplayName,
+				PriceUnit:        lineItemReq.PriceUnit,
+				PriceUnitAmount:  lineItemReq.PriceUnitAmount,
+				Amount:           lineItemReq.Amount,
+				Quantity:         lineItemReq.Quantity,
+				Currency:         inv.Currency,
+				PeriodStart:      lineItemReq.PeriodStart,
+				PeriodEnd:        lineItemReq.PeriodEnd,
+				Metadata:         lineItemReq.Metadata,
+				EnvironmentID:    inv.EnvironmentID,
+				CommitmentInfo:   lineItemReq.CommitmentInfo,
+				BaseModel:        types.GetDefaultBaseModel(txCtx),
 			}
 			newLineItems[i] = lineItem
 		}

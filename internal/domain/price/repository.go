@@ -25,4 +25,6 @@ type Repository interface {
 	// Group-related operations (minimal set)
 	GetByGroupIDs(ctx context.Context, groupIDs []string) ([]*Price, error)
 	ClearByGroupID(ctx context.Context, groupID string) error
+
+	GetByLookupKey(ctx context.Context, lookupKey string) (*Price, error)
 }

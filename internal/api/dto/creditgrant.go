@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	domainCreditGrantApplication "github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
 	"github.com/flexprice/flexprice/internal/errors"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/samber/lo"
@@ -434,4 +435,34 @@ func (r *CreateCreditGrantApplicationRequest) ToCreditGrantApplication(ctx conte
 		EnvironmentID:                   types.GetEnvironmentID(ctx),
 		BaseModel:                       types.GetDefaultBaseModel(ctx),
 	}
+}
+
+// CancelFutureSubscriptionGrantsRequest represents the request to cancel future credit grants for a subscription
+type CancelFutureSubscriptionGrantsRequest struct {
+	SubscriptionID string     `json:"subscription_id" binding:"required"`
+	EffectiveDate  *time.Time `json:"effective_date,omitempty"`
+}
+
+// Validate validates the cancel future subscription grants request
+func (r *CancelFutureSubscriptionGrantsRequest) Validate() error {
+
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	// EffectiveDate is optional - if not provided, it defaults to now in the implementation
+	// Only validate if it's provided
+	if r.EffectiveDate != nil && !r.EffectiveDate.IsZero() {
+		// Allow dates that are at or within 5 seconds of the current time
+		// This accounts for timing differences between date calculation and validation
+		now := time.Now().UTC()
+		tolerance := 5 * time.Second
+		if r.EffectiveDate.Before(now.Add(-tolerance)) {
+			return errors.NewError("effective_date must be at or after the current time (within tolerance)").
+				WithHint("Please provide a valid effective date that is not too far in the past").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
 }
