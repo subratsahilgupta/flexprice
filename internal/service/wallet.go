@@ -2249,7 +2249,7 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 			}
 
 			// Calculate usage charges
-			usageCharges, usageTotal, err := billingService.CalculateUsageCharges(ctx, sub, usage, periodStart, periodEnd)
+			usageCharges, usageTotal, err := billingService.CalculateUsageChargesForPreview(ctx, sub, usage, periodStart, periodEnd)
 			if err != nil {
 				return nil, err
 			}
