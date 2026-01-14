@@ -263,6 +263,7 @@ func (r *walletRepository) FindEligibleCredits(ctx context.Context, walletID str
 					wallettransaction.ExpiryDateGTE(timeReference),
 				),
 				wallettransaction.StatusEQ(string(types.StatusPublished)),
+				wallettransaction.TransactionStatusEQ(types.TransactionStatusCompleted),
 			).
 			Order(
 				ent.Asc(wallettransaction.FieldPriority), // Sort by priority first (nil values come last)
@@ -1105,7 +1106,7 @@ func (o WalletTransactionQueryOptions) GetFieldResolver(st string) (string, erro
 	return fieldName, nil
 }
 
-// GetCreditsAvailableBreakdown retrieves the breakdown of available credits by type (purchased, free, other)
+// GetCreditsAvailableBreakdown retrieves the breakdown of available credits by type (purchased, free)
 func (r *walletRepository) GetCreditsAvailableBreakdown(ctx context.Context, walletID string) (*types.CreditBreakdown, error) {
 	span := StartRepositorySpan(ctx, "wallet", "get_credits_available_breakdown", map[string]interface{}{
 		"wallet_id": walletID,
