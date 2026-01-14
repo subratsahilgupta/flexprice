@@ -863,6 +863,13 @@ definitions:
     properties:
       cadence:
         $ref: '#/definitions/types.CreditGrantCadence'
+      conversion_rate:
+        description: |-
+          amount in the currency =  number of credits * conversion_rate
+          ex if conversion_rate is 1, then 1 USD = 1 credit
+          ex if conversion_rate is 2, then 1 USD = 0.5 credits
+          ex if conversion_rate is 0.5, then 1 USD = 2 credits
+        type: string
       credits:
         type: string
       expiration_duration:
@@ -886,6 +893,13 @@ definitions:
       scope:
         $ref: '#/definitions/types.CreditGrantScope'
       subscription_id:
+        type: string
+      topup_conversion_rate:
+        description: |-
+          topup_conversion_rate is the conversion rate for the topup to the currency
+          ex if topup_conversion_rate is 1, then 1 USD = 1 credit
+          ex if topup_conversion_rate is 2, then 1 USD = 0.5 credits
+          ex if topup_conversion_rate is 0.5, then 1 USD = 2 credits
         type: string
     required:
     - cadence
@@ -1944,6 +1958,13 @@ definitions:
           - currency: set to price unit's base_currency
           - conversion_rate: set to price unit's conversion_rate
         type: string
+      topup_conversion_rate:
+        description: |-
+          topup_conversion_rate is the conversion rate for the topup to the currency
+          ex if topup_conversion_rate is 1, then 1 USD = 1 credit
+          ex if topup_conversion_rate is 2, then 1 USD = 0.5 credits
+          ex if topup_conversion_rate is 0.5, then 1 USD = 2 credits
+        type: string
       wallet_type:
         $ref: '#/definitions/types.WalletType'
     required:
@@ -2000,6 +2021,13 @@ definitions:
     properties:
       cadence:
         $ref: '#/definitions/types.CreditGrantCadence'
+      conversion_rate:
+        description: |-
+          amount in the currency =  number of credits * conversion_rate
+          ex if conversion_rate is 1, then 1 USD = 1 credit
+          ex if conversion_rate is 2, then 1 USD = 0.5 credits
+          ex if conversion_rate is 0.5, then 1 USD = 2 credits
+        type: string
       created_at:
         type: string
       created_by:
@@ -2041,6 +2069,13 @@ definitions:
       subscription_id:
         type: string
       tenant_id:
+        type: string
+      topup_conversion_rate:
+        description: |-
+          topup_conversion_rate is the conversion rate for the topup to the currency
+          ex if topup_conversion_rate is 1, then 1 USD = 1 credit
+          ex if topup_conversion_rate is 2, then 1 USD = 0.5 credits
+          ex if topup_conversion_rate is 0.5, then 1 USD = 2 credits
         type: string
       updated_at:
         type: string
@@ -3721,6 +3756,16 @@ definitions:
       price_id:
         description: PriceID references the plan price to override
         type: string
+      price_unit_amount:
+        description: PriceUnitAmount is the amount of the price unit (for CUSTOM type,
+          FLAT_FEE/PACKAGE billing models)
+        type: string
+      price_unit_tiers:
+        description: PriceUnitTiers are the tiers for the price unit (for CUSTOM type,
+          TIERED billing model)
+        items:
+          $ref: '#/definitions/dto.CreatePriceTier'
+        type: array
       quantity:
         description: Quantity for this line item (optional)
         type: string
@@ -3935,6 +3980,15 @@ definitions:
         description: name of the plan
         type: string
     type: object
+  dto.PortalSessionResponse:
+    properties:
+      expires_at:
+        type: string
+      token:
+        type: string
+      url:
+        type: string
+    type: object
   dto.PriceResponse:
     properties:
       addon:
@@ -3958,7 +4012,7 @@ definitions:
       conversion_rate:
         description: ConversionRate is the conversion rate of the price unit to the
           fiat currency
-        type: number
+        type: string
       created_at:
         type: string
       created_by:
@@ -4017,6 +4071,7 @@ definitions:
       min_quantity:
         description: MinQuantity is the minimum quantity of the price
         type: string
+        x-nullable: true
       parent_price_id:
         description: ParentPriceID references the root price (always set for price
           lineage tracking)
@@ -4028,7 +4083,7 @@ definitions:
         type: string
       price_unit_amount:
         description: PriceUnitAmount is the amount of the price unit
-        type: number
+        type: string
       price_unit_id:
         description: PriceUnitID is the id of the price unit (for CUSTOM type)
         type: string
@@ -5429,6 +5484,8 @@ definitions:
         $ref: '#/definitions/types.BillingModel'
       description:
         type: string
+      display_name:
+        type: string
       effective_from:
         type: string
       group_id:
@@ -5443,6 +5500,16 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      price_unit_amount:
+        description: PriceUnitAmount is the price unit amount (for CUSTOM price unit
+          type, FLAT_FEE/PACKAGE billing models)
+        type: string
+      price_unit_tiers:
+        description: PriceUnitTiers are the price unit tiers (for CUSTOM price unit
+          type, TIERED billing model)
+        items:
+          $ref: '#/definitions/dto.CreatePriceTier'
+        type: array
       tier_mode:
         allOf:
         - $ref: '#/definitions/types.BillingTier'
@@ -5754,6 +5821,8 @@ definitions:
         type: string
       credit_balance:
         type: string
+      credits_available_breakdown:
+        $ref: '#/definitions/types.CreditBreakdown'
       currency:
         type: string
       current_period_usage:
@@ -5777,6 +5846,13 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
       tenant_id:
+        type: string
+      topup_conversion_rate:
+        description: |-
+          topup_conversion_rate is the conversion rate for the topup to the currency
+          ex if topup_conversion_rate is 1, then 1 USD = 1 credit
+          ex if topup_conversion_rate is 2, then 1 USD = 0.5 credits
+          ex if topup_conversion_rate is 0.5, then 1 USD = 2 credits
         type: string
       unpaid_invoices_amount:
         type: string
@@ -5804,16 +5880,27 @@ definitions:
       config:
         $ref: '#/definitions/types.WalletConfig'
       conversion_rate:
+        description: |-
+          amount in the currency =  number of credits * conversion_rate
+          ex if conversion_rate is 1, then 1 USD = 1 credit
+          ex if conversion_rate is 2, then 1 USD = 0.5 credits
+          ex if conversion_rate is 0.5, then 1 USD = 2 credits
         type: string
       created_at:
         type: string
+      created_by:
+        type: string
       credit_balance:
         type: string
+      credits_available_breakdown:
+        $ref: '#/definitions/types.CreditBreakdown'
       currency:
         type: string
       customer_id:
         type: string
       description:
+        type: string
+      environment_id:
         type: string
       id:
         type: string
@@ -5821,7 +5908,20 @@ definitions:
         $ref: '#/definitions/types.Metadata'
       name:
         type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      topup_conversion_rate:
+        description: |-
+          topup_conversion_rate is the conversion rate for the topup to the currency
+          ex if topup_conversion_rate is 1, then 1 USD = 1 credit
+          ex if topup_conversion_rate is 2, then 1 USD = 0.5 credits
+          ex if topup_conversion_rate is 0.5, then 1 USD = 2 credits
+        type: string
       updated_at:
+        type: string
+      updated_by:
         type: string
       wallet_status:
         $ref: '#/definitions/types.WalletStatus'
@@ -5831,6 +5931,10 @@ definitions:
   dto.WalletTransactionResponse:
     properties:
       amount:
+        type: string
+      conversion_rate:
+        description: conversion_rate is the conversion rate for the transaction to
+          the currency
         type: string
       created_at:
         type: string
@@ -5873,6 +5977,10 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
       tenant_id:
+        type: string
+      topup_conversion_rate:
+        description: topup_conversion_rate is the conversion rate for the topup to
+          the currency
         type: string
       transaction_reason:
         $ref: '#/definitions/types.TransactionReason'
@@ -6256,7 +6364,7 @@ definitions:
       conversion_rate:
         description: ConversionRate is the conversion rate of the price unit to the
           fiat currency
-        type: number
+        type: string
       created_at:
         type: string
       created_by:
@@ -6311,6 +6419,7 @@ definitions:
       min_quantity:
         description: MinQuantity is the minimum quantity of the price
         type: string
+        x-nullable: true
       parent_price_id:
         description: ParentPriceID references the root price (always set for price
           lineage tracking)
@@ -6320,7 +6429,7 @@ definitions:
         type: string
       price_unit_amount:
         description: PriceUnitAmount is the amount of the price unit
-        type: number
+        type: string
       price_unit_id:
         description: PriceUnitID is the id of the price unit (for CUSTOM type)
         type: string
@@ -6993,6 +7102,13 @@ definitions:
     x-enum-varnames:
     - CouponTypeFixed
     - CouponTypePercentage
+  types.CreditBreakdown:
+    properties:
+      free:
+        type: string
+      purchased:
+        type: string
+    type: object
   types.CreditGrantApplicationReason:
     enum:
     - first_time_recurring_credit_grant
@@ -7244,11 +7360,13 @@ definitions:
     - EVENTS
     - PRICES
     - CUSTOMERS
+    - FEATURES
     type: string
     x-enum-varnames:
     - EntityTypeEvents
     - EntityTypePrices
     - EntityTypeCustomers
+    - EntityTypeFeatures
   types.FeatureFilter:
     properties:
       end_time:
@@ -7346,6 +7464,7 @@ definitions:
     enum:
     - eq
     - contains
+    - not_contains
     - gt
     - lt
     - in
@@ -7356,6 +7475,7 @@ definitions:
     x-enum-varnames:
     - EQUAL
     - CONTAINS
+    - NOT_CONTAINS
     - GREATER_THAN
     - LESS_THAN
     - IN
@@ -7866,6 +7986,30 @@ definitions:
     - S3EncryptionTypeAES256
     - S3EncryptionTypeAwsKms
     - S3EncryptionTypeAwsKmsDsse
+  types.S3ExportConfig:
+    properties:
+      bucket:
+        description: S3 bucket name
+        type: string
+      compression:
+        allOf:
+        - $ref: '#/definitions/types.S3CompressionType'
+        description: 'Compression type: "gzip", "none" (default: "none")'
+      encryption:
+        allOf:
+        - $ref: '#/definitions/types.S3EncryptionType'
+        description: 'Encryption type: "AES256", "aws:kms", "aws:kms:dsse" (default:
+          "AES256")'
+      is_flexprice_managed:
+        description: If true, use Flexprice-managed S3 credentials instead of user-provided
+        type: boolean
+      key_prefix:
+        description: Optional prefix for S3 keys (e.g., "flexprice-exports/")
+        type: string
+      region:
+        description: AWS region (e.g., "us-west-2")
+        type: string
+    type: object
   types.S3JobConfig:
     properties:
       bucket:
@@ -8113,6 +8257,10 @@ definitions:
         description: Integration sync (Stripe, Razorpay, QuickBooks, etc.)
       quote:
         $ref: '#/definitions/types.EntitySyncConfig'
+      s3:
+        allOf:
+        - $ref: '#/definitions/types.S3ExportConfig'
+        description: S3 connection metadata (for Flexprice-managed S3 connections)
       subscription:
         $ref: '#/definitions/types.EntitySyncConfig'
     type: object
@@ -10558,6 +10706,9 @@ paths:
       - application/json
       description: Get all wallets for a customer by lookup key or id
       parameters:
+      - in: query
+        name: expand
+        type: string
       - in: query
         name: id
         type: string
@@ -13051,6 +13202,42 @@ paths:
       summary: List plans by filter
       tags:
       - Plans
+  /portal/{external_id}:
+    get:
+      consumes:
+      - application/json
+      description: Generate a dashboard URL/token for a customer to access their billing
+        information
+      parameters:
+      - description: Customer External ID
+        in: path
+        name: external_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PortalSessionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a customer portal session
+      tags:
+      - CustomerPortal
   /prices:
     get:
       consumes:
@@ -13334,6 +13521,37 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Create multiple prices in bulk
+      tags:
+      - Prices
+  /prices/lookup/{lookup_key}:
+    get:
+      consumes:
+      - application/json
+      description: Get price by lookup key
+      parameters:
+      - description: Lookup key
+        in: path
+        name: lookup_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.PriceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get price by lookup key
       tags:
       - Prices
   /prices/units:
@@ -14634,6 +14852,7 @@ paths:
         - EVENTS
         - PRICES
         - CUSTOMERS
+        - FEATURES
         in: query
         name: entity_type
         type: string
@@ -14641,6 +14860,7 @@ paths:
         - EntityTypeEvents
         - EntityTypePrices
         - EntityTypeCustomers
+        - EntityTypeFeatures
       - in: query
         name: expand
         type: string
@@ -14785,6 +15005,44 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Get a task
+      tags:
+      - Tasks
+  /tasks/{id}/download:
+    get:
+      consumes:
+      - application/json
+      description: Generate a presigned URL for downloading an exported file (supports
+        both Flexprice-managed and customer-owned S3)
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Download task export file
       tags:
       - Tasks
   /tasks/{id}/status:
@@ -15771,6 +16029,10 @@ paths:
           type: string
         name: wallet_ids
         type: array
+      - description: Expand fields (e.g., credits_available_breakdown)
+        in: query
+        name: expand
+        type: string
       produces:
       - application/json
       responses:
@@ -15907,6 +16169,10 @@ paths:
         in: path
         name: id
         required: true
+        type: string
+      - description: Expand fields (e.g., credits_available_breakdown)
+        in: query
+        name: expand
         type: string
       produces:
       - application/json
