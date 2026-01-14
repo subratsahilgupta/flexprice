@@ -91,6 +91,9 @@ func main() {
 			sentry.NewSentryService,
 			pyroscope.NewPyroscopeService,
 
+			// redis
+			redis.NewClient,
+
 			// Cache
 			cache.Initialize,
 
@@ -100,9 +103,6 @@ func main() {
 
 			// Clickhouse
 			clickhouse.NewClickHouseStore,
-
-			// redis
-			redis.NewClient,
 
 			// Typst
 			typst.DefaultCompiler,
