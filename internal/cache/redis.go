@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
 	redisClient "github.com/flexprice/flexprice/internal/redis"
 	"github.com/redis/go-redis/v9"
@@ -23,23 +25,30 @@ const (
 type RedisCache struct {
 	client *redis.ClusterClient
 	log    *logger.Logger
+	config *config.Configuration
 }
 
 // Redis cache instance
 var redisCache *RedisCache
 
 // NewRedisCache creates a new Redis cache
-func NewRedisCache(client *redisClient.Client, log *logger.Logger) *RedisCache {
+func NewRedisCache(client *redisClient.Client, log *logger.Logger, config *config.Configuration) *RedisCache {
 	return &RedisCache{
 		client: client.GetClient(),
 		log:    log,
+		config: config,
 	}
 }
 
 // InitializeRedisCache initializes the global Redis cache instance
 func InitializeRedisCache(client *redisClient.Client, log *logger.Logger) {
+	config, err := config.NewConfig()
+	if err != nil {
+		log.Error("Failed to initialize Redis cache", "error", err)
+		return
+	}
 	if redisCache == nil {
-		redisCache = NewRedisCache(client, log)
+		redisCache = NewRedisCache(client, log, config)
 	}
 }
 
@@ -50,7 +59,13 @@ func GetRedisCache() *RedisCache {
 
 // Get retrieves a value from the cache
 func (c *RedisCache) Get(ctx context.Context, key string) (interface{}, bool) {
-	val, err := c.client.Get(ctx, key).Result()
+
+	if !c.config.Cache.Enabled {
+		fmt.Println("Cache is disabled")
+		return nil, false
+	}
+
+	value, err := c.client.Get(ctx, key).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			// Key does not exist
@@ -60,18 +75,16 @@ func (c *RedisCache) Get(ctx context.Context, key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	// Try to unmarshal as JSON first
-	var result interface{}
-	if err := json.Unmarshal([]byte(val), &result); err != nil {
-		// If it's not valid JSON, return as string
-		return val, true
-	}
-
-	return result, true
+	return value, true
 }
 
 // Set adds a value to the cache with the specified expiration
 func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) {
+
+	if !c.config.Cache.Enabled {
+		fmt.Println("Cache is disabled")
+		return
+	}
 	// Use default expiration if none specified
 	if expiration == 0 {
 		expiration = ExpiryDefaultRedis
@@ -99,6 +112,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, exp
 
 // Delete removes a key from the cache with retry
 func (c *RedisCache) Delete(ctx context.Context, key string) {
+
 	err := c.delete(ctx, key)
 	if err != nil {
 		c.log.Warn("Redis DELETE failed, retrying...", "key", key, "error", err)
