@@ -94,7 +94,7 @@ webhook:
   multiplier: 2.0
   max_elapsed_time: 2m
   tenants:
-    "00000000-0000-0000-0000-000000000000":
+    "tenant_01JJ20ZF9M5GQQXJG2AQSMZCVM":
       enabled: true
       endpoint: "http://localhost:8080/health"
       headers:
@@ -153,6 +153,7 @@ flexprice_s3_exports:
 
 cache:
   enabled: false
+  type: "inmemory"
 
 event_processing:
   topic: "events"

@@ -22,6 +22,7 @@ import (
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/pyroscope"
 	"github.com/flexprice/flexprice/internal/rbac"
+	"github.com/flexprice/flexprice/internal/redis"
 	"github.com/flexprice/flexprice/internal/repository"
 	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/sentry"
@@ -92,7 +93,6 @@ func main() {
 
 			// Cache
 			cache.Initialize,
-			cache.NewInMemoryCache,
 
 			// Postgres
 			postgres.NewEntClients,
@@ -100,6 +100,9 @@ func main() {
 
 			// Clickhouse
 			clickhouse.NewClickHouseStore,
+
+			// redis
+			redis.NewClient,
 
 			// Typst
 			typst.DefaultCompiler,

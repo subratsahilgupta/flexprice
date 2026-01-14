@@ -4,102 +4,62 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"time"
 
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/redis/go-redis/v9"
 )
 
-// Config holds Redis connection configuration
-type Config struct {
-	Host     string
-	Port     int
-	Password string
-	DB       int
-	UseTLS   bool
-	PoolSize int
-	Timeout  time.Duration
-}
-
-// ConfigFromMap creates a Config from a map[string]interface{}
-func ConfigFromMap(m map[string]interface{}) Config {
-	cfg := Config{}
-
-	if host, ok := m["Host"].(string); ok {
-		cfg.Host = host
-	}
-
-	if port, ok := m["Port"].(int); ok {
-		cfg.Port = port
-	}
-
-	if password, ok := m["Password"].(string); ok {
-		cfg.Password = password
-	}
-
-	if db, ok := m["DB"].(int); ok {
-		cfg.DB = db
-	}
-
-	if useTLS, ok := m["UseTLS"].(bool); ok {
-		cfg.UseTLS = useTLS
-	}
-
-	if poolSize, ok := m["PoolSize"].(int); ok {
-		cfg.PoolSize = poolSize
-	}
-
-	if timeout, ok := m["Timeout"].(time.Duration); ok {
-		cfg.Timeout = timeout
-	}
-
-	return cfg
-}
-
 // Client wraps Redis client functionality
 type Client struct {
-	rdb  *redis.Client
-	log  *logger.Logger
-	opts *redis.Options
+	rdb *redis.ClusterClient
+	log *logger.Logger
 }
 
 // NewClient creates a new Redis client
-func NewClient(cfg Config, log *logger.Logger) (*Client, error) {
-	opts := &redis.Options{
-		Addr:         fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-		Password:     cfg.Password,
-		DB:           cfg.DB,
-		DialTimeout:  cfg.Timeout,
-		ReadTimeout:  cfg.Timeout,
-		WriteTimeout: cfg.Timeout,
-		PoolSize:     cfg.PoolSize,
-	}
-
-	if cfg.UseTLS {
-		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-	}
-
-	rdb := redis.NewClient(opts)
+func NewClient(config *config.Configuration, log *logger.Logger) (*Client, error) {
 
 	// Test connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), config.Redis.Timeout)
 	defer cancel()
 
-	if _, err := rdb.Ping(ctx).Result(); err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+	// Create cluster client
+	clusterOpts := &redis.ClusterOptions{
+		Addrs:        []string{fmt.Sprintf("%s:%d", config.Redis.Host, config.Redis.Port)},
+		Password:     config.Redis.Password,
+		ReadTimeout:  config.Redis.Timeout,
+		WriteTimeout: config.Redis.Timeout,
+		PoolSize:     config.Redis.PoolSize,
 	}
 
-	log.Info("Connected to Redis successfully")
+	if config.Redis.UseTLS {
+		clusterOpts.TLSConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true, // Required for AWS ElastiCache wildcard certificates
+		}
+	}
+
+	rdb := redis.NewClusterClient(clusterOpts)
+
+	result, err := rdb.Ping(ctx).Result()
+
+	if err != nil {
+		log.Errorw("Failed to connect to Redis Cluster", "error", err)
+		return nil, err
+	}
+
+	log.Infow("PING result", "result", result)
+
+	log.Infow("Connected to Redis Cluster successfully", "addr", clusterOpts.Addrs)
 
 	return &Client{
-		rdb:  rdb,
-		log:  log,
-		opts: opts,
+		rdb: rdb,
+		log: log,
 	}, nil
 }
 
 // GetClient returns the underlying Redis client
-func (c *Client) GetClient() *redis.Client {
+func (c *Client) GetClient() *redis.ClusterClient {
 	return c.rdb
 }
 
@@ -112,20 +72,4 @@ func (c *Client) Close() error {
 func (c *Client) Ping(ctx context.Context) error {
 	_, err := c.rdb.Ping(ctx).Result()
 	return err
-}
-
-// reconnect attempts to reconnect to Redis
-func (c *Client) reconnect(ctx context.Context) error {
-	if err := c.rdb.Close(); err != nil {
-		c.log.Error("Failed to close existing Redis connection", "error", err)
-	}
-
-	c.rdb = redis.NewClient(c.opts)
-
-	if _, err := c.rdb.Ping(ctx).Result(); err != nil {
-		return fmt.Errorf("failed to reconnect to Redis: %w", err)
-	}
-
-	c.log.Info("Successfully reconnected to Redis")
-	return nil
 }

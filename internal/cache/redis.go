@@ -21,7 +21,7 @@ const (
 
 // RedisCache implements the Cache interface using Redis
 type RedisCache struct {
-	client *redis.Client
+	client *redis.ClusterClient
 	log    *logger.Logger
 }
 

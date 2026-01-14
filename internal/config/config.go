@@ -49,11 +49,12 @@ type Configuration struct {
 	OAuth                      OAuthConfig                      `mapstructure:"oauth" validate:"required"`
 	WalletBalanceAlert         WalletBalanceAlertConfig         `mapstructure:"wallet_balance_alert" validate:"required"`
 	CustomerPortal             CustomerPortalConfig             `mapstructure:"customer_portal" validate:"required"`
-	RedisConfig                RedisConfig                      `mapstructure:"redis" validate:"required"`
+	Redis                      RedisConfig                      `mapstructure:"redis" validate:"required"`
 }
 
 type CacheConfig struct {
-	Enabled bool `mapstructure:"enabled" validate:"required"`
+	Enabled bool   `mapstructure:"enabled" validate:"required"`
+	Type    string `mapstructure:"type" validate:"required"`
 }
 
 type S3Config struct {
