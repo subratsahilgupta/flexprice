@@ -1123,7 +1123,6 @@ func (r *walletRepository) GetCreditsAvailableBreakdown(ctx context.Context, wal
 			CASE 
 				WHEN transaction_reason IN ('PURCHASED_CREDIT_INVOICED', 'PURCHASED_CREDIT_DIRECT') THEN 'PURCHASED'
 				WHEN transaction_reason IN ('FREE_CREDIT_GRANT', 'SUBSCRIPTION_CREDIT_GRANT') THEN 'FREE'
-				ELSE 'OTHER'
 			END AS credit_type,
 			SUM(credits_available) AS total_credits_available
 		FROM wallet_transactions
@@ -1132,6 +1131,7 @@ func (r *walletRepository) GetCreditsAvailableBreakdown(ctx context.Context, wal
 			AND wallet_id = $3
 			AND type = 'credit'
 			AND transaction_status = 'completed'
+			AND status = 'published'
 		GROUP BY credit_type
 		ORDER BY credit_type
 	`
@@ -1161,8 +1161,10 @@ func (r *walletRepository) GetCreditsAvailableBreakdown(ctx context.Context, wal
 
 		err := rows.Scan(&creditType, &total)
 		if err != nil {
-			r.logger.Errorw("failed to scan credit breakdown row", "error", err)
-			continue
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Failed to scan credit breakdown row").
+				Mark(ierr.ErrDatabase)
 		}
 
 		switch creditType {
