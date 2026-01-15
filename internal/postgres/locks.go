@@ -12,7 +12,7 @@ import (
 
 // LockRequest represents a request to acquire an advisory lock
 type LockRequest struct {
-	// Key is the lock key to acquire
+	// Key is the entity ID (e.g., wallet ID) to lock
 	Key string
 	// Timeout is the maximum time to wait for the lock.
 	// If nil, defaults to 30 seconds. Must be positive.
@@ -36,14 +36,15 @@ func (r *LockRequest) GetTimeout() time.Duration {
 	return timeout
 }
 
-// LockKey acquires an advisory lock based on the provided request.
+// LockWithWait acquires an advisory lock based on the provided request.
 // If Timeout is nil, defaults to 30 seconds.
+// The key should be the entity ID (e.g., wallet ID).
 // Auto released on tx commit/rollback.
 // Must be called inside a transaction.
-func (c *Client) LockKey(ctx context.Context, req LockRequest) error {
+func (c *Client) LockWithWait(ctx context.Context, req LockRequest) error {
 	tx := c.TxFromContext(ctx)
 	if tx == nil {
-		return fmt.Errorf("LockKey must be called inside transaction")
+		return fmt.Errorf("LockWithWait must be called inside transaction")
 	}
 
 	timeout := req.GetTimeout()
@@ -85,38 +86,4 @@ func isLockTimeoutError(err error) bool {
 	}
 
 	return false
-}
-
-// TryLockKey tries acquiring advisory lock immediately.
-// Returns ok=false if lock is already held.
-// Auto released on tx commit/rollback.
-// Must be called inside a transaction.
-func (c *Client) TryLockKey(ctx context.Context, key string) (bool, error) {
-	tx := c.TxFromContext(ctx)
-	if tx == nil {
-		return false, fmt.Errorf("TryLockKey must be called inside transaction")
-	}
-
-	rows, err := tx.QueryContext(ctx, `
-		SELECT pg_try_advisory_xact_lock(hashtext($1))
-	`, key)
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-
-	if !rows.Next() {
-		// Check for errors when no rows are returned
-		if err := rows.Err(); err != nil {
-			return false, err
-		}
-		return false, nil
-	}
-
-	var ok bool
-	if err := rows.Scan(&ok); err != nil {
-		return false, err
-	}
-
-	return ok, nil
 }

@@ -59,23 +59,8 @@ func (c *MockPostgresClient) Reader(ctx context.Context) *ent.Client {
 	return c.entClient
 }
 
-// LockKey is a no-op for mock client
-func (c *MockPostgresClient) LockKey(ctx context.Context, req postgres.LockRequest) error {
-	return nil
-}
-
-// TryLockKey always returns true for mock client
-func (c *MockPostgresClient) TryLockKey(ctx context.Context, key string) (bool, error) {
-	return true, nil
-}
-
-// LockRowForUpdate is a no-op for mock client
-func (c *MockPostgresClient) LockRowForUpdate(ctx context.Context, tableName types.TableName, id any) error {
-	return nil
-}
-
-// LockRowForUpdateNowait is a no-op for mock client
-func (c *MockPostgresClient) LockRowForUpdateNowait(ctx context.Context, tableName types.TableName, id any) error {
+// LockWithWait is a no-op for mock client
+func (c *MockPostgresClient) LockWithWait(ctx context.Context, req postgres.LockRequest) error {
 	return nil
 }
 

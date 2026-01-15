@@ -46,14 +46,10 @@ type IClient interface {
 	// Use for: Get, List, Count, Query operations
 	Reader(ctx context.Context) *ent.Client
 
-	// LockKey acquires an advisory lock based on the provided request.
-	// If Timeout is nil, defaults to 30 seconds. If Timeout is 0 or negative, uses fail-fast behavior.
+	// LockWithWait acquires an advisory lock with a default timeout of 30 seconds.
+	// The key should be the entity ID (e.g., wallet ID).
 	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
-	LockKey(ctx context.Context, req LockRequest) error
-
-	// TryLockKey tries to acquire an advisory lock (TRY mode) - returns false if already locked.
-	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
-	TryLockKey(ctx context.Context, key string) (bool, error)
+	LockWithWait(ctx context.Context, req LockRequest) error
 
 	// Close closes the database connection
 	Close() error

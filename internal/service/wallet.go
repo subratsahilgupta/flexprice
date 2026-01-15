@@ -1530,13 +1530,9 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 	var finalBalance decimal.Decimal
 
 	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
-		// Step 1: Generate and acquire advisory lock for the wallet
+		// Step 1: Acquire advisory lock for the wallet
 		// This ensures only one operation on this wallet can proceed at a time across all servers
-		lockKey := types.GenerateLockKey(ctx, types.LockScopeWallet, map[string]interface{}{
-			"wallet_id": req.WalletID,
-		})
-
-		if err := s.DB.LockKey(ctx, postgres.LockRequest{Key: lockKey}); err != nil {
+		if err := s.DB.LockWithWait(ctx, postgres.LockRequest{Key: req.WalletID}); err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to acquire wallet lock").
 				Mark(ierr.ErrInternal)
