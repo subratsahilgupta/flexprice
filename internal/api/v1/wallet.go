@@ -330,7 +330,7 @@ func (h *WalletHandler) GetWalletBalance(c *gin.Context) {
 	}
 
 	// Get wallet balance
-	balance, err := h.walletService.GetWalletBalanceV2(c.Request.Context(), walletID, false)
+	balance, err := h.walletService.GetWalletBalanceV2(c.Request.Context(), walletID)
 	if err != nil {
 		h.logger.Error("Failed to get wallet balance", "error", err)
 		c.Error(err)
@@ -373,7 +373,7 @@ func (h *WalletHandler) GetWalletBalanceForceCached(c *gin.Context) {
 	}
 
 	// Get wallet balance
-	balance, err := h.walletService.GetWalletBalanceV2(c.Request.Context(), walletID, true)
+	balance, err := h.walletService.GetWalletBalanceFromCache(c.Request.Context(), walletID)
 	if err != nil {
 		h.logger.Error("Failed to get wallet balance", "error", err)
 		c.Error(err)
