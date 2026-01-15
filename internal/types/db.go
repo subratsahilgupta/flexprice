@@ -1,5 +1,12 @@
 package types
 
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+)
+
 // LockScope represents the scope of a database advisory lock
 type LockScope string
 
@@ -7,6 +14,53 @@ const (
 	// LockScopeWallet represents wallet entity locks
 	LockScopeWallet LockScope = "wallet"
 )
+
+// GenerateLockKey generates a lock key from a scope and parameters.
+// Automatically extracts tenant_id and environment_id from context and includes them in the key.
+// Reuses the same pattern as idempotency.GenerateKey for consistency.
+// The key is a deterministic string that Postgres will hash internally.
+func GenerateLockKey(ctx context.Context, scope LockScope, params map[string]interface{}) string {
+	// Extract tenant and environment IDs from context
+	tenantID := GetTenantID(ctx)
+	environmentID := GetEnvironmentID(ctx)
+
+	// Create a merged params map that includes context values
+	// User-provided params override context values if same key is provided
+	mergedParams := make(map[string]interface{})
+
+	// Add tenant_id from context if present
+	if tenantID != "" {
+		mergedParams["tenant_id"] = tenantID
+	}
+
+	// Add environment_id from context if present
+	if environmentID != "" {
+		mergedParams["environment_id"] = environmentID
+	}
+
+	// Merge user-provided params (these override context values if same key)
+	for k, v := range params {
+		mergedParams[k] = v
+	}
+
+	// Sort params for consistent ordering (same as idempotency generator)
+	keys := make([]string, 0, len(mergedParams))
+	for k := range mergedParams {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Build string in format: scope:key1=value1:key2=value2:...
+	// Same format as idempotency generator, but without hashing
+	// (Postgres hashtext() will hash it internally)
+	var b strings.Builder
+	b.WriteString(string(scope))
+	for _, k := range keys {
+		b.WriteString(fmt.Sprintf(":%s=%v", k, mergedParams[k]))
+	}
+
+	return b.String()
+}
 
 // TableName represents a database table name
 type TableName string
