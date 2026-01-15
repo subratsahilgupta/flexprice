@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -45,7 +46,7 @@ type WalletService interface {
 	GetWalletBalance(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error)
 
 	// GetWalletBalance Version 2
-	GetWalletBalanceV2(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error)
+	GetWalletBalanceV2(ctx context.Context, walletID string, forceCache bool) (*dto.WalletBalanceResponse, error)
 
 	// TerminateWallet terminates a wallet by closing it and debiting remaining balance
 	TerminateWallet(ctx context.Context, walletID string) error
@@ -1872,7 +1873,7 @@ func (s *walletService) PublishEvent(ctx context.Context, eventName string, w *w
 	}
 
 	// Get real-time balance
-	balance, err := s.GetWalletBalanceV2(ctx, w.ID)
+	balance, err := s.GetWalletBalanceV2(ctx, w.ID, false)
 	if err != nil {
 		s.Logger.Errorw("failed to get wallet balance for webhook",
 			"wallet_id", w.ID,
@@ -2192,7 +2193,7 @@ func (s *walletService) TopUpWalletForProratedCharge(ctx context.Context, custom
 	return nil
 }
 
-func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string) (*dto.WalletBalanceResponse, error) {
+func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string, forceCache bool) (*dto.WalletBalanceResponse, error) {
 	if walletID == "" {
 		return nil, ierr.NewError("wallet_id is required").
 			WithHint("Wallet ID is required").
@@ -2223,6 +2224,24 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 		lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeAll)
 
 	totalPendingCharges := decimal.Zero
+	if forceCache {
+		cachedBalance := s.getWalletRealtimeBalanceFromCache(ctx, walletID)
+		if cachedBalance != nil {
+			s.Logger.Info("using cached real-time balance",
+				"wallet_id", walletID,
+				"cached_balance", cachedBalance,
+			)
+			realTimeCreditBalance := s.GetCreditsFromCurrencyAmount(*cachedBalance, w.ConversionRate)
+			return &dto.WalletBalanceResponse{
+				Wallet:                w,
+				RealTimeBalance:       cachedBalance,
+				RealTimeCreditBalance: &realTimeCreditBalance,
+				BalanceUpdatedAt:      lo.ToPtr(w.UpdatedAt),
+				CurrentPeriodUsage:    &totalPendingCharges,
+			}, nil
+		}
+	}
+
 	if shouldIncludeUsage {
 
 		// STEP 1: Get all active subscriptions to calculate current usage
@@ -2304,6 +2323,8 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 
 	// Convert real-time balance to credit balance
 	realTimeCreditBalance := s.GetCreditsFromCurrencyAmount(realTimeBalance, w.ConversionRate)
+
+	s.setWalletRealtimeBalanceToCache(ctx, walletID, realTimeBalance)
 
 	return &dto.WalletBalanceResponse{
 		Wallet:                w,
@@ -2431,7 +2452,7 @@ func (s *walletService) CheckWalletBalanceAlert(ctx context.Context, req *wallet
 			"has_wallet_alert_config", w.AlertConfig != nil,
 			"event_id", req.ID,
 		)
-		balance, err := s.GetWalletBalanceV2(ctx, w.ID)
+		balance, err := s.GetWalletBalanceV2(ctx, w.ID, false)
 		if err != nil {
 			s.Logger.Errorw("failed to get wallet balance, skipping wallet",
 				"error", err,
@@ -2790,4 +2811,37 @@ func (s *walletService) GetCreditsAvailableBreakdown(ctx context.Context, wallet
 	}
 
 	return breakdown, nil
+}
+
+func (s *walletService) setWalletRealtimeBalanceToCache(ctx context.Context, walletID string, balance decimal.Decimal) {
+	span := cache.StartCacheSpan(ctx, "wallet", "set", map[string]interface{}{
+		"wallet_id": walletID,
+	})
+	defer cache.FinishSpan(span)
+
+	redisCache := cache.NewRedisCache()
+	cacheKey := cache.GenerateKey(cache.PrefixWallet, walletID)
+	redisCache.ForceCacheSet(ctx, cacheKey, balance.String(), 5*time.Minute)
+}
+
+func (s *walletService) getWalletRealtimeBalanceFromCache(ctx context.Context, walletID string) *decimal.Decimal {
+	span := cache.StartCacheSpan(ctx, "wallet", "get", map[string]interface{}{
+		"wallet_id": walletID,
+	})
+	defer cache.FinishSpan(span)
+
+	redisCache := cache.NewRedisCache()
+	cacheKey := cache.GenerateKey(cache.PrefixWallet, walletID)
+	cachedValue, found := redisCache.ForceCacheGet(ctx, cacheKey)
+	if !found {
+		return nil
+	}
+
+	balance, success := cache.UnmarshalCacheValue[decimal.Decimal](cachedValue)
+
+	if !success {
+		return nil
+	}
+
+	return balance
 }
