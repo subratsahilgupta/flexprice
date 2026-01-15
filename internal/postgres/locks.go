@@ -80,7 +80,7 @@ func isLockTimeoutError(err error) bool {
 	// Check for pq.Error directly (most common case)
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) {
-		// PostgreSQL error code 55P03 = query_canceled (lock timeout)
+		// PostgreSQL error code 55P03 = lock_not_available (lock timeout)
 		return pqErr.Code == "55P03"
 	}
 
