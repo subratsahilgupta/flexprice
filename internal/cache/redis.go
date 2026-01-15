@@ -32,28 +32,38 @@ type RedisCache struct {
 var redisCache *RedisCache
 
 // NewRedisCache creates a new Redis cache
-func NewRedisCache(client *redisClient.Client, log *logger.Logger, config *config.Configuration) *RedisCache {
-	return &RedisCache{
-		client: client.GetClient(),
-		log:    log,
-		config: config,
+func NewRedisCache() *RedisCache {
+	if redisCache == nil {
+		InitializeRedisCache()
 	}
+	return redisCache
 }
 
 // InitializeRedisCache initializes the global Redis cache instance
-func InitializeRedisCache(client *redisClient.Client, log *logger.Logger) {
+func InitializeRedisCache() {
 	config, err := config.NewConfig()
 	if err != nil {
-		log.Error("Failed to initialize Redis cache", "error", err)
+		fmt.Println("Failed to initialize Redis cache", "error", err)
 		return
 	}
 	if redisCache == nil {
-		redisCache = NewRedisCache(client, log, config)
+		redisClient, err := redisClient.NewClient(config, logger.GetLogger())
+		if err != nil {
+			fmt.Println("Failed to create Redis client", "error", err)
+			return
+		}
+		redisCache = &RedisCache{
+			client: redisClient.GetClient(),
+			config: config,
+		}
 	}
 }
 
 // GetRedisCache returns the global Redis cache instance
 func GetRedisCache() *RedisCache {
+	if redisCache == nil {
+		InitializeRedisCache()
+	}
 	return redisCache
 }
 

@@ -22,7 +22,6 @@ import (
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
 	"github.com/flexprice/flexprice/internal/pyroscope"
 	"github.com/flexprice/flexprice/internal/rbac"
-	"github.com/flexprice/flexprice/internal/redis"
 	"github.com/flexprice/flexprice/internal/repository"
 	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/sentry"
@@ -90,9 +89,6 @@ func main() {
 			// Monitoring
 			sentry.NewSentryService,
 			pyroscope.NewPyroscopeService,
-
-			// redis
-			redis.NewClient,
 
 			// Cache
 			cache.Initialize,
