@@ -580,7 +580,7 @@ func (r *customerRepository) GetCache(ctx context.Context, key string) *domainCu
 
 	cacheKey := cache.GenerateKey(cache.PrefixCustomer, types.GetTenantID(ctx), types.GetEnvironmentID(ctx), key)
 	if value, found := r.cache.Get(ctx, cacheKey); found {
-		if customer, ok := cache.UnmarshalCacheValue[domainCustomer.Customer](value); ok {
+		if customer, ok := value.(*domainCustomer.Customer); ok {
 			r.log.Debugw("cache hit", "key", cacheKey)
 			return customer
 		}

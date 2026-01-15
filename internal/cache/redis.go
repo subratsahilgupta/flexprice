@@ -24,7 +24,6 @@ const (
 // RedisCache implements the Cache interface using Redis
 type RedisCache struct {
 	client *redis.ClusterClient
-	log    *logger.Logger
 	config *config.Configuration
 }
 
@@ -81,7 +80,7 @@ func (c *RedisCache) Get(ctx context.Context, key string) (interface{}, bool) {
 			// Key does not exist
 			return nil, false
 		}
-		c.log.Error("Redis GET error", "key", key, "error", err)
+		fmt.Print("Redis GET error", "key", key, "error", err)
 		return nil, false
 	}
 
@@ -109,14 +108,14 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, exp
 		// Marshal non-string values to JSON
 		jsonBytes, err := json.Marshal(value)
 		if err != nil {
-			c.log.Error("Failed to marshal cache value", "key", key, "error", err)
+			fmt.Println("Failed to marshal cache value", "key", key, "error", err)
 			return
 		}
 		strValue = string(jsonBytes)
 	}
 
 	if err := c.client.Set(ctx, key, strValue, expiration).Err(); err != nil {
-		c.log.Error("Redis SET error", "key", key, "error", err)
+		fmt.Println("Redis SET error", "key", key, "error", err)
 	}
 }
 
@@ -125,7 +124,7 @@ func (c *RedisCache) Delete(ctx context.Context, key string) {
 
 	err := c.delete(ctx, key)
 	if err != nil {
-		c.log.Warn("Redis DELETE failed, retrying...", "key", key, "error", err)
+		fmt.Println("Redis DELETE failed, retrying...", "key", key, "error", err)
 
 		// Create a new context with timeout for the retry
 		retryCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -136,7 +135,7 @@ func (c *RedisCache) Delete(ctx context.Context, key string) {
 
 		// Retry once
 		if retryErr := c.delete(retryCtx, key); retryErr != nil {
-			c.log.Error("Redis DELETE retry failed", "key", key, "error", retryErr)
+			fmt.Println("Redis DELETE retry failed", "key", key, "error", retryErr)
 		}
 	}
 }
@@ -182,7 +181,7 @@ func (c *RedisCache) DeleteByPrefix(ctx context.Context, prefix string) {
 // Flush removes all items from the cache
 func (c *RedisCache) Flush(ctx context.Context) {
 	if err := c.client.FlushDB(ctx).Err(); err != nil {
-		c.log.Error("Redis FLUSHDB error", "error", err)
+		fmt.Println("Redis FLUSHDB error", "error", err)
 	}
 }
 
@@ -193,7 +192,7 @@ func (c *RedisCache) ForceCacheGet(ctx context.Context, key string) (interface{}
 			// Key does not exist
 			return nil, false
 		}
-		c.log.Error("Redis GET error", "key", key, "error", err)
+		fmt.Println("Redis GET error", "key", key, "error", err)
 		return nil, false
 	}
 
@@ -215,13 +214,13 @@ func (c *RedisCache) ForceCacheSet(ctx context.Context, key string, value interf
 		// Marshal non-string values to JSON
 		jsonBytes, err := json.Marshal(value)
 		if err != nil {
-			c.log.Error("Failed to marshal cache value", "key", key, "error", err)
+			fmt.Println("Failed to marshal cache value", "key", key, "error", err)
 			return
 		}
 		strValue = string(jsonBytes)
 	}
 
 	if err := c.client.Set(ctx, key, strValue, expiration).Err(); err != nil {
-		c.log.Error("Redis SET error", "key", key, "error", err)
+		fmt.Println("Redis SET error", "key", key, "error", err)
 	}
 }

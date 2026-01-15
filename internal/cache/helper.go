@@ -20,6 +20,11 @@ func UnmarshalCacheValue[T any](value interface{}) (*T, bool) {
 		return typed, true
 	}
 
+	// Try type assertion for non-pointer type T (some caches may store values directly)
+	if typed, ok := value.(T); ok {
+		return &typed, true
+	}
+
 	// Try unmarshalling from JSON string (for Redis cache)
 	if str, ok := value.(string); ok {
 		var result T
