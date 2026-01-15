@@ -2254,7 +2254,17 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 			periodStart := sub.CurrentPeriodStart
 			periodEnd := sub.CurrentPeriodEnd
 
-			// Get usage data for current period
+			/*
+				// Get usage for subscription using raw events table
+				usage, err := subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
+					SubscriptionID: sub.ID,
+					StartTime:      periodStart,
+					EndTime:        periodEnd,
+				})
+
+			*/
+
+			// Get usage data for current period using feature usage table
 			usage, err := subscriptionService.GetFeatureUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
 				SubscriptionID: sub.ID,
 				StartTime:      periodStart,
@@ -2264,8 +2274,11 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 				return nil, err
 			}
 
-			// Calculate usage charges
-			usageCharges, usageTotal, err := billingService.CalculateUsageCharges(ctx, sub, usage, periodStart, periodEnd)
+			// Calculate usage charges for raw events usage
+			// usageCharges, usageTotal, err := billingService.CalculateFeatureUsageCharges(ctx, sub, usage, periodStart, periodEnd)
+
+			// Calculate usage charges for feature usage data
+			usageCharges, usageTotal, err := billingService.CalculateFeatureUsageCharges(ctx, sub, usage, periodStart, periodEnd)
 			if err != nil {
 				return nil, err
 			}

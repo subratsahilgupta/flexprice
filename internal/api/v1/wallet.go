@@ -330,7 +330,7 @@ func (h *WalletHandler) GetWalletBalance(c *gin.Context) {
 	}
 
 	// Get wallet balance
-	balance, err := h.walletService.GetWalletBalance(c.Request.Context(), walletID)
+	balance, err := h.walletService.GetWalletBalanceV2(c.Request.Context(), walletID)
 	if err != nil {
 		h.logger.Error("Failed to get wallet balance", "error", err)
 		c.Error(err)
@@ -348,26 +348,6 @@ func (h *WalletHandler) GetWalletBalance(c *gin.Context) {
 		} else {
 			balance.CreditsAvailableBreakdown = breakdown
 		}
-	}
-
-	c.JSON(http.StatusOK, balance)
-}
-
-// TODONEW: Revamp
-func (h *WalletHandler) GetWalletBalanceV2(c *gin.Context) {
-	walletID := c.Param("id")
-	if walletID == "" {
-		c.Error(ierr.NewError("wallet_id is required").
-			WithHint("Wallet ID is required").
-			Mark(ierr.ErrValidation))
-		return
-	}
-
-	balance, err := h.walletService.GetWalletBalanceV2(c.Request.Context(), walletID)
-	if err != nil {
-		h.logger.Error("Failed to get wallet balance", "error", err)
-		c.Error(err)
-		return
 	}
 
 	c.JSON(http.StatusOK, balance)
