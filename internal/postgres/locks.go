@@ -4,34 +4,49 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
-	"github.com/flexprice/flexprice/internal/types"
 	"github.com/lib/pq"
+	"github.com/samber/lo"
 )
 
+// LockRequest represents a request to acquire an advisory lock
+type LockRequest struct {
+	// Key is the lock key to acquire
+	Key string
+	// Timeout is the maximum time to wait for the lock.
+	// If nil, defaults to 30 seconds. Must be positive.
+	Timeout *time.Duration
+}
+
+// GetTimeout returns the timeout duration, defaulting to 30 seconds if nil.
+// Ensures the returned duration is always positive (minimum 1ms).
+func (r *LockRequest) GetTimeout() time.Duration {
+	var timeout time.Duration
+	if r.Timeout == nil {
+		timeout = 30 * time.Second
+	} else {
+		timeout = lo.FromPtr(r.Timeout)
+	}
+
+	// Ensure timeout is always positive
+	if timeout <= 0 {
+		return time.Millisecond
+	}
+	return timeout
+}
+
 // LockKey acquires an advisory lock based on the provided request.
-// If Timeout is nil, defaults to 30 seconds. If Timeout is 0 or negative, uses fail-fast behavior.
+// If Timeout is nil, defaults to 30 seconds.
 // Auto released on tx commit/rollback.
 // Must be called inside a transaction.
-func (c *Client) LockKey(ctx context.Context, req types.LockRequest) error {
+func (c *Client) LockKey(ctx context.Context, req LockRequest) error {
 	tx := c.TxFromContext(ctx)
 	if tx == nil {
 		return fmt.Errorf("LockKey must be called inside transaction")
 	}
 
 	timeout := req.GetTimeout()
-
-	// Handle zero or negative timeout (fail-fast)
-	if timeout <= 0 {
-		ok, err := c.TryLockKey(ctx, req.Key)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("lock already held (timeout: 0ms)")
-		}
-		return nil
-	}
 
 	// Set lock_timeout for this transaction (automatically reset on commit/rollback)
 	timeoutMs := int(timeout.Milliseconds())
@@ -91,6 +106,10 @@ func (c *Client) TryLockKey(ctx context.Context, key string) (bool, error) {
 	defer rows.Close()
 
 	if !rows.Next() {
+		// Check for errors when no rows are returned
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 

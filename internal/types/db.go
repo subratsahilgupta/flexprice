@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 )
 
 // LockScope represents the scope of a database advisory lock
@@ -15,23 +14,6 @@ const (
 	// LockScopeWallet represents wallet entity locks
 	LockScopeWallet LockScope = "wallet"
 )
-
-// LockRequest represents a request to acquire an advisory lock
-type LockRequest struct {
-	// Key is the lock key to acquire
-	Key string
-	// Timeout is the maximum time to wait for the lock.
-	// If nil, defaults to 30 seconds. If set to 0 or negative, uses TryLockKey behavior (fail-fast).
-	Timeout *time.Duration
-}
-
-// GetTimeout returns the timeout duration, defaulting to 30 seconds if nil
-func (r *LockRequest) GetTimeout() time.Duration {
-	if r.Timeout == nil {
-		return 30 * time.Second
-	}
-	return *r.Timeout
-}
 
 // GenerateLockKey generates a lock key from a scope and parameters.
 // Automatically extracts tenant_id and environment_id from context and includes them in the key.

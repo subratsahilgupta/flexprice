@@ -77,7 +77,7 @@ func (c *SentryClient) Reader(ctx context.Context) *ent.Client {
 }
 
 // LockKey acquires an advisory lock based on request
-func (c *SentryClient) LockKey(ctx context.Context, req types.LockRequest) error {
+func (c *SentryClient) LockKey(ctx context.Context, req LockRequest) error {
 	return c.client.LockKey(ctx, req)
 }
 
