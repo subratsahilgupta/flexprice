@@ -3,8 +3,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-
-	"github.com/flexprice/flexprice/internal/types"
 )
 
 // LockKey uses transaction-scoped advisory lock.
@@ -51,32 +49,4 @@ func (c *Client) TryLockKey(ctx context.Context, key string) (bool, error) {
 	}
 
 	return ok, nil
-}
-
-// LockRowForUpdate locks a row using FOR UPDATE (WAIT mode).
-// Blocks until the row is available for locking.
-// Must be called inside a transaction. Lock is automatically released on commit/rollback.
-func (c *Client) LockRowForUpdate(ctx context.Context, tableName types.TableName, id any) error {
-	tx := c.TxFromContext(ctx)
-	if tx == nil {
-		return fmt.Errorf("LockRowForUpdate must be called inside transaction")
-	}
-
-	query := fmt.Sprintf("SELECT id FROM %s WHERE id = $1 FOR UPDATE", tableName)
-	_, err := tx.ExecContext(ctx, query, id)
-	return err
-}
-
-// LockRowForUpdateNowait locks a row using FOR UPDATE NOWAIT (fail-fast mode).
-// Returns error if row is already locked.
-// Must be called inside a transaction. Lock is automatically released on commit/rollback.
-func (c *Client) LockRowForUpdateNowait(ctx context.Context, tableName types.TableName, id any) error {
-	tx := c.TxFromContext(ctx)
-	if tx == nil {
-		return fmt.Errorf("LockRowForUpdateNowait must be called inside transaction")
-	}
-
-	query := fmt.Sprintf("SELECT id FROM %s WHERE id = $1 FOR UPDATE NOWAIT", tableName)
-	_, err := tx.ExecContext(ctx, query, id)
-	return err
 }

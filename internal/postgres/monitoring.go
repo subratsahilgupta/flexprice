@@ -86,16 +86,6 @@ func (c *SentryClient) TryLockKey(ctx context.Context, key string) (bool, error)
 	return c.client.TryLockKey(ctx, key)
 }
 
-// LockRowForUpdate locks a row using FOR UPDATE (WAIT mode)
-func (c *SentryClient) LockRowForUpdate(ctx context.Context, tableName types.TableName, id any) error {
-	return c.client.LockRowForUpdate(ctx, tableName, id)
-}
-
-// LockRowForUpdateNowait locks a row using FOR UPDATE NOWAIT (fail-fast mode)
-func (c *SentryClient) LockRowForUpdateNowait(ctx context.Context, tableName types.TableName, id any) error {
-	return c.client.LockRowForUpdateNowait(ctx, tableName, id)
-}
-
 // Close closes the database connection
 func (c *SentryClient) Close() error {
 	return c.client.Close()

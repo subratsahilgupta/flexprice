@@ -54,14 +54,6 @@ type IClient interface {
 	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
 	TryLockKey(ctx context.Context, key string) (bool, error)
 
-	// LockRowForUpdate locks a row using FOR UPDATE (WAIT mode).
-	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
-	LockRowForUpdate(ctx context.Context, tableName types.TableName, id any) error
-
-	// LockRowForUpdateNowait locks a row using FOR UPDATE NOWAIT (fail-fast mode).
-	// Must be called inside a transaction. Returns error if row is already locked.
-	LockRowForUpdateNowait(ctx context.Context, tableName types.TableName, id any) error
-
 	// Close closes the database connection
 	Close() error
 }
