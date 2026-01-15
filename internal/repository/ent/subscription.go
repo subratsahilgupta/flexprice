@@ -1049,6 +1049,57 @@ func (r *subscriptionRepository) DeleteCache(ctx context.Context, subID string) 
 }
 
 // ListByCustomerID retrieves all active subscriptions for a customer and includes line items
+// GetRecentSubscriptionsByPlan returns subscription counts grouped by plan for last 7 days
+func (r *subscriptionRepository) GetRecentSubscriptionsByPlan(ctx context.Context) ([]types.SubscriptionPlanCount, error) {
+	tenantID := types.GetTenantID(ctx)
+	envID := types.GetEnvironmentID(ctx)
+
+	span := StartRepositorySpan(ctx, "subscription", "get_recent_subscriptions_by_plan", map[string]interface{}{
+		"tenant_id":      tenantID,
+		"environment_id": envID,
+	})
+	defer FinishSpan(span)
+
+	query := `
+		SELECT
+			p.id AS plan_id,
+			p.name AS plan_name,
+			COUNT(s.id) AS recent_subscription_count
+		FROM subscriptions s
+		JOIN plans p ON p.id = s.plan_id
+		WHERE s.tenant_id = $1
+			AND s.environment_id = $2
+			AND s.created_at >= NOW() - INTERVAL '7 days'
+			AND s.subscription_status = 'active'
+		GROUP BY p.id, p.name
+		ORDER BY recent_subscription_count DESC`
+
+	rows, err := r.client.Reader(ctx).QueryContext(ctx, query, tenantID, envID)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("failed to get recent subscriptions by plan").Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	var results []types.SubscriptionPlanCount
+	for rows.Next() {
+		var result types.SubscriptionPlanCount
+		if err := rows.Scan(&result.PlanID, &result.PlanName, &result.Count); err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).WithHint("failed to scan recent subscriptions row").Mark(ierr.ErrDatabase)
+		}
+		results = append(results, result)
+	}
+
+	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("failed to iterate recent subscriptions rows").Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return results, nil
+}
+
 func (r *subscriptionRepository) ListByCustomerID(ctx context.Context, customerID string) ([]*domainSub.Subscription, error) {
 	r.logger.Debugw("listing subscriptions by customer ID",
 		"customer_id", customerID)

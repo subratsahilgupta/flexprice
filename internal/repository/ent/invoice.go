@@ -1109,3 +1109,141 @@ func convertStringPtrToPriceTypePtr(s *string) *types.PriceType {
 	t := types.PriceType(*s)
 	return &t
 }
+
+// GetRevenueTrend returns revenue trend data grouped by time windows
+func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowSize types.WindowSize, windowCount int) ([]types.RevenueTrendWindow, error) {
+	tenantID := types.GetTenantID(ctx)
+	envID := types.GetEnvironmentID(ctx)
+
+	span := StartRepositorySpan(ctx, "invoice", "get_revenue_trend", map[string]interface{}{
+		"tenant_id":      tenantID,
+		"environment_id": envID,
+		"window_size":    windowSize,
+		"window_count":   windowCount,
+	})
+	defer FinishSpan(span)
+
+	// Map windowSize to PostgreSQL date_trunc format and interval
+	var dateTruncPart string
+	var intervalUnit string
+	switch windowSize {
+	case types.WindowSizeMonth:
+		dateTruncPart = string(types.WindowSizeMonth)
+		intervalUnit = "1 month"
+	case types.WindowSizeWeek:
+		dateTruncPart = string(types.WindowSizeWeek)
+		intervalUnit = "1 week"
+	case types.WindowSizeDay:
+		dateTruncPart = string(types.WindowSizeDay)
+		intervalUnit = "1 day"
+	case types.WindowSizeHour:
+		dateTruncPart = string(types.WindowSizeHour)
+		intervalUnit = "1 hour"
+	default:
+		dateTruncPart = string(types.WindowSizeMonth)
+		intervalUnit = "1 month"
+	}
+
+	query := fmt.Sprintf(`
+		WITH windows AS (
+			SELECT
+				gs AS window_index,
+				(date_trunc('%s', now()) - (gs * interval '%s'))                    AS window_start,
+				(date_trunc('%s', now()) - (gs * interval '%s') + interval '%s') AS window_end
+			FROM generate_series(0, $1 - 1) AS gs
+		)
+		SELECT
+			w.window_index,
+			w.window_start,
+			(w.window_end - interval '1 microsecond') AS window_end_inclusive,
+			COALESCE(SUM(i.amount_paid), 0)::text     AS revenue
+		FROM windows w
+		LEFT JOIN invoices i
+			ON i.created_at >= w.window_start
+		 AND i.created_at <  w.window_end
+		 AND i.tenant_id = $2
+		 AND i.environment_id = $3
+		 AND i.invoice_status = 'FINALIZED'
+		 AND i.status = 'published'
+		 AND i.payment_status IN ('SUCCEEDED', 'OVERPAID')
+		GROUP BY w.window_index, w.window_start, w.window_end
+		ORDER BY w.window_index ASC`, dateTruncPart, intervalUnit, dateTruncPart, intervalUnit, intervalUnit)
+
+	rows, err := r.client.Reader(ctx).QueryContext(ctx, query, windowCount, tenantID, envID)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("failed to get revenue trend").Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	var results []types.RevenueTrendWindow
+	for rows.Next() {
+		var result types.RevenueTrendWindow
+		if err := rows.Scan(&result.WindowIndex, &result.WindowStart, &result.WindowEnd, &result.Revenue); err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).WithHint("failed to scan revenue trend row").Mark(ierr.ErrDatabase)
+		}
+		results = append(results, result)
+	}
+
+	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("failed to iterate revenue trend rows").Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return results, nil
+}
+
+// GetInvoicePaymentStatus returns invoice payment status counts
+func (r *invoiceRepository) GetInvoicePaymentStatus(ctx context.Context) (*types.InvoicePaymentStatus, error) {
+	tenantID := types.GetTenantID(ctx)
+	envID := types.GetEnvironmentID(ctx)
+
+	span := StartRepositorySpan(ctx, "invoice", "get_invoice_payment_status", map[string]interface{}{
+		"tenant_id":      tenantID,
+		"environment_id": envID,
+	})
+	defer FinishSpan(span)
+
+	query := `
+		WITH invoice_history AS (
+			SELECT id, payment_status
+			FROM invoices
+			WHERE tenant_id = $1
+				AND environment_id = $2
+				AND invoice_status = 'FINALIZED'
+				AND status = 'published'
+		)
+		SELECT
+			COUNT(*) FILTER (WHERE payment_status = 'PENDING')   AS pending_count,
+			COUNT(*) FILTER (WHERE payment_status = 'SUCCEEDED') AS succeeded_count,
+			COUNT(*) FILTER (WHERE payment_status = 'FAILED')    AS failed_count
+		FROM invoice_history`
+
+	var result types.InvoicePaymentStatus
+	rows, err := r.client.Reader(ctx).QueryContext(ctx, query, tenantID, envID)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("failed to get invoice payment status").Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		// No rows returned, return zero counts
+		return &types.InvoicePaymentStatus{}, nil
+	}
+
+	if err := rows.Scan(&result.Pending, &result.Succeeded, &result.Failed); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("failed to scan invoice payment status").Mark(ierr.ErrDatabase)
+	}
+
+	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("failed to iterate invoice payment status rows").Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return &result, nil
+}

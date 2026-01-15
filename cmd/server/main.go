@@ -237,6 +237,7 @@ func main() {
 			service.NewWalletPaymentService,
 			service.NewWalletBalanceAlertService,
 			service.NewCustomerPortalService,
+			service.NewDashboardService,
 		),
 	)
 
@@ -312,6 +313,7 @@ func provideHandlers(
 	oauthService service.OAuthService,
 	costsheetUsageTrackingService service.CostSheetUsageTrackingService,
 	customerPortalService service.CustomerPortalService,
+	dashboardService service.DashboardService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, featureUsageTrackingService, cfg, logger),
@@ -359,6 +361,7 @@ func provideHandlers(
 		OAuth:                    v1.NewOAuthHandler(oauthService, cfg.OAuth.RedirectURI, logger),
 		CronKafkaLagMonitoring:   cron.NewKafkaLagMonitoringHandler(logger, eventService),
 		CustomerPortal:           v1.NewCustomerPortalHandler(customerPortalService, logger),
+		Dashboard:                v1.NewDashboardHandler(dashboardService, logger),
 	}
 }
 

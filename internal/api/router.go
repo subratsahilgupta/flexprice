@@ -53,6 +53,7 @@ type Handlers struct {
 	AlertLogsHandler         *v1.AlertLogsHandler
 	RBAC                     *v1.RBACHandler
 	OAuth                    *v1.OAuthHandler
+	Dashboard                *v1.DashboardHandler
 
 	// Portal handlers
 	Onboarding     *v1.OnboardingHandler
@@ -614,6 +615,12 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	{
 		oauth.POST("/init", handlers.OAuth.InitiateOAuth)
 		oauth.POST("/complete", handlers.OAuth.CompleteOAuth)
+	}
+
+	// Dashboard routes
+	dashboardRoutes := v1Private.Group("/dashboard")
+	{
+		dashboardRoutes.POST("/revenues", handlers.Dashboard.GetRevenues)
 	}
 
 	return router
