@@ -60,7 +60,7 @@ func (c *MockPostgresClient) Reader(ctx context.Context) *ent.Client {
 }
 
 // LockKey is a no-op for mock client
-func (c *MockPostgresClient) LockKey(ctx context.Context, key string) error {
+func (c *MockPostgresClient) LockKey(ctx context.Context, req types.LockRequest) error {
 	return nil
 }
 

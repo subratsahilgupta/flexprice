@@ -1535,7 +1535,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			"wallet_id": req.WalletID,
 		})
 
-		if err := s.DB.LockKey(ctx, lockKey); err != nil {
+		if err := s.DB.LockKey(ctx, types.LockRequest{Key: lockKey}); err != nil {
 			return ierr.WithError(err).
 				WithHint("Failed to acquire wallet lock").
 				Mark(ierr.ErrInternal)

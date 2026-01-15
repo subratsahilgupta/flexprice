@@ -46,9 +46,10 @@ type IClient interface {
 	// Use for: Get, List, Count, Query operations
 	Reader(ctx context.Context) *ent.Client
 
-	// LockKey acquires an advisory lock (WAIT mode) - blocks until acquired.
+	// LockKey acquires an advisory lock based on the provided request.
+	// If Timeout is nil, defaults to 30 seconds. If Timeout is 0 or negative, uses fail-fast behavior.
 	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
-	LockKey(ctx context.Context, key string) error
+	LockKey(ctx context.Context, req types.LockRequest) error
 
 	// TryLockKey tries to acquire an advisory lock (TRY mode) - returns false if already locked.
 	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
