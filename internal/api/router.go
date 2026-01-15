@@ -29,6 +29,7 @@ type Handlers struct {
 	Subscription             *v1.SubscriptionHandler
 	SubscriptionPause        *v1.SubscriptionPauseHandler
 	SubscriptionChange       *v1.SubscriptionChangeHandler
+	SubscriptionSchedule     *v1.SubscriptionScheduleHandler
 	Wallet                   *v1.WalletHandler
 	Tenant                   *v1.TenantHandler
 	Invoice                  *v1.InvoiceHandler
@@ -273,6 +274,16 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 			subscription.POST("/temporal/schedule-update-billing-period", handlers.ScheduledTask.ScheduleUpdateBillingPeriod)
 
+			// Subscription schedules - nested group
+			subscription.GET("/:id/schedules", handlers.SubscriptionSchedule.ListSchedulesForSubscription)
+
+			schedules := subscription.Group("/schedules")
+			{
+				schedules.GET("", handlers.SubscriptionSchedule.ListSchedules)
+				schedules.GET("/:schedule_id", handlers.SubscriptionSchedule.GetSchedule)
+				schedules.POST("/:schedule_id/cancel", handlers.SubscriptionSchedule.CancelSchedule)
+				schedules.POST("/cancel", handlers.SubscriptionSchedule.CancelSchedule) // Cancel by body only
+			}
 		}
 
 		wallet := v1Private.Group("/wallets")
@@ -284,7 +295,6 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			wallet.POST("/:id/top-up", handlers.Wallet.TopUpWallet)
 			wallet.POST("/:id/terminate", handlers.Wallet.TerminateWallet)
 			wallet.GET("/:id/balance/real-time", handlers.Wallet.GetWalletBalance)
-			wallet.GET("/:id/balance/real-time-v2", handlers.Wallet.GetWalletBalanceV2)
 			wallet.PUT("/:id", handlers.Wallet.UpdateWallet)
 			wallet.POST("/:id/debit", handlers.Wallet.ManualBalanceDebit)
 			wallet.POST("/transactions/search", handlers.Wallet.ListWalletTransactionsByFilter)

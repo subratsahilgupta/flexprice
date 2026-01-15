@@ -735,10 +735,12 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 			BaseModel:           types.GetDefaultBaseModel(ctx),
 		}
 
-		if tx.CreditBalanceBefore.LessThan(decimal.Zero) {
-			tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditBalanceAfter)
-		} else {
-			tx.CreditsAvailable = tx.CreditAmount
+		// Compute credits available for the transaction
+		tx.CreditsAvailable, err = tx.ComputeCreditsAvailable()
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to compute credits available").
+				Mark(ierr.ErrInternal)
 		}
 
 		// Create the transaction
@@ -971,11 +973,14 @@ func (s *walletService) completePurchasedCreditTransaction(ctx context.Context, 
 		tx.CreditBalanceBefore = w.CreditBalance
 		tx.CreditBalanceAfter = newCreditBalance
 
-		if tx.CreditBalanceBefore.LessThan(decimal.Zero) {
-			tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditBalanceAfter)
-		} else {
-			tx.CreditsAvailable = tx.CreditAmount
+		// Compute credits available for the transaction
+		tx.CreditsAvailable, err = tx.ComputeCreditsAvailable()
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to compute credits available").
+				Mark(ierr.ErrInternal)
 		}
+
 		tx.UpdatedAt = time.Now().UTC()
 
 		// Update the transaction
@@ -1570,22 +1575,22 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 		BaseModel:           types.GetDefaultBaseModel(ctx),
 	}
 
+	// Compute credits available for the transaction
+	tx.CreditsAvailable, err = tx.ComputeCreditsAvailable()
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to compute credits available").
+			Mark(ierr.ErrInternal)
+	}
+
 	// Set transaction-specific fields based on transaction type
 	if req.Type == types.TransactionTypeCredit {
 		tx.TopupConversionRate = lo.ToPtr(w.TopupConversionRate)
-
-		if tx.CreditBalanceBefore.LessThan(decimal.Zero) {
-			tx.CreditsAvailable = decimal.Max(decimal.Zero, tx.CreditBalanceAfter)
-		} else {
-			tx.CreditsAvailable = tx.CreditAmount
-		}
-
 		if req.ExpiryDate != nil {
 			tx.ExpiryDate = types.ParseYYYYMMDDToDate(req.ExpiryDate)
 		}
 	} else if req.Type == types.TransactionTypeDebit {
 		tx.ConversionRate = lo.ToPtr(w.ConversionRate)
-		tx.CreditsAvailable = decimal.Zero
 	}
 
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
@@ -2249,7 +2254,17 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 			periodStart := sub.CurrentPeriodStart
 			periodEnd := sub.CurrentPeriodEnd
 
-			// Get usage data for current period
+			/*
+				// Get usage for subscription using raw events table
+				usage, err := subscriptionService.GetUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
+					SubscriptionID: sub.ID,
+					StartTime:      periodStart,
+					EndTime:        periodEnd,
+				})
+
+			*/
+
+			// Get usage data for current period using feature usage table
 			usage, err := subscriptionService.GetFeatureUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
 				SubscriptionID: sub.ID,
 				StartTime:      periodStart,
@@ -2259,8 +2274,11 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 				return nil, err
 			}
 
-			// Calculate usage charges
-			usageCharges, usageTotal, err := billingService.CalculateUsageCharges(ctx, sub, usage, periodStart, periodEnd)
+			// Calculate usage charges for raw events usage
+			// usageCharges, usageTotal, err := billingService.CalculateFeatureUsageCharges(ctx, sub, usage, periodStart, periodEnd)
+
+			// Calculate usage charges for feature usage data
+			usageCharges, usageTotal, err := billingService.CalculateFeatureUsageCharges(ctx, sub, usage, periodStart, periodEnd)
 			if err != nil {
 				return nil, err
 			}
