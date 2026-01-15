@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	"github.com/samber/lo"
@@ -1527,83 +1528,95 @@ func (s *walletService) processDebitOperation(ctx context.Context, req *wallet.W
 func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.WalletOperation) error {
 	s.Logger.Debugw("Processing wallet operation", "req", req)
 
-	// Get wallet
-	w, err := s.WalletRepo.GetWalletByID(ctx, req.WalletID)
-	if err != nil {
-		return err
-	}
-
-	// Validate operation
-	if err := s.validateWalletOperation(w, req); err != nil {
-		return err
-	}
-
+	var w *wallet.Wallet
+	var tx *wallet.Transaction
 	var newCreditBalance decimal.Decimal
+	var finalBalance decimal.Decimal
 
-	// For debit operations, find and consume available credits
-	if req.Type == types.TransactionTypeDebit {
-		newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
-		// Process debit operation first
-		err = s.processDebitOperation(ctx, req)
+	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// Step 1: Acquire advisory lock for the wallet
+		// This ensures only one operation on this wallet can proceed at a time across all servers
+		if err := s.DB.LockWithWait(ctx, postgres.LockRequest{Key: req.WalletID}); err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to acquire wallet lock").
+				Mark(ierr.ErrInternal)
+		}
+
+		// Step 2: Get wallet inside transaction (after acquiring lock)
+		// This ensures we read the latest committed state
+		var err error
+		w, err = s.WalletRepo.GetWalletByID(ctx, req.WalletID)
 		if err != nil {
 			return err
 		}
-	} else {
-		// Process credit operation
-		newCreditBalance = w.CreditBalance.Add(req.CreditAmount)
-	}
 
-	finalBalance := s.GetCurrencyAmountFromCredits(newCreditBalance, w.ConversionRate)
-
-	// Create transaction record
-	tx := &wallet.Transaction{
-		ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
-		WalletID:            req.WalletID,
-		CustomerID:          w.CustomerID,
-		Type:                req.Type,
-		Amount:              req.Amount,
-		CreditAmount:        req.CreditAmount,
-		ReferenceType:       req.ReferenceType,
-		ReferenceID:         req.ReferenceID,
-		Description:         req.Description,
-		Metadata:            req.Metadata,
-		TxStatus:            types.TransactionStatusCompleted,
-		TransactionReason:   req.TransactionReason,
-		ExpiryDate:          types.ParseYYYYMMDDToDate(req.ExpiryDate),
-		Priority:            req.Priority,
-		CreditBalanceBefore: w.CreditBalance,
-		CreditBalanceAfter:  newCreditBalance,
-		Currency:            w.Currency,
-		EnvironmentID:       types.GetEnvironmentID(ctx),
-		IdempotencyKey:      req.IdempotencyKey,
-		BaseModel:           types.GetDefaultBaseModel(ctx),
-	}
-
-	// Compute credits available for the transaction
-	tx.CreditsAvailable, err = tx.ComputeCreditsAvailable()
-	if err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to compute credits available").
-			Mark(ierr.ErrInternal)
-	}
-
-	// Set transaction-specific fields based on transaction type
-	if req.Type == types.TransactionTypeCredit {
-		tx.TopupConversionRate = lo.ToPtr(w.TopupConversionRate)
-		if req.ExpiryDate != nil {
-			tx.ExpiryDate = types.ParseYYYYMMDDToDate(req.ExpiryDate)
+		// Step 3: Validate operation
+		if err := s.validateWalletOperation(w, req); err != nil {
+			return err
 		}
-	} else if req.Type == types.TransactionTypeDebit {
-		tx.ConversionRate = lo.ToPtr(w.ConversionRate)
-	}
 
-	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// Step 4: Process operation-specific logic
+		if req.Type == types.TransactionTypeDebit {
+			newCreditBalance = w.CreditBalance.Sub(req.CreditAmount)
+			// Process debit operation (credit selection and consumption)
+			if err := s.processDebitOperation(ctx, req); err != nil {
+				return err
+			}
+		} else {
+			// Process credit operation
+			newCreditBalance = w.CreditBalance.Add(req.CreditAmount)
+		}
 
+		finalBalance = s.GetCurrencyAmountFromCredits(newCreditBalance, w.ConversionRate)
+
+		// Step 5: Create transaction record
+		tx = &wallet.Transaction{
+			ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
+			WalletID:            req.WalletID,
+			CustomerID:          w.CustomerID,
+			Type:                req.Type,
+			Amount:              req.Amount,
+			CreditAmount:        req.CreditAmount,
+			ReferenceType:       req.ReferenceType,
+			ReferenceID:         req.ReferenceID,
+			Description:         req.Description,
+			Metadata:            req.Metadata,
+			TxStatus:            types.TransactionStatusCompleted,
+			TransactionReason:   req.TransactionReason,
+			ExpiryDate:          types.ParseYYYYMMDDToDate(req.ExpiryDate),
+			Priority:            req.Priority,
+			CreditBalanceBefore: w.CreditBalance,
+			CreditBalanceAfter:  newCreditBalance,
+			Currency:            w.Currency,
+			EnvironmentID:       types.GetEnvironmentID(ctx),
+			IdempotencyKey:      req.IdempotencyKey,
+			BaseModel:           types.GetDefaultBaseModel(ctx),
+		}
+
+		// Compute credits available for the transaction
+		tx.CreditsAvailable, err = tx.ComputeCreditsAvailable()
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to compute credits available").
+				Mark(ierr.ErrInternal)
+		}
+
+		// Set transaction-specific fields based on transaction type
+		if req.Type == types.TransactionTypeCredit {
+			tx.TopupConversionRate = lo.ToPtr(w.TopupConversionRate)
+			if req.ExpiryDate != nil {
+				tx.ExpiryDate = types.ParseYYYYMMDDToDate(req.ExpiryDate)
+			}
+		} else if req.Type == types.TransactionTypeDebit {
+			tx.ConversionRate = lo.ToPtr(w.ConversionRate)
+		}
+
+		// Step 6: Create transaction record
 		if err := s.WalletRepo.CreateTransaction(ctx, tx); err != nil {
 			return err
 		}
 
-		// Update wallet balance
+		// Step 7: Update wallet balance atomically
 		if err := s.WalletRepo.UpdateWalletBalance(ctx, req.WalletID, finalBalance, newCreditBalance); err != nil {
 			return err
 		}
