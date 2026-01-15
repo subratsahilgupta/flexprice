@@ -44,8 +44,7 @@ func NewClient(config *config.Configuration, log *logger.Logger) (*Client, error
 	result, err := rdb.Ping(ctx).Result()
 
 	if err != nil {
-		log.Errorw("Failed to connect to Redis Cluster", "error", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to create redis client: %w", err)
 	}
 
 	log.Infow("PING result", "result", result)

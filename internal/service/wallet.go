@@ -2227,22 +2227,6 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 		lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeAll)
 
 	totalPendingCharges := decimal.Zero
-	cachedBalance := s.getWalletRealtimeBalanceFromCache(ctx, walletID)
-	if cachedBalance != nil {
-		s.Logger.Info("using cached real-time balance",
-			"wallet_id", walletID,
-			"cached_balance", cachedBalance,
-		)
-		realTimeCreditBalance := s.GetCreditsFromCurrencyAmount(*cachedBalance, w.ConversionRate)
-		return &dto.WalletBalanceResponse{
-			Wallet:                w,
-			RealTimeBalance:       cachedBalance,
-			RealTimeCreditBalance: &realTimeCreditBalance,
-			BalanceUpdatedAt:      lo.ToPtr(w.UpdatedAt),
-			CurrentPeriodUsage:    &totalPendingCharges,
-		}, nil
-	}
-
 	if shouldIncludeUsage {
 
 		// STEP 1: Get all active subscriptions to calculate current usage
@@ -2367,6 +2351,21 @@ func (s *walletService) GetWalletBalanceFromCache(ctx context.Context, walletID 
 		lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeAll)
 
 	totalPendingCharges := decimal.Zero
+	cachedBalance := s.getWalletRealtimeBalanceFromCache(ctx, walletID)
+	if cachedBalance != nil {
+		s.Logger.Info("using cached real-time balance",
+			"wallet_id", walletID,
+			"cached_balance", cachedBalance,
+		)
+		realTimeCreditBalance := s.GetCreditsFromCurrencyAmount(*cachedBalance, w.ConversionRate)
+		return &dto.WalletBalanceResponse{
+			Wallet:                w,
+			RealTimeBalance:       cachedBalance,
+			RealTimeCreditBalance: &realTimeCreditBalance,
+			BalanceUpdatedAt:      lo.ToPtr(w.UpdatedAt),
+			CurrentPeriodUsage:    &totalPendingCharges,
+		}, nil
+	}
 	if shouldIncludeUsage {
 
 		// STEP 1: Get all active subscriptions to calculate current usage
@@ -2945,6 +2944,9 @@ func (s *walletService) setWalletRealtimeBalanceToCache(ctx context.Context, wal
 	defer cache.FinishSpan(span)
 
 	redisCache := cache.NewRedisCache()
+	if redisCache == nil {
+		return
+	}
 	cacheKey := cache.GenerateKey(cache.PrefixWallet, walletID)
 	redisCache.ForceCacheSet(ctx, cacheKey, balance.String(), 5*time.Minute)
 }
@@ -2956,6 +2958,9 @@ func (s *walletService) getWalletRealtimeBalanceFromCache(ctx context.Context, w
 	defer cache.FinishSpan(span)
 
 	redisCache := cache.NewRedisCache()
+	if redisCache == nil {
+		return nil
+	}
 	cacheKey := cache.GenerateKey(cache.PrefixWallet, walletID)
 	cachedValue, found := redisCache.ForceCacheGet(ctx, cacheKey)
 	if !found {

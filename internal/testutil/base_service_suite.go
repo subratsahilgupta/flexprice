@@ -131,6 +131,7 @@ func (s *BaseServiceTestSuite) SetupSuite() {
 
 	// Initialize cache
 	cache.Initialize(cfg, s.logger)
+	cache.InitializeRedisCache()
 }
 
 func (s *BaseServiceTestSuite) setupDependencies() {

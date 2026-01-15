@@ -148,33 +148,35 @@ func (c *RedisCache) delete(ctx context.Context, key string) error {
 
 // DeleteByPrefix removes all keys with the given prefix
 func (c *RedisCache) DeleteByPrefix(ctx context.Context, prefix string) {
+
+	// TODO: This needs to be implemented properly
 	// Use SCAN to iterate through keys matching the pattern
-	iter := c.client.Scan(ctx, 0, prefix+"*", ScanCount).Iterator()
+	// iter := c.client.Scan(ctx, 0, prefix+"*", ScanCount).Iterator()
 
-	var keysToDelete []string
+	// var keysToDelete []string
 
-	for iter.Next(ctx) {
-		keysToDelete = append(keysToDelete, iter.Val())
+	// for iter.Next(ctx) {
+	// 	keysToDelete = append(keysToDelete, iter.Val())
 
-		// Delete in batches of 1000 keys
-		if len(keysToDelete) >= 1000 {
-			if err := c.client.Del(ctx, keysToDelete...).Err(); err != nil {
-				c.log.Error("Redis DEL batch error", "prefix", prefix, "error", err)
-			}
-			keysToDelete = keysToDelete[:0]
-		}
-	}
+	// 	// Delete in batches of 1000 keys
+	// 	if len(keysToDelete) >= 1000 {
+	// 		if err := c.client.Del(ctx, keysToDelete...).Err(); err != nil {
+	// 			c.log.Error("Redis DEL batch error", "prefix", prefix, "error", err)
+	// 		}
+	// 		keysToDelete = keysToDelete[:0]
+	// 	}
+	// }
 
-	// Delete any remaining keys
-	if len(keysToDelete) > 0 {
-		if err := c.client.Del(ctx, keysToDelete...).Err(); err != nil {
-			c.log.Error("Redis DEL batch error", "prefix", prefix, "error", err)
-		}
-	}
+	// // Delete any remaining keys
+	// if len(keysToDelete) > 0 {
+	// 	if err := c.client.Del(ctx, keysToDelete...).Err(); err != nil {
+	// 		c.log.Error("Redis DEL batch error", "prefix", prefix, "error", err)
+	// 	}
+	// }
 
-	if err := iter.Err(); err != nil {
-		c.log.Error("Redis SCAN error", "prefix", prefix, "error", err)
-	}
+	// if err := iter.Err(); err != nil {
+	// 	c.log.Error("Redis SCAN error", "prefix", prefix, "error", err)
+	// }
 }
 
 // Flush removes all items from the cache
@@ -185,9 +187,41 @@ func (c *RedisCache) Flush(ctx context.Context) {
 }
 
 func (c *RedisCache) ForceCacheGet(ctx context.Context, key string) (interface{}, bool) {
-	return c.Get(ctx, key)
+	value, err := c.client.Get(ctx, key).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			// Key does not exist
+			return nil, false
+		}
+		c.log.Error("Redis GET error", "key", key, "error", err)
+		return nil, false
+	}
+
+	return value, true
 }
 
 func (c *RedisCache) ForceCacheSet(ctx context.Context, key string, value interface{}, expiration time.Duration) {
-	c.Set(ctx, key, value, expiration)
+	// Use default expiration if none specified
+	if expiration == 0 {
+		expiration = ExpiryDefaultRedis
+	}
+
+	// Convert value to string if it's not already
+	var strValue string
+	switch v := value.(type) {
+	case string:
+		strValue = v
+	default:
+		// Marshal non-string values to JSON
+		jsonBytes, err := json.Marshal(value)
+		if err != nil {
+			c.log.Error("Failed to marshal cache value", "key", key, "error", err)
+			return
+		}
+		strValue = string(jsonBytes)
+	}
+
+	if err := c.client.Set(ctx, key, strValue, expiration).Err(); err != nil {
+		c.log.Error("Redis SET error", "key", key, "error", err)
+	}
 }
