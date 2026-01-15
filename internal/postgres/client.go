@@ -46,6 +46,22 @@ type IClient interface {
 	// Use for: Get, List, Count, Query operations
 	Reader(ctx context.Context) *ent.Client
 
+	// LockKey acquires an advisory lock (WAIT mode) - blocks until acquired.
+	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
+	LockKey(ctx context.Context, key string) error
+
+	// TryLockKey tries to acquire an advisory lock (TRY mode) - returns false if already locked.
+	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
+	TryLockKey(ctx context.Context, key string) (bool, error)
+
+	// LockRowForUpdate locks a row using FOR UPDATE (WAIT mode).
+	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
+	LockRowForUpdate(ctx context.Context, tableName types.TableName, id any) error
+
+	// LockRowForUpdateNowait locks a row using FOR UPDATE NOWAIT (fail-fast mode).
+	// Must be called inside a transaction. Returns error if row is already locked.
+	LockRowForUpdateNowait(ctx context.Context, tableName types.TableName, id any) error
+
 	// Close closes the database connection
 	Close() error
 }
