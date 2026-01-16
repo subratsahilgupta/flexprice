@@ -1090,6 +1090,7 @@ func (r *subscriptionRepository) GetRecentSubscriptionsByPlan(ctx context.Contex
 			AND s.environment_id = $2
 			AND s.created_at >= NOW() - INTERVAL '7 days'
 			AND s.subscription_status = 'active'
+			AND s.status = 'published'
 		GROUP BY p.id, p.name
 		ORDER BY recent_subscription_count DESC`
 

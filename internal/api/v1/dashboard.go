@@ -5,10 +5,11 @@ import (
 	"strconv"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 )
 
 type DashboardHandler struct {
@@ -28,30 +29,16 @@ func NewDashboardHandler(
 
 func (h *DashboardHandler) GetRevenues(c *gin.Context) {
 	// Get window_count from query parameter only
-	windowCountStr := c.Query("window_count")
-	windowCount := 3 // Default to 3 if not provided
-	if windowCountStr != "" {
-		wc, err := strconv.Atoi(windowCountStr)
-		if err != nil || wc <= 0 {
-			c.Error(ierr.NewError("invalid window_count query parameter").
-				WithHint("window_count must be a positive integer").
-				Mark(ierr.ErrValidation))
-			return
-		}
-		windowCount = wc
+	windowCount := c.Query("window_count")
+	if windowCount == "" {
+		windowCount = strconv.Itoa(types.DefaultWindowCount)
 	}
 
 	// Build request with window_count from query param
 	req := dto.DashboardRevenuesRequest{
 		RevenueTrend: &dto.RevenueTrendRequest{
-			WindowCount: &windowCount,
+			WindowCount: lo.ToPtr(lo.Must(strconv.Atoi(windowCount))),
 		},
-	}
-
-	// Validate request
-	if err := req.Validate(); err != nil {
-		c.Error(err)
-		return
 	}
 
 	response, err := h.dashboardService.GetRevenues(c.Request.Context(), req)

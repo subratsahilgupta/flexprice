@@ -32,6 +32,12 @@ func NewDashboardService(
 func (s *dashboardService) GetRevenues(ctx context.Context, req dto.DashboardRevenuesRequest) (*dto.DashboardRevenuesResponse, error) {
 	response := &dto.DashboardRevenuesResponse{}
 
+	if err := req.Validate(); err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("failed to get dashboard revenues").
+			Mark(ierr.ErrValidation)
+	}
+
 	// Revenue Trend
 	if req.RevenueTrend != nil {
 		revenueTrend, err := s.getRevenueTrend(ctx, req.RevenueTrend)
