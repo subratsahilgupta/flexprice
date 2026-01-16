@@ -64,6 +64,7 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 		// Validate that the entity has less than 1000 active prices
 		filter := types.NewNoLimitPriceFilter().
 			WithEntityIDs([]string{req.EntityID}).
+			WithStatus(types.StatusPublished).
 			WithEntityType(req.EntityType)
 
 		count, err := s.PriceRepo.Count(ctx, filter)
@@ -239,18 +240,17 @@ func (s *priceService) validateEntityExists(ctx context.Context, entityType type
 	return nil
 }
 
-func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPriceRequest) (*dto.CreateBulkPriceResponse, error) {
-	if err := req.Validate(); err != nil {
-		return nil, err
-	}
-
+// validateBulkPriceEntityLimits validates that entities don't exceed the maximum number of active prices
+// when creating bulk prices. It checks each unique entity and ensures that the total count of existing
+// plus new prices doesn't exceed MAX_ACTIVE_PRICES.
+func (s *priceService) validateBulkPriceEntityLimits(ctx context.Context, items []dto.CreatePriceRequest) error {
 	// Create a map of entityID -> entityType using lo
-	entityIDToType := lo.SliceToMap(req.Items, func(priceReq dto.CreatePriceRequest) (string, types.PriceEntityType) {
+	entityIDToType := lo.SliceToMap(items, func(priceReq dto.CreatePriceRequest) (string, types.PriceEntityType) {
 		return priceReq.EntityID, priceReq.EntityType
 	})
 
 	// Group prices by entityID to count how many prices are being added for each entity
-	entityGroups := lo.GroupBy(req.Items, func(priceReq dto.CreatePriceRequest) string {
+	entityGroups := lo.GroupBy(items, func(priceReq dto.CreatePriceRequest) string {
 		return priceReq.EntityID
 	})
 
@@ -258,7 +258,7 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 	for entityID, entityType := range entityIDToType {
 		// Check if we should skip validation (check first item with this entityID)
 		itemsForEntity := entityGroups[entityID]
-	
+
 		firstItem := itemsForEntity[0]
 		if firstItem.SkipEntityValidation {
 			continue
@@ -267,11 +267,12 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 		// Count existing active prices for this entity
 		filter := types.NewNoLimitPriceFilter().
 			WithEntityIDs([]string{entityID}).
+			WithStatus(types.StatusPublished).
 			WithEntityType(entityType)
 
 		existingCount, err := s.PriceRepo.Count(ctx, filter)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// Count how many new prices are being added for this entity
@@ -281,7 +282,7 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 		// If existingCount + newPricesCount > MAX_ACTIVE_PRICES, reject
 		// This allows exactly MAX_ACTIVE_PRICES total (e.g., 999 existing + 1 new = 1000, which is allowed)
 		if existingCount+newPricesCount > price.MAX_ACTIVE_PRICES {
-			return nil, ierr.NewError("entity has too many active prices").
+			return ierr.NewError("entity has too many active prices").
 				WithHint("The specified entity has too many active prices").
 				WithReportableDetails(map[string]interface{}{
 					"entity_id":        entityID,
@@ -293,6 +294,19 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 				}).
 				Mark(ierr.ErrValidation)
 		}
+	}
+
+	return nil
+}
+
+func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPriceRequest) (*dto.CreateBulkPriceResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Validate price limit for each unique entity
+	if err := s.validateBulkPriceEntityLimits(ctx, req.Items); err != nil {
+		return nil, err
 	}
 
 	response := &dto.CreateBulkPriceResponse{
