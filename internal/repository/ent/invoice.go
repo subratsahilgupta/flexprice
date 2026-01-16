@@ -1111,19 +1111,19 @@ func convertStringPtrToPriceTypePtr(s *string) *types.PriceType {
 }
 
 // GetRevenueTrend returns revenue trend data grouped by time windows
-func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowSize types.WindowSize, windowCount int) ([]types.RevenueTrendWindow, error) {
+func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowCount int) ([]types.RevenueTrendWindow, error) {
 	tenantID := types.GetTenantID(ctx)
 	envID := types.GetEnvironmentID(ctx)
 
 	span := StartRepositorySpan(ctx, "invoice", "get_revenue_trend", map[string]interface{}{
 		"tenant_id":      tenantID,
 		"environment_id": envID,
-		"window_size":    windowSize,
 		"window_count":   windowCount,
 	})
 	defer FinishSpan(span)
 
-	// Map windowSize to PostgreSQL date_trunc format and interval
+	// Note: windowSize parameter is accepted for API consistency, but currently only MONTH is supported
+	// All revenue trend queries use monthly windows regardless of the parameter value
 	dateTruncPart := string(types.WindowSizeMonth)
 	intervalUnit := "1 month"
 	query := fmt.Sprintf(`

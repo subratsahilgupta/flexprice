@@ -68,10 +68,11 @@ type RecentSubscriptionsResponse struct {
 }
 
 // InvoicePaymentStatusResponse represents invoice payment status counts
+// Note: Paid field maps to types.InvoicePaymentStatus.Succeeded for API consistency
 type InvoicePaymentStatusResponse struct {
-	Paid        int       `json:"paid"`
-	Pending     int       `json:"pending"`
-	Failed      int       `json:"failed"`
+	Paid        int       `json:"paid"`    // Maps to InvoicePaymentStatus.Succeeded
+	Pending     int       `json:"pending"` // Maps to InvoicePaymentStatus.Pending
+	Failed      int       `json:"failed"`  // Maps to InvoicePaymentStatus.Failed
 	PeriodStart time.Time `json:"period_start"`
 	PeriodEnd   time.Time `json:"period_end"`
 }

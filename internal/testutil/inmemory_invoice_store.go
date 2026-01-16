@@ -367,7 +367,7 @@ func invoiceSortFn(i, j *invoice.Invoice) bool {
 }
 
 // GetRevenueTrend returns revenue trend data grouped by time windows
-func (s *InMemoryInvoiceStore) GetRevenueTrend(ctx context.Context, windowSize types.WindowSize, windowCount int) ([]types.RevenueTrendWindow, error) {
+func (s *InMemoryInvoiceStore) GetRevenueTrend(ctx context.Context, windowCount int) ([]types.RevenueTrendWindow, error) {
 	filter := types.NewNoLimitInvoiceFilter()
 	filter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusFinalized}
 	filter.PaymentStatus = []types.PaymentStatus{types.PaymentStatusSucceeded, types.PaymentStatusOverpaid}
@@ -384,7 +384,9 @@ func (s *InMemoryInvoiceStore) GetRevenueTrend(ctx context.Context, windowSize t
 	// For each window
 	for i := 0; i < windowCount; i++ {
 		// Calculate window start/end (assuming MONTH window size)
-		windowStart := time.Date(now.Year(), now.Month()-time.Month(i), 1, 0, 0, 0, 0, time.UTC)
+		// Use AddDate to properly handle year boundaries when subtracting months
+		windowStart := now.AddDate(0, -i, 0)
+		windowStart = time.Date(windowStart.Year(), windowStart.Month(), 1, 0, 0, 0, 0, time.UTC)
 		windowEnd := windowStart.AddDate(0, 1, 0).Add(-time.Nanosecond)
 
 		// Get unique currencies

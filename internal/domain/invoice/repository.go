@@ -41,6 +41,6 @@ type Repository interface {
 	GetInvoicesForExport(ctx context.Context, tenantID, envID string, startTime, endTime time.Time, limit, offset int) ([]*Invoice, error)
 
 	// Dashboard methods
-	GetRevenueTrend(ctx context.Context, windowSize types.WindowSize, windowCount int) ([]types.RevenueTrendWindow, error)
+	GetRevenueTrend(ctx context.Context, windowCount int) ([]types.RevenueTrendWindow, error)
 	GetInvoicePaymentStatus(ctx context.Context) (*types.InvoicePaymentStatus, error)
 }

@@ -67,7 +67,7 @@ func (s *dashboardService) GetRevenues(ctx context.Context, req dto.DashboardRev
 // getRevenueTrend calculates revenue trend data using repository
 func (s *dashboardService) getRevenueTrend(ctx context.Context, req *dto.RevenueTrendRequest) (*dto.RevenueTrendResponse, error) {
 	// Call repository method - always use MONTH window size
-	windows, err := s.InvoiceRepo.GetRevenueTrend(ctx, types.WindowSizeMonth, *req.WindowCount)
+	windows, err := s.InvoiceRepo.GetRevenueTrend(ctx, *req.WindowCount)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (s *dashboardService) getRevenueTrend(ctx context.Context, req *dto.Revenue
 		if currency == "" {
 			return nil, ierr.NewError("currency is missing for revenue data").
 				WithHint("Revenue data must include currency information").
-				Mark(ierr.ErrDatabase)
+				Mark(ierr.ErrValidation)
 		}
 		currencyMap[currency] = append(currencyMap[currency], revenueWindow)
 	}
