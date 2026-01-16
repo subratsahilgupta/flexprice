@@ -66,6 +66,14 @@ func GetRedisCache() *RedisCache {
 	return redisCache
 }
 
+// Helper function to add prefix to key
+func (c *RedisCache) GetRedisKey(key string) string {
+	if c.config.Redis.KeyPrefix == "" {
+		return key
+	}
+	return c.config.Redis.KeyPrefix + ":" + key
+}
+
 // Get retrieves a value from the cache
 func (c *RedisCache) Get(ctx context.Context, key string) (interface{}, bool) {
 
@@ -74,13 +82,15 @@ func (c *RedisCache) Get(ctx context.Context, key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	value, err := c.client.Get(ctx, key).Result()
+	redisKey := c.GetRedisKey(key)
+
+	value, err := c.client.Get(ctx, redisKey).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			// Key does not exist
 			return nil, false
 		}
-		fmt.Print("Redis GET error", "key", key, "error", err)
+		fmt.Print("Redis GET error", "key", redisKey, "error", err)
 		return nil, false
 	}
 
@@ -99,6 +109,9 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, exp
 		expiration = ExpiryDefaultRedis
 	}
 
+	// Generate Key
+	redisKey := c.GetRedisKey(key)
+
 	// Convert value to string if it's not already
 	var strValue string
 	switch v := value.(type) {
@@ -108,23 +121,24 @@ func (c *RedisCache) Set(ctx context.Context, key string, value interface{}, exp
 		// Marshal non-string values to JSON
 		jsonBytes, err := json.Marshal(value)
 		if err != nil {
-			fmt.Println("Failed to marshal cache value", "key", key, "error", err)
+			fmt.Println("Failed to marshal cache value", "key", redisKey, "error", err)
 			return
 		}
 		strValue = string(jsonBytes)
 	}
 
-	if err := c.client.Set(ctx, key, strValue, expiration).Err(); err != nil {
-		fmt.Println("Redis SET error", "key", key, "error", err)
+	if err := c.client.Set(ctx, redisKey, strValue, expiration).Err(); err != nil {
+		fmt.Println("Redis SET error", "key", redisKey, "error", err)
 	}
 }
 
 // Delete removes a key from the cache with retry
 func (c *RedisCache) Delete(ctx context.Context, key string) {
 
-	err := c.delete(ctx, key)
+	redisKey := c.GetRedisKey(key)
+	err := c.delete(ctx, redisKey)
 	if err != nil {
-		fmt.Println("Redis DELETE failed, retrying...", "key", key, "error", err)
+		fmt.Println("Redis DELETE failed, retrying...", "key", redisKey, "error", err)
 
 		// Create a new context with timeout for the retry
 		retryCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -134,8 +148,8 @@ func (c *RedisCache) Delete(ctx context.Context, key string) {
 		time.Sleep(DeleteRetryDelay)
 
 		// Retry once
-		if retryErr := c.delete(retryCtx, key); retryErr != nil {
-			fmt.Println("Redis DELETE retry failed", "key", key, "error", retryErr)
+		if retryErr := c.delete(retryCtx, redisKey); retryErr != nil {
+			fmt.Println("Redis DELETE retry failed", "key", redisKey, "error", retryErr)
 		}
 	}
 }
@@ -185,14 +199,6 @@ func (c *RedisCache) Flush(ctx context.Context) {
 	}
 }
 
-// Helper function to add prefix to key
-func (c *RedisCache) GetRedisKey(key string) string {
-	if c.config.Redis.KeyPrefix == "" {
-		return key
-	}
-	return c.config.Redis.KeyPrefix + ":" + key
-}
-
 // Get value from cache bypassing configuration checks
 func (c *RedisCache) ForceCacheGet(ctx context.Context, key string) (interface{}, bool) {
 	redisKey := c.GetRedisKey(key)
@@ -202,7 +208,7 @@ func (c *RedisCache) ForceCacheGet(ctx context.Context, key string) (interface{}
 			// Key does not exist
 			return nil, false
 		}
-		fmt.Println("Redis GET error", "key", key, "error", err)
+		fmt.Println("Redis GET error", "key", redisKey, "error", err)
 		return nil, false
 	}
 
@@ -216,6 +222,9 @@ func (c *RedisCache) ForceCacheSet(ctx context.Context, key string, value interf
 		expiration = ExpiryDefaultRedis
 	}
 
+	// generate redis key
+	redisKey := c.GetRedisKey(key)
+
 	// Convert value to string if it's not already
 	var strValue string
 	switch v := value.(type) {
@@ -225,13 +234,13 @@ func (c *RedisCache) ForceCacheSet(ctx context.Context, key string, value interf
 		// Marshal non-string values to JSON
 		jsonBytes, err := json.Marshal(value)
 		if err != nil {
-			fmt.Println("Failed to marshal cache value", "key", key, "error", err)
+			fmt.Println("Failed to marshal cache value", "key", redisKey, "error", err)
 			return
 		}
 		strValue = string(jsonBytes)
 	}
-	redisKey := c.GetRedisKey(key)
+
 	if err := c.client.Set(ctx, redisKey, strValue, expiration).Err(); err != nil {
-		fmt.Println("Redis SET error", "key", key, "error", err)
+		fmt.Println("Redis SET error", "key", redisKey, "error", err)
 	}
 }
