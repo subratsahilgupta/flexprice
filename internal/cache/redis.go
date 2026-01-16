@@ -190,7 +190,7 @@ func (c *RedisCache) GetRedisKey(key string) string {
 	if c.config.Redis.KeyPrefix == "" {
 		return key
 	}
-	return c.config.Redis.KeyPrefix + key
+	return c.config.Redis.KeyPrefix + ":" + key
 }
 
 // Get value from cache bypassing configuration checks
