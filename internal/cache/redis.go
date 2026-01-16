@@ -185,8 +185,18 @@ func (c *RedisCache) Flush(ctx context.Context) {
 	}
 }
 
+// Helper function to add prefix to key
+func (c *RedisCache) GetRedisKey(key string) string {
+	if c.config.Redis.KeyPrefix == "" {
+		return key
+	}
+	return c.config.Redis.KeyPrefix + key
+}
+
+// Get value from cache bypassing configuration checks
 func (c *RedisCache) ForceCacheGet(ctx context.Context, key string) (interface{}, bool) {
-	value, err := c.client.Get(ctx, key).Result()
+	redisKey := c.GetRedisKey(key)
+	value, err := c.client.Get(ctx, redisKey).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			// Key does not exist
@@ -199,6 +209,7 @@ func (c *RedisCache) ForceCacheGet(ctx context.Context, key string) (interface{}
 	return value, true
 }
 
+// Set value from cache bypassing configuration checks
 func (c *RedisCache) ForceCacheSet(ctx context.Context, key string, value interface{}, expiration time.Duration) {
 	// Use default expiration if none specified
 	if expiration == 0 {
@@ -219,8 +230,8 @@ func (c *RedisCache) ForceCacheSet(ctx context.Context, key string, value interf
 		}
 		strValue = string(jsonBytes)
 	}
-
-	if err := c.client.Set(ctx, key, strValue, expiration).Err(); err != nil {
+	redisKey := c.GetRedisKey(key)
+	if err := c.client.Set(ctx, redisKey, strValue, expiration).Err(); err != nil {
 		fmt.Println("Redis SET error", "key", key, "error", err)
 	}
 }
