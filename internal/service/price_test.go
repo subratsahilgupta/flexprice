@@ -1988,6 +1988,9 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 	})
 
 	s.Run("bulk_creation_exceeds_limit_for_entity", func() {
+		// Clear previous prices for this test to ensure clean state
+		s.priceRepo.Clear()
+
 		// Create 999 existing prices for the plan (1 less than max)
 		for i := 0; i < 999; i++ {
 			existingPrice := &price.Price{
