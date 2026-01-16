@@ -240,3 +240,4 @@ redis:
   use_tls: false # Use TLS for Redis connection
   pool_size: 10 # Maximum number of connections in the pool
   timeout: 5s # Timeout for Redis operations
+  key_prefix: "flexprice:local"
