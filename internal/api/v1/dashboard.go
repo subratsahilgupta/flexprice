@@ -2,14 +2,12 @@ package v1
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/service"
-	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
-	"github.com/samber/lo"
 )
 
 type DashboardHandler struct {
@@ -28,22 +26,17 @@ func NewDashboardHandler(
 }
 
 func (h *DashboardHandler) GetRevenues(c *gin.Context) {
-	// Get window_count from query parameter only
-	windowCount := c.Query("window_count")
-	if windowCount == "" {
-		windowCount = strconv.Itoa(types.DefaultWindowCount)
-	}
 
-	// Build request with window_count from query param
-	req := dto.DashboardRevenuesRequest{
-		RevenueTrend: &dto.RevenueTrendRequest{
-			WindowCount: lo.ToPtr(lo.Must(strconv.Atoi(windowCount))),
-		},
+	var req dto.DashboardRevenuesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format").
+			Mark(ierr.ErrValidation))
+		return
 	}
 
 	response, err := h.dashboardService.GetRevenues(c.Request.Context(), req)
 	if err != nil {
-		h.logger.Errorw("failed to get dashboard revenues", "error", err)
 		c.Error(err)
 		return
 	}

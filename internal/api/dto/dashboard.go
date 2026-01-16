@@ -5,6 +5,7 @@ import (
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
 
 // DashboardRevenuesRequest represents the request for dashboard revenues API
@@ -14,10 +15,11 @@ type DashboardRevenuesRequest struct {
 
 // Validate validates the dashboard revenues request
 func (r *DashboardRevenuesRequest) Validate() error {
-	if r.RevenueTrend != nil {
-		return r.RevenueTrend.Validate()
+	// Initialize RevenueTrend if nil
+	if r.RevenueTrend == nil {
+		r.RevenueTrend = &RevenueTrendRequest{}
 	}
-	return nil
+	return r.RevenueTrend.Validate()
 }
 
 // RevenueTrendRequest represents parameters for revenue trend section
@@ -35,6 +37,10 @@ func (r *RevenueTrendRequest) Validate() error {
 				"window_count": *r.WindowCount,
 			}).
 			Mark(ierr.ErrValidation)
+	}
+
+	if r.WindowCount == nil {
+		r.WindowCount = lo.ToPtr(types.DefaultWindowCount)
 	}
 
 	return nil
