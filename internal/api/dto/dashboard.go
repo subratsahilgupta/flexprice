@@ -54,7 +54,7 @@ type RevenueTrendResponse struct {
 	WindowCount int                               `json:"window_count"`
 }
 
-// CurrencyWindows represents windows for a specific currency
+// CurrencyRevenueWindows represents windows for a specific currency
 type CurrencyRevenueWindows struct {
 	Windows []types.RevenueWindow `json:"windows"`
 }

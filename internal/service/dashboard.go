@@ -147,11 +147,12 @@ func (s *dashboardService) getInvoicePaymentStatus(ctx context.Context) (*dto.In
 	}
 
 	now := time.Now().UTC()
+	periodStart := now.AddDate(0, 0, -7) // T-7 days from now
 	return &dto.InvoicePaymentStatusResponse{
 		Paid:        status.Succeeded,
 		Pending:     status.Pending,
 		Failed:      status.Failed,
-		PeriodStart: now,
+		PeriodStart: periodStart,
 		PeriodEnd:   now,
 	}, nil
 }
