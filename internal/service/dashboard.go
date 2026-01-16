@@ -2,10 +2,11 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -65,45 +66,46 @@ func (s *dashboardService) GetRevenues(ctx context.Context, req dto.DashboardRev
 
 // getRevenueTrend calculates revenue trend data using repository
 func (s *dashboardService) getRevenueTrend(ctx context.Context, req *dto.RevenueTrendRequest) (*dto.RevenueTrendResponse, error) {
-	// Call repository method
-	windows, err := s.InvoiceRepo.GetRevenueTrend(ctx, types.WindowSize(req.WindowSize), *req.WindowCount)
+	// Call repository method - always use MONTH window size
+	windows, err := s.InvoiceRepo.GetRevenueTrend(ctx, types.WindowSizeMonth, *req.WindowCount)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert to DTO
-	revenueWindows := make([]types.RevenueWindow, 0, len(windows))
+	// Group by currency
+	currencyMap := make(map[string][]types.RevenueWindow)
 	for _, w := range windows {
-		label := s.formatWindowLabel(w.WindowStart, w.WindowEnd, types.WindowSize(req.WindowSize))
-		revenueWindows = append(revenueWindows, types.RevenueWindow{
+		// Format label for MONTH window size
+		label := w.WindowStart.Format("Jan 2006")
+		revenueWindow := types.RevenueWindow{
 			WindowStart:  w.WindowStart,
 			WindowEnd:    w.WindowEnd,
 			WindowLabel:  label,
 			TotalRevenue: w.Revenue,
-		})
+		}
+
+		currency := strings.ToLower(strings.TrimSpace(w.Currency))
+		if currency == "" {
+			return nil, ierr.NewError("currency is missing for revenue data").
+				WithHint("Revenue data must include currency information").
+				Mark(ierr.ErrDatabase)
+		}
+		currencyMap[currency] = append(currencyMap[currency], revenueWindow)
+	}
+
+	// Convert to response structure
+	currencyRevenueWindows := make(map[string]dto.CurrencyRevenueWindows)
+	for currency, windows := range currencyMap {
+		currencyRevenueWindows[currency] = dto.CurrencyRevenueWindows{
+			Windows: windows,
+		}
 	}
 
 	return &dto.RevenueTrendResponse{
-		Windows:     revenueWindows,
-		WindowSize:  req.WindowSize,
+		Currency:    currencyRevenueWindows,
+		WindowSize:  types.WindowSizeMonth,
 		WindowCount: *req.WindowCount,
 	}, nil
-}
-
-// formatWindowLabel formats a window label based on window size
-func (s *dashboardService) formatWindowLabel(start, end time.Time, windowSize types.WindowSize) string {
-	switch windowSize {
-	case types.WindowSizeMonth:
-		return start.Format("Jan 2006")
-	case types.WindowSizeWeek:
-		return fmt.Sprintf("Week of %s", start.Format("Jan 2"))
-	case types.WindowSizeDay:
-		return start.Format("Jan 2, 2006")
-	case types.WindowSizeHour:
-		return start.Format("Jan 2, 3:04 PM")
-	default:
-		return start.Format("Jan 2, 2006")
-	}
 }
 
 // getRecentSubscriptions gets recent subscriptions grouped by plan using repository
@@ -115,10 +117,10 @@ func (s *dashboardService) getRecentSubscriptions(ctx context.Context) (*dto.Rec
 	}
 
 	// Convert to DTO
-	byPlan := make([]types.SubscriptionPlanCount, 0, len(planCounts))
+	plans := make([]types.SubscriptionPlanCount, 0, len(planCounts))
 	totalCount := 0
 	for _, pc := range planCounts {
-		byPlan = append(byPlan, types.SubscriptionPlanCount{
+		plans = append(plans, types.SubscriptionPlanCount{
 			PlanID:   pc.PlanID,
 			PlanName: pc.PlanName,
 			Count:    pc.Count,
@@ -130,7 +132,7 @@ func (s *dashboardService) getRecentSubscriptions(ctx context.Context) (*dto.Rec
 	periodStart := now.AddDate(0, 0, -7) // 7 days ago
 	return &dto.RecentSubscriptionsResponse{
 		TotalCount:  totalCount,
-		ByPlan:      byPlan,
+		Plans:       plans,
 		PeriodStart: periodStart,
 		PeriodEnd:   now,
 	}, nil

@@ -17,6 +17,7 @@ type RevenueTrendWindow struct {
 	WindowStart time.Time
 	WindowEnd   time.Time
 	Revenue     string
+	Currency    string
 }
 
 // InvoicePaymentStatus represents invoice payment status counts from repository

@@ -1124,26 +1124,8 @@ func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowSize type
 	defer FinishSpan(span)
 
 	// Map windowSize to PostgreSQL date_trunc format and interval
-	var dateTruncPart string
-	var intervalUnit string
-	switch windowSize {
-	case types.WindowSizeMonth:
-		dateTruncPart = string(types.WindowSizeMonth)
-		intervalUnit = "1 month"
-	case types.WindowSizeWeek:
-		dateTruncPart = string(types.WindowSizeWeek)
-		intervalUnit = "1 week"
-	case types.WindowSizeDay:
-		dateTruncPart = string(types.WindowSizeDay)
-		intervalUnit = "1 day"
-	case types.WindowSizeHour:
-		dateTruncPart = string(types.WindowSizeHour)
-		intervalUnit = "1 hour"
-	default:
-		dateTruncPart = string(types.WindowSizeMonth)
-		intervalUnit = "1 month"
-	}
-
+	dateTruncPart := string(types.WindowSizeMonth)
+	intervalUnit := "1 month"
 	query := fmt.Sprintf(`
 		WITH windows AS (
 			SELECT
@@ -1151,13 +1133,24 @@ func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowSize type
 				(date_trunc('%s', now()) - (gs * interval '%s'))                    AS window_start,
 				(date_trunc('%s', now()) - (gs * interval '%s') + interval '%s') AS window_end
 			FROM generate_series(0, $1 - 1) AS gs
+		),
+		currencies AS (
+			SELECT DISTINCT currency
+			FROM invoices
+			WHERE tenant_id = $2
+			  AND environment_id = $3
+			  AND invoice_status = 'FINALIZED'
+			  AND status = 'published'
+			  AND payment_status IN ('SUCCEEDED', 'OVERPAID')
 		)
 		SELECT
 			w.window_index,
 			w.window_start,
 			(w.window_end - interval '1 microsecond') AS window_end_inclusive,
-			COALESCE(SUM(i.amount_paid), 0)::text     AS revenue
+			COALESCE(SUM(i.amount_paid), 0)::text     AS revenue,
+			c.currency
 		FROM windows w
+		CROSS JOIN currencies c
 		LEFT JOIN invoices i
 			ON i.created_at >= w.window_start
 		 AND i.created_at <  w.window_end
@@ -1166,8 +1159,9 @@ func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowSize type
 		 AND i.invoice_status = 'FINALIZED'
 		 AND i.status = 'published'
 		 AND i.payment_status IN ('SUCCEEDED', 'OVERPAID')
-		GROUP BY w.window_index, w.window_start, w.window_end
-		ORDER BY w.window_index ASC`, dateTruncPart, intervalUnit, dateTruncPart, intervalUnit, intervalUnit)
+		 AND i.currency = c.currency
+		GROUP BY w.window_index, w.window_start, w.window_end, c.currency
+		ORDER BY c.currency, w.window_index ASC`, dateTruncPart, intervalUnit, dateTruncPart, intervalUnit, intervalUnit)
 
 	rows, err := r.client.Reader(ctx).QueryContext(ctx, query, windowCount, tenantID, envID)
 	if err != nil {
@@ -1179,7 +1173,7 @@ func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowSize type
 	var results []types.RevenueTrendWindow
 	for rows.Next() {
 		var result types.RevenueTrendWindow
-		if err := rows.Scan(&result.WindowIndex, &result.WindowStart, &result.WindowEnd, &result.Revenue); err != nil {
+		if err := rows.Scan(&result.WindowIndex, &result.WindowStart, &result.WindowEnd, &result.Revenue, &result.Currency); err != nil {
 			SetSpanError(span, err)
 			return nil, ierr.WithError(err).WithHint("failed to scan revenue trend row").Mark(ierr.ErrDatabase)
 		}

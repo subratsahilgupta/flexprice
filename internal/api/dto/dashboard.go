@@ -22,19 +22,11 @@ func (r *DashboardRevenuesRequest) Validate() error {
 
 // RevenueTrendRequest represents parameters for revenue trend section
 type RevenueTrendRequest struct {
-	WindowSize  types.WindowSize `json:"window_size,omitempty"`  //by default, it's MONTH
-	WindowCount *int             `json:"window_count,omitempty"` //by default, it's 3
+	WindowCount *int `json:"window_count,omitempty"` //by default, it's 3
 }
 
 // Validate validates the revenue trend request
 func (r *RevenueTrendRequest) Validate() error {
-	// Validate window_size if provided
-	if r.WindowSize != "" {
-		if err := r.WindowSize.Validate(); err != nil {
-			return err
-		}
-	}
-
 	// Validate window_count if provided
 	if r.WindowCount != nil && *r.WindowCount <= 0 {
 		return ierr.NewError("window_count must be >= 1").
@@ -57,15 +49,20 @@ type DashboardRevenuesResponse struct {
 
 // RevenueTrendResponse represents revenue trend data
 type RevenueTrendResponse struct {
-	Windows     []types.RevenueWindow `json:"windows"`
-	WindowSize  types.WindowSize      `json:"window_size"`
-	WindowCount int                   `json:"window_count"`
+	Currency    map[string]CurrencyRevenueWindows `json:"currency_revenue_windows"`
+	WindowSize  types.WindowSize                  `json:"window_size"`
+	WindowCount int                               `json:"window_count"`
+}
+
+// CurrencyWindows represents windows for a specific currency
+type CurrencyRevenueWindows struct {
+	Windows []types.RevenueWindow `json:"windows"`
 }
 
 // RecentSubscriptionsResponse represents recent subscriptions data
 type RecentSubscriptionsResponse struct {
 	TotalCount  int                           `json:"total_count"`
-	ByPlan      []types.SubscriptionPlanCount `json:"by_plan"`
+	Plans       []types.SubscriptionPlanCount `json:"plans"`
 	PeriodStart time.Time                     `json:"period_start"`
 	PeriodEnd   time.Time                     `json:"period_end"`
 }
