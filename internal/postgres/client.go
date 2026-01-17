@@ -100,10 +100,16 @@ func NewEntClients(config *config.Configuration, logger *logger.Logger) (*EntCli
 	// Create writer driver
 	writerDrv := entsql.OpenDB(dialect.Postgres, writerDB)
 
-	// Create writer client with options
+	// Create client with options
 	writerOpts := []ent.Option{
 		ent.Driver(writerDrv),
-		ent.Debug(), // Enable debug logging
+	}
+
+	if config.Logging.DBLevel == types.LogLevelDebug {
+		writerOpts = append(writerOpts,
+			ent.Debug(),
+			ent.Log(logger.GetEntLogger()),
+		)
 	}
 
 	writerClient := ent.NewClient(writerOpts...)
@@ -138,6 +144,13 @@ func NewEntClients(config *config.Configuration, logger *logger.Logger) (*EntCli
 		// Create reader client with options (removing debug logs for reads)
 		readerOpts := []ent.Option{
 			ent.Driver(readerDrv),
+		}
+
+		if config.Logging.DBLevel == types.LogLevelDebug {
+			readerOpts = append(readerOpts,
+				ent.Debug(),
+				ent.Log(logger.GetEntLogger()),
+			)
 		}
 
 		readerClient = ent.NewClient(readerOpts...)

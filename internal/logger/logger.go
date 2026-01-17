@@ -21,12 +21,15 @@ var L *Logger
 func NewLogger(cfg *config.Configuration) (*Logger, error) {
 	config := zap.NewProductionConfig()
 
-	if cfg.Logging.Level == types.LogLevelDebug {
+	if cfg.Logging.DBLevel == types.LogLevelDebug {
 		config = zap.NewDevelopmentConfig()
 	}
 
 	config.EncoderConfig.TimeKey = "timestamp"
 	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	// Disable stack traces for warnings to reduce log noise
+	config.DisableStacktrace = true
 
 	zapLogger, err := config.Build()
 	if err != nil {
@@ -101,4 +104,38 @@ func (l *Logger) GetRetryableHTTPLogger() *retryableHTTPLogger {
 // Printf implements the Logger interface for go-retryablehttp
 func (r *retryableHTTPLogger) Printf(format string, v ...interface{}) {
 	r.logger.Infof(format, v...)
+}
+
+// GetEntLogger returns an ent-compatible logger function
+func (l *Logger) GetEntLogger() func(...any) {
+	return func(args ...any) {
+		// Ent typically passes query strings, format them properly
+		if len(args) > 0 {
+			// If args is a single string, use it as the query
+			if len(args) == 1 {
+				if query, ok := args[0].(string); ok {
+					l.Debugw("ent_query", "query", query)
+					return
+				}
+			}
+			// Otherwise, format all args as a single query string
+			l.Debugw("ent_query", "query", args)
+		}
+	}
+}
+
+// ginLogger adapts our Logger to gin's logging interface
+type ginLogger struct {
+	logger *Logger
+}
+
+// GetGinLogger returns a gin-compatible logger
+func (l *Logger) GetGinLogger() *ginLogger {
+	return &ginLogger{logger: l}
+}
+
+// Write implements the io.Writer interface for gin
+func (g *ginLogger) Write(p []byte) (n int, err error) {
+	g.logger.Info(string(p))
+	return len(p), nil
 }

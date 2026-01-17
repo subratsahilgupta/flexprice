@@ -82,6 +82,7 @@ dynamodb:
 
 logging:
   level: "debug"
+  db_level: "error"
 
 webhook:
   enabled: true
