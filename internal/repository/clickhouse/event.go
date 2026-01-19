@@ -1191,20 +1191,11 @@ func (r *EventRepository) GetEventByID(ctx context.Context, eventID string) (*ev
 		AND id = ?
 		LIMIT 1
 	`
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
 	args := []interface{}{
-		tenantID,
-		environmentID,
+		types.GetTenantID(ctx),
+		types.GetEnvironmentID(ctx),
 		eventID,
 	}
-
-	// Debug logging to help diagnose query failures
-	r.logger.Debug("GetEventByID query",
-		"event_id", eventID,
-		"tenant_id", tenantID,
-		"environment_id", environmentID,
-	)
 
 	var event events.Event
 	var propertiesJSON string
