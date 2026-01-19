@@ -3751,12 +3751,12 @@ func (s *subscriptionService) addAddonToSubscription(
 
 	// Ensure subscription-level and line-item-level commitments don't conflict
 	originalLineItems := sub.LineItems
-	sub.LineItems = append(append([]*subscription.SubscriptionLineItem{}, originalLineItems...), lineItems...)
-	if err := s.validateSubscriptionLevelCommitment(sub); err != nil {
-		sub.LineItems = originalLineItems
+	sub.LineItems = lo.Flatten([][]*subscription.SubscriptionLineItem{originalLineItems, lineItems})
+	err = s.validateSubscriptionLevelCommitment(sub)
+	sub.LineItems = originalLineItems
+	if err != nil {
 		return nil, err
 	}
-	sub.LineItems = originalLineItems
 
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Create subscription addon association

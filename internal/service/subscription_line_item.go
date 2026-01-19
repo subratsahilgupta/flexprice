@@ -421,7 +421,11 @@ func (s *subscriptionService) validateLineItemCommitment(ctx context.Context, li
 	// Window commitment is only supported for certain meters or configurations
 	// but for now, we just allow it if set
 	if lineItem.CommitmentWindowed {
-		
+		if m == nil {
+			return ierr.NewError("meter is required for window-based commitment").
+				WithHint("Window commitment requires a meter with bucket_size configured").
+				Mark(ierr.ErrValidation)
+		}
 
 		if !m.HasBucketSize() {
 			return ierr.NewError("window commitment requires meter with bucket_size").
