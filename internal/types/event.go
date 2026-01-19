@@ -28,7 +28,7 @@ const (
 type EventProcessingStatusType string
 
 const (
-	EventProcessingStatusTypeProcessed     EventProcessingStatusType = "processed"
-	EventProcessingStatusTypePostProcessed EventProcessingStatusType = "post-processed"
-	EventProcessingStatusTypeFailed        EventProcessingStatusType = "failed"
+	EventProcessingStatusTypeProcessed  EventProcessingStatusType = "processed"
+	EventProcessingStatusTypeProcessing EventProcessingStatusType = "processing"
+	EventProcessingStatusTypeFailed     EventProcessingStatusType = "failed"
 )

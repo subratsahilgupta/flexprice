@@ -1191,11 +1191,20 @@ func (r *EventRepository) GetEventByID(ctx context.Context, eventID string) (*ev
 		AND id = ?
 		LIMIT 1
 	`
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
 	args := []interface{}{
-		types.GetTenantID(ctx),
-		types.GetEnvironmentID(ctx),
+		tenantID,
+		environmentID,
 		eventID,
 	}
+
+	// Debug logging to help diagnose query failures
+	r.logger.Debug("GetEventByID query",
+		"event_id", eventID,
+		"tenant_id", tenantID,
+		"environment_id", environmentID,
+	)
 
 	var event events.Event
 	var propertiesJSON string
@@ -1217,7 +1226,7 @@ func (r *EventRepository) GetEventByID(ctx context.Context, eventID string) (*ev
 		SetSpanError(span, err)
 		if err.Error() == "sql: no rows in result set" {
 			return nil, ierr.WithError(err).
-				WithHint("Event not found").
+				WithHint("Event not found in events table").
 				WithReportableDetails(map[string]interface{}{
 					"event_id": eventID,
 				}).
