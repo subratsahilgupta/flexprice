@@ -16,7 +16,7 @@ import (
 func (s *subscriptionService) AddSubscriptionLineItem(ctx context.Context, subscriptionID string, req dto.CreateSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error) {
 	// Get the subscription
 	sub, err := s.SubRepo.Get(ctx, subscriptionID)
-	if err != nil  {
+	if err != nil {
 		return nil, err
 	}
 
@@ -93,18 +93,7 @@ func (s *subscriptionService) AddSubscriptionLineItem(ctx context.Context, subsc
 	lineItem := req.ToSubscriptionLineItem(ctx, params)
 
 	// Validate line item commitment if configured
-	// Get meter if this is a usage-based line item
-	var meter *meter.Meter
-	if lineItem.PriceType == types.PRICE_TYPE_USAGE && lineItem.MeterID != "" {
-		meterFilter := types.NewNoLimitMeterFilter()
-		meterFilter.MeterIDs = []string{lineItem.MeterID}
-		meters, err := s.MeterRepo.List(ctx, meterFilter)
-		if err == nil && len(meters) > 0 {
-			meter = meters[0]
-		}
-	}
-
-	if err := s.validateLineItemCommitment(ctx, lineItem, meter); err != nil {
+	if err := s.validateLineItemCommitment(ctx, lineItem); err != nil {
 		return nil, err
 	}
 
@@ -279,17 +268,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			newLineItem.StartDate = endDate // Start where the old one ends
 
 			// Validate line item commitment if configured
-			var meter *meter.Meter
-			if newLineItem.PriceType == types.PRICE_TYPE_USAGE && newLineItem.MeterID != "" {
-				meterFilter := types.NewNoLimitMeterFilter()
-				meterFilter.MeterIDs = []string{newLineItem.MeterID}
-				meters, err := s.MeterRepo.List(ctx, meterFilter)
-				if err == nil && len(meters) > 0 {
-					meter = meters[0]
-				}
-			}
-
-			if err := s.validateLineItemCommitment(ctx, newLineItem, meter); err != nil {
+			if err := s.validateLineItemCommitment(ctx, newLineItem); err != nil {
 				return err
 			}
 
@@ -346,17 +325,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 		}
 
 		// Validate line item commitment if configured
-		var meter *meter.Meter
-		if existingLineItem.PriceType == types.PRICE_TYPE_USAGE && existingLineItem.MeterID != "" {
-			meterFilter := types.NewNoLimitMeterFilter()
-			meterFilter.MeterIDs = []string{existingLineItem.MeterID}
-			meters, err := s.MeterRepo.List(ctx, meterFilter)
-			if err == nil && len(meters) > 0 {
-				meter = meters[0]
-			}
-		}
-
-		if err := s.validateLineItemCommitment(ctx, existingLineItem, meter); err != nil {
+		if err := s.validateLineItemCommitment(ctx, existingLineItem); err != nil {
 			return nil, err
 		}
 
@@ -378,10 +347,24 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 }
 
 // validateLineItemCommitment validates commitment configuration for a subscription line item
-func (s *subscriptionService) validateLineItemCommitment(ctx context.Context, lineItem *subscription.SubscriptionLineItem, meter *meter.Meter) error {
+func (s *subscriptionService) validateLineItemCommitment(ctx context.Context, lineItem *subscription.SubscriptionLineItem) error {
+	if lineItem == nil {
+		return nil
+	}
+
 	// If no commitment is configured, no validation needed
 	if !lineItem.HasCommitment() {
 		return nil
+	}
+
+	// Fetch meter details only when needed for window-based commitment validation.
+	var m *meter.Meter
+	if lineItem.CommitmentWindowed && lineItem.MeterID != "" {
+		var err error
+		m, err = s.MeterRepo.GetMeter(ctx, lineItem.MeterID)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Validate commitment type is valid
@@ -438,21 +421,15 @@ func (s *subscriptionService) validateLineItemCommitment(ctx context.Context, li
 	// Window commitment is only supported for certain meters or configurations
 	// but for now, we just allow it if set
 	if lineItem.CommitmentWindowed {
-		// Just validate that we're not doing something obviously wrong with windows
-		// For example, maybe we need to check if the meter supports it, but ignoring for now
-		if meter == nil {
-			return ierr.NewError("meter is required for window-based commitment").
-				WithHint("Window commitment requires a meter with bucket_size configured").
-				Mark(ierr.ErrValidation)
-		}
+		
 
-		if !meter.HasBucketSize() {
+		if !m.HasBucketSize() {
 			return ierr.NewError("window commitment requires meter with bucket_size").
 				WithHint("Configure bucket_size on the meter to use window-based commitment").
 				WithReportableDetails(map[string]interface{}{
-					"meter_id":         meter.ID,
-					"aggregation_type": meter.Aggregation.Type,
-					"bucket_size":      meter.Aggregation.BucketSize,
+					"meter_id":         m.ID,
+					"aggregation_type": m.Aggregation.Type,
+					"bucket_size":      m.Aggregation.BucketSize,
 				}).
 				Mark(ierr.ErrValidation)
 		}
@@ -477,6 +454,48 @@ func (s *subscriptionService) validateLineItemCommitment(ctx context.Context, li
 				"commitment_quantity": lineItem.CommitmentQuantity,
 			}).
 			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// applyLineItemCommitmentFromMap applies commitment config (keyed by price_id) onto a line item
+// and validates the resulting commitment configuration.
+func (s *subscriptionService) applyLineItemCommitmentFromMap(
+	ctx context.Context,
+	lineItem *subscription.SubscriptionLineItem,
+	commitments map[string]*dto.LineItemCommitmentConfig,
+) error {
+	if lineItem == nil || len(commitments) == 0 {
+		return nil
+	}
+
+	cfg, ok := commitments[lineItem.PriceID]
+	if !ok || cfg == nil {
+		return nil
+	}
+
+	if cfg.CommitmentAmount != nil {
+		lineItem.CommitmentAmount = cfg.CommitmentAmount
+	}
+	if cfg.CommitmentQuantity != nil {
+		lineItem.CommitmentQuantity = cfg.CommitmentQuantity
+	}
+	if cfg.CommitmentType != "" {
+		lineItem.CommitmentType = cfg.CommitmentType
+	}
+	if cfg.OverageFactor != nil {
+		lineItem.CommitmentOverageFactor = cfg.OverageFactor
+	}
+	if cfg.EnableTrueUp != nil {
+		lineItem.CommitmentTrueUpEnabled = *cfg.EnableTrueUp
+	}
+	if cfg.IsWindowCommitment != nil {
+		lineItem.CommitmentWindowed = *cfg.IsWindowCommitment
+	}
+
+	if err := s.validateLineItemCommitment(ctx, lineItem); err != nil {
+		return err
 	}
 
 	return nil

@@ -85,6 +85,9 @@ type AddAddonToSubscriptionRequest struct {
 	StartDate *time.Time             `json:"start_date,omitempty"`
 	Metadata  map[string]interface{} `json:"metadata"`
 
+	// LineItemCommitments allows setting commitment configuration per addon line item (keyed by price_id)
+	LineItemCommitments map[string]*LineItemCommitmentConfig `json:"line_item_commitments,omitempty" validate:"omitempty,dive"`
+
 	// SkipEntityValidation is used to skip the entitlement check for the addon
 	// This is used to add an addon to a subscription without checking the entitlement compatibility
 	// This is used when we are adding an addon to a subscription that already has an active instance of the addon
@@ -115,6 +118,10 @@ func (a *AddAddonToSubscriptionRequest) ToAddonAssociation(ctx context.Context, 
 func (r *AddAddonToSubscriptionRequest) Validate() error {
 	err := validator.ValidateRequest(r)
 	if err != nil {
+		return err
+	}
+
+	if err := validateLineItemCommitments(r.LineItemCommitments); err != nil {
 		return err
 	}
 

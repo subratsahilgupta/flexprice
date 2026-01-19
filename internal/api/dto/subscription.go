@@ -83,6 +83,42 @@ type LineItemCommitmentConfig struct {
 	IsWindowCommitment *bool `json:"is_window_commitment,omitempty"`
 }
 
+// validateLineItemCommitments validates a map of price_id -> commitment configuration.
+func validateLineItemCommitments(commitments map[string]*LineItemCommitmentConfig) error {
+	if len(commitments) == 0 {
+		return nil
+	}
+
+	for priceID, commitmentConfig := range commitments {
+		if priceID == "" {
+			return ierr.NewError("price_id cannot be empty in line_item_commitments").
+				WithHint("Each entry in line_item_commitments must have a valid price_id as the key").
+				Mark(ierr.ErrValidation)
+		}
+
+		if commitmentConfig == nil {
+			return ierr.NewError("commitment config cannot be nil").
+				WithHint(fmt.Sprintf("Commitment configuration for price_id %s cannot be nil", priceID)).
+				WithReportableDetails(map[string]interface{}{
+					"price_id": priceID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		if err := commitmentConfig.Validate(); err != nil {
+			return ierr.NewError(fmt.Sprintf("invalid commitment config for price_id %s", priceID)).
+				WithHint("Line item commitment validation failed").
+				WithReportableDetails(map[string]interface{}{
+					"price_id": priceID,
+					"error":    err.Error(),
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
 // Validate validates the line item commitment configuration
 func (c *LineItemCommitmentConfig) Validate() error {
 	hasAmountCommitment := c.CommitmentAmount != nil && c.CommitmentAmount.GreaterThan(decimal.Zero)
@@ -678,33 +714,8 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	}
 
 	// Validate line item commitments if provided
-	if len(r.LineItemCommitments) > 0 {
-		for priceID, commitmentConfig := range r.LineItemCommitments {
-			if priceID == "" {
-				return ierr.NewError("price_id cannot be empty in line_item_commitments").
-					WithHint("Each entry in line_item_commitments must have a valid price_id as the key").
-					Mark(ierr.ErrValidation)
-			}
-
-			if commitmentConfig == nil {
-				return ierr.NewError("commitment config cannot be nil").
-					WithHint(fmt.Sprintf("Commitment configuration for price_id %s cannot be nil", priceID)).
-					WithReportableDetails(map[string]interface{}{
-						"price_id": priceID,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-
-			if err := commitmentConfig.Validate(); err != nil {
-				return ierr.NewError(fmt.Sprintf("invalid commitment config for price_id %s", priceID)).
-					WithHint("Line item commitment validation failed").
-					WithReportableDetails(map[string]interface{}{
-						"price_id": priceID,
-						"error":    err.Error(),
-					}).
-					Mark(ierr.ErrValidation)
-			}
-		}
+	if err := validateLineItemCommitments(r.LineItemCommitments); err != nil {
+		return err
 	}
 
 	// Validate override line items if provided
