@@ -3148,6 +3148,15 @@ func (s *featureUsageTrackingService) DebugEvent(ctx context.Context, eventID st
 		},
 	}
 
+	// Fetch customer if exists
+	customer, _ := s.CustomerRepo.GetByLookupKey(ctx, event.ExternalCustomerID)
+	if customer != nil {
+		response.Customer = &dto.CustomerInfo{
+			ID:   customer.ID,
+			Name: customer.Name,
+		}
+	}
+
 	// If processed events found, return them
 	if len(processedEvents) > 0 {
 		response.Status = types.EventProcessingStatusTypeProcessed
