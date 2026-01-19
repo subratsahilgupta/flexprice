@@ -138,9 +138,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 	// Setup subscription dates
 	if sub.StartDate.IsZero() {
-		sub.StartDate = time.Now().UTC()
+		sub.StartDate = time.Now().UTC().Truncate(time.Millisecond)
 	} else {
-		sub.StartDate = sub.StartDate.UTC()
+		sub.StartDate = sub.StartDate.UTC().Truncate(time.Millisecond)
 	}
 	if req.BillingAnchor != nil {
 		sub.BillingAnchor = *req.BillingAnchor
