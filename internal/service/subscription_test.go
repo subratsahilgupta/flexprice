@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -107,6 +108,134 @@ func (s *SubscriptionServiceSuite) TestPaymentBehaviorValidation() {
 	}
 }
 
+func (s *SubscriptionServiceSuite) TestAddAddonToSubscriptionLineItemCommitments() {
+	ctx := s.GetContext()
+
+	createAddonWithUsagePrice := func(addonID, priceID, meterID string) {
+		subService := s.service.(*subscriptionService)
+		a := &addon.Addon{
+			ID:          addonID,
+			LookupKey:   addonID,
+			Name:        "Test Addon",
+			Description: "Test Addon Description",
+			Type:        types.AddonTypeOnetime,
+			BaseModel:   types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(subService.AddonRepo.Create(ctx, a))
+
+		p := &price.Price{
+			ID:                 priceID,
+			Amount:             decimal.Zero,
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_ADDON,
+			EntityID:           addonID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceAdvance,
+			MeterID:            meterID,
+			BaseModel:          types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+	}
+
+	s.Run("applies_commitment_to_addon_line_item", func() {
+		addonID := "addon_commitment_ok"
+		priceID := "price_addon_commitment_ok"
+		createAddonWithUsagePrice(addonID, priceID, s.testData.meters.apiCalls.ID)
+
+		now := time.Now().UTC()
+		commitmentAmount := decimal.NewFromFloat(25)
+		overageFactor := decimal.NewFromFloat(2)
+		enableTrueUp := true
+
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+			LineItemCommitments: map[string]*dto.LineItemCommitmentConfig{
+				priceID: {
+					CommitmentAmount: &commitmentAmount,
+					OverageFactor:    &overageFactor,
+					EnableTrueUp:     &enableTrueUp,
+				},
+			},
+		})
+		s.NoError(err)
+
+		filter := types.NewNoLimitSubscriptionLineItemFilter()
+		filter.SubscriptionIDs = []string{s.testData.subscription.ID}
+
+		items, err := s.GetStores().SubscriptionLineItemRepo.List(ctx, filter)
+		s.NoError(err)
+		s.NotEmpty(items)
+
+		var matched *subscription.SubscriptionLineItem
+		for _, it := range items {
+			if it.EntityType == types.SubscriptionLineItemEntityTypeAddon && it.EntityID == addonID && it.PriceID == priceID {
+				matched = it
+				break
+			}
+		}
+		s.NotNil(matched)
+		if matched == nil {
+			return
+		}
+		s.NotNil(matched.CommitmentAmount)
+		s.True(matched.CommitmentAmount.Equal(commitmentAmount))
+		s.Equal(types.COMMITMENT_TYPE_AMOUNT, matched.CommitmentType)
+		s.NotNil(matched.CommitmentOverageFactor)
+		s.True(matched.CommitmentOverageFactor.Equal(overageFactor))
+		s.Equal(enableTrueUp, matched.CommitmentTrueUpEnabled)
+		s.False(matched.CommitmentWindowed)
+	})
+
+	s.Run("rejects_invalid_commitment_config_missing_overage_factor", func() {
+		addonID := "addon_commitment_missing_overage"
+		priceID := "price_addon_commitment_missing_overage"
+		createAddonWithUsagePrice(addonID, priceID, s.testData.meters.apiCalls.ID)
+
+		now := time.Now().UTC()
+		commitmentAmount := decimal.NewFromFloat(25)
+
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+			LineItemCommitments: map[string]*dto.LineItemCommitmentConfig{
+				priceID: {
+					CommitmentAmount: &commitmentAmount,
+				},
+			},
+		})
+		s.Error(err)
+	})
+
+	s.Run("rejects_window_commitment_when_meter_has_no_bucket_size", func() {
+		addonID := "addon_commitment_window_no_bucket"
+		priceID := "price_addon_commitment_window_no_bucket"
+		createAddonWithUsagePrice(addonID, priceID, s.testData.meters.apiCalls.ID)
+
+		now := time.Now().UTC()
+		commitmentAmount := decimal.NewFromFloat(25)
+		overageFactor := decimal.NewFromFloat(2)
+		isWindow := true
+
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+			LineItemCommitments: map[string]*dto.LineItemCommitmentConfig{
+				priceID: {
+					CommitmentAmount:   &commitmentAmount,
+					OverageFactor:      &overageFactor,
+					IsWindowCommitment: &isWindow,
+				},
+			},
+		})
+		s.Error(err)
+	})
+}
+
 func (s *SubscriptionServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
 	s.ClearStores() // Clear all stores before each test for isolation
@@ -129,6 +258,7 @@ func (s *SubscriptionServiceSuite) setupService() {
 		TaxAssociationRepo:         s.GetStores().TaxAssociationRepo,
 		TaxRateRepo:                s.GetStores().TaxRateRepo,
 		SubRepo:                    s.GetStores().SubscriptionRepo,
+		SubscriptionLineItemRepo:   s.GetStores().SubscriptionLineItemRepo,
 		SubscriptionPhaseRepo:      s.GetStores().SubscriptionPhaseRepo,
 		SubScheduleRepo:            s.GetStores().SubscriptionScheduleRepo,
 		PlanRepo:                   s.GetStores().PlanRepo,
@@ -150,6 +280,7 @@ func (s *SubscriptionServiceSuite) setupService() {
 		CouponRepo:                 s.GetStores().CouponRepo,
 		CouponAssociationRepo:      s.GetStores().CouponAssociationRepo,
 		CouponApplicationRepo:      s.GetStores().CouponApplicationRepo,
+		AddonRepo:                  testutil.NewInMemoryAddonStore(),
 		AddonAssociationRepo:       s.GetStores().AddonAssociationRepo,
 		ConnectionRepo:             s.GetStores().ConnectionRepo,
 		SettingsRepo:               s.GetStores().SettingsRepo,

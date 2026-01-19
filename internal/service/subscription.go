@@ -232,27 +232,8 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		// Apply commitment configuration if provided for this price
-		if req.LineItemCommitments != nil {
-			if commitmentConfig, exists := req.LineItemCommitments[item.PriceID]; exists && commitmentConfig != nil {
-				if commitmentConfig.CommitmentAmount != nil {
-					item.CommitmentAmount = commitmentConfig.CommitmentAmount
-				}
-				if commitmentConfig.CommitmentQuantity != nil {
-					item.CommitmentQuantity = commitmentConfig.CommitmentQuantity
-				}
-				if commitmentConfig.CommitmentType != "" {
-					item.CommitmentType = commitmentConfig.CommitmentType
-				}
-				if commitmentConfig.OverageFactor != nil {
-					item.CommitmentOverageFactor = commitmentConfig.OverageFactor
-				}
-				if commitmentConfig.EnableTrueUp != nil {
-					item.CommitmentTrueUpEnabled = *commitmentConfig.EnableTrueUp
-				}
-				if commitmentConfig.IsWindowCommitment != nil {
-					item.CommitmentWindowed = *commitmentConfig.IsWindowCommitment
-				}
-			}
+		if err := s.applyLineItemCommitmentFromMap(ctx, item, req.LineItemCommitments); err != nil {
+			return nil, err
 		}
 
 		if priceResponse.Price.StartDate != nil && priceResponse.Price.StartDate.After(startDate) {
@@ -278,6 +259,12 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	}
 
 	sub.LineItems = lineItems
+
+	// Ensure subscription-level and line-item-level commitments don't conflict
+	if err := s.validateSubscriptionLevelCommitment(sub); err != nil {
+		return nil, err
+	}
+
 	sub.EnableTrueUp = req.EnableTrueUp
 	if req.SubscriptionStatus != "" {
 		sub.SubscriptionStatus = req.SubscriptionStatus
@@ -3862,7 +3849,19 @@ func (s *subscriptionService) addAddonToSubscription(
 	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(validPrices))
 	for _, priceResponse := range validPrices {
 		lineItem := s.createLineItemFromPrice(ctx, priceResponse, sub, req.AddonID, a.Addon.Name)
+		if err := s.applyLineItemCommitmentFromMap(ctx, lineItem, req.LineItemCommitments); err != nil {
+			return nil, err
+		}
 		lineItems = append(lineItems, lineItem)
+	}
+
+	// Ensure subscription-level and line-item-level commitments don't conflict
+	originalLineItems := sub.LineItems
+	sub.LineItems = lo.Flatten([][]*subscription.SubscriptionLineItem{originalLineItems, lineItems})
+	err = s.validateSubscriptionLevelCommitment(sub)
+	sub.LineItems = originalLineItems
+	if err != nil {
+		return nil, err
 	}
 
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
