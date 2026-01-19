@@ -444,6 +444,34 @@ type SubscriptionResponse struct {
 // ListSubscriptionsResponse represents the response for listing subscriptions
 type ListSubscriptionsResponse = types.ListResponse[*SubscriptionResponse]
 
+// SubscriptionResponseV2 represents the V2 response for a subscription
+// with optional expanded fields based on the request expand parameter
+type SubscriptionResponseV2 struct {
+	*subscription.Subscription
+
+	// Plan is expanded only if "plan" is in expand parameter
+	Plan *PlanResponse `json:"plan,omitempty"`
+
+	// Customer is expanded only if "customer" is in expand parameter
+	Customer *CustomerResponse `json:"customer,omitempty"`
+
+	// LineItems is expanded only if "subscription_line_items" is in expand parameter
+	// Each line item can optionally include expanded price data
+	LineItems []*SubscriptionLineItemResponse `json:"line_items,omitempty"`
+
+	// CouponAssociations are included when "coupon_associations" is in expand parameter
+	CouponAssociations []*CouponAssociationResponse `json:"coupon_associations,omitempty"`
+
+	// Phases are included when "phases" is in expand parameter
+	Phases []*SubscriptionPhaseResponse `json:"phases,omitempty"`
+
+	// CreditGrants are included when "credit_grants" is in expand parameter
+	CreditGrants []*CreditGrantResponse `json:"credit_grants,omitempty"`
+
+	// Pauses are included when subscription has pause status
+	Pauses []*subscription.SubscriptionPause `json:"pauses,omitempty"`
+}
+
 func (r *CreateSubscriptionRequest) Validate() error {
 	// Case- Both are absent
 	if r.CustomerID == "" && r.ExternalCustomerID == "" {

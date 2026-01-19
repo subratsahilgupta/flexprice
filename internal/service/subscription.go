@@ -1405,6 +1405,112 @@ func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*
 	return response, nil
 }
 
+// GetSubscriptionV2 retrieves a subscription with optional expanded fields based on expand parameter
+func (s *subscriptionService) GetSubscriptionV2(ctx context.Context, id string, expand types.Expand) (*dto.SubscriptionResponseV2, error) {
+	// Validate expand parameters
+	if !expand.IsEmpty() {
+		if err := expand.Validate(types.SubscriptionExpandConfig); err != nil {
+			return nil, err
+		}
+	}
+
+	// Determine if we need to fetch line items
+	needsLineItems := expand.Has(types.ExpandSubscriptionLineItems) || expand.Has(types.ExpandPrices)
+
+	var sub *subscription.Subscription
+	var lineItems []*subscription.SubscriptionLineItem
+	var err error
+
+	if needsLineItems {
+		sub, lineItems, err = s.SubRepo.GetWithLineItems(ctx, id)
+	} else {
+		sub, err = s.SubRepo.Get(ctx, id)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	response := &dto.SubscriptionResponseV2{
+		Subscription: sub,
+	}
+
+	// Expand pauses if subscription has pause status
+	if sub.PauseStatus != types.PauseStatusNone {
+		pauses, err := s.SubRepo.ListPauses(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		response.Pauses = pauses
+	}
+
+	// Conditionally expand plan
+	if expand.Has(types.ExpandPlan) {
+		planService := NewPlanService(s.ServiceParams)
+		plan, err := planService.GetPlan(ctx, sub.PlanID)
+		if err != nil {
+			return nil, err
+		}
+		response.Plan = plan
+	}
+
+	// Conditionally expand customer
+	if expand.Has(types.ExpandCustomer) {
+		customerService := NewCustomerService(s.ServiceParams)
+		customer, err := customerService.GetCustomer(ctx, sub.CustomerID)
+		if err != nil {
+			return nil, err
+		}
+		response.Customer = customer
+	}
+
+	// Conditionally expand line items with prices
+	if expand.Has(types.ExpandSubscriptionLineItems) && len(lineItems) > 0 {
+		lineItemResponses := make([]*dto.SubscriptionLineItemResponse, len(lineItems))
+
+		// Check if we need to expand prices within line items
+		shouldExpandPrices := expand.Has(types.ExpandPrices) ||
+			expand.GetNested(types.ExpandSubscriptionLineItems).Has(types.ExpandPrices)
+
+		if shouldExpandPrices {
+			// Get all prices in bulk
+			priceIds := lo.Map(lineItems, func(item *subscription.SubscriptionLineItem, _ int) string {
+				return item.PriceID
+			})
+			priceService := NewPriceService(s.ServiceParams)
+			priceFilter := types.NewNoLimitPriceFilter().
+				WithPriceIDs(priceIds).
+				WithAllowExpiredPrices(true)
+			prices, err := priceService.GetPrices(ctx, priceFilter)
+			if err != nil {
+				return nil, err
+			}
+
+			priceMap := make(map[string]*dto.PriceResponse)
+			for _, p := range prices.Items {
+				priceMap[p.ID] = p
+			}
+
+			for i, lineItem := range lineItems {
+				lineItemResponses[i] = &dto.SubscriptionLineItemResponse{
+					SubscriptionLineItem: lineItem,
+					Price:                priceMap[lineItem.PriceID],
+				}
+			}
+		} else {
+			// Just include line items without price expansion
+			for i, lineItem := range lineItems {
+				lineItemResponses[i] = &dto.SubscriptionLineItemResponse{
+					SubscriptionLineItem: lineItem,
+				}
+			}
+		}
+
+		response.LineItems = lineItemResponses
+	}
+
+	return response, nil
+}
+
 // UpdateSubscription updates a subscription with the provided request
 func (s *subscriptionService) UpdateSubscription(ctx context.Context, subscriptionID string, req dto.UpdateSubscriptionRequest) (*dto.SubscriptionResponse, error) {
 	logger := s.Logger.With(

@@ -77,6 +77,7 @@ type RevenueAnalyticsService interface {
 type SubscriptionService interface {
 	CreateSubscription(ctx context.Context, req dto.CreateSubscriptionRequest) (*dto.SubscriptionResponse, error)
 	GetSubscription(ctx context.Context, id string) (*dto.SubscriptionResponse, error)
+	GetSubscriptionV2(ctx context.Context, id string, expand types.Expand) (*dto.SubscriptionResponseV2, error)
 	UpdateSubscription(ctx context.Context, subscriptionID string, req dto.UpdateSubscriptionRequest) (*dto.SubscriptionResponse, error)
 	CancelSubscription(ctx context.Context, subscriptionID string, req *dto.CancelSubscriptionRequest) (*dto.CancelSubscriptionResponse, error)
 	ActivateIncompleteSubscription(ctx context.Context, subscriptionID string) error
