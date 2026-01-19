@@ -1166,3 +1166,82 @@ func (r *EventRepository) GetTotalEventCount(ctx context.Context, startTime, end
 	SetSpanSuccess(span)
 	return result, nil
 }
+
+func (r *EventRepository) GetEventByID(ctx context.Context, eventID string) (*events.Event, error) {
+	span := StartRepositorySpan(ctx, "event", "get_event_by_id", map[string]interface{}{
+		"event_id": eventID,
+	})
+	defer FinishSpan(span)
+
+	query := `
+		SELECT 
+			id,
+			external_customer_id,
+			customer_id,
+			tenant_id,
+			event_name,
+			timestamp,
+			source,
+			properties,
+			environment_id,
+			ingested_at
+		FROM events
+		WHERE tenant_id = ?
+		AND environment_id = ?
+		AND id = ?
+		LIMIT 1
+	`
+	args := []interface{}{
+		types.GetTenantID(ctx),
+		types.GetEnvironmentID(ctx),
+		eventID,
+	}
+
+	var event events.Event
+	var propertiesJSON string
+
+	err := r.store.GetConn().QueryRow(ctx, query, args...).Scan(
+		&event.ID,
+		&event.ExternalCustomerID,
+		&event.CustomerID,
+		&event.TenantID,
+		&event.EventName,
+		&event.Timestamp,
+		&event.Source,
+		&propertiesJSON,
+		&event.EnvironmentID,
+		&event.IngestedAt,
+	)
+
+	if err != nil {
+		SetSpanError(span, err)
+		if err.Error() == "sql: no rows in result set" {
+			return nil, ierr.WithError(err).
+				WithHint("Event not found").
+				WithReportableDetails(map[string]interface{}{
+					"event_id": eventID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get event").
+			WithReportableDetails(map[string]interface{}{
+				"event_id": eventID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	if err := json.Unmarshal([]byte(propertiesJSON), &event.Properties); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to unmarshal event properties").
+			WithReportableDetails(map[string]interface{}{
+				"event_id":   eventID,
+				"properties": propertiesJSON,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	SetSpanSuccess(span)
+	return &event, nil
+}

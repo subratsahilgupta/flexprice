@@ -58,6 +58,9 @@ type FeatureUsageTrackingService interface {
 
 	// Get HuggingFace Inference
 	GetHuggingFaceBillingData(ctx context.Context, req *dto.GetHuggingFaceBillingDataRequest) (*dto.GetHuggingFaceBillingDataResponse, error)
+
+	// DebugEvent provides debugging information for an event by ID
+	DebugEvent(ctx context.Context, eventID string) (*dto.GetEventByIDResponse, error)
 }
 
 type featureUsageTrackingService struct {
@@ -3111,4 +3114,340 @@ func (s *featureUsageTrackingService) mergeBucketPointsByWindow(points []events.
 	})
 
 	return mergedPoints
+}
+
+func (s *featureUsageTrackingService) DebugEvent(ctx context.Context, eventID string) (*dto.GetEventByIDResponse, error) {
+	// Step 1: Get event by ID
+	event, err := s.eventRepo.GetEventByID(ctx, eventID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 2: Check feature_usage for processed events
+	processedEvents, err := s.featureUsageRepo.GetFeatureUsageByEventIDs(ctx, []string{eventID})
+	if err != nil {
+		return nil, err
+	}
+
+	response := &dto.GetEventByIDResponse{
+		Event: &dto.Event{
+			ID:                 event.ID,
+			EventName:          event.EventName,
+			ExternalCustomerID: event.ExternalCustomerID,
+			CustomerID:         event.CustomerID,
+			Timestamp:          event.Timestamp,
+			Properties:         event.Properties,
+			Source:             event.Source,
+			EnvironmentID:      event.EnvironmentID,
+		},
+	}
+
+	// If processed events found, return them
+	if len(processedEvents) > 0 {
+		response.Status = types.EventProcessingStatusTypeProcessed
+		response.ProcessedEvents = make([]*dto.FeatureUsageInfo, len(processedEvents))
+		for i, pe := range processedEvents {
+			response.ProcessedEvents[i] = &dto.FeatureUsageInfo{
+				SubscriptionID: pe.SubscriptionID,
+				SubLineItemID:  pe.SubLineItemID,
+				PriceID:        pe.PriceID,
+				MeterID:        pe.MeterID,
+				FeatureID:      pe.FeatureID,
+				QtyTotal:       pe.QtyTotal.String(),
+				ProcessedAt:    pe.ProcessedAt,
+			}
+		}
+		return response, nil
+	}
+
+	// Step 3: Try to process event at runtime
+	runtimeProcessed, _ := s.prepareProcessedEvents(ctx, event)
+	if len(runtimeProcessed) > 0 {
+		// If runtime processing succeeded, return results
+		response.Status = types.EventProcessingStatusTypePostProcessed
+		response.ProcessedEvents = make([]*dto.FeatureUsageInfo, len(runtimeProcessed))
+		for i, pe := range runtimeProcessed {
+			response.ProcessedEvents[i] = &dto.FeatureUsageInfo{
+				SubscriptionID: pe.SubscriptionID,
+				SubLineItemID:  pe.SubLineItemID,
+				PriceID:        pe.PriceID,
+				MeterID:        pe.MeterID,
+				FeatureID:      pe.FeatureID,
+				QtyTotal:       pe.QtyTotal.String(),
+				ProcessedAt:    pe.ProcessedAt,
+			}
+		}
+		return response, nil
+	}
+
+	// Step 4: Run debug tracker to find where it failed
+	response.Status = types.EventProcessingStatusTypeFailed
+	response.DebugTracker = s.runDebugTracker(ctx, event)
+
+	return response, nil
+}
+
+func (s *featureUsageTrackingService) runDebugTracker(ctx context.Context, event *events.Event) *dto.DebugTracker {
+	tracker := &dto.DebugTracker{
+		CustomerLookup:             &dto.CustomerLookupResult{Status: types.DebugTrackerStatusUnprocessed},
+		MeterMatching:              &dto.MeterMatchingResult{Status: types.DebugTrackerStatusUnprocessed},
+		PriceLookup:                &dto.PriceLookupResult{Status: types.DebugTrackerStatusUnprocessed},
+		SubscriptionLineItemLookup: &dto.SubscriptionLineItemLookupResult{Status: types.DebugTrackerStatusUnprocessed},
+	}
+
+	// Step 1: Customer Lookup
+	customer, err := s.CustomerRepo.GetByLookupKey(ctx, event.ExternalCustomerID)
+	if err != nil {
+		tracker.CustomerLookup.Status = types.DebugTrackerStatusError
+		errorResp := &ierr.ErrorResponse{
+			Success: false,
+			Error: ierr.ErrorDetail{
+				Display:       err.Error(),
+				InternalError: err.Error(),
+			},
+		}
+		tracker.CustomerLookup.Error = errorResp
+		tracker.FailurePoint = &types.FailurePoint{
+			FailurePointType: types.FailurePointTypeCustomerLookup,
+			Error:            errorResp,
+		}
+		return tracker
+	}
+
+	if customer == nil {
+		tracker.CustomerLookup.Status = types.DebugTrackerStatusNotFound
+		tracker.FailurePoint = &types.FailurePoint{
+			FailurePointType: types.FailurePointTypeCustomerLookup,
+			Error:            tracker.CustomerLookup.Error,
+		}
+		return tracker
+	}
+
+	tracker.CustomerLookup.Status = types.DebugTrackerStatusFound
+	tracker.CustomerLookup.Customer = customer
+
+	// Step 2: Meter Matching
+	meterFilter := types.NewNoLimitMeterFilter()
+	meterFilter.EventName = event.EventName
+	meters, err := s.MeterRepo.List(ctx, meterFilter)
+	if err != nil {
+		tracker.MeterMatching.Status = types.DebugTrackerStatusError
+		errorResp := &ierr.ErrorResponse{
+			Success: false,
+			Error: ierr.ErrorDetail{
+				Display:       err.Error(),
+				InternalError: err.Error(),
+			},
+		}
+		tracker.MeterMatching.Error = errorResp
+		tracker.FailurePoint = &types.FailurePoint{
+			FailurePointType: types.FailurePointTypeMeterLookup,
+			Error:            errorResp,
+		}
+		return tracker
+	}
+
+	matchedMeters := make([]dto.MatchedMeter, 0)
+	for _, m := range meters {
+		if s.checkMeterFilters(event, m.Filters) {
+			matchedMeters = append(matchedMeters, dto.MatchedMeter{
+				MeterID:   m.ID,
+				EventName: m.EventName,
+				Meter:     m,
+			})
+		}
+	}
+
+	if len(matchedMeters) == 0 {
+		tracker.MeterMatching.Status = types.DebugTrackerStatusNotFound
+		errMessage := fmt.Sprintf("No meters found matching event_name: %s", event.EventName)
+		tracker.FailurePoint = &types.FailurePoint{
+			FailurePointType: types.FailurePointTypeMeterLookup,
+			Error: &ierr.ErrorResponse{
+				Success: false,
+				Error: ierr.ErrorDetail{
+					Display:       errMessage,
+					InternalError: errMessage,
+				},
+			},
+		}
+		return tracker
+	}
+
+	tracker.MeterMatching.Status = types.DebugTrackerStatusFound
+	tracker.MeterMatching.MatchedMeters = matchedMeters
+
+	// Step 3: Price Lookup
+	meterIDs := make([]string, len(matchedMeters))
+	for i, m := range matchedMeters {
+		meterIDs[i] = m.MeterID
+	}
+
+	priceFilter := types.NewNoLimitPriceFilter().
+		WithStatus(types.StatusPublished)
+	priceFilter.MeterIDs = meterIDs
+	prices, err := s.PriceRepo.List(ctx, priceFilter)
+	if err != nil {
+		tracker.PriceLookup.Status = types.DebugTrackerStatusError
+		errorResp := &ierr.ErrorResponse{
+			Success: false,
+			Error: ierr.ErrorDetail{
+				Display:       err.Error(),
+				InternalError: err.Error(),
+			},
+		}
+		tracker.PriceLookup.Error = errorResp
+		tracker.FailurePoint = &types.FailurePoint{
+			FailurePointType: types.FailurePointTypePriceLookup,
+			Error:            errorResp,
+		}
+		return tracker
+	}
+
+	matchedPrices := make([]dto.MatchedPrice, 0)
+	for _, p := range prices {
+		if p.IsUsage() {
+			matchedPrices = append(matchedPrices, dto.MatchedPrice{
+				PriceID: p.ID,
+				MeterID: p.MeterID,
+				Status:  string(p.Status),
+				Price:   p,
+			})
+		}
+	}
+
+	if len(matchedPrices) == 0 {
+		tracker.PriceLookup.Status = types.DebugTrackerStatusNotFound
+		errMessage := "No prices found for matched meters"
+		tracker.FailurePoint = &types.FailurePoint{
+			FailurePointType: types.FailurePointTypePriceLookup,
+			Error: &ierr.ErrorResponse{
+				Success: false,
+				Error: ierr.ErrorDetail{
+					Display:       errMessage,
+					InternalError: errMessage,
+				},
+			},
+		}
+		return tracker
+	}
+
+	tracker.PriceLookup.Status = types.DebugTrackerStatusFound
+	tracker.PriceLookup.MatchedPrices = matchedPrices
+
+	// Step 4: Subscription Line Item Lookup
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	subFilter := types.NewSubscriptionFilter()
+	subFilter.CustomerID = customer.ID
+	subFilter.WithLineItems = true
+	subFilter.SubscriptionStatus = []types.SubscriptionStatus{
+		types.SubscriptionStatusActive,
+		types.SubscriptionStatusTrialing,
+	}
+
+	subscriptionsList, err := subscriptionService.ListSubscriptions(ctx, subFilter)
+	if err != nil {
+		tracker.SubscriptionLineItemLookup.Status = types.DebugTrackerStatusError
+		errorResp := &ierr.ErrorResponse{
+			Success: false,
+			Error: ierr.ErrorDetail{
+				Display:       err.Error(),
+				InternalError: err.Error(),
+			},
+		}
+		tracker.SubscriptionLineItemLookup.Error = errorResp
+		tracker.FailurePoint = &types.FailurePoint{
+			FailurePointType: types.FailurePointTypeSubscriptionLineItemLookup,
+			Error:            errorResp,
+		}
+		return tracker
+	}
+
+	priceIDs := make([]string, len(matchedPrices))
+	for i, p := range matchedPrices {
+		priceIDs[i] = p.PriceID
+	}
+
+	matchedLineItems := make([]dto.MatchedSubscriptionLineItem, 0)
+	for _, sub := range subscriptionsList.Items {
+		for _, item := range sub.LineItems {
+			if !item.IsUsage() {
+				continue
+			}
+
+			// Check if this line item's price is in our matched prices
+			if !lo.Contains(priceIDs, item.PriceID) {
+				continue
+			}
+
+			isActive := item.IsActive(event.Timestamp)
+			// Check: start_date < event timestamp < end_date
+			timestampWithinRange := event.Timestamp.After(item.StartDate) && (item.EndDate.IsZero() || event.Timestamp.Before(item.EndDate))
+
+			matchedLineItems = append(matchedLineItems, dto.MatchedSubscriptionLineItem{
+				SubLineItemID:        item.ID,
+				SubscriptionID:       sub.ID,
+				PriceID:              item.PriceID,
+				StartDate:            item.StartDate,
+				EndDate:              item.EndDate,
+				IsActiveForEvent:     isActive,
+				TimestampWithinRange: timestampWithinRange,
+				SubscriptionLineItem: item,
+			})
+		}
+	}
+
+	if len(matchedLineItems) == 0 {
+		tracker.SubscriptionLineItemLookup.Status = types.DebugTrackerStatusNotFound
+		errorResp := &ierr.ErrorResponse{
+			Success: false,
+			Error: ierr.ErrorDetail{
+				Display:       "No subscription line items found for matched prices",
+				InternalError: "No subscription line items found for matched prices",
+			},
+		}
+		tracker.SubscriptionLineItemLookup.Error = errorResp
+		tracker.FailurePoint = &types.FailurePoint{
+			FailurePointType: types.FailurePointTypeSubscriptionLineItemLookup,
+			Error:            errorResp,
+		}
+		return tracker
+	}
+
+	// Check if any line item is active for the event timestamp
+	hasActiveLineItem := false
+	for _, item := range matchedLineItems {
+		if item.TimestampWithinRange {
+			hasActiveLineItem = true
+			break
+		}
+	}
+
+	if !hasActiveLineItem {
+		tracker.SubscriptionLineItemLookup.Status = types.DebugTrackerStatusNotFound
+		errorMsg := fmt.Sprintf("Found %d subscription line item(s) but none are active for event timestamp %s. Event timestamp must be between line item start_date and end_date",
+			len(matchedLineItems),
+			event.Timestamp.Format(time.RFC3339))
+		errorResp := &ierr.ErrorResponse{
+			Success: false,
+			Error: ierr.ErrorDetail{
+				Display:       "No active subscription line items found for event timestamp",
+				InternalError: errorMsg,
+			},
+		}
+		tracker.SubscriptionLineItemLookup.Error = errorResp
+		tracker.FailurePoint = &types.FailurePoint{
+			FailurePointType: types.FailurePointTypeSubscriptionLineItemLookup,
+			Error:            errorResp,
+		}
+		return tracker
+	}
+
+	tracker.SubscriptionLineItemLookup.Status = types.DebugTrackerStatusFound
+	tracker.SubscriptionLineItemLookup.MatchedLineItems = matchedLineItems
+
+	// No failure point if we got here
+	tracker.FailurePoint = nil
+
+	return tracker
 }
