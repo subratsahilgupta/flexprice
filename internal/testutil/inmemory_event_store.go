@@ -49,6 +49,36 @@ func (s *InMemoryEventStore) BulkInsertEvents(ctx context.Context, events []*eve
 	return nil
 }
 
+func (s *InMemoryEventStore) GetEventByID(ctx context.Context, eventID string) (*events.Event, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	event, exists := s.events[eventID]
+	if !exists {
+		return nil, ierr.NewError("event not found").
+			WithHint("Event with the specified ID does not exist").
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Check tenant ID and environment ID from context
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	if event.TenantID != tenantID {
+		return nil, ierr.NewError("event not found").
+			WithHint("Event with the specified ID does not exist for this tenant").
+			Mark(ierr.ErrNotFound)
+	}
+
+	if event.EnvironmentID != environmentID {
+		return nil, ierr.NewError("event not found").
+			WithHint("Event with the specified ID does not exist for this environment").
+			Mark(ierr.ErrNotFound)
+	}
+
+	return event, nil
+}
+
 func (s *InMemoryEventStore) GetUsage(ctx context.Context, params *events.UsageParams) (*events.AggregationResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
