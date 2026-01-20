@@ -232,6 +232,8 @@ func (r *ScheduledTaskRepository) GetByConnection(ctx context.Context, connectio
 			scheduledtask.ConnectionID(connectionID),
 			scheduledtask.TenantID(types.GetTenantID(ctx)),
 			scheduledtask.EnvironmentID(types.GetEnvironmentID(ctx)),
+			// Only return active tasks; deleted/archived tasks should not be acted on (e.g. during connection deletion).
+			scheduledtask.Status(string(types.StatusPublished)),
 		).
 		All(ctx)
 

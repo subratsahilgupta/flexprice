@@ -59,6 +59,21 @@ func GetGlobalTemporalService() TemporalService {
 	return globalTemporalService
 }
 
+// GetGlobalTemporalClient returns the underlying Temporal client from the global service instance.
+// Useful for operations not exposed on the TemporalService interface (e.g. schedules).
+func GetGlobalTemporalClient() client.TemporalClient {
+	if globalTemporalService == nil {
+		return nil
+	}
+
+	// The global service is initialized via NewTemporalService, which returns *temporalService.
+	if svc, ok := globalTemporalService.(*temporalService); ok {
+		return svc.client
+	}
+
+	return nil
+}
+
 // Start implements TemporalService
 func (s *temporalService) Start(ctx context.Context) error {
 	// Start client
