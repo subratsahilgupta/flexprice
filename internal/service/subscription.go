@@ -138,9 +138,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 
 	// Setup subscription dates
 	if sub.StartDate.IsZero() {
-		sub.StartDate = time.Now().UTC()
+		sub.StartDate = time.Now().UTC().Truncate(time.Millisecond)
 	} else {
-		sub.StartDate = sub.StartDate.UTC()
+		sub.StartDate = sub.StartDate.UTC().Truncate(time.Millisecond)
 	}
 	if req.BillingAnchor != nil {
 		sub.BillingAnchor = *req.BillingAnchor
@@ -1433,11 +1433,23 @@ func (s *subscriptionService) GetSubscriptionV2(ctx context.Context, id string, 
 	// Conditionally expand plan
 	if expand.Has(types.ExpandPlan) {
 		planService := NewPlanService(s.ServiceParams)
-		plan, err := planService.GetPlan(ctx, sub.PlanID)
+		planFilter := types.NewNoLimitPlanFilter()
+		planFilter.PlanIDs = []string{sub.PlanID}
+
+		// Build expand string for plan based on nested expand parameters
+		// Only include prices if explicitly requested via expand=plan.prices
+		// Note: expand=prices alone should NOT expand prices in the plan, only in line items
+		if expand.GetNested(types.ExpandPlan).Has(types.ExpandPrices) {
+			planFilter.Expand = lo.ToPtr(string(types.ExpandPrices))
+		}
+
+		plansResponse, err := planService.GetPlans(ctx, planFilter)
 		if err != nil {
 			return nil, err
 		}
-		response.Plan = plan
+		if len(plansResponse.Items) > 0 {
+			response.Plan = plansResponse.Items[0]
+		}
 	}
 
 	// Conditionally expand customer
