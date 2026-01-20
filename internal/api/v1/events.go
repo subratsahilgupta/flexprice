@@ -492,17 +492,6 @@ func (h *EventsHandler) GetHuggingFaceBillingData(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// @Summary Benchmark event processing V1
-// @Description Benchmark the V1 (original) event processing without persisting to ClickHouse
-// @Tags Events
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param event body dto.BenchmarkRequest true "Event data"
-// @Success 200 {object} dto.BenchmarkResult
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /events/benchmark/v1 [post]
 func (h *EventsHandler) BenchmarkV1(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -533,17 +522,6 @@ func (h *EventsHandler) BenchmarkV1(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// @Summary Benchmark event processing V2
-// @Description Benchmark the V2 (optimized) event processing without persisting to ClickHouse
-// @Tags Events
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param event body dto.BenchmarkRequest true "Event data"
-// @Success 200 {object} dto.BenchmarkResult
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /events/benchmark/v2 [post]
 func (h *EventsHandler) BenchmarkV2(c *gin.Context) {
 	ctx := c.Request.Context()
 
