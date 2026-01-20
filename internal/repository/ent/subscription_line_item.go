@@ -633,6 +633,11 @@ func (o *SubscriptionLineItemQueryOptions) applyEntityQueryOptions(_ context.Con
 		query = query.Where(subscriptionlineitem.SubscriptionIDIn(f.SubscriptionIDs...))
 	}
 
+	// Apply customer IDs filter if specified
+	if len(f.CustomerIDs) > 0 {
+		query = query.Where(subscriptionlineitem.CustomerIDIn(f.CustomerIDs...))
+	}
+
 	// Apply entity IDs filter if specified
 	if len(f.EntityIDs) > 0 {
 		query = query.Where(subscriptionlineitem.EntityIDIn(f.EntityIDs...))
