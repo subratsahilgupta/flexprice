@@ -562,7 +562,7 @@ func (s *connectionService) DeleteConnection(ctx context.Context, id string) err
 		s.Config,
 	)
 
-	// Sheduled tasks cleanup
+	// Scheduled tasks cleanup
 	for _, schedTask := range schedTasks {
 		if err := scheduledTaskService.DeleteScheduledTask(ctx, schedTask.ID); err != nil {
 			s.Logger.Errorw("failed to delete scheduled task", "error", err, "scheduled_task_id", schedTask.ID)
