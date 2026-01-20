@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
+	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -437,4 +439,83 @@ func (r *BenchmarkRequest) ToEvent(ctx context.Context) *events.Event {
 		r.Source,
 		types.GetEnvironmentID(ctx),
 	)
+}
+
+type CustomerInfo struct {
+	ID   string `json:"customer_id,omitempty"`
+	Name string `json:"customer_name,omitempty"`
+}
+
+type GetEventByIDResponse struct {
+	Event           *Event                          `json:"event"`
+	Status          types.EventProcessingStatusType `json:"status"`
+	Customer        *CustomerInfo                   `json:"customer,omitempty"`
+	ProcessedEvents []*FeatureUsageInfo             `json:"processed_events,omitempty"`
+	DebugTracker    *DebugTracker                   `json:"debug_tracker,omitempty"`
+}
+
+type FeatureUsageInfo struct {
+	SubscriptionID string    `json:"subscription_id"`
+	SubLineItemID  string    `json:"sub_line_item_id"`
+	PriceID        string    `json:"price_id"`
+	MeterID        string    `json:"meter_id"`
+	FeatureID      string    `json:"feature_id"`
+	QtyTotal       string    `json:"qty_total"`
+	ProcessedAt    time.Time `json:"processed_at"`
+}
+
+type DebugTracker struct {
+	CustomerLookup             *CustomerLookupResult             `json:"customer_lookup"`
+	MeterMatching              *MeterMatchingResult              `json:"meter_matching"`
+	PriceLookup                *PriceLookupResult                `json:"price_lookup"`
+	SubscriptionLineItemLookup *SubscriptionLineItemLookupResult `json:"subscription_line_item_lookup"`
+	FailurePoint               *types.FailurePoint               `json:"failure_point"`
+}
+
+type CustomerLookupResult struct {
+	Status   types.DebugTrackerStatus `json:"status"`
+	Customer *customer.Customer       `json:"customer,omitempty"`
+	Error    *ierr.ErrorResponse      `json:"error,omitempty"`
+}
+
+type MeterMatchingResult struct {
+	Status        types.DebugTrackerStatus `json:"status"`
+	MatchedMeters []MatchedMeter           `json:"matched_meters,omitempty"`
+	Error         *ierr.ErrorResponse      `json:"error,omitempty"`
+}
+
+type MatchedMeter struct {
+	MeterID   string       `json:"meter_id"`
+	EventName string       `json:"event_name"`
+	Meter     *meter.Meter `json:"meter"`
+}
+
+type PriceLookupResult struct {
+	Status        types.DebugTrackerStatus `json:"status"`
+	MatchedPrices []MatchedPrice           `json:"matched_prices,omitempty"`
+	Error         *ierr.ErrorResponse      `json:"error,omitempty"`
+}
+
+type MatchedPrice struct {
+	PriceID string       `json:"price_id"`
+	MeterID string       `json:"meter_id"`
+	Status  string       `json:"status"`
+	Price   *price.Price `json:"price"`
+}
+
+type SubscriptionLineItemLookupResult struct {
+	Status           types.DebugTrackerStatus      `json:"status"`
+	MatchedLineItems []MatchedSubscriptionLineItem `json:"matched_line_items,omitempty"`
+	Error            *ierr.ErrorResponse           `json:"error,omitempty"`
+}
+
+type MatchedSubscriptionLineItem struct {
+	SubLineItemID        string                             `json:"sub_line_item_id"`
+	SubscriptionID       string                             `json:"subscription_id"`
+	PriceID              string                             `json:"price_id"`
+	StartDate            time.Time                          `json:"start_date"`
+	EndDate              time.Time                          `json:"end_date"`
+	IsActiveForEvent     bool                               `json:"is_active_for_event"`
+	TimestampWithinRange bool                               `json:"timestamp_within_range"`
+	SubscriptionLineItem *subscription.SubscriptionLineItem `json:"subscription_line_item,omitempty"`
 }

@@ -573,3 +573,34 @@ func (h *EventsHandler) BenchmarkV2(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+// @Summary Get event by ID
+// @Description Retrieve event details and processing status with debug information
+// @Tags Events
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Event ID"
+// @Success 200 {object} dto.GetEventByIDResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /events/{id} [get]
+func (h *EventsHandler) GetEventByID(c *gin.Context) {
+	ctx := c.Request.Context()
+	eventID := c.Param("id")
+
+	if eventID == "" {
+		c.Error(ierr.NewError("event ID is required").
+			WithHint("Please provide a valid event ID").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	response, err := h.featureUsageTrackingService.DebugEvent(ctx, eventID)
+	if err != nil {
+		h.log.Error("Failed to debug event", "error", err, "event_id", eventID)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}

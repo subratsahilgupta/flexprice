@@ -14,6 +14,7 @@ type Repository interface {
 	GetUsage(ctx context.Context, params *UsageParams) (*AggregationResult, error)
 	GetUsageWithFilters(ctx context.Context, params *UsageWithFiltersParams) ([]*AggregationResult, error)
 	GetEvents(ctx context.Context, params *GetEventsParams) ([]*Event, uint64, error)
+	GetEventByID(ctx context.Context, eventID string) (*Event, error)
 	FindUnprocessedEvents(ctx context.Context, params *FindUnprocessedEventsParams) ([]*Event, error)
 	FindUnprocessedEventsFromFeatureUsage(ctx context.Context, params *FindUnprocessedEventsParams) ([]*Event, error)
 	GetDistinctEventNames(ctx context.Context, externalCustomerID string, startTime, endTime time.Time) ([]string, error)
