@@ -106,6 +106,13 @@ func (r *subscriptionLineItemRepository) Create(ctx context.Context, item *subsc
 		SetInvoiceCadence(item.InvoiceCadence).
 		SetTrialPeriod(item.TrialPeriod).
 		SetMetadata(item.Metadata).
+		// Commitment fields
+		SetNillableCommitmentAmount(item.CommitmentAmount).
+		SetNillableCommitmentQuantity(item.CommitmentQuantity).
+		SetNillableCommitmentType(types.ToNillableString(string(item.CommitmentType))).
+		SetNillableCommitmentOverageFactor(item.CommitmentOverageFactor).
+		SetCommitmentTrueUpEnabled(item.CommitmentTrueUpEnabled).
+		SetCommitmentWindowed(item.CommitmentWindowed).
 		SetTenantID(item.TenantID).
 		SetEnvironmentID(item.EnvironmentID).
 		SetStatus(string(item.Status)).
@@ -233,6 +240,13 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 		SetNillableStartDate(types.ToNillableTime(item.StartDate)).
 		SetNillableEndDate(types.ToNillableTime(item.EndDate)).
 		SetMetadata(item.Metadata).
+		// Commitment fields
+		SetNillableCommitmentAmount(item.CommitmentAmount).
+		SetNillableCommitmentQuantity(item.CommitmentQuantity).
+		SetNillableCommitmentType(types.ToNillableString(string(item.CommitmentType))).
+		SetNillableCommitmentOverageFactor(item.CommitmentOverageFactor).
+		SetCommitmentTrueUpEnabled(item.CommitmentTrueUpEnabled).
+		SetCommitmentWindowed(item.CommitmentWindowed).
 		SetStatus(string(item.Status)).
 		SetUpdatedBy(item.UpdatedBy).
 		SetUpdatedAt(time.Now()).

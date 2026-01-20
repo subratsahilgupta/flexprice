@@ -9,6 +9,9 @@ import (
 // StartRepositorySpan creates a new span for a repository operation
 // Returns nil if Sentry is not available in the context
 func StartRepositorySpan(ctx context.Context, repository, operation string, params map[string]interface{}) *sentry.Span {
+	// Disabled to reduce Sentry span quota usage
+	return nil
+
 	// Get the hub from the context
 	hub := sentry.GetHubFromContext(ctx)
 	if hub == nil {

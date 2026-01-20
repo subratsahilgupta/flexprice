@@ -80,6 +80,40 @@ func (h *SubscriptionHandler) GetSubscription(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// @Summary Get subscription V2
+// @Description Get a subscription by ID with optional expand parameters
+// @Tags Subscriptions
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Subscription ID"
+// @Param expand query string false "Comma-separated list of fields to expand (e.g., 'subscription_line_items,prices,plan')"
+// @Success 200 {object} dto.SubscriptionResponseV2
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /subscriptions/{id}/v2 [get]
+func (h *SubscriptionHandler) GetSubscriptionV2(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("subscription ID is required").
+			WithHint("Please provide a valid subscription ID").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Parse expand query parameter
+	expandStr := c.Query("expand")
+	expand := types.NewExpand(expandStr)
+
+	resp, err := h.service.GetSubscriptionV2(c.Request.Context(), id, expand)
+	if err != nil {
+		h.log.Error("Failed to get subscription v2", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
 // @Summary List subscriptions
 // @Description Get subscriptions with optional filtering
 // @Tags Subscriptions
