@@ -406,6 +406,8 @@ type BenchmarkResult struct {
 	ExternalCustomerID string `json:"external_customer_id"`
 	// Error message if processing failed
 	Error string `json:"error,omitempty"`
+
+	Events []*events.FeatureUsage `json:"events,omitempty"`
 }
 
 // BenchmarkRequest represents a request to benchmark event processing

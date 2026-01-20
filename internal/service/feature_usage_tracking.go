@@ -316,7 +316,7 @@ func (s *featureUsageTrackingService) processEvent(ctx context.Context, event *e
 		"ingested_at", event.IngestedAt,
 	)
 
-	featureUsage, err := s.prepareProcessedEvents(ctx, event)
+	featureUsage, err := s.prepareProcessedEventsV2(ctx, event)
 	if err != nil {
 		s.Logger.Errorw("failed to prepare feature usage",
 			"error", err,
@@ -3464,6 +3464,8 @@ func (s *featureUsageTrackingService) BenchmarkPrepareV1(ctx context.Context, ev
 		return result, nil // Still return the result with error info
 	}
 
+	result.Events = featureUsages
+
 	result.FeatureUsageCount = len(featureUsages)
 	if len(featureUsages) > 0 {
 		result.CustomerID = featureUsages[0].CustomerID
@@ -3497,6 +3499,8 @@ func (s *featureUsageTrackingService) BenchmarkPrepareV2(ctx context.Context, ev
 		result.Error = err.Error()
 		return result, nil // Still return the result with error info
 	}
+
+	result.Events = featureUsages
 
 	result.FeatureUsageCount = len(featureUsages)
 	if len(featureUsages) > 0 {
