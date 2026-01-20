@@ -46,6 +46,11 @@ type IClient interface {
 	// Use for: Get, List, Count, Query operations
 	Reader(ctx context.Context) *ent.Client
 
+	// LockWithWait acquires an advisory lock with a default timeout of 30 seconds.
+	// The key should be the entity ID (e.g., wallet ID).
+	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
+	LockWithWait(ctx context.Context, req LockRequest) error
+
 	// Close closes the database connection
 	Close() error
 }
@@ -95,10 +100,16 @@ func NewEntClients(config *config.Configuration, logger *logger.Logger) (*EntCli
 	// Create writer driver
 	writerDrv := entsql.OpenDB(dialect.Postgres, writerDB)
 
-	// Create writer client with options
+	// Create client with options
 	writerOpts := []ent.Option{
 		ent.Driver(writerDrv),
-		ent.Debug(), // Enable debug logging
+	}
+
+	if config.Logging.DBLevel == types.LogLevelDebug {
+		writerOpts = append(writerOpts,
+			ent.Debug(),
+			ent.Log(logger.GetEntLogger()),
+		)
 	}
 
 	writerClient := ent.NewClient(writerOpts...)
@@ -133,6 +144,13 @@ func NewEntClients(config *config.Configuration, logger *logger.Logger) (*EntCli
 		// Create reader client with options (removing debug logs for reads)
 		readerOpts := []ent.Option{
 			ent.Driver(readerDrv),
+		}
+
+		if config.Logging.DBLevel == types.LogLevelDebug {
+			readerOpts = append(readerOpts,
+				ent.Debug(),
+				ent.Log(logger.GetEntLogger()),
+			)
 		}
 
 		readerClient = ent.NewClient(readerOpts...)

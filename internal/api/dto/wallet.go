@@ -252,6 +252,7 @@ func (r *CreateWalletRequest) Validate() error {
 // WalletResponse represents a wallet in API responses
 type WalletResponse struct {
 	*wallet.Wallet
+	CreditsAvailableBreakdown *types.CreditBreakdown `json:"credits_available_breakdown,omitempty"`
 }
 
 // ToWalletResponse converts domain Wallet to WalletResponse
@@ -380,11 +381,12 @@ type TopUpWalletResponse struct {
 // WalletBalanceResponse represents the response for getting wallet balance
 type WalletBalanceResponse struct {
 	*wallet.Wallet
-	RealTimeBalance       *decimal.Decimal `json:"real_time_balance,omitempty" swaggertype:"string"`
-	RealTimeCreditBalance *decimal.Decimal `json:"real_time_credit_balance,omitempty" swaggertype:"string"`
-	BalanceUpdatedAt      *time.Time       `json:"balance_updated_at,omitempty"`
-	CurrentPeriodUsage    *decimal.Decimal `json:"current_period_usage,omitempty" swaggertype:"string"`
-	UnpaidInvoicesAmount  *decimal.Decimal `json:"unpaid_invoices_amount,omitempty" swaggertype:"string"`
+	RealTimeBalance           *decimal.Decimal       `json:"real_time_balance,omitempty" swaggertype:"string"`
+	RealTimeCreditBalance     *decimal.Decimal       `json:"real_time_credit_balance,omitempty" swaggertype:"string"`
+	BalanceUpdatedAt          *time.Time             `json:"balance_updated_at,omitempty"`
+	CurrentPeriodUsage        *decimal.Decimal       `json:"current_period_usage,omitempty" swaggertype:"string"`
+	UnpaidInvoicesAmount      *decimal.Decimal       `json:"unpaid_invoices_amount,omitempty" swaggertype:"string"`
+	CreditsAvailableBreakdown *types.CreditBreakdown `json:"credits_available_breakdown,omitempty"`
 }
 
 type ExpiredCreditsResponseItem struct {
@@ -404,6 +406,7 @@ type GetCustomerWalletsRequest struct {
 	ID                     string `form:"id"`
 	LookupKey              string `form:"lookup_key"`
 	IncludeRealTimeBalance bool   `form:"include_real_time_balance" default:"false"`
+	Expand                 string `form:"expand"`
 }
 
 func (r *GetCustomerWalletsRequest) Validate() error {

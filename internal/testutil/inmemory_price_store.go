@@ -43,6 +43,11 @@ func priceFilterFn(ctx context.Context, p *price.Price, filter interface{}) bool
 		return false
 	}
 
+	// Filter by entity type
+	if f.EntityType != nil && p.EntityType != *f.EntityType {
+		return false
+	}
+
 	// Filter by plan IDs
 	if len(f.EntityIDs) > 0 {
 		if !lo.Contains(f.EntityIDs, p.EntityID) {
@@ -317,7 +322,8 @@ func (s *InMemoryPriceStore) GetByLookupKey(ctx context.Context, lookupKey strin
 		if p.LookupKey == lookupKey &&
 			p.TenantID == tenantID &&
 			p.EnvironmentID == environmentID &&
-			p.Status == types.StatusPublished {
+			p.Status == types.StatusPublished &&
+			p.EndDate == nil { // Only return active prices (without end date)
 			foundPrice = p
 			break
 		}

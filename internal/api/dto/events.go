@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
+	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -387,4 +389,128 @@ type EventCostInfo struct {
 
 type GetHuggingFaceBillingDataResponse struct {
 	Data []EventCostInfo `json:"requests"`
+}
+
+// BenchmarkResult represents the result of running a benchmark on event processing
+// This is used for comparing V1 vs V2 event processing performance
+type BenchmarkResult struct {
+	// Version of the prepare function used (v1 or v2)
+	Version string `json:"version"`
+	// Time taken to process the event in milliseconds
+	DurationMs float64 `json:"duration_ms"`
+	// Number of feature usage records generated
+	FeatureUsageCount int `json:"feature_usage_count"`
+	// Event ID that was processed
+	EventID string `json:"event_id"`
+	// Customer ID resolved for the event
+	CustomerID string `json:"customer_id,omitempty"`
+	// External customer ID from the event
+	ExternalCustomerID string `json:"external_customer_id"`
+	// Error message if processing failed
+	Error string `json:"error,omitempty"`
+
+	Events []*events.FeatureUsage `json:"events,omitempty"`
+}
+
+// BenchmarkRequest represents a request to benchmark event processing
+type BenchmarkRequest struct {
+	EventName          string                 `json:"event_name" validate:"required" binding:"required" example:"api_request"`
+	EventID            string                 `json:"event_id" example:"event123"`
+	CustomerID         string                 `json:"customer_id" example:"customer456"`
+	ExternalCustomerID string                 `json:"external_customer_id" validate:"required" binding:"required" example:"customer456"`
+	Timestamp          time.Time              `json:"timestamp" example:"2024-03-20T15:04:05Z"`
+	Source             string                 `json:"source" example:"api"`
+	Properties         map[string]interface{} `json:"properties" swaggertype:"object,string,number"`
+}
+
+func (r *BenchmarkRequest) Validate() error {
+	return validator.ValidateRequest(r)
+}
+
+func (r *BenchmarkRequest) ToEvent(ctx context.Context) *events.Event {
+	return events.NewEvent(
+		r.EventName,
+		types.GetTenantID(ctx),
+		r.ExternalCustomerID,
+		r.Properties,
+		r.Timestamp,
+		r.EventID,
+		r.CustomerID,
+		r.Source,
+		types.GetEnvironmentID(ctx),
+	)
+}
+
+type GetEventByIDResponse struct {
+	Event           *Event                          `json:"event"`
+	Status          types.EventProcessingStatusType `json:"status"`
+	ProcessedEvents []*FeatureUsageInfo             `json:"processed_events,omitempty"`
+	DebugTracker    *DebugTracker                   `json:"debug_tracker,omitempty"`
+}
+
+type FeatureUsageInfo struct {
+	CustomerID     string    `json:"customer_id"`
+	SubscriptionID string    `json:"subscription_id"`
+	SubLineItemID  string    `json:"sub_line_item_id"`
+	PriceID        string    `json:"price_id"`
+	MeterID        string    `json:"meter_id"`
+	FeatureID      string    `json:"feature_id"`
+	QtyTotal       string    `json:"qty_total"`
+	ProcessedAt    time.Time `json:"processed_at"`
+}
+
+type DebugTracker struct {
+	CustomerLookup             *CustomerLookupResult             `json:"customer_lookup"`
+	MeterMatching              *MeterMatchingResult              `json:"meter_matching"`
+	PriceLookup                *PriceLookupResult                `json:"price_lookup"`
+	SubscriptionLineItemLookup *SubscriptionLineItemLookupResult `json:"subscription_line_item_lookup"`
+	FailurePoint               *types.FailurePoint               `json:"failure_point"`
+}
+
+type CustomerLookupResult struct {
+	Status   types.DebugTrackerStatus `json:"status"`
+	Customer *customer.Customer       `json:"customer,omitempty"`
+	Error    *ierr.ErrorResponse      `json:"error,omitempty"`
+}
+
+type MeterMatchingResult struct {
+	Status        types.DebugTrackerStatus `json:"status"`
+	MatchedMeters []MatchedMeter           `json:"matched_meters,omitempty"`
+	Error         *ierr.ErrorResponse      `json:"error,omitempty"`
+}
+
+type MatchedMeter struct {
+	MeterID   string       `json:"meter_id"`
+	EventName string       `json:"event_name"`
+	Meter     *meter.Meter `json:"meter"`
+}
+
+type PriceLookupResult struct {
+	Status        types.DebugTrackerStatus `json:"status"`
+	MatchedPrices []MatchedPrice           `json:"matched_prices,omitempty"`
+	Error         *ierr.ErrorResponse      `json:"error,omitempty"`
+}
+
+type MatchedPrice struct {
+	PriceID string       `json:"price_id"`
+	MeterID string       `json:"meter_id"`
+	Status  string       `json:"status"`
+	Price   *price.Price `json:"price"`
+}
+
+type SubscriptionLineItemLookupResult struct {
+	Status           types.DebugTrackerStatus      `json:"status"`
+	MatchedLineItems []MatchedSubscriptionLineItem `json:"matched_line_items,omitempty"`
+	Error            *ierr.ErrorResponse           `json:"error,omitempty"`
+}
+
+type MatchedSubscriptionLineItem struct {
+	SubLineItemID        string                             `json:"sub_line_item_id"`
+	SubscriptionID       string                             `json:"subscription_id"`
+	PriceID              string                             `json:"price_id"`
+	StartDate            time.Time                          `json:"start_date"`
+	EndDate              time.Time                          `json:"end_date"`
+	IsActiveForEvent     bool                               `json:"is_active_for_event"`
+	TimestampWithinRange bool                               `json:"timestamp_within_range"`
+	SubscriptionLineItem *subscription.SubscriptionLineItem `json:"subscription_line_item,omitempty"`
 }

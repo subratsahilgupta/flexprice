@@ -351,3 +351,9 @@ func (a *AutoTopup) Validate() error {
 	}
 	return nil
 }
+
+// CreditBreakdown represents the breakdown of credits available by type
+type CreditBreakdown struct {
+	Purchased decimal.Decimal `json:"purchased" swaggertype:"string"`
+	Free      decimal.Decimal `json:"free" swaggertype:"string"`
+}

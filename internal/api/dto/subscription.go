@@ -83,6 +83,42 @@ type LineItemCommitmentConfig struct {
 	IsWindowCommitment *bool `json:"is_window_commitment,omitempty"`
 }
 
+// validateLineItemCommitments validates a map of price_id -> commitment configuration.
+func validateLineItemCommitments(commitments map[string]*LineItemCommitmentConfig) error {
+	if len(commitments) == 0 {
+		return nil
+	}
+
+	for priceID, commitmentConfig := range commitments {
+		if priceID == "" {
+			return ierr.NewError("price_id cannot be empty in line_item_commitments").
+				WithHint("Each entry in line_item_commitments must have a valid price_id as the key").
+				Mark(ierr.ErrValidation)
+		}
+
+		if commitmentConfig == nil {
+			return ierr.NewError("commitment config cannot be nil").
+				WithHint(fmt.Sprintf("Commitment configuration for price_id %s cannot be nil", priceID)).
+				WithReportableDetails(map[string]interface{}{
+					"price_id": priceID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		if err := commitmentConfig.Validate(); err != nil {
+			return ierr.NewError(fmt.Sprintf("invalid commitment config for price_id %s", priceID)).
+				WithHint("Line item commitment validation failed").
+				WithReportableDetails(map[string]interface{}{
+					"price_id": priceID,
+					"error":    err.Error(),
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
 // Validate validates the line item commitment configuration
 func (c *LineItemCommitmentConfig) Validate() error {
 	hasAmountCommitment := c.CommitmentAmount != nil && c.CommitmentAmount.GreaterThan(decimal.Zero)
@@ -444,6 +480,34 @@ type SubscriptionResponse struct {
 // ListSubscriptionsResponse represents the response for listing subscriptions
 type ListSubscriptionsResponse = types.ListResponse[*SubscriptionResponse]
 
+// SubscriptionResponseV2 represents the V2 response for a subscription
+// with optional expanded fields based on the request expand parameter
+type SubscriptionResponseV2 struct {
+	*subscription.Subscription
+
+	// Plan is expanded only if "plan" is in expand parameter
+	Plan *PlanResponse `json:"plan,omitempty"`
+
+	// Customer is expanded only if "customer" is in expand parameter
+	Customer *CustomerResponse `json:"customer,omitempty"`
+
+	// LineItems is expanded only if "subscription_line_items" is in expand parameter
+	// Each line item can optionally include expanded price data
+	LineItems []*SubscriptionLineItemResponse `json:"line_items,omitempty"`
+
+	// CouponAssociations are included when "coupon_associations" is in expand parameter
+	CouponAssociations []*CouponAssociationResponse `json:"coupon_associations,omitempty"`
+
+	// Phases are included when "phases" is in expand parameter
+	Phases []*SubscriptionPhaseResponse `json:"phases,omitempty"`
+
+	// CreditGrants are included when "credit_grants" is in expand parameter
+	CreditGrants []*CreditGrantResponse `json:"credit_grants,omitempty"`
+
+	// Pauses are included when subscription has pause status
+	Pauses []*subscription.SubscriptionPause `json:"pauses,omitempty"`
+}
+
 func (r *CreateSubscriptionRequest) Validate() error {
 	// Case- Both are absent
 	if r.CustomerID == "" && r.ExternalCustomerID == "" {
@@ -678,33 +742,8 @@ func (r *CreateSubscriptionRequest) Validate() error {
 	}
 
 	// Validate line item commitments if provided
-	if len(r.LineItemCommitments) > 0 {
-		for priceID, commitmentConfig := range r.LineItemCommitments {
-			if priceID == "" {
-				return ierr.NewError("price_id cannot be empty in line_item_commitments").
-					WithHint("Each entry in line_item_commitments must have a valid price_id as the key").
-					Mark(ierr.ErrValidation)
-			}
-
-			if commitmentConfig == nil {
-				return ierr.NewError("commitment config cannot be nil").
-					WithHint(fmt.Sprintf("Commitment configuration for price_id %s cannot be nil", priceID)).
-					WithReportableDetails(map[string]interface{}{
-						"price_id": priceID,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-
-			if err := commitmentConfig.Validate(); err != nil {
-				return ierr.NewError(fmt.Sprintf("invalid commitment config for price_id %s", priceID)).
-					WithHint("Line item commitment validation failed").
-					WithReportableDetails(map[string]interface{}{
-						"price_id": priceID,
-						"error":    err.Error(),
-					}).
-					Mark(ierr.ErrValidation)
-			}
-		}
+	if err := validateLineItemCommitments(r.LineItemCommitments); err != nil {
+		return err
 	}
 
 	// Validate override line items if provided
