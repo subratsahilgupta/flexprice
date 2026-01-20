@@ -141,6 +141,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			events.POST("", permissionMW.RequirePermission("event", "write"), handlers.Events.IngestEvent)
 			events.POST("/bulk", permissionMW.RequirePermission("event", "write"), handlers.Events.BulkIngestEvent)
 			events.GET("", handlers.Events.GetEvents)
+			events.GET("/:id", handlers.Events.GetEventByID)
 			events.POST("/query", handlers.Events.QueryEvents)
 			events.POST("/usage", handlers.Events.GetUsage)
 			events.POST("/usage/meter", handlers.Events.GetUsageByMeter)
@@ -148,6 +149,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			events.POST("/analytics-v2", handlers.Events.GetUsageAnalyticsV2)
 			events.POST("/huggingface-billing", handlers.Events.GetHuggingFaceBillingData)
 			events.GET("/monitoring", handlers.Events.GetMonitoringData)
+			// Benchmark endpoints for comparing V1 vs V2 event processing performance
+			events.POST("/benchmark/v1", handlers.Events.BenchmarkV1)
+			events.POST("/benchmark/v2", handlers.Events.BenchmarkV2)
 		}
 
 		meters := v1Private.Group("/meters")
