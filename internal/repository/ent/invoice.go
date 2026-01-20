@@ -1124,6 +1124,7 @@ func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowCount int
 
 	// Note: windowSize parameter is accepted for API consistency, but currently only MONTH is supported
 	// All revenue trend queries use monthly windows regardless of the parameter value
+	// Revenue is calculated as the total amount of FINALIZED and published invoices (SUM of total) includes invoices with payment status PENDING, SUCCEEDED, or FAILED
 	dateTruncPart := string(types.WindowSizeMonth)
 	intervalUnit := "1 month"
 	query := fmt.Sprintf(`
@@ -1141,13 +1142,12 @@ func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowCount int
 			  AND environment_id = $3
 			  AND invoice_status = 'FINALIZED'
 			  AND status = 'published'
-			  AND payment_status IN ('SUCCEEDED', 'OVERPAID')
 		)
 		SELECT
 			w.window_index,
 			w.window_start,
 			(w.window_end - interval '1 microsecond') AS window_end_inclusive,
-			COALESCE(SUM(i.amount_paid), 0)::text     AS revenue,
+			COALESCE(SUM(i.total), 0)::text     AS revenue,
 			c.currency
 		FROM windows w
 		CROSS JOIN currencies c
@@ -1158,7 +1158,6 @@ func (r *invoiceRepository) GetRevenueTrend(ctx context.Context, windowCount int
 		 AND i.environment_id = $3
 		 AND i.invoice_status = 'FINALIZED'
 		 AND i.status = 'published'
-		 AND i.payment_status IN ('SUCCEEDED', 'OVERPAID')
 		 AND i.currency = c.currency
 		GROUP BY w.window_index, w.window_start, w.window_end, c.currency
 		ORDER BY c.currency, w.window_index ASC`, dateTruncPart, intervalUnit, dateTruncPart, intervalUnit, intervalUnit)
