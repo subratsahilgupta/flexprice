@@ -122,6 +122,11 @@ type ClickHouseConfig struct {
 type LoggingConfig struct {
 	Level   types.LogLevel `mapstructure:"level" validate:"required"`
 	DBLevel types.LogLevel `mapstructure:"db_level" validate:"required"`
+	
+	// Fluentd configuration
+	FluentdEnabled bool   `mapstructure:"fluentd_enabled" default:"false"`
+	FluentdHost    string `mapstructure:"fluentd_host" validate:"omitempty"`
+	FluentdPort    int    `mapstructure:"fluentd_port" validate:"omitempty"`
 }
 
 type PostgresConfig struct {
