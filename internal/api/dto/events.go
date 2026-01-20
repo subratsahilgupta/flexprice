@@ -391,20 +391,15 @@ type GetHuggingFaceBillingDataResponse struct {
 	Data []EventCostInfo `json:"requests"`
 }
 
-type CustomerInfo struct {
-	ID   string `json:"customer_id,omitempty"`
-	Name string `json:"customer_name,omitempty"`
-}
-
 type GetEventByIDResponse struct {
 	Event           *Event                          `json:"event"`
 	Status          types.EventProcessingStatusType `json:"status"`
-	Customer        *CustomerInfo                   `json:"customer,omitempty"`
 	ProcessedEvents []*FeatureUsageInfo             `json:"processed_events,omitempty"`
 	DebugTracker    *DebugTracker                   `json:"debug_tracker,omitempty"`
 }
 
 type FeatureUsageInfo struct {
+	CustomerID     string    `json:"customer_id"`
 	SubscriptionID string    `json:"subscription_id"`
 	SubLineItemID  string    `json:"sub_line_item_id"`
 	PriceID        string    `json:"price_id"`

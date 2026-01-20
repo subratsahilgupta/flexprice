@@ -3148,14 +3148,14 @@ func (s *featureUsageTrackingService) DebugEvent(ctx context.Context, eventID st
 		},
 	}
 
-	// Fetch customer if exists
-	customer, _ := s.CustomerRepo.GetByLookupKey(ctx, event.ExternalCustomerID)
-	if customer != nil {
-		response.Customer = &dto.CustomerInfo{
-			ID:   customer.ID,
-			Name: customer.Name,
-		}
-	}
+	// // Fetch customer if exists
+	// customer, _ := s.CustomerRepo.GetByLookupKey(ctx, event.ExternalCustomerID)
+	// if customer != nil {
+	// 	response.Customer = &dto.CustomerInfo{
+	// 		ID:   customer.ID,
+	// 		Name: customer.Name,
+	// 	}
+	// }
 
 	// If processed events found, return them
 	if len(processedEvents) > 0 {
@@ -3163,6 +3163,7 @@ func (s *featureUsageTrackingService) DebugEvent(ctx context.Context, eventID st
 		response.ProcessedEvents = make([]*dto.FeatureUsageInfo, len(processedEvents))
 		for i, pe := range processedEvents {
 			response.ProcessedEvents[i] = &dto.FeatureUsageInfo{
+				CustomerID:     pe.CustomerID,
 				SubscriptionID: pe.SubscriptionID,
 				SubLineItemID:  pe.SubLineItemID,
 				PriceID:        pe.PriceID,
