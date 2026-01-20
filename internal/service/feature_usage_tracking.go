@@ -58,6 +58,14 @@ type FeatureUsageTrackingService interface {
 
 	// Get HuggingFace Inference
 	GetHuggingFaceBillingData(ctx context.Context, req *dto.GetHuggingFaceBillingDataRequest) (*dto.GetHuggingFaceBillingDataResponse, error)
+
+	// BenchmarkPrepareV1 runs the original prepareProcessedEvents function and returns timing info
+	// This is for benchmarking purposes only - does not persist to ClickHouse
+	BenchmarkPrepareV1(ctx context.Context, event *events.Event) (*dto.BenchmarkResult, error)
+
+	// BenchmarkPrepareV2 runs the optimized prepareProcessedEventsV2 function and returns timing info
+	// This is for benchmarking purposes only - does not persist to ClickHouse
+	BenchmarkPrepareV2(ctx context.Context, event *events.Event) (*dto.BenchmarkResult, error)
 }
 
 type featureUsageTrackingService struct {
@@ -709,7 +717,330 @@ func (s *featureUsageTrackingService) prepareProcessedEvents(ctx context.Context
 	return results, nil
 }
 
-// handleMissingCustomer attempts to auto-create a customer via workflow when not found
+// prepareProcessedEventsV2 is an optimized version of prepareProcessedEvents that uses meter-based lookup.
+// Instead of fetching all subscriptions with all line items, this approach:
+// 1. Queries meters by event name (targeted)
+// 2. Gets features by meter IDs
+// 3. Gets subscription line items by meter IDs + customer ID (instead of all subscriptions)
+// 4. Batch-fetches subscriptions only for matching line items (for period calculation)
+// This significantly reduces database load for high-volume event processing.
+func (s *featureUsageTrackingService) prepareProcessedEventsV2(ctx context.Context, event *events.Event) ([]*events.FeatureUsage, error) {
+	results := make([]*events.FeatureUsage, 0)
+
+	// STEP 1: Lookup customer
+	customer, err := s.CustomerRepo.GetByLookupKey(ctx, event.ExternalCustomerID)
+	if err != nil {
+		s.Logger.Warnw("customer not found for event",
+			"event_id", event.ID,
+			"external_customer_id", event.ExternalCustomerID,
+			"error", err,
+		)
+
+		// Try to auto-create customer via workflow if configured
+		customer, err = s.handleMissingCustomer(ctx, event)
+		if err != nil {
+			s.Logger.Errorw("failed to handle missing customer",
+				"event_id", event.ID,
+				"external_customer_id", event.ExternalCustomerID,
+				"error", err,
+			)
+			return results, err
+		}
+
+		if customer == nil {
+			s.Logger.Infow("skipping event - no customer and no auto-creation workflow configured",
+				"event_id", event.ID,
+				"external_customer_id", event.ExternalCustomerID,
+			)
+			return results, nil
+		}
+
+		s.Logger.Infow("customer auto-created via workflow",
+			"event_id", event.ID,
+			"external_customer_id", event.ExternalCustomerID,
+			"customer_id", customer.ID,
+		)
+	}
+
+	// Set the customer ID in the event if it's not already set
+	if event.CustomerID == "" {
+		event.CustomerID = customer.ID
+	}
+
+	// STEP 2: Get meters by event name (targeted query - typically 1-2 meters per event name)
+	meterFilter := types.NewNoLimitMeterFilter()
+	meterFilter.EventName = event.EventName
+
+	meters, err := s.MeterRepo.List(ctx, meterFilter)
+	if err != nil {
+		s.Logger.Errorw("failed to get meters by event name",
+			"event_id", event.ID,
+			"event_name", event.EventName,
+			"error", err,
+		)
+		return results, err
+	}
+
+	if len(meters) == 0 {
+		s.Logger.Debugw("no meters found for event name, skipping",
+			"event_id", event.ID,
+			"event_name", event.EventName,
+		)
+		return results, nil
+	}
+
+	// Build meter map and collect meter IDs
+	meterMap := make(map[string]*meter.Meter)
+	meterIDs := make([]string, 0, len(meters))
+	for _, m := range meters {
+		// Check meter filters before including
+		if !s.checkMeterFilters(event, m.Filters) {
+			continue
+		}
+		meterMap[m.ID] = m
+		meterIDs = append(meterIDs, m.ID)
+	}
+
+	if len(meterIDs) == 0 {
+		s.Logger.Debugw("no meters match event filters, skipping",
+			"event_id", event.ID,
+			"event_name", event.EventName,
+		)
+		return results, nil
+	}
+
+	// STEP 3: Get features by meter IDs
+	featureFilter := types.NewNoLimitFeatureFilter()
+	featureFilter.MeterIDs = meterIDs
+	features, err := s.FeatureRepo.List(ctx, featureFilter)
+	if err != nil {
+		s.Logger.Errorw("failed to get features by meter IDs",
+			"error", err,
+			"event_id", event.ID,
+			"meter_count", len(meterIDs),
+		)
+		return results, err
+	}
+
+	// Build feature maps
+	featureMeterMap := make(map[string]*feature.Feature) // meter_id -> feature
+	for _, f := range features {
+		featureMeterMap[f.MeterID] = f
+	}
+
+	// STEP 4: Get subscription line items by meter IDs + customer ID (TARGETED QUERY)
+	lineItemFilter := types.NewNoLimitSubscriptionLineItemFilter()
+	lineItemFilter.MeterIDs = meterIDs
+	lineItemFilter.CustomerIDs = []string{customer.ID}
+	lineItemFilter.ActiveFilter = true
+	lineItemFilter.CurrentPeriodStart = &event.Timestamp
+
+	lineItems, err := s.SubscriptionLineItemRepo.List(ctx, lineItemFilter)
+	if err != nil {
+		s.Logger.Errorw("failed to get subscription line items",
+			"error", err,
+			"event_id", event.ID,
+			"customer_id", customer.ID,
+			"meter_ids", meterIDs,
+		)
+		return results, err
+	}
+
+	if len(lineItems) == 0 {
+		s.Logger.Debugw("no active subscription line items found for meters and customer, skipping",
+			"event_id", event.ID,
+			"customer_id", customer.ID,
+			"meter_ids", meterIDs,
+		)
+		return results, nil
+	}
+
+	// Filter line items that are active for the event timestamp
+	activeLineItems := make([]*subscription.SubscriptionLineItem, 0, len(lineItems))
+	for _, li := range lineItems {
+		if li.IsActive(event.Timestamp) && li.IsUsage() {
+			activeLineItems = append(activeLineItems, li)
+		}
+	}
+
+	if len(activeLineItems) == 0 {
+		s.Logger.Debugw("no line items active for event timestamp, skipping",
+			"event_id", event.ID,
+			"customer_id", customer.ID,
+			"event_timestamp", event.Timestamp,
+		)
+		return results, nil
+	}
+
+	// STEP 5: Batch lookup subscriptions for period calculation
+	subscriptionIDs := lo.Uniq(lo.Map(activeLineItems, func(li *subscription.SubscriptionLineItem, _ int) string {
+		return li.SubscriptionID
+	}))
+
+	subFilter := types.NewNoLimitSubscriptionFilter()
+	subFilter.SubscriptionIDs = subscriptionIDs
+	subFilter.SubscriptionStatus = []types.SubscriptionStatus{
+		types.SubscriptionStatusActive,
+		types.SubscriptionStatusTrialing,
+	}
+
+	subscriptions, err := s.SubRepo.List(ctx, subFilter)
+	if err != nil {
+		s.Logger.Errorw("failed to get subscriptions",
+			"error", err,
+			"event_id", event.ID,
+			"subscription_ids", subscriptionIDs,
+		)
+		return results, err
+	}
+
+	// Build subscription map
+	subscriptionMap := make(map[string]*subscription.Subscription)
+	for _, sub := range subscriptions {
+		// Validate subscription is valid for this event
+		if !s.isSubscriptionValidForEventV2(sub, event) {
+			continue
+		}
+		subscriptionMap[sub.ID] = sub
+	}
+
+	if len(subscriptionMap) == 0 {
+		s.Logger.Debugw("no valid subscriptions for event, skipping",
+			"event_id", event.ID,
+			"customer_id", customer.ID,
+		)
+		return results, nil
+	}
+
+	// STEP 6: Build FeatureUsage records for each matching line item
+	// Note: We don't need to query prices separately - the line item already has PriceID
+	// and we've already filtered by IsUsage() when building activeLineItems
+	featureUsagePerSub := make([]*events.FeatureUsage, 0)
+
+	for _, lineItem := range activeLineItems {
+		// Get subscription for this line item
+		sub, ok := subscriptionMap[lineItem.SubscriptionID]
+		if !ok {
+			s.Logger.Debugw("subscription not found for line item",
+				"event_id", event.ID,
+				"line_item_id", lineItem.ID,
+				"subscription_id", lineItem.SubscriptionID,
+			)
+			continue
+		}
+
+		// Get meter for this line item
+		m, ok := meterMap[lineItem.MeterID]
+		if !ok {
+			s.Logger.Warnw("meter not found for line item",
+				"event_id", event.ID,
+				"line_item_id", lineItem.ID,
+				"meter_id", lineItem.MeterID,
+			)
+			continue
+		}
+
+		// Get feature for this meter
+		f, ok := featureMeterMap[lineItem.MeterID]
+		if !ok {
+			s.Logger.Warnw("feature not found for meter",
+				"event_id", event.ID,
+				"meter_id", lineItem.MeterID,
+			)
+			continue
+		}
+
+		// Calculate the period ID for this subscription
+		periodID, err := types.CalculatePeriodID(
+			event.Timestamp,
+			sub.StartDate,
+			sub.CurrentPeriodStart,
+			sub.CurrentPeriodEnd,
+			sub.BillingAnchor,
+			sub.BillingPeriodCount,
+			sub.BillingPeriod,
+		)
+		if err != nil {
+			s.Logger.Errorw("failed to calculate period id",
+				"event_id", event.ID,
+				"subscription_id", sub.ID,
+				"error", err,
+			)
+			continue
+		}
+
+		// Create a unique hash for deduplication
+		uniqueHash := s.generateUniqueHash(event, m)
+
+		// Create FeatureUsage record
+		// Use lineItem.PriceID directly - no need to fetch price from DB
+		featureUsageCopy := &events.FeatureUsage{
+			Event:          *event,
+			SubscriptionID: sub.ID,
+			SubLineItemID:  lineItem.ID,
+			PriceID:        lineItem.PriceID, // Use directly from line item
+			MeterID:        m.ID,
+			FeatureID:      f.ID,
+			PeriodID:       periodID,
+			UniqueHash:     uniqueHash,
+			Sign:           1, // Default to positive sign
+		}
+
+		// Extract quantity based on meter aggregation
+		quantity, _ := s.extractQuantityFromEvent(event, m, sub, periodID)
+
+		// Validate the quantity is positive
+		if quantity.IsNegative() {
+			s.Logger.Warnw("negative quantity calculated, setting to zero",
+				"event_id", event.ID,
+				"meter_id", m.ID,
+				"calculated_quantity", quantity.String(),
+			)
+			quantity = decimal.Zero
+		}
+
+		featureUsageCopy.QtyTotal = quantity
+		featureUsagePerSub = append(featureUsagePerSub, featureUsageCopy)
+	}
+
+	if len(featureUsagePerSub) > 0 {
+		s.Logger.Debugw("event processing request prepared (V2)",
+			"event_id", event.ID,
+			"feature_usage_count", len(featureUsagePerSub),
+		)
+		return featureUsagePerSub, nil
+	}
+
+	return results, nil
+}
+
+// isSubscriptionValidForEventV2 validates a subscription domain model for the given event.
+// This is a variant of isSubscriptionValidForEvent that works with the domain model
+// instead of the DTO response (needed for the optimized V2 flow).
+func (s *featureUsageTrackingService) isSubscriptionValidForEventV2(
+	sub *subscription.Subscription,
+	event *events.Event,
+) bool {
+	// Event must be after subscription start date
+	if event.Timestamp.Before(sub.StartDate) {
+		return false
+	}
+
+	// If subscription has an end date, event must be before or equal to it
+	if sub.EndDate != nil && event.Timestamp.After(*sub.EndDate) {
+		return false
+	}
+
+	// Additional check: if subscription is cancelled, make sure event is before cancellation
+	if sub.SubscriptionStatus == types.SubscriptionStatusCancelled && sub.CancelledAt != nil {
+		if event.Timestamp.After(*sub.CancelledAt) {
+			return false
+		}
+	}
+
+	return true
+}
+
 func (s *featureUsageTrackingService) handleMissingCustomer(
 	ctx context.Context,
 	event *events.Event,
@@ -3111,4 +3442,72 @@ func (s *featureUsageTrackingService) mergeBucketPointsByWindow(points []events.
 	})
 
 	return mergedPoints
+}
+
+// BenchmarkPrepareV1 runs the original prepareProcessedEvents function and returns timing info
+// This is for benchmarking purposes only - does not persist to ClickHouse
+func (s *featureUsageTrackingService) BenchmarkPrepareV1(ctx context.Context, event *events.Event) (*dto.BenchmarkResult, error) {
+	result := &dto.BenchmarkResult{
+		Version:            "v1",
+		EventID:            event.ID,
+		ExternalCustomerID: event.ExternalCustomerID,
+	}
+
+	startTime := time.Now()
+
+	featureUsages, err := s.prepareProcessedEvents(ctx, event)
+
+	result.DurationMs = float64(time.Since(startTime).Microseconds()) / 1000.0 // Convert to milliseconds with precision
+
+	if err != nil {
+		result.Error = err.Error()
+		return result, nil // Still return the result with error info
+	}
+
+	result.FeatureUsageCount = len(featureUsages)
+	if len(featureUsages) > 0 {
+		result.CustomerID = featureUsages[0].CustomerID
+	}
+
+	s.Logger.Infow("benchmark v1 completed",
+		"event_id", event.ID,
+		"duration_ms", result.DurationMs,
+		"feature_usage_count", result.FeatureUsageCount,
+	)
+
+	return result, nil
+}
+
+// BenchmarkPrepareV2 runs the optimized prepareProcessedEventsV2 function and returns timing info
+// This is for benchmarking purposes only - does not persist to ClickHouse
+func (s *featureUsageTrackingService) BenchmarkPrepareV2(ctx context.Context, event *events.Event) (*dto.BenchmarkResult, error) {
+	result := &dto.BenchmarkResult{
+		Version:            "v2",
+		EventID:            event.ID,
+		ExternalCustomerID: event.ExternalCustomerID,
+	}
+
+	startTime := time.Now()
+
+	featureUsages, err := s.prepareProcessedEventsV2(ctx, event)
+
+	result.DurationMs = float64(time.Since(startTime).Microseconds()) / 1000.0 // Convert to milliseconds with precision
+
+	if err != nil {
+		result.Error = err.Error()
+		return result, nil // Still return the result with error info
+	}
+
+	result.FeatureUsageCount = len(featureUsages)
+	if len(featureUsages) > 0 {
+		result.CustomerID = featureUsages[0].CustomerID
+	}
+
+	s.Logger.Infow("benchmark v2 completed",
+		"event_id", event.ID,
+		"duration_ms", result.DurationMs,
+		"feature_usage_count", result.FeatureUsageCount,
+	)
+
+	return result, nil
 }

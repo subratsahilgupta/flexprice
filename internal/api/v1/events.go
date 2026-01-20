@@ -491,3 +491,85 @@ func (h *EventsHandler) GetHuggingFaceBillingData(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, response)
 }
+
+// @Summary Benchmark event processing V1
+// @Description Benchmark the V1 (original) event processing without persisting to ClickHouse
+// @Tags Events
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param event body dto.BenchmarkRequest true "Event data"
+// @Success 200 {object} dto.BenchmarkResult
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /events/benchmark/v1 [post]
+func (h *EventsHandler) BenchmarkV1(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req dto.BenchmarkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request payload").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.Error(err)
+		return
+	}
+
+	// Convert to event
+	event := req.ToEvent(ctx)
+
+	result, err := h.featureUsageTrackingService.BenchmarkPrepareV1(ctx, event)
+	if err != nil {
+		h.log.Error("Failed to benchmark V1", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// @Summary Benchmark event processing V2
+// @Description Benchmark the V2 (optimized) event processing without persisting to ClickHouse
+// @Tags Events
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param event body dto.BenchmarkRequest true "Event data"
+// @Success 200 {object} dto.BenchmarkResult
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /events/benchmark/v2 [post]
+func (h *EventsHandler) BenchmarkV2(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req dto.BenchmarkRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request payload").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		c.Error(err)
+		return
+	}
+
+	// Convert to event
+	event := req.ToEvent(ctx)
+
+	result, err := h.featureUsageTrackingService.BenchmarkPrepareV2(ctx, event)
+	if err != nil {
+		h.log.Error("Failed to benchmark V2", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
