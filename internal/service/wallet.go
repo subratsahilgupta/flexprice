@@ -1827,7 +1827,7 @@ func (s *walletService) GetCustomerWallets(ctx context.Context, req *dto.GetCust
 
 	if req.IncludeRealTimeBalance {
 		for i, w := range wallets {
-			balance, err := s.GetWalletBalance(ctx, w.ID)
+			balance, err := s.GetWalletBalanceV2(ctx, w.ID)
 			if err != nil {
 				return nil, err
 			}
