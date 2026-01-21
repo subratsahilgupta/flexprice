@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -16,6 +17,7 @@ import (
 	exportWorkflows "github.com/flexprice/flexprice/internal/temporal/workflows/export"
 	subscriptionWorkflows "github.com/flexprice/flexprice/internal/temporal/workflows/subscription"
 	"github.com/flexprice/flexprice/internal/types"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 )
 
@@ -581,6 +583,13 @@ func (s *scheduledTaskService) deleteTemporalSchedule(ctx context.Context, task 
 	handle := s.temporalClient.GetScheduleHandle(ctx, task.TemporalScheduleID)
 	err := handle.Delete(ctx)
 	if err != nil {
+		// Deleting a schedule is allowed to be idempotent. If it's already gone, treat it as success.
+		var notFound *serviceerror.NotFound
+		if errors.As(err, &notFound) {
+			s.logger.Infow("temporal schedule not found; treating as deleted", "task_id", task.ID, "schedule_id", task.TemporalScheduleID)
+			return nil
+		}
+
 		s.logger.Errorw("failed to delete temporal schedule", "schedule_id", task.TemporalScheduleID, "error", err)
 		return ierr.WithError(err).
 			WithHint("Failed to delete Temporal schedule").

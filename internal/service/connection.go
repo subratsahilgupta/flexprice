@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/security"
+	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -544,6 +545,31 @@ func (s *connectionService) DeleteConnection(ctx context.Context, id string) err
 	if err != nil {
 		s.Logger.Errorw("failed to get connection for deletion", "error", err, "connection_id", id)
 		return err
+	}
+
+	// Get all scheduled tasks for the connection
+	schedTasks, err := s.ScheduledTaskRepo.GetByConnection(ctx, conn.ID)
+	if err != nil {
+		s.Logger.Errorw("failed to get scheduled tasks by connection", "error", err, "connection_id", id)
+		return err
+	}
+
+	scheduledTaskService := NewScheduledTaskService(
+		s.ScheduledTaskRepo,
+		s.ConnectionRepo,
+		temporalService.GetGlobalTemporalClient(),
+		s.Logger,
+		s.Config,
+	)
+
+	// Scheduled tasks cleanup
+	for _, schedTask := range schedTasks {
+		if err := scheduledTaskService.DeleteScheduledTask(ctx, schedTask.ID); err != nil {
+			s.Logger.Errorw("failed to delete scheduled task", "error", err, "scheduled_task_id", schedTask.ID)
+			return ierr.WithError(err).
+				WithHint("Failed to delete scheduled task").
+				Mark(ierr.ErrDatabase)
+		}
 	}
 
 	conn.UpdatedAt = time.Now()
