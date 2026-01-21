@@ -2408,7 +2408,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 			SubscriptionID: subscriptionID,
 		}
 
-		usage, err := subscriptionService.GetUsageBySubscription(ctx, usageReq)
+		usage, err := subscriptionService.GetFeatureUsageBySubscription(ctx, usageReq)
 		if err != nil {
 			s.Logger.Warnw("failed to get usage for subscription", "subscription_id", subscriptionID, "error", err)
 			continue
