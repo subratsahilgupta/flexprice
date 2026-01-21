@@ -246,7 +246,7 @@ func (h *SubscriptionHandler) GetUsageBySubscription(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.GetUsageBySubscription(c.Request.Context(), &req)
+	resp, err := h.service.GetFeatureUsageBySubscription(c.Request.Context(), &req)
 	if err != nil {
 		h.log.Error("Failed to get usage", "error", err)
 		c.Error(err)
