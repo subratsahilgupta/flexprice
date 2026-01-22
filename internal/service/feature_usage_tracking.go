@@ -2936,8 +2936,11 @@ func (s *featureUsageTrackingService) ToGetUsageAnalyticsResponseDTO(ctx context
 					// Parent price should already be fetched in fetchSubscriptionPrices
 					if price.ParentPriceID != "" {
 						if parentPrice, ok := data.PriceResponses[price.ParentPriceID]; ok {
-							if parentPrice.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
+							switch parentPrice.EntityType {
+							case types.PRICE_ENTITY_TYPE_PLAN:
 								item.PlanID = parentPrice.EntityID
+							case types.PRICE_ENTITY_TYPE_ADDON:
+								item.AddOnID = parentPrice.EntityID
 							}
 						}
 					}
