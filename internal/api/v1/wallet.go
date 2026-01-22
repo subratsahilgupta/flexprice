@@ -329,12 +329,24 @@ func (h *WalletHandler) GetWalletBalance(c *gin.Context) {
 		}
 	}
 
+	fromCache := c.Query("from_cache") == "true"
 	// Get wallet balance
-	balance, err := h.walletService.GetWalletBalanceV2(c.Request.Context(), walletID)
-	if err != nil {
-		h.logger.Error("Failed to get wallet balance", "error", err)
-		c.Error(err)
-		return
+	var balance *dto.WalletBalanceResponse
+	var err error
+	if fromCache {
+		balance, err = h.walletService.GetWalletBalanceFromCache(c.Request.Context(), walletID)
+		if err != nil {
+			h.logger.Error("Failed to get wallet balance", "error", err)
+			c.Error(err)
+			return
+		}
+	} else {
+		balance, err = h.walletService.GetWalletBalanceV2(c.Request.Context(), walletID)
+		if err != nil {
+			h.logger.Error("Failed to get wallet balance", "error", err)
+			c.Error(err)
+			return
+		}
 	}
 
 	// Handle expand: credits_available_breakdown
