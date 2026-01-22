@@ -2985,8 +2985,6 @@ func (s *walletService) getWalletRealtimeBalanceFromCache(ctx context.Context, w
 	}
 	cacheKey := cache.GenerateKey(cache.PrefixWallet, walletID)
 	cachedValue, found := redisCache.ForceCacheGet(ctx, cacheKey)
-	fmt.Println("cached KEY", cacheKey)
-	fmt.Println("cached VALUE", cachedValue)
 	if !found {
 		return nil
 	}
