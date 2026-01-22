@@ -470,7 +470,8 @@ func (f *Factory) GetMoyasarIntegration(ctx context.Context) (*MoyasarIntegratio
 	// Create invoice sync service
 	invoiceSyncSvc := moyasar.NewInvoiceSyncService(
 		moyasarClient,
-		customerSvc,
+		f.invoiceRepo,
+		f.entityIntegrationMappingRepo,
 		f.logger,
 	)
 

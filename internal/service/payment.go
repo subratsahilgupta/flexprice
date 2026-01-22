@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/domain/payment"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
@@ -62,6 +63,25 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 	// validate the invoice payment eligibility
 	if err := s.validateInvoicePaymentEligibility(ctx, invoice, req); err != nil {
 		return nil, err
+	}
+
+	// Check if payment link already exists for this invoice
+	// If invoice was synced to gateway and has a payment URL, return it immediately
+	// No payment record is created here - the webhook will create it when payment is made
+	// For Moyasar, if no existing URL is found, return an error that invoice needs to be synced
+	if p.PaymentMethodType == types.PaymentMethodTypePaymentLink && req.PaymentGateway != nil && *req.PaymentGateway == types.PaymentGatewayTypeMoyasar {
+		response := s.getExistingPaymentLinkResponse(ctx, invoice, p, *req.PaymentGateway)
+		if response != nil {
+			return response, nil
+		}
+		// If no existing URL found, invoice is not synced to Moyasar
+		return nil, ierr.NewError("invoice is not synced to Moyasar").
+			WithHint("Invoice must be synced to Moyasar before creating a payment link. Please sync the invoice first.").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id": invoice.ID,
+				"gateway":    types.PaymentGatewayTypeMoyasar,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// select the wallet for the payment in case of credits payment where wallet id is not provided
@@ -160,6 +180,62 @@ func (s *paymentService) validateInvoicePaymentEligibility(_ context.Context, in
 	}
 
 	return nil
+}
+
+// getExistingPaymentLinkResponse checks if the invoice already has a payment link URL stored in metadata
+// for the given gateway. If found, returns a payment response with the URL without creating a payment record.
+// The actual payment record will be created by the webhook when payment is made.
+// Returns nil if no existing URL is found.
+func (s *paymentService) getExistingPaymentLinkResponse(ctx context.Context, invoice *invoice.Invoice, p *payment.Payment, gateway types.PaymentGatewayType) *dto.PaymentResponse {
+	if invoice.Metadata == nil {
+		return nil
+	}
+
+	var existingURL string
+	var metadataKey string
+
+	// Switch case for different gateways
+	switch gateway {
+	case types.PaymentGatewayTypeMoyasar:
+		metadataKey = "moyasar_invoice_url"
+		if url, exists := invoice.Metadata[metadataKey]; exists && url != "" {
+			existingURL = url
+		}
+	default:
+		// For other gateways, return nil (not implemented yet)
+		return nil
+	}
+
+	if existingURL == "" {
+		return nil
+	}
+
+	s.Logger.Infow("found existing payment link URL, returning it without creating payment record",
+		"invoice_id", invoice.ID,
+		"gateway", gateway,
+		"payment_url", existingURL)
+
+	// Create a minimal payment object in memory (not persisted) just for the response
+	// The actual payment record will be created by the webhook when payment is made
+	minimalPayment := &payment.Payment{
+		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PAYMENT),
+		DestinationType:   p.DestinationType,
+		DestinationID:     p.DestinationID,
+		PaymentMethodType: p.PaymentMethodType,
+		Amount:            p.Amount,
+		Currency:          p.Currency,
+		PaymentStatus:     types.PaymentStatusPending,
+		PaymentGateway:    lo.ToPtr(string(gateway)),
+		GatewayMetadata: types.Metadata{
+			"payment_url": existingURL,
+			"gateway":     string(gateway),
+		},
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}
+
+	// Return response with payment URL (will be extracted from gateway_metadata)
+	return dto.NewPaymentResponse(minimalPayment)
 }
 
 func (s *paymentService) selectWalletForPayment(ctx context.Context, invoice *invoice.Invoice, p *dto.CreatePaymentRequest) (*wallet.Wallet, error) {

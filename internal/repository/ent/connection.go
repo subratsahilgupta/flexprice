@@ -316,6 +316,19 @@ func convertConnectionMetadataToMap(encryptedSecretData types.ConnectionMetadata
 			}
 			return data
 		}
+	case types.SecretProviderMoyasar:
+		if encryptedSecretData.Moyasar != nil {
+			data := map[string]interface{}{
+				"secret_key": encryptedSecretData.Moyasar.SecretKey,
+			}
+			if encryptedSecretData.Moyasar.PublishableKey != "" {
+				data["publishable_key"] = encryptedSecretData.Moyasar.PublishableKey
+			}
+			if encryptedSecretData.Moyasar.WebhookSecret != "" {
+				data["webhook_secret"] = encryptedSecretData.Moyasar.WebhookSecret
+			}
+			return data
+		}
 	default:
 		// For other providers or unknown types, use generic format
 		if encryptedSecretData.Generic != nil {

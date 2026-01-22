@@ -26,6 +26,7 @@ type MoyasarClient interface {
 	HasMoyasarConnection(ctx context.Context) bool
 	GetConnection(ctx context.Context) (*connection.Connection, error)
 	CreatePayment(ctx context.Context, req *CreatePaymentRequest) (*CreatePaymentResponse, error)
+	CreateInvoice(ctx context.Context, req *CreateInvoiceRequest) (*CreateInvoiceResponse, error)
 	GetPayment(ctx context.Context, paymentID string) (*MoyasarPayment, error)
 	RefundPayment(ctx context.Context, paymentID string, amount int) (*RefundPaymentResponse, error)
 	VoidPayment(ctx context.Context, paymentID string) (*MoyasarPayment, error)
@@ -191,6 +192,11 @@ func (c *Client) CreatePayment(ctx context.Context, req *CreatePaymentRequest) (
 	httpReq.SetBasicAuth(config.SecretKey, "")
 	httpReq.Header.Set("Content-Type", "application/json")
 
+	// Log the request for debugging
+	c.logger.Infow("sending request to Moyasar",
+		"url", BaseURL+"/payments",
+		"request_body", string(bodyBytes))
+
 	// Execute request
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -207,11 +213,16 @@ func (c *Client) CreatePayment(ctx context.Context, req *CreatePaymentRequest) (
 		return nil, ierr.NewError("failed to read Moyasar response").Mark(ierr.ErrInternal)
 	}
 
+	// Log response for debugging
+	c.logger.Infow("received response from Moyasar",
+		"status_code", resp.StatusCode,
+		"response_body", string(respBody))
+
 	// Handle non-2xx responses
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var errResp ErrorResponse
 		if err := json.Unmarshal(respBody, &errResp); err == nil {
-			c.logger.Errorw("Moyasar API error", "status", resp.StatusCode, "message", errResp.Message, "type", errResp.Type)
+			c.logger.Errorw("Moyasar API error", "status", resp.StatusCode, "message", errResp.Message, "type", errResp.Type, "errors", errResp.Errors)
 			return nil, ierr.NewError(errResp.Message).
 				WithHint("Moyasar payment creation failed").
 				WithReportableDetails(map[string]interface{}{
@@ -239,7 +250,91 @@ func (c *Client) CreatePayment(ctx context.Context, req *CreatePaymentRequest) (
 	return &payment, nil
 }
 
-// GetPayment retrieves a payment from Moyasar by ID
+// CreateInvoice creates an invoice (payment link) in Moyasar
+func (c *Client) CreateInvoice(ctx context.Context, req *CreateInvoiceRequest) (*CreateInvoiceResponse, error) {
+	config, err := c.GetMoyasarConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Marshal request body
+	bodyBytes, err := json.Marshal(req)
+	if err != nil {
+		return nil, ierr.NewError("failed to marshal invoice request").
+			WithHint("Invalid invoice request data").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Create HTTP request
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, BaseURL+"/invoices", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, ierr.NewError("failed to create HTTP request").Mark(ierr.ErrInternal)
+	}
+
+	// Set headers - Moyasar uses HTTP Basic Auth with secret key as username
+	httpReq.SetBasicAuth(config.SecretKey, "")
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// Log the request for debugging
+	c.logger.Infow("sending invoice request to Moyasar",
+		"url", BaseURL+"/invoices",
+		"request_body", string(bodyBytes))
+
+	// Execute request
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		c.logger.Errorw("failed to create invoice in Moyasar", "error", err)
+		return nil, ierr.NewError("failed to create invoice in Moyasar").
+			WithHint("Unable to connect to Moyasar API").
+			Mark(ierr.ErrInternal)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, ierr.NewError("failed to read Moyasar response").Mark(ierr.ErrInternal)
+	}
+
+	// Log response for debugging
+	c.logger.Infow("received invoice response from Moyasar",
+		"status_code", resp.StatusCode,
+		"response_body", string(respBody))
+
+	// Handle non-2xx responses
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var errResp ErrorResponse
+		if err := json.Unmarshal(respBody, &errResp); err == nil {
+			c.logger.Errorw("Moyasar API error", "status", resp.StatusCode, "message", errResp.Message, "type", errResp.Type, "errors", errResp.Errors)
+			return nil, ierr.NewError(errResp.Message).
+				WithHint("Moyasar invoice creation failed").
+				WithReportableDetails(map[string]interface{}{
+					"type":   errResp.Type,
+					"errors": errResp.Errors,
+				}).
+				Mark(ierr.ErrInternal)
+		}
+		return nil, ierr.NewError("Moyasar API error").
+			WithHint(fmt.Sprintf("HTTP status %d", resp.StatusCode)).
+			Mark(ierr.ErrInternal)
+	}
+
+	// Parse successful response
+	var invoice CreateInvoiceResponse
+	if err := json.Unmarshal(respBody, &invoice); err != nil {
+		return nil, ierr.NewError("failed to parse Moyasar invoice response").Mark(ierr.ErrInternal)
+	}
+
+	c.logger.Infow("successfully created invoice in Moyasar",
+		"invoice_id", invoice.ID,
+		"status", invoice.Status,
+		"amount", invoice.Amount,
+		"url", invoice.URL)
+
+	return &invoice, nil
+}
+
+// GetPayment retrieves a payment by IDfrom Moyasar by ID
 func (c *Client) GetPayment(ctx context.Context, paymentID string) (*MoyasarPayment, error) {
 	config, err := c.GetMoyasarConfig(ctx)
 	if err != nil {

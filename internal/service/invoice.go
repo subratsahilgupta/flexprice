@@ -769,6 +769,9 @@ func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, pay
 			"invoice_id", inv.ID)
 	}
 
+	// Sync to Moyasar if Moyasar connection is enabled (async via Temporal)
+	s.triggerMoyasarInvoiceSyncWorkflow(ctx, inv.ID, inv.CustomerID)
+
 	// Sync to HubSpot if HubSpot connection is enabled (async via Temporal)
 	s.triggerHubSpotInvoiceSyncWorkflow(ctx, inv.ID, inv.CustomerID)
 
@@ -1214,6 +1217,82 @@ func (s *invoiceService) triggerNomodInvoiceSyncWorkflow(ctx context.Context, in
 	}
 
 	s.Logger.Infow("Nomod invoice sync workflow started successfully",
+		"invoice_id", invoiceID,
+		"customer_id", customerID,
+		"workflow_id", workflowRun.GetID(),
+		"run_id", workflowRun.GetRunID())
+}
+
+// triggerMoyasarInvoiceSyncWorkflow triggers the Moyasar invoice sync workflow via Temporal
+func (s *invoiceService) triggerMoyasarInvoiceSyncWorkflow(ctx context.Context, invoiceID, customerID string) {
+	// Copy necessary context values
+	tenantID := types.GetTenantID(ctx)
+	envID := types.GetEnvironmentID(ctx)
+
+	s.Logger.Infow("triggering Moyasar invoice sync workflow",
+		"invoice_id", invoiceID,
+		"customer_id", customerID,
+		"tenant_id", tenantID,
+		"environment_id", envID)
+
+	// Check if Moyasar connection exists and invoice outbound sync is enabled
+	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderMoyasar)
+	if err != nil {
+		s.Logger.Debugw("Moyasar connection not found, skipping invoice sync",
+			"error", err,
+			"invoice_id", invoiceID,
+			"customer_id", customerID)
+		return
+	}
+
+	if !conn.IsInvoiceOutboundEnabled() {
+		s.Logger.Debugw("Moyasar invoice outbound sync disabled, skipping invoice sync",
+			"invoice_id", invoiceID,
+			"customer_id", customerID,
+			"connection_id", conn.ID)
+		return
+	}
+
+	// Prepare workflow input with all necessary IDs
+	input := &models.MoyasarInvoiceSyncWorkflowInput{
+		InvoiceID:     invoiceID,
+		CustomerID:    customerID,
+		TenantID:      tenantID,
+		EnvironmentID: envID,
+	}
+
+	// Validate input
+	if err := input.Validate(); err != nil {
+		s.Logger.Errorw("invalid workflow input for Moyasar invoice sync",
+			"error", err,
+			"invoice_id", invoiceID,
+			"customer_id", customerID)
+		return
+	}
+
+	// Get global temporal service
+	temporalSvc := temporalservice.GetGlobalTemporalService()
+	if temporalSvc == nil {
+		s.Logger.Warnw("temporal service not available for Moyasar invoice sync",
+			"invoice_id", invoiceID)
+		return
+	}
+
+	// Start workflow - Temporal handles async execution, no need for goroutines
+	workflowRun, err := temporalSvc.ExecuteWorkflow(
+		ctx,
+		types.TemporalMoyasarInvoiceSyncWorkflow,
+		input,
+	)
+	if err != nil {
+		s.Logger.Errorw("failed to start Moyasar invoice sync workflow",
+			"error", err,
+			"invoice_id", invoiceID,
+			"customer_id", customerID)
+		return
+	}
+
+	s.Logger.Infow("Moyasar invoice sync workflow started successfully",
 		"invoice_id", invoiceID,
 		"customer_id", customerID,
 		"workflow_id", workflowRun.GetID(),
