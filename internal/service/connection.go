@@ -268,6 +268,43 @@ func (s *connectionService) encryptMetadata(encryptedSecretData types.Connection
 
 		encryptedMetadata.Nomod = nomodMeta
 
+	case types.SecretProviderMoyasar:
+		if encryptedSecretData.Moyasar == nil {
+			s.Logger.Warnw("Moyasar metadata is nil, cannot encrypt", "provider_type", providerType)
+			return types.ConnectionMetadata{}, ierr.NewError("Moyasar metadata is required").
+				WithHint("Moyasar connection requires encrypted_secret_data with secret_key").
+				Mark(ierr.ErrValidation)
+		}
+		// Encrypt secret key (required)
+		encryptedSecretKey, err := s.encryptionService.Encrypt(encryptedSecretData.Moyasar.SecretKey)
+		if err != nil {
+			return types.ConnectionMetadata{}, err
+		}
+
+		moyasarMeta := &types.MoyasarConnectionMetadata{
+			SecretKey: encryptedSecretKey,
+		}
+
+		// Encrypt publishable key if provided (optional)
+		if encryptedSecretData.Moyasar.PublishableKey != "" {
+			encryptedPublishableKey, err := s.encryptionService.Encrypt(encryptedSecretData.Moyasar.PublishableKey)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+			moyasarMeta.PublishableKey = encryptedPublishableKey
+		}
+
+		// Encrypt webhook secret if provided (optional)
+		if encryptedSecretData.Moyasar.WebhookSecret != "" {
+			encryptedWebhookSecret, err := s.encryptionService.Encrypt(encryptedSecretData.Moyasar.WebhookSecret)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+			moyasarMeta.WebhookSecret = encryptedWebhookSecret
+		}
+
+		encryptedMetadata.Moyasar = moyasarMeta
+
 	default:
 		// For other providers or unknown types, use generic format
 		if encryptedSecretData.Generic != nil {

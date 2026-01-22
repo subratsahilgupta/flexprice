@@ -136,6 +136,38 @@ type CreatePaymentLinkResponse struct {
 	PaymentID  string          // FlexPrice payment ID
 }
 
+// CreateInvoiceRequest represents a request to create a Moyasar invoice (payment link)
+type CreateInvoiceRequest struct {
+	Amount      int               `json:"amount"`                 // Amount in smallest currency unit
+	Currency    string            `json:"currency"`               // Currency code (e.g., SAR, USD)
+	Description string            `json:"description"`            // Invoice description
+	CallbackURL string            `json:"callback_url,omitempty"` // Webhook callback URL
+	SuccessURL  string            `json:"success_url,omitempty"`  // Redirect URL after successful payment
+	BackURL     string            `json:"back_url,omitempty"`     // Back button URL
+	ExpiredAt   string            `json:"expired_at,omitempty"`   // Expiration timestamp (ISO 8601)
+	Metadata    map[string]string `json:"metadata,omitempty"`     // Custom metadata
+}
+
+// CreateInvoiceResponse represents the response from creating a Moyasar invoice
+type CreateInvoiceResponse struct {
+	ID           string            `json:"id"`            // Invoice ID (UUID)
+	Status       string            `json:"status"`        // Invoice status
+	Amount       int               `json:"amount"`        // Amount in smallest currency unit
+	Currency     string            `json:"currency"`      // Currency code
+	Description  string            `json:"description"`   // Invoice description
+	LogoURL      string            `json:"logo_url"`      // Logo URL
+	AmountFormat string            `json:"amount_format"` // Formatted amount with currency
+	URL          string            `json:"url"`           // Checkout page URL (payment link)
+	CallbackURL  string            `json:"callback_url"`  // Callback URL
+	SuccessURL   string            `json:"success_url"`   // Success redirect URL
+	BackURL      string            `json:"back_url"`      // Back button URL
+	ExpiredAt    string            `json:"expired_at"`    // Expiration timestamp
+	CreatedAt    string            `json:"created_at"`    // Creation timestamp
+	UpdatedAt    string            `json:"updated_at"`    // Update timestamp
+	Payments     []MoyasarPayment  `json:"payments"`      // Associated payments
+	Metadata     map[string]string `json:"metadata"`      // Custom metadata
+}
+
 // RefundPaymentRequest represents a request to refund a payment
 type RefundPaymentRequest struct {
 	PaymentID string `json:"payment_id"`       // Moyasar payment ID

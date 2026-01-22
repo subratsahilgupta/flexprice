@@ -9,6 +9,7 @@ import (
 	exportActivities "github.com/flexprice/flexprice/internal/temporal/activities/export"
 	hubspotActivities "github.com/flexprice/flexprice/internal/temporal/activities/hubspot"
 	invoiceActivities "github.com/flexprice/flexprice/internal/temporal/activities/invoice"
+	moyasarActivities "github.com/flexprice/flexprice/internal/temporal/activities/moyasar"
 	nomodActivities "github.com/flexprice/flexprice/internal/temporal/activities/nomod"
 	planActivities "github.com/flexprice/flexprice/internal/temporal/activities/plan"
 	qbActivities "github.com/flexprice/flexprice/internal/temporal/activities/quickbooks"
@@ -107,6 +108,14 @@ func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalServ
 		customerService,
 		params.Logger,
 	)
+
+	// Moyasar activities
+	moyasarInvoiceSyncActivities := moyasarActivities.NewInvoiceSyncActivities(
+		params.IntegrationFactory,
+		customerService,
+		params.Logger,
+	)
+
 	// Customer activities
 	customerActivities := customerActivities.NewCustomerActivities(
 		params,
@@ -123,7 +132,7 @@ func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalServ
 
 	// Get all task queues and register workflows/activities for each
 	for _, taskQueue := range types.GetAllTaskQueues() {
-		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, hubspotQuoteSyncActivities, qbPriceSyncActivities, nomodInvoiceSyncActivities, customerActivities, scheduleBillingActivities, billingActivities, invoiceActs, reprocessEventsActivities)
+		config := buildWorkerConfig(taskQueue, planActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, hubspotQuoteSyncActivities, qbPriceSyncActivities, nomodInvoiceSyncActivities, moyasarInvoiceSyncActivities, customerActivities, scheduleBillingActivities, billingActivities, invoiceActs, reprocessEventsActivities)
 		if err := registerWorker(temporalService, config); err != nil {
 			return fmt.Errorf("failed to register worker for task queue %s: %w", taskQueue, err)
 		}
@@ -145,6 +154,7 @@ func buildWorkerConfig(
 	hubspotQuoteSyncActivities *hubspotActivities.QuoteSyncActivities,
 	qbPriceSyncActivities *qbActivities.QuickBooksPriceSyncActivities,
 	nomodInvoiceSyncActivities *nomodActivities.InvoiceSyncActivities,
+	moyasarInvoiceSyncActivities *moyasarActivities.InvoiceSyncActivities,
 	customerActivities *customerActivities.CustomerActivities,
 	scheduleBillingActivities *subscriptionActivities.SubscriptionActivities,
 	billingActivities *subscriptionActivities.BillingActivities,
@@ -162,6 +172,7 @@ func buildWorkerConfig(
 			workflows.HubSpotInvoiceSyncWorkflow,
 			workflows.HubSpotQuoteSyncWorkflow,
 			workflows.NomodInvoiceSyncWorkflow,
+			workflows.MoyasarInvoiceSyncWorkflow,
 		)
 		activitiesList = append(activitiesList,
 			taskActivities.ProcessTask,
@@ -170,6 +181,7 @@ func buildWorkerConfig(
 			hubspotInvoiceSyncActivities.SyncInvoiceToHubSpot,
 			hubspotQuoteSyncActivities.CreateQuoteAndLineItems,
 			nomodInvoiceSyncActivities.SyncInvoiceToNomod,
+			moyasarInvoiceSyncActivities.SyncInvoiceToMoyasar,
 		)
 
 	case types.TemporalTaskQueuePrice:
