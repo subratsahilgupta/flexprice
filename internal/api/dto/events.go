@@ -518,7 +518,7 @@ type MatchedSubscriptionLineItem struct {
 // ReprocessEventsRequest represents the request to reprocess events
 type ReprocessEventsRequest struct {
 	ExternalCustomerID string `json:"external_customer_id" validate:"required" binding:"required" example:"customer456"`
-	EventName          string `json:"event_name" validate:"required" binding:"required" example:"api_request"`
+	EventName          string `json:"event_name" example:"api_request"`
 	StartDate          string `json:"start_date" validate:"required" binding:"required" example:"2024-01-01T00:00:00Z"`
 	EndDate            string `json:"end_date" validate:"required" binding:"required" example:"2024-01-31T23:59:59Z"`
 	BatchSize          int    `json:"batch_size" example:"100"`

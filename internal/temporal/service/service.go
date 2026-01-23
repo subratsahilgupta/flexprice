@@ -374,18 +374,24 @@ func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWo
 		}
 	case types.TemporalReprocessEventsWorkflow:
 		// Extract context ID from ReprocessEventsWorkflowInput
-		// Format: external_customer_id-event_name for meaningful workflow identification
+		// Format: external_customer_id-event_name (if event_name provided) or just external_customer_id
 		if input, ok := params.(eventsModels.ReprocessEventsWorkflowInput); ok {
-			if input.ExternalCustomerID != "" && input.EventName != "" {
-				return fmt.Sprintf("%s-%s", input.ExternalCustomerID, input.EventName)
+			if input.ExternalCustomerID != "" {
+				if input.EventName != "" {
+					return fmt.Sprintf("%s-%s", input.ExternalCustomerID, input.EventName)
+				}
+				return input.ExternalCustomerID
 			}
 		}
 		// Also handle map input for reprocess events
 		if paramsMap, ok := params.(map[string]interface{}); ok {
 			externalCustomerID, _ := paramsMap["external_customer_id"].(string)
 			eventName, _ := paramsMap["event_name"].(string)
-			if externalCustomerID != "" && eventName != "" {
-				return fmt.Sprintf("%s-%s", externalCustomerID, eventName)
+			if externalCustomerID != "" {
+				if eventName != "" {
+					return fmt.Sprintf("%s-%s", externalCustomerID, eventName)
+				}
+				return externalCustomerID
 			}
 		}
 	}
@@ -856,15 +862,10 @@ func (s *temporalService) buildReprocessEventsInput(_ context.Context, tenantID,
 				WithHint("Provide map with external_customer_id").
 				Mark(errors.ErrValidation)
 		}
-		if eventName == "" {
-			return nil, errors.NewError("event_name is required").
-				WithHint("Provide map with event_name").
-				Mark(errors.ErrValidation)
-		}
 
 		input := eventsModels.ReprocessEventsWorkflowInput{
 			ExternalCustomerID: externalCustomerID,
-			EventName:          eventName,
+			EventName:          eventName, // Optional - can be empty
 			StartDate:          startDate,
 			EndDate:            endDate,
 			BatchSize:          batchSize,

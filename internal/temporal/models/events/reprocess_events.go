@@ -25,11 +25,6 @@ func (i *ReprocessEventsWorkflowInput) Validate() error {
 			WithHint("External customer ID is required").
 			Mark(ierr.ErrValidation)
 	}
-	if i.EventName == "" {
-		return ierr.NewError("event_name is required").
-			WithHint("Event name is required").
-			Mark(ierr.ErrValidation)
-	}
 	if i.StartDate.IsZero() {
 		return ierr.NewError("start_date is required").
 			WithHint("Start date is required").
