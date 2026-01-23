@@ -53,18 +53,14 @@ func (i *ReprocessEventsWorkflowInput) Validate() error {
 	// Validate batch size (default to 100 if not provided or invalid)
 	if i.BatchSize <= 0 {
 		i.BatchSize = 100 // Default batch size
-	} else if i.BatchSize > 1000 {
-		return ierr.NewError("batch_size exceeds maximum").
-			WithHint("Batch size must be between 1 and 1000").
-			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
 
 // ReprocessEventsWorkflowResult represents the result of reprocess events workflow
 type ReprocessEventsWorkflowResult struct {
-	TotalEventsFound    int       `json:"total_events_found"`
-	TotalEventsPublished int      `json:"total_events_published"`
-	ProcessedBatches    int       `json:"processed_batches"`
-	CompletedAt         time.Time `json:"completed_at"`
+	TotalEventsFound     int       `json:"total_events_found"`
+	TotalEventsPublished int       `json:"total_events_published"`
+	ProcessedBatches     int       `json:"processed_batches"`
+	CompletedAt          time.Time `json:"completed_at"`
 }

@@ -558,10 +558,6 @@ func (r *ReprocessEventsRequest) Validate() error {
 	// Validate batch size (default to 100 if not provided or invalid)
 	if r.BatchSize <= 0 {
 		r.BatchSize = 100 // Default batch size
-	} else if r.BatchSize > 1000 {
-		return ierr.NewError("batch_size exceeds maximum").
-			WithHint("Batch size must be between 1 and 1000").
-			Mark(ierr.ErrValidation)
 	}
 
 	return nil
