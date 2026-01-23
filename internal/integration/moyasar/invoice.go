@@ -112,7 +112,7 @@ func (s *InvoiceSyncService) SyncInvoiceToMoyasar(
 	s.logger.Infow("successfully created invoice in Moyasar",
 		"invoice_id", req.InvoiceID,
 		"moyasar_invoice_id", moyasarInvoiceID,
-		"payment_url", moyasarInvoice.URL)
+		"payment_url_present", moyasarInvoice.URL != "")
 
 	// Step 6: Create entity integration mapping
 	if err := s.createInvoiceMapping(ctx, req.InvoiceID, moyasarInvoice, flexInvoice.EnvironmentID); err != nil {
@@ -134,18 +134,67 @@ func (s *InvoiceSyncService) SyncInvoiceToMoyasar(
 }
 
 // convertToSmallestUnit converts an amount to the smallest currency unit
-// For most currencies: 1 unit = 100 smallest units (e.g., 1 USD = 100 cents)
-// For zero-decimal currencies (e.g., JPY): 1 unit = 1 smallest unit
+// The multiplier is based on the currency's decimal precision:
+// - Precision 0 (zero-decimal): multiplier 1 (e.g., JPY, KRW, VND, CLP)
+// - Precision 2 (two-decimal): multiplier 100 (e.g., USD, SAR, EUR)
+// - Precision 3 (three-decimal): multiplier 1000 (e.g., KWD)
 func convertToSmallestUnit(amount decimal.Decimal, currency string) (int64, error) {
-	// Moyasar uses smallest currency units
-	// Most currencies: multiply by 100 (e.g., USD, SAR, EUR)
-	// Zero-decimal currencies: multiply by 1 (e.g., JPY, KRW)
-	multiplier := decimal.NewFromInt(100)
+	// Get currency precision to determine the multiplier
+	precision := types.GetCurrencyPrecision(currency)
+
+	// Calculate multiplier: 10^precision
+	// Precision 0 → 1, Precision 2 → 100, Precision 3 → 1000
+	var multiplier int64
+	switch precision {
+	case 0:
+		multiplier = 1
+	case 2:
+		multiplier = 100
+	case 3:
+		multiplier = 1000
+	default:
+		// For any other precision, calculate 10^precision
+		multiplier = 1
+		for i := int32(0); i < precision; i++ {
+			multiplier *= 10
+		}
+	}
 
 	// Round to nearest integer to avoid truncation errors
-	amountInSmallestUnit := amount.Mul(multiplier).Round(0).IntPart()
+	amountInSmallestUnit := amount.Mul(decimal.NewFromInt(multiplier)).Round(0).IntPart()
 
 	return amountInSmallestUnit, nil
+}
+
+// convertFromSmallestUnit converts an amount from the smallest currency unit to standard unit
+// The divisor is based on the currency's decimal precision:
+// - Precision 0 (zero-decimal): divisor 1 (e.g., JPY, KRW, VND, CLP)
+// - Precision 2 (two-decimal): divisor 100 (e.g., USD, SAR, EUR)
+// - Precision 3 (three-decimal): divisor 1000 (e.g., KWD)
+func convertFromSmallestUnit(amountInSmallestUnit int64, currency string) decimal.Decimal {
+	// Get currency precision to determine the divisor
+	precision := types.GetCurrencyPrecision(currency)
+
+	// Calculate divisor: 10^precision
+	// Precision 0 → 1, Precision 2 → 100, Precision 3 → 1000
+	var divisor int64
+	switch precision {
+	case 0:
+		divisor = 1
+	case 2:
+		divisor = 100
+	case 3:
+		divisor = 1000
+	default:
+		// For any other precision, calculate 10^precision
+		divisor = 1
+		for i := int32(0); i < precision; i++ {
+			divisor *= 10
+		}
+	}
+
+	// Convert from smallest unit to standard unit
+	return decimal.NewFromInt(amountInSmallestUnit).Div(decimal.NewFromInt(divisor))
 }
 
 // buildInvoiceRequest constructs the Moyasar invoice creation request
@@ -190,20 +239,72 @@ func (s *InvoiceSyncService) buildInvoiceRequest(
 	return req, nil
 }
 
-// buildInvoiceDescription creates a description for the invoice
+// buildInvoiceDescription creates a detailed description for the invoice
+// including plan names and line item details
 func (s *InvoiceSyncService) buildInvoiceDescription(flexInvoice *invoice.Invoice) string {
-	// Use invoice number if available
+	var parts []string
+
+	// Start with invoice number if available
 	if flexInvoice.InvoiceNumber != nil && *flexInvoice.InvoiceNumber != "" {
-		return fmt.Sprintf("Invoice %s", *flexInvoice.InvoiceNumber)
+		parts = append(parts, fmt.Sprintf("Invoice %s", *flexInvoice.InvoiceNumber))
+	} else {
+		parts = append(parts, "Invoice")
 	}
 
-	// Fallback to generic description with item count
-	itemCount := len(flexInvoice.LineItems)
-	if itemCount == 1 {
-		return "Invoice for 1 item"
+	// Add line items details
+	if len(flexInvoice.LineItems) > 0 {
+		var lineDescriptions []string
+		
+		for _, item := range flexInvoice.LineItems {
+			// Build description for each line item
+			var itemDesc string
+			
+			// Use plan display name if available
+			if item.PlanDisplayName != nil && *item.PlanDisplayName != "" {
+				itemDesc = *item.PlanDisplayName
+			} else if item.DisplayName != nil && *item.DisplayName != "" {
+				// Fallback to display name
+				itemDesc = *item.DisplayName
+			} else if item.MeterDisplayName != nil && *item.MeterDisplayName != "" {
+				// Fallback to meter display name
+				itemDesc = *item.MeterDisplayName
+			} else {
+				// Generic fallback
+				itemDesc = "Item"
+			}
+			
+			// Add quantity and amount
+			amountStr := item.Amount.StringFixed(2)
+			if item.Quantity.GreaterThan(decimal.NewFromInt(1)) {
+				itemDesc = fmt.Sprintf("%s (x%s) - %s %s", 
+					itemDesc, 
+					item.Quantity.String(), 
+					amountStr,
+					strings.ToUpper(item.Currency))
+			} else {
+				itemDesc = fmt.Sprintf("%s - %s %s", 
+					itemDesc, 
+					amountStr,
+					strings.ToUpper(item.Currency))
+			}
+			
+			lineDescriptions = append(lineDescriptions, itemDesc)
+		}
+		
+		// Limit to first 3 line items to keep description concise
+		if len(lineDescriptions) > 3 {
+			parts = append(parts, strings.Join(lineDescriptions[:3], ", "))
+			parts = append(parts, fmt.Sprintf("and %d more items", len(lineDescriptions)-3))
+		} else {
+			parts = append(parts, strings.Join(lineDescriptions, ", "))
+		}
 	}
 
-	return fmt.Sprintf("Invoice for %d items", itemCount)
+	// Add total amount
+	totalStr := flexInvoice.Total.StringFixed(2)
+	parts = append(parts, fmt.Sprintf("Total: %s %s", totalStr, strings.ToUpper(flexInvoice.Currency)))
+
+	return strings.Join(parts, " | ")
 }
 
 // buildSyncResponse constructs the sync response from Moyasar invoice data
@@ -339,7 +440,7 @@ func (s *InvoiceSyncService) updateFlexPriceInvoiceFromMoyasar(ctx context.Conte
 		s.logger.Infow("updating FlexPrice invoice with Moyasar details",
 			"invoice_id", flexInvoice.ID,
 			"moyasar_invoice_id", moyasarInvoice.ID,
-			"moyasar_invoice_url", moyasarInvoice.URL)
+			"moyasar_invoice_url_present", moyasarInvoice.URL != "")
 
 		return s.invoiceRepo.Update(ctx, flexInvoice)
 	}

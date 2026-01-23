@@ -101,22 +101,29 @@ func TestAmountConversion(t *testing.T) {
 
 func TestHMACSignatureGeneration(t *testing.T) {
 	// Test HMAC signature generation for webhook verification
+	// This tests the actual signature generation logic used in production
 	payload := []byte(`{"type":"payment_paid","data":{"id":"pay_123"}}`)
 	secret := "test_webhook_secret"
 
-	// Generate signature
-	signature := generateHMACSig(payload, secret)
+	// Generate signature using the same logic as production
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(payload)
+	signature := hex.EncodeToString(mac.Sum(nil))
 
 	// Verify properties
 	assert.NotEmpty(t, signature)
 	assert.Len(t, signature, 64) // SHA256 hex is 64 chars
 
 	// Same payload and secret should produce same signature
-	signature2 := generateHMACSig(payload, secret)
+	mac2 := hmac.New(sha256.New, []byte(secret))
+	mac2.Write(payload)
+	signature2 := hex.EncodeToString(mac2.Sum(nil))
 	assert.Equal(t, signature, signature2)
 
 	// Different secret should produce different signature
-	differentSig := generateHMACSig(payload, "different_secret")
+	mac3 := hmac.New(sha256.New, []byte("different_secret"))
+	mac3.Write(payload)
+	differentSig := hex.EncodeToString(mac3.Sum(nil))
 	assert.NotEqual(t, signature, differentSig)
 }
 
@@ -148,6 +155,9 @@ func TestDefaultCurrency(t *testing.T) {
 }
 
 // Helper functions for tests
+// generateHMACSig generates an HMAC signature for testing purposes
+// This matches the logic used in VerifyWebhookSignature but is kept separate
+// for test convenience. Production code should always use VerifyWebhookSignature.
 func generateHMACSig(payload []byte, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)

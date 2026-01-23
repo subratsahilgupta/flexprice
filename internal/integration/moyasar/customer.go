@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
-	"github.com/flexprice/flexprice/internal/interfaces"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -17,7 +17,7 @@ type MoyasarCustomerService interface {
 	StoreCustomerMapping(ctx context.Context, flexpriceCustomerID string, moyasarCustomerRef string) error
 	HasCustomerMapping(ctx context.Context, flexpriceCustomerID string) (bool, error)
 	// Token management methods
-	GetCustomerTokens(ctx context.Context, customerID string, customerService interfaces.CustomerService) ([]string, error)
+	GetCustomerTokens(ctx context.Context, customerID string) ([]string, error)
 	SaveCustomerToken(ctx context.Context, customerID string, tokenID string) error
 }
 
@@ -98,6 +98,13 @@ func (s *CustomerService) StoreCustomerMapping(ctx context.Context, flexpriceCus
 
 	err = s.entityIntegrationMappingRepo.Create(ctx, mapping)
 	if err != nil {
+		// Handle duplicate key error gracefully (race condition between check and create)
+		if ierr.IsAlreadyExists(err) {
+			s.logger.Debugw("customer mapping already exists (race condition)",
+				"flexprice_customer_id", flexpriceCustomerID,
+				"moyasar_customer_ref", moyasarCustomerRef)
+			return nil // Mapping already exists, treat as success
+		}
 		s.logger.Errorw("failed to create customer mapping",
 			"flexprice_customer_id", flexpriceCustomerID,
 			"moyasar_customer_ref", moyasarCustomerRef,
@@ -140,7 +147,7 @@ func (s *CustomerService) HasCustomerMapping(ctx context.Context, flexpriceCusto
 // GetCustomerTokens retrieves all saved token IDs for a customer
 // Tokens are stored as entity integration mappings with entity type "payment_method"
 // Customer ID is stored in EntityID, and Token ID is stored in ProviderEntityID
-func (s *CustomerService) GetCustomerTokens(ctx context.Context, customerID string, customerService interfaces.CustomerService) ([]string, error) {
+func (s *CustomerService) GetCustomerTokens(ctx context.Context, customerID string) ([]string, error) {
 	if customerID == "" {
 		return nil, nil
 	}
@@ -190,7 +197,14 @@ func (s *CustomerService) SaveCustomerToken(ctx context.Context, customerID stri
 	}
 
 	mappings, err := s.entityIntegrationMappingRepo.List(ctx, filter)
-	if err == nil && len(mappings) > 0 {
+	if err != nil {
+		s.logger.Errorw("failed to check if token mapping exists",
+			"customer_id", customerID,
+			"token_id", tokenID,
+			"error", err)
+		return err
+	}
+	if len(mappings) > 0 {
 		s.logger.Debugw("token mapping already exists",
 			"customer_id", customerID,
 			"token_id", tokenID)

@@ -943,7 +943,7 @@ func (h *WebhookHandler) HandleMoyasarWebhook(c *gin.Context) {
 		return
 	}
 
-	// Get Moyasar signature from headers (if present)
+	// Get Moyasar signature from headers (optional)
 	signature := c.GetHeader("X-Moyasar-Signature")
 
 	// Set context with tenant and environment IDs
@@ -958,24 +958,49 @@ func (h *WebhookHandler) HandleMoyasarWebhook(c *gin.Context) {
 		return
 	}
 
-	// Verify webhook signature (if present and webhook secret is configured)
-	if signature != "" {
+	// Get connection to check if webhook secret is configured
+	conn, err := moyasarIntegration.Client.GetConnection(ctx)
+	if err != nil {
+		h.logger.Errorw("failed to get Moyasar connection", "error", err)
+		return
+	}
+
+	// Check if webhook secret is configured
+	hasWebhookSecretConfigured := conn.EncryptedSecretData.Moyasar != nil &&
+		conn.EncryptedSecretData.Moyasar.WebhookSecret != ""
+
+	// Verify webhook signature if both secret and signature are present
+	if hasWebhookSecretConfigured && signature != "" {
+		// Both webhook secret and signature are present - verify the signature
 		err = moyasarIntegration.Client.VerifyWebhookSignature(ctx, body, signature)
 		if err != nil {
-			h.logger.Errorw("failed to verify Moyasar webhook signature",
+			h.logger.Errorw("failed to verify Moyasar webhook signature - rejecting request",
 				"error", err,
 				"tenant_id", tenantID,
 				"environment_id", environmentID)
 			return
 		}
-		h.logger.Debugw("Moyasar webhook signature verified",
+		h.logger.Debugw("Moyasar webhook signature verified successfully",
 			"tenant_id", tenantID,
 			"environment_id", environmentID)
-	} else {
-		h.logger.Warnw("Moyasar webhook received without signature",
+	} else if hasWebhookSecretConfigured && signature == "" {
+		// Webhook secret is configured but signature is missing - allow with warning
+		h.logger.Warnw("Moyasar webhook secret configured but signature header missing - allowing request",
 			"tenant_id", tenantID,
 			"environment_id", environmentID,
-			"note", "Consider configuring webhook secret for security")
+			"note", "Configure shared_secret in Moyasar webhook settings for enhanced security")
+	} else if !hasWebhookSecretConfigured && signature != "" {
+		// Signature provided but no webhook secret configured - allow with warning
+		h.logger.Warnw("Moyasar webhook has signature but no webhook secret configured - skipping verification",
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+			"note", "Configure webhook_secret in Moyasar connection for security")
+	} else {
+		// No signature and no webhook secret - allow with warning
+		h.logger.Warnw("Moyasar webhook received without signature verification",
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+			"note", "Configure webhook_secret in Moyasar connection for enhanced security")
 	}
 
 	// Log webhook processing (without sensitive data)
