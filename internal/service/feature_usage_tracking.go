@@ -785,11 +785,56 @@ func (s *featureUsageTrackingService) prepareProcessedEventsV2(ctx context.Conte
 	}
 
 	if len(meters) == 0 {
-		s.Logger.Debugw("no meters found for event name, skipping",
+		s.Logger.Debugw("no meters found for event name, attempting auto-creation",
 			"event_id", event.ID,
 			"event_name", event.EventName,
 		)
-		return results, nil
+
+		// Try to auto-create feature/meter/price via workflow if configured
+		workflowResult, err := s.handleMissingFeature(ctx, event)
+		if err != nil {
+			s.Logger.Errorw("failed to handle missing feature",
+				"event_id", event.ID,
+				"event_name", event.EventName,
+				"error", err,
+			)
+			return results, err
+		}
+
+		if workflowResult == nil {
+			s.Logger.Debugw("skipping event - no meters and no auto-creation workflow configured",
+				"event_id", event.ID,
+				"event_name", event.EventName,
+			)
+			return results, nil
+		}
+
+		s.Logger.Debugw("feature/meter/price auto-created via workflow",
+			"event_id", event.ID,
+			"event_name", event.EventName,
+			"feature_id", workflowResult.ID,
+			"meter_id", workflowResult.MeterID,
+		)
+
+		// Re-fetch meters after auto-creation
+		meters, err = s.MeterRepo.List(ctx, meterFilter)
+		if err != nil {
+			s.Logger.Errorw("failed to re-fetch meters by event name after auto-creation",
+				"event_id", event.ID,
+				"event_name", event.EventName,
+				"error", err,
+			)
+			return results, err
+		}
+
+		// feature/meter wrongly auto-created
+		if len(meters) == 0 {
+			s.Logger.Warnw("no meters found for event name even after auto-creation, skipping",
+				"event_id", event.ID,
+				"event_name", event.EventName,
+			)
+			return results, nil
+		}
 	}
 
 	// Build meter map and collect meter IDs
@@ -838,6 +883,14 @@ func (s *featureUsageTrackingService) prepareProcessedEventsV2(ctx context.Conte
 	lineItemFilter.ActiveFilter = true
 	lineItemFilter.CurrentPeriodStart = &event.Timestamp
 
+	s.Logger.Debugw("querying subscription line items",
+		"event_id", event.ID,
+		"event_name", event.EventName,
+		"customer_id", customer.ID,
+		"meter_ids", meterIDs,
+		"event_timestamp", event.Timestamp,
+	)
+
 	lineItems, err := s.SubscriptionLineItemRepo.List(ctx, lineItemFilter)
 	if err != nil {
 		s.Logger.Errorw("failed to get subscription line items",
@@ -849,11 +902,21 @@ func (s *featureUsageTrackingService) prepareProcessedEventsV2(ctx context.Conte
 		return results, err
 	}
 
+	s.Logger.Debugw("found subscription line items",
+		"event_id", event.ID,
+		"event_name", event.EventName,
+		"customer_id", customer.ID,
+		"meter_ids", meterIDs,
+		"line_items_count", len(lineItems),
+	)
+
 	if len(lineItems) == 0 {
-		s.Logger.Debugw("no active subscription line items found for meters and customer, skipping",
+		s.Logger.Warnw("no subscription line items found for meters and customer",
 			"event_id", event.ID,
+			"event_name", event.EventName,
 			"customer_id", customer.ID,
 			"meter_ids", meterIDs,
+			"event_timestamp", event.Timestamp,
 		)
 		return results, nil
 	}
@@ -867,7 +930,7 @@ func (s *featureUsageTrackingService) prepareProcessedEventsV2(ctx context.Conte
 	}
 
 	if len(activeLineItems) == 0 {
-		s.Logger.Debugw("no line items active for event timestamp, skipping",
+		s.Logger.Debugw("no line items active for event timestamp",
 			"event_id", event.ID,
 			"customer_id", customer.ID,
 			"event_timestamp", event.Timestamp,
@@ -1221,6 +1284,232 @@ func (s *featureUsageTrackingService) handleMissingCustomer(
 	)
 
 	return createdCustomer, nil
+}
+
+func (s *featureUsageTrackingService) handleMissingFeature(
+	ctx context.Context,
+	event *events.Event,
+) (*feature.Feature, error) {
+	// Get config from settings
+	settingsService := &settingsService{ServiceParams: s.ServiceParams}
+	workflowConfig, err := GetSetting[*workflowModels.WorkflowConfig](
+		settingsService,
+		ctx,
+		types.SettingKeyPrepareProcessedEvents,
+	)
+	if err != nil {
+		s.Logger.Debugw("failed to get workflow config",
+			"event_id", event.ID,
+			"event_name", event.EventName,
+			"error", err,
+		)
+		return nil, nil // No config, skip auto-creation
+	}
+
+	if workflowConfig == nil || len(workflowConfig.Actions) == 0 {
+		s.Logger.Debugw("no workflow config found for prepare processed events",
+			"event_id", event.ID,
+			"event_name", event.EventName,
+		)
+		return nil, nil // No config, skip auto-creation
+	}
+
+	// Check if workflow has create_feature_and_price action as the first action
+	hasCreateFeatureAndPrice := false
+	if len(workflowConfig.Actions) > 0 {
+		if workflowConfig.Actions[0].GetAction() == workflowModels.WorkflowActionCreateFeatureAndPrice {
+			hasCreateFeatureAndPrice = true
+		}
+	}
+
+	if !hasCreateFeatureAndPrice {
+		s.Logger.Debugw("workflow config does not have create_feature_and_price as first action",
+			"event_id", event.ID,
+			"event_name", event.EventName,
+			"actions", workflowConfig.Actions,
+		)
+		return nil, nil // No create_feature_and_price action, skip auto-creation
+	}
+
+	// Extract plan_id from the create_feature_and_price action
+	var planID string
+	for _, action := range workflowConfig.Actions {
+		if action.GetAction() == workflowModels.WorkflowActionCreateFeatureAndPrice {
+			if featureAction, ok := action.(*workflowModels.CreateFeatureAndPriceActionConfig); ok {
+				planID = featureAction.PlanID
+				break
+			}
+		}
+	}
+
+	// plan_id is required to run this workflow
+	if planID == "" {
+		s.Logger.Debugw("workflow config missing plan_id in create_feature_and_price action; skipping auto-creation",
+			"event_id", event.ID,
+			"event_name", event.EventName,
+		)
+		return nil, nil
+	}
+
+	s.Logger.Debugw("executing prepare processed events workflow",
+		"event_id", event.ID,
+		"event_name", event.EventName,
+		"plan_id", planID,
+	)
+
+	// Validate that plan exists for this tenant and environment
+	_, err = s.PlanRepo.Get(ctx, planID)
+	if err != nil {
+		s.Logger.Errorw("plan does not exist for prepare processed events workflow",
+			"error", err,
+			"event_id", event.ID,
+			"event_name", event.EventName,
+			"plan_id", planID,
+		)
+		return nil, ierr.WithError(err).
+			WithHint("Plan does not exist for the specified tenant and environment").
+			WithReportableDetails(map[string]interface{}{
+				"event_id":   event.ID,
+				"event_name": event.EventName,
+				"plan_id":    planID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	input := &workflowModels.PrepareProcessedEventsWorkflowInput{
+		EventID:        event.ID,
+		EventName:      event.EventName,
+		EventTimestamp: event.Timestamp,
+		TenantID:       types.GetTenantID(ctx),
+		EnvironmentID:  types.GetEnvironmentID(ctx),
+		WorkflowConfig: *workflowConfig,
+	}
+
+	if err := input.Validate(); err != nil {
+		s.Logger.Errorw("invalid workflow input for prepare processed events",
+			"error", err,
+			"event_id", event.ID,
+			"event_name", event.EventName,
+		)
+		return nil, ierr.WithError(err).
+			WithHint("Invalid workflow input for prepare processed events").
+			WithReportableDetails(map[string]interface{}{
+				"event_id":   event.ID,
+				"event_name": event.EventName,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	temporalSvc := temporalservice.GetGlobalTemporalService()
+	if temporalSvc == nil {
+		return nil, ierr.NewError("temporal service not available").
+			WithHint("Prepare processed events workflow requires Temporal service").
+			WithReportableDetails(map[string]interface{}{
+				"event_id":   event.ID,
+				"event_name": event.EventName,
+			}).
+			Mark(ierr.ErrInternal)
+	}
+
+	result, err := temporalSvc.ExecuteWorkflowSync(
+		ctx,
+		types.TemporalPrepareProcessedEventsWorkflow,
+		input,
+		30, // keep consistent with customer onboarding
+	)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to execute prepare processed events workflow").
+			WithReportableDetails(map[string]interface{}{
+				"event_id":   event.ID,
+				"event_name": event.EventName,
+			}).
+			Mark(ierr.ErrInternal)
+	}
+
+	workflowResult, ok := result.(*workflowModels.PrepareProcessedEventsWorkflowResult)
+	if !ok {
+		return nil, ierr.NewError("invalid workflow result type").
+			WithHint("Expected PrepareProcessedEventsWorkflowResult").
+			WithReportableDetails(map[string]interface{}{
+				"event_id":   event.ID,
+				"event_name": event.EventName,
+			}).
+			Mark(ierr.ErrInternal)
+	}
+
+	if workflowResult.Status != workflowModels.WorkflowStatusCompleted {
+		errorMsg := "workflow did not complete successfully"
+		if workflowResult.ErrorSummary != nil {
+			errorMsg = *workflowResult.ErrorSummary
+		}
+		return nil, ierr.NewError(errorMsg).
+			WithHint("Prepare processed events workflow failed").
+			WithReportableDetails(map[string]interface{}{
+				"event_id":         event.ID,
+				"event_name":       event.EventName,
+				"workflow_status":  workflowResult.Status,
+				"actions_executed": workflowResult.ActionsExecuted,
+			}).
+			Mark(ierr.ErrInternal)
+	}
+
+	// Extract feature_id from workflow results
+	var featureID string
+	for _, actionResult := range workflowResult.Results {
+		if actionResult.ActionType == workflowModels.WorkflowActionCreateFeatureAndPrice &&
+			actionResult.Status == workflowModels.WorkflowStatusCompleted &&
+			actionResult.ResourceID != "" {
+			featureID = actionResult.ResourceID
+			break
+		}
+	}
+
+	if featureID == "" {
+		return nil, ierr.NewError("feature_id not found in workflow results").
+			WithHint("Workflow completed but feature was not created").
+			WithReportableDetails(map[string]interface{}{
+				"event_id":   event.ID,
+				"event_name": event.EventName,
+			}).
+			Mark(ierr.ErrInternal)
+	}
+
+	// Fetch the created feature
+	createdFeature, err := s.FeatureRepo.Get(ctx, featureID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to fetch created feature").
+			WithReportableDetails(map[string]interface{}{
+				"event_id":   event.ID,
+				"event_name": event.EventName,
+				"feature_id": featureID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	// Check if rollout_to_subscriptions action was executed
+	var rolloutExecuted bool
+	var rolloutPlanID string
+	for _, actionResult := range workflowResult.Results {
+		if actionResult.ActionType == workflowModels.WorkflowActionRolloutToSubscriptions &&
+			actionResult.Status == workflowModels.WorkflowStatusCompleted {
+			rolloutExecuted = true
+			rolloutPlanID = actionResult.ResourceID
+			break
+		}
+	}
+
+	s.Logger.Infow("prepare processed events workflow completed successfully",
+		"event_id", event.ID,
+		"event_name", event.EventName,
+		"feature_id", featureID,
+		"actions_executed", workflowResult.ActionsExecuted,
+		"rollout_to_subscriptions_executed", rolloutExecuted,
+		"rollout_plan_id", rolloutPlanID,
+	)
+
+	return createdFeature, nil
 }
 
 // Find matching prices for an event based on meter configuration and filters

@@ -372,7 +372,7 @@ func (s *temporalService) generateWorkflowID(workflowType types.TemporalWorkflow
 	return types.GenerateWorkflowIDForType(workflowType.String())
 }
 
-// extractWorkflowContextID extracts the context ID (e.g., subscription_id, invoice_id) from params
+// extractWorkflowContextID extracts the context ID (e.g., subscription_id, invoice_id, event_id) from params
 // for deterministic workflow ID generation. Returns empty string if no context ID is applicable.
 func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWorkflowType, params interface{}) string {
 	switch workflowType {
@@ -385,6 +385,14 @@ func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWo
 		// Extract invoice ID from ProcessInvoiceWorkflowInput
 		if input, ok := params.(invoiceModels.ProcessInvoiceWorkflowInput); ok {
 			return input.InvoiceID
+		}
+	case types.TemporalPrepareProcessedEventsWorkflow:
+		// Extract event ID from PrepareProcessedEventsWorkflowInput
+		if input, ok := params.(*models.PrepareProcessedEventsWorkflowInput); ok {
+			return input.EventID
+		}
+		if input, ok := params.(models.PrepareProcessedEventsWorkflowInput); ok {
+			return input.EventID
 		}
 	}
 	return ""
@@ -430,6 +438,8 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 		return s.buildNomodInvoiceSyncInput(ctx, tenantID, environmentID, params)
 	case types.TemporalCustomerOnboardingWorkflow:
 		return s.buildCustomerOnboardingInput(ctx, tenantID, environmentID, userID, params)
+	case types.TemporalPrepareProcessedEventsWorkflow:
+		return s.buildPrepareProcessedEventsInput(ctx, tenantID, environmentID, userID, params)
 	case types.TemporalProcessInvoiceWorkflow:
 		return s.buildProcessInvoiceInput(ctx, tenantID, environmentID, params)
 	default:
@@ -663,6 +673,26 @@ func (s *temporalService) buildProcessInvoiceInput(_ context.Context, tenantID, 
 		Mark(errors.ErrValidation)
 }
 
+// buildPrepareProcessedEventsInput builds input for prepare processed events workflow
+func (s *temporalService) buildPrepareProcessedEventsInput(_ context.Context, tenantID, environmentID, userID string, params interface{}) (interface{}, error) {
+	// If already correct type, just ensure context is set
+	if input, ok := params.(*models.PrepareProcessedEventsWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return *input, nil
+	}
+
+	if input, ok := params.(models.PrepareProcessedEventsWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return input, nil
+	}
+
+	return nil, errors.NewError("invalid input for prepare processed events workflow").
+		WithHint("Provide PrepareProcessedEventsWorkflowInput with event_name and workflow_config").
+		Mark(errors.ErrValidation)
+}
+
 // ExecuteWorkflowSync executes a workflow synchronously and waits for completion
 func (s *temporalService) ExecuteWorkflowSync(
 	ctx context.Context,
@@ -694,20 +724,45 @@ func (s *temporalService) ExecuteWorkflowSync(
 	}
 
 	// Wait for workflow completion and get result
-	var result models.CustomerOnboardingWorkflowResult
-	if err := workflowRun.Get(timeoutCtx, &result); err != nil {
-		return nil, errors.WithError(err).
-			WithHint("Workflow execution failed or timed out").
-			WithReportableDetails(map[string]interface{}{
-				"workflow_id":   workflowRun.GetID(),
-				"run_id":        workflowRun.GetRunID(),
-				"workflow_type": workflowType.String(),
-				"timeout":       timeoutSeconds,
-			}).
-			Mark(errors.ErrInternal)
-	}
+	switch workflowType {
+	case types.TemporalCustomerOnboardingWorkflow:
+		var result models.CustomerOnboardingWorkflowResult
+		if err := workflowRun.Get(timeoutCtx, &result); err != nil {
+			return nil, errors.WithError(err).
+				WithHint("Workflow execution failed or timed out").
+				WithReportableDetails(map[string]interface{}{
+					"workflow_id":   workflowRun.GetID(),
+					"run_id":        workflowRun.GetRunID(),
+					"workflow_type": workflowType.String(),
+					"timeout":       timeoutSeconds,
+				}).
+				Mark(errors.ErrInternal)
+		}
+		return &result, nil
 
-	return &result, nil
+	case types.TemporalPrepareProcessedEventsWorkflow:
+		var result models.PrepareProcessedEventsWorkflowResult
+		if err := workflowRun.Get(timeoutCtx, &result); err != nil {
+			return nil, errors.WithError(err).
+				WithHint("Workflow execution failed or timed out").
+				WithReportableDetails(map[string]interface{}{
+					"workflow_id":   workflowRun.GetID(),
+					"run_id":        workflowRun.GetRunID(),
+					"workflow_type": workflowType.String(),
+					"timeout":       timeoutSeconds,
+				}).
+				Mark(errors.ErrInternal)
+		}
+		return &result, nil
+
+	default:
+		return nil, errors.NewError("unsupported workflow type for synchronous execution").
+			WithHint("Use an explicitly supported workflow type for ExecuteWorkflowSync").
+			WithReportableDetails(map[string]interface{}{
+				"workflow_type": workflowType.String(),
+			}).
+			Mark(errors.ErrValidation)
+	}
 }
 
 // buildScheduleSubscriptionBillingWorkflowInput builds input for schedule subscription billing workflow

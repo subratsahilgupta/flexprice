@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
@@ -16,15 +17,18 @@ import (
 type WorkflowType string
 
 const (
-	WorkflowTypeCustomerOnboarding WorkflowType = "customer_onboarding"
+	WorkflowTypeCustomerOnboarding     WorkflowType = "customer_onboarding"
+	WorkflowTypePrepareProcessedEvents WorkflowType = "prepare_processed_events"
 )
 
 type WorkflowAction string
 
 const (
-	WorkflowActionCreateCustomer     WorkflowAction = "create_customer"
-	WorkflowActionCreateSubscription WorkflowAction = "create_subscription"
-	WorkflowActionCreateWallet       WorkflowAction = "create_wallet"
+	WorkflowActionCreateCustomer         WorkflowAction = "create_customer"
+	WorkflowActionCreateSubscription     WorkflowAction = "create_subscription"
+	WorkflowActionCreateWallet           WorkflowAction = "create_wallet"
+	WorkflowActionCreateFeatureAndPrice  WorkflowAction = "create_feature_and_price"
+	WorkflowActionRolloutToSubscriptions WorkflowAction = "rollout_to_subscriptions"
 )
 
 // WorkflowActionConfig is an interface for workflow action configurations
@@ -41,6 +45,7 @@ type WorkflowActionParams struct {
 	Currency       string
 	EventTimestamp *time.Time // Optional - timestamp of the triggering event for subscription start date
 	DefaultUserID  *string    // Optional - user_id from config for created_by/updated_by fields
+	EventName      string     // Optional - event name for prepare processed events workflow
 	// Add more fields as needed for different action types
 }
 
@@ -116,6 +121,24 @@ func (c *WorkflowConfig) UnmarshalJSON(data []byte) error {
 			}
 			action = &subAction
 
+		case WorkflowActionCreateFeatureAndPrice:
+			featureAction, err := utils.ToStruct[CreateFeatureAndPriceActionConfig](actionMap)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHintf("Failed to convert create_feature_and_price action: %v", err).
+					Mark(ierr.ErrValidation)
+			}
+			action = &featureAction
+
+		case WorkflowActionRolloutToSubscriptions:
+			rolloutAction, err := utils.ToStruct[RolloutToSubscriptionsActionConfig](actionMap)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHintf("Failed to convert rollout_to_subscriptions action: %v", err).
+					Mark(ierr.ErrValidation)
+			}
+			action = &rolloutAction
+
 		default:
 			return ierr.NewErrorf("unknown action type: %s", actionType).
 				WithHint("Please provide a valid action type").
@@ -125,6 +148,8 @@ func (c *WorkflowConfig) UnmarshalJSON(data []byte) error {
 						WorkflowActionCreateCustomer,
 						WorkflowActionCreateWallet,
 						WorkflowActionCreateSubscription,
+						WorkflowActionCreateFeatureAndPrice,
+						WorkflowActionRolloutToSubscriptions,
 					},
 				}).
 				Mark(ierr.ErrValidation)
@@ -378,4 +403,167 @@ func (c *CreateSubscriptionActionConfig) ToDTO(params interface{}) (interface{},
 		BillingPeriodCount: 1,                               // Default to 1
 		BillingCycle:       billingCycle,
 	}, nil
+}
+
+// CreateFeatureAndPriceActionConfig represents configuration for creating a feature, meter, and price action
+// Meter and price defaults come from GetDefaultSettings() - not stored in action config
+type CreateFeatureAndPriceActionConfig struct {
+	Action      WorkflowAction    `json:"action"` // Type discriminator - automatically set to "create_feature_and_price"
+	PlanID      string            `json:"plan_id" binding:"required"`
+	FeatureType types.FeatureType `json:"feature_type,omitempty"`
+}
+
+func (c *CreateFeatureAndPriceActionConfig) Validate() error {
+	if err := validator.ValidateRequest(c); err != nil {
+		return err
+	}
+	if c.PlanID == "" {
+		return ierr.NewError("plan_id is required for create_feature_and_price action").
+			WithHint("Please provide a plan_id").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+func (c *CreateFeatureAndPriceActionConfig) GetAction() WorkflowAction {
+	return WorkflowActionCreateFeatureAndPrice
+}
+
+// CreateFeatureAndPriceDTOs contains both feature and price DTOs
+type CreateFeatureAndPriceDTOs struct {
+	Feature *dto.CreateFeatureRequest
+	Price   *dto.CreatePriceRequest
+}
+
+// ToDTO converts the action config to both CreateFeatureRequest and CreatePriceRequest DTOs
+func (c *CreateFeatureAndPriceActionConfig) ToDTO(params interface{}) (interface{}, error) {
+	// Type assert to get the parameters we need
+	actionParams, ok := params.(*WorkflowActionParams)
+	if !ok {
+		return nil, ierr.NewError("invalid parameters for create_feature_and_price action").
+			WithHint("Expected WorkflowActionParams").
+			Mark(ierr.ErrValidation)
+	}
+
+	// EventName must be provided in params
+	if actionParams.EventName == "" {
+		return nil, ierr.NewError("event_name is required for create_feature_and_price action").
+			WithHint("Provide event name in WorkflowActionParams").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get defaults from settings
+	defaults, err := types.GetDefaultSettings()
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get default settings").
+			Mark(ierr.ErrInternal)
+	}
+
+	defaultSetting, exists := defaults[types.SettingKeyPrepareProcessedEvents]
+	if !exists {
+		return nil, ierr.NewError("default settings not found for prepare_processed_events_config").
+			WithHint("Default settings must be defined").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Extract defaults from the default setting
+	// Defaults are applied here, not stored in action config
+	featureType := c.FeatureType
+	if featureType == "" {
+		featureType = types.FeatureTypeMetered
+	}
+	meterAggType := types.AggregationSum
+	meterAggField := "value"
+	meterResetUsage := types.ResetUsageBillingPeriod
+	priceBillingCadence := types.BILLING_CADENCE_RECURRING
+	priceBillingPeriod := types.BILLING_PERIOD_MONTHLY
+	priceBillingModel := types.BILLING_MODEL_FLAT_FEE
+	priceCurrency := "USD"
+	priceEntityType := types.PRICE_ENTITY_TYPE_PLAN
+	priceInvoiceCadence := types.InvoiceCadenceArrear
+	pricePriceUnitType := types.PRICE_UNIT_TYPE_FIAT
+	priceType := types.PRICE_TYPE_USAGE
+	priceAmount := decimal.NewFromFloat(1.0)
+	priceBillingPeriodCount := 1
+
+	// Create feature DTO with defaults
+	featureReq := &dto.CreateFeatureRequest{
+		Name:      actionParams.EventName,
+		LookupKey: actionParams.EventName,
+		Type:      featureType,
+		Meter: &dto.CreateMeterRequest{
+			Name:      actionParams.EventName,
+			EventName: actionParams.EventName,
+			Aggregation: meter.Aggregation{
+				Type:  meterAggType,
+				Field: meterAggField,
+			},
+			Filters:    []meter.Filter{},
+			ResetUsage: meterResetUsage,
+		},
+		Metadata: types.Metadata{
+			"created_by_workflow": "true",
+			"workflow_type":       "prepare_processed_events_workflow",
+		},
+	}
+
+	// Create price DTO with defaults (meter_id will be set after feature creation)
+	priceReq := &dto.CreatePriceRequest{
+		Amount:             &priceAmount,
+		Currency:           priceCurrency,
+		EntityType:         priceEntityType,
+		EntityID:           c.PlanID,
+		Type:               priceType,
+		PriceUnitType:      pricePriceUnitType,
+		BillingPeriod:      priceBillingPeriod,
+		BillingPeriodCount: priceBillingPeriodCount,
+		BillingModel:       priceBillingModel,
+		BillingCadence:     priceBillingCadence,
+		InvoiceCadence:     priceInvoiceCadence,
+		// MeterID will be set after feature creation
+		Metadata: map[string]string{
+			"created_by_workflow": "true",
+			"workflow_type":       "prepare_processed_events_workflow",
+			"event_name":          actionParams.EventName,
+		},
+	}
+
+	// Use defaults from settings if available (for future extensibility)
+	_ = defaultSetting
+
+	return &CreateFeatureAndPriceDTOs{
+		Feature: featureReq,
+		Price:   priceReq,
+	}, nil
+}
+
+// RolloutToSubscriptionsActionConfig represents configuration for rolling out plan prices to subscriptions
+type RolloutToSubscriptionsActionConfig struct {
+	Action WorkflowAction `json:"action"` // Type discriminator - automatically set to "rollout_to_subscriptions"
+	PlanID string         `json:"plan_id" binding:"required"`
+}
+
+func (c *RolloutToSubscriptionsActionConfig) Validate() error {
+	if err := validator.ValidateRequest(c); err != nil {
+		return err
+	}
+	if c.PlanID == "" {
+		return ierr.NewError("plan_id is required for rollout_to_subscriptions action").
+			WithHint("Please provide a plan_id").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+func (c *RolloutToSubscriptionsActionConfig) GetAction() WorkflowAction {
+	return WorkflowActionRolloutToSubscriptions
+}
+
+// ToDTO converts the action config to DTO
+// For rollout_to_subscriptions, we don't need a DTO conversion, but we implement it for interface compliance
+func (c *RolloutToSubscriptionsActionConfig) ToDTO(params interface{}) (interface{}, error) {
+	// This action doesn't need DTO conversion - it uses the plan_id directly
+	// Return the config itself or nil - the workflow will extract plan_id directly
+	return nil, nil
 }
