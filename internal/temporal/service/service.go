@@ -349,6 +349,32 @@ func (s *temporalService) ExecuteWorkflow(ctx context.Context, workflowType type
 	return s.StartWorkflow(ctx, options, workflowType, input)
 }
 
+// ExecuteWorkflowWithTimeout implements workflow execution with custom timeout
+func (s *temporalService) ExecuteWorkflowWithTimeout(ctx context.Context, workflowType types.TemporalWorkflowType, params interface{}, timeout time.Duration) (models.WorkflowRun, error) {
+	// Check if service is initialized
+	if s == nil {
+		return nil, errors.NewError("temporal service not initialized").
+			WithHint("Temporal service must be initialized before use").
+			Mark(errors.ErrInternal)
+	}
+
+	// Build input with context validation
+	input, err := s.buildWorkflowInput(ctx, workflowType, params)
+	if err != nil {
+		return nil, err
+	}
+
+	workflowID := s.generateWorkflowID(workflowType, input)
+	options := models.StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                workflowType.TaskQueueName(),
+		WorkflowExecutionTimeout: timeout,
+	}
+
+	// Execute workflow using existing StartWorkflow method with custom timeout
+	return s.StartWorkflow(ctx, options, workflowType, input)
+}
+
 func (s *temporalService) generateWorkflowID(workflowType types.TemporalWorkflowType, params interface{}) string {
 	contextID := s.extractWorkflowContextID(workflowType, params)
 	if contextID != "" {
@@ -417,6 +443,8 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 		return s.buildCustomerOnboardingInput(ctx, tenantID, environmentID, userID, params)
 	case types.TemporalProcessInvoiceWorkflow:
 		return s.buildProcessInvoiceInput(ctx, tenantID, environmentID, params)
+	case types.TemporalReprocessEventsWorkflow:
+		return s.buildReprocessEventsInput(ctx, tenantID, environmentID, userID, params)
 	default:
 		return nil, errors.NewError("unsupported workflow type").
 			WithHintf("Workflow type %s is not supported", workflowType.String()).
@@ -777,6 +805,92 @@ func (s *temporalService) buildProcessSubscriptionBillingWorkflowInput(_ context
 
 	return nil, errors.NewError("invalid input for process subscription billing workflow").
 		WithHint("Provide ProcessSubscriptionBillingWorkflowInput or map with subscription_id").
+		Mark(errors.ErrValidation)
+}
+
+// buildReprocessEventsInput builds input for reprocess events workflow
+func (s *temporalService) buildReprocessEventsInput(_ context.Context, tenantID, environmentID, userID string, params interface{}) (interface{}, error) {
+	// If already correct type, just ensure context is set
+	if input, ok := params.(models.ReprocessEventsWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		input.UserID = userID
+		// Validate the input
+		if err := input.Validate(); err != nil {
+			return nil, err
+		}
+		return input, nil
+	}
+
+	// Handle map input
+	if paramsMap, ok := params.(map[string]interface{}); ok {
+		externalCustomerID, _ := paramsMap["external_customer_id"].(string)
+		eventName, _ := paramsMap["event_name"].(string)
+		
+		var startDate, endDate time.Time
+		if sd, ok := paramsMap["start_date"].(time.Time); ok {
+			startDate = sd
+		} else if sdStr, ok := paramsMap["start_date"].(string); ok {
+			var err error
+			startDate, err = time.Parse(time.RFC3339, sdStr)
+			if err != nil {
+				return nil, errors.NewError("invalid start_date format").
+					WithHint("Start date must be in RFC3339 format (e.g., 2006-01-02T15:04:05Z07:00)").
+					Mark(errors.ErrValidation)
+			}
+		}
+		
+		if ed, ok := paramsMap["end_date"].(time.Time); ok {
+			endDate = ed
+		} else if edStr, ok := paramsMap["end_date"].(string); ok {
+			var err error
+			endDate, err = time.Parse(time.RFC3339, edStr)
+			if err != nil {
+				return nil, errors.NewError("invalid end_date format").
+					WithHint("End date must be in RFC3339 format (e.g., 2006-01-02T15:04:05Z07:00)").
+					Mark(errors.ErrValidation)
+			}
+		}
+
+		// Extract batch size (default to 100 if not provided)
+		batchSize := 100
+		if bs, ok := paramsMap["batch_size"].(int); ok && bs > 0 {
+			batchSize = bs
+		} else if bsFloat, ok := paramsMap["batch_size"].(float64); ok && bsFloat > 0 {
+			batchSize = int(bsFloat)
+		}
+
+		if externalCustomerID == "" {
+			return nil, errors.NewError("external_customer_id is required").
+				WithHint("Provide map with external_customer_id").
+				Mark(errors.ErrValidation)
+		}
+		if eventName == "" {
+			return nil, errors.NewError("event_name is required").
+				WithHint("Provide map with event_name").
+				Mark(errors.ErrValidation)
+		}
+
+		input := models.ReprocessEventsWorkflowInput{
+			ExternalCustomerID: externalCustomerID,
+			EventName:          eventName,
+			StartDate:          startDate,
+			EndDate:            endDate,
+			BatchSize:          batchSize,
+			TenantID:           tenantID,
+			EnvironmentID:      environmentID,
+			UserID:             userID,
+		}
+
+		// Validate the input
+		if err := input.Validate(); err != nil {
+			return nil, err
+		}
+		return input, nil
+	}
+
+	return nil, errors.NewError("invalid input for reprocess events workflow").
+		WithHint("Provide ReprocessEventsWorkflowInput or map with external_customer_id, event_name, start_date, and end_date").
 		Mark(errors.ErrValidation)
 }
 

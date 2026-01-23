@@ -13,12 +13,13 @@ type TemporalTaskQueue string
 
 const (
 	// Task Queues - logical groupings to limit worker count
-	TemporalTaskQueueTask         TemporalTaskQueue = "task"
-	TemporalTaskQueuePrice        TemporalTaskQueue = "price"
-	TemporalTaskQueueExport       TemporalTaskQueue = "export"
-	TemporalTaskQueueWorkflows    TemporalTaskQueue = "workflows"
-	TemporalTaskQueueSubscription TemporalTaskQueue = "subscription"
-	TemporalTaskQueueInvoice      TemporalTaskQueue = "invoice"
+	TemporalTaskQueueTask            TemporalTaskQueue = "task"
+	TemporalTaskQueuePrice           TemporalTaskQueue = "price"
+	TemporalTaskQueueExport          TemporalTaskQueue = "export"
+	TemporalTaskQueueWorkflows       TemporalTaskQueue = "workflows"
+	TemporalTaskQueueSubscription    TemporalTaskQueue = "subscription"
+	TemporalTaskQueueInvoice         TemporalTaskQueue = "invoice"
+	TemporalTaskQueueReprocessEvents TemporalTaskQueue = "events"
 )
 
 // String returns the string representation of the task queue
@@ -35,6 +36,7 @@ func (tq TemporalTaskQueue) Validate() error {
 		TemporalTaskQueueSubscription,
 		TemporalTaskQueueWorkflows,
 		TemporalTaskQueueInvoice,
+		TemporalTaskQueueReprocessEvents,
 	}
 	if lo.Contains(allowedQueues, tq) {
 		return nil
@@ -64,6 +66,7 @@ const (
 	TemporalScheduleSubscriptionBillingWorkflow TemporalWorkflowType = "ScheduleSubscriptionBillingWorkflow"
 	TemporalProcessSubscriptionBillingWorkflow  TemporalWorkflowType = "ProcessSubscriptionBillingWorkflow"
 	TemporalProcessInvoiceWorkflow              TemporalWorkflowType = "ProcessInvoiceWorkflow"
+	TemporalReprocessEventsWorkflow             TemporalWorkflowType = "ReprocessEventsWorkflow"
 )
 
 // String returns the string representation of the workflow type
@@ -88,6 +91,7 @@ func (w TemporalWorkflowType) Validate() error {
 		TemporalScheduleSubscriptionBillingWorkflow, // "ScheduleSubscriptionBillingWorkflow"
 		TemporalProcessSubscriptionBillingWorkflow,  // "ProcessSubscriptionBillingWorkflow"
 		TemporalProcessInvoiceWorkflow,              // "ProcessInvoiceWorkflow"
+		TemporalReprocessEventsWorkflow,             // "ReprocessEventsWorkflow"
 	}
 	if lo.Contains(allowedWorkflows, w) {
 		return nil
@@ -115,6 +119,8 @@ func (w TemporalWorkflowType) TaskQueue() TemporalTaskQueue {
 		return TemporalTaskQueueInvoice
 	case TemporalCustomerOnboardingWorkflow:
 		return TemporalTaskQueueWorkflows
+	case TemporalReprocessEventsWorkflow:
+		return TemporalTaskQueueTask
 	default:
 		return TemporalTaskQueueTask // Default fallback
 	}
@@ -163,6 +169,10 @@ func GetWorkflowsForTaskQueue(taskQueue TemporalTaskQueue) []TemporalWorkflowTyp
 		return []TemporalWorkflowType{
 			TemporalCustomerOnboardingWorkflow,
 		}
+	case TemporalTaskQueueReprocessEvents:
+		return []TemporalWorkflowType{
+			TemporalReprocessEventsWorkflow,
+		}
 	default:
 		return []TemporalWorkflowType{}
 	}
@@ -177,5 +187,6 @@ func GetAllTaskQueues() []TemporalTaskQueue {
 		TemporalTaskQueueSubscription,
 		TemporalTaskQueueInvoice,
 		TemporalTaskQueueWorkflows,
+		TemporalTaskQueueReprocessEvents,
 	}
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/temporal/models"
 	"github.com/flexprice/flexprice/internal/types"
@@ -38,6 +39,9 @@ type TemporalService interface {
 
 	// Unified workflow execution - handles everything internally
 	ExecuteWorkflow(ctx context.Context, workflowType types.TemporalWorkflowType, params interface{}) (models.WorkflowRun, error)
+
+	// ExecuteWorkflowWithTimeout executes a workflow with a custom execution timeout
+	ExecuteWorkflowWithTimeout(ctx context.Context, workflowType types.TemporalWorkflowType, params interface{}, timeout time.Duration) (models.WorkflowRun, error)
 
 	// Synchronous workflow execution - waits for workflow completion and returns result
 	ExecuteWorkflowSync(ctx context.Context, workflowType types.TemporalWorkflowType, params interface{}, timeout int) (interface{}, error)
