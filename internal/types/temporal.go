@@ -120,7 +120,7 @@ func (w TemporalWorkflowType) TaskQueue() TemporalTaskQueue {
 	case TemporalCustomerOnboardingWorkflow:
 		return TemporalTaskQueueWorkflows
 	case TemporalReprocessEventsWorkflow:
-		return TemporalTaskQueueTask
+		return TemporalTaskQueueReprocessEvents
 	default:
 		return TemporalTaskQueueTask // Default fallback
 	}
