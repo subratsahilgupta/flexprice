@@ -372,6 +372,22 @@ func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWo
 		if input, ok := params.(invoiceModels.ProcessInvoiceWorkflowInput); ok {
 			return input.InvoiceID
 		}
+	case types.TemporalReprocessEventsWorkflow:
+		// Extract context ID from ReprocessEventsWorkflowInput
+		// Format: external_customer_id-event_name for meaningful workflow identification
+		if input, ok := params.(eventsModels.ReprocessEventsWorkflowInput); ok {
+			if input.ExternalCustomerID != "" && input.EventName != "" {
+				return fmt.Sprintf("%s-%s", input.ExternalCustomerID, input.EventName)
+			}
+		}
+		// Also handle map input for reprocess events
+		if paramsMap, ok := params.(map[string]interface{}); ok {
+			externalCustomerID, _ := paramsMap["external_customer_id"].(string)
+			eventName, _ := paramsMap["event_name"].(string)
+			if externalCustomerID != "" && eventName != "" {
+				return fmt.Sprintf("%s-%s", externalCustomerID, eventName)
+			}
+		}
 	}
 	return ""
 }
