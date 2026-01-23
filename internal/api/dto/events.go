@@ -531,14 +531,14 @@ func (r *ReprocessEventsRequest) Validate() error {
 	}
 
 	// Validate date format (RFC3339)
-	_, err := time.Parse(time.RFC3339, r.StartDate)
+	parsedStartDate, err := time.Parse(time.RFC3339, r.StartDate)
 	if err != nil {
 		return ierr.NewError("invalid start_date format").
 			WithHint("Start date must be in RFC3339 format (e.g., 2006-01-02T15:04:05Z07:00)").
 			Mark(ierr.ErrValidation)
 	}
 
-	_, err = time.Parse(time.RFC3339, r.EndDate)
+	parsedEndDate, err := time.Parse(time.RFC3339, r.EndDate)
 	if err != nil {
 		return ierr.NewError("invalid end_date format").
 			WithHint("End date must be in RFC3339 format (e.g., 2006-01-02T15:04:05Z07:00)").
@@ -546,8 +546,8 @@ func (r *ReprocessEventsRequest) Validate() error {
 	}
 
 	// Parse dates to validate start_date < end_date
-	startDate, _ := time.Parse(time.RFC3339, r.StartDate)
-	endDate, _ := time.Parse(time.RFC3339, r.EndDate)
+	startDate := parsedStartDate
+	endDate := parsedEndDate
 
 	if startDate.After(endDate) {
 		return ierr.NewError("start_date must be before end_date").

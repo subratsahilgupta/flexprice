@@ -1,9 +1,9 @@
-package workflows
+package events
 
 import (
 	"time"
 
-	"github.com/flexprice/flexprice/internal/temporal/models"
+	models "github.com/flexprice/flexprice/internal/temporal/models/events"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -30,9 +30,9 @@ func ReprocessEventsWorkflow(ctx workflow.Context, input models.ReprocessEventsW
 		"end_date", input.EndDate)
 
 	// Define activity options with extended timeouts for large batch processing
-	// Activity timeout set to 4.5 hours to allow for long-running reprocessing
+	// Activity timeout set to 10 hours to allow for long-running reprocessing
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: time.Hour*4 + time.Minute*30, // 4.5 hours
+		StartToCloseTimeout: time.Hour * 10,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second * 10,
 			BackoffCoefficient: 2.0,
@@ -53,8 +53,8 @@ func ReprocessEventsWorkflow(ctx workflow.Context, input models.ReprocessEventsW
 			"error", err)
 		return &models.ReprocessEventsWorkflowResult{
 			TotalEventsFound:     0,
-			TotalEventsPublished:  0,
-			ProcessedBatches:      0,
+			TotalEventsPublished: 0,
+			ProcessedBatches:     0,
 			CompletedAt:          workflow.Now(ctx),
 		}, err
 	}

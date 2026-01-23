@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/temporal/client"
 	temporalInterceptor "github.com/flexprice/flexprice/internal/temporal/interceptor"
 	"github.com/flexprice/flexprice/internal/temporal/models"
+	eventsModels "github.com/flexprice/flexprice/internal/temporal/models/events"
 	invoiceModels "github.com/flexprice/flexprice/internal/temporal/models/invoice"
 	subscriptionModels "github.com/flexprice/flexprice/internal/temporal/models/subscription"
 	"github.com/flexprice/flexprice/internal/temporal/worker"
@@ -346,32 +347,6 @@ func (s *temporalService) ExecuteWorkflow(ctx context.Context, workflowType type
 	}
 
 	// Execute workflow using existing StartWorkflow method
-	return s.StartWorkflow(ctx, options, workflowType, input)
-}
-
-// ExecuteWorkflowWithTimeout implements workflow execution with custom timeout
-func (s *temporalService) ExecuteWorkflowWithTimeout(ctx context.Context, workflowType types.TemporalWorkflowType, params interface{}, timeout time.Duration) (models.WorkflowRun, error) {
-	// Check if service is initialized
-	if s == nil {
-		return nil, errors.NewError("temporal service not initialized").
-			WithHint("Temporal service must be initialized before use").
-			Mark(errors.ErrInternal)
-	}
-
-	// Build input with context validation
-	input, err := s.buildWorkflowInput(ctx, workflowType, params)
-	if err != nil {
-		return nil, err
-	}
-
-	workflowID := s.generateWorkflowID(workflowType, input)
-	options := models.StartWorkflowOptions{
-		ID:                       workflowID,
-		TaskQueue:                workflowType.TaskQueueName(),
-		WorkflowExecutionTimeout: timeout,
-	}
-
-	// Execute workflow using existing StartWorkflow method with custom timeout
 	return s.StartWorkflow(ctx, options, workflowType, input)
 }
 
@@ -811,7 +786,7 @@ func (s *temporalService) buildProcessSubscriptionBillingWorkflowInput(_ context
 // buildReprocessEventsInput builds input for reprocess events workflow
 func (s *temporalService) buildReprocessEventsInput(_ context.Context, tenantID, environmentID, userID string, params interface{}) (interface{}, error) {
 	// If already correct type, just ensure context is set
-	if input, ok := params.(models.ReprocessEventsWorkflowInput); ok {
+	if input, ok := params.(eventsModels.ReprocessEventsWorkflowInput); ok {
 		input.TenantID = tenantID
 		input.EnvironmentID = environmentID
 		input.UserID = userID
@@ -826,7 +801,7 @@ func (s *temporalService) buildReprocessEventsInput(_ context.Context, tenantID,
 	if paramsMap, ok := params.(map[string]interface{}); ok {
 		externalCustomerID, _ := paramsMap["external_customer_id"].(string)
 		eventName, _ := paramsMap["event_name"].(string)
-		
+
 		var startDate, endDate time.Time
 		if sd, ok := paramsMap["start_date"].(time.Time); ok {
 			startDate = sd
@@ -839,7 +814,7 @@ func (s *temporalService) buildReprocessEventsInput(_ context.Context, tenantID,
 					Mark(errors.ErrValidation)
 			}
 		}
-		
+
 		if ed, ok := paramsMap["end_date"].(time.Time); ok {
 			endDate = ed
 		} else if edStr, ok := paramsMap["end_date"].(string); ok {
@@ -871,7 +846,7 @@ func (s *temporalService) buildReprocessEventsInput(_ context.Context, tenantID,
 				Mark(errors.ErrValidation)
 		}
 
-		input := models.ReprocessEventsWorkflowInput{
+		input := eventsModels.ReprocessEventsWorkflowInput{
 			ExternalCustomerID: externalCustomerID,
 			EventName:          eventName,
 			StartDate:          startDate,

@@ -2855,12 +2855,11 @@ func (s *featureUsageTrackingService) TriggerReprocessEventsWorkflow(ctx context
 			Mark(ierr.ErrInternal)
 	}
 
-	// Execute workflow with 5-hour timeout
-	workflowRun, err := temporalSvc.ExecuteWorkflowWithTimeout(
+	// Execute workflow
+	workflowRun, err := temporalSvc.ExecuteWorkflow(
 		ctx,
 		types.TemporalReprocessEventsWorkflow,
 		workflowInput,
-		5*time.Hour,
 	)
 
 	if err != nil {

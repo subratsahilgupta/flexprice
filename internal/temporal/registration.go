@@ -16,6 +16,7 @@ import (
 	taskActivities "github.com/flexprice/flexprice/internal/temporal/activities/task"
 	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/temporal/workflows"
+	eventsWorkflows "github.com/flexprice/flexprice/internal/temporal/workflows/events"
 	exportWorkflows "github.com/flexprice/flexprice/internal/temporal/workflows/export"
 	invoiceWorkflows "github.com/flexprice/flexprice/internal/temporal/workflows/invoice"
 	subscriptionWorkflows "github.com/flexprice/flexprice/internal/temporal/workflows/subscription"
@@ -161,7 +162,6 @@ func buildWorkerConfig(
 			workflows.HubSpotInvoiceSyncWorkflow,
 			workflows.HubSpotQuoteSyncWorkflow,
 			workflows.NomodInvoiceSyncWorkflow,
-			workflows.ReprocessEventsWorkflow,
 		)
 		activitiesList = append(activitiesList,
 			taskActivities.ProcessTask,
@@ -170,7 +170,6 @@ func buildWorkerConfig(
 			hubspotInvoiceSyncActivities.SyncInvoiceToHubSpot,
 			hubspotQuoteSyncActivities.CreateQuoteAndLineItems,
 			nomodInvoiceSyncActivities.SyncInvoiceToNomod,
-			reprocessEventsActivities.ReprocessEvents,
 		)
 
 	case types.TemporalTaskQueuePrice:
@@ -237,6 +236,13 @@ func buildWorkerConfig(
 			customerActivities.CreateCustomerActivity,
 			customerActivities.CreateWalletActivity,
 			customerActivities.CreateSubscriptionActivity,
+		)
+	case types.TemporalTaskQueueReprocessEvents:
+		workflowsList = append(workflowsList,
+			eventsWorkflows.ReprocessEventsWorkflow,
+		)
+		activitiesList = append(activitiesList,
+			reprocessEventsActivities.ReprocessEvents,
 		)
 	}
 	return WorkerConfig{
