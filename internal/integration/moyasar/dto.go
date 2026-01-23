@@ -78,7 +78,7 @@ type MoyasarPayment struct {
 	Fee            int               `json:"fee,omitempty"` // Fee amount
 	Currency       string            `json:"currency"`
 	RefundedAmount int               `json:"refunded,omitempty"`
-	Refunded       int               `json:"refunded_at,omitempty"`
+	RefundedAt     string            `json:"refunded_at,omitempty"`
 	CapturedAmount int               `json:"captured,omitempty"`
 	CapturedAt     string            `json:"captured_at,omitempty"`
 	VoidedAt       string            `json:"voided_at,omitempty"`

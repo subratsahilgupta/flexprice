@@ -69,7 +69,9 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 	// If invoice was synced to gateway and has a payment URL, return it immediately
 	// No payment record is created here - the webhook will create it when payment is made
 	// For Moyasar, if no existing URL is found, return an error that invoice needs to be synced
-	if p.PaymentMethodType == types.PaymentMethodTypePaymentLink && req.PaymentGateway != nil && *req.PaymentGateway == types.PaymentGatewayTypeMoyasar {
+	// Skip this check for external payments (coming from webhooks) as they need to create actual payment records
+	isExternalPayment := req.Metadata != nil && req.Metadata["external_payment"] == "true"
+	if p.PaymentMethodType == types.PaymentMethodTypePaymentLink && req.PaymentGateway != nil && *req.PaymentGateway == types.PaymentGatewayTypeMoyasar && !isExternalPayment {
 		response := s.getExistingPaymentLinkResponse(ctx, invoice, p, *req.PaymentGateway)
 		if response != nil {
 			return response, nil
@@ -213,12 +215,11 @@ func (s *paymentService) getExistingPaymentLinkResponse(ctx context.Context, inv
 	s.Logger.Infow("found existing payment link URL, returning it without creating payment record",
 		"invoice_id", invoice.ID,
 		"gateway", gateway,
-		"payment_url", existingURL)
+		"payment_url_present", true)
 
 	// Create a minimal payment object in memory (not persisted) just for the response
 	// The actual payment record will be created by the webhook when payment is made
 	minimalPayment := &payment.Payment{
-		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PAYMENT),
 		DestinationType:   p.DestinationType,
 		DestinationID:     p.DestinationID,
 		PaymentMethodType: p.PaymentMethodType,
@@ -231,7 +232,6 @@ func (s *paymentService) getExistingPaymentLinkResponse(ctx context.Context, inv
 			"gateway":     string(gateway),
 		},
 		EnvironmentID: types.GetEnvironmentID(ctx),
-		BaseModel:     types.GetDefaultBaseModel(ctx),
 	}
 
 	// Return response with payment URL (will be extracted from gateway_metadata)

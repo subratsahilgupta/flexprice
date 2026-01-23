@@ -236,7 +236,8 @@ func TestIntegration_CreateToken(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err, "failed to read response body")
 	t.Logf("Create Token Response Status: %d", resp.StatusCode)
 	t.Logf("Create Token Response: %s", string(respBody))
 

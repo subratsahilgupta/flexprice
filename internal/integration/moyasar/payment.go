@@ -139,7 +139,7 @@ func (s *PaymentService) CreatePaymentLink(
 		"moyasar_payment_id", payment.ID,
 		"flexprice_payment_id", req.PaymentID,
 		"status", payment.Status,
-		"payment_url", payment.TransactionURL)
+		"payment_url_present", payment.TransactionURL != "")
 
 	return response, nil
 }
@@ -237,8 +237,8 @@ func (s *PaymentService) GetPaymentStatus(
 		return nil, err
 	}
 
-	// Convert amount from smallest currency unit (halalah) to standard unit
-	amount := decimal.NewFromInt(int64(payment.Amount)).Div(decimal.NewFromInt(100))
+	// Convert amount from smallest currency unit to standard unit using currency-aware conversion
+	amount := convertFromSmallestUnit(int64(payment.Amount), payment.Currency)
 
 	response := &PaymentStatusResponse{
 		ID:          payment.ID,
@@ -354,8 +354,8 @@ func (s *PaymentService) ProcessExternalMoyasarPayment(
 	}
 
 	// Step 3: Reconcile invoice with external payment
-	// Convert amount from smallest currency unit (halalah) to standard unit
-	amount := decimal.NewFromInt(int64(payment.Amount)).Div(decimal.NewFromInt(100))
+	// Convert amount from smallest currency unit to standard unit using currency-aware conversion
+	amount := convertFromSmallestUnit(int64(payment.Amount), payment.Currency)
 	err = s.reconcileInvoice(ctx, flexpriceInvoiceID, amount, invoiceService)
 	if err != nil {
 		s.logger.Errorw("failed to reconcile invoice with external payment",
@@ -382,8 +382,8 @@ func (s *PaymentService) createExternalPaymentRecord(
 ) error {
 	moyasarPaymentID := payment.ID
 
-	// Convert amount from smallest currency unit (halalah) to standard unit
-	amount := decimal.NewFromInt(int64(payment.Amount)).Div(decimal.NewFromInt(100))
+	// Convert amount from smallest currency unit to standard unit using currency-aware conversion
+	amount := convertFromSmallestUnit(int64(payment.Amount), payment.Currency)
 
 	// Determine payment method ID from source
 	var paymentMethodID string
@@ -437,10 +437,24 @@ func (s *PaymentService) createExternalPaymentRecord(
 
 	_, err = paymentService.UpdatePayment(ctx, paymentResp.ID, updateReq)
 	if err != nil {
-		s.logger.Errorw("failed to update external payment status",
+		s.logger.Errorw("failed to update external payment status, attempting cleanup",
 			"error", err,
 			"payment_id", paymentResp.ID,
 			"moyasar_payment_id", moyasarPaymentID)
+		
+		// Cleanup: Delete the orphaned payment record to prevent inconsistent state
+		// If cleanup fails, log the error but return the original update error
+		if deleteErr := paymentService.DeletePayment(ctx, paymentResp.ID); deleteErr != nil {
+			s.logger.Errorw("failed to cleanup orphaned payment record",
+				"error", deleteErr,
+				"payment_id", paymentResp.ID,
+				"moyasar_payment_id", moyasarPaymentID)
+		} else {
+			s.logger.Infow("successfully cleaned up orphaned payment record",
+				"payment_id", paymentResp.ID,
+				"moyasar_payment_id", moyasarPaymentID)
+		}
+		
 		return err
 	}
 
@@ -491,7 +505,6 @@ func (s *PaymentService) ChargeSavedPaymentMethod(
 	description string,
 	invoiceID string,
 	paymentID string,
-	invoiceService interfaces.InvoiceService,
 ) (*CreatePaymentLinkResponse, error) {
 	if tokenID == "" {
 		return nil, ierr.NewError("token_id is required").Mark(ierr.ErrValidation)
@@ -506,8 +519,13 @@ func (s *PaymentService) ChargeSavedPaymentMethod(
 	}
 	currency = strings.ToUpper(currency)
 
-	// Convert amount to smallest currency unit (halalah)
-	amountInSmallestUnit := int(amount.Mul(decimal.NewFromInt(100)).Round(0).IntPart())
+	// Convert amount to smallest currency unit using currency-aware conversion
+	amountInSmallestUnit, err := convertToSmallestUnit(amount, currency)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to convert amount to smallest currency unit").
+			Mark(ierr.ErrInternal)
+	}
 
 	// Build description
 	if description == "" {
@@ -531,7 +549,7 @@ func (s *PaymentService) ChargeSavedPaymentMethod(
 		"currency", currency)
 
 	// Charge using token
-	payment, err := s.client.ChargeWithToken(ctx, tokenID, amountInSmallestUnit, currency, description, metadata, paymentID)
+	payment, err := s.client.ChargeWithToken(ctx, tokenID, int(amountInSmallestUnit), currency, description, metadata, paymentID)
 	if err != nil {
 		s.logger.Errorw("failed to charge saved payment method",
 			"customer_id", customerID,
@@ -561,11 +579,12 @@ func (s *PaymentService) ChargeSavedPaymentMethod(
 
 // SetupIntent creates a setup intent to save a payment method for future use
 // In Moyasar, this creates a token that can be used for recurring payments
+// Note: Token creation in Moyasar typically happens on the frontend.
+// This method returns a response with the callback URL for frontend token creation.
 func (s *PaymentService) SetupIntent(
 	ctx context.Context,
 	customerID string,
 	req *SetupIntentRequest,
-	customerService interfaces.CustomerService,
 ) (*SetupIntentResponse, error) {
 	if customerID == "" {
 		return nil, ierr.NewError("customer_id is required").Mark(ierr.ErrValidation)
@@ -618,7 +637,7 @@ func (s *PaymentService) GetCustomerPaymentMethods(
 		"customer_id", customerID)
 
 	// Get customer's saved token IDs from entity integration mapping
-	tokenIDs, err := s.customerSvc.GetCustomerTokens(ctx, customerID, customerService)
+	tokenIDs, err := s.customerSvc.GetCustomerTokens(ctx, customerID)
 	if err != nil {
 		s.logger.Errorw("failed to get customer tokens",
 			"customer_id", customerID,
