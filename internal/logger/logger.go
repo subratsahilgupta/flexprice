@@ -2,9 +2,12 @@ package logger
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/fluent/fluent-logger-golang/fluent"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -12,6 +15,8 @@ import (
 // Logger wraps zap.SugaredLogger to provide logging functionality
 type Logger struct {
 	*zap.SugaredLogger
+	fluentdLogger *fluent.Fluent
+	serviceName   string
 }
 
 // Global logger for convenience
@@ -36,8 +41,40 @@ func NewLogger(cfg *config.Configuration) (*Logger, error) {
 		return nil, err
 	}
 
+	// Initialize Fluentd logger based on configuration
+	var fluentdLogger *fluent.Fluent
+	var fluentdHost string
+	var fluentdPort int
+
+	if cfg.Logging.FluentdEnabled {
+		fluentdHost = cfg.Logging.FluentdHost
+		fluentdPort = cfg.Logging.FluentdPort
+	}
+
+	// Initialize Fluentd client if host and port are configured
+	if fluentdHost != "" && fluentdPort > 0 {
+		fluentdLogger, err = fluent.New(fluent.Config{
+			FluentHost:   fluentdHost,
+			FluentPort:   fluentdPort,
+			Async:        true,
+			BufferLimit:  8 * 1024 * 1024, // 8MB buffer
+			WriteTimeout: 3 * time.Second,
+			RetryWait:    500,
+			MaxRetry:     5,
+		})
+		if err != nil {
+			zapLogger.Sugar().Warnf("Failed to initialize Fluentd logger: %v, falling back to stdout only", err)
+		} else {
+			zapLogger.Sugar().Infof("Fluentd logger initialized successfully (host: %s, port: %d)", fluentdHost, fluentdPort)
+		}
+	} else if cfg.Logging.FluentdEnabled {
+		zapLogger.Sugar().Warn("Fluentd is enabled but host/port not configured properly")
+	}
+
 	return &Logger{
 		SugaredLogger: zapLogger.Sugar(),
+		fluentdLogger: fluentdLogger,
+		serviceName:   string(cfg.Deployment.Mode),
 	}, nil
 }
 
@@ -60,35 +97,117 @@ func GetLoggerWithContext(ctx context.Context) *Logger {
 	return GetLogger().WithContext(ctx)
 }
 
+// sendToFluentd sends structured log data to Fluentd
+func (l *Logger) sendToFluentd(level string, msg string, fields map[string]interface{}) {
+	if l.fluentdLogger == nil {
+		return // Fluentd not configured, skip
+	}
+
+	logData := map[string]interface{}{
+		"level":     level,
+		"message":   msg,
+		"service":   l.serviceName,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Merge additional fields
+	for k, v := range fields {
+		logData[k] = v
+	}
+
+	// Post to Fluentd asynchronously (non-blocking)
+	// Tag format: app.logs
+	err := l.fluentdLogger.Post("app.logs", logData)
+	if err != nil {
+		// If Fluentd fails, log to stderr but don't block the application
+		l.SugaredLogger.Warnf("Failed to send log to Fluentd: %v", err)
+	}
+}
+
 // Helper methods to make logging more convenient
 func (l *Logger) Debugf(template string, args ...interface{}) {
 	l.SugaredLogger.Debugf(template, args...)
+	l.sendToFluentd("debug", l.sprintf(template, args...), nil)
 }
 
 func (l *Logger) Infof(template string, args ...interface{}) {
 	l.SugaredLogger.Infof(template, args...)
+	l.sendToFluentd("info", l.sprintf(template, args...), nil)
 }
 
 func (l *Logger) Warnf(template string, args ...interface{}) {
 	l.SugaredLogger.Warnf(template, args...)
+	l.sendToFluentd("warning", l.sprintf(template, args...), nil)
 }
 
 func (l *Logger) Errorf(template string, args ...interface{}) {
 	l.SugaredLogger.Errorf(template, args...)
+	l.sendToFluentd("error", l.sprintf(template, args...), nil)
 }
 
 func (l *Logger) Fatalf(template string, args ...interface{}) {
+	msg := l.sprintf(template, args...)
+	l.sendToFluentd("fatal", msg, nil)
 	l.SugaredLogger.Fatalf(template, args...)
 }
 
+// sprintf is a helper to format strings
+func (l *Logger) sprintf(template string, args ...interface{}) string {
+	if len(args) == 0 {
+		return template
+	}
+	// Use standard library fmt.Sprintf
+	return fmt.Sprintf(template, args...)
+}
+
 func (l *Logger) WithContext(ctx context.Context) *Logger {
+	requestID := types.GetRequestID(ctx)
+	tenantID := types.GetTenantID(ctx)
+	userID := types.GetUserID(ctx)
+
 	return &Logger{
 		SugaredLogger: l.SugaredLogger.With(
-			"request_id", types.GetRequestID(ctx),
-			"tenant_id", types.GetTenantID(ctx),
-			"user_id", types.GetUserID(ctx),
+			"request_id", requestID,
+			"tenant_id", tenantID,
+			"user_id", userID,
 		),
+		fluentdLogger: l.fluentdLogger,
+		serviceName:   l.serviceName,
 	}
+}
+
+// Structured logging methods that include context fields
+func (l *Logger) Debugw(msg string, keysAndValues ...interface{}) {
+	l.SugaredLogger.Debugw(msg, keysAndValues...)
+	l.sendToFluentd("debug", msg, l.keysAndValuesToMap(keysAndValues...))
+}
+
+func (l *Logger) Infow(msg string, keysAndValues ...interface{}) {
+	l.SugaredLogger.Infow(msg, keysAndValues...)
+	l.sendToFluentd("info", msg, l.keysAndValuesToMap(keysAndValues...))
+}
+
+func (l *Logger) Warnw(msg string, keysAndValues ...interface{}) {
+	l.SugaredLogger.Warnw(msg, keysAndValues...)
+	l.sendToFluentd("warning", msg, l.keysAndValuesToMap(keysAndValues...))
+}
+
+func (l *Logger) Errorw(msg string, keysAndValues ...interface{}) {
+	l.SugaredLogger.Errorw(msg, keysAndValues...)
+	l.sendToFluentd("error", msg, l.keysAndValuesToMap(keysAndValues...))
+}
+
+// keysAndValuesToMap converts variadic key-value pairs to a map
+func (l *Logger) keysAndValuesToMap(keysAndValues ...interface{}) map[string]interface{} {
+	fields := make(map[string]interface{})
+	for i := 0; i < len(keysAndValues); i += 2 {
+		if i+1 < len(keysAndValues) {
+			if key, ok := keysAndValues[i].(string); ok {
+				fields[key] = keysAndValues[i+1]
+			}
+		}
+	}
+	return fields
 }
 
 // retryableHTTPLogger adapts our Logger to go-retryablehttp's logging interface

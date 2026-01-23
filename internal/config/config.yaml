@@ -83,6 +83,11 @@ dynamodb:
 logging:
   level: "debug"
   db_level: "error"
+  # Fluentd configuration for centralized logging
+  # When enabled, logs will be sent to Fluentd in addition to stdout
+  fluentd_enabled: false # Set to true to enable Fluentd logging
+  fluentd_host: "" # e.g., "fluentd-forward.kube-system.svc.cluster.local" or "X.X.X.X"
+  fluentd_port: 0 # e.g., 24224
 
 webhook:
   enabled: true

@@ -262,16 +262,6 @@ func (s *featureUsageTrackingService) processMessage(msg *message.Message) error
 		"environment_id", environmentID,
 	)
 
-	// Create a background context with tenant ID
-	ctx := context.Background()
-	if tenantID != "" {
-		ctx = context.WithValue(ctx, types.CtxTenantID, tenantID)
-	}
-
-	if environmentID != "" {
-		ctx = context.WithValue(ctx, types.CtxEnvironmentID, environmentID)
-	}
-
 	// Unmarshal the event
 	var event events.Event
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
@@ -282,14 +272,48 @@ func (s *featureUsageTrackingService) processMessage(msg *message.Message) error
 		return nil // Don't retry on unmarshal errors
 	}
 
-	// validate tenant id
-	if event.TenantID != tenantID {
-		s.Logger.Errorw("invalid tenant id",
-			"expected", tenantID,
-			"actual", event.TenantID,
+	// validate tenant id (todo commenting for now)
+	// if event.TenantID != tenantID {
+	// 	s.Logger.Errorw("invalid tenant id",
+	// 		"expected", tenantID,
+	// 		"actual", event.TenantID,
+	// 		"message_uuid", msg.UUID,
+	// 	)
+	// 	return nil // Don't retry on invalid tenant id
+	// }
+
+	if tenantID == "" && event.TenantID != "" {
+		tenantID = event.TenantID
+	}
+
+	if environmentID == "" && event.EnvironmentID != "" {
+		environmentID = event.EnvironmentID
+	}
+
+	// Create a background context with tenant ID
+	ctx := context.Background()
+	if tenantID != "" {
+		ctx = context.WithValue(ctx, types.CtxTenantID, tenantID)
+	}
+
+	if environmentID != "" {
+		ctx = context.WithValue(ctx, types.CtxEnvironmentID, environmentID)
+	}
+
+	if tenantID == "" {
+		s.Logger.Errorw("tenant id is required for feature usage tracking: event_id", event.ID,
+			"event_name", event.EventName,
 			"message_uuid", msg.UUID,
 		)
 		return nil // Don't retry on invalid tenant id
+	}
+
+	if environmentID == "" {
+		s.Logger.Errorw("environment id is required for feature usage tracking: event_id", event.ID,
+			"event_name", event.EventName,
+			"message_uuid", msg.UUID,
+		)
+		return nil // Don't retry on invalid environment id
 	}
 
 	// Process the event
@@ -305,6 +329,8 @@ func (s *featureUsageTrackingService) processMessage(msg *message.Message) error
 	s.Logger.Infow("event for feature usage tracking processed successfully",
 		"event_id", event.ID,
 		"event_name", event.EventName,
+		"tenant_id", tenantID,
+		"environment_id", environmentID,
 	)
 
 	return nil
@@ -3225,8 +3251,11 @@ func (s *featureUsageTrackingService) ToGetUsageAnalyticsResponseDTO(ctx context
 					// Parent price should already be fetched in fetchSubscriptionPrices
 					if price.ParentPriceID != "" {
 						if parentPrice, ok := data.PriceResponses[price.ParentPriceID]; ok {
-							if parentPrice.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
+							switch parentPrice.EntityType {
+							case types.PRICE_ENTITY_TYPE_PLAN:
 								item.PlanID = parentPrice.EntityID
+							case types.PRICE_ENTITY_TYPE_ADDON:
+								item.AddOnID = parentPrice.EntityID
 							}
 						}
 					}

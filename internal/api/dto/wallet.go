@@ -407,6 +407,7 @@ type GetCustomerWalletsRequest struct {
 	LookupKey              string `form:"lookup_key"`
 	IncludeRealTimeBalance bool   `form:"include_real_time_balance" default:"false"`
 	Expand                 string `form:"expand"`
+	FromCache              bool   `form:"from_cache" default:"false"`
 }
 
 func (r *GetCustomerWalletsRequest) Validate() error {
