@@ -913,8 +913,6 @@ func (r *EventRepository) FindUnprocessedEventsFromFeatureUsage(ctx context.Cont
 		"batch_size", params.BatchSize,
 	)
 
-	fmt.Println("query", query)
-	fmt.Println("args", args)
 	// Execute the query
 	rows, err := r.store.GetConn().Query(ctx, query, args...)
 	if err != nil {
