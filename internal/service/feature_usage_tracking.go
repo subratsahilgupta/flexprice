@@ -192,6 +192,11 @@ func (s *featureUsageTrackingService) PublishEvent(ctx context.Context, event *e
 
 // RegisterHandler registers a handler for the feature usage tracking topic with rate limiting
 func (s *featureUsageTrackingService) RegisterHandler(router *pubsubRouter.Router, cfg *config.Configuration) {
+	if !cfg.FeatureUsageTracking.Enabled {
+		s.Logger.Infow("feature usage tracking handler disabled by configuration")
+		return
+	}
+
 	// Add throttle middleware to this specific handler
 	throttle := middleware.NewThrottle(cfg.FeatureUsageTracking.RateLimit, time.Second)
 
@@ -233,6 +238,11 @@ func (s *featureUsageTrackingService) RegisterHandler(router *pubsubRouter.Route
 
 // RegisterHandler registers a handler for the feature usage tracking topic with rate limiting
 func (s *featureUsageTrackingService) RegisterHandlerLazy(router *pubsubRouter.Router, cfg *config.Configuration) {
+	if !cfg.FeatureUsageTrackingLazy.Enabled {
+		s.Logger.Infow("feature usage tracking lazy handler disabled by configuration")
+		return
+	}
+
 	// Add throttle middleware to this specific handler
 	throttle := middleware.NewThrottle(cfg.FeatureUsageTrackingLazy.RateLimit, time.Second)
 

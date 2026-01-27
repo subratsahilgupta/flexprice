@@ -546,7 +546,7 @@ func registerRouterHandlers(
 
 	// Only register processing handlers when needed
 	if includeProcessingHandlers {
-		// Register handlers
+		// Each service checks its own enabled flag internally
 		eventConsumptionSvc.RegisterHandler(router, cfg)
 		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
 		// eventPostProcessingSvc.RegisterHandler(router, cfg)
@@ -554,7 +554,7 @@ func registerRouterHandlers(
 		featureUsageSvc.RegisterHandlerLazy(router, cfg)
 		costSheetUsageSvc.RegisterHandler(router, cfg)
 		costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
-		// walletBalanceAlertSvc.RegisterHandler(router, cfg)
+		walletBalanceAlertSvc.RegisterHandler(router, cfg)
 	}
 }
 
