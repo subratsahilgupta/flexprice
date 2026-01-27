@@ -47,6 +47,9 @@ type FeatureUsageTrackingService interface {
 	// Register message handler with the router
 	RegisterHandlerLazy(router *pubsubRouter.Router, cfg *config.Configuration)
 
+	// Register replay handler with the router
+	RegisterHandlerReplay(router *pubsubRouter.Router, cfg *config.Configuration)
+
 	// GetDetailedUsageAnalytics provides comprehensive usage analytics with filtering, grouping, and time-series data
 	GetDetailedUsageAnalytics(ctx context.Context, req *dto.GetUsageAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error)
 
@@ -79,6 +82,7 @@ type featureUsageTrackingService struct {
 	pubSub           pubsub.PubSub // Regular PubSub for normal processing
 	backfillPubSub   pubsub.PubSub // Dedicated Kafka PubSub for backfill processing
 	lazyPubSub       pubsub.PubSub // Dedicated Kafka PubSub for lazy processing
+	replayPubSub     pubsub.PubSub // Dedicated Kafka PubSub for replay processing
 	eventRepo        events.Repository
 	featureUsageRepo events.FeatureUsageRepository
 }
@@ -129,6 +133,17 @@ func NewFeatureUsageTrackingService(
 		return nil
 	}
 	ev.lazyPubSub = lazyPubSub
+
+	replayPubSub, err := kafka.NewPubSubFromConfig(
+		params.Config,
+		params.Logger,
+		params.Config.FeatureUsageTrackingReplay.ConsumerGroup,
+	)
+	if err != nil {
+		params.Logger.Fatalw("failed to create replay pubsub", "error", err)
+		return nil
+	}
+	ev.replayPubSub = replayPubSub
 
 	return ev
 }
@@ -214,6 +229,11 @@ func (s *featureUsageTrackingService) RegisterHandler(router *pubsubRouter.Route
 		"rate_limit", cfg.FeatureUsageTracking.RateLimit,
 	)
 
+	if !cfg.FeatureUsageTracking.BackfillEnabled {
+		s.Logger.Infow("feature usage tracking backfill handler disabled by configuration")
+		return
+	}
+
 	// Add backfill handler
 	if cfg.FeatureUsageTracking.TopicBackfill == "" {
 		s.Logger.Warnw("backfill topic not set, skipping backfill handler")
@@ -258,6 +278,38 @@ func (s *featureUsageTrackingService) RegisterHandlerLazy(router *pubsubRouter.R
 	s.Logger.Infow("registered event feature usage tracking lazy handler",
 		"topic", cfg.FeatureUsageTrackingLazy.Topic,
 		"rate_limit", cfg.FeatureUsageTrackingLazy.RateLimit,
+	)
+}
+
+// RegisterHandlerReplay registers a handler for the feature usage tracking replay topic with rate limiting
+func (s *featureUsageTrackingService) RegisterHandlerReplay(router *pubsubRouter.Router, cfg *config.Configuration) {
+	if !cfg.FeatureUsageTrackingReplay.Enabled {
+		s.Logger.Infow("feature usage tracking replay handler disabled by configuration")
+		return
+	}
+
+	// Check if replay topic is configured
+	if cfg.FeatureUsageTrackingReplay.Topic == "" {
+		s.Logger.Warnw("replay topic not set, skipping replay handler")
+		return
+	}
+
+	// Add throttle middleware to this specific handler
+	replayThrottle := middleware.NewThrottle(cfg.FeatureUsageTrackingReplay.RateLimit, time.Second)
+
+	// Add the handler
+	router.AddNoPublishHandler(
+		"feature_usage_tracking_replay_handler",
+		cfg.FeatureUsageTrackingReplay.Topic,
+		s.replayPubSub, // Use the dedicated Kafka replay PubSub
+		s.processMessage,
+		replayThrottle.Middleware,
+	)
+
+	s.Logger.Infow("registered event feature usage tracking replay handler",
+		"topic", cfg.FeatureUsageTrackingReplay.Topic,
+		"rate_limit", cfg.FeatureUsageTrackingReplay.RateLimit,
+		"pubsub_type", "kafka",
 	)
 }
 
@@ -374,29 +426,36 @@ func (s *featureUsageTrackingService) processEvent(ctx context.Context, event *e
 			return err
 		}
 
-		walletBalanceAlertService := NewWalletBalanceAlertService(s.ServiceParams)
-		for _, fu := range featureUsage {
-			event := &wallet.WalletBalanceAlertEvent{
-				ID:                    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_ALERT),
-				Timestamp:             time.Now().UTC(),
-				Source:                EventSourceFeatureUsage,
-				CustomerID:            fu.CustomerID,
-				ForceCalculateBalance: false,
-				TenantID:              fu.TenantID,
-				EnvironmentID:         fu.EnvironmentID,
-			}
-			if err := walletBalanceAlertService.PublishEvent(ctx, event); err != nil {
-				s.Logger.Errorw("failed to publish wallet balance alert event",
-					"error", err,
+		// Only publish wallet balance alerts if enabled in configuration
+		if s.Config.FeatureUsageTracking.WalletAlertPushEnabled {
+			walletBalanceAlertService := NewWalletBalanceAlertService(s.ServiceParams)
+			for _, fu := range featureUsage {
+				event := &wallet.WalletBalanceAlertEvent{
+					ID:                    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_ALERT),
+					Timestamp:             time.Now().UTC(),
+					Source:                EventSourceFeatureUsage,
+					CustomerID:            fu.CustomerID,
+					ForceCalculateBalance: false,
+					TenantID:              fu.TenantID,
+					EnvironmentID:         fu.EnvironmentID,
+				}
+				if err := walletBalanceAlertService.PublishEvent(ctx, event); err != nil {
+					s.Logger.Errorw("failed to publish wallet balance alert event",
+						"error", err,
+						"event_id", event.ID,
+						"customer_id", event.CustomerID,
+					)
+					continue
+				}
+
+				s.Logger.Infow("wallet balance alert event published successfully",
 					"event_id", event.ID,
 					"customer_id", event.CustomerID,
 				)
-				continue
 			}
-
-			s.Logger.Infow("wallet balance alert event published successfully",
-				"event_id", event.ID,
-				"customer_id", event.CustomerID,
+		} else {
+			s.Logger.Debugw("wallet balance alert push disabled by configuration",
+				"feature_usage_count", len(featureUsage),
 			)
 		}
 

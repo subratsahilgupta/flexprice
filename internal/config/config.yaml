@@ -188,6 +188,8 @@ feature_usage_tracking:
   topic: "events"
   rate_limit: 1
   consumer_group: "v1_feature_tracking_service"
+  backfill_enabled: true
+  wallet_alert_push_enabled: true
   topic_backfill: "events_post_processing_backfill"
   rate_limit_backfill: 1
   consumer_group_backfill: "v1_feature_tracking_service_backfill"
@@ -197,6 +199,12 @@ feature_usage_tracking_lazy:
   topic: "events_lazy"
   rate_limit: 1
   consumer_group: "v1_feature_tracking_service_lazy"
+
+feature_usage_tracking_replay:
+  enabled: true
+  topic: "staging_events_backfill"
+  rate_limit: 1
+  consumer_group: "v1_feature_tracking_service_replay"
 
 costsheet_usage_tracking:
   enabled: true
