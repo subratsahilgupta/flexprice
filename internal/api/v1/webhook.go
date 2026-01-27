@@ -943,13 +943,18 @@ func (h *WebhookHandler) HandleMoyasarWebhook(c *gin.Context) {
 		return
 	}
 
-	// Get Moyasar signature from headers (optional)
-	signature := c.GetHeader("X-Moyasar-Signature")
-
 	// Set context with tenant and environment IDs
 	ctx := types.SetTenantID(c.Request.Context(), tenantID)
 	ctx = types.SetEnvironmentID(ctx, environmentID)
 	c.Request = c.Request.WithContext(ctx)
+
+	// Parse webhook payload first to get the secret_token
+	var event moyasarwebhook.MoyasarWebhookEvent
+	err = json.Unmarshal(body, &event)
+	if err != nil {
+		h.logger.Errorw("failed to parse Moyasar webhook payload", "error", err)
+		return
+	}
 
 	// Get Moyasar integration
 	moyasarIntegration, err := h.integrationFactory.GetMoyasarIntegration(ctx)
@@ -965,41 +970,53 @@ func (h *WebhookHandler) HandleMoyasarWebhook(c *gin.Context) {
 		return
 	}
 
-	// Check if webhook secret is configured
+	// Check if webhook secret is configured in FlexPrice
 	hasWebhookSecretConfigured := conn.EncryptedSecretData.Moyasar != nil &&
 		conn.EncryptedSecretData.Moyasar.WebhookSecret != ""
 
-	// Verify webhook signature if both secret and signature are present
-	if hasWebhookSecretConfigured && signature != "" {
-		// Both webhook secret and signature are present - verify the signature
-		err = moyasarIntegration.Client.VerifyWebhookSignature(ctx, body, signature)
+	// Verify webhook secret_token from payload if configured
+	// According to Moyasar docs, the secret is sent in the payload as "secret_token", not as HTTP header
+	if hasWebhookSecretConfigured {
+		// Webhook secret is configured - verification is REQUIRED
+		if event.SecretToken == "" {
+			h.logger.Errorw("Moyasar webhook secret configured but secret_token missing in payload - rejecting request",
+				"tenant_id", tenantID,
+				"environment_id", environmentID,
+				"event_id", event.ID,
+				"note", "Moyasar must send shared_secret as secret_token in webhook payload when configured")
+			return
+		}
+		
+		// Get the decrypted Moyasar config to access the webhook secret
+		moyasarConfig, err := moyasarIntegration.Client.GetDecryptedMoyasarConfig(conn)
 		if err != nil {
-			h.logger.Errorw("failed to verify Moyasar webhook signature - rejecting request",
+			h.logger.Errorw("failed to get decrypted Moyasar config",
 				"error", err,
 				"tenant_id", tenantID,
 				"environment_id", environmentID)
 			return
 		}
-		h.logger.Debugw("Moyasar webhook signature verified successfully",
-			"tenant_id", tenantID,
-			"environment_id", environmentID)
-	} else if hasWebhookSecretConfigured && signature == "" {
-		// Webhook secret is configured but signature is missing - allow with warning
-		h.logger.Warnw("Moyasar webhook secret configured but signature header missing - allowing request",
+		
+		// Verify the secret_token matches our configured (decrypted) webhook_secret
+		if event.SecretToken != moyasarConfig.WebhookSecret {
+			h.logger.Errorw("Moyasar webhook secret_token verification failed - rejecting request",
+				"tenant_id", tenantID,
+				"environment_id", environmentID,
+				"event_id", event.ID,
+				"note", "secret_token in payload does not match configured webhook_secret")
+			return
+		}
+		
+		h.logger.Infow("Moyasar webhook secret_token verified successfully",
 			"tenant_id", tenantID,
 			"environment_id", environmentID,
-			"note", "Configure shared_secret in Moyasar webhook settings for enhanced security")
-	} else if !hasWebhookSecretConfigured && signature != "" {
-		// Signature provided but no webhook secret configured - allow with warning
-		h.logger.Warnw("Moyasar webhook has signature but no webhook secret configured - skipping verification",
-			"tenant_id", tenantID,
-			"environment_id", environmentID,
-			"note", "Configure webhook_secret in Moyasar connection for security")
+			"event_id", event.ID)
 	} else {
-		// No signature and no webhook secret - allow with warning
-		h.logger.Warnw("Moyasar webhook received without signature verification",
+		// No webhook secret configured - allow with warning
+		h.logger.Warnw("Moyasar webhook received without secret verification",
 			"tenant_id", tenantID,
 			"environment_id", environmentID,
+			"event_id", event.ID,
 			"note", "Configure webhook_secret in Moyasar connection for enhanced security")
 	}
 
@@ -1007,15 +1024,9 @@ func (h *WebhookHandler) HandleMoyasarWebhook(c *gin.Context) {
 	h.logger.Infow("processing Moyasar webhook",
 		"environment_id", environmentID,
 		"tenant_id", tenantID,
+		"event_type", event.Type,
+		"event_id", event.ID,
 		"payload_length", len(body))
-
-	// Parse webhook payload
-	var event moyasarwebhook.MoyasarWebhookEvent
-	err = json.Unmarshal(body, &event)
-	if err != nil {
-		h.logger.Errorw("failed to parse Moyasar webhook payload", "error", err)
-		return
-	}
 
 	// Create service dependencies for webhook handler
 	serviceDeps := &moyasarwebhook.ServiceDependencies{

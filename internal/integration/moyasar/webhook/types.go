@@ -14,11 +14,13 @@ const (
 
 // MoyasarWebhookEvent represents a Moyasar webhook event payload
 type MoyasarWebhookEvent struct {
-	ID        string           `json:"id"`
-	Type      MoyasarEventType `json:"type"`
-	CreatedAt string           `json:"created_at"`
-	Data      PaymentEventData `json:"data"`
-	Secret    string           `json:"secret,omitempty"` // Webhook secret token for verification
+	ID          string           `json:"id"`
+	Type        MoyasarEventType `json:"type"`
+	CreatedAt   string           `json:"created_at"`
+	SecretToken string           `json:"secret_token,omitempty"` // Webhook secret token for verification
+	AccountName string           `json:"account_name,omitempty"` // The name of the account
+	Live        bool             `json:"live"`                    // True if live mode, false if test mode
+	Data        PaymentEventData `json:"data"`
 }
 
 // PaymentEventData represents the data object in a payment webhook
