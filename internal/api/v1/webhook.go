@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/integration"
 	chargebeewebhook "github.com/flexprice/flexprice/internal/integration/chargebee/webhook"
+	moyasarwebhook "github.com/flexprice/flexprice/internal/integration/moyasar/webhook"
 	nomodwebhook "github.com/flexprice/flexprice/internal/integration/nomod/webhook"
 	quickbookswebhook "github.com/flexprice/flexprice/internal/integration/quickbooks/webhook"
 	razorpaywebhook "github.com/flexprice/flexprice/internal/integration/razorpay/webhook"
@@ -904,4 +905,151 @@ func (h *WebhookHandler) HandleNomodWebhook(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Webhook processed successfully",
 	})
+}
+
+// @Summary Handle Moyasar webhook events
+// @Description Process incoming Moyasar webhook events for payment status updates
+// @Tags Webhooks
+// @Accept json
+// @Produce json
+// @Param tenant_id path string true "Tenant ID"
+// @Param environment_id path string true "Environment ID"
+// @Param X-Moyasar-Signature header string false "Moyasar webhook signature"
+// @Success 200 {object} map[string]interface{} "Webhook received (always returns 200)"
+// @Router /webhooks/moyasar/{tenant_id}/{environment_id} [post]
+func (h *WebhookHandler) HandleMoyasarWebhook(c *gin.Context) {
+	// Always return 200 OK to Moyasar to prevent retries
+	// We log errors internally but don't expose them to Moyasar
+	defer func() {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Webhook received",
+		})
+	}()
+
+	tenantID := c.Param("tenant_id")
+	environmentID := c.Param("environment_id")
+
+	if tenantID == "" || environmentID == "" {
+		h.logger.Errorw("missing tenant_id or environment_id in webhook URL",
+			"tenant_id", tenantID,
+			"environment_id", environmentID)
+		return
+	}
+
+	// Read the raw request body
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		h.logger.Errorw("failed to read request body", "error", err)
+		return
+	}
+
+	// Set context with tenant and environment IDs
+	ctx := types.SetTenantID(c.Request.Context(), tenantID)
+	ctx = types.SetEnvironmentID(ctx, environmentID)
+	c.Request = c.Request.WithContext(ctx)
+
+	// Parse webhook payload first to get the secret_token
+	var event moyasarwebhook.MoyasarWebhookEvent
+	err = json.Unmarshal(body, &event)
+	if err != nil {
+		h.logger.Errorw("failed to parse Moyasar webhook payload", "error", err)
+		return
+	}
+
+	// Get Moyasar integration
+	moyasarIntegration, err := h.integrationFactory.GetMoyasarIntegration(ctx)
+	if err != nil {
+		h.logger.Errorw("failed to get Moyasar integration", "error", err)
+		return
+	}
+
+	// Get connection to check if webhook secret is configured
+	conn, err := moyasarIntegration.Client.GetConnection(ctx)
+	if err != nil {
+		h.logger.Errorw("failed to get Moyasar connection", "error", err)
+		return
+	}
+
+	// Check if webhook secret is configured in FlexPrice
+	hasWebhookSecretConfigured := conn.EncryptedSecretData.Moyasar != nil &&
+		conn.EncryptedSecretData.Moyasar.WebhookSecret != ""
+
+	// Verify webhook secret_token from payload if configured
+	// According to Moyasar docs, the secret is sent in the payload as "secret_token", not as HTTP header
+	if hasWebhookSecretConfigured {
+		// Webhook secret is configured - verification is REQUIRED
+		if event.SecretToken == "" {
+			h.logger.Errorw("Moyasar webhook secret configured but secret_token missing in payload - rejecting request",
+				"tenant_id", tenantID,
+				"environment_id", environmentID,
+				"event_id", event.ID,
+				"note", "Moyasar must send shared_secret as secret_token in webhook payload when configured")
+			return
+		}
+		
+		// Get the decrypted Moyasar config to access the webhook secret
+		moyasarConfig, err := moyasarIntegration.Client.GetDecryptedMoyasarConfig(conn)
+		if err != nil {
+			h.logger.Errorw("failed to get decrypted Moyasar config",
+				"error", err,
+				"tenant_id", tenantID,
+				"environment_id", environmentID)
+			return
+		}
+		
+		// Verify the secret_token matches our configured (decrypted) webhook_secret
+		if event.SecretToken != moyasarConfig.WebhookSecret {
+			h.logger.Errorw("Moyasar webhook secret_token verification failed - rejecting request",
+				"tenant_id", tenantID,
+				"environment_id", environmentID,
+				"event_id", event.ID,
+				"note", "secret_token in payload does not match configured webhook_secret")
+			return
+		}
+		
+		h.logger.Infow("Moyasar webhook secret_token verified successfully",
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+			"event_id", event.ID)
+	} else {
+		// No webhook secret configured - allow with warning
+		h.logger.Warnw("Moyasar webhook received without secret verification",
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+			"event_id", event.ID,
+			"note", "Configure webhook_secret in Moyasar connection for enhanced security")
+	}
+
+	// Log webhook processing (without sensitive data)
+	h.logger.Infow("processing Moyasar webhook",
+		"environment_id", environmentID,
+		"tenant_id", tenantID,
+		"event_type", event.Type,
+		"event_id", event.ID,
+		"payload_length", len(body))
+
+	// Create service dependencies for webhook handler
+	serviceDeps := &moyasarwebhook.ServiceDependencies{
+		CustomerService:                 h.customerService,
+		PaymentService:                  h.paymentService,
+		InvoiceService:                  h.invoiceService,
+		PlanService:                     h.planService,
+		SubscriptionService:             h.subscriptionService,
+		EntityIntegrationMappingService: h.entityIntegrationMappingService,
+		DB:                              h.db,
+	}
+
+	// Handle the webhook event
+	err = moyasarIntegration.WebhookHandler.HandleWebhookEvent(ctx, &event, environmentID, serviceDeps)
+	if err != nil {
+		h.logger.Errorw("failed to handle Moyasar webhook event",
+			"error", err,
+			"event_type", event.Type,
+			"environment_id", environmentID)
+		return
+	}
+
+	h.logger.Infow("successfully processed Moyasar webhook",
+		"environment_id", environmentID,
+		"event_type", event.Type)
 }

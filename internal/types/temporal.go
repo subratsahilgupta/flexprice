@@ -60,6 +60,7 @@ const (
 	TemporalHubSpotInvoiceSyncWorkflow          TemporalWorkflowType = "HubSpotInvoiceSyncWorkflow"
 	TemporalHubSpotQuoteSyncWorkflow            TemporalWorkflowType = "HubSpotQuoteSyncWorkflow"
 	TemporalNomodInvoiceSyncWorkflow            TemporalWorkflowType = "NomodInvoiceSyncWorkflow"
+	TemporalMoyasarInvoiceSyncWorkflow          TemporalWorkflowType = "MoyasarInvoiceSyncWorkflow"
 	TemporalCustomerOnboardingWorkflow          TemporalWorkflowType = "CustomerOnboardingWorkflow"
 	TemporalPrepareProcessedEventsWorkflow      TemporalWorkflowType = "PrepareProcessedEventsWorkflow"
 	TemporalScheduleSubscriptionBillingWorkflow TemporalWorkflowType = "ScheduleSubscriptionBillingWorkflow"
@@ -85,6 +86,7 @@ func (w TemporalWorkflowType) Validate() error {
 		TemporalHubSpotInvoiceSyncWorkflow,          // "HubSpotInvoiceSyncWorkflow"
 		TemporalHubSpotQuoteSyncWorkflow,            // "HubSpotQuoteSyncWorkflow"
 		TemporalNomodInvoiceSyncWorkflow,            // "NomodInvoiceSyncWorkflow"
+		TemporalMoyasarInvoiceSyncWorkflow,          // "MoyasarInvoiceSyncWorkflow"
 		TemporalCustomerOnboardingWorkflow,          // "CustomerOnboardingWorkflow"
 		TemporalPrepareProcessedEventsWorkflow,      // "PrepareProcessedEventsWorkflow"
 		TemporalScheduleSubscriptionBillingWorkflow, // "ScheduleSubscriptionBillingWorkflow"
@@ -103,7 +105,7 @@ func (w TemporalWorkflowType) Validate() error {
 // TaskQueue returns the logical task queue for the workflow
 func (w TemporalWorkflowType) TaskQueue() TemporalTaskQueue {
 	switch w {
-	case TemporalTaskProcessingWorkflow, TemporalSubscriptionChangeWorkflow, TemporalSubscriptionCreationWorkflow, TemporalHubSpotDealSyncWorkflow, TemporalHubSpotInvoiceSyncWorkflow, TemporalHubSpotQuoteSyncWorkflow, TemporalNomodInvoiceSyncWorkflow:
+	case TemporalTaskProcessingWorkflow, TemporalSubscriptionChangeWorkflow, TemporalSubscriptionCreationWorkflow, TemporalHubSpotDealSyncWorkflow, TemporalHubSpotInvoiceSyncWorkflow, TemporalHubSpotQuoteSyncWorkflow, TemporalNomodInvoiceSyncWorkflow, TemporalMoyasarInvoiceSyncWorkflow:
 		return TemporalTaskQueueTask
 	case TemporalPriceSyncWorkflow, TemporalQuickBooksPriceSyncWorkflow:
 		return TemporalTaskQueuePrice
@@ -144,6 +146,7 @@ func GetWorkflowsForTaskQueue(taskQueue TemporalTaskQueue) []TemporalWorkflowTyp
 			TemporalHubSpotInvoiceSyncWorkflow,
 			TemporalHubSpotQuoteSyncWorkflow,
 			TemporalNomodInvoiceSyncWorkflow,
+			TemporalMoyasarInvoiceSyncWorkflow,
 		}
 	case TemporalTaskQueuePrice:
 		return []TemporalWorkflowType{

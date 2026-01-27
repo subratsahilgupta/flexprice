@@ -197,6 +197,23 @@ func convertFlatMetadataToStructured(flatMetadata map[string]interface{}, provid
 			Nomod: nomodMetadata,
 		}
 
+	case types.SecretProviderMoyasar:
+		moyasarMetadata := &types.MoyasarConnectionMetadata{}
+
+		if publishableKey, ok := flatMetadata["publishable_key"].(string); ok {
+			moyasarMetadata.PublishableKey = publishableKey
+		}
+		if secretKey, ok := flatMetadata["secret_key"].(string); ok {
+			moyasarMetadata.SecretKey = secretKey
+		}
+		if webhookSecret, ok := flatMetadata["webhook_secret"].(string); ok {
+			moyasarMetadata.WebhookSecret = webhookSecret
+		}
+
+		return types.ConnectionMetadata{
+			Moyasar: moyasarMetadata,
+		}
+
 	default:
 		// For other providers or unknown types, use generic format
 		return types.ConnectionMetadata{
