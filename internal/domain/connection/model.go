@@ -195,6 +195,20 @@ func convertMapToConnectionMetadata(metadata map[string]interface{}, providerTyp
 		return types.ConnectionMetadata{
 			Nomod: nomodMetadata,
 		}
+	case types.SecretProviderMoyasar:
+		moyasarMetadata := &types.MoyasarConnectionMetadata{}
+		if secretKey, ok := metadata["secret_key"].(string); ok {
+			moyasarMetadata.SecretKey = secretKey
+		}
+		if publishableKey, ok := metadata["publishable_key"].(string); ok {
+			moyasarMetadata.PublishableKey = publishableKey
+		}
+		if webhookSecret, ok := metadata["webhook_secret"].(string); ok {
+			moyasarMetadata.WebhookSecret = webhookSecret
+		}
+		return types.ConnectionMetadata{
+			Moyasar: moyasarMetadata,
+		}
 	default:
 		// For other providers or unknown types, use generic format
 		return types.ConnectionMetadata{

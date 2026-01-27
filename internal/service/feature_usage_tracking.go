@@ -368,7 +368,6 @@ func (s *featureUsageTrackingService) processMessage(msg *message.Message) error
 	if tenantID == "" {
 		s.Logger.Errorw("tenant id is required for feature usage tracking: event_id", event.ID,
 			"event_name", event.EventName,
-
 			"message_uuid", msg.UUID,
 		)
 		return nil // Don't retry on invalid tenant id
@@ -377,7 +376,6 @@ func (s *featureUsageTrackingService) processMessage(msg *message.Message) error
 	if environmentID == "" {
 		s.Logger.Errorw("environment id is required for feature usage tracking: event_id", event.ID,
 			"event_name", event.EventName,
-
 			"message_uuid", msg.UUID,
 		)
 		return nil // Don't retry on invalid environment id

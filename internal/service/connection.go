@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/security"
+	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -266,6 +267,43 @@ func (s *connectionService) encryptMetadata(encryptedSecretData types.Connection
 		}
 
 		encryptedMetadata.Nomod = nomodMeta
+
+	case types.SecretProviderMoyasar:
+		if encryptedSecretData.Moyasar == nil {
+			s.Logger.Warnw("Moyasar metadata is nil, cannot encrypt", "provider_type", providerType)
+			return types.ConnectionMetadata{}, ierr.NewError("Moyasar metadata is required").
+				WithHint("Moyasar connection requires encrypted_secret_data with secret_key").
+				Mark(ierr.ErrValidation)
+		}
+		// Encrypt secret key (required)
+		encryptedSecretKey, err := s.encryptionService.Encrypt(encryptedSecretData.Moyasar.SecretKey)
+		if err != nil {
+			return types.ConnectionMetadata{}, err
+		}
+
+		moyasarMeta := &types.MoyasarConnectionMetadata{
+			SecretKey: encryptedSecretKey,
+		}
+
+		// Encrypt publishable key if provided (optional)
+		if encryptedSecretData.Moyasar.PublishableKey != "" {
+			encryptedPublishableKey, err := s.encryptionService.Encrypt(encryptedSecretData.Moyasar.PublishableKey)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+			moyasarMeta.PublishableKey = encryptedPublishableKey
+		}
+
+		// Encrypt webhook secret if provided (optional)
+		if encryptedSecretData.Moyasar.WebhookSecret != "" {
+			encryptedWebhookSecret, err := s.encryptionService.Encrypt(encryptedSecretData.Moyasar.WebhookSecret)
+			if err != nil {
+				return types.ConnectionMetadata{}, err
+			}
+			moyasarMeta.WebhookSecret = encryptedWebhookSecret
+		}
+
+		encryptedMetadata.Moyasar = moyasarMeta
 
 	default:
 		// For other providers or unknown types, use generic format
@@ -544,6 +582,31 @@ func (s *connectionService) DeleteConnection(ctx context.Context, id string) err
 	if err != nil {
 		s.Logger.Errorw("failed to get connection for deletion", "error", err, "connection_id", id)
 		return err
+	}
+
+	// Get all scheduled tasks for the connection
+	schedTasks, err := s.ScheduledTaskRepo.GetByConnection(ctx, conn.ID)
+	if err != nil {
+		s.Logger.Errorw("failed to get scheduled tasks by connection", "error", err, "connection_id", id)
+		return err
+	}
+
+	scheduledTaskService := NewScheduledTaskService(
+		s.ScheduledTaskRepo,
+		s.ConnectionRepo,
+		temporalService.GetGlobalTemporalClient(),
+		s.Logger,
+		s.Config,
+	)
+
+	// Scheduled tasks cleanup
+	for _, schedTask := range schedTasks {
+		if err := scheduledTaskService.DeleteScheduledTask(ctx, schedTask.ID); err != nil {
+			s.Logger.Errorw("failed to delete scheduled task", "error", err, "scheduled_task_id", schedTask.ID)
+			return ierr.WithError(err).
+				WithHint("Failed to delete scheduled task").
+				Mark(ierr.ErrDatabase)
+		}
 	}
 
 	conn.UpdatedAt = time.Now()

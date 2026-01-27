@@ -59,6 +59,21 @@ func GetGlobalTemporalService() TemporalService {
 	return globalTemporalService
 }
 
+// GetGlobalTemporalClient returns the underlying Temporal client from the global service instance.
+// Useful for operations not exposed on the TemporalService interface (e.g. schedules).
+func GetGlobalTemporalClient() client.TemporalClient {
+	if globalTemporalService == nil {
+		return nil
+	}
+
+	// The global service is initialized via NewTemporalService, which returns *temporalService.
+	if svc, ok := globalTemporalService.(*temporalService); ok {
+		return svc.client
+	}
+
+	return nil
+}
+
 // Start implements TemporalService
 func (s *temporalService) Start(ctx context.Context) error {
 	// Start client
@@ -436,6 +451,8 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 		return s.buildHubSpotQuoteSyncInput(ctx, tenantID, environmentID, params)
 	case types.TemporalNomodInvoiceSyncWorkflow:
 		return s.buildNomodInvoiceSyncInput(ctx, tenantID, environmentID, params)
+	case types.TemporalMoyasarInvoiceSyncWorkflow:
+		return s.buildMoyasarInvoiceSyncInput(ctx, tenantID, environmentID, params)
 	case types.TemporalCustomerOnboardingWorkflow:
 		return s.buildCustomerOnboardingInput(ctx, tenantID, environmentID, userID, params)
 	case types.TemporalProcessInvoiceWorkflow:
@@ -639,6 +656,26 @@ func (s *temporalService) buildNomodInvoiceSyncInput(_ context.Context, tenantID
 
 	return nil, errors.NewError("invalid input for Nomod invoice sync workflow").
 		WithHint("Provide NomodInvoiceSyncWorkflowInput with invoice_id and customer_id").
+		Mark(errors.ErrValidation)
+}
+
+func (s *temporalService) buildMoyasarInvoiceSyncInput(_ context.Context, tenantID, environmentID string, params interface{}) (interface{}, error) {
+	// If already correct type, just ensure context is set
+	if input, ok := params.(*models.MoyasarInvoiceSyncWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return *input, nil
+	}
+
+	// Handle value type as well
+	if input, ok := params.(models.MoyasarInvoiceSyncWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return input, nil
+	}
+
+	return nil, errors.NewError("invalid input for Moyasar invoice sync workflow").
+		WithHint("Provide MoyasarInvoiceSyncWorkflowInput with invoice_id and customer_id").
 		Mark(errors.ErrValidation)
 }
 
