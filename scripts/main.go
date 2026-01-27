@@ -64,11 +64,6 @@ var commands = []Command{
 		Run:         internal.ImportPricing,
 	},
 	{
-		Name:        "sync-plan-prices",
-		Description: "Synchronize plan prices to all active subscriptions",
-		Run:         internal.SyncPlanPrices,
-	},
-	{
 		Name:        "reprocess-events",
 		Description: "Reprocess events",
 		Run:         internal.ReprocessEventsFromEnv,
