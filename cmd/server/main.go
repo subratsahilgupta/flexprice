@@ -540,13 +540,10 @@ func registerRouterHandlers(
 	cfg *config.Configuration,
 	includeProcessingHandlers bool,
 ) {
-	// Always register these basic handlers
 	webhookService.RegisterHandler(router)
 	onboardingService.RegisterHandler(router)
 
-	// Only register processing handlers when needed
 	if includeProcessingHandlers {
-		// Each service checks its own enabled flag internally
 		eventConsumptionSvc.RegisterHandler(router, cfg)
 		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
 		// eventPostProcessingSvc.RegisterHandler(router, cfg)
