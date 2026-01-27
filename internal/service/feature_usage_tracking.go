@@ -47,6 +47,9 @@ type FeatureUsageTrackingService interface {
 	// Register message handler with the router
 	RegisterHandlerLazy(router *pubsubRouter.Router, cfg *config.Configuration)
 
+	// Register replay handler with the router
+	RegisterHandlerReplay(router *pubsubRouter.Router, cfg *config.Configuration)
+
 	// GetDetailedUsageAnalytics provides comprehensive usage analytics with filtering, grouping, and time-series data
 	GetDetailedUsageAnalytics(ctx context.Context, req *dto.GetUsageAnalyticsRequest) (*dto.GetUsageAnalyticsResponse, error)
 
@@ -55,6 +58,9 @@ type FeatureUsageTrackingService interface {
 
 	// Reprocess events for a specific customer or with other filters
 	ReprocessEvents(ctx context.Context, params *events.ReprocessEventsParams) error
+
+	// TriggerReprocessEventsWorkflow triggers a Temporal workflow to reprocess events asynchronously
+	TriggerReprocessEventsWorkflow(ctx context.Context, req *dto.ReprocessEventsRequest) (*workflowModels.TemporalWorkflowResult, error)
 
 	// Get HuggingFace Inference
 	GetHuggingFaceBillingData(ctx context.Context, req *dto.GetHuggingFaceBillingDataRequest) (*dto.GetHuggingFaceBillingDataResponse, error)
@@ -76,6 +82,7 @@ type featureUsageTrackingService struct {
 	pubSub           pubsub.PubSub // Regular PubSub for normal processing
 	backfillPubSub   pubsub.PubSub // Dedicated Kafka PubSub for backfill processing
 	lazyPubSub       pubsub.PubSub // Dedicated Kafka PubSub for lazy processing
+	replayPubSub     pubsub.PubSub // Dedicated Kafka PubSub for replay processing
 	eventRepo        events.Repository
 	featureUsageRepo events.FeatureUsageRepository
 }
@@ -126,6 +133,17 @@ func NewFeatureUsageTrackingService(
 		return nil
 	}
 	ev.lazyPubSub = lazyPubSub
+
+	replayPubSub, err := kafka.NewPubSubFromConfig(
+		params.Config,
+		params.Logger,
+		params.Config.FeatureUsageTrackingReplay.ConsumerGroup,
+	)
+	if err != nil {
+		params.Logger.Fatalw("failed to create replay pubsub", "error", err)
+		return nil
+	}
+	ev.replayPubSub = replayPubSub
 
 	return ev
 }
@@ -189,6 +207,11 @@ func (s *featureUsageTrackingService) PublishEvent(ctx context.Context, event *e
 
 // RegisterHandler registers a handler for the feature usage tracking topic with rate limiting
 func (s *featureUsageTrackingService) RegisterHandler(router *pubsubRouter.Router, cfg *config.Configuration) {
+	if !cfg.FeatureUsageTracking.Enabled {
+		s.Logger.Infow("feature usage tracking handler disabled by configuration")
+		return
+	}
+
 	// Add throttle middleware to this specific handler
 	throttle := middleware.NewThrottle(cfg.FeatureUsageTracking.RateLimit, time.Second)
 
@@ -205,6 +228,11 @@ func (s *featureUsageTrackingService) RegisterHandler(router *pubsubRouter.Route
 		"topic", cfg.FeatureUsageTracking.Topic,
 		"rate_limit", cfg.FeatureUsageTracking.RateLimit,
 	)
+
+	if !cfg.FeatureUsageTracking.BackfillEnabled {
+		s.Logger.Infow("feature usage tracking backfill handler disabled by configuration")
+		return
+	}
 
 	// Add backfill handler
 	if cfg.FeatureUsageTracking.TopicBackfill == "" {
@@ -230,6 +258,11 @@ func (s *featureUsageTrackingService) RegisterHandler(router *pubsubRouter.Route
 
 // RegisterHandler registers a handler for the feature usage tracking topic with rate limiting
 func (s *featureUsageTrackingService) RegisterHandlerLazy(router *pubsubRouter.Router, cfg *config.Configuration) {
+	if !cfg.FeatureUsageTrackingLazy.Enabled {
+		s.Logger.Infow("feature usage tracking lazy handler disabled by configuration")
+		return
+	}
+
 	// Add throttle middleware to this specific handler
 	throttle := middleware.NewThrottle(cfg.FeatureUsageTrackingLazy.RateLimit, time.Second)
 
@@ -248,6 +281,38 @@ func (s *featureUsageTrackingService) RegisterHandlerLazy(router *pubsubRouter.R
 	)
 }
 
+// RegisterHandlerReplay registers a handler for the feature usage tracking replay topic with rate limiting
+func (s *featureUsageTrackingService) RegisterHandlerReplay(router *pubsubRouter.Router, cfg *config.Configuration) {
+	if !cfg.FeatureUsageTrackingReplay.Enabled {
+		s.Logger.Infow("feature usage tracking replay handler disabled by configuration")
+		return
+	}
+
+	// Check if replay topic is configured
+	if cfg.FeatureUsageTrackingReplay.Topic == "" {
+		s.Logger.Warnw("replay topic not set, skipping replay handler")
+		return
+	}
+
+	// Add throttle middleware to this specific handler
+	replayThrottle := middleware.NewThrottle(cfg.FeatureUsageTrackingReplay.RateLimit, time.Second)
+
+	// Add the handler
+	router.AddNoPublishHandler(
+		"feature_usage_tracking_replay_handler",
+		cfg.FeatureUsageTrackingReplay.Topic,
+		s.replayPubSub, // Use the dedicated Kafka replay PubSub
+		s.processMessage,
+		replayThrottle.Middleware,
+	)
+
+	s.Logger.Infow("registered event feature usage tracking replay handler",
+		"topic", cfg.FeatureUsageTrackingReplay.Topic,
+		"rate_limit", cfg.FeatureUsageTrackingReplay.RateLimit,
+		"pubsub_type", "kafka",
+	)
+}
+
 // Process a single event message for feature usage tracking
 func (s *featureUsageTrackingService) processMessage(msg *message.Message) error {
 	// Extract tenant ID from message metadata
@@ -262,16 +327,6 @@ func (s *featureUsageTrackingService) processMessage(msg *message.Message) error
 		"environment_id", environmentID,
 	)
 
-	// Create a background context with tenant ID
-	ctx := context.Background()
-	if tenantID != "" {
-		ctx = context.WithValue(ctx, types.CtxTenantID, tenantID)
-	}
-
-	if environmentID != "" {
-		ctx = context.WithValue(ctx, types.CtxEnvironmentID, environmentID)
-	}
-
 	// Unmarshal the event
 	var event events.Event
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
@@ -282,14 +337,50 @@ func (s *featureUsageTrackingService) processMessage(msg *message.Message) error
 		return nil // Don't retry on unmarshal errors
 	}
 
-	// validate tenant id
-	if event.TenantID != tenantID {
-		s.Logger.Errorw("invalid tenant id",
-			"expected", tenantID,
-			"actual", event.TenantID,
+	// validate tenant id (todo commenting for now)
+	// if event.TenantID != tenantID {
+	// 	s.Logger.Errorw("invalid tenant id",
+	// 		"expected", tenantID,
+	// 		"actual", event.TenantID,
+	// 		"message_uuid", msg.UUID,
+	// 	)
+	// 	return nil // Don't retry on invalid tenant id
+	// }
+
+	if tenantID == "" && event.TenantID != "" {
+		tenantID = event.TenantID
+	}
+
+	if environmentID == "" && event.EnvironmentID != "" {
+		environmentID = event.EnvironmentID
+	}
+
+	// Create a background context with tenant ID
+	ctx := context.Background()
+	if tenantID != "" {
+		ctx = context.WithValue(ctx, types.CtxTenantID, tenantID)
+	}
+
+	if environmentID != "" {
+		ctx = context.WithValue(ctx, types.CtxEnvironmentID, environmentID)
+	}
+
+	if tenantID == "" {
+		s.Logger.Errorw("tenant id is required for feature usage tracking: event_id", event.ID,
+			"event_name", event.EventName,
+
 			"message_uuid", msg.UUID,
 		)
 		return nil // Don't retry on invalid tenant id
+	}
+
+	if environmentID == "" {
+		s.Logger.Errorw("environment id is required for feature usage tracking: event_id", event.ID,
+			"event_name", event.EventName,
+
+			"message_uuid", msg.UUID,
+		)
+		return nil // Don't retry on invalid environment id
 	}
 
 	// Process the event
@@ -305,6 +396,8 @@ func (s *featureUsageTrackingService) processMessage(msg *message.Message) error
 	s.Logger.Infow("event for feature usage tracking processed successfully",
 		"event_id", event.ID,
 		"event_name", event.EventName,
+		"tenant_id", tenantID,
+		"environment_id", environmentID,
 	)
 
 	return nil
@@ -333,29 +426,36 @@ func (s *featureUsageTrackingService) processEvent(ctx context.Context, event *e
 			return err
 		}
 
-		walletBalanceAlertService := NewWalletBalanceAlertService(s.ServiceParams)
-		for _, fu := range featureUsage {
-			event := &wallet.WalletBalanceAlertEvent{
-				ID:                    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_ALERT),
-				Timestamp:             time.Now().UTC(),
-				Source:                EventSourceFeatureUsage,
-				CustomerID:            fu.CustomerID,
-				ForceCalculateBalance: false,
-				TenantID:              fu.TenantID,
-				EnvironmentID:         fu.EnvironmentID,
-			}
-			if err := walletBalanceAlertService.PublishEvent(ctx, event); err != nil {
-				s.Logger.Errorw("failed to publish wallet balance alert event",
-					"error", err,
+		// Only publish wallet balance alerts if enabled in configuration
+		if s.Config.FeatureUsageTracking.WalletAlertPushEnabled {
+			walletBalanceAlertService := NewWalletBalanceAlertService(s.ServiceParams)
+			for _, fu := range featureUsage {
+				event := &wallet.WalletBalanceAlertEvent{
+					ID:                    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_ALERT),
+					Timestamp:             time.Now().UTC(),
+					Source:                EventSourceFeatureUsage,
+					CustomerID:            fu.CustomerID,
+					ForceCalculateBalance: false,
+					TenantID:              fu.TenantID,
+					EnvironmentID:         fu.EnvironmentID,
+				}
+				if err := walletBalanceAlertService.PublishEvent(ctx, event); err != nil {
+					s.Logger.Errorw("failed to publish wallet balance alert event",
+						"error", err,
+						"event_id", event.ID,
+						"customer_id", event.CustomerID,
+					)
+					continue
+				}
+
+				s.Logger.Infow("wallet balance alert event published successfully",
 					"event_id", event.ID,
 					"customer_id", event.CustomerID,
 				)
-				continue
 			}
-
-			s.Logger.Infow("wallet balance alert event published successfully",
-				"event_id", event.ID,
-				"customer_id", event.CustomerID,
+		} else {
+			s.Logger.Debugw("wallet balance alert push disabled by configuration",
+				"feature_usage_count", len(featureUsage),
 			)
 		}
 
@@ -2828,6 +2928,64 @@ func (s *featureUsageTrackingService) ReprocessEvents(ctx context.Context, param
 	return nil
 }
 
+// TriggerReprocessEventsWorkflow triggers a Temporal workflow to reprocess events asynchronously
+func (s *featureUsageTrackingService) TriggerReprocessEventsWorkflow(ctx context.Context, req *dto.ReprocessEventsRequest) (*workflowModels.TemporalWorkflowResult, error) {
+	// Validate request (includes date format and relationship validation)
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Build workflow input
+	workflowInput := map[string]interface{}{
+		"external_customer_id": req.ExternalCustomerID,
+		"event_name":           req.EventName,
+		"start_date":           req.StartDate,
+		"end_date":             req.EndDate,
+		"batch_size":           req.BatchSize,
+	}
+
+	// Get global temporal service
+	temporalSvc := temporalservice.GetGlobalTemporalService()
+	if temporalSvc == nil {
+		return nil, ierr.NewError("temporal service not available").
+			WithHint("Reprocess events workflow requires Temporal service").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Execute workflow
+	workflowRun, err := temporalSvc.ExecuteWorkflow(
+		ctx,
+		types.TemporalReprocessEventsWorkflow,
+		workflowInput,
+	)
+
+	if err != nil {
+		s.Logger.Errorw("failed to start reprocess events workflow",
+			"error", err,
+			"external_customer_id", req.ExternalCustomerID,
+			"event_name", req.EventName)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to start reprocess events workflow").
+			WithReportableDetails(map[string]interface{}{
+				"external_customer_id": req.ExternalCustomerID,
+				"event_name":           req.EventName,
+			}).
+			Mark(ierr.ErrInternal)
+	}
+
+	s.Logger.Infow("reprocess events workflow started successfully",
+		"external_customer_id", req.ExternalCustomerID,
+		"event_name", req.EventName,
+		"workflow_id", workflowRun.GetID(),
+		"run_id", workflowRun.GetRunID())
+
+	return &workflowModels.TemporalWorkflowResult{
+		Message:    "reprocess events workflow started successfully",
+		WorkflowID: workflowRun.GetID(),
+		RunID:      workflowRun.GetRunID(),
+	}, nil
+}
+
 // isSubscriptionValidForEvent checks if a subscription is valid for processing the given event
 // It ensures the event timestamp falls within the subscription's active period
 func (s *featureUsageTrackingService) isSubscriptionValidForEvent(
@@ -2936,8 +3094,11 @@ func (s *featureUsageTrackingService) ToGetUsageAnalyticsResponseDTO(ctx context
 					// Parent price should already be fetched in fetchSubscriptionPrices
 					if price.ParentPriceID != "" {
 						if parentPrice, ok := data.PriceResponses[price.ParentPriceID]; ok {
-							if parentPrice.EntityType == types.PRICE_ENTITY_TYPE_PLAN {
+							switch parentPrice.EntityType {
+							case types.PRICE_ENTITY_TYPE_PLAN:
 								item.PlanID = parentPrice.EntityID
+							case types.PRICE_ENTITY_TYPE_ADDON:
+								item.AddOnID = parentPrice.EntityID
 							}
 						}
 					}

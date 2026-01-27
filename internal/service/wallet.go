@@ -1827,9 +1827,18 @@ func (s *walletService) GetCustomerWallets(ctx context.Context, req *dto.GetCust
 
 	if req.IncludeRealTimeBalance {
 		for i, w := range wallets {
-			balance, err := s.GetWalletBalanceV2(ctx, w.ID)
-			if err != nil {
-				return nil, err
+			var balance *dto.WalletBalanceResponse
+			var err error
+			if req.FromCache {
+				balance, err = s.GetWalletBalanceFromCache(ctx, w.ID)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				balance, err = s.GetWalletBalanceV2(ctx, w.ID)
+				if err != nil {
+					return nil, err
+				}
 			}
 			response[i] = balance
 		}
@@ -2366,7 +2375,7 @@ func (s *walletService) GetWalletBalanceFromCache(ctx context.Context, walletID 
 	totalPendingCharges := decimal.Zero
 	cachedBalance := s.getWalletRealtimeBalanceFromCache(ctx, walletID)
 	if cachedBalance != nil {
-		s.Logger.Info("using cached real-time balance",
+		s.Logger.Infow("using cached real-time balance",
 			"wallet_id", walletID,
 			"cached_balance", cachedBalance,
 		)

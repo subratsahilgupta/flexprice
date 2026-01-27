@@ -152,6 +152,8 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			// Benchmark endpoints for comparing V1 vs V2 event processing performance
 			events.POST("/benchmark/v1", handlers.Events.BenchmarkV1)
 			events.POST("/benchmark/v2", handlers.Events.BenchmarkV2)
+			// Reprocess events endpoint
+			events.POST("/reprocess", handlers.Events.ReprocessEvents)
 		}
 
 		meters := v1Private.Group("/meters")
