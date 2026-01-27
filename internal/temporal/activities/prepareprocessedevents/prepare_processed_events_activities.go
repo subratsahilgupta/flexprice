@@ -9,7 +9,6 @@ import (
 	"github.com/flexprice/flexprice/internal/temporal/models"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
-	"go.temporal.io/sdk/activity"
 )
 
 // PrepareProcessedEventsActivities contains Temporal activities used by PrepareProcessedEventsWorkflow.
@@ -27,8 +26,10 @@ func (a *PrepareProcessedEventsActivities) CreateFeatureAndPriceActivity(
 	ctx context.Context,
 	input models.CreateFeatureAndPriceActivityInput,
 ) (*models.CreateFeatureAndPriceActivityResult, error) {
-	logger := activity.GetLogger(ctx)
-	logger.Info("Starting CreateFeatureAndPriceActivity", "event_name", input.EventName, "plan_id", input.FeatureAndPriceConfig.PlanID)
+	logger := a.serviceParams.Logger
+	logger.Debugw("Starting CreateFeatureAndPriceActivity",
+		"event_name", input.EventName,
+		"plan_id", input.FeatureAndPriceConfig.PlanID)
 
 	if err := input.Validate(); err != nil {
 		return nil, err
@@ -43,9 +44,10 @@ func (a *PrepareProcessedEventsActivities) CreateFeatureAndPriceActivity(
 	featureService := service.NewFeatureService(a.serviceParams)
 	priceService := service.NewPriceService(a.serviceParams)
 
-	// Convert workflow config to DTOs
+	// Convert workflow config to DTOs - returns slice of DTOs (one per feature)
 	dtos, err := cfg.ToDTO(&models.WorkflowActionParams{
-		EventName: input.EventName,
+		EventName:       input.EventName,
+		EventProperties: input.EventProperties,
 	})
 	if err != nil {
 		return nil, ierr.WithError(err).
@@ -53,62 +55,70 @@ func (a *PrepareProcessedEventsActivities) CreateFeatureAndPriceActivity(
 			Mark(ierr.ErrInternal)
 	}
 
-	featureAndPriceDTOs, ok := dtos.(*models.CreateFeatureAndPriceDTOs)
+	// Handle multiple features - ToDTO returns []CreateFeatureAndPriceDTOs
+	dtosList, ok := dtos.([]models.CreateFeatureAndPriceDTOs)
 	if !ok {
-		return nil, ierr.NewError("failed to convert to CreateFeatureAndPriceDTOs").Mark(ierr.ErrInternal)
-	}
-
-	featureResp, err := featureService.CreateFeature(ctx, *featureAndPriceDTOs.Feature)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to create feature and meter via workflow").
-			WithReportableDetails(map[string]interface{}{
-				"event_name": input.EventName,
-			}).
+		return nil, ierr.NewError("failed to convert to []CreateFeatureAndPriceDTOs").
+			WithHint("Failed to convert DTOs to []CreateFeatureAndPriceDTOs").
 			Mark(ierr.ErrInternal)
 	}
 
-	if featureResp == nil || featureResp.Feature == nil || featureResp.Feature.MeterID == "" {
-		return nil, ierr.NewError("feature created but meter_id missing").
-			WithHint("Feature creation did not return a valid meter_id").
-			WithReportableDetails(map[string]interface{}{
-				"event_name": input.EventName,
-				"feature_id": func() string {
-					if featureResp != nil && featureResp.Feature != nil {
-						return featureResp.Feature.ID
-					}
-					return ""
-				}(),
-			}).
-			Mark(ierr.ErrInternal)
+	results := make([]models.FeaturePriceResult, 0, len(dtosList))
+
+	// Create each feature and price
+	for i, featureAndPriceDTOs := range dtosList {
+		featureResp, err := featureService.CreateFeature(ctx, *featureAndPriceDTOs.Feature)
+		if err != nil {
+			return nil, ierr.WithError(err).
+				WithHint("Failed to create feature and meter via workflow").
+				WithReportableDetails(map[string]interface{}{
+					"event_name":    input.EventName,
+					"feature_index": i,
+					"feature_name":  featureAndPriceDTOs.Feature.Name,
+				}).
+				Mark(ierr.ErrInternal)
+		}
+
+		// Set meter_id on price DTO and create price
+		featureAndPriceDTOs.Price.MeterID = featureResp.Feature.MeterID
+		priceResp, err := priceService.CreatePrice(ctx, *featureAndPriceDTOs.Price)
+		if err != nil {
+			return nil, ierr.WithError(err).
+				WithHint("Failed to create price via workflow").
+				WithReportableDetails(map[string]interface{}{
+					"event_name":    input.EventName,
+					"feature_index": i,
+					"feature_id":    featureResp.Feature.ID,
+					"plan_id":       cfg.PlanID,
+					"meter_id":      featureResp.Feature.MeterID,
+				}).
+				Mark(ierr.ErrInternal)
+		}
+
+		results = append(results, models.FeaturePriceResult{
+			FeatureID: featureResp.Feature.ID,
+			MeterID:   featureResp.Feature.MeterID,
+			PriceID:   priceResp.ID,
+		})
+
+		logger.Infow("Created feature and price",
+			"event_name", input.EventName,
+			"feature_index", i,
+			"feature_id", featureResp.Feature.ID,
+			"meter_id", featureResp.Feature.MeterID,
+			"price_id", priceResp.ID,
+			"feature_name", featureResp.Feature.Name,
+		)
 	}
 
-	// Set meter_id on price DTO and create price
-	featureAndPriceDTOs.Price.MeterID = featureResp.Feature.MeterID
-	priceResp, err := priceService.CreatePrice(ctx, *featureAndPriceDTOs.Price)
-	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to create price via workflow").
-			WithReportableDetails(map[string]interface{}{
-				"event_name": input.EventName,
-				"plan_id":    cfg.PlanID,
-				"meter_id":   featureResp.Feature.MeterID,
-			}).
-			Mark(ierr.ErrInternal)
-	}
-
-	logger.Info("CreateFeatureAndPriceActivity completed",
+	logger.Debugw("CreateFeatureAndPriceActivity completed",
 		"event_name", input.EventName,
-		"feature_id", featureResp.Feature.ID,
-		"meter_id", featureResp.Feature.MeterID,
-		"price_id", priceResp.ID,
+		"features_created", len(results),
 	)
 
 	return &models.CreateFeatureAndPriceActivityResult{
-		FeatureID: featureResp.Feature.ID,
-		MeterID:   featureResp.Feature.MeterID,
-		PriceID:   priceResp.ID,
-		PlanID:    cfg.PlanID,
+		Features: results,
+		PlanID:   cfg.PlanID,
 	}, nil
 }
 
@@ -139,7 +149,6 @@ func (a *PrepareProcessedEventsActivities) RolloutToSubscriptionsActivity(
 		PlanID: input.PlanID,
 		SubscriptionStatus: []types.SubscriptionStatus{
 			types.SubscriptionStatusActive,
-			types.SubscriptionStatusTrialing,
 		},
 	}
 	subsResponse, err := subscriptionService.ListSubscriptions(ctx, subscriptionFilter)
@@ -151,7 +160,14 @@ func (a *PrepareProcessedEventsActivities) RolloutToSubscriptionsActivity(
 
 	logger.Debugw("Found subscriptions for plan",
 		"plan_id", input.PlanID,
-		"subscription_count", len(subsResponse.Items))
+		"subscription_count", len(subsResponse.Items),
+		"subscription_ids", func() []string {
+			ids := make([]string, 0, len(subsResponse.Items))
+			for _, sub := range subsResponse.Items {
+				ids = append(ids, sub.ID)
+			}
+			return ids
+		}())
 
 	lineItemsCreated := 0
 	lineItemsFailed := 0
@@ -159,33 +175,40 @@ func (a *PrepareProcessedEventsActivities) RolloutToSubscriptionsActivity(
 	// Create line item for each subscription
 	for _, subResp := range subsResponse.Items {
 		createReq := dto.CreateSubscriptionLineItemRequest{
-			PriceID:   input.PriceID,
-			StartDate: &input.EventTimestamp, // Use event timestamp as StartDate
+			PriceID:              input.PriceID,
+			StartDate:            &input.EventTimestamp, // Use event timestamp as StartDate
+			Quantity:             decimal.Zero,          // Usage prices have zero quantity
+			SkipEntitlementCheck: true,                  // Skip entitlement check for workflow-created line items
 			Metadata: map[string]string{
 				"added_by":      "prepare_processed_events_workflow",
 				"workflow_type": "rollout_to_subscriptions",
 			},
-			Quantity: decimal.Zero, // Usage prices have zero quantity
 		}
 
-		_, err := subscriptionService.AddSubscriptionLineItem(ctx, subResp.ID, createReq)
+		lineItemResp, err := subscriptionService.AddSubscriptionLineItem(ctx, subResp.ID, createReq)
 		if err != nil {
-			logger.Error("Failed to create line item for subscription",
+			logger.Errorw("Failed to create line item for subscription",
 				"subscription_id", subResp.ID,
 				"price_id", input.PriceID,
+				"plan_id", input.PlanID,
 				"error", err)
 			lineItemsFailed++
 			continue
 		}
 
 		lineItemsCreated++
-		logger.Debugw("Created line item for subscription",
+		logger.Debugw("Successfully created line item for subscription",
 			"subscription_id", subResp.ID,
 			"price_id", input.PriceID,
+			"plan_id", input.PlanID,
+			"line_item_id", lineItemResp.SubscriptionLineItem.ID,
+			"line_item_entity_id", lineItemResp.SubscriptionLineItem.EntityID,
+			"line_item_entity_type", lineItemResp.SubscriptionLineItem.EntityType,
+			"line_item_status", lineItemResp.SubscriptionLineItem.Status,
 			"start_date", input.EventTimestamp)
 	}
 
-	logger.Info("RolloutToSubscriptionsActivity completed",
+	logger.Debugw("RolloutToSubscriptionsActivity completed",
 		"plan_id", input.PlanID,
 		"price_id", input.PriceID,
 		"line_items_created", lineItemsCreated,

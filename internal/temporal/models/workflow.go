@@ -2,6 +2,8 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -41,11 +43,12 @@ type WorkflowActionConfig interface {
 
 // WorkflowActionParams contains common parameters that actions might need
 type WorkflowActionParams struct {
-	CustomerID     string
-	Currency       string
-	EventTimestamp *time.Time // Optional - timestamp of the triggering event for subscription start date
-	DefaultUserID  *string    // Optional - user_id from config for created_by/updated_by fields
-	EventName      string     // Optional - event name for prepare processed events workflow
+	CustomerID      string
+	Currency        string
+	EventTimestamp  *time.Time             // Optional - timestamp of the triggering event for subscription start date
+	DefaultUserID   *string                // Optional - user_id from config for created_by/updated_by fields
+	EventName       string                 // Optional - event name for prepare processed events workflow
+	EventProperties map[string]interface{} // Optional - event properties for feature determination
 	// Add more fields as needed for different action types
 }
 
@@ -435,7 +438,189 @@ type CreateFeatureAndPriceDTOs struct {
 	Price   *dto.CreatePriceRequest
 }
 
+// EventPropertyKey represents event property keys used for feature determination
+type EventPropertyKey string
+
+const (
+	// Token-related property keys (Case 1: 5 features)
+	EventPropertyKeyPromptTokens             EventPropertyKey = "promptTokens"
+	EventPropertyKeyCompletionTokens         EventPropertyKey = "completionTokens"
+	EventPropertyKeyCachedPromptTokens       EventPropertyKey = "cachedPromptTokens"
+	EventPropertyKeyCacheCreationInputTokens EventPropertyKey = "cacheCreationInputTokens"
+	EventPropertyKeyCacheReadInputTokens     EventPropertyKey = "cacheReadInputTokens"
+
+	// Audio/Text token property keys (Case 2: 6 features)
+	EventPropertyKeyUncachedPromptAudioTokens EventPropertyKey = "uncachedPromptAudioTokens"
+	EventPropertyKeyUncachedPromptTextTokens  EventPropertyKey = "uncachedPromptTextTokens"
+	EventPropertyKeyCachedPromptAudioTokens   EventPropertyKey = "cachedPromptAudioTokens"
+	EventPropertyKeyCachedPromptTextTokens    EventPropertyKey = "cachedPromptTextTokens"
+	EventPropertyKeyCandidatesAudioTokens     EventPropertyKey = "candidatesAudioTokens"
+	EventPropertyKeyCandidatesTextTokens      EventPropertyKey = "candidatesTextTokens"
+
+	// Single feature property keys (Case 3)
+	EventPropertyKeyNumCharacters EventPropertyKey = "numCharacters"
+	EventPropertyKeyDurationMS    EventPropertyKey = "durationMS"
+
+	// Property keys
+	EventPropertyKeyProviderName  EventPropertyKey = "providerName"
+	EventPropertyKeyMethodName    EventPropertyKey = "methodName"
+	EventPropertyKeyModelName     EventPropertyKey = "modelName"
+	EventPropertyKeyBillableValue EventPropertyKey = "billable_value"
+)
+
+// FeatureSpec defines the specification for creating a feature
+type FeatureSpec struct {
+	Name             string // Feature name
+	LookupKey        string // Feature lookup key
+	AggregationField string // Meter aggregation field
+	UnitSingular     string // Feature unit singular (optional)
+	UnitPlural       string // Feature unit plural (optional)
+}
+
+// determineFeatureSpecs determines which features to create based on event properties
+func determineFeatureSpecs(eventName string, eventProperties map[string]interface{}) []FeatureSpec {
+	if eventProperties == nil {
+		// Fallback to basic single feature creation
+		return []FeatureSpec{
+			{
+				Name:             eventName,
+				LookupKey:        eventName,
+				AggregationField: "value",
+			},
+		}
+	}
+
+	// Extract providerName, methodName, modelName from properties
+	providerName := getStringProperty(eventProperties, string(EventPropertyKeyProviderName))
+	methodName := getStringProperty(eventProperties, string(EventPropertyKeyMethodName))
+	modelName := getStringProperty(eventProperties, string(EventPropertyKeyModelName))
+
+	// Case 1: Check for token-related fields (5 features)
+	tokenFields := []EventPropertyKey{
+		EventPropertyKeyPromptTokens,
+		EventPropertyKeyCompletionTokens,
+		EventPropertyKeyCachedPromptTokens,
+		EventPropertyKeyCacheCreationInputTokens,
+		EventPropertyKeyCacheReadInputTokens,
+	}
+	hasTokenField := false
+	for _, field := range tokenFields {
+		if _, exists := eventProperties[string(field)]; exists {
+			hasTokenField = true
+			break
+		}
+	}
+
+	if hasTokenField {
+		// Create all 5 features when any token field exists
+		specs := make([]FeatureSpec, 0, 5)
+		for _, field := range tokenFields {
+			featureName := buildFeatureName(providerName, methodName, modelName, string(field))
+			specs = append(specs, FeatureSpec{
+				Name:             featureName,
+				LookupKey:        featureName,
+				AggregationField: string(field),
+			})
+		}
+		return specs
+	}
+
+	// Case 2: Check for audio/text token fields (6 features)
+	audioTextFields := []EventPropertyKey{
+		EventPropertyKeyUncachedPromptAudioTokens,
+		EventPropertyKeyUncachedPromptTextTokens,
+		EventPropertyKeyCachedPromptAudioTokens,
+		EventPropertyKeyCachedPromptTextTokens,
+		EventPropertyKeyCandidatesAudioTokens,
+		EventPropertyKeyCandidatesTextTokens,
+	}
+	hasAudioTextField := false
+	for _, field := range audioTextFields {
+		if _, exists := eventProperties[string(field)]; exists {
+			hasAudioTextField = true
+			break
+		}
+	}
+
+	if hasAudioTextField {
+		// Create all 6 features when any audio/text token field exists
+		specs := make([]FeatureSpec, 0, 6)
+		for _, field := range audioTextFields {
+			featureName := buildFeatureName(providerName, methodName, modelName, string(field))
+			specs = append(specs, FeatureSpec{
+				Name:             featureName,
+				LookupKey:        featureName,
+				AggregationField: string(field),
+			})
+		}
+		return specs
+	}
+
+	// Case 3: Check for numCharacters or durationMS (single feature)
+	if _, hasNumChars := eventProperties[string(EventPropertyKeyNumCharacters)]; hasNumChars {
+		return []FeatureSpec{
+			{
+				Name:             eventName,
+				LookupKey:        eventName,
+				AggregationField: string(EventPropertyKeyBillableValue),
+				UnitSingular:     "character",
+				UnitPlural:       "characters",
+			},
+		}
+	}
+
+	if _, hasDuration := eventProperties[string(EventPropertyKeyDurationMS)]; hasDuration {
+		return []FeatureSpec{
+			{
+				Name:             eventName,
+				LookupKey:        eventName,
+				AggregationField: string(EventPropertyKeyBillableValue),
+				UnitSingular:     "millisecond",
+				UnitPlural:       "milliseconds",
+			},
+		}
+	}
+
+	// Fallback: basic single feature
+	return []FeatureSpec{
+		{
+			Name:             eventName,
+			LookupKey:        eventName,
+			AggregationField: "value",
+		},
+	}
+}
+
+// buildFeatureName builds feature name as: providerName-methodName-modelName(if present)-aggregationField
+func buildFeatureName(providerName, methodName, modelName, aggregationField string) string {
+	parts := []string{}
+	if providerName != "" {
+		parts = append(parts, providerName)
+	}
+	if methodName != "" {
+		parts = append(parts, methodName)
+	}
+	if modelName != "" {
+		parts = append(parts, modelName)
+	}
+	parts = append(parts, aggregationField)
+	return strings.Join(parts, "-")
+}
+
+// getStringProperty safely extracts a string property from event properties
+func getStringProperty(props map[string]interface{}, key string) string {
+	if val, ok := props[key]; ok {
+		if str, ok := val.(string); ok {
+			return str
+		}
+		// Try to convert to string
+		return fmt.Sprintf("%v", val)
+	}
+	return ""
+}
+
 // ToDTO converts the action config to both CreateFeatureRequest and CreatePriceRequest DTOs
+// Returns a slice of DTOs - one for each feature that needs to be created based on event properties
 func (c *CreateFeatureAndPriceActionConfig) ToDTO(params interface{}) (interface{}, error) {
 	// Type assert to get the parameters we need
 	actionParams, ok := params.(*WorkflowActionParams)
@@ -451,6 +636,15 @@ func (c *CreateFeatureAndPriceActionConfig) ToDTO(params interface{}) (interface
 			WithHint("Provide event name in WorkflowActionParams").
 			Mark(ierr.ErrValidation)
 	}
+
+	// Get event properties from params if available
+	var eventProperties map[string]interface{}
+	if actionParams.EventProperties != nil {
+		eventProperties = actionParams.EventProperties
+	}
+
+	// Determine which features to create
+	featureSpecs := determineFeatureSpecs(actionParams.EventName, eventProperties)
 
 	// Get defaults from settings
 	defaults, err := types.GetDefaultSettings()
@@ -474,7 +668,6 @@ func (c *CreateFeatureAndPriceActionConfig) ToDTO(params interface{}) (interface
 		featureType = types.FeatureTypeMetered
 	}
 	meterAggType := types.AggregationSum
-	meterAggField := "value"
 	meterResetUsage := types.ResetUsageBillingPeriod
 	priceBillingCadence := types.BILLING_CADENCE_RECURRING
 	priceBillingPeriod := types.BILLING_PERIOD_MONTHLY
@@ -484,58 +677,71 @@ func (c *CreateFeatureAndPriceActionConfig) ToDTO(params interface{}) (interface
 	priceInvoiceCadence := types.InvoiceCadenceArrear
 	pricePriceUnitType := types.PRICE_UNIT_TYPE_FIAT
 	priceType := types.PRICE_TYPE_USAGE
-	priceAmount := decimal.NewFromFloat(1.0)
+	priceAmount := decimal.NewFromFloat(0.0)
 	priceBillingPeriodCount := 1
-
-	// Create feature DTO with defaults
-	featureReq := &dto.CreateFeatureRequest{
-		Name:      actionParams.EventName,
-		LookupKey: actionParams.EventName,
-		Type:      featureType,
-		Meter: &dto.CreateMeterRequest{
-			Name:      actionParams.EventName,
-			EventName: actionParams.EventName,
-			Aggregation: meter.Aggregation{
-				Type:  meterAggType,
-				Field: meterAggField,
-			},
-			Filters:    []meter.Filter{},
-			ResetUsage: meterResetUsage,
-		},
-		Metadata: types.Metadata{
-			"created_by_workflow": "true",
-			"workflow_type":       "prepare_processed_events_workflow",
-		},
-	}
-
-	// Create price DTO with defaults (meter_id will be set after feature creation)
-	priceReq := &dto.CreatePriceRequest{
-		Amount:             &priceAmount,
-		Currency:           priceCurrency,
-		EntityType:         priceEntityType,
-		EntityID:           c.PlanID,
-		Type:               priceType,
-		PriceUnitType:      pricePriceUnitType,
-		BillingPeriod:      priceBillingPeriod,
-		BillingPeriodCount: priceBillingPeriodCount,
-		BillingModel:       priceBillingModel,
-		BillingCadence:     priceBillingCadence,
-		InvoiceCadence:     priceInvoiceCadence,
-		// MeterID will be set after feature creation
-		Metadata: map[string]string{
-			"created_by_workflow": "true",
-			"workflow_type":       "prepare_processed_events_workflow",
-			"event_name":          actionParams.EventName,
-		},
-	}
 
 	// Use defaults from settings if available (for future extensibility)
 	_ = defaultSetting
 
-	return &CreateFeatureAndPriceDTOs{
-		Feature: featureReq,
-		Price:   priceReq,
-	}, nil
+	// Create DTOs for each feature spec
+	dtosList := make([]CreateFeatureAndPriceDTOs, 0, len(featureSpecs))
+	for _, spec := range featureSpecs {
+		// Create feature DTO
+		featureReq := &dto.CreateFeatureRequest{
+			Name:      spec.Name,
+			LookupKey: spec.LookupKey,
+			Type:      featureType,
+			Meter: &dto.CreateMeterRequest{
+				Name:      spec.Name,
+				EventName: actionParams.EventName, // Original event name for meter
+				Aggregation: meter.Aggregation{
+					Type:  meterAggType,
+					Field: spec.AggregationField,
+				},
+				Filters:    []meter.Filter{},
+				ResetUsage: meterResetUsage,
+			},
+			Metadata: types.Metadata{
+				"created_by_workflow": "true",
+				"workflow_type":       "prepare_processed_events_workflow",
+			},
+		}
+
+		// Set units if provided
+		if spec.UnitSingular != "" && spec.UnitPlural != "" {
+			featureReq.UnitSingular = spec.UnitSingular
+			featureReq.UnitPlural = spec.UnitPlural
+		}
+
+		// Create price DTO (meter_id will be set after feature creation)
+		priceReq := &dto.CreatePriceRequest{
+			Amount:             &priceAmount,
+			Currency:           priceCurrency,
+			EntityType:         priceEntityType,
+			EntityID:           c.PlanID,
+			Type:               priceType,
+			PriceUnitType:      pricePriceUnitType,
+			BillingPeriod:      priceBillingPeriod,
+			BillingPeriodCount: priceBillingPeriodCount,
+			BillingModel:       priceBillingModel,
+			BillingCadence:     priceBillingCadence,
+			InvoiceCadence:     priceInvoiceCadence,
+			// MeterID will be set after feature creation
+			Metadata: map[string]string{
+				"created_by_workflow": "true",
+				"workflow_type":       "prepare_processed_events_workflow",
+				"event_name":          actionParams.EventName,
+				"feature_name":        spec.Name,
+			},
+		}
+
+		dtosList = append(dtosList, CreateFeatureAndPriceDTOs{
+			Feature: featureReq,
+			Price:   priceReq,
+		})
+	}
+
+	return dtosList, nil
 }
 
 // RolloutToSubscriptionsActionConfig represents configuration for rolling out plan prices to subscriptions

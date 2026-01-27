@@ -47,8 +47,8 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 		Results:         make([]models.PrepareProcessedEventsActionResult, 0, len(input.WorkflowConfig.Actions)),
 	}
 
-	// Track price_id from create_feature_and_price action for use in rollout action
-	var createdPriceID string
+	// Track price_ids from create_feature_and_price action for use in rollout action
+	var createdPriceIDs []string
 
 	// Execute each action in sequence
 	for i, action := range input.WorkflowConfig.Actions {
@@ -67,10 +67,10 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 		var err error
 		switch actionType {
 		case models.WorkflowActionCreateFeatureAndPrice:
-			err = executeCreateFeatureAndPriceAction(ctx, input, action, &actionResult, &createdPriceID)
+			err = executeCreateFeatureAndPriceAction(ctx, input, action, &actionResult, &createdPriceIDs, logger)
 
 		case models.WorkflowActionRolloutToSubscriptions:
-			err = executeRolloutToSubscriptionsAction(ctx, input, action, &actionResult, createdPriceID)
+			err = executeRolloutToSubscriptionsAction(ctx, input, action, &actionResult, createdPriceIDs, logger)
 
 		default:
 			logger.Warnw("Unknown workflow action type",
@@ -90,7 +90,7 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 		}
 
 		if err != nil {
-			logger.Error("Workflow action failed",
+			logger.Errorw("Workflow action failed",
 				"event_name", input.EventName,
 				"action_index", i,
 				"action_type", actionType,
@@ -122,7 +122,7 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 	result.Status = models.WorkflowStatusCompleted
 	result.CompletedAt = workflow.Now(ctx)
 
-	logger.Info("PrepareProcessedEventsWorkflow completed successfully",
+	logger.Infow("PrepareProcessedEventsWorkflow completed successfully",
 		"event_name", input.EventName,
 		"actions_executed", result.ActionsExecuted)
 
@@ -135,19 +135,26 @@ func executeCreateFeatureAndPriceAction(
 	input models.PrepareProcessedEventsWorkflowInput,
 	action models.WorkflowActionConfig,
 	actionResult *models.PrepareProcessedEventsActionResult,
-	createdPriceID *string,
+	createdPriceIDs *[]string,
+	logger *logger.Logger,
 ) error {
 	featureAction, ok := action.(*models.CreateFeatureAndPriceActionConfig)
 	if !ok {
+		logger.Errorw("Invalid action config type for create_feature_and_price",
+			"event_name", input.EventName,
+			"action_type", action.GetAction())
 		return temporal.NewApplicationError("invalid action config type for create_feature_and_price", "InvalidActionConfig")
 	}
 
 	if featureAction.PlanID == "" {
+		logger.Errorw("plan_id is required for create_feature_and_price action",
+			"event_name", input.EventName)
 		return temporal.NewApplicationError("plan_id is required for create_feature_and_price action", "MissingPlanID")
 	}
 
 	activityInput := models.CreateFeatureAndPriceActivityInput{
 		EventName:             input.EventName,
+		EventProperties:       input.EventProperties,
 		TenantID:              input.TenantID,
 		EnvironmentID:         input.EnvironmentID,
 		FeatureAndPriceConfig: featureAction,
@@ -156,15 +163,34 @@ func executeCreateFeatureAndPriceAction(
 	var activityResult models.CreateFeatureAndPriceActivityResult
 	err := workflow.ExecuteActivity(ctx, ActivityCreateFeatureAndPrice, activityInput).Get(ctx, &activityResult)
 	if err != nil {
+		logger.Errorw("CreateFeatureAndPriceActivity failed",
+			"event_name", input.EventName,
+			"plan_id", featureAction.PlanID,
+			"error", err)
 		return err
 	}
 
-	// Store feature_id as the primary resource ID
-	actionResult.ResourceID = activityResult.FeatureID
+	if len(activityResult.Features) == 0 {
+		logger.Errorw("CreateFeatureAndPriceActivity returned no features",
+			"event_name", input.EventName,
+			"plan_id", featureAction.PlanID)
+		return temporal.NewApplicationError("no features were created", "NoFeaturesCreated")
+	}
+	// Store first feature_id as the primary resource ID (for backward compatibility)
+	actionResult.ResourceID = activityResult.Features[0].FeatureID
 	actionResult.ResourceType = models.WorkflowResourceTypeFeature
 
-	// Store price_id for rollout action to use
-	*createdPriceID = activityResult.PriceID
+	// Store all price_ids for rollout action to use
+	*createdPriceIDs = make([]string, 0, len(activityResult.Features))
+	for _, featureResult := range activityResult.Features {
+		*createdPriceIDs = append(*createdPriceIDs, featureResult.PriceID)
+	}
+
+	logger.Debugw("CreateFeatureAndPriceAction completed successfully",
+		"event_name", input.EventName,
+		"plan_id", featureAction.PlanID,
+		"features_created", len(activityResult.Features),
+		"prices_created", len(*createdPriceIDs))
 	return nil
 }
 
@@ -174,33 +200,82 @@ func executeRolloutToSubscriptionsAction(
 	input models.PrepareProcessedEventsWorkflowInput,
 	action models.WorkflowActionConfig,
 	actionResult *models.PrepareProcessedEventsActionResult,
-	priceID string,
+	priceIDs []string,
+	logger *logger.Logger,
 ) error {
 	rolloutAction, ok := action.(*models.RolloutToSubscriptionsActionConfig)
 	if !ok {
+		logger.Errorw("Invalid action config type for rollout_to_subscriptions",
+			"event_name", input.EventName,
+			"action_type", action.GetAction())
 		return temporal.NewApplicationError("invalid action config type for rollout_to_subscriptions", "InvalidActionConfig")
 	}
 
 	if rolloutAction.PlanID == "" {
+		logger.Errorw("plan_id is required for rollout_to_subscriptions action",
+			"event_name", input.EventName)
 		return temporal.NewApplicationError("plan_id is required for rollout_to_subscriptions action", "MissingPlanID")
 	}
 
-	if priceID == "" {
-		return temporal.NewApplicationError("price_id is required for rollout_to_subscriptions action", "MissingPriceID")
+	if len(priceIDs) == 0 {
+		logger.Errorw("at least one price_id is required for rollout_to_subscriptions action",
+			"event_name", input.EventName,
+			"plan_id", rolloutAction.PlanID)
+		return temporal.NewApplicationError("at least one price_id is required for rollout_to_subscriptions action", "MissingPriceID")
 	}
 
-	activityInput := models.RolloutToSubscriptionsActivityInput{
-		PlanID:         rolloutAction.PlanID,
-		PriceID:        priceID,
-		EventTimestamp: input.EventTimestamp,
-		TenantID:       input.TenantID,
-		EnvironmentID:  input.EnvironmentID,
+	// Roll out each price to subscriptions
+	totalLineItemsCreated := 0
+	totalLineItemsFailed := 0
+
+	for _, priceID := range priceIDs {
+		activityInput := models.RolloutToSubscriptionsActivityInput{
+			PlanID:         rolloutAction.PlanID,
+			PriceID:        priceID,
+			EventTimestamp: input.EventTimestamp,
+			TenantID:       input.TenantID,
+			EnvironmentID:  input.EnvironmentID,
+		}
+
+		var activityResult models.RolloutToSubscriptionsActivityResult
+		err := workflow.ExecuteActivity(ctx, ActivityRolloutToSubscriptions, activityInput).Get(ctx, &activityResult)
+		if err != nil {
+			// Log error but continue with other prices
+			logger.Errorw("Failed to rollout price to subscriptions",
+				"price_id", priceID,
+				"plan_id", rolloutAction.PlanID,
+				"event_name", input.EventName,
+				"error", err)
+			totalLineItemsFailed += activityResult.LineItemsFailed
+			continue
+		}
+
+		totalLineItemsCreated += activityResult.LineItemsCreated
+		totalLineItemsFailed += activityResult.LineItemsFailed
+
+		if activityResult.LineItemsCreated > 0 {
+			logger.Debugw("Successfully rolled out price to subscriptions",
+				"price_id", priceID,
+				"plan_id", rolloutAction.PlanID,
+				"line_items_created", activityResult.LineItemsCreated,
+				"line_items_failed", activityResult.LineItemsFailed)
+		}
 	}
 
-	var activityResult models.RolloutToSubscriptionsActivityResult
-	err := workflow.ExecuteActivity(ctx, ActivityRolloutToSubscriptions, activityInput).Get(ctx, &activityResult)
-	if err != nil {
-		return err
+	// Log summary
+	if totalLineItemsFailed > 0 {
+		logger.Debugw("RolloutToSubscriptionsAction completed with some failures",
+			"event_name", input.EventName,
+			"plan_id", rolloutAction.PlanID,
+			"total_line_items_created", totalLineItemsCreated,
+			"total_line_items_failed", totalLineItemsFailed,
+			"prices_processed", len(priceIDs))
+	} else {
+		logger.Debugw("RolloutToSubscriptionsAction completed successfully",
+			"event_name", input.EventName,
+			"plan_id", rolloutAction.PlanID,
+			"total_line_items_created", totalLineItemsCreated,
+			"prices_processed", len(priceIDs))
 	}
 
 	// Store plan_id as the resource ID

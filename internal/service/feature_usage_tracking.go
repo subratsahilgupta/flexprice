@@ -1403,12 +1403,13 @@ func (s *featureUsageTrackingService) handleMissingFeature(
 	}
 
 	input := &workflowModels.PrepareProcessedEventsWorkflowInput{
-		EventID:        event.ID,
-		EventName:      event.EventName,
-		EventTimestamp: event.Timestamp,
-		TenantID:       types.GetTenantID(ctx),
-		EnvironmentID:  types.GetEnvironmentID(ctx),
-		WorkflowConfig: *workflowConfig,
+		EventID:         event.ID,
+		EventName:       event.EventName,
+		EventTimestamp:  event.Timestamp,
+		EventProperties: event.Properties,
+		TenantID:        types.GetTenantID(ctx),
+		EnvironmentID:   types.GetEnvironmentID(ctx),
+		WorkflowConfig:  *workflowConfig,
 	}
 
 	if err := input.Validate(); err != nil {

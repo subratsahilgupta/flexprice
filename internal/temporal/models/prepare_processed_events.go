@@ -9,12 +9,13 @@ import (
 // PrepareProcessedEventsWorkflowInput represents input for the prepare processed events workflow.
 // It is used when an ingested event references a non-existent feature/meter/price.
 type PrepareProcessedEventsWorkflowInput struct {
-	EventID        string         `json:"event_id"` // Event ID for workflow ID generation
-	EventName      string         `json:"event_name"`
-	EventTimestamp time.Time      `json:"event_timestamp"` // Event timestamp for line item StartDate
-	TenantID       string         `json:"tenant_id"`
-	EnvironmentID  string         `json:"environment_id"`
-	WorkflowConfig WorkflowConfig `json:"workflow_config"`
+	EventID         string                 `json:"event_id"` // Event ID for workflow ID generation
+	EventName       string                 `json:"event_name"`
+	EventTimestamp  time.Time              `json:"event_timestamp"` // Event timestamp for line item StartDate
+	EventProperties map[string]interface{} `json:"event_properties"` // Event properties to determine feature creation logic
+	TenantID        string                 `json:"tenant_id"`
+	EnvironmentID   string                 `json:"environment_id"`
+	WorkflowConfig  WorkflowConfig         `json:"workflow_config"`
 }
 
 func (p *PrepareProcessedEventsWorkflowInput) Validate() error {
@@ -56,6 +57,7 @@ type PrepareProcessedEventsActionResult struct {
 
 type CreateFeatureAndPriceActivityInput struct {
 	EventName             string                             `json:"event_name"`
+	EventProperties       map[string]interface{}             `json:"event_properties"` // Event properties for feature determination
 	TenantID              string                             `json:"tenant_id"`
 	EnvironmentID         string                             `json:"environment_id"`
 	FeatureAndPriceConfig *CreateFeatureAndPriceActionConfig `json:"feature_and_price_config" validate:"required"`
@@ -81,10 +83,14 @@ func (c *CreateFeatureAndPriceActivityInput) Validate() error {
 }
 
 type CreateFeatureAndPriceActivityResult struct {
+	Features []FeaturePriceResult `json:"features"` // Multiple features can be created
+	PlanID   string               `json:"plan_id"`
+}
+
+type FeaturePriceResult struct {
 	FeatureID string `json:"feature_id"`
 	MeterID   string `json:"meter_id"`
 	PriceID   string `json:"price_id"`
-	PlanID    string `json:"plan_id"`
 }
 
 type RolloutToSubscriptionsActivityInput struct {
