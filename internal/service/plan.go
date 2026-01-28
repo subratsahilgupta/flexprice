@@ -563,6 +563,8 @@ func createPlanLineItem(
 		Quantity:    decimal.Zero,
 		Metadata:    price.Metadata,
 		DisplayName: price.DisplayName,
+		StartDate:   price.StartDate,
+		EndDate:     price.EndDate,
 	}
 
 	lineItemParams := dto.LineItemParams{
