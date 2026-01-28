@@ -810,76 +810,46 @@ func (s *featureUsageTrackingService) prepareProcessedEventsV2(ctx context.Conte
 		return results, err
 	}
 
-	if len(meters) == 0 {
-		s.Logger.Debugw("no meters found for event name, attempting auto-creation",
-			"event_id", event.ID,
-			"event_name", event.EventName,
-		)
+	// Match meters: event filters + aggregation field in required set for this event
+	required := workflowModels.RequiredAggregationFields(event.EventName, event.Properties)
+	meterMap, meterIDs, existing := s.matchMetersForEvent(meters, event, required)
+	// missing = required aggregation fields we don't have a meter for yet
+	missing := lo.Filter(required, func(f string, _ int) bool { _, ok := existing[f]; return !ok })
 
-		// Try to auto-create feature/meter/price via workflow if configured
-		workflowResult, err := s.handleMissingFeature(ctx, event)
-		if err != nil {
-			s.Logger.Errorw("failed to handle missing feature",
-				"event_id", event.ID,
-				"event_name", event.EventName,
-				"error", err,
-			)
-			return results, err
-		}
-
-		if workflowResult == nil {
-			s.Logger.Debugw("skipping event - no meters and no auto-creation workflow configured",
-				"event_id", event.ID,
-				"event_name", event.EventName,
-			)
+	// No matching meters: try to create all required, then re-fetch
+	if len(meterIDs) == 0 {
+		if len(required) == 0 {
+			s.Logger.Debugw("no meters found for event name and no required aggregation fields, skipping", "event_id", event.ID, "event_name", event.EventName)
 			return results, nil
 		}
-
-		s.Logger.Debugw("feature/meter/price auto-created via workflow",
-			"event_id", event.ID,
-			"event_name", event.EventName,
-			"feature_id", workflowResult.ID,
-			"meter_id", workflowResult.MeterID,
-		)
-
-		// Re-fetch meters after auto-creation
+		s.Logger.Debugw("no meters found for event name, attempting auto-creation", "event_id", event.ID, "event_name", event.EventName, "required", required)
+		workflowResult, err := s.handleMissingFeature(ctx, event, nil)
+		if err != nil {
+			s.Logger.Errorw("failed to handle missing feature", "event_id", event.ID, "event_name", event.EventName, "error", err)
+			return results, err
+		}
+		if workflowResult == nil {
+			s.Logger.Debugw("skipping event - no auto-creation workflow configured", "event_id", event.ID, "event_name", event.EventName)
+			return results, nil
+		}
+		s.Logger.Debugw("feature/meter/price auto-created via workflow", "event_id", event.ID, "event_name", event.EventName, "feature_id", workflowResult.ID, "meter_id", workflowResult.MeterID)
 		meters, err = s.MeterRepo.List(ctx, meterFilter)
 		if err != nil {
-			s.Logger.Errorw("failed to re-fetch meters by event name after auto-creation",
-				"event_id", event.ID,
-				"event_name", event.EventName,
-				"error", err,
-			)
+			s.Logger.Errorw("failed to re-fetch meters after auto-creation", "event_id", event.ID, "event_name", event.EventName, "error", err)
 			return results, err
 		}
-
-		// feature/meter wrongly auto-created
-		if len(meters) == 0 {
-			s.Logger.Warnw("no meters found for event name even after auto-creation, skipping",
-				"event_id", event.ID,
-				"event_name", event.EventName,
-			)
+		meterMap, meterIDs, _ = s.matchMetersForEvent(meters, event, required)
+		if len(meterIDs) == 0 {
+			s.Logger.Warnw("no meters found even after auto-creation, skipping", "event_id", event.ID, "event_name", event.EventName)
 			return results, nil
 		}
-	}
-
-	// Build meter map and collect meter IDs
-	meterMap := make(map[string]*meter.Meter)
-	meterIDs := make([]string, 0, len(meters))
-	for _, m := range meters {
-		// Check meter filters before including
-		if !s.checkMeterFilters(event, m.Filters) {
-			continue
-		}
-		meterMap[m.ID] = m
-		meterIDs = append(meterIDs, m.ID)
+	} else if len(missing) > 0 {
+		s.Logger.Infow("creating only missing aggregation fields (skipping existing)", "event_id", event.ID, "event_name", event.EventName, "existing", lo.Keys(existing), "missing", missing)
+		_, _ = s.handleMissingFeature(ctx, event, missing)
 	}
 
 	if len(meterIDs) == 0 {
-		s.Logger.Debugw("no meters match event filters, skipping",
-			"event_id", event.ID,
-			"event_name", event.EventName,
-		)
+		s.Logger.Debugw("no meters match event filters and required aggregation fields, skipping", "event_id", event.ID, "event_name", event.EventName)
 		return results, nil
 	}
 
@@ -1315,6 +1285,7 @@ func (s *featureUsageTrackingService) handleMissingCustomer(
 func (s *featureUsageTrackingService) handleMissingFeature(
 	ctx context.Context,
 	event *events.Event,
+	onlyCreateAggregationFields []string,
 ) (*feature.Feature, error) {
 	// Get config from settings
 	settingsService := &settingsService{ServiceParams: s.ServiceParams}
@@ -1403,13 +1374,14 @@ func (s *featureUsageTrackingService) handleMissingFeature(
 	}
 
 	input := &workflowModels.PrepareProcessedEventsWorkflowInput{
-		EventID:         event.ID,
-		EventName:       event.EventName,
-		EventTimestamp:  event.Timestamp,
-		EventProperties: event.Properties,
-		TenantID:        types.GetTenantID(ctx),
-		EnvironmentID:   types.GetEnvironmentID(ctx),
-		WorkflowConfig:  *workflowConfig,
+		EventID:                     event.ID,
+		EventName:                   event.EventName,
+		EventTimestamp:              event.Timestamp,
+		EventProperties:             event.Properties,
+		TenantID:                    types.GetTenantID(ctx),
+		EnvironmentID:               types.GetEnvironmentID(ctx),
+		WorkflowConfig:              *workflowConfig,
+		OnlyCreateAggregationFields: onlyCreateAggregationFields,
 	}
 
 	if err := input.Validate(); err != nil {
@@ -1442,7 +1414,7 @@ func (s *featureUsageTrackingService) handleMissingFeature(
 		ctx,
 		types.TemporalPrepareProcessedEventsWorkflow,
 		input,
-		30, // keep consistent with customer onboarding
+		300, // 5 minutes timeout
 	)
 	if err != nil {
 		return nil, ierr.WithError(err).
@@ -1619,6 +1591,23 @@ func (s *featureUsageTrackingService) checkMeterFilters(event *events.Event, fil
 	}
 
 	return true
+}
+
+// matchMetersForEvent returns meters that pass event filters and have aggregation field in required.
+// Returns meterMap, meterIDs, and set of existing aggregation fields.
+func (s *featureUsageTrackingService) matchMetersForEvent(meters []*meter.Meter, event *events.Event, required []string) (map[string]*meter.Meter, []string, map[string]struct{}) {
+	meterMap := make(map[string]*meter.Meter)
+	meterIDs := make([]string, 0, len(meters))
+	existing := make(map[string]struct{})
+	for _, m := range meters {
+		if !s.checkMeterFilters(event, m.Filters) || !lo.Contains(required, m.Aggregation.Field) {
+			continue
+		}
+		meterMap[m.ID] = m
+		meterIDs = append(meterIDs, m.ID)
+		existing[m.Aggregation.Field] = struct{}{}
+	}
+	return meterMap, meterIDs, existing
 }
 
 // Extract quantity from event based on meter aggregation

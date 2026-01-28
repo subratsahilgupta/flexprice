@@ -46,8 +46,9 @@ func (a *PrepareProcessedEventsActivities) CreateFeatureAndPriceActivity(
 
 	// Convert workflow config to DTOs - returns slice of DTOs (one per feature)
 	dtos, err := cfg.ToDTO(&models.WorkflowActionParams{
-		EventName:       input.EventName,
-		EventProperties: input.EventProperties,
+		EventName:                  input.EventName,
+		EventProperties:            input.EventProperties,
+		OnlyCreateAggregationFields: input.OnlyCreateAggregationFields,
 	})
 	if err != nil {
 		return nil, ierr.WithError(err).
@@ -63,52 +64,66 @@ func (a *PrepareProcessedEventsActivities) CreateFeatureAndPriceActivity(
 			Mark(ierr.ErrInternal)
 	}
 
-	results := make([]models.FeaturePriceResult, 0, len(dtosList))
+	var results []models.FeaturePriceResult
 
-	// Create each feature and price
-	for i, featureAndPriceDTOs := range dtosList {
-		featureResp, err := featureService.CreateFeature(ctx, *featureAndPriceDTOs.Feature)
-		if err != nil {
-			return nil, ierr.WithError(err).
-				WithHint("Failed to create feature and meter via workflow").
-				WithReportableDetails(map[string]interface{}{
-					"event_name":    input.EventName,
-					"feature_index": i,
-					"feature_name":  featureAndPriceDTOs.Feature.Name,
-				}).
-				Mark(ierr.ErrInternal)
+	// Create all features and prices in a single transaction: if any fails, none are committed
+	err = a.serviceParams.DB.WithTx(ctx, func(txCtx context.Context) error {
+		results = make([]models.FeaturePriceResult, 0, len(dtosList))
+		for i, featureAndPriceDTOs := range dtosList {
+			featureResp, err := featureService.CreateFeature(txCtx, *featureAndPriceDTOs.Feature)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHint("Failed to create feature and meter via workflow (transaction will roll back)").
+					WithReportableDetails(map[string]interface{}{
+						"event_name":     input.EventName,
+						"feature_index":  i,
+						"feature_name":   featureAndPriceDTOs.Feature.Name,
+						"total_features": len(dtosList),
+					}).
+					Mark(ierr.ErrInternal)
+			}
+
+			featureAndPriceDTOs.Price.MeterID = featureResp.Feature.MeterID
+			priceResp, err := priceService.CreatePrice(txCtx, *featureAndPriceDTOs.Price)
+			if err != nil {
+				return ierr.WithError(err).
+					WithHint("Failed to create price via workflow (transaction will roll back)").
+					WithReportableDetails(map[string]interface{}{
+						"event_name":     input.EventName,
+						"feature_index":  i,
+						"feature_id":     featureResp.Feature.ID,
+						"plan_id":        cfg.PlanID,
+						"meter_id":       featureResp.Feature.MeterID,
+						"total_features": len(dtosList),
+					}).
+					Mark(ierr.ErrInternal)
+			}
+
+			results = append(results, models.FeaturePriceResult{
+				FeatureID: featureResp.Feature.ID,
+				MeterID:   featureResp.Feature.MeterID,
+				PriceID:   priceResp.ID,
+			})
+
+			logger.Infow("Created feature and price",
+				"event_name", input.EventName,
+				"feature_index", i,
+				"feature_id", featureResp.Feature.ID,
+				"meter_id", featureResp.Feature.MeterID,
+				"price_id", priceResp.ID,
+				"feature_name", featureResp.Feature.Name,
+			)
 		}
-
-		// Set meter_id on price DTO and create price
-		featureAndPriceDTOs.Price.MeterID = featureResp.Feature.MeterID
-		priceResp, err := priceService.CreatePrice(ctx, *featureAndPriceDTOs.Price)
-		if err != nil {
-			return nil, ierr.WithError(err).
-				WithHint("Failed to create price via workflow").
-				WithReportableDetails(map[string]interface{}{
-					"event_name":    input.EventName,
-					"feature_index": i,
-					"feature_id":    featureResp.Feature.ID,
-					"plan_id":       cfg.PlanID,
-					"meter_id":      featureResp.Feature.MeterID,
-				}).
-				Mark(ierr.ErrInternal)
-		}
-
-		results = append(results, models.FeaturePriceResult{
-			FeatureID: featureResp.Feature.ID,
-			MeterID:   featureResp.Feature.MeterID,
-			PriceID:   priceResp.ID,
-		})
-
-		logger.Infow("Created feature and price",
-			"event_name", input.EventName,
-			"feature_index", i,
-			"feature_id", featureResp.Feature.ID,
-			"meter_id", featureResp.Feature.MeterID,
-			"price_id", priceResp.ID,
-			"feature_name", featureResp.Feature.Name,
-		)
+		return nil
+	})
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Create feature/price batch failed; no features or prices were created for this event").
+			WithReportableDetails(map[string]interface{}{
+				"event_name": input.EventName,
+				"plan_id":    cfg.PlanID,
+			}).
+			Mark(ierr.ErrInternal)
 	}
 
 	logger.Debugw("CreateFeatureAndPriceActivity completed",

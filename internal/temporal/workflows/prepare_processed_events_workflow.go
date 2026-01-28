@@ -153,11 +153,12 @@ func executeCreateFeatureAndPriceAction(
 	}
 
 	activityInput := models.CreateFeatureAndPriceActivityInput{
-		EventName:             input.EventName,
-		EventProperties:       input.EventProperties,
-		TenantID:              input.TenantID,
-		EnvironmentID:         input.EnvironmentID,
-		FeatureAndPriceConfig: featureAction,
+		EventName:                  input.EventName,
+		EventProperties:            input.EventProperties,
+		TenantID:                   input.TenantID,
+		EnvironmentID:              input.EnvironmentID,
+		FeatureAndPriceConfig:      featureAction,
+		OnlyCreateAggregationFields: input.OnlyCreateAggregationFields,
 	}
 
 	var activityResult models.CreateFeatureAndPriceActivityResult
@@ -171,6 +172,17 @@ func executeCreateFeatureAndPriceAction(
 	}
 
 	if len(activityResult.Features) == 0 {
+		// When OnlyCreateAggregationFields is set, zero features is valid (all requested aggregation fields already existed)
+		if len(input.OnlyCreateAggregationFields) > 0 {
+			logger.Debugw("CreateFeatureAndPriceActivity created no features (only_create_aggregation_fields set; all may already exist)",
+				"event_name", input.EventName,
+				"plan_id", featureAction.PlanID,
+				"only_create_aggregation_fields", input.OnlyCreateAggregationFields)
+			actionResult.ResourceID = ""
+			actionResult.ResourceType = models.WorkflowResourceTypeFeature
+			*createdPriceIDs = []string{}
+			return nil
+		}
 		logger.Errorw("CreateFeatureAndPriceActivity returned no features",
 			"event_name", input.EventName,
 			"plan_id", featureAction.PlanID)

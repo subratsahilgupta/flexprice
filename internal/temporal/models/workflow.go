@@ -2,8 +2,6 @@ package models
 
 import (
 	"encoding/json"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -12,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
 	"github.com/flexprice/flexprice/internal/validator"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -43,12 +42,13 @@ type WorkflowActionConfig interface {
 
 // WorkflowActionParams contains common parameters that actions might need
 type WorkflowActionParams struct {
-	CustomerID      string
-	Currency        string
-	EventTimestamp  *time.Time             // Optional - timestamp of the triggering event for subscription start date
-	DefaultUserID   *string                // Optional - user_id from config for created_by/updated_by fields
-	EventName       string                 // Optional - event name for prepare processed events workflow
-	EventProperties map[string]interface{} // Optional - event properties for feature determination
+	CustomerID                  string
+	Currency                    string
+	EventTimestamp              *time.Time             // Optional - timestamp of the triggering event for subscription start date
+	DefaultUserID               *string                // Optional - user_id from config for created_by/updated_by fields
+	EventName                   string                 // Optional - event name for prepare processed events workflow
+	EventProperties             map[string]interface{} // Optional - event properties for feature determination
+	OnlyCreateAggregationFields []string               // Optional - when set, create only features for these aggregation fields (skip existing)
 	// Add more fields as needed for different action types
 }
 
@@ -461,11 +461,21 @@ const (
 	EventPropertyKeyNumCharacters EventPropertyKey = "numCharacters"
 	EventPropertyKeyDurationMS    EventPropertyKey = "durationMS"
 
-	// Property keys
-	EventPropertyKeyProviderName  EventPropertyKey = "providerName"
-	EventPropertyKeyMethodName    EventPropertyKey = "methodName"
-	EventPropertyKeyModelName     EventPropertyKey = "modelName"
+	// Property key for billable value (Case 3)
 	EventPropertyKeyBillableValue EventPropertyKey = "billable_value"
+)
+
+// General enums for feature/meter (Case 3: numCharacters / durationMS)
+const (
+
+	// Unit Enums
+	UnitSingularCharacter   = "character"
+	UnitPluralCharacters    = "characters"
+	UnitSingularMillisecond = "millisecond"
+	UnitPluralMilliseconds  = "milliseconds"
+
+	// Aggregation Field Enums
+	AggregationFieldBillableValue = "value"
 )
 
 // FeatureSpec defines the specification for creating a feature
@@ -485,17 +495,13 @@ func determineFeatureSpecs(eventName string, eventProperties map[string]interfac
 			{
 				Name:             eventName,
 				LookupKey:        eventName,
-				AggregationField: "value",
+				AggregationField: AggregationFieldBillableValue,
 			},
 		}
 	}
 
-	// Extract providerName, methodName, modelName from properties
-	providerName := getStringProperty(eventProperties, string(EventPropertyKeyProviderName))
-	methodName := getStringProperty(eventProperties, string(EventPropertyKeyMethodName))
-	modelName := getStringProperty(eventProperties, string(EventPropertyKeyModelName))
-
 	// Case 1: Check for token-related fields (5 features)
+	// Feature name = event.name-{AggregationField}, lookup key = feature.name, meter.name = feature.name
 	tokenFields := []EventPropertyKey{
 		EventPropertyKeyPromptTokens,
 		EventPropertyKeyCompletionTokens,
@@ -512,20 +518,21 @@ func determineFeatureSpecs(eventName string, eventProperties map[string]interfac
 	}
 
 	if hasTokenField {
-		// Create all 5 features when any token field exists
 		specs := make([]FeatureSpec, 0, 5)
 		for _, field := range tokenFields {
-			featureName := buildFeatureName(providerName, methodName, modelName, string(field))
+			aggField := string(field)
+			featureName := eventName + "-" + aggField
 			specs = append(specs, FeatureSpec{
 				Name:             featureName,
 				LookupKey:        featureName,
-				AggregationField: string(field),
+				AggregationField: aggField,
 			})
 		}
 		return specs
 	}
 
 	// Case 2: Check for audio/text token fields (6 features)
+	// Feature name = event_name-{AggregationField}, lookup key = feature name, meter.name = feature name
 	audioTextFields := []EventPropertyKey{
 		EventPropertyKeyUncachedPromptAudioTokens,
 		EventPropertyKeyUncachedPromptTextTokens,
@@ -543,28 +550,28 @@ func determineFeatureSpecs(eventName string, eventProperties map[string]interfac
 	}
 
 	if hasAudioTextField {
-		// Create all 6 features when any audio/text token field exists
 		specs := make([]FeatureSpec, 0, 6)
 		for _, field := range audioTextFields {
-			featureName := buildFeatureName(providerName, methodName, modelName, string(field))
+			aggField := string(field)
+			featureName := eventName + "-" + aggField
 			specs = append(specs, FeatureSpec{
 				Name:             featureName,
 				LookupKey:        featureName,
-				AggregationField: string(field),
+				AggregationField: aggField,
 			})
 		}
 		return specs
 	}
 
-	// Case 3: Check for numCharacters or durationMS (single feature)
+	// Case 3: numCharacters or durationMS — single feature, feature name = event_name, lookup key = feature name
 	if _, hasNumChars := eventProperties[string(EventPropertyKeyNumCharacters)]; hasNumChars {
 		return []FeatureSpec{
 			{
 				Name:             eventName,
 				LookupKey:        eventName,
 				AggregationField: string(EventPropertyKeyBillableValue),
-				UnitSingular:     "character",
-				UnitPlural:       "characters",
+				UnitSingular:     UnitSingularCharacter,
+				UnitPlural:       UnitPluralCharacters,
 			},
 		}
 	}
@@ -575,8 +582,8 @@ func determineFeatureSpecs(eventName string, eventProperties map[string]interfac
 				Name:             eventName,
 				LookupKey:        eventName,
 				AggregationField: string(EventPropertyKeyBillableValue),
-				UnitSingular:     "millisecond",
-				UnitPlural:       "milliseconds",
+				UnitSingular:     UnitSingularMillisecond,
+				UnitPlural:       UnitPluralMilliseconds,
 			},
 		}
 	}
@@ -586,37 +593,21 @@ func determineFeatureSpecs(eventName string, eventProperties map[string]interfac
 		{
 			Name:             eventName,
 			LookupKey:        eventName,
-			AggregationField: "value",
+			AggregationField: AggregationFieldBillableValue,
 		},
 	}
 }
 
-// buildFeatureName builds feature name as: providerName-methodName-modelName(if present)-aggregationField
-func buildFeatureName(providerName, methodName, modelName, aggregationField string) string {
-	parts := []string{}
-	if providerName != "" {
-		parts = append(parts, providerName)
+// RequiredAggregationFields returns the list of aggregation fields required for an event (same logic as determineFeatureSpecs).
+// Used by feature usage tracking to know which meters to consider and which features to create when partially missing.
+func RequiredAggregationFields(eventName string, eventProperties map[string]interface{}) []string {
+	// Determine which set of features to create based on event properties
+	specs := determineFeatureSpecs(eventName, eventProperties)
+	fields := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		fields = append(fields, spec.AggregationField)
 	}
-	if methodName != "" {
-		parts = append(parts, methodName)
-	}
-	if modelName != "" {
-		parts = append(parts, modelName)
-	}
-	parts = append(parts, aggregationField)
-	return strings.Join(parts, "-")
-}
-
-// getStringProperty safely extracts a string property from event properties
-func getStringProperty(props map[string]interface{}, key string) string {
-	if val, ok := props[key]; ok {
-		if str, ok := val.(string); ok {
-			return str
-		}
-		// Try to convert to string
-		return fmt.Sprintf("%v", val)
-	}
-	return ""
+	return fields
 }
 
 // ToDTO converts the action config to both CreateFeatureRequest and CreatePriceRequest DTOs
@@ -645,6 +636,14 @@ func (c *CreateFeatureAndPriceActionConfig) ToDTO(params interface{}) (interface
 
 	// Determine which features to create
 	featureSpecs := determineFeatureSpecs(actionParams.EventName, eventProperties)
+
+	// When OnlyCreateAggregationFields is set, create only features for those aggregation fields (skip existing)
+	if len(actionParams.OnlyCreateAggregationFields) > 0 {
+		allowedSet := actionParams.OnlyCreateAggregationFields
+		featureSpecs = lo.Filter(featureSpecs, func(spec FeatureSpec, _ int) bool {
+			return lo.Contains(allowedSet, spec.AggregationField)
+		})
+	}
 
 	// Get defaults from settings
 	defaults, err := types.GetDefaultSettings()
