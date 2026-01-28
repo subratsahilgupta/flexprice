@@ -653,15 +653,14 @@ func (c *CreateFeatureAndPriceActionConfig) ToDTO(params interface{}) (interface
 			Mark(ierr.ErrInternal)
 	}
 
-	defaultSetting, exists := defaults[types.SettingKeyPrepareProcessedEvents]
+	_, exists := defaults[types.SettingKeyPrepareProcessedEvents]
 	if !exists {
 		return nil, ierr.NewError("default settings not found for prepare_processed_events_config").
 			WithHint("Default settings must be defined").
 			Mark(ierr.ErrInternal)
 	}
 
-	// Extract defaults from the default setting
-	// Defaults are applied here, not stored in action config
+	// Defaults are applied here, not stored in action config (defaultSetting reserved for future extensibility)
 	featureType := c.FeatureType
 	if featureType == "" {
 		featureType = types.FeatureTypeMetered
@@ -678,9 +677,6 @@ func (c *CreateFeatureAndPriceActionConfig) ToDTO(params interface{}) (interface
 	priceType := types.PRICE_TYPE_USAGE
 	priceAmount := decimal.NewFromFloat(0.0)
 	priceBillingPeriodCount := 1
-
-	// Use defaults from settings if available (for future extensibility)
-	_ = defaultSetting
 
 	// Create DTOs for each feature spec
 	dtosList := make([]CreateFeatureAndPriceDTOs, 0, len(featureSpecs))

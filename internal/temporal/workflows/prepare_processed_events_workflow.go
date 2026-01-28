@@ -3,7 +3,6 @@ package workflows
 import (
 	"time"
 
-	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/temporal/models"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
@@ -23,8 +22,8 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 	if err := input.Validate(); err != nil {
 		return nil, err
 	}
-	logger := logger.GetLogger()
-	logger.Debugw("Starting PrepareProcessedEventsWorkflow",
+	logger := workflow.GetLogger(ctx)
+	logger.Debug("Starting PrepareProcessedEventsWorkflow",
 		"event_name", input.EventName,
 		"action_count", len(input.WorkflowConfig.Actions),
 	)
@@ -53,7 +52,7 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 	// Execute each action in sequence
 	for i, action := range input.WorkflowConfig.Actions {
 		actionType := action.GetAction()
-		logger.Debugw("Executing workflow action",
+		logger.Debug("Executing workflow action",
 			"event_name", input.EventName,
 			"action_index", i,
 			"action_type", actionType)
@@ -67,13 +66,13 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 		var err error
 		switch actionType {
 		case models.WorkflowActionCreateFeatureAndPrice:
-			err = executeCreateFeatureAndPriceAction(ctx, input, action, &actionResult, &createdPriceIDs, logger)
+			err = executeCreateFeatureAndPriceAction(ctx, input, action, &actionResult, &createdPriceIDs)
 
 		case models.WorkflowActionRolloutToSubscriptions:
-			err = executeRolloutToSubscriptionsAction(ctx, input, action, &actionResult, createdPriceIDs, logger)
+			err = executeRolloutToSubscriptionsAction(ctx, input, action, &actionResult, createdPriceIDs)
 
 		default:
-			logger.Warnw("Unknown workflow action type",
+			logger.Warn("Unknown workflow action type",
 				"event_name", input.EventName,
 				"action_type", actionType,
 				"action_index", i)
@@ -90,7 +89,7 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 		}
 
 		if err != nil {
-			logger.Errorw("Workflow action failed",
+			logger.Error("Workflow action failed",
 				"event_name", input.EventName,
 				"action_index", i,
 				"action_type", actionType,
@@ -111,7 +110,7 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 		result.Results = append(result.Results, actionResult)
 		result.ActionsExecuted++
 
-		logger.Debugw("Workflow action completed successfully",
+		logger.Debug("Workflow action completed successfully",
 			"event_name", input.EventName,
 			"action_index", i,
 			"action_type", actionType,
@@ -122,7 +121,7 @@ func PrepareProcessedEventsWorkflow(ctx workflow.Context, input models.PreparePr
 	result.Status = models.WorkflowStatusCompleted
 	result.CompletedAt = workflow.Now(ctx)
 
-	logger.Infow("PrepareProcessedEventsWorkflow completed successfully",
+	logger.Info("PrepareProcessedEventsWorkflow completed successfully",
 		"event_name", input.EventName,
 		"actions_executed", result.ActionsExecuted)
 
@@ -136,18 +135,18 @@ func executeCreateFeatureAndPriceAction(
 	action models.WorkflowActionConfig,
 	actionResult *models.PrepareProcessedEventsActionResult,
 	createdPriceIDs *[]string,
-	logger *logger.Logger,
 ) error {
+	logger := workflow.GetLogger(ctx)
 	featureAction, ok := action.(*models.CreateFeatureAndPriceActionConfig)
 	if !ok {
-		logger.Errorw("Invalid action config type for create_feature_and_price",
+		logger.Error("Invalid action config type for create_feature_and_price",
 			"event_name", input.EventName,
 			"action_type", action.GetAction())
 		return temporal.NewApplicationError("invalid action config type for create_feature_and_price", "InvalidActionConfig")
 	}
 
 	if featureAction.PlanID == "" {
-		logger.Errorw("plan_id is required for create_feature_and_price action",
+		logger.Error("plan_id is required for create_feature_and_price action",
 			"event_name", input.EventName)
 		return temporal.NewApplicationError("plan_id is required for create_feature_and_price action", "MissingPlanID")
 	}
@@ -164,7 +163,7 @@ func executeCreateFeatureAndPriceAction(
 	var activityResult models.CreateFeatureAndPriceActivityResult
 	err := workflow.ExecuteActivity(ctx, ActivityCreateFeatureAndPrice, activityInput).Get(ctx, &activityResult)
 	if err != nil {
-		logger.Errorw("CreateFeatureAndPriceActivity failed",
+		logger.Error("CreateFeatureAndPriceActivity failed",
 			"event_name", input.EventName,
 			"plan_id", featureAction.PlanID,
 			"error", err)
@@ -174,7 +173,7 @@ func executeCreateFeatureAndPriceAction(
 	if len(activityResult.Features) == 0 {
 		// When OnlyCreateAggregationFields is set, zero features is valid (all requested aggregation fields already existed)
 		if len(input.OnlyCreateAggregationFields) > 0 {
-			logger.Debugw("CreateFeatureAndPriceActivity created no features (only_create_aggregation_fields set; all may already exist)",
+			logger.Debug("CreateFeatureAndPriceActivity created no features (only_create_aggregation_fields set; all may already exist)",
 				"event_name", input.EventName,
 				"plan_id", featureAction.PlanID,
 				"only_create_aggregation_fields", input.OnlyCreateAggregationFields)
@@ -183,7 +182,7 @@ func executeCreateFeatureAndPriceAction(
 			*createdPriceIDs = []string{}
 			return nil
 		}
-		logger.Errorw("CreateFeatureAndPriceActivity returned no features",
+		logger.Error("CreateFeatureAndPriceActivity returned no features",
 			"event_name", input.EventName,
 			"plan_id", featureAction.PlanID)
 		return temporal.NewApplicationError("no features were created", "NoFeaturesCreated")
@@ -198,7 +197,7 @@ func executeCreateFeatureAndPriceAction(
 		*createdPriceIDs = append(*createdPriceIDs, featureResult.PriceID)
 	}
 
-	logger.Debugw("CreateFeatureAndPriceAction completed successfully",
+	logger.Debug("CreateFeatureAndPriceAction completed successfully",
 		"event_name", input.EventName,
 		"plan_id", featureAction.PlanID,
 		"features_created", len(activityResult.Features),
@@ -213,24 +212,24 @@ func executeRolloutToSubscriptionsAction(
 	action models.WorkflowActionConfig,
 	actionResult *models.PrepareProcessedEventsActionResult,
 	priceIDs []string,
-	logger *logger.Logger,
 ) error {
+	logger := workflow.GetLogger(ctx)
 	rolloutAction, ok := action.(*models.RolloutToSubscriptionsActionConfig)
 	if !ok {
-		logger.Errorw("Invalid action config type for rollout_to_subscriptions",
+		logger.Error("Invalid action config type for rollout_to_subscriptions",
 			"event_name", input.EventName,
 			"action_type", action.GetAction())
 		return temporal.NewApplicationError("invalid action config type for rollout_to_subscriptions", "InvalidActionConfig")
 	}
 
 	if rolloutAction.PlanID == "" {
-		logger.Errorw("plan_id is required for rollout_to_subscriptions action",
+		logger.Error("plan_id is required for rollout_to_subscriptions action",
 			"event_name", input.EventName)
 		return temporal.NewApplicationError("plan_id is required for rollout_to_subscriptions action", "MissingPlanID")
 	}
 
 	if len(priceIDs) == 0 {
-		logger.Errorw("at least one price_id is required for rollout_to_subscriptions action",
+		logger.Error("at least one price_id is required for rollout_to_subscriptions action",
 			"event_name", input.EventName,
 			"plan_id", rolloutAction.PlanID)
 		return temporal.NewApplicationError("at least one price_id is required for rollout_to_subscriptions action", "MissingPriceID")
@@ -253,7 +252,7 @@ func executeRolloutToSubscriptionsAction(
 		err := workflow.ExecuteActivity(ctx, ActivityRolloutToSubscriptions, activityInput).Get(ctx, &activityResult)
 		if err != nil {
 			// Log error but continue with other prices
-			logger.Errorw("Failed to rollout price to subscriptions",
+			logger.Error("Failed to rollout price to subscriptions",
 				"price_id", priceID,
 				"plan_id", rolloutAction.PlanID,
 				"event_name", input.EventName,
@@ -266,7 +265,7 @@ func executeRolloutToSubscriptionsAction(
 		totalLineItemsFailed += activityResult.LineItemsFailed
 
 		if activityResult.LineItemsCreated > 0 {
-			logger.Debugw("Successfully rolled out price to subscriptions",
+			logger.Debug("Successfully rolled out price to subscriptions",
 				"price_id", priceID,
 				"plan_id", rolloutAction.PlanID,
 				"line_items_created", activityResult.LineItemsCreated,
@@ -276,14 +275,14 @@ func executeRolloutToSubscriptionsAction(
 
 	// Log summary
 	if totalLineItemsFailed > 0 {
-		logger.Debugw("RolloutToSubscriptionsAction completed with some failures",
+		logger.Debug("RolloutToSubscriptionsAction completed with some failures",
 			"event_name", input.EventName,
 			"plan_id", rolloutAction.PlanID,
 			"total_line_items_created", totalLineItemsCreated,
 			"total_line_items_failed", totalLineItemsFailed,
 			"prices_processed", len(priceIDs))
 	} else {
-		logger.Debugw("RolloutToSubscriptionsAction completed successfully",
+		logger.Debug("RolloutToSubscriptionsAction completed successfully",
 			"event_name", input.EventName,
 			"plan_id", rolloutAction.PlanID,
 			"total_line_items_created", totalLineItemsCreated,
