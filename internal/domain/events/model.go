@@ -95,6 +95,13 @@ type ReprocessEventsParams struct {
 	BatchSize          int       // Number of events to process per batch (default 100)
 }
 
+// ReprocessEventsResult contains the result of event reprocessing
+type ReprocessEventsResult struct {
+	TotalEventsFound     int // Total number of events found
+	TotalEventsPublished int // Total number of events published for reprocessing
+	ProcessedBatches     int // Number of batches processed
+}
+
 // NewEvent creates a new event with defaults
 func NewEvent(
 	eventName, tenantID, externalCustomerID string, // primary keys
