@@ -133,6 +133,7 @@ func main() {
 			repository.NewPriceRepository,
 			repository.NewCustomerRepository,
 			repository.NewPlanRepository,
+			repository.NewPlanPriceSyncRepository,
 			repository.NewSubscriptionRepository,
 			repository.NewWalletRepository,
 			repository.NewTenantRepository,
@@ -540,18 +541,16 @@ func registerRouterHandlers(
 	cfg *config.Configuration,
 	includeProcessingHandlers bool,
 ) {
-	// Always register these basic handlers
 	webhookService.RegisterHandler(router)
 	onboardingService.RegisterHandler(router)
 
-	// Only register processing handlers when needed
 	if includeProcessingHandlers {
-		// Register handlers
 		eventConsumptionSvc.RegisterHandler(router, cfg)
 		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
 		// eventPostProcessingSvc.RegisterHandler(router, cfg)
 		featureUsageSvc.RegisterHandler(router, cfg)
 		featureUsageSvc.RegisterHandlerLazy(router, cfg)
+		featureUsageSvc.RegisterHandlerReplay(router, cfg)
 		costSheetUsageSvc.RegisterHandler(router, cfg)
 		costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
 		walletBalanceAlertSvc.RegisterHandler(router, cfg)

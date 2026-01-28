@@ -133,7 +133,11 @@ func (s *InvoiceSyncService) SyncInvoiceToMoyasar(
 	return s.buildSyncResponse(moyasarInvoice), nil
 }
 
+<<<<<<< HEAD
 // convertToSmallestUnit converts an amount to the smallest currency unit
+=======
+// convertToSmallestUnit converts an amount to the smallest currency unit.
+>>>>>>> develop
 // The multiplier is based on the currency's decimal precision:
 // - Precision 0 (zero-decimal): multiplier 1 (e.g., JPY, KRW, VND, CLP)
 // - Precision 2 (two-decimal): multiplier 100 (e.g., USD, SAR, EUR)
@@ -166,7 +170,11 @@ func convertToSmallestUnit(amount decimal.Decimal, currency string) (int64, erro
 	return amountInSmallestUnit, nil
 }
 
+<<<<<<< HEAD
 // convertFromSmallestUnit converts an amount from the smallest currency unit to standard unit
+=======
+// convertFromSmallestUnit converts an amount from the smallest currency unit to standard unit.
+>>>>>>> develop
 // The divisor is based on the currency's decimal precision:
 // - Precision 0 (zero-decimal): divisor 1 (e.g., JPY, KRW, VND, CLP)
 // - Precision 2 (two-decimal): divisor 100 (e.g., USD, SAR, EUR)
@@ -254,11 +262,19 @@ func (s *InvoiceSyncService) buildInvoiceDescription(flexInvoice *invoice.Invoic
 	// Add line items details
 	if len(flexInvoice.LineItems) > 0 {
 		var lineDescriptions []string
+<<<<<<< HEAD
 		
 		for _, item := range flexInvoice.LineItems {
 			// Build description for each line item
 			var itemDesc string
 			
+=======
+
+		for _, item := range flexInvoice.LineItems {
+			// Build description for each line item
+			var itemDesc string
+
+>>>>>>> develop
 			// Use plan display name if available
 			if item.PlanDisplayName != nil && *item.PlanDisplayName != "" {
 				itemDesc = *item.PlanDisplayName
@@ -272,6 +288,7 @@ func (s *InvoiceSyncService) buildInvoiceDescription(flexInvoice *invoice.Invoic
 				// Generic fallback
 				itemDesc = "Item"
 			}
+<<<<<<< HEAD
 			
 			// Add quantity and amount
 			amountStr := item.Amount.StringFixed(2)
@@ -291,6 +308,27 @@ func (s *InvoiceSyncService) buildInvoiceDescription(flexInvoice *invoice.Invoic
 			lineDescriptions = append(lineDescriptions, itemDesc)
 		}
 		
+=======
+
+			// Add quantity and amount
+			amountStr := item.Amount.StringFixed(2)
+			if item.Quantity.GreaterThan(decimal.NewFromInt(1)) {
+				itemDesc = fmt.Sprintf("%s (x%s) - %s %s",
+					itemDesc,
+					item.Quantity.String(),
+					amountStr,
+					strings.ToUpper(item.Currency))
+			} else {
+				itemDesc = fmt.Sprintf("%s - %s %s",
+					itemDesc,
+					amountStr,
+					strings.ToUpper(item.Currency))
+			}
+
+			lineDescriptions = append(lineDescriptions, itemDesc)
+		}
+
+>>>>>>> develop
 		// Limit to first 3 line items to keep description concise
 		if len(lineDescriptions) > 3 {
 			parts = append(parts, strings.Join(lineDescriptions[:3], ", "))
