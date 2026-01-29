@@ -555,15 +555,16 @@ func registerRouterHandlers(
 	onboardingService.RegisterHandler(router)
 
 	if includeProcessingHandlers {
-		eventConsumptionSvc.RegisterHandler(router, cfg)
-		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
+		// eventConsumptionSvc.RegisterHandler(router, cfg)
+		// eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
+		eventConsumptionSvc.RegisterHandlerReplay(router, cfg)
 		// eventPostProcessingSvc.RegisterHandler(router, cfg)
-		featureUsageSvc.RegisterHandler(router, cfg)
-		featureUsageSvc.RegisterHandlerLazy(router, cfg)
-		featureUsageSvc.RegisterHandlerReplay(router, cfg)
-		costSheetUsageSvc.RegisterHandler(router, cfg)
-		costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
-		walletBalanceAlertSvc.RegisterHandler(router, cfg)
+		// featureUsageSvc.RegisterHandler(router, cfg)
+		// featureUsageSvc.RegisterHandlerLazy(router, cfg)
+		// featureUsageSvc.RegisterHandlerReplay(router, cfg)
+		// costSheetUsageSvc.RegisterHandler(router, cfg)
+		// costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
+		// walletBalanceAlertSvc.RegisterHandler(router, cfg)
 	}
 }
 
