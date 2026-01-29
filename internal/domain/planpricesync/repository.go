@@ -14,7 +14,6 @@ type PlanLineItemTerminationDelta struct {
 }
 
 // PlanLineItemCreationDelta is a plan-sync delta row for creating a new line item.
-// PriceID is the plan price ID (from prices where entity_type=PLAN), not a subscription override's parent_price_id.
 type PlanLineItemCreationDelta struct {
 	SubscriptionID string
 	PriceID        string // plan price ID to use for the new line item
