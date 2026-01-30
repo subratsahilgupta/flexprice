@@ -37,20 +37,6 @@ func NewWorkflowHandler(
 	}
 }
 
-// @Summary List workflow executions
-// @Description Get a paginated list of workflow executions with filtering
-// @Tags Workflows
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param workflow_type query string false "Filter by workflow type"
-// @Param task_queue query string false "Filter by task queue"
-// @Param page_size query int false "Page size (default 50, max 100)"
-// @Param page query int false "Page number (default 1)"
-// @Success 200 {object} dto.ListWorkflowsResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /workflows [get]
 func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 	var req dto.ListWorkflowsRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -121,18 +107,6 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// @Summary Get workflow execution summary
-// @Description Get basic status information for a workflow execution
-// @Tags Workflows
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param workflow_id path string true "Workflow ID"
-// @Param run_id path string true "Run ID"
-// @Success 200 {object} dto.WorkflowSummaryResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /workflows/{workflow_id}/{run_id}/summary [get]
 func (h *WorkflowHandler) GetWorkflowSummary(c *gin.Context) {
 	workflowID := c.Param("workflow_id")
 	runID := c.Param("run_id")
@@ -188,18 +162,6 @@ func (h *WorkflowHandler) GetWorkflowSummary(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// @Summary Get workflow execution details
-// @Description Get complete details for a workflow execution including activities and timeline
-// @Tags Workflows
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param workflow_id path string true "Workflow ID"
-// @Param run_id path string true "Run ID"
-// @Success 200 {object} dto.WorkflowDetailsResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /workflows/{workflow_id}/{run_id} [get]
 func (h *WorkflowHandler) GetWorkflowDetails(c *gin.Context) {
 	workflowID := c.Param("workflow_id")
 	runID := c.Param("run_id")
@@ -300,18 +262,6 @@ func (h *WorkflowHandler) GetWorkflowDetails(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// @Summary Get workflow execution timeline
-// @Description Get timeline visualization data for a workflow execution
-// @Tags Workflows
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param workflow_id path string true "Workflow ID"
-// @Param run_id path string true "Run ID"
-// @Success 200 {object} dto.WorkflowTimelineResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /workflows/{workflow_id}/{run_id}/timeline [get]
 func (h *WorkflowHandler) GetWorkflowTimeline(c *gin.Context) {
 	workflowID := c.Param("workflow_id")
 	runID := c.Param("run_id")
@@ -382,17 +332,6 @@ func (h *WorkflowHandler) GetWorkflowTimeline(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// @Summary Get details for multiple workflows
-// @Description Get full details for multiple workflow executions in a single request
-// @Tags Workflows
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body dto.BatchWorkflowsRequest true "Batch workflow request"
-// @Success 200 {object} dto.BatchWorkflowsResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /workflows/batch [post]
 func (h *WorkflowHandler) GetWorkflowsBatch(c *gin.Context) {
 	var req dto.BatchWorkflowsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
