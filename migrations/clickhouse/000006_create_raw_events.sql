@@ -25,14 +25,14 @@ CREATE TABLE flexprice.raw_events
 ENGINE = ReplacingMergeTree(version)
 PARTITION BY toYYYYMMDD(timestamp)
 PRIMARY KEY (tenant_id, environment_id, external_customer_id, timestamp)
-ORDER BY (tenant_id, environment_id, external_customer_id, timestamp, event_name, id)
+ORDER BY (tenant_id, environment_id, external_customer_id, timestamp, id)
 SETTINGS index_granularity = 16384,
     parts_to_delay_insert = 200,
     parts_to_throw_insert = 400,
     max_bytes_to_merge_at_max_space_in_pool = 5368709120;
 
 ALTER TABLE flexprice.raw_events
-    ADD INDEX IF NOT EXISTS bf_feature_id feature_id TYPE bloom_filter(0.01) GRANULARITY 64;
+    ADD INDEX IF NOT EXISTS bf_event_name event_name TYPE bloom_filter(0.01) GRANULARITY 64;
 
 ALTER TABLE flexprice.raw_events
     ADD INDEX IF NOT EXISTS mm_ts timestamp TYPE minmax GRANULARITY 1;
