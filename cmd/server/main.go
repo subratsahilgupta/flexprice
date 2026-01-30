@@ -572,6 +572,7 @@ func registerRouterHandlers(
 		eventConsumptionSvc.RegisterHandler(router, cfg)
 		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
 		eventPostProcessingSvc.RegisterHandler(router, cfg)
+		eventConsumptionSvc.RegisterHandlerReplay(router, cfg)
 		featureUsageSvc.RegisterHandler(router, cfg)
 		featureUsageSvc.RegisterHandlerLazy(router, cfg)
 		featureUsageSvc.RegisterHandlerReplay(router, cfg)
