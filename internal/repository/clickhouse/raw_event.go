@@ -7,12 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/events"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
-)
-
-// Hardcoded tenant and environment ID for raw_events queries (for now)
-const (
-	rawEventsTenantID      = "tenant_01KF5GXB4S7YKWH2Y3YQ1TEMQ3"
-	rawEventsEnvironmentID = "env_01KF5GXB8X2TYQHSVE4YVZYCN8"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 type RawEventRepository struct {
@@ -37,8 +32,11 @@ func (r *RawEventRepository) FindRawEvents(ctx context.Context, params *events.F
 	})
 	defer FinishSpan(span)
 
+	// Get tenant and environment ID from context
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
 	// Build query with filters following primary key order for optimal index usage
-	// Tenant and environment ID are hardcoded for now
 	query := `
 		SELECT 
 			id, tenant_id, environment_id, external_customer_id, event_name, 
@@ -46,11 +44,11 @@ func (r *RawEventRepository) FindRawEvents(ctx context.Context, params *events.F
 			field6, field7, field8, field9, field10, timestamp, ingested_at, 
 			version, sign
 		FROM raw_events
-		WHERE (tenant_id = '` + rawEventsTenantID + `')
-		AND (environment_id = '` + rawEventsEnvironmentID + `')
+		WHERE tenant_id = ?
+		AND environment_id = ?
 	`
 
-	args := []interface{}{}
+	args := []interface{}{tenantID, environmentID}
 
 	// Add filters if provided - order matters for index usage
 	// Follow the primary key order: tenant_id, environment_id, external_customer_id, timestamp
@@ -180,9 +178,12 @@ func (r *RawEventRepository) FindUnprocessedRawEvents(ctx context.Context, param
 	})
 	defer FinishSpan(span)
 
+	// Get tenant and environment ID from context
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
 	// Use ANTI JOIN for better performance with ClickHouse
 	// This finds raw events that don't have a corresponding entry in the events table
-	// Tenant and environment ID are hardcoded for now
 	query := `
 		SELECT 
 			r.id, r.tenant_id, r.environment_id, r.external_customer_id, r.event_name, 
@@ -193,15 +194,15 @@ func (r *RawEventRepository) FindUnprocessedRawEvents(ctx context.Context, param
 		ANTI JOIN (
 			SELECT id, tenant_id, environment_id
 			FROM events
-			WHERE tenant_id = '` + rawEventsTenantID + `'
-			AND environment_id = '` + rawEventsEnvironmentID + `'
+			WHERE tenant_id = ?
+			AND environment_id = ?
 		) AS e
 		ON r.id = e.id AND r.tenant_id = e.tenant_id AND r.environment_id = e.environment_id
-		WHERE r.tenant_id = '` + rawEventsTenantID + `'
-		AND r.environment_id = '` + rawEventsEnvironmentID + `'
+		WHERE r.tenant_id = ?
+		AND r.environment_id = ?
 	`
 
-	args := []interface{}{}
+	args := []interface{}{tenantID, environmentID, tenantID, environmentID}
 
 	// Add filters if provided - order matters for index usage
 	if params.ExternalCustomerID != "" {
