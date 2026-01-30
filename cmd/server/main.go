@@ -170,6 +170,7 @@ func main() {
 			repository.NewScheduledTaskRepository,
 			repository.NewPriceUnitRepository,
 			repository.NewWorkflowExecutionRepository,
+			repository.NewRawEventRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -208,6 +209,7 @@ func main() {
 			service.NewEventPostProcessingService,
 			service.NewEventConsumptionService,
 			service.NewFeatureUsageTrackingService,
+			service.NewRawEventsReprocessingService,
 			service.NewCostSheetUsageTrackingService,
 			service.NewPriceService,
 			service.NewPriceUnitService,
@@ -321,6 +323,7 @@ func provideHandlers(
 	subscriptionChangeService service.SubscriptionChangeService,
 	subscriptionScheduleService service.SubscriptionScheduleService,
 	featureUsageTrackingService service.FeatureUsageTrackingService,
+	rawEventsReprocessingService service.RawEventsReprocessingService,
 	alertLogsService service.AlertLogsService,
 	groupService service.GroupService,
 	integrationFactory *integration.Factory,
@@ -335,7 +338,7 @@ func provideHandlers(
 	workflowExecutionService *service.WorkflowExecutionService,
 ) api.Handlers {
 	return api.Handlers{
-		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, featureUsageTrackingService, cfg, logger),
+		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, featureUsageTrackingService, rawEventsReprocessingService, cfg, logger),
 		Meter:                    v1.NewMeterHandler(meterService, logger),
 		Auth:                     v1.NewAuthHandler(cfg, authService, logger),
 		User:                     v1.NewUserHandler(userService, logger),
@@ -567,14 +570,14 @@ func registerRouterHandlers(
 
 	if includeProcessingHandlers {
 		eventConsumptionSvc.RegisterHandler(router, cfg)
-		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
+		// eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
 		// eventPostProcessingSvc.RegisterHandler(router, cfg)
-		featureUsageSvc.RegisterHandler(router, cfg)
-		featureUsageSvc.RegisterHandlerLazy(router, cfg)
-		featureUsageSvc.RegisterHandlerReplay(router, cfg)
-		costSheetUsageSvc.RegisterHandler(router, cfg)
-		costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
-		walletBalanceAlertSvc.RegisterHandler(router, cfg)
+		// featureUsageSvc.RegisterHandler(router, cfg)
+		// featureUsageSvc.RegisterHandlerLazy(router, cfg)
+		// featureUsageSvc.RegisterHandlerReplay(router, cfg)
+		// costSheetUsageSvc.RegisterHandler(router, cfg)
+		// costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
+		// walletBalanceAlertSvc.RegisterHandler(router, cfg)
 	}
 }
 
