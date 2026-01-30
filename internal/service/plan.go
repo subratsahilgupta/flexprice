@@ -3,15 +3,19 @@ package service
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/planpricesync"
 	domainPrice "github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
+	eventsWorkflowModels "github.com/flexprice/flexprice/internal/temporal/models/events"
+	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -522,6 +526,37 @@ func (s *planService) SyncPlanPrices(ctx context.Context, planID string) (*dto.S
 			}
 
 			lineItemsCreated += totalCreated
+
+			// Trigger reprocess events for plan workflow non-blocking (fire-and-forget)
+			if temporalSvc := temporalService.GetGlobalTemporalService(); temporalSvc != nil {
+				pairs := make([]eventsWorkflowModels.MissingPair, len(missingPairs))
+				for j, p := range missingPairs {
+					pairs[j] = eventsWorkflowModels.MissingPair{
+						SubscriptionID: p.SubscriptionID,
+						PriceID:        p.PriceID,
+						CustomerID:     p.CustomerID,
+					}
+				}
+				workflowInput := eventsWorkflowModels.ReprocessEventsForPlanWorkflowInput{
+					MissingPairs:  pairs,
+					TenantID:      types.GetTenantID(ctx),
+					EnvironmentID: types.GetEnvironmentID(ctx),
+					UserID:        types.GetUserID(ctx),
+				}
+				workflowRun, err := temporalSvc.ExecuteWorkflow(ctx, types.TemporalReprocessEventsForPlanWorkflow, workflowInput)
+				if err != nil {
+					s.Logger.Warnw("failed to start reprocess events for plan workflow",
+						"plan_id", planID,
+						"missing_pairs_count", len(missingPairs),
+						"error", err)
+				} else {
+					s.Logger.Debugw("reprocess events for plan workflow started",
+						"plan_id", planID,
+						"missing_pairs_count", len(missingPairs),
+						"workflow_id", workflowRun.GetID(),
+						"run_id", workflowRun.GetRunID())
+				}
+			}
 		}
 
 		if nextSubID != nil {
@@ -549,6 +584,121 @@ func (s *planService) SyncPlanPrices(ctx context.Context, planID string) (*dto.S
 		"termination_duration_ms", terminationTotalDuration.Milliseconds(),
 		"creation_duration_ms", creationTotalDuration.Milliseconds())
 	return response, nil
+}
+
+// ReprocessEventsForMissingPairs triggers event reprocessing for customers affected by the given missing (subscription_id, price_id, customer_id) pairs.
+// Groups by price ID, resolves external customer IDs via a single CustomerRepo.List, and calls FeatureUsageTrackingService.ReprocessEvents for each price x customer (best-effort; logs errors and continues).
+// ReprocessEvents calls run with bounded concurrency to avoid overwhelming the system.
+func (s *planService) ReprocessEventsForMissingPairs(ctx context.Context, missingPairs []planpricesync.PlanLineItemCreationDelta) error {
+	if len(missingPairs) == 0 {
+		return nil
+	}
+
+	// Group by price_id: for each price, collect customer IDs from pairs (then dedupe with lo.Uniq)
+	priceToCustomerIDs := make(map[string][]string)
+	for _, pair := range missingPairs {
+		if pair.CustomerID == "" {
+			continue
+		}
+		priceToCustomerIDs[pair.PriceID] = append(priceToCustomerIDs[pair.PriceID], pair.CustomerID)
+	}
+
+	priceIDs := lo.Keys(priceToCustomerIDs)
+	priceFilter := types.NewNoLimitPriceFilter().
+		WithPriceIDs(priceIDs).
+		WithEntityType(types.PRICE_ENTITY_TYPE_PLAN).
+		WithAllowExpiredPrices(true)
+
+	prices, err := s.PriceRepo.List(ctx, priceFilter)
+	if err != nil {
+		s.Logger.Errorw("failed to fetch prices for reprocess events for plan", "price_ids", priceIDs, "error", err)
+		return err
+	}
+	priceMap := lo.KeyBy(prices, func(p *domainPrice.Price) string { return p.ID })
+
+	// Single CustomerRepo.List for all unique customer IDs across all prices (avoids N DB calls)
+	allCustomerIDs := lo.Uniq(lo.FlatMap(lo.Values(priceToCustomerIDs), func(ids []string, _ int) []string { return ids }))
+	if len(allCustomerIDs) == 0 {
+		return nil
+	}
+	customerFilter := types.NewNoLimitCustomerFilter()
+	customerFilter.CustomerIDs = allCustomerIDs
+	customers, err := s.CustomerRepo.List(ctx, customerFilter)
+	if err != nil {
+		s.Logger.Errorw("failed to list customers for reprocess events for plan", "customer_ids", allCustomerIDs, "error", err)
+		return err
+	}
+	customerIDToExternalID := make(map[string]string, len(customers))
+	for _, c := range customers {
+		if c.ExternalID != "" {
+			customerIDToExternalID[c.ID] = c.ExternalID
+		}
+	}
+
+	featureSvc := NewFeatureUsageTrackingService(s.ServiceParams, s.EventRepo, s.FeatureUsageRepo)
+	now := time.Now().UTC()
+	const reprocessBatchSize = 100
+	const maxConcurrentReprocess = 10
+
+	type reprocessJob struct {
+		extID     string
+		startTime time.Time
+		endTime   time.Time
+	}
+	var jobs []reprocessJob
+	for _, priceID := range priceIDs {
+		price, ok := priceMap[priceID]
+		if !ok {
+			continue
+		}
+		customerIDs := lo.Uniq(priceToCustomerIDs[priceID])
+		if len(customerIDs) == 0 {
+			continue
+		}
+		var startTime, endTime time.Time
+		if price.EndDate != nil && !price.EndDate.IsZero() {
+			endTime = *price.EndDate
+		} else {
+			endTime = now
+		}
+		if price.StartDate != nil && !price.StartDate.IsZero() {
+			startTime = *price.StartDate
+		} else {
+			startTime = endTime.Add(-10 * 365 * 24 * time.Hour)
+		}
+		if startTime.After(endTime) {
+			startTime = endTime
+		}
+		for _, cid := range customerIDs {
+			if extID, ok := customerIDToExternalID[cid]; ok {
+				jobs = append(jobs, reprocessJob{extID: extID, startTime: startTime, endTime: endTime})
+			}
+		}
+	}
+
+	// Run ReprocessEvents with bounded concurrency
+	sem := make(chan struct{}, maxConcurrentReprocess)
+	var wg sync.WaitGroup
+	for _, job := range jobs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(j reprocessJob) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			_, err := featureSvc.ReprocessEvents(ctx, &events.ReprocessEventsParams{
+				ExternalCustomerID: j.extID,
+				StartTime:          j.startTime,
+				EndTime:            j.endTime,
+				BatchSize:          reprocessBatchSize,
+			})
+			if err != nil {
+				s.Logger.Warnw("reprocess events for plan failed for customer", "external_customer_id", j.extID, "error", err)
+			}
+		}(job)
+	}
+	wg.Wait()
+
+	return nil
 }
 
 func createPlanLineItem(

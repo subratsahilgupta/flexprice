@@ -483,6 +483,8 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 		return s.buildReprocessEventsInput(ctx, tenantID, environmentID, userID, params)
 	case types.TemporalReprocessRawEventsWorkflow:
 		return s.buildReprocessRawEventsInput(ctx, tenantID, environmentID, userID, params)
+	case types.TemporalReprocessEventsForPlanWorkflow:
+		return s.buildReprocessEventsForPlanInput(ctx, tenantID, environmentID, userID, params)
 	default:
 		return nil, errors.NewError("unsupported workflow type").
 			WithHintf("Workflow type %s is not supported", workflowType.String()).
@@ -1013,6 +1015,23 @@ func (s *temporalService) buildReprocessRawEventsInput(_ context.Context, tenant
 
 	return nil, errors.NewError("invalid input for reprocess raw events workflow").
 		WithHint("Provide ReprocessRawEventsWorkflowInput or map with start_date and end_date").
+		Mark(errors.ErrValidation)
+}
+
+// buildReprocessEventsForPlanInput builds input for reprocess events for plan workflow
+func (s *temporalService) buildReprocessEventsForPlanInput(_ context.Context, tenantID, environmentID, userID string, params interface{}) (interface{}, error) {
+	if input, ok := params.(eventsModels.ReprocessEventsForPlanWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		input.UserID = userID
+		if err := input.Validate(); err != nil {
+			return nil, err
+		}
+		return input, nil
+	}
+
+	return nil, errors.NewError("invalid input for reprocess events for plan workflow").
+		WithHint("Provide ReprocessEventsForPlanWorkflowInput with missing_pairs").
 		Mark(errors.ErrValidation)
 }
 
