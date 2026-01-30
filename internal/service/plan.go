@@ -644,20 +644,17 @@ func (s *planService) ReprocessEventsForMissingPairs(ctx context.Context, missin
 		if len(customerIDs) == 0 {
 			continue
 		}
-		var startTime, endTime time.Time
-		if price.EndDate != nil && !price.EndDate.IsZero() {
-			endTime = *price.EndDate
-		} else {
-			endTime = now
+
+		endTime := now
+		if price.EndDate != nil {
+			endTime = lo.FromPtr(price.EndDate)
 		}
-		if price.StartDate != nil && !price.StartDate.IsZero() {
-			startTime = *price.StartDate
-		} else {
-			startTime = endTime.Add(-10 * 365 * 24 * time.Hour)
+
+		startTime := now
+		if price.StartDate != nil {
+			startTime = lo.FromPtr(price.StartDate)
 		}
-		if startTime.After(endTime) {
-			startTime = endTime
-		}
+
 		for _, cid := range customerIDs {
 			extID, ok := customerIDToExternalID[cid]
 			if !ok || extID == "" {
