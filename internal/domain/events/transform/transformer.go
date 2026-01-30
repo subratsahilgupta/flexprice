@@ -237,14 +237,6 @@ func isValidBentoInput(input *BentoInput) bool {
 	if input.ProviderName == "" && input.ServiceName == "" {
 		return false
 	}
-	// Must have data.modelName
-	if input.Data == nil {
-		return false
-	}
-	modelName, exists := input.Data["modelName"]
-	if !exists || toString(modelName) == "" {
-		return false
-	}
 	if input.ID == "" {
 		return false
 	}
