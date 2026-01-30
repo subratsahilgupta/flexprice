@@ -345,12 +345,15 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 		lineItem.Metadata["addon_status"] = string(types.AddonStatusActive)
 	}
 
-	// Set dates
-	if r.StartDate != nil {
-		lineItem.StartDate = r.StartDate.UTC()
-	} else {
-		lineItem.StartDate = time.Now().UTC()
+	// Set dates: effective start = max(subscription start, price start); request start_date may only push start later
+	startDate := params.Subscription.StartDate
+	if params.Price != nil && params.Price.StartDate != nil && params.Price.StartDate.After(startDate) {
+		startDate = lo.FromPtr(params.Price.StartDate)
 	}
+	if r.StartDate != nil && r.StartDate.After(startDate) {
+		startDate = lo.FromPtr(r.StartDate)
+	}
+	lineItem.StartDate = startDate.UTC()
 	if r.EndDate != nil {
 		lineItem.EndDate = r.EndDate.UTC()
 	}

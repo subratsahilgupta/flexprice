@@ -376,7 +376,7 @@ func (r *CreatePriceRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	// 12. Validate dates
+	// 12. Validate dates (backdated start_date is allowed; when end_date is provided it must be after start_date)
 	if r.StartDate != nil && r.EndDate != nil {
 		if r.StartDate.After(*r.EndDate) {
 			return ierr.NewError("start date must be before end date").
