@@ -95,6 +95,13 @@ type ReprocessEventsParams struct {
 	BatchSize          int       // Number of events to process per batch (default 100)
 }
 
+// ReprocessEventsResult contains the result of event reprocessing
+type ReprocessEventsResult struct {
+	TotalEventsFound     int // Total number of events found matching the criteria
+	TotalEventsPublished int // Total number of events successfully published for reprocessing
+	ProcessedBatches     int // Number of batches processed
+}
+
 // RawEvent represents a raw event from the raw_events table
 type RawEvent struct {
 	ID                 string    `json:"id" ch:"id"`
