@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -586,9 +585,6 @@ func (s *planService) SyncPlanPrices(ctx context.Context, planID string) (*dto.S
 	return response, nil
 }
 
-// ReprocessEventsForMissingPairs triggers event reprocessing for customers affected by the given missing (subscription_id, price_id, customer_id) pairs.
-// Groups by price ID, resolves external customer IDs via a single CustomerRepo.List, and calls FeatureUsageTrackingService.ReprocessEvents for each price x customer (best-effort; logs errors and continues).
-// ReprocessEvents calls run with bounded concurrency to avoid overwhelming the system.
 func (s *planService) ReprocessEventsForMissingPairs(ctx context.Context, missingPairs []planpricesync.PlanLineItemCreationDelta) error {
 	if len(missingPairs) == 0 {
 		return nil
@@ -638,14 +634,7 @@ func (s *planService) ReprocessEventsForMissingPairs(ctx context.Context, missin
 	featureSvc := NewFeatureUsageTrackingService(s.ServiceParams, s.EventRepo, s.FeatureUsageRepo)
 	now := time.Now().UTC()
 	const reprocessBatchSize = 100
-	const maxConcurrentReprocess = 10
 
-	type reprocessJob struct {
-		extID     string
-		startTime time.Time
-		endTime   time.Time
-	}
-	var jobs []reprocessJob
 	for _, priceID := range priceIDs {
 		price, ok := priceMap[priceID]
 		if !ok {
@@ -670,33 +659,21 @@ func (s *planService) ReprocessEventsForMissingPairs(ctx context.Context, missin
 			startTime = endTime
 		}
 		for _, cid := range customerIDs {
-			if extID, ok := customerIDToExternalID[cid]; ok {
-				jobs = append(jobs, reprocessJob{extID: extID, startTime: startTime, endTime: endTime})
+			extID, ok := customerIDToExternalID[cid]
+			if !ok || extID == "" {
+				continue
 			}
-		}
-	}
-
-	// Run ReprocessEvents with bounded concurrency
-	sem := make(chan struct{}, maxConcurrentReprocess)
-	var wg sync.WaitGroup
-	for _, job := range jobs {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(j reprocessJob) {
-			defer wg.Done()
-			defer func() { <-sem }()
 			_, err := featureSvc.ReprocessEvents(ctx, &events.ReprocessEventsParams{
-				ExternalCustomerID: j.extID,
-				StartTime:          j.startTime,
-				EndTime:            j.endTime,
+				ExternalCustomerID: extID,
+				StartTime:          startTime,
+				EndTime:            endTime,
 				BatchSize:          reprocessBatchSize,
 			})
 			if err != nil {
-				s.Logger.Warnw("reprocess events for plan failed for customer", "external_customer_id", j.extID, "error", err)
+				s.Logger.Warnw("reprocess events for plan failed for customer", "price_id", priceID, "external_customer_id", extID, "error", err)
 			}
-		}(job)
+		}
 	}
-	wg.Wait()
 
 	return nil
 }
