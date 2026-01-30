@@ -118,6 +118,11 @@ var commands = []Command{
 		Description: "Migrate existing Credit Grant Applications to new structure (ensure environment_id is set)",
 		Run:         internal.MigrateCGA,
 	},
+	{
+		Name:        "sync-price-to-subscriptions",
+		Description: "Sync a price to all subscriptions with the same plan and start date by creating new line items",
+		Run:         internal.SyncPriceToSubscriptions,
+	},
 }
 
 // runBulkReprocessEventsCommand wraps the bulk reprocess events with command line parameters
