@@ -347,6 +347,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			invoices.GET("/:id/pdf", handlers.Invoice.GetInvoicePDF)
 			invoices.POST("/:id/recalculate", handlers.Invoice.RecalculateInvoice)
 			invoices.POST("/:id/comms/trigger", handlers.Invoice.TriggerCommunication)
+			invoices.POST("/:id/webhook/trigger", handlers.Invoice.TriggerWebhook)
 		}
 
 		feature := v1Private.Group("/features")
