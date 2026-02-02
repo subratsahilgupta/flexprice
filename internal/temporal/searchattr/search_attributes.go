@@ -1,5 +1,20 @@
 package searchattr
 
+// This package provides FAIL-SAFE helper functions for setting Temporal custom search attributes.
+//
+// PRODUCTION SAFETY GUARANTEES:
+// 1. All functions are wrapped in panic recovery - they will NEVER crash a workflow
+// 2. All errors are logged as warnings, not errors - they will NEVER fail a workflow
+// 3. All inputs are validated with early returns - invalid data is handled gracefully
+// 4. If search attributes are not registered in Temporal, workflows continue normally
+//
+// This means:
+// - If Temporal doesn't have search attributes registered: Workflow runs fine, just logs warnings
+// - If there's a bug in this code: Workflow runs fine, panic is recovered
+// - If Temporal API changes: Workflow runs fine, error is logged
+//
+// The workflow's core business logic is COMPLETELY ISOLATED from search attribute functionality.
+
 import (
 	"fmt"
 
@@ -38,37 +53,62 @@ func UpsertFailureSearchAttributes(
 	err error,
 	subscriptionID string,
 ) {
-	if err == nil {
+	// Fail-safe: Early returns to prevent any issues
+	if ctx == nil || err == nil {
 		return
 	}
 
+	// Wrap everything in a recover to catch any panics
+	defer func() {
+		if r := recover(); r != nil {
+			logger := workflow.GetLogger(ctx)
+			logger.Warn("Recovered from panic in UpsertFailureSearchAttributes",
+				"panic", r,
+				"activity", activityName)
+		}
+	}()
+
 	logger := workflow.GetLogger(ctx)
 
-	// Build search attributes map
-	searchAttrs := map[string]interface{}{
-		SearchAttributeFailingActivity: activityName,
-		SearchAttributeFailureReason:   truncateString(err.Error(), 2000), // Limit to 2000 chars
+	// Build search attributes map with safe string conversion
+	searchAttrs := make(map[string]interface{})
+
+	// Safely add activity name
+	if activityName != "" {
+		searchAttrs[SearchAttributeFailingActivity] = activityName
 	}
 
-	// Add subscription ID if provided
+	// Safely add failure reason
+	errMsg := "unknown error"
+	if err != nil {
+		errMsg = err.Error()
+	}
+	searchAttrs[SearchAttributeFailureReason] = truncateString(errMsg, 2000)
+
+	// Safely add subscription ID if provided
 	if subscriptionID != "" {
 		searchAttrs[SearchAttributeSubscriptionID] = subscriptionID
 	}
 
-	// Upsert the search attributes
+	// Upsert the search attributes - if this fails, only log warning
 	if upsertErr := workflow.UpsertSearchAttributes(ctx, searchAttrs); upsertErr != nil {
-		logger.Error("Failed to upsert failure search attributes",
+		// Don't fail the workflow, just log a warning
+		logger.Warn("Failed to upsert failure search attributes (non-critical)",
 			"activity", activityName,
-			"error", upsertErr)
+			"upsert_error", upsertErr.Error(),
+			"note", "This does not affect workflow execution")
 	} else {
-		logger.Info("Upserted failure search attributes",
+		logger.Debug("Upserted failure search attributes",
 			"activity", activityName,
-			"failure_reason", truncateString(err.Error(), 200))
+			"failure_reason_preview", truncateString(errMsg, 100))
 	}
 }
 
 // UpsertWorkflowSearchAttributes upserts general workflow search attributes
 // Useful for setting searchable metadata at workflow start
+//
+// FAIL-SAFE: This function will NEVER panic or cause workflow to fail.
+// If search attribute upsert fails, it only logs a warning and continues.
 //
 // Example usage:
 //
@@ -78,10 +118,29 @@ func UpsertFailureSearchAttributes(
 //	    SearchAttributeEnvironmentID: input.EnvironmentID,
 //	})
 func UpsertWorkflowSearchAttributes(ctx workflow.Context, attrs map[string]interface{}) {
+	// Fail-safe: Early return if context or attrs are invalid
+	if ctx == nil || len(attrs) == 0 {
+		return
+	}
+
+	// Wrap in recover to catch any panics
+	defer func() {
+		if r := recover(); r != nil {
+			logger := workflow.GetLogger(ctx)
+			logger.Warn("Recovered from panic in UpsertWorkflowSearchAttributes",
+				"panic", r)
+		}
+	}()
+
 	logger := workflow.GetLogger(ctx)
 
+	// Attempt to upsert - if this fails, only log warning
 	if err := workflow.UpsertSearchAttributes(ctx, attrs); err != nil {
-		logger.Error("Failed to upsert workflow search attributes", "error", err)
+		// Don't fail the workflow, just log a warning
+		logger.Warn("Failed to upsert workflow search attributes (non-critical)",
+			"error", err.Error(),
+			"attribute_count", len(attrs),
+			"note", "This does not affect workflow execution")
 	} else {
 		logger.Debug("Upserted workflow search attributes", "count", len(attrs))
 	}
@@ -89,7 +148,23 @@ func UpsertWorkflowSearchAttributes(ctx workflow.Context, attrs map[string]inter
 
 // ClearFailureSearchAttributes clears failure-related search attributes
 // Useful when retrying after a failure
+//
+// FAIL-SAFE: This function will NEVER panic or cause workflow to fail.
 func ClearFailureSearchAttributes(ctx workflow.Context) {
+	// Fail-safe: Early return if context is invalid
+	if ctx == nil {
+		return
+	}
+
+	// Wrap in recover to catch any panics
+	defer func() {
+		if r := recover(); r != nil {
+			logger := workflow.GetLogger(ctx)
+			logger.Warn("Recovered from panic in ClearFailureSearchAttributes",
+				"panic", r)
+		}
+	}()
+
 	logger := workflow.GetLogger(ctx)
 
 	// Set empty strings to clear the attributes
@@ -98,17 +173,38 @@ func ClearFailureSearchAttributes(ctx workflow.Context) {
 		SearchAttributeFailureReason:   "",
 	}
 
+	// Attempt to clear - if this fails, only log warning
 	if err := workflow.UpsertSearchAttributes(ctx, searchAttrs); err != nil {
-		logger.Error("Failed to clear failure search attributes", "error", err)
+		// Don't fail the workflow, just log a warning
+		logger.Warn("Failed to clear failure search attributes (non-critical)",
+			"error", err.Error(),
+			"note", "This does not affect workflow execution")
 	}
 }
 
 // truncateString truncates a string to the specified length
+// FAIL-SAFE: Returns empty string on any error
 func truncateString(s string, maxLen int) string {
+	defer func() {
+		if r := recover(); r != nil {
+			// Silently recover from any panic
+		}
+	}()
+
+	if s == "" || maxLen <= 0 {
+		return ""
+	}
+
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+
+	// Safely truncate
+	if maxLen > 3 {
+		return s[:maxLen-3] + "..."
+	}
+
+	return s[:maxLen]
 }
 
 // GetSearchAttributeQueries returns example queries for filtering workflows
