@@ -41,7 +41,6 @@ const (
 	BillingModeInArrears BillingMode = "in_arrears"
 )
 
-
 // TerminationReason represents why a subscription is being terminated.
 type TerminationReason string
 
@@ -80,6 +79,37 @@ func (c CancellationType) Validate() error {
 
 func (c CancellationType) String() string {
 	return string(c)
+}
+
+// InvoiceOnCancelPolicy controls whether to generate a final invoice on subscription cancellation.
+type InvoiceOnCancelPolicy string
+
+const (
+	InvoiceOnCancelPolicyGenerateInvoice InvoiceOnCancelPolicy = "generate_invoice"
+	InvoiceOnCancelPolicySkip            InvoiceOnCancelPolicy = "skip"
+)
+
+func (p InvoiceOnCancelPolicy) Validate() error {
+
+	allowedValues := []InvoiceOnCancelPolicy{
+		InvoiceOnCancelPolicyGenerateInvoice,
+		InvoiceOnCancelPolicySkip,
+	}
+
+	if !lo.Contains(allowedValues, p) {
+		return ierr.NewError("invalid invoice on cancel policy").
+			WithHint("Invoice on cancel policy must be generate_invoice or skip").
+			WithReportableDetails(map[string]any{
+				"allowed_values": allowedValues,
+				"provided_value": p,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+func (p InvoiceOnCancelPolicy) String() string {
+	return string(p)
 }
 
 // BillingCycleAnchor defines how billing cycle is handled during subscription changes
