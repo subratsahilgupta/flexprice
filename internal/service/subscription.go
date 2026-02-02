@@ -1621,7 +1621,14 @@ func (s *subscriptionService) CancelSubscription(
 			prorationDetails, totalCreditAmount = s.convertProrationResultToDetails(prorationResult)
 		}
 
-		if req.CancellationType != types.CancellationTypeEndOfPeriod {
+		// Default to skip (no final invoice) when policy is empty; only generate when explicitly requested
+		invoicePolicy := req.InvoiceOnImmediateCancellationPolicy
+		if invoicePolicy == "" {
+			invoicePolicy = types.InvoiceOnImmediateCancellationPolicySkip
+		}
+		shouldCreateInvoice := req.CancellationType != types.CancellationTypeEndOfPeriod &&
+			invoicePolicy == types.InvoiceOnImmediateCancellationPolicyGenerateInvoice
+		if shouldCreateInvoice {
 			invoiceService := NewInvoiceService(s.ServiceParams)
 			paymentParams := dto.NewPaymentParametersFromSubscription(subscription.CollectionMethod, subscription.PaymentBehavior, subscription.GatewayPaymentMethodID)
 			paymentParams = paymentParams.NormalizePaymentParameters()
