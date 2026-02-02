@@ -387,7 +387,7 @@ type CancelSubscriptionRequest struct {
 	// CancellationType determines when the cancellation takes effect
 	CancellationType types.CancellationType `json:"cancellation_type" validate:"required"`
 
-	// InvoiceOnImmediateCancellationPolicy controls whether to generate a final invoice on immediate cancellation. Defaults to generate_invoice.
+	// InvoiceOnImmediateCancellationPolicy controls whether to generate a final invoice on immediate cancellation. Defaults to skip.
 	InvoiceOnImmediateCancellationPolicy *types.InvoiceOnImmediateCancellationPolicy `json:"invoice_on_immediate_cancellation_policy,omitempty"`
 
 	// Reason for cancellation (for audit and business intelligence)
@@ -439,8 +439,8 @@ func (r *CancelSubscriptionRequest) Validate() error {
 		r.ProrationBehavior = types.ProrationBehaviorNone
 	}
 	// Set default invoice on immediate cancellation policy if not provided
-	if r.InvoiceOnImmediateCancellationPolicy == nil || *r.InvoiceOnImmediateCancellationPolicy == "" {
-		r.InvoiceOnImmediateCancellationPolicy = lo.ToPtr(types.InvoiceOnImmediateCancellationPolicyGenerateInvoice)
+	if r.InvoiceOnImmediateCancellationPolicy == nil {
+		r.InvoiceOnImmediateCancellationPolicy = lo.ToPtr(types.InvoiceOnImmediateCancellationPolicySkip)
 	} else if err := (*r.InvoiceOnImmediateCancellationPolicy).Validate(); err != nil {
 		return err
 	}

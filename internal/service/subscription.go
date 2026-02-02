@@ -1621,7 +1621,7 @@ func (s *subscriptionService) CancelSubscription(
 			prorationDetails, totalCreditAmount = s.convertProrationResultToDetails(prorationResult)
 		}
 
-		invoicePolicy := lo.FromPtrOr(req.InvoiceOnImmediateCancellationPolicy, types.InvoiceOnImmediateCancellationPolicyGenerateInvoice)
+		invoicePolicy := lo.FromPtrOr(req.InvoiceOnImmediateCancellationPolicy, types.InvoiceOnImmediateCancellationPolicySkip)
 		shouldCreateInvoice := req.CancellationType != types.CancellationTypeEndOfPeriod &&
 			invoicePolicy == types.InvoiceOnImmediateCancellationPolicyGenerateInvoice
 		if shouldCreateInvoice {
