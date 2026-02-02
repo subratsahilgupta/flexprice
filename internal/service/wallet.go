@@ -1690,6 +1690,14 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 			Mark(ierr.ErrInvalidOperation)
 	}
 
+	shouldSkip, err := s.shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if shouldSkip {
+		return nil
+	}
+
 	// Create a debit operation for the expired credits
 	debitReq := &wallet.WalletOperation{
 		WalletID:          tx.WalletID,
@@ -1721,6 +1729,52 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 	}
 
 	return nil
+}
+
+// shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice checks if there is any subscription or invoice
+// for the customer with current_period_end/end time before now. If so, credit expiry should be skipped.
+// It returns (true, nil) when expiry should be skipped, (false, nil) when expiry can proceed, and (false, err) on error.
+func (s *walletService) shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(ctx context.Context, tx *wallet.Transaction) (bool, error) {
+	subFilter := types.NewSubscriptionFilter()
+	subFilter.CustomerID = tx.CustomerID
+	subFilter.Limit = lo.ToPtr(1)
+	subFilter.TimeRangeFilter = &types.TimeRangeFilter{
+		EndTime: lo.ToPtr(time.Now().UTC()),
+	}
+
+	subscriptions, err := s.SubRepo.List(ctx, subFilter)
+	if err != nil {
+		return false, err
+	}
+	if len(subscriptions) > 0 {
+		s.Logger.Warnw("there is a subscription for this customer with current_period_end < now and credits available to expire",
+			"transaction_id", tx.ID,
+			"subscription_id", subscriptions[0].ID,
+			"credits_available", tx.CreditsAvailable,
+		)
+		return true, nil
+	}
+
+	invoiceFilter := types.NewInvoiceFilter()
+	invoiceFilter.CustomerID = tx.CustomerID
+	invoiceFilter.Limit = lo.ToPtr(1)
+	invoiceFilter.TimeRangeFilter = &types.TimeRangeFilter{
+		EndTime: tx.ExpiryDate,
+	}
+
+	invoices, err := s.InvoiceRepo.List(ctx, invoiceFilter)
+	if err != nil {
+		return false, err
+	}
+	if len(invoices) > 0 {
+		s.Logger.Warnw("there is an invoice for this customer with current_period_end < now and credits available to expire",
+			"transaction_id", tx.ID,
+			"invoice_id", invoices[0].ID,
+		)
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (s *walletService) publishInternalWalletWebhookEvent(ctx context.Context, eventName string, walletID string) {
