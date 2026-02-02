@@ -163,9 +163,9 @@ cache:
 
 event_processing:
   enabled: true
-  topic: "events"
+  topic: "staging_events"
   rate_limit: 12
-  consumer_group: "flexprice-consumer-local"
+  consumer_group: "flexprice-consumer-local-v1"
 
 event_processing_lazy:
   enabled: true
@@ -274,3 +274,10 @@ redis:
 raw_events_reprocessing:
   enabled: true
   output_topic: "prod_events_v4"
+
+# Raw event consumption configuration (batch processing from Bento)
+raw_event_consumption:
+  enabled: true
+  topic: "staging_events_backfill"
+  rate_limit: 10
+  consumer_group: "v1_raw_event_processing_v4"

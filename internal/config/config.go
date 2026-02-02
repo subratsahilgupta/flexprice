@@ -53,6 +53,7 @@ type Configuration struct {
 	CustomerPortal             CustomerPortalConfig             `mapstructure:"customer_portal" validate:"required"`
 	Redis                      RedisConfig                      `mapstructure:"redis" validate:"required"`
 	RawEventsReprocessing      RawEventsReprocessingConfig      `mapstructure:"raw_events_reprocessing" validate:"required"`
+	RawEventConsumption        RawEventConsumptionConfig        `mapstructure:"raw_event_consumption" validate:"required"`
 }
 
 type CacheConfig struct {
@@ -276,6 +277,13 @@ type WalletBalanceAlertConfig struct {
 type RawEventsReprocessingConfig struct {
 	Enabled     bool   `mapstructure:"enabled" default:"true"`
 	OutputTopic string `mapstructure:"output_topic" default:"prod_events_v4"`
+}
+
+type RawEventConsumptionConfig struct {
+	Enabled       bool   `mapstructure:"enabled" default:"true"`
+	Topic         string `mapstructure:"topic" default:"raw_events"`
+	RateLimit     int64  `mapstructure:"rate_limit" default:"10"`
+	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_raw_event_processing"`
 }
 
 type EnvAccessConfig struct {
