@@ -163,9 +163,9 @@ cache:
 
 event_processing:
   enabled: true
-  topic: "staging_events"
+  topic: "events"
   rate_limit: 12
-  consumer_group: "flexprice-consumer-local-v1"
+  consumer_group: "flexprice-consumer-local"
 
 event_processing_lazy:
   enabled: true
