@@ -81,24 +81,24 @@ func (c CancellationType) String() string {
 	return string(c)
 }
 
-// InvoiceOnImmediateCancellationPolicy controls whether to generate a final invoice on immediate subscription cancellation.
-type InvoiceOnImmediateCancellationPolicy string
+// CancelImmediatelyInvoicePolicy controls whether to generate a final invoice on immediate subscription cancellation.
+type CancelImmediatelyInvoicePolicy string
 
 const (
-	InvoiceOnImmediateCancellationPolicyGenerateInvoice InvoiceOnImmediateCancellationPolicy = "generate_invoice"
-	InvoiceOnImmediateCancellationPolicySkip            InvoiceOnImmediateCancellationPolicy = "skip"
+	CancelImmediatelyInvoicePolicyGenerateInvoice CancelImmediatelyInvoicePolicy = "generate_invoice"
+	CancelImmediatelyInvoicePolicySkip            CancelImmediatelyInvoicePolicy = "skip"
 )
 
-func (p InvoiceOnImmediateCancellationPolicy) Validate() error {
+func (p CancelImmediatelyInvoicePolicy) Validate() error {
 
-	allowedValues := []InvoiceOnImmediateCancellationPolicy{
-		InvoiceOnImmediateCancellationPolicyGenerateInvoice,
-		InvoiceOnImmediateCancellationPolicySkip,
+	allowedValues := []CancelImmediatelyInvoicePolicy{
+		CancelImmediatelyInvoicePolicyGenerateInvoice,
+		CancelImmediatelyInvoicePolicySkip,
 	}
 
 	if !lo.Contains(allowedValues, p) {
-		return ierr.NewError("invalid invoice on immediate cancellation policy").
-			WithHint("Invoice on immediate cancellation policy must be generate_invoice or skip").
+		return ierr.NewError("invalid cancel immediately invoice policy").
+			WithHint("Cancel immediately invoice policy must be generate_invoice or skip").
 			WithReportableDetails(map[string]any{
 				"allowed_values": allowedValues,
 				"provided_value": p,
@@ -108,7 +108,7 @@ func (p InvoiceOnImmediateCancellationPolicy) Validate() error {
 	return nil
 }
 
-func (p InvoiceOnImmediateCancellationPolicy) String() string {
+func (p CancelImmediatelyInvoicePolicy) String() string {
 	return string(p)
 }
 
