@@ -34,7 +34,9 @@ type rawEventConsumptionService struct {
 
 // RawEventBatch represents the batch structure from Bento
 type RawEventBatch struct {
-	Data []json.RawMessage `json:"data"`
+	Data          []json.RawMessage `json:"data"`
+	TenantID      string            `json:"tenant_id"`
+	EnvironmentID string            `json:"environment_id"`
 }
 
 // NewRawEventConsumptionService creates a new raw event consumption service
@@ -124,9 +126,28 @@ func (s *rawEventConsumptionService) processMessage(msg *message.Message) error 
 		"message_uuid", msg.UUID,
 	)
 
-	// Get tenant and environment IDs from environment variables
-	tenantID := s.Config.Billing.TenantID
-	environmentID := s.Config.Billing.EnvironmentID
+	// Get tenant and environment IDs from batch payload (priority)
+	// Fall back to config if not provided in batch
+	tenantID := batch.TenantID
+	if tenantID == "" {
+		tenantID = s.Config.Billing.TenantID
+	}
+
+	environmentID := batch.EnvironmentID
+	if environmentID == "" {
+		environmentID = s.Config.Billing.EnvironmentID
+	}
+
+	s.Logger.Debugw("using tenant and environment context",
+		"tenant_id", tenantID,
+		"environment_id", environmentID,
+		"source", func() string {
+			if batch.TenantID != "" {
+				return "batch_payload"
+			}
+			return "config"
+		}(),
+	)
 
 	// Counters for tracking
 	successCount := 0
