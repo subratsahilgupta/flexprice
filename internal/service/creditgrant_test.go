@@ -927,10 +927,10 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 	s.NotNil(currentApp.PeriodStart)
 	s.NotNil(currentApp.PeriodEnd)
 
-	// For monthly period, verify it's approximately 30 days (allowing for month variations)
+	// For monthly period, verify it's approximately 28-32 days (allow 1h tolerance for float/DST)
 	periodDuration := currentApp.PeriodEnd.Sub(currentApp.PeriodStart)
-	s.GreaterOrEqual(periodDuration.Hours(), float64(28*24), "Monthly period should be at least 28 days")
-	s.LessOrEqual(periodDuration.Hours(), float64(32*24), "Monthly period should be at most 32 days")
+	s.GreaterOrEqual(periodDuration.Hours(), float64(28*24)-1, "Monthly period should be at least 28 days")
+	s.LessOrEqual(periodDuration.Hours(), float64(32*24)+1, "Monthly period should be at most 32 days")
 
 	// Verify next period dates
 	s.NotNil(nextApp.PeriodStart)
@@ -940,10 +940,10 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
-	// Next period should also be approximately monthly
+	// Next period should also be approximately monthly (allow 1h tolerance for float/DST)
 	nextPeriodDuration := nextApp.PeriodEnd.Sub(nextApp.PeriodStart)
-	s.GreaterOrEqual(nextPeriodDuration.Hours(), float64(28*24), "Next monthly period should be at least 28 days")
-	s.LessOrEqual(nextPeriodDuration.Hours(), float64(32*24), "Next monthly period should be at most 32 days")
+	s.GreaterOrEqual(nextPeriodDuration.Hours(), float64(28*24)-1, "Next monthly period should be at least 28 days")
+	s.LessOrEqual(nextPeriodDuration.Hours(), float64(32*24)+1, "Next monthly period should be at most 32 days")
 
 	s.T().Logf("Monthly Grant - Current Period: %s to %s (Duration: %.1f days)",
 		currentApp.PeriodStart.Format("2006-01-02 15:04:05"),
