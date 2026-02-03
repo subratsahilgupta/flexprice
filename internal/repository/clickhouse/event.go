@@ -293,6 +293,13 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 					}
 					total = safeDecimalFromFloat(totalFloat)
 					value = safeDecimalFromFloat(valueFloat)
+					// Ensure negative values are treated as zero
+					if total.LessThan(decimal.Zero) {
+						total = decimal.Zero
+					}
+					if value.LessThan(decimal.Zero) {
+						value = decimal.Zero
+					}
 					// Set the overall max/sum as the result value
 					result.Value = total
 				} else {
@@ -308,6 +315,10 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 							Mark(ierr.ErrDatabase)
 					}
 					value = safeDecimalFromFloat(floatValue)
+					// Ensure negative values are treated as zero
+					if value.LessThan(decimal.Zero) {
+						value = decimal.Zero
+					}
 				}
 			case types.AggregationAvg, types.AggregationLatest, types.AggregationSumWithMultiplier, types.AggregationWeightedSum:
 				var floatValue float64
@@ -323,8 +334,8 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 				}
 				value = safeDecimalFromFloat(floatValue)
 
-				// For Latest aggregation, return 0 if negative
-				if params.AggregationType == types.AggregationLatest && value.LessThan(decimal.Zero) {
+				// Ensure negative values are treated as zero for all aggregation types
+				if value.LessThan(decimal.Zero) {
 					value = decimal.Zero
 				}
 			default:
@@ -371,8 +382,8 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 				}
 				result.Value = safeDecimalFromFloat(value)
 
-				// For Latest aggregation, return 0 if negative
-				if params.AggregationType == types.AggregationLatest && result.Value.LessThan(decimal.Zero) {
+				// Ensure negative values are treated as zero for all aggregation types
+				if result.Value.LessThan(decimal.Zero) {
 					result.Value = decimal.Zero
 				}
 			default:
