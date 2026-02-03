@@ -212,9 +212,10 @@ func (s *rawEventConsumptionService) processMessage(msg *message.Message) error 
 		"message_uuid", msg.UUID,
 	)
 
-	// Return error only if all events failed
-	if successCount == 0 && len(batch.Data) > 0 {
-		return fmt.Errorf("failed to process any events in batch")
+	// Return error if any events failed (causes batch retry)
+	// Skip count is acceptable (validation failures), but error count requires retry
+	if errorCount > 0 {
+		return fmt.Errorf("failed to process %d events in batch, retrying entire batch", errorCount)
 	}
 
 	return nil
