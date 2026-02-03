@@ -2381,7 +2381,6 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.Su
 			TimeRangeFilter: &types.TimeRangeFilter{
 				EndTime: &now,
 			},
-			SubscriptionIDs: []string{"subs_01KCKKHB2Q2KY412GDC3RHYW18"},
 		}
 
 		subs, err := s.SubRepo.ListAllTenant(ctx, filter)
