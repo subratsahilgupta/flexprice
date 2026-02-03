@@ -73,7 +73,7 @@ func ProcessSubscriptionBillingWorkflow(
 
 	// Define activity options
 	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 30 * time.Minute,
+		StartToCloseTimeout: 45 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second * 10,
 			BackoffCoefficient: 2.0,
