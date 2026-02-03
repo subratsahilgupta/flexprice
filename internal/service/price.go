@@ -127,6 +127,23 @@ func (s *priceService) preparePriceForCreation(ctx context.Context, req *dto.Cre
 		return nil, err
 	}
 
+	// Validate meter for USAGE prices: must be set and must exist
+	if p.Type == types.PRICE_TYPE_USAGE {
+		if p.MeterID == "" {
+			return nil, ierr.NewError("meter_id is required when type is USAGE").
+				WithHint("Please select a metered feature to set up usage pricing").
+				WithReportableDetails(map[string]interface{}{
+					"type": p.Type,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		if _, err := s.MeterRepo.GetMeter(ctx, p.MeterID); err != nil {
+			return nil, err
+		}
+
+	}
+
 	// Apply price unit conversion if price type is CUSTOM
 	// This converts amounts/tiers and updates the Price object
 	if p.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
