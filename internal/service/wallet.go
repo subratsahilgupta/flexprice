@@ -67,8 +67,8 @@ type WalletService interface {
 	// CreditWallet processes a credit operation on a wallet
 	CreditWallet(ctx context.Context, req *wallet.WalletOperation) error
 
-	// ExpireCredits expires credits for a given transaction
-	ExpireCredits(ctx context.Context, transactionID string) error
+	// ExpireCredits expires credits for a given transaction. Returns result with Expired or SkipReason (active_subscription, active_invoice).
+	ExpireCredits(ctx context.Context, transactionID string) (*types.ExpireCreditsResult, error)
 
 	// conversion rate operations
 	GetCurrencyAmountFromCredits(credits decimal.Decimal, conversionRate decimal.Decimal) decimal.Decimal
@@ -1646,16 +1646,16 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 }
 
 // ExpireCredits expires credits for a given transaction
-func (s *walletService) ExpireCredits(ctx context.Context, transactionID string) error {
+func (s *walletService) ExpireCredits(ctx context.Context, transactionID string) (*types.ExpireCreditsResult, error) {
 	// Get the transaction
 	tx, err := s.WalletRepo.GetTransactionByID(ctx, transactionID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Validate transaction
 	if tx.Type != types.TransactionTypeCredit {
-		return ierr.NewError("can only expire credit transactions").
+		return nil, ierr.NewError("can only expire credit transactions").
 			WithHint("Only credit transactions can be expired").
 			WithReportableDetails(map[string]interface{}{
 				"transaction_id": transactionID,
@@ -1664,7 +1664,7 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 	}
 
 	if tx.ExpiryDate == nil {
-		return ierr.NewError("transaction has no expiry date").
+		return nil, ierr.NewError("transaction has no expiry date").
 			WithHint("Transaction must have an expiry date to be expired").
 			WithReportableDetails(map[string]interface{}{
 				"transaction_id": transactionID,
@@ -1673,7 +1673,7 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 	}
 
 	if tx.ExpiryDate.After(time.Now().UTC()) {
-		return ierr.NewError("transaction has not expired yet").
+		return nil, ierr.NewError("transaction has not expired yet").
 			WithHint("Transaction must have expired to be expired").
 			WithReportableDetails(map[string]interface{}{
 				"transaction_id": transactionID,
@@ -1682,7 +1682,7 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 	}
 
 	if tx.CreditsAvailable.IsZero() {
-		return ierr.NewError("no credits available to expire").
+		return nil, ierr.NewError("no credits available to expire").
 			WithHint("Transaction has no credits available to expire").
 			WithReportableDetails(map[string]interface{}{
 				"transaction_id": transactionID,
@@ -1690,12 +1690,12 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 			Mark(ierr.ErrInvalidOperation)
 	}
 
-	shouldSkip, err := s.shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(ctx, tx)
+	skipReason, err := s.shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(ctx, tx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if shouldSkip {
-		return nil
+	if skipReason != types.CreditExpirySkipReasonNone {
+		return &types.ExpireCreditsResult{Expired: false, SkipReason: skipReason}, nil
 	}
 
 	// Create a debit operation for the expired credits
@@ -1725,16 +1725,16 @@ func (s *walletService) ExpireCredits(ctx context.Context, transactionID string)
 	})
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return &types.ExpireCreditsResult{Expired: true}, nil
 }
 
 // shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice checks if there is any subscription or invoice
 // for the customer with current_period_end/end time before now. If so, credit expiry should be skipped.
-// It returns (true, nil) when expiry should be skipped, (false, nil) when expiry can proceed, and (false, err) on error.
-func (s *walletService) shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(ctx context.Context, tx *wallet.Transaction) (bool, error) {
+// It returns the skip reason when expiry should be skipped, CreditExpirySkipReasonNone when expiry can proceed, and err on error.
+func (s *walletService) shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(ctx context.Context, tx *wallet.Transaction) (types.CreditExpirySkipReason, error) {
 	subFilter := types.NewSubscriptionFilter()
 	subFilter.CustomerID = tx.CustomerID
 	subFilter.Limit = lo.ToPtr(1)
@@ -1745,7 +1745,7 @@ func (s *walletService) shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(c
 
 	subscriptions, err := s.SubRepo.List(ctx, subFilter)
 	if err != nil {
-		return false, err
+		return types.CreditExpirySkipReasonNone, err
 	}
 	if len(subscriptions) > 0 {
 		s.Logger.Warnw("there is a subscription for this customer with current_period_end < now and credits available to expire",
@@ -1753,7 +1753,7 @@ func (s *walletService) shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(c
 			"subscription_id", subscriptions[0].ID,
 			"credits_available", tx.CreditsAvailable,
 		)
-		return true, nil
+		return types.CreditExpirySkipReasonActiveSubscription, nil
 	}
 
 	// Find invoices whose billing period contains the grant's created_at and whose period ended before grant expiry
@@ -1769,17 +1769,17 @@ func (s *walletService) shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(c
 
 	invoices, err := s.InvoiceRepo.List(ctx, invoiceFilter)
 	if err != nil {
-		return false, err
+		return types.CreditExpirySkipReasonNone, err
 	}
 	if len(invoices) > 0 {
 		s.Logger.Warnw("there is an invoice for this customer with current_period_end < now and credits available to expire",
 			"transaction_id", tx.ID,
 			"invoice_id", invoices[0].ID,
 		)
-		return true, nil
+		return types.CreditExpirySkipReasonActiveInvoice, nil
 	}
 
-	return false, nil
+	return types.CreditExpirySkipReasonNone, nil
 }
 
 func (s *walletService) publishInternalWalletWebhookEvent(ctx context.Context, eventName string, walletID string) {
