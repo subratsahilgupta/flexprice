@@ -20,6 +20,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/temporal/models"
+	subscriptionModels "github.com/flexprice/flexprice/internal/temporal/models/subscription"
 	temporalservice "github.com/flexprice/flexprice/internal/temporal/service"
 
 	"github.com/flexprice/flexprice/internal/types"
@@ -2380,6 +2381,7 @@ func (s *subscriptionService) UpdateBillingPeriods(ctx context.Context) (*dto.Su
 			TimeRangeFilter: &types.TimeRangeFilter{
 				EndTime: &now,
 			},
+			SubscriptionIDs: []string{"subs_01KCKKHB2Q2KY412GDC3RHYW18"},
 		}
 
 		subs, err := s.SubRepo.ListAllTenant(ctx, filter)
@@ -5787,4 +5789,91 @@ func (s *subscriptionService) createCancellationSchedule(
 		"reason", req.Reason)
 
 	return nil
+}
+
+// TriggerSubscriptionWorkflow triggers the subscription billing workflow for a given subscription
+func (s *subscriptionService) TriggerSubscriptionWorkflow(ctx context.Context, subscriptionID string) (*dto.TriggerSubscriptionWorkflowResponse, error) {
+	// Validate subscription ID
+	if subscriptionID == "" {
+		return nil, ierr.NewError("subscription_id is required").
+			WithHint("Please provide a valid subscription ID").
+			Mark(ierr.ErrValidation)
+	}
+
+	// Fetch the subscription to get current period details
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to fetch subscription").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": subscriptionID,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	// Get tenant and environment from context
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	userID := types.GetUserID(ctx)
+
+	s.Logger.Infow("triggering subscription billing workflow",
+		"subscription_id", subscriptionID,
+		"tenant_id", tenantID,
+		"environment_id", environmentID,
+		"user_id", userID,
+		"current_period_start", sub.CurrentPeriodStart,
+		"current_period_end", sub.CurrentPeriodEnd)
+
+	// Prepare workflow input
+	workflowInput := subscriptionModels.ProcessSubscriptionBillingWorkflowInput{
+		SubscriptionID: subscriptionID,
+		TenantID:       tenantID,
+		EnvironmentID:  environmentID,
+		UserID:         userID,
+		PeriodStart:    sub.CurrentPeriodStart,
+		PeriodEnd:      sub.CurrentPeriodEnd,
+	}
+
+	// Validate workflow input
+	if err := workflowInput.Validate(); err != nil {
+		s.Logger.Errorw("invalid workflow input", "error", err)
+		return nil, ierr.WithError(err).
+			WithHint("Invalid workflow input").
+			Mark(ierr.ErrValidation)
+	}
+
+	temporalSvc := temporalservice.GetGlobalTemporalService()
+	if temporalSvc == nil {
+		return nil, ierr.NewError("temporal service not available").
+			WithHint("Temporal service not available").
+			Mark(ierr.ErrInternal)
+	}
+
+	// Execute workflow asynchronously
+	workflowRun, err := temporalSvc.ExecuteWorkflow(
+		ctx,
+		types.TemporalProcessSubscriptionBillingWorkflow,
+		workflowInput,
+	)
+	if err != nil {
+		s.Logger.Errorw("failed to trigger subscription billing workflow",
+			"error", err,
+			"subscription_id", subscriptionID)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to trigger subscription billing workflow").
+			Mark(ierr.ErrInternal)
+	}
+
+	s.Logger.Infow("successfully triggered subscription billing workflow",
+		"subscription_id", subscriptionID,
+		"workflow_id", workflowRun.GetID(),
+		"run_id", workflowRun.GetRunID())
+
+	response := &dto.TriggerSubscriptionWorkflowResponse{
+		WorkflowID: workflowRun.GetID(),
+		RunID:      workflowRun.GetRunID(),
+		Message:    fmt.Sprintf("Successfully triggered subscription billing workflow for subscription %s", subscriptionID),
+	}
+
+	return response, nil
 }

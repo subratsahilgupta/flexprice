@@ -528,7 +528,7 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 			properties,
 			environment_id,
 			ingested_at
-		FROM events
+		FROM events FINAL
 		WHERE tenant_id = ?
 	`
 	args := make([]interface{}, 0)
@@ -714,10 +714,10 @@ func (r *EventRepository) FindUnprocessedEvents(ctx context.Context, params *eve
 			e.id, e.external_customer_id, e.customer_id, e.tenant_id, 
 			e.event_name, e.timestamp, e.source, e.properties, 
 			e.environment_id, e.ingested_at
-		FROM events e
+		FROM events FINAL e
 		ANTI JOIN (
 			SELECT id, tenant_id, environment_id
-			FROM events_processed
+			FROM events_processed FINAL
 			WHERE tenant_id = ?
 			AND environment_id = ?
 		) AS p
@@ -846,10 +846,10 @@ func (r *EventRepository) FindUnprocessedEventsFromFeatureUsage(ctx context.Cont
 			e.id, e.external_customer_id, e.customer_id, e.tenant_id, 
 			e.event_name, e.timestamp, e.source, e.properties, 
 			e.environment_id, e.ingested_at
-		FROM events e
+		FROM events FINAL e
 		ANTI JOIN (
 			SELECT id, tenant_id, environment_id
-			FROM feature_usage
+			FROM feature_usage FINAL
 			WHERE tenant_id = ?
 			AND environment_id = ?
 		) AS p
@@ -975,7 +975,7 @@ func (r *EventRepository) GetDistinctEventNames(ctx context.Context, externalCus
 
 	query := `
 		SELECT DISTINCT event_name 
-		FROM events 
+		FROM events FINAL
 		WHERE tenant_id = ?
 		AND environment_id = ?
 		AND external_customer_id = ?
@@ -1070,7 +1070,7 @@ func (r *EventRepository) GetTotalEventCount(ctx context.Context, startTime, end
 			SELECT 
 				%s AS window_time,
 				COUNT(DISTINCT(id)) as event_count
-			FROM events
+			FROM events FINAL
 			WHERE tenant_id = ?
 			AND environment_id = ?
 			AND timestamp >= ?
@@ -1127,7 +1127,7 @@ func (r *EventRepository) GetTotalEventCount(ctx context.Context, startTime, end
 		// No window size, just get total count
 		query := `
 			SELECT COUNT(DISTINCT(id)) as total_count
-			FROM events
+			FROM events FINAL
 			WHERE tenant_id = ?
 			AND environment_id = ?
 		`
@@ -1185,7 +1185,7 @@ func (r *EventRepository) GetEventByID(ctx context.Context, eventID string) (*ev
 			properties,
 			environment_id,
 			ingested_at
-		FROM events
+		FROM events FINAL
 		WHERE tenant_id = ?
 		AND environment_id = ?
 		AND id = ?
