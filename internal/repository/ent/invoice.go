@@ -960,6 +960,20 @@ func (o InvoiceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types
 		}
 	}
 
+	// Apply invoice period filters (period_start / period_end GTE/LTE)
+	if f.PeriodStartGTE != nil {
+		query = query.Where(invoice.PeriodStartGTE(*f.PeriodStartGTE))
+	}
+	if f.PeriodStartLTE != nil {
+		query = query.Where(invoice.PeriodStartLTE(*f.PeriodStartLTE))
+	}
+	if f.PeriodEndGTE != nil {
+		query = query.Where(invoice.PeriodEndGTE(*f.PeriodEndGTE))
+	}
+	if f.PeriodEndLTE != nil {
+		query = query.Where(invoice.PeriodEndLTE(*f.PeriodEndLTE))
+	}
+
 	if f.Filters != nil {
 		query, err = dsl.ApplyFilters[InvoiceQuery, predicate.Invoice](
 			query,
