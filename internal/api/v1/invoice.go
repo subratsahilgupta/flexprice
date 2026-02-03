@@ -530,20 +530,6 @@ func (h *InvoiceHandler) TriggerCommunication(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "communication triggered successfully"})
 }
 
-// TriggerWebhook godoc
-// @Summary Trigger a webhook event for an invoice
-// @Description Manually trigger a specific webhook event for an invoice. Useful for debugging or replaying missed webhooks.
-// @Tags Invoices
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param id path string true "Invoice ID"
-// @Param event_name query string true "Event name (e.g., invoice.update.finalized)"
-// @Success 200 {object} dto.SuccessResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 404 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /invoices/{id}/webhook/trigger [post]
 func (h *InvoiceHandler) TriggerWebhook(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
