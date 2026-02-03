@@ -546,17 +546,6 @@ func (h *SubscriptionHandler) GetActiveAddonAssociations(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// @Summary Trigger subscription billing workflow
-// @Description Trigger the subscription billing workflow for a given subscription ID
-// @Tags Subscriptions
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param subscription_id path string true "Subscription ID"
-// @Success 200 {object} dto.TriggerSubscriptionWorkflowResponse
-// @Failure 400 {object} ierr.ErrorResponse
-// @Failure 500 {object} ierr.ErrorResponse
-// @Router /subscriptions/{subscription_id}/trigger-workflow [post]
 func (h *SubscriptionHandler) TriggerSubscriptionWorkflow(c *gin.Context) {
 	subscriptionID := c.Param("subscription_id")
 	if subscriptionID == "" {
