@@ -83,7 +83,8 @@ func UpsertFailureSearchAttributes(
 	if err != nil {
 		errMsg = err.Error()
 	}
-	searchAttrs[SearchAttributeFailureReason] = truncateString(errMsg, 2000)
+	// Temporal has a 2048 byte limit - truncate to 2000 bytes to be safe
+	searchAttrs[SearchAttributeFailureReason] = truncateStringByBytes(errMsg, 2000)
 
 	// Safely add subscription ID if provided
 	if subscriptionID != "" {
@@ -182,7 +183,7 @@ func ClearFailureSearchAttributes(ctx workflow.Context) {
 	}
 }
 
-// truncateString truncates a string to the specified length
+// truncateString truncates a string to the specified length (character count)
 // FAIL-SAFE: Returns empty string on any error
 func truncateString(s string, maxLen int) string {
 	defer func() {
@@ -205,6 +206,49 @@ func truncateString(s string, maxLen int) string {
 	}
 
 	return s[:maxLen]
+}
+
+// truncateStringByBytes truncates a string to the specified byte limit
+// This is important for Temporal search attributes which have byte limits, not character limits
+// FAIL-SAFE: Returns empty string on any error
+func truncateStringByBytes(s string, maxBytes int) string {
+	defer func() {
+		if r := recover(); r != nil {
+			// Silently recover from any panic
+		}
+	}()
+
+	if s == "" || maxBytes <= 0 {
+		return ""
+	}
+
+	// If string is already within limit, return as-is
+	if len(s) <= maxBytes {
+		return s
+	}
+
+	// Truncate by bytes, ensuring we don't cut in the middle of a multi-byte character
+	ellipsis := "..."
+	maxBytes -= len(ellipsis) // Reserve space for ellipsis
+
+	if maxBytes <= 0 {
+		return ""
+	}
+
+	// Start from maxBytes and walk backward to find a valid UTF-8 boundary
+	truncated := s
+	for len(truncated) > maxBytes {
+		// Remove last rune to ensure we don't cut in middle of multi-byte char
+		truncated = truncated[:len(truncated)-1]
+	}
+
+	// Trim to the last complete UTF-8 character
+	for len(truncated) > 0 && len(truncated) > maxBytes {
+		// Move back one byte at a time until we're under the limit
+		truncated = truncated[:len(truncated)-1]
+	}
+
+	return truncated + ellipsis
 }
 
 // GetSearchAttributeQueries returns example queries for filtering workflows
