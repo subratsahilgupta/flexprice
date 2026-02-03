@@ -1756,14 +1756,16 @@ func (s *walletService) shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(c
 		return true, nil
 	}
 
+	// Find invoices whose billing period contains the grant's created_at and whose period ended before grant expiry
+	// (skip expiry if there is such an invoice - grant was created in that period and period is not "very before")
 	invoiceFilter := types.NewInvoiceFilter()
 	invoiceFilter.CustomerID = tx.CustomerID
 	invoiceFilter.InvoiceType = types.InvoiceTypeSubscription
-	invoiceFilter.AmountDueGt = lo.ToPtr(decimal.Zero)
+	invoiceFilter.AmountRemainingGt = lo.ToPtr(decimal.Zero)
 	invoiceFilter.Limit = lo.ToPtr(1)
-	invoiceFilter.TimeRangeFilter = &types.TimeRangeFilter{
-		EndTime: tx.ExpiryDate,
-	}
+	invoiceFilter.PeriodStartLTE = &tx.CreatedAt // period_start <= grant created_at
+	invoiceFilter.PeriodEndGTE = &tx.CreatedAt   // period_end >= grant created_at → grant created in this period
+	invoiceFilter.PeriodEndLTE = tx.ExpiryDate   // period_end <= grant expiry → exclude invoices that ended long after expiry
 
 	invoices, err := s.InvoiceRepo.List(ctx, invoiceFilter)
 	if err != nil {
