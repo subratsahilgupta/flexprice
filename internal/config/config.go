@@ -282,6 +282,7 @@ type RawEventsReprocessingConfig struct {
 type RawEventConsumptionConfig struct {
 	Enabled       bool   `mapstructure:"enabled" default:"true"`
 	Topic         string `mapstructure:"topic" default:"raw_events"`
+	OutputTopic   string `mapstructure:"output_topic" default:"events"`
 	RateLimit     int64  `mapstructure:"rate_limit" default:"10"`
 	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_raw_event_processing"`
 }

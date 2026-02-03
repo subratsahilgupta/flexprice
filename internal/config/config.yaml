@@ -278,6 +278,7 @@ raw_events_reprocessing:
 # Raw event consumption configuration (batch processing from Bento)
 raw_event_consumption:
   enabled: true
-  topic: "staging_events_backfill"
+  topic: "staging_events_backfill"      # INPUT: Reads batches from here
+  output_topic: "staging_events"                 # OUTPUT: Publishes transformed events to here
   rate_limit: 10
   consumer_group: "v1_raw_event_processing_v4"

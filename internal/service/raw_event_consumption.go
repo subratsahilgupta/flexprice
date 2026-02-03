@@ -246,8 +246,8 @@ func (s *rawEventConsumptionService) publishTransformedEvent(ctx context.Context
 	msg.Metadata.Set("environment_id", event.EnvironmentID)
 	msg.Metadata.Set("partition_key", partitionKey)
 
-	// Publish to events topic
-	topic := s.Config.EventProcessing.Topic
+	// Publish to events topic (from raw_event_consumption config)
+	topic := s.Config.RawEventConsumption.OutputTopic
 
 	s.Logger.Debugw("publishing transformed event to kafka",
 		"event_id", event.ID,
