@@ -72,10 +72,12 @@ func (s *InvoiceDiscountCreditWorkflowSuite) setupServices() {
 		CouponApplicationRepo: stores.CouponApplicationRepo,
 	})
 
+	pubsub := testutil.NewInMemoryPubSub()
 	s.creditAdjustmentService = NewCreditAdjustmentService(ServiceParams{
 		Logger:                   s.GetLogger(),
 		Config:                   s.GetConfig(),
 		DB:                       s.GetDB(),
+		CustomerRepo:             stores.CustomerRepo,
 		WalletRepo:               stores.WalletRepo,
 		InvoiceRepo:              stores.InvoiceRepo,
 		SettingsRepo:             stores.SettingsRepo,
@@ -88,9 +90,9 @@ func (s *InvoiceDiscountCreditWorkflowSuite) setupServices() {
 		FeatureUsageRepo:         stores.FeatureUsageRepo,
 		EventPublisher:           s.GetPublisher(),
 		WebhookPublisher:         s.GetWebhookPublisher(),
+		WalletBalanceAlertPubSub: types.WalletBalanceAlertPubSub{PubSub: pubsub},
 	})
 
-	pubsub := testutil.NewInMemoryPubSub()
 	s.walletService = NewWalletService(ServiceParams{
 		Logger:                   s.GetLogger(),
 		Config:                   s.GetConfig(),
