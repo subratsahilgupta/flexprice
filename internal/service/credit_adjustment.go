@@ -129,6 +129,13 @@ func (s *creditAdjustmentService) CalculateCreditAdjustments(inv *invoice.Invoic
 			rawAmount := decimal.Min(currentWalletBalance, amountStillNeeded)
 			roundedAmountFromWallet := decimal.Min(types.RoundToCurrencyPrecision(rawAmount, inv.Currency), rawAmount)
 
+			// Avoid hang when raw amount is positive but rounds to zero (e.g. 0.001 in USD)
+			if roundedAmountFromWallet.IsZero() && rawAmount.GreaterThan(decimal.Zero) && currentWalletBalance.GreaterThan(decimal.Zero) {
+				walletBalances[currentWallet.ID] = decimal.Zero
+				currentWalletIdx++
+				continue
+			}
+
 			if roundedAmountFromWallet.GreaterThan(decimal.Zero) {
 				// Remember how much we're taking from this wallet (we'll debit it later)
 				amountsToDebitFromWallets[currentWallet.ID] = amountsToDebitFromWallets[currentWallet.ID].Add(roundedAmountFromWallet)

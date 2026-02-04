@@ -238,4 +238,25 @@ func (s *CreditAdjustmentServiceSuite) createInvoiceForCalculation(id string, cu
 	}
 }
 
-// All test methods have been removed - see invoice_discount_credit_workflow_test.go for comprehensive tests
+// TestCalculateCreditAdjustments_DustBalanceNoHang ensures that when a wallet has a positive balance
+// that rounds to zero (e.g. 0.001 USD), the loop skips it and advances instead of hanging.
+func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_DustBalanceNoHang() {
+	svc := s.getServiceImpl()
+
+	// One usage line item for 1.00 USD
+	li := s.createLineItemForCalculation(decimal.NewFromFloat(1.00), lo.ToPtr(string(types.PRICE_TYPE_USAGE)), decimal.Zero)
+	li.InvoiceLevelDiscount = decimal.Zero
+	inv := s.createInvoiceForCalculation("inv_dust", "USD", []*invoice.InvoiceLineItem{li})
+
+	// Single wallet with dust balance: 0.001 USD rounds to 0.00 for USD (2 decimals)
+	wallets := []*wallet.Wallet{
+		s.createWalletForCalculation("wallet_dust", "USD", decimal.RequireFromString("0.001")),
+	}
+
+	debits, err := svc.CalculateCreditAdjustments(inv, wallets)
+	s.Require().NoError(err)
+
+	// Dust is skipped (not debited); no amount applied to line item
+	s.Empty(debits, "dust wallet should not be debited")
+	s.True(inv.LineItems[0].PrepaidCreditsApplied.IsZero(), "no amount should be applied from dust")
+}
