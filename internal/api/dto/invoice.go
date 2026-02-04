@@ -618,15 +618,13 @@ func (r *CreateInvoiceLineItemRequest) Validate(invoiceType types.InvoiceType) e
 	}
 
 	// Validate invoice_level_discount if provided
-	if r.InvoiceLevelDiscount != nil {
-		if r.InvoiceLevelDiscount.IsNegative() || r.InvoiceLevelDiscount.IsZero() {
-			return ierr.NewError("invoice_level_discount must be non-negative and non-zero").
-				WithHint("invoice_level_discount cannot be negative or zero").
-				WithReportableDetails(map[string]any{
-					"invoice_level_discount": r.InvoiceLevelDiscount.String(),
-				}).
-				Mark(ierr.ErrValidation)
-		}
+	if r.InvoiceLevelDiscount != nil && r.InvoiceLevelDiscount.IsNegative() {
+		return ierr.NewError("invoice_level_discount must be non-negative").
+			WithHint("invoice_level_discount cannot be negative").
+			WithReportableDetails(map[string]any{
+				"invoice_level_discount": r.InvoiceLevelDiscount.String(),
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil

@@ -1308,6 +1308,7 @@ func (r *invoiceRepository) UpdateLineItem(ctx context.Context, item *domainInvo
 			Mark(ierr.ErrDatabase)
 	}
 
+	r.DeleteCache(ctx, item.InvoiceID)
 	SetSpanSuccess(span)
 	return nil
 }

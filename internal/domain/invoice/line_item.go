@@ -108,6 +108,24 @@ func (i *InvoiceLineItem) Validate() error {
 		}
 	}
 
+	if i.PrepaidCreditsApplied.IsNegative() {
+		return ierr.NewError("invoice line item validation failed").
+			WithHint("prepaid_credits_applied must be non-negative").
+			WithReportableDetails(map[string]any{
+				"prepaid_credits_applied": i.PrepaidCreditsApplied.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if i.LineItemDiscount.IsNegative() {
+		return ierr.NewError("invoice line item validation failed").
+			WithHint("line_item_discount must be non-negative").
+			WithReportableDetails(map[string]any{
+				"line_item_discount": i.LineItemDiscount.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Validate invoice_level_discount: must be non-negative (zero is allowed, meaning no discount)
 	if i.InvoiceLevelDiscount.IsNegative() {
 		return ierr.NewError("invoice line item validation failed").

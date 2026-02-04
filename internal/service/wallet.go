@@ -170,15 +170,15 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	// Convert to domain wallet model
 	w := req.ToWallet(ctx)
 
-	for _, w := range existingWallets {
-		if w.WalletStatus == types.WalletStatusActive && w.Currency == req.Currency && w.WalletType == req.WalletType {
+	for _, existing := range existingWallets {
+		if existing.WalletStatus == types.WalletStatusActive && existing.Currency == w.Currency && existing.WalletType == w.WalletType {
 			return nil, ierr.NewError("customer already has an active wallet with the same currency and wallet type").
 				WithHint("A customer can only have one active wallet per currency and wallet type").
 				WithReportableDetails(map[string]interface{}{
 					"customer_id": req.CustomerID,
-					"wallet_id":   w.ID,
-					"currency":    req.Currency,
-					"wallet_type": req.WalletType,
+					"wallet_id":   existing.ID,
+					"currency":    w.Currency,
+					"wallet_type": w.WalletType,
 				}).
 				Mark(ierr.ErrAlreadyExists)
 		}
@@ -2441,6 +2441,19 @@ func (s *walletService) GetWalletBalanceFromCache(ctx context.Context, walletID 
 			RealTimeCreditBalance: lo.ToPtr(decimal.Zero),
 			BalanceUpdatedAt:      lo.ToPtr(w.UpdatedAt),
 			CurrentPeriodUsage:    lo.ToPtr(decimal.Zero),
+		}, nil
+	}
+
+	// POST_PAID wallets: balance doesn't deplete with usage, real-time balance = wallet balance
+	if w.WalletType == types.WalletTypePostPaid {
+		realTimeCreditBalance := s.GetCreditsFromCurrencyAmount(w.Balance, w.ConversionRate)
+		return &dto.WalletBalanceResponse{
+			Wallet:                w,
+			RealTimeBalance:       lo.ToPtr(w.Balance),
+			RealTimeCreditBalance: lo.ToPtr(realTimeCreditBalance),
+			BalanceUpdatedAt:      lo.ToPtr(w.UpdatedAt),
+			CurrentPeriodUsage:    lo.ToPtr(decimal.Zero),
+			UnpaidInvoicesAmount:  lo.ToPtr(decimal.Zero),
 		}, nil
 	}
 
