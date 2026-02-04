@@ -928,7 +928,7 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 	s.NotNil(currentApp.PeriodStart)
 	s.NotNil(currentApp.PeriodEnd)
 
-	// For monthly period, verify it's approximately 30 days (allowing for month variations)
+	// For monthly period, verify it's approximately 28-32 days (allow 1h tolerance for float/DST)
 	periodDuration := currentApp.PeriodEnd.Sub(currentApp.PeriodStart)
 	// Round to account for floating-point precision issues
 	periodHours := math.Round(periodDuration.Hours()*100) / 100
@@ -943,7 +943,7 @@ func (s *CreditGrantServiceTestSuite) TestMonthlyCreditGrantPeriodDates() {
 	s.WithinDuration(*currentApp.PeriodEnd, nextApp.PeriodStart, time.Minute,
 		"Next period should start when current period ends")
 
-	// Next period should also be approximately monthly
+	// Next period should also be approximately monthly (allow 1h tolerance for float/DST)
 	nextPeriodDuration := nextApp.PeriodEnd.Sub(nextApp.PeriodStart)
 	// Round to account for floating-point precision issues
 	nextPeriodHours := math.Round(nextPeriodDuration.Hours()*100) / 100
