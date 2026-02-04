@@ -103,6 +103,8 @@ func (r *planPriceSyncRepository) TerminateExpiredPlanPricesLineItems(
 					AND li.status = '%s'
 					AND li.entity_type = '%s'
 					AND li.end_date IS NULL
+					AND (li.start_date IS NULL OR li.start_date <= p.end_date)
+				ORDER BY li.id
 				LIMIT $4
 			)
 		UPDATE
@@ -245,6 +247,8 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToTerminate(
 			AND li.status = '%s'
 			AND li.entity_type = '%s'
 			AND li.end_date IS NULL
+			AND (li.start_date IS NULL OR li.start_date <= p.end_date)
+		ORDER BY li.start_date, li.id
 		LIMIT
 			$4
 	`,
