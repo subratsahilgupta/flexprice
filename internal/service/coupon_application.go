@@ -137,9 +137,6 @@ func (s *couponApplicationService) ApplyCouponsToInvoice(ctx context.Context, re
 	}
 
 	couponsMap := make(map[string]*coupon.Coupon)
-	if len(couponIDs) == 0 {
-		return result, nil
-	}
 	couponFilter := types.NewNoLimitCouponFilter()
 	couponFilter.CouponIDs = couponIDs
 	coupons, err := s.CouponRepo.List(ctx, couponFilter)
@@ -209,7 +206,6 @@ func (s *couponApplicationService) ApplyCouponsToInvoice(ctx context.Context, re
 			continue
 		}
 
-		// Accumulate discount for this line item (multiple coupons can apply to same item)
 		// Mutate line item directly since we'll persist it in DB anyway
 		targetLineItem.LineItemDiscount = targetLineItem.LineItemDiscount.Add(discountResult.Discount)
 		totalLineItemDiscount = totalLineItemDiscount.Add(discountResult.Discount)
