@@ -208,6 +208,18 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 		endDate = req.EffectiveFrom.UTC()
 	}
 
+	// Effective date must not be before the line item's start date (avoids end_date < start_date)
+	if !existingLineItem.StartDate.IsZero() && endDate.Before(existingLineItem.StartDate) {
+		return nil, ierr.NewError("effective date must be on or after line item start date").
+			WithHint("The effective date for terminating this line item cannot be before the line item's start date").
+			WithReportableDetails(map[string]interface{}{
+				"line_item_id":   lineItemID,
+				"start_date":     existingLineItem.StartDate,
+				"effective_from": endDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Check if we need to create a new line item (with price overrides)
 	if req.ShouldCreateNewLineItem() {
 		// Validate line item is not already terminated
