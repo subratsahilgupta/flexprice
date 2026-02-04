@@ -1,8 +1,9 @@
-package coupon
+package service
 
 import (
 	"testing"
 
+	"github.com/flexprice/flexprice/internal/domain/coupon"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -102,7 +103,7 @@ func TestDiscountRounding_PercentageDiscounts(t *testing.T) {
 			expectedFinal := decimal.RequireFromString(tt.expectedFinal)
 
 			// Create coupon with percentage discount
-			coupon := &Coupon{
+			coupon := &coupon.Coupon{
 				Type:          types.CouponTypePercentage,
 				PercentageOff: &percentageOff,
 			}
@@ -193,7 +194,7 @@ func TestDiscountRounding_FixedDiscounts(t *testing.T) {
 			expectedFinal := decimal.RequireFromString(tt.expectedFinal)
 
 			// Create coupon with fixed discount
-			coupon := &Coupon{
+			coupon := &coupon.Coupon{
 				Type:      types.CouponTypeFixed,
 				AmountOff: &amountOff,
 			}
@@ -266,7 +267,7 @@ func TestDiscountRounding_MultiCurrency(t *testing.T) {
 			percentageOff := decimal.RequireFromString(tt.percentageOff)
 			expectedDiscount := decimal.RequireFromString(tt.expectedDiscount)
 
-			coupon := &Coupon{
+			coupon := &coupon.Coupon{
 				Type:          types.CouponTypePercentage,
 				PercentageOff: &percentageOff,
 			}
@@ -292,7 +293,7 @@ func TestDiscountRounding_EdgeCases(t *testing.T) {
 		price := decimal.Zero
 		percentage := decimal.NewFromFloat(10)
 
-		coupon := &Coupon{
+		coupon := &coupon.Coupon{
 			Type:          types.CouponTypePercentage,
 			PercentageOff: &percentage,
 		}
@@ -309,7 +310,7 @@ func TestDiscountRounding_EdgeCases(t *testing.T) {
 		price := decimal.NewFromFloat(100.00)
 		percentage := decimal.NewFromFloat(100)
 
-		coupon := &Coupon{
+		coupon := &coupon.Coupon{
 			Type:          types.CouponTypePercentage,
 			PercentageOff: &percentage,
 		}
@@ -324,7 +325,7 @@ func TestDiscountRounding_EdgeCases(t *testing.T) {
 		price := decimal.NewFromFloat(100.00)
 		percentage := decimal.NewFromFloat(150)
 
-		coupon := &Coupon{
+		coupon := &coupon.Coupon{
 			Type:          types.CouponTypePercentage,
 			PercentageOff: &percentage,
 		}
@@ -340,7 +341,7 @@ func TestDiscountRounding_EdgeCases(t *testing.T) {
 		price := decimal.NewFromFloat(1.00)
 		percentage := decimal.NewFromFloat(0.01) // 0.01%
 
-		coupon := &Coupon{
+		coupon := &coupon.Coupon{
 			Type:          types.CouponTypePercentage,
 			PercentageOff: &percentage,
 		}
@@ -357,7 +358,7 @@ func TestDiscountRounding_EdgeCases(t *testing.T) {
 		price := decimal.NewFromFloat(100.00)
 		percentage := decimal.NewFromFloat(33.333333333)
 
-		coupon := &Coupon{
+		coupon := &coupon.Coupon{
 			Type:          types.CouponTypePercentage,
 			PercentageOff: &percentage,
 		}
