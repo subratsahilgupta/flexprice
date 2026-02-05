@@ -12,6 +12,7 @@ import (
 	moyasarActivities "github.com/flexprice/flexprice/internal/temporal/activities/moyasar"
 	nomodActivities "github.com/flexprice/flexprice/internal/temporal/activities/nomod"
 	planActivities "github.com/flexprice/flexprice/internal/temporal/activities/plan"
+	prepareProcessedEventsActivities "github.com/flexprice/flexprice/internal/temporal/activities/prepareprocessedevents"
 	qbActivities "github.com/flexprice/flexprice/internal/temporal/activities/quickbooks"
 	subscriptionActivities "github.com/flexprice/flexprice/internal/temporal/activities/subscription"
 	taskActivities "github.com/flexprice/flexprice/internal/temporal/activities/task"
@@ -44,6 +45,8 @@ func RegisterWorkflowsAndActivities(temporalService temporalService.TemporalServ
 	// Create activity instances with dependencies
 	planService := service.NewPlanService(params)
 	planActivities := planActivities.NewPlanActivities(planService)
+
+	prepareEventsActivities := prepareProcessedEventsActivities.NewPrepareProcessedEventsActivities(params)
 
 	taskService := service.NewTaskService(params)
 	taskActivities := taskActivities.NewTaskActivities(taskService)
@@ -158,6 +161,7 @@ func buildWorkerConfig(
 	taskQueue types.TemporalTaskQueue,
 	workflowTrackingActivities *workflowActivities.WorkflowTrackingActivities,
 	planActivities *planActivities.PlanActivities,
+	prepareEventsActivities *prepareProcessedEventsActivities.PrepareProcessedEventsActivities,
 	taskActivities *taskActivities.TaskActivities,
 	taskActivity *exportActivities.TaskActivity,
 	scheduledTaskActivity *exportActivities.ScheduledTaskActivity,
@@ -259,12 +263,16 @@ func buildWorkerConfig(
 		// Customer workflows
 		workflowsList = append(workflowsList,
 			workflows.CustomerOnboardingWorkflow,
+			workflows.PrepareProcessedEventsWorkflow,
 		)
 		// Customer activities
 		activitiesList = append(activitiesList,
 			customerActivities.CreateCustomerActivity,
 			customerActivities.CreateWalletActivity,
 			customerActivities.CreateSubscriptionActivity,
+			prepareEventsActivities.CreateFeatureAndPriceActivity,
+			prepareEventsActivities.RolloutToSubscriptionsActivity,
+			planActivities.SyncPlanPrices,
 		)
 	case types.TemporalTaskQueueReprocessEvents:
 		workflowsList = append(workflowsList,
