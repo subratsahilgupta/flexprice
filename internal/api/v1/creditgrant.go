@@ -177,7 +177,18 @@ func (h *CreditGrantHandler) DeleteCreditGrant(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.DeleteCreditGrant(c.Request.Context(), id); err != nil {
+	var req dto.DeleteCreditGrantRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Error("Failed to bind JSON", "error", err)
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid request format").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	req.CreditGrantID = id
+
+	if err := h.service.DeleteCreditGrant(c.Request.Context(), req); err != nil {
 		h.log.Error("Failed to delete credit grant", "error", err)
 		c.Error(err)
 		return

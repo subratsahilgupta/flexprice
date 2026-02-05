@@ -30,8 +30,8 @@ type CreateCreditGrantRequest struct {
 	Priority               *int                                 `json:"priority,omitempty"`
 	Metadata               types.Metadata                       `json:"metadata,omitempty"`
 	CreditGrantAnchor      *time.Time                           `json:"-"`
-	StartDate              *time.Time                           `json:"-"`
-	EndDate                *time.Time                           `json:"-"`
+	StartDate              *time.Time                           `json:"start_date,omitempty"`
+	EndDate                *time.Time                           `json:"end_date,omitempty"`
 
 	// amount in the currency =  number of credits * conversion_rate
 	// ex if conversion_rate is 1, then 1 USD = 1 credit
@@ -466,6 +466,27 @@ func (r *CancelFutureSubscriptionGrantsRequest) Validate() error {
 				}).
 				Mark(ierr.ErrValidation)
 		}
+	}
+
+	return nil
+}
+
+type DeleteCreditGrantRequest struct {
+	EffectiveDate *time.Time `json:"effective_date,omitempty"`
+	CreditGrantID string     `json:"credit_grant_id" binding:"required"`
+}
+
+// Validate validates the delete credit grant request
+func (r *DeleteCreditGrantRequest) Validate() error {
+
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	if r.CreditGrantID == "" {
+		return errors.NewError("credit_grant_id is required").
+			WithHint("Please provide a valid credit grant ID").
+			Mark(errors.ErrValidation)
 	}
 
 	return nil
