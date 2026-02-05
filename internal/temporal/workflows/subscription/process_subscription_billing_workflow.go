@@ -5,6 +5,9 @@ import (
 
 	invoiceModels "github.com/flexprice/flexprice/internal/temporal/models/invoice"
 	subscriptionModels "github.com/flexprice/flexprice/internal/temporal/models/subscription"
+	"github.com/flexprice/flexprice/internal/temporal/searchattr"
+	"github.com/flexprice/flexprice/internal/temporal/tracking"
+	"github.com/flexprice/flexprice/internal/types"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -49,6 +52,25 @@ func ProcessSubscriptionBillingWorkflow(
 		return nil, err
 	}
 
+	// Track workflow execution start
+	tracking.ExecuteTrackWorkflowStart(ctx, tracking.TrackWorkflowStartInput{
+		WorkflowType:  WorkflowProcessSubscriptionBilling,
+		TaskQueue:     string(types.TemporalTaskQueueSubscription),
+		TenantID:      input.TenantID,
+		EnvironmentID: input.EnvironmentID,
+		UserID:        "",
+		Metadata: map[string]interface{}{
+			"subscription_id": input.SubscriptionID,
+		},
+	})
+
+	// Upsert workflow search attributes for better discoverability
+	searchattr.UpsertWorkflowSearchAttributes(ctx, map[string]interface{}{
+		searchattr.SearchAttributeSubscriptionID: input.SubscriptionID,
+		searchattr.SearchAttributeTenantID:       input.TenantID,
+		searchattr.SearchAttributeEnvironmentID:  input.EnvironmentID,
+	})
+
 	// Define activity options
 	activityOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Minute,
@@ -83,6 +105,7 @@ func ProcessSubscriptionBillingWorkflow(
 		logger.Error("Failed to check if subscription is draft",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
+		searchattr.UpsertFailureSearchAttributes(ctx, ActivityCheckDraftSubscription, err, input.SubscriptionID)
 		return nil, err
 	}
 
@@ -116,6 +139,7 @@ func ProcessSubscriptionBillingWorkflow(
 		logger.Error("Failed to calculate periods",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
+		searchattr.UpsertFailureSearchAttributes(ctx, ActivityCalculatePeriods, err, input.SubscriptionID)
 		return nil, err
 	}
 	if !periodsOutput.ShouldProcess {
@@ -156,6 +180,7 @@ func ProcessSubscriptionBillingWorkflow(
 		logger.Error("Failed to create draft invoices",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
+		searchattr.UpsertFailureSearchAttributes(ctx, ActivityCreateDraftInvoices, err, input.SubscriptionID)
 		return nil, err
 	}
 
@@ -187,6 +212,7 @@ func ProcessSubscriptionBillingWorkflow(
 		logger.Error("Failed to update subscription period",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
+		searchattr.UpsertFailureSearchAttributes(ctx, ActivityUpdateCurrentPeriod, err, input.SubscriptionID)
 		return nil, err
 	}
 
@@ -209,6 +235,7 @@ func ProcessSubscriptionBillingWorkflow(
 		logger.Error("Failed to check subscription cancellation",
 			"error", err,
 			"subscription_id", input.SubscriptionID)
+		searchattr.UpsertFailureSearchAttributes(ctx, ActivityCheckCancellation, err, input.SubscriptionID)
 		return nil, err
 	}
 
@@ -233,6 +260,7 @@ func ProcessSubscriptionBillingWorkflow(
 			logger.Warn("Failed to process pending plan changes, but continuing",
 				"error", err,
 				"subscription_id", input.SubscriptionID)
+			searchattr.UpsertFailureSearchAttributes(ctx, ActivityProcessPlanChange, err, input.SubscriptionID)
 		} else if planChangeOutput.Success {
 			logger.Info("Processed pending plan changes",
 				"subscription_id", input.SubscriptionID,
@@ -267,6 +295,7 @@ func ProcessSubscriptionBillingWorkflow(
 			logger.Warn("Failed to trigger invoice workflows, but continuing",
 				"error", err,
 				"subscription_id", input.SubscriptionID)
+			searchattr.UpsertFailureSearchAttributes(ctx, ActivityTriggerInvoiceWorkflow, err, input.SubscriptionID)
 		} else {
 			logger.Info("Triggered invoice workflows",
 				"subscription_id", input.SubscriptionID,

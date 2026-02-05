@@ -66,6 +66,18 @@ func (s *PriceServiceSuite) TestCreatePrice() {
 	}
 	_ = s.planRepo.Create(s.ctx, plan)
 
+	// Create a meter so that the USAGE price can reference it (meter validation requires it to exist)
+	testMeter := &meter.Meter{
+		ID:        "meter-1",
+		Name:      "Test Meter",
+		EventName: "api_call",
+		Aggregation: meter.Aggregation{
+			Type: types.AggregationCount,
+		},
+		BaseModel: types.GetDefaultBaseModel(s.ctx),
+	}
+	_ = s.meterRepo.CreateMeter(s.ctx, testMeter)
+
 	amount := decimal.RequireFromString("100")
 	req := dto.CreatePriceRequest{
 		Amount:             &amount,

@@ -15,10 +15,13 @@ CREATE TABLE IF NOT EXISTS flexprice.events (
     CONSTRAINT check_environment_id CHECK environment_id != ''
 )
 ENGINE = ReplacingMergeTree(ingested_at)
-PARTITION BY toYYYYMM(timestamp)
+PARTITION BY toYYYYMMDD(timestamp)
 PRIMARY KEY (tenant_id, environment_id)
 ORDER BY (tenant_id, environment_id, timestamp, id)
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 16384,
+    parts_to_delay_insert = 200,
+    parts_to_throw_insert = 400,
+    max_bytes_to_merge_at_max_space_in_pool = 5368709120; -- 5 GiB
 
 -- Bloom Filter for external_customer_id
 ALTER TABLE flexprice.events

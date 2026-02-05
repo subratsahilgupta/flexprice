@@ -55,6 +55,7 @@ type Handlers struct {
 	RBAC                     *v1.RBACHandler
 	OAuth                    *v1.OAuthHandler
 	Dashboard                *v1.DashboardHandler
+	Workflow                 *v1.WorkflowHandler
 
 	// Portal handlers
 	Onboarding     *v1.OnboardingHandler
@@ -154,6 +155,10 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			events.POST("/benchmark/v2", handlers.Events.BenchmarkV2)
 			// Reprocess events endpoint
 			events.POST("/reprocess", handlers.Events.ReprocessEvents)
+			// Reprocess raw events endpoint
+			events.POST("/raw/reprocess", handlers.Events.ReprocessRawEvents)
+			// Internal reprocess events endpoint (no external_customer_id required)
+			events.POST("/reprocess/internal", handlers.Events.ReprocessEventsInternal)
 		}
 
 		meters := v1Private.Group("/meters")
@@ -650,6 +655,16 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	dashboardRoutes := v1Private.Group("/dashboard")
 	{
 		dashboardRoutes.POST("/revenues", handlers.Dashboard.GetRevenues)
+	}
+
+	// Workflow monitoring routes
+	workflows := v1Private.Group("/workflows")
+	{
+		workflows.GET("", handlers.Workflow.ListWorkflows)
+		workflows.POST("/batch", handlers.Workflow.GetWorkflowsBatch)
+		workflows.GET("/:workflow_id/:run_id/summary", handlers.Workflow.GetWorkflowSummary)
+		workflows.GET("/:workflow_id/:run_id/timeline", handlers.Workflow.GetWorkflowTimeline)
+		workflows.GET("/:workflow_id/:run_id", handlers.Workflow.GetWorkflowDetails)
 	}
 
 	return router

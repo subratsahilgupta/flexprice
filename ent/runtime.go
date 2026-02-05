@@ -51,6 +51,7 @@ import (
 	"github.com/flexprice/flexprice/ent/user"
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
+	"github.com/flexprice/flexprice/ent/workflowexecution"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -1002,6 +1003,10 @@ func init() {
 	invoiceDescVersion := invoiceFields[27].Descriptor()
 	// invoice.DefaultVersion holds the default value on creation for the version field.
 	invoice.DefaultVersion = invoiceDescVersion.Default.(int)
+	// invoiceDescTotalPrepaidCreditsApplied is the schema descriptor for total_prepaid_credits_applied field.
+	invoiceDescTotalPrepaidCreditsApplied := invoiceFields[30].Descriptor()
+	// invoice.DefaultTotalPrepaidCreditsApplied holds the default value on creation for the total_prepaid_credits_applied field.
+	invoice.DefaultTotalPrepaidCreditsApplied = invoiceDescTotalPrepaidCreditsApplied.Default.(decimal.Decimal)
 	invoicelineitemMixin := schema.InvoiceLineItem{}.Mixin()
 	invoicelineitemMixinFields0 := invoicelineitemMixin[0].Fields()
 	_ = invoicelineitemMixinFields0
@@ -1051,6 +1056,18 @@ func init() {
 	invoicelineitemDescCurrency := invoicelineitemFields[17].Descriptor()
 	// invoicelineitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	invoicelineitem.CurrencyValidator = invoicelineitemDescCurrency.Validators[0].(func(string) error)
+	// invoicelineitemDescPrepaidCreditsApplied is the schema descriptor for prepaid_credits_applied field.
+	invoicelineitemDescPrepaidCreditsApplied := invoicelineitemFields[22].Descriptor()
+	// invoicelineitem.DefaultPrepaidCreditsApplied holds the default value on creation for the prepaid_credits_applied field.
+	invoicelineitem.DefaultPrepaidCreditsApplied = invoicelineitemDescPrepaidCreditsApplied.Default.(decimal.Decimal)
+	// invoicelineitemDescLineItemDiscount is the schema descriptor for line_item_discount field.
+	invoicelineitemDescLineItemDiscount := invoicelineitemFields[23].Descriptor()
+	// invoicelineitem.DefaultLineItemDiscount holds the default value on creation for the line_item_discount field.
+	invoicelineitem.DefaultLineItemDiscount = invoicelineitemDescLineItemDiscount.Default.(decimal.Decimal)
+	// invoicelineitemDescInvoiceLevelDiscount is the schema descriptor for invoice_level_discount field.
+	invoicelineitemDescInvoiceLevelDiscount := invoicelineitemFields[24].Descriptor()
+	// invoicelineitem.DefaultInvoiceLevelDiscount holds the default value on creation for the invoice_level_discount field.
+	invoicelineitem.DefaultInvoiceLevelDiscount = invoicelineitemDescInvoiceLevelDiscount.Default.(decimal.Decimal)
 	invoicesequenceFields := schema.InvoiceSequence{}.Fields()
 	_ = invoicesequenceFields
 	// invoicesequenceDescTenantID is the schema descriptor for tenant_id field.
@@ -2246,4 +2263,53 @@ func init() {
 	wallettransactionDescTransactionReason := wallettransactionFields[19].Descriptor()
 	// wallettransaction.DefaultTransactionReason holds the default value on creation for the transaction_reason field.
 	wallettransaction.DefaultTransactionReason = types.TransactionReason(wallettransactionDescTransactionReason.Default.(string))
+	workflowexecutionMixin := schema.WorkflowExecution{}.Mixin()
+	workflowexecutionMixinFields0 := workflowexecutionMixin[0].Fields()
+	_ = workflowexecutionMixinFields0
+	workflowexecutionMixinFields1 := workflowexecutionMixin[1].Fields()
+	_ = workflowexecutionMixinFields1
+	workflowexecutionFields := schema.WorkflowExecution{}.Fields()
+	_ = workflowexecutionFields
+	// workflowexecutionDescTenantID is the schema descriptor for tenant_id field.
+	workflowexecutionDescTenantID := workflowexecutionMixinFields0[0].Descriptor()
+	// workflowexecution.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	workflowexecution.TenantIDValidator = workflowexecutionDescTenantID.Validators[0].(func(string) error)
+	// workflowexecutionDescStatus is the schema descriptor for status field.
+	workflowexecutionDescStatus := workflowexecutionMixinFields0[1].Descriptor()
+	// workflowexecution.DefaultStatus holds the default value on creation for the status field.
+	workflowexecution.DefaultStatus = workflowexecutionDescStatus.Default.(string)
+	// workflowexecutionDescCreatedAt is the schema descriptor for created_at field.
+	workflowexecutionDescCreatedAt := workflowexecutionMixinFields0[2].Descriptor()
+	// workflowexecution.DefaultCreatedAt holds the default value on creation for the created_at field.
+	workflowexecution.DefaultCreatedAt = workflowexecutionDescCreatedAt.Default.(func() time.Time)
+	// workflowexecutionDescUpdatedAt is the schema descriptor for updated_at field.
+	workflowexecutionDescUpdatedAt := workflowexecutionMixinFields0[3].Descriptor()
+	// workflowexecution.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	workflowexecution.DefaultUpdatedAt = workflowexecutionDescUpdatedAt.Default.(func() time.Time)
+	// workflowexecution.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	workflowexecution.UpdateDefaultUpdatedAt = workflowexecutionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// workflowexecutionDescEnvironmentID is the schema descriptor for environment_id field.
+	workflowexecutionDescEnvironmentID := workflowexecutionMixinFields1[0].Descriptor()
+	// workflowexecution.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	workflowexecution.DefaultEnvironmentID = workflowexecutionDescEnvironmentID.Default.(string)
+	// workflowexecutionDescWorkflowID is the schema descriptor for workflow_id field.
+	workflowexecutionDescWorkflowID := workflowexecutionFields[1].Descriptor()
+	// workflowexecution.WorkflowIDValidator is a validator for the "workflow_id" field. It is called by the builders before save.
+	workflowexecution.WorkflowIDValidator = workflowexecutionDescWorkflowID.Validators[0].(func(string) error)
+	// workflowexecutionDescRunID is the schema descriptor for run_id field.
+	workflowexecutionDescRunID := workflowexecutionFields[2].Descriptor()
+	// workflowexecution.RunIDValidator is a validator for the "run_id" field. It is called by the builders before save.
+	workflowexecution.RunIDValidator = workflowexecutionDescRunID.Validators[0].(func(string) error)
+	// workflowexecutionDescWorkflowType is the schema descriptor for workflow_type field.
+	workflowexecutionDescWorkflowType := workflowexecutionFields[3].Descriptor()
+	// workflowexecution.WorkflowTypeValidator is a validator for the "workflow_type" field. It is called by the builders before save.
+	workflowexecution.WorkflowTypeValidator = workflowexecutionDescWorkflowType.Validators[0].(func(string) error)
+	// workflowexecutionDescTaskQueue is the schema descriptor for task_queue field.
+	workflowexecutionDescTaskQueue := workflowexecutionFields[4].Descriptor()
+	// workflowexecution.TaskQueueValidator is a validator for the "task_queue" field. It is called by the builders before save.
+	workflowexecution.TaskQueueValidator = workflowexecutionDescTaskQueue.Validators[0].(func(string) error)
+	// workflowexecutionDescID is the schema descriptor for id field.
+	workflowexecutionDescID := workflowexecutionFields[0].Descriptor()
+	// workflowexecution.DefaultID holds the default value on creation for the id field.
+	workflowexecution.DefaultID = workflowexecutionDescID.Default.(func() string)
 }
