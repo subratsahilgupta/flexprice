@@ -92,7 +92,7 @@ func (r *planPriceSyncRepository) TerminateExpiredPlanPricesLineItems(
 			targets AS (
 				SELECT
 					li.id AS line_item_id,
-					p.end_date AS target_end_date
+					GREATEST(COALESCE(li.start_date, p.end_date), p.end_date) AS target_end_date
 				FROM
 					subscription_line_items li
 					JOIN subs s ON s.id = li.subscription_id
@@ -103,7 +103,6 @@ func (r *planPriceSyncRepository) TerminateExpiredPlanPricesLineItems(
 					AND li.status = '%s'
 					AND li.entity_type = '%s'
 					AND li.end_date IS NULL
-					AND (li.start_date IS NULL OR li.start_date <= p.end_date)
 				ORDER BY li.id
 				LIMIT $4
 			)
@@ -236,7 +235,7 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToTerminate(
 			li.id AS line_item_id,
 			li.subscription_id AS subscription_id,
 			li.price_id AS price_id,
-			p.end_date AS target_end_date
+			GREATEST(COALESCE(li.start_date, p.end_date), p.end_date) AS target_end_date
 		FROM
 			subscription_line_items li
 			JOIN subs s ON s.id = li.subscription_id
@@ -247,7 +246,6 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToTerminate(
 			AND li.status = '%s'
 			AND li.entity_type = '%s'
 			AND li.end_date IS NULL
-			AND (li.start_date IS NULL OR li.start_date <= p.end_date)
 		ORDER BY li.start_date, li.id
 		LIMIT
 			$4

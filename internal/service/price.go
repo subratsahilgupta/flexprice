@@ -940,10 +940,10 @@ func (s *priceService) DeletePrice(ctx context.Context, id string, req dto.Delet
 		endDate = time.Now().UTC()
 	}
 
-	// Validate end date is after start date
+	// Validate end date is on or after start date
 	if price.StartDate != nil && price.StartDate.After(endDate) {
-		return ierr.NewError("end date must be after start date").
-			WithHint("The termination date must be after the price's start date").
+		return ierr.NewError("end date must be on or after start date").
+			WithHint("The termination date must be on or after the price's start date").
 			WithReportableDetails(map[string]interface{}{
 				"price_id":   id,
 				"start_date": price.StartDate,

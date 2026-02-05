@@ -541,12 +541,6 @@ func (r *UpdatePriceRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.EffectiveFrom != nil && r.ShouldCreateNewPrice() && r.EffectiveFrom.Before(time.Now().UTC()) {
-		return ierr.NewError("effective from date must be in the future when used as termination date").
-			WithHint("Effective from date must be in the future when updating critical fields").
-			Mark(ierr.ErrValidation)
-	}
-
 	return nil
 }
 
@@ -713,12 +707,6 @@ func (r *CreateBulkPriceRequest) Validate() error {
 }
 
 func (r *DeletePriceRequest) Validate() error {
-	if r.EndDate != nil && r.EndDate.Before(time.Now().UTC()) {
-		return ierr.NewError("end date must be in the future").
-			WithHint("End date must be in the future").
-			Mark(ierr.ErrValidation)
-	}
-
 	return nil
 }
 
