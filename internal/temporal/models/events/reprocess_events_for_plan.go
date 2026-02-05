@@ -1,6 +1,8 @@
 package models
 
 import (
+	"time"
+
 	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
@@ -33,4 +35,14 @@ func (i *ReprocessEventsForPlanWorkflowInput) Validate() error {
 	}
 	// Allow empty MissingPairs (no-op)
 	return nil
+}
+
+// ReprocessEventsForPlanWorkflowResult represents the result of the reprocess events for plan workflow.
+type ReprocessEventsForPlanWorkflowResult struct {
+	CustomerIDs     []string  `json:"customer_ids"`
+	SubscriptionIDs []string  `json:"subscription_ids"`
+	PriceIDs        []string  `json:"price_ids"`
+	PairCount       int       `json:"pair_count"`
+	Message         string    `json:"message"`
+	CompletedAt     time.Time `json:"completed_at"`
 }
