@@ -857,10 +857,10 @@ func (r *EventRepository) FindUnprocessedEventsFromFeatureUsage(ctx context.Cont
 			e.id, e.external_customer_id, e.customer_id, e.tenant_id, 
 			e.event_name, e.timestamp, e.source, e.properties, 
 			e.environment_id, e.ingested_at
-		FROM events FINAL e
+		FROM events e
 		ANTI JOIN (
 			SELECT id, tenant_id, environment_id
-			FROM feature_usage FINAL
+			FROM feature_usage
 			WHERE tenant_id = ?
 			AND environment_id = ?
 		) AS p
