@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/planpricesync"
 	domainPrice "github.com/flexprice/flexprice/internal/domain/price"
@@ -631,9 +630,9 @@ func (s *planService) ReprocessEventsForMissingPairs(ctx context.Context, missin
 		}
 	}
 
-	featureSvc := NewFeatureUsageTrackingService(s.ServiceParams, s.EventRepo, s.FeatureUsageRepo)
 	now := time.Now().UTC()
 	const reprocessBatchSize = 100
+	temporalSvc := temporalService.GetGlobalTemporalService()
 
 	for _, priceID := range priceIDs {
 		price, ok := priceMap[priceID]
@@ -655,19 +654,32 @@ func (s *planService) ReprocessEventsForMissingPairs(ctx context.Context, missin
 			startTime = lo.FromPtr(price.StartDate)
 		}
 
+		if startTime.After(time.Now().UTC()) || endTime.Equal(time.Now().UTC()) {
+			continue
+		}
+
 		for _, cid := range customerIDs {
 			extID, ok := customerIDToExternalID[cid]
 			if !ok || extID == "" {
 				continue
 			}
-			_, err := featureSvc.ReprocessEvents(ctx, &events.ReprocessEventsParams{
+			if temporalSvc == nil {
+				continue
+			}
+			workflowInput := eventsWorkflowModels.ReprocessEventsWorkflowInput{
 				ExternalCustomerID: extID,
-				StartTime:          startTime,
-				EndTime:            endTime,
+				StartDate:          startTime,
+				EndDate:            endTime,
 				BatchSize:          reprocessBatchSize,
-			})
+			}
+			workflowRun, err := temporalSvc.ExecuteWorkflow(ctx, types.TemporalReprocessEventsWorkflow, workflowInput)
 			if err != nil {
-				s.Logger.Warnw("reprocess events for plan failed for customer", "price_id", priceID, "external_customer_id", extID, "error", err)
+				s.Logger.Warnw("failed to start reprocess events workflow for plan customer",
+					"price_id", priceID, "external_customer_id", extID, "error", err)
+			} else {
+				s.Logger.Debugw("reprocess events workflow started for plan customer",
+					"price_id", priceID, "external_customer_id", extID,
+					"workflow_id", workflowRun.GetID(), "run_id", workflowRun.GetRunID())
 			}
 		}
 	}
