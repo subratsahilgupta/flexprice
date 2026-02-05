@@ -94,7 +94,7 @@ func (s *InMemoryFeatureUsageStore) GetDetailedUsageAnalytics(ctx context.Contex
 }
 
 // GetFeatureUsageBySubscription gets feature usage by subscription
-func (s *InMemoryFeatureUsageStore) GetFeatureUsageBySubscription(ctx context.Context, subscriptionID, externalCustomerID string, startTime, endTime time.Time, aggTypes []types.AggregationType) (map[string]*events.UsageByFeatureResult, error) {
+func (s *InMemoryFeatureUsageStore) GetFeatureUsageBySubscription(ctx context.Context, subscriptionID, customerID string, startTime, endTime time.Time, aggTypes []types.AggregationType) (map[string]*events.UsageByFeatureResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

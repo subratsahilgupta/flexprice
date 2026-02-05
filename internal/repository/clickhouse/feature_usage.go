@@ -1896,19 +1896,19 @@ func (r *FeatureUsageRepository) getAnalyticsPoints(
 }
 
 // GetFeatureUsageBySubscription gets usage data for a subscription using a single optimized query
-func (r *FeatureUsageRepository) GetFeatureUsageBySubscription(ctx context.Context, subscriptionID, externalCustomerID string, startTime, endTime time.Time, aggTypes []types.AggregationType) (map[string]*events.UsageByFeatureResult, error) {
+func (r *FeatureUsageRepository) GetFeatureUsageBySubscription(ctx context.Context, subscriptionID, customerID string, startTime, endTime time.Time, aggTypes []types.AggregationType) (map[string]*events.UsageByFeatureResult, error) {
 	// Extract tenantID and environmentID from context
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "feature_usage", "get_usage_by_subscription_v2", map[string]interface{}{
-		"subscription_id":      subscriptionID,
-		"external_customer_id": externalCustomerID,
-		"environment_id":       environmentID,
-		"tenant_id":            tenantID,
-		"start_time":           startTime,
-		"end_time":             endTime,
+		"subscription_id": subscriptionID,
+		"customer_id":     customerID,
+		"environment_id":  environmentID,
+		"tenant_id":       tenantID,
+		"start_time":      startTime,
+		"end_time":        endTime,
 	})
 	defer FinishSpan(span)
 
@@ -1925,7 +1925,7 @@ func (r *FeatureUsageRepository) GetFeatureUsageBySubscription(ctx context.Conte
 		FROM feature_usage
 		WHERE 
 			subscription_id = ?
-			AND external_customer_id = ?
+			AND customer_id = ?
 			AND environment_id = ?
 			AND tenant_id = ?
 			AND "timestamp" >= ?
@@ -1935,16 +1935,16 @@ func (r *FeatureUsageRepository) GetFeatureUsageBySubscription(ctx context.Conte
 	`, strings.Join(aggColumns, ",\n\t\t\t"))
 
 	log.Printf("Executing query: %s", query)
-	log.Printf("Params: %v", []interface{}{subscriptionID, externalCustomerID, environmentID, tenantID, startTime, endTime})
+	log.Printf("Params: %v", []interface{}{subscriptionID, customerID, environmentID, tenantID, startTime, endTime})
 
-	rows, err := r.store.GetConn().Query(ctx, query, subscriptionID, externalCustomerID, environmentID, tenantID, startTime, endTime)
+	rows, err := r.store.GetConn().Query(ctx, query, subscriptionID, customerID, environmentID, tenantID, startTime, endTime)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to execute optimized subscription usage query").
 			WithReportableDetails(map[string]interface{}{
-				"subscription_id":      subscriptionID,
-				"external_customer_id": externalCustomerID,
+				"subscription_id": subscriptionID,
+				"customer_id":     customerID,
 			}).
 			Mark(ierr.ErrDatabase)
 	}

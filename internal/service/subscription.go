@@ -4776,7 +4776,7 @@ func (s *subscriptionService) GetFeatureUsageBySubscription(ctx context.Context,
 	aggTypes = lo.Uniq(aggTypes)
 
 	// Use the optimized single query with conditional aggregation
-	usageResults, err := s.FeatureUsageRepo.GetFeatureUsageBySubscription(ctx, req.SubscriptionID, customer.ExternalID, usageStartTime, usageEndTime, aggTypes)
+	usageResults, err := s.FeatureUsageRepo.GetFeatureUsageBySubscription(ctx, req.SubscriptionID, customer.ID, usageStartTime, usageEndTime, aggTypes)
 
 	if err != nil {
 		return nil, err
