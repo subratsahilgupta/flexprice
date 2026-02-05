@@ -20,6 +20,10 @@ type UsageAnalyticsParams struct {
 	GroupBy            []string // Allowed values: "source", "feature_id", "properties.<field_name>"
 	WindowSize         types.WindowSize
 	PropertyFilters    map[string][]string
+	// AggregationTypes specifies which aggregation types to compute.
+	// If an aggregation type is in this array, it will be computed; otherwise, 0 is returned.
+	// Supported: SUM, MAX, LATEST, COUNT_UNIQUE, COUNT
+	AggregationTypes []types.AggregationType
 	// BillingAnchor defines the reference point for custom billing periods.
 	// Only affects MONTH window size - all other window sizes ignore this field.
 	//

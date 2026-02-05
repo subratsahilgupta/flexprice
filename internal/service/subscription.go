@@ -4766,8 +4766,18 @@ func (s *subscriptionService) GetFeatureUsageBySubscription(ctx context.Context,
 		"end_time", usageEndTime,
 		"metered_line_items", len(priceIDs))
 
-	// Use the optimized single query
-	usageResults, err := s.FeatureUsageRepo.GetFeatureUsageBySubscription(ctx, req.SubscriptionID, customer.ExternalID, usageStartTime, usageEndTime)
+	// Extract aggregation types from meters for conditional query building
+	var aggTypes []types.AggregationType
+	for _, meter := range meterMap {
+		if meter != nil && meter.Aggregation.Type != "" {
+			aggTypes = append(aggTypes, meter.Aggregation.Type)
+		}
+	}
+	aggTypes = lo.Uniq(aggTypes)
+
+	// Use the optimized single query with conditional aggregation
+	usageResults, err := s.FeatureUsageRepo.GetFeatureUsageBySubscription(ctx, req.SubscriptionID, customer.ExternalID, usageStartTime, usageEndTime, aggTypes)
+
 	if err != nil {
 		return nil, err
 	}

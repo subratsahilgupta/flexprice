@@ -1999,11 +1999,19 @@ func (s *featureUsageTrackingService) buildBucketFeatures(ctx context.Context, p
 				Mark(ierr.ErrDatabase)
 		}
 
-		// Build meter map
+		// Build meter map and extract aggregation types
 		meterMap := make(map[string]*meter.Meter)
+		var aggTypes []types.AggregationType
 		for _, m := range meters {
 			meterMap[m.ID] = m
+			// Collect aggregation types from all meters
+			if m.Aggregation.Type != "" {
+				aggTypes = append(aggTypes, m.Aggregation.Type)
+			}
 		}
+
+		// Set unique aggregation types on params for conditional aggregation
+		params.AggregationTypes = lo.Uniq(aggTypes)
 
 		// Check features for bucketed max/sum meters
 		for _, f := range features {

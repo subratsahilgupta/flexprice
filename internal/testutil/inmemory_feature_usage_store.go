@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -93,7 +94,7 @@ func (s *InMemoryFeatureUsageStore) GetDetailedUsageAnalytics(ctx context.Contex
 }
 
 // GetFeatureUsageBySubscription gets feature usage by subscription
-func (s *InMemoryFeatureUsageStore) GetFeatureUsageBySubscription(ctx context.Context, subscriptionID, externalCustomerID string, startTime, endTime time.Time) (map[string]*events.UsageByFeatureResult, error) {
+func (s *InMemoryFeatureUsageStore) GetFeatureUsageBySubscription(ctx context.Context, subscriptionID, externalCustomerID string, startTime, endTime time.Time, aggTypes []types.AggregationType) (map[string]*events.UsageByFeatureResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
