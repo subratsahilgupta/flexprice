@@ -539,7 +539,7 @@ func (r *EventRepository) GetEvents(ctx context.Context, params *events.GetEvent
 			properties,
 			environment_id,
 			ingested_at
-		FROM events FINAL
+		FROM events
 		WHERE tenant_id = ?
 	`
 	args := make([]interface{}, 0)
@@ -725,10 +725,10 @@ func (r *EventRepository) FindUnprocessedEvents(ctx context.Context, params *eve
 			e.id, e.external_customer_id, e.customer_id, e.tenant_id, 
 			e.event_name, e.timestamp, e.source, e.properties, 
 			e.environment_id, e.ingested_at
-		FROM events FINAL e
+		FROM events e
 		ANTI JOIN (
 			SELECT id, tenant_id, environment_id
-			FROM events_processed FINAL
+			FROM events_processed
 			WHERE tenant_id = ?
 			AND environment_id = ?
 		) AS p
@@ -986,7 +986,7 @@ func (r *EventRepository) GetDistinctEventNames(ctx context.Context, externalCus
 
 	query := `
 		SELECT DISTINCT event_name 
-		FROM events FINAL
+		FROM events
 		WHERE tenant_id = ?
 		AND environment_id = ?
 		AND external_customer_id = ?
