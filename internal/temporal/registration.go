@@ -278,10 +278,12 @@ func buildWorkerConfig(
 		workflowsList = append(workflowsList,
 			eventsWorkflows.ReprocessEventsWorkflow,
 			eventsWorkflows.ReprocessRawEventsWorkflow,
+			eventsWorkflows.ReprocessEventsForPlanWorkflow,
 		)
 		activitiesList = append(activitiesList,
 			reprocessEventsActivities.ReprocessEvents,
 			reprocessRawEventsActivities.ReprocessRawEvents,
+			planActivities.ReprocessEventsForPlan,
 		)
 	}
 	return WorkerConfig{

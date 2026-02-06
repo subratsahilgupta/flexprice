@@ -213,6 +213,131 @@ func (s *PriceServiceSuite) TestUpdatePrice() {
 	s.Equal(req.Metadata, map[string]string(resp.Price.Metadata)) // Convert Metadata for comparison
 }
 
+func (s *PriceServiceSuite) TestUpdatePrice_EffectiveDateValidation() {
+	s.Run("EffectiveFrom_before_price_start_date_returns_error", func() {
+		priceStart := time.Now().UTC().AddDate(0, 0, -2)           // 2 days ago
+		effectiveBeforeStart := time.Now().UTC().AddDate(0, 0, -3) // 3 days ago
+		p := &price.Price{
+			ID:         "price-eff-before-start",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+			StartDate:  &priceStart,
+		}
+		_ = s.priceRepo.Create(s.ctx, p)
+
+		newAmount := decimal.NewFromInt(200)
+		req := dto.UpdatePriceRequest{
+			Amount:        &newAmount,
+			EffectiveFrom: &effectiveBeforeStart,
+		}
+
+		_, err := s.priceService.UpdatePrice(s.ctx, p.ID, req)
+		s.Error(err)
+		s.Contains(err.Error(), "effective date must be on or after price start date")
+
+		updated, _ := s.priceRepo.Get(s.ctx, p.ID)
+		s.NotNil(updated)
+		s.Nil(updated.EndDate)
+		s.True(updated.Amount.Equal(decimal.NewFromInt(100)))
+	})
+
+	s.Run("EffectiveFrom_on_or_after_start_date_backdated_succeeds", func() {
+		priceStart := time.Now().UTC().AddDate(0, 0, -5)    // 5 days ago
+		effectiveFrom := time.Now().UTC().AddDate(0, 0, -3) // 3 days ago (>= priceStart)
+		p := &price.Price{
+			ID:                 "price-eff-backdated-ok",
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           "plan-1",
+			StartDate:          &priceStart,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceAdvance,
+		}
+		_ = s.priceRepo.Create(s.ctx, p)
+		oldID := p.ID
+
+		newAmount := decimal.NewFromInt(250)
+		req := dto.UpdatePriceRequest{
+			Amount:        &newAmount,
+			EffectiveFrom: &effectiveFrom,
+		}
+
+		resp, err := s.priceService.UpdatePrice(s.ctx, p.ID, req)
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotEqual(oldID, resp.Price.ID)
+		s.True(resp.Price.Amount.Equal(decimal.NewFromInt(250)))
+		s.NotNil(resp.Price.StartDate)
+		s.Equal(effectiveFrom.Unix(), resp.Price.StartDate.Unix())
+
+		oldPrice, _ := s.priceRepo.Get(s.ctx, oldID)
+		s.NotNil(oldPrice.EndDate)
+		s.Equal(effectiveFrom.Unix(), oldPrice.EndDate.Unix())
+	})
+
+	s.Run("EffectiveFrom_without_critical_field_returns_error", func() {
+		p := &price.Price{
+			ID:         "price-eff-no-critical",
+			Amount:     decimal.NewFromInt(100),
+			Currency:   "usd",
+			EntityType: types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:   "plan-1",
+		}
+		_ = s.priceRepo.Create(s.ctx, p)
+
+		effectiveFrom := time.Now().UTC().AddDate(0, 0, 1)
+		req := dto.UpdatePriceRequest{
+			EffectiveFrom: &effectiveFrom,
+		}
+
+		_, err := s.priceService.UpdatePrice(s.ctx, p.ID, req)
+		s.Error(err)
+		s.Contains(err.Error(), "effective_from requires at least one critical field")
+	})
+
+	s.Run("critical_field_without_EffectiveFrom_terminates_at_now", func() {
+		p := &price.Price{
+			ID:                 "price-critical-no-eff",
+			Amount:             decimal.NewFromInt(100),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           "plan-1",
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceAdvance,
+		}
+		_ = s.priceRepo.Create(s.ctx, p)
+		oldID := p.ID
+
+		newAmount := decimal.NewFromInt(300)
+		req := dto.UpdatePriceRequest{
+			Amount: &newAmount,
+		}
+
+		before := time.Now().UTC()
+		resp, err := s.priceService.UpdatePrice(s.ctx, p.ID, req)
+		after := time.Now().UTC()
+		s.NoError(err)
+		s.NotNil(resp)
+		s.NotEqual(oldID, resp.Price.ID)
+		s.True(resp.Price.Amount.Equal(decimal.NewFromInt(300)))
+
+		oldPrice, _ := s.priceRepo.Get(s.ctx, oldID)
+		s.NotNil(oldPrice.EndDate)
+		s.True(oldPrice.EndDate.Unix() >= before.Unix() && oldPrice.EndDate.Unix() <= after.Unix()+1)
+	})
+}
+
 func (s *PriceServiceSuite) TestDeletePrice() {
 	// Create a price
 	price := &price.Price{ID: "price-1", Amount: decimal.NewFromInt(100), Currency: "usd"}
@@ -1054,8 +1179,8 @@ func (s *PriceServiceSuite) TestDeletePrice_Comprehensive() {
 		s.True(timeDiff < time.Second, "End date should be set to current time")
 	})
 
-	s.Run("TC-DEL-005_Past_End_Date_Provided", func() {
-		// Create a price first
+	s.Run("TC-DEL-005_Backdated_End_Date_Allowed", func() {
+		// Create a price first (no explicit start date, so default applies)
 		price := &price.Price{
 			ID:         "price-past-end-date",
 			Amount:     decimal.NewFromInt(100),
@@ -1065,15 +1190,18 @@ func (s *PriceServiceSuite) TestDeletePrice_Comprehensive() {
 		}
 		_ = s.priceRepo.Create(s.ctx, price)
 
-		// Try to delete with past end date
+		// Delete with backdated end date is allowed
 		pastDate := time.Now().UTC().AddDate(0, 0, -1) // 1 day ago
 		req := dto.DeletePriceRequest{
 			EndDate: lo.ToPtr(pastDate),
 		}
 
 		err := s.priceService.DeletePrice(s.ctx, price.ID, req)
-		s.Error(err)
-		s.Contains(err.Error(), "end date must be in the future")
+		s.NoError(err)
+		updatedPrice, err := s.priceRepo.Get(s.ctx, price.ID)
+		s.NoError(err)
+		s.NotNil(updatedPrice.EndDate)
+		s.Equal(pastDate.Unix(), updatedPrice.EndDate.Unix())
 	})
 
 	s.Run("TC-DEL-006_Future_End_Date_Provided", func() {
