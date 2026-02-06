@@ -53,6 +53,7 @@ type InvoiceService interface {
 	CalculateUsageBreakdown(ctx context.Context, inv *dto.InvoiceResponse, groupBy []string, forceRealtimeRecalculation bool) (map[string][]dto.UsageBreakdownItem, error)
 	GetInvoiceWithBreakdown(ctx context.Context, req dto.GetInvoiceWithBreakdownRequest) (*dto.InvoiceResponse, error)
 	TriggerCommunication(ctx context.Context, id string) error
+	TriggerWebhook(ctx context.Context, invoiceID string, eventName string) error
 	HandleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error
 
 	// Cron methods
@@ -2810,6 +2811,52 @@ func (s *invoiceService) TriggerCommunication(ctx context.Context, id string) er
 
 	// Publish webhook event
 	s.publishInternalWebhookEvent(ctx, types.WebhookEventInvoiceCommunicationTriggered, inv.ID)
+	return nil
+}
+
+// TriggerWebhook manually triggers a webhook event for an invoice
+// This is useful for debugging or replaying missed webhook events
+func (s *invoiceService) TriggerWebhook(ctx context.Context, invoiceID string, eventName string) error {
+	// Validate event name
+	validEvents := []string{
+		types.WebhookEventInvoiceCreateDraft,
+		types.WebhookEventInvoiceUpdateFinalized,
+		types.WebhookEventInvoiceUpdatePayment,
+		types.WebhookEventInvoiceUpdateVoided,
+		types.WebhookEventInvoiceCommunicationTriggered,
+	}
+
+	isValid := false
+	for _, validEvent := range validEvents {
+		if eventName == validEvent {
+			isValid = true
+			break
+		}
+	}
+
+	if !isValid {
+		return ierr.NewError("invalid event name").
+			WithHint("Event must be one of: invoice.draft.created, invoice.update.finalized, invoice.payment.updated, invoice.voided, invoice.communication.triggered").
+			WithReportableDetails(map[string]interface{}{
+				"event_name":   eventName,
+				"valid_events": validEvents,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Get invoice to verify it exists
+	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
+	if err != nil {
+		return err
+	}
+
+	s.Logger.Infow("manually triggering webhook event",
+		"invoice_id", inv.ID,
+		"event_name", eventName,
+	)
+
+	// Publish webhook event
+	s.publishInternalWebhookEvent(ctx, eventName, inv.ID)
 	return nil
 }
 

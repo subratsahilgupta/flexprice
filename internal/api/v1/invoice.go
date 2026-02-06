@@ -529,3 +529,27 @@ func (h *InvoiceHandler) TriggerCommunication(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "communication triggered successfully"})
 }
+
+func (h *InvoiceHandler) TriggerWebhook(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
+		return
+	}
+
+	eventName := c.Query("event_name")
+	if eventName == "" {
+		c.Error(ierr.NewError("event_name query parameter is required").
+			WithHint("Please provide event_name query parameter").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	if err := h.invoiceService.TriggerWebhook(c.Request.Context(), id, eventName); err != nil {
+		h.logger.Errorw("failed to trigger webhook", "error", err, "invoice_id", id, "event_name", eventName)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "webhook triggered successfully", "event_name": eventName})
+}

@@ -128,6 +128,9 @@ type SubscriptionService interface {
 
 	GetActiveAddonAssociations(ctx context.Context, subscriptionID string) (*dto.ListAddonAssociationsResponse, error)
 
+	// TriggerSubscriptionWorkflow triggers the subscription billing workflow
+	TriggerSubscriptionWorkflow(ctx context.Context, subscriptionID string) (*dto.TriggerSubscriptionWorkflowResponse, error)
+
 	// Cron methods
 
 	// Calculate Billing Periods for the subscription
