@@ -472,8 +472,10 @@ func (r *CancelFutureSubscriptionGrantsRequest) Validate() error {
 }
 
 type DeleteCreditGrantRequest struct {
+	// EffectiveDate is optional; when set (subscription scope) the grant end date is set to this time.
 	EffectiveDate *time.Time `json:"effective_date,omitempty"`
-	CreditGrantID string     `json:"credit_grant_id" binding:"required"`
+	// CreditGrantID is set by the handler from the path param, not from the body.
+	CreditGrantID string `json:"-"`
 }
 
 // Validate validates the delete credit grant request
