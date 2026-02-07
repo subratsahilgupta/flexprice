@@ -145,6 +145,7 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 	}
 
 	defaultWalletBalanceAlertConfig := AlertConfig{
+		Enabled: false, // Disabled by default
 		Threshold: &WalletAlertThreshold{
 			Type:  AlertThresholdTypeAmount,
 			Value: decimal.NewFromFloat(0.0),

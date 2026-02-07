@@ -307,6 +307,26 @@ func (s *walletBalanceAlertService) markProcessed(ctx context.Context, event wal
 
 // processEvent delegates to the wallet service to check balance alerts
 func (s *walletBalanceAlertService) processEvent(ctx context.Context, event wallet.WalletBalanceAlertEvent) error {
+	// Check if wallet balance alerts are enabled for this tenant
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+	config, err := GetSetting[types.AlertConfig](settingsSvc, ctx, types.SettingKeyWalletBalanceAlertConfig)
+	if err != nil {
+		s.Logger.Warnw("failed to get wallet balance alert config, skipping",
+			"error", err,
+			"tenant_id", event.TenantID,
+			"environment_id", event.EnvironmentID,
+		)
+		return nil // Skip on error - fail safe
+	}
+
+	if !config.Enabled {
+		s.Logger.Debugw("wallet balance alerts disabled for tenant, skipping",
+			"tenant_id", event.TenantID,
+			"environment_id", event.EnvironmentID,
+		)
+		return nil
+	}
+
 	// Check if we should throttle this request
 	if s.shouldThrottle(ctx, event) {
 		s.Logger.Infow("skipping wallet balance recalculation due to throttle",
@@ -322,7 +342,7 @@ func (s *walletBalanceAlertService) processEvent(ctx context.Context, event wall
 	walletService := NewWalletService(s.ServiceParams)
 
 	// Delegate to wallet service for actual processing
-	err := walletService.CheckWalletBalanceAlert(ctx, &event)
+	err = walletService.CheckWalletBalanceAlert(ctx, &event)
 	if err != nil {
 		return err
 	}
