@@ -3041,7 +3041,7 @@ func (s *walletService) setWalletRealtimeBalanceToCache(ctx context.Context, wal
 		return
 	}
 	cacheKey := cache.GenerateKey(cache.PrefixWallet, walletID)
-	redisCache.ForceCacheSet(ctx, cacheKey, balance.String(), 5*time.Minute)
+	redisCache.ForceCacheSet(ctx, cacheKey, balance.String(), cache.ExpiryWalletBalance)
 }
 
 func (s *walletService) getWalletRealtimeBalanceFromCache(ctx context.Context, walletID string) *decimal.Decimal {
