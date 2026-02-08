@@ -40,39 +40,39 @@ func buildConditionalAggregationColumns(aggTypes []types.AggregationType) []stri
 
 	columns := []string{}
 
-	// SUM aggregation (total_usage)
+	// SUM aggregation (total_usage) - returns Decimal, so fallback must also be Decimal
 	if aggSet[types.AggregationSum] {
 		columns = append(columns, "SUM(qty_total) AS total_usage")
 	} else {
-		columns = append(columns, "0 AS total_usage")
+		columns = append(columns, "toDecimal128(0, 9) AS total_usage")
 	}
 
-	// MAX aggregation (max_usage)
+	// MAX aggregation (max_usage) - returns Decimal, so fallback must also be Decimal
 	if aggSet[types.AggregationMax] {
 		columns = append(columns, "MAX(qty_total) AS max_usage")
 	} else {
-		columns = append(columns, "0 AS max_usage")
+		columns = append(columns, "toDecimal128(0, 9) AS max_usage")
 	}
 
-	// LATEST aggregation (latest_usage)
+	// LATEST aggregation (latest_usage) - returns Decimal, so fallback must also be Decimal
 	if aggSet[types.AggregationLatest] {
 		columns = append(columns, "argMax(qty_total, timestamp) AS latest_usage")
 	} else {
-		columns = append(columns, "0 AS latest_usage")
+		columns = append(columns, "toDecimal128(0, 9) AS latest_usage")
 	}
 
-	// COUNT_UNIQUE aggregation (count_unique_usage)
+	// COUNT_UNIQUE aggregation (count_unique_usage) - returns UInt64
 	if aggSet[types.AggregationCountUnique] {
 		columns = append(columns, "COUNT(DISTINCT unique_hash) AS count_unique_usage")
 	} else {
-		columns = append(columns, "0 AS count_unique_usage")
+		columns = append(columns, "toUInt64(0) AS count_unique_usage")
 	}
 
-	// COUNT aggregation (event_count) - count distinct event IDs
+	// COUNT aggregation (event_count) - count distinct event IDs - returns UInt64
 	if aggSet[types.AggregationCount] {
 		columns = append(columns, "COUNT(DISTINCT id) AS event_count")
 	} else {
-		columns = append(columns, "0 AS event_count")
+		columns = append(columns, "toUInt64(0) AS event_count")
 	}
 
 	return columns
@@ -89,39 +89,39 @@ func buildConditionalAggregationColumnsForSubscription(aggTypes []types.Aggregat
 
 	columns := []string{}
 
-	// SUM aggregation (sum_total)
+	// SUM aggregation (sum_total) - returns Decimal, so fallback must also be Decimal
 	if aggSet[types.AggregationSum] || aggSet[types.AggregationSumWithMultiplier] || aggSet[types.AggregationWeightedSum] {
 		columns = append(columns, "sum(qty_total) AS sum_total")
 	} else {
-		columns = append(columns, "0 AS sum_total")
+		columns = append(columns, "toDecimal128(0, 9) AS sum_total")
 	}
 
-	// MAX aggregation (max_total)
+	// MAX aggregation (max_total) - returns Decimal, so fallback must also be Decimal
 	if aggSet[types.AggregationMax] {
 		columns = append(columns, "max(qty_total) AS max_total")
 	} else {
-		columns = append(columns, "0 AS max_total")
+		columns = append(columns, "toDecimal128(0, 9) AS max_total")
 	}
 
-	// COUNT aggregation (count_distinct_ids)
+	// COUNT aggregation (count_distinct_ids) - returns UInt64
 	if aggSet[types.AggregationCount] {
 		columns = append(columns, "count(DISTINCT id) AS count_distinct_ids")
 	} else {
-		columns = append(columns, "0 AS count_distinct_ids")
+		columns = append(columns, "toUInt64(0) AS count_distinct_ids")
 	}
 
-	// COUNT_UNIQUE aggregation (count_unique_qty)
+	// COUNT_UNIQUE aggregation (count_unique_qty) - returns UInt64
 	if aggSet[types.AggregationCountUnique] {
 		columns = append(columns, "count(DISTINCT unique_hash) AS count_unique_qty")
 	} else {
-		columns = append(columns, "0 AS count_unique_qty")
+		columns = append(columns, "toUInt64(0) AS count_unique_qty")
 	}
 
-	// LATEST aggregation (latest_qty)
+	// LATEST aggregation (latest_qty) - returns Decimal, so fallback must also be Decimal
 	if aggSet[types.AggregationLatest] {
 		columns = append(columns, "argMax(qty_total, \"timestamp\") AS latest_qty")
 	} else {
-		columns = append(columns, "0 AS latest_qty")
+		columns = append(columns, "toDecimal128(0, 9) AS latest_qty")
 	}
 
 	return columns
