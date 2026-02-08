@@ -187,8 +187,6 @@ func (s *walletBalanceAlertService) RegisterHandler(router *pubsubRouter.Router,
 
 // processMessage processes a single Kafka message for wallet balance alerts
 func (s *walletBalanceAlertService) processMessage(msg *message.Message) error {
-	startTime := time.Now()
-
 	var event wallet.WalletBalanceAlertEvent
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
 		s.Logger.Errorw("failed to unmarshal wallet balance alert event",
@@ -218,31 +216,16 @@ func (s *walletBalanceAlertService) processMessage(msg *message.Message) error {
 
 	// Process the event
 	if err := s.processEvent(ctx, event); err != nil {
-		processingDuration := time.Since(startTime)
+		// Return error to trigger retry with backoff
 		s.Logger.Errorw("failed to process wallet balance alert event",
 			"error", err,
 			"event_id", event.ID,
 			"customer_id", event.CustomerID,
 			"tenant_id", event.TenantID,
 			"environment_id", event.EnvironmentID,
-			"wallet_id", event.WalletID,
-			"source", event.Source,
-			"processing_duration_ms", processingDuration.Milliseconds(),
 		)
-		// Return error to trigger retry with backoff
 		return err
 	}
-
-	processingDuration := time.Since(startTime)
-	s.Logger.Infow("wallet balance alert event processed successfully",
-		"event_id", event.ID,
-		"customer_id", event.CustomerID,
-		"tenant_id", event.TenantID,
-		"environment_id", event.EnvironmentID,
-		"wallet_id", event.WalletID,
-		"source", event.Source,
-		"processing_duration_ms", processingDuration.Milliseconds(),
-	)
 
 	return nil
 }
