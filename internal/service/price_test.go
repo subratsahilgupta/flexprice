@@ -2131,8 +2131,8 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 		// Clear previous prices for this test to ensure clean state
 		s.priceRepo.Clear()
 
-		// Create 999 existing prices for the plan (1 less than max)
-		for i := 0; i < 999; i++ {
+		// Create (MAX_ACTIVE_PRICES-1) existing published prices for the plan (1 less than max)
+		for i := 0; i < price.MAX_ACTIVE_PRICES-1; i++ {
 			existingPrice := &price.Price{
 				ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 				Amount:     decimal.NewFromInt(100),
@@ -2144,7 +2144,7 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 			_ = s.priceRepo.Create(s.ctx, existingPrice)
 		}
 
-		// Try to create 2 more prices (would make it 1001, exceeding the limit)
+		// Try to create 2 more prices (would exceed the limit)
 		req := dto.CreateBulkPriceRequest{
 			Items: []dto.CreatePriceRequest{
 				{
@@ -2197,8 +2197,8 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 		}
 		s.priceService = NewPriceService(serviceParams)
 
-		// Create 999 existing prices (1 less than max)
-		for i := 0; i < 999; i++ {
+		// Create (MAX_ACTIVE_PRICES-1) existing published prices (1 less than max)
+		for i := 0; i < price.MAX_ACTIVE_PRICES-1; i++ {
 			existingPrice := &price.Price{
 				ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 				Amount:     decimal.NewFromInt(100),
@@ -2210,7 +2210,7 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 			_ = s.priceRepo.Create(s.ctx, existingPrice)
 		}
 
-		// Create 1 more price (exactly at the limit: 999 + 1 = 1000)
+		// Create 1 more price (exactly at the limit)
 		req := dto.CreateBulkPriceRequest{
 			Items: []dto.CreatePriceRequest{
 				{
@@ -2250,8 +2250,8 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 		}
 		s.priceService = NewPriceService(serviceParams)
 
-		// Create 998 existing prices
-		for i := 0; i < 998; i++ {
+		// Create (MAX_ACTIVE_PRICES-3) existing published prices so that adding 3 exceeds limit
+		for i := 0; i < price.MAX_ACTIVE_PRICES-3; i++ {
 			existingPrice := &price.Price{
 				ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 				Amount:     decimal.NewFromInt(100),
@@ -2263,7 +2263,7 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 			_ = s.priceRepo.Create(s.ctx, existingPrice)
 		}
 
-		// Try to create 3 prices in bulk (998 + 3 = 1001, exceeding limit)
+		// Try to create 3 prices in bulk (exceeding limit)
 		req := dto.CreateBulkPriceRequest{
 			Items: []dto.CreatePriceRequest{
 				{
@@ -2338,8 +2338,8 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 		}
 		s.priceService = NewPriceService(serviceParams)
 
-		// Create 1000 existing prices for plan-bulk-test (at the limit)
-		for i := 0; i < 1000; i++ {
+		// Create MAX_ACTIVE_PRICES existing published prices for plan-bulk-test (at the limit)
+		for i := 0; i < price.MAX_ACTIVE_PRICES; i++ {
 			existingPrice := &price.Price{
 				ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 				Amount:     decimal.NewFromInt(100),
@@ -2406,8 +2406,8 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 		}
 		s.priceService = NewPriceService(serviceParams)
 
-		// Create 999 existing prices
-		for i := 0; i < 999; i++ {
+		// Create (MAX_ACTIVE_PRICES-1) existing published prices
+		for i := 0; i < price.MAX_ACTIVE_PRICES-1; i++ {
 			existingPrice := &price.Price{
 				ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 				Amount:     decimal.NewFromInt(100),
