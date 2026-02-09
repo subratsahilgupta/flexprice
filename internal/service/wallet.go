@@ -1218,7 +1218,11 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 		return nil, err
 	}
 
-	totalPendingCharges = currentPeriodUsage.Add(resp.TotalUnpaidUsageCharges)
+	if lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeAll) && lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeFixed) {
+		totalPendingCharges = totalPendingCharges.Add(resp.TotalUnpaidAmount)
+	} else {
+		totalPendingCharges = totalPendingCharges.Add(resp.TotalUnpaidUsageCharges).Sub(resp.TotalPaidInvoiceAmount)
+	}
 
 	// Calculate real-time balance
 	realTimeBalance := w.Balance.Sub(totalPendingCharges)
@@ -2533,6 +2537,22 @@ func (s *walletService) GetWalletBalanceFromCache(ctx context.Context, walletID 
 		}
 	}
 
+	// Account for unpaid invoices (same as GetWalletBalance)
+	invoiceService := NewInvoiceService(s.ServiceParams)
+	resp, err := invoiceService.GetUnpaidInvoicesToBePaid(ctx, dto.GetUnpaidInvoicesToBePaidRequest{
+		CustomerID: w.CustomerID,
+		Currency:   w.Currency,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeAll) && lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeFixed) {
+		totalPendingCharges = totalPendingCharges.Add(resp.TotalUnpaidAmount)
+	} else {
+		totalPendingCharges = totalPendingCharges.Add(resp.TotalUnpaidUsageCharges).Sub(resp.TotalPaidInvoiceAmount)
+	}
+
 	// Calculate real-time balance
 	realTimeBalance := w.Balance.Sub(totalPendingCharges)
 
@@ -2554,6 +2574,7 @@ func (s *walletService) GetWalletBalanceFromCache(ctx context.Context, walletID 
 		RealTimeCreditBalance: &realTimeCreditBalance,
 		BalanceUpdatedAt:      lo.ToPtr(w.UpdatedAt),
 		CurrentPeriodUsage:    &totalPendingCharges,
+		UnpaidInvoicesAmount:  lo.ToPtr(resp.TotalUnpaidUsageCharges),
 	}, nil
 }
 
