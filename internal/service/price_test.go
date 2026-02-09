@@ -2250,8 +2250,8 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 		}
 		s.priceService = NewPriceService(serviceParams)
 
-		// Create (MAX_ACTIVE_PRICES-3) existing published prices so that adding 3 exceeds limit
-		for i := 0; i < price.MAX_ACTIVE_PRICES-3; i++ {
+		// Create (MAX_ACTIVE_PRICES-2) existing published prices so that adding 3 exceeds limit (1498+3=1501)
+		for i := 0; i < price.MAX_ACTIVE_PRICES-2; i++ {
 			existingPrice := &price.Price{
 				ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 				Amount:     decimal.NewFromInt(100),
