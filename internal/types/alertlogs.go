@@ -91,14 +91,19 @@ type AlertInfo struct {
 
 // AlertConfig represents the configuration for wallet alerts
 type AlertConfig struct {
+	Enabled   bool                  `json:"enabled"`
 	Threshold *WalletAlertThreshold `json:"threshold,omitempty"`
 }
 
 // Validate implements SettingConfig interface
 func (c AlertConfig) Validate() error {
-	// Validate that threshold exists and is valid
+	// If not enabled, no threshold required
+	if !c.Enabled {
+		return nil
+	}
+	// Validate that threshold exists and is valid when enabled
 	if c.Threshold == nil {
-		return ierr.NewError("threshold is required").
+		return ierr.NewError("threshold is required when alerts are enabled").
 			WithHint("Please provide a threshold").
 			Mark(ierr.ErrValidation)
 	}
