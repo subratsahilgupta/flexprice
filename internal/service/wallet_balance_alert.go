@@ -21,9 +21,6 @@ const (
 	// Event sources for tracking where alerts originated
 	EventSourceFeatureUsage      = "feature_usage"
 	EventSourceWalletTransaction = "wallet_transaction"
-
-	// Throttle duration for wallet balance recalculations
-	WalletAlertThrottleDuration = 1 * time.Minute
 )
 
 // WalletBalanceAlertService handles wallet balance alert operations via Kafka
@@ -259,7 +256,6 @@ func (s *walletBalanceAlertService) shouldThrottle(ctx context.Context, event wa
 			"tenant_id", event.TenantID,
 			"environment_id", event.EnvironmentID,
 			"cache_key", cacheKey,
-			"throttle_duration", WalletAlertThrottleDuration,
 		)
 		return true
 	}
@@ -277,14 +273,14 @@ func (s *walletBalanceAlertService) markProcessed(ctx context.Context, event wal
 	)
 
 	// Set cache entry with TTL
-	s.cache.ForceCacheSet(ctx, cacheKey, time.Now().Unix(), WalletAlertThrottleDuration)
+	s.cache.ForceCacheSet(ctx, cacheKey, time.Now().Unix(), cache.ExpiryWalletAlertCheck)
 
 	s.Logger.Debugw("marked customer as processed in throttle cache",
 		"customer_id", event.CustomerID,
 		"tenant_id", event.TenantID,
 		"environment_id", event.EnvironmentID,
 		"cache_key", cacheKey,
-		"ttl", WalletAlertThrottleDuration,
+		"ttl", cache.ExpiryWalletAlertCheck,
 	)
 }
 
