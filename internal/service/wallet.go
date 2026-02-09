@@ -1219,9 +1219,9 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 	}
 
 	if lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeAll) && lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeFixed) {
-		totalPendingCharges = totalPendingCharges.Add(resp.TotalUnpaidAmount)
+		totalPendingCharges = currentPeriodUsage.Add(resp.TotalUnpaidAmount)
 	} else {
-		totalPendingCharges = totalPendingCharges.Add(resp.TotalUnpaidUsageCharges).Sub(resp.TotalPaidInvoiceAmount)
+		totalPendingCharges = currentPeriodUsage.Add(resp.TotalUnpaidUsageCharges).Sub(resp.TotalPaidInvoiceAmount)
 	}
 
 	// Calculate real-time balance
