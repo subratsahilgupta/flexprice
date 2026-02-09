@@ -2386,7 +2386,12 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 	if err != nil {
 		return nil, err
 	}
-	totalPendingCharges = totalPendingCharges.Add(resp.TotalUnpaidUsageCharges)
+
+	if lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeAll) && lo.Contains(w.Config.AllowedPriceTypes, types.WalletConfigPriceTypeFixed) {
+		totalPendingCharges = totalPendingCharges.Add(resp.TotalUnpaidAmount)
+	} else {
+		totalPendingCharges = totalPendingCharges.Add(resp.TotalUnpaidUsageCharges).Sub(resp.TotalPaidInvoiceAmount)
+	}
 
 	// Calculate real-time balance
 	realTimeBalance := w.Balance.Sub(totalPendingCharges)
