@@ -202,19 +202,3 @@ func GetAllTaskQueues() []TemporalTaskQueue {
 		TemporalTaskQueueReprocessEvents,
 	}
 }
-
-// WorkflowExecutionStatus represents the execution state of a Temporal workflow run.
-// Values align with Temporal's workflow execution status.
-type WorkflowExecutionStatus string
-
-const (
-	WorkflowExecutionStatusRunning         WorkflowExecutionStatus = "Running"
-	WorkflowExecutionStatusCompleted      WorkflowExecutionStatus = "Completed"
-	WorkflowExecutionStatusFailed         WorkflowExecutionStatus = "Failed"
-	WorkflowExecutionStatusCanceled       WorkflowExecutionStatus = "Canceled"
-	WorkflowExecutionStatusTerminated     WorkflowExecutionStatus = "Terminated"
-	WorkflowExecutionStatusContinuedAsNew WorkflowExecutionStatus = "ContinuedAsNew"
-	WorkflowExecutionStatusTimedOut       WorkflowExecutionStatus = "TimedOut"
-	// WorkflowExecutionStatusUnknown is used when we have a DB record but haven't synced status from Temporal yet
-	WorkflowExecutionStatusUnknown WorkflowExecutionStatus = "Unknown"
-)
