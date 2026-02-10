@@ -197,17 +197,5 @@ func (SubscriptionLineItem) Indexes() []ent.Index {
 			Annotations(entsql.IndexWhere("status = 'published'")),
 		index.Fields("tenant_id", "environment_id", "entity_id", "entity_type").
 			Annotations(entsql.IndexWhere("status = 'published'")),
-		index.Fields("tenant_id", "environment_id", "price_id").
-			Annotations(entsql.IndexWhere("status = 'published'")),
-		index.Fields("tenant_id", "environment_id", "meter_id").
-			Annotations(entsql.IndexWhere("status = 'published'")),
-		// Performance index for plan lookups with published status (merged with subscription_id index)
-		index.Fields("tenant_id", "environment_id", "subscription_id", "price_id").
-			Annotations(entsql.IndexWhere("status = 'published' AND entity_type = 'plan'")),
-		// Date range index (no status filter needed)
-		index.Fields("start_date", "end_date"),
-		// Subscription-level index for published items
-		index.Fields("subscription_id").
-			Annotations(entsql.IndexWhere("status = 'published'")),
 	}
 }

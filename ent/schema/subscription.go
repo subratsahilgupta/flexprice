@@ -209,9 +209,5 @@ func (Subscription) Indexes() []ent.Index {
 		// For billing period updates (merged with subscription_status)
 		index.Fields("tenant_id", "environment_id", "current_period_end", "subscription_status").
 			Annotations(entsql.IndexWhere("status = 'published'")),
-		// Performance index for plan lookups with billing dimensions (covers active/trialing queries)
-		// This index can also serve queries that only need plan_id + subscription_status
-		index.Fields("tenant_id", "environment_id", "plan_id", "currency", "billing_period", "billing_period_count").
-			Annotations(entsql.IndexWhere("status = 'published' AND subscription_status IN ('active', 'trialing')")),
 	}
 }
