@@ -67,16 +67,12 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 
 	// Query database for workflow executions
 	filters := &service.ListWorkflowExecutionsFilters{
-		TenantID:       tenantID,
-		EnvironmentID:  environmentID,
-		WorkflowID:     req.WorkflowID,
-		WorkflowType:   req.WorkflowType,
-		TaskQueue:      req.TaskQueue,
-		WorkflowStatus: req.WorkflowStatus,
-		Entity:         req.Entity,
-		EntityID:       req.EntityID,
-		PageSize:       req.PageSize,
-		Page:           req.Page,
+		TenantID:      tenantID,
+		EnvironmentID: environmentID,
+		WorkflowType:  req.WorkflowType,
+		TaskQueue:     req.TaskQueue,
+		PageSize:      req.PageSize,
+		Page:          req.Page,
 	}
 
 	executions, total, err := h.workflowExecService.ListWorkflowExecutions(c.Request.Context(), filters)
@@ -93,10 +89,7 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 			RunID:        exec.RunID,
 			WorkflowType: exec.WorkflowType,
 			TaskQueue:    exec.TaskQueue,
-			Status:       string(exec.WorkflowStatus),
 			StartTime:    exec.StartTime,
-			CloseTime:    exec.EndTime,    // Map end_time to CloseTime
-			DurationMs:   exec.DurationMs, // Include duration
 			CreatedBy:    exec.CreatedBy,
 		}
 	}

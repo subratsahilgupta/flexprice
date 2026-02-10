@@ -13,7 +13,6 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/workflowexecution"
-	"github.com/flexprice/flexprice/internal/types"
 )
 
 // WorkflowExecutionUpdate is the builder for updating WorkflowExecution entities.
@@ -135,67 +134,6 @@ func (weu *WorkflowExecutionUpdate) SetStartTime(t time.Time) *WorkflowExecution
 func (weu *WorkflowExecutionUpdate) SetNillableStartTime(t *time.Time) *WorkflowExecutionUpdate {
 	if t != nil {
 		weu.SetStartTime(*t)
-	}
-	return weu
-}
-
-// SetEndTime sets the "end_time" field.
-func (weu *WorkflowExecutionUpdate) SetEndTime(t time.Time) *WorkflowExecutionUpdate {
-	weu.mutation.SetEndTime(t)
-	return weu
-}
-
-// SetNillableEndTime sets the "end_time" field if the given value is not nil.
-func (weu *WorkflowExecutionUpdate) SetNillableEndTime(t *time.Time) *WorkflowExecutionUpdate {
-	if t != nil {
-		weu.SetEndTime(*t)
-	}
-	return weu
-}
-
-// ClearEndTime clears the value of the "end_time" field.
-func (weu *WorkflowExecutionUpdate) ClearEndTime() *WorkflowExecutionUpdate {
-	weu.mutation.ClearEndTime()
-	return weu
-}
-
-// SetDurationMs sets the "duration_ms" field.
-func (weu *WorkflowExecutionUpdate) SetDurationMs(i int64) *WorkflowExecutionUpdate {
-	weu.mutation.ResetDurationMs()
-	weu.mutation.SetDurationMs(i)
-	return weu
-}
-
-// SetNillableDurationMs sets the "duration_ms" field if the given value is not nil.
-func (weu *WorkflowExecutionUpdate) SetNillableDurationMs(i *int64) *WorkflowExecutionUpdate {
-	if i != nil {
-		weu.SetDurationMs(*i)
-	}
-	return weu
-}
-
-// AddDurationMs adds i to the "duration_ms" field.
-func (weu *WorkflowExecutionUpdate) AddDurationMs(i int64) *WorkflowExecutionUpdate {
-	weu.mutation.AddDurationMs(i)
-	return weu
-}
-
-// ClearDurationMs clears the value of the "duration_ms" field.
-func (weu *WorkflowExecutionUpdate) ClearDurationMs() *WorkflowExecutionUpdate {
-	weu.mutation.ClearDurationMs()
-	return weu
-}
-
-// SetWorkflowStatus sets the "workflow_status" field.
-func (weu *WorkflowExecutionUpdate) SetWorkflowStatus(tes types.WorkflowExecutionStatus) *WorkflowExecutionUpdate {
-	weu.mutation.SetWorkflowStatus(tes)
-	return weu
-}
-
-// SetNillableWorkflowStatus sets the "workflow_status" field if the given value is not nil.
-func (weu *WorkflowExecutionUpdate) SetNillableWorkflowStatus(tes *types.WorkflowExecutionStatus) *WorkflowExecutionUpdate {
-	if tes != nil {
-		weu.SetWorkflowStatus(*tes)
 	}
 	return weu
 }
@@ -322,24 +260,6 @@ func (weu *WorkflowExecutionUpdate) sqlSave(ctx context.Context) (n int, err err
 	}
 	if value, ok := weu.mutation.StartTime(); ok {
 		_spec.SetField(workflowexecution.FieldStartTime, field.TypeTime, value)
-	}
-	if value, ok := weu.mutation.EndTime(); ok {
-		_spec.SetField(workflowexecution.FieldEndTime, field.TypeTime, value)
-	}
-	if weu.mutation.EndTimeCleared() {
-		_spec.ClearField(workflowexecution.FieldEndTime, field.TypeTime)
-	}
-	if value, ok := weu.mutation.DurationMs(); ok {
-		_spec.SetField(workflowexecution.FieldDurationMs, field.TypeInt64, value)
-	}
-	if value, ok := weu.mutation.AddedDurationMs(); ok {
-		_spec.AddField(workflowexecution.FieldDurationMs, field.TypeInt64, value)
-	}
-	if weu.mutation.DurationMsCleared() {
-		_spec.ClearField(workflowexecution.FieldDurationMs, field.TypeInt64)
-	}
-	if value, ok := weu.mutation.WorkflowStatus(); ok {
-		_spec.SetField(workflowexecution.FieldWorkflowStatus, field.TypeString, value)
 	}
 	if value, ok := weu.mutation.Metadata(); ok {
 		_spec.SetField(workflowexecution.FieldMetadata, field.TypeJSON, value)
@@ -473,67 +393,6 @@ func (weuo *WorkflowExecutionUpdateOne) SetStartTime(t time.Time) *WorkflowExecu
 func (weuo *WorkflowExecutionUpdateOne) SetNillableStartTime(t *time.Time) *WorkflowExecutionUpdateOne {
 	if t != nil {
 		weuo.SetStartTime(*t)
-	}
-	return weuo
-}
-
-// SetEndTime sets the "end_time" field.
-func (weuo *WorkflowExecutionUpdateOne) SetEndTime(t time.Time) *WorkflowExecutionUpdateOne {
-	weuo.mutation.SetEndTime(t)
-	return weuo
-}
-
-// SetNillableEndTime sets the "end_time" field if the given value is not nil.
-func (weuo *WorkflowExecutionUpdateOne) SetNillableEndTime(t *time.Time) *WorkflowExecutionUpdateOne {
-	if t != nil {
-		weuo.SetEndTime(*t)
-	}
-	return weuo
-}
-
-// ClearEndTime clears the value of the "end_time" field.
-func (weuo *WorkflowExecutionUpdateOne) ClearEndTime() *WorkflowExecutionUpdateOne {
-	weuo.mutation.ClearEndTime()
-	return weuo
-}
-
-// SetDurationMs sets the "duration_ms" field.
-func (weuo *WorkflowExecutionUpdateOne) SetDurationMs(i int64) *WorkflowExecutionUpdateOne {
-	weuo.mutation.ResetDurationMs()
-	weuo.mutation.SetDurationMs(i)
-	return weuo
-}
-
-// SetNillableDurationMs sets the "duration_ms" field if the given value is not nil.
-func (weuo *WorkflowExecutionUpdateOne) SetNillableDurationMs(i *int64) *WorkflowExecutionUpdateOne {
-	if i != nil {
-		weuo.SetDurationMs(*i)
-	}
-	return weuo
-}
-
-// AddDurationMs adds i to the "duration_ms" field.
-func (weuo *WorkflowExecutionUpdateOne) AddDurationMs(i int64) *WorkflowExecutionUpdateOne {
-	weuo.mutation.AddDurationMs(i)
-	return weuo
-}
-
-// ClearDurationMs clears the value of the "duration_ms" field.
-func (weuo *WorkflowExecutionUpdateOne) ClearDurationMs() *WorkflowExecutionUpdateOne {
-	weuo.mutation.ClearDurationMs()
-	return weuo
-}
-
-// SetWorkflowStatus sets the "workflow_status" field.
-func (weuo *WorkflowExecutionUpdateOne) SetWorkflowStatus(tes types.WorkflowExecutionStatus) *WorkflowExecutionUpdateOne {
-	weuo.mutation.SetWorkflowStatus(tes)
-	return weuo
-}
-
-// SetNillableWorkflowStatus sets the "workflow_status" field if the given value is not nil.
-func (weuo *WorkflowExecutionUpdateOne) SetNillableWorkflowStatus(tes *types.WorkflowExecutionStatus) *WorkflowExecutionUpdateOne {
-	if tes != nil {
-		weuo.SetWorkflowStatus(*tes)
 	}
 	return weuo
 }
@@ -690,24 +549,6 @@ func (weuo *WorkflowExecutionUpdateOne) sqlSave(ctx context.Context) (_node *Wor
 	}
 	if value, ok := weuo.mutation.StartTime(); ok {
 		_spec.SetField(workflowexecution.FieldStartTime, field.TypeTime, value)
-	}
-	if value, ok := weuo.mutation.EndTime(); ok {
-		_spec.SetField(workflowexecution.FieldEndTime, field.TypeTime, value)
-	}
-	if weuo.mutation.EndTimeCleared() {
-		_spec.ClearField(workflowexecution.FieldEndTime, field.TypeTime)
-	}
-	if value, ok := weuo.mutation.DurationMs(); ok {
-		_spec.SetField(workflowexecution.FieldDurationMs, field.TypeInt64, value)
-	}
-	if value, ok := weuo.mutation.AddedDurationMs(); ok {
-		_spec.AddField(workflowexecution.FieldDurationMs, field.TypeInt64, value)
-	}
-	if weuo.mutation.DurationMsCleared() {
-		_spec.ClearField(workflowexecution.FieldDurationMs, field.TypeInt64)
-	}
-	if value, ok := weuo.mutation.WorkflowStatus(); ok {
-		_spec.SetField(workflowexecution.FieldWorkflowStatus, field.TypeString, value)
 	}
 	if value, ok := weuo.mutation.Metadata(); ok {
 		_spec.SetField(workflowexecution.FieldMetadata, field.TypeJSON, value)
