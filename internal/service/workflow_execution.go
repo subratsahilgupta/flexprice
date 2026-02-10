@@ -61,22 +61,23 @@ func (s *WorkflowExecutionService) CreateWorkflowExecution(ctx context.Context, 
 			Mark(ierr.ErrValidation)
 	}
 
-	// Create workflow execution entity
+	// Create workflow execution entity (workflow_status defaults to Running at start)
 	now := time.Now().UTC()
 	exec := &ent.WorkflowExecution{
-		WorkflowID:    input.WorkflowID,
-		RunID:         input.RunID,
-		WorkflowType:  input.WorkflowType,
-		TaskQueue:     input.TaskQueue,
-		StartTime:     now,
-		TenantID:      input.TenantID,
-		EnvironmentID: input.EnvironmentID,
-		CreatedBy:     input.CreatedBy,
-		UpdatedBy:     input.CreatedBy,
-		Metadata:      input.Metadata,
-		Status:        string(types.StatusPublished),
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		WorkflowID:     input.WorkflowID,
+		RunID:          input.RunID,
+		WorkflowType:   input.WorkflowType,
+		TaskQueue:      input.TaskQueue,
+		StartTime:      now,
+		TenantID:       input.TenantID,
+		EnvironmentID:  input.EnvironmentID,
+		CreatedBy:      input.CreatedBy,
+		UpdatedBy:      input.CreatedBy,
+		Metadata:       input.Metadata,
+		Status:         string(types.StatusPublished),
+		WorkflowStatus: types.WorkflowExecutionStatusRunning,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	if err := s.workflowExecRepo.Create(ctx, exec); err != nil {
@@ -88,23 +89,34 @@ func (s *WorkflowExecutionService) CreateWorkflowExecution(ctx context.Context, 
 
 // ListWorkflowExecutionsFilters represents filters for listing workflow executions
 type ListWorkflowExecutionsFilters struct {
-	TenantID      string
-	EnvironmentID string
-	WorkflowType  string
-	TaskQueue     string
-	PageSize      int
-	Page          int
+	TenantID       string
+	EnvironmentID  string
+	WorkflowID     string // Filter by specific workflow ID
+	WorkflowType   string
+	TaskQueue      string
+	WorkflowStatus string // e.g. Running, Completed, Failed
+
+	// Metadata filters - specific fields
+	Entity   string // Filter by entity type in metadata (e.g. "plan", "customer")
+	EntityID string // Filter by entity_id in metadata (e.g. "plan_01ABC123")
+
+	PageSize int
+	Page     int
 }
 
 // ListWorkflowExecutions retrieves a paginated list of workflow executions
 func (s *WorkflowExecutionService) ListWorkflowExecutions(ctx context.Context, filters *ListWorkflowExecutionsFilters) ([]*ent.WorkflowExecution, int64, error) {
 	repoFilter := &workflowexecution.ListFilter{
-		TenantID:      filters.TenantID,
-		EnvironmentID: filters.EnvironmentID,
-		WorkflowType:  filters.WorkflowType,
-		TaskQueue:     filters.TaskQueue,
-		PageSize:      filters.PageSize,
-		Page:          filters.Page,
+		TenantID:       filters.TenantID,
+		EnvironmentID:  filters.EnvironmentID,
+		WorkflowID:     filters.WorkflowID,
+		WorkflowType:   filters.WorkflowType,
+		TaskQueue:      filters.TaskQueue,
+		WorkflowStatus: filters.WorkflowStatus,
+		Entity:         filters.Entity,
+		EntityID:       filters.EntityID,
+		PageSize:       filters.PageSize,
+		Page:           filters.Page,
 	}
 
 	executions, total, err := s.workflowExecRepo.List(ctx, repoFilter)

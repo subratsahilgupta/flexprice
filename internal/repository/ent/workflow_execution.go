@@ -2,13 +2,16 @@ package ent
 
 import (
 	"context"
+	"time"
 
+	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/workflowexecution"
 	domainWorkflowExecution "github.com/flexprice/flexprice/internal/domain/workflowexecution"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 type workflowExecutionRepository struct {
@@ -42,6 +45,7 @@ func (r *workflowExecutionRepository) Create(ctx context.Context, exec *ent.Work
 		SetEnvironmentID(exec.EnvironmentID).
 		SetCreatedBy(exec.CreatedBy).
 		SetStatus(exec.Status).
+		SetWorkflowStatus(exec.WorkflowStatus).
 		SetCreatedAt(exec.CreatedAt).
 		SetUpdatedAt(exec.UpdatedAt).
 		SetUpdatedBy(exec.UpdatedBy)
@@ -104,11 +108,35 @@ func (r *workflowExecutionRepository) List(ctx context.Context, filter *domainWo
 	if filter.EnvironmentID != "" {
 		query = query.Where(workflowexecution.EnvironmentID(filter.EnvironmentID))
 	}
+	if filter.WorkflowID != "" {
+		query = query.Where(workflowexecution.WorkflowID(filter.WorkflowID))
+	}
 	if filter.WorkflowType != "" {
 		query = query.Where(workflowexecution.WorkflowType(filter.WorkflowType))
 	}
 	if filter.TaskQueue != "" {
 		query = query.Where(workflowexecution.TaskQueue(filter.TaskQueue))
+	}
+	if filter.WorkflowStatus != "" {
+		query = query.Where(workflowexecution.WorkflowStatus(types.WorkflowExecutionStatus(filter.WorkflowStatus)))
+	}
+
+	// Metadata filters - JSONB queries
+	if filter.Entity != "" {
+		query = query.Where(func(s *sql.Selector) {
+			s.Where(sql.P(func(b *sql.Builder) {
+				b.WriteString("metadata->>'entity' = ")
+				b.Arg(filter.Entity)
+			}))
+		})
+	}
+	if filter.EntityID != "" {
+		query = query.Where(func(s *sql.Selector) {
+			s.Where(sql.P(func(b *sql.Builder) {
+				b.WriteString("metadata->>'entity_id' = ")
+				b.Arg(filter.EntityID)
+			}))
+		})
 	}
 
 	// Get total count
@@ -167,6 +195,76 @@ func (r *workflowExecutionRepository) Delete(ctx context.Context, id string) err
 			WithHint("Failed to delete workflow execution").
 			Mark(ierr.ErrDatabase)
 	}
+
+	return nil
+}
+
+func (r *workflowExecutionRepository) UpdateStatus(
+	ctx context.Context,
+	workflowID string,
+	runID string,
+	status types.WorkflowExecutionStatus,
+	errorMessage string,
+	endTime *time.Time,
+	durationMs *int64,
+) error {
+	client := r.client.Writer(ctx)
+
+	r.log.Debugw("updating workflow execution status",
+		"workflow_id", workflowID,
+		"run_id", runID,
+		"status", status,
+		"has_end_time", endTime != nil,
+		"has_duration", durationMs != nil,
+	)
+
+	// Find the workflow execution
+	exec, err := r.Get(ctx, workflowID, runID)
+	if err != nil {
+		return err
+	}
+
+	// Build update query
+	updateQuery := client.WorkflowExecution.
+		UpdateOne(exec).
+		SetWorkflowStatus(status).
+		SetUpdatedAt(exec.UpdatedAt) // Will be auto-updated by the hook
+
+	// Set end time if provided
+	if endTime != nil {
+		updateQuery = updateQuery.SetEndTime(*endTime)
+	}
+
+	// Set duration if provided
+	if durationMs != nil {
+		updateQuery = updateQuery.SetDurationMs(*durationMs)
+	}
+
+	// Store error message in metadata if provided
+	if errorMessage != "" {
+		metadata := exec.Metadata
+		if metadata == nil {
+			metadata = make(map[string]interface{})
+		}
+		metadata["error"] = errorMessage
+		updateQuery = updateQuery.SetMetadata(metadata)
+	}
+
+	// Execute update
+	_, err = updateQuery.Save(ctx)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHintf("Failed to update workflow execution status: %s/%s", workflowID, runID).
+			Mark(ierr.ErrDatabase)
+	}
+
+	r.log.Infow("successfully updated workflow execution status",
+		"workflow_id", workflowID,
+		"run_id", runID,
+		"status", status,
+		"end_time", endTime,
+		"duration_ms", durationMs,
+	)
 
 	return nil
 }
