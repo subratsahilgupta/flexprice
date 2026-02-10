@@ -7,6 +7,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // ID filters vertices based on their ID field.
@@ -122,6 +123,22 @@ func TaskQueue(v string) predicate.WorkflowExecution {
 // StartTime applies equality check predicate on the "start_time" field. It's identical to StartTimeEQ.
 func StartTime(v time.Time) predicate.WorkflowExecution {
 	return predicate.WorkflowExecution(sql.FieldEQ(FieldStartTime, v))
+}
+
+// EndTime applies equality check predicate on the "end_time" field. It's identical to EndTimeEQ.
+func EndTime(v time.Time) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldEndTime, v))
+}
+
+// DurationMs applies equality check predicate on the "duration_ms" field. It's identical to DurationMsEQ.
+func DurationMs(v int64) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldDurationMs, v))
+}
+
+// WorkflowStatus applies equality check predicate on the "workflow_status" field. It's identical to WorkflowStatusEQ.
+func WorkflowStatus(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldWorkflowStatus, vc))
 }
 
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
@@ -857,6 +874,190 @@ func StartTimeLT(v time.Time) predicate.WorkflowExecution {
 // StartTimeLTE applies the LTE predicate on the "start_time" field.
 func StartTimeLTE(v time.Time) predicate.WorkflowExecution {
 	return predicate.WorkflowExecution(sql.FieldLTE(FieldStartTime, v))
+}
+
+// EndTimeEQ applies the EQ predicate on the "end_time" field.
+func EndTimeEQ(v time.Time) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldEndTime, v))
+}
+
+// EndTimeNEQ applies the NEQ predicate on the "end_time" field.
+func EndTimeNEQ(v time.Time) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNEQ(FieldEndTime, v))
+}
+
+// EndTimeIn applies the In predicate on the "end_time" field.
+func EndTimeIn(vs ...time.Time) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldIn(FieldEndTime, vs...))
+}
+
+// EndTimeNotIn applies the NotIn predicate on the "end_time" field.
+func EndTimeNotIn(vs ...time.Time) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNotIn(FieldEndTime, vs...))
+}
+
+// EndTimeGT applies the GT predicate on the "end_time" field.
+func EndTimeGT(v time.Time) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldGT(FieldEndTime, v))
+}
+
+// EndTimeGTE applies the GTE predicate on the "end_time" field.
+func EndTimeGTE(v time.Time) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldGTE(FieldEndTime, v))
+}
+
+// EndTimeLT applies the LT predicate on the "end_time" field.
+func EndTimeLT(v time.Time) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldLT(FieldEndTime, v))
+}
+
+// EndTimeLTE applies the LTE predicate on the "end_time" field.
+func EndTimeLTE(v time.Time) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldLTE(FieldEndTime, v))
+}
+
+// EndTimeIsNil applies the IsNil predicate on the "end_time" field.
+func EndTimeIsNil() predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldIsNull(FieldEndTime))
+}
+
+// EndTimeNotNil applies the NotNil predicate on the "end_time" field.
+func EndTimeNotNil() predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNotNull(FieldEndTime))
+}
+
+// DurationMsEQ applies the EQ predicate on the "duration_ms" field.
+func DurationMsEQ(v int64) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldDurationMs, v))
+}
+
+// DurationMsNEQ applies the NEQ predicate on the "duration_ms" field.
+func DurationMsNEQ(v int64) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNEQ(FieldDurationMs, v))
+}
+
+// DurationMsIn applies the In predicate on the "duration_ms" field.
+func DurationMsIn(vs ...int64) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldIn(FieldDurationMs, vs...))
+}
+
+// DurationMsNotIn applies the NotIn predicate on the "duration_ms" field.
+func DurationMsNotIn(vs ...int64) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNotIn(FieldDurationMs, vs...))
+}
+
+// DurationMsGT applies the GT predicate on the "duration_ms" field.
+func DurationMsGT(v int64) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldGT(FieldDurationMs, v))
+}
+
+// DurationMsGTE applies the GTE predicate on the "duration_ms" field.
+func DurationMsGTE(v int64) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldGTE(FieldDurationMs, v))
+}
+
+// DurationMsLT applies the LT predicate on the "duration_ms" field.
+func DurationMsLT(v int64) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldLT(FieldDurationMs, v))
+}
+
+// DurationMsLTE applies the LTE predicate on the "duration_ms" field.
+func DurationMsLTE(v int64) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldLTE(FieldDurationMs, v))
+}
+
+// DurationMsIsNil applies the IsNil predicate on the "duration_ms" field.
+func DurationMsIsNil() predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldIsNull(FieldDurationMs))
+}
+
+// DurationMsNotNil applies the NotNil predicate on the "duration_ms" field.
+func DurationMsNotNil() predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNotNull(FieldDurationMs))
+}
+
+// WorkflowStatusEQ applies the EQ predicate on the "workflow_status" field.
+func WorkflowStatusEQ(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusNEQ applies the NEQ predicate on the "workflow_status" field.
+func WorkflowStatusNEQ(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldNEQ(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusIn applies the In predicate on the "workflow_status" field.
+func WorkflowStatusIn(vs ...types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.WorkflowExecution(sql.FieldIn(FieldWorkflowStatus, v...))
+}
+
+// WorkflowStatusNotIn applies the NotIn predicate on the "workflow_status" field.
+func WorkflowStatusNotIn(vs ...types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.WorkflowExecution(sql.FieldNotIn(FieldWorkflowStatus, v...))
+}
+
+// WorkflowStatusGT applies the GT predicate on the "workflow_status" field.
+func WorkflowStatusGT(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldGT(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusGTE applies the GTE predicate on the "workflow_status" field.
+func WorkflowStatusGTE(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldGTE(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusLT applies the LT predicate on the "workflow_status" field.
+func WorkflowStatusLT(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldLT(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusLTE applies the LTE predicate on the "workflow_status" field.
+func WorkflowStatusLTE(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldLTE(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusContains applies the Contains predicate on the "workflow_status" field.
+func WorkflowStatusContains(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldContains(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusHasPrefix applies the HasPrefix predicate on the "workflow_status" field.
+func WorkflowStatusHasPrefix(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldHasPrefix(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusHasSuffix applies the HasSuffix predicate on the "workflow_status" field.
+func WorkflowStatusHasSuffix(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldHasSuffix(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusEqualFold applies the EqualFold predicate on the "workflow_status" field.
+func WorkflowStatusEqualFold(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldEqualFold(FieldWorkflowStatus, vc))
+}
+
+// WorkflowStatusContainsFold applies the ContainsFold predicate on the "workflow_status" field.
+func WorkflowStatusContainsFold(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
+	vc := string(v)
+	return predicate.WorkflowExecution(sql.FieldContainsFold(FieldWorkflowStatus, vc))
 }
 
 // MetadataIsNil applies the IsNil predicate on the "metadata" field.
