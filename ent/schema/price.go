@@ -281,9 +281,11 @@ func (Price) Edges() []ent.Edge {
 // Indexes of the Price.
 func (Price) Indexes() []ent.Index {
 	return []ent.Index{
-		// Unique lookup key index for published prices
 		index.Fields("tenant_id", "environment_id", "lookup_key").
 			Unique().
-			Annotations(entsql.IndexWhere("status = 'published' AND lookup_key IS NOT NULL AND lookup_key != '' AND end_date IS NULL")),
+			Annotations(entsql.IndexWhere("status = 'published' AND lookup_key IS NOT NULL AND lookup_key != ''")),
+		index.Fields("tenant_id", "environment_id"),
+		index.Fields("start_date", "end_date"),
+		index.Fields("tenant_id", "environment_id", "group_id"),
 	}
 }
