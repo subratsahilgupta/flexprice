@@ -47,10 +47,17 @@ type WorkflowTimelineItemDTO struct {
 
 // ListWorkflowsRequest represents the request parameters for listing workflows
 type ListWorkflowsRequest struct {
-	WorkflowType string `form:"workflow_type"`
-	TaskQueue    string `form:"task_queue"`
-	PageSize     int    `form:"page_size"`
-	Page         int    `form:"page"`
+	WorkflowID     string `form:"workflow_id"` // Filter by specific workflow ID
+	WorkflowType   string `form:"workflow_type"`
+	TaskQueue      string `form:"task_queue"`
+	WorkflowStatus string `form:"workflow_status"` // e.g. Running, Completed, Failed
+
+	// Metadata filters - specific fields for common use cases
+	Entity   string `form:"entity"`    // e.g. "plan", "customer", "invoice"
+	EntityID string `form:"entity_id"` // e.g. "plan_01ABC123"
+
+	PageSize int `form:"page_size"`
+	Page     int `form:"page"`
 }
 
 // ListWorkflowsResponse represents the response for listing workflows
