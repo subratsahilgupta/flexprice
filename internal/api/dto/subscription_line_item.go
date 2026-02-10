@@ -345,12 +345,15 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 		lineItem.Metadata["addon_status"] = string(types.AddonStatusActive)
 	}
 
-	// Set dates
-	if r.StartDate != nil {
-		lineItem.StartDate = r.StartDate.UTC()
-	} else {
-		lineItem.StartDate = time.Now().UTC()
+	// Set dates: effective start = max(subscription start, price start); request start_date may only push start later
+	startDate := params.Subscription.StartDate
+	if params.Price != nil && params.Price.StartDate != nil && params.Price.StartDate.After(startDate) {
+		startDate = lo.FromPtr(params.Price.StartDate)
 	}
+	if r.StartDate != nil && r.StartDate.After(startDate) {
+		startDate = lo.FromPtr(r.StartDate)
+	}
+	lineItem.StartDate = startDate.UTC()
 	if r.EndDate != nil {
 		lineItem.EndDate = r.EndDate.UTC()
 	}
@@ -376,36 +379,11 @@ func (r *CreateSubscriptionLineItemRequest) ToSubscriptionLineItem(ctx context.C
 
 // Validate validates the delete subscription line item request
 func (r *DeleteSubscriptionLineItemRequest) Validate() error {
-	// Validate effective from date is not in the past if provided
-	// Use a small buffer (5 seconds) to account for microsecond-level timing differences
-	// when effectiveFrom defaults to time.Now() and StartDate is very recent
-	// This allows effectiveFrom to be slightly before StartDate (within buffer) due to timing
-	buffer := 5 * time.Second
-	if r.EffectiveFrom != nil && r.EffectiveFrom.Before(time.Now().UTC().Add(-buffer)) {
-		return ierr.NewError("effective_from must be in the future or present").
-			WithHint("Effective from date must be in the future or present").
-			WithReportableDetails(map[string]interface{}{
-				"effective_from": r.EffectiveFrom,
-				"current_time":   time.Now().UTC(),
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
 	return nil
 }
 
 // Validate validates the update subscription line item request
 func (r *UpdateSubscriptionLineItemRequest) Validate() error {
-	if r.EffectiveFrom != nil && r.EffectiveFrom.Before(time.Now().UTC()) {
-		return ierr.NewError("effective_from must be in the future").
-			WithHint("Effective from date must be in the future").
-			WithReportableDetails(map[string]interface{}{
-				"effective_from": r.EffectiveFrom,
-				"current_time":   time.Now().UTC(),
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
 	// If EffectiveFrom is provided, at least one critical field must be present
 	if r.EffectiveFrom != nil && !r.ShouldCreateNewLineItem() {
 		return ierr.NewError("effective_from requires at least one critical field").

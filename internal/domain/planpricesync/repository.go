@@ -17,6 +17,7 @@ type PlanLineItemTerminationDelta struct {
 type PlanLineItemCreationDelta struct {
 	SubscriptionID string
 	PriceID        string // plan price ID to use for the new line item
+	CustomerID     string // subscription's customer_id, for reprocessing without listing subscriptions
 }
 
 type ListPlanLineItemsToTerminateParams struct {

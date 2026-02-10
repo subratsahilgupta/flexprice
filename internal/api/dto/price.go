@@ -376,7 +376,7 @@ func (r *CreatePriceRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	// 12. Validate dates
+	// 12. Validate dates (backdated start_date is allowed; when end_date is provided it must be after start_date)
 	if r.StartDate != nil && r.EndDate != nil {
 		if r.StartDate.After(*r.EndDate) {
 			return ierr.NewError("start date must be before end date").
@@ -538,12 +538,6 @@ func (r *UpdatePriceRequest) Validate() error {
 	if r.EffectiveFrom != nil && !r.ShouldCreateNewPrice() {
 		return ierr.NewError("effective_from requires at least one critical field").
 			WithHint("When providing effective_from, you must also provide one of: amount, billing_model, tier_mode, tiers, transform_quantity, price_unit_amount, or price_unit_tiers").
-			Mark(ierr.ErrValidation)
-	}
-
-	if r.EffectiveFrom != nil && r.ShouldCreateNewPrice() && r.EffectiveFrom.Before(time.Now().UTC()) {
-		return ierr.NewError("effective from date must be in the future when used as termination date").
-			WithHint("Effective from date must be in the future when updating critical fields").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -713,12 +707,6 @@ func (r *CreateBulkPriceRequest) Validate() error {
 }
 
 func (r *DeletePriceRequest) Validate() error {
-	if r.EndDate != nil && r.EndDate.Before(time.Now().UTC()) {
-		return ierr.NewError("end date must be in the future").
-			WithHint("End date must be in the future").
-			Mark(ierr.ErrValidation)
-	}
-
 	return nil
 }
 

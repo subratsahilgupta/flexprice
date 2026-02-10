@@ -293,6 +293,13 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 					}
 					total = safeDecimalFromFloat(totalFloat)
 					value = safeDecimalFromFloat(valueFloat)
+					// Ensure negative values are treated as zero
+					if total.LessThan(decimal.Zero) {
+						total = decimal.Zero
+					}
+					if value.LessThan(decimal.Zero) {
+						value = decimal.Zero
+					}
 					// Set the overall max/sum as the result value
 					result.Value = total
 				} else {
@@ -308,6 +315,10 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 							Mark(ierr.ErrDatabase)
 					}
 					value = safeDecimalFromFloat(floatValue)
+					// Ensure negative values are treated as zero
+					if value.LessThan(decimal.Zero) {
+						value = decimal.Zero
+					}
 				}
 			case types.AggregationAvg, types.AggregationLatest, types.AggregationSumWithMultiplier, types.AggregationWeightedSum:
 				var floatValue float64
@@ -323,8 +334,8 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 				}
 				value = safeDecimalFromFloat(floatValue)
 
-				// For Latest aggregation, return 0 if negative
-				if params.AggregationType == types.AggregationLatest && value.LessThan(decimal.Zero) {
+				// Ensure negative values are treated as zero for all aggregation types
+				if value.LessThan(decimal.Zero) {
 					value = decimal.Zero
 				}
 			default:
@@ -371,8 +382,8 @@ func (r *EventRepository) GetUsage(ctx context.Context, params *events.UsagePara
 				}
 				result.Value = safeDecimalFromFloat(value)
 
-				// For Latest aggregation, return 0 if negative
-				if params.AggregationType == types.AggregationLatest && result.Value.LessThan(decimal.Zero) {
+				// Ensure negative values are treated as zero for all aggregation types
+				if result.Value.LessThan(decimal.Zero) {
 					result.Value = decimal.Zero
 				}
 			default:
@@ -975,7 +986,7 @@ func (r *EventRepository) GetDistinctEventNames(ctx context.Context, externalCus
 
 	query := `
 		SELECT DISTINCT event_name 
-		FROM events 
+		FROM events
 		WHERE tenant_id = ?
 		AND environment_id = ?
 		AND external_customer_id = ?
@@ -1070,7 +1081,7 @@ func (r *EventRepository) GetTotalEventCount(ctx context.Context, startTime, end
 			SELECT 
 				%s AS window_time,
 				COUNT(DISTINCT(id)) as event_count
-			FROM events
+			FROM events FINAL
 			WHERE tenant_id = ?
 			AND environment_id = ?
 			AND timestamp >= ?
@@ -1127,7 +1138,7 @@ func (r *EventRepository) GetTotalEventCount(ctx context.Context, startTime, end
 		// No window size, just get total count
 		query := `
 			SELECT COUNT(DISTINCT(id)) as total_count
-			FROM events
+			FROM events FINAL
 			WHERE tenant_id = ?
 			AND environment_id = ?
 		`
@@ -1185,7 +1196,7 @@ func (r *EventRepository) GetEventByID(ctx context.Context, eventID string) (*ev
 			properties,
 			environment_id,
 			ingested_at
-		FROM events
+		FROM events FINAL
 		WHERE tenant_id = ?
 		AND environment_id = ?
 		AND id = ?

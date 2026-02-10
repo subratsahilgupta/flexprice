@@ -29,7 +29,106 @@ func NewFeatureUsageRepository(store *clickhouse.ClickHouseStore, logger *logger
 	}
 }
 
+// buildConditionalAggregationColumns builds SQL aggregation columns based on the provided aggregation types.
+// If an aggregation type is in the array, it computes the actual aggregation; otherwise, it returns 0.
+func buildConditionalAggregationColumns(aggTypes []types.AggregationType) []string {
+	// Create a set for quick lookup
+	aggSet := make(map[types.AggregationType]bool)
+	for _, aggType := range aggTypes {
+		aggSet[aggType] = true
+	}
+
+	columns := []string{}
+
+	// SUM aggregation (total_usage) - returns Decimal, so fallback must also be Decimal
+	if aggSet[types.AggregationSum] {
+		columns = append(columns, "SUM(qty_total) AS total_usage")
+	} else {
+		columns = append(columns, "toDecimal128(0, 9) AS total_usage")
+	}
+
+	// MAX aggregation (max_usage) - returns Decimal, so fallback must also be Decimal
+	if aggSet[types.AggregationMax] {
+		columns = append(columns, "MAX(qty_total) AS max_usage")
+	} else {
+		columns = append(columns, "toDecimal128(0, 9) AS max_usage")
+	}
+
+	// LATEST aggregation (latest_usage) - returns Decimal, so fallback must also be Decimal
+	if aggSet[types.AggregationLatest] {
+		columns = append(columns, "argMax(qty_total, timestamp) AS latest_usage")
+	} else {
+		columns = append(columns, "toDecimal128(0, 9) AS latest_usage")
+	}
+
+	// COUNT_UNIQUE aggregation (count_unique_usage) - returns UInt64
+	if aggSet[types.AggregationCountUnique] {
+		columns = append(columns, "COUNT(DISTINCT unique_hash) AS count_unique_usage")
+	} else {
+		columns = append(columns, "toUInt64(0) AS count_unique_usage")
+	}
+
+	// COUNT aggregation (event_count) - count distinct event IDs - returns UInt64
+	if aggSet[types.AggregationCount] {
+		columns = append(columns, "COUNT(DISTINCT id) AS event_count")
+	} else {
+		columns = append(columns, "toUInt64(0) AS event_count")
+	}
+
+	return columns
+}
+
+// buildConditionalAggregationColumnsForSubscription builds SQL aggregation columns for GetFeatureUsageBySubscription.
+// Uses subscription-specific column aliases (sum_total, max_total, etc.)
+func buildConditionalAggregationColumnsForSubscription(aggTypes []types.AggregationType) []string {
+	// Create a set for quick lookup
+	aggSet := make(map[types.AggregationType]bool)
+	for _, aggType := range aggTypes {
+		aggSet[aggType] = true
+	}
+
+	columns := []string{}
+
+	// SUM aggregation (sum_total) - returns Decimal, so fallback must also be Decimal
+	if aggSet[types.AggregationSum] || aggSet[types.AggregationSumWithMultiplier] || aggSet[types.AggregationWeightedSum] {
+		columns = append(columns, "sum(qty_total) AS sum_total")
+	} else {
+		columns = append(columns, "toDecimal128(0, 9) AS sum_total")
+	}
+
+	// MAX aggregation (max_total) - returns Decimal, so fallback must also be Decimal
+	if aggSet[types.AggregationMax] {
+		columns = append(columns, "max(qty_total) AS max_total")
+	} else {
+		columns = append(columns, "toDecimal128(0, 9) AS max_total")
+	}
+
+	// COUNT aggregation (count_distinct_ids) - returns UInt64
+	if aggSet[types.AggregationCount] {
+		columns = append(columns, "count(DISTINCT id) AS count_distinct_ids")
+	} else {
+		columns = append(columns, "toUInt64(0) AS count_distinct_ids")
+	}
+
+	// COUNT_UNIQUE aggregation (count_unique_qty) - returns UInt64
+	if aggSet[types.AggregationCountUnique] {
+		columns = append(columns, "count(DISTINCT unique_hash) AS count_unique_qty")
+	} else {
+		columns = append(columns, "toUInt64(0) AS count_unique_qty")
+	}
+
+	// LATEST aggregation (latest_qty) - returns Decimal, so fallback must also be Decimal
+	if aggSet[types.AggregationLatest] {
+		columns = append(columns, "argMax(qty_total, \"timestamp\") AS latest_qty")
+	} else {
+		columns = append(columns, "toDecimal128(0, 9) AS latest_qty")
+	}
+
+	return columns
+}
+
 // InsertProcessedEvent inserts a single processed event
+
 func (r *FeatureUsageRepository) InsertProcessedEvent(ctx context.Context, event *events.FeatureUsage) error {
 	query := `
 		INSERT INTO feature_usage (
@@ -441,7 +540,7 @@ func (r *FeatureUsageRepository) GetDetailedUsageAnalytics(ctx context.Context, 
 			otherParams.FeatureIDs = []string{}
 		}
 
-		otherResults, err := r.getStandardAnalytics(ctx, &otherParams, maxBucketFeatures, sumBucketFeatures)
+		otherResults, err := r.getStandardAnalytics(ctx, &otherParams, maxBucketFeatures, sumBucketFeatures, params.AggregationTypes)
 		if err != nil {
 			SetSpanError(span, err)
 			return nil, err
@@ -473,7 +572,7 @@ func (r *FeatureUsageRepository) getOtherFeatureIDs(requestedFeatureIDs []string
 }
 
 // getStandardAnalytics handles analytics for non-MAX/SUM with bucket features
-func (r *FeatureUsageRepository) getStandardAnalytics(ctx context.Context, params *events.UsageAnalyticsParams, maxBucketFeatures map[string]*events.MaxBucketFeatureInfo, sumBucketFeatures map[string]*events.SumBucketFeatureInfo) ([]*events.DetailedUsageAnalytic, error) {
+func (r *FeatureUsageRepository) getStandardAnalytics(ctx context.Context, params *events.UsageAnalyticsParams, maxBucketFeatures map[string]*events.MaxBucketFeatureInfo, sumBucketFeatures map[string]*events.SumBucketFeatureInfo, aggTypes []types.AggregationType) ([]*events.DetailedUsageAnalytic, error) {
 	// Initialize query parameters with the standard parameters that will be added later
 	// This ensures they're always in the right order
 	queryParams := []interface{}{
@@ -526,18 +625,14 @@ func (r *FeatureUsageRepository) getStandardAnalytics(ctx context.Context, param
 		}
 	}
 
-	// Base query for aggregates - fetch all aggregation types for each feature
+	// Base query for aggregates - build conditional aggregation columns based on aggTypes
 	selectColumns := []string{}
 	if len(groupByColumnAliases) > 0 {
 		selectColumns = append(selectColumns, strings.Join(groupByColumnAliases, ", ")) // group by columns with aliases
 	}
-	selectColumns = append(selectColumns,
-		"SUM(qty_total * sign) AS total_usage",
-		"MAX(qty_total * sign) AS max_usage",
-		"argMax(qty_total, timestamp) AS latest_usage",
-		"COUNT(DISTINCT unique_hash) AS count_unique_usage",
-		"COUNT(DISTINCT id) AS event_count", // Count distinct event IDs, not rows
-	)
+	// Add conditional aggregation columns based on aggTypes
+	aggColumns := buildConditionalAggregationColumns(aggTypes)
+	selectColumns = append(selectColumns, aggColumns...)
 	// Add sources array when source is not in group_by
 	if !sourceInGroupBy {
 		selectColumns = append(selectColumns, "groupUniqArray(source) AS sources")
@@ -840,7 +935,7 @@ func (r *FeatureUsageRepository) getMaxBucketTotals(ctx context.Context, params 
 		SELECT
 			%s as bucket_start,
 			%s,
-			max(qty_total * sign) as bucket_max,
+			max(qty_total) as bucket_max,
 			argMax(qty_total, timestamp) as bucket_latest,
 			count(DISTINCT unique_hash) as bucket_count_unique,
 			count(DISTINCT id) as event_count
@@ -1027,7 +1122,7 @@ func (r *FeatureUsageRepository) getMaxBucketPointsForGroup(ctx context.Context,
 		SELECT
 			%s as bucket_start,
 			%s as window_start,
-			max(qty_total * sign) as bucket_max,
+			max(qty_total) as bucket_max,
 			argMax(qty_total, timestamp) as bucket_latest,
 			count(DISTINCT unique_hash) as bucket_count_unique,
 			count(DISTINCT id) as event_count
@@ -1245,7 +1340,7 @@ func (r *FeatureUsageRepository) getSumBucketTotals(ctx context.Context, params 
 		SELECT
 			%s as bucket_start,
 			%s,
-			sum(qty_total * sign) as bucket_sum,
+			sum(qty_total) as bucket_sum,
 			argMax(qty_total, timestamp) as bucket_latest,
 			count(DISTINCT unique_hash) as bucket_count_unique,
 			count(DISTINCT id) as event_count
@@ -1432,7 +1527,7 @@ func (r *FeatureUsageRepository) getSumBucketPointsForGroup(ctx context.Context,
 		SELECT
 			%s as bucket_start,
 			%s as window_start,
-			sum(qty_total * sign) as bucket_sum,
+			sum(qty_total) as bucket_sum,
 			argMax(qty_total, timestamp) as bucket_latest,
 			count(DISTINCT unique_hash) as bucket_count_unique,
 			count(DISTINCT id) as event_count
@@ -1646,15 +1741,12 @@ func (r *FeatureUsageRepository) getAnalyticsPoints(
 		timeWindowExpr = "toStartOfHour(timestamp)"
 	}
 
-	// Build the select columns for time-series query - fetch all aggregation types
+	// Build the select columns for time-series query - use conditional aggregation based on params.AggregationTypes
+	aggColumns := buildConditionalAggregationColumns(params.AggregationTypes)
 	selectColumns := []string{
 		fmt.Sprintf("%s AS window_time", timeWindowExpr),
-		"SUM(qty_total * sign) AS total_usage",
-		"MAX(qty_total * sign) AS max_usage",
-		"argMax(qty_total, timestamp) AS latest_usage",
-		"COUNT(DISTINCT unique_hash) AS count_unique_usage",
-		"COUNT(DISTINCT id) AS event_count", // Count distinct event IDs, not rows
 	}
+	selectColumns = append(selectColumns, aggColumns...)
 
 	// Build the query
 	query := fmt.Sprintf(`
@@ -1804,56 +1896,55 @@ func (r *FeatureUsageRepository) getAnalyticsPoints(
 }
 
 // GetFeatureUsageBySubscription gets usage data for a subscription using a single optimized query
-func (r *FeatureUsageRepository) GetFeatureUsageBySubscription(ctx context.Context, subscriptionID, externalCustomerID string, startTime, endTime time.Time) (map[string]*events.UsageByFeatureResult, error) {
+func (r *FeatureUsageRepository) GetFeatureUsageBySubscription(ctx context.Context, subscriptionID, customerID string, startTime, endTime time.Time, aggTypes []types.AggregationType) (map[string]*events.UsageByFeatureResult, error) {
 	// Extract tenantID and environmentID from context
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "feature_usage", "get_usage_by_subscription_v2", map[string]interface{}{
-		"subscription_id":      subscriptionID,
-		"external_customer_id": externalCustomerID,
-		"environment_id":       environmentID,
-		"tenant_id":            tenantID,
-		"start_time":           startTime,
-		"end_time":             endTime,
+		"subscription_id": subscriptionID,
+		"customer_id":     customerID,
+		"environment_id":  environmentID,
+		"tenant_id":       tenantID,
+		"start_time":      startTime,
+		"end_time":        endTime,
 	})
 	defer FinishSpan(span)
 
-	query := `
+	// Build conditional aggregation columns
+	aggColumns := buildConditionalAggregationColumnsForSubscription(aggTypes)
+
+	query := fmt.Sprintf(`
 		SELECT 
 			sub_line_item_id,
 			feature_id,
 			meter_id,
 			price_id,
-			sum(qty_total * sign)              AS sum_total,
-			max(qty_total * sign)              AS max_total,
-			count(DISTINCT id)                 AS count_distinct_ids,
-			count(DISTINCT unique_hash)        AS count_unique_qty,
-			argMax(qty_total * sign, "timestamp") AS latest_qty
+			%s
 		FROM feature_usage
 		WHERE 
 			subscription_id = ?
-			AND external_customer_id = ?
+			AND customer_id = ?
 			AND environment_id = ?
 			AND tenant_id = ?
 			AND "timestamp" >= ?
 			AND "timestamp" < ?
 			AND sign != 0
 		GROUP BY sub_line_item_id, feature_id, meter_id, price_id
-	`
+	`, strings.Join(aggColumns, ",\n\t\t\t"))
 
 	log.Printf("Executing query: %s", query)
-	log.Printf("Params: %v", []interface{}{subscriptionID, externalCustomerID, environmentID, tenantID, startTime, endTime})
+	log.Printf("Params: %v", []interface{}{subscriptionID, customerID, environmentID, tenantID, startTime, endTime})
 
-	rows, err := r.store.GetConn().Query(ctx, query, subscriptionID, externalCustomerID, environmentID, tenantID, startTime, endTime)
+	rows, err := r.store.GetConn().Query(ctx, query, subscriptionID, customerID, environmentID, tenantID, startTime, endTime)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
 			WithHint("Failed to execute optimized subscription usage query").
 			WithReportableDetails(map[string]interface{}{
-				"subscription_id":      subscriptionID,
-				"external_customer_id": externalCustomerID,
+				"subscription_id": subscriptionID,
+				"customer_id":     customerID,
 			}).
 			Mark(ierr.ErrDatabase)
 	}
@@ -2140,7 +2231,7 @@ func (r *FeatureUsageRepository) getWindowedQuery(ctx context.Context, params *e
 		WITH %s AS (
 			SELECT
 				%s as bucket_start,
-				%s(qty_total * sign) as %s
+				%s(qty_total) as %s
 			FROM feature_usage
 			PREWHERE tenant_id = '%s'
 				AND environment_id = '%s'

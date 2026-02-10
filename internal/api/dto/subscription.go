@@ -1405,7 +1405,7 @@ func (r *OverrideLineItemRequest) Validate(
 				WithReportableDetails(map[string]interface{}{
 					"price_id": r.PriceID,
 				}).
-				Mark(ierr.ErrInternal)
+				Mark(ierr.ErrNotFound)
 		}
 	}
 
@@ -1569,4 +1569,24 @@ func (p *Period) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 	return nil
+}
+
+// TriggerSubscriptionWorkflowRequest represents the request to trigger a subscription billing workflow
+type TriggerSubscriptionWorkflowRequest struct {
+	SubscriptionID string `json:"subscription_id" validate:"required"`
+}
+
+// Validate validates the TriggerSubscriptionWorkflowRequest
+func (r *TriggerSubscriptionWorkflowRequest) Validate() error {
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+// TriggerSubscriptionWorkflowResponse represents the response for triggering a subscription billing workflow
+type TriggerSubscriptionWorkflowResponse struct {
+	WorkflowID string `json:"workflow_id"`
+	RunID      string `json:"run_id"`
+	Message    string `json:"message"`
 }

@@ -122,6 +122,7 @@ func (s *CreditGrantServiceTestSuite) setupTestData() {
 		ID:                 "sub_test_123",
 		PlanID:             s.testData.plan.ID,
 		CustomerID:         s.testData.customer.ID,
+		Currency:           "USD",
 		StartDate:          s.testData.now,
 		CurrentPeriodStart: s.testData.now,
 		CurrentPeriodEnd:   s.testData.now.Add(30 * 24 * time.Hour), // 30 days
@@ -156,26 +157,28 @@ func (s *CreditGrantServiceTestSuite) getWalletTransactionByGrantID(customerID s
 		return nil, fmt.Errorf("wallet not found for customer: %s", customerID)
 	}
 
-	walletID := wallets[0].ID
-	txFilter := &types.WalletTransactionFilter{
-		WalletID:    &walletID,
-		QueryFilter: types.NewDefaultQueryFilter(),
-	}
-	transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), walletID, txFilter)
-	if err != nil {
-		return nil, err
-	}
+	// Search through all wallets to find the transaction
+	for _, wallet := range wallets {
+		txFilter := &types.WalletTransactionFilter{
+			WalletID:    &wallet.ID,
+			QueryFilter: types.NewDefaultQueryFilter(),
+		}
+		transactions, err := s.walletService.GetWalletTransactions(s.GetContext(), wallet.ID, txFilter)
+		if err != nil {
+			return nil, err
+		}
 
-	for _, tx := range transactions.Items {
-		if tx.Metadata != nil {
-			if grantID != nil {
-				if id, ok := tx.Metadata["grant_id"]; ok && id == *grantID {
-					return tx, nil
+		for _, tx := range transactions.Items {
+			if tx.Metadata != nil {
+				if grantID != nil {
+					if id, ok := tx.Metadata["grant_id"]; ok && id == *grantID {
+						return tx, nil
+					}
 				}
-			}
-			if cgaID != nil {
-				if id, ok := tx.Metadata["cga_id"]; ok && id == *cgaID {
-					return tx, nil
+				if cgaID != nil {
+					if id, ok := tx.Metadata["cga_id"]; ok && id == *cgaID {
+						return tx, nil
+					}
 				}
 			}
 		}
@@ -792,14 +795,18 @@ func (s *CreditGrantServiceTestSuite) TestDeleteCreditGrant() {
 	creditGrantResp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), creditGrantReq)
 	s.NoError(err)
 
-	// Delete the credit grant
-	err = s.creditGrantService.DeleteCreditGrant(s.GetContext(), creditGrantResp.CreditGrant.ID)
+	// Delete the credit grant (subscription scope: sets end date and cancels future CGAs, does not delete)
+	err = s.creditGrantService.DeleteCreditGrant(s.GetContext(), dto.DeleteCreditGrantRequest{
+		CreditGrantID: creditGrantResp.CreditGrant.ID,
+		EffectiveDate: &s.testData.now,
+	})
 	s.NoError(err)
 
-	// Verify it's deleted (should return not found error)
-	_, err = s.creditGrantService.GetCreditGrant(s.GetContext(), creditGrantResp.CreditGrant.ID)
-	s.Error(err)
-	s.True(ierr.IsNotFound(err))
+	// For subscription-scoped grants, the grant is not deleted; end date is set. Verify grant still exists with end date set.
+	gotGrant, err := s.creditGrantService.GetCreditGrant(s.GetContext(), creditGrantResp.CreditGrant.ID)
+	s.NoError(err)
+	s.NotNil(gotGrant.EndDate)
+	s.True(gotGrant.EndDate.Equal(s.testData.now) || (gotGrant.EndDate.After(s.testData.now.Add(-time.Second)) && gotGrant.EndDate.Before(s.testData.now.Add(time.Second))))
 }
 
 // Test Case 13: Test period start and end dates for weekly credit grant
@@ -2161,10 +2168,10 @@ func (s *CreditGrantServiceTestSuite) TestSubscriptionCancellationCancelsFutureG
 	s.Equal(types.ApplicationStatusCancelled, cancelledFutureApp.ApplicationStatus, "Future application should be cancelled")
 	s.Nil(cancelledFutureApp.AppliedAt, "Cancelled application should not have AppliedAt set")
 
-	// Verify that the grant was archived (deleted) as part of cancellation
-	_, err = s.GetStores().CreditGrantRepo.Get(s.GetContext(), creditGrantResp.CreditGrant.ID)
-	s.Error(err, "Grant should be deleted/archived after cancellation")
-	s.Contains(err.Error(), "not found", "Error should indicate grant not found")
+	// Verify that the grant has end_date set (subscription-scoped grants are not deleted, just ended)
+	updatedGrant, err := s.GetStores().CreditGrantRepo.Get(s.GetContext(), creditGrantResp.CreditGrant.ID)
+	s.NoError(err, "Grant should still exist after cancellation")
+	s.NotNil(updatedGrant.EndDate, "Grant should have end_date set after cancellation")
 
 	// Test that processing a grant application for a cancelled subscription results in cancellation
 	// Create a new subscription and grant for this test

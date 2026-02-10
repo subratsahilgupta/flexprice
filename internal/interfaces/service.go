@@ -5,6 +5,8 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/domain/planpricesync"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
@@ -53,6 +55,7 @@ type PlanService interface {
 	DeletePlan(ctx context.Context, id string) error
 	SyncPlanPrices(ctx context.Context, id string) (*dto.SyncPlanPricesResponse, error)
 	SyncPlanPricesV2(ctx context.Context, id string) (*dto.SyncPlanPricesV2Response, error)
+	ReprocessEventsForMissingPairs(ctx context.Context, missingPairs []planpricesync.PlanLineItemCreationDelta) error
 }
 
 type EntityIntegrationMappingService interface {
@@ -125,6 +128,9 @@ type SubscriptionService interface {
 
 	GetActiveAddonAssociations(ctx context.Context, subscriptionID string) (*dto.ListAddonAssociationsResponse, error)
 
+	// TriggerSubscriptionWorkflow triggers the subscription billing workflow
+	TriggerSubscriptionWorkflow(ctx context.Context, subscriptionID string) (*dto.TriggerSubscriptionWorkflowResponse, error)
+
 	// Cron methods
 
 	// Calculate Billing Periods for the subscription
@@ -146,6 +152,12 @@ type PriceUnitService interface {
 	DeletePriceUnit(ctx context.Context, id string) error
 }
 
+// CreditAdjustmentService defines the interface for credit adjustment operations
+type CreditAdjustmentService interface {
+	// ApplyCreditsToInvoice applies wallet credits to invoice line items
+	ApplyCreditsToInvoice(ctx context.Context, inv *invoice.Invoice) (*dto.CreditAdjustmentResult, error)
+}
+
 type ServiceDependencies struct {
 	CustomerService                 CustomerService
 	PaymentService                  PaymentService
@@ -154,5 +166,6 @@ type ServiceDependencies struct {
 	SubscriptionService             SubscriptionService
 	EntityIntegrationMappingService EntityIntegrationMappingService
 	PriceUnitService                PriceUnitService
+	CreditAdjustmentService         CreditAdjustmentService
 	DB                              postgres.IClient
 }
