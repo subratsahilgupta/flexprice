@@ -144,11 +144,12 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 		"actions":       []interface{}{},
 	}
 
-	defaultWalletBalanceAlertConfig := AlertConfig{
-		Threshold: &WalletAlertThreshold{
-			Type:  AlertThresholdTypeAmount,
-			Value: decimal.NewFromFloat(0.0),
+	defaultWalletBalanceAlertConfig := AlertSettings{
+		Critical: &AlertThreshold{
+			Threshold: decimal.NewFromFloat(0.0),
+			Condition: AlertConditionBelow,
 		},
+		AlertEnabled: lo.ToPtr(false), // Disabled by default, users must explicitly enable
 	}
 
 	// Convert typed structs to maps using centralized utility
@@ -279,7 +280,7 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 		return nil
 
 	case SettingKeyWalletBalanceAlertConfig:
-		config, err := utils.ToStruct[AlertConfig](value)
+		config, err := utils.ToStruct[AlertSettings](value)
 		if err != nil {
 			return err
 		}
