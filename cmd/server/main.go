@@ -30,6 +30,7 @@ import (
 	"github.com/flexprice/flexprice/internal/temporal"
 	"github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/temporal/models"
+	"github.com/flexprice/flexprice/internal/temporal/queries"
 	temporalservice "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/temporal/worker"
 	"github.com/flexprice/flexprice/internal/types"
@@ -168,6 +169,8 @@ func main() {
 			repository.NewGroupRepository,
 			repository.NewScheduledTaskRepository,
 			repository.NewPriceUnitRepository,
+			repository.NewWorkflowExecutionRepository,
+			repository.NewRawEventRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -206,6 +209,8 @@ func main() {
 			service.NewEventPostProcessingService,
 			service.NewEventConsumptionService,
 			service.NewFeatureUsageTrackingService,
+			service.NewRawEventsReprocessingService,
+			service.NewRawEventConsumptionService,
 			service.NewCostSheetUsageTrackingService,
 			service.NewPriceService,
 			service.NewPriceUnitService,
@@ -241,6 +246,7 @@ func main() {
 			service.NewWalletBalanceAlertService,
 			service.NewCustomerPortalService,
 			service.NewDashboardService,
+			service.NewWorkflowExecutionService,
 
 			// Enterprise (ee) services
 			ee.NewEnterpriseParams,
@@ -261,6 +267,7 @@ func main() {
 			provideTemporalClient,
 			provideTemporalWorkerManager,
 			provideTemporalService,
+			provideWorkflowQuerier,
 
 			// API components
 			provideHandlers,
@@ -317,6 +324,7 @@ func provideHandlers(
 	subscriptionChangeService service.SubscriptionChangeService,
 	subscriptionScheduleService service.SubscriptionScheduleService,
 	featureUsageTrackingService service.FeatureUsageTrackingService,
+	rawEventsReprocessingService service.RawEventsReprocessingService,
 	alertLogsService service.AlertLogsService,
 	groupService service.GroupService,
 	integrationFactory *integration.Factory,
@@ -327,9 +335,11 @@ func provideHandlers(
 	costsheetUsageTrackingService service.CostSheetUsageTrackingService,
 	customerPortalService service.CustomerPortalService,
 	dashboardService service.DashboardService,
+	workflowQuerier *queries.WorkflowQuerier,
+	workflowExecutionService *service.WorkflowExecutionService,
 ) api.Handlers {
 	return api.Handlers{
-		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, featureUsageTrackingService, cfg, logger),
+		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, featureUsageTrackingService, rawEventsReprocessingService, cfg, logger),
 		Meter:                    v1.NewMeterHandler(meterService, logger),
 		Auth:                     v1.NewAuthHandler(cfg, authService, logger),
 		User:                     v1.NewUserHandler(userService, logger),
@@ -376,6 +386,7 @@ func provideHandlers(
 		CronKafkaLagMonitoring:   cron.NewKafkaLagMonitoringHandler(logger, eventService),
 		CustomerPortal:           v1.NewCustomerPortalHandler(customerPortalService, logger),
 		Dashboard:                v1.NewDashboardHandler(dashboardService, logger),
+		Workflow:                 v1.NewWorkflowHandler(workflowExecutionService, temporalService, workflowQuerier, logger),
 	}
 }
 
@@ -432,6 +443,10 @@ func provideTemporalService(temporalClient client.TemporalClient, workerManager 
 	return service
 }
 
+func provideWorkflowQuerier(temporalClient client.TemporalClient, log *logger.Logger) *queries.WorkflowQuerier {
+	return queries.NewWorkflowQuerier(temporalClient.GetRawClient(), log)
+}
+
 func startServer(
 	lc fx.Lifecycle,
 	cfg *config.Configuration,
@@ -448,6 +463,7 @@ func startServer(
 	featureUsageSvc service.FeatureUsageTrackingService,
 	costSheetUsageSvc service.CostSheetUsageTrackingService,
 	walletBalanceAlertSvc service.WalletBalanceAlertService,
+	rawEventConsumptionSvc service.RawEventConsumptionService,
 	params service.ServiceParams,
 ) {
 	mode := cfg.Deployment.Mode
@@ -463,14 +479,14 @@ func startServer(
 		startAPIServer(lc, r, cfg, log)
 
 		// Register all handlers and start router once
-		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, costSheetUsageSvc, walletBalanceAlertSvc, cfg, true)
+		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, cfg, true)
 		startRouter(lc, router, log)
 		startTemporalWorker(lc, temporalService, params)
 	case types.ModeAPI:
 		startAPIServer(lc, r, cfg, log)
 
 		// Register all handlers and start router once (no event consumption)
-		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, costSheetUsageSvc, walletBalanceAlertSvc, cfg, false)
+		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, cfg, false)
 		startRouter(lc, router, log)
 
 	case types.ModeTemporalWorker:
@@ -481,7 +497,7 @@ func startServer(
 		}
 
 		// Register all handlers and start router once
-		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, costSheetUsageSvc, walletBalanceAlertSvc, cfg, true)
+		registerRouterHandlers(router, webhookService, onboardingService, eventPostProcessingSvc, eventConsumptionSvc, featureUsageSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, cfg, true)
 		startRouter(lc, router, log)
 	default:
 		log.Fatalf("Unknown deployment mode: %s", mode)
@@ -548,6 +564,7 @@ func registerRouterHandlers(
 	featureUsageSvc service.FeatureUsageTrackingService,
 	costSheetUsageSvc service.CostSheetUsageTrackingService,
 	walletBalanceAlertSvc service.WalletBalanceAlertService,
+	rawEventConsumptionSvc service.RawEventConsumptionService,
 	cfg *config.Configuration,
 	includeProcessingHandlers bool,
 ) {
@@ -558,12 +575,14 @@ func registerRouterHandlers(
 		eventConsumptionSvc.RegisterHandler(router, cfg)
 		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
 		// eventPostProcessingSvc.RegisterHandler(router, cfg)
+		eventConsumptionSvc.RegisterHandlerReplay(router, cfg)
 		featureUsageSvc.RegisterHandler(router, cfg)
 		featureUsageSvc.RegisterHandlerLazy(router, cfg)
 		featureUsageSvc.RegisterHandlerReplay(router, cfg)
 		costSheetUsageSvc.RegisterHandler(router, cfg)
 		costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
 		walletBalanceAlertSvc.RegisterHandler(router, cfg)
+		rawEventConsumptionSvc.RegisterHandler(router, cfg)
 	}
 }
 

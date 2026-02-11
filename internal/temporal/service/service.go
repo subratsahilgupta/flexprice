@@ -234,11 +234,16 @@ func (s *temporalService) RegisterWorkflow(taskQueue types.TemporalTaskQueue, wo
 			Mark(errors.ErrValidation)
 	}
 
-	// Create worker options with Sentry interceptor
+	// Create worker options with Sentry and Workflow Tracking interceptors
 	options := models.DefaultWorkerOptions()
 	if s.sentry != nil && s.sentry.IsEnabled() {
 		options.Interceptors = []interceptor.WorkerInterceptor{
 			temporalInterceptor.NewSentryInterceptor(s.sentry),
+			temporalInterceptor.NewWorkflowTrackingInterceptor(),
+		}
+	} else {
+		options.Interceptors = []interceptor.WorkerInterceptor{
+			temporalInterceptor.NewWorkflowTrackingInterceptor(),
 		}
 	}
 
@@ -265,11 +270,16 @@ func (s *temporalService) RegisterActivity(taskQueue types.TemporalTaskQueue, ac
 			Mark(errors.ErrValidation)
 	}
 
-	// Create worker options with Sentry interceptor
+	// Create worker options with Sentry and Workflow Tracking interceptors
 	options := models.DefaultWorkerOptions()
 	if s.sentry != nil && s.sentry.IsEnabled() {
 		options.Interceptors = []interceptor.WorkerInterceptor{
 			temporalInterceptor.NewSentryInterceptor(s.sentry),
+			temporalInterceptor.NewWorkflowTrackingInterceptor(),
+		}
+	} else {
+		options.Interceptors = []interceptor.WorkerInterceptor{
+			temporalInterceptor.NewWorkflowTrackingInterceptor(),
 		}
 	}
 
@@ -373,7 +383,7 @@ func (s *temporalService) generateWorkflowID(workflowType types.TemporalWorkflow
 	return types.GenerateWorkflowIDForType(workflowType.String())
 }
 
-// extractWorkflowContextID extracts the context ID (e.g., subscription_id, invoice_id) from params
+// extractWorkflowContextID extracts the context ID (e.g., subscription_id, invoice_id, event_id) from params
 // for deterministic workflow ID generation. Returns empty string if no context ID is applicable.
 func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWorkflowType, params interface{}) string {
 	switch workflowType {
@@ -387,6 +397,14 @@ func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWo
 		if input, ok := params.(invoiceModels.ProcessInvoiceWorkflowInput); ok {
 			return input.InvoiceID
 		}
+	case types.TemporalPrepareProcessedEventsWorkflow:
+		// Extract event ID from PrepareProcessedEventsWorkflowInput
+		if input, ok := params.(*models.PrepareProcessedEventsWorkflowInput); ok {
+			return input.EventID
+		}
+		if input, ok := params.(models.PrepareProcessedEventsWorkflowInput); ok {
+			return input.EventID
+		}
 	case types.TemporalReprocessEventsWorkflow:
 		// Extract context ID from ReprocessEventsWorkflowInput
 		// Format: external_customer_id-event_name (if event_name provided) or just external_customer_id
@@ -399,6 +417,28 @@ func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWo
 			}
 		}
 		// Also handle map input for reprocess events
+		if paramsMap, ok := params.(map[string]interface{}); ok {
+			externalCustomerID, _ := paramsMap["external_customer_id"].(string)
+			eventName, _ := paramsMap["event_name"].(string)
+			if externalCustomerID != "" {
+				if eventName != "" {
+					return fmt.Sprintf("%s-%s", externalCustomerID, eventName)
+				}
+				return externalCustomerID
+			}
+		}
+	case types.TemporalReprocessRawEventsWorkflow:
+		// Extract context ID from ReprocessRawEventsWorkflowInput
+		// Format: external_customer_id-event_name (if event_name provided) or just external_customer_id
+		if input, ok := params.(eventsModels.ReprocessRawEventsWorkflowInput); ok {
+			if input.ExternalCustomerID != "" {
+				if input.EventName != "" {
+					return fmt.Sprintf("%s-%s", input.ExternalCustomerID, input.EventName)
+				}
+				return input.ExternalCustomerID
+			}
+		}
+		// Also handle map input for reprocess raw events
 		if paramsMap, ok := params.(map[string]interface{}); ok {
 			externalCustomerID, _ := paramsMap["external_customer_id"].(string)
 			eventName, _ := paramsMap["event_name"].(string)
@@ -455,10 +495,16 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 		return s.buildMoyasarInvoiceSyncInput(ctx, tenantID, environmentID, params)
 	case types.TemporalCustomerOnboardingWorkflow:
 		return s.buildCustomerOnboardingInput(ctx, tenantID, environmentID, userID, params)
+	case types.TemporalPrepareProcessedEventsWorkflow:
+		return s.buildPrepareProcessedEventsInput(ctx, tenantID, environmentID, userID, params)
 	case types.TemporalProcessInvoiceWorkflow:
 		return s.buildProcessInvoiceInput(ctx, tenantID, environmentID, params)
 	case types.TemporalReprocessEventsWorkflow:
 		return s.buildReprocessEventsInput(ctx, tenantID, environmentID, userID, params)
+	case types.TemporalReprocessRawEventsWorkflow:
+		return s.buildReprocessRawEventsInput(ctx, tenantID, environmentID, userID, params)
+	case types.TemporalReprocessEventsForPlanWorkflow:
+		return s.buildReprocessEventsForPlanInput(ctx, tenantID, environmentID, userID, params)
 	default:
 		return nil, errors.NewError("unsupported workflow type").
 			WithHintf("Workflow type %s is not supported", workflowType.String()).
@@ -710,6 +756,26 @@ func (s *temporalService) buildProcessInvoiceInput(_ context.Context, tenantID, 
 		Mark(errors.ErrValidation)
 }
 
+// buildPrepareProcessedEventsInput builds input for prepare processed events workflow
+func (s *temporalService) buildPrepareProcessedEventsInput(_ context.Context, tenantID, environmentID, userID string, params interface{}) (interface{}, error) {
+	// If already correct type, just ensure context is set
+	if input, ok := params.(*models.PrepareProcessedEventsWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return *input, nil
+	}
+
+	if input, ok := params.(models.PrepareProcessedEventsWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		return input, nil
+	}
+
+	return nil, errors.NewError("invalid input for prepare processed events workflow").
+		WithHint("Provide PrepareProcessedEventsWorkflowInput with event_name and workflow_config").
+		Mark(errors.ErrValidation)
+}
+
 // ExecuteWorkflowSync executes a workflow synchronously and waits for completion
 func (s *temporalService) ExecuteWorkflowSync(
 	ctx context.Context,
@@ -741,20 +807,45 @@ func (s *temporalService) ExecuteWorkflowSync(
 	}
 
 	// Wait for workflow completion and get result
-	var result models.CustomerOnboardingWorkflowResult
-	if err := workflowRun.Get(timeoutCtx, &result); err != nil {
-		return nil, errors.WithError(err).
-			WithHint("Workflow execution failed or timed out").
-			WithReportableDetails(map[string]interface{}{
-				"workflow_id":   workflowRun.GetID(),
-				"run_id":        workflowRun.GetRunID(),
-				"workflow_type": workflowType.String(),
-				"timeout":       timeoutSeconds,
-			}).
-			Mark(errors.ErrInternal)
-	}
+	switch workflowType {
+	case types.TemporalCustomerOnboardingWorkflow:
+		var result models.CustomerOnboardingWorkflowResult
+		if err := workflowRun.Get(timeoutCtx, &result); err != nil {
+			return nil, errors.WithError(err).
+				WithHint("Workflow execution failed or timed out").
+				WithReportableDetails(map[string]interface{}{
+					"workflow_id":   workflowRun.GetID(),
+					"run_id":        workflowRun.GetRunID(),
+					"workflow_type": workflowType.String(),
+					"timeout":       timeoutSeconds,
+				}).
+				Mark(errors.ErrInternal)
+		}
+		return &result, nil
 
-	return &result, nil
+	case types.TemporalPrepareProcessedEventsWorkflow:
+		var result models.PrepareProcessedEventsWorkflowResult
+		if err := workflowRun.Get(timeoutCtx, &result); err != nil {
+			return nil, errors.WithError(err).
+				WithHint("Workflow execution failed or timed out").
+				WithReportableDetails(map[string]interface{}{
+					"workflow_id":   workflowRun.GetID(),
+					"run_id":        workflowRun.GetRunID(),
+					"workflow_type": workflowType.String(),
+					"timeout":       timeoutSeconds,
+				}).
+				Mark(errors.ErrInternal)
+		}
+		return &result, nil
+
+	default:
+		return nil, errors.NewError("unsupported workflow type for synchronous execution").
+			WithHint("Use an explicitly supported workflow type for ExecuteWorkflowSync").
+			WithReportableDetails(map[string]interface{}{
+				"workflow_type": workflowType.String(),
+			}).
+			Mark(errors.ErrValidation)
+	}
 }
 
 // buildScheduleSubscriptionBillingWorkflowInput builds input for schedule subscription billing workflow
@@ -894,12 +985,6 @@ func (s *temporalService) buildReprocessEventsInput(_ context.Context, tenantID,
 			batchSize = int(bsFloat)
 		}
 
-		if externalCustomerID == "" {
-			return nil, errors.NewError("external_customer_id is required").
-				WithHint("Provide map with external_customer_id").
-				Mark(errors.ErrValidation)
-		}
-
 		input := eventsModels.ReprocessEventsWorkflowInput{
 			ExternalCustomerID: externalCustomerID,
 			EventName:          eventName, // Optional - can be empty
@@ -920,6 +1005,98 @@ func (s *temporalService) buildReprocessEventsInput(_ context.Context, tenantID,
 
 	return nil, errors.NewError("invalid input for reprocess events workflow").
 		WithHint("Provide ReprocessEventsWorkflowInput or map with external_customer_id, event_name, start_date, and end_date").
+		Mark(errors.ErrValidation)
+}
+
+// buildReprocessRawEventsInput builds input for reprocess raw events workflow
+func (s *temporalService) buildReprocessRawEventsInput(_ context.Context, tenantID, environmentID, userID string, params interface{}) (interface{}, error) {
+	// If already correct type, just ensure context is set
+	if input, ok := params.(eventsModels.ReprocessRawEventsWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		input.UserID = userID
+		// Validate the input
+		if err := input.Validate(); err != nil {
+			return nil, err
+		}
+		return input, nil
+	}
+
+	// Handle map input
+	if paramsMap, ok := params.(map[string]interface{}); ok {
+		externalCustomerID, _ := paramsMap["external_customer_id"].(string)
+		eventName, _ := paramsMap["event_name"].(string)
+
+		var startDate, endDate time.Time
+		if sd, ok := paramsMap["start_date"].(time.Time); ok {
+			startDate = sd
+		} else if sdStr, ok := paramsMap["start_date"].(string); ok {
+			var err error
+			startDate, err = time.Parse(time.RFC3339, sdStr)
+			if err != nil {
+				return nil, errors.NewError("invalid start_date format").
+					WithHint("Start date must be in RFC3339 format (e.g., 2006-01-02T15:04:05Z07:00)").
+					Mark(errors.ErrValidation)
+			}
+		}
+
+		if ed, ok := paramsMap["end_date"].(time.Time); ok {
+			endDate = ed
+		} else if edStr, ok := paramsMap["end_date"].(string); ok {
+			var err error
+			endDate, err = time.Parse(time.RFC3339, edStr)
+			if err != nil {
+				return nil, errors.NewError("invalid end_date format").
+					WithHint("End date must be in RFC3339 format (e.g., 2006-01-02T15:04:05Z07:00)").
+					Mark(errors.ErrValidation)
+			}
+		}
+
+		// Extract batch size (default to 1000 if not provided)
+		batchSize := 1000
+		if bs, ok := paramsMap["batch_size"].(int); ok && bs > 0 {
+			batchSize = bs
+		} else if bsFloat, ok := paramsMap["batch_size"].(float64); ok && bsFloat > 0 {
+			batchSize = int(bsFloat)
+		}
+
+		input := eventsModels.ReprocessRawEventsWorkflowInput{
+			ExternalCustomerID: externalCustomerID, // Optional - can be empty for raw events
+			EventName:          eventName,          // Optional - can be empty
+			StartDate:          startDate,
+			EndDate:            endDate,
+			BatchSize:          batchSize,
+			TenantID:           tenantID,
+			EnvironmentID:      environmentID,
+			UserID:             userID,
+		}
+
+		// Validate the input
+		if err := input.Validate(); err != nil {
+			return nil, err
+		}
+		return input, nil
+	}
+
+	return nil, errors.NewError("invalid input for reprocess raw events workflow").
+		WithHint("Provide ReprocessRawEventsWorkflowInput or map with start_date and end_date").
+		Mark(errors.ErrValidation)
+}
+
+// buildReprocessEventsForPlanInput builds input for reprocess events for plan workflow
+func (s *temporalService) buildReprocessEventsForPlanInput(_ context.Context, tenantID, environmentID, userID string, params interface{}) (interface{}, error) {
+	if input, ok := params.(eventsModels.ReprocessEventsForPlanWorkflowInput); ok {
+		input.TenantID = tenantID
+		input.EnvironmentID = environmentID
+		input.UserID = userID
+		if err := input.Validate(); err != nil {
+			return nil, err
+		}
+		return input, nil
+	}
+
+	return nil, errors.NewError("invalid input for reprocess events for plan workflow").
+		WithHint("Provide ReprocessEventsForPlanWorkflowInput with missing_pairs").
 		Mark(errors.ErrValidation)
 }
 

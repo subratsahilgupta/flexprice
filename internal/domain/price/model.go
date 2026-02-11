@@ -14,8 +14,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// max active prices per entity is 1000
-const MAX_ACTIVE_PRICES = 1000
+// max active prices per entity is 2000
+const MAX_ACTIVE_PRICES = 1500
 
 // JSONB types for complex fields
 // JSONBTiers are the tiers for the price when BillingModel is TIERED

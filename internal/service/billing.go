@@ -143,7 +143,7 @@ func (s *billingService) CalculateFixedCharges(
 			if err != nil {
 				s.Logger.Warnw("failed to get price unit",
 					"error", err,
-					"price_unit", lo.FromPtr(item.PriceUnit),
+					"price_unit", lo.ToPtr(item.PriceUnit),
 					"subscription_id", sub.ID,
 					"line_item_id", item.ID)
 				continue
@@ -160,6 +160,11 @@ func (s *billingService) CalculateFixedCharges(
 			}
 		}
 
+		// Round fixed charge amount to currency precision before creating invoice line item
+		// This ensures all line items use proper currency precision from the start
+		// Example: $10.278798 → $10.28 for USD (2 decimals), ¥1023.45 → ¥1023 for JPY (0 decimals)
+		roundedAmount := types.RoundToCurrencyPrecision(amount, sub.Currency)
+
 		fixedCostLineItems = append(fixedCostLineItems, dto.CreateInvoiceLineItemRequest{
 			EntityID:        lo.ToPtr(item.EntityID),
 			EntityType:      lo.ToPtr(string(item.EntityType)),
@@ -169,7 +174,7 @@ func (s *billingService) CalculateFixedCharges(
 			PriceUnit:       item.PriceUnit,
 			PriceUnitAmount: lo.ToPtr(priceUnitAmount),
 			DisplayName:     lo.ToPtr(item.DisplayName),
-			Amount:          amount,
+			Amount:          roundedAmount,
 			Quantity:        item.Quantity,
 			PeriodStart:     lo.ToPtr(periodStart),
 			PeriodEnd:       lo.ToPtr(periodEnd),
@@ -178,7 +183,7 @@ func (s *billingService) CalculateFixedCharges(
 			},
 		})
 
-		fixedCost = fixedCost.Add(amount)
+		fixedCost = fixedCost.Add(roundedAmount)
 	}
 
 	return fixedCostLineItems, fixedCost, nil
@@ -241,6 +246,13 @@ func (s *billingService) CalculateUsageCharges(
 		meterMap[m.ID] = m
 	}
 
+	// Get customer for usage request (once, outside the loop)
+	customer, err := s.CustomerRepo.Get(ctx, sub.CustomerID)
+	if err != nil {
+		return nil, decimal.Zero, err
+	}
+	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
+
 	// filter out line items that are not active
 	for _, item := range sub.LineItems {
 		if item.PriceType != types.PRICE_TYPE_USAGE {
@@ -262,13 +274,6 @@ func (s *billingService) CalculateUsageCharges(
 				"price_id", item.PriceID)
 			continue
 		}
-
-		// Get customer for usage request
-		customer, err := s.CustomerRepo.Get(ctx, sub.CustomerID)
-		if err != nil {
-			return nil, decimal.Zero, err
-		}
-		eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
 
 		// Process each matching charge individually (normal and overage charges)
 		for _, matchingCharge := range matchingCharges {
@@ -599,7 +604,13 @@ func (s *billingService) CalculateUsageCharges(
 				}
 			}
 
-			totalUsageCost = totalUsageCost.Add(lineItemAmount)
+			// Round line item amount to currency precision before creating invoice line item
+			// This ensures all line items use proper currency precision from the start
+			// Example: $10.278798 → $10.28 for USD (2 decimals), ¥1023.45 → ¥1023 for JPY (0 decimals)
+			roundedLineItemAmount := types.RoundToCurrencyPrecision(lineItemAmount, sub.Currency)
+
+			// Add rounded amount to total to ensure subtotal = sum of rounded line items
+			totalUsageCost = totalUsageCost.Add(roundedLineItemAmount)
 
 			// Create metadata for the line item, including overage information if applicable
 			metadata := types.Metadata{
@@ -669,7 +680,7 @@ func (s *billingService) CalculateUsageCharges(
 				PriceUnit:        item.PriceUnit,
 				PriceUnitAmount:  lo.ToPtr(priceUnitAmount),
 				DisplayName:      displayName,
-				Amount:           lineItemAmount,
+				Amount:           roundedLineItemAmount,
 				Quantity:         quantityForCalculation,
 				PeriodStart:      lo.ToPtr(item.GetPeriodStart(periodStart)),
 				PeriodEnd:        lo.ToPtr(item.GetPeriodEnd(periodEnd)),
@@ -802,6 +813,13 @@ func (s *billingService) CalculateFeatureUsageCharges(
 		meterMap[m.ID] = m
 	}
 
+	// Get customer for usage request (once, outside the loop)
+	customer, err := s.CustomerRepo.Get(ctx, sub.CustomerID)
+	if err != nil {
+		return nil, decimal.Zero, err
+	}
+	eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
+
 	// filter out line items that are not active
 	for _, item := range sub.LineItems {
 		if item.PriceType != types.PRICE_TYPE_USAGE {
@@ -823,13 +841,6 @@ func (s *billingService) CalculateFeatureUsageCharges(
 				"price_id", item.PriceID)
 			continue
 		}
-
-		// Get customer for usage request
-		customer, err := s.CustomerRepo.Get(ctx, sub.CustomerID)
-		if err != nil {
-			return nil, decimal.Zero, err
-		}
-		eventService := NewEventService(s.EventRepo, s.MeterRepo, s.EventPublisher, s.Logger, s.Config)
 
 		// Get meter from pre-fetched map (needed for bucketed meter check)
 		meter, meterOk := meterMap[item.MeterID]
@@ -1952,7 +1963,6 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 		PeriodStart:      &periodStart,
 		PeriodEnd:        &periodEnd,
 		BillingReason:    types.InvoiceBillingReasonSubscriptionCycle,
-		EnvironmentID:    sub.EnvironmentID,
 		Metadata:         metadata,
 		LineItems:        append(result.FixedCharges, result.UsageCharges...),
 		InvoiceCoupons:   validCoupons,

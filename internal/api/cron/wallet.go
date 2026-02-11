@@ -51,25 +51,28 @@ func (h *WalletCronHandler) ExpireCredits(c *gin.Context) {
 		return
 	}
 
-	// Create filter to find expired credits
+	// Create filter to find expired credits (expired at least 6 hours ago - grace period after expiry)
 	filter := &types.WalletTransactionFilter{
 		Type:               lo.ToPtr(types.TransactionTypeCredit),
 		TransactionStatus:  lo.ToPtr(types.TransactionStatusCompleted),
-		ExpiryDateBefore:   lo.ToPtr(time.Now().UTC().Add(6 * time.Hour)),
+		ExpiryDateBefore:   lo.ToPtr(time.Now().UTC().Add(-6 * time.Hour)),
 		CreditsAvailableGT: lo.ToPtr(decimal.Zero),
 	}
 
 	response := &dto.ExpiredCreditsResponse{
-		Items:   make([]*dto.ExpiredCreditsResponseItem, 0),
-		Total:   0,
-		Success: 0,
-		Failed:  0,
+		Items:                          make([]*dto.ExpiredCreditsResponseItem, 0),
+		Total:                          0,
+		Success:                        0,
+		Failed:                         0,
+		SkippedDueToActiveSubscription: 0,
+		SkippedDueToActiveInvoice:      0,
 	}
 
 	for _, tenant := range tenants {
 		ctx := context.WithValue(c.Request.Context(), types.CtxTenantID, tenant.ID)
-		// fetch all environments for the tenant
-		environments, err := h.environmentService.GetEnvironments(ctx, types.GetDefaultFilter())
+		envFilter := types.GetDefaultFilter()
+		envFilter.Limit = 1000
+		environments, err := h.environmentService.GetEnvironments(ctx, envFilter)
 		if err != nil {
 			h.logger.Errorw("failed to get all environments", "error", err)
 			c.Error(err)
@@ -80,45 +83,51 @@ func (h *WalletCronHandler) ExpireCredits(c *gin.Context) {
 			ctx = context.WithValue(ctx, types.CtxEnvironmentID, environment.ID)
 
 			tenantResponse := &dto.ExpiredCreditsResponseItem{
-				TenantID:      tenant.ID,
-				EnvironmentID: environment.ID,
-				Count:         0,
+				TenantID:                       tenant.ID,
+				EnvironmentID:                  environment.ID,
+				Count:                          0,
+				Success:                        0,
+				Failed:                         0,
+				SkippedDueToActiveSubscription: 0,
+				SkippedDueToActiveInvoice:      0,
 			}
 
-			// Get transactions with expired credits
 			transactions, err := h.walletService.ListWalletTransactionsByFilter(ctx, filter)
 			if err != nil {
-				h.logger.Errorw("failed to list expired credits",
-					"error", err,
-				)
+				h.logger.Errorw("failed to list expired credits", "error", err)
 				c.Error(err)
 				return
 			}
 
 			h.logger.Infow("found expired credits", "count", len(transactions.Items))
 
-			// Process each expired credit
 			for _, tx := range transactions.Items {
 				tenantResponse.Count++
 				response.Total++
 
-				// Setting same user for expiry as creation for RBAC in future
 				ctx = context.WithValue(ctx, types.CtxUserID, tx.CreatedBy)
-				if err := h.walletService.ExpireCredits(ctx, tx.ID); err != nil {
-					h.logger.Errorw("failed to expire credits",
-						"transaction_id", tx.ID,
-						"error", err,
-					)
+				result, err := h.walletService.ExpireCredits(ctx, tx.ID)
+				if err != nil {
+					h.logger.Errorw("failed to expire credits", "transaction_id", tx.ID, "error", err)
+					tenantResponse.Failed++
 					response.Failed++
 					continue
 				}
-
-				response.Success++
-				h.logger.Infow("expired credits successfully",
-					"transaction_id", tx.ID,
-					"wallet_id", tx.WalletID,
-					"amount", tx.CreditsAvailable,
-				)
+				if result.Expired {
+					tenantResponse.Success++
+					response.Success++
+					h.logger.Infow("expired credits successfully",
+						"transaction_id", tx.ID, "wallet_id", tx.WalletID, "amount", tx.CreditsAvailable)
+					continue
+				}
+				switch result.SkipReason {
+				case types.CreditExpirySkipReasonActiveSubscription:
+					tenantResponse.SkippedDueToActiveSubscription++
+					response.SkippedDueToActiveSubscription++
+				case types.CreditExpirySkipReasonActiveInvoice:
+					tenantResponse.SkippedDueToActiveInvoice++
+					response.SkippedDueToActiveInvoice++
+				}
 			}
 
 			response.Items = append(response.Items, tenantResponse)

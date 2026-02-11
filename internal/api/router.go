@@ -55,6 +55,7 @@ type Handlers struct {
 	RBAC                     *v1.RBACHandler
 	OAuth                    *v1.OAuthHandler
 	Dashboard                *v1.DashboardHandler
+	Workflow                 *v1.WorkflowHandler
 
 	// Portal handlers
 	Onboarding     *v1.OnboardingHandler
@@ -116,6 +117,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, logger))
 	private.Use(middleware.EnvAccessMiddleware(envAccessService, logger))
+	private.Use(middleware.SentryTenantContextMiddleware)
 
 	v1Private := private.Group("/v1")
 	v1Private.Use(middleware.ErrorHandler())
@@ -154,6 +156,10 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			events.POST("/benchmark/v2", handlers.Events.BenchmarkV2)
 			// Reprocess events endpoint
 			events.POST("/reprocess", handlers.Events.ReprocessEvents)
+			// Reprocess raw events endpoint
+			events.POST("/raw/reprocess", handlers.Events.ReprocessRawEvents)
+			// Internal reprocess events endpoint (no external_customer_id required)
+			events.POST("/reprocess/internal", handlers.Events.ReprocessEventsInternal)
 		}
 
 		meters := v1Private.Group("/meters")
@@ -175,6 +181,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			price.PUT("/:id", handlers.Price.UpdatePrice)
 			price.DELETE("/:id", handlers.Price.DeletePrice)
 			price.GET("/lookup/:lookup_key", handlers.Price.GetByLookupKey)
+			price.POST("/search", handlers.Price.ListPricesByFilter)
 
 			priceUnit := price.Group("/units")
 			{
@@ -291,6 +298,9 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 
 			subscription.POST("/temporal/schedule-update-billing-period", handlers.ScheduledTask.ScheduleUpdateBillingPeriod)
 
+			// Trigger subscription billing workflow
+			subscription.POST("/temporal/:subscription_id/trigger-workflow", handlers.Subscription.TriggerSubscriptionWorkflow)
+
 			// Subscription schedules - nested group
 			subscription.GET("/:id/schedules", handlers.SubscriptionSchedule.ListSchedulesForSubscription)
 
@@ -342,6 +352,7 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 			invoices.GET("/:id/pdf", handlers.Invoice.GetInvoicePDF)
 			invoices.POST("/:id/recalculate", handlers.Invoice.RecalculateInvoice)
 			invoices.POST("/:id/comms/trigger", handlers.Invoice.TriggerCommunication)
+			invoices.POST("/:id/webhook/trigger", handlers.Invoice.TriggerWebhook)
 		}
 
 		feature := v1Private.Group("/features")
@@ -649,6 +660,16 @@ func NewRouter(handlers Handlers, cfg *config.Configuration, logger *logger.Logg
 	dashboardRoutes := v1Private.Group("/dashboard")
 	{
 		dashboardRoutes.POST("/revenues", handlers.Dashboard.GetRevenues)
+	}
+
+	// Workflow monitoring routes
+	workflows := v1Private.Group("/workflows")
+	{
+		workflows.GET("", handlers.Workflow.ListWorkflows)
+		workflows.POST("/batch", handlers.Workflow.GetWorkflowsBatch)
+		workflows.GET("/:workflow_id/:run_id/summary", handlers.Workflow.GetWorkflowSummary)
+		workflows.GET("/:workflow_id/:run_id/timeline", handlers.Workflow.GetWorkflowTimeline)
+		workflows.GET("/:workflow_id/:run_id", handlers.Workflow.GetWorkflowDetails)
 	}
 
 	return router

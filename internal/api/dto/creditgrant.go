@@ -30,8 +30,8 @@ type CreateCreditGrantRequest struct {
 	Priority               *int                                 `json:"priority,omitempty"`
 	Metadata               types.Metadata                       `json:"metadata,omitempty"`
 	CreditGrantAnchor      *time.Time                           `json:"-"`
-	StartDate              *time.Time                           `json:"-"`
-	EndDate                *time.Time                           `json:"-"`
+	StartDate              *time.Time                           `json:"start_date,omitempty"`
+	EndDate                *time.Time                           `json:"end_date,omitempty"`
 
 	// amount in the currency =  number of credits * conversion_rate
 	// ex if conversion_rate is 1, then 1 USD = 1 credit
@@ -453,15 +453,42 @@ func (r *CancelFutureSubscriptionGrantsRequest) Validate() error {
 	// EffectiveDate is optional - if not provided, it defaults to now in the implementation
 	// Only validate if it's provided
 	if r.EffectiveDate != nil && !r.EffectiveDate.IsZero() {
-		// Allow dates that are at or within 5 seconds of the current time
-		// This accounts for timing differences between date calculation and validation
+		// Allow dates that are at or within 1 minute of the current time
+		// This accounts for timing differences between date calculation and validation,
 		now := time.Now().UTC()
-		tolerance := 5 * time.Second
+		tolerance := 1 * time.Minute
 		if r.EffectiveDate.Before(now.Add(-tolerance)) {
 			return errors.NewError("effective_date must be at or after the current time (within tolerance)").
 				WithHint("Please provide a valid effective date that is not too far in the past").
+				WithReportableDetails(map[string]interface{}{
+					"effective_date": r.EffectiveDate,
+					"current_time":   now,
+				}).
 				Mark(ierr.ErrValidation)
 		}
+	}
+
+	return nil
+}
+
+type DeleteCreditGrantRequest struct {
+	// EffectiveDate is optional; when set (subscription scope) the grant end date is set to this time.
+	EffectiveDate *time.Time `json:"effective_date,omitempty"`
+	// CreditGrantID is set by the handler from the path param, not from the body.
+	CreditGrantID string `json:"-"`
+}
+
+// Validate validates the delete credit grant request
+func (r *DeleteCreditGrantRequest) Validate() error {
+
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	if r.CreditGrantID == "" {
+		return errors.NewError("credit_grant_id is required").
+			WithHint("Please provide a valid credit grant ID").
+			Mark(errors.ErrValidation)
 	}
 
 	return nil

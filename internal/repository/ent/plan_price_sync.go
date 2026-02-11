@@ -92,7 +92,7 @@ func (r *planPriceSyncRepository) TerminateExpiredPlanPricesLineItems(
 			targets AS (
 				SELECT
 					li.id AS line_item_id,
-					p.end_date AS target_end_date
+					GREATEST(COALESCE(li.start_date, p.end_date), p.end_date) AS target_end_date
 				FROM
 					subscription_line_items li
 					JOIN subs s ON s.id = li.subscription_id
@@ -103,6 +103,7 @@ func (r *planPriceSyncRepository) TerminateExpiredPlanPricesLineItems(
 					AND li.status = '%s'
 					AND li.entity_type = '%s'
 					AND li.end_date IS NULL
+				ORDER BY li.id
 				LIMIT $4
 			)
 		UPDATE
@@ -234,7 +235,7 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToTerminate(
 			li.id AS line_item_id,
 			li.subscription_id AS subscription_id,
 			li.price_id AS price_id,
-			p.end_date AS target_end_date
+			GREATEST(COALESCE(li.start_date, p.end_date), p.end_date) AS target_end_date
 		FROM
 			subscription_line_items li
 			JOIN subs s ON s.id = li.subscription_id
@@ -245,6 +246,7 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToTerminate(
 			AND li.status = '%s'
 			AND li.entity_type = '%s'
 			AND li.end_date IS NULL
+		ORDER BY li.start_date, li.id
 		LIMIT
 			$4
 	`,
@@ -357,6 +359,7 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToCreate(
 			subs_batch AS (
 				SELECT
 					s.id,
+					s.customer_id,
 					s.tenant_id,
 					s.environment_id,
 					s.currency,
@@ -381,7 +384,8 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToCreate(
 					p.environment_id,
 					p.currency,
 					p.billing_period,
-					p.billing_period_count
+					p.billing_period_count,
+					p.parent_price_id
 				FROM
 					prices p
 				WHERE
@@ -394,7 +398,8 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToCreate(
 			)
 		SELECT
 			s.id AS subscription_id,
-			p.id AS missing_price_id
+			p.id AS missing_price_id,
+			s.customer_id AS customer_id
 		FROM
 			subs_batch s
 			JOIN plan_prices p ON lower(p.currency) = lower(s.currency)
@@ -412,7 +417,10 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToCreate(
 					AND sp.status = '%s'
 					AND sp.entity_type = '%s'
 					AND sp.entity_id = s.id
-					AND sp.parent_price_id = p.id
+					AND (
+						sp.parent_price_id = p.id
+						OR (p.parent_price_id IS NOT NULL AND sp.parent_price_id = p.parent_price_id)
+					)
 			)
 			AND NOT EXISTS (
 				SELECT
@@ -475,8 +483,8 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToCreate(
 	defer rows.Close()
 
 	for rows.Next() {
-		var subID, priceID string
-		if scanErr := rows.Scan(&subID, &priceID); scanErr != nil {
+		var subID, priceID, customerID string
+		if scanErr := rows.Scan(&subID, &priceID, &customerID); scanErr != nil {
 			r.log.Errorw("failed to scan creation delta row",
 				"plan_id", planID,
 				"limit", limit,
@@ -489,6 +497,7 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToCreate(
 		items = append(items, planpricesync.PlanLineItemCreationDelta{
 			SubscriptionID: subID,
 			PriceID:        priceID,
+			CustomerID:     customerID,
 		})
 	}
 	if rowsErr := rows.Err(); rowsErr != nil {

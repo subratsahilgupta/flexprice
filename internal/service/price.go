@@ -127,6 +127,23 @@ func (s *priceService) preparePriceForCreation(ctx context.Context, req *dto.Cre
 		return nil, err
 	}
 
+	// Validate meter for USAGE prices: must be set and must exist
+	if p.Type == types.PRICE_TYPE_USAGE {
+		if p.MeterID == "" {
+			return nil, ierr.NewError("meter_id is required when type is USAGE").
+				WithHint("Please select a metered feature to set up usage pricing").
+				WithReportableDetails(map[string]interface{}{
+					"type": p.Type,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		if _, err := s.MeterRepo.GetMeter(ctx, p.MeterID); err != nil {
+			return nil, err
+		}
+
+	}
+
 	// Apply price unit conversion if price type is CUSTOM
 	// This converts amounts/tiers and updates the Price object
 	if p.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
@@ -794,6 +811,18 @@ func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.Updat
 			terminationEndDate = *req.EffectiveFrom
 		}
 
+		// Effective date must not be before the price's start date (avoids end_date < start_date)
+		if existingPrice.StartDate != nil && terminationEndDate.Before(lo.FromPtr(existingPrice.StartDate)) {
+			return nil, ierr.NewError("effective date must be on or after price start date").
+				WithHint("The effective date for terminating this price cannot be before the price's start date").
+				WithReportableDetails(map[string]interface{}{
+					"price_id":         id,
+					"price_start_date": existingPrice.StartDate,
+					"effective_from":   terminationEndDate,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
 		if err := s.DB.WithTx(ctx, func(ctx context.Context) error {
 			// Terminate the existing price
 			existingPrice.EndDate = &terminationEndDate
@@ -911,10 +940,10 @@ func (s *priceService) DeletePrice(ctx context.Context, id string, req dto.Delet
 		endDate = time.Now().UTC()
 	}
 
-	// Validate end date is after start date
+	// Validate end date is on or after start date
 	if price.StartDate != nil && price.StartDate.After(endDate) {
-		return ierr.NewError("end date must be after start date").
-			WithHint("The termination date must be after the price's start date").
+		return ierr.NewError("end date must be on or after start date").
+			WithHint("The termination date must be on or after the price's start date").
 			WithReportableDetails(map[string]interface{}{
 				"price_id":   id,
 				"start_date": price.StartDate,

@@ -73,4 +73,3 @@ func NomodInvoiceSyncWorkflow(ctx workflow.Context, input models.NomodInvoiceSyn
 
 	return nil
 }
-

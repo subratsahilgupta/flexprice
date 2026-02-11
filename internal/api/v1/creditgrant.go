@@ -158,12 +158,13 @@ func (h *CreditGrantHandler) UpdateCreditGrant(c *gin.Context) {
 }
 
 // @Summary Delete a credit grant
-// @Description Delete a credit grant
+// @Description Delete a credit grant. Plan-scoped grants are archived; subscription-scoped grants have their end date set (optional body with effective_date). Request body is optional.
 // @Tags CreditGrants
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Param id path string true "Credit Grant ID"
+// @Param body body dto.DeleteCreditGrantRequest false "Optional: effective_date for subscription-scoped grants"
 // @Success 200 {object} dto.SuccessResponse
 // @Failure 400 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse
@@ -177,7 +178,19 @@ func (h *CreditGrantHandler) DeleteCreditGrant(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.DeleteCreditGrant(c.Request.Context(), id); err != nil {
+	req := dto.DeleteCreditGrantRequest{CreditGrantID: id}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			h.log.Error("Failed to bind JSON", "error", err)
+			c.Error(ierr.WithError(err).
+				WithHint("Invalid request format").
+				Mark(ierr.ErrValidation))
+			return
+		}
+		req.CreditGrantID = id // always from path
+	}
+
+	if err := h.service.DeleteCreditGrant(c.Request.Context(), req); err != nil {
 		h.log.Error("Failed to delete credit grant", "error", err)
 		c.Error(err)
 		return

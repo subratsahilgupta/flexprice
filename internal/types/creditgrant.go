@@ -176,6 +176,7 @@ type CreditGrantFilter struct {
 	PlanIDs         []string          `form:"plan_ids" json:"plan_ids,omitempty"`
 	SubscriptionIDs []string          `form:"subscription_ids" json:"subscription_ids,omitempty"`
 	Scope           *CreditGrantScope `form:"scope" json:"scope,omitempty"`
+	CreditGrantIDs  []string          `form:"credit_grant_ids" json:"credit_grant_ids,omitempty"`
 }
 
 // NewDefaultCreditGrantFilter creates a new CreditGrantFilter with default values

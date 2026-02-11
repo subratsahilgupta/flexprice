@@ -17,7 +17,10 @@ type SubscriptionHandler struct {
 }
 
 func NewSubscriptionHandler(service service.SubscriptionService, log *logger.Logger) *SubscriptionHandler {
-	return &SubscriptionHandler{service: service, log: log}
+	return &SubscriptionHandler{
+		service: service,
+		log:     log,
+	}
 }
 
 // @Summary Create subscription
@@ -541,4 +544,24 @@ func (h *SubscriptionHandler) GetActiveAddonAssociations(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+func (h *SubscriptionHandler) TriggerSubscriptionWorkflow(c *gin.Context) {
+	subscriptionID := c.Param("subscription_id")
+	if subscriptionID == "" {
+		c.Error(ierr.NewError("subscription_id is required").
+			WithHint("Please provide a valid subscription ID").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// Call the service method to trigger the workflow
+	response, err := h.service.TriggerSubscriptionWorkflow(c.Request.Context(), subscriptionID)
+	if err != nil {
+		h.log.Error("Failed to trigger subscription workflow", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
 }

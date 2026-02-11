@@ -92,6 +92,17 @@ func (s *subscriptionService) AddSubscriptionLineItem(ctx context.Context, subsc
 	// Create the line item
 	lineItem := req.ToSubscriptionLineItem(ctx, params)
 
+	// Invariant: line item start_date must not be greater than end_date when both are set
+	if !lineItem.StartDate.IsZero() && !lineItem.EndDate.IsZero() && lineItem.StartDate.After(lineItem.EndDate) {
+		return nil, ierr.NewError("line item start date cannot be after end date").
+			WithHint("Start date must be on or before end date.").
+			WithReportableDetails(map[string]interface{}{
+				"start_date": lineItem.StartDate,
+				"end_date":   lineItem.EndDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Validate line item commitment if configured
 	if err := s.validateLineItemCommitment(ctx, lineItem); err != nil {
 		return nil, err
@@ -140,10 +151,10 @@ func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, li
 		effectiveFrom = time.Now().UTC()
 	}
 
-	// Validate effective from date is after start date
+	// Validate effective from date is on or after start date
 	if effectiveFrom.Before(lineItem.StartDate) {
-		return nil, ierr.NewError("effective from date must be after start date").
-			WithHint("The effective from date must be after the line item's start date").
+		return nil, ierr.NewError("effective from date must be on or after start date").
+			WithHint("The effective from date must be on or after the line item's start date").
 			WithReportableDetails(map[string]interface{}{
 				"line_item_id":   lineItemID,
 				"start_date":     lineItem.StartDate,
@@ -208,6 +219,18 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 		endDate = req.EffectiveFrom.UTC()
 	}
 
+	// Effective date must not be before the line item's start date (avoids end_date < start_date)
+	if !existingLineItem.StartDate.IsZero() && endDate.Before(existingLineItem.StartDate) {
+		return nil, ierr.NewError("effective date must be on or after line item start date").
+			WithHint("The effective date for terminating this line item cannot be before the line item's start date").
+			WithReportableDetails(map[string]interface{}{
+				"line_item_id":   lineItemID,
+				"start_date":     existingLineItem.StartDate,
+				"effective_from": endDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Check if we need to create a new line item (with price overrides)
 	if req.ShouldCreateNewLineItem() {
 		// Validate line item is not already terminated
@@ -221,6 +244,13 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 				Mark(ierr.ErrValidation)
 		}
 
+		// Get price for override logic (and ensure endDate >= existing line item start already validated above)
+		priceService := NewPriceService(s.ServiceParams)
+		price, err := priceService.GetPrice(ctx, existingLineItem.PriceID)
+		if err != nil {
+			return nil, err
+		}
+
 		// Convert request to OverrideLineItemRequest format to reuse existing logic
 		overrideReq := dto.OverrideLineItemRequest{
 			PriceID:           existingLineItem.PriceID,
@@ -230,13 +260,6 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			TierMode:          req.TierMode,
 			Tiers:             req.Tiers,
 			TransformQuantity: req.TransformQuantity,
-		}
-
-		// Get price map for validation (reuse existing logic)
-		priceService := NewPriceService(s.ServiceParams)
-		price, err := priceService.GetPrice(ctx, existingLineItem.PriceID)
-		if err != nil {
-			return nil, err
 		}
 
 		priceMap := map[string]*dto.PriceResponse{existingLineItem.PriceID: price}

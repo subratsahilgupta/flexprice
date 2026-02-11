@@ -1,0 +1,35 @@
+package workflowexecution
+
+import (
+	"context"
+	"time"
+
+	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/internal/types"
+)
+
+// Repository defines the interface for workflow execution data access
+type Repository interface {
+	Create(ctx context.Context, exec *ent.WorkflowExecution) error
+	Get(ctx context.Context, workflowID, runID string) (*ent.WorkflowExecution, error)
+	List(ctx context.Context, filter *ListFilter) ([]*ent.WorkflowExecution, int, error)
+	Delete(ctx context.Context, id string) error
+	UpdateStatus(ctx context.Context, workflowID, runID string, status types.WorkflowExecutionStatus, errorMessage string, endTime *time.Time, durationMs *int64) error
+}
+
+// ListFilter defines filters for listing workflow executions
+type ListFilter struct {
+	TenantID       string
+	EnvironmentID  string
+	WorkflowID     string // Filter by specific workflow ID
+	WorkflowType   string
+	TaskQueue      string
+	WorkflowStatus string // e.g. Running, Completed, Failed
+
+	// Entity columns for efficient filtering (replaces metadata JSONB filter)
+	Entity   string // Filter by entity type (e.g. plan, invoice, subscription)
+	EntityID string // Filter by entity ID (e.g. plan_01ABC, inv_xyz)
+
+	PageSize int
+	Page     int
+}

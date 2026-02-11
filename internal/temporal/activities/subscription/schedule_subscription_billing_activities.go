@@ -17,7 +17,7 @@ const ActivityPrefix = "SubscriptionActivities"
 
 const (
 	// Workflow name - must match the function name
-	WorkflowProcessSubscriptionBilling = "ProcessSubscriptionBillingWorkflow_v2"
+	WorkflowProcessSubscriptionBilling = "ProcessSubscriptionBillingWorkflow"
 )
 
 // SubscriptionActivities contains all subscription-related activities

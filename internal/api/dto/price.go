@@ -376,7 +376,7 @@ func (r *CreatePriceRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	// 12. Validate dates
+	// 12. Validate dates (backdated start_date is allowed; when end_date is provided it must be after start_date)
 	if r.StartDate != nil && r.EndDate != nil {
 		if r.StartDate.After(*r.EndDate) {
 			return ierr.NewError("start date must be before end date").
@@ -437,7 +437,7 @@ func (r *CreatePriceRequest) ToPrice(ctx context.Context) (*priceDomain.Price, e
 		BillingCadence:     r.BillingCadence,
 		InvoiceCadence:     r.InvoiceCadence,
 		TrialPeriod:        r.TrialPeriod,
-		MeterID:            r.MeterID,
+		MeterID:            lo.Ternary(r.Type == types.PRICE_TYPE_USAGE, r.MeterID, ""),
 		LookupKey:          r.LookupKey,
 		Description:        r.Description,
 		Metadata:           metadata,
@@ -541,12 +541,6 @@ func (r *UpdatePriceRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.EffectiveFrom != nil && r.ShouldCreateNewPrice() && r.EffectiveFrom.Before(time.Now().UTC()) {
-		return ierr.NewError("effective from date must be in the future when used as termination date").
-			WithHint("Effective from date must be in the future when updating critical fields").
-			Mark(ierr.ErrValidation)
-	}
-
 	return nil
 }
 
@@ -579,7 +573,7 @@ func (r *UpdatePriceRequest) ToCreatePriceRequest(existingPrice *price.Price) Cr
 	createReq.BillingCadence = existingPrice.BillingCadence
 	createReq.InvoiceCadence = existingPrice.InvoiceCadence
 	createReq.TrialPeriod = existingPrice.TrialPeriod
-	createReq.MeterID = existingPrice.MeterID
+	createReq.MeterID = lo.Ternary(existingPrice.Type == types.PRICE_TYPE_USAGE, existingPrice.MeterID, "")
 	createReq.ParentPriceID = existingPrice.GetRootPriceID()
 	createReq.DisplayName = existingPrice.DisplayName
 
@@ -713,12 +707,6 @@ func (r *CreateBulkPriceRequest) Validate() error {
 }
 
 func (r *DeletePriceRequest) Validate() error {
-	if r.EndDate != nil && r.EndDate.Before(time.Now().UTC()) {
-		return ierr.NewError("end date must be in the future").
-			WithHint("End date must be in the future").
-			Mark(ierr.ErrValidation)
-	}
-
 	return nil
 }
 

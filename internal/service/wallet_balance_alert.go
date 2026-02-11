@@ -21,9 +21,6 @@ const (
 	// Event sources for tracking where alerts originated
 	EventSourceFeatureUsage      = "feature_usage"
 	EventSourceWalletTransaction = "wallet_transaction"
-
-	// Throttle duration for wallet balance recalculations
-	WalletAlertThrottleDuration = 1 * time.Minute
 )
 
 // WalletBalanceAlertService handles wallet balance alert operations via Kafka
@@ -187,8 +184,6 @@ func (s *walletBalanceAlertService) RegisterHandler(router *pubsubRouter.Router,
 
 // processMessage processes a single Kafka message for wallet balance alerts
 func (s *walletBalanceAlertService) processMessage(msg *message.Message) error {
-	startTime := time.Now()
-
 	var event wallet.WalletBalanceAlertEvent
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
 		s.Logger.Errorw("failed to unmarshal wallet balance alert event",
@@ -218,31 +213,16 @@ func (s *walletBalanceAlertService) processMessage(msg *message.Message) error {
 
 	// Process the event
 	if err := s.processEvent(ctx, event); err != nil {
-		processingDuration := time.Since(startTime)
+		// Return error to trigger retry with backoff
 		s.Logger.Errorw("failed to process wallet balance alert event",
 			"error", err,
 			"event_id", event.ID,
 			"customer_id", event.CustomerID,
 			"tenant_id", event.TenantID,
 			"environment_id", event.EnvironmentID,
-			"wallet_id", event.WalletID,
-			"source", event.Source,
-			"processing_duration_ms", processingDuration.Milliseconds(),
 		)
-		// Return error to trigger retry with backoff
 		return err
 	}
-
-	processingDuration := time.Since(startTime)
-	s.Logger.Infow("wallet balance alert event processed successfully",
-		"event_id", event.ID,
-		"customer_id", event.CustomerID,
-		"tenant_id", event.TenantID,
-		"environment_id", event.EnvironmentID,
-		"wallet_id", event.WalletID,
-		"source", event.Source,
-		"processing_duration_ms", processingDuration.Milliseconds(),
-	)
 
 	return nil
 }
@@ -276,7 +256,6 @@ func (s *walletBalanceAlertService) shouldThrottle(ctx context.Context, event wa
 			"tenant_id", event.TenantID,
 			"environment_id", event.EnvironmentID,
 			"cache_key", cacheKey,
-			"throttle_duration", WalletAlertThrottleDuration,
 		)
 		return true
 	}
@@ -294,19 +273,39 @@ func (s *walletBalanceAlertService) markProcessed(ctx context.Context, event wal
 	)
 
 	// Set cache entry with TTL
-	s.cache.ForceCacheSet(ctx, cacheKey, time.Now().Unix(), WalletAlertThrottleDuration)
+	s.cache.ForceCacheSet(ctx, cacheKey, time.Now().Unix(), cache.ExpiryWalletAlertCheck)
 
 	s.Logger.Debugw("marked customer as processed in throttle cache",
 		"customer_id", event.CustomerID,
 		"tenant_id", event.TenantID,
 		"environment_id", event.EnvironmentID,
 		"cache_key", cacheKey,
-		"ttl", WalletAlertThrottleDuration,
+		"ttl", cache.ExpiryWalletAlertCheck,
 	)
 }
 
 // processEvent delegates to the wallet service to check balance alerts
 func (s *walletBalanceAlertService) processEvent(ctx context.Context, event wallet.WalletBalanceAlertEvent) error {
+	// Check if wallet balance alerts are enabled for this tenant
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+	config, err := GetSetting[types.AlertSettings](settingsSvc, ctx, types.SettingKeyWalletBalanceAlertConfig)
+	if err != nil {
+		s.Logger.Warnw("failed to get wallet balance alert config, skipping",
+			"error", err,
+			"tenant_id", event.TenantID,
+			"environment_id", event.EnvironmentID,
+		)
+		return nil // Skip on error - fail safe
+	}
+
+	if !config.IsAlertEnabled() {
+		s.Logger.Debugw("wallet balance alerts disabled for tenant, skipping",
+			"tenant_id", event.TenantID,
+			"environment_id", event.EnvironmentID,
+		)
+		return nil
+	}
+
 	// Check if we should throttle this request
 	if s.shouldThrottle(ctx, event) {
 		s.Logger.Infow("skipping wallet balance recalculation due to throttle",
@@ -322,7 +321,7 @@ func (s *walletBalanceAlertService) processEvent(ctx context.Context, event wall
 	walletService := NewWalletService(s.ServiceParams)
 
 	// Delegate to wallet service for actual processing
-	err := walletService.CheckWalletBalanceAlert(ctx, &event)
+	err = walletService.CheckWalletBalanceAlert(ctx, &event)
 	if err != nil {
 		return err
 	}

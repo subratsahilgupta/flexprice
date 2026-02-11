@@ -3,21 +3,25 @@ package internal
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"sync"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	entRepo "github.com/flexprice/flexprice/internal/repository/ent"
 	"github.com/flexprice/flexprice/internal/sentry"
 	"github.com/flexprice/flexprice/internal/service"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -37,6 +41,7 @@ type FeatureImportSummary struct {
 	FeaturesSkipped int
 	PricesCreated   int
 	PricesSkipped   int
+	PricesUpdated   int
 	Errors          []string
 }
 
@@ -45,10 +50,21 @@ type featureImportScript struct {
 	log            *logger.Logger
 	featureService service.FeatureService
 	priceService   service.PriceService
+	pgClient       postgres.IClient
 	summary        FeatureImportSummary
+	summaryMu      sync.Mutex
 	tenantID       string
 	environmentID  string
 	planID         string
+
+	// In-memory caches populated by bulk-load before processing rows.
+	// These are read-only during concurrent processing (writes only happen
+	// during single-threaded bulk-load or under mutex for newly created items).
+	featureCacheMu sync.RWMutex
+	featureCache   map[string]*dto.FeatureResponse // lookupKey -> FeatureResponse
+
+	priceCacheMu sync.RWMutex
+	priceCache   map[string]*price.Price // meterID -> Price (for the plan)
 }
 
 func newFeatureImportScript(tenantID, environmentID, planID string) (*featureImportScript, error) {
@@ -102,10 +118,13 @@ func newFeatureImportScript(tenantID, environmentID, planID string) (*featureImp
 		log:            log,
 		featureService: featureService,
 		priceService:   priceService,
+		pgClient:       pgClient,
 		summary:        FeatureImportSummary{},
 		tenantID:       tenantID,
 		environmentID:  environmentID,
 		planID:         planID,
+		featureCache:   make(map[string]*dto.FeatureResponse),
+		priceCache:     make(map[string]*price.Price),
 	}, nil
 }
 
@@ -165,38 +184,119 @@ func (s *featureImportScript) parseFeatureCSV(filePath string) ([]FeatureRow, er
 	return featureRows, nil
 }
 
-// getFeatureByLookupKey gets a feature by lookup key
-func (s *featureImportScript) getFeatureByLookupKey(ctx context.Context, lookupKey string) (*dto.FeatureResponse, error) {
-	filter := types.NewDefaultFeatureFilter()
-	filter.LookupKey = lookupKey
-	filter.QueryFilter.Limit = lo.ToPtr(1)
+// bulkLoadFeatures fetches all features in bulk and populates the featureCache map (lookupKey -> FeatureResponse).
+// This replaces per-row getFeatureByLookupKey calls with a single bulk query.
+func (s *featureImportScript) bulkLoadFeatures(ctx context.Context) error {
+	filter := types.NewNoLimitFeatureFilter()
 
 	features, err := s.featureService.GetFeatures(ctx, filter)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to bulk load features: %w", err)
 	}
 
-	if len(features.Items) == 0 {
-		return nil, nil
+	for _, f := range features.Items {
+		if f.Feature != nil && f.Feature.LookupKey != "" {
+			s.featureCache[f.Feature.LookupKey] = f
+		}
 	}
 
-	return features.Items[0], nil
+	s.log.Infow("Bulk loaded features into cache", "count", len(s.featureCache))
+	return nil
 }
 
-// checkPriceExists checks if a price with the given meter_id already exists for the plan
-func (s *featureImportScript) checkPriceExists(ctx context.Context, planID, meterID string) (bool, error) {
+// bulkLoadPrices fetches all published prices for the plan in bulk and populates the priceCache map (meterID -> Price).
+// This replaces per-row getExistingPrice calls with a single bulk query.
+func (s *featureImportScript) bulkLoadPrices(ctx context.Context) error {
 	priceFilter := types.NewNoLimitPriceFilter().
-		WithEntityIDs([]string{planID}).
+		WithEntityIDs([]string{s.planID}).
 		WithStatus(types.StatusPublished).
 		WithEntityType(types.PRICE_ENTITY_TYPE_PLAN)
-	priceFilter.MeterIDs = []string{meterID}
 
 	prices, err := s.priceService.GetPrices(ctx, priceFilter)
 	if err != nil {
-		return false, err
+		return fmt.Errorf("failed to bulk load prices: %w", err)
 	}
 
-	return len(prices.Items) > 0, nil
+	for _, p := range prices.Items {
+		if p.Price == nil || p.Price.MeterID == "" {
+			continue
+		}
+		// Skip prices with end_date (expired/superseded)
+		if p.Price.EndDate != nil {
+			s.log.Debugw("Skipping price with end date during bulk load",
+				"price_id", p.Price.ID,
+				"meter_id", p.Price.MeterID,
+				"end_date", p.Price.EndDate,
+			)
+			continue
+		}
+		// First active price wins per meter_id (same as the old per-row logic)
+		if _, exists := s.priceCache[p.Price.MeterID]; !exists {
+			s.priceCache[p.Price.MeterID] = p.Price
+		}
+	}
+
+	s.log.Infow("Bulk loaded prices into cache", "count", len(s.priceCache))
+	return nil
+}
+
+// getCachedFeature returns the cached feature for a lookup key, or nil if not found
+func (s *featureImportScript) getCachedFeature(lookupKey string) *dto.FeatureResponse {
+	s.featureCacheMu.RLock()
+	defer s.featureCacheMu.RUnlock()
+	return s.featureCache[lookupKey]
+}
+
+// getCachedPrice returns the cached price for a meter ID, or nil if not found
+func (s *featureImportScript) getCachedPrice(meterID string) *price.Price {
+	s.priceCacheMu.RLock()
+	defer s.priceCacheMu.RUnlock()
+	return s.priceCache[meterID]
+}
+
+// addFeatureToCache adds a newly created feature to the in-memory cache (thread-safe)
+func (s *featureImportScript) addFeatureToCache(lookupKey string, f *dto.FeatureResponse) {
+	s.featureCacheMu.Lock()
+	defer s.featureCacheMu.Unlock()
+	s.featureCache[lookupKey] = f
+}
+
+// addPriceToCache adds a newly created price to the in-memory cache (thread-safe)
+func (s *featureImportScript) addPriceToCache(meterID string, p *price.Price) {
+	s.priceCacheMu.Lock()
+	defer s.priceCacheMu.Unlock()
+	s.priceCache[meterID] = p
+}
+
+// updatePriceAmount updates the amount and display_amount of an existing price using raw SQL
+// (bypassing Ent's immutable field constraint). It also stores the old pricing in metadata
+// with a timestamped key for audit trail: price_YYYYMMDDHHMMSS = old_amount
+func (s *featureImportScript) updatePriceAmount(ctx context.Context, existingPrice *price.Price, newAmount decimal.Decimal) error {
+	now := time.Now().UTC()
+	timestampKey := fmt.Sprintf("price_%s", now.Format("20060102150405"))
+
+	// Build updated metadata: merge existing metadata with the old price record
+	metadata := make(map[string]string)
+	for k, v := range existingPrice.Metadata {
+		metadata[k] = v
+	}
+	metadata[timestampKey] = existingPrice.Amount.String()
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Compute new display_amount
+	newDisplayAmount := fmt.Sprintf("%s%s", existingPrice.GetCurrencySymbol(), newAmount.String())
+
+	query := `UPDATE prices SET amount = $1, display_amount = $2, metadata = $3, updated_at = $4 WHERE id = $5`
+	_, err = s.pgClient.Writer(ctx).ExecContext(ctx, query, newAmount, newDisplayAmount, string(metadataJSON), now, existingPrice.ID)
+	if err != nil {
+		return fmt.Errorf("failed to update price via raw SQL: %w", err)
+	}
+
+	return nil
 }
 
 // processRow processes a single row from the CSV and creates a feature and price
@@ -207,11 +307,8 @@ func (s *featureImportScript) processRow(ctx context.Context, row FeatureRow) er
 		return fmt.Errorf("invalid aggregation type: %s", row.AggregationType)
 	}
 
-	// Check if feature already exists by lookup key
-	existingFeature, err := s.getFeatureByLookupKey(ctx, row.FeatureName)
-	if err != nil {
-		return fmt.Errorf("failed to check if feature exists: %w", err)
-	}
+	// Check if feature already exists in cache (populated by bulkLoadFeatures)
+	existingFeature := s.getCachedFeature(row.FeatureName)
 
 	var feature *dto.FeatureResponse
 	var meterID string
@@ -220,7 +317,9 @@ func (s *featureImportScript) processRow(ctx context.Context, row FeatureRow) er
 		// Feature exists, use it
 		feature = existingFeature
 		meterID = feature.Feature.MeterID
+		s.summaryMu.Lock()
 		s.summary.FeaturesSkipped++
+		s.summaryMu.Unlock()
 		s.log.Infow("Feature already exists, skipping creation", "feature_name", row.FeatureName, "feature_id", feature.Feature.ID, "meter_id", meterID)
 	} else {
 		// Create aggregation object
@@ -252,27 +351,72 @@ func (s *featureImportScript) processRow(ctx context.Context, row FeatureRow) er
 		}
 
 		// Create feature using service
+		var err error
 		feature, err = s.featureService.CreateFeature(ctx, featureReq)
 		if err != nil {
 			return fmt.Errorf("failed to create feature: %w", err)
 		}
 
 		meterID = feature.Feature.MeterID
+
+		// Add newly created feature to cache so parallel workers see it
+		s.addFeatureToCache(row.FeatureName, feature)
+
+		s.summaryMu.Lock()
 		s.summary.FeaturesCreated++
+		s.summaryMu.Unlock()
 		s.log.Infow("Created feature", "feature_name", row.FeatureName, "event_name", row.EventName, "meter_id", meterID)
 	}
 
-	// Check if price already exists for this meter and plan
-	priceExists, err := s.checkPriceExists(ctx, s.planID, meterID)
-	if err != nil {
-		return fmt.Errorf("failed to check if price exists: %w", err)
-	}
+	// Check if price already exists in cache (populated by bulkLoadPrices)
+	existingPrice := s.getCachedPrice(meterID)
 
-	if priceExists {
-		s.summary.PricesSkipped++
-		s.log.Infow("Price already exists, skipping creation", "feature_name", row.FeatureName, "meter_id", meterID, "plan_id", s.planID)
+	if existingPrice != nil {
+		// Price exists - check if the per-unit amount has changed
+		if existingPrice.Amount.Equal(row.PricePerUnit) {
+			// Same price, skip
+			s.summaryMu.Lock()
+			s.summary.PricesSkipped++
+			s.summaryMu.Unlock()
+			s.log.Infow("Price already exists with same amount, skipping",
+				"feature_name", row.FeatureName,
+				"meter_id", meterID,
+				"plan_id", s.planID,
+				"amount", row.PricePerUnit,
+			)
+			return nil
+		}
+
+		// Skip if new price is zero as it means the price is not available in new sheet but we have the data
+		if row.PricePerUnit.Equal(decimal.Zero) {
+			s.summaryMu.Lock()
+			s.summary.PricesSkipped++
+			s.summaryMu.Unlock()
+			s.log.Infow("Price is zero, skipping", "feature_name", row.FeatureName, "meter_id", meterID, "plan_id", s.planID, "amount", row.PricePerUnit)
+			return nil
+		}
+
+		// Price has changed - update via raw SQL
+		oldAmount := existingPrice.Amount
+		if err := s.updatePriceAmount(ctx, existingPrice, row.PricePerUnit); err != nil {
+			return fmt.Errorf("failed to update price amount: %w", err)
+		}
+
+		s.summaryMu.Lock()
+		s.summary.PricesUpdated++
+		s.summaryMu.Unlock()
+		s.log.Infow("Price amount updated",
+			"feature_name", row.FeatureName,
+			"meter_id", meterID,
+			"plan_id", s.planID,
+			"price_id", existingPrice.ID,
+			"old_amount", oldAmount,
+			"new_amount", row.PricePerUnit,
+		)
 		return nil
 	}
+
+	startDate := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Create price
 	priceReq := dto.CreatePriceRequest{
@@ -290,14 +434,22 @@ func (s *featureImportScript) processRow(ctx context.Context, row FeatureRow) er
 		InvoiceCadence:       types.InvoiceCadenceArrear,
 		DisplayName:          row.FeatureName,
 		SkipEntityValidation: false,
+		StartDate:            &startDate,
 	}
 
-	_, err = s.priceService.CreatePrice(ctx, priceReq)
+	createdPrice, err := s.priceService.CreatePrice(ctx, priceReq)
 	if err != nil {
 		return fmt.Errorf("failed to create price: %w", err)
 	}
 
+	// Add newly created price to cache so parallel workers see it
+	if createdPrice != nil && createdPrice.Price != nil {
+		s.addPriceToCache(meterID, createdPrice.Price)
+	}
+
+	s.summaryMu.Lock()
 	s.summary.PricesCreated++
+	s.summaryMu.Unlock()
 	s.log.Infow("Created price", "feature_name", row.FeatureName, "meter_id", meterID, "plan_id", s.planID, "amount", row.PricePerUnit)
 	return nil
 }
@@ -310,6 +462,7 @@ func (s *featureImportScript) printSummary() {
 		"features_skipped", s.summary.FeaturesSkipped,
 		"prices_created", s.summary.PricesCreated,
 		"prices_skipped", s.summary.PricesSkipped,
+		"prices_updated", s.summary.PricesUpdated,
 		"errors", len(s.summary.Errors),
 	)
 
@@ -358,23 +511,67 @@ func ImportFeatures() error {
 		return fmt.Errorf("failed to parse feature CSV: %w", err)
 	}
 
+	// Bulk-load all existing features and prices into in-memory caches.
+	// This eliminates per-row DB lookups and dramatically speeds up the import.
+	script.log.Infow("Bulk loading existing features and prices into cache...")
+	if err := script.bulkLoadFeatures(ctx); err != nil {
+		return fmt.Errorf("failed to bulk load features: %w", err)
+	}
+	if err := script.bulkLoadPrices(ctx); err != nil {
+		return fmt.Errorf("failed to bulk load prices: %w", err)
+	}
+
+	// Get worker count from environment variable (default: 10)
+	workerCount := 10
+	if workerCountStr := os.Getenv("WORKER_COUNT"); workerCountStr != "" {
+		if count, err := strconv.Atoi(workerCountStr); err == nil && count > 0 {
+			workerCount = count
+		}
+	}
+
 	script.log.Infow("Starting feature import",
 		"file", filePath,
 		"row_count", len(featureRows),
 		"tenant_id", tenantID,
 		"environment_id", environmentID,
-		"plan_id", planID)
+		"plan_id", planID,
+		"worker_count", workerCount)
 
-	// Process each row
-	for i, row := range featureRows {
-		script.log.Infow("Processing row", "index", i, "feature_name", row.FeatureName, "event_name", row.EventName)
-		err := script.processRow(ctx, row)
-		if err != nil {
-			script.log.Errorw("Failed to process row", "index", i, "feature_name", row.FeatureName, "error", err)
-			script.summary.Errors = append(script.summary.Errors, fmt.Sprintf("Row %d (%s): %v", i, row.FeatureName, err))
-			// Continue with the next row
-		}
+	// Create channels for job distribution
+	type job struct {
+		index int
+		row   FeatureRow
 	}
+
+	jobs := make(chan job, len(featureRows))
+	var wg sync.WaitGroup
+
+	// Start worker goroutines
+	for w := 1; w <= workerCount; w++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := range jobs {
+				script.log.Infow("Processing row", "worker", workerID, "index", j.index, "feature_name", j.row.FeatureName, "event_name", j.row.EventName)
+				err := script.processRow(ctx, j.row)
+				if err != nil {
+					script.log.Errorw("Failed to process row", "worker", workerID, "index", j.index, "feature_name", j.row.FeatureName, "error", err)
+					script.summaryMu.Lock()
+					script.summary.Errors = append(script.summary.Errors, fmt.Sprintf("Row %d (%s): %v", j.index, j.row.FeatureName, err))
+					script.summaryMu.Unlock()
+				}
+			}
+		}(w)
+	}
+
+	// Send jobs to workers
+	for i, row := range featureRows {
+		jobs <- job{index: i, row: row}
+	}
+	close(jobs)
+
+	// Wait for all workers to complete
+	wg.Wait()
 
 	// Print summary
 	script.printSummary()
