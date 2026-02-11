@@ -76,6 +76,20 @@ func (WorkflowExecution) Fields() []ent.Field {
 			Default(string(types.WorkflowExecutionStatusUnknown)).
 			GoType(types.WorkflowExecutionStatus("")).
 			Comment("Temporal workflow run status (Running, Completed, Failed, etc.)"),
+		field.String("entity").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{
+				"postgres": "varchar(100)",
+			}).
+			Comment("Entity type (e.g. plan, invoice, subscription) for efficient filtering"),
+		field.String("entity_id").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{
+				"postgres": "varchar(255)",
+			}).
+			Comment("Entity ID (e.g. plan ID, invoice ID) for efficient filtering"),
 		field.JSON("metadata", map[string]interface{}{}).
 			Optional().
 			SchemaType(map[string]string{
@@ -115,5 +129,8 @@ func (WorkflowExecution) Indexes() []ent.Index {
 		// Index for filtering by workflow status (e.g. Running, Failed)
 		index.Fields("tenant_id", "environment_id", "workflow_status").
 			StorageKey("idx_workflow_executions_tenant_env_status"),
+		// Index for filtering by entity and entity_id (replaces metadata JSONB filter)
+		index.Fields("tenant_id", "environment_id", "entity", "entity_id").
+			StorageKey("idx_workflow_executions_tenant_env_entity"),
 	}
 }

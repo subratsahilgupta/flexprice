@@ -200,6 +200,46 @@ func (weu *WorkflowExecutionUpdate) SetNillableWorkflowStatus(tes *types.Workflo
 	return weu
 }
 
+// SetEntity sets the "entity" field.
+func (weu *WorkflowExecutionUpdate) SetEntity(s string) *WorkflowExecutionUpdate {
+	weu.mutation.SetEntity(s)
+	return weu
+}
+
+// SetNillableEntity sets the "entity" field if the given value is not nil.
+func (weu *WorkflowExecutionUpdate) SetNillableEntity(s *string) *WorkflowExecutionUpdate {
+	if s != nil {
+		weu.SetEntity(*s)
+	}
+	return weu
+}
+
+// ClearEntity clears the value of the "entity" field.
+func (weu *WorkflowExecutionUpdate) ClearEntity() *WorkflowExecutionUpdate {
+	weu.mutation.ClearEntity()
+	return weu
+}
+
+// SetEntityID sets the "entity_id" field.
+func (weu *WorkflowExecutionUpdate) SetEntityID(s string) *WorkflowExecutionUpdate {
+	weu.mutation.SetEntityID(s)
+	return weu
+}
+
+// SetNillableEntityID sets the "entity_id" field if the given value is not nil.
+func (weu *WorkflowExecutionUpdate) SetNillableEntityID(s *string) *WorkflowExecutionUpdate {
+	if s != nil {
+		weu.SetEntityID(*s)
+	}
+	return weu
+}
+
+// ClearEntityID clears the value of the "entity_id" field.
+func (weu *WorkflowExecutionUpdate) ClearEntityID() *WorkflowExecutionUpdate {
+	weu.mutation.ClearEntityID()
+	return weu
+}
+
 // SetMetadata sets the "metadata" field.
 func (weu *WorkflowExecutionUpdate) SetMetadata(m map[string]interface{}) *WorkflowExecutionUpdate {
 	weu.mutation.SetMetadata(m)
@@ -340,6 +380,18 @@ func (weu *WorkflowExecutionUpdate) sqlSave(ctx context.Context) (n int, err err
 	}
 	if value, ok := weu.mutation.WorkflowStatus(); ok {
 		_spec.SetField(workflowexecution.FieldWorkflowStatus, field.TypeString, value)
+	}
+	if value, ok := weu.mutation.Entity(); ok {
+		_spec.SetField(workflowexecution.FieldEntity, field.TypeString, value)
+	}
+	if weu.mutation.EntityCleared() {
+		_spec.ClearField(workflowexecution.FieldEntity, field.TypeString)
+	}
+	if value, ok := weu.mutation.EntityID(); ok {
+		_spec.SetField(workflowexecution.FieldEntityID, field.TypeString, value)
+	}
+	if weu.mutation.EntityIDCleared() {
+		_spec.ClearField(workflowexecution.FieldEntityID, field.TypeString)
 	}
 	if value, ok := weu.mutation.Metadata(); ok {
 		_spec.SetField(workflowexecution.FieldMetadata, field.TypeJSON, value)
@@ -538,6 +590,46 @@ func (weuo *WorkflowExecutionUpdateOne) SetNillableWorkflowStatus(tes *types.Wor
 	return weuo
 }
 
+// SetEntity sets the "entity" field.
+func (weuo *WorkflowExecutionUpdateOne) SetEntity(s string) *WorkflowExecutionUpdateOne {
+	weuo.mutation.SetEntity(s)
+	return weuo
+}
+
+// SetNillableEntity sets the "entity" field if the given value is not nil.
+func (weuo *WorkflowExecutionUpdateOne) SetNillableEntity(s *string) *WorkflowExecutionUpdateOne {
+	if s != nil {
+		weuo.SetEntity(*s)
+	}
+	return weuo
+}
+
+// ClearEntity clears the value of the "entity" field.
+func (weuo *WorkflowExecutionUpdateOne) ClearEntity() *WorkflowExecutionUpdateOne {
+	weuo.mutation.ClearEntity()
+	return weuo
+}
+
+// SetEntityID sets the "entity_id" field.
+func (weuo *WorkflowExecutionUpdateOne) SetEntityID(s string) *WorkflowExecutionUpdateOne {
+	weuo.mutation.SetEntityID(s)
+	return weuo
+}
+
+// SetNillableEntityID sets the "entity_id" field if the given value is not nil.
+func (weuo *WorkflowExecutionUpdateOne) SetNillableEntityID(s *string) *WorkflowExecutionUpdateOne {
+	if s != nil {
+		weuo.SetEntityID(*s)
+	}
+	return weuo
+}
+
+// ClearEntityID clears the value of the "entity_id" field.
+func (weuo *WorkflowExecutionUpdateOne) ClearEntityID() *WorkflowExecutionUpdateOne {
+	weuo.mutation.ClearEntityID()
+	return weuo
+}
+
 // SetMetadata sets the "metadata" field.
 func (weuo *WorkflowExecutionUpdateOne) SetMetadata(m map[string]interface{}) *WorkflowExecutionUpdateOne {
 	weuo.mutation.SetMetadata(m)
@@ -708,6 +800,18 @@ func (weuo *WorkflowExecutionUpdateOne) sqlSave(ctx context.Context) (_node *Wor
 	}
 	if value, ok := weuo.mutation.WorkflowStatus(); ok {
 		_spec.SetField(workflowexecution.FieldWorkflowStatus, field.TypeString, value)
+	}
+	if value, ok := weuo.mutation.Entity(); ok {
+		_spec.SetField(workflowexecution.FieldEntity, field.TypeString, value)
+	}
+	if weuo.mutation.EntityCleared() {
+		_spec.ClearField(workflowexecution.FieldEntity, field.TypeString)
+	}
+	if value, ok := weuo.mutation.EntityID(); ok {
+		_spec.SetField(workflowexecution.FieldEntityID, field.TypeString, value)
+	}
+	if weuo.mutation.EntityIDCleared() {
+		_spec.ClearField(workflowexecution.FieldEntityID, field.TypeString)
 	}
 	if value, ok := weuo.mutation.Metadata(); ok {
 		_spec.SetField(workflowexecution.FieldMetadata, field.TypeJSON, value)

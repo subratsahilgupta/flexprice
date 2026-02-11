@@ -141,6 +141,16 @@ func WorkflowStatus(v types.WorkflowExecutionStatus) predicate.WorkflowExecution
 	return predicate.WorkflowExecution(sql.FieldEQ(FieldWorkflowStatus, vc))
 }
 
+// Entity applies equality check predicate on the "entity" field. It's identical to EntityEQ.
+func Entity(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldEntity, v))
+}
+
+// EntityID applies equality check predicate on the "entity_id" field. It's identical to EntityIDEQ.
+func EntityID(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldEntityID, v))
+}
+
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.WorkflowExecution {
 	return predicate.WorkflowExecution(sql.FieldEQ(FieldTenantID, v))
@@ -1058,6 +1068,156 @@ func WorkflowStatusEqualFold(v types.WorkflowExecutionStatus) predicate.Workflow
 func WorkflowStatusContainsFold(v types.WorkflowExecutionStatus) predicate.WorkflowExecution {
 	vc := string(v)
 	return predicate.WorkflowExecution(sql.FieldContainsFold(FieldWorkflowStatus, vc))
+}
+
+// EntityEQ applies the EQ predicate on the "entity" field.
+func EntityEQ(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldEntity, v))
+}
+
+// EntityNEQ applies the NEQ predicate on the "entity" field.
+func EntityNEQ(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNEQ(FieldEntity, v))
+}
+
+// EntityIn applies the In predicate on the "entity" field.
+func EntityIn(vs ...string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldIn(FieldEntity, vs...))
+}
+
+// EntityNotIn applies the NotIn predicate on the "entity" field.
+func EntityNotIn(vs ...string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNotIn(FieldEntity, vs...))
+}
+
+// EntityGT applies the GT predicate on the "entity" field.
+func EntityGT(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldGT(FieldEntity, v))
+}
+
+// EntityGTE applies the GTE predicate on the "entity" field.
+func EntityGTE(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldGTE(FieldEntity, v))
+}
+
+// EntityLT applies the LT predicate on the "entity" field.
+func EntityLT(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldLT(FieldEntity, v))
+}
+
+// EntityLTE applies the LTE predicate on the "entity" field.
+func EntityLTE(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldLTE(FieldEntity, v))
+}
+
+// EntityContains applies the Contains predicate on the "entity" field.
+func EntityContains(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldContains(FieldEntity, v))
+}
+
+// EntityHasPrefix applies the HasPrefix predicate on the "entity" field.
+func EntityHasPrefix(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldHasPrefix(FieldEntity, v))
+}
+
+// EntityHasSuffix applies the HasSuffix predicate on the "entity" field.
+func EntityHasSuffix(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldHasSuffix(FieldEntity, v))
+}
+
+// EntityIsNil applies the IsNil predicate on the "entity" field.
+func EntityIsNil() predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldIsNull(FieldEntity))
+}
+
+// EntityNotNil applies the NotNil predicate on the "entity" field.
+func EntityNotNil() predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNotNull(FieldEntity))
+}
+
+// EntityEqualFold applies the EqualFold predicate on the "entity" field.
+func EntityEqualFold(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEqualFold(FieldEntity, v))
+}
+
+// EntityContainsFold applies the ContainsFold predicate on the "entity" field.
+func EntityContainsFold(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldContainsFold(FieldEntity, v))
+}
+
+// EntityIDEQ applies the EQ predicate on the "entity_id" field.
+func EntityIDEQ(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEQ(FieldEntityID, v))
+}
+
+// EntityIDNEQ applies the NEQ predicate on the "entity_id" field.
+func EntityIDNEQ(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNEQ(FieldEntityID, v))
+}
+
+// EntityIDIn applies the In predicate on the "entity_id" field.
+func EntityIDIn(vs ...string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldIn(FieldEntityID, vs...))
+}
+
+// EntityIDNotIn applies the NotIn predicate on the "entity_id" field.
+func EntityIDNotIn(vs ...string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNotIn(FieldEntityID, vs...))
+}
+
+// EntityIDGT applies the GT predicate on the "entity_id" field.
+func EntityIDGT(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldGT(FieldEntityID, v))
+}
+
+// EntityIDGTE applies the GTE predicate on the "entity_id" field.
+func EntityIDGTE(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldGTE(FieldEntityID, v))
+}
+
+// EntityIDLT applies the LT predicate on the "entity_id" field.
+func EntityIDLT(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldLT(FieldEntityID, v))
+}
+
+// EntityIDLTE applies the LTE predicate on the "entity_id" field.
+func EntityIDLTE(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldLTE(FieldEntityID, v))
+}
+
+// EntityIDContains applies the Contains predicate on the "entity_id" field.
+func EntityIDContains(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldContains(FieldEntityID, v))
+}
+
+// EntityIDHasPrefix applies the HasPrefix predicate on the "entity_id" field.
+func EntityIDHasPrefix(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldHasPrefix(FieldEntityID, v))
+}
+
+// EntityIDHasSuffix applies the HasSuffix predicate on the "entity_id" field.
+func EntityIDHasSuffix(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldHasSuffix(FieldEntityID, v))
+}
+
+// EntityIDIsNil applies the IsNil predicate on the "entity_id" field.
+func EntityIDIsNil() predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldIsNull(FieldEntityID))
+}
+
+// EntityIDNotNil applies the NotNil predicate on the "entity_id" field.
+func EntityIDNotNil() predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldNotNull(FieldEntityID))
+}
+
+// EntityIDEqualFold applies the EqualFold predicate on the "entity_id" field.
+func EntityIDEqualFold(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldEqualFold(FieldEntityID, v))
+}
+
+// EntityIDContainsFold applies the ContainsFold predicate on the "entity_id" field.
+func EntityIDContainsFold(v string) predicate.WorkflowExecution {
+	return predicate.WorkflowExecution(sql.FieldContainsFold(FieldEntityID, v))
 }
 
 // MetadataIsNil applies the IsNil predicate on the "metadata" field.

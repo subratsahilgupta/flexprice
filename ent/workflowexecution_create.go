@@ -183,6 +183,34 @@ func (wec *WorkflowExecutionCreate) SetNillableWorkflowStatus(tes *types.Workflo
 	return wec
 }
 
+// SetEntity sets the "entity" field.
+func (wec *WorkflowExecutionCreate) SetEntity(s string) *WorkflowExecutionCreate {
+	wec.mutation.SetEntity(s)
+	return wec
+}
+
+// SetNillableEntity sets the "entity" field if the given value is not nil.
+func (wec *WorkflowExecutionCreate) SetNillableEntity(s *string) *WorkflowExecutionCreate {
+	if s != nil {
+		wec.SetEntity(*s)
+	}
+	return wec
+}
+
+// SetEntityID sets the "entity_id" field.
+func (wec *WorkflowExecutionCreate) SetEntityID(s string) *WorkflowExecutionCreate {
+	wec.mutation.SetEntityID(s)
+	return wec
+}
+
+// SetNillableEntityID sets the "entity_id" field if the given value is not nil.
+func (wec *WorkflowExecutionCreate) SetNillableEntityID(s *string) *WorkflowExecutionCreate {
+	if s != nil {
+		wec.SetEntityID(*s)
+	}
+	return wec
+}
+
 // SetMetadata sets the "metadata" field.
 func (wec *WorkflowExecutionCreate) SetMetadata(m map[string]interface{}) *WorkflowExecutionCreate {
 	wec.mutation.SetMetadata(m)
@@ -415,6 +443,14 @@ func (wec *WorkflowExecutionCreate) createSpec() (*WorkflowExecution, *sqlgraph.
 	if value, ok := wec.mutation.WorkflowStatus(); ok {
 		_spec.SetField(workflowexecution.FieldWorkflowStatus, field.TypeString, value)
 		_node.WorkflowStatus = value
+	}
+	if value, ok := wec.mutation.Entity(); ok {
+		_spec.SetField(workflowexecution.FieldEntity, field.TypeString, value)
+		_node.Entity = &value
+	}
+	if value, ok := wec.mutation.EntityID(); ok {
+		_spec.SetField(workflowexecution.FieldEntityID, field.TypeString, value)
+		_node.EntityID = &value
 	}
 	if value, ok := wec.mutation.Metadata(); ok {
 		_spec.SetField(workflowexecution.FieldMetadata, field.TypeJSON, value)

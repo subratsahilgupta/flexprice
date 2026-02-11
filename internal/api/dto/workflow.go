@@ -9,6 +9,8 @@ type WorkflowExecutionDTO struct {
 	WorkflowType  string     `json:"workflow_type"`
 	TaskQueue     string     `json:"task_queue"`
 	Status        string     `json:"status,omitempty"`
+	Entity        string     `json:"entity,omitempty"`    // e.g. plan, invoice, subscription
+	EntityID      string     `json:"entity_id,omitempty"` // e.g. plan ID, invoice ID
 	StartTime     time.Time  `json:"start_time"`
 	CloseTime     *time.Time `json:"close_time,omitempty"`
 	DurationMs    *int64     `json:"duration_ms,omitempty"`
@@ -52,9 +54,9 @@ type ListWorkflowsRequest struct {
 	TaskQueue      string `form:"task_queue"`
 	WorkflowStatus string `form:"workflow_status"` // e.g. Running, Completed, Failed
 
-	// Metadata filters - specific fields for common use cases
-	Entity   string `form:"entity"`    // e.g. "plan", "customer", "invoice"
-	EntityID string `form:"entity_id"` // e.g. "plan_01ABC123"
+	// Entity column filters (efficient; not metadata JSONB)
+	Entity   string `form:"entity"`    // e.g. plan, invoice, subscription
+	EntityID string `form:"entity_id"` // e.g. plan_01ABC123
 
 	PageSize int `form:"page_size"`
 	Page     int `form:"page"`

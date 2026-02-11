@@ -50,6 +50,10 @@ type WorkflowExecution struct {
 	DurationMs *int64 `json:"duration_ms,omitempty"`
 	// Temporal workflow run status (Running, Completed, Failed, etc.)
 	WorkflowStatus types.WorkflowExecutionStatus `json:"workflow_status,omitempty"`
+	// Entity type (e.g. plan, invoice, subscription) for efficient filtering
+	Entity *string `json:"entity,omitempty"`
+	// Entity ID (e.g. plan ID, invoice ID) for efficient filtering
+	EntityID *string `json:"entity_id,omitempty"`
 	// Custom metadata (e.g., customer_id, plan, etc.)
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 	selectValues sql.SelectValues
@@ -64,7 +68,7 @@ func (*WorkflowExecution) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case workflowexecution.FieldDurationMs:
 			values[i] = new(sql.NullInt64)
-		case workflowexecution.FieldID, workflowexecution.FieldTenantID, workflowexecution.FieldStatus, workflowexecution.FieldCreatedBy, workflowexecution.FieldUpdatedBy, workflowexecution.FieldEnvironmentID, workflowexecution.FieldWorkflowID, workflowexecution.FieldRunID, workflowexecution.FieldWorkflowType, workflowexecution.FieldTaskQueue, workflowexecution.FieldWorkflowStatus:
+		case workflowexecution.FieldID, workflowexecution.FieldTenantID, workflowexecution.FieldStatus, workflowexecution.FieldCreatedBy, workflowexecution.FieldUpdatedBy, workflowexecution.FieldEnvironmentID, workflowexecution.FieldWorkflowID, workflowexecution.FieldRunID, workflowexecution.FieldWorkflowType, workflowexecution.FieldTaskQueue, workflowexecution.FieldWorkflowStatus, workflowexecution.FieldEntity, workflowexecution.FieldEntityID:
 			values[i] = new(sql.NullString)
 		case workflowexecution.FieldCreatedAt, workflowexecution.FieldUpdatedAt, workflowexecution.FieldStartTime, workflowexecution.FieldEndTime:
 			values[i] = new(sql.NullTime)
@@ -181,6 +185,20 @@ func (we *WorkflowExecution) assignValues(columns []string, values []any) error 
 			} else if value.Valid {
 				we.WorkflowStatus = types.WorkflowExecutionStatus(value.String)
 			}
+		case workflowexecution.FieldEntity:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field entity", values[i])
+			} else if value.Valid {
+				we.Entity = new(string)
+				*we.Entity = value.String
+			}
+		case workflowexecution.FieldEntityID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field entity_id", values[i])
+			} else if value.Valid {
+				we.EntityID = new(string)
+				*we.EntityID = value.String
+			}
 		case workflowexecution.FieldMetadata:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field metadata", values[i])
@@ -273,6 +291,16 @@ func (we *WorkflowExecution) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("workflow_status=")
 	builder.WriteString(fmt.Sprintf("%v", we.WorkflowStatus))
+	builder.WriteString(", ")
+	if v := we.Entity; v != nil {
+		builder.WriteString("entity=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := we.EntityID; v != nil {
+		builder.WriteString("entity_id=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("metadata=")
 	builder.WriteString(fmt.Sprintf("%v", we.Metadata))
