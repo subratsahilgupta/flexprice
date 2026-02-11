@@ -26,9 +26,9 @@ type ListFilter struct {
 	TaskQueue      string
 	WorkflowStatus string // e.g. Running, Completed, Failed
 
-	// Metadata filters - specific fields
-	Entity   string // Filter by entity type in metadata
-	EntityID string // Filter by entity_id in metadata
+	// Entity columns for efficient filtering (replaces metadata JSONB filter)
+	Entity   string // Filter by entity type (e.g. plan, invoice, subscription)
+	EntityID string // Filter by entity ID (e.g. plan_01ABC, inv_xyz)
 
 	PageSize int
 	Page     int

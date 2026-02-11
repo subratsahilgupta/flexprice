@@ -65988,6 +65988,8 @@ type WorkflowExecutionMutation struct {
 	duration_ms     *int64
 	addduration_ms  *int64
 	workflow_status *types.WorkflowExecutionStatus
+	entity          *string
+	entity_id       *string
 	metadata        *map[string]interface{}
 	clearedFields   map[string]struct{}
 	done            bool
@@ -66725,6 +66727,104 @@ func (m *WorkflowExecutionMutation) ResetWorkflowStatus() {
 	m.workflow_status = nil
 }
 
+// SetEntity sets the "entity" field.
+func (m *WorkflowExecutionMutation) SetEntity(s string) {
+	m.entity = &s
+}
+
+// Entity returns the value of the "entity" field in the mutation.
+func (m *WorkflowExecutionMutation) Entity() (r string, exists bool) {
+	v := m.entity
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEntity returns the old "entity" field's value of the WorkflowExecution entity.
+// If the WorkflowExecution object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WorkflowExecutionMutation) OldEntity(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEntity is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEntity requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEntity: %w", err)
+	}
+	return oldValue.Entity, nil
+}
+
+// ClearEntity clears the value of the "entity" field.
+func (m *WorkflowExecutionMutation) ClearEntity() {
+	m.entity = nil
+	m.clearedFields[workflowexecution.FieldEntity] = struct{}{}
+}
+
+// EntityCleared returns if the "entity" field was cleared in this mutation.
+func (m *WorkflowExecutionMutation) EntityCleared() bool {
+	_, ok := m.clearedFields[workflowexecution.FieldEntity]
+	return ok
+}
+
+// ResetEntity resets all changes to the "entity" field.
+func (m *WorkflowExecutionMutation) ResetEntity() {
+	m.entity = nil
+	delete(m.clearedFields, workflowexecution.FieldEntity)
+}
+
+// SetEntityID sets the "entity_id" field.
+func (m *WorkflowExecutionMutation) SetEntityID(s string) {
+	m.entity_id = &s
+}
+
+// EntityID returns the value of the "entity_id" field in the mutation.
+func (m *WorkflowExecutionMutation) EntityID() (r string, exists bool) {
+	v := m.entity_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEntityID returns the old "entity_id" field's value of the WorkflowExecution entity.
+// If the WorkflowExecution object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WorkflowExecutionMutation) OldEntityID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEntityID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEntityID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEntityID: %w", err)
+	}
+	return oldValue.EntityID, nil
+}
+
+// ClearEntityID clears the value of the "entity_id" field.
+func (m *WorkflowExecutionMutation) ClearEntityID() {
+	m.entity_id = nil
+	m.clearedFields[workflowexecution.FieldEntityID] = struct{}{}
+}
+
+// EntityIDCleared returns if the "entity_id" field was cleared in this mutation.
+func (m *WorkflowExecutionMutation) EntityIDCleared() bool {
+	_, ok := m.clearedFields[workflowexecution.FieldEntityID]
+	return ok
+}
+
+// ResetEntityID resets all changes to the "entity_id" field.
+func (m *WorkflowExecutionMutation) ResetEntityID() {
+	m.entity_id = nil
+	delete(m.clearedFields, workflowexecution.FieldEntityID)
+}
+
 // SetMetadata sets the "metadata" field.
 func (m *WorkflowExecutionMutation) SetMetadata(value map[string]interface{}) {
 	m.metadata = &value
@@ -66808,7 +66908,7 @@ func (m *WorkflowExecutionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WorkflowExecutionMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 18)
 	if m.tenant_id != nil {
 		fields = append(fields, workflowexecution.FieldTenantID)
 	}
@@ -66854,6 +66954,12 @@ func (m *WorkflowExecutionMutation) Fields() []string {
 	if m.workflow_status != nil {
 		fields = append(fields, workflowexecution.FieldWorkflowStatus)
 	}
+	if m.entity != nil {
+		fields = append(fields, workflowexecution.FieldEntity)
+	}
+	if m.entity_id != nil {
+		fields = append(fields, workflowexecution.FieldEntityID)
+	}
 	if m.metadata != nil {
 		fields = append(fields, workflowexecution.FieldMetadata)
 	}
@@ -66895,6 +67001,10 @@ func (m *WorkflowExecutionMutation) Field(name string) (ent.Value, bool) {
 		return m.DurationMs()
 	case workflowexecution.FieldWorkflowStatus:
 		return m.WorkflowStatus()
+	case workflowexecution.FieldEntity:
+		return m.Entity()
+	case workflowexecution.FieldEntityID:
+		return m.EntityID()
 	case workflowexecution.FieldMetadata:
 		return m.Metadata()
 	}
@@ -66936,6 +67046,10 @@ func (m *WorkflowExecutionMutation) OldField(ctx context.Context, name string) (
 		return m.OldDurationMs(ctx)
 	case workflowexecution.FieldWorkflowStatus:
 		return m.OldWorkflowStatus(ctx)
+	case workflowexecution.FieldEntity:
+		return m.OldEntity(ctx)
+	case workflowexecution.FieldEntityID:
+		return m.OldEntityID(ctx)
 	case workflowexecution.FieldMetadata:
 		return m.OldMetadata(ctx)
 	}
@@ -67052,6 +67166,20 @@ func (m *WorkflowExecutionMutation) SetField(name string, value ent.Value) error
 		}
 		m.SetWorkflowStatus(v)
 		return nil
+	case workflowexecution.FieldEntity:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEntity(v)
+		return nil
+	case workflowexecution.FieldEntityID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEntityID(v)
+		return nil
 	case workflowexecution.FieldMetadata:
 		v, ok := value.(map[string]interface{})
 		if !ok {
@@ -67119,6 +67247,12 @@ func (m *WorkflowExecutionMutation) ClearedFields() []string {
 	if m.FieldCleared(workflowexecution.FieldDurationMs) {
 		fields = append(fields, workflowexecution.FieldDurationMs)
 	}
+	if m.FieldCleared(workflowexecution.FieldEntity) {
+		fields = append(fields, workflowexecution.FieldEntity)
+	}
+	if m.FieldCleared(workflowexecution.FieldEntityID) {
+		fields = append(fields, workflowexecution.FieldEntityID)
+	}
 	if m.FieldCleared(workflowexecution.FieldMetadata) {
 		fields = append(fields, workflowexecution.FieldMetadata)
 	}
@@ -67150,6 +67284,12 @@ func (m *WorkflowExecutionMutation) ClearField(name string) error {
 		return nil
 	case workflowexecution.FieldDurationMs:
 		m.ClearDurationMs()
+		return nil
+	case workflowexecution.FieldEntity:
+		m.ClearEntity()
+		return nil
+	case workflowexecution.FieldEntityID:
+		m.ClearEntityID()
 		return nil
 	case workflowexecution.FieldMetadata:
 		m.ClearMetadata()
@@ -67206,6 +67346,12 @@ func (m *WorkflowExecutionMutation) ResetField(name string) error {
 		return nil
 	case workflowexecution.FieldWorkflowStatus:
 		m.ResetWorkflowStatus()
+		return nil
+	case workflowexecution.FieldEntity:
+		m.ResetEntity()
+		return nil
+	case workflowexecution.FieldEntityID:
+		m.ResetEntityID()
 		return nil
 	case workflowexecution.FieldMetadata:
 		m.ResetMetadata()

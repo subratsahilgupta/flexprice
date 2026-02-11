@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -94,9 +95,11 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 			WorkflowType: exec.WorkflowType,
 			TaskQueue:    exec.TaskQueue,
 			Status:       string(exec.WorkflowStatus),
+			Entity:       lo.FromPtr(exec.Entity),
+			EntityID:     lo.FromPtr(exec.EntityID),
 			StartTime:    exec.StartTime,
-			CloseTime:    exec.EndTime,    // Map end_time to CloseTime
-			DurationMs:   exec.DurationMs, // Include duration
+			CloseTime:    exec.EndTime,
+			DurationMs:   exec.DurationMs,
 			CreatedBy:    exec.CreatedBy,
 		}
 	}

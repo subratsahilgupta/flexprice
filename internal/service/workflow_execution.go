@@ -34,6 +34,8 @@ type CreateWorkflowExecutionInput struct {
 	TenantID      string
 	EnvironmentID string
 	CreatedBy     string
+	Entity        string // e.g. plan, invoice, subscription (stored in column for efficient filtering)
+	EntityID      string // e.g. plan ID, invoice ID
 	Metadata      map[string]interface{}
 }
 
@@ -73,6 +75,8 @@ func (s *WorkflowExecutionService) CreateWorkflowExecution(ctx context.Context, 
 		EnvironmentID:  input.EnvironmentID,
 		CreatedBy:      input.CreatedBy,
 		UpdatedBy:      input.CreatedBy,
+		Entity:         stringPtr(input.Entity),
+		EntityID:       stringPtr(input.EntityID),
 		Metadata:       input.Metadata,
 		Status:         string(types.StatusPublished),
 		WorkflowStatus: types.WorkflowExecutionStatusRunning,
@@ -143,4 +147,12 @@ func CalculateTotalPages(total int64, pageSize int) int {
 		return 0
 	}
 	return int(math.Ceil(float64(total) / float64(pageSize)))
+}
+
+// stringPtr returns a pointer to s, or nil if s is empty (for optional ent fields).
+func stringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

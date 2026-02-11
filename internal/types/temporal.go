@@ -73,6 +73,21 @@ const (
 	TemporalReprocessEventsForPlanWorkflow      TemporalWorkflowType = "ReprocessEventsForPlanWorkflow"
 )
 
+// WorkflowTypesExcludedFromTracking are workflow types that are not persisted to the
+// workflow_execution table and do not run start/end tracking in the interceptor.
+// Use the existing TemporalWorkflowType enums so the list stays type-safe and discoverable.
+var WorkflowTypesExcludedFromTracking = []TemporalWorkflowType{
+	TemporalScheduleSubscriptionBillingWorkflow,
+	TemporalProcessSubscriptionBillingWorkflow,
+	TemporalProcessInvoiceWorkflow,
+}
+
+// ShouldTrackWorkflowType returns false if this workflow type is excluded from tracking
+// (no DB save, no interceptor start/end logic). Used by the workflow tracking interceptor.
+func ShouldTrackWorkflowType(w TemporalWorkflowType) bool {
+	return !lo.Contains(WorkflowTypesExcludedFromTracking, w)
+}
+
 // String returns the string representation of the workflow type
 func (w TemporalWorkflowType) String() string {
 	return string(w)
@@ -208,7 +223,7 @@ func GetAllTaskQueues() []TemporalTaskQueue {
 type WorkflowExecutionStatus string
 
 const (
-	WorkflowExecutionStatusRunning         WorkflowExecutionStatus = "Running"
+	WorkflowExecutionStatusRunning        WorkflowExecutionStatus = "Running"
 	WorkflowExecutionStatusCompleted      WorkflowExecutionStatus = "Completed"
 	WorkflowExecutionStatusFailed         WorkflowExecutionStatus = "Failed"
 	WorkflowExecutionStatusCanceled       WorkflowExecutionStatus = "Canceled"

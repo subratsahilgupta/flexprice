@@ -39,13 +39,20 @@ type workflowTrackingInboundInterceptor struct {
 	interceptor.WorkflowInboundInterceptorBase
 }
 
-// ExecuteWorkflow intercepts workflow execution to track completion status and timing
+// ExecuteWorkflow intercepts workflow execution to track completion status and timing.
+// Workflows in types.WorkflowTypesExcludedFromTracking are not saved or tracked.
 func (w *workflowTrackingInboundInterceptor) ExecuteWorkflow(
 	ctx workflow.Context,
 	in *interceptor.ExecuteWorkflowInput,
 ) (interface{}, error) {
-	logger := workflow.GetLogger(ctx)
 	workflowInfo := workflow.GetInfo(ctx)
+
+	// Skip all tracking for excluded workflow types (no DB save, no start/end tracking)
+	if !tracking.ShouldTrackWorkflow(workflowInfo.WorkflowType.Name) {
+		return w.Next.ExecuteWorkflow(ctx, in)
+	}
+
+	logger := workflow.GetLogger(ctx)
 
 	// Track workflow start automatically
 	trackWorkflowStart(ctx, *workflowInfo, in)
@@ -118,8 +125,8 @@ func trackWorkflowStart(ctx workflow.Context, info workflow.Info, in *intercepto
 		}
 	}()
 
-	// Extract tenant/environment and metadata from workflow input
-	tenantID, environmentID, metadata := extractWorkflowContext(in.Args)
+	// Extract tenant, environment, entity, entity_id, and metadata from workflow input
+	tenantID, environmentID, entity, entityID, metadata := extractWorkflowContext(in.Args)
 
 	logger.Debug("Tracking workflow start",
 		"workflow_type", info.WorkflowType.Name,
@@ -127,6 +134,8 @@ func trackWorkflowStart(ctx workflow.Context, info workflow.Info, in *intercepto
 		"task_queue", info.TaskQueueName,
 		"tenant_id", tenantID,
 		"environment_id", environmentID,
+		"entity", entity,
+		"entity_id", entityID,
 	)
 
 	tracking.ExecuteTrackWorkflowStart(ctx, tracking.TrackWorkflowStartInput{
@@ -134,39 +143,41 @@ func trackWorkflowStart(ctx workflow.Context, info workflow.Info, in *intercepto
 		TaskQueue:     info.TaskQueueName,
 		TenantID:      tenantID,
 		EnvironmentID: environmentID,
-		UserID:        "", // Can be extracted from metadata if needed
+		UserID:        "",
+		Entity:        entity,
+		EntityID:      entityID,
 		Metadata:      metadata,
 	})
 }
 
-// extractWorkflowContext extracts TenantID, EnvironmentID, and metadata from workflow input
-// This function is panic-safe and will return empty values if extraction fails
-func extractWorkflowContext(args []interface{}) (tenantID, environmentID string, metadata map[string]interface{}) {
-	// CRITICAL: Panic recovery to ensure reflection errors never crash workflows
+// extractWorkflowContext extracts TenantID, EnvironmentID, entity, entity_id, and metadata from workflow input.
+// Entity and entity_id are derived from known ID fields (PlanID->plan, InvoiceID->invoice, etc.) for efficient DB filtering.
+// This function is panic-safe and will return empty values if extraction fails.
+func extractWorkflowContext(args []interface{}) (tenantID, environmentID, entity, entityID string, metadata map[string]interface{}) {
 	defer func() {
 		if r := recover(); r != nil {
-			// Return empty values on panic - workflow will continue
 			tenantID = ""
 			environmentID = ""
+			entity = ""
+			entityID = ""
 			metadata = nil
 		}
 	}()
 
 	if len(args) == 0 {
-		return "", "", nil
+		return "", "", "", "", nil
 	}
 
 	metadata = make(map[string]interface{})
 	input := args[0]
 
-	// Use reflection to extract fields
 	val := reflect.ValueOf(input)
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
 	}
 
 	if val.Kind() != reflect.Struct {
-		return "", "", nil
+		return "", "", "", "", nil
 	}
 
 	typ := val.Type()
@@ -174,30 +185,54 @@ func extractWorkflowContext(args []interface{}) (tenantID, environmentID string,
 		field := typ.Field(i)
 		fieldVal := val.Field(i)
 
-		// Skip unexported fields
 		if !fieldVal.CanInterface() {
 			continue
 		}
 
-		// Extract TenantID
 		if field.Name == "TenantID" && fieldVal.Kind() == reflect.String {
 			tenantID = fieldVal.String()
 			continue
 		}
 
-		// Extract EnvironmentID (handles both EnvironmentID and EnvID field names)
 		if (field.Name == "EnvironmentID" || field.Name == "EnvID") && fieldVal.Kind() == reflect.String {
 			environmentID = fieldVal.String()
 			continue
 		}
 
-		// Add other fields to metadata (skip empty values)
+		// Set entity and entity_id from known ID fields (for efficient column-based filtering)
+		if fieldVal.Kind() == reflect.String && !isZeroValue(fieldVal) {
+			idVal := fieldVal.String()
+			switch field.Name {
+			case "PlanID":
+				entity, entityID = "plan", idVal
+				continue
+			case "PriceID":
+				entity, entityID = "price", idVal
+				continue
+			case "InvoiceID":
+				entity, entityID = "invoice", idVal
+				continue
+			case "SubscriptionID":
+				entity, entityID = "subscription", idVal
+				continue
+			case "CustomerID":
+				entity, entityID = "customer", idVal
+				continue
+			case "ScheduledTaskID":
+				entity, entityID = "scheduled_task", idVal
+				continue
+			case "TaskID":
+				entity, entityID = "task", idVal
+				continue
+			}
+		}
+
 		if !isZeroValue(fieldVal) {
 			metadata[toSnakeCase(field.Name)] = fieldVal.Interface()
 		}
 	}
 
-	return tenantID, environmentID, metadata
+	return tenantID, environmentID, entity, entityID, metadata
 }
 
 // isZeroValue checks if a reflect.Value is the zero value for its type

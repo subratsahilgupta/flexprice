@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/workflowexecution"
 	domainWorkflowExecution "github.com/flexprice/flexprice/internal/domain/workflowexecution"
@@ -50,6 +49,12 @@ func (r *workflowExecutionRepository) Create(ctx context.Context, exec *ent.Work
 		SetUpdatedAt(exec.UpdatedAt).
 		SetUpdatedBy(exec.UpdatedBy)
 
+	if exec.Entity != nil {
+		createQuery = createQuery.SetEntity(*exec.Entity)
+	}
+	if exec.EntityID != nil {
+		createQuery = createQuery.SetEntityID(*exec.EntityID)
+	}
 	if exec.Metadata != nil {
 		createQuery = createQuery.SetMetadata(exec.Metadata)
 	}
@@ -120,23 +125,11 @@ func (r *workflowExecutionRepository) List(ctx context.Context, filter *domainWo
 	if filter.WorkflowStatus != "" {
 		query = query.Where(workflowexecution.WorkflowStatus(types.WorkflowExecutionStatus(filter.WorkflowStatus)))
 	}
-
-	// Metadata filters - JSONB queries
 	if filter.Entity != "" {
-		query = query.Where(func(s *sql.Selector) {
-			s.Where(sql.P(func(b *sql.Builder) {
-				b.WriteString("metadata->>'entity' = ")
-				b.Arg(filter.Entity)
-			}))
-		})
+		query = query.Where(workflowexecution.EntityEQ(filter.Entity))
 	}
 	if filter.EntityID != "" {
-		query = query.Where(func(s *sql.Selector) {
-			s.Where(sql.P(func(b *sql.Builder) {
-				b.WriteString("metadata->>'entity_id' = ")
-				b.Arg(filter.EntityID)
-			}))
-		})
+		query = query.Where(workflowexecution.EntityIDEQ(filter.EntityID))
 	}
 
 	// Get total count

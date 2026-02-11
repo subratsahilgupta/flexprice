@@ -44,6 +44,10 @@ const (
 	FieldDurationMs = "duration_ms"
 	// FieldWorkflowStatus holds the string denoting the workflow_status field in the database.
 	FieldWorkflowStatus = "workflow_status"
+	// FieldEntity holds the string denoting the entity field in the database.
+	FieldEntity = "entity"
+	// FieldEntityID holds the string denoting the entity_id field in the database.
+	FieldEntityID = "entity_id"
 	// FieldMetadata holds the string denoting the metadata field in the database.
 	FieldMetadata = "metadata"
 	// Table holds the table name of the workflowexecution in the database.
@@ -68,6 +72,8 @@ var Columns = []string{
 	FieldEndTime,
 	FieldDurationMs,
 	FieldWorkflowStatus,
+	FieldEntity,
+	FieldEntityID,
 	FieldMetadata,
 }
 
@@ -189,4 +195,14 @@ func ByDurationMs(opts ...sql.OrderTermOption) OrderOption {
 // ByWorkflowStatus orders the results by the workflow_status field.
 func ByWorkflowStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldWorkflowStatus, opts...).ToFunc()
+}
+
+// ByEntity orders the results by the entity field.
+func ByEntity(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEntity, opts...).ToFunc()
+}
+
+// ByEntityID orders the results by the entity_id field.
+func ByEntityID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEntityID, opts...).ToFunc()
 }
