@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -38,10 +39,12 @@ func NewWorkflowHandler(
 }
 
 func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
-	var req dto.ListWorkflowsRequest
-	if err := c.ShouldBindQuery(&req); err != nil {
+	// NOTE: This endpoint is used as POST /workflows/search (body-based filters),
+	// consistent with other /search APIs in this codebase.
+	var req dto.SearchWorkflowsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(ierr.WithError(err).
-			WithHint("Invalid query parameters").
+			WithHint("Invalid filter parameters").
 			Mark(ierr.ErrValidation))
 		return
 	}
@@ -57,22 +60,42 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 		return
 	}
 
-	// Set default page size
-	if req.PageSize <= 0 {
-		req.PageSize = 50
+	// Pagination (match /search semantics: limit/offset are primary; page/page_size are aliases)
+	limit := req.Limit
+	offset := req.Offset
+
+	if limit <= 0 {
+		limit = req.PageSize // alias
 	}
-	if req.Page <= 0 {
-		req.Page = 1
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	// If client provided page/page_size but not offset, derive offset.
+	if req.Offset == 0 && req.Limit <= 0 && req.PageSize > 0 {
+		page := req.Page
+		if page <= 0 {
+			page = 1
+		}
+		offset = (page - 1) * limit
 	}
 
 	// Query database for workflow executions
 	filters := &service.ListWorkflowExecutionsFilters{
-		TenantID:      tenantID,
-		EnvironmentID: environmentID,
-		WorkflowType:  req.WorkflowType,
-		TaskQueue:     req.TaskQueue,
-		PageSize:      req.PageSize,
-		Page:          req.Page,
+		TenantID:       tenantID,
+		EnvironmentID:  environmentID,
+		WorkflowID:     req.WorkflowID,
+		WorkflowType:   req.WorkflowType,
+		TaskQueue:      req.TaskQueue,
+		WorkflowStatus: req.WorkflowStatus,
+		Entity:         req.Entity,
+		EntityID:       req.EntityID,
+		Sort:           req.Sort,
+		Order:          req.Order,
+		Limit:          limit,
+		Offset:         offset,
 	}
 
 	executions, total, err := h.workflowExecService.ListWorkflowExecutions(c.Request.Context(), filters)
@@ -89,22 +112,26 @@ func (h *WorkflowHandler) ListWorkflows(c *gin.Context) {
 			RunID:        exec.RunID,
 			WorkflowType: exec.WorkflowType,
 			TaskQueue:    exec.TaskQueue,
+			Status:       string(exec.WorkflowStatus),
+			Entity:       lo.FromPtr(exec.Entity),
+			EntityID:     lo.FromPtr(exec.EntityID),
 			StartTime:    exec.StartTime,
+			CloseTime:    exec.EndTime,
+			DurationMs:   exec.DurationMs,
 			CreatedBy:    exec.CreatedBy,
 		}
 	}
 
-	totalPages := service.CalculateTotalPages(total, req.PageSize)
-
-	response := &dto.ListWorkflowsResponse{
-		Workflows:  workflowDTOs,
-		Total:      total,
-		Page:       req.Page,
-		PageSize:   req.PageSize,
-		TotalPages: totalPages,
-	}
-
-	c.JSON(http.StatusOK, response)
+	// Match other /search APIs response shape: { items: [...], pagination: { total, limit, offset } }
+	// Note: Pagination.Offset is the "next offset" (offset + limit), consistent with types.NewPaginationResponse.
+	c.JSON(http.StatusOK, &types.ListResponse[*dto.WorkflowExecutionDTO]{
+		Items: workflowDTOs,
+		Pagination: types.NewPaginationResponse(
+			int(total),
+			limit,
+			offset,
+		),
+	})
 }
 
 func (h *WorkflowHandler) GetWorkflowSummary(c *gin.Context) {
