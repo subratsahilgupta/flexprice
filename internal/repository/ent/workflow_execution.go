@@ -284,8 +284,7 @@ func (r *workflowExecutionRepository) UpdateStatus(
 	// Build update query
 	updateQuery := client.WorkflowExecution.
 		UpdateOne(exec).
-		SetWorkflowStatus(status).
-		SetUpdatedAt(exec.UpdatedAt) // Will be auto-updated by the hook
+		SetWorkflowStatus(status)
 
 	// Set end time if provided
 	if endTime != nil {
