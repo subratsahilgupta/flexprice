@@ -1,6 +1,13 @@
 package dto
 
-import "time"
+import (
+	"time"
+
+	"github.com/flexprice/flexprice/internal/types"
+)
+
+// ListWorkflowsResponse represents a paginated list of workflow executions
+type ListWorkflowsResponse = types.ListResponse[*WorkflowExecutionDTO]
 
 // WorkflowExecutionDTO represents a workflow execution summary
 type WorkflowExecutionDTO struct {
