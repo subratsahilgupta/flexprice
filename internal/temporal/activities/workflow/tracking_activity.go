@@ -111,6 +111,10 @@ func (a *WorkflowTrackingActivities) TrackWorkflowEnd(ctx context.Context, input
 		"has_end_time", input.EndTime != nil,
 		"has_duration", input.DurationMs != nil)
 
+	// Set context for repository lookup (getEnt applies tenant/env filter; without these the row is not found)
+	ctx = types.SetTenantID(ctx, input.TenantID)
+	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+
 	// Update workflow execution status in database
 	err := a.workflowExecRepo.UpdateStatus(
 		ctx,

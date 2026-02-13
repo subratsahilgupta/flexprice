@@ -97,12 +97,15 @@ func (w *workflowTrackingInboundInterceptor) ExecuteWorkflow(
 	}
 
 	// Execute local activity to update workflow status in database with timing
-	// This is non-blocking and won't fail the workflow if tracking fails
+	// TenantID and EnvironmentID are required so the activity can set context for repository lookup
+	tenantID, environmentID, _, _, _, _ := extractWorkflowContext(in.Args)
 	tracking.ExecuteTrackWorkflowEnd(ctx, tracking.TrackWorkflowEndInput{
 		WorkflowStatus: status,
 		Error:          errorMsg,
 		EndTime:        endTime,
 		DurationMs:     durationMs,
+		TenantID:       tenantID,
+		EnvironmentID: environmentID,
 	})
 
 	return result, err

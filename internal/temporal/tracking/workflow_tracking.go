@@ -28,10 +28,12 @@ type TrackWorkflowStartInput struct {
 
 // TrackWorkflowEndInput contains the parameters for tracking a workflow end
 type TrackWorkflowEndInput struct {
-	WorkflowStatus types.WorkflowExecutionStatus
-	Error          string
-	EndTime        time.Time
-	DurationMs     int64
+	WorkflowStatus  types.WorkflowExecutionStatus
+	Error           string
+	EndTime         time.Time
+	DurationMs      int64
+	TenantID        string // required for repository lookup (tenant-scoped)
+	EnvironmentID   string // required for repository lookup (environment-scoped)
 }
 
 // TrackWorkflowEndActivityInput is the input for the end tracking activity
@@ -42,6 +44,8 @@ type TrackWorkflowEndActivityInput struct {
 	ErrorMessage   string
 	EndTime        *time.Time
 	DurationMs     *int64
+	TenantID       string // required so UpdateStatus can find the row (getEnt applies tenant/env filter)
+	EnvironmentID  string
 }
 
 // TrackWorkflowStartActivityInput is the input for the tracking activity
@@ -131,6 +135,8 @@ func ExecuteTrackWorkflowEnd(ctx workflow.Context, input TrackWorkflowEndInput) 
 		ErrorMessage:   input.Error,
 		EndTime:        &input.EndTime,
 		DurationMs:     &input.DurationMs,
+		TenantID:       input.TenantID,
+		EnvironmentID:  input.EnvironmentID,
 	}
 
 	// Execute as local activity (fast, doesn't need to be in history)
