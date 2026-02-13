@@ -239,5 +239,5 @@ func NewCostSheetUsageRepository(p RepositoryParams) events.CostSheetUsageReposi
 }
 
 func NewWorkflowExecutionRepository(p RepositoryParams) workflowexecution.Repository {
-	return entRepo.NewWorkflowExecutionRepository(p.EntClient, p.Logger)
+	return entRepo.NewWorkflowExecutionRepository(p.EntClient, p.Logger, p.Cache)
 }

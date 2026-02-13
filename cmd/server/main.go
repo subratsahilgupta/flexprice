@@ -247,6 +247,7 @@ func main() {
 			service.NewCustomerPortalService,
 			service.NewDashboardService,
 			service.NewWorkflowExecutionService,
+			service.NewWorkflowService,
 
 			// Enterprise (ee) services
 			ee.NewEnterpriseParams,
@@ -335,8 +336,7 @@ func provideHandlers(
 	costsheetUsageTrackingService service.CostSheetUsageTrackingService,
 	customerPortalService service.CustomerPortalService,
 	dashboardService service.DashboardService,
-	workflowQuerier *queries.WorkflowQuerier,
-	workflowExecutionService *service.WorkflowExecutionService,
+	workflowService service.WorkflowService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:                   v1.NewEventsHandler(eventService, eventPostProcessingService, featureUsageTrackingService, rawEventsReprocessingService, cfg, logger),
@@ -386,7 +386,7 @@ func provideHandlers(
 		CronKafkaLagMonitoring:   cron.NewKafkaLagMonitoringHandler(logger, eventService),
 		CustomerPortal:           v1.NewCustomerPortalHandler(customerPortalService, logger),
 		Dashboard:                v1.NewDashboardHandler(dashboardService, logger),
-		Workflow:                 v1.NewWorkflowHandler(workflowExecutionService, temporalService, workflowQuerier, logger),
+		Workflow:                 v1.NewWorkflowHandler(workflowService, logger),
 	}
 }
 
