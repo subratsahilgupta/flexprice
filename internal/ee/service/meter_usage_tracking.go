@@ -13,9 +13,13 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"github.com/flexprice/flexprice/internal/cache"
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
+	domainAlert "github.com/flexprice/flexprice/internal/domain/alert"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/expression"
 	"github.com/flexprice/flexprice/internal/pubsub"
 	"github.com/flexprice/flexprice/internal/pubsub/kafka"
@@ -379,7 +383,283 @@ func (s *meterUsageTrackingService) processEvent(ctx context.Context, event *eve
 
 	s.runMeterUsagePostInsertSideEffects(ctx, event)
 
+	// Step 4: Evaluate subscription/line-item/group spend alerts for the meters this event
+	// touched. Swallows its own errors — it must never fail processEvent, since the meter_usage
+	// write above already succeeded and a retry would just redo that insert.
+	meterIDs := lo.Uniq(lo.Map(records, func(r *events.MeterUsage, _ int) string { return r.MeterID }))
+	s.checkSpendBreachForEvent(ctx, event, meterIDs)
+
 	return nil
+}
+
+// checkSpendBreachForEvent checks every subscription this event's usage touches against its
+// configured spend thresholds — subscription total, a single line item, and/or a feature group —
+// and records any state change through alertLogsSvc.LogAlert, which handles the actual webhook dispatch.
+func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context, event *events.Event, meterIDs []string) {
+	customerID := event.CustomerID
+	if customerID == "" {
+		if event.ExternalCustomerID == "" {
+			return
+		}
+		cust, err := s.CustomerRepo.GetByLookupKey(ctx, event.ExternalCustomerID)
+		if err != nil {
+			s.Logger.Debug(ctx, "customer not found for spend alert evaluation, skipping",
+				"event_id", event.ID, "external_customer_id", event.ExternalCustomerID, "error", err)
+			return
+		}
+		customerID = cust.ID
+	}
+
+	// One meter is often shared across every customer on a plan that uses it; filtering by
+	// (customer, meters) narrows this down to exactly the line items this event's usage affects.
+	affectedLineItems, err := s.SubscriptionLineItemRepo.List(ctx, &types.SubscriptionLineItemFilter{
+		QueryFilter:  types.NewNoLimitQueryFilter(),
+		CustomerIDs:  []string{customerID},
+		MeterIDs:     meterIDs,
+		ActiveFilter: true,
+	})
+	if err != nil {
+		s.Logger.Error(ctx, "failed to list affected line items for spend alert evaluation", "error", err, "event_id", event.ID)
+		return
+	}
+	if len(affectedLineItems) == 0 {
+		return
+	}
+	subscriptionIDs := lo.Uniq(lo.Map(affectedLineItems, func(li *subscription.SubscriptionLineItem, _ int) string {
+		return li.SubscriptionID
+	}))
+
+	// Batched across all affected subscriptions: 3 queries total, not 3 per subscription.
+	allSubCfgs, err := s.AlertRepo.List(ctx, &types.AlertSettingsFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		EntityType:  types.AlertEntityTypeSubscription,
+		EntityIDs:   subscriptionIDs,
+		Enabled:     lo.ToPtr(true),
+	})
+	if err != nil {
+		s.Logger.Error(ctx, "failed to list subscription alert settings", "error", err, "event_id", event.ID)
+		return
+	}
+	allLineItemCfgs, err := s.AlertRepo.List(ctx, &types.AlertSettingsFilter{
+		QueryFilter:      types.NewNoLimitQueryFilter(),
+		EntityType:       types.AlertEntityTypeSubscriptionLineItem,
+		ParentEntityType: types.AlertEntityTypeSubscription,
+		ParentEntityIDs:  subscriptionIDs,
+		Enabled:          lo.ToPtr(true),
+	})
+	if err != nil {
+		s.Logger.Error(ctx, "failed to list line item alert settings", "error", err, "event_id", event.ID)
+		return
+	}
+	allGroupCfgs, err := s.AlertRepo.List(ctx, &types.AlertSettingsFilter{
+		QueryFilter:      types.NewNoLimitQueryFilter(),
+		EntityType:       types.AlertEntityTypeGroup,
+		ParentEntityType: types.AlertEntityTypeSubscription,
+		ParentEntityIDs:  subscriptionIDs,
+		Enabled:          lo.ToPtr(true),
+	})
+	if err != nil {
+		s.Logger.Error(ctx, "failed to list group alert settings", "error", err, "event_id", event.ID)
+		return
+	}
+
+	if len(allSubCfgs) == 0 && len(allLineItemCfgs) == 0 && len(allGroupCfgs) == 0 {
+		return
+	}
+
+	// Meter -> feature resolution is only needed for group spend, and only paid for when a
+	// group alert actually exists among the affected subscriptions.
+	featuresByMeterID := make(map[string]*feature.Feature)
+	if len(allGroupCfgs) > 0 {
+		features, err := s.FeatureRepo.List(ctx, &types.FeatureFilter{
+			QueryFilter: types.NewNoLimitQueryFilter(),
+			MeterIDs:    meterIDs,
+		})
+		if err != nil {
+			s.Logger.Error(ctx, "failed to list features for group spend evaluation", "error", err, "event_id", event.ID)
+		} else {
+			for _, f := range features {
+				featuresByMeterID[f.MeterID] = f
+			}
+		}
+	}
+
+	alertLogsSvc := NewAlertLogsService(s.ServiceParams)
+	subscriptionSvc := NewSubscriptionService(s.ServiceParams)
+	// CalculateMeterUsageCharges isn't on the BillingService interface, only on the concrete
+	// type, so construct it directly rather than through NewBillingService.
+	billingSvc := &billingService{ServiceParams: s.ServiceParams}
+	now := time.Now().UTC()
+
+	for _, subscriptionID := range subscriptionIDs {
+		// affectedLineItems spans every subscription this event touched; narrow it down to just
+		// this one so group totals below only sum charges that actually belong here.
+		lineItemsForSub := lo.Filter(affectedLineItems, func(li *subscription.SubscriptionLineItem, _ int) bool {
+			return li.SubscriptionID == subscriptionID
+		})
+
+		var subscriptionCfg *domainAlert.AlertSettings
+		for _, c := range allSubCfgs {
+			if c.EntityID == subscriptionID {
+				subscriptionCfg = c
+				break
+			}
+		}
+		lineItemCfgs := lo.Filter(allLineItemCfgs, func(c *domainAlert.AlertSettings, _ int) bool {
+			return c.ParentEntityID != nil && *c.ParentEntityID == subscriptionID
+		})
+		groupCfgsForSub := lo.Filter(allGroupCfgs, func(c *domainAlert.AlertSettings, _ int) bool {
+			return c.ParentEntityID != nil && *c.ParentEntityID == subscriptionID
+		})
+
+		if subscriptionCfg == nil && len(lineItemCfgs) == 0 && len(groupCfgsForSub) == 0 {
+			continue
+		}
+
+		sub, err := s.SubRepo.Get(ctx, subscriptionID)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to get subscription for spend alert evaluation", "error", err, "subscription_id", subscriptionID)
+			continue
+		}
+
+		usage, err := subscriptionSvc.GetMeterUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
+			SubscriptionID: subscriptionID,
+			StartTime:      sub.CurrentPeriodStart,
+			EndTime:        now,
+			Source:         string(types.UsageSourceInvoiceCreation),
+		})
+		if err != nil {
+			s.Logger.Error(ctx, "failed to get meter usage for spend alert evaluation", "error", err, "subscription_id", subscriptionID)
+			continue
+		}
+
+		usageCharges, totalUsageCost, err := billingSvc.CalculateMeterUsageCharges(
+			ctx, sub, usage, sub.CurrentPeriodStart, now, types.UsageSourceInvoiceCreation,
+		)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to calculate meter usage charges for spend alert evaluation", "error", err, "subscription_id", subscriptionID)
+			continue
+		}
+
+		// Subscription-level threshold: total usage cost across the whole subscription.
+		if subscriptionCfg != nil {
+			state, err := subscriptionCfg.Config.AlertState(totalUsageCost)
+			if err != nil {
+				s.Logger.Error(ctx, "failed to determine subscription spend alert state", "error", err, "subscription_id", subscriptionID)
+			} else if err := alertLogsSvc.LogAlert(ctx, &LogAlertRequest{
+				AlertSettingID: &subscriptionCfg.ID,
+				PeriodStart:    &sub.CurrentPeriodStart,
+				EntityType:     types.AlertEntityTypeSubscription,
+				EntityID:       subscriptionID,
+				CustomerID:     &customerID,
+				AlertType:      types.AlertTypeSubscriptionSpend,
+				AlertStatus:    state,
+				AlertInfo: types.AlertInfo{
+					AlertSettings: subscriptionCfg.Config,
+					ValueAtTime:   totalUsageCost,
+					Timestamp:     now,
+				},
+			}); err != nil {
+				s.Logger.Error(ctx, "failed to log subscription spend alert", "error", err, "subscription_id", subscriptionID)
+			}
+		}
+
+		// Line-item-level thresholds. usageCharges holds a charge for every usage-priced line
+		// item on the subscription for this period, not just ones this specific event touched;
+		// chargeAmountForLineItem simply skips a configured line item that has no charge yet.
+		for _, cfg := range lineItemCfgs {
+			amount, found := chargeAmountForLineItem(usageCharges, cfg.EntityID)
+			if !found {
+				continue
+			}
+			state, err := cfg.Config.AlertState(amount)
+			if err != nil {
+				s.Logger.Error(ctx, "failed to determine line item spend alert state", "error", err, "subscription_line_item_id", cfg.EntityID)
+				continue
+			}
+			parentEntityType := string(types.AlertEntityTypeSubscription)
+			if err := alertLogsSvc.LogAlert(ctx, &LogAlertRequest{
+				AlertSettingID:   &cfg.ID,
+				PeriodStart:      &sub.CurrentPeriodStart,
+				EntityType:       types.AlertEntityTypeSubscriptionLineItem,
+				EntityID:         cfg.EntityID,
+				ParentEntityType: &parentEntityType,
+				ParentEntityID:   &subscriptionID,
+				CustomerID:       &customerID,
+				AlertType:        types.AlertTypeSubscriptionLineItemSpend,
+				AlertStatus:      state,
+				AlertInfo: types.AlertInfo{
+					AlertSettings: cfg.Config,
+					ValueAtTime:   amount,
+					Timestamp:     now,
+				},
+			}); err != nil {
+				s.Logger.Error(ctx, "failed to log line item spend alert", "error", err, "subscription_line_item_id", cfg.EntityID)
+			}
+		}
+
+		// Group-level thresholds, restricted to groups actually touched by this event — an
+		// untouched group's total can't have changed, so there's nothing new to check.
+		if len(groupCfgsForSub) == 0 {
+			continue
+		}
+		touchedGroupIDs := make(map[string]bool)
+		for _, li := range lineItemsForSub {
+			if f, ok := featuresByMeterID[li.MeterID]; ok && f.GroupID != "" {
+				touchedGroupIDs[f.GroupID] = true
+			}
+		}
+		for _, cfg := range groupCfgsForSub {
+			if !touchedGroupIDs[cfg.EntityID] {
+				continue
+			}
+			groupTotal := decimal.Zero
+			for _, li := range lineItemsForSub {
+				f, ok := featuresByMeterID[li.MeterID]
+				if !ok || f.GroupID != cfg.EntityID {
+					continue
+				}
+				if amount, found := chargeAmountForLineItem(usageCharges, li.ID); found {
+					groupTotal = groupTotal.Add(amount)
+				}
+			}
+			state, err := cfg.Config.AlertState(groupTotal)
+			if err != nil {
+				s.Logger.Error(ctx, "failed to determine group spend alert state", "error", err, "group_id", cfg.EntityID)
+				continue
+			}
+			parentEntityType := string(types.AlertEntityTypeSubscription)
+			if err := alertLogsSvc.LogAlert(ctx, &LogAlertRequest{
+				AlertSettingID:   &cfg.ID,
+				PeriodStart:      &sub.CurrentPeriodStart,
+				EntityType:       types.AlertEntityTypeGroup,
+				EntityID:         cfg.EntityID,
+				ParentEntityType: &parentEntityType,
+				ParentEntityID:   &subscriptionID,
+				CustomerID:       &customerID,
+				AlertType:        types.AlertTypeSubscriptionGroupSpend,
+				AlertStatus:      state,
+				AlertInfo: types.AlertInfo{
+					AlertSettings: cfg.Config,
+					ValueAtTime:   groupTotal,
+					Timestamp:     now,
+				},
+			}); err != nil {
+				s.Logger.Error(ctx, "failed to log group spend alert", "error", err, "group_id", cfg.EntityID)
+			}
+		}
+	}
+}
+
+// chargeAmountForLineItem picks this line item's own charge out of CalculateMeterUsageCharges'
+// output, which returns all of a subscription's computed charges as one flat, unindexed slice.
+func chargeAmountForLineItem(charges []dto.CreateInvoiceLineItemRequest, subscriptionLineItemID string) (decimal.Decimal, bool) {
+	for _, c := range charges {
+		if c.SubscriptionLineItemID != nil && *c.SubscriptionLineItemID == subscriptionLineItemID {
+			return c.Amount, true
+		}
+	}
+	return decimal.Zero, false
 }
 
 // checkMeterFilters validates that all meter filters match the event properties
