@@ -463,6 +463,14 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 		return
 	}
 
+	s.Logger.Debug(ctx, "batched alert settings fetched",
+		"event_id", event.ID,
+		"subscription_ids", subscriptionIDs,
+		"sub_cfg_count", len(allSubCfgs),
+		"line_item_cfg_count", len(allLineItemCfgs),
+		"group_cfg_count", len(allGroupCfgs),
+	)
+
 	if len(allSubCfgs) == 0 && len(allLineItemCfgs) == 0 && len(allGroupCfgs) == 0 {
 		return
 	}
@@ -512,11 +520,19 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 			return c.ParentEntityID != nil && *c.ParentEntityID == subscriptionID
 		})
 
+		s.Logger.Debug(ctx, "per-subscription alert config filter result",
+			"subscription_id", subscriptionID,
+			"has_subscription_cfg", subscriptionCfg != nil,
+			"line_item_cfg_count", len(lineItemCfgs),
+			"group_cfg_count", len(groupCfgsForSub),
+		)
+
 		if subscriptionCfg == nil && len(lineItemCfgs) == 0 && len(groupCfgsForSub) == 0 {
 			continue
 		}
 
-		sub, err := s.SubRepo.Get(ctx, subscriptionID)
+		// CalculateMeterUsageCharges iterates sub.LineItems to build charges
+		sub, _, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 		if err != nil {
 			s.Logger.Error(ctx, "failed to get subscription for spend alert evaluation", "error", err, "subscription_id", subscriptionID)
 			continue
@@ -609,6 +625,11 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 				touchedGroupIDs[f.GroupID] = true
 			}
 		}
+		s.Logger.Debug(ctx, "touched groups resolved for this subscription",
+			"subscription_id", subscriptionID,
+			"touched_group_ids", touchedGroupIDs,
+			"configured_group_ids", lo.Map(groupCfgsForSub, func(c *domainAlert.AlertSettings, _ int) string { return c.EntityID }),
+		)
 		for _, cfg := range groupCfgsForSub {
 			if !touchedGroupIDs[cfg.EntityID] {
 				continue
