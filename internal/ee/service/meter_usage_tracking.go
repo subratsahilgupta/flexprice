@@ -396,9 +396,13 @@ func (s *meterUsageTrackingService) processEvent(ctx context.Context, event *eve
 // configured spend thresholds — subscription total, a single line item, and/or a feature group —
 // and records any state change through alertLogsSvc.LogAlert, which handles the actual webhook dispatch.
 func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context, event *events.Event, meterIDs []string) {
+	// Resolves the customer associated with this event. Most events already carry a resolved
+	// CustomerID; events ingested by external_customer_id require an additional lookup before
+	// subscriptions can be resolved.
 	customerID := event.CustomerID
 	if customerID == "" {
 		if event.ExternalCustomerID == "" {
+			// No customer reference on the event, so there is no subscription to evaluate.
 			return
 		}
 		cust, err := s.CustomerRepo.GetByLookupKey(ctx, event.ExternalCustomerID)
@@ -410,26 +414,37 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 		customerID = cust.ID
 	}
 
-	// One meter is often shared across every customer on a plan that uses it; filtering by
-	// (customer, meters) narrows this down to exactly the line items this event's usage affects.
+	// Resolves the subscription line items affected by this event's usage. A meter is typically
+	// shared across every customer on a plan that references it, so filtering by (customer,
+	// meters) rather than by meter alone scopes the result to this customer's active line items.
+	// ActiveFilter alone is a no-op: applyActiveLineItemFilter only applies its Status(published)
+	// and EndDate checks when CurrentPeriodStart is set, so it must be passed explicitly here —
+	// as the event's own timestamp, matching FeatureUsageTrackingService's equivalent lookup —
+	// or a cancelled subscription's already-ended line items would still be treated as affected.
 	affectedLineItems, err := s.SubscriptionLineItemRepo.List(ctx, &types.SubscriptionLineItemFilter{
-		QueryFilter:  types.NewNoLimitQueryFilter(),
-		CustomerIDs:  []string{customerID},
-		MeterIDs:     meterIDs,
-		ActiveFilter: true,
+		QueryFilter:        types.NewNoLimitQueryFilter(),
+		CustomerIDs:        []string{customerID},
+		MeterIDs:           meterIDs,
+		ActiveFilter:       true,
+		CurrentPeriodStart: &event.Timestamp,
 	})
 	if err != nil {
 		s.Logger.Error(ctx, "failed to list affected line items for spend alert evaluation", "error", err, "event_id", event.ID)
 		return
 	}
 	if len(affectedLineItems) == 0 {
+		// No active line item on any of this event's meters for this customer.
 		return
 	}
+	// A customer may have multiple subscriptions, and a single event can affect line items across
+	// more than one of them. Each affected subscription is evaluated independently below.
 	subscriptionIDs := lo.Uniq(lo.Map(affectedLineItems, func(li *subscription.SubscriptionLineItem, _ int) string {
 		return li.SubscriptionID
 	}))
 
-	// Batched across all affected subscriptions: 3 queries total, not 3 per subscription.
+	// Fetches every enabled alert configuration across all three scopes (subscription, line item,
+	// group) for all affected subscriptions in three queries total, rather than three queries per
+	// subscription. Results are filtered down per subscription inside the loop below.
 	allSubCfgs, err := s.AlertRepo.List(ctx, &types.AlertSettingsFilter{
 		QueryFilter: types.NewNoLimitQueryFilter(),
 		EntityType:  types.AlertEntityTypeSubscription,
@@ -472,24 +487,9 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 	)
 
 	if len(allSubCfgs) == 0 && len(allLineItemCfgs) == 0 && len(allGroupCfgs) == 0 {
+		// No alert is configured for any affected subscription. Returns before any billing or
+		// ClickHouse work is performed.
 		return
-	}
-
-	// Meter -> feature resolution is only needed for group spend, and only paid for when a
-	// group alert actually exists among the affected subscriptions.
-	featuresByMeterID := make(map[string]*feature.Feature)
-	if len(allGroupCfgs) > 0 {
-		features, err := s.FeatureRepo.List(ctx, &types.FeatureFilter{
-			QueryFilter: types.NewNoLimitQueryFilter(),
-			MeterIDs:    meterIDs,
-		})
-		if err != nil {
-			s.Logger.Error(ctx, "failed to list features for group spend evaluation", "error", err, "event_id", event.ID)
-		} else {
-			for _, f := range features {
-				featuresByMeterID[f.MeterID] = f
-			}
-		}
 	}
 
 	alertLogsSvc := NewAlertLogsService(s.ServiceParams)
@@ -499,13 +499,13 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 	billingSvc := &billingService{ServiceParams: s.ServiceParams}
 	now := time.Now().UTC()
 
+	// Evaluates each affected subscription independently. An error on one subscription must not
+	// abort evaluation of the others, so every failure path below logs and continues rather than
+	// returning.
 	for _, subscriptionID := range subscriptionIDs {
-		// affectedLineItems spans every subscription this event touched; narrow it down to just
-		// this one so group totals below only sum charges that actually belong here.
-		lineItemsForSub := lo.Filter(affectedLineItems, func(li *subscription.SubscriptionLineItem, _ int) bool {
-			return li.SubscriptionID == subscriptionID
-		})
-
+		// Filters the batched configuration lookups down to this subscription. At most one
+		// subscription-level configuration can exist per subscription; line-item and group
+		// configurations may be multiple.
 		var subscriptionCfg *domainAlert.AlertSettings
 		for _, c := range allSubCfgs {
 			if c.EntityID == subscriptionID {
@@ -528,16 +528,22 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 		)
 
 		if subscriptionCfg == nil && len(lineItemCfgs) == 0 && len(groupCfgsForSub) == 0 {
+			// No alert is configured for this subscription.
 			continue
 		}
 
-		// CalculateMeterUsageCharges iterates sub.LineItems to build charges
+		// Fetches the subscription with its line items populated. CalculateMeterUsageCharges
+		// below iterates sub.LineItems directly; a plain Get would leave LineItems nil and
+		// compute a zero total regardless of actual usage.
 		sub, _, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
 		if err != nil {
 			s.Logger.Error(ctx, "failed to get subscription for spend alert evaluation", "error", err, "subscription_id", subscriptionID)
 			continue
 		}
 
+		// Reads accumulated usage for the current billing period, from CurrentPeriodStart through
+		// now. The threshold comparison is against the cumulative period total, not a single
+		// event's increment.
 		usage, err := subscriptionSvc.GetMeterUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
 			SubscriptionID: subscriptionID,
 			StartTime:      sub.CurrentPeriodStart,
@@ -549,6 +555,10 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 			continue
 		}
 
+		// Uses the same invoicing-grade computation as real invoice generation — commitment- and
+		// overage-aware — so the value compared against thresholds matches what the customer is
+		// actually billed. Returns both the per-line-item breakdown (usageCharges, used by Parts B
+		// and C) and the subscription total (totalUsageCost, used by Part A) from one billing call.
 		usageCharges, totalUsageCost, err := billingSvc.CalculateMeterUsageCharges(
 			ctx, sub, usage, sub.CurrentPeriodStart, now, types.UsageSourceInvoiceCreation,
 		)
@@ -557,7 +567,9 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 			continue
 		}
 
-		// Subscription-level threshold: total usage cost across the whole subscription.
+		// --- Part A: subscription-level threshold ---
+		// Total usage cost across every metered line item on the whole subscription, compared
+		// against this one subscription-level configuration (at most one can exist).
 		if subscriptionCfg != nil {
 			state, err := subscriptionCfg.Config.AlertState(totalUsageCost)
 			if err != nil {
@@ -580,11 +592,25 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 			}
 		}
 
-		// Line-item-level thresholds. usageCharges holds a charge for every usage-priced line
-		// item on the subscription for this period, not just ones this specific event touched;
-		// chargeAmountForLineItem simply skips a configured line item that has no charge yet.
+		// Indexes usageCharges by line item ID once per subscription; Parts B and C below both
+		// look up individual line items' charges, potentially several times each, and this avoids
+		// re-scanning the flat charge slice for every lookup. A charge with a nil
+		// SubscriptionLineItemID (e.g. a plan-level true-up/overage charge not tied to one line
+		// item) is not indexed and is simply never matched below.
+		chargesBySubLiItem := make(map[string]decimal.Decimal, len(usageCharges))
+		for _, c := range usageCharges {
+			if c.SubscriptionLineItemID != nil {
+				chargesBySubLiItem[*c.SubscriptionLineItemID] = c.Amount
+			}
+		}
+
+		// --- Part B: subscription line item-level thresholds ---
+		// usageCharges contains a charge for every usage-priced line item on the subscription for
+		// this period, not only the line item(s) this event touched, so each configured line item
+		// is checked against its current period total regardless of which line item this event
+		// affected. A configured line item with no charge yet is simply absent from the map.
 		for _, cfg := range lineItemCfgs {
-			amount, found := chargeAmountForLineItem(usageCharges, cfg.EntityID)
+			amount, found := chargesBySubLiItem[cfg.EntityID]
 			if !found {
 				continue
 			}
@@ -614,36 +640,58 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 			}
 		}
 
-		// Group-level thresholds, restricted to groups actually touched by this event — an
-		// untouched group's total can't have changed, so there's nothing new to check.
+		// --- Part C: group-level thresholds ---
+		// A group's spend is the sum of every line item on the subscription whose feature belongs
+		// to that group. Every configured group is evaluated unconditionally on every event, the
+		// same as Parts A and B above — LogAlert already dedups against the last recorded state,
+		// so a group whose total hasn't changed simply produces no new log entry or webhook.
 		if len(groupCfgsForSub) == 0 {
+			// No group alert is configured on this subscription.
 			continue
 		}
-		touchedGroupIDs := make(map[string]bool)
-		for _, li := range lineItemsForSub {
-			if f, ok := featuresByMeterID[li.MeterID]; ok && f.GroupID != "" {
-				touchedGroupIDs[f.GroupID] = true
-			}
+
+		// Resolves features for every meter this subscription bills on (sub.LineItems, populated
+		// by GetWithLineItems above). A group's total must include every line item in the group,
+		// not only the line item(s) on the meter this specific event touched, since a group can
+		// span multiple meters.
+		subMeterIDs := lo.Uniq(lo.Map(sub.LineItems, func(li *subscription.SubscriptionLineItem, _ int) string {
+			return li.MeterID
+		}))
+		subFeatures, err := s.FeatureRepo.List(ctx, &types.FeatureFilter{
+			QueryFilter: types.NewNoLimitQueryFilter(),
+			MeterIDs:    subMeterIDs,
+		})
+		if err != nil {
+			s.Logger.Error(ctx, "failed to list features for group spend summation", "error", err, "subscription_id", subscriptionID)
+			continue
 		}
-		s.Logger.Debug(ctx, "touched groups resolved for this subscription",
-			"subscription_id", subscriptionID,
-			"touched_group_ids", touchedGroupIDs,
-			"configured_group_ids", lo.Map(groupCfgsForSub, func(c *domainAlert.AlertSettings, _ int) string { return c.EntityID }),
-		)
-		for _, cfg := range groupCfgsForSub {
-			if !touchedGroupIDs[cfg.EntityID] {
+		featuresByMeterID := make(map[string]*feature.Feature, len(subFeatures))
+		for _, f := range subFeatures {
+			featuresByMeterID[f.MeterID] = f
+		}
+
+		// Sums each line item's charge into its feature's group in a single pass over
+		// sub.LineItems, rather than rescanning all of them once per configured group below. A
+		// line item whose meter has no matching feature, or whose feature has no group, does not
+		// contribute to any group's total. A group with no contributing line items is simply
+		// absent from groupTotals below; decimal.Decimal's zero value already reads as zero, so a
+		// missing key needs no explicit default.
+		groupTotals := make(map[string]decimal.Decimal, len(groupCfgsForSub))
+		for _, li := range sub.LineItems {
+			f, ok := featuresByMeterID[li.MeterID]
+			if !ok || f.GroupID == "" {
 				continue
 			}
-			groupTotal := decimal.Zero
-			for _, li := range lineItemsForSub {
-				f, ok := featuresByMeterID[li.MeterID]
-				if !ok || f.GroupID != cfg.EntityID {
-					continue
-				}
-				if amount, found := chargeAmountForLineItem(usageCharges, li.ID); found {
-					groupTotal = groupTotal.Add(amount)
-				}
+			amount, found := chargesBySubLiItem[li.ID]
+			if !found {
+				continue
 			}
+			groupTotals[f.GroupID] = groupTotals[f.GroupID].Add(amount)
+		}
+
+		// Evaluates each configured group against its own threshold.
+		for _, cfg := range groupCfgsForSub {
+			groupTotal := groupTotals[cfg.EntityID]
 			state, err := cfg.Config.AlertState(groupTotal)
 			if err != nil {
 				s.Logger.Error(ctx, "failed to determine group spend alert state", "error", err, "group_id", cfg.EntityID)
@@ -670,17 +718,6 @@ func (s *meterUsageTrackingService) checkSpendBreachForEvent(ctx context.Context
 			}
 		}
 	}
-}
-
-// chargeAmountForLineItem picks this line item's own charge out of CalculateMeterUsageCharges'
-// output, which returns all of a subscription's computed charges as one flat, unindexed slice.
-func chargeAmountForLineItem(charges []dto.CreateInvoiceLineItemRequest, subscriptionLineItemID string) (decimal.Decimal, bool) {
-	for _, c := range charges {
-		if c.SubscriptionLineItemID != nil && *c.SubscriptionLineItemID == subscriptionLineItemID {
-			return c.Amount, true
-		}
-	}
-	return decimal.Zero, false
 }
 
 // checkMeterFilters validates that all meter filters match the event properties

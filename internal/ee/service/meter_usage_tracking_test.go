@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/events"
@@ -15,7 +14,6 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -555,18 +553,4 @@ func (s *MeterUsageTrackingEvaluationSuite) TestCheckSpendBreachForEvent_NoAlert
 		s.svc.checkSpendBreachForEvent(ctx, event, []string{"meter_eval_test"})
 	})
 	s.Equal(0, s.countAlertLogs())
-}
-
-func TestChargeAmountForLineItem(t *testing.T) {
-	charges := []dto.CreateInvoiceLineItemRequest{
-		{SubscriptionLineItemID: lo.ToPtr("li_1"), Amount: decimal.NewFromInt(100)},
-		{SubscriptionLineItemID: lo.ToPtr("li_2"), Amount: decimal.NewFromInt(200)},
-	}
-
-	amount, found := chargeAmountForLineItem(charges, "li_2")
-	require.True(t, found)
-	require.True(t, amount.Equal(decimal.NewFromInt(200)))
-
-	_, found = chargeAmountForLineItem(charges, "li_missing")
-	require.False(t, found)
 }
