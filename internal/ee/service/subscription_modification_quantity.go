@@ -775,7 +775,7 @@ func (s *subscriptionModificationService) settlePayFirst(
 		return nil, err
 	}
 
-	subscriptionID := plan.GetSubscriptionID()
+	subscriptionID := sub.ID
 	checkoutSvc := NewCheckoutSessionService(sp)
 	if err := checkoutSvc.CheckIfAnyCheckoutSessionPending(
 		ctx,
