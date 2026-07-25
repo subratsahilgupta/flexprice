@@ -165,7 +165,7 @@ func (r *PayFirstCheckoutRequest) Validate() error {
 		return ierr.NewError("pay-first checkout requires a draft invoice").
 			Mark(ierr.ErrValidation)
 	}
-	
+
 	if r.CustomerID == "" {
 		return ierr.NewError("pay-first checkout requires customer_id").
 			Mark(ierr.ErrValidation)
@@ -194,8 +194,6 @@ func (r *PayFirstCheckoutRequest) ToCheckoutSession(ctx context.Context, custome
 	}
 }
 
-// ValidateCheckoutSessionForCompletion ensures a session has action params and
-// locked invoice/payment IDs before completion handlers run.
 func ValidateCheckoutSessionForCompletion(session *domainCheckout.CheckoutSession) error {
 	if session == nil {
 		return ierr.NewError("checkout session is required").

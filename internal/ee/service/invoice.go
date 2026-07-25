@@ -345,8 +345,6 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 	return dto.NewInvoiceResponse(inv), nil
 }
 
-// CreateComputedDraftInvoice creates an empty DRAFT invoice and computes line items/amounts
-// without finalizing.
 func (s *invoiceService) CreateComputedDraftInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, bool, error) {
 	draftResp, err := s.CreateEmptyDraftInvoice(ctx, req.ToDraftRequest())
 	if err != nil {

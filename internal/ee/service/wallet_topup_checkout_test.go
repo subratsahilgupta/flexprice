@@ -153,6 +153,7 @@ func (s *WalletServiceSuite) TestHandlePurchasedCreditInvoiced_PayFirstForcesPen
 		&dto.TopUpWalletRequest{
 			CreditsToAdd:      decimal.NewFromInt(250),
 			TransactionReason: types.TransactionReasonPurchasedCreditInvoiced,
+			Checkout:          s.checkoutParamsRazorpay(),
 		},
 	)
 	s.Require().NoError(err)
@@ -189,6 +190,7 @@ func (s *WalletServiceSuite) TestCompleteWalletTopupCheckout_CreditsWalletAndBon
 			CreditsToAdd:      credits,
 			BonusCreditsToAdd: &bonus,
 			TransactionReason: types.TransactionReasonPurchasedCreditInvoiced,
+			Checkout:          s.checkoutParamsRazorpay(),
 		},
 	)
 	s.Require().NoError(err)

@@ -210,8 +210,12 @@ func (c *CheckoutPaymentProviderConfig) Validate() error {
 	if c == nil {
 		return nil
 	}
-	if err := c.PaymentMethod.Validate(); err != nil {
-		return err
+
+	// PaymentMethod is optional (empty = provider picks / tries saved methods in order).
+	if c.PaymentMethod != "" {
+		if err := c.PaymentMethod.Validate(); err != nil {
+			return err
+		}
 	}
 
 	if err := c.CollectionMethod.Validate(); err != nil {

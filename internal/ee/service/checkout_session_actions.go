@@ -271,10 +271,14 @@ func (s *checkoutSessionService) completeWalletTopupCheckout(
 	if err != nil {
 		return err
 	}
-	if w.Status != types.StatusPublished {
+	if w.WalletStatus != types.WalletStatusActive {
 		return ierr.NewError("wallet is not active").
 			WithHint("The wallet must be active to complete a payment-gated top-up").
-			WithReportableDetails(map[string]any{"wallet_id": params.WalletID, "status": w.Status}).
+			WithReportableDetails(map[string]any{
+				"wallet_id":     params.WalletID,
+				"wallet_status": w.WalletStatus,
+				"status":        w.Status,
+			}).
 			Mark(ierr.ErrValidation)
 	}
 

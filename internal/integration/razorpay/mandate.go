@@ -177,7 +177,7 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 	ctx context.Context,
 	req interfaces.AuthorizationLinkRequest,
 ) (*interfaces.CheckoutProviderResponse, bool, error) {
-	if a == nil || a.Svc == nil {
+	if a == nil || a.Svc == nil || a.CustomerSvc == nil {
 		return nil, false, nil
 	}
 

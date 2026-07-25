@@ -150,6 +150,14 @@ func NewDefaultCheckoutSessionFilter() *CheckoutSessionFilter {
 	return &CheckoutSessionFilter{QueryFilter: NewDefaultQueryFilter()}
 }
 
+func (f *CheckoutSessionFilter) GetStatus() string {
+	if f == nil || f.QueryFilter == nil {
+		return ""
+	}
+
+	return f.QueryFilter.GetStatus()
+}
+
 func (f *CheckoutSessionFilter) Validate() error {
 	if f.QueryFilter != nil {
 		if err := f.QueryFilter.Validate(); err != nil {

@@ -767,6 +767,7 @@ func (s *walletService) getAnyPendingCheckoutSession(ctx context.Context, custom
 		},
 		Configuration: &types.CheckoutConfigurationFilter{WalletID: walletID},
 	}
+	pendingFilter.Limit = lo.ToPtr(1)
 
 	return s.CheckoutSessionRepo.List(ctx, pendingFilter)
 }
@@ -1038,9 +1039,10 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 		}
 
 		var inv *dto.InvoiceResponse
+		var skipped bool
 		if isPayFirst {
 			// Pay-first: leave DRAFT until checkout complete finalizes + reconciles.
-			inv, skipped, err := invoiceService.CreateComputedDraftInvoice(ctx, invReq)
+			inv, skipped, err = invoiceService.CreateComputedDraftInvoice(ctx, invReq)
 			if err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to create draft invoice for purchased credits").
@@ -1049,11 +1051,9 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 			if skipped {
 				return ierr.NewError("draft invoice was skipped").
 					WithHint("Expected a non-zero invoice amount").
-					WithReportableDetails(
-						map[string]any{
-							"invoice_id": inv.GetId(),
-						},
-					).
+					WithReportableDetails(map[string]any{
+						"invoice_id": inv.GetId(),
+					}).
 					Mark(ierr.ErrValidation)
 			}
 		} else {
