@@ -164,6 +164,11 @@ func LastComputedAt(v time.Time) predicate.EntitlementGrant {
 	return predicate.EntitlementGrant(sql.FieldEQ(FieldLastComputedAt, v))
 }
 
+// QuotaCrossedAt applies equality check predicate on the "quota_crossed_at" field. It's identical to QuotaCrossedAtEQ.
+func QuotaCrossedAt(v time.Time) predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldEQ(FieldQuotaCrossedAt, v))
+}
+
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
 func TenantIDEQ(v string) predicate.EntitlementGrant {
 	return predicate.EntitlementGrant(sql.FieldEQ(FieldTenantID, v))
@@ -1319,6 +1324,56 @@ func LastComputedAtIsNil() predicate.EntitlementGrant {
 // LastComputedAtNotNil applies the NotNil predicate on the "last_computed_at" field.
 func LastComputedAtNotNil() predicate.EntitlementGrant {
 	return predicate.EntitlementGrant(sql.FieldNotNull(FieldLastComputedAt))
+}
+
+// QuotaCrossedAtEQ applies the EQ predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtEQ(v time.Time) predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldEQ(FieldQuotaCrossedAt, v))
+}
+
+// QuotaCrossedAtNEQ applies the NEQ predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtNEQ(v time.Time) predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldNEQ(FieldQuotaCrossedAt, v))
+}
+
+// QuotaCrossedAtIn applies the In predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtIn(vs ...time.Time) predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldIn(FieldQuotaCrossedAt, vs...))
+}
+
+// QuotaCrossedAtNotIn applies the NotIn predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtNotIn(vs ...time.Time) predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldNotIn(FieldQuotaCrossedAt, vs...))
+}
+
+// QuotaCrossedAtGT applies the GT predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtGT(v time.Time) predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldGT(FieldQuotaCrossedAt, v))
+}
+
+// QuotaCrossedAtGTE applies the GTE predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtGTE(v time.Time) predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldGTE(FieldQuotaCrossedAt, v))
+}
+
+// QuotaCrossedAtLT applies the LT predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtLT(v time.Time) predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldLT(FieldQuotaCrossedAt, v))
+}
+
+// QuotaCrossedAtLTE applies the LTE predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtLTE(v time.Time) predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldLTE(FieldQuotaCrossedAt, v))
+}
+
+// QuotaCrossedAtIsNil applies the IsNil predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtIsNil() predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldIsNull(FieldQuotaCrossedAt))
+}
+
+// QuotaCrossedAtNotNil applies the NotNil predicate on the "quota_crossed_at" field.
+func QuotaCrossedAtNotNil() predicate.EntitlementGrant {
+	return predicate.EntitlementGrant(sql.FieldNotNull(FieldQuotaCrossedAt))
 }
 
 // And groups predicates with the AND operator between them.

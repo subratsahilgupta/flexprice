@@ -2227,8 +2227,9 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 				_, err := s.GetStores().EntitlementRepo.Create(s.GetContext(), entitlement)
 				s.NoError(err)
 			},
-			expectedRealTimeBalance: decimal.NewFromInt(961),
-			expectedCurrentUsage:    decimal.NewFromInt(39),
+			// Limit 1000 alone covers less usage than case 1's 2000, so more is billed.
+			expectedRealTimeBalance: decimal.NewFromInt(951), // 1000 - 49
+			expectedCurrentUsage:    decimal.NewFromInt(49),
 			wantErr:                 false,
 		},
 		{
@@ -2256,9 +2257,6 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 		{
 			name: "disabled_entitlement",
 			setupFunc: func() {
-				// Clear any existing entitlements first
-				s.GetStores().EntitlementRepo.(*testutil.InMemoryEntitlementStore).Clear()
-
 				entitlement := &entitlement.Entitlement{
 					ID:               "ent_test_4",
 					EntityType:       types.ENTITLEMENT_ENTITY_TYPE_PLAN,
@@ -2290,6 +2288,9 @@ func (s *WalletServiceSuite) TestGetWalletBalanceWithEntitlements() {
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
 			s.setupWallet()
+			// Each case models exactly one entitlement on (plan, feat_api_calls);
+			// the DB allows only one published entitlement per (entity, feature).
+			s.GetStores().EntitlementRepo.(*testutil.InMemoryEntitlementStore).Clear()
 			if tt.setupFunc != nil {
 				tt.setupFunc()
 			}

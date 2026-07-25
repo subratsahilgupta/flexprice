@@ -78,11 +78,24 @@ func matchRecord(r *events.MeterUsage, p *events.MeterUsageQueryParams) bool {
 	if len(p.MeterIDs) > 0 && !containsString(p.MeterIDs, r.MeterID) {
 		return false
 	}
-	if !p.StartTime.IsZero() && r.Timestamp.Before(p.StartTime) {
-		return false
-	}
-	if !p.EndTime.IsZero() && !r.Timestamp.Before(p.EndTime) {
-		return false
+	if len(p.TimeRanges) > 0 {
+		inAny := false
+		for _, tr := range p.TimeRanges {
+			if !r.Timestamp.Before(tr.Start) && r.Timestamp.Before(tr.End) {
+				inAny = true
+				break
+			}
+		}
+		if !inAny {
+			return false
+		}
+	} else {
+		if !p.StartTime.IsZero() && r.Timestamp.Before(p.StartTime) {
+			return false
+		}
+		if !p.EndTime.IsZero() && !r.Timestamp.Before(p.EndTime) {
+			return false
+		}
 	}
 	if p.ExternalCustomerID != "" && r.ExternalCustomerID != p.ExternalCustomerID {
 		return false

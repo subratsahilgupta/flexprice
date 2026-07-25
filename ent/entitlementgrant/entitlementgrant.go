@@ -53,6 +53,8 @@ const (
 	FieldGrantStatus = "grant_status"
 	// FieldLastComputedAt holds the string denoting the last_computed_at field in the database.
 	FieldLastComputedAt = "last_computed_at"
+	// FieldQuotaCrossedAt holds the string denoting the quota_crossed_at field in the database.
+	FieldQuotaCrossedAt = "quota_crossed_at"
 	// Table holds the table name of the entitlementgrant in the database.
 	Table = "entitlement_grants"
 )
@@ -79,6 +81,7 @@ var Columns = []string{
 	FieldValidTo,
 	FieldGrantStatus,
 	FieldLastComputedAt,
+	FieldQuotaCrossedAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -223,4 +226,9 @@ func ByGrantStatus(opts ...sql.OrderTermOption) OrderOption {
 // ByLastComputedAt orders the results by the last_computed_at field.
 func ByLastComputedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastComputedAt, opts...).ToFunc()
+}
+
+// ByQuotaCrossedAt orders the results by the quota_crossed_at field.
+func ByQuotaCrossedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldQuotaCrossedAt, opts...).ToFunc()
 }

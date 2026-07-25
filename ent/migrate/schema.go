@@ -897,7 +897,7 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7], EntitlementsColumns[8], EntitlementsColumns[9], EntitlementsColumns[10]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "((status)::text = 'published'::text)",
+					Where: "(((status)::text = 'published'::text) AND ((aggregation_mode)::text <> 'parallel'::text))",
 				},
 			},
 			{
@@ -947,6 +947,7 @@ var (
 		{Name: "valid_to", Type: field.TypeTime},
 		{Name: "grant_status", Type: field.TypeString, Default: "active", SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "last_computed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "quota_crossed_at", Type: field.TypeTime, Nullable: true},
 	}
 	// EntitlementGrantsTable holds the schema information for the "entitlement_grants" table.
 	EntitlementGrantsTable = &schema.Table{

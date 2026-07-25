@@ -132,6 +132,26 @@ func (egu *EntitlementGrantUpdate) ClearLastComputedAt() *EntitlementGrantUpdate
 	return egu
 }
 
+// SetQuotaCrossedAt sets the "quota_crossed_at" field.
+func (egu *EntitlementGrantUpdate) SetQuotaCrossedAt(t time.Time) *EntitlementGrantUpdate {
+	egu.mutation.SetQuotaCrossedAt(t)
+	return egu
+}
+
+// SetNillableQuotaCrossedAt sets the "quota_crossed_at" field if the given value is not nil.
+func (egu *EntitlementGrantUpdate) SetNillableQuotaCrossedAt(t *time.Time) *EntitlementGrantUpdate {
+	if t != nil {
+		egu.SetQuotaCrossedAt(*t)
+	}
+	return egu
+}
+
+// ClearQuotaCrossedAt clears the value of the "quota_crossed_at" field.
+func (egu *EntitlementGrantUpdate) ClearQuotaCrossedAt() *EntitlementGrantUpdate {
+	egu.mutation.ClearQuotaCrossedAt()
+	return egu
+}
+
 // Mutation returns the EntitlementGrantMutation object of the builder.
 func (egu *EntitlementGrantUpdate) Mutation() *EntitlementGrantMutation {
 	return egu.mutation
@@ -214,6 +234,12 @@ func (egu *EntitlementGrantUpdate) sqlSave(ctx context.Context) (n int, err erro
 	}
 	if egu.mutation.LastComputedAtCleared() {
 		_spec.ClearField(entitlementgrant.FieldLastComputedAt, field.TypeTime)
+	}
+	if value, ok := egu.mutation.QuotaCrossedAt(); ok {
+		_spec.SetField(entitlementgrant.FieldQuotaCrossedAt, field.TypeTime, value)
+	}
+	if egu.mutation.QuotaCrossedAtCleared() {
+		_spec.ClearField(entitlementgrant.FieldQuotaCrossedAt, field.TypeTime)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, egu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -337,6 +363,26 @@ func (eguo *EntitlementGrantUpdateOne) ClearLastComputedAt() *EntitlementGrantUp
 	return eguo
 }
 
+// SetQuotaCrossedAt sets the "quota_crossed_at" field.
+func (eguo *EntitlementGrantUpdateOne) SetQuotaCrossedAt(t time.Time) *EntitlementGrantUpdateOne {
+	eguo.mutation.SetQuotaCrossedAt(t)
+	return eguo
+}
+
+// SetNillableQuotaCrossedAt sets the "quota_crossed_at" field if the given value is not nil.
+func (eguo *EntitlementGrantUpdateOne) SetNillableQuotaCrossedAt(t *time.Time) *EntitlementGrantUpdateOne {
+	if t != nil {
+		eguo.SetQuotaCrossedAt(*t)
+	}
+	return eguo
+}
+
+// ClearQuotaCrossedAt clears the value of the "quota_crossed_at" field.
+func (eguo *EntitlementGrantUpdateOne) ClearQuotaCrossedAt() *EntitlementGrantUpdateOne {
+	eguo.mutation.ClearQuotaCrossedAt()
+	return eguo
+}
+
 // Mutation returns the EntitlementGrantMutation object of the builder.
 func (eguo *EntitlementGrantUpdateOne) Mutation() *EntitlementGrantMutation {
 	return eguo.mutation
@@ -449,6 +495,12 @@ func (eguo *EntitlementGrantUpdateOne) sqlSave(ctx context.Context) (_node *Enti
 	}
 	if eguo.mutation.LastComputedAtCleared() {
 		_spec.ClearField(entitlementgrant.FieldLastComputedAt, field.TypeTime)
+	}
+	if value, ok := eguo.mutation.QuotaCrossedAt(); ok {
+		_spec.SetField(entitlementgrant.FieldQuotaCrossedAt, field.TypeTime, value)
+	}
+	if eguo.mutation.QuotaCrossedAtCleared() {
+		_spec.ClearField(entitlementgrant.FieldQuotaCrossedAt, field.TypeTime)
 	}
 	_node = &EntitlementGrant{config: eguo.config}
 	_spec.Assign = _node.assignValues

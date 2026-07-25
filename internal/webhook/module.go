@@ -63,6 +63,7 @@ func providePayloadBuilderFactory(
 	creditNoteService service.CreditNoteService,
 	checkoutSessionService interfaces.CheckoutSessionService,
 	groupService service.GroupService,
+	entitlementGrantService service.EntitlementGrantService,
 ) payload.PayloadBuilderFactory {
 	services := payload.NewServices(
 		invoiceService,
@@ -78,6 +79,7 @@ func providePayloadBuilderFactory(
 		creditNoteService,
 		checkoutSessionService,
 		groupService,
+		entitlementGrantService,
 	)
 	return payload.NewPayloadBuilderFactory(services)
 }

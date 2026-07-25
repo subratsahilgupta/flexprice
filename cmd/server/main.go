@@ -251,6 +251,7 @@ func main() {
 			service.NewInvoiceService,
 			service.NewFeatureService,
 			service.NewEntitlementService,
+			service.NewEntitlementGrantService,
 			service.NewPaymentService,
 			service.NewPaymentProcessorService,
 			service.NewTaskService,

@@ -20,6 +20,9 @@ import (
 
 // EntitlementGrantService owns the lifecycle of entitlement_grants rows.
 type EntitlementGrantService interface {
+	// GetGrant returns one grant by id (webhook payloads, lookups).
+	GetGrant(ctx context.Context, id string) (*entitlementgrant.EntitlementGrant, error)
+
 	EnsureGrants(ctx context.Context, cust *customer.Customer, at time.Time) ([]*entitlementgrant.EntitlementGrant, *grantEvalMeta, error)
 
 	// EnsureGrantsForSubscriptions is the data-fed variant: the caller supplies
@@ -35,6 +38,10 @@ type entitlementGrantService struct {
 
 func NewEntitlementGrantService(params ServiceParams) EntitlementGrantService {
 	return &entitlementGrantService{ServiceParams: params}
+}
+
+func (s *entitlementGrantService) GetGrant(ctx context.Context, id string) (*entitlementgrant.EntitlementGrant, error) {
+	return s.EntitlementGrantRepo.Get(ctx, id)
 }
 
 // grantEvalMeta is the per-pass lookup bundle shared by grant opening and the
@@ -261,13 +268,11 @@ func (s *entitlementGrantService) openMissingGrants(
 	for _, sub := range subs {
 		for _, featureECs := range s.eligibleGrantConfigsByFeature(ctx, sub, ecsBySub[sub.ID]) {
 			for _, candidate := range grantCandidatesForFeature(featureECs) {
-				g, err := s.openIfSlotFree(ctx, sub, candidate, latestEndBySlot, meta, at)
+				slotOpened, err := s.openIfSlotFree(ctx, sub, candidate, latestEndBySlot, meta, at)
 				if err != nil {
 					return nil, err
 				}
-				if g != nil {
-					opened = append(opened, g)
-				}
+				opened = append(opened, slotOpened...)
 			}
 		}
 	}
@@ -331,8 +336,11 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 	return []grantCandidate{{ec: primary, quota: total}}
 }
 
-// openIfSlotFree opens the candidate's grant unless the slot's latest window
-// is still open at `at`; a freshly opened grant claims the slot.
+// openIfSlotFree opens grants on the candidate's slot until it is caught up:
+// after a backlog (delayed evaluation, cycle rollover lag) a single tick walks
+// every missed usage-anchored window up to `at` instead of needing one future
+// event per window. Terminates because each window strictly advances the
+// covered range, bounded by cycle_end.
 func (s *entitlementGrantService) openIfSlotFree(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -340,20 +348,28 @@ func (s *entitlementGrantService) openIfSlotFree(
 	latestEndBySlot map[string]time.Time,
 	meta *grantEvalMeta,
 	at time.Time,
-) (*entitlementgrant.EntitlementGrant, error) {
+) ([]*entitlementgrant.EntitlementGrant, error) {
 	slot := grantSlotKey(candidate.ec.ID, sub.ID)
-	lastEnd := latestEndBySlot[slot]
-	if lastEnd.After(at) {
-		return nil, nil
-	}
+	opened := make([]*entitlementgrant.EntitlementGrant, 0, 1)
+	for {
+		lastEnd := latestEndBySlot[slot]
+		// Done when the latest window is still open, or coverage already reaches
+		// cycle_end (catch-up finished, or rollover lag with a stale sub) — the
+		// anchor range would be empty, so skip the usage query outright.
+		if lastEnd.After(at) || !lastEnd.Before(sub.CurrentPeriodEnd) {
+			return opened, nil
+		}
 
-	g, err := s.openOneGrant(ctx, sub, candidate.ec, lastEnd, meta, at, candidate.quota)
-	if err != nil || g == nil {
-		return nil, err
+		g, err := s.openOneGrant(ctx, sub, candidate.ec, lastEnd, meta, at, candidate.quota)
+		if err != nil {
+			return opened, err
+		}
+		if g == nil {
+			return opened, nil // no uncovered usage left
+		}
+		opened = append(opened, g)
+		latestEndBySlot[slot] = g.ValidTo
 	}
-
-	latestEndBySlot[slot] = g.ValidTo
-	return g, nil
 }
 
 // openOneGrant inserts the slot's next grant. On INSERT conflict — valid_from
@@ -415,9 +431,9 @@ func (s *entitlementGrantService) openOneGrant(
 
 // computeGrantWindow derives [valid_from, valid_to): the window opens at the
 // first usage event past the covered range; no uncovered usage → no window.
-// At the cycle boundary the window becomes the cycle's last `dur` — backdating
-// the start is safe because [coveredUntil, firstUncoveredEventAt) is event-free by
-// definition — and it stretches to cycle_end rather than leave a sub-1h stub.
+// The 1h minimum is best-effort: the window stretches to cycle_end rather
+// than leave a sub-1h stub behind it, but a forced tail may itself be short —
+// coverage beats window-length aesthetics.
 func (s *entitlementGrantService) computeGrantWindow(
 	ctx context.Context,
 	ec *entitlement.Entitlement,
@@ -430,23 +446,35 @@ func (s *entitlementGrantService) computeGrantWindow(
 	cycleStart := sub.CurrentPeriodStart
 	cycleEnd := sub.CurrentPeriodEnd
 	coveredUntil := latestOf(lastWindowEnd, cycleStart)
+	searchUntil := earliestOf(at, cycleEnd)
+
+	s.Logger.Debug(ctx, "computing grant window",
+		"coveredUntil", coveredUntil,
+		"searchUntil", searchUntil,
+		"cycleStart", cycleStart,
+		"cycleEnd", cycleEnd,
+		"eventTime", at,
+		"grantDuration", dur,
+	)
 
 	// The clamp to cycle_end keeps next-cycle events (sub object not yet rolled)
 	// out; an empty/inverted range simply finds nothing.
-	firstUncoveredEventAt, err := s.earliestUncoveredUsage(ctx, meta, sub, ec, coveredUntil, earliestOf(at, cycleEnd))
+	firstUncoveredEventAt, err := s.earliestUncoveredUsage(ctx, meta, sub, ec, coveredUntil, searchUntil)
 	if err != nil || firstUncoveredEventAt == nil {
 		return time.Time{}, time.Time{}, false, err
 	}
 
 	validFrom := *firstUncoveredEventAt
-	if cycleEnd.Sub(validFrom) < dur {
-		validFrom = latestOf(coveredUntil, cycleEnd.Add(-dur))
-	}
-
 	validTo := validFrom.Add(dur)
+	// Cap at cycle_end AND absorb a sub-minimum trailing remainder in one rule
 	if cycleEnd.Sub(validTo) < types.EntitlementGrantMinDuration {
 		validTo = cycleEnd
 	}
+
+	s.Logger.Debug(ctx, "computed grant window",
+		"validFrom", validFrom,
+		"validTo", validTo,
+	)
 	return validFrom, validTo, true, nil
 }
 
@@ -462,13 +490,19 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 ) (*time.Time, error) {
 	f := meta.featureByID[ec.FeatureID]
 	if f == nil || f.MeterID == "" {
+		s.Logger.Debug(ctx, "computing grant window: no meter found for feature",
+			"feature_id", ec.FeatureID,
+			"subscription_id", sub.ID,
+			"customer_id", sub.CustomerID,
+		)
 		return nil, nil
 	}
+
 	extIDs, err := meta.externalIDs(ctx, sub)
 	if err != nil {
 		return nil, err
 	}
-	return s.MeterUsageRepo.GetEarliestUsageTimestamp(ctx, &events.MeterUsageQueryParams{
+	timestamp, err := s.MeterUsageRepo.GetEarliestUsageTimestamp(ctx, &events.MeterUsageQueryParams{
 		TenantID:            types.GetTenantID(ctx),
 		EnvironmentID:       types.GetEnvironmentID(ctx),
 		ExternalCustomerIDs: extIDs,
@@ -476,6 +510,13 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 		StartTime:           coveredUntil,
 		EndTime:             until,
 	})
+	if err != nil {
+		s.Logger.Error(ctx, "computing grant window: error getting earliest usage timestamp", "error", err)
+		return nil, err
+	}
+
+	s.Logger.Debug(ctx, "computing grant window: earliest un-covered usage timestamp", "timestamp", timestamp)
+	return timestamp, nil
 }
 
 func latestOf(a, b time.Time) time.Time {

@@ -130,7 +130,7 @@ func (Entitlement) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "environment_id", "entity_type", "entity_id", "feature_id").
 			Unique().
-			Annotations(entsql.IndexWhere("((status)::text = 'published'::text)")),
+			Annotations(entsql.IndexWhere("(((status)::text = 'published'::text) AND ((aggregation_mode)::text <> 'parallel'::text))")),
 
 		index.Fields("tenant_id", "environment_id", "entity_type", "entity_id"),
 		index.Fields("tenant_id", "environment_id", "feature_id"),

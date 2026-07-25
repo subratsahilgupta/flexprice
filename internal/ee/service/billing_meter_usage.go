@@ -179,7 +179,10 @@ func (s *billingService) CalculateMeterUsageCharges(
 		grantResult, grantsApplied := adjustMeterUsageGrantsResult{}, false
 		if !matchingCharge.IsOverage {
 			if grantsForMeter := grantsByMeterID[item.MeterID]; len(grantsForMeter) > 0 {
-				grantResult, grantsApplied = s.adjustMeterUsageGrants(ctx, item, matchingCharge, grantsForMeter, priceService)
+				grantResult, grantsApplied, err = s.adjustMeterUsageGrants(ctx, item, matchingCharge, grantsForMeter, priceService, m, sub, extCustomerIDs)
+				if err != nil {
+					return nil, decimal.Zero, err
+				}
 			}
 		}
 

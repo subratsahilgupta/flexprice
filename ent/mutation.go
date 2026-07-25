@@ -25735,6 +25735,7 @@ type EntitlementGrantMutation struct {
 	valid_to              *time.Time
 	grant_status          *types.EntitlementGrantStatus
 	last_computed_at      *time.Time
+	quota_crossed_at      *time.Time
 	clearedFields         map[string]struct{}
 	done                  bool
 	oldValue              func(context.Context) (*EntitlementGrant, error)
@@ -26581,6 +26582,55 @@ func (m *EntitlementGrantMutation) ResetLastComputedAt() {
 	delete(m.clearedFields, entitlementgrant.FieldLastComputedAt)
 }
 
+// SetQuotaCrossedAt sets the "quota_crossed_at" field.
+func (m *EntitlementGrantMutation) SetQuotaCrossedAt(t time.Time) {
+	m.quota_crossed_at = &t
+}
+
+// QuotaCrossedAt returns the value of the "quota_crossed_at" field in the mutation.
+func (m *EntitlementGrantMutation) QuotaCrossedAt() (r time.Time, exists bool) {
+	v := m.quota_crossed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQuotaCrossedAt returns the old "quota_crossed_at" field's value of the EntitlementGrant entity.
+// If the EntitlementGrant object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *EntitlementGrantMutation) OldQuotaCrossedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQuotaCrossedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQuotaCrossedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQuotaCrossedAt: %w", err)
+	}
+	return oldValue.QuotaCrossedAt, nil
+}
+
+// ClearQuotaCrossedAt clears the value of the "quota_crossed_at" field.
+func (m *EntitlementGrantMutation) ClearQuotaCrossedAt() {
+	m.quota_crossed_at = nil
+	m.clearedFields[entitlementgrant.FieldQuotaCrossedAt] = struct{}{}
+}
+
+// QuotaCrossedAtCleared returns if the "quota_crossed_at" field was cleared in this mutation.
+func (m *EntitlementGrantMutation) QuotaCrossedAtCleared() bool {
+	_, ok := m.clearedFields[entitlementgrant.FieldQuotaCrossedAt]
+	return ok
+}
+
+// ResetQuotaCrossedAt resets all changes to the "quota_crossed_at" field.
+func (m *EntitlementGrantMutation) ResetQuotaCrossedAt() {
+	m.quota_crossed_at = nil
+	delete(m.clearedFields, entitlementgrant.FieldQuotaCrossedAt)
+}
+
 // Where appends a list predicates to the EntitlementGrantMutation builder.
 func (m *EntitlementGrantMutation) Where(ps ...predicate.EntitlementGrant) {
 	m.predicates = append(m.predicates, ps...)
@@ -26615,7 +26665,7 @@ func (m *EntitlementGrantMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *EntitlementGrantMutation) Fields() []string {
-	fields := make([]string, 0, 19)
+	fields := make([]string, 0, 20)
 	if m.tenant_id != nil {
 		fields = append(fields, entitlementgrant.FieldTenantID)
 	}
@@ -26673,6 +26723,9 @@ func (m *EntitlementGrantMutation) Fields() []string {
 	if m.last_computed_at != nil {
 		fields = append(fields, entitlementgrant.FieldLastComputedAt)
 	}
+	if m.quota_crossed_at != nil {
+		fields = append(fields, entitlementgrant.FieldQuotaCrossedAt)
+	}
 	return fields
 }
 
@@ -26719,6 +26772,8 @@ func (m *EntitlementGrantMutation) Field(name string) (ent.Value, bool) {
 		return m.GrantStatus()
 	case entitlementgrant.FieldLastComputedAt:
 		return m.LastComputedAt()
+	case entitlementgrant.FieldQuotaCrossedAt:
+		return m.QuotaCrossedAt()
 	}
 	return nil, false
 }
@@ -26766,6 +26821,8 @@ func (m *EntitlementGrantMutation) OldField(ctx context.Context, name string) (e
 		return m.OldGrantStatus(ctx)
 	case entitlementgrant.FieldLastComputedAt:
 		return m.OldLastComputedAt(ctx)
+	case entitlementgrant.FieldQuotaCrossedAt:
+		return m.OldQuotaCrossedAt(ctx)
 	}
 	return nil, fmt.Errorf("unknown EntitlementGrant field %s", name)
 }
@@ -26908,6 +26965,13 @@ func (m *EntitlementGrantMutation) SetField(name string, value ent.Value) error 
 		}
 		m.SetLastComputedAt(v)
 		return nil
+	case entitlementgrant.FieldQuotaCrossedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQuotaCrossedAt(v)
+		return nil
 	}
 	return fmt.Errorf("unknown EntitlementGrant field %s", name)
 }
@@ -26950,6 +27014,9 @@ func (m *EntitlementGrantMutation) ClearedFields() []string {
 	if m.FieldCleared(entitlementgrant.FieldLastComputedAt) {
 		fields = append(fields, entitlementgrant.FieldLastComputedAt)
 	}
+	if m.FieldCleared(entitlementgrant.FieldQuotaCrossedAt) {
+		fields = append(fields, entitlementgrant.FieldQuotaCrossedAt)
+	}
 	return fields
 }
 
@@ -26975,6 +27042,9 @@ func (m *EntitlementGrantMutation) ClearField(name string) error {
 		return nil
 	case entitlementgrant.FieldLastComputedAt:
 		m.ClearLastComputedAt()
+		return nil
+	case entitlementgrant.FieldQuotaCrossedAt:
+		m.ClearQuotaCrossedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown EntitlementGrant nullable field %s", name)
@@ -27040,6 +27110,9 @@ func (m *EntitlementGrantMutation) ResetField(name string) error {
 		return nil
 	case entitlementgrant.FieldLastComputedAt:
 		m.ResetLastComputedAt()
+		return nil
+	case entitlementgrant.FieldQuotaCrossedAt:
+		m.ResetQuotaCrossedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown EntitlementGrant field %s", name)

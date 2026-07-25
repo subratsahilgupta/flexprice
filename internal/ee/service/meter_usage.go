@@ -56,6 +56,14 @@ type MeterUsageService interface {
 	// ConvertToBillingCharges maps SubscriptionMeterUsage to billing charges.
 	ConvertToBillingCharges(ctx context.Context, usage *SubscriptionMeterUsage) ([]*dto.SubscriptionUsageByMetersResponse, decimal.Decimal, error)
 
+	// GetUsageTotal returns a meter's aggregated usage total (FINAL consistency;
+	// supports a single range or multiple disjoint TimeRanges in one query).
+	GetUsageTotal(ctx context.Context, req *dto.UsageTotalRequest) (decimal.Decimal, error)
+
+	// GetMeterWindowCost prices the meter's usage in [from, to) through the
+	// billing path, so a mid-window price change is priced per line-item segment.
+	GetMeterWindowCost(ctx context.Context, sub *subscription.Subscription, meterID string, from, to time.Time) (decimal.Decimal, error)
+
 	// DebugEvent powers GET /events/:id — reports processing status and
 	// per-lookup diagnostics for a single event under the meter-usage pipeline.
 	DebugEvent(ctx context.Context, eventID string) (*dto.GetEventByIDResponse, error)
@@ -77,6 +85,45 @@ func NewMeterUsageService(params ServiceParams) MeterUsageService {
 		repo:          params.MeterUsageRepo,
 		logger:        params.Logger,
 	}
+}
+
+func (s *meterUsageService) GetUsageTotal(ctx context.Context, req *dto.UsageTotalRequest) (decimal.Decimal, error) {
+	if s.repo == nil {
+		return decimal.Zero, ierr.NewError("meter usage repository is not configured").Mark(ierr.ErrSystem)
+	}
+	result, err := s.repo.GetUsage(ctx, req.ToParams())
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return result.TotalValue, nil
+}
+
+func (s *meterUsageService) GetMeterWindowCost(ctx context.Context, sub *subscription.Subscription, meterID string, from, to time.Time) (decimal.Decimal, error) {
+	if !to.After(from) {
+		return decimal.Zero, nil
+	}
+	subUsage, err := s.GetSubscriptionMeterUsageWithSub(ctx, sub, &GetSubscriptionMeterUsageRequest{
+		SubscriptionID:  sub.ID,
+		StartTime:       from,
+		EndTime:         to,
+		MeterIDs:        []string{meterID},
+		UseFinal:        true,
+		IncludeChildren: true,
+	})
+	if err != nil {
+		return decimal.Zero, err
+	}
+	charges, _, err := s.ConvertToBillingCharges(ctx, subUsage)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	total := decimal.Zero
+	for _, c := range charges {
+		if c != nil && c.MeterID == meterID {
+			total = total.Add(decimal.NewFromFloat(c.Amount))
+		}
+	}
+	return total, nil
 }
 
 // ---------------------------------------------------------------------------

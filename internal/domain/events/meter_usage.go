@@ -25,17 +25,26 @@ type MeterUsage struct {
 }
 
 // MeterUsageQueryParams defines filters for querying the meter_usage table
+// TimeRange is a half-open [Start, End) window.
+type TimeRange struct {
+	Start time.Time
+	End   time.Time
+}
+
 type MeterUsageQueryParams struct {
 	TenantID           string
 	EnvironmentID      string
 	ExternalCustomerID string
 	// ExternalCustomerIDs supports multi-customer queries (e.g. inherited subscriptions)
 	ExternalCustomerIDs []string
-	MeterID             string
-	MeterIDs            []string
-	StartTime           time.Time
-	EndTime             time.Time
-	AggregationType     types.AggregationType
+	MeterID  string
+	MeterIDs []string
+	StartTime time.Time
+	EndTime   time.Time
+	// TimeRanges, when non-empty, replaces StartTime/EndTime with multiple
+	// OR'd half-open [Start, End) windows — one query for disjoint ranges.
+	TimeRanges      []TimeRange
+	AggregationType types.AggregationType
 	WindowSize          types.WindowSize
 	BillingAnchor       *time.Time
 	// Timezone is the customer's IANA timezone name. See UsageParams.Timezone.
