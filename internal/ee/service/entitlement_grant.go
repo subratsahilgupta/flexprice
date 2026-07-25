@@ -20,6 +20,9 @@ import (
 
 // EntitlementGrantService owns the lifecycle of entitlement_grants rows.
 type EntitlementGrantService interface {
+	// GetGrant returns one grant by id (webhook payloads, lookups).
+	GetGrant(ctx context.Context, id string) (*entitlementgrant.EntitlementGrant, error)
+
 	EnsureGrants(ctx context.Context, cust *customer.Customer, at time.Time) ([]*entitlementgrant.EntitlementGrant, *grantEvalMeta, error)
 
 	// EnsureGrantsForSubscriptions is the data-fed variant: the caller supplies
@@ -35,6 +38,10 @@ type entitlementGrantService struct {
 
 func NewEntitlementGrantService(params ServiceParams) EntitlementGrantService {
 	return &entitlementGrantService{ServiceParams: params}
+}
+
+func (s *entitlementGrantService) GetGrant(ctx context.Context, id string) (*entitlementgrant.EntitlementGrant, error) {
+	return s.EntitlementGrantRepo.Get(ctx, id)
 }
 
 // grantEvalMeta is the per-pass lookup bundle shared by grant opening and the
