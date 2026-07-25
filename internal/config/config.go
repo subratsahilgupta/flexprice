@@ -74,7 +74,7 @@ type Configuration struct {
 }
 
 type OnboardingConfig struct {
-	DefaultTenantName string `mapstructure:"default_tenant_name" validate:"omitempty"`
+	DefaultTenantName string `mapstructure:"default_tenant_name" validate:"omitempty" default:"Flexprice"`
 }
 
 // WhopConfig holds Whop integration settings (non-secret, static config)
