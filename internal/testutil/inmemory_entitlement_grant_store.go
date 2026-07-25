@@ -212,6 +212,7 @@ func (s *InMemoryEntitlementGrantStore) UpdateSnapshot(ctx context.Context, g *e
 	existing.Usage = g.Usage
 	existing.GrantStatus = g.GrantStatus
 	existing.LastComputedAt = g.LastComputedAt
+	existing.QuotaCrossedAt = g.QuotaCrossedAt
 	existing.UpdatedAt = time.Now().UTC()
 	return s.InMemoryStore.Update(ctx, g.ID, existing)
 }

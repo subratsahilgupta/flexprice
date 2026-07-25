@@ -57,6 +57,8 @@ type EntitlementGrant struct {
 	GrantStatus types.EntitlementGrantStatus `json:"grant_status,omitempty"`
 	// LastComputedAt holds the value of the "last_computed_at" field.
 	LastComputedAt *time.Time `json:"last_computed_at,omitempty"`
+	// QuotaCrossedAt holds the value of the "quota_crossed_at" field.
+	QuotaCrossedAt *time.Time `json:"quota_crossed_at,omitempty"`
 	selectValues   sql.SelectValues
 }
 
@@ -69,7 +71,7 @@ func (*EntitlementGrant) scanValues(columns []string) ([]any, error) {
 			values[i] = new(decimal.Decimal)
 		case entitlementgrant.FieldID, entitlementgrant.FieldTenantID, entitlementgrant.FieldStatus, entitlementgrant.FieldCreatedBy, entitlementgrant.FieldUpdatedBy, entitlementgrant.FieldEnvironmentID, entitlementgrant.FieldEntitlementConfigID, entitlementgrant.FieldCustomerID, entitlementgrant.FieldSubscriptionID, entitlementgrant.FieldScopeEntityType, entitlementgrant.FieldScopeEntityID, entitlementgrant.FieldMeasure, entitlementgrant.FieldGrantStatus:
 			values[i] = new(sql.NullString)
-		case entitlementgrant.FieldCreatedAt, entitlementgrant.FieldUpdatedAt, entitlementgrant.FieldValidFrom, entitlementgrant.FieldValidTo, entitlementgrant.FieldLastComputedAt:
+		case entitlementgrant.FieldCreatedAt, entitlementgrant.FieldUpdatedAt, entitlementgrant.FieldValidFrom, entitlementgrant.FieldValidTo, entitlementgrant.FieldLastComputedAt, entitlementgrant.FieldQuotaCrossedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -207,6 +209,13 @@ func (eg *EntitlementGrant) assignValues(columns []string, values []any) error {
 				eg.LastComputedAt = new(time.Time)
 				*eg.LastComputedAt = value.Time
 			}
+		case entitlementgrant.FieldQuotaCrossedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field quota_crossed_at", values[i])
+			} else if value.Valid {
+				eg.QuotaCrossedAt = new(time.Time)
+				*eg.QuotaCrossedAt = value.Time
+			}
 		default:
 			eg.selectValues.Set(columns[i], values[i])
 		}
@@ -299,6 +308,11 @@ func (eg *EntitlementGrant) String() string {
 	builder.WriteString(", ")
 	if v := eg.LastComputedAt; v != nil {
 		builder.WriteString("last_computed_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := eg.QuotaCrossedAt; v != nil {
+		builder.WriteString("quota_crossed_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteByte(')')

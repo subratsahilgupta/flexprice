@@ -23,6 +23,10 @@ func NewEntitlementGrantBuilder(g *EntitlementGrant) *entitlementGrantBuilder {
 		t := *g.LastComputedAt
 		copied.LastComputedAt = &t
 	}
+	if g.QuotaCrossedAt != nil {
+		t := *g.QuotaCrossedAt
+		copied.QuotaCrossedAt = &t
+	}
 	return &entitlementGrantBuilder{grant: &copied}
 }
 
@@ -115,6 +119,15 @@ func (b *entitlementGrantBuilder) WithLastComputedAt(t *time.Time) *entitlementG
 	b.grant.LastComputedAt = t
 	return b
 }
+
+func (b *entitlementGrantBuilder) WithQuotaCrossedAt(t *time.Time) *entitlementGrantBuilder {
+	if b == nil || b.grant == nil {
+		return b
+	}
+	b.grant.QuotaCrossedAt = t
+	return b
+}
+
 
 func (b *entitlementGrantBuilder) WithEnvironmentID(id string) *entitlementGrantBuilder {
 	if b == nil || b.grant == nil {

@@ -41,6 +41,12 @@ type AlertService interface {
 	// different query path and their own throttle.
 	EvaluateSpendAndEntitlementAlertsForCustomer(ctx context.Context, cust *customer.Customer) error
 
+	// RefreshEntitlementGrantsForCustomer runs one grants-only pass (ensure +
+	// usage refresh + billable-overage ledger accrual) so the materialized
+	// numbers billing reads are exact. Watermark-idempotent; used by invoice
+	// creation to close the debounce gap at the money moment.
+	RefreshEntitlementGrantsForCustomer(ctx context.Context, customerID string) error
+
 	// EvaluateWalletAlertsForCustomer resolves the tenant's wallet alert config,
 	// fetches every wallet for the customer, computes real-time balance for each,
 	// and runs wallet-level + feature-level alert checks and auto-topup.

@@ -103,6 +103,13 @@ func (EntitlementGrant) Fields() []ent.Field {
 		field.Time("last_computed_at").
 			Optional().
 			Nillable(),
+
+		// Set once by the evaluator when it first sees usage > quota. Holds the
+		// EVALUATION time, not the exact event-level crossing — billing only
+		// charges usage after this point (pro-customer, bounded by the debounce).
+		field.Time("quota_crossed_at").
+			Optional().
+			Nillable(),
 	}
 }
 

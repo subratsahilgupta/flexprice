@@ -1287,6 +1287,11 @@ func (s *EntitlementGrantSuite) TestEvaluate_OverQuota_FlipsExhaustedAndFiresAle
 	s.Equal(types.EntitlementGrantStatusExhausted, stored.GrantStatus)
 	s.Require().NotNil(stored.LastComputedAt)
 
+	// Quota exhaustion recorded once, at the evaluation time that first saw
+	// usage > quota (not the exact event time — see the note in the evaluator).
+	s.Require().NotNil(stored.QuotaCrossedAt, "exhaustion must be recorded once usage exceeds quota")
+	s.True(stored.QuotaCrossedAt.Equal(at), "quota_crossed_at = evaluation time, got %s", stored.QuotaCrossedAt)
+
 	logs, err := s.GetStores().AlertLogsRepo.ListByEntity(s.GetContext(), types.AlertEntityTypeEntitlementGrant, g.ID, 10)
 	s.Require().NoError(err)
 	s.Require().Len(logs, 1, "exhaustion must write exactly one alert log")

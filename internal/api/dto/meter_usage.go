@@ -40,11 +40,9 @@ func (r *MeterUsageQueryRequest) ToParams(tenantID, environmentID string) *event
 	}
 }
 
-// GrantWindowUsageRequest builds the raw meter-usage query for an entitlement
-// grant window. Used for quantity-measure grants only — amount-measure grants
-// price usage through the billing path (per-line-item date-range segmentation),
-// not a raw meter query.
-type GrantWindowUsageRequest struct {
+// UsageTotalRequest queries a meter's aggregated usage total over one or more
+// time windows.
+type UsageTotalRequest struct {
 	TenantID            string
 	EnvironmentID       string
 	ExternalCustomerIDs []string
@@ -52,10 +50,13 @@ type GrantWindowUsageRequest struct {
 	AggregationType     types.AggregationType
 	StartTime           time.Time
 	EndTime             time.Time
+	// TimeRanges, when non-empty, replaces StartTime/EndTime with multiple
+	// disjoint windows measured in one query.
+	TimeRanges []events.TimeRange
 }
 
 // ToParams converts the request to domain query params (FINAL consistency).
-func (r *GrantWindowUsageRequest) ToParams() *events.MeterUsageQueryParams {
+func (r *UsageTotalRequest) ToParams() *events.MeterUsageQueryParams {
 	return &events.MeterUsageQueryParams{
 		TenantID:            r.TenantID,
 		EnvironmentID:       r.EnvironmentID,
@@ -63,6 +64,7 @@ func (r *GrantWindowUsageRequest) ToParams() *events.MeterUsageQueryParams {
 		MeterID:             r.MeterID,
 		StartTime:           r.StartTime,
 		EndTime:             r.EndTime,
+		TimeRanges:          r.TimeRanges,
 		AggregationType:     r.AggregationType,
 		UseFinal:            true,
 	}

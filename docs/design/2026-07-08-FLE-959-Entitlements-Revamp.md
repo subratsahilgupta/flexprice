@@ -77,7 +77,8 @@ CREATE TABLE entitlement_grants (
     valid_from             timestamptz NOT NULL,
     valid_to               timestamptz NOT NULL,             -- <= sub.current_period_end
     grant_status           varchar(20) NOT NULL DEFAULT 'active',  -- active|exhausted; expiry derived from valid_to
-    last_computed_at       timestamptz                              -- >= valid_to marks a closed window finalized
+    last_computed_at       timestamptz,                             -- snapshot watermark; >= valid_to marks a closed window finalized
+    quota_crossed_at       timestamptz                              -- set once: the EVALUATION time that first saw usage > quota (see §5.3 note)
     -- + standard base columns (status, created_at, ...)
 );
 
@@ -264,10 +265,12 @@ Grants are immutable for their lifetime; EC/mode/quota changes take effect from 
 
 Per returned feature-scoped grant (open windows plus the finalize set), over `[valid_from, min(now, valid_to))`:
 
-- **quantity** — one raw `meter_usage` query (`dto.GrantWindowUsageRequest.ToParams()`, FINAL consistency).
+- **quantity** — one raw `meter_usage` query (`dto.UsageTotalRequest.ToParams()`, FINAL consistency).
 - **amount** — rides the billing path: `GetSubscriptionMeterUsageWithSub` + `ConvertToBillingCharges`, summing the charges for the grant's meter. The billing path splits the window into per-line-item date ranges, so a **mid-window price change produces a new segment priced at its own price** — no price pinning, no retroactive repricing.
 
-Snapshot write (`UpdateSnapshot`): `usage`, `last_computed_at`, and `active → exhausted` when `usage >= quota`.
+Snapshot write (`UpdateSnapshot`): `usage`, `last_computed_at`, `quota_crossed_at`, and `active → exhausted` when `usage >= quota`.
+
+**Quota-exhaustion recording (once per grant lifetime):** when a refresh first sees `usage > quota`, the evaluator sets `quota_crossed_at = evaluation time` — no extra queries. **Note (deliberate approximation):** this is the *detection* time, not the exact event-level crossing; billing only charges usage *after* it, so overage accrued between the true crossing and detection is never billed — pro-customer, bounded by the debounce delay. The exact alternative, if ever needed, is binary-searching the crossing second on the running measure and storing the usage total through it (see decisions log). That is ALL the evaluator does for overage; billing derives everything else (§6).
 
 **Alerts fire on exhaustion only** (`usage/quota >= 1`): one `alert_logs` row (`in_alarm`) per grant, deduped by state transition, delivered as the `entitlement.grant.exhausted` webhook (payload: subscription + grant id + usage ratio). Recovery is a new grant window, not a state flip.
 
@@ -277,7 +280,15 @@ Snapshot write (`UpdateSnapshot`): `usage`, `last_computed_at`, and `active → 
 
 Runs inside `CalculateMeterUsageCharges`. Grants for the cycle are loaded once per invoice build (`WithCycleOverlap` — purely time-based, so a grant whose window closed mid-cycle still owes its overage) and folded per line item, replacing the legacy entitlement adjustment for that feature.
 
-**Overage-sum model:** `Σ max(0, grant.usage − grant.quota)` across the cycle's grants. Each grant is an independent budget — combined-pool was rejected because it silently masks overage across parallel budgets. Additive groups are already one summed grant, so the same formula covers both modes.
+**Merged-overage-windows model:** overage usage bills **exactly once** no matter how many ECs were in overage. The evaluator records only *when* each grant exhausted (§5.3); billing derives everything else:
+
+- **Single EC** (common config): snapshot sum `Σ max(0, usage − quota)` — exact, zero queries.
+- **Multiple ECs** (`mergedOverage`): each quota-crossed EG contributes an overage window `[quota_crossed_at, valid_to)`; overlapping windows **merge**, and billable = usage/cost inside the merged windows. Quantity measure: **one** ClickHouse query over all windows (`TimeRanges` OR'd in `BuildWhereClause`); amount measure: one billing-path pricing per window. **Zero queries when nothing crossed** (the common case) — marginal next to the per-meter usage queries `CalculateMeterUsageCharges` already runs.
+- **Lag semantics:** an EG over quota whose exhaustion isn't recorded yet simply contributes no window — it bills on the next pass (slight lag, never wrong). A measurement error propagates: the charge calculation fails and retries rather than billing an approximation.
+- **Service boundaries:** window measurement lives on `MeterUsageService` (`GetUsageTotal`, `GetMeterWindowCost`); neither the evaluator nor the billing fold touches the meter-usage repo directly.
+- **Freshness:** wallet real-time balance accepts ≤ one debounce of staleness; invoice creation runs `RefreshEntitlementGrantsForCustomer` (grants-only pass, idempotent) before charges so snapshots are fresh at the money moment.
+
+`PerECOverage` reports per-EC violation totals (`usage − quota`) — overlapping across ECs by construction, NOT a bill decomposition. Combined-pool stays rejected (masks per-budget overage in alerts); additive groups are one summed grant, so a single EC covers that mode.
 
 - **Quantity lane** — the summed overage becomes the billable quantity for the pricer (commit / tier / true-up apply on top as usual).
 - **Amount lane** — the summed overage is already currency; it lands directly on the line item and the quantity zeroes so nothing double-counts. A runtime guard skips folding when the line item carries commitment or true-up, or the price is tiered (those need full-cycle pricing scope) — EC-write validation prevents the tiered case, the guard covers config drift and sub-line-level commitments invisible at EC-write time.
@@ -307,7 +318,7 @@ Only **feature-scoped** grants fold per meter. A future subscription- or group-s
 
 **Runtime (billing fold):**
 
-12. Amount-lane folding skips line items with commitment / true-up / tiered pricing (belt-and-braces).
+12. Grant folding skips **tiered** prices in both lanes (overage is priced standalone / pre-priced per window — the marginal units would land in the wrong tier); the **amount lane** additionally skips commitment / true-up line items (they reconcile the whole cycle, which pre-priced overage bypasses). The quantity lane composes with commitments — its qty re-enters the normal pipeline.
 13. Only feature-scoped grants fold per meter.
 
 **Alerting:**
@@ -329,6 +340,8 @@ Only **feature-scoped** grants fold per meter. A future subscription- or group-s
 | Backdated events | Usage is always recomputed from CH over the grant window, never incremented — late events inside a window are picked up on the next tick. |
 | Window closes between ticks | The closed grant stays in the finalize set (`last_computed_at < valid_to`) and gets one final refresh — the tick scheduled by the window's own last event performs it. |
 | Slot race (two workers opening) | Deterministic `valid_from` ⇒ collision on the unique `(slot, valid_from)` index; loser re-reads the winner. |
+| Exhaustion not yet recorded at read time (evaluator lagging) | The EG contributes no overage window — bills on the next pass. Slight lag, never a wrong number; invoice creation closes the gap by running a grants-only refresh first. |
+| Merged-window measurement failure at read time | The error propagates — charge calculation fails and the invoice/balance request retries. A knowingly wrong number is never billed. |
 | Workflow-task backlog | Late-firing runs yield once via `ContinueAsNew` to the back of the queue; newer customers evaluate first. |
 | Activity-queue backlog | `ScheduleToStartTimeout` bounds the wait; error logged, next event's workflow re-evaluates. |
 
@@ -341,7 +354,9 @@ Only **feature-scoped** grants fold per meter. A future subscription- or group-s
 | No `grant_type` column | Fully derivable: an entitlement with a grant config *is* grant-based (`HasGrantConfig()`). Fewer knobs, no half-set states. |
 | `aggregation_mode` enum (`additive` default / `parallel`) instead of a `parallel` bool | Names the semantic; additive stays the legacy-compatible default. |
 | Additive = ONE summed grant on the primary EC slot | Single pool downstream — evaluation, alerts, billing need zero group-awareness. Splitting usage across same-feature buckets would need attribution machinery. |
-| Parallel = one grant per EC slot | Independent windows/budgets; per-grant overage summed for billing (combined-pool rejected — masks overage). |
+| Parallel = one grant per EC slot | Independent windows/budgets that each see the full usage stream; windows drift (usage-anchored per slot). Billing uses the excess-interval union — every unit that exceeded ≥1 budget bills exactly once — aligned violations merge, drifted ones both bill. Combined-pool rejected — masks per-budget overage in alerts. |
+| Record *when*, measure *where* (exhaustion timestamp at evaluator time, merged overage windows at read) | The debounced tick stores one fact per exhausted grant (`quota_crossed_at`); billing merges the overage windows and measures usage inside them — 0 queries when nothing crossed, ~1 when in overage. Replaced a full ownership ledger: same bill-once semantics, a fraction of the machinery. Invoice creation runs one idempotent refresh to close the debounce gap. |
+| `quota_crossed_at` = detection time, not the exact event-level crossing | Exact crossing needs extra ClickHouse queries (binary search on running usage) plus a stored usage-at-crossing for the straddling event. We skip both: billing only charges usage after detection — under-bills by the overage accrued before the tick (pro-customer, bounded by the debounce). Upgrade path if exactness is ever needed: binary-searched crossing second + usage-through-it. |
 | No price pinning on amount grants | The billing path already segments queries by line-item date ranges; a mid-window price change is priced per segment. Pinning would freeze the whole window at one price — worse. |
 | Usage-anchored windows (replaces butt-joint / delay-derived anchors) | Windows open at the first uncovered usage event and never at all when there is none — exact coverage with no idle-time windows and no delay-derived approximation. One extra indexed CH `min(timestamp)` scalar per window open. |
 | Skip `duration >= cycle length` at open | Cycle-scoped quotas already exist as `usage_reset_period`; avoids redundant rows/evaluation. Checked at open (not write) because cycle length is per-subscription. |

@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
+	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	priceDomain "github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
@@ -13,13 +16,12 @@ import (
 )
 
 // adjustMeterUsageGrantsResult is the per-line-item output of the grant folding.
-// Exactly one of {AdjustedQty, OverageAmount} carries the load per invocation,
-// selected by Measure.
+// Overage is in meter units for the quantity measure and in currency for the
+// amount measure; PerECOverage decomposes it per entitlement config.
 type adjustMeterUsageGrantsResult struct {
-	Measure        types.EntitlementGrantMeasure
-	AdjustedQty    decimal.Decimal
-	OverageAmount  decimal.Decimal
-	AppliedGrantID string
+	Measure      types.EntitlementGrantMeasure
+	Overage      decimal.Decimal
+	PerECOverage map[string]decimal.Decimal
 }
 
 // loadEntitlementGrantsByMeterID returns grants overlapping the billing cycle
@@ -72,120 +74,212 @@ func (s *billingService) loadEntitlementGrantsByMeterID(
 	return out, nil
 }
 
-// adjustMeterUsageGrants folds Σ max(0, grant.usage − grant.quota) into the line
-// item. Quantity lane returns AdjustedQty for the pricer; amount lane returns
-// OverageAmount (already priced) and zeros the qty. Returns applied=false when
-// the runtime pricing guard rejects an amount-lane line item.
+// adjustMeterUsageGrants folds the meter's EG overage into the line item.
+// Quantity measure: overage re-enters the pricer as the billable quantity.
+// Amount measure: overage is already money and bypasses the pricer.
+// applied=false when the pricing guard rejects the line item; a measurement
+// error propagates — billing a knowingly wrong number is never an option.
 func (s *billingService) adjustMeterUsageGrants(
 	ctx context.Context,
 	item *subscription.SubscriptionLineItem,
 	matchingCharge *dto.SubscriptionUsageByMetersResponse,
 	grants []*entitlementgrant.EntitlementGrant,
 	priceService PriceService,
-) (adjustMeterUsageGrantsResult, bool) {
+	m *meter.Meter,
+	sub *subscription.Subscription,
+	extCustomerIDs []string,
+) (adjustMeterUsageGrantsResult, bool, error) {
 	if len(grants) == 0 {
-		return adjustMeterUsageGrantsResult{}, false
+		return adjustMeterUsageGrantsResult{}, false, nil
 	}
-	// Measure is set on the EC and copied to every grant at open time; EC-write
-	// validation keeps it consistent per feature, so we can trust the first row.
+	// Measure is copied from the EC to every grant; EC-write validation keeps
+	// it consistent per feature, so the first row is authoritative.
 	measure := grants[0].Measure
 	if measure == "" {
-		return adjustMeterUsageGrantsResult{}, false
+		return adjustMeterUsageGrantsResult{}, false, nil
 	}
 
-	// Runtime-only guard: commitments and true-up live on the sub line item, not
-	// the plan-level EC, so this check has to happen here — EC-write validation
-	// can't see them at config time.
-	if measure == types.EntitlementGrantMeasureAmount {
-		if guardErr := amountLanePricingGuard(item, matchingCharge.Price); guardErr != nil {
-			s.Logger.Error(ctx, "entitlement grant overage: amount lane rejected, skipping grants",
-				"meter_id", item.MeterID,
-				"line_item_id", item.ID,
-				"error", guardErr,
-			)
-			return adjustMeterUsageGrantsResult{}, false
-		}
+	if guardErr := grantPricingGuard(measure, item, matchingCharge.Price); guardErr != nil {
+		s.Logger.Error(ctx, "entitlement grant overage: line item rejected, skipping grants",
+			"meter_id", item.MeterID,
+			"line_item_id", item.ID,
+			"measure", measure,
+			"error", guardErr,
+		)
+		return adjustMeterUsageGrantsResult{}, false, nil
 	}
 
-	res := adjustMeterUsageGrantsResult{Measure: measure}
+	// Per-EC violation totals (usage − quota). ECs share the usage stream, so
+	// these overlap — attribution only, never summed into the bill directly.
+	perECOverage := make(map[string]decimal.Decimal)
+	ecIDs := make(map[string]struct{})
 	for _, g := range grants {
 		if g == nil {
 			continue
 		}
-		overage := g.Overage()
-		if !overage.IsPositive() {
-			continue
+		ecIDs[g.EntitlementConfigID] = struct{}{}
+		if overage := g.Overage(); overage.IsPositive() {
+			perECOverage[g.EntitlementConfigID] = perECOverage[g.EntitlementConfigID].Add(overage)
 		}
-		if res.AppliedGrantID == "" {
-			res.AppliedGrantID = g.ID
+	}
+
+	res := adjustMeterUsageGrantsResult{Measure: measure, PerECOverage: perECOverage}
+	if len(ecIDs) <= 1 {
+		// Single EC: its windows never overlap, so the snapshot sum is exact
+		for _, total := range perECOverage {
+			res.Overage = res.Overage.Add(total)
 		}
-		switch measure {
-		case types.EntitlementGrantMeasureQuantity:
-			res.AdjustedQty = res.AdjustedQty.Add(overage)
-		case types.EntitlementGrantMeasureAmount:
-			res.OverageAmount = res.OverageAmount.Add(overage)
+	} else {
+		overage, err := s.mergedOverage(ctx, m, sub, extCustomerIDs, grants, measure)
+		if err != nil {
+			return adjustMeterUsageGrantsResult{}, false, err
 		}
+		res.Overage = overage
 	}
 
 	switch measure {
 	case types.EntitlementGrantMeasureQuantity:
+		matchingCharge.Quantity = res.Overage.InexactFloat64()
 		if matchingCharge.Price != nil {
-			adjustedAmount := priceService.CalculateCost(ctx, matchingCharge.Price, res.AdjustedQty)
-			matchingCharge.Amount = priceDomain.FormatAmountToFloat64WithPrecision(adjustedAmount, matchingCharge.Price.Currency)
+			cost := priceService.CalculateCost(ctx, matchingCharge.Price, res.Overage)
+			matchingCharge.Amount = priceDomain.FormatAmountToFloat64WithPrecision(cost, matchingCharge.Price.Currency)
 		} else {
 			matchingCharge.Amount = 0
 		}
-		matchingCharge.Quantity = res.AdjustedQty.InexactFloat64()
 	case types.EntitlementGrantMeasureAmount:
+		// Already money — zero the qty so aggregation doesn't double-count.
 		if matchingCharge.Price != nil {
-			matchingCharge.Amount = priceDomain.FormatAmountToFloat64WithPrecision(res.OverageAmount, matchingCharge.Price.Currency)
+			matchingCharge.Amount = priceDomain.FormatAmountToFloat64WithPrecision(res.Overage, matchingCharge.Price.Currency)
 		} else {
-			matchingCharge.Amount = res.OverageAmount.InexactFloat64()
+			matchingCharge.Amount = res.Overage.InexactFloat64()
 		}
-		// Amount-lane grants are already priced; zero the qty so aggregation doesn't double-count.
 		matchingCharge.Quantity = 0
 	}
-	return res, true
+	return res, true, nil
 }
 
-// amountLanePricingGuard returns nil when the line item is safe for the amount lane.
+// mergedOverage bills usage inside the unique overage windows across the
+// meter's ECs. Each quota-crossed EG contributes [quota_crossed_at, valid_to);
+// overlapping windows merge, so a unit bills once no matter how many EGs were in overage.
 //
-// Why each of these disqualifies amount grants:
-//   - commitment: the pricer walks the sub line's minimum commitment across the
-//     full cycle. Amount grants pre-price a slice of usage inside a window and
-//     hand back OverageAmount; the pricer would then re-apply commitment on top
-//     and either double-charge or under-charge the commit floor.
-//   - true-up: same shape — true-up reconciles the whole cycle against actual
-//     usage. Pre-priced overage bypasses it and produces a wrong final invoice.
-//   - tiered: tier boundaries walk with cumulative cycle quantity. A grant only
-//     knows its own window's qty, so it can't price against the right tier.
-//     EC-write validation already rejects this, but the guard keeps the
-//     billing path safe if a tier is ever added after the EC was created.
-func amountLanePricingGuard(item *subscription.SubscriptionLineItem, price *priceDomain.Price) error {
-	if item == nil {
+// Quantity measure: one ClickHouse query over all windows (TimeRanges)
+// Amount measure: one billing-path pricing per window.
+// Zero queries when nothing crossed.
+func (s *billingService) mergedOverage(
+	ctx context.Context,
+	m *meter.Meter,
+	sub *subscription.Subscription,
+	extCustomerIDs []string,
+	grants []*entitlementgrant.EntitlementGrant,
+	measure types.EntitlementGrantMeasure,
+) (decimal.Decimal, error) {
+	overageIntervals := make([]timeInterval, 0, len(grants))
+	for _, g := range grants {
+		if g != nil && g.QuotaCrossedAt != nil {
+			overageIntervals = append(overageIntervals, timeInterval{start: *g.QuotaCrossedAt, end: g.ValidTo})
+		}
+	}
+	if len(overageIntervals) == 0 {
+		return decimal.Zero, nil
+	}
+	if m == nil {
+		return decimal.Zero, errGrantDepsMissing
+	}
+
+	overageWindows := mergeIntervals(overageIntervals)
+	billableRanges := make([]events.TimeRange, 0, len(overageWindows))
+	for _, w := range overageWindows {
+		billableRanges = append(billableRanges, events.TimeRange{Start: w.start, End: w.end})
+	}
+
+	meterUsageSvc := NewMeterUsageService(s.ServiceParams)
+	total := decimal.Zero
+	switch measure {
+	case types.EntitlementGrantMeasureQuantity:
+		usage, err := meterUsageSvc.GetUsageTotal(ctx, &dto.UsageTotalRequest{
+			TenantID:            types.GetTenantID(ctx),
+			EnvironmentID:       types.GetEnvironmentID(ctx),
+			ExternalCustomerIDs: extCustomerIDs,
+			MeterID:             m.ID,
+			AggregationType:     m.Aggregation.Type,
+			TimeRanges:          billableRanges,
+		})
+		if err != nil {
+			return decimal.Zero, err
+		}
+		total = usage
+	case types.EntitlementGrantMeasureAmount:
+		if sub == nil {
+			return decimal.Zero, errGrantDepsMissing
+		}
+		for _, r := range billableRanges {
+			cost, err := meterUsageSvc.GetMeterWindowCost(ctx, sub, m.ID, r.Start, r.End)
+			if err != nil {
+				return decimal.Zero, err
+			}
+			total = total.Add(cost)
+		}
+	}
+	return total, nil
+}
+
+// timeInterval is a half-open [start, end) range.
+type timeInterval struct {
+	start, end time.Time
+}
+
+// mergeIntervals coalesces overlapping/touching intervals; empty ones drop.
+func mergeIntervals(in []timeInterval) []timeInterval {
+	valid := make([]timeInterval, 0, len(in))
+	for _, iv := range in {
+		if iv.end.After(iv.start) {
+			valid = append(valid, iv)
+		}
+	}
+	sort.Slice(valid, func(i, j int) bool { return valid[i].start.Before(valid[j].start) })
+
+	out := make([]timeInterval, 0, len(valid))
+	for _, iv := range valid {
+		if n := len(out); n > 0 && !iv.start.After(out[n-1].end) {
+			if iv.end.After(out[n-1].end) {
+				out[n-1].end = iv.end
+			}
+			continue
+		}
+		out = append(out, iv)
+	}
+	return out
+}
+
+// grantPricingGuard returns nil when grants may fold into this line item.
+// Tiered prices are rejected for both measures (tiers walk with cumulative
+// cycle quantity; overage priced standalone would land in the wrong tier).
+// Commitment/true-up reject only the amount measure — they reconcile the
+// whole cycle, which pre-priced overage bypasses; the quantity measure feeds
+// its qty back into the normal pipeline where they compose correctly.
+func grantPricingGuard(measure types.EntitlementGrantMeasure, item *subscription.SubscriptionLineItem, price *priceDomain.Price) error {
+	if price != nil && price.BillingModel == types.BILLING_MODEL_TIERED {
+		return errGrantTiered
+	}
+	if measure != types.EntitlementGrantMeasureAmount || item == nil {
 		return nil
 	}
 	if item.HasAnyCommitment() {
-		return errAmountLaneCommitment
+		return errGrantAmountCommitment
 	}
 	if item.HasTrueUpEnabled() {
-		return errAmountLaneTrueUp
-	}
-	if price == nil {
-		return nil
-	}
-	if price.BillingModel == types.BILLING_MODEL_TIERED {
-		return errAmountLaneTiered
+		return errGrantAmountTrueUp
 	}
 	return nil
 }
 
 var (
-	errAmountLaneCommitment = errAmountLaneReason("line item carries a commitment")
-	errAmountLaneTrueUp     = errAmountLaneReason("line item enables true-up")
-	errAmountLaneTiered     = errAmountLaneReason("price uses tiered billing")
+	errGrantAmountCommitment = grantGuardError("line item carries a commitment")
+	errGrantAmountTrueUp     = grantGuardError("line item enables true-up")
+	errGrantTiered           = grantGuardError("price uses tiered billing")
+	errGrantDepsMissing      = grantGuardError("measurement dependencies unavailable")
 )
 
-type errAmountLaneReason string
+type grantGuardError string
 
-func (e errAmountLaneReason) Error() string { return string(e) }
+func (e grantGuardError) Error() string { return string(e) }

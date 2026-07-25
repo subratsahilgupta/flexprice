@@ -73,6 +73,7 @@ func (r *entitlementGrantRepository) Create(ctx context.Context, g *domainGrant.
 		SetValidTo(g.ValidTo).
 		SetGrantStatus(defaultedGrantStatus(g.GrantStatus)).
 		SetNillableLastComputedAt(g.LastComputedAt).
+		SetNillableQuotaCrossedAt(g.QuotaCrossedAt).
 		SetTenantID(g.TenantID).
 		SetEnvironmentID(g.EnvironmentID).
 		SetStatus(string(g.Status)).
@@ -203,6 +204,7 @@ func (r *entitlementGrantRepository) UpdateSnapshot(ctx context.Context, g *doma
 		SetUsage(g.Usage).
 		SetGrantStatus(defaultedGrantStatus(g.GrantStatus)).
 		SetNillableLastComputedAt(g.LastComputedAt).
+		SetNillableQuotaCrossedAt(g.QuotaCrossedAt).
 		SetUpdatedAt(time.Now().UTC())
 
 	if err := q.Exec(ctx); err != nil {

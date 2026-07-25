@@ -216,6 +216,20 @@ func (egc *EntitlementGrantCreate) SetNillableLastComputedAt(t *time.Time) *Enti
 	return egc
 }
 
+// SetQuotaCrossedAt sets the "quota_crossed_at" field.
+func (egc *EntitlementGrantCreate) SetQuotaCrossedAt(t time.Time) *EntitlementGrantCreate {
+	egc.mutation.SetQuotaCrossedAt(t)
+	return egc
+}
+
+// SetNillableQuotaCrossedAt sets the "quota_crossed_at" field if the given value is not nil.
+func (egc *EntitlementGrantCreate) SetNillableQuotaCrossedAt(t *time.Time) *EntitlementGrantCreate {
+	if t != nil {
+		egc.SetQuotaCrossedAt(*t)
+	}
+	return egc
+}
+
 // SetID sets the "id" field.
 func (egc *EntitlementGrantCreate) SetID(s string) *EntitlementGrantCreate {
 	egc.mutation.SetID(s)
@@ -484,6 +498,10 @@ func (egc *EntitlementGrantCreate) createSpec() (*EntitlementGrant, *sqlgraph.Cr
 	if value, ok := egc.mutation.LastComputedAt(); ok {
 		_spec.SetField(entitlementgrant.FieldLastComputedAt, field.TypeTime, value)
 		_node.LastComputedAt = &value
+	}
+	if value, ok := egc.mutation.QuotaCrossedAt(); ok {
+		_spec.SetField(entitlementgrant.FieldQuotaCrossedAt, field.TypeTime, value)
+		_node.QuotaCrossedAt = &value
 	}
 	return _node, _spec
 }
