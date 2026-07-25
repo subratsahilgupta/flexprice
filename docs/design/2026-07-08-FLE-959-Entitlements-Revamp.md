@@ -78,7 +78,7 @@ CREATE TABLE entitlement_grants (
     valid_to               timestamptz NOT NULL,             -- <= sub.current_period_end
     grant_status           varchar(20) NOT NULL DEFAULT 'active',  -- active|exhausted; expiry derived from valid_to
     last_computed_at       timestamptz,                             -- snapshot watermark; >= valid_to marks a closed window finalized
-    quota_crossed_at       timestamptz                              -- set once: the EVALUATION time that first saw usage > quota (see §5.3 note)
+    quota_crossed_at       timestamptz                              -- set once: the EVALUATION time that first saw usage >= quota (see §5.3 note)
     -- + standard base columns (status, created_at, ...)
 );
 
@@ -270,7 +270,7 @@ Per returned feature-scoped grant (open windows plus the finalize set), over `[v
 
 Snapshot write (`UpdateSnapshot`): `usage`, `last_computed_at`, `quota_crossed_at`, and `active → exhausted` when `usage >= quota`.
 
-**Quota-exhaustion recording (once per grant lifetime):** when a refresh first sees `usage > quota`, the evaluator sets `quota_crossed_at = evaluation time` — no extra queries. **Note (deliberate approximation):** this is the *detection* time, not the exact event-level crossing; billing only charges usage *after* it, so overage accrued between the true crossing and detection is never billed — pro-customer, bounded by the debounce delay. The exact alternative, if ever needed, is binary-searching the crossing second on the running measure and storing the usage total through it (see decisions log). That is ALL the evaluator does for overage; billing derives everything else (§6).
+**Quota-exhaustion recording (once per grant lifetime):** when a refresh first sees `usage >= quota`, the evaluator sets `quota_crossed_at = evaluation time` — no extra queries. **Note (deliberate approximation):** this is the *detection* time, not the exact event-level crossing; billing only charges usage *after* it, so overage accrued between the true crossing and detection is never billed — pro-customer, bounded by the debounce delay. The exact alternative, if ever needed, is binary-searching the crossing second on the running measure and storing the usage total through it (see decisions log). That is ALL the evaluator does for overage; billing derives everything else (§6).
 
 **Alerts fire on exhaustion only** (`usage/quota >= 1`): one `alert_logs` row (`in_alarm`) per grant, deduped by state transition, delivered as the `entitlement.grant.exhausted` webhook (payload: subscription + grant id + usage ratio). Recovery is a new grant window, not a state flip.
 
