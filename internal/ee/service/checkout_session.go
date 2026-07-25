@@ -423,17 +423,8 @@ func (s *checkoutSessionService) StartPayFirstCheckoutSession(
 	ctx context.Context,
 	req *dto.PayFirstCheckoutRequest,
 ) (*dto.CheckoutSessionResponse, error) {
-	if req == nil || req.Checkout == nil {
-		return nil, ierr.NewError("pay-first checkout requires checkout params").
-			Mark(ierr.ErrValidation)
-	}
-	if req.DraftInvoice == nil || req.DraftInvoice.ID == "" {
-		return nil, ierr.NewError("pay-first checkout requires a draft invoice").
-			Mark(ierr.ErrValidation)
-	}
-	if req.CustomerID == "" {
-		return nil, ierr.NewError("pay-first checkout requires customer_id").
-			Mark(ierr.ErrValidation)
+	if err := req.Validate(); err != nil {
+		return nil, err
 	}
 
 	providerCfg := &types.CheckoutPaymentProviderConfig{}
@@ -449,14 +440,8 @@ func (s *checkoutSessionService) StartPayFirstCheckoutSession(
 	req.Checkout.PaymentProviderConfig = providerCfg
 
 	draftInvoiceID := req.DraftInvoice.ID
-	session := domainCheckout.NewCheckoutSessionBuilder(ctx, domainCheckout.EmptyCheckoutSession()).
-		InitiateSession(ctx).
-		WithCustomerID(req.CustomerID).
-		WithAction(req.Action).
-		WithConfiguration(domainCheckout.ToJSONBCheckoutConfiguration(req.Configuration)).
-		WithCheckoutParams(req.Checkout.ToDomainCheckoutParams()).
-		WithCheckoutInvoiceID(&draftInvoiceID).
-		Build()
+	session := req.ToCheckoutSession(ctx, req.CustomerID)
+	session.CheckoutInvoiceID = lo.ToPtr(draftInvoiceID)
 
 	if err := s.CheckoutSessionRepo.Create(ctx, session); err != nil {
 		if delErr := s.InvoiceRepo.Delete(ctx, draftInvoiceID); delErr != nil {

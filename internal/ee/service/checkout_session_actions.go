@@ -157,10 +157,7 @@ func (s *checkoutSessionService) callCheckoutProvider(
 		ProviderPaymentIntentID: resp.ProviderPaymentIntentID,
 		ExpiresAt:               resp.ExpiresAt,
 		ProviderMetadata:        resp.ProviderMetadata,
-	}
-	if resp.NextAction.URL != "" {
-		next := resp.NextAction
-		result.NextAction = &next
+		NextAction:              lo.ToPtr(resp.NextAction),
 	}
 	return result, nil
 }

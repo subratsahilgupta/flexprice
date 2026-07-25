@@ -346,9 +346,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 }
 
 // CreateComputedDraftInvoice creates an empty DRAFT invoice and computes line items/amounts
-// without finalizing. Callers that need a payment-gated lock should use this instead of
-// CreateOneOffInvoice / CreateInvoice (which finalize ONE_OFF invoices).
-// skipped is true when ComputeInvoice skips a zero-dollar invoice; callers decide how to handle it.
+// without finalizing.
 func (s *invoiceService) CreateComputedDraftInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, bool, error) {
 	draftResp, err := s.CreateEmptyDraftInvoice(ctx, req.ToDraftRequest())
 	if err != nil {

@@ -59,28 +59,6 @@ func (p *CheckoutParams) Validate() error {
 	return p.PaymentParams.Validate()
 }
 
-// ToDomainCheckoutParams maps API checkout params onto the domain builder input.
-func (p *CheckoutParams) ToDomainCheckoutParams() *domainCheckout.CheckoutParams {
-	if p == nil {
-		return nil
-	}
-
-	var meta types.Metadata
-	if len(p.Metadata) > 0 {
-		meta = types.Metadata(p.Metadata)
-	}
-	
-	return &domainCheckout.CheckoutParams{
-		PaymentProvider:       p.PaymentProvider,
-		PaymentProviderConfig: p.PaymentProviderConfig,
-		IdempotencyKey:        p.IdempotencyKey,
-		SuccessURL:            p.SuccessURL,
-		FailureURL:            p.FailureURL,
-		CancelURL:             p.CancelURL,
-		Metadata:              meta,
-	}
-}
-
 // CreateCheckoutSessionRequest is the request body for POST /checkout/sessions.
 type CreateCheckoutSessionRequest struct {
 	CustomerExternalID string                      `json:"customer_external_id" binding:"required"`
@@ -123,13 +101,28 @@ func (r *CreateCheckoutSessionRequest) Validate() error {
 	return nil
 }
 
+func (r *CreateCheckoutSessionRequest) ResolveExpiresAt(now time.Time) time.Time {
+	return now.UTC().Add(r.PaymentProvider.SessionExpiry())
+}
+
 func (r *CreateCheckoutSessionRequest) ToCheckoutSession(ctx context.Context, customerID string) *domainCheckout.CheckoutSession {
-	return domainCheckout.NewCheckoutSessionBuilder(ctx, nil).
-		WithCustomerID(customerID).
-		WithAction(r.Action).
-		WithConfiguration(domainCheckout.ToJSONBCheckoutConfiguration(r.Configuration)).
-		WithCheckoutParams(r.CheckoutParams.ToDomainCheckoutParams()).
-		Build()
+	return &domainCheckout.CheckoutSession{
+		ID:                    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
+		EnvironmentID:         types.GetEnvironmentID(ctx),
+		CustomerID:            customerID,
+		Action:                r.Action,
+		CheckoutStatus:        types.CheckoutStatusInitiated,
+		PaymentProvider:       r.PaymentProvider,
+		Configuration:         domainCheckout.ToJSONBCheckoutConfiguration(r.Configuration),
+		PaymentProviderConfig: domainCheckout.ToJSONBCheckoutPaymentProviderConfig(r.PaymentProviderConfig),
+		IdempotencyKey:        r.IdempotencyKey,
+		SuccessURL:            r.SuccessURL,
+		FailureURL:            r.FailureURL,
+		CancelURL:             r.CancelURL,
+		ExpiresAt:             r.ResolveExpiresAt(time.Now()),
+		Metadata:              r.Metadata,
+		BaseModel:             types.GetDefaultBaseModel(ctx),
+	}
 }
 
 // UpdateCheckoutSessionRequest carries lifecycle-only patch fields.
@@ -154,16 +147,51 @@ type CreateCheckoutPaymentRequest struct {
 	Gateway types.PaymentGatewayType
 }
 
-// PayFirstCheckoutRequest is the shared settlement input for payment-gated flows.
-// Callers create domain intent + DRAFT invoice after guarding concurrent pending
-// sessions; StartPayFirstCheckoutSession owns session create, fulfill, cleanup,
-// and initiated webhook.
 type PayFirstCheckoutRequest struct {
 	CustomerID    string
 	Action        types.CheckoutAction
 	Configuration types.CheckoutConfiguration
 	DraftInvoice  *invoice.Invoice
 	Checkout      *CheckoutParams
+}
+
+func (r *PayFirstCheckoutRequest) Validate() error {
+	if r == nil || r.Checkout == nil {
+		return ierr.NewError("pay-first checkout requires checkout params").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.DraftInvoice == nil || r.DraftInvoice.ID == "" {
+		return ierr.NewError("pay-first checkout requires a draft invoice").
+			Mark(ierr.ErrValidation)
+	}
+	
+	if r.CustomerID == "" {
+		return ierr.NewError("pay-first checkout requires customer_id").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+func (r *PayFirstCheckoutRequest) ToCheckoutSession(ctx context.Context, customerID string) *domainCheckout.CheckoutSession {
+	return &domainCheckout.CheckoutSession{
+		ID:                    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
+		EnvironmentID:         types.GetEnvironmentID(ctx),
+		CustomerID:            customerID,
+		Action:                r.Action,
+		CheckoutStatus:        types.CheckoutStatusInitiated,
+		PaymentProvider:       r.Checkout.PaymentProvider,
+		Configuration:         domainCheckout.ToJSONBCheckoutConfiguration(r.Configuration),
+		PaymentProviderConfig: domainCheckout.ToJSONBCheckoutPaymentProviderConfig(r.Checkout.PaymentProviderConfig),
+		IdempotencyKey:        r.Checkout.IdempotencyKey,
+		SuccessURL:            r.Checkout.SuccessURL,
+		FailureURL:            r.Checkout.FailureURL,
+		CancelURL:             r.Checkout.CancelURL,
+		ExpiresAt:             time.Now().UTC().Add(r.Checkout.PaymentProvider.SessionExpiry()),
+		Metadata:              r.Checkout.Metadata,
+		BaseModel:             types.GetDefaultBaseModel(ctx),
+	}
 }
 
 // ValidateCheckoutSessionForCompletion ensures a session has action params and
