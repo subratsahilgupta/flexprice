@@ -346,8 +346,11 @@ func (s *entitlementGrantService) openIfSlotFree(
 	opened := make([]*entitlementgrant.EntitlementGrant, 0, 1)
 	for {
 		lastEnd := latestEndBySlot[slot]
-		if lastEnd.After(at) {
-			return opened, nil // latest window is open (or slot just caught up)
+		// Done when the latest window is still open, or coverage already reaches
+		// cycle_end (catch-up finished, or rollover lag with a stale sub) — the
+		// anchor range would be empty, so skip the usage query outright.
+		if lastEnd.After(at) || !lastEnd.Before(sub.CurrentPeriodEnd) {
+			return opened, nil
 		}
 
 		g, err := s.openOneGrant(ctx, sub, candidate.ec, lastEnd, meta, at, candidate.quota)

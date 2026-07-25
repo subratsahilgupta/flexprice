@@ -224,8 +224,8 @@ flowchart TD
 
     Meta --> Open["openMissingGrants<br/>per sub → openableGrantECsByFeature"]
     Open --> Cand["grantCandidatesForFeature<br/>additive → one summed candidate on the primary EC<br/>parallel → one candidate per EC"]
-    Cand --> Occ{"slot's latest<br/>valid_to &gt; at?"}
-    Occ -->|"yes — window still open"| Skip["skip candidate"]
+    Cand --> Occ{"slot's latest valid_to &gt; at,<br/>or already &ge; cycle_end?"}
+    Occ -->|"yes — window open / cycle fully covered"| Skip["skip candidate<br/>(no usage query)"]
     Occ -->|"no — slot free"| Win["computeGrantWindow<br/>coveredUntil = max(last window end, cycle_start)<br/>firstUncoveredAt = min(timestamp) in [coveredUntil, min(at, cycle_end))"]
     Win -->|"no uncovered usage"| Skip
     Win -->|"window (boundary: cap at cycle_end, absorb sub-1h stubs; loops until slot caught up)"| Ins["INSERT grant<br/>unique (slot, valid_from) = race arbiter"]
@@ -324,7 +324,7 @@ Only **feature-scoped** grants fold per meter. A future subscription- or group-s
 | Redis unavailable | Throttle fails open; Temporal `AlreadyStarted` dedup absorbs duplicates. |
 | Temporal unavailable | CH insert + Kafka ack unaffected; alerts delayed, not lost. |
 | Evaluation delayed / consumer down | Usage during the outage anchors each missed window exactly; one tick drains the whole backlog (per-slot catch-up loop) and recomputes usage from CH. |
-| Cycle-rollover lag (period fields updated late by the billing worker) | Ticks during the lag open nothing past the stale `cycle_end` (anchor query is clamped). The first tick after rollover drains all backlog windows at exact event timestamps. If no event ever arrives post-rollover, the backlog waits for the next tick — hardening option: trigger an evaluation from the rollover workflow itself. |
+| Cycle-rollover lag (period fields updated late by the billing worker) | Ticks during the lag open nothing past the stale `cycle_end`: once slot coverage reaches `cycle_end` the open loop skips without even issuing the usage query. The first tick after rollover drains all backlog windows at exact event timestamps. If no event ever arrives post-rollover, the backlog waits for the next tick — hardening option: trigger an evaluation from the rollover workflow itself. |
 | Outage spanning a cycle rollover | New cycle anchors at `cycle_start` (coverage continues); windows never open in a closed cycle, so an old-cycle uncovered tail stays unbilled (accepted — same class as any usage after the last window of a cycle). |
 | Backdated events | Usage is always recomputed from CH over the grant window, never incremented — late events inside a window are picked up on the next tick. |
 | Window closes between ticks | The closed grant stays in the finalize set (`last_computed_at < valid_to`) and gets one final refresh — the tick scheduled by the window's own last event performs it. |
