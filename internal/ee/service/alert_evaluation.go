@@ -243,6 +243,8 @@ func (s *alertService) RefreshEntitlementGrantsForCustomer(ctx context.Context, 
 // refresh). Alert-log dedup makes it safe under Temporal retries. meta is the
 // lookup bundle built during EnsureGrantsForSubscriptions; grants whose
 // subscription is not in it (e.g. cancelled mid-window) are skipped.
+// Per-grant failures never block the remaining grants; they join into the
+// returned error so the Temporal retry decision sees them.
 func (s *alertService) evaluateEntitlementGrantsForCustomer(
 	ctx context.Context,
 	cust *customer.Customer,
@@ -271,6 +273,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 
 	alertLogsSvc := NewAlertLogsService(s.ServiceParams)
 
+	var errs []error
 	for _, g := range featureGrants {
 		f, ok := meta.featureByID[g.ScopeEntityID]
 		if !ok || f.MeterID == "" {
@@ -292,6 +295,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 		if err != nil {
 			s.Logger.Error(ctx, "entitlement grant evaluation: external customer id lookup failed",
 				"grant_id", g.ID, "subscription_id", sub.ID, "error", err)
+			errs = append(errs, err)
 			continue
 		}
 
@@ -299,12 +303,14 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 		if err != nil {
 			s.Logger.Error(ctx, "entitlement grant evaluation: usage refresh failed",
 				"grant_id", g.ID, "error", err)
+			errs = append(errs, err)
 			continue
 		}
 
 		if err := s.transitionEntitlementGrantAlert(ctx, alertLogsSvc, cust, g, usage, at); err != nil {
 			s.Logger.Error(ctx, "entitlement grant evaluation: alert transition failed",
 				"grant_id", g.ID, "error", err)
+			errs = append(errs, err)
 		}
 
 		// Record the quota exhaustion timestamp, once per grant.
@@ -331,9 +337,10 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 		if err := s.EntitlementGrantRepo.UpdateSnapshot(ctx, builder.Build()); err != nil {
 			s.Logger.Error(ctx, "entitlement grant evaluation: snapshot write failed",
 				"grant_id", g.ID, "error", err)
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // refreshEntitlementGrantUsage refreshes the grant's consumed usage over

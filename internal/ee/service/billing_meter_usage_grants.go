@@ -99,7 +99,7 @@ func (s *billingService) adjustMeterUsageGrants(
 		return adjustMeterUsageGrantsResult{}, false, nil
 	}
 
-	if guardErr := grantPricingGuard(measure, item, matchingCharge.Price); guardErr != nil {
+	if guardErr := grantPricingGuard(measure, item, matchingCharge.Price, m); guardErr != nil {
 		s.Logger.Error(ctx, "entitlement grant overage: line item rejected, skipping grants",
 			"meter_id", item.MeterID,
 			"line_item_id", item.ID,
@@ -252,12 +252,25 @@ func mergeIntervals(in []timeInterval) []timeInterval {
 }
 
 // grantPricingGuard returns nil when grants may fold into this line item.
+// The fold assumes usage is additive over disjoint time windows (snapshot sums
+// per window, merged-window measurement) — so non-additive aggregations
+// (MAX, LATEST, AVG, ...) and bucketed meters are rejected outright.
 // Tiered prices are rejected for both measures (tiers walk with cumulative
 // cycle quantity; overage priced standalone would land in the wrong tier).
 // Commitment/true-up reject only the amount measure — they reconcile the
 // whole cycle, which pre-priced overage bypasses; the quantity measure feeds
 // its qty back into the normal pipeline where they compose correctly.
-func grantPricingGuard(measure types.EntitlementGrantMeasure, item *subscription.SubscriptionLineItem, price *priceDomain.Price) error {
+func grantPricingGuard(measure types.EntitlementGrantMeasure, item *subscription.SubscriptionLineItem, price *priceDomain.Price, m *meter.Meter) error {
+	if m != nil {
+		switch m.Aggregation.Type {
+		case types.AggregationSum, types.AggregationCount, types.AggregationSumWithMultiplier:
+		default:
+			return errGrantNonAdditiveAggregation
+		}
+		if m.Aggregation.BucketSize != "" {
+			return errGrantBucketedMeter
+		}
+	}
 	if price != nil && price.BillingModel == types.BILLING_MODEL_TIERED {
 		return errGrantTiered
 	}
@@ -274,10 +287,12 @@ func grantPricingGuard(measure types.EntitlementGrantMeasure, item *subscription
 }
 
 var (
-	errGrantAmountCommitment = grantGuardError("line item carries a commitment")
-	errGrantAmountTrueUp     = grantGuardError("line item enables true-up")
-	errGrantTiered           = grantGuardError("price uses tiered billing")
-	errGrantDepsMissing      = grantGuardError("measurement dependencies unavailable")
+	errGrantAmountCommitment       = grantGuardError("line item carries a commitment")
+	errGrantAmountTrueUp           = grantGuardError("line item enables true-up")
+	errGrantTiered                 = grantGuardError("price uses tiered billing")
+	errGrantDepsMissing            = grantGuardError("measurement dependencies unavailable")
+	errGrantNonAdditiveAggregation = grantGuardError("meter aggregation is not additive over time windows")
+	errGrantBucketedMeter          = grantGuardError("meter uses bucketed aggregation")
 )
 
 type grantGuardError string

@@ -1920,7 +1920,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	// values. Dep guard keeps partially-wired test services on the old path.
 	if s.EntitlementGrantRepo != nil && s.CustomerRepo != nil && s.SubRepo != nil && s.MeterUsageRepo != nil {
 		if err := NewAlertService(s.ServiceParams).RefreshEntitlementGrantsForCustomer(ctx, subscription.CustomerID); err != nil {
-			s.Logger.Warn(ctx, "entitlement grant refresh before invoicing failed; using last materialized overage",
+			s.Logger.Error(ctx, "entitlement grant refresh before invoicing failed; using last materialized overage",
 				"subscription_id", subscription.ID, "error", err)
 		}
 	}

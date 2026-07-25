@@ -249,11 +249,11 @@ For each subscription, resolve its entitlements (`GetSubscriptionEntitlements` �
 
 Grant opening (`openOneGrant`): compute the window and INSERT — nothing else. The unique `(slot, valid_from)` index is the race arbiter: `valid_from` is deterministic (same covered-until bound + same events ⇒ same start), so a losing racer collides and re-reads the winner (`FindLastBySlot`).
 
-**Window math (`computeGrantWindow`) — windows are usage-anchored.** Every window opens at the first usage event past the covered range, so no event ever falls outside a window and idle periods open no windows at all:
+**Window math (`computeGrantWindow`) — windows are usage-anchored.** Every window opens at the first usage event past the covered range, so every event *visible at evaluation time* falls inside a window and idle periods open no windows at all (a backdated arrival into an already-passed gap is the accepted edge below):
 
 - **`coveredUntil`** = `max(prev.valid_to, cycle_start)` from the slot's latest grant — everything before it is covered by past windows (no grant, or one from an earlier cycle → `cycle_start`; last usage in the previous cycle followed by first usage in the new one is a normal idle gap, not an error).
 - **`firstUncoveredAt`** = `min(timestamp)` of `meter_usage` in `[coveredUntil, min(now, cycle_end))` for the grant's meter + external customer IDs (`GetEarliestUsageTimestamp`). The `cycle_end` clamp keeps next-cycle events out before the subscription object rolls; an empty range simply finds nothing. **No uncovered usage → no grant opens** (lazy opening — the next tick re-checks with the same covered-until bound, so an event still in the ingest pipeline is picked up later).
-- `valid_from = firstUncoveredAt` — exact: an event at 2:00 evaluated at 2:07 opens a window starting 2:00. Idle gaps between windows are legal by construction (no events there).
+- `valid_from = firstUncoveredAt` — exact for events visible in the uncovered query range: an event at 2:00 evaluated at 2:07 opens a window starting 2:00. Idle gaps between windows are legal by construction (no events there *when the window opened*; a later backdated arrival into such a gap stays uncovered — see the accepted edges).
 - `valid_to = valid_from + duration`; when the remainder to `cycle_end` would be sub-minimum the window **stretches to `cycle_end`** — cap and trailing-stub absorption in one rule. The **1h minimum is best-effort at the boundary**: a forced tail (first uncovered event inside the cycle's last hour) opens short `[event, cycle_end)` — coverage beats window-length aesthetics; the config-level minimum (`grant_duration >= 1h`) is structural (smallest unit is an hour).
 - **Catch-up drains in one pass**: after delayed evaluation or cycle-rollover lag, a single tick loops per slot — open window, advance the covered bound, re-anchor — until the latest window is open at `now` or no uncovered usage remains. Draining a backlog never depends on future events arriving. Usage recompute from CH keeps late accounting idempotent.
 
@@ -318,7 +318,7 @@ Only **feature-scoped** grants fold per meter. A future subscription- or group-s
 
 **Runtime (billing fold):**
 
-12. Grant folding skips **tiered** prices in both lanes (overage is priced standalone / pre-priced per window — the marginal units would land in the wrong tier); the **amount lane** additionally skips commitment / true-up line items (they reconcile the whole cycle, which pre-priced overage bypasses). The quantity lane composes with commitments — its qty re-enters the normal pipeline.
+12. Grant folding requires an **additive, non-bucketed** meter aggregation (SUM / COUNT / SUM_WITH_MULTIPLIER without a bucket): snapshot sums and merged-window measurement assume usage decomposes over time windows, which MAX / LATEST / AVG / bucketed meters don't. Grant folding also skips **tiered** prices in both lanes (overage is priced standalone / pre-priced per window — the marginal units would land in the wrong tier); the **amount lane** additionally skips commitment / true-up line items (they reconcile the whole cycle, which pre-priced overage bypasses). The quantity lane composes with commitments — its qty re-enters the normal pipeline.
 13. Only feature-scoped grants fold per meter.
 
 **Alerting:**

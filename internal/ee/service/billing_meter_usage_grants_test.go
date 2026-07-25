@@ -246,6 +246,41 @@ func TestAdjustMeterUsageGrants_QuantityLane_TieredPriceGuardRejects(t *testing.
 	}
 }
 
+func TestAdjustMeterUsageGrants_NonAdditiveAggregationGuardRejects(t *testing.T) {
+	// Snapshot sums and merged-window measurement assume usage is additive over
+	// disjoint time windows; MAX/LATEST/AVG do not decompose that way.
+	bs := newTestBillingService()
+	li := linItem(false, false)
+	c := charge(flatPrice(0.01))
+	grants := []*entitlementgrant.EntitlementGrant{
+		makeGrant(100, 250, types.EntitlementGrantMeasureQuantity),
+	}
+	m := &meter.Meter{ID: "meter_max", Aggregation: meter.Aggregation{Type: types.AggregationMax}}
+	_, applied, _ := bs.adjustMeterUsageGrants(context.Background(), li, c, grants, newTestPriceService(), m, nil, nil)
+	if applied {
+		t.Fatalf("MAX aggregation must reject grant folding")
+	}
+	if c.Quantity != 1000 {
+		t.Fatalf("matchingCharge should be untouched when guard trips")
+	}
+}
+
+func TestAdjustMeterUsageGrants_BucketedMeterGuardRejects(t *testing.T) {
+	// Bucketed meters price through their own bucketed cost path; window
+	// measurement over raw usage would disagree with it.
+	bs := newTestBillingService()
+	li := linItem(false, false)
+	c := charge(flatPrice(0.01))
+	grants := []*entitlementgrant.EntitlementGrant{
+		makeGrant(100, 250, types.EntitlementGrantMeasureQuantity),
+	}
+	m := &meter.Meter{ID: "meter_bucketed", Aggregation: meter.Aggregation{Type: types.AggregationSum, BucketSize: types.WindowSizeHour}}
+	_, applied, _ := bs.adjustMeterUsageGrants(context.Background(), li, c, grants, newTestPriceService(), m, nil, nil)
+	if applied {
+		t.Fatalf("bucketed meter must reject grant folding")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Merged overage windows: grants pre-materialized (quota_crossed_at, as the
 // evaluator writes it), fold measures usage inside the merged windows.
