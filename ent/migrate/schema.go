@@ -897,7 +897,7 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{EntitlementsColumns[1], EntitlementsColumns[7], EntitlementsColumns[8], EntitlementsColumns[9], EntitlementsColumns[10]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "((status)::text = 'published'::text)",
+					Where: "(((status)::text = 'published'::text) AND ((aggregation_mode)::text <> 'parallel'::text))",
 				},
 			},
 			{

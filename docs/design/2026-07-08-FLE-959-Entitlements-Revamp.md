@@ -228,7 +228,7 @@ flowchart TD
     Occ -->|"yes — window still open"| Skip["skip candidate"]
     Occ -->|"no — slot free"| Win["computeGrantWindow<br/>coveredUntil = max(last window end, cycle_start)<br/>firstUncoveredAt = min(timestamp) in [coveredUntil, min(at, cycle_end))"]
     Win -->|"no uncovered usage"| Skip
-    Win -->|"window (boundary: backdate to last full duration / stretch to cycle_end)"| Ins["INSERT grant<br/>unique (slot, valid_from) = race arbiter"]
+    Win -->|"window (boundary: cap at cycle_end, absorb sub-1h stubs; loops until slot caught up)"| Ins["INSERT grant<br/>unique (slot, valid_from) = race arbiter"]
     Ins -->|"conflict"| ReRead["FindLastBySlot → return the winner"]
     Ins -->|"ok"| Opened["opened"]
     ReRead --> Opened
@@ -252,9 +252,9 @@ Grant opening (`openOneGrant`): compute the window and INSERT — nothing else. 
 
 - **`coveredUntil`** = `max(prev.valid_to, cycle_start)` from the slot's latest grant — everything before it is covered by past windows (no grant, or one from an earlier cycle → `cycle_start`; last usage in the previous cycle followed by first usage in the new one is a normal idle gap, not an error).
 - **`firstUncoveredAt`** = `min(timestamp)` of `meter_usage` in `[coveredUntil, min(now, cycle_end))` for the grant's meter + external customer IDs (`GetEarliestUsageTimestamp`). The `cycle_end` clamp keeps next-cycle events out before the subscription object rolls; an empty range simply finds nothing. **No uncovered usage → no grant opens** (lazy opening — the next tick re-checks with the same covered-until bound, so an event still in the ingest pipeline is picked up later).
-- `valid_from = firstUncoveredAt` — exact: an event at 2:00 evaluated at 2:07 opens a window starting 2:00. Idle gaps between windows are legal by construction (no events there). When the full duration no longer fits (`cycle_end − firstUncoveredAt < duration`), the start **backdates** to `max(coveredUntil, cycle_end − duration)` — the final window is the cycle's last `duration`, clamped at the covered range. Backdating is free: `[coveredUntil, firstUncoveredAt)` is event-free by definition.
-- `valid_to = valid_from + duration`; when the remainder to `cycle_end` would be sub-minimum the window **stretches to `cycle_end`** — cap and trailing-stub absorption in one rule (absorption also keeps `coveredUntil` out of the final hour, which is what guarantees backdated windows are ≥ 1h even when clamped). Every instantiated window is ≥ 1h, enforced by domain `Validate`.
-- Catch-up after delayed evaluation walks one usage-anchored window per tick; usage recompute from CH keeps late accounting idempotent.
+- `valid_from = firstUncoveredAt` — exact: an event at 2:00 evaluated at 2:07 opens a window starting 2:00. Idle gaps between windows are legal by construction (no events there).
+- `valid_to = valid_from + duration`; when the remainder to `cycle_end` would be sub-minimum the window **stretches to `cycle_end`** — cap and trailing-stub absorption in one rule. The **1h minimum is best-effort at the boundary**: a forced tail (first uncovered event inside the cycle's last hour) opens short `[event, cycle_end)` — coverage beats window-length aesthetics; the config-level minimum (`grant_duration >= 1h`) is structural (smallest unit is an hour).
+- **Catch-up drains in one pass**: after delayed evaluation or cycle-rollover lag, a single tick loops per slot — open window, advance the covered bound, re-anchor — until the latest window is open at `now` or no uncovered usage remains. Draining a backlog never depends on future events arriving. Usage recompute from CH keeps late accounting idempotent.
 
 Grants are immutable for their lifetime; EC/mode/quota changes take effect from the next window.
 
@@ -296,22 +296,23 @@ Only **feature-scoped** grants fold per meter. A future subscription- or group-s
 4. `measure='amount'` rejects **tiered** prices on the meter — amount grants require linear/flat per-unit pricing.
 5. `aggregation_mode='parallel'` requires a grant config (legacy entitlements are always additive).
 6. **Cross-EC coherence per feature**: one aggregation mode, one measure; **additive** groups must also share `grant_duration` (their quotas sum into one window).
+7. **One published entitlement per (entity, feature)** — DB partial unique index `WHERE status='published' AND aggregation_mode <> 'parallel'`. Parallel ECs stack on one entity (that's the mode's purpose); additive duplicates on the same entity are a quota edit, not a second row — additive *groups* span entities (plan + addon + subscription override).
 
 **Grant open time:**
 
-7. `grant_duration < subscription cycle length` — cycle-spanning grants are skipped (use `usage_reset_period` instead).
-8. Cycle-boundary cap: `valid_to <= current_period_end`. The cycle's final window absorbs a sub-1h trailing remainder; an anchor within `duration` of `cycle_end` backdates the start to `max(frontier, cycle_end − duration)` (safe — the backdated zone is event-free). Every instantiated window is ≥ 1h (also enforced by domain `Validate`).
-9. One window at a time per (tenant, env, config, customer, subscription) slot — the unique `(slot, valid_from)` index arbitrates racing opens; occupancy itself is time-derived (`valid_to > now`).
-10. Grants are immutable; config changes apply from the next window.
+8. `grant_duration < subscription cycle length` — cycle-spanning grants are skipped (use `usage_reset_period` instead).
+9. Cycle-boundary cap: `valid_to <= current_period_end`. The cycle's final window absorbs a sub-1h trailing remainder; a forced-tail anchor opens a short window `[event, cycle_end)` — the 1h minimum is best-effort at the boundary (config-level minimum stays structural).
+10. One window at a time per (tenant, env, config, customer, subscription) slot — the unique `(slot, valid_from)` index arbitrates racing opens; occupancy itself is time-derived (`valid_to > now`).
+11. Grants are immutable; config changes apply from the next window.
 
 **Runtime (billing fold):**
 
-11. Amount-lane folding skips line items with commitment / true-up / tiered pricing (belt-and-braces).
-12. Only feature-scoped grants fold per meter.
+12. Amount-lane folding skips line items with commitment / true-up / tiered pricing (belt-and-braces).
+13. Only feature-scoped grants fold per meter.
 
 **Alerting:**
 
-13. Exhaustion-only (`usage/quota >= 1` → `in_alarm`), deduped by alert-log state transition; no intermediate thresholds, no recovery transitions.
+14. Exhaustion-only (`usage/quota >= 1` → `in_alarm`), deduped by alert-log state transition; no intermediate thresholds, no recovery transitions.
 
 ---
 
@@ -322,7 +323,8 @@ Only **feature-scoped** grants fold per meter. A future subscription- or group-s
 | Activity crashes / retried | Alert dedup (state transition) + idempotent `UpdateSnapshot` + `EnsureGrants` convergence make retries safe. |
 | Redis unavailable | Throttle fails open; Temporal `AlreadyStarted` dedup absorbs duplicates. |
 | Temporal unavailable | CH insert + Kafka ack unaffected; alerts delayed, not lost. |
-| Evaluation delayed / consumer down | Usage during the outage anchors the next window exactly (no coverage gap); catch-up opens one window per tick and recomputes usage from CH. |
+| Evaluation delayed / consumer down | Usage during the outage anchors each missed window exactly; one tick drains the whole backlog (per-slot catch-up loop) and recomputes usage from CH. |
+| Cycle-rollover lag (period fields updated late by the billing worker) | Ticks during the lag open nothing past the stale `cycle_end` (anchor query is clamped). The first tick after rollover drains all backlog windows at exact event timestamps. If no event ever arrives post-rollover, the backlog waits for the next tick — hardening option: trigger an evaluation from the rollover workflow itself. |
 | Outage spanning a cycle rollover | New cycle anchors at `cycle_start` (coverage continues); windows never open in a closed cycle, so an old-cycle uncovered tail stays unbilled (accepted — same class as any usage after the last window of a cycle). |
 | Backdated events | Usage is always recomputed from CH over the grant window, never incremented — late events inside a window are picked up on the next tick. |
 | Window closes between ticks | The closed grant stays in the finalize set (`last_computed_at < valid_to`) and gets one final refresh — the tick scheduled by the window's own last event performs it. |
@@ -350,7 +352,8 @@ Only **feature-scoped** grants fold per meter. A future subscription- or group-s
 | Spend alerts subscription-level only | Line-item/group spend alerts dropped by design review; settings CRUD retained for now. |
 | `ContinueAsNew` for late-firing workflow runs | Temporal's native "replace myself with a fresh run": same workflow ID (no duplicate race), fresh task at the back of the queue, no in-workflow sleep. One yield per chain guards against livelock. |
 | `ScheduleToStartTimeout` for activity-queue waits | Temporal's out-of-the-box queue-wait bound; not retried by policy (a retry rejoins the same queue). Distinct from workflow-run staleness — different queues. Knobs ride the workflow input for replay determinism. |
-| Minimum grant duration 1 hour; hour/day/week units | Product rule — no noisy short buckets. A boundary anchor backdates the window start to the cycle's last full `duration` rather than opening short (the backdated zone is event-free by definition of the anchor). |
+| Minimum grant duration 1 hour; hour/day/week units | Product rule — no noisy short buckets. Enforced at config level (structural — smallest unit is an hour); instantiated windows honor it best-effort: cycle-boundary tails may be shorter, keeping window math a plain anchor + cap and never leaving boundary usage uncovered. |
+| Multi-window catch-up per tick | One evaluation pass loops per slot until caught up to `now`, so a rollover-lag or outage backlog drains on the first tick instead of needing one future event per missed window. Bounded: windows strictly advance the covered range within one cycle. |
 | Expiry derived, never written (`grant_status` = quota state only) | Closed windows need no UPDATE at all — `valid_to <= now` says it. The slot's uniqueness moved to `(slot, valid_from)`, sound because usage-anchored `valid_from` is deterministic. Two constant-size reads (slot-frontier aggregate + open-or-unfinalized working set) replace per-slot expire/find queries and stay flat as the cycle accumulates windows. |
 | Finalize via `last_computed_at >= valid_to` | A closed window still owes one usage refresh (its last events tick in after the close, debounce ≈ schedule delay). The marker is snapshot data the evaluator already writes — no status machinery, self-clearing, zero cost when idle. |
 

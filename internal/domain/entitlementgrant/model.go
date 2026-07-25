@@ -115,16 +115,11 @@ func (g *EntitlementGrant) Validate() error {
 			WithReportableDetails(map[string]interface{}{"usage": g.Usage.String()}).
 			Mark(ierr.ErrValidation)
 	}
+	// No window-length minimum here: the 1h floor is a config-level rule
+	// (smallest duration unit is one hour); instantiated windows at the cycle
+	// boundary may be shorter — coverage beats window-length aesthetics.
 	if !g.ValidTo.After(g.ValidFrom) {
 		return ierr.NewError("valid_to must be strictly after valid_from").
-			WithReportableDetails(map[string]interface{}{
-				"valid_from": g.ValidFrom,
-				"valid_to":   g.ValidTo,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-	if g.ValidTo.Sub(g.ValidFrom) < types.EntitlementGrantMinDuration {
-		return ierr.NewError("grant window must be at least 1 hour").
 			WithReportableDetails(map[string]interface{}{
 				"valid_from": g.ValidFrom,
 				"valid_to":   g.ValidTo,

@@ -80,16 +80,12 @@ func TestValidate_WindowShape(t *testing.T) {
 		t.Fatalf("valid_to must be strictly after valid_from")
 	}
 
+	// The 1h minimum is config-level and best-effort at the boundary: short
+	// instantiated windows (forced cycle tails) are legal rows.
 	g = baseGrant()
 	g.ValidTo = g.ValidFrom.Add(30 * time.Minute)
-	if err := g.Validate(); err == nil {
-		t.Fatalf("sub-1h window must be rejected")
-	}
-
-	g = baseGrant()
-	g.ValidTo = g.ValidFrom.Add(time.Hour)
 	if err := g.Validate(); err != nil {
-		t.Fatalf("exactly-1h window should validate, got %v", err)
+		t.Fatalf("short boundary window should validate, got %v", err)
 	}
 }
 

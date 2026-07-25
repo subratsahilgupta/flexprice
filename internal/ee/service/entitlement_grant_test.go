@@ -437,9 +437,9 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_IdleGapHop() {
 }
 
 func (s *EntitlementGrantSuite) TestComputeGrantWindow_CycleBoundaryCap() {
-	// A 24h duration anchored 6h before cycle_end: the full duration doesn't
-	// fit, so the window becomes the cycle's last 24h — backdated start (safe:
-	// [frontier, anchor) is event-free), capped end.
+	// A 24h duration anchored 6h before cycle_end: the window keeps its exact
+	// usage anchor and the end caps at cycle_end (6h window — best-effort
+	// minimum, coverage beats window-length aesthetics).
 	svc := s.grantService.(*entitlementGrantService)
 	fx := s.newWindowFixture("cap", 24)
 	eventAt := fx.cycleEnd.Add(-6 * time.Hour)
@@ -449,7 +449,7 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_CycleBoundaryCap() {
 	from, to, ok, err := svc.computeGrantWindow(s.GetContext(), fx.ec, fx.sub, meta, last, eventAt.Add(10*time.Minute), 24*time.Hour)
 	s.NoError(err)
 	s.True(ok)
-	s.True(from.Equal(fx.cycleEnd.Add(-24*time.Hour)), "start must backdate to cycle_end-24h: got %s", from)
+	s.True(from.Equal(eventAt), "window must anchor at the event: got %s", from)
 	s.True(to.Equal(fx.cycleEnd), "valid_to must cap at cycle_end")
 }
 
@@ -472,10 +472,10 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_TrailingStubAbsorbed() {
 	s.True(to.Equal(fx.cycleEnd), "final window must absorb the sub-minimum stub: got %s want %s", to, fx.cycleEnd)
 }
 
-func (s *EntitlementGrantSuite) TestComputeGrantWindow_ForcedTailBackdatedToFullDuration() {
-	// First uncovered event inside the cycle's final stretch: the window
-	// backdates its start to cycle_end − duration, covering the anchoring
-	// event with a full-length window ending at cycle_end.
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_ForcedTailShortWindow() {
+	// First uncovered event inside the cycle's last hour: a short boundary
+	// window [event, cycle_end) opens — the 1h minimum is best-effort and
+	// coverage wins at the boundary.
 	svc := s.grantService.(*entitlementGrantService)
 	fx := s.newWindowFixture("tail", 5)
 	eventAt := fx.cycleEnd.Add(-30 * time.Minute)
@@ -484,8 +484,8 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_ForcedTailBackdatedToFull
 	meta, last := s.windowArgs(fx)
 	from, to, ok, err := svc.computeGrantWindow(s.GetContext(), fx.ec, fx.sub, meta, last, fx.cycleEnd.Add(-10*time.Minute), 5*time.Hour)
 	s.NoError(err)
-	s.True(ok, "tail window must open, backdated to the full duration")
-	s.True(from.Equal(fx.cycleEnd.Add(-5*time.Hour)), "start must backdate to cycle_end-duration: got %s", from)
+	s.True(ok, "tail window must open even when shorter than the config minimum")
+	s.True(from.Equal(eventAt), "window must anchor at the event: got %s", from)
 	s.True(to.Equal(fx.cycleEnd))
 }
 
@@ -768,15 +768,21 @@ func (s *EntitlementGrantSuite) TestEnsureGrants_AdditiveECs_OneSummedGrant() {
 	m := s.simpleMeter("meter-add")
 	f := s.simpleFeature("feat-add", m.ID)
 	p := s.simplePlan("plan-add")
-
-	for i, quota := range []int64{100, 200} {
-		req := s.grantCreateRequest(f.ID, p.ID, types.EntitlementGrantMeasureQuantity, 5, decimal.NewFromInt(quota))
-		_, err := s.entService.CreateEntitlement(s.GetContext(), req)
-		s.Require().NoError(err, "creating additive EC %d", i)
-	}
-
 	cust := s.simpleCustomer("cust-add")
 	sub := s.simpleSubscription("sub-add", cust.ID, p.ID)
+
+	// Additive groups span entities: the DB allows one published non-parallel
+	// entitlement per (entity, feature), so the second EC lives on the
+	// subscription (override-style addition), like plan + addon in production.
+	_, err := s.entService.CreateEntitlement(s.GetContext(),
+		s.grantCreateRequest(f.ID, p.ID, types.EntitlementGrantMeasureQuantity, 5, decimal.NewFromInt(100)))
+	s.Require().NoError(err, "creating plan-level additive EC")
+
+	subReq := s.grantCreateRequest(f.ID, sub.ID, types.EntitlementGrantMeasureQuantity, 5, decimal.NewFromInt(200))
+	subReq.EntityType = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
+	_, err = s.entService.CreateEntitlement(s.GetContext(), subReq)
+	s.Require().NoError(err, "creating subscription-level additive EC")
+
 	s.seedMeterUsage(cust.ExternalID, m.ID, sub.CurrentPeriodStart.Add(5*time.Minute), 1)
 
 	grants, meta, err := s.grantService.EnsureGrants(s.GetContext(), cust, sub.CurrentPeriodStart.Add(10*time.Minute))
@@ -792,6 +798,23 @@ func (s *EntitlementGrantSuite) TestEnsureGrants_AdditiveECs_OneSummedGrant() {
 	s.Require().Len(again, 1)
 	s.Equal(grants[0].ID, again[0].ID)
 	s.NotNil(meta)
+}
+
+func (s *EntitlementGrantSuite) TestCreateEntitlement_RejectsDuplicateAdditiveOnSameEntityFeature() {
+	// The partial unique index allows one published non-parallel entitlement
+	// per (entity, feature); a bigger additive grant is a quota edit, not a
+	// second row. Parallel is the stacking mode (covered by ParallelECs test).
+	m := s.simpleMeter("meter-dup")
+	f := s.simpleFeature("feat-dup", m.ID)
+	p := s.simplePlan("plan-dup")
+
+	_, err := s.entService.CreateEntitlement(s.GetContext(),
+		s.grantCreateRequest(f.ID, p.ID, types.EntitlementGrantMeasureQuantity, 5, decimal.NewFromInt(100)))
+	s.Require().NoError(err)
+
+	_, err = s.entService.CreateEntitlement(s.GetContext(),
+		s.grantCreateRequest(f.ID, p.ID, types.EntitlementGrantMeasureQuantity, 5, decimal.NewFromInt(200)))
+	s.Require().Error(err, "second additive EC on the same (plan, feature) must be rejected")
 }
 
 func (s *EntitlementGrantSuite) TestCreateEntitlement_RejectsMixedModesOnFeature() {
@@ -931,6 +954,37 @@ func (s *EntitlementGrantSuite) TestEnsureGrants_DelayedEvaluationCoversGapUsage
 	s.True(grants[0].ValidFrom.Equal(gapEvent),
 		"gap usage must anchor the next window: got %s want %s", grants[0].ValidFrom, gapEvent)
 	s.NotNil(meta)
+}
+
+func (s *EntitlementGrantSuite) TestEnsureGrants_CatchUpOpensAllMissedWindows() {
+	// Rollover/outage backlog: evaluation resumes hours late with usage spread
+	// across several would-be windows. ONE tick must walk every missed window —
+	// draining the backlog must not depend on future events arriving.
+	_, sub, cust := s.setupCustomerSubWithGrantEC(types.EntitlementGrantMeasureQuantity) // 5h duration
+
+	// Events at +1h, +7h, +13h → three 5h windows: [1h,6h) [7h,12h) [13h,18h).
+	for _, offset := range []time.Duration{1 * time.Hour, 7 * time.Hour, 13 * time.Hour} {
+		s.seedMeterUsage(cust.ExternalID, "meter-quantity", sub.CurrentPeriodStart.Add(offset), 1)
+	}
+
+	at := sub.CurrentPeriodStart.Add(14 * time.Hour)
+	grants, _, err := s.grantService.EnsureGrants(s.GetContext(), cust, at)
+	s.Require().NoError(err)
+	s.Require().Len(grants, 3, "one pass must open every missed window")
+
+	froms := lo.Map(grants, func(g *entitlementgrant.EntitlementGrant, _ int) time.Duration {
+		return g.ValidFrom.Sub(sub.CurrentPeriodStart)
+	})
+	s.ElementsMatch([]time.Duration{1 * time.Hour, 7 * time.Hour, 13 * time.Hour}, froms,
+		"each window must anchor at its usage event")
+
+	// Idempotent: the caught-up slot opens nothing new on the next pass.
+	knownIDs := lo.Map(grants, func(g *entitlementgrant.EntitlementGrant, _ int) string { return g.ID })
+	again, _, err := s.grantService.EnsureGrants(s.GetContext(), cust, at.Add(time.Minute))
+	s.Require().NoError(err)
+	for _, g := range again {
+		s.Contains(knownIDs, g.ID)
+	}
 }
 
 // -----------------------------------------------------------------------------

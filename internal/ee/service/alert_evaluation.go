@@ -340,6 +340,10 @@ func (s *alertService) refreshEntitlementGrantUsage(
 		if err != nil {
 			return decimal.Zero, err
 		}
+
+		s.Logger.Debug(ctx, "quantity measure: entitlement grant evaluation: usage refreshed",
+			"grant_id", g.ID, "usage", result.TotalValue,
+		)
 		return result.TotalValue, nil
 	}
 
@@ -347,6 +351,7 @@ func (s *alertService) refreshEntitlementGrantUsage(
 	subUsage, err := meterUsageSvc.GetSubscriptionMeterUsageWithSub(ctx, sub, &GetSubscriptionMeterUsageRequest{
 		SubscriptionID:  sub.ID,
 		StartTime:       g.ValidFrom,
+		MeterIDs:        []string{m.ID},
 		EndTime:         end,
 		UseFinal:        true,
 		IncludeChildren: true,
@@ -369,6 +374,10 @@ func (s *alertService) refreshEntitlementGrantUsage(
 			total = total.Add(decimal.NewFromFloat(c.Amount))
 		}
 	}
+
+	s.Logger.Debug(ctx, "amount measure: entitlement grant evaluation: usage refreshed",
+		"grant_id", g.ID, "usage", total,
+	)
 	return total, nil
 }
 
