@@ -1299,6 +1299,31 @@ func (s *EntitlementGrantSuite) TestEvaluate_OverQuota_FlipsExhaustedAndFiresAle
 	s.Equal(types.AlertTypeEntitlementGrantExhausted, logs[0].AlertType)
 }
 
+func (s *EntitlementGrantSuite) TestEvaluate_ExactQuota_FlipsExhaustedAndRecordsCrossing() {
+	// usage == quota: quota fully consumed, every later unit is overage. The
+	// crossing must be recorded with the same >= the exhausted flip uses —
+	// exhausted with a NULL quota_crossed_at is an illegal state.
+	_, sub, cust := s.setupCustomerSubWithGrantEC(types.EntitlementGrantMeasureQuantity)
+
+	first := sub.CurrentPeriodStart.Add(30 * time.Minute)
+	s.seedMeterUsage(cust.ExternalID, "meter-quantity", first, 100)
+
+	at := sub.CurrentPeriodStart.Add(2 * time.Hour)
+	grants, meta, err := s.grantService.EnsureGrantsForSubscriptions(s.GetContext(), cust, []*subscription.Subscription{sub}, at)
+	s.Require().NoError(err)
+	s.Require().Len(grants, 1)
+
+	s.Require().NoError(s.evalAlertService().evaluateEntitlementGrantsForCustomer(
+		s.GetContext(), cust, meta, grants, at))
+
+	stored, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), grants[0].ID)
+	s.Require().NoError(err)
+	s.True(stored.Usage.Equal(decimal.NewFromInt(100)))
+	s.Equal(types.EntitlementGrantStatusExhausted, stored.GrantStatus)
+	s.Require().NotNil(stored.QuotaCrossedAt, "usage == quota must record the crossing alongside the exhausted flip")
+	s.True(stored.QuotaCrossedAt.Equal(at))
+}
+
 func (s *EntitlementGrantSuite) TestEvaluate_UnderQuota_StaysActiveNoAlert() {
 	f, sub, cust := s.setupCustomerSubWithGrantEC(types.EntitlementGrantMeasureQuantity)
 	_ = f

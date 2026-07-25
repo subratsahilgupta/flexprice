@@ -313,7 +313,9 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 			errs = append(errs, err)
 		}
 
-		// Record the quota exhaustion timestamp, once per grant.
+		// Record the quota exhaustion timestamp, once per grant. Same >= as the
+		// exhausted flip below: once quota is fully consumed, every later unit
+		// is overage, so exhausted ⟺ crossing set.
 		// NOTE: this is the EVALUATION time, not the exact crossing time.
 		// finding that exactly needs extra ClickHouse queries (binary search on the
 		// running usage). Billing only charges usage AFTER this timestamp, so
@@ -321,7 +323,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 		// bounded by the debounce delay. If exactness is ever needed, the
 		// upgrade path is the binary-searched crossing (see ERD decisions).
 		cross := g.QuotaCrossedAt
-		if cross == nil && usage.GreaterThan(g.Quota) {
+		if cross == nil && usage.GreaterThanOrEqual(g.Quota) {
 			cross = &at
 		}
 

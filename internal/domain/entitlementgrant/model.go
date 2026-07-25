@@ -26,7 +26,7 @@ type EntitlementGrant struct {
 	ValidTo             time.Time                             `json:"valid_to"`
 	GrantStatus         types.EntitlementGrantStatus          `json:"grant_status"`
 	LastComputedAt      *time.Time                            `json:"last_computed_at,omitempty"`
-	// QuotaCrossedAt is set once, when the evaluator first sees usage > quota.
+	// QuotaCrossedAt is set once, when the evaluator first sees usage >= quota
 	// It holds the evaluation time, not the exact event-level crossing.
 	QuotaCrossedAt *time.Time `json:"quota_crossed_at,omitempty"`
 	EnvironmentID  string     `json:"environment_id"`
