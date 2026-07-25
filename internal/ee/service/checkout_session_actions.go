@@ -96,7 +96,7 @@ func (s *checkoutSessionService) callCheckoutProvider(
 			return nil, err
 		}
 
-		resp, err = provider.CreateAuthorizationLink(ctx, interfaces.AuthorizationLinkRequest{
+		authReq := interfaces.AuthorizationLinkRequest{
 			InvoiceID:       req.InvoiceID,
 			CustomerID:      req.CustomerID,
 			PaymentID:       req.PaymentID,
@@ -107,7 +107,18 @@ func (s *checkoutSessionService) callCheckoutProvider(
 			SuccessURL:      req.SuccessURL,
 			CancelURL:       req.CancelURL,
 			Metadata:        req.Metadata,
-		})
+		}
+
+		// Prefer an existing confirmed token (off-session). If none / amount above
+		// mandate max, fall back to registration+charge auth link.
+		if chargedResp, charged, chargeErr := provider.TryAutoChargingSavedMethod(ctx, authReq); chargeErr != nil {
+			return nil, chargeErr
+		} else if charged {
+			resp = chargedResp
+			break
+		}
+
+		resp, err = provider.CreateAuthorizationLink(ctx, authReq)
 
 	case types.CollectionMethodSendInvoice:
 		resp, err = provider.CreatePaymentLink(ctx, req)
@@ -129,23 +140,29 @@ func (s *checkoutSessionService) callCheckoutProvider(
 	}
 
 	// Record ProviderSessionID → FlexPrice PaymentID so incoming webhooks can route back.
-	mappingSvc := NewEntityIntegrationMappingService(s.ServiceParams)
-	if _, err := mappingSvc.CreateEntityIntegrationMapping(ctx, dto.CreateEntityIntegrationMappingRequest{
-		EntityID:         payResp.ID,
-		EntityType:       types.IntegrationEntityTypePayment,
-		ProviderType:     session.PaymentProvider.String(),
-		ProviderEntityID: resp.ProviderSessionID,
-	}); err != nil {
-		return nil, err
+	if resp.ProviderSessionID != "" {
+		mappingSvc := NewEntityIntegrationMappingService(s.ServiceParams)
+		if _, err := mappingSvc.CreateEntityIntegrationMapping(ctx, dto.CreateEntityIntegrationMappingRequest{
+			EntityID:         payResp.ID,
+			EntityType:       types.IntegrationEntityTypePayment,
+			ProviderType:     session.PaymentProvider.String(),
+			ProviderEntityID: resp.ProviderSessionID,
+		}); err != nil {
+			return nil, err
+		}
 	}
 
-	return &types.CheckoutProviderResult{
-		NextAction:              &resp.NextAction,
+	result := &types.CheckoutProviderResult{
 		ProviderSessionID:       resp.ProviderSessionID,
 		ProviderPaymentIntentID: resp.ProviderPaymentIntentID,
 		ExpiresAt:               resp.ExpiresAt,
 		ProviderMetadata:        resp.ProviderMetadata,
-	}, nil
+	}
+	if resp.NextAction.URL != "" {
+		next := resp.NextAction
+		result.NextAction = &next
+	}
+	return result, nil
 }
 
 // resolveMaxMandateLimit caps MaxMandateLimit against the tenant's
@@ -212,24 +229,12 @@ func (s *checkoutSessionService) completeModifySubscriptionCheckout(
 	session *domainCheckout.CheckoutSession,
 	providerResult *types.CheckoutProviderResult,
 ) error {
-	cfg := session.Configuration.ToCheckoutConfiguration()
-	params := cfg.ModifySubscriptionParams
-	if params == nil {
-		return ierr.NewError("session has no modify_subscription_params").
-			WithHint("checkout session must have modify_subscription_params before it can be completed").
-			Mark(ierr.ErrValidation)
-	}
-	if session.CheckoutInvoiceID == nil || *session.CheckoutInvoiceID == "" {
-		return ierr.NewError("session has no checkout invoice").
-			WithHint("checkout session must have checkout_invoice_id before it can be completed").
-			Mark(ierr.ErrValidation)
-	}
-	if session.CheckoutPaymentID == nil || *session.CheckoutPaymentID == "" {
-		return ierr.NewError("session has no checkout payment").
-			WithHint("checkout session must have checkout_payment_id before it can be completed").
-			Mark(ierr.ErrValidation)
+	if err := dto.ValidateCheckoutSessionForCompletion(session); err != nil {
+		return err
 	}
 
+	cfg := session.Configuration.ToCheckoutConfiguration()
+	params := cfg.ModifySubscriptionParams
 	invoiceID := *session.CheckoutInvoiceID
 	paymentID := *session.CheckoutPaymentID
 
@@ -258,23 +263,12 @@ func (s *checkoutSessionService) completeWalletTopupCheckout(
 	session *domainCheckout.CheckoutSession,
 	providerResult *types.CheckoutProviderResult,
 ) error {
+	if err := dto.ValidateCheckoutSessionForCompletion(session); err != nil {
+		return err
+	}
+
 	cfg := session.Configuration.ToCheckoutConfiguration()
 	params := cfg.WalletTopupParams
-	if params == nil || params.WalletID == "" {
-		return ierr.NewError("session has no wallet_topup_params").
-			WithHint("checkout session must have wallet_topup_params before it can be completed").
-			Mark(ierr.ErrValidation)
-	}
-	if session.CheckoutInvoiceID == nil || *session.CheckoutInvoiceID == "" {
-		return ierr.NewError("session has no checkout invoice").
-			WithHint("checkout session must have checkout_invoice_id before it can be completed").
-			Mark(ierr.ErrValidation)
-	}
-	if session.CheckoutPaymentID == nil || *session.CheckoutPaymentID == "" {
-		return ierr.NewError("session has no checkout payment").
-			WithHint("checkout session must have checkout_payment_id before it can be completed").
-			Mark(ierr.ErrValidation)
-	}
 
 	w, err := s.WalletRepo.GetWalletByID(ctx, params.WalletID)
 	if err != nil {

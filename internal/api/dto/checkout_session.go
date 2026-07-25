@@ -59,6 +59,28 @@ func (p *CheckoutParams) Validate() error {
 	return p.PaymentParams.Validate()
 }
 
+// ToDomainCheckoutParams maps API checkout params onto the domain builder input.
+func (p *CheckoutParams) ToDomainCheckoutParams() *domainCheckout.CheckoutParams {
+	if p == nil {
+		return nil
+	}
+
+	var meta types.Metadata
+	if len(p.Metadata) > 0 {
+		meta = types.Metadata(p.Metadata)
+	}
+	
+	return &domainCheckout.CheckoutParams{
+		PaymentProvider:       p.PaymentProvider,
+		PaymentProviderConfig: p.PaymentProviderConfig,
+		IdempotencyKey:        p.IdempotencyKey,
+		SuccessURL:            p.SuccessURL,
+		FailureURL:            p.FailureURL,
+		CancelURL:             p.CancelURL,
+		Metadata:              meta,
+	}
+}
+
 // CreateCheckoutSessionRequest is the request body for POST /checkout/sessions.
 type CreateCheckoutSessionRequest struct {
 	CustomerExternalID string                      `json:"customer_external_id" binding:"required"`
@@ -101,29 +123,13 @@ func (r *CreateCheckoutSessionRequest) Validate() error {
 	return nil
 }
 
-// ResolveExpiresAt returns when the session should expire based on the payment provider.
-func (r *CreateCheckoutSessionRequest) ResolveExpiresAt(now time.Time) time.Time {
-	return now.UTC().Add(r.PaymentProvider.SessionExpiry())
-}
-
 func (r *CreateCheckoutSessionRequest) ToCheckoutSession(ctx context.Context, customerID string) *domainCheckout.CheckoutSession {
-	return &domainCheckout.CheckoutSession{
-		ID:                    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
-		EnvironmentID:         types.GetEnvironmentID(ctx),
-		CustomerID:            customerID,
-		Action:                r.Action,
-		CheckoutStatus:        types.CheckoutStatusInitiated,
-		PaymentProvider:       r.PaymentProvider,
-		Configuration:         domainCheckout.ToJSONBCheckoutConfiguration(r.Configuration),
-		PaymentProviderConfig: domainCheckout.ToJSONBCheckoutPaymentProviderConfig(r.PaymentProviderConfig),
-		IdempotencyKey:        r.IdempotencyKey,
-		SuccessURL:            r.SuccessURL,
-		FailureURL:            r.FailureURL,
-		CancelURL:             r.CancelURL,
-		ExpiresAt:             r.ResolveExpiresAt(time.Now()),
-		Metadata:              r.Metadata,
-		BaseModel:             types.GetDefaultBaseModel(ctx),
-	}
+	return domainCheckout.NewCheckoutSessionBuilder(ctx, nil).
+		WithCustomerID(customerID).
+		WithAction(r.Action).
+		WithConfiguration(domainCheckout.ToJSONBCheckoutConfiguration(r.Configuration)).
+		WithCheckoutParams(r.CheckoutParams.ToDomainCheckoutParams()).
+		Build()
 }
 
 // UpdateCheckoutSessionRequest carries lifecycle-only patch fields.
@@ -149,8 +155,9 @@ type CreateCheckoutPaymentRequest struct {
 }
 
 // PayFirstCheckoutRequest is the shared settlement input for payment-gated flows.
-// Callers create domain intent + DRAFT invoice after CheckIfAnyCheckoutSessionPending;
-// StartPayFirstCheckoutSession owns session create, fulfill, cleanup, and initiated webhook.
+// Callers create domain intent + DRAFT invoice after guarding concurrent pending
+// sessions; StartPayFirstCheckoutSession owns session create, fulfill, cleanup,
+// and initiated webhook.
 type PayFirstCheckoutRequest struct {
 	CustomerID    string
 	Action        types.CheckoutAction
@@ -159,11 +166,43 @@ type PayFirstCheckoutRequest struct {
 	Checkout      *CheckoutParams
 }
 
-// PendingCheckoutConflict describes the AlreadyExists error when a pending session matches.
-type PendingCheckoutConflict struct {
-	Message string
-	Hint    string
-	Details map[string]any
+// ValidateCheckoutSessionForCompletion ensures a session has action params and
+// locked invoice/payment IDs before completion handlers run.
+func ValidateCheckoutSessionForCompletion(session *domainCheckout.CheckoutSession) error {
+	if session == nil {
+		return ierr.NewError("checkout session is required").
+			Mark(ierr.ErrValidation)
+	}
+	if session.CheckoutInvoiceID == nil || *session.CheckoutInvoiceID == "" {
+		return ierr.NewError("session has no checkout invoice").
+			WithHint("checkout session must have checkout_invoice_id before it can be completed").
+			Mark(ierr.ErrValidation)
+	}
+	if session.CheckoutPaymentID == nil || *session.CheckoutPaymentID == "" {
+		return ierr.NewError("session has no checkout payment").
+			WithHint("checkout session must have checkout_payment_id before it can be completed").
+			Mark(ierr.ErrValidation)
+	}
+
+	cfg := session.Configuration.ToCheckoutConfiguration()
+	switch session.Action {
+	case types.CheckoutActionModifySubscription:
+		if cfg.ModifySubscriptionParams == nil {
+			return ierr.NewError("session has no modify_subscription_params").
+				WithHint("checkout session must have modify_subscription_params before it can be completed").
+				Mark(ierr.ErrValidation)
+		}
+		return cfg.ModifySubscriptionParams.Validate()
+	case types.CheckoutActionWalletTopup:
+		if cfg.WalletTopupParams == nil {
+			return ierr.NewError("session has no wallet_topup_params").
+				WithHint("checkout session must have wallet_topup_params before it can be completed").
+				Mark(ierr.ErrValidation)
+		}
+		return cfg.WalletTopupParams.Validate()
+	default:
+		return nil
+	}
 }
 
 // CheckoutSessionResponse is the API response for a single checkout session.

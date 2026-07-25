@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -775,24 +777,18 @@ func (s *subscriptionModificationService) settlePayFirst(
 		return nil, err
 	}
 
-	subscriptionID := sub.ID
-	checkoutSvc := NewCheckoutSessionService(sp)
-	if err := checkoutSvc.CheckIfAnyCheckoutSessionPending(
-		ctx,
-		sub.CustomerID,
-		types.CheckoutActionModifySubscription,
-		func(cfg *types.CheckoutConfiguration) bool {
-			return cfg != nil &&
-				cfg.ModifySubscriptionParams != nil &&
-				cfg.ModifySubscriptionParams.SubscriptionID == subscriptionID
-		},
-		dto.PendingCheckoutConflict{
-			Message: "a pending checkout session already exists for this subscription",
-			Hint:    "Complete or cancel the existing checkout before starting another payment-gated modification",
-			Details: map[string]any{"subscription_id": subscriptionID},
-		},
-	); err != nil {
+	existing, err := s.getAnyPendingCheckoutSession(ctx, sub.CustomerID, sub.ID)
+	if err != nil {
 		return nil, err
+	}
+	if len(existing) > 0 {
+		return nil, ierr.NewError("a pending checkout session already exists for this subscription").
+			WithHint("Complete or cancel the existing checkout before starting another payment-gated modification").
+			WithReportableDetails(map[string]any{
+				"subscription_id":     sub.ID,
+				"checkout_session_id": existing[0].ID,
+			}).
+			Mark(ierr.ErrAlreadyExists)
 	}
 
 	draftInvoice, err := s.createAggregatedProrationDraftInvoice(ctx, sub, prorationResult)
@@ -800,6 +796,7 @@ func (s *subscriptionModificationService) settlePayFirst(
 		return nil, err
 	}
 
+	checkoutSvc := NewCheckoutSessionService(sp)
 	sessionResp, err := checkoutSvc.StartPayFirstCheckoutSession(ctx, &dto.PayFirstCheckoutRequest{
 		CustomerID: sub.CustomerID,
 		Action:     types.CheckoutActionModifySubscription,
@@ -814,7 +811,7 @@ func (s *subscriptionModificationService) settlePayFirst(
 	}
 
 	subSvc := NewSubscriptionService(sp)
-	subResp, err := subSvc.GetSubscription(ctx, subscriptionID)
+	subResp, err := subSvc.GetSubscription(ctx, sub.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -843,6 +840,22 @@ func (s *subscriptionModificationService) settlePayFirst(
 	}, nil
 }
 
+func (s *subscriptionModificationService) getAnyPendingCheckoutSession(ctx context.Context, customerID string, subscriptionID string) ([]*checkout.CheckoutSession, error) {
+	pendingFilter := &types.CheckoutSessionFilter{
+		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
+		CustomerIDs: []string{customerID},
+		Actions:     []types.CheckoutAction{types.CheckoutActionModifySubscription},
+		CheckoutStatuses: []types.CheckoutStatus{
+			types.CheckoutStatusInitiated,
+			types.CheckoutStatusPending,
+		},
+		Configuration: &types.CheckoutConfigurationFilter{SubscriptionID: subscriptionID},
+	}
+	pendingFilter.Limit = lo.ToPtr(1)
+
+	return s.serviceParams.CheckoutSessionRepo.List(ctx, pendingFilter)
+}
+
 // createAggregatedProrationDraftInvoice locks the batch net (charges − credits) on one DRAFT ONE_OFF.
 // Line items keep per-LI charge/credit amounts; AmountDue is their sum (the net).
 func (s *subscriptionModificationService) createAggregatedProrationDraftInvoice(
@@ -869,7 +882,19 @@ func (s *subscriptionModificationService) createAggregatedProrationDraftInvoice(
 	req := buildAggregatedProrationChargeInvoiceRequest(sub, items)
 
 	invoiceSvc := NewInvoiceService(s.serviceParams)
-	return invoiceSvc.CreateComputedDraftInvoice(ctx, req)
+	inv, skipped, err := invoiceSvc.CreateComputedDraftInvoice(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if skipped {
+		return nil, ierr.NewError("draft invoice was skipped").
+			WithHint("Expected a non-zero invoice amount").
+			WithReportableDetails(map[string]any{
+				"invoice_id": inv.GetId(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return inv, nil
 }
 
 func buildAggregatedProrationChargeInvoiceRequest(
@@ -932,11 +957,22 @@ func (s *subscriptionModificationService) createProrationChargeInvoice(
 	req := buildProrationChargeInvoiceRequest(sub, item)
 
 	if draft {
-		latest, err := invoiceSvc.CreateComputedDraftInvoice(ctx, req)
+		latest, skipped, err := invoiceSvc.CreateComputedDraftInvoice(ctx, req)
 		if err != nil {
 			sp.Logger.Error(ctx, "failed to create draft proration invoice for quantity change", "error", err)
 			return nil, err
 		}
+		if skipped {
+			return nil, ierr.NewError("draft invoice was skipped").
+				WithHint("Expected a non-zero invoice amount").
+				WithReportableDetails(
+					map[string]any{
+						"invoice_id": latest.GetId(),
+					},
+				).
+				Mark(ierr.ErrValidation)
+		}
+		
 		return &dto.ChangedInvoice{
 			ID:      latest.ID,
 			Action:  dto.ChangedInvoiceActionCreated,

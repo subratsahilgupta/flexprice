@@ -4,6 +4,7 @@ import (
 	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/shopspring/decimal"
 )
 
@@ -138,7 +139,7 @@ func (p *ModifySubscriptionParams) Validate() error {
 // top-ups. Credits are applied on payment success via invoice metadata
 // (wallet_transaction_id), not by re-running top-up from this config.
 type WalletTopupParams struct {
-	WalletID            string `json:"wallet_id"`
+	WalletID            string `json:"wallet_id" validate:"required"`
 	WalletTransactionID string `json:"wallet_transaction_id,omitempty"`
 }
 
@@ -147,12 +148,7 @@ func (p *WalletTopupParams) Validate() error {
 		return ierr.NewError("wallet_topup_params is required").
 			Mark(ierr.ErrValidation)
 	}
-	if p.WalletID == "" {
-		return ierr.NewError("wallet_id is required").
-			WithHint("Provide wallet_id in wallet_topup_params").
-			Mark(ierr.ErrValidation)
-	}
-	return nil
+	return validator.ValidateRequest(p)
 }
 
 // ── JSONB result structs ──────────────────────────────────────────────────────
@@ -214,10 +210,8 @@ func (c *CheckoutPaymentProviderConfig) Validate() error {
 	if c == nil {
 		return nil
 	}
-	if c.PaymentMethod != "" {
-		if err := c.PaymentMethod.Validate(); err != nil {
-			return err
-		}
+	if err := c.PaymentMethod.Validate(); err != nil {
+		return err
 	}
 
 	if err := c.CollectionMethod.Validate(); err != nil {

@@ -154,7 +154,6 @@ func (s *WalletServiceSuite) TestHandlePurchasedCreditInvoiced_PayFirstForcesPen
 			CreditsToAdd:      decimal.NewFromInt(250),
 			TransactionReason: types.TransactionReasonPurchasedCreditInvoiced,
 		},
-		true,
 	)
 	s.Require().NoError(err)
 
@@ -191,7 +190,6 @@ func (s *WalletServiceSuite) TestCompleteWalletTopupCheckout_CreditsWalletAndBon
 			BonusCreditsToAdd: &bonus,
 			TransactionReason: types.TransactionReasonPurchasedCreditInvoiced,
 		},
-		true,
 	)
 	s.Require().NoError(err)
 

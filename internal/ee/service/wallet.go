@@ -9,6 +9,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/cache"
+	"github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -624,26 +625,21 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 
 	// Handle purchased credits with invoice (pay-later / auto-complete, or pay-first checkout).
 	if req.TransactionReason == types.TransactionReasonPurchasedCreditInvoiced {
-		checkoutSvc := NewCheckoutSessionService(s.ServiceParams)
-
 		// Opt-in checkout: force pending + DRAFT so credits apply only after payment.
 		if req.Checkout != nil {
-			if err := checkoutSvc.CheckIfAnyCheckoutSessionPending(
-				ctx,
-				w.CustomerID,
-				types.CheckoutActionWalletTopup,
-				func(cfg *types.CheckoutConfiguration) bool {
-					return cfg != nil &&
-						cfg.WalletTopupParams != nil &&
-						cfg.WalletTopupParams.WalletID == walletID
-				},
-				dto.PendingCheckoutConflict{
-					Message: "a pending checkout session already exists for this wallet",
-					Hint:    "Complete or cancel the existing checkout before starting another payment-gated top-up",
-					Details: map[string]any{"wallet_id": walletID},
-				},
-			); err != nil {
+			existing, err := s.getAnyPendingCheckoutSession(ctx, w.CustomerID, walletID)
+			if err != nil {
 				return nil, err
+			}
+
+			if len(existing) > 0 {
+				return nil, ierr.NewError("a pending checkout session already exists for this wallet").
+					WithHint("Complete or cancel the existing checkout before starting another payment-gated top-up").
+					WithReportableDetails(map[string]any{
+						"wallet_id":           walletID,
+						"checkout_session_id": existing[0].ID,
+					}).
+					Mark(ierr.ErrAlreadyExists)
 			}
 		}
 
@@ -652,7 +648,6 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 			walletID,
 			lo.ToPtr(idempotencyKey),
 			req,
-			req.Checkout != nil,
 		)
 		if err != nil {
 			return nil, err
@@ -689,6 +684,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 				return nil, err
 			}
 
+			checkoutSvc := NewCheckoutSessionService(s.ServiceParams)
 			sessionResp, err := checkoutSvc.StartPayFirstCheckoutSession(ctx, &dto.PayFirstCheckoutRequest{
 				CustomerID: w.CustomerID,
 				Action:     types.CheckoutActionWalletTopup,
@@ -760,6 +756,21 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 	}, nil
 }
 
+func (s *walletService) getAnyPendingCheckoutSession(ctx context.Context, customerID string, walletID string) ([]*checkout.CheckoutSession, error) {
+	pendingFilter := &types.CheckoutSessionFilter{
+		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
+		CustomerIDs: []string{customerID},
+		Actions:     []types.CheckoutAction{types.CheckoutActionWalletTopup},
+		CheckoutStatuses: []types.CheckoutStatus{
+			types.CheckoutStatusInitiated,
+			types.CheckoutStatusPending,
+		},
+		Configuration: &types.CheckoutConfigurationFilter{WalletID: walletID},
+	}
+
+	return s.CheckoutSessionRepo.List(ctx, pendingFilter)
+}
+
 // findBonusSlab returns the highest-threshold slab that credits clears. Requires slabs sorted
 // descending by Threshold (enforced by BonusCreditsTopupConfig.Validate) — first match wins.
 func findBonusSlab(slabs []types.BonusCreditsSlab, credits decimal.Decimal) *types.BonusCreditsSlab {
@@ -790,6 +801,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 	// Initialize required services
 	invoiceService := NewInvoiceService(s.ServiceParams)
 	taxService := NewTaxService(s.ServiceParams)
+	isPayFirst := req.Checkout != nil
 
 	settingsService := &settingsService{
 		ServiceParams: s.ServiceParams,
@@ -1028,11 +1040,21 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 		var inv *dto.InvoiceResponse
 		if isPayFirst {
 			// Pay-first: leave DRAFT until checkout complete finalizes + reconciles.
-			inv, err = invoiceService.CreateComputedDraftInvoice(ctx, invReq)
+			inv, skipped, err := invoiceService.CreateComputedDraftInvoice(ctx, invReq)
 			if err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to create draft invoice for purchased credits").
 					Mark(ierr.ErrInternal)
+			}
+			if skipped {
+				return ierr.NewError("draft invoice was skipped").
+					WithHint("Expected a non-zero invoice amount").
+					WithReportableDetails(
+						map[string]any{
+							"invoice_id": inv.GetId(),
+						},
+					).
+					Mark(ierr.ErrValidation)
 			}
 		} else {
 			inv, err = invoiceService.CreateOneOffInvoice(ctx, invReq)

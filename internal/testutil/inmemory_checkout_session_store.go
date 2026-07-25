@@ -91,6 +91,24 @@ func checkoutSessionFilterFn(ctx context.Context, session *domainCheckout.Checko
 			return false
 		}
 	}
+	if cfg := filter.Configuration; cfg != nil && !cfg.IsEmpty() {
+		sessionCfg := session.Configuration.ToCheckoutConfiguration()
+		if cfg.WalletID != "" {
+			if sessionCfg.WalletTopupParams == nil || sessionCfg.WalletTopupParams.WalletID != cfg.WalletID {
+				return false
+			}
+		}
+		if cfg.SubscriptionID != "" {
+			if sessionCfg.ModifySubscriptionParams == nil || sessionCfg.ModifySubscriptionParams.SubscriptionID != cfg.SubscriptionID {
+				return false
+			}
+		}
+	}
+	if filter.QueryFilter != nil && filter.GetStatus() != "" {
+		if session.Status != types.Status(filter.GetStatus()) {
+			return false
+		}
+	}
 	return true
 }
 
