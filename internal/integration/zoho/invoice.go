@@ -206,15 +206,15 @@ func (s *InvoiceService) MarkInvoicePaidInZoho(ctx context.Context, flexpriceInv
 		return nil
 	}
 
-	_, err = s.client.CreateCustomerPayment(ctx, &CustomerPaymentCreateRequest{
-		CustomerID:  zohoInv.CustomerID,
-		PaymentMode: "other",
-		Amount:      zohoInv.Balance,
-		Date:        time.Now().UTC().Format("2006-01-02"),
-		Invoices: []CustomerPaymentInvoiceApply{
-			{InvoiceID: zohoInvoiceID, AmountApplied: zohoInv.Balance},
+	_, err = s.client.CreateCustomerPayment(ctx, NewCustomerPaymentCreateRequest(
+		zohoInv.CustomerID,
+		"others",
+		zohoInv.Balance,
+		time.Now().UTC().Format("2006-01-02"),
+		[]CustomerPaymentInvoiceApply{
+			NewCustomerPaymentInvoiceApply(zohoInvoiceID, zohoInv.Balance),
 		},
-	})
+	))
 	if err != nil {
 		return err
 	}

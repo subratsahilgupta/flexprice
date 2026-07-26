@@ -43,8 +43,8 @@ func (a *InvoiceSyncActivities) SyncInvoiceToZoho(ctx context.Context, input mod
 }
 
 func (a *InvoiceSyncActivities) MarkZohoBooksInvoicePaid(ctx context.Context, input models.ZohoBooksInvoiceMarkPaidWorkflowInput) error {
-	ctx = types.SetTenantID(ctx, input.TenantID)
-	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	ctx = types.SetTenantID(ctx, input.TenantID())
+	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID())
 
 	zohoIntegration, err := a.integrationFactory.GetZohoBooksIntegration(ctx)
 	if err != nil {
@@ -54,5 +54,5 @@ func (a *InvoiceSyncActivities) MarkZohoBooksInvoicePaid(ctx context.Context, in
 		return err
 	}
 
-	return zohoIntegration.InvoiceSvc.MarkInvoicePaidInZoho(ctx, input.InvoiceID)
+	return zohoIntegration.InvoiceSvc.MarkInvoicePaidInZoho(ctx, input.InvoiceID())
 }

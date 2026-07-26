@@ -42,9 +42,9 @@ func ZohoBooksInvoiceSyncWorkflow(ctx workflow.Context, input models.ZohoBooksIn
 func ZohoBooksInvoiceMarkPaidWorkflow(ctx workflow.Context, input models.ZohoBooksInvoiceMarkPaidWorkflowInput) error {
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Starting Zoho Books mark-paid workflow",
-		"invoice_id", input.InvoiceID,
-		"tenant_id", input.TenantID,
-		"environment_id", input.EnvironmentID)
+		"invoice_id", input.InvoiceID(),
+		"tenant_id", input.TenantID(),
+		"environment_id", input.EnvironmentID())
 
 	if err := input.Validate(); err != nil {
 		logger.Error("Invalid workflow input", "error", err)
@@ -60,10 +60,10 @@ func ZohoBooksInvoiceMarkPaidWorkflow(ctx workflow.Context, input models.ZohoBoo
 	ctx = workflow.WithActivityOptions(ctx, opts)
 
 	if err := workflow.ExecuteActivity(ctx, ActivityMarkZohoBooksInvoicePaid, input).Get(ctx, nil); err != nil {
-		logger.Error("Failed to mark Zoho Books invoice as paid", "error", err, "invoice_id", input.InvoiceID)
+		logger.Error("Failed to mark Zoho Books invoice as paid", "error", err, "invoice_id", input.InvoiceID())
 		return err
 	}
 
-	logger.Info("Successfully marked Zoho Books invoice as paid", "invoice_id", input.InvoiceID)
+	logger.Info("Successfully marked Zoho Books invoice as paid", "invoice_id", input.InvoiceID())
 	return nil
 }

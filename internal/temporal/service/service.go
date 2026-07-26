@@ -495,7 +495,7 @@ func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWo
 		}
 	case types.TemporalZohoBooksInvoiceMarkPaidWorkflow:
 		if input, ok := params.(models.ZohoBooksInvoiceMarkPaidWorkflowInput); ok {
-			return input.InvoiceID
+			return input.InvoiceID()
 		}
 
 	// Vendor customer sync workflows — deterministic IDs prevent duplicate concurrent syncs.
@@ -1061,14 +1061,14 @@ func (s *temporalService) buildZohoBooksInvoiceSyncInput(_ context.Context, tena
 
 func (s *temporalService) buildZohoBooksInvoiceMarkPaidInput(_ context.Context, tenantID, environmentID string, params interface{}) (interface{}, error) {
 	if input, ok := params.(*models.ZohoBooksInvoiceMarkPaidWorkflowInput); ok {
-		input.TenantID = tenantID
-		input.EnvironmentID = environmentID
+		input.SetTenantID(tenantID)
+		input.SetEnvironmentID(environmentID)
 		return *input, nil
 	}
 
 	if input, ok := params.(models.ZohoBooksInvoiceMarkPaidWorkflowInput); ok {
-		input.TenantID = tenantID
-		input.EnvironmentID = environmentID
+		input.SetTenantID(tenantID)
+		input.SetEnvironmentID(environmentID)
 		return input, nil
 	}
 

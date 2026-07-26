@@ -50,7 +50,7 @@ func (f *fakeZohoClient) CreateCustomerPayment(_ context.Context, req *CustomerP
 	if f.createPaymentErr != nil {
 		return nil, f.createPaymentErr
 	}
-	return &CustomerPaymentResponse{PaymentID: "zoho_payment_1"}, nil
+	return NewCustomerPaymentResponse("zoho_payment_1"), nil
 }
 
 func newTestInvoiceService(client ZohoClient, mappingRepo entityintegrationmapping.Repository) *InvoiceService {
@@ -113,12 +113,12 @@ func TestMarkInvoicePaidInZoho_PositiveBalance_RecordsFullBalance(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, 1, client.createPaymentCalls)
 	req := client.createPaymentReq
-	assert.Equal(t, "zoho_cust_1", req.CustomerID)
-	assert.True(t, decimal.NewFromInt(160).Equal(req.Amount))
-	assert.Equal(t, "other", req.PaymentMode)
-	require.Len(t, req.Invoices, 1)
-	assert.Equal(t, "zoho_inv_1", req.Invoices[0].InvoiceID)
-	assert.True(t, decimal.NewFromInt(160).Equal(req.Invoices[0].AmountApplied))
+	assert.Equal(t, "zoho_cust_1", req.CustomerID())
+	assert.True(t, decimal.NewFromInt(160).Equal(req.Amount()))
+	assert.Equal(t, "others", req.PaymentMode())
+	require.Len(t, req.Invoices(), 1)
+	assert.Equal(t, "zoho_inv_1", req.Invoices()[0].InvoiceID())
+	assert.True(t, decimal.NewFromInt(160).Equal(req.Invoices()[0].AmountApplied()))
 }
 
 func TestMarkInvoicePaidInZoho_CreatePaymentError_Propagates(t *testing.T) {

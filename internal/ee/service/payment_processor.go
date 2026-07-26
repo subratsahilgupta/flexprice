@@ -389,14 +389,14 @@ func (p *paymentProcessor) handleRazorpayPaymentLinkCreation(ctx context.Context
 
 	// Convert to Razorpay payment link request
 	paymentLinkReq := &razorpay.CreatePaymentLinkRequest{
-		InvoiceID:     paymentObj.DestinationID,
-		CustomerID:    invoice.CustomerID,
-		Amount:        paymentObj.Amount,
-		Currency:      paymentObj.Currency,
-		SuccessURL:    successURL,
-		CancelURL:     cancelURL,
-		Metadata:  linkMetadata,
-		PaymentID: paymentObj.ID,
+		InvoiceID:  paymentObj.DestinationID,
+		CustomerID: invoice.CustomerID,
+		Amount:     paymentObj.Amount,
+		Currency:   paymentObj.Currency,
+		SuccessURL: successURL,
+		CancelURL:  cancelURL,
+		Metadata:   linkMetadata,
+		PaymentID:  paymentObj.ID,
 	}
 
 	// Get Razorpay integration for creating payment link
@@ -481,14 +481,14 @@ func (p *paymentProcessor) handleNomodPaymentLinkCreation(ctx context.Context, p
 
 	// Convert to Nomod payment link request
 	paymentLinkReq := nomod.CreatePaymentLinkReq{
-		InvoiceID:     paymentObj.DestinationID,
-		CustomerID:    invoice.CustomerID,
-		Amount:        paymentObj.Amount,
-		Currency:      paymentObj.Currency,
-		SuccessURL:    successURL,
-		FailureURL:    cancelURL,
-		Metadata:  linkMetadata,
-		PaymentID: paymentObj.ID,
+		InvoiceID:  paymentObj.DestinationID,
+		CustomerID: invoice.CustomerID,
+		Amount:     paymentObj.Amount,
+		Currency:   paymentObj.Currency,
+		SuccessURL: successURL,
+		FailureURL: cancelURL,
+		Metadata:   linkMetadata,
+		PaymentID:  paymentObj.ID,
 	}
 
 	// Get Nomod integration for creating payment link
@@ -799,11 +799,7 @@ func (p *paymentProcessor) dispatchZohoMarkPaid(ctx context.Context, invoiceID s
 		return
 	}
 
-	input := temporalmodels.ZohoBooksInvoiceMarkPaidWorkflowInput{
-		InvoiceID:     invoiceID,
-		TenantID:      types.GetTenantID(ctx),
-		EnvironmentID: types.GetEnvironmentID(ctx),
-	}
+	input := temporalmodels.NewZohoBooksInvoiceMarkPaidWorkflowInput(invoiceID, types.GetTenantID(ctx), types.GetEnvironmentID(ctx))
 	if _, err := temporalSvc.ExecuteWorkflow(ctx, types.TemporalZohoBooksInvoiceMarkPaidWorkflow, input); err != nil {
 		p.Logger.Error(ctx, "failed to start Zoho mark-paid workflow", "error", err, "invoice_id", invoiceID)
 	}
