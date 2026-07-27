@@ -3719,13 +3719,17 @@ func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 	var pricesResponse *dto.ListPricesResponse
 	var err error
 
-	if entityType == types.PRICE_ENTITY_TYPE_PLAN {
+	switch entityType {
+	case types.PRICE_ENTITY_TYPE_PLAN:
 		pricesResponse, err = priceService.GetPricesByPlanID(ctx, dto.GetPricesByPlanRequest{
-			PlanID:         entityID,
-			AllowExpired:   false,
-			BillingPeriods: []types.BillingPeriod{subscription.BillingPeriod},
+			PlanID:       entityID,
+			AllowExpired: false,
+			BillingPeriods: []types.BillingPeriod{
+				subscription.BillingPeriod,
+				types.BILLING_PERIOD_ONETIME,
+			},
 		})
-	} else if entityType == types.PRICE_ENTITY_TYPE_ADDON {
+	case types.PRICE_ENTITY_TYPE_ADDON:
 		pricesResponse, err = priceService.GetPricesByAddonID(ctx, entityID)
 	}
 
