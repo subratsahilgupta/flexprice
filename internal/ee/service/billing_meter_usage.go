@@ -21,7 +21,6 @@ import (
 // for deferred processing by the cumulative commitment path.
 type meterUsageBaseChargeInfo struct {
 	item                        *subscription.SubscriptionLineItem
-	matchingCharge              *dto.SubscriptionUsageByMetersResponse
 	baseAmount                  decimal.Decimal
 	quantityForCalculation      decimal.Decimal
 	priceUnitAmount             decimal.Decimal
@@ -153,6 +152,18 @@ func (s *billingService) CalculateMeterUsageCharges(
 				Mark(ierr.ErrNotFound)
 		}
 
+		// Accumulated once per LINE ITEM (not per charge) for the cumulative-commitment
+		// path below: a base+overage split must contribute exactly one combined entry
+		// to baseChargesForCumulative, otherwise the item gets two allocated invoice
+		// lines and its contribution is misattributed between them (see step 3).
+		var cumulativeBaseAmount decimal.Decimal
+		var cumulativeQuantity decimal.Decimal
+		var cumulativePriceUnitAmount decimal.Decimal
+		var cumulativeDisplayName *string
+		var cumulativeMetadata types.Metadata
+		var cumulativeAdjustedEntitlementQty *decimal.Decimal
+		var cumulativePreferredCharge bool // true once a non-overage charge has set the fields above
+
 		for _, matchingCharge := range matchingCharges {
 			quantityForCalculation := decimal.NewFromFloat(matchingCharge.Quantity)
 
@@ -219,39 +230,48 @@ func (s *billingService) CalculateMeterUsageCharges(
 
 			lineItemAmount := decimal.NewFromFloat(matchingCharge.Amount)
 
-			// 3. Cumulative commitment — collect for batch processing after the loop
+			// 3. Cumulative commitment — accumulate into ONE combined entry per line
+			// item (appended after the charge loop below), not one per charge.
 			if useCumulativePath {
 				baseAmount := lineItemAmount
 				if matchingCharge.IsOverage && overageFactor.GreaterThan(decimal.Zero) {
 					baseAmount = lineItemAmount.Div(overageFactor)
 				}
-				metadata := s.buildChargeMetadata(item, matchingCharge, entitlement)
-				displayName := lo.ToPtr(item.DisplayName)
-				if matchingCharge.IsOverage {
-					displayName = lo.ToPtr(fmt.Sprintf("%s (Overage)", item.DisplayName))
-				}
-				var priceUnitAmount decimal.Decimal
+				cumulativeBaseAmount = cumulativeBaseAmount.Add(baseAmount)
+				cumulativeQuantity = cumulativeQuantity.Add(quantityForCalculation)
 				if item.PriceUnit != nil {
 					priceUnit, puErr := s.PriceUnitRepo.GetByCode(ctx, lo.FromPtr(item.PriceUnit))
 					if puErr == nil {
 						converted, convErr := priceunit.ConvertToPriceUnitAmount(ctx, lineItemAmount, priceUnit.ConversionRate, priceUnit.BaseCurrency)
 						if convErr == nil {
-							priceUnitAmount = converted
+							cumulativePriceUnitAmount = cumulativePriceUnitAmount.Add(converted)
 						}
 					}
 				}
-				baseChargesForCumulative = append(baseChargesForCumulative, meterUsageBaseChargeInfo{
-					item: item, matchingCharge: matchingCharge, baseAmount: baseAmount,
-					quantityForCalculation: quantityForCalculation, priceUnitAmount: priceUnitAmount,
-					displayName: displayName, metadata: metadata,
-					adjustedEntitlementQuantity: entitlementAdjustedQty,
-				})
+				// Prefer the non-overage charge's metadata/display name/entitlement
+				// info for the combined line; only an entirely-overage item (no
+				// non-overage charge at all) keeps the overage charge's info.
+				if !cumulativePreferredCharge || !matchingCharge.IsOverage {
+					cumulativeMetadata = s.buildChargeMetadata(item, matchingCharge, entitlement)
+					cumulativeDisplayName = lo.ToPtr(item.DisplayName)
+					if matchingCharge.IsOverage {
+						cumulativeDisplayName = lo.ToPtr(fmt.Sprintf("%s (Overage)", item.DisplayName))
+					}
+					cumulativeAdjustedEntitlementQty = entitlementAdjustedQty
+					cumulativePreferredCharge = !matchingCharge.IsOverage
+				}
 				continue
 			}
 
-			// 4. Line-item commitment (windowed or flat)
+			// 4. Line-item commitment (windowed or flat). Applied once per line item:
+			// when this item's usage was split into a normal + overage charge, only the
+			// non-overage charge goes through it — otherwise a floor/true-up would be
+			// enforced independently on each half instead of once for the item. A
+			// single (unsplit) charge is unaffected, overage or not.
 			var commitmentInfo *types.CommitmentInfo
-			if item.HasAnyCommitment() && matchingCharge.Price != nil {
+			applyItemCommitment := item.HasAnyCommitment() && matchingCharge.Price != nil &&
+				(!matchingCharge.IsOverage || len(matchingCharges) == 1)
+			if applyItemCommitment {
 				lineItemAmount, commitmentInfo, err = s.applyMeterUsageCommitment(
 					ctx, item, m, matchingCharge, cachedBucketedUsageResult,
 					sub, extCustomerIDs, periodStart, periodEnd, asOf,
@@ -306,6 +326,15 @@ func (s *billingService) CalculateMeterUsageCharges(
 				SubscriptionLineItemID:      lo.ToPtr(item.ID),
 				Metadata:                    metadata,
 				CommitmentInfo:              commitmentInfo,
+			})
+		}
+
+		if useCumulativePath {
+			baseChargesForCumulative = append(baseChargesForCumulative, meterUsageBaseChargeInfo{
+				item: item, baseAmount: cumulativeBaseAmount,
+				quantityForCalculation: cumulativeQuantity, priceUnitAmount: cumulativePriceUnitAmount,
+				displayName: cumulativeDisplayName, metadata: cumulativeMetadata,
+				adjustedEntitlementQuantity: cumulativeAdjustedEntitlementQty,
 			})
 		}
 	}
