@@ -3731,6 +3731,13 @@ func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 		})
 	case types.PRICE_ENTITY_TYPE_ADDON:
 		pricesResponse, err = priceService.GetPricesByAddonID(ctx, entityID)
+	default:
+		return nil, ierr.NewError("unsupported price entity type").
+			WithHint("Only PLAN and ADDON entity types are supported for subscription prices").
+			WithReportableDetails(map[string]interface{}{
+				"entity_type": entityType,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	if err != nil {
