@@ -71,6 +71,11 @@ type Configuration struct {
 	WebhookRetryJob            WebhookRetryJobConfig            `mapstructure:"webhook_retry_job" validate:"omitempty"`
 	Gemini                     GeminiConfig                     `mapstructure:"gemini" validate:"omitempty"`
 	Whop                       WhopConfig                       `mapstructure:"whop" validate:"omitempty"`
+	Onboarding                 OnboardingConfig                 `mapstructure:"onboarding" validate:"omitempty"`
+}
+
+type OnboardingConfig struct {
+	DefaultTenantName string `mapstructure:"default_tenant_name" validate:"omitempty" default:"Flexprice"`
 }
 
 // WhopConfig holds Whop integration settings (non-secret, static config)

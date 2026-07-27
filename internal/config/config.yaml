@@ -481,3 +481,6 @@ onboarding_events:
 # Checkout base URL for the checkout page
 checkout:
   base_url: ""
+
+onboarding:
+  default_tenant_name: "Flexprice"

@@ -139,6 +139,9 @@ func (s *BaseServiceTestSuite) SetupSuite() {
 		Secrets: config.SecretsConfig{
 			EncryptionKey: "test-encryption-key-for-unit-tests-only",
 		},
+		Onboarding: config.OnboardingConfig{
+			DefaultTenantName: "Flexprice",
+		},
 	}
 	var err error
 	s.config = cfg
