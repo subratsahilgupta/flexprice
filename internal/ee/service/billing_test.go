@@ -2869,6 +2869,49 @@ func (s *BillingServiceSuite) TestCalculateMeterUsageCharges_SkipsInactiveLineIt
 	s.True(totalAmount.IsZero(), "Total should be zero: no charges should be attributed to active line items")
 }
 
+func (s *BillingServiceSuite) TestCalculateMeterUsageCharges_KeepsBothNormalAndOverageChargesForSameLineItem() {
+	// When commitment/overage math splits one line item's usage into a normal (base slab)
+	// charge and an overage charge, both share the same SubscriptionLineItemID. Both must
+	// produce their own invoice line item — the base slab must not be dropped.
+	ctx := s.GetContext()
+	s.setupTestData()
+
+	apiCallsLineItem := s.testData.subscription.LineItems[1]
+
+	usage := &dto.GetUsageBySubscriptionResponse{
+		StartTime: s.testData.subscription.CurrentPeriodStart,
+		EndTime:   s.testData.subscription.CurrentPeriodEnd,
+		Currency:  s.testData.subscription.Currency,
+		Charges: []*dto.SubscriptionUsageByMetersResponse{
+			{
+				SubscriptionLineItemID: apiCallsLineItem.ID,
+				Price:                  s.testData.prices.apiCalls,
+				Quantity:               300,
+				Amount:                 6,
+				IsOverage:              false,
+			},
+			{
+				SubscriptionLineItemID: apiCallsLineItem.ID,
+				Price:                  s.testData.prices.apiCalls,
+				Quantity:               200,
+				Amount:                 8,
+				IsOverage:              true,
+				OverageFactor:          2,
+			},
+		},
+	}
+
+	lineItems, totalAmount, err := s.service.CalculateMeterUsageCharges(ctx, s.testData.subscription, usage,
+		s.testData.subscription.CurrentPeriodStart,
+		s.testData.subscription.CurrentPeriodEnd,
+		types.UsageSourceInvoiceCreation,
+	)
+
+	s.NoError(err)
+	s.Len(lineItems, 2, "Should have one invoice line item for the normal slab AND one for the overage slab")
+	s.True(totalAmount.Equal(decimal.NewFromInt(14)), "Total should include both the normal and overage amounts")
+}
+
 func (s *BillingServiceSuite) TestCalculateMeterUsageCharges_MatchesActiveLineItemBySubscriptionLineItemID() {
 	// When SubscriptionLineItemID is set and matches an active line item, the charge should be processed.
 	ctx := s.GetContext()
