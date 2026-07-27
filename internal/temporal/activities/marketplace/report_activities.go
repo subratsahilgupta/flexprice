@@ -397,8 +397,11 @@ func (a *ReportActivities) authAWSConnection(ctx context.Context, conn *connecti
 	// needing to raise MaxSessionDuration.
 	creds, err := a.awsClient.AssumeRole(ctx, roleArn, externalID, time.Hour)
 	if err != nil {
-		a.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
-			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "assume_role")
+		// err is already redacted of the role ARN and external ID by AssumeRole.
+		a.logger.Error(ctx, "marketplace usage report failed",
+			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID,
+			"region", region,
+			"error", err, "stage", "assume_role")
 		return awssdk.Credentials{}, "", nil, err
 	}
 

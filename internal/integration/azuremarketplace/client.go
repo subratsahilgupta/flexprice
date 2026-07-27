@@ -16,6 +16,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/utils"
 )
 
 const (
@@ -85,9 +86,24 @@ func NewClient(log *logger.Logger) Client {
 	return &client{httpClient: httpclient.NewDefaultClient(), logger: log}
 }
 
+// sendFailureReason turns a failed httpClient.Send into a diagnosable message with the tenant's own
+// secrets stripped, matching how the AWS and GCP clients treat their SDK errors.
+//
+// Azure's own response body is what makes a failure actionable — Entra's AADSTS code and description,
+// or the Marketplace API's error code — but httpclient.Error.Error() flattens to a bare "http client
+// error", so the status and body are read off the typed error instead. A transport failure has no
+// response at all; its message names the request URL, which is why the caller passes the values that
+// appear there as secrets.
+func sendFailureReason(err error, secrets ...string) string {
+	msg := err.Error()
+	if httpErr, ok := httpclient.IsHTTPError(err); ok {
+		msg = fmt.Sprintf("status %d: %s", httpErr.StatusCode, string(httpErr.Response))
+	}
+	return utils.RedactSecrets(msg, secrets...)
+}
+
 // GetToken requests a client_credentials token scoped to the Marketplace SaaS API resource ID. The
-// tenant's own Entra app and client secret sign the request; on failure the raw error is not logged,
-// since it may echo request parameters.
+// tenant's own Entra app and client secret sign the request.
 func (c *client) GetToken(ctx context.Context, tenantID, clientID, clientSecret string) (Token, error) {
 	if tenantID == "" || clientID == "" || clientSecret == "" {
 		return Token{}, ierr.NewError("tenant_id, client_id and client_secret are required").
@@ -108,9 +124,16 @@ func (c *client) GetToken(ctx context.Context, tenantID, clientID, clientSecret 
 		Body:    []byte(form.Encode()),
 	})
 	if err != nil {
-		c.logger.Error(ctx, "azure marketplace token request failed",
-			"error", "redacted: error response may echo request parameters")
-		return Token{}, ierr.NewError("azure marketplace token request failed").
+		// Entra's error body carries the AADSTS code and description that says exactly what is wrong
+		// (secret expired, app not found in the directory, tenant not found, Marketplace service
+		// principal not registered), and that is the whole value of this log line. Only the tenant's
+		// own credentials are stripped: the body echoes back the client id it was given, and a
+		// transport failure names the token URL, which embeds the tenant id.
+		reason := sendFailureReason(err, clientSecret, clientID, tenantID)
+		c.logger.Error(ctx, "azure marketplace token request failed", "error", reason)
+		// NewError(reason), not WithError(err): wrapping would drop the reason, since the underlying
+		// httpclient error stringifies to a bare "http client error".
+		return Token{}, ierr.NewError(reason).
 			WithHint("Failed to authenticate with the provided tenant_id, client_id and client_secret.").
 			Mark(ierr.ErrValidation)
 	}
@@ -187,7 +210,12 @@ func (c *client) ReportUsageEvent(ctx context.Context, token Token, record Usage
 		Body: body,
 	})
 	if err != nil {
-		return nil, ierr.WithError(err).
+		// Azure's body names the actual rejection — Duplicate, Expired, InvalidQuantity,
+		// BadArgument — and on a 409 describes the event it already holds. That is what tells the
+		// caller whether a retry can ever succeed, so it is kept verbatim. The bearer token is the
+		// only secret this call carries; the resource id, dimension and plan id are the tenant's own
+		// mapping values, already logged in the clear by the reporting activity.
+		return nil, ierr.NewError(sendFailureReason(err, token.AccessToken)).
 			WithHint("usageEvent call failed").
 			Mark(ierr.ErrHTTPClient)
 	}
