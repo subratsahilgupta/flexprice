@@ -4797,6 +4797,12 @@ func (s *subscriptionService) addAddonToSubscription(
 		return nil, err
 	}
 
+	// Price map for override processing, keyed by price ID (same pattern createSubscription uses)
+	priceMap := make(map[string]*dto.PriceResponse, len(validPrices))
+	for _, p := range validPrices {
+		priceMap[p.Price.ID] = p
+	}
+
 	// Create subscription addon association
 	addonAssociation := req.ToAddonAssociation(
 		ctx,
@@ -4844,6 +4850,16 @@ func (s *subscriptionService) addAddonToSubscription(
 			lineItemBucketCfgs[lineItem.ID] = cfg
 		}
 		lineItems = append(lineItems, lineItem)
+	}
+
+	// Process price overrides — must run after commitments are applied above (bucket
+	// configs are keyed by line item ID, not price ID, so they survive the PriceID
+	// mutation this performs) and before the transaction below (it persists its own
+	// subscription-scoped Price rows directly via priceService.CreatePrice).
+	if len(req.OverrideLineItems) > 0 {
+		if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
+			return nil, err
+		}
 	}
 
 	// Ensure subscription-level and line-item-level commitments don't conflict
