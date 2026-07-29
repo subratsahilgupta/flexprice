@@ -13,7 +13,12 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
+
+// matching meters by event name is a hot path for the single-event and bulk consumers.
+// the in-memory cache is used to avoid hitting the database for repeat lookups.
+const matchingMetersByEventNameCacheTTL = 10 * time.Minute
 
 type meterRepository struct {
 	client    postgres.IClient
@@ -132,6 +137,58 @@ func (r *meterRepository) GetMeter(ctx context.Context, id string) (*domainMeter
 	return meter, nil
 }
 
+func (r *meterRepository) ListByIDs(ctx context.Context, ids []string) ([]*domainMeter.Meter, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	span := StartRepositorySpan(ctx, "meter", "list_by_ids", map[string]interface{}{
+		"meter_ids_count": len(ids),
+	})
+	defer FinishSpan(span)
+
+	result := make([]*domainMeter.Meter, 0, len(ids))
+	missing := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+
+		if cached := r.GetCache(ctx, id); cached != nil {
+			result = append(result, cached)
+			continue
+		}
+		missing = append(missing, id)
+	}
+
+	if len(missing) == 0 {
+		SetSpanSuccess(span)
+		return result, nil
+	}
+
+	filter := types.NewNoLimitMeterFilter()
+	filter.MeterIDs = missing
+	fetched, err := r.List(ctx, filter)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, err
+	}
+
+	for _, m := range fetched {
+		r.SetCache(ctx, m)
+		result = append(result, m)
+	}
+
+	SetSpanSuccess(span)
+	return result, nil
+}
+
 func (r *meterRepository) List(ctx context.Context, filter *types.MeterFilter) ([]*domainMeter.Meter, error) {
 	span := StartRepositorySpan(ctx, "meter", "list", map[string]interface{}{
 		"filter": filter,
@@ -169,6 +226,31 @@ func (r *meterRepository) List(ctx context.Context, filter *types.MeterFilter) (
 
 	SetSpanSuccess(span)
 	return result, nil
+}
+
+// GetMatchingMetersByEventName fetches published meters for the event name using the in-memory cache first.
+func (r *meterRepository) GetMatchingMetersByEventName(ctx context.Context, eventName string) ([]*domainMeter.Meter, error) {
+	eventName = strings.TrimSpace(eventName)
+	cacheKey := cache.GenerateKey(ctx, cache.PrefixMeter, "event_name", eventName)
+
+	if cached, found := r.cache.Get(ctx, cacheKey); found {
+		if meters, ok := cached.([]*domainMeter.Meter); ok {
+			return meters, nil
+		}
+	}
+
+	filter := types.NewNoLimitMeterFilter()
+	filter.EventName = eventName
+	filter.Status = lo.ToPtr(types.StatusPublished)
+
+	meters, err := r.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	if len(meters) > 0 {
+		r.cache.Set(ctx, cacheKey, meters, matchingMetersByEventNameCacheTTL)
+	}
+	return meters, nil
 }
 
 func (r *meterRepository) ListAll(ctx context.Context, filter *types.MeterFilter) ([]*domainMeter.Meter, error) {

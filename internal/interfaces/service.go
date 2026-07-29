@@ -82,6 +82,12 @@ type RevenueAnalyticsService interface {
 	GetDetailedCostAnalytics(ctx context.Context, req *dto.GetCostAnalyticsRequest) (*dto.GetDetailedCostAnalyticsResponse, error)
 }
 
+// DraftAndComputeOptions configures draft-and-compute workflows.
+type DraftAndComputeOptions struct {
+	// SkipIfAlreadyInvoiced skips finalized current periods.
+	SkipIfAlreadyInvoiced bool
+}
+
 type SubscriptionService interface {
 	CreateSubscription(ctx context.Context, req dto.CreateSubscriptionRequest) (*dto.SubscriptionResponse, error)
 	GetSubscription(ctx context.Context, id string) (*dto.SubscriptionResponse, error)
@@ -91,6 +97,7 @@ type SubscriptionService interface {
 	ActivateIncompleteSubscription(ctx context.Context, subscriptionID string) error
 	HandleSubscriptionActivatingInvoicePaid(ctx context.Context, inv *invoice.Invoice) error
 	ListSubscriptions(ctx context.Context, filter *types.SubscriptionFilter) (*dto.ListSubscriptionsResponse, error)
+	GetSubscriptionsForCustomer(ctx context.Context, externalCustomerID string, expand types.Expand) (*dto.ListSubscriptionsResponse, error)
 
 	GetUsageBySubscription(ctx context.Context, req *dto.GetUsageBySubscriptionRequest) (*dto.GetUsageBySubscriptionResponse, error)
 	UpdateBillingPeriods(ctx context.Context) (*dto.SubscriptionUpdatePeriodResponse, error)
@@ -135,6 +142,9 @@ type SubscriptionService interface {
 	GetMeterUsageForSubscription(ctx context.Context, sub *subscription.Subscription, req *dto.GetUsageBySubscriptionRequest) (*dto.GetUsageBySubscriptionResponse, error)
 
 	GetSubscriptionEntitlements(ctx context.Context, subscriptionID string) ([]*dto.EntitlementResponse, error)
+
+	GetSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription) ([]*dto.EntitlementResponse, error)
+
 	GetAggregatedSubscriptionEntitlements(ctx context.Context, subscriptionID string, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error)
 
 	// List all tenant subscriptions
@@ -156,6 +166,9 @@ type SubscriptionService interface {
 
 	// TriggerSubscriptionDraftAndComputeWorkflow creates an idempotent draft for the current period and runs compute via Temporal (invoice task queue).
 	TriggerSubscriptionDraftAndComputeWorkflow(ctx context.Context, subscriptionID string) (*dto.TriggerSubscriptionWorkflowResponse, error)
+
+	// TriggerSubscriptionDraftAndComputeWorkflowWithOptions starts a configurable workflow.
+	TriggerSubscriptionDraftAndComputeWorkflowWithOptions(ctx context.Context, subscriptionID string, opts DraftAndComputeOptions) (*dto.TriggerSubscriptionWorkflowResponse, error)
 
 	// Cron methods
 
@@ -228,6 +241,9 @@ type CheckoutSessionService interface {
 	// CompleteCheckoutSession activates the subscription, finalizes the invoice, and marks
 	// the payment succeeded. Called by gateway webhook handlers after payment confirmation.
 	CompleteCheckoutSession(ctx context.Context, sessionID string, providerResult *types.CheckoutProviderResult) error
+	// StartPayFirstCheckoutSession creates a checkout session on an existing DRAFT invoice,
+	// fulfills payment + provider link, and publishes checkout.session.initiated.
+	StartPayFirstCheckoutSession(ctx context.Context, req *dto.PayFirstCheckoutRequest) (*dto.CheckoutSessionResponse, error)
 }
 
 type ServiceDependencies struct {

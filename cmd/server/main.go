@@ -461,7 +461,7 @@ func provideTemporalConfig(cfg *config.Configuration) *config.TemporalConfig {
 	return &cfg.Temporal
 }
 
-func provideTemporalClient(cfg *config.TemporalConfig, log *logger.Logger) (client.TemporalClient, error) {
+func provideTemporalClient(cfg *config.TemporalConfig, log *logger.Logger, tracingSvc *tracing.Service) (client.TemporalClient, error) {
 	log.Info(context.Background(), "Initializing Temporal client", "address", cfg.Address, "namespace", cfg.Namespace)
 
 	// Use default options and merge with config
@@ -476,6 +476,7 @@ func provideTemporalClient(cfg *config.TemporalConfig, log *logger.Logger) (clie
 		options.APIKey = cfg.APIKey
 	}
 	options.TLS = cfg.TLS
+	options.MetricsHandler = tracingSvc.TemporalMetricsHandler()
 
 	// Create temporal client directly
 	temporalClient, err := client.NewTemporalClient(options, log)
@@ -651,12 +652,14 @@ func registerRouterHandlers(
 		eventConsumptionSvc.RegisterHandler(router, cfg)
 		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
 		eventConsumptionSvc.RegisterHandlerReplay(router, cfg)
+		eventConsumptionSvc.RegisterBulkHandler(router, cfg)
 		costSheetUsageSvc.RegisterHandler(router, cfg)
 		costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
 		walletBalanceAlertSvc.RegisterHandler(router, cfg)
 		rawEventConsumptionSvc.RegisterHandler(router, cfg)
 		meterUsageTrackingSvc.RegisterHandler(router, cfg)
 		meterUsageTrackingSvc.RegisterHandlerLazy(router, cfg)
+		meterUsageTrackingSvc.RegisterBulkHandler(router, cfg)
 	}
 }
 

@@ -891,6 +891,9 @@ func (m *mockSubscriptionService) HandleSubscriptionActivatingInvoicePaid(ctx co
 func (m *mockSubscriptionService) ListSubscriptions(ctx context.Context, filter *types.SubscriptionFilter) (*apidto.ListSubscriptionsResponse, error) {
 	return nil, nil
 }
+func (m *mockSubscriptionService) GetSubscriptionsForCustomer(ctx context.Context, externalCustomerID string, expand types.Expand) (*apidto.ListSubscriptionsResponse, error) {
+	return nil, nil
+}
 func (m *mockSubscriptionService) GetUsageBySubscription(ctx context.Context, req *apidto.GetUsageBySubscriptionRequest) (*apidto.GetUsageBySubscriptionResponse, error) {
 	return nil, nil
 }
@@ -963,6 +966,9 @@ func (m *mockSubscriptionService) GetMeterUsageForSubscription(ctx context.Conte
 func (m *mockSubscriptionService) GetSubscriptionEntitlements(ctx context.Context, subscriptionID string) ([]*apidto.EntitlementResponse, error) {
 	return nil, nil
 }
+func (m *mockSubscriptionService) GetSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription) ([]*apidto.EntitlementResponse, error) {
+	return nil, nil
+}
 func (m *mockSubscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.Context, subscriptionID string, req *apidto.GetSubscriptionEntitlementsRequest) (*apidto.SubscriptionEntitlementsResponse, error) {
 	return nil, nil
 }
@@ -985,6 +991,9 @@ func (m *mockSubscriptionService) TriggerSubscriptionWorkflow(ctx context.Contex
 	return nil, nil
 }
 func (m *mockSubscriptionService) TriggerSubscriptionDraftAndComputeWorkflow(ctx context.Context, subscriptionID string) (*apidto.TriggerSubscriptionWorkflowResponse, error) {
+	return nil, nil
+}
+func (m *mockSubscriptionService) TriggerSubscriptionDraftAndComputeWorkflowWithOptions(ctx context.Context, subscriptionID string, opts interfaces.DraftAndComputeOptions) (*apidto.TriggerSubscriptionWorkflowResponse, error) {
 	return nil, nil
 }
 func (m *mockSubscriptionService) CalculateBillingPeriods(ctx context.Context, subscriptionID string) ([]apidto.Period, error) {

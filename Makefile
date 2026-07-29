@@ -177,13 +177,29 @@ migrate-local:
 
 .PHONY: test test-verbose test-coverage
 
+# Run go test, stream output, then print a short failure summary at the end.
+# Usage: $(call run-go-test,<go test args...>)
+define run-go-test
+	@bash -c 'set -o pipefail; \
+	tmp=$$(mktemp -t flexprice-test.XXXXXX); \
+	go test $(1) 2>&1 | tee "$$tmp"; \
+	status=$$?; \
+	echo ""; \
+	echo "======== FAILED TESTS ========"; \
+	grep -E "^--- FAIL:" "$$tmp" || echo "(none)"; \
+	echo "======== FAILED PACKAGES ====="; \
+	grep -E "^FAIL[[:space:]]" "$$tmp" || echo "(none)"; \
+	rm -f "$$tmp"; \
+	exit $$status'
+endef
+
 # Run all tests
 test: install-typst
-	go test -v -race ./internal/...
+	$(call run-go-test,-v -race ./internal/...)
 
 # Run tests with verbose output
 test-verbose:
-	go test -v ./internal/...
+	$(call run-go-test,-v ./internal/...)
 
 # Run tests with coverage report
 test-coverage:
@@ -373,7 +389,7 @@ restart-flexprice: stop-flexprice start-flexprice
 dev-setup:
 	@echo "Setting up FlexPrice development environment..."
 	@echo "Step 1: Starting infrastructure services..."
-	@docker compose up -d postgres kafka clickhouse temporal temporal-ui
+	@docker compose up -d postgres kafka clickhouse redis temporal temporal-ui
 	@echo "Step 2: Building FlexPrice application image..."
 	@make build-image
 	@echo "Step 3: Running database migrations and initializing Kafka..."

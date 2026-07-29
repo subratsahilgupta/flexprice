@@ -54,6 +54,8 @@ type Configuration struct {
 	CostSheetUsageTrackingLazy CostSheetUsageTrackingLazyConfig `mapstructure:"costsheet_usage_tracking_lazy" validate:"required"`
 	MeterUsageTracking         MeterUsageTrackingConfig         `mapstructure:"meter_usage_tracking" validate:"required"`
 	MeterUsageTrackingLazy     MeterUsageTrackingLazyConfig     `mapstructure:"meter_usage_tracking_lazy" validate:"required"`
+	BulkEventConsumption       BulkEventConsumptionConfig       `mapstructure:"bulk_event_consumption" validate:"required"`
+	BulkMeterUsageTracking     BulkMeterUsageTrackingConfig     `mapstructure:"bulk_meter_usage_tracking" validate:"required"`
 	UsageAlerts                UsageAlertsConfig                `mapstructure:"usage_alerts" validate:"omitempty"`
 	EnvAccess                  EnvAccessConfig                  `mapstructure:"env_access" json:"env_access" validate:"omitempty"`
 	FeatureFlag                FeatureFlagConfig                `mapstructure:"feature_flag" validate:"required"`
@@ -192,6 +194,15 @@ type KafkaConfig struct {
 	ConsumerGroup string   `mapstructure:"consumer_group" validate:"required"`
 	Topic         string   `mapstructure:"topic" validate:"required"`
 	TopicLazy     string   `mapstructure:"topic_lazy" validate:"required"`
+	// TopicBulk is this cluster's batched-ingest topic. Per-cluster because a shared prod
+	// cluster renames topics (FLEXPRICE_KAFKA_TOPICS).
+	TopicBulk string `mapstructure:"topic_bulk"`
+	// Batching bounds for PublishBatch; a batch closes at whichever is hit first.
+	// BulkMaxBatchBytes must stay under the topic's max.message.bytes (1 MB default on MSK).
+	// Read from the LOCAL cluster only: both clusters must receive byte-identical payloads to
+	// stay dedup-identical, so these must not diverge per cluster.
+	BulkMaxBatchSize  int `mapstructure:"bulk_max_batch_size" default:"200"`
+	BulkMaxBatchBytes int `mapstructure:"bulk_max_batch_bytes" default:"524288"`
 	// TopicDLQ is the global fallback dead-letter Kafka topic used by handlers that
 	// do not define their own per-consumer-group topic_dlq. Empty disables DLQ for
 	// those handlers.
@@ -228,12 +239,28 @@ type KafkaTopicSpec struct {
 }
 
 type ClickHouseConfig struct {
-	Address        string `mapstructure:"address" validate:"required"`
-	TLS            bool   `mapstructure:"tls"`
-	Username       string `mapstructure:"username" validate:"required"`
-	Password       string `mapstructure:"password" validate:"required"`
-	Database       string `mapstructure:"database" validate:"required"`
-	MaxMemoryUsage int64  `mapstructure:"max_memory_usage" validate:"required"`
+	// MaxOpenConns caps concurrent ClickHouse queries per PROCESS, so insert throughput is
+	// bounded by (MaxOpenConns / insert latency) per pod/task no matter how many run. Left
+	// at 0 the driver applies MaxIdleConns+5 = 10, which silently caps a consumer fleet:
+	// 40 tasks x 10 conns / 685ms inserts = ~580 events/s. Exhaustion surfaces as
+	// clickhouse-go ErrAcquireConnTimeout ("acquire conn timeout") raised client-side —
+	// the query never reaches the server, so ClickHouse logs nothing. Size it against the
+	// server's spare admission (system.metrics Query vs max_concurrent_queries): raising it
+	// helps only when ClickHouse has headroom, and hurts when it is already saturated.
+	MaxOpenConns int `mapstructure:"max_open_conns"`
+	MaxIdleConns int `mapstructure:"max_idle_conns"`
+	// DialTimeout doubles as the pool-acquire deadline inside clickhouse-go
+	// (clickhouse.go acquire() waits on a semaphore of MaxOpenConns slots for DialTimeout),
+	// so it cannot be tuned for pool pressure without also changing dial failover — see
+	// the ConnOpenInOrder note in GetClientOptions. Prefer raising MaxOpenConns instead.
+	DialTimeout    time.Duration `mapstructure:"dial_timeout"`
+	ReadTimeout    time.Duration `mapstructure:"read_timeout"`
+	Address        string        `mapstructure:"address" validate:"required"`
+	TLS            bool          `mapstructure:"tls"`
+	Username       string        `mapstructure:"username" validate:"required"`
+	Password       string        `mapstructure:"password" validate:"required"`
+	Database       string        `mapstructure:"database" validate:"required"`
+	MaxMemoryUsage int64         `mapstructure:"max_memory_usage" validate:"required"`
 }
 
 type LoggingConfig struct {
@@ -370,6 +397,10 @@ type OtelMetricsConfig struct {
 	Headers    map[string]string `mapstructure:"headers" validate:"omitempty"`
 	// Export interval in seconds (PeriodicReader). Longer = cheaper (fewer samples).
 	IntervalSeconds int `mapstructure:"interval_seconds" default:"60"`
+	// TemporalEnabled attaches the Temporal Go SDK MetricsHandler to the shared
+	// MeterProvider when the metrics pipeline is on. Off by default — Temporal
+	// SDK series are higher volume than app DB/cache metrics.
+	TemporalEnabled bool `mapstructure:"temporal_enabled" default:"false"`
 }
 
 // MergedHeaders — see OtelTracesConfig.MergedHeaders.
@@ -537,7 +568,10 @@ type UsageAlertsConfig struct {
 	// than this past its intended time yields once (ContinueAsNew) to the back
 	// of the queue so fresher customers evaluate first, and each activity's
 	// ScheduleToStartTimeout is set to the same value.
-	StaleAfter time.Duration `mapstructure:"stale_after" default:"1h"`
+	StaleAfter               time.Duration `mapstructure:"stale_after" default:"1h"`
+	WalletAlertsEnabled      bool          `mapstructure:"wallet_alerts_enabled" default:"true"`
+	SpendAlertsEnabled       bool          `mapstructure:"spend_alerts_enabled" default:"true"`
+	EntitlementAlertsEnabled bool          `mapstructure:"entitlement_alerts_enabled" default:"true"`
 }
 
 // MeterUsageTrackingLazyConfig configures the lazy consumer for tenants that
@@ -572,6 +606,31 @@ type RawEventConsumptionConfig struct {
 	OutputTopic   string `mapstructure:"output_topic" default:"events"`
 	RateLimit     int64  `mapstructure:"rate_limit" default:"10"`
 	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_raw_event_processing"`
+}
+
+// BulkEventConsumptionConfig configures the batch-mode consumer that reads
+// RawEventBatch messages published by POST /events/bulk (batch_source=api_bulk
+// metadata) and bulk-inserts each event into the ClickHouse events table.
+// Shares the raw_events topic with RawEventConsumption (Bento) but a separate
+// consumer group; a metadata filter keeps the two paths from cross-processing.
+type BulkEventConsumptionConfig struct {
+	Enabled       bool   `mapstructure:"enabled" default:"true"`
+	Topic         string `mapstructure:"topic" default:"raw_events"`
+	RateLimit     int64  `mapstructure:"rate_limit" default:"10"`
+	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_bulk_event_consumption"`
+	TopicDLQ      string `mapstructure:"topic_dlq" default:""`
+}
+
+// BulkMeterUsageTrackingConfig is the batch-mode sibling of MeterUsageTracking:
+// it reads the same api_bulk batches from raw_events, extracts per-meter
+// quantity/hash for every event, and bulk-inserts into meter_usage. Distinct
+// consumer group from BulkEventConsumption so the two run in parallel.
+type BulkMeterUsageTrackingConfig struct {
+	Enabled       bool   `mapstructure:"enabled" default:"true"`
+	Topic         string `mapstructure:"topic" default:"raw_events"`
+	RateLimit     int64  `mapstructure:"rate_limit" default:"10"`
+	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_bulk_meter_usage_tracking"`
+	TopicDLQ      string `mapstructure:"topic_dlq" default:""`
 }
 
 type OnboardingEventsConfig struct {
@@ -863,6 +922,11 @@ func (c Configuration) Validate() error {
 // Legitimate for local dev; a red flag in any real deployment.
 const devDBPassword = "flexprice123"
 
+const (
+	defaultClickHouseDialTimeout = 10 * time.Second
+	defaultClickHouseReadTimeout = 30 * time.Second
+)
+
 // placeholderSecrets are the exact dev/sample values baked into config.yaml (plus empty).
 // A non-local deployment booting with any of these for an ENABLED feature is running on a
 // public credential, so validateSecrets flags it (warn-only — see NewValidatedConfig).
@@ -971,8 +1035,18 @@ func (c ClickHouseConfig) GetClientOptions() *clickhouse.Options {
 		// fronted by multiple AZ ENIs, and an in-order dial to an ENI that never
 		// completes the TCP/native handshake hangs indefinitely with no default
 		// deadline. A finite DialTimeout makes it fail over to the next address.
-		DialTimeout: 10 * time.Second,
-		ReadTimeout: 30 * time.Second,
+		DialTimeout: defaultClickHouseDialTimeout,
+		ReadTimeout: defaultClickHouseReadTimeout,
+		// Pool sizing. Zero values leave the driver defaults (MaxIdleConns 5,
+		// MaxOpenConns MaxIdleConns+5), which cap per-process query concurrency at 10.
+		MaxOpenConns: c.MaxOpenConns,
+		MaxIdleConns: c.MaxIdleConns,
+	}
+	if c.DialTimeout > 0 {
+		options.DialTimeout = c.DialTimeout
+	}
+	if c.ReadTimeout > 0 {
+		options.ReadTimeout = c.ReadTimeout
 	}
 	if c.TLS {
 		options.TLS = &tls.Config{}
