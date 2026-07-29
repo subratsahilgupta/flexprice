@@ -4852,14 +4852,6 @@ func (s *subscriptionService) addAddonToSubscription(
 		lineItems = append(lineItems, lineItem)
 	}
 
-	// Must run after commitments above (keyed by line item ID, so they survive the
-	// PriceID mutation here) and before the transaction (CreatePrice persists directly).
-	if len(req.OverrideLineItems) > 0 {
-		if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
-			return nil, err
-		}
-	}
-
 	// Ensure subscription-level and line-item-level commitments don't conflict
 	originalLineItems := sub.LineItems
 	sub.LineItems = lo.Flatten([][]*subscription.SubscriptionLineItem{originalLineItems, lineItems})
@@ -4870,6 +4862,12 @@ func (s *subscriptionService) addAddonToSubscription(
 	}
 
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		if len(req.OverrideLineItems) > 0 {
+			if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
+				return err
+			}
+		}
+
 		// Create subscription addon association
 		err = s.AddonAssociationRepo.Create(ctx, addonAssociation)
 		if err != nil {
