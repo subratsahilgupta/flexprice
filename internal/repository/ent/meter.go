@@ -233,10 +233,16 @@ func (r *meterRepository) GetMatchingMetersByEventName(ctx context.Context, even
 	eventName = strings.TrimSpace(eventName)
 	cacheKey := cache.GenerateKey(ctx, cache.PrefixMeter, "event_name", eventName)
 
-	if cached, found := r.cache.Get(ctx, cacheKey); found {
-		if meters, ok := cached.([]*domainMeter.Meter); ok {
-			return meters, nil
+	if cached, found := r.cache.ForceCacheGet(ctx, cacheKey); found {
+		meters, ok := cache.UnmarshalCacheValue[[]*domainMeter.Meter](cached)
+		if !ok {
+			return nil, ierr.WithError(ierr.ErrInternal).
+				WithMessage("failed to unmarshal meters from cache").
+				WithHint("Failed to unmarshal meters from cache").
+				WithReportableDetails(map[string]any{"cache_key": cacheKey}).
+				Mark(ierr.ErrInternal)
 		}
+		return *meters, nil
 	}
 
 	filter := types.NewNoLimitMeterFilter()
@@ -248,7 +254,7 @@ func (r *meterRepository) GetMatchingMetersByEventName(ctx context.Context, even
 		return nil, err
 	}
 	if len(meters) > 0 {
-		r.cache.Set(ctx, cacheKey, meters, matchingMetersByEventNameCacheTTL)
+		r.cache.ForceCacheSet(ctx, cacheKey, meters, matchingMetersByEventNameCacheTTL)
 	}
 	return meters, nil
 }
