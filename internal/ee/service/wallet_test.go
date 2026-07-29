@@ -133,7 +133,7 @@ func (s *WalletServiceSuite) setupService() {
 		CustomerRepo:             stores.CustomerRepo,
 		InvoiceRepo:              stores.InvoiceRepo,
 		EntitlementRepo:          stores.EntitlementRepo,
-		EntitlementGrantRepo:         stores.EntitlementGrantRepo,
+		EntitlementGrantRepo:     stores.EntitlementGrantRepo,
 		FeatureRepo:              stores.FeatureRepo,
 		CouponRepo:               stores.CouponRepo,
 		CouponAssociationRepo:    stores.CouponAssociationRepo,
@@ -2437,7 +2437,7 @@ func (s *WalletAutoTopupInvoiceSuite) setupService() {
 		CustomerRepo:             stores.CustomerRepo,
 		InvoiceRepo:              stores.InvoiceRepo,
 		EntitlementRepo:          stores.EntitlementRepo,
-		EntitlementGrantRepo:         stores.EntitlementGrantRepo,
+		EntitlementGrantRepo:     stores.EntitlementGrantRepo,
 		FeatureRepo:              stores.FeatureRepo,
 		AddonAssociationRepo:     stores.AddonAssociationRepo,
 		SettingsRepo:             stores.SettingsRepo,
@@ -2958,7 +2958,7 @@ func (s *CheckWalletBalanceAlertSuite) setupService() {
 		CustomerRepo:             stores.CustomerRepo,
 		InvoiceRepo:              stores.InvoiceRepo,
 		EntitlementRepo:          stores.EntitlementRepo,
-		EntitlementGrantRepo:         stores.EntitlementGrantRepo,
+		EntitlementGrantRepo:     stores.EntitlementGrantRepo,
 		FeatureRepo:              stores.FeatureRepo,
 		AddonAssociationRepo:     stores.AddonAssociationRepo,
 		SettingsRepo:             stores.SettingsRepo,
@@ -3253,10 +3253,11 @@ func (s *WalletServiceSuite) installCompute(fn func(ctx context.Context, w *wall
 
 // primeCachedBalance writes a balance directly into the injected cache,
 // matching the on-disk format that the wallet service uses (decimal
-// stringified, wrapped via the wallet prefix).
+// stringified, under the dedicated real-time-balance prefix — NOT the wallet
+// entity prefix, which stores a full wallet JSON object).
 func (s *WalletServiceSuite) primeCachedBalance(ctx context.Context, walletID string, balance decimal.Decimal, ttl time.Duration) {
 	ws := s.service.(*walletService)
-	key := cache.GenerateKey(ctx, cache.PrefixWallet, walletID)
+	key := cache.GenerateKey(ctx, cache.PrefixWalletRealTimeBalance, walletID)
 	ws.RedisCache.ForceCacheSet(ctx, key, balance.String(), ttl)
 }
 
@@ -3285,6 +3286,68 @@ func (s *WalletServiceSuite) TestGetWalletBalanceFromCache_FallbackIgnoresMaxLiv
 	s.NoError(err)
 	s.True(resp.IsCachedFallback, "expected IsCachedFallback=true")
 	s.True(resp.RealTimeBalance.Equal(decimal.NewFromInt(42)))
+}
+
+// A warm read must come from the cache. The cold call populates it through the
+// real write path (setWalletRealtimeBalanceToCache), so this covers set→get end
+// to end rather than priming the key by hand — a get/set prefix mismatch fails here.
+func (s *WalletServiceSuite) TestGetWalletBalanceFromCache_WarmReadSkipsRecompute() {
+	ctx := s.GetContext()
+	w := s.buildFallbackTestWallet(decimal.NewFromInt(100))
+
+	computes := 0
+	s.installCompute(func(_ context.Context, _ *wallet.Wallet) (*dto.WalletBalanceResponse, error) {
+		computes++
+		return &dto.WalletBalanceResponse{
+			Wallet:                w,
+			RealTimeBalance:       lo.ToPtr(decimal.NewFromInt(88)),
+			RealTimeCreditBalance: lo.ToPtr(decimal.NewFromInt(88)),
+		}, nil
+	})
+
+	cold, err := s.service.GetWalletBalanceFromCache(ctx, w.ID, nil)
+	s.NoError(err)
+	s.Equal(1, computes, "cold read must compute")
+	s.True(cold.RealTimeBalance.Equal(decimal.NewFromInt(88)))
+	s.NotNil(s.readCachedBalance(ctx, w.ID), "cold read must populate the balance cache")
+
+	warm, err := s.service.GetWalletBalanceFromCache(ctx, w.ID, nil)
+	s.NoError(err)
+	s.Equal(1, computes, "warm read must be served from cache, not recomputed")
+	s.True(warm.RealTimeBalance.Equal(decimal.NewFromInt(88)))
+}
+
+// The non-cached path: once the balance is invalidated the next read must
+// recompute and return the new value, not a stale cached one.
+func (s *WalletServiceSuite) TestGetWalletBalanceFromCache_RecomputesAfterInvalidation() {
+	ctx := s.GetContext()
+	w := s.buildFallbackTestWallet(decimal.NewFromInt(100))
+	ws := s.service.(*walletService)
+
+	balance := decimal.NewFromInt(88)
+	computes := 0
+	s.installCompute(func(_ context.Context, _ *wallet.Wallet) (*dto.WalletBalanceResponse, error) {
+		computes++
+		return &dto.WalletBalanceResponse{
+			Wallet:                w,
+			RealTimeBalance:       lo.ToPtr(balance),
+			RealTimeCreditBalance: lo.ToPtr(balance),
+		}, nil
+	})
+
+	_, err := s.service.GetWalletBalanceFromCache(ctx, w.ID, nil)
+	s.NoError(err)
+	s.Equal(1, computes)
+
+	ws.invalidateWalletRealtimeBalanceCache(ctx, w.ID)
+	s.Nil(s.readCachedBalance(ctx, w.ID), "invalidate must clear the cached balance")
+
+	balance = decimal.NewFromInt(55)
+	after, err := s.service.GetWalletBalanceFromCache(ctx, w.ID, nil)
+	s.NoError(err)
+	s.Equal(2, computes, "read after invalidation must recompute")
+	s.True(after.RealTimeBalance.Equal(decimal.NewFromInt(55)), "must return the recomputed value, got %v", after.RealTimeBalance)
+	s.NotNil(s.readCachedBalance(ctx, w.ID), "recompute must repopulate the cache")
 }
 
 func (s *WalletServiceSuite) TestGetWalletBalanceV2_FallsBackToCacheOnTimeout() {
