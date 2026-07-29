@@ -4852,10 +4852,8 @@ func (s *subscriptionService) addAddonToSubscription(
 		lineItems = append(lineItems, lineItem)
 	}
 
-	// Process price overrides — must run after commitments are applied above (bucket
-	// configs are keyed by line item ID, not price ID, so they survive the PriceID
-	// mutation this performs) and before the transaction below (it persists its own
-	// subscription-scoped Price rows directly via priceService.CreatePrice).
+	// Must run after commitments above (keyed by line item ID, so they survive the
+	// PriceID mutation here) and before the transaction (CreatePrice persists directly).
 	if len(req.OverrideLineItems) > 0 {
 		if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
 			return nil, err

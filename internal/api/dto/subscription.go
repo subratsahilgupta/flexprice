@@ -154,8 +154,7 @@ func validateLineItemCommitments(commitments map[string]*LineItemCommitmentConfi
 	return nil
 }
 
-// validateNoDuplicateOverridePriceIDs rejects override line items that target the same
-// price more than once — each price can only be overridden once per request.
+// validateNoDuplicateOverridePriceIDs rejects overrides that repeat the same price_id.
 func validateNoDuplicateOverridePriceIDs(overrides []OverrideLineItemRequest) error {
 	if len(overrides) == 0 {
 		return nil
