@@ -479,6 +479,108 @@ type SubscriptionCreationConfig struct {
 	Phases []SubscriptionPhaseCreateRequest `json:"phases,omitempty" validate:"omitempty,dive"`
 }
 
+// Validate validates the self-contained fields of SubscriptionCreationConfig — checks that
+// only ever need this struct's own fields, independent of the parent request's type,
+// billing status, or proration settings. Used by both CreateSubscriptionRequest.Validate()
+// and (transitively, via CreateSubscriptionRequest's own promoted fields) grouped-invoicing
+// child requests.
+func (c *SubscriptionCreationConfig) Validate() error {
+	// Validate commitment amount and overage factor
+	if c.CommitmentAmount != nil && c.CommitmentAmount.LessThan(decimal.Zero) {
+		return ierr.NewError("commitment_amount must be non-negative").
+			WithHint("Commitment amount must be greater than or equal to 0").
+			WithReportableDetails(map[string]interface{}{
+				"commitment_amount": *c.CommitmentAmount,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if c.OverageFactor != nil && c.OverageFactor.LessThan(decimal.NewFromInt(1)) {
+		return ierr.NewError("overage_factor must be at least 1.0").
+			WithHint("Overage factor must be greater than or equal to 1.0").
+			WithReportableDetails(map[string]interface{}{
+				"overage_factor": *c.OverageFactor,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Validate credit grants if provided
+	if len(c.CreditGrants) > 0 {
+		for i, grant := range c.CreditGrants {
+			// Force scope to SUBSCRIPTION for all grants added this way
+			if grant.Scope != types.CreditGrantScopeSubscription {
+				return ierr.NewError("invalid credit grant scope").
+					WithHint("Credit grants created with a subscription must have SUBSCRIPTION scope").
+					WithReportableDetails(map[string]interface{}{
+						"grant_scope": grant.Scope,
+						"grant_index": i,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+
+	// taxrate overrides validation
+	if len(c.TaxRateOverrides) > 0 {
+		for _, taxRateOverride := range c.TaxRateOverrides {
+			if err := taxRateOverride.Validate(); err != nil {
+				return ierr.NewError("invalid tax rate override").
+					WithHint("Tax rate override validation failed").
+					WithReportableDetails(map[string]interface{}{
+						"error":             err.Error(),
+						"tax_rate_override": taxRateOverride,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+
+	// Validate line item commitments if provided
+	if err := validateLineItemCommitments(c.LineItemCommitments); err != nil {
+		return err
+	}
+
+	// Validate override line items if provided
+	if len(c.OverrideLineItems) > 0 {
+		priceIDsSeen := make(map[string]bool)
+		for i, override := range c.OverrideLineItems {
+			// Check for duplicate price IDs
+			if priceIDsSeen[override.PriceID] {
+				return ierr.NewError(fmt.Sprintf("duplicate price_id in override line items at index %d", i)).
+					WithHint("Each price can only be overridden once per subscription").
+					WithReportableDetails(map[string]interface{}{
+						"price_id": override.PriceID,
+						"index":    i,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+			priceIDsSeen[override.PriceID] = true
+		}
+	}
+
+	// Validate line_items if provided (each must have exactly one of price_id or price)
+	const maxLineItems = 100
+	if len(c.LineItems) > maxLineItems {
+		return ierr.NewError("line_items exceeds maximum allowed").
+			WithHint(fmt.Sprintf("At most %d line items can be added at subscription creation", maxLineItems)).
+			WithReportableDetails(map[string]interface{}{
+				"count": len(c.LineItems),
+				"max":   maxLineItems,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	for i, item := range c.LineItems {
+		if err := item.Validate(nil, nil); err != nil {
+			return ierr.WithError(err).
+				WithHint(fmt.Sprintf("Line item validation failed at index %d", i)).
+				WithReportableDetails(map[string]interface{}{"line_item_index": i}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
 type CreateSubscriptionRequest struct {
 	// ID is an optional pre-generated subscription ID for internal use only.
 	// This exists as a temporary patch to allow Paddle entity mapping to be created
@@ -1046,98 +1148,8 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		}
 	}
 
-	// Validate commitment amount and overage factor
-	if r.CommitmentAmount != nil && r.CommitmentAmount.LessThan(decimal.Zero) {
-		return ierr.NewError("commitment_amount must be non-negative").
-			WithHint("Commitment amount must be greater than or equal to 0").
-			WithReportableDetails(map[string]interface{}{
-				"commitment_amount": *r.CommitmentAmount,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	if r.OverageFactor != nil && r.OverageFactor.LessThan(decimal.NewFromInt(1)) {
-		return ierr.NewError("overage_factor must be at least 1.0").
-			WithHint("Overage factor must be greater than or equal to 1.0").
-			WithReportableDetails(map[string]interface{}{
-				"overage_factor": *r.OverageFactor,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Validate credit grants if provided
-	if len(r.CreditGrants) > 0 {
-		for i, grant := range r.CreditGrants {
-
-			// Force scope to SUBSCRIPTION for all grants added this way
-			if grant.Scope != types.CreditGrantScopeSubscription {
-				return ierr.NewError("invalid credit grant scope").
-					WithHint("Credit grants created with a subscription must have SUBSCRIPTION scope").
-					WithReportableDetails(map[string]interface{}{
-						"grant_scope": grant.Scope,
-						"grant_index": i,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-		}
-	}
-
-	// taxrate overrides validation
-	if len(r.TaxRateOverrides) > 0 {
-		for _, taxRateOverride := range r.TaxRateOverrides {
-			if err := taxRateOverride.Validate(); err != nil {
-				return ierr.NewError("invalid tax rate override").
-					WithHint("Tax rate override validation failed").
-					WithReportableDetails(map[string]interface{}{
-						"error":             err.Error(),
-						"tax_rate_override": taxRateOverride,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-		}
-	}
-
-	// Validate line item commitments if provided
-	if err := validateLineItemCommitments(r.LineItemCommitments); err != nil {
+	if err := r.SubscriptionCreationConfig.Validate(); err != nil {
 		return err
-	}
-
-	// Validate override line items if provided
-	if len(r.OverrideLineItems) > 0 {
-		priceIDsSeen := make(map[string]bool)
-		for i, override := range r.OverrideLineItems {
-			// Check for duplicate price IDs
-			if priceIDsSeen[override.PriceID] {
-				return ierr.NewError(fmt.Sprintf("duplicate price_id in override line items at index %d", i)).
-					WithHint("Each price can only be overridden once per subscription").
-					WithReportableDetails(map[string]interface{}{
-						"price_id": override.PriceID,
-						"index":    i,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-			priceIDsSeen[override.PriceID] = true
-		}
-	}
-
-	// Validate line_items if provided (each must have exactly one of price_id or price)
-	const maxLineItems = 100
-	if len(r.LineItems) > maxLineItems {
-		return ierr.NewError("line_items exceeds maximum allowed").
-			WithHint(fmt.Sprintf("At most %d line items can be added at subscription creation", maxLineItems)).
-			WithReportableDetails(map[string]interface{}{
-				"count": len(r.LineItems),
-				"max":   maxLineItems,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-	for i, item := range r.LineItems {
-		if err := item.Validate(nil, nil); err != nil {
-			return ierr.WithError(err).
-				WithHint(fmt.Sprintf("Line item validation failed at index %d", i)).
-				WithReportableDetails(map[string]interface{}{"line_item_index": i}).
-				Mark(ierr.ErrValidation)
-		}
 	}
 
 	// Validate phases continuity if provided
