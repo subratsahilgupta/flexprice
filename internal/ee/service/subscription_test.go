@@ -9044,13 +9044,22 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildr
 	ctx := s.GetContext()
 	seatPlan := s.setupSeatFeePlan()
 
+	// Create a separate plan as the entity for the onboarding fee so the price is NOT
+	// auto-included in seatPlan subscriptions, but the plan lookup in buildLineItemParamsForPrice succeeds.
+	onboardingPlan := &plan.Plan{
+		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
+		Name:      "Onboarding Plan T5",
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, onboardingPlan))
+
 	onboardingFeeID := "price_onboarding_fee_child_t5"
 	onboardingFee := &price.Price{
 		ID:                 onboardingFeeID,
 		Amount:             decimal.NewFromInt(25),
 		Currency:           "usd",
 		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
-		EntityID:           seatPlan.ID,
+		EntityID:           onboardingPlan.ID,
 		Type:               types.PRICE_TYPE_FIXED,
 		BillingPeriod:      types.BILLING_PERIOD_ONETIME,
 		BillingPeriodCount: 1,
