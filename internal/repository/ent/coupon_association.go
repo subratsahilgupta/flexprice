@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/couponassociation"
 	"github.com/flexprice/flexprice/ent/predicate"
@@ -113,8 +114,19 @@ func applyActiveOnlyFilter(query CouponAssociationQuery, activePeriodStart, acti
 				couponassociation.EndDateGTE(periodStart),
 				couponassociation.EndDateIsNil(),
 			),
+			couponassociation.Or(
+				couponassociation.EndDateIsNil(),
+				predicate.CouponAssociation(excludeZeroDurationCouponAssociations),
+			),
 		),
 	)
+}
+
+func excludeZeroDurationCouponAssociations(selector *entsql.Selector) {
+	selector.Where(entsql.ColumnsNEQ(
+		selector.C(couponassociation.FieldStartDate),
+		selector.C(couponassociation.FieldEndDate),
+	))
 }
 
 // applyEntityQueryOptions applies entity-specific filters from CouponAssociationFilter
