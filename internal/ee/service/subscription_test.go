@@ -2004,9 +2004,11 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithLineItems() {
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,
 		BillingCycle:       types.BillingCycleAnniversary,
-		LineItems: []dto.CreateSubscriptionLineItemRequest{
-			{PriceID: planPriceID},
-			{Price: inlinePriceReq},
+		SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+			LineItems: []dto.CreateSubscriptionLineItemRequest{
+				{PriceID: planPriceID},
+				{Price: inlinePriceReq},
+			},
 		},
 	}
 
@@ -2097,17 +2099,19 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithLineItems_Validatio
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			req := dto.CreateSubscriptionRequest{
-				CustomerID:         s.testData.customer.ID,
-				PlanID:             s.testData.plan.ID,
-				StartDate:          &start,
-				EndDate:            &end,
-				Currency:           "usd",
-				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-				BillingPeriodCount: 1,
-				BillingCycle:       types.BillingCycleAnniversary,
-				LineItems:          tt.lineItems,
-			}
+		req := dto.CreateSubscriptionRequest{
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			StartDate:          &start,
+			EndDate:            &end,
+			Currency:           "usd",
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingCycle:       types.BillingCycleAnniversary,
+			SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+				LineItems: tt.lineItems,
+			},
+		}
 			_, err := s.service.CreateSubscription(ctx, req)
 			s.Error(err)
 			s.Contains(err.Error(), tt.wantErrCont)
@@ -2172,37 +2176,39 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_LineItemWithBuckets_Ma
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,
 		BillingCycle:       types.BillingCycleAnniversary,
-		// Add a line item with CommitmentTimeBuckets — this goes through AddSubscriptionLineItem
-		// which calls resolveBucketPrices inside the transaction.
-		LineItems: []dto.CreateSubscriptionLineItemRequest{
-			{
-				PriceID:                 usagePriceForBucketSub.ID,
-				SkipEntitlementCheck:    true,
-				CommitmentAmount:        &commitmentAmount,
-				CommitmentType:          types.COMMITMENT_TYPE_AMOUNT,
-				CommitmentOverageFactor: &overageFactor,
-				CommitmentWindowed:      true,
-				CommitmentTimeBuckets: []dto.CommitmentBucketRequest{
-					{
-						Start: types.Bucket{Hour: 9, Minute: 0},
-						End:   types.Bucket{Hour: 17, Minute: 0},
-						Price: &dto.CreatePriceRequest{
-							Amount:               lo.ToPtr(bucketPriceAmount),
-							Currency:             "usd",
-							EntityType:           types.PRICE_ENTITY_TYPE_SUBSCRIPTION,
-							Type:                 types.PRICE_TYPE_FIXED,
-							PriceUnitType:        types.PRICE_UNIT_TYPE_FIAT,
-							BillingPeriod:        types.BILLING_PERIOD_MONTHLY,
-							BillingPeriodCount:   1,
-							BillingModel:         types.BILLING_MODEL_FLAT_FEE,
-							InvoiceCadence:       types.InvoiceCadenceAdvance,
-							LookupKey:            "sub_create_bucket_price",
-							SkipEntityValidation: true,
+		SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+			// Add a line item with CommitmentTimeBuckets — this goes through AddSubscriptionLineItem
+			// which calls resolveBucketPrices inside the transaction.
+			LineItems: []dto.CreateSubscriptionLineItemRequest{
+				{
+					PriceID:                 usagePriceForBucketSub.ID,
+					SkipEntitlementCheck:    true,
+					CommitmentAmount:        &commitmentAmount,
+					CommitmentType:          types.COMMITMENT_TYPE_AMOUNT,
+					CommitmentOverageFactor: &overageFactor,
+					CommitmentWindowed:      true,
+					CommitmentTimeBuckets: []dto.CommitmentBucketRequest{
+						{
+							Start: types.Bucket{Hour: 9, Minute: 0},
+							End:   types.Bucket{Hour: 17, Minute: 0},
+							Price: &dto.CreatePriceRequest{
+								Amount:               lo.ToPtr(bucketPriceAmount),
+								Currency:             "usd",
+								EntityType:           types.PRICE_ENTITY_TYPE_SUBSCRIPTION,
+								Type:                 types.PRICE_TYPE_FIXED,
+								PriceUnitType:        types.PRICE_UNIT_TYPE_FIAT,
+								BillingPeriod:        types.BILLING_PERIOD_MONTHLY,
+								BillingPeriodCount:   1,
+								BillingModel:         types.BILLING_MODEL_FLAT_FEE,
+								InvoiceCadence:       types.InvoiceCadenceAdvance,
+								LookupKey:            "sub_create_bucket_price",
+								SkipEntityValidation: true,
+							},
+							CommitmentType:  types.COMMITMENT_TYPE_AMOUNT,
+							CommitmentValue: decimal.NewFromInt(300),
+							OverageFactor:   lo.ToPtr(decimal.NewFromFloat(1.5)),
+							TrueUpEnabled:   true,
 						},
-						CommitmentType:  types.COMMITMENT_TYPE_AMOUNT,
-						CommitmentValue: decimal.NewFromInt(300),
-						OverageFactor:   lo.ToPtr(decimal.NewFromFloat(1.5)),
-						TrueUpEnabled:   true,
 					},
 				},
 			},
@@ -6464,15 +6470,17 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithPriceOverrides() {
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
 			// Create subscription request with overrides
-			req := dto.CreateSubscriptionRequest{
-				CustomerID:         s.testData.customer.ID,
-				PlanID:             s.testData.plan.ID,
-				Currency:           "usd",
-				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-				BillingPeriodCount: 1,
-				BillingCycle:       types.BillingCycleAnniversary,
-				OverrideLineItems:  tc.overrideLineItems,
-			}
+		req := dto.CreateSubscriptionRequest{
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			Currency:           "usd",
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingCycle:       types.BillingCycleAnniversary,
+			SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+				OverrideLineItems: tc.overrideLineItems,
+			},
+		}
 
 			// Create subscription
 			resp, err := s.service.CreateSubscription(s.GetContext(), req)
@@ -6991,17 +6999,19 @@ func (s *SubscriptionServiceSuite) TestPriceOverrideIntegration() {
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BillingCycle:       types.BillingCycleAnniversary,
-			OverrideLineItems: []dto.OverrideLineItemRequest{
-				{
-					PriceID:      s.testData.prices.fixedMonthly.ID,
-					Amount:       lo.ToPtr(decimal.NewFromFloat(75.00)),
-					BillingModel: types.BILLING_MODEL_TIERED,
-					TierMode:     types.BILLING_TIER_VOLUME,
-					Tiers: []dto.CreatePriceTier{
-						{UpTo: lo.ToPtr(uint64(100)), UnitAmount: decimal.RequireFromString("0.50")},
-						{UpTo: nil, UnitAmount: decimal.RequireFromString("0.25")},
+			SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+				OverrideLineItems: []dto.OverrideLineItemRequest{
+					{
+						PriceID:      s.testData.prices.fixedMonthly.ID,
+						Amount:       lo.ToPtr(decimal.NewFromFloat(75.00)),
+						BillingModel: types.BILLING_MODEL_TIERED,
+						TierMode:     types.BILLING_TIER_VOLUME,
+						Tiers: []dto.CreatePriceTier{
+							{UpTo: lo.ToPtr(uint64(100)), UnitAmount: decimal.RequireFromString("0.50")},
+							{UpTo: nil, UnitAmount: decimal.RequireFromString("0.25")},
+						},
+						Quantity: lo.ToPtr(decimal.NewFromInt(2)),
 					},
-					Quantity: lo.ToPtr(decimal.NewFromInt(2)),
 				},
 			},
 		}
@@ -7045,15 +7055,17 @@ func (s *SubscriptionServiceSuite) TestPriceOverrideIntegration() {
 		subscriptionIDs := make([]string, len(overrideScenarios))
 
 		for i, override := range overrideScenarios {
-			req := dto.CreateSubscriptionRequest{
-				CustomerID:         s.testData.customer.ID,
-				PlanID:             s.testData.plan.ID,
-				Currency:           "usd",
-				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-				BillingPeriodCount: 1,
-				BillingCycle:       types.BillingCycleAnniversary,
-				OverrideLineItems:  []dto.OverrideLineItemRequest{override},
-			}
+		req := dto.CreateSubscriptionRequest{
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			Currency:           "usd",
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingCycle:       types.BillingCycleAnniversary,
+			SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+				OverrideLineItems: []dto.OverrideLineItemRequest{override},
+			},
+		}
 
 			resp, err := s.service.CreateSubscription(s.GetContext(), req)
 			s.NoError(err, "Failed to create subscription %d with overrides", i+1)
@@ -7912,8 +7924,10 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_DraftWithAddons() {
 		BillingCycle:       types.BillingCycleAnniversary,
 		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
 		SubscriptionStatus: types.SubscriptionStatusDraft,
-		Addons: []dto.AddAddonToSubscriptionRequest{
-			{AddonID: addonID},
+		SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+			Addons: []dto.AddAddonToSubscriptionRequest{
+				{AddonID: addonID},
+			},
 		},
 	})
 	s.Require().NoError(err)
@@ -7982,8 +7996,10 @@ func (s *SubscriptionServiceSuite) TestActivateDraftSubscription_WithAddons_Date
 		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
 		PaymentBehavior:    lo.ToPtr(types.PaymentBehaviorDefaultActive),
 		SubscriptionStatus: types.SubscriptionStatusDraft,
-		Addons: []dto.AddAddonToSubscriptionRequest{
-			{AddonID: addonID},
+		SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+			Addons: []dto.AddAddonToSubscriptionRequest{
+				{AddonID: addonID},
+			},
 		},
 	})
 	s.Require().NoError(err)
@@ -8049,8 +8065,10 @@ func (s *SubscriptionServiceSuite) TestActivateDraftSubscription_OnetimeAddon_En
 		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
 		PaymentBehavior:    lo.ToPtr(types.PaymentBehaviorDefaultActive),
 		SubscriptionStatus: types.SubscriptionStatusDraft,
-		Addons: []dto.AddAddonToSubscriptionRequest{
-			{AddonID: addonID, Cadence: types.AddonCadenceOnetime},
+		SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+			Addons: []dto.AddAddonToSubscriptionRequest{
+				{AddonID: addonID, Cadence: types.AddonCadenceOnetime},
+			},
 		},
 	})
 	s.Require().NoError(err)

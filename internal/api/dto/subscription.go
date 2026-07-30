@@ -424,49 +424,15 @@ func (c *SubscriptionInheritanceConfig) Validate() error {
 	return nil
 }
 
-type CreateSubscriptionRequest struct {
-	// ID is an optional pre-generated subscription ID for internal use only.
-	// This exists as a temporary patch to allow Paddle entity mapping to be created
-	// before the subscription row is written, so both share the same transaction.
-	// TODO: Remove once plan-change integration carryover is handled generically.
-	// Never populated from external JSON.
-	ID string `json:"-"`
-
-	// customer_id is the flexprice customer id
-	// and it is prioritized over external_customer_id in case both are provided.
-	CustomerID string `json:"customer_id"`
-
-	// external_customer_id is the customer id in your DB
-	// and must be same as what you provided as external_id while creating the customer in flexprice.
-	ExternalCustomerID string `json:"external_customer_id"`
-
-	PlanID    string     `json:"plan_id" validate:"required"`
-	Currency  string     `json:"currency" validate:"required,len=3"`
-	LookupKey string     `json:"lookup_key"`
-	StartDate *time.Time `json:"start_date,omitempty"`
-	EndDate   *time.Time `json:"end_date,omitempty"`
-
+// SubscriptionCreationConfig groups every optional, per-subscription configuration field
+// that can be set at creation time, beyond plan/customer/billing-schedule. It is embedded
+// in both CreateSubscriptionRequest (top-level subscription creation) and
+// GroupedInvoicingChildRequest (inline grouped-invoicing child creation), so both use
+// identical JSON field names and identical validation.
+type SubscriptionCreationConfig struct {
 	// TrialPeriodDays: nil = inherit trial length from plan recurring-fixed prices (must be uniform).
 	// 0 = explicitly no trial (overrides catalog). >0 = override duration in days.
 	TrialPeriodDays *int `json:"trial_period_days,omitempty"`
-
-	// TrialStart/TrialEnd are for internal integrations only (e.g. Stripe sync); not accepted from public JSON.
-	TrialStart *time.Time `json:"-"`
-	TrialEnd   *time.Time `json:"-"`
-
-	BillingCadence     types.BillingCadence `json:"-"`
-	BillingPeriod      types.BillingPeriod  `json:"billing_period" validate:"required"`
-	BillingPeriodCount int                  `json:"billing_period_count" default:"1"`
-	Metadata           map[string]string    `json:"metadata,omitempty"`
-
-	// BillingCycle is the cycle of the billing anchor.
-	// This is used to determine the billing date for the subscription (i.e set the billing anchor)
-	// If not set, the default value is anniversary. Possible values are anniversary and calendar.
-	// Anniversary billing means the billing anchor will be the start date of the subscription.
-	// Calendar billing means the billing anchor will be the appropriate date based on the billing period.
-	// For example, if the billing period is month and the start date is 2025-04-15 then in case of
-	// calendar billing the billing anchor will be 2025-05-01 vs 2025-04-15 for anniversary billing.
-	BillingCycle types.BillingCycle `json:"billing_cycle"`
 
 	// Credit grants to be applied when subscription is created
 	CreditGrants []CreateCreditGrantRequest `json:"credit_grants,omitempty"`
@@ -480,7 +446,10 @@ type CreateSubscriptionRequest struct {
 	// OverageFactor is a multiplier applied to usage beyond the commitment amount
 	OverageFactor *decimal.Decimal `json:"overage_factor,omitempty" swaggertype:"string"`
 
-	// tax_rate_overrides is the tax rate overrides	to be applied to the subscription
+	// Enable Commitment True Up Fee
+	EnableTrueUp bool `json:"enable_true_up"`
+
+	// tax_rate_overrides is the tax rate overrides to be applied to the subscription
 	TaxRateOverrides []*TaxRateOverride `json:"tax_rate_overrides,omitempty"`
 
 	// SubscriptionCoupons is the preferred way to attach coupons at creation.
@@ -508,6 +477,47 @@ type CreateSubscriptionRequest struct {
 
 	// Phases represents subscription phases to be created with the subscription
 	Phases []SubscriptionPhaseCreateRequest `json:"phases,omitempty" validate:"omitempty,dive"`
+}
+
+type CreateSubscriptionRequest struct {
+	// ID is an optional pre-generated subscription ID for internal use only.
+	// This exists as a temporary patch to allow Paddle entity mapping to be created
+	// before the subscription row is written, so both share the same transaction.
+	// TODO: Remove once plan-change integration carryover is handled generically.
+	// Never populated from external JSON.
+	ID string `json:"-"`
+
+	// customer_id is the flexprice customer id
+	// and it is prioritized over external_customer_id in case both are provided.
+	CustomerID string `json:"customer_id"`
+
+	// external_customer_id is the customer id in your DB
+	// and must be same as what you provided as external_id while creating the customer in flexprice.
+	ExternalCustomerID string `json:"external_customer_id"`
+
+	PlanID    string     `json:"plan_id" validate:"required"`
+	Currency  string     `json:"currency" validate:"required,len=3"`
+	LookupKey string     `json:"lookup_key"`
+	StartDate *time.Time `json:"start_date,omitempty"`
+	EndDate   *time.Time `json:"end_date,omitempty"`
+
+	// TrialStart/TrialEnd are for internal integrations only (e.g. Stripe sync); not accepted from public JSON.
+	TrialStart *time.Time `json:"-"`
+	TrialEnd   *time.Time `json:"-"`
+
+	BillingCadence     types.BillingCadence `json:"-"`
+	BillingPeriod      types.BillingPeriod  `json:"billing_period" validate:"required"`
+	BillingPeriodCount int                  `json:"billing_period_count" default:"1"`
+	Metadata           map[string]string    `json:"metadata,omitempty"`
+
+	// BillingCycle is the cycle of the billing anchor.
+	// This is used to determine the billing date for the subscription (i.e set the billing anchor)
+	// If not set, the default value is anniversary. Possible values are anniversary and calendar.
+	// Anniversary billing means the billing anchor will be the start date of the subscription.
+	// Calendar billing means the billing anchor will be the appropriate date based on the billing period.
+	// For example, if the billing period is month and the start date is 2025-04-15 then in case of
+	// calendar billing the billing anchor will be 2025-05-01 vs 2025-04-15 for anniversary billing.
+	BillingCycle types.BillingCycle `json:"billing_cycle"`
 
 	// Payment behavior configuration
 	PaymentBehavior        *types.PaymentBehavior `json:"payment_behavior,omitempty"`
@@ -545,9 +555,6 @@ type CreateSubscriptionRequest struct {
 	// PaymentTerms (e.g. 15 NET, 30 NET) used to compute invoice due date from period end
 	PaymentTerms *types.PaymentTerms `json:"payment_terms,omitempty"`
 
-	// Enable Commitment True Up Fee
-	EnableTrueUp bool `json:"enable_true_up"`
-
 	// AutoInvoiceThreshold is the usage amount (in subscription currency) that triggers
 	// an intermediate invoice mid-period. Set once at creation; cannot be changed later.
 	// Allowed only when the subscription resolves to type standalone (no parent hierarchy rows).
@@ -564,6 +571,11 @@ type CreateSubscriptionRequest struct {
 
 	// OpeningInvoiceAdjustmentAmount is internal: proration/cancel credit to net the new subscription's first (opening) invoice (e.g. CancelSubscriptionResponse.TotalCreditAmount on immediate plan change). Not in public JSON.
 	OpeningInvoiceAdjustmentAmount *decimal.Decimal `json:"-"`
+
+	// SubscriptionCreationConfig holds every optional configuration field shared with
+	// GroupedInvoicingChildRequest (overrides, extra line items, coupons, taxes,
+	// commitments, trial, credit grants, entitlement overrides, addons, phases).
+	SubscriptionCreationConfig
 }
 
 // AddAddonRequest is used by body-based endpoint /subscriptions/addon
