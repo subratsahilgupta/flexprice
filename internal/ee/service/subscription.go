@@ -4899,10 +4899,12 @@ func (s *subscriptionService) addAddonToSubscription(
 
 	addProrationKey := fmt.Sprintf("addon_add_%s_%d", addonAssociation.ID, effectiveDate.Unix())
 	if err := s.applyAddonAddProration(ctx, sub, lineItems, effectiveDate, req.ProrationBehavior, addProrationKey); err != nil {
-		s.Logger.Info(ctx, "failed to create proration invoice for addon add; addon was persisted successfully",
+		s.Logger.Error(ctx, "failed to create proration invoice for addon add; addon was persisted and is UNBILLED for this period",
 			"error", err,
 			"association_id", addonAssociation.ID,
+			"addon_id", req.AddonID,
 			"subscription_id", sub.ID,
+			"effective_date", effectiveDate,
 			"idempotency_key", addProrationKey,
 		)
 	}
@@ -5322,9 +5324,10 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 			association.ID, *effectiveEndDate,
 			req.ProrationBehavior, endReason,
 		); err != nil {
-			s.Logger.Info(ctx, "failed to issue proration credit for addon remove; removal was persisted successfully",
+			s.Logger.Error(ctx, "failed to issue proration credit for addon remove; removal was persisted and the credit is UNISSUED",
 				"error", err,
 				"association_id", association.ID,
+				"addon_id", association.AddonID,
 				"subscription_id", sub.ID,
 			)
 		}

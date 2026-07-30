@@ -148,7 +148,7 @@ func (s *LineItemProrationServiceSuite) setupTestData() {
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 		BillingPeriodCount: 1,
 		SubscriptionStatus: types.SubscriptionStatusActive,
-		Timezone:   "UTC",
+		Timezone:           "UTC",
 		BaseModel:          types.GetDefaultBaseModel(ctx),
 	}
 	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, s.td.sub))
@@ -476,6 +476,112 @@ func (s *LineItemProrationServiceSuite) TestApply_AddItem_CreatesOneOffInvoice()
 	s.Equal(types.InvoiceTypeOneOff, inv.InvoiceType)
 	s.True(inv.AmountDue.GreaterThan(decimal.Zero),
 		"invoice amount must be positive, got %s", inv.AmountDue)
+}
+
+// TestApply_TwoChangesSameEffectiveDate_BillSeparately guards the under-billing
+// regression: two mid-period changes on one subscription sharing an effective date
+// used to collide on the auto-generated invoice idempotency key (subscription +
+// billing reason + period truncated to the minute), so the second was rejected as a
+// duplicate and silently never billed. Only the caller's key distinguishes them.
+func (s *LineItemProrationServiceSuite) TestApply_TwoChangesSameEffectiveDate_BillSeparately() {
+	ctx := s.GetContext()
+	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
+
+	secondPrice := &price.Price{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+		Amount:             decimal.NewFromInt(35),
+		Currency:           "usd",
+		Type:               types.PRICE_TYPE_FIXED,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, secondPrice))
+
+	secondLineItem := &subscription.SubscriptionLineItem{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+		SubscriptionID: s.td.sub.ID,
+		CustomerID:     s.td.sub.CustomerID,
+		PriceID:        secondPrice.ID,
+		PriceType:      types.PRICE_TYPE_FIXED,
+		Quantity:       decimal.NewFromInt(1),
+		Currency:       "usd",
+		BillingPeriod:  types.BILLING_PERIOD_MONTHLY,
+		InvoiceCadence: types.InvoiceCadenceAdvance,
+		StartDate:      effectiveDate,
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, secondLineItem))
+
+	applyAdd := func(lineItem *subscription.SubscriptionLineItem, p *price.Price, key string) error {
+		return s.svc.Apply(ctx, LineItemProrationRequest{
+			Subscription:   s.subCopyWithPeriod(s.td.periodStart, s.td.periodEnd),
+			EffectiveDate:  effectiveDate,
+			Behavior:       types.ProrationBehaviorCreateProrations,
+			IdempotencyKey: key,
+			Entries: []LineItemProrationEntry{{
+				LineItem:    lineItem,
+				Price:       p,
+				Action:      types.ProrationActionAddItem,
+				NewQuantity: lineItem.Quantity,
+			}},
+		})
+	}
+
+	s.NoError(applyAdd(s.td.lineItem, s.td.fixedPrice, "addon_add_assoc_one"))
+	s.NoError(applyAdd(secondLineItem, secondPrice, "addon_add_assoc_two"),
+		"a second change with the same effective date must still be billed")
+
+	invoices, err := s.GetStores().InvoiceRepo.List(ctx, &types.InvoiceFilter{
+		QueryFilter: types.NewDefaultQueryFilter(),
+	})
+	s.NoError(err)
+	s.Require().Len(invoices, 2, "each change must produce its own proration invoice")
+
+	keys := make(map[string]struct{}, len(invoices))
+	total := decimal.Zero
+	for _, inv := range invoices {
+		s.Require().NotNil(inv.IdempotencyKey, "proration invoice must carry an idempotency key")
+		keys[*inv.IdempotencyKey] = struct{}{}
+		s.True(inv.AmountDue.GreaterThan(decimal.Zero))
+		total = total.Add(inv.AmountDue)
+	}
+	s.Len(keys, 2, "proration invoices must have distinct idempotency keys")
+
+	// $20 and $35 prorated over the same remaining window (2/3 of the period).
+	expected, _ := decimal.NewFromString("36.66")
+	s.True(total.Equal(expected), "expected %s billed across both invoices, got %s", expected, total)
+}
+
+// TestApply_SameChangeTwice_IsIdempotent verifies the flip side: replaying the exact
+// same change must not produce a second invoice.
+func (s *LineItemProrationServiceSuite) TestApply_SameChangeTwice_IsIdempotent() {
+	ctx := s.GetContext()
+	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
+
+	req := LineItemProrationRequest{
+		Subscription:   s.subCopyWithPeriod(s.td.periodStart, s.td.periodEnd),
+		EffectiveDate:  effectiveDate,
+		Behavior:       types.ProrationBehaviorCreateProrations,
+		IdempotencyKey: "addon_add_assoc_replayed",
+		Entries: []LineItemProrationEntry{{
+			LineItem:    s.td.lineItem,
+			Price:       s.td.fixedPrice,
+			Action:      types.ProrationActionAddItem,
+			NewQuantity: s.td.lineItem.Quantity,
+		}},
+	}
+
+	s.NoError(s.svc.Apply(ctx, req))
+	_ = s.svc.Apply(ctx, req)
+
+	invoices, err := s.GetStores().InvoiceRepo.List(ctx, &types.InvoiceFilter{
+		QueryFilter: types.NewDefaultQueryFilter(),
+	})
+	s.NoError(err)
+	s.Len(invoices, 1, "replaying the same change must not double-bill")
 }
 
 // ─── Apply – credit (wallet top-up) ──────────────────────────────────────────
