@@ -9140,6 +9140,121 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildr
 	}
 }
 
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_Commitment() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	seatExternal := "ext_seat_commitment_t8"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Commitment",
+		Email:      "seatcommitment@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	commitmentAmount := decimal.NewFromInt(200)
+	overageFactor := decimal.NewFromFloat(1.5)
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						CommitmentAmount:   &commitmentAmount,
+						CommitmentDuration: lo.ToPtr(types.BILLING_PERIOD_ANNUAL),
+						OverageFactor:      &overageFactor,
+						EnableTrueUp:       true,
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.NoError(err)
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{resp.ID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
+	children, err := s.GetStores().SubscriptionRepo.List(ctx, filter)
+	s.NoError(err)
+	s.Require().Len(children, 1)
+
+	child, err := s.GetStores().SubscriptionRepo.Get(ctx, children[0].ID)
+	s.NoError(err)
+	s.Require().NotNil(child.CommitmentAmount)
+	s.True(commitmentAmount.Equal(*child.CommitmentAmount))
+	s.Require().NotNil(child.CommitmentDuration)
+	s.Equal(types.BILLING_PERIOD_ANNUAL, *child.CommitmentDuration)
+	s.Require().NotNil(child.OverageFactor)
+	s.True(overageFactor.Equal(*child.OverageFactor))
+	s.True(child.EnableTrueUp)
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_TrialPeriodDays() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	seatExternal := "ext_seat_trial_t9"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Trial",
+		Email:      "seattrial@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						TrialPeriodDays: lo.ToPtr(14),
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.NoError(err)
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{resp.ID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
+	children, err := s.GetStores().SubscriptionRepo.List(ctx, filter)
+	s.NoError(err)
+	s.Require().Len(children, 1)
+
+	child, err := s.GetStores().SubscriptionRepo.Get(ctx, children[0].ID)
+	s.NoError(err)
+	s.Require().NotNil(child.TrialStart)
+	s.Require().NotNil(child.TrialEnd)
+	s.Equal(child.TrialStart.AddDate(0, 0, 14), *child.TrialEnd)
+}
+
 func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_SubscriptionCoupons() {
 	ctx := s.GetContext()
 	seatPlan := s.setupSeatFeePlan()
