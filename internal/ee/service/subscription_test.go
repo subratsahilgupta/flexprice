@@ -9,15 +9,19 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/coupon"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	taxrate "github.com/flexprice/flexprice/internal/domain/tax"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/testutil"
@@ -9134,4 +9138,503 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildr
 	for _, item := range parentItems {
 		s.NotEqual(onboardingFeeID, item.PriceID, "parent must not carry the child's extra line item")
 	}
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_SubscriptionCoupons() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	pct := decimal.NewFromInt(10)
+	couponID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_COUPON)
+	c := &coupon.Coupon{
+		ID:            couponID,
+		Name:          "Seat Coupon",
+		Type:          types.CouponTypePercentage,
+		Cadence:       types.CouponCadenceForever,
+		PercentageOff: &pct,
+		CouponCode:    lo.ToPtr(couponID),
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}
+	c.Status = types.StatusPublished
+	s.Require().NoError(s.GetStores().CouponRepo.Create(ctx, c))
+
+	seatExternal := "ext_seat_coupon_t6"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Coupon",
+		Email:      "seatcoupon@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						SubscriptionCoupons: []dto.SubscriptionCouponInput{
+							{CouponCode: *c.CouponCode},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.NoError(err)
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{resp.ID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
+	children, err := s.GetStores().SubscriptionRepo.List(ctx, filter)
+	s.NoError(err)
+	s.Require().Len(children, 1)
+
+	assocFilter := &types.CouponAssociationFilter{
+		QueryFilter:     types.NewNoLimitQueryFilter(),
+		SubscriptionIDs: []string{children[0].ID},
+		CouponIDs:       []string{couponID},
+	}
+	assocs, err := s.GetStores().CouponAssociationRepo.List(ctx, assocFilter)
+	s.NoError(err)
+	s.Require().Len(assocs, 1, "expected the coupon to be associated with the child, not the parent")
+
+	parentAssocFilter := &types.CouponAssociationFilter{
+		QueryFilter:     types.NewNoLimitQueryFilter(),
+		SubscriptionIDs: []string{resp.ID},
+		CouponIDs:       []string{couponID},
+	}
+	parentAssocs, err := s.GetStores().CouponAssociationRepo.List(ctx, parentAssocFilter)
+	s.NoError(err)
+	s.Empty(parentAssocs, "parent must not carry the child's coupon association")
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_TaxRateOverrides() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	pct := decimal.NewFromInt(10)
+	taxCode := "seat_tax_t7a"
+	tr := &taxrate.TaxRate{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TAX_RATE),
+		Name:            "Seat Tax Rate",
+		Code:            taxCode,
+		TaxRateStatus:   types.TaxRateStatusActive,
+		TaxRateType:     types.TaxRateTypePercentage,
+		PercentageValue: &pct,
+		EnvironmentID:   types.GetEnvironmentID(ctx),
+		BaseModel:       types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().TaxRateRepo.Create(ctx, tr))
+
+	seatExternal := "ext_seat_tax_t7a"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Tax",
+		Email:      "seattax@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						TaxRateOverrides: []*dto.TaxRateOverride{
+							{TaxRateCode: taxCode, Currency: "usd"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.NoError(err)
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{resp.ID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
+	children, err := s.GetStores().SubscriptionRepo.List(ctx, filter)
+	s.NoError(err)
+	s.Require().Len(children, 1)
+
+	taxFilter := &types.TaxAssociationFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		EntityType:  types.TaxRateEntityTypeSubscription,
+		EntityID:    children[0].ID,
+		TaxRateIDs:  []string{tr.ID},
+	}
+	assocs, err := s.GetStores().TaxAssociationRepo.List(ctx, taxFilter)
+	s.NoError(err)
+	s.Require().Len(assocs, 1, "expected the tax rate to be linked to the child")
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_ExplicitCreditGrants() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	seatExternal := "ext_seat_explicit_credit_t10"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Explicit Credit",
+		Email:      "seatexplicitcredit@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						CreditGrants: []dto.CreateCreditGrantRequest{
+							{
+								Name:           "Explicit Seat Credits",
+								Scope:          types.CreditGrantScopeSubscription,
+								Credits:        decimal.NewFromInt(250),
+								Cadence:        types.CreditGrantCadenceOneTime,
+								ExpirationType: types.CreditGrantExpiryTypeNever,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.NoError(err)
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{resp.ID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
+	children, err := s.GetStores().SubscriptionRepo.List(ctx, filter)
+	s.NoError(err)
+	s.Require().Len(children, 1)
+
+	wallets, err := s.GetStores().WalletRepo.GetWalletsByCustomerID(ctx, seat.ID)
+	s.NoError(err)
+	s.Require().Len(wallets, 1)
+	s.True(decimal.NewFromInt(250).Equal(wallets[0].Balance),
+		"expected seat wallet funded with the child's explicit 250 credits, got %s",
+		wallets[0].Balance.String())
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_OverrideEntitlements() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	seatFeature := &feature.Feature{
+		ID:        "feat_seat_override_t11",
+		Name:      "Seat Feature",
+		Type:      types.FeatureTypeMetered,
+		MeterID:   s.testData.meters.apiCalls.ID,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().FeatureRepo.Create(ctx, seatFeature))
+
+	planEntitlement := &entitlement.Entitlement{
+		ID:               "ent_seat_override_plan_t11",
+		EntityType:       types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+		EntityID:         seatPlan.ID,
+		FeatureID:        seatFeature.ID,
+		FeatureType:      types.FeatureTypeMetered,
+		IsEnabled:        true,
+		UsageLimit:       lo.ToPtr(int64(1000)),
+		UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
+		BaseModel:        types.GetDefaultBaseModel(ctx),
+	}
+	_, err := s.GetStores().EntitlementRepo.Create(ctx, planEntitlement)
+	s.NoError(err)
+
+	seatExternal := "ext_seat_entitlement_override_t11"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Entitlement Override",
+		Email:      "seatentitlementoverride@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						OverrideEntitlements: []dto.OverrideEntitlementRequest{
+							{
+								EntitlementID: planEntitlement.ID,
+								UsageLimit:    lo.ToPtr(int64(50)),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.NoError(err)
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{resp.ID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
+	children, err := s.GetStores().SubscriptionRepo.List(ctx, filter)
+	s.NoError(err)
+	s.Require().Len(children, 1)
+
+	entFilter := types.NewNoLimitEntitlementFilter()
+	entFilter.WithEntityIDs([]string{children[0].ID})
+	entFilter.WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION)
+	childEntitlements, err := s.GetStores().EntitlementRepo.List(ctx, entFilter)
+	s.NoError(err)
+	s.Require().Len(childEntitlements, 1)
+	s.Equal(seatFeature.ID, childEntitlements[0].FeatureID)
+	s.Require().NotNil(childEntitlements[0].ParentEntitlementID)
+	s.Equal(planEntitlement.ID, *childEntitlements[0].ParentEntitlementID)
+	s.Require().NotNil(childEntitlements[0].UsageLimit)
+	s.Equal(int64(50), *childEntitlements[0].UsageLimit)
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_Addons() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	addonID := "addon_seat_child_t12"
+	addonPriceID := "price_addon_seat_child_t12"
+
+	a := &addon.Addon{
+		ID:        addonID,
+		LookupKey: addonID,
+		Name:      "Seat Child Addon",
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().AddonRepo.Create(ctx, a))
+
+	p := &price.Price{
+		ID:                 addonPriceID,
+		Amount:             decimal.NewFromFloat(15),
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_ADDON,
+		EntityID:           addonID,
+		Type:               types.PRICE_TYPE_FIXED,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, p))
+
+	seatExternal := "ext_seat_addon_t12"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Addon",
+		Email:      "seataddon@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						Addons: []dto.AddAddonToSubscriptionRequest{
+							{AddonID: addonID},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.NoError(err)
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{resp.ID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
+	children, err := s.GetStores().SubscriptionRepo.List(ctx, filter)
+	s.NoError(err)
+	s.Require().Len(children, 1)
+
+	assocFilter := types.NewNoLimitAddonAssociationFilter()
+	assocFilter.EntityType = lo.ToPtr(types.AddonAssociationEntityTypeSubscription)
+	assocFilter.EntityIDs = []string{children[0].ID}
+	associations, err := s.GetStores().AddonAssociationRepo.List(ctx, assocFilter)
+	s.Require().NoError(err)
+	s.Require().Len(associations, 1)
+	s.Equal(addonID, associations[0].AddonID)
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_Phases() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	seatExternal := "ext_seat_phases_t13"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Phases",
+		Email:      "seatphases@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	phaseStart := s.testData.now.Truncate(time.Millisecond)
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(phaseStart),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						Phases: []dto.SubscriptionPhaseCreateRequest{
+							{
+								StartDate: phaseStart,
+								Metadata:  map[string]string{"phase": "seat_single_phase"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.NoError(err)
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{resp.ID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
+	children, err := s.GetStores().SubscriptionRepo.List(ctx, filter)
+	s.NoError(err)
+	s.Require().Len(children, 1)
+
+	phaseFilter := types.NewNoLimitSubscriptionPhaseFilter()
+	phaseFilter.SubscriptionIDs = []string{children[0].ID}
+	phases, err := s.GetStores().SubscriptionPhaseRepo.List(ctx, phaseFilter)
+	s.NoError(err)
+	s.Require().Len(phases, 1, "expected the child to have its own phase record")
+	s.Equal("seat_single_phase", phases[0].Metadata["phase"])
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_RejectsDuplicateOverridePriceID() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	priceFilter := types.NewNoLimitPriceFilter()
+	priceFilter.EntityType = lo.ToPtr(types.PRICE_ENTITY_TYPE_PLAN)
+	priceFilter.EntityIDs = []string{seatPlan.ID}
+	seatPrices, err := s.GetStores().PriceRepo.List(ctx, priceFilter)
+	s.Require().NoError(err)
+	s.Require().Len(seatPrices, 1)
+	seatPriceID := seatPrices[0].ID
+
+	seatExternal := "ext_seat_dup_override_t14"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Dup Override",
+		Email:      "seatdupoverride@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						OverrideLineItems: []dto.OverrideLineItemRequest{
+							{PriceID: seatPriceID, Amount: lo.ToPtr(decimal.NewFromFloat(60.00))},
+							{PriceID: seatPriceID, Amount: lo.ToPtr(decimal.NewFromFloat(70.00))},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err = s.service.CreateSubscription(ctx, req)
+	s.Error(err, "expected duplicate price_id in a child's override_line_items to be rejected")
+	s.Contains(err.Error(), "duplicate price_id in override line items")
 }
