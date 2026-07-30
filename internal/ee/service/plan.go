@@ -621,7 +621,7 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 		missingPairs, subIDsInPage, listErr := s.PlanPriceSyncRepo.ListPlanLineItemsToCreateV2(ctx, planpricesync.ListPlanLineItemsToCreateV2Params{
 			PlanID:    planID,
 			TargetSeq: targetSeq,
-			Limit:     10000,
+			Limit:     2000,
 		})
 		if listErr != nil {
 			return nil, listErr
