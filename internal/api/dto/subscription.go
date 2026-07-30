@@ -471,20 +471,8 @@ func (c *SubscriptionCreationConfig) Validate() error {
 		return err
 	}
 
-	if len(c.OverrideLineItems) > 0 {
-		priceIDsSeen := make(map[string]bool)
-		for i, override := range c.OverrideLineItems {
-			if priceIDsSeen[override.PriceID] {
-				return ierr.NewError(fmt.Sprintf("duplicate price_id in override line items at index %d", i)).
-					WithHint("Each price can only be overridden once per subscription").
-					WithReportableDetails(map[string]interface{}{
-						"price_id": override.PriceID,
-						"index":    i,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-			priceIDsSeen[override.PriceID] = true
-		}
+	if err := validateNoDuplicateOverridePriceIDs(c.OverrideLineItems); err != nil {
+		return err
 	}
 
 	const maxLineItems = 100
