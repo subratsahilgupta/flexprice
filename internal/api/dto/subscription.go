@@ -128,6 +128,23 @@ func validateLineItemCommitments(commitments map[string]*LineItemCommitmentConfi
 	return nil
 }
 
+func validateNoDuplicateOverridePriceIDs(overrides []OverrideLineItemRequest) error {
+	priceIDsSeen := make(map[string]bool)
+	for i, override := range overrides {
+		if priceIDsSeen[override.PriceID] {
+			return ierr.NewError(fmt.Sprintf("duplicate price_id in override line items at index %d", i)).
+				WithHint("Each price can only be overridden once per subscription").
+				WithReportableDetails(map[string]interface{}{
+					"price_id": override.PriceID,
+					"index":    i,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+		priceIDsSeen[override.PriceID] = true
+	}
+	return nil
+}
+
 func (c *LineItemCommitmentConfig) Validate() error {
 	hasAmountCommitment := c.CommitmentAmount != nil && c.CommitmentAmount.GreaterThan(decimal.Zero)
 	hasQuantityCommitment := c.CommitmentQuantity != nil && c.CommitmentQuantity.GreaterThan(decimal.Zero)

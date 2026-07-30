@@ -4797,6 +4797,12 @@ func (s *subscriptionService) addAddonToSubscription(
 		return nil, err
 	}
 
+	// Price map for override processing, keyed by price ID (same pattern createSubscription uses)
+	priceMap := make(map[string]*dto.PriceResponse, len(validPrices))
+	for _, p := range validPrices {
+		priceMap[p.Price.ID] = p
+	}
+
 	// Create subscription addon association
 	addonAssociation := req.ToAddonAssociation(
 		ctx,
@@ -4856,6 +4862,12 @@ func (s *subscriptionService) addAddonToSubscription(
 	}
 
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		if len(req.OverrideLineItems) > 0 {
+			if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
+				return err
+			}
+		}
+
 		// Create subscription addon association
 		err = s.AddonAssociationRepo.Create(ctx, addonAssociation)
 		if err != nil {

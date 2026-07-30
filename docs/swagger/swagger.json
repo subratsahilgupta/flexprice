@@ -2545,6 +2545,66 @@
                 }
             }
         },
+        "/customers/external/{external_id}/subscriptions": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns all subscriptions for a customer looked up by external_id, with line-item meters and entitlements attached (no pagination).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Get subscriptions for customer by external ID",
+                "operationId": "getSubscriptionsForCustomer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer External ID",
+                        "name": "external_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated fields to expand: subscription_line_items, subscription_line_items.meters, entitlements, plan, customer",
+                        "name": "expand",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ListSubscriptionsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
         "/customers/search": {
             "post": {
                 "security": [
@@ -3602,7 +3662,10 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Use when fetching Hugging Face inference usage or billing data (e.g. for HF-specific reporting or reconciliation).",
+                "description": "Use when fetching Hugging Face inference usage or billing data (e.g. for HF-specific reporting or reconciliation). Reads the meter-usage pipeline.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -3611,11 +3674,69 @@
                 ],
                 "summary": "Get Hugging Face inference data",
                 "operationId": "getHuggingfaceInferenceData",
+                "parameters": [
+                    {
+                        "description": "Request body",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/GetHuggingFaceBillingDataRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/GetHuggingFaceBillingDataResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/events/lookup": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when debugging a specific event (e.g. why it failed or how it was aggregated). Reads the meter-usage pipeline; includes processing status and step-by-step debug tracker when unprocessed. Uses ?id= query param because event IDs can contain \"/\".",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Events"
+                ],
+                "summary": "Get event",
+                "operationId": "getEvent",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Event ID",
+                        "name": "id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/GetEventByIDResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "500": {
@@ -3776,53 +3897,6 @@
                     },
                     "404": {
                         "description": "Resource not found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/events/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Use when debugging a specific event (e.g. why it failed or how it was aggregated). Includes processing status and debug info.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Events"
-                ],
-                "summary": "Get event",
-                "operationId": "getEvent",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Event ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/GetEventByIDResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -4733,6 +4807,12 @@
                         "collectionFormat": "csv",
                         "description": "Group usage breakdown by specified fields (e.g., source, feature_id, properties.org_id)",
                         "name": "group_by",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated related fields to include. Supports 'tax_applied.tax_rate' to attach rate details to each applied tax.",
+                        "name": "expand",
                         "in": "query"
                     }
                 ],
@@ -12876,6 +12956,12 @@
             "properties": {
                 "create_subscription_params": {
                     "$ref": "#/definitions/types.CreateSubscriptionParams"
+                },
+                "modify_subscription_params": {
+                    "$ref": "#/definitions/types.ModifySubscriptionParams"
+                },
+                "wallet_topup_params": {
+                    "$ref": "#/definitions/types.WalletTopupParams"
                 }
             }
         },
@@ -13165,6 +13251,37 @@
                 }
             }
         },
+        "AWSMarketplaceAgreement": {
+            "type": "object",
+            "required": [
+                "customer_aws_account_id",
+                "dimension",
+                "license_arn",
+                "product_code"
+            ],
+            "properties": {
+                "concurrent_agreements": {
+                    "description": "if true, ProductCode is omitted when reporting",
+                    "type": "boolean"
+                },
+                "customer_aws_account_id": {
+                    "description": "-\u003e BatchMeterUsage's CustomerAWSAccountId",
+                    "type": "string"
+                },
+                "dimension": {
+                    "description": "-\u003e BatchMeterUsage's Dimension (always \"usage_fee\" in the cents model)",
+                    "type": "string"
+                },
+                "license_arn": {
+                    "description": "-\u003e BatchMeterUsage's LicenseArn; identifies the buyer's agreement",
+                    "type": "string"
+                },
+                "product_code": {
+                    "description": "-\u003e BatchMeterUsage's ProductCode (omitted when ConcurrentAgreements)",
+                    "type": "string"
+                }
+            }
+        },
         "ActivateDraftSubscriptionRequest": {
             "type": "object",
             "required": [
@@ -13201,6 +13318,13 @@
                     "type": "object",
                     "additionalProperties": true
                 },
+                "override_line_items": {
+                    "description": "OverrideLineItems allows overriding price/quantity/billing model for specific addon prices",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/OverrideLineItemRequest"
+                    }
+                },
                 "proration_behavior": {
                     "$ref": "#/definitions/types.ProrationBehavior"
                 },
@@ -13234,6 +13358,13 @@
                 "metadata": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "override_line_items": {
+                    "description": "OverrideLineItems allows overriding price/quantity/billing model for specific addon prices",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/OverrideLineItemRequest"
+                    }
                 },
                 "proration_behavior": {
                     "$ref": "#/definitions/types.ProrationBehavior"
@@ -13398,6 +13529,15 @@
         "AggregatedEntitlement": {
             "type": "object",
             "properties": {
+                "aggregation_mode": {
+                    "$ref": "#/definitions/types.EntitlementAggregationMode"
+                },
+                "buckets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AggregatedEntitlementBucket"
+                    }
+                },
                 "config_values": {
                     "type": "array",
                     "items": {
@@ -13422,6 +13562,32 @@
                 },
                 "usage_reset_period": {
                     "$ref": "#/definitions/types.EntitlementUsageResetPeriod"
+                }
+            }
+        },
+        "AggregatedEntitlementBucket": {
+            "type": "object",
+            "properties": {
+                "entitlement_id": {
+                    "type": "string"
+                },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "string"
+                },
+                "source_entity_id": {
+                    "type": "string"
+                },
+                "usage_limit": {
+                    "type": "integer"
                 }
             }
         },
@@ -13563,6 +13729,33 @@
                 },
                 "status": {
                     "$ref": "#/definitions/types.DebugTrackerStatus"
+                }
+            }
+        },
+        "AzureMarketplaceAgreement": {
+            "type": "object",
+            "required": [
+                "beneficiary_account_id",
+                "dimension",
+                "plan_id",
+                "resource_id"
+            ],
+            "properties": {
+                "beneficiary_account_id": {
+                    "description": "writes the customer mapping; not read in the report payload",
+                    "type": "string"
+                },
+                "dimension": {
+                    "description": "-\u003e usageEvent's dimension (always \"usage_fee\" in the cents model)",
+                    "type": "string"
+                },
+                "plan_id": {
+                    "description": "-\u003e usageEvent's planId; Azure's plan id, distinct from the request's top-level PlanID",
+                    "type": "string"
+                },
+                "resource_id": {
+                    "description": "-\u003e usageEvent's resourceId; the Azure SaaS subscription id",
+                    "type": "string"
                 }
             }
         },
@@ -13915,6 +14108,38 @@
                 "ChangedSubscriptionActionCreated",
                 "ChangedSubscriptionActionUpdated"
             ]
+        },
+        "CheckoutParams": {
+            "type": "object",
+            "required": [
+                "payment_provider"
+            ],
+            "properties": {
+                "cancel_url": {
+                    "type": "string"
+                },
+                "failure_url": {
+                    "type": "string"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "payment_provider": {
+                    "$ref": "#/definitions/types.CheckoutPaymentProvider"
+                },
+                "payment_provider_config": {
+                    "$ref": "#/definitions/types.CheckoutPaymentProviderConfig"
+                },
+                "success_url": {
+                    "type": "string"
+                }
+            }
         },
         "CheckoutSessionResponse": {
             "type": "object",
@@ -14995,6 +15220,10 @@
                     "type": "string",
                     "maxLength": 255
                 },
+                "onboarding_workflow_name": {
+                    "description": "onboarding_workflow_name is given if a custom onboarding workflow is to be triggered for this customer",
+                    "type": "string"
+                },
                 "skip_onboarding_workflow": {
                     "description": "skip_onboarding_workflow when true, prevents the customer onboarding workflow from being triggered\nThis is used internally when a customer is created via a workflow to prevent infinite loops\nDefault: false",
                     "type": "boolean"
@@ -15019,6 +15248,9 @@
                 "feature_type"
             ],
             "properties": {
+                "aggregation_mode": {
+                    "$ref": "#/definitions/types.EntitlementAggregationMode"
+                },
                 "config_value": {
                     "type": "object",
                     "additionalProperties": true
@@ -15037,6 +15269,19 @@
                 },
                 "feature_type": {
                     "$ref": "#/definitions/types.FeatureType"
+                },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "description": "Grant config — optional. All-or-nothing; see entitlement.validateGrantConfig.",
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "string"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -16839,6 +17084,9 @@
                 "addon": {
                     "$ref": "#/definitions/AddonResponse"
                 },
+                "aggregation_mode": {
+                    "$ref": "#/definitions/types.EntitlementAggregationMode"
+                },
                 "config_value": {
                     "type": "object",
                     "additionalProperties": true
@@ -16872,6 +17120,19 @@
                 },
                 "feature_type": {
                     "$ref": "#/definitions/types.FeatureType"
+                },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "description": "Grant config; all-or-nothing set (see validateGrantConfig). Presence of a\ngrant config turns the entitlement into a time-boxed bucket source.",
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "number"
                 },
                 "id": {
                     "type": "string"
@@ -17062,6 +17323,9 @@
                 "type"
             ],
             "properties": {
+                "checkout": {
+                    "$ref": "#/definitions/CheckoutParams"
+                },
                 "coupon_params": {
                     "$ref": "#/definitions/SubModifyCouponParams"
                 },
@@ -17218,6 +17482,33 @@
                 }
             }
         },
+        "GCPMarketplaceAgreement": {
+            "type": "object",
+            "required": [
+                "account_id",
+                "metric_name",
+                "service_name",
+                "usage_reporting_id"
+            ],
+            "properties": {
+                "account_id": {
+                    "description": "writes the customer mapping; not read in the report payload",
+                    "type": "string"
+                },
+                "metric_name": {
+                    "description": "-\u003e services.report's metricName (always \"{service_name}/usage_fee\")",
+                    "type": "string"
+                },
+                "service_name": {
+                    "description": "-\u003e services.report URL's service_name; identifies the product",
+                    "type": "string"
+                },
+                "usage_reporting_id": {
+                    "description": "-\u003e services.report's consumerId; identifies the buyer",
+                    "type": "string"
+                }
+            }
+        },
         "GetCostAnalyticsRequest": {
             "type": "object",
             "properties": {
@@ -17242,12 +17533,26 @@
                         "type": "string"
                     }
                 },
+                "include_children": {
+                    "description": "IncludeChildren, when true and ExternalCustomerID belongs to a parent\ncustomer, aggregates every inherited-child customer's usage into the\nrevenue and cost totals. Default (false) restricts the query to the\ncustomer's own usage — mirrors the meter-usage analytics contract.",
+                    "type": "boolean"
+                },
                 "limit": {
                     "description": "Pagination",
                     "type": "integer"
                 },
                 "offset": {
                     "type": "integer"
+                },
+                "property_filters": {
+                    "description": "Property filters to filter the events by the keys in `properties` field of the event",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
                 },
                 "start_time": {
                     "description": "Time range fields (optional - defaults to last 7 days if not provided)",
@@ -17417,6 +17722,21 @@
                 },
                 "total_count": {
                     "type": "integer"
+                }
+            }
+        },
+        "GetHuggingFaceBillingDataRequest": {
+            "type": "object",
+            "required": [
+                "requestIds"
+            ],
+            "properties": {
+                "requestIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -17830,6 +18150,21 @@
                 "GroupedInvoicingActionAdd",
                 "GroupedInvoicingActionRemove"
             ]
+        },
+        "GroupedInvoicingChildRequest": {
+            "type": "object",
+            "required": [
+                "external_customer_id",
+                "plan_id"
+            ],
+            "properties": {
+                "external_customer_id": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                }
+            }
         },
         "IngestEventRequest": {
             "type": "object",
@@ -18383,8 +18718,7 @@
         "LineItemQuantityChange": {
             "type": "object",
             "required": [
-                "id",
-                "quantity"
+                "id"
             ],
             "properties": {
                 "effective_date": {
@@ -18810,6 +19144,9 @@
                 },
                 "destination_type": {
                     "$ref": "#/definitions/types.PaymentDestinationType"
+                },
+                "environment_id": {
+                    "type": "string"
                 },
                 "error_message": {
                     "type": "string"
@@ -19316,40 +19653,33 @@
         "RegisterMarketplaceAgreementRequest": {
             "type": "object",
             "required": [
-                "customer_aws_account_id",
                 "customer_id",
-                "dimension",
-                "license_arn",
                 "plan_id",
-                "product_code",
                 "provider",
                 "subscription_id"
             ],
             "properties": {
-                "concurrent_agreements": {
-                    "type": "boolean"
+                "aws": {
+                    "description": "required iff Provider == aws_marketplace",
+                    "$ref": "#/definitions/AWSMarketplaceAgreement"
                 },
-                "customer_aws_account_id": {
-                    "type": "string"
+                "azure": {
+                    "description": "required iff Provider == azure_marketplace",
+                    "$ref": "#/definitions/AzureMarketplaceAgreement"
                 },
                 "customer_id": {
                     "type": "string"
                 },
-                "dimension": {
-                    "type": "string"
-                },
-                "license_arn": {
-                    "type": "string"
+                "gcp": {
+                    "description": "required iff Provider == gcp_marketplace",
+                    "$ref": "#/definitions/GCPMarketplaceAgreement"
                 },
                 "plan_id": {
                     "type": "string"
                 },
-                "product_code": {
-                    "type": "string"
-                },
                 "provider": {
-                    "description": "e.g. \"aws\"",
-                    "type": "string"
+                    "description": "\"aws_marketplace\" | \"gcp_marketplace\" | \"azure_marketplace\"",
+                    "$ref": "#/definitions/types.SecretProvider"
                 },
                 "subscription_id": {
                     "type": "string"
@@ -19882,6 +20212,13 @@
                         "type": "string"
                     }
                 },
+                "grouped_invoicing_children_to_create": {
+                    "description": "grouped_invoicing_children_to_create creates new grouped_invoicing children under this parent",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GroupedInvoicingChildRequest"
+                    }
+                },
                 "invoicing_customer_external_id": {
                     "description": "InvoicingCustomerExternalID sets a different billing recipient (external ID).\nRequired for delegated; rejected for inherited; optional for others.",
                     "type": "string"
@@ -19996,6 +20333,10 @@
                         "type": "string"
                     }
                 },
+                "meter": {
+                    "description": "Meter is populated when the caller adds \"meters\" to a subscription-scoped\nexpand string alongside \"subscription_line_items\". Only usage line items\n(PriceType == USAGE with a non-empty MeterID) will have a non-nil Meter.",
+                    "$ref": "#/definitions/meter.Meter"
+                },
                 "meter_display_name": {
                     "type": "string"
                 },
@@ -20052,6 +20393,10 @@
                 "changed_resources": {
                     "description": "All resources created or mutated as a result of this modification.",
                     "$ref": "#/definitions/ChangedResources"
+                },
+                "checkout_session": {
+                    "description": "CheckoutSession is set on pay-first execute when payment must be collected\nbefore line-item changes apply. Reuses CheckoutSessionResponse (payment_action\nat session root). Omitted for pay-later and preview.",
+                    "$ref": "#/definitions/CheckoutSessionResponse"
                 },
                 "subscription": {
                     "description": "The subscription after the modification.",
@@ -20369,6 +20714,13 @@
                 "end_date": {
                     "description": "EndDate is the end date of the subscription",
                     "type": "string"
+                },
+                "entitlements": {
+                    "description": "Entitlements is populated only when the caller adds \"entitlements\" to\nthe search filter's expand string. Each entry is a feature with its\naggregated entitlement info (same shape as CustomerEntitlementsResponse.Features).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AggregatedFeature"
+                    }
                 },
                 "environment_id": {
                     "description": "EnvironmentID is the environment identifier for the subscription",
@@ -21255,9 +21607,17 @@
                     "description": "amount is the amount in the currency of the wallet to be added\nNOTE: this is not the number of credits to add, but the amount in the currency\namount = credits_to_add * conversion_rate\nif both amount and credits_to_add are provided, amount will be ignored\nex if the wallet has a conversion_rate of 2 then adding an amount of\n10 USD in the wallet wil add 5 credits in the wallet",
                     "type": "string"
                 },
+                "bonus_credits_expiry_date_utc": {
+                    "description": "bonus_credits_expiry_date_utc is the expiry (UTC, full precision) applied to the bonus\ncredits transaction. Independent of expiry_date_utc, which governs the purchase credits.\nOnly honored when bonus credits are actually granted (explicit BonusCreditsToAdd or slab).",
+                    "type": "string"
+                },
                 "bonus_credits_to_add": {
                     "description": "bonus_credits_to_add is an explicit override for the bonus credits granted alongside this\npurchase. When nil/omitted, the bonus is resolved from the tenant's\nbonus_credits_topup_config slabs (if enabled). When set, it must be greater than 0 and is\nused as-is, skipping slab resolution. To grant no bonus, omit this field entirely.",
                     "type": "string"
+                },
+                "checkout": {
+                    "description": "checkout opts into pay-first hosted checkout for PURCHASED_CREDIT_INVOICED top-ups.\nWhen set, credits are applied only after checkout payment succeeds.\nOmit for today's pay-later / auto-complete behavior.",
+                    "$ref": "#/definitions/CheckoutParams"
                 },
                 "credits_to_add": {
                     "description": "credits_to_add is the number of credits to add to the wallet",
@@ -21270,6 +21630,9 @@
                 "expiry_date_utc": {
                     "description": "expiry_date_utc is the expiry date in UTC timezone\nex 2025-01-01 00:00:00 UTC",
                     "type": "string"
+                },
+                "force_sync_invoice": {
+                    "type": "boolean"
                 },
                 "idempotency_key": {
                     "description": "idempotency_key is a unique key for the transaction",
@@ -21291,6 +21654,10 @@
         "TopUpWalletResponse": {
             "type": "object",
             "properties": {
+                "checkout_session": {
+                    "description": "CheckoutSession is set when pay-first checkout was requested on top-up.",
+                    "$ref": "#/definitions/CheckoutSessionResponse"
+                },
                 "invoice_id": {
                     "description": "Invoice ID if an invoice was created (only for PURCHASED_CREDIT_INVOICED)",
                     "type": "string"
@@ -21507,9 +21874,28 @@
         "UpdateEntitlementRequest": {
             "type": "object",
             "properties": {
+                "aggregation_mode": {
+                    "$ref": "#/definitions/types.EntitlementAggregationMode"
+                },
+                "clear_grant_config": {
+                    "description": "Grant config — nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).",
+                    "type": "boolean"
+                },
                 "config_value": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "string"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -22601,20 +22987,6 @@
                 "ErrCodeNotImplemented"
             ]
         },
-        "errors.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "$ref": "#/definitions/errors.ErrorCode"
-                },
-                "http_status_code": {
-                    "type": "integer"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
         "Addon": {
             "type": "object",
             "properties": {
@@ -22924,776 +23296,16 @@
                 }
             }
         },
-        "types.Bucket": {
+        "errors.ErrorResponse": {
             "type": "object",
             "properties": {
-                "hour": {
-                    "type": "integer",
-                    "maximum": 24,
-                    "minimum": 0
+                "code": {
+                    "$ref": "#/definitions/errors.ErrorCode"
                 },
-                "minute": {
-                    "type": "integer",
-                    "maximum": 59,
-                    "minimum": 0
-                }
-            }
-        },
-        "types.Value": {
-            "type": "object",
-            "properties": {
-                "array": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                "http_status_code": {
+                    "type": "integer"
                 },
-                "boolean": {
-                    "type": "boolean"
-                },
-                "date": {
-                    "type": "string"
-                },
-                "number": {
-                    "type": "number"
-                },
-                "string": {
-                    "type": "string"
-                }
-            }
-        },
-        "group.Group": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "entity_type": {
-                    "$ref": "#/definitions/types.GroupEntityType"
-                },
-                "environment_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "lookup_key": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
-        "invoice.InvoiceLineItem": {
-            "type": "object",
-            "properties": {
-                "adjusted_entitlement_quantity": {
-                    "description": "adjusted_entitlement_quantity is the entitlement-covered portion deducted from raw usage.\nNil when no entitlement was applied. Raw usage = Quantity + AdjustedEntitlementQuantity.",
-                    "type": "string"
-                },
-                "amount": {
-                    "type": "string"
-                },
-                "commitment_info": {
-                    "$ref": "#/definitions/types.CommitmentInfo"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "customer_id": {
-                    "type": "string"
-                },
-                "display_name": {
-                    "type": "string"
-                },
-                "entity_id": {
-                    "type": "string"
-                },
-                "entity_type": {
-                    "type": "string"
-                },
-                "environment_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "invoice_id": {
-                    "type": "string"
-                },
-                "invoice_level_discount": {
-                    "description": "invoice_level_discount is the discount amount in invoice currency applied to all line items on the invoice.",
-                    "type": "string"
-                },
-                "line_item_discount": {
-                    "description": "line_item_discount is the discount amount in invoice currency applied directly to this line item.",
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
-                },
-                "meter_display_name": {
-                    "type": "string"
-                },
-                "meter_id": {
-                    "type": "string"
-                },
-                "period_end": {
-                    "type": "string"
-                },
-                "period_start": {
-                    "type": "string"
-                },
-                "plan_display_name": {
-                    "type": "string"
-                },
-                "prepaid_credits_applied": {
-                    "description": "prepaid_credits_applied is the amount in invoice currency reduced from this line item due to prepaid credits application.",
-                    "type": "string"
-                },
-                "price_id": {
-                    "type": "string"
-                },
-                "price_type": {
-                    "type": "string"
-                },
-                "price_unit": {
-                    "type": "string"
-                },
-                "price_unit_amount": {
-                    "type": "string"
-                },
-                "price_unit_id": {
-                    "type": "string"
-                },
-                "quantity": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "subscription_id": {
-                    "type": "string"
-                },
-                "subscription_line_item_id": {
-                    "description": "sub_line_item_id links this invoice line item to the subscription_line_item that generated it.",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
-        "meter.Aggregation": {
-            "type": "object",
-            "properties": {
-                "bucket_size": {
-                    "description": "BucketSize is used only for MAX aggregation when windowed aggregation is needed\nIt defines the size of time windows to calculate max values within",
-                    "$ref": "#/definitions/types.WindowSize"
-                },
-                "expression": {
-                    "description": "Expression is an optional CEL expression to compute per-event quantity from event.properties.\nWhen set, it replaces Field-based extraction. Property names are used directly (e.g., token * duration * pixel).",
-                    "type": "string"
-                },
-                "field": {
-                    "description": "Field is the key in $event.properties on which the aggregation is to be applied\nFor ex if the aggregation type is sum for API usage, the field could be \"duration_ms\"\nIgnored when Expression is set.",
-                    "type": "string"
-                },
-                "group_by": {
-                    "description": "GroupBy is the property name in event.properties to group by before aggregating.\nCurrently only supported for MAX aggregation with bucket_size.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.",
-                    "type": "string"
-                },
-                "multiplier": {
-                    "description": "Multiplier is the multiplier for the aggregation\nFor ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000\nto scale up by a factor of 1000. If not provided, it will be null.",
-                    "type": "string"
-                },
-                "type": {
-                    "$ref": "#/definitions/types.AggregationType"
-                }
-            }
-        },
-        "meter.Filter": {
-            "type": "object",
-            "properties": {
-                "key": {
-                    "description": "Key is the key for the filter from $event.properties\nCurrently we support only first level keys in the properties and not nested keys",
-                    "type": "string"
-                },
-                "values": {
-                    "description": "Values are the possible values for the filter to be considered for the meter\nFor ex \"model_name\" could have values \"o1-mini\", \"gpt-4o\" etc",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "meter.Meter": {
-            "type": "object",
-            "properties": {
-                "aggregation": {
-                    "description": "Aggregation defines the aggregation type and field for the meter\nIt is used to aggregate the events into a single value for calculating the usage",
-                    "$ref": "#/definitions/meter.Aggregation"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "environment_id": {
-                    "description": "EnvironmentID is the environment identifier for the meter",
-                    "type": "string"
-                },
-                "event_name": {
-                    "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation",
-                    "type": "string"
-                },
-                "filters": {
-                    "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/meter.Filter"
-                    }
-                },
-                "id": {
-                    "description": "ID is the unique identifier for the meter",
-                    "type": "string"
-                },
-                "name": {
-                    "description": "Name is the display name of the meter",
-                    "type": "string"
-                },
-                "reset_usage": {
-                    "description": "ResetUsage defines whether the usage should be reset periodically or not\nFor ex meters tracking total storage used do not get reset but meters tracking\ntotal API requests do.",
-                    "$ref": "#/definitions/types.ResetUsage"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.TemporalWorkflowResult": {
-            "type": "object",
-            "properties": {
                 "message": {
-                    "type": "string"
-                },
-                "run_id": {
-                    "type": "string"
-                },
-                "workflow_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "price.JSONBFilters": {
-            "type": "object",
-            "additionalProperties": {
-                "type": "array",
-                "items": {
-                    "type": "string"
-                }
-            }
-        },
-        "price.JSONBMetadata": {
-            "type": "object",
-            "additionalProperties": {
-                "type": "string"
-            }
-        },
-        "price.JSONBTransformQuantity": {
-            "type": "object",
-            "properties": {
-                "divide_by": {
-                    "description": "Divide quantity by this number",
-                    "type": "integer"
-                },
-                "round": {
-                    "description": "up or down",
-                    "$ref": "#/definitions/types.RoundType"
-                }
-            }
-        },
-        "price.Price": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "description": "Amount stored in main currency units (e.g., dollars, not cents)\nFor USD: 12.50 means $12.50",
-                    "type": "string"
-                },
-                "billing_cadence": {
-                    "$ref": "#/definitions/types.BillingCadence"
-                },
-                "billing_model": {
-                    "$ref": "#/definitions/types.BillingModel"
-                },
-                "billing_period": {
-                    "$ref": "#/definitions/types.BillingPeriod"
-                },
-                "billing_period_count": {
-                    "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
-                    "type": "integer",
-                    "default": 1
-                },
-                "conversion_rate": {
-                    "description": "ConversionRate is the conversion rate of the price unit to the fiat currency",
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "currency": {
-                    "description": "Currency 3 digit ISO currency code in lowercase ex usd, eur, gbp",
-                    "type": "string"
-                },
-                "description": {
-                    "description": "Description of the price",
-                    "type": "string"
-                },
-                "display_amount": {
-                    "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
-                    "type": "string"
-                },
-                "display_name": {
-                    "description": "DisplayName is the name of the price",
-                    "type": "string"
-                },
-                "display_price_unit_amount": {
-                    "description": "DisplayPriceUnitAmount is the formatted amount of the price unit",
-                    "type": "string"
-                },
-                "end_date": {
-                    "description": "EndDate is the end date of the price",
-                    "type": "string"
-                },
-                "entity_id": {
-                    "description": "EntityID holds the value of the \"entity_id\" field.",
-                    "type": "string"
-                },
-                "entity_type": {
-                    "description": "EntityType holds the value of the \"entity_type\" field.",
-                    "$ref": "#/definitions/types.PriceEntityType"
-                },
-                "environment_id": {
-                    "description": "EnvironmentID is the environment identifier for the price",
-                    "type": "string"
-                },
-                "group_id": {
-                    "description": "GroupID references the group this price belongs to",
-                    "type": "string"
-                },
-                "id": {
-                    "description": "ID uuid identifier for the price",
-                    "type": "string"
-                },
-                "invoice_cadence": {
-                    "$ref": "#/definitions/types.InvoiceCadence"
-                },
-                "lookup_key": {
-                    "description": "LookupKey used for looking up the price in the database",
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/price.JSONBMetadata"
-                },
-                "meter_id": {
-                    "description": "MeterID is the id of the meter for usage based pricing",
-                    "type": "string"
-                },
-                "min_quantity": {
-                    "description": "MinQuantity is the minimum quantity of the price",
-                    "type": "string",
-                    "x-nullable": true
-                },
-                "parent_price_id": {
-                    "description": "ParentPriceID references the root price (always set for price lineage tracking)",
-                    "type": "string"
-                },
-                "price_unit": {
-                    "description": "PriceUnit is the code of the price unit (e.g., 'btc', 'eth')",
-                    "type": "string"
-                },
-                "price_unit_amount": {
-                    "description": "PriceUnitAmount is the amount of the price unit",
-                    "type": "string"
-                },
-                "price_unit_id": {
-                    "description": "PriceUnitID is the id of the price unit (for CUSTOM type)",
-                    "type": "string"
-                },
-                "price_unit_tiers": {
-                    "description": "PriceUnitTiers are the tiers for the price unit when BillingModel is TIERED",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/price.PriceTier"
-                    }
-                },
-                "price_unit_type": {
-                    "description": "PriceUnitType is the type of the price unit (FIAT, CUSTOM)",
-                    "$ref": "#/definitions/types.PriceUnitType"
-                },
-                "sequence": {
-                    "description": "Sequence is the monotonic stamp bumped on every state change that\nsubscription line items need to react to. Read by the plan-price sync;\nset by the database (DEFAULT nextval) on create and by the price\nrepository on termination / compatibility-affecting edits.",
-                    "type": "integer"
-                },
-                "start_date": {
-                    "description": "StartDate is the start date of the price",
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "tier_mode": {
-                    "$ref": "#/definitions/types.BillingTier"
-                },
-                "tiers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/price.PriceTier"
-                    }
-                },
-                "transform_quantity": {
-                    "$ref": "#/definitions/price.JSONBTransformQuantity"
-                },
-                "trial_period_days": {
-                    "description": "TrialPeriodDays is the number of days for the trial period\nNote: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)",
-                    "type": "integer"
-                },
-                "type": {
-                    "$ref": "#/definitions/types.PriceType"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
-        "price.PriceTier": {
-            "type": "object",
-            "properties": {
-                "flat_amount": {
-                    "description": "flat_amount is the flat amount for the given tier (optional)\nApplied on top of unit_amount*quantity. Useful for cases like \"2.7$ + 5c\"",
-                    "type": "string"
-                },
-                "unit_amount": {
-                    "description": "unit_amount is the amount per unit for the given tier",
-                    "type": "string"
-                },
-                "up_to": {
-                    "description": "up_to is the quantity up to which this tier applies. It is null for the last tier.\nIMPORTANT: Tier boundaries are INCLUSIVE.\n- If up_to is 1000, then quantity less than or equal to 1000 belongs to this tier\n- This behavior is consistent across both VOLUME and SLAB tier modes",
-                    "type": "integer"
-                }
-            }
-        },
-        "price.TransformQuantity": {
-            "type": "object",
-            "properties": {
-                "divide_by": {
-                    "description": "Divide quantity by this number",
-                    "type": "integer"
-                },
-                "round": {
-                    "description": "up or down",
-                    "$ref": "#/definitions/types.RoundType"
-                }
-            }
-        },
-        "subscription.SubscriptionLineItem": {
-            "type": "object",
-            "properties": {
-                "addon_association_id": {
-                    "type": "string"
-                },
-                "billing_period": {
-                    "$ref": "#/definitions/types.BillingPeriod"
-                },
-                "billing_period_count": {
-                    "description": "from price at create; default 1",
-                    "type": "integer"
-                },
-                "commitment_amount": {
-                    "description": "Commitment fields",
-                    "type": "string"
-                },
-                "commitment_duration": {
-                    "$ref": "#/definitions/types.BillingPeriod"
-                },
-                "commitment_overage_factor": {
-                    "type": "string"
-                },
-                "commitment_quantity": {
-                    "type": "string"
-                },
-                "commitment_time_buckets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.TimeOfDayBucket"
-                    }
-                },
-                "commitment_true_up_enabled": {
-                    "type": "boolean"
-                },
-                "commitment_type": {
-                    "$ref": "#/definitions/types.CommitmentType"
-                },
-                "commitment_windowed": {
-                    "type": "boolean"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "customer_id": {
-                    "type": "string"
-                },
-                "display_name": {
-                    "type": "string"
-                },
-                "end_date": {
-                    "type": "string"
-                },
-                "entity_id": {
-                    "type": "string"
-                },
-                "entity_type": {
-                    "$ref": "#/definitions/types.SubscriptionLineItemEntityType"
-                },
-                "environment_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "invoice_cadence": {
-                    "$ref": "#/definitions/types.InvoiceCadence"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "meter_display_name": {
-                    "type": "string"
-                },
-                "meter_id": {
-                    "type": "string"
-                },
-                "plan_display_name": {
-                    "type": "string"
-                },
-                "price": {
-                    "$ref": "#/definitions/price.Price"
-                },
-                "price_id": {
-                    "type": "string"
-                },
-                "price_type": {
-                    "$ref": "#/definitions/types.PriceType"
-                },
-                "price_unit": {
-                    "type": "string"
-                },
-                "price_unit_id": {
-                    "type": "string"
-                },
-                "quantity": {
-                    "type": "string"
-                },
-                "start_date": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "subscription_id": {
-                    "type": "string"
-                },
-                "subscription_phase_id": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
-        "subscription.SubscriptionPause": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "environment_id": {
-                    "description": "EnvironmentID is the environment identifier for the pause",
-                    "type": "string"
-                },
-                "id": {
-                    "description": "ID is the unique identifier for the subscription pause",
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
-                },
-                "original_period_end": {
-                    "description": "OriginalPeriodEnd is the end of the billing period when the pause was created",
-                    "type": "string"
-                },
-                "original_period_start": {
-                    "description": "OriginalPeriodStart is the start of the billing period when the pause was created",
-                    "type": "string"
-                },
-                "pause_end": {
-                    "description": "PauseEnd is when the pause will end (null for indefinite)",
-                    "type": "string"
-                },
-                "pause_mode": {
-                    "$ref": "#/definitions/types.PauseMode"
-                },
-                "pause_start": {
-                    "description": "PauseStart is when the pause actually started",
-                    "type": "string"
-                },
-                "pause_status": {
-                    "$ref": "#/definitions/types.PauseStatus"
-                },
-                "reason": {
-                    "description": "Reason is the reason for pausing",
-                    "type": "string"
-                },
-                "resume_mode": {
-                    "$ref": "#/definitions/types.ResumeMode"
-                },
-                "resumed_at": {
-                    "description": "ResumedAt is when the pause was actually ended (if manually resumed)",
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "subscription_id": {
-                    "description": "SubscriptionID is the identifier for the subscription",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
-        "subscription.SubscriptionPhase": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "end_date": {
-                    "description": "EndDate is when the phase ends (nil if phase is still active or indefinite)",
-                    "type": "string"
-                },
-                "environment_id": {
-                    "description": "EnvironmentID is the environment identifier for the phase",
-                    "type": "string"
-                },
-                "id": {
-                    "description": "ID is the unique identifier for the subscription phase",
-                    "type": "string"
-                },
-                "metadata": {
-                    "description": "Metadata contains additional key-value pairs",
-                    "$ref": "#/definitions/types.Metadata"
-                },
-                "start_date": {
-                    "description": "StartDate is when the phase starts",
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "subscription_id": {
-                    "description": "SubscriptionID is the identifier for the subscription",
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
                     "type": "string"
                 }
             }
@@ -23837,14 +23449,16 @@
                 "feature",
                 "subscription",
                 "subscription_line_item",
-                "group"
+                "group",
+                "entitlement_grant"
             ],
             "x-enum-varnames": [
                 "AlertEntityTypeWallet",
                 "AlertEntityTypeFeature",
                 "AlertEntityTypeSubscription",
                 "AlertEntityTypeSubscriptionLineItem",
-                "AlertEntityTypeGroup"
+                "AlertEntityTypeGroup",
+                "AlertEntityTypeEntitlementGrant"
             ]
         },
         "types.AlertInfo": {
@@ -23939,79 +23553,6 @@
                 }
             }
         },
-        "types.AlertSettingsFilter": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "type": "boolean"
-                },
-                "end_time": {
-                    "type": "string"
-                },
-                "entity_id": {
-                    "type": "string"
-                },
-                "entity_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "entity_type": {
-                    "$ref": "#/definitions/types.AlertEntityType"
-                },
-                "expand": {
-                    "type": "string"
-                },
-                "filters": {
-                    "description": "filters allows complex filtering based on multiple fields",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.FilterCondition"
-                    }
-                },
-                "limit": {
-                    "type": "integer",
-                    "maximum": 1000,
-                    "minimum": 1
-                },
-                "offset": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "order": {
-                    "type": "string",
-                    "enum": [
-                        "asc",
-                        "desc"
-                    ]
-                },
-                "parent_entity_id": {
-                    "type": "string"
-                },
-                "parent_entity_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "parent_entity_type": {
-                    "$ref": "#/definitions/types.AlertEntityType"
-                },
-                "sort": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.SortCondition"
-                    }
-                },
-                "start_time": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                }
-            }
-        },
         "types.AlertState": {
             "type": "string",
             "enum": [
@@ -24046,7 +23587,9 @@
                 "feature_wallet_balance",
                 "subscription_spend",
                 "subscription_line_item_spend",
-                "subscription_group_spend"
+                "subscription_group_spend",
+                "entitlement_grant_threshold",
+                "entitlement_grant_exhausted"
             ],
             "x-enum-varnames": [
                 "AlertTypeLowOngoingBalance",
@@ -24054,7 +23597,9 @@
                 "AlertTypeFeatureWalletBalance",
                 "AlertTypeSubscriptionSpend",
                 "AlertTypeSubscriptionLineItemSpend",
-                "AlertTypeSubscriptionGroupSpend"
+                "AlertTypeSubscriptionGroupSpend",
+                "AlertTypeEntitlementGrantThreshold",
+                "AlertTypeEntitlementGrantExhausted"
             ]
         },
         "types.ApplicationStatus": {
@@ -24079,6 +23624,10 @@
             "properties": {
                 "amount": {
                     "type": "number"
+                },
+                "cooldown": {
+                    "description": "Cooldown is an optional cooloff after a successful auto top-up before another may run.",
+                    "$ref": "#/definitions/types.Duration"
                 },
                 "enabled": {
                     "type": "boolean"
@@ -24156,6 +23705,21 @@
                 "BILLING_TIER_SLAB"
             ]
         },
+        "types.Bucket": {
+            "type": "object",
+            "properties": {
+                "hour": {
+                    "type": "integer",
+                    "maximum": 24,
+                    "minimum": 0
+                },
+                "minute": {
+                    "type": "integer",
+                    "maximum": 59,
+                    "minimum": 0
+                }
+            }
+        },
         "types.CancelImmediatelyInvoicePolicy": {
             "type": "string",
             "enum": [
@@ -24183,10 +23747,14 @@
         "types.CheckoutAction": {
             "type": "string",
             "enum": [
-                "create_subscription"
+                "create_subscription",
+                "modify_subscription",
+                "wallet_topup"
             ],
             "x-enum-varnames": [
-                "CheckoutActionCreateSubscription"
+                "CheckoutActionCreateSubscription",
+                "CheckoutActionModifySubscription",
+                "CheckoutActionWalletTopup"
             ]
         },
         "types.CheckoutConfiguration": {
@@ -24194,6 +23762,12 @@
             "properties": {
                 "create_subscription_params": {
                     "$ref": "#/definitions/types.CreateSubscriptionParams"
+                },
+                "modify_subscription_params": {
+                    "$ref": "#/definitions/types.ModifySubscriptionParams"
+                },
+                "wallet_topup_params": {
+                    "$ref": "#/definitions/types.WalletTopupParams"
                 }
             }
         },
@@ -24205,20 +23779,6 @@
             "x-enum-varnames": [
                 "CheckoutPaymentProviderRazorpay"
             ]
-        },
-        "types.CheckoutPaymentProviderConfig": {
-            "type": "object",
-            "properties": {
-                "collection_method": {
-                    "$ref": "#/definitions/types.CollectionMethod"
-                },
-                "max_mandate_limit": {
-                    "type": "string"
-                },
-                "payment_method": {
-                    "$ref": "#/definitions/types.PaymentMethodType"
-                }
-            }
         },
         "types.CheckoutStatus": {
             "type": "string",
@@ -24657,6 +24217,23 @@
                 "DebugTrackerStatusAttributed"
             ]
         },
+        "types.Duration": {
+            "type": "object",
+            "enum": [
+                3600000000000
+            ],
+            "properties": {
+                "unit": {
+                    "$ref": "#/definitions/types.DurationUnit"
+                },
+                "value": {
+                    "type": "integer"
+                }
+            },
+            "x-enum-varnames": [
+                "EntitlementGrantMinDuration"
+            ]
+        },
         "types.EntitlementEntityType": {
             "type": "string",
             "enum": [
@@ -24703,6 +24280,10 @@
                     "items": {
                         "$ref": "#/definitions/types.FilterCondition"
                     }
+                },
+                "has_grant_config": {
+                    "description": "HasGrantConfig filters on grant-config presence (grant_quota set or not).",
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -25317,26 +24898,6 @@
                 "InvoiceTypeCredit"
             ]
         },
-        "types.ListResponse-dto_WalletResponse": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/WalletResponse"
-                    }
-                },
-                "pagination": {
-                    "$ref": "#/definitions/types.PaginationResponse"
-                }
-            }
-        },
-        "types.Metadata": {
-            "type": "object",
-            "additionalProperties": {
-                "type": "string"
-            }
-        },
         "types.PaginationResponse": {
             "type": "object",
             "properties": {
@@ -25798,17 +25359,6 @@
                 }
             }
         },
-        "types.RejectedEventReason": {
-            "type": "string",
-            "enum": [
-                "no_meter_for_event_name",
-                "no_matching_meter"
-            ],
-            "x-enum-varnames": [
-                "RejectedEventReasonNoMeterForName",
-                "RejectedEventReasonNoMatchingMeter"
-            ]
-        },
         "types.ReportingUnit": {
             "type": "object",
             "properties": {
@@ -26035,7 +25585,9 @@
                 "paddle",
                 "whop",
                 "tabs",
-                "aws_marketplace"
+                "aws_marketplace",
+                "gcp_marketplace",
+                "azure_marketplace"
             ],
             "x-enum-comments": {
                 "SecretProviderS3": "supports multiple connections per environment"
@@ -26054,7 +25606,9 @@
                 "SecretProviderPaddle",
                 "SecretProviderWhop",
                 "SecretProviderTabs",
-                "SecretProviderAWSMarketplace"
+                "SecretProviderAWSMarketplace",
+                "SecretProviderGCPMarketplace",
+                "SecretProviderAzureMarketplace"
             ]
         },
         "types.SecretType": {
@@ -26240,8 +25794,12 @@
                     "description": "TrialEndDueLTE, when set, restricts to subscriptions with trial_end not nil and trial_end \u003c= trial_end_due_lte.\nUse with subscription_status trialing for trial-end cron processing.",
                     "type": "string"
                 },
+                "with_coupon_associations": {
+                    "description": "WithCouponAssociations eager-loads coupon associations and their coupons.\n\nKept separate from WithLineItems because the coupon_associations table has no\nindex leading with subscription_id, so Ent's edge load degrades to a full table\nscan. Only set it when the response actually surfaces the associations; the\nservice layer back-fills it from expand=\"coupon_associations\".",
+                    "type": "boolean"
+                },
                 "with_line_items": {
-                    "description": "WithLineItems includes line items in the response",
+                    "description": "WithLineItems includes line items in the response.\n\nDeprecated: use expand=\"subscription_line_items\" instead. Retained for\nbackwards compatibility and for internal callers that need to force-disable\nline item loading (set to false). The service layer ORs this with the\nexpand check before invoking the repository.",
                     "type": "boolean"
                 }
             }
@@ -26419,6 +25977,10 @@
         "types.SyncConfig": {
             "type": "object",
             "properties": {
+                "aws_marketplace": {
+                    "description": "AWSMarketplace connection metadata",
+                    "$ref": "#/definitions/types.AWSMarketplaceSyncConfig"
+                },
                 "customer": {
                     "$ref": "#/definitions/types.EntitySyncConfig"
                 },
@@ -26703,6 +26265,29 @@
                 "UserTypeServiceAccount"
             ]
         },
+        "types.Value": {
+            "type": "object",
+            "properties": {
+                "array": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "boolean": {
+                    "type": "boolean"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "number": {
+                    "type": "number"
+                },
+                "string": {
+                    "type": "string"
+                }
+            }
+        },
         "types.WalletConfig": {
             "type": "object",
             "properties": {
@@ -26934,6 +26519,7 @@
                 "subscription.line_item_spend.threshold_recovered",
                 "subscription.group_spend.threshold_reached",
                 "subscription.group_spend.threshold_recovered",
+                "entitlement.grant.exhausted",
                 "subscription.renewal.due",
                 "invoice.communication.triggered",
                 "credit_note.created",
@@ -26991,6 +26577,7 @@
                 "WebhookEventSubscriptionLineItemSpendThresholdRecovered",
                 "WebhookEventSubscriptionGroupSpendThresholdReached",
                 "WebhookEventSubscriptionGroupSpendThresholdRecovered",
+                "WebhookEventEntitlementGrantExhausted",
                 "WebhookEventSubscriptionRenewalDue",
                 "WebhookEventInvoiceCommunicationTriggered",
                 "WebhookEventCreditNoteCreated",
@@ -27093,6 +26680,964 @@
                     "type": "string"
                 },
                 "workflow_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "group.Group": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.GroupEntityType"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "invoice.InvoiceLineItem": {
+            "type": "object",
+            "properties": {
+                "adjusted_entitlement_quantity": {
+                    "description": "adjusted_entitlement_quantity is the entitlement-covered portion deducted from raw usage.\nNil when no entitlement was applied. Raw usage = Quantity + AdjustedEntitlementQuantity.",
+                    "type": "string"
+                },
+                "amount": {
+                    "type": "string"
+                },
+                "commitment_info": {
+                    "$ref": "#/definitions/types.CommitmentInfo"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_id": {
+                    "type": "string"
+                },
+                "invoice_level_discount": {
+                    "description": "invoice_level_discount is the discount amount in invoice currency applied to all line items on the invoice.",
+                    "type": "string"
+                },
+                "line_item_discount": {
+                    "description": "line_item_discount is the discount amount in invoice currency applied directly to this line item.",
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "meter_display_name": {
+                    "type": "string"
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "plan_display_name": {
+                    "type": "string"
+                },
+                "prepaid_credits_applied": {
+                    "description": "prepaid_credits_applied is the amount in invoice currency reduced from this line item due to prepaid credits application.",
+                    "type": "string"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "price_type": {
+                    "type": "string"
+                },
+                "price_unit": {
+                    "type": "string"
+                },
+                "price_unit_amount": {
+                    "type": "string"
+                },
+                "price_unit_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "subscription_line_item_id": {
+                    "description": "sub_line_item_id links this invoice line item to the subscription_line_item that generated it.",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "meter.Aggregation": {
+            "type": "object",
+            "properties": {
+                "bucket_size": {
+                    "description": "BucketSize is used only for MAX aggregation when windowed aggregation is needed\nIt defines the size of time windows to calculate max values within",
+                    "$ref": "#/definitions/types.WindowSize"
+                },
+                "expression": {
+                    "description": "Expression is an optional CEL expression to compute per-event quantity from event.properties.\nWhen set, it replaces Field-based extraction. Property names are used directly (e.g., token * duration * pixel).",
+                    "type": "string"
+                },
+                "field": {
+                    "description": "Field is the key in $event.properties on which the aggregation is to be applied\nFor ex if the aggregation type is sum for API usage, the field could be \"duration_ms\"\nIgnored when Expression is set.",
+                    "type": "string"
+                },
+                "group_by": {
+                    "description": "GroupBy is the property name in event.properties to group by before aggregating.\nCurrently only supported for MAX aggregation with bucket_size.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.",
+                    "type": "string"
+                },
+                "multiplier": {
+                    "description": "Multiplier is the multiplier for the aggregation\nFor ex if the aggregation type is sum_with_multiplier for API usage, the multiplier could be 1000\nto scale up by a factor of 1000. If not provided, it will be null.",
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.AggregationType"
+                }
+            }
+        },
+        "meter.Filter": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "description": "Key is the key for the filter from $event.properties\nCurrently we support only first level keys in the properties and not nested keys",
+                    "type": "string"
+                },
+                "values": {
+                    "description": "Values are the possible values for the filter to be considered for the meter\nFor ex \"model_name\" could have values \"o1-mini\", \"gpt-4o\" etc",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "meter.Meter": {
+            "type": "object",
+            "properties": {
+                "aggregation": {
+                    "description": "Aggregation defines the aggregation type and field for the meter\nIt is used to aggregate the events into a single value for calculating the usage",
+                    "$ref": "#/definitions/meter.Aggregation"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the meter",
+                    "type": "string"
+                },
+                "event_name": {
+                    "description": "EventName is the unique identifier for the event that this meter is tracking\nIt is a mandatory field in the events table and hence being used as the primary matching field\nWe can have multiple meters tracking the same event but with different filters and aggregation",
+                    "type": "string"
+                },
+                "filters": {
+                    "description": "Filters define the criteria for the meter to be applied on the events before aggregation\nIt also defines the possible values on which later the charges will be applied",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/meter.Filter"
+                    }
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the meter",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is the display name of the meter",
+                    "type": "string"
+                },
+                "reset_usage": {
+                    "description": "ResetUsage defines whether the usage should be reset periodically or not\nFor ex meters tracking total storage used do not get reset but meters tracking\ntotal API requests do.",
+                    "$ref": "#/definitions/types.ResetUsage"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.TemporalWorkflowResult": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "run_id": {
+                    "type": "string"
+                },
+                "workflow_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "price.JSONBFilters": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            }
+        },
+        "price.JSONBMetadata": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
+        "price.JSONBTransformQuantity": {
+            "type": "object",
+            "properties": {
+                "divide_by": {
+                    "description": "Divide quantity by this number",
+                    "type": "integer"
+                },
+                "round": {
+                    "description": "up or down",
+                    "$ref": "#/definitions/types.RoundType"
+                }
+            }
+        },
+        "price.Price": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "description": "Amount stored in main currency units (e.g., dollars, not cents)\nFor USD: 12.50 means $12.50",
+                    "type": "string"
+                },
+                "billing_cadence": {
+                    "$ref": "#/definitions/types.BillingCadence"
+                },
+                "billing_model": {
+                    "$ref": "#/definitions/types.BillingModel"
+                },
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_count": {
+                    "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
+                    "type": "integer",
+                    "default": 1
+                },
+                "conversion_rate": {
+                    "description": "ConversionRate is the conversion rate of the price unit to the fiat currency",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "description": "Currency 3 digit ISO currency code in lowercase ex usd, eur, gbp",
+                    "type": "string"
+                },
+                "description": {
+                    "description": "Description of the price",
+                    "type": "string"
+                },
+                "display_amount": {
+                    "description": "DisplayAmount is the formatted amount with currency symbol\nFor USD: $12.50",
+                    "type": "string"
+                },
+                "display_name": {
+                    "description": "DisplayName is the name of the price",
+                    "type": "string"
+                },
+                "display_price_unit_amount": {
+                    "description": "DisplayPriceUnitAmount is the formatted amount of the price unit",
+                    "type": "string"
+                },
+                "end_date": {
+                    "description": "EndDate is the end date of the price",
+                    "type": "string"
+                },
+                "entity_id": {
+                    "description": "EntityID holds the value of the \"entity_id\" field.",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "description": "EntityType holds the value of the \"entity_type\" field.",
+                    "$ref": "#/definitions/types.PriceEntityType"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the price",
+                    "type": "string"
+                },
+                "group_id": {
+                    "description": "GroupID references the group this price belongs to",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID uuid identifier for the price",
+                    "type": "string"
+                },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "lookup_key": {
+                    "description": "LookupKey used for looking up the price in the database",
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/price.JSONBMetadata"
+                },
+                "meter_id": {
+                    "description": "MeterID is the id of the meter for usage based pricing",
+                    "type": "string"
+                },
+                "min_quantity": {
+                    "description": "MinQuantity is the minimum quantity of the price",
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "parent_price_id": {
+                    "description": "ParentPriceID references the root price (always set for price lineage tracking)",
+                    "type": "string"
+                },
+                "price_unit": {
+                    "description": "PriceUnit is the code of the price unit (e.g., 'btc', 'eth')",
+                    "type": "string"
+                },
+                "price_unit_amount": {
+                    "description": "PriceUnitAmount is the amount of the price unit",
+                    "type": "string"
+                },
+                "price_unit_id": {
+                    "description": "PriceUnitID is the id of the price unit (for CUSTOM type)",
+                    "type": "string"
+                },
+                "price_unit_tiers": {
+                    "description": "PriceUnitTiers are the tiers for the price unit when BillingModel is TIERED",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "price_unit_type": {
+                    "description": "PriceUnitType is the type of the price unit (FIAT, CUSTOM)",
+                    "$ref": "#/definitions/types.PriceUnitType"
+                },
+                "sequence": {
+                    "description": "Sequence is the monotonic stamp bumped on every state change that\nsubscription line items need to react to. Read by the plan-price sync;\nset by the database (DEFAULT nextval) on create and by the price\nrepository on termination / compatibility-affecting edits.",
+                    "type": "integer"
+                },
+                "start_date": {
+                    "description": "StartDate is the start date of the price",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
+                "tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.JSONBTransformQuantity"
+                },
+                "trial_period_days": {
+                    "description": "TrialPeriodDays is the number of days for the trial period\nNote: This is only applicable for recurring prices (BILLING_CADENCE_RECURRING)",
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.PriceType"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "price.PriceTier": {
+            "type": "object",
+            "properties": {
+                "flat_amount": {
+                    "description": "flat_amount is the flat amount for the given tier (optional)\nApplied on top of unit_amount*quantity. Useful for cases like \"2.7$ + 5c\"",
+                    "type": "string"
+                },
+                "unit_amount": {
+                    "description": "unit_amount is the amount per unit for the given tier",
+                    "type": "string"
+                },
+                "up_to": {
+                    "description": "up_to is the quantity up to which this tier applies. It is null for the last tier.\nIMPORTANT: Tier boundaries are INCLUSIVE.\n- If up_to is 1000, then quantity less than or equal to 1000 belongs to this tier\n- This behavior is consistent across both VOLUME and SLAB tier modes",
+                    "type": "integer"
+                }
+            }
+        },
+        "price.TransformQuantity": {
+            "type": "object",
+            "properties": {
+                "divide_by": {
+                    "description": "Divide quantity by this number",
+                    "type": "integer"
+                },
+                "round": {
+                    "description": "up or down",
+                    "$ref": "#/definitions/types.RoundType"
+                }
+            }
+        },
+        "subscription.SubscriptionLineItem": {
+            "type": "object",
+            "properties": {
+                "addon_association_id": {
+                    "type": "string"
+                },
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_count": {
+                    "description": "from price at create; default 1",
+                    "type": "integer"
+                },
+                "commitment_amount": {
+                    "description": "Commitment fields",
+                    "type": "string"
+                },
+                "commitment_duration": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "commitment_overage_factor": {
+                    "type": "string"
+                },
+                "commitment_quantity": {
+                    "type": "string"
+                },
+                "commitment_time_buckets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.TimeOfDayBucket"
+                    }
+                },
+                "commitment_true_up_enabled": {
+                    "type": "boolean"
+                },
+                "commitment_type": {
+                    "$ref": "#/definitions/types.CommitmentType"
+                },
+                "commitment_windowed": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.SubscriptionLineItemEntityType"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "meter": {
+                    "description": "Meter is populated when the caller adds \"meters\" to a subscription-scoped\nexpand string alongside \"subscription_line_items\". Only usage line items\n(PriceType == USAGE with a non-empty MeterID) will have a non-nil Meter.",
+                    "$ref": "#/definitions/meter.Meter"
+                },
+                "meter_display_name": {
+                    "type": "string"
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "plan_display_name": {
+                    "type": "string"
+                },
+                "price": {
+                    "$ref": "#/definitions/price.Price"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "price_type": {
+                    "$ref": "#/definitions/types.PriceType"
+                },
+                "price_unit": {
+                    "type": "string"
+                },
+                "price_unit_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "subscription_phase_id": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "subscription.SubscriptionPause": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the pause",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the subscription pause",
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "original_period_end": {
+                    "description": "OriginalPeriodEnd is the end of the billing period when the pause was created",
+                    "type": "string"
+                },
+                "original_period_start": {
+                    "description": "OriginalPeriodStart is the start of the billing period when the pause was created",
+                    "type": "string"
+                },
+                "pause_end": {
+                    "description": "PauseEnd is when the pause will end (null for indefinite)",
+                    "type": "string"
+                },
+                "pause_mode": {
+                    "$ref": "#/definitions/types.PauseMode"
+                },
+                "pause_start": {
+                    "description": "PauseStart is when the pause actually started",
+                    "type": "string"
+                },
+                "pause_status": {
+                    "$ref": "#/definitions/types.PauseStatus"
+                },
+                "reason": {
+                    "description": "Reason is the reason for pausing",
+                    "type": "string"
+                },
+                "resume_mode": {
+                    "$ref": "#/definitions/types.ResumeMode"
+                },
+                "resumed_at": {
+                    "description": "ResumedAt is when the pause was actually ended (if manually resumed)",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "description": "SubscriptionID is the identifier for the subscription",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "subscription.SubscriptionPhase": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "description": "EndDate is when the phase ends (nil if phase is still active or indefinite)",
+                    "type": "string"
+                },
+                "environment_id": {
+                    "description": "EnvironmentID is the environment identifier for the phase",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier for the subscription phase",
+                    "type": "string"
+                },
+                "metadata": {
+                    "description": "Metadata contains additional key-value pairs",
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "start_date": {
+                    "description": "StartDate is when the phase starts",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "description": "SubscriptionID is the identifier for the subscription",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.AWSMarketplaceSyncConfig": {
+            "type": "object",
+            "properties": {
+                "region": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.AlertSettingsFilter": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.AlertEntityType"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "filters": {
+                    "description": "filters allows complex filtering based on multiple fields",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "parent_entity_id": {
+                    "type": "string"
+                },
+                "parent_entity_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "parent_entity_type": {
+                    "$ref": "#/definitions/types.AlertEntityType"
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                }
+            }
+        },
+        "types.CheckoutPaymentProviderConfig": {
+            "type": "object",
+            "properties": {
+                "collection_method": {
+                    "$ref": "#/definitions/types.CollectionMethod"
+                },
+                "max_mandate_limit": {
+                    "type": "string"
+                },
+                "payment_method": {
+                    "$ref": "#/definitions/types.PaymentMethodType"
+                }
+            }
+        },
+        "types.DurationUnit": {
+            "type": "string",
+            "enum": [
+                "second",
+                "minute",
+                "hour",
+                "day"
+            ],
+            "x-enum-varnames": [
+                "DurationUnitSecond",
+                "DurationUnitMinute",
+                "DurationUnitHour",
+                "DurationUnitDay"
+            ]
+        },
+        "types.EntitlementAggregationMode": {
+            "type": "string",
+            "enum": [
+                "additive",
+                "parallel"
+            ],
+            "x-enum-varnames": [
+                "EntitlementAggregationModeAdditive",
+                "EntitlementAggregationModeParallel"
+            ]
+        },
+        "types.EntitlementGrantDurationUnit": {
+            "type": "string",
+            "enum": [
+                "hour",
+                "day",
+                "week"
+            ],
+            "x-enum-varnames": [
+                "EntitlementGrantDurationUnitHour",
+                "EntitlementGrantDurationUnitDay",
+                "EntitlementGrantDurationUnitWeek"
+            ]
+        },
+        "types.EntitlementGrantMeasure": {
+            "type": "string",
+            "enum": [
+                "quantity",
+                "amount"
+            ],
+            "x-enum-varnames": [
+                "EntitlementGrantMeasureQuantity",
+                "EntitlementGrantMeasureAmount"
+            ]
+        },
+        "types.ListResponse-dto_WalletResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WalletResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "types.Metadata": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
+        "types.ModifySubscriptionLineItem": {
+            "type": "object",
+            "properties": {
+                "effective_date": {
+                    "type": "string"
+                },
+                "line_item_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.ModifySubscriptionParams": {
+            "type": "object",
+            "properties": {
+                "line_item_modifications": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.ModifySubscriptionLineItem"
+                    }
+                },
+                "subscription_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.RejectedEventReason": {
+            "type": "string",
+            "enum": [
+                "no_meter_for_event_name",
+                "no_matching_meter"
+            ],
+            "x-enum-varnames": [
+                "RejectedEventReasonNoMeterForName",
+                "RejectedEventReasonNoMatchingMeter"
+            ]
+        },
+        "types.WalletTopupParams": {
+            "type": "object",
+            "required": [
+                "wallet_id"
+            ],
+            "properties": {
+                "wallet_id": {
+                    "type": "string"
+                },
+                "wallet_transaction_id": {
                     "type": "string"
                 }
             }
@@ -27303,6 +27848,9 @@
         "webhookDto.TransactionUpdatedWebhookPayload": {
             "type": "object",
             "properties": {
+                "customer": {
+                    "$ref": "#/definitions/CustomerResponse"
+                },
                 "event_type": {
                     "$ref": "#/definitions/types.WebhookEventName"
                 },
@@ -27317,6 +27865,9 @@
         "webhookDto.TransactionWebhookPayload": {
             "type": "object",
             "properties": {
+                "customer": {
+                    "$ref": "#/definitions/CustomerResponse"
+                },
                 "event_type": {
                     "$ref": "#/definitions/types.WebhookEventName"
                 },

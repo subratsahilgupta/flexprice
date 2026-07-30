@@ -370,6 +370,271 @@ func (s *SubscriptionServiceSuite) TestAddAddonToSubscriptionLineItemCommitments
 	})
 }
 
+func (s *SubscriptionServiceSuite) TestAddAddonToSubscriptionPriceOverrides() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+
+	createFixedPriceAddon := func(addonID, priceID string, amount decimal.Decimal) {
+		a := &addon.Addon{
+			ID:          addonID,
+			LookupKey:   addonID,
+			Name:        "Test Addon",
+			Description: "Test Addon Description",
+			BaseModel:   types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(subService.AddonRepo.Create(ctx, a))
+
+		p := &price.Price{
+			ID:                 priceID,
+			Amount:             amount,
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_ADDON,
+			EntityID:           addonID,
+			Type:               types.PRICE_TYPE_FIXED,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			InvoiceCadence:     types.InvoiceCadenceAdvance,
+			BaseModel:          types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+	}
+
+	createUsagePriceAddon := func(addonID, priceID, meterID string) {
+		a := &addon.Addon{
+			ID:          addonID,
+			LookupKey:   addonID,
+			Name:        "Test Addon",
+			Description: "Test Addon Description",
+			BaseModel:   types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(subService.AddonRepo.Create(ctx, a))
+
+		p := &price.Price{
+			ID:                 priceID,
+			Amount:             decimal.Zero,
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_ADDON,
+			EntityID:           addonID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			InvoiceCadence:     types.InvoiceCadenceArrear,
+			MeterID:            meterID,
+			BaseModel:          types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+	}
+
+	findLineItemByEntity := func(subID, addonID string) *subscription.SubscriptionLineItem {
+		filter := types.NewNoLimitSubscriptionLineItemFilter()
+		filter.SubscriptionIDs = []string{subID}
+		items, err := s.GetStores().SubscriptionLineItemRepo.List(ctx, filter)
+		s.NoError(err)
+		for _, it := range items {
+			if it.EntityType == types.SubscriptionLineItemEntityTypeAddon && it.EntityID == addonID {
+				return it
+			}
+		}
+		return nil
+	}
+
+	s.Run("overrides_amount_and_quantity_on_fixed_addon_price", func() {
+		addonID := "addon_override_amount_qty"
+		priceID := "price_addon_override_amount_qty"
+		createFixedPriceAddon(addonID, priceID, decimal.NewFromFloat(10.00))
+
+		now := time.Now().UTC()
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+			OverrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:  priceID,
+					Amount:   lo.ToPtr(decimal.NewFromFloat(25.00)),
+					Quantity: lo.ToPtr(decimal.NewFromInt(3)),
+				},
+			},
+		})
+		s.NoError(err)
+
+		li := findLineItemByEntity(s.testData.subscription.ID, addonID)
+		s.NotNil(li)
+		if li == nil {
+			return
+		}
+		s.NotEqual(priceID, li.PriceID, "line item should reference the overridden price, not the original")
+		s.True(li.Quantity.Equal(decimal.NewFromInt(3)))
+
+		overriddenPrice, err := s.GetStores().PriceRepo.Get(ctx, li.PriceID)
+		s.NoError(err)
+		s.True(overriddenPrice.Amount.Equal(decimal.NewFromFloat(25.00)))
+		s.Equal(priceID, overriddenPrice.ParentPriceID)
+		s.Equal(types.PRICE_ENTITY_TYPE_SUBSCRIPTION, overriddenPrice.EntityType)
+		s.Equal(s.testData.subscription.ID, overriddenPrice.EntityID)
+	})
+
+	s.Run("rejects_quantity_override_on_usage_based_addon_price", func() {
+		addonID := "addon_override_usage_qty_reject"
+		priceID := "price_addon_override_usage_qty_reject"
+		createUsagePriceAddon(addonID, priceID, s.testData.meters.apiCalls.ID)
+
+		now := time.Now().UTC()
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+			OverrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:  priceID,
+					Quantity: lo.ToPtr(decimal.NewFromInt(5)),
+				},
+			},
+		})
+		s.Error(err)
+		s.Contains(err.Error(), "quantity cannot be set for usage-based prices")
+	})
+
+	s.Run("overrides_billing_model_to_tiered_on_addon_price", func() {
+		addonID := "addon_override_tiered"
+		priceID := "price_addon_override_tiered"
+		createFixedPriceAddon(addonID, priceID, decimal.NewFromFloat(10.00))
+
+		now := time.Now().UTC()
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+			OverrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:      priceID,
+					BillingModel: types.BILLING_MODEL_TIERED,
+					TierMode:     types.BILLING_TIER_VOLUME,
+					Tiers: []dto.CreatePriceTier{
+						{UpTo: lo.ToPtr(uint64(10)), UnitAmount: decimal.RequireFromString("5.00")},
+						{UpTo: nil, UnitAmount: decimal.RequireFromString("3.00")},
+					},
+				},
+			},
+		})
+		s.NoError(err)
+
+		li := findLineItemByEntity(s.testData.subscription.ID, addonID)
+		s.NotNil(li)
+		if li == nil {
+			return
+		}
+		overriddenPrice, err := s.GetStores().PriceRepo.Get(ctx, li.PriceID)
+		s.NoError(err)
+		s.Equal(types.BILLING_MODEL_TIERED, overriddenPrice.BillingModel)
+		s.Equal(types.BILLING_TIER_VOLUME, overriddenPrice.TierMode)
+		s.Len(overriddenPrice.Tiers, 2)
+	})
+
+	s.Run("rejects_override_price_id_not_belonging_to_addon", func() {
+		addonID := "addon_override_invalid_price"
+		priceID := "price_addon_override_invalid_price"
+		createFixedPriceAddon(addonID, priceID, decimal.NewFromFloat(10.00))
+
+		now := time.Now().UTC()
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+			OverrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID: s.testData.prices.fixedMonthly.ID, // belongs to the plan, not this addon
+					Amount:  lo.ToPtr(decimal.NewFromFloat(15.00)),
+				},
+			},
+		})
+		s.Error(err)
+		s.Contains(err.Error(), "price not found in plan")
+	})
+
+	s.Run("rejects_duplicate_override_price_id", func() {
+		addonID := "addon_override_dup"
+		priceID := "price_addon_override_dup"
+		createFixedPriceAddon(addonID, priceID, decimal.NewFromFloat(10.00))
+
+		now := time.Now().UTC()
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+			OverrideLineItems: []dto.OverrideLineItemRequest{
+				{PriceID: priceID, Amount: lo.ToPtr(decimal.NewFromFloat(15.00))},
+				{PriceID: priceID, Amount: lo.ToPtr(decimal.NewFromFloat(20.00))},
+			},
+		})
+		s.Error(err)
+		s.Contains(err.Error(), "duplicate price_id in override line items")
+	})
+
+	s.Run("no_overrides_behaves_as_before", func() {
+		addonID := "addon_no_override_regression"
+		priceID := "price_addon_no_override_regression"
+		createFixedPriceAddon(addonID, priceID, decimal.NewFromFloat(10.00))
+
+		now := time.Now().UTC()
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+		})
+		s.NoError(err)
+
+		li := findLineItemByEntity(s.testData.subscription.ID, addonID)
+		s.NotNil(li)
+		if li == nil {
+			return
+		}
+		s.Equal(priceID, li.PriceID, "line item should still reference the original addon price when no overrides are given")
+	})
+
+	s.Run("commitment_and_override_on_same_price_both_apply", func() {
+		addonID := "addon_override_with_commitment"
+		priceID := "price_addon_override_with_commitment"
+		createUsagePriceAddon(addonID, priceID, s.testData.meters.apiCalls.ID)
+
+		now := time.Now().UTC()
+		commitmentAmount := decimal.NewFromFloat(25)
+		overageFactor := decimal.NewFromFloat(2)
+
+		_, err := s.service.AddAddonToSubscription(ctx, s.testData.subscription.ID, &dto.AddAddonToSubscriptionRequest{
+			AddonID:   addonID,
+			StartDate: &now,
+			LineItemCommitments: map[string]*dto.LineItemCommitmentConfig{
+				priceID: {
+					CommitmentAmount: &commitmentAmount,
+					OverageFactor:    &overageFactor,
+				},
+			},
+			OverrideLineItems: []dto.OverrideLineItemRequest{
+				{
+					PriceID:      priceID,
+					TierMode:     types.BILLING_TIER_SLAB,
+					BillingModel: types.BILLING_MODEL_TIERED,
+					Tiers: []dto.CreatePriceTier{
+						{UpTo: lo.ToPtr(uint64(1000)), UnitAmount: decimal.RequireFromString("0.02")},
+						{UpTo: nil, UnitAmount: decimal.RequireFromString("0.01")},
+					},
+				},
+			},
+		})
+		s.NoError(err)
+
+		li := findLineItemByEntity(s.testData.subscription.ID, addonID)
+		s.NotNil(li)
+		if li == nil {
+			return
+		}
+		s.NotEqual(priceID, li.PriceID, "commitment line item should still get its price overridden")
+		s.NotNil(li.CommitmentAmount)
+		s.True(li.CommitmentAmount.Equal(commitmentAmount), "commitment config must survive the price override")
+
+		overriddenPrice, err := s.GetStores().PriceRepo.Get(ctx, li.PriceID)
+		s.NoError(err)
+		s.Equal(types.BILLING_MODEL_TIERED, overriddenPrice.BillingModel)
+	})
+}
+
 func (s *SubscriptionServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
 	s.ClearStores() // Clear all stores before each test for isolation

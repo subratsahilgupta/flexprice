@@ -84,6 +84,9 @@ type AddAddonToSubscriptionRequest struct {
 	// LineItemCommitments allows setting commitment configuration per addon line item (keyed by price_id)
 	LineItemCommitments map[string]*LineItemCommitmentConfig `json:"line_item_commitments,omitempty" validate:"omitempty,dive"`
 
+	// OverrideLineItems allows overriding price/quantity/billing model for specific addon prices
+	OverrideLineItems []OverrideLineItemRequest `json:"override_line_items,omitempty" validate:"omitempty,dive"`
+
 	// SkipEntityValidation is used to skip the entitlement check for the addon
 	// This is used to add an addon to a subscription without checking the entitlement compatibility
 	// This is used when we are adding an addon to a subscription that already has an active instance of the addon
@@ -132,6 +135,10 @@ func (r *AddAddonToSubscriptionRequest) Validate() error {
 	}
 
 	if err := validateLineItemCommitments(r.LineItemCommitments); err != nil {
+		return err
+	}
+
+	if err := validateNoDuplicateOverridePriceIDs(r.OverrideLineItems); err != nil {
 		return err
 	}
 
