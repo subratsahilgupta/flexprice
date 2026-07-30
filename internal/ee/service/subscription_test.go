@@ -8923,3 +8923,69 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildr
 			"expected child %s line item amount 50, got %s", childID, amount.String())
 	}
 }
+
+// TestCreateSubscription_GroupedInvoicingChildrenToCreate_OverrideLineItems verifies a child
+// can override its own plan's price at creation, independent of the parent.
+func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildrenToCreate_OverrideLineItems() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	priceFilter := types.NewNoLimitPriceFilter()
+	priceFilter.EntityType = lo.ToPtr(types.PRICE_ENTITY_TYPE_PLAN)
+	priceFilter.EntityIDs = []string{seatPlan.ID}
+	seatPrices, err := s.GetStores().PriceRepo.List(ctx, priceFilter)
+	s.Require().NoError(err)
+	s.Require().Len(seatPrices, 1)
+	seatPriceID := seatPrices[0].ID
+
+	seatExternal := "ext_seat_override"
+	seat := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: seatExternal,
+		Name:       "Seat Override",
+		Email:      "seatoverride@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
+
+	req := dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				{
+					PlanID:             seatPlan.ID,
+					ExternalCustomerID: seatExternal,
+					SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+						OverrideLineItems: []dto.OverrideLineItemRequest{
+							{
+								PriceID: seatPriceID,
+								Amount:  lo.ToPtr(decimal.NewFromFloat(75.00)),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, req)
+	s.NoError(err)
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.ParentSubscriptionIDs = []string{resp.ID}
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
+	children, err := s.GetStores().SubscriptionRepo.List(ctx, filter)
+	s.NoError(err)
+	s.Require().Len(children, 1)
+
+	s.verifyPriceOverridesCreated(ctx, children[0].ID,
+		[]dto.OverrideLineItemRequest{{PriceID: seatPriceID, Amount: lo.ToPtr(decimal.NewFromFloat(75.00))}},
+		"child subscription must have its own subscription-scoped override price")
+}

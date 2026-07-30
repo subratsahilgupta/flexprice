@@ -327,10 +327,12 @@ func (r *SubscriptionCouponInput) Validate() error {
 }
 
 // GroupedInvoicingChildRequest creates one grouped_invoicing child under the parent in the same request.
-// Billing period, cycle, anchor, currency, and start_date are inherited from the parent.
+// Billing period, cycle, anchor, currency, and start_date are inherited from the parent;
+// everything in SubscriptionCreationConfig is independently configurable per child.
 type GroupedInvoicingChildRequest struct {
 	PlanID             string `json:"plan_id" validate:"required"`
 	ExternalCustomerID string `json:"external_customer_id" validate:"required"`
+	SubscriptionCreationConfig
 }
 
 // SubscriptionInheritanceConfig groups all hierarchy and invoicing-routing fields for

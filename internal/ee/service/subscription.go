@@ -7689,12 +7689,15 @@ func (s *subscriptionService) createInheritedSubscriptions(ctx context.Context, 
 
 // createGroupedInvoicingChildren creates each child spec as a brand-new grouped_invoicing
 // subscription under parent, inside the caller's existing transaction. Each child's own opening
-// invoice is suppressed (see the invoice-generation gate in createSubscriptionCore); its period-1
-// charges are folded into the parent's own opening invoice instead. Calls createSubscriptionCore
+// invoice is suppressed (see the invoice-generation gate in createSubscription); its period-1
+// charges are folded into the parent's own opening invoice instead. Calls createSubscription
 // directly (not the public CreateSubscription): it must reuse the caller's already-open
 // transaction and must not fire the child's own post-transaction side effects (webhook,
 // HubSpot/Paddle sync) — only the parent's single post-tx block should run, once, after
-// everything commits.
+// everything commits. Every field in the child's SubscriptionCreationConfig (overrides, extra
+// line items, coupons, taxes, commitments, trial, credit grants, entitlement overrides, addons,
+// phases) is copied through as-is and validated/applied by the same createSubscription call the
+// parent uses — no separate handling needed here.
 func (s *subscriptionService) createGroupedInvoicingChildren(
 	ctx context.Context,
 	parent *subscription.Subscription,
@@ -7702,15 +7705,28 @@ func (s *subscriptionService) createGroupedInvoicingChildren(
 ) error {
 	for _, c := range childRequests {
 		startDate := parent.StartDate
+
+		// BillingAnchor is only ever valid alongside BillingCycle == anniversary (enforced in
+		// CreateSubscriptionRequest.Validate()). Since BillingCycle is always inherited from the
+		// parent below, only pass the anchor through when that inherited cycle is anniversary —
+		// otherwise a calendar-cycle child would fail validation on a non-nil anchor pointer.
+		var billingAnchor *time.Time
+		if parent.BillingCycle == types.BillingCycleAnniversary {
+			anchor := parent.BillingAnchor
+			billingAnchor = &anchor
+		}
+
 		childReq := dto.CreateSubscriptionRequest{
-			ExternalCustomerID: c.ExternalCustomerID,
-			PlanID:             c.PlanID,
-			Currency:           parent.Currency,
-			StartDate:          &startDate,
-			BillingPeriod:      parent.BillingPeriod,
-			BillingPeriodCount: parent.BillingPeriodCount,
-			BillingCycle:       parent.BillingCycle,
-			SubscriptionType:   types.SubscriptionTypeGroupedInvoicing,
+			ExternalCustomerID:         c.ExternalCustomerID,
+			PlanID:                     c.PlanID,
+			Currency:                   parent.Currency,
+			StartDate:                  &startDate,
+			BillingPeriod:              parent.BillingPeriod,
+			BillingPeriodCount:         parent.BillingPeriodCount,
+			BillingCycle:               parent.BillingCycle,
+			BillingAnchor:              billingAnchor,
+			SubscriptionType:           types.SubscriptionTypeGroupedInvoicing,
+			SubscriptionCreationConfig: c.SubscriptionCreationConfig,
 			Inheritance: &dto.SubscriptionInheritanceConfig{
 				ParentSubscriptionID: parent.ID,
 			},
