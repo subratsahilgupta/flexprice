@@ -62,14 +62,14 @@ func TestSetCreateSubscriptionTrialWindow_RequestOverrideDays(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	sub := &subscription.Subscription{StartDate: start}
 	seven := 7
-	req := &dto.CreateSubscriptionRequest{TrialPeriodDays: &seven}
+	req := &dto.CreateSubscriptionRequest{SubscriptionCreationConfig: dto.SubscriptionCreationConfig{TrialPeriodDays: &seven}}
 	err := setCreateSubscriptionTrialWindow(req, sub, nil)
 	require.NoError(t, err)
 	assert.Equal(t, start, *sub.TrialStart)
 	assert.Equal(t, start.AddDate(0, 0, 7), *sub.TrialEnd)
 
 	zero := 0
-	req2 := &dto.CreateSubscriptionRequest{TrialPeriodDays: &zero}
+	req2 := &dto.CreateSubscriptionRequest{SubscriptionCreationConfig: dto.SubscriptionCreationConfig{TrialPeriodDays: &zero}}
 	sub2 := &subscription.Subscription{StartDate: start}
 	err2 := setCreateSubscriptionTrialWindow(req2, sub2, []*dto.PriceResponse{
 		{Price: &price.Price{BillingCadence: types.BILLING_CADENCE_RECURRING, Type: types.PRICE_TYPE_FIXED, TrialPeriodDays: 14}},
@@ -167,7 +167,7 @@ func TestSetCreateSubscriptionTrialWindow_ZeroClears(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	sub := &subscription.Subscription{StartDate: start, TrialStart: &start, TrialEnd: &start}
 	z := 0
-	req := &dto.CreateSubscriptionRequest{TrialPeriodDays: &z}
+	req := &dto.CreateSubscriptionRequest{SubscriptionCreationConfig: dto.SubscriptionCreationConfig{TrialPeriodDays: &z}}
 	prices := []*dto.PriceResponse{
 		{Price: &price.Price{BillingCadence: types.BILLING_CADENCE_RECURRING, Type: types.PRICE_TYPE_FIXED, TrialPeriodDays: 14}},
 	}
