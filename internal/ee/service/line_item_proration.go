@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -30,7 +32,7 @@ type LineItemProrationRequest struct {
 	EffectiveDate  time.Time
 	Behavior       types.ProrationBehavior
 	Reason         string // shown in wallet credit description
-	IdempotencyKey string // required when Behavior == create_prorations and credits may be issued
+	IdempotencyKey string
 }
 
 // LineItemProrationSummary is returned by Compute and used internally by Apply.
@@ -145,7 +147,7 @@ func (s *lineItemProrationService) Apply(ctx context.Context, req LineItemProrat
 
 	if summary.TotalChargeAmount.GreaterThan(decimal.Zero) && len(summary.ChargeLineItems) > 0 {
 		invoiceSvc := NewInvoiceService(s.params)
-		if err := s.settleCharge(ctx, sub, summary, req.EffectiveDate, invoiceSvc); err != nil {
+		if err := s.settleCharge(ctx, sub, summary, req.EffectiveDate, prorationChargeInvoiceKey(req), invoiceSvc); err != nil {
 			return err
 		}
 	}
@@ -259,12 +261,32 @@ func (s *lineItemProrationService) buildChargeLineItem(
 	}
 }
 
+func prorationChargeInvoiceKey(req LineItemProrationRequest) string {
+	source := req.IdempotencyKey
+	if source == "" {
+		ids := make([]string, 0, len(req.Entries))
+		for _, entry := range req.Entries {
+			ids = append(ids, entry.LineItem.ID)
+			ids = append(ids, string(entry.Action))
+		}
+		sort.Strings(ids)
+		source = strings.Join(ids, ",")
+	}
+
+	return idempotency.NewGenerator().GenerateKey(idempotency.ScopeProrationCharge, map[string]interface{}{
+		"subscription_id": req.Subscription.ID,
+		"effective_date":  req.EffectiveDate.UTC().Format(time.RFC3339Nano),
+		"source":          source,
+	})
+}
+
 // settleCharge creates a one-off invoice for the aggregated charge amount.
 func (s *lineItemProrationService) settleCharge(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	summary *LineItemProrationSummary,
 	effectiveDate time.Time,
+	idempotencyKey string,
 	invoiceSvc InvoiceService,
 ) error {
 	billingCustomer := sub.GetInvoicingCustomerID()
@@ -284,6 +306,7 @@ func (s *lineItemProrationService) settleCharge(
 		PeriodEnd:      &periodEnd,
 		BillingPeriod:  &billingPeriod,
 		LineItems:      summary.ChargeLineItems,
+		IdempotencyKey: &idempotencyKey,
 	})
 	if err != nil {
 		s.params.Logger.Error(ctx, "failed to create proration charge invoice", "error", err)
