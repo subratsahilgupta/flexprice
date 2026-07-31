@@ -32,11 +32,13 @@ func TestCreateSubscriptionWithPriceOverrides(t *testing.T) {
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BillingCycle:       types.BillingCycleAnniversary,
-			OverrideLineItems: []dto.OverrideLineItemRequest{
-				{
-					PriceID:  "test_price_789",
-					Amount:   &overrideAmount,
-					Quantity: &overrideQuantity,
+			SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+				OverrideLineItems: []dto.OverrideLineItemRequest{
+					{
+						PriceID:  "test_price_789",
+						Amount:   &overrideAmount,
+						Quantity: &overrideQuantity,
+					},
 				},
 			},
 		}
@@ -151,14 +153,16 @@ func TestCreateSubscriptionWithPriceOverrides(t *testing.T) {
 			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
 			BillingPeriodCount: 1,
 			BillingCycle:       types.BillingCycleAnniversary,
-			OverrideLineItems: []dto.OverrideLineItemRequest{
-				{
-					PriceID: "duplicate_price",
-					Amount:  &amount1,
-				},
-				{
-					PriceID: "duplicate_price", // Duplicate!
-					Amount:  &amount2,
+			SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+				OverrideLineItems: []dto.OverrideLineItemRequest{
+					{
+						PriceID: "duplicate_price",
+						Amount:  &amount1,
+					},
+					{
+						PriceID: "duplicate_price", // Duplicate!
+						Amount:  &amount2,
+					},
 				},
 			},
 		}

@@ -4797,6 +4797,12 @@ func (s *subscriptionService) addAddonToSubscription(
 		return nil, err
 	}
 
+	// Price map for override processing, keyed by price ID (same pattern createSubscription uses)
+	priceMap := make(map[string]*dto.PriceResponse, len(validPrices))
+	for _, p := range validPrices {
+		priceMap[p.Price.ID] = p
+	}
+
 	// Create subscription addon association
 	addonAssociation := req.ToAddonAssociation(
 		ctx,
@@ -4856,6 +4862,12 @@ func (s *subscriptionService) addAddonToSubscription(
 	}
 
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+		if len(req.OverrideLineItems) > 0 {
+			if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
+				return err
+			}
+		}
+
 		// Create subscription addon association
 		err = s.AddonAssociationRepo.Create(ctx, addonAssociation)
 		if err != nil {
@@ -4899,10 +4911,12 @@ func (s *subscriptionService) addAddonToSubscription(
 
 	addProrationKey := fmt.Sprintf("addon_add_%s_%d", addonAssociation.ID, effectiveDate.Unix())
 	if err := s.applyAddonAddProration(ctx, sub, lineItems, effectiveDate, req.ProrationBehavior, addProrationKey); err != nil {
-		s.Logger.Info(ctx, "failed to create proration invoice for addon add; addon was persisted successfully",
+		s.Logger.Error(ctx, "failed to create proration invoice for addon add; addon was persisted and is UNBILLED for this period",
 			"error", err,
 			"association_id", addonAssociation.ID,
+			"addon_id", req.AddonID,
 			"subscription_id", sub.ID,
+			"effective_date", effectiveDate,
 			"idempotency_key", addProrationKey,
 		)
 	}
@@ -5322,9 +5336,10 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 			association.ID, *effectiveEndDate,
 			req.ProrationBehavior, endReason,
 		); err != nil {
-			s.Logger.Info(ctx, "failed to issue proration credit for addon remove; removal was persisted successfully",
+			s.Logger.Error(ctx, "failed to issue proration credit for addon remove; removal was persisted and the credit is UNISSUED",
 				"error", err,
 				"association_id", association.ID,
+				"addon_id", association.AddonID,
 				"subscription_id", sub.ID,
 			)
 		}
@@ -7687,14 +7702,9 @@ func (s *subscriptionService) createInheritedSubscriptions(ctx context.Context, 
 	return nil
 }
 
-// createGroupedInvoicingChildren creates each child spec as a brand-new grouped_invoicing
-// subscription under parent, inside the caller's existing transaction. Each child's own opening
-// invoice is suppressed (see the invoice-generation gate in createSubscriptionCore); its period-1
-// charges are folded into the parent's own opening invoice instead. Calls createSubscriptionCore
-// directly (not the public CreateSubscription): it must reuse the caller's already-open
-// transaction and must not fire the child's own post-transaction side effects (webhook,
-// HubSpot/Paddle sync) — only the parent's single post-tx block should run, once, after
-// everything commits.
+// createGroupedInvoicingChildren creates grouped_invoicing child subscriptions inside the caller's
+// transaction. Children suppress their own opening invoice (charges fold into the parent's);
+// post-tx side effects (webhooks, HubSpot/Paddle sync) run only from the parent's block.
 func (s *subscriptionService) createGroupedInvoicingChildren(
 	ctx context.Context,
 	parent *subscription.Subscription,
@@ -7702,15 +7712,25 @@ func (s *subscriptionService) createGroupedInvoicingChildren(
 ) error {
 	for _, c := range childRequests {
 		startDate := parent.StartDate
+
+		// BillingAnchor is only valid for anniversary billing; pass nil for calendar to avoid validation failure.
+		var billingAnchor *time.Time
+		if parent.BillingCycle == types.BillingCycleAnniversary {
+			anchor := parent.BillingAnchor
+			billingAnchor = &anchor
+		}
+
 		childReq := dto.CreateSubscriptionRequest{
-			ExternalCustomerID: c.ExternalCustomerID,
-			PlanID:             c.PlanID,
-			Currency:           parent.Currency,
-			StartDate:          &startDate,
-			BillingPeriod:      parent.BillingPeriod,
-			BillingPeriodCount: parent.BillingPeriodCount,
-			BillingCycle:       parent.BillingCycle,
-			SubscriptionType:   types.SubscriptionTypeGroupedInvoicing,
+			ExternalCustomerID:         c.ExternalCustomerID,
+			PlanID:                     c.PlanID,
+			Currency:                   parent.Currency,
+			StartDate:                  &startDate,
+			BillingPeriod:              parent.BillingPeriod,
+			BillingPeriodCount:         parent.BillingPeriodCount,
+			BillingCycle:               parent.BillingCycle,
+			BillingAnchor:              billingAnchor,
+			SubscriptionType:           types.SubscriptionTypeGroupedInvoicing,
+			SubscriptionCreationConfig: c.SubscriptionCreationConfig,
 			Inheritance: &dto.SubscriptionInheritanceConfig{
 				ParentSubscriptionID: parent.ID,
 			},
@@ -7962,14 +7982,8 @@ func (s *subscriptionService) processAutoInvoiceThresholdSubscription(
 	return nil
 }
 
-// runPaddleSubscriptionSync synchronously bootstraps a Paddle subscription for the given
-// subscription. It is called inline from CreateSubscription so the checkout URL is available
-// in the response without a round-trip through Temporal. All errors are soft-fail: the
-// subscription has already been persisted, so we only log and continue.
-//
-// On success, EnsureSubscriptionSynced persists paddle checkout metadata; it is copied back
-// onto the caller's sub so the create response includes paddle_checkout_url and
-// paddle_transaction_id.
+// runPaddleSubscriptionSync bootstraps Paddle inline (not via Temporal) so checkout metadata is
+// available in the create response. Errors are soft-fail — subscription is already persisted.
 func (s *subscriptionService) runPaddleSubscriptionSync(ctx context.Context, sub *subscription.Subscription) {
 	if s.IntegrationFactory == nil {
 		return
