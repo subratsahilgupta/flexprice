@@ -267,6 +267,7 @@ func prorationChargeInvoiceKey(req LineItemProrationRequest) string {
 		ids := make([]string, 0, len(req.Entries))
 		for _, entry := range req.Entries {
 			ids = append(ids, entry.LineItem.ID)
+			ids = append(ids, string(entry.Action))
 		}
 		sort.Strings(ids)
 		source = strings.Join(ids, ",")
