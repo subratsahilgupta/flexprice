@@ -20,3 +20,115 @@ type UsageRecordSyncEntry struct {
 	Skipped     bool           `json:"skipped,omitempty"`
 	SkipReason  string         `json:"skip_reason,omitempty"`
 }
+
+// UsageRecordFilter filters usage_records, following EntityIntegrationMappingFilter/ConnectionFilter's
+// shape (embedded QueryFilter/TimeRangeFilter plus entity-specific fields) for consistency. Fields
+// mirror the table's own columns; tenant and environment are not fields here because ApplyBaseFilters
+// always scopes them from context.
+type UsageRecordFilter struct {
+	*QueryFilter
+	*TimeRangeFilter
+
+	// Filters/Sort are the generic DSL escape hatch every other filter carries — range predicates
+	// (e.g. period_end >= now-24h) go through these rather than a bespoke field per comparison.
+	Filters []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
+	Sort    []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
+
+	SubscriptionID     string `json:"subscription_id,omitempty" form:"subscription_id" validate:"omitempty"`
+	CustomerID         string `json:"customer_id,omitempty" form:"customer_id" validate:"omitempty"`
+	CustomerExternalID string `json:"customer_external_id,omitempty" form:"customer_external_id" validate:"omitempty"`
+	PlanID             string `json:"plan_id,omitempty" form:"plan_id" validate:"omitempty"`
+	Currency           string `json:"currency,omitempty" form:"currency" validate:"omitempty"`
+
+	// PeriodStart/PeriodEnd match a window exactly, the same key ExistsForPeriod checks.
+	PeriodStart *time.Time `json:"period_start,omitempty" form:"period_start" validate:"omitempty"`
+	PeriodEnd   *time.Time `json:"period_end,omitempty" form:"period_end" validate:"omitempty"`
+
+	Synced *bool `json:"synced,omitempty" form:"synced" validate:"omitempty"`
+}
+
+// NewUsageRecordFilter creates a new UsageRecordFilter with default pagination.
+func NewUsageRecordFilter() *UsageRecordFilter {
+	return &UsageRecordFilter{
+		QueryFilter: NewDefaultQueryFilter(),
+	}
+}
+
+// NewNoLimitUsageRecordFilter creates a new UsageRecordFilter with no pagination limits.
+func NewNoLimitUsageRecordFilter() *UsageRecordFilter {
+	return &UsageRecordFilter{
+		QueryFilter: NewNoLimitQueryFilter(),
+	}
+}
+
+func (f UsageRecordFilter) Validate() error {
+	if f.QueryFilter != nil {
+		if err := f.QueryFilter.Validate(); err != nil {
+			return err
+		}
+	}
+	if f.TimeRangeFilter != nil {
+		if err := f.TimeRangeFilter.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, c := range f.Filters {
+		if err := c.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, c := range f.Sort {
+		if err := c.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetLimit implements BaseFilter interface
+func (f *UsageRecordFilter) GetLimit() int {
+	if f.QueryFilter == nil {
+		return NewDefaultQueryFilter().GetLimit()
+	}
+	return f.QueryFilter.GetLimit()
+}
+
+// GetOffset implements BaseFilter interface
+func (f *UsageRecordFilter) GetOffset() int {
+	if f.QueryFilter == nil {
+		return NewDefaultQueryFilter().GetOffset()
+	}
+	return f.QueryFilter.GetOffset()
+}
+
+// GetSort implements BaseFilter interface
+func (f *UsageRecordFilter) GetSort() string {
+	if f.QueryFilter == nil {
+		return NewDefaultQueryFilter().GetSort()
+	}
+	return f.QueryFilter.GetSort()
+}
+
+// GetOrder implements BaseFilter interface
+func (f *UsageRecordFilter) GetOrder() string {
+	if f.QueryFilter == nil {
+		return NewDefaultQueryFilter().GetOrder()
+	}
+	return f.QueryFilter.GetOrder()
+}
+
+// GetStatus implements BaseFilter interface
+func (f *UsageRecordFilter) GetStatus() string {
+	if f.QueryFilter == nil {
+		return NewDefaultQueryFilter().GetStatus()
+	}
+	return f.QueryFilter.GetStatus()
+}
+
+// IsUnlimited implements BaseFilter interface
+func (f *UsageRecordFilter) IsUnlimited() bool {
+	if f.QueryFilter == nil {
+		return false
+	}
+	return f.QueryFilter.IsUnlimited()
+}

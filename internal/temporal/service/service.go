@@ -527,6 +527,10 @@ func (s *temporalService) extractWorkflowContextID(workflowType types.TemporalWo
 		if input, ok := params.(models.PaddleSubscriptionSyncWorkflowInput); ok {
 			return input.SubscriptionID
 		}
+	case types.TemporalMarketplaceSubscriptionFinalUsageFlushWorkflow:
+		if input, ok := params.(models.MarketplaceSubscriptionFinalUsageFlushWorkflowInput); ok {
+			return input.SubscriptionID
+		}
 	case types.TemporalRecalculateInvoiceWorkflow:
 		// Extract invoice ID from RecalculateInvoiceWorkflowInput
 		if input, ok := params.(invoiceModels.RecalculateInvoiceWorkflowInput); ok {
@@ -654,6 +658,8 @@ func (s *temporalService) buildWorkflowInput(ctx context.Context, workflowType t
 		return s.buildPaddleCustomerSyncInput(ctx, tenantID, environmentID, params)
 	case types.TemporalPaddleSubscriptionSyncWorkflow:
 		return s.buildPaddleSubscriptionSyncInput(ctx, tenantID, environmentID, params)
+	case types.TemporalMarketplaceSubscriptionFinalUsageFlushWorkflow:
+		return s.buildMarketplaceSubscriptionFinalUsageFlushInput(ctx, tenantID, environmentID, params)
 	case types.TemporalCustomerOnboardingWorkflow:
 		return s.buildCustomerOnboardingInput(ctx, tenantID, environmentID, userID, params)
 	case types.TemporalPrepareProcessedEventsWorkflow:
@@ -1196,6 +1202,18 @@ func (s *temporalService) buildPaddleSubscriptionSyncInput(_ context.Context, te
 	if !ok {
 		return nil, errors.NewError("invalid input for Paddle subscription sync workflow").
 			WithHint("Provide PaddleSubscriptionSyncWorkflowInput with subscription_id").
+			Mark(errors.ErrValidation)
+	}
+	input.TenantID = tenantID
+	input.EnvironmentID = environmentID
+	return input, nil
+}
+
+func (s *temporalService) buildMarketplaceSubscriptionFinalUsageFlushInput(_ context.Context, tenantID, environmentID string, params interface{}) (interface{}, error) {
+	input, ok := params.(models.MarketplaceSubscriptionFinalUsageFlushWorkflowInput)
+	if !ok {
+		return nil, errors.NewError("invalid input for marketplace subscription final usage flush workflow").
+			WithHint("Provide MarketplaceSubscriptionFinalUsageFlushWorkflowInput with subscription_id and cancel_at").
 			Mark(errors.ErrValidation)
 	}
 	input.TenantID = tenantID

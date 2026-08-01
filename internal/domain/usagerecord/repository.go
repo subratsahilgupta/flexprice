@@ -20,7 +20,13 @@ type Repository interface {
 
 	// ListUnsynced returns this tenant/environment's usage records that are not yet fully synced
 	// (synced=false) — not scoped to any one connection, since a record can be relevant to several.
+	// Bounded to period_end within the last 24h: none of the three marketplaces accept a report
+	// older than that, so an older row is never re-fetched (ERD FLE-1106 §5.2).
 	ListUnsynced(ctx context.Context, tenantID, environmentID string) ([]*UsageRecord, error)
+
+	// List returns usage records matching filter — subscription-scoped queries (the cancellation
+	// flush's frontier and backlog lookups) go through this rather than a bespoke method per query.
+	List(ctx context.Context, filter *types.UsageRecordFilter) ([]*UsageRecord, error)
 
 	// MarkSynced writes the record's syncs map (one entry per connection it's been reported to) and
 	// the synced flag, which the caller sets true once every connection relevant to this record has
