@@ -6,25 +6,21 @@ Status: design, pending approval
 Scope: two lifecycle defects and the final-usage flush that closes them. Applies to all three
 marketplaces (AWS, GCP, Azure) and, for the mapping defect, to every integration provider.
 
-This builds on
-[2026-07-23-FLE-1071-marketplace-integration-v3.md](2026-07-23-FLE-1071-marketplace-integration-v3.md).
-Everything in v3 stands except where §6 below marks it superseded.
+Builds on [v3](2026-07-23-FLE-1071-marketplace-integration-v3.md). Everything in v3 stands except
+where §6 marks it superseded.
 
 ---
 
 ## 1. What this changes
 
-Two defects, one new mechanism.
-
 | # | Problem | Fix |
 | --- | --- | --- |
 | 1 | Re-linking an entity after unlinking silently leaves the mapping `archived`. The API returns 200 but no active mapping exists. | Treat an archived row as absent: create a new published row instead of updating it (§2). |
-| 2 | Cancelling a subscription leaves its marketplace mapping `published`, and the final active-period usage is never reported inside the marketplaces' post-cancellation windows. | A one-shot flush on cancellation: report the backlog, compute and report the final window, then archive the subscription mapping (§3). |
+| 2 | Cancelling a subscription leaves its marketplace mapping `published`, and the final active-period usage is never reported inside the marketplaces' post-cancellation windows. | A one-shot flush on cancellation: report the backlog, compute and report the final window, then archive the mapping (§3). |
 
 The driver for #2 is timing. v3 §10 assumed the tenant could wait for the 6-hour snapshot cron's
-4–10h lag to catch the last window before archiving. Both AWS and GCP give roughly **one hour** after
-cancellation, so that assumption loses the final usage of every cancelled marketplace subscription
-(§4).
+4–10h lag before archiving. AWS and GCP give roughly **one hour** after cancellation, so that
+assumption loses the final usage of every cancelled marketplace subscription (§4).
 
 ---
 
@@ -32,56 +28,34 @@ cancellation, so that assumption loses the final usage of every cancelled market
 
 ### 2.1 What happens today
 
-`DelinkIntegrationMapping`
-([entityintegrationmapping.go:271-314](../../internal/ee/service/entityintegrationmapping.go))
-soft-deletes: it flips `status` to `archived` via `Delete`
-([repository/ent/entityintegrationmapping.go:310-356](../../internal/repository/ent/entityintegrationmapping.go)).
-The row stays, and its unique-index columns are untouched. That part is correct.
+`DelinkIntegrationMapping` soft-deletes: it flips `status` to `archived` and leaves the row and its
+unique-index columns untouched. That part is correct.
 
 The defect is in `upsertEntityMapping`
-([entityintegrationmapping.go:316-366](../../internal/ee/service/entityintegrationmapping.go)). It
-looks up existing mappings with `types.NewNoLimitQueryFilter()`, which leaves `Status` nil, so
-`GetStatus()` returns `""` and `ApplyStatusFilter` applies **no status predicate at all** — archived
-rows match. When the only existing row is the archived one, the service updates its
-`ProviderEntityID`, `Metadata` and timestamps, then returns:
+([entityintegrationmapping.go](../../internal/ee/service/entityintegrationmapping.go)). It looked up
+existing mappings with `types.NewNoLimitQueryFilter()`, which leaves `Status` nil, so
+`ApplyStatusFilter` applies **no status predicate** and archived rows match. With only an archived row
+present, the service updated it in place and returned it — `Update` writes back whatever status the
+caller passed, so the row stayed `archived`. The caller got a 200 and a mapping object, but no active
+mapping existed.
 
-```go
-if len(existing) > 0 {
-    mapping := existing[0]
-    mapping.ProviderEntityID = req.ProviderEntityID
-    mapping.Metadata = metadata
-    mapping.UpdatedAt = time.Now().UTC()
-    mapping.UpdatedBy = types.GetUserID(ctx)
-    if err := s.EntityIntegrationMappingRepo.Update(ctx, mapping); err != nil { ... }
-    return mapping, nil          // status is never reset to published
-}
-```
-
-`Update` writes whatever status the caller passed, so the row goes back to Postgres still
-`status = 'archived'`. The caller gets a 200 and a mapping object, but no active mapping exists.
-
-The marketplace path is **not** affected: `RegisterAgreement` / `createMappingIfAbsent`
-([marketplace.go:198-240](../../internal/ee/service/marketplace.go)) queries with
-`NewNoLimitPublishedQueryFilter()`, so an archived row is invisible to it and a re-link creates a
-fresh published row correctly.
+The marketplace path was never affected: `RegisterAgreement` / `createMappingIfAbsent`
+([marketplace.go](../../internal/ee/service/marketplace.go)) already queried with
+`NewNoLimitPublishedQueryFilter()`.
 
 ### 2.2 The fix
 
-Branch on the found row's status:
+One-line change: query published-only. An archived row is then invisible to the lookup, so a re-link
+falls through to the existing create path and gets a new published row. The archived row is never
+touched.
 
-```text
-existing = List(entity_id, entity_type, provider_type)     # status-blind, as today
-
-if a PUBLISHED row exists:
-    update it in place                                      # unchanged behaviour
-else if only ARCHIVED rows exist:
-    log.debug("entity mapping is archived, creating new mapping", entity_id, entity_type, provider_type)
-    create a NEW row with a new id and status = published    # never touch the archived row
-else:
-    create as today
+```go
+filter := &types.EntityIntegrationMappingFilter{
+    QueryFilter: types.NewNoLimitPublishedQueryFilter(),   // was NewNoLimitQueryFilter()
+    EntityID:    req.EntityID,
+    ...
+}
 ```
-
-The archived row is left exactly as it was.
 
 ```mermaid
 sequenceDiagram
@@ -90,44 +64,36 @@ sequenceDiagram
     participant DB
 
     Caller->>Svc: link(entity_id, entity_type, provider_type)
-    Svc->>DB: List (status-blind, as today)
-    DB-->>Svc: existing rows, if any
-
+    Svc->>DB: List (published only)
     alt a published row exists
+        DB-->>Svc: that row
         Svc->>DB: update it in place
-    else only archived rows exist
-        Svc->>Svc: log.debug "archived, creating new mapping"
-        Svc->>DB: create new row, status = published
-    else no rows exist
+    else none (no row, or only archived rows)
+        DB-->>Svc: empty
         Svc->>DB: create new row, status = published
     end
-    Svc-->>Caller: mapping (now genuinely published)
+    Svc-->>Caller: mapping (genuinely published)
 ```
 
-### 2.3 Why no `expired_at` / `terminated_at` column
+### 2.3 Why no `expired_at` column
 
-Considered and rejected. Reusing an archived row and flipping it back to `published` would need a
-separate timestamp to record when it had been archived — but that timestamp would then be overwritten
-on the next unlink, so it could not carry history anyway.
-
-Creating a new row makes the column unnecessary:
-
-- the archived row's own `updated_at` is when it was archived (set by `Delete`),
-- the new row's `created_at` is when it was re-linked,
-- the full link/unlink history is the ordered sequence of rows.
+Considered and rejected. Reusing an archived row would need a separate timestamp for when it had been
+archived — but that timestamp would be overwritten on the next unlink, so it could not carry history
+anyway. Creating a new row makes the column unnecessary: the archived row's `updated_at` is when it was
+archived, the new row's `created_at` is when it was re-linked, and the full history is the ordered
+sequence of rows.
 
 The unique index already permits this. It is **partial** —
 `Unique().Annotations(entsql.IndexWhere("((status)::text = 'published'::text)"))`
-([ent/schema/entityintegrationmapping.go:71-74](../../ent/schema/entityintegrationmapping.go)) — so
-any number of archived rows can coexist with one published row for the same
+([ent/schema/entityintegrationmapping.go](../../ent/schema/entityintegrationmapping.go)) — so any
+number of archived rows can coexist with one published row for the same
 `(tenant, environment, entity_type, entity_id, provider_type)`. No schema change.
 
 ### 2.4 Test gap
 
-`TestLinkIntegrationMapping_UpsertExistingMapping`
-([entityintegrationmapping_test.go:279-315](../../internal/ee/service/entityintegrationmapping_test.go))
-only covers link → link on a still-published row. Nothing exercises delink → re-link, which is why
-this shipped unnoticed. A regression test for that path is part of this work.
+`TestLinkIntegrationMapping_UpsertExistingMapping` only covered link → link on a still-published row.
+Nothing exercised delink → re-link, which is why this shipped unnoticed. A regression test for that
+path is part of this work.
 
 ---
 
@@ -135,20 +101,26 @@ this shipped unnoticed. A regression test for that path is part of this work.
 
 ### 3.1 Trigger
 
-`CancelSubscription` ([subscription.go:1931](../../internal/ee/service/subscription.go)) stays fast
-and is not restructured. After its existing `WithTx` (2035-2146) commits — alongside the existing
-`publishCancellationEvents` call (2155-2157) — it starts the flush workflow with `ExecuteWorkflow`
-(non-blocking; the blocking variant is `ExecuteWorkflowSync`,
-[temporal/service/interface.go:18,40,46](../../internal/temporal/service/interface.go)).
+`CancelSubscription` stays fast and is not restructured. After its existing `WithTx` commits — next to
+the existing `publishCancellationEvents` call — it starts the flush with `ExecuteWorkflow`
+(non-blocking), gated on:
 
-This matches the convention already in the codebase: `CreateSubscription` starts its HubSpot sync
-workflows after its transaction returns ([subscription.go:532-568, 851-877](../../internal/ee/service/subscription.go)),
-and `CreateCustomer` does the same for onboarding ([customer.go:87-99](../../internal/ee/service/customer.go)).
-No workflow is started inside a `WithTx` anywhere in `internal/ee/service`, for the obvious reason
-that a rollback would leave an orphaned workflow running against rows that were never written.
+```go
+subscription.SubscriptionStatus == types.SubscriptionStatusCancelled &&
+    subscription.CancelAt != nil &&
+    s.hasMarketplaceMapping(ctx, subscription.ID)
+```
 
-**This is not a cron.** It is one workflow execution per cancellation. The snapshot (6h) and report
-(3h) crons are unchanged and keep running for live subscriptions.
+The status check matters: `CancelAt` is set for all three cancellation types, but only `immediate`
+sets `Cancelled` synchronously. `end_of_period` and `scheduled_date` leave the subscription active
+until a later processor, so flushing then would report a final window for a subscription that has not
+ended. `hasMarketplaceMapping` gates at the call site so ordinary cancellations don't start a workflow
+that would immediately no-op; a lookup error is logged and treated as "no mapping", since this is a
+post-commit side effect that must never fail an already-committed cancellation.
+
+Starting workflows after the transaction matches the existing convention (`CreateSubscription`'s
+HubSpot syncs, `CreateCustomer`'s onboarding). **This is not a cron** — one execution per cancellation.
+The snapshot (6h) and report (3h) crons are unchanged.
 
 ```mermaid
 sequenceDiagram
@@ -156,53 +128,58 @@ sequenceDiagram
     participant MP as Marketplace
     participant Tenant
     participant FP as Flexprice API
-    participant Temporal
     participant Flush
 
     Buyer->>MP: cancels subscription
     MP->>Tenant: notification (carries the cancellation instant)
     Tenant->>FP: POST /cancel (immediate, cancel_at = that instant)
-    FP->>FP: commit — cancel subscription, CancelAt = cancel_at
+    FP->>FP: commit — CancelAt = cancel_at
     FP-->>Tenant: 200
-    FP->>Temporal: ExecuteWorkflow (non-blocking, after commit)
-    Temporal->>Flush: run
-    Flush->>MP: report backlog + final usage record
-    Flush->>Flush: delink the marketplace mapping
+    FP->>Flush: ExecuteWorkflow (non-blocking, post-commit)
+    Flush->>MP: report backlog, then the final record
+    Flush->>Flush: delink mapping (only if everything succeeded)
 ```
 
 ### 3.2 Sequence
 
+Workflow `MarketplaceSubscriptionFinalUsageFlushWorkflow`, activity
+`MarketplaceSubscriptionFinalUsageFlushActivity`. The workflow is a thin wrapper — one
+`ExecuteActivity` with 5 attempts (5s initial, 2× backoff, 1 min max, 5 min start-to-close). All logic
+is in the activity.
+
 ```text
-FlushSubscriptionUsage(subscriptionID, cancelAt):     # cancelAt = sub.CancelAt, NOT sub.CancelledAt — see §3.8
+FlushActivity(subscriptionID, cancelAt, tenantID, environmentID):
+    # cancelAt = sub.CancelAt, never sub.CancelledAt (§3.6)
+    # tenantID/environmentID come from the workflow input and are set onto ctx first —
+    # every repository call below is scoped by them.
 
 1. subMappings = published subscription mappings for [aws, gcp, azure]
-   if none: return                                    # not a marketplace subscription
+   if none: return                                  # not a marketplace subscription
+   for m in subMappings:
+       conn = resolve m's connection; prepareConnection(conn)
+       on failure: log, set connectionResolutionFailed, continue   # never abort the others
 
-   connections   = resolve each mapping's connection
-   preparedConns = [prepareConnection(c) for c in connections]      # report_activities.go:301, reused
+2. # Phase 1 — the pre-existing backlog. Fetched before phase 2 computes anything, so a first run
+   # never sees its own final record here.
+   backlog = List(subscription_id, synced=false, period_end >= now-24h, sort period_end asc)
+   for rec in backlog:
+       if not isEligibleForReport(rec): continue    # non-USD or negative (§8.2)
+       reportRecordToConnections(rec, relevantConnections(rec)); MarkSynced(rec)
 
-2. frontier = MAX(period_end) over ALL published usage_records for this subscription
-   if none:  frontier = subscription mapping's created_at           # §3.4
+3. # Phase 2 — the one final record.
+   computedThrough = MAX(period_end) over ALL published rows, else earliest mapping created_at (§3.3)
+   finalRec = buildFinalUsageRecord(computedThrough, cancelAt)     # nil if cancelAt <= computedThrough
+   if finalRec and isEligibleForReport(finalRec):
+       reportRecordToConnections(finalRec, relevantConnections(finalRec))
+       if fully reported:
+           finalRec.PeriodEnd = cancelAt            # stored exact; the wire got cancelAt - 1s (§3.4)
+           Create(finalRec)                         # first write, only now
+       else: finalUsageFlushFailed = true
 
-3. if cancelAt > frontier:                                          # §3.5
-       usage      = GetMeterUsageBySubscription(subscriptionID, frontier, cancelAt)   # true window — full amount
-       amount     = CalculateMeterUsageCharges(...)
-       reportedAt = cancelAt - 1 second                             # §3.8 — reported timestamp only
-       Create(UsageRecord{period_start: frontier, period_end: reportedAt, synced: false, ...})
-       # ErrAlreadyExists is success — same idempotency rule as snapshot_activities.go:272
-
-4. backlog = List(subscription_id, synced=false, period_end >= now-24h, sort period_end asc)
-   for rec in backlog:                                 # includes the row just created
-       for conn in preparedConns:                      # one API call per record per connection
-           entry, ok = reportAWS/GCP/AzureRecord(rec, conn)          # reused unchanged, sends rec.PeriodEnd
-           if ok: rec.Syncs[conn.ID] = entry
-       MarkSynced(rec.ID, rec.Syncs, allConnectionsPresent)
-
-   if any record failed to report:
-       return error                                    # Temporal retries; syncs map makes it idempotent
-
-5. for mapping in subMappings:                         # ALWAYS runs, even after exhausted retries
-       DelinkIntegrationMapping(subscriptionID, subscription, mapping.ProviderType)
+4. if connectionResolutionFailed or finalUsageFlushFailed or any backlog record failed:
+       return error                                 # Temporal retries; mapping stays published (§3.5)
+   else:
+       for m in subMappings: entityIntegrationMappingRepo.Delete(m)
 ```
 
 Customer and plan mappings are **not** archived. Only the subscription's marketplace mappings are.
@@ -211,115 +188,114 @@ Customer and plan mappings are **not** archived. Only the subscription's marketp
 sequenceDiagram
     participant Flush
     participant DB as usage_records
-    participant MP as Marketplace connections
+    participant MP as Marketplaces
 
-    Flush->>DB: frontier = MAX(period_end), all published rows
-    alt cancelAt > frontier
-        Flush->>Flush: compute usage [frontier, cancelAt]
-        Flush->>DB: create final record (period_end = cancelAt - 1s)
-    else
-        Flush->>Flush: nothing new to compute
-    end
-
-    Flush->>DB: backlog = unsynced, period_end within 24h
-    loop each record in backlog
-        loop each connection
-            Flush->>MP: report record
-            alt accepted
-                MP-->>Flush: reporting_id
-                Flush->>Flush: syncs[conn] = entry
-            else rejected or failed
-                Flush->>Flush: no entry — stays unsynced
-            end
+    Note over Flush,MP: Phase 1 — backlog (pre-existing rows only)
+    Flush->>DB: unsynced rows, period_end within 24h
+    loop each record × each relevant connection without an entry
+        Flush->>MP: report
+        alt accepted
+            MP-->>Flush: reporting_id → syncs[conn]
+        else Azure zero-amount
+            Flush->>Flush: syncs[conn] = skipped
+        else rejected / failed
+            Flush->>Flush: no entry — stays unsynced
         end
-        Flush->>DB: MarkSynced (true only if every connection has an entry)
+    end
+    Flush->>DB: MarkSynced (true iff every relevant connection has an entry)
+
+    Note over Flush,MP: Phase 2 — the one final record
+    Flush->>DB: frontier = MAX(period_end)
+    alt cancelAt > frontier
+        Flush->>Flush: compute usage — NOT written yet
+        Flush->>MP: report (wire timestamp = cancelAt - 1s)
+        alt fully reported
+            Flush->>DB: create record (period_end = cancelAt)
+        else any connection failed
+            Flush->>Flush: discard — next attempt recomputes fresh
+        end
     end
 
-    Flush->>Flush: delink mapping (always, even after failures)
+    alt everything succeeded
+        Flush->>Flush: delink every mapping
+    else any failure
+        Flush->>Flush: mapping stays published; return error
+    end
 ```
 
-Note step 3's `reportedAt`: the usage **amount** is computed over the true window `[frontier, cancelAt]` —
-nothing is under-billed. Only the persisted `period_end` (and therefore the timestamp every provider
-receives, since `reportAWSRecord`/`reportGCPRecord`/`reportAzureRecord` all send `rec.PeriodEnd`
-unchanged) is backed off by one second. See §3.8 for why.
+### 3.3 Window rules
 
-### 3.3 Why `frontier` spans all rows, not just unsynced ones
+**The frontier spans all rows, not just unsynced ones.** Taking the max over unsynced rows alone can
+double-bill: if record A `[T-10h, T-4h]` failed to sync but B `[T-4h, T+2h]` succeeded, the unsynced
+max is `T-4h` and the flush window `[T-4h, cancelAt]` re-reports everything B covered. The max over
+**all published rows** is `T+2h`. Since snapshot windows are contiguous, the frontier has no holes
+behind it — every earlier span belongs to some row, and those rows are exactly what Phase 1 reports.
 
-Taking the max over unsynced rows alone can double-bill. If record A `[T-10h, T-4h]` failed to sync
-but record B `[T-4h, T+2h]` succeeded, the max over unsynced rows is `T-4h`, and the flush window
-`[T-4h, cancelAt]` re-reports everything B already covered.
+**Fallback when no usage record exists.** A subscription can be linked and cancelled without the
+snapshot cron ever running for it. The flush then uses the earliest subscription mapping's
+`created_at` — the moment the subscription became reportable to that marketplace. Consequence: usage
+from before it was linked is deliberately excluded.
 
-The max over **all published rows** is `T+2h`, giving `[T+2h, cancelAt]`. Since the snapshot
-cron's windows are contiguous (`period_start = scheduledTime−10h`, `period_end = scheduledTime−4h`,
-every 6h), the frontier has no holes behind it: every span before it belongs to some row, and those
-rows are exactly what step 4 reports.
+**Boundaries.** `period_start` is inclusive, `period_end` exclusive, inherited from the ClickHouse
+query builder (`timestamp >= ?` and `timestamp < ?`). Chaining `period_start = previous period_end`
+counts a boundary event exactly once. `buildFinalUsageRecord` early-returns when
+`cancelAt <= windowStart`, so a backdated cancellation can't produce an inverted window; the backlog
+flush is then the whole job.
 
-### 3.4 Fallback when no usage record exists
+### 3.4 Why the final record is reported before it is written
 
-A subscription can be linked and cancelled without the snapshot cron ever having run for it. Then
-`frontier` is undefined and the flush uses the **subscription mapping's `created_at`**.
+Two earlier shapes were tried; each had a real bug the next one fixed.
 
-That is the moment the subscription became reportable to that marketplace; nothing before it could
-ever have been owed there. Note the consequence: if the subscription's billing period started before
-it was linked, that earlier usage is deliberately excluded from the flush. That is intended, not an
-oversight.
+| Shape | Stored `period_end` | Bug |
+| --- | --- | --- |
+| 1. Create first, with the margin baked in | `cancelAt - 1s` | The row instantly becomes the frontier, so `cancelAt > frontier` is *still true* on a retry — it creates a second, near-empty record for the 1-second sliver. |
+| 2. Create first, store the true instant | `cancelAt` | Fixes the sliver, but a partially-reported row (say GCP failed) sits `synced = false` and the **next run picks it up through Phase 1**, which applies no margin — GCP's strict `<` rejects it forever. |
+| **3. Report first, then create** (current) | `cancelAt` | None of the above. Nothing unreported is ever persisted, so a retry recomputes the same window from an unchanged frontier and reports it again with the margin correctly applied. |
 
-### 3.5 Boundary semantics
+The cost of shape 3: nothing about a partially-successful attempt survives between retries for the
+final record, and each rebuild generates a fresh id. AWS de-duplicates on customer+dimension+timestamp
+so a resend is safe there; GCP de-duplicates on `OperationID` (= the record id), so it cannot recognise
+a retry as the same operation — see §7.
 
-`period_start` is **inclusive**, `period_end` **exclusive** — inherited from the ClickHouse query
-builder, which emits `timestamp >= ?` and `timestamp < ?`
-([meter_usage_query_builder.go:166-173](../../internal/repository/clickhouse/meter_usage_query_builder.go)).
+### 3.5 Failure handling and when the mapping is delinked
 
-Chaining `period_start = previous period_end` therefore counts a boundary event exactly once: the
-previous window excluded it, this one includes it. Making `period_start` exclusive would **skip** any
-event landing precisely on the boundary. Keep it inclusive.
+A report failure does not stop the run: every backlog record is still attempted and every connection
+still resolved, exactly as the report cron behaves. Retries are idempotent for backlog records — a
+connection that already has a `rec.Syncs[connection_id]` entry (real accept *or* skip) is never
+re-attempted.
 
-Step 3 is guarded on `cancelAt > frontier` because a backdated cancellation would otherwise
-produce an inverted window. When the guard fails, the backlog flush is the whole job.
+Each record's outcome is exactly one of three, decided by the caller from `rec.Synced` and
+`anyRealEntry` (the shared reporter itself only reports; it does not classify):
 
-### 3.6 Failure handling
+- **succeeded** — every relevant connection has an entry, and at least one is a real post
+- **failed** — at least one relevant connection still has no entry
+- **skipped** — every relevant connection has an entry, but all are skips (today only Azure's
+  zero-amount case) — nothing was posted anywhere
 
-A report failure inside the flush returns an error from the activity so Temporal retries it. Retries
-are naturally idempotent: `if _, done := rec.Syncs[conn.ID]; done { continue }`
-([report_activities.go:239](../../internal/temporal/activities/marketplace/report_activities.go))
-means only the connections that actually failed are re-attempted.
+**Delink runs only when everything succeeded**: no failed backlog record, the final record (if needed)
+fully reported, and every mapped connection resolved. On any failure the mapping stays `published` and
+the activity returns an error.
 
-When retries are exhausted:
+This reverses the original draft, which delinked unconditionally on the reasoning that a cancelled
+subscription shouldn't keep a live-looking mapping. That trade was wrong: a published mapping is the
+*only* thing that keeps a subscription's backlog visible to the 3h report cron
+(`isRelevantForSubscription` resolves through published mappings only). Delinking on failure doesn't
+just look stale — it permanently strands whatever failed to report, with no path back short of a human
+re-publishing the mapping. Retries are cheap and idempotent, so there was no compensating benefit.
 
-- the failed records keep `synced = false` and gain no `syncs` entry — they are not marked skipped
-  and nothing is resolved silently,
-- an `error` line is logged carrying every non-secret identifier available: `subscription_id`,
-  `customer_id`, `usage_record_id`, `connection_id`, `marketplace`, `period_start`, `period_end`,
-  `amount`, and the provider-side identifier (`license_arn`, `consumer_id`/entitlement id, or
-  `resource_id`), plus the provider's own error text,
-- credentials are never logged, at any level: no `client_secret` or bearer token (Azure), no
-  `role_arn`, `external_id` or assumed-role credentials (AWS), no WIF JSON or federated token (GCP).
-  Provider errors go through `utils.RedactSecrets` first, exactly as v3 §8.4 requires,
-- the delink in step 5 **still runs**. The subscription is cancelled; leaving its mapping published
-  would be stale state. The trade-off is accepted deliberately: once archived, the 3h report cron
-  cannot retry those rows, because `isRelevantForSubscription` resolves through published mappings
-  only ([report_activities.go:86-96, 231-233](../../internal/temporal/activities/marketplace/report_activities.go)).
-  At that point the failure is a tenant-side credential or configuration problem, and the logged
-  error is the signal to act on.
+**No skip entries on the row itself.** An earlier draft resolved leftover rows with
+`{skipped: true, skip_reason: "subscription_flushed"}`. Dropped: the 24h bound (§5) already stops
+expired rows being re-scanned, and marking them synced would make a subscription whose connection was
+broken for days look cleanly resolved when revenue was actually lost. Do not confuse this with the
+per-run *skipped* outcome above, which is in-memory observability only and never persisted. Azure's
+`zero_amount_not_supported` remains the only place `Skipped: true` is set.
 
-### 3.7 No skip entries
+### 3.6 The cancellation timestamp — `CancelAt`, not `CancelledAt`
 
-An earlier draft resolved leftover rows with `{skipped: true, skip_reason: "subscription_flushed"}`.
-Dropped. The 24h bound in §5.2 already stops expired rows being re-scanned forever, and marking them
-`synced = true, skipped = true` would make a subscription whose connection was broken for days look
-cleanly resolved when in fact revenue was lost. `synced = false` on an old row is the more honest
-signal and preserves the diagnostic trail.
-
-The existing Azure zero-amount skip (`zero_amount_not_supported`, v3 §11.6) is unaffected.
-
-### 3.8 Sourcing the cancellation timestamp — `CancelAt`, not `CancelledAt`
-
-This closes what was an open risk in an earlier draft of this document: GCP requires the reported
-timestamp to be strictly *before* its own recorded cancellation instant, and Flexprice's own
-`cancelled_at` can never satisfy that, because it is set by definition *after* the marketplace's own
-cancellation already happened — buyer cancels at the marketplace, the marketplace notifies the tenant,
-the tenant then calls Flexprice, and only at that point does Flexprice record anything. No amount of
-speed on our side closes that gap; it's a causal ordering, not a latency problem.
+GCP requires the reported timestamp to be strictly *before* its own recorded cancellation instant, and
+Flexprice's `cancelled_at` can never satisfy that: it is set only after the marketplace already
+cancelled, the marketplace notified the tenant, and the tenant called us. That's causal ordering, not
+latency.
 
 ```mermaid
 sequenceDiagram
@@ -331,49 +307,34 @@ sequenceDiagram
     MP->>Tenant: notification (carries T0)
     Tenant->>FP: POST /cancel (cancel_at = T0)
     Note over FP: T2 — call processed.<br/>CancelledAt := T2 (now, always)<br/>CancelAt := T0 (the tenant's value)
-    Note over FP,MP: T0 < T2, always — use CancelAt, not CancelledAt
+    Note over FP,MP: T0 < T2 always — use CancelAt
 ```
 
-The fix doesn't need a buffer or a guess, because the API already carries the right value if the
-tenant is asked to supply it. `CancelSubscriptionRequest` already accepts `cancel_at` for a backdated
-immediate cancellation: *"For 'immediate', accepts past/current dates only... backdated
-cancellation"* ([dto/subscription.go:655-659](../../internal/api/dto/subscription.go)), validated to
-reject only a future date ([dto/subscription.go:737-743](../../internal/api/dto/subscription.go)) and
-to require it fall after the current period start
-([subscription.go:1982-1991](../../internal/ee/service/subscription.go)) — no upper bound on how far
-in the past it can be. **The tenant contract for a marketplace-linked subscription is: call `/cancel`
-with `cancellation_type: "immediate"` and `cancel_at` set to the marketplace's own cancellation
-instant** (from the same webhook/notification that told the tenant to call us in the first place).
+The API already carries the right value. `CancelSubscriptionRequest` accepts `cancel_at` for a
+backdated immediate cancellation, validated only to reject a future date and to require it fall after
+the current period start. **The tenant contract for a marketplace-linked subscription is: call
+`/cancel` with `cancellation_type: "immediate"` and `cancel_at` set to the marketplace's own
+cancellation instant** (from the same notification that prompted the call).
 
-The field this lands in matters, and it is easy to get wrong. Traced through
-`updateSubscriptionForCancellation` ([subscription.go:6100-6121](../../internal/ee/service/subscription.go)):
+Which field it lands in is easy to get wrong. In `updateSubscriptionForCancellation`:
 
 ```go
 now := time.Now().UTC()
-subscription.CancelledAt = &now                    // ALWAYS wall-clock now — never the tenant's cancel_at
-
+subscription.CancelledAt = &now                // ALWAYS wall-clock now
 switch cancellationType {
 case types.CancellationTypeImmediate:
-    subscription.CancelAt = &effectiveDate          // ← the tenant's backdated cancel_at lands HERE
-    subscription.EndDate = &effectiveDate           // ← and here
+    subscription.CancelAt = &effectiveDate     // ← the tenant's backdated value lands HERE
+    subscription.EndDate = &effectiveDate
 ```
 
-`CancelledAt` is unconditional — the comment above it says plainly *"cancelled_at is the time of the
-subscription cancellation [call]"*. `determineEffectiveDate`
-([subscription.go:5994-5998](../../internal/ee/service/subscription.go)) confirms a backdated
-`customDate` is returned unmodified for the immediate case. So the flush must read **`sub.CancelAt`**
-(equivalently `sub.EndDate` for the immediate path) — reading `sub.CancelledAt` here would silently
-reintroduce the exact causal-ordering problem this section exists to close. Verified against a real
-row: a subscription cancelled via `scheduled_date` showed `cancelled_at` at the API-call instant while
-`cancel_at`/`end_date` carried the requested effective date, several hours later — confirming the two
-fields diverge in practice, not just in the code path being read here.
+So the flush reads **`sub.CancelAt`**. Verified against a real row: a `scheduled_date` cancellation
+showed `cancelled_at` at the API-call instant while `cancel_at`/`end_date` carried the requested
+effective date hours later — the two genuinely diverge.
 
-With the tenant supplying the marketplace's own instant, `cancelAt - 1 second` (§3.2 step 3) is now a
-minimal, deterministic correction against the *real* comparison GCP makes — not an arbitrary safety
-margin against a value we could only estimate. One second costs nothing material and is not
-provider-specific: it satisfies GCP's strict `<` requirement, and does not conflict with Azure (whose
-own worked example already accepts landing exactly *at* the instant) or AWS (no such comparison exists
-at all).
+With the tenant supplying the marketplace's own instant, `cancelAt - 1 second` is a minimal
+deterministic correction against the real comparison GCP makes, applied uniformly to all three
+providers rather than branched: it satisfies GCP's strict `<`, and conflicts with neither Azure (whose
+documented example accepts landing exactly at the instant) nor AWS (no such comparison).
 
 ---
 
@@ -384,84 +345,59 @@ post-cancellation window far shorter than their general staleness limit.
 
 | | General staleness window | Post-cancellation window | Rejection for an inactive subscription |
 | --- | --- | --- | --- |
-| **AWS** | 24h, plus a month-end cutoff at 06:00 UTC on the 1st for the prior month | **~1 hour** from `License Deprovisioned` / `unsubscribe-pending` | `Status: CustomerNotSubscribed` |
+| **AWS** | 24h, plus a month-end cutoff at 06:00 UTC on the 1st | **~1 hour** from `License Deprovisioned` / `unsubscribe-pending` | `Status: CustomerNotSubscribed` |
 | **GCP** | no hard cutoff published; guidance is **within 1 hour** of the usage occurring, with a ≤30-day outage provision (re-timestamped, not backdated) | **1 hour**, and the timestamp must be *before* the cancellation | `reportErrors` `NOT_FOUND` — *inferred, not doc-confirmed* |
 | **Azure** | 24h from `effectiveStartTime` | none stated separately; the 24h rule governs | `ResourceNotActive` (batch) / 400 "SaaS subscription isn't in Subscribed status" (single) |
 
-Sources:
+Sources: AWS —
+[SaaS EventBridge integration](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-eventbridge-integration.html#saas-eventbridge-final-usage)
+("this event marks the start of a 1-hour final reporting window… After this window closes… usage
+reporting is no longer accepted"),
+[BatchMeterUsage](https://docs.aws.amazon.com/marketplace/latest/APIReference/API_marketplace-metering_BatchMeterUsage.html),
+[UsageRecordResult](https://docs.aws.amazon.com/marketplace/latest/APIReference/API_marketplace-metering_UsageRecordResult.html).
+GCP —
+[Best practices for usage reporting](https://docs.cloud.google.com/marketplace/docs/partners/integrated-saas/best-practices-reporting#report_usage_after_an_entitlement_is_canceled)
+("you can still report it with a timestamp that reflects the actual time… Report this usage within one
+hour"). Azure —
+[Metering service APIs](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/marketplace-metering-service-apis),
+[FAQ on already-unsubscribed subscriptions](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/marketplace-metering-service-apis-faq#what-happens-when-you-emit-usage-for-a-saas-subscription-that-s-already-unsubscribed-)
+("The only exception is reporting usage for the time that was before the SaaS subscription is
+cancelled").
 
-- AWS — [Managing SaaS subscription events with Amazon EventBridge](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-eventbridge-integration.html#saas-eventbridge-final-usage):
-  "this event marks the start of a 1-hour final reporting window… After this window closes, customer
-  entitlements are fully revoked and usage reporting is no longer accepted."
-  [BatchMeterUsage](https://docs.aws.amazon.com/marketplace/latest/APIReference/API_marketplace-metering_BatchMeterUsage.html)
-  for the 24h + month-end rule;
-  [UsageRecordResult](https://docs.aws.amazon.com/marketplace/latest/APIReference/API_marketplace-metering_UsageRecordResult.html)
-  for `CustomerNotSubscribed`.
-- GCP — [Best practices for usage reporting](https://docs.cloud.google.com/marketplace/docs/partners/integrated-saas/best-practices-reporting#report_usage_after_an_entitlement_is_canceled):
-  "If you have unreported usage after an entitlement is canceled, you can still report it with a
-  timestamp that reflects the actual time when the usage was generated. Report this usage within one
-  hour. Do not report any usage as new usage after the entitlement ends."
-- Azure — [Metering service APIs](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/marketplace-metering-service-apis)
-  for the 24h rule and the `ResourceNotActive` / 400 statuses;
-  [Metering service APIs FAQ — "What happens when you emit usage for a SaaS subscription that's already unsubscribed?"](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/marketplace-metering-service-apis-faq#what-happens-when-you-emit-usage-for-a-saas-subscription-that-s-already-unsubscribed-)
-  for the post-cancellation exception: "Usage can be emitted only for subscriptions in the Subscribed
-  status (and not for subscriptions in `PendingFulfillmentStart`, `Suspended`, or `Unsubscribed`
-  status). The only exception is reporting usage for the time that was before the SaaS subscription
-  is canceled. For example, the customer canceled the SaaS subscription today at 3 pm. Now is 5 pm,
-  the publisher can still emit usage for the period between 6 pm yesterday and 3 pm today."
-- Azure cancellation flow — [SaaS subscription life cycle](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-life-cycle),
-  [Implementing a webhook](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-webhook)
-  (the `Unsubscribe` action is notify-only: "There's no send to ACK for this event").
-
-### 4.1 Why the marketplace cannot tell us what we already reported
-
-Considered as a way to derive the flush window from the provider rather than our own table. Only one
-of three supports it, so `usage_records` stays the source of truth for all three:
-
-- **Azure** — yes: `GET /api/usageEvents?api-version=2018-08-31&usageStartDate=<date>` returns prior
-  submissions with `usageDate` and `reconStatus`.
-- **AWS** — no. The metering API is `MeterUsage` / `BatchMeterUsage` / `RegisterUsage` /
-  `ResolveCustomer`. AWS's own guidance for auditing past submissions is CloudTrail, which is the
-  tenant's audit log, not a seller-queryable metering API.
-- **GCP** — no. Service Control exposes only `check` and `report`.
+**Why the marketplace can't tell us what we already reported.** Only Azure supports it
+(`GET /api/usageEvents?usageStartDate=…`). AWS's metering API has no seller-queryable read (its
+guidance is CloudTrail, the tenant's own audit log); GCP's Service Control exposes only `check` and
+`report`. So `usage_records` stays the source of truth for all three.
 
 ---
 
-## 5. Schema, repository and filter changes
+## 5. Schema and repository changes
 
-### 5.1 No schema changes
+**No migrations.** `entity_integration_mapping` keeps its partial unique index (§2.3);
+`usage_records` is unchanged.
 
-Neither defect needs a migration. `entity_integration_mapping` keeps its partial unique index
-(§2.3); `usage_records` is unchanged.
+**`ListUnsynced` gains a 24h bound.** It previously returned every `synced = false` row forever, so
+rows past the submission window were re-scanned by every run and never resolved. Now bounded by
+`period_end >= now() - 24h` — Azure's exact limit, AWS's limit (whose month-end rule is a deadline, not
+an extension), and far more generous than GCP's hourly guidance.
 
-### 5.2 `ListUnsynced` gains a 24h bound
+**`UsageRecordFilter` added.** No filter type existed; the repository exposed only `Create`,
+`ExistsForPeriod`, `ListUnsynced` and `MarkSynced`. Rather than one bespoke method per query, a filter
+following `EntityIntegrationMappingFilter`'s shape was added (embedded `*QueryFilter` /
+`*TimeRangeFilter`, `Filters`, `Sort`, plus explicit columns), with a matching `List` on the interface
+and Ent implementation. Both flush queries are the same call:
 
-Today `ListUnsynced` ([repository/ent/usagerecord.go:127-154](../../internal/repository/ent/usagerecord.go))
-returns every `synced = false` row for a tenant/environment, forever. Rows past the submission window
-can never be accepted, so they are re-scanned by every run and never resolve.
+- frontier — `{subscription_id, sort: period_end desc, limit: 1}`
+- backlog — `{subscription_id, synced: false, period_end >= now-24h, sort: period_end asc}`
 
-Add `period_end >= now() - 24h`. Safe on all three providers: it is Azure's exact limit, it is AWS's
-limit (whose month-end rule is a *deadline*, not an extension, so a flat 24h never over-includes),
-and it is far more generous than GCP's hourly guidance.
+`ListUnsynced` was **not** folded in; the report cron needs it tenant/environment-scoped rather than
+subscription-scoped.
 
-This also removes the need for the skip entries discussed in §3.7 — an expired row is simply never
-fetched again, while its `synced = false` state remains visible for diagnosis.
-
-### 5.3 A generalized `UsageRecordFilter`
-
-No `UsageRecordFilter` exists today; the repository exposes only `Create`, `ExistsForPeriod`,
-`ListUnsynced` and `MarkSynced`. Rather than adding one bespoke method per query, add a filter type
-following the shape of `EntityIntegrationMappingFilter`
-([types/entityintegrationmapping.go:89-105](../../internal/types/entityintegrationmapping.go)):
-embedded `*QueryFilter` and `*TimeRangeFilter`, `Filters []*FilterCondition`, `Sort []*SortCondition`,
-plus entity-specific fields (`SubscriptionID`, `Synced`, …).
-
-Both flush queries are then the same `List(ctx, filter)` call:
-
-- `frontier` — `{subscription_id, status: published, sort: period_end desc, limit: 1}`
-- `backlog` — `{subscription_id, synced: false, period_end >= now-24h, sort: period_end asc}`
-
-`ListUnsynced` can fold into it later; it is not required by this change.
+**Tenant filter hardened.** `EntityIntegrationMappingQueryOptions.ApplyTenantFilter` skipped the tenant
+predicate when the ctx tenant was empty, failing *open* (cross-tenant rows) instead of closed. Now
+unconditional, matching `ConnectionQueryOptions`. No call site relied on the old behaviour — the only
+deliberately cross-tenant query is `Connection.ListPublishedByProvider`, a separate method that
+documents why.
 
 ---
 
@@ -469,176 +405,297 @@ Both flush queries are then the same `List(ctx, filter)` call:
 
 | v3 section | Status |
 | --- | --- |
-| §8.1 Snapshot cron | Still correct for live subscriptions. A cancelled subscription is now handled by the flush (§3), not by waiting for the next scheduled run. |
-| §8.2 Reporting cron | Still correct. `ListUnsynced` gains the 24h bound (§5.2). |
-| §10, "the tenant should archive only after the snapshot cron's 4–10h lag has had a chance to capture the final active-period usage" | **Superseded.** AWS and GCP allow roughly one hour after cancellation (§4); a 4–10h wait misses both windows. Cancellation now triggers the flush directly (§3). |
-| §10 lifecycle table, `Suspend` row: "mapping stays published, reporting continues until `Unsubscribe`" | **Incorrect.** Azure documents that usage may be emitted only in `Subscribed` status — explicitly not `Suspended` (§4). Reporting for a suspended Azure subscription is rejected with `ResourceNotActive`. The row should read: reporting will be rejected while suspended; the mapping stays published because `Reinstate` is possible. |
-| §2.5, "GCP submission window: not documented; assumed similar" | **Resolved, and the framing was wrong.** GCP documents its timing expectations clearly — "within one hour," stated for normal reporting, month-end, and post-cancellation alike (§7.1) — it simply does not publish a hard technical rejection cutoff the way AWS (`TimestampOutOfBoundsException`) and Azure (`Expired`) do. Checked directly against the raw text of all seven GCP references this ERD cites, plus the `manage-entitlements` and `providers.entitlements` API pages — no "24 hours" figure exists anywhere in GCP's marketplace documentation. |
-| §12, "No terminal state / TTL for un-acceptable or expired rows" | **Partially addressed.** The 24h bound (§5.2) stops expired rows being re-scanned. A true terminal status is still not built. |
-| §12, "Azure's late-submission rule is unconfirmed" | **Partially resolved.** Azure rejects on subscription status (`ResourceNotActive` / 400) independently of the 24h `effectiveStartTime` rule. Whether lateness is judged by submission time or `effectiveStartTime` is still unstated. |
+| §8.1 Snapshot cron | Still correct for live subscriptions. Cancelled ones are now handled by the flush (§3). |
+| §8.2 Reporting cron | Still correct. `ListUnsynced` gains the 24h bound (§5). |
+| §10, "archive only after the snapshot cron's 4–10h lag" | **Superseded.** AWS and GCP allow ~1 hour (§4); a 4–10h wait misses both windows. |
+| §10 lifecycle table, `Suspend` row | **Incorrect.** Azure permits usage only in `Subscribed` status, explicitly not `Suspended`. Should read: reporting is rejected while suspended; the mapping stays published because `Reinstate` is possible. |
+| §2.5, "GCP submission window not documented" | **Resolved, and the framing was wrong.** GCP documents "within one hour" clearly; what it doesn't publish is a hard rejection cutoff like AWS's `TimestampOutOfBoundsException` or Azure's `Expired`. |
+| §12, "no terminal state for expired rows" | **Partially addressed.** The 24h bound stops re-scanning; a true terminal status is still not built. |
 
 ---
 
 ## 7. Known gaps
 
-Every gap listed in v3 §12 is restated here in full, each with what v4 does about it. Nothing is
-dropped just because it was written down before.
+| Gap | Status |
+| --- | --- |
+| No "give up" marker on a record that can never be sent | **Partly fixed.** The 24h bound stops the cron re-scanning hopeless rows, but they still sit `synced = false` with nothing marking them dead. A terminal status remains future work. |
+| No dead-letter table | **Closed, not needed.** Failure logs carry every identifier (§8) and are queryable in SigNoz; a second copy would be a second thing to keep consistent. |
+| GCP's timing rules differ in shape from AWS's and Azure's | **Answered.** GCP expects hourly reporting but publishes no hard cutoff. The 24h bound is exact for AWS/Azure and simply a uniform choice for GCP. |
+| Which clock Azure measures lateness by | **Partly answered.** Azure rejects on *status* independently of the 24h rule, and usage from before cancellation stays reportable. Submission-time vs. timestamp is still unstated in any doc. |
+| One record per API call instead of batching | **Enhancement.** Not a flush risk: the 24h bound caps a backlog at ~4 records across ≤3 marketplaces, so a flush makes at most about a dozen calls. |
+| GCP could reject the final report as too late | **Resolved (§3.6)** by sourcing the timestamp from `sub.CancelAt` and reporting `cancelAt - 1s`. |
 
-Nothing below is an open risk to the launch. The one item that was — whether GCP rejects the final
-report because our timestamp lands after its own cancellation instant — is resolved by sourcing the
-timestamp correctly rather than guessing at a margin (§3.8). Everything else is either closed, an
-accepted trade-off, or a follow-up enhancement.
+**New in v4, still open:**
 
-### 7.1 Carried over from v3
+**Nothing re-triggers the flush once its own retries are exhausted.** Temporal does not restart it and
+`CancelSubscription` calls `ExecuteWorkflow` once. Recovery is then the 3h report cron's job, which is
+fine for the backlog (it has a real 24h window) but not for the final record's timestamp — AWS/GCP's
+~1 hour deadline doesn't care that the cron keeps trying. The 5 attempts are ~2.5 minutes of backoff,
+well inside the hour, so exhausting them on a transient issue still leaves the cron a full window. If
+the deadline itself was already blown, no retry by anything can fix it — that's the marketplaces' rule,
+not a design gap.
 
-**No "give up" marker on a record that can never be sent — _partly fixed; remainder is an enhancement, not a blocker_.**
+**GCP could double-count a final record split across retries.** Because shape 3 (§3.4) never persists
+an unreported record, a rebuild generates a fresh id, and GCP de-duplicates on `OperationID` = that id.
+If GCP accepts on attempt 1 but a *different* connection fails, attempt 2 reports the same usage to GCP
+under a new identity. Narrow, but real. Closing it means deriving the final record's id
+deterministically (e.g. from `subscription_id + cancel_at`) instead of a fresh UUID.
 
-Some usage records can never succeed, no matter how many times we try: the buyer's subscription
-closed, or the record is simply older than the marketplace will accept. The problem is that a record
-in that state looks exactly like a record that failed once and deserves another try — both just say
-`synced = false`. Nothing in the row distinguishes "retry me" from "this is hopeless."
-
-The consequence was that the reporting cron kept picking those hopeless records up on every run,
-forever, and the pile only grew.
-
-What v4 does: the reporting cron now only looks at records from the last 24 hours (§5.2). Anything
-older is never fetched again, so hopeless records stop being retried and the query stops getting
-slower over time. What v4 does **not** do is give those records a real "finished, expired" status —
-they are still sitting there marked unsynced, we simply stop looking at them. Anyone reading the
-table directly still has to work out for themselves that an old unsynced row is dead. A proper
-terminal status remains future work.
-
-**No dead-letter table — _closed, not needed_.**
-
-v3 listed the absence of a dead-letter table as a gap: nowhere to answer "which records are failing,
-and how often?" without grepping logs.
-
-Closing this rather than carrying it forward. The failure logs now carry every identifier needed to
-answer that question — subscription, customer, usage record, connection, marketplace, period, and the
-provider's own error text (§3.6) — and they are queryable in SigNoz. A dead-letter table would be a
-second copy of the same information in a second place to keep consistent. The original gap assumed
-logs could only be grepped; that is no longer the case.
-
-**GCP's timing rules are different in shape from AWS's and Azure's — _answered_.**
-
-v3 recorded GCP's submission window as "not documented; assumed similar" to AWS's 24 hours. That
-framing was wrong in both directions. GCP documents its timing expectations clearly; what it does
-*not* publish is a hard rejection cutoff.
-
-GCP's actual rules ([Best practices for usage reporting](https://docs.cloud.google.com/marketplace/docs/partners/integrated-saas/best-practices-reporting)):
-
-- *"Service providers must report usage within one hour of the usage being generated."* — one hour,
-  not 24.
-- Month-end: report by 1 AM US Pacific the following day to land on that month's invoice.
-- Post-cancellation: within one hour, with a timestamp before the cancellation.
-- Extended outage: a grace period *"not exceeding 30 days"*, during which usage is collected in
-  hourly windows and then, once service is restored, reported *"as actual usage with the time the
-  data was collected"* — re-timestamped to the present, not backdated.
-
-So AWS and Azure both enforce a hard 24-hour wall (`TimestampOutOfBoundsException` and `Expired`
-respectively); GCP enforces no documented wall at all, but expects hourly reporting.
-
-One consequence for §5.2: the 24-hour bound on `ListUnsynced` matches AWS's and Azure's limits
-exactly, but for GCP it is simply a choice — it stops us retrying records GCP might still have
-accepted. This is deliberate, to keep one uniform rule across all three providers rather than a
-per-provider retention window.
-
-**We don't know which clock Azure measures lateness by — _partly answered_.**
-
-Azure won't accept usage older than 24 hours. What its docs never say is *which* 24 hours: measured
-from when we send the request, or from the timestamp we put inside the request. In normal operation
-this never matters, because our records are only 4–10 hours old when we send them. It would only
-matter right at the edge — a subscription cancelled just as a record approaches the 24-hour mark.
-
-v4 answers a neighbouring question but not this one. We confirmed Azure rejects usage for an inactive
-subscription on *status* grounds, separately from any lateness rule (`ResourceNotActive`, or a 400
-saying the subscription isn't in `Subscribed` status), and confirmed that usage for the period
-*before* cancellation stays reportable (§4). The submission-time-versus-timestamp question is still
-unanswered by any published doc.
-
-**We send one record per API call instead of batching — _enhancement; not a problem for the flush_.**
-
-All three marketplaces accept multiple records in a single call (AWS and Azure up to 25; GCP up to
-1 MB). We send them one at a time, so a tenant with many buyers makes many more API calls than
-strictly necessary.
-
-v4 does not change this, and deliberately so — the reasons in v3 §12 still hold (AWS and GCP scope a
-single call to one product, so batching would need records grouped by product first; and AWS's move
-to per-record `LicenseArn` for Concurrent Agreements by June 2026 will remove that constraint anyway).
-
-Worth noting explicitly for the flush specifically: this is not a throughput risk there. The 24-hour
-bound means a backlog can hold at most four records (the snapshot cron runs every 6 hours), and a
-subscription can be mapped to at most three marketplaces — so the flush makes at most about a dozen
-API calls, comfortably inside its one-hour deadline.
-
-### 7.2 New in v4
-
-**GCP could reject the final report because our timestamp was a moment too late — _resolved, see §3.8_.**
-
-GCP requires that any usage reported after a cancellation carries a timestamp from *before* the
-cancellation happened. The risk was sourcing that timestamp from Flexprice's own `cancelled_at` —
-which is causally always at or after the marketplace's own instant, since it's only ever set once the
-tenant, having been notified by the marketplace, calls us — so it could never satisfy "before."
-
-Closed by sourcing it correctly rather than padding for uncertainty: the tenant supplies the
-marketplace's own cancellation instant via the existing backdated-immediate-cancellation `cancel_at`
-field, the flush reads `sub.CancelAt` (not `sub.CancelledAt`, which is unconditionally wall-clock
-processing time — §3.8 traces this exactly), and reports `cancelAt - 1 second`. This affects GCP alone
-in practice — Azure's own documented example already accepts landing exactly at the cancellation
-instant, and AWS makes no such comparison — but the fix is applied uniformly to all three rather than
-branched per provider.
-
-**Once the flush gives up, nothing tries again — _accepted trade-off_.**
-
-Temporal retries the flush automatically, and those retries are safe to repeat. But when the retries
-are finally exhausted, the flush archives the subscription's mapping anyway (§3.6). From that moment
-the ordinary reporting cron cannot pick those records up, because it only considers subscriptions
-with a published mapping — even if hours of the marketplace's window were still left.
-
-This is a deliberate choice: a cancelled subscription should not keep a live-looking mapping. By the
-time retries are exhausted the cause is almost always a tenant-side credentials or configuration
-problem, and the error log is the signal for someone to act on.
-
-**A connection broken for more than a day permanently loses that usage — _inherent to the providers_.**
-
-Say a subscription is linked to both AWS and Azure. AWS has been reporting fine for weeks, but the
-Azure connection's client secret expired ten days ago, so every Azure report has failed since.
-
-When the buyer cancels, the flush catches Azure up — but only for the last 24 hours of records. Ten
-days of Azure usage sits in `usage_records`, correctly computed, and can never be sent: AWS and Azure
-both reject any record whose timestamp is more than 24 hours old, so re-sending them is not an option
-we can build our way around.
-
-To be clear about what does *not* go wrong here: AWS is not double-reported. The final window starts
-from the newest record's `period_end` regardless of who has synced it, so it covers only genuinely
-new time, and the backlog step skips any connection that already has an entry for a record. The loss
-is one-sided — the broken connection misses out, the healthy one is unaffected.
-
-The mitigation, if this revenue matters, is the one both Azure and GCP describe in their own docs:
-roll the expired quantity into a current-timestamped event instead of trying to backdate it. Neither
-provider lets you preserve the original timestamps, and Microsoft warns it weakens the customer's
-billing audit trail, so this is a deliberate choice to make case by case — not something to automate
-here.
-
-The real defence is not losing ten days in the first place: a broken connection should be alerted on
-from the `error` logs (§3.6) long before a cancellation exposes it.
+**A connection broken for more than a day permanently loses that usage.** Inherent to the providers:
+the flush catches a broken connection up only for the last 24 hours, and AWS/Azure reject anything
+older. AWS is not double-reported — the frontier covers only genuinely new time, and the backlog step
+skips connections that already have an entry — so the loss is one-sided. The mitigation both Azure and
+GCP describe is rolling the expired quantity into a current-timestamped event, which weakens the
+customer's audit trail and is a case-by-case call, not something to automate. The real defence is
+alerting on the failure logs long before a cancellation exposes it.
 
 ---
 
-## 8. Reference
+## 8. Logging and what to search for
+
+Levels are `error`, `info`, or `debug` only — never `warn`.
+
+**Credentials are never logged, at any level, for any provider** — no `client_secret` or bearer token
+(Azure), no `role_arn`, `external_id` or assumed-role credentials (AWS), no WIF JSON or federated token
+(GCP). Provider errors pass through `utils.RedactSecrets`, which strips the tenant's identifiers and
+preserves everything else verbatim, because the status and reason are what make a failure diagnosable.
+
+Four message strings carry the whole feature. Grep these first:
+
+| Message | Emitted by | Meaning |
+| --- | --- | --- |
+| `marketplace usage snapshot failed` | snapshot cron | Always tagged `stage` |
+| `marketplace usage report failed` | report cron **and** the flush | Always tagged `stage`. Shared, because both call the same reporter — when debugging a flush, grep this too |
+| `marketplace subscription flush failed` | flush only | Always tagged `stage` |
+| `marketplace usage record synced` / `marketplace subscription flush: usage record synced` | report cron / flush | The only lines meaning a marketplace accepted a record |
+
+Every line tied to one connection carries `marketplace` and `connection_id`; every line tied to one
+record carries `usage_record_id`. Connection-level lines (auth, mapping load) have no
+`usage_record_id`, because no record is in scope yet.
+
+### 8.1 Snapshot activity — every 6h, never contacts a marketplace
+
+Computes usage and writes `usage_records`. Every failure here is Flexprice-side. Window is anchored to
+the run's *scheduled* time: `[scheduledTime − 10h, scheduledTime − 4h]`, so re-runs recompute the
+identical window.
+
+```
+Starting MarketplaceUsageSnapshotWorkflow
+[warn-ish info] scheduled start time unavailable; falling back to current time   ← windows stop being reproducible
+Starting MarketplaceUsageSnapshotActivity   period_start=… period_end=…
+Completed MarketplaceUsageSnapshotActivity  total=… succeeded=… failed=…
+MarketplaceUsageSnapshotWorkflow completed  period_start=… period_end=… total=… succeeded=… failed=…
+```
+
+| `stage` | What broke | Blast radius |
+| --- | --- | --- |
+| `list_connections` | Listing published connections for a provider | That **provider** skipped; others continue |
+| `list_customer_mappings` | Customer mappings for a connection | That **connection** skipped |
+| `list_subscription_mappings` | Subscription mappings for a connection | That **connection** skipped |
+| `get_subscription` | `GetWithLineItems` | That subscription counted `failed` |
+| `check_existing` | The "already snapshotted" lookup | That subscription counted `failed` |
+| `get_meter_usage` | Usage retrieval | That subscription counted `failed` |
+| `calculate_charges` | `CalculateMeterUsageCharges` | That subscription counted `failed` |
+| `create_usage_record` | The insert, for a reason other than already-exists | That subscription counted `failed` |
+
+Reading the counts: `Total` counts **distinct subscriptions** (a subscription mapped to two
+marketplaces is deduplicated, not counted twice). `succeeded` means a row now exists — whether written
+this run, already present, or won by a concurrent insert; all three are correct. `failed` means that
+window's usage was never captured, and **nothing retries it** — the next scheduled run computes a
+different window.
+
+Two things are invisible here, and both matter:
+
+- The first three stages abort before reaching any subscription, so they increment nothing.
+  `total=0 succeeded=0 failed=0` next to one of them means "never got far enough to look", not
+  "nothing to do".
+- A subscription whose customer has no published customer mapping, or a connection whose tenant has no
+  mapped customers at all, is skipped with **no log and no count**. Legitimate, but silent.
+
+There is **no per-subscription success log**. The only evidence is the row itself.
+
+### 8.2 Report activity — every 3h, this is where marketplaces are called
+
+Tenant-wide by construction: `ListPublishedByProvider` deliberately bypasses tenant scoping (the one
+query that does) so a job with no tenant on ctx can discover work, then groups by (tenant, environment)
+and sets both onto ctx before anything else.
+
+Its own stages — all under `marketplace usage report failed`:
+
+| `stage` | What broke | Blast radius |
+| --- | --- | --- |
+| `list_connections` | Listing published connections for a provider | That provider skipped |
+| `list_unsynced` | Reading the tenant's unsynced records | That **tenant/environment group** skipped entirely |
+| `mark_synced` | Persisting sync state **after** the marketplace already accepted | See below |
+
+Auth and the report call itself are in §8.4 — they are shared with the flush.
+
+> `mark_synced` is the one genuinely dangerous stage: the provider has the usage, our table doesn't.
+> The next run re-reports. AWS de-duplicates on customer+dimension+timestamp and GCP on `OperationID`
+> (unchanged for a persisted row), so both are safe; Azure returns 409, surfacing as
+> `stage=usage_event`. Always investigate.
+
+**Pre-filter, before any connection is chosen** (provider-agnostic, so no `marketplace` tag). Both are
+excluded from *every* count:
+
+| Level | Message | Meaning |
+| --- | --- | --- |
+| `debug` | `skipping marketplace usage record, currency not usd` | None of the three marketplaces accept non-USD. **Debug-level, so invisible at default settings** — a EUR marketplace subscription simply never syncs, with no signal. Check this first when records aren't syncing and nothing is logged. |
+| `error` | `marketplace usage record has negative amount` | A credit, not usage. An upstream billing bug; never sent. |
+
+Reading the counts: `Total` counts records that reached at least one relevant connection. `succeeded` =
+every relevant connection has an entry and at least one is a real post (`synced` now true, done
+forever). `failed` = at least one connection still missing; the next run retries **only** the missing
+ones. `skipped` = every entry is a skip (Azure zero-amount only).
+
+Two caveats worth knowing:
+
+- `skipped` is in the workflow result but in **neither completion log** — both log only
+  `total`/`succeeded`/`failed`. Read it from the Temporal UI.
+- A record is `failed` if *any* relevant connection is missing, however many succeeded. With GCP broken
+  and AWS/Azure fine, you will see `…usage record synced` lines for AWS and Azure right next to the
+  record being counted `failed`. Expected, not contradictory.
+
+### 8.3 Flush activity — once per cancellation
+
+Trigger-side, all emitted post-commit so none can affect the cancellation:
+
+| Level | Message | Meaning |
+| --- | --- | --- |
+| `info` | **`marketplace subscription flush workflow started successfully`** | **The definitive confirmation.** Carries `workflow_id` |
+| `error` | `failed to look up marketplace mappings for subscription flush` | The gate query failed; treated as "no mapping" so the cancellation is never blocked. Nothing downstream ran |
+| `info` | `temporal service not available for marketplace subscription flush` | Temporal isn't wired into this process |
+| `error` | `failed to start marketplace subscription flush workflow` | `ExecuteWorkflow` failed — usually Temporal unreachable |
+
+Seeing **none** of the four is itself a finding: the subscription had no published marketplace mapping.
+
+Activity stages — all under `marketplace subscription flush failed`:
+
+| `stage` | Phase | Blast radius |
+| --- | --- | --- |
+| `list_subscription_mappings` | setup | **Hard abort**, activity retries |
+| `get_connection` | setup | **Does not abort** — other mappings still processed, but this blocks delink |
+| `list_backlog` | 1 | **Hard abort** |
+| `mark_synced` | 1 | That record forced to `failed`; same warning as §8.2 |
+| `get_subscription` / `get_meter_usage` / `calculate_charges` | 2 | **Hard abort** |
+| `create_usage_record` | 2 | **Hard abort** — note this runs *after* the record was already reported, so the provider has the usage but the row isn't stored |
+| `delink_mapping` | 3 | Only reachable once everything else succeeded — a pure DB failure at the last step |
+
+Success path:
+
+```
+Starting MarketplaceSubscriptionFinalUsageFlushWorkflow   subscription_id=…
+[if not a marketplace sub] subscription has no marketplace mapping, nothing to flush   ← ends here
+marketplace subscription flush: usage record synced        (phase 1, per record per connection)
+marketplace subscription flush: final usage record created (phase 2, only after a successful report)
+marketplace subscription flush: usage record synced        (the final record's connections)
+MarketplaceSubscriptionFinalUsageFlushActivity completed   final_record_id=… records_succeeded=… records_skipped=… mappings_delinked=…
+MarketplaceSubscriptionFinalUsageFlushWorkflow completed   … records_failed=… …
+```
+
+The activity's completion log omits `records_failed` (it only runs on the success path, where that
+count is zero); the workflow's includes it.
+
+**Confirming the final record — the most misread signal.** Because it is only written after a
+successful report (§3.4), a still-failing final record is **never in the table at all**: each retry
+rebuilds and re-attempts it with a new id. There is no partial row to find. `final usage record
+created` and a non-empty `final_record_id` are the only positive signals. If neither appears, exactly
+one of these is true, and the other logs say which: no final record was needed (`cancel_at` at or
+before the frontier), the connection didn't resolve (`stage=get_connection`), reporting failed (§8.4,
+carrying a `usage_record_id` that won't exist in `usage_records` — that's the discarded attempt), or
+the record was ineligible (§8.2's two pre-filter lines; the flush applies the same filter).
+
+**Confirming the delink.** No per-mapping success log — only `mappings_delinked` and the absence of
+`stage=delink_mapping`. Per §3.5 it must **only** happen on a fully successful run: a mapping archived
+on a run that also logged a failure is a bug worth reporting. Still `published` after a failed flush is
+correct and deliberate.
+
+**Timing.** 5 attempts, ~2.5 minutes of total backoff, 5-minute start-to-close per attempt —
+comfortably inside the one-hour window. What isn't bounded is queue delay: compare `start_time` on the
+tracking line against the line's own timestamp. Minutes is harmless; tens of minutes means worker
+saturation.
+
+### 8.4 Connection auth and the report call — shared by §8.2 and §8.3
+
+Both paths use the same reporter, so these lines are identical from either caller and all carry
+`marketplace usage report failed` — **including during a flush**.
+
+**Auth has no success log.** If it works you see nothing; success is proven only by execution reaching
+the report call. A failure skips the **whole connection** for that run (and in the flush, blocks
+delink).
+
+| Provider | `stage` values, in order |
+| --- | --- |
+| **AWS** | `read_connection` (missing secret data *or* missing `sync_config` region) → `decrypt_role_arn` → `decrypt_external_id` → `load_mappings` → `assume_role` |
+| **GCP** | `read_connection` → `decrypt_credentials_json` → `load_mappings` → `wif_session` |
+| **Azure** | `read_connection` → `decrypt_tenant_id` → `decrypt_client_id` → `decrypt_client_secret` → `load_mappings` → `get_token` (most commonly an **expired client secret** — the failure that appears after months of working) |
+
+One check covers all three — empty output means every configured credential is valid:
+
+```bash
+grep 'marketplace usage report failed' log | grep -E 'stage=(assume_role|wif_session|get_token)'
+```
+
+**The report call.** First distinguish our data problem from their rejection: `stage=resolve_record`
+means the entity mapping is missing a required field and **nothing was sent** (AWS: license_arn /
+customer account / plan dimension; GCP: usage_reporting_id / service_name / metric_name; Azure:
+resource_id / plan_id / dimension).
+
+| Provider | Log | Meaning |
+| --- | --- | --- |
+| AWS | `stage=convert_quantity` | Amount doesn't fit AWS's int32 quantity |
+| AWS | `stage=batch_meter_usage` | Transport or malformed request — no verdict reached |
+| AWS | `marketplace usage record not processed by aws, will retry next run` (info) | No result row returned |
+| AWS | `…rejected by aws: customer not subscribed, will retry next run` | `CustomerNotSubscribed` — self-heals if the buyer re-subscribes. **Expected against a test customer** |
+| AWS | `…rejected by aws: conflicts with a different record already on file, needs manual investigation` | `DuplicateRecord` — AWS holds a *different* record for the same key. Retrying can't fix it |
+| AWS | `…rejected by aws: unrecognized status, will retry next run` | `aws_status` carries the raw value |
+| GCP | `stage=services_report` | Transport failure **or** an API-level rejection such as 403 — read the error text, not just the stage |
+| GCP | `marketplace usage report rejected by gcp, will retry next run` | HTTP 200 but `reportErrors` set. `error_code=5` NOT_FOUND (inactive consumer), `7` PERMISSION_DENIED (missing IAM grant), `3` INVALID_ARGUMENT |
+| Azure | `marketplace usage record skipped: zero quantity not supported by azure` (info) | **Not a failure.** Nothing sent; the connection resolves as a *skip*, permanently |
+| Azure | `stage=usage_event` | Every other Azure outcome — rejection, status error and transport failure are indistinguishable at the stage level. Read the error text for the HTTP status |
+| All | `…usage record synced` | **Accepted.** `reporting_id` is AWS's `MeteringRecordId`, GCP's `operationId`, or Azure's `usageEventId` |
+
+**The "already reported" silence.** A connection that already holds an entry in `rec.Syncs` is skipped
+with no log and no API call — correct, but it means a provider can vanish from a run's logs because an
+earlier run already satisfied it. Absence of AWS lines does **not** mean AWS failed.
+
+### 8.5 Answering "was this record reported?"
+
+Logs alone can't always tell you, because of the two silences above. Read the row:
+
+```sql
+SELECT synced, syncs FROM usage_records WHERE id = '<usage_record_id>';
+```
+
+A connection id present with a real `reporting_id` = accepted (possibly on an earlier run). Present
+with `"skipped": true` = resolved via skip. **Absent** = never accepted — and check whether that
+provider is even relevant: the subscription mapping must exist *and* carry a non-empty provider entity
+id, or `relevantConnections` excludes it silently.
+
+For a flush specifically, the final record's `period_end` must equal `cancel_at` **exactly**, not
+`cancel_at - 1s` — the margin exists only on the wire (§3.4).
+
+### 8.6 Local-dev noise — not this feature
+
+| Symptom | Explanation |
+| --- | --- |
+| `BadSearchAttributes: custom search attribute 'TenantID'/'EnvironmentID'/'SubscriptionID' not found` | From `ProcessSubscriptionBillingWorkflow`, the only caller of `UpsertWorkflowSearchAttributes`. The dev namespace never had them registered. Interleaved because one local worker runs many workflow types |
+| `Failed to track workflow start: tenant_id is required` + `workflow_execution not found` on the marketplace crons | Fixed: both crons are now in `temporalCronWorkflowTypes`, which excludes them from tracking like every other cron. They are tenant-wide, so there was never a tenant to write a tracking row with |
+| `redis: … connection refused` at boot | Non-fatal; ~500ms of retries |
+| `dial tcp 127.0.0.1:7233: connect: connection refused` | Fatal — every mode needs a reachable Temporal. `temporal server start-dev` (no Docker needed) |
+
+---
+
+## 9. Reference
 
 Everything in v3 §13 still applies. Added here:
 
-**AWS**
-- [Managing SaaS subscription events with Amazon EventBridge](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-eventbridge-integration.html#saas-eventbridge-final-usage) — the 1-hour final reporting window
-- [Amazon SNS notifications for SaaS products](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-notification.html) — `unsubscribe-pending` / `unsubscribe-success`
-- [UsageRecordResult](https://docs.aws.amazon.com/marketplace/latest/APIReference/API_marketplace-metering_UsageRecordResult.html) — `CustomerNotSubscribed`
+**AWS** — [SaaS EventBridge integration](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-eventbridge-integration.html#saas-eventbridge-final-usage) (1-hour final window) ·
+[SNS notifications](https://docs.aws.amazon.com/marketplace/latest/userguide/saas-notification.html) (`unsubscribe-pending`) ·
+[UsageRecordResult](https://docs.aws.amazon.com/marketplace/latest/APIReference/API_marketplace-metering_UsageRecordResult.html) (`CustomerNotSubscribed`)
 
-**GCP**
-- [Best practices for usage reporting](https://docs.cloud.google.com/marketplace/docs/partners/integrated-saas/best-practices-reporting#report_usage_after_an_entitlement_is_canceled) — the 1-hour post-cancellation rule
+**GCP** — [Best practices for usage reporting](https://docs.cloud.google.com/marketplace/docs/partners/integrated-saas/best-practices-reporting#report_usage_after_an_entitlement_is_canceled) (1-hour post-cancellation rule)
 
-**Azure**
-- [Metering service APIs FAQ — emitting usage for an already-unsubscribed SaaS subscription](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/marketplace-metering-service-apis-faq#what-happens-when-you-emit-usage-for-a-saas-subscription-that-s-already-unsubscribed-) — status eligibility and the post-cancellation exception
-- [Metering service APIs FAQ — maximum delay between event and emission](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/marketplace-metering-service-apis-faq) — the general 24h rule
-- [Managing the SaaS subscription life cycle](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-life-cycle) — `Unsubscribed` state
-- [Implementing a webhook on the SaaS service](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-webhook) — `Unsubscribe` is notify-only
+**Azure** — [Metering FAQ: already-unsubscribed](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/marketplace-metering-service-apis-faq#what-happens-when-you-emit-usage-for-a-saas-subscription-that-s-already-unsubscribed-) ·
+[SaaS subscription life cycle](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-life-cycle) ·
+[Implementing a webhook](https://learn.microsoft.com/en-us/partner-center/marketplace-offers/pc-saas-fulfillment-webhook) (`Unsubscribe` is notify-only)
