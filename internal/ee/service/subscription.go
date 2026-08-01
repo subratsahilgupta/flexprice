@@ -6688,6 +6688,15 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlementsForSubscripti
 			WithHint("A subscription must be provided to resolve entitlements").
 			Mark(ierr.ErrValidation)
 	}
+	// Validate request if provided
+	if req != nil {
+		if err := req.Validate(); err != nil {
+			return nil, err
+		}
+	} else {
+		// Initialize with empty request if none provided
+		req = &dto.GetSubscriptionEntitlementsRequest{}
+	}
 
 	// Get all entitlements for the subscription
 	entitlements, err := s.GetSubscriptionEntitlementsForSubscription(ctx, sub)
