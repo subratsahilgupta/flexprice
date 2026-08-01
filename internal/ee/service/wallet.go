@@ -2968,9 +2968,9 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 		var timeoutDuration time.Duration
 		currentTimeout, ok := ctx.Deadline()
 		if ok && !currentTimeout.IsZero() && time.Until(currentTimeout) < s.computeBalanceTimeout {
-			timeoutDuration = time.Until(currentTimeout)
+			timeoutDuration = time.Until(currentTimeout) - (100 * time.Millisecond)
 		} else {
-			timeoutDuration = s.computeBalanceTimeout
+			timeoutDuration = s.computeBalanceTimeout - (100 * time.Millisecond)
 		}
 
 		computeCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
@@ -2981,6 +2981,13 @@ func (s *walletService) GetWalletBalanceV2(ctx context.Context, walletID string)
 			// Parent context was canceled or its deadline exceeded, the caller
 			// has given up, so propagate instead of serving stale cached data.
 			if ctx.Err() != nil {
+				s.Logger.Error(ctx, "wallet balance computation timed out",
+					"wallet_id", walletID,
+					"tenant_id", types.GetTenantID(ctx),
+					"environment_id", types.GetEnvironmentID(ctx),
+					"endpoint", "real_time",
+					"error", err.Error(),
+				)
 				return nil, err
 			}
 			s.Logger.Error(ctx, "wallet balance fallback to cache",
@@ -3076,7 +3083,7 @@ func (s *walletService) computeRealtimeBalanceDefault(ctx context.Context, w *wa
 				Source:         string(types.UsageSourceWallet),
 			}
 
-			usage, err := subscriptionService.GetMeterUsageBySubscription(ctx, usageReq)
+			usage, err := subscriptionService.GetMeterUsageForSubscription(ctx, sub, usageReq)
 			if err != nil {
 				return nil, err
 			}
@@ -3196,9 +3203,9 @@ func (s *walletService) GetWalletBalanceFromCache(ctx context.Context, walletID 
 		var timeoutDuration time.Duration
 		currentTimeout, ok := ctx.Deadline()
 		if ok && !currentTimeout.IsZero() && time.Until(currentTimeout) < s.computeBalanceTimeout {
-			timeoutDuration = time.Until(currentTimeout)
+			timeoutDuration = time.Until(currentTimeout) - (100 * time.Millisecond)
 		} else {
-			timeoutDuration = s.computeBalanceTimeout
+			timeoutDuration = s.computeBalanceTimeout - (100 * time.Millisecond)
 		}
 
 		computeCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
@@ -3209,6 +3216,13 @@ func (s *walletService) GetWalletBalanceFromCache(ctx context.Context, walletID 
 			// Parent context was canceled or its deadline exceeded, the caller
 			// has given up, so propagate instead of serving stale cached data.
 			if ctx.Err() != nil {
+				s.Logger.Error(ctx, "wallet balance computation timed out",
+					"wallet_id", walletID,
+					"tenant_id", types.GetTenantID(ctx),
+					"environment_id", types.GetEnvironmentID(ctx),
+					"endpoint", "real_time",
+					"error", err.Error(),
+				)
 				return nil, err
 			}
 			s.Logger.Error(ctx, "wallet balance fallback to cache",
