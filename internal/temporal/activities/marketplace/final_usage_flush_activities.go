@@ -174,6 +174,9 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	}
 
 	for _, rec := range backlog {
+		if !a.reporter.isEligibleForReport(ctx, rec) {
+			continue
+		}
 		a.reportRecord(ctx, rec, preparedConns, result)
 	}
 
@@ -193,8 +196,11 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		return nil, err
 	}
 
+	// An ineligible final record (non-USD, or a negative amount) can never be accepted by any
+	// marketplace, so it is not reported and not written — same rule the report cron applies to the
+	// backlog, and isEligibleForReport logs which of the two it was.
 	finalUsageFlushFailed := false
-	if finalUsageFlush != nil {
+	if finalUsageFlush != nil && a.reporter.isEligibleForReport(ctx, finalUsageFlush) {
 		relevantConns := relevantConnections(finalUsageFlush, preparedConns)
 		var reportedConnIDs []string
 		if len(relevantConns) > 0 {
