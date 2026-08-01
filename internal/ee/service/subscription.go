@@ -6680,9 +6680,14 @@ func (s *subscriptionService) filterOverriddenEntitlements(
 	return finalEntitlements
 }
 
-// GetAggregatedSubscriptionEntitlements retrieves and aggregates all entitlements for a subscription
+// GetAggregatedSubscriptionEntitlementsForSubscription retrieves and aggregates all entitlements for a subscription
 // and returns them in a structured response format with aggregated features
-func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.Context, subscriptionID string, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error) {
+func (s *subscriptionService) GetAggregatedSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error) {
+	if sub == nil {
+		return nil, ierr.NewError("subscription is required").
+			WithHint("A subscription must be provided to resolve entitlements").
+			Mark(ierr.ErrValidation)
+	}
 	// Validate request if provided
 	if req != nil {
 		if err := req.Validate(); err != nil {
@@ -6693,14 +6698,8 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.
 		req = &dto.GetSubscriptionEntitlementsRequest{}
 	}
 
-	// Get the subscription
-	sub, err := s.SubRepo.Get(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-
 	// Get all entitlements for the subscription
-	entitlements, err := s.GetSubscriptionEntitlements(ctx, subscriptionID)
+	entitlements, err := s.GetSubscriptionEntitlementsForSubscription(ctx, sub)
 	if err != nil {
 		return nil, err
 	}
@@ -6720,26 +6719,48 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.
 	billingService := NewBillingService(s.ServiceParams)
 	aggregatedFeatures := billingService.AggregateEntitlements(&dto.AggregateEntitlementsParams{
 		Entitlements:   entitlements,
-		SubscriptionID: subscriptionID,
+		SubscriptionID: sub.ID,
 	})
 
 	// Ensure subscription ID is set in all sources
 	for _, feature := range aggregatedFeatures {
 		for _, source := range feature.Sources {
 			if source.SubscriptionID == "" {
-				source.SubscriptionID = subscriptionID
+				source.SubscriptionID = sub.ID
 			}
 		}
 	}
 
 	// Build final response
 	response := &dto.SubscriptionEntitlementsResponse{
-		SubscriptionID: subscriptionID,
+		SubscriptionID: sub.ID,
 		PlanID:         sub.PlanID,
 		Features:       aggregatedFeatures,
 	}
 
 	return response, nil
+}
+
+// GetAggregatedSubscriptionEntitlements retrieves and aggregates all entitlements for a subscription
+// and returns them in a structured response format with aggregated features
+func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.Context, subscriptionID string, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error) {
+	// Validate request if provided
+	if req != nil {
+		if err := req.Validate(); err != nil {
+			return nil, err
+		}
+	} else {
+		// Initialize with empty request if none provided
+		req = &dto.GetSubscriptionEntitlementsRequest{}
+	}
+
+	// Get the subscription
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetAggregatedSubscriptionEntitlementsForSubscription(ctx, sub, req)
 }
 
 // ProcessSubscriptionEntitlementOverrides creates subscription-scoped entitlement overrides
