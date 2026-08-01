@@ -74,7 +74,7 @@ func (s *billingService) CalculateMeterUsageCharges(
 	}
 
 	subscriptionService := NewSubscriptionService(s.ServiceParams)
-	aggregatedEntitlements, err := subscriptionService.GetAggregatedSubscriptionEntitlements(ctx, sub.ID, nil)
+	aggregatedEntitlements, err := subscriptionService.GetAggregatedSubscriptionEntitlementsForSubscription(ctx, sub, nil)
 	if err != nil {
 		return nil, decimal.Zero, err
 	}
