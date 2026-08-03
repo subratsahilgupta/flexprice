@@ -71,7 +71,6 @@ func (s *revenueAnalyticsService) GetDetailedCostAnalytics(
 		MarginPercent: decimal.Zero,
 		ROI:           decimal.Zero,
 		ROIPercent:    decimal.Zero,
-		Currency:      "USD", // Default currency
 		StartTime:     req.StartTime,
 		EndTime:       req.EndTime,
 	}
@@ -80,9 +79,6 @@ func (s *revenueAnalyticsService) GetDetailedCostAnalytics(
 	if costAnalytics != nil {
 		response.CostAnalytics = costAnalytics.CostAnalytics
 		response.TotalCost = costAnalytics.TotalCost
-		if costAnalytics.Currency != "" {
-			response.Currency = costAnalytics.Currency
-		}
 		response.StartTime = costAnalytics.StartTime
 		response.EndTime = costAnalytics.EndTime
 	}
@@ -92,10 +88,14 @@ func (s *revenueAnalyticsService) GetDetailedCostAnalytics(
 		for _, item := range revenueAnalytics.Items {
 			response.TotalRevenue = response.TotalRevenue.Add(item.TotalCost) // TotalCost in usage analytics represents revenue
 		}
-		if revenueAnalytics.Currency != "" && costAnalytics == nil {
-			// Use revenue currency if cost analytics is not available
-			response.Currency = revenueAnalytics.Currency
-		}
+	}
+
+	// Currency follows events analytics: first subscription currency from meter usage.
+	// Fall back to costsheet price currency when revenue analytics has none.
+	if revenueAnalytics != nil && revenueAnalytics.Currency != "" {
+		response.Currency = revenueAnalytics.Currency
+	} else if costAnalytics != nil && costAnalytics.Currency != "" {
+		response.Currency = costAnalytics.Currency
 	}
 
 	// Calculate derived metrics if both cost and revenue are available
