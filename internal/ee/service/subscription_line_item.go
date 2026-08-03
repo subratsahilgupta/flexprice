@@ -342,23 +342,18 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 		return nil, err
 	}
 
-	// Check if line item is already terminated
-	if !lineItem.EndDate.IsZero() {
-		return nil, ierr.NewError("line item is already terminated").
-			WithHint("Cannot terminate a line item that has already been terminated").
-			WithReportableDetails(map[string]interface{}{
-				"line_item_id": lineItemID,
-				"end_date":     lineItem.EndDate,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
 	// Set end date and update
 	var effectiveFrom time.Time
 	if req.EffectiveFrom != nil {
 		effectiveFrom = req.EffectiveFrom.UTC()
 	} else {
 		effectiveFrom = time.Now().UTC()
+	}
+
+	// Validate the requested end date can actually be applied (handles the
+	// already-terminated / one-time / backdate cases uniformly).
+	if err := validateLineItemEndDateChange(lineItem, effectiveFrom); err != nil {
+		return nil, err
 	}
 
 	// Validate effective from date is on or after start date

@@ -283,6 +283,158 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 	s.Equal(effectiveFrom.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix())
 }
 
+// TestDeleteSubscriptionLineItem_EffectiveFromBackdated_Allowed verifies that a
+// recurring line item whose EndDate is already set can have that EndDate moved
+// earlier (backdated).
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromBackdated_Allowed() {
+	ctx := s.GetContext()
+
+	existingEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
+	s.testData.lineItem.EndDate = existingEndDate
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	newEndDate := s.testData.lineItem.StartDate.Add(3 * 24 * time.Hour) // before existingEndDate
+
+	req := dto.DeleteSubscriptionLineItemRequest{
+		EffectiveFrom: &newEndDate,
+	}
+
+	resp, err := s.service.DeleteSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
+	s.NoError(err)
+	s.NotNil(resp)
+	s.Equal(newEndDate.Truncate(time.Second).Unix(), resp.SubscriptionLineItem.EndDate.Truncate(time.Second).Unix())
+
+	li, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.Equal(newEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix())
+}
+
+// TestDeleteSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked verifies
+// the out-of-scope "extend forward" case remains blocked.
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked() {
+	ctx := s.GetContext()
+
+	existingEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
+	s.testData.lineItem.EndDate = existingEndDate
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	newEndDate := s.testData.lineItem.StartDate.Add(7 * 24 * time.Hour) // after existingEndDate
+
+	req := dto.DeleteSubscriptionLineItemRequest{
+		EffectiveFrom: &newEndDate,
+	}
+
+	_, err := s.service.DeleteSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
+	s.Error(err)
+	s.Contains(err.Error(), "already terminated")
+
+	li, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.Equal(existingEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix(), "end date must remain unchanged")
+}
+
+// TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked verifies
+// a no-op request (new date == current EndDate) is rejected with a distinct message.
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked() {
+	ctx := s.GetContext()
+
+	existingEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
+	s.testData.lineItem.EndDate = existingEndDate
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	newEndDate := existingEndDate
+
+	req := dto.DeleteSubscriptionLineItemRequest{
+		EffectiveFrom: &newEndDate,
+	}
+
+	_, err := s.service.DeleteSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
+	s.Error(err)
+	s.Contains(err.Error(), "matches the current end date")
+}
+
+// TestDeleteSubscriptionLineItem_OnetimeExcludedFromBackdate verifies one-time line
+// items never get the new backdate behavior, even for a date that would otherwise
+// be allowed on a recurring line item.
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_OnetimeExcludedFromBackdate() {
+	ctx := s.GetContext()
+
+	onetimePrice := &price.Price{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+		Amount:             decimal.NewFromInt(25),
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+		EntityID:           s.testData.plan.ID,
+		Type:               types.PRICE_TYPE_FIXED,
+		BillingPeriod:      types.BILLING_PERIOD_ONETIME,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, onetimePrice))
+
+	existingEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
+	onetimeItem := &subscription.SubscriptionLineItem{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+		SubscriptionID: s.testData.subscription.ID,
+		CustomerID:     s.testData.customer.ID,
+		EntityID:       s.testData.plan.ID,
+		EntityType:     types.SubscriptionLineItemEntityTypePlan,
+		PriceID:        onetimePrice.ID,
+		PriceType:      types.PRICE_TYPE_FIXED,
+		DisplayName:    "Onetime addon",
+		Quantity:       decimal.NewFromInt(1),
+		Currency:       "usd",
+		BillingPeriod:  types.BILLING_PERIOD_ONETIME,
+		InvoiceCadence: types.InvoiceCadenceAdvance,
+		StartDate:      s.testData.lineItem.StartDate,
+		EndDate:        existingEndDate,
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, onetimeItem))
+
+	// Before existingEndDate — would be allowed for a recurring line item.
+	newEndDate := s.testData.lineItem.StartDate.Add(3 * 24 * time.Hour)
+
+	req := dto.DeleteSubscriptionLineItemRequest{
+		EffectiveFrom: &newEndDate,
+	}
+
+	_, err := s.service.DeleteSubscriptionLineItem(ctx, onetimeItem.ID, req)
+	s.Error(err, "one-time line items must never be backdated")
+	s.Contains(err.Error(), "already terminated")
+}
+
+// TestDeleteSubscriptionLineItem_BackdateSkipsProrationCredit documents the known
+// limitation: the existing onetime-skip heuristic in line_item_proration.go keys
+// off EndDate being non-zero, so a backdate on an already-terminated recurring
+// line item does not currently produce a proration credit for the shortened gap.
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_BackdateSkipsProrationCredit() {
+	ctx := s.GetContext()
+
+	existingEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
+	s.testData.lineItem.EndDate = existingEndDate
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	newEndDate := s.testData.lineItem.StartDate.Add(3 * 24 * time.Hour)
+
+	req := dto.DeleteSubscriptionLineItemRequest{
+		EffectiveFrom:     &newEndDate,
+		ProrationBehavior: types.ProrationBehaviorCreateProrations,
+	}
+
+	resp, err := s.service.DeleteSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
+	s.NoError(err)
+	s.NotNil(resp)
+
+	wallets, listErr := s.GetStores().WalletRepo.GetWalletsByFilter(ctx, &types.WalletFilter{
+		QueryFilter: types.NewDefaultQueryFilter(),
+	})
+	s.NoError(listErr)
+	s.Empty(wallets, "known limitation: backdating an already-terminated line item does not currently produce a proration credit")
+}
+
 func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromBeforeStartDate() {
 	ctx := s.GetContext()
 	effectiveBefore := s.testData.lineItem.StartDate.Add(-24 * time.Hour)
