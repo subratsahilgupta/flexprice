@@ -238,6 +238,68 @@ func (s *SubscriptionModificationServiceSuite) TestCouponModification() {
 			},
 		},
 		{
+			name: "remove coupon with explicit end_date in future — sets association end_date to specified future date",
+			run: func() {
+				ctx := s.GetContext()
+				cust := s.createCustomer("coup-rm-future-end")
+				sub := s.createActiveSub(cust.ID)
+				c := s.createCoupon()
+
+				now := s.GetNow()
+				assoc := s.createCouponAssociation(c.ID, sub.ID, now, nil)
+
+				futureEnd := now.Add(30 * 24 * time.Hour)
+				req := dto.ExecuteSubscriptionModifyRequest{
+					Type: dto.SubscriptionModifyTypeCoupon,
+					CouponParams: &dto.SubModifyCouponParams{
+						Action:              dto.SubModifyCouponActionRemove,
+						CouponAssociationID: &assoc.ID,
+						EndDate:             &futureEnd,
+					},
+				}
+				resp, err := s.service.Execute(ctx, sub.ID, req)
+				s.Require().NoError(err)
+				s.Require().NotNil(resp)
+
+				updated, err := s.GetStores().CouponAssociationRepo.Get(ctx, assoc.ID)
+				s.Require().NoError(err)
+				s.Require().NotNil(updated.EndDate)
+				s.True(updated.EndDate.Equal(futureEnd.UTC()), "EndDate should be set to the explicit future end_date")
+			},
+		},
+		{
+			name: "remove coupon with explicit end_date in past — backdates the association end_date",
+			run: func() {
+				ctx := s.GetContext()
+				cust := s.createCustomer("coup-rm-past-end")
+				sub := s.createActiveSub(cust.ID)
+				c := s.createCoupon()
+
+				// Association started 72 hours ago, still open.
+				pastStart := s.GetNow().Add(-72 * time.Hour)
+				assoc := s.createCouponAssociation(c.ID, sub.ID, pastStart, nil)
+
+				// Request removal effective 24 hours ago (backdate).
+				pastEnd := s.GetNow().Add(-24 * time.Hour)
+				req := dto.ExecuteSubscriptionModifyRequest{
+					Type: dto.SubscriptionModifyTypeCoupon,
+					CouponParams: &dto.SubModifyCouponParams{
+						Action:              dto.SubModifyCouponActionRemove,
+						CouponAssociationID: &assoc.ID,
+						EndDate:             &pastEnd,
+					},
+				}
+				resp, err := s.service.Execute(ctx, sub.ID, req)
+				s.Require().NoError(err)
+				s.Require().NotNil(resp)
+
+				updated, err := s.GetStores().CouponAssociationRepo.Get(ctx, assoc.ID)
+				s.Require().NoError(err)
+				s.Require().NotNil(updated.EndDate)
+				s.True(updated.EndDate.Equal(pastEnd.UTC()), "EndDate should be backdated to the explicit past end_date")
+			},
+		},
+		{
 			name: "remove coupon — association not found returns error",
 			run: func() {
 				ctx := s.GetContext()
