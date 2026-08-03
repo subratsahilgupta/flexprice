@@ -303,6 +303,7 @@ func validateLineItemEndDateChange(lineItem *subscription.SubscriptionLineItem, 
 			WithReportableDetails(map[string]interface{}{
 				"line_item_id": lineItem.ID,
 				"end_date":     lineItem.EndDate,
+				"new_date":     newDate,
 			}).
 			Mark(ierr.ErrValidation)
 	}
@@ -312,6 +313,7 @@ func validateLineItemEndDateChange(lineItem *subscription.SubscriptionLineItem, 
 		WithReportableDetails(map[string]interface{}{
 			"line_item_id": lineItem.ID,
 			"end_date":     lineItem.EndDate,
+			"new_date":     newDate,
 		}).
 		Mark(ierr.ErrValidation)
 }
@@ -346,10 +348,6 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 		effectiveFrom = time.Now().UTC()
 	}
 
-	if err := validateLineItemEndDateChange(lineItem, effectiveFrom); err != nil {
-		return nil, err
-	}
-
 	// Validate effective from date is on or after start date
 	if effectiveFrom.Before(lineItem.StartDate) {
 		return nil, ierr.NewError("effective from date must be on or after start date").
@@ -362,6 +360,10 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 			Mark(ierr.ErrValidation)
 	}
 
+	if err := validateLineItemEndDateChange(lineItem, effectiveFrom); err != nil {
+		return nil, err
+	}
+
 	// Capture a snapshot before mutating EndDate — the proration service uses EndDate==zero
 	// to distinguish "active recurring" from "onetime" (pre-existing EndDate at period boundary).
 	lineItemForProration := *lineItem
@@ -370,6 +372,13 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 
 	if err := s.SubscriptionLineItemRepo.Update(ctx, lineItem); err != nil {
 		return nil, err
+	}
+
+	// Backdating an already-terminated line item leaves lineItemForProration.EndDate
+	// non-zero, which line_item_proration.go's onetime heuristic reads as "skip credit."
+	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations && !lineItemForProration.EndDate.IsZero() {
+		s.Logger.Info(ctx, "backdating already-terminated line item, no proration credit will be issued for the shortened gap",
+			"line_item_id", lineItemID, "old_end_date", lineItemForProration.EndDate, "new_end_date", effectiveFrom)
 	}
 
 	// Apply proration for the removal if requested. Skip usage prices.
