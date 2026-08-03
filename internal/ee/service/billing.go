@@ -81,7 +81,6 @@ type BillingService interface {
 
 	// GetCustomerUsageSummary returns usage summaries for a customer's features.
 	GetCustomerUsageSummary(ctx context.Context, customerID string, req *dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error)
-
 }
 
 type billingService struct {
@@ -205,6 +204,15 @@ func (s *billingService) CalculateFixedCharges(
 					"invoice_cadence", item.InvoiceCadence,
 					"period_start", periodStart,
 					"period_end", periodEnd)
+				continue
+			}
+			if !res.LineItemPeriodEnd.After(res.LineItemPeriodStart) {
+				// Zero-duration matched period (e.g. a line item whose StartDate == EndDate) —
+				// existed for no time, so it must not be charged the full cadence price.
+				s.Logger.Debug(ctx, "skipping fixed charge line item: matched period has zero duration",
+					"subscription_id", sub.ID,
+					"line_item_id", item.ID,
+					"price_id", item.PriceID)
 				continue
 			}
 			// Full amount for the matched period
@@ -1127,7 +1135,6 @@ func (s *billingService) fillBucketedValuesForWindowedCommitment(
 	}
 	return bucketedValues, bucketStarts
 }
-
 
 func (s *billingService) CalculateAllCharges(
 	ctx context.Context,
