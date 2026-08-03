@@ -288,6 +288,12 @@ func (s *subscriptionService) applySubscriptionScopedLineItemDefaults(lineItem *
 // one-time line items — whose EndDate reflects an inherent lifespan, not a
 // prior edit/termination — are never allowed.
 func validateLineItemEndDateChange(lineItem *subscription.SubscriptionLineItem, newDate time.Time) error {
+	if lineItem == nil {
+		return ierr.NewError("line item is required").
+			WithHint("A line item must be provided to validate its end date change").
+			Mark(ierr.ErrValidation)
+	}
+
 	if lineItem.EndDate.IsZero() {
 		return nil
 	}
@@ -297,7 +303,7 @@ func validateLineItemEndDateChange(lineItem *subscription.SubscriptionLineItem, 
 	}
 
 	return ierr.NewError("line item is already terminated").
-		WithHint("Cannot terminate a line item that has already been terminated").
+		WithHint("This line item's end date cannot be moved to the requested date").
 		WithReportableDetails(map[string]interface{}{
 			"line_item_id": lineItem.ID,
 			"end_date":     lineItem.EndDate,

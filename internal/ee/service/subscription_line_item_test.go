@@ -115,6 +115,12 @@ func TestValidateLineItemEndDateChange(t *testing.T) {
 	}
 }
 
+func TestValidateLineItemEndDateChange_NilLineItem(t *testing.T) {
+	err := validateLineItemEndDateChange(nil, time.Now())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "line item is required")
+}
+
 func (s *SubscriptionLineItemServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
 	s.setupService()
@@ -519,6 +525,59 @@ func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_Effect
 	li, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
 	s.NoError(err)
 	s.Equal(oldEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix(), "end date must remain unchanged")
+}
+
+// TestUpdateSubscriptionLineItem_OnetimeExcludedFromBackdate verifies one-time line items never get the new backdate behavior via the edit flow.
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_OnetimeExcludedFromBackdate() {
+	ctx := s.GetContext()
+
+	onetimePrice := &price.Price{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+		Amount:             decimal.NewFromInt(25),
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+		EntityID:           s.testData.plan.ID,
+		Type:               types.PRICE_TYPE_FIXED,
+		BillingPeriod:      types.BILLING_PERIOD_ONETIME,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, onetimePrice))
+
+	existingEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
+	onetimeItem := &subscription.SubscriptionLineItem{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+		SubscriptionID: s.testData.subscription.ID,
+		CustomerID:     s.testData.customer.ID,
+		EntityID:       s.testData.plan.ID,
+		EntityType:     types.SubscriptionLineItemEntityTypePlan,
+		PriceID:        onetimePrice.ID,
+		PriceType:      types.PRICE_TYPE_FIXED,
+		DisplayName:    "Onetime addon",
+		Quantity:       decimal.NewFromInt(1),
+		Currency:       "usd",
+		BillingPeriod:  types.BILLING_PERIOD_ONETIME,
+		InvoiceCadence: types.InvoiceCadenceAdvance,
+		StartDate:      s.testData.lineItem.StartDate,
+		EndDate:        existingEndDate,
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, onetimeItem))
+
+	// before existingEndDate: would be allowed for a recurring line item
+	newEffectiveFrom := s.testData.lineItem.StartDate.Add(3 * 24 * time.Hour)
+	newAmount := decimal.NewFromInt(300)
+
+	req := dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &newAmount,
+		EffectiveFrom: &newEffectiveFrom,
+	}
+
+	_, err := s.service.UpdateSubscriptionLineItem(ctx, onetimeItem.ID, req)
+	s.Error(err, "one-time line items must never be backdated")
+	s.Contains(err.Error(), "already terminated")
 }
 
 // TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Allowed verifies an effective
