@@ -497,16 +497,16 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 
 	// Check if we need to create a new line item (with price overrides)
 	if req.ShouldCreateNewLineItem() {
-		// Validate line item is not already terminated
-		if !existingLineItem.EndDate.IsZero() {
-			return nil, ierr.NewError("line item is already terminated").
-				WithHint("Terminated line items cannot be updated").
-				WithReportableDetails(map[string]interface{}{
-					"line_item_id": lineItemID,
-					"end_date":     existingLineItem.EndDate,
-				}).
-				Mark(ierr.ErrValidation)
+		// Validate the requested end date can actually be applied (handles the
+		// already-terminated / one-time / backdate cases uniformly).
+		if err := validateLineItemEndDateChange(existingLineItem, endDate); err != nil {
+			return nil, err
 		}
+
+		// Preserve the existing end_date (if any) so the new line item below
+		// inherits the same boundary instead of becoming open-ended and
+		// overlapping whatever already starts there.
+		oldEndDate := existingLineItem.EndDate
 
 		// Get price for override logic (and ensure endDate >= existing line item start already validated above)
 		priceService := NewPriceService(s.ServiceParams)
@@ -553,6 +553,9 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			// Create new line item using the DTO method
 			newLineItem = req.ToSubscriptionLineItem(ctx, existingLineItem, newPriceID)
 			newLineItem.StartDate = endDate // Start where the old one ends
+			if !oldEndDate.IsZero() {
+				newLineItem.EndDate = oldEndDate // Fill exactly the gap freed up by the backdate
+			}
 
 			// Materialize bucket prices when the update request carries
 			// commitment_time_buckets: ToSubscriptionLineItem rebuilt

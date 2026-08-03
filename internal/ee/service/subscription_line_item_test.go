@@ -477,6 +477,86 @@ func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_Effect
 	s.Equal(effectiveFrom.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
 }
 
+// TestUpdateSubscriptionLineItem_BackdateAlreadyTerminated_Allowed verifies that
+// editing a line item whose EndDate is already set, effective from a date before
+// that EndDate, moves the old EndDate back and creates a new line item that fills
+// exactly the freed-up gap (StartDate == new effective date, EndDate == old EndDate).
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_BackdateAlreadyTerminated_Allowed() {
+	ctx := s.GetContext()
+
+	oldEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
+	s.testData.lineItem.EndDate = oldEndDate
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	newEffectiveFrom := s.testData.lineItem.StartDate.Add(3 * 24 * time.Hour) // before oldEndDate
+	newAmount := decimal.NewFromInt(300)
+
+	req := dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &newAmount,
+		EffectiveFrom: &newEffectiveFrom,
+	}
+
+	resp, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
+	s.NoError(err)
+	s.NotNil(resp)
+	s.NotEqual(s.testData.lineItem.ID, resp.SubscriptionLineItem.ID, "new line item should be created")
+	s.Equal(newEffectiveFrom.Truncate(time.Second).Unix(), resp.SubscriptionLineItem.StartDate.Truncate(time.Second).Unix())
+	s.False(resp.SubscriptionLineItem.EndDate.IsZero(), "new line item must inherit the old end date, not be open-ended")
+	s.Equal(oldEndDate.Truncate(time.Second).Unix(), resp.SubscriptionLineItem.EndDate.Truncate(time.Second).Unix())
+
+	oldLi, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.Equal(newEffectiveFrom.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
+}
+
+// TestUpdateSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked verifies
+// the out-of-scope "extend forward" case remains blocked.
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked() {
+	ctx := s.GetContext()
+
+	oldEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
+	s.testData.lineItem.EndDate = oldEndDate
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	newEffectiveFrom := s.testData.lineItem.StartDate.Add(7 * 24 * time.Hour) // after oldEndDate
+	newAmount := decimal.NewFromInt(300)
+
+	req := dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &newAmount,
+		EffectiveFrom: &newEffectiveFrom,
+	}
+
+	_, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
+	s.Error(err)
+	s.Contains(err.Error(), "already terminated")
+
+	li, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.Equal(oldEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix(), "end date must remain unchanged")
+}
+
+// TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked verifies
+// a no-op request (new date == current EndDate) is rejected with a distinct message.
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked() {
+	ctx := s.GetContext()
+
+	oldEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
+	s.testData.lineItem.EndDate = oldEndDate
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	newEffectiveFrom := oldEndDate
+	newAmount := decimal.NewFromInt(300)
+
+	req := dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &newAmount,
+		EffectiveFrom: &newEffectiveFrom,
+	}
+
+	_, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
+	s.Error(err)
+	s.Contains(err.Error(), "matches the current end date")
+}
+
 func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromWithoutCriticalField() {
 	ctx := s.GetContext()
 	effectiveFrom := time.Now().UTC().Add(24 * time.Hour)
