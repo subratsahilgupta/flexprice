@@ -283,6 +283,43 @@ func (s *subscriptionService) applySubscriptionScopedLineItemDefaults(lineItem *
 	}
 }
 
+// validateLineItemEndDateChange determines whether a line item whose EndDate is
+// already set may have that EndDate moved to newDate. Recurring line items
+// (BillingPeriod != BILLING_PERIOD_ONETIME) may be backdated to any date strictly
+// before the current EndDate. One-time line items — whose EndDate represents an
+// inherent single-occurrence lifespan rather than a prior edit/termination event —
+// and any date on or after the current EndDate, remain blocked exactly as before
+// this change.
+func validateLineItemEndDateChange(lineItem *subscription.SubscriptionLineItem, newDate time.Time) error {
+	if lineItem.EndDate.IsZero() {
+		return nil
+	}
+
+	canBackdate := lineItem.BillingPeriod != types.BILLING_PERIOD_ONETIME
+
+	if canBackdate && newDate.Before(lineItem.EndDate) {
+		return nil
+	}
+
+	if canBackdate && newDate.Equal(lineItem.EndDate) {
+		return ierr.NewError("effective date matches the current end date").
+			WithHint("The line item's end date is already set to this date; there is nothing to change").
+			WithReportableDetails(map[string]interface{}{
+				"line_item_id": lineItem.ID,
+				"end_date":     lineItem.EndDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return ierr.NewError("line item is already terminated").
+		WithHint("Cannot terminate a line item that has already been terminated").
+		WithReportableDetails(map[string]interface{}{
+			"line_item_id": lineItem.ID,
+			"end_date":     lineItem.EndDate,
+		}).
+		Mark(ierr.ErrValidation)
+}
+
 // DeleteSubscriptionLineItem marks a line item as deleted by setting its end date
 func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, lineItemID string, req dto.DeleteSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error) {
 	resp, err := s.deleteSubscriptionLineItem(ctx, lineItemID, req)

@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -31,6 +32,91 @@ type SubscriptionLineItemServiceSuite struct {
 
 func TestSubscriptionLineItemService(t *testing.T) {
 	suite.Run(t, new(SubscriptionLineItemServiceSuite))
+}
+
+// TestValidateLineItemEndDateChange covers the three-way decision for backdating
+// a line item whose EndDate is already set: recurring line items may move their
+// EndDate to any date strictly before the current one; one-time line items, and
+// any date on or after the current EndDate, remain blocked.
+func TestValidateLineItemEndDateChange(t *testing.T) {
+	base := time.Date(2024, 1, 5, 0, 0, 0, 0, time.UTC)
+	before := base.Add(-48 * time.Hour)
+	after := base.Add(48 * time.Hour)
+
+	tests := []struct {
+		name          string
+		endDate       time.Time
+		billingPeriod types.BillingPeriod
+		newDate       time.Time
+		wantErr       bool
+		wantErrSubstr string
+	}{
+		{
+			name:          "no end date set - always allowed",
+			endDate:       time.Time{},
+			billingPeriod: types.BILLING_PERIOD_MONTHLY,
+			newDate:       before,
+			wantErr:       false,
+		},
+		{
+			name:          "recurring - before existing end date - allowed",
+			endDate:       base,
+			billingPeriod: types.BILLING_PERIOD_MONTHLY,
+			newDate:       before,
+			wantErr:       false,
+		},
+		{
+			name:          "recurring - equal to existing end date - blocked",
+			endDate:       base,
+			billingPeriod: types.BILLING_PERIOD_MONTHLY,
+			newDate:       base,
+			wantErr:       true,
+			wantErrSubstr: "matches the current end date",
+		},
+		{
+			name:          "recurring - after existing end date - blocked",
+			endDate:       base,
+			billingPeriod: types.BILLING_PERIOD_MONTHLY,
+			newDate:       after,
+			wantErr:       true,
+			wantErrSubstr: "already terminated",
+		},
+		{
+			name:          "onetime - before existing end date - blocked",
+			endDate:       base,
+			billingPeriod: types.BILLING_PERIOD_ONETIME,
+			newDate:       before,
+			wantErr:       true,
+			wantErrSubstr: "already terminated",
+		},
+		{
+			name:          "onetime - equal to existing end date - blocked",
+			endDate:       base,
+			billingPeriod: types.BILLING_PERIOD_ONETIME,
+			newDate:       base,
+			wantErr:       true,
+			wantErrSubstr: "already terminated",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lineItem := &subscription.SubscriptionLineItem{
+				ID:            "li_test",
+				EndDate:       tt.endDate,
+				BillingPeriod: tt.billingPeriod,
+			}
+
+			err := validateLineItemEndDateChange(lineItem, tt.newDate)
+
+			if !tt.wantErr {
+				assert.NoError(t, err)
+				return
+			}
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErrSubstr)
+		})
+	}
 }
 
 func (s *SubscriptionLineItemServiceSuite) SetupTest() {
