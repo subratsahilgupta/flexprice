@@ -30,7 +30,7 @@ func validateAPIKey(ctx context.Context, cfg *config.Configuration, secretServic
 		secret, err := secretService.VerifyAPIKey(ctx, apiKey)
 		if err == nil && secret != nil {
 			// Return roles from the secret for RBAC permission checks
-			return secret.TenantID, secret.CreatedBy, secret.EnvironmentID, secret.UserType, secret.Roles, true
+			return secret.TenantID, secret.UserID, secret.EnvironmentID, secret.UserType, secret.Roles, true
 		}
 	}
 
