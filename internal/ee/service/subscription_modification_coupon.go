@@ -8,6 +8,7 @@ import (
 	coupon_association "github.com/flexprice/flexprice/internal/domain/coupon_association"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
 
 func (s *subscriptionModificationService) executeCouponModification(
@@ -18,9 +19,9 @@ func (s *subscriptionModificationService) executeCouponModification(
 	effectiveDate := time.Now().UTC()
 	switch params.Action {
 	case dto.SubModifyCouponActionAdd:
-		return s.executeAddCoupon(ctx, subscriptionID, params, effectiveDate)
+		return s.executeAddCoupon(ctx, subscriptionID, params, lo.FromPtrOr(params.StartDate, effectiveDate))
 	case dto.SubModifyCouponActionRemove:
-		return s.executeRemoveCoupon(ctx, subscriptionID, *params.CouponAssociationID, effectiveDate)
+		return s.executeRemoveCoupon(ctx, subscriptionID, *params.CouponAssociationID, lo.FromPtrOr(params.EndDate, effectiveDate))
 	default:
 		return nil, ierr.NewError("unknown coupon action: " + string(params.Action)).
 			Mark(ierr.ErrValidation)
