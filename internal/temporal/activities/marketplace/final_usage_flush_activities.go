@@ -24,8 +24,8 @@ import (
 // cancellation instant it holds, and cancelAt is exactly that instant, so a second satisfies the
 // comparison without materially under-billing. Applied to every provider rather than branched.
 //
-// Storing the exact cancelAt keeps the computed-through frontier equal to it after a successful
-// write, so a retry finds nothing left to compute rather than a one-second sliver.
+// Storing the exact cancelAt keeps the record's window identical on every attempt, so a retry finds
+// the same row rather than computing a second one a second wide.
 const reportTimestampSafetyMargin = 1 * time.Second
 
 // backlogSubmissionWindow bounds the backlog to rows a marketplace can still accept. None of the
@@ -107,13 +107,13 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 
 	subMappings, err := a.subscriptionMarketplaceMappings(ctx, input.SubscriptionID)
 	if err != nil {
-		a.logger.Error(ctx, "marketplace subscription flush failed",
+		a.logger.Error(ctx, "marketplace subscription flush: failed to list subscription marketplace mappings",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", input.SubscriptionID,
 			"error", err, "stage", "list_subscription_mappings")
 		return nil, err
 	}
 	if len(subMappings) == 0 {
-		log.Info("subscription has no marketplace mapping, nothing to flush", "subscription_id", input.SubscriptionID)
+		log.Info("marketplace subscription flush: subscription has no marketplace mapping, nothing to flush", "subscription_id", input.SubscriptionID)
 		return result, nil
 	}
 
@@ -124,7 +124,7 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	for _, m := range subMappings {
 		conn, err := a.connectionRepo.GetByProvider(ctx, types.SecretProvider(m.ProviderType))
 		if err != nil {
-			a.logger.Error(ctx, "marketplace subscription flush failed",
+			a.logger.Error(ctx, "marketplace subscription flush: failed to resolve marketplace connection",
 				"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", input.SubscriptionID,
 				"provider_type", m.ProviderType, "error", err, "stage", "get_connection")
 			connectionResolutionFailed = true
@@ -139,9 +139,12 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		preparedConns = append(preparedConns, prepared)
 	}
 
-	// Phase 1: the backlog already written by earlier snapshots. Read before phase 2 creates anything,
-	// so a first run never picks up its own final record. A retry does — by then a previous attempt's
-	// record is just another unsynced row, and phase 2 declines to create a second one.
+	cancelAt := input.CancelAt.UTC()
+
+	// Phase 1: the backlog written by earlier snapshots. Bounded below by the submission window, since
+	// an older row can no longer be accepted by any provider, and above by cancelAt, which excludes
+	// the final record — phase 2 owns that one, and reporting it here would send it without the
+	// timestamp margin the providers require.
 	backlog, err := a.usageRecordRepo.List(ctx, &types.UsageRecordFilter{
 		QueryFilter: &types.QueryFilter{
 			Sort:  lo.ToPtr("period_end"),
@@ -149,16 +152,23 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		},
 		SubscriptionID: input.SubscriptionID,
 		Synced:         lo.ToPtr(false),
-		// Bound to the submission window: an older row can no longer be accepted by any provider.
-		Filters: []*types.FilterCondition{{
-			Field:    lo.ToPtr("period_end"),
-			Operator: lo.ToPtr(types.GREATER_THAN_EQUAL),
-			DataType: lo.ToPtr(types.DataTypeDate),
-			Value:    &types.Value{Date: lo.ToPtr(time.Now().UTC().Add(-backlogSubmissionWindow))},
-		}},
+		Filters: []*types.FilterCondition{
+			{
+				Field:    lo.ToPtr("period_end"),
+				Operator: lo.ToPtr(types.GREATER_THAN_EQUAL),
+				DataType: lo.ToPtr(types.DataTypeDate),
+				Value:    &types.Value{Date: lo.ToPtr(time.Now().UTC().Add(-backlogSubmissionWindow))},
+			},
+			{
+				Field:    lo.ToPtr("period_end"),
+				Operator: lo.ToPtr(types.LESS_THAN),
+				DataType: lo.ToPtr(types.DataTypeDate),
+				Value:    &types.Value{Date: lo.ToPtr(cancelAt)},
+			},
+		},
 	})
 	if err != nil {
-		a.logger.Error(ctx, "marketplace subscription flush failed",
+		a.logger.Error(ctx, "marketplace subscription flush: failed to list backlog usage records",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", input.SubscriptionID,
 			"error", err, "stage", "list_backlog")
 		return nil, err
@@ -172,49 +182,32 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	}
 
 	// Phase 2: the single record covering everything from the last computed point up to cancellation.
-	cancelAt := input.CancelAt.UTC()
-
-	computedThrough, err := a.lastComputedPeriodEnd(ctx, input.SubscriptionID, subMappings)
+	computedThrough, err := a.lastComputedPeriodEnd(ctx, input.SubscriptionID, cancelAt, subMappings)
 	if err != nil {
-		a.logger.Error(ctx, "marketplace subscription flush failed",
+		a.logger.Error(ctx, "marketplace subscription flush: failed to determine last computed period",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", input.SubscriptionID,
 			"error", err, "stage", "last_computed_period_end")
 		return nil, err
 	}
 
-	finalUsageFlush, err := a.buildFinalUsageRecord(ctx, input.SubscriptionID, computedThrough, cancelAt, environmentID)
+	finalUsageFlush, err := a.finalUsageRecord(ctx, input.SubscriptionID, computedThrough, cancelAt, environmentID)
 	if err != nil {
 		return nil, err
 	}
 
-	// An ineligible record — non-USD, or a negative amount — can never be accepted, so it is neither
-	// reported nor written. The eligibility check logs which of the two it was.
+	// An ineligible record — non-USD, or a negative amount — can never be accepted, so it is not
+	// reported. The eligibility check logs which of the two it was.
 	finalUsageFlushFailed := false
 	if finalUsageFlush != nil && a.reporter.isEligibleForReport(ctx, finalUsageFlush) {
-		relevantConns := relevantConnections(finalUsageFlush, preparedConns)
-		var reportedConnIDs []string
-		if len(relevantConns) > 0 {
-			reportedConnIDs = a.reporter.reportRecordToConnections(ctx, finalUsageFlush, relevantConns)
-		}
-		finalUsageFlushFailed = len(relevantConns) == 0 || !finalUsageFlush.Synced
+		result.FinalRecordID = finalUsageFlush.ID
+		result.PeriodStart = finalUsageFlush.PeriodStart
+		result.PeriodEnd = finalUsageFlush.PeriodEnd
 
-		if !finalUsageFlushFailed {
-			// The providers received cancelAt less the margin; the stored row keeps the true instant.
-			finalUsageFlush.PeriodEnd = cancelAt
-			if err := a.createFinalUsageRecord(ctx, finalUsageFlush); err != nil {
-				return nil, err
-			}
-			a.logReported(ctx, finalUsageFlush, reportedConnIDs)
-
-			result.FinalRecordID = finalUsageFlush.ID
-			result.PeriodStart = finalUsageFlush.PeriodStart
-			result.PeriodEnd = finalUsageFlush.PeriodEnd
-			if anyRealEntry(finalUsageFlush, relevantConns) {
-				result.SucceededRecordIDs = append(result.SucceededRecordIDs, finalUsageFlush.ID)
-			} else {
-				result.SkippedRecordIDs = append(result.SkippedRecordIDs, finalUsageFlush.ID)
-			}
-		}
+		// The providers receive cancelAt less the margin; the stored row keeps the true instant, and
+		// reporting never writes period_end back.
+		finalUsageFlush.PeriodEnd = cancelAt.Add(-reportTimestampSafetyMargin)
+		finalUsageFlushFailed = a.reportRecord(ctx, finalUsageFlush, preparedConns, result)
+		finalUsageFlush.PeriodEnd = cancelAt
 	}
 
 	if connectionResolutionFailed || finalUsageFlushFailed || len(result.FailedRecordIDs) > 0 {
@@ -251,26 +244,39 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	return result, nil
 }
 
-// reportRecord reports one record to every relevant connection, logs what was accepted, and records
-// the outcome on result.
+// reportRecord reports one record to every connection mapped to its subscription, persists the
+// outcome, and records it on result. It reports whether the record was left unreported, which is what
+// keeps the mappings published: archiving a subscription whose records never reached a marketplace
+// would put them beyond the reporting cron's reach, since that cron also needs the mapping to decide
+// a record is relevant to a connection.
 func (a *FlushActivities) reportRecord(
 	ctx context.Context,
 	rec *usagerecord.UsageRecord,
 	preparedConns []*preparedConnection,
 	result *temporalModels.MarketplaceSubscriptionFinalUsageFlushWorkflowResult,
-) {
+) (failed bool) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
 	relevantConns := relevantConnections(rec, preparedConns)
 	if len(relevantConns) == 0 {
-		return // no resolved connection is mapped to this subscription
+		// No provider can be reached, so the record stays exactly as it is: unreported and unsynced.
+		// The subscription resolved a connection but is not mapped to it for reporting, which means its
+		// mapping carries no provider entity id.
+		a.logger.Error(ctx, "marketplace subscription flush: usage record has no connection to report to",
+			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
+			"usage_record_id", rec.ID, "connections_resolved", len(preparedConns),
+			"error", "subscription is not mapped to any resolved marketplace connection",
+			"stage", "relevant_connections")
+		result.FailedRecordIDs = append(result.FailedRecordIDs, rec.ID)
+		return true
 	}
+
 	reportedConnIDs := a.reporter.reportRecordToConnections(ctx, rec, relevantConns)
 	a.logReported(ctx, rec, reportedConnIDs)
 
 	if err := a.usageRecordRepo.MarkSynced(ctx, rec.ID, rec.Syncs, rec.Synced); err != nil {
-		a.logger.Error(ctx, "marketplace subscription flush failed",
+		a.logger.Error(ctx, "marketplace subscription flush: failed to record usage sync state",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "error", err, "stage", "mark_synced")
 		rec.Synced = false
@@ -279,11 +285,13 @@ func (a *FlushActivities) reportRecord(
 	switch {
 	case !rec.Synced:
 		result.FailedRecordIDs = append(result.FailedRecordIDs, rec.ID)
+		return true
 	case anyRealEntry(rec, relevantConns):
 		result.SucceededRecordIDs = append(result.SucceededRecordIDs, rec.ID)
 	default:
 		result.SkippedRecordIDs = append(result.SkippedRecordIDs, rec.ID)
 	}
+	return false
 }
 
 // logReported logs one line per connection that accepted this record on this run.
@@ -304,7 +312,7 @@ func (a *FlushActivities) delinkSubscriptionMappings(ctx context.Context, subMap
 	delinked := make([]string, 0, len(subMappings))
 	for _, m := range subMappings {
 		if err := a.entityIntegrationMappingRepo.Delete(ctx, m); err != nil {
-			a.logger.Error(ctx, "marketplace subscription flush failed",
+			a.logger.Error(ctx, "marketplace subscription flush: failed to archive marketplace mapping",
 				"tenant_id", types.GetTenantID(ctx), "environment_id", types.GetEnvironmentID(ctx),
 				"subscription_id", m.EntityID, "provider_type", m.ProviderType,
 				"error", err, "stage", "delink_mapping")
@@ -320,9 +328,13 @@ func (a *FlushActivities) delinkSubscriptionMappings(ctx context.Context, subMap
 // its sync state. Taking the latest unsynced row instead would re-report a span an already-synced row
 // covers, billing it twice.
 //
+// Rows ending at or after cancelAt are excluded so the final record cannot move this point past
+// itself. Without that, a retry would measure from the record the previous attempt wrote and compute a
+// second, narrower window — a different period_start, so the unique index would not catch it.
+//
 // With no usage record yet, it falls back to the earliest marketplace mapping's creation time — the
 // point the subscription became reportable, before which nothing could have been owed.
-func (a *FlushActivities) lastComputedPeriodEnd(ctx context.Context, subscriptionID string, subMappings []*entityintegrationmapping.EntityIntegrationMapping) (time.Time, error) {
+func (a *FlushActivities) lastComputedPeriodEnd(ctx context.Context, subscriptionID string, cancelAt time.Time, subMappings []*entityintegrationmapping.EntityIntegrationMapping) (time.Time, error) {
 	rows, err := a.usageRecordRepo.List(ctx, &types.UsageRecordFilter{
 		QueryFilter: &types.QueryFilter{
 			Sort:  lo.ToPtr("period_end"),
@@ -330,6 +342,12 @@ func (a *FlushActivities) lastComputedPeriodEnd(ctx context.Context, subscriptio
 			Limit: lo.ToPtr(1),
 		},
 		SubscriptionID: subscriptionID,
+		Filters: []*types.FilterCondition{{
+			Field:    lo.ToPtr("period_end"),
+			Operator: lo.ToPtr(types.LESS_THAN),
+			DataType: lo.ToPtr(types.DataTypeDate),
+			Value:    &types.Value{Date: lo.ToPtr(cancelAt)},
+		}},
 	})
 	if err != nil {
 		return time.Time{}, err
@@ -347,24 +365,47 @@ func (a *FlushActivities) lastComputedPeriodEnd(ctx context.Context, subscriptio
 	return earliest, nil
 }
 
-// buildFinalUsageRecord computes the subscription's usage for [windowStart, cancelAt) and returns the
-// record to report without writing it: the caller stores it only after a marketplace has accepted it,
-// so an unreportable record never reaches the table. Returns nil when cancelAt is at or before
-// windowStart and there is nothing left to compute — a backdated cancellation, or a retry after an
-// earlier attempt already recorded this window.
+// finalUsageRecord returns the stored record covering [windowStart, cancelAt), computing and writing
+// it if this is the first attempt. Returns nil when cancelAt is at or before windowStart and there is
+// nothing left to compute, which is what a backdated cancellation looks like.
 //
-// The amount covers the window through cancelAt, but PeriodEnd on the returned record carries the
-// reporting margin already applied; the caller restores the true instant before storing it.
-func (a *FlushActivities) buildFinalUsageRecord(ctx context.Context, subscriptionID string, windowStart, cancelAt time.Time, environmentID string) (*usagerecord.UsageRecord, error) {
+// A retry recomputes the same window, since the starting point ignores this record, so the insert
+// collides with the unique key and the existing row is returned instead. The record therefore keeps
+// one identity across every attempt, which is what lets a provider recognise a resend as the same
+// usage rather than new usage.
+func (a *FlushActivities) finalUsageRecord(ctx context.Context, subscriptionID string, windowStart, cancelAt time.Time, environmentID string) (*usagerecord.UsageRecord, error) {
 	if !cancelAt.After(windowStart) {
 		return nil, nil
 	}
 
 	tenantID := types.GetTenantID(ctx)
 
+	// Looked up before any computation, not just before the insert: on a retry an earlier attempt has
+	// already written this exact window, and there is no reason to recompute usage and charges only to
+	// discard them a moment later. The unique key over the window means at most one row can match.
+	existing, err := a.usageRecordRepo.List(ctx, &types.UsageRecordFilter{
+		QueryFilter:    types.NewNoLimitQueryFilter(),
+		SubscriptionID: subscriptionID,
+		PeriodStart:    &windowStart,
+		PeriodEnd:      &cancelAt,
+	})
+	if err != nil {
+		a.logger.Error(ctx, "marketplace subscription flush: failed to load the existing final usage record",
+			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", subscriptionID,
+			"error", err, "stage", "get_existing_usage_record")
+		return nil, err
+	}
+	if len(existing) > 0 {
+		a.logger.Info(ctx, "marketplace subscription flush: final usage record already exists, reporting it",
+			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", subscriptionID,
+			"usage_record_id", existing[0].ID, "period_start", existing[0].PeriodStart,
+			"period_end", existing[0].PeriodEnd, "synced", existing[0].Synced)
+		return existing[0], nil
+	}
+
 	sub, _, err := a.subscriptionRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
-		a.logger.Error(ctx, "marketplace subscription flush failed",
+		a.logger.Error(ctx, "marketplace subscription flush: failed to load subscription",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", subscriptionID,
 			"error", err, "stage", "get_subscription")
 		return nil, err
@@ -377,7 +418,7 @@ func (a *FlushActivities) buildFinalUsageRecord(ctx context.Context, subscriptio
 		Source:         string(types.UsageSourceInvoiceCreation),
 	})
 	if err != nil {
-		a.logger.Error(ctx, "marketplace subscription flush failed",
+		a.logger.Error(ctx, "marketplace subscription flush: failed to compute meter usage",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", subscriptionID,
 			"customer_id", sub.CustomerID, "error", err, "stage", "get_meter_usage")
 		return nil, err
@@ -387,7 +428,7 @@ func (a *FlushActivities) buildFinalUsageRecord(ctx context.Context, subscriptio
 		ctx, sub, usageResp, windowStart, cancelAt, types.UsageSourceInvoiceCreation,
 	)
 	if err != nil {
-		a.logger.Error(ctx, "marketplace subscription flush failed",
+		a.logger.Error(ctx, "marketplace subscription flush: failed to calculate charges",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", subscriptionID,
 			"customer_id", sub.CustomerID, "error", err, "stage", "calculate_charges")
 		return nil, err
@@ -398,7 +439,7 @@ func (a *FlushActivities) buildFinalUsageRecord(ctx context.Context, subscriptio
 		customerExternalID = cust.ExternalID
 	}
 
-	return &usagerecord.UsageRecord{
+	rec := &usagerecord.UsageRecord{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USAGE_RECORD),
 		CustomerID:         sub.CustomerID,
 		CustomerExternalID: customerExternalID,
@@ -407,35 +448,24 @@ func (a *FlushActivities) buildFinalUsageRecord(ctx context.Context, subscriptio
 		Amount:             totalAmount,
 		Currency:           usageResp.Currency,
 		PeriodStart:        windowStart,
-		PeriodEnd:          cancelAt.Add(-reportTimestampSafetyMargin),
+		PeriodEnd:          cancelAt,
 		EnvironmentID:      environmentID,
 		BaseModel:          types.GetDefaultBaseModel(ctx),
-	}, nil
-}
+	}
 
-// createFinalUsageRecord stores the final record after its marketplaces have accepted it. rec already
-// carries the sync state that reporting produced.
-func (a *FlushActivities) createFinalUsageRecord(ctx context.Context, rec *usagerecord.UsageRecord) error {
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
+	// An already-exists error here means a concurrent attempt won the race against the check above.
+	// It is returned like any other failure: the next attempt's check finds that row and reports it.
 	if err := a.usageRecordRepo.Create(ctx, rec); err != nil {
-		// A concurrent attempt can win the race between computing this window and inserting it. That
-		// attempt reported the same usage and wrote the row, so this one has nothing left to do.
-		if ierr.IsAlreadyExists(err) {
-			return nil
-		}
-		a.logger.Error(ctx, "marketplace subscription flush failed",
-			"tenant_id", tenantID, "environment_id", environmentID,
-			"subscription_id", rec.SubscriptionID, "customer_id", rec.CustomerID,
-			"usage_record_id", rec.ID, "error", err, "stage", "create_usage_record")
-		return err
+		a.logger.Error(ctx, "marketplace subscription flush: failed to create final usage record",
+			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", subscriptionID,
+			"customer_id", sub.CustomerID, "usage_record_id", rec.ID, "error", err,
+			"stage", "create_usage_record")
+		return nil, err
 	}
 
 	a.logger.Info(ctx, "marketplace subscription flush: final usage record created",
 		"tenant_id", tenantID, "environment_id", environmentID,
 		"subscription_id", rec.SubscriptionID, "customer_id", rec.CustomerID, "usage_record_id", rec.ID,
-		"period_start", rec.PeriodStart, "period_end", rec.PeriodEnd, "amount", rec.Amount,
-		"synced", rec.Synced)
-	return nil
+		"period_start", rec.PeriodStart, "period_end", rec.PeriodEnd, "amount", rec.Amount)
+	return rec, nil
 }

@@ -159,22 +159,23 @@ FlushActivity(subscriptionID, cancelAt, tenantID, environmentID):
        conn = resolve m's connection; prepareConnection(conn)
        on failure: log, set connectionResolutionFailed, continue   # never abort the others
 
-2. # Phase 1 — the pre-existing backlog. Fetched before phase 2 computes anything, so a first run
-   # never sees its own final record here.
-   backlog = List(subscription_id, synced=false, period_end >= now-24h, sort period_end asc)
+2. # Phase 1 — the pre-existing backlog. Bounded above by cancelAt so the final record is excluded:
+   # phase 2 owns it, and only phase 2 applies the reporting margin (§3.4).
+   backlog = List(subscription_id, synced=false,
+                  period_end >= now-24h, period_end < cancelAt, sort period_end asc)
    for rec in backlog:
        if not isEligibleForReport(rec): continue    # non-USD or negative (§8.2)
        reportRecordToConnections(rec, relevantConnections(rec)); MarkSynced(rec)
 
-3. # Phase 2 — the one final record.
-   computedThrough = MAX(period_end) over ALL published rows, else earliest mapping created_at (§3.3)
-   finalRec = buildFinalUsageRecord(computedThrough, cancelAt)     # nil if cancelAt <= computedThrough
+3. # Phase 2 — the one final record. Written first, then reported (§3.4).
+   computedThrough = MAX(period_end) over published rows with period_end < cancelAt,
+                     else earliest mapping created_at (§3.3)
+   finalRec = finalUsageRecord(computedThrough, cancelAt)   # nil if cancelAt <= computedThrough
+       # looks the window up first — on a retry the row is already there, so nothing is
+       # recomputed; otherwise compute and Create it with period_end = cancelAt
    if finalRec and isEligibleForReport(finalRec):
-       reportRecordToConnections(finalRec, relevantConnections(finalRec))
-       if fully reported:
-           finalRec.PeriodEnd = cancelAt            # stored exact; the wire got cancelAt - 1s (§3.4)
-           Create(finalRec)                         # first write, only now
-       else: finalUsageFlushFailed = true
+       report it with period_end - 1s on the wire (§3.4); MarkSynced(finalRec)
+       if not fully reported: finalUsageFlushFailed = true
 
 4. if connectionResolutionFailed or finalUsageFlushFailed or any backlog record failed:
        return error                                 # Temporal retries; mapping stays published (§3.5)
@@ -205,15 +206,15 @@ sequenceDiagram
     Flush->>DB: MarkSynced (true iff every relevant connection has an entry)
 
     Note over Flush,MP: Phase 2 — the one final record
-    Flush->>DB: frontier = MAX(period_end)
-    alt cancelAt > frontier
-        Flush->>Flush: compute usage — NOT written yet
-        Flush->>MP: report (wire timestamp = cancelAt - 1s)
-        alt fully reported
-            Flush->>DB: create record (period_end = cancelAt)
-        else any connection failed
-            Flush->>Flush: discard — next attempt recomputes fresh
+    Flush->>DB: last computed point = MAX(period_end) where period_end < cancelAt
+    alt cancelAt > that point
+        Flush->>Flush: compute usage for the remaining window
+        Flush->>DB: create record (period_end = cancelAt)
+        alt unique key collision
+            DB-->>Flush: an earlier attempt already wrote it — report that row
         end
+        Flush->>MP: report (wire timestamp = cancelAt - 1s)
+        Flush->>DB: MarkSynced
     end
 
     alt everything succeeded
@@ -225,11 +226,13 @@ sequenceDiagram
 
 ### 3.3 Window rules
 
-**The frontier spans all rows, not just unsynced ones.** Taking the max over unsynced rows alone can
-double-bill: if record A `[T-10h, T-4h]` failed to sync but B `[T-4h, T+2h]` succeeded, the unsynced
-max is `T-4h` and the flush window `[T-4h, cancelAt]` re-reports everything B covered. The max over
-**all published rows** is `T+2h`. Since snapshot windows are contiguous, the frontier has no holes
-behind it — every earlier span belongs to some row, and those rows are exactly what Phase 1 reports.
+**The window starts from all rows, not just unsynced ones.** Taking the max over unsynced rows alone
+can double-bill: if record A `[T-10h, T-4h]` failed to sync but B `[T-4h, T+2h]` succeeded, the
+unsynced max is `T-4h` and the flush window `[T-4h, cancelAt]` re-reports everything B covered. The
+max over **all published rows** is `T+2h`. Since snapshot windows are contiguous, there are no holes
+behind that point — every earlier span belongs to some row, and those rows are what Phase 1 reports.
+Rows ending at or after `cancelAt` are excluded so the final record cannot move its own starting
+point (§3.4).
 
 **Fallback when no usage record exists.** A subscription can be linked and cancelled without the
 snapshot cron ever running for it. The flush then uses the earliest subscription mapping's
@@ -238,24 +241,47 @@ from before it was linked is deliberately excluded.
 
 **Boundaries.** `period_start` is inclusive, `period_end` exclusive, inherited from the ClickHouse
 query builder (`timestamp >= ?` and `timestamp < ?`). Chaining `period_start = previous period_end`
-counts a boundary event exactly once. `buildFinalUsageRecord` early-returns when
-`cancelAt <= windowStart`, so a backdated cancellation can't produce an inverted window; the backlog
+counts a boundary event exactly once. The final record is skipped entirely when
+`cancelAt <= windowStart`, so a backdated cancellation cannot produce an inverted window; the backlog
 flush is then the whole job.
 
-### 3.4 Why the final record is reported before it is written
+### 3.4 The final record: written first, reported second
 
-Two earlier shapes were tried; each had a real bug the next one fixed.
+The record is created before it is reported, like every other write in the system, and an unreported
+record is deliberately left in the table for the reporting cron or a later attempt to pick up.
 
-| Shape | Stored `period_end` | Bug |
-| --- | --- | --- |
-| 1. Create first, with the margin baked in | `cancelAt - 1s` | The row instantly becomes the frontier, so `cancelAt > frontier` is *still true* on a retry — it creates a second, near-empty record for the 1-second sliver. |
-| 2. Create first, store the true instant | `cancelAt` | Fixes the sliver, but a partially-reported row (say GCP failed) sits `synced = false` and the **next run picks it up through Phase 1**, which applies no margin — GCP's strict `<` rejects it forever. |
-| **3. Report first, then create** (current) | `cancelAt` | None of the above. Nothing unreported is ever persisted, so a retry recomputes the same window from an unchanged frontier and reports it again with the margin correctly applied. |
+What makes that safe is that **every attempt computes the identical window**, so a retry collides with
+the unique key on `(tenant, environment, subscription, period_start, period_end)` and reports the
+existing row instead of writing a second one. Two bounds produce that:
 
-The cost of shape 3: nothing about a partially-successful attempt survives between retries for the
-final record, and each rebuild generates a fresh id. AWS de-duplicates on customer+dimension+timestamp
-so a resend is safe there; GCP de-duplicates on `OperationID` (= the record id), so it cannot recognise
-a retry as the same operation — see §7.
+- The last-computed point ignores rows ending at or after `cancelAt`, so the final record cannot move
+  the start of its own window. Without this, a retry would measure from the row the previous attempt
+  wrote and compute a narrower window — a **different `period_start`**, which the unique key would not
+  catch. That is a real trap, not a theoretical one: the index constrains the window, so nothing
+  protects against a window that changes between attempts.
+- Phase 1 excludes `period_end >= cancelAt`, so the final record is not also reported by the backlog
+  loop, which does not apply the reporting margin.
+
+Keeping one row across attempts also gives the record one identity, which matters for GCP: it
+de-duplicates on `OperationID`, which is the record id. A design that rebuilt the record per attempt
+would hand GCP a new id each time and could double-count usage it had already accepted. AWS and Azure
+de-duplicate on customer, dimension and timestamp, so they are unaffected either way.
+
+The window stability this depends on is covered by `TestUsageRecordFlushRetryReusesTheSameRecord`: a
+second attempt must compute the same window, find the same row, and be refused by the unique key. A
+change that lets the window move between attempts breaks that test rather than silently duplicating
+usage in production.
+
+The record is **not** recomputed or rewritten when it already exists — the amount stays exactly what
+was reported. §7 covers why revising it is not an option.
+
+**The stored `period_end` is the true `cancelAt`; only the value sent to a provider carries the
+margin.** One consequence worth knowing: if the flush fails and the reporting cron later retries the
+record, the cron sends the stored `cancelAt` with no margin. That is correct for AWS, which makes no
+such comparison, and for Azure, whose own documentation accepts usage ending exactly at the
+cancellation instant. For GCP it would be rejected — but GCP's post-cancellation window is about an
+hour and the cron runs every three, so by then the record is unacceptable regardless of its timestamp.
+The margin is only ever decisive inside the flush's own attempts.
 
 ### 3.5 Failure handling and when the mapping is delinked
 
@@ -385,10 +411,12 @@ an extension), and far more generous than GCP's hourly guidance.
 `ExistsForPeriod`, `ListUnsynced` and `MarkSynced`. Rather than one bespoke method per query, a filter
 following `EntityIntegrationMappingFilter`'s shape was added (embedded `*QueryFilter` /
 `*TimeRangeFilter`, `Filters`, `Sort`, plus explicit columns), with a matching `List` on the interface
-and Ent implementation. Both flush queries are the same call:
+and Ent implementation. All three flush queries are the same call:
 
-- frontier — `{subscription_id, sort: period_end desc, limit: 1}`
-- backlog — `{subscription_id, synced: false, period_end >= now-24h, sort: period_end asc}`
+- last computed point — `{subscription_id, period_end < cancel_at, sort: period_end desc, limit: 1}`
+- backlog — `{subscription_id, synced: false, period_end >= now-24h, period_end < cancel_at, sort: period_end asc}`
+- the existing final record — `{subscription_id, period_start, period_end}`, the exact window, which
+  the unique key makes single-valued
 
 `ListUnsynced` was **not** folded in; the report cron needs it tenant/environment-scoped rather than
 subscription-scoped.
@@ -435,19 +463,33 @@ well inside the hour, so exhausting them on a transient issue still leaves the c
 the deadline itself was already blown, no retry by anything can fix it — that's the marketplaces' rule,
 not a design gap.
 
-**GCP could double-count a final record split across retries.** Because shape 3 (§3.4) never persists
-an unreported record, a rebuild generates a fresh id, and GCP de-duplicates on `OperationID` = that id.
-If GCP accepts on attempt 1 but a *different* connection fails, attempt 2 reports the same usage to GCP
-under a new identity. Narrow, but real. Closing it means deriving the final record's id
-deterministically (e.g. from `subscription_id + cancel_at`) instead of a fresh UUID.
-
 **A connection broken for more than a day permanently loses that usage.** Inherent to the providers:
 the flush catches a broken connection up only for the last 24 hours, and AWS/Azure reject anything
-older. AWS is not double-reported — the frontier covers only genuinely new time, and the backlog step
+older. AWS is not double-reported — the window covers only genuinely new time, and the backlog step
 skips connections that already have an entry — so the loss is one-sided. The mitigation both Azure and
 GCP describe is rolling the expired quantity into a current-timestamped event, which weakens the
 customer's audit trail and is a case-by-case call, not something to automate. The real defence is
 alerting on the failure logs long before a cancellation exposes it.
+
+**Events arriving after a window was reported cannot be added to it.** A record's amount is fixed once
+it has been sent, so late usage for that window is lost. Revising the stored row does not recover it,
+and the reason is worth stating because it looks like an easy fix:
+
+- The reporter skips any connection already holding a `syncs` entry, so a revised amount is never sent
+  to a provider that accepted the original. The row would then claim an amount no marketplace ever
+  received, and nothing would flag the divergence — strictly worse than a stale figure, because
+  `syncs` stops being a truthful receipt.
+- Forcing a resend fails anyway. All three de-duplicate on (customer, dimension, timestamp), and the
+  timestamp does not move when the amount does — so a revision is *a different amount at an existing
+  key*. AWS answers `DuplicateRecord` (§8.4), GCP de-dupes on the unchanged `OperationID`, Azure
+  returns 409. Metering APIs are append-only by design, which is exactly the property that makes our
+  retries safe.
+
+The only mechanism the marketplaces offer for late usage is an **additional** record on a new window,
+which is what the snapshot cron already does for a live subscription. The final record has no such
+successor: once the mapping is archived no further window exists, and AWS/GCP's ~1 hour deadline
+closes before the next cron run regardless. Widening this would mean delaying the flush, which the
+same deadline forbids.
 
 ---
 
@@ -460,14 +502,23 @@ Levels are `error`, `info`, or `debug` only — never `warn`.
 (GCP). Provider errors pass through `utils.RedactSecrets`, which strips the tenant's identifiers and
 preserves everything else verbatim, because the status and reason are what make a failure diagnosable.
 
-Four message strings carry the whole feature. Grep these first:
+**Every message begins with one of three prefixes**, so a single grep scopes to a flow and the rest of
+the line says what happened. The `stage` tag is kept alongside for structured filtering, but the
+message alone is enough to read a failure:
 
-| Message | Emitted by | Meaning |
-| --- | --- | --- |
-| `marketplace usage snapshot failed` | snapshot cron | Always tagged `stage` |
-| `marketplace usage report failed` | report cron **and** the flush | Always tagged `stage`. Shared, because both call the same reporter — when debugging a flush, grep this too |
-| `marketplace subscription flush failed` | flush only | Always tagged `stage` |
-| `marketplace usage record synced` / `marketplace subscription flush: usage record synced` | report cron / flush | The only lines meaning a marketplace accepted a record |
+| Prefix | Emitted by |
+| --- | --- |
+| `marketplace usage snapshot:` | snapshot cron |
+| `marketplace usage report:` | report cron **and** the flush — both call the same reporter, so when debugging a flush, grep this too |
+| `marketplace subscription flush:` | flush only |
+
+```
+marketplace subscription flush: failed to list backlog usage records
+marketplace subscription flush: final usage record created
+marketplace usage report:       failed to assume the tenant's aws role
+marketplace usage report:       gcp rejected the usage record, will retry next run
+marketplace usage snapshot:     failed to check for an existing usage record
+```
 
 Every line tied to one connection carries `marketplace` and `connection_id`; every line tied to one
 record carries `usage_record_id`. Connection-level lines (auth, mapping load) have no
@@ -520,7 +571,7 @@ Tenant-wide by construction: `ListPublishedByProvider` deliberately bypasses ten
 query that does) so a job with no tenant on ctx can discover work, then groups by (tenant, environment)
 and sets both onto ctx before anything else.
 
-Its own stages — all under `marketplace usage report failed`:
+Its own failures — every message begins `marketplace usage report: failed to …`:
 
 | `stage` | What broke | Blast radius |
 | --- | --- | --- |
@@ -540,8 +591,8 @@ excluded from *every* count:
 
 | Level | Message | Meaning |
 | --- | --- | --- |
-| `debug` | `skipping marketplace usage record, currency not usd` | None of the three marketplaces accept non-USD. **Debug-level, so invisible at default settings** — a EUR marketplace subscription simply never syncs, with no signal. Check this first when records aren't syncing and nothing is logged. |
-| `error` | `marketplace usage record has negative amount` | A credit, not usage. An upstream billing bug; never sent. |
+| `debug` | `…skipping usage record, currency is not usd` | None of the three marketplaces accept non-USD. **Debug-level, so invisible at default settings** — a EUR marketplace subscription simply never syncs, with no signal. Check this first when records aren't syncing and nothing is logged. |
+| `error` | `…skipping usage record, amount is negative` | A credit, not usage. An upstream billing bug; never sent. |
 
 Reading the counts: `Total` counts records that reached at least one relevant connection. `succeeded` =
 every relevant connection has an entry and at least one is a real post (`synced` now true, done
@@ -569,41 +620,55 @@ Trigger-side, all emitted post-commit so none can affect the cancellation:
 
 Seeing **none** of the four is itself a finding: the subscription had no published marketplace mapping.
 
-Activity stages — all under `marketplace subscription flush failed`:
+Activity failures — every message begins `marketplace subscription flush: failed to …`:
 
-| `stage` | Phase | Blast radius |
-| --- | --- | --- |
-| `list_subscription_mappings` | setup | **Hard abort**, activity retries |
-| `get_connection` | setup | **Does not abort** — other mappings still processed, but this blocks delink |
-| `list_backlog` | 1 | **Hard abort** |
-| `mark_synced` | 1 | That record forced to `failed`; same warning as §8.2 |
-| `get_subscription` / `get_meter_usage` / `calculate_charges` | 2 | **Hard abort** |
-| `create_usage_record` | 2 | **Hard abort** — note this runs *after* the record was already reported, so the provider has the usage but the row isn't stored |
-| `delink_mapping` | 3 | Only reachable once everything else succeeded — a pure DB failure at the last step |
+| `stage` | Message ends | Phase | Blast radius |
+| --- | --- | --- | --- |
+| `list_subscription_mappings` | list subscription marketplace mappings | setup | **Hard abort**, activity retries |
+| `get_connection` | resolve marketplace connection | setup | **Does not abort** — other mappings still processed, but this blocks delink |
+| `list_backlog` | list backlog usage records | 1 | **Hard abort** |
+| `mark_synced` | record usage sync state | 1 and 2 | That record forced to `failed`; same warning as §8.2 |
+| `relevant_connections` | usage record has no connection to report to | 1 and 2 | Nothing is sent for that record and the run fails, so the mappings stay published — archiving them would put the record beyond the cron, which also needs the mapping to judge relevance |
+| `last_computed_period_end` | determine last computed period | 2 | **Hard abort** |
+| `get_existing_usage_record` | load the existing final usage record | 2 | **Hard abort** — runs before any computation, so nothing was computed |
+| `get_subscription` / `get_meter_usage` / `calculate_charges` | load subscription / compute meter usage / calculate charges | 2 | **Hard abort** |
+| `create_usage_record` | create final usage record | 2 | **Hard abort** — includes losing an insert race to a concurrent attempt; the retry finds that row |
+| `delink_mapping` | archive marketplace mapping | 3 | Only reachable once everything else succeeded — a pure DB failure at the last step |
 
 Success path:
 
 ```
 Starting MarketplaceSubscriptionFinalUsageFlushWorkflow   subscription_id=…
-[if not a marketplace sub] subscription has no marketplace mapping, nothing to flush   ← ends here
-marketplace subscription flush: usage record synced        (phase 1, per record per connection)
-marketplace subscription flush: final usage record created (phase 2, only after a successful report)
-marketplace subscription flush: usage record synced        (the final record's connections)
-MarketplaceSubscriptionFinalUsageFlushActivity completed   final_record_id=… records_succeeded=… records_skipped=… mappings_delinked=…
-MarketplaceSubscriptionFinalUsageFlushWorkflow completed   … records_failed=… …
+[if not a marketplace sub] marketplace subscription flush: subscription has no marketplace mapping…  ← ends here
+marketplace subscription flush: usage record synced          (phase 1, per record per connection)
+marketplace subscription flush: final usage record created   (phase 2, before it is reported)
+   — or —
+marketplace subscription flush: final usage record already exists, reporting it   (a retry)
+marketplace subscription flush: usage record synced          (the final record's connections)
+MarketplaceSubscriptionFinalUsageFlushActivity completed     final_record_id=… records_succeeded=… records_skipped=… mappings_delinked=…
+MarketplaceSubscriptionFinalUsageFlushWorkflow completed     final_record_id=… records_succeeded=… records_skipped=… mappings_delinked=…
 ```
 
-The activity's completion log omits `records_failed` (it only runs on the success path, where that
-count is zero); the workflow's includes it.
+**The result is only ever visible on a successful run.** When the activity returns an error Temporal
+discards its result value — the task is recorded as failed, carrying the failure and not the payload —
+so the workflow's `.Get` leaves the struct zero and its completion log never runs. The error itself
+carries only its message: a plain Go error is converted to an `ApplicationError` with `err.Error()`,
+so `WithReportableDetails` does not survive into Temporal either.
 
-**Confirming the final record — the most misread signal.** Because it is only written after a
-successful report (§3.4), a still-failing final record is **never in the table at all**: each retry
-rebuilds and re-attempts it with a new id. There is no partial row to find. `final usage record
-created` and a non-empty `final_record_id` are the only positive signals. If neither appears, exactly
-one of these is true, and the other logs say which: no final record was needed (`cancel_at` at or
-before the frontier), the connection didn't resolve (`stage=get_connection`), reporting failed (§8.4,
-carrying a `usage_record_id` that won't exist in `usage_records` — that's the discarded attempt), or
-the record was ineligible (§8.2's two pre-filter lines; the flush applies the same filter).
+On a failed run the record ids therefore exist **only in the logs above**, which is what the per-record
+lines are for. Do not expect the Temporal UI to show which record failed — grep `usage_record_id`.
+
+Neither completion log reports a failure count, and that is deliberate rather than an omission: the
+activity fails the run whenever a record failed, so any count printed on the success path could only
+ever be zero.
+
+**Confirming the final record.** It is written *before* it is reported (§3.4), so it exists in
+`usage_records` whether or not any marketplace accepted it — an unreported one sits there `synced =
+false` with a partial `syncs` map. Either `final usage record created` or `final usage record already
+exists, reporting it` appears on every run that needed one, and `final_record_id` on the completion
+log carries its id in both cases. If neither line appears, one of these is true and the other logs say
+which: no final record was needed (`cancel_at` at or before the last computed point), an earlier stage
+aborted, or the record was ineligible (§8.2's two pre-filter lines, which the flush applies too).
 
 **Confirming the delink.** No per-mapping success log — only `mappings_delinked` and the absence of
 `stage=delink_mapping`. Per §3.5 it must **only** happen on a fully successful run: a mapping archived
@@ -618,7 +683,7 @@ saturation.
 ### 8.4 Connection auth and the report call — shared by §8.2 and §8.3
 
 Both paths use the same reporter, so these lines are identical from either caller and all carry
-`marketplace usage report failed` — **including during a flush**.
+the `marketplace usage report:` prefix — **including during a flush**.
 
 **Auth has no success log.** If it works you see nothing; success is proven only by execution reaching
 the report call. A failure skips the **whole connection** for that run (and in the flush, blocks
@@ -633,7 +698,7 @@ delink).
 One check covers all three — empty output means every configured credential is valid:
 
 ```bash
-grep 'marketplace usage report failed' log | grep -E 'stage=(assume_role|wif_session|get_token)'
+grep 'marketplace usage report:' log | grep -E 'stage=(assume_role|wif_session|get_token)'
 ```
 
 **The report call.** First distinguish our data problem from their rejection: `stage=resolve_record`
@@ -645,13 +710,13 @@ resource_id / plan_id / dimension).
 | --- | --- | --- |
 | AWS | `stage=convert_quantity` | Amount doesn't fit AWS's int32 quantity |
 | AWS | `stage=batch_meter_usage` | Transport or malformed request — no verdict reached |
-| AWS | `marketplace usage record not processed by aws, will retry next run` (info) | No result row returned |
-| AWS | `…rejected by aws: customer not subscribed, will retry next run` | `CustomerNotSubscribed` — self-heals if the buyer re-subscribes. **Expected against a test customer** |
-| AWS | `…rejected by aws: conflicts with a different record already on file, needs manual investigation` | `DuplicateRecord` — AWS holds a *different* record for the same key. Retrying can't fix it |
-| AWS | `…rejected by aws: unrecognized status, will retry next run` | `aws_status` carries the raw value |
+| AWS | `…aws did not process the usage record, will retry next run` (info) | No result row returned |
+| AWS | `…aws rejected the usage record, customer not subscribed, will retry next run` | `CustomerNotSubscribed` — self-heals if the buyer re-subscribes. **Expected against a test customer** |
+| AWS | `…aws rejected the usage record, it conflicts with a different record already on file` | `DuplicateRecord` — AWS holds a *different* record for the same key. Retrying can't fix it |
+| AWS | `…aws returned an unrecognized status, will retry next run` | `aws_status` carries the raw value |
 | GCP | `stage=services_report` | Transport failure **or** an API-level rejection such as 403 — read the error text, not just the stage |
-| GCP | `marketplace usage report rejected by gcp, will retry next run` | HTTP 200 but `reportErrors` set. `error_code=5` NOT_FOUND (inactive consumer), `7` PERMISSION_DENIED (missing IAM grant), `3` INVALID_ARGUMENT |
-| Azure | `marketplace usage record skipped: zero quantity not supported by azure` (info) | **Not a failure.** Nothing sent; the connection resolves as a *skip*, permanently |
+| GCP | `…gcp rejected the usage record, will retry next run` | HTTP 200 but `reportErrors` set. `error_code=5` NOT_FOUND (inactive consumer), `7` PERMISSION_DENIED (missing IAM grant), `3` INVALID_ARGUMENT |
+| Azure | `…skipping usage record for azure, it does not accept a zero quantity` (info) | **Not a failure.** Nothing sent; the connection resolves as a *skip*, permanently |
 | Azure | `stage=usage_event` | Every other Azure outcome — rejection, status error and transport failure are indistinguishable at the stage level. Read the error text for the HTTP status |
 | All | `…usage record synced` | **Accepted.** `reporting_id` is AWS's `MeteringRecordId`, GCP's `operationId`, or Azure's `usageEventId` |
 
@@ -674,15 +739,6 @@ id, or `relevantConnections` excludes it silently.
 
 For a flush specifically, the final record's `period_end` must equal `cancel_at` **exactly**, not
 `cancel_at - 1s` — the margin exists only on the wire (§3.4).
-
-### 8.6 Local-dev noise — not this feature
-
-| Symptom | Explanation |
-| --- | --- |
-| `BadSearchAttributes: custom search attribute 'TenantID'/'EnvironmentID'/'SubscriptionID' not found` | From `ProcessSubscriptionBillingWorkflow`, the only caller of `UpsertWorkflowSearchAttributes`. The dev namespace never had them registered. Interleaved because one local worker runs many workflow types |
-| `Failed to track workflow start: tenant_id is required` + `workflow_execution not found` on the marketplace crons | Fixed: both crons are now in `temporalCronWorkflowTypes`, which excludes them from tracking like every other cron. They are tenant-wide, so there was never a tenant to write a tracking row with |
-| `redis: … connection refused` at boot | Non-fatal; ~500ms of retries |
-| `dial tcp 127.0.0.1:7233: connect: connection refused` | Fatal — every mode needs a reachable Temporal. `temporal server start-dev` (no Docker needed) |
 
 ---
 

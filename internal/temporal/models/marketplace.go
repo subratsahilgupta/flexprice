@@ -127,35 +127,29 @@ type MarketplaceSubscriptionFinalUsageFlushActivityInput struct {
 	EnvironmentID  string    `json:"environment_id"`
 }
 
-// MarketplaceSubscriptionFinalUsageFlushWorkflowResult captures what the flush actually did. Scoped to a single
-// subscription, so it carries full IDs rather than the truncated lists the two scheduled results use —
-// a flush covers at most a day's backlog across at most three marketplaces. The three record-ID lists
-// mirror MarketplaceUsageReportWorkflowResult's classification exactly (both are produced by the same
-// shared reportRecordToConnections), so the two report paths can never disagree on what "succeeded"
-// means.
+// MarketplaceSubscriptionFinalUsageFlushWorkflowResult captures what one flush did. It carries full
+// id lists rather than truncated ones: a flush covers at most a day of records across at most three
+// marketplaces.
 type MarketplaceSubscriptionFinalUsageFlushWorkflowResult struct {
 	SubscriptionID string `json:"subscription_id"`
 
-	// PeriodStart/PeriodEnd and FinalRecordID describe the final record this run wrote — PeriodEnd is
-	// the true cancellation instant, without the reporting margin (that's applied on the wire only).
-	// All three are zero/empty unless this run both computed AND fully reported the record. That
-	// covers three different cases the same way: nothing was left to compute (cancel_at at or before
-	// the frontier — also what a retry sees once an earlier attempt's record already advanced it), the
-	// record's connection couldn't be resolved this run, or reporting it didn't fully succeed. The
-	// last two also make this run return an error.
+	// The final usage record covering the span up to cancellation, whether this run created it or
+	// found one an earlier attempt had already written. PeriodEnd is the true cancellation instant;
+	// the reporting margin is applied only to the value sent to the providers. All three are empty
+	// when no such record was needed, which is what a backdated cancellation looks like.
 	PeriodStart   time.Time `json:"period_start,omitempty"`
 	PeriodEnd     time.Time `json:"period_end,omitempty"`
 	FinalRecordID string    `json:"final_record_id,omitempty"`
 
-	// Record IDs cover the backlog plus the final record (once persisted, it's just another backlog
-	// row), reported through the same shared loop.
+	// Every record this run reported, the backlog and the final one alike, split by outcome. A record
+	// is succeeded once every marketplace mapped to it has accepted or skipped it and at least one
+	// accepted; skipped when they all skipped; failed while any is still outstanding.
 	SucceededRecordIDs []string `json:"succeeded_record_ids,omitempty"`
 	FailedRecordIDs    []string `json:"failed_record_ids,omitempty"`
 	SkippedRecordIDs   []string `json:"skipped_record_ids,omitempty"`
 
-	// DelinkedMappingIDs are the entity_integration_mapping rows archived by this run. Empty unless
-	// every record above fully synced and every mapped connection could be resolved — a cancelled
-	// subscription's mapping stays published on any failure so the next attempt (this activity's own
-	// Temporal retry, or a future catch-up mechanism) can still find and retry it.
+	// The marketplace mappings archived by this run. Empty unless every record above synced and every
+	// mapped connection resolved: the mappings stay published on any failure so the reporting cron can
+	// still find the outstanding records.
 	DelinkedMappingIDs []string `json:"delinked_mapping_ids,omitempty"`
 }

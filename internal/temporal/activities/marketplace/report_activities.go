@@ -56,7 +56,7 @@ func (a *ReportActivities) MarketplaceUsageReportActivity(
 	for _, providerType := range marketplaceProviderTypes {
 		conns, err := a.connectionRepo.ListPublishedByProvider(ctx, providerType)
 		if err != nil {
-			a.logger.Error(ctx, "marketplace usage report failed", "marketplace", providerType, "error", err, "stage", "list_connections")
+			a.logger.Error(ctx, "marketplace usage report: failed to list marketplace connections", "marketplace", providerType, "error", err, "stage", "list_connections")
 			continue
 		}
 		for _, conn := range conns {
@@ -100,7 +100,7 @@ func (a *ReportActivities) reportForTenant(
 
 	records, err := a.usageRecordRepo.ListUnsynced(ctx, tenantID, environmentID)
 	if err != nil {
-		a.logger.Error(ctx, "marketplace usage report failed",
+		a.logger.Error(ctx, "marketplace usage report: failed to list unsynced usage records",
 			"tenant_id", tenantID, "environment_id", environmentID, "error", err, "stage", "list_unsynced")
 		return
 	}
@@ -130,14 +130,14 @@ func (a *ReportActivities) reportRecord(
 	environmentID := types.GetEnvironmentID(ctx)
 	for _, connectionID := range reportedConnIDs {
 		entry := rec.Syncs[connectionID]
-		a.logger.Info(ctx, "marketplace usage record synced",
+		a.logger.Info(ctx, "marketplace usage report: usage record synced",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", connectionID,
 			"marketplace", entry.Marketplace, "reporting_id", entry.ReportingID)
 	}
 
 	if err := a.usageRecordRepo.MarkSynced(ctx, rec.ID, rec.Syncs, rec.Synced); err != nil {
-		a.logger.Error(ctx, "marketplace usage report failed",
+		a.logger.Error(ctx, "marketplace usage report: failed to record usage sync state",
 			"tenant_id", tenantID, "environment_id", environmentID,
 			"subscription_id", rec.SubscriptionID, "usage_record_id", rec.ID, "error", err, "stage", "mark_synced")
 		rec.Synced = false

@@ -94,7 +94,7 @@ func (a *SnapshotActivities) MarketplaceUsageSnapshotActivity(
 	for _, providerType := range marketplaceProviderTypes {
 		conns, err := a.connectionRepo.ListPublishedByProvider(ctx, providerType)
 		if err != nil {
-			a.logger.Error(ctx, "marketplace usage snapshot failed", "provider_type", providerType, "error", err, "stage", "list_connections")
+			a.logger.Error(ctx, "marketplace usage snapshot: failed to list marketplace connections", "provider_type", providerType, "error", err, "stage", "list_connections")
 			continue
 		}
 
@@ -133,7 +133,7 @@ func (a *SnapshotActivities) processConnection(
 		ProviderTypes: []string{providerType},
 	})
 	if err != nil {
-		a.logger.Error(ctx, "marketplace usage snapshot failed",
+		a.logger.Error(ctx, "marketplace usage snapshot: failed to list customer mappings",
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "list_customer_mappings")
 		return
 	}
@@ -151,7 +151,7 @@ func (a *SnapshotActivities) processConnection(
 		ProviderTypes: []string{providerType},
 	})
 	if err != nil {
-		a.logger.Error(ctx, "marketplace usage snapshot failed",
+		a.logger.Error(ctx, "marketplace usage snapshot: failed to list subscription mappings",
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "list_subscription_mappings")
 		return
 	}
@@ -172,7 +172,7 @@ func (a *SnapshotActivities) snapshotSubscription(
 	// CalculateMeterUsageCharges iterates sub.LineItems to drive its per-line-item recalculation
 	sub, _, err := a.subscriptionRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
-		a.logger.Error(ctx, "marketplace usage snapshot failed",
+		a.logger.Error(ctx, "marketplace usage snapshot: failed to load subscription",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", subscriptionID,
 			"period_start", input.PeriodStart, "period_end", input.PeriodEnd, "error", err, "stage", "get_subscription")
 		run.result.AppendFailedSubscriptionID(subscriptionID)
@@ -201,7 +201,7 @@ func (a *SnapshotActivities) snapshotSubscription(
 	// re-inserting it — this is what makes the activity safe to retry.
 	alreadyExists, err := a.usageRecordRepo.ExistsForPeriod(ctx, sub.ID, input.PeriodStart, input.PeriodEnd)
 	if err != nil {
-		a.logger.Error(ctx, "marketplace usage snapshot failed",
+		a.logger.Error(ctx, "marketplace usage snapshot: failed to check for an existing usage record",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", sub.ID, "customer_id", sub.CustomerID,
 			"period_start", input.PeriodStart, "period_end", input.PeriodEnd, "error", err, "stage", "check_existing")
 		run.result.AppendFailedSubscriptionID(sub.ID)
@@ -219,7 +219,7 @@ func (a *SnapshotActivities) snapshotSubscription(
 		Source:         string(types.UsageSourceInvoiceCreation),
 	})
 	if err != nil {
-		a.logger.Error(ctx, "marketplace usage snapshot failed",
+		a.logger.Error(ctx, "marketplace usage snapshot: failed to compute meter usage",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", sub.ID, "customer_id", sub.CustomerID,
 			"period_start", input.PeriodStart, "period_end", input.PeriodEnd, "error", err, "stage", "get_meter_usage")
 		run.result.AppendFailedSubscriptionID(sub.ID)
@@ -230,7 +230,7 @@ func (a *SnapshotActivities) snapshotSubscription(
 		ctx, sub, usageResp, input.PeriodStart, input.PeriodEnd, types.UsageSourceInvoiceCreation,
 	)
 	if err != nil {
-		a.logger.Error(ctx, "marketplace usage snapshot failed",
+		a.logger.Error(ctx, "marketplace usage snapshot: failed to calculate charges",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", sub.ID, "customer_id", sub.CustomerID,
 			"period_start", input.PeriodStart, "period_end", input.PeriodEnd, "error", err, "stage", "calculate_charges")
 		run.result.AppendFailedSubscriptionID(sub.ID)
@@ -269,7 +269,7 @@ func (a *SnapshotActivities) snapshotSubscription(
 			run.result.AppendSucceededSubscriptionID(sub.ID)
 			return
 		}
-		a.logger.Error(ctx, "marketplace usage snapshot failed",
+		a.logger.Error(ctx, "marketplace usage snapshot: failed to create usage record",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", sub.ID, "customer_id", sub.CustomerID,
 			"period_start", input.PeriodStart, "period_end", input.PeriodEnd, "error", err, "stage", "create_usage_record")
 		run.result.AppendFailedSubscriptionID(sub.ID)

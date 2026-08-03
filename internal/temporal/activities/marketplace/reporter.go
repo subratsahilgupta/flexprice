@@ -247,12 +247,12 @@ func (r *marketplaceReporter) prepareConnection(ctx context.Context, conn *conne
 // decided in reportAzureRecord.
 func (r *marketplaceReporter) isEligibleForReport(ctx context.Context, rec *usagerecord.UsageRecord) bool {
 	if !types.IsMatchingCurrency(rec.Currency, marketplaceReportingCurrency) {
-		r.logger.Debug(ctx, "skipping marketplace usage record, currency not usd",
+		r.logger.Debug(ctx, "marketplace usage report: skipping usage record, currency is not usd",
 			"subscription_id", rec.SubscriptionID, "usage_record_id", rec.ID, "currency", rec.Currency)
 		return false
 	}
 	if rec.Amount.IsNegative() {
-		r.logger.Error(ctx, "marketplace usage record has negative amount",
+		r.logger.Error(ctx, "marketplace usage report: skipping usage record, amount is negative",
 			"subscription_id", rec.SubscriptionID, "usage_record_id", rec.ID, "amount", rec.Amount,
 			"error", "negative_amount")
 		return false
@@ -272,7 +272,7 @@ func (r *marketplaceReporter) authAWSConnection(ctx context.Context, conn *conne
 
 	if conn.EncryptedSecretData.AWSMarketplace == nil {
 		err := ierr.NewError("connection has no aws_marketplace secret data").Mark(ierr.ErrValidation)
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to read connection configuration", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "read_connection")
 		return awssdk.Credentials{}, "", nil, err
 	}
@@ -281,7 +281,7 @@ func (r *marketplaceReporter) authAWSConnection(ctx context.Context, conn *conne
 	// same home as S3's bucket/region); it selects the AWS Marketplace Metering endpoint and is required.
 	if conn.SyncConfig == nil || conn.SyncConfig.AWSMarketplace == nil || conn.SyncConfig.AWSMarketplace.Region == "" {
 		err := ierr.NewError("connection has no region in sync_config").Mark(ierr.ErrValidation)
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to read connection configuration", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "read_connection")
 		return awssdk.Credentials{}, "", nil, err
 	}
@@ -289,20 +289,20 @@ func (r *marketplaceReporter) authAWSConnection(ctx context.Context, conn *conne
 
 	roleArn, err := r.encryptionService.Decrypt(conn.EncryptedSecretData.AWSMarketplace.RoleArn)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to decrypt aws role arn", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "decrypt_role_arn")
 		return awssdk.Credentials{}, "", nil, err
 	}
 	externalID, err := r.encryptionService.Decrypt(conn.EncryptedSecretData.AWSMarketplace.ExternalID)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to decrypt aws external id", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "decrypt_external_id")
 		return awssdk.Credentials{}, "", nil, err
 	}
 
 	mappings, err := r.loadAWSMappings(ctx)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to load entity mappings", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "load_mappings")
 		return awssdk.Credentials{}, "", nil, err
 	}
@@ -315,7 +315,7 @@ func (r *marketplaceReporter) authAWSConnection(ctx context.Context, conn *conne
 	creds, err := r.awsClient.AssumeRole(ctx, roleArn, externalID, time.Hour)
 	if err != nil {
 		// err is already redacted of the role ARN and external ID by AssumeRole.
-		r.logger.Error(ctx, "marketplace usage report failed",
+		r.logger.Error(ctx, "marketplace usage report: failed to assume the tenant's aws role",
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID,
 			"region", region,
 			"error", err, "stage", "assume_role")
@@ -336,7 +336,7 @@ func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerec
 	customerAWSAccountID := mappings.awsAccountByCustomer[rec.CustomerID]
 	plan, planFound := mappings.plan[rec.PlanID]
 	if licenseArn == "" || customerAWSAccountID == "" || !planFound || plan.dimension == "" {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to resolve the record's marketplace identifiers", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "customer_id", rec.CustomerID, "plan_id", rec.PlanID, "connection_id", preparedConn.conn.ID,
 			"error", "missing license_arn, customer_aws_account_id, or plan dimension mapping", "stage", "resolve_record")
@@ -355,7 +355,7 @@ func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerec
 	// AWS's job: it bills quantity x the dimension's rate.
 	quantity := types.ToSmallestUnit(rec.Amount, marketplaceReportingCurrency)
 	if quantity > math.MaxInt32 {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to convert amount to an aws quantity", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "amount", rec.Amount, "currency", rec.Currency, "quantity", quantity,
 			"error", "quantity exceeds the maximum aws accepts", "stage", "convert_quantity")
@@ -372,7 +372,7 @@ func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerec
 		Timestamp: rec.PeriodEnd,
 	})
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: aws batch meter usage call failed", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "license_arn", licenseArn, "dimension", plan.dimension, "amount", rec.Amount,
 			"error", err, "stage", "batch_meter_usage")
@@ -380,7 +380,7 @@ func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerec
 	}
 	if res == nil {
 		// AWS returned the record as unprocessed; leaving it unsynced retries it next run.
-		r.logger.Info(ctx, "marketplace usage record not processed by aws, will retry next run", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Info(ctx, "marketplace usage report: aws did not process the usage record, will retry next run", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "license_arn", licenseArn, "dimension", plan.dimension, "amount", rec.Amount)
 		return types.UsageRecordSyncEntry{}, false
@@ -396,7 +396,7 @@ func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerec
 		// The buyer has no active agreement for this product, or their AWS account was suspended.
 		// Resolves itself once the buyer (re)subscribes, so it keeps retrying rather than needing
 		// manual action.
-		r.logger.Error(ctx, "marketplace usage report rejected by aws: customer not subscribed, will retry next run", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: aws rejected the usage record, customer not subscribed, will retry next run", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "customer_id", rec.CustomerID, "license_arn", licenseArn,
 			"dimension", plan.dimension, "amount", rec.Amount, "error", "customer_not_subscribed")
@@ -405,13 +405,13 @@ func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerec
 		// NOT "AWS already has this exact record, safe to skip" — AWS has a DIFFERENT record for the
 		// same customer+dimension+timestamp already on file, and rejected this one. Retrying with the
 		// same amount hits the same rejection every time; this needs a human to fix the mismatch.
-		r.logger.Error(ctx, "marketplace usage report rejected by aws: conflicts with a different record already on file, needs manual investigation", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: aws rejected the usage record, it conflicts with a different record already on file, needs manual investigation", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "customer_id", rec.CustomerID, "license_arn", licenseArn,
 			"dimension", plan.dimension, "amount", rec.Amount, "period_end", rec.PeriodEnd, "error", "duplicate_record")
 		return types.UsageRecordSyncEntry{}, false
 	default:
-		r.logger.Error(ctx, "marketplace usage report rejected by aws: unrecognized status, will retry next run", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: aws returned an unrecognized status, will retry next run", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "license_arn", licenseArn, "dimension", plan.dimension, "amount", rec.Amount,
 			"aws_status", res.Status, "error", "unrecognized_aws_status")
@@ -490,21 +490,21 @@ func (r *marketplaceReporter) authGCPConnection(ctx context.Context, conn *conne
 
 	if conn.EncryptedSecretData.GCPMarketplace == nil {
 		err := ierr.NewError("connection has no gcp_marketplace secret data").Mark(ierr.ErrValidation)
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to read connection configuration", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "read_connection")
 		return nil, nil, err
 	}
 
 	credentialsJSON, err := r.encryptionService.Decrypt(conn.EncryptedSecretData.GCPMarketplace.CredentialsJSON)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to decrypt gcp credentials", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "decrypt_credentials_json")
 		return nil, nil, err
 	}
 
 	mappings, err := r.loadGCPMappings(ctx)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to load entity mappings", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "load_mappings")
 		return nil, nil, err
 	}
@@ -513,7 +513,7 @@ func (r *marketplaceReporter) authGCPConnection(ctx context.Context, conn *conne
 	// connection reports, mirroring the single AssumeRole-per-connection pattern on the AWS path.
 	svc, err := r.gcpClient.WifSession(ctx, credentialsJSON)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to establish the gcp workload identity session", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "wif_session")
 		return nil, nil, err
 	}
@@ -531,7 +531,7 @@ func (r *marketplaceReporter) reportGCPRecord(ctx context.Context, rec *usagerec
 	consumerID := mappings.usageReportingIDBySubscription[rec.SubscriptionID]
 	plan, planFound := mappings.plan[rec.PlanID]
 	if consumerID == "" || !planFound || plan.serviceName == "" || plan.metricName == "" {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to resolve the record's marketplace identifiers", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "customer_id", rec.CustomerID, "plan_id", rec.PlanID, "connection_id", preparedConn.conn.ID,
 			"error", "missing usage_reporting_id or plan service_name/metric_name mapping", "stage", "resolve_record")
@@ -553,7 +553,7 @@ func (r *marketplaceReporter) reportGCPRecord(ctx context.Context, rec *usagerec
 		EndTime:     rec.PeriodEnd,
 	})
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: gcp services report call failed", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "error", err, "stage", "services_report")
 		return types.UsageRecordSyncEntry{}, false
@@ -562,7 +562,7 @@ func (r *marketplaceReporter) reportGCPRecord(ctx context.Context, rec *usagerec
 	// HTTP 200 is not the same as accepted — reportErrors must be checked. Common codes:
 	// 5=NOT_FOUND (consumer inactive), 7=PERMISSION_DENIED, 3=INVALID_ARGUMENT.
 	if !reportResult.Accepted {
-		r.logger.Error(ctx, "marketplace usage report rejected by gcp, will retry next run", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: gcp rejected the usage record, will retry next run", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "error", "rejected_by_gcp", "error_code", reportResult.ErrorCode,
 			"error_message", reportResult.ErrorMessage)
@@ -629,33 +629,33 @@ func (r *marketplaceReporter) authAzureConnection(ctx context.Context, conn *con
 
 	if conn.EncryptedSecretData.AzureMarketplace == nil {
 		err := ierr.NewError("connection has no azure_marketplace secret data").Mark(ierr.ErrValidation)
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to read connection configuration", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "read_connection")
 		return azuremarketplace.Token{}, nil, err
 	}
 
 	azureTenantID, err := r.encryptionService.Decrypt(conn.EncryptedSecretData.AzureMarketplace.TenantID)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to decrypt azure tenant id", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "decrypt_tenant_id")
 		return azuremarketplace.Token{}, nil, err
 	}
 	clientID, err := r.encryptionService.Decrypt(conn.EncryptedSecretData.AzureMarketplace.ClientID)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to decrypt azure client id", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "decrypt_client_id")
 		return azuremarketplace.Token{}, nil, err
 	}
 	clientSecret, err := r.encryptionService.Decrypt(conn.EncryptedSecretData.AzureMarketplace.ClientSecret)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to decrypt azure client secret", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "decrypt_client_secret")
 		return azuremarketplace.Token{}, nil, err
 	}
 
 	mappings, err := r.loadAzureMappings(ctx)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to load entity mappings", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "load_mappings")
 		return azuremarketplace.Token{}, nil, err
 	}
@@ -664,7 +664,7 @@ func (r *marketplaceReporter) authAzureConnection(ctx context.Context, conn *con
 	// connection reports, mirroring the AssumeRole/WifSession pattern on the AWS/GCP paths.
 	token, err := r.azureClient.GetToken(ctx, azureTenantID, clientID, clientSecret)
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to obtain an azure access token", "marketplace", conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "connection_id", conn.ID, "error", err, "stage", "get_token")
 		return azuremarketplace.Token{}, nil, err
 	}
@@ -684,7 +684,7 @@ func (r *marketplaceReporter) reportAzureRecord(ctx context.Context, rec *usager
 	resourceID := mappings.resourceIDBySubscription[rec.SubscriptionID]
 	plan, planFound := mappings.plan[rec.PlanID]
 	if resourceID == "" || !planFound || plan.planID == "" || plan.dimension == "" {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to resolve the record's marketplace identifiers", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "customer_id", rec.CustomerID, "plan_id", rec.PlanID, "connection_id", preparedConn.conn.ID,
 			"error", "missing resource_id or plan plan_id/dimension mapping", "stage", "resolve_record")
@@ -698,7 +698,7 @@ func (r *marketplaceReporter) reportAzureRecord(ctx context.Context, rec *usager
 	// Skip on cents, not rec.Amount: a positive sub-cent amount rounds to zero cents and Azure
 	// rejects a zero quantity. Negatives are already filtered upstream (isEligibleForReport).
 	if cents == 0 {
-		r.logger.Info(ctx, "marketplace usage record skipped: zero quantity not supported by azure", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Info(ctx, "marketplace usage report: skipping usage record for azure, it does not accept a zero quantity", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "amount", rec.Amount)
 		return types.UsageRecordSyncEntry{
@@ -725,7 +725,7 @@ func (r *marketplaceReporter) reportAzureRecord(ctx context.Context, rec *usager
 	// error here, rejection or transient failure alike, is left unsynced and retried next run, never
 	// resolved by inference.
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: azure usage event call failed", "marketplace", preparedConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "resource_id", resourceID, "dimension", plan.dimension, "amount", rec.Amount,
 			"error", err, "stage", "usage_event")
