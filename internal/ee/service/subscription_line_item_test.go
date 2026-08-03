@@ -34,10 +34,7 @@ func TestSubscriptionLineItemService(t *testing.T) {
 	suite.Run(t, new(SubscriptionLineItemServiceSuite))
 }
 
-// TestValidateLineItemEndDateChange covers the three-way decision for backdating
-// a line item whose EndDate is already set: recurring line items may move their
-// EndDate to any date strictly before the current one; one-time line items, and
-// any date on or after the current EndDate, remain blocked.
+// TestValidateLineItemEndDateChange covers backdating an already-set EndDate: allowed before it, blocked on/after it or for one-time line items.
 func TestValidateLineItemEndDateChange(t *testing.T) {
 	base := time.Date(2024, 1, 5, 0, 0, 0, 0, time.UTC)
 	before := base.Add(-48 * time.Hour)
@@ -283,9 +280,7 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 	s.Equal(effectiveFrom.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix())
 }
 
-// TestDeleteSubscriptionLineItem_EffectiveFromBackdated_Allowed verifies that a
-// recurring line item whose EndDate is already set can have that EndDate moved
-// earlier (backdated).
+// TestDeleteSubscriptionLineItem_EffectiveFromBackdated_Allowed verifies a recurring line item's already-set EndDate can be moved earlier.
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromBackdated_Allowed() {
 	ctx := s.GetContext()
 
@@ -309,8 +304,7 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 	s.Equal(newEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix())
 }
 
-// TestDeleteSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked verifies
-// the out-of-scope "extend forward" case remains blocked.
+// TestDeleteSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked verifies the out-of-scope "extend forward" case stays blocked.
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked() {
 	ctx := s.GetContext()
 
@@ -333,8 +327,7 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 	s.Equal(existingEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix(), "end date must remain unchanged")
 }
 
-// TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked verifies
-// a no-op request (new date == current EndDate) is rejected with a distinct message.
+// TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked verifies a no-op request gets a distinct error message.
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked() {
 	ctx := s.GetContext()
 
@@ -353,9 +346,7 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 	s.Contains(err.Error(), "matches the current end date")
 }
 
-// TestDeleteSubscriptionLineItem_OnetimeExcludedFromBackdate verifies one-time line
-// items never get the new backdate behavior, even for a date that would otherwise
-// be allowed on a recurring line item.
+// TestDeleteSubscriptionLineItem_OnetimeExcludedFromBackdate verifies one-time line items never get the new backdate behavior.
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_OnetimeExcludedFromBackdate() {
 	ctx := s.GetContext()
 
@@ -394,7 +385,7 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Onetim
 	}
 	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, onetimeItem))
 
-	// Before existingEndDate — would be allowed for a recurring line item.
+	// before existingEndDate: would be allowed for a recurring line item
 	newEndDate := s.testData.lineItem.StartDate.Add(3 * 24 * time.Hour)
 
 	req := dto.DeleteSubscriptionLineItemRequest{
@@ -406,10 +397,8 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Onetim
 	s.Contains(err.Error(), "already terminated")
 }
 
-// TestDeleteSubscriptionLineItem_BackdateSkipsProrationCredit documents the known
-// limitation: the existing onetime-skip heuristic in line_item_proration.go keys
-// off EndDate being non-zero, so a backdate on an already-terminated recurring
-// line item does not currently produce a proration credit for the shortened gap.
+// TestDeleteSubscriptionLineItem_BackdateSkipsProrationCredit documents a known limitation: the
+// proration onetime-skip heuristic keys off EndDate being non-zero, so a backdate produces no credit.
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_BackdateSkipsProrationCredit() {
 	ctx := s.GetContext()
 
@@ -477,10 +466,8 @@ func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_Effect
 	s.Equal(effectiveFrom.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
 }
 
-// TestUpdateSubscriptionLineItem_BackdateAlreadyTerminated_Allowed verifies that
-// editing a line item whose EndDate is already set, effective from a date before
-// that EndDate, moves the old EndDate back and creates a new line item that fills
-// exactly the freed-up gap (StartDate == new effective date, EndDate == old EndDate).
+// TestUpdateSubscriptionLineItem_BackdateAlreadyTerminated_Allowed verifies the new line item
+// fills exactly the freed-up gap (StartDate == new effective date, EndDate == old EndDate).
 func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_BackdateAlreadyTerminated_Allowed() {
 	ctx := s.GetContext()
 
@@ -509,8 +496,7 @@ func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_Backda
 	s.Equal(newEffectiveFrom.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
 }
 
-// TestUpdateSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked verifies
-// the out-of-scope "extend forward" case remains blocked.
+// TestUpdateSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked verifies the out-of-scope "extend forward" case stays blocked.
 func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromAfterExistingEndDate_Blocked() {
 	ctx := s.GetContext()
 
@@ -535,8 +521,7 @@ func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_Effect
 	s.Equal(oldEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix(), "end date must remain unchanged")
 }
 
-// TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked verifies
-// a no-op request (new date == current EndDate) is rejected with a distinct message.
+// TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked verifies a no-op request gets a distinct error message.
 func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked() {
 	ctx := s.GetContext()
 
