@@ -28,19 +28,21 @@ Every platform researched (Stripe, Orb, Metronome, Lago) treats "draft = mutable
 - Removing a previously ad-hoc-applied coupon.
 - Applying a tax rate to a draft invoice, as an ad-hoc, invoice-scoped action.
 - Removing a previously ad-hoc-applied tax.
-- Locking a draft invoice out of automatic/explicit recompute once it has been manually edited.
+- Locking a draft invoice's **line items** out of automatic/explicit recompute once they've been manually added, edited, or removed.
+- Making coupon/tax recompute additive-aware, so ad-hoc coupon/tax applications survive a `ComputeInvoice` run without needing a lock.
 
 **Out of scope:**
 - Editing finalized, voided, or skipped invoices (existing status guards are unchanged).
 - Any preview/dry-run mode for these edits — direct execution only, matching every platform researched.
 - A dedicated audit trail table (existing structured logging is sufficient for v1).
-- An "unlock" / force-recompute escape hatch for a manually-edited invoice — `void` → `RecalculateInvoice` (creates a replacement invoice) remains the only way back to a fully system-computed state.
-- Any change to how coupons/taxes resolve for invoices that have **not** been manually edited (standing subscription-level `CouponAssociation`/`TaxAssociation` + compute-time resolution is untouched).
+- An "unlock" / force-recompute escape hatch for a line-item-locked invoice — `void` → `RecalculateInvoice` (creates a replacement invoice) remains the only way back to a fully system-computed state.
+- Any change to how coupons/taxes resolve for invoices that have **not** had an ad-hoc coupon/tax applied (standing subscription-level `CouponAssociation`/`TaxAssociation` + compute-time resolution is untouched).
 - Editing quantity/amount recalculating each other automatically (each is an independent override).
+- Suppressing a *standing subscription-level* coupon/tax association going forward. Removing an ad-hoc `CouponApplication`/`TaxApplied` record only deletes that record — if a subscription-level `CouponAssociation`/`TaxAssociation` independently resolves to the same coupon/tax, it can still reapply on the next compute. See Known limitations.
 
 ## Data model changes
 
-- `Invoice`: add `has_manual_edits bool` (default `false`). This is the single interaction point with the existing compute pipeline.
+- `Invoice`: add `has_manual_edits bool` (default `false`). Set only by line-item mutations (add/edit/remove); coupon/tax ad-hoc mutations do **not** set it. This is the single interaction point with the existing compute pipeline.
 - `InvoiceLineItem`: remove `Immutable()` from `display_name` so renames are possible. `amount`/`quantity` require no schema change — already mutable.
 - No new tables. `CouponApplication.coupon_association_id` and `TaxApplied.tax_association_id` are already nullable, and `TaxApplied` already has a generic `entity_type`/`entity_id` (already supporting `invoice`). Ad-hoc coupon/tax application creates these records directly, with the association field left `nil`, entirely reusing existing entities.
 - Line item removal reuses the existing `InvoiceRepo.RemoveLineItems` (sets `status = deleted`) — no new soft-delete mechanism.
@@ -59,15 +61,19 @@ All endpoints below: draft-only (`invoice_status == DRAFT`, else reject), `write
 | `POST /invoices/:id/taxes` | Apply a tax rate ad hoc |
 | `DELETE /invoices/:id/taxes/:tax_applied_id` | Remove an ad-hoc tax application |
 
-Every mutation is one transaction: validate draft status → apply the change → recalculate `subtotal`/`total`/`total_tax`/`total_discount`/`amount_due` from the full current set of line items + applied coupons/taxes → set `has_manual_edits = true` if not already set → persist.
+Every mutation is one transaction: validate draft status → apply the change → recalculate `subtotal`/`total`/`total_tax`/`total_discount`/`amount_due` from the full current set of line items + applied coupons/taxes → persist. The three line-item endpoints additionally set `has_manual_edits = true` if not already set; the four coupon/tax endpoints do not touch that flag.
 
 ## Recompute lock behavior
 
-`has_manual_edits` is checked, and short-circuits with an info-level log (no error), at the top of:
-- `ComputeInvoice` (`internal/ee/service/invoice.go:408`) — covers the explicit `POST /invoices/:id/compute` API call, the once-per-period-rollover call from `ProcessInvoiceWorkflow`, and every invocation from the daily `DailyDraftAndComputeActivity` schedule.
-- `RecalculateInvoiceV2` (`internal/ee/service/invoice.go:3253`) — covers the explicit `POST /invoices/:id/recalculate-v2` call.
+`has_manual_edits` — set only by a line-item add/edit/remove — is checked, and short-circuits with an info-level log (no error), at the top of:
+- `ComputeInvoice` (`internal/ee/service/invoice.go:408`) — covers the explicit `POST /invoices/:id/compute` API call, the once-per-period-rollover call from `ProcessInvoiceWorkflow`, and every invocation from the daily `DailyDraftAndComputeActivity` schedule. This is what stops `reconcileLineItems` from re-deriving line items from usage over a manual edit.
+- `RecalculateInvoiceV2` (`internal/ee/service/invoice.go:3253`) — covers the explicit `POST /invoices/:id/recalculate-v2` call, for the same reason.
 
 Both become permanent no-ops for that invoice once locked. There is no unlock path in v1 (see Scope).
+
+**Finalize is deliberately not gated by this lock.** `performFinalizeInvoiceActions` never re-derives line items — it only applies prepaid credits (additive against whatever the current line-item amounts are) and resolves/applies taxes (see below) against the current subtotal. Once coupon/tax application is made additive-aware, finalize's existing behavior is already correct on top of a manually-edited invoice without any special-casing: it finalizes using whatever state the invoice is actually in.
+
+**Coupon/tax additive-awareness (required change to existing code, not just new code).** `applyCouponsToInvoice` and `applyTaxesToInvoice`/`ApplyTaxesOnInvoice` (`internal/ee/service/invoice.go` and `internal/ee/service/tax.go`), invoked both from `ComputeInvoice` (for invoices that are not line-item-locked) and from `performFinalizeInvoiceActions` (for every invoice), must be updated to fold in existing ad-hoc `CouponApplication`/`TaxApplied` records (`*_association_id = nil`, tied directly to the invoice) into `TotalDiscount`/`TotalTax` **in addition to** whatever subscription-level associations resolve that round, rather than overwriting those totals from subscription-resolved data alone. This is what lets an ad-hoc coupon/tax survive a `ComputeInvoice` run without needing to set `has_manual_edits`.
 
 ## Validation & guardrails
 
@@ -86,11 +92,17 @@ WHEN any edit endpoint (line item add/edit/remove, coupon add/remove, tax add/re
 **CR-02 — Atomic apply + recompute**
 WHEN any edit endpoint successfully applies its change, THE SYSTEM SHALL recalculate `subtotal`/`total`/`total_tax`/`total_discount`/`amount_due` from the current full set of line items and applied coupons/taxes, and persist both the edit and the recalculated totals within a single transaction.
 
-**CR-03 — Manual edit lock is set**
-WHEN any edit endpoint successfully applies a change to a draft invoice, THE SYSTEM SHALL set `has_manual_edits = true` on the invoice if not already set.
+**CR-03 — Manual edit lock is set only by line-item mutations**
+WHEN a line item is added, edited, or removed on a draft invoice, THE SYSTEM SHALL set `has_manual_edits = true` on the invoice if not already set. Applying or removing an ad-hoc coupon or tax SHALL NOT set this flag.
 
-**CR-04 — Recompute no-ops on locked invoices**
+**CR-04 — Recompute no-ops on line-item-locked invoices**
 WHEN `ComputeInvoice` or `RecalculateInvoiceV2` is invoked — by API call, Temporal workflow, or scheduled job — on an invoice with `has_manual_edits = true`, THE SYSTEM SHALL return success without altering any line item, coupon application, tax applied record, or total, and SHALL log the skip at info level with the invoice ID.
+
+**CR-04a — Finalize is unaffected by the lock**
+WHEN `FinalizeInvoice` is called on a draft invoice, regardless of `has_manual_edits`, THE SYSTEM SHALL proceed with its existing behavior (invoice numbering, prepaid credit application, tax resolution via CR-04b, status transition to `FINALIZED`) using the invoice's current line items and totals as-is — finalize never re-derives line items and is therefore never blocked by this lock.
+
+**CR-04b — Coupon/tax application is additive-aware**
+WHEN `applyCouponsToInvoice` or `applyTaxesToInvoice`/`ApplyTaxesOnInvoice` runs (from `ComputeInvoice` on a non-locked invoice, or from `FinalizeInvoice` on any invoice), THE SYSTEM SHALL include existing ad-hoc `CouponApplication`/`TaxApplied` records (association field `nil`) for that invoice in the resulting `TotalDiscount`/`TotalTax`, in addition to whatever subscription-level associations resolve that round — never overwriting their contribution.
 
 **CR-05 — Quantity/amount independence**
 WHEN a user edits a line item's `quantity`, THE SYSTEM SHALL NOT automatically recalculate that line item's `amount` from a unit price, or vice versa; each is an independently stored override.
@@ -136,5 +148,9 @@ These new endpoints are synchronous CRUD mutations, not event consumers or Tempo
 - Does NOT support editing finalized, voided, or skipped invoices.
 - Does NOT provide a preview/dry-run mode for any edit.
 - Does NOT persist a dedicated audit trail (structured logging only).
-- Does NOT provide a way to unlock a manually-edited invoice back into automatic recompute; void + recalculate is the only path back to a system-computed invoice.
-- Does NOT change coupon/tax resolution behavior for invoices that have never been manually edited.
+- Does NOT provide a way to unlock a line-item-locked invoice back into automatic recompute; void + recalculate is the only path back to a system-computed invoice.
+- Does NOT change coupon/tax resolution behavior for invoices that have never had an ad-hoc coupon/tax applied.
+
+## Known limitations (accepted for v1)
+
+- **Removing an ad-hoc coupon/tax does not suppress a standing subscription-level association resolving to the same coupon/tax.** `CR-10` deletes the ad-hoc `CouponApplication`/`TaxApplied` record; it does not create a "never apply this again" rule. If the customer's subscription independently carries a `CouponAssociation`/`TaxAssociation` that resolves to that same coupon/tax rate, a later `ComputeInvoice` run (on a non-line-item-locked invoice) or `FinalizeInvoice` can reapply it. This only affects *removal* of something that's also standing subscription config — adding an ad-hoc coupon/tax, and editing/adding/removing line items, are fully protected as specified above.
