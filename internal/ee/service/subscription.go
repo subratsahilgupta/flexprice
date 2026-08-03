@@ -4921,10 +4921,12 @@ func (s *subscriptionService) addAddonToSubscription(
 
 	addProrationKey := fmt.Sprintf("addon_add_%s_%d", addonAssociation.ID, effectiveDate.Unix())
 	if err := s.applyAddonAddProration(ctx, sub, lineItems, effectiveDate, req.ProrationBehavior, addProrationKey); err != nil {
-		s.Logger.Info(ctx, "failed to create proration invoice for addon add; addon was persisted successfully",
+		s.Logger.Error(ctx, "failed to create proration invoice for addon add; addon was persisted and is UNBILLED for this period",
 			"error", err,
 			"association_id", addonAssociation.ID,
+			"addon_id", req.AddonID,
 			"subscription_id", sub.ID,
+			"effective_date", effectiveDate,
 			"idempotency_key", addProrationKey,
 		)
 	}
@@ -5344,9 +5346,10 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 			association.ID, *effectiveEndDate,
 			req.ProrationBehavior, endReason,
 		); err != nil {
-			s.Logger.Info(ctx, "failed to issue proration credit for addon remove; removal was persisted successfully",
+			s.Logger.Error(ctx, "failed to issue proration credit for addon remove; removal was persisted and the credit is UNISSUED",
 				"error", err,
 				"association_id", association.ID,
+				"addon_id", association.AddonID,
 				"subscription_id", sub.ID,
 			)
 		}
@@ -6687,9 +6690,14 @@ func (s *subscriptionService) filterOverriddenEntitlements(
 	return finalEntitlements
 }
 
-// GetAggregatedSubscriptionEntitlements retrieves and aggregates all entitlements for a subscription
+// GetAggregatedSubscriptionEntitlementsForSubscription retrieves and aggregates all entitlements for a subscription
 // and returns them in a structured response format with aggregated features
-func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.Context, subscriptionID string, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error) {
+func (s *subscriptionService) GetAggregatedSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error) {
+	if sub == nil {
+		return nil, ierr.NewError("subscription is required").
+			WithHint("A subscription must be provided to resolve entitlements").
+			Mark(ierr.ErrValidation)
+	}
 	// Validate request if provided
 	if req != nil {
 		if err := req.Validate(); err != nil {
@@ -6700,14 +6708,8 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.
 		req = &dto.GetSubscriptionEntitlementsRequest{}
 	}
 
-	// Get the subscription
-	sub, err := s.SubRepo.Get(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-
 	// Get all entitlements for the subscription
-	entitlements, err := s.GetSubscriptionEntitlements(ctx, subscriptionID)
+	entitlements, err := s.GetSubscriptionEntitlementsForSubscription(ctx, sub)
 	if err != nil {
 		return nil, err
 	}
@@ -6727,26 +6729,48 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.
 	billingService := NewBillingService(s.ServiceParams)
 	aggregatedFeatures := billingService.AggregateEntitlements(&dto.AggregateEntitlementsParams{
 		Entitlements:   entitlements,
-		SubscriptionID: subscriptionID,
+		SubscriptionID: sub.ID,
 	})
 
 	// Ensure subscription ID is set in all sources
 	for _, feature := range aggregatedFeatures {
 		for _, source := range feature.Sources {
 			if source.SubscriptionID == "" {
-				source.SubscriptionID = subscriptionID
+				source.SubscriptionID = sub.ID
 			}
 		}
 	}
 
 	// Build final response
 	response := &dto.SubscriptionEntitlementsResponse{
-		SubscriptionID: subscriptionID,
+		SubscriptionID: sub.ID,
 		PlanID:         sub.PlanID,
 		Features:       aggregatedFeatures,
 	}
 
 	return response, nil
+}
+
+// GetAggregatedSubscriptionEntitlements retrieves and aggregates all entitlements for a subscription
+// and returns them in a structured response format with aggregated features
+func (s *subscriptionService) GetAggregatedSubscriptionEntitlements(ctx context.Context, subscriptionID string, req *dto.GetSubscriptionEntitlementsRequest) (*dto.SubscriptionEntitlementsResponse, error) {
+	// Validate request if provided
+	if req != nil {
+		if err := req.Validate(); err != nil {
+			return nil, err
+		}
+	} else {
+		// Initialize with empty request if none provided
+		req = &dto.GetSubscriptionEntitlementsRequest{}
+	}
+
+	// Get the subscription
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetAggregatedSubscriptionEntitlementsForSubscription(ctx, sub, req)
 }
 
 // ProcessSubscriptionEntitlementOverrides creates subscription-scoped entitlement overrides
@@ -7709,14 +7733,9 @@ func (s *subscriptionService) createInheritedSubscriptions(ctx context.Context, 
 	return nil
 }
 
-// createGroupedInvoicingChildren creates each child spec as a brand-new grouped_invoicing
-// subscription under parent, inside the caller's existing transaction. Each child's own opening
-// invoice is suppressed (see the invoice-generation gate in createSubscriptionCore); its period-1
-// charges are folded into the parent's own opening invoice instead. Calls createSubscriptionCore
-// directly (not the public CreateSubscription): it must reuse the caller's already-open
-// transaction and must not fire the child's own post-transaction side effects (webhook,
-// HubSpot/Paddle sync) — only the parent's single post-tx block should run, once, after
-// everything commits.
+// createGroupedInvoicingChildren creates grouped_invoicing child subscriptions inside the caller's
+// transaction. Children suppress their own opening invoice (charges fold into the parent's);
+// post-tx side effects (webhooks, HubSpot/Paddle sync) run only from the parent's block.
 func (s *subscriptionService) createGroupedInvoicingChildren(
 	ctx context.Context,
 	parent *subscription.Subscription,
@@ -7724,15 +7743,25 @@ func (s *subscriptionService) createGroupedInvoicingChildren(
 ) error {
 	for _, c := range childRequests {
 		startDate := parent.StartDate
+
+		// BillingAnchor is only valid for anniversary billing; pass nil for calendar to avoid validation failure.
+		var billingAnchor *time.Time
+		if parent.BillingCycle == types.BillingCycleAnniversary {
+			anchor := parent.BillingAnchor
+			billingAnchor = &anchor
+		}
+
 		childReq := dto.CreateSubscriptionRequest{
-			ExternalCustomerID: c.ExternalCustomerID,
-			PlanID:             c.PlanID,
-			Currency:           parent.Currency,
-			StartDate:          &startDate,
-			BillingPeriod:      parent.BillingPeriod,
-			BillingPeriodCount: parent.BillingPeriodCount,
-			BillingCycle:       parent.BillingCycle,
-			SubscriptionType:   types.SubscriptionTypeGroupedInvoicing,
+			ExternalCustomerID:         c.ExternalCustomerID,
+			PlanID:                     c.PlanID,
+			Currency:                   parent.Currency,
+			StartDate:                  &startDate,
+			BillingPeriod:              parent.BillingPeriod,
+			BillingPeriodCount:         parent.BillingPeriodCount,
+			BillingCycle:               parent.BillingCycle,
+			BillingAnchor:              billingAnchor,
+			SubscriptionType:           types.SubscriptionTypeGroupedInvoicing,
+			SubscriptionCreationConfig: c.SubscriptionCreationConfig,
 			Inheritance: &dto.SubscriptionInheritanceConfig{
 				ParentSubscriptionID: parent.ID,
 			},
@@ -7984,14 +8013,8 @@ func (s *subscriptionService) processAutoInvoiceThresholdSubscription(
 	return nil
 }
 
-// runPaddleSubscriptionSync synchronously bootstraps a Paddle subscription for the given
-// subscription. It is called inline from CreateSubscription so the checkout URL is available
-// in the response without a round-trip through Temporal. All errors are soft-fail: the
-// subscription has already been persisted, so we only log and continue.
-//
-// On success, EnsureSubscriptionSynced persists paddle checkout metadata; it is copied back
-// onto the caller's sub so the create response includes paddle_checkout_url and
-// paddle_transaction_id.
+// runPaddleSubscriptionSync bootstraps Paddle inline (not via Temporal) so checkout metadata is
+// available in the create response. Errors are soft-fail — subscription is already persisted.
 func (s *subscriptionService) runPaddleSubscriptionSync(ctx context.Context, sub *subscription.Subscription) {
 	if s.IntegrationFactory == nil {
 		return
