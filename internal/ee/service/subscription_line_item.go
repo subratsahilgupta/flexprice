@@ -283,29 +283,17 @@ func (s *subscriptionService) applySubscriptionScopedLineItemDefaults(lineItem *
 	}
 }
 
-// validateLineItemEndDateChange allows moving an already-set EndDate earlier
-// (backdating). One-time line items are excluded: their EndDate reflects an
-// inherent lifespan, not a prior edit/termination, so it's never adjustable.
+// validateLineItemEndDateChange allows moving an already-set EndDate to any
+// date on or before the current EndDate (backdating). Moving it later, and
+// one-time line items — whose EndDate reflects an inherent lifespan, not a
+// prior edit/termination — are never allowed.
 func validateLineItemEndDateChange(lineItem *subscription.SubscriptionLineItem, newDate time.Time) error {
 	if lineItem.EndDate.IsZero() {
 		return nil
 	}
 
-	canBackdate := lineItem.BillingPeriod != types.BILLING_PERIOD_ONETIME
-
-	if canBackdate && newDate.Before(lineItem.EndDate) {
+	if lineItem.BillingPeriod != types.BILLING_PERIOD_ONETIME && !newDate.After(lineItem.EndDate) {
 		return nil
-	}
-
-	if canBackdate && newDate.Equal(lineItem.EndDate) {
-		return ierr.NewError("effective date matches the current end date").
-			WithHint("The line item's end date is already set to this date; there is nothing to change").
-			WithReportableDetails(map[string]interface{}{
-				"line_item_id": lineItem.ID,
-				"end_date":     lineItem.EndDate,
-				"new_date":     newDate,
-			}).
-			Mark(ierr.ErrValidation)
 	}
 
 	return ierr.NewError("line item is already terminated").
@@ -377,7 +365,7 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 	// Backdating an already-terminated line item leaves lineItemForProration.EndDate
 	// non-zero, which line_item_proration.go's onetime heuristic reads as "skip credit."
 	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations && !lineItemForProration.EndDate.IsZero() {
-		s.Logger.Info(ctx, "backdating already-terminated line item, no proration credit will be issued for the shortened gap",
+		s.Logger.Info(ctx, "line item's end date was already set; no proration adjustment will be made",
 			"line_item_id", lineItemID, "old_end_date", lineItemForProration.EndDate, "new_end_date", effectiveFrom)
 	}
 

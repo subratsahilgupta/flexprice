@@ -34,7 +34,7 @@ func TestSubscriptionLineItemService(t *testing.T) {
 	suite.Run(t, new(SubscriptionLineItemServiceSuite))
 }
 
-// TestValidateLineItemEndDateChange covers backdating an already-set EndDate: allowed before it, blocked on/after it or for one-time line items.
+// TestValidateLineItemEndDateChange covers backdating an already-set EndDate: allowed on/before it, blocked after it or for one-time line items.
 func TestValidateLineItemEndDateChange(t *testing.T) {
 	base := time.Date(2024, 1, 5, 0, 0, 0, 0, time.UTC)
 	before := base.Add(-48 * time.Hour)
@@ -63,12 +63,11 @@ func TestValidateLineItemEndDateChange(t *testing.T) {
 			wantErr:       false,
 		},
 		{
-			name:          "recurring - equal to existing end date - blocked",
+			name:          "recurring - equal to existing end date - allowed",
 			endDate:       base,
 			billingPeriod: types.BILLING_PERIOD_MONTHLY,
 			newDate:       base,
-			wantErr:       true,
-			wantErrSubstr: "matches the current end date",
+			wantErr:       false,
 		},
 		{
 			name:          "recurring - after existing end date - blocked",
@@ -327,8 +326,8 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 	s.Equal(existingEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix(), "end date must remain unchanged")
 }
 
-// TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked verifies a no-op request gets a distinct error message.
-func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked() {
+// TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Allowed verifies a no-op re-set to the same end date succeeds.
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Allowed() {
 	ctx := s.GetContext()
 
 	existingEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
@@ -341,9 +340,10 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 		EffectiveFrom: &newEndDate,
 	}
 
-	_, err := s.service.DeleteSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
-	s.Error(err)
-	s.Contains(err.Error(), "matches the current end date")
+	resp, err := s.service.DeleteSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
+	s.NoError(err)
+	s.NotNil(resp)
+	s.Equal(existingEndDate.Truncate(time.Second).Unix(), resp.SubscriptionLineItem.EndDate.Truncate(time.Second).Unix())
 }
 
 // TestDeleteSubscriptionLineItem_OnetimeExcludedFromBackdate verifies one-time line items never get the new backdate behavior.
@@ -521,8 +521,9 @@ func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_Effect
 	s.Equal(oldEndDate.Truncate(time.Second).Unix(), li.EndDate.Truncate(time.Second).Unix(), "end date must remain unchanged")
 }
 
-// TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked verifies a no-op request gets a distinct error message.
-func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Blocked() {
+// TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Allowed verifies an effective
+// date exactly at the current end date succeeds, producing a zero-duration replacement line item.
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromEqualsExistingEndDate_Allowed() {
 	ctx := s.GetContext()
 
 	oldEndDate := s.testData.lineItem.StartDate.Add(5 * 24 * time.Hour)
@@ -537,9 +538,11 @@ func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_Effect
 		EffectiveFrom: &newEffectiveFrom,
 	}
 
-	_, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
-	s.Error(err)
-	s.Contains(err.Error(), "matches the current end date")
+	resp, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, req)
+	s.NoError(err)
+	s.NotNil(resp)
+	s.Equal(oldEndDate.Truncate(time.Second).Unix(), resp.SubscriptionLineItem.StartDate.Truncate(time.Second).Unix())
+	s.Equal(oldEndDate.Truncate(time.Second).Unix(), resp.SubscriptionLineItem.EndDate.Truncate(time.Second).Unix())
 }
 
 func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_EffectiveFromWithoutCriticalField() {
