@@ -128,9 +128,8 @@ func (r *usageRecordRepository) ExistsForPeriod(ctx context.Context, subscriptio
 	return exists, nil
 }
 
-// submissionWindow bounds ListUnsynced to rows still within a marketplace's submission
-// window. None of AWS, GCP or Azure accept a report older than this, so an older row would only be
-// re-fetched and re-skipped forever (ERD FLE-1106 §5.2).
+// submissionWindow bounds ListUnsynced to rows a marketplace can still accept. None of AWS, GCP or
+// Azure take a report older than this, so an older row would be fetched and rejected on every run.
 const submissionWindow = 24 * time.Hour
 
 func (r *usageRecordRepository) ListUnsynced(ctx context.Context, tenantID, environmentID string) ([]*domainUsageRecord.UsageRecord, error) {
@@ -229,14 +228,16 @@ func (o UsageRecordQueryOptions) ApplyStatusFilter(query UsageRecordQuery, statu
 }
 
 func (o UsageRecordQueryOptions) ApplySortFilter(query UsageRecordQuery, field string, order string) UsageRecordQuery {
-	if field != "" {
-		if order == types.OrderDesc {
-			query = query.Order(ent.Desc(o.GetFieldName(field)))
-		} else {
-			query = query.Order(ent.Asc(o.GetFieldName(field)))
-		}
+	// Guard the resolved name rather than the caller's: an unknown column resolves to "", and ordering
+	// by "" attaches an error to the whole query instead of leaving it unsorted.
+	fieldName := o.GetFieldName(field)
+	if fieldName == "" {
+		return query
 	}
-	return query
+	if order == types.OrderDesc {
+		return query.Order(ent.Desc(fieldName))
+	}
+	return query.Order(ent.Asc(fieldName))
 }
 
 func (o UsageRecordQueryOptions) ApplyPaginationFilter(query UsageRecordQuery, limit int, offset int) UsageRecordQuery {
@@ -249,8 +250,8 @@ func (o UsageRecordQueryOptions) ApplyPaginationFilter(query UsageRecordQuery, l
 	return query
 }
 
-// GetFieldName returns the ent field name for usage_records; delegates to ent's ValidColumn so new
-// schema fields are supported automatically.
+// GetFieldName resolves a caller-supplied field to a usage_records column, returning "" if no such
+// column exists. Validation is delegated to the generated schema so new columns need no change here.
 func (o UsageRecordQueryOptions) GetFieldName(field string) string {
 	if usagerecord.ValidColumn(field) {
 		return field
@@ -298,6 +299,16 @@ func (o UsageRecordQueryOptions) applyEntityQueryOptions(_ context.Context, f *t
 	if f.Synced != nil {
 		query = query.Where(usagerecord.SyncedEQ(*f.Synced))
 	}
+	// Bounds when the row was written, not the usage window it covers: that is PeriodStart/PeriodEnd
+	// above, and range comparisons over it go through the DSL filters below.
+	if f.TimeRangeFilter != nil {
+		if f.StartTime != nil {
+			query = query.Where(usagerecord.CreatedAtGTE(*f.StartTime))
+		}
+		if f.EndTime != nil {
+			query = query.Where(usagerecord.CreatedAtLTE(*f.EndTime))
+		}
+	}
 
 	var err error
 	if f.Filters != nil {
@@ -327,8 +338,7 @@ func (o UsageRecordQueryOptions) applyEntityQueryOptions(_ context.Context, f *t
 	return query, nil
 }
 
-// List returns usage records matching filter. Entity-scoped queries (the cancellation flush's
-// frontier and backlog lookups) go through this rather than a bespoke method per query.
+// List returns the usage records matching filter.
 func (r *usageRecordRepository) List(ctx context.Context, filter *types.UsageRecordFilter) ([]*domainUsageRecord.UsageRecord, error) {
 	client := r.client.Reader(ctx)
 

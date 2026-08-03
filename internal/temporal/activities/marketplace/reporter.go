@@ -99,9 +99,8 @@ type azureConnectionMappings struct {
 	plan                     map[string]azurePlanMapping
 }
 
-// preparedConnection is a published marketplace connection that's been authenticated and had its
-// mappings loaded, ready to report records through. Exactly one provider's fields are set, matching
-// conn.ProviderType.
+// preparedConnection is an authenticated connection with its entity mappings loaded, ready to report
+// records through. Only the fields for conn.ProviderType are populated.
 type preparedConnection struct {
 	conn *connection.Connection
 
@@ -130,9 +129,8 @@ func (preparedConn *preparedConnection) isRelevantForSubscription(subscriptionID
 	return false
 }
 
-// relevantConnections returns the subset of preparedConns mapped to rec's subscription. Callers use
-// this both to decide whether there's anything to report and, after reporting, to read back which of
-// those connections' entries in rec.Syncs are real vs. skipped.
+// relevantConnections returns the connections mapped to the record's subscription — those it must
+// reach before it can be considered synced.
 func relevantConnections(rec *usagerecord.UsageRecord, preparedConns []*preparedConnection) []*preparedConnection {
 	var relevant []*preparedConnection
 	for _, preparedConn := range preparedConns {
@@ -143,17 +141,15 @@ func relevantConnections(rec *usagerecord.UsageRecord, preparedConns []*prepared
 	return relevant
 }
 
-// reportRecordToConnections reports rec to every one of relevantConns that doesn't already have a
-// sync entry. Shared by the scheduled report cron and the cancellation flush so the two can never
-// report the same situation differently — see the package doc on marketplaceReporter.
+// reportRecordToConnections reports rec to each of relevantConns that does not already hold a sync
+// entry, and sets rec.Synced once every one of them does.
 //
-// It sets rec.Synced and updates rec.Syncs in place but never persists: the cancellation flush
-// reports its final record before that record exists in the table, so persisting is the caller's
-// decision.
+// It updates rec in place but never persists it: the final flush record is reported before it exists
+// in the table, so storing the outcome is left to the caller.
 //
-// The returned connection ids are the ones that accepted a real post on this call — the caller looks
-// each one up in rec.Syncs to log it. Skips are excluded — one already logged itself where the skip
-// was decided, and calling it "synced" would claim something was posted when nothing was.
+// The returned connection ids are those that accepted the record on this call, for the caller to log;
+// the entry itself is on rec.Syncs. Skips are excluded — they are logged where the decision is made,
+// and reporting one as synced would claim something was sent when nothing was.
 func (r *marketplaceReporter) reportRecordToConnections(
 	ctx context.Context,
 	rec *usagerecord.UsageRecord,
@@ -164,8 +160,8 @@ func (r *marketplaceReporter) reportRecordToConnections(
 	}
 
 	for _, preparedConn := range relevantConns {
-		// A prior skip wrote an entry here too, so this correctly treats "already skipped" the same
-		// as "already reported" and never re-attempts it.
+		// A skip leaves an entry as well, so a connection that skipped this record is treated as
+		// resolved and never attempted again.
 		if _, alreadyReported := rec.Syncs[preparedConn.conn.ID]; alreadyReported {
 			continue
 		}
@@ -190,9 +186,9 @@ func (r *marketplaceReporter) reportRecordToConnections(
 		}
 	}
 
-	// rec.Synced: every relevant connection has an entry, skip or real — a skip is a permanent fact
-	// about the record (the amount doesn't change on retry), so requiring a real post here would
-	// re-attempt an Azure skip forever.
+	// Synced means every relevant connection is resolved, whether it accepted the record or skipped
+	// it. A skip is permanent — the amount will not change on a retry — so requiring an acceptance
+	// here would leave the record pending forever.
 	rec.Synced = true
 	for _, preparedConn := range relevantConns {
 		if _, alreadyReported := rec.Syncs[preparedConn.conn.ID]; !alreadyReported {
@@ -204,9 +200,9 @@ func (r *marketplaceReporter) reportRecordToConnections(
 	return reportedConnIDs
 }
 
-// anyRealEntry reports whether any of relevantConns has a real (non-skip) entry in rec.Syncs — the
-// caller uses this after reportRecordToConnections to tell "succeeded" apart from "skipped", since
-// both leave every relevant connection with an entry and rec.Synced true.
+// anyRealEntry reports whether any relevant connection actually accepted the record, as opposed to
+// every one of them skipping it. Both outcomes leave the record synced, so this is what separates a
+// record that reached a marketplace from one that never did.
 func anyRealEntry(rec *usagerecord.UsageRecord, relevantConns []*preparedConnection) bool {
 	for _, preparedConn := range relevantConns {
 		if entry, ok := rec.Syncs[preparedConn.conn.ID]; ok && !entry.Skipped {
@@ -216,10 +212,9 @@ func anyRealEntry(rec *usagerecord.UsageRecord, relevantConns []*preparedConnect
 	return false
 }
 
-// ReportActivities reports usage records that have not yet reached every marketplace connection
-// relevant to them. For every tenant/environment with a published marketplace connection (AWS, GCP
-// or Azure), it authenticates each connection once, reads that tenant's unsynced usage records once,
-// and reports each record to whichever relevant connections it hasn't already reached. A record a
+// prepareConnection authenticates one connection and loads its provider's entity mappings, returning
+// a handle ready to report records through. Called once per connection per run, before any record is
+// touched, so a failure here defers every record for that connection.
 func (r *marketplaceReporter) prepareConnection(ctx context.Context, conn *connection.Connection) (*preparedConnection, error) {
 	switch conn.ProviderType {
 	case types.SecretProviderAWSMarketplace:
@@ -250,6 +245,21 @@ func (r *marketplaceReporter) prepareConnection(ctx context.Context, conn *conne
 // produced a bad value, not a marketplace rejection, so it is left unsynced for investigation rather
 // than sent. A zero amount passes this check; whether it is reportable is provider-specific and is
 // decided in reportAzureRecord.
+func (r *marketplaceReporter) isEligibleForReport(ctx context.Context, rec *usagerecord.UsageRecord) bool {
+	if !types.IsMatchingCurrency(rec.Currency, marketplaceReportingCurrency) {
+		r.logger.Debug(ctx, "skipping marketplace usage record, currency not usd",
+			"subscription_id", rec.SubscriptionID, "usage_record_id", rec.ID, "currency", rec.Currency)
+		return false
+	}
+	if rec.Amount.IsNegative() {
+		r.logger.Error(ctx, "marketplace usage record has negative amount",
+			"subscription_id", rec.SubscriptionID, "usage_record_id", rec.ID, "amount", rec.Amount,
+			"error", "negative_amount")
+		return false
+	}
+	return true
+}
+
 // ---------------------------------------------------------------------------
 // AWS
 // ---------------------------------------------------------------------------

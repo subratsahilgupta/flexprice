@@ -20,26 +20,25 @@ import (
 )
 
 // reportTimestampSafetyMargin is subtracted from the final record's period_end when it is reported,
-// never when it is stored. GCP requires the reported timestamp to be strictly before its own recorded
-// cancellation instant, and CancelAt is exactly that instant (sub.CancelAt, never sub.CancelledAt —
-// see ERD FLE-1106 §3.8), so one second satisfies the strict "<" without materially under-billing.
-// Applied uniformly to all three providers rather than branched per provider.
+// never when it is stored. GCP requires the reported timestamp to be strictly earlier than the
+// cancellation instant it holds, and cancelAt is exactly that instant, so a second satisfies the
+// comparison without materially under-billing. Applied to every provider rather than branched.
 //
-// Storing the exact cancelAt also keeps lastComputedPeriodEnd's MAX(period_end) frontier equal to
-// cancelAt after a successful write, so a retry computes no leftover sliver window.
+// Storing the exact cancelAt keeps the computed-through frontier equal to it after a successful
+// write, so a retry finds nothing left to compute rather than a one-second sliver.
 const reportTimestampSafetyMargin = 1 * time.Second
 
-// backlogSubmissionWindow mirrors ListUnsynced's own bound (repository/ent/usagerecord.go) — none of
-// the three marketplaces accept a report older than this, so there's no reason to fetch it here either.
+// backlogSubmissionWindow bounds the backlog to rows a marketplace can still accept. None of the
+// three take a report older than this, so there is no point fetching one.
 const backlogSubmissionWindow = 24 * time.Hour
 
-// FlushActivities computes and reports a cancelled subscription's final marketplace usage. It is
-// started once per cancellation from CancelSubscription (post-commit, non-blocking) — not on a
-// schedule — because AWS and GCP only accept a final report within roughly an hour of cancellation,
-// far tighter than the ordinary 6h snapshot / 3h report cron cadence (ERD FLE-1106 §4).
+// FlushActivities computes and reports a cancelled subscription's final marketplace usage, then
+// archives its marketplace mappings. It runs once per cancellation rather than on a schedule because
+// AWS and GCP accept a final report for only about an hour after cancellation, far tighter than the
+// reporting crons' cadence.
 //
-// The per-provider mechanics live on the shared marketplaceReporter, the same instance the scheduled
-// reporting cron holds, so the two report paths can never drift out of sync with each other.
+// The per-provider mechanics live on the shared reporter, the same instance the reporting cron holds,
+// so the two report paths cannot drift apart.
 type FlushActivities struct {
 	subscriptionService          service.SubscriptionService
 	billingService               service.BillingService
@@ -52,10 +51,8 @@ type FlushActivities struct {
 	logger                       *logger.Logger
 }
 
-// NewFlushActivities takes ServiceParams rather than each repo individually (the pattern used by
-// NewInvoiceSyncActivities and friends) — every dependency below already lives on it. The reporter is
-// the same instance the scheduled reporting cron holds, so both report through identical per-provider
-// code and cannot drift apart.
+// NewFlushActivities builds the activity set. The reporter is constructed once at registration and
+// shared with the reporting cron.
 func NewFlushActivities(params service.ServiceParams, reporter *marketplaceReporter, log *logger.Logger) *FlushActivities {
 	return &FlushActivities{
 		subscriptionService:          service.NewSubscriptionService(params),
@@ -70,8 +67,8 @@ func NewFlushActivities(params service.ServiceParams, reporter *marketplaceRepor
 	}
 }
 
-// subscriptionMarketplaceMappings resolves the published marketplace mappings for a subscription,
-// scoped to the same three providers the snapshot/report crons iterate.
+// subscriptionMarketplaceMappings returns the subscription's published mappings for the marketplace
+// providers.
 func (a *FlushActivities) subscriptionMarketplaceMappings(ctx context.Context, subscriptionID string) ([]*entityintegrationmapping.EntityIntegrationMapping, error) {
 	providerTypes := make([]string, len(marketplaceProviderTypes))
 	for i, p := range marketplaceProviderTypes {
@@ -85,18 +82,15 @@ func (a *FlushActivities) subscriptionMarketplaceMappings(ctx context.Context, s
 	})
 }
 
-// MarketplaceSubscriptionFinalUsageFlushActivity reports the pre-existing backlog of unsynced records,
-// then computes, writes and reports the final usage window, then archives the subscription's
-// marketplace mapping(s). The backlog and the final record are two explicit, separately logged phases
-// — not merged into one query — so a reader of the logs always knows which one they're looking at.
+// MarketplaceSubscriptionFinalUsageFlushActivity reports the subscription's outstanding usage in two
+// phases — first the backlog of unsynced records, then the final window up to the cancellation — and
+// archives its marketplace mappings. The phases are kept separate, and logged separately, so a run's
+// logs say which one a line belongs to.
 //
-// The delink only runs once every record across both phases has fully synced and every mapped
-// connection could be resolved. On any failure the mapping stays published and nothing else is done
-// about it here — there is no dedicated retry for a failed flush today beyond this activity's own
-// Temporal retries (up to 5 attempts). Leaving the mapping published is what keeps the subscription's
-// backlog visible to the scheduled report cron, which will keep retrying it independently of this
-// activity; a purpose-built catch-up mechanism for a flush that exhausted its retries is a known gap,
-// not yet built.
+// Archiving only happens once every record in both phases has fully synced and every mapped
+// connection resolved. On any failure the mappings stay published: that is what keeps the
+// subscription's backlog visible to the reporting cron, which retries it independently of this
+// activity. Archiving early would strand whatever failed with no way to reach it again.
 func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	ctx context.Context,
 	input temporalModels.MarketplaceSubscriptionFinalUsageFlushActivityInput,
@@ -123,9 +117,8 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		return result, nil
 	}
 
-	// A connection that fails to resolve for one mapping must not stop the other mappings from being
-	// reported — but it does block delink below (via connectionResolutionFailed), since this provider
-	// was never actually attempted this run.
+	// One unresolvable connection must not stop the others from being reported, but it does block
+	// archiving below: that provider was never attempted, so nothing can be concluded about it.
 	preparedConns := make([]*preparedConnection, 0, len(subMappings))
 	connectionResolutionFailed := false
 	for _, m := range subMappings {
@@ -146,10 +139,9 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		preparedConns = append(preparedConns, prepared)
 	}
 
-	// Phase 1: report the backlog — every unsynced record the snapshot cron already wrote. Fetched
-	// before phase 2 creates anything, so a first run never sees its own final record here. On a
-	// Temporal retry it does: the final record the previous attempt wrote is by then just another
-	// unsynced row, and phase 2 will decline to create a second one.
+	// Phase 1: the backlog already written by earlier snapshots. Read before phase 2 creates anything,
+	// so a first run never picks up its own final record. A retry does — by then a previous attempt's
+	// record is just another unsynced row, and phase 2 declines to create a second one.
 	backlog, err := a.usageRecordRepo.List(ctx, &types.UsageRecordFilter{
 		QueryFilter: &types.QueryFilter{
 			Sort:  lo.ToPtr("period_end"),
@@ -157,8 +149,7 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		},
 		SubscriptionID: input.SubscriptionID,
 		Synced:         lo.ToPtr(false),
-		// Bound to the marketplaces' submission window: a row older than this can no longer be
-		// accepted by any of the three providers (ERD FLE-1106 §5.2).
+		// Bound to the submission window: an older row can no longer be accepted by any provider.
 		Filters: []*types.FilterCondition{{
 			Field:    lo.ToPtr("period_end"),
 			Operator: lo.ToPtr(types.GREATER_THAN_EQUAL),
@@ -180,7 +171,7 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		a.reportRecord(ctx, rec, preparedConns, result)
 	}
 
-	// Phase 2: this subscription's one final usage record — computed and reported as its own step.
+	// Phase 2: the single record covering everything from the last computed point up to cancellation.
 	cancelAt := input.CancelAt.UTC()
 
 	computedThrough, err := a.lastComputedPeriodEnd(ctx, input.SubscriptionID, subMappings)
@@ -196,9 +187,8 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		return nil, err
 	}
 
-	// An ineligible final record (non-USD, or a negative amount) can never be accepted by any
-	// marketplace, so it is not reported and not written — same rule the report cron applies to the
-	// backlog, and isEligibleForReport logs which of the two it was.
+	// An ineligible record — non-USD, or a negative amount — can never be accepted, so it is neither
+	// reported nor written. The eligibility check logs which of the two it was.
 	finalUsageFlushFailed := false
 	if finalUsageFlush != nil && a.reporter.isEligibleForReport(ctx, finalUsageFlush) {
 		relevantConns := relevantConnections(finalUsageFlush, preparedConns)
@@ -209,7 +199,7 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		finalUsageFlushFailed = len(relevantConns) == 0 || !finalUsageFlush.Synced
 
 		if !finalUsageFlushFailed {
-			// The wire carried cancelAt minus the margin; the row keeps the true instant.
+			// The providers received cancelAt less the margin; the stored row keeps the true instant.
 			finalUsageFlush.PeriodEnd = cancelAt
 			if err := a.createFinalUsageRecord(ctx, finalUsageFlush); err != nil {
 				return nil, err
@@ -228,12 +218,21 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	}
 
 	if connectionResolutionFailed || finalUsageFlushFailed || len(result.FailedRecordIDs) > 0 {
-		// Mapping stays published — see this function's doc comment. Returned so Temporal retries the
-		// whole activity; the syncs map already written makes a retry idempotent, since only the
-		// connections still missing an entry are re-attempted.
-		return result, ierr.NewErrorf("marketplace subscription flush: %d of %d records did not fully sync",
-			len(result.FailedRecordIDs), len(result.SucceededRecordIDs)+len(result.FailedRecordIDs)+len(result.SkippedRecordIDs)).
-			WithReportableDetails(map[string]any{"subscription_id": input.SubscriptionID}).
+		// Each cause is reported separately: an unresolved connection and an unreported final record
+		// both fail the run while leaving no failed record ids behind, so counts alone would describe
+		// the failure as affecting zero records and hide what actually went wrong.
+		//
+		// Returning an error retries the whole activity. That is safe to repeat: connections already
+		// holding a sync entry are not attempted again.
+		return result, ierr.NewErrorf("marketplace subscription flush failed for subscription %s", input.SubscriptionID).
+			WithReportableDetails(map[string]any{
+				"subscription_id":              input.SubscriptionID,
+				"connection_resolution_failed": connectionResolutionFailed,
+				"final_usage_flush_failed":     finalUsageFlushFailed,
+				"records_failed":               len(result.FailedRecordIDs),
+				"records_succeeded":            len(result.SucceededRecordIDs),
+				"records_skipped":              len(result.SkippedRecordIDs),
+			}).
 			Mark(ierr.ErrInternal)
 	}
 
@@ -252,8 +251,8 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	return result, nil
 }
 
-// reportRecord reports one record to every relevant connection, logs what happened, and records the
-// outcome on result. Mirrors ReportActivities.reportRecord on the cron side.
+// reportRecord reports one record to every relevant connection, logs what was accepted, and records
+// the outcome on result.
 func (a *FlushActivities) reportRecord(
 	ctx context.Context,
 	rec *usagerecord.UsageRecord,
@@ -299,9 +298,8 @@ func (a *FlushActivities) logReported(ctx context.Context, rec *usagerecord.Usag
 	}
 }
 
-// delinkSubscriptionMappings archives the subscription's marketplace mappings, returning how many
-// were archived. Uses the repository's soft-delete directly rather than the service's
-// DelinkIntegrationMapping, which would re-query for the same rows already resolved here.
+// delinkSubscriptionMappings archives the subscription's marketplace mappings and returns the ids it
+// archived. It soft-deletes through the repository directly, since the rows are already resolved.
 func (a *FlushActivities) delinkSubscriptionMappings(ctx context.Context, subMappings []*entityintegrationmapping.EntityIntegrationMapping) ([]string, error) {
 	delinked := make([]string, 0, len(subMappings))
 	for _, m := range subMappings {
@@ -317,14 +315,13 @@ func (a *FlushActivities) delinkSubscriptionMappings(ctx context.Context, subMap
 	return delinked, nil
 }
 
-// lastComputedPeriodEnd returns the point this subscription's usage has already been computed up to:
-// the latest period_end across every published usage_record, regardless of sync state. Using only
-// unsynced rows would risk re-reporting a span an earlier, already-synced row already covered
-// (ERD FLE-1106 §3.3). It is the start of the final flush window.
+// lastComputedPeriodEnd returns the point this subscription's usage has already been computed up to,
+// which is where the final window starts: the latest period_end across every published row, whatever
+// its sync state. Taking the latest unsynced row instead would re-report a span an already-synced row
+// covers, billing it twice.
 //
-// Falls back to the earliest of the subscription's marketplace mappings' own created_at when no
-// usage_record exists yet (ERD §3.4): a mapping's creation is when this subscription became
-// reportable to that marketplace, so nothing before it could ever have been owed there.
+// With no usage record yet, it falls back to the earliest marketplace mapping's creation time — the
+// point the subscription became reportable, before which nothing could have been owed.
 func (a *FlushActivities) lastComputedPeriodEnd(ctx context.Context, subscriptionID string, subMappings []*entityintegrationmapping.EntityIntegrationMapping) (time.Time, error) {
 	rows, err := a.usageRecordRepo.List(ctx, &types.UsageRecordFilter{
 		QueryFilter: &types.QueryFilter{
@@ -350,15 +347,14 @@ func (a *FlushActivities) lastComputedPeriodEnd(ctx context.Context, subscriptio
 	return earliest, nil
 }
 
-// buildFinalUsageRecord computes the subscription's final usage for [windowStart, cancelAt) and
-// returns the record to report, without writing it — the caller inserts it only once a marketplace
-// has accepted it (see createFinalUsageRecord). Returns nil when there is nothing left to compute:
-// cancelAt at or before windowStart, which is what a backdated cancellation looks like, and also what
-// a Temporal retry sees once an earlier attempt already wrote the record.
+// buildFinalUsageRecord computes the subscription's usage for [windowStart, cancelAt) and returns the
+// record to report without writing it: the caller stores it only after a marketplace has accepted it,
+// so an unreportable record never reaches the table. Returns nil when cancelAt is at or before
+// windowStart and there is nothing left to compute — a backdated cancellation, or a retry after an
+// earlier attempt already recorded this window.
 //
-// The usage amount covers the true window up to cancelAt, but PeriodEnd on the returned record is the
-// wire timestamp — cancelAt minus the reporting margin. The caller restores the true instant before
-// storing it.
+// The amount covers the window through cancelAt, but PeriodEnd on the returned record carries the
+// reporting margin already applied; the caller restores the true instant before storing it.
 func (a *FlushActivities) buildFinalUsageRecord(ctx context.Context, subscriptionID string, windowStart, cancelAt time.Time, environmentID string) (*usagerecord.UsageRecord, error) {
 	if !cancelAt.After(windowStart) {
 		return nil, nil
@@ -417,8 +413,8 @@ func (a *FlushActivities) buildFinalUsageRecord(ctx context.Context, subscriptio
 	}, nil
 }
 
-// createFinalUsageRecord writes the final record once its marketplaces have accepted it. rec already
-// carries the sync state the report produced.
+// createFinalUsageRecord stores the final record after its marketplaces have accepted it. rec already
+// carries the sync state that reporting produced.
 func (a *FlushActivities) createFinalUsageRecord(ctx context.Context, rec *usagerecord.UsageRecord) error {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)

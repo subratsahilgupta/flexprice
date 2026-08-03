@@ -18,14 +18,12 @@ type Repository interface {
 	// subscription was already processed by an earlier attempt.
 	ExistsForPeriod(ctx context.Context, subscriptionID string, periodStart, periodEnd time.Time) (bool, error)
 
-	// ListUnsynced returns this tenant/environment's usage records that are not yet fully synced
-	// (synced=false) — not scoped to any one connection, since a record can be relevant to several.
-	// Bounded to period_end within the last 24h: none of the three marketplaces accept a report
-	// older than that, so an older row is never re-fetched (ERD FLE-1106 §5.2).
+	// ListUnsynced returns the tenant and environment's records that have not reached every
+	// marketplace relevant to them. It is not scoped to a connection, since one record can be owed to
+	// several. Rows older than the submission window are excluded: no marketplace would accept them.
 	ListUnsynced(ctx context.Context, tenantID, environmentID string) ([]*UsageRecord, error)
 
-	// List returns usage records matching filter — subscription-scoped queries (the cancellation
-	// flush's frontier and backlog lookups) go through this rather than a bespoke method per query.
+	// List returns the records matching filter.
 	List(ctx context.Context, filter *types.UsageRecordFilter) ([]*UsageRecord, error)
 
 	// MarkSynced writes the record's syncs map (one entry per connection it's been reported to) and

@@ -15,15 +15,13 @@ const (
 	ActivityMarketplaceSubscriptionFinalUsageFlush = "MarketplaceSubscriptionFinalUsageFlushActivity"
 )
 
-// MarketplaceSubscriptionFinalUsageFlushWorkflow reports a cancelled subscription's final marketplace usage
-// and archives its marketplace mapping. Started once per cancellation from CancelSubscription
-// (post-commit, non-blocking) — not on a schedule, because AWS and GCP only accept a final report
-// within roughly an hour of cancellation, far tighter than the 6h snapshot / 3h report cadence
-// (ERD FLE-1106 §3, §4).
+// MarketplaceSubscriptionFinalUsageFlushWorkflow reports a cancelled subscription's outstanding
+// marketplace usage and archives its marketplace mappings. It is started once per cancellation, after
+// the cancellation commits, rather than on a schedule: AWS and GCP accept a final report for only
+// about an hour afterwards, far tighter than the reporting crons' cadence.
 //
-// A thin wrapper around a single activity, matching MarketplaceUsageReportWorkflow. The activity only
-// delinks once everything reported successfully — the mapping stays published on any failure, so the
-// report cron can keep retrying it. See ERD FLE-1106 §3.6.
+// The activity archives the mappings only once everything reported successfully; on failure they stay
+// published so the reporting cron can keep retrying the records.
 func MarketplaceSubscriptionFinalUsageFlushWorkflow(
 	ctx workflow.Context,
 	input models.MarketplaceSubscriptionFinalUsageFlushWorkflowInput,

@@ -4,9 +4,8 @@ import "time"
 
 // ===================== MarketplaceUsageSnapshot (Cron A, every 6h) =====================
 
-// MarketplaceUsageSnapshotWorkflowInput is the input for MarketplaceUsageSnapshotWorkflow.
-// No fields required — period_start/period_end are derived inside the workflow from the run's
-// scheduled_time (design doc FLE-981 §8.3).
+// MarketplaceUsageSnapshotWorkflowInput is the input for the snapshot cron. It is empty: the
+// reporting window is derived inside the workflow from the run's scheduled time.
 type MarketplaceUsageSnapshotWorkflowInput struct{}
 
 // MarketplaceUsageSnapshotActivityInput carries the reporting window computed by the workflow.
@@ -103,12 +102,15 @@ func (r *MarketplaceUsageReportWorkflowResult) AppendSkippedRecordID(id string) 
 
 // ===================== MarketplaceSubscriptionFinalUsageFlush (triggered by CancelSubscription) =====================
 
-// MarketplaceSubscriptionFinalUsageFlushWorkflowInput is the input for MarketplaceSubscriptionFinalUsageFlushWorkflow,
-// started once per cancellation — not on a schedule. CancelAt must be the marketplace's own
-// cancellation instant (sourced from sub.CancelAt, never sub.CancelledAt — see ERD FLE-1106 §3.8).
-// TenantID/EnvironmentID are stamped on by temporalService.buildWorkflowInput from the triggering
-// ctx — required so the workflow-tracking interceptor (which reads them via reflection off this
-// struct) and every repository call inside the activity have a tenant to scope to.
+// MarketplaceSubscriptionFinalUsageFlushWorkflowInput is the input for the cancellation flush.
+//
+// CancelAt must be the marketplace's own cancellation instant, which the tenant supplies on the
+// cancellation request. It is not the time Flexprice processed that request: that is always later,
+// and reporting against it would put the final usage after the cancellation the provider recorded.
+//
+// TenantID and EnvironmentID are stamped on from the triggering context when the workflow starts.
+// They are required, not informational: the activity scopes every query by them, and workflow
+// tracking reads them from this struct.
 type MarketplaceSubscriptionFinalUsageFlushWorkflowInput struct {
 	SubscriptionID string    `json:"subscription_id"`
 	CancelAt       time.Time `json:"cancel_at"`

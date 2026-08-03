@@ -8064,16 +8064,10 @@ func (s *subscriptionService) runPaddleSubscriptionSync(ctx context.Context, sub
 		"checkout_url_present", sub.Metadata[paddleint.MetaKeyPaddleCheckoutURL] != "")
 }
 
-// triggerMarketplaceSubscriptionFinalUsageFlushWorkflow starts the one-shot cancellation flush (ERD FLE-1106
-// §3): it reports the subscription's final marketplace usage and archives its marketplace mapping.
-// cancelAt must be sub.CancelAt, not sub.CancelledAt — CancelledAt is always Flexprice's own
-// processing time, which is causally always at-or-after the marketplace's own cancellation instant,
-// never before it (see the workflow's own doc comment, and ERD §3.8).
 // hasMarketplaceMapping reports whether the subscription is linked to any marketplace. Most
-// cancellations are not marketplace subscriptions, so this gates the flush at the call site rather
-// than starting a Temporal execution per cancellation that would immediately no-op. A lookup failure
-// is logged and treated as "no mapping": the flush is an after-the-fact side effect and must never
-// fail the cancellation that already committed.
+// cancellations are not, so this gates the flush at the call site rather than starting a workflow per
+// cancellation that would immediately find nothing to do. A lookup failure is logged and treated as
+// no mapping: the flush follows a cancellation that has already committed and must never fail it.
 func (s *subscriptionService) hasMarketplaceMapping(ctx context.Context, subscriptionID string) bool {
 	mappings, err := s.EntityIntegrationMappingRepo.List(ctx, &types.EntityIntegrationMappingFilter{
 		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
@@ -8094,6 +8088,12 @@ func (s *subscriptionService) hasMarketplaceMapping(ctx context.Context, subscri
 	return len(mappings) > 0
 }
 
+// triggerMarketplaceSubscriptionFinalUsageFlushWorkflow starts the cancellation flush, which reports
+// the subscription's outstanding marketplace usage and archives its mappings.
+//
+// cancelAt must be the marketplace's own cancellation instant, taken from the cancellation request,
+// not the time Flexprice processed it. The latter is always the later of the two, and reporting
+// against it would place the final usage after the cancellation the provider recorded.
 func (s *subscriptionService) triggerMarketplaceSubscriptionFinalUsageFlushWorkflow(ctx context.Context, subscriptionID string, cancelAt time.Time) {
 	temporalSvc := temporalservice.GetGlobalTemporalService()
 	if temporalSvc == nil {

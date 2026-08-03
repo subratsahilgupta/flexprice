@@ -27,9 +27,8 @@ type ReportActivities struct {
 	logger          *logger.Logger
 }
 
-// NewReportActivities takes ServiceParams for its own repos (the pattern used by
-// NewInvoiceSyncActivities and friends); the reporter is constructed once in registration and shared
-// with FlushActivities.
+// NewReportActivities builds the activity set. The reporter is constructed once at registration and
+// shared with the cancellation flush.
 func NewReportActivities(params service.ServiceParams, reporter *marketplaceReporter, log *logger.Logger) *ReportActivities {
 	return &ReportActivities{
 		reporter:        reporter,
@@ -113,11 +112,8 @@ func (a *ReportActivities) reportForTenant(
 	}
 }
 
-// reportRecord reports one record to every connection relevant to its subscription and classifies the
-// result into exactly one of Succeeded/Failed/Skipped. The per-connection mechanics and the
-// classification rule live on the shared reporter (reportRecordToConnections) so the cron and the
-// cancellation flush can never disagree on what "succeeded" means; this function only logs and
-// bookkeeps in its own words.
+// reportRecord reports one record to every connection relevant to its subscription, persists the
+// outcome, and classifies the record as succeeded, failed or skipped.
 func (a *ReportActivities) reportRecord(
 	ctx context.Context,
 	rec *usagerecord.UsageRecord,
@@ -156,21 +152,4 @@ func (a *ReportActivities) reportRecord(
 	default:
 		result.AppendSkippedRecordID(rec.ID)
 	}
-}
-
-// isEligibleForReport filters out records that must never reach a marketplace at all: non-USD
-// currency (none of the three marketplaces accept it) and negative amounts (a credit, not usage).
-func (r *marketplaceReporter) isEligibleForReport(ctx context.Context, rec *usagerecord.UsageRecord) bool {
-	if !types.IsMatchingCurrency(rec.Currency, marketplaceReportingCurrency) {
-		r.logger.Debug(ctx, "skipping marketplace usage record, currency not usd",
-			"subscription_id", rec.SubscriptionID, "usage_record_id", rec.ID, "currency", rec.Currency)
-		return false
-	}
-	if rec.Amount.IsNegative() {
-		r.logger.Error(ctx, "marketplace usage record has negative amount",
-			"subscription_id", rec.SubscriptionID, "usage_record_id", rec.ID, "amount", rec.Amount,
-			"error", "negative_amount")
-		return false
-	}
-	return true
 }

@@ -314,10 +314,9 @@ func (s *entityIntegrationMappingService) DelinkIntegrationMapping(ctx context.C
 }
 
 func (s *entityIntegrationMappingService) upsertEntityMapping(ctx context.Context, req dto.LinkIntegrationMappingRequest) (*entityintegrationmapping.EntityIntegrationMapping, error) {
-	// Published-only: an archived row (left behind by a previous delink) must not be updated in
-	// place. Resurrecting it by flipping its status back would overwrite the archive/re-link history
-	// the row otherwise preserves, so a re-link after an unlink falls through to the create below and
-	// gets a new published row (ERD FLE-1106 §2).
+	// Published rows only. An archived row left behind by an earlier unlink must not be updated in
+	// place: reviving it would overwrite the record of when it was archived, which is the only trace
+	// of that unlink. Re-linking therefore falls through to the create below and gets a fresh row.
 	filter := &types.EntityIntegrationMappingFilter{
 		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
 		EntityID:    req.EntityID,

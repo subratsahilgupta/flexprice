@@ -21,16 +21,17 @@ type UsageRecordSyncEntry struct {
 	SkipReason  string         `json:"skip_reason,omitempty"`
 }
 
-// UsageRecordFilter filters usage_records, following EntityIntegrationMappingFilter/ConnectionFilter's
-// shape (embedded QueryFilter/TimeRangeFilter plus entity-specific fields) for consistency. Fields
-// mirror the table's own columns; tenant and environment are not fields here because ApplyBaseFilters
-// always scopes them from context.
+// UsageRecordFilter selects rows from usage_records. Tenant and environment are not fields: every
+// query is scoped to the caller's context before these filters are applied.
 type UsageRecordFilter struct {
 	*QueryFilter
+
+	// Bounds created_at, the time the row was written. The usage window the row covers is
+	// PeriodStart/PeriodEnd below.
 	*TimeRangeFilter
 
-	// Filters/Sort are the generic DSL escape hatch every other filter carries — range predicates
-	// (e.g. period_end >= now-24h) go through these rather than a bespoke field per comparison.
+	// Generic predicate and ordering escape hatch, for comparisons that have no dedicated field
+	// below — a range such as period_end at or after a cutoff goes here.
 	Filters []*FilterCondition `json:"filters,omitempty" form:"filters" validate:"omitempty"`
 	Sort    []*SortCondition   `json:"sort,omitempty" form:"sort" validate:"omitempty"`
 
@@ -40,7 +41,8 @@ type UsageRecordFilter struct {
 	PlanID             string `json:"plan_id,omitempty" form:"plan_id" validate:"omitempty"`
 	Currency           string `json:"currency,omitempty" form:"currency" validate:"omitempty"`
 
-	// PeriodStart/PeriodEnd match a window exactly, the same key ExistsForPeriod checks.
+	// Exact-match on the window boundaries. Together with SubscriptionID these identify a single row:
+	// they are the columns the table's unique index is built on.
 	PeriodStart *time.Time `json:"period_start,omitempty" form:"period_start" validate:"omitempty"`
 	PeriodEnd   *time.Time `json:"period_end,omitempty" form:"period_end" validate:"omitempty"`
 

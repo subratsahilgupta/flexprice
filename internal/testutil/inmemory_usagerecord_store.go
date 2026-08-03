@@ -31,9 +31,8 @@ func (s *InMemoryUsageRecordStore) Create(ctx context.Context, rec *usagerecord.
 		rec.Syncs = map[string]types.UsageRecordSyncEntry{}
 	}
 
-	// Mirrors the unique index on (tenant_id, environment_id, subscription_id, period_start,
-	// period_end) — kept in-memory since it costs nothing and exercises snapshotSubscription's
-	// ErrAlreadyExists path.
+	// Enforces the table's unique key on (tenant, environment, subscription, period_start,
+	// period_end), so callers relying on the already-exists error behave as they do against Postgres.
 	exists, _ := s.ExistsForPeriod(ctx, rec.SubscriptionID, rec.PeriodStart, rec.PeriodEnd)
 	if exists {
 		return ierr.NewError("usage record already exists for this subscription and period").
@@ -64,8 +63,8 @@ func (s *InMemoryUsageRecordStore) ExistsForPeriod(ctx context.Context, subscrip
 	return len(items) > 0, nil
 }
 
-// unsyncedSubmissionWindow mirrors the real repository's bound (repository/ent/usagerecord.go) —
-// none of the three marketplaces accept a report older than this.
+// unsyncedSubmissionWindow bounds unsynced rows to those a marketplace can still accept, as the
+// repository does.
 const unsyncedSubmissionWindow = 24 * time.Hour
 
 func (s *InMemoryUsageRecordStore) ListUnsynced(ctx context.Context, tenantID, environmentID string) ([]*usagerecord.UsageRecord, error) {
@@ -88,9 +87,9 @@ func (s *InMemoryUsageRecordStore) ListUnsynced(ctx context.Context, tenantID, e
 	return result, nil
 }
 
-// List returns usage records matching filter, mirroring the real repository's semantics
-// (repository/ent/usagerecord.go): tenant/environment always scoped, status defaults to published
-// unless the filter is status-blind, sorted and limited per the embedded QueryFilter.
+// List returns the usage records matching filter, reproducing the repository's semantics: always
+// scoped to the caller's tenant and environment, defaulting to published rows, sorted and paginated
+// per the embedded query filter.
 func (s *InMemoryUsageRecordStore) List(ctx context.Context, filter *types.UsageRecordFilter) ([]*usagerecord.UsageRecord, error) {
 	if filter == nil {
 		filter = types.NewUsageRecordFilter()
@@ -100,10 +99,8 @@ func (s *InMemoryUsageRecordStore) List(ctx context.Context, filter *types.Usage
 		if !CheckTenantFilter(ctx, r.TenantID) || !CheckEnvironmentFilter(ctx, r.EnvironmentID) {
 			return false
 		}
-		// Unlike entity_integration_mapping, an empty status here defaults to published rather than
-		// matching every status — mirrors UsageRecordQueryOptions.ApplyStatusFilter in
-		// repository/ent/usagerecord.go. Nothing archives a usage record today, so this is always
-		// what every caller wants.
+		// An unset status means published rather than any status, as the repository does. Nothing
+		// archives a usage record, so every caller wants published rows.
 		status := filter.GetStatus()
 		if status == "" {
 			status = string(types.StatusPublished)
@@ -135,12 +132,21 @@ func (s *InMemoryUsageRecordStore) List(ctx context.Context, filter *types.Usage
 		if filter.Synced != nil && r.Synced != *filter.Synced {
 			return false
 		}
+		// Bounds created_at, as the repository does.
+		if filter.TimeRangeFilter != nil {
+			if filter.StartTime != nil && r.CreatedAt.Before(*filter.StartTime) {
+				return false
+			}
+			if filter.EndTime != nil && r.CreatedAt.After(*filter.EndTime) {
+				return false
+			}
+		}
 		return matchesUsageRecordDSLFilters(r, filter.Filters)
 	}
 
 	sortField, sortAsc := filter.GetSort(), filter.GetOrder() == types.OrderAsc
 	if len(filter.Sort) > 0 {
-		// DSL sort wins, matching dsl.ApplySorts being applied after ApplySorting in the real repo.
+		// A sort condition overrides the query filter's, since it is applied last.
 		sortField = filter.Sort[0].Field
 		sortAsc = filter.Sort[0].Direction == types.SortDirectionAsc
 	}
@@ -170,15 +176,11 @@ func (s *InMemoryUsageRecordStore) List(ctx context.Context, filter *types.Usage
 		}
 	}
 
-	items, err := s.store.List(ctx, nil, filterFn, sortFn)
+	// Passing the filter through applies offset as well as limit. Slicing by limit here instead would
+	// ignore a non-zero offset and return the first page where the database returns a later one.
+	items, err := s.store.List(ctx, filter, filterFn, sortFn)
 	if err != nil {
 		return nil, err
-	}
-
-	if !filter.IsUnlimited() {
-		if limit := filter.GetLimit(); limit > 0 && limit < len(items) {
-			items = items[:limit]
-		}
 	}
 
 	result := make([]*usagerecord.UsageRecord, len(items))
