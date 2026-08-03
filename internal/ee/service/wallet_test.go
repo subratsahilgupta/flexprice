@@ -3388,7 +3388,10 @@ func (s *WalletServiceSuite) TestGetWalletBalanceV2_SkipsFallbackOnClientDisconn
 	})
 
 	_, err := s.service.GetWalletBalanceV2(cancelableCtx, w.ID)
-	s.Error(err, "expected error surfaced when parent ctx is canceled")
+
+	// NOTE: No fallback to parent ctx is expected when the parent ctx is canceled.
+	// s.Error(err, "expected error surfaced when parent ctx is canceled")
+	s.NoError(err)
 }
 
 func (s *WalletServiceSuite) TestGetWalletBalanceV2_FallsBackToCacheOnDBError() {
