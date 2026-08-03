@@ -283,13 +283,9 @@ func (s *subscriptionService) applySubscriptionScopedLineItemDefaults(lineItem *
 	}
 }
 
-// validateLineItemEndDateChange determines whether a line item whose EndDate is
-// already set may have that EndDate moved to newDate. Recurring line items
-// (BillingPeriod != BILLING_PERIOD_ONETIME) may be backdated to any date strictly
-// before the current EndDate. One-time line items — whose EndDate represents an
-// inherent single-occurrence lifespan rather than a prior edit/termination event —
-// and any date on or after the current EndDate, remain blocked exactly as before
-// this change.
+// validateLineItemEndDateChange allows moving an already-set EndDate earlier
+// (backdating). One-time line items are excluded: their EndDate reflects an
+// inherent lifespan, not a prior edit/termination, so it's never adjustable.
 func validateLineItemEndDateChange(lineItem *subscription.SubscriptionLineItem, newDate time.Time) error {
 	if lineItem.EndDate.IsZero() {
 		return nil
@@ -350,8 +346,6 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 		effectiveFrom = time.Now().UTC()
 	}
 
-	// Validate the requested end date can actually be applied (handles the
-	// already-terminated / one-time / backdate cases uniformly).
 	if err := validateLineItemEndDateChange(lineItem, effectiveFrom); err != nil {
 		return nil, err
 	}
@@ -497,15 +491,12 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 
 	// Check if we need to create a new line item (with price overrides)
 	if req.ShouldCreateNewLineItem() {
-		// Validate the requested end date can actually be applied (handles the
-		// already-terminated / one-time / backdate cases uniformly).
 		if err := validateLineItemEndDateChange(existingLineItem, endDate); err != nil {
 			return nil, err
 		}
 
-		// Preserve the existing end_date (if any) so the new line item below
-		// inherits the same boundary instead of becoming open-ended and
-		// overlapping whatever already starts there.
+		// existingLineItem and the repo's copy are the same object, so this must be
+		// read before deleteSubscriptionLineItem below overwrites EndDate in place.
 		oldEndDate := existingLineItem.EndDate
 
 		// Get price for override logic (and ensure endDate >= existing line item start already validated above)
@@ -554,7 +545,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			newLineItem = req.ToSubscriptionLineItem(ctx, existingLineItem, newPriceID)
 			newLineItem.StartDate = endDate // Start where the old one ends
 			if !oldEndDate.IsZero() {
-				newLineItem.EndDate = oldEndDate // Fill exactly the gap freed up by the backdate
+				newLineItem.EndDate = oldEndDate // Fill the gap freed up by the backdate
 			}
 
 			// Materialize bucket prices when the update request carries
