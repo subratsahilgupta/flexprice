@@ -572,6 +572,20 @@ func (ic *InvoiceCreate) SetNillableRecalculatedInvoiceID(s *string) *InvoiceCre
 	return ic
 }
 
+// SetIsManuallyEdited sets the "is_manually_edited" field.
+func (ic *InvoiceCreate) SetIsManuallyEdited(b bool) *InvoiceCreate {
+	ic.mutation.SetIsManuallyEdited(b)
+	return ic
+}
+
+// SetNillableIsManuallyEdited sets the "is_manually_edited" field if the given value is not nil.
+func (ic *InvoiceCreate) SetNillableIsManuallyEdited(b *bool) *InvoiceCreate {
+	if b != nil {
+		ic.SetIsManuallyEdited(*b)
+	}
+	return ic
+}
+
 // SetID sets the "id" field.
 func (ic *InvoiceCreate) SetID(s string) *InvoiceCreate {
 	ic.mutation.SetID(s)
@@ -710,6 +724,10 @@ func (ic *InvoiceCreate) defaults() {
 	if _, ok := ic.mutation.TotalPrepaidCreditsApplied(); !ok {
 		v := invoice.DefaultTotalPrepaidCreditsApplied
 		ic.mutation.SetTotalPrepaidCreditsApplied(v)
+	}
+	if _, ok := ic.mutation.IsManuallyEdited(); !ok {
+		v := invoice.DefaultIsManuallyEdited
+		ic.mutation.SetIsManuallyEdited(v)
 	}
 }
 
@@ -991,6 +1009,10 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 	if value, ok := ic.mutation.RecalculatedInvoiceID(); ok {
 		_spec.SetField(invoice.FieldRecalculatedInvoiceID, field.TypeString, value)
 		_node.RecalculatedInvoiceID = &value
+	}
+	if value, ok := ic.mutation.IsManuallyEdited(); ok {
+		_spec.SetField(invoice.FieldIsManuallyEdited, field.TypeBool, value)
+		_node.IsManuallyEdited = value
 	}
 	if nodes := ic.mutation.LineItemsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
