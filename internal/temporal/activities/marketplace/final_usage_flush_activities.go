@@ -47,13 +47,13 @@ type FlushActivities struct {
 	subscriptionRepo             subscription.Repository
 	customerRepo                 customer.Repository
 	usageRecordRepo              usagerecord.Repository
-	reporter                     *marketplaceReporter
+	mktplaceReporter             *MarketplaceReporter
 	logger                       *logger.Logger
 }
 
 // NewFlushActivities builds the activity set. The reporter is constructed once at registration and
 // shared with the reporting cron.
-func NewFlushActivities(params service.ServiceParams, reporter *marketplaceReporter, log *logger.Logger) *FlushActivities {
+func NewFlushActivities(params service.ServiceParams, mktplaceReporter *MarketplaceReporter, log *logger.Logger) *FlushActivities {
 	return &FlushActivities{
 		subscriptionService:          service.NewSubscriptionService(params),
 		billingService:               service.NewBillingService(params),
@@ -62,7 +62,7 @@ func NewFlushActivities(params service.ServiceParams, reporter *marketplaceRepor
 		subscriptionRepo:             params.SubRepo,
 		customerRepo:                 params.CustomerRepo,
 		usageRecordRepo:              params.UsageRecordRepo,
-		reporter:                     reporter,
+		mktplaceReporter:             mktplaceReporter,
 		logger:                       log,
 	}
 }
@@ -119,7 +119,7 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 
 	// One unresolvable connection must not stop the others from being reported, but it does block
 	// archiving below: that provider was never attempted, so nothing can be concluded about it.
-	preparedConns := make([]*preparedConnection, 0, len(subMappings))
+	marketplaceConns := make([]*marketplaceConnection, 0, len(subMappings))
 	connectionResolutionFailed := false
 	for _, m := range subMappings {
 		conn, err := a.connectionRepo.GetByProvider(ctx, types.SecretProvider(m.ProviderType))
@@ -130,13 +130,13 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 			connectionResolutionFailed = true
 			continue
 		}
-		prepared, err := a.reporter.prepareConnection(ctx, conn)
+		prepared, err := a.mktplaceReporter.prepareMarketplaceConnection(ctx, conn)
 		if err != nil {
-			// already logged inside prepareConnection at the stage that failed
+			// already logged inside prepareMarketplaceConnection at the stage that failed
 			connectionResolutionFailed = true
 			continue
 		}
-		preparedConns = append(preparedConns, prepared)
+		marketplaceConns = append(marketplaceConns, prepared)
 	}
 
 	cancelAt := input.CancelAt.UTC()
@@ -175,10 +175,10 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	}
 
 	for _, rec := range backlog {
-		if !a.reporter.isEligibleForReport(ctx, rec) {
+		if !a.mktplaceReporter.isEligibleForReport(ctx, rec) {
 			continue
 		}
-		a.reportRecord(ctx, rec, preparedConns, result)
+		a.reportRecord(ctx, rec, marketplaceConns, result)
 	}
 
 	// Phase 2: the single record covering everything from the last computed point up to cancellation.
@@ -198,7 +198,7 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	// An ineligible record — non-USD, or a negative amount — can never be accepted, so it is not
 	// reported. The eligibility check logs which of the two it was.
 	finalUsageFlushFailed := false
-	if finalUsageFlush != nil && a.reporter.isEligibleForReport(ctx, finalUsageFlush) {
+	if finalUsageFlush != nil && a.mktplaceReporter.isEligibleForReport(ctx, finalUsageFlush) {
 		result.FinalRecordID = finalUsageFlush.ID
 		result.PeriodStart = finalUsageFlush.PeriodStart
 		result.PeriodEnd = finalUsageFlush.PeriodEnd
@@ -206,14 +206,14 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 		// The providers receive cancelAt less the margin; the stored row keeps the true instant, and
 		// reporting never writes period_end back.
 		finalUsageFlush.PeriodEnd = cancelAt.Add(-reportTimestampSafetyMargin)
-		finalUsageFlushFailed = a.reportRecord(ctx, finalUsageFlush, preparedConns, result)
+		finalUsageFlushFailed = a.reportRecord(ctx, finalUsageFlush, marketplaceConns, result)
 		finalUsageFlush.PeriodEnd = cancelAt
 	}
 
-	if connectionResolutionFailed || finalUsageFlushFailed || len(result.FailedRecordIDs) > 0 {
+	if connectionResolutionFailed || finalUsageFlushFailed || result.RecordsFailed > 0 {
 		// Each cause is reported separately: an unresolved connection and an unreported final record
-		// both fail the run while leaving no failed record ids behind, so counts alone would describe
-		// the failure as affecting zero records and hide what actually went wrong.
+		// both fail the run while leaving the failed-record count at zero, so that count alone would
+		// describe the failure as affecting no records and hide what actually went wrong.
 		//
 		// Returning an error retries the whole activity. That is safe to repeat: connections already
 		// holding a sync entry are not attempted again.
@@ -222,9 +222,9 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 				"subscription_id":              input.SubscriptionID,
 				"connection_resolution_failed": connectionResolutionFailed,
 				"final_usage_flush_failed":     finalUsageFlushFailed,
-				"records_failed":               len(result.FailedRecordIDs),
-				"records_succeeded":            len(result.SucceededRecordIDs),
-				"records_skipped":              len(result.SkippedRecordIDs),
+				"records_failed":               result.RecordsFailed,
+				"records_succeeded":            result.RecordsSucceeded,
+				"records_skipped":              result.RecordsSkipped,
 			}).
 			Mark(ierr.ErrInternal)
 	}
@@ -233,47 +233,55 @@ func (a *FlushActivities) MarketplaceSubscriptionFinalUsageFlushActivity(
 	if err != nil {
 		return result, err
 	}
-	result.DelinkedMappingIDs = delinkedIDs
+	result.MappingsDelinked = len(delinkedIDs)
 
-	log.Info("MarketplaceSubscriptionFinalUsageFlushActivity completed",
+	// Emitted through the structured logger, not the workflow logger, so a completed run is greppable
+	// under the same prefix as this activity's failures.
+	a.logger.Info(ctx, "marketplace subscription flush: completed",
+		"tenant_id", tenantID, "environment_id", environmentID,
 		"subscription_id", input.SubscriptionID,
 		"final_record_id", result.FinalRecordID,
-		"records_succeeded", len(result.SucceededRecordIDs),
-		"records_skipped", len(result.SkippedRecordIDs),
-		"mappings_delinked", len(result.DelinkedMappingIDs))
+		"records_succeeded", result.RecordsSucceeded,
+		"records_skipped", result.RecordsSkipped,
+		"mappings_delinked", result.MappingsDelinked)
 	return result, nil
 }
 
-// reportRecord reports one record to every connection mapped to its subscription, persists the
+// reportRecord reports one record to every marketplace its subscription holds an agreement on, persists the
 // outcome, and records it on result. It reports whether the record was left unreported, which is what
 // keeps the mappings published: archiving a subscription whose records never reached a marketplace
 // would put them beyond the reporting cron's reach, since that cron also needs the mapping to decide
-// a record is relevant to a connection.
+// a record belongs to a marketplace.
 func (a *FlushActivities) reportRecord(
 	ctx context.Context,
 	rec *usagerecord.UsageRecord,
-	preparedConns []*preparedConnection,
+	marketplaceConns []*marketplaceConnection,
 	result *temporalModels.MarketplaceSubscriptionFinalUsageFlushWorkflowResult,
 ) (failed bool) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
-	relevantConns := relevantConnections(rec, preparedConns)
-	if len(relevantConns) == 0 {
+	var reportableConns []*marketplaceConnection
+	for _, marketplaceConn := range marketplaceConns {
+		if marketplaceConn.hasAgreementFor(rec.SubscriptionID) {
+			reportableConns = append(reportableConns, marketplaceConn)
+		}
+	}
+	if len(reportableConns) == 0 {
 		// No provider can be reached, so the record stays exactly as it is: unreported and unsynced.
-		// The subscription resolved a connection but is not mapped to it for reporting, which means its
-		// mapping carries no provider entity id.
+		// A connection resolved for the subscription's marketplace, but the subscription holds no
+		// agreement there: its mapping carries no provider entity id.
 		a.logger.Error(ctx, "marketplace subscription flush: usage record has no connection to report to",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connections_resolved", len(preparedConns),
-			"error", "subscription is not mapped to any resolved marketplace connection",
+			"usage_record_id", rec.ID, "connections_resolved", len(marketplaceConns),
+			"error", "subscription holds no agreement on any resolved marketplace",
 			"stage", "relevant_connections")
-		result.FailedRecordIDs = append(result.FailedRecordIDs, rec.ID)
+		result.RecordsFailed++
 		return true
 	}
 
-	reportedConnIDs := a.reporter.reportRecordToConnections(ctx, rec, relevantConns)
-	a.logReported(ctx, rec, reportedConnIDs)
+	reportedMarketplaces := a.mktplaceReporter.reportRecordToMarketplaces(ctx, rec, reportableConns)
+	a.logReported(ctx, rec, reportedMarketplaces)
 
 	if err := a.usageRecordRepo.MarkSynced(ctx, rec.ID, rec.Syncs, rec.Synced); err != nil {
 		a.logger.Error(ctx, "marketplace subscription flush: failed to record usage sync state",
@@ -282,26 +290,36 @@ func (a *FlushActivities) reportRecord(
 		rec.Synced = false
 	}
 
+	// A record that reached every marketplace it has an agreement on but was skipped by all of them is not a
+	// success: nothing was posted anywhere.
+	anyAccepted := false
+	for _, marketplaceConn := range reportableConns {
+		if entry, ok := rec.Syncs[string(marketplaceConn.conn.ProviderType)]; ok && entry.IsResolved() && !entry.Skipped {
+			anyAccepted = true
+			break
+		}
+	}
+
 	switch {
 	case !rec.Synced:
-		result.FailedRecordIDs = append(result.FailedRecordIDs, rec.ID)
+		result.RecordsFailed++
 		return true
-	case anyRealEntry(rec, relevantConns):
-		result.SucceededRecordIDs = append(result.SucceededRecordIDs, rec.ID)
+	case anyAccepted:
+		result.RecordsSucceeded++
 	default:
-		result.SkippedRecordIDs = append(result.SkippedRecordIDs, rec.ID)
+		result.RecordsSkipped++
 	}
 	return false
 }
 
 // logReported logs one line per connection that accepted this record on this run.
-func (a *FlushActivities) logReported(ctx context.Context, rec *usagerecord.UsageRecord, reportedConnIDs []string) {
-	for _, connectionID := range reportedConnIDs {
-		entry := rec.Syncs[connectionID]
+func (a *FlushActivities) logReported(ctx context.Context, rec *usagerecord.UsageRecord, reportedMarketplaces []string) {
+	for _, marketplace := range reportedMarketplaces {
+		entry := rec.Syncs[marketplace]
 		a.logger.Info(ctx, "marketplace subscription flush: usage record synced",
 			"tenant_id", types.GetTenantID(ctx), "environment_id", types.GetEnvironmentID(ctx),
 			"subscription_id", rec.SubscriptionID, "usage_record_id", rec.ID,
-			"connection_id", connectionID, "marketplace", entry.Marketplace,
+			"marketplace", marketplace, "agreement_id", entry.AgreementID,
 			"reporting_id", entry.ReportingID)
 	}
 }

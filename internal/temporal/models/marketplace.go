@@ -14,43 +14,21 @@ type MarketplaceUsageSnapshotActivityInput struct {
 	PeriodEnd   time.Time `json:"period_end"`
 }
 
-// MaxReportedIDs caps the ID lists carried on a workflow result. A result is persisted in Temporal's
-// workflow history, so a tenant-wide failure (e.g. one broken connection) must not write an
-// unbounded list into it. The counts are always exact; only the ID lists are truncated.
-const MaxReportedIDs = 100
-
 // MarketplaceUsageSnapshotWorkflowResult captures outcome metrics. Total counts distinct
 // subscriptions walked; Succeeded counts those that now have a usage record for the window (whether
 // this run wrote it or found one already there); Failed counts those that could not be snapshotted.
 // The window is echoed back so a run's output is self-describing in the Temporal UI without having
-// to cross-reference the schedule's fire time, and the ID lists name exactly which subscriptions
-// landed and which need investigating, without grepping logs first.
+// to cross-reference the schedule's fire time.
+//
+// Counts only, no id lists: a run walks every marketplace subscription in the deployment, so naming
+// them would write an unbounded list into Temporal's workflow history. The per-subscription detail
+// lives in the logs, keyed by subscription_id.
 type MarketplaceUsageSnapshotWorkflowResult struct {
 	Total       int       `json:"total"`
 	Succeeded   int       `json:"succeeded"`
 	Failed      int       `json:"failed"`
 	PeriodStart time.Time `json:"period_start"`
 	PeriodEnd   time.Time `json:"period_end"`
-
-	// ID lists are truncated to MaxReportedIDs; the counts above carry the true totals.
-	SucceededSubscriptionIDs []string `json:"succeeded_subscription_ids,omitempty"`
-	FailedSubscriptionIDs    []string `json:"failed_subscription_ids,omitempty"`
-}
-
-// AppendSucceededSubscriptionID records a subscription that now has a usage record for the window.
-func (r *MarketplaceUsageSnapshotWorkflowResult) AppendSucceededSubscriptionID(id string) {
-	r.Succeeded++
-	if len(r.SucceededSubscriptionIDs) < MaxReportedIDs {
-		r.SucceededSubscriptionIDs = append(r.SucceededSubscriptionIDs, id)
-	}
-}
-
-// AppendFailedSubscriptionID records a subscription that could not be snapshotted.
-func (r *MarketplaceUsageSnapshotWorkflowResult) AppendFailedSubscriptionID(id string) {
-	r.Failed++
-	if len(r.FailedSubscriptionIDs) < MaxReportedIDs {
-		r.FailedSubscriptionIDs = append(r.FailedSubscriptionIDs, id)
-	}
 }
 
 // MarketplaceUsageReportWorkflowInput is the input for MarketplaceUsageReportWorkflow. It is
@@ -59,45 +37,18 @@ type MarketplaceUsageReportWorkflowInput struct{}
 
 // MarketplaceUsageReportWorkflowResult captures outcome metrics. Total counts records that reached
 // at least one relevant connection this run; Succeeded counts those now fully synced to every
-// relevant connection; Failed counts those still awaiting at least one. Skipped counts sync entries
+// relevant marketplace; Failed counts those still awaiting at least one. Skipped counts sync entries
 // resolved without anything being posted (today only Azure's zero-quantity case), which would
-// otherwise be indistinguishable from a real acceptance in Succeeded. The ID lists name the rows
-// behind each count, so a run is actionable from the Temporal UI alone.
+// otherwise be indistinguishable from a real acceptance in Succeeded.
+//
+// Counts only, never ids: a run covers every record across every tenant, so any id list here would be
+// unbounded in Temporal's workflow history. Every id is already on the per-record log lines, which is
+// where debugging starts.
 type MarketplaceUsageReportWorkflowResult struct {
 	Total     int `json:"total"`
 	Succeeded int `json:"succeeded"`
 	Failed    int `json:"failed"`
 	Skipped   int `json:"skipped"`
-
-	// ID lists are truncated to MaxReportedIDs; the counts above carry the true totals.
-	SucceededRecordIDs []string `json:"succeeded_record_ids,omitempty"`
-	FailedRecordIDs    []string `json:"failed_record_ids,omitempty"`
-	SkippedRecordIDs   []string `json:"skipped_record_ids,omitempty"`
-}
-
-// AppendSucceededRecordID records a usage record now fully synced to every relevant connection.
-func (r *MarketplaceUsageReportWorkflowResult) AppendSucceededRecordID(id string) {
-	r.Succeeded++
-	if len(r.SucceededRecordIDs) < MaxReportedIDs {
-		r.SucceededRecordIDs = append(r.SucceededRecordIDs, id)
-	}
-}
-
-// AppendFailedRecordID records a usage record that did not fully sync.
-func (r *MarketplaceUsageReportWorkflowResult) AppendFailedRecordID(id string) {
-	r.Failed++
-	if len(r.FailedRecordIDs) < MaxReportedIDs {
-		r.FailedRecordIDs = append(r.FailedRecordIDs, id)
-	}
-}
-
-// AppendSkippedRecordID records a connection resolved without anything being posted. Skipped is
-// counted per sync entry, so one record can appear here once per connection that skipped it.
-func (r *MarketplaceUsageReportWorkflowResult) AppendSkippedRecordID(id string) {
-	r.Skipped++
-	if len(r.SkippedRecordIDs) < MaxReportedIDs {
-		r.SkippedRecordIDs = append(r.SkippedRecordIDs, id)
-	}
 }
 
 // ===================== MarketplaceSubscriptionFinalUsageFlush (triggered by CancelSubscription) =====================
@@ -127,9 +78,7 @@ type MarketplaceSubscriptionFinalUsageFlushActivityInput struct {
 	EnvironmentID  string    `json:"environment_id"`
 }
 
-// MarketplaceSubscriptionFinalUsageFlushWorkflowResult captures what one flush did. It carries full
-// id lists rather than truncated ones: a flush covers at most a day of records across at most three
-// marketplaces.
+// MarketplaceSubscriptionFinalUsageFlushWorkflowResult captures what one flush did.
 type MarketplaceSubscriptionFinalUsageFlushWorkflowResult struct {
 	SubscriptionID string `json:"subscription_id"`
 
@@ -141,15 +90,16 @@ type MarketplaceSubscriptionFinalUsageFlushWorkflowResult struct {
 	PeriodEnd     time.Time `json:"period_end,omitempty"`
 	FinalRecordID string    `json:"final_record_id,omitempty"`
 
-	// Every record this run reported, the backlog and the final one alike, split by outcome. A record
-	// is succeeded once every marketplace mapped to it has accepted or skipped it and at least one
-	// accepted; skipped when they all skipped; failed while any is still outstanding.
-	SucceededRecordIDs []string `json:"succeeded_record_ids,omitempty"`
-	FailedRecordIDs    []string `json:"failed_record_ids,omitempty"`
-	SkippedRecordIDs   []string `json:"skipped_record_ids,omitempty"`
+	// Every record this run reported, the backlog and the final one alike, counted by outcome. A
+	// record is succeeded once every marketplace mapped to it has accepted or skipped it and at least
+	// one accepted; skipped when they all skipped; failed while any is still outstanding. Counted
+	// rather than named: a cancellation can carry a full day of backlog behind it.
+	RecordsSucceeded int `json:"records_succeeded"`
+	RecordsFailed    int `json:"records_failed"`
+	RecordsSkipped   int `json:"records_skipped"`
 
-	// The marketplace mappings archived by this run. Empty unless every record above synced and every
+	// How many marketplace mappings this run archived. Zero unless every record above synced and every
 	// mapped connection resolved: the mappings stay published on any failure so the reporting cron can
 	// still find the outstanding records.
-	DelinkedMappingIDs []string `json:"delinked_mapping_ids,omitempty"`
+	MappingsDelinked int `json:"mappings_delinked"`
 }

@@ -12,16 +12,16 @@ import (
 	"go.temporal.io/sdk/activity"
 )
 
-// ReportActivities reports usage records that have not yet reached every marketplace connection
-// relevant to them. For every tenant/environment with a published marketplace connection it
+// ReportActivities reports usage records that have not yet reached every marketplace their
+// subscription is mapped to. For every tenant/environment with a published marketplace connection it
 // authenticates each connection once, reads that tenant's unsynced usage records once, and reports
-// each record to whichever relevant connections it hasn't already reached. A record a marketplace
-// rejects is left unsynced so the next run retries it; there is no terminal failure state.
+// each record to whichever marketplaces it has not already reached. A record a marketplace rejects is
+// left unsynced so the next run retries it; there is no terminal failure state.
 //
-// The per-provider mechanics live on the shared marketplaceReporter, the same instance the
+// The per-provider mechanics live on the shared MarketplaceReporter, the same instance the
 // cancellation flush holds, so the two cannot drift apart.
 type ReportActivities struct {
-	reporter        *marketplaceReporter
+	reporter        *MarketplaceReporter
 	connectionRepo  connection.Repository
 	usageRecordRepo usagerecord.Repository
 	logger          *logger.Logger
@@ -29,7 +29,7 @@ type ReportActivities struct {
 
 // NewReportActivities builds the activity set. The reporter is constructed once at registration and
 // shared with the cancellation flush.
-func NewReportActivities(params service.ServiceParams, reporter *marketplaceReporter, log *logger.Logger) *ReportActivities {
+func NewReportActivities(params service.ServiceParams, reporter *MarketplaceReporter, log *logger.Logger) *ReportActivities {
 	return &ReportActivities{
 		reporter:        reporter,
 		connectionRepo:  params.ConnectionRepo,
@@ -38,7 +38,7 @@ func NewReportActivities(params service.ServiceParams, reporter *marketplaceRepo
 	}
 }
 
-// MarketplaceUsageReportActivity is the activity entrypoint. A record's relevant connections and its
+// MarketplaceUsageReportActivity is the activity entrypoint. A record's reportable connections and its
 // unsynced status are both tenant/environment-scoped, so it groups every published marketplace
 // connection by tenant/environment and reports each group independently — a failure in one tenant
 // does not stop the others.
@@ -71,13 +71,17 @@ func (a *ReportActivities) MarketplaceUsageReportActivity(
 		a.reportForTenant(ctx, key.tenantID, key.environmentID, conns, result)
 	}
 
-	log.Info("Completed MarketplaceUsageReportActivity",
-		"total", result.Total, "succeeded", result.Succeeded, "failed", result.Failed)
+	// Emitted through the structured logger, not the workflow logger, so a completed run is greppable
+	// under the same prefix as this activity's failures.
+	a.logger.Info(ctx, "marketplace usage report: completed",
+		"total", result.Total, "succeeded", result.Succeeded,
+		"failed", result.Failed)
 	return result, nil
 }
 
 // reportForTenant authenticates each of this tenant/environment's published connections once,
-// fetches its unsynced usage records once, and reports each record to the relevant ones. Both lists
+// fetches its unsynced usage records once, and reports each record to the marketplaces it holds an
+// agreement on. Both lists
 // are fixed for the whole call — nothing is re-queried mid-run, so a connection deleted while this
 // run executes only takes effect from the next scheduled run.
 func (a *ReportActivities) reportForTenant(
@@ -86,15 +90,15 @@ func (a *ReportActivities) reportForTenant(
 	conns []*connection.Connection,
 	result *temporalModels.MarketplaceUsageReportWorkflowResult,
 ) {
-	preparedConns := make([]*preparedConnection, 0, len(conns))
+	marketplaceConns := make([]*marketplaceConnection, 0, len(conns))
 	for _, conn := range conns {
-		preparedConn, err := a.reporter.prepareConnection(ctx, conn)
+		marketplaceConn, err := a.reporter.prepareMarketplaceConnection(ctx, conn)
 		if err != nil {
-			continue // already logged inside prepareConnection at the stage that failed
+			continue // already logged inside prepareMarketplaceConnection at the stage that failed
 		}
-		preparedConns = append(preparedConns, preparedConn)
+		marketplaceConns = append(marketplaceConns, marketplaceConn)
 	}
-	if len(preparedConns) == 0 {
+	if len(marketplaceConns) == 0 {
 		return
 	}
 
@@ -107,33 +111,38 @@ func (a *ReportActivities) reportForTenant(
 
 	for _, rec := range records {
 		if a.reporter.isEligibleForReport(ctx, rec) {
-			a.reportRecord(ctx, rec, preparedConns, result)
+			a.reportRecord(ctx, rec, marketplaceConns, result)
 		}
 	}
 }
 
-// reportRecord reports one record to every connection relevant to its subscription, persists the
-// outcome, and classifies the record as succeeded, failed or skipped.
+// reportRecord reports one record to every marketplace its subscription holds an agreement on,
+// persists the outcome, and classifies the record as succeeded, failed or skipped.
 func (a *ReportActivities) reportRecord(
 	ctx context.Context,
 	rec *usagerecord.UsageRecord,
-	preparedConns []*preparedConnection,
+	marketplaceConns []*marketplaceConnection,
 	result *temporalModels.MarketplaceUsageReportWorkflowResult,
 ) {
-	relevantConns := relevantConnections(rec, preparedConns)
-	if len(relevantConns) == 0 {
-		return // no published connection is mapped to this subscription right now
+	var reportableConns []*marketplaceConnection
+	for _, marketplaceConn := range marketplaceConns {
+		if marketplaceConn.hasAgreementFor(rec.SubscriptionID) {
+			reportableConns = append(reportableConns, marketplaceConn)
+		}
 	}
-	reportedConnIDs := a.reporter.reportRecordToConnections(ctx, rec, relevantConns)
+	if len(reportableConns) == 0 {
+		return // the subscription holds no agreement on any connected marketplace right now
+	}
+	reportedMarketplaces := a.reporter.reportRecordToMarketplaces(ctx, rec, reportableConns)
 
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
-	for _, connectionID := range reportedConnIDs {
-		entry := rec.Syncs[connectionID]
+	for _, marketplace := range reportedMarketplaces {
+		entry := rec.Syncs[marketplace]
 		a.logger.Info(ctx, "marketplace usage report: usage record synced",
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", connectionID,
-			"marketplace", entry.Marketplace, "reporting_id", entry.ReportingID)
+			"usage_record_id", rec.ID, "marketplace", marketplace,
+			"agreement_id", entry.AgreementID, "reporting_id", entry.ReportingID)
 	}
 
 	if err := a.usageRecordRepo.MarkSynced(ctx, rec.ID, rec.Syncs, rec.Synced); err != nil {
@@ -143,13 +152,23 @@ func (a *ReportActivities) reportRecord(
 		rec.Synced = false
 	}
 
+	// A record that reached every marketplace it has an agreement on but was skipped by all of them is not a
+	// success: nothing was posted anywhere.
+	anyAccepted := false
+	for _, marketplaceConn := range reportableConns {
+		if entry, ok := rec.Syncs[string(marketplaceConn.conn.ProviderType)]; ok && entry.IsResolved() && !entry.Skipped {
+			anyAccepted = true
+			break
+		}
+	}
+
 	result.Total++
 	switch {
 	case !rec.Synced:
-		result.AppendFailedRecordID(rec.ID)
-	case anyRealEntry(rec, relevantConns):
-		result.AppendSucceededRecordID(rec.ID)
+		result.Failed++
+	case anyAccepted:
+		result.Succeeded++
 	default:
-		result.AppendSkippedRecordID(rec.ID)
+		result.Skipped++
 	}
 }

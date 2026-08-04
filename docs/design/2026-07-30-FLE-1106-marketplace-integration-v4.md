@@ -165,7 +165,7 @@ FlushActivity(subscriptionID, cancelAt, tenantID, environmentID):
                   period_end >= now-24h, period_end < cancelAt, sort period_end asc)
    for rec in backlog:
        if not isEligibleForReport(rec): continue    # non-USD or negative (§8.2)
-       reportRecordToConnections(rec, relevantConnections(rec)); MarkSynced(rec)
+       reportRecordToMarketplaces(rec, marketplaces it holds an agreement on); MarkSynced(rec)
 
 3. # Phase 2 — the one final record. Written first, then reported (§3.4).
    computedThrough = MAX(period_end) over published rows with period_end < cancelAt,
@@ -196,9 +196,9 @@ sequenceDiagram
     loop each record × each relevant connection without an entry
         Flush->>MP: report
         alt accepted
-            MP-->>Flush: reporting_id → syncs[conn]
+            MP-->>Flush: reporting_id → syncs[marketplace]
         else Azure zero-amount
-            Flush->>Flush: syncs[conn] = skipped
+            Flush->>Flush: syncs[marketplace] = skipped
         else rejected / failed
             Flush->>Flush: no entry — stays unsynced
         end
@@ -287,11 +287,18 @@ The margin is only ever decisive inside the flush's own attempts.
 
 A report failure does not stop the run: every backlog record is still attempted and every connection
 still resolved, exactly as the report cron behaves. Retries are idempotent for backlog records — a
-connection that already has a `rec.Syncs[connection_id]` entry (real accept *or* skip) is never
-re-attempted.
+marketplace that already holds a resolved `rec.Syncs[provider_type]` entry (real accept *or* skip) is
+never re-attempted.
 
-Each record's outcome is exactly one of three, decided by the caller from `rec.Synced` and
-`anyRealEntry` (the shared reporter itself only reports; it does not classify):
+**`syncs` is keyed by marketplace, not by connection.** A tenant can delete a connection and create
+another for the same marketplace; the connection id changes while the subscription's agreement does
+not. Keyed by connection, an already-reported record would read as unreported the moment that happens
+and be sent twice. The entry still records `connection_id`, for tracing which credentials were used,
+but never as part of the key. An entry counts as resolved only when it carries both `synced_at` and
+`agreement_id` — a half-written one is retried rather than mistaken for a completed report.
+
+Each record's outcome is exactly one of three, decided by the caller from `rec.Synced` and whether any
+mapped marketplace accepted it (the shared reporter itself only reports; it does not classify):
 
 - **succeeded** — every relevant connection has an entry, and at least one is a real post
 - **failed** — at least one relevant connection still has no entry
@@ -305,7 +312,7 @@ the activity returns an error.
 This reverses the original draft, which delinked unconditionally on the reasoning that a cancelled
 subscription shouldn't keep a live-looking mapping. That trade was wrong: a published mapping is the
 *only* thing that keeps a subscription's backlog visible to the 3h report cron
-(`isRelevantForSubscription` resolves through published mappings only). Delinking on failure doesn't
+(`hasAgreementFor` resolves through published mappings only). Delinking on failure doesn't
 just look stale — it permanently strands whatever failed to report, with no path back short of a human
 re-publishing the mapping. Retries are cheap and idempotent, so there was no compensating benefit.
 
@@ -475,7 +482,7 @@ alerting on the failure logs long before a cancellation exposes it.
 it has been sent, so late usage for that window is lost. Revising the stored row does not recover it,
 and the reason is worth stating because it looks like an easy fix:
 
-- The reporter skips any connection already holding a `syncs` entry, so a revised amount is never sent
+- The reporter skips any marketplace already holding a `syncs` entry, so a revised amount is never sent
   to a provider that accepted the original. The row would then claim an amount no marketplace ever
   received, and nothing would flag the divergence — strictly worse than a stale figure, because
   `syncs` stops being a truthful receipt.
@@ -520,7 +527,7 @@ marketplace usage report:       gcp rejected the usage record, will retry next r
 marketplace usage snapshot:     failed to check for an existing usage record
 ```
 
-Every line tied to one connection carries `marketplace` and `connection_id`; every line tied to one
+Every line tied to one connection carries `marketplace`; every line tied to one
 record carries `usage_record_id`. Connection-level lines (auth, mapping load) have no
 `usage_record_id`, because no record is in scope yet.
 
@@ -591,7 +598,7 @@ excluded from *every* count:
 
 | Level | Message | Meaning |
 | --- | --- | --- |
-| `debug` | `…skipping usage record, currency is not usd` | None of the three marketplaces accept non-USD. **Debug-level, so invisible at default settings** — a EUR marketplace subscription simply never syncs, with no signal. Check this first when records aren't syncing and nothing is logged. |
+| `info` | `…skipping usage record, currency is not usd` | None of the three marketplaces accept non-USD. A record in any other currency never syncs and will fall out of the submission window unreported, so this is logged at info rather than debug: it needs to be visible at default settings. |
 | `error` | `…skipping usage record, amount is negative` | A credit, not usage. An upstream billing bug; never sent. |
 
 Reading the counts: `Total` counts records that reached at least one relevant connection. `succeeded` =
@@ -720,9 +727,9 @@ resource_id / plan_id / dimension).
 | Azure | `stage=usage_event` | Every other Azure outcome — rejection, status error and transport failure are indistinguishable at the stage level. Read the error text for the HTTP status |
 | All | `…usage record synced` | **Accepted.** `reporting_id` is AWS's `MeteringRecordId`, GCP's `operationId`, or Azure's `usageEventId` |
 
-**The "already reported" silence.** A connection that already holds an entry in `rec.Syncs` is skipped
-with no log and no API call — correct, but it means a provider can vanish from a run's logs because an
-earlier run already satisfied it. Absence of AWS lines does **not** mean AWS failed.
+**The "already reported" silence.** A marketplace that already holds a resolved entry in `rec.Syncs`
+is skipped with no log and no API call — correct, but it means a provider can vanish from a run's logs
+because an earlier run already satisfied it. Absence of AWS lines does **not** mean AWS failed.
 
 ### 8.5 Answering "was this record reported?"
 
@@ -732,10 +739,12 @@ Logs alone can't always tell you, because of the two silences above. Read the ro
 SELECT synced, syncs FROM usage_records WHERE id = '<usage_record_id>';
 ```
 
-A connection id present with a real `reporting_id` = accepted (possibly on an earlier run). Present
-with `"skipped": true` = resolved via skip. **Absent** = never accepted — and check whether that
-provider is even relevant: the subscription mapping must exist *and* carry a non-empty provider entity
-id, or `relevantConnections` excludes it silently.
+The map is keyed by provider type (`aws_marketplace`, `gcp_marketplace`, `azure_marketplace`). A key
+present with a real `reporting_id` = accepted (possibly on an earlier run, possibly through a
+connection since replaced — `connection_id` on the entry says which). Present with `"skipped": true` =
+resolved via skip. **Absent** = never accepted — and check whether the subscription holds an agreement
+there at all: the mapping must exist *and* carry a non-empty provider entity id, or that marketplace is
+excluded silently.
 
 For a flush specifically, the final record's `period_end` must equal `cancel_at` **exactly**, not
 `cancel_at - 1s` — the margin exists only on the wire (§3.4).

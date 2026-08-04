@@ -2,23 +2,43 @@ package types
 
 import "time"
 
-// UsageRecordSyncEntry records the outcome of reporting a usage record to one destination (today,
-// always a marketplace connection). Stored in usage_records.syncs, keyed by connection_id.
-// Marketplace is carried on the entry itself so it reads back self-describing even if the
-// connection is later deleted.
+// UsageRecordSyncEntry records the outcome of reporting a usage record to one marketplace. Stored in
+// usage_records.syncs, keyed by provider type: aws_marketplace, gcp_marketplace or azure_marketplace.
+//
+// The key is the marketplace, not the connection that did the reporting. A tenant can delete a
+// connection and create another one for the same marketplace, which changes the connection id while
+// the subscription's agreement on that marketplace stays the same. Keyed by connection, an already
+// reported record would look unreported the moment that happens and be sent a second time. Keyed by
+// marketplace, the question asked is the one that actually matters: has this record reached AWS for
+// this subscription yet.
 //
 // An entry is one of two kinds, distinguished by Skipped:
 //   - A real acceptance: Skipped is false, ReportingID carries the marketplace's receipt.
 //   - A skip: Skipped is true, ReportingID is empty, SkipReason explains why. Used only when
 //     sending is deterministically pointless for this provider (e.g. a zero-amount row on Azure,
-//     which documents a zero quantity as invalid). This still resolves the connection so the row's
+//     which documents a zero quantity as invalid). This still resolves the marketplace so the row's
 //     synced flag can reach true, without claiming anything was posted.
 type UsageRecordSyncEntry struct {
-	Marketplace SecretProvider `json:"marketplace"`
-	ReportingID string         `json:"reporting_id"`
-	SyncedAt    time.Time      `json:"synced_at"`
-	Skipped     bool           `json:"skipped,omitempty"`
-	SkipReason  string         `json:"skip_reason,omitempty"`
+	// AgreementID is the subscription's identifier on this marketplace: license_arn on AWS,
+	// usage_reporting_id on GCP, resource_id on Azure. It records which agreement the usage was
+	// billed against, which stays meaningful after the connection that reported it is replaced.
+	AgreementID string    `json:"agreement_id"`
+	ReportingID string    `json:"reporting_id"`
+	SyncedAt    time.Time `json:"synced_at"`
+	Skipped     bool      `json:"skipped,omitempty"`
+	SkipReason  string    `json:"skip_reason,omitempty"`
+	// ConnectionID is the connection that reported this entry, kept for tracing which credentials
+	// were used. It is deliberately not part of the map key: a replaced connection must not make an
+	// already reported record look unreported.
+	ConnectionID string `json:"connection_id"`
+}
+
+// IsResolved reports whether this entry represents a completed attempt, accepted or skipped. A
+// zero-valued or half-written entry is not resolved and must be attempted again: treating one as
+// done would silently drop the usage it stands for. Every provider sets SyncedAt and AgreementID on
+// both outcomes, so those two are what a complete entry is recognised by.
+func (e UsageRecordSyncEntry) IsResolved() bool {
+	return !e.SyncedAt.IsZero() && e.AgreementID != ""
 }
 
 // UsageRecordFilter selects rows from usage_records. Tenant and environment are not fields: every

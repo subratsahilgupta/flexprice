@@ -55,9 +55,8 @@ func MarketplaceSubscriptionFinalUsageFlushWorkflow(
 	log.Info("MarketplaceSubscriptionFinalUsageFlushWorkflow completed",
 		"subscription_id", input.SubscriptionID,
 		"final_record_id", result.FinalRecordID,
-		"records_succeeded", len(result.SucceededRecordIDs),
-		"records_failed", len(result.FailedRecordIDs),
-		"records_skipped", len(result.SkippedRecordIDs),
-		"mappings_delinked", len(result.DelinkedMappingIDs))
+		"records_succeeded", result.RecordsSucceeded,
+		"records_skipped", result.RecordsSkipped,
+		"mappings_delinked", result.MappingsDelinked)
 	return &result, nil
 }

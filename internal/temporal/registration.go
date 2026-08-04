@@ -286,7 +286,7 @@ func RegisterWorkflowsAndActivities(
 	azureMarketplaceClient := azuremarketplace.NewClient(params.Logger)
 	// One reporter shared by both the scheduled reporting cron and the cancellation flush, so the two
 	// report through identical per-provider code.
-	marketplaceReporter := marketplaceActivities.NewMarketplaceReporter(
+	mktplaceReporter := marketplaceActivities.NewMarketplaceReporter(
 		params,
 		awsMarketplaceClient,
 		gcpMarketplaceClient,
@@ -294,8 +294,8 @@ func RegisterWorkflowsAndActivities(
 		params.Logger,
 	)
 	marketplaceSnapshotActivities := marketplaceActivities.NewSnapshotActivities(params, params.Logger)
-	marketplaceReportActivities := marketplaceActivities.NewReportActivities(params, marketplaceReporter, params.Logger)
-	marketplaceFlushActivities := marketplaceActivities.NewFlushActivities(params, marketplaceReporter, params.Logger)
+	marketplaceReportActivities := marketplaceActivities.NewReportActivities(params, mktplaceReporter, params.Logger)
+	marketplaceFlushActivities := marketplaceActivities.NewFlushActivities(params, mktplaceReporter, params.Logger)
 
 	cronBundle := &cronActivityBundle{
 		creditGrant:                  cronActivities.NewCreditGrantActivities(creditGrantService),

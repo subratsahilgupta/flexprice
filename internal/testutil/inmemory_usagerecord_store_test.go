@@ -55,21 +55,24 @@ func TestInMemoryUsageRecordStore(t *testing.T) {
 	require.Len(t, unsynced, 1)
 	require.Equal(t, "ur_1", unsynced[0].ID)
 
-	// Reported to one of two relevant connections — synced stays false, still in the unsynced list
+	// Reported to one of two marketplaces the subscription has an agreement on — synced stays false,
+	// so the record is still in the unsynced list
+	awsKey := string(types.SecretProviderAWSMarketplace)
+	gcpKey := string(types.SecretProviderGCPMarketplace)
 	err = store.MarkSynced(ctx, "ur_1", map[string]types.UsageRecordSyncEntry{
-		"conn_aws": {Marketplace: types.SecretProviderAWSMarketplace, ReportingID: "aws-report-1", SyncedAt: time.Now().UTC()},
+		awsKey: {AgreementID: "arn:aws:license-manager::l-abc", ReportingID: "aws-report-1", SyncedAt: time.Now().UTC(), ConnectionID: "conn_aws"},
 	}, false)
 	require.NoError(t, err)
 
 	unsynced, err = store.ListUnsynced(ctx, "tenant_1", "env_1")
 	require.NoError(t, err)
-	require.Len(t, unsynced, 1, "still relevant to a second connection, so still unsynced")
-	require.Contains(t, unsynced[0].Syncs, "conn_aws")
+	require.Len(t, unsynced, 1, "a second marketplace is still outstanding, so still unsynced")
+	require.Contains(t, unsynced[0].Syncs, awsKey)
 
-	// Reported to the second connection too — now fully synced, drops out of the unsynced list
+	// Reported to the second marketplace too — now fully synced, drops out of the unsynced list
 	err = store.MarkSynced(ctx, "ur_1", map[string]types.UsageRecordSyncEntry{
-		"conn_aws": {Marketplace: types.SecretProviderAWSMarketplace, ReportingID: "aws-report-1", SyncedAt: time.Now().UTC()},
-		"conn_gcp": {Marketplace: types.SecretProviderGCPMarketplace, ReportingID: "gcp-report-1", SyncedAt: time.Now().UTC()},
+		awsKey: {AgreementID: "arn:aws:license-manager::l-abc", ReportingID: "aws-report-1", SyncedAt: time.Now().UTC(), ConnectionID: "conn_aws"},
+		gcpKey: {AgreementID: "gcp-usage-reporting-id", ReportingID: "gcp-report-1", SyncedAt: time.Now().UTC(), ConnectionID: "conn_gcp"},
 	}, true)
 	require.NoError(t, err)
 
@@ -79,8 +82,8 @@ func TestInMemoryUsageRecordStore(t *testing.T) {
 
 	stored, err := store.store.Get(ctx, "ur_1")
 	require.NoError(t, err)
-	require.Contains(t, stored.Syncs, "conn_aws")
-	require.Contains(t, stored.Syncs, "conn_gcp")
+	require.Contains(t, stored.Syncs, awsKey)
+	require.Contains(t, stored.Syncs, gcpKey)
 
 	store.Clear()
 	unsynced, err = store.ListUnsynced(ctx, "tenant_1", "env_1")
@@ -281,4 +284,48 @@ func recordIDs(records []*usagerecord.UsageRecord) []string {
 		ids[i] = r.ID
 	}
 	return ids
+}
+
+// The sync map is keyed by marketplace, not by the connection that reported it, so replacing a
+// connection must not make an already reported record look unreported. Keyed by connection id this
+// would report the same usage to the same marketplace twice.
+func TestUsageRecordSyncSurvivesConnectionReplacement(t *testing.T) {
+	awsKey := string(types.SecretProviderAWSMarketplace)
+
+	entry := types.UsageRecordSyncEntry{
+		AgreementID:  "arn:aws:license-manager::l-abc",
+		ReportingID:  "aws-report-1",
+		SyncedAt:     time.Now().UTC(),
+		ConnectionID: "conn_old",
+	}
+	syncs := map[string]types.UsageRecordSyncEntry{awsKey: entry}
+
+	// The tenant deletes conn_old and connects conn_new for the same marketplace. The agreement is
+	// unchanged, so the record must still read as reported.
+	got, ok := syncs[awsKey]
+	require.True(t, ok, "the entry is found by marketplace regardless of which connection wrote it")
+	require.True(t, got.IsResolved())
+	require.Equal(t, "conn_old", got.ConnectionID, "the reporting connection stays recorded for tracing")
+}
+
+// A half-written entry must not be mistaken for a completed report: treating one as done would
+// silently drop the usage it stands for.
+func TestUsageRecordSyncEntryIsResolved(t *testing.T) {
+	now := time.Now().UTC()
+	cases := []struct {
+		name  string
+		entry types.UsageRecordSyncEntry
+		want  bool
+	}{
+		{"accepted", types.UsageRecordSyncEntry{AgreementID: "a", ReportingID: "r", SyncedAt: now}, true},
+		{"skipped still resolves", types.UsageRecordSyncEntry{AgreementID: "a", SyncedAt: now, Skipped: true, SkipReason: "zero_amount_not_supported"}, true},
+		{"zero value", types.UsageRecordSyncEntry{}, false},
+		{"no synced_at", types.UsageRecordSyncEntry{AgreementID: "a", ReportingID: "r"}, false},
+		{"no agreement id", types.UsageRecordSyncEntry{ReportingID: "r", SyncedAt: now}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, tc.entry.IsResolved())
+		})
+	}
 }

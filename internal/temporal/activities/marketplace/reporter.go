@@ -24,15 +24,12 @@ import (
 // seller-facing currency selection.
 const marketplaceReportingCurrency = "usd"
 
-// MarketplaceReporter is exported only so registration can construct one; callers treat it as opaque.
-type MarketplaceReporter = marketplaceReporter
-
-// marketplaceReporter owns everything needed to authenticate a marketplace connection and report one
+// MarketplaceReporter owns everything needed to authenticate a marketplace connection and report one
 // usage record to it. It is deliberately not a Temporal activity: it is the shared implementation
 // behind both the scheduled reporting cron (ReportActivities) and the one-shot cancellation flush
 // (FlushActivities), so neither can drift from the other in how it talks to a provider. Both hold
 // the same instance rather than one activity reaching into the other.
-type marketplaceReporter struct {
+type MarketplaceReporter struct {
 	entityIntegrationMappingRepo entityintegrationmapping.Repository
 	encryptionService            security.EncryptionService
 	awsClient                    awsmarketplace.Client
@@ -49,8 +46,8 @@ func NewMarketplaceReporter(
 	gcpClient gcpmarketplace.Client,
 	azureClient azuremarketplace.Client,
 	log *logger.Logger,
-) *marketplaceReporter {
-	return &marketplaceReporter{
+) *MarketplaceReporter {
+	return &MarketplaceReporter{
 		entityIntegrationMappingRepo: params.EntityIntegrationMappingRepo,
 		encryptionService:            params.EncryptionService,
 		awsClient:                    awsClient,
@@ -99,9 +96,9 @@ type azureConnectionMappings struct {
 	plan                     map[string]azurePlanMapping
 }
 
-// preparedConnection is an authenticated connection with its entity mappings loaded, ready to report
+// marketplaceConnection is an authenticated connection with its entity mappings loaded, ready to report
 // records through. Only the fields for conn.ProviderType are populated.
-type preparedConnection struct {
+type marketplaceConnection struct {
 	conn *connection.Connection
 
 	awsCreds    awssdk.Credentials
@@ -115,126 +112,110 @@ type preparedConnection struct {
 	azureMappings *azureConnectionMappings
 }
 
-// isRelevantForSubscription reports whether this connection is mapped to subscriptionID — i.e.
-// whether a usage record for that subscription needs to reach it at all.
-func (preparedConn *preparedConnection) isRelevantForSubscription(subscriptionID string) bool {
-	switch preparedConn.conn.ProviderType {
+// hasAgreementFor reports whether the subscription holds an agreement on this connection's
+// marketplace, which is what makes a usage record for it reportable here.
+//
+// A subscription is never mapped to a connection: an entity mapping records the subscription's
+// identifier on a marketplace (license_arn, usage_reporting_id, resource_id) against a provider type,
+// and a connection is only the credentials for talking to that provider. Replacing the connection
+// leaves the agreement untouched.
+func (marketplaceConn *marketplaceConnection) hasAgreementFor(subscriptionID string) bool {
+	switch marketplaceConn.conn.ProviderType {
 	case types.SecretProviderAWSMarketplace:
-		return preparedConn.awsMappings != nil && preparedConn.awsMappings.licenseArnBySubscription[subscriptionID] != ""
+		return marketplaceConn.awsMappings != nil && marketplaceConn.awsMappings.licenseArnBySubscription[subscriptionID] != ""
 	case types.SecretProviderGCPMarketplace:
-		return preparedConn.gcpMappings != nil && preparedConn.gcpMappings.usageReportingIDBySubscription[subscriptionID] != ""
+		return marketplaceConn.gcpMappings != nil && marketplaceConn.gcpMappings.usageReportingIDBySubscription[subscriptionID] != ""
 	case types.SecretProviderAzureMarketplace:
-		return preparedConn.azureMappings != nil && preparedConn.azureMappings.resourceIDBySubscription[subscriptionID] != ""
+		return marketplaceConn.azureMappings != nil && marketplaceConn.azureMappings.resourceIDBySubscription[subscriptionID] != ""
 	}
 	return false
 }
 
-// relevantConnections returns the connections mapped to the record's subscription — those it must
-// reach before it can be considered synced.
-func relevantConnections(rec *usagerecord.UsageRecord, preparedConns []*preparedConnection) []*preparedConnection {
-	var relevant []*preparedConnection
-	for _, preparedConn := range preparedConns {
-		if preparedConn.isRelevantForSubscription(rec.SubscriptionID) {
-			relevant = append(relevant, preparedConn)
-		}
-	}
-	return relevant
-}
-
-// reportRecordToConnections reports rec to each of relevantConns that does not already hold a sync
-// entry, and sets rec.Synced once every one of them does.
+// reportRecordToMarketplaces reports a record to every marketplace its subscription holds an
+// agreement on that does not already hold a sync entry, and marks it synced once all of them do.
 //
-// It updates rec in place but never persists it: the final flush record is reported before it exists
-// in the table, so storing the outcome is left to the caller.
+// The record is updated in place but never persisted: the final flush record is reported before it
+// exists in the table, so storing the outcome is left to the caller.
 //
-// The returned connection ids are those that accepted the record on this call, for the caller to log;
-// the entry itself is on rec.Syncs. Skips are excluded — they are logged where the decision is made,
-// and reporting one as synced would claim something was sent when nothing was.
-func (r *marketplaceReporter) reportRecordToConnections(
+// Returns the marketplaces that accepted the record on this call, for the caller to log; the entry
+// itself is on the record. Skips are excluded, since they are logged where the decision is made and
+// reporting one as accepted would claim something was sent when nothing was.
+func (r *MarketplaceReporter) reportRecordToMarketplaces(
 	ctx context.Context,
 	rec *usagerecord.UsageRecord,
-	relevantConns []*preparedConnection,
-) (reportedConnIDs []string) {
+	reportableConns []*marketplaceConnection,
+) (reportedMarketplaces []string) {
 	if rec.Syncs == nil {
 		rec.Syncs = map[string]types.UsageRecordSyncEntry{}
 	}
 
-	for _, preparedConn := range relevantConns {
-		// A skip leaves an entry as well, so a connection that skipped this record is treated as
-		// resolved and never attempted again.
-		if _, alreadyReported := rec.Syncs[preparedConn.conn.ID]; alreadyReported {
+	for _, marketplaceConn := range reportableConns {
+		marketplace := string(marketplaceConn.conn.ProviderType)
+		// A skip leaves an entry as well, so a marketplace that skipped this record is treated as
+		// resolved and never attempted again. Only a complete entry counts: a half-written one is
+		// retried rather than mistaken for a report that already happened.
+		if entry, ok := rec.Syncs[marketplace]; ok && entry.IsResolved() {
 			continue
 		}
 
 		var entry types.UsageRecordSyncEntry
 		var ok bool
-		switch preparedConn.conn.ProviderType {
+		switch marketplaceConn.conn.ProviderType {
 		case types.SecretProviderAWSMarketplace:
-			entry, ok = r.reportAWSRecord(ctx, rec, preparedConn)
+			entry, ok = r.reportAWSRecord(ctx, rec, marketplaceConn)
 		case types.SecretProviderGCPMarketplace:
-			entry, ok = r.reportGCPRecord(ctx, rec, preparedConn)
+			entry, ok = r.reportGCPRecord(ctx, rec, marketplaceConn)
 		case types.SecretProviderAzureMarketplace:
-			entry, ok = r.reportAzureRecord(ctx, rec, preparedConn)
+			entry, ok = r.reportAzureRecord(ctx, rec, marketplaceConn)
 		}
 		if !ok {
 			continue // already logged inside the provider method
 		}
 
-		rec.Syncs[preparedConn.conn.ID] = entry
+		rec.Syncs[marketplace] = entry
 		if !entry.Skipped {
-			reportedConnIDs = append(reportedConnIDs, preparedConn.conn.ID)
+			reportedMarketplaces = append(reportedMarketplaces, marketplace)
 		}
 	}
 
-	// Synced means every relevant connection is resolved, whether it accepted the record or skipped
+	// Synced means every marketplace with an agreement is resolved, whether it accepted or skipped
 	// it. A skip is permanent — the amount will not change on a retry — so requiring an acceptance
 	// here would leave the record pending forever.
 	rec.Synced = true
-	for _, preparedConn := range relevantConns {
-		if _, alreadyReported := rec.Syncs[preparedConn.conn.ID]; !alreadyReported {
+	for _, marketplaceConn := range reportableConns {
+		entry, ok := rec.Syncs[string(marketplaceConn.conn.ProviderType)]
+		if !ok || !entry.IsResolved() {
 			rec.Synced = false
 			break
 		}
 	}
 
-	return reportedConnIDs
+	return reportedMarketplaces
 }
 
-// anyRealEntry reports whether any relevant connection actually accepted the record, as opposed to
-// every one of them skipping it. Both outcomes leave the record synced, so this is what separates a
-// record that reached a marketplace from one that never did.
-func anyRealEntry(rec *usagerecord.UsageRecord, relevantConns []*preparedConnection) bool {
-	for _, preparedConn := range relevantConns {
-		if entry, ok := rec.Syncs[preparedConn.conn.ID]; ok && !entry.Skipped {
-			return true
-		}
-	}
-	return false
-}
-
-// prepareConnection authenticates one connection and loads its provider's entity mappings, returning
+// prepareMarketplaceConnection authenticates one connection and loads its provider's entity mappings, returning
 // a handle ready to report records through. Called once per connection per run, before any record is
 // touched, so a failure here defers every record for that connection.
-func (r *marketplaceReporter) prepareConnection(ctx context.Context, conn *connection.Connection) (*preparedConnection, error) {
+func (r *MarketplaceReporter) prepareMarketplaceConnection(ctx context.Context, conn *connection.Connection) (*marketplaceConnection, error) {
 	switch conn.ProviderType {
 	case types.SecretProviderAWSMarketplace:
 		creds, region, mappings, err := r.authAWSConnection(ctx, conn)
 		if err != nil {
 			return nil, err
 		}
-		return &preparedConnection{conn: conn, awsCreds: creds, awsRegion: region, awsMappings: mappings}, nil
+		return &marketplaceConnection{conn: conn, awsCreds: creds, awsRegion: region, awsMappings: mappings}, nil
 	case types.SecretProviderGCPMarketplace:
 		svc, mappings, err := r.authGCPConnection(ctx, conn)
 		if err != nil {
 			return nil, err
 		}
-		return &preparedConnection{conn: conn, gcpSvc: svc, gcpMappings: mappings}, nil
+		return &marketplaceConnection{conn: conn, gcpSvc: svc, gcpMappings: mappings}, nil
 	case types.SecretProviderAzureMarketplace:
 		token, mappings, err := r.authAzureConnection(ctx, conn)
 		if err != nil {
 			return nil, err
 		}
-		return &preparedConnection{conn: conn, azureToken: token, azureMappings: mappings}, nil
+		return &marketplaceConnection{conn: conn, azureToken: token, azureMappings: mappings}, nil
 	}
 	return nil, ierr.NewErrorf("unsupported marketplace provider type %q", conn.ProviderType).Mark(ierr.ErrValidation)
 }
@@ -245,9 +226,9 @@ func (r *marketplaceReporter) prepareConnection(ctx context.Context, conn *conne
 // produced a bad value, not a marketplace rejection, so it is left unsynced for investigation rather
 // than sent. A zero amount passes this check; whether it is reportable is provider-specific and is
 // decided in reportAzureRecord.
-func (r *marketplaceReporter) isEligibleForReport(ctx context.Context, rec *usagerecord.UsageRecord) bool {
+func (r *MarketplaceReporter) isEligibleForReport(ctx context.Context, rec *usagerecord.UsageRecord) bool {
 	if !types.IsMatchingCurrency(rec.Currency, marketplaceReportingCurrency) {
-		r.logger.Debug(ctx, "marketplace usage report: skipping usage record, currency is not usd",
+		r.logger.Info(ctx, "marketplace usage report: skipping usage record, currency is not usd",
 			"subscription_id", rec.SubscriptionID, "usage_record_id", rec.ID, "currency", rec.Currency)
 		return false
 	}
@@ -266,7 +247,7 @@ func (r *marketplaceReporter) isEligibleForReport(ctx context.Context, rec *usag
 
 // authAWSConnection decrypts a connection's AWS secret, loads its mappings, and assumes the tenant's
 // role once.
-func (r *marketplaceReporter) authAWSConnection(ctx context.Context, conn *connection.Connection) (awssdk.Credentials, string, *awsConnectionMappings, error) {
+func (r *MarketplaceReporter) authAWSConnection(ctx context.Context, conn *connection.Connection) (awssdk.Credentials, string, *awsConnectionMappings, error) {
 	tenantID := conn.TenantID
 	environmentID := conn.EnvironmentID
 
@@ -327,18 +308,18 @@ func (r *marketplaceReporter) authAWSConnection(ctx context.Context, conn *conne
 
 // reportAWSRecord reports a single usage record to AWS and returns the sync entry to persist on
 // success.
-func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerecord.UsageRecord, preparedConn *preparedConnection) (types.UsageRecordSyncEntry, bool) {
+func (r *MarketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerecord.UsageRecord, marketplaceConn *marketplaceConnection) (types.UsageRecordSyncEntry, bool) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
-	mappings := preparedConn.awsMappings
+	mappings := marketplaceConn.awsMappings
 
 	licenseArn := mappings.licenseArnBySubscription[rec.SubscriptionID]
 	customerAWSAccountID := mappings.awsAccountByCustomer[rec.CustomerID]
 	plan, planFound := mappings.plan[rec.PlanID]
 	if licenseArn == "" || customerAWSAccountID == "" || !planFound || plan.dimension == "" {
-		r.logger.Error(ctx, "marketplace usage report: failed to resolve the record's marketplace identifiers", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to resolve the record's marketplace identifiers", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "customer_id", rec.CustomerID, "plan_id", rec.PlanID, "connection_id", preparedConn.conn.ID,
+			"usage_record_id", rec.ID, "customer_id", rec.CustomerID, "plan_id", rec.PlanID, "connection_id", marketplaceConn.conn.ID,
 			"error", "missing license_arn, customer_aws_account_id, or plan dimension mapping", "stage", "resolve_record")
 		return types.UsageRecordSyncEntry{}, false
 	}
@@ -355,14 +336,14 @@ func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerec
 	// AWS's job: it bills quantity x the dimension's rate.
 	quantity := types.ToSmallestUnit(rec.Amount, marketplaceReportingCurrency)
 	if quantity > math.MaxInt32 {
-		r.logger.Error(ctx, "marketplace usage report: failed to convert amount to an aws quantity", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to convert amount to an aws quantity", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "amount", rec.Amount, "currency", rec.Currency, "quantity", quantity,
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "amount", rec.Amount, "currency", rec.Currency, "quantity", quantity,
 			"error", "quantity exceeds the maximum aws accepts", "stage", "convert_quantity")
 		return types.UsageRecordSyncEntry{}, false
 	}
 
-	res, err := r.awsClient.BatchMeterUsage(ctx, preparedConn.awsCreds, preparedConn.awsRegion, awsmarketplace.UsageRecordInput{
+	res, err := r.awsClient.BatchMeterUsage(ctx, marketplaceConn.awsCreds, marketplaceConn.awsRegion, awsmarketplace.UsageRecordInput{
 		CustomerAWSAccountID: customerAWSAccountID,
 		LicenseArn:           licenseArn,
 		ProductCode:          productCode,
@@ -372,17 +353,17 @@ func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerec
 		Timestamp: rec.PeriodEnd,
 	})
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report: aws batch meter usage call failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: aws batch meter usage call failed", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "license_arn", licenseArn, "dimension", plan.dimension, "amount", rec.Amount,
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "license_arn", licenseArn, "dimension", plan.dimension, "amount", rec.Amount,
 			"error", err, "stage", "batch_meter_usage")
 		return types.UsageRecordSyncEntry{}, false
 	}
 	if res == nil {
 		// AWS returned the record as unprocessed; leaving it unsynced retries it next run.
-		r.logger.Info(ctx, "marketplace usage report: aws did not process the usage record, will retry next run", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Info(ctx, "marketplace usage report: aws did not process the usage record, will retry next run", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "license_arn", licenseArn, "dimension", plan.dimension, "amount", rec.Amount)
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "license_arn", licenseArn, "dimension", plan.dimension, "amount", rec.Amount)
 		return types.UsageRecordSyncEntry{}, false
 	}
 
@@ -396,38 +377,39 @@ func (r *marketplaceReporter) reportAWSRecord(ctx context.Context, rec *usagerec
 		// The buyer has no active agreement for this product, or their AWS account was suspended.
 		// Resolves itself once the buyer (re)subscribes, so it keeps retrying rather than needing
 		// manual action.
-		r.logger.Error(ctx, "marketplace usage report: aws rejected the usage record, customer not subscribed, will retry next run", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: aws rejected the usage record, customer not subscribed, will retry next run", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "customer_id", rec.CustomerID, "license_arn", licenseArn,
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "customer_id", rec.CustomerID, "license_arn", licenseArn,
 			"dimension", plan.dimension, "amount", rec.Amount, "error", "customer_not_subscribed")
 		return types.UsageRecordSyncEntry{}, false
 	case awsmarketplace.StatusDuplicateRecord:
 		// NOT "AWS already has this exact record, safe to skip" — AWS has a DIFFERENT record for the
 		// same customer+dimension+timestamp already on file, and rejected this one. Retrying with the
 		// same amount hits the same rejection every time; this needs a human to fix the mismatch.
-		r.logger.Error(ctx, "marketplace usage report: aws rejected the usage record, it conflicts with a different record already on file, needs manual investigation", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: aws rejected the usage record, it conflicts with a different record already on file, needs manual investigation", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "customer_id", rec.CustomerID, "license_arn", licenseArn,
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "customer_id", rec.CustomerID, "license_arn", licenseArn,
 			"dimension", plan.dimension, "amount", rec.Amount, "period_end", rec.PeriodEnd, "error", "duplicate_record")
 		return types.UsageRecordSyncEntry{}, false
 	default:
-		r.logger.Error(ctx, "marketplace usage report: aws returned an unrecognized status, will retry next run", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: aws returned an unrecognized status, will retry next run", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "license_arn", licenseArn, "dimension", plan.dimension, "amount", rec.Amount,
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "license_arn", licenseArn, "dimension", plan.dimension, "amount", rec.Amount,
 			"aws_status", res.Status, "error", "unrecognized_aws_status")
 		return types.UsageRecordSyncEntry{}, false
 	}
 
 	return types.UsageRecordSyncEntry{
-		Marketplace: types.SecretProviderAWSMarketplace,
-		ReportingID: res.MeteringRecordID,
-		SyncedAt:    time.Now().UTC(),
+		AgreementID:  licenseArn,
+		ReportingID:  res.MeteringRecordID,
+		SyncedAt:     time.Now().UTC(),
+		ConnectionID: marketplaceConn.conn.ID,
 	}, true
 }
 
 // loadAWSMappings loads the subscription, customer and plan mappings for the current tenant/
 // environment and indexes them for lookup while reporting.
-func (r *marketplaceReporter) loadAWSMappings(ctx context.Context) (*awsConnectionMappings, error) {
+func (r *MarketplaceReporter) loadAWSMappings(ctx context.Context) (*awsConnectionMappings, error) {
 	providerType := string(types.SecretProviderAWSMarketplace)
 
 	subMappings, err := r.entityIntegrationMappingRepo.List(ctx, &types.EntityIntegrationMappingFilter{
@@ -484,7 +466,7 @@ func (r *marketplaceReporter) loadAWSMappings(ctx context.Context) (*awsConnecti
 
 // authGCPConnection decrypts a connection's GCP secret, loads its mappings, and performs the WIF
 // exchange once.
-func (r *marketplaceReporter) authGCPConnection(ctx context.Context, conn *connection.Connection) (*servicecontrol.Service, *gcpConnectionMappings, error) {
+func (r *MarketplaceReporter) authGCPConnection(ctx context.Context, conn *connection.Connection) (*servicecontrol.Service, *gcpConnectionMappings, error) {
 	tenantID := conn.TenantID
 	environmentID := conn.EnvironmentID
 
@@ -523,17 +505,17 @@ func (r *marketplaceReporter) authGCPConnection(ctx context.Context, conn *conne
 
 // reportGCPRecord reports a single usage record to GCP and returns the sync entry to persist on
 // success.
-func (r *marketplaceReporter) reportGCPRecord(ctx context.Context, rec *usagerecord.UsageRecord, preparedConn *preparedConnection) (types.UsageRecordSyncEntry, bool) {
+func (r *MarketplaceReporter) reportGCPRecord(ctx context.Context, rec *usagerecord.UsageRecord, marketplaceConn *marketplaceConnection) (types.UsageRecordSyncEntry, bool) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
-	mappings := preparedConn.gcpMappings
+	mappings := marketplaceConn.gcpMappings
 
 	consumerID := mappings.usageReportingIDBySubscription[rec.SubscriptionID]
 	plan, planFound := mappings.plan[rec.PlanID]
 	if consumerID == "" || !planFound || plan.serviceName == "" || plan.metricName == "" {
-		r.logger.Error(ctx, "marketplace usage report: failed to resolve the record's marketplace identifiers", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to resolve the record's marketplace identifiers", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "customer_id", rec.CustomerID, "plan_id", rec.PlanID, "connection_id", preparedConn.conn.ID,
+			"usage_record_id", rec.ID, "customer_id", rec.CustomerID, "plan_id", rec.PlanID, "connection_id", marketplaceConn.conn.ID,
 			"error", "missing usage_reporting_id or plan service_name/metric_name mapping", "stage", "resolve_record")
 		return types.UsageRecordSyncEntry{}, false
 	}
@@ -542,7 +524,7 @@ func (r *marketplaceReporter) reportGCPRecord(ctx context.Context, rec *usagerec
 	// ToSmallestUnit already returns int64, so unlike AWS's int32 Quantity there's no overflow guard.
 	cents := types.ToSmallestUnit(rec.Amount, marketplaceReportingCurrency)
 
-	reportResult, err := r.gcpClient.Report(ctx, preparedConn.gcpSvc, gcpmarketplace.UsageReportInput{
+	reportResult, err := r.gcpClient.Report(ctx, marketplaceConn.gcpSvc, gcpmarketplace.UsageReportInput{
 		ServiceName: plan.serviceName,
 		ConsumerID:  consumerID,
 		MetricName:  plan.metricName,
@@ -553,18 +535,18 @@ func (r *marketplaceReporter) reportGCPRecord(ctx context.Context, rec *usagerec
 		EndTime:     rec.PeriodEnd,
 	})
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report: gcp services report call failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: gcp services report call failed", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "error", err, "stage", "services_report")
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "error", err, "stage", "services_report")
 		return types.UsageRecordSyncEntry{}, false
 	}
 
 	// HTTP 200 is not the same as accepted — reportErrors must be checked. Common codes:
 	// 5=NOT_FOUND (consumer inactive), 7=PERMISSION_DENIED, 3=INVALID_ARGUMENT.
 	if !reportResult.Accepted {
-		r.logger.Error(ctx, "marketplace usage report: gcp rejected the usage record, will retry next run", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: gcp rejected the usage record, will retry next run", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "error", "rejected_by_gcp", "error_code", reportResult.ErrorCode,
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "error", "rejected_by_gcp", "error_code", reportResult.ErrorCode,
 			"error_message", reportResult.ErrorMessage)
 		return types.UsageRecordSyncEntry{}, false
 	}
@@ -572,15 +554,16 @@ func (r *marketplaceReporter) reportGCPRecord(ctx context.Context, rec *usagerec
 	// GCP returns no per-record receipt; the operationId echoed back (== rec.ID) becomes this
 	// connection's reporting_id, read from the result rather than re-derived.
 	return types.UsageRecordSyncEntry{
-		Marketplace: types.SecretProviderGCPMarketplace,
-		ReportingID: reportResult.OperationID,
-		SyncedAt:    time.Now().UTC(),
+		AgreementID:  consumerID,
+		ReportingID:  reportResult.OperationID,
+		SyncedAt:     time.Now().UTC(),
+		ConnectionID: marketplaceConn.conn.ID,
 	}, true
 }
 
 // loadGCPMappings loads the subscription and plan mappings for the current tenant/environment and
 // indexes them for lookup while reporting.
-func (r *marketplaceReporter) loadGCPMappings(ctx context.Context) (*gcpConnectionMappings, error) {
+func (r *MarketplaceReporter) loadGCPMappings(ctx context.Context) (*gcpConnectionMappings, error) {
 	providerType := string(types.SecretProviderGCPMarketplace)
 
 	subMappings, err := r.entityIntegrationMappingRepo.List(ctx, &types.EntityIntegrationMappingFilter{
@@ -623,7 +606,7 @@ func (r *marketplaceReporter) loadGCPMappings(ctx context.Context) (*gcpConnecti
 
 // authAzureConnection decrypts a connection's Azure secret, loads its mappings, and requests a
 // client_credentials token once.
-func (r *marketplaceReporter) authAzureConnection(ctx context.Context, conn *connection.Connection) (azuremarketplace.Token, *azureConnectionMappings, error) {
+func (r *MarketplaceReporter) authAzureConnection(ctx context.Context, conn *connection.Connection) (azuremarketplace.Token, *azureConnectionMappings, error) {
 	tenantID := conn.TenantID
 	environmentID := conn.EnvironmentID
 
@@ -676,17 +659,17 @@ func (r *marketplaceReporter) authAzureConnection(ctx context.Context, conn *con
 // success. A row whose reportable quantity is zero cents is never sent — Azure treats a quantity
 // of zero as invalid — and instead resolves this connection with Skipped=true, so a record is not
 // permanently blocked from reaching synced=true just because Azure cannot accept a zero quantity.
-func (r *marketplaceReporter) reportAzureRecord(ctx context.Context, rec *usagerecord.UsageRecord, preparedConn *preparedConnection) (types.UsageRecordSyncEntry, bool) {
+func (r *MarketplaceReporter) reportAzureRecord(ctx context.Context, rec *usagerecord.UsageRecord, marketplaceConn *marketplaceConnection) (types.UsageRecordSyncEntry, bool) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
-	mappings := preparedConn.azureMappings
+	mappings := marketplaceConn.azureMappings
 
 	resourceID := mappings.resourceIDBySubscription[rec.SubscriptionID]
 	plan, planFound := mappings.plan[rec.PlanID]
 	if resourceID == "" || !planFound || plan.planID == "" || plan.dimension == "" {
-		r.logger.Error(ctx, "marketplace usage report: failed to resolve the record's marketplace identifiers", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: failed to resolve the record's marketplace identifiers", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "customer_id", rec.CustomerID, "plan_id", rec.PlanID, "connection_id", preparedConn.conn.ID,
+			"usage_record_id", rec.ID, "customer_id", rec.CustomerID, "plan_id", rec.PlanID, "connection_id", marketplaceConn.conn.ID,
 			"error", "missing resource_id or plan plan_id/dimension mapping", "stage", "resolve_record")
 		return types.UsageRecordSyncEntry{}, false
 	}
@@ -698,19 +681,20 @@ func (r *marketplaceReporter) reportAzureRecord(ctx context.Context, rec *usager
 	// Skip on cents, not rec.Amount: a positive sub-cent amount rounds to zero cents and Azure
 	// rejects a zero quantity. Negatives are already filtered upstream (isEligibleForReport).
 	if cents == 0 {
-		r.logger.Info(ctx, "marketplace usage report: skipping usage record for azure, it does not accept a zero quantity", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Info(ctx, "marketplace usage report: skipping usage record for azure, it does not accept a zero quantity", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "amount", rec.Amount)
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "amount", rec.Amount)
 		return types.UsageRecordSyncEntry{
-			Marketplace: types.SecretProviderAzureMarketplace,
-			SyncedAt:    time.Now().UTC(),
-			Skipped:     true,
+			AgreementID:  resourceID,
+			SyncedAt:     time.Now().UTC(),
+			ConnectionID: marketplaceConn.conn.ID,
+			Skipped:      true,
 			// Azure documents a quantity of zero as invalid, so this is never sent and never retried.
 			SkipReason: "zero_amount_not_supported",
 		}, true
 	}
 
-	res, err := r.azureClient.ReportUsageEvent(ctx, preparedConn.azureToken, azuremarketplace.UsageEventInput{
+	res, err := r.azureClient.ReportUsageEvent(ctx, marketplaceConn.azureToken, azuremarketplace.UsageEventInput{
 		ResourceID: resourceID,
 		Dimension:  plan.dimension,
 		PlanID:     plan.planID,
@@ -725,23 +709,24 @@ func (r *marketplaceReporter) reportAzureRecord(ctx context.Context, rec *usager
 	// error here, rejection or transient failure alike, is left unsynced and retried next run, never
 	// resolved by inference.
 	if err != nil {
-		r.logger.Error(ctx, "marketplace usage report: azure usage event call failed", "marketplace", preparedConn.conn.ProviderType,
+		r.logger.Error(ctx, "marketplace usage report: azure usage event call failed", "marketplace", marketplaceConn.conn.ProviderType,
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
-			"usage_record_id", rec.ID, "connection_id", preparedConn.conn.ID, "resource_id", resourceID, "dimension", plan.dimension, "amount", rec.Amount,
+			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "resource_id", resourceID, "dimension", plan.dimension, "amount", rec.Amount,
 			"error", err, "stage", "usage_event")
 		return types.UsageRecordSyncEntry{}, false
 	}
 
 	return types.UsageRecordSyncEntry{
-		Marketplace: types.SecretProviderAzureMarketplace,
-		ReportingID: res.UsageEventID,
-		SyncedAt:    time.Now().UTC(),
+		AgreementID:  resourceID,
+		ReportingID:  res.UsageEventID,
+		SyncedAt:     time.Now().UTC(),
+		ConnectionID: marketplaceConn.conn.ID,
 	}, true
 }
 
 // loadAzureMappings loads the subscription and plan mappings for the current tenant/environment and
 // indexes them for lookup while reporting.
-func (r *marketplaceReporter) loadAzureMappings(ctx context.Context) (*azureConnectionMappings, error) {
+func (r *MarketplaceReporter) loadAzureMappings(ctx context.Context) (*azureConnectionMappings, error) {
 	providerType := string(types.SecretProviderAzureMarketplace)
 
 	subMappings, err := r.entityIntegrationMappingRepo.List(ctx, &types.EntityIntegrationMappingFilter{
