@@ -152,9 +152,8 @@ func (r *MarketplaceReporter) reportRecordToMarketplaces(
 	for _, marketplaceConn := range reportableConns {
 		marketplace := string(marketplaceConn.conn.ProviderType)
 		// A skip leaves an entry as well, so a marketplace that skipped this record is treated as
-		// resolved and never attempted again. Only a complete entry counts: a half-written one is
-		// retried rather than mistaken for a report that already happened.
-		if entry, ok := rec.Syncs[marketplace]; ok && entry.IsResolved() {
+		// resolved and never attempted again: the amount will not change on a retry.
+		if _, ok := rec.Syncs[marketplace]; ok {
 			continue
 		}
 
@@ -183,8 +182,7 @@ func (r *MarketplaceReporter) reportRecordToMarketplaces(
 	// here would leave the record pending forever.
 	rec.Synced = true
 	for _, marketplaceConn := range reportableConns {
-		entry, ok := rec.Syncs[string(marketplaceConn.conn.ProviderType)]
-		if !ok || !entry.IsResolved() {
+		if _, ok := rec.Syncs[string(marketplaceConn.conn.ProviderType)]; !ok {
 			rec.Synced = false
 			break
 		}
@@ -685,12 +683,12 @@ func (r *MarketplaceReporter) reportAzureRecord(ctx context.Context, rec *usager
 			"tenant_id", tenantID, "environment_id", environmentID, "subscription_id", rec.SubscriptionID,
 			"usage_record_id", rec.ID, "connection_id", marketplaceConn.conn.ID, "amount", rec.Amount)
 		return types.UsageRecordSyncEntry{
-			AgreementID:  resourceID,
-			SyncedAt:     time.Now().UTC(),
+			AgreementID: resourceID,
+			// SyncedAt stays zero: nothing was sent, so nothing was synced. Azure documents a quantity
+			// of zero as invalid, so this is never sent and never retried.
 			ConnectionID: marketplaceConn.conn.ID,
 			Skipped:      true,
-			// Azure documents a quantity of zero as invalid, so this is never sent and never retried.
-			SkipReason: "zero_amount_not_supported",
+			SkipReason:   types.SkipReasonZeroAmountNotSupported,
 		}, true
 	}
 

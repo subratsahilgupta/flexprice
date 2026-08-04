@@ -294,7 +294,7 @@ func (a *FlushActivities) reportRecord(
 	// success: nothing was posted anywhere.
 	anyAccepted := false
 	for _, marketplaceConn := range reportableConns {
-		if entry, ok := rec.Syncs[string(marketplaceConn.conn.ProviderType)]; ok && entry.IsResolved() && !entry.Skipped {
+		if entry, ok := rec.Syncs[string(marketplaceConn.conn.ProviderType)]; ok && entry.IsSynced() {
 			anyAccepted = true
 			break
 		}

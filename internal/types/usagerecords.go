@@ -12,33 +12,39 @@ import "time"
 // marketplace, the question asked is the one that actually matters: has this record reached AWS for
 // this subscription yet.
 //
+// SkipReasonZeroAmountNotSupported is the SkipReason for a record whose computed amount rounds to
+// zero. Azure rejects a zero usage quantity, so the record is resolved as skipped rather than sent.
+const SkipReasonZeroAmountNotSupported = "zero_amount_not_supported"
+
 // An entry is one of two kinds, distinguished by Skipped:
-//   - A real acceptance: Skipped is false, ReportingID carries the marketplace's receipt.
-//   - A skip: Skipped is true, ReportingID is empty, SkipReason explains why. Used only when
-//     sending is deterministically pointless for this provider (e.g. a zero-amount row on Azure,
-//     which documents a zero quantity as invalid). This still resolves the marketplace so the row's
-//     synced flag can reach true, without claiming anything was posted.
+//   - A real acceptance: Skipped is false, SyncedAt is when the marketplace accepted it, ReportingID
+//     carries its receipt.
+//   - A skip: Skipped is true, SyncedAt is left zero because nothing was sent, ReportingID is empty,
+//     and SkipReason explains why. Used only when sending is deterministically pointless for this
+//     provider (e.g. a zero-amount row on Azure, which documents a zero quantity as invalid). The
+//     entry still resolves the marketplace so the row's synced flag can reach true, without claiming
+//     anything was posted.
 type UsageRecordSyncEntry struct {
 	// AgreementID is the subscription's identifier on this marketplace: license_arn on AWS,
 	// usage_reporting_id on GCP, resource_id on Azure. It records which agreement the usage was
 	// billed against, which stays meaningful after the connection that reported it is replaced.
-	AgreementID string    `json:"agreement_id"`
-	ReportingID string    `json:"reporting_id"`
-	SyncedAt    time.Time `json:"synced_at"`
-	Skipped     bool      `json:"skipped,omitempty"`
-	SkipReason  string    `json:"skip_reason,omitempty"`
+	AgreementID string `json:"agreement_id"`
+	ReportingID string `json:"reporting_id"`
+	// SyncedAt is when the marketplace accepted the record. Zero on a skip, since nothing was sent.
+	SyncedAt   time.Time `json:"synced_at"`
+	Skipped    bool      `json:"skipped,omitempty"`
+	SkipReason string    `json:"skip_reason,omitempty"`
 	// ConnectionID is the connection that reported this entry, kept for tracing which credentials
 	// were used. It is deliberately not part of the map key: a replaced connection must not make an
 	// already reported record look unreported.
 	ConnectionID string `json:"connection_id"`
 }
 
-// IsResolved reports whether this entry represents a completed attempt, accepted or skipped. A
-// zero-valued or half-written entry is not resolved and must be attempted again: treating one as
-// done would silently drop the usage it stands for. Every provider sets SyncedAt and AgreementID on
-// both outcomes, so those two are what a complete entry is recognised by.
-func (e UsageRecordSyncEntry) IsResolved() bool {
-	return !e.SyncedAt.IsZero() && e.AgreementID != ""
+// IsSynced reports whether this entry represents usage actually delivered to the marketplace, as
+// opposed to a skip. Callers pair it with the syncs map lookup's ok: the zero value reports true,
+// so it distinguishes a real send from a skip, not a present entry from an absent one.
+func (e UsageRecordSyncEntry) IsSynced() bool {
+	return !e.Skipped
 }
 
 // UsageRecordFilter selects rows from usage_records. Tenant and environment are not fields: every

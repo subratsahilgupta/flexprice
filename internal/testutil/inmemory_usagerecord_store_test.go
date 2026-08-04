@@ -304,13 +304,13 @@ func TestUsageRecordSyncSurvivesConnectionReplacement(t *testing.T) {
 	// unchanged, so the record must still read as reported.
 	got, ok := syncs[awsKey]
 	require.True(t, ok, "the entry is found by marketplace regardless of which connection wrote it")
-	require.True(t, got.IsResolved())
+	require.True(t, got.IsSynced())
 	require.Equal(t, "conn_old", got.ConnectionID, "the reporting connection stays recorded for tracing")
 }
 
-// A half-written entry must not be mistaken for a completed report: treating one as done would
-// silently drop the usage it stands for.
-func TestUsageRecordSyncEntryIsResolved(t *testing.T) {
+// A skip resolves the marketplace so it is not retried, but it is not a delivery: nothing was sent,
+// so it must not be counted as synced and must carry no SyncedAt.
+func TestUsageRecordSyncEntryIsSynced(t *testing.T) {
 	now := time.Now().UTC()
 	cases := []struct {
 		name  string
@@ -318,14 +318,25 @@ func TestUsageRecordSyncEntryIsResolved(t *testing.T) {
 		want  bool
 	}{
 		{"accepted", types.UsageRecordSyncEntry{AgreementID: "a", ReportingID: "r", SyncedAt: now}, true},
-		{"skipped still resolves", types.UsageRecordSyncEntry{AgreementID: "a", SyncedAt: now, Skipped: true, SkipReason: "zero_amount_not_supported"}, true},
-		{"zero value", types.UsageRecordSyncEntry{}, false},
-		{"no synced_at", types.UsageRecordSyncEntry{AgreementID: "a", ReportingID: "r"}, false},
-		{"no agreement id", types.UsageRecordSyncEntry{ReportingID: "r", SyncedAt: now}, false},
+		{"skipped", types.UsageRecordSyncEntry{AgreementID: "a", Skipped: true, SkipReason: types.SkipReasonZeroAmountNotSupported}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, tc.entry.IsResolved())
+			require.Equal(t, tc.want, tc.entry.IsSynced())
 		})
 	}
+}
+
+// A skip records no SyncedAt, since synced_at means the marketplace accepted the usage and a skip
+// never sent it.
+func TestUsageRecordSkipCarriesNoSyncedAt(t *testing.T) {
+	skip := types.UsageRecordSyncEntry{
+		AgreementID:  "resource-id",
+		ConnectionID: "conn_azure",
+		Skipped:      true,
+		SkipReason:   types.SkipReasonZeroAmountNotSupported,
+	}
+	require.True(t, skip.SyncedAt.IsZero(), "a skip sent nothing, so it was never synced at any time")
+	require.False(t, skip.IsSynced())
+	require.Empty(t, skip.ReportingID, "a skip has no marketplace receipt")
 }
