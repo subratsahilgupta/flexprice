@@ -52,7 +52,7 @@ Each task is one implementable unit — one agent loop or one PR. Tasks are orde
 
 ## T-06: Service — shared totals recalculation helper
 **Files:** `internal/ee/service/invoice_line_item_edit.go` (new file)
-**What:** Add a private helper `func (s *invoiceService) recalculateInvoiceTotals(inv *invoice.Invoice, lineItems []*invoice.InvoiceLineItem)`. Sets `inv.Subtotal` = sum of `lineItems[i].Amount` (callers must pass only published, non-archived, non-deleted line items — this helper does not filter); sets `inv.Total = max(0, Subtotal - TotalPrepaidCreditsApplied - TotalDiscount + TotalTax)`; sets `inv.AmountDue = inv.Total`; sets `inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)`. Mirrors the arithmetic already used in `applyTaxesToInvoice` (`internal/ee/service/invoice.go:3564-3570`). Does NOT recompute `TotalDiscount`/`TotalTax` — only re-derives from current values.
+**What:** Add a private helper `func (s *invoiceService) recalculateTotalsFromLineItems(inv *invoice.Invoice, lineItems []*invoice.InvoiceLineItem)`. Sets `inv.Subtotal` = sum of `lineItems[i].Amount` (callers must pass only published, non-archived, non-deleted line items — this helper does not filter); sets `inv.Total = max(0, Subtotal - TotalPrepaidCreditsApplied - TotalDiscount + TotalTax)`; sets `inv.AmountDue = inv.Total`; sets `inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)`. Mirrors the arithmetic already used in `applyTaxesToInvoice` (`internal/ee/service/invoice.go:3564-3570`). Does NOT recompute `TotalDiscount`/`TotalTax` — only re-derives from current values.
 **Done when:** Unit test: given a set of line items and existing `TotalDiscount`/`TotalTax`, assert `Total`/`AmountDue`/`AmountRemaining` come out correct, including the floor-at-zero case.
 **Covers:** CR-02
 
@@ -65,7 +65,7 @@ Each task is one implementable unit — one agent loop or one PR. Tasks are orde
 2. Validate `newItem` via existing `InvoiceLineItem.Validate()`.
 3. Persist the old row as archived: `existingItem.Status = types.StatusArchived`, `LineItemRepo.Update(ctx, existingItem)`.
 4. Persist `newItem` via `LineItemRepo.Create(ctx, newItem)`.
-5. Re-fetch all published line items for the invoice (the archived predecessor is excluded), call `recalculateInvoiceTotals` (T-06), set `inv.IsManuallyEdited = true`, persist invoice via `InvoiceRepo.Update`.
+5. Re-fetch all published line items for the invoice (the archived predecessor is excluded), call `recalculateTotalsFromLineItems` (T-06), set `inv.IsManuallyEdited = true`, persist invoice via `InvoiceRepo.Update`.
 **Done when:** Service test: edit `display_name` only → amount/quantity unchanged on the new row; edit `quantity` only → amount unchanged (CR-05); the old row's `status` becomes `archived` and it is excluded from `ListByInvoiceID`'s default totals view; the new row's `parent_line_item_id` equals the old row's ID (CR-06); editing a line item that is itself the result of a prior edit sets the new row's `parent_line_item_id` to the immediately-preceding row's ID, not the original (CR-06a); edit on a finalized invoice → rejected (CR-01); `is_manually_edited` becomes `true` (CR-03); totals reflect the change (CR-02).
 **Covers:** CR-01, CR-02, CR-03, CR-05, CR-06, CR-06a, CR-11, CR-12, CR-13
 
@@ -121,7 +121,7 @@ Each task is one implementable unit — one agent loop or one PR. Tasks are orde
 
 ## T-14: Service — `ApplyAdHocCoupon`
 **Files:** `internal/ee/service/invoice_coupon_edit.go`
-**What:** `func (s *invoiceService) ApplyAdHocCoupon(ctx context.Context, invoiceID string, req dto.ApplyCouponRequest) (*dto.InvoiceResponse, error)`. Draft-only + row-lock gate (same shape as T-07, but does NOT set `IsManuallyEdited`). Determine `OriginalPrice`: `inv.Subtotal.Sub(inv.TotalDiscount)` for invoice-level (`req.LineItemID == nil`), or the target line item's `Amount.Sub(LineItemDiscount)` for line-item-level. Call `couponService.ApplyDiscount(ctx, dto.ApplyDiscountRequest{CouponID: req.CouponID, OriginalPrice: ..., Currency: inv.Currency})`. Build and persist a `CouponApplication` via its repository `Create` (`CouponAssociationID: ""`, `InvoiceID: invoiceID`, `InvoiceLineItemID: req.LineItemID`, `OriginalPrice`/`FinalPrice`/`DiscountedAmount` from the discount result). Recompute `TotalDiscount` via T-12's `sumAdHocCouponDiscounts` (plus any subscription-resolved amount already on the invoice) and re-run `recalculateInvoiceTotals`.
+**What:** `func (s *invoiceService) ApplyAdHocCoupon(ctx context.Context, invoiceID string, req dto.ApplyCouponRequest) (*dto.InvoiceResponse, error)`. Draft-only + row-lock gate (same shape as T-07, but does NOT set `IsManuallyEdited`). Determine `OriginalPrice`: `inv.Subtotal.Sub(inv.TotalDiscount)` for invoice-level (`req.LineItemID == nil`), or the target line item's `Amount.Sub(LineItemDiscount)` for line-item-level. Call `couponService.ApplyDiscount(ctx, dto.ApplyDiscountRequest{CouponID: req.CouponID, OriginalPrice: ..., Currency: inv.Currency})`. Build and persist a `CouponApplication` via its repository `Create` (`CouponAssociationID: ""`, `InvoiceID: invoiceID`, `InvoiceLineItemID: req.LineItemID`, `OriginalPrice`/`FinalPrice`/`DiscountedAmount` from the discount result). Recompute `TotalDiscount` via T-12's `sumAdHocCouponDiscounts` (plus any subscription-resolved amount already on the invoice) and re-run `recalculateTotalsFromLineItems`.
 **Done when:** Service test: apply an invoice-level coupon → `CouponApplication` row created with no association, `TotalDiscount`/`Total` updated, `IsManuallyEdited` remains `false`; apply a line-item-level coupon (`LineItemID` set) → discount computed against that line item's amount; apply on non-draft invoice → rejected.
 **Covers:** CR-01, CR-02, CR-08, CR-12, CR-13
 
@@ -129,7 +129,7 @@ Each task is one implementable unit — one agent loop or one PR. Tasks are orde
 
 ## T-15: Service — `RemoveAdHocCoupon`
 **Files:** `internal/ee/service/invoice_coupon_edit.go`
-**What:** `func (s *invoiceService) RemoveAdHocCoupon(ctx context.Context, invoiceID, couponApplicationID string) (*dto.InvoiceResponse, error)`. Draft-only + row-lock gate. Verify the `CouponApplication` belongs to this invoice. Delete via its repository `Delete`. Recompute `TotalDiscount` via `sumAdHocCouponDiscounts` + subscription-resolved portion, re-run `recalculateInvoiceTotals`.
+**What:** `func (s *invoiceService) RemoveAdHocCoupon(ctx context.Context, invoiceID, couponApplicationID string) (*dto.InvoiceResponse, error)`. Draft-only + row-lock gate. Verify the `CouponApplication` belongs to this invoice. Delete via its repository `Delete`. Recompute `TotalDiscount` via `sumAdHocCouponDiscounts` + subscription-resolved portion, re-run `recalculateTotalsFromLineItems`.
 **Done when:** Service test: remove an ad-hoc coupon application → row deleted, `TotalDiscount`/`Total` recomputed as if it never applied (CR-10); remove on non-draft → rejected.
 **Covers:** CR-01, CR-02, CR-10, CR-12, CR-13
 
@@ -137,7 +137,7 @@ Each task is one implementable unit — one agent loop or one PR. Tasks are orde
 
 ## T-16: Service — `ApplyAdHocTax`
 **Files:** `internal/ee/service/invoice_tax_edit.go`
-**What:** `func (s *invoiceService) ApplyAdHocTax(ctx context.Context, invoiceID string, req dto.ApplyTaxRequest) (*dto.InvoiceResponse, error)`. Draft-only + row-lock gate (does NOT set `IsManuallyEdited`). Fetch the `TaxRate` (via existing tax repo/service getter), build a `*dto.TaxRateResponse`, compute the amount using the same switch-logic as `calculateTaxAmount` (`internal/ee/service/tax.go:1065` — same package, callable directly) against taxable base `inv.Subtotal.Sub(inv.TotalDiscount)`. Call `taxService.CreateTaxApplied(ctx, dto.CreateTaxAppliedRequest{TaxRateID: req.TaxRateID, EntityType: types.TaxRateEntityTypeInvoice, EntityID: invoiceID, TaxableAmount, TaxAmount, Currency: inv.Currency, TaxAssociationID: nil})`. Recompute `TotalTax` via T-13's `sumAdHocTaxAmounts` + subscription-resolved portion, re-run `recalculateInvoiceTotals`.
+**What:** `func (s *invoiceService) ApplyAdHocTax(ctx context.Context, invoiceID string, req dto.ApplyTaxRequest) (*dto.InvoiceResponse, error)`. Draft-only + row-lock gate (does NOT set `IsManuallyEdited`). Fetch the `TaxRate` (via existing tax repo/service getter), build a `*dto.TaxRateResponse`, compute the amount using the same switch-logic as `calculateTaxAmount` (`internal/ee/service/tax.go:1065` — same package, callable directly) against taxable base `inv.Subtotal.Sub(inv.TotalDiscount)`. Call `taxService.CreateTaxApplied(ctx, dto.CreateTaxAppliedRequest{TaxRateID: req.TaxRateID, EntityType: types.TaxRateEntityTypeInvoice, EntityID: invoiceID, TaxableAmount, TaxAmount, Currency: inv.Currency, TaxAssociationID: nil})`. Recompute `TotalTax` via T-13's `sumAdHocTaxAmounts` + subscription-resolved portion, re-run `recalculateTotalsFromLineItems`.
 **Done when:** Service test: apply a tax → `TaxApplied` row created with `TaxAssociationID = nil`, `TotalTax`/`Total` updated, `IsManuallyEdited` remains `false`; apply on non-draft → rejected.
 **Covers:** CR-01, CR-02, CR-09, CR-12, CR-13
 
@@ -145,7 +145,7 @@ Each task is one implementable unit — one agent loop or one PR. Tasks are orde
 
 ## T-17: Service — `RemoveAdHocTax`
 **Files:** `internal/ee/service/invoice_tax_edit.go`
-**What:** `func (s *invoiceService) RemoveAdHocTax(ctx context.Context, invoiceID, taxAppliedID string) (*dto.InvoiceResponse, error)`. Draft-only + row-lock gate. Verify the `TaxApplied` record belongs to this invoice (`EntityType == invoice && EntityID == invoiceID`). Delete via `taxService.DeleteTaxApplied`. Recompute `TotalTax` via `sumAdHocTaxAmounts` + subscription-resolved portion, re-run `recalculateInvoiceTotals`.
+**What:** `func (s *invoiceService) RemoveAdHocTax(ctx context.Context, invoiceID, taxAppliedID string) (*dto.InvoiceResponse, error)`. Draft-only + row-lock gate. Verify the `TaxApplied` record belongs to this invoice (`EntityType == invoice && EntityID == invoiceID`). Delete via `taxService.DeleteTaxApplied`. Recompute `TotalTax` via `sumAdHocTaxAmounts` + subscription-resolved portion, re-run `recalculateTotalsFromLineItems`.
 **Done when:** Service test: remove an ad-hoc tax → row deleted, `TotalTax`/`Total` recomputed as if never applied (CR-10); remove on non-draft → rejected.
 **Covers:** CR-01, CR-02, CR-10, CR-12, CR-13
 

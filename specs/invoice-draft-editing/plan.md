@@ -43,7 +43,7 @@ Existing files get targeted edits, not rewrites: `invoice.go` (lock guards in `C
 ## Key design points
 
 ### Totals recalculation helper (used by all three line-item methods)
-A private helper, e.g. `recalculateInvoiceTotals(ctx, inv, lineItems) error`, computes `Subtotal` (sum of line item amounts), then re-derives `Total`/`AmountDue`/`AmountRemaining` factoring in existing `TotalDiscount`/`TotalTax`/`TotalPrepaidCreditsApplied` (same arithmetic already used in `applyTaxesToInvoice`: `Total = Subtotal - TotalPrepaidCreditsApplied - TotalDiscount + TotalTax`, floored at zero). This does **not** recompute discount/tax from scratch — CR-02 only requires recalculating from the *current* set of line items + already-applied coupons/taxes, not re-deriving new ones.
+A private helper, e.g. `recalculateTotalsFromLineItems(ctx, inv, lineItems) error`, computes `Subtotal` (sum of line item amounts), then re-derives `Total`/`AmountDue`/`AmountRemaining` factoring in existing `TotalDiscount`/`TotalTax`/`TotalPrepaidCreditsApplied` (same arithmetic already used in `applyTaxesToInvoice`: `Total = Subtotal - TotalPrepaidCreditsApplied - TotalDiscount + TotalTax`, floored at zero). This does **not** recompute discount/tax from scratch — CR-02 only requires recalculating from the *current* set of line items + already-applied coupons/taxes, not re-deriving new ones.
 
 ### `is_manually_edited` lock guard placement
 - `ComputeInvoice` (`internal/ee/service/invoice.go:408`): add the check immediately after the existing `if inv.InvoiceStatus != Draft && != Skipped { return early }` guard (~line 417-419): `if inv.IsManuallyEdited { log.Info(...); return inv, false, nil }`.

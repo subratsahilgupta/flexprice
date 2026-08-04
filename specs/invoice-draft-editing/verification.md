@@ -24,7 +24,7 @@ Each acceptance criterion maps to at least one test. If a criterion has no test,
 
 **Test:** `TestRecalculateInvoiceTotals_Arithmetic`
 - Setup: line items summing to $100, existing `TotalDiscount = $10`, `TotalTax = $5`, `TotalPrepaidCreditsApplied = $0`.
-- Action: call `recalculateInvoiceTotals`.
+- Action: call `recalculateTotalsFromLineItems`.
 - Assert: `Subtotal = $100`, `Total = $95`, `AmountDue = $95`, `AmountRemaining = $95 - AmountPaid`.
 - Edge case: discount + tax combination that would drive `Total` negative → assert floored at `$0`.
 - Type: service unit test (pure function, no DB).
