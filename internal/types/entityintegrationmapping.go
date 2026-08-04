@@ -60,6 +60,7 @@ const (
 	IntegrationProviderTypeQuickBooks       IntegrationProviderType = "quickbooks"
 	IntegrationProviderTypeZohoBooks        IntegrationProviderType = "zoho_books"
 	IntegrationProviderTypePaddle           IntegrationProviderType = "paddle"
+	IntegrationProviderTypeHubspot          IntegrationProviderType = "hubspot"
 	IntegrationProviderTypeAWSMarketplace   IntegrationProviderType = "aws_marketplace"
 	IntegrationProviderTypeGCPMarketplace   IntegrationProviderType = "gcp_marketplace"
 	IntegrationProviderTypeAzureMarketplace IntegrationProviderType = "azure_marketplace"
@@ -73,6 +74,7 @@ func (p IntegrationProviderType) Validate() error {
 		IntegrationProviderTypeQuickBooks,
 		IntegrationProviderTypeZohoBooks,
 		IntegrationProviderTypePaddle,
+		IntegrationProviderTypeHubspot,
 		IntegrationProviderTypeAWSMarketplace,
 		IntegrationProviderTypeGCPMarketplace,
 		IntegrationProviderTypeAzureMarketplace,
