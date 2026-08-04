@@ -38,7 +38,7 @@ Existing files get targeted edits, not rewrites: `invoice.go` (lock guards in `C
 | `internal/api/dto/invoice.go` | New request DTOs: `AddLineItemRequest`, `UpdateLineItemRequest`, `ApplyCouponRequest`, `ApplyTaxRequest` |
 | `internal/api/v1/invoice.go` | 7 new handlers |
 | `internal/api/router.go` | 7 new route registrations inside existing `invoices := v1Private.Group("/invoices")` block |
-| `migrations/postgres/` | New migration for `is_manually_edited` and `parent_line_item_id` columns |
+| _(none)_ | No `migrations/postgres/` file needed — both new columns are simple additive Ent-native fields, applied via `make migrate-ent`'s live schema diff, same as prior precedent (`0a2fb87e0`). See T-02/T-04. |
 
 ## Key design points
 
@@ -74,6 +74,7 @@ All 7 routes use `write(types.EntityInvoice, types.ActionWrite)` (the existing s
 - **Additive-aware fix touches invoice.go/tax.go paths used by every subscription invoice compute**, not just ones with ad-hoc coupons/taxes. Must verify with a test that an invoice with **zero** ad-hoc records behaves identically to today (sum = 0, no regression) — this is the highest-risk change in the whole feature since it's a modification to hot, existing, billing-critical code.
 - **Line-item-scoped ad-hoc coupons don't get re-pointed across an edit** (documented in spec's Known limitations) — a coupon's `InvoiceLineItemID` keeps referencing the archived predecessor after that line item is edited. Doesn't affect totals (see spec), only a cosmetic traceability gap. Not fixed in v1.
 - **Line-item-scoped tax was considered and explicitly rejected** for this iteration (see Deliberate deviations) — if a future request needs it, that's a new `TaxRateEntityType` constant plus resolver support, out of scope here.
+- **`make migrate-ent-dry-run` for T-02/T-04 requires a live Postgres connection** (`cmd/migrate/postgres.go` always opens a real DB, no offline diff mode) — unavailable in a sandboxed execution environment with no Docker access. This sanity check must run in CI or on a developer machine with DB access before the two new columns ship to production. Not a blocker for the rest of this plan (Ent's auto-migration will apply them at deploy time regardless), but the review step itself is deferred, not skipped.
 
 ## Decisions carried over from spec (recap, not new)
 

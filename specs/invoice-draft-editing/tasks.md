@@ -18,10 +18,10 @@ Each task is one implementable unit — one agent loop or one PR. Tasks are orde
 
 ---
 
-## T-02: Migration — `is_manually_edited` column
-**Files:** `migrations/postgres/`
-**What:** `make generate-migration` after T-01. Verify SQL adds a nullable/defaulted boolean column to `invoices` (`ALTER TABLE invoices ADD COLUMN is_manually_edited boolean DEFAULT false`).
-**Done when:** `make migrate-ent-dry-run` shows the expected `ALTER TABLE`; migration file committed.
+## T-02: Verify `is_manually_edited` auto-migration (no file to commit)
+**Files:** none expected — this task does NOT commit a `migrations/postgres/` file.
+**What:** This repo's convention for a simple additive Ent-native column (nullable, with a default) is to let `make migrate-ent` apply it directly against the live DB via Ent's own schema diff — no hand-committed SQL file. Confirmed precedent: commit `0a2fb87e0` ("feat(invoice): add display_name in line items") added a comparable simple field with zero `migrations/postgres/` changes. `migrations/postgres/` is reserved for changes Ent's auto-migration can't express (sequences, extensions, backfills) — not this. Run `make migrate-ent-dry-run` to review the SQL Ent would apply, purely as a sanity check (requires a live Postgres connection — `cmd/migrate/postgres.go` always opens a real DB connection, there is no offline/static-diff mode).
+**Done when:** `make migrate-ent-dry-run` output reviewed and confirmed to show only `ALTER TABLE invoices ADD COLUMN is_manually_edited ...` — no unrelated statements for other tables. **If no Postgres is reachable in the execution environment** (true for this sandbox — no Docker, no local Postgres), this verification must be deferred to CI or a developer machine with DB access before this change ships; do not fabricate or skip this check, just document that it's pending.
 **Covers:** CR-03, CR-04
 
 ---
@@ -34,10 +34,10 @@ Each task is one implementable unit — one agent loop or one PR. Tasks are orde
 
 ---
 
-## T-04: Migration — `parent_line_item_id` column
-**Files:** `migrations/postgres/`
-**What:** `make generate-migration` after T-03. Verify SQL adds a nullable varchar/text column to the invoice line items table.
-**Done when:** `make migrate-ent-dry-run` shows the expected `ALTER TABLE`; migration file committed.
+## T-04: Verify `parent_line_item_id` auto-migration (no file to commit)
+**Files:** none expected — same reasoning as T-02.
+**What:** Same as T-02: a nullable string column is Ent-auto-migration-native, no `migrations/postgres/` file needed. `make migrate-ent-dry-run` sanity check only, same live-Postgres caveat.
+**Done when:** Same as T-02 — reviewed if a DB is reachable, otherwise explicitly deferred to CI/human-with-DB-access before shipping.
 **Covers:** CR-06, CR-06a
 
 ---
