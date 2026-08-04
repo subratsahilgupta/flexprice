@@ -153,7 +153,7 @@ func (r *MarketplaceReporter) reportRecordToMarketplaces(
 		marketplace := string(marketplaceConn.conn.ProviderType)
 		// A skip leaves an entry as well, so a marketplace that skipped this record is treated as
 		// resolved and never attempted again: the amount will not change on a retry.
-		if _, ok := rec.Syncs[marketplace]; ok {
+		if entry, ok := rec.Syncs[marketplace]; ok && entry.IsSynced() {
 			continue
 		}
 
