@@ -314,6 +314,61 @@ func (s *EntityIntegrationMappingServiceSuite) TestLinkIntegrationMapping_Upsert
 	assert.Len(s.T(), listResp.Items, 1)
 }
 
+// TestLinkIntegrationMapping_RelinkAfterDelink verifies that re-linking an entity whose only
+// existing mapping was archived creates a new published row rather than resurrecting the archived
+// one — regression coverage for the archived-row-blind upsert bug (ERD FLE-1106 §2).
+func (s *EntityIntegrationMappingServiceSuite) TestLinkIntegrationMapping_RelinkAfterDelink() {
+	ctx := s.testCtx()
+	s.seedConnection(types.SecretProviderRazorpay)
+	s.seedCustomer("cust_razorpay_003")
+
+	req := dto.LinkIntegrationMappingRequest{
+		EntityType:       types.IntegrationEntityTypeCustomer,
+		EntityID:         "cust_razorpay_003",
+		ProviderType:     string(types.SecretProviderRazorpay),
+		ProviderEntityID: "rzp_cust_v1",
+	}
+
+	firstResp, err := s.service.LinkIntegrationMapping(ctx, req)
+	require.NoError(s.T(), err)
+	firstID := firstResp.Mapping.ID
+
+	_, err = s.service.DelinkIntegrationMapping(ctx, dto.DelinkIntegrationMappingRequest{
+		EntityType:   types.IntegrationEntityTypeCustomer,
+		EntityID:     "cust_razorpay_003",
+		ProviderType: string(types.SecretProviderRazorpay),
+	})
+	require.NoError(s.T(), err)
+
+	// Re-link with a new provider entity ID — must create a fresh published row, not update the
+	// now-archived one in place.
+	req.ProviderEntityID = "rzp_cust_v2"
+	secondResp, err := s.service.LinkIntegrationMapping(ctx, req)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), secondResp.Mapping)
+
+	assert.NotEqual(s.T(), firstID, secondResp.Mapping.ID, "relink after delink must create a new row")
+	assert.Equal(s.T(), types.StatusPublished, secondResp.Mapping.Status, "relinked mapping must be published")
+	assert.Equal(s.T(), "rzp_cust_v2", secondResp.Mapping.ProviderEntityID)
+
+	// The archived row must be left untouched, not flipped back to published.
+	archived, err := s.service.GetEntityIntegrationMapping(ctx, firstID)
+	require.NoError(s.T(), err)
+	assert.Equal(s.T(), types.StatusArchived, archived.Status)
+	assert.Equal(s.T(), "rzp_cust_v1", archived.ProviderEntityID, "archived row's data must not be overwritten")
+
+	// Exactly one published mapping should exist for this entity/provider.
+	listResp, err := s.service.GetEntityIntegrationMappings(ctx, &types.EntityIntegrationMappingFilter{
+		QueryFilter:   types.NewNoLimitPublishedQueryFilter(),
+		EntityID:      "cust_razorpay_003",
+		EntityType:    types.IntegrationEntityTypeCustomer,
+		ProviderTypes: []string{string(types.SecretProviderRazorpay)},
+	})
+	require.NoError(s.T(), err)
+	assert.Len(s.T(), listResp.Items, 1)
+	assert.Equal(s.T(), secondResp.Mapping.ID, listResp.Items[0].ID)
+}
+
 // TestLinkIntegrationMapping_CustomerMetadataUpdated verifies the side effect of stamping
 // razorpay_customer_id onto the customer metadata.
 func (s *EntityIntegrationMappingServiceSuite) TestLinkIntegrationMapping_CustomerMetadataUpdated() {

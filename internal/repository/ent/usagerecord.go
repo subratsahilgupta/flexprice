@@ -5,8 +5,10 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/usagerecord"
 	domainUsageRecord "github.com/flexprice/flexprice/internal/domain/usagerecord"
+	"github.com/flexprice/flexprice/internal/dsl"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -15,15 +17,17 @@ import (
 
 // usageRecordRepository implements domainUsageRecord.Repository against the Ent client.
 type usageRecordRepository struct {
-	client postgres.IClient
-	log    *logger.Logger
+	client    postgres.IClient
+	log       *logger.Logger
+	queryOpts UsageRecordQueryOptions
 }
 
 // NewUsageRecordRepository creates a new usage record repository.
 func NewUsageRecordRepository(client postgres.IClient, log *logger.Logger) domainUsageRecord.Repository {
 	return &usageRecordRepository{
-		client: client,
-		log:    log,
+		client:    client,
+		log:       log,
+		queryOpts: UsageRecordQueryOptions{},
 	}
 }
 
@@ -124,6 +128,10 @@ func (r *usageRecordRepository) ExistsForPeriod(ctx context.Context, subscriptio
 	return exists, nil
 }
 
+// submissionWindow bounds ListUnsynced to rows a marketplace can still accept. None of AWS, GCP or
+// Azure take a report older than this, so an older row would be fetched and rejected on every run.
+const submissionWindow = 24 * time.Hour
+
 func (r *usageRecordRepository) ListUnsynced(ctx context.Context, tenantID, environmentID string) ([]*domainUsageRecord.UsageRecord, error) {
 	client := r.client.Reader(ctx)
 
@@ -139,6 +147,7 @@ func (r *usageRecordRepository) ListUnsynced(ctx context.Context, tenantID, envi
 			usagerecord.EnvironmentID(environmentID),
 			usagerecord.Synced(false),
 			usagerecord.StatusEQ(string(types.StatusPublished)),
+			usagerecord.PeriodEndGTE(time.Now().UTC().Add(-submissionWindow)),
 		).
 		All(ctx)
 
@@ -191,4 +200,172 @@ func (r *usageRecordRepository) MarkSynced(ctx context.Context, id string, syncs
 
 	SetSpanSuccess(span)
 	return nil
+}
+
+// UsageRecordQuery type alias for better readability.
+type UsageRecordQuery = *ent.UsageRecordQuery
+
+// UsageRecordQueryOptions implements BaseQueryOptions for usage record queries.
+type UsageRecordQueryOptions struct{}
+
+func (o UsageRecordQueryOptions) ApplyTenantFilter(ctx context.Context, query UsageRecordQuery) UsageRecordQuery {
+	return query.Where(usagerecord.TenantIDEQ(types.GetTenantID(ctx)))
+}
+
+func (o UsageRecordQueryOptions) ApplyEnvironmentFilter(ctx context.Context, query UsageRecordQuery) UsageRecordQuery {
+	environmentID := types.GetEnvironmentID(ctx)
+	if environmentID != "" {
+		return query.Where(usagerecord.EnvironmentIDEQ(environmentID))
+	}
+	return query
+}
+
+func (o UsageRecordQueryOptions) ApplyStatusFilter(query UsageRecordQuery, status string) UsageRecordQuery {
+	if status == "" {
+		return query.Where(usagerecord.StatusEQ(string(types.StatusPublished)))
+	}
+	return query.Where(usagerecord.StatusEQ(status))
+}
+
+func (o UsageRecordQueryOptions) ApplySortFilter(query UsageRecordQuery, field string, order string) UsageRecordQuery {
+	// Guard the resolved name rather than the caller's: an unknown column resolves to "", and ordering
+	// by "" attaches an error to the whole query instead of leaving it unsorted.
+	fieldName := o.GetFieldName(field)
+	if fieldName == "" {
+		return query
+	}
+	if order == types.OrderDesc {
+		return query.Order(ent.Desc(fieldName))
+	}
+	return query.Order(ent.Asc(fieldName))
+}
+
+func (o UsageRecordQueryOptions) ApplyPaginationFilter(query UsageRecordQuery, limit int, offset int) UsageRecordQuery {
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+	return query
+}
+
+// GetFieldName resolves a caller-supplied field to a usage_records column, returning "" if no such
+// column exists. Validation is delegated to the generated schema so new columns need no change here.
+func (o UsageRecordQueryOptions) GetFieldName(field string) string {
+	if usagerecord.ValidColumn(field) {
+		return field
+	}
+	return ""
+}
+
+func (o UsageRecordQueryOptions) GetFieldResolver(field string) (string, error) {
+	fieldName := o.GetFieldName(field)
+	if fieldName == "" {
+		return "", ierr.NewErrorf("unknown field name '%s' in usage record query", field).
+			Mark(ierr.ErrValidation)
+	}
+	return fieldName, nil
+}
+
+// applyEntityQueryOptions applies usage-record-specific filters: the owning entity columns, currency,
+// an exact window, and synced — plus the generic DSL Filters/Sort, which is how range predicates such
+// as the marketplaces' submission-window floor are expressed.
+func (o UsageRecordQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.UsageRecordFilter, query UsageRecordQuery) (UsageRecordQuery, error) {
+	if f == nil {
+		return query, nil
+	}
+	if f.SubscriptionID != "" {
+		query = query.Where(usagerecord.SubscriptionIDEQ(f.SubscriptionID))
+	}
+	if f.CustomerID != "" {
+		query = query.Where(usagerecord.CustomerIDEQ(f.CustomerID))
+	}
+	if f.CustomerExternalID != "" {
+		query = query.Where(usagerecord.CustomerExternalIDEQ(f.CustomerExternalID))
+	}
+	if f.PlanID != "" {
+		query = query.Where(usagerecord.PlanIDEQ(f.PlanID))
+	}
+	if f.Currency != "" {
+		query = query.Where(usagerecord.CurrencyEQ(f.Currency))
+	}
+	if f.PeriodStart != nil {
+		query = query.Where(usagerecord.PeriodStartEQ(*f.PeriodStart))
+	}
+	if f.PeriodEnd != nil {
+		query = query.Where(usagerecord.PeriodEndEQ(*f.PeriodEnd))
+	}
+	if f.Synced != nil {
+		query = query.Where(usagerecord.SyncedEQ(*f.Synced))
+	}
+	// Bounds when the row was written, not the usage window it covers: that is PeriodStart/PeriodEnd
+	// above, and range comparisons over it go through the DSL filters below.
+	if f.TimeRangeFilter != nil {
+		if f.StartTime != nil {
+			query = query.Where(usagerecord.CreatedAtGTE(*f.StartTime))
+		}
+		if f.EndTime != nil {
+			query = query.Where(usagerecord.CreatedAtLTE(*f.EndTime))
+		}
+	}
+
+	var err error
+	if f.Filters != nil {
+		query, err = dsl.ApplyFilters[UsageRecordQuery, predicate.UsageRecord](
+			query,
+			f.Filters,
+			o.GetFieldResolver,
+			func(p dsl.Predicate) predicate.UsageRecord { return predicate.UsageRecord(p) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if f.Sort != nil {
+		query, err = dsl.ApplySorts[UsageRecordQuery, usagerecord.OrderOption](
+			query,
+			f.Sort,
+			o.GetFieldResolver,
+			func(o dsl.OrderFunc) usagerecord.OrderOption { return usagerecord.OrderOption(o) },
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return query, nil
+}
+
+// List returns the usage records matching filter.
+func (r *usageRecordRepository) List(ctx context.Context, filter *types.UsageRecordFilter) ([]*domainUsageRecord.UsageRecord, error) {
+	client := r.client.Reader(ctx)
+
+	span := StartRepositorySpan(ctx, "usage_record", "list", map[string]interface{}{
+		"filter": filter,
+	})
+	defer FinishSpan(span)
+
+	query := client.UsageRecord.Query()
+	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
+	query = ApplyPagination(query, filter, r.queryOpts)
+	query = ApplySorting(query, filter, r.queryOpts)
+
+	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, err
+	}
+
+	records, err := query.All(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list usage records").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return domainUsageRecord.FromEntList(records), nil
 }
