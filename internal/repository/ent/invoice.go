@@ -563,6 +563,7 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetTotal(inv.Total).
 		SetSubtotal(inv.Subtotal).
 		SetTotalDiscount(inv.TotalDiscount).
+		SetIsManuallyEdited(inv.IsManuallyEdited).
 		AddVersion(1) // Increment version atomically
 
 	// Execute update
