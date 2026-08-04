@@ -281,30 +281,21 @@ func RegisterWorkflowsAndActivities(
 	settingsService := service.NewSettingsService(params)
 	environmentService := service.NewEnvironmentService(params.EnvironmentRepo, envAccessService, settingsService, params)
 	// Marketplace activities
-	billingService := service.NewBillingService(params)
 	awsMarketplaceClient := awsmarketplace.NewClient(params.Config, params.Logger)
 	gcpMarketplaceClient := gcpmarketplace.NewClient(params.Config, params.Logger)
 	azureMarketplaceClient := azuremarketplace.NewClient(params.Logger)
-	marketplaceSnapshotActivities := marketplaceActivities.NewSnapshotActivities(
-		subscriptionService,
-		billingService,
-		params.ConnectionRepo,
-		params.EntityIntegrationMappingRepo,
-		params.SubRepo,
-		params.CustomerRepo,
-		params.UsageRecordRepo,
-		params.Logger,
-	)
-	marketplaceReportActivities := marketplaceActivities.NewReportActivities(
-		params.ConnectionRepo,
-		params.EntityIntegrationMappingRepo,
-		params.UsageRecordRepo,
-		params.EncryptionService,
+	// One reporter shared by both the scheduled reporting cron and the cancellation flush, so the two
+	// report through identical per-provider code.
+	mktplaceReporter := marketplaceActivities.NewMarketplaceReporter(
+		params,
 		awsMarketplaceClient,
 		gcpMarketplaceClient,
 		azureMarketplaceClient,
 		params.Logger,
 	)
+	marketplaceSnapshotActivities := marketplaceActivities.NewSnapshotActivities(params, params.Logger)
+	marketplaceReportActivities := marketplaceActivities.NewReportActivities(params, mktplaceReporter, params.Logger)
+	marketplaceFlushActivities := marketplaceActivities.NewFlushActivities(params, mktplaceReporter, params.Logger)
 
 	cronBundle := &cronActivityBundle{
 		creditGrant:                  cronActivities.NewCreditGrantActivities(creditGrantService),
@@ -321,7 +312,7 @@ func RegisterWorkflowsAndActivities(
 
 	// Get all task queues and register workflows/activities for each
 	for _, taskQueue := range types.GetAllTaskQueues() {
-		config := buildWorkerConfig(taskQueue, workflowTrackingActivities, planActivities, prepareEventsActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, hubspotQuoteSyncActivities, qbPriceSyncActivities, nomodInvoiceSyncActivities, nomodCustomerSyncActivities, whopInvoiceSyncActivities, moyasarInvoiceSyncActivities, paddleInvoiceSyncActivities, paddleCustomerSyncActivities, paddleSubscriptionSyncActivities, stripeInvoiceSyncActivities, stripeCustomerSyncActivities, razorpayInvoiceSyncActivities, razorpayCustomerSyncActivities, chargebeeInvoiceSyncActivities, chargebeeCustomerSyncActivities, qbInvoiceSyncActivities, qbCustomerSyncActivities, zohoInvoiceSyncActivities, tabsInvoiceSyncActivities, customerActivities, scheduleBillingActivities, billingActivities, invoiceActs, reprocessRawEventsActivities, envActivities, cronBundle, alertActs)
+		config := buildWorkerConfig(taskQueue, workflowTrackingActivities, planActivities, prepareEventsActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, hubspotQuoteSyncActivities, qbPriceSyncActivities, nomodInvoiceSyncActivities, nomodCustomerSyncActivities, whopInvoiceSyncActivities, moyasarInvoiceSyncActivities, paddleInvoiceSyncActivities, paddleCustomerSyncActivities, paddleSubscriptionSyncActivities, stripeInvoiceSyncActivities, stripeCustomerSyncActivities, razorpayInvoiceSyncActivities, razorpayCustomerSyncActivities, chargebeeInvoiceSyncActivities, chargebeeCustomerSyncActivities, qbInvoiceSyncActivities, qbCustomerSyncActivities, zohoInvoiceSyncActivities, tabsInvoiceSyncActivities, customerActivities, scheduleBillingActivities, billingActivities, invoiceActs, reprocessRawEventsActivities, envActivities, cronBundle, alertActs, marketplaceFlushActivities)
 		if err := registerWorker(temporalService, config); err != nil {
 			return fmt.Errorf("failed to register worker for task queue %s: %w", taskQueue, err)
 		}
@@ -369,6 +360,7 @@ func buildWorkerConfig(
 	envActivities *environmentActivities.EnvironmentActivities,
 	cron *cronActivityBundle,
 	alertActs *alertActivities.AlertActivities,
+	marketplaceFlushActivities *marketplaceActivities.FlushActivities,
 ) WorkerConfig {
 	workflowsList := []interface{}{}
 	// Add tracking activity to all task queues
@@ -469,6 +461,7 @@ func buildWorkerConfig(
 			subscriptionWorkflows.ScheduleSubscriptionBillingWorkflow,
 			subscriptionWorkflows.ProcessSubscriptionBillingWorkflow,
 			invoiceWorkflows.RecalculateInvoiceWorkflow,
+			subscriptionWorkflows.MarketplaceSubscriptionFinalUsageFlushWorkflow,
 		)
 		activitiesList = append(activitiesList,
 			// Schedule billing activities
@@ -483,6 +476,7 @@ func buildWorkerConfig(
 			billingActivities.TriggerInvoiceWorkflowActivity,
 			// Invoice recalculation (v2)
 			invoiceActs.RecalculateInvoiceActivity,
+			marketplaceFlushActivities.MarketplaceSubscriptionFinalUsageFlushActivity,
 		)
 
 	case types.TemporalTaskQueueInvoice:

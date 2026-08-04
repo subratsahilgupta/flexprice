@@ -2157,6 +2157,16 @@ func (s *subscriptionService) CancelSubscription(
 		s.publishCancellationEvents(ctx, subscription, req.CancellationType)
 	}
 
+	// Gate on the resulting status, not the request's cancellation type: only an immediate
+	// cancellation sets Cancelled here. end_of_period and scheduled_date both set CancelAt but leave
+	// the subscription active until the cancellation schedule processor fires, so flushing now would
+	// report a final usage window for a subscription that has not ended yet.
+	if subscription.SubscriptionStatus == types.SubscriptionStatusCancelled &&
+		subscription.CancelAt != nil &&
+		s.hasMarketplaceMapping(ctx, subscription.ID) {
+		s.triggerMarketplaceSubscriptionFinalUsageFlushWorkflow(ctx, subscription.ID, *subscription.CancelAt)
+	}
+
 	// Step 11: Build response
 	response := &dto.CancelSubscriptionResponse{
 		SubscriptionID:    subscription.ID,
@@ -8075,4 +8085,64 @@ func (s *subscriptionService) runPaddleSubscriptionSync(ctx context.Context, sub
 	s.Logger.Info(ctx, "paddle subscription synced synchronously",
 		"subscription_id", sub.ID,
 		"checkout_url_present", sub.Metadata[paddleint.MetaKeyPaddleCheckoutURL] != "")
+}
+
+// hasMarketplaceMapping reports whether the subscription is linked to any marketplace. Most
+// cancellations are not, so this gates the flush at the call site rather than starting a workflow per
+// cancellation that would immediately find nothing to do. A lookup failure is logged and treated as
+// no mapping: the flush follows a cancellation that has already committed and must never fail it.
+func (s *subscriptionService) hasMarketplaceMapping(ctx context.Context, subscriptionID string) bool {
+	mappings, err := s.EntityIntegrationMappingRepo.List(ctx, &types.EntityIntegrationMappingFilter{
+		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
+		EntityID:    subscriptionID,
+		EntityType:  types.IntegrationEntityTypeSubscription,
+		ProviderTypes: []string{
+			string(types.SecretProviderAWSMarketplace),
+			string(types.SecretProviderGCPMarketplace),
+			string(types.SecretProviderAzureMarketplace),
+		},
+	})
+	if err != nil {
+		s.Logger.Error(ctx, "failed to look up marketplace mappings for subscription flush",
+			"error", err,
+			"subscription_id", subscriptionID)
+		return false
+	}
+	return len(mappings) > 0
+}
+
+// triggerMarketplaceSubscriptionFinalUsageFlushWorkflow starts the cancellation flush, which reports
+// the subscription's outstanding marketplace usage and archives its mappings.
+//
+// cancelAt must be the marketplace's own cancellation instant, taken from the cancellation request,
+// not the time Flexprice processed it. The latter is always the later of the two, and reporting
+// against it would place the final usage after the cancellation the provider recorded.
+func (s *subscriptionService) triggerMarketplaceSubscriptionFinalUsageFlushWorkflow(ctx context.Context, subscriptionID string, cancelAt time.Time) {
+	temporalSvc := temporalservice.GetGlobalTemporalService()
+	if temporalSvc == nil {
+		s.Logger.Info(ctx, "temporal service not available for marketplace subscription flush",
+			"subscription_id", subscriptionID)
+		return
+	}
+
+	input := models.MarketplaceSubscriptionFinalUsageFlushWorkflowInput{
+		SubscriptionID: subscriptionID,
+		CancelAt:       cancelAt,
+	}
+
+	workflowRun, err := temporalSvc.ExecuteWorkflow(
+		ctx,
+		types.TemporalMarketplaceSubscriptionFinalUsageFlushWorkflow,
+		input,
+	)
+	if err != nil {
+		s.Logger.Error(ctx, "failed to start marketplace subscription flush workflow",
+			"error", err,
+			"subscription_id", subscriptionID)
+		return
+	}
+
+	s.Logger.Info(ctx, "marketplace subscription flush workflow started successfully",
+		"subscription_id", subscriptionID,
+		"workflow_id", workflowRun.GetID())
 }

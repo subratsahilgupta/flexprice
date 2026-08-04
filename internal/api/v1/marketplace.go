@@ -25,8 +25,8 @@ func NewMarketplaceHandler(service service.MarketplaceService, log *logger.Logge
 }
 
 // RegisterAgreement godoc
-// @Summary Register a marketplace agreement (AWS, GCP, or Azure)
-// @Description Registers an AWS, GCP, or Azure Marketplace buyer agreement against an existing FlexPrice subscription, upserting plan/subscription/customer integration mappings in one call. Set "provider" to the target marketplace and populate the matching aws/gcp/azure block.
+// @Summary Register an AWS Marketplace agreement
+// @Description Registers an AWS Marketplace buyer agreement against an existing Flexprice subscription, upserting plan/subscription/customer integration mappings in one call.
 // @Tags Marketplace
 // @Accept json
 // @Produce json

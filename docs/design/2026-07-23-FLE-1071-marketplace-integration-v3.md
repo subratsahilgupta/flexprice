@@ -9,6 +9,11 @@ This builds on the shipped state of
 The starting point is v2 as it actually shipped — its Section 12 deviations: `usage_records` is
 provider-agnostic with a `syncs` map, and there is no `connection_id` column.
 
+> **Superseded in part by [v4](2026-07-30-FLE-1106-marketplace-integration-v4.md).** v4 replaces the
+> cancellation timing contract in §10, corrects the `Suspend` row in the §10 lifecycle table, adds a
+> 24h bound to `ListUnsynced` (§8.2), and documents the post-cancellation reporting windows left open
+> in §2.5. See v4 §6 for the full list of what it changes here.
+
 ---
 
 ## 1. What we are building
@@ -191,7 +196,7 @@ strictly, with no exception for how the zero is encoded.
 | Report call          | `BatchMeterUsage`                                                        | `services.report`                                        | `usageEvent`                                |
 | Dedup key            | product + customer + dimension + `Timestamp` (byte-identical retry-safe) | `operationId` (caller-chosen)                            | `(resourceId, dimension, calendar hour)`    |
 | Quantity type        | int32 cents                                                              | int64 cents                                              | double (cents as a whole number)            |
-| Submission window    | 24h + 6h month-end grace                                                 | not documented; assumed similar                          | 24h, no stated grace                        |
+| Submission window    | 24h + 6h month-end grace                                                 | general window not documented; **1h after cancellation** ([v4](2026-07-30-FLE-1106-marketplace-integration-v4.md) §4) | 24h, no stated grace                        |
 | Per-call receipt     | `MeteringRecordId`                                                       | none — absence from `reportErrors` = success              | `usageEventId`                              |
 | Rejection outcome    | `Status` in `Results[]`, or absent (`UnprocessedRecords`, retried)       | listed in `reportErrors`; success is its absence          | distinct non-2xx status code, not a 200     |
 | Call-level ambiguity | none — an explicit outcome every time                                    | RPC-level failure = outcome unknown, retried              | none — an explicit outcome every time       |
@@ -580,7 +585,8 @@ does the same job for all three providers. `MarketplaceUsageReportActivity` grou
 marketplace connection by tenant/environment; `reportForTenant` then, for one tenant/environment:
 
 1. authenticates each connection once and loads its mappings (`prepareConnection`),
-2. reads that tenant's unsynced records once (`usageRecordRepo.ListUnsynced`),
+2. reads that tenant's unsynced records once (`usageRecordRepo.ListUnsynced` — gains a
+   `period_end >= now-24h` bound in [v4](2026-07-30-FLE-1106-marketplace-integration-v4.md) §5.2),
 3. keeps the eligible ones (`isEligibleForReport`: currency is USD, amount is not negative),
 4. reports each eligible record to every relevant connection it isn't already in the `syncs` map for
    (`isRelevantForSubscription`), one API call per record, and persists the record's `syncs` + `synced`
@@ -910,13 +916,19 @@ Azure's lifecycle events, all delivered to the tenant's webhook
 | `ChangePlan`     | approve, update the Flexprice subscription's plan mapping                  | Yes — PATCH the Operations API within 10s, or Azure auto-accepts |
 | `ChangeQuantity` | update seat count if relevant                                              | Yes — same 10s ACK window                                        |
 | `Renew`          | nothing                                                                    | notify-only                                                      |
-| `Suspend`        | nothing — mapping stays published, reporting continues until `Unsubscribe` | notify-only                                                      |
+| `Suspend`        | nothing — mapping stays published (`Reinstate` is possible). **Correction, see [v4](2026-07-30-FLE-1106-marketplace-integration-v4.md) §6:** reporting does *not* continue — Azure accepts usage only in `Subscribed` status and rejects a suspended subscription with `ResourceNotActive` | notify-only                                                      |
 | `Unsubscribe`    | cancel the Flexprice subscription → mapping archived → both crons stop     | notify-only                                                      |
 | `Reinstate`      | nothing — buyer's payment recovered                                        | notify-only                                                      |
 
 
 Timing is the same as AWS/GCP: the tenant should archive only after the snapshot cron's 4–10h lag has
 had a chance to capture the final active-period usage.
+
+> **Superseded by [v4](2026-07-30-FLE-1106-marketplace-integration-v4.md) §3.** Waiting for the snapshot cron's
+> 4–10h lag misses the providers' post-cancellation windows: AWS allows ~1 hour from
+> `License Deprovisioned`, and GCP 1 hour from cancellation. Cancelling a Flexprice subscription now
+> triggers a one-shot flush that reports the backlog and the final window immediately, then archives
+> the subscription mapping itself — the tenant does not wait, and does not archive anything by hand.
 
 ---
 
@@ -1018,6 +1030,9 @@ state (e.g. `expired`) set once a row's `period_end` passes the acceptance windo
 assumed similar for GCP), plus TTL/reaping of those rows so they stop being retried and stop
 accumulating. Alerting on the `error`-level log lines is a natural follow-on. None of this is built
 here.
+  **Partially addressed in [v4](2026-07-30-FLE-1106-marketplace-integration-v4.md) §5.2:** `ListUnsynced` gains
+  a `period_end >= now-24h` bound, so rows past the submission window stop being re-scanned. A true
+  terminal status is still not built.
 - **No dead-letter table.** A failed row is visible only as a log line plus its own state in
 `usage_records`. There is no place that surfaces "these rows have failed N times". Carried through
 v1 and v2; not blocking Azure.
@@ -1025,6 +1040,11 @@ v1 and v2; not blocking Azure.
 `effectiveStartTime`? No doc checked answers it. The 4–10h snapshot lag (§8.1) makes this a
 non-issue for ordinary reporting, but the edge case of a subscription closing right at the 24h
 boundary is untested. Same open status as the equivalent AWS/GCP question in v2.
+  **Partially resolved in [v4](2026-07-30-FLE-1106-marketplace-integration-v4.md) §4:** Azure rejects on
+  subscription status (`ResourceNotActive`, or a 400 "SaaS subscription isn't in Subscribed status")
+  independently of the 24h `effectiveStartTime` rule, and documents that usage for the period *before*
+  cancellation stays reportable. Whether lateness itself is judged by submission time or
+  `effectiveStartTime` is still unstated.
 - **Usage records are reported one at a time, not batched.** All three providers support a
 multi-record call — AWS and Azure up to 25 records, GCP up to a 1MB request. None of that is used
 here; every report is one API call per record. Two reasons this is deferred rather than done now:
