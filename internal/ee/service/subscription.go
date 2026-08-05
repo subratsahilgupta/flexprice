@@ -4903,46 +4903,21 @@ func (s *subscriptionService) addAddonToSubscription(
 		types.AddonAssociationEntityTypeSubscription,
 	)
 
-	addonRequestedStart := time.Now()
-	if req.StartDate != nil {
-		addonRequestedStart = lo.FromPtr(req.StartDate)
+	addonRequestedStart := addonRequestedStartDate(req)
+	onetimePeriodEnd, err := addonOnetimePeriodEnd(sub, req, addonRequestedStart)
+	if err != nil {
+		return nil, err
 	}
-
-	// For onetime cadence, determine which period's end to use as the line item end date.
-	// If StartDate falls in a future period we walk forward to find the right boundary.
-	var onetimePeriodEnd time.Time
 	if req.Cadence == types.AddonCadenceOnetime {
-		var periodErr error
-		onetimePeriodEnd, periodErr = addonPeriodEndForStartDate(sub, addonRequestedStart)
-		if periodErr != nil {
-			return nil, periodErr
-		}
-		// Mirror the same boundary on the association so it is self-consistent
-		// with its line items and so the remove-addon flow can identify the
-		// association as already-terminated without inspecting its line items.
 		addonAssociation.EndDate = &onetimePeriodEnd
 	}
 
 	// Create line items for addon prices
-	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(validPrices))
-	lineItemBucketCfgs := make(map[string]*dto.LineItemCommitmentConfig)
-	for _, priceResponse := range validPrices {
-		lineItem := s.createLineItemFromPrice(ctx, priceResponse, sub, req.AddonID, a.Addon.Name, addonAssociation.ID, addonRequestedStart)
-
-		// Onetime: end at the period boundary containing the start date.
-		// Recurring: no end date (renews each period).
-		if req.Cadence == types.AddonCadenceOnetime {
-			lineItem.EndDate = onetimePeriodEnd
-		}
-
-		cfg, err := s.applyLineItemCommitmentFromMap(ctx, sub, lineItem, req.LineItemCommitments)
-		if err != nil {
-			return nil, err
-		}
-		if cfg != nil && len(cfg.CommitmentTimeBuckets) > 0 {
-			lineItemBucketCfgs[lineItem.ID] = cfg
-		}
-		lineItems = append(lineItems, lineItem)
+	lineItems, lineItemBucketCfgs, err := s.buildAddonLineItems(
+		ctx, sub, req, validPrices, a.Addon.Name, addonAssociation.ID, addonRequestedStart, onetimePeriodEnd,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	// Ensure subscription-level and line-item-level commitments don't conflict
@@ -4997,12 +4972,7 @@ func (s *subscriptionService) addAddonToSubscription(
 		return nil, err
 	}
 
-	effectiveDate := addonRequestedStart
-	for _, li := range lineItems {
-		if li.StartDate.After(effectiveDate) {
-			effectiveDate = li.StartDate
-		}
-	}
+	effectiveDate := addonProrationEffectiveDate(addonRequestedStart, lineItems)
 
 	addProrationKey := fmt.Sprintf("addon_add_%s_%d", addonAssociation.ID, effectiveDate.Unix())
 	if err := s.applyAddonAddProration(ctx, sub, lineItems, effectiveDate, req.ProrationBehavior, addProrationKey); err != nil {
@@ -5445,6 +5415,41 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 	return nil
 }
 
+func (s *subscriptionService) buildAddonLineItems(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	req *dto.AddAddonToSubscriptionRequest,
+	validPrices []*dto.PriceResponse,
+	addonName string,
+	associationID string,
+	requestedStart time.Time,
+	onetimePeriodEnd time.Time,
+) ([]*subscription.SubscriptionLineItem, map[string]*dto.LineItemCommitmentConfig, error) {
+	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(validPrices))
+	lineItemBucketCfgs := make(map[string]*dto.LineItemCommitmentConfig)
+
+	for _, priceResponse := range validPrices {
+		lineItem := s.createLineItemFromPrice(ctx, priceResponse, sub, req.AddonID, addonName, associationID, requestedStart)
+
+		// Onetime: end at the period boundary containing the start date.
+		// Recurring: no end date (renews each period).
+		if req.Cadence == types.AddonCadenceOnetime {
+			lineItem.EndDate = onetimePeriodEnd
+		}
+
+		cfg, err := s.applyLineItemCommitmentFromMap(ctx, sub, lineItem, req.LineItemCommitments)
+		if err != nil {
+			return nil, nil, err
+		}
+		if cfg != nil && len(cfg.CommitmentTimeBuckets) > 0 {
+			lineItemBucketCfgs[lineItem.ID] = cfg
+		}
+		lineItems = append(lineItems, lineItem)
+	}
+
+	return lineItems, lineItemBucketCfgs, nil
+}
+
 // createLineItemFromPrice creates a subscription line item from a price for addon additions.
 func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, priceResponse *dto.PriceResponse, sub *subscription.Subscription, addonID, addonName, addonAssociationID string, addonRequestedStart time.Time) *subscription.SubscriptionLineItem {
 	price := priceResponse.Price
@@ -5564,6 +5569,47 @@ func (s *subscriptionService) shiftAddonLineItemDates(
 	return nil
 }
 
+func addonRequestedStartDate(req *dto.AddAddonToSubscriptionRequest) time.Time {
+	if req.StartDate != nil {
+		return lo.FromPtr(req.StartDate)
+	}
+
+	return time.Now()
+}
+
+// addonOnetimePeriodEnd returns the period boundary a onetime addon's line items end on,
+// walking forward when requestedStart falls in a future period. Any other cadence renews
+// each period and gets the zero time.
+func addonOnetimePeriodEnd(
+	sub *subscription.Subscription,
+	req *dto.AddAddonToSubscriptionRequest,
+	requestedStart time.Time,
+) (time.Time, error) {
+	if req.Cadence != types.AddonCadenceOnetime {
+		return time.Time{}, nil
+	}
+
+	return addonPeriodEndForStartDate(sub, requestedStart)
+}
+
+// addonProrationEffectiveDate is the date an addon's proration must be priced from.
+// createLineItemFromPrice clamps every line item's start to
+// max(requestedStart, sub.StartDate, price.StartDate), so anchoring the charge at
+// requestedStart alone would price a window the addon is not live for.
+func addonProrationEffectiveDate(
+	requestedStart time.Time,
+	lineItems []*subscription.SubscriptionLineItem,
+) time.Time {
+	effectiveDate := requestedStart
+	for _, lineItem := range lineItems {
+		if lineItem.StartDate.After(effectiveDate) {
+			effectiveDate = lineItem.StartDate
+		}
+	}
+	
+	return effectiveDate
+}
+
 // addonPeriodEndForStartDate returns the end of the billing period that contains startDate.
 func addonPeriodEndForStartDate(sub *subscription.Subscription, startDate time.Time) (time.Time, error) {
 	p, err := types.FindPeriodForDate(&types.FindPeriodForDateParams{
@@ -5581,6 +5627,32 @@ func addonPeriodEndForStartDate(sub *subscription.Subscription, startDate time.T
 	return p.End, nil
 }
 
+// buildAddonProrationEntries pairs each addon line item with its price as an add-item
+// proration entry. Prices are loaded per line item rather than reused from the addon's
+// filtered price list because ProcessSubscriptionPriceOverrides may have rewritten a line
+// item's PriceID to a subscription-scoped override price by the time this runs.
+func (s *subscriptionService) buildAddonProrationEntries(
+	ctx context.Context,
+	lineItems []*subscription.SubscriptionLineItem,
+) ([]LineItemProrationEntry, error) {
+	priceSvc := NewPriceService(s.ServiceParams)
+
+	entries := make([]LineItemProrationEntry, 0, len(lineItems))
+	for _, lineItem := range lineItems {
+		priceResp, err := priceSvc.GetPrice(ctx, lineItem.PriceID)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, LineItemProrationEntry{
+			LineItem: lineItem,
+			Price:    priceResp.Price,
+			Action:   types.ProrationActionAddItem,
+		})
+	}
+
+	return entries, nil
+}
+
 // applyAddonAddProration creates a one-off proration invoice when an addon is added mid-period.
 // It is a no-op when behavior is ProrationBehaviorNone. Usage-type prices are skipped.
 // idempotencyKey must be stable across retries so duplicate charges cannot be created.
@@ -5596,19 +5668,9 @@ func (s *subscriptionService) applyAddonAddProration(
 		return nil
 	}
 
-	priceSvc := NewPriceService(s.ServiceParams)
-
-	var entries []LineItemProrationEntry
-	for _, lineItem := range lineItems {
-		priceResp, err := priceSvc.GetPrice(ctx, lineItem.PriceID)
-		if err != nil {
-			return err
-		}
-		entries = append(entries, LineItemProrationEntry{
-			LineItem: lineItem,
-			Price:    priceResp.Price,
-			Action:   types.ProrationActionAddItem,
-		})
+	entries, err := s.buildAddonProrationEntries(ctx, lineItems)
+	if err != nil {
+		return err
 	}
 
 	return NewLineItemProrationService(s.ServiceParams).Apply(ctx, LineItemProrationRequest{
