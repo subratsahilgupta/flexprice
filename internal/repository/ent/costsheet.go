@@ -327,13 +327,16 @@ func (r *costsheetRepository) Update(ctx context.Context, cs *domainCostsheet.Co
 
 // Delete soft deletes a costsheet record by setting its status to deleted, scoped to the tenant and environment in ctx.
 // The tenant/environment predicates are always applied (never conditionally skipped) so that a
-// request with incomplete auth context fails closed instead of widening the delete scope.
+// request with incomplete auth context fails closed instead of widening the delete scope. The
+// StatusNEQ guard makes the transition atomic: only a costsheet that isn't already deleted gets
+// flipped, so two concurrent deletes can't both read "active" and both report success.
 func (r *costsheetRepository) Delete(ctx context.Context, id string) error {
 	deleteQuery := r.client.Writer(ctx).Costsheet.Update().
 		Where(
 			costsheet.ID(id),
 			costsheet.TenantID(types.GetTenantID(ctx)),
 			costsheet.EnvironmentID(types.GetEnvironmentID(ctx)),
+			costsheet.StatusNEQ(string(types.StatusDeleted)),
 		).
 		SetStatus(string(types.StatusDeleted)).
 		SetUpdatedAt(time.Now().UTC())
@@ -354,10 +357,35 @@ func (r *costsheetRepository) Delete(ctx context.Context, id string) error {
 	}
 
 	if affected == 0 {
-		return ierr.NewError("costsheet not found").
-			WithHint("No costsheet found with the provided ID").
+		// affected == 0 means either the costsheet doesn't exist (or isn't in this
+		// tenant/environment), or the StatusNEQ guard excluded it because it was
+		// already deleted (possibly by a concurrent request that won the race).
+		// Disambiguate with one cheap existence check ignoring status (only on
+		// this already-failed path, not the common-case success path).
+		exists, existErr := r.client.Reader(ctx).Costsheet.Query().
+			Where(
+				costsheet.ID(id),
+				costsheet.TenantID(types.GetTenantID(ctx)),
+				costsheet.EnvironmentID(types.GetEnvironmentID(ctx)),
+			).
+			Exist(ctx)
+		if existErr != nil {
+			r.logger.Error(ctx, "Failed to delete costsheet", "error", existErr, "costsheet_id", id)
+			return ierr.WithError(existErr).
+				WithHint("Failed to delete costsheet").
+				Mark(ierr.ErrDatabase)
+		}
+		if !exists {
+			return ierr.NewError("costsheet not found").
+				WithHint("No costsheet found with the provided ID").
+				WithReportableDetails(map[string]any{"id": id}).
+				Mark(ierr.ErrNotFound)
+		}
+
+		return ierr.NewError("costsheet is already deleted").
+			WithHint("This costsheet has already been deleted").
 			WithReportableDetails(map[string]any{"id": id}).
-			Mark(ierr.ErrNotFound)
+			Mark(ierr.ErrValidation)
 	}
 
 	r.logger.Info(ctx, "Deleted costsheet", "costsheet_id", id)
