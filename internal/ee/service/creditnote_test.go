@@ -1339,6 +1339,106 @@ func (s *CreditNoteServiceSuite) TestCreditNoteNumberGeneration() {
 	s.Contains(resp.CreditNoteNumber, types.SHORT_ID_PREFIX_CREDIT_NOTE)
 }
 
+func (s *CreditNoteServiceSuite) TestCreditNoteIdempotency() {
+	s.Run("retry with identical request returns same credit note, no duplicate row", func() {
+		req := &dto.CreateCreditNoteRequest{
+			InvoiceID: s.testData.invoices.finalized.ID,
+			Reason:    types.CreditNoteReasonBillingError,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{
+					InvoiceLineItemID: "line_1",
+					Amount:            decimal.NewFromFloat(10.00),
+				},
+			},
+		}
+
+		first, err := s.service.CreateCreditNote(s.GetContext(), req)
+		s.NoError(err)
+
+		// Simulate a client retry: identical logical request, no explicit
+		// idempotency key, credit_note_number left blank again (the normal
+		// case - the server auto-generates it).
+		retryReq := &dto.CreateCreditNoteRequest{
+			InvoiceID: s.testData.invoices.finalized.ID,
+			Reason:    types.CreditNoteReasonBillingError,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{
+					InvoiceLineItemID: "line_1",
+					Amount:            decimal.NewFromFloat(10.00),
+				},
+			},
+		}
+
+		second, err := s.service.CreateCreditNote(s.GetContext(), retryReq)
+		s.NoError(err)
+
+		s.Equal(first.ID, second.ID)
+
+		filter := types.NewNoLimitCreditNoteFilter()
+		filter.InvoiceID = s.testData.invoices.finalized.ID
+		count, err := s.GetStores().CreditNoteRepo.Count(s.GetContext(), filter)
+		s.NoError(err)
+		s.Equal(1, count)
+	})
+
+	s.Run("same invoice and reason but different line items are not merged", func() {
+		req1 := &dto.CreateCreditNoteRequest{
+			InvoiceID: s.testData.invoices.pending.ID,
+			Reason:    types.CreditNoteReasonService,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{
+					InvoiceLineItemID: "line_3",
+					Amount:            decimal.NewFromFloat(10.00),
+				},
+			},
+		}
+		req2 := &dto.CreateCreditNoteRequest{
+			InvoiceID: s.testData.invoices.pending.ID,
+			Reason:    types.CreditNoteReasonService,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{
+					InvoiceLineItemID: "line_3",
+					Amount:            decimal.NewFromFloat(20.00),
+				},
+			},
+		}
+
+		first, err := s.service.CreateCreditNote(s.GetContext(), req1)
+		s.NoError(err)
+
+		second, err := s.service.CreateCreditNote(s.GetContext(), req2)
+		s.NoError(err)
+
+		s.NotEqual(first.ID, second.ID)
+	})
+
+	s.Run("explicit idempotency key still short-circuits regardless of content", func() {
+		key := "explicit-test-key-1"
+		req := &dto.CreateCreditNoteRequest{
+			InvoiceID:      s.testData.invoices.finalized.ID,
+			Reason:         types.CreditNoteReasonUnsatisfactory,
+			IdempotencyKey: &key,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{
+					InvoiceLineItemID: "line_2",
+					Amount:            decimal.NewFromFloat(5.00),
+				},
+			},
+		}
+
+		first, err := s.service.CreateCreditNote(s.GetContext(), req)
+		s.NoError(err)
+
+		// Different line item amount, but same explicit key -> must still
+		// short-circuit to the first row (explicit key always wins).
+		req.LineItems[0].Amount = decimal.NewFromFloat(15.00)
+		second, err := s.service.CreateCreditNote(s.GetContext(), req)
+		s.NoError(err)
+
+		s.Equal(first.ID, second.ID)
+	})
+}
+
 func (s *CreditNoteServiceSuite) TestProcessCreditNoteFlag() {
 	tests := []struct {
 		name              string
