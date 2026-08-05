@@ -1,12 +1,14 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	invoicedomain "github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -49,7 +51,9 @@ func (s *SubscriptionChangeServiceTestSuite) setupServices() {
 		UserRepo:                     s.GetStores().UserRepo,
 		EventRepo:                    s.GetStores().EventRepo,
 		MeterRepo:                    s.GetStores().MeterRepo,
+		MeterUsageRepo:               s.GetStores().MeterUsageRepo,
 		PriceRepo:                    s.GetStores().PriceRepo,
+		PriceUnitRepo:                s.GetStores().PriceUnitRepo,
 		CustomerRepo:                 s.GetStores().CustomerRepo,
 		PlanRepo:                     s.GetStores().PlanRepo,
 		SubRepo:                      s.GetStores().SubscriptionRepo,
@@ -62,6 +66,7 @@ func (s *SubscriptionChangeServiceTestSuite) setupServices() {
 		InvoiceRepo:                  s.GetStores().InvoiceRepo,
 		FeatureRepo:                  s.GetStores().FeatureRepo,
 		EntitlementRepo:              s.GetStores().EntitlementRepo,
+		EntitlementGrantRepo:         s.GetStores().EntitlementGrantRepo,
 		PaymentRepo:                  s.GetStores().PaymentRepo,
 		SecretRepo:                   s.GetStores().SecretRepo,
 		EnvironmentRepo:              s.GetStores().EnvironmentRepo,
@@ -997,6 +1002,116 @@ func (s *SubscriptionChangeServiceTestSuite) TestFixedToUsagePlanTransition() {
 	assert.NotNil(s.T(), executeResponse)
 	assert.Equal(s.T(), usagePlan.ID, executeResponse.NewSubscription.PlanID)
 	assert.NotNil(s.T(), executeResponse.ProrationApplied)
+}
+
+// TestPlanChangeInvoicesCancelUsageAndDebitsPrepaidWallet verifies that an immediate
+// plan change raises a cancel invoice for arrear usage on the old subscription and
+// applies prepaid credits (wallet debit) so usage liability is not dropped.
+func (s *SubscriptionChangeServiceTestSuite) TestPlanChangeInvoicesCancelUsageAndDebitsPrepaidWallet() {
+	ctx := s.GetContext()
+
+	cust := s.createTestCustomer()
+	usagePlan, m := s.createUsageBasedPlan("Usage Source", decimal.Zero, decimal.NewFromInt(1))
+	targetPlan := s.createTestPlan("Target Fixed", decimal.NewFromInt(20))
+	sub := s.createTestSubscription(usagePlan.ID, cust.ID)
+
+	// Widen the cancel window and align line-item start so seeded usage is billable.
+	periodStart := time.Now().UTC().Add(-2 * time.Hour)
+	sub.CurrentPeriodStart = periodStart
+	require.NoError(s.T(), s.GetStores().SubscriptionRepo.Update(ctx, sub))
+	lineItems, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(ctx, sub)
+	require.NoError(s.T(), err)
+	for _, li := range lineItems {
+		li.StartDate = periodStart
+		require.NoError(s.T(), s.GetStores().SubscriptionLineItemRepo.Update(ctx, li))
+	}
+	sub, _, err = s.GetStores().SubscriptionRepo.GetWithLineItems(ctx, sub.ID)
+	require.NoError(s.T(), err)
+
+	walletBalance := decimal.NewFromInt(100)
+	w := &walletdomain.Wallet{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET),
+		CustomerID:     cust.ID,
+		Currency:       "usd",
+		Balance:        walletBalance,
+		CreditBalance:  walletBalance,
+		ConversionRate: decimal.NewFromInt(1),
+		WalletStatus:   types.WalletStatusActive,
+		WalletType:     types.WalletTypePrePaid,
+		EnvironmentID:  types.GetEnvironmentID(ctx),
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}
+	require.NoError(s.T(), s.GetStores().WalletRepo.CreateWallet(ctx, w))
+	require.NoError(s.T(), s.GetStores().WalletRepo.CreateTransaction(ctx, &walletdomain.Transaction{
+		ID:               types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION),
+		WalletID:         w.ID,
+		Type:             types.TransactionTypeCredit,
+		Amount:           walletBalance,
+		CreditAmount:     walletBalance,
+		CreditsAvailable: walletBalance,
+		TxStatus:         types.TransactionStatusCompleted,
+		BaseModel:        types.GetDefaultBaseModel(ctx),
+	}))
+
+	const usageQty int64 = 10
+	usageAmount := decimal.NewFromInt(usageQty) // $1/unit
+	ts := periodStart.Add(time.Hour)
+	records := make([]*events.MeterUsage, 0, usageQty)
+	for i := int64(0); i < usageQty; i++ {
+		id := types.GenerateUUIDWithPrefix("mu")
+		records = append(records, &events.MeterUsage{
+			Event: events.Event{
+				ID:                 id,
+				TenantID:           types.GetTenantID(ctx),
+				EnvironmentID:      types.GetEnvironmentID(ctx),
+				EventName:          m.EventName,
+				CustomerID:         cust.ID,
+				ExternalCustomerID: cust.ExternalID,
+				Timestamp:          ts,
+				IngestedAt:         ts,
+				Properties:         map[string]interface{}{},
+			},
+			MeterID:    m.ID,
+			QtyTotal:   decimal.NewFromInt(1),
+			UniqueHash: fmt.Sprintf("%s:%s", m.EventName, id),
+		})
+	}
+	require.NoError(s.T(), s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, records))
+
+	req := s.createSubscriptionChangeRequest(targetPlan.ID, types.ProrationBehaviorNone)
+	execResp, err := s.subscriptionChangeService.ExecuteSubscriptionChange(ctx, sub.ID, req)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), execResp)
+	assert.Equal(s.T(), types.SubscriptionStatusCancelled, execResp.OldSubscription.Status)
+
+	oldInvoices := s.getInvoicesForSub(sub.ID)
+	var cancelInv *invoicedomain.Invoice
+	for _, inv := range oldInvoices {
+		if types.InvoiceBillingReason(inv.BillingReason) == types.InvoiceBillingReasonProration {
+			cancelInv = inv
+			break
+		}
+	}
+	require.NotNil(s.T(), cancelInv, "plan change should create a cancel invoice on the old subscription")
+	require.NotEmpty(s.T(), cancelInv.LineItems, "cancel invoice should include usage line items")
+
+	var usageLine *invoicedomain.InvoiceLineItem
+	for i := range cancelInv.LineItems {
+		li := cancelInv.LineItems[i]
+		if li.MeterID != nil && *li.MeterID == m.ID {
+			usageLine = li
+			break
+		}
+	}
+	require.NotNil(s.T(), usageLine, "cancel invoice must include a usage line for the meter")
+	assert.True(s.T(), usageAmount.Equal(usageLine.Amount),
+		"usage line amount: want %s, got %s", usageAmount, usageLine.Amount)
+
+	updatedWallet, err := s.GetStores().WalletRepo.GetWalletByID(ctx, w.ID)
+	require.NoError(s.T(), err)
+	expectedBalance := walletBalance.Sub(usageAmount)
+	assert.True(s.T(), expectedBalance.Equal(updatedWallet.Balance),
+		"prepaid wallet should be debited for cancel usage: want %s, got %s", expectedBalance, updatedWallet.Balance)
 }
 
 // // TC-012: Usage Plan to Fixed Plan Transition
