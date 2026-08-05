@@ -32,7 +32,7 @@ func TestCalculateCreditGrantProration(t *testing.T) {
 			strategy:        types.StrategySecondBased,
 			credits:         decimal.NewFromInt(100),
 			wantCoefficient: "0.3870967741935484",
-			wantCredits:     "38.70967742",
+			wantCredits:     "38.71",
 		},
 		{
 			// A zero-credit application fails the wallet top-up, which rolls back the

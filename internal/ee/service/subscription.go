@@ -1575,7 +1575,6 @@ func (s *subscriptionService) addonCreditGrantProration(
 		PeriodEnd:     p.End,
 		ProrationDate: startDate,
 		Strategy:      types.StrategySecondBased,
-		Source:        "addon_attach",
 	}
 }
 

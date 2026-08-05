@@ -7,9 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// creditGrantCreditsScale matches the numeric(20,8) precision of
-// credit_grant_applications.credits.
-const creditGrantCreditsScale = 8
+const creditGrantCreditsScale = 2
 
 // CreditGrantProrationParams describes the window a credit grant's first
 // application covers relative to the full billing period it sits in.
