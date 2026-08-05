@@ -409,22 +409,29 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 	// Store original status for logging
 	originalStatus := cn.CreditNoteStatus
 
-	// Recalculate before flipping status, so a failure never leaves the credit note half-voided.
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
 		if originalStatus == types.CreditNoteStatusFinalized {
 			// Lock to serialize against a concurrent finalize/void on the same invoice.
 			if _, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID); err != nil {
 				return err
 			}
+		}
 
+		cn.CreditNoteStatus = types.CreditNoteStatusVoided
+		if err := s.CreditNoteRepo.Update(tx, cn); err != nil {
+			return err
+		}
+
+		if originalStatus == types.CreditNoteStatusFinalized {
+			// Status must be persisted as Voided before this runs: RecalculateInvoiceAmounts
+			// sums all Finalized credit notes, and would otherwise still count this one.
 			invoiceService := NewInvoiceService(s.ServiceParams)
 			if err := invoiceService.RecalculateInvoiceAmounts(tx, cn.InvoiceID); err != nil {
 				return err
 			}
 		}
 
-		cn.CreditNoteStatus = types.CreditNoteStatusVoided
-		return s.CreditNoteRepo.Update(tx, cn)
+		return nil
 	})
 	if err != nil {
 		s.Logger.Error(ctx, "failed to void credit note",
@@ -486,11 +493,10 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			return err
 		}
 
-		// Re-check capacity under the lock: another credit note may have consumed it since draft creation.
-		maxCreditableAmount, err := s.calculateMaxCreditableAmount(tx, lockedInv)
-		if err != nil {
-			return err
-		}
+		// Re-check capacity under the lock: another credit note may have consumed it since draft
+		// creation. Use cn's own type, not the invoice's current derived type, which may have
+		// drifted (e.g. payment succeeded after this draft was created as an adjustment).
+		maxCreditableAmount := s.calculateMaxCreditableAmount(tx, lockedInv, cn.CreditNoteType)
 		if cn.TotalAmount.GreaterThan(maxCreditableAmount) {
 			return ierr.NewError("credit amount exceeds available limit").
 				WithHintf(
@@ -636,11 +642,12 @@ func (s *creditNoteService) validateInvoiceEligibility(ctx context.Context, invo
 
 // validateCreditNoteAmounts validates credit note amounts and line items
 func (s *creditNoteService) validateCreditNoteAmounts(ctx context.Context, req *dto.CreateCreditNoteRequest, inv *invoice.Invoice) error {
-	// Determine the max creditable amount
-	maxCreditableAmount, err := s.calculateMaxCreditableAmount(ctx, inv)
+	creditNoteType, err := s.getCreditNoteType(inv)
 	if err != nil {
 		return err
 	}
+
+	maxCreditableAmount := s.calculateMaxCreditableAmount(ctx, inv, creditNoteType)
 
 	// Validate line items and calculate total amount
 	totalCreditNoteAmount, err := s.validateLineItems(req, inv)
@@ -650,9 +657,6 @@ func (s *creditNoteService) validateCreditNoteAmounts(ctx context.Context, req *
 
 	// Check if total amount exceeds max creditable amount
 	if totalCreditNoteAmount.GreaterThan(maxCreditableAmount) {
-		// Determine credit note type for better messaging
-		creditNoteType, _ := s.getCreditNoteType(inv)
-
 		var messageTemplate string
 		if creditNoteType == types.CreditNoteTypeRefund {
 			messageTemplate = "You can only refund up to %s for this invoice. You're trying to refund %s, but only %s is available based on payments received."
@@ -678,13 +682,8 @@ func (s *creditNoteService) validateCreditNoteAmounts(ctx context.Context, req *
 	return nil
 }
 
-// calculateMaxCreditableAmount calculates the maximum amount that can be credited using stored amounts
-func (s *creditNoteService) calculateMaxCreditableAmount(ctx context.Context, inv *invoice.Invoice) (decimal.Decimal, error) {
-	creditNoteType, err := s.getCreditNoteType(inv)
-	if err != nil {
-		return decimal.Zero, err
-	}
-
+// calculateMaxCreditableAmount calculates the maximum amount creditable for the given type, using stored amounts
+func (s *creditNoteService) calculateMaxCreditableAmount(ctx context.Context, inv *invoice.Invoice, creditNoteType types.CreditNoteType) decimal.Decimal {
 	// Calculate max creditable amount based on credit note type using stored amounts
 	var maxCreditableAmount decimal.Decimal
 	if creditNoteType == types.CreditNoteTypeRefund {
@@ -713,7 +712,7 @@ func (s *creditNoteService) calculateMaxCreditableAmount(ctx context.Context, in
 		"invoice_refunded_amount", inv.RefundedAmount,
 		"max_creditable_amount", maxCreditableAmount)
 
-	return maxCreditableAmount, nil
+	return maxCreditableAmount
 }
 
 // validateLineItems validates credit note line items against invoice line items
