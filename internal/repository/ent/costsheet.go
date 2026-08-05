@@ -71,9 +71,22 @@ func (r *costsheetRepository) Create(ctx context.Context, costsheet *domainCosts
 	return nil
 }
 
-// GetByID retrieves a costsheet record by its ID.
+// GetByID retrieves a costsheet record by its ID, scoped to the tenant and environment in ctx.
 func (r *costsheetRepository) GetByID(ctx context.Context, id string) (*domainCostsheet.Costsheet, error) {
-	entCostsheet, err := r.client.Reader(ctx).Costsheet.Get(ctx, id)
+	query := r.client.Reader(ctx).Costsheet.Query().
+		Where(costsheet.ID(id))
+
+	// Apply tenant and environment from context
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	if tenantID != "" {
+		query = query.Where(costsheet.TenantID(tenantID))
+	}
+	if environmentID != "" {
+		query = query.Where(costsheet.EnvironmentID(environmentID))
+	}
+
+	entCostsheet, err := query.Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil, ierr.NewError("costsheet not found").
@@ -263,11 +276,24 @@ func (r *costsheetRepository) Count(ctx context.Context, filter *domainCostsheet
 	return int64(count), nil
 }
 
-// Update updates an existing costsheet record.
-func (r *costsheetRepository) Update(ctx context.Context, costsheet *domainCostsheet.Costsheet) error {
-	entCostsheet := r.domainToEnt(costsheet)
+// Update updates an existing costsheet record, scoped to the tenant and environment in ctx.
+func (r *costsheetRepository) Update(ctx context.Context, cs *domainCostsheet.Costsheet) error {
+	entCostsheet := r.domainToEnt(cs)
 
-	updateQuery := r.client.Writer(ctx).Costsheet.UpdateOneID(entCostsheet.ID).
+	updateQuery := r.client.Writer(ctx).Costsheet.Update().
+		Where(costsheet.ID(entCostsheet.ID))
+
+	// Apply tenant and environment from context
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	if tenantID != "" {
+		updateQuery = updateQuery.Where(costsheet.TenantID(tenantID))
+	}
+	if environmentID != "" {
+		updateQuery = updateQuery.Where(costsheet.EnvironmentID(environmentID))
+	}
+
+	updateQuery = updateQuery.
 		SetName(entCostsheet.Name).
 		SetStatus(entCostsheet.Status).
 		SetUpdatedAt(entCostsheet.UpdatedAt).
@@ -284,31 +310,51 @@ func (r *costsheetRepository) Update(ctx context.Context, costsheet *domainCosts
 		updateQuery.SetMetadata(entCostsheet.Metadata)
 	}
 
-	err := updateQuery.Exec(ctx)
+	affected, err := updateQuery.Save(ctx)
 
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return ierr.NewError("costsheet not found").
 				WithHint("No costsheet found with the provided ID").
-				WithReportableDetails(map[string]any{"id": costsheet.ID}).
+				WithReportableDetails(map[string]any{"id": cs.ID}).
 				Mark(ierr.ErrNotFound)
 		}
-		r.logger.Error(ctx, "Failed to update costsheet", "error", err, "costsheet_id", costsheet.ID)
+		r.logger.Error(ctx, "Failed to update costsheet", "error", err, "costsheet_id", cs.ID)
 		return ierr.WithError(err).
 			WithHint("Failed to update costsheet").
 			Mark(ierr.ErrDatabase)
 	}
 
-	r.logger.Info(ctx, "Updated costsheet", "costsheet_id", costsheet.ID, "name", costsheet.Name)
+	if affected == 0 {
+		return ierr.NewError("costsheet not found").
+			WithHint("No costsheet found with the provided ID").
+			WithReportableDetails(map[string]any{"id": cs.ID}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	r.logger.Info(ctx, "Updated costsheet", "costsheet_id", cs.ID, "name", cs.Name)
 	return nil
 }
 
-// Delete soft deletes a costsheet record by setting its status to deleted.
+// Delete soft deletes a costsheet record by setting its status to deleted, scoped to the tenant and environment in ctx.
 func (r *costsheetRepository) Delete(ctx context.Context, id string) error {
-	err := r.client.Writer(ctx).Costsheet.UpdateOneID(id).
+	deleteQuery := r.client.Writer(ctx).Costsheet.Update().
+		Where(costsheet.ID(id))
+
+	// Apply tenant and environment from context
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	if tenantID != "" {
+		deleteQuery = deleteQuery.Where(costsheet.TenantID(tenantID))
+	}
+	if environmentID != "" {
+		deleteQuery = deleteQuery.Where(costsheet.EnvironmentID(environmentID))
+	}
+
+	affected, err := deleteQuery.
 		SetStatus(string(types.StatusDeleted)).
 		SetUpdatedAt(time.Now().UTC()).
-		Exec(ctx)
+		Save(ctx)
 
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -321,6 +367,13 @@ func (r *costsheetRepository) Delete(ctx context.Context, id string) error {
 		return ierr.WithError(err).
 			WithHint("Failed to delete costsheet").
 			Mark(ierr.ErrDatabase)
+	}
+
+	if affected == 0 {
+		return ierr.NewError("costsheet not found").
+			WithHint("No costsheet found with the provided ID").
+			WithReportableDetails(map[string]any{"id": id}).
+			Mark(ierr.ErrNotFound)
 	}
 
 	r.logger.Info(ctx, "Deleted costsheet", "costsheet_id", id)
