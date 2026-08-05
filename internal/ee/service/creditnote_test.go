@@ -976,6 +976,38 @@ func (s *CreditNoteServiceSuite) TestVoidCreditNote() {
 	}
 }
 
+func (s *CreditNoteServiceSuite) TestVoidCreditNote_RecalculationFailurePropagates() {
+	// A finalized ADJUSTMENT credit note (refund-type finalized credit notes can
+	// never be voided, so this is the only status/type combination that reaches
+	// the invoice recalculation path) referencing an invoice that no longer
+	// exists — standing in for the recalculation step failing. Voiding it must
+	// surface that failure, not silently succeed while leaving the invoice
+	// unrecalculated.
+	brokenCN := &creditnote.CreditNote{
+		ID:               "cn_void_recalc_fail",
+		CustomerID:       s.testData.customer.ID,
+		InvoiceID:        "inv_does_not_exist",
+		CreditNoteNumber: "CN-VOID-FAIL-TEST",
+		CreditNoteStatus: types.CreditNoteStatusFinalized,
+		CreditNoteType:   types.CreditNoteTypeAdjustment,
+		Reason:           types.CreditNoteReasonBillingError,
+		Currency:         "USD",
+		TotalAmount:      decimal.NewFromFloat(10.00),
+		BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().CreditNoteRepo.CreateWithLineItems(s.GetContext(), brokenCN))
+
+	err := s.service.VoidCreditNote(s.GetContext(), brokenCN.ID)
+	s.Error(err)
+	s.Contains(err.Error(), "not found")
+
+	// The credit note must remain Finalized: the status flip must never be
+	// attempted before the invoice lock/recalculation succeeds.
+	after, err := s.GetStores().CreditNoteRepo.Get(s.GetContext(), brokenCN.ID)
+	s.NoError(err)
+	s.Equal(types.CreditNoteStatusFinalized, after.CreditNoteStatus)
+}
+
 func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 	// Create draft credit note manually in repository to test processing
 	// This bypasses the CreateCreditNote validation that automatically processes the credit note
