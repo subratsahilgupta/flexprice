@@ -712,15 +712,20 @@ func (s *subscriptionChangeService) executeChange(
 	isTrialing := currentSub.SubscriptionStatus == types.SubscriptionStatusTrialing
 
 	// Cancel the old subscription (pass through proration_behavior so execute matches preview).
-	// Generate a cancel invoice so arrear usage in the old window is billed and can be debited from the prepaid wallet.
+	// Non-trial: generate a cancel invoice so arrear usage is billed and can debit prepaid wallet.
+	// Trial: skip invoice — nothing has been charged yet.
 	// SkipProrationWalletCredit: unused fixed-fee credit is netted onto the new subscription opening invoice instead of a wallet top-up.
+	cancelInvoicePolicy := types.CancelImmediatelyInvoicePolicyGenerateInvoice
+	if isTrialing {
+		cancelInvoicePolicy = types.CancelImmediatelyInvoicePolicySkip
+	}
 	subscriptionService := NewSubscriptionService(s.serviceParams)
 	archivedSub, err := subscriptionService.CancelSubscription(ctx, currentSub.ID, &dto.CancelSubscriptionRequest{
 		CancellationType:               types.CancellationTypeImmediate,
 		Reason:                         "subscription_change",
 		ProrationBehavior:              req.ProrationBehavior,
 		SkipProrationWalletCredit:      true,
-		CancelImmediatelyInvoicePolicy: types.CancelImmediatelyInvoicePolicyGenerateInvoice,
+		CancelImmediatelyInvoicePolicy: cancelInvoicePolicy,
 	})
 	if err != nil {
 		return nil, err
