@@ -1101,6 +1101,57 @@ func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 	}
 }
 
+func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() {
+	// Two drafts on the same invoice (AmountPaid=110.00, RefundedAmount=0.00 at
+	// creation time), each individually valid (100.00 <= 110.00 max), but their
+	// combined total (200.00) exceeds what the invoice can actually refund.
+	// Finalizing the first must succeed; finalizing the second must be rejected
+	// under the invoice lock instead of silently double-refunding the wallet.
+	draftReq := func() *dto.CreateCreditNoteRequest {
+		return &dto.CreateCreditNoteRequest{
+			InvoiceID:         s.testData.invoices.finalized.ID,
+			Reason:            types.CreditNoteReasonUnsatisfactory,
+			ProcessCreditNote: false,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{InvoiceLineItemID: "line_1", Amount: decimal.NewFromFloat(50.00)},
+				{InvoiceLineItemID: "line_2", Amount: decimal.NewFromFloat(50.00)},
+			},
+		}
+	}
+
+	first, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	s.NoError(err)
+	s.Equal(types.CreditNoteStatusDraft, first.CreditNoteStatus)
+
+	second, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	s.NoError(err)
+	s.Equal(types.CreditNoteStatusDraft, second.CreditNoteStatus)
+
+	walletBefore, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallets.usd.ID)
+	s.NoError(err)
+
+	// Finalize the first: succeeds, refunds 100.00 into the USD wallet.
+	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID))
+
+	// Finalizing the second must now fail: only 10.00 (110.00 paid - 100.00
+	// already refunded) is available, but this credit note is for 100.00.
+	err = s.service.FinalizeCreditNote(s.GetContext(), second.ID)
+	s.Error(err)
+	s.Contains(err.Error(), "credit amount exceeds available limit")
+
+	// The rejected credit note must stay Draft, not silently flip to Finalized.
+	secondAfter, err := s.GetStores().CreditNoteRepo.Get(s.GetContext(), second.ID)
+	s.NoError(err)
+	s.Equal(types.CreditNoteStatusDraft, secondAfter.CreditNoteStatus)
+
+	// The wallet must reflect only the first refund, never a double refund.
+	walletAfter, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallets.usd.ID)
+	s.NoError(err)
+	expectedBalance := walletBefore.Balance.Add(decimal.NewFromFloat(100.00))
+	s.True(walletAfter.Balance.Equal(expectedBalance),
+		"expected wallet balance %s, got %s", expectedBalance, walletAfter.Balance)
+}
+
 func (s *CreditNoteServiceSuite) TestMaxCreditableAmountValidation() {
 	// Create credit notes that exceed max creditable amount
 	tests := []struct {
