@@ -266,12 +266,27 @@ func (s *costsheetService) DeleteCostsheet(ctx context.Context, id string) (*dto
 			Mark(ierr.ErrValidation)
 	}
 
+	existing, err := s.CostSheetRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if existing.Status == types.StatusDeleted {
+		return nil, ierr.NewError("costsheet is already archived").
+			WithHint("This costsheet has already been archived").
+			WithReportableDetails(map[string]any{
+				"id":     id,
+				"status": existing.Status,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Start a transaction to delete costsheet
-	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		// Soft delete the costsheet
 		if err := s.CostSheetRepo.Delete(ctx, id); err != nil {
 			return ierr.WithError(err).
-				WithHint("Failed to delete costsheet").
+				WithHint("Failed to archive costsheet").
 				Mark(ierr.ErrDatabase)
 		}
 		return nil

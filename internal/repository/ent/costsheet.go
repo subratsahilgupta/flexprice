@@ -72,21 +72,16 @@ func (r *costsheetRepository) Create(ctx context.Context, costsheet *domainCosts
 }
 
 // GetByID retrieves a costsheet record by its ID, scoped to the tenant and environment in ctx.
+// The tenant/environment predicates are always applied (never conditionally skipped) so that a
+// request with incomplete auth context fails closed instead of widening the lookup scope.
 func (r *costsheetRepository) GetByID(ctx context.Context, id string) (*domainCostsheet.Costsheet, error) {
-	query := r.client.Reader(ctx).Costsheet.Query().
-		Where(costsheet.ID(id))
-
-	// Apply tenant and environment from context
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-	if tenantID != "" {
-		query = query.Where(costsheet.TenantID(tenantID))
-	}
-	if environmentID != "" {
-		query = query.Where(costsheet.EnvironmentID(environmentID))
-	}
-
-	entCostsheet, err := query.Only(ctx)
+	entCostsheet, err := r.client.Reader(ctx).Costsheet.Query().
+		Where(
+			costsheet.ID(id),
+			costsheet.TenantID(types.GetTenantID(ctx)),
+			costsheet.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
+		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil, ierr.NewError("costsheet not found").
@@ -277,23 +272,17 @@ func (r *costsheetRepository) Count(ctx context.Context, filter *domainCostsheet
 }
 
 // Update updates an existing costsheet record, scoped to the tenant and environment in ctx.
+// The tenant/environment predicates are always applied (never conditionally skipped) so that a
+// request with incomplete auth context fails closed instead of widening the update scope.
 func (r *costsheetRepository) Update(ctx context.Context, cs *domainCostsheet.Costsheet) error {
 	entCostsheet := r.domainToEnt(cs)
 
 	updateQuery := r.client.Writer(ctx).Costsheet.Update().
-		Where(costsheet.ID(entCostsheet.ID))
-
-	// Apply tenant and environment from context
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-	if tenantID != "" {
-		updateQuery = updateQuery.Where(costsheet.TenantID(tenantID))
-	}
-	if environmentID != "" {
-		updateQuery = updateQuery.Where(costsheet.EnvironmentID(environmentID))
-	}
-
-	updateQuery = updateQuery.
+		Where(
+			costsheet.ID(entCostsheet.ID),
+			costsheet.TenantID(types.GetTenantID(ctx)),
+			costsheet.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
 		SetName(entCostsheet.Name).
 		SetStatus(entCostsheet.Status).
 		SetUpdatedAt(entCostsheet.UpdatedAt).
@@ -337,24 +326,19 @@ func (r *costsheetRepository) Update(ctx context.Context, cs *domainCostsheet.Co
 }
 
 // Delete soft deletes a costsheet record by setting its status to deleted, scoped to the tenant and environment in ctx.
+// The tenant/environment predicates are always applied (never conditionally skipped) so that a
+// request with incomplete auth context fails closed instead of widening the delete scope.
 func (r *costsheetRepository) Delete(ctx context.Context, id string) error {
 	deleteQuery := r.client.Writer(ctx).Costsheet.Update().
-		Where(costsheet.ID(id))
-
-	// Apply tenant and environment from context
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-	if tenantID != "" {
-		deleteQuery = deleteQuery.Where(costsheet.TenantID(tenantID))
-	}
-	if environmentID != "" {
-		deleteQuery = deleteQuery.Where(costsheet.EnvironmentID(environmentID))
-	}
-
-	affected, err := deleteQuery.
+		Where(
+			costsheet.ID(id),
+			costsheet.TenantID(types.GetTenantID(ctx)),
+			costsheet.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
 		SetStatus(string(types.StatusDeleted)).
-		SetUpdatedAt(time.Now().UTC()).
-		Save(ctx)
+		SetUpdatedAt(time.Now().UTC())
+
+	affected, err := deleteQuery.Save(ctx)
 
 	if err != nil {
 		if ent.IsNotFound(err) {
