@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	Idx_tenant_environment_credit_note_number_unique = "idx_tenant_environment_credit_note_number_unique"
-	Idx_tenant_environment_subscription_id_unique    = "idx_tenant_environment_subscription_id_unique"
+	Idx_tenant_environment_credit_note_number_unique         = "idx_tenant_environment_credit_note_number_unique"
+	Idx_tenant_environment_subscription_id_unique            = "idx_tenant_environment_subscription_id_unique"
+	Idx_tenant_environment_creditnote_idempotency_key_unique = "idx_tenant_environment_creditnote_idempotency_key_unique"
 )
 
 // CreditNote holds the schema definition for the CreditNote entity.
@@ -145,6 +146,8 @@ func (CreditNote) Indexes() []ent.Index {
 			Annotations(entsql.IndexWhere("((credit_note_number IS NOT NULL) AND ((credit_note_number)::text <> ''::text) AND ((status)::text = 'published'::text))")),
 
 		index.Fields("tenant_id", "environment_id", "idempotency_key").
+			Unique().
+			StorageKey(Idx_tenant_environment_creditnote_idempotency_key_unique).
 			Annotations(entsql.IndexWhere("((idempotency_key IS NOT NULL) AND ((idempotency_key)::text <> ''::text))")),
 
 		index.Fields("tenant_id", "environment_id", "invoice_id"),

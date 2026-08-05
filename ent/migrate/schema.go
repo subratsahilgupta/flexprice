@@ -722,8 +722,8 @@ var (
 				},
 			},
 			{
-				Name:    "creditnote_tenant_id_environment_id_idempotency_key",
-				Unique:  false,
+				Name:    "idx_tenant_environment_creditnote_idempotency_key_unique",
+				Unique:  true,
 				Columns: []*schema.Column{CreditNotesColumns[1], CreditNotesColumns[7], CreditNotesColumns[18]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "((idempotency_key IS NOT NULL) AND ((idempotency_key)::text <> ''::text))",
