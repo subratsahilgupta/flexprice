@@ -409,26 +409,37 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 	// Store original status for logging
 	originalStatus := cn.CreditNoteStatus
 
-	// Update credit note status to voided
-	cn.CreditNoteStatus = types.CreditNoteStatusVoided
+	// Update credit note status to voided, and — for a finalized credit note —
+	// lock the invoice and recalculate its amounts in the same transaction, so
+	// both writes commit or roll back together. The lock/recalculation runs
+	// before the status flip so a recalculation failure never leaves the credit
+	// note marked Voided.
+	err = s.DB.WithTx(ctx, func(tx context.Context) error {
+		if originalStatus == types.CreditNoteStatusFinalized {
+			// Lock the invoice row so a concurrent finalize/void on the same
+			// invoice cannot race this recalculation with a stale view of it.
+			if _, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID); err != nil {
+				return err
+			}
 
-	if err := s.CreditNoteRepo.Update(ctx, cn); err != nil {
+			invoiceService := NewInvoiceService(s.ServiceParams)
+			if err := invoiceService.RecalculateInvoiceAmounts(tx, cn.InvoiceID); err != nil {
+				return err
+			}
+		}
+
+		cn.CreditNoteStatus = types.CreditNoteStatusVoided
+		return s.CreditNoteRepo.Update(tx, cn)
+	})
+	if err != nil {
+		s.Logger.Error(ctx, "failed to void credit note",
+			"error", err,
+			"credit_note_id", cn.ID,
+			"invoice_id", cn.InvoiceID)
 		return err
 	}
 
-	// Recalculate invoice amounts after credit note void
-	// This is needed to update the adjustment and refunded amounts
-	if originalStatus == types.CreditNoteStatusFinalized {
-		invoiceService := NewInvoiceService(s.ServiceParams)
-		if err := invoiceService.RecalculateInvoiceAmounts(ctx, cn.InvoiceID); err != nil {
-			s.Logger.Error(ctx, "failed to recalculate invoice amounts after credit note void",
-				"error", err,
-				"credit_note_id", cn.ID,
-				"invoice_id", cn.InvoiceID)
-		}
-	}
-
-	// Publish webhook event after successful update
+	// Publish webhook event after successful transaction
 	s.publishSystemEvent(ctx, types.WebhookEventCreditNoteUpdated, cn.ID)
 
 	s.Logger.Info(ctx, "credit note voided successfully",
