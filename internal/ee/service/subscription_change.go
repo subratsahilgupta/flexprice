@@ -712,11 +712,8 @@ func (s *subscriptionChangeService) executeChange(
 	isTrialing := currentSub.SubscriptionStatus == types.SubscriptionStatusTrialing
 
 	// Cancel the old subscription (pass through proration_behavior so execute matches preview).
-	// Generate a cancel invoice so arrear usage in the old window is billed and can be
-	// debited from the prepaid wallet — otherwise pending usage drops out of ongoing
-	// balance when the old sub leaves the active set.
-	// SkipProrationWalletCredit: unused fixed-fee credit is netted onto the new
-	// subscription opening invoice instead of a wallet top-up.
+	// Generate a cancel invoice so arrear usage in the old window is billed and can be debited from the prepaid wallet.
+	// SkipProrationWalletCredit: unused fixed-fee credit is netted onto the new subscription opening invoice instead of a wallet top-up.
 	subscriptionService := NewSubscriptionService(s.serviceParams)
 	archivedSub, err := subscriptionService.CancelSubscription(ctx, currentSub.ID, &dto.CancelSubscriptionRequest{
 		CancellationType:               types.CancellationTypeImmediate,
