@@ -977,12 +977,8 @@ func (s *CreditNoteServiceSuite) TestVoidCreditNote() {
 }
 
 func (s *CreditNoteServiceSuite) TestVoidCreditNote_RecalculationFailurePropagates() {
-	// A finalized ADJUSTMENT credit note (refund-type finalized credit notes can
-	// never be voided, so this is the only status/type combination that reaches
-	// the invoice recalculation path) referencing an invoice that no longer
-	// exists — standing in for the recalculation step failing. Voiding it must
-	// surface that failure, not silently succeed while leaving the invoice
-	// unrecalculated.
+	// Finalized ADJUSTMENT (refund type can't be voided) pointing at a missing invoice,
+	// standing in for the recalculation step failing.
 	brokenCN := &creditnote.CreditNote{
 		ID:               "cn_void_recalc_fail",
 		CustomerID:       s.testData.customer.ID,
@@ -1001,8 +997,7 @@ func (s *CreditNoteServiceSuite) TestVoidCreditNote_RecalculationFailurePropagat
 	s.Error(err)
 	s.Contains(err.Error(), "not found")
 
-	// The credit note must remain Finalized: the status flip must never be
-	// attempted before the invoice lock/recalculation succeeds.
+	// Status flip must not happen before the lock/recalculation succeeds.
 	after, err := s.GetStores().CreditNoteRepo.Get(s.GetContext(), brokenCN.ID)
 	s.NoError(err)
 	s.Equal(types.CreditNoteStatusFinalized, after.CreditNoteStatus)
@@ -1134,11 +1129,8 @@ func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 }
 
 func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() {
-	// Two drafts on the same invoice (AmountPaid=110.00, RefundedAmount=0.00 at
-	// creation time), each individually valid (100.00 <= 110.00 max), but their
-	// combined total (200.00) exceeds what the invoice can actually refund.
-	// Finalizing the first must succeed; finalizing the second must be rejected
-	// under the invoice lock instead of silently double-refunding the wallet.
+	// Two drafts, each individually valid (100 <= 110 max), whose combined total (200)
+	// exceeds what the invoice can actually refund.
 	draftReq := func() *dto.CreateCreditNoteRequest {
 		return &dto.CreateCreditNoteRequest{
 			InvoiceID:         s.testData.invoices.finalized.ID,
@@ -1161,27 +1153,19 @@ func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() 
 
 	walletBefore, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallets.usd.ID)
 	s.NoError(err)
-	// Snapshot the balance as a plain value: the in-memory wallet store returns a
-	// live pointer (no cloning), and later top-ups mutate that same object's
-	// Balance field in place, so walletBefore.Balance itself is not a frozen
-	// snapshot once read later in this test.
+	// In-memory wallet store returns a live pointer, so snapshot the balance now.
 	balanceBefore := walletBefore.Balance
 
-	// Finalize the first: succeeds, refunds 100.00 into the USD wallet.
 	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID))
 
-	// Finalizing the second must now fail: only 10.00 (110.00 paid - 100.00
-	// already refunded) is available, but this credit note is for 100.00.
 	err = s.service.FinalizeCreditNote(s.GetContext(), second.ID)
 	s.Error(err)
 	s.Contains(err.Error(), "credit amount exceeds available limit")
 
-	// The rejected credit note must stay Draft, not silently flip to Finalized.
 	secondAfter, err := s.GetStores().CreditNoteRepo.Get(s.GetContext(), second.ID)
 	s.NoError(err)
 	s.Equal(types.CreditNoteStatusDraft, secondAfter.CreditNoteStatus)
 
-	// The wallet must reflect only the first refund, never a double refund.
 	walletAfter, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallets.usd.ID)
 	s.NoError(err)
 	expectedBalance := balanceBefore.Add(decimal.NewFromFloat(100.00))

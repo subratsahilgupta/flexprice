@@ -409,15 +409,10 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 	// Store original status for logging
 	originalStatus := cn.CreditNoteStatus
 
-	// Update credit note status to voided, and — for a finalized credit note —
-	// lock the invoice and recalculate its amounts in the same transaction, so
-	// both writes commit or roll back together. The lock/recalculation runs
-	// before the status flip so a recalculation failure never leaves the credit
-	// note marked Voided.
+	// Recalculate before flipping status, so a failure never leaves the credit note half-voided.
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
 		if originalStatus == types.CreditNoteStatusFinalized {
-			// Lock the invoice row so a concurrent finalize/void on the same
-			// invoice cannot race this recalculation with a stale view of it.
+			// Lock to serialize against a concurrent finalize/void on the same invoice.
 			if _, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID); err != nil {
 				return err
 			}
@@ -485,17 +480,13 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 
 	// Process the credit note in transaction
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
-		// Lock the invoice row first, before any write, so a concurrent finalize
-		// on the same invoice cannot race past the capacity re-check below with a
-		// stale view of refunded/adjusted amounts.
+		// Lock before any write so a concurrent finalize can't race the capacity check below.
 		lockedInv, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID)
 		if err != nil {
 			return err
 		}
 
-		// Re-validate refund/adjustment capacity under the lock. The amount
-		// available may have shrunk since this credit note was drafted, if
-		// another credit note on the same invoice was finalized in the meantime.
+		// Re-check capacity under the lock: another credit note may have consumed it since draft creation.
 		maxCreditableAmount, err := s.calculateMaxCreditableAmount(tx, lockedInv)
 		if err != nil {
 			return err
@@ -515,7 +506,6 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 				Mark(ierr.ErrValidation)
 		}
 
-		// Only now, having validated capacity under the lock, mutate anything.
 		cn.CreditNoteStatus = types.CreditNoteStatusFinalized
 		if err := s.CreditNoteRepo.Update(tx, cn); err != nil {
 			return err
@@ -566,9 +556,7 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			}
 		}
 
-		// Recalculate invoice amounts within the same transaction and using the
-		// locked invoice, so this write commits/rolls back atomically with the
-		// wallet top-up and credit note status change above.
+		// Same tx as the wallet top-up above, so both commit/roll back together.
 		if err := s.RecalculateInvoiceAmountsForCreditNote(tx, lockedInv, cn); err != nil {
 			return err
 		}
