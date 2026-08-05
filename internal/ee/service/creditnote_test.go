@@ -1129,6 +1129,11 @@ func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() 
 
 	walletBefore, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallets.usd.ID)
 	s.NoError(err)
+	// Snapshot the balance as a plain value: the in-memory wallet store returns a
+	// live pointer (no cloning), and later top-ups mutate that same object's
+	// Balance field in place, so walletBefore.Balance itself is not a frozen
+	// snapshot once read later in this test.
+	balanceBefore := walletBefore.Balance
 
 	// Finalize the first: succeeds, refunds 100.00 into the USD wallet.
 	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID))
@@ -1147,7 +1152,7 @@ func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() 
 	// The wallet must reflect only the first refund, never a double refund.
 	walletAfter, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallets.usd.ID)
 	s.NoError(err)
-	expectedBalance := walletBefore.Balance.Add(decimal.NewFromFloat(100.00))
+	expectedBalance := balanceBefore.Add(decimal.NewFromFloat(100.00))
 	s.True(walletAfter.Balance.Equal(expectedBalance),
 		"expected wallet balance %s, got %s", expectedBalance, walletAfter.Balance)
 }

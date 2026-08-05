@@ -474,7 +474,37 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 
 	// Process the credit note in transaction
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
-		// Update credit note status first
+		// Lock the invoice row first, before any write, so a concurrent finalize
+		// on the same invoice cannot race past the capacity re-check below with a
+		// stale view of refunded/adjusted amounts.
+		lockedInv, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID)
+		if err != nil {
+			return err
+		}
+
+		// Re-validate refund/adjustment capacity under the lock. The amount
+		// available may have shrunk since this credit note was drafted, if
+		// another credit note on the same invoice was finalized in the meantime.
+		maxCreditableAmount, err := s.calculateMaxCreditableAmount(tx, lockedInv)
+		if err != nil {
+			return err
+		}
+		if cn.TotalAmount.GreaterThan(maxCreditableAmount) {
+			return ierr.NewError("credit amount exceeds available limit").
+				WithHintf(
+					"This credit note is for %s, but only %s is currently available to credit against this invoice. Another credit note may have been finalized against it since this one was created.",
+					cn.TotalAmount, maxCreditableAmount,
+				).
+				WithReportableDetails(map[string]any{
+					"credit_note_id":   cn.ID,
+					"requested_amount": cn.TotalAmount,
+					"maximum_allowed":  maxCreditableAmount,
+					"invoice_id":       lockedInv.ID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		// Only now, having validated capacity under the lock, mutate anything.
 		cn.CreditNoteStatus = types.CreditNoteStatusFinalized
 		if err := s.CreditNoteRepo.Update(tx, cn); err != nil {
 			return err
@@ -482,21 +512,15 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 
 		// Handle refund credit notes (wallet top-up logic)
 		if cn.CreditNoteType == types.CreditNoteTypeRefund {
-			// Get invoice using transaction context
-			inv, err := s.InvoiceRepo.Get(tx, cn.InvoiceID)
-			if err != nil {
-				return err
-			}
-
 			// Find or create wallet using transaction context
-			wallets, err := walletService.GetWalletsByCustomerID(tx, inv.CustomerID)
+			wallets, err := walletService.GetWalletsByCustomerID(tx, lockedInv.CustomerID)
 			if err != nil {
 				return err
 			}
 
 			var selectedWallet *dto.WalletResponse
 			for _, w := range wallets {
-				if types.IsMatchingCurrency(w.Currency, inv.Currency) {
+				if types.IsMatchingCurrency(w.Currency, lockedInv.Currency) {
 					selectedWallet = w
 					break
 				}
@@ -504,8 +528,8 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			if selectedWallet == nil {
 				// Create new wallet using transaction context
 				walletReq := &dto.CreateWalletRequest{
-					CustomerID:     inv.CustomerID,
-					Currency:       inv.Currency,
+					CustomerID:     lockedInv.CustomerID,
+					Currency:       lockedInv.Currency,
 					ConversionRate: decimal.NewFromInt(1), // Set default conversion rate to avoid division by zero
 					WalletType:     types.WalletTypePrePaid,
 				}
@@ -531,24 +555,21 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			}
 		}
 
-		// Recalculate invoice amounts after credit note finalization
-		// This is needed to update the adjustment and refunded amounts
-		inv, err := s.InvoiceRepo.Get(ctx, cn.InvoiceID)
-		if err != nil {
+		// Recalculate invoice amounts within the same transaction and using the
+		// locked invoice, so this write commits/rolls back atomically with the
+		// wallet top-up and credit note status change above.
+		if err := s.RecalculateInvoiceAmountsForCreditNote(tx, lockedInv, cn); err != nil {
 			return err
-		}
-
-		if err := s.RecalculateInvoiceAmountsForCreditNote(ctx, inv, cn); err != nil {
-			s.Logger.Error(ctx, "failed to recalculate invoice amounts after credit note finalization",
-				"error", err,
-				"credit_note_id", cn.ID,
-				"invoice_id", cn.InvoiceID)
 		}
 
 		return nil
 	})
 
 	if err != nil {
+		s.Logger.Error(ctx, "failed to finalize credit note",
+			"error", err,
+			"credit_note_id", cn.ID,
+			"invoice_id", cn.InvoiceID)
 		return err
 	}
 
