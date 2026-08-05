@@ -1520,7 +1520,63 @@ func (s *subscriptionService) handleCreditGrants(
 	if subscription.TrialEnd != nil {
 		startDate = lo.FromPtr(subscription.TrialEnd)
 	}
-	return s.handleCreditGrantsWithStart(ctx, subscription, creditGrantRequests, startDate, nil)
+	return s.handleCreditGrantsWithStart(ctx, subscription, creditGrantRequests, startDate, nil, nil)
+}
+
+// addonCreditGrantProration resolves the billing period containing startDate so a
+// mid-cycle grant can be scaled to the part of that period it actually covers.
+// Returns nil when proration does not apply, in which case the grant keeps its full
+// credits and its natural anchoring.
+//
+// Never returns an error: proration is an enhancement to the attach, so an
+// unresolvable period downgrades to today's behaviour instead of rejecting the addon.
+func (s *subscriptionService) addonCreditGrantProration(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	startDate time.Time,
+	behavior types.ProrationBehavior,
+) *dto.FirstPeriodProration {
+	if behavior != types.ProrationBehaviorCreateProrations {
+		return nil
+	}
+
+	p, err := types.FindPeriodForDate(&types.FindPeriodForDateParams{
+		Target:           startDate,
+		KnownPeriodStart: sub.CurrentPeriodStart,
+		KnownPeriodEnd:   sub.CurrentPeriodEnd,
+		Anchor:           sub.BillingAnchor,
+		PeriodCount:      sub.BillingPeriodCount,
+		BillingPeriod:    sub.BillingPeriod,
+		Timezone:         sub.Timezone,
+	})
+	if err != nil {
+		// FindPeriodForDate only walks forward, so a start date in an already-closed
+		// period cannot be resolved. Grant in full rather than blocking the attach.
+		s.Logger.Info(ctx, "skipping credit grant proration; could not resolve billing period for addon start",
+			"subscription_id", sub.ID,
+			"start_date", startDate,
+			"current_period_start", sub.CurrentPeriodStart,
+			"error", err.Error())
+		return nil
+	}
+
+	if !startDate.After(p.Start) {
+		return nil
+	}
+
+	// A grant anchored past the subscription end fails CreateCreditGrant validation,
+	// and the grant would be capped to that end anyway.
+	if sub.EndDate != nil && p.End.After(lo.FromPtr(sub.EndDate)) {
+		return nil
+	}
+
+	return &dto.FirstPeriodProration{
+		PeriodStart:   p.Start,
+		PeriodEnd:     p.End,
+		ProrationDate: startDate,
+		Strategy:      types.StrategySecondBased,
+		Source:        "addon_attach",
+	}
 }
 
 // handleCreditGrantsWithStart materializes the given credit grant requests onto the
@@ -1533,6 +1589,7 @@ func (s *subscriptionService) handleCreditGrantsWithStart(
 	creditGrantRequests []dto.CreateCreditGrantRequest,
 	startDate time.Time,
 	endDateOverride *time.Time,
+	prorationCfg *dto.FirstPeriodProration,
 ) error {
 	if len(creditGrantRequests) == 0 {
 		return nil
@@ -1598,6 +1655,33 @@ func (s *subscriptionService) handleCreditGrantsWithStart(
 
 		// Use subscription start date as the anchor for the credit grant chain
 		grantReq.CreditGrantAnchor = lo.ToPtr(startDate)
+
+		// Prorating a mid-cycle grant only makes sense for a recurring allowance that
+		// shares the subscription's billing rhythm; a onetime grant is a fixed lump,
+		// and a monthly grant on an annual subscription should keep recurring monthly
+		// rather than stretch to the billing period.
+		grantPeriod := types.BillingPeriod("")
+		if grantReq.Period != nil {
+			period, err := types.GetBillingPeriodFromCreditGrantPeriod(lo.FromPtr(grantReq.Period))
+			if err != nil {
+				s.Logger.Error(ctx, "failed to get billing period from credit grant period",
+					"subscription_id", subscription.ID,
+					"credit_grant_period", grantReq.Period,
+					"error", err)
+			}
+			grantPeriod = period
+		}
+
+		if prorationCfg != nil &&
+			grantReq.Cadence == types.CreditGrantCadenceRecurring &&
+			grantPeriod == subscription.BillingPeriod {
+			// Anchor on the subscription's period boundary rather than the attach date, so
+			// every period after the short first one lands on an invoicing boundary instead
+			// of drifting. Chaining stays correct because createNextPeriodApplication feeds
+			// each period end back in as the next period start, matching this anchor.
+			grantReq.CreditGrantAnchor = lo.ToPtr(prorationCfg.PeriodEnd)
+			grantReq.FirstPeriodProration = prorationCfg
+		}
 
 		// Create credit grant: this now triggers initializeCreditGrantWorkflow
 		// which handles creation, anchor calculation, and eager application
@@ -4871,6 +4955,8 @@ func (s *subscriptionService) addAddonToSubscription(
 		return nil, err
 	}
 
+	creditGrantProration := s.addonCreditGrantProration(ctx, sub, addonRequestedStart, req.ProrationBehavior)
+
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		if len(req.OverrideLineItems) > 0 {
 			if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
@@ -4901,7 +4987,7 @@ func (s *subscriptionService) addAddonToSubscription(
 		// Materialize the addon's credit grants (if any) onto the subscription,
 		// anchored at the addon attach date so mid-cycle grants apply immediately.
 		// Kept in-transaction so grant application is atomic with the addon attach.
-		if err := s.materializeAddonCreditGrants(ctx, sub, req.AddonID, addonRequestedStart, addonAssociation.EndDate); err != nil {
+		if err := s.materializeAddonCreditGrants(ctx, sub, req.AddonID, addonRequestedStart, addonAssociation.EndDate, creditGrantProration); err != nil {
 			return err
 		}
 
@@ -4944,6 +5030,7 @@ func (s *subscriptionService) materializeAddonCreditGrants(
 	addonID string,
 	startDate time.Time,
 	addonEndDate *time.Time,
+	prorationCfg *dto.FirstPeriodProration,
 ) error {
 	creditGrantService := NewCreditGrantService(s.ServiceParams)
 	addonGrants, err := creditGrantService.GetCreditGrantsByAddon(ctx, addonID)
@@ -4980,7 +5067,7 @@ func (s *subscriptionService) materializeAddonCreditGrants(
 		})
 	}
 
-	return s.handleCreditGrantsWithStart(ctx, sub, requests, startDate, addonEndDate)
+	return s.handleCreditGrantsWithStart(ctx, sub, requests, startDate, addonEndDate, prorationCfg)
 }
 
 // validateEntitlementCompatibility checks if addon entitlements are compatible with existing subscription entitlements
