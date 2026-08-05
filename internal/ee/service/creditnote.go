@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -81,21 +83,11 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 			return err
 		}
 
-		// Generate credit note number if not provided
-		if req.CreditNoteNumber == "" {
-			req.CreditNoteNumber = types.GenerateShortIDWithPrefix(types.SHORT_ID_PREFIX_CREDIT_NOTE)
-		}
-
-		// Check if credit note number is unique
+		// Compute the idempotency key from stable request content before
+		// generating the credit note number - the number is random per call
+		// and must never be part of the dedup key, or retries never match.
 		if req.IdempotencyKey == nil {
-			generator := idempotency.NewGenerator()
-			key := generator.GenerateKey(idempotency.ScopeCreditNote, map[string]any{
-				"invoice_id":         req.InvoiceID,
-				"credit_note_number": req.CreditNoteNumber,
-				"reason":             req.Reason,
-				"credit_note_type":   creditNoteType,
-			})
-			req.IdempotencyKey = lo.ToPtr(key)
+			req.IdempotencyKey = lo.ToPtr(s.generateCreditNoteIdempotencyKey(req, creditNoteType))
 		}
 
 		// Check if idempotency key is already used
@@ -106,6 +98,11 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 				"existing_credit_note_id", existingCreditNote.ID)
 			creditNote = existingCreditNote
 			return nil
+		}
+
+		// Generate credit note number if not provided
+		if req.CreditNoteNumber == "" {
+			req.CreditNoteNumber = types.GenerateShortIDWithPrefix(types.SHORT_ID_PREFIX_CREDIT_NOTE)
 		}
 
 		// Convert request to domain model
@@ -164,6 +161,26 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 	return &dto.CreditNoteResponse{
 		CreditNote: updatedCreditNote,
 	}, nil
+}
+
+// generateCreditNoteIdempotencyKey builds a deterministic idempotency key from
+// the request's stable business content - invoice, reason, type, and line
+// items - so identical retries dedupe while distinct credit notes against the
+// same invoice/reason (different line items or amounts) do not collide.
+func (s *creditNoteService) generateCreditNoteIdempotencyKey(req *dto.CreateCreditNoteRequest, creditNoteType types.CreditNoteType) string {
+	lineItems := make([]string, len(req.LineItems))
+	for i, li := range req.LineItems {
+		lineItems[i] = fmt.Sprintf("%s:%s", li.InvoiceLineItemID, li.Amount.String())
+	}
+	sort.Strings(lineItems)
+
+	generator := idempotency.NewGenerator()
+	return generator.GenerateKey(idempotency.ScopeCreditNote, map[string]any{
+		"invoice_id":       req.InvoiceID,
+		"reason":           req.Reason,
+		"credit_note_type": creditNoteType,
+		"line_items":       strings.Join(lineItems, "|"),
+	})
 }
 
 func (s *creditNoteService) GetCreditNote(ctx context.Context, id string) (*dto.CreditNoteResponse, error) {
