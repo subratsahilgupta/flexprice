@@ -1479,6 +1479,52 @@ func (s *CreditNoteServiceSuite) TestCreditNoteIdempotency() {
 		s.Equal(types.CreditNoteStatusFinalized, finalized.CreditNoteStatus)
 	})
 
+	s.Run("retry of an already-finalized credit note is idempotent, no duplicate webhook", func() {
+		webhookPub := s.GetWebhookPublisher().(*testutil.InMemoryWebhookPublisher)
+		webhookPub.Reset()
+
+		req := &dto.CreateCreditNoteRequest{
+			InvoiceID:         s.testData.invoices.finalized.ID,
+			Reason:            types.CreditNoteReasonFraudulent,
+			ProcessCreditNote: true,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{
+					InvoiceLineItemID: "line_1",
+					Amount:            decimal.NewFromFloat(2.00),
+				},
+			},
+		}
+
+		first, err := s.service.CreateCreditNote(s.GetContext(), req)
+		s.NoError(err)
+		s.Equal(types.CreditNoteStatusFinalized, first.CreditNoteStatus)
+
+		retryReq := &dto.CreateCreditNoteRequest{
+			InvoiceID:         s.testData.invoices.finalized.ID,
+			Reason:            types.CreditNoteReasonFraudulent,
+			ProcessCreditNote: true,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{
+					InvoiceLineItemID: "line_1",
+					Amount:            decimal.NewFromFloat(2.00),
+				},
+			},
+		}
+
+		second, err := s.service.CreateCreditNote(s.GetContext(), retryReq)
+		s.NoError(err)
+		s.Equal(first.ID, second.ID)
+		s.Equal(types.CreditNoteStatusFinalized, second.CreditNoteStatus)
+
+		createdEvents := 0
+		for _, evt := range webhookPub.Events() {
+			if evt.EntityID == first.ID && evt.EventName == types.WebhookEventCreditNoteCreated {
+				createdEvents++
+			}
+		}
+		s.Equal(1, createdEvents)
+	})
+
 	s.Run("explicit idempotency key still short-circuits regardless of content", func() {
 		key := "explicit-test-key-1"
 		req := &dto.CreateCreditNoteRequest{

@@ -58,6 +58,7 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 	}
 
 	var creditNote *creditnote.CreditNote
+	isNewCreditNote := false
 
 	// Start transaction
 	err := s.DB.WithTx(ctx, func(tx context.Context) error {
@@ -128,6 +129,7 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 
 		// Convert to response
 		creditNote = cn
+		isNewCreditNote = true
 		return nil
 	})
 
@@ -141,11 +143,13 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 		return nil, err
 	}
 
-	// Publish webhook event after successful transaction
-	s.publishSystemEvent(ctx, types.WebhookEventCreditNoteCreated, creditNote.ID)
+	// Only a genuine insert is a "created" event - an idempotent cache hit
+	// must not re-publish or re-finalize an already-processed credit note.
+	if isNewCreditNote {
+		s.publishSystemEvent(ctx, types.WebhookEventCreditNoteCreated, creditNote.ID)
+	}
 
-	// Finalize the credit note if the flag is set
-	if req.ProcessCreditNote {
+	if req.ProcessCreditNote && creditNote.CreditNoteStatus == types.CreditNoteStatusDraft {
 		if err := s.FinalizeCreditNote(ctx, creditNote.ID); err != nil {
 			return nil, err
 		}
