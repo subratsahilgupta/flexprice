@@ -83,9 +83,8 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 			return err
 		}
 
-		// Compute the idempotency key from stable request content before
-		// generating the credit note number - the number is random per call
-		// and must never be part of the dedup key, or retries never match.
+		// Must run before number generation below - the number is random per
+		// call and would break retry matching if hashed.
 		if req.IdempotencyKey == nil {
 			req.IdempotencyKey = lo.ToPtr(s.generateCreditNoteIdempotencyKey(req, creditNoteType))
 		}
@@ -163,10 +162,8 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 	}, nil
 }
 
-// generateCreditNoteIdempotencyKey builds a deterministic idempotency key from
-// the request's stable business content - invoice, reason, type, and line
-// items - so identical retries dedupe while distinct credit notes against the
-// same invoice/reason (different line items or amounts) do not collide.
+// generateCreditNoteIdempotencyKey hashes stable request content only;
+// credit_note_number is excluded since it's random per call.
 func (s *creditNoteService) generateCreditNoteIdempotencyKey(req *dto.CreateCreditNoteRequest, creditNoteType types.CreditNoteType) string {
 	lineItems := make([]string, len(req.LineItems))
 	for i, li := range req.LineItems {
@@ -176,10 +173,11 @@ func (s *creditNoteService) generateCreditNoteIdempotencyKey(req *dto.CreateCred
 
 	generator := idempotency.NewGenerator()
 	return generator.GenerateKey(idempotency.ScopeCreditNote, map[string]any{
-		"invoice_id":       req.InvoiceID,
-		"reason":           req.Reason,
-		"credit_note_type": creditNoteType,
-		"line_items":       strings.Join(lineItems, "|"),
+		"invoice_id":          req.InvoiceID,
+		"reason":              req.Reason,
+		"credit_note_type":    creditNoteType,
+		"line_items":          strings.Join(lineItems, "|"),
+		"process_credit_note": req.ProcessCreditNote,
 	})
 }
 

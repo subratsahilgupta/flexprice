@@ -552,7 +552,6 @@ func (r *creditnoteRepository) GetByIdempotencyKey(ctx context.Context, key stri
 			creditnote.EnvironmentID(types.GetEnvironmentID(ctx)),
 			creditnote.TenantID(types.GetTenantID(ctx)),
 			creditnote.Status(string(types.StatusPublished)),
-			creditnote.CreditNoteStatus(types.CreditNoteStatusFinalized),
 		).
 		First(ctx)
 	if err != nil {
