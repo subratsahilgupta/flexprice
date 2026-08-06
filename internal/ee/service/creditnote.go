@@ -412,23 +412,34 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 	// Update credit note status to voided
 	cn.CreditNoteStatus = types.CreditNoteStatusVoided
 
-	if err := s.CreditNoteRepo.Update(ctx, cn); err != nil {
+	// Process the status update and invoice recalculation in a single transaction
+	// so a recalculation failure rolls back the status change too.
+	err = s.DB.WithTx(ctx, func(tx context.Context) error {
+		if err := s.CreditNoteRepo.Update(tx, cn); err != nil {
+			return err
+		}
+
+		// Recalculate invoice amounts after credit note void
+		// This is needed to update the adjustment and refunded amounts
+		if originalStatus == types.CreditNoteStatusFinalized {
+			invoiceService := NewInvoiceService(s.ServiceParams)
+			if err := invoiceService.RecalculateInvoiceAmounts(tx, cn.InvoiceID); err != nil {
+				s.Logger.Error(ctx, "failed to recalculate invoice amounts after credit note void",
+					"error", err,
+					"credit_note_id", cn.ID,
+					"invoice_id", cn.InvoiceID)
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
 		return err
 	}
 
-	// Recalculate invoice amounts after credit note void
-	// This is needed to update the adjustment and refunded amounts
-	if originalStatus == types.CreditNoteStatusFinalized {
-		invoiceService := NewInvoiceService(s.ServiceParams)
-		if err := invoiceService.RecalculateInvoiceAmounts(ctx, cn.InvoiceID); err != nil {
-			s.Logger.Error(ctx, "failed to recalculate invoice amounts after credit note void",
-				"error", err,
-				"credit_note_id", cn.ID,
-				"invoice_id", cn.InvoiceID)
-		}
-	}
-
-	// Publish webhook event after successful update
+	// Publish webhook event after successful transaction
 	s.publishSystemEvent(ctx, types.WebhookEventCreditNoteUpdated, cn.ID)
 
 	s.Logger.Info(ctx, "credit note voided successfully",

@@ -976,6 +976,43 @@ func (s *CreditNoteServiceSuite) TestVoidCreditNote() {
 	}
 }
 
+func (s *CreditNoteServiceSuite) TestVoidCreditNote_RecalculationFailureIsPropagated() {
+	cn := &creditnote.CreditNote{
+		ID:               "cn_void_recalc_fail_test",
+		CustomerID:       s.testData.customer.ID,
+		InvoiceID:        s.testData.invoices.pending.ID,
+		CreditNoteNumber: "CN-VOID-RECALC-FAIL-TEST",
+		CreditNoteStatus: types.CreditNoteStatusFinalized,
+		CreditNoteType:   types.CreditNoteTypeAdjustment,
+		Reason:           types.CreditNoteReasonBillingError,
+		Currency:         "USD",
+		TotalAmount:      decimal.NewFromFloat(10.00),
+		LineItems: []*creditnote.CreditNoteLineItem{
+			{
+				ID:          "void_recalc_fail_line_1",
+				DisplayName: "Adjustment for Product C",
+				Amount:      decimal.NewFromFloat(10.00),
+				Currency:    "USD",
+				BaseModel:   types.GetDefaultBaseModel(s.GetContext()),
+			},
+		},
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().CreditNoteRepo.CreateWithLineItems(s.GetContext(), cn))
+
+	// Delete the invoice out from under the credit note so invoice amount
+	// recalculation fails when VoidCreditNote tries to fetch it.
+	s.NoError(s.GetStores().InvoiceRepo.Delete(s.GetContext(), s.testData.invoices.pending.ID))
+
+	webhookCountBefore := len(s.GetPublishedWebhooks())
+
+	err := s.service.VoidCreditNote(s.GetContext(), cn.ID)
+
+	s.Error(err)
+	s.Contains(err.Error(), "not found")
+	s.Len(s.GetPublishedWebhooks(), webhookCountBefore)
+}
+
 func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 	// Create draft credit note manually in repository to test processing
 	// This bypasses the CreateCreditNote validation that automatically processes the credit note
