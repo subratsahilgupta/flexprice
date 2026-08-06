@@ -544,16 +544,17 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 
 		// Recalculate invoice amounts after credit note finalization
 		// This is needed to update the adjustment and refunded amounts
-		inv, err := s.InvoiceRepo.Get(ctx, cn.InvoiceID)
+		inv, err := s.InvoiceRepo.Get(tx, cn.InvoiceID)
 		if err != nil {
 			return err
 		}
 
-		if err := s.RecalculateInvoiceAmountsForCreditNote(ctx, inv, cn); err != nil {
+		if err := s.RecalculateInvoiceAmountsForCreditNote(tx, inv, cn); err != nil {
 			s.Logger.Error(ctx, "failed to recalculate invoice amounts after credit note finalization",
 				"error", err,
 				"credit_note_id", cn.ID,
 				"invoice_id", cn.InvoiceID)
+			return err
 		}
 
 		return nil
