@@ -14,84 +14,62 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// RecalculateDiscountOnInvoice recomputes this draft invoice's discount from its current
-// standing CouponAssociation records. Idempotent: wipes and rebuilds from scratch each call.
-func (s *invoiceService) RecalculateDiscountOnInvoice(ctx context.Context, invoiceID string) (*dto.InvoiceResponse, error) {
-	var lockedInv *invoice.Invoice
-
-	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, invoiceID)
-		if err != nil {
-			return err
-		}
-
-		if inv.InvoiceStatus != types.InvoiceStatusDraft {
-			return ierr.NewError("invoice is not in draft status").
-				WithHint("Only draft invoices can have their discount recalculated").
-				WithReportableDetails(map[string]interface{}{
-					"invoice_id":     inv.ID,
-					"current_status": inv.InvoiceStatus,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-
-		if err := s.wipeCouponApplications(txCtx, inv); err != nil {
-			return err
-		}
-
-		invoiceCoupons, lineItemCoupons, err := s.resolveCurrentInvoiceCoupons(txCtx, inv)
-		if err != nil {
-			return err
-		}
-
-		couponApplicationService := NewCouponApplicationService(s.ServiceParams)
-		couponResult, err := couponApplicationService.ApplyCouponsToInvoice(txCtx, dto.ApplyCouponsToInvoiceRequest{
-			Invoice:         inv,
-			InvoiceCoupons:  invoiceCoupons,
-			LineItemCoupons: lineItemCoupons,
-		})
-		if err != nil {
-			return err
-		}
-		inv.TotalDiscount = couponResult.TotalDiscountAmount
-
-		// Tax depends on discount (taxableAmount = Subtotal - TotalDiscount); refresh it via real
-		// TaxApplied records rather than TotalTax==0, which a full discount can zero legitimately.
-		taxFilter := types.NewNoLimitTaxAppliedFilter()
-		taxFilter.EntityType = types.TaxRateEntityTypeInvoice
-		taxFilter.EntityID = inv.ID
-		taxAppliedCount, err := s.TaxAppliedRepo.Count(txCtx, taxFilter)
-		if err != nil {
-			return err
-		}
-		if taxAppliedCount > 0 {
-			if err := s.applyTaxesToInvoice(txCtx, inv, dto.InvoiceComputeRequest{}); err != nil {
-				return err
-			}
-		}
-
-		inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(inv.TotalTax), decimal.Zero)
-		inv.AmountDue = inv.Total
-		inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
-
-		if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
-			return err
-		}
-
-		s.Logger.Info(txCtx, "recalculated discount on invoice",
-			"invoice_id", inv.ID,
-			"total_discount", inv.TotalDiscount,
-			"new_total", inv.Total,
-		)
-
-		lockedInv = inv
-		return nil
-	})
-	if err != nil {
-		return nil, err
+// recalculateDiscountOnInvoice mutates inv's discount/tax/totals in place. Caller must
+// hold the row lock (GetForUpdate) and persist inv afterward.
+func (s *invoiceService) recalculateDiscountOnInvoice(ctx context.Context, inv *invoice.Invoice) error {
+	if inv.InvoiceStatus != types.InvoiceStatusDraft {
+		return ierr.NewError("invoice is not in draft status").
+			WithHint("Only draft invoices can have their discount recalculated").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id":     inv.ID,
+				"current_status": inv.InvoiceStatus,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
-	return dto.NewInvoiceResponse(lockedInv), nil
+	if err := s.wipeCouponApplications(ctx, inv); err != nil {
+		return err
+	}
+
+	invoiceCoupons, lineItemCoupons, err := s.resolveCurrentInvoiceCoupons(ctx, inv)
+	if err != nil {
+		return err
+	}
+
+	couponApplicationService := NewCouponApplicationService(s.ServiceParams)
+	couponResult, err := couponApplicationService.ApplyCouponsToInvoice(ctx, dto.ApplyCouponsToInvoiceRequest{
+		Invoice:         inv,
+		InvoiceCoupons:  invoiceCoupons,
+		LineItemCoupons: lineItemCoupons,
+	})
+	if err != nil {
+		return err
+	}
+	inv.TotalDiscount = couponResult.TotalDiscountAmount
+
+	// Tax depends on discount (taxableAmount = Subtotal - TotalDiscount); refresh it via real
+	// TaxApplied records rather than TotalTax==0, which a full discount can zero legitimately.
+	taxFilter := types.NewNoLimitTaxAppliedFilter()
+	taxFilter.EntityType = types.TaxRateEntityTypeInvoice
+	taxFilter.EntityID = inv.ID
+	taxAppliedCount, err := s.TaxAppliedRepo.Count(ctx, taxFilter)
+	if err != nil {
+		return err
+	}
+	if taxAppliedCount > 0 {
+		if err := s.applyTaxesToInvoice(ctx, inv, dto.InvoiceComputeRequest{}); err != nil {
+			return err
+		}
+	}
+
+	inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(inv.TotalTax), decimal.Zero)
+	inv.AmountDue = inv.Total
+	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
+
+	s.Logger.Info(ctx, "recalculated discount on invoice",
+		"invoice_id", inv.ID, "total_discount", inv.TotalDiscount, "new_total", inv.Total)
+
+	return nil
 }
 
 // wipeCouponApplications deletes existing CouponApplication rows and persists a zeroed
