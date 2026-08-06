@@ -45,10 +45,6 @@ func (h *UsageRecordHandler) QueryUsageRecords(c *gin.Context) {
 		return
 	}
 
-	if filter.GetLimit() == 0 {
-		filter.QueryFilter = types.NewDefaultQueryFilter()
-	}
-
 	response, err := h.service.ListUsageRecords(c.Request.Context(), &filter)
 	if err != nil {
 		h.log.Error(c.Request.Context(), "Failed to search usage records", "error", err)
