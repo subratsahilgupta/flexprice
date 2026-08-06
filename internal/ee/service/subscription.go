@@ -1520,7 +1520,63 @@ func (s *subscriptionService) handleCreditGrants(
 	if subscription.TrialEnd != nil {
 		startDate = lo.FromPtr(subscription.TrialEnd)
 	}
-	return s.handleCreditGrantsWithStart(ctx, subscription, creditGrantRequests, startDate, nil)
+	return s.handleCreditGrantsWithStart(ctx, subscription, creditGrantRequests, startDate, nil, nil)
+}
+
+// addonCreditGrantProration resolves the billing period containing startDate so a
+// mid-cycle grant can be scaled to the part of that period it actually covers.
+// Returns nil when proration does not apply, in which case the grant keeps its full
+// credits and its natural anchoring.
+//
+// Never returns an error: proration is an enhancement to the attach, so an
+// unresolvable period downgrades to today's behaviour instead of rejecting the addon.
+func (s *subscriptionService) addonCreditGrantProration(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	startDate time.Time,
+	behavior types.ProrationBehavior,
+) *dto.FirstPeriodProration {
+	if behavior != types.ProrationBehaviorCreateProrations {
+		return nil
+	}
+
+	p, err := types.FindPeriodForDate(&types.FindPeriodForDateParams{
+		Target:           startDate,
+		KnownPeriodStart: sub.CurrentPeriodStart,
+		KnownPeriodEnd:   sub.CurrentPeriodEnd,
+		Anchor:           sub.BillingAnchor,
+		PeriodCount:      sub.BillingPeriodCount,
+		BillingPeriod:    sub.BillingPeriod,
+		Timezone:         sub.Timezone,
+	})
+	if err != nil {
+		// FindPeriodForDate only walks forward, so a start date in an already-closed
+		// period cannot be resolved. Grant in full rather than blocking the attach.
+		s.Logger.Info(ctx, "skipping credit grant proration; could not resolve billing period for addon start",
+			"subscription_id", sub.ID,
+			"start_date", startDate,
+			"current_period_start", sub.CurrentPeriodStart,
+			"error", err.Error())
+		return nil
+	}
+
+	if !startDate.After(p.Start) {
+		return nil
+	}
+
+	// A grant anchored past the subscription end fails CreateCreditGrant validation,
+	// and the grant would be capped to that end anyway.
+	if sub.EndDate != nil && p.End.After(lo.FromPtr(sub.EndDate)) {
+		return nil
+	}
+
+	return &dto.FirstPeriodProration{
+		PeriodStart:   p.Start,
+		PeriodEnd:     p.End,
+		ProrationDate: startDate,
+		Strategy:      types.StrategySecondBased,
+		Source:        "addon_attach",
+	}
 }
 
 // handleCreditGrantsWithStart materializes the given credit grant requests onto the
@@ -1533,6 +1589,7 @@ func (s *subscriptionService) handleCreditGrantsWithStart(
 	creditGrantRequests []dto.CreateCreditGrantRequest,
 	startDate time.Time,
 	endDateOverride *time.Time,
+	prorationCfg *dto.FirstPeriodProration,
 ) error {
 	if len(creditGrantRequests) == 0 {
 		return nil
@@ -1598,6 +1655,33 @@ func (s *subscriptionService) handleCreditGrantsWithStart(
 
 		// Use subscription start date as the anchor for the credit grant chain
 		grantReq.CreditGrantAnchor = lo.ToPtr(startDate)
+
+		// Prorating a mid-cycle grant only makes sense for a recurring allowance that
+		// shares the subscription's billing rhythm; a onetime grant is a fixed lump,
+		// and a monthly grant on an annual subscription should keep recurring monthly
+		// rather than stretch to the billing period.
+		grantPeriod := types.BillingPeriod("")
+		if grantReq.Period != nil {
+			period, err := types.GetBillingPeriodFromCreditGrantPeriod(lo.FromPtr(grantReq.Period))
+			if err != nil {
+				s.Logger.Error(ctx, "failed to get billing period from credit grant period",
+					"subscription_id", subscription.ID,
+					"credit_grant_period", grantReq.Period,
+					"error", err)
+			}
+			grantPeriod = period
+		}
+
+		if prorationCfg != nil &&
+			grantReq.Cadence == types.CreditGrantCadenceRecurring &&
+			grantPeriod == subscription.BillingPeriod {
+			// Anchor on the subscription's period boundary rather than the attach date, so
+			// every period after the short first one lands on an invoicing boundary instead
+			// of drifting. Chaining stays correct because createNextPeriodApplication feeds
+			// each period end back in as the next period start, matching this anchor.
+			grantReq.CreditGrantAnchor = lo.ToPtr(prorationCfg.PeriodEnd)
+			grantReq.FirstPeriodProration = prorationCfg
+		}
 
 		// Create credit grant: this now triggers initializeCreditGrantWorkflow
 		// which handles creation, anchor calculation, and eager application
@@ -2155,6 +2239,16 @@ func (s *subscriptionService) CancelSubscription(
 	if !req.SuppressWebhook {
 		// Step 10: Publish events
 		s.publishCancellationEvents(ctx, subscription, req.CancellationType)
+	}
+
+	// Gate on the resulting status, not the request's cancellation type: only an immediate
+	// cancellation sets Cancelled here. end_of_period and scheduled_date both set CancelAt but leave
+	// the subscription active until the cancellation schedule processor fires, so flushing now would
+	// report a final usage window for a subscription that has not ended yet.
+	if subscription.SubscriptionStatus == types.SubscriptionStatusCancelled &&
+		subscription.CancelAt != nil &&
+		s.hasMarketplaceMapping(ctx, subscription.ID) {
+		s.triggerMarketplaceSubscriptionFinalUsageFlushWorkflow(ctx, subscription.ID, *subscription.CancelAt)
 	}
 
 	// Step 11: Build response
@@ -2937,12 +3031,12 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 
 		for _, charge := range usageOnlyCharges {
 			// Get charge amount as decimal for precise calculations
-			chargeAmount := decimal.NewFromFloat(charge.Amount)
+			chargeAmount := charge.AmountDecimal()
 			pricePerUnit := decimal.Zero
 			if charge.Price != nil && charge.Price.BillingModel == types.BILLING_MODEL_FLAT_FEE {
 				pricePerUnit = charge.Price.Amount
 			} else if charge.Quantity > 0 {
-				pricePerUnit = chargeAmount.Div(decimal.NewFromFloat(charge.Quantity))
+				pricePerUnit = chargeAmount.Div(charge.QuantityDecimal())
 			}
 
 			// Normal price covers all of this charge
@@ -2971,15 +3065,15 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 				// Create the normal charge
 				if normalQuantityDecimal.GreaterThan(decimal.Zero) {
 					normalCharge := *charge // Create a copy
-					normalCharge.Quantity = normalQuantityDecimal.InexactFloat64()
-					normalCharge.Amount = price.FormatAmountToFloat64WithPrecision(normalAmountDecimal, subscription.Currency)
+					normalCharge.SetQuantityDecimal(normalQuantityDecimal)
+					normalCharge.SetAmountWithCurrencyPrecision(normalAmountDecimal, subscription.Currency)
 					normalCharge.DisplayAmount = price.FormatAmountToStringWithPrecision(normalAmountDecimal, subscription.Currency)
 					normalCharge.IsOverage = false
 					response.Charges = append(response.Charges, &normalCharge)
 				}
 
 				// Calculate overage quantity and amount
-				overageQuantityDecimal := decimal.NewFromFloat(charge.Quantity).Sub(normalQuantityDecimal)
+				overageQuantityDecimal := charge.QuantityDecimal().Sub(normalQuantityDecimal)
 
 				// Create the overage charge only if there's actual overage
 				if overageQuantityDecimal.GreaterThan(decimal.Zero) {
@@ -2987,8 +3081,8 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 					totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
 
 					overageCharge := *charge // Create a copy
-					overageCharge.Quantity = overageQuantityDecimal.InexactFloat64()
-					overageCharge.Amount = price.FormatAmountToFloat64WithPrecision(overageAmountDecimal, subscription.Currency)
+					overageCharge.SetQuantityDecimal(overageQuantityDecimal)
+					overageCharge.SetAmountWithCurrencyPrecision(overageAmountDecimal, subscription.Currency)
 					overageCharge.DisplayAmount = price.FormatAmountToStringWithPrecision(overageAmountDecimal, subscription.Currency)
 					overageCharge.IsOverage = true
 					overageCharge.OverageFactor = overageFactorFloat
@@ -3005,8 +3099,8 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 			overageAmountDecimal := chargeAmount.Mul(overageFactor)
 			totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
 
-			charge.Amount = price.FormatAmountToFloat64WithPrecision(overageAmountDecimal, subscription.Currency)
-			charge.DisplayAmount = overageAmountDecimal.StringFixed(6)
+			charge.SetAmountWithCurrencyPrecision(overageAmountDecimal, subscription.Currency)
+			charge.DisplayAmount = price.FormatAmountToStringWithPrecision(charge.AmountDecimal(), subscription.Currency)
 			charge.IsOverage = true
 			charge.OverageFactor = overageFactorFloat
 			response.Charges = append(response.Charges, charge)
@@ -3795,17 +3889,16 @@ func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost 
 		return nil
 	}
 
-	finalAmount := price.FormatAmountToFloat64WithPrecision(cost, priceObj.Currency)
-
-	return &dto.SubscriptionUsageByMetersResponse{
-		Amount:           finalAmount,
+	charge := &dto.SubscriptionUsageByMetersResponse{
 		Currency:         priceObj.Currency,
 		DisplayAmount:    price.GetDisplayAmountWithPrecision(cost, priceObj.Currency),
-		Quantity:         quantity.InexactFloat64(),
 		MeterID:          priceObj.MeterID,
 		MeterDisplayName: meterDisplayName,
 		Price:            priceObj,
 	}
+	charge.SetAmountWithCurrencyPrecision(cost, priceObj.Currency)
+	charge.SetQuantityDecimal(quantity)
+	return charge
 }
 
 // filterValidPricesForSubscription filters prices that are valid for a subscription.
@@ -4861,6 +4954,8 @@ func (s *subscriptionService) addAddonToSubscription(
 		return nil, err
 	}
 
+	creditGrantProration := s.addonCreditGrantProration(ctx, sub, addonRequestedStart, req.ProrationBehavior)
+
 	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		if len(req.OverrideLineItems) > 0 {
 			if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
@@ -4891,7 +4986,7 @@ func (s *subscriptionService) addAddonToSubscription(
 		// Materialize the addon's credit grants (if any) onto the subscription,
 		// anchored at the addon attach date so mid-cycle grants apply immediately.
 		// Kept in-transaction so grant application is atomic with the addon attach.
-		if err := s.materializeAddonCreditGrants(ctx, sub, req.AddonID, addonRequestedStart, addonAssociation.EndDate); err != nil {
+		if err := s.materializeAddonCreditGrants(ctx, sub, req.AddonID, addonRequestedStart, addonAssociation.EndDate, creditGrantProration); err != nil {
 			return err
 		}
 
@@ -4934,6 +5029,7 @@ func (s *subscriptionService) materializeAddonCreditGrants(
 	addonID string,
 	startDate time.Time,
 	addonEndDate *time.Time,
+	prorationCfg *dto.FirstPeriodProration,
 ) error {
 	creditGrantService := NewCreditGrantService(s.ServiceParams)
 	addonGrants, err := creditGrantService.GetCreditGrantsByAddon(ctx, addonID)
@@ -4970,7 +5066,7 @@ func (s *subscriptionService) materializeAddonCreditGrants(
 		})
 	}
 
-	return s.handleCreditGrantsWithStart(ctx, sub, requests, startDate, addonEndDate)
+	return s.handleCreditGrantsWithStart(ctx, sub, requests, startDate, addonEndDate, prorationCfg)
 }
 
 // validateEntitlementCompatibility checks if addon entitlements are compatible with existing subscription entitlements
@@ -6355,12 +6451,12 @@ func (s *subscriptionService) buildMeterUsageResponse(ctx context.Context, subMe
 		totalOverageAmount := decimal.Zero
 
 		for _, charge := range usageOnlyCharges {
-			chargeAmount := decimal.NewFromFloat(charge.Amount)
+			chargeAmount := charge.AmountDecimal()
 			pricePerUnit := decimal.Zero
 			if charge.Price != nil && charge.Price.BillingModel == types.BILLING_MODEL_FLAT_FEE {
 				pricePerUnit = charge.Price.Amount
 			} else if charge.Quantity > 0 {
-				pricePerUnit = chargeAmount.Div(decimal.NewFromFloat(charge.Quantity))
+				pricePerUnit = chargeAmount.Div(charge.QuantityDecimal())
 			}
 
 			if remainingCommitment.GreaterThanOrEqual(chargeAmount) {
@@ -6379,21 +6475,21 @@ func (s *subscriptionService) buildMeterUsageResponse(ctx context.Context, subMe
 
 				if normalQuantityDecimal.GreaterThan(decimal.Zero) {
 					normalCharge := *charge
-					normalCharge.Quantity = normalQuantityDecimal.InexactFloat64()
-					normalCharge.Amount = price.FormatAmountToFloat64WithPrecision(normalAmountDecimal, sub.Currency)
+					normalCharge.SetQuantityDecimal(normalQuantityDecimal)
+					normalCharge.SetAmountWithCurrencyPrecision(normalAmountDecimal, sub.Currency)
 					normalCharge.DisplayAmount = price.FormatAmountToStringWithPrecision(normalAmountDecimal, sub.Currency)
 					normalCharge.IsOverage = false
 					finalCharges = append(finalCharges, &normalCharge)
 				}
 
-				overageQuantityDecimal := decimal.NewFromFloat(charge.Quantity).Sub(normalQuantityDecimal)
+				overageQuantityDecimal := charge.QuantityDecimal().Sub(normalQuantityDecimal)
 				if overageQuantityDecimal.GreaterThan(decimal.Zero) {
 					overageAmountDecimal := overageQuantityDecimal.Mul(pricePerUnit).Mul(overageFactor)
 					totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
 
 					overageCharge := *charge
-					overageCharge.Quantity = overageQuantityDecimal.InexactFloat64()
-					overageCharge.Amount = price.FormatAmountToFloat64WithPrecision(overageAmountDecimal, sub.Currency)
+					overageCharge.SetQuantityDecimal(overageQuantityDecimal)
+					overageCharge.SetAmountWithCurrencyPrecision(overageAmountDecimal, sub.Currency)
 					overageCharge.DisplayAmount = price.GetDisplayAmountWithPrecision(overageAmountDecimal, sub.Currency)
 					overageCharge.IsOverage = true
 					overageCharge.OverageFactor = overageFactorFloat
@@ -6408,8 +6504,8 @@ func (s *subscriptionService) buildMeterUsageResponse(ctx context.Context, subMe
 			overageAmountDecimal := chargeAmount.Mul(overageFactor)
 			totalOverageAmount = totalOverageAmount.Add(overageAmountDecimal)
 
-			charge.Amount = price.FormatAmountToFloat64WithPrecision(overageAmountDecimal, sub.Currency)
-			charge.DisplayAmount = overageAmountDecimal.StringFixed(6)
+			charge.SetAmountWithCurrencyPrecision(overageAmountDecimal, sub.Currency)
+			charge.DisplayAmount = price.GetDisplayAmountWithPrecision(charge.AmountDecimal(), sub.Currency)
 			charge.IsOverage = true
 			charge.OverageFactor = overageFactorFloat
 			finalCharges = append(finalCharges, charge)
@@ -8075,4 +8171,64 @@ func (s *subscriptionService) runPaddleSubscriptionSync(ctx context.Context, sub
 	s.Logger.Info(ctx, "paddle subscription synced synchronously",
 		"subscription_id", sub.ID,
 		"checkout_url_present", sub.Metadata[paddleint.MetaKeyPaddleCheckoutURL] != "")
+}
+
+// hasMarketplaceMapping reports whether the subscription is linked to any marketplace. Most
+// cancellations are not, so this gates the flush at the call site rather than starting a workflow per
+// cancellation that would immediately find nothing to do. A lookup failure is logged and treated as
+// no mapping: the flush follows a cancellation that has already committed and must never fail it.
+func (s *subscriptionService) hasMarketplaceMapping(ctx context.Context, subscriptionID string) bool {
+	mappings, err := s.EntityIntegrationMappingRepo.List(ctx, &types.EntityIntegrationMappingFilter{
+		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
+		EntityID:    subscriptionID,
+		EntityType:  types.IntegrationEntityTypeSubscription,
+		ProviderTypes: []string{
+			string(types.SecretProviderAWSMarketplace),
+			string(types.SecretProviderGCPMarketplace),
+			string(types.SecretProviderAzureMarketplace),
+		},
+	})
+	if err != nil {
+		s.Logger.Error(ctx, "failed to look up marketplace mappings for subscription flush",
+			"error", err,
+			"subscription_id", subscriptionID)
+		return false
+	}
+	return len(mappings) > 0
+}
+
+// triggerMarketplaceSubscriptionFinalUsageFlushWorkflow starts the cancellation flush, which reports
+// the subscription's outstanding marketplace usage and archives its mappings.
+//
+// cancelAt must be the marketplace's own cancellation instant, taken from the cancellation request,
+// not the time Flexprice processed it. The latter is always the later of the two, and reporting
+// against it would place the final usage after the cancellation the provider recorded.
+func (s *subscriptionService) triggerMarketplaceSubscriptionFinalUsageFlushWorkflow(ctx context.Context, subscriptionID string, cancelAt time.Time) {
+	temporalSvc := temporalservice.GetGlobalTemporalService()
+	if temporalSvc == nil {
+		s.Logger.Info(ctx, "temporal service not available for marketplace subscription flush",
+			"subscription_id", subscriptionID)
+		return
+	}
+
+	input := models.MarketplaceSubscriptionFinalUsageFlushWorkflowInput{
+		SubscriptionID: subscriptionID,
+		CancelAt:       cancelAt,
+	}
+
+	workflowRun, err := temporalSvc.ExecuteWorkflow(
+		ctx,
+		types.TemporalMarketplaceSubscriptionFinalUsageFlushWorkflow,
+		input,
+	)
+	if err != nil {
+		s.Logger.Error(ctx, "failed to start marketplace subscription flush workflow",
+			"error", err,
+			"subscription_id", subscriptionID)
+		return
+	}
+
+	s.Logger.Info(ctx, "marketplace subscription flush workflow started successfully",
+		"subscription_id", subscriptionID,
+		"workflow_id", workflowRun.GetID())
 }

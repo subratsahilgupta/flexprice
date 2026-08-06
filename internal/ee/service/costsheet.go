@@ -238,11 +238,13 @@ func (s *costsheetService) UpdateCostsheet(ctx context.Context, id string, req d
 		// Update the costsheet
 		req.UpdateCostsheet(costsheet, ctx)
 
-		// Save the updated costsheet
+		// Save the updated costsheet. The repository already classifies this error
+		// (not-found, validation, or database) — propagate it as-is rather than
+		// re-marking it, since Mark() adds a mark on top instead of replacing one,
+		// which would make ResolveError's classification pick between two matching
+		// sentinels non-deterministically.
 		if err := s.CostSheetRepo.Update(ctx, costsheet); err != nil {
-			return ierr.WithError(err).
-				WithHint("Failed to update costsheet").
-				Mark(ierr.ErrDatabase)
+			return err
 		}
 
 		return nil
@@ -266,13 +268,14 @@ func (s *costsheetService) DeleteCostsheet(ctx context.Context, id string) (*dto
 			Mark(ierr.ErrValidation)
 	}
 
-	// Start a transaction to delete costsheet
+	// The "already deleted" check lives in the repository, not here: reading the
+	// status before the transaction would race with a concurrent delete (both
+	// requests could read "active" and both report success). CostSheetRepo.Delete
+	// makes the status transition atomic and returns a validation error if it
+	// lost the race, or if the costsheet was already deleted.
 	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
-		// Soft delete the costsheet
 		if err := s.CostSheetRepo.Delete(ctx, id); err != nil {
-			return ierr.WithError(err).
-				WithHint("Failed to delete costsheet").
-				Mark(ierr.ErrDatabase)
+			return err
 		}
 		return nil
 	})

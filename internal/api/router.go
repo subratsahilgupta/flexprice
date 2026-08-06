@@ -91,6 +91,7 @@ func NewRouter(
 		middleware.DBWriterPinMiddleware,     // Per-request read-your-writes pin for DB routing
 		middleware.LoggingMiddleware(logger), // Use our standard logger for HTTP logging
 		middleware.CORSMiddleware,
+		middleware.SecurityHeadersMiddleware, // nosniff / frame-deny / referrer / CSP / permissions
 	)
 	// Tracing middleware creates the otelgin span per request (SigNoz / OTLP).
 	// Each handler is added separately because gin's Use signature is variadic
@@ -265,7 +266,7 @@ func NewRouter(
 			plan.PUT("/:id", write(types.EntityPlan, types.ActionWrite), handlers.Plan.UpdatePlan)
 			plan.DELETE("/:id", write(types.EntityPlan, types.ActionWrite), handlers.Plan.DeletePlan)
 			plan.POST("/:id/clone", write(types.EntityPlan, types.ActionWrite), handlers.Plan.ClonePlan)
-			plan.POST("/:id/sync/subscriptions", write(types.EntityPlan, types.ActionWrite), handlers.Plan.SyncPlanPrices)
+			plan.POST("/:id/sync/subscriptions", write(types.EntityPlan, types.ActionWrite), handlers.Plan.SyncPlanPricesV2)
 			plan.POST("/:id/sync/subscriptions/v2", write(types.EntityPlan, types.ActionWrite), handlers.Plan.SyncPlanPricesV2)
 
 			// entitlement routes

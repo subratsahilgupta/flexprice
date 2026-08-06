@@ -54,6 +54,66 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Object labels for a component's Kubernetes resources (Deployment, Service, HPA,
+PDB, Ingress, ServiceAccount, ...).
+Usage: include "flexprice.componentLabels" (dict "ctx" . "component" "api")
+
+Emits the common labels, then operator-supplied labels from
+`.Values.<component>.labels`, then the component key.
+
+The component key goes last so it can't be overridden from values — several
+resources (PDB, NetworkPolicy, Service) build selectors from it, and a Service
+whose object labels disagree with the pods it targets is a debugging trap. The
+remaining common labels stay overridable, so an operator who really wants their
+own `app.kubernetes.io/version` can still set it.
+
+Never use this for `spec.selector.matchLabels`: selectors are immutable on
+Deployments and StatefulSets, so a user adding a label would break every
+subsequent `helm upgrade` with "field is immutable". Selectors stay on
+`flexprice.selectorLabels` + the component key.
+*/}}
+{{- define "flexprice.componentLabels" -}}
+{{- $ctx := .ctx -}}
+{{- /* `dig` can't walk .Values (chartutil.Values, not map[string]interface{}),
+       so resolve the component block with `index` and guard it being unset. */ -}}
+{{- $cfg := index $ctx.Values .component | default dict -}}
+{{ include "flexprice.labels" $ctx }}
+{{- with (get $cfg "labels") }}
+{{- toYaml . | nindent 0 }}
+{{ end }}
+app.kubernetes.io/component: {{ .component }}
+{{- end }}
+
+{{/*
+Pod template labels for a component.
+Usage: include "flexprice.componentPodLabels" (dict "ctx" . "component" "api")
+
+Global `.Values.podLabels`, then `.Values.<component>.podLabels`, and finally the
+selector labels + component key. Pod labels are mutable, so adding one here only
+triggers a normal rolling update. This is the hook log shippers (Filebeat/ELK,
+Fluent Bit, Datadog) should target, since they enrich from pod metadata.
+
+The selector-owned keys (app.kubernetes.io/name, /instance, /component) are
+emitted LAST on purpose. YAML resolves duplicate keys to the final occurrence, so
+this makes them impossible to override from values: a user who sets
+`podLabels.app.kubernetes.io/component` gets their value silently discarded
+rather than a pod that no longer matches its own Deployment selector, Service,
+PDB, and NetworkPolicy. Reordering these lines reintroduces that bug.
+*/}}
+{{- define "flexprice.componentPodLabels" -}}
+{{- $ctx := .ctx -}}
+{{- $cfg := index $ctx.Values .component | default dict -}}
+{{- with $ctx.Values.podLabels }}
+{{- toYaml . | nindent 0 }}
+{{ end }}
+{{- with (get $cfg "podLabels") }}
+{{- toYaml . | nindent 0 }}
+{{ end }}
+{{- include "flexprice.selectorLabels" $ctx }}
+app.kubernetes.io/component: {{ .component }}
+{{- end }}
+
+{{/*
 Default ServiceAccount name (shared across components when per-workload SAs are off).
 */}}
 {{- define "flexprice.serviceAccountName" -}}
@@ -274,6 +334,40 @@ Uses the temporalio/temporal subchart service name when internal, or user-suppli
 {{- end }}
 
 {{/*
+Kafka broker CA volume. Renders nothing unless kafkaConfig.tlsCASecret.name is
+set, so clusters using publicly-trusted brokers (MSK, Confluent Cloud) are
+untouched.
+
+The Secret is expected to already exist — created by an ExternalSecret, sealed
+secret, or by hand. The chart never renders certificate material itself, which
+keeps PEM bytes out of values files. Its `key` must hold a PEM bundle; JKS/PKCS12
+truststores are not readable by Go and must be exported with
+`keytool -exportcert -rfc` first.
+*/}}
+{{- define "flexprice.kafkaTLSVolume" -}}
+{{- if .Values.kafkaConfig.tlsCASecret.name }}
+- name: kafka-tls-ca
+  secret:
+    secretName: {{ .Values.kafkaConfig.tlsCASecret.name | quote }}
+    items:
+      - key: {{ .Values.kafkaConfig.tlsCASecret.key | default "ca.crt" | quote }}
+        path: {{ .Values.kafkaConfig.tlsCASecret.key | default "ca.crt" | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
+Mount for the Kafka broker CA. Path must match FLEXPRICE_KAFKA_TLS_CA_CERT_FILE
+in "flexprice.env".
+*/}}
+{{- define "flexprice.kafkaTLSVolumeMounts" -}}
+{{- if .Values.kafkaConfig.tlsCASecret.name }}
+- name: kafka-tls-ca
+  mountPath: {{ .Values.kafkaConfig.tlsCASecret.mountPath | default "/etc/flexprice/kafka-tls" | quote }}
+  readOnly: true
+{{- end }}
+{{- end }}
+
+{{/*
 Create environment variables from configuration.
 All service addresses are resolved via named templates above so this block stays clean.
 */}}
@@ -342,6 +436,8 @@ All service addresses are resolved via named templates above so this block stays
   value: {{ .Values.clickhouse.database | quote }}
 - name: FLEXPRICE_CLICKHOUSE_TLS
   value: {{ .Values.clickhouse.tls | quote }}
+- name: FLEXPRICE_CLICKHOUSE_TLS_SKIP_VERIFY
+  value: {{ .Values.clickhouse.tlsSkipVerify | default false | quote }}
 - name: FLEXPRICE_CLICKHOUSE_MAX_MEMORY_USAGE
   value: {{ .Values.clickhouse.maxMemoryUsageGB | default 90 | quote }}
 {{- /* ---- Kafka ---- */}}
@@ -355,6 +451,16 @@ All service addresses are resolved via named templates above so this block stays
   value: {{ .Values.kafkaConfig.topicLazy | quote }}
 - name: FLEXPRICE_KAFKA_TLS
   value: {{ .Values.kafkaConfig.tls | quote }}
+{{- /*
+  Private/self-signed broker CA. Not gated on useSASL — a plain-TLS broker can
+  present a private CA too. The path must match the mount in
+  `flexprice.kafkaTLSVolumeMounts`. The file must be PEM; a JKS truststore has
+  to be exported first with `keytool -exportcert -rfc`.
+*/}}
+{{- if .Values.kafkaConfig.tlsCASecret.name }}
+- name: FLEXPRICE_KAFKA_TLS_CA_CERT_FILE
+  value: {{ printf "%s/%s" (.Values.kafkaConfig.tlsCASecret.mountPath | default "/etc/flexprice/kafka-tls") (.Values.kafkaConfig.tlsCASecret.key | default "ca.crt") | quote }}
+{{- end }}
 - name: FLEXPRICE_KAFKA_USE_SASL
   value: {{ .Values.kafkaConfig.useSASL | quote }}
 - name: FLEXPRICE_KAFKA_CLIENT_ID

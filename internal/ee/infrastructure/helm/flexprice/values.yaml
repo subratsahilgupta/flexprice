@@ -144,6 +144,13 @@ securityContext:
 api:
   enabled: true
   replicaCount: 1
+  # Extra labels for this component's Kubernetes objects (Deployment, Service,
+  # HPA, PDB, Ingress, ServiceAccount). Merged on top of the global `labels`.
+  # Not applied to spec.selector.matchLabels — selectors are immutable.
+  labels: {}
+  # Extra labels for this component's pods only. Merged on top of the global
+  # `podLabels`. This is what log shippers (Filebeat/ELK, Fluent Bit) read.
+  podLabels: {}
   resources:
     requests:
       cpu: "500m"
@@ -184,6 +191,13 @@ api:
 consumer:
   enabled: true
   replicaCount: 1
+  # Extra labels for this component's Kubernetes objects (Deployment, Service,
+  # HPA, PDB, Ingress, ServiceAccount). Merged on top of the global `labels`.
+  # Not applied to spec.selector.matchLabels — selectors are immutable.
+  labels: {}
+  # Extra labels for this component's pods only. Merged on top of the global
+  # `podLabels`. This is what log shippers (Filebeat/ELK, Fluent Bit) read.
+  podLabels: {}
   # Consumer-only env overrides (rendered after the shared flexprice.env, so these
   # win for duplicate keys). For settings that differ on the consumer vs api/worker —
   # e.g. FLEXPRICE_CACHE_ENABLED (cache enabled on the consumer only).
@@ -217,6 +231,29 @@ consumer:
     # Example:
     #   authenticationRef:
     #     name: kafka-msk-auth
+    #
+    # KEDA's operator connects to Kafka itself, separately from the consumer
+    # pod, so it does NOT see kafkaConfig.tlsCASecret — that Secret is only
+    # mounted into the workloads. A private/self-signed broker CA therefore has
+    # to be repeated here, in the same TriggerAuthentication that carries the
+    # SASL credentials (KEDA accepts one authenticationRef per trigger, so the
+    # CA and the credentials cannot be split across two resources):
+    #
+    #   apiVersion: keda.sh/v1alpha1
+    #   kind: TriggerAuthentication
+    #   metadata:
+    #     name: kafka-scram-auth
+    #   spec:
+    #     secretTargetRef:
+    #       - {parameter: sasl,     name: keda-kafka-secrets, key: sasl}
+    #       - {parameter: username, name: keda-kafka-secrets, key: username}
+    #       - {parameter: password, name: keda-kafka-secrets, key: password}
+    #       - {parameter: tls,      name: keda-kafka-secrets, key: tls}
+    #       - {parameter: ca,       name: keda-kafka-secrets, key: ca}
+    #
+    # The `ca` key holds the same PEM bundle as kafkaConfig.tlsCASecret. Without
+    # it the scaler fails its TLS handshake against a private CA and the
+    # consumer silently stops autoscaling.
     authenticationRef: {}
   podDisruptionBudget:
     enabled: true
@@ -245,6 +282,13 @@ consumer:
 worker:
   enabled: true
   replicaCount: 1
+  # Extra labels for this component's Kubernetes objects (Deployment, Service,
+  # HPA, PDB, Ingress, ServiceAccount). Merged on top of the global `labels`.
+  # Not applied to spec.selector.matchLabels — selectors are immutable.
+  labels: {}
+  # Extra labels for this component's pods only. Merged on top of the global
+  # `podLabels`. This is what log shippers (Filebeat/ELK, Fluent Bit) read.
+  podLabels: {}
   resources:
     requests:
       cpu: "375m"
@@ -299,6 +343,13 @@ ingress:
 frontend:
   enabled: false
   replicaCount: 1
+  # Extra labels for this component's Kubernetes objects (Deployment, Service,
+  # HPA, PDB, Ingress, ServiceAccount). Merged on top of the global `labels`.
+  # Not applied to spec.selector.matchLabels — selectors are immutable.
+  labels: {}
+  # Extra labels for this component's pods only. Merged on top of the global
+  # `podLabels`. This is what log shippers (Filebeat/ELK, Fluent Bit) read.
+  podLabels: {}
   image:
     repository: flexprice-frontend
     tag: "local"
@@ -414,6 +465,12 @@ clickhouse:
 
   # Shared connection settings (used by all modes)
   tls: false
+  # Skip server certificate/hostname verification on the TLS connection. Only has
+  # an effect when tls is true. This is the "SSL on, SSL_MODE none" combination —
+  # use it for dev ClickHouse serving a self-signed cert with no CA to distribute.
+  # It removes MITM protection, so keep it false in staging/production and trust
+  # the issuing CA instead (mount the bundle and point SSL_CERT_FILE at it).
+  tlsSkipVerify: false
   username: "default"
   password: "" # Set via secret or secrets.existingSecret key: clickhouse-password
   database: "flexprice"
@@ -491,6 +548,25 @@ kafkaConfig:
   topic: "events"
   topicLazy: "events_lazy"
   tls: false
+  # Broker CA for private/self-signed Kafka certificates. Leave name empty for
+  # brokers with publicly-trusted certs (MSK, Confluent Cloud) — the pods then
+  # verify against the OS trust store and no volume is mounted.
+  #
+  # The Secret must already exist; create it with an ExternalSecret (or sealed
+  # secret) so certificate material never lands in a values file. Its key must
+  # hold a PEM bundle. A JKS truststore must be converted first:
+  #   keytool -exportcert -alias <alias> -keystore truststore.jks -rfc -file ca.pem
+  #
+  # Setting `name` always mounts the Secret. On the legacy structured-env shape
+  # the chart also emits FLEXPRICE_KAFKA_TLS_CA_CERT_FILE pointing at the
+  # mounted path. On the MIGRATED generic-env shape (`.Values.env` set) the
+  # chart emits no kafkaConfig-derived env vars at all, so set it yourself:
+  #   env:
+  #     FLEXPRICE_KAFKA_TLS_CA_CERT_FILE: "/etc/flexprice/kafka-tls/ca.crt"
+  tlsCASecret:
+    name: ""                              # e.g. "flexprice-kafka-ca" (synced by ExternalSecret)
+    key: "ca.crt"                         # key inside the Secret holding the PEM bundle
+    mountPath: "/etc/flexprice/kafka-tls" # dir the key is mounted into
   useSASL: false
   saslMechanism: ""
   saslUser: ""
@@ -1026,6 +1102,13 @@ envAccess:
 # Pod annotations
 podAnnotations: {}
 
+# Pod labels applied to every flexprice pod (api, consumer, worker, frontend).
+# Per-component additions go under `<component>.podLabels`.
+# Example — tag pods for an ELK ingest pipeline:
+#   podLabels:
+#     logging.company.io/index: flexprice
+podLabels: {}
+
 # ---------------------------------------------------------------------------
 # Node placement — nodeSelector, tolerations, affinity
 # ---------------------------------------------------------------------------
@@ -1144,7 +1227,10 @@ extraVolumeMounts: []
 # - name: extra-volume
 #   mountPath: /extra
 
-# Resource labels
+# Labels applied to every Kubernetes object the chart renders.
+# Per-component additions go under `<component>.labels`.
+# Never lands on spec.selector.matchLabels — those are immutable on
+# Deployments, so changing this value stays upgrade-safe.
 labels: {}
 
 # ---------------------------------------------------------------------------

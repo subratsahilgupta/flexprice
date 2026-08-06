@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	domainCreditGrantApplication "github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
+	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
@@ -48,7 +49,7 @@ type CreditGrantService interface {
 
 	// InitializeCreditGrantWorkflow initializes the workflow for a credit grant
 	// This creates the first CGA and triggers eager application if applicable
-	InitializeCreditGrantWorkflow(ctx context.Context, cg creditgrant.CreditGrant) (*creditgrant.CreditGrant, error)
+	InitializeCreditGrantWorkflow(ctx context.Context, cg creditgrant.CreditGrant, prorationCfg *dto.FirstPeriodProration) (*creditgrant.CreditGrant, error)
 
 	// ProcessCreditGrantApplication processes a single credit grant application
 	// Use this to manually trigger processing of a pending/failed application
@@ -265,7 +266,7 @@ func (s *creditGrantService) CreateCreditGrant(ctx context.Context, req dto.Crea
 
 	// Initialize workflow
 	if cg.Scope == types.CreditGrantScopeSubscription {
-		cg, err = s.InitializeCreditGrantWorkflow(ctx, lo.FromPtr(cg))
+		cg, err = s.InitializeCreditGrantWorkflow(ctx, lo.FromPtr(cg), req.FirstPeriodProration)
 		if err != nil {
 			return nil, err
 		}
@@ -275,7 +276,15 @@ func (s *creditGrantService) CreateCreditGrant(ctx context.Context, req dto.Crea
 	return response, nil
 }
 
-func (s *creditGrantService) InitializeCreditGrantWorkflow(ctx context.Context, cg creditgrant.CreditGrant) (*creditgrant.CreditGrant, error) {
+// initializeCreditGrantWorkflow creates the grant's first application. When
+// prorationCfg is set, that first application covers only part of a billing period
+// and its credits are scaled accordingly; later periods are whole and always grant
+// the full amount, which is why the config is never persisted on the grant.
+func (s *creditGrantService) InitializeCreditGrantWorkflow(
+	ctx context.Context,
+	cg creditgrant.CreditGrant,
+	prorationCfg *dto.FirstPeriodProration,
+) (*creditgrant.CreditGrant, error) {
 
 	// 3. Calculate period for the first application
 	periodStart := lo.FromPtr(cg.StartDate)
@@ -292,13 +301,21 @@ func (s *creditGrantService) InitializeCreditGrantWorkflow(ctx context.Context, 
 	}
 
 	if cg.Cadence == types.CreditGrantCadenceRecurring {
-		var err error
-		var calculatedPeriodEnd time.Time
-		_, calculatedPeriodEnd, err = CalculateNextCreditGrantPeriod(cg, periodStart, subscription.Timezone)
-		if err != nil {
-			return nil, err
+		if prorationCfg != nil {
+			// A prorated grant's first period is deliberately short: it ends where the
+			// subscription's billing period does. It is set directly rather than derived
+			// from the anchor because NextBillingDate has no short-first-period rule for
+			// annual cycles, and overshoots when the period spans multiple weeks.
+			periodEnd = lo.ToPtr(prorationCfg.PeriodEnd)
+		} else {
+			var err error
+			var calculatedPeriodEnd time.Time
+			_, calculatedPeriodEnd, err = CalculateNextCreditGrantPeriod(cg, periodStart, subscription.Timezone)
+			if err != nil {
+				return nil, err
+			}
+			periodEnd = lo.ToPtr(calculatedPeriodEnd)
 		}
-		periodEnd = lo.ToPtr(calculatedPeriodEnd)
 	}
 
 	// 5. Create the first CGA record in Pending status
@@ -309,6 +326,30 @@ func (s *creditGrantService) InitializeCreditGrantWorkflow(ctx context.Context, 
 		applicationReason = types.ApplicationReasonOnetimeCreditGrant
 	}
 
+	credits := cg.Credits
+	var prorationMetadata types.Metadata
+	if prorationCfg != nil {
+		result, err := proration.CalculateCreditGrantProration(proration.CreditGrantProrationParams{
+			PeriodStart:     prorationCfg.PeriodStart,
+			PeriodEnd:       prorationCfg.PeriodEnd,
+			ProrationDate:   prorationCfg.ProrationDate,
+			Strategy:        prorationCfg.Strategy,
+			OriginalCredits: cg.Credits,
+		})
+		if err != nil {
+			return nil, err
+		}
+		credits = result.ProratedCredits
+		prorationMetadata = result.AuditMetadata(prorationCfg.Source)
+
+		s.Logger.Info(ctx, "prorating first credit grant application",
+			"grant_id", cg.ID,
+			"subscription_id", lo.FromPtr(cg.SubscriptionID),
+			"coefficient", result.Coefficient.String(),
+			"original_credits", cg.Credits.String(),
+			"prorated_credits", credits.String())
+	}
+
 	cgaReq := dto.CreateCreditGrantApplicationRequest{
 		CreditGrantID:                   cg.ID,
 		SubscriptionID:                  lo.FromPtr(cg.SubscriptionID),
@@ -316,9 +357,10 @@ func (s *creditGrantService) InitializeCreditGrantWorkflow(ctx context.Context, 
 		PeriodStart:                     periodStart,
 		PeriodEnd:                       periodEnd,
 		ApplicationReason:               applicationReason,
-		Credits:                         cg.Credits,
+		Credits:                         credits,
 		SubscriptionStatusAtApplication: subscription.SubscriptionStatus,
 		IdempotencyKey:                  s.generateIdempotencyKey(lo.ToPtr(cg), lo.ToPtr(periodStart), periodEnd),
+		Metadata:                        prorationMetadata,
 	}
 
 	if err := cgaReq.Validate(); err != nil {
@@ -331,8 +373,9 @@ func (s *creditGrantService) InitializeCreditGrantWorkflow(ctx context.Context, 
 		return nil, err
 	}
 
-	// 6. Eager application: if the grant is due now or in the past, process it immediately
-	if cg.CreditGrantAnchor.Before(time.Now()) || cg.CreditGrantAnchor.Equal(time.Now()) {
+	// 6. Eager application: if the application is due now or in the past, process it
+	// immediately.
+	if !cga.ScheduledFor.After(time.Now()) {
 		// Use a background context or a sub-context to avoid blocking the main creation if processing fails
 		// Though for initialization, we might want it to be synchronous if it fails due to validation
 		if err := s.processCatchUpApplications(ctx, cga); err != nil {
@@ -710,18 +753,19 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 		}
 	}
 
-	// Prepare top-up request
+	topupMetadata := lo.Assign(map[string]string{
+		"grant_id":        grant.ID,
+		"subscription_id": subscription.ID,
+		"cga_id":          cga.ID,
+	}, cga.Metadata)
+
 	topupReq := &dto.TopUpWalletRequest{
 		CreditsToAdd:      cga.Credits,
 		TransactionReason: types.TransactionReasonSubscriptionCredit,
 		ExpiryDateUTC:     expiryDate,
 		Priority:          grant.Priority,
 		IdempotencyKey:    lo.ToPtr(cga.ID),
-		Metadata: map[string]string{
-			"grant_id":        grant.ID,
-			"subscription_id": subscription.ID,
-			"cga_id":          cga.ID,
-		},
+		Metadata:          topupMetadata,
 	}
 
 	var nextCGA *domainCreditGrantApplication.CreditGrantApplication
@@ -1261,8 +1305,8 @@ func (s *creditGrantService) cancelFutureGrantApplications(ctx context.Context, 
 			types.ApplicationStatusPending,
 			types.ApplicationStatusFailed,
 		},
-		ScheduledAfter: &effectiveDate,
-		QueryFilter:    types.NewNoLimitQueryFilter(),
+		ScheduledFrom: &effectiveDate,
+		QueryFilter:   types.NewNoLimitQueryFilter(),
 	}
 
 	applications, err := s.CreditGrantApplicationRepo.List(ctx, pendingFilter)

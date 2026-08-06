@@ -4,8 +4,7 @@ kind: Deployment
 metadata:
   name: {{ include "flexprice.fullname" . }}-api
   labels:
-    {{- include "flexprice.labels" . | nindent 4 }}
-    app.kubernetes.io/component: api
+    {{- include "flexprice.componentLabels" (dict "ctx" . "component" "api") | nindent 4 }}
 spec:
   replicas: {{ .Values.api.replicaCount }}
   {{- with .Values.api.strategy }}
@@ -27,8 +26,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "flexprice.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: api
+        {{- include "flexprice.componentPodLabels" (dict "ctx" . "component" "api") | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -80,6 +78,7 @@ spec:
             {{- end }}
             - name: tmp
               mountPath: /tmp
+            {{- include "flexprice.kafkaTLSVolumeMounts" . | nindent 12 }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -91,6 +90,7 @@ spec:
         {{- end }}
         - name: tmp
           emptyDir: {}
+        {{- include "flexprice.kafkaTLSVolume" . | nindent 8 }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
