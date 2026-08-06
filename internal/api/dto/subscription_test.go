@@ -304,3 +304,146 @@ func TestCreateSubscriptionRequestValidate_GroupedInvoicingChildrenToCreate_Requ
 		}
 	})
 }
+
+func razorpayCheckoutParams() *CheckoutParams {
+	return &CheckoutParams{
+		PaymentParams: PaymentParams{
+			PaymentProvider: types.CheckoutPaymentProviderRazorpay,
+		},
+		RedirectionParams: RedirectionParams{
+			SuccessURL: lo.ToPtr("https://app.example.com/ok"),
+		},
+	}
+}
+
+func TestCreateSubscriptionRequestValidate_CheckoutAllowlist(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*CreateSubscriptionRequest)
+		wantErr string
+	}{
+		{
+			name:    "plain checkout accepted",
+			mutate:  func(r *CreateSubscriptionRequest) {},
+			wantErr: "",
+		},
+		{
+			name:    "subscription_status rejected",
+			mutate:  func(r *CreateSubscriptionRequest) { r.SubscriptionStatus = types.SubscriptionStatusDraft },
+			wantErr: "subscription_status",
+		},
+		{
+			name: "phases rejected",
+			mutate: func(r *CreateSubscriptionRequest) {
+				r.Phases = []SubscriptionPhaseCreateRequest{{StartDate: time.Now().UTC()}}
+			},
+			wantErr: "phases",
+		},
+		{
+			// Lifetime config read at every renewal, not an instruction for this payment.
+			name: "payment_behavior accepted",
+			mutate: func(r *CreateSubscriptionRequest) {
+				r.PaymentBehavior = lo.ToPtr(types.PaymentBehaviorDefaultActive)
+			},
+			wantErr: "",
+		},
+		{
+			// The saved method for renewals; the session collects the opening charge itself.
+			name:    "gateway_payment_method_id accepted",
+			mutate:  func(r *CreateSubscriptionRequest) { r.GatewayPaymentMethodID = lo.ToPtr("pm_123") },
+			wantErr: "",
+		},
+		{
+			// Governs future invoices, a different question from how this checkout collects.
+			name: "collection_method accepted",
+			mutate: func(r *CreateSubscriptionRequest) {
+				r.CollectionMethod = lo.ToPtr(types.CollectionMethodSendInvoice)
+			},
+			wantErr: "",
+		},
+		{
+			// A trial produces no charge, so the service falls through to a normal create rather
+			// than rejecting.
+			name:    "trial_period_days accepted",
+			mutate:  func(r *CreateSubscriptionRequest) { r.TrialPeriodDays = lo.ToPtr(14) },
+			wantErr: "",
+		},
+		{
+			name: "inheritance rejected",
+			mutate: func(r *CreateSubscriptionRequest) {
+				r.Inheritance = &SubscriptionInheritanceConfig{
+					GroupedInvoicingChildrenToCreate: []GroupedInvoicingChildRequest{
+						{PlanID: "plan_seat", ExternalCustomerID: "ext_seat_1"},
+					},
+				}
+			},
+			wantErr: "inheritance",
+		},
+		{
+			name:    "missing payment_provider rejected",
+			mutate:  func(r *CreateSubscriptionRequest) { r.Checkout.PaymentProvider = "" },
+			wantErr: "PaymentProvider",
+		},
+		{
+			// Struct tags only enforce presence; the enum allow-list lives in
+			// PaymentParams.Validate, which is why the allowlist calls Checkout.Validate itself.
+			name:    "unsupported payment_provider rejected",
+			mutate:  func(r *CreateSubscriptionRequest) { r.Checkout.PaymentProvider = "stripe" },
+			wantErr: "payment provider",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := baseCreateSubscriptionRequest()
+			req.Checkout = razorpayCheckoutParams()
+			tt.mutate(&req)
+
+			err := req.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error to mention %q, got: %v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
+// Everything the allowlist rejects must stay legal without a checkout object.
+func TestCreateSubscriptionRequestValidate_NoCheckoutUnaffected(t *testing.T) {
+	req := baseCreateSubscriptionRequest()
+	req.SubscriptionStatus = types.SubscriptionStatusDraft
+	req.Inheritance = &SubscriptionInheritanceConfig{
+		GroupedInvoicingChildrenToCreate: []GroupedInvoicingChildRequest{
+			{PlanID: "plan_seat", ExternalCustomerID: "ext_seat_1"},
+		},
+	}
+
+	if err := req.Validate(); err != nil {
+		t.Fatalf("expected no error without checkout, got: %v", err)
+	}
+}
+
+// The allowlist runs before Validate() defaults collection_method and payment_behavior. If it ran
+// after, a caller who sent neither would be judged against the values Validate() filled in.
+func TestCreateSubscriptionRequestValidate_CheckoutRunsBeforeDefaulting(t *testing.T) {
+	req := baseCreateSubscriptionRequest()
+	req.Checkout = razorpayCheckoutParams()
+	req.CollectionMethod = nil
+	req.PaymentBehavior = nil
+
+	if err := req.Validate(); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if req.CollectionMethod == nil || req.PaymentBehavior == nil {
+		t.Fatal("expected Validate to still apply its defaults on the checkout path")
+	}
+}
