@@ -279,3 +279,77 @@ func (s *subscriptionService) archivePendingAddonAssociation(
 		)
 	}
 }
+
+// applyAddAddonParams activates the pending associations a completed checkout session gated.
+//
+// The charge is NOT recomputed — it is already locked on the session's draft invoice, and
+// settling is finalizeCheckoutInvoiceAndPayment's job. Credit-grant proration is not
+// suppressed, so grants scale exactly as they would have pay-later.
+func (s *subscriptionService) applyAddAddonCheckoutParams(ctx context.Context, params *types.AddAddonParams) error {
+	if err := params.Validate(); err != nil {
+		return err
+	}
+
+	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, params.SubscriptionID)
+	if err != nil {
+		return err
+	}
+	sub.LineItems = lineItems
+
+	for _, ref := range params.Addons {
+		if err := s.applyAddAddonRef(ctx, sub, ref); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *subscriptionService) applyAddAddonRef(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	ref types.AddAddonRef,
+) error {
+	association, err := s.AddonAssociationRepo.GetByID(ctx, ref.AssociationID)
+	if err != nil {
+		return err
+	}
+
+	switch association.AddonStatus {
+	case types.AddonStatusActive:
+		s.Logger.Info(ctx, "addon association already active, skipping checkout replay",
+			"association_id", association.ID,
+			"addon_id", ref.AddonID,
+			"subscription_id", sub.ID,
+		)
+		return nil
+	case types.AddonStatusPending:
+		// The state we expect; fall through and activate.
+	default:
+		return ierr.NewError("addon association is not pending activation").
+			WithHint("The addon was cancelled or removed while its checkout was outstanding").
+			WithReportableDetails(map[string]any{
+				"association_id":  association.ID,
+				"addon_id":        ref.AddonID,
+				"subscription_id": sub.ID,
+				"addon_status":    association.AddonStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	req := &dto.AddAddonToSubscriptionRequest{
+		AddonID:              ref.AddonID,
+		Cadence:              ref.Cadence,
+		StartDate:            lo.ToPtr(ref.StartDate),
+		ProrationBehavior:    ref.ProrationBehavior,
+		Metadata:             association.Metadata,
+		SkipEntityValidation: true,
+	}
+
+	params, err := s.createAddonAttachParams(ctx, sub, req, association)
+	if err != nil {
+		return err
+	}
+
+	return s.persistAddonAttach(ctx, params)
+}

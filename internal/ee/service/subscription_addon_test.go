@@ -827,3 +827,230 @@ func (s *SubscriptionServiceSuite) TestAddAddon_CheckoutSessionCreateFailure_Arc
 
 	s.Empty(s.addonLineItemsFor(sub.ID, addonID), "a failed pay-first must leave no line items")
 }
+
+// ─────────────────────────────────────────────
+// Completion & cleanup
+// ─────────────────────────────────────────────
+
+// seedPayFirstAddonCheckout reproduces the state settleAddAddonPayFirst leaves behind —
+// pending association, DRAFT proration invoice, INITIATED payment, pending session — without
+// going through the provider, which needs a live Razorpay connection.
+func (s *SubscriptionServiceSuite) seedPayFirstAddonCheckout(
+	addonID string,
+) (*domainCheckout.CheckoutSession, *addonassociation.AddonAssociation, *dto.InvoiceResponse) {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	sub := s.testData.subscription
+	params := subService.ServiceParams
+
+	now := s.testData.now
+	req := &dto.AddAddonToSubscriptionRequest{
+		AddonID:           addonID,
+		Cadence:           types.AddonCadenceRecurring,
+		StartDate:         &now,
+		ProrationBehavior: types.ProrationBehaviorCreateProrations,
+	}
+
+	attach, err := subService.createAddonAttachParams(ctx, sub, req, nil)
+	s.Require().NoError(err)
+
+	summary, err := subService.calculateAddonProration(ctx, attach)
+	s.Require().NoError(err)
+	s.Require().True(summary.TotalChargeAmount.GreaterThan(decimal.Zero))
+
+	pending := attach.getAssociation()
+	pending.AddonStatus = types.AddonStatusPending
+	s.Require().NoError(s.GetStores().AddonAssociationRepo.Create(ctx, pending))
+
+	draft, err := subService.createAddonProrationDraftInvoice(ctx, attach, summary)
+	s.Require().NoError(err)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: params}
+	payResp, err := checkoutSvc.createCheckoutPayment(ctx, &draft.Invoice, types.CheckoutPaymentProviderRazorpay)
+	s.Require().NoError(err)
+
+	session := &domainCheckout.CheckoutSession{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
+		EnvironmentID:   types.GetEnvironmentID(ctx),
+		CustomerID:      sub.CustomerID,
+		Action:          types.CheckoutActionAddAddon,
+		CheckoutStatus:  types.CheckoutStatusPending,
+		PaymentProvider: types.CheckoutPaymentProviderRazorpay,
+		Configuration: domainCheckout.ToJSONBCheckoutConfiguration(types.CheckoutConfiguration{
+			AddAddonParams: &types.AddAddonParams{
+				SubscriptionID: sub.ID,
+				Addons: []types.AddAddonRef{{
+					AssociationID:     pending.ID,
+					AddonID:           addonID,
+					Cadence:           types.AddonCadenceRecurring,
+					ProrationBehavior: types.ProrationBehaviorCreateProrations,
+					StartDate:         attach.getRequestedStart(),
+				}},
+			},
+		}),
+		CheckoutInvoiceID: &draft.ID,
+		CheckoutPaymentID: &payResp.ID,
+		ExpiresAt:         time.Now().UTC().Add(time.Hour),
+		BaseModel:         types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Create(ctx, session))
+
+	return session, pending, draft
+}
+
+// Payment succeeded: the addon takes effect, the SAME draft is finalized, and no second charge
+// appears — the charge exists exactly once, on the invoice the customer paid.
+func (s *SubscriptionServiceSuite) TestCompleteAddAddonCheckout_ActivatesAndFinalizes() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	sub := s.testData.subscription
+	addonID := "addon_complete_activates"
+
+	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	session, pending, draft := s.seedPayFirstAddonCheckout(addonID)
+
+	oneOffBefore := len(s.oneOffInvoicesFor(sub.ID))
+	s.Empty(s.addonLineItemsFor(sub.ID, addonID), "line items must not exist before payment")
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, session.ID, &types.CheckoutProviderResult{
+		ProviderPaymentIntentID: "pay_addon_complete_001",
+	}))
+
+	activated, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, pending.ID)
+	s.Require().NoError(err)
+	s.Equal(types.AddonStatusActive, activated.AddonStatus, "payment must activate the association")
+
+	s.Len(s.addonLineItemsFor(sub.ID, addonID), 1, "completion must create the addon's line items")
+
+	finalized, err := NewInvoiceService(subService.ServiceParams).GetInvoice(ctx, draft.ID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, finalized.InvoiceStatus)
+
+	s.Equal(oneOffBefore, len(s.oneOffInvoicesFor(sub.ID)),
+		"completion must finalize the existing draft, never raise a second proration charge")
+
+	completed, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusCompleted, completed.CheckoutStatus)
+}
+
+// CompleteCheckoutSession runs the action BEFORE the atomic MarkCompleted claim, so two
+// concurrent webhooks can both enter completion. The association's own status is the replay
+// fingerprint that makes the second one a no-op.
+func (s *SubscriptionServiceSuite) TestCompleteAddAddonCheckout_ReplayIsIdempotent() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	sub := s.testData.subscription
+	addonID := "addon_complete_replay"
+
+	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	session, pending, _ := s.seedPayFirstAddonCheckout(addonID)
+
+	cfg := session.Configuration.ToCheckoutConfiguration()
+
+	// Applied directly, twice, so the second call is not short-circuited by the session's own
+	// terminal-status guard — this isolates the association-level replay guard.
+	s.Require().NoError(subService.applyAddAddonParams(ctx, cfg.AddAddonParams))
+	s.Require().NoError(subService.applyAddAddonParams(ctx, cfg.AddAddonParams))
+
+	s.Len(s.addonLineItemsFor(sub.ID, addonID), 1, "a replay must not duplicate line items")
+
+	assocFilter := types.NewNoLimitAddonAssociationFilter()
+	assocFilter.EntityIDs = []string{sub.ID}
+	assocFilter.AddonIDs = []string{addonID}
+	associations, err := s.GetStores().AddonAssociationRepo.List(ctx, assocFilter)
+	s.Require().NoError(err)
+	s.Len(associations, 1, "a replay must not create a second association")
+	s.Equal(pending.ID, associations[0].ID)
+	s.Equal(types.AddonStatusActive, associations[0].AddonStatus)
+
+	s.Equal(1, len(s.oneOffInvoicesFor(sub.ID)), "a replay must not raise another charge")
+}
+
+// Paid-but-unactivatable: the subscription was cancelled while the checkout was outstanding.
+// The attach must fail loudly and leave a clean, resumable state rather than half-applying.
+func (s *SubscriptionServiceSuite) TestCompleteAddAddonCheckout_SubscriptionCancelled() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	sub := s.testData.subscription
+	addonID := "addon_complete_cancelled"
+
+	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	session, pending, draft := s.seedPayFirstAddonCheckout(addonID)
+
+	sub.SubscriptionStatus = types.SubscriptionStatusCancelled
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+
+	cfg := session.Configuration.ToCheckoutConfiguration()
+	err := subService.applyAddAddonParams(ctx, cfg.AddAddonParams)
+	s.Require().Error(err)
+	s.True(ierr.IsValidation(err))
+
+	stored, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, pending.ID)
+	s.Require().NoError(err)
+	s.Equal(types.AddonStatusPending, stored.AddonStatus, "a failed activation must leave the association pending")
+
+	s.Empty(s.addonLineItemsFor(sub.ID, addonID))
+
+	stillDraft, err := NewInvoiceService(subService.ServiceParams).GetInvoice(ctx, draft.ID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusDraft, stillDraft.InvoiceStatus, "the invoice must not be finalized when the attach fails")
+}
+
+// An expired or failed session must take its pending association with it, or the association
+// outlives the session as an orphan that RemoveAddonFromSubscription refuses to touch.
+func (s *SubscriptionServiceSuite) TestAddAddonCheckout_CleanupArchivesPendingAssociation() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	sub := s.testData.subscription
+	addonID := "addon_cleanup_pending"
+
+	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	session, pending, draft := s.seedPayFirstAddonCheckout(addonID)
+
+	lineItemsBefore := len(sub.LineItems)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
+
+	archived, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, pending.ID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusArchived, archived.Status, "cleanup must archive the pending association")
+
+	// The generic cleanup block archives the draft; the in-memory store scopes Get to live
+	// rows, so an archived invoice is simply no longer retrievable.
+	_, err = s.GetStores().InvoiceRepo.Get(ctx, draft.ID)
+	s.Error(err, "the draft proration invoice must be archived by cleanup")
+
+	cleaned, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusExpired, cleaned.CheckoutStatus)
+
+	// The subscription and its own line items are untouched.
+	storedSub, storedItems, err := s.GetStores().SubscriptionRepo.GetWithLineItems(ctx, sub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusActive, storedSub.SubscriptionStatus)
+	s.Equal(lineItemsBefore, len(storedItems))
+}
+
+// A session that completed and only later expired must not archive the addon it activated.
+func (s *SubscriptionServiceSuite) TestAddAddonCheckout_CleanupLeavesActivatedAssociationAlone() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	addonID := "addon_cleanup_active"
+
+	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	session, pending, _ := s.seedPayFirstAddonCheckout(addonID)
+
+	cfg := session.Configuration.ToCheckoutConfiguration()
+	s.Require().NoError(subService.applyAddAddonParams(ctx, cfg.AddAddonParams))
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
+
+	stored, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, pending.ID)
+	s.Require().NoError(err)
+	s.Equal(types.AddonStatusActive, stored.AddonStatus)
+	s.Equal(types.StatusPublished, stored.Status, "a live addon must survive a late session expiry")
+}
