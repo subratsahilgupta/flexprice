@@ -978,12 +978,12 @@ func (s *CreditNoteServiceSuite) TestVoidCreditNote() {
 }
 
 // failOnUpdateInvoiceRepo wraps a real invoice.Repository and forces Update to
-// fail for one specific invoice ID, leaving every other method (including Get)
-// delegated to the real repo. This is the only way to make
+// fail for one specific invoice ID, leaving every other method (including
+// GetForUpdate) delegated to the real repo. This is the only way to make
 // RecalculateInvoiceAmountsForCreditNote's InvoiceRepo.Update call fail while
-// the earlier InvoiceRepo.Get call in FinalizeCreditNote still succeeds -
-// deleting the invoice out from under it fails the (already-correct) Get
-// instead of the (buggy, swallowed-error) recalculation step.
+// the earlier GetForUpdate in FinalizeCreditNote still succeeds — deleting the
+// invoice out from under it fails the (already-correct) lock instead of the
+// (buggy, swallowed-error) recalculation step.
 type failOnUpdateInvoiceRepo struct {
 	invoice.Repository
 	failInvoiceID string
