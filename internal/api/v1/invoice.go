@@ -166,6 +166,38 @@ func (h *InvoiceHandler) FinalizeInvoice(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "invoice finalized successfully"})
 }
 
+// ApplyDiscountToInvoice godoc
+// @Summary Reapply discount to draft invoice
+// @ID applyDiscountToInvoice
+// @Description Recomputes this draft invoice's discount from its current standing coupon associations. Safe to call repeatedly - each call resets and rebuilds the discount from scratch rather than compounding it.
+// @Tags Invoices
+// @x-scope "write"
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Invoice ID"
+// @Success 200 {object} dto.InvoiceResponse
+// @Failure 400 {object} ierr.ErrorResponse "Invalid request"
+// @Failure 404 {object} ierr.ErrorResponse "Invoice not found"
+// @Failure 500 {object} ierr.ErrorResponse "Server error"
+// @Router /invoices/{id}/apply-discount [post]
+func (h *InvoiceHandler) ApplyDiscountToInvoice(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
+		return
+	}
+
+	resp, err := h.invoiceService.ApplyDiscountToInvoice(c.Request.Context(), id)
+	if err != nil {
+		h.logger.Error(c.Request.Context(), "failed to apply discount to invoice", "error", err, "invoice_id", id)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
 func (h *InvoiceHandler) ComputeInvoice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
