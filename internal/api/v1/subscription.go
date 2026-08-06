@@ -424,11 +424,6 @@ func (h *SubscriptionHandler) AddAddonToSubscription(c *gin.Context) {
 		return
 	}
 
-	if err := req.Validate(); err != nil {
-		c.Error(err)
-		return
-	}
-
 	resp, err := h.service.AddAddonToSubscription(c.Request.Context(), &req)
 	if err != nil {
 		h.log.Error(c.Request.Context(), "Failed to add addon to subscription", "error", err)

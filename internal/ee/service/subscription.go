@@ -4823,6 +4823,10 @@ func (s *subscriptionService) AddAddonToSubscription(
 	ctx context.Context,
 	req *dto.AddAddonRequest,
 ) (*dto.AddAddonToSubscriptionResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
 	subID := req.SubscriptionID
 	checkout := req.Checkout
 
@@ -4977,12 +4981,18 @@ func (s *subscriptionService) createAddonAttachParams(
 		)
 	}
 
-	addonRequestedStart := addonRequestedStartDate(req)
-	onetimePeriodEnd, err := addonOnetimePeriodEnd(sub, req, addonRequestedStart)
-	if err != nil {
-		return nil, err
-	}
+	addonRequestedStart := lo.Ternary(req.StartDate != nil, lo.FromPtr(req.StartDate), time.Now())
+
+	// A onetime addon ends on the boundary of the period containing its start date; any
+	// other cadence renews each period and keeps the zero time.
+	var onetimePeriodEnd time.Time
 	if req.Cadence == types.AddonCadenceOnetime {
+		periodEnd, err := addonPeriodEndForStartDate(sub, addonRequestedStart)
+		if err != nil {
+			return nil, err
+		}
+		
+		onetimePeriodEnd = periodEnd
 		addonAssociation.EndDate = &onetimePeriodEnd
 	}
 
@@ -4993,6 +5003,13 @@ func (s *subscriptionService) createAddonAttachParams(
 	if err != nil {
 		return nil, err
 	}
+
+	// createLineItemFromPrice clamps every line item's start to
+	// max(requestedStart, sub.StartDate, price.StartDate), so anchoring the proration at
+	// requestedStart alone would price a window the addon is not live for.
+	prorationEffectiveDate := lo.Reduce(lineItems, func(acc time.Time, li *subscription.SubscriptionLineItem, _ int) time.Time {
+		return lo.Ternary(li.StartDate.After(acc), li.StartDate, acc)
+	}, addonRequestedStart)
 
 	// Ensure subscription-level and line-item-level commitments don't conflict
 	originalLineItems := sub.LineItems
@@ -5011,7 +5028,7 @@ func (s *subscriptionService) createAddonAttachParams(
 		bucketCfgs:     lineItemBucketCfgs,
 		priceMap:       priceMap,
 		requestedStart: addonRequestedStart,
-		effectiveDate:  addonProrationEffectiveDate(addonRequestedStart, lineItems),
+		effectiveDate:  prorationEffectiveDate,
 		isReplay:       existing != nil,
 	}, nil
 }
@@ -5189,12 +5206,6 @@ func (s *subscriptionService) validateEntitlementCompatibility(ctx context.Conte
 		}
 	}
 
-	// Pending associations grant no access, so GetSubscriptionEntitlements deliberately does
-	// not see them — but their reset periods still have to be conflict-checked here. Without
-	// this, a pay-later add landing while a checkout is outstanding passes its own check, and
-	// completing that checkout activates two conflicting reset periods on the same feature —
-	// exactly the state this validation exists to prevent. Existing entitlements win on
-	// collision so the reported conflict names the live reset period, not the unpaid one.
 	pendingResetPeriods, err := s.pendingAddonFeatureResetPeriods(ctx, subscriptionID)
 	if err != nil {
 		return err
@@ -5774,47 +5785,6 @@ func (s *subscriptionService) shiftAddonLineItemDates(
 	return nil
 }
 
-func addonRequestedStartDate(req *dto.AddAddonToSubscriptionRequest) time.Time {
-	if req.StartDate != nil {
-		return lo.FromPtr(req.StartDate)
-	}
-
-	return time.Now()
-}
-
-// addonOnetimePeriodEnd returns the period boundary a onetime addon's line items end on,
-// walking forward when requestedStart falls in a future period. Any other cadence renews
-// each period and gets the zero time.
-func addonOnetimePeriodEnd(
-	sub *subscription.Subscription,
-	req *dto.AddAddonToSubscriptionRequest,
-	requestedStart time.Time,
-) (time.Time, error) {
-	if req.Cadence != types.AddonCadenceOnetime {
-		return time.Time{}, nil
-	}
-
-	return addonPeriodEndForStartDate(sub, requestedStart)
-}
-
-// addonProrationEffectiveDate is the date an addon's proration must be priced from.
-// createLineItemFromPrice clamps every line item's start to
-// max(requestedStart, sub.StartDate, price.StartDate), so anchoring the charge at
-// requestedStart alone would price a window the addon is not live for.
-func addonProrationEffectiveDate(
-	requestedStart time.Time,
-	lineItems []*subscription.SubscriptionLineItem,
-) time.Time {
-	effectiveDate := requestedStart
-	for _, lineItem := range lineItems {
-		if lineItem.StartDate.After(effectiveDate) {
-			effectiveDate = lineItem.StartDate
-		}
-	}
-
-	return effectiveDate
-}
-
 // addonPeriodEndForStartDate returns the end of the billing period that contains startDate.
 func addonPeriodEndForStartDate(sub *subscription.Subscription, startDate time.Time) (time.Time, error) {
 	p, err := types.FindPeriodForDate(&types.FindPeriodForDateParams{
@@ -5832,10 +5802,6 @@ func addonPeriodEndForStartDate(sub *subscription.Subscription, startDate time.T
 	return p.End, nil
 }
 
-// buildAddonProrationEntries pairs each addon line item with its price as an add-item
-// proration entry. Prices are loaded per line item rather than reused from the addon's
-// filtered price list because ProcessSubscriptionPriceOverrides may have rewritten a line
-// item's PriceID to a subscription-scoped override price by the time this runs.
 func (s *subscriptionService) buildAddonProrationEntries(
 	ctx context.Context,
 	lineItems []*subscription.SubscriptionLineItem,

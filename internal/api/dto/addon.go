@@ -155,7 +155,6 @@ type AddonAssociationResponse struct {
 // ListAddonAssociationsResponse represents the response for listing addon associations
 type ListAddonAssociationsResponse = types.ListResponse[*AddonAssociationResponse]
 
-// AddAddonToSubscriptionResponse is the response for POST /subscriptions/addon.
 type AddAddonToSubscriptionResponse struct {
 	*addonassociation.AddonAssociation
 	CheckoutSession *CheckoutSessionResponse `json:"checkout_session,omitempty"`
