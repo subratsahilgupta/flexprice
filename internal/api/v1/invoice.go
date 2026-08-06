@@ -169,7 +169,7 @@ func (h *InvoiceHandler) FinalizeInvoice(c *gin.Context) {
 // RecalculateDiscountOnInvoice godoc
 // @Summary Recalculate discount on draft invoice
 // @ID recalculateDiscountOnInvoice
-// @Description Recomputes this draft invoice's discount from its current standing coupon associations. Safe to call repeatedly - each call resets and rebuilds the discount from scratch rather than compounding it. Does not attach a new coupon; only resyncs existing associations.
+// @Description Recalculates a draft invoice's discount from its existing coupon associations
 // @Tags Invoices
 // @x-scope "write"
 // @Accept json

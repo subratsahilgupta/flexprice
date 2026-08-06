@@ -84,8 +84,6 @@ type InvoiceService interface {
 	// total_tax / total / amount_due. Idempotent via tax-applied records.
 	RecalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error)
 
-	// RecalculateDiscountOnInvoice recomputes this draft invoice's discount from its current
-	// standing CouponAssociation records. Idempotent: wipes and rebuilds from scratch each call.
 	RecalculateDiscountOnInvoice(ctx context.Context, invoiceID string) (*dto.InvoiceResponse, error)
 }
 
