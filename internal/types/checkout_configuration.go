@@ -53,6 +53,8 @@ func (c *CheckoutConfiguration) Validate(action CheckoutAction) error {
 }
 
 type CreateSubscriptionParams struct {
+	SubscriptionID string `json:"subscription_id,omitempty"`
+
 	PlanID        string            `json:"plan_id"`
 	Currency      string            `json:"currency"`
 	LookupKey     string            `json:"lookup_key,omitempty"`
@@ -65,6 +67,15 @@ type CreateSubscriptionParams struct {
 // Validate checks that all required fields for subscription creation are present
 // and internally consistent, mirroring CreateSubscriptionRequest validation rules.
 func (p *CreateSubscriptionParams) Validate() error {
+	if p == nil {
+		return ierr.NewError("create_subscription_params is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if p.SubscriptionID != "" {
+		return nil
+	}
+
 	if p.PlanID == "" {
 		return ierr.NewError("plan_id is required").
 			WithHint("Provide a valid plan_id in create_subscription_params").
