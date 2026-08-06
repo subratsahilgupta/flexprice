@@ -1115,6 +1115,8 @@ func (s *SubscriptionServiceSuite) setupService() {
 		WalletBalanceAlertPubSub:   types.WalletBalanceAlertPubSub{PubSub: testutil.NewInMemoryPubSub()},
 		AddonRepo:                  s.GetStores().AddonRepo,
 		AddonAssociationRepo:       s.GetStores().AddonAssociationRepo,
+		CheckoutSessionRepo:        s.GetStores().CheckoutSessionRepo,
+		TaxAppliedRepo:             s.GetStores().TaxAppliedRepo,
 		ConnectionRepo:             s.GetStores().ConnectionRepo,
 		SettingsRepo:               s.GetStores().SettingsRepo,
 		EventPublisher:             s.GetPublisher(),

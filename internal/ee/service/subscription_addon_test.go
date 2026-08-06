@@ -7,12 +7,14 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
+	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -358,34 +360,6 @@ func (s *SubscriptionServiceSuite) TestAddAddon_NoCheckout_PayLaterUnchanged() {
 		"full-period attach must charge the full price, got %s", invoices[0].AmountDue)
 }
 
-// checkout + a net charge is the Phase 4 surface; until it lands the request must be refused
-// outright rather than silently attaching and billing pay-later.
-func (s *SubscriptionServiceSuite) TestAddAddon_CheckoutNetCharge_NotYetSupported() {
-	ctx := s.GetContext()
-	sub := s.testData.subscription
-	addonID := "addon_checkout_charge"
-
-	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
-
-	now := s.testData.now
-	_, err := s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
-		SubscriptionID: sub.ID,
-		Checkout:       s.razorpayCheckoutParams(),
-		AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
-			AddonID:           addonID,
-			Cadence:           types.AddonCadenceRecurring,
-			StartDate:         &now,
-			ProrationBehavior: types.ProrationBehaviorCreateProrations,
-		},
-	})
-	s.Require().Error(err)
-	s.Contains(err.Error(), "not yet supported")
-
-	s.Empty(s.addonLineItemsFor(sub.ID, addonID), "nothing may be persisted on the refused path")
-	s.Empty(s.oneOffInvoicesFor(sub.ID))
-	s.Zero(s.checkoutSessionCount())
-}
-
 // Every route to a zero net: the pay-later path raises no charge for these, so gating them
 // behind payment would ask the customer to pay nothing. They attach immediately and the
 // checkout is ignored.
@@ -591,4 +565,265 @@ func (s *SubscriptionServiceSuite) TestPendingAssociation_InvisibleToActiveReads
 		s.NotEqual(featureID, ent.FeatureID,
 			"pending association must not grant entitlements before its checkout completes")
 	}
+}
+
+// ─────────────────────────────────────────────
+// Pay-first execute
+// ─────────────────────────────────────────────
+
+// The invariant the whole design rests on: at execute time the pay-first path writes the
+// association and the DRAFT invoice and NOTHING else. Line items are what billing reads, so a
+// published addon line item here would be billed at the next rollover — including by the
+// unattended daily draft-recompute cron — for an addon the customer has not paid for.
+//
+// Driven through the pieces rather than the entry point because completing a checkout session
+// requires a live Razorpay call, which the test suite has no connection for.
+func (s *SubscriptionServiceSuite) TestAddAddon_CheckoutNetCharge_PersistsOnlyPendingAssociation() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	sub := s.testData.subscription
+	addonID := "addon_payfirst_only_pending"
+
+	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+
+	now := s.testData.now
+	req := &dto.AddAddonToSubscriptionRequest{
+		AddonID:           addonID,
+		Cadence:           types.AddonCadenceRecurring,
+		StartDate:         &now,
+		ProrationBehavior: types.ProrationBehaviorCreateProrations,
+	}
+
+	plan, err := subService.createAddonAttachParams(ctx, sub, req, nil)
+	s.Require().NoError(err)
+
+	summary, err := subService.calculateAddonProration(ctx, plan)
+	s.Require().NoError(err)
+	s.True(summary.TotalChargeAmount.GreaterThan(decimal.Zero),
+		"a mid-period fixed ADVANCE addon must produce a charge to gate on")
+
+	// Planning alone must not have written anything.
+	s.Empty(s.addonLineItemsFor(sub.ID, addonID), "planning must not persist line items")
+
+	pending := plan.getAssociation()
+	pending.AddonStatus = types.AddonStatusPending
+	s.Require().NoError(s.GetStores().AddonAssociationRepo.Create(ctx, pending))
+
+	draft, err := subService.createAddonProrationDraftInvoice(ctx, plan, summary)
+	s.Require().NoError(err)
+
+	s.Equal(types.InvoiceStatusDraft, draft.InvoiceStatus)
+	s.Equal(types.InvoiceTypeOneOff, draft.InvoiceType)
+	s.True(summary.TotalChargeAmount.Equal(draft.AmountDue),
+		"the draft must lock exactly the computed proration, got %s want %s",
+		draft.AmountDue, summary.TotalChargeAmount)
+
+	// Everything that must NOT exist yet.
+	s.Empty(s.addonLineItemsFor(sub.ID, addonID), "pay-first must defer line items to completion")
+
+	grantFilter := types.NewNoLimitCreditGrantFilter()
+	grantFilter.SubscriptionIDs = []string{sub.ID}
+	grants, err := subService.CreditGrantRepo.List(ctx, grantFilter)
+	s.Require().NoError(err)
+	for _, g := range grants {
+		s.NotEqual(addonID, lo.FromPtr(g.AddonID), "pay-first must not materialize addon credit grants")
+	}
+
+	stored, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, pending.ID)
+	s.Require().NoError(err)
+	s.Equal(types.AddonStatusPending, stored.AddonStatus)
+}
+
+// The highest-value assertion in the plan: a pending association must be invisible to the
+// billing engine. Billing reads subscription_line_items and never addon_associations, so this
+// guards the chokepoint at billing.go's line-item load — if pay-first ever started creating
+// line items, this is what would catch it.
+func (s *SubscriptionServiceSuite) TestAddAddon_PendingIsInvisibleToBilling() {
+	ctx := s.GetContext()
+	sub := s.testData.subscription
+	addonID := "addon_pending_billing"
+
+	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	s.seedPendingAddonAssociation("assoc_pending_billing", addonID, sub.ID, nil)
+
+	billingSvc := NewBillingService(s.service.(*subscriptionService).ServiceParams)
+	invoiceReq, err := billingSvc.PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription:   sub,
+		PeriodStart:    sub.CurrentPeriodStart,
+		PeriodEnd:      sub.CurrentPeriodEnd,
+		ReferencePoint: types.ReferencePointPeriodEnd,
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(invoiceReq)
+
+	addonPriceID := "price_" + addonID
+	for _, li := range invoiceReq.LineItems {
+		s.NotEqual(addonPriceID, lo.FromPtr(li.PriceID),
+			"a pending addon must not be billed before its checkout completes")
+	}
+}
+
+// Both payment-gated subscription flows mutually exclude, in both directions: either can
+// invalidate the amount the other has locked on its draft invoice.
+func (s *SubscriptionServiceSuite) TestAddAddon_CheckoutConcurrentGuard() {
+	seedSession := func(action types.CheckoutAction, subscriptionID string) {
+		ctx := s.GetContext()
+		cfg := types.CheckoutConfiguration{}
+		switch action {
+		case types.CheckoutActionAddAddon:
+			cfg.AddAddonParams = &types.AddAddonParams{
+				SubscriptionID: subscriptionID,
+				Addons: []types.AddAddonRef{{
+					AssociationID: "addon_assoc_outstanding",
+					AddonID:       "addon_outstanding",
+					Cadence:       types.AddonCadenceRecurring,
+					StartDate:     s.testData.now,
+				}},
+			}
+		case types.CheckoutActionModifySubscription:
+			cfg.ModifySubscriptionParams = &types.ModifySubscriptionParams{
+				SubscriptionID: subscriptionID,
+				LineItemModifications: []types.ModifySubscriptionLineItem{
+					{LineItemID: "subs_li_outstanding", Quantity: decimal.NewFromInt(2)},
+				},
+			}
+		}
+
+		s.Require().NoError(s.GetStores().CheckoutSessionRepo.Create(ctx, &domainCheckout.CheckoutSession{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
+			EnvironmentID:   types.GetEnvironmentID(ctx),
+			CustomerID:      s.testData.customer.ID,
+			Action:          action,
+			CheckoutStatus:  types.CheckoutStatusPending,
+			PaymentProvider: types.CheckoutPaymentProviderRazorpay,
+			Configuration:   domainCheckout.ToJSONBCheckoutConfiguration(cfg),
+			ExpiresAt:       time.Now().UTC().Add(time.Hour),
+			BaseModel:       types.GetDefaultBaseModel(ctx),
+		}))
+	}
+
+	tests := []struct {
+		name           string
+		outstanding    types.CheckoutAction
+		onSubscription bool
+		wantBlocked    bool
+	}{
+		{name: "pending add_addon blocks", outstanding: types.CheckoutActionAddAddon, onSubscription: true, wantBlocked: true},
+		{name: "pending modify_subscription blocks", outstanding: types.CheckoutActionModifySubscription, onSubscription: true, wantBlocked: true},
+		{name: "session on another subscription does not block", outstanding: types.CheckoutActionAddAddon, onSubscription: false, wantBlocked: false},
+	}
+
+	for i, tc := range tests {
+		s.Run(tc.name, func() {
+			ctx := s.GetContext()
+			// s.Run does not re-run SetupTest, so sessions seeded by earlier cases would
+			// otherwise linger on this subscription and trip the guard for every case.
+			s.GetStores().CheckoutSessionRepo.(*testutil.InMemoryCheckoutSessionStore).Clear()
+
+			sub := s.testData.subscription
+			addonID := fmt.Sprintf("addon_guard_%d", i)
+			s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+
+			target := sub.ID
+			if !tc.onSubscription {
+				target = "subs_unrelated_guard"
+			}
+			seedSession(tc.outstanding, target)
+
+			now := s.testData.now
+			_, err := s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+				SubscriptionID: sub.ID,
+				Checkout:       s.razorpayCheckoutParams(),
+				AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
+					AddonID:           addonID,
+					Cadence:           types.AddonCadenceRecurring,
+					StartDate:         &now,
+					ProrationBehavior: types.ProrationBehaviorCreateProrations,
+				},
+			})
+			s.Require().Error(err, "the provider is unreachable in tests, so this always errors")
+
+			if tc.wantBlocked {
+				s.True(ierr.IsAlreadyExists(err), "expected the concurrent guard, got %v", err)
+				// The guard runs before any write.
+				s.Empty(s.addonLineItemsFor(sub.ID, addonID))
+				s.Empty(s.oneOffInvoicesFor(sub.ID), "guard must reject before creating a draft")
+				return
+			}
+
+			s.False(ierr.IsAlreadyExists(err),
+				"a session on another subscription must not trip the guard, got %v", err)
+		})
+	}
+}
+
+// When session creation fails after the pending association is written, the association must
+// not survive as an orphan a later webhook could activate.
+//
+// Triggered the same way wallet top-up tests trigger it: a session already holds this
+// idempotency key. Its configuration names a DIFFERENT subscription, so the concurrent guard
+// does not fire and the failure lands in CheckoutSessionRepo.Create — after the pending
+// association and the draft invoice exist, which is precisely the window the rollback covers.
+func (s *SubscriptionServiceSuite) TestAddAddon_CheckoutSessionCreateFailure_ArchivesPendingAssociation() {
+	ctx := s.GetContext()
+	sub := s.testData.subscription
+	addonID := "addon_payfirst_rollback"
+
+	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+
+	idempKey := "addon-attach-orphan-idemp-key"
+	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Create(ctx, &domainCheckout.CheckoutSession{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
+		EnvironmentID:   types.GetEnvironmentID(ctx),
+		CustomerID:      s.testData.customer.ID,
+		Action:          types.CheckoutActionAddAddon,
+		CheckoutStatus:  types.CheckoutStatusPending,
+		PaymentProvider: types.CheckoutPaymentProviderRazorpay,
+		Configuration: domainCheckout.ToJSONBCheckoutConfiguration(types.CheckoutConfiguration{
+			AddAddonParams: &types.AddAddonParams{
+				SubscriptionID: "subs_some_other_subscription",
+				Addons: []types.AddAddonRef{{
+					AssociationID: "addon_assoc_other",
+					AddonID:       "addon_other",
+					Cadence:       types.AddonCadenceRecurring,
+					StartDate:     s.testData.now,
+				}},
+			},
+		}),
+		IdempotencyKey: &idempKey,
+		ExpiresAt:      time.Now().UTC().Add(time.Hour),
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}))
+
+	checkout := s.razorpayCheckoutParams()
+	checkout.IdempotencyKey = &idempKey
+
+	now := s.testData.now
+	_, err := s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+		SubscriptionID: sub.ID,
+		Checkout:       checkout,
+		AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
+			AddonID:           addonID,
+			Cadence:           types.AddonCadenceRecurring,
+			StartDate:         &now,
+			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+		},
+	})
+	s.Require().Error(err)
+
+	// Asserted on the row itself rather than through a status filter: the in-memory
+	// association store only applies the published/archived filter inside its time-window
+	// branch, so a status-scoped List would not distinguish the two here.
+	assocFilter := types.NewNoLimitAddonAssociationFilter()
+	assocFilter.EntityIDs = []string{sub.ID}
+	assocFilter.AddonIDs = []string{addonID}
+	associations, listErr := s.GetStores().AddonAssociationRepo.List(ctx, assocFilter)
+	s.Require().NoError(listErr)
+	s.Require().Len(associations, 1, "the pending association must have been written before the failure")
+	s.Equal(types.StatusArchived, associations[0].Status,
+		"the pending association must be archived when pay-first setup fails")
+	s.Equal(types.AddonStatusPending, associations[0].AddonStatus,
+		"the soft delete leaves addon_status untouched, matching the ent repository")
+
+	s.Empty(s.addonLineItemsFor(sub.ID, addonID), "a failed pay-first must leave no line items")
 }
