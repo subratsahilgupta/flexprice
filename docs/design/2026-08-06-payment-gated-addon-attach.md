@@ -63,7 +63,7 @@ Net effect: the association carries the identity, the line items stay unborn. Th
 
 The attach is split so both branches consume **one** resolution, mirroring `buildQuantityChangeRequest → calculateProration → settle*`:
 
-```
+```text
 createAddonAttachParams  → resolves validations, prices, association, line items. Writes nothing.
 calculateAddonProration  → prices those exact line items.
 persistAddonAttach       → writes association + line items + bucket prices + credit grants. Raises no charge.

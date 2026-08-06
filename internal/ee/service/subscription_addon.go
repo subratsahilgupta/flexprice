@@ -61,8 +61,6 @@ func (p *addonAttachParams) getLineItems() []*subscription.SubscriptionLineItem 
 	return p.lineItems
 }
 
-// getRequestedStart is the resolved attach date. It must be carried into AddAddonParams so a
-// completion replay rebuilds line items for the same day the draft invoice was priced for.
 func (p *addonAttachParams) getRequestedStart() time.Time {
 	if p == nil {
 		return time.Time{}
@@ -70,8 +68,6 @@ func (p *addonAttachParams) getRequestedStart() time.Time {
 	return p.requestedStart
 }
 
-// getEffectiveDate is the date the proration charge is priced from: the latest line item start,
-// which createLineItemFromPrice may clamp past the requested start.
 func (p *addonAttachParams) getEffectiveDate() time.Time {
 	if p == nil {
 		return time.Time{}
@@ -79,17 +75,36 @@ func (p *addonAttachParams) getEffectiveDate() time.Time {
 	return p.effectiveDate
 }
 
-// prorationIdempotencyKey is stable across retries so a duplicate charge cannot be created.
-func (p *addonAttachParams) prorationIdempotencyKey() string {
+// getBucketCfgs is keyed by LINE ITEM ID, matching applyLineItemCommitmentFromMap's contract.
+func (p *addonAttachParams) getBucketCfgs() map[string]*dto.LineItemCommitmentConfig {
 	if p == nil {
-		return ""
+		return nil
 	}
-	return fmt.Sprintf("addon_add_%s_%d", p.association.ID, p.effectiveDate.Unix())
+	return p.bucketCfgs
 }
 
-// calculateAddonProration prices a planned attach without persisting anything. The plan's line
-// items are the same objects persistAddonAttach would write, so the preview and the pay-later
-// charge cannot disagree.
+func (p *addonAttachParams) getPriceMap() map[string]*dto.PriceResponse {
+	if p == nil {
+		return nil
+	}
+	return p.priceMap
+}
+
+func (p *addonAttachParams) isReplayAttach() bool {
+	if p == nil {
+		return false
+	}
+	return p.isReplay
+}
+
+func (p *addonAttachParams) prorationIdempotencyKey() string {
+	association := p.getAssociation()
+	if association == nil {
+		return ""
+	}
+	return fmt.Sprintf("addon_add_%s_%d", association.ID, p.getEffectiveDate().Unix())
+}
+
 func (s *subscriptionService) calculateAddonProration(
 	ctx context.Context,
 	params *addonAttachParams,
@@ -172,9 +187,6 @@ func (s *subscriptionService) settleAddAddonPayFirst(
 		return nil, err
 	}
 
-	// StartPayFirstCheckoutSession already archives the draft on session-create failure and
-	// runs cleanupCheckoutSession on fulfil failure, so the pending association is the only
-	// thing this path has to unwind itself.
 	checkoutSvc := NewCheckoutSessionService(s.ServiceParams)
 	sessionResp, err := checkoutSvc.StartPayFirstCheckoutSession(ctx, &dto.PayFirstCheckoutRequest{
 		CustomerID: sub.CustomerID,
@@ -190,7 +202,6 @@ func (s *subscriptionService) settleAddAddonPayFirst(
 		return nil, err
 	}
 
-	// Re-fetch for the response so amounts reflect compute.
 	latestInvoice, invErr := NewInvoiceService(s.ServiceParams).GetInvoice(ctx, draftInvoice.ID)
 	if invErr != nil {
 		latestInvoice = draftInvoice

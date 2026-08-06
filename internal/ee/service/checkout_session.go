@@ -179,7 +179,7 @@ func (s *checkoutSessionService) cleanupCheckoutSession(ctx context.Context, ses
 			}
 		}
 	}
-	
+
 	if cfg := session.Configuration.ToCheckoutConfiguration(); cfg.AddAddonParams != nil {
 		for _, ref := range cfg.AddAddonParams.Addons {
 			association, err := s.AddonAssociationRepo.GetByID(ctx, ref.AssociationID)

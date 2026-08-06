@@ -1575,6 +1575,7 @@ func (s *subscriptionService) addonCreditGrantProration(
 		PeriodEnd:     p.End,
 		ProrationDate: startDate,
 		Strategy:      types.StrategySecondBased,
+		Source:        "addon_attach",
 	}
 }
 
@@ -5024,14 +5025,14 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 			Mark(ierr.ErrValidation)
 	}
 
-	sub := params.subscription
-	req := params.request
-	addonAssociation := params.association
-	lineItems := params.lineItems
-	lineItemBucketCfgs := params.bucketCfgs
-	priceMap := params.priceMap
-	addonRequestedStart := params.requestedStart
-	existing := params.isReplay
+	sub := params.getSubscription()
+	req := params.getRequest()
+	addonAssociation := params.getAssociation()
+	lineItems := params.getLineItems()
+	lineItemBucketCfgs := params.getBucketCfgs()
+	priceMap := params.getPriceMap()
+	addonRequestedStart := params.getRequestedStart()
+	existing := params.isReplayAttach()
 
 	creditGrantProration := s.addonCreditGrantProration(ctx, sub, addonRequestedStart, req.ProrationBehavior)
 
@@ -5081,17 +5082,21 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 // settleAddonAttachPayLater raises the mid-period proration charge for an already-persisted
 // attach. Failure is logged, not returned: the addon is live and must not be rolled back.
 func (s *subscriptionService) settleAddonAttachPayLater(ctx context.Context, params *addonAttachParams) {
+	sub := params.getSubscription()
+	req := params.getRequest()
+	association := params.getAssociation()
+	effectiveDate := params.getEffectiveDate()
 	key := params.prorationIdempotencyKey()
 
 	if err := s.applyAddonAddProration(
-		ctx, params.subscription, params.lineItems, params.effectiveDate, params.request.ProrationBehavior, key,
+		ctx, sub, params.getLineItems(), effectiveDate, req.ProrationBehavior, key,
 	); err != nil {
 		s.Logger.Error(ctx, "failed to create proration invoice for addon add; addon was persisted and is UNBILLED for this period",
 			"error", err,
-			"association_id", params.association.ID,
-			"addon_id", params.request.AddonID,
-			"subscription_id", params.subscription.ID,
-			"effective_date", params.effectiveDate,
+			"association_id", association.ID,
+			"addon_id", req.AddonID,
+			"subscription_id", sub.ID,
+			"effective_date", effectiveDate,
 			"idempotency_key", key,
 		)
 	}
