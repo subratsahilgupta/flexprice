@@ -62,7 +62,7 @@ func (s *invoiceService) RecalculateDiscountOnInvoice(ctx context.Context, invoi
 		taxFilter.EntityID = inv.ID
 		taxAppliedCount, err := s.TaxAppliedRepo.Count(txCtx, taxFilter)
 		if err != nil {
-			return ierr.WithError(err).WithHint("failed to check existing tax applications").Mark(ierr.ErrDatabase)
+			return err
 		}
 		if taxAppliedCount > 0 {
 			if err := s.applyTaxesToInvoice(txCtx, inv, dto.InvoiceComputeRequest{}); err != nil {
