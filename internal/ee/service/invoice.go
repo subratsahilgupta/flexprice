@@ -3631,16 +3631,6 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 			return err
 		}
 
-		if inv.InvoiceStatus != types.InvoiceStatusDraft {
-			return ierr.NewError("cannot update invoice in current status").
-				WithHint("Invoice can only be updated when in draft status").
-				WithReportableDetails(map[string]any{
-					"invoice_id":     id,
-					"current_status": inv.InvoiceStatus,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-
 		if req.InvoicePDFURL != nil {
 			inv.InvoicePDFURL = req.InvoicePDFURL
 		}
