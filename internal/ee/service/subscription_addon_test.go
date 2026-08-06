@@ -951,8 +951,8 @@ func (s *SubscriptionServiceSuite) TestCompleteAddAddonCheckout_ReplayIsIdempote
 
 	// Applied directly, twice, so the second call is not short-circuited by the session's own
 	// terminal-status guard — this isolates the association-level replay guard.
-	s.Require().NoError(subService.applyAddAddonParams(ctx, cfg.AddAddonParams))
-	s.Require().NoError(subService.applyAddAddonParams(ctx, cfg.AddAddonParams))
+	s.Require().NoError(subService.applyAddAddonCheckoutParams(ctx, cfg.AddAddonParams))
+	s.Require().NoError(subService.applyAddAddonCheckoutParams(ctx, cfg.AddAddonParams))
 
 	s.Len(s.addonLineItemsFor(sub.ID, addonID), 1, "a replay must not duplicate line items")
 
@@ -983,7 +983,7 @@ func (s *SubscriptionServiceSuite) TestCompleteAddAddonCheckout_SubscriptionCanc
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
 
 	cfg := session.Configuration.ToCheckoutConfiguration()
-	err := subService.applyAddAddonParams(ctx, cfg.AddAddonParams)
+	err := subService.applyAddAddonCheckoutParams(ctx, cfg.AddAddonParams)
 	s.Require().Error(err)
 	s.True(ierr.IsValidation(err))
 
@@ -1044,7 +1044,7 @@ func (s *SubscriptionServiceSuite) TestAddAddonCheckout_CleanupLeavesActivatedAs
 	session, pending, _ := s.seedPayFirstAddonCheckout(addonID)
 
 	cfg := session.Configuration.ToCheckoutConfiguration()
-	s.Require().NoError(subService.applyAddAddonParams(ctx, cfg.AddAddonParams))
+	s.Require().NoError(subService.applyAddAddonCheckoutParams(ctx, cfg.AddAddonParams))
 
 	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
 	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
