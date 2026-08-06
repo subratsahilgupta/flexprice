@@ -410,12 +410,10 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 	originalStatus := cn.CreditNoteStatus
 
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
-		if originalStatus == types.CreditNoteStatusFinalized {
 			// Lock to serialize against a concurrent finalize/void on the same invoice.
 			if _, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID); err != nil {
 				return err
 			}
-		}
 
 		cn.CreditNoteStatus = types.CreditNoteStatusVoided
 		if err := s.CreditNoteRepo.Update(tx, cn); err != nil {
