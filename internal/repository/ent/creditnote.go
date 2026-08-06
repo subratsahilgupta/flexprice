@@ -94,6 +94,15 @@ func (r *creditnoteRepository) Create(ctx context.Context, cn *domainCreditNote.
 						}).
 						Mark(ierr.ErrAlreadyExists)
 				}
+				if pqErr.Constraint == schema.Idx_tenant_environment_creditnote_idempotency_key_unique {
+					return ierr.WithError(err).
+						WithHint("Credit note with same idempotency key already exists").
+						WithReportableDetails(map[string]any{
+							"creditnote_id":   cn.ID,
+							"idempotency_key": lo.FromPtr(cn.IdempotencyKey),
+						}).
+						Mark(ierr.ErrAlreadyExists)
+				}
 			}
 
 			return ierr.WithError(err).
@@ -170,6 +179,15 @@ func (r *creditnoteRepository) CreateWithLineItems(ctx context.Context, cn *doma
 							WithReportableDetails(map[string]any{
 								"creditnote_id":     cn.ID,
 								"creditnote_number": cn.CreditNoteNumber,
+							}).
+							Mark(ierr.ErrAlreadyExists)
+					}
+					if pqErr.Constraint == schema.Idx_tenant_environment_creditnote_idempotency_key_unique {
+						return ierr.WithError(err).
+							WithHint("Credit note with same idempotency key already exists").
+							WithReportableDetails(map[string]any{
+								"creditnote_id":   cn.ID,
+								"idempotency_key": lo.FromPtr(cn.IdempotencyKey),
 							}).
 							Mark(ierr.ErrAlreadyExists)
 					}
@@ -534,7 +552,6 @@ func (r *creditnoteRepository) GetByIdempotencyKey(ctx context.Context, key stri
 			creditnote.EnvironmentID(types.GetEnvironmentID(ctx)),
 			creditnote.TenantID(types.GetTenantID(ctx)),
 			creditnote.Status(string(types.StatusPublished)),
-			creditnote.CreditNoteStatus(types.CreditNoteStatusFinalized),
 		).
 		First(ctx)
 	if err != nil {

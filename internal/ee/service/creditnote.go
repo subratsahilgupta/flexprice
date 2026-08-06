@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -56,6 +58,7 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 	}
 
 	var creditNote *creditnote.CreditNote
+	isNewCreditNote := false
 
 	// Start transaction
 	err := s.DB.WithTx(ctx, func(tx context.Context) error {
@@ -81,21 +84,10 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 			return err
 		}
 
-		// Generate credit note number if not provided
-		if req.CreditNoteNumber == "" {
-			req.CreditNoteNumber = types.GenerateShortIDWithPrefix(types.SHORT_ID_PREFIX_CREDIT_NOTE)
-		}
-
-		// Check if credit note number is unique
+		// Must run before number generation below - the number is random per
+		// call and would break retry matching if hashed.
 		if req.IdempotencyKey == nil {
-			generator := idempotency.NewGenerator()
-			key := generator.GenerateKey(idempotency.ScopeCreditNote, map[string]any{
-				"invoice_id":         req.InvoiceID,
-				"credit_note_number": req.CreditNoteNumber,
-				"reason":             req.Reason,
-				"credit_note_type":   creditNoteType,
-			})
-			req.IdempotencyKey = lo.ToPtr(key)
+			req.IdempotencyKey = lo.ToPtr(s.generateCreditNoteIdempotencyKey(req, creditNoteType))
 		}
 
 		// Check if idempotency key is already used
@@ -106,6 +98,11 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 				"existing_credit_note_id", existingCreditNote.ID)
 			creditNote = existingCreditNote
 			return nil
+		}
+
+		// Generate credit note number if not provided
+		if req.CreditNoteNumber == "" {
+			req.CreditNoteNumber = types.GenerateShortIDWithPrefix(types.SHORT_ID_PREFIX_CREDIT_NOTE)
 		}
 
 		// Convert request to domain model
@@ -132,6 +129,7 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 
 		// Convert to response
 		creditNote = cn
+		isNewCreditNote = true
 		return nil
 	})
 
@@ -145,11 +143,13 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 		return nil, err
 	}
 
-	// Publish webhook event after successful transaction
-	s.publishSystemEvent(ctx, types.WebhookEventCreditNoteCreated, creditNote.ID)
+	// Only a genuine insert is a "created" event - an idempotent cache hit
+	// must not re-publish or re-finalize an already-processed credit note.
+	if isNewCreditNote {
+		s.publishSystemEvent(ctx, types.WebhookEventCreditNoteCreated, creditNote.ID)
+	}
 
-	// Finalize the credit note if the flag is set
-	if req.ProcessCreditNote {
+	if req.ProcessCreditNote && creditNote.CreditNoteStatus == types.CreditNoteStatusDraft {
 		if err := s.FinalizeCreditNote(ctx, creditNote.ID); err != nil {
 			return nil, err
 		}
@@ -164,6 +164,25 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 	return &dto.CreditNoteResponse{
 		CreditNote: updatedCreditNote,
 	}, nil
+}
+
+// generateCreditNoteIdempotencyKey hashes stable request content only;
+// credit_note_number is excluded since it's random per call.
+func (s *creditNoteService) generateCreditNoteIdempotencyKey(req *dto.CreateCreditNoteRequest, creditNoteType types.CreditNoteType) string {
+	lineItems := make([]string, len(req.LineItems))
+	for i, li := range req.LineItems {
+		lineItems[i] = fmt.Sprintf("%s:%s", li.InvoiceLineItemID, li.Amount.String())
+	}
+	sort.Strings(lineItems)
+
+	generator := idempotency.NewGenerator()
+	return generator.GenerateKey(idempotency.ScopeCreditNote, map[string]any{
+		"invoice_id":          req.InvoiceID,
+		"reason":              req.Reason,
+		"credit_note_type":    creditNoteType,
+		"line_items":          strings.Join(lineItems, "|"),
+		"process_credit_note": req.ProcessCreditNote,
+	})
 }
 
 func (s *creditNoteService) GetCreditNote(ctx context.Context, id string) (*dto.CreditNoteResponse, error) {
@@ -409,26 +428,41 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 	// Store original status for logging
 	originalStatus := cn.CreditNoteStatus
 
-	// Update credit note status to voided
-	cn.CreditNoteStatus = types.CreditNoteStatusVoided
+	err = s.DB.WithTx(ctx, func(tx context.Context) error {
+			// Lock to serialize against a concurrent finalize/void on the same invoice.
+			if _, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID); err != nil {
+				return err
+			}
 
-	if err := s.CreditNoteRepo.Update(ctx, cn); err != nil {
-		return err
-	}
+		cn.CreditNoteStatus = types.CreditNoteStatusVoided
+		if err := s.CreditNoteRepo.Update(tx, cn); err != nil {
+			return err
+		}
 
-	// Recalculate invoice amounts after credit note void
-	// This is needed to update the adjustment and refunded amounts
-	if originalStatus == types.CreditNoteStatusFinalized {
-		invoiceService := NewInvoiceService(s.ServiceParams)
-		if err := invoiceService.RecalculateInvoiceAmounts(ctx, cn.InvoiceID); err != nil {
-			s.Logger.Error(ctx, "failed to recalculate invoice amounts after credit note void",
+		if originalStatus == types.CreditNoteStatusFinalized {
+			// Status must be persisted as Voided before this runs: RecalculateInvoiceAmounts
+			// sums all Finalized credit notes, and would otherwise still count this one.
+			invoiceService := NewInvoiceService(s.ServiceParams)
+			if err := invoiceService.RecalculateInvoiceAmounts(tx, cn.InvoiceID); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		if ierr.IsValidation(err) {
+			s.Logger.Info(ctx, "credit note void rejected", "error", err, "credit_note_id", cn.ID)
+		} else {
+			s.Logger.Error(ctx, "failed to void credit note",
 				"error", err,
 				"credit_note_id", cn.ID,
 				"invoice_id", cn.InvoiceID)
 		}
+		return err
 	}
 
-	// Publish webhook event after successful update
+	// Publish webhook event after successful transaction
 	s.publishSystemEvent(ctx, types.WebhookEventCreditNoteUpdated, cn.ID)
 
 	s.Logger.Info(ctx, "credit note voided successfully",
@@ -436,6 +470,16 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 		"previous_status", originalStatus)
 
 	return nil
+}
+
+func creditNoteAlreadyProcessedError(status types.CreditNoteStatus) error {
+	return ierr.NewError("credit note already processed").
+		WithHintf("This credit note is %s and cannot be processed again. Only draft credit notes can be finalized.", status).
+		WithReportableDetails(map[string]any{
+			"current_status":  status,
+			"required_status": types.CreditNoteStatusDraft,
+		}).
+		Mark(ierr.ErrValidation)
 }
 
 func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) error {
@@ -451,13 +495,7 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 	}
 
 	if cn.CreditNoteStatus != types.CreditNoteStatusDraft {
-		return ierr.NewError("credit note already processed").
-			WithHintf("This credit note is %s and cannot be processed again. Only draft credit notes can be finalized.", cn.CreditNoteStatus).
-			WithReportableDetails(map[string]any{
-				"current_status":  cn.CreditNoteStatus,
-				"required_status": types.CreditNoteStatusDraft,
-			}).
-			Mark(ierr.ErrValidation)
+		return creditNoteAlreadyProcessedError(cn.CreditNoteStatus)
 	}
 
 	// Additional validation before processing
@@ -474,7 +512,41 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 
 	// Process the credit note in transaction
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
-		// Update credit note status first
+		// Lock before any write so a concurrent finalize can't race the capacity check below.
+		lockedInv, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID)
+		if err != nil {
+			return err
+		}
+
+		// Re-fetch under the lock: a concurrent finalize of this exact credit note may have
+		// already committed while this call was waiting on the invoice lock.
+		cn, err = s.CreditNoteRepo.Get(tx, cn.ID)
+		if err != nil {
+			return err
+		}
+		if cn.CreditNoteStatus != types.CreditNoteStatusDraft {
+			return creditNoteAlreadyProcessedError(cn.CreditNoteStatus)
+		}
+
+		// Re-check capacity under the lock: another credit note may have consumed it since draft
+		// creation. Use cn's own type, not the invoice's current derived type, which may have
+		// drifted (e.g. payment succeeded after this draft was created as an adjustment).
+		maxCreditableAmount := s.calculateMaxCreditableAmount(tx, lockedInv, cn.CreditNoteType)
+		if cn.TotalAmount.GreaterThan(maxCreditableAmount) {
+			return ierr.NewError("credit amount exceeds available limit").
+				WithHintf(
+					"This credit note is for %s, but only %s is currently available to credit against this invoice. Another credit note may have been finalized against it since this one was created.",
+					cn.TotalAmount, maxCreditableAmount,
+				).
+				WithReportableDetails(map[string]any{
+					"credit_note_id":   cn.ID,
+					"requested_amount": cn.TotalAmount,
+					"maximum_allowed":  maxCreditableAmount,
+					"invoice_id":       lockedInv.ID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
 		cn.CreditNoteStatus = types.CreditNoteStatusFinalized
 		if err := s.CreditNoteRepo.Update(tx, cn); err != nil {
 			return err
@@ -482,21 +554,15 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 
 		// Handle refund credit notes (wallet top-up logic)
 		if cn.CreditNoteType == types.CreditNoteTypeRefund {
-			// Get invoice using transaction context
-			inv, err := s.InvoiceRepo.Get(tx, cn.InvoiceID)
-			if err != nil {
-				return err
-			}
-
 			// Find or create wallet using transaction context
-			wallets, err := walletService.GetWalletsByCustomerID(tx, inv.CustomerID)
+			wallets, err := walletService.GetWalletsByCustomerID(tx, lockedInv.CustomerID)
 			if err != nil {
 				return err
 			}
 
 			var selectedWallet *dto.WalletResponse
 			for _, w := range wallets {
-				if types.IsMatchingCurrency(w.Currency, inv.Currency) {
+				if types.IsMatchingCurrency(w.Currency, lockedInv.Currency) {
 					selectedWallet = w
 					break
 				}
@@ -504,8 +570,8 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			if selectedWallet == nil {
 				// Create new wallet using transaction context
 				walletReq := &dto.CreateWalletRequest{
-					CustomerID:     inv.CustomerID,
-					Currency:       inv.Currency,
+					CustomerID:     lockedInv.CustomerID,
+					Currency:       lockedInv.Currency,
 					ConversionRate: decimal.NewFromInt(1), // Set default conversion rate to avoid division by zero
 					WalletType:     types.WalletTypePrePaid,
 				}
@@ -531,24 +597,23 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			}
 		}
 
-		// Recalculate invoice amounts after credit note finalization
-		// This is needed to update the adjustment and refunded amounts
-		inv, err := s.InvoiceRepo.Get(ctx, cn.InvoiceID)
-		if err != nil {
+		// Same tx as the wallet top-up above, so both commit/roll back together.
+		if err := s.RecalculateInvoiceAmountsForCreditNote(tx, lockedInv, cn); err != nil {
 			return err
-		}
-
-		if err := s.RecalculateInvoiceAmountsForCreditNote(ctx, inv, cn); err != nil {
-			s.Logger.Error(ctx, "failed to recalculate invoice amounts after credit note finalization",
-				"error", err,
-				"credit_note_id", cn.ID,
-				"invoice_id", cn.InvoiceID)
 		}
 
 		return nil
 	})
 
 	if err != nil {
+		if ierr.IsValidation(err) {
+			s.Logger.Info(ctx, "credit note finalize rejected", "error", err, "credit_note_id", cn.ID)
+		} else {
+			s.Logger.Error(ctx, "failed to finalize credit note",
+				"error", err,
+				"credit_note_id", cn.ID,
+				"invoice_id", cn.InvoiceID)
+		}
 		return err
 	}
 
@@ -616,11 +681,12 @@ func (s *creditNoteService) validateInvoiceEligibility(ctx context.Context, invo
 
 // validateCreditNoteAmounts validates credit note amounts and line items
 func (s *creditNoteService) validateCreditNoteAmounts(ctx context.Context, req *dto.CreateCreditNoteRequest, inv *invoice.Invoice) error {
-	// Determine the max creditable amount
-	maxCreditableAmount, err := s.calculateMaxCreditableAmount(ctx, inv)
+	creditNoteType, err := s.getCreditNoteType(inv)
 	if err != nil {
 		return err
 	}
+
+	maxCreditableAmount := s.calculateMaxCreditableAmount(ctx, inv, creditNoteType)
 
 	// Validate line items and calculate total amount
 	totalCreditNoteAmount, err := s.validateLineItems(req, inv)
@@ -630,9 +696,6 @@ func (s *creditNoteService) validateCreditNoteAmounts(ctx context.Context, req *
 
 	// Check if total amount exceeds max creditable amount
 	if totalCreditNoteAmount.GreaterThan(maxCreditableAmount) {
-		// Determine credit note type for better messaging
-		creditNoteType, _ := s.getCreditNoteType(inv)
-
 		var messageTemplate string
 		if creditNoteType == types.CreditNoteTypeRefund {
 			messageTemplate = "You can only refund up to %s for this invoice. You're trying to refund %s, but only %s is available based on payments received."
@@ -658,13 +721,8 @@ func (s *creditNoteService) validateCreditNoteAmounts(ctx context.Context, req *
 	return nil
 }
 
-// calculateMaxCreditableAmount calculates the maximum amount that can be credited using stored amounts
-func (s *creditNoteService) calculateMaxCreditableAmount(ctx context.Context, inv *invoice.Invoice) (decimal.Decimal, error) {
-	creditNoteType, err := s.getCreditNoteType(inv)
-	if err != nil {
-		return decimal.Zero, err
-	}
-
+// calculateMaxCreditableAmount calculates the maximum amount creditable for the given type, using stored amounts
+func (s *creditNoteService) calculateMaxCreditableAmount(ctx context.Context, inv *invoice.Invoice, creditNoteType types.CreditNoteType) decimal.Decimal {
 	// Calculate max creditable amount based on credit note type using stored amounts
 	var maxCreditableAmount decimal.Decimal
 	if creditNoteType == types.CreditNoteTypeRefund {
@@ -693,7 +751,7 @@ func (s *creditNoteService) calculateMaxCreditableAmount(ctx context.Context, in
 		"invoice_refunded_amount", inv.RefundedAmount,
 		"max_creditable_amount", maxCreditableAmount)
 
-	return maxCreditableAmount, nil
+	return maxCreditableAmount
 }
 
 // validateLineItems validates credit note line items against invoice line items

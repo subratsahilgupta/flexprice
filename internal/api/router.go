@@ -91,6 +91,7 @@ func NewRouter(
 		middleware.DBWriterPinMiddleware,     // Per-request read-your-writes pin for DB routing
 		middleware.LoggingMiddleware(logger), // Use our standard logger for HTTP logging
 		middleware.CORSMiddleware,
+		middleware.SecurityHeadersMiddleware, // nosniff / frame-deny / referrer / CSP / permissions
 	)
 	// Tracing middleware creates the otelgin span per request (SigNoz / OTLP).
 	// Each handler is added separately because gin's Use signature is variadic
@@ -450,7 +451,6 @@ func NewRouter(
 
 		tasks := v1Private.Group("/tasks")
 		{
-			tasks.POST("", write(types.EntityTask, types.ActionWrite), handlers.Task.CreateTask)
 			tasks.GET("", handlers.Task.ListTasks)
 			tasks.GET("/:id", handlers.Task.GetTask)
 			tasks.PUT("/:id/status", write(types.EntityTask, types.ActionWrite), handlers.Task.UpdateTaskStatus)

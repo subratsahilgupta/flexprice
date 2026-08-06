@@ -340,8 +340,63 @@ func (s *couponApplicationService) ApplyCouponsToInvoice(ctx context.Context, re
 	totalDiscountAmount := totalLineItemDiscount.Add(totalInvoiceLevelDiscount)
 
 	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		// Persist coupon applications
+		// Enforce MaxRedemptions for one-off applications (nil CouponAssociationID).
+		// Subscription-attached coupons are already counted during createCouponAssociation;
+		// re-counting them here would multiply redemptions by number of invoices.
+		// Deduped by coupon_id so a coupon that appears on both a line item and at
+		// invoice level (or twice at line-item level) counts as one redemption per
+		// invoice, matching the "one use of the code" semantic.
+		// Idempotency: skip increment AND persistence if a CouponApplication for
+		// this (invoice_id, coupon_id) already exists — protects against
+		// ComputeInvoice retries after a failed FinalizeInvoice (line-item
+		// discounts get reset by reconcileLineItems but CouponApplication rows
+		// persist; without this, retries would over-count redemptions and insert
+		// duplicate application rows).
+		seen := make(map[string]bool)
+		alreadyPersisted := make(map[string]bool)
 		for _, ca := range appliedCoupons {
+			if ca.CouponApplication.CouponAssociationID != "" {
+				continue
+			}
+			couponID := ca.CouponApplication.CouponID
+			if seen[couponID] {
+				continue
+			}
+			seen[couponID] = true
+
+			existing, countErr := s.CouponApplicationRepo.Count(txCtx, &types.CouponApplicationFilter{
+				QueryFilter: types.NewNoLimitQueryFilter(),
+				InvoiceIDs:  []string{inv.ID},
+				CouponIDs:   []string{couponID},
+			})
+			if countErr != nil {
+				s.Logger.Error(txCtx, "failed to count existing coupon applications for redemption idempotency",
+					"error", countErr,
+					"invoice_id", inv.ID,
+					"coupon_id", couponID)
+				return countErr
+			}
+			if existing > 0 {
+				alreadyPersisted[couponID] = true
+				continue
+			}
+
+			if err := s.CouponRepo.IncrementRedemptions(txCtx, couponID, couponsMap[couponID].MaxRedemptions); err != nil {
+				s.Logger.Error(txCtx, "failed to increment coupon redemptions",
+					"error", err,
+					"invoice_id", inv.ID,
+					"coupon_id", couponID)
+				return err
+			}
+		}
+
+		// Persist coupon applications. Skip one-off entries whose (invoice_id,
+		// coupon_id) already has rows from a prior compute — otherwise a retry
+		// would insert duplicates.
+		for _, ca := range appliedCoupons {
+			if ca.CouponApplication.CouponAssociationID == "" && alreadyPersisted[ca.CouponApplication.CouponID] {
+				continue
+			}
 			if err := s.CouponApplicationRepo.Create(txCtx, ca.CouponApplication); err != nil {
 				s.Logger.Error(ctx, "failed to create coupon application",
 					"coupon_application_id", ca.CouponApplication.ID,

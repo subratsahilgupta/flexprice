@@ -81,7 +81,6 @@ type BillingService interface {
 
 	// GetCustomerUsageSummary returns usage summaries for a customer's features.
 	GetCustomerUsageSummary(ctx context.Context, customerID string, req *dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error)
-
 }
 
 type billingService struct {
@@ -299,25 +298,33 @@ func (s *billingService) CalculateFixedCharges(
 	// capped per line, and keep total consistent.
 	if params.OpeningInvoiceAdjustmentAmount != nil {
 		adj := lo.FromPtr(params.OpeningInvoiceAdjustmentAmount)
-		fixedCostLineItems = applyOpeningInvoiceAdjustmentToLineItems(fixedCostLineItems, adj)
-		fixedCost = fixedCost.Sub(adj)
+		var applied decimal.Decimal
+		fixedCostLineItems, applied = applyOpeningInvoiceAdjustmentToLineItems(fixedCostLineItems, adj)
+		fixedCost = fixedCost.Sub(applied)
+		if applied.LessThan(adj) {
+			s.Logger.Info(ctx, "opening invoice adjustment exceeds fixed charges, excess credit not applied to this invoice",
+				"subscription_id", sub.ID,
+				"requested_adjustment", adj,
+				"applied_adjustment", applied,
+				"unapplied_excess", adj.Sub(applied))
+		}
 	}
 
 	return &dto.CalculateFixedChargesResult{LineItems: fixedCostLineItems, TotalAmount: fixedCost}, nil
 }
 
-// applyOpeningInvoiceAdjustmentToLineItems reduces line Amounts in slice order: for each line,
-// take min(remaining credit, line amount). Each take is capped by the line, so total reduction
-// cannot exceed the sum of line amounts even when credit is larger.
+// applyOpeningInvoiceAdjustmentToLineItems reduces line Amounts in slice order: for each line, take min(remaining credit, line amount).
+// Returns the adjusted items and the total amount actually applied — which is min(creditsToAdjust, sum(items.Amount)), never more.
+// Callers must subtract the returned applied amount (not the requested credit) from any running total they keep alongside the line items.
 func applyOpeningInvoiceAdjustmentToLineItems(
 	items []dto.CreateInvoiceLineItemRequest,
 	creditsToAdjust decimal.Decimal,
-) []dto.CreateInvoiceLineItemRequest {
+) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal) {
 	if len(items) == 0 || !creditsToAdjust.GreaterThan(decimal.Zero) {
-		return slices.Clone(items)
+		return slices.Clone(items), decimal.Zero
 	}
 	remaining := creditsToAdjust
-	return lo.Map(items, func(item dto.CreateInvoiceLineItemRequest, _ int) dto.CreateInvoiceLineItemRequest {
+	adjusted := lo.Map(items, func(item dto.CreateInvoiceLineItemRequest, _ int) dto.CreateInvoiceLineItemRequest {
 		if remaining.IsZero() {
 			return item
 		}
@@ -326,6 +333,7 @@ func applyOpeningInvoiceAdjustmentToLineItems(
 		remaining = remaining.Sub(take)
 		return item
 	})
+	return adjusted, creditsToAdjust.Sub(remaining)
 }
 
 // endDateBoundaryForMatching returns periodEnd + one billing period length so that
@@ -499,7 +507,7 @@ func (s *billingService) CalculateUsageCharges(
 
 		// Process each matching charge individually (normal and overage charges)
 		for _, matchingCharge := range matchingCharges {
-			quantityForCalculation := decimal.NewFromFloat(matchingCharge.Quantity)
+			quantityForCalculation := matchingCharge.QuantityDecimal()
 			matchingEntitlement, entitlementOk := entitlementsByMeterID[item.MeterID]
 			var entitlementAdjustedQty *decimal.Decimal
 
@@ -537,8 +545,8 @@ func (s *billingService) CalculateUsageCharges(
 				}
 
 				cost := calculateBucketedMeterCost(ctx, priceService, matchingCharge.Price, usageResult, hasGroupBy)
-				matchingCharge.Amount = priceDomain.FormatAmountToFloat64WithPrecision(cost.Amount, matchingCharge.Price.Currency)
-				matchingCharge.Quantity = cost.Quantity.InexactFloat64()
+				matchingCharge.SetAmountWithCurrencyPrecision(cost.Amount, matchingCharge.Price.Currency)
+				matchingCharge.SetQuantityDecimal(cost.Quantity)
 				quantityForCalculation = cost.Quantity
 			}
 
@@ -558,7 +566,7 @@ func (s *billingService) CalculateUsageCharges(
 						quantityForCalculation = adjustedQuantity
 						if matchingCharge.Price != nil {
 							adjustedAmount := priceService.CalculateCost(ctx, matchingCharge.Price, quantityForCalculation)
-							matchingCharge.Amount = priceDomain.FormatAmountToFloat64WithPrecision(adjustedAmount, matchingCharge.Price.Currency)
+							matchingCharge.SetAmountWithCurrencyPrecision(adjustedAmount, matchingCharge.Price.Currency)
 						}
 						adj := rawQtyBeforeEntitlement.Sub(quantityForCalculation)
 						entitlementAdjustedQty = &adj
@@ -566,7 +574,7 @@ func (s *billingService) CalculateUsageCharges(
 				} else {
 					// Unlimited entitlement → zero cost
 					quantityForCalculation = decimal.Zero
-					matchingCharge.Amount = 0
+					matchingCharge.SetAmountDecimal(decimal.Zero)
 					entitlementAdjustedQty = lo.ToPtr(decimal.Max(rawQtyBeforeEntitlement, decimal.Zero))
 				}
 			}
@@ -587,7 +595,7 @@ func (s *billingService) CalculateUsageCharges(
 					if (matchingEntitlement.UsageResetPeriod) == types.EntitlementUsageResetPeriod(sub.BillingPeriod) {
 
 						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
-						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
+						adjustedQuantity := matchingCharge.QuantityDecimal().Sub(usageAllowed)
 						quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
 						adj := rawQtyBeforeEntitlement.Sub(quantityForCalculation)
 						entitlementAdjustedQty = lo.ToPtr(decimal.Max(adj, decimal.Zero))
@@ -728,7 +736,7 @@ func (s *billingService) CalculateUsageCharges(
 						entitlementAdjustedQty = lo.ToPtr(decimal.Max(adj, decimal.Zero))
 					} else {
 						usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
-						adjustedQuantity := decimal.NewFromFloat(matchingCharge.Quantity).Sub(usageAllowed)
+						adjustedQuantity := matchingCharge.QuantityDecimal().Sub(usageAllowed)
 						quantityForCalculation = decimal.Max(adjustedQuantity, decimal.Zero)
 						adj := rawQtyBeforeEntitlement.Sub(quantityForCalculation)
 						entitlementAdjustedQty = lo.ToPtr(decimal.Max(adj, decimal.Zero))
@@ -738,12 +746,12 @@ func (s *billingService) CalculateUsageCharges(
 					if matchingCharge.Price != nil {
 						// For regular pricing, use standard cost calculation
 						adjustedAmount := priceService.CalculateCost(ctx, matchingCharge.Price, quantityForCalculation)
-						matchingCharge.Amount = adjustedAmount.InexactFloat64()
+						matchingCharge.SetAmountDecimal(adjustedAmount)
 					}
 				} else {
 					// unlimited usage allowed, so we set the usage quantity for calculation to 0
 					quantityForCalculation = decimal.Zero
-					matchingCharge.Amount = 0
+					matchingCharge.SetAmountDecimal(decimal.Zero)
 					entitlementAdjustedQty = lo.ToPtr(decimal.Max(rawQtyBeforeEntitlement, decimal.Zero))
 				}
 			}
@@ -751,7 +759,7 @@ func (s *billingService) CalculateUsageCharges(
 			// use the full quantity and calculate the amount normally
 
 			// Add the amount to total usage cost
-			lineItemAmount := decimal.NewFromFloat(matchingCharge.Amount)
+			lineItemAmount := matchingCharge.AmountDecimal()
 
 			// Store commitment info separately
 			var commitmentInfo *types.CommitmentInfo
@@ -820,7 +828,7 @@ func (s *billingService) CalculateUsageCharges(
 						}
 
 						lineItemAmount = adjustedAmount
-						matchingCharge.Amount = adjustedAmount.InexactFloat64()
+						matchingCharge.SetAmountDecimal(adjustedAmount)
 						commitmentInfo = info
 					} else {
 						// Non-window commitment: apply to aggregated usage cost
@@ -831,7 +839,7 @@ func (s *billingService) CalculateUsageCharges(
 						}
 
 						lineItemAmount = adjustedAmount
-						matchingCharge.Amount = adjustedAmount.InexactFloat64()
+						matchingCharge.SetAmountDecimal(adjustedAmount)
 						commitmentInfo = info
 					}
 				}
@@ -1127,7 +1135,6 @@ func (s *billingService) fillBucketedValuesForWindowedCommitment(
 	}
 	return bucketedValues, bucketStarts
 }
-
 
 func (s *billingService) CalculateAllCharges(
 	ctx context.Context,
@@ -2639,7 +2646,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 				resetPeriod := featureUsageResetPeriodMap[featureID]
 				if resetPeriod.String() == sub.BillingPeriod.String() {
 					currentUsage := usageByFeature[featureID]
-					usageByFeature[featureID] = currentUsage.Add(decimal.NewFromFloat(charge.Quantity))
+					usageByFeature[featureID] = currentUsage.Add(charge.QuantityDecimal())
 				} else if resetPeriod == types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY {
 					// Handle daily reset features: get today's usage from daily windows
 					meterID := featureMeterMap[featureID]
