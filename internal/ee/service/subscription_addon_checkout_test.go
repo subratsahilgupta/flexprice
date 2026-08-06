@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -8,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -15,6 +17,15 @@ import (
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
+
+// razorpayCheckoutParams is the minimal checkout object the attach endpoint accepts.
+func (s *SubscriptionServiceSuite) razorpayCheckoutParams() *dto.CheckoutParams {
+	return &dto.CheckoutParams{
+		PaymentParams: dto.PaymentParams{
+			PaymentProvider: types.CheckoutPaymentProviderRazorpay,
+		},
+	}
+}
 
 // seedPendingAddonAssociation writes a pending association straight through the store, the
 // state the payment-gated attach flow will produce once it exists. The in-memory store does
@@ -39,6 +50,73 @@ func (s *SubscriptionServiceSuite) seedPendingAddonAssociation(
 	s.NoError(s.GetStores().AddonAssociationRepo.Create(ctx, assoc))
 
 	return assoc
+}
+
+// seedFixedPriceAddon registers a published addon with a single FIXED price, the shape that
+// actually produces a proration charge when attached mid-period.
+func (s *SubscriptionServiceSuite) seedFixedPriceAddon(
+	addonID string,
+	amount decimal.Decimal,
+	cadence types.InvoiceCadence,
+) {
+	ctx := s.GetContext()
+
+	s.NoError(s.GetStores().AddonRepo.Create(ctx, &addon.Addon{
+		ID:        addonID,
+		LookupKey: addonID,
+		Name:      "Fixed Price Addon",
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, &price.Price{
+		ID:                 "price_" + addonID,
+		Amount:             amount,
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_ADDON,
+		EntityID:           addonID,
+		Type:               types.PRICE_TYPE_FIXED,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		InvoiceCadence:     cadence,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}))
+}
+
+// oneOffInvoicesFor returns the subscription's ONE_OFF invoices — the shape addon proration
+// charges take.
+func (s *SubscriptionServiceSuite) oneOffInvoicesFor(subscriptionID string) []*invoice.Invoice {
+	filter := types.NewNoLimitInvoiceFilter()
+	filter.SubscriptionID = subscriptionID
+	invoices, err := s.GetStores().InvoiceRepo.List(s.GetContext(), filter)
+	s.NoError(err)
+
+	oneOff := make([]*invoice.Invoice, 0, len(invoices))
+	for _, inv := range invoices {
+		if inv.InvoiceType == types.InvoiceTypeOneOff {
+			oneOff = append(oneOff, inv)
+		}
+	}
+	return oneOff
+}
+
+func (s *SubscriptionServiceSuite) addonLineItemsFor(subscriptionID, addonID string) []*subscription.SubscriptionLineItem {
+	filter := types.NewNoLimitSubscriptionLineItemFilter()
+	filter.SubscriptionIDs = []string{subscriptionID}
+	filter.EntityIDs = []string{addonID}
+	filter.EntityType = lo.ToPtr(types.SubscriptionLineItemEntityTypeAddon)
+
+	items, err := s.GetStores().SubscriptionLineItemRepo.List(s.GetContext(), filter)
+	s.NoError(err)
+	return items
+}
+
+func (s *SubscriptionServiceSuite) checkoutSessionCount() int {
+	sessions, err := s.GetStores().CheckoutSessionRepo.List(s.GetContext(), &types.CheckoutSessionFilter{
+		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
+	})
+	s.NoError(err)
+	return len(sessions)
 }
 
 // seedMeteredAddon registers a published addon with one usage price and one metered
@@ -240,6 +318,244 @@ func (s *SubscriptionServiceSuite) TestValidateEntitlementCompatibility_SeesPend
 	matchingAddonID := "addon_incoming_monthly"
 	s.seedMeteredAddon(matchingAddonID, featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
 	s.NoError(subService.validateEntitlementCompatibility(ctx, sub.ID, matchingAddonID))
+}
+
+// Baseline for everything the checkout path must not disturb. Attaching at the period start
+// makes the proration a full period, so the charge is exactly the price and the money assertion
+// is deterministic rather than a tolerance.
+func (s *SubscriptionServiceSuite) TestAddAddon_NoCheckout_PayLaterUnchanged() {
+	ctx := s.GetContext()
+	sub := s.testData.subscription
+	addonID := "addon_paylater_fixed"
+
+	amount := decimal.NewFromInt(30)
+	s.seedFixedPriceAddon(addonID, amount, types.InvoiceCadenceAdvance)
+
+	periodStart := sub.CurrentPeriodStart
+	resp, err := s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+		SubscriptionID: sub.ID,
+		AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
+			AddonID:           addonID,
+			Cadence:           types.AddonCadenceRecurring,
+			StartDate:         &periodStart,
+			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+		},
+	})
+	s.Require().NoError(err)
+
+	s.Require().NotNil(resp.AddonAssociation)
+	s.Equal(types.AddonStatusActive, resp.AddonAssociation.AddonStatus)
+	s.Nil(resp.CheckoutSession, "pay-later must not produce a checkout session")
+	s.Nil(resp.Invoice)
+	s.Zero(s.checkoutSessionCount())
+
+	s.Len(s.addonLineItemsFor(sub.ID, addonID), 1)
+
+	invoices := s.oneOffInvoicesFor(sub.ID)
+	s.Require().Len(invoices, 1, "pay-later must raise exactly one ONE_OFF proration invoice")
+	s.Equal(string(types.InvoiceBillingReasonSubscriptionUpdate), invoices[0].BillingReason)
+	s.True(amount.Equal(invoices[0].AmountDue),
+		"full-period attach must charge the full price, got %s", invoices[0].AmountDue)
+}
+
+// checkout + a net charge is the Phase 4 surface; until it lands the request must be refused
+// outright rather than silently attaching and billing pay-later.
+func (s *SubscriptionServiceSuite) TestAddAddon_CheckoutNetCharge_NotYetSupported() {
+	ctx := s.GetContext()
+	sub := s.testData.subscription
+	addonID := "addon_checkout_charge"
+
+	s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+
+	now := s.testData.now
+	_, err := s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+		SubscriptionID: sub.ID,
+		Checkout:       s.razorpayCheckoutParams(),
+		AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
+			AddonID:           addonID,
+			Cadence:           types.AddonCadenceRecurring,
+			StartDate:         &now,
+			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+		},
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "not yet supported")
+
+	s.Empty(s.addonLineItemsFor(sub.ID, addonID), "nothing may be persisted on the refused path")
+	s.Empty(s.oneOffInvoicesFor(sub.ID))
+	s.Zero(s.checkoutSessionCount())
+}
+
+// Every route to a zero net: the pay-later path raises no charge for these, so gating them
+// behind payment would ask the customer to pay nothing. They attach immediately and the
+// checkout is ignored.
+func (s *SubscriptionServiceSuite) TestAddAddon_CheckoutZeroNet_AttachesImmediately() {
+	tests := []struct {
+		name              string
+		usagePrice        bool
+		prorationBehavior types.ProrationBehavior
+	}{
+		{
+			// calculator.go short-circuits on `none` before computing anything.
+			name:              "proration behavior none",
+			prorationBehavior: types.ProrationBehaviorNone,
+		},
+		{
+			// D2: Compute would price this, but Apply is a no-op for anything other than
+			// create_prorations — so previewing a charge here would diverge from pay-later.
+			name:              "proration behavior unset",
+			prorationBehavior: "",
+		},
+		{
+			// Future consumption is unknown at change time, so usage prices are skipped.
+			name:              "usage only addon prices",
+			usagePrice:        true,
+			prorationBehavior: types.ProrationBehaviorCreateProrations,
+		},
+	}
+
+	for i, tc := range tests {
+		s.Run(tc.name, func() {
+			ctx := s.GetContext()
+			sub := s.testData.subscription
+			addonID := fmt.Sprintf("addon_zero_net_%d", i)
+
+			if tc.usagePrice {
+				s.seedMeteredAddon(addonID, "", types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
+			} else {
+				s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+			}
+
+			now := s.testData.now
+			resp, err := s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+				SubscriptionID: sub.ID,
+				Checkout:       s.razorpayCheckoutParams(),
+				AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
+					AddonID:           addonID,
+					Cadence:           types.AddonCadenceRecurring,
+					StartDate:         &now,
+					ProrationBehavior: tc.prorationBehavior,
+				},
+			})
+			s.Require().NoError(err)
+
+			s.Require().NotNil(resp.AddonAssociation)
+			s.Equal(types.AddonStatusActive, resp.AddonAssociation.AddonStatus,
+				"a zero-net attach takes effect immediately")
+			s.Nil(resp.CheckoutSession, "checkout must be ignored when there is nothing to charge")
+			s.Len(s.addonLineItemsFor(sub.ID, addonID), 1)
+			s.Zero(s.checkoutSessionCount())
+		})
+	}
+}
+
+// The v1 checkout path cannot honour overrides, commitments or draft subscriptions. Each must
+// be refused before anything is written.
+func (s *SubscriptionServiceSuite) TestAddAddon_CheckoutRejectsUnsupportedCombinations() {
+	ctx := s.GetContext()
+	sub := s.testData.subscription
+
+	s.Run("override_line_items", func() {
+		addonID := "addon_reject_override"
+		s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+
+		now := s.testData.now
+		_, err := s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+			SubscriptionID: sub.ID,
+			Checkout:       s.razorpayCheckoutParams(),
+			AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
+				AddonID:           addonID,
+				Cadence:           types.AddonCadenceRecurring,
+				StartDate:         &now,
+				ProrationBehavior: types.ProrationBehaviorCreateProrations,
+				OverrideLineItems: []dto.OverrideLineItemRequest{{
+					PriceID:  "price_" + addonID,
+					Quantity: lo.ToPtr(decimal.NewFromInt(2)),
+				}},
+			},
+		})
+
+		s.Require().Error(err)
+		s.True(ierr.IsValidation(err))
+		s.Empty(s.addonLineItemsFor(sub.ID, addonID))
+		s.Zero(s.checkoutSessionCount())
+	})
+
+	s.Run("line_item_commitments", func() {
+		addonID := "addon_reject_commitment"
+		s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+
+		now := s.testData.now
+		_, err := s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+			SubscriptionID: sub.ID,
+			Checkout:       s.razorpayCheckoutParams(),
+			AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
+				AddonID:           addonID,
+				Cadence:           types.AddonCadenceRecurring,
+				StartDate:         &now,
+				ProrationBehavior: types.ProrationBehaviorCreateProrations,
+				LineItemCommitments: map[string]*dto.LineItemCommitmentConfig{
+					"price_" + addonID: {CommitmentAmount: lo.ToPtr(decimal.NewFromInt(10))},
+				},
+			},
+		})
+
+		s.Require().Error(err)
+		s.True(ierr.IsValidation(err))
+		s.Empty(s.addonLineItemsFor(sub.ID, addonID))
+		s.Zero(s.checkoutSessionCount())
+	})
+
+	s.Run("draft subscription", func() {
+		addonID := "addon_reject_draft"
+		s.seedFixedPriceAddon(addonID, decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+
+		draft := &subscription.Subscription{
+			ID:                 "sub_draft_checkout_addon",
+			CustomerID:         s.testData.customer.ID,
+			PlanID:             s.testData.plan.ID,
+			SubscriptionStatus: types.SubscriptionStatusDraft,
+			StartDate:          s.testData.now,
+			CurrentPeriodStart: s.testData.now,
+			CurrentPeriodEnd:   s.testData.now.AddDate(0, 1, 0),
+			BillingAnchor:      s.testData.now,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			Currency:           "usd",
+			BaseModel:          types.GetDefaultBaseModel(ctx),
+			LineItems:          []*subscription.SubscriptionLineItem{},
+		}
+		s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, draft, draft.LineItems))
+
+		now := s.testData.now
+		_, err := s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+			SubscriptionID: draft.ID,
+			Checkout:       s.razorpayCheckoutParams(),
+			AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
+				AddonID:           addonID,
+				Cadence:           types.AddonCadenceRecurring,
+				StartDate:         &now,
+				ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			},
+		})
+
+		s.Require().Error(err)
+		s.True(ierr.IsValidation(err))
+		s.Contains(err.Error(), "status does not allow")
+		s.Empty(s.addonLineItemsFor(draft.ID, addonID))
+		s.Zero(s.checkoutSessionCount())
+
+		// Draft attach without checkout stays supported.
+		_, err = s.service.AddAddonToSubscription(ctx, &dto.AddAddonRequest{
+			SubscriptionID: draft.ID,
+			AddAddonToSubscriptionRequest: dto.AddAddonToSubscriptionRequest{
+				AddonID:   addonID,
+				Cadence:   types.AddonCadenceRecurring,
+				StartDate: &now,
+			},
+		})
+		s.NoError(err, "pay-later attach to a draft subscription must be unaffected")
+	})
 }
 
 // Pending associations must stay out of the reads that grant real access and drive the public

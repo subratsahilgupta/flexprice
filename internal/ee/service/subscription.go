@@ -4820,9 +4820,10 @@ func (s *subscriptionService) handleSubscriptionAddons(
 // This is the public facing method for adding an addon to a subscription
 func (s *subscriptionService) AddAddonToSubscription(
 	ctx context.Context,
-	subID string,
-	req *dto.AddAddonToSubscriptionRequest,
-) (*addonassociation.AddonAssociation, error) {
+	req *dto.AddAddonRequest,
+) (*dto.AddAddonToSubscriptionResponse, error) {
+	subID := req.SubscriptionID
+	checkout := req.Checkout
 
 	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, subID)
 	if err != nil {
@@ -4830,13 +4831,50 @@ func (s *subscriptionService) AddAddonToSubscription(
 	}
 	sub.LineItems = lineItems
 
-	assoc, err := s.addAddonToSubscription(ctx, sub, req)
+	if checkout != nil {
+		if err := checkout.Validate(); err != nil {
+			return nil, err
+		}
+
+		if len(req.OverrideLineItems) > 0 || len(req.LineItemCommitments) > 0 {
+			return nil, ierr.NewError("override_line_items and line_item_commitments are not supported with checkout").
+				WithHint("Attach without checkout to use price overrides or line item commitments").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id": sub.ID,
+					"addon_id":        req.AddonID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		if sub.SubscriptionStatus != types.SubscriptionStatusActive {
+			return nil, ierr.NewError("subscription status does not allow a payment-gated addon attach").
+				WithHint("Checkout is only supported for active subscriptions").
+				WithReportableDetails(map[string]interface{}{
+					"subscription_id":     sub.ID,
+					"subscription_status": sub.SubscriptionStatus,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		summary, err := s.previewAddonAddProration(ctx, sub, &req.AddAddonToSubscriptionRequest)
+		if err != nil {
+			return nil, err
+		}
+
+		if summary.TotalChargeAmount.GreaterThan(decimal.Zero) {
+			return nil, ierr.NewError("payment-gated addon attach is not yet supported").
+				WithHint("This addon produces a charge; attach it without checkout for now").
+				Mark(ierr.ErrNotImplemented)
+		}
+	}
+
+	assoc, err := s.addAddonToSubscription(ctx, sub, &req.AddAddonToSubscriptionRequest)
 	if err != nil {
 		return nil, err
 	}
 
 	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subID)
-	return assoc, nil
+	return &dto.AddAddonToSubscriptionResponse{AddonAssociation: assoc}, nil
 }
 
 // addAddonToSubscription adds an addon to a subscription
@@ -4845,20 +4883,47 @@ func (s *subscriptionService) addAddonToSubscription(
 	sub *subscription.Subscription,
 	req *dto.AddAddonToSubscriptionRequest,
 ) (*addonassociation.AddonAssociation, error) {
-	// Validate request
-	if err := req.Validate(); err != nil {
+	addonAssociation, lineItems, effectiveDate, err := s.applyAddonAttach(ctx, sub, req, nil)
+	if err != nil {
 		return nil, err
+	}
+
+	addProrationKey := fmt.Sprintf("addon_add_%s_%d", addonAssociation.ID, effectiveDate.Unix())
+	if err := s.applyAddonAddProration(ctx, sub, lineItems, effectiveDate, req.ProrationBehavior, addProrationKey); err != nil {
+		s.Logger.Error(ctx, "failed to create proration invoice for addon add; addon was persisted and is UNBILLED for this period",
+			"error", err,
+			"association_id", addonAssociation.ID,
+			"addon_id", req.AddonID,
+			"subscription_id", sub.ID,
+			"effective_date", effectiveDate,
+			"idempotency_key", addProrationKey,
+		)
+	}
+
+	return addonAssociation, nil
+}
+
+// applyAddonAttach persists the addon — association, line items, bucket prices and credit
+// grants — in one transaction and raises NO charge. Settling is the caller's job.
+func (s *subscriptionService) applyAddonAttach(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	req *dto.AddAddonToSubscriptionRequest,
+	existing *addonassociation.AddonAssociation,
+) (*addonassociation.AddonAssociation, []*subscription.SubscriptionLineItem, time.Time, error) {
+	if err := req.Validate(); err != nil {
+		return nil, nil, time.Time{}, err
 	}
 
 	// Get addon via addon service to reuse validations
 	addonService := NewAddonService(s.ServiceParams)
 	a, err := addonService.GetAddon(ctx, req.AddonID)
 	if err != nil {
-		return nil, err
+		return nil, nil, time.Time{}, err
 	}
 
 	if a.Addon.Status != types.StatusPublished {
-		return nil, ierr.NewError("addon is not published").
+		return nil, nil, time.Time{}, ierr.NewError("addon is not published").
 			WithHint("Cannot add inactive addon to subscription").
 			Mark(ierr.ErrValidation)
 	}
@@ -4872,7 +4937,7 @@ func (s *subscriptionService) addAddonToSubscription(
 		types.SubscriptionStatusDraft,
 	}
 	if !lo.Contains(allowedStatuses, sub.SubscriptionStatus) {
-		return nil, ierr.NewError("subscription status does not allow addon attachment").
+		return nil, nil, time.Time{}, ierr.NewError("subscription status does not allow addon attachment").
 			WithHint("Addon can only be added to active or draft subscriptions").
 			Mark(ierr.ErrValidation)
 	}
@@ -4880,14 +4945,14 @@ func (s *subscriptionService) addAddonToSubscription(
 	// Validate entitlement compatibility if check is not skipped
 	if !req.SkipEntityValidation {
 		if err := s.validateEntitlementCompatibility(ctx, sub.ID, req.AddonID); err != nil {
-			return nil, err
+			return nil, nil, time.Time{}, err
 		}
 	}
 
 	// Validate and filter prices for the addon
 	validPrices, err := s.ValidateAndFilterPricesForSubscription(ctx, req.AddonID, types.PRICE_ENTITY_TYPE_ADDON, sub, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, time.Time{}, err
 	}
 
 	// Price map for override processing, keyed by price ID (same pattern createSubscription uses)
@@ -4896,17 +4961,19 @@ func (s *subscriptionService) addAddonToSubscription(
 		priceMap[p.Price.ID] = p
 	}
 
-	// Create subscription addon association
-	addonAssociation := req.ToAddonAssociation(
-		ctx,
-		sub.ID,
-		types.AddonAssociationEntityTypeSubscription,
-	)
+	addonAssociation := existing
+	if addonAssociation == nil {
+		addonAssociation = req.ToAddonAssociation(
+			ctx,
+			sub.ID,
+			types.AddonAssociationEntityTypeSubscription,
+		)
+	}
 
 	addonRequestedStart := addonRequestedStartDate(req)
 	onetimePeriodEnd, err := addonOnetimePeriodEnd(sub, req, addonRequestedStart)
 	if err != nil {
-		return nil, err
+		return nil, nil, time.Time{}, err
 	}
 	if req.Cadence == types.AddonCadenceOnetime {
 		addonAssociation.EndDate = &onetimePeriodEnd
@@ -4917,7 +4984,7 @@ func (s *subscriptionService) addAddonToSubscription(
 		ctx, sub, req, validPrices, a.Addon.Name, addonAssociation.ID, addonRequestedStart, onetimePeriodEnd,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, time.Time{}, err
 	}
 
 	// Ensure subscription-level and line-item-level commitments don't conflict
@@ -4926,7 +4993,7 @@ func (s *subscriptionService) addAddonToSubscription(
 	err = s.validateSubscriptionLevelCommitment(sub)
 	sub.LineItems = originalLineItems
 	if err != nil {
-		return nil, err
+		return nil, nil, time.Time{}, err
 	}
 
 	creditGrantProration := s.addonCreditGrantProration(ctx, sub, addonRequestedStart, req.ProrationBehavior)
@@ -4938,9 +5005,13 @@ func (s *subscriptionService) addAddonToSubscription(
 			}
 		}
 
-		// Create subscription addon association
-		err = s.AddonAssociationRepo.Create(ctx, addonAssociation)
-		if err != nil {
+		// Create the association, or flip the pending one to active on a completion replay.
+		if existing != nil {
+			addonAssociation.AddonStatus = types.AddonStatusActive
+			if err := s.AddonAssociationRepo.Update(ctx, addonAssociation); err != nil {
+				return err
+			}
+		} else if err := s.AddonAssociationRepo.Create(ctx, addonAssociation); err != nil {
 			return err
 		}
 
@@ -4969,24 +5040,10 @@ func (s *subscriptionService) addAddonToSubscription(
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, nil, time.Time{}, err
 	}
 
-	effectiveDate := addonProrationEffectiveDate(addonRequestedStart, lineItems)
-
-	addProrationKey := fmt.Sprintf("addon_add_%s_%d", addonAssociation.ID, effectiveDate.Unix())
-	if err := s.applyAddonAddProration(ctx, sub, lineItems, effectiveDate, req.ProrationBehavior, addProrationKey); err != nil {
-		s.Logger.Error(ctx, "failed to create proration invoice for addon add; addon was persisted and is UNBILLED for this period",
-			"error", err,
-			"association_id", addonAssociation.ID,
-			"addon_id", req.AddonID,
-			"subscription_id", sub.ID,
-			"effective_date", effectiveDate,
-			"idempotency_key", addProrationKey,
-		)
-	}
-
-	return addonAssociation, nil
+	return addonAssociation, lineItems, addonProrationEffectiveDate(addonRequestedStart, lineItems), nil
 }
 
 // materializeAddonCreditGrants clones the addon's ADDON-scoped credit grant templates
@@ -5698,7 +5755,7 @@ func addonProrationEffectiveDate(
 			effectiveDate = lineItem.StartDate
 		}
 	}
-	
+
 	return effectiveDate
 }
 

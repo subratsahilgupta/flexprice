@@ -64,12 +64,13 @@ func TestAddAddonParams_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "multiple addons rejected in v1",
+			// The blob is list-shaped so batching is additive; completion loops the list.
+			name: "multiple addons allowed",
 			params: &AddAddonParams{
 				SubscriptionID: "subs_123",
 				Addons:         []AddAddonRef{validAddAddonRef(), validAddAddonRef()},
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name:    "empty association id",

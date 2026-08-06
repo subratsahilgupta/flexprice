@@ -146,8 +146,8 @@ func (p *ModifySubscriptionParams) Validate() error {
 // AddAddonParams is persisted on checkout sessions for payment-gated addon attach.
 // The association rows it references already exist as addon_status = pending; payment
 // success flips them to active and materializes their line items and credit grants.
-// List-shaped so batching more than one addon per session is additive later; v1 validates
-// exactly one.
+// List-shaped so batching more than one addon per session is additive; the attach endpoint
+// is single-addon today, so sessions carry one, but completion loops the list.
 type AddAddonParams struct {
 	SubscriptionID string        `json:"subscription_id"`
 	Addons         []AddAddonRef `json:"addons"`
@@ -156,12 +156,12 @@ type AddAddonParams struct {
 // AddAddonRef is one pending addon attach, carrying everything needed to replay the attach
 // at completion without trusting execute-time state.
 type AddAddonRef struct {
-	AssociationID string `json:"association_id"`
-	AddonID       string `json:"addon_id"`
-	Cadence AddonCadence `json:"cadence"`
+	AssociationID string       `json:"association_id"`
+	AddonID       string       `json:"addon_id"`
+	Cadence       AddonCadence `json:"cadence"`
 	// Needed to prorate the addon's first credit grant.
 	ProrationBehavior ProrationBehavior `json:"proration_behavior,omitempty"`
-	StartDate time.Time `json:"start_date"`
+	StartDate         time.Time         `json:"start_date"`
 }
 
 func (p *AddAddonParams) Validate() error {
@@ -172,6 +172,11 @@ func (p *AddAddonParams) Validate() error {
 	if p.SubscriptionID == "" {
 		return ierr.NewError("subscription_id is required").
 			WithHint("Provide subscription_id in add_addon_params").
+			Mark(ierr.ErrValidation)
+	}
+	if len(p.Addons) == 0 {
+		return ierr.NewError("at least one addon is required").
+			WithHint("add_addon_params must carry at least one addon").
 			Mark(ierr.ErrValidation)
 	}
 
