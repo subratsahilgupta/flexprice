@@ -293,10 +293,11 @@ func (s *InMemorySubscriptionStore) Update(ctx context.Context, sub *subscriptio
 	return nil
 }
 
+// Delete archives the subscription, matching the ent repository, which flips status to archived and
+// leaves the row and its line items in place. This double used to hard-delete both, which made
+// every archival assertion pass vacuously — a deleted row simply stopped appearing in List.
 func (s *InMemorySubscriptionStore) Delete(ctx context.Context, id string) error {
-	// Delete line items first
-	delete(s.lineItems, id)
-	err := s.InMemoryStore.Delete(ctx, id)
+	sub, err := s.InMemoryStore.Get(ctx, id)
 	if err != nil {
 		if ierr.IsNotFound(err) {
 			return ierr.WithError(err).
@@ -313,7 +314,9 @@ func (s *InMemorySubscriptionStore) Delete(ctx context.Context, id string) error
 			}).
 			Mark(ierr.ErrDatabase)
 	}
-	return nil
+
+	sub.Status = types.StatusArchived
+	return s.InMemoryStore.Update(ctx, id, sub)
 }
 
 // ListAll returns all subscriptions without pagination

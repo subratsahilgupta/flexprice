@@ -5,6 +5,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -135,9 +136,14 @@ func (s *WalletServiceSuite) TestTopUpWallet_CheckoutSessionCreateFailureArchive
 	s.Require().Error(err)
 	s.True(ierr.IsAlreadyExists(err), "expected session create AlreadyExists, got %v", err)
 
+	// Counted by live rows rather than total rows: the repository soft deletes, so the archived
+	// draft is still listed.
 	after, err := s.GetStores().InvoiceRepo.List(ctx, filter)
 	s.Require().NoError(err)
-	s.Equal(len(before), len(after), "draft invoice must be archived when session create fails")
+	live := lo.Filter(after, func(inv *invoice.Invoice, _ int) bool {
+		return inv.Status != types.StatusDeleted
+	})
+	s.Equal(len(before), len(live), "draft invoice must be archived when session create fails")
 }
 
 func (s *WalletServiceSuite) TestHandlePurchasedCreditInvoiced_PayFirstForcesPendingDespiteAutoComplete() {

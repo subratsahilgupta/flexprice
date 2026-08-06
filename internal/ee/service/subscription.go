@@ -75,6 +75,15 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	if req.BillingCycle == "" {
 		req.BillingCycle = types.BillingCycleAnniversary
 	}
+
+	// The subscription's collection method governs future invoices; the checkout's governs only the
+	// gated payment. Inherit one from the other only when the caller expressed no opinion, and
+	// before Validate fills it in with its own default.
+	if req.Checkout != nil && req.CollectionMethod == nil &&
+		req.Checkout.PaymentProviderConfig != nil &&
+		req.Checkout.PaymentProviderConfig.CollectionMethod != "" {
+		req.CollectionMethod = lo.ToPtr(req.Checkout.PaymentProviderConfig.CollectionMethod)
+	}
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -281,6 +290,13 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		sub.SubscriptionStatus = req.SubscriptionStatus
 	}
 	syncTrialingStateFromCreateRequest(&req, sub)
+
+	// After the trial resolution above, deliberately: a trial raises no opening charge, so there is
+	// nothing to gate and the subscription is left TRIALING. Forcing draft first would also suppress
+	// the trial promotion itself, since syncTrialingStateFromCreateRequest returns early for draft.
+	if req.Checkout != nil && sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
+		sub.SubscriptionStatus = types.SubscriptionStatusDraft
+	}
 
 	// Stamp the sub with the plan's current max prices.sequence so new subscriptions are considered already-synced.
 	currentPlanSeq, seqErr := s.PlanPriceSyncRepo.CurrentPlanSequence(ctx, plan.ID)
@@ -553,8 +569,18 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		response.LatestInvoice = result.Invoice
 	}
 
+	// Price the draft and open the payment gate before anything is announced, so a failure archives
+	// the subscription without having published a create it would have to take back. A trialing
+	// subscription is not draft here and falls through with the checkout ignored.
+	if req.Checkout != nil && result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft {
+		if err := s.gateSubscriptionOnCheckout(ctx, response, req.Checkout); err != nil {
+			return nil, err
+		}
+	}
+
 	// Sync to HubSpot and publish webhooks
-	isDraft := req.SubscriptionStatus == types.SubscriptionStatusDraft
+	isDraft := req.SubscriptionStatus == types.SubscriptionStatusDraft ||
+		result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft
 	if isDraft {
 		s.triggerHubSpotQuoteSyncWorkflow(ctx, result.Sub.ID, result.Customer.ID)
 		s.runPaddleSubscriptionSync(ctx, result.Sub)
