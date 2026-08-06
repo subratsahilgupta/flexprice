@@ -166,38 +166,6 @@ func (h *InvoiceHandler) FinalizeInvoice(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "invoice finalized successfully"})
 }
 
-// RecalculateDiscountOnInvoice godoc
-// @Summary Recalculate discount on draft invoice
-// @ID recalculateDiscountOnInvoice
-// @Description Recalculates a draft invoice's discount from its existing coupon associations
-// @Tags Invoices
-// @x-scope "write"
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param id path string true "Invoice ID"
-// @Success 200 {object} dto.InvoiceResponse
-// @Failure 400 {object} ierr.ErrorResponse "Invalid request"
-// @Failure 404 {object} ierr.ErrorResponse "Invoice not found"
-// @Failure 500 {object} ierr.ErrorResponse "Server error"
-// @Router /invoices/{id}/recalculate/discount [post]
-func (h *InvoiceHandler) RecalculateDiscountOnInvoice(c *gin.Context) {
-	id := c.Param("id")
-	if id == "" {
-		c.Error(ierr.NewError("invalid invoice id").Mark(ierr.ErrValidation))
-		return
-	}
-
-	resp, err := h.invoiceService.RecalculateDiscountOnInvoice(c.Request.Context(), id)
-	if err != nil {
-		h.logger.Error(c.Request.Context(), "failed to recalculate discount on invoice", "error", err, "invoice_id", id)
-		c.Error(err)
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
-}
-
 func (h *InvoiceHandler) ComputeInvoice(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -701,7 +669,7 @@ func (h *InvoiceHandler) RecalculateInvoiceV2(c *gin.Context) {
 // UpdateInvoice godoc
 // @Summary Update invoice
 // @ID updateInvoice
-// @Description Use when updating invoice metadata or due date (e.g. PDF URL, net terms). For paid invoices only safe fields can be updated.
+// @Description Use when updating invoice metadata or due date (e.g. PDF URL, net terms), or when recalculating this draft invoice's discount from its current standing coupon associations via apply_discount:true (idempotent, does not attach a new coupon). For paid invoices only safe fields can be updated.
 // @Tags Invoices
 // @Accept json
 // @Produce json
