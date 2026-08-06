@@ -383,7 +383,7 @@ func NewRouter(
 			invoices.POST("/:id/finalize", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.FinalizeInvoice)
 			invoices.POST("/:id/compute", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.ComputeInvoice)
 			invoices.POST("/:id/void", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.VoidInvoice)
-			invoices.POST("/:id/apply-discount", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.ApplyDiscountToInvoice)
+			invoices.POST("/:id/recalculate/discount", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.RecalculateDiscountOnInvoice)
 			invoices.POST("/preview", handlers.Invoice.GetPreviewInvoice)
 			invoices.POST("/internal/preview", handlers.Invoice.GetInternalPreviewInvoice)
 			invoices.PUT("/:id/payment", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.UpdatePaymentStatus)

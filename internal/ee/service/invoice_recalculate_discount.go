@@ -10,14 +10,13 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
-// ApplyDiscountToInvoice recomputes this draft invoice's discount from its current standing
-// CouponAssociation records. Safe to call any number of times: every call wipes whatever
-// CouponApplication rows and line-item discount state it previously produced and rebuilds them
-// from scratch, so repeated calls converge on the same result rather than compounding.
-func (s *invoiceService) ApplyDiscountToInvoice(ctx context.Context, invoiceID string) (*dto.InvoiceResponse, error) {
+// RecalculateDiscountOnInvoice recomputes this draft invoice's discount from its current
+// standing CouponAssociation records. Idempotent: wipes and rebuilds from scratch each call.
+func (s *invoiceService) RecalculateDiscountOnInvoice(ctx context.Context, invoiceID string) (*dto.InvoiceResponse, error) {
 	var lockedInv *invoice.Invoice
 
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
@@ -28,7 +27,7 @@ func (s *invoiceService) ApplyDiscountToInvoice(ctx context.Context, invoiceID s
 
 		if inv.InvoiceStatus != types.InvoiceStatusDraft {
 			return ierr.NewError("invoice is not in draft status").
-				WithHint("Only draft invoices can have their discount reapplied").
+				WithHint("Only draft invoices can have their discount recalculated").
 				WithReportableDetails(map[string]interface{}{
 					"invoice_id":     inv.ID,
 					"current_status": inv.InvoiceStatus,
@@ -56,14 +55,22 @@ func (s *invoiceService) ApplyDiscountToInvoice(ctx context.Context, invoiceID s
 		}
 		inv.TotalDiscount = couponResult.TotalDiscountAmount
 
-		// Discount-first-then-tax, same formula as applyTaxesToInvoice: this endpoint may run
-		// before or after tax has already been computed on this invoice, so it must not drop an
-		// existing TotalTax contribution the way a naive Subtotal-minus-discount formula would.
-		newTotal := inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(inv.TotalTax)
-		if newTotal.IsNegative() {
-			newTotal = decimal.Zero
+		// Tax depends on discount (taxableAmount = Subtotal - TotalDiscount); refresh it via real
+		// TaxApplied records rather than TotalTax==0, which a full discount can zero legitimately.
+		taxFilter := types.NewNoLimitTaxAppliedFilter()
+		taxFilter.EntityType = types.TaxRateEntityTypeInvoice
+		taxFilter.EntityID = inv.ID
+		taxAppliedCount, err := s.TaxAppliedRepo.Count(txCtx, taxFilter)
+		if err != nil {
+			return ierr.WithError(err).WithHint("failed to check existing tax applications").Mark(ierr.ErrDatabase)
 		}
-		inv.Total = newTotal
+		if taxAppliedCount > 0 {
+			if err := s.applyTaxesToInvoice(txCtx, inv, dto.InvoiceComputeRequest{}); err != nil {
+				return err
+			}
+		}
+
+		inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(inv.TotalTax), decimal.Zero)
 		inv.AmountDue = inv.Total
 		inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
 
@@ -71,12 +78,10 @@ func (s *invoiceService) ApplyDiscountToInvoice(ctx context.Context, invoiceID s
 			return err
 		}
 
-		s.Logger.Info(txCtx, "reapplied discount to invoice",
+		s.Logger.Info(txCtx, "recalculated discount on invoice",
 			"invoice_id", inv.ID,
 			"total_discount", inv.TotalDiscount,
 			"new_total", inv.Total,
-			"invoice_coupon_count", len(invoiceCoupons),
-			"line_item_coupon_count", len(lineItemCoupons),
 		)
 
 		lockedInv = inv
@@ -89,43 +94,38 @@ func (s *invoiceService) ApplyDiscountToInvoice(ctx context.Context, invoiceID s
 	return dto.NewInvoiceResponse(lockedInv), nil
 }
 
-// wipeCouponApplications deletes every existing CouponApplication row for this invoice and
-// resets each line item's LineItemDiscount to zero. Both are required for idempotency:
-// ApplyCouponsToInvoice always inserts fresh CouponApplication rows and ADDS to
-// LineItemDiscount rather than overwriting it, so without this in-memory reset a second call
-// would double the discount even after the stale DB rows are deleted.
+// wipeCouponApplications deletes existing CouponApplication rows and persists a zeroed
+// discount reset — ApplyCouponsToInvoice only adds to these fields, never resets them.
 func (s *invoiceService) wipeCouponApplications(ctx context.Context, inv *invoice.Invoice) error {
 	filter := types.NewNoLimitCouponApplicationFilter()
 	filter.InvoiceIDs = []string{inv.ID}
 	existing, err := s.CouponApplicationRepo.List(ctx, filter)
 	if err != nil {
-		return ierr.WithError(err).
-			WithHint("failed to list existing coupon applications").
-			Mark(ierr.ErrDatabase)
+		return ierr.WithError(err).WithHint("failed to list existing coupon applications").Mark(ierr.ErrDatabase)
 	}
 
 	for _, app := range existing {
 		if err := s.CouponApplicationRepo.Delete(ctx, app.ID); err != nil {
-			return ierr.WithError(err).
-				WithHint("failed to delete existing coupon application").
-				Mark(ierr.ErrDatabase)
+			return ierr.WithError(err).WithHint("failed to delete existing coupon application").Mark(ierr.ErrDatabase)
 		}
 	}
 
 	for _, li := range inv.LineItems {
 		li.LineItemDiscount = decimal.Zero
+		li.InvoiceLevelDiscount = decimal.Zero
+		if err := s.InvoiceLineItemRepo.Update(ctx, li); err != nil {
+			return ierr.WithError(err).WithHint("failed to reset line item discount").Mark(ierr.ErrDatabase)
+		}
 	}
 
 	return nil
 }
 
-// resolveCurrentInvoiceCoupons resolves the coupons currently standing against this invoice's
-// subscription (via CouponAssociation), scoped to the invoice's billing period and filtered to
-// price IDs actually present on its line items. Returns two empty slices (not an error) for
-// one-off/credit invoices with no subscription, or invoices missing period dates.
+// resolveCurrentInvoiceCoupons resolves coupons currently standing against this invoice's
+// subscription, scoped to its billing period and filtered to price IDs on its line items.
 func (s *invoiceService) resolveCurrentInvoiceCoupons(ctx context.Context, inv *invoice.Invoice) ([]dto.InvoiceCoupon, []dto.InvoiceLineItemCoupon, error) {
 	if inv.SubscriptionID == nil || inv.PeriodStart == nil || inv.PeriodEnd == nil {
-		return []dto.InvoiceCoupon{}, []dto.InvoiceLineItemCoupon{}, nil
+		return nil, nil, nil
 	}
 
 	sub, _, err := s.SubRepo.GetWithLineItems(ctx, *inv.SubscriptionID)
@@ -142,36 +142,26 @@ func (s *invoiceService) resolveCurrentInvoiceCoupons(ctx context.Context, inv *
 		return nil, nil, err
 	}
 
-	invoiceLineItemPriceIDs := make(map[string]bool)
-	for _, li := range inv.LineItems {
-		if li.PriceID != nil {
-			invoiceLineItemPriceIDs[*li.PriceID] = true
-		}
-	}
+	priceIDs := lo.SliceToMap(
+		lo.Filter(inv.LineItems, func(li *invoice.InvoiceLineItem, _ int) bool { return li.PriceID != nil }),
+		func(li *invoice.InvoiceLineItem) (string, bool) { return *li.PriceID, true },
+	)
 
-	invoiceCoupons := make([]dto.InvoiceCoupon, 0)
-	for _, assocs := range sel.SubLevel {
-		for _, assoc := range assocs {
-			invoiceCoupons = append(invoiceCoupons, dto.InvoiceCoupon{
-				CouponID:            assoc.CouponID,
-				CouponAssociationID: &assoc.ID,
-			})
-		}
-	}
+	invoiceCoupons := lo.FlatMap(lo.Values(sel.SubLevel), func(assocs []*coupon_association.CouponAssociation, _ int) []dto.InvoiceCoupon {
+		return lo.Map(assocs, func(a *coupon_association.CouponAssociation, _ int) dto.InvoiceCoupon {
+			return dto.InvoiceCoupon{CouponID: a.CouponID, CouponAssociationID: &a.ID}
+		})
+	})
 
 	lineItemCoupons := make([]dto.InvoiceLineItemCoupon, 0)
 	for sliID, assocs := range sel.LineLevel {
-		priceID, ok := sel.SubLineItemIDToPriceID[sliID]
-		if !ok || priceID == "" || !invoiceLineItemPriceIDs[priceID] {
+		priceID := sel.SubLineItemIDToPriceID[sliID]
+		if priceID == "" || !priceIDs[priceID] {
 			continue
 		}
-		for _, assoc := range assocs {
-			lineItemCoupons = append(lineItemCoupons, dto.InvoiceLineItemCoupon{
-				LineItemID:          priceID,
-				CouponID:            assoc.CouponID,
-				CouponAssociationID: &assoc.ID,
-			})
-		}
+		lineItemCoupons = append(lineItemCoupons, lo.Map(assocs, func(a *coupon_association.CouponAssociation, _ int) dto.InvoiceLineItemCoupon {
+			return dto.InvoiceLineItemCoupon{LineItemID: priceID, CouponID: a.CouponID, CouponAssociationID: &a.ID}
+		})...)
 	}
 
 	return invoiceCoupons, lineItemCoupons, nil
