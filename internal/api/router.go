@@ -25,6 +25,7 @@ type Handlers struct {
 	Customer                 *v1.CustomerHandler
 	Connection               *v1.ConnectionHandler
 	Marketplace              *v1.MarketplaceHandler
+	UsageRecord              *v1.UsageRecordHandler
 	Plan                     *v1.PlanHandler
 	Subscription             *v1.SubscriptionHandler
 	SubscriptionChange       *v1.SubscriptionChangeHandler
@@ -515,6 +516,11 @@ func NewRouter(
 		marketplace := v1Private.Group("/marketplace")
 		{
 			marketplace.POST("/agreements", write(types.EntityIntegration, types.ActionWrite), handlers.Marketplace.RegisterAgreement)
+		}
+
+		usageRecords := v1Private.Group("/usage-records")
+		{
+			usageRecords.POST("/search", handlers.UsageRecord.QueryUsageRecords)
 		}
 
 		// Costsheet routes
