@@ -976,6 +976,33 @@ func (s *CreditNoteServiceSuite) TestVoidCreditNote() {
 	}
 }
 
+func (s *CreditNoteServiceSuite) TestVoidCreditNote_TransactionFailurePropagates() {
+	// Finalized ADJUSTMENT (refund type can't be voided) pointing at a missing invoice:
+	// fails at the GetForUpdate lock step, before recalculation itself ever runs.
+	brokenCN := &creditnote.CreditNote{
+		ID:               "cn_void_recalc_fail",
+		CustomerID:       s.testData.customer.ID,
+		InvoiceID:        "inv_does_not_exist",
+		CreditNoteNumber: "CN-VOID-FAIL-TEST",
+		CreditNoteStatus: types.CreditNoteStatusFinalized,
+		CreditNoteType:   types.CreditNoteTypeAdjustment,
+		Reason:           types.CreditNoteReasonBillingError,
+		Currency:         "USD",
+		TotalAmount:      decimal.NewFromFloat(10.00),
+		BaseModel:        types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().CreditNoteRepo.CreateWithLineItems(s.GetContext(), brokenCN))
+
+	err := s.service.VoidCreditNote(s.GetContext(), brokenCN.ID)
+	s.Error(err)
+	s.Contains(err.Error(), "not found")
+
+	// Status flip must not happen before the lock succeeds.
+	after, err := s.GetStores().CreditNoteRepo.Get(s.GetContext(), brokenCN.ID)
+	s.NoError(err)
+	s.Equal(types.CreditNoteStatusFinalized, after.CreditNoteStatus)
+}
+
 func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 	// Create draft credit note manually in repository to test processing
 	// This bypasses the CreateCreditNote validation that automatically processes the credit note
@@ -1099,6 +1126,88 @@ func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 			}
 		})
 	}
+}
+
+func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() {
+	// Two drafts, each individually valid (100 <= 110 max), whose combined total (200)
+	// exceeds what the invoice can actually refund.
+	draftReq := func() *dto.CreateCreditNoteRequest {
+		return &dto.CreateCreditNoteRequest{
+			InvoiceID:         s.testData.invoices.finalized.ID,
+			Reason:            types.CreditNoteReasonUnsatisfactory,
+			ProcessCreditNote: false,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{InvoiceLineItemID: "line_1", Amount: decimal.NewFromFloat(50.00)},
+				{InvoiceLineItemID: "line_2", Amount: decimal.NewFromFloat(50.00)},
+			},
+		}
+	}
+
+	first, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	s.NoError(err)
+	s.Equal(types.CreditNoteStatusDraft, first.CreditNoteStatus)
+
+	second, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	s.NoError(err)
+	s.Equal(types.CreditNoteStatusDraft, second.CreditNoteStatus)
+
+	walletBefore, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallets.usd.ID)
+	s.NoError(err)
+	// In-memory wallet store returns a live pointer, so snapshot the balance now.
+	balanceBefore := walletBefore.Balance
+
+	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID))
+
+	err = s.service.FinalizeCreditNote(s.GetContext(), second.ID)
+	s.Error(err)
+	s.Contains(err.Error(), "credit amount exceeds available limit")
+
+	secondAfter, err := s.GetStores().CreditNoteRepo.Get(s.GetContext(), second.ID)
+	s.NoError(err)
+	s.Equal(types.CreditNoteStatusDraft, secondAfter.CreditNoteStatus)
+
+	walletAfter, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallets.usd.ID)
+	s.NoError(err)
+	expectedBalance := balanceBefore.Add(decimal.NewFromFloat(100.00))
+	s.True(walletAfter.Balance.Equal(expectedBalance),
+		"expected wallet balance %s, got %s", expectedBalance, walletAfter.Balance)
+}
+
+func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_AdjustmentCapacityRecheck() {
+	// Same race as the refund case, but for ADJUSTMENT type, which has no wallet
+	// idempotency backstop against a double-applied recalculation.
+	draftReq := func() *dto.CreateCreditNoteRequest {
+		return &dto.CreateCreditNoteRequest{
+			InvoiceID:         s.testData.invoices.pending.ID,
+			Reason:            types.CreditNoteReasonBillingError,
+			ProcessCreditNote: false,
+			LineItems: []dto.CreateCreditNoteLineItemRequest{
+				{InvoiceLineItemID: "line_3", Amount: decimal.NewFromFloat(80.00)},
+			},
+		}
+	}
+
+	first, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	s.NoError(err)
+	s.Equal(types.CreditNoteTypeAdjustment, first.CreditNoteType)
+
+	second, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	s.NoError(err)
+
+	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID))
+
+	err = s.service.FinalizeCreditNote(s.GetContext(), second.ID)
+	s.Error(err)
+	s.Contains(err.Error(), "credit amount exceeds available limit")
+
+	secondAfter, err := s.GetStores().CreditNoteRepo.Get(s.GetContext(), second.ID)
+	s.NoError(err)
+	s.Equal(types.CreditNoteStatusDraft, secondAfter.CreditNoteStatus)
+
+	invAfter, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), s.testData.invoices.pending.ID)
+	s.NoError(err)
+	s.True(invAfter.AdjustmentAmount.Equal(decimal.NewFromFloat(80.00)),
+		"expected adjustment amount 80, got %s", invAfter.AdjustmentAmount)
 }
 
 func (s *CreditNoteServiceSuite) TestMaxCreditableAmountValidation() {
