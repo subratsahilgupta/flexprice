@@ -83,6 +83,11 @@ type InvoiceService interface {
 	// RecalculateTaxesOnInvoice applies subscription auto-apply taxes and updates
 	// total_tax / total / amount_due. Idempotent via tax-applied records.
 	RecalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error)
+
+	// ApplyDiscountToInvoice recomputes this draft invoice's discount from its current
+	// standing CouponAssociation records. Idempotent: every call wipes and rebuilds the
+	// discount from scratch rather than compounding it.
+	ApplyDiscountToInvoice(ctx context.Context, invoiceID string) (*dto.InvoiceResponse, error)
 }
 
 type invoiceService struct {
