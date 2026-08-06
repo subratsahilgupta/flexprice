@@ -434,10 +434,14 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 		return nil
 	})
 	if err != nil {
-		s.Logger.Error(ctx, "failed to void credit note",
-			"error", err,
-			"credit_note_id", cn.ID,
-			"invoice_id", cn.InvoiceID)
+		if ierr.IsValidation(err) {
+			s.Logger.Info(ctx, "credit note void rejected", "error", err, "credit_note_id", cn.ID)
+		} else {
+			s.Logger.Error(ctx, "failed to void credit note",
+				"error", err,
+				"credit_note_id", cn.ID,
+				"invoice_id", cn.InvoiceID)
+		}
 		return err
 	}
 
@@ -449,6 +453,16 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 		"previous_status", originalStatus)
 
 	return nil
+}
+
+func creditNoteAlreadyProcessedError(status types.CreditNoteStatus) error {
+	return ierr.NewError("credit note already processed").
+		WithHintf("This credit note is %s and cannot be processed again. Only draft credit notes can be finalized.", status).
+		WithReportableDetails(map[string]any{
+			"current_status":  status,
+			"required_status": types.CreditNoteStatusDraft,
+		}).
+		Mark(ierr.ErrValidation)
 }
 
 func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) error {
@@ -464,13 +478,7 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 	}
 
 	if cn.CreditNoteStatus != types.CreditNoteStatusDraft {
-		return ierr.NewError("credit note already processed").
-			WithHintf("This credit note is %s and cannot be processed again. Only draft credit notes can be finalized.", cn.CreditNoteStatus).
-			WithReportableDetails(map[string]any{
-				"current_status":  cn.CreditNoteStatus,
-				"required_status": types.CreditNoteStatusDraft,
-			}).
-			Mark(ierr.ErrValidation)
+		return creditNoteAlreadyProcessedError(cn.CreditNoteStatus)
 	}
 
 	// Additional validation before processing
@@ -491,6 +499,16 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 		lockedInv, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID)
 		if err != nil {
 			return err
+		}
+
+		// Re-fetch under the lock: a concurrent finalize of this exact credit note may have
+		// already committed while this call was waiting on the invoice lock.
+		cn, err = s.CreditNoteRepo.Get(tx, cn.ID)
+		if err != nil {
+			return err
+		}
+		if cn.CreditNoteStatus != types.CreditNoteStatusDraft {
+			return creditNoteAlreadyProcessedError(cn.CreditNoteStatus)
 		}
 
 		// Re-check capacity under the lock: another credit note may have consumed it since draft
@@ -571,10 +589,14 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 	})
 
 	if err != nil {
-		s.Logger.Error(ctx, "failed to finalize credit note",
-			"error", err,
-			"credit_note_id", cn.ID,
-			"invoice_id", cn.InvoiceID)
+		if ierr.IsValidation(err) {
+			s.Logger.Info(ctx, "credit note finalize rejected", "error", err, "credit_note_id", cn.ID)
+		} else {
+			s.Logger.Error(ctx, "failed to finalize credit note",
+				"error", err,
+				"credit_note_id", cn.ID,
+				"invoice_id", cn.InvoiceID)
+		}
 		return err
 	}
 
