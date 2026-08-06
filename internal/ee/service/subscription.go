@@ -5076,6 +5076,22 @@ func (s *subscriptionService) validateEntitlementCompatibility(ctx context.Conte
 		}
 	}
 
+	// Pending associations grant no access, so GetSubscriptionEntitlements deliberately does
+	// not see them — but their reset periods still have to be conflict-checked here. Without
+	// this, a pay-later add landing while a checkout is outstanding passes its own check, and
+	// completing that checkout activates two conflicting reset periods on the same feature —
+	// exactly the state this validation exists to prevent. Existing entitlements win on
+	// collision so the reported conflict names the live reset period, not the unpaid one.
+	pendingResetPeriods, err := s.pendingAddonFeatureResetPeriods(ctx, subscriptionID)
+	if err != nil {
+		return err
+	}
+	for featureID, resetPeriod := range pendingResetPeriods {
+		if _, exists := featureResetMap[featureID]; !exists {
+			featureResetMap[featureID] = resetPeriod
+		}
+	}
+
 	// Check for conflicts
 	for _, addonEnt := range meteredAddonEntitlements {
 
@@ -5095,6 +5111,40 @@ func (s *subscriptionService) validateEntitlementCompatibility(ctx context.Conte
 	}
 
 	return nil
+}
+
+// pendingAddonFeatureResetPeriods returns the usage reset period of every metered feature
+// granted by an addon whose association is still pending payment, keyed by feature id.
+// Compatibility-only: it deliberately does not flow into GetSubscriptionEntitlements, which
+// also drives real feature access where a pending addon must not count.
+func (s *subscriptionService) pendingAddonFeatureResetPeriods(
+	ctx context.Context,
+	subscriptionID string,
+) (map[string]types.EntitlementUsageResetPeriod, error) {
+	pendingAssociations, err := s.listPendingAddonAssociations(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	if len(pendingAssociations) == 0 {
+		return nil, nil
+	}
+
+	entitlementService := NewEntitlementService(s.ServiceParams)
+	resetPeriods := make(map[string]types.EntitlementUsageResetPeriod)
+
+	for _, association := range pendingAssociations {
+		addonEntitlements, err := entitlementService.GetAddonEntitlements(ctx, association.AddonID)
+		if err != nil {
+			return nil, err
+		}
+		for _, ent := range addonEntitlements.Items {
+			if ent.FeatureType == types.FeatureTypeMetered {
+				resetPeriods[ent.FeatureID] = ent.UsageResetPeriod
+			}
+		}
+	}
+
+	return resetPeriods, nil
 }
 
 // TerminateSubscriptionResources terminates all line items, addon associations, and credit
@@ -5131,8 +5181,20 @@ func (s *subscriptionService) TerminateSubscriptionResources(
 	return nil
 }
 
-// cancelAddonsForSubscription marks all active addon associations for the subscription as cancelled
-// and terminates subscription line items where entity type is addon and entity id is the addon id.
+// listPendingAddonAssociations returns the subscription's addon associations that are still
+// awaiting payment.
+func (s *subscriptionService) listPendingAddonAssociations(
+	ctx context.Context,
+	subscriptionID string,
+) ([]*addonassociation.AddonAssociation, error) {
+	filter := types.NewNoLimitAddonAssociationFilter()
+	filter.EntityType = lo.ToPtr(types.AddonAssociationEntityTypeSubscription)
+	filter.EntityIDs = []string{subscriptionID}
+	filter.AddonStatus = lo.ToPtr(string(types.AddonStatusPending))
+
+	return s.AddonAssociationRepo.List(ctx, filter)
+}
+
 // Called during subscription cancellation (immediate or end_of_period) with the effective cancellation date.
 // Uses the same GetActiveAddonAssociation path as the API so we reliably find all active addons on the subscription.
 func (s *subscriptionService) cancelAddonsForSubscription(ctx context.Context, subscriptionID string, effectiveDate time.Time, reason string) error {
@@ -5152,30 +5214,50 @@ func (s *subscriptionService) cancelAddonsForSubscription(ctx context.Context, s
 			Mark(ierr.ErrDatabase)
 	}
 
-	if activeAddons == nil || len(activeAddons.Items) == 0 {
-		logger.Debug(ctx, "no active addon associations to cancel")
+	// Pending associations are gated behind an unpaid checkout and are invisible to the
+	// active read above, but they must be cancelled here too or they outlive the subscription.
+	pendingAddons, err := s.listPendingAddonAssociations(ctx, subscriptionID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to get pending addon associations for subscription").
+			Mark(ierr.ErrDatabase)
+	}
+
+	associations := make([]*addonassociation.AddonAssociation, 0, len(pendingAddons))
+	if activeAddons != nil {
+		for _, addonResp := range activeAddons.Items {
+			if addonResp == nil || addonResp.AddonAssociation == nil {
+				continue
+			}
+			associations = append(associations, addonResp.AddonAssociation)
+		}
+	}
+	associations = append(associations, pendingAddons...)
+
+	if len(associations) == 0 {
+		logger.Debug(ctx, "no addon associations to cancel")
 		return nil
 	}
 
 	logger.Info(ctx, "cancelling addon associations for subscription",
 		"subscription_id", subscriptionID,
-		"addon_count", len(activeAddons.Items))
+		"addon_count", len(associations),
+		"pending_addon_count", len(pendingAddons))
 
 	cancellationReason := "Subscription cancelled"
 	if reason != "" {
 		cancellationReason = fmt.Sprintf("Subscription cancelled: %s", reason)
 	}
 
-	addonIDsToCancel := make(map[string]struct{}, len(activeAddons.Items))
+	addonIDsToCancel := make(map[string]struct{}, len(associations))
 
-	for _, addonResp := range activeAddons.Items {
-		if addonResp == nil || addonResp.AddonAssociation == nil {
-			continue
-		}
-		association := addonResp.AddonAssociation
+	for _, association := range associations {
+		// A pending association's EndDate is the onetime cadence boundary stamped at attach
+		// time, not a removal schedule, so it must still be cancelled here.
+		isPending := association.AddonStatus == types.AddonStatusPending
 
 		// Skip if already has end date (already scheduled for removal)
-		if association.EndDate != nil && !association.EndDate.IsZero() {
+		if !isPending && association.EndDate != nil && !association.EndDate.IsZero() {
 			logger.Debug(ctx, "addon association already has end date, skipping",
 				"addon_association_id", association.ID,
 				"end_date", association.EndDate)
@@ -5266,6 +5348,16 @@ func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, r
 	association, err := s.AddonAssociationRepo.GetByID(ctx, req.AddonAssociationID)
 	if err != nil {
 		return err
+	}
+
+	if association.AddonStatus == types.AddonStatusPending {
+		return ierr.NewError("addon attach is pending payment").
+			WithHint("Complete or cancel the pending checkout for this addon first").
+			WithReportableDetails(map[string]interface{}{
+				"addon_association_id": association.ID,
+				"addon_id":             association.AddonID,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// check if association already has end date i.e. scheduled to be removed
