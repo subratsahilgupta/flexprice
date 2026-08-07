@@ -34725,22 +34725,9 @@ func (m *InvoiceMutation) OldIsManuallyEdited(ctx context.Context) (v bool, err 
 	return oldValue.IsManuallyEdited, nil
 }
 
-// ClearIsManuallyEdited clears the value of the "is_manually_edited" field.
-func (m *InvoiceMutation) ClearIsManuallyEdited() {
-	m.is_manually_edited = nil
-	m.clearedFields[invoice.FieldIsManuallyEdited] = struct{}{}
-}
-
-// IsManuallyEditedCleared returns if the "is_manually_edited" field was cleared in this mutation.
-func (m *InvoiceMutation) IsManuallyEditedCleared() bool {
-	_, ok := m.clearedFields[invoice.FieldIsManuallyEdited]
-	return ok
-}
-
 // ResetIsManuallyEdited resets all changes to the "is_manually_edited" field.
 func (m *InvoiceMutation) ResetIsManuallyEdited() {
 	m.is_manually_edited = nil
-	delete(m.clearedFields, invoice.FieldIsManuallyEdited)
 }
 
 // AddLineItemIDs adds the "line_items" edge to the InvoiceLineItem entity by ids.
@@ -35658,9 +35645,6 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	if m.FieldCleared(invoice.FieldRecalculatedInvoiceID) {
 		fields = append(fields, invoice.FieldRecalculatedInvoiceID)
 	}
-	if m.FieldCleared(invoice.FieldIsManuallyEdited) {
-		fields = append(fields, invoice.FieldIsManuallyEdited)
-	}
 	return fields
 }
 
@@ -35761,9 +35745,6 @@ func (m *InvoiceMutation) ClearField(name string) error {
 		return nil
 	case invoice.FieldRecalculatedInvoiceID:
 		m.ClearRecalculatedInvoiceID()
-		return nil
-	case invoice.FieldIsManuallyEdited:
-		m.ClearIsManuallyEdited()
 		return nil
 	}
 	return fmt.Errorf("unknown Invoice nullable field %s", name)

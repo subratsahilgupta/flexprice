@@ -563,8 +563,13 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetTotal(inv.Total).
 		SetSubtotal(inv.Subtotal).
 		SetTotalDiscount(inv.TotalDiscount).
-		SetIsManuallyEdited(inv.IsManuallyEdited).
 		AddVersion(1) // Increment version atomically
+
+	// Monotonic: only ever set the lock, never clear it here - a caller
+	// passing the Go zero-value false must not silently unlock the invoice.
+	if inv.IsManuallyEdited {
+		query.SetIsManuallyEdited(true)
+	}
 
 	// Execute update
 	n, err := query.Save(ctx)

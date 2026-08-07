@@ -227,7 +227,6 @@ func (Invoice) Fields() []ent.Field {
 			Comment("ID of the replacement invoice created when this invoice was recalculated after voiding"),
 
 		field.Bool("is_manually_edited").
-			Optional().
 			Default(false).
 			Comment("True once a user has manually added, edited, or removed a line item on this draft invoice"),
 	}

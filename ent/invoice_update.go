@@ -616,12 +616,6 @@ func (iu *InvoiceUpdate) SetNillableIsManuallyEdited(b *bool) *InvoiceUpdate {
 	return iu
 }
 
-// ClearIsManuallyEdited clears the value of the "is_manually_edited" field.
-func (iu *InvoiceUpdate) ClearIsManuallyEdited() *InvoiceUpdate {
-	iu.mutation.ClearIsManuallyEdited()
-	return iu
-}
-
 // AddLineItemIDs adds the "line_items" edge to the InvoiceLineItem entity by IDs.
 func (iu *InvoiceUpdate) AddLineItemIDs(ids ...string) *InvoiceUpdate {
 	iu.mutation.AddLineItemIDs(ids...)
@@ -932,9 +926,6 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := iu.mutation.IsManuallyEdited(); ok {
 		_spec.SetField(invoice.FieldIsManuallyEdited, field.TypeBool, value)
-	}
-	if iu.mutation.IsManuallyEditedCleared() {
-		_spec.ClearField(invoice.FieldIsManuallyEdited, field.TypeBool)
 	}
 	if iu.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1630,12 +1621,6 @@ func (iuo *InvoiceUpdateOne) SetNillableIsManuallyEdited(b *bool) *InvoiceUpdate
 	return iuo
 }
 
-// ClearIsManuallyEdited clears the value of the "is_manually_edited" field.
-func (iuo *InvoiceUpdateOne) ClearIsManuallyEdited() *InvoiceUpdateOne {
-	iuo.mutation.ClearIsManuallyEdited()
-	return iuo
-}
-
 // AddLineItemIDs adds the "line_items" edge to the InvoiceLineItem entity by IDs.
 func (iuo *InvoiceUpdateOne) AddLineItemIDs(ids ...string) *InvoiceUpdateOne {
 	iuo.mutation.AddLineItemIDs(ids...)
@@ -1976,9 +1961,6 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	}
 	if value, ok := iuo.mutation.IsManuallyEdited(); ok {
 		_spec.SetField(invoice.FieldIsManuallyEdited, field.TypeBool, value)
-	}
-	if iuo.mutation.IsManuallyEditedCleared() {
-		_spec.ClearField(invoice.FieldIsManuallyEdited, field.TypeBool)
 	}
 	if iuo.mutation.LineItemsCleared() {
 		edge := &sqlgraph.EdgeSpec{

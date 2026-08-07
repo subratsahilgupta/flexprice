@@ -243,26 +243,6 @@ func (iliu *InvoiceLineItemUpdate) ClearAdjustedEntitlementQuantity() *InvoiceLi
 	return iliu
 }
 
-// SetParentLineItemID sets the "parent_line_item_id" field.
-func (iliu *InvoiceLineItemUpdate) SetParentLineItemID(s string) *InvoiceLineItemUpdate {
-	iliu.mutation.SetParentLineItemID(s)
-	return iliu
-}
-
-// SetNillableParentLineItemID sets the "parent_line_item_id" field if the given value is not nil.
-func (iliu *InvoiceLineItemUpdate) SetNillableParentLineItemID(s *string) *InvoiceLineItemUpdate {
-	if s != nil {
-		iliu.SetParentLineItemID(*s)
-	}
-	return iliu
-}
-
-// ClearParentLineItemID clears the value of the "parent_line_item_id" field.
-func (iliu *InvoiceLineItemUpdate) ClearParentLineItemID() *InvoiceLineItemUpdate {
-	iliu.mutation.ClearParentLineItemID()
-	return iliu
-}
-
 // AddCouponApplicationIDs adds the "coupon_applications" edge to the CouponApplication entity by IDs.
 func (iliu *InvoiceLineItemUpdate) AddCouponApplicationIDs(ids ...string) *InvoiceLineItemUpdate {
 	iliu.mutation.AddCouponApplicationIDs(ids...)
@@ -470,9 +450,6 @@ func (iliu *InvoiceLineItemUpdate) sqlSave(ctx context.Context) (n int, err erro
 	}
 	if iliu.mutation.AdjustedEntitlementQuantityCleared() {
 		_spec.ClearField(invoicelineitem.FieldAdjustedEntitlementQuantity, field.TypeOther)
-	}
-	if value, ok := iliu.mutation.ParentLineItemID(); ok {
-		_spec.SetField(invoicelineitem.FieldParentLineItemID, field.TypeString, value)
 	}
 	if iliu.mutation.ParentLineItemIDCleared() {
 		_spec.ClearField(invoicelineitem.FieldParentLineItemID, field.TypeString)
@@ -754,26 +731,6 @@ func (iliuo *InvoiceLineItemUpdateOne) ClearAdjustedEntitlementQuantity() *Invoi
 	return iliuo
 }
 
-// SetParentLineItemID sets the "parent_line_item_id" field.
-func (iliuo *InvoiceLineItemUpdateOne) SetParentLineItemID(s string) *InvoiceLineItemUpdateOne {
-	iliuo.mutation.SetParentLineItemID(s)
-	return iliuo
-}
-
-// SetNillableParentLineItemID sets the "parent_line_item_id" field if the given value is not nil.
-func (iliuo *InvoiceLineItemUpdateOne) SetNillableParentLineItemID(s *string) *InvoiceLineItemUpdateOne {
-	if s != nil {
-		iliuo.SetParentLineItemID(*s)
-	}
-	return iliuo
-}
-
-// ClearParentLineItemID clears the value of the "parent_line_item_id" field.
-func (iliuo *InvoiceLineItemUpdateOne) ClearParentLineItemID() *InvoiceLineItemUpdateOne {
-	iliuo.mutation.ClearParentLineItemID()
-	return iliuo
-}
-
 // AddCouponApplicationIDs adds the "coupon_applications" edge to the CouponApplication entity by IDs.
 func (iliuo *InvoiceLineItemUpdateOne) AddCouponApplicationIDs(ids ...string) *InvoiceLineItemUpdateOne {
 	iliuo.mutation.AddCouponApplicationIDs(ids...)
@@ -1011,9 +968,6 @@ func (iliuo *InvoiceLineItemUpdateOne) sqlSave(ctx context.Context) (_node *Invo
 	}
 	if iliuo.mutation.AdjustedEntitlementQuantityCleared() {
 		_spec.ClearField(invoicelineitem.FieldAdjustedEntitlementQuantity, field.TypeOther)
-	}
-	if value, ok := iliuo.mutation.ParentLineItemID(); ok {
-		_spec.SetField(invoicelineitem.FieldParentLineItemID, field.TypeString, value)
 	}
 	if iliuo.mutation.ParentLineItemIDCleared() {
 		_spec.ClearField(invoicelineitem.FieldParentLineItemID, field.TypeString)

@@ -206,6 +206,7 @@ func (InvoiceLineItem) Fields() []ent.Field {
 			}).
 			Optional().
 			Nillable().
+			Immutable().
 			Comment("ID of the line item this one replaced, if it was created by editing an existing line item"),
 	}
 }

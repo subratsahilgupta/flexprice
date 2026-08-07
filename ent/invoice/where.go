@@ -2772,16 +2772,6 @@ func IsManuallyEditedNEQ(v bool) predicate.Invoice {
 	return predicate.Invoice(sql.FieldNEQ(FieldIsManuallyEdited, v))
 }
 
-// IsManuallyEditedIsNil applies the IsNil predicate on the "is_manually_edited" field.
-func IsManuallyEditedIsNil() predicate.Invoice {
-	return predicate.Invoice(sql.FieldIsNull(FieldIsManuallyEdited))
-}
-
-// IsManuallyEditedNotNil applies the NotNil predicate on the "is_manually_edited" field.
-func IsManuallyEditedNotNil() predicate.Invoice {
-	return predicate.Invoice(sql.FieldNotNull(FieldIsManuallyEdited))
-}
-
 // HasLineItems applies the HasEdge predicate on the "line_items" edge.
 func HasLineItems() predicate.Invoice {
 	return predicate.Invoice(func(s *sql.Selector) {

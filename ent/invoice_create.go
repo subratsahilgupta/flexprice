@@ -807,6 +807,9 @@ func (ic *InvoiceCreate) check() error {
 	if _, ok := ic.mutation.Version(); !ok {
 		return &ValidationError{Name: "version", err: errors.New(`ent: missing required field "Invoice.version"`)}
 	}
+	if _, ok := ic.mutation.IsManuallyEdited(); !ok {
+		return &ValidationError{Name: "is_manually_edited", err: errors.New(`ent: missing required field "Invoice.is_manually_edited"`)}
+	}
 	return nil
 }
 
