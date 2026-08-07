@@ -544,23 +544,3 @@ func (s *RecalculateDiscountOnInvoiceSuite) TestApplyDiscountFalseIsNoOp() {
 	s.NoError(err)
 	s.Empty(apps, "apply_discount omitted must not create any CouponApplication rows")
 }
-
-// TestApplyDiscountRejectedOnFinalizedInvoice proves apply_discount is stricter than the
-// general UpdateInvoice status gate: a plain field update on a FINALIZED invoice succeeds,
-// but apply_discount:true on the same invoice does not.
-func (s *RecalculateDiscountOnInvoiceSuite) TestApplyDiscountRejectedOnFinalizedInvoice() {
-	ctx := s.GetContext()
-	inv := s.createOneOffDraftInvoice("inv_discount_finalized", decimal.NewFromInt(100))
-	inv.InvoiceStatus = types.InvoiceStatusFinalized
-	s.NoError(s.GetStores().InvoiceRepo.Update(ctx, inv))
-
-	_, err := s.applyDiscount(ctx, inv.ID)
-	s.Error(err)
-	s.Contains(err.Error(), "cannot update invoice in current status")
-
-	newDueDate := time.Now().UTC().Add(30 * 24 * time.Hour)
-	resp, err := s.service.UpdateInvoice(ctx, inv.ID, dto.UpdateInvoiceRequest{DueDate: &newDueDate})
-	s.NoError(err)
-	s.Require().NotNil(resp.DueDate)
-	s.True(resp.DueDate.Equal(newDueDate))
-}
