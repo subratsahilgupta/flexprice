@@ -554,9 +554,6 @@ type CreateSubscriptionRequest struct {
 	// OpeningInvoiceAdjustmentAmount nets the opening invoice against a proration/cancel credit (e.g. on plan change). Internal only.
 	OpeningInvoiceAdjustmentAmount *decimal.Decimal `json:"-"`
 
-	// Checkout opts this create into payment gating: the subscription is materialized as DRAFT and
-	// only activates once the customer pays. Omitting it leaves the create path unchanged.
-	// See validateCheckoutCompatibility for the fields it is incompatible with.
 	Checkout *CheckoutParams `json:"checkout,omitempty"`
 
 	SubscriptionCreationConfig
@@ -791,9 +788,6 @@ type SubscriptionResponse struct {
 	// aggregated entitlement info (same shape as CustomerEntitlementsResponse.Features).
 	Entitlements []*AggregatedFeature `json:"entitlements,omitempty"`
 
-	// CheckoutSession is set only by a payment-gated create (POST /subscriptions with a checkout
-	// object) that produced a charge. It carries the payment link the customer must complete
-	// before the DRAFT subscription activates.
 	CheckoutSession *CheckoutSessionResponse `json:"checkout_session,omitempty"`
 }
 

@@ -71,6 +71,7 @@ func (s *subscriptionService) activateDraftSubscription(ctx context.Context, sub
 		)
 	}
 
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionActivated, sub.ID)
 	return nil
 }
 

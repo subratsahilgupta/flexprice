@@ -371,7 +371,6 @@ func (s *checkoutSessionService) completeSubscriptionCheckout(ctx context.Contex
 		return err
 	}
 
-	subSvc.publishSubscriptionCreatedEvent(ctx, sub)
 	return nil
 }
 
