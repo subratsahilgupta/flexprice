@@ -2526,6 +2526,9 @@ func (s *SubscriptionModificationServiceSuite) TestSettlePayFirst_ArchivesDraftW
 	filter.SubscriptionID = sub.ID
 	invoices, listErr := s.GetStores().InvoiceRepo.List(ctx, filter)
 	s.Require().NoError(listErr)
+	// Required non-empty first: a bare loop over an empty list asserts nothing and would pass
+	// whether or not the draft was ever created.
+	s.Require().NotEmpty(invoices, "the draft invoice is created before the session, so it must exist")
 	for _, inv := range invoices {
 		s.Equal(types.StatusDeleted, inv.Status,
 			"draft invoice must be archived when session create fails")

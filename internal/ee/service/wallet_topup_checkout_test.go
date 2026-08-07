@@ -137,13 +137,19 @@ func (s *WalletServiceSuite) TestTopUpWallet_CheckoutSessionCreateFailureArchive
 	s.True(ierr.IsAlreadyExists(err), "expected session create AlreadyExists, got %v", err)
 
 	// Counted by live rows rather than total rows: the repository soft deletes, so the archived
-	// draft is still listed.
+	// draft is still listed. Both sides go through the same predicate — filtering only the "after"
+	// side would compare unlike quantities and mask a draft that was live before the call.
 	after, err := s.GetStores().InvoiceRepo.List(ctx, filter)
 	s.Require().NoError(err)
-	live := lo.Filter(after, func(inv *invoice.Invoice, _ int) bool {
+	s.Equal(len(liveInvoices(before)), len(liveInvoices(after)),
+		"draft invoice must be archived when session create fails")
+}
+
+// liveInvoices drops soft-deleted rows so before/after counts compare like with like.
+func liveInvoices(invoices []*invoice.Invoice) []*invoice.Invoice {
+	return lo.Filter(invoices, func(inv *invoice.Invoice, _ int) bool {
 		return inv.Status != types.StatusDeleted
 	})
-	s.Equal(len(before), len(live), "draft invoice must be archived when session create fails")
 }
 
 func (s *WalletServiceSuite) TestHandlePurchasedCreditInvoiced_PayFirstForcesPendingDespiteAutoComplete() {

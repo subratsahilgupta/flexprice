@@ -621,16 +621,16 @@ func (s *SubscriptionServiceSuite) seedPayFirstSubscriptionCheckoutWithGrants(
 	return session, subResp.Subscription, draft
 }
 
-// The other route to "nothing to collect": a real subtotal that a discount cancels. Unlike the
-// usage-only case the invoice is KEPT and finalized, so the subtotal and the discount stay on the
-// books rather than making the subscription look like it was never billed.
+// activateDraftSubscription is the step both zero-charge creates and paid webhooks share: flip
+// DRAFT to ACTIVE and apply the credit grants the draft was holding back. Grants are the part worth
+// pinning — they are written at create but stay pending while the subscription is a draft, so an
+// activation that forgets them leaves the customer's credits stranded until the cron sweeps.
 //
-// Driven through activateGatedSubscriptionNow directly rather than through a 100%-off coupon: the
-// in-memory coupon machinery creates the association but applies no discount at invoice time
-// (total_discount stays 0), so a coupon fixture would silently exercise the charged path instead.
-// The branch condition that routes here (amount_due <= 0 on a non-skipped invoice) is therefore
-// covered by this test only for its consequences, not its trigger.
-func (s *SubscriptionServiceSuite) TestActivateGatedSubscriptionNow_KeepsAndFinalizesTheInvoice() {
+// NOTE: the sibling behaviour — a zero-due invoice being FINALIZED rather than archived, unlike the
+// zero-subtotal case — is inlined in CreateSubscription and no longer has a callable seam. Producing
+// it needs subtotal > 0 with amount_due == 0, i.e. a real discount, and the in-memory coupon
+// machinery applies none at invoice time. That branch is covered by the Postman collection only.
+func (s *SubscriptionServiceSuite) TestActivateDraftSubscription_AppliesHeldBackGrants() {
 	ctx := s.GetContext()
 	subService := s.service.(*subscriptionService)
 	s.seedFixedPricePlan("plan_zero_due", decimal.NewFromInt(50), 0)
@@ -647,22 +647,8 @@ func (s *SubscriptionServiceSuite) TestActivateGatedSubscriptionNow_KeepsAndFina
 	}}
 	subResp, err := subService.CreateSubscription(ctx, req)
 	s.Require().NoError(err)
+	s.Require().Equal(types.SubscriptionStatusDraft, subResp.SubscriptionStatus)
 
-	invResp, skipped, err := buildCheckoutDraftInvoice(ctx, subService.ServiceParams, subResp)
-	s.Require().NoError(err)
-	s.Require().False(skipped)
-
-	response := &dto.SubscriptionResponse{Subscription: subResp.Subscription}
-
-	s.Equal(types.SubscriptionStatusActive, response.SubscriptionStatus)
-	s.Nil(response.CheckoutSession, "an immediate activation opens no session")
-
-	kept, err := s.GetStores().InvoiceRepo.Get(ctx, invResp.ID)
-	s.Require().NoError(err)
-	s.Equal(types.InvoiceStatusFinalized, kept.InvoiceStatus, "the invoice must be finalized, not archived")
-	s.Equal(types.StatusPublished, kept.Status)
-
-	// Grants were held back while the subscription was draft and must not stay that way.
 	grants, err := s.GetStores().CreditGrantRepo.List(ctx, &types.CreditGrantFilter{
 		QueryFilter:     types.NewNoLimitQueryFilter(),
 		SubscriptionIDs: []string{subResp.ID},
@@ -670,10 +656,25 @@ func (s *SubscriptionServiceSuite) TestActivateGatedSubscriptionNow_KeepsAndFina
 	s.Require().NoError(err)
 	s.Require().Len(grants, 1)
 
-	application := s.firstApplicationFor(grants[0].ID)
-	s.Require().NotNil(application)
-	s.Equal(types.ApplicationStatusApplied, application.ApplicationStatus,
+	before := s.firstApplicationFor(grants[0].ID)
+	s.Require().NotNil(before)
+	s.Require().NotEqual(types.ApplicationStatusApplied, before.ApplicationStatus,
+		"the grant must still be unapplied while the subscription is a draft")
+
+	s.Require().NoError(subService.activateDraftSubscription(ctx, subResp.Subscription))
+
+	activated, err := s.GetStores().SubscriptionRepo.Get(ctx, subResp.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusActive, activated.SubscriptionStatus)
+
+	after := s.firstApplicationFor(grants[0].ID)
+	s.Require().NotNil(after)
+	s.Equal(types.ApplicationStatusApplied, after.ApplicationStatus,
 		"activating must apply the grants the draft held back")
+
+	// Replay guard: a second call must be a harmless no-op, not a second application.
+	s.Require().NoError(subService.activateDraftSubscription(ctx, activated))
+	s.Equal(types.SubscriptionStatusActive, activated.SubscriptionStatus)
 }
 
 // The subscription's collection_method governs FUTURE invoices; the checkout's governs only the

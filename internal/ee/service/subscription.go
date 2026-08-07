@@ -571,16 +571,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		}
 
 		if skipped || !invResp.AmountDue.GreaterThan(decimal.Zero) {
-			if skipped {
-				if err := s.InvoiceRepo.Delete(ctx, invResp.ID); err != nil {
-					s.Logger.Error(ctx, "failed to archive empty draft invoice for zero-charge checkout create",
-						"error", err,
-						"invoice_id", invResp.ID,
-						"subscription_id", response.ID,
-					)
-				}
-				invResp = nil
-			} else {
+			if !skipped {
 				invSvc := NewInvoiceService(s.ServiceParams)
 
 				if err := invSvc.FinalizeInvoice(ctx, invResp.ID); err != nil {
@@ -590,13 +581,13 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 				if refreshed, err := invSvc.GetInvoice(ctx, invResp.ID); err == nil {
 					invResp = refreshed
 				}
+				response.LatestInvoice = invResp
 			}
 
 			if err := s.activateDraftSubscription(ctx, response.Subscription); err != nil {
 				s.archiveDraftCheckoutSubscription(ctx, response.ID)
 				return nil, err
 			}
-			response.LatestInvoice = invResp
 		} else {
 			err = s.startCreateSubscriptionCheckout(ctx, response, invResp, req.Checkout)
 		}

@@ -97,6 +97,12 @@ func (r *CreateCheckoutSessionRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
+	if cfg := r.Configuration.CreateSubscriptionParams; cfg != nil && cfg.SubscriptionID != "" {
+		return ierr.NewError("subscription_id is not supported via create checkout session").
+			WithHint("Use POST /subscriptions with a checkout object to gate an existing draft subscription").
+			Mark(ierr.ErrValidation)
+	}
+
 	if err := r.CheckoutParams.Validate(); err != nil {
 		return err
 	}
