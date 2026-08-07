@@ -947,6 +947,8 @@ type UpdateInvoiceRequest struct {
 	DueDate       *time.Time `json:"due_date,omitempty"`
 	// Invoice metadata will be overridden with the request metadata
 	Metadata *types.Metadata `json:"metadata,omitempty"`
+	// When true, recalculates discount from existing coupon associations (draft invoices only).
+	ApplyDiscount bool `json:"apply_discount,omitempty"`
 }
 
 func (r *UpdateInvoiceRequest) Validate() error {
