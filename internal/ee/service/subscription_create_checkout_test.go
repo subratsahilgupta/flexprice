@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -323,4 +324,298 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithCheckout_SessionCre
 		s.Equal(types.StatusDeleted, inv.Status,
 			"the draft invoice must be archived alongside its subscription")
 	}
+}
+
+// ─────────────────────────────────────────────
+// Completion
+// ─────────────────────────────────────────────
+
+// seedPayFirstSubscriptionCheckout reproduces the state gateSubscriptionOnCheckout leaves behind —
+// DRAFT subscription, DRAFT invoice, INITIATED payment, pending session — without going through the
+// provider, which needs a live Razorpay connection.
+func (s *SubscriptionServiceSuite) seedPayFirstSubscriptionCheckout(
+	planID string,
+) (*domainCheckout.CheckoutSession, *subscription.Subscription, *dto.InvoiceResponse) {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+
+	// Created without checkout so the seeding stops short of the session, but as draft so the
+	// opening invoice is skipped exactly as the gated path leaves it.
+	req := s.checkoutCreateRequest(planID)
+	req.Checkout = nil
+	req.SubscriptionStatus = types.SubscriptionStatusDraft
+	subResp, err := subService.CreateSubscription(ctx, req)
+	s.Require().NoError(err)
+
+	draft, skipped, err := buildCheckoutDraftInvoice(ctx, subService.ServiceParams, subResp)
+	s.Require().NoError(err)
+	s.Require().False(skipped, "the seeded plan must produce a real charge")
+	s.Require().True(draft.AmountDue.GreaterThan(decimal.Zero))
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	payResp, err := checkoutSvc.createCheckoutPayment(ctx, &draft.Invoice, types.CheckoutPaymentProviderRazorpay)
+	s.Require().NoError(err)
+
+	session := &domainCheckout.CheckoutSession{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
+		EnvironmentID:   types.GetEnvironmentID(ctx),
+		CustomerID:      subResp.CustomerID,
+		Action:          types.CheckoutActionCreateSubscription,
+		CheckoutStatus:  types.CheckoutStatusPending,
+		PaymentProvider: types.CheckoutPaymentProviderRazorpay,
+		Configuration: domainCheckout.ToJSONBCheckoutConfiguration(types.CheckoutConfiguration{
+			CreateSubscriptionParams: &types.CreateSubscriptionParams{SubscriptionID: subResp.ID},
+		}),
+		CheckoutInvoiceID: &draft.ID,
+		CheckoutPaymentID: &payResp.ID,
+		ExpiresAt:         time.Now().UTC().Add(time.Hour),
+		BaseModel:         types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Create(ctx, session))
+
+	return session, subResp.Subscription, draft
+}
+
+func (s *SubscriptionServiceSuite) webhookEventNames() []types.WebhookEventName {
+	publisher, ok := s.GetWebhookPublisher().(*testutil.InMemoryWebhookPublisher)
+	s.Require().True(ok, "expected the capturing webhook publisher")
+
+	return lo.Map(publisher.Events(), func(e *types.WebhookEvent, _ int) types.WebhookEventName {
+		return e.EventName
+	})
+}
+
+func (s *SubscriptionServiceSuite) TestCompleteSubscriptionCheckout_ActivatesAndFinalizes() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_complete_activates", decimal.NewFromInt(50), 0)
+
+	session, draftSub, draft := s.seedPayFirstSubscriptionCheckout("plan_complete_activates")
+	invoicesBefore := len(s.invoicesForSubscription(draftSub.ID))
+
+	publisher := s.GetWebhookPublisher().(*testutil.InMemoryWebhookPublisher)
+	publisher.Reset()
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, session.ID, &types.CheckoutProviderResult{
+		ProviderPaymentIntentID: "pay_subs_complete_001",
+	}))
+
+	activated, err := s.GetStores().SubscriptionRepo.Get(ctx, draftSub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusActive, activated.SubscriptionStatus,
+		"payment must activate the draft subscription")
+
+	finalized, err := NewInvoiceService(subService.ServiceParams).GetInvoice(ctx, draft.ID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, finalized.InvoiceStatus)
+
+	payment, err := s.GetStores().PaymentRepo.Get(ctx, *session.CheckoutPaymentID)
+	s.Require().NoError(err)
+	s.Equal(types.PaymentStatusSucceeded, payment.PaymentStatus)
+
+	s.Equal(invoicesBefore, len(s.invoicesForSubscription(draftSub.ID)),
+		"completion must finalize the existing draft, never raise a second charge")
+
+	// The gap this work closes: a checkout-created subscription used to emit only
+	// subscription.draft_created and never announce that it went live.
+	s.Contains(s.webhookEventNames(), types.WebhookEventSubscriptionCreated,
+		"activation must publish subscription.created")
+
+	completed, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusCompleted, completed.CheckoutStatus)
+}
+
+// CompleteCheckoutSession runs the action BEFORE the atomic MarkCompleted claim, so two concurrent
+// webhooks can both enter completion. The subscription's own status is the replay fingerprint.
+func (s *SubscriptionServiceSuite) TestCompleteSubscriptionCheckout_ReplayIsIdempotent() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_complete_replay", decimal.NewFromInt(50), 0)
+
+	session, draftSub, draft := s.seedPayFirstSubscriptionCheckout("plan_complete_replay")
+	invoicesBefore := len(s.invoicesForSubscription(draftSub.ID))
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	providerResult := &types.CheckoutProviderResult{ProviderPaymentIntentID: "pay_subs_replay_001"}
+
+	// Applied directly, twice, so the second call is not short-circuited by the session's own
+	// terminal-status guard — this isolates the subscription-level replay guard.
+	s.Require().NoError(checkoutSvc.completeSubscriptionCheckout(ctx, session, providerResult))
+	s.Require().NoError(checkoutSvc.completeSubscriptionCheckout(ctx, session, providerResult))
+
+	activated, err := s.GetStores().SubscriptionRepo.Get(ctx, draftSub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusActive, activated.SubscriptionStatus)
+
+	s.Equal(invoicesBefore, len(s.invoicesForSubscription(draftSub.ID)),
+		"a replay must not raise another charge")
+
+	finalized, err := NewInvoiceService(subService.ServiceParams).GetInvoice(ctx, draft.ID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, finalized.InvoiceStatus)
+}
+
+// A session opened by the legacy POST /checkout/sessions carries its ids in session.Result and has
+// no subscription id in its configuration. Those must keep completing.
+func (s *SubscriptionServiceSuite) TestCompleteSubscriptionCheckout_LegacyResultShape() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_complete_legacy", decimal.NewFromInt(50), 0)
+
+	session, draftSub, draft := s.seedPayFirstSubscriptionCheckout("plan_complete_legacy")
+
+	// Rewrite the session into the legacy shape: slim params, ids in Result.
+	session.Configuration = domainCheckout.ToJSONBCheckoutConfiguration(types.CheckoutConfiguration{
+		CreateSubscriptionParams: &types.CreateSubscriptionParams{
+			PlanID:        "plan_complete_legacy",
+			Currency:      "usd",
+			BillingPeriod: types.BILLING_PERIOD_MONTHLY,
+		},
+	})
+	session.Result = domainCheckout.ToJSONBCheckoutResult(&types.CheckoutResult{
+		CreateSubscriptionResult: &types.CreateSubscriptionResult{
+			SubscriptionID: draftSub.ID,
+			InvoiceID:      draft.ID,
+			PaymentID:      *session.CheckoutPaymentID,
+		},
+	})
+	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Update(ctx, session))
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.completeSubscriptionCheckout(ctx, session,
+		&types.CheckoutProviderResult{ProviderPaymentIntentID: "pay_subs_legacy_001"}))
+
+	activated, err := s.GetStores().SubscriptionRepo.Get(ctx, draftSub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusActive, activated.SubscriptionStatus)
+}
+
+// An expired or failed session must take its draft subscription with it, or the draft outlives the
+// session as an orphan the customer can never pay for.
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupArchivesDraftSubscription() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_cleanup_draft", decimal.NewFromInt(50), 0)
+
+	session, draftSub, draft := s.seedPayFirstSubscriptionCheckout("plan_cleanup_draft")
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
+
+	archived, err := s.GetStores().SubscriptionRepo.Get(ctx, draftSub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusArchived, archived.Status, "cleanup must archive the draft subscription")
+	s.Equal(types.SubscriptionStatusDraft, archived.SubscriptionStatus,
+		"the soft delete leaves subscription_status untouched")
+
+	archivedDraft, err := s.GetStores().InvoiceRepo.Get(ctx, draft.ID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusDeleted, archivedDraft.Status, "cleanup must archive the draft invoice")
+
+	cleaned, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusExpired, cleaned.CheckoutStatus)
+}
+
+// A session that completed and only later expired must leave the live subscription alone.
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupSkipsActivatedSubscription() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_cleanup_active", decimal.NewFromInt(50), 0)
+
+	session, draftSub, _ := s.seedPayFirstSubscriptionCheckout("plan_cleanup_active")
+
+	draftSub.SubscriptionStatus = types.SubscriptionStatusActive
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, draftSub))
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
+
+	live, err := s.GetStores().SubscriptionRepo.Get(ctx, draftSub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusPublished, live.Status, "cleanup must not archive an activated subscription")
+	s.Equal(types.SubscriptionStatusActive, live.SubscriptionStatus)
+}
+
+// The other gap this work closes: a checkout-created subscription's credit grants stayed pending
+// until the cron happened to sweep them, because completion never processed them at activation.
+func (s *SubscriptionServiceSuite) TestCompleteSubscriptionCheckout_ProcessesPendingCreditGrants() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_complete_grants", decimal.NewFromInt(50), 0)
+
+	session, draftSub, _ := s.seedPayFirstSubscriptionCheckoutWithGrants("plan_complete_grants")
+
+	grants, err := s.GetStores().CreditGrantRepo.List(ctx, &types.CreditGrantFilter{
+		QueryFilter:     types.NewNoLimitQueryFilter(),
+		SubscriptionIDs: []string{draftSub.ID},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(grants, 1, "the draft create must have written the grant")
+
+	before := s.firstApplicationFor(grants[0].ID)
+	s.Require().NotNil(before)
+	s.Require().NotEqual(types.ApplicationStatusApplied, before.ApplicationStatus,
+		"the grant must still be unapplied while the subscription is a draft")
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.completeSubscriptionCheckout(ctx, session,
+		&types.CheckoutProviderResult{ProviderPaymentIntentID: "pay_subs_grants_001"}))
+
+	after := s.firstApplicationFor(grants[0].ID)
+	s.Require().NotNil(after)
+	s.Equal(types.ApplicationStatusApplied, after.ApplicationStatus,
+		"activation must process the pending credit grant instead of leaving it for the cron")
+}
+
+// seedPayFirstSubscriptionCheckoutWithGrants is seedPayFirstSubscriptionCheckout with a
+// subscription-scoped credit grant attached at create.
+func (s *SubscriptionServiceSuite) seedPayFirstSubscriptionCheckoutWithGrants(
+	planID string,
+) (*domainCheckout.CheckoutSession, *subscription.Subscription, *dto.InvoiceResponse) {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+
+	req := s.checkoutCreateRequest(planID)
+	req.Checkout = nil
+	req.SubscriptionStatus = types.SubscriptionStatusDraft
+	req.CreditGrants = []dto.CreateCreditGrantRequest{{
+		Name:           "Gated Signup Credits",
+		Scope:          types.CreditGrantScopeSubscription,
+		Credits:        decimal.NewFromInt(250),
+		Cadence:        types.CreditGrantCadenceOneTime,
+		ExpirationType: types.CreditGrantExpiryTypeNever,
+	}}
+
+	subResp, err := subService.CreateSubscription(ctx, req)
+	s.Require().NoError(err)
+
+	draft, skipped, err := buildCheckoutDraftInvoice(ctx, subService.ServiceParams, subResp)
+	s.Require().NoError(err)
+	s.Require().False(skipped)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	payResp, err := checkoutSvc.createCheckoutPayment(ctx, &draft.Invoice, types.CheckoutPaymentProviderRazorpay)
+	s.Require().NoError(err)
+
+	session := &domainCheckout.CheckoutSession{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CHECKOUT_SESSION),
+		EnvironmentID:   types.GetEnvironmentID(ctx),
+		CustomerID:      subResp.CustomerID,
+		Action:          types.CheckoutActionCreateSubscription,
+		CheckoutStatus:  types.CheckoutStatusPending,
+		PaymentProvider: types.CheckoutPaymentProviderRazorpay,
+		Configuration: domainCheckout.ToJSONBCheckoutConfiguration(types.CheckoutConfiguration{
+			CreateSubscriptionParams: &types.CreateSubscriptionParams{SubscriptionID: subResp.ID},
+		}),
+		CheckoutInvoiceID: &draft.ID,
+		CheckoutPaymentID: &payResp.ID,
+		ExpiresAt:         time.Now().UTC().Add(time.Hour),
+		BaseModel:         types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Create(ctx, session))
+
+	return session, subResp.Subscription, draft
 }

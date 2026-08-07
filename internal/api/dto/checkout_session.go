@@ -219,6 +219,13 @@ func ValidateCheckoutSessionForCompletion(session *domainCheckout.CheckoutSessio
 
 	cfg := session.Configuration.ToCheckoutConfiguration()
 	switch session.Action {
+	case types.CheckoutActionCreateSubscription:
+		if cfg.CreateSubscriptionParams == nil {
+			return ierr.NewError("session has no create_subscription_params").
+				WithHint("checkout session must have create_subscription_params before it can be completed").
+				Mark(ierr.ErrValidation)
+		}
+		return cfg.CreateSubscriptionParams.Validate()
 	case types.CheckoutActionModifySubscription:
 		if cfg.ModifySubscriptionParams == nil {
 			return ierr.NewError("session has no modify_subscription_params").

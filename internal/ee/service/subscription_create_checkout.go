@@ -83,18 +83,9 @@ func (s *subscriptionService) activateGatedSubscriptionNow(
 		}
 	}
 
-	sub.SubscriptionStatus = types.SubscriptionStatusActive
-	if err := s.SubRepo.Update(ctx, sub); err != nil {
+	if err := s.activateGatedSubscription(ctx, sub); err != nil {
 		s.archiveDraftCheckoutSubscription(ctx, sub.ID)
 		return err
-	}
-
-	// Grants were left pending while the subscription was draft.
-	if err := s.processPendingCreditGrantsForSubscription(ctx, sub); err != nil {
-		s.Logger.Error(ctx, "failed to process pending credit grants for zero-charge checkout create",
-			"error", err,
-			"subscription_id", sub.ID,
-		)
 	}
 
 	response.LatestInvoice = invResp
@@ -146,20 +137,31 @@ func (s *subscriptionService) settleCreateSubscriptionPayFirst(
 	return nil
 }
 
-// finishGatedSubscriptionActivation runs the post-activation work a normal create does inline:
-// pending credit-grant applications are processed and subscription.created is published. Neither
-// happened for checkout-created subscriptions before — they only ever emitted
-// subscription.draft_created, and their grants waited for the credit-grant cron.
+// activateGatedSubscription flips a DRAFT subscription live and applies the credit grants that were
+// held back while it was draft. Shared by the two ways a gated create can activate: the customer
+// paying the checkout, and a create that turned out to owe nothing.
 //
-// For the WEBHOOK completion path only. The create path must not call this: CreateSubscription
-// publishes the lifecycle event itself from the subscription's resulting status, so a gated create
-// that activates immediately would announce itself twice.
+// The draft check is the replay fingerprint — a second webhook finds the subscription already
+// active and changes nothing, the same shape applyAddAddonRef uses for its association. Grant
+// processing is idempotent (it only applies pending applications), so a replay is safe there too.
 //
-// Grant failures are logged rather than returned: the payment has already been collected by the
-// time this runs, so failing the completion would be worse than the cron picking them up late.
-func (s *subscriptionService) finishGatedSubscriptionActivation(ctx context.Context, sub *subscription.Subscription) {
+// Publishing the lifecycle event is deliberately NOT here. CreateSubscription publishes from the
+// subscription's resulting status, so a gated create that activates immediately would announce
+// itself twice; the webhook completion path, which has no such caller, publishes for itself.
+//
+// Grant failures are logged rather than returned: on the completion path the payment has already
+// been collected, so failing would be worse than the credit-grant cron picking them up late.
+func (s *subscriptionService) activateGatedSubscription(ctx context.Context, sub *subscription.Subscription) error {
 	if sub == nil {
-		return
+		return ierr.NewError("subscription is required to activate a gated create").
+			Mark(ierr.ErrValidation)
+	}
+
+	if sub.SubscriptionStatus == types.SubscriptionStatusDraft {
+		sub.SubscriptionStatus = types.SubscriptionStatusActive
+		if err := s.SubRepo.Update(ctx, sub); err != nil {
+			return err
+		}
 	}
 
 	if err := s.processPendingCreditGrantsForSubscription(ctx, sub); err != nil {
@@ -169,7 +171,7 @@ func (s *subscriptionService) finishGatedSubscriptionActivation(ctx context.Cont
 		)
 	}
 
-	s.publishSubscriptionCreatedEvent(ctx, sub)
+	return nil
 }
 
 // archiveDraftCheckoutSubscription rolls back a DRAFT subscription that was materialized for a
