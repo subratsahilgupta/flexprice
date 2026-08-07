@@ -76,17 +76,6 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		req.BillingCycle = types.BillingCycleAnniversary
 	}
 
-	// The subscription's collection method governs future invoices; the checkout's governs only the
-	// gated payment. When the caller expressed no opinion, inherit the checkout's EFFECTIVE method:
-	// its config value, or send_invoice — the same default StartPayFirstCheckoutSession applies.
-	//
-	// The fallback is the point. Without it a link-paid subscription would take Validate's own
-	// default of charge_automatically and try to auto-charge its first renewal against a mandate
-	// that was never created. The legacy create-session path stores send_invoice here, and this
-	// keeps the two entry points agreeing.
-	//
-	// Runs before Validate, which fills CollectionMethod in and would erase the distinction between
-	// "caller chose" and "caller said nothing".
 	if req.Checkout != nil && req.CollectionMethod == nil {
 		method := types.CollectionMethodSendInvoice
 		if cfg := req.Checkout.PaymentProviderConfig; cfg != nil && cfg.CollectionMethod != "" {
@@ -301,9 +290,6 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	}
 	syncTrialingStateFromCreateRequest(&req, sub)
 
-	// After the trial resolution above, deliberately: a trial raises no opening charge, so there is
-	// nothing to gate and the subscription is left TRIALING. Forcing draft first would also suppress
-	// the trial promotion itself, since syncTrialingStateFromCreateRequest returns early for draft.
 	if req.Checkout != nil && sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
 		sub.SubscriptionStatus = types.SubscriptionStatusDraft
 	}
@@ -566,31 +552,61 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		return nil, err
 	}
 
-	// Handle phases (post-transaction)
 	if req.SubscriptionStatus != types.SubscriptionStatusDraft && len(result.Phases) > 0 {
 		if err = s.handleSubscriptionPhases(ctx, result.Sub, result.Phases, req.Phases, result.Plan, result.ValidPrices); err != nil {
 			return nil, err
 		}
 	}
 
-	// Build response
 	response := &dto.SubscriptionResponse{Subscription: result.Sub}
 	if result.Invoice != nil {
 		response.LatestInvoice = result.Invoice
 	}
 
-	// Price the draft and open the payment gate before anything is announced, so a failure archives
-	// the subscription without having published a create it would have to take back. A trialing
-	// subscription is not draft here and falls through with the checkout ignored.
 	if req.Checkout != nil && result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft {
-		if err := s.gateSubscriptionOnCheckout(ctx, response, req.Checkout); err != nil {
+		invResp, skipped, err := buildCheckoutDraftInvoice(ctx, s.ServiceParams, response)
+		if err != nil {
+			s.archiveDraftCheckoutSubscription(ctx, response.ID)
+			return nil, err
+		}
+
+		if skipped || !invResp.AmountDue.GreaterThan(decimal.Zero) {
+			if skipped {
+				if err := s.InvoiceRepo.Delete(ctx, invResp.ID); err != nil {
+					s.Logger.Error(ctx, "failed to archive empty draft invoice for zero-charge checkout create",
+						"error", err,
+						"invoice_id", invResp.ID,
+						"subscription_id", response.ID,
+					)
+				}
+				invResp = nil
+			} else {
+				invSvc := NewInvoiceService(s.ServiceParams)
+
+				if err := invSvc.FinalizeInvoice(ctx, invResp.ID); err != nil {
+					s.archiveDraftCheckoutSubscription(ctx, response.ID)
+					return nil, err
+				}
+				if refreshed, err := invSvc.GetInvoice(ctx, invResp.ID); err == nil {
+					invResp = refreshed
+				}
+			}
+
+			if err := s.activateDraftSubscription(ctx, response.Subscription); err != nil {
+				s.archiveDraftCheckoutSubscription(ctx, response.ID)
+				return nil, err
+			}
+			response.LatestInvoice = invResp
+		} else {
+			err = s.startCreateSubscriptionCheckout(ctx, response, invResp, req.Checkout)
+		}
+
+		if err != nil {
 			return nil, err
 		}
 	}
 
-	// Sync to HubSpot and publish webhooks
-	isDraft := req.SubscriptionStatus == types.SubscriptionStatusDraft ||
-		result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft
+	isDraft := req.SubscriptionStatus == types.SubscriptionStatusDraft || result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft
 	if isDraft {
 		s.triggerHubSpotQuoteSyncWorkflow(ctx, result.Sub.ID, result.Customer.ID)
 		s.runPaddleSubscriptionSync(ctx, result.Sub)
@@ -5026,7 +5042,7 @@ func (s *subscriptionService) createAddonAttachParams(
 		if err != nil {
 			return nil, err
 		}
-		
+
 		onetimePeriodEnd = periodEnd
 		addonAssociation.EndDate = &onetimePeriodEnd
 	}

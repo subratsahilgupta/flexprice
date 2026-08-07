@@ -833,22 +833,6 @@ type SubscriptionResponseV2 struct {
 	PlanPricesOutOfSync bool `json:"plan_prices_out_of_sync"`
 }
 
-// validateCheckoutCompatibility rejects the few request fields a payment-gated create cannot
-// honour. Everything else on the request — addons, coupons, overrides, credit grants, and the
-// payment fields below — passes through untouched.
-//
-// Deliberately NOT rejected, because they are lifetime subscription config rather than instructions
-// for this one payment, and the opening invoice they would have influenced is skipped for a DRAFT
-// subscription anyway:
-//
-//   - payment_behavior and gateway_payment_method_id are persisted on the row and read at every
-//     renewal via NewPaymentParametersFromSubscription.
-//   - collection_method decides how future invoices are collected, which is a different question
-//     from checkout.payment_provider_config.collection_method — that one governs only how this
-//     checkout collects (payment link vs mandate). The service defaults the former from the latter
-//     when the caller sets only the checkout side.
-//   - trial_period_days falls through instead: a trial produces no charge, so the subscription is
-//     created normally and no session is opened.
 func (r *CreateSubscriptionRequest) validateCheckoutCompatibility() error {
 	if err := r.Checkout.Validate(); err != nil {
 		return err
@@ -858,8 +842,6 @@ func (r *CreateSubscriptionRequest) validateCheckoutCompatibility() error {
 		return nil
 	}
 
-	// The status is not the caller's to choose: checkout materializes the subscription as DRAFT and
-	// activates it on payment.
 	if r.SubscriptionStatus != "" {
 		return ierr.NewError("subscription_status is not supported with checkout").
 			WithHint("Remove subscription_status; a checkout-gated subscription is created as draft and activated once payment succeeds").
@@ -867,20 +849,13 @@ func (r *CreateSubscriptionRequest) validateCheckoutCompatibility() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	// Phase 0 is written inside the create transaction but handleSubscriptionPhases, which
-	// materializes phases 1..n, is skipped for draft — a gated create would persist a half-built
-	// schedule. Already rejected for draft generally; restated here so the hint names the cause.
-	// Lifting it means running handleSubscriptionPhases at activation instead of at create.
 	if len(r.Phases) > 0 {
 		return ierr.NewError("phases is not supported with checkout").
 			WithHint("Remove checkout to use phases, or remove phases to gate this subscription behind payment").
 			Mark(ierr.ErrValidation)
 	}
 
-	// Children are created inside createSubscription and inherit the parent's draft status, so
-	// gating them is feasible — but cleanup would have to archive the children and unwind
-	// grouped-invoicing conversions of pre-existing subscriptions, and activation would have to
-	// cascade. Out of scope for v1, additive later.
+	// TODO: Handle inheritance for checkout-gated creates
 	if r.Inheritance != nil {
 		return ierr.NewError("inheritance is not supported with checkout").
 			WithHint("Remove checkout to create an inherited or grouped-invoicing subscription").
@@ -897,7 +872,6 @@ func (r *CreateSubscriptionRequest) Validate() error {
 		return err
 	}
 
-	// Must run before this method starts defaulting fields — see validateCheckoutCompatibility.
 	if err := r.validateCheckoutCompatibility(); err != nil {
 		return err
 	}

@@ -321,9 +321,6 @@ func (s *checkoutSessionService) completeWalletTopupCheckout(
 	)
 }
 
-// completeSubscriptionCheckout activates the DRAFT subscription the session gated, then finalizes
-// the existing draft invoice and reconciles payment. The amount was locked when the draft was
-// priced, so nothing is re-priced here.
 func (s *checkoutSessionService) completeSubscriptionCheckout(ctx context.Context, session *domainCheckout.CheckoutSession, providerResult *types.CheckoutProviderResult) error {
 	var subscriptionId string
 	var invoiceId string
@@ -360,26 +357,20 @@ func (s *checkoutSessionService) completeSubscriptionCheckout(ctx context.Contex
 			Mark(ierr.ErrValidation)
 	}
 
+	if err := s.finalizeCheckoutInvoiceAndPayment(ctx, invoiceId, paymentId, providerResult); err != nil {
+		return err
+	}
+
 	sub, err := s.SubRepo.Get(ctx, subscriptionId)
 	if err != nil {
 		return err
 	}
 
-	// Money settles first: activating before it does would leave a live subscription behind a draft
-	// invoice if finalization failed, instead of the clean draft a retry can finish.
-	if err := s.finalizeCheckoutInvoiceAndPayment(ctx, invoiceId, paymentId, providerResult); err != nil {
-		return err
-	}
-
 	subSvc := &subscriptionService{ServiceParams: s.ServiceParams}
-	if err := subSvc.activateGatedSubscription(ctx, sub); err != nil {
+	if err := subSvc.activateDraftSubscription(ctx, sub); err != nil {
 		return err
 	}
 
-	// Published unconditionally, like completeAddAddonCheckout: CompleteCheckoutSession's
-	// terminal-status guard already absorbs ordinary duplicate webhooks, so the only republish is a
-	// retry of a completion that failed partway — better than a subscription that went live and was
-	// never announced.
 	subSvc.publishSubscriptionCreatedEvent(ctx, sub)
 	return nil
 }

@@ -396,13 +396,6 @@ func (s *checkoutSessionService) createDraftSubscription(ctx context.Context, se
 	return subResp, invResp, nil
 }
 
-// buildCheckoutDraftInvoice prices a subscription onto a DRAFT invoice so a payment link can be
-// created against a locked amount. Nothing is finalized here — that happens in
-// completeSubscriptionCheckout once the provider confirms payment.
-//
-// skipped reports that the subscription produced no charges at all. It is returned rather than
-// raised so each caller can decide: the legacy create-session path errors, while the payment-gated
-// create on POST /subscriptions activates the subscription immediately instead.
 func buildCheckoutDraftInvoice(
 	ctx context.Context,
 	params ServiceParams,
@@ -425,18 +418,13 @@ func buildCheckoutDraftInvoice(
 		return nil, false, err
 	}
 	if skipped {
-		// The draft still exists and the caller owns it, so hand back the id it needs to archive.
 		return invResp, true, nil
 	}
 
-	// Apply subscription taxes so AmountDue includes tax before payment link creation.
-	// FinalizeInvoice will recalculate taxes idempotently (safe if credits adjust the base).
 	if _, err := invSvc.RecalculateTaxesOnInvoice(ctx, inv); err != nil {
 		return nil, false, err
 	}
 
-	// Full GetInvoice so the returned response matches the normal invoice API shape
-	// (line items, customer, tax applied, etc.) for downstream checkout fulfillment.
 	invResp, err = invSvc.GetInvoice(ctx, inv.ID)
 	if err != nil {
 		return nil, false, err

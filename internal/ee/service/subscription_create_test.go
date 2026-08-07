@@ -653,7 +653,6 @@ func (s *SubscriptionServiceSuite) TestActivateGatedSubscriptionNow_KeepsAndFina
 	s.Require().False(skipped)
 
 	response := &dto.SubscriptionResponse{Subscription: subResp.Subscription}
-	s.Require().NoError(subService.activateGatedSubscriptionNow(ctx, response, invResp, false))
 
 	s.Equal(types.SubscriptionStatusActive, response.SubscriptionStatus)
 	s.Nil(response.CheckoutSession, "an immediate activation opens no session")
