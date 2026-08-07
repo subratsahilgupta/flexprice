@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/coupon_association"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	taxrate "github.com/flexprice/flexprice/internal/domain/tax"
 	"github.com/flexprice/flexprice/internal/domain/taxassociation"
@@ -25,6 +26,7 @@ type RecalculateDiscountOnInvoiceSuite struct {
 	service  InvoiceService
 	testData struct {
 		customer *customer.Customer
+		plan     *plan.Plan
 	}
 }
 
@@ -92,6 +94,13 @@ func (s *RecalculateDiscountOnInvoiceSuite) setupTestData() {
 		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.NoError(s.GetStores().CustomerRepo.Create(s.GetContext(), s.testData.customer))
+
+	s.testData.plan = &plan.Plan{
+		ID:        "plan_discount_test",
+		Name:      "Discount Test Plan",
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().PlanRepo.Create(s.GetContext(), s.testData.plan))
 }
 
 // createOneOffDraftInvoice creates a subscription-less draft invoice with one line item.
@@ -164,7 +173,7 @@ func (s *RecalculateDiscountOnInvoiceSuite) createSubscriptionWithAssociation(
 	subID, assocID string, c *coupon.Coupon, periodStart, periodEnd time.Time,
 ) *subscription.Subscription {
 	sub := &subscription.Subscription{
-		ID: subID, CustomerID: s.testData.customer.ID, Currency: "usd",
+		ID: subID, CustomerID: s.testData.customer.ID, PlanID: s.testData.plan.ID, Currency: "usd",
 		SubscriptionStatus: types.SubscriptionStatusActive,
 		CurrentPeriodStart: periodStart, CurrentPeriodEnd: periodEnd,
 		BillingAnchor: periodStart, StartDate: periodStart,
@@ -238,7 +247,7 @@ func (s *RecalculateDiscountOnInvoiceSuite) TestRejectsNonDraftInvoice() {
 
 	_, err := s.applyDiscount(ctx, inv.ID)
 	s.Error(err)
-	s.Contains(err.Error(), "cannot update invoice in current status")
+	s.Contains(err.Error(), "not in draft status")
 }
 
 func (s *RecalculateDiscountOnInvoiceSuite) TestAppliesInvoiceLevelCoupon() {
@@ -314,7 +323,7 @@ func (s *RecalculateDiscountOnInvoiceSuite) TestSubscriptionInvoiceWithNoAssocia
 	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
 	sub := &subscription.Subscription{
-		ID: "sub_discount_6", CustomerID: s.testData.customer.ID, Currency: "usd",
+		ID: "sub_discount_6", CustomerID: s.testData.customer.ID, PlanID: s.testData.plan.ID, Currency: "usd",
 		SubscriptionStatus: types.SubscriptionStatusActive,
 		CurrentPeriodStart: periodStart, CurrentPeriodEnd: periodEnd,
 		BillingAnchor: periodStart, StartDate: periodStart,
@@ -403,7 +412,7 @@ func (s *RecalculateDiscountOnInvoiceSuite) TestRecalculatesTaxAgainstRealTaxRat
 	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
 	sub := &subscription.Subscription{
-		ID: "sub_discount_tax", CustomerID: s.testData.customer.ID, Currency: "usd",
+		ID: "sub_discount_tax", CustomerID: s.testData.customer.ID, PlanID: s.testData.plan.ID, Currency: "usd",
 		SubscriptionStatus: types.SubscriptionStatusActive,
 		CurrentPeriodStart: periodStart, CurrentPeriodEnd: periodEnd,
 		BillingAnchor: periodStart, StartDate: periodStart,
@@ -456,7 +465,7 @@ func (s *RecalculateDiscountOnInvoiceSuite) TestLineItemLevelCoupon() {
 	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 
 	sub := &subscription.Subscription{
-		ID: "sub_discount_5", CustomerID: s.testData.customer.ID, Currency: "usd",
+		ID: "sub_discount_5", CustomerID: s.testData.customer.ID, PlanID: s.testData.plan.ID, Currency: "usd",
 		SubscriptionStatus: types.SubscriptionStatusActive,
 		CurrentPeriodStart: periodStart, CurrentPeriodEnd: periodEnd,
 		BillingAnchor: periodStart, StartDate: periodStart,
@@ -526,7 +535,7 @@ func (s *RecalculateDiscountOnInvoiceSuite) TestApplyDiscountAtomicWithOtherFiel
 // TestApplyDiscountFalseIsNoOp is a regression guard: omitting apply_discount must leave
 // discount/coupon state provably untouched, same as before this field existed. Uses a one-off
 // invoice (no subscription) so it exercises UpdateInvoice's full existing GetInvoice-based
-// return path — the same path TestApplyDiscountRejectedOnFinalizedInvoice's plain update uses.
+// return path.
 func (s *RecalculateDiscountOnInvoiceSuite) TestApplyDiscountFalseIsNoOp() {
 	ctx := s.GetContext()
 	inv := s.createOneOffDraftInvoice("inv_discount_noop", decimal.NewFromInt(100))

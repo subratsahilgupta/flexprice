@@ -3577,16 +3577,16 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
-	if !req.ApplyDiscount {
-		// Get the existing invoice
-		inv, err := s.InvoiceRepo.Get(ctx, id)
+	var updatedInv *invoice.Invoice
+	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, id)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// Only allow updates for draft or finalized invoices
 		if inv.InvoiceStatus != types.InvoiceStatusDraft && inv.InvoiceStatus != types.InvoiceStatusFinalized {
-			return nil, ierr.NewError("cannot update invoice in current status").
+			return ierr.NewError("cannot update invoice in current status").
 				WithHint("Invoice can only be updated when in draft or finalized status").
 				WithReportableDetails(map[string]any{
 					"invoice_id":     id,
@@ -3595,42 +3595,6 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 				Mark(ierr.ErrValidation)
 		}
 
-		// Update invoice PDF URL if provided
-		if req.InvoicePDFURL != nil {
-			inv.InvoicePDFURL = req.InvoicePDFURL
-		}
-
-		// Update due date if provided
-		if req.DueDate != nil {
-			inv.DueDate = req.DueDate
-		}
-
-		// Update metadata if provided
-		if req.Metadata != nil {
-			inv.Metadata = *req.Metadata
-		}
-
-		// Update the invoice in the repository
-		if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-			return nil, err
-		}
-
-		// Publish webhook event for invoice update
-		s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, id)
-
-		// Return the updated invoice
-		return s.GetInvoice(ctx, id)
-	}
-
-	// apply_discount:true needs a row lock (it mutates coupon/tax state) and must commit
-	// atomically with any other requested fields, so it takes its own transactional path.
-	var updatedInv *invoice.Invoice
-	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, id)
-		if err != nil {
-			return err
-		}
-
 		if req.InvoicePDFURL != nil {
 			inv.InvoicePDFURL = req.InvoicePDFURL
 		}
@@ -3641,8 +3605,10 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 			inv.Metadata = *req.Metadata
 		}
 
-		if err := s.recalculateDiscountOnInvoice(txCtx, inv); err != nil {
-			return err
+		if req.ApplyDiscount {
+			if err := s.recalculateDiscountOnInvoice(txCtx, inv); err != nil {
+				return err
+			}
 		}
 
 		if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
