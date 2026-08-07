@@ -423,9 +423,11 @@ func (s *SubscriptionServiceSuite) TestCompleteSubscriptionCheckout_ActivatesAnd
 		"completion must finalize the existing draft, never raise a second charge")
 
 	// The gap this work closes: a checkout-created subscription used to emit only
-	// subscription.draft_created and never announce that it went live.
-	s.Contains(s.webhookEventNames(), types.WebhookEventSubscriptionCreated,
-		"activation must publish subscription.created")
+	// subscription.draft_created and never announce that it went live. It announces itself as
+	// ACTIVATED rather than created — the create already emitted subscription.draft_created, and
+	// this matches how every other draft-to-live transition reports itself.
+	s.Contains(s.webhookEventNames(), types.WebhookEventSubscriptionActivated,
+		"activation must publish subscription.activated")
 
 	completed, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
 	s.Require().NoError(err)
