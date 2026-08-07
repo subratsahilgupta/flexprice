@@ -619,3 +619,59 @@ func (s *SubscriptionServiceSuite) seedPayFirstSubscriptionCheckoutWithGrants(
 
 	return session, subResp.Subscription, draft
 }
+
+// The other route to "nothing to collect": a real subtotal that a discount cancels. Unlike the
+// usage-only case the invoice is KEPT and finalized, so the subtotal and the discount stay on the
+// books rather than making the subscription look like it was never billed.
+//
+// Driven through activateGatedSubscriptionNow directly rather than through a 100%-off coupon: the
+// in-memory coupon machinery creates the association but applies no discount at invoice time
+// (total_discount stays 0), so a coupon fixture would silently exercise the charged path instead.
+// The branch condition that routes here (amount_due <= 0 on a non-skipped invoice) is therefore
+// covered by this test only for its consequences, not its trigger.
+func (s *SubscriptionServiceSuite) TestActivateGatedSubscriptionNow_KeepsAndFinalizesTheInvoice() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_zero_due", decimal.NewFromInt(50), 0)
+
+	req := s.checkoutCreateRequest("plan_zero_due")
+	req.Checkout = nil
+	req.SubscriptionStatus = types.SubscriptionStatusDraft
+	req.CreditGrants = []dto.CreateCreditGrantRequest{{
+		Name:           "Discounted Signup Credits",
+		Scope:          types.CreditGrantScopeSubscription,
+		Credits:        decimal.NewFromInt(100),
+		Cadence:        types.CreditGrantCadenceOneTime,
+		ExpirationType: types.CreditGrantExpiryTypeNever,
+	}}
+	subResp, err := subService.CreateSubscription(ctx, req)
+	s.Require().NoError(err)
+
+	invResp, skipped, err := buildCheckoutDraftInvoice(ctx, subService.ServiceParams, subResp)
+	s.Require().NoError(err)
+	s.Require().False(skipped)
+
+	response := &dto.SubscriptionResponse{Subscription: subResp.Subscription}
+	s.Require().NoError(subService.activateGatedSubscriptionNow(ctx, response, invResp, false))
+
+	s.Equal(types.SubscriptionStatusActive, response.SubscriptionStatus)
+	s.Nil(response.CheckoutSession, "an immediate activation opens no session")
+
+	kept, err := s.GetStores().InvoiceRepo.Get(ctx, invResp.ID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, kept.InvoiceStatus, "the invoice must be finalized, not archived")
+	s.Equal(types.StatusPublished, kept.Status)
+
+	// Grants were held back while the subscription was draft and must not stay that way.
+	grants, err := s.GetStores().CreditGrantRepo.List(ctx, &types.CreditGrantFilter{
+		QueryFilter:     types.NewNoLimitQueryFilter(),
+		SubscriptionIDs: []string{subResp.ID},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(grants, 1)
+
+	application := s.firstApplicationFor(grants[0].ID)
+	s.Require().NotNil(application)
+	s.Equal(types.ApplicationStatusApplied, application.ApplicationStatus,
+		"activating must apply the grants the draft held back")
+}
