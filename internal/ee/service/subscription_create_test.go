@@ -163,12 +163,16 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithCheckout_UsageOnlyP
 	s.Require().NoError(err)
 	s.Empty(sessions, "a zero-charge create must create no checkout session at all")
 
+	s.Nil(resp.LatestInvoice, "a skipped invoice is reported as no invoice, like CreateSubscriptionInvoice does")
+
+	// The SKIPPED row is left alone. It is the period's placeholder, not litter: ComputeInvoice
+	// re-opens SKIPPED rows to DRAFT once usage accrues, and the idempotency and period-uniqueness
+	// lookups both treat SKIPPED as "reuse this one". Archiving it would strand the period.
 	invoices := s.invoicesForSubscription(resp.ID)
-	s.Require().NotEmpty(invoices, "the checkout path prices a draft before deciding not to gate")
-	for _, inv := range invoices {
-		s.Equal(types.StatusDeleted, inv.Status,
-			"the empty draft priced for the checkout must not be left behind")
-	}
+	s.Require().Len(invoices, 1, "the checkout path prices a draft before deciding not to gate")
+	s.Equal(types.InvoiceStatusSkipped, invoices[0].InvoiceStatus)
+	s.Equal(types.StatusPublished, invoices[0].Status,
+		"the skipped invoice must stay live so the period keeps its anchor")
 }
 
 // ─────────────────────────────────────────────
