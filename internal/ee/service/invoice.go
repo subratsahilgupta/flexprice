@@ -3577,61 +3577,52 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
-	// Get the existing invoice
-	inv, err := s.InvoiceRepo.Get(ctx, id)
+	var updatedInv *invoice.Invoice
+	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, id)
+		if err != nil {
+			return err
+		}
+
+		// Only allow updates for draft or finalized invoices
+		if inv.InvoiceStatus != types.InvoiceStatusDraft && inv.InvoiceStatus != types.InvoiceStatusFinalized {
+			return ierr.NewError("cannot update invoice in current status").
+				WithHint("Invoice can only be updated when in draft or finalized status").
+				WithReportableDetails(map[string]any{
+					"invoice_id":     id,
+					"current_status": inv.InvoiceStatus,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		if req.InvoicePDFURL != nil {
+			inv.InvoicePDFURL = req.InvoicePDFURL
+		}
+		if req.DueDate != nil {
+			inv.DueDate = req.DueDate
+		}
+		if req.Metadata != nil {
+			inv.Metadata = *req.Metadata
+		}
+
+		if req.ApplyDiscount {
+			if err := s.recalculateDiscountOnInvoice(txCtx, inv); err != nil {
+				return err
+			}
+		}
+
+		if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
+			return err
+		}
+		updatedInv = inv
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Only allow updates for draft or finalized invoices
-	if inv.InvoiceStatus != types.InvoiceStatusDraft && inv.InvoiceStatus != types.InvoiceStatusFinalized {
-		return nil, ierr.NewError("cannot update invoice in current status").
-			WithHint("Invoice can only be updated when in draft or finalized status").
-			WithReportableDetails(map[string]any{
-				"invoice_id":     id,
-				"current_status": inv.InvoiceStatus,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// For paid invoices, only allow updates to safe fields (PDF URL and due date)
-	if inv.PaymentStatus == types.PaymentStatusSucceeded {
-		if !isSafeUpdateForPaidInvoice(req) {
-			return nil, ierr.NewError("cannot update paid invoice").
-				WithHint("Only PDF URL and due date can be updated for paid invoices").
-				WithReportableDetails(map[string]any{
-					"invoice_id":     id,
-					"payment_status": inv.PaymentStatus,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	// Update invoice PDF URL if provided
-	if req.InvoicePDFURL != nil {
-		inv.InvoicePDFURL = req.InvoicePDFURL
-	}
-
-	// Update due date if provided
-	if req.DueDate != nil {
-		inv.DueDate = req.DueDate
-	}
-
-	// Update metadata if provided
-	if req.Metadata != nil {
-		inv.Metadata = *req.Metadata
-	}
-
-	// Update the invoice in the repository
-	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-		return nil, err
-	}
-
-	// Publish webhook event for invoice update
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, id)
-
-	// Return the updated invoice
-	return s.GetInvoice(ctx, id)
+	return dto.NewInvoiceResponse(updatedInv), nil
 }
 
 func (s *invoiceService) TriggerCommunication(ctx context.Context, id string) error {
@@ -4312,17 +4303,6 @@ func (s *invoiceService) getAppliedDiscountsForPDF(ctx context.Context, inv *dto
 	}
 
 	return appliedDiscounts, nil
-}
-
-// isSafeUpdateForPaidInvoice checks if the update request contains only safe fields for paid invoices
-func isSafeUpdateForPaidInvoice(_ dto.UpdateInvoiceRequest) bool {
-	// Currently, UpdateInvoiceRequest only contains InvoicePDFURL and DueDate
-	// Both of these are considered safe for paid invoices
-	// In the future, if more fields are added, they should be categorized here
-
-	// For now, all fields in UpdateInvoiceRequest are safe
-	// This function is here for future extensibility
-	return true
 }
 
 // DeleteInvoice deletes an invoice (stub implementation)

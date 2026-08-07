@@ -211,8 +211,21 @@ func (s *InMemoryInvoiceStore) Update(ctx context.Context, inv *invoice.Invoice)
 	return s.InMemoryStore.Update(ctx, inv.ID, copyInvoice(inv))
 }
 
+// Delete marks the invoice and its line items deleted, matching the ent repository, which soft
+// deletes both and leaves the rows readable. This double used to hard-delete, so any assertion that
+// an orphaned draft had been cleaned up passed whether or not the code did anything.
 func (s *InMemoryInvoiceStore) Delete(ctx context.Context, id string) error {
-	return s.InMemoryStore.Delete(ctx, id)
+	inv, err := s.InMemoryStore.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	inv.Status = types.StatusDeleted
+	for _, item := range inv.LineItems {
+		item.Status = types.StatusDeleted
+	}
+
+	return s.InMemoryStore.Update(ctx, id, inv)
 }
 
 func (s *InMemoryInvoiceStore) List(ctx context.Context, filter *types.InvoiceFilter) ([]*invoice.Invoice, error) {
