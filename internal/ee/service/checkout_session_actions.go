@@ -322,27 +322,56 @@ func (s *checkoutSessionService) completeWalletTopupCheckout(
 }
 
 func (s *checkoutSessionService) completeSubscriptionCheckout(ctx context.Context, session *domainCheckout.CheckoutSession, providerResult *types.CheckoutProviderResult) error {
-	if session.Result == nil || session.Result.CreateSubscriptionResult == nil {
-		return ierr.NewError("session has no fulfillment result").
-			WithHint("checkout session must have been fulfilled before it can be completed").
-			Mark(ierr.ErrValidation)
-	}
-	res := session.Result.CreateSubscriptionResult
+	var subscriptionId string
+	var invoiceId string
+	var paymentId string
 
-	// 1. Activate subscription: only update if still in draft.
-	sub, err := s.SubRepo.Get(ctx, res.SubscriptionID)
-	if err != nil {
-		return err
+	if cfg := session.Configuration.ToCheckoutConfiguration(); cfg.CreateSubscriptionParams != nil {
+		subscriptionId = cfg.CreateSubscriptionParams.SubscriptionID
 	}
-	if sub.SubscriptionStatus == types.SubscriptionStatusDraft {
-		sub.SubscriptionStatus = types.SubscriptionStatusActive
-		if err := s.SubRepo.Update(ctx, sub); err != nil {
-			return err
+	invoiceId = lo.FromPtr(session.CheckoutInvoiceID)
+	paymentId = lo.FromPtr(session.CheckoutPaymentID)
+
+	if session.Result != nil && session.Result.CreateSubscriptionResult != nil {
+		legacy := session.Result.CreateSubscriptionResult
+		if subscriptionId == "" {
+			subscriptionId = legacy.SubscriptionID
+		}
+		if invoiceId == "" {
+			invoiceId = legacy.InvoiceID
+		}
+		if paymentId == "" {
+			paymentId = legacy.PaymentID
 		}
 	}
 
-	// 2. Finalize draft + mark payment succeeded + reconcile (credits wallet for top-up invoices).
-	return s.finalizeCheckoutInvoiceAndPayment(ctx, res.InvoiceID, res.PaymentID, providerResult)
+	if subscriptionId == "" || invoiceId == "" || paymentId == "" {
+		return ierr.NewError("session has no fulfillment result").
+			WithHint("checkout session must have been fulfilled before it can be completed").
+			WithReportableDetails(map[string]any{
+				"session_id":      session.ID,
+				"subscription_id": subscriptionId,
+				"invoice_id":      invoiceId,
+				"payment_id":      paymentId,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if err := s.finalizeCheckoutInvoiceAndPayment(ctx, invoiceId, paymentId, providerResult); err != nil {
+		return err
+	}
+
+	sub, err := s.SubRepo.Get(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	subSvc := &subscriptionService{ServiceParams: s.ServiceParams}
+	if err := subSvc.activateDraftSubscription(ctx, sub); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // finalizeCheckoutInvoiceAndPayment finalizes a DRAFT checkout invoice (idempotent),

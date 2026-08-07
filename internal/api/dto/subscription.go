@@ -554,6 +554,8 @@ type CreateSubscriptionRequest struct {
 	// OpeningInvoiceAdjustmentAmount nets the opening invoice against a proration/cancel credit (e.g. on plan change). Internal only.
 	OpeningInvoiceAdjustmentAmount *decimal.Decimal `json:"-"`
 
+	Checkout *CheckoutParams `json:"checkout,omitempty"`
+
 	SubscriptionCreationConfig
 }
 
@@ -785,6 +787,8 @@ type SubscriptionResponse struct {
 	// the search filter's expand string. Each entry is a feature with its
 	// aggregated entitlement info (same shape as CustomerEntitlementsResponse.Features).
 	Entitlements []*AggregatedFeature `json:"entitlements,omitempty"`
+
+	CheckoutSession *CheckoutSessionResponse `json:"checkout_session,omitempty"`
 }
 
 // ListSubscriptionsResponse represents the response for listing subscriptions
@@ -823,10 +827,46 @@ type SubscriptionResponseV2 struct {
 	PlanPricesOutOfSync bool `json:"plan_prices_out_of_sync"`
 }
 
+func (r *CreateSubscriptionRequest) validateCheckoutCompatibility() error {
+	if err := r.Checkout.Validate(); err != nil {
+		return err
+	}
+
+	if r.Checkout == nil {
+		return nil
+	}
+
+	if r.SubscriptionStatus != "" {
+		return ierr.NewError("subscription_status is not supported with checkout").
+			WithHint("Remove subscription_status; a checkout-gated subscription is created as draft and activated once payment succeeds").
+			WithReportableDetails(map[string]any{"subscription_status": r.SubscriptionStatus}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if len(r.Phases) > 0 {
+		return ierr.NewError("phases is not supported with checkout").
+			WithHint("Remove checkout to use phases, or remove phases to gate this subscription behind payment").
+			Mark(ierr.ErrValidation)
+	}
+
+	// TODO: Handle inheritance for checkout-gated creates
+	if r.Inheritance != nil {
+		return ierr.NewError("inheritance is not supported with checkout").
+			WithHint("Remove checkout to create an inherited or grouped-invoicing subscription").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
 func (r *CreateSubscriptionRequest) Validate() error {
 
 	err := validator.ValidateRequest(r)
 	if err != nil {
+		return err
+	}
+
+	if err := r.validateCheckoutCompatibility(); err != nil {
 		return err
 	}
 

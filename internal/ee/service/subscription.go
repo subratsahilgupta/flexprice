@@ -75,6 +75,14 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	if req.BillingCycle == "" {
 		req.BillingCycle = types.BillingCycleAnniversary
 	}
+
+	if req.Checkout != nil && req.CollectionMethod == nil {
+		method := types.CollectionMethodSendInvoice
+		if cfg := req.Checkout.PaymentProviderConfig; cfg != nil && cfg.CollectionMethod != "" {
+			method = cfg.CollectionMethod
+		}
+		req.CollectionMethod = lo.ToPtr(method)
+	}
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -281,6 +289,10 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		sub.SubscriptionStatus = req.SubscriptionStatus
 	}
 	syncTrialingStateFromCreateRequest(&req, sub)
+
+	if req.Checkout != nil && sub.SubscriptionStatus != types.SubscriptionStatusTrialing {
+		sub.SubscriptionStatus = types.SubscriptionStatusDraft
+	}
 
 	// Stamp the sub with the plan's current max prices.sequence so new subscriptions are considered already-synced.
 	currentPlanSeq, seqErr := s.PlanPriceSyncRepo.CurrentPlanSequence(ctx, plan.ID)
@@ -540,29 +552,64 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		return nil, err
 	}
 
-	// Handle phases (post-transaction)
 	if req.SubscriptionStatus != types.SubscriptionStatusDraft && len(result.Phases) > 0 {
 		if err = s.handleSubscriptionPhases(ctx, result.Sub, result.Phases, req.Phases, result.Plan, result.ValidPrices); err != nil {
 			return nil, err
 		}
 	}
 
-	// Build response
 	response := &dto.SubscriptionResponse{Subscription: result.Sub}
 	if result.Invoice != nil {
 		response.LatestInvoice = result.Invoice
 	}
 
-	// Sync to HubSpot and publish webhooks
-	isDraft := req.SubscriptionStatus == types.SubscriptionStatusDraft
+	isDraft := req.SubscriptionStatus == types.SubscriptionStatusDraft || result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft
+	if isDraft {
+		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionDraftCreated, result.Sub.ID)
+	} else {
+		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionCreated, result.Sub.ID)
+	}
+
+	if req.Checkout != nil && result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft {
+		invResp, skipped, err := buildCheckoutDraftInvoice(ctx, s.ServiceParams, response)
+		if err != nil {
+			s.archiveDraftCheckoutSubscription(ctx, response.ID)
+			return nil, err
+		}
+
+		if skipped || !invResp.AmountDue.GreaterThan(decimal.Zero) {
+			if !skipped {
+				invSvc := NewInvoiceService(s.ServiceParams)
+
+				if err := invSvc.FinalizeInvoice(ctx, invResp.ID); err != nil {
+					s.archiveDraftCheckoutSubscription(ctx, response.ID)
+					return nil, err
+				}
+				if refreshed, err := invSvc.GetInvoice(ctx, invResp.ID); err == nil {
+					invResp = refreshed
+				}
+				response.LatestInvoice = invResp
+			}
+
+			if err := s.activateDraftSubscription(ctx, response.Subscription); err != nil {
+				s.archiveDraftCheckoutSubscription(ctx, response.ID)
+				return nil, err
+			}
+		} else {
+			err = s.startCreateSubscriptionCheckout(ctx, response, invResp, req.Checkout)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if isDraft {
 		s.triggerHubSpotQuoteSyncWorkflow(ctx, result.Sub.ID, result.Customer.ID)
 		s.runPaddleSubscriptionSync(ctx, result.Sub)
-		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionDraftCreated, result.Sub.ID)
 	} else {
 		s.triggerHubSpotDealSyncWorkflow(ctx, result.Sub.ID, result.Customer.ID)
 		s.runPaddleSubscriptionSync(ctx, result.Sub)
-		s.publishSubscriptionCreatedEvent(ctx, result.Sub)
 	}
 	return response, nil
 }
@@ -4990,7 +5037,7 @@ func (s *subscriptionService) createAddonAttachParams(
 		if err != nil {
 			return nil, err
 		}
-		
+
 		onetimePeriodEnd = periodEnd
 		addonAssociation.EndDate = &onetimePeriodEnd
 	}
