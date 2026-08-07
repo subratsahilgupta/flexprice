@@ -57,6 +57,9 @@ func (s *invoiceService) recalculateDiscountOnInvoice(ctx context.Context, inv *
 		return err
 	}
 	if taxAppliedCount > 0 {
+		// Reset first: applyTaxesToInvoice no-ops (leaving TotalTax stale) when the current
+		// subscription resolves to no active tax rates, e.g. the association was removed.
+		inv.TotalTax = decimal.Zero
 		if err := s.applyTaxesToInvoice(ctx, inv, dto.InvoiceComputeRequest{}); err != nil {
 			return err
 		}
@@ -64,7 +67,7 @@ func (s *invoiceService) recalculateDiscountOnInvoice(ctx context.Context, inv *
 
 	inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(inv.TotalTax), decimal.Zero)
 	inv.AmountDue = inv.Total
-	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
+	inv.AmountRemaining = decimal.Max(inv.Total.Sub(inv.AmountPaid), decimal.Zero)
 
 	s.Logger.Info(ctx, "recalculated discount on invoice",
 		"invoice_id", inv.ID, "total_discount", inv.TotalDiscount, "new_total", inv.Total)

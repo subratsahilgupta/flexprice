@@ -459,6 +459,74 @@ func (s *RecalculateDiscountOnInvoiceSuite) TestRecalculatesTaxAgainstRealTaxRat
 	s.True(resp.Total.Equal(decimal.NewFromInt(88)), "want 88, got %s", resp.Total)
 }
 
+// TestTaxAssociationRemovedResetsTax proves TotalTax is reset to zero (not left stale) when
+// tax was previously computed but the current tax association no longer resolves any rate.
+func (s *RecalculateDiscountOnInvoiceSuite) TestTaxAssociationRemovedResetsTax() {
+	ctx := s.GetContext()
+	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+
+	sub := &subscription.Subscription{
+		ID: "sub_discount_tax_removed", CustomerID: s.testData.customer.ID, PlanID: s.testData.plan.ID, Currency: "usd",
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		CurrentPeriodStart: periodStart, CurrentPeriodEnd: periodEnd,
+		BillingAnchor: periodStart, StartDate: periodStart,
+		BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, sub))
+
+	taxPct := decimal.NewFromInt(10)
+	tr := &taxrate.TaxRate{
+		ID: "taxrate_discount_removed", Name: "Removed Tax", Code: "removed_tax",
+		TaxRateStatus: types.TaxRateStatusActive, TaxRateType: types.TaxRateTypePercentage,
+		PercentageValue: &taxPct, EnvironmentID: types.GetEnvironmentID(ctx), BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().TaxRateRepo.Create(ctx, tr))
+	assoc := &taxassociation.TaxAssociation{
+		ID: "taxassoc_discount_removed", TaxRateID: tr.ID, EntityType: types.TaxRateEntityTypeSubscription,
+		EntityID: sub.ID, Priority: 100, AutoApply: true, Currency: "usd",
+		StartDate: periodStart.Add(-24 * time.Hour), EnvironmentID: types.GetEnvironmentID(ctx), BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().TaxAssociationRepo.Create(ctx, assoc))
+
+	inv := s.createSubscriptionDraftInvoice("inv_discount_tax_removed", sub, periodStart, periodEnd, decimal.NewFromInt(100), "price_tax_removed")
+
+	afterTax, err := s.service.RecalculateTaxesOnInvoice(ctx, inv)
+	s.NoError(err)
+	s.True(afterTax.TotalTax.Equal(decimal.NewFromInt(10)), "want 10, got %s", afterTax.TotalTax)
+
+	// Tax association no longer auto-applies -> PrepareTaxRatesForInvoice resolves zero rates.
+	assoc.AutoApply = false
+	s.NoError(s.GetStores().TaxAssociationRepo.Update(ctx, assoc))
+
+	resp, err := s.applyDiscount(ctx, inv.ID)
+	s.NoError(err)
+	s.True(resp.TotalTax.IsZero(), "want 0, got %s", resp.TotalTax)
+	s.True(resp.Total.Equal(decimal.NewFromInt(100)), "want 100, got %s", resp.Total)
+}
+
+// TestNegativeAmountRemainingClampedToZero proves an overpaid draft (AmountPaid exceeding the
+// newly-discounted Total) doesn't end up with a negative AmountRemaining.
+func (s *RecalculateDiscountOnInvoiceSuite) TestNegativeAmountRemainingClampedToZero() {
+	ctx := s.GetContext()
+	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+
+	c := s.createPercentageCoupon("coupon_discount_overpaid", 90)
+	sub := s.createSubscriptionWithAssociation("sub_discount_overpaid", "assoc_discount_overpaid", c, periodStart, periodEnd)
+	inv := s.createSubscriptionDraftInvoice("inv_discount_overpaid", sub, periodStart, periodEnd, decimal.NewFromInt(100), "price_overpaid")
+
+	inv.AmountPaid = decimal.NewFromInt(50)
+	s.NoError(s.GetStores().InvoiceRepo.Update(ctx, inv))
+
+	// 90% off drops Total to 10, well below the 50 already paid.
+	resp, err := s.applyDiscount(ctx, inv.ID)
+	s.NoError(err)
+	s.True(resp.Total.Equal(decimal.NewFromInt(10)), "want 10, got %s", resp.Total)
+	s.True(resp.AmountRemaining.IsZero(), "want 0, got %s", resp.AmountRemaining)
+}
+
 func (s *RecalculateDiscountOnInvoiceSuite) TestLineItemLevelCoupon() {
 	ctx := s.GetContext()
 	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

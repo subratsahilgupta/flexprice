@@ -4843,7 +4843,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Use when updating invoice metadata or due date (e.g. PDF URL, net terms). For paid invoices only safe fields can be updated.",
+                "description": "Use when updating invoice metadata or due date (e.g. PDF URL, net terms), or when recalculating this draft invoice's discount from its current standing coupon associations via apply_discount:true (idempotent, does not attach a new coupon). For paid invoices only safe fields can be updated.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4899,63 +4899,6 @@
                         }
                     }
                 }
-            }
-        },
-        "/invoices/{id}/apply-discount": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Recomputes this draft invoice's discount from its current standing coupon associations. Safe to call repeatedly - each call resets and rebuilds the discount from scratch rather than compounding it.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Invoices"
-                ],
-                "summary": "Reapply discount to draft invoice",
-                "operationId": "applyDiscountToInvoice",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Invoice ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/InvoiceResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Invoice not found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                },
-                "x-scope": "write"
             }
         },
         "/invoices/{id}/comms/trigger": {
@@ -22081,6 +22024,10 @@
         "UpdateInvoiceRequest": {
             "type": "object",
             "properties": {
+                "apply_discount": {
+                    "description": "When true, recalculates discount from existing coupon associations (draft invoices only).",
+                    "type": "boolean"
+                },
                 "due_date": {
                     "type": "string"
                 },
