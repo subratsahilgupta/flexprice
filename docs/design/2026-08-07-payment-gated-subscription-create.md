@@ -189,7 +189,7 @@ for this one payment — and the opening invoice they would have influenced is s
 | Accepted | Handling |
 | --- | --- |
 | `payment_behavior`, `gateway_payment_method_id` | Persisted on the row and read at every renewal via `NewPaymentParametersFromSubscription`. Rejecting them would pin every gated subscription to `default_active` with no saved method. |
-| `collection_method` | Governs *future* invoices — a different question from `checkout.payment_provider_config.collection_method`, which governs only how this checkout collects (link vs mandate). The service inherits the former from the latter only when the caller set neither. |
+| `collection_method` | Governs *future* invoices — a different question from `checkout.payment_provider_config.collection_method`, which governs only how this checkout collects (link vs mandate). When the caller sets neither, the subscription inherits the checkout's **effective** method: its config value, or `send_invoice`. The fallback matters — without it a link-paid subscription takes `Validate`'s own `charge_automatically` default and would try to auto-charge its first renewal against a mandate that was never created, while the legacy create-session path stores `send_invoice`. Pinned by `TestCreateSubscriptionWithCheckout_CollectionMethodInheritance`. |
 | `trial_period_days` | Falls through (§2.4). |
 
 ### 2.10 No concurrent guard

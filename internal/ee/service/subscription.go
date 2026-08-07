@@ -77,12 +77,22 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	}
 
 	// The subscription's collection method governs future invoices; the checkout's governs only the
-	// gated payment. Inherit one from the other only when the caller expressed no opinion, and
-	// before Validate fills it in with its own default.
-	if req.Checkout != nil && req.CollectionMethod == nil &&
-		req.Checkout.PaymentProviderConfig != nil &&
-		req.Checkout.PaymentProviderConfig.CollectionMethod != "" {
-		req.CollectionMethod = lo.ToPtr(req.Checkout.PaymentProviderConfig.CollectionMethod)
+	// gated payment. When the caller expressed no opinion, inherit the checkout's EFFECTIVE method:
+	// its config value, or send_invoice — the same default StartPayFirstCheckoutSession applies.
+	//
+	// The fallback is the point. Without it a link-paid subscription would take Validate's own
+	// default of charge_automatically and try to auto-charge its first renewal against a mandate
+	// that was never created. The legacy create-session path stores send_invoice here, and this
+	// keeps the two entry points agreeing.
+	//
+	// Runs before Validate, which fills CollectionMethod in and would erase the distinction between
+	// "caller chose" and "caller said nothing".
+	if req.Checkout != nil && req.CollectionMethod == nil {
+		method := types.CollectionMethodSendInvoice
+		if cfg := req.Checkout.PaymentProviderConfig; cfg != nil && cfg.CollectionMethod != "" {
+			method = cfg.CollectionMethod
+		}
+		req.CollectionMethod = lo.ToPtr(method)
 	}
 	if err := req.Validate(); err != nil {
 		return nil, err

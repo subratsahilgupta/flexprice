@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -674,4 +675,64 @@ func (s *SubscriptionServiceSuite) TestActivateGatedSubscriptionNow_KeepsAndFina
 	s.Require().NotNil(application)
 	s.Equal(types.ApplicationStatusApplied, application.ApplicationStatus,
 		"activating must apply the grants the draft held back")
+}
+
+// The subscription's collection_method governs FUTURE invoices; the checkout's governs only the
+// gated payment. Pinned here because the fallback is easy to lose: without it a link-paid
+// subscription takes Validate's own charge_automatically default and would try to auto-charge its
+// first renewal against a mandate that was never created. The legacy create-session path stores
+// send_invoice, and these two entry points must agree.
+//
+// Uses the usage-only plan so the create activates immediately — a charging plan would need the
+// payment provider, which is unreachable in this suite.
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionWithCheckout_CollectionMethodInheritance() {
+	tests := []struct {
+		name     string
+		mutate   func(*dto.CreateSubscriptionRequest)
+		expected types.CollectionMethod
+	}{
+		{
+			name:     "checkout with no provider config inherits send_invoice",
+			mutate:   func(r *dto.CreateSubscriptionRequest) {},
+			expected: types.CollectionMethodSendInvoice,
+		},
+		{
+			name: "checkout config wins over the fallback",
+			mutate: func(r *dto.CreateSubscriptionRequest) {
+				r.Checkout.PaymentProviderConfig = &types.CheckoutPaymentProviderConfig{
+					CollectionMethod: types.CollectionMethodChargeAutomatically,
+				}
+			},
+			expected: types.CollectionMethodChargeAutomatically,
+		},
+		{
+			name: "an explicit subscription-level choice beats both",
+			mutate: func(r *dto.CreateSubscriptionRequest) {
+				r.CollectionMethod = lo.ToPtr(types.CollectionMethodChargeAutomatically)
+				r.Checkout.PaymentProviderConfig = &types.CheckoutPaymentProviderConfig{
+					CollectionMethod: types.CollectionMethodSendInvoice,
+				}
+			},
+			expected: types.CollectionMethodChargeAutomatically,
+		},
+		{
+			name:     "without checkout the default is untouched",
+			mutate:   func(r *dto.CreateSubscriptionRequest) { r.Checkout = nil },
+			expected: types.CollectionMethodChargeAutomatically,
+		},
+	}
+
+	for i, tt := range tests {
+		s.Run(tt.name, func() {
+			planID := fmt.Sprintf("plan_cm_inherit_%d", i)
+			s.seedUsageOnlyPlan(planID)
+
+			req := s.checkoutCreateRequest(planID)
+			tt.mutate(&req)
+
+			resp, err := s.service.CreateSubscription(s.GetContext(), req)
+			s.Require().NoError(err)
+			s.Equal(string(tt.expected), resp.CollectionMethod)
+		})
+	}
 }
