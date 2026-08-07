@@ -5,10 +5,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// recalculateTotalsFromLineItems re-derives Total/AmountDue/AmountRemaining from the
-// invoice's already-applied TotalDiscount/TotalTax/TotalPrepaidCreditsApplied. Callers
-// must pass only published, non-archived, non-deleted line items - it does not filter,
-// and it does not recompute TotalDiscount/TotalTax itself.
+// recalculateTotalsFromLineItems re-derives totals from already-applied discount/tax;
+// callers must pass only published line items, and discount/tax are not recomputed here.
 func (s *invoiceService) recalculateTotalsFromLineItems(inv *invoice.Invoice, lineItems []*invoice.InvoiceLineItem) {
 	subtotal := decimal.Zero
 	for _, li := range lineItems {

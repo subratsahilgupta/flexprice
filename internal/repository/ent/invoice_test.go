@@ -12,12 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestInvoiceRepository builds an invoiceRepository backed by a real
-// Postgres instance (see newRealPostgresTestClient in coupon_test.go). This
-// is required because we are testing internal/repository/ent's Ent-backed
-// Update method directly, not the domain.Repository interface in the
-// abstract - an in-memory testutil implementation would not exercise this
-// file's SQL update chain at all.
+// newTestInvoiceRepository needs a real Postgres instance (see coupon_test.go) -
+// an in-memory implementation wouldn't exercise this file's SQL update chain.
 func newTestInvoiceRepository(t *testing.T) domainInvoice.Repository {
 	t.Helper()
 	client := newRealPostgresTestClient(t)
@@ -56,9 +52,6 @@ func newTestInvoice(ctx context.Context) *domainInvoice.Invoice {
 	}
 }
 
-// TestInvoiceRepository_Update_PersistsIsManuallyEdited verifies that
-// setting IsManuallyEdited on the domain invoice struct and calling
-// Update persists the flag, i.e. it round-trips through a re-fetch (CR-03).
 func TestInvoiceRepository_Update_PersistsIsManuallyEdited(t *testing.T) {
 	repo := newTestInvoiceRepository(t)
 	ctx := testInvoiceContext()
