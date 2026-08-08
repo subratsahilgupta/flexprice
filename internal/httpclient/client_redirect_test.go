@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // A redirect must never be followed: the redirect target has not been through
@@ -31,6 +32,64 @@ func TestSendDoesNotFollowRedirects(t *testing.T) {
 
 	if err == nil {
 		t.Fatalf("expected an error for a redirect response, got resp=%+v", resp)
+	}
+	if internalHit {
+		t.Fatal("redirect was followed: the internal target received a request")
+	}
+}
+
+// NewDefaultClient shares the redirect policy — a regression there would
+// otherwise go unnoticed.
+func TestNewDefaultClientDoesNotFollowRedirects(t *testing.T) {
+	var internalHit bool
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		internalHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer internal.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, internal.URL, http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	_, err := NewDefaultClient().Send(context.Background(), &Request{
+		Method: http.MethodGet,
+		URL:    redirector.URL,
+	})
+	if err == nil {
+		t.Fatal("expected an error for a redirect response")
+	}
+	if internalHit {
+		t.Fatal("redirect was followed: the internal target received a request")
+	}
+}
+
+// NewOtelHTTPClient is used directly (not via Send) by the file-import download
+// and HEAD paths, so its redirect policy must hold on the bare *http.Client.
+func TestNewOtelHTTPClientDoesNotFollowRedirects(t *testing.T) {
+	var internalHit bool
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		internalHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer internal.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, internal.URL, http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	resp, err := NewOtelHTTPClient(5 * time.Second).Get(redirector.URL)
+	if err != nil {
+		t.Fatalf("unexpected transport error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// CheckRedirect returns ErrUseLastResponse, so the 302 is surfaced as-is
+	// rather than followed.
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected the 302 to be returned unfollowed, got %d", resp.StatusCode)
 	}
 	if internalHit {
 		t.Fatal("redirect was followed: the internal target received a request")
