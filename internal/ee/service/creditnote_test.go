@@ -1841,3 +1841,37 @@ func (s *CreditNoteServiceSuite) TestCreditNoteTypeDetection() {
 		})
 	}
 }
+
+// CreateCreditNote must take a row lock on the invoice before evaluating the
+// maxCreditableAmount guard. Without it, two concurrent creations both read the
+// pre-update RefundedAmount, both pass the guard, and both succeed — an
+// over-refund reachable from creation-time concurrency alone, with no
+// finalize-time race (VAPT SFX-2026-0203-F02-EXT).
+//
+// The in-memory store cannot enforce real mutual exclusion, so this asserts the
+// lock is acquired; SELECT ... FOR UPDATE provides the exclusion in Postgres.
+func (s *CreditNoteServiceSuite) TestCreateCreditNoteLocksInvoiceRow() {
+	invStore, ok := s.GetStores().InvoiceRepo.(*testutil.InMemoryInvoiceStore)
+	s.Require().True(ok, "expected the in-memory invoice store")
+
+	inv := s.testData.invoices.pending
+	before := invStore.GetForUpdateCalls(inv.ID)
+
+	_, err := s.service.CreateCreditNote(s.GetContext(), &dto.CreateCreditNoteRequest{
+		InvoiceID:         inv.ID,
+		Reason:            types.CreditNoteReasonBillingError,
+		Memo:              "row lock regression",
+		ProcessCreditNote: false,
+		LineItems: []dto.CreateCreditNoteLineItemRequest{
+			{
+				InvoiceLineItemID: "line_3",
+				DisplayName:       "Partial refund for Product C",
+				Amount:            decimal.NewFromFloat(5.00),
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	s.Greater(invStore.GetForUpdateCalls(inv.ID), before,
+		"CreateCreditNote must lock the invoice row before reading RefundedAmount")
+}

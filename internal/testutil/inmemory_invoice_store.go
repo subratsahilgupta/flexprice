@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -16,12 +17,16 @@ import (
 type InMemoryInvoiceStore struct {
 	*InMemoryStore[*invoice.Invoice]
 	lineItemStore *InMemoryInvoiceLineItemStore
+
+	getForUpdateMu    sync.Mutex
+	getForUpdateCalls map[string]int
 }
 
 // NewInMemoryInvoiceStore creates a new in-memory invoice store
 func NewInMemoryInvoiceStore() *InMemoryInvoiceStore {
 	return &InMemoryInvoiceStore{
-		InMemoryStore: NewInMemoryStore[*invoice.Invoice](),
+		InMemoryStore:     NewInMemoryStore[*invoice.Invoice](),
+		getForUpdateCalls: make(map[string]int),
 	}
 }
 
@@ -200,8 +205,20 @@ func (s *InMemoryInvoiceStore) Get(ctx context.Context, id string) (*invoice.Inv
 }
 
 // GetForUpdate returns the invoice; in-memory store has no row locking.
+// The call is counted so tests can assert that a code path takes the lock —
+// real mutual exclusion only exists against Postgres (SELECT ... FOR UPDATE).
 func (s *InMemoryInvoiceStore) GetForUpdate(ctx context.Context, id string) (*invoice.Invoice, error) {
+	s.getForUpdateMu.Lock()
+	s.getForUpdateCalls[id]++
+	s.getForUpdateMu.Unlock()
 	return s.Get(ctx, id)
+}
+
+// GetForUpdateCalls reports how many times a row lock was taken for an invoice.
+func (s *InMemoryInvoiceStore) GetForUpdateCalls(id string) int {
+	s.getForUpdateMu.Lock()
+	defer s.getForUpdateMu.Unlock()
+	return s.getForUpdateCalls[id]
 }
 
 func (s *InMemoryInvoiceStore) Update(ctx context.Context, inv *invoice.Invoice) error {

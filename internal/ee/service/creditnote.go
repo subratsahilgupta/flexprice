@@ -72,6 +72,17 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 			return err
 		}
 
+		// Lock the invoice row for the rest of this transaction before reading
+		// RefundedAmount. The creation guard below (maxCreditableAmount) is a
+		// read-then-write on a mutable field: with a plain Get, two concurrent
+		// CreateCreditNote calls both observe the pre-update RefundedAmount, both
+		// pass the guard, and both produce valid credit notes — an over-refund
+		// without any finalize-time race (VAPT SFX-2026-0203-F02-EXT).
+		// Finalize and void already take this lock; creation must too.
+		if _, err := s.InvoiceRepo.GetForUpdate(tx, req.InvoiceID); err != nil {
+			return err
+		}
+
 		// Get invoice with line items
 		inv, err := s.InvoiceRepo.Get(tx, req.InvoiceID)
 		if err != nil {
@@ -429,10 +440,10 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 	originalStatus := cn.CreditNoteStatus
 
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
-			// Lock to serialize against a concurrent finalize/void on the same invoice.
-			if _, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID); err != nil {
-				return err
-			}
+		// Lock to serialize against a concurrent finalize/void on the same invoice.
+		if _, err := s.InvoiceRepo.GetForUpdate(tx, cn.InvoiceID); err != nil {
+			return err
+		}
 
 		cn.CreditNoteStatus = types.CreditNoteStatusVoided
 		if err := s.CreditNoteRepo.Update(tx, cn); err != nil {
