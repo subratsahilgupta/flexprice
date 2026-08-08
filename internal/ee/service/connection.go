@@ -704,7 +704,9 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 
 	// Chargebee: require webhook Basic Auth credentials at creation time so new
 	// connections cannot be created in the fail-open state the handler used to
-	// accept. Existing connections predating this check remain until migrated.
+	// accept. Legacy connections predating this check can add credentials via
+	// UpdateConnection (webhook_username + webhook_password must be supplied
+	// together).
 	if conn.ProviderType == types.SecretProviderChargebee {
 		if conn.EncryptedSecretData.Chargebee == nil {
 			return nil, ierr.NewError("chargebee connection requires site, api_key, webhook_username and webhook_password").
@@ -929,6 +931,40 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 			return nil, encErr
 		}
 		conn.EncryptedSecretData.Whop.WebhookSecret = encWS
+	}
+
+	// Chargebee: merge webhook_username and webhook_password so legacy
+	// connections predating the mandatory-creds-at-create check can migrate
+	// without delete-and-recreate. Both fields must be provided together — a
+	// mismatched pair would leave the connection in a broken state that the
+	// webhook handler rejects with 401.
+	if req.EncryptedSecretData != nil && req.EncryptedSecretData.Chargebee != nil &&
+		(req.EncryptedSecretData.Chargebee.WebhookUsername != "" || req.EncryptedSecretData.Chargebee.WebhookPassword != "") {
+		if conn.ProviderType != types.SecretProviderChargebee {
+			return nil, ierr.NewError("chargebee webhook credential update is only valid for chargebee connections").
+				Mark(ierr.ErrValidation)
+		}
+		if req.EncryptedSecretData.Chargebee.WebhookUsername == "" || req.EncryptedSecretData.Chargebee.WebhookPassword == "" {
+			return nil, ierr.NewError("webhook_username and webhook_password must be provided together").
+				WithHint("Update both webhook_username and webhook_password in the same request").
+				Mark(ierr.ErrValidation)
+		}
+		if conn.EncryptedSecretData.Chargebee == nil {
+			return nil, ierr.NewError("Chargebee connection metadata is missing").
+				Mark(ierr.ErrValidation)
+		}
+		encUser, encErr := s.encryptionService.Encrypt(req.EncryptedSecretData.Chargebee.WebhookUsername)
+		if encErr != nil {
+			s.Logger.Error(ctx, "failed to encrypt Chargebee webhook username", "error", encErr, "connection_id", id)
+			return nil, encErr
+		}
+		encPass, encErr := s.encryptionService.Encrypt(req.EncryptedSecretData.Chargebee.WebhookPassword)
+		if encErr != nil {
+			s.Logger.Error(ctx, "failed to encrypt Chargebee webhook password", "error", encErr, "connection_id", id)
+			return nil, encErr
+		}
+		conn.EncryptedSecretData.Chargebee.WebhookUsername = encUser
+		conn.EncryptedSecretData.Chargebee.WebhookPassword = encPass
 	}
 
 	conn.UpdatedAt = time.Now()

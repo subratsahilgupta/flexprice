@@ -529,9 +529,15 @@ func (h *WebhookHandler) HandleRazorpayWebhook(c *gin.Context) {
 }
 
 func (h *WebhookHandler) HandleChargebeeWebhook(c *gin.Context) {
-	// Always return 200 OK to Chargebee to prevent retries
-	// We log errors internally but don't expose them to Chargebee
+	// Return 200 OK to Chargebee to prevent retries when we successfully accept
+	// the request. Skip the success body if an earlier branch already aborted
+	// (e.g. 401 for missing/invalid Basic Auth) — AbortWithStatus commits the
+	// status, but writing a "Webhook received" body over a rejection would still
+	// mislead operators reading the response.
 	defer func() {
+		if c.IsAborted() {
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Webhook received",
 		})
@@ -619,7 +625,7 @@ func (h *WebhookHandler) HandleChargebeeWebhook(c *gin.Context) {
 		// scheme, so Basic Auth is the only supported webhook authentication.
 		// Accepting unauthenticated requests would let anyone who knows a
 		// Chargebee invoice ID forge payment_succeeded events for that tenant.
-		h.logger.Error(context.Background(), "Chargebee webhook rejected: Basic Auth is not configured on the connection",
+		h.logger.Error(ctx, "Chargebee webhook rejected: Basic Auth is not configured on the connection",
 			"error", "webhook_basic_auth_not_configured",
 			"remote_addr", c.ClientIP(),
 			"tenant_id", tenantID,
