@@ -91,10 +91,6 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 
 	if err != nil {
 		SetSpanError(span, err)
-		// Idempotent create: surface unique-index conflicts on the
-		// (tenant_id, environment_id, idempotency_key) index as ErrAlreadyExists
-		// so the service layer can re-fetch and return the existing payment
-		// instead of the caller seeing a generic DB error under concurrent retries.
 		if ent.IsConstraintError(err) {
 			var pqErr *pq.Error
 			if errors.As(err, &pqErr) && pqErr.Constraint == entSchema.Idx_tenant_environment_payment_idempotency_key_unique {

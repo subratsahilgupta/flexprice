@@ -156,23 +156,10 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 		}
 	}
 
-	// Generate idempotency key when the caller didn't supply one.
-	//
-	// The previous implementation embedded time.Now() (RFC3339, second precision)
-	// which produced a fresh key on every call — defeating idempotency and letting
-	// naive client retries (network timeout → retry) create duplicate payment rows
-	// AND, when ProcessPayment=true, double-charge the customer's card via the
-	// gateway. The unique DB constraint on idempotency_key never caught it because
-	// the key was unique per call by design.
-	//
-	// Key composition — {invoice_id, amount, currency, payment_method_type,
-	// payment_gateway} — dedups genuine retries of the same charge intent but
-	// keeps distinct intents distinct: switching payment method (card → link)
-	// or gateway after a failed attempt must not collapse into the earlier
-	// payment record. Callers who legitimately need multiple payments for the
-	// same intent (installments, partial re-attempts) can still opt out by
-	// supplying their own IdempotencyKey — the `if p.IdempotencyKey == ""`
-	// guard already respects that.
+	// Auto-generated key includes payment_method_type and payment_gateway so
+	// switching method (card → link) or gateway after a failed attempt creates
+	// a new payment intent instead of colliding with the earlier row. Callers
+	// can pass their own IdempotencyKey to opt out (installments, etc).
 	if p.IdempotencyKey == "" {
 		p.IdempotencyKey = s.idempGen.GenerateKey(idempotency.ScopePayment, map[string]interface{}{
 			"invoice_id":          p.DestinationID,
@@ -183,29 +170,12 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 		})
 	}
 
-	// validate the payment object before creating it
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
 
-	// Idempotent create.
-	// Fast path: check for an existing payment first and return it. Avoids
-	// generating a wasted payment ID + burning a Create attempt for typical
-	// serial retries.
-	// Race path: two concurrent requests can both observe not-found and both
-	// call Create; the unique index on (tenant_id, environment_id,
-	// idempotency_key) fails one with ErrAlreadyExists — we then re-fetch and
-	// return the winner's payment.
-	// GetByIdempotencyKey is tenant/env-scoped via ctx.
-	existing, err := s.PaymentRepo.GetByIdempotencyKey(ctx, p.IdempotencyKey)
-	if err != nil && !ierr.IsNotFound(err) {
-		return nil, err
-	}
-	if existing != nil {
-		return dto.NewPaymentResponse(existing), nil
-	}
-
 	if err := s.PaymentRepo.Create(ctx, p); err != nil {
+		// Concurrent request already inserted with this key — return theirs.
 		if ierr.IsAlreadyExists(err) {
 			existing, fetchErr := s.PaymentRepo.GetByIdempotencyKey(ctx, p.IdempotencyKey)
 			if fetchErr != nil {
