@@ -702,6 +702,20 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 		}
 	}
 
+	// Chargebee: require webhook Basic Auth credentials at creation time so new
+	// connections cannot be created in the fail-open state the handler used to
+	// accept. Existing connections predating this check remain until migrated.
+	if conn.ProviderType == types.SecretProviderChargebee {
+		if conn.EncryptedSecretData.Chargebee == nil {
+			return nil, ierr.NewError("chargebee connection requires site, api_key, webhook_username and webhook_password").
+				WithHint("encrypted_secret_data.chargebee with site, api_key, webhook_username and webhook_password is required").
+				Mark(ierr.ErrValidation)
+		}
+		if err := conn.EncryptedSecretData.Chargebee.Validate(); err != nil {
+			return nil, err
+		}
+	}
+
 	// Check if this is a Flexprice-managed S3 connection
 	if conn.ProviderType == types.SecretProviderS3 && conn.SyncConfig != nil && conn.SyncConfig.S3 != nil && conn.SyncConfig.S3.IsFlexpriceManaged {
 		s.Logger.Info(ctx, "creating flexprice-managed S3 connection",

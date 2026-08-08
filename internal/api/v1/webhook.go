@@ -615,12 +615,18 @@ func (h *WebhookHandler) HandleChargebeeWebhook(c *gin.Context) {
 		h.logger.Debug(context.Background(), "Chargebee webhook basic auth verified",
 			"remote_addr", c.ClientIP())
 	} else {
-		// Case 4: Neither side has auth - allow but warn
-		h.logger.Info(context.Background(), "Chargebee webhook processing without authentication",
+		// Case 4: Neither side has auth - reject. Chargebee v2 has no signature
+		// scheme, so Basic Auth is the only supported webhook authentication.
+		// Accepting unauthenticated requests would let anyone who knows a
+		// Chargebee invoice ID forge payment_succeeded events for that tenant.
+		h.logger.Error(context.Background(), "Chargebee webhook rejected: Basic Auth is not configured on the connection",
+			"error", "webhook_basic_auth_not_configured",
 			"remote_addr", c.ClientIP(),
 			"tenant_id", tenantID,
 			"environment_id", environmentID,
-			"note", "Consider configuring Basic Auth for security")
+			"note", "Configure webhook_username and webhook_password in the Chargebee connection and enable Basic Auth in the Chargebee webhook settings")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
 	}
 
 	// Parse webhook event
