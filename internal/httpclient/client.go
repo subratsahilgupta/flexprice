@@ -35,6 +35,18 @@ type ClientConfig struct {
 	Timeout time.Duration
 }
 
+// rejectRedirects refuses to follow any HTTP redirect.
+//
+// Go's default http.Client silently follows up to 10 redirects. Callers that
+// validate a user-supplied URL (for example the file-import providers) only
+// ever check the *initial* URL, so a redirect to an internal address —
+// 169.254.169.254, localhost, or any RFC1918 host — would be followed without
+// a second validation and would not be visible in the stored task metadata.
+// Refusing redirects keeps the validated URL the only URL we ever fetch.
+func rejectRedirects(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 // NewClientWithConfig creates a new DefaultClient with custom configuration
 func NewClientWithConfig(config ClientConfig) Client {
 	timeout := config.Timeout
@@ -44,8 +56,9 @@ func NewClientWithConfig(config ClientConfig) Client {
 
 	return &DefaultClient{
 		client: &http.Client{
-			Timeout:   timeout,
-			Transport: OtelTransport(nil),
+			Timeout:       timeout,
+			Transport:     OtelTransport(nil),
+			CheckRedirect: rejectRedirects,
 		},
 	}
 }
@@ -59,8 +72,9 @@ type DefaultClient struct {
 func NewDefaultClient() Client {
 	return &DefaultClient{
 		client: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: OtelTransport(nil),
+			Timeout:       30 * time.Second,
+			Transport:     OtelTransport(nil),
+			CheckRedirect: rejectRedirects,
 		},
 	}
 }
@@ -98,6 +112,15 @@ func (c *DefaultClient) Send(ctx context.Context, req *Request) (*Response, erro
 			Mark(ierr.ErrHTTPClient)
 	}
 	defer resp.Body.Close()
+
+	// CheckRedirect returns ErrUseLastResponse, so a redirect arrives here as a
+	// 3xx rather than being followed. Reject it explicitly: the redirect target
+	// has not been through whatever validation the caller applied to req.URL.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, ierr.NewError("redirects are not allowed").
+			WithHint("The requested URL responded with a redirect, which is not followed").
+			Mark(ierr.ErrHTTPClient)
+	}
 
 	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
