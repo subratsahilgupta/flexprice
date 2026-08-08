@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -11,9 +12,9 @@ import (
 // A redirect must never be followed: the redirect target has not been through
 // the caller's URL validation (VAPT SFX-2026-0203-F16).
 func TestSendDoesNotFollowRedirects(t *testing.T) {
-	var internalHit bool
+	var internalHit atomic.Bool
 	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		internalHit = true
+		internalHit.Store(true)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("secret-metadata"))
 	}))
@@ -33,7 +34,7 @@ func TestSendDoesNotFollowRedirects(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected an error for a redirect response, got resp=%+v", resp)
 	}
-	if internalHit {
+	if internalHit.Load() {
 		t.Fatal("redirect was followed: the internal target received a request")
 	}
 }
@@ -41,9 +42,9 @@ func TestSendDoesNotFollowRedirects(t *testing.T) {
 // NewDefaultClient shares the redirect policy — a regression there would
 // otherwise go unnoticed.
 func TestNewDefaultClientDoesNotFollowRedirects(t *testing.T) {
-	var internalHit bool
+	var internalHit atomic.Bool
 	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		internalHit = true
+		internalHit.Store(true)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer internal.Close()
@@ -60,7 +61,7 @@ func TestNewDefaultClientDoesNotFollowRedirects(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a redirect response")
 	}
-	if internalHit {
+	if internalHit.Load() {
 		t.Fatal("redirect was followed: the internal target received a request")
 	}
 }
@@ -68,9 +69,9 @@ func TestNewDefaultClientDoesNotFollowRedirects(t *testing.T) {
 // NewOtelHTTPClient is used directly (not via Send) by the file-import download
 // and HEAD paths, so its redirect policy must hold on the bare *http.Client.
 func TestNewOtelHTTPClientDoesNotFollowRedirects(t *testing.T) {
-	var internalHit bool
+	var internalHit atomic.Bool
 	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		internalHit = true
+		internalHit.Store(true)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer internal.Close()
@@ -91,7 +92,7 @@ func TestNewOtelHTTPClientDoesNotFollowRedirects(t *testing.T) {
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("expected the 302 to be returned unfollowed, got %d", resp.StatusCode)
 	}
-	if internalHit {
+	if internalHit.Load() {
 		t.Fatal("redirect was followed: the internal target received a request")
 	}
 }
