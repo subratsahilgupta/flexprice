@@ -156,20 +156,45 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 		}
 	}
 
-	// Generate idempotency key
+	// Generate idempotency key when the caller didn't supply one.
+	//
+	// The previous implementation embedded time.Now() (RFC3339, second precision)
+	// which produced a fresh key on every call — defeating idempotency and letting
+	// naive client retries (network timeout → retry) create duplicate payment rows
+	// AND, when ProcessPayment=true, double-charge the customer's card via the
+	// gateway. The unique DB constraint on idempotency_key never caught it because
+	// the key was unique per call by design.
+	//
+	// Deterministic key on {invoice_id, amount, currency} means:
+	//   - Retries of the same charge intent hit the pre-Create lookup below and
+	//     return the existing payment (true idempotent behavior, matching the
+	//     razorpay/invoice.go and tax.go patterns).
+	//   - Callers who legitimately need multiple payments for the same
+	//     invoice+amount+currency (installments, partial re-attempts) can still
+	//     do so by supplying their own IdempotencyKey in the request — the
+	//     `if p.IdempotencyKey == ""` guard already respects that.
 	if p.IdempotencyKey == "" {
 		p.IdempotencyKey = s.idempGen.GenerateKey(idempotency.ScopePayment, map[string]interface{}{
 			"invoice_id": p.DestinationID,
 			"amount":     p.Amount,
 			"currency":   p.Currency,
-			// TODO: think of a better way to generate this key rather than using the current timestamp
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
 		})
 	}
 
 	// validate the payment object before creating it
 	if err := p.Validate(); err != nil {
 		return nil, err
+	}
+
+	// Idempotent create: if a payment with the same idempotency key already exists,
+	// return it as the response instead of racing the unique constraint on Create.
+	// GetByIdempotencyKey is tenant/env-scoped via ctx.
+	existing, err := s.PaymentRepo.GetByIdempotencyKey(ctx, p.IdempotencyKey)
+	if err != nil && !ierr.IsNotFound(err) {
+		return nil, err
+	}
+	if existing != nil {
+		return dto.NewPaymentResponse(existing), nil
 	}
 
 	if err := s.PaymentRepo.Create(ctx, p); err != nil {
