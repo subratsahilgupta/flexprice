@@ -156,16 +156,21 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 		}
 	}
 
-	// Auto-generated key includes payment_method_type and payment_gateway so
-	// switching method (card → link) or gateway after a failed attempt creates
-	// a new payment intent instead of colliding with the earlier row. Callers
-	// can pass their own IdempotencyKey to opt out (installments, etc).
+	// Auto-generated key includes payment_method_type, payment_method_id, and
+	// payment_gateway so distinct intents don't collapse into one row: switching
+	// method (card → link), swapping the underlying card (pm_1 → pm_2), or
+	// changing gateway all produce distinct keys. payment_method_id also
+	// captures gateway implicitly, since each method belongs to a single gateway
+	// — this matters for subscription card charges where the caller doesn't set
+	// payment_gateway (gets resolved later in ProcessPayment). Callers can pass
+	// their own IdempotencyKey to opt out (installments, etc).
 	if p.IdempotencyKey == "" {
 		p.IdempotencyKey = s.idempGen.GenerateKey(idempotency.ScopePayment, map[string]interface{}{
 			"invoice_id":          p.DestinationID,
 			"amount":              p.Amount,
 			"currency":            p.Currency,
 			"payment_method_type": p.PaymentMethodType,
+			"payment_method_id":   p.PaymentMethodID,
 			"payment_gateway":     lo.FromPtr(p.PaymentGateway),
 		})
 	}
