@@ -165,19 +165,21 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 	// gateway. The unique DB constraint on idempotency_key never caught it because
 	// the key was unique per call by design.
 	//
-	// Deterministic key on {invoice_id, amount, currency} means:
-	//   - Retries of the same charge intent hit the pre-Create lookup below and
-	//     return the existing payment (true idempotent behavior, matching the
-	//     razorpay/invoice.go and tax.go patterns).
-	//   - Callers who legitimately need multiple payments for the same
-	//     invoice+amount+currency (installments, partial re-attempts) can still
-	//     do so by supplying their own IdempotencyKey in the request — the
-	//     `if p.IdempotencyKey == ""` guard already respects that.
+	// Key composition — {invoice_id, amount, currency, payment_method_type,
+	// payment_gateway} — dedups genuine retries of the same charge intent but
+	// keeps distinct intents distinct: switching payment method (card → link)
+	// or gateway after a failed attempt must not collapse into the earlier
+	// payment record. Callers who legitimately need multiple payments for the
+	// same intent (installments, partial re-attempts) can still opt out by
+	// supplying their own IdempotencyKey — the `if p.IdempotencyKey == ""`
+	// guard already respects that.
 	if p.IdempotencyKey == "" {
 		p.IdempotencyKey = s.idempGen.GenerateKey(idempotency.ScopePayment, map[string]interface{}{
-			"invoice_id": p.DestinationID,
-			"amount":     p.Amount,
-			"currency":   p.Currency,
+			"invoice_id":          p.DestinationID,
+			"amount":              p.Amount,
+			"currency":            p.Currency,
+			"payment_method_type": p.PaymentMethodType,
+			"payment_gateway":     lo.FromPtr(p.PaymentGateway),
 		})
 	}
 
@@ -186,8 +188,14 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 		return nil, err
 	}
 
-	// Idempotent create: if a payment with the same idempotency key already exists,
-	// return it as the response instead of racing the unique constraint on Create.
+	// Idempotent create.
+	// Fast path: check for an existing payment first and return it. Avoids
+	// generating a wasted payment ID + burning a Create attempt for typical
+	// serial retries.
+	// Race path: two concurrent requests can both observe not-found and both
+	// call Create; the unique index on (tenant_id, environment_id,
+	// idempotency_key) fails one with ErrAlreadyExists — we then re-fetch and
+	// return the winner's payment.
 	// GetByIdempotencyKey is tenant/env-scoped via ctx.
 	existing, err := s.PaymentRepo.GetByIdempotencyKey(ctx, p.IdempotencyKey)
 	if err != nil && !ierr.IsNotFound(err) {
@@ -198,6 +206,13 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 	}
 
 	if err := s.PaymentRepo.Create(ctx, p); err != nil {
+		if ierr.IsAlreadyExists(err) {
+			existing, fetchErr := s.PaymentRepo.GetByIdempotencyKey(ctx, p.IdempotencyKey)
+			if fetchErr != nil {
+				return nil, fetchErr
+			}
+			return dto.NewPaymentResponse(existing), nil
+		}
 		return nil, err
 	}
 

@@ -36,7 +36,6 @@ func (Payment) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			Unique().
 			Immutable(),
 		field.String("destination_type").
 			SchemaType(map[string]string{
@@ -135,6 +134,12 @@ func (Payment) Edges() []ent.Edge {
 	}
 }
 
+// Idx_tenant_environment_payment_idempotency_key_unique is exported so the
+// repository can identify unique-constraint violations on this specific
+// index and return them as ErrAlreadyExists (used to resolve concurrent
+// idempotent-create races).
+var Idx_tenant_environment_payment_idempotency_key_unique = "idx_tenant_environment_payment_idempotency_key_unique"
+
 // Indexes of the Payment.
 func (Payment) Indexes() []ent.Index {
 	return []ent.Index{
@@ -145,5 +150,10 @@ func (Payment) Indexes() []ent.Index {
 		index.Fields("tenant_id", "environment_id", "payment_gateway", "gateway_payment_id").
 			StorageKey("idx_tenant_gateway_payment").
 			Annotations(entsql.IndexWhere("((payment_gateway IS NOT NULL) AND (gateway_payment_id IS NOT NULL))")),
+		// Idempotency is scoped per tenant+environment: the same caller-supplied
+		// key (e.g. "retry-1") can legitimately be used by different tenants.
+		index.Fields("tenant_id", "environment_id", "idempotency_key").
+			Unique().
+			StorageKey(Idx_tenant_environment_payment_idempotency_key_unique),
 	}
 }

@@ -2,17 +2,20 @@ package ent
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/payment"
 	"github.com/flexprice/flexprice/ent/paymentattempt"
+	entSchema "github.com/flexprice/flexprice/ent/schema"
 	"github.com/flexprice/flexprice/internal/cache"
 	domainPayment "github.com/flexprice/flexprice/internal/domain/payment"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/lib/pq"
 )
 
 type paymentRepository struct {
@@ -88,6 +91,24 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 
 	if err != nil {
 		SetSpanError(span, err)
+		// Idempotent create: surface unique-index conflicts on the
+		// (tenant_id, environment_id, idempotency_key) index as ErrAlreadyExists
+		// so the service layer can re-fetch and return the existing payment
+		// instead of the caller seeing a generic DB error under concurrent retries.
+		if ent.IsConstraintError(err) {
+			var pqErr *pq.Error
+			if errors.As(err, &pqErr) && pqErr.Constraint == entSchema.Idx_tenant_environment_payment_idempotency_key_unique {
+				return ierr.WithError(err).
+					WithHint("A payment with this idempotency key already exists").
+					WithReportableDetails(map[string]interface{}{
+						"idempotency_key": p.IdempotencyKey,
+					}).
+					Mark(ierr.ErrAlreadyExists)
+			}
+			return ierr.WithError(err).
+				WithHint("Payment creation failed due to constraint violation").
+				Mark(ierr.ErrAlreadyExists)
+		}
 		return ierr.WithError(err).
 			WithHint("Failed to create payment").
 			WithReportableDetails(map[string]interface{}{
