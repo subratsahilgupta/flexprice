@@ -50,6 +50,9 @@ func NewFileProcessor(client httpclient.Client, logger *logger.Logger) *FileProc
 	retryClient.Logger = logger.GetRetryableHTTPLogger()
 	// Instrument outbound file downloads for SigNoz External API Monitoring.
 	retryClient.HTTPClient.Transport = httpclient.OtelTransport(retryClient.HTTPClient.Transport)
+	// Refuse redirects: file_url is caller-supplied and only the initial URL is
+	// validated, so a redirect would reach an unvalidated host (VAPT F16).
+	retryClient.HTTPClient.CheckRedirect = httpclient.RejectRedirects
 
 	return &FileProcessor{
 		StreamingProcessor: NewStreamingProcessor(client, logger),
@@ -168,11 +171,10 @@ func (fp *FileProcessor) DownloadFileStream(ctx context.Context, t *task.Task) (
 			Mark(ierr.ErrHTTPClient)
 	}
 
-	// Make the request with extended timeout for large file downloads
-	httpClient := &http.Client{
-		Timeout:   10 * time.Minute, // Extended timeout for large file downloads
-		Transport: httpclient.OtelTransport(nil),
-	}
+	// Make the request with extended timeout for large file downloads.
+	// NewOtelHTTPClient refuses redirects — file_url is caller-supplied and only
+	// the initial URL is validated, so a redirect would reach an unvalidated host.
+	httpClient := httpclient.NewOtelHTTPClient(10 * time.Minute)
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		fp.Logger.Error(ctx, "failed to download file stream", "error", err, "url", downloadURL, "provider", provider.GetProviderName())
@@ -235,10 +237,9 @@ func (fp *FileProcessor) GetFileSize(ctx context.Context, t *task.Task) (int64, 
 			Mark(ierr.ErrHTTPClient)
 	}
 
-	httpClient := &http.Client{
-		Timeout:   30 * time.Second, // Shorter timeout for HEAD requests
-		Transport: httpclient.OtelTransport(nil),
-	}
+	// Shorter timeout for HEAD requests; redirects refused (same reasoning as
+	// the download path above).
+	httpClient := httpclient.NewOtelHTTPClient(30 * time.Second)
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		fp.Logger.Error(ctx, "failed to get file size", "error", err, "url", downloadURL, "provider", provider.GetProviderName())
