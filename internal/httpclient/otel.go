@@ -46,6 +46,6 @@ func NewOtelHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout:       timeout,
 		Transport:     OtelTransport(nil),
-		CheckRedirect: rejectRedirects,
+		CheckRedirect: RejectRedirects,
 	}
 }

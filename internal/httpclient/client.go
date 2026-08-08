@@ -35,7 +35,8 @@ type ClientConfig struct {
 	Timeout time.Duration
 }
 
-// rejectRedirects refuses to follow any HTTP redirect.
+// RejectRedirects refuses to follow any HTTP redirect. Assign it to an
+// http.Client's CheckRedirect field.
 //
 // Go's default http.Client silently follows up to 10 redirects. Callers that
 // validate a user-supplied URL (for example the file-import providers) only
@@ -43,7 +44,10 @@ type ClientConfig struct {
 // 169.254.169.254, localhost, or any RFC1918 host — would be followed without
 // a second validation and would not be visible in the stored task metadata.
 // Refusing redirects keeps the validated URL the only URL we ever fetch.
-func rejectRedirects(_ *http.Request, _ []*http.Request) error {
+//
+// Exported so callers that build their own client (retryablehttp, third-party
+// SDKs) can apply the same policy.
+func RejectRedirects(_ *http.Request, _ []*http.Request) error {
 	return http.ErrUseLastResponse
 }
 
@@ -58,7 +62,7 @@ func NewClientWithConfig(config ClientConfig) Client {
 		client: &http.Client{
 			Timeout:       timeout,
 			Transport:     OtelTransport(nil),
-			CheckRedirect: rejectRedirects,
+			CheckRedirect: RejectRedirects,
 		},
 	}
 }
@@ -74,7 +78,7 @@ func NewDefaultClient() Client {
 		client: &http.Client{
 			Timeout:       30 * time.Second,
 			Transport:     OtelTransport(nil),
-			CheckRedirect: rejectRedirects,
+			CheckRedirect: RejectRedirects,
 		},
 	}
 }
@@ -113,21 +117,21 @@ func (c *DefaultClient) Send(ctx context.Context, req *Request) (*Response, erro
 	}
 	defer resp.Body.Close()
 
-	// CheckRedirect returns ErrUseLastResponse, so a redirect arrives here as a
-	// 3xx rather than being followed. Reject it explicitly: the redirect target
-	// has not been through whatever validation the caller applied to req.URL.
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return nil, ierr.NewError("redirects are not allowed").
-			WithHint("The requested URL responded with a redirect, which is not followed").
-			Mark(ierr.ErrHTTPClient)
-	}
-
 	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Please check the request payload").
 			Mark(ierr.ErrHTTPClient)
+	}
+
+	// CheckRedirect returns ErrUseLastResponse, so a redirect arrives here as a
+	// 3xx rather than being followed. Reject it explicitly: the redirect target
+	// has not been through whatever validation the caller applied to req.URL.
+	// Returned as the package's typed *Error so IsHTTPError and status-based
+	// retry/mapping keep working for this case like any other HTTP failure.
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, NewError(resp.StatusCode, respBody)
 	}
 
 	// Copy response headers
