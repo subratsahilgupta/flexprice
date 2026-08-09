@@ -422,3 +422,40 @@ func (s *PaymentServiceSuite) TestCreatePayment_NonIdempotencyConstraintErrorIsN
 		"a duplicate-ID violation must not be tagged as an idempotency conflict")
 	s.False(ierr.IsNotFound(err), "must not surface as ErrNotFound")
 }
+
+// Payments created without an explicit TenantID take it from context. The store
+// must persist that resolved tenant, otherwise the row is kept with an empty
+// TenantID, a later retry compares "" against the context tenant, the duplicate
+// goes undetected, and the idempotency guarantee silently disappears.
+func (s *PaymentServiceSuite) TestCreatePayment_RetryIsIdempotentWhenTenantComesFromContext() {
+	ctx := types.SetEnvironmentID(s.GetContext(), "test-env-id")
+
+	newPayment := func() *payment.Payment {
+		return &payment.Payment{
+			ID:                types.GenerateUUIDWithPrefix("pay"),
+			IdempotencyKey:    "tenant-from-context-key",
+			DestinationType:   types.PaymentDestinationTypeInvoice,
+			DestinationID:     s.testData.invoice.ID,
+			PaymentMethodType: types.PaymentMethodTypeOffline,
+			Amount:            decimal.NewFromInt(100),
+			Currency:          "usd",
+			PaymentStatus:     types.PaymentStatusPending,
+			EnvironmentID:     "test-env-id",
+			// TenantID deliberately left empty — resolved from ctx.
+		}
+	}
+
+	s.Require().NoError(s.GetStores().PaymentRepo.Create(ctx, newPayment()))
+
+	// The retry carries the tenant explicitly — as a caller that populated
+	// BaseModel would. If the first insert was stored with an empty TenantID,
+	// this comparison misses and the duplicate slips through.
+	retry := newPayment()
+	retry.TenantID = types.GetTenantID(ctx)
+	s.Require().NotEmpty(retry.TenantID, "test context must carry a tenant for this to be meaningful")
+
+	err := s.GetStores().PaymentRepo.Create(ctx, retry)
+	s.Require().Error(err, "second insert with the same key must be rejected")
+	s.True(payment.IsIdempotencyKeyConflict(err),
+		"context-resolved tenant must still be matched by the uniqueness check")
+}

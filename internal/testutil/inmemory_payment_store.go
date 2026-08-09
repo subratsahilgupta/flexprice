@@ -58,6 +58,14 @@ func (m *InMemoryPaymentStore) Create(ctx context.Context, p *payment.Payment) e
 		p.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
+	// Same for tenant. This must be persisted onto p, not just resolved into a
+	// local: the duplicate check below compares against stored payments, so a row
+	// kept with an empty TenantID would never match a later retry carrying the
+	// context tenant, silently defeating the uniqueness check.
+	if p.TenantID == "" {
+		p.TenantID = types.GetTenantID(ctx)
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -66,13 +74,9 @@ func (m *InMemoryPaymentStore) Create(ctx context.Context, p *payment.Payment) e
 	// test of the idempotent-create path would pass vacuously — the duplicate
 	// insert would silently succeed instead of surfacing ErrAlreadyExists.
 	if p.IdempotencyKey != "" {
-		tenantID := p.TenantID
-		if tenantID == "" {
-			tenantID = types.GetTenantID(ctx)
-		}
 		for _, existing := range m.createdInOrder {
 			if existing.IdempotencyKey == p.IdempotencyKey &&
-				existing.TenantID == tenantID &&
+				existing.TenantID == p.TenantID &&
 				existing.EnvironmentID == p.EnvironmentID {
 				return ierr.WithError(payment.ErrIdempotencyKeyConflict).
 					WithHint("A payment with this idempotency key already exists").
