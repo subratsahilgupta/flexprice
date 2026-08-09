@@ -94,7 +94,11 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 		if ent.IsConstraintError(err) {
 			var pqErr *pq.Error
 			if errors.As(err, &pqErr) && pqErr.Constraint == entSchema.Idx_tenant_environment_payment_idempotency_key_unique {
-				return ierr.WithError(err).
+				// Tag this specific constraint so callers can tell an idempotency
+				// race apart from any other constraint violation (a duplicate
+				// payment ID, say). Both stay ErrAlreadyExists → HTTP 409; only
+				// this one means "re-fetching by idempotency key will find it".
+				return ierr.WithError(errors.Join(err, domainPayment.ErrIdempotencyKeyConflict)).
 					WithHint("A payment with this idempotency key already exists").
 					WithReportableDetails(map[string]interface{}{
 						"idempotency_key": p.IdempotencyKey,

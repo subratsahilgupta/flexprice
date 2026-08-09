@@ -181,10 +181,15 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 
 	if err := s.PaymentRepo.Create(ctx, p); err != nil {
 		// Concurrent request already inserted with this key — return theirs.
-		if ierr.IsAlreadyExists(err) {
+		// Gated on the idempotency-key conflict specifically: any other
+		// constraint violation is also ErrAlreadyExists, and re-fetching by a
+		// key that was never inserted would turn it into a misleading 404.
+		if payment.IsIdempotencyKeyConflict(err) {
 			existing, fetchErr := s.PaymentRepo.GetByIdempotencyKey(ctx, p.IdempotencyKey)
 			if fetchErr != nil {
-				return nil, fetchErr
+				// The row is gone or unreadable — report the original conflict
+				// rather than the lookup miss, which would misdescribe the cause.
+				return nil, err
 			}
 			return dto.NewPaymentResponse(existing), nil
 		}

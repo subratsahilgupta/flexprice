@@ -74,7 +74,7 @@ func (m *InMemoryPaymentStore) Create(ctx context.Context, p *payment.Payment) e
 			if existing.IdempotencyKey == p.IdempotencyKey &&
 				existing.TenantID == tenantID &&
 				existing.EnvironmentID == p.EnvironmentID {
-				return ierr.NewError("payment with this idempotency key already exists").
+				return ierr.WithError(payment.ErrIdempotencyKeyConflict).
 					WithHint("A payment with this idempotency key already exists").
 					WithReportableDetails(map[string]interface{}{
 						"idempotency_key": p.IdempotencyKey,

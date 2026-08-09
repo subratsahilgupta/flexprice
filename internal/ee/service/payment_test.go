@@ -384,3 +384,41 @@ func (s *PaymentServiceSuite) TestCreatePayment_ConcurrentRetriesReturnSamePayme
 	unique := lo.Uniq(ids)
 	s.Len(unique, 1, "concurrent identical requests produced %d distinct payments (duplicate charges)", len(unique))
 }
+
+// A constraint violation that is NOT the idempotency-key index (a duplicate
+// payment ID, say) is also marked ErrAlreadyExists by the repository. Treating
+// every ErrAlreadyExists as an idempotency conflict made CreatePayment re-fetch
+// by a key that was never inserted, turning a 409 into a misleading 404.
+func (s *PaymentServiceSuite) TestCreatePayment_NonIdempotencyConstraintErrorIsNotMasked() {
+	ctx := types.SetEnvironmentID(s.GetContext(), "test-env-id")
+
+	err := s.GetStores().PaymentRepo.Create(ctx, &payment.Payment{
+		ID:                "pay_duplicate_id_probe",
+		IdempotencyKey:    "key-already-taken",
+		DestinationType:   types.PaymentDestinationTypeInvoice,
+		DestinationID:     s.testData.invoice.ID,
+		PaymentMethodType: types.PaymentMethodTypeOffline,
+		Amount:            decimal.NewFromInt(100),
+		Currency:          "usd",
+		PaymentStatus:     types.PaymentStatusPending,
+		BaseModel:         types.GetDefaultBaseModel(ctx),
+	})
+	s.Require().NoError(err)
+
+	// Same ID, different idempotency key: a non-idempotency constraint failure.
+	err = s.GetStores().PaymentRepo.Create(ctx, &payment.Payment{
+		ID:                "pay_duplicate_id_probe",
+		IdempotencyKey:    "a-different-key",
+		DestinationType:   types.PaymentDestinationTypeInvoice,
+		DestinationID:     s.testData.invoice.ID,
+		PaymentMethodType: types.PaymentMethodTypeOffline,
+		Amount:            decimal.NewFromInt(100),
+		Currency:          "usd",
+		PaymentStatus:     types.PaymentStatusPending,
+		BaseModel:         types.GetDefaultBaseModel(ctx),
+	})
+	s.Require().Error(err)
+	s.False(payment.IsIdempotencyKeyConflict(err),
+		"a duplicate-ID violation must not be tagged as an idempotency conflict")
+	s.False(ierr.IsNotFound(err), "must not surface as ErrNotFound")
+}
