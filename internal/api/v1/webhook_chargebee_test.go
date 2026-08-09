@@ -166,10 +166,20 @@ func requireUnauthorizedJSON(t *testing.T, w *httptest.ResponseRecorder) {
 		"deferred success body overwrote the rejection")
 }
 
+// newChargebeeWebhookCredentials returns opaque credentials generated at runtime.
+// These are fixture values with no meaning outside a single test run; generating
+// them avoids committing credential-shaped string literals that secret scanners
+// flag (suppressing the scanner instead would train it to ignore this file).
+func newChargebeeWebhookCredentials() (string, string) {
+	return types.GenerateUUIDWithPrefix("cbuser"),
+		types.GenerateUUIDWithPrefix("cbsecret")
+}
+
 // Case 1: creds configured, request sends none.
 func TestHandleChargebeeWebhook_RejectsMissingBasicAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := setupChargebeeWebhookHandler(t, "hook_user", "hook_pass", false)
+	username, password := newChargebeeWebhookCredentials()
+	handler := setupChargebeeWebhookHandler(t, username, password, false)
 
 	requireUnauthorizedJSON(t, chargebeeWebhookRequest(t, handler, "", ""))
 }
@@ -177,9 +187,12 @@ func TestHandleChargebeeWebhook_RejectsMissingBasicAuth(t *testing.T) {
 // Case 3: creds configured, request sends wrong ones.
 func TestHandleChargebeeWebhook_RejectsInvalidBasicAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := setupChargebeeWebhookHandler(t, "hook_user", "hook_pass", false)
+	username, password := newChargebeeWebhookCredentials()
+	handler := setupChargebeeWebhookHandler(t, username, password, false)
 
-	requireUnauthorizedJSON(t, chargebeeWebhookRequest(t, handler, "wrong_user", "wrong_pass"))
+	// Deliberately different from the configured pair.
+	wrongUsername, wrongPassword := newChargebeeWebhookCredentials()
+	requireUnauthorizedJSON(t, chargebeeWebhookRequest(t, handler, wrongUsername, wrongPassword))
 }
 
 // Case 4 — the VAPT finding. Neither side has auth: previously allowed with a
@@ -196,7 +209,8 @@ func TestHandleChargebeeWebhook_RejectsAuthWhenNoneConfigured(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := setupChargebeeWebhookHandler(t, "", "", false)
 
-	requireUnauthorizedJSON(t, chargebeeWebhookRequest(t, handler, "any_user", "any_pass"))
+	username, password := newChargebeeWebhookCredentials()
+	requireUnauthorizedJSON(t, chargebeeWebhookRequest(t, handler, username, password))
 }
 
 // The decryption-failure bypass: ciphertext present but undecryptable. The raw
@@ -207,5 +221,6 @@ func TestHandleChargebeeWebhook_RejectsWhenCredentialsCannotBeDecrypted(t *testi
 	gin.SetMode(gin.TestMode)
 	handler := setupChargebeeWebhookHandler(t, "", "", true)
 
-	requireUnauthorizedJSON(t, chargebeeWebhookRequest(t, handler, "attacker", "anything"))
+	attackerUsername, attackerPassword := newChargebeeWebhookCredentials()
+	requireUnauthorizedJSON(t, chargebeeWebhookRequest(t, handler, attackerUsername, attackerPassword))
 }
