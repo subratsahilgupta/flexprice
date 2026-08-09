@@ -42,6 +42,9 @@ func NewStreamingProcessor(client httpclient.Client, logger *logger.Logger) *Str
 	retryClient.Logger = logger.GetRetryableHTTPLogger()
 	// Instrument outbound file downloads for SigNoz External API Monitoring.
 	retryClient.HTTPClient.Transport = httpclient.OtelTransport(retryClient.HTTPClient.Transport)
+	// Refuse redirects: this client streams the caller-supplied file_url and only
+	// the initial URL is validated (VAPT F16).
+	retryClient.HTTPClient.CheckRedirect = httpclient.RejectRedirects
 
 	return &StreamingProcessor{
 		Client:           client,
