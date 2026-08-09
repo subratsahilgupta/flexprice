@@ -588,37 +588,50 @@ func (h *WebhookHandler) HandleChargebeeWebhook(c *gin.Context) {
 		conn.EncryptedSecretData.Chargebee.WebhookUsername != "" &&
 		conn.EncryptedSecretData.Chargebee.WebhookPassword != ""
 
+	// Every rejection below writes a JSON body rather than using a bare
+	// AbortWithStatus, so the response matches the API error contract used by the
+	// other webhook handlers in this file. AbortWithStatusJSON also marks the
+	// context aborted, which is what stops the deferred success body at the top
+	// of this handler from overwriting the rejection.
+	rejectUnauthorized := func(message string) {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+			"error": message,
+		})
+	}
+
 	// Case 1: Auth configured in FlexPrice but webhook request has no auth
 	if hasWebhookAuthConfigured && !hasAuth {
-		h.logger.Error(context.Background(), "webhook auth is configured but request has no Basic Auth credentials",
-			"error", err,
+		h.logger.Error(ctx, "webhook auth is configured but request has no Basic Auth credentials",
+			"error", "webhook_basic_auth_header_missing",
 			"remote_addr", c.ClientIP(),
 			"tenant_id", tenantID,
 			"environment_id", environmentID)
-		c.AbortWithStatus(http.StatusUnauthorized)
+		rejectUnauthorized("Basic Auth credentials are required for this webhook")
 		return
 	}
 
 	// Case 2: Auth NOT configured in FlexPrice but webhook request has auth
 	if !hasWebhookAuthConfigured && hasAuth {
-		h.logger.Info(context.Background(), "webhook request has Basic Auth but no credentials configured in FlexPrice",
+		h.logger.Info(ctx, "webhook request has Basic Auth but no credentials configured in FlexPrice",
 			"remote_addr", c.ClientIP(),
 			"tenant_id", tenantID,
 			"environment_id", environmentID,
 			"note", "Configure webhook_username and webhook_password in connection settings")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		rejectUnauthorized("Webhook Basic Auth is not configured for this connection")
 		return
 	} else if hasWebhookAuthConfigured && hasAuth {
 		// Case 3: Both sides have auth - verify it
 		err = chargebeeIntegration.Client.VerifyWebhookBasicAuth(ctx, username, password)
 		if err != nil {
-			h.logger.Error(context.Background(), "Chargebee webhook basic auth verification failed",
+			h.logger.Error(ctx, "Chargebee webhook basic auth verification failed",
 				"error", err,
-				"remote_addr", c.ClientIP())
-			c.AbortWithStatus(http.StatusUnauthorized)
+				"remote_addr", c.ClientIP(),
+				"tenant_id", tenantID,
+				"environment_id", environmentID)
+			rejectUnauthorized("Invalid webhook authentication")
 			return
 		}
-		h.logger.Debug(context.Background(), "Chargebee webhook basic auth verified",
+		h.logger.Debug(ctx, "Chargebee webhook basic auth verified",
 			"remote_addr", c.ClientIP())
 	} else {
 		// Case 4: Neither side has auth - reject. Chargebee v2 has no signature
@@ -631,7 +644,7 @@ func (h *WebhookHandler) HandleChargebeeWebhook(c *gin.Context) {
 			"tenant_id", tenantID,
 			"environment_id", environmentID,
 			"note", "Configure webhook_username and webhook_password in the Chargebee connection and enable Basic Auth in the Chargebee webhook settings")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		rejectUnauthorized("Webhook Basic Auth is not configured for this connection")
 		return
 	}
 
