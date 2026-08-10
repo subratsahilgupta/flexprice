@@ -172,7 +172,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -183,7 +183,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -194,7 +194,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -205,7 +205,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -216,7 +216,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -227,7 +227,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -238,7 +238,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -249,7 +249,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -260,7 +260,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -271,7 +271,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -282,7 +282,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
