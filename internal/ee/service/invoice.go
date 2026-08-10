@@ -4610,6 +4610,7 @@ func (s *invoiceService) ApplyExternalInvoiceDiscount(ctx context.Context, invoi
 		}
 
 		inv.TotalDiscount = inv.TotalDiscount.Add(discountAmount)
+		inv.Total = inv.Total.Sub(discountAmount)
 		inv.AmountDue = inv.AmountDue.Sub(discountAmount)
 		inv.AmountRemaining = inv.AmountRemaining.Sub(discountAmount)
 

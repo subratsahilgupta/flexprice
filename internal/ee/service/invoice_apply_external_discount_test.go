@@ -129,6 +129,7 @@ func (s *ApplyExternalInvoiceDiscountSuite) TestFreshInvoice_NoExistingDiscount(
 	updated, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), inv.ID)
 	s.NoError(err)
 	s.True(decimal.NewFromInt(20).Equal(updated.TotalDiscount))
+	s.True(decimal.NewFromInt(80).Equal(updated.Total))
 	s.True(decimal.NewFromInt(80).Equal(updated.AmountDue))
 	s.True(decimal.NewFromInt(80).Equal(updated.AmountRemaining))
 	s.NoError(updated.Validate())
@@ -158,6 +159,7 @@ func (s *ApplyExternalInvoiceDiscountSuite) TestDoesNotClobberExistingInvoiceLev
 	updated, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), inv.ID)
 	s.NoError(err)
 	s.True(decimal.NewFromInt(30).Equal(updated.TotalDiscount))
+	s.True(decimal.NewFromInt(70).Equal(updated.Total))
 	s.True(decimal.NewFromInt(70).Equal(updated.AmountDue))
 	s.NoError(updated.Validate())
 }
@@ -178,6 +180,7 @@ func (s *ApplyExternalInvoiceDiscountSuite) TestAppendsMetadataRatherThanOverwri
 	s.Equal("cp_second", entries[1]["stripe_coupon_id"])
 
 	s.True(decimal.NewFromInt(15).Equal(updated.TotalDiscount))
+	s.True(decimal.NewFromInt(185).Equal(updated.Total))
 	s.True(decimal.NewFromInt(185).Equal(updated.AmountDue))
 }
 
@@ -190,5 +193,6 @@ func (s *ApplyExternalInvoiceDiscountSuite) TestZeroDiscountIsANoOp() {
 	updated, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), inv.ID)
 	s.NoError(err)
 	s.True(decimal.NewFromInt(50).Equal(updated.AmountDue))
+	s.True(decimal.NewFromInt(50).Equal(updated.Total))
 	s.True(decimal.Zero.Equal(updated.TotalDiscount))
 }
