@@ -1,6 +1,7 @@
 package stripe
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
+	"github.com/stripe/stripe-go/v82"
 )
 
 func TestBuildSyncedLineItems_HappyPath(t *testing.T) {
@@ -148,4 +150,107 @@ func TestBuildSyncedLineItems_ZeroAmountLineItemsSkipped(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, lineItems, 1)
+}
+
+func TestComputeCheckoutDiscount_NoDiscountWhenEqual(t *testing.T) {
+	session := &stripe.CheckoutSession{AmountTotal: 10000}
+
+	actual, discount, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+
+	require.NoError(t, err)
+	require.False(t, hasDiscount)
+	require.True(t, decimal.NewFromInt(100).Equal(actual))
+	require.True(t, decimal.Zero.Equal(discount))
+	require.Empty(t, metadataJSON)
+}
+
+func TestComputeCheckoutDiscount_NoDiscountWhenCapturedMore(t *testing.T) {
+	session := &stripe.CheckoutSession{AmountTotal: 10500}
+
+	actual, discount, _, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+
+	require.NoError(t, err)
+	require.False(t, hasDiscount)
+	require.True(t, decimal.NewFromInt(105).Equal(actual))
+	require.True(t, decimal.Zero.Equal(discount))
+}
+
+func TestComputeCheckoutDiscount_DiscountWithCouponAndPromoCode(t *testing.T) {
+	session := &stripe.CheckoutSession{
+		AmountTotal: 8000,
+		Discounts: []*stripe.CheckoutSessionDiscount{
+			{
+				Coupon:        &stripe.Coupon{ID: "cp_1", Name: "20 off", AmountOff: 2000},
+				PromotionCode: &stripe.PromotionCode{Code: "SAVE20"},
+			},
+		},
+	}
+
+	actual, discount, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+
+	require.NoError(t, err)
+	require.True(t, hasDiscount)
+	require.True(t, decimal.NewFromInt(80).Equal(actual))
+	require.True(t, decimal.NewFromInt(20).Equal(discount))
+
+	var entries []stripeCheckoutDiscountEntry
+	require.NoError(t, json.Unmarshal([]byte(metadataJSON), &entries))
+	require.Len(t, entries, 1)
+	require.Equal(t, "cp_1", entries[0].StripeCouponID)
+	require.Equal(t, "SAVE20", entries[0].PromotionCode)
+	require.EqualValues(t, 2000, entries[0].AmountOff)
+}
+
+func TestComputeCheckoutDiscount_MultipleStackedDiscounts(t *testing.T) {
+	session := &stripe.CheckoutSession{
+		AmountTotal: 7000,
+		Discounts: []*stripe.CheckoutSessionDiscount{
+			{Coupon: &stripe.Coupon{ID: "cp_1", Name: "First"}},
+			{Coupon: &stripe.Coupon{ID: "cp_2", Name: "Second"}},
+		},
+	}
+
+	_, discount, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+
+	require.NoError(t, err)
+	require.True(t, hasDiscount)
+	require.True(t, decimal.NewFromInt(30).Equal(discount))
+
+	var entries []stripeCheckoutDiscountEntry
+	require.NoError(t, json.Unmarshal([]byte(metadataJSON), &entries))
+	require.Len(t, entries, 2)
+}
+
+func TestComputeCheckoutDiscount_DiscountWithNoCouponsListedYet(t *testing.T) {
+	// AmountTotal reduced with no session.Discounts populated (e.g. a manual amount edit).
+	session := &stripe.CheckoutSession{AmountTotal: 9000}
+
+	_, discount, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+
+	require.NoError(t, err)
+	require.True(t, hasDiscount)
+	require.True(t, decimal.NewFromInt(10).Equal(discount))
+
+	var entries []stripeCheckoutDiscountEntry
+	require.NoError(t, json.Unmarshal([]byte(metadataJSON), &entries))
+	require.Empty(t, entries)
+}
+
+func TestComputeCheckoutDiscount_NilCouponOrPromotionCode(t *testing.T) {
+	session := &stripe.CheckoutSession{
+		AmountTotal: 9000,
+		Discounts: []*stripe.CheckoutSessionDiscount{
+			{Coupon: nil, PromotionCode: &stripe.PromotionCode{Code: "NOCOUPON"}},
+		},
+	}
+
+	_, _, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+
+	require.NoError(t, err)
+	require.True(t, hasDiscount)
+	var entries []stripeCheckoutDiscountEntry
+	require.NoError(t, json.Unmarshal([]byte(metadataJSON), &entries))
+	require.Len(t, entries, 1)
+	require.Equal(t, "", entries[0].StripeCouponID)
+	require.Equal(t, "NOCOUPON", entries[0].PromotionCode)
 }

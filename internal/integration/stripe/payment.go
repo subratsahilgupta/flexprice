@@ -79,6 +79,52 @@ func (s *PaymentService) buildSyncedLineItems(ctx context.Context, invoiceResp *
 	return lineItems, nil
 }
 
+// stripeCheckoutDiscountEntry is one entry in the JSON array stored under
+// Invoice.Metadata["stripe_checkout_discounts"].
+type stripeCheckoutDiscountEntry struct {
+	StripeCouponID string    `json:"stripe_coupon_id"`
+	Name           string    `json:"name"`
+	AmountOff      int64     `json:"amount_off,omitempty"`
+	PercentOff     float64   `json:"percent_off,omitempty"`
+	PromotionCode  string    `json:"promotion_code,omitempty"`
+	AppliedAt      time.Time `json:"applied_at"`
+}
+
+// computeCheckoutDiscount is pure (no Stripe calls) so it's unit-testable directly. Compares
+// what was requested against what Stripe actually captured. hasDiscount is false when they
+// match, or when actual > requested (the caller logs that case; never treated as a negative
+// discount).
+func computeCheckoutDiscount(session *stripe.CheckoutSession, requestedAmount decimal.Decimal) (
+	actualAmount decimal.Decimal, discountAmount decimal.Decimal, metadataJSON string, hasDiscount bool, err error,
+) {
+	actualAmount = decimal.NewFromInt(session.AmountTotal).Div(decimal.NewFromInt(100))
+	if !actualAmount.LessThan(requestedAmount) {
+		return actualAmount, decimal.Zero, "", false, nil
+	}
+
+	discountAmount = requestedAmount.Sub(actualAmount)
+
+	entries := make([]stripeCheckoutDiscountEntry, 0, len(session.Discounts))
+	for _, d := range session.Discounts {
+		// lo.TernaryF (lazy) not lo.Ternary (eager) — d.Coupon.ID would nil-pointer-panic
+		// eagerly evaluating both branches when d.Coupon is nil.
+		entries = append(entries, stripeCheckoutDiscountEntry{
+			StripeCouponID: lo.TernaryF(d.Coupon != nil, func() string { return d.Coupon.ID }, func() string { return "" }),
+			Name:           lo.TernaryF(d.Coupon != nil, func() string { return d.Coupon.Name }, func() string { return "" }),
+			AmountOff:      lo.TernaryF(d.Coupon != nil, func() int64 { return d.Coupon.AmountOff }, func() int64 { return 0 }),
+			PercentOff:     lo.TernaryF(d.Coupon != nil, func() float64 { return d.Coupon.PercentOff }, func() float64 { return 0 }),
+			PromotionCode:  lo.TernaryF(d.PromotionCode != nil, func() string { return d.PromotionCode.Code }, func() string { return "" }),
+			AppliedAt:      time.Now().UTC(),
+		})
+	}
+
+	metadataBytes, err := json.Marshal(entries)
+	if err != nil {
+		return actualAmount, discountAmount, "", true, err
+	}
+	return actualAmount, discountAmount, string(metadataBytes), true, nil
+}
+
 // NewPaymentService creates a new Stripe payment service
 func NewPaymentService(
 	client *Client,
