@@ -369,6 +369,43 @@ func (s *UserServiceSuite) TestInviteUser_RoleAssignment() {
 		},
 	}
 
+	// Admitting someone to the tenant is restricted to super_admins, so a
+	// writer is refused even when the invitee would only be a reader.
+	s.Run("only a super_admin can invite", func() {
+		for _, callerRoles := range [][]string{
+			{types.RoleWriter.String()},
+			{types.RoleReader.String()},
+			{},
+		} {
+			ctx := testutil.SetupContext()
+			ctx = context.WithValue(ctx, types.CtxTenantID, types.DefaultTenantID)
+			ctx = context.WithValue(ctx, types.CtxUserID, "actor-1")
+			ctx = context.WithValue(ctx, types.CtxRoles, callerRoles)
+
+			tenantRepo := testutil.NewInMemoryTenantStore()
+			_ = tenantRepo.Create(ctx, &tenant.Tenant{ID: types.DefaultTenantID, Name: "Test Tenant"})
+			authRepo := testutil.NewInMemoryAuthRepository()
+
+			svc := &userService{
+				userRepo:    testutil.NewInMemoryUserStore(),
+				tenantRepo:  tenantRepo,
+				authRepo:    authRepo,
+				rbacService: rbacSvc,
+			}
+
+			created, _, err := svc.InviteUser(ctx, &dto.CreateUserRequest{
+				Type:  types.UserTypeUser,
+				Email: "invitee@example.com",
+				Roles: []string{types.RoleReader.String()},
+			}, "actor-1")
+
+			s.Error(err, "caller %v must not be able to invite", callerRoles)
+			s.Nil(created)
+			s.Contains(err.Error(), "only super_admin can invite users")
+			s.Zero(authRepo.Count(), "a refused invite must not leave auth material behind")
+		}
+	})
+
 	for _, tc := range testCases {
 		s.Run(tc.name, func() {
 			ctx := testutil.SetupContext()

@@ -312,6 +312,14 @@ func (s *userService) InviteUser(ctx context.Context, req *dto.CreateUserRequest
 
 	var userID string
 
+	// Admitting someone to the tenant is an administrative act, so it is
+	// restricted to super_admins regardless of which role the invitee is given.
+	if !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
+		return nil, nil, ierr.NewError("only super_admin can invite users").
+			WithHint("Ask a tenant super_admin to invite this user").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
 	// Resolve and check the roles up front. Everything below provisions state —
 	// a provider identity, an auth record — that this function does not roll
 	// back, so a rejected role must fail before any of it is created rather than
