@@ -72,8 +72,19 @@ func (r *InMemoryUserStore) GetByID(ctx context.Context, userID string) (*user.U
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Scoped to the tenant in context, matching the real repository: a missing
+	// tenant is an error rather than a wildcard, so a test that forgets to
+	// propagate tenant context fails here instead of silently reading across
+	// tenants.
+	tenantID, ok := ctx.Value(types.CtxTenantID).(string)
+	if !ok || tenantID == "" {
+		return nil, ierr.NewError("tenant ID not found in context").
+			WithHint("Tenant ID is required in the context").
+			Mark(ierr.ErrValidation)
+	}
+
 	for _, u := range r.users {
-		if u.ID == userID {
+		if u.ID == userID && u.TenantID == tenantID {
 			return u, nil
 		}
 	}

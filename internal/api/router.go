@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	domainEnvironment "github.com/flexprice/flexprice/internal/domain/environment"
 	domainIncomingWebhookEvent "github.com/flexprice/flexprice/internal/domain/incomingwebhookevent"
+	domainUser "github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rbac"
@@ -78,6 +79,7 @@ func NewRouter(
 	tenantService service.TenantService,
 	webhookRequestRepo domainIncomingWebhookEvent.Repository,
 	environmentRepo domainEnvironment.Repository,
+	userRepo domainUser.Repository,
 ) *gin.Engine {
 	// gin.SetMode(gin.ReleaseMode)
 
@@ -140,7 +142,7 @@ func NewRouter(
 		v1Public.POST("/auth/login", handlers.Auth.Login)
 	}
 
-	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, environmentRepo, logger))
+	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, environmentRepo, userRepo, logger))
 	private.Use(middleware.TenantStatusMiddleware(tenantService, logger))
 	private.Use(middleware.EnvAccessMiddleware(envAccessService, logger))
 	private.Use(middleware.TenantContextMiddleware)

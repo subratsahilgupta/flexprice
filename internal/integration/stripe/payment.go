@@ -49,6 +49,49 @@ func NewPaymentService(
 	}
 }
 
+// reservedStripeMetadataKeys are metadata keys FlexPrice sets itself and relies
+// on when a Stripe webhook comes back: they identify which payment, invoice and
+// environment the Stripe object belongs to. Caller-supplied metadata must never
+// set them, or a webhook would be reconciled against the wrong record.
+var reservedStripeMetadataKeys = map[string]struct{}{
+	"flexprice_payment_id":  {},
+	"flexprice_invoice_id":  {},
+	"flexprice_customer_id": {},
+	"stripe_invoice_id":     {},
+	"environment_id":        {},
+	"customer_id":           {},
+	"payment_source":        {},
+	"payment_type":          {},
+	// The setup-intent success webhook makes the payment method the customer's
+	// default when this is "true", so it must come from req.SetDefault only.
+	"set_default": {},
+	// Internal connection fields, previously filtered by the callers.
+	"connection_id":   {},
+	"connection_name": {},
+}
+
+func isReservedStripeMetadataKey(key string) bool {
+	_, reserved := reservedStripeMetadataKeys[key]
+	return reserved
+}
+
+// mergeCallerMetadata copies caller-supplied metadata over the trusted block,
+// skipping the keys FlexPrice sets itself. Both Stripe call sites that accept
+// caller metadata go through here so the filtering cannot be dropped from one
+// of them alone.
+func mergeCallerMetadata(trusted map[string]string, caller types.Metadata) map[string]string {
+	if trusted == nil {
+		trusted = map[string]string{}
+	}
+	for k, v := range caller {
+		if isReservedStripeMetadataKey(k) {
+			continue
+		}
+		trusted[k] = v
+	}
+	return trusted
+}
+
 // CreatePaymentLink creates a Stripe checkout session for payment
 func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateStripePaymentLinkRequest, customerService interfaces.CustomerService, invoiceService interfaces.InvoiceService) (*dto.StripePaymentLinkResponse, error) {
 	s.logger.Info(ctx, "creating stripe payment link",
@@ -238,10 +281,12 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 			"error", err)
 	}
 
-	// Add custom metadata if provided
-	for k, v := range req.Metadata {
-		metadata[k] = v
-	}
+	// Add custom metadata if provided. Reserved keys are skipped rather than
+	// overwritten: flexprice_payment_id is the anchor the payment_intent webhook
+	// uses to correlate the Stripe payment back to ours, and req.Metadata carries
+	// caller-supplied values straight from the create-payment request. Letting a
+	// caller set it would point the webhook at a different payment.
+	metadata = mergeCallerMetadata(metadata, req.Metadata)
 
 	// Provide default URLs if not provided
 	successURL := req.SuccessURL
@@ -1181,12 +1226,9 @@ func (s *PaymentService) SetupIntent(ctx context.Context, customerID string, req
 		"usage":          usage,
 	}
 
-	// Add custom metadata if provided (exclude internal connection fields)
-	for k, v := range req.Metadata {
-		if k != "connection_id" && k != "connection_name" {
-			metadata[k] = v
-		}
-	}
+	// Add custom metadata if provided, keeping the keys FlexPrice sets itself
+	// authoritative (this also covers the internal connection fields).
+	metadata = mergeCallerMetadata(metadata, req.Metadata)
 
 	// Add set_default flag to metadata if requested
 	if req.SetDefault {
