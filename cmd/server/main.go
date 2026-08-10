@@ -40,6 +40,7 @@ import (
 	"go.uber.org/fx"
 
 	_ "github.com/flexprice/flexprice/docs/swagger"
+	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/incomingwebhookevent"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	syncExport "github.com/flexprice/flexprice/internal/ee/service/sync/export"
@@ -241,6 +242,7 @@ func main() {
 			service.NewCustomerService,
 			service.NewPlanService,
 			service.NewSubscriptionService,
+			service.NewSubscriptionPhaseService,
 			service.NewWalletService,
 			service.NewInvoiceService,
 			service.NewFeatureService,
@@ -433,6 +435,7 @@ func provideRouter(
 	rbacService *rbac.RBACService,
 	tenantService service.TenantService,
 	webhookRequestRepo incomingwebhookevent.Repository,
+	environmentRepo environment.Repository,
 ) *gin.Engine {
 	return api.NewRouter(
 		handlers,
@@ -443,6 +446,7 @@ func provideRouter(
 		rbacService,
 		tenantService,
 		webhookRequestRepo,
+		environmentRepo,
 	)
 }
 
