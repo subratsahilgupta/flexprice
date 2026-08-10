@@ -38,24 +38,33 @@ func (pm *PermissionMiddleware) RequirePermission(entity types.Entity, action ty
 			return
 		}
 
-		// Service accounts are subject to RBAC; JWT users and config keys are not.
-		if types.IsServiceAccount(ctx) {
-			roles := types.GetRoles(ctx)
-			if !pm.rbacService.HasPermission(roles, string(entity), string(action)) {
-				pm.logger.Info(ctx, "service account access denied due to insufficient RBAC roles",
+		roles := types.GetRoles(ctx)
+		if !pm.rbacService.HasPermission(roles, string(entity), string(action)) {
+			// A caller carrying no roles at all is refused every check, which
+			// looks identical to holding the wrong role. Call it out separately:
+			// it usually means the principal's roles column is null or empty
+			// rather than that the role set is misconfigured.
+			if len(roles) == 0 {
+				pm.logger.Info(ctx, "access denied: caller has no roles assigned",
 					"user_id", types.GetUserID(ctx),
 					"tenant_id", types.GetTenantID(ctx),
-					"environment_id", types.GetEnvironmentID(ctx),
-					"roles", roles,
-					"entity", entity,
-					"action", action,
 					"path", c.Request.URL.Path,
 				)
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-					"message": "insufficient permissions",
-				})
-				return
 			}
+
+			pm.logger.Info(ctx, "access denied due to insufficient RBAC roles",
+				"user_id", types.GetUserID(ctx),
+				"tenant_id", types.GetTenantID(ctx),
+				"environment_id", types.GetEnvironmentID(ctx),
+				"roles", roles,
+				"entity", entity,
+				"action", action,
+				"path", c.Request.URL.Path,
+			)
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"message": "insufficient permissions",
+			})
+			return
 		}
 
 		c.Next()

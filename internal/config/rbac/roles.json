@@ -6,6 +6,22 @@
       "*": ["*"]
     }
   },
+
+  "reader": {
+    "name": "Reader",
+    "description": "Limited to reading resources for users.",
+    "permissions": {
+      "*": ["read"]
+    }
+  },
+
+  "writer": {
+    "name": "Writer",
+    "description": "Can read and write resources for users.",
+    "permissions": {
+      "*": ["read", "write"]
+    }
+  },
   
   "event_ingestor": {
     "name": "Event Ingestor",
