@@ -1892,6 +1892,7 @@ func paymentIntentCustomerID(paymentIntent *stripe.PaymentIntent) string {
 // paymentIntent is optional and can be nil
 func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 	ctx context.Context,
+	session *stripe.CheckoutSession,
 	paymentIntent *stripe.PaymentIntent,
 	payment *dto.PaymentResponse,
 	customerService interfaces.CustomerService,
@@ -1908,6 +1909,26 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 	// Update payment record
 	updateReq := dto.UpdatePaymentRequest{
 		PaymentStatus: &paymentStatus,
+	}
+
+	actualAmount, discountAmount, discountMetadataJSON, hasDiscount, err := computeCheckoutDiscount(session, payment.Amount)
+	if err != nil {
+		s.logger.Error(ctx, "failed to compute checkout discount", "error", err, "payment_id", payment.ID)
+		actualAmount = payment.Amount
+	} else if actualAmount.GreaterThan(payment.Amount) {
+		s.logger.Warn(ctx, "checkout session captured more than requested, not treating as a discount",
+			"payment_id", payment.ID, "requested", payment.Amount.String(), "captured", actualAmount.String())
+	}
+
+	if hasDiscount {
+		if err := invoiceService.ApplyExternalInvoiceDiscount(ctx, payment.DestinationID, discountAmount, discountMetadataJSON); err != nil {
+			s.logger.Error(ctx, "failed to apply external invoice discount", "error", err, "payment_id", payment.ID)
+			return err
+		}
+	}
+
+	if !actualAmount.Equal(payment.Amount) {
+		updateReq.Amount = &actualAmount
 	}
 
 	// If payment intent exists, extract payment method and gateway payment ID
@@ -1964,7 +1985,7 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 		}
 	}
 
-	_, err := paymentService.UpdatePayment(ctx, payment.ID, updateReq)
+	_, err = paymentService.UpdatePayment(ctx, payment.ID, updateReq)
 	if err != nil {
 		s.logger.Error(ctx, "failed to update payment record",
 			"error", err,
@@ -1979,19 +2000,17 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 		"payment_id", payment.ID,
 		"new_status", paymentStatus)
 
-	// get the amount from the payment
-	amount := payment.Amount
-	err = s.ReconcilePaymentWithInvoice(ctx, payment.ID, amount, paymentService, invoiceService)
+	err = s.ReconcilePaymentWithInvoice(ctx, payment.ID, actualAmount, paymentService, invoiceService)
 	if err != nil {
 		s.logger.Error(ctx, "failed to reconcile payment with invoice",
 			"error", err,
 			"payment_id", payment.ID,
-			"amount", amount.String())
+			"amount", actualAmount.String())
 		// Don't fail the entire webhook processing
 	} else {
 		s.logger.Info(ctx, "successfully reconciled payment with invoice",
 			"payment_id", payment.ID,
-			"amount", amount.String())
+			"amount", actualAmount.String())
 	}
 
 	// Only attach to Stripe invoice and reconcile if we have a payment intent
