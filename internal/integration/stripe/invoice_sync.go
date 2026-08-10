@@ -22,7 +22,7 @@ type InvoiceSyncService struct {
 	customerSvc                  *CustomerService
 	invoiceRepo                  invoice.Repository
 	entityIntegrationMappingRepo entityintegrationmapping.Repository
-	priceSyncSvc                 *StripePriceSyncService
+	priceSyncSvc                 *stripePriceSyncService
 	logger                       *logger.Logger
 }
 
@@ -32,7 +32,7 @@ func NewInvoiceSyncService(
 	customerSvc *CustomerService,
 	invoiceRepo invoice.Repository,
 	entityIntegrationMappingRepo entityintegrationmapping.Repository,
-	priceSyncSvc *StripePriceSyncService,
+	priceSyncSvc *stripePriceSyncService,
 	logger *logger.Logger,
 ) *InvoiceSyncService {
 	return &InvoiceSyncService{
@@ -226,8 +226,8 @@ func (s *InvoiceSyncService) syncLineItemsToStripe(ctx context.Context, flexInvo
 		}), func(li *invoice.InvoiceLineItem) string { return *li.PriceID })
 
 		if len(priced) > 0 {
-			items := lo.Map(priced, func(li *invoice.InvoiceLineItem, _ int) PriceSyncItem {
-				return PriceSyncItem{PriceID: *li.PriceID, DisplayName: lo.FromPtr(li.DisplayName)}
+			items := lo.Map(priced, func(li *invoice.InvoiceLineItem, _ int) priceSyncItem {
+				return priceSyncItem{PriceID: *li.PriceID, DisplayName: lo.FromPtr(li.DisplayName)}
 			})
 			productIDByPriceID, err = s.priceSyncSvc.EnsureBulkProductsSynced(ctx, items)
 			if err != nil {

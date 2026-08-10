@@ -21,7 +21,7 @@ func TestEnsureBulkProductsSynced_AllAlreadyMapped(t *testing.T) {
 	}
 	svc := NewStripePriceSyncService(nil, mappingRepo, logger.NewNoopLogger())
 
-	result, err := svc.EnsureBulkProductsSynced(testContext(), []PriceSyncItem{
+	result, err := svc.EnsureBulkProductsSynced(testContext(), []priceSyncItem{
 		{PriceID: "price_1", DisplayName: "Seat fee"},
 		{PriceID: "price_2", DisplayName: "API calls"},
 	})

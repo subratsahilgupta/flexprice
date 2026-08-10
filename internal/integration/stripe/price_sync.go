@@ -12,26 +12,26 @@ import (
 	"github.com/stripe/stripe-go/v82"
 )
 
-// PriceSyncItem is a single FlexPrice Price to ensure has a linked Stripe Product.
-type PriceSyncItem struct {
+// priceSyncItem is a single FlexPrice Price to ensure has a linked Stripe Product.
+type priceSyncItem struct {
 	PriceID     string
 	DisplayName string
 }
 
-// StripePriceSyncService ensures FlexPrice Prices have a linked Stripe Product for invoice line items.
-type StripePriceSyncService struct {
+// stripePriceSyncService ensures FlexPrice Prices have a linked Stripe Product for invoice line items.
+type stripePriceSyncService struct {
 	client                       *Client
 	entityIntegrationMappingRepo entityintegrationmapping.Repository
 	logger                       *logger.Logger
 }
 
-// NewStripePriceSyncService creates a new StripePriceSyncService.
+// NewStripePriceSyncService creates a new price-sync service.
 func NewStripePriceSyncService(
 	client *Client,
 	entityIntegrationMappingRepo entityintegrationmapping.Repository,
 	logger *logger.Logger,
-) *StripePriceSyncService {
-	return &StripePriceSyncService{
+) *stripePriceSyncService {
+	return &stripePriceSyncService{
 		client:                       client,
 		entityIntegrationMappingRepo: entityIntegrationMappingRepo,
 		logger:                       logger,
@@ -39,18 +39,18 @@ func NewStripePriceSyncService(
 }
 
 // EnsureBulkProductsSynced ensures a Stripe Product exists per price and returns priceID -> stripeProductID.
-func (s *StripePriceSyncService) EnsureBulkProductsSynced(ctx context.Context, items []PriceSyncItem) (map[string]string, error) {
+func (s *stripePriceSyncService) EnsureBulkProductsSynced(ctx context.Context, items []priceSyncItem) (map[string]string, error) {
 	if len(items) == 0 {
 		return map[string]string{}, nil
 	}
 
-	priceIDs := lo.Map(items, func(item PriceSyncItem, _ int) string { return item.PriceID })
+	priceIDs := lo.Map(items, func(item priceSyncItem, _ int) string { return item.PriceID })
 
 	existing, err := s.entityIntegrationMappingRepo.List(ctx, &types.EntityIntegrationMappingFilter{
 		EntityIDs:     priceIDs,
 		EntityType:    types.IntegrationEntityTypePrice,
 		ProviderTypes: []string{"stripe"},
-		QueryFilter:   types.NewDefaultQueryFilter(),
+		QueryFilter:   types.NewNoLimitQueryFilter(),
 	})
 	if err != nil {
 		return nil, ierr.WithError(err).WithHint("Failed to fetch existing Stripe product mappings").Mark(ierr.ErrDatabase)
@@ -60,7 +60,7 @@ func (s *StripePriceSyncService) EnsureBulkProductsSynced(ctx context.Context, i
 		return m.EntityID, m.ProviderEntityID
 	})
 
-	unmapped := lo.Filter(items, func(item PriceSyncItem, _ int) bool { return result[item.PriceID] == "" })
+	unmapped := lo.Filter(items, func(item priceSyncItem, _ int) bool { return result[item.PriceID] == "" })
 	if len(unmapped) == 0 {
 		return result, nil
 	}
@@ -107,7 +107,28 @@ func (s *StripePriceSyncService) EnsureBulkProductsSynced(ctx context.Context, i
 			BaseModel:     types.GetDefaultBaseModel(ctx),
 		}
 		if err := s.entityIntegrationMappingRepo.Create(ctx, mapping); err != nil {
-			return nil, ierr.WithError(err).WithHint("Failed to persist Stripe product mapping").Mark(ierr.ErrDatabase)
+			if !ierr.IsAlreadyExists(err) {
+				return nil, ierr.WithError(err).WithHint("Failed to persist Stripe product mapping").Mark(ierr.ErrDatabase)
+			}
+
+			// Lost a create race against a concurrent sync of the same price: the other
+			// mapping already committed, so adopt its product instead of failing — the
+			// Product we just created above is orphaned (unreferenced, harmless) rather
+			// than retried into a duplicate.
+			winner, findErr := s.entityIntegrationMappingRepo.List(ctx, &types.EntityIntegrationMappingFilter{
+				EntityIDs:     []string{item.PriceID},
+				EntityType:    types.IntegrationEntityTypePrice,
+				ProviderTypes: []string{"stripe"},
+				QueryFilter:   types.NewNoLimitQueryFilter(),
+			})
+			if findErr != nil || len(winner) == 0 {
+				return nil, ierr.WithError(err).WithHint("Failed to persist Stripe product mapping and could not recover the concurrent winner").Mark(ierr.ErrDatabase)
+			}
+
+			s.logger.Info(ctx, "lost product mapping race, adopting concurrently created mapping",
+				"price_id", item.PriceID, "orphaned_stripe_product_id", product.ID, "winning_stripe_product_id", winner[0].ProviderEntityID)
+			result[item.PriceID] = winner[0].ProviderEntityID
+			continue
 		}
 
 		result[item.PriceID] = product.ID
