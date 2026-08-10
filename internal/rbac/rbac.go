@@ -129,6 +129,40 @@ func (s *RBACService) ValidateRoles(userType types.UserType, roles []string) err
 	return nil
 }
 
+// CanGrantRoles reports whether a caller holding callerRoles may hand out
+// requestedRoles. A caller may only grant access it already holds, so a reader
+// cannot mint a service account that writes, and only a super_admin can create
+// another super_admin. Containment is checked permission by permission rather
+// than by comparing role names, so a writer can still grant a narrower
+// write-scoped role it fully covers.
+func (s *RBACService) CanGrantRoles(callerRoles []string, requestedRoles []string) error {
+	for _, role := range requestedRoles {
+		permissions := s.permissions[role]
+		if permissions == nil {
+			// Unknown roles are rejected by ValidateRoles; nothing to compare here.
+			continue
+		}
+
+		for entity, actions := range permissions {
+			for action := range actions {
+				if !s.HasPermission(callerRoles, entity, action) {
+					return ierr.NewError("cannot grant a role that exceeds your own access").
+						WithHintf("Role '%s' grants '%s' on '%s', which you do not have", role, action, entity).
+						WithReportableDetails(map[string]interface{}{
+							"role":         role,
+							"entity":       entity,
+							"action":       action,
+							"caller_roles": callerRoles,
+						}).
+						Mark(ierr.ErrPermissionDenied)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // GetAllRoles returns all roles with metadata (for API endpoint)
 // This is called rarely (only when fetching available roles for UI)
 func (s *RBACService) ListRoles() []*Role {

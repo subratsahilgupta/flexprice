@@ -136,6 +136,9 @@ func (s *userService) CreateUser(ctx context.Context, req *dto.CreateUserRequest
 		if err := s.rbacService.ValidateRoles(req.Type, req.Roles); err != nil {
 			return nil, err
 		}
+		if err := s.rbacService.CanGrantRoles(types.GetRoles(ctx), req.Roles); err != nil {
+			return nil, err
+		}
 		newUser = &user.User{
 			ID:    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER),
 			Name:  req.Name,
@@ -388,6 +391,9 @@ func (s *userService) InviteUser(ctx context.Context, req *dto.CreateUserRequest
 				Mark(ierr.ErrValidation)
 		}
 		if err := s.rbacService.ValidateRoles(types.UserTypeUser, roles); err != nil {
+			return nil, nil, err
+		}
+		if err := s.rbacService.CanGrantRoles(types.GetRoles(ctx), roles); err != nil {
 			return nil, nil, err
 		}
 	}
