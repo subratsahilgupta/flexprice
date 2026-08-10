@@ -335,14 +335,14 @@ func (s *UserServiceSuite) TestInviteUser_RoleAssignment() {
 		errContains string
 	}{
 		{
-			name:      "no roles requested defaults to reader",
+			name:      "no roles requested defaults to super_admin",
 			reqRoles:  nil,
-			wantRoles: []string{types.RoleReader.String()},
+			wantRoles: []string{types.RoleSuperAdmin.String()},
 		},
 		{
-			name:      "empty roles requested defaults to reader",
+			name:      "empty roles requested defaults to super_admin",
 			reqRoles:  []string{},
-			wantRoles: []string{types.RoleReader.String()},
+			wantRoles: []string{types.RoleSuperAdmin.String()},
 		},
 		{
 			name:      "requested roles are honoured",
