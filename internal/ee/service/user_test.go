@@ -381,10 +381,11 @@ func (s *UserServiceSuite) TestInviteUser_RoleAssignment() {
 			tenantRepo := testutil.NewInMemoryTenantStore()
 			_ = tenantRepo.Create(ctx, &tenant.Tenant{ID: types.DefaultTenantID, Name: "Test Tenant"})
 
+			authRepo := testutil.NewInMemoryAuthRepository()
 			svc := &userService{
 				userRepo:    userRepo,
 				tenantRepo:  tenantRepo,
-				authRepo:    testutil.NewInMemoryAuthRepository(),
+				authRepo:    authRepo,
 				rbacService: rbacSvc,
 				cfg: &config.Configuration{
 					Auth: config.AuthConfig{
@@ -407,6 +408,11 @@ func (s *UserServiceSuite) TestInviteUser_RoleAssignment() {
 				s.Error(err)
 				s.Nil(created)
 				s.Contains(err.Error(), tc.errContains)
+
+				// A rejected role must fail before anything is provisioned,
+				// otherwise an auth record is left behind holding the invitee's
+				// identity with no user attached to it.
+				s.Zero(authRepo.Count(), "a rejected role must not leave auth material behind")
 				return
 			}
 

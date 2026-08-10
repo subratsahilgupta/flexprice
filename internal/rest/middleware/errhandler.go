@@ -41,7 +41,8 @@ func getDisplayMessage(err error) string {
 			}
 		}
 	}
-	return err.Error()
+	// fallback to the error message
+	return "An unexpected error occurred"
 }
 
 func getSafeDetails(err error) map[string]any {

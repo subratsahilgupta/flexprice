@@ -46,7 +46,7 @@ func (User) Fields() []ent.Field {
 			Default("user"),
 		field.Strings("roles").
 			Optional().
-			Default([]string{"super_admin"}),
+			Default([]string{}),
 	}
 }
 
