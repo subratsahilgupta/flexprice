@@ -72,8 +72,11 @@ func (r *InMemoryUserStore) GetByID(ctx context.Context, userID string) (*user.U
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Scoped to the tenant in context, matching the real repository: an ID
+	// belonging to another tenant must resolve to not-found, not to the record.
+	tenantID, _ := ctx.Value(types.CtxTenantID).(string)
 	for _, u := range r.users {
-		if u.ID == userID {
+		if u.ID == userID && (tenantID == "" || u.TenantID == tenantID) {
 			return u, nil
 		}
 	}

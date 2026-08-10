@@ -133,18 +133,8 @@ func (s *userService) CreateUser(ctx context.Context, req *dto.CreateUserRequest
 				WithHint("Service accounts require RBAC for role validation; provide a non-nil RBAC service.").
 				Mark(ierr.ErrValidation)
 		}
-		for _, role := range req.Roles {
-			if !s.rbacService.ValidateRole(role) {
-				return nil, ierr.NewError("invalid role").
-					WithHint("Role '" + role + "' does not exist").
-					WithReportableDetails(map[string]interface{}{"role": role}).
-					Mark(ierr.ErrValidation)
-			}
-		}
-		if lo.Contains(req.Roles, "super_admin") && len(req.Roles) > 1 {
-			return nil, ierr.NewError("super admin role need not be combined with other roles").
-				WithHint("When super_admin is selected, no other roles need to be assigned").
-				Mark(ierr.ErrValidation)
+		if err := s.rbacService.ValidateRoles(req.Type, req.Roles); err != nil {
+			return nil, err
 		}
 		newUser = &user.User{
 			ID:    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER),
@@ -387,11 +377,26 @@ func (s *userService) InviteUser(ctx context.Context, req *dto.CreateUserRequest
 		}
 	}
 
+	// Invited users default to read-only access.
+	roles := req.Roles
+	if len(roles) == 0 {
+		roles = []string{types.RoleReader.String()}
+	} else {
+		if s.rbacService == nil {
+			return nil, nil, ierr.NewError("RBAC not configured").
+				WithHint("Role assignment requires RBAC for role validation; provide a non-nil RBAC service.").
+				Mark(ierr.ErrValidation)
+		}
+		if err := s.rbacService.ValidateRoles(types.UserTypeUser, roles); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	newUser := &user.User{
 		ID:    userID,
 		Email: req.Email,
 		Type:  types.UserTypeUser,
-		Roles: []string{},
+		Roles: roles,
 	}
 	newUser.BaseModel = types.GetDefaultBaseModel(ctx)
 	newUser.BaseModel.CreatedBy = currentUserID
