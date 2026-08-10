@@ -1916,7 +1916,7 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 		s.logger.Error(ctx, "failed to compute checkout discount", "error", err, "payment_id", payment.ID)
 		actualAmount = payment.Amount
 	} else if actualAmount.GreaterThan(payment.Amount) {
-		s.logger.Warn(ctx, "checkout session captured more than requested, not treating as a discount",
+		s.logger.Info(ctx, "checkout session captured more than requested, not treating as a discount",
 			"payment_id", payment.ID, "requested", payment.Amount.String(), "captured", actualAmount.String())
 	}
 
