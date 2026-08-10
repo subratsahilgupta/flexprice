@@ -278,8 +278,10 @@ func AuthenticateMiddleware(cfg *config.Configuration, secretService service.Sec
 		}
 
 		// A JWT carries no roles claim, so the user record is the only source
-		// of the session's permissions.
-		user, err := userRepo.GetByID(types.SetTenantID(c.Request.Context(), claims.TenantID), claims.UserID)
+		// of the session's permissions. The lookup is scoped to the tenant the
+		// token names, since the repository takes it from the context.
+		tenantCtx := types.SetTenantID(c.Request.Context(), claims.TenantID)
+		user, err := userRepo.GetByID(tenantCtx, claims.UserID)
 		if err != nil {
 			if ierr.IsNotFound(err) {
 				logger.Info(c.Request.Context(), "rejecting token for a user that no longer exists",

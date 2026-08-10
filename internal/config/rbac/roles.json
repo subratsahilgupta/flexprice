@@ -17,9 +17,9 @@
 
   "writer": {
     "name": "Writer",
-    "description": "Limited to writing resources for users.",
+    "description": "Can read and write resources for users.",
     "permissions": {
-      "*": ["write"]
+      "*": ["read", "write"]
     }
   },
   

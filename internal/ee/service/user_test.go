@@ -725,6 +725,25 @@ func (s *RBACPermissionSuite) TestEventReader_CanOnlyReadEvents() {
 	}
 }
 
+// A writer that could not read would be unable to fetch the very records it is
+// allowed to modify, so write implies read.
+func (s *RBACPermissionSuite) TestWriter_CanReadAndWrite() {
+	roles := []string{types.RoleWriter.String()}
+	for _, entity := range []string{"customer", "invoice", "event"} {
+		s.True(s.rbacSvc.HasPermission(roles, entity, "read"), "writer should read %s", entity)
+		s.True(s.rbacSvc.HasPermission(roles, entity, "write"), "writer should write %s", entity)
+	}
+}
+
+// Reader stays read-only; widening writer must not have widened reader with it.
+func (s *RBACPermissionSuite) TestReader_CanOnlyRead() {
+	roles := []string{types.RoleReader.String()}
+	for _, entity := range []string{"customer", "invoice", "event"} {
+		s.True(s.rbacSvc.HasPermission(roles, entity, "read"), "reader should read %s", entity)
+		s.False(s.rbacSvc.HasPermission(roles, entity, "write"), "reader should NOT write %s", entity)
+	}
+}
+
 func (s *RBACPermissionSuite) TestMultipleRoles_UnionOfPermissions() {
 	roles := []string{"event_ingestor", "event_reader"}
 
@@ -797,10 +816,9 @@ func (s *RBACPermissionSuite) TestCanGrantRoles() {
 			wantErr:     true,
 		},
 		{
-			name:        "writer cannot grant a read scope it does not hold",
+			name:        "writer can grant a read scope, since writer includes read",
 			callerRoles: []string{types.RoleWriter.String()},
 			requested:   []string{types.RoleEventReader.String()},
-			wantErr:     true,
 		},
 		{
 			name:        "writer cannot grant super_admin",
