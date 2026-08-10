@@ -97,7 +97,7 @@ type stripeCheckoutDiscountEntry struct {
 func computeCheckoutDiscount(session *stripe.CheckoutSession, requestedAmount decimal.Decimal) (
 	actualAmount decimal.Decimal, discountAmount decimal.Decimal, metadataJSON string, hasDiscount bool, err error,
 ) {
-	actualAmount = decimal.NewFromInt(session.AmountTotal).Div(decimal.NewFromInt(100))
+	actualAmount = types.FromSmallestUnit(session.AmountTotal, string(session.Currency))
 	if !actualAmount.LessThan(requestedAmount) {
 		return actualAmount, decimal.Zero, "", false, nil
 	}
@@ -1920,13 +1920,6 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 			"payment_id", payment.ID, "requested", payment.Amount.String(), "captured", actualAmount.String())
 	}
 
-	if hasDiscount {
-		if err := invoiceService.ApplyExternalInvoiceDiscount(ctx, payment.DestinationID, discountAmount, discountMetadataJSON); err != nil {
-			s.logger.Error(ctx, "failed to apply external invoice discount", "error", err, "payment_id", payment.ID)
-			return err
-		}
-	}
-
 	if !actualAmount.Equal(payment.Amount) {
 		updateReq.Amount = &actualAmount
 	}
@@ -1985,6 +1978,10 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 		}
 	}
 
+	// Claim the payment before applying any discount. UpdatePayment is CAS-protected
+	// against the status it reads internally (UpdateWithExpectedStatus) — a concurrent
+	// duplicate delivery loses this race and returns ErrVersionConflict, so it never
+	// reaches ApplyExternalInvoiceDiscount below and can't double-discount the invoice.
 	_, err = paymentService.UpdatePayment(ctx, payment.ID, updateReq)
 	if err != nil {
 		s.logger.Error(ctx, "failed to update payment record",
@@ -1999,6 +1996,13 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 	s.logger.Info(ctx, "successfully updated payment record",
 		"payment_id", payment.ID,
 		"new_status", paymentStatus)
+
+	if hasDiscount {
+		if err := invoiceService.ApplyExternalInvoiceDiscount(ctx, payment.DestinationID, discountAmount, discountMetadataJSON); err != nil {
+			s.logger.Error(ctx, "failed to apply external invoice discount", "error", err, "payment_id", payment.ID)
+			return err
+		}
+	}
 
 	err = s.ReconcilePaymentWithInvoice(ctx, payment.ID, actualAmount, paymentService, invoiceService)
 	if err != nil {

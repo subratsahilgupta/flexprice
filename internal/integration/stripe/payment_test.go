@@ -1,6 +1,7 @@
 package stripe
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -8,7 +9,9 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
@@ -164,6 +167,31 @@ func TestComputeCheckoutDiscount_NoDiscountWhenEqual(t *testing.T) {
 	require.Empty(t, metadataJSON)
 }
 
+func TestComputeCheckoutDiscount_ZeroDecimalCurrencyNoFalseDiscount(t *testing.T) {
+	// JPY has zero decimal places: AmountTotal is already the yen amount, not cents.
+	// Dividing by 100 (the USD-shaped conversion) would wrongly read 10,000 JPY as a
+	// captured amount of 100 and report a false 9,900 discount.
+	session := &stripe.CheckoutSession{AmountTotal: 10000, Currency: stripe.CurrencyJPY}
+
+	actual, discount, _, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(10000))
+
+	require.NoError(t, err)
+	require.False(t, hasDiscount)
+	require.True(t, decimal.NewFromInt(10000).Equal(actual))
+	require.True(t, decimal.Zero.Equal(discount))
+}
+
+func TestComputeCheckoutDiscount_ZeroDecimalCurrencyRealDiscount(t *testing.T) {
+	session := &stripe.CheckoutSession{AmountTotal: 8000, Currency: stripe.CurrencyJPY}
+
+	actual, discount, _, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(10000))
+
+	require.NoError(t, err)
+	require.True(t, hasDiscount)
+	require.True(t, decimal.NewFromInt(8000).Equal(actual))
+	require.True(t, decimal.NewFromInt(2000).Equal(discount))
+}
+
 func TestComputeCheckoutDiscount_NoDiscountWhenCapturedMore(t *testing.T) {
 	session := &stripe.CheckoutSession{AmountTotal: 10500}
 
@@ -253,4 +281,82 @@ func TestComputeCheckoutDiscount_NilCouponOrPromotionCode(t *testing.T) {
 	require.Len(t, entries, 1)
 	require.Equal(t, "", entries[0].StripeCouponID)
 	require.Equal(t, "NOCOUPON", entries[0].PromotionCode)
+}
+
+// ── fakes for HandleFlexPriceCheckoutPayment ordering tests ─────────────────────────────
+
+type checkoutTestPaymentService struct {
+	interfaces.PaymentService
+	payment          *dto.PaymentResponse
+	updatePaymentErr error
+	updatePaymentReq dto.UpdatePaymentRequest
+}
+
+func (f *checkoutTestPaymentService) UpdatePayment(_ context.Context, _ string, req dto.UpdatePaymentRequest) (*dto.PaymentResponse, error) {
+	f.updatePaymentReq = req
+	if f.updatePaymentErr != nil {
+		return nil, f.updatePaymentErr
+	}
+	return &dto.PaymentResponse{}, nil
+}
+
+func (f *checkoutTestPaymentService) GetPayment(_ context.Context, _ string) (*dto.PaymentResponse, error) {
+	return f.payment, nil
+}
+
+type checkoutTestInvoiceService struct {
+	interfaces.InvoiceService
+	applyDiscountCalls int
+}
+
+func (f *checkoutTestInvoiceService) ApplyExternalInvoiceDiscount(_ context.Context, _ string, _ decimal.Decimal, _ string) error {
+	f.applyDiscountCalls++
+	return nil
+}
+
+func (f *checkoutTestInvoiceService) GetInvoice(_ context.Context, id string) (*dto.InvoiceResponse, error) {
+	return &dto.InvoiceResponse{Invoice: invoice.Invoice{
+		ID:              id,
+		AmountDue:       decimal.NewFromInt(80),
+		AmountPaid:      decimal.Zero,
+		AmountRemaining: decimal.NewFromInt(80),
+	}}, nil
+}
+
+func (f *checkoutTestInvoiceService) ReconcilePaymentStatus(_ context.Context, _ string, _ types.PaymentStatus, _ *decimal.Decimal) error {
+	return nil
+}
+
+func TestHandleFlexPriceCheckoutPayment_DiscountNotAppliedWhenPaymentClaimFails(t *testing.T) {
+	s := &PaymentService{logger: logger.NewNoopLogger()}
+	session := &stripe.CheckoutSession{
+		AmountTotal: 8000,
+		Discounts:   []*stripe.CheckoutSessionDiscount{{Coupon: &stripe.Coupon{ID: "cp_1"}}},
+	}
+	payment := &dto.PaymentResponse{ID: "pay_1", Amount: decimal.NewFromInt(100), DestinationID: "inv_1"}
+	invoiceSvc := &checkoutTestInvoiceService{}
+	paymentSvc := &checkoutTestPaymentService{payment: payment, updatePaymentErr: errors.New("payment status changed during update")}
+
+	err := s.HandleFlexPriceCheckoutPayment(context.Background(), session, nil, payment, nil, invoiceSvc, paymentSvc)
+
+	require.Error(t, err)
+	require.Equal(t, 0, invoiceSvc.applyDiscountCalls, "a failed/conflicting payment claim must never apply the discount")
+}
+
+func TestHandleFlexPriceCheckoutPayment_DiscountAppliedAfterSuccessfulClaim(t *testing.T) {
+	s := &PaymentService{logger: logger.NewNoopLogger()}
+	session := &stripe.CheckoutSession{
+		AmountTotal: 8000,
+		Discounts:   []*stripe.CheckoutSessionDiscount{{Coupon: &stripe.Coupon{ID: "cp_1"}}},
+	}
+	payment := &dto.PaymentResponse{ID: "pay_1", Amount: decimal.NewFromInt(100), DestinationID: "inv_1"}
+	invoiceSvc := &checkoutTestInvoiceService{}
+	paymentSvc := &checkoutTestPaymentService{payment: payment}
+
+	err := s.HandleFlexPriceCheckoutPayment(context.Background(), session, nil, payment, nil, invoiceSvc, paymentSvc)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, invoiceSvc.applyDiscountCalls)
+	require.NotNil(t, paymentSvc.updatePaymentReq.Amount)
+	require.True(t, decimal.NewFromInt(80).Equal(*paymentSvc.updatePaymentReq.Amount))
 }
