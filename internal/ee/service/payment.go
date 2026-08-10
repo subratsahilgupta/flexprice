@@ -425,6 +425,9 @@ func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.U
 	if req.PaymentMethodID != nil {
 		p.PaymentMethodID = *req.PaymentMethodID
 	}
+	if req.Amount != nil {
+		p.Amount = *req.Amount
+	}
 	if req.SucceededAt != nil {
 		p.SucceededAt = req.SucceededAt
 	}
