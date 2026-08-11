@@ -172,7 +172,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
-			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
+			Price:        off,
 			Deal:         off,
 			Quote:        off,
 		}
