@@ -172,8 +172,14 @@ func NewRouter(
 		// Events routes
 		events := v1Private.Group("/events")
 		{
-			events.POST("", write(types.EntityEvent, types.ActionWrite), handlers.Events.IngestEvent)
-			events.POST("/bulk", write(types.EntityEvent, types.ActionWrite), handlers.Events.BulkIngestEvent)
+			// Ingestion is the only caller-supplied-payload surface here, so the
+			// body cap goes on those three routes rather than the whole group —
+			// the query/analytics routes take small filter bodies and reprocess
+			// takes none.
+			ingestBodyLimit := middleware.BodyLimitMiddleware(middleware.MaxEventIngestionBodyBytes)
+
+			events.POST("", ingestBodyLimit, write(types.EntityEvent, types.ActionWrite), handlers.Events.IngestEvent)
+			events.POST("/bulk", ingestBodyLimit, write(types.EntityEvent, types.ActionWrite), handlers.Events.BulkIngestEvent)
 			events.GET("", handlers.Events.GetEvents)
 			events.GET("/lookup", handlers.Events.GetEventByID)
 			events.GET("/:id", handlers.Events.GetEventByID) // legacy alias, remove once no caller uses /events/:id
@@ -183,7 +189,7 @@ func NewRouter(
 			events.POST("/analytics", handlers.Events.GetUsageAnalytics)
 			events.POST("/huggingface-billing", handlers.Events.GetHuggingFaceBillingData)
 			events.GET("/monitoring", handlers.Events.GetMonitoringData)
-			events.POST("/raw/bulk", write(types.EntityEvent, types.ActionWrite), handlers.Events.BulkIngestRawEvent)
+			events.POST("/raw/bulk", ingestBodyLimit, write(types.EntityEvent, types.ActionWrite), handlers.Events.BulkIngestRawEvent)
 			events.POST("/raw/reprocess/all", write(types.EntityEvent, types.ActionWrite), handlers.Events.ReprocessRawEvents)
 			events.POST("/raw/reprocess/pending", write(types.EntityEvent, types.ActionWrite), handlers.Events.ReprocessUnprocessedRawEvents)
 		}
