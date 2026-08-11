@@ -248,25 +248,29 @@ func TestSyncInvoiceToZoho_Discounts(t *testing.T) {
 			wantAdjustment:          "-250",
 		},
 		{
-			name:          "discount rounds to currency precision",
+			// The coupon engine already rounds both columns to currency precision, so the
+			// mapper passes them through as stored rather than rounding again.
+			name:          "discount passes through at stored precision",
 			currency:      "INR",
 			totalDiscount: "600.004",
 			items: []testLineItem{
 				{name: "Blinkit - Workspace 1", priceID: "price_1", amount: "3000", lineDisc: "600.004", invDisc: "0"},
 			},
-			wantLineDiscounts:       []string{"600"},
+			wantLineDiscounts:       []string{"600.004"},
 			wantDiscountType:        "item_level",
 			wantIsDiscountBeforeTax: true,
 			wantAdjustment:          "0",
 		},
 		{
-			name:          "discount never exceeds the line amount",
+			// Upstream guarantees LineItemDiscount + InvoiceLevelDiscount <= Amount, so this
+			// input is unreachable in practice; the mapper does not clamp it.
+			name:          "discount is not clamped to the line amount",
 			currency:      "INR",
-			totalDiscount: "5000",
+			totalDiscount: "1400",
 			items: []testLineItem{
 				{name: "Blinkit - Workspace 1", priceID: "price_1", amount: "1000", lineDisc: "900", invDisc: "500"},
 			},
-			wantLineDiscounts:       []string{"1000"},
+			wantLineDiscounts:       []string{"1400"},
 			wantDiscountType:        "item_level",
 			wantIsDiscountBeforeTax: true,
 			wantAdjustment:          "0",
