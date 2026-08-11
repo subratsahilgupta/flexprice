@@ -324,10 +324,10 @@ func (s *userService) InviteUser(ctx context.Context, req *dto.CreateUserRequest
 	// a provider identity, an auth record — that this function does not roll
 	// back, so a rejected role must fail before any of it is created rather than
 	// leaving an orphaned account behind holding the invitee's email.
-	// Invited users default to read-only access.
+	// Invited users default to super_admin when no roles are specified.
 	roles := req.Roles
 	if len(roles) == 0 {
-		roles = []string{types.RoleReader.String()}
+		roles = []string{types.RoleSuperAdmin.String()}
 	} else {
 		if s.rbacService == nil {
 			return nil, nil, ierr.NewError("RBAC not configured").
