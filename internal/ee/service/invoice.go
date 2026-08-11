@@ -1428,8 +1428,9 @@ func (s *invoiceService) SyncInvoiceToStripeIfEnabled(ctx context.Context, invoi
 
 	// Create sync request using the integration package's DTO
 	syncRequest := stripe.StripeInvoiceSyncRequest{
-		InvoiceID:        inv.ID,
-		CollectionMethod: string(stripeCollectionMethod),
+		InvoiceID:         inv.ID,
+		CollectionMethod:  string(stripeCollectionMethod),
+		LinkStripeProduct: conn.IsPriceOutboundEnabled(),
 	}
 
 	// Perform the sync
@@ -2459,6 +2460,23 @@ func (s *invoiceService) AttemptPayment(ctx context.Context, id string) error {
 	}
 	if inv.InvoiceStatus == types.InvoiceStatusSkipped {
 		return nil // No-op for zero-dollar skipped invoices
+	}
+
+	// A payment must only be attempted against a finalized invoice: finalization
+	// is what applies credits, tax, and discounts. The subscription payment path
+	// below does not re-check this, so a DRAFT subscription invoice would
+	// otherwise be charged pre-finalization (the non-subscription path already
+	// enforces the same rule). Internal subscription-creation/renewal flows that
+	// legitimately process a DRAFT invoice call attemptPaymentForSubscriptionInvoice
+	// directly and do not go through this entry point.
+	if inv.InvoiceStatus != types.InvoiceStatusFinalized {
+		return ierr.NewError("invoice must be finalized").
+			WithHint("Invoice must be finalized before attempting payment").
+			WithReportableDetails(map[string]any{
+				"invoice_id":     inv.ID,
+				"invoice_status": inv.InvoiceStatus,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	// Use the new payment function with nil parameters to use subscription defaults

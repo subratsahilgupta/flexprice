@@ -15,6 +15,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const zohoDiscountTypeItemLevel = "item_level"
+
 type ZohoInvoiceService interface {
 	SyncInvoiceToZoho(ctx context.Context, req ZohoInvoiceSyncRequest) (*ZohoInvoiceSyncResponse, error)
 	// MarkInvoicePaidInZoho records a Zoho customer payment for the invoice's current
@@ -116,6 +118,12 @@ func (s *InvoiceService) SyncInvoiceToZoho(ctx context.Context, req ZohoInvoiceS
 		LineItems:  lineItems,
 		Adjustment: flexInvoice.TotalPrepaidCreditsApplied.Mul(decimal.NewFromInt(-1)),
 	}
+
+	if s.totalLineItemDiscount(lineItems).IsPositive() {
+		reqPayload.DiscountType = zohoDiscountTypeItemLevel
+		reqPayload.IsDiscountBeforeTax = true
+	}
+
 	if flexInvoice.FinalizedAt != nil {
 		reqPayload.Date = flexInvoice.FinalizedAt.Format("2006-01-02")
 	} else {
@@ -311,12 +319,22 @@ func (s *InvoiceService) buildLineItems(ctx context.Context, flexInvoice *invoic
 			Description: formatPeriodDescription(childName, li.PeriodStart, li.PeriodEnd),
 			Quantity:    qty,
 			Rate:        rate,
+			Discount:    li.LineItemDiscount.Add(li.InvoiceLevelDiscount),
 			ItemID:      priceToItemID[lo.FromPtr(li.PriceID)],
 			//TaxID:          taxRes.TaxID,
 			//TaxExemptionID: taxRes.TaxExemptionID,
 		})
 	}
 	return out, nil
+}
+
+func (s *InvoiceService) totalLineItemDiscount(lineItems []InvoiceLineItem) decimal.Decimal {
+	total := decimal.Zero
+	for _, li := range lineItems {
+		total = total.Add(li.Discount)
+	}
+
+	return total
 }
 
 func (s *InvoiceService) getInvoiceSyncSettings(ctx context.Context) (*types.InvoiceSyncSettings, error) {
