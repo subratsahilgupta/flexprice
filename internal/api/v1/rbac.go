@@ -34,7 +34,8 @@ func NewRBACHandler(rbacService *rbac.RBACService, userService service.UserServi
 // @Produce json
 // @Param user_type query string false "Filter by user type" Enums(user, service_account)
 // @Success 200 {object} map[string]interface{} "List of roles"
-// @Failure 500 {object} map[string]string "Internal server error"
+// @Failure 400 {object} ierr.ErrorResponse "Invalid request"
+// @Failure 500 {object} ierr.ErrorResponse "Server error"
 // @Router /rbac/roles [get]
 // @Security ApiKeyAuth
 func (h *RBACHandler) ListRoles(c *gin.Context) {
@@ -46,9 +47,9 @@ func (h *RBACHandler) ListRoles(c *gin.Context) {
 		return
 	}
 
-	// ShouldBindQuery does not enforce the `validate` struct tag (gin's
-	// binder only reads `binding` tags), so an invalid enum value has to be
-	// checked explicitly here rather than trusted from the tag alone.
+	// ShouldBindQuery maps query values via `form` tags and validates only
+	// `binding` tags; RoleFilter.UserType has no binding rule for enum
+	// values, so UserType.Validate() performs that check explicitly.
 	if filter.UserType != nil {
 		if err := filter.UserType.Validate(); err != nil {
 			c.Error(err)
