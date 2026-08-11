@@ -163,14 +163,24 @@ func (s *RBACService) CanGrantRoles(callerRoles []string, requestedRoles []strin
 	return nil
 }
 
-// GetAllRoles returns all roles with metadata (for API endpoint)
-// This is called rarely (only when fetching available roles for UI)
-func (s *RBACService) ListRoles() []*Role {
-	result := make([]*Role, 0, len(s.roles))
+// ListRoles returns roles matching filter, for API responses (role pickers,
+// permission UIs). A nil filter, or one with no fields set, returns every
+// role. Add new fields to types.RoleFilter and check them here as filtering
+// needs grow (e.g. by name) — this stays the one method callers use.
+func (s *RBACService) ListRoles(filter *types.RoleFilter) []*Role {
+	all := make([]*Role, 0, len(s.roles))
 	for _, role := range s.roles {
-		result = append(result, role)
+		all = append(all, role)
 	}
-	return result
+
+	if filter == nil || filter.UserType == nil {
+		return all
+	}
+
+	allowed := filter.UserType.AllowedRoles()
+	return lo.Filter(all, func(role *Role, _ int) bool {
+		return lo.Contains(allowed, types.Role(role.ID))
+	})
 }
 
 // GetRole returns a specific role with metadata

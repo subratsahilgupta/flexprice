@@ -3,9 +3,11 @@ package v1
 import (
 	"net/http"
 
+	"github.com/flexprice/flexprice/internal/ee/service"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rbac"
-	"github.com/flexprice/flexprice/internal/ee/service"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,12 +32,31 @@ func NewRBACHandler(rbacService *rbac.RBACService, userService service.UserServi
 // @Tags RBAC
 // @Accept json
 // @Produce json
+// @Param user_type query string false "Filter by user type" Enums(user, service_account)
 // @Success 200 {object} map[string]interface{} "List of roles"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /rbac/roles [get]
 // @Security ApiKeyAuth
 func (h *RBACHandler) ListRoles(c *gin.Context) {
-	roles := h.rbacService.ListRoles()
+	var filter types.RoleFilter
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Invalid filter parameters").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	// ShouldBindQuery does not enforce the `validate` struct tag (gin's
+	// binder only reads `binding` tags), so an invalid enum value has to be
+	// checked explicitly here rather than trusted from the tag alone.
+	if filter.UserType != nil {
+		if err := filter.UserType.Validate(); err != nil {
+			c.Error(err)
+			return
+		}
+	}
+
+	roles := h.rbacService.ListRoles(&filter)
 
 	c.JSON(http.StatusOK, gin.H{
 		"roles": roles,
