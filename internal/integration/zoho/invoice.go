@@ -319,7 +319,7 @@ func (s *InvoiceService) buildLineItems(ctx context.Context, flexInvoice *invoic
 			Description: formatPeriodDescription(childName, li.PeriodStart, li.PeriodEnd),
 			Quantity:    qty,
 			Rate:        rate,
-			Discount:    s.lineItemDiscount(li, flexInvoice.Currency),
+			Discount:    li.LineItemDiscount.Add(li.InvoiceLevelDiscount),
 			ItemID:      priceToItemID[lo.FromPtr(li.PriceID)],
 			//TaxID:          taxRes.TaxID,
 			//TaxExemptionID: taxRes.TaxExemptionID,
@@ -335,19 +335,6 @@ func (s *InvoiceService) totalLineItemDiscount(lineItems []InvoiceLineItem) deci
 	}
 
 	return total
-}
-
-func (s *InvoiceService) lineItemDiscount(li *invoice.InvoiceLineItem, currency string) decimal.Decimal {
-	discount := types.RoundToCurrencyPrecision(li.LineItemDiscount.Add(li.InvoiceLevelDiscount), currency)
-	if discount.IsNegative() {
-		return decimal.Zero
-	}
-
-	if discount.GreaterThan(li.Amount) {
-		return li.Amount
-	}
-
-	return discount
 }
 
 func (s *InvoiceService) getInvoiceSyncSettings(ctx context.Context) (*types.InvoiceSyncSettings, error) {
