@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/rest/middleware"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -53,7 +54,7 @@ func NewEventsHandler(eventService service.EventService, rawEventsReprocessingSe
 func (h *EventsHandler) IngestEvent(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req dto.IngestEventRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := middleware.BindJSONWithLimit(c, &req); err != nil {
 		if isRequestBodyTooLarge(err) {
 			c.Error(errRequestBodyTooLarge())
 			return
@@ -95,7 +96,7 @@ func (h *EventsHandler) IngestEvent(c *gin.Context) {
 func (h *EventsHandler) BulkIngestEvent(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req dto.BulkIngestEventRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := middleware.BindJSONWithLimit(c, &req); err != nil {
 		if isRequestBodyTooLarge(err) {
 			c.Error(errRequestBodyTooLarge())
 			return
@@ -144,7 +145,7 @@ func errRequestBodyTooLarge() error {
 func (h *EventsHandler) BulkIngestRawEvent(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req dto.BulkIngestRawEventRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := middleware.BindJSONWithLimit(c, &req); err != nil {
 		if isRequestBodyTooLarge(err) {
 			c.Error(errRequestBodyTooLarge())
 			return
