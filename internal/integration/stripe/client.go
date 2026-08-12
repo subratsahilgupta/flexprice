@@ -57,8 +57,6 @@ func (c *Client) GetStripeClient(ctx context.Context) (*stripe.Client, *StripeCo
 	return c.buildStripeClient(conn)
 }
 
-// buildStripeClient builds a Stripe client from an already-resolved connection, so
-// callers that need the connection object itself don't fetch it a second time.
 func (c *Client) buildStripeClient(conn *connection.Connection) (*stripe.Client, *StripeConfig, error) {
 	stripeConfig, err := c.GetDecryptedStripeConfig(conn)
 	if err != nil {
