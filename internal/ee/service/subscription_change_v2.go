@@ -149,6 +149,13 @@ func (s *subscriptionService) checkPlanChangePreconditions(
 			map[string]any{"subscription_id": sub.ID})
 	}
 
+	// TODO: Handle mixed billing periods correctly.
+	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations && sub.HasMixedBillingPeriods() {
+		return fail("proration is not supported for subscriptions with mixed billing periods",
+			"Set proration_behavior to 'none' to change this subscription's plan",
+			map[string]any{"subscription_id": sub.ID})
+	}
+
 	for _, item := range sub.LineItems {
 		if item.SubscriptionPhaseID != nil {
 			return fail("subscription has phases",
@@ -243,13 +250,34 @@ func buildPlanChangeLineItem(
 	return item, nil
 }
 
-// TODO: Handle tiered prices correctly.
+// billsIdentically reports whether two prices bill the same way, which is the
+// only case where leaving a line item untouched is correct.
+//
+// It is deliberately conservative: a false "identical" leaves a line on the old
+// price forever, which is worse than the churn of slicing one that did not need
+// it. So anything it cannot compare completely returns false.
+//
+//   - USAGE prices never match. Separating them needs filter_values, which is
+//     not on the domain price model, so two prices on one meter split by filter
+//     (region=us vs region=eu) would compare equal and be treated as one charge.
+//   - Tiered prices never match; comparing ladders is more subtlety than a
+//     shortcut is worth.
 func billsIdentically(a, b *price.Price) bool {
 	if a == nil || b == nil {
 		return false
 	}
 
+	if a.Type == types.PRICE_TYPE_USAGE || b.Type == types.PRICE_TYPE_USAGE {
+		return false
+	}
+
 	if len(a.Tiers) > 0 || len(b.Tiers) > 0 {
+		return false
+	}
+
+	// PACKAGE prices at the same amount still differ if they bundle a different
+	// quantity per package.
+	if a.TransformQuantity != b.TransformQuantity {
 		return false
 	}
 
@@ -469,12 +497,7 @@ func (s *subscriptionService) PreviewPlanChange(
 
 	resp := buildPlanChangeResponse(r, req)
 	resp.ChangedResources.LineItems = planChangeChangedLineItems(r)
-	resp.ChangedResources.Invoices = planChangePreviewInvoices(r, quote)
-	if len(resp.ChangedResources.Invoices) > 0 {
-		resp.Warnings = append(resp.Warnings,
-			"quoted amount is the pre-tax subtotal; tax and coupons are applied when the change is executed")
-	}
-
+	resp.ChangedResources.Invoices = s.planChangePreviewInvoices(ctx, r, quote)
 	return resp, nil
 }
 
@@ -533,11 +556,27 @@ func (s *subscriptionService) ExecutePlanChange(
 		"to_plan_id", resp.ToPlan.ID,
 		"change_type", resp.ChangeType)
 
+	s.attemptPlanChangePayment(ctx, resp)
+
 	// After commit so webhook failure cannot roll back a completed change.
 	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionPlanChanged, subscriptionID)
 	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subscriptionID)
 
 	return resp, nil
+}
+
+func (s *subscriptionService) attemptPlanChangePayment(ctx context.Context, resp *dto.SubscriptionChangeV2Response) {
+	invoiceSvc := NewInvoiceService(s.ServiceParams)
+	for _, changed := range resp.ChangedResources.Invoices {
+		if changed.Invoice == nil || changed.Invoice.ID == "" {
+			continue
+		}
+
+		if err := invoiceSvc.AttemptPayment(ctx, changed.Invoice.ID); err != nil {
+			s.Logger.Info(ctx, "plan change invoice created but payment attempt failed; invoice remains collectable",
+				"error", err, "invoice_id", changed.Invoice.ID)
+		}
+	}
 }
 
 // forUpdate takes the row lock as the first read so concurrent changes serialize.
@@ -568,6 +607,19 @@ func (s *subscriptionService) loadSubscriptionForPlanChange(
 }
 
 func (s *subscriptionService) applyPlanChangeLineItems(ctx context.Context, r *planChangeRequest) error {
+	// A line left alone still belongs to the subscription, and the subscription is
+	// moving. Without this its entity_id keeps naming the old plan and its
+	// plan_display_name — copied onto every future invoice line — keeps showing
+	// the old plan's name to the customer.
+	for _, item := range r.unchanged {
+		updated := subscription.NewSubscriptionLineItemBuilder(item).
+			WithOwningPlan(r.toPlan.ID, r.toPlan.Name).
+			Build()
+		if err := s.SubscriptionLineItemRepo.Update(ctx, updated); err != nil {
+			return err
+		}
+	}
+
 	for _, move := range r.closing {
 		move.lineItem.EndDate = r.effectiveAt
 		if err := s.SubscriptionLineItemRepo.Update(ctx, move.lineItem); err != nil {
@@ -724,23 +776,73 @@ func planChangeChangedLineItems(r *planChangeRequest) []dto.ChangedLineItem {
 	return items
 }
 
-// Preview amounts are pre-tax: invoice tax/coupon computation writes and cannot run read-only.
-func planChangePreviewInvoices(r *planChangeRequest, quote *LineItemProrationSummary) []dto.ChangedInvoice {
+func (s *subscriptionService) planChangePreviewInvoices(
+	ctx context.Context,
+	r *planChangeRequest,
+	quote *LineItemProrationSummary,
+) []dto.ChangedInvoice {
 	if r.behavior != types.ProrationBehaviorCreateProrations || quote.NetAmount().IsZero() {
 		return nil
 	}
+
+	subtotal := quote.NetAmount()
+	tax := s.previewTaxFor(ctx, r, subtotal)
+
 	return []dto.ChangedInvoice{{
 		Action: dto.ChangedInvoiceActionCreated,
 		Status: dto.ChangedInvoiceStatusPreview,
 		Invoice: &dto.InvoiceResponse{
 			Invoice: invoice.Invoice{
-				Subtotal:  quote.NetAmount(),
-				AmountDue: quote.NetAmount(),
-				Total:     quote.NetAmount(),
+				Subtotal:  subtotal,
+				TotalTax:  tax,
+				Total:     subtotal.Add(tax),
+				AmountDue: subtotal.Add(tax),
 				Currency:  r.sub.Currency,
 			},
 		},
 	}}
+}
+
+func (s *subscriptionService) previewTaxFor(
+	ctx context.Context,
+	r *planChangeRequest,
+	subtotal decimal.Decimal,
+) decimal.Decimal {
+	if !subtotal.IsPositive() {
+		return decimal.Zero
+	}
+
+	taxSvc := NewTaxService(s.ServiceParams)
+	periodEnd := r.sub.CurrentPeriodEnd
+
+	rates, err := taxSvc.PrepareTaxRatesForInvoice(ctx, dto.CreateInvoiceRequest{
+		CustomerID:     r.sub.GetInvoicingCustomerID(),
+		SubscriptionID: &r.sub.ID,
+		Currency:       r.sub.Currency,
+		PeriodStart:    &r.effectiveAt,
+		PeriodEnd:      &periodEnd,
+	})
+	if err != nil {
+		s.Logger.Info(ctx, "could not resolve tax rates for plan change preview; quoting untaxed",
+			"error", err, "subscription_id", r.sub.ID)
+		return decimal.Zero
+	}
+	if len(rates) == 0 {
+		return decimal.Zero
+	}
+
+	result, err := taxSvc.ApplyTaxesOnInvoice(ctx, &invoice.Invoice{
+		ID:       r.sub.ID,
+		Currency: r.sub.Currency,
+		Subtotal: subtotal,
+	}, rates)
+	if err != nil {
+		s.Logger.Info(ctx, "could not compute tax for plan change preview; quoting untaxed",
+			"error", err, "subscription_id", r.sub.ID)
+		return decimal.Zero
+	}
+
+	return result.TotalTaxAmount
 }
 
 // Hash to fit invoices.idempotency_key (varchar(100)).

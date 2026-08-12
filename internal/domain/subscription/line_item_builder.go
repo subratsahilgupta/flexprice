@@ -65,6 +65,20 @@ func (b *subscriptionLineItemBuilder) WithEndDate(endDate time.Time) *subscripti
 	return b
 }
 
+// WithOwningPlan re-points a line item at a plan. Used when a subscription
+// swaps plan and a line item is carried across rather than replaced: the item
+// still belongs to the subscription, so it must name the plan the subscription
+// is now on.
+func (b *subscriptionLineItemBuilder) WithOwningPlan(planID, planName string) *subscriptionLineItemBuilder {
+	if b == nil || b.item == nil {
+		return b
+	}
+	b.item.EntityID = planID
+	b.item.EntityType = types.SubscriptionLineItemEntityTypePlan
+	b.item.PlanDisplayName = planName
+	return b
+}
+
 func (b *subscriptionLineItemBuilder) WithBaseModel(baseModel types.BaseModel) *subscriptionLineItemBuilder {
 	if b == nil || b.item == nil {
 		return b
