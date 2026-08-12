@@ -332,6 +332,10 @@ func NewRouter(
 			// Subscription plan changes (upgrade/downgrade)
 			subscription.POST("/:id/change/preview", handlers.SubscriptionChange.PreviewSubscriptionChange)
 			subscription.POST("/:id/change/execute", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionChange.ExecuteSubscriptionChange)
+
+			// Plan change v2 (swap in place). v1 remains for interval/cadence/currency changes.
+			subscription.POST("/:id/change/v2/preview", handlers.Subscription.PreviewSubscriptionPlanChangeV2)
+			subscription.POST("/:id/change/v2/execute", write(types.EntitySubscription, types.ActionWrite), handlers.Subscription.ExecuteSubscriptionPlanChangeV2)
 			subscription.POST(":id/modify/execute", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionModification.Execute)
 			subscription.POST(":id/modify/preview", handlers.SubscriptionModification.Preview)
 
