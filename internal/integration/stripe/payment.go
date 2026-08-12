@@ -31,120 +31,25 @@ type PaymentService struct {
 	logger         *logger.Logger
 }
 
-// paymentLinkLineItemInput is one FlexPrice invoice line item being priced into a
-// payment-link Checkout Session.
-type paymentLinkLineItemInput struct {
-	PriceID     string
-	DisplayName string
-	Amount      decimal.Decimal
-}
-
-// paymentLinkLineItemShare is one line item's proportional share of the requested
-// payment amount, in the currency's smallest unit.
-type paymentLinkLineItemShare struct {
-	PriceID     string
-	DisplayName string
-	UnitAmount  int64
-}
-
-// distributePaymentAmount splits requestedAmount across items proportional to each
-// item's share of the total invoice-line-item amount. Every non-last item's share is
-// floored; the last item (by input order) absorbs the remainder so the returned shares
-// always sum to exactly requestedAmount. A non-last item whose floored share is 0 is
-// dropped (Stripe rejects zero-amount line items) rather than sent through. If the
-// final remainder itself would be <= 0 (e.g. a requested amount of 0, or so small no
-// valid split exists), an empty result is returned so the caller can fall back to a
-// single lump-sum line item.
-func distributePaymentAmount(items []paymentLinkLineItemInput, requestedAmount decimal.Decimal, currency string) []paymentLinkLineItemShare {
-	if len(items) == 0 {
-		return nil
-	}
-
-	totalAmount := decimal.Zero
-	for _, item := range items {
-		totalAmount = totalAmount.Add(item.Amount)
-	}
-
-	// Guard on the truncated smallest-unit total, not the decimal total: a positive
-	// amount smaller than one smallest currency unit (e.g. $0.001) still truncates to
-	// 0 and would divide by zero below.
-	totalUnits := types.ToSmallestUnit(totalAmount, currency)
-	if totalUnits <= 0 {
-		return nil
-	}
-	requestedUnits := types.ToSmallestUnit(requestedAmount, currency)
-
-	shares := make([]paymentLinkLineItemShare, 0, len(items))
-	var allocated int64
-	for _, item := range items[:len(items)-1] {
-		itemUnits := types.ToSmallestUnit(item.Amount, currency)
-		unitAmount := requestedUnits * itemUnits / totalUnits
-		if unitAmount <= 0 {
-			continue
-		}
-		allocated += unitAmount
-		shares = append(shares, paymentLinkLineItemShare{
-			PriceID:     item.PriceID,
-			DisplayName: item.DisplayName,
-			UnitAmount:  unitAmount,
-		})
-	}
-
-	last := items[len(items)-1]
-	remainder := requestedUnits - allocated
-	if remainder <= 0 {
-		return nil
-	}
-	shares = append(shares, paymentLinkLineItemShare{
-		PriceID:     last.PriceID,
-		DisplayName: last.DisplayName,
-		UnitAmount:  remainder,
-	})
-
-	return shares
-}
-
-// buildSyncedLineItems builds one Checkout Session line item per invoice line item,
-// referencing each line item's synced Stripe Product, with unit_amount scaled
-// proportionally to requestedAmount. Every non-zero-amount line item must be
-// Price-backed (PriceID != nil); returns a validation error otherwise. Returns a nil
-// slice (not an error) when there's nothing to build — the caller falls back to a
-// single ad-hoc lump-sum line item in that case, same as when price.outbound is
-// disabled entirely.
-func (s *PaymentService) buildSyncedLineItems(ctx context.Context, invoiceResp *dto.InvoiceResponse, requestedAmount decimal.Decimal, currency string) ([]*stripe.CheckoutSessionCreateLineItemParams, error) {
-	var inputs []paymentLinkLineItemInput
+// buildSyncedLineItems builds one Checkout line item per line item, referencing its
+// synced Stripe Product when linked to a Price, else an ad-hoc item; nil falls back.
+func (s *PaymentService) buildSyncedLineItems(ctx context.Context, invoiceResp *dto.InvoiceResponse, currency string) ([]*stripe.CheckoutSessionCreateLineItemParams, error) {
+	var priced []*dto.InvoiceLineItemResponse
 	for _, li := range invoiceResp.LineItems {
-		if li.Amount.IsZero() {
-			continue
+		if !li.Amount.IsZero() && li.PriceID != nil {
+			priced = append(priced, li)
 		}
-		if li.PriceID == nil {
-			return nil, ierr.NewError("invoice line item is not linked to a FlexPrice price").
-				WithHint("Every priced line item must be linked to a Price to generate a payment link with synced Stripe products").
-				WithReportableDetails(map[string]interface{}{
-					"invoice_id":   invoiceResp.ID,
-					"line_item_id": li.ID,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-		inputs = append(inputs, paymentLinkLineItemInput{
-			PriceID:     *li.PriceID,
-			DisplayName: lo.FromPtrOr(li.DisplayName, *li.PriceID),
-			Amount:      li.Amount,
-		})
 	}
-
-	if len(inputs) == 0 {
+	if len(priced) == 0 {
 		return nil, nil
 	}
 
-	// Two invoice line items can reference the same Price (e.g. a base charge plus a
-	// usage overage). Dedupe before syncing so EnsureBulkProductsSynced doesn't create
-	// two Stripe Products for one Price — inputs itself stays untouched since amount
-	// distribution still needs every line item.
+	// Dedupe by PriceID before syncing — two line items can share a Price (e.g. base
+	// charge + usage overage) and would otherwise create two Stripe Products for one.
 	syncItems := lo.Map(
-		lo.UniqBy(inputs, func(in paymentLinkLineItemInput) string { return in.PriceID }),
-		func(in paymentLinkLineItemInput, _ int) priceSyncItem {
-			return priceSyncItem{PriceID: in.PriceID, DisplayName: in.DisplayName}
+		lo.UniqBy(priced, func(li *dto.InvoiceLineItemResponse) string { return *li.PriceID }),
+		func(li *dto.InvoiceLineItemResponse, _ int) priceSyncItem {
+			return priceSyncItem{PriceID: *li.PriceID, DisplayName: lo.FromPtrOr(li.DisplayName, *li.PriceID)}
 		},
 	)
 	productIDs, err := s.priceSyncSvc.EnsureBulkProductsSynced(ctx, syncItems)
@@ -152,21 +57,23 @@ func (s *PaymentService) buildSyncedLineItems(ctx context.Context, invoiceResp *
 		return nil, err
 	}
 
-	shares := distributePaymentAmount(inputs, requestedAmount, currency)
-	if len(shares) == 0 {
-		return nil, nil
-	}
-
-	lineItems := make([]*stripe.CheckoutSessionCreateLineItemParams, 0, len(shares))
-	for _, share := range shares {
-		lineItems = append(lineItems, &stripe.CheckoutSessionCreateLineItemParams{
-			PriceData: &stripe.CheckoutSessionCreateLineItemPriceDataParams{
-				Currency:   stripe.String(currency),
-				Product:    stripe.String(productIDs[share.PriceID]),
-				UnitAmount: stripe.Int64(share.UnitAmount),
-			},
-			Quantity: stripe.Int64(1),
-		})
+	lineItems := make([]*stripe.CheckoutSessionCreateLineItemParams, 0, len(invoiceResp.LineItems))
+	for _, li := range invoiceResp.LineItems {
+		if li.Amount.IsZero() {
+			continue
+		}
+		priceData := &stripe.CheckoutSessionCreateLineItemPriceDataParams{
+			Currency:   stripe.String(currency),
+			UnitAmount: stripe.Int64(types.ToSmallestUnit(li.Amount, currency)),
+		}
+		if li.PriceID != nil {
+			priceData.Product = stripe.String(productIDs[*li.PriceID])
+		} else {
+			priceData.ProductData = &stripe.CheckoutSessionCreateLineItemPriceDataProductDataParams{
+				Name: stripe.String(lo.FromPtrOr(li.DisplayName, "Item")),
+			}
+		}
+		lineItems = append(lineItems, &stripe.CheckoutSessionCreateLineItemParams{PriceData: priceData, Quantity: stripe.Int64(1)})
 	}
 
 	return lineItems, nil
@@ -245,8 +152,11 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 		"currency", req.Currency,
 	)
 
-	// Get Stripe client and config
-	stripeClient, _, err := s.client.GetStripeClient(ctx)
+	conn, err := s.client.GetConnection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stripeClient, _, err := s.client.buildStripeClient(conn)
 	if err != nil {
 		return nil, err
 	}
@@ -331,9 +241,8 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 			Mark(ierr.ErrValidation)
 	}
 
-	// Convert to the currency's smallest unit — not always cents (e.g. JPY has none),
-	// and must match buildSyncedLineItems' conversion for the two branches to agree.
-	amountCents := types.ToSmallestUnit(req.Amount, req.Currency)
+	// Not always cents — e.g. JPY has no decimal places.
+	amountSmallestUnit := types.ToSmallestUnit(req.Amount, req.Currency)
 
 	// Build comprehensive product name with all information
 	productName := fmt.Sprintf("%s", customerResp.Customer.Name)
@@ -390,22 +299,16 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 	// Join all parts with separators for better readability
 	productDescription := strings.Join(descriptionParts, " • ")
 
-	// If the connection has price.outbound sync enabled, build real per-line-item
-	// Checkout line items referencing synced Stripe Products, so a Stripe coupon
-	// restricted to specific products can apply. Falls back to a single ad-hoc
-	// lump-sum line item when the flag is off, or when there's nothing eligible
-	// to build (e.g. every line item is zero-amount).
+	// Real product line items only apply to full payments — Stripe's hosted checkout
+	// has no partial-payment concept, so a partial amount stays ad-hoc.
 	var lineItems []*stripe.CheckoutSessionCreateLineItemParams
-	conn, err := s.client.GetConnection(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if conn.IsPriceOutboundEnabled() {
-		lineItems, err = s.buildSyncedLineItems(ctx, invoiceResp, req.Amount, req.Currency)
+	if conn.IsPriceOutboundEnabled() && req.Amount.Equal(invoiceResp.AmountRemaining) {
+		lineItems, err = s.buildSyncedLineItems(ctx, invoiceResp, req.Currency)
 		if err != nil {
 			return nil, err
 		}
 	}
+	s.logger.Info(ctx, "resolved payment link line items", "invoice_id", req.InvoiceID, "synced", len(lineItems) > 0)
 	if len(lineItems) == 0 {
 		lineItems = []*stripe.CheckoutSessionCreateLineItemParams{
 			{
@@ -415,7 +318,7 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 						Name:        stripe.String(productName),
 						Description: stripe.String(productDescription),
 					},
-					UnitAmount: stripe.Int64(amountCents),
+					UnitAmount: stripe.Int64(amountSmallestUnit),
 				},
 				Quantity: stripe.Int64(1),
 			},
