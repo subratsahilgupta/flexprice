@@ -236,14 +236,16 @@ func (f *fakeFeatures) Query(_ context.Context, filter types.FeatureFilter) (*dt
 // --- Subscriptions ---
 
 type fakeSubscriptions struct {
-	mu        sync.Mutex
-	created   []types.CreateSubscriptionRequest
-	cancelled []string
-	gets      int
-	nextID    int
-	subs      map[string]types.SubscriptionResponse
-	subErr    error
-	cancelErr error
+	mu                  sync.Mutex
+	created             []types.CreateSubscriptionRequest
+	cancelled           []string
+	gets                int
+	nextID              int
+	subs                map[string]types.SubscriptionResponse
+	subErr              error
+	cancelErr           error
+	getEntitlementsResp *dtos.GetSubscriptionEntitlementsResponse
+	getEntitlementsErr  error
 }
 
 func (f *fakeSubscriptions) Create(_ context.Context, req types.CreateSubscriptionRequest) (*dtos.CreateSubscriptionResponse, error) {
@@ -311,6 +313,14 @@ func (f *fakeSubscriptions) ActivateSubscription(_ context.Context, _ string, _ 
 	return &dtos.ActivateSubscriptionResponse{}, nil
 }
 func (f *fakeSubscriptions) GetEntitlements(_ context.Context, _ string, _ []string) (*dtos.GetSubscriptionEntitlementsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.getEntitlementsErr != nil {
+		return nil, f.getEntitlementsErr
+	}
+	if f.getEntitlementsResp != nil {
+		return f.getEntitlementsResp, nil
+	}
 	return &dtos.GetSubscriptionEntitlementsResponse{}, nil
 }
 func (f *fakeSubscriptions) GetUsage(_ context.Context, _ types.GetUsageBySubscriptionRequest) (*dtos.GetSubscriptionUsageResponse, error) {
