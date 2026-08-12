@@ -554,19 +554,19 @@ func creditBasis(
 		return decimal.Zero, decimal.Zero
 	}
 
-	if billed == nil {
-		listPrice := decimal.Zero
-		if p != nil {
-			listPrice = p.Amount.Mul(item.Quantity)
-		}
-		return listPrice, decimal.Zero
-	}
-
 	if amounts := billed[item.ID]; amounts != nil {
 		return amounts.Charged(), amounts.Credited()
 	}
 
-	return decimal.Zero, decimal.Zero
+	return listPriceTotal(item, p), decimal.Zero
+}
+
+func listPriceTotal(item *subscription.SubscriptionLineItem, p *price.Price) decimal.Decimal {
+	if item == nil || p == nil {
+		return decimal.Zero
+	}
+
+	return p.Amount.Mul(item.Quantity)
 }
 
 func (s *prorationService) creditBasisForLineItem(
@@ -584,7 +584,7 @@ func (s *prorationService) creditBasisForLineItem(
 			"error", err,
 			"line_item_id", item.ID,
 			"subscription_id", item.SubscriptionID)
-		return price.Amount.Mul(item.Quantity), decimal.Zero
+		return creditBasis(item, price, nil)
 	}
 
 	return creditBasis(item, price, billed)

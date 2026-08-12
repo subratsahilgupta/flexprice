@@ -353,7 +353,11 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_CreditNetsPreviou
 		summary.TotalCreditAmount)
 }
 
-func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_NeverBilled_NoCredit() {
+// No invoice row is absence of evidence, not evidence of a zero charge: advance
+// charges are stamped with the period they fund, so the charge behind a line item
+// is not always findable at the proration date. The cap falls back to list price
+// rather than silently withholding the credit.
+func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_NoBilledRow_FallsBackToListPrice() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
 
@@ -373,8 +377,10 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_NeverBilled_NoCre
 	s.NoError(err)
 	s.Require().NotNil(summary)
 
-	s.True(summary.TotalCreditAmount.IsZero(),
-		"an unbilled line item must not produce a credit; got %s", summary.TotalCreditAmount)
+	expected, _ := decimal.NewFromString("13.33")
+	s.True(summary.TotalCreditAmount.Equal(expected),
+		"a line item with no billed row must credit the unused list price; got %s",
+		summary.TotalCreditAmount)
 }
 
 func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_IgnoresOtherPeriodBilling() {
@@ -389,12 +395,13 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_IgnoresOtherPerio
 		CustomerID:             s.td.sub.CustomerID,
 		SubscriptionID:         &s.td.sub.ID,
 		SubscriptionLineItemID: &lineItemID,
-		Amount:                 decimal.NewFromInt(20),
-		Quantity:               decimal.NewFromInt(1),
-		Currency:               "usd",
-		PeriodStart:            &marchStart,
-		PeriodEnd:              &s.td.periodStart,
-		BaseModel:              types.GetDefaultBaseModel(ctx),
+		// Deliberately tiny: if March were counted it would cap the credit at $1.
+		Amount:      decimal.NewFromInt(1),
+		Quantity:    decimal.NewFromInt(1),
+		Currency:    "usd",
+		PeriodStart: &marchStart,
+		PeriodEnd:   &s.td.periodStart,
+		BaseModel:   types.GetDefaultBaseModel(ctx),
 	}))
 
 	req := LineItemProrationRequest{
@@ -413,8 +420,9 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_IgnoresOtherPerio
 	s.NoError(err)
 	s.Require().NotNil(summary)
 
-	s.True(summary.TotalCreditAmount.IsZero(),
-		"a previous period's charge must not fund this period's credit; got %s",
+	expected, _ := decimal.NewFromString("13.33")
+	s.True(summary.TotalCreditAmount.Equal(expected),
+		"a previous period's charge must not cap this period's credit; got %s",
 		summary.TotalCreditAmount)
 }
 

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -98,5 +99,57 @@ func TestPlanChangeIdempotencyKey(t *testing.T) {
 		later.UpdatedAt = readAt.Add(time.Hour)
 		assert.Equal(t, withKey, planChangeIdempotencyKey(planChangeKeyRequest(&later, "caller-supplied")),
 			"the caller's key is the whole identity of the attempt")
+	})
+}
+
+func TestCreditBasis(t *testing.T) {
+	item := &subscription.SubscriptionLineItem{ID: "subs_line_1", Quantity: decimal.NewFromInt(2)}
+	p := &price.Price{Amount: decimal.NewFromInt(20)}
+	listPrice := decimal.NewFromInt(40)
+
+	t.Run("a billed row caps the credit at what was charged", func(t *testing.T) {
+		billed := map[string]*invoice.BilledAmounts{
+			item.ID: invoice.NewBilledAmounts(decimal.NewFromInt(5), decimal.NewFromInt(1)),
+		}
+
+		paid, credits := creditBasis(item, p, billed)
+		assert.True(t, paid.Equal(decimal.NewFromInt(5)))
+		assert.True(t, credits.Equal(decimal.NewFromInt(1)))
+	})
+
+	t.Run("a row charging zero caps the credit at zero", func(t *testing.T) {
+		billed := map[string]*invoice.BilledAmounts{
+			item.ID: invoice.NewBilledAmounts(decimal.Zero, decimal.Zero),
+		}
+
+		paid, credits := creditBasis(item, p, billed)
+		assert.True(t, paid.IsZero(), "an invoice that charged nothing is evidence, not absence")
+		assert.True(t, credits.IsZero())
+	})
+
+	t.Run("no row for this line item falls back to list price", func(t *testing.T) {
+		billed := map[string]*invoice.BilledAmounts{
+			"subs_line_other": invoice.NewBilledAmounts(decimal.NewFromInt(5), decimal.Zero),
+		}
+
+		paid, credits := creditBasis(item, p, billed)
+		assert.True(t, paid.Equal(listPrice))
+		assert.True(t, credits.IsZero())
+	})
+
+	// A transient repo failure must not change the money: it hands creditBasis a
+	// nil map, which has to land on the same basis as a lookup that found nothing.
+	t.Run("a failed lookup credits the same as an empty one", func(t *testing.T) {
+		failed, _ := creditBasis(item, p, nil)
+		empty, _ := creditBasis(item, p, map[string]*invoice.BilledAmounts{})
+
+		assert.True(t, failed.Equal(empty))
+		assert.True(t, failed.Equal(listPrice))
+	})
+
+	t.Run("a missing price cannot invent a basis", func(t *testing.T) {
+		paid, credits := creditBasis(item, nil, nil)
+		assert.True(t, paid.IsZero())
+		assert.True(t, credits.IsZero())
 	})
 }
