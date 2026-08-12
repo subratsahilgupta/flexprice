@@ -157,10 +157,25 @@ var seedFeatureSpecs = func() []featureSpec {
 			},
 			aggLabel: "sum_filtered",
 		},
+		{
+			lookupKey: "e2eprobe_max_15min_feature", eventName: "e2eprobe_max_15min",
+			displayName: "E2EProbe Max 15min", aggType: types.AggregationTypeMax,
+			field: strPtr("amount"), bucketSize: bucketSizePtr(types.WindowSizeFifteenMin), aggLabel: "max_15min",
+		},
+		{
+			lookupKey: "e2eprobe_sum_hour_feature", eventName: "e2eprobe_sum_hour",
+			displayName: "E2EProbe Sum Hour", aggType: types.AggregationTypeSum,
+			field: strPtr("amount"), bucketSize: bucketSizePtr(types.WindowSizeHour), aggLabel: "sum_hour",
+		},
+		{
+			lookupKey: "e2eprobe_max_day_feature", eventName: "e2eprobe_max_day",
+			displayName: "E2EProbe Max Day", aggType: types.AggregationTypeMax,
+			field: strPtr("amount"), bucketSize: bucketSizePtr(types.WindowSizeDay), aggLabel: "max_day",
+		},
 	}
 }()
 
-// ensureFeatures creates 8 features with embedded meters idempotently.
+// ensureFeatures creates 11 features with embedded meters idempotently.
 // MeterIDs and FeatureIDs are populated into out.
 func (s *SeedEnsure) ensureFeatures(ctx context.Context, out *e2eprobe.Seeds) error {
 	// Build lookup-key index of existing features.
@@ -188,6 +203,12 @@ func (s *SeedEnsure) ensureFeatures(ctx context.Context, out *e2eprobe.Seeds) er
 			// Already exists — record IDs.
 			if existing.ID != nil {
 				out.FeatureIDs = append(out.FeatureIDs, *existing.ID)
+				if spec.bucketSize != nil {
+					if out.BucketedFeatureIDs == nil {
+						out.BucketedFeatureIDs = map[string]string{}
+					}
+					out.BucketedFeatureIDs[spec.lookupKey] = *existing.ID
+				}
 			}
 			if existing.MeterID != nil {
 				out.MeterIDs[spec.eventName] = *existing.MeterID
@@ -237,6 +258,12 @@ func (s *SeedEnsure) ensureFeatures(ctx context.Context, out *e2eprobe.Seeds) er
 		feat := resp.FeatureResponse
 		if feat.ID != nil {
 			out.FeatureIDs = append(out.FeatureIDs, *feat.ID)
+			if spec.bucketSize != nil {
+				if out.BucketedFeatureIDs == nil {
+					out.BucketedFeatureIDs = map[string]string{}
+				}
+				out.BucketedFeatureIDs[spec.lookupKey] = *feat.ID
+			}
 		}
 		if feat.MeterID != nil {
 			out.MeterIDs[spec.eventName] = *feat.MeterID
@@ -638,3 +665,5 @@ func (s *SeedEnsure) ensureAlertCanaryWallet(ctx context.Context, extCustID stri
 	}
 	return nil
 }
+
+func bucketSizePtr(w types.WindowSize) *types.WindowSize { return &w }

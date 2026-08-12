@@ -4,7 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/e2eprobe"
+	"github.com/flexprice/flexprice/internal/logger"
+	itypes "github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/go-sdk/v2/models/types"
 )
 
@@ -29,7 +32,7 @@ func TestSeedEnsure(t *testing.T) {
 		{
 			name: "AllPresent: features pre-exist, customers present, plan pre-exists",
 			setup: func(fc *fakeClient) {
-				// Pre-populate 8 features with lookup keys and meter IDs.
+				// Pre-populate 11 features with lookup keys and meter IDs.
 				for _, spec := range seedFeatureSpecs {
 					lk := spec.lookupKey
 					mID := "meter_" + spec.eventName
@@ -54,16 +57,16 @@ func TestSeedEnsure(t *testing.T) {
 				// subs and wallets are empty — they'll be created
 			},
 			wantErr:                 false,
-			wantFeaturesCreated:     0, // all 8 found via Query
-			wantCustomersCreated:    1, // 10 pre-populated; alert canary still needs creating
-			wantPlansCreated:        0, // plan found via Query
-			wantPricesCreated:       9, // base + 8 usage prices
+			wantFeaturesCreated:     0,  // all 11 found via Query
+			wantCustomersCreated:    1,  // 10 pre-populated; alert canary still needs creating
+			wantPlansCreated:        0,  // plan found via Query
+			wantPricesCreated:       12, // base + 11 usage prices
 			wantSubsCreated:         11, // 10 persistent + 1 alert canary
 			wantWalletsCreated:      4,  // 3 pre-funded + 1 alert canary
 			wantPersistentCustomers: 11, // 10 persistent + 1 alert canary
 			wantPreFundedCustomers:  3,
-			wantMeterIDs:            8,
-			wantFeatureIDs:          8,
+			wantMeterIDs:            11,
+			wantFeatureIDs:          11,
 			wantPlanIDs:             1,
 			wantSubIDs:              11,
 		},
@@ -74,23 +77,23 @@ func TestSeedEnsure(t *testing.T) {
 				fc.customers.getErr = errNotFound
 			},
 			wantErr:                 false,
-			wantFeaturesCreated:     8,
+			wantFeaturesCreated:     11,
 			wantCustomersCreated:    11, // 10 persistent + 1 alert canary
 			wantPlansCreated:        1,
-			wantPricesCreated:       9, // base + 8 usage
+			wantPricesCreated:       12, // base + 11 usage
 			wantSubsCreated:         11, // 10 persistent + 1 alert canary
 			wantWalletsCreated:      4,  // 3 pre-funded + 1 alert canary
 			wantPersistentCustomers: 11, // 10 persistent + 1 alert canary
 			wantPreFundedCustomers:  3,
-			wantMeterIDs:            8,
-			wantFeatureIDs:          8,
+			wantMeterIDs:            11,
+			wantFeatureIDs:          11,
 			wantPlanIDs:             1,
 			wantSubIDs:              11,
 		},
 		{
 			name: "PartialExisting: features exist but plan/subs/wallets don't",
 			setup: func(fc *fakeClient) {
-				// Pre-populate 8 features.
+				// Pre-populate 11 features.
 				for _, spec := range seedFeatureSpecs {
 					lk := spec.lookupKey
 					mID := "meter_" + spec.eventName
@@ -109,15 +112,15 @@ func TestSeedEnsure(t *testing.T) {
 			},
 			wantErr:                 false,
 			wantFeaturesCreated:     0,
-			wantCustomersCreated:    1, // alert canary still needs creating
+			wantCustomersCreated:    1,  // alert canary still needs creating
 			wantPlansCreated:        1,
-			wantPricesCreated:       9,
+			wantPricesCreated:       12,
 			wantSubsCreated:         11, // 10 persistent + 1 alert canary
 			wantWalletsCreated:      4,  // 3 pre-funded + 1 alert canary
 			wantPersistentCustomers: 11, // 10 persistent + 1 alert canary
 			wantPreFundedCustomers:  3,
-			wantMeterIDs:            8,
-			wantFeatureIDs:          8,
+			wantMeterIDs:            11,
+			wantFeatureIDs:          11,
 			wantPlanIDs:             1,
 			wantSubIDs:              11,
 		},
@@ -177,4 +180,31 @@ func TestSeedEnsure(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSeedEnsure_BucketedFeaturesProvisioned(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+
+	seeds := reg.Seeds()
+	wantKeys := []string{"e2eprobe_max_15min_feature", "e2eprobe_sum_hour_feature", "e2eprobe_max_day_feature"}
+	for _, k := range wantKeys {
+		if _, ok := seeds.BucketedFeatureIDs[k]; !ok {
+			t.Errorf("BucketedFeatureIDs missing key %q; got keys %v", k, keysOf(seeds.BucketedFeatureIDs))
+		}
+	}
+}
+
+func keysOf(m map[string]string) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
 }
