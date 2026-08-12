@@ -160,6 +160,16 @@ func WebhookEventSubscriptionPaused() {}
 // @Router /webhook-events/subscription.cancelled [post]
 func WebhookEventSubscriptionCancelled() {}
 
+// WebhookEventSubscriptionPlanChanged godoc
+// @Summary subscription.plan_changed
+// @Description Fired when a subscription is moved to a different plan in place. The subscription id and billing anchor are unchanged — this is never accompanied by subscription.cancelled or subscription.created. Doc-only for parsing.
+// @Tags Webhook Events
+// @Accept json
+// @Produce json
+// @Success 200 {object} webhookDto.SubscriptionWebhookPayload "Webhook payload"
+// @Router /webhook-events/subscription.plan_changed [post]
+func WebhookEventSubscriptionPlanChanged() {}
+
 // WebhookEventSubscriptionResumed godoc
 // @Summary subscription.resumed
 // @Description Fired when a paused subscription is resumed. Doc-only for parsing.

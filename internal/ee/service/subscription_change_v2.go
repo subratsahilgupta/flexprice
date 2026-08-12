@@ -611,6 +611,11 @@ func (s *subscriptionService) ExecutePlanChange(
 		"to_plan_id", resp.ToPlan.ID,
 		"change_type", resp.ChangeType)
 
+	// Published after commit: the change is already durable, and a webhook that
+	// fails must not roll back a completed plan change.
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionPlanChanged, subscriptionID)
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subscriptionID)
+
 	return resp, nil
 }
 

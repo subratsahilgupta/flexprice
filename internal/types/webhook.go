@@ -101,6 +101,13 @@ const (
 	WebhookEventSubscriptionPaused       WebhookEventName = "subscription.paused"
 	WebhookEventSubscriptionCancelled    WebhookEventName = "subscription.cancelled"
 	WebhookEventSubscriptionResumed      WebhookEventName = "subscription.resumed"
+
+	// WebhookEventSubscriptionPlanChanged fires when a subscription is swapped
+	// onto a different plan in place. A plan change must NEVER be reported as a
+	// cancellation followed by a creation: the subscription row, its id and its
+	// billing anchor all survive, and a consumer that saw cancelled+created would
+	// wrongly conclude the customer churned.
+	WebhookEventSubscriptionPlanChanged WebhookEventName = "subscription.plan_changed"
 )
 
 // subscription phase event names
