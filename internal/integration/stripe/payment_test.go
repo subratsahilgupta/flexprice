@@ -86,6 +86,16 @@ func TestDistributePaymentAmount(t *testing.T) {
 			currency:        "usd",
 			want:            nil,
 		},
+		{
+			name: "positive total that truncates to zero smallest units does not divide by zero",
+			items: []paymentLinkLineItemInput{
+				{PriceID: "price_1", DisplayName: "A", Amount: decimal.NewFromFloat(0.001)},
+				{PriceID: "price_2", DisplayName: "B", Amount: decimal.NewFromFloat(0.001)},
+			},
+			requestedAmount: decimal.NewFromFloat(0.001),
+			currency:        "usd",
+			want:            nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -122,6 +132,38 @@ func TestBuildSyncedLineItems_HappyPath(t *testing.T) {
 	require.EqualValues(t, 5000, *lineItems[0].PriceData.UnitAmount)
 	require.Equal(t, "prod_2", *lineItems[1].PriceData.Product)
 	require.EqualValues(t, 5000, *lineItems[1].PriceData.UnitAmount)
+}
+
+// TestBuildSyncedLineItems_DuplicatePriceIDAcrossLineItems covers two invoice line
+// items referencing the same Price (e.g. a base charge plus a usage overage). Both
+// still resolve to the same Stripe Product and get their own Checkout line item. The
+// dedup itself — avoiding two V1Products.Create calls when the Price is unmapped —
+// needs a real Stripe client to exercise and is out of reach for this package's unit
+// tests (see the file-level comment on syncTestMappingRepo); verified by code review
+// against the same lo.UniqBy pattern already used in InvoiceSyncService.
+func TestBuildSyncedLineItems_DuplicatePriceIDAcrossLineItems(t *testing.T) {
+	mappingRepo := &syncTestMappingRepo{
+		mappings: []*entityintegrationmapping.EntityIntegrationMapping{
+			{EntityID: "price_1", ProviderEntityID: "prod_1"},
+		},
+	}
+	s := &PaymentService{
+		logger:       logger.NewNoopLogger(),
+		priceSyncSvc: NewStripePriceSyncService(nil, mappingRepo, logger.NewNoopLogger()),
+	}
+	invoiceResp := &dto.InvoiceResponse{
+		LineItems: []*dto.InvoiceLineItemResponse{
+			{InvoiceLineItem: invoice.InvoiceLineItem{ID: "li_1", PriceID: lo.ToPtr("price_1"), DisplayName: lo.ToPtr("Base fee"), Amount: decimal.NewFromInt(50)}},
+			{InvoiceLineItem: invoice.InvoiceLineItem{ID: "li_2", PriceID: lo.ToPtr("price_1"), DisplayName: lo.ToPtr("Overage"), Amount: decimal.NewFromInt(50)}},
+		},
+	}
+
+	lineItems, err := s.buildSyncedLineItems(testContext(), invoiceResp, decimal.NewFromInt(100), "usd")
+
+	require.NoError(t, err)
+	require.Len(t, lineItems, 2, "both line items still get their own Checkout line item")
+	require.Equal(t, "prod_1", *lineItems[0].PriceData.Product)
+	require.Equal(t, "prod_1", *lineItems[1].PriceData.Product)
 }
 
 func TestBuildSyncedLineItems_MissingPriceIDRejectsRequest(t *testing.T) {

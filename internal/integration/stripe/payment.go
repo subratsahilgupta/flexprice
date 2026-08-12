@@ -64,11 +64,14 @@ func distributePaymentAmount(items []paymentLinkLineItemInput, requestedAmount d
 	for _, item := range items {
 		totalAmount = totalAmount.Add(item.Amount)
 	}
-	if !totalAmount.IsPositive() {
+
+	// Guard on the truncated smallest-unit total, not the decimal total: a positive
+	// amount smaller than one smallest currency unit (e.g. $0.001) still truncates to
+	// 0 and would divide by zero below.
+	totalUnits := types.ToSmallestUnit(totalAmount, currency)
+	if totalUnits <= 0 {
 		return nil
 	}
-
-	totalUnits := types.ToSmallestUnit(totalAmount, currency)
 	requestedUnits := types.ToSmallestUnit(requestedAmount, currency)
 
 	shares := make([]paymentLinkLineItemShare, 0, len(items))
@@ -134,9 +137,16 @@ func (s *PaymentService) buildSyncedLineItems(ctx context.Context, invoiceResp *
 		return nil, nil
 	}
 
-	syncItems := lo.Map(inputs, func(in paymentLinkLineItemInput, _ int) priceSyncItem {
-		return priceSyncItem{PriceID: in.PriceID, DisplayName: in.DisplayName}
-	})
+	// Two invoice line items can reference the same Price (e.g. a base charge plus a
+	// usage overage). Dedupe before syncing so EnsureBulkProductsSynced doesn't create
+	// two Stripe Products for one Price — inputs itself stays untouched since amount
+	// distribution still needs every line item.
+	syncItems := lo.Map(
+		lo.UniqBy(inputs, func(in paymentLinkLineItemInput) string { return in.PriceID }),
+		func(in paymentLinkLineItemInput, _ int) priceSyncItem {
+			return priceSyncItem{PriceID: in.PriceID, DisplayName: in.DisplayName}
+		},
+	)
 	productIDs, err := s.priceSyncSvc.EnsureBulkProductsSynced(ctx, syncItems)
 	if err != nil {
 		return nil, err
@@ -321,8 +331,9 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 			Mark(ierr.ErrValidation)
 	}
 
-	// Convert amount to cents (Stripe expects amounts in smallest currency unit)
-	amountCents := req.Amount.Mul(decimal.NewFromInt(100)).IntPart()
+	// Convert to the currency's smallest unit — not always cents (e.g. JPY has none),
+	// and must match buildSyncedLineItems' conversion for the two branches to agree.
+	amountCents := types.ToSmallestUnit(req.Amount, req.Currency)
 
 	// Build comprehensive product name with all information
 	productName := fmt.Sprintf("%s", customerResp.Customer.Name)
