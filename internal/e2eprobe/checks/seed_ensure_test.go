@@ -2,6 +2,7 @@ package checks
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/config"
@@ -9,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	itypes "github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/go-sdk/v2/models/dtos"
+	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/flexprice/go-sdk/v2/models/types"
 )
 
@@ -256,7 +258,7 @@ func TestSeedEnsure_TaxRateProvisioning(t *testing.T) {
 	}
 	seeds := reg.Seeds()
 	if seeds.SharedTaxRateID == "" {
-		t.Fatalf("SharedTaxRateID empty after seed run")
+		t.Fatalf("SharedTaxRateID empty after seed run (Create succeeded — should carry the id)")
 	}
 	if seeds.SharedTaxRateCode != "E2EPROBE_TAX_10PCT" {
 		t.Errorf("SharedTaxRateCode = %q, want E2EPROBE_TAX_10PCT", seeds.SharedTaxRateCode)
@@ -274,19 +276,37 @@ func TestSeedEnsure_TaxRateProvisioning(t *testing.T) {
 	if got.Scope == nil || *got.Scope != types.TaxRateScopeExternal {
 		t.Errorf("tax rate Scope = %v, want EXTERNAL", got.Scope)
 	}
+}
 
-	// Simulate the second run finding the existing rate via List.
-	codeCopy := "E2EPROBE_TAX_10PCT"
-	idCopy := seeds.SharedTaxRateID
-	fc.taxRates.listResp = &dtos.GetTaxRatesResponse{
-		TaxRateResponses: []types.TaxRateResponse{{ID: &idCopy, Code: &codeCopy}},
+// TestSeedEnsure_TaxRateAlreadyExistsSwallowed simulates the second-run
+// scenario where CreateTaxRate returns "already exists" — the seed treats
+// this as success, populates only the Code, and leaves the ID empty (the
+// SDK v2.0.24 workaround for the broken TaxRates.List response shape).
+func TestSeedEnsure_TaxRateAlreadyExistsSwallowed(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	code := types.ErrorCodeAlreadyExists
+	status := int64(http.StatusConflict)
+	msg := "A taxrate with this code E2EPROBE_TAX_10PCT already exists"
+	fc.taxRates.createErr = &sdkerrors.ErrorResponse{
+		Code:           &code,
+		HTTPStatusCode: &status,
+		Message:        &msg,
 	}
+
 	if err := s.Run(context.Background()); err != nil {
-		t.Fatalf("second Run() unexpected error: %v", err)
+		t.Fatalf("Run() must swallow ErrAlreadyExists on tax rate; got %v", err)
 	}
-	if len(fc.taxRates.created) != 1 {
-		t.Errorf("tax rate created %d times across 2 runs; want 1 (idempotency broken)", len(fc.taxRates.created))
+	seeds := reg.Seeds()
+	if seeds.SharedTaxRateCode != "E2EPROBE_TAX_10PCT" {
+		t.Errorf("SharedTaxRateCode = %q, want E2EPROBE_TAX_10PCT (must be set even on duplicate path)", seeds.SharedTaxRateCode)
 	}
+	// SharedTaxRateID may end up populated by ensurePersistentTaxAssociation's
+	// backfill from the fake CreateTaxAssociation response — that's fine.
+	// The key invariant is that Run() did not fail.
 }
 
 func TestSeedEnsure_PlanEntitlementsProvisioned(t *testing.T) {
@@ -401,15 +421,18 @@ func TestSeedEnsure_PersistentTaxAssociation(t *testing.T) {
 		t.Errorf("EntityType = %v, want SUBSCRIPTION", req.EntityType)
 	}
 
-	// Idempotency: the fake doesn't dedupe on repeat Runs (it creates fresh IDs
-	// each time), so pre-populate both TaxRates.List (so ensureTaxRates returns
-	// the same rate ID) AND TaxAssociations.List (so ensurePersistentTaxAssociation
-	// sees the existing association). On real APIs both lookups deduplicate
-	// server-side.
+	// Idempotency on second Run:
+	//   1. ensureTaxRates: fake CreateTaxRate returns "already exists" (the
+	//      real server behaviour when the tax rate was created by Run #1).
+	//   2. ensurePersistentTaxAssociation: fake TaxAssociations.List returns
+	//      the existing association we created in Run #1, so create is
+	//      skipped.
 	trID := reg.Seeds().SharedTaxRateID
-	trCode := "E2EPROBE_TAX_10PCT"
-	fc.taxRates.listResp = &dtos.GetTaxRatesResponse{
-		TaxRateResponses: []types.TaxRateResponse{{ID: &trID, Code: &trCode}},
+	dupCode := types.ErrorCodeAlreadyExists
+	dupStatus := int64(http.StatusConflict)
+	fc.taxRates.createErr = &sdkerrors.ErrorResponse{
+		Code:           &dupCode,
+		HTTPStatusCode: &dupStatus,
 	}
 	fc.taxAssociations.listResp = &dtos.ListTaxAssociationsResponse{
 		ListTaxAssociationsResponse: &types.ListTaxAssociationsResponse{
