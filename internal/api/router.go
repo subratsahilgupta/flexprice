@@ -156,6 +156,7 @@ func NewRouter(
 			user.POST("", write(types.EntityUser, types.ActionWrite), handlers.User.CreateUser)
 			user.PUT("/me", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateUser)
 			user.PUT("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateServiceAccount)
+			user.PUT("/:id/roles", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateUserRoles)
 			user.DELETE("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.DeleteUser)
 			user.POST("/search", handlers.User.QueryUsers)
 		}
@@ -700,10 +701,10 @@ func NewRouter(
 	}
 
 	// RBAC routes
-	rbac := v1Private.Group("/rbac")
+	rbac := v1Private.Group("/rbac/roles")
 	{
-		rbac.GET("/roles", handlers.RBAC.ListRoles)
-		rbac.GET("/roles/:id", handlers.RBAC.GetRole)
+		rbac.GET("", handlers.RBAC.ListRoles)
+		rbac.GET("/:id", handlers.RBAC.GetRole)
 	}
 
 	// OAuth routes

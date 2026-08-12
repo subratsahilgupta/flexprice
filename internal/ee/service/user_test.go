@@ -207,7 +207,7 @@ func (s *UserServiceSuite) TestCreateUser_TableDriven() {
 			errContains string
 		}{
 			name: "type_service_account_with_user_role_rejected",
-			req:  dto.CreateUserRequest{Type: types.UserTypeServiceAccount, Roles: []string{types.RoleReader.String()}},
+			req:  dto.CreateUserRequest{Type: types.UserTypeServiceAccount, Roles: []string{types.RoleAllReader.String()}},
 			setup: func() *userService {
 				return &userService{
 					userRepo:        s.userRepo,
@@ -269,18 +269,18 @@ func (s *UserServiceSuite) TestCreateUser_CannotGrantBeyondCallerAccess() {
 		},
 		{
 			name:        "writer can create a write-scoped service account",
-			callerRoles: []string{types.RoleWriter.String()},
+			callerRoles: []string{types.RoleAllWriter.String()},
 			saRoles:     []string{types.RoleEventIngestor.String()},
 		},
 		{
 			name:        "reader cannot create a write-scoped service account",
-			callerRoles: []string{types.RoleReader.String()},
+			callerRoles: []string{types.RoleAllReader.String()},
 			saRoles:     []string{types.RoleEventIngestor.String()},
 			wantErr:     true,
 		},
 		{
 			name:        "writer cannot create a super_admin service account",
-			callerRoles: []string{types.RoleWriter.String()},
+			callerRoles: []string{types.RoleAllWriter.String()},
 			saRoles:     []string{types.RoleSuperAdmin.String()},
 			wantErr:     true,
 		},
@@ -346,8 +346,8 @@ func (s *UserServiceSuite) TestInviteUser_RoleAssignment() {
 		},
 		{
 			name:      "requested roles are honoured",
-			reqRoles:  []string{types.RoleWriter.String()},
-			wantRoles: []string{types.RoleWriter.String()},
+			reqRoles:  []string{types.RoleAllWriter.String()},
+			wantRoles: []string{types.RoleAllWriter.String()},
 		},
 		{
 			name:        "undefined role is rejected",
@@ -357,7 +357,7 @@ func (s *UserServiceSuite) TestInviteUser_RoleAssignment() {
 		},
 		{
 			name:        "super_admin cannot be combined with another role",
-			reqRoles:    []string{types.RoleSuperAdmin.String(), types.RoleReader.String()},
+			reqRoles:    []string{types.RoleSuperAdmin.String(), types.RoleAllReader.String()},
 			wantErr:     true,
 			errContains: "super admin role need not be combined",
 		},
@@ -373,8 +373,8 @@ func (s *UserServiceSuite) TestInviteUser_RoleAssignment() {
 	// writer is refused even when the invitee would only be a reader.
 	s.Run("only a super_admin can invite", func() {
 		for _, callerRoles := range [][]string{
-			{types.RoleWriter.String()},
-			{types.RoleReader.String()},
+			{types.RoleAllWriter.String()},
+			{types.RoleAllReader.String()},
 			{},
 		} {
 			ctx := testutil.SetupContext()
@@ -396,7 +396,7 @@ func (s *UserServiceSuite) TestInviteUser_RoleAssignment() {
 			created, _, err := svc.InviteUser(ctx, &dto.CreateUserRequest{
 				Type:  types.UserTypeUser,
 				Email: "invitee@example.com",
-				Roles: []string{types.RoleReader.String()},
+				Roles: []string{types.RoleAllReader.String()},
 			}, "actor-1")
 
 			s.Error(err, "caller %v must not be able to invite", callerRoles)
@@ -765,7 +765,7 @@ func (s *RBACPermissionSuite) TestEventReader_CanOnlyReadEvents() {
 // A writer that could not read would be unable to fetch the very records it is
 // allowed to modify, so write implies read.
 func (s *RBACPermissionSuite) TestWriter_CanReadAndWrite() {
-	roles := []string{types.RoleWriter.String()}
+	roles := []string{types.RoleAllWriter.String()}
 	for _, entity := range []string{"customer", "invoice", "event"} {
 		s.True(s.rbacSvc.HasPermission(roles, entity, "read"), "writer should read %s", entity)
 		s.True(s.rbacSvc.HasPermission(roles, entity, "write"), "writer should write %s", entity)
@@ -774,7 +774,7 @@ func (s *RBACPermissionSuite) TestWriter_CanReadAndWrite() {
 
 // Reader stays read-only; widening writer must not have widened reader with it.
 func (s *RBACPermissionSuite) TestReader_CanOnlyRead() {
-	roles := []string{types.RoleReader.String()}
+	roles := []string{types.RoleAllReader.String()}
 	for _, entity := range []string{"customer", "invoice", "event"} {
 		s.True(s.rbacSvc.HasPermission(roles, entity, "read"), "reader should read %s", entity)
 		s.False(s.rbacSvc.HasPermission(roles, entity, "write"), "reader should NOT write %s", entity)
@@ -831,41 +831,41 @@ func (s *RBACPermissionSuite) TestCanGrantRoles() {
 		},
 		{
 			name:        "writer can grant a write scope it fully covers",
-			callerRoles: []string{types.RoleWriter.String()},
+			callerRoles: []string{types.RoleAllWriter.String()},
 			requested:   []string{types.RoleEventIngestor.String()},
 		},
 		{
 			name:        "reader can grant a read scope it fully covers",
-			callerRoles: []string{types.RoleReader.String()},
+			callerRoles: []string{types.RoleAllReader.String()},
 			requested:   []string{types.RoleEventReader.String()},
 		},
 
 		{
 			name:        "reader cannot grant a write scope",
-			callerRoles: []string{types.RoleReader.String()},
+			callerRoles: []string{types.RoleAllReader.String()},
 			requested:   []string{types.RoleEventIngestor.String()},
 			wantErr:     true,
 		},
 		{
 			name:        "reader cannot grant writer",
-			callerRoles: []string{types.RoleReader.String()},
-			requested:   []string{types.RoleWriter.String()},
+			callerRoles: []string{types.RoleAllReader.String()},
+			requested:   []string{types.RoleAllWriter.String()},
 			wantErr:     true,
 		},
 		{
 			name:        "writer can grant a read scope, since writer includes read",
-			callerRoles: []string{types.RoleWriter.String()},
+			callerRoles: []string{types.RoleAllWriter.String()},
 			requested:   []string{types.RoleEventReader.String()},
 		},
 		{
 			name:        "writer cannot grant super_admin",
-			callerRoles: []string{types.RoleWriter.String()},
+			callerRoles: []string{types.RoleAllWriter.String()},
 			requested:   []string{types.RoleSuperAdmin.String()},
 			wantErr:     true,
 		},
 		{
 			name:        "reader cannot grant super_admin",
-			callerRoles: []string{types.RoleReader.String()},
+			callerRoles: []string{types.RoleAllReader.String()},
 			requested:   []string{types.RoleSuperAdmin.String()},
 			wantErr:     true,
 		},
@@ -877,7 +877,7 @@ func (s *RBACPermissionSuite) TestCanGrantRoles() {
 		},
 		{
 			name:        "one ungrantable role rejects the whole set",
-			callerRoles: []string{types.RoleReader.String()},
+			callerRoles: []string{types.RoleAllReader.String()},
 			requested:   []string{types.RoleEventReader.String(), types.RoleEventIngestor.String()},
 			wantErr:     true,
 		},
@@ -908,9 +908,9 @@ func (s *RBACPermissionSuite) TestValidateRoles() {
 
 		// A person holds an access level over the tenant.
 		{name: "user_may_hold_super_admin", userType: types.UserTypeUser, roles: []string{types.RoleSuperAdmin.String()}},
-		{name: "user_may_hold_reader", userType: types.UserTypeUser, roles: []string{types.RoleReader.String()}},
-		{name: "user_may_hold_writer", userType: types.UserTypeUser, roles: []string{types.RoleWriter.String()}},
-		{name: "user_may_hold_reader_and_writer", userType: types.UserTypeUser, roles: []string{types.RoleReader.String(), types.RoleWriter.String()}},
+		{name: "user_may_hold_reader", userType: types.UserTypeUser, roles: []string{types.RoleAllReader.String()}},
+		{name: "user_may_hold_writer", userType: types.UserTypeUser, roles: []string{types.RoleAllWriter.String()}},
+		{name: "user_may_hold_reader_and_writer", userType: types.UserTypeUser, roles: []string{types.RoleAllReader.String(), types.RoleAllWriter.String()}},
 
 		// A service account holds full access or a narrow machine scope.
 		{name: "service_account_may_hold_super_admin", userType: types.UserTypeServiceAccount, roles: []string{types.RoleSuperAdmin.String()}},
@@ -934,28 +934,28 @@ func (s *RBACPermissionSuite) TestValidateRoles() {
 		{
 			name:        "service_account_may_not_hold_reader",
 			userType:    types.UserTypeServiceAccount,
-			roles:       []string{types.RoleReader.String()},
+			roles:       []string{types.RoleAllReader.String()},
 			wantErr:     true,
 			errContains: "not assignable to this user type",
 		},
 		{
 			name:        "service_account_may_not_hold_writer",
 			userType:    types.UserTypeServiceAccount,
-			roles:       []string{types.RoleWriter.String()},
+			roles:       []string{types.RoleAllWriter.String()},
 			wantErr:     true,
 			errContains: "not assignable to this user type",
 		},
 		{
 			name:        "one_disallowed_role_rejects_the_whole_set",
 			userType:    types.UserTypeServiceAccount,
-			roles:       []string{types.RoleEventReader.String(), types.RoleWriter.String()},
+			roles:       []string{types.RoleEventReader.String(), types.RoleAllWriter.String()},
 			wantErr:     true,
 			errContains: "not assignable to this user type",
 		},
 		{
 			name:        "unknown_user_type_may_hold_nothing",
 			userType:    types.UserType("robot"),
-			roles:       []string{types.RoleReader.String()},
+			roles:       []string{types.RoleAllReader.String()},
 			wantErr:     true,
 			errContains: "not assignable to this user type",
 		},
@@ -977,14 +977,14 @@ func (s *RBACPermissionSuite) TestValidateRoles() {
 		{
 			name:        "one_undefined_role_rejects_the_whole_set",
 			userType:    types.UserTypeUser,
-			roles:       []string{types.RoleReader.String(), "nonexistent"},
+			roles:       []string{types.RoleAllReader.String(), "nonexistent"},
 			wantErr:     true,
 			errContains: "invalid role",
 		},
 		{
 			name:        "super_admin_cannot_be_combined",
 			userType:    types.UserTypeUser,
-			roles:       []string{types.RoleSuperAdmin.String(), types.RoleReader.String()},
+			roles:       []string{types.RoleSuperAdmin.String(), types.RoleAllReader.String()},
 			wantErr:     true,
 			errContains: "super admin role need not be combined",
 		},

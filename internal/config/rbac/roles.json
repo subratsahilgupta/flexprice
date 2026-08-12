@@ -7,16 +7,16 @@
     }
   },
 
-  "reader": {
-    "name": "Reader",
+  "all_reader": {
+    "name": "All Reader",
     "description": "Limited to reading resources for users.",
     "permissions": {
       "*": ["read"]
     }
   },
 
-  "writer": {
-    "name": "Writer",
+  "all_writer": {
+    "name": "All Writer",
     "description": "Can read and write resources for users.",
     "permissions": {
       "*": ["read", "write"]

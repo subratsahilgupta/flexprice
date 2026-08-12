@@ -6,8 +6,8 @@ func (r Role) String() string { return string(r) }
 
 const (
 	RoleSuperAdmin    Role = "super_admin"
-	RoleReader        Role = "reader"
-	RoleWriter        Role = "writer"
+	RoleAllReader     Role = "all_reader"
+	RoleAllWriter     Role = "all_writer"
 	RoleEventIngestor Role = "event_ingestor"
 	RoleEventReader   Role = "event_reader"
 )
@@ -19,7 +19,7 @@ const (
 func (ut UserType) AllowedRoles() []Role {
 	switch ut {
 	case UserTypeUser:
-		return []Role{RoleSuperAdmin, RoleReader, RoleWriter}
+		return []Role{RoleSuperAdmin, RoleAllReader, RoleAllWriter}
 	case UserTypeServiceAccount:
 		return []Role{RoleSuperAdmin, RoleEventIngestor, RoleEventReader}
 	default:
