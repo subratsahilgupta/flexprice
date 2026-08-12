@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/flexprice/go-sdk/v2/models/types"
+	"github.com/shopspring/decimal"
 )
 
 const (
@@ -112,6 +113,9 @@ func (s *SeedEnsure) Run(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensurePlanEntitlements(ctx, &seeds); err != nil {
+		return err
+	}
+	if err := s.ensureEntitlementGrants(ctx, &seeds); err != nil {
 		return err
 	}
 	if err := s.ensureSubscriptions(ctx, &seeds); err != nil {
@@ -733,6 +737,180 @@ func (s *SeedEnsure) ensurePrices(ctx context.Context, seeds *e2eprobe.Seeds) er
 		}
 	}
 	return nil
+}
+
+// ensureEntitlementGrants idempotently provisions one plan-level additive
+// grant entitlement on AdditiveGrantFeatureLookupKey. Reconciliation cases:
+//   - grant entitlement already present on (plan, feature): skip; capture id.
+//   - legacy soft-limit entitlement present on (plan, feature): delete it
+//     (frees the (entity, feature) slot the additive grant needs), then
+//     create the grant.
+//   - nothing present: create the grant.
+//
+// After Create, an immediate GetRaw round-trip verifies the server stored
+// the grant config as sent — catches silent field drops or mistranslation.
+func (s *SeedEnsure) ensureEntitlementGrants(ctx context.Context, out *e2eprobe.Seeds) error {
+	if len(out.PlanIDs) == 0 {
+		return nil
+	}
+	planID := out.PlanIDs[0]
+
+	// Resolve the target feature.
+	featResp, err := s.client.Features().Query(ctx, types.FeatureFilter{
+		LookupKeys: []string{AdditiveGrantFeatureLookupKey},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "query_feature", "feature_lookup_key": AdditiveGrantFeatureLookupKey}, "query grant feature: %w", err)
+	}
+	if featResp.ListFeaturesResponse == nil || len(featResp.ListFeaturesResponse.Items) == 0 {
+		return nil // grant feature not seeded yet — soft skip
+	}
+	if featResp.ListFeaturesResponse.Items[0].ID == nil {
+		return nil
+	}
+	featID := *featResp.ListFeaturesResponse.Items[0].ID
+
+	// Query existing entitlements on this (plan, feature).
+	existResp, err := s.client.Entitlements().Query(ctx, types.EntitlementFilter{
+		PlanIds:    []string{planID},
+		FeatureIds: []string{featID},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "query_existing_entitlements", "plan_id": planID, "feature_id": featID}, "query existing entitlements: %w", err)
+	}
+
+	var existingGrantID string
+	var legacySoftLimitID string
+	if existResp.ListEntitlementsResponse != nil {
+		for _, e := range existResp.ListEntitlementsResponse.Items {
+			if e.ID == nil {
+				continue
+			}
+			// The SDK's EntitlementResponse doesn't expose grant fields, so
+			// we use GetRaw to inspect grant_measure — its presence signals a
+			// grant entitlement, its absence a legacy soft-limit one.
+			raw, rawErr := s.client.Entitlements().GetRaw(ctx, *e.ID)
+			if rawErr != nil {
+				// Best-effort: treat unreadable as legacy for cleanup safety.
+				legacySoftLimitID = *e.ID
+				continue
+			}
+			if raw.GrantMeasure != "" {
+				existingGrantID = *e.ID
+				break
+			}
+			legacySoftLimitID = *e.ID
+		}
+	}
+
+	if existingGrantID != "" {
+		// Idempotent-run case.
+		if out.GrantEntitlementIDs == nil {
+			out.GrantEntitlementIDs = map[string]string{}
+		}
+		out.GrantEntitlementIDs[AdditiveGrantFeatureLookupKey] = existingGrantID
+		return s.assertGrantConfigEcho(ctx, existingGrantID, featID, planID)
+	}
+
+	if legacySoftLimitID != "" {
+		// Legacy soft-limit entitlement from a pre-migration seed run.
+		// Delete it to free the (plan, feature) slot for the grant.
+		if _, err := s.client.Entitlements().Delete(ctx, legacySoftLimitID); err != nil && !isNotFound(err) {
+			return e2eprobe.Errorf(map[string]string{"step": "delete_legacy_entitlement", "plan_id": planID, "feature_id": featID, "entitlement_id": legacySoftLimitID}, "delete legacy soft-limit entitlement: %w", err)
+		}
+		if s.logger != nil {
+			s.logger.Info(ctx, "ensureEntitlementGrants: deleted legacy soft-limit entitlement to make room for grant",
+				"plan_id", planID,
+				"feature_id", featID,
+				"entitlement_id", legacySoftLimitID,
+			)
+		}
+	}
+
+	// Create the additive grant entitlement.
+	createReq := e2eprobe.GrantEntitlementInput{
+		FeatureID:          featID,
+		FeatureType:        "metered",
+		PlanID:             planID,
+		EntityType:         "plan",
+		EntityID:           planID,
+		IsEnabled:          true,
+		GrantMeasure:       "quantity",
+		GrantQuota:         AdditiveGrantQuota,
+		GrantDurationValue: AdditiveGrantDurationValue,
+		GrantDurationUnit:  AdditiveGrantDurationUnit,
+		AggregationMode:    "additive",
+	}
+	id, err := s.client.Entitlements().CreateWithGrant(ctx, createReq)
+	if err != nil {
+		if isAlreadyExists(err) {
+			if s.logger != nil {
+				s.logger.Info(ctx, "ensureEntitlementGrants: grant entitlement already exists (concurrent create)",
+					"plan_id", planID,
+					"feature_id", featID,
+				)
+			}
+			return nil
+		}
+		return e2eprobe.Errorf(map[string]string{"step": "create_grant_entitlement", "plan_id": planID, "feature_id": featID}, "create grant entitlement: %w", err)
+	}
+
+	if out.GrantEntitlementIDs == nil {
+		out.GrantEntitlementIDs = map[string]string{}
+	}
+	out.GrantEntitlementIDs[AdditiveGrantFeatureLookupKey] = id
+
+	return s.assertGrantConfigEcho(ctx, id, featID, planID)
+}
+
+// assertGrantConfigEcho fetches the entitlement via raw HTTP and asserts
+// the grant fields we sent came back unchanged. Catches silent server-side
+// field drops that would otherwise leave the probe running against a
+// ghost entitlement.
+func (s *SeedEnsure) assertGrantConfigEcho(ctx context.Context, entitlementID, featID, planID string) error {
+	raw, err := s.client.Entitlements().GetRaw(ctx, entitlementID)
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "get_grant_entitlement", "entitlement_id": entitlementID, "plan_id": planID, "feature_id": featID}, "get grant entitlement for echo verification: %w", err)
+	}
+	if raw.GrantMeasure != "quantity" {
+		return e2eprobe.Errorf(map[string]string{"step": "assert_grant_echo", "entitlement_id": entitlementID, "field": "grant_measure", "want": "quantity", "got": raw.GrantMeasure}, "grant_measure did not round-trip: want %q, got %q", "quantity", raw.GrantMeasure)
+	}
+	if !decimalEquals(raw.GrantQuota, AdditiveGrantQuota) {
+		return e2eprobe.Errorf(map[string]string{"step": "assert_grant_echo", "entitlement_id": entitlementID, "field": "grant_quota", "want": AdditiveGrantQuota, "got": raw.GrantQuota}, "grant_quota did not round-trip: want %q, got %q", AdditiveGrantQuota, raw.GrantQuota)
+	}
+	if raw.GrantDurationValue == nil || *raw.GrantDurationValue != AdditiveGrantDurationValue {
+		gotStr := "<nil>"
+		if raw.GrantDurationValue != nil {
+			gotStr = fmt.Sprintf("%d", *raw.GrantDurationValue)
+		}
+		return e2eprobe.Errorf(map[string]string{"step": "assert_grant_echo", "entitlement_id": entitlementID, "field": "grant_duration_value", "want": fmt.Sprintf("%d", AdditiveGrantDurationValue), "got": gotStr}, "grant_duration_value did not round-trip")
+	}
+	if raw.GrantDurationUnit != AdditiveGrantDurationUnit {
+		return e2eprobe.Errorf(map[string]string{"step": "assert_grant_echo", "entitlement_id": entitlementID, "field": "grant_duration_unit", "want": AdditiveGrantDurationUnit, "got": raw.GrantDurationUnit}, "grant_duration_unit did not round-trip: want %q, got %q", AdditiveGrantDurationUnit, raw.GrantDurationUnit)
+	}
+	if raw.AggregationMode != "additive" {
+		return e2eprobe.Errorf(map[string]string{"step": "assert_grant_echo", "entitlement_id": entitlementID, "field": "aggregation_mode", "want": "additive", "got": raw.AggregationMode}, "aggregation_mode did not round-trip: want %q, got %q", "additive", raw.AggregationMode)
+	}
+	if !raw.IsEnabled {
+		return e2eprobe.Errorf(map[string]string{"step": "assert_grant_echo", "entitlement_id": entitlementID, "field": "is_enabled", "want": "true", "got": "false"}, "is_enabled did not round-trip: server returned disabled")
+	}
+	return nil
+}
+
+// decimalEquals compares two decimal-string values with tolerance for
+// server-side normalisation of trailing zeros (e.g. "1000" vs "1000.0"
+// vs "1000.00"). Both empty strings compare unequal; empty vs non-empty
+// compares unequal.
+func decimalEquals(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	da, errA := decimal.NewFromString(a)
+	db, errB := decimal.NewFromString(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return da.Equal(db)
 }
 
 // ensureSubscriptions creates subscriptions for all persistent customers on the e2eprobe plan.

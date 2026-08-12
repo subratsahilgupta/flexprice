@@ -3,6 +3,7 @@ package checks
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/config"
@@ -470,5 +471,174 @@ func TestSeedEnsure_PlanEntitlements_SkipsGrantFeature(t *testing.T) {
 	// reaches the fake.
 	if len(fc.entitlements.created) != 7 {
 		t.Errorf("plan-level soft-limit entitlements created = %d, want 7 (8 non-bucketed features minus the reserved grant feature)", len(fc.entitlements.created))
+	}
+}
+
+func TestSeedEnsure_AdditiveGrantEntitlementProvisioned(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	seeds := reg.Seeds()
+
+	id, ok := seeds.GrantEntitlementIDs["e2eprobe_sum_multiplier_feature"]
+	if !ok || id == "" {
+		t.Fatalf("GrantEntitlementIDs missing e2eprobe_sum_multiplier_feature; got %v", seeds.GrantEntitlementIDs)
+	}
+	if len(fc.entitlements.createdWithGrant) != 1 {
+		t.Fatalf("CreateWithGrant called %d times, want 1", len(fc.entitlements.createdWithGrant))
+	}
+	req := fc.entitlements.createdWithGrant[0]
+	if req.GrantMeasure != "quantity" {
+		t.Errorf("GrantMeasure = %q, want quantity", req.GrantMeasure)
+	}
+	if req.GrantQuota != "1000" {
+		t.Errorf("GrantQuota = %q, want 1000", req.GrantQuota)
+	}
+	if req.GrantDurationValue != 1 {
+		t.Errorf("GrantDurationValue = %d, want 1", req.GrantDurationValue)
+	}
+	if req.GrantDurationUnit != "hour" {
+		t.Errorf("GrantDurationUnit = %q, want hour", req.GrantDurationUnit)
+	}
+	if req.AggregationMode != "additive" {
+		t.Errorf("AggregationMode = %q, want additive", req.AggregationMode)
+	}
+	if req.FeatureType != "metered" {
+		t.Errorf("FeatureType = %q, want metered", req.FeatureType)
+	}
+	if !req.IsEnabled {
+		t.Errorf("IsEnabled = false, want true")
+	}
+	if len(fc.entitlements.getRawCalls) < 1 {
+		t.Errorf("GetRaw was not called for config-echo verification")
+	}
+}
+
+func TestSeedEnsure_AdditiveGrantEchoMismatchFails(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+
+	dv := 1
+	fc.entitlements.getRawResp = &e2eprobe.GrantEntitlementResponse{
+		ID:                 "ent_grant_1",
+		GrantMeasure:       "quantity",
+		GrantQuota:         "1000",
+		GrantDurationValue: &dv,
+		GrantDurationUnit:  "hour",
+		AggregationMode:    "parallel", // ← the divergence
+		IsEnabled:          true,
+	}
+
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+	err := s.Run(context.Background())
+	if err == nil {
+		t.Fatalf("Run() must fail when server-side aggregation_mode diverges from sent value; got nil")
+	}
+	if !strings.Contains(err.Error(), "aggregation_mode") {
+		t.Errorf("error message should mention aggregation_mode drift; got: %v", err)
+	}
+}
+
+func TestSeedEnsure_AdditiveGrantIdempotent(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("first Run() unexpected error: %v", err)
+	}
+	if len(fc.entitlements.createdWithGrant) != 1 {
+		t.Fatalf("first Run should have created 1 grant, got %d", len(fc.entitlements.createdWithGrant))
+	}
+	grantID := reg.Seeds().GrantEntitlementIDs["e2eprobe_sum_multiplier_feature"]
+
+	existingID := grantID
+	fc.entitlements.queryResp = &dtos.QueryEntitlementResponse{
+		ListEntitlementsResponse: &types.ListEntitlementsResponse{
+			Items: []types.EntitlementResponse{
+				{ID: &existingID},
+			},
+		},
+	}
+	dv := 1
+	fc.entitlements.getRawResp = &e2eprobe.GrantEntitlementResponse{
+		ID:                 existingID,
+		GrantMeasure:       "quantity",
+		GrantQuota:         "1000",
+		GrantDurationValue: &dv,
+		GrantDurationUnit:  "hour",
+		AggregationMode:    "additive",
+		IsEnabled:          true,
+	}
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("second Run() unexpected error: %v", err)
+	}
+	if len(fc.entitlements.createdWithGrant) != 1 {
+		t.Errorf("grant CreateWithGrant called %d times across 2 runs; want 1 (idempotency broken)", len(fc.entitlements.createdWithGrant))
+	}
+}
+
+func TestSeedEnsure_LegacySoftLimitReplacedByGrant(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+
+	legacyID := "ent_legacy_soft"
+	fc.entitlements.queryResp = &dtos.QueryEntitlementResponse{
+		ListEntitlementsResponse: &types.ListEntitlementsResponse{
+			Items: []types.EntitlementResponse{
+				{ID: &legacyID},
+			},
+		},
+	}
+	// Per-id: legacyID's GetRaw returns empty GrantMeasure → classified as
+	// legacy soft-limit → deleted. The newly-created grant's GetRaw (any
+	// other id) falls through to the fake's default well-formed response.
+	fc.entitlements.getRawRespByID = map[string]*e2eprobe.GrantEntitlementResponse{
+		legacyID: {ID: legacyID, GrantMeasure: ""},
+	}
+
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	found := false
+	for _, id := range fc.entitlements.deleted {
+		if id == legacyID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("legacy soft-limit entitlement was not deleted; deleted = %v", fc.entitlements.deleted)
+	}
+	if len(fc.entitlements.createdWithGrant) != 1 {
+		t.Errorf("CreateWithGrant called %d times, want 1", len(fc.entitlements.createdWithGrant))
+	}
+}
+
+func TestSeedEnsure_AdditiveGrantAlreadyExistsSwallowed(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+
+	code := types.ErrorCodeAlreadyExists
+	status := int64(http.StatusConflict)
+	fc.entitlements.createWithGrantErr = &sdkerrors.ErrorResponse{
+		Code:           &code,
+		HTTPStatusCode: &status,
+	}
+
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() must swallow ErrAlreadyExists on grant CreateWithGrant; got %v", err)
 	}
 }

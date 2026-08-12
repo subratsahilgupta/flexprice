@@ -591,6 +591,7 @@ type fakeEntitlements struct {
 	createWithGrantErr error
 	createWithGrantID  string // returned by CreateWithGrant when non-empty; else auto-generated
 	getRawResp         *e2eprobe.GrantEntitlementResponse
+	getRawRespByID     map[string]*e2eprobe.GrantEntitlementResponse // per-id lookup takes priority over getRawResp
 	getRawErr          error
 	getRawCalls        []string
 }
@@ -644,6 +645,9 @@ func (f *fakeEntitlements) GetRaw(_ context.Context, id string) (*e2eprobe.Grant
 	f.getRawCalls = append(f.getRawCalls, id)
 	if f.getRawErr != nil {
 		return nil, f.getRawErr
+	}
+	if resp, ok := f.getRawRespByID[id]; ok {
+		return resp, nil
 	}
 	if f.getRawResp != nil {
 		return f.getRawResp, nil
