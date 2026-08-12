@@ -27,6 +27,15 @@ func (ut UserType) AllowedRoles() []Role {
 	}
 }
 
+// RoleFilter filters the roles returned by GET /rbac/roles. Bound via
+// ShouldBindQuery, following the same *QueryFilter-style convention as the
+// other GET list endpoints (e.g. ConnectionFilter, MeterFilter) — no
+// pagination/time-range fields are needed here since role listing isn't
+// paginated.
+type RoleFilter struct {
+	UserType *UserType `json:"user_type,omitempty" form:"user_type"`
+}
+
 type Action string
 
 func (a Action) String() string { return string(a) }
