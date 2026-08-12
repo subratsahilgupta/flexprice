@@ -38,7 +38,7 @@ type LineItemRepository interface {
 	// GetBilledAmountsBySubscriptionLineItem sums charges/credits on non-voided
 	// published invoices whose service period contains asOf (not the subscription
 	// period — longer-cadence charges must still match). Missing ids mean nothing billed.
-	GetBilledAmountsBySubscriptionLineItem(ctx context.Context, subscriptionLineItemIDs []string, asOf time.Time) (map[string]BilledAmounts, error)
+	GetBilledAmountsBySubscriptionLineItem(ctx context.Context, subscriptionLineItemIDs []string, asOf time.Time) (map[string]*BilledAmounts, error)
 
 	// GetRevenueByCustomer aggregates invoice line item amounts grouped by
 	// customer_id, price_type, and currency for DRAFT/FINALIZED invoices within the given period.

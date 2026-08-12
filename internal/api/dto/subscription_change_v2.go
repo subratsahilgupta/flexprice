@@ -12,6 +12,7 @@ type SubscriptionChangeV2Request struct {
 	ProrationBehavior types.ProrationBehavior `json:"proration_behavior" validate:"required"`
 
 	EntityPolicies *SubscriptionChangeEntityPolicies `json:"entity_policies,omitempty"`
+	IdempotencyKey *string                           `json:"idempotency_key,omitempty" validate:"omitempty"`
 
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
@@ -21,45 +22,47 @@ type SubscriptionChangeEntityPolicies struct {
 }
 
 type EntityChangePolicy struct {
-	Default types.EntityDisposition `json:"default,omitempty"`
+	DefaultBehaviour types.EntityChangeBehaviour `json:"default_behaviour,omitempty"`
 
 	// Overrides is keyed by addon_associations.id (instance), not catalogue addon_id.
-	Overrides map[string]types.EntityDisposition `json:"overrides,omitempty"`
+	Overrides map[string]types.EntityChangeBehaviour `json:"overrides,omitempty"`
 }
 
 func (p *EntityChangePolicy) Validate() error {
 	if p == nil {
 		return nil
 	}
-	if err := p.Default.Validate(); err != nil {
+
+	if err := p.DefaultBehaviour.Validate(); err != nil {
 		return err
 	}
-	for _, disposition := range p.Overrides {
-		if err := disposition.Validate(); err != nil {
+
+	for _, behaviour := range p.Overrides {
+		if err := behaviour.Validate(); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (p *EntityChangePolicy) DispositionFor(referenceID string) types.EntityDisposition {
+func (p *EntityChangePolicy) BehaviourFor(referenceID string) types.EntityChangeBehaviour {
 	if p == nil {
-		return types.EntityDispositionCarry
+		return types.EntityChangeBehaviourCarry
 	}
 	if d, ok := p.Overrides[referenceID]; ok && d != "" {
 		return d
 	}
-	if p.Default != "" {
-		return p.Default
+	if p.DefaultBehaviour != "" {
+		return p.DefaultBehaviour
 	}
-	return types.EntityDispositionCarry
+	return types.EntityChangeBehaviourCarry
 }
 
-type EntityDispositionResult struct {
-	EntityType  string                  `json:"entity_type"`
-	ReferenceID string                  `json:"reference_id"`
-	EntityID    string                  `json:"entity_id"`
-	Disposition types.EntityDisposition `json:"disposition"`
+type EntityChangeResult struct {
+	EntityType  string                      `json:"entity_type"`
+	ReferenceID string                      `json:"reference_id"`
+	EntityID    string                      `json:"entity_id"`
+	Behaviour   types.EntityChangeBehaviour `json:"behaviour"`
 }
 
 func (r *SubscriptionChangeV2Request) Validate() error {
@@ -86,7 +89,7 @@ type SubscriptionChangeV2Response struct {
 	FromPlan    PlanSummary                  `json:"from_plan"`
 	ToPlan      PlanSummary                  `json:"to_plan"`
 
-	EntityDispositions []EntityDispositionResult `json:"entity_dispositions,omitempty"`
+	EntityChanges []EntityChangeResult `json:"entity_changes,omitempty"`
 
 	Warnings []string          `json:"warnings,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`

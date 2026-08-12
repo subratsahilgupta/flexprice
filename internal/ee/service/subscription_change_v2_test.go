@@ -279,11 +279,11 @@ func (s *SubscriptionChangeV2Suite) TestExecute_UpgradeSwapsInPlace() {
 	s.True(live[0].StartDate.Equal(closed.EndDate), "line items must tile with no gap or overlap")
 }
 
-func (s *SubscriptionChangeV2Suite) TestExecute_LateralIdenticalPrice_LeavesLineAlone() {
+func (s *SubscriptionChangeV2Suite) TestExecute_LateralIdenticalPrice_CarriesLineToTargetPlan() {
 	ctx := s.GetContext()
 
 	lateral := s.createPlan("Lateral", "lateral")
-	s.createFixedPrice(lateral.ID, "base_fee", 20)
+	lateralBase := s.createFixedPrice(lateral.ID, "base_fee", 20)
 
 	invoicesBefore := s.countInvoices()
 
@@ -297,10 +297,18 @@ func (s *SubscriptionChangeV2Suite) TestExecute_LateralIdenticalPrice_LeavesLine
 
 	live := s.liveLineItems()
 	s.Require().Len(live, 1)
-	s.Equal(s.td.baseLine.ID, live[0].ID, "the line item keeps its id — nothing about this service changed")
-	s.Equal(s.td.starterBase.ID, live[0].PriceID, "and keeps pointing at the identical price")
+	s.Equal(s.td.baseLine.ID, live[0].ID, "the line item keeps its id — the service was never interrupted")
+	s.Equal(s.td.baseLine.StartDate, live[0].StartDate, "and its usage window")
+	// Billing does not change, but ownership does: a line still pointing at the old
+	// plan's price would bill off a plan the subscription has left, and plan-price
+	// sync — re-anchored to the target here — would never see it.
+	s.Equal(lateralBase.ID, live[0].PriceID, "the carried line bills off the target plan's price")
+	s.Equal(lateral.ID, live[0].EntityID, "and is owned by the target plan")
 
-	s.Empty(resp.ChangedResources.LineItems, "an untouched line is not a change to report")
+	s.Require().Len(resp.ChangedResources.LineItems, 1, "repointing a carried line is a change the caller must see")
+	s.Equal(dto.ChangedLineItemActionUpdated, resp.ChangedResources.LineItems[0].ChangeAction)
+	s.Equal(lateralBase.ID, resp.ChangedResources.LineItems[0].PriceID)
+
 	s.Equal(invoicesBefore, s.countInvoices(), "net zero on an unchanged service must raise no invoice")
 }
 
@@ -326,10 +334,9 @@ func (s *SubscriptionChangeV2Suite) TestExecute_DowngradeCreditsWallet() {
 	ctx := s.GetContext()
 
 	s.NoError(s.GetStores().SubscriptionLineItemRepo.Delete(ctx, s.td.baseLine.ID))
+	s.Require().NoError(s.GetStores().SubscriptionRepo.UpdatePlan(ctx, s.td.sub.ID, s.td.pro.ID))
 	sub, err := s.GetStores().SubscriptionRepo.Get(ctx, s.td.sub.ID)
 	s.Require().NoError(err)
-	sub.PlanID = s.td.pro.ID
-	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
 	s.td.baseLine = s.createLineItem(sub, s.td.proBase, s.td.pro)
 
 	// Need a billed charge so the removal credit has a basis.
@@ -382,6 +389,68 @@ func (s *SubscriptionChangeV2Suite) TestPreviewMatchesExecute() {
 	s.True(quoted.Equal(charged), "quoted %s but charged %s", quoted, charged)
 	s.Equal(preview.ChangeType, executed.ChangeType)
 	s.Len(preview.ChangedResources.LineItems, len(executed.ChangedResources.LineItems))
+}
+
+// A net credit is paid to the wallet, never invoiced, so the quote has to say so:
+// an invoice in the preview that execute does not raise is a lie to the caller,
+// and its totals would have to be negative to boot.
+func (s *SubscriptionChangeV2Suite) TestPreviewMatchesExecute_OnADowngradeCredit() {
+	ctx := s.GetContext()
+
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Delete(ctx, s.td.baseLine.ID))
+	s.Require().NoError(s.GetStores().SubscriptionRepo.UpdatePlan(ctx, s.td.sub.ID, s.td.pro.ID))
+	sub, err := s.GetStores().SubscriptionRepo.Get(ctx, s.td.sub.ID)
+	s.Require().NoError(err)
+	s.td.baseLine = s.createLineItem(sub, s.td.proBase, s.td.pro)
+	s.recordBilled(s.td.baseLine.ID, s.td.proBase.Amount)
+
+	req := s.changeRequest(s.td.starter.ID, types.ProrationBehaviorCreateProrations)
+
+	preview, err := s.svc.PreviewPlanChange(ctx, s.td.sub.ID, req)
+	s.Require().NoError(err)
+	s.Require().Len(preview.ChangedResources.Invoices, 1)
+	quoted := preview.ChangedResources.Invoices[0]
+	s.Equal(dto.ChangedInvoiceActionWalletCredit, quoted.Action, "a downgrade credit is not an invoice")
+	s.Equal(dto.ChangedInvoiceStatusPreview, quoted.Status)
+	s.Nil(quoted.Invoice, "quoting an invoice execute never creates misleads the caller")
+	s.Require().NotNil(quoted.WalletTransaction)
+	s.True(quoted.WalletTransaction.Amount.IsPositive(), "the credit is quoted as an amount owed to the customer")
+
+	invoicesBefore := s.countInvoices()
+	executed, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req)
+	s.Require().NoError(err)
+	s.Require().Len(executed.ChangedResources.Invoices, 1)
+	settled := executed.ChangedResources.Invoices[0]
+
+	s.Equal(quoted.Action, settled.Action)
+	s.Equal(dto.ChangedInvoiceStatusWalletIssued, settled.Status)
+	s.Require().NotNil(settled.WalletTransaction)
+	s.True(quoted.WalletTransaction.Amount.Equal(settled.WalletTransaction.Amount),
+		"quoted %s but credited %s", quoted.WalletTransaction.Amount, settled.WalletTransaction.Amount)
+	s.Equal(invoicesBefore, s.countInvoices(), "a net credit raises no invoice")
+}
+
+// The plan lives on the subscription row, which is read through a cache, so any
+// caller can be holding a copy from before a change. Only UpdatePlan may move it.
+func (s *SubscriptionChangeV2Suite) TestExecute_PlanSurvivesAStaleConcurrentUpdate() {
+	ctx := s.GetContext()
+
+	stale, err := s.GetStores().SubscriptionRepo.Get(ctx, s.td.sub.ID)
+	s.Require().NoError(err)
+	staleCopy := *stale
+	s.Require().Equal(s.td.starter.ID, staleCopy.PlanID)
+
+	_, err = s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone))
+	s.Require().NoError(err)
+
+	// Whatever that caller was actually updating — status, period, metadata — it
+	// must not carry the old plan back with it.
+	staleCopy.SubscriptionStatus = types.SubscriptionStatusActive
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, &staleCopy))
+
+	reloaded, err := s.GetStores().SubscriptionRepo.Get(ctx, s.td.sub.ID)
+	s.Require().NoError(err)
+	s.Equal(s.td.pro.ID, reloaded.PlanID, "a stale writer must not undo a completed plan change")
 }
 
 func (s *SubscriptionChangeV2Suite) TestPreconditionsRejectBeforeAnyWrite() {
@@ -560,8 +629,8 @@ func (s *SubscriptionChangeV2Suite) dropAddonRequest(targetPlanID, associationID
 	req := s.changeRequest(targetPlanID, types.ProrationBehaviorCreateProrations)
 	req.EntityPolicies = &dto.SubscriptionChangeEntityPolicies{
 		Addons: &dto.EntityChangePolicy{
-			Overrides: map[string]types.EntityDisposition{
-				associationID: types.EntityDispositionDrop,
+			Overrides: map[string]types.EntityChangeBehaviour{
+				associationID: types.EntityChangeBehaviourDrop,
 			},
 		},
 	}
@@ -585,9 +654,9 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonCarriesByDefault() {
 	s.Require().NoError(err)
 	s.True(reloadedLine.EndDate.IsZero(), "the addon's line item must not be sliced by a plan change")
 
-	s.Require().Len(resp.EntityDispositions, 1)
-	s.Equal(types.EntityDispositionCarry, resp.EntityDispositions[0].Disposition)
-	s.Equal(assoc.ID, resp.EntityDispositions[0].ReferenceID)
+	s.Require().Len(resp.EntityChanges, 1)
+	s.Equal(types.EntityChangeBehaviourCarry, resp.EntityChanges[0].Behaviour)
+	s.Equal(assoc.ID, resp.EntityChanges[0].ReferenceID)
 }
 
 func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropClosesAttachment() {
@@ -607,8 +676,8 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropClosesAttachment() {
 	s.False(reloadedLine.EndDate.IsZero(), "the dropped addon's line item closes with it")
 	s.True(reloadedLine.EndDate.Equal(*reloadedAssoc.EndDate), "line item and association close together")
 
-	s.Require().Len(resp.EntityDispositions, 1)
-	s.Equal(types.EntityDispositionDrop, resp.EntityDispositions[0].Disposition)
+	s.Require().Len(resp.EntityChanges, 1)
+	s.Equal(types.EntityChangeBehaviourDrop, resp.EntityChanges[0].Behaviour)
 }
 
 func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropSettlesOnTheChangeInvoice() {
@@ -672,8 +741,8 @@ func (s *SubscriptionChangeV2Suite) TestPreview_AddonDropWritesNothing() {
 
 	resp, err := s.svc.PreviewPlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
 	s.Require().NoError(err)
-	s.Require().Len(resp.EntityDispositions, 1)
-	s.Equal(types.EntityDispositionDrop, resp.EntityDispositions[0].Disposition)
+	s.Require().Len(resp.EntityChanges, 1)
+	s.Equal(types.EntityChangeBehaviourDrop, resp.EntityChanges[0].Behaviour)
 
 	reloadedAssoc, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, assoc.ID)
 	s.Require().NoError(err)

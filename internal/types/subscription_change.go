@@ -5,30 +5,30 @@ import (
 	"github.com/samber/lo"
 )
 
-type EntityDisposition string
+type EntityChangeBehaviour string
 
 const (
-	EntityDispositionCarry EntityDisposition = "carry"
-	EntityDispositionDrop  EntityDisposition = "drop"
+	EntityChangeBehaviourCarry EntityChangeBehaviour = "carry"
+	EntityChangeBehaviourDrop  EntityChangeBehaviour = "drop"
 )
 
-var EntityDispositionValues = []EntityDisposition{
-	EntityDispositionCarry,
-	EntityDispositionDrop,
+var EntityChangeBehaviourValues = []EntityChangeBehaviour{
+	EntityChangeBehaviourCarry,
+	EntityChangeBehaviourDrop,
 }
 
-func (d EntityDisposition) String() string { return string(d) }
+func (d EntityChangeBehaviour) String() string { return string(d) }
 
-func (d EntityDisposition) Validate() error {
+func (d EntityChangeBehaviour) Validate() error {
 	if d == "" {
 		return nil
 	}
-	if !lo.Contains(EntityDispositionValues, d) {
-		return ierr.NewError("invalid entity disposition").
-			WithHint("Disposition must be one of the allowed values").
+	if !lo.Contains(EntityChangeBehaviourValues, d) {
+		return ierr.NewError("invalid entity change behaviour").
+			WithHint("Behaviour must be one of the allowed values").
 			WithReportableDetails(map[string]any{
-				"disposition": string(d),
-				"allowed":     EntityDispositionValues,
+				"behaviour": string(d),
+				"allowed":   EntityChangeBehaviourValues,
 			}).
 			Mark(ierr.ErrValidation)
 	}

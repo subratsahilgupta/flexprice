@@ -22,13 +22,13 @@ type BilledAmounts struct {
 	credited decimal.Decimal
 }
 
-func NewBilledAmounts(charged, credited decimal.Decimal) BilledAmounts {
-	return BilledAmounts{charged: charged, credited: credited}
+func NewBilledAmounts(charged, credited decimal.Decimal) *BilledAmounts {
+	return &BilledAmounts{charged: charged, credited: credited}
 }
 
-func (b BilledAmounts) Charged() decimal.Decimal { return b.charged }
+func (b *BilledAmounts) Charged() decimal.Decimal { return b.charged }
 
-func (b BilledAmounts) Credited() decimal.Decimal { return b.credited }
+func (b *BilledAmounts) Credited() decimal.Decimal { return b.credited }
 
 // VoiceMinutesRow represents a single row from the voice minutes aggregation query,
 // grouped by customer_id.

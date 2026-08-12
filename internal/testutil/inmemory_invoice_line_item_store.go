@@ -133,14 +133,20 @@ func (s *InMemoryInvoiceLineItemStore) List(ctx context.Context, filter *types.I
 	return result, nil
 }
 
-// Service-period containment only; no invoice-status join (store has no invoices).
+// Mirrors the SQL predicate except for the invoice join: the SQL counts a line
+// only when its invoice is published and DRAFT or FINALIZED, and this store holds
+// no invoices. Tenant/environment scoping is enforced, so a test that leaks a
+// line item across scopes fails here the way it would in production.
 func (s *InMemoryInvoiceLineItemStore) GetBilledAmountsBySubscriptionLineItem(
-	_ context.Context,
+	ctx context.Context,
 	subscriptionLineItemIDs []string,
 	asOf time.Time,
-) (map[string]invoice.BilledAmounts, error) {
+) (map[string]*invoice.BilledAmounts, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
 
 	wanted := make(map[string]bool, len(subscriptionLineItemIDs))
 	for _, id := range subscriptionLineItemIDs {
@@ -151,6 +157,9 @@ func (s *InMemoryInvoiceLineItemStore) GetBilledAmountsBySubscriptionLineItem(
 	credited := make(map[string]decimal.Decimal)
 	for _, item := range s.data {
 		if item.Status != types.StatusPublished || item.SubscriptionLineItemID == nil {
+			continue
+		}
+		if item.TenantID != tenantID || item.EnvironmentID != environmentID {
 			continue
 		}
 		id := *item.SubscriptionLineItemID
@@ -169,7 +178,7 @@ func (s *InMemoryInvoiceLineItemStore) GetBilledAmountsBySubscriptionLineItem(
 		}
 	}
 
-	results := make(map[string]invoice.BilledAmounts, len(charged)+len(credited))
+	results := make(map[string]*invoice.BilledAmounts, len(charged)+len(credited))
 	for id := range charged {
 		results[id] = invoice.NewBilledAmounts(charged[id], credited[id])
 	}

@@ -553,6 +553,7 @@ func (s *prorationService) creditBasisForLineItem(
 	billed, err := s.serviceParams.InvoiceLineItemRepo.GetBilledAmountsBySubscriptionLineItem(
 		ctx, []string{item.ID}, asOf,
 	)
+
 	if err != nil {
 		s.serviceParams.Logger.Info(ctx, "failed to read billed amounts for credit basis, falling back to list price",
 			"error", err,
@@ -561,8 +562,7 @@ func (s *prorationService) creditBasisForLineItem(
 		return price.Amount.Mul(item.Quantity), decimal.Zero
 	}
 
-	amounts := billed[item.ID]
-	return amounts.Charged(), amounts.Credited()
+	return creditBasis(item, price, billed)
 }
 
 // isRefundEligible determines if a customer is eligible for refund/credit based on cancellation scenario

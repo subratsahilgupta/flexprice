@@ -32,19 +32,19 @@ func (c lineItemChange) isAddon() bool {
 }
 
 type planChangeRequest struct {
-	sub         *subscription.Subscription
-	fromPlan    *plan.Plan
-	toPlan      *plan.Plan
-	effectiveAt time.Time
-	behavior    types.ProrationBehavior
+	sub            *subscription.Subscription
+	fromPlan       *plan.Plan
+	toPlan         *plan.Plan
+	effectiveAt    time.Time
+	behavior       types.ProrationBehavior
+	idempotencyKey string
 
-	// Prices that bill identically keep their line-item id / usage window.
-	unchanged []*subscription.SubscriptionLineItem
-	closing   []lineItemChange
-	opening   []lineItemChange
+	carried []lineItemChange
+	closing []lineItemChange
+	opening []lineItemChange
 
-	dispositions []dto.EntityDispositionResult
-	warnings     []string
+	changes  []dto.EntityChangeResult
+	warnings []string
 
 	changeType types.SubscriptionChangeType
 }
@@ -92,21 +92,22 @@ func (s *subscriptionService) resolvePlanChange(
 	}
 
 	r := &planChangeRequest{
-		sub:         sub,
-		fromPlan:    fromPlan.Plan,
-		toPlan:      toPlan.Plan,
-		effectiveAt: effectiveAt,
-		behavior:    req.ProrationBehavior,
+		sub:            sub,
+		fromPlan:       fromPlan.Plan,
+		toPlan:         toPlan.Plan,
+		effectiveAt:    effectiveAt,
+		behavior:       req.ProrationBehavior,
+		idempotencyKey: lo.FromPtr(req.IdempotencyKey),
 	}
 	if err := s.resolveLineItems(ctx, r, targetPrices, toPlan); err != nil {
 		return nil, err
 	}
 
-	if err := s.resolveAddonDispositions(ctx, r, req); err != nil {
+	if err := s.resolveAddonChanges(ctx, r, req); err != nil {
 		return nil, err
 	}
 
-	r.changeType = planChangeTypeFor(r)
+	r.changeType = planChangeType(r)
 	return r, nil
 }
 
@@ -198,7 +199,7 @@ func (s *subscriptionService) resolveLineItems(
 			}
 
 			matchedTarget[j], matchedCurrent[i] = true, true
-			r.unchanged = append(r.unchanged, live.lineItem)
+			r.carried = append(r.carried, lineItemChange{lineItem: live.lineItem, price: target.Price})
 			break
 		}
 	}
@@ -291,16 +292,16 @@ func billsIdentically(a, b *price.Price) bool {
 }
 
 // Uses recurring amounts (not prorated net) so timing/proration don't change the type.
-func planChangeTypeFor(r *planChangeRequest) types.SubscriptionChangeType {
+func planChangeType(r *planChangeRequest) types.SubscriptionChangeType {
 	oldTotal, newTotal := decimal.Zero, decimal.Zero
 	for _, move := range r.closing {
 		if move.isAddon() {
 			continue
 		}
-		oldTotal = oldTotal.Add(move.price.Amount)
+		oldTotal = oldTotal.Add(move.price.Amount.Mul(move.lineItem.Quantity))
 	}
 	for _, move := range r.opening {
-		newTotal = newTotal.Add(move.price.Amount)
+		newTotal = newTotal.Add(move.price.Amount.Mul(move.lineItem.Quantity))
 	}
 
 	switch {
@@ -313,7 +314,7 @@ func planChangeTypeFor(r *planChangeRequest) types.SubscriptionChangeType {
 	}
 }
 
-func (s *subscriptionService) resolveAddonDispositions(
+func (s *subscriptionService) resolveAddonChanges(
 	ctx context.Context,
 	r *planChangeRequest,
 	req dto.SubscriptionChangeV2Request,
@@ -332,15 +333,15 @@ func (s *subscriptionService) resolveAddonDispositions(
 	for _, association := range associations {
 		seen[association.ID] = true
 
-		disposition := policy.DispositionFor(association.ID)
-		r.dispositions = append(r.dispositions, dto.EntityDispositionResult{
+		behaviour := policy.BehaviourFor(association.ID)
+		r.changes = append(r.changes, dto.EntityChangeResult{
 			EntityType:  "addon",
 			ReferenceID: association.ID,
 			EntityID:    association.AddonID,
-			Disposition: disposition,
+			Behaviour:   behaviour,
 		})
 
-		if disposition != types.EntityDispositionDrop {
+		if behaviour != types.EntityChangeBehaviourDrop {
 			continue
 		}
 
@@ -354,7 +355,7 @@ func (s *subscriptionService) resolveAddonDispositions(
 		for referenceID := range policy.Overrides {
 			if !seen[referenceID] {
 				r.warnings = append(r.warnings,
-					"ignored addon disposition for unknown or inactive association "+referenceID)
+					"ignored addon behaviour for unknown or inactive association "+referenceID)
 			}
 		}
 	}
@@ -607,14 +608,12 @@ func (s *subscriptionService) loadSubscriptionForPlanChange(
 }
 
 func (s *subscriptionService) applyPlanChangeLineItems(ctx context.Context, r *planChangeRequest) error {
-	// A line left alone still belongs to the subscription, and the subscription is
-	// moving. Without this its entity_id keeps naming the old plan and its
-	// plan_display_name — copied onto every future invoice line — keeps showing
-	// the old plan's name to the customer.
-	for _, item := range r.unchanged {
-		updated := subscription.NewSubscriptionLineItemBuilder(item).
-			WithOwningPlan(r.toPlan.ID, r.toPlan.Name).
+	for _, move := range r.carried {
+		updated := subscription.NewSubscriptionLineItemBuilder(move.lineItem).
+			WithPlan(r.toPlan.ID, r.toPlan.Name).
+			WithPrice(move.price).
 			Build()
+
 		if err := s.SubscriptionLineItemRepo.Update(ctx, updated); err != nil {
 			return err
 		}
@@ -678,13 +677,14 @@ func (s *subscriptionService) settlePlanChange(
 
 	case quote.NetAmount().LessThan(decimal.Zero):
 		walletSvc := NewWalletService(s.ServiceParams)
-		if _, err := walletSvc.TopUpWalletForProratedCharge(
+		txn, err := walletSvc.TopUpWalletForProratedCharge(
 			ctx, r.sub.GetInvoicingCustomerID(), quote.NetAmount().Abs(), r.sub.Currency, planChangeIdempotencyKey(r),
-		); err != nil {
+		)
+		if err != nil {
 			return nil, err
 		}
 
-		return nil, nil
+		return []dto.ChangedInvoice{planChangeWalletCredit(txn, dto.ChangedInvoiceStatusWalletIssued)}, nil
 	default:
 		return nil, nil
 	}
@@ -732,9 +732,9 @@ func buildPlanChangeResponse(
 		FromPlan:     planChangeSummary(r.fromPlan),
 		ToPlan:       planChangeSummary(r.toPlan),
 
-		EntityDispositions: r.dispositions,
-		Warnings:           r.warnings,
-		Metadata:           req.Metadata,
+		EntityChanges: r.changes,
+		Warnings:      r.warnings,
+		Metadata:      req.Metadata,
 	}
 }
 
@@ -750,8 +750,34 @@ func planChangeSummary(p *plan.Plan) dto.PlanSummary {
 	}
 }
 
+// A wallet credit and a charge invoice are the two shapes of one settlement, so
+// both are reported through ChangedInvoice (Action tells them apart).
+func planChangeWalletCredit(txn *dto.WalletTransactionResponse, status dto.ChangedInvoiceStatus) dto.ChangedInvoice {
+	credit := dto.ChangedInvoice{
+		Action:            dto.ChangedInvoiceActionWalletCredit,
+		Status:            status,
+		WalletTransaction: txn,
+	}
+
+	if txn != nil && txn.Transaction != nil {
+		credit.ID = txn.ID
+	}
+
+	return credit
+}
+
 func planChangeChangedLineItems(r *planChangeRequest) []dto.ChangedLineItem {
-	items := make([]dto.ChangedLineItem, 0, len(r.closing)+len(r.opening))
+	items := make([]dto.ChangedLineItem, 0, len(r.carried)+len(r.closing)+len(r.opening))
+	for _, move := range r.carried {
+		items = append(items, dto.ChangedLineItem{
+			ID:           move.lineItem.ID,
+			PriceID:      move.price.ID,
+			Quantity:     move.lineItem.Quantity,
+			StartDate:    &move.lineItem.StartDate,
+			ChangeAction: dto.ChangedLineItemActionUpdated,
+		})
+	}
+
 	for _, move := range r.closing {
 		endDate := r.effectiveAt
 		items = append(items, dto.ChangedLineItem{
@@ -763,6 +789,7 @@ func planChangeChangedLineItems(r *planChangeRequest) []dto.ChangedLineItem {
 			ChangeAction: dto.ChangedLineItemActionEnded,
 		})
 	}
+
 	for _, move := range r.opening {
 		startDate := move.lineItem.StartDate
 		items = append(items, dto.ChangedLineItem{
@@ -783,6 +810,17 @@ func (s *subscriptionService) planChangePreviewInvoices(
 ) []dto.ChangedInvoice {
 	if r.behavior != types.ProrationBehaviorCreateProrations || quote.NetAmount().IsZero() {
 		return nil
+	}
+
+	if quote.NetAmount().IsNegative() {
+		return []dto.ChangedInvoice{planChangeWalletCredit(&dto.WalletTransactionResponse{
+			Transaction: &wallet.Transaction{
+				CustomerID:        r.sub.GetInvoicingCustomerID(),
+				Amount:            quote.NetAmount().Abs(),
+				Currency:          r.sub.Currency,
+				TransactionReason: types.TransactionReasonSubscriptionCredit,
+			},
+		}, dto.ChangedInvoiceStatusPreview)}
 	}
 
 	subtotal := quote.NetAmount()
@@ -845,11 +883,18 @@ func (s *subscriptionService) previewTaxFor(
 	return result.TotalTaxAmount
 }
 
-// Hash to fit invoices.idempotency_key (varchar(100)).
 func planChangeIdempotencyKey(r *planChangeRequest) string {
-	return idempotency.NewGenerator().GenerateKey(idempotency.ScopePlanChange, map[string]interface{}{
+	inputs := map[string]interface{}{
 		"subscription_id": r.sub.ID,
 		"target_plan_id":  r.toPlan.ID,
-		"effective_at":    r.effectiveAt.UTC().Format(time.RFC3339Nano),
-	})
+	}
+
+	if r.idempotencyKey != "" {
+		inputs["client_key"] = r.idempotencyKey
+	} else {
+		inputs["subscription_version"] = r.sub.Version
+		inputs["subscription_updated_at"] = r.sub.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	}
+
+	return idempotency.NewGenerator().GenerateKey(idempotency.ScopePlanChange, inputs)
 }

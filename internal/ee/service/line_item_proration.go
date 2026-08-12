@@ -88,7 +88,7 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 		TotalCreditAmount: decimal.Zero,
 	}
 
-	billed := s.creditBasisForEntries(ctx, req)
+	billed := s.creditBasisForInvoiceLineItems(ctx, req)
 
 	for _, entry := range req.Entries {
 		item := entry.LineItem
@@ -166,10 +166,10 @@ func (s *lineItemProrationService) Apply(ctx context.Context, req LineItemProrat
 }
 
 // Cap removal credits at amounts actually billed (list price never binds).
-func (s *lineItemProrationService) creditBasisForEntries(
+func (s *lineItemProrationService) creditBasisForInvoiceLineItems(
 	ctx context.Context,
 	req LineItemProrationRequest,
-) map[string]invoice.BilledAmounts {
+) map[string]*invoice.BilledAmounts {
 	lineItemIDs := make([]string, 0, len(req.Entries))
 	for _, entry := range req.Entries {
 		if entry.Action == types.ProrationActionRemoveItem && entry.LineItem != nil {
@@ -198,7 +198,7 @@ func (s *lineItemProrationService) buildProrationParams(
 	entry LineItemProrationEntry,
 	req LineItemProrationRequest,
 	customerTimezone string,
-	billed map[string]invoice.BilledAmounts,
+	billed map[string]*invoice.BilledAmounts,
 ) (proration.ProrationParams, bool) {
 	item := entry.LineItem
 	p := entry.Price
@@ -233,14 +233,7 @@ func (s *lineItemProrationService) buildProrationParams(
 		base.CancellationType = types.CancellationTypeImmediate
 		base.CancellationReason = req.Reason
 		base.RefundEligible = true
-		if billed == nil {
-			base.OriginalAmountPaid = p.Amount.Mul(item.Quantity)
-			base.PreviousCreditsIssued = decimal.Zero
-		} else {
-			amounts := billed[item.ID]
-			base.OriginalAmountPaid = amounts.Charged()
-			base.PreviousCreditsIssued = amounts.Credited()
-		}
+		base.OriginalAmountPaid, base.PreviousCreditsIssued = creditBasis(item, p, billed)
 
 	default:
 		return proration.ProrationParams{}, true

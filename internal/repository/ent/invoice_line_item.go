@@ -548,9 +548,9 @@ func (r *invoiceLineItemRepository) GetBilledAmountsBySubscriptionLineItem(
 	ctx context.Context,
 	subscriptionLineItemIDs []string,
 	asOf time.Time,
-) (map[string]domaininvoice.BilledAmounts, error) {
+) (map[string]*domaininvoice.BilledAmounts, error) {
 	if len(subscriptionLineItemIDs) == 0 {
-		return map[string]domaininvoice.BilledAmounts{}, nil
+		return map[string]*domaininvoice.BilledAmounts{}, nil
 	}
 
 	tenantID := types.GetTenantID(ctx)
@@ -599,7 +599,7 @@ func (r *invoiceLineItemRepository) GetBilledAmountsBySubscriptionLineItem(
 	}
 	defer rows.Close()
 
-	results := make(map[string]domaininvoice.BilledAmounts, len(subscriptionLineItemIDs))
+	results := make(map[string]*domaininvoice.BilledAmounts, len(subscriptionLineItemIDs))
 	for rows.Next() {
 		var lineItemID, chargedStr, creditedStr string
 		if err := rows.Scan(&lineItemID, &chargedStr, &creditedStr); err != nil {
