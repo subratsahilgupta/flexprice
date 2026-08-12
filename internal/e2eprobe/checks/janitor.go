@@ -64,7 +64,22 @@ func isNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
-	// Real SDK errors surface as *sdkerrors.APIError with StatusCode 404.
+	// Endpoints with an explicit 404 branch (e.g., GetCustomerByExternalID,
+	// GetSubscription, DeleteCustomer) surface the response as
+	// *sdkerrors.ErrorResponse with HTTPStatusCode=404. Endpoints that fall
+	// through to the generic 4xx handler surface it as *sdkerrors.APIError.
+	// Both must be treated as "not found" or the janitor spuriously fails
+	// whenever another flow (e.g., cancel-customer-flow) archives an
+	// ephemeral customer concurrently with the janitor's own sweep.
+	var errResp *sdkerrors.ErrorResponse
+	if errors.As(err, &errResp) {
+		if errResp.HTTPStatusCode != nil && *errResp.HTTPStatusCode == http.StatusNotFound {
+			return true
+		}
+		if errResp.Code != nil && *errResp.Code == types.ErrorCodeNotFound {
+			return true
+		}
+	}
 	var apiErr *sdkerrors.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 		return true

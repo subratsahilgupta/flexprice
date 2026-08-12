@@ -2,10 +2,12 @@ package checks
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/e2eprobe"
+	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/flexprice/go-sdk/v2/models/types"
 )
 
@@ -116,6 +118,39 @@ func TestJanitor_SweepOrphans(t *testing.T) {
 	}
 	if deletedSet[freshID] {
 		t.Errorf("fresh customer %s was incorrectly deleted", freshID)
+	}
+}
+
+// TestJanitor_ArchiveSwallowsErrorResponseNotFound verifies that a 404 surfaced
+// as *sdkerrors.ErrorResponse (the shape returned by GetCustomerByExternalID
+// and other endpoints with an explicit 404 branch) is treated as "already
+// gone" rather than a check failure. Prior to the fix, only *sdkerrors.APIError
+// was recognized, so any concurrent archive of an ephemeral customer (e.g., by
+// cancel-customer-flow) would race the janitor's lookup and emit a false
+// e2eprobe.check.failed alert.
+func TestJanitor_ArchiveSwallowsErrorResponseNotFound(t *testing.T) {
+	fc := newFakeClient()
+	// Inject an *ErrorResponse{404} on the GetByExternalID call — this mirrors
+	// what the real SDK returns when the underlying customer was archived
+	// between the janitor's decision to sweep and its lookup.
+	notFoundCode := types.ErrorCodeNotFound
+	notFoundStatus := int64(http.StatusNotFound)
+	notFoundMsg := "Customer with lookup key foo was not found"
+	fc.customers.getErr = &sdkerrors.ErrorResponse{
+		Code:           &notFoundCode,
+		HTTPStatusCode: &notFoundStatus,
+		Message:        &notFoundMsg,
+	}
+
+	reg := e2eprobe.NewRegistry()
+	reg.RegisterEphemeral("customer", "e2eprobe-cust-eph-vanished", time.Now().Add(-5*time.Hour))
+	j := NewJanitor(fc, reg, 4*time.Hour, "run-race")
+
+	if err := j.Run(context.Background()); err != nil {
+		t.Fatalf("Run() returned error for concurrently-archived customer: %v", err)
+	}
+	if got := reg.Ephemerals("customer"); len(got) != 0 {
+		t.Errorf("ephemeral not archived from registry after 404: %+v", got)
 	}
 }
 
