@@ -83,6 +83,7 @@ var CheckNames = []string{
 	"TAX_APPLICATION_PROBE",
 	"COUPON_APPLICATION_PROBE",
 	"PERSISTENT_BILLING_INVARIANTS_PROBE",
+	"ENTITLEMENT_GRANT_ADDITIVE_PROBE",
 	"LOW_WALLET_ALERT_LISTENER",
 	"LOW_BALANCE_ALERT_PROBE",
 	"JANITOR",
@@ -106,6 +107,7 @@ var checkDefaultIntervals = map[string]time.Duration{
 	"TAX_APPLICATION_PROBE":               15 * time.Minute,
 	"COUPON_APPLICATION_PROBE":            15 * time.Minute,
 	"PERSISTENT_BILLING_INVARIANTS_PROBE": 30 * time.Minute,
+	"ENTITLEMENT_GRANT_ADDITIVE_PROBE":    15 * time.Minute,
 	"LOW_WALLET_ALERT_LISTENER":           0, // listener — not a ticker
 	"LOW_BALANCE_ALERT_PROBE":        5 * time.Minute,
 	"JANITOR":                        1 * time.Hour,

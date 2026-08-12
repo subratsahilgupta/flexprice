@@ -320,13 +320,13 @@ func TestSeedEnsure_PlanEntitlementsProvisioned(t *testing.T) {
 	}
 	seeds := reg.Seeds()
 	// 8 non-bucketed metered features get plan-level entitlements.
-	if len(seeds.PlanEntitlementIDs) != 8 {
-		t.Errorf("PlanEntitlementIDs = %d, want 8 (one per non-bucketed feature); got %v", len(seeds.PlanEntitlementIDs), seeds.PlanEntitlementIDs)
+	if len(seeds.PlanEntitlementIDs) != 7 {
+		t.Errorf("PlanEntitlementIDs = %d, want 7 (one per non-bucketed feature MINUS the reserved additive-grant feature); got %v", len(seeds.PlanEntitlementIDs), seeds.PlanEntitlementIDs)
 	}
 	// Every created entitlement carries usage_limit=100, is_soft_limit=true,
 	// reset_period=MONTHLY, is_enabled=true.
-	if len(fc.entitlements.created) != 8 {
-		t.Errorf("entitlements Create called %d times, want 8", len(fc.entitlements.created))
+	if len(fc.entitlements.created) != 7 {
+		t.Errorf("entitlements Create called %d times, want 7 (grant-only feature excluded from soft-limit seeding)", len(fc.entitlements.created))
 	}
 	for i, req := range fc.entitlements.created {
 		if req.UsageLimit == nil || *req.UsageLimit != 100 {
@@ -444,5 +444,252 @@ func TestSeedEnsure_PersistentTaxAssociation(t *testing.T) {
 	}
 	if len(fc.taxAssociations.created) != 1 {
 		t.Errorf("tax association created %d times across 2 runs; want 1 (idempotency broken)", len(fc.taxAssociations.created))
+	}
+}
+
+// TestSeedEnsure_PlanEntitlements_SkipsGrantFeature verifies that
+// ensurePlanEntitlements no longer seeds a soft-limit entitlement on
+// the reserved additive-grant feature. Task 5's ensureEntitlementGrants
+// then creates the grant entitlement on the (plan, feature) slot the
+// skip vacated.
+func TestSeedEnsure_PlanEntitlements_SkipsGrantFeature(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	// The additive-grant feature must NOT get a soft-limit entitlement.
+	// Before this change, all 8 non-bucketed features were entitled;
+	// now it's 7. The SDK typed Create is invoked once per soft-limit
+	// entitlement, so a strict count check is sufficient — the seed
+	// queries features by lookup key and skips the grant feature at
+	// that lookup step, so no create call for the grant feature ever
+	// reaches the fake.
+	if len(fc.entitlements.created) != 7 {
+		t.Errorf("plan-level soft-limit entitlements created = %d, want 7 (8 non-bucketed features minus the reserved grant feature)", len(fc.entitlements.created))
+	}
+}
+
+func TestSeedEnsure_AdditiveGrantEntitlementProvisioned(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	seeds := reg.Seeds()
+
+	id, ok := seeds.GrantEntitlementIDs["e2eprobe_sum_multiplier_feature"]
+	if !ok || id == "" {
+		t.Fatalf("GrantEntitlementIDs missing e2eprobe_sum_multiplier_feature; got %v", seeds.GrantEntitlementIDs)
+	}
+	if len(fc.entitlements.createdWithGrant) != 1 {
+		t.Fatalf("CreateWithGrant called %d times, want 1", len(fc.entitlements.createdWithGrant))
+	}
+	req := fc.entitlements.createdWithGrant[0]
+	if req.GrantMeasure != "quantity" {
+		t.Errorf("GrantMeasure = %q, want quantity", req.GrantMeasure)
+	}
+	if req.GrantQuota != "1000" {
+		t.Errorf("GrantQuota = %q, want 1000", req.GrantQuota)
+	}
+	if req.GrantDurationValue != 1 {
+		t.Errorf("GrantDurationValue = %d, want 1", req.GrantDurationValue)
+	}
+	if req.GrantDurationUnit != "hour" {
+		t.Errorf("GrantDurationUnit = %q, want hour", req.GrantDurationUnit)
+	}
+	if req.AggregationMode != "additive" {
+		t.Errorf("AggregationMode = %q, want additive", req.AggregationMode)
+	}
+	if req.FeatureType != "metered" {
+		t.Errorf("FeatureType = %q, want metered", req.FeatureType)
+	}
+	if !req.IsEnabled {
+		t.Errorf("IsEnabled = false, want true")
+	}
+	if len(fc.entitlements.getRawCalls) < 1 {
+		t.Errorf("GetRaw was not called for config-echo verification")
+	}
+}
+
+// TestSeedEnsure_AdditiveGrantEchoMismatchLoggedNotFatal: config-echo
+// drift (server accepted the create but returned a different config) is
+// surfaced via a Warn log AND leaves GrantEntitlementIDs empty so the
+// grant probe soft-skips — but does NOT fail seed-ensure Run(). Prior
+// to the 2026-08-13 "non-fatal grant provisioning" change the seed
+// returned this error, which poisoned LoadSeeds and broke every
+// ephemeral-creating probe. Alerting on the drift now happens via the
+// structured warn log (SigNoz / Grafana pattern-match), not Slack.
+func TestSeedEnsure_AdditiveGrantEchoMismatchLoggedNotFatal(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+
+	dv := 1
+	fc.entitlements.getRawResp = &e2eprobe.GrantEntitlementResponse{
+		ID:                 "ent_grant_1",
+		GrantMeasure:       "quantity",
+		GrantQuota:         "1000",
+		GrantDurationValue: &dv,
+		GrantDurationUnit:  "hour",
+		AggregationMode:    "parallel", // ← the divergence
+		IsEnabled:          true,
+	}
+
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() must not fail hard on grant echo mismatch; got %v", err)
+	}
+	seeds := reg.Seeds()
+	if len(seeds.PlanIDs) == 0 {
+		t.Errorf("PlanIDs empty — non-fatal contract violated: downstream state was not preserved")
+	}
+	if len(seeds.GrantEntitlementIDs) != 0 {
+		t.Errorf("GrantEntitlementIDs = %v; expected empty so probe soft-skips on drift", seeds.GrantEntitlementIDs)
+	}
+}
+
+func TestSeedEnsure_AdditiveGrantIdempotent(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("first Run() unexpected error: %v", err)
+	}
+	if len(fc.entitlements.createdWithGrant) != 1 {
+		t.Fatalf("first Run should have created 1 grant, got %d", len(fc.entitlements.createdWithGrant))
+	}
+	grantID := reg.Seeds().GrantEntitlementIDs["e2eprobe_sum_multiplier_feature"]
+
+	existingID := grantID
+	fc.entitlements.queryResp = &dtos.QueryEntitlementResponse{
+		ListEntitlementsResponse: &types.ListEntitlementsResponse{
+			Items: []types.EntitlementResponse{
+				{ID: &existingID},
+			},
+		},
+	}
+	dv := 1
+	fc.entitlements.getRawResp = &e2eprobe.GrantEntitlementResponse{
+		ID:                 existingID,
+		GrantMeasure:       "quantity",
+		GrantQuota:         "1000",
+		GrantDurationValue: &dv,
+		GrantDurationUnit:  "hour",
+		AggregationMode:    "additive",
+		IsEnabled:          true,
+	}
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("second Run() unexpected error: %v", err)
+	}
+	if len(fc.entitlements.createdWithGrant) != 1 {
+		t.Errorf("grant CreateWithGrant called %d times across 2 runs; want 1 (idempotency broken)", len(fc.entitlements.createdWithGrant))
+	}
+}
+
+func TestSeedEnsure_LegacySoftLimitReplacedByGrant(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+
+	legacyID := "ent_legacy_soft"
+	fc.entitlements.queryResp = &dtos.QueryEntitlementResponse{
+		ListEntitlementsResponse: &types.ListEntitlementsResponse{
+			Items: []types.EntitlementResponse{
+				{ID: &legacyID},
+			},
+		},
+	}
+	// Per-id: legacyID's GetRaw returns empty GrantMeasure → classified as
+	// legacy soft-limit → deleted. The newly-created grant's GetRaw (any
+	// other id) falls through to the fake's default well-formed response.
+	fc.entitlements.getRawRespByID = map[string]*e2eprobe.GrantEntitlementResponse{
+		legacyID: {ID: legacyID, GrantMeasure: ""},
+	}
+
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	found := false
+	for _, id := range fc.entitlements.deleted {
+		if id == legacyID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("legacy soft-limit entitlement was not deleted; deleted = %v", fc.entitlements.deleted)
+	}
+	if len(fc.entitlements.createdWithGrant) != 1 {
+		t.Errorf("CreateWithGrant called %d times, want 1", len(fc.entitlements.createdWithGrant))
+	}
+}
+
+func TestSeedEnsure_AdditiveGrantAlreadyExistsSwallowed(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+
+	code := types.ErrorCodeAlreadyExists
+	status := int64(http.StatusConflict)
+	fc.entitlements.createWithGrantErr = &sdkerrors.ErrorResponse{
+		Code:           &code,
+		HTTPStatusCode: &status,
+	}
+
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() must swallow ErrAlreadyExists on grant CreateWithGrant; got %v", err)
+	}
+}
+
+// TestSeedEnsure_GrantsFailureDoesNotBlockDownstream is the regression
+// guard for the "no ephemeral customers on staging" report (2026-08-13).
+// If ensureEntitlementGrants fails for any reason (server rejects the
+// grant config, response echo drifts, transient 5xx), the rest of the
+// seed — including ensureSubscriptions which populates PersistentSubIDs —
+// MUST still run to completion. Otherwise every ephemeral-creating probe
+// soft-skips on empty PlanIDs and no customers are ever created.
+func TestSeedEnsure_GrantsFailureDoesNotBlockDownstream(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+
+	// Inject a hard failure on CreateWithGrant that is NOT "already exists".
+	fc.entitlements.createWithGrantErr = &sdkerrors.APIError{
+		Message:    "server rejected grant config",
+		StatusCode: http.StatusBadRequest,
+		Body:       `{"code":"validation_error","message":"grant_measure not supported"}`,
+	}
+
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() must not fail hard when grant provisioning fails; got %v", err)
+	}
+
+	// Verify downstream state IS populated — this is the whole point.
+	seeds := reg.Seeds()
+	if len(seeds.PlanIDs) == 0 {
+		t.Errorf("PlanIDs empty after grants failed — seed cascaded and broke everything")
+	}
+	if len(seeds.PersistentCustomerIDs) == 0 {
+		t.Errorf("PersistentCustomerIDs empty after grants failed — ephemeral probes will soft-skip")
+	}
+	if len(seeds.PersistentSubIDs) == 0 {
+		t.Errorf("PersistentSubIDs empty after grants failed — probes that depend on subs will soft-skip")
+	}
+	// Grant coverage is expected to be missing (the whole point of the failure).
+	if len(seeds.GrantEntitlementIDs) != 0 {
+		t.Errorf("GrantEntitlementIDs = %v; expected empty when grant provisioning failed", seeds.GrantEntitlementIDs)
 	}
 }

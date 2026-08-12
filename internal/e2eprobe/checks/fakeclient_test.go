@@ -236,14 +236,16 @@ func (f *fakeFeatures) Query(_ context.Context, filter types.FeatureFilter) (*dt
 // --- Subscriptions ---
 
 type fakeSubscriptions struct {
-	mu        sync.Mutex
-	created   []types.CreateSubscriptionRequest
-	cancelled []string
-	gets      int
-	nextID    int
-	subs      map[string]types.SubscriptionResponse
-	subErr    error
-	cancelErr error
+	mu                  sync.Mutex
+	created             []types.CreateSubscriptionRequest
+	cancelled           []string
+	gets                int
+	nextID              int
+	subs                map[string]types.SubscriptionResponse
+	subErr              error
+	cancelErr           error
+	getEntitlementsResp *dtos.GetSubscriptionEntitlementsResponse
+	getEntitlementsErr  error
 }
 
 func (f *fakeSubscriptions) Create(_ context.Context, req types.CreateSubscriptionRequest) (*dtos.CreateSubscriptionResponse, error) {
@@ -311,6 +313,14 @@ func (f *fakeSubscriptions) ActivateSubscription(_ context.Context, _ string, _ 
 	return &dtos.ActivateSubscriptionResponse{}, nil
 }
 func (f *fakeSubscriptions) GetEntitlements(_ context.Context, _ string, _ []string) (*dtos.GetSubscriptionEntitlementsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.getEntitlementsErr != nil {
+		return nil, f.getEntitlementsErr
+	}
+	if f.getEntitlementsResp != nil {
+		return f.getEntitlementsResp, nil
+	}
 	return &dtos.GetSubscriptionEntitlementsResponse{}, nil
 }
 func (f *fakeSubscriptions) GetUsage(_ context.Context, _ types.GetUsageBySubscriptionRequest) (*dtos.GetSubscriptionUsageResponse, error) {
@@ -585,6 +595,15 @@ type fakeEntitlements struct {
 	queryResp *dtos.QueryEntitlementResponse
 	queryErr  error
 	deleted   []string
+
+	// Grant-related fields (Task 3 of entitlement-grants plan)
+	createdWithGrant   []e2eprobe.GrantEntitlementInput
+	createWithGrantErr error
+	createWithGrantID  string // returned by CreateWithGrant when non-empty; else auto-generated
+	getRawResp         *e2eprobe.GrantEntitlementResponse
+	getRawRespByID     map[string]*e2eprobe.GrantEntitlementResponse // per-id lookup takes priority over getRawResp
+	getRawErr          error
+	getRawCalls        []string
 }
 
 func (f *fakeEntitlements) Create(_ context.Context, req types.CreateEntitlementRequest) (*dtos.CreateEntitlementResponse, error) {
@@ -615,6 +634,46 @@ func (f *fakeEntitlements) Delete(_ context.Context, id string) (*dtos.DeleteEnt
 	defer f.mu.Unlock()
 	f.deleted = append(f.deleted, id)
 	return &dtos.DeleteEntitlementResponse{}, nil
+}
+
+func (f *fakeEntitlements) CreateWithGrant(_ context.Context, req e2eprobe.GrantEntitlementInput) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createWithGrantErr != nil {
+		return "", f.createWithGrantErr
+	}
+	f.createdWithGrant = append(f.createdWithGrant, req)
+	if f.createWithGrantID != "" {
+		return f.createWithGrantID, nil
+	}
+	return fmt.Sprintf("ent_grant_%d", len(f.createdWithGrant)), nil
+}
+
+func (f *fakeEntitlements) GetRaw(_ context.Context, id string) (*e2eprobe.GrantEntitlementResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.getRawCalls = append(f.getRawCalls, id)
+	if f.getRawErr != nil {
+		return nil, f.getRawErr
+	}
+	if resp, ok := f.getRawRespByID[id]; ok {
+		return resp, nil
+	}
+	if f.getRawResp != nil {
+		return f.getRawResp, nil
+	}
+	// Default: well-formed response matching the seed's config-echo assertion,
+	// so happy-path tests don't need to inject.
+	dv := 1
+	return &e2eprobe.GrantEntitlementResponse{
+		ID:                 id,
+		GrantMeasure:       "quantity",
+		GrantQuota:         "1000",
+		GrantDurationValue: &dv,
+		GrantDurationUnit:  "hour",
+		AggregationMode:    "additive",
+		IsEnabled:          true,
+	}, nil
 }
 
 // --- Coupons ---

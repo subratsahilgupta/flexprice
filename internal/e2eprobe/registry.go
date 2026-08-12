@@ -38,6 +38,9 @@ type Seeds struct {
 	SharedTaxRateCode  string            // canonical code used for tax associations
 	BucketedFeatureIDs map[string]string // lookup_key -> feature id
 	PlanEntitlementIDs []string          // entitlement IDs seeded on the plan
+
+	// Entitlement-grants coverage (2026-08-13 plan)
+	GrantEntitlementIDs map[string]string // feature-lookup-key → entitlement id
 }
 
 type EphemeralEntity struct {
@@ -82,6 +85,7 @@ func (r *registry) LoadSeeds(s Seeds) {
 		SharedTaxRateCode:             s.SharedTaxRateCode,
 		BucketedFeatureIDs:            copyStringMap(s.BucketedFeatureIDs),
 		PlanEntitlementIDs:            append([]string(nil), s.PlanEntitlementIDs...),
+		GrantEntitlementIDs:           copyStringMap(s.GrantEntitlementIDs),
 	}
 }
 
@@ -103,6 +107,7 @@ func (r *registry) Seeds() Seeds {
 		SharedTaxRateCode:             r.seeds.SharedTaxRateCode,
 		BucketedFeatureIDs:            copyStringMap(r.seeds.BucketedFeatureIDs),
 		PlanEntitlementIDs:            append([]string(nil), r.seeds.PlanEntitlementIDs...),
+		GrantEntitlementIDs:           copyStringMap(r.seeds.GrantEntitlementIDs),
 	}
 }
 
