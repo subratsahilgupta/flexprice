@@ -318,11 +318,11 @@ func (s *subscriptionService) resolveAddonChanges(
 			continue
 		}
 
-		closing, err := s.addonLineItemsToClose(ctx, sub.ID, association)
+		dropped, err := s.addonLineItemsToClose(ctx, sub.ID, association)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		closing = append(closing, closing...)
+		closing = append(closing, dropped...)
 	}
 
 	// Stale override keys (e.g. preview→execute race) warn instead of failing.
@@ -363,7 +363,7 @@ func (s *subscriptionService) addonLineItemsToClose(
 	ctx context.Context,
 	subscriptionID string,
 	association *addonassociation.AddonAssociation,
-) ([]lineItemChange, error) {
+) ([]*lineItemChange, error) {
 	filter := types.NewSubscriptionLineItemFilter()
 	filter.SubscriptionIDs = []string{subscriptionID}
 	filter.AddonAssociationIDs = []string{association.ID}
@@ -374,7 +374,7 @@ func (s *subscriptionService) addonLineItemsToClose(
 	}
 
 	priceSvc := NewPriceService(s.ServiceParams)
-	closing := make([]lineItemChange, 0, len(items))
+	closing := make([]*lineItemChange, 0, len(items))
 	for _, item := range items {
 		if !item.EndDate.IsZero() {
 			continue
@@ -383,7 +383,7 @@ func (s *subscriptionService) addonLineItemsToClose(
 		if err != nil {
 			return nil, err
 		}
-		closing = append(closing, lineItemChange{
+		closing = append(closing, &lineItemChange{
 			lineItem:    item,
 			price:       p.Price,
 			association: association,
