@@ -98,6 +98,9 @@ func (s *SeedEnsure) Run(ctx context.Context) error {
 	if err := s.ensurePrices(ctx, &seeds); err != nil {
 		return err
 	}
+	if err := s.ensurePlanEntitlements(ctx, &seeds); err != nil {
+		return err
+	}
 	if err := s.ensureSubscriptions(ctx, &seeds); err != nil {
 		return err
 	}
@@ -370,6 +373,94 @@ func (s *SeedEnsure) ensureTaxRates(ctx context.Context, out *e2eprobe.Seeds) er
 		out.SharedTaxRateID = *createResp.TaxRateResponse.ID
 	}
 	out.SharedTaxRateCode = SharedTaxRateCode
+	return nil
+}
+
+// bucketedFeatureLookupKeys is the set of lookup keys whose features are
+// bucketed meters — plan-level entitlements are NOT provisioned for these
+// to keep entitlement enforcement scoped to the 8 non-bucketed metered
+// features. entitlement-enforcement-probe asserts against e2eprobe_count.
+var bucketedFeatureLookupKeys = map[string]bool{
+	"e2eprobe_max_15min_feature": true,
+	"e2eprobe_sum_hour_feature":  true,
+	"e2eprobe_max_day_feature":   true,
+}
+
+// ensurePlanEntitlements idempotently provisions one plan-level soft-limit
+// entitlement per non-bucketed metered feature (limit=100, reset MONTHLY).
+// Soft-limit is deliberate: hard-limit would reject the ingest driver's
+// traffic and pollute every other probe.
+func (s *SeedEnsure) ensurePlanEntitlements(ctx context.Context, out *e2eprobe.Seeds) error {
+	if len(out.PlanIDs) == 0 {
+		return nil
+	}
+	planID := out.PlanIDs[0]
+
+	existResp, err := s.client.Entitlements().Query(ctx, types.EntitlementFilter{
+		PlanIds: []string{planID},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"plan_id": planID}, "query plan entitlements: %w", err)
+	}
+	existByFeature := map[string]string{}
+	if existResp.ListEntitlementsResponse != nil {
+		for _, e := range existResp.ListEntitlementsResponse.Items {
+			if e.FeatureID != nil && e.ID != nil {
+				existByFeature[*e.FeatureID] = *e.ID
+			}
+		}
+	}
+
+	// Resolve non-bucketed feature IDs by lookup key.
+	lookupKeys := make([]string, 0, len(seedFeatureSpecs))
+	for _, spec := range seedFeatureSpecs {
+		if bucketedFeatureLookupKeys[spec.lookupKey] {
+			continue
+		}
+		lookupKeys = append(lookupKeys, spec.lookupKey)
+	}
+	featResp, err := s.client.Features().Query(ctx, types.FeatureFilter{LookupKeys: lookupKeys})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"plan_id": planID}, "query features for entitlements: %w", err)
+	}
+	if featResp.ListFeaturesResponse == nil {
+		return nil
+	}
+
+	limit := int64(100)
+	resetPeriod := types.EntitlementUsageResetPeriodMonthly
+	softLimit := true
+	enabled := true
+	planIDCopy := planID
+	entityType := types.EntitlementEntityTypePlan
+
+	for _, feat := range featResp.ListFeaturesResponse.Items {
+		if feat.ID == nil {
+			continue
+		}
+		featID := *feat.ID
+		if existID, ok := existByFeature[featID]; ok {
+			out.PlanEntitlementIDs = append(out.PlanEntitlementIDs, existID)
+			continue
+		}
+		createResp, err := s.client.Entitlements().Create(ctx, types.CreateEntitlementRequest{
+			FeatureID:        featID,
+			FeatureType:      types.FeatureTypeMetered,
+			EntityID:         &planIDCopy,
+			EntityType:       &entityType,
+			PlanID:           &planIDCopy,
+			UsageLimit:       &limit,
+			UsageResetPeriod: &resetPeriod,
+			IsSoftLimit:      &softLimit,
+			IsEnabled:        &enabled,
+		})
+		if err != nil {
+			return e2eprobe.Errorf(map[string]string{"plan_id": planID, "feature_id": featID}, "create entitlement for feature %s: %w", featID, err)
+		}
+		if createResp.EntitlementResponse != nil && createResp.EntitlementResponse.ID != nil {
+			out.PlanEntitlementIDs = append(out.PlanEntitlementIDs, *createResp.EntitlementResponse.ID)
+		}
+	}
 	return nil
 }
 

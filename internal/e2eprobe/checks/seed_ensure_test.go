@@ -288,3 +288,41 @@ func TestSeedEnsure_TaxRateProvisioning(t *testing.T) {
 		t.Errorf("tax rate created %d times across 2 runs; want 1 (idempotency broken)", len(fc.taxRates.created))
 	}
 }
+
+func TestSeedEnsure_PlanEntitlementsProvisioned(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	seeds := reg.Seeds()
+	// 8 non-bucketed metered features get plan-level entitlements.
+	if len(seeds.PlanEntitlementIDs) != 8 {
+		t.Errorf("PlanEntitlementIDs = %d, want 8 (one per non-bucketed feature); got %v", len(seeds.PlanEntitlementIDs), seeds.PlanEntitlementIDs)
+	}
+	// Every created entitlement carries usage_limit=100, is_soft_limit=true,
+	// reset_period=MONTHLY, is_enabled=true.
+	if len(fc.entitlements.created) != 8 {
+		t.Errorf("entitlements Create called %d times, want 8", len(fc.entitlements.created))
+	}
+	for i, req := range fc.entitlements.created {
+		if req.UsageLimit == nil || *req.UsageLimit != 100 {
+			t.Errorf("entitlement[%d] UsageLimit = %v, want 100", i, req.UsageLimit)
+		}
+		if req.IsSoftLimit == nil || !*req.IsSoftLimit {
+			t.Errorf("entitlement[%d] IsSoftLimit = %v, want true", i, req.IsSoftLimit)
+		}
+		if req.IsEnabled == nil || !*req.IsEnabled {
+			t.Errorf("entitlement[%d] IsEnabled = %v, want true", i, req.IsEnabled)
+		}
+		if req.UsageResetPeriod == nil || *req.UsageResetPeriod != types.EntitlementUsageResetPeriodMonthly {
+			t.Errorf("entitlement[%d] UsageResetPeriod = %v, want Monthly", i, req.UsageResetPeriod)
+		}
+		if req.FeatureType != types.FeatureTypeMetered {
+			t.Errorf("entitlement[%d] FeatureType = %v, want Metered", i, req.FeatureType)
+		}
+	}
+}
