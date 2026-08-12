@@ -5,12 +5,14 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -30,11 +32,25 @@ import (
 
 // ─── Stage 1: resolve ────────────────────────────────────────────────────────
 
-// lineMove pairs a line item with the price that governs it, for one side of the
-// slice: a line being closed, or one being opened.
-type lineMove struct {
+// lineItemChange pairs a line item with the price that governs it, for one side
+// of the slice: a line being closed, or one being opened.
+type lineItemChange struct {
 	lineItem *subscription.SubscriptionLineItem
 	price    *price.Price
+
+	// association is the addon attachment this line belongs to, set only for
+	// addon lines being dropped. It is the payload the apply step needs to close
+	// the attachment itself.
+	association *addonassociation.AddonAssociation
+}
+
+// isAddon asks the line item what it belongs to rather than inferring it from a
+// field being populated: as coupons and tax associations gain dispositions, more
+// than one kind of attachment will hang off this struct.
+func (c lineItemChange) isAddon() bool {
+	return c.lineItem != nil &&
+		c.lineItem.EntityType == types.SubscriptionLineItemEntityTypeAddon &&
+		c.association != nil
 }
 
 // planChangeRequest is the fully resolved intent: every decision made, no money
@@ -50,8 +66,14 @@ type planChangeRequest struct {
 	// left completely alone — not closed and reopened — so an unchanged service
 	// keeps its line-item id and its usage window.
 	unchanged []*subscription.SubscriptionLineItem
-	closing   []lineMove
-	opening   []lineMove
+	closing   []lineItemChange
+	opening   []lineItemChange
+
+	// Carried addons appear in dispositions but need no work: a swap-in-place
+	// change does not touch anything keyed on the subscription id. Dropped ones
+	// join closing, so they slice and settle exactly like a plan line.
+	dispositions []dto.EntityDispositionResult
+	warnings     []string
 
 	changeType types.SubscriptionChangeType
 }
@@ -109,7 +131,11 @@ func (s *subscriptionService) resolvePlanChange(
 		effectiveAt: effectiveAt,
 		behavior:    req.ProrationBehavior,
 	}
-	if err := s.planLineMoves(ctx, r, targetPrices, toPlan); err != nil {
+	if err := s.resolveLineItems(ctx, r, targetPrices, toPlan); err != nil {
+		return nil, err
+	}
+
+	if err := s.resolveAddonDispositions(ctx, r, req); err != nil {
 		return nil, err
 	}
 
@@ -169,14 +195,14 @@ func (s *subscriptionService) checkPlanChangePreconditions(
 	return nil
 }
 
-// planLineMoves works out which plan line items close, which open, and which are
+// resolveLineItems works out which plan line items close, which open, and which are
 // left alone.
 //
 // A target price that bills identically to a live line is treated as the same
 // service continuing: the row is not touched. Slicing it would give an unchanged
 // service a new line-item id, split its usage window, and emit a charge and a
 // credit that cancel. Everything else closes and its replacements open.
-func (s *subscriptionService) planLineMoves(
+func (s *subscriptionService) resolveLineItems(
 	ctx context.Context,
 	r *planChangeRequest,
 	targetPrices []*dto.PriceResponse,
@@ -184,7 +210,7 @@ func (s *subscriptionService) planLineMoves(
 ) error {
 	priceSvc := NewPriceService(s.ServiceParams)
 
-	current := make([]lineMove, 0, len(r.sub.LineItems))
+	current := make([]lineItemChange, 0, len(r.sub.LineItems))
 	for _, item := range r.sub.LineItems {
 		if item.EntityType != types.SubscriptionLineItemEntityTypePlan || !item.EndDate.IsZero() {
 			continue
@@ -193,7 +219,7 @@ func (s *subscriptionService) planLineMoves(
 		if err != nil {
 			return err
 		}
-		current = append(current, lineMove{lineItem: item, price: p.Price})
+		current = append(current, lineItemChange{lineItem: item, price: p.Price})
 	}
 
 	matchedTarget := make([]bool, len(targetPrices))
@@ -226,7 +252,7 @@ func (s *subscriptionService) planLineMoves(
 		if err != nil {
 			return err
 		}
-		r.opening = append(r.opening, lineMove{lineItem: item, price: target.Price})
+		r.opening = append(r.opening, lineItemChange{lineItem: item, price: target.Price})
 	}
 
 	return nil
@@ -255,7 +281,7 @@ func buildPlanChangeLineItem(
 		Plan:         toPlan,
 		EntityType:   types.SubscriptionLineItemEntityTypePlan,
 	})
-	
+
 	item.BillingPeriodCount = target.Price.BillingPeriodCount
 	return item, nil
 }
@@ -287,6 +313,10 @@ func billsIdentically(a, b *price.Price) bool {
 func planChangeTypeFor(r *planChangeRequest) types.SubscriptionChangeType {
 	oldTotal, newTotal := decimal.Zero, decimal.Zero
 	for _, move := range r.closing {
+		// Dropping an addon does not make a Starter → Pro move stop being an upgrade.
+		if move.isAddon() {
+			continue
+		}
 		oldTotal = oldTotal.Add(move.price.Amount)
 	}
 	for _, move := range r.opening {
@@ -301,6 +331,160 @@ func planChangeTypeFor(r *planChangeRequest) types.SubscriptionChangeType {
 	default:
 		return types.SubscriptionChangeTypeLateral
 	}
+}
+
+// resolveAddonDispositions resolves what happens to every addon currently attached.
+// Carry is the default and costs nothing; drop closes the attachment at the
+// effective date.
+func (s *subscriptionService) resolveAddonDispositions(
+	ctx context.Context,
+	r *planChangeRequest,
+	req dto.SubscriptionChangeV2Request,
+) error {
+	var policy *dto.EntityChangePolicy
+	if req.EntityPolicies != nil {
+		policy = req.EntityPolicies.Addons
+	}
+
+	associations, err := s.activeAddonAssociations(ctx, r.sub.ID)
+	if err != nil {
+		return err
+	}
+
+	seen := make(map[string]bool, len(associations))
+	for _, association := range associations {
+		seen[association.ID] = true
+
+		disposition := policy.DispositionFor(association.ID)
+		r.dispositions = append(r.dispositions, dto.EntityDispositionResult{
+			EntityType:  "addon",
+			ReferenceID: association.ID,
+			EntityID:    association.AddonID,
+			Disposition: disposition,
+		})
+
+		if disposition != types.EntityDispositionDrop {
+			continue
+		}
+
+		if err := s.closeAddonLineItems(ctx, r, association); err != nil {
+			return err
+		}
+	}
+
+	// An override naming something that is not an active attachment is not fatal.
+	// A caller round-tripping a preview into an execute can legitimately race an
+	// attachment that ended in between, and failing the whole change for a stale
+	// key is worse than ignoring it.
+	if policy != nil {
+		for referenceID := range policy.Overrides {
+			if !seen[referenceID] {
+				r.warnings = append(r.warnings,
+					"ignored addon disposition for unknown or inactive association "+referenceID)
+			}
+		}
+	}
+
+	return nil
+}
+
+// activeAddonAssociations reuses the same read the cancellation path and the API
+// use, so a plan change sees exactly the addons everything else considers live.
+func (s *subscriptionService) activeAddonAssociations(
+	ctx context.Context,
+	subscriptionID string,
+) ([]*addonassociation.AddonAssociation, error) {
+	resp, err := NewAddonService(s.ServiceParams).GetActiveAddonAssociation(ctx, dto.GetActiveAddonAssociationRequest{
+		EntityID:   subscriptionID,
+		EntityType: types.AddonAssociationEntityTypeSubscription,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	associations := make([]*addonassociation.AddonAssociation, 0, len(resp.Items))
+	for _, item := range resp.Items {
+		if item.AddonAssociation != nil {
+			associations = append(associations, item.AddonAssociation)
+		}
+	}
+	return associations, nil
+}
+
+// closeAddonLineItems adds the line items an association owns to the change's
+// closing set, so they slice, price and settle exactly like a plan line. Items
+// already scheduled to end are skipped — onetime charges and lines from a
+// previously cancelled association are handled already and must not be
+// re-processed.
+func (s *subscriptionService) closeAddonLineItems(
+	ctx context.Context,
+	r *planChangeRequest,
+	association *addonassociation.AddonAssociation,
+) error {
+	filter := types.NewSubscriptionLineItemFilter()
+	filter.SubscriptionIDs = []string{r.sub.ID}
+	filter.AddonAssociationIDs = []string{association.ID}
+
+	items, err := s.SubscriptionLineItemRepo.List(ctx, filter)
+	if err != nil {
+		return err
+	}
+
+	priceSvc := NewPriceService(s.ServiceParams)
+	for _, item := range items {
+		if !item.EndDate.IsZero() {
+			continue
+		}
+		p, err := priceSvc.GetPrice(ctx, item.PriceID)
+		if err != nil {
+			return err
+		}
+		r.closing = append(r.closing, lineItemChange{
+			lineItem:    item,
+			price:       p.Price,
+			association: association,
+		})
+	}
+	return nil
+}
+
+// applyDroppedAddons closes each dropped attachment and stops its future credit
+// grants. The line items themselves are already closed by the shared slice step
+// — an addon line is just a closing line that happens to belong to an addon.
+func (s *subscriptionService) applyDroppedAddons(ctx context.Context, r *planChangeRequest) error {
+	closed := make(map[string]bool)
+	for _, change := range r.closing {
+		if !change.isAddon() || closed[change.association.ID] {
+			continue
+		}
+		closed[change.association.ID] = true
+
+		association := change.association
+		association.EndDate = lo.ToPtr(r.effectiveAt)
+		association.CancelledAt = lo.ToPtr(r.effectiveAt)
+		association.AddonStatus = types.AddonStatusCancelled
+		if err := s.AddonAssociationRepo.Update(ctx, association); err != nil {
+			return err
+		}
+
+		// KNOWN LIMITATION, unchanged from the existing removal path: grants are
+		// materialised per attachment but tagged only with addon_id
+		// (subscription.go:5204, "provenance for targeted removal"), so two concurrent
+		// attachments of one addon produce two indistinguishable grant rows. Cancelling
+		// by addon_id therefore stops both. Cancelling neither would be worse — the
+		// dropped attachment would keep granting credits — so this matches the existing
+		// behaviour rather than inventing a third one. Telling the two apart needs
+		// credit_grants.addon_association_id.
+		if err := NewCreditGrantService(s.ServiceParams).CancelFutureSubscriptionGrants(ctx, dto.CancelFutureSubscriptionGrantsRequest{
+			SubscriptionID: r.sub.ID,
+			AddonID:        lo.ToPtr(association.AddonID),
+			EffectiveDate:  lo.ToPtr(r.effectiveAt),
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // ─── Stage 2: compute ────────────────────────────────────────────────────────
@@ -396,6 +580,10 @@ func (s *subscriptionService) ExecutePlanChange(
 		}
 
 		if err := s.applyPlanChangeLineItems(txCtx, r); err != nil {
+			return err
+		}
+
+		if err := s.applyDroppedAddons(txCtx, r); err != nil {
 			return err
 		}
 
@@ -578,7 +766,10 @@ func buildPlanChangeResponse(
 		EffectiveAt:  r.effectiveAt,
 		FromPlan:     planChangeSummary(r.fromPlan),
 		ToPlan:       planChangeSummary(r.toPlan),
-		Metadata:     req.Metadata,
+
+		EntityDispositions: r.dispositions,
+		Warnings:           r.warnings,
+		Metadata:           req.Metadata,
 	}
 }
 

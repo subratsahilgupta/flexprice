@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -545,4 +547,241 @@ func (s *SubscriptionChangeV2Suite) TestExecute_NettedInvoiceCarriesCreditLine()
 		}
 	}
 	s.True(sawCredit, "the unused-time credit must appear as a negative line on the netted invoice")
+}
+
+// ─── Addon dispositions ──────────────────────────────────────────────────────
+
+// attachAddon gives the subscription a live addon with one fixed-price line item.
+func (s *SubscriptionChangeV2Suite) attachAddon(name string, amount int64) (*addon.Addon, *addonassociation.AddonAssociation, *subscription.SubscriptionLineItem) {
+	ctx := s.GetContext()
+
+	a := &addon.Addon{
+		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ADDON),
+		Name:      name,
+		LookupKey: name,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().AddonRepo.Create(ctx, a))
+
+	p := &price.Price{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+		Amount:             decimal.NewFromInt(amount),
+		Currency:           "usd",
+		Type:               types.PRICE_TYPE_FIXED,
+		EntityType:         types.PRICE_ENTITY_TYPE_ADDON,
+		EntityID:           a.ID,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+
+	assoc := &addonassociation.AddonAssociation{
+		ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ADDON_ASSOCIATION),
+		EntityID:    s.td.sub.ID,
+		EntityType:  types.AddonAssociationEntityTypeSubscription,
+		AddonID:     a.ID,
+		AddonStatus: types.AddonStatusActive,
+		StartDate:   &s.td.periodStart,
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().AddonAssociationRepo.Create(ctx, assoc))
+
+	item := &subscription.SubscriptionLineItem{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+		SubscriptionID:     s.td.sub.ID,
+		CustomerID:         s.td.sub.CustomerID,
+		EntityID:           a.ID,
+		EntityType:         types.SubscriptionLineItemEntityTypeAddon,
+		PriceID:            p.ID,
+		PriceType:          p.Type,
+		Quantity:           decimal.NewFromInt(1),
+		Currency:           "usd",
+		BillingPeriod:      p.BillingPeriod,
+		BillingPeriodCount: 1,
+		InvoiceCadence:     p.InvoiceCadence,
+		StartDate:          s.td.periodStart,
+		AddonAssociationID: &assoc.ID,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, item))
+
+	return a, assoc, item
+}
+
+func (s *SubscriptionChangeV2Suite) dropAddonRequest(targetPlanID, associationID string) dto.SubscriptionChangeV2Request {
+	req := s.changeRequest(targetPlanID, types.ProrationBehaviorCreateProrations)
+	req.EntityPolicies = &dto.SubscriptionChangeEntityPolicies{
+		Addons: &dto.EntityChangePolicy{
+			Overrides: map[string]types.EntityDisposition{
+				associationID: types.EntityDispositionDrop,
+			},
+		},
+	}
+	return req
+}
+
+// TestExecute_AddonCarriesByDefault is the property that makes carry free: a
+// swap-in-place change does not touch anything keyed on the subscription id, so
+// an addon nobody mentioned needs zero operations.
+func (s *SubscriptionChangeV2Suite) TestExecute_AddonCarriesByDefault() {
+	ctx := s.GetContext()
+	_, assoc, addonLine := s.attachAddon("priority_support", 10)
+
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID,
+		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations))
+	s.Require().NoError(err)
+
+	reloadedAssoc, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, assoc.ID)
+	s.Require().NoError(err)
+	s.Equal(types.AddonStatusActive, reloadedAssoc.AddonStatus, "an unmentioned addon must be left alone")
+	s.Nil(reloadedAssoc.EndDate)
+
+	reloadedLine, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, addonLine.ID)
+	s.Require().NoError(err)
+	s.True(reloadedLine.EndDate.IsZero(), "the addon's line item must not be sliced by a plan change")
+
+	s.Require().Len(resp.EntityDispositions, 1)
+	s.Equal(types.EntityDispositionCarry, resp.EntityDispositions[0].Disposition)
+	s.Equal(assoc.ID, resp.EntityDispositions[0].ReferenceID)
+}
+
+// TestExecute_AddonDropClosesAttachment covers the one configurable disposition:
+// the association and its line items close at the effective date.
+func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropClosesAttachment() {
+	ctx := s.GetContext()
+	_, assoc, addonLine := s.attachAddon("priority_support", 10)
+
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
+	s.Require().NoError(err)
+
+	reloadedAssoc, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, assoc.ID)
+	s.Require().NoError(err)
+	s.Equal(types.AddonStatusCancelled, reloadedAssoc.AddonStatus)
+	s.Require().NotNil(reloadedAssoc.EndDate)
+
+	reloadedLine, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, addonLine.ID)
+	s.Require().NoError(err)
+	s.False(reloadedLine.EndDate.IsZero(), "the dropped addon's line item closes with it")
+	s.True(reloadedLine.EndDate.Equal(*reloadedAssoc.EndDate), "line item and association close together")
+
+	s.Require().Len(resp.EntityDispositions, 1)
+	s.Equal(types.EntityDispositionDrop, resp.EntityDispositions[0].Disposition)
+}
+
+// TestExecute_AddonDropSettlesOnTheChangeInvoice is the fix for the credit that
+// today is issued after the transaction, best-effort, and logged as UNISSUED
+// when it fails. The addon's credit belongs on the change's own invoice.
+func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropSettlesOnTheChangeInvoice() {
+	ctx := s.GetContext()
+	_, assoc, addonLine := s.attachAddon("priority_support", 10)
+	s.recordBilled(addonLine.ID, decimal.NewFromInt(10))
+
+	invoicesBefore := s.countInvoices()
+
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
+	s.Require().NoError(err)
+
+	s.Equal(invoicesBefore+1, s.countInvoices(), "one invoice for the whole change, not one per moving part")
+	s.Require().Len(resp.ChangedResources.Invoices, 1)
+
+	var sawAddonCredit bool
+	for _, li := range resp.ChangedResources.Invoices[0].Invoice.LineItems {
+		if li.Amount.IsNegative() && li.SubscriptionLineItemID != nil && *li.SubscriptionLineItemID == addonLine.ID {
+			sawAddonCredit = true
+		}
+	}
+	s.True(sawAddonCredit, "the dropped addon's credit must be a line on the change invoice")
+}
+
+// TestExecute_AddonDropWithProrationNone covers a caller who wants the addon
+// gone without money moving. It is legal, not an error.
+func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropWithProrationNone() {
+	ctx := s.GetContext()
+	_, assoc, addonLine := s.attachAddon("priority_support", 10)
+	s.recordBilled(addonLine.ID, decimal.NewFromInt(10))
+
+	invoicesBefore := s.countInvoices()
+
+	req := s.dropAddonRequest(s.td.pro.ID, assoc.ID)
+	req.ProrationBehavior = types.ProrationBehaviorNone
+
+	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req)
+	s.Require().NoError(err)
+
+	reloadedAssoc, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, assoc.ID)
+	s.Require().NoError(err)
+	s.Equal(types.AddonStatusCancelled, reloadedAssoc.AddonStatus, "the addon still goes away")
+	s.Equal(invoicesBefore, s.countInvoices(), "but no money moves")
+}
+
+// TestExecute_UnknownAddonOverrideWarnsRatherThanFails covers a caller
+// round-tripping a stale preview: the attachment ended in between, and failing
+// the whole change for a key that no longer matters would be worse.
+func (s *SubscriptionChangeV2Suite) TestExecute_UnknownAddonOverrideWarnsRatherThanFails() {
+	ctx := s.GetContext()
+
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID,
+		s.dropAddonRequest(s.td.pro.ID, "addon_assoc_does_not_exist"))
+	s.Require().NoError(err, "a stale override key must not fail the change")
+	s.Require().Len(resp.Warnings, 1)
+	s.Contains(resp.Warnings[0], "addon_assoc_does_not_exist")
+
+	reloaded, err := s.GetStores().SubscriptionRepo.Get(ctx, s.td.sub.ID)
+	s.Require().NoError(err)
+	s.Equal(s.td.pro.ID, reloaded.PlanID, "and the change still happens")
+}
+
+// TestPreview_AddonDropWritesNothing keeps preview honest once addons are in
+// play: it reports the disposition without closing anything.
+func (s *SubscriptionChangeV2Suite) TestPreview_AddonDropWritesNothing() {
+	ctx := s.GetContext()
+	_, assoc, addonLine := s.attachAddon("priority_support", 10)
+
+	resp, err := s.svc.PreviewPlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
+	s.Require().NoError(err)
+	s.Require().Len(resp.EntityDispositions, 1)
+	s.Equal(types.EntityDispositionDrop, resp.EntityDispositions[0].Disposition)
+
+	reloadedAssoc, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, assoc.ID)
+	s.Require().NoError(err)
+	s.Equal(types.AddonStatusActive, reloadedAssoc.AddonStatus, "preview must not close the attachment")
+
+	reloadedLine, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, addonLine.ID)
+	s.Require().NoError(err)
+	s.True(reloadedLine.EndDate.IsZero())
+}
+
+// TestExecute_AddonDropDoesNotSkewChangeType guards the one subtlety of putting
+// addon lines in the same closing set as plan lines: change_type describes the
+// plan move. Dropping a $10 addon while moving $20 → $50 is still an upgrade.
+func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropDoesNotSkewChangeType() {
+	ctx := s.GetContext()
+	_, assoc, _ := s.attachAddon("priority_support", 10)
+
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
+	s.Require().NoError(err)
+
+	s.Equal(types.SubscriptionChangeTypeUpgrade, resp.ChangeType,
+		"the addon's value must not count towards the plan's change type")
+}
+
+// TestExecute_AddonDropIsReportedAsAChangedLineItem verifies the dropped addon's
+// line shows up in the response alongside the plan lines, since it moved too.
+func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropIsReportedAsAChangedLineItem() {
+	ctx := s.GetContext()
+	_, assoc, addonLine := s.attachAddon("priority_support", 10)
+
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
+	s.Require().NoError(err)
+
+	var sawAddonLine bool
+	for _, item := range resp.ChangedResources.LineItems {
+		if item.ID == addonLine.ID && item.ChangeAction == dto.ChangedLineItemActionEnded {
+			sawAddonLine = true
+		}
+	}
+	s.True(sawAddonLine, "a dropped addon's line item moved, so the response must say so")
 }
