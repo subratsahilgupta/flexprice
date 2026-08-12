@@ -42,6 +42,17 @@ type StripeConfig struct {
 	WebhookSecret  string
 }
 
+// GetConnection returns the Stripe connection for the current environment.
+func (c *Client) GetConnection(ctx context.Context) (*connection.Connection, error) {
+	conn, err := c.connectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
+	if err != nil {
+		return nil, ierr.NewError("failed to get Stripe connection").
+			WithHint("Stripe connection not configured for this environment").
+			Mark(ierr.ErrNotFound)
+	}
+	return conn, nil
+}
+
 // GetStripeClient returns a configured Stripe client for the current environment
 func (c *Client) GetStripeClient(ctx context.Context) (*stripe.Client, *StripeConfig, error) {
 	// Get Stripe connection for this environment
