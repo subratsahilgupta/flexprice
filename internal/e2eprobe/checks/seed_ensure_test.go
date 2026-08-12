@@ -208,3 +208,38 @@ func keysOf(m map[string]string) []string {
 	}
 	return ks
 }
+
+func TestSeedEnsure_CouponProvisioning(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("first Run() unexpected error: %v", err)
+	}
+	seeds := reg.Seeds()
+	if seeds.SharedCouponID == "" {
+		t.Fatalf("SharedCouponID empty after seed run")
+	}
+	if seeds.SharedCouponCode != "E2EPROBE_COUPON_10PCT" {
+		t.Errorf("SharedCouponCode = %q, want E2EPROBE_COUPON_10PCT", seeds.SharedCouponCode)
+	}
+	if len(fc.coupons.created) != 1 {
+		t.Fatalf("coupon created %d times on first run; want 1", len(fc.coupons.created))
+	}
+	if got := fc.coupons.created[0]; got.Type != types.CouponTypePercentage || got.Cadence != types.CouponCadenceOnce {
+		t.Errorf("coupon Type/Cadence = %v/%v; want percentage/once", got.Type, got.Cadence)
+	}
+	if got := fc.coupons.created[0]; got.PercentageOff == nil || *got.PercentageOff != "10" {
+		t.Errorf("coupon PercentageOff = %v, want \"10\"", got.PercentageOff)
+	}
+
+	// Second run must not create another (idempotent).
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("second Run() unexpected error: %v", err)
+	}
+	if len(fc.coupons.created) != 1 {
+		t.Errorf("coupon created %d times across 2 runs; want 1 (idempotency broken)", len(fc.coupons.created))
+	}
+}

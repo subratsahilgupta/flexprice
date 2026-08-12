@@ -33,6 +33,11 @@ func strPtr(s string) *string { return &s }
 func int64Ptr(i int64) *int64 { return &i }
 func boolPtr(b bool) *bool    { return &b }
 
+const (
+	SharedCouponCode = "E2EPROBE_COUPON_10PCT"
+	SharedCouponName = "E2EProbe 10% Coupon"
+)
+
 // lowBalanceAlertSettings returns the alert thresholds seed wallets are
 // created with: info at 25, warning at 10, critical at 0 (all "below").
 // Fires wallet.credit_balance.dropped webhooks; consumed by the
@@ -72,6 +77,9 @@ func (s *SeedEnsure) Run(ctx context.Context) error {
 	// Order matters: features first (provides MeterIDs), then customers, plan, prices,
 	// subscriptions (needs plan + customers), wallets (needs customers).
 	if err := s.ensureFeatures(ctx, &seeds); err != nil {
+		return err
+	}
+	if err := s.ensureCoupons(ctx, &seeds); err != nil {
 		return err
 	}
 	if err := s.ensureCustomers(ctx, &seeds); err != nil {
@@ -269,6 +277,49 @@ func (s *SeedEnsure) ensureFeatures(ctx context.Context, out *e2eprobe.Seeds) er
 			out.MeterIDs[spec.eventName] = *feat.MeterID
 		}
 	}
+	return nil
+}
+
+// ensureCoupons idempotently provisions the shared E2EPROBE_COUPON_10PCT
+// coupon reused by coupon-application-probe and by seed's attachment on
+// persistent cust #1. Lookup is by CouponCode (the SDK's canonical id for
+// coupons — CreateCouponRequest has no lookup_key field).
+func (s *SeedEnsure) ensureCoupons(ctx context.Context, out *e2eprobe.Seeds) error {
+	existResp, err := s.client.Coupons().Query(ctx, types.CouponFilter{
+		CouponCodes: []string{SharedCouponCode},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "query_coupons"}, "query coupons: %w", err)
+	}
+	if existResp.ListCouponsResponse != nil && len(existResp.ListCouponsResponse.Items) > 0 {
+		c := existResp.ListCouponsResponse.Items[0]
+		if c.ID != nil {
+			out.SharedCouponID = *c.ID
+		}
+		out.SharedCouponCode = SharedCouponCode
+		return nil
+	}
+
+	code := SharedCouponCode
+	percentage := "10"
+	createResp, err := s.client.Coupons().Create(ctx, types.CreateCouponRequest{
+		Name:          SharedCouponName,
+		Type:          types.CouponTypePercentage,
+		Cadence:       types.CouponCadenceOnce,
+		CouponCode:    &code,
+		PercentageOff: &percentage,
+		Metadata: map[string]string{
+			"e2eprobe":      "true",
+			"e2eprobe_role": "seed",
+		},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"coupon_code": SharedCouponCode}, "create coupon: %w", err)
+	}
+	if createResp.CouponResponse != nil && createResp.CouponResponse.ID != nil {
+		out.SharedCouponID = *createResp.CouponResponse.ID
+	}
+	out.SharedCouponCode = SharedCouponCode
 	return nil
 }
 
