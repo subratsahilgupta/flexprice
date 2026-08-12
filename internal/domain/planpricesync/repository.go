@@ -115,6 +115,10 @@ type Repository interface {
 		ctx context.Context,
 		p StampSubsAsSyncedParams,
 	) (int, error)
+
+	// ReanchorSubSyncedSequence sets synced_price_sequence for one subscription
+	// unconditionally — forward or backward.
+	ReanchorSubSyncedSequence(ctx context.Context, subscriptionID string, seq int64) error
 }
 
 // ListPlanLineItemsToCreateV2Params drives the V2 discovery query.

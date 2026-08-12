@@ -275,6 +275,49 @@ func (r *planPriceSyncRepository) TerminatePlanPricesLineItemsV2(
 	return int(n), nil
 }
 
+// ReanchorSubSyncedSequence re-points one subscription's watermark at a new
+// plan's sequence. Unlike StampSubsAsSynced this is not forward-only: a plan
+// change can move a subscription onto a plan whose max sequence is lower.
+func (r *planPriceSyncRepository) ReanchorSubSyncedSequence(
+	ctx context.Context,
+	subscriptionID string,
+	seq int64,
+) error {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	userID := types.GetUserID(ctx)
+
+	span := StartRepositorySpan(ctx, "plan_price_sync_v2", "reanchor_sub_sequence", map[string]interface{}{
+		"subscription_id": subscriptionID,
+		"seq":             seq,
+	})
+	defer FinishSpan(span)
+
+	query := `
+		UPDATE subscriptions
+		SET synced_price_sequence = $3,
+		    updated_at = NOW(),
+		    updated_by = $4
+		WHERE tenant_id      = $1
+		  AND environment_id = $2
+		  AND id = $5
+	`
+
+	if _, err := r.client.Writer(ctx).ExecContext(
+		ctx, query,
+		tenantID, environmentID, seq, userID, subscriptionID,
+	); err != nil {
+		SetSpanError(span, err)
+		return ierr.WithError(err).
+			WithHint("Failed to re-anchor subscription price sequence").
+			WithReportableDetails(map[string]any{"subscription_id": subscriptionID, "seq": seq}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return nil
+}
+
 // StampSubsAsSynced sets synced_price_sequence on the given subs. Forward-only
 // (uses GREATEST so a concurrent newer stamp from a different worker isn't
 // overwritten).
