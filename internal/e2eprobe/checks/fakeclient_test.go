@@ -16,15 +16,20 @@ import (
 
 
 type fakeClient struct {
-	customers fakeCustomers
-	plans     fakePlans
-	prices    fakePrices
-	features  fakeFeatures
-	subs      fakeSubscriptions
-	wallets   fakeWallets
-	events    fakeEvents
-	invoices  fakeInvoices
-	async     *fakeAsyncEvents
+	customers          fakeCustomers
+	plans              fakePlans
+	prices             fakePrices
+	features           fakeFeatures
+	subs               fakeSubscriptions
+	wallets            fakeWallets
+	events             fakeEvents
+	invoices           fakeInvoices
+	entitlements       fakeEntitlements
+	coupons            fakeCoupons
+	couponAssociations fakeCouponAssociations
+	taxRates           fakeTaxRates
+	taxAssociations    fakeTaxAssociations
+	async              *fakeAsyncEvents
 }
 
 func newFakeClient() *fakeClient {
@@ -45,6 +50,11 @@ func (c *fakeClient) Invoices() e2eprobe.InvoiceOps           { return &c.invoic
 func (c *fakeClient) NewAsyncEventClient() e2eprobe.AsyncEventClient {
 	return c.async
 }
+func (c *fakeClient) Entitlements() e2eprobe.EntitlementOps             { return &c.entitlements }
+func (c *fakeClient) Coupons() e2eprobe.CouponOps                       { return &c.coupons }
+func (c *fakeClient) CouponAssociations() e2eprobe.CouponAssociationOps { return &c.couponAssociations }
+func (c *fakeClient) TaxRates() e2eprobe.TaxRateOps                     { return &c.taxRates }
+func (c *fakeClient) TaxAssociations() e2eprobe.TaxAssociationOps       { return &c.taxAssociations }
 
 // --- Customers ---
 
@@ -485,6 +495,11 @@ type fakeInvoices struct {
 	queryErr   error
 	invoices   []types.InvoiceResponse
 	lastFilter types.InvoiceFilter
+	// Preview support
+	previewResp    *dtos.GetInvoicePreviewResponse               // default response
+	previewErr     error
+	previewForSub  map[string]*dtos.GetInvoicePreviewResponse    // per-sub override, keyed by SubscriptionID
+	previewCalls   []types.GetPreviewInvoiceRequest
 }
 
 func (f *fakeInvoices) Query(_ context.Context, filter types.InvoiceFilter) (*dtos.QueryInvoiceResponse, error) {
@@ -504,6 +519,21 @@ func (f *fakeInvoices) Query(_ context.Context, filter types.InvoiceFilter) (*dt
 }
 func (f *fakeInvoices) Get(_ context.Context, _ string) (*dtos.GetInvoiceResponse, error) {
 	return &dtos.GetInvoiceResponse{}, nil
+}
+func (f *fakeInvoices) GetPreview(_ context.Context, req types.GetPreviewInvoiceRequest) (*dtos.GetInvoicePreviewResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.previewCalls = append(f.previewCalls, req)
+	if f.previewErr != nil {
+		return nil, f.previewErr
+	}
+	if resp, ok := f.previewForSub[req.SubscriptionID]; ok {
+		return resp, nil
+	}
+	if f.previewResp != nil {
+		return f.previewResp, nil
+	}
+	return &dtos.GetInvoicePreviewResponse{}, nil
 }
 
 // --- Async events ---
@@ -538,6 +568,206 @@ func (f *fakeAsyncEvents) Close() error {
 	defer f.mu.Unlock()
 	f.closed = true
 	return nil
+}
+
+// --- Entitlements ---
+
+type fakeEntitlements struct {
+	mu        sync.Mutex
+	created   []types.CreateEntitlementRequest
+	createErr error
+	queryResp *dtos.QueryEntitlementResponse
+	queryErr  error
+	deleted   []string
+}
+
+func (f *fakeEntitlements) Create(_ context.Context, req types.CreateEntitlementRequest) (*dtos.CreateEntitlementResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	f.created = append(f.created, req)
+	id := fmt.Sprintf("ent_%d", len(f.created))
+	return &dtos.CreateEntitlementResponse{
+		EntitlementResponse: &types.EntitlementResponse{ID: &id, FeatureID: &req.FeatureID},
+	}, nil
+}
+func (f *fakeEntitlements) Query(_ context.Context, _ types.EntitlementFilter) (*dtos.QueryEntitlementResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.queryErr != nil {
+		return nil, f.queryErr
+	}
+	if f.queryResp != nil {
+		return f.queryResp, nil
+	}
+	return &dtos.QueryEntitlementResponse{}, nil
+}
+func (f *fakeEntitlements) Delete(_ context.Context, id string) (*dtos.DeleteEntitlementResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleted = append(f.deleted, id)
+	return &dtos.DeleteEntitlementResponse{}, nil
+}
+
+// --- Coupons ---
+
+type fakeCoupons struct {
+	mu        sync.Mutex
+	created   []types.CreateCouponRequest
+	createErr error
+	byCode    map[string]string // code -> id
+}
+
+func (f *fakeCoupons) Create(_ context.Context, req types.CreateCouponRequest) (*dtos.CreateCouponResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	f.created = append(f.created, req)
+	id := fmt.Sprintf("coupon_%d", len(f.created))
+	if req.CouponCode != nil {
+		if f.byCode == nil {
+			f.byCode = map[string]string{}
+		}
+		f.byCode[*req.CouponCode] = id
+	}
+	return &dtos.CreateCouponResponse{
+		CouponResponse: &types.CouponResponse{ID: &id, CouponCode: req.CouponCode, Name: &req.Name},
+	}, nil
+}
+func (f *fakeCoupons) Query(_ context.Context, filter types.CouponFilter) (*dtos.QueryCouponResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var items []types.CouponResponse
+	for _, code := range filter.CouponCodes {
+		if id, ok := f.byCode[code]; ok {
+			c := code
+			i := id
+			items = append(items, types.CouponResponse{ID: &i, CouponCode: &c})
+		}
+	}
+	if len(items) == 0 {
+		return &dtos.QueryCouponResponse{}, nil
+	}
+	return &dtos.QueryCouponResponse{
+		ListCouponsResponse: &types.ListCouponsResponse{Items: items},
+	}, nil
+}
+func (f *fakeCoupons) GetByCode(_ context.Context, code string) (*dtos.GetCouponByCodeResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id, ok := f.byCode[code]
+	if !ok {
+		return nil, &sdkerrors.ErrorResponse{
+			HTTPStatusCode: int64Ptr(http.StatusNotFound),
+		}
+	}
+	c := code
+	return &dtos.GetCouponByCodeResponse{
+		CouponResponse: &types.CouponResponse{ID: &id, CouponCode: &c},
+	}, nil
+}
+func (f *fakeCoupons) Delete(_ context.Context, _ string) (*dtos.DeleteCouponResponse, error) {
+	return &dtos.DeleteCouponResponse{}, nil
+}
+
+// --- Coupon associations ---
+
+type fakeCouponAssociations struct {
+	mu   sync.Mutex
+	resp *dtos.ListCouponAssociationsResponse
+}
+
+func (f *fakeCouponAssociations) List(_ context.Context, _ dtos.ListCouponAssociationsRequest) (*dtos.ListCouponAssociationsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.resp != nil {
+		return f.resp, nil
+	}
+	return &dtos.ListCouponAssociationsResponse{}, nil
+}
+
+// --- Tax rates ---
+
+type fakeTaxRates struct {
+	mu        sync.Mutex
+	created   []types.CreateTaxRateRequest
+	createErr error
+	byCode    map[string]string // code -> id
+}
+
+func (f *fakeTaxRates) Create(_ context.Context, req types.CreateTaxRateRequest) (*dtos.CreateTaxRateResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	f.created = append(f.created, req)
+	id := fmt.Sprintf("taxrate_%d", len(f.created))
+	if f.byCode == nil {
+		f.byCode = map[string]string{}
+	}
+	f.byCode[req.Code] = id
+	c := req.Code
+	return &dtos.CreateTaxRateResponse{
+		TaxRateResponse: &types.TaxRateResponse{ID: &id, Code: &c},
+	}, nil
+}
+func (f *fakeTaxRates) Get(_ context.Context, id string) (*dtos.GetTaxRateResponse, error) {
+	return &dtos.GetTaxRateResponse{
+		TaxRateResponse: &types.TaxRateResponse{ID: &id},
+	}, nil
+}
+func (f *fakeTaxRates) Delete(_ context.Context, _ string) (*dtos.DeleteTaxRateResponse, error) {
+	return &dtos.DeleteTaxRateResponse{}, nil
+}
+
+// --- Tax associations ---
+
+type fakeTaxAssociations struct {
+	mu        sync.Mutex
+	created   []types.CreateTaxAssociationRequest
+	createErr error
+	listResp  *dtos.ListTaxAssociationsResponse
+	listErr   error
+	deleted   []string
+	deleteErr error
+}
+
+func (f *fakeTaxAssociations) Create(_ context.Context, req types.CreateTaxAssociationRequest) (*dtos.CreateTaxAssociationResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	f.created = append(f.created, req)
+	id := fmt.Sprintf("taxassoc_%d", len(f.created))
+	return &dtos.CreateTaxAssociationResponse{
+		TaxAssociationResponse: &types.TaxAssociationResponse{ID: &id},
+	}, nil
+}
+func (f *fakeTaxAssociations) List(_ context.Context, _, _, _, _ *string) (*dtos.ListTaxAssociationsResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	if f.listResp != nil {
+		return f.listResp, nil
+	}
+	return &dtos.ListTaxAssociationsResponse{}, nil
+}
+func (f *fakeTaxAssociations) Delete(_ context.Context, id string) (*dtos.DeleteTaxAssociationResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.deleteErr != nil {
+		return nil, f.deleteErr
+	}
+	f.deleted = append(f.deleted, id)
+	return &dtos.DeleteTaxAssociationResponse{}, nil
 }
 
 // --- helpers (strPtr is defined in seed_ensure.go) ---
