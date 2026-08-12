@@ -313,6 +313,18 @@ func (d *dryRunEntitlements) Delete(ctx context.Context, id string) (*dtos.Delet
 	dryLog(ctx, d.lg, "Entitlements.Delete", "id", id)
 	return &dtos.DeleteEntitlementResponse{}, nil
 }
+func (d *dryRunEntitlements) CreateWithGrant(ctx context.Context, req GrantEntitlementInput) (string, error) {
+	dryLog(ctx, d.lg, "Entitlements.CreateWithGrant",
+		"feature_id", req.FeatureID,
+		"grant_measure", req.GrantMeasure,
+		"grant_quota", req.GrantQuota,
+		"aggregation_mode", req.AggregationMode,
+	)
+	return "grant_dryrun", nil
+}
+func (d *dryRunEntitlements) GetRaw(ctx context.Context, id string) (*GrantEntitlementResponse, error) {
+	return d.inner.GetRaw(ctx, id)
+}
 
 // ── Coupons ───────────────────────────────────────────────────────────
 

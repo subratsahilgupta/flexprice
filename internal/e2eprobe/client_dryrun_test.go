@@ -181,6 +181,12 @@ func (f *fakeEntitlementOps) Query(_ context.Context, _ types.EntitlementFilter)
 func (f *fakeEntitlementOps) Delete(_ context.Context, _ string) (*dtos.DeleteEntitlementResponse, error) {
 	return &dtos.DeleteEntitlementResponse{}, nil
 }
+func (f *fakeEntitlementOps) CreateWithGrant(_ context.Context, _ GrantEntitlementInput) (string, error) {
+	return "grant_test", nil
+}
+func (f *fakeEntitlementOps) GetRaw(_ context.Context, _ string) (*GrantEntitlementResponse, error) {
+	return &GrantEntitlementResponse{}, nil
+}
 
 type fakeCouponOps struct{}
 
