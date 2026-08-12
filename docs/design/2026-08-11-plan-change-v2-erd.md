@@ -19,7 +19,7 @@ effective date, leave the billing anchor alone.
 | Deferred                                                                  | Note                                   |
 | ------------------------------------------------------------------------- | -------------------------------------- |
 | `subscription_associations` table                                         | §7                                     |
-| `target_config` — coupons / overrides at change time (addons ARE in v0)   | §8                                     |
+| `addendum_config` — coupons / overrides at change time (addons ARE in v0) | §8                                     |
 | Dispositions for coupons, tax, credit grants, price/entitlement overrides | all default to CARRY = zero operations |
 | Interval / cadence / currency change, hierarchy subs, phases              | 4xx, hint points at v1                 |
 
@@ -50,7 +50,7 @@ type SubscriptionChangeV2Request struct {
     EntityPolicies *SubscriptionChangeEntityPolicies `json:"entity_policies,omitempty"`
 
     // What to attach as part of the change. Same wrapper reasoning.
-    TargetConfig *SubscriptionChangeTargetConfig `json:"target_config,omitempty"`
+    AddendumConfig *SubscriptionAddendumConfig `json:"addendum_config,omitempty"`
 
     Checkout       *CheckoutParams   `json:"checkout,omitempty"`
     IdempotencyKey *string           `json:"idempotency_key,omitempty"`
@@ -65,12 +65,27 @@ type SubscriptionChangeEntityPolicies struct {
     //   Coupons, TaxAssociations, CreditGrants, PriceOverrides, EntitlementOverrides
 }
 
-// SubscriptionChangeTargetConfig attaches new entities as part of the change.
-// A named subset of SubscriptionCreationConfig, same field names and types.
-type SubscriptionChangeTargetConfig struct {
+// SubscriptionChangeConfig is the subscription's configuration on the new plan.
+// Field names, JSON tags and types mirror SubscriptionCreationConfig so the payload
+// looks identical to a caller — but it is a DISTINCT type, not that one reused:
+//
+//   - Update semantics need tri-state. SubscriptionCreationConfig.EnableTrueUp is a
+//     plain bool, where absent and false are the same thing. Correct at create;
+//     on a change it would silently disable true-up on every request that omits it.
+//     Anything settable here must be a pointer.
+//   - Phases is a blocked precondition, and Coupons / LineItemCoupons are deprecated;
+//     neither belongs on a new endpoint.
+//   - Sharing the type would put all 16 creation fields in the OpenAPI schema while
+//     most 400, and would leak future creation-only fields into the generated SDKs
+//     without anyone deciding they work here.
+//
+// Growth is deliberate: copy a field over when it is implemented.
+type SubscriptionAddendumConfig struct {
     Addons []AddAddonToSubscriptionRequest `json:"addons,omitempty" validate:"omitempty,dive"`
-    // v1+: SubscriptionCoupons, OverrideLineItems, OverrideEntitlements,
-    //      CreditGrants, TaxRateOverrides, LineItemCommitments
+    // v1+, pointer-typed where "leave unchanged" must be expressible:
+    //   SubscriptionCoupons, OverrideLineItems, OverrideEntitlements, CreditGrants,
+    //   TaxRateOverrides, LineItemCommitments, CommitmentAmount, OverageFactor,
+    //   EnableTrueUp *bool
 }
 
 // EntityChangePolicy declares what happens to one entity type's existing
@@ -199,7 +214,7 @@ const (
     DispositionReasonExplicitOverride DispositionReason = "explicit_override"
     // The server overrode policy. The only reason a consumer cannot derive from
     // its own request, so it is the one that has to be on the wire. Detail says why.
-    DispositionReasonForced DispositionReason = "overriden_default"
+    DispositionReasonForced DispositionReason = "forced"
 )
 
 var DispositionReasonValues = []DispositionReason{
@@ -219,21 +234,19 @@ fixes that:
 type ChangedLineItem struct {
     ID           string                `json:"id"`
     PriceID      string                `json:"price_id"`
-    Quantity     decimal.Decimal       `json:"quantity"`
+    Quantity     decimal.Decimal       `json:"quantity" swaggertype:"string"`
     StartDate    *time.Time            `json:"start_date,omitempty"`
     EndDate      *time.Time            `json:"end_date,omitempty"`
-    ChangeAction ChangedLineItemAction `json:"change_action"`
+    ChangeAction ChangedLineItemAction `json:"change_action" enums:"created,updated,ended"`
 
     // NEW. Two entries in the SAME response sharing a non-empty line_key — one
     // "ended", one "created" — are the same service continuing. An "ended" entry
     // whose key matches no "created" entry is a service that stopped; a "created"
-    // entry matching no "ended" one is new.
+    // entry matching no "ended" one is new. Unpaired is normal, not an error.
     //
-    // The key is derived from the price, so it is equal across plans only when the
-    // two prices are genuinely the same service: (meter_id, filter_values) for
-    // USAGE, a shared prices.group_id for FIXED, otherwise price_id — which is
-    // unique per line and therefore pairs with nothing. Unpaired is the normal
-    // outcome for fixed lines and is not an error.
+    // The value is the line key defined in §6 — the same function the engine uses
+    // to resolve successors, so the response cannot disagree with what was billed.
+    // A plan change never emits "updated".
     LineKey string `json:"line_key,omitempty"`
 }
 ```
@@ -247,6 +260,17 @@ Interval / cadence / period-count / billing-cycle mismatch · currency mismatch 
 `pause_status ∈ {active, scheduled}` · pending cancellation or plan_change schedule ·
 pending checkout session · `subscription_status ∉ {active, trialing}` ·
 `target_plan_id == subscription.plan_id`. Every hint names the v1 endpoint as the fallback.
+
+**v0 is not a superset of v1.** v1 requires `billing_cadence`, `billing_period`,
+`billing_period_count` and `billing_cycle` and can change all four, because it recreates the
+subscription ([subscription_change.go:29-38](../../internal/api/dto/subscription_change.go#L29)); v2
+4xxs on any of them. v1 also carries the internal-only `OpeningInvoiceAdjustmentAmount`, which the
+Stripe inbound path uses and v2 has no equivalent for. So v1 stays supported and callable — it is the
+documented fallback — and it must **not** be marked deprecated in Swagger until interval change
+lands. One behaviour difference to expect: for anniversary billing v1 deliberately moves the anchor
+to the effective date to avoid a short first period ([subscription_change.go:855](../../internal/ee/service/subscription_change.go#L855));
+v2 always keeps the anchor, which is the point of swap-in-place, but it means the same operation
+produces different invoice dates than v1 did.
 
 ---
 
@@ -271,8 +295,12 @@ no longer restarts at 1.
 `gateway_payment_method_id`, `payment_terms`, `timezone`, `lookup_key`, `auto_invoice_threshold`,
 `invoicing_customer_id`).
 
+Carrying `entitlement_grants` means the target plan's **quota** applies from the next reset, not at
+`effective_at`. That is a deliberate v0 choice, not an oversight — see §6.
+
 **REDERIVE.** `subscription_line_items` where `entity_type = 'plan'` — close at `effective_at`, open
-successors from the target plan's prices.
+successors from the target plan's prices, per the line key in §6. A line whose successor carries an
+identical price is left alone rather than closed and reopened.
 
 ### Addons
 
@@ -302,8 +330,9 @@ on `Old* × (1 − coefficient)`. A design task, not a flag.
 
 **Guard — two attachments of one addon.** `entitlement_grants` is UNIQUE on
 `(tenant_id, environment_id, entitlement_config_id, customer_id, subscription_id, valid_from)`
-([entitlement_grant.go:125](../../ent/schema/entitlement_grant.go#L125)), so two attachments of the
-same addon share **one** grant row — a second cannot exist. Dropping one attachment must therefore
+([entitlement_grant.go:118](../../ent/schema/entitlement_grant.go#L118)), so two attachments of the
+same addon share **one** grant row whenever their windows align — the index only separates them when
+`valid_from` differs. Dropping one attachment must therefore
 not close the entitlement grant while another active attachment of the same `addon_id` remains. Same
 shape as the `credit_grants` case in §5, and the reason `credit_grants.addon_association_id` alone
 does not cover it.
@@ -329,7 +358,7 @@ erDiagram
     SUBSCRIPTION ||--o{ ENTITLEMENT_GRANT : "CARRY usage counter"
     SUBSCRIPTION ||--o{ COUPON_ASSOCIATION : CARRY
     SUBSCRIPTION ||--o{ ALERT_SETTINGS : CARRY
-    SUBSCRIPTION ||--o{ TAX_ASSOCIATION : UNTOUCHED
+    SUBSCRIPTION ||--o{ TAX_ASSOCIATION : CARRY
     SUBSCRIPTION ||--o{ INVOICE : UNTOUCHED
     SUBSCRIPTION ||--|| BILLING_SEQUENCE : "UNTOUCHED, counter continues"
     SUBSCRIPTION ||--o{ SUBSCRIPTION_SCHEDULE : "deferred change lives here"
@@ -372,8 +401,9 @@ erDiagram
         string id PK
         string entity_type "PLAN, ADDON, or SUBSCRIPTION override"
         string entity_id
-        string lookup_key "drives successor resolution"
-        string meter_id "successor fallback for USAGE"
+        string lookup_key "line key for FIXED, see section 6"
+        string meter_id "line key for USAGE, with filter_values"
+        string filter_values "line key for USAGE, with meter_id"
         string parent_price_id
         decimal amount
     }
@@ -449,7 +479,7 @@ Oct 15 -> Nov 1: two concurrent associations, same addon_id
 > while a new recurring association was added on top (EndDate zero)."
 
 A plan change landing Oct 20 cannot say which to drop from `addon_id` alone — A is dying Nov 1
-anyway, B is the live one. Hence `AddonChangePolicy.Overrides` is keyed by `addon_associations.id`.
+anyway, B is the live one. Hence `EntityChangePolicy.Overrides` is keyed by `addon_associations.id`.
 
 Secondary: `Cadence` is a property of the attachment, not the addon
 ([ent/schema/addon.go](../../ent/schema/addon.go) carries only id / lookup_key / name / description /
@@ -463,6 +493,76 @@ is already end-dated — but real. Fix: `credit_grants.addon_association_id`. Se
 ([subscription.go:5743](../../internal/ee/service/subscription.go#L5743)) while the real quantity is
 set later by the override path, so association-level quantity is unreliable. Fix:
 `addon_associations.quantity`.
+
+---
+
+
+
+## 6. Line key, and the v0 decisions that follow from it
+
+Successor resolution and the response's `line_key` are **one function**, so the report cannot
+disagree with what was billed. It answers one question: is this target-plan price the same service as
+this current-plan price?
+
+```
+USAGE    ->  (meter_id, sorted filter_values)
+FIXED    ->  lookup_key, when both prices have a non-empty one
+otherwise->  price_id — unique per price, so it pairs with nothing
+```
+
+`prices.group_id` is deliberately **not** used. It is a catalogue grouping label
+([types/group_entity.go](../../internal/types/group_entity.go)) with no billing semantics, and it is
+optional — depending on it would turn line-item continuity into a catalogue-hygiene problem.
+`feature_id` is not used either: it does not exist on `prices`, and it is too coarse, because two
+prices can share a meter and split on `filter_values` (`region=us` vs `region=eu`) and are genuinely
+different charges.
+
+Four cases:
+
+
+| Current line            | Target line | What happens                                                        |
+| ----------------------- | ----------- | ------------------------------------------------------------------- |
+| paired, identical price | —           | **nothing.** Row untouched, no proration entry, `id` unchanged      |
+| paired, different price | —           | close at `effective_at`, open successor                             |
+| paired with nothing     | —           | close at `effective_at` (remove)                                    |
+| —                       | unpaired    | open at `effective_at` (add)                                        |
+
+
+Row 1 is what makes a lateral change emit no invoice, and it is the only thing stopping an unchanged
+service from getting a new line-item id on every plan change.
+
+### v0 decisions
+
+**Settlement nets — one invoice per change.** Charges and credits are summed across *all* entries;
+credits become negative invoice lines; nothing is raised when the net is zero and no entry moved.
+Today `Compute` buckets each entry into charge *or* credit and `Apply` settles the two independently
+([line_item_proration.go:124](../../internal/ee/service/line_item_proration.go#L124)), which is why a
+lateral change currently produces an invoice **and** a wallet credit that cancel. This supersedes the
+open decision in §8.
+
+**Usage tier ladders restart when a line splits — accepted in v0.** `CalculateCost(price, quantity)`
+([price.go:1073](../../internal/ee/service/price.go#L1073)) applies the ladder to one window's
+quantity, so a mid-period split bills the first tier twice and the customer pays *more* for having
+changed plan. Row 1 above avoids this whenever the price is identical across plans, which is the
+common case. Where the price genuinely differs, v0 accepts the restart and test 26 asserts it. The
+fix is a tier **offset** — bill the successor's own quantity, priced from the predecessor's
+cumulative position — and never a quantity bump, which would double-charge. It also needs a separate
+policy for VOLUME tier mode, which reprices every unit at a single tier
+([price.go:1111](../../internal/ee/service/price.go#L1111)) and so cannot be offset cleanly. Out of v0.
+
+**Entitlement quota does not rederive.** Grants carry with their usage counter, so the target plan's
+quota applies from the next reset, not at `effective_at`. Deliberate: it keeps the counter honest and
+closes the mid-period reset loophole. Callers needing the new quota immediately use the entitlement
+override API.
+
+**Preview parity is arithmetic parity.** Same request, same instant → same numbers. Preview returns
+the `effective_at` it used; `immediate` resolves to `now` at each call, and usage accrued between
+preview and execute legitimately changes the result.
+
+**Idempotency** reuses `idempotency.Generator` with a new `ScopePlanChange`, keyed on
+`(subscription_id, target_plan_id, effective_at, caller key)`
+([generator.go](../../internal/idempotency/generator.go)). It — not the
+`target_plan_id == plan_id` precondition — is what makes a double-execute safe.
 
 ---
 
@@ -518,16 +618,16 @@ the immutable `subscription_line_item_id` FK.
 
 
 
-## 8. `target_config` — attaching addons, and replace
+## 8. `addendum_config` — attaching addons, and replace
 
-`target_config.addons` attaches addons as part of the change. Combined with `entity_policies`,
+`addendum_config.addons` attaches addons as part of the change. Combined with `entity_policies`,
 **replace** is expressible without a dedicated action:
 
 ```json
 { "target_plan_id": "plan_pro",
   "proration_behavior": "create_prorations",
-  "entity_policies": { "addons": { "overrides": { "addon_assoc_A": "drop" } } },
-  "target_config":   { "addons": [ { "addon_id": "addon_B", "cadence": "recurring" } ] } }
+  "entity_policies":  { "addons": { "overrides": { "addon_assoc_A": "drop" } } },
+  "addendum_config":  { "addons": [ { "addon_id": "addon_B", "cadence": "recurring" } ] } }
 ```
 
 **Adding an addon that is already attached is not a conflict.** It creates a second attachment,  
@@ -535,7 +635,7 @@ which §5 establishes is legitimate and which `AddAddonToSubscription` already s
 rather than stack, drop the existing attachment in the same request. Note this differs from coupons,  
 where additive application *is* a bug — `[handleSubCoupons](../../internal/ee/service/subscription.go#L4602)`  
 has it today — so the precedence rule must be decided per entity type when `SubscriptionCoupons`  
-joins `target_config`, not inherited from addons.
+joins `addendum_config`, not inherited from addons.
 
 ```
 close plan lines         -> ProrationActionRemoveItem
@@ -547,10 +647,11 @@ added addon lines        -> ProrationActionAddItem
       -> settle once
 ```
 
-Two gaps to close in the shared settlement:
+Three gaps to close in the shared settlement:
 
 - `Apply` **returns only** `error`**.** `ChangedResources` needs the invoice and wallet-transaction ids, so the change calls `Compute` and settles itself, or `Apply` widens its return.
-- **Charges and credits do not net.** `Apply` raises an invoice for `TotalChargeAmount` *and separately* a wallet credit for `TotalCreditAmount`, so a replace whose drop out-credits the add produces both. The pay-first path already nets them into one draft (`createAggregatedProrationDraftInvoice` locks charges − credits). **Open decision:** net for pay-later too, or keep the split.
+- **Charges and credits do not net.** `Apply` raises an invoice for `TotalChargeAmount` *and separately* a wallet credit for `TotalCreditAmount`, so a replace whose drop out-credits the add produces both. §6 decides this: net them, emit credits as negative invoice lines, and raise nothing when the net is zero. The pay-first path already does it (`createAggregatedProrationDraftInvoice` locks charges − credits).
+- **Compute skips usage prices** ([line_item_proration.go:99](../../internal/ee/service/line_item_proration.go#L99), *"future consumption is unknown at change time"*). Correct, but it means the settlement never sees usage lines — usage continuity (§6) is decided outside this path.
 
 ---
 
@@ -559,13 +660,13 @@ Two gaps to close in the shared settlement:
 ## 9. Persistence delta
 
 
-| Piece                                | Change                                                                                                                                         |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `subscriptions.plan_id`              | drop `.Immutable()`; add to the repository `Update` field list                                                                                 |
-|                                      |                                                                                                                                                |
-| `credit_grants.addon_association_id` | new nullable immutable column; backfill from `addon_id` where the subscription has exactly one association for that addon, NULL otherwise (§5) |
-| `addon_associations.quantity`        | new column, default 1, backfilled from line-item quantity (§5)                                                                                 |
-|                                      |                                                                                                                                                |
+| Piece                                       | Change                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `subscriptions.plan_id`                     | drop `.Immutable()`; add to the repository `Update` field list                                                                                                                                                                                                                            |
+| `subscriptions.synced_price_sequence`       | **reset on swap** to the target plan's current max. The watermark is only meaningful relative to a `plan_id` — the discovery filter is `synced_price_sequence < TargetSeq` ([planpricesync/repository.go:92](../../internal/domain/planpricesync/repository.go#L92)) — so a carried value silently marks the sub permanently in-sync with the new plan |
+| `invoice_line_items.subscription_line_item_id` | populate it in `buildChargeLineItem` ([line_item_proration.go:221](../../internal/ee/service/line_item_proration.go#L221)). Regular invoices set it ([billing.go:289](../../internal/ee/service/billing.go#L289)); proration invoices leave it NULL, so §10's join sees only regular invoices |
+| `credit_grants.addon_association_id`        | new nullable immutable column; backfill from `addon_id` where the subscription has exactly one association for that addon, NULL otherwise (§5)                                                                                                                                            |
+| `addon_associations.quantity`               | new column, default 1, backfilled from line-item quantity (§5). **Not in v0** — the `addon_quantity` metadata it replaces is written twice and read nowhere, and proration already uses the line item's real quantity. Hygiene, not correctness                                            |
 
 
 ---
@@ -577,8 +678,10 @@ Two gaps to close in the shared settlement:
 **Ships first, on v1. Blocking.** Credit is computed from the **list** price
 ([proration.go:451,463](../../internal/ee/service/proration.go#L451), and again at
 [line_item_proration.go:210](../../internal/ee/service/line_item_proration.go#L210)), and the cap
-meant to bound it compares a value against itself scaled by a coefficient ≤ 1
-([calculator.go:255-273](../../internal/domain/proration/calculator.go#L255)), so it never binds.
+meant to bound it never binds: `capCreditAmount`
+([calculator.go:179-200](../../internal/domain/proration/calculator.go#L179)) compares
+`OldPricePerUnit × OldQuantity × coefficient` against an `OriginalAmountPaid` that is set to the same
+`price.Amount × quantity` un-scaled, and the coefficient is ≤ 1.
 
 Restart masks this — each subscription is credited once and cancelled. Under swap a line item
 survives many changes and the error compounds. Fix is the join through the immutable
@@ -586,8 +689,13 @@ survives many changes and the error compounds. Fix is the join through the immut
 `getOriginalAmountPaidForLineItem` and `getPreviousCreditsForLineItem` already exist commented out at
 [proration.go:441,454](../../internal/ee/service/proration.go#L441).
 
-Ship it on v1 where the parity harness measures it. **A4 and A2 point in opposite directions —
-fixing A2 without A4 turns an over-credit into real money leaving the business.**
+**The join needs the FK populated first.** Proration invoice lines do not set
+`SubscriptionLineItemID` today (§9), so without that one-line fix the basis for any
+proration-created charge reads as zero and test 4 cannot pass. Do it in the same change.
+
+Ship it on v1 where the parity harness measures it. Credit basis (over-credit from list price) and
+credit capping point in opposite directions — fixing the cap without fixing the basis turns an
+over-credit into real money leaving the business, so they land together.
 
 ---
 
@@ -595,14 +703,19 @@ fixing A2 without A4 turns an over-credit into real money leaving the business.*
 
 ## 11. Sequencing
 
-1. **A4 credit basis fix**, on v1. Blocking.
-2. `credit_grants.addon_association_id` and `addon_associations.quantity` + backfills. Behaviour-neutral. Scope addon-drop grant cancellation on the association once the column exists.
-3. `plan_id` mutable; `SubRepo.GetForUpdate` mirroring the invoice repo.
-4. `/change/v2` preview + execute, immediate only. v1 deprecated in Swagger.
+**v0 is planned in phases in [2026-08-12-plan-change-v2-v0-plan.md](2026-08-12-plan-change-v2-v0-plan.md)** —
+that document is the implementation source of truth. This list is the whole arc, v0 and beyond.
+
+1. **Credit basis fix** (§10) + populate `SubscriptionLineItemID` on proration lines, on v1. Blocking. — *v0, phase 0*
+2. `credit_grants.addon_association_id` + backfill, and scope addon-drop grant cancellation on it. Only matters once a change can drop an addon. — *v0, phase 3*. `addon_associations.quantity` is hygiene — the metadata it replaces is read nowhere — and is **not** in v0.
+3. `plan_id` mutable, `synced_price_sequence` reset; `SubRepo.GetForUpdate` mirroring the invoice repo. — *v0, phase 1*
+4. `/change/v2` preview + execute, immediate only, plan lines then addons. v1 stays supported. — *v0, phases 2–4*
 5. Deferred (`end_of_period`) + collapse the three scheduled executors ([subscription.go:3709](../../internal/ee/service/subscription.go#L3709), [update_billing_period_activities.go:380](../../internal/temporal/activities/subscription/update_billing_period_activities.go#L380), [subscription_schedule.go:246](../../internal/ee/service/subscription_schedule.go#L246)) into one — all three currently pass `time.Now()` instead of the scheduled instant.
 6. Payment gating — add plan change to the checkout allowlist.
-7. Point the Stripe inbound `handlePlanChange` ([internal/integration/stripe/subscription.go:585](../../internal/integration/stripe/subscription.go#L585)) at the same service, deleting the fourth implementation.
+7. Point the Stripe inbound `handlePlanChange` ([internal/integration/stripe/subscription.go:585](../../internal/integration/stripe/subscription.go#L585)) at the same service, deleting the fourth implementation. Needs a v2 equivalent of `OpeningInvoiceAdjustmentAmount` first.
 8. Webhooks: `subscription.updated` + new `subscription.plan_changed`. **Never** `subscription.cancelled` then `subscription.created` for an upgrade.
+9. Tier offset for split usage lines, and the VOLUME-mode policy (§6).
+10. Interval / cadence / currency change. Until this lands, v1 is not deprecated.
 
 Deleted once v2 is the only in-place path: `inheritPaddleEntityMappings` and its TODO
 ([subscription_change.go:959](../../internal/ee/service/subscription_change.go#L959)),
@@ -619,7 +732,7 @@ Deleted once v2 is the only in-place path: `inheritPaddleEntityMappings` and its
 | #   | Scenario                                                   | Expected                                                                                                            |
 | --- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 1   | Same-interval upgrade mid-period                           | one row, same `id`, anchor and period bounds unchanged, `plan_id` updated, line items tile with no gap or overlap   |
-| 2   | Lateral change, identical price                            | net zero, no invoice                                                                                                |
+| 2   | Lateral change, identical price                            | line row untouched, **no proration entry, no invoice, no new line-item id** (§6 row 1)                              |
 | 3   | Upgrade then downgrade back in one period                  | total equals true consumption, **with no special-case code**                                                        |
 | 4   | Two changes in one period                                  | second credit references the first change's debit, not list price                                                   |
 | 5   | Downgrade, credit exceeds the invoice                      | visible credit line, residue to the wallet, not discarded                                                           |
@@ -639,10 +752,12 @@ Deleted once v2 is the only in-place path: `inheritPaddleEntityMappings` and its
 | 19  | Subscription-level coupon                                  | survives                                                                                                            |
 | 20  | Entitlement usage counter                                  | preserved across the change                                                                                         |
 | 21  | Trial in progress                                          | continues to its natural end                                                                                        |
-| 22  | Concurrent double-execute                                  | second blocks on the row lock, then 4xx on `target_plan_id == plan_id`; exactly one change, no duplicate line items |
+| 22  | Concurrent double-execute, **different** target plans      | second blocks on the row lock; exactly one change lands, no duplicate line items                                    |
 | 23  | Replayed `idempotency_key`                                 | same response, no second change                                                                                     |
 | 24  | Interval / hierarchy / phases / pause / currency           | 4xx, no mutation                                                                                                    |
-| 25  | Preview vs execute                                         | identical money for an identical request                                                                            |
+| 25  | Preview vs execute                                         | identical money for the same request at the same instant                                                            |
+| 26  | Tiered usage line, price differs across plans              | ladder restarts per window — asserts the accepted v0 limitation (§6), so the fix has a failing test to flip         |
+| 27  | Swap, then a plan-price change on the target plan          | the sub is picked up by the plan-price sync — `synced_price_sequence` was reset (§9)                                |
 
 
 ```bash

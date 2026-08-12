@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -91,6 +92,8 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 		TotalCreditAmount: decimal.Zero,
 	}
 
+	billed := s.creditBasisForEntries(ctx, req)
+
 	for _, entry := range req.Entries {
 		item := entry.LineItem
 		p := entry.Price
@@ -105,7 +108,7 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 			continue
 		}
 
-		params, skip := s.buildProrationParams(sub, entry, req, customerTimezone)
+		params, skip := s.buildProrationParams(sub, entry, req, customerTimezone, billed)
 		if skip {
 			continue
 		}
@@ -166,6 +169,36 @@ func (s *lineItemProrationService) Apply(ctx context.Context, req LineItemProrat
 	return nil
 }
 
+// creditBasisForEntries reads, in one query, what each removable line item was
+// actually billed this period. Credits are capped against this instead of the
+// list price, which never binds.
+func (s *lineItemProrationService) creditBasisForEntries(
+	ctx context.Context,
+	req LineItemProrationRequest,
+) map[string]invoice.BilledAmounts {
+	lineItemIDs := make([]string, 0, len(req.Entries))
+	for _, entry := range req.Entries {
+		if entry.Action == types.ProrationActionRemoveItem && entry.LineItem != nil {
+			lineItemIDs = append(lineItemIDs, entry.LineItem.ID)
+		}
+	}
+	if len(lineItemIDs) == 0 {
+		return nil
+	}
+
+	billed, err := s.params.InvoiceLineItemRepo.GetBilledAmountsBySubscriptionLineItem(
+		ctx, lineItemIDs, req.EffectiveDate,
+	)
+	if err != nil {
+		s.params.Logger.Info(ctx, "failed to read billed amounts for credit basis, falling back to list price",
+			"error", err,
+			"subscription_id", req.Subscription.ID)
+		return nil
+	}
+
+	return billed
+}
+
 // buildProrationParams constructs the ProrationParams for a single entry.
 // Returns (params, skip=true) when the entry should be skipped entirely.
 func (s *lineItemProrationService) buildProrationParams(
@@ -173,6 +206,7 @@ func (s *lineItemProrationService) buildProrationParams(
 	entry LineItemProrationEntry,
 	req LineItemProrationRequest,
 	customerTimezone string,
+	billed map[string]invoice.BilledAmounts,
 ) (proration.ProrationParams, bool) {
 	item := entry.LineItem
 	p := entry.Price
@@ -207,8 +241,14 @@ func (s *lineItemProrationService) buildProrationParams(
 		base.CancellationType = types.CancellationTypeImmediate
 		base.CancellationReason = req.Reason
 		base.RefundEligible = true
-		base.OriginalAmountPaid = p.Amount.Mul(item.Quantity)
-		base.PreviousCreditsIssued = decimal.Zero
+		if billed == nil {
+			base.OriginalAmountPaid = p.Amount.Mul(item.Quantity)
+			base.PreviousCreditsIssued = decimal.Zero
+		} else {
+			amounts := billed[item.ID]
+			base.OriginalAmountPaid = amounts.Charged()
+			base.PreviousCreditsIssued = amounts.Credited()
+		}
 
 	default:
 		return proration.ProrationParams{}, true
@@ -230,6 +270,7 @@ func (s *lineItemProrationService) buildChargeLineItem(
 	priceID := item.PriceID
 	priceType := string(p.Type)
 	displayName := item.DisplayName
+	subscriptionLineItemID := item.ID
 
 	qty := item.Quantity
 	if entry.Action == types.ProrationActionAddItem && !entry.NewQuantity.IsZero() {
@@ -250,14 +291,15 @@ func (s *lineItemProrationService) buildChargeLineItem(
 	}
 
 	return dto.CreateInvoiceLineItemRequest{
-		PriceID:     &priceID,
-		PriceType:   &priceType,
-		DisplayName: &displayName,
-		Amount:      amount,
-		Quantity:    qty,
-		PeriodStart: &effectiveDate,
-		PeriodEnd:   &periodEnd,
-		Metadata:    types.Metadata{"description": description},
+		PriceID:                &priceID,
+		PriceType:              &priceType,
+		DisplayName:            &displayName,
+		Amount:                 amount,
+		Quantity:               qty,
+		PeriodStart:            &effectiveDate,
+		PeriodEnd:              &periodEnd,
+		SubscriptionLineItemID: &subscriptionLineItemID,
+		Metadata:               types.Metadata{"description": description},
 	}
 }
 

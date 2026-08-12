@@ -35,6 +35,20 @@ type LineItemRepository interface {
 	// List retrieves invoice line items matching the filter.
 	List(ctx context.Context, filter *types.InvoiceLineItemFilter) ([]*InvoiceLineItem, error)
 
+	// GetBilledAmountsBySubscriptionLineItem aggregates, per subscription line item,
+	// what has been billed for the service window covering asOf: positive amounts
+	// as charges, negative as credits, on non-voided published invoices only.
+	//
+	// A charge counts when its service period contains asOf, which is the window a
+	// proration at asOf is cutting short. Matching on the subscription's current
+	// period instead would miss a line item billed on a longer cadence — a
+	// quarterly charge raised in January is still the charge being shortened when
+	// the line is removed in February.
+	//
+	// Ids with no billing history are absent from the map; that is a valid answer
+	// (nothing billed, nothing to credit), not an error.
+	GetBilledAmountsBySubscriptionLineItem(ctx context.Context, subscriptionLineItemIDs []string, asOf time.Time) (map[string]BilledAmounts, error)
+
 	// GetRevenueByCustomer aggregates invoice line item amounts grouped by
 	// customer_id, price_type, and currency for DRAFT/FINALIZED invoices within the given period.
 	// When customerIDs is non-empty, results are scoped to those customers only.
