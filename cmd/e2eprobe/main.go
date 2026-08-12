@@ -175,6 +175,11 @@ func main() {
 		runner.Add(pbip, e2eprobe.NewTickerScheduler(pbip, cfg.Checks["PERSISTENT_BILLING_INVARIANTS_PROBE"].Interval))
 	}
 
+	if cfg.Checks["ENTITLEMENT_GRANT_ADDITIVE_PROBE"].Enabled {
+		egap := checks_pkg.NewEntitlementGrantAdditiveProbe(client, reg, runID, lg)
+		runner.Add(egap, e2eprobe.NewTickerScheduler(egap, cfg.Checks["ENTITLEMENT_GRANT_ADDITIVE_PROBE"].Interval))
+	}
+
 	// The listener is created regardless of the LOW_WALLET_ALERT_LISTENER flag
 	// because LOW_BALANCE_ALERT_PROBE reads SeenThresholds from it to verify
 	// webhook receipt. If neither the listener check nor the probe is enabled,

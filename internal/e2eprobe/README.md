@@ -22,10 +22,11 @@ make run-e2eprobe
 4. **10 persistent customers** tagged `metadata.e2eprobe_cohort = "persistent"`.
 5. **1 plan** (`e2eprobe_plan`) with metadata `e2eprobe = "true"`.
 6. **12 prices** attached to the plan: 1 base recurring fixed fee ($19.99/mo) + 1 usage price per feature ($0.01/unit).
-7. **8 plan-level entitlements**: one soft-limit entitlement (usage_limit=100, reset MONTHLY) on each non-bucketed metered feature.
-8. **10 subscriptions** — one per persistent customer — on the e2eprobe plan (monthly, anniversary cycle). New subs carry a $5/mo commitment (1.5× overage factor); cust #1's sub additionally carries the shared coupon via SubscriptionCoupons. Draft subscriptions are activated automatically.
-9. **1 tax association** linking the shared tax rate to persistent cust #0's subscription (idempotent — covers both new and existing subs).
-10. **3 wallets** on the first 3 persistent customers (`e2eprobe-cust-persistent-0/1/2`), each topped up to $100.00 USD.
+7. **7 plan-level soft-limit entitlements** (was 8): one on each non-bucketed metered feature EXCEPT `e2eprobe_sum_multiplier_feature`, which is reserved for the additive grant (see next bullet).
+8. **1 additive grant entitlement** on `e2eprobe_sum_multiplier_feature` (grant_measure=quantity, quota=1000, duration=1 hour, aggregation_mode=additive). Post-create config-echo verified at seed time via raw HTTP GET, since SDK v2.0.24 doesn't expose grant fields on `EntitlementResponse`.
+9. **10 subscriptions** — one per persistent customer — on the e2eprobe plan (monthly, anniversary cycle). New subs carry a $5/mo commitment (1.5× overage factor); cust #1's sub additionally carries the shared coupon via SubscriptionCoupons. Draft subscriptions are activated automatically.
+10. **1 tax association** linking the shared tax rate to persistent cust #0's subscription (idempotent — covers both new and existing subs).
+11. **3 wallets** on the first 3 persistent customers (`e2eprobe-cust-persistent-0/1/2`), each topped up to $100.00 USD.
 
 Every step is idempotent: re-running seed-ensure against a tenant that already has all entities is a no-op.
 
@@ -85,6 +86,7 @@ Standard OTLP env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, etc.) flow through unchan
 | scenario | tax-application-probe | 15m | Ephemeral sub + tax association → preview → assert `preview.Taxes` includes the seed rate and 10% math |
 | scenario | coupon-application-probe | 15m | Ephemeral sub w/ SubscriptionCoupons → preview → assert `preview.CouponApplications` references the seed coupon |
 | probe | persistent-billing-invariants-probe | 30m | Latest cycle invoice for pers cust #0/#1 → assert tax + coupon present as configured |
+| scenario | entitlement-grant-additive-probe | 15m | Ephemeral sub inheriting plan additive grant → ingest 200 events → assert usage summary populates |
 | maintenance | janitor | 1h | Archive in-memory ephemerals > 1h; also scans Flexprice for orphan ephemeral customers (Phase 2) and orphan tax associations (Phase 3) and deletes them |
 
 ## Webhook pipeline verification (low-balance-alert-probe + low-wallet-alert-listener)
