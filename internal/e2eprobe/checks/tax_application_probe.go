@@ -153,7 +153,14 @@ func (p *TaxApplicationProbe) Run(ctx context.Context) error {
 	epsilon := decimal.NewFromFloat(0.01)
 	found := false
 	for _, tx := range inv.Taxes {
+		// Prefer strong match by tax_rate_id when available; fall back to
+		// nested TaxRate.Code == SharedTaxRateCode. Seeds.SharedTaxRateID is
+		// empty when the SDK's broken GetTaxRates list + our create-only
+		// idempotency workaround couldn't recover the ID.
 		if tx.TaxRateID != nil && seeds.SharedTaxRateID != "" && *tx.TaxRateID == seeds.SharedTaxRateID {
+			found = true
+		}
+		if !found && tx.TaxRate != nil && tx.TaxRate.Code != nil && *tx.TaxRate.Code == seeds.SharedTaxRateCode {
 			found = true
 		}
 		if tx.TaxableAmount != nil && tx.TaxAmount != nil {
@@ -170,10 +177,11 @@ func (p *TaxApplicationProbe) Run(ctx context.Context) error {
 			}
 		}
 	}
-	if !found && seeds.SharedTaxRateID != "" {
+	if !found {
 		return e2eprobe.Errorf(map[string]string{
-			"step": "assert_tax_rate_match", "subscription_id": subID, "tax_rate_id": seeds.SharedTaxRateID,
-		}, "preview.Taxes did not include tax_rate_id %s", seeds.SharedTaxRateID)
+			"step": "assert_tax_rate_match", "subscription_id": subID,
+			"tax_rate_id": seeds.SharedTaxRateID, "tax_rate_code": seeds.SharedTaxRateCode,
+		}, "preview.Taxes did not include our tax rate (checked id %q AND code %q)", seeds.SharedTaxRateID, seeds.SharedTaxRateCode)
 	}
 	return nil
 }

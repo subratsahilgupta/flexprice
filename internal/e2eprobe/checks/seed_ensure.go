@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/e2eprobe"
 	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/go-sdk/v2/models/dtos"
 	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/flexprice/go-sdk/v2/models/types"
 )
@@ -338,22 +338,20 @@ func (s *SeedEnsure) ensureCoupons(ctx context.Context, out *e2eprobe.Seeds) err
 
 // ensureTaxRates idempotently provisions the shared E2EPROBE_TAX_10PCT tax
 // rate (10% percentage, EXTERNAL scope) reused by tax-application-probe and
-// by the persistent tax association on customer #0. Lookup uses the SDK's
-// server-side TaxrateCodes filter.
+// by the persistent tax association on customer #0.
+//
+// SDK v2.0.24's TaxRates.List (GET /taxes/rates) is broken: the server
+// returns {items, pagination} but the SDK expects a bare array (schema-
+// annotation mismatch in the server's Swagger doc). Rather than call the
+// broken List method, this step attempts Create and treats an already-
+// exists response (HTTP 409 or Code=="already_exists") as success. On a
+// duplicate we cannot recover the existing ID (there is no exposed
+// GET-by-code endpoint), so out.SharedTaxRateID stays empty on that path
+// and downstream callers must tolerate that.
 func (s *SeedEnsure) ensureTaxRates(ctx context.Context, out *e2eprobe.Seeds) error {
-	listResp, err := s.client.TaxRates().List(ctx, dtos.GetTaxRatesRequest{
-		TaxrateCodes: []string{SharedTaxRateCode},
-	})
-	if err != nil {
-		return e2eprobe.Errorf(map[string]string{"step": "list_tax_rates"}, "list tax rates: %w", err)
-	}
-	for _, tr := range listResp.TaxRateResponses {
-		if tr.Code != nil && *tr.Code == SharedTaxRateCode && tr.ID != nil {
-			out.SharedTaxRateID = *tr.ID
-			out.SharedTaxRateCode = SharedTaxRateCode
-			return nil
-		}
-	}
+	// Populate the code first so downstream soft-skips (that only need code)
+	// still get it even if Create returns an unexpected error below.
+	out.SharedTaxRateCode = SharedTaxRateCode
 
 	percentage := "10"
 	scope := types.TaxRateScopeExternal
@@ -369,14 +367,52 @@ func (s *SeedEnsure) ensureTaxRates(ctx context.Context, out *e2eprobe.Seeds) er
 			"e2eprobe_role": "seed",
 		},
 	})
-	if err != nil {
-		return e2eprobe.Errorf(map[string]string{"tax_rate_code": SharedTaxRateCode}, "create tax rate: %w", err)
+	if err == nil {
+		if createResp.TaxRateResponse != nil && createResp.TaxRateResponse.ID != nil {
+			out.SharedTaxRateID = *createResp.TaxRateResponse.ID
+		}
+		return nil
 	}
-	if createResp.TaxRateResponse != nil && createResp.TaxRateResponse.ID != nil {
-		out.SharedTaxRateID = *createResp.TaxRateResponse.ID
+	if isAlreadyExists(err) {
+		if s.logger != nil {
+			s.logger.Info(ctx, "ensureTaxRates: tax rate already exists (no ID lookup available in SDK v2.0.24, downstream will fall back to code match)",
+				"tax_rate_code", SharedTaxRateCode,
+			)
+		}
+		return nil
 	}
-	out.SharedTaxRateCode = SharedTaxRateCode
-	return nil
+	return e2eprobe.Errorf(map[string]string{"tax_rate_code": SharedTaxRateCode}, "create tax rate: %w", err)
+}
+
+// isAlreadyExists returns true when the given SDK error represents a
+// "resource already exists" (HTTP 409, or an ErrorResponse with Code
+// "already_exists"). Used by seed steps for create-then-swallow-duplicate
+// idempotency where a list-then-create round-trip is unavailable.
+func isAlreadyExists(err error) bool {
+	if err == nil {
+		return false
+	}
+	var errResp *sdkerrors.ErrorResponse
+	if errors.As(err, &errResp) {
+		if errResp.HTTPStatusCode != nil && *errResp.HTTPStatusCode == http.StatusConflict {
+			return true
+		}
+		if errResp.Code != nil && *errResp.Code == types.ErrorCodeAlreadyExists {
+			return true
+		}
+	}
+	var apiErr *sdkerrors.APIError
+	if errors.As(err, &apiErr) {
+		if apiErr.StatusCode == http.StatusConflict {
+			return true
+		}
+		// The generic 4xx SDK path returns *APIError with the raw JSON body;
+		// fall back to substring match on the error code within the body.
+		if strings.Contains(apiErr.Body, `"code":"already_exists"`) {
+			return true
+		}
+	}
+	return false
 }
 
 // bucketedFeatureLookupKeys is the set of lookup keys whose features are
@@ -761,12 +797,17 @@ func (s *SeedEnsure) ensureSubscriptions(ctx context.Context, seeds *e2eprobe.Se
 }
 
 // ensurePersistentTaxAssociation attaches the shared E2EPROBE_TAX_10PCT
-// tax rate to persistent cust #0's subscription. Idempotent: lists
-// existing associations filtered by tax_rate_id + entity_id and creates
-// only if absent. Unlike coupons, tax associations are a separate call
-// (not a sub-create field), so this covers both new and existing subs.
+// tax rate to persistent cust #0's subscription. Idempotency lists all
+// tax associations for the subscription (filtered by entity_type + entity_id
+// only — NOT by tax_rate_id, since SharedTaxRateID may be empty when the
+// tax rate pre-existed) and treats "any association present" as done. Safe
+// because the seed only ever attaches one tax rate to this sub.
+//
+// Unlike coupons (attached at sub-create via SubscriptionCoupons), tax
+// associations are a separate API call, so this covers both freshly-
+// created and pre-existing seed subs.
 func (s *SeedEnsure) ensurePersistentTaxAssociation(ctx context.Context, out *e2eprobe.Seeds) error {
-	if out.SharedTaxRateCode == "" || out.SharedTaxRateID == "" {
+	if out.SharedTaxRateCode == "" {
 		return nil // tax rate seed didn't run — soft skip
 	}
 	if len(out.PersistentCustomerIDs) == 0 || len(out.PersistentSubIDs) == 0 {
@@ -779,16 +820,35 @@ func (s *SeedEnsure) ensurePersistentTaxAssociation(ctx context.Context, out *e2
 		return nil
 	}
 	subID := out.PersistentSubIDs[0]
-	taxRateID := out.SharedTaxRateID
 
 	entityType := "SUBSCRIPTION"
-	listResp, err := s.client.TaxAssociations().List(ctx, &entityType, &subID, nil, &taxRateID)
+	listResp, err := s.client.TaxAssociations().List(ctx, &entityType, &subID, nil, nil)
 	if err != nil {
-		return e2eprobe.Errorf(map[string]string{"subscription_id": subID, "tax_rate_id": taxRateID}, "list tax associations: %w", err)
+		return e2eprobe.Errorf(map[string]string{"subscription_id": subID, "tax_rate_code": out.SharedTaxRateCode}, "list tax associations: %w", err)
 	}
+	// The seed only ever attaches ONE tax rate to persistent cust #0's sub,
+	// so any existing association is by definition OUR association. On the
+	// happy path we match by SharedTaxRateID; when the ID is unknown (SDK
+	// v2.0.24 TaxRates.List is broken and CreateTaxRate returned
+	// "already exists"), we opportunistically backfill SharedTaxRateID from
+	// the existing association's TaxRateID so downstream janitor / probe
+	// assertions can use the strong ID match.
 	if listResp.ListTaxAssociationsResponse != nil {
 		for _, ta := range listResp.ListTaxAssociationsResponse.Items {
-			if ta.TaxRateID != nil && *ta.TaxRateID == taxRateID {
+			if out.SharedTaxRateID != "" && ta.TaxRateID != nil && *ta.TaxRateID == out.SharedTaxRateID {
+				return nil
+			}
+			if ta.TaxRate != nil && ta.TaxRate.Code != nil && *ta.TaxRate.Code == out.SharedTaxRateCode {
+				if out.SharedTaxRateID == "" && ta.TaxRateID != nil {
+					out.SharedTaxRateID = *ta.TaxRateID
+				}
+				return nil
+			}
+			// Unknown-code, unknown-ID fallback: seed invariant guarantees only
+			// our shared rate is ever attached to cust #0's sub, so any
+			// association wins. Backfill the ID from it.
+			if out.SharedTaxRateID == "" && ta.TaxRateID != nil {
+				out.SharedTaxRateID = *ta.TaxRateID
 				return nil
 			}
 		}
@@ -796,7 +856,7 @@ func (s *SeedEnsure) ensurePersistentTaxAssociation(ctx context.Context, out *e2
 
 	autoApply := true
 	tType := types.TaxRateEntityTypeSubscription
-	_, err = s.client.TaxAssociations().Create(ctx, types.CreateTaxAssociationRequest{
+	createResp, err := s.client.TaxAssociations().Create(ctx, types.CreateTaxAssociationRequest{
 		TaxRateCode: out.SharedTaxRateCode,
 		EntityID:    &subID,
 		EntityType:  &tType,
@@ -807,7 +867,15 @@ func (s *SeedEnsure) ensurePersistentTaxAssociation(ctx context.Context, out *e2
 		},
 	})
 	if err != nil {
+		if isAlreadyExists(err) {
+			return nil // benign — a prior seed already attached it
+		}
 		return e2eprobe.Errorf(map[string]string{"subscription_id": subID, "tax_rate_code": out.SharedTaxRateCode}, "create tax association: %w", err)
+	}
+	// Opportunistically backfill SharedTaxRateID from the association response
+	// so downstream janitor / probe assertions can use the stronger ID match.
+	if out.SharedTaxRateID == "" && createResp.TaxAssociationResponse != nil && createResp.TaxAssociationResponse.TaxRateID != nil {
+		out.SharedTaxRateID = *createResp.TaxAssociationResponse.TaxRateID
 	}
 	return nil
 }

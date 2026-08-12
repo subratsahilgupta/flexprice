@@ -233,10 +233,18 @@ func (j *Janitor) sweepOrphans(ctx context.Context, cutoff time.Time) error {
 // tax rate and deletes any whose EntityID (subscription) 404s on lookup.
 // The seed tax association on persistent cust #0 is preserved because its
 // subscription is persistent and never 404s.
+//
+// Soft-skips when SharedTaxRateID is empty. That can happen when the seed's
+// CreateTaxRate call returned "already exists" AND no CreateTaxAssociation
+// has yet backfilled the ID (see ensureTaxRates + ensurePersistentTaxAssociation
+// in seed_ensure.go, added as workarounds for the SDK v2.0.24 GetTaxRates
+// schema mismatch). Missing a cleanup cycle in that edge state is acceptable
+// — orphan accumulation is slow and a fresh probe iteration typically
+// backfills the ID within one cycle.
 func (j *Janitor) sweepOrphanTaxAssociations(ctx context.Context) error {
 	taxRateID := j.reg.Seeds().SharedTaxRateID
 	if taxRateID == "" {
-		return nil // seed hasn't run — nothing to sweep
+		return nil // seed hasn't run yet, or ID wasn't recoverable — nothing to sweep
 	}
 	resp, err := j.client.TaxAssociations().List(ctx, nil, nil, nil, &taxRateID)
 	if err != nil {

@@ -38,16 +38,18 @@ func (p *PersistentBillingInvariantsProbe) Run(ctx context.Context) error {
 		return nil
 	}
 
-	// Persistent cust #0 → tax invariant.
-	if seeds.SharedTaxRateID != "" {
+	// Persistent cust #0 → tax invariant. Match by ID when available, else
+	// by nested TaxRate.Code (SharedTaxRateID may be empty when the SDK's
+	// broken GetTaxRates list forced create-only idempotency in the seed).
+	if seeds.SharedTaxRateID != "" || seeds.SharedTaxRateCode != "" {
 		cust0 := seeds.PersistentCustomerIDs[0]
 		inv, err := p.latestInvoice(ctx, cust0)
 		if err != nil {
 			return e2eprobe.Errorf(map[string]string{"step": "query_invoice_cust0", "external_customer_id": cust0}, "query invoice: %w", err)
 		}
 		if inv != nil {
-			if !invoiceHasTaxRate(inv, seeds.SharedTaxRateID) {
-				return e2eprobe.Errorf(map[string]string{"step": "assert_tax_present_cust0", "external_customer_id": cust0, "tax_rate_id": seeds.SharedTaxRateID}, "latest invoice for cust #0 does not include tax rate %s", seeds.SharedTaxRateID)
+			if !invoiceHasTaxRate(inv, seeds.SharedTaxRateID, seeds.SharedTaxRateCode) {
+				return e2eprobe.Errorf(map[string]string{"step": "assert_tax_present_cust0", "external_customer_id": cust0, "tax_rate_id": seeds.SharedTaxRateID, "tax_rate_code": seeds.SharedTaxRateCode}, "latest invoice for cust #0 does not include our tax rate (checked id %q AND code %q)", seeds.SharedTaxRateID, seeds.SharedTaxRateCode)
 			}
 		}
 	}
@@ -84,9 +86,12 @@ func (p *PersistentBillingInvariantsProbe) latestInvoice(ctx context.Context, ex
 	return &inv, nil
 }
 
-func invoiceHasTaxRate(inv *types.InvoiceResponse, taxRateID string) bool {
+func invoiceHasTaxRate(inv *types.InvoiceResponse, taxRateID, taxRateCode string) bool {
 	for _, tx := range inv.Taxes {
-		if tx.TaxRateID != nil && *tx.TaxRateID == taxRateID {
+		if taxRateID != "" && tx.TaxRateID != nil && *tx.TaxRateID == taxRateID {
+			return true
+		}
+		if taxRateCode != "" && tx.TaxRate != nil && tx.TaxRate.Code != nil && *tx.TaxRate.Code == taxRateCode {
 			return true
 		}
 	}
