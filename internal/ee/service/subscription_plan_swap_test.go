@@ -15,14 +15,6 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// PlanSwapEnablementSuite covers the persistence groundwork for swapping a
-// subscription's plan in place instead of cancelling and recreating it:
-// plan_id is mutable, and synced_price_sequence is re-anchored with it.
-//
-// The watermark matters because it is only meaningful relative to one plan —
-// it is compared against that plan's max(prices.sequence). Carrying a value
-// across a swap can leave a subscription permanently above its new plan's
-// target, so plan-price sync never selects it again.
 type PlanSwapEnablementSuite struct {
 	testutil.BaseServiceTestSuite
 	td planSwapTestData
@@ -34,8 +26,6 @@ type planSwapTestData struct {
 	sub      *subscription.Subscription
 }
 
-// Sequences are global across prices, so a subscription can easily carry a
-// watermark higher than its target plan's — that is the failure being guarded.
 const (
 	fromPlanSeq = int64(5000)
 	toPlanSeq   = int64(3000)
@@ -86,21 +76,20 @@ func (s *PlanSwapEnablementSuite) setupTestData() {
 
 	periodStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	s.td.sub = &subscription.Subscription{
-		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
-		CustomerID:         cust.ID,
-		PlanID:             s.td.fromPlan.ID,
-		SubscriptionStatus: types.SubscriptionStatusActive,
-		SubscriptionType:   types.SubscriptionTypeStandalone,
-		Currency:           "usd",
-		BillingAnchor:      periodStart,
-		StartDate:          periodStart,
-		CurrentPeriodStart: periodStart,
-		CurrentPeriodEnd:   periodStart.AddDate(0, 1, 0),
-		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-		BillingPeriodCount: 1,
-		BillingCadence:     types.BILLING_CADENCE_RECURRING,
-		BillingCycle:       types.BillingCycleAnniversary,
-		// Already reconciled with the old plan.
+		ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
+		CustomerID:          cust.ID,
+		PlanID:              s.td.fromPlan.ID,
+		SubscriptionStatus:  types.SubscriptionStatusActive,
+		SubscriptionType:    types.SubscriptionTypeStandalone,
+		Currency:            "usd",
+		BillingAnchor:       periodStart,
+		StartDate:           periodStart,
+		CurrentPeriodStart:  periodStart,
+		CurrentPeriodEnd:    periodStart.AddDate(0, 1, 0),
+		BillingPeriod:       types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount:  1,
+		BillingCadence:      types.BILLING_CADENCE_RECURRING,
+		BillingCycle:        types.BillingCycleAnniversary,
 		SyncedPriceSequence: fromPlanSeq,
 		Timezone:            "UTC",
 		BaseModel:           types.GetDefaultBaseModel(ctx),
@@ -108,8 +97,6 @@ func (s *PlanSwapEnablementSuite) setupTestData() {
 	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, s.td.sub))
 }
 
-// createPlanPrice adds a published USAGE price to a plan at a given sequence —
-// the shape plan-price sync tracks.
 func (s *PlanSwapEnablementSuite) createPlanPrice(planID string, seq int64) *price.Price {
 	ctx := s.GetContext()
 	p := &price.Price{
@@ -131,7 +118,6 @@ func (s *PlanSwapEnablementSuite) createPlanPrice(planID string, seq int64) *pri
 	return p
 }
 
-// swapPlan mutates plan_id in place, the way the change engine will.
 func (s *PlanSwapEnablementSuite) swapPlan(toPlanID string) {
 	ctx := s.GetContext()
 	sub, err := s.GetStores().SubscriptionRepo.GetForUpdate(ctx, s.td.sub.ID)
@@ -141,8 +127,6 @@ func (s *PlanSwapEnablementSuite) swapPlan(toPlanID string) {
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
 }
 
-// staleForPlan reports whether plan-price sync would select the subscription
-// for reconciliation against the given plan.
 func (s *PlanSwapEnablementSuite) staleForPlan(planID string) ([]string, []planpricesync.PlanLineItemCreationDelta) {
 	ctx := s.GetContext()
 	syncRepo := s.GetStores().PlanPriceSyncRepo
@@ -158,9 +142,6 @@ func (s *PlanSwapEnablementSuite) staleForPlan(planID string) ([]string, []planp
 	return staleSubIDs, items
 }
 
-// TestPlanIDIsMutable is the change that makes swap-in-place possible at all:
-// plan_id was Immutable, so the only way to move a subscription between plans
-// was to cancel it and create a new one.
 func (s *PlanSwapEnablementSuite) TestPlanIDIsMutable() {
 	ctx := s.GetContext()
 
@@ -176,15 +157,9 @@ func (s *PlanSwapEnablementSuite) TestPlanIDIsMutable() {
 	s.True(reloaded.CurrentPeriodEnd.Equal(s.td.sub.CurrentPeriodEnd))
 }
 
-// TestCarriedSequenceHidesSubFromPlanPriceSync documents why the re-anchor is
-// required. Swapping plan_id alone leaves the old plan's watermark in place;
-// because it is higher than the new plan's sequence, discovery's
-// `synced_price_sequence < TargetSeq` filter never selects the subscription
-// again and it silently stops tracking its plan's price changes.
 func (s *PlanSwapEnablementSuite) TestCarriedSequenceHidesSubFromPlanPriceSync() {
 	s.swapPlan(s.td.toPlan.ID)
 
-	// A later price change on the new plan.
 	s.createPlanPrice(s.td.toPlan.ID, laterToSeq)
 
 	staleSubIDs, items := s.staleForPlan(s.td.toPlan.ID)
@@ -195,9 +170,6 @@ func (s *PlanSwapEnablementSuite) TestCarriedSequenceHidesSubFromPlanPriceSync()
 	s.Empty(items, "and so no line item is ever created for the new plan price")
 }
 
-// TestReanchorMakesSubTrackNewPlanPrices is the same scenario with the
-// re-anchor applied: the subscription is considered in sync with the target
-// plan as of the swap, and any later price change on that plan picks it up.
 func (s *PlanSwapEnablementSuite) TestReanchorMakesSubTrackNewPlanPrices() {
 	ctx := s.GetContext()
 	syncRepo := s.GetStores().PlanPriceSyncRepo
@@ -214,12 +186,9 @@ func (s *PlanSwapEnablementSuite) TestReanchorMakesSubTrackNewPlanPrices() {
 	s.Equal(toPlanSeq, reloaded.SyncedPriceSequence,
 		"the watermark must be re-anchored to the target plan, moving downward here")
 
-	// Nothing outstanding immediately after the swap — line items were just
-	// built from this plan's current prices.
 	staleSubIDs, _ := s.staleForPlan(s.td.toPlan.ID)
 	s.NotContains(staleSubIDs, s.td.sub.ID, "a freshly swapped sub is in sync with its new plan")
 
-	// A later price change on the new plan must now reach it.
 	newPrice := s.createPlanPrice(s.td.toPlan.ID, laterToSeq)
 
 	staleSubIDs, items := s.staleForPlan(s.td.toPlan.ID)
@@ -229,10 +198,6 @@ func (s *PlanSwapEnablementSuite) TestReanchorMakesSubTrackNewPlanPrices() {
 	s.Equal(s.td.sub.ID, items[0].SubscriptionID)
 }
 
-// TestReanchorLowersWhereStampCannot pins the reason for a separate repository
-// method: StampSubsAsSynced is deliberately forward-only (GREATEST + a `<`
-// guard), which is right for the sync but cannot express a swap onto a plan
-// with a lower sequence.
 func (s *PlanSwapEnablementSuite) TestReanchorLowersWhereStampCannot() {
 	ctx := s.GetContext()
 	syncRepo := s.GetStores().PlanPriceSyncRepo
@@ -255,9 +220,6 @@ func (s *PlanSwapEnablementSuite) TestReanchorLowersWhereStampCannot() {
 	s.Equal(toPlanSeq, afterReanchor.SyncedPriceSequence, "re-anchor moves the watermark in either direction")
 }
 
-// TestGetForUpdateReturnsSubscription covers the read side of the row lock the
-// change engine will take. The lock itself needs a real database — the
-// in-memory store has no rows to lock — so this asserts the contract only.
 func (s *PlanSwapEnablementSuite) TestGetForUpdateReturnsSubscription() {
 	ctx := s.GetContext()
 

@@ -153,9 +153,7 @@ func (r *subscriptionRepository) Get(ctx context.Context, id string) (*domainSub
 	return subData, nil
 }
 
-// GetForUpdate loads a subscription under a row-level lock. The cache is
-// deliberately bypassed: the point of the lock is to read the committed row and
-// hold it, which a cached copy cannot do.
+// GetForUpdate row-locks the subscription and bypasses cache (cache can't hold a lock).
 func (r *subscriptionRepository) GetForUpdate(ctx context.Context, id string) (*domainSub.Subscription, error) {
 	span := StartRepositorySpan(ctx, "subscription", "get_for_update", map[string]interface{}{
 		"subscription_id": id,

@@ -8,16 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Plan change v2 — swap in place. Preview and execute take the identical request
-// type and differ only in whether anything is written, so a quote and its
-// execution cannot drift apart.
-//
-// The handlers below do only what a handler should: read the path param, bind
-// the body, delegate, respond. Every decision lives in the service.
-
 // @Summary Preview a plan change (v2, swap in place)
 // @ID previewSubscriptionPlanChangeV2
-// @Description Shows what changing this subscription's plan would do — line items sliced, addon dispositions, and the money that would move — without writing anything. Unlike the v1 endpoint the subscription is swapped in place, so its id, billing anchor and period bounds are preserved.
+// @Description Preview a subscription plan change without writing. Swap-in-place: subscription id, billing anchor and period bounds are preserved.
 // @Tags Subscriptions
 // @Accept json
 // @Produce json
@@ -47,7 +40,7 @@ func (h *SubscriptionHandler) PreviewSubscriptionPlanChangeV2(c *gin.Context) {
 
 // @Summary Execute a plan change (v2, swap in place)
 // @ID executeSubscriptionPlanChangeV2
-// @Description Moves the subscription to a different plan in place. The subscription row survives with its id, billing anchor and period bounds intact; plan line items are sliced at the effective date and settled on a single invoice. Every write happens in one transaction.
+// @Description Change a subscription's plan in place. Subscription id, billing anchor and period bounds are preserved; line items are sliced and settled in one transaction.
 // @Tags Subscriptions
 // @Accept json
 // @Produce json
@@ -75,8 +68,6 @@ func (h *SubscriptionHandler) ExecuteSubscriptionPlanChangeV2(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// bindPlanChangeV2Request is shared so preview and execute cannot diverge in how
-// they read the same request.
 func bindPlanChangeV2Request(c *gin.Context) (string, dto.SubscriptionChangeV2Request, bool) {
 	var req dto.SubscriptionChangeV2Request
 

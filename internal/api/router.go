@@ -333,9 +333,7 @@ func NewRouter(
 			subscription.POST("/:id/change/preview", handlers.SubscriptionChange.PreviewSubscriptionChange)
 			subscription.POST("/:id/change/execute", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionChange.ExecuteSubscriptionChange)
 
-			// Plan change v2: swap in place. v1 above stays supported — it is the
-			// documented fallback for interval, cadence and currency changes, which
-			// v2 rejects by design.
+			// Plan change v2 (swap in place). v1 remains for interval/cadence/currency changes.
 			subscription.POST("/:id/change/v2/preview", handlers.Subscription.PreviewSubscriptionPlanChangeV2)
 			subscription.POST("/:id/change/v2/execute", write(types.EntitySubscription, types.ActionWrite), handlers.Subscription.ExecuteSubscriptionPlanChangeV2)
 			subscription.POST(":id/modify/execute", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionModification.Execute)

@@ -133,9 +133,7 @@ func (s *InMemoryInvoiceLineItemStore) List(ctx context.Context, filter *types.I
 	return result, nil
 }
 
-// GetBilledAmountsBySubscriptionLineItem mirrors the SQL implementation's
-// service-period containment but not its invoice-status join — the in-memory
-// store holds no invoices, so voided invoices cannot be excluded here.
+// Service-period containment only; no invoice-status join (store has no invoices).
 func (s *InMemoryInvoiceLineItemStore) GetBilledAmountsBySubscriptionLineItem(
 	_ context.Context,
 	subscriptionLineItemIDs []string,

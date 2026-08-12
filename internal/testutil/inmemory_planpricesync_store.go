@@ -127,8 +127,6 @@ func (r *InMemoryPlanPriceSyncStore) CurrentPlanSequence(
 	return maxSeq, nil
 }
 
-// ReanchorSubSyncedSequence sets synced_price_sequence unconditionally, in
-// either direction — the plan-change case StampSubsAsSynced cannot serve.
 func (r *InMemoryPlanPriceSyncStore) ReanchorSubSyncedSequence(
 	ctx context.Context,
 	subscriptionID string,

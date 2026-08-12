@@ -15,13 +15,8 @@ type RevenueByCustomerRow struct {
 	Amount     decimal.Decimal
 }
 
-// BilledAmounts is what one subscription line item has actually been billed for a
-// service period: charges raised and credits already returned, on non-voided
-// invoices. It is the basis for capping a proration credit, so a customer can
-// never be credited more than they were charged.
-//
-// Both values are non-negative. A line item with no billing history yields the
-// zero value, which correctly caps its credit at zero.
+// BilledAmounts is charges/credits already invoiced for a subscription line item
+// (non-negative). Used to cap proration credits so we never credit more than billed.
 type BilledAmounts struct {
 	charged  decimal.Decimal
 	credited decimal.Decimal

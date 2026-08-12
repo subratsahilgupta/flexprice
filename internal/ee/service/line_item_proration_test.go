@@ -14,12 +14,6 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// ─── Suite ───────────────────────────────────────────────────────────────────
-
-// LineItemProrationServiceSuite tests the LineItemProrationService in isolation
-// using in-memory repositories. It focuses on:
-//  1. Compute – pure math correctness (no side effects)
-//  2. Apply   – Compute + settle (invoice creation / wallet credit)
 type LineItemProrationServiceSuite struct {
 	testutil.BaseServiceTestSuite
 	svc LineItemProrationService
@@ -96,11 +90,9 @@ func (s *LineItemProrationServiceSuite) setupService() {
 func (s *LineItemProrationServiceSuite) setupTestData() {
 	ctx := s.GetContext()
 
-	// Billing period: Apr 1 → May 1 (30-day month, UTC)
 	s.td.periodStart = time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	s.td.periodEnd = time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
-	// Fixed $20/month price
 	s.td.fixedPrice = &price.Price{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 		Amount:             decimal.NewFromInt(20),
@@ -114,7 +106,6 @@ func (s *LineItemProrationServiceSuite) setupTestData() {
 	}
 	s.NoError(s.GetStores().PriceRepo.Create(ctx, s.td.fixedPrice))
 
-	// Usage price (should be skipped by proration)
 	s.td.usagePrice = &price.Price{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
 		Amount:             decimal.Zero,
@@ -128,7 +119,6 @@ func (s *LineItemProrationServiceSuite) setupTestData() {
 	}
 	s.NoError(s.GetStores().PriceRepo.Create(ctx, s.td.usagePrice))
 
-	// Customer (needed by wallet service's TopUpWalletForProratedCharge)
 	customerID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER)
 	cust := &customer.Customer{
 		ID:        customerID,
@@ -138,7 +128,6 @@ func (s *LineItemProrationServiceSuite) setupTestData() {
 	}
 	s.NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
 
-	// Subscription anchored to Apr 1, current period Apr 1–May 1
 	s.td.sub = &subscription.Subscription{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
 		CustomerID:         customerID,
@@ -155,7 +144,6 @@ func (s *LineItemProrationServiceSuite) setupTestData() {
 	}
 	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, s.td.sub))
 
-	// Active fixed-price line item (EndDate zero = active recurring)
 	s.td.lineItem = &subscription.SubscriptionLineItem{
 		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
 		SubscriptionID: s.td.sub.ID,
@@ -172,10 +160,6 @@ func (s *LineItemProrationServiceSuite) setupTestData() {
 	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, s.td.lineItem))
 }
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
-
-// subCopyWithPeriod returns a shallow copy of the subscription with the billing
-// period overridden.  Matches the pattern used in production code.
 func (s *LineItemProrationServiceSuite) subCopyWithPeriod(start, end time.Time) *subscription.Subscription {
 	cp := *s.td.sub
 	cp.CurrentPeriodStart = start
@@ -183,10 +167,6 @@ func (s *LineItemProrationServiceSuite) subCopyWithPeriod(start, end time.Time) 
 	return &cp
 }
 
-// recordBilled writes an invoice line item against a subscription line item, the
-// way a real invoice does. A removal credit is capped at what was actually billed,
-// so a test that expects a credit has to have billed something first.
-// A negative amount records a credit already returned.
 func (s *LineItemProrationServiceSuite) recordBilled(lineItemID string, amount decimal.Decimal) {
 	ctx := s.GetContext()
 	periodStart := s.td.periodStart
@@ -207,10 +187,6 @@ func (s *LineItemProrationServiceSuite) recordBilled(lineItemID string, amount d
 	}))
 }
 
-// ─── Compute – AddItem ───────────────────────────────────────────────────────
-
-// TestCompute_AddItem_FullPeriod verifies that adding a line item at period start
-// results in a charge equal to the full price (coefficient == 1.0).
 func (s *LineItemProrationServiceSuite) TestCompute_AddItem_FullPeriod() {
 	ctx := s.GetContext()
 	effectiveDate := s.td.periodStart // Apr 1 – entire period remaining
@@ -240,14 +216,6 @@ func (s *LineItemProrationServiceSuite) TestCompute_AddItem_FullPeriod() {
 	s.False(summary.IsPreview)
 }
 
-// TestCompute_AddItem_MidPeriod verifies the proportional charge when a line item
-// is added partway through the billing period.
-//
-// Period: Apr 1–May 1 (30 days).  Effective: Apr 11 (10 days elapsed, 20 remaining).
-// SecondBased: remaining=(Apr30 23:59:59 - Apr11 00:00:00)=1,727,999s
-//
-//	total=(Apr30 23:59:59 - Apr1 00:00:00)=2,591,999s
-//	charge = $20 × (1,727,999/2,591,999) ≈ $13.33
 func (s *LineItemProrationServiceSuite) TestCompute_AddItem_MidPeriod() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC) // Apr 11
@@ -277,11 +245,8 @@ func (s *LineItemProrationServiceSuite) TestCompute_AddItem_MidPeriod() {
 	s.Len(summary.ChargeLineItems, 1)
 }
 
-// TestCompute_AddItem_LastSecond adds at the very last second of the period —
-// proration coefficient ≈ 0, so charge rounds to $0.
 func (s *LineItemProrationServiceSuite) TestCompute_AddItem_LastSecond() {
 	ctx := s.GetContext()
-	// periodEnd - 1s is the last valid second
 	effectiveDate := s.td.periodEnd.Add(-time.Second)
 
 	req := LineItemProrationRequest{
@@ -305,16 +270,10 @@ func (s *LineItemProrationServiceSuite) TestCompute_AddItem_LastSecond() {
 		"last-second add should round to $0, got %s", summary.TotalChargeAmount)
 }
 
-// ─── Compute – RemoveItem ────────────────────────────────────────────────────
-
-// TestCompute_RemoveItem_MidPeriod mirrors the AddItem mid-period test but for
-// removal — the credit amount should equal the unused portion of the period.
 func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_MidPeriod() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
 
-	// The customer paid the full $20 for this period, so the unused-time credit
-	// is well under the cap and passes through unchanged.
 	s.recordBilled(s.td.lineItem.ID, decimal.NewFromInt(20))
 
 	req := LineItemProrationRequest{
@@ -339,16 +298,6 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_MidPeriod() {
 	s.True(summary.TotalChargeAmount.IsZero())
 }
 
-// ─── Credit basis ────────────────────────────────────────────────────────────
-//
-// The credit for a removal is capped at what the line item was actually billed
-// this period, read from its invoice history. Before this, the cap compared the
-// list price against itself scaled by a coefficient <= 1 and could never bind,
-// so repeated changes in one period could credit more than was ever charged.
-
-// TestCompute_RemoveItem_CreditCappedAtBilledAmount covers a line item billed
-// below its list price — a discount, or a mid-period addition already prorated.
-// The unused-time credit would be $13.33 at list price; only $5 was billed.
 func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_CreditCappedAtBilledAmount() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -376,9 +325,6 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_CreditCappedAtBil
 		summary.TotalCreditAmount)
 }
 
-// TestCompute_RemoveItem_CreditNetsPreviousCredits is the two-changes-in-one-period
-// case: an earlier change already returned $8 of the $20 billed, so at most $12
-// remains creditable even though unused time is worth $13.33.
 func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_CreditNetsPreviousCredits() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -407,9 +353,6 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_CreditNetsPreviou
 		summary.TotalCreditAmount)
 }
 
-// TestCompute_RemoveItem_NeverBilled_NoCredit covers a line item with no invoice
-// history. Nothing was charged, so nothing can be credited — an empty billing
-// history is a valid answer, not a lookup failure to fall back from.
 func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_NeverBilled_NoCredit() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -434,13 +377,10 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_NeverBilled_NoCre
 		"an unbilled line item must not produce a credit; got %s", summary.TotalCreditAmount)
 }
 
-// TestCompute_RemoveItem_IgnoresOtherPeriodBilling verifies that charges from a
-// previous billing period do not raise this period's credit ceiling.
 func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_IgnoresOtherPeriodBilling() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
 
-	// March's charge, one period earlier.
 	marchStart := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	lineItemID := s.td.lineItem.ID
 	s.NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, &invoice.InvoiceLineItem{
@@ -478,11 +418,6 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_IgnoresOtherPerio
 		summary.TotalCreditAmount)
 }
 
-// TestCompute_RemoveItem_LongerCadenceCharge covers a line item billed on a
-// longer cadence than the subscription — a quarterly charge on a monthly sub.
-// The charge is raised once, in January, covering Jan–Apr. Removing the line in
-// April must still be capped against that charge, not treated as unbilled just
-// because nothing was invoiced inside April's own period.
 func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_LongerCadenceCharge() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -520,16 +455,12 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_LongerCadenceChar
 	s.NoError(err)
 	s.Require().NotNil(summary)
 
-	// $60 covers the window, so the $13.33 of unused April is well under the cap.
 	expected, _ := decimal.NewFromString("13.33")
 	s.True(summary.TotalCreditAmount.Equal(expected),
 		"a charge covering this date must fund the credit whatever its cadence; got %s",
 		summary.TotalCreditAmount)
 }
 
-// TestCompute_ProrationChargeLinksToLineItem verifies the charge carries the FK
-// that makes it visible to a later change's credit basis. Without it, proration
-// charges are invisible and the cap reads zero.
 func (s *LineItemProrationServiceSuite) TestCompute_ProrationChargeLinksToLineItem() {
 	ctx := s.GetContext()
 
@@ -554,13 +485,10 @@ func (s *LineItemProrationServiceSuite) TestCompute_ProrationChargeLinksToLineIt
 	s.Equal(s.td.lineItem.ID, *summary.ChargeLineItems[0].SubscriptionLineItemID)
 }
 
-// TestCompute_RemoveItem_OnetimeAddon verifies that removing an item whose EndDate
-// is non-zero (onetime addon) is silently skipped — onetime charges are non-refundable.
 func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_OnetimeAddon() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
 
-	// Clone the line item but give it a non-zero EndDate to simulate a onetime addon.
 	onetimeItem := *s.td.lineItem
 	onetimeItem.EndDate = s.td.periodEnd
 
@@ -585,10 +513,6 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_OnetimeAddon() {
 	s.Empty(summary.Results, "no proration result expected for onetime remove")
 }
 
-// ─── Compute – Usage price skip ──────────────────────────────────────────────
-
-// TestCompute_SkipsUsagePrice asserts that usage-type line items are excluded
-// from proration because future consumption is unknown at change time.
 func (s *LineItemProrationServiceSuite) TestCompute_SkipsUsagePrice() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -616,11 +540,6 @@ func (s *LineItemProrationServiceSuite) TestCompute_SkipsUsagePrice() {
 	s.Empty(summary.Results)
 }
 
-// ─── Compute – ProrationBehavior = none ──────────────────────────────────────
-
-// TestCompute_NoneProrationBehavior confirms that when behavior == none the
-// summary is returned with IsPreview=true and zero amounts (the underlying
-// calculator returns nil for none-behavior params).
 func (s *LineItemProrationServiceSuite) TestCompute_NoneProrationBehavior() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -645,16 +564,10 @@ func (s *LineItemProrationServiceSuite) TestCompute_NoneProrationBehavior() {
 	s.True(summary.TotalCreditAmount.IsZero())
 }
 
-// ─── Compute – Multiple entries ───────────────────────────────────────────────
-
-// TestCompute_MultipleEntries_AddAndRemove covers a batch where one entry triggers
-// a charge (AddItem) and another triggers a credit (RemoveItem). Both amounts
-// should be accumulated independently.
 func (s *LineItemProrationServiceSuite) TestCompute_MultipleEntries_AddAndRemove() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
 
-	// Second line item to add (same price for simplicity)
 	addItem := *s.td.lineItem
 	addItem.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
 
@@ -688,10 +601,6 @@ func (s *LineItemProrationServiceSuite) TestCompute_MultipleEntries_AddAndRemove
 	s.True(summary.TotalChargeAmount.Equal(expected), "add charge mismatch: %s", summary.TotalChargeAmount)
 }
 
-// ─── Apply – charge (invoice creation) ───────────────────────────────────────
-
-// TestApply_AddItem_CreatesOneOffInvoice verifies that Apply with CreateProrations
-// and a positive net amount creates exactly one ONE_OFF invoice in the invoice repo.
 func (s *LineItemProrationServiceSuite) TestApply_AddItem_CreatesOneOffInvoice() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -712,7 +621,6 @@ func (s *LineItemProrationServiceSuite) TestApply_AddItem_CreatesOneOffInvoice()
 	err := s.svc.Apply(ctx, req)
 	s.NoError(err)
 
-	// Invoice should have been created in the in-memory repo.
 	invoices, listErr := s.GetStores().InvoiceRepo.List(ctx, &types.InvoiceFilter{
 		QueryFilter: types.NewDefaultQueryFilter(),
 	})
@@ -725,11 +633,6 @@ func (s *LineItemProrationServiceSuite) TestApply_AddItem_CreatesOneOffInvoice()
 		"invoice amount must be positive, got %s", inv.AmountDue)
 }
 
-// TestApply_TwoChangesSameEffectiveDate_BillSeparately guards the under-billing
-// regression: two mid-period changes on one subscription sharing an effective date
-// used to collide on the auto-generated invoice idempotency key (subscription +
-// billing reason + period truncated to the minute), so the second was rejected as a
-// duplicate and silently never billed. Only the caller's key distinguishes them.
 func (s *LineItemProrationServiceSuite) TestApply_TwoChangesSameEffectiveDate_BillSeparately() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -802,8 +705,6 @@ func (s *LineItemProrationServiceSuite) TestApply_TwoChangesSameEffectiveDate_Bi
 	s.True(total.Equal(expected), "expected %s billed across both invoices, got %s", expected, total)
 }
 
-// TestApply_SameChangeTwice_IsIdempotent verifies the flip side: replaying the exact
-// same change must not produce a second invoice.
 func (s *LineItemProrationServiceSuite) TestApply_SameChangeTwice_IsIdempotent() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -831,10 +732,6 @@ func (s *LineItemProrationServiceSuite) TestApply_SameChangeTwice_IsIdempotent()
 	s.Len(invoices, 1, "replaying the same change must not double-bill")
 }
 
-// ─── Apply – credit (wallet top-up) ──────────────────────────────────────────
-
-// TestApply_RemoveItem_CreatesWalletCredit verifies that Apply with CreateProrations
-// and a negative net amount creates a wallet top-up for the customer.
 func (s *LineItemProrationServiceSuite) TestApply_RemoveItem_CreatesWalletCredit() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -856,7 +753,6 @@ func (s *LineItemProrationServiceSuite) TestApply_RemoveItem_CreatesWalletCredit
 	err := s.svc.Apply(ctx, req)
 	s.NoError(err)
 
-	// A wallet should have been created/topped-up for the customer.
 	wallets, listErr := s.GetStores().WalletRepo.GetWalletsByFilter(ctx, &types.WalletFilter{
 		QueryFilter: types.NewDefaultQueryFilter(),
 	})
@@ -869,10 +765,6 @@ func (s *LineItemProrationServiceSuite) TestApply_RemoveItem_CreatesWalletCredit
 		"wallet balance %s should be >= expected credit %s", w.Balance, expectedCredit)
 }
 
-// ─── Apply – ProrationBehavior = none (no-op) ────────────────────────────────
-
-// TestApply_NoneProrationBehavior_IsNoOp verifies that Apply returns immediately
-// without creating any invoices or wallets when behavior == none.
 func (s *LineItemProrationServiceSuite) TestApply_NoneProrationBehavior_IsNoOp() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -892,7 +784,6 @@ func (s *LineItemProrationServiceSuite) TestApply_NoneProrationBehavior_IsNoOp()
 	err := s.svc.Apply(ctx, req)
 	s.NoError(err)
 
-	// No invoice and no wallet should exist.
 	invoices, _ := s.GetStores().InvoiceRepo.List(ctx, &types.InvoiceFilter{
 		QueryFilter: types.NewDefaultQueryFilter(),
 	})
@@ -904,8 +795,6 @@ func (s *LineItemProrationServiceSuite) TestApply_NoneProrationBehavior_IsNoOp()
 	s.Empty(wallets, "no wallet expected for behavior=none")
 }
 
-// TestApply_OnetimeRemove_IsNoOp confirms that removing a onetime addon
-// (EndDate != zero) produces no credit even when behavior == create_prorations.
 func (s *LineItemProrationServiceSuite) TestApply_OnetimeRemove_IsNoOp() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -934,10 +823,6 @@ func (s *LineItemProrationServiceSuite) TestApply_OnetimeRemove_IsNoOp() {
 	s.Empty(wallets, "onetime remove must not create a wallet credit")
 }
 
-// ─── Apply – idempotency key propagated to wallet ────────────────────────────
-
-// TestApply_RemoveItem_IdempotencyKeyUsed verifies that calling Apply twice with
-// the same IdempotencyKey does not double-credit the customer.
 func (s *LineItemProrationServiceSuite) TestApply_RemoveItem_IdempotencyKeyUsed() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -956,19 +841,13 @@ func (s *LineItemProrationServiceSuite) TestApply_RemoveItem_IdempotencyKeyUsed(
 		}},
 	}
 
-	// First call
 	err := s.svc.Apply(ctx, req)
 	s.NoError(err)
 
-	// Second call with same key
 	err = s.svc.Apply(ctx, req)
 	s.NoError(err, "duplicate Apply call with same idempotency key must not error")
 }
 
-// ─── Table-driven: various effective dates ────────────────────────────────────
-
-// TestCompute_AddItem_TableDriven covers a range of effective dates for an
-// AddItem in the Apr 1–May 1 period, verifying the proportional charge.
 func (s *LineItemProrationServiceSuite) TestCompute_AddItem_TableDriven() {
 	ctx := s.GetContext()
 

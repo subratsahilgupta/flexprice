@@ -19,10 +19,6 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// SubscriptionPlanChangeSuite covers the core swap engine: plan lines only, no
-// addons. The properties under test are the ones cancel-and-recreate could not
-// offer — the subscription row survives, the anchor never moves, and a service
-// the target plan prices identically is left completely alone.
 type SubscriptionChangeV2Suite struct {
 	testutil.BaseServiceTestSuite
 	svc interfaces.SubscriptionService
@@ -104,8 +100,7 @@ func (s *SubscriptionChangeV2Suite) serviceParams() ServiceParams {
 func (s *SubscriptionChangeV2Suite) setupTestData() {
 	ctx := s.GetContext()
 
-	// The change lands at time.Now(), so the current period has to contain it —
-	// ten days elapsed, twenty remaining, on a thirty-day period.
+	// Period must contain time.Now() (change effective date).
 	s.td.periodStart = time.Now().UTC().Truncate(time.Hour).AddDate(0, 0, -10)
 	s.td.periodEnd = s.td.periodStart.AddDate(0, 0, 30)
 
@@ -120,8 +115,6 @@ func (s *SubscriptionChangeV2Suite) setupTestData() {
 	s.td.starter = s.createPlan("Starter", "starter")
 	s.td.pro = s.createPlan("Pro", "pro")
 
-	// The base fee exists on both plans at different amounts, so a change slices
-	// the line rather than leaving it alone.
 	s.td.starterBase = s.createFixedPrice(s.td.starter.ID, "base_fee", 20)
 	s.td.proBase = s.createFixedPrice(s.td.pro.ID, "base_fee", 50)
 
@@ -212,9 +205,6 @@ func (s *SubscriptionChangeV2Suite) createLineItem(
 	return item
 }
 
-// recordBilled writes the invoice line a real invoice run would, so a removal
-// credit has a basis to be capped against. Without it a line item reads as never
-// billed, and nothing can be credited back.
 func (s *SubscriptionChangeV2Suite) recordBilled(lineItemID string, amount decimal.Decimal) {
 	ctx := s.GetContext()
 	periodStart := s.td.periodStart
@@ -258,11 +248,6 @@ func (s *SubscriptionChangeV2Suite) liveLineItems() []*subscription.Subscription
 	return live
 }
 
-// ─── Swap in place ───────────────────────────────────────────────────────────
-
-// TestExecute_UpgradeSwapsInPlace is the whole point of v2: the subscription row
-// survives with its id, anchor and period bounds intact, and only plan_id and
-// the plan line items move. Cancel-and-recreate could offer none of that.
 func (s *SubscriptionChangeV2Suite) TestExecute_UpgradeSwapsInPlace() {
 	ctx := s.GetContext()
 	effectiveFrom := time.Now().UTC()
@@ -283,7 +268,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_UpgradeSwapsInPlace() {
 	s.True(reloaded.CurrentPeriodStart.Equal(s.td.sub.CurrentPeriodStart))
 	s.True(reloaded.CurrentPeriodEnd.Equal(s.td.sub.CurrentPeriodEnd))
 
-	// The old line closes exactly where the new one opens: no gap, no overlap.
 	live := s.liveLineItems()
 	s.Require().Len(live, 1, "exactly one live base-fee line after the swap")
 	s.Equal(s.td.proBase.ID, live[0].PriceID)
@@ -295,16 +279,9 @@ func (s *SubscriptionChangeV2Suite) TestExecute_UpgradeSwapsInPlace() {
 	s.True(live[0].StartDate.Equal(closed.EndDate), "line items must tile with no gap or overlap")
 }
 
-// ─── The unchanged case ──────────────────────────────────────────────────────
-
-// TestExecute_LateralIdenticalPrice_LeavesLineAlone is the case a naive
-// close-and-reopen gets wrong. The service did not change, so nothing should
-// move: no new line-item id, no proration entry, and no invoice made of a charge
-// and a credit that cancel.
 func (s *SubscriptionChangeV2Suite) TestExecute_LateralIdenticalPrice_LeavesLineAlone() {
 	ctx := s.GetContext()
 
-	// A second plan whose base fee is priced identically to Starter's.
 	lateral := s.createPlan("Lateral", "lateral")
 	s.createFixedPrice(lateral.ID, "base_fee", 20)
 
@@ -327,11 +304,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_LateralIdenticalPrice_LeavesLine
 	s.Equal(invoicesBefore, s.countInvoices(), "net zero on an unchanged service must raise no invoice")
 }
 
-// ─── Proration behaviour ─────────────────────────────────────────────────────
-
-// TestExecute_ProrationNone_SwapsWithoutMoney verifies that a caller who asks
-// for no proration gets the service change and no money movement — the next
-// regular invoice simply bills the new price.
 func (s *SubscriptionChangeV2Suite) TestExecute_ProrationNone_SwapsWithoutMoney() {
 	ctx := s.GetContext()
 	invoicesBefore := s.countInvoices()
@@ -350,13 +322,9 @@ func (s *SubscriptionChangeV2Suite) TestExecute_ProrationNone_SwapsWithoutMoney(
 	s.Equal(invoicesBefore, s.countInvoices(), "proration_behavior=none must not settle anything")
 }
 
-// TestExecute_DowngradeCreditsWallet covers a change that gives back more than
-// it takes. A non-credit invoice cannot carry a negative total, so the net
-// credit goes to the customer's wallet rather than being discarded.
 func (s *SubscriptionChangeV2Suite) TestExecute_DowngradeCreditsWallet() {
 	ctx := s.GetContext()
 
-	// Start on Pro so the change is a genuine downgrade.
 	s.NoError(s.GetStores().SubscriptionLineItemRepo.Delete(ctx, s.td.baseLine.ID))
 	sub, err := s.GetStores().SubscriptionRepo.Get(ctx, s.td.sub.ID)
 	s.Require().NoError(err)
@@ -364,8 +332,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_DowngradeCreditsWallet() {
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
 	s.td.baseLine = s.createLineItem(sub, s.td.proBase, s.td.pro)
 
-	// The credit is capped at what this line was actually billed, so the period's
-	// charge has to exist for a downgrade to return anything at all.
+	// Need a billed charge so the removal credit has a basis.
 	s.recordBilled(s.td.baseLine.ID, s.td.proBase.Amount)
 
 	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.starter.ID, types.ProrationBehaviorCreateProrations))
@@ -380,11 +347,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_DowngradeCreditsWallet() {
 	s.True(wallets[0].Balance.GreaterThan(decimal.Zero))
 }
 
-// ─── Preview ─────────────────────────────────────────────────────────────────
-
-// TestPreviewWritesNothing is the property that makes preview safe to call: it
-// runs resolve and compute, which are the same functions execute runs, and then
-// stops before the only stage that writes.
 func (s *SubscriptionChangeV2Suite) TestPreviewWritesNothing() {
 	ctx := s.GetContext()
 	invoicesBefore := s.countInvoices()
@@ -403,9 +365,6 @@ func (s *SubscriptionChangeV2Suite) TestPreviewWritesNothing() {
 	s.Equal(invoicesBefore, s.countInvoices(), "preview must not raise an invoice")
 }
 
-// TestPreviewMatchesExecute is quote parity. Preview and execute share resolve
-// and compute by calling the same functions, so the money cannot drift between
-// what a customer was quoted and what they are charged.
 func (s *SubscriptionChangeV2Suite) TestPreviewMatchesExecute() {
 	ctx := s.GetContext()
 	req := s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations)
@@ -425,11 +384,6 @@ func (s *SubscriptionChangeV2Suite) TestPreviewMatchesExecute() {
 	s.Len(preview.ChangedResources.LineItems, len(executed.ChangedResources.LineItems))
 }
 
-// ─── Preconditions ───────────────────────────────────────────────────────────
-
-// TestPreconditionsRejectBeforeAnyWrite covers the shapes the swap engine does
-// not handle. Each must fail cleanly with nothing mutated, so a caller can fall
-// back to the v1 endpoint.
 func (s *SubscriptionChangeV2Suite) TestPreconditionsRejectBeforeAnyWrite() {
 	ctx := s.GetContext()
 
@@ -497,8 +451,6 @@ func (s *SubscriptionChangeV2Suite) TestPreconditionsRejectBeforeAnyWrite() {
 	}
 }
 
-// TestExecute_ReanchorsPriceSyncSequence ties the swap to phase 1's watermark:
-// after moving plans the subscription must track its new plan's price changes.
 func (s *SubscriptionChangeV2Suite) TestExecute_ReanchorsPriceSyncSequence() {
 	ctx := s.GetContext()
 
@@ -523,10 +475,6 @@ func (s *SubscriptionChangeV2Suite) countInvoices() int {
 	return len(invoices)
 }
 
-// TestExecute_NettedInvoiceCarriesCreditLine covers an upgrade where the old
-// line was genuinely billed, so the change produces BOTH a credit for unused
-// time and a charge for the new price. They net onto one invoice, and the
-// credit must be visible as its own line rather than paid out separately.
 func (s *SubscriptionChangeV2Suite) TestExecute_NettedInvoiceCarriesCreditLine() {
 	ctx := s.GetContext()
 
@@ -549,9 +497,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_NettedInvoiceCarriesCreditLine()
 	s.True(sawCredit, "the unused-time credit must appear as a negative line on the netted invoice")
 }
 
-// ─── Addon dispositions ──────────────────────────────────────────────────────
-
-// attachAddon gives the subscription a live addon with one fixed-price line item.
 func (s *SubscriptionChangeV2Suite) attachAddon(name string, amount int64) (*addon.Addon, *addonassociation.AddonAssociation, *subscription.SubscriptionLineItem) {
 	ctx := s.GetContext()
 
@@ -623,9 +568,6 @@ func (s *SubscriptionChangeV2Suite) dropAddonRequest(targetPlanID, associationID
 	return req
 }
 
-// TestExecute_AddonCarriesByDefault is the property that makes carry free: a
-// swap-in-place change does not touch anything keyed on the subscription id, so
-// an addon nobody mentioned needs zero operations.
 func (s *SubscriptionChangeV2Suite) TestExecute_AddonCarriesByDefault() {
 	ctx := s.GetContext()
 	_, assoc, addonLine := s.attachAddon("priority_support", 10)
@@ -648,8 +590,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonCarriesByDefault() {
 	s.Equal(assoc.ID, resp.EntityDispositions[0].ReferenceID)
 }
 
-// TestExecute_AddonDropClosesAttachment covers the one configurable disposition:
-// the association and its line items close at the effective date.
 func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropClosesAttachment() {
 	ctx := s.GetContext()
 	_, assoc, addonLine := s.attachAddon("priority_support", 10)
@@ -671,9 +611,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropClosesAttachment() {
 	s.Equal(types.EntityDispositionDrop, resp.EntityDispositions[0].Disposition)
 }
 
-// TestExecute_AddonDropSettlesOnTheChangeInvoice is the fix for the credit that
-// today is issued after the transaction, best-effort, and logged as UNISSUED
-// when it fails. The addon's credit belongs on the change's own invoice.
 func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropSettlesOnTheChangeInvoice() {
 	ctx := s.GetContext()
 	_, assoc, addonLine := s.attachAddon("priority_support", 10)
@@ -696,8 +633,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropSettlesOnTheChangeInvoi
 	s.True(sawAddonCredit, "the dropped addon's credit must be a line on the change invoice")
 }
 
-// TestExecute_AddonDropWithProrationNone covers a caller who wants the addon
-// gone without money moving. It is legal, not an error.
 func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropWithProrationNone() {
 	ctx := s.GetContext()
 	_, assoc, addonLine := s.attachAddon("priority_support", 10)
@@ -717,9 +652,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropWithProrationNone() {
 	s.Equal(invoicesBefore, s.countInvoices(), "but no money moves")
 }
 
-// TestExecute_UnknownAddonOverrideWarnsRatherThanFails covers a caller
-// round-tripping a stale preview: the attachment ended in between, and failing
-// the whole change for a key that no longer matters would be worse.
 func (s *SubscriptionChangeV2Suite) TestExecute_UnknownAddonOverrideWarnsRatherThanFails() {
 	ctx := s.GetContext()
 
@@ -734,8 +666,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_UnknownAddonOverrideWarnsRatherT
 	s.Equal(s.td.pro.ID, reloaded.PlanID, "and the change still happens")
 }
 
-// TestPreview_AddonDropWritesNothing keeps preview honest once addons are in
-// play: it reports the disposition without closing anything.
 func (s *SubscriptionChangeV2Suite) TestPreview_AddonDropWritesNothing() {
 	ctx := s.GetContext()
 	_, assoc, addonLine := s.attachAddon("priority_support", 10)
@@ -754,9 +684,6 @@ func (s *SubscriptionChangeV2Suite) TestPreview_AddonDropWritesNothing() {
 	s.True(reloadedLine.EndDate.IsZero())
 }
 
-// TestExecute_AddonDropDoesNotSkewChangeType guards the one subtlety of putting
-// addon lines in the same closing set as plan lines: change_type describes the
-// plan move. Dropping a $10 addon while moving $20 → $50 is still an upgrade.
 func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropDoesNotSkewChangeType() {
 	ctx := s.GetContext()
 	_, assoc, _ := s.attachAddon("priority_support", 10)
@@ -768,8 +695,6 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropDoesNotSkewChangeType()
 		"the addon's value must not count towards the plan's change type")
 }
 
-// TestExecute_AddonDropIsReportedAsAChangedLineItem verifies the dropped addon's
-// line shows up in the response alongside the plan lines, since it moved too.
 func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropIsReportedAsAChangedLineItem() {
 	ctx := s.GetContext()
 	_, assoc, addonLine := s.attachAddon("priority_support", 10)

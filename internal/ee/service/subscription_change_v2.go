@@ -11,50 +11,26 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
-// Plan change, swap-in-place: the subscription row survives with its id, billing
-// anchor and period bounds intact; only plan_id and the plan-derived line items
-// move. Cancel-and-recreate could offer none of that.
-//
-// Three stages, and Preview is exactly Execute minus the last one:
-//
-//	resolve  — decide everything. Reads only.
-//	compute  — price the decision. Reads only.
-//	settle   — the sole stage that writes.
-//
-// Preview and Execute call the same resolve and compute, so a quote and its
-// execution cannot drift apart. That is also the seam a pay-first checkout slots
-// into later: a third settler, not a change to the first two stages.
-
-// ─── Stage 1: resolve ────────────────────────────────────────────────────────
-
-// lineItemChange pairs a line item with the price that governs it, for one side
-// of the slice: a line being closed, or one being opened.
 type lineItemChange struct {
 	lineItem *subscription.SubscriptionLineItem
 	price    *price.Price
 
-	// association is the addon attachment this line belongs to, set only for
-	// addon lines being dropped. It is the payload the apply step needs to close
-	// the attachment itself.
+	// Set only for dropped addon lines (needed to close the association).
 	association *addonassociation.AddonAssociation
 }
 
-// isAddon asks the line item what it belongs to rather than inferring it from a
-// field being populated: as coupons and tax associations gain dispositions, more
-// than one kind of attachment will hang off this struct.
 func (c lineItemChange) isAddon() bool {
 	return c.lineItem != nil &&
 		c.lineItem.EntityType == types.SubscriptionLineItemEntityTypeAddon &&
 		c.association != nil
 }
 
-// planChangeRequest is the fully resolved intent: every decision made, no money
-// computed, nothing written.
 type planChangeRequest struct {
 	sub         *subscription.Subscription
 	fromPlan    *plan.Plan
@@ -62,24 +38,17 @@ type planChangeRequest struct {
 	effectiveAt time.Time
 	behavior    types.ProrationBehavior
 
-	// Services the target plan prices identically to the current one. These are
-	// left completely alone — not closed and reopened — so an unchanged service
-	// keeps its line-item id and its usage window.
+	// Prices that bill identically keep their line-item id / usage window.
 	unchanged []*subscription.SubscriptionLineItem
 	closing   []lineItemChange
 	opening   []lineItemChange
 
-	// Carried addons appear in dispositions but need no work: a swap-in-place
-	// change does not touch anything keyed on the subscription id. Dropped ones
-	// join closing, so they slice and settle exactly like a plan line.
 	dispositions []dto.EntityDispositionResult
 	warnings     []string
 
 	changeType types.SubscriptionChangeType
 }
 
-// resolvePlanChange loads the target plan, rejects everything the swap engine
-// cannot honour, and works out which line items move.
 func (s *subscriptionService) resolvePlanChange(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -104,8 +73,6 @@ func (s *subscriptionService) resolvePlanChange(
 		return nil, err
 	}
 
-	// Prices the target plan can actually offer this subscription: currency and
-	// billing period have to line up, which is why an interval change is a 4xx.
 	targetPrices, err := s.ValidateAndFilterPricesForSubscription(
 		ctx, toPlan.Plan.ID, types.PRICE_ENTITY_TYPE_PLAN, sub, nil,
 	)
@@ -143,8 +110,6 @@ func (s *subscriptionService) resolvePlanChange(
 	return r, nil
 }
 
-// checkPlanChangePreconditions rejects, before any write, every shape the swap
-// engine does not handle. Each hint names the v1 endpoint as the way forward.
 func (s *subscriptionService) checkPlanChangePreconditions(
 	sub *subscription.Subscription,
 	req dto.SubscriptionChangeV2Request,
@@ -195,13 +160,7 @@ func (s *subscriptionService) checkPlanChangePreconditions(
 	return nil
 }
 
-// resolveLineItems works out which plan line items close, which open, and which are
-// left alone.
-//
-// A target price that bills identically to a live line is treated as the same
-// service continuing: the row is not touched. Slicing it would give an unchanged
-// service a new line-item id, split its usage window, and emit a charge and a
-// credit that cancel. Everything else closes and its replacements open.
+// Leave lines alone when the target price bills identically; otherwise close/open.
 func (s *subscriptionService) resolveLineItems(
 	ctx context.Context,
 	r *planChangeRequest,
@@ -258,8 +217,6 @@ func (s *subscriptionService) resolveLineItems(
 	return nil
 }
 
-// buildPlanChangeLineItem constructs (without persisting) the line item for a
-// target price, starting at the effective date.
 func buildPlanChangeLineItem(
 	ctx context.Context,
 	subResp *dto.SubscriptionResponse,
@@ -286,8 +243,6 @@ func buildPlanChangeLineItem(
 	return item, nil
 }
 
-// billsIdentically reports whether two prices produce the same bill for the same
-// usage. Only then is leaving a line item untouched correct.
 // TODO: Handle tiered prices correctly.
 func billsIdentically(a, b *price.Price) bool {
 	if a == nil || b == nil {
@@ -307,13 +262,10 @@ func billsIdentically(a, b *price.Price) bool {
 		a.BillingPeriodCount == b.BillingPeriodCount
 }
 
-// planChangeTypeFor compares recurring value rather than the prorated net, so the
-// answer does not depend on when in the period the change lands, or on whether
-// proration was requested at all.
+// Uses recurring amounts (not prorated net) so timing/proration don't change the type.
 func planChangeTypeFor(r *planChangeRequest) types.SubscriptionChangeType {
 	oldTotal, newTotal := decimal.Zero, decimal.Zero
 	for _, move := range r.closing {
-		// Dropping an addon does not make a Starter → Pro move stop being an upgrade.
 		if move.isAddon() {
 			continue
 		}
@@ -333,9 +285,6 @@ func planChangeTypeFor(r *planChangeRequest) types.SubscriptionChangeType {
 	}
 }
 
-// resolveAddonDispositions resolves what happens to every addon currently attached.
-// Carry is the default and costs nothing; drop closes the attachment at the
-// effective date.
 func (s *subscriptionService) resolveAddonDispositions(
 	ctx context.Context,
 	r *planChangeRequest,
@@ -372,10 +321,7 @@ func (s *subscriptionService) resolveAddonDispositions(
 		}
 	}
 
-	// An override naming something that is not an active attachment is not fatal.
-	// A caller round-tripping a preview into an execute can legitimately race an
-	// attachment that ended in between, and failing the whole change for a stale
-	// key is worse than ignoring it.
+	// Stale override keys (e.g. preview→execute race) warn instead of failing.
 	if policy != nil {
 		for referenceID := range policy.Overrides {
 			if !seen[referenceID] {
@@ -388,8 +334,6 @@ func (s *subscriptionService) resolveAddonDispositions(
 	return nil
 }
 
-// activeAddonAssociations reuses the same read the cancellation path and the API
-// use, so a plan change sees exactly the addons everything else considers live.
 func (s *subscriptionService) activeAddonAssociations(
 	ctx context.Context,
 	subscriptionID string,
@@ -411,11 +355,6 @@ func (s *subscriptionService) activeAddonAssociations(
 	return associations, nil
 }
 
-// closeAddonLineItems adds the line items an association owns to the change's
-// closing set, so they slice, price and settle exactly like a plan line. Items
-// already scheduled to end are skipped — onetime charges and lines from a
-// previously cancelled association are handled already and must not be
-// re-processed.
 func (s *subscriptionService) closeAddonLineItems(
 	ctx context.Context,
 	r *planChangeRequest,
@@ -448,9 +387,6 @@ func (s *subscriptionService) closeAddonLineItems(
 	return nil
 }
 
-// applyDroppedAddons closes each dropped attachment and stops its future credit
-// grants. The line items themselves are already closed by the shared slice step
-// — an addon line is just a closing line that happens to belong to an addon.
 func (s *subscriptionService) applyDroppedAddons(ctx context.Context, r *planChangeRequest) error {
 	closed := make(map[string]bool)
 	for _, change := range r.closing {
@@ -467,14 +403,8 @@ func (s *subscriptionService) applyDroppedAddons(ctx context.Context, r *planCha
 			return err
 		}
 
-		// KNOWN LIMITATION, unchanged from the existing removal path: grants are
-		// materialised per attachment but tagged only with addon_id
-		// (subscription.go:5204, "provenance for targeted removal"), so two concurrent
-		// attachments of one addon produce two indistinguishable grant rows. Cancelling
-		// by addon_id therefore stops both. Cancelling neither would be worse — the
-		// dropped attachment would keep granting credits — so this matches the existing
-		// behaviour rather than inventing a third one. Telling the two apart needs
-		// credit_grants.addon_association_id.
+		// KNOWN LIMITATION: grants are tagged by addon_id only, so concurrent
+		// attachments of the same addon cannot be cancelled independently.
 		if err := NewCreditGrantService(s.ServiceParams).CancelFutureSubscriptionGrants(ctx, dto.CancelFutureSubscriptionGrantsRequest{
 			SubscriptionID: r.sub.ID,
 			AddonID:        lo.ToPtr(association.AddonID),
@@ -487,11 +417,6 @@ func (s *subscriptionService) applyDroppedAddons(ctx context.Context, r *planCha
 	return nil
 }
 
-// ─── Stage 2: compute ────────────────────────────────────────────────────────
-
-// computePlanChange prices the resolved change. Charges and credits are netted
-// across every entry rather than settled as two independent totals, so a change
-// that gives back as much as it takes produces nothing at all.
 func (s *subscriptionService) computePlanChange(
 	ctx context.Context,
 	r *planChangeRequest,
@@ -522,10 +447,6 @@ func (s *subscriptionService) computePlanChange(
 	})
 }
 
-// ─── Stage 3: settle ─────────────────────────────────────────────────────────
-
-// PreviewPlanChange returns the money and line-item movements a change would
-// produce, writing nothing.
 func (s *subscriptionService) PreviewPlanChange(
 	ctx context.Context,
 	subscriptionID string,
@@ -549,13 +470,14 @@ func (s *subscriptionService) PreviewPlanChange(
 	resp := buildPlanChangeResponse(r, req)
 	resp.ChangedResources.LineItems = planChangeChangedLineItems(r)
 	resp.ChangedResources.Invoices = planChangePreviewInvoices(r, quote)
+	if len(resp.ChangedResources.Invoices) > 0 {
+		resp.Warnings = append(resp.Warnings,
+			"quoted amount is the pre-tax subtotal; tax and coupons are applied when the change is executed")
+	}
 
 	return resp, nil
 }
 
-// ExecutePlanChange applies the change. Every database write happens in one
-// transaction, so the change either fully happens or fully does not — the
-// subscription is never left swapped but unbilled.
 func (s *subscriptionService) ExecutePlanChange(
 	ctx context.Context,
 	subscriptionID string,
@@ -611,19 +533,14 @@ func (s *subscriptionService) ExecutePlanChange(
 		"to_plan_id", resp.ToPlan.ID,
 		"change_type", resp.ChangeType)
 
-	// Published after commit: the change is already durable, and a webhook that
-	// fails must not roll back a completed plan change.
+	// After commit so webhook failure cannot roll back a completed change.
 	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionPlanChanged, subscriptionID)
 	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subscriptionID)
 
 	return resp, nil
 }
 
-// loadSubscriptionForPlanChange reads the subscription and its line items.
-// Execute takes a row lock first, so two concurrent changes serialise on the
-// subscription instead of both reading the same state and both writing line
-// items. The lock must be the first read: a decision made before it is a
-// decision made on state another writer can still change.
+// forUpdate takes the row lock as the first read so concurrent changes serialize.
 func (s *subscriptionService) loadSubscriptionForPlanChange(
 	ctx context.Context,
 	subscriptionID string,
@@ -650,8 +567,6 @@ func (s *subscriptionService) loadSubscriptionForPlanChange(
 	return sub, nil
 }
 
-// applyPlanChangeLineItems slices the plan lines at the effective date. Lines
-// left unchanged are not touched at all.
 func (s *subscriptionService) applyPlanChangeLineItems(ctx context.Context, r *planChangeRequest) error {
 	for _, move := range r.closing {
 		move.lineItem.EndDate = r.effectiveAt
@@ -670,9 +585,7 @@ func (s *subscriptionService) applyPlanChangeLineItems(ctx context.Context, r *p
 	return s.SubscriptionLineItemRepo.CreateBulk(ctx, toCreate)
 }
 
-// applyPlanSwap mutates plan_id and re-anchors the plan-price watermark. That
-// watermark only means anything relative to one plan, so carrying the old value
-// would hide the subscription from plan-price sync for good.
+// Re-anchor synced_price_sequence; the old plan's watermark is meaningless on the new plan.
 func (s *subscriptionService) applyPlanSwap(ctx context.Context, r *planChangeRequest) error {
 	r.sub.PlanID = r.toPlan.ID
 	if err := s.SubRepo.Update(ctx, r.sub); err != nil {
@@ -687,10 +600,7 @@ func (s *subscriptionService) applyPlanSwap(ctx context.Context, r *planChangeRe
 	return s.PlanPriceSyncRepo.ReanchorSubSyncedSequence(ctx, r.sub.ID, targetSeq)
 }
 
-// settlePlanChange turns the quote into money. Charges and credits net onto one
-// invoice so the credit is visible as its own line rather than being paid out
-// separately; a net credit goes to the wallet, since a non-credit invoice cannot
-// carry a negative total.
+// Net charge → one invoice (credits as lines); net credit → wallet (invoice totals can't go negative).
 func (s *subscriptionService) settlePlanChange(
 	ctx context.Context,
 	r *planChangeRequest,
@@ -759,8 +669,6 @@ func (s *subscriptionService) createPlanChangeInvoice(
 	})
 }
 
-// ─── Response ────────────────────────────────────────────────────────────────
-
 func buildPlanChangeResponse(
 	r *planChangeRequest,
 	req dto.SubscriptionChangeV2Request,
@@ -816,8 +724,7 @@ func planChangeChangedLineItems(r *planChangeRequest) []dto.ChangedLineItem {
 	return items
 }
 
-// planChangePreviewInvoices renders the money a change would move without
-// creating anything, so a caller sees the amount rather than an empty response.
+// Preview amounts are pre-tax: invoice tax/coupon computation writes and cannot run read-only.
 func planChangePreviewInvoices(r *planChangeRequest, quote *LineItemProrationSummary) []dto.ChangedInvoice {
 	if r.behavior != types.ProrationBehaviorCreateProrations || quote.NetAmount().IsZero() {
 		return nil
@@ -827,6 +734,7 @@ func planChangePreviewInvoices(r *planChangeRequest, quote *LineItemProrationSum
 		Status: dto.ChangedInvoiceStatusPreview,
 		Invoice: &dto.InvoiceResponse{
 			Invoice: invoice.Invoice{
+				Subtotal:  quote.NetAmount(),
 				AmountDue: quote.NetAmount(),
 				Total:     quote.NetAmount(),
 				Currency:  r.sub.Currency,
@@ -835,7 +743,11 @@ func planChangePreviewInvoices(r *planChangeRequest, quote *LineItemProrationSum
 	}}
 }
 
+// Hash to fit invoices.idempotency_key (varchar(100)).
 func planChangeIdempotencyKey(r *planChangeRequest) string {
-	return "plan_change_" + r.sub.ID + "_" + r.toPlan.ID + "_" +
-		r.effectiveAt.UTC().Format(time.RFC3339Nano)
+	return idempotency.NewGenerator().GenerateKey(idempotency.ScopePlanChange, map[string]interface{}{
+		"subscription_id": r.sub.ID,
+		"target_plan_id":  r.toPlan.ID,
+		"effective_at":    r.effectiveAt.UTC().Format(time.RFC3339Nano),
+	})
 }

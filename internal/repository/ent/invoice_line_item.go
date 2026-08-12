@@ -544,8 +544,6 @@ func (r *invoiceLineItemRepository) List(ctx context.Context, filter *types.Invo
 	return result, nil
 }
 
-// GetBilledAmountsBySubscriptionLineItem aggregates charges and credits per
-// subscription line item for the given service period.
 func (r *invoiceLineItemRepository) GetBilledAmountsBySubscriptionLineItem(
 	ctx context.Context,
 	subscriptionLineItemIDs []string,

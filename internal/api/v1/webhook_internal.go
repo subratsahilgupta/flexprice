@@ -162,7 +162,7 @@ func WebhookEventSubscriptionCancelled() {}
 
 // WebhookEventSubscriptionPlanChanged godoc
 // @Summary subscription.plan_changed
-// @Description Fired when a subscription is moved to a different plan in place. The subscription id and billing anchor are unchanged — this is never accompanied by subscription.cancelled or subscription.created. Doc-only for parsing.
+// @Description Fired when a subscription plan changes in place (id/anchor preserved; not cancelled+created). Doc-only for parsing.
 // @Tags Webhook Events
 // @Accept json
 // @Produce json

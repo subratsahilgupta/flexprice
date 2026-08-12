@@ -17,7 +17,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// LineItemProrationEntry pairs a line item with its loaded price and the requested action.
 type LineItemProrationEntry struct {
 	LineItem    *subscription.SubscriptionLineItem
 	Price       *price.Price
@@ -26,7 +25,6 @@ type LineItemProrationEntry struct {
 	NewQuantity decimal.Decimal // zero for remove; equals line item qty for add
 }
 
-// LineItemProrationRequest is the unified input for Compute and Apply.
 type LineItemProrationRequest struct {
 	Subscription   *subscription.Subscription
 	Entries        []LineItemProrationEntry
@@ -36,30 +34,22 @@ type LineItemProrationRequest struct {
 	IdempotencyKey string
 }
 
-// LineItemProrationSummary is returned by Compute and used internally by Apply.
 type LineItemProrationSummary struct {
-	// Per-item results in the same order as Entries (skipped entries are omitted).
 	Results []proration.ProrationResult
 
-	// Positive-net items aggregated into a single one-off invoice.
 	ChargeLineItems   []dto.CreateInvoiceLineItemRequest
 	TotalChargeAmount decimal.Decimal
 
-	// Negative-net items as invoice lines, amounts negative. Callers that net
-	// charges against credits on one invoice use these; Apply ignores them and
-	// pays credits out to the wallet instead.
+	// Negative amounts. Netting callers put these on the charge invoice; Apply
+	// ignores them and pays TotalCreditAmount to the wallet instead.
 	CreditLineItems []dto.CreateInvoiceLineItemRequest
 
-	// Absolute value of negative-net items; used for a single wallet credit.
 	TotalCreditAmount decimal.Decimal
 
 	Currency  string
 	IsPreview bool
 }
 
-// NetAmount is what the change actually costs: charges less credits. Positive
-// means collect, negative means return, zero means the change pays for itself
-// and nothing needs to be settled at all.
 func (s *LineItemProrationSummary) NetAmount() decimal.Decimal {
 	if s == nil {
 		return decimal.Zero
@@ -67,18 +57,10 @@ func (s *LineItemProrationSummary) NetAmount() decimal.Decimal {
 	return s.TotalChargeAmount.Sub(s.TotalCreditAmount)
 }
 
-// LineItemProrationService centralises compute + settlement for mid-period
-// add/remove of individual subscription line items.
 type LineItemProrationService interface {
-	// Compute calculates proration for all entries and returns a summary.
-	// No invoices or wallet credits are created.
 	Compute(ctx context.Context, req LineItemProrationRequest) (*LineItemProrationSummary, error)
-
-	// Apply calls Compute and then settles:
-	//   net > 0  → creates a single InvoiceTypeOneOff and attempts payment
-	//   net < 0  → issues a single wallet credit using req.IdempotencyKey
-	//   net == 0 → no-op
-	// If req.Behavior != ProrationBehaviorCreateProrations, Apply is a no-op.
+	// Apply settles Compute: charge invoice if net > 0, wallet credit if net < 0.
+	// No-op when Behavior != CreateProrations.
 	Apply(ctx context.Context, req LineItemProrationRequest) error
 }
 
@@ -86,7 +68,6 @@ type lineItemProrationService struct {
 	params ServiceParams
 }
 
-// NewLineItemProrationService creates a new LineItemProrationService.
 func NewLineItemProrationService(params ServiceParams) LineItemProrationService {
 	return &lineItemProrationService{params: params}
 }
@@ -113,12 +94,11 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 		item := entry.LineItem
 		p := entry.Price
 
-		// Skip usage prices — future consumption is unknown at change time.
 		if item.PriceType == types.PRICE_TYPE_USAGE {
 			continue
 		}
 
-		// Skip remove of onetime addons — non-refundable (EndDate non-zero means onetime cadence).
+		// Onetime addons (EndDate set) are non-refundable.
 		if entry.Action == types.ProrationActionRemoveItem && !item.EndDate.IsZero() {
 			continue
 		}
@@ -133,7 +113,6 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 			return nil, err
 		}
 		if result == nil {
-			// ProrationBehavior == none returns nil
 			continue
 		}
 
@@ -186,9 +165,7 @@ func (s *lineItemProrationService) Apply(ctx context.Context, req LineItemProrat
 	return nil
 }
 
-// creditBasisForEntries reads, in one query, what each removable line item was
-// actually billed this period. Credits are capped against this instead of the
-// list price, which never binds.
+// Cap removal credits at amounts actually billed (list price never binds).
 func (s *lineItemProrationService) creditBasisForEntries(
 	ctx context.Context,
 	req LineItemProrationRequest,
@@ -216,8 +193,6 @@ func (s *lineItemProrationService) creditBasisForEntries(
 	return billed
 }
 
-// buildProrationParams constructs the ProrationParams for a single entry.
-// Returns (params, skip=true) when the entry should be skipped entirely.
 func (s *lineItemProrationService) buildProrationParams(
 	sub *subscription.Subscription,
 	entry LineItemProrationEntry,
@@ -274,7 +249,6 @@ func (s *lineItemProrationService) buildProrationParams(
 	return base, false
 }
 
-// buildChargeLineItem constructs the invoice line item for a positive proration result.
 func (s *lineItemProrationService) buildChargeLineItem(
 	sub *subscription.Subscription,
 	entry LineItemProrationEntry,

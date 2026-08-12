@@ -544,8 +544,6 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 	}, nil
 }
 
-// creditBasisForLineItem returns what the line item was charged and already
-// credited this period, for capping a proration credit.
 func (s *prorationService) creditBasisForLineItem(
 	ctx context.Context,
 	item *subscription.SubscriptionLineItem,

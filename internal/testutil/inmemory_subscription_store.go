@@ -195,9 +195,7 @@ func (s *InMemorySubscriptionStore) Get(ctx context.Context, id string) (*subscr
 	return sub, nil
 }
 
-// GetForUpdate returns the same data as Get. There is no row locking to
-// simulate in an in-memory store, so tests asserting lock behaviour need the
-// real database.
+// GetForUpdate matches Get; in-memory store has no row locks.
 func (s *InMemorySubscriptionStore) GetForUpdate(ctx context.Context, id string) (*subscription.Subscription, error) {
 	return s.Get(ctx, id)
 }

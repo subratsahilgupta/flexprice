@@ -275,9 +275,8 @@ func (r *planPriceSyncRepository) TerminatePlanPricesLineItemsV2(
 	return int(n), nil
 }
 
-// ReanchorSubSyncedSequence re-points one subscription's watermark at a new
-// plan's sequence. Unlike StampSubsAsSynced this is not forward-only: a plan
-// change can move a subscription onto a plan whose max sequence is lower.
+// ReanchorSubSyncedSequence sets synced_price_sequence in either direction
+// (StampSubsAsSynced is forward-only and cannot express a lower target sequence).
 func (r *planPriceSyncRepository) ReanchorSubSyncedSequence(
 	ctx context.Context,
 	subscriptionID string,
