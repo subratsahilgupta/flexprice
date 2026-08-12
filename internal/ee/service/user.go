@@ -339,7 +339,7 @@ func (s *userService) UpdateUserRoles(ctx context.Context, id string, req *dto.U
 
 	if !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
 		return nil, ierr.NewError("only super_admin can update roles").
-			WithHint("Ask a tenant super_admin to update this user's roles").
+			WithHint("Ask a tenant super_admin to update roles").
 			Mark(ierr.ErrPermissionDenied)
 	}
 

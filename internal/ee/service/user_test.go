@@ -2,17 +2,24 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	cockroachErrors "github.com/cockroachdb/errors"
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
+	domainEnvironment "github.com/flexprice/flexprice/internal/domain/environment"
 	domainSecret "github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
+	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -1002,4 +1009,342 @@ func (s *RBACPermissionSuite) TestValidateRoles() {
 			}
 		})
 	}
+}
+
+const (
+	adminUserID  = "user_admin"
+	targetUserID = "user_target"
+	envProdID    = "env_prod"
+	envStagingID = "env_staging"
+
+	// Matches the encoding used by ErrorBuilder.WithReportableDetails.
+	jsonDetailsPrefix = "__json__:"
+)
+
+type UserRolesSuite struct {
+	suite.Suite
+	ctx         context.Context
+	userService *userService
+	userRepo    *testutil.InMemoryUserStore
+	tenantRepo  *testutil.InMemoryTenantStore
+	secretRepo  *testutil.InMemorySecretStore
+	envRepo     *testutil.InMemoryEnvironmentStore
+}
+
+func TestUserRoles(t *testing.T) {
+	suite.Run(t, new(UserRolesSuite))
+}
+
+func (s *UserRolesSuite) SetupTest() {
+	s.userRepo = testutil.NewInMemoryUserStore()
+	s.tenantRepo = testutil.NewInMemoryTenantStore()
+	s.secretRepo = testutil.NewInMemorySecretStore()
+	s.envRepo = testutil.NewInMemoryEnvironmentStore()
+
+	rbacSvc, err := rbac.NewRBACService(&config.Configuration{
+		RBAC: config.RBACConfig{RolesConfigPath: "../../config/rbac/roles.json"},
+	})
+	s.Require().NoError(err, "RBAC service must load, check roles.json path")
+
+	log, err := logger.NewLogger(&config.Configuration{})
+	s.Require().NoError(err)
+
+	s.userService = &userService{
+		userRepo:        s.userRepo,
+		tenantRepo:      s.tenantRepo,
+		secretRepo:      s.secretRepo,
+		environmentRepo: s.envRepo,
+		db:              testutil.NewMockPostgresClient(log),
+		rbacService:     rbacSvc,
+		logger:          log,
+	}
+
+	// The caller is a super_admin acting on a different user, which is the only
+	// shape the endpoint accepts; individual cases override what they need.
+	s.ctx = testutil.SetupContext()
+	s.ctx = context.WithValue(s.ctx, types.CtxUserID, adminUserID)
+	s.ctx = context.WithValue(s.ctx, types.CtxRoles, []string{types.RoleSuperAdmin.String()})
+
+	s.Require().NoError(s.tenantRepo.Create(s.ctx, &tenant.Tenant{
+		ID:   types.DefaultTenantID,
+		Name: "Test Tenant",
+	}))
+
+	for id, name := range map[string]string{envProdID: "Production", envStagingID: "Staging"} {
+		s.Require().NoError(s.envRepo.Create(s.ctx, environmentFixture(id, name)))
+	}
+
+	s.seedUser(adminUserID, types.UserTypeUser, []string{types.RoleSuperAdmin.String()}, types.StatusPublished)
+	s.seedUser(targetUserID, types.UserTypeUser, []string{types.RoleAllReader.String()}, types.StatusPublished)
+}
+
+func environmentFixture(id, name string) *domainEnvironment.Environment {
+	return &domainEnvironment.Environment{
+		ID:   id,
+		Name: name,
+		Type: types.EnvironmentDevelopment,
+		BaseModel: types.BaseModel{
+			TenantID: types.DefaultTenantID,
+			Status:   types.StatusPublished,
+		},
+	}
+}
+
+func (s *UserRolesSuite) seedUser(id string, userType types.UserType, roles []string, status types.Status) {
+	email := id + "@example.com"
+	if userType == types.UserTypeServiceAccount {
+		email = ""
+	}
+	s.Require().NoError(s.userRepo.Create(s.ctx, &user.User{
+		ID:    id,
+		Email: email,
+		Type:  userType,
+		Roles: roles,
+		BaseModel: types.BaseModel{
+			TenantID: types.DefaultTenantID,
+			Status:   status,
+		},
+	}))
+}
+
+// seedAPIKey creates an active private key owned by userID in the given
+// environment. expiresAt nil means the key never expires.
+func (s *UserRolesSuite) seedAPIKey(id, name, userID, envID string, expiresAt *time.Time) {
+	s.Require().NoError(s.secretRepo.Create(s.ctx, &domainSecret.Secret{
+		ID:            id,
+		Name:          name,
+		Type:          types.SecretTypePrivateKey,
+		Provider:      types.SecretProviderFlexPrice,
+		Value:         "hashed_" + id,
+		EnvironmentID: envID,
+		UserID:        userID,
+		ExpiresAt:     expiresAt,
+		BaseModel: types.BaseModel{
+			TenantID: types.DefaultTenantID,
+			Status:   types.StatusPublished,
+		},
+	}))
+}
+
+func (s *UserRolesSuite) update(id string, roles ...string) (*dto.UpdateUserRolesResponse, error) {
+	return s.userService.UpdateUserRoles(s.ctx, id, &dto.UpdateUserRolesRequest{Roles: roles})
+}
+
+func (s *UserRolesSuite) TestSuperAdminUpdatesAnotherUser() {
+	resp, err := s.update(targetUserID, types.RoleAllWriter.String())
+
+	s.NoError(err)
+	s.Require().NotNil(resp)
+	s.Equal([]string{types.RoleAllWriter.String()}, resp.Roles)
+
+	// The write must be visible through the repository, not just echoed back.
+	stored, err := s.userRepo.GetByID(s.ctx, targetUserID)
+	s.NoError(err)
+	s.Equal([]string{types.RoleAllWriter.String()}, stored.Roles)
+}
+
+func (s *UserRolesSuite) TestPromotionToSuperAdmin() {
+	resp, err := s.update(targetUserID, types.RoleSuperAdmin.String())
+
+	s.NoError(err)
+	s.Equal([]string{types.RoleSuperAdmin.String()}, resp.Roles)
+}
+
+func (s *UserRolesSuite) TestCallerWithoutSuperAdminIsDenied() {
+	s.ctx = context.WithValue(s.ctx, types.CtxRoles, []string{types.RoleAllWriter.String()})
+
+	_, err := s.update(targetUserID, types.RoleAllReader.String())
+
+	s.Error(err)
+	s.True(ierr.IsPermissionDenied(err), "expected permission denied, got %v", err)
+	s.assertRolesUnchanged(targetUserID, types.RoleAllReader.String())
+}
+
+func (s *UserRolesSuite) TestCallerWithNoRolesIsDenied() {
+	s.ctx = context.WithValue(s.ctx, types.CtxRoles, []string{})
+
+	_, err := s.update(targetUserID, types.RoleAllWriter.String())
+
+	s.Error(err)
+	s.True(ierr.IsPermissionDenied(err), "expected permission denied, got %v", err)
+}
+
+// A super_admin must not be able to demote themselves; this is what guarantees
+// a tenant always retains at least one super_admin.
+func (s *UserRolesSuite) TestCallerCannotUpdateOwnRoles() {
+	_, err := s.update(adminUserID, types.RoleAllReader.String())
+
+	s.Error(err)
+	s.True(ierr.IsPermissionDenied(err), "expected permission denied, got %v", err)
+	s.assertRolesUnchanged(adminUserID, types.RoleSuperAdmin.String())
+}
+
+func (s *UserRolesSuite) TestServiceAccountRolesCannotBeChanged() {
+	const svcAccountID = "user_service_account"
+	s.seedUser(svcAccountID, types.UserTypeServiceAccount, []string{types.RoleEventIngestor.String()}, types.StatusPublished)
+
+	_, err := s.update(svcAccountID, types.RoleEventReader.String())
+
+	s.Error(err)
+	s.True(ierr.IsValidation(err), "expected validation error, got %v", err)
+	s.assertRolesUnchanged(svcAccountID, types.RoleEventIngestor.String())
+}
+
+func (s *UserRolesSuite) TestArchivedUserIsRejected() {
+	const archivedID = "user_archived"
+	s.seedUser(archivedID, types.UserTypeUser, []string{types.RoleAllReader.String()}, types.StatusArchived)
+
+	_, err := s.update(archivedID, types.RoleAllWriter.String())
+
+	s.Error(err)
+	s.True(ierr.IsValidation(err), "expected validation error, got %v", err)
+}
+
+func (s *UserRolesSuite) TestUnknownUserIsRejected() {
+	_, err := s.update("user_does_not_exist", types.RoleAllWriter.String())
+
+	s.Error(err)
+	s.True(ierr.IsNotFound(err), "expected not found, got %v", err)
+}
+
+func (s *UserRolesSuite) TestRoleValidation() {
+	testCases := []struct {
+		name  string
+		id    string
+		roles []string
+	}{
+		{
+			name:  "empty user id",
+			id:    "",
+			roles: []string{types.RoleAllWriter.String()},
+		},
+		{
+			name:  "no roles supplied",
+			id:    targetUserID,
+			roles: []string{},
+		},
+		{
+			name:  "role does not exist",
+			id:    targetUserID,
+			roles: []string{"not_a_real_role"},
+		},
+		{
+			name:  "service account scope cannot be given to a person",
+			id:    targetUserID,
+			roles: []string{types.RoleEventIngestor.String()},
+		},
+		{
+			name:  "super_admin cannot be combined with another role",
+			id:    targetUserID,
+			roles: []string{types.RoleSuperAdmin.String(), types.RoleAllReader.String()},
+		},
+	}
+
+	for _, tc := range testCases {
+		s.Run(tc.name, func() {
+			_, err := s.update(tc.id, tc.roles...)
+
+			s.Error(err)
+			s.True(ierr.IsValidation(err), "expected validation error, got %v", err)
+			s.assertRolesUnchanged(targetUserID, types.RoleAllReader.String())
+		})
+	}
+}
+
+func (s *UserRolesSuite) TestActiveAPIKeyBlocksUpdate() {
+	s.seedAPIKey("sec_1", "billing-key", targetUserID, envProdID, nil)
+
+	_, err := s.update(targetUserID, types.RoleAllWriter.String())
+
+	s.Require().Error(err)
+	s.True(ierr.IsValidation(err), "expected validation error, got %v", err)
+	s.assertRolesUnchanged(targetUserID, types.RoleAllReader.String())
+
+	details := s.errorDetails(err)
+	s.EqualValues(1, details["active_api_key_count"])
+
+	keysByEnv := s.activeAPIKeys(details)
+	s.Require().Contains(keysByEnv, envProdID)
+	s.Equal("Production", keysByEnv[envProdID].EnvName)
+	s.Equal([]dto.ActiveAPIKey{{ID: "sec_1", KeyName: "billing-key"}}, keysByEnv[envProdID].APIKeys)
+}
+
+// Roles are tenant-wide while secrets are environment-scoped, so a key living
+// outside the caller's current environment must still block the change.
+func (s *UserRolesSuite) TestKeysAreFoundAcrossEnvironments() {
+	s.seedAPIKey("sec_prod", "prod-key", targetUserID, envProdID, nil)
+	s.seedAPIKey("sec_stg_a", "ci-key", targetUserID, envStagingID, nil)
+	s.seedAPIKey("sec_stg_b", "test-key", targetUserID, envStagingID, nil)
+
+	_, err := s.update(targetUserID, types.RoleAllWriter.String())
+
+	s.Require().Error(err)
+
+	details := s.errorDetails(err)
+	s.EqualValues(3, details["active_api_key_count"])
+
+	keysByEnv := s.activeAPIKeys(details)
+	s.Len(keysByEnv, 2)
+	s.Equal("Production", keysByEnv[envProdID].EnvName)
+	s.Len(keysByEnv[envProdID].APIKeys, 1)
+	s.Equal("Staging", keysByEnv[envStagingID].EnvName)
+	s.Len(keysByEnv[envStagingID].APIKeys, 2)
+}
+
+func (s *UserRolesSuite) TestKeysThatDoNotBlockUpdate() {
+	// Another user's key is irrelevant to this user's role change.
+	s.seedAPIKey("sec_other_user", "other-key", adminUserID, envProdID, nil)
+	// An expired key can no longer authenticate, so it cannot carry stale roles.
+	s.seedAPIKey("sec_expired", "expired-key", targetUserID, envProdID, lo.ToPtr(time.Now().UTC().Add(-time.Hour)))
+
+	_, err := s.update(targetUserID, types.RoleAllWriter.String())
+
+	s.NoError(err)
+	s.assertRolesUnchanged(targetUserID, types.RoleAllWriter.String())
+}
+
+func (s *UserRolesSuite) TestDeletedKeyDoesNotBlockUpdate() {
+	s.seedAPIKey("sec_1", "billing-key", targetUserID, envProdID, nil)
+	s.Require().NoError(s.secretRepo.Delete(s.ctx, "sec_1"))
+
+	_, err := s.update(targetUserID, types.RoleAllWriter.String())
+
+	s.NoError(err)
+	s.assertRolesUnchanged(targetUserID, types.RoleAllWriter.String())
+}
+
+func (s *UserRolesSuite) assertRolesUnchanged(id string, want ...string) {
+	stored, err := s.userRepo.GetByID(s.ctx, id)
+	s.Require().NoError(err)
+	s.Equal(want, stored.Roles)
+}
+
+// errorDetails extracts an ierr error's reportable details the same way the HTTP
+// error handler does (see middleware/errhandler.go), so assertions see exactly
+// the JSON payload a client receives rather than the in-process Go values.
+func (s *UserRolesSuite) errorDetails(err error) map[string]any {
+	for _, sdp := range cockroachErrors.GetAllSafeDetails(err) {
+		for _, payload := range sdp.SafeDetails {
+			if !strings.HasPrefix(payload, jsonDetailsPrefix) {
+				continue
+			}
+			var details map[string]any
+			if json.Unmarshal([]byte(payload[len(jsonDetailsPrefix):]), &details) == nil {
+				return details
+			}
+		}
+	}
+	s.Failf("no reportable details", "error carried no JSON details: %v", err)
+	return nil
+}
+
+// activeAPIKeys re-decodes the details payload into the typed shape the docs
+// promise, which also asserts the wire format has not drifted.
+func (s *UserRolesSuite) activeAPIKeys(details map[string]any) map[string]dto.ActiveEnvironmentAPIKeys {
+	raw, err := json.Marshal(details["active_api_keys"])
+	s.Require().NoError(err)
+
+	var byEnv map[string]dto.ActiveEnvironmentAPIKeys
+	s.Require().NoError(json.Unmarshal(raw, &byEnv))
+	return byEnv
 }
