@@ -2090,19 +2090,17 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 			"error", err, "customer_id", req.CustomerID)
 		return dto.NewInvoiceResponse(inv), nil
 	}
-	if len(rates) == 0 {
-		return dto.NewInvoiceResponse(inv), nil
-	}
 
-	result, err := taxSvc.ApplyTaxesOnInvoice(ctx, inv, rates)
-	if err != nil {
-		s.Logger.Info(ctx, "could not compute tax for invoice preview; quoting untaxed",
-			"error", err, "customer_id", req.CustomerID)
-		return dto.NewInvoiceResponse(inv), nil
+	// Calculate, never apply: applying writes a tax_applied record per rate, and this
+	// invoice is never created.
+	inv.TotalTax = taxSvc.CalculateTaxesOnInvoice(ctx, inv, rates).TotalTaxAmount
+	inv.Total = inv.Subtotal.
+		Sub(inv.TotalPrepaidCreditsApplied).
+		Sub(inv.TotalDiscount).
+		Add(inv.TotalTax)
+	if inv.Total.IsNegative() {
+		inv.Total = decimal.Zero
 	}
-
-	inv.TotalTax = result.TotalTaxAmount
-	inv.Total = inv.Subtotal.Add(inv.TotalTax)
 	inv.AmountDue = inv.Total
 	inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
 	return dto.NewInvoiceResponse(inv), nil

@@ -771,9 +771,11 @@ func (p *Price) BillsIdenticallyTo(other *Price) bool {
 	}
 
 	return p.Amount.Equal(other.Amount) &&
+		p.Currency == other.Currency &&
 		p.Type == other.Type &&
 		p.MeterID == other.MeterID &&
 		p.BillingModel == other.BillingModel &&
+		p.BillingCadence == other.BillingCadence &&
 		p.InvoiceCadence == other.InvoiceCadence &&
 		p.BillingPeriod == other.BillingPeriod &&
 		p.BillingPeriodCount == other.BillingPeriodCount

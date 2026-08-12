@@ -12,6 +12,8 @@ func TestBillsIdenticallyTo_SeparatesPricesThatOnlyLookAlike(t *testing.T) {
 	base := func() *Price {
 		return &Price{
 			Amount:             decimal.NewFromInt(20),
+			Currency:           "usd",
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
 			Type:               types.PRICE_TYPE_FIXED,
 			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
 			InvoiceCadence:     types.InvoiceCadenceAdvance,
@@ -28,6 +30,16 @@ func TestBillsIdenticallyTo_SeparatesPricesThatOnlyLookAlike(t *testing.T) {
 	pkgB.TransformQuantity = JSONBTransformQuantity{DivideBy: 500}
 	assert.False(t, pkgA.BillsIdenticallyTo(pkgB),
 		"$20 per 100 units and $20 per 500 units are a 5x difference, not the same price")
+
+	curA, curB := base(), base()
+	curA.Currency, curB.Currency = "usd", "eur"
+	assert.False(t, curA.BillsIdenticallyTo(curB), "20 dollars is not 20 euros")
+
+	// One-time vs recurring is carried by BillingPeriod; BillingCadence has a single
+	// value today (BILLING_CADENCE_ONETIME was removed) but is compared for when it does not.
+	oneA, oneB := base(), base()
+	oneB.BillingPeriod = types.BILLING_PERIOD_ONETIME
+	assert.False(t, oneA.BillsIdenticallyTo(oneB), "a one-time 20 is not 20 every month")
 
 	unitA, unitB := base(), base()
 	credits := "pu_credits"
