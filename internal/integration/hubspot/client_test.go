@@ -197,3 +197,37 @@ func testCtx() context.Context {
 	ctx = types.SetEnvironmentID(ctx, "env_test")
 	return ctx
 }
+
+func TestDeleteDealLineItem_Success(t *testing.T) {
+	client, httpClient := newTestHubSpotClient(t)
+	httpClient.registerResponse("/crm/v3/objects/line_items/li_123", fakeHTTPResponse{
+		statusCode: http.StatusNoContent,
+	})
+
+	err := client.DeleteDealLineItem(testCtx(), "li_123")
+	require.NoError(t, err)
+}
+
+func TestDeleteDealLineItem_NotFound(t *testing.T) {
+	client, httpClient := newTestHubSpotClient(t)
+	httpClient.registerResponse("/crm/v3/objects/line_items/li_missing", fakeHTTPResponse{
+		statusCode: http.StatusNotFound,
+		body:       []byte(`{"message":"line item not found"}`),
+	})
+
+	err := client.DeleteDealLineItem(testCtx(), "li_missing")
+	require.Error(t, err)
+	require.True(t, ierr.IsNotFound(err), "expected ErrNotFound, got: %v", err)
+}
+
+func TestDeleteDealLineItem_UnexpectedStatus(t *testing.T) {
+	client, httpClient := newTestHubSpotClient(t)
+	httpClient.registerResponse("/crm/v3/objects/line_items/li_500", fakeHTTPResponse{
+		statusCode: http.StatusInternalServerError,
+		body:       []byte(`{"message":"internal error"}`),
+	})
+
+	err := client.DeleteDealLineItem(testCtx(), "li_500")
+	require.Error(t, err)
+	require.False(t, ierr.IsNotFound(err))
+}
