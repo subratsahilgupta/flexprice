@@ -326,3 +326,54 @@ func TestSeedEnsure_PlanEntitlementsProvisioned(t *testing.T) {
 		}
 	}
 }
+
+func TestSeedEnsure_CommitmentAndCouponOnPersistentSubs(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+
+	if len(fc.subs.created) == 0 {
+		t.Fatalf("no subs created")
+	}
+	// Every persistent sub must carry commitment fields.
+	for i, req := range fc.subs.created {
+		if req.CommitmentAmount == nil || *req.CommitmentAmount != "5.00" {
+			t.Errorf("sub[%d] CommitmentAmount = %v, want \"5.00\"", i, req.CommitmentAmount)
+		}
+		if req.CommitmentDuration == nil || *req.CommitmentDuration != types.BillingPeriodMonthly {
+			t.Errorf("sub[%d] CommitmentDuration = %v, want MONTHLY", i, req.CommitmentDuration)
+		}
+		if req.OverageFactor == nil || *req.OverageFactor != "1.5" {
+			t.Errorf("sub[%d] OverageFactor = %v, want \"1.5\"", i, req.OverageFactor)
+		}
+	}
+
+	// Persistent cust #1's sub must carry the shared coupon at sub-create.
+	found := false
+	for _, req := range fc.subs.created {
+		if req.ExternalCustomerID != nil && *req.ExternalCustomerID == "e2eprobe-cust-persistent-1" {
+			if len(req.SubscriptionCoupons) != 1 || req.SubscriptionCoupons[0].CouponCode != "E2EPROBE_COUPON_10PCT" {
+				t.Errorf("cust-persistent-1 sub SubscriptionCoupons = %+v, want [{CouponCode: E2EPROBE_COUPON_10PCT}]", req.SubscriptionCoupons)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no sub found for e2eprobe-cust-persistent-1")
+	}
+
+	// Other persistent subs must NOT carry the coupon (only cust #1).
+	for _, req := range fc.subs.created {
+		if req.ExternalCustomerID == nil || *req.ExternalCustomerID == "e2eprobe-cust-persistent-1" {
+			continue
+		}
+		if len(req.SubscriptionCoupons) != 0 {
+			t.Errorf("sub for %s carries SubscriptionCoupons = %+v, want none", *req.ExternalCustomerID, req.SubscriptionCoupons)
+		}
+	}
+}

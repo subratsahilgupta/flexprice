@@ -695,6 +695,9 @@ func (s *SeedEnsure) ensureSubscriptions(ctx context.Context, seeds *e2eprobe.Se
 
 		billingCycle := types.BillingCycleAnniversary
 		now := time.Now().UTC()
+		commitAmount := "5.00"
+		commitDuration := types.BillingPeriodMonthly
+		overageFactor := "1.5"
 		req := types.CreateSubscriptionRequest{
 			ExternalCustomerID: &extID,
 			PlanID:             planID,
@@ -703,11 +706,24 @@ func (s *SeedEnsure) ensureSubscriptions(ctx context.Context, seeds *e2eprobe.Se
 			BillingPeriodCount: int64Ptr(1),
 			BillingCycle:       &billingCycle,
 			StartDate:          &now,
+			// Commitment applies to every newly-created persistent sub.
+			// Existing subs are not migrated (would break cycle-invoice-probe baseline).
+			CommitmentAmount:   &commitAmount,
+			CommitmentDuration: &commitDuration,
+			OverageFactor:      &overageFactor,
 			Metadata: map[string]string{
 				"e2eprobe":        "true",
 				"e2eprobe_role":   "seed",
 				"e2eprobe_cohort": "persistent",
 			},
+		}
+		// Attach shared coupon to persistent cust #1 at sub-create time (the
+		// only hook the SDK exposes for coupon attachment). Same "new subs
+		// only" caveat as commitment.
+		if extID == persistentExternalCustomerID(1) && seeds.SharedCouponCode != "" {
+			req.SubscriptionCoupons = []types.SubscriptionCouponInput{
+				{CouponCode: seeds.SharedCouponCode},
+			}
 		}
 		createResp, err := s.client.Subscriptions().Create(ctx, req)
 		if err != nil {
