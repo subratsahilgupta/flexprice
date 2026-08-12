@@ -104,6 +104,9 @@ func (s *SeedEnsure) Run(ctx context.Context) error {
 	if err := s.ensureSubscriptions(ctx, &seeds); err != nil {
 		return err
 	}
+	if err := s.ensurePersistentTaxAssociation(ctx, &seeds); err != nil {
+		return err
+	}
 	if err := s.ensureWallets(ctx, &seeds); err != nil {
 		return err
 	}
@@ -753,6 +756,58 @@ func (s *SeedEnsure) ensureSubscriptions(ctx context.Context, seeds *e2eprobe.Se
 				)
 			}
 		}
+	}
+	return nil
+}
+
+// ensurePersistentTaxAssociation attaches the shared E2EPROBE_TAX_10PCT
+// tax rate to persistent cust #0's subscription. Idempotent: lists
+// existing associations filtered by tax_rate_id + entity_id and creates
+// only if absent. Unlike coupons, tax associations are a separate call
+// (not a sub-create field), so this covers both new and existing subs.
+func (s *SeedEnsure) ensurePersistentTaxAssociation(ctx context.Context, out *e2eprobe.Seeds) error {
+	if out.SharedTaxRateCode == "" || out.SharedTaxRateID == "" {
+		return nil // tax rate seed didn't run — soft skip
+	}
+	if len(out.PersistentCustomerIDs) == 0 || len(out.PersistentSubIDs) == 0 {
+		return nil
+	}
+	// PersistentSubIDs[0] corresponds to PersistentCustomerIDs[0] because
+	// ensureSubscriptions iterates PersistentCustomerIDs in order. Defensive
+	// alignment check keeps this safe if that invariant ever changes.
+	if out.PersistentCustomerIDs[0] != persistentExternalCustomerID(0) {
+		return nil
+	}
+	subID := out.PersistentSubIDs[0]
+	taxRateID := out.SharedTaxRateID
+
+	entityType := "SUBSCRIPTION"
+	listResp, err := s.client.TaxAssociations().List(ctx, &entityType, &subID, nil, &taxRateID)
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"subscription_id": subID, "tax_rate_id": taxRateID}, "list tax associations: %w", err)
+	}
+	if listResp.ListTaxAssociationsResponse != nil {
+		for _, ta := range listResp.ListTaxAssociationsResponse.Items {
+			if ta.TaxRateID != nil && *ta.TaxRateID == taxRateID {
+				return nil
+			}
+		}
+	}
+
+	autoApply := true
+	tType := types.TaxRateEntityTypeSubscription
+	_, err = s.client.TaxAssociations().Create(ctx, types.CreateTaxAssociationRequest{
+		TaxRateCode: out.SharedTaxRateCode,
+		EntityID:    &subID,
+		EntityType:  &tType,
+		AutoApply:   &autoApply,
+		Metadata: map[string]string{
+			"e2eprobe":      "true",
+			"e2eprobe_role": "seed",
+		},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"subscription_id": subID, "tax_rate_code": out.SharedTaxRateCode}, "create tax association: %w", err)
 	}
 	return nil
 }

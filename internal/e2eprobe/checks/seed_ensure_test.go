@@ -377,3 +377,49 @@ func TestSeedEnsure_CommitmentAndCouponOnPersistentSubs(t *testing.T) {
 		}
 	}
 }
+
+func TestSeedEnsure_PersistentTaxAssociation(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	if len(fc.taxAssociations.created) != 1 {
+		t.Fatalf("tax associations created = %d, want 1", len(fc.taxAssociations.created))
+	}
+	req := fc.taxAssociations.created[0]
+	if req.TaxRateCode != "E2EPROBE_TAX_10PCT" {
+		t.Errorf("TaxRateCode = %q, want E2EPROBE_TAX_10PCT", req.TaxRateCode)
+	}
+	if req.EntityID == nil || *req.EntityID == "" {
+		t.Errorf("EntityID missing on tax association create")
+	}
+	if req.EntityType == nil || *req.EntityType != types.TaxRateEntityTypeSubscription {
+		t.Errorf("EntityType = %v, want SUBSCRIPTION", req.EntityType)
+	}
+
+	// Idempotency: the fake doesn't dedupe on repeat Runs (it creates fresh IDs
+	// each time), so pre-populate both TaxRates.List (so ensureTaxRates returns
+	// the same rate ID) AND TaxAssociations.List (so ensurePersistentTaxAssociation
+	// sees the existing association). On real APIs both lookups deduplicate
+	// server-side.
+	trID := reg.Seeds().SharedTaxRateID
+	trCode := "E2EPROBE_TAX_10PCT"
+	fc.taxRates.listResp = &dtos.GetTaxRatesResponse{
+		TaxRateResponses: []types.TaxRateResponse{{ID: &trID, Code: &trCode}},
+	}
+	fc.taxAssociations.listResp = &dtos.ListTaxAssociationsResponse{
+		ListTaxAssociationsResponse: &types.ListTaxAssociationsResponse{
+			Items: []types.TaxAssociationResponse{{TaxRateID: &trID}},
+		},
+	}
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("second Run() unexpected error: %v", err)
+	}
+	if len(fc.taxAssociations.created) != 1 {
+		t.Errorf("tax association created %d times across 2 runs; want 1 (idempotency broken)", len(fc.taxAssociations.created))
+	}
+}
