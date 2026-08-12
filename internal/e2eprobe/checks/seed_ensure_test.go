@@ -3,7 +3,6 @@ package checks
 import (
 	"context"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/config"
@@ -519,7 +518,15 @@ func TestSeedEnsure_AdditiveGrantEntitlementProvisioned(t *testing.T) {
 	}
 }
 
-func TestSeedEnsure_AdditiveGrantEchoMismatchFails(t *testing.T) {
+// TestSeedEnsure_AdditiveGrantEchoMismatchLoggedNotFatal: config-echo
+// drift (server accepted the create but returned a different config) is
+// surfaced via a Warn log AND leaves GrantEntitlementIDs empty so the
+// grant probe soft-skips — but does NOT fail seed-ensure Run(). Prior
+// to the 2026-08-13 "non-fatal grant provisioning" change the seed
+// returned this error, which poisoned LoadSeeds and broke every
+// ephemeral-creating probe. Alerting on the drift now happens via the
+// structured warn log (SigNoz / Grafana pattern-match), not Slack.
+func TestSeedEnsure_AdditiveGrantEchoMismatchLoggedNotFatal(t *testing.T) {
 	fc := newFakeClient()
 	reg := e2eprobe.NewRegistry()
 	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
@@ -536,12 +543,15 @@ func TestSeedEnsure_AdditiveGrantEchoMismatchFails(t *testing.T) {
 	}
 
 	s := NewSeedEnsure(fc, reg, "test-run", lg)
-	err := s.Run(context.Background())
-	if err == nil {
-		t.Fatalf("Run() must fail when server-side aggregation_mode diverges from sent value; got nil")
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() must not fail hard on grant echo mismatch; got %v", err)
 	}
-	if !strings.Contains(err.Error(), "aggregation_mode") {
-		t.Errorf("error message should mention aggregation_mode drift; got: %v", err)
+	seeds := reg.Seeds()
+	if len(seeds.PlanIDs) == 0 {
+		t.Errorf("PlanIDs empty — non-fatal contract violated: downstream state was not preserved")
+	}
+	if len(seeds.GrantEntitlementIDs) != 0 {
+		t.Errorf("GrantEntitlementIDs = %v; expected empty so probe soft-skips on drift", seeds.GrantEntitlementIDs)
 	}
 }
 
@@ -640,5 +650,46 @@ func TestSeedEnsure_AdditiveGrantAlreadyExistsSwallowed(t *testing.T) {
 	s := NewSeedEnsure(fc, reg, "test-run", lg)
 	if err := s.Run(context.Background()); err != nil {
 		t.Fatalf("Run() must swallow ErrAlreadyExists on grant CreateWithGrant; got %v", err)
+	}
+}
+
+// TestSeedEnsure_GrantsFailureDoesNotBlockDownstream is the regression
+// guard for the "no ephemeral customers on staging" report (2026-08-13).
+// If ensureEntitlementGrants fails for any reason (server rejects the
+// grant config, response echo drifts, transient 5xx), the rest of the
+// seed — including ensureSubscriptions which populates PersistentSubIDs —
+// MUST still run to completion. Otherwise every ephemeral-creating probe
+// soft-skips on empty PlanIDs and no customers are ever created.
+func TestSeedEnsure_GrantsFailureDoesNotBlockDownstream(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+
+	// Inject a hard failure on CreateWithGrant that is NOT "already exists".
+	fc.entitlements.createWithGrantErr = &sdkerrors.APIError{
+		Message:    "server rejected grant config",
+		StatusCode: http.StatusBadRequest,
+		Body:       `{"code":"validation_error","message":"grant_measure not supported"}`,
+	}
+
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() must not fail hard when grant provisioning fails; got %v", err)
+	}
+
+	// Verify downstream state IS populated — this is the whole point.
+	seeds := reg.Seeds()
+	if len(seeds.PlanIDs) == 0 {
+		t.Errorf("PlanIDs empty after grants failed — seed cascaded and broke everything")
+	}
+	if len(seeds.PersistentCustomerIDs) == 0 {
+		t.Errorf("PersistentCustomerIDs empty after grants failed — ephemeral probes will soft-skip")
+	}
+	if len(seeds.PersistentSubIDs) == 0 {
+		t.Errorf("PersistentSubIDs empty after grants failed — probes that depend on subs will soft-skip")
+	}
+	// Grant coverage is expected to be missing (the whole point of the failure).
+	if len(seeds.GrantEntitlementIDs) != 0 {
+		t.Errorf("GrantEntitlementIDs = %v; expected empty when grant provisioning failed", seeds.GrantEntitlementIDs)
 	}
 }

@@ -115,8 +115,25 @@ func (s *SeedEnsure) Run(ctx context.Context) error {
 	if err := s.ensurePlanEntitlements(ctx, &seeds); err != nil {
 		return err
 	}
+	// ensureEntitlementGrants is intentionally NON-FATAL. It provisions
+	// additive-grant coverage on ONE reserved feature (2026-08-13 plan).
+	// If the server rejects the raw-HTTP grant config, an SDK/server
+	// version drift misses a field, or config-echo drifts, we log and
+	// continue — every downstream step (subscriptions, wallets, tax
+	// association) and every existing probe (new-customer-lifecycle,
+	// commitment, tax, coupon, etc.) must keep working. Otherwise a
+	// grant-side failure poisons LoadSeeds → all ephemeral-creating
+	// probes soft-skip on empty PlanIDs → no customers appear in the
+	// tenant. See the "no ephemeral customers on staging" report.
 	if err := s.ensureEntitlementGrants(ctx, &seeds); err != nil {
-		return err
+		if s.logger != nil {
+			s.logger.Warn(ctx, "seed-ensure: grant provisioning failed; continuing without grant coverage",
+				"error", err.Error(),
+			)
+		}
+		// Intentional: clear GrantEntitlementIDs so the grant probe
+		// soft-skips instead of hitting the half-populated map.
+		seeds.GrantEntitlementIDs = nil
 	}
 	if err := s.ensureSubscriptions(ctx, &seeds); err != nil {
 		return err
