@@ -585,6 +585,14 @@ type fakeEntitlements struct {
 	queryResp *dtos.QueryEntitlementResponse
 	queryErr  error
 	deleted   []string
+
+	// Grant-related fields (Task 3 of entitlement-grants plan)
+	createdWithGrant   []e2eprobe.GrantEntitlementInput
+	createWithGrantErr error
+	createWithGrantID  string // returned by CreateWithGrant when non-empty; else auto-generated
+	getRawResp         *e2eprobe.GrantEntitlementResponse
+	getRawErr          error
+	getRawCalls        []string
 }
 
 func (f *fakeEntitlements) Create(_ context.Context, req types.CreateEntitlementRequest) (*dtos.CreateEntitlementResponse, error) {
@@ -615,6 +623,43 @@ func (f *fakeEntitlements) Delete(_ context.Context, id string) (*dtos.DeleteEnt
 	defer f.mu.Unlock()
 	f.deleted = append(f.deleted, id)
 	return &dtos.DeleteEntitlementResponse{}, nil
+}
+
+func (f *fakeEntitlements) CreateWithGrant(_ context.Context, req e2eprobe.GrantEntitlementInput) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.createWithGrantErr != nil {
+		return "", f.createWithGrantErr
+	}
+	f.createdWithGrant = append(f.createdWithGrant, req)
+	if f.createWithGrantID != "" {
+		return f.createWithGrantID, nil
+	}
+	return fmt.Sprintf("ent_grant_%d", len(f.createdWithGrant)), nil
+}
+
+func (f *fakeEntitlements) GetRaw(_ context.Context, id string) (*e2eprobe.GrantEntitlementResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.getRawCalls = append(f.getRawCalls, id)
+	if f.getRawErr != nil {
+		return nil, f.getRawErr
+	}
+	if f.getRawResp != nil {
+		return f.getRawResp, nil
+	}
+	// Default: well-formed response matching the seed's config-echo assertion,
+	// so happy-path tests don't need to inject.
+	dv := 1
+	return &e2eprobe.GrantEntitlementResponse{
+		ID:                 id,
+		GrantMeasure:       "quantity",
+		GrantQuota:         "1000",
+		GrantDurationValue: &dv,
+		GrantDurationUnit:  "hour",
+		AggregationMode:    "additive",
+		IsEnabled:          true,
+	}, nil
 }
 
 // --- Coupons ---
