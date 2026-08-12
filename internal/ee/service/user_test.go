@@ -38,6 +38,7 @@ func (s *UserServiceSuite) SetupTest() {
 		userRepo:        s.userRepo,
 		tenantRepo:      s.tenantRepo,
 		secretRepo:      s.secretRepo,
+		db:              testutil.NewMockPostgresClient(nil),
 		rbacService:     nil,
 		supabaseAuth:    nil,
 		settingsService: nil,

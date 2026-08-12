@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/user"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/nedpals/supabase-go"
@@ -36,6 +37,7 @@ type userService struct {
 	authRepo        domainAuth.Repository
 	secretRepo      domainSecret.Repository
 	environmentRepo domainEnvironment.Repository
+	db              postgres.IClient
 	cfg             *config.Configuration
 	rbacService     *rbac.RBACService
 	supabaseAuth    *supabase.Client
@@ -49,6 +51,7 @@ func NewUserService(
 	authRepo domainAuth.Repository,
 	secretRepo domainSecret.Repository,
 	environmentRepo domainEnvironment.Repository,
+	db postgres.IClient,
 	cfg *config.Configuration,
 	rbacService *rbac.RBACService,
 	supabaseAuth *supabase.Client,
@@ -61,6 +64,7 @@ func NewUserService(
 		authRepo:        authRepo,
 		secretRepo:      secretRepo,
 		environmentRepo: environmentRepo,
+		db:              db,
 		cfg:             cfg,
 		rbacService:     rbacService,
 		supabaseAuth:    supabaseAuth,
@@ -372,11 +376,12 @@ func (s *userService) UpdateUserRoles(ctx context.Context, id string, req *dto.U
 		return nil, err
 	}
 
-	if err := s.ensureNoActiveAPIKeys(ctx, id); err != nil {
-		return nil, err
-	}
-
-	if err := s.userRepo.UpdateRoles(ctx, id, req.Roles); err != nil {
+	if err := s.db.WithTx(ctx, func(txCtx context.Context) error {
+		if err := s.ensureNoActiveAPIKeys(txCtx, id); err != nil {
+			return err
+		}
+		return s.userRepo.UpdateRoles(txCtx, id, req.Roles)
+	}); err != nil {
 		return nil, err
 	}
 
