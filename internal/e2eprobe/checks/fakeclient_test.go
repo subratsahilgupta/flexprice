@@ -697,6 +697,8 @@ type fakeTaxRates struct {
 	created   []types.CreateTaxRateRequest
 	createErr error
 	byCode    map[string]string // code -> id
+	listResp  *dtos.GetTaxRatesResponse
+	listErr   error
 }
 
 func (f *fakeTaxRates) Create(_ context.Context, req types.CreateTaxRateRequest) (*dtos.CreateTaxRateResponse, error) {
@@ -720,6 +722,17 @@ func (f *fakeTaxRates) Get(_ context.Context, id string) (*dtos.GetTaxRateRespon
 	return &dtos.GetTaxRateResponse{
 		TaxRateResponse: &types.TaxRateResponse{ID: &id},
 	}, nil
+}
+func (f *fakeTaxRates) List(_ context.Context, _ dtos.GetTaxRatesRequest) (*dtos.GetTaxRatesResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	if f.listResp != nil {
+		return f.listResp, nil
+	}
+	return &dtos.GetTaxRatesResponse{}, nil
 }
 func (f *fakeTaxRates) Delete(_ context.Context, _ string) (*dtos.DeleteTaxRateResponse, error) {
 	return &dtos.DeleteTaxRateResponse{}, nil

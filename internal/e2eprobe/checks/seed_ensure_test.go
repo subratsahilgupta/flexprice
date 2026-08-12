@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/e2eprobe"
 	"github.com/flexprice/flexprice/internal/logger"
 	itypes "github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/go-sdk/v2/models/dtos"
 	"github.com/flexprice/go-sdk/v2/models/types"
 )
 
@@ -241,5 +242,49 @@ func TestSeedEnsure_CouponProvisioning(t *testing.T) {
 	}
 	if len(fc.coupons.created) != 1 {
 		t.Errorf("coupon created %d times across 2 runs; want 1 (idempotency broken)", len(fc.coupons.created))
+	}
+}
+
+func TestSeedEnsure_TaxRateProvisioning(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("first Run() unexpected error: %v", err)
+	}
+	seeds := reg.Seeds()
+	if seeds.SharedTaxRateID == "" {
+		t.Fatalf("SharedTaxRateID empty after seed run")
+	}
+	if seeds.SharedTaxRateCode != "E2EPROBE_TAX_10PCT" {
+		t.Errorf("SharedTaxRateCode = %q, want E2EPROBE_TAX_10PCT", seeds.SharedTaxRateCode)
+	}
+	if len(fc.taxRates.created) != 1 {
+		t.Fatalf("tax rate created %d times on first run; want 1", len(fc.taxRates.created))
+	}
+	got := fc.taxRates.created[0]
+	if got.Code != "E2EPROBE_TAX_10PCT" {
+		t.Errorf("tax rate Code = %q, want E2EPROBE_TAX_10PCT", got.Code)
+	}
+	if got.PercentageValue == nil || *got.PercentageValue != "10" {
+		t.Errorf("tax rate PercentageValue = %v, want \"10\"", got.PercentageValue)
+	}
+	if got.Scope == nil || *got.Scope != types.TaxRateScopeExternal {
+		t.Errorf("tax rate Scope = %v, want EXTERNAL", got.Scope)
+	}
+
+	// Simulate the second run finding the existing rate via List.
+	codeCopy := "E2EPROBE_TAX_10PCT"
+	idCopy := seeds.SharedTaxRateID
+	fc.taxRates.listResp = &dtos.GetTaxRatesResponse{
+		TaxRateResponses: []types.TaxRateResponse{{ID: &idCopy, Code: &codeCopy}},
+	}
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("second Run() unexpected error: %v", err)
+	}
+	if len(fc.taxRates.created) != 1 {
+		t.Errorf("tax rate created %d times across 2 runs; want 1 (idempotency broken)", len(fc.taxRates.created))
 	}
 }

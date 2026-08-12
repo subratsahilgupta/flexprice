@@ -350,6 +350,9 @@ func (d *dryRunTaxRates) Create(ctx context.Context, req types.CreateTaxRateRequ
 func (d *dryRunTaxRates) Get(ctx context.Context, id string) (*dtos.GetTaxRateResponse, error) {
 	return d.inner.Get(ctx, id)
 }
+func (d *dryRunTaxRates) List(ctx context.Context, req dtos.GetTaxRatesRequest) (*dtos.GetTaxRatesResponse, error) {
+	return d.inner.List(ctx, req)
+}
 func (d *dryRunTaxRates) Delete(ctx context.Context, id string) (*dtos.DeleteTaxRateResponse, error) {
 	dryLog(ctx, d.lg, "TaxRates.Delete", "id", id)
 	return &dtos.DeleteTaxRateResponse{}, nil

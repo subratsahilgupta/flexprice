@@ -9,6 +9,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/e2eprobe"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/go-sdk/v2/models/dtos"
 	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/flexprice/go-sdk/v2/models/types"
 )
@@ -36,6 +37,9 @@ func boolPtr(b bool) *bool    { return &b }
 const (
 	SharedCouponCode = "E2EPROBE_COUPON_10PCT"
 	SharedCouponName = "E2EProbe 10% Coupon"
+
+	SharedTaxRateCode = "E2EPROBE_TAX_10PCT"
+	SharedTaxRateName = "E2EProbe 10% Tax"
 )
 
 // lowBalanceAlertSettings returns the alert thresholds seed wallets are
@@ -80,6 +84,9 @@ func (s *SeedEnsure) Run(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureCoupons(ctx, &seeds); err != nil {
+		return err
+	}
+	if err := s.ensureTaxRates(ctx, &seeds); err != nil {
 		return err
 	}
 	if err := s.ensureCustomers(ctx, &seeds); err != nil {
@@ -320,6 +327,49 @@ func (s *SeedEnsure) ensureCoupons(ctx context.Context, out *e2eprobe.Seeds) err
 		out.SharedCouponID = *createResp.CouponResponse.ID
 	}
 	out.SharedCouponCode = SharedCouponCode
+	return nil
+}
+
+// ensureTaxRates idempotently provisions the shared E2EPROBE_TAX_10PCT tax
+// rate (10% percentage, EXTERNAL scope) reused by tax-application-probe and
+// by the persistent tax association on customer #0. Lookup uses the SDK's
+// server-side TaxrateCodes filter.
+func (s *SeedEnsure) ensureTaxRates(ctx context.Context, out *e2eprobe.Seeds) error {
+	listResp, err := s.client.TaxRates().List(ctx, dtos.GetTaxRatesRequest{
+		TaxrateCodes: []string{SharedTaxRateCode},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "list_tax_rates"}, "list tax rates: %w", err)
+	}
+	for _, tr := range listResp.TaxRateResponses {
+		if tr.Code != nil && *tr.Code == SharedTaxRateCode && tr.ID != nil {
+			out.SharedTaxRateID = *tr.ID
+			out.SharedTaxRateCode = SharedTaxRateCode
+			return nil
+		}
+	}
+
+	percentage := "10"
+	scope := types.TaxRateScopeExternal
+	trType := types.TaxRateTypePercentage
+	createResp, err := s.client.TaxRates().Create(ctx, types.CreateTaxRateRequest{
+		Code:            SharedTaxRateCode,
+		Name:            SharedTaxRateName,
+		PercentageValue: &percentage,
+		Scope:           &scope,
+		TaxRateType:     &trType,
+		Metadata: map[string]string{
+			"e2eprobe":      "true",
+			"e2eprobe_role": "seed",
+		},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"tax_rate_code": SharedTaxRateCode}, "create tax rate: %w", err)
+	}
+	if createResp.TaxRateResponse != nil && createResp.TaxRateResponse.ID != nil {
+		out.SharedTaxRateID = *createResp.TaxRateResponse.ID
+	}
+	out.SharedTaxRateCode = SharedTaxRateCode
 	return nil
 }
 

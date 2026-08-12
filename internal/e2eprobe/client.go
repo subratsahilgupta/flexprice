@@ -108,6 +108,7 @@ type CouponAssociationOps interface {
 type TaxRateOps interface {
 	Create(ctx context.Context, req types.CreateTaxRateRequest) (*dtos.CreateTaxRateResponse, error)
 	Get(ctx context.Context, id string) (*dtos.GetTaxRateResponse, error)
+	List(ctx context.Context, req dtos.GetTaxRatesRequest) (*dtos.GetTaxRatesResponse, error)
 	Delete(ctx context.Context, id string) (*dtos.DeleteTaxRateResponse, error)
 }
 
@@ -328,6 +329,9 @@ func (o taxRateOps) Create(ctx context.Context, req types.CreateTaxRateRequest) 
 }
 func (o taxRateOps) Get(ctx context.Context, id string) (*dtos.GetTaxRateResponse, error) {
 	return o.s.GetTaxRate(ctx, id)
+}
+func (o taxRateOps) List(ctx context.Context, req dtos.GetTaxRatesRequest) (*dtos.GetTaxRatesResponse, error) {
+	return o.s.GetTaxRates(ctx, req)
 }
 func (o taxRateOps) Delete(ctx context.Context, id string) (*dtos.DeleteTaxRateResponse, error) {
 	return o.s.DeleteTaxRate(ctx, id)

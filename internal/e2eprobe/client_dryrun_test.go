@@ -211,6 +211,9 @@ func (f *fakeTaxRateOps) Create(_ context.Context, _ types.CreateTaxRateRequest)
 func (f *fakeTaxRateOps) Get(_ context.Context, _ string) (*dtos.GetTaxRateResponse, error) {
 	return &dtos.GetTaxRateResponse{}, nil
 }
+func (f *fakeTaxRateOps) List(_ context.Context, _ dtos.GetTaxRatesRequest) (*dtos.GetTaxRatesResponse, error) {
+	return &dtos.GetTaxRatesResponse{}, nil
+}
 func (f *fakeTaxRateOps) Delete(_ context.Context, _ string) (*dtos.DeleteTaxRateResponse, error) {
 	return &dtos.DeleteTaxRateResponse{}, nil
 }
