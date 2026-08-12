@@ -232,6 +232,7 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 			t := types.PriceType(item.PriceType)
 			return &t
 		}()).
+		SetNillablePriceUnitID(item.PriceUnitID).
 		SetNillablePriceUnit(item.PriceUnit).
 		SetNillableDisplayName(types.ToNillableString(item.DisplayName)).
 		SetQuantity(item.Quantity).

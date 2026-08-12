@@ -797,38 +797,3 @@ func (s *SubscriptionChangeV2Suite) TestExecute_CarriedLineFollowsTheSubscriptio
 	s.Equal(lateral.Name, live[0].PlanDisplayName,
 		"plan_display_name is copied onto every future invoice line, so it must not name the old plan")
 }
-
-func (s *SubscriptionChangeV2Suite) TestBillsIdentically_SeparatesPricesThatOnlyLookAlike() {
-	base := func() *price.Price {
-		return &price.Price{
-			Amount:             decimal.NewFromInt(20),
-			Type:               types.PRICE_TYPE_FIXED,
-			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
-			InvoiceCadence:     types.InvoiceCadenceAdvance,
-			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-			BillingPeriodCount: 1,
-		}
-	}
-
-	s.True(billsIdentically(base(), base()), "two prices that bill the same way are the same service")
-
-	pkgA, pkgB := base(), base()
-	pkgA.BillingModel, pkgB.BillingModel = types.BILLING_MODEL_PACKAGE, types.BILLING_MODEL_PACKAGE
-	pkgA.TransformQuantity = price.JSONBTransformQuantity{DivideBy: 100}
-	pkgB.TransformQuantity = price.JSONBTransformQuantity{DivideBy: 500}
-	s.False(billsIdentically(pkgA, pkgB),
-		"$20 per 100 units and $20 per 500 units are a 5x difference, not the same price")
-
-	useA, useB := base(), base()
-	useA.Type, useB.Type = types.PRICE_TYPE_USAGE, types.PRICE_TYPE_USAGE
-	useA.MeterID, useB.MeterID = "meter_1", "meter_1"
-	s.False(billsIdentically(useA, useB),
-		"usage prices can differ by filter_values, which this comparison cannot see")
-
-	tierA, tierB := base(), base()
-	tierA.Tiers = []price.PriceTier{{UnitAmount: decimal.NewFromInt(1)}}
-	s.False(billsIdentically(tierA, tierB), "a tiered ladder is never assumed equal to a flat fee")
-
-	s.False(billsIdentically(nil, base()))
-	s.False(billsIdentically(base(), nil))
-}

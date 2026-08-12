@@ -59,10 +59,10 @@ func (p *EntityChangePolicy) BehaviourFor(referenceID string) types.EntityChange
 }
 
 type EntityChangeResult struct {
-	EntityType  string                      `json:"entity_type"`
-	ReferenceID string                      `json:"reference_id"`
-	EntityID    string                      `json:"entity_id"`
-	Behaviour   types.EntityChangeBehaviour `json:"behaviour"`
+	EntityType  types.SubscriptionLineItemEntityType `json:"entity_type"`
+	ReferenceID string                               `json:"reference_id"`
+	EntityID    string                               `json:"entity_id"`
+	Behaviour   types.EntityChangeBehaviour          `json:"behaviour"`
 }
 
 func (r *SubscriptionChangeV2Request) Validate() error {
@@ -89,7 +89,7 @@ type SubscriptionChangeV2Response struct {
 	FromPlan    PlanSummary                  `json:"from_plan"`
 	ToPlan      PlanSummary                  `json:"to_plan"`
 
-	EntityChanges []EntityChangeResult `json:"entity_changes,omitempty"`
+	EntityChanges []*EntityChangeResult `json:"entity_changes,omitempty"`
 
 	Warnings []string          `json:"warnings,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`

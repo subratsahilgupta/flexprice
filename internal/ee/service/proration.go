@@ -6,6 +6,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -542,6 +543,30 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 		Currency:              price.Currency,
 		PlanDisplayName:       item.PlanDisplayName,
 	}, nil
+}
+
+func creditBasis(
+	item *subscription.SubscriptionLineItem,
+	p *price.Price,
+	billed map[string]*invoice.BilledAmounts,
+) (originalAmountPaid, previousCredits decimal.Decimal) {
+	if item == nil {
+		return decimal.Zero, decimal.Zero
+	}
+
+	if billed == nil {
+		listPrice := decimal.Zero
+		if p != nil {
+			listPrice = p.Amount.Mul(item.Quantity)
+		}
+		return listPrice, decimal.Zero
+	}
+
+	if amounts := billed[item.ID]; amounts != nil {
+		return amounts.Charged(), amounts.Credited()
+	}
+
+	return decimal.Zero, decimal.Zero
 }
 
 func (s *prorationService) creditBasisForLineItem(

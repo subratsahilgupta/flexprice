@@ -48,6 +48,7 @@ type InvoiceService interface {
 	ComputeInvoice(ctx context.Context, invoiceID string, req *dto.InvoiceComputeRequest) (*invoice.Invoice, bool, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetInternalPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
+	CreatePreviewInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetCustomerInvoiceSummary(ctx context.Context, customerID string, currency string) (*dto.CustomerInvoiceSummary, error)
 	GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.GetUnpaidInvoicesToBePaidRequest) (*dto.GetUnpaidInvoicesToBePaidResponse, error)
 	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
@@ -2063,6 +2064,48 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 		return nil, nil, err
 	}
 	return dto.NewInvoiceResponse(inv), subscription, nil
+}
+
+// CreatePreviewInvoice builds the invoice a CreateInvoice request would produce —
+// taxes resolved against the customer, totals computed — and writes nothing. Quote
+// and charge stay in step by construction: callers build one request and send it
+// here to preview it and to CreateInvoice to raise it.
+//
+// Tax is best effort: a customer whose rates cannot be resolved is quoted untaxed
+// rather than refused a quote.
+func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error) {
+	inv, err := req.ToInvoice(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if !inv.Subtotal.IsPositive() {
+		return dto.NewInvoiceResponse(inv), nil
+	}
+
+	taxSvc := NewTaxService(s.ServiceParams)
+	rates, err := taxSvc.PrepareTaxRatesForInvoice(ctx, req)
+	if err != nil {
+		s.Logger.Info(ctx, "could not resolve tax rates for invoice preview; quoting untaxed",
+			"error", err, "customer_id", req.CustomerID)
+		return dto.NewInvoiceResponse(inv), nil
+	}
+	if len(rates) == 0 {
+		return dto.NewInvoiceResponse(inv), nil
+	}
+
+	result, err := taxSvc.ApplyTaxesOnInvoice(ctx, inv, rates)
+	if err != nil {
+		s.Logger.Info(ctx, "could not compute tax for invoice preview; quoting untaxed",
+			"error", err, "customer_id", req.CustomerID)
+		return dto.NewInvoiceResponse(inv), nil
+	}
+
+	inv.TotalTax = result.TotalTaxAmount
+	inv.Total = inv.Subtotal.Add(inv.TotalTax)
+	inv.AmountDue = inv.Total
+	inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
+	return dto.NewInvoiceResponse(inv), nil
 }
 
 func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error) {

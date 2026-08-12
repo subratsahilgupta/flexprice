@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func planChangeMove(amount int64, quantity int64) lineItemChange {
-	return lineItemChange{
+func planChangeMove(amount int64, quantity int64) *lineItemChange {
+	return &lineItemChange{
 		lineItem: &subscription.SubscriptionLineItem{
 			ID:       "subs_line_" + decimal.NewFromInt(amount).String(),
 			Quantity: decimal.NewFromInt(quantity),
@@ -26,26 +26,26 @@ func planChangeMove(amount int64, quantity int64) lineItemChange {
 func TestPlanChangeType_CountsQuantity(t *testing.T) {
 	tests := []struct {
 		name    string
-		closing []lineItemChange
-		opening []lineItemChange
+		closing []*lineItemChange
+		opening []*lineItemChange
 		want    types.SubscriptionChangeType
 	}{
 		{
 			name:    "ten seats at $5 out, one $20 line in, is a downgrade",
-			closing: []lineItemChange{planChangeMove(5, 10)},
-			opening: []lineItemChange{planChangeMove(20, 1)},
+			closing: []*lineItemChange{planChangeMove(5, 10)},
+			opening: []*lineItemChange{planChangeMove(20, 1)},
 			want:    types.SubscriptionChangeTypeDowngrade,
 		},
 		{
 			name:    "same unit price, more seats, is an upgrade",
-			closing: []lineItemChange{planChangeMove(5, 2)},
-			opening: []lineItemChange{planChangeMove(5, 3)},
+			closing: []*lineItemChange{planChangeMove(5, 2)},
+			opening: []*lineItemChange{planChangeMove(5, 3)},
 			want:    types.SubscriptionChangeTypeUpgrade,
 		},
 		{
 			name:    "same money either side is lateral",
-			closing: []lineItemChange{planChangeMove(10, 3)},
-			opening: []lineItemChange{planChangeMove(30, 1)},
+			closing: []*lineItemChange{planChangeMove(10, 3)},
+			opening: []*lineItemChange{planChangeMove(30, 1)},
 			want:    types.SubscriptionChangeTypeLateral,
 		},
 	}
@@ -98,35 +98,5 @@ func TestPlanChangeIdempotencyKey(t *testing.T) {
 		later.UpdatedAt = readAt.Add(time.Hour)
 		assert.Equal(t, withKey, planChangeIdempotencyKey(planChangeKeyRequest(&later, "caller-supplied")),
 			"the caller's key is the whole identity of the attempt")
-	})
-}
-
-func TestBillsIdentically_SeparatesPricesThatBillDifferently(t *testing.T) {
-	base := func() *price.Price {
-		return &price.Price{
-			Amount:             decimal.NewFromInt(20),
-			Type:               types.PRICE_TYPE_FIXED,
-			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
-			InvoiceCadence:     types.InvoiceCadenceAdvance,
-			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-			BillingPeriodCount: 1,
-		}
-	}
-
-	assert.True(t, billsIdentically(base(), base()), "the same terms on two plans are the same charge")
-
-	t.Run("different pricing unit", func(t *testing.T) {
-		other := base()
-		unit := "pu_credits"
-		other.PriceUnitID = &unit
-		assert.False(t, billsIdentically(base(), other), "20 credits is not 20 dollars")
-	})
-
-	t.Run("different package size", func(t *testing.T) {
-		a, b := base(), base()
-		a.BillingModel, b.BillingModel = types.BILLING_MODEL_PACKAGE, types.BILLING_MODEL_PACKAGE
-		a.TransformQuantity = price.JSONBTransformQuantity{DivideBy: 100}
-		b.TransformQuantity = price.JSONBTransformQuantity{DivideBy: 1000}
-		assert.False(t, billsIdentically(a, b), "$20 per 100 units is not $20 per 1000")
 	})
 }

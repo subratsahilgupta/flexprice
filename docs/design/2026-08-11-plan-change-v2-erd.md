@@ -520,16 +520,28 @@ different charges.
 Four cases:
 
 
-| Current line            | Target line | What happens                                                        |
-| ----------------------- | ----------- | ------------------------------------------------------------------- |
-| paired, identical price | —           | **nothing.** Row untouched, no proration entry, `id` unchanged      |
-| paired, different price | —           | close at `effective_at`, open successor                             |
-| paired with nothing     | —           | close at `effective_at` (remove)                                    |
-| —                       | unpaired    | open at `effective_at` (add)                                        |
+| Current line            | Target line | What happens                                                                     |
+| ----------------------- | ----------- | -------------------------------------------------------------------------------- |
+| paired, identical price | —           | **carried.** `id`, `start_date` and usage window kept; repointed at the target    |
+| paired, different price | —           | close at `effective_at`, open successor                                          |
+| paired with nothing     | —           | close at `effective_at` (remove)                                                 |
+| —                       | unpaired    | open at `effective_at` (add)                                                     |
 
 
 Row 1 is what makes a lateral change emit no invoice, and it is the only thing stopping an unchanged
 service from getting a new line-item id on every plan change.
+
+Carried does not mean untouched. The row's billing is unchanged — that is what "identical" is
+tested for — but everything naming its owner moves to the target plan: `entity_id`,
+`plan_display_name`, and `price_id`. A row left on the old plan's price would keep billing off a
+plan the subscription has left: editing the target plan's price would not reach it, archiving the
+source plan's price would terminate it, and plan-price sync would never notice either, because the
+change re-anchors `synced_price_sequence` to the target. Carried rows are reported in
+`changed_resources.line_items` with `change_action = "updated"`.
+
+"Identical" is decided by `billsIdentically`, which is deliberately conservative: usage prices and
+tier ladders never match, and package size (`transform_quantity`) and pricing unit must be equal.
+Anything it cannot compare completely falls through to close-and-open, which is safe.
 
 ### v0 decisions
 
@@ -559,10 +571,23 @@ override API.
 the `effective_at` it used; `immediate` resolves to `now` at each call, and usage accrued between
 preview and execute legitimately changes the result.
 
-**Idempotency** reuses `idempotency.Generator` with a new `ScopePlanChange`, keyed on
-`(subscription_id, target_plan_id, effective_at, caller key)`
-([generator.go](../../internal/idempotency/generator.go)). It — not the
-`target_plan_id == plan_id` precondition — is what makes a double-execute safe.
+**Idempotency** reuses `idempotency.Generator` with a new `ScopePlanChange`
+([generator.go](../../internal/idempotency/generator.go)). It scopes the *settlement* — the one
+invoice or the one wallet credit — so a retried attempt does not charge twice.
+
+The key is `(subscription_id, target_plan_id, caller key)` when the caller supplies
+`idempotency_key`, and `(subscription_id, target_plan_id, subscription version, subscription
+updated_at)` when it does not. Both hold the two properties the key needs, which `effective_at`
+(read from the clock on every call) held neither of:
+
+- **Stable while an attempt is failing.** A caller that times out and retries derives the same key,
+  because a rolled-back attempt leaves the subscription row untouched.
+- **Distinct once a change has landed.** `updated_at` moves on any write, so Starter → Pro →
+  Starter → Pro does not replay the first change's invoice.
+
+The key is not what makes a double-execute safe on its own: a concurrent second attempt blocks on
+the row lock and is then rejected by the `target_plan_id == plan_id` precondition (matrix rows 22
+and 23). The key is the backstop for the settlement itself.
 
 ---
 
@@ -732,7 +757,7 @@ Deleted once v2 is the only in-place path: `inheritPaddleEntityMappings` and its
 | #   | Scenario                                                   | Expected                                                                                                            |
 | --- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 1   | Same-interval upgrade mid-period                           | one row, same `id`, anchor and period bounds unchanged, `plan_id` updated, line items tile with no gap or overlap   |
-| 2   | Lateral change, identical price                            | line row untouched, **no proration entry, no invoice, no new line-item id** (§6 row 1)                              |
+| 2   | Lateral change, identical price                            | line carried: same `id` and window, repointed at the target's price, **no proration entry, no invoice** (§6 row 1)  |
 | 3   | Upgrade then downgrade back in one period                  | total equals true consumption, **with no special-case code**                                                        |
 | 4   | Two changes in one period                                  | second credit references the first change's debit, not list price                                                   |
 | 5   | Downgrade, credit exceeds the invoice                      | visible credit line, residue to the wallet, not discarded                                                           |

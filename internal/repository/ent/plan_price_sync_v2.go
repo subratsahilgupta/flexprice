@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/flexprice/flexprice/ent/subscription"
 	"github.com/flexprice/flexprice/internal/domain/planpricesync"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -292,20 +294,16 @@ func (r *planPriceSyncRepository) ReanchorSubSyncedSequence(
 	})
 	defer FinishSpan(span)
 
-	query := `
-		UPDATE subscriptions
-		SET synced_price_sequence = $3,
-		    updated_at = NOW(),
-		    updated_by = $4
-		WHERE tenant_id      = $1
-		  AND environment_id = $2
-		  AND id = $5
-	`
-
-	if _, err := r.client.Writer(ctx).ExecContext(
-		ctx, query,
-		tenantID, environmentID, seq, userID, subscriptionID,
-	); err != nil {
+	if _, err := r.client.Writer(ctx).Subscription.Update().
+		Where(
+			subscription.ID(subscriptionID),
+			subscription.TenantID(tenantID),
+			subscription.EnvironmentID(environmentID),
+		).
+		SetSyncedPriceSequence(seq).
+		SetUpdatedAt(time.Now().UTC()).
+		SetUpdatedBy(userID).
+		Save(ctx); err != nil {
 		SetSpanError(span, err)
 		return ierr.WithError(err).
 			WithHint("Failed to re-anchor subscription price sequence").
