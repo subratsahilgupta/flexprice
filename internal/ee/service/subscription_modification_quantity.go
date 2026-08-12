@@ -430,7 +430,7 @@ func (r *quantityChangeProration) GetNetCredit() decimal.Decimal {
 
 // GetNetAmount is charges minus credits across the batch (can be negative).
 func (r *quantityChangeProration) GetNetAmount() decimal.Decimal {
-	if r == nil {
+	if r == nil { 
 		return decimal.Zero
 	}
 	return r.netCharge.Sub(r.netCredit)

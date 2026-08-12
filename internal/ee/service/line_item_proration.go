@@ -45,11 +45,26 @@ type LineItemProrationSummary struct {
 	ChargeLineItems   []dto.CreateInvoiceLineItemRequest
 	TotalChargeAmount decimal.Decimal
 
+	// Negative-net items as invoice lines, amounts negative. Callers that net
+	// charges against credits on one invoice use these; Apply ignores them and
+	// pays credits out to the wallet instead.
+	CreditLineItems []dto.CreateInvoiceLineItemRequest
+
 	// Absolute value of negative-net items; used for a single wallet credit.
 	TotalCreditAmount decimal.Decimal
 
 	Currency  string
 	IsPreview bool
+}
+
+// NetAmount is what the change actually costs: charges less credits. Positive
+// means collect, negative means return, zero means the change pays for itself
+// and nothing needs to be settled at all.
+func (s *LineItemProrationSummary) NetAmount() decimal.Decimal {
+	if s == nil {
+		return decimal.Zero
+	}
+	return s.TotalChargeAmount.Sub(s.TotalCreditAmount)
 }
 
 // LineItemProrationService centralises compute + settlement for mid-period
@@ -129,6 +144,8 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 			summary.ChargeLineItems = append(summary.ChargeLineItems, lineItem)
 			summary.TotalChargeAmount = summary.TotalChargeAmount.Add(result.NetAmount)
 		} else if result.NetAmount.LessThan(decimal.Zero) {
+			lineItem := s.buildChargeLineItem(sub, entry, result.NetAmount, req.EffectiveDate, p)
+			summary.CreditLineItems = append(summary.CreditLineItems, lineItem)
 			summary.TotalCreditAmount = summary.TotalCreditAmount.Add(result.NetAmount.Abs())
 		}
 	}

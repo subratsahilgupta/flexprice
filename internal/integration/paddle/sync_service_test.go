@@ -926,6 +926,12 @@ func (m *mockSubscriptionService) CalculateResumeImpact(ctx context.Context, sub
 func (m *mockSubscriptionService) ValidateAndFilterPricesForSubscription(ctx context.Context, entityID string, entityType types.PriceEntityType, sub *subscription.Subscription, workflowType *types.TemporalWorkflowType) ([]*apidto.PriceResponse, error) {
 	return nil, nil
 }
+func (m *mockSubscriptionService) PreviewPlanChange(ctx context.Context, subscriptionID string, req apidto.SubscriptionChangeV2Request) (*apidto.SubscriptionChangeV2Response, error) {
+	return nil, nil
+}
+func (m *mockSubscriptionService) ExecutePlanChange(ctx context.Context, subscriptionID string, req apidto.SubscriptionChangeV2Request) (*apidto.SubscriptionChangeV2Response, error) {
+	return nil, nil
+}
 func (m *mockSubscriptionService) AddAddonToSubscription(ctx context.Context, req *apidto.AddAddonRequest) (*apidto.AddAddonToSubscriptionResponse, error) {
 	return nil, nil
 }
