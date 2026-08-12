@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/e2eprobe"
+	sdkdtos "github.com/flexprice/go-sdk/v2/models/dtos"
 	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/flexprice/go-sdk/v2/models/types"
 )
@@ -214,4 +215,67 @@ func TestJanitor_SweepOrphans_DetectsByNameOrPrefix(t *testing.T) {
 	if deleted["unrelated"] {
 		t.Errorf("unrelated customer was incorrectly deleted")
 	}
+}
+
+// TestJanitor_SweepOrphanTaxAssociations verifies that tax associations
+// whose EntityID (subscription) has been deleted are best-effort-cleaned
+// up on the next janitor tick, while associations pointing at live subs
+// (e.g. the seed association on persistent cust #0) are preserved.
+func TestJanitor_SweepOrphanTaxAssociations(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	reg.LoadSeeds(e2eprobe.Seeds{SharedTaxRateID: "taxrate_1", SharedTaxRateCode: "E2EPROBE_TAX_10PCT"})
+
+	subAlive := "sub_alive"
+	subGone := "sub_gone"
+	taID1 := "ta_1"
+	taID2 := "ta_2"
+	fc.taxAssociations.listResp = &sdkdtos.ListTaxAssociationsResponse{
+		ListTaxAssociationsResponse: &types.ListTaxAssociationsResponse{
+			Items: []types.TaxAssociationResponse{
+				{ID: &taID1, EntityID: &subAlive},
+				{ID: &taID2, EntityID: &subGone},
+			},
+		},
+	}
+	// Only sub_alive is present in the fake — sub_gone will 404 on Get.
+	fc.subs.subs = map[string]types.SubscriptionResponse{subAlive: {ID: &subAlive}}
+
+	j := NewJanitor(fc, reg, 1*time.Hour, "test-run")
+	if err := j.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	if !containsStr(fc.taxAssociations.deleted, taID2) {
+		t.Errorf("orphan tax association %s not deleted; deleted=%v", taID2, fc.taxAssociations.deleted)
+	}
+	if containsStr(fc.taxAssociations.deleted, taID1) {
+		t.Errorf("live tax association %s was incorrectly deleted", taID1)
+	}
+}
+
+// TestJanitor_SweepOrphanTaxAssociations_NoSeedSoftSkip verifies that when
+// the seed tax rate hasn't been provisioned yet, the sweep skips cleanly
+// without emitting any errors.
+func TestJanitor_SweepOrphanTaxAssociations_NoSeedSoftSkip(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	// Seeds contain no SharedTaxRateID.
+	reg.LoadSeeds(e2eprobe.Seeds{})
+
+	j := NewJanitor(fc, reg, 1*time.Hour, "test-run")
+	if err := j.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	if len(fc.taxAssociations.deleted) != 0 {
+		t.Errorf("no tax associations should be deleted without a seed rate; got %v", fc.taxAssociations.deleted)
+	}
+}
+
+func containsStr(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
