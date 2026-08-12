@@ -320,13 +320,13 @@ func TestSeedEnsure_PlanEntitlementsProvisioned(t *testing.T) {
 	}
 	seeds := reg.Seeds()
 	// 8 non-bucketed metered features get plan-level entitlements.
-	if len(seeds.PlanEntitlementIDs) != 8 {
-		t.Errorf("PlanEntitlementIDs = %d, want 8 (one per non-bucketed feature); got %v", len(seeds.PlanEntitlementIDs), seeds.PlanEntitlementIDs)
+	if len(seeds.PlanEntitlementIDs) != 7 {
+		t.Errorf("PlanEntitlementIDs = %d, want 7 (one per non-bucketed feature MINUS the reserved additive-grant feature); got %v", len(seeds.PlanEntitlementIDs), seeds.PlanEntitlementIDs)
 	}
 	// Every created entitlement carries usage_limit=100, is_soft_limit=true,
 	// reset_period=MONTHLY, is_enabled=true.
-	if len(fc.entitlements.created) != 8 {
-		t.Errorf("entitlements Create called %d times, want 8", len(fc.entitlements.created))
+	if len(fc.entitlements.created) != 7 {
+		t.Errorf("entitlements Create called %d times, want 7 (grant-only feature excluded from soft-limit seeding)", len(fc.entitlements.created))
 	}
 	for i, req := range fc.entitlements.created {
 		if req.UsageLimit == nil || *req.UsageLimit != 100 {
@@ -444,5 +444,31 @@ func TestSeedEnsure_PersistentTaxAssociation(t *testing.T) {
 	}
 	if len(fc.taxAssociations.created) != 1 {
 		t.Errorf("tax association created %d times across 2 runs; want 1 (idempotency broken)", len(fc.taxAssociations.created))
+	}
+}
+
+// TestSeedEnsure_PlanEntitlements_SkipsGrantFeature verifies that
+// ensurePlanEntitlements no longer seeds a soft-limit entitlement on
+// the reserved additive-grant feature. Task 5's ensureEntitlementGrants
+// then creates the grant entitlement on the (plan, feature) slot the
+// skip vacated.
+func TestSeedEnsure_PlanEntitlements_SkipsGrantFeature(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	// The additive-grant feature must NOT get a soft-limit entitlement.
+	// Before this change, all 8 non-bucketed features were entitled;
+	// now it's 7. The SDK typed Create is invoked once per soft-limit
+	// entitlement, so a strict count check is sufficient — the seed
+	// queries features by lookup key and skips the grant feature at
+	// that lookup step, so no create call for the grant feature ever
+	// reaches the fake.
+	if len(fc.entitlements.created) != 7 {
+		t.Errorf("plan-level soft-limit entitlements created = %d, want 7 (8 non-bucketed features minus the reserved grant feature)", len(fc.entitlements.created))
 	}
 }

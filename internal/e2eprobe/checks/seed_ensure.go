@@ -42,6 +42,19 @@ const (
 	SharedTaxRateName = "E2EProbe 10% Tax"
 )
 
+// Grant coverage constants (2026-08-13 spec). See
+// docs/superpowers/specs/2026-08-13-e2eprobe-entitlement-grants-design.md
+// for rationale. The DB constraint "one non-parallel entitlement per
+// (entity, feature)" means the additive-grant feature MUST NOT also get
+// the legacy soft-limit entitlement — ensurePlanEntitlements skips it via
+// the grantOnlyFeatures set defined below.
+const (
+	AdditiveGrantFeatureLookupKey = "e2eprobe_sum_multiplier_feature"
+	AdditiveGrantQuota            = "1000"
+	AdditiveGrantDurationValue    = 1
+	AdditiveGrantDurationUnit     = "hour"
+)
+
 // lowBalanceAlertSettings returns the alert thresholds seed wallets are
 // created with: info at 25, warning at 10, critical at 0 (all "below").
 // Fires wallet.credit_balance.dropped webhooks; consumed by the
@@ -425,6 +438,16 @@ var bucketedFeatureLookupKeys = map[string]bool{
 	"e2eprobe_max_day_feature":   true,
 }
 
+// grantOnlyFeatures is the set of feature lookup keys reserved for
+// grant entitlements. ensurePlanEntitlements skips these; the grant
+// entitlement is created by ensureEntitlementGrants instead. The DB
+// enforces at most one non-parallel entitlement per (entity, feature),
+// so trying to add both a soft-limit AND an additive grant here would
+// conflict at INSERT time.
+var grantOnlyFeatures = map[string]bool{
+	AdditiveGrantFeatureLookupKey: true,
+}
+
 // ensurePlanEntitlements idempotently provisions one plan-level soft-limit
 // entitlement per non-bucketed metered feature (limit=100, reset MONTHLY).
 // Soft-limit is deliberate: hard-limit would reject the ingest driver's
@@ -450,10 +473,15 @@ func (s *SeedEnsure) ensurePlanEntitlements(ctx context.Context, out *e2eprobe.S
 		}
 	}
 
-	// Resolve non-bucketed feature IDs by lookup key.
+	// Resolve non-bucketed feature IDs by lookup key. Also skip the
+	// grant-only feature — ensureEntitlementGrants owns its (plan, feature)
+	// slot, and adding a soft-limit here would DB-conflict.
 	lookupKeys := make([]string, 0, len(seedFeatureSpecs))
 	for _, spec := range seedFeatureSpecs {
 		if bucketedFeatureLookupKeys[spec.lookupKey] {
+			continue
+		}
+		if grantOnlyFeatures[spec.lookupKey] {
 			continue
 		}
 		lookupKeys = append(lookupKeys, spec.lookupKey)
