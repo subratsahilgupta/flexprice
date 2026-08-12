@@ -2109,7 +2109,7 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error) {
 	billingService := NewBillingService(s.ServiceParams)
 
-	sub, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	sub, err := s.SubRepo.Get(ctx, req.SubscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -2133,8 +2133,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		return nil, err
 	}
 
-	s.Logger.Info(ctx, "prepared invoice request for preview",
-		"invoice_request", invReq)
+	s.Logger.Info(ctx, "prepared invoice request for preview", "invoice_request", invReq)
 
 	if req.HideZeroChargesLineItems {
 		invReq.LineItems = lo.Filter(invReq.LineItems, func(item dto.CreateInvoiceLineItemRequest, _ int) bool {
