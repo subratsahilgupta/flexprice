@@ -145,6 +145,36 @@ func main() {
 		runner.Add(smf, e2eprobe.NewTickerScheduler(smf, cfg.Checks["SUBSCRIPTION_MODIFICATION_FLOW"].Interval))
 	}
 
+	if cfg.Checks["BUCKETED_METER_PROBE"].Enabled {
+		bmp := checks_pkg.NewBucketedMeterProbe(client, reg, runID, lg)
+		runner.Add(bmp, e2eprobe.NewTickerScheduler(bmp, cfg.Checks["BUCKETED_METER_PROBE"].Interval))
+	}
+
+	if cfg.Checks["COMMITMENT_TRUE_UP_PROBE"].Enabled {
+		ctup := checks_pkg.NewCommitmentTrueUpProbe(client, reg, runID, lg)
+		runner.Add(ctup, e2eprobe.NewTickerScheduler(ctup, cfg.Checks["COMMITMENT_TRUE_UP_PROBE"].Interval))
+	}
+
+	if cfg.Checks["ENTITLEMENT_ENFORCEMENT_PROBE"].Enabled {
+		eep := checks_pkg.NewEntitlementEnforcementProbe(client, reg, runID, lg)
+		runner.Add(eep, e2eprobe.NewTickerScheduler(eep, cfg.Checks["ENTITLEMENT_ENFORCEMENT_PROBE"].Interval))
+	}
+
+	if cfg.Checks["TAX_APPLICATION_PROBE"].Enabled {
+		tap := checks_pkg.NewTaxApplicationProbe(client, reg, runID, lg)
+		runner.Add(tap, e2eprobe.NewTickerScheduler(tap, cfg.Checks["TAX_APPLICATION_PROBE"].Interval))
+	}
+
+	if cfg.Checks["COUPON_APPLICATION_PROBE"].Enabled {
+		cap_ := checks_pkg.NewCouponApplicationProbe(client, reg, runID, lg)
+		runner.Add(cap_, e2eprobe.NewTickerScheduler(cap_, cfg.Checks["COUPON_APPLICATION_PROBE"].Interval))
+	}
+
+	if cfg.Checks["PERSISTENT_BILLING_INVARIANTS_PROBE"].Enabled {
+		pbip := checks_pkg.NewPersistentBillingInvariantsProbe(client, reg, runID, lg)
+		runner.Add(pbip, e2eprobe.NewTickerScheduler(pbip, cfg.Checks["PERSISTENT_BILLING_INVARIANTS_PROBE"].Interval))
+	}
+
 	// The listener is created regardless of the LOW_WALLET_ALERT_LISTENER flag
 	// because LOW_BALANCE_ALERT_PROBE reads SeenThresholds from it to verify
 	// webhook receipt. If neither the listener check nor the probe is enabled,

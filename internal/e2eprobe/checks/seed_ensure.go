@@ -9,6 +9,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/e2eprobe"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/go-sdk/v2/models/dtos"
 	sdkerrors "github.com/flexprice/go-sdk/v2/models/errors"
 	"github.com/flexprice/go-sdk/v2/models/types"
 )
@@ -32,6 +33,14 @@ const (
 func strPtr(s string) *string { return &s }
 func int64Ptr(i int64) *int64 { return &i }
 func boolPtr(b bool) *bool    { return &b }
+
+const (
+	SharedCouponCode = "E2EPROBE_COUPON_10PCT"
+	SharedCouponName = "E2EProbe 10% Coupon"
+
+	SharedTaxRateCode = "E2EPROBE_TAX_10PCT"
+	SharedTaxRateName = "E2EProbe 10% Tax"
+)
 
 // lowBalanceAlertSettings returns the alert thresholds seed wallets are
 // created with: info at 25, warning at 10, critical at 0 (all "below").
@@ -74,6 +83,12 @@ func (s *SeedEnsure) Run(ctx context.Context) error {
 	if err := s.ensureFeatures(ctx, &seeds); err != nil {
 		return err
 	}
+	if err := s.ensureCoupons(ctx, &seeds); err != nil {
+		return err
+	}
+	if err := s.ensureTaxRates(ctx, &seeds); err != nil {
+		return err
+	}
 	if err := s.ensureCustomers(ctx, &seeds); err != nil {
 		return err
 	}
@@ -83,7 +98,13 @@ func (s *SeedEnsure) Run(ctx context.Context) error {
 	if err := s.ensurePrices(ctx, &seeds); err != nil {
 		return err
 	}
+	if err := s.ensurePlanEntitlements(ctx, &seeds); err != nil {
+		return err
+	}
 	if err := s.ensureSubscriptions(ctx, &seeds); err != nil {
+		return err
+	}
+	if err := s.ensurePersistentTaxAssociation(ctx, &seeds); err != nil {
 		return err
 	}
 	if err := s.ensureWallets(ctx, &seeds); err != nil {
@@ -157,10 +178,25 @@ var seedFeatureSpecs = func() []featureSpec {
 			},
 			aggLabel: "sum_filtered",
 		},
+		{
+			lookupKey: "e2eprobe_max_15min_feature", eventName: "e2eprobe_max_15min",
+			displayName: "E2EProbe Max 15min", aggType: types.AggregationTypeMax,
+			field: strPtr("amount"), bucketSize: bucketSizePtr(types.WindowSizeFifteenMin), aggLabel: "max_15min",
+		},
+		{
+			lookupKey: "e2eprobe_sum_hour_feature", eventName: "e2eprobe_sum_hour",
+			displayName: "E2EProbe Sum Hour", aggType: types.AggregationTypeSum,
+			field: strPtr("amount"), bucketSize: bucketSizePtr(types.WindowSizeHour), aggLabel: "sum_hour",
+		},
+		{
+			lookupKey: "e2eprobe_max_day_feature", eventName: "e2eprobe_max_day",
+			displayName: "E2EProbe Max Day", aggType: types.AggregationTypeMax,
+			field: strPtr("amount"), bucketSize: bucketSizePtr(types.WindowSizeDay), aggLabel: "max_day",
+		},
 	}
 }()
 
-// ensureFeatures creates 8 features with embedded meters idempotently.
+// ensureFeatures creates 11 features with embedded meters idempotently.
 // MeterIDs and FeatureIDs are populated into out.
 func (s *SeedEnsure) ensureFeatures(ctx context.Context, out *e2eprobe.Seeds) error {
 	// Build lookup-key index of existing features.
@@ -188,6 +224,12 @@ func (s *SeedEnsure) ensureFeatures(ctx context.Context, out *e2eprobe.Seeds) er
 			// Already exists — record IDs.
 			if existing.ID != nil {
 				out.FeatureIDs = append(out.FeatureIDs, *existing.ID)
+				if spec.bucketSize != nil {
+					if out.BucketedFeatureIDs == nil {
+						out.BucketedFeatureIDs = map[string]string{}
+					}
+					out.BucketedFeatureIDs[spec.lookupKey] = *existing.ID
+				}
 			}
 			if existing.MeterID != nil {
 				out.MeterIDs[spec.eventName] = *existing.MeterID
@@ -237,9 +279,189 @@ func (s *SeedEnsure) ensureFeatures(ctx context.Context, out *e2eprobe.Seeds) er
 		feat := resp.FeatureResponse
 		if feat.ID != nil {
 			out.FeatureIDs = append(out.FeatureIDs, *feat.ID)
+			if spec.bucketSize != nil {
+				if out.BucketedFeatureIDs == nil {
+					out.BucketedFeatureIDs = map[string]string{}
+				}
+				out.BucketedFeatureIDs[spec.lookupKey] = *feat.ID
+			}
 		}
 		if feat.MeterID != nil {
 			out.MeterIDs[spec.eventName] = *feat.MeterID
+		}
+	}
+	return nil
+}
+
+// ensureCoupons idempotently provisions the shared E2EPROBE_COUPON_10PCT
+// coupon reused by coupon-application-probe and by seed's attachment on
+// persistent cust #1. Lookup is by CouponCode (the SDK's canonical id for
+// coupons — CreateCouponRequest has no lookup_key field).
+func (s *SeedEnsure) ensureCoupons(ctx context.Context, out *e2eprobe.Seeds) error {
+	existResp, err := s.client.Coupons().Query(ctx, types.CouponFilter{
+		CouponCodes: []string{SharedCouponCode},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "query_coupons"}, "query coupons: %w", err)
+	}
+	if existResp.ListCouponsResponse != nil && len(existResp.ListCouponsResponse.Items) > 0 {
+		c := existResp.ListCouponsResponse.Items[0]
+		if c.ID != nil {
+			out.SharedCouponID = *c.ID
+		}
+		out.SharedCouponCode = SharedCouponCode
+		return nil
+	}
+
+	code := SharedCouponCode
+	percentage := "10"
+	createResp, err := s.client.Coupons().Create(ctx, types.CreateCouponRequest{
+		Name:          SharedCouponName,
+		Type:          types.CouponTypePercentage,
+		Cadence:       types.CouponCadenceOnce,
+		CouponCode:    &code,
+		PercentageOff: &percentage,
+		Metadata: map[string]string{
+			"e2eprobe":      "true",
+			"e2eprobe_role": "seed",
+		},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"coupon_code": SharedCouponCode}, "create coupon: %w", err)
+	}
+	if createResp.CouponResponse != nil && createResp.CouponResponse.ID != nil {
+		out.SharedCouponID = *createResp.CouponResponse.ID
+	}
+	out.SharedCouponCode = SharedCouponCode
+	return nil
+}
+
+// ensureTaxRates idempotently provisions the shared E2EPROBE_TAX_10PCT tax
+// rate (10% percentage, EXTERNAL scope) reused by tax-application-probe and
+// by the persistent tax association on customer #0. Lookup uses the SDK's
+// server-side TaxrateCodes filter.
+func (s *SeedEnsure) ensureTaxRates(ctx context.Context, out *e2eprobe.Seeds) error {
+	listResp, err := s.client.TaxRates().List(ctx, dtos.GetTaxRatesRequest{
+		TaxrateCodes: []string{SharedTaxRateCode},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "list_tax_rates"}, "list tax rates: %w", err)
+	}
+	for _, tr := range listResp.TaxRateResponses {
+		if tr.Code != nil && *tr.Code == SharedTaxRateCode && tr.ID != nil {
+			out.SharedTaxRateID = *tr.ID
+			out.SharedTaxRateCode = SharedTaxRateCode
+			return nil
+		}
+	}
+
+	percentage := "10"
+	scope := types.TaxRateScopeExternal
+	trType := types.TaxRateTypePercentage
+	createResp, err := s.client.TaxRates().Create(ctx, types.CreateTaxRateRequest{
+		Code:            SharedTaxRateCode,
+		Name:            SharedTaxRateName,
+		PercentageValue: &percentage,
+		Scope:           &scope,
+		TaxRateType:     &trType,
+		Metadata: map[string]string{
+			"e2eprobe":      "true",
+			"e2eprobe_role": "seed",
+		},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"tax_rate_code": SharedTaxRateCode}, "create tax rate: %w", err)
+	}
+	if createResp.TaxRateResponse != nil && createResp.TaxRateResponse.ID != nil {
+		out.SharedTaxRateID = *createResp.TaxRateResponse.ID
+	}
+	out.SharedTaxRateCode = SharedTaxRateCode
+	return nil
+}
+
+// bucketedFeatureLookupKeys is the set of lookup keys whose features are
+// bucketed meters — plan-level entitlements are NOT provisioned for these
+// to keep entitlement enforcement scoped to the 8 non-bucketed metered
+// features. entitlement-enforcement-probe asserts against e2eprobe_count.
+var bucketedFeatureLookupKeys = map[string]bool{
+	"e2eprobe_max_15min_feature": true,
+	"e2eprobe_sum_hour_feature":  true,
+	"e2eprobe_max_day_feature":   true,
+}
+
+// ensurePlanEntitlements idempotently provisions one plan-level soft-limit
+// entitlement per non-bucketed metered feature (limit=100, reset MONTHLY).
+// Soft-limit is deliberate: hard-limit would reject the ingest driver's
+// traffic and pollute every other probe.
+func (s *SeedEnsure) ensurePlanEntitlements(ctx context.Context, out *e2eprobe.Seeds) error {
+	if len(out.PlanIDs) == 0 {
+		return nil
+	}
+	planID := out.PlanIDs[0]
+
+	existResp, err := s.client.Entitlements().Query(ctx, types.EntitlementFilter{
+		PlanIds: []string{planID},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"plan_id": planID}, "query plan entitlements: %w", err)
+	}
+	existByFeature := map[string]string{}
+	if existResp.ListEntitlementsResponse != nil {
+		for _, e := range existResp.ListEntitlementsResponse.Items {
+			if e.FeatureID != nil && e.ID != nil {
+				existByFeature[*e.FeatureID] = *e.ID
+			}
+		}
+	}
+
+	// Resolve non-bucketed feature IDs by lookup key.
+	lookupKeys := make([]string, 0, len(seedFeatureSpecs))
+	for _, spec := range seedFeatureSpecs {
+		if bucketedFeatureLookupKeys[spec.lookupKey] {
+			continue
+		}
+		lookupKeys = append(lookupKeys, spec.lookupKey)
+	}
+	featResp, err := s.client.Features().Query(ctx, types.FeatureFilter{LookupKeys: lookupKeys})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"plan_id": planID}, "query features for entitlements: %w", err)
+	}
+	if featResp.ListFeaturesResponse == nil {
+		return nil
+	}
+
+	limit := int64(100)
+	resetPeriod := types.EntitlementUsageResetPeriodMonthly
+	softLimit := true
+	enabled := true
+	planIDCopy := planID
+	entityType := types.EntitlementEntityTypePlan
+
+	for _, feat := range featResp.ListFeaturesResponse.Items {
+		if feat.ID == nil {
+			continue
+		}
+		featID := *feat.ID
+		if existID, ok := existByFeature[featID]; ok {
+			out.PlanEntitlementIDs = append(out.PlanEntitlementIDs, existID)
+			continue
+		}
+		createResp, err := s.client.Entitlements().Create(ctx, types.CreateEntitlementRequest{
+			FeatureID:        featID,
+			FeatureType:      types.FeatureTypeMetered,
+			EntityID:         &planIDCopy,
+			EntityType:       &entityType,
+			PlanID:           &planIDCopy,
+			UsageLimit:       &limit,
+			UsageResetPeriod: &resetPeriod,
+			IsSoftLimit:      &softLimit,
+			IsEnabled:        &enabled,
+		})
+		if err != nil {
+			return e2eprobe.Errorf(map[string]string{"plan_id": planID, "feature_id": featID}, "create entitlement for feature %s: %w", featID, err)
+		}
+		if createResp.EntitlementResponse != nil && createResp.EntitlementResponse.ID != nil {
+			out.PlanEntitlementIDs = append(out.PlanEntitlementIDs, *createResp.EntitlementResponse.ID)
 		}
 	}
 	return nil
@@ -476,6 +698,9 @@ func (s *SeedEnsure) ensureSubscriptions(ctx context.Context, seeds *e2eprobe.Se
 
 		billingCycle := types.BillingCycleAnniversary
 		now := time.Now().UTC()
+		commitAmount := "5.00"
+		commitDuration := types.BillingPeriodMonthly
+		overageFactor := "1.5"
 		req := types.CreateSubscriptionRequest{
 			ExternalCustomerID: &extID,
 			PlanID:             planID,
@@ -484,11 +709,24 @@ func (s *SeedEnsure) ensureSubscriptions(ctx context.Context, seeds *e2eprobe.Se
 			BillingPeriodCount: int64Ptr(1),
 			BillingCycle:       &billingCycle,
 			StartDate:          &now,
+			// Commitment applies to every newly-created persistent sub.
+			// Existing subs are not migrated (would break cycle-invoice-probe baseline).
+			CommitmentAmount:   &commitAmount,
+			CommitmentDuration: &commitDuration,
+			OverageFactor:      &overageFactor,
 			Metadata: map[string]string{
 				"e2eprobe":        "true",
 				"e2eprobe_role":   "seed",
 				"e2eprobe_cohort": "persistent",
 			},
+		}
+		// Attach shared coupon to persistent cust #1 at sub-create time (the
+		// only hook the SDK exposes for coupon attachment). Same "new subs
+		// only" caveat as commitment.
+		if extID == persistentExternalCustomerID(1) && seeds.SharedCouponCode != "" {
+			req.SubscriptionCoupons = []types.SubscriptionCouponInput{
+				{CouponCode: seeds.SharedCouponCode},
+			}
 		}
 		createResp, err := s.client.Subscriptions().Create(ctx, req)
 		if err != nil {
@@ -518,6 +756,58 @@ func (s *SeedEnsure) ensureSubscriptions(ctx context.Context, seeds *e2eprobe.Se
 				)
 			}
 		}
+	}
+	return nil
+}
+
+// ensurePersistentTaxAssociation attaches the shared E2EPROBE_TAX_10PCT
+// tax rate to persistent cust #0's subscription. Idempotent: lists
+// existing associations filtered by tax_rate_id + entity_id and creates
+// only if absent. Unlike coupons, tax associations are a separate call
+// (not a sub-create field), so this covers both new and existing subs.
+func (s *SeedEnsure) ensurePersistentTaxAssociation(ctx context.Context, out *e2eprobe.Seeds) error {
+	if out.SharedTaxRateCode == "" || out.SharedTaxRateID == "" {
+		return nil // tax rate seed didn't run — soft skip
+	}
+	if len(out.PersistentCustomerIDs) == 0 || len(out.PersistentSubIDs) == 0 {
+		return nil
+	}
+	// PersistentSubIDs[0] corresponds to PersistentCustomerIDs[0] because
+	// ensureSubscriptions iterates PersistentCustomerIDs in order. Defensive
+	// alignment check keeps this safe if that invariant ever changes.
+	if out.PersistentCustomerIDs[0] != persistentExternalCustomerID(0) {
+		return nil
+	}
+	subID := out.PersistentSubIDs[0]
+	taxRateID := out.SharedTaxRateID
+
+	entityType := "SUBSCRIPTION"
+	listResp, err := s.client.TaxAssociations().List(ctx, &entityType, &subID, nil, &taxRateID)
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"subscription_id": subID, "tax_rate_id": taxRateID}, "list tax associations: %w", err)
+	}
+	if listResp.ListTaxAssociationsResponse != nil {
+		for _, ta := range listResp.ListTaxAssociationsResponse.Items {
+			if ta.TaxRateID != nil && *ta.TaxRateID == taxRateID {
+				return nil
+			}
+		}
+	}
+
+	autoApply := true
+	tType := types.TaxRateEntityTypeSubscription
+	_, err = s.client.TaxAssociations().Create(ctx, types.CreateTaxAssociationRequest{
+		TaxRateCode: out.SharedTaxRateCode,
+		EntityID:    &subID,
+		EntityType:  &tType,
+		AutoApply:   &autoApply,
+		Metadata: map[string]string{
+			"e2eprobe":      "true",
+			"e2eprobe_role": "seed",
+		},
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"subscription_id": subID, "tax_rate_code": out.SharedTaxRateCode}, "create tax association: %w", err)
 	}
 	return nil
 }
@@ -638,3 +928,5 @@ func (s *SeedEnsure) ensureAlertCanaryWallet(ctx context.Context, extCustID stri
 	}
 	return nil
 }
+
+func bucketSizePtr(w types.WindowSize) *types.WindowSize { return &w }

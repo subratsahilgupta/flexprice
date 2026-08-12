@@ -4,7 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/e2eprobe"
+	"github.com/flexprice/flexprice/internal/logger"
+	itypes "github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/go-sdk/v2/models/dtos"
 	"github.com/flexprice/go-sdk/v2/models/types"
 )
 
@@ -29,7 +33,7 @@ func TestSeedEnsure(t *testing.T) {
 		{
 			name: "AllPresent: features pre-exist, customers present, plan pre-exists",
 			setup: func(fc *fakeClient) {
-				// Pre-populate 8 features with lookup keys and meter IDs.
+				// Pre-populate 11 features with lookup keys and meter IDs.
 				for _, spec := range seedFeatureSpecs {
 					lk := spec.lookupKey
 					mID := "meter_" + spec.eventName
@@ -54,16 +58,16 @@ func TestSeedEnsure(t *testing.T) {
 				// subs and wallets are empty — they'll be created
 			},
 			wantErr:                 false,
-			wantFeaturesCreated:     0, // all 8 found via Query
-			wantCustomersCreated:    1, // 10 pre-populated; alert canary still needs creating
-			wantPlansCreated:        0, // plan found via Query
-			wantPricesCreated:       9, // base + 8 usage prices
+			wantFeaturesCreated:     0,  // all 11 found via Query
+			wantCustomersCreated:    1,  // 10 pre-populated; alert canary still needs creating
+			wantPlansCreated:        0,  // plan found via Query
+			wantPricesCreated:       12, // base + 11 usage prices
 			wantSubsCreated:         11, // 10 persistent + 1 alert canary
 			wantWalletsCreated:      4,  // 3 pre-funded + 1 alert canary
 			wantPersistentCustomers: 11, // 10 persistent + 1 alert canary
 			wantPreFundedCustomers:  3,
-			wantMeterIDs:            8,
-			wantFeatureIDs:          8,
+			wantMeterIDs:            11,
+			wantFeatureIDs:          11,
 			wantPlanIDs:             1,
 			wantSubIDs:              11,
 		},
@@ -74,23 +78,23 @@ func TestSeedEnsure(t *testing.T) {
 				fc.customers.getErr = errNotFound
 			},
 			wantErr:                 false,
-			wantFeaturesCreated:     8,
+			wantFeaturesCreated:     11,
 			wantCustomersCreated:    11, // 10 persistent + 1 alert canary
 			wantPlansCreated:        1,
-			wantPricesCreated:       9, // base + 8 usage
+			wantPricesCreated:       12, // base + 11 usage
 			wantSubsCreated:         11, // 10 persistent + 1 alert canary
 			wantWalletsCreated:      4,  // 3 pre-funded + 1 alert canary
 			wantPersistentCustomers: 11, // 10 persistent + 1 alert canary
 			wantPreFundedCustomers:  3,
-			wantMeterIDs:            8,
-			wantFeatureIDs:          8,
+			wantMeterIDs:            11,
+			wantFeatureIDs:          11,
 			wantPlanIDs:             1,
 			wantSubIDs:              11,
 		},
 		{
 			name: "PartialExisting: features exist but plan/subs/wallets don't",
 			setup: func(fc *fakeClient) {
-				// Pre-populate 8 features.
+				// Pre-populate 11 features.
 				for _, spec := range seedFeatureSpecs {
 					lk := spec.lookupKey
 					mID := "meter_" + spec.eventName
@@ -109,15 +113,15 @@ func TestSeedEnsure(t *testing.T) {
 			},
 			wantErr:                 false,
 			wantFeaturesCreated:     0,
-			wantCustomersCreated:    1, // alert canary still needs creating
+			wantCustomersCreated:    1,  // alert canary still needs creating
 			wantPlansCreated:        1,
-			wantPricesCreated:       9,
+			wantPricesCreated:       12,
 			wantSubsCreated:         11, // 10 persistent + 1 alert canary
 			wantWalletsCreated:      4,  // 3 pre-funded + 1 alert canary
 			wantPersistentCustomers: 11, // 10 persistent + 1 alert canary
 			wantPreFundedCustomers:  3,
-			wantMeterIDs:            8,
-			wantFeatureIDs:          8,
+			wantMeterIDs:            11,
+			wantFeatureIDs:          11,
 			wantPlanIDs:             1,
 			wantSubIDs:              11,
 		},
@@ -176,5 +180,246 @@ func TestSeedEnsure(t *testing.T) {
 				t.Errorf("PersistentSubIDs = %d, want %d", len(got.PersistentSubIDs), tc.wantSubIDs)
 			}
 		})
+	}
+}
+
+func TestSeedEnsure_BucketedFeaturesProvisioned(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+
+	seeds := reg.Seeds()
+	wantKeys := []string{"e2eprobe_max_15min_feature", "e2eprobe_sum_hour_feature", "e2eprobe_max_day_feature"}
+	for _, k := range wantKeys {
+		if _, ok := seeds.BucketedFeatureIDs[k]; !ok {
+			t.Errorf("BucketedFeatureIDs missing key %q; got keys %v", k, keysOf(seeds.BucketedFeatureIDs))
+		}
+	}
+}
+
+func keysOf(m map[string]string) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
+}
+
+func TestSeedEnsure_CouponProvisioning(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("first Run() unexpected error: %v", err)
+	}
+	seeds := reg.Seeds()
+	if seeds.SharedCouponID == "" {
+		t.Fatalf("SharedCouponID empty after seed run")
+	}
+	if seeds.SharedCouponCode != "E2EPROBE_COUPON_10PCT" {
+		t.Errorf("SharedCouponCode = %q, want E2EPROBE_COUPON_10PCT", seeds.SharedCouponCode)
+	}
+	if len(fc.coupons.created) != 1 {
+		t.Fatalf("coupon created %d times on first run; want 1", len(fc.coupons.created))
+	}
+	if got := fc.coupons.created[0]; got.Type != types.CouponTypePercentage || got.Cadence != types.CouponCadenceOnce {
+		t.Errorf("coupon Type/Cadence = %v/%v; want percentage/once", got.Type, got.Cadence)
+	}
+	if got := fc.coupons.created[0]; got.PercentageOff == nil || *got.PercentageOff != "10" {
+		t.Errorf("coupon PercentageOff = %v, want \"10\"", got.PercentageOff)
+	}
+
+	// Second run must not create another (idempotent).
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("second Run() unexpected error: %v", err)
+	}
+	if len(fc.coupons.created) != 1 {
+		t.Errorf("coupon created %d times across 2 runs; want 1 (idempotency broken)", len(fc.coupons.created))
+	}
+}
+
+func TestSeedEnsure_TaxRateProvisioning(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("first Run() unexpected error: %v", err)
+	}
+	seeds := reg.Seeds()
+	if seeds.SharedTaxRateID == "" {
+		t.Fatalf("SharedTaxRateID empty after seed run")
+	}
+	if seeds.SharedTaxRateCode != "E2EPROBE_TAX_10PCT" {
+		t.Errorf("SharedTaxRateCode = %q, want E2EPROBE_TAX_10PCT", seeds.SharedTaxRateCode)
+	}
+	if len(fc.taxRates.created) != 1 {
+		t.Fatalf("tax rate created %d times on first run; want 1", len(fc.taxRates.created))
+	}
+	got := fc.taxRates.created[0]
+	if got.Code != "E2EPROBE_TAX_10PCT" {
+		t.Errorf("tax rate Code = %q, want E2EPROBE_TAX_10PCT", got.Code)
+	}
+	if got.PercentageValue == nil || *got.PercentageValue != "10" {
+		t.Errorf("tax rate PercentageValue = %v, want \"10\"", got.PercentageValue)
+	}
+	if got.Scope == nil || *got.Scope != types.TaxRateScopeExternal {
+		t.Errorf("tax rate Scope = %v, want EXTERNAL", got.Scope)
+	}
+
+	// Simulate the second run finding the existing rate via List.
+	codeCopy := "E2EPROBE_TAX_10PCT"
+	idCopy := seeds.SharedTaxRateID
+	fc.taxRates.listResp = &dtos.GetTaxRatesResponse{
+		TaxRateResponses: []types.TaxRateResponse{{ID: &idCopy, Code: &codeCopy}},
+	}
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("second Run() unexpected error: %v", err)
+	}
+	if len(fc.taxRates.created) != 1 {
+		t.Errorf("tax rate created %d times across 2 runs; want 1 (idempotency broken)", len(fc.taxRates.created))
+	}
+}
+
+func TestSeedEnsure_PlanEntitlementsProvisioned(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	seeds := reg.Seeds()
+	// 8 non-bucketed metered features get plan-level entitlements.
+	if len(seeds.PlanEntitlementIDs) != 8 {
+		t.Errorf("PlanEntitlementIDs = %d, want 8 (one per non-bucketed feature); got %v", len(seeds.PlanEntitlementIDs), seeds.PlanEntitlementIDs)
+	}
+	// Every created entitlement carries usage_limit=100, is_soft_limit=true,
+	// reset_period=MONTHLY, is_enabled=true.
+	if len(fc.entitlements.created) != 8 {
+		t.Errorf("entitlements Create called %d times, want 8", len(fc.entitlements.created))
+	}
+	for i, req := range fc.entitlements.created {
+		if req.UsageLimit == nil || *req.UsageLimit != 100 {
+			t.Errorf("entitlement[%d] UsageLimit = %v, want 100", i, req.UsageLimit)
+		}
+		if req.IsSoftLimit == nil || !*req.IsSoftLimit {
+			t.Errorf("entitlement[%d] IsSoftLimit = %v, want true", i, req.IsSoftLimit)
+		}
+		if req.IsEnabled == nil || !*req.IsEnabled {
+			t.Errorf("entitlement[%d] IsEnabled = %v, want true", i, req.IsEnabled)
+		}
+		if req.UsageResetPeriod == nil || *req.UsageResetPeriod != types.EntitlementUsageResetPeriodMonthly {
+			t.Errorf("entitlement[%d] UsageResetPeriod = %v, want Monthly", i, req.UsageResetPeriod)
+		}
+		if req.FeatureType != types.FeatureTypeMetered {
+			t.Errorf("entitlement[%d] FeatureType = %v, want Metered", i, req.FeatureType)
+		}
+	}
+}
+
+func TestSeedEnsure_CommitmentAndCouponOnPersistentSubs(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+
+	if len(fc.subs.created) == 0 {
+		t.Fatalf("no subs created")
+	}
+	// Every persistent sub must carry commitment fields.
+	for i, req := range fc.subs.created {
+		if req.CommitmentAmount == nil || *req.CommitmentAmount != "5.00" {
+			t.Errorf("sub[%d] CommitmentAmount = %v, want \"5.00\"", i, req.CommitmentAmount)
+		}
+		if req.CommitmentDuration == nil || *req.CommitmentDuration != types.BillingPeriodMonthly {
+			t.Errorf("sub[%d] CommitmentDuration = %v, want MONTHLY", i, req.CommitmentDuration)
+		}
+		if req.OverageFactor == nil || *req.OverageFactor != "1.5" {
+			t.Errorf("sub[%d] OverageFactor = %v, want \"1.5\"", i, req.OverageFactor)
+		}
+	}
+
+	// Persistent cust #1's sub must carry the shared coupon at sub-create.
+	found := false
+	for _, req := range fc.subs.created {
+		if req.ExternalCustomerID != nil && *req.ExternalCustomerID == "e2eprobe-cust-persistent-1" {
+			if len(req.SubscriptionCoupons) != 1 || req.SubscriptionCoupons[0].CouponCode != "E2EPROBE_COUPON_10PCT" {
+				t.Errorf("cust-persistent-1 sub SubscriptionCoupons = %+v, want [{CouponCode: E2EPROBE_COUPON_10PCT}]", req.SubscriptionCoupons)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no sub found for e2eprobe-cust-persistent-1")
+	}
+
+	// Other persistent subs must NOT carry the coupon (only cust #1).
+	for _, req := range fc.subs.created {
+		if req.ExternalCustomerID == nil || *req.ExternalCustomerID == "e2eprobe-cust-persistent-1" {
+			continue
+		}
+		if len(req.SubscriptionCoupons) != 0 {
+			t.Errorf("sub for %s carries SubscriptionCoupons = %+v, want none", *req.ExternalCustomerID, req.SubscriptionCoupons)
+		}
+	}
+}
+
+func TestSeedEnsure_PersistentTaxAssociation(t *testing.T) {
+	fc := newFakeClient()
+	reg := e2eprobe.NewRegistry()
+	lg, _ := logger.NewLogger(&config.Configuration{Logging: config.LoggingConfig{Level: itypes.LogLevelInfo}})
+	s := NewSeedEnsure(fc, reg, "test-run", lg)
+
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("Run() unexpected error: %v", err)
+	}
+	if len(fc.taxAssociations.created) != 1 {
+		t.Fatalf("tax associations created = %d, want 1", len(fc.taxAssociations.created))
+	}
+	req := fc.taxAssociations.created[0]
+	if req.TaxRateCode != "E2EPROBE_TAX_10PCT" {
+		t.Errorf("TaxRateCode = %q, want E2EPROBE_TAX_10PCT", req.TaxRateCode)
+	}
+	if req.EntityID == nil || *req.EntityID == "" {
+		t.Errorf("EntityID missing on tax association create")
+	}
+	if req.EntityType == nil || *req.EntityType != types.TaxRateEntityTypeSubscription {
+		t.Errorf("EntityType = %v, want SUBSCRIPTION", req.EntityType)
+	}
+
+	// Idempotency: the fake doesn't dedupe on repeat Runs (it creates fresh IDs
+	// each time), so pre-populate both TaxRates.List (so ensureTaxRates returns
+	// the same rate ID) AND TaxAssociations.List (so ensurePersistentTaxAssociation
+	// sees the existing association). On real APIs both lookups deduplicate
+	// server-side.
+	trID := reg.Seeds().SharedTaxRateID
+	trCode := "E2EPROBE_TAX_10PCT"
+	fc.taxRates.listResp = &dtos.GetTaxRatesResponse{
+		TaxRateResponses: []types.TaxRateResponse{{ID: &trID, Code: &trCode}},
+	}
+	fc.taxAssociations.listResp = &dtos.ListTaxAssociationsResponse{
+		ListTaxAssociationsResponse: &types.ListTaxAssociationsResponse{
+			Items: []types.TaxAssociationResponse{{TaxRateID: &trID}},
+		},
+	}
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatalf("second Run() unexpected error: %v", err)
+	}
+	if len(fc.taxAssociations.created) != 1 {
+		t.Errorf("tax association created %d times across 2 runs; want 1 (idempotency broken)", len(fc.taxAssociations.created))
 	}
 }
