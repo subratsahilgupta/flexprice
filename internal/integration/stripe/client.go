@@ -42,15 +42,12 @@ type StripeConfig struct {
 	WebhookSecret  string
 }
 
-// GetConnection returns the Stripe connection for the current environment.
+// GetConnection returns the Stripe connection for the current environment. The
+// repository already classifies its own errors (ErrNotFound when no connection
+// exists, the underlying error otherwise), so it's returned as-is rather than
+// forced into a single error type here.
 func (c *Client) GetConnection(ctx context.Context) (*connection.Connection, error) {
-	conn, err := c.connectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
-	if err != nil {
-		return nil, ierr.NewError("failed to get Stripe connection").
-			WithHint("Stripe connection not configured for this environment").
-			Mark(ierr.ErrNotFound)
-	}
-	return conn, nil
+	return c.connectionRepo.GetByProvider(ctx, types.SecretProviderStripe)
 }
 
 // GetStripeClient returns a configured Stripe client for the current environment
