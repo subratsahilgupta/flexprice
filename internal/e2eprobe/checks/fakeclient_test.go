@@ -59,12 +59,13 @@ func (c *fakeClient) TaxAssociations() e2eprobe.TaxAssociationOps       { return
 // --- Customers ---
 
 type fakeCustomers struct {
-	mu          sync.Mutex
-	created     []types.CreateCustomerRequest
-	byExt       map[string]string
-	getErr      error
-	deleted     []string // internal customer IDs passed to Delete
-	queryResult []types.CustomerResponse
+	mu           sync.Mutex
+	created      []types.CreateCustomerRequest
+	byExt        map[string]string
+	getErr       error
+	deleted      []string // internal customer IDs passed to Delete
+	queryResult  []types.CustomerResponse
+	usageSummary *dtos.GetCustomerUsageSummaryResponse
 }
 
 func (f *fakeCustomers) Create(_ context.Context, req types.CreateCustomerRequest) (*dtos.CreateCustomerResponse, error) {
@@ -103,6 +104,11 @@ func (f *fakeCustomers) GetEntitlements(_ context.Context, _ string) (*dtos.GetC
 	return &dtos.GetCustomerEntitlementsResponse{}, nil
 }
 func (f *fakeCustomers) GetUsageSummary(_ context.Context, _ dtos.GetCustomerUsageSummaryRequest) (*dtos.GetCustomerUsageSummaryResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.usageSummary != nil {
+		return f.usageSummary, nil
+	}
 	return &dtos.GetCustomerUsageSummaryResponse{}, nil
 }
 func (f *fakeCustomers) Update(_ context.Context, _ types.UpdateCustomerRequest, _, _ *string) (*dtos.UpdateCustomerResponse, error) {
