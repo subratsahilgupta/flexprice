@@ -3426,13 +3426,9 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 
 	// Fetch grouped_invoicing children once (before the transaction) so both the
 	// per-period invoice loop and the post-loop period-advancement step can reuse them.
-	var groupedChildren []*subscription.Subscription
-	if sub.SubscriptionType == types.SubscriptionTypeParent {
-		var gErr error
-		groupedChildren, gErr = s.getGroupedInvoicingSubscriptions(ctx, sub.ID)
-		if gErr != nil {
-			return gErr
-		}
+	groupedChildren, gErr := groupedInvoicingChildren(ctx, s.ServiceParams, sub, false)
+	if gErr != nil {
+		return gErr
 	}
 
 	// Initialize services

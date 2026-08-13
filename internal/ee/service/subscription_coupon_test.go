@@ -488,6 +488,59 @@ func (s *SubscriptionServiceSuite) TestDiscountMatrix_4_ChildPriceCouponStaysOnT
 	}
 }
 
+// TestDiscountMatrix_4c_RecalculationKeepsChildDiscounts covers PUT /invoices/:id with
+// apply_discount, which wipes every coupon application on the invoice and rebuilds from the
+// associations standing at that moment.
+//
+// On a grouped parent that rebuild has to see the children too. Resolving only the parent does not
+// merely skip their discounts — the wipe already removed them, so a correctly discounted invoice
+// silently gains back the children's charges while their coupons stay attached.
+func (s *SubscriptionServiceSuite) TestDiscountMatrix_4c_RecalculationKeepsChildDiscounts() {
+	ctx := s.GetContext()
+	s.seedSharedAddon()
+	c := s.seedCouponPercentOff("coupon_matrix_4c", 100, 0)
+
+	group := s.createCouponTestGroup("s4c", nil,
+		[]dto.SubscriptionCouponInput{{CouponCode: *c.CouponCode, PriceID: lo.ToPtr(couponTestAddonPriceID)}},
+	)
+
+	inv := s.invoiceFor(group.parentID)
+	discountBefore := inv.TotalDiscount
+	s.Require().True(discountBefore.Equal(decimal.NewFromInt(30)),
+		"both children's addons discounted up front, got %s", discountBefore)
+
+	// Recalculation only runs on drafts, and the opening invoice is finalized as it is created.
+	// Draft grouped-parent invoices are real — a checkout parent stays draft until payment — so
+	// put it back to draft rather than skip the case.
+	stored, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.Require().NoError(err)
+	stored.InvoiceStatus = types.InvoiceStatusDraft
+	s.Require().NoError(s.GetStores().InvoiceRepo.Update(ctx, stored))
+
+	_, err = s.createInvoiceService().UpdateInvoice(ctx, inv.ID, dto.UpdateInvoiceRequest{ApplyDiscount: true})
+	s.Require().NoError(err)
+
+	after, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.Require().NoError(err)
+	s.True(discountBefore.Equal(after.TotalDiscount),
+		"recalculation must not drop the children's discounts: before %s, after %s",
+		discountBefore, after.TotalDiscount)
+
+	lineFilter := types.NewNoLimitInvoiceLineItemFilter()
+	lineFilter.InvoiceIDs = []string{inv.ID}
+	lines, err := s.GetStores().InvoiceLineItemRepo.List(ctx, lineFilter)
+	s.Require().NoError(err)
+
+	for _, li := range lines {
+		if lo.FromPtr(li.PriceID) != couponTestAddonPriceID || lo.FromPtr(li.SubscriptionID) == group.parentID {
+			continue
+		}
+		s.True(li.Amount.Equal(li.LineItemDiscount),
+			"child addon line %s must still be discounted after recalculation: amount %s discount %s",
+			li.ID, li.Amount, li.LineItemDiscount)
+	}
+}
+
 // 5. A child's subscription-level coupon does nothing today — a known, deliberate gap.
 //
 // It has no line item to anchor to, and an invoice-level coupon discounts the entire invoice, so

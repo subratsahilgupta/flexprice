@@ -1548,21 +1548,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 
 	// For parent subscriptions, merge line items from all grouped_invoicing children.
 	if sub.SubscriptionType == types.SubscriptionTypeParent {
-		filter := types.NewNoLimitSubscriptionFilter()
-		filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
-		filter.ParentSubscriptionIDs = []string{sub.ID}
-		filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeGroupedInvoicing}
-		filter.SubscriptionStatus = []types.SubscriptionStatus{
-			types.SubscriptionStatusActive,
-			types.SubscriptionStatusTrialing,
-		}
-
-		// A draft parent is only ever invoiced by the checkout pricing pass, and its inline
-		// children are draft too, so they belong on the amount the customer is asked to pay.
-		if sub.SubscriptionStatus == types.SubscriptionStatusDraft {
-			filter.SubscriptionStatus = append(filter.SubscriptionStatus, types.SubscriptionStatusDraft)
-		}
-		children, err := s.SubRepo.List(ctx, filter)
+		children, err := groupedInvoicingChildren(ctx, s.ServiceParams, sub, false)
 		if err != nil {
 			return nil, err
 		}
