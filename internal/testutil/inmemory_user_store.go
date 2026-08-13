@@ -67,6 +67,29 @@ func (r *InMemoryUserStore) Update(ctx context.Context, updatedUser *user.User) 
 	return ierr.NewError("user not found").Mark(ierr.ErrNotFound)
 }
 
+// UpdateRoles updates a user's roles in the in-memory store (tenant-scoped, matches prod semantics)
+func (r *InMemoryUserStore) UpdateRoles(ctx context.Context, id string, roles []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tenantID, ok := ctx.Value(types.CtxTenantID).(string)
+	if !ok || tenantID == "" {
+		return ierr.NewError("tenant ID not found in context").
+			WithHint("Tenant ID is required in the context").
+			Mark(ierr.ErrValidation)
+	}
+
+	for key, u := range r.users {
+		if u.ID == id && u.TenantID == tenantID {
+			u.Roles = roles
+			r.users[key] = u
+			return nil
+		}
+	}
+
+	return ierr.NewError("user not found").Mark(ierr.ErrNotFound)
+}
+
 // GetByID retrieves a user by ID from the in-memory store
 func (r *InMemoryUserStore) GetByID(ctx context.Context, userID string) (*user.User, error) {
 	r.mu.Lock()

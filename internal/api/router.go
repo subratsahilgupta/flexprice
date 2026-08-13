@@ -115,8 +115,9 @@ func NewRouter(
 
 	// Initialize permission middleware
 	permissionMW := middleware.NewPermissionMiddleware(rbacService, logger)
-	write := permissionMW.RequirePermission // shorthand used on every write route
-	read := permissionMW.RequirePermission  // shorthand used on read routes that opt in to an RBAC gate
+	write := permissionMW.RequirePermission       // shorthand used on every write route
+	read := permissionMW.RequirePermission        // shorthand used on read routes that opt in to an RBAC gate
+	superAdminOnly := middleware.SuperAdminOnly() // shorthand used on routes accessible only to super_admin users
 
 	// Add middleware to set swagger host dynamically
 	router.Use(func(c *gin.Context) {
@@ -156,6 +157,7 @@ func NewRouter(
 			user.POST("", write(types.EntityUser, types.ActionWrite), handlers.User.CreateUser)
 			user.PUT("/me", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateUser)
 			user.PUT("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateServiceAccount)
+			user.PUT("/:id/roles", write(types.EntityUser, types.ActionWrite, superAdminOnly), handlers.User.UpdateUserRoles)
 			user.DELETE("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.DeleteUser)
 			user.POST("/search", handlers.User.QueryUsers)
 		}
@@ -710,10 +712,10 @@ func NewRouter(
 	}
 
 	// RBAC routes
-	rbac := v1Private.Group("/rbac")
+	rbac := v1Private.Group("/rbac/roles")
 	{
-		rbac.GET("/roles", handlers.RBAC.ListRoles)
-		rbac.GET("/roles/:id", handlers.RBAC.GetRole)
+		rbac.GET("", handlers.RBAC.ListRoles)
+		rbac.GET("/:id", handlers.RBAC.GetRole)
 	}
 
 	// OAuth routes

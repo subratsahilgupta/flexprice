@@ -331,6 +331,7 @@ func (r *paymentRepository) update(ctx context.Context, p *domainPayment.Payment
 		Where(predicates...).
 		SetPaymentStatus(string(p.PaymentStatus)).
 		SetPaymentMethodID(p.PaymentMethodID).
+		SetAmount(p.Amount).
 		SetNillablePaymentGateway(p.PaymentGateway).
 		SetNillableGatewayPaymentID(p.GatewayPaymentID).
 		SetNillableGatewayTrackingID(p.GatewayTrackingID).
