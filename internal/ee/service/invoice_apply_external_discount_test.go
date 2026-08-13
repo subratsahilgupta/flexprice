@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/testutil"
@@ -123,7 +124,11 @@ func (s *ApplyExternalInvoiceDiscountSuite) createDraftInvoice(id string, amount
 func (s *ApplyExternalInvoiceDiscountSuite) TestFreshInvoice_NoExistingDiscount() {
 	inv := s.createDraftInvoice("inv_fresh", decimal.NewFromInt(100), decimal.Zero)
 
-	err := s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, decimal.NewFromInt(20), `[{"stripe_coupon_id":"cp_1"}]`)
+	err := s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, dto.ApplyExternalInvoiceDiscountRequest{
+		DiscountAmount: decimal.NewFromInt(20),
+		MetadataKey:    "stripe_checkout_discounts",
+		MetadataJSON:   `[{"stripe_coupon_id":"cp_1"}]`,
+	})
 	s.NoError(err)
 
 	updated, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), inv.ID)
@@ -146,7 +151,11 @@ func (s *ApplyExternalInvoiceDiscountSuite) TestDoesNotClobberExistingInvoiceLev
 	// Invoice already has a $10 invoice-level discount from FlexPrice's own coupon engine.
 	inv := s.createDraftInvoice("inv_existing_discount", decimal.NewFromInt(100), decimal.NewFromInt(10))
 
-	err := s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, decimal.NewFromInt(20), `[{"stripe_coupon_id":"cp_2"}]`)
+	err := s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, dto.ApplyExternalInvoiceDiscountRequest{
+		DiscountAmount: decimal.NewFromInt(20),
+		MetadataKey:    "stripe_checkout_discounts",
+		MetadataJSON:   `[{"stripe_coupon_id":"cp_2"}]`,
+	})
 	s.NoError(err)
 
 	items, err := s.GetStores().InvoiceLineItemRepo.ListByInvoiceID(s.GetContext(), inv.ID)
@@ -167,8 +176,16 @@ func (s *ApplyExternalInvoiceDiscountSuite) TestDoesNotClobberExistingInvoiceLev
 func (s *ApplyExternalInvoiceDiscountSuite) TestAppendsMetadataRatherThanOverwriting() {
 	inv := s.createDraftInvoice("inv_second_payment", decimal.NewFromInt(200), decimal.Zero)
 
-	s.NoError(s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, decimal.NewFromInt(10), `[{"stripe_coupon_id":"cp_first"}]`))
-	s.NoError(s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, decimal.NewFromInt(5), `[{"stripe_coupon_id":"cp_second"}]`))
+	s.NoError(s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, dto.ApplyExternalInvoiceDiscountRequest{
+		DiscountAmount: decimal.NewFromInt(10),
+		MetadataKey:    "stripe_checkout_discounts",
+		MetadataJSON:   `[{"stripe_coupon_id":"cp_first"}]`,
+	}))
+	s.NoError(s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, dto.ApplyExternalInvoiceDiscountRequest{
+		DiscountAmount: decimal.NewFromInt(5),
+		MetadataKey:    "stripe_checkout_discounts",
+		MetadataJSON:   `[{"stripe_coupon_id":"cp_second"}]`,
+	}))
 
 	updated, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), inv.ID)
 	s.NoError(err)
@@ -187,7 +204,10 @@ func (s *ApplyExternalInvoiceDiscountSuite) TestAppendsMetadataRatherThanOverwri
 func (s *ApplyExternalInvoiceDiscountSuite) TestZeroDiscountIsANoOp() {
 	inv := s.createDraftInvoice("inv_zero", decimal.NewFromInt(50), decimal.Zero)
 
-	err := s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, decimal.Zero, "")
+	err := s.service.ApplyExternalInvoiceDiscount(s.GetContext(), inv.ID, dto.ApplyExternalInvoiceDiscountRequest{
+		DiscountAmount: decimal.Zero,
+		MetadataKey:    "stripe_checkout_discounts",
+	})
 	s.NoError(err)
 
 	updated, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), inv.ID)

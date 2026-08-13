@@ -4579,12 +4579,11 @@ func (s *invoiceService) DistributeInvoiceLevelDiscount(ctx context.Context, lin
 	return nil
 }
 
-// ApplyExternalInvoiceDiscount records a discount applied on an external provider (e.g. a
-// Stripe promotion code at checkout) against an existing invoice: distributes it across line
-// items via DistributeInvoiceLevelDiscount, keeps AmountDue/AmountRemaining/TotalDiscount
-// consistent with Invoice.Validate()'s invariant, and appends discount detail to metadata.
-func (s *invoiceService) ApplyExternalInvoiceDiscount(ctx context.Context, invoiceID string, discountAmount decimal.Decimal, metadataJSON string) error {
-	if discountAmount.IsZero() {
+func (s *invoiceService) ApplyExternalInvoiceDiscount(ctx context.Context, invoiceID string, req dto.ApplyExternalInvoiceDiscountRequest) error {
+	if err := req.Validate(); err != nil {
+		return err
+	}
+	if req.DiscountAmount.IsZero() {
 		return nil
 	}
 
@@ -4599,7 +4598,7 @@ func (s *invoiceService) ApplyExternalInvoiceDiscount(ctx context.Context, invoi
 			existingInvoiceLevelDiscount = existingInvoiceLevelDiscount.Add(li.InvoiceLevelDiscount)
 		}
 
-		if err := s.DistributeInvoiceLevelDiscount(txCtx, inv.LineItems, existingInvoiceLevelDiscount.Add(discountAmount)); err != nil {
+		if err := s.DistributeInvoiceLevelDiscount(txCtx, inv.LineItems, existingInvoiceLevelDiscount.Add(req.DiscountAmount)); err != nil {
 			return err
 		}
 
@@ -4609,20 +4608,20 @@ func (s *invoiceService) ApplyExternalInvoiceDiscount(ctx context.Context, invoi
 			}
 		}
 
-		inv.TotalDiscount = inv.TotalDiscount.Add(discountAmount)
-		inv.Total = inv.Total.Sub(discountAmount)
-		inv.AmountDue = inv.AmountDue.Sub(discountAmount)
-		inv.AmountRemaining = inv.AmountRemaining.Sub(discountAmount)
+		inv.TotalDiscount = inv.TotalDiscount.Add(req.DiscountAmount)
+		inv.Total = inv.Total.Sub(req.DiscountAmount)
+		inv.AmountDue = inv.AmountDue.Sub(req.DiscountAmount)
+		inv.AmountRemaining = inv.AmountRemaining.Sub(req.DiscountAmount)
 
-		if metadataJSON != "" {
+		if req.MetadataJSON != "" && req.MetadataKey != "" {
 			if inv.Metadata == nil {
 				inv.Metadata = types.Metadata{}
 			}
-			merged, err := mergeJSONArrayMetadata(inv.Metadata["stripe_checkout_discounts"], metadataJSON)
+			merged, err := mergeJSONArrayMetadata(inv.Metadata[req.MetadataKey], req.MetadataJSON)
 			if err != nil {
 				return err
 			}
-			inv.Metadata["stripe_checkout_discounts"] = merged
+			inv.Metadata[req.MetadataKey] = merged
 		}
 
 		if err := inv.Validate(); err != nil {

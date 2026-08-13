@@ -79,8 +79,10 @@ func (s *PaymentService) buildSyncedLineItems(ctx context.Context, invoiceResp *
 	return lineItems, nil
 }
 
+const checkoutDiscountMetadataKey = "stripe_checkout_discounts"
+
 // stripeCheckoutDiscountEntry is one entry in the JSON array stored under
-// Invoice.Metadata["stripe_checkout_discounts"].
+// Invoice.Metadata[checkoutDiscountMetadataKey].
 type stripeCheckoutDiscountEntry struct {
 	StripeCouponID string    `json:"stripe_coupon_id"`
 	Name           string    `json:"name"`
@@ -90,24 +92,17 @@ type stripeCheckoutDiscountEntry struct {
 	AppliedAt      time.Time `json:"applied_at"`
 }
 
-// computeCheckoutDiscount is pure (no Stripe calls) so it's unit-testable directly. Compares
-// what was requested against what Stripe actually captured. hasDiscount is false when they
-// match, or when actual > requested (the caller logs that case; never treated as a negative
-// discount).
-func computeCheckoutDiscount(session *stripe.CheckoutSession, requestedAmount decimal.Decimal) (
-	actualAmount decimal.Decimal, discountAmount decimal.Decimal, metadataJSON string, hasDiscount bool, err error,
-) {
-	actualAmount = types.FromSmallestUnit(session.AmountTotal, string(session.Currency))
+// computeCheckoutDiscount is pure (no Stripe calls) so it's unit-testable directly.
+func computeCheckoutDiscount(session *stripe.CheckoutSession, requestedAmount decimal.Decimal) (discountAmount decimal.Decimal, metadataJSON string, err error) {
+	actualAmount := types.FromSmallestUnit(session.AmountTotal, string(session.Currency))
 	if !actualAmount.LessThan(requestedAmount) {
-		return actualAmount, decimal.Zero, "", false, nil
+		return decimal.Zero, "", nil
 	}
 
 	discountAmount = requestedAmount.Sub(actualAmount)
 
 	entries := make([]stripeCheckoutDiscountEntry, 0, len(session.Discounts))
 	for _, d := range session.Discounts {
-		// lo.TernaryF (lazy) not lo.Ternary (eager) — d.Coupon.ID would nil-pointer-panic
-		// eagerly evaluating both branches when d.Coupon is nil.
 		entries = append(entries, stripeCheckoutDiscountEntry{
 			StripeCouponID: lo.TernaryF(d.Coupon != nil, func() string { return d.Coupon.ID }, func() string { return "" }),
 			Name:           lo.TernaryF(d.Coupon != nil, func() string { return d.Coupon.Name }, func() string { return "" }),
@@ -120,9 +115,9 @@ func computeCheckoutDiscount(session *stripe.CheckoutSession, requestedAmount de
 
 	metadataBytes, err := json.Marshal(entries)
 	if err != nil {
-		return actualAmount, discountAmount, "", true, err
+		return discountAmount, "", err
 	}
-	return actualAmount, discountAmount, string(metadataBytes), true, nil
+	return discountAmount, string(metadataBytes), nil
 }
 
 // NewPaymentService creates a new Stripe payment service
@@ -1911,18 +1906,20 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 		PaymentStatus: &paymentStatus,
 	}
 
-	actualAmount, discountAmount, discountMetadataJSON, hasDiscount, err := computeCheckoutDiscount(session, payment.Amount)
-	if err != nil {
-		s.logger.Error(ctx, "failed to compute checkout discount", "error", err, "payment_id", payment.ID)
-		actualAmount = payment.Amount
-	} else if actualAmount.GreaterThan(payment.Amount) {
+	actualAmount := types.FromSmallestUnit(session.AmountTotal, string(session.Currency))
+	if actualAmount.GreaterThan(payment.Amount) {
 		s.logger.Info(ctx, "checkout session captured more than requested, not treating as a discount",
 			"payment_id", payment.ID, "requested", payment.Amount.String(), "captured", actualAmount.String())
 	}
-
 	if !actualAmount.Equal(payment.Amount) {
 		updateReq.Amount = &actualAmount
 	}
+
+	discountAmount, discountMetadataJSON, err := computeCheckoutDiscount(session, payment.Amount)
+	if err != nil {
+		s.logger.Error(ctx, "failed to compute checkout discount", "error", err, "payment_id", payment.ID)
+	}
+	hasDiscount := err == nil && discountAmount.IsPositive()
 
 	// If payment intent exists, extract payment method and gateway payment ID
 	if paymentIntent != nil {
@@ -1978,10 +1975,6 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 		}
 	}
 
-	// Claim the payment before applying any discount. UpdatePayment is CAS-protected
-	// against the status it reads internally (UpdateWithExpectedStatus) — a concurrent
-	// duplicate delivery loses this race and returns ErrVersionConflict, so it never
-	// reaches ApplyExternalInvoiceDiscount below and can't double-discount the invoice.
 	_, err = paymentService.UpdatePayment(ctx, payment.ID, updateReq)
 	if err != nil {
 		s.logger.Error(ctx, "failed to update payment record",
@@ -1998,7 +1991,12 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 		"new_status", paymentStatus)
 
 	if hasDiscount {
-		if err := invoiceService.ApplyExternalInvoiceDiscount(ctx, payment.DestinationID, discountAmount, discountMetadataJSON); err != nil {
+		applyDiscountReq := dto.ApplyExternalInvoiceDiscountRequest{
+			DiscountAmount: discountAmount,
+			MetadataKey:    checkoutDiscountMetadataKey,
+			MetadataJSON:   discountMetadataJSON,
+		}
+		if err := invoiceService.ApplyExternalInvoiceDiscount(ctx, payment.DestinationID, applyDiscountReq); err != nil {
 			s.logger.Error(ctx, "failed to apply external invoice discount", "error", err, "payment_id", payment.ID)
 			return err
 		}

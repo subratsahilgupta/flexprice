@@ -158,11 +158,9 @@ func TestBuildSyncedLineItems_ZeroAmountLineItemsSkipped(t *testing.T) {
 func TestComputeCheckoutDiscount_NoDiscountWhenEqual(t *testing.T) {
 	session := &stripe.CheckoutSession{AmountTotal: 10000}
 
-	actual, discount, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+	discount, metadataJSON, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
 
 	require.NoError(t, err)
-	require.False(t, hasDiscount)
-	require.True(t, decimal.NewFromInt(100).Equal(actual))
 	require.True(t, decimal.Zero.Equal(discount))
 	require.Empty(t, metadataJSON)
 }
@@ -173,33 +171,27 @@ func TestComputeCheckoutDiscount_ZeroDecimalCurrencyNoFalseDiscount(t *testing.T
 	// captured amount of 100 and report a false 9,900 discount.
 	session := &stripe.CheckoutSession{AmountTotal: 10000, Currency: stripe.CurrencyJPY}
 
-	actual, discount, _, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(10000))
+	discount, _, err := computeCheckoutDiscount(session, decimal.NewFromInt(10000))
 
 	require.NoError(t, err)
-	require.False(t, hasDiscount)
-	require.True(t, decimal.NewFromInt(10000).Equal(actual))
 	require.True(t, decimal.Zero.Equal(discount))
 }
 
 func TestComputeCheckoutDiscount_ZeroDecimalCurrencyRealDiscount(t *testing.T) {
 	session := &stripe.CheckoutSession{AmountTotal: 8000, Currency: stripe.CurrencyJPY}
 
-	actual, discount, _, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(10000))
+	discount, _, err := computeCheckoutDiscount(session, decimal.NewFromInt(10000))
 
 	require.NoError(t, err)
-	require.True(t, hasDiscount)
-	require.True(t, decimal.NewFromInt(8000).Equal(actual))
 	require.True(t, decimal.NewFromInt(2000).Equal(discount))
 }
 
 func TestComputeCheckoutDiscount_NoDiscountWhenCapturedMore(t *testing.T) {
 	session := &stripe.CheckoutSession{AmountTotal: 10500}
 
-	actual, discount, _, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+	discount, _, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
 
 	require.NoError(t, err)
-	require.False(t, hasDiscount)
-	require.True(t, decimal.NewFromInt(105).Equal(actual))
 	require.True(t, decimal.Zero.Equal(discount))
 }
 
@@ -214,11 +206,9 @@ func TestComputeCheckoutDiscount_DiscountWithCouponAndPromoCode(t *testing.T) {
 		},
 	}
 
-	actual, discount, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+	discount, metadataJSON, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
 
 	require.NoError(t, err)
-	require.True(t, hasDiscount)
-	require.True(t, decimal.NewFromInt(80).Equal(actual))
 	require.True(t, decimal.NewFromInt(20).Equal(discount))
 
 	var entries []stripeCheckoutDiscountEntry
@@ -238,10 +228,9 @@ func TestComputeCheckoutDiscount_MultipleStackedDiscounts(t *testing.T) {
 		},
 	}
 
-	_, discount, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+	discount, metadataJSON, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
 
 	require.NoError(t, err)
-	require.True(t, hasDiscount)
 	require.True(t, decimal.NewFromInt(30).Equal(discount))
 
 	var entries []stripeCheckoutDiscountEntry
@@ -253,10 +242,9 @@ func TestComputeCheckoutDiscount_DiscountWithNoCouponsListedYet(t *testing.T) {
 	// AmountTotal reduced with no session.Discounts populated (e.g. a manual amount edit).
 	session := &stripe.CheckoutSession{AmountTotal: 9000}
 
-	_, discount, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+	discount, metadataJSON, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
 
 	require.NoError(t, err)
-	require.True(t, hasDiscount)
 	require.True(t, decimal.NewFromInt(10).Equal(discount))
 
 	var entries []stripeCheckoutDiscountEntry
@@ -272,10 +260,9 @@ func TestComputeCheckoutDiscount_NilCouponOrPromotionCode(t *testing.T) {
 		},
 	}
 
-	_, _, metadataJSON, hasDiscount, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
+	_, metadataJSON, err := computeCheckoutDiscount(session, decimal.NewFromInt(100))
 
 	require.NoError(t, err)
-	require.True(t, hasDiscount)
 	var entries []stripeCheckoutDiscountEntry
 	require.NoError(t, json.Unmarshal([]byte(metadataJSON), &entries))
 	require.Len(t, entries, 1)
@@ -309,7 +296,7 @@ type checkoutTestInvoiceService struct {
 	applyDiscountCalls int
 }
 
-func (f *checkoutTestInvoiceService) ApplyExternalInvoiceDiscount(_ context.Context, _ string, _ decimal.Decimal, _ string) error {
+func (f *checkoutTestInvoiceService) ApplyExternalInvoiceDiscount(_ context.Context, _ string, _ dto.ApplyExternalInvoiceDiscountRequest) error {
 	f.applyDiscountCalls++
 	return nil
 }
