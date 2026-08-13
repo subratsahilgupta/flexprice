@@ -4844,7 +4844,7 @@ func (s *subscriptionService) handleSubCoupons(
 				WithReportableDetails(map[string]interface{}{"coupon_code": input.CouponCode, "price_id": *input.PriceID}).
 				Mark(ierr.ErrValidation)
 		}
-		
+
 		for _, lineItemID := range lineItemIDs {
 			scoped := couponReq
 			scoped.LineItemID = lo.ToPtr(lineItemID)

@@ -222,6 +222,89 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_SubscriptionCoupon_Unk
 	s.True(ierr.IsValidation(err), "expected a validation error, got %v", err)
 }
 
+// TestGroupedChildAddonCoupons_ZeroOutBothAddonLinesOnTheParentInvoice is the whole chain in one
+// test: create the parent with two children sharing an addon and a coupon on that addon price,
+// then bill the parent. Resolution, the parent merge and line-item matching are each covered
+// elsewhere; this proves they compose into a correct invoice, which is the only claim that matters.
+func (s *SubscriptionServiceSuite) TestGroupedChildAddonCoupons_ZeroOutBothAddonLinesOnTheParentInvoice() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	addonID := "addon_e2e_shared"
+	addonPriceID := "price_addon_e2e_shared"
+	s.seedSharedAddon(addonID, addonPriceID)
+	c := s.seedFullDiscountCoupon("coupon_e2e_full")
+
+	ws1 := s.seedChildCustomer("ext_ws1_e2e")
+	ws2 := s.seedChildCustomer("ext_ws2_e2e")
+
+	childReq := func(externalID string) dto.GroupedInvoicingChildRequest {
+		return dto.GroupedInvoicingChildRequest{
+			PlanID:             seatPlan.ID,
+			ExternalCustomerID: externalID,
+			SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+				Addons: []dto.AddAddonToSubscriptionRequest{{AddonID: addonID}},
+				SubscriptionCoupons: []dto.SubscriptionCouponInput{
+					{CouponCode: *c.CouponCode, PriceID: lo.ToPtr(addonPriceID)},
+				},
+			},
+		}
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				childReq(ws1.ExternalID),
+				childReq(ws2.ExternalID),
+			},
+		},
+	})
+	s.Require().NoError(err)
+
+	parent, err := s.GetStores().SubscriptionRepo.Get(ctx, resp.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(types.SubscriptionTypeParent, parent.SubscriptionType)
+
+	inv, _, err := s.createInvoiceService().CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
+		SubscriptionID: parent.ID,
+		PeriodStart:    parent.CurrentPeriodStart,
+		PeriodEnd:      parent.CurrentPeriodEnd,
+		ReferencePoint: types.ReferencePointPeriodStart,
+	}, nil, types.InvoiceFlowManual, false)
+	s.Require().NoError(err)
+	s.Require().NotNil(inv)
+
+	addonLines := lo.Filter(inv.LineItems, func(li *dto.InvoiceLineItemResponse, _ int) bool {
+		return lo.FromPtr(li.PriceID) == addonPriceID
+	})
+	s.Require().Len(addonLines, 2, "both children's addon charges belong on the parent invoice")
+
+	for _, li := range addonLines {
+		s.True(
+			li.Amount.Equal(li.LineItemDiscount),
+			"addon line %s should be fully discounted: amount %s, discount %s",
+			li.ID, li.Amount, li.LineItemDiscount,
+		)
+	}
+
+	// Each child's addon is charged and then fully discounted, so neither reaches the total.
+	addonTotal := lo.Reduce(addonLines, func(acc decimal.Decimal, li *dto.InvoiceLineItemResponse, _ int) decimal.Decimal {
+		return acc.Add(li.Amount)
+	}, decimal.Zero)
+	s.True(addonTotal.Equal(inv.TotalDiscount),
+		"the whole discount is the two addon lines: addons %s, invoice discount %s", addonTotal, inv.TotalDiscount)
+	s.True(inv.Total.Equal(inv.Subtotal.Sub(addonTotal)),
+		"total must drop by both addons: subtotal %s, total %s, addons %s", inv.Subtotal, inv.Total, addonTotal)
+}
+
 // seedLimitedCoupon publishes a 100%-off coupon capped at maxRedemptions.
 func (s *SubscriptionServiceSuite) seedLimitedCoupon(couponID string, maxRedemptions int) *coupon.Coupon {
 	c := s.seedFullDiscountCoupon(couponID)
