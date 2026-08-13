@@ -273,52 +273,12 @@ func (s *BillingGroupedInvoicingCouponSuite) TestParentOwnCouponsSurviveChildMer
 
 	req := s.prepareParentRequest()
 
-	targetsByCoupon := map[string][]string{}
-	for _, lic := range req.LineItemCoupons {
-		targetsByCoupon[lic.CouponID] = append(targetsByCoupon[lic.CouponID], lo.FromPtr(lic.SubscriptionLineItemID))
-	}
-
-	// The child's coupon stays on the child. The parent's is price-scoped and the child runs the
-	// same price here, so it covers both — a parent-level price discount applies group-wide.
-	s.ElementsMatch(
-		[]string{s.parent.LineItems[0].ID, child.LineItems[0].ID},
-		targetsByCoupon[parentCoupon.ID],
-		"parent's price coupon covers its own line and the child's line behind the same price",
-	)
-	s.Equal([]string{child.LineItems[0].ID}, targetsByCoupon[childCoupon.ID],
-		"child's line-item coupon must be appended and stay on the child")
-}
-
-// TestParentPriceCouponDoesNotReachChildrenOnOtherPrices bounds the cascade: it follows the price
-// the parent named, not the parent-child link, so a child billing a different price is untouched.
-func (s *BillingGroupedInvoicingCouponSuite) TestParentPriceCouponDoesNotReachChildrenOnOtherPrices() {
-	ctx := s.GetContext()
-
-	otherPrice := &price.Price{
-		ID:                 "price_gic_other",
-		Amount:             decimal.NewFromInt(70),
-		Currency:           "usd",
-		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
-		EntityID:           "plan_gic",
-		Type:               types.PRICE_TYPE_FIXED,
-		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-		BillingPeriodCount: 1,
-		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
-		BillingCadence:     types.BILLING_CADENCE_RECURRING,
-		InvoiceCadence:     types.InvoiceCadenceArrear,
-		BaseModel:          types.GetDefaultBaseModel(ctx),
-	}
-	s.NoError(s.GetStores().PriceRepo.Create(ctx, otherPrice))
-
-	child := s.seedSubscription("child_other_price", types.SubscriptionTypeGroupedInvoicing, &s.parent.ID)
-	child.LineItems[0].PriceID = otherPrice.ID
-	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, child.LineItems[0]))
-
-	parentCoupon := s.seedCoupon("coupon_gic_parent_scoped")
-	s.associate("assoc_gic_parent_scoped", parentCoupon, s.parent.ID, s.parent.LineItems[0].ID)
-
-	req := s.prepareParentRequest()
-
-	s.Require().Len(req.LineItemCoupons, 1, "nothing to cascade onto: the child bills a different price")
-	s.Equal(s.parent.LineItems[0].ID, lo.FromPtr(req.LineItemCoupons[0].SubscriptionLineItemID))
+	// Each coupon stays on the line item its association named, even though parent and child bill
+	// the same price here — a coupon does not spread across the group on price alone.
+	s.Require().Len(req.LineItemCoupons, 2)
+	targetByCoupon := lo.SliceToMap(req.LineItemCoupons, func(lic dto.InvoiceLineItemCoupon) (string, string) {
+		return lic.CouponID, lo.FromPtr(lic.SubscriptionLineItemID)
+	})
+	s.Equal(s.parent.LineItems[0].ID, targetByCoupon[parentCoupon.ID], "parent's own line-item coupon must be retained")
+	s.Equal(child.LineItems[0].ID, targetByCoupon[childCoupon.ID], "child's line-item coupon must be appended")
 }

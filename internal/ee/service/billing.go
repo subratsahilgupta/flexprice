@@ -1567,21 +1567,6 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			return nil, err
 		}
 
-		// Snapshot before the loop starts appending, so cascaded entries are not themselves
-		// cascaded onto later children. Deduplicated by (coupon, price): the parent can hold
-		// several associations for one price when it carries the same addon more than once, but
-		// a child's line item takes each coupon once, not once per parent attachment.
-		parentLineItemCoupons := make([]dto.InvoiceLineItemCoupon, 0, len(invReq.LineItemCoupons))
-		seenCouponPrice := make(map[string]bool, len(invReq.LineItemCoupons))
-		for _, parentCoupon := range invReq.LineItemCoupons {
-			key := parentCoupon.CouponID + "|" + parentCoupon.LineItemID
-			if seenCouponPrice[key] {
-				continue
-			}
-			seenCouponPrice[key] = true
-			parentLineItemCoupons = append(parentLineItemCoupons, parentCoupon)
-		}
-
 		for _, child := range children {
 			// NOTE: ExcludeInvoiceID and OpeningInvoiceAdjustmentAmount from the parent params
 			// are intentionally not forwarded here.
@@ -1609,35 +1594,6 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			}
 			invReq.LineItems = append(invReq.LineItems, childReq.LineItems...)
 			invReq.LineItemCoupons = append(invReq.LineItemCoupons, childReq.LineItemCoupons...)
-
-			// A price-scoped coupon on the parent covers that price across the whole group: the
-			// caller named a price, and a child's line item behind the same price is the same
-			// charge. The parent's association is reused rather than duplicated, so cascading
-			// costs no extra redemption — association-backed applications never re-increment.
-			for _, parentCoupon := range parentLineItemCoupons {
-				for _, li := range childReq.LineItems {
-					if lo.FromPtr(li.PriceID) != parentCoupon.LineItemID || li.SubscriptionLineItemID == nil {
-						continue
-					}
-					invReq.LineItemCoupons = append(invReq.LineItemCoupons, dto.InvoiceLineItemCoupon{
-						LineItemID:             parentCoupon.LineItemID,
-						SubscriptionLineItemID: li.SubscriptionLineItemID,
-						CouponID:               parentCoupon.CouponID,
-						CouponAssociationID:    parentCoupon.CouponAssociationID,
-					})
-				}
-			}
-
-			// Subscription-level coupons have no line item to anchor to. Merged into the parent's
-			// InvoiceCoupons they would discount the parent's and the siblings' charges as well,
-			// and fanning them across the child's lines would multiply a fixed amount_off by the
-			// line count. Left behind until invoice coupons can name the lines they may touch.
-			if len(childReq.InvoiceCoupons) > 0 {
-				s.Logger.Info(ctx, "grouped invoicing child has subscription-level coupons; only line-item coupons are merged onto the parent invoice",
-					"parent_subscription_id", sub.ID,
-					"child_subscription_id", child.ID,
-					"skipped_coupon_count", len(childReq.InvoiceCoupons))
-			}
 		}
 		// Recalculate totals from merged line items
 		if len(children) > 0 {
