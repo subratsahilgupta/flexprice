@@ -51,6 +51,8 @@ type InvoiceService interface {
 	UpdateInvoice(ctx context.Context, id string, req dto.UpdateInvoiceRequest) (*dto.InvoiceResponse, error)
 	DeleteInvoice(ctx context.Context, id string) error
 	ReconcilePaymentStatus(ctx context.Context, invoiceID string, paymentStatus types.PaymentStatus, paymentAmount *decimal.Decimal) error
+
+	ApplyExternalInvoiceDiscount(ctx context.Context, invoiceID string, req dto.ApplyExternalInvoiceDiscountRequest) error
 	VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) error
 }
 

@@ -4619,3 +4619,79 @@ func (s *invoiceService) DistributeInvoiceLevelDiscount(ctx context.Context, lin
 
 	return nil
 }
+
+func (s *invoiceService) ApplyExternalInvoiceDiscount(ctx context.Context, invoiceID string, req dto.ApplyExternalInvoiceDiscountRequest) error {
+	if err := req.Validate(); err != nil {
+		return err
+	}
+	if req.DiscountAmount.IsZero() {
+		return nil
+	}
+
+	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, invoiceID)
+		if err != nil {
+			return err
+		}
+
+		existingInvoiceLevelDiscount := decimal.Zero
+		for _, li := range inv.LineItems {
+			existingInvoiceLevelDiscount = existingInvoiceLevelDiscount.Add(li.InvoiceLevelDiscount)
+		}
+
+		if err := s.DistributeInvoiceLevelDiscount(txCtx, inv.LineItems, existingInvoiceLevelDiscount.Add(req.DiscountAmount)); err != nil {
+			return err
+		}
+
+		for _, li := range inv.LineItems {
+			if err := s.InvoiceLineItemRepo.Update(txCtx, li); err != nil {
+				return err
+			}
+		}
+
+		inv.TotalDiscount = inv.TotalDiscount.Add(req.DiscountAmount)
+		inv.Total = inv.Total.Sub(req.DiscountAmount)
+		inv.AmountDue = inv.AmountDue.Sub(req.DiscountAmount)
+		inv.AmountRemaining = inv.AmountRemaining.Sub(req.DiscountAmount)
+
+		if req.MetadataJSON != "" && req.MetadataKey != "" {
+			if inv.Metadata == nil {
+				inv.Metadata = types.Metadata{}
+			}
+			merged, err := mergeJSONArrayMetadata(inv.Metadata[req.MetadataKey], req.MetadataJSON)
+			if err != nil {
+				return err
+			}
+			inv.Metadata[req.MetadataKey] = merged
+		}
+
+		if err := inv.Validate(); err != nil {
+			return err
+		}
+
+		return s.InvoiceRepo.Update(txCtx, inv)
+	})
+}
+
+// mergeJSONArrayMetadata appends the entries in newEntriesJSON (a JSON array) onto existing
+// (a JSON array string, or "" if absent), returning the re-marshaled combined array.
+func mergeJSONArrayMetadata(existing string, newEntriesJSON string) (string, error) {
+	var combined []json.RawMessage
+	if existing != "" {
+		if err := json.Unmarshal([]byte(existing), &combined); err != nil {
+			return "", ierr.WithError(err).WithHint("Failed to parse existing discount metadata").Mark(ierr.ErrValidation)
+		}
+	}
+
+	var newEntries []json.RawMessage
+	if err := json.Unmarshal([]byte(newEntriesJSON), &newEntries); err != nil {
+		return "", ierr.WithError(err).WithHint("Failed to parse new discount metadata").Mark(ierr.ErrValidation)
+	}
+	combined = append(combined, newEntries...)
+
+	merged, err := json.Marshal(combined)
+	if err != nil {
+		return "", ierr.WithError(err).WithHint("Failed to marshal merged discount metadata").Mark(ierr.ErrValidation)
+	}
+	return string(merged), nil
+}

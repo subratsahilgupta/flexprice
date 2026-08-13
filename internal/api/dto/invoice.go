@@ -1415,3 +1415,16 @@ type GetUnpaidInvoicesToBePaidResponse struct {
 	// total paid invoice amount
 	TotalPaidInvoiceAmount decimal.Decimal `json:"total_paid_invoice_amount" swaggertype:"string"`
 }
+
+type ApplyExternalInvoiceDiscountRequest struct {
+	DiscountAmount decimal.Decimal `json:"discount_amount"`
+	MetadataKey    string          `json:"metadata_key,omitempty"`
+	MetadataJSON   string          `json:"metadata_json,omitempty"`
+}
+
+func (r *ApplyExternalInvoiceDiscountRequest) Validate() error {
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+	return nil
+}

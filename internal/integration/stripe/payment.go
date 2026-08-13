@@ -79,6 +79,47 @@ func (s *PaymentService) buildSyncedLineItems(ctx context.Context, invoiceResp *
 	return lineItems, nil
 }
 
+const checkoutDiscountMetadataKey = "stripe_checkout_discounts"
+
+// stripeCheckoutDiscountEntry is one entry in the JSON array stored under
+// Invoice.Metadata[checkoutDiscountMetadataKey].
+type stripeCheckoutDiscountEntry struct {
+	StripeCouponID string    `json:"stripe_coupon_id"`
+	Name           string    `json:"name"`
+	AmountOff      int64     `json:"amount_off,omitempty"`
+	PercentOff     float64   `json:"percent_off,omitempty"`
+	PromotionCode  string    `json:"promotion_code,omitempty"`
+	AppliedAt      time.Time `json:"applied_at"`
+}
+
+// computeCheckoutDiscount is pure (no Stripe calls) so it's unit-testable directly.
+func computeCheckoutDiscount(session *stripe.CheckoutSession, requestedAmount decimal.Decimal) (discountAmount decimal.Decimal, metadataJSON string, err error) {
+	actualAmount := types.FromSmallestUnit(session.AmountTotal, string(session.Currency))
+	if !actualAmount.LessThan(requestedAmount) {
+		return decimal.Zero, "", nil
+	}
+
+	discountAmount = requestedAmount.Sub(actualAmount)
+
+	entries := make([]stripeCheckoutDiscountEntry, 0, len(session.Discounts))
+	for _, d := range session.Discounts {
+		entries = append(entries, stripeCheckoutDiscountEntry{
+			StripeCouponID: lo.TernaryF(d.Coupon != nil, func() string { return d.Coupon.ID }, func() string { return "" }),
+			Name:           lo.TernaryF(d.Coupon != nil, func() string { return d.Coupon.Name }, func() string { return "" }),
+			AmountOff:      lo.TernaryF(d.Coupon != nil, func() int64 { return d.Coupon.AmountOff }, func() int64 { return 0 }),
+			PercentOff:     lo.TernaryF(d.Coupon != nil, func() float64 { return d.Coupon.PercentOff }, func() float64 { return 0 }),
+			PromotionCode:  lo.TernaryF(d.PromotionCode != nil, func() string { return d.PromotionCode.Code }, func() string { return "" }),
+			AppliedAt:      time.Now().UTC(),
+		})
+	}
+
+	metadataBytes, err := json.Marshal(entries)
+	if err != nil {
+		return discountAmount, "", err
+	}
+	return discountAmount, string(metadataBytes), nil
+}
+
 // NewPaymentService creates a new Stripe payment service
 func NewPaymentService(
 	client *Client,
@@ -1846,6 +1887,7 @@ func paymentIntentCustomerID(paymentIntent *stripe.PaymentIntent) string {
 // paymentIntent is optional and can be nil
 func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 	ctx context.Context,
+	session *stripe.CheckoutSession,
 	paymentIntent *stripe.PaymentIntent,
 	payment *dto.PaymentResponse,
 	customerService interfaces.CustomerService,
@@ -1863,6 +1905,21 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 	updateReq := dto.UpdatePaymentRequest{
 		PaymentStatus: &paymentStatus,
 	}
+
+	actualAmount := types.FromSmallestUnit(session.AmountTotal, string(session.Currency))
+	if actualAmount.GreaterThan(payment.Amount) {
+		s.logger.Info(ctx, "checkout session captured more than requested, not treating as a discount",
+			"payment_id", payment.ID, "requested", payment.Amount.String(), "captured", actualAmount.String())
+	}
+	if !actualAmount.Equal(payment.Amount) {
+		updateReq.Amount = &actualAmount
+	}
+
+	discountAmount, discountMetadataJSON, err := computeCheckoutDiscount(session, payment.Amount)
+	if err != nil {
+		s.logger.Error(ctx, "failed to compute checkout discount", "error", err, "payment_id", payment.ID)
+	}
+	hasDiscount := err == nil && discountAmount.IsPositive()
 
 	// If payment intent exists, extract payment method and gateway payment ID
 	if paymentIntent != nil {
@@ -1918,7 +1975,7 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 		}
 	}
 
-	_, err := paymentService.UpdatePayment(ctx, payment.ID, updateReq)
+	_, err = paymentService.UpdatePayment(ctx, payment.ID, updateReq)
 	if err != nil {
 		s.logger.Error(ctx, "failed to update payment record",
 			"error", err,
@@ -1933,19 +1990,29 @@ func (s *PaymentService) HandleFlexPriceCheckoutPayment(
 		"payment_id", payment.ID,
 		"new_status", paymentStatus)
 
-	// get the amount from the payment
-	amount := payment.Amount
-	err = s.ReconcilePaymentWithInvoice(ctx, payment.ID, amount, paymentService, invoiceService)
+	if hasDiscount {
+		applyDiscountReq := dto.ApplyExternalInvoiceDiscountRequest{
+			DiscountAmount: discountAmount,
+			MetadataKey:    checkoutDiscountMetadataKey,
+			MetadataJSON:   discountMetadataJSON,
+		}
+		if err := invoiceService.ApplyExternalInvoiceDiscount(ctx, payment.DestinationID, applyDiscountReq); err != nil {
+			s.logger.Error(ctx, "failed to apply external invoice discount", "error", err, "payment_id", payment.ID)
+			return err
+		}
+	}
+
+	err = s.ReconcilePaymentWithInvoice(ctx, payment.ID, actualAmount, paymentService, invoiceService)
 	if err != nil {
 		s.logger.Error(ctx, "failed to reconcile payment with invoice",
 			"error", err,
 			"payment_id", payment.ID,
-			"amount", amount.String())
+			"amount", actualAmount.String())
 		// Don't fail the entire webhook processing
 	} else {
 		s.logger.Info(ctx, "successfully reconciled payment with invoice",
 			"payment_id", payment.ID,
-			"amount", amount.String())
+			"amount", actualAmount.String())
 	}
 
 	// Only attach to Stripe invoice and reconcile if we have a payment intent
