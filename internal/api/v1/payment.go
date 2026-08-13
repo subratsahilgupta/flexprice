@@ -116,10 +116,6 @@ func (h *PaymentHandler) UpdatePayment(c *gin.Context) {
 			Mark(ierr.ErrValidation))
 		return
 	}
-	// Amount correction is only for internal/webhook-triggered callers (e.g. reconciling
-	// against what Stripe actually captured) — never client-settable via the public API.
-	req.Amount = nil
-
 	resp, err := h.service.UpdatePayment(c.Request.Context(), id, req)
 	if err != nil {
 		h.log.Error(c.Request.Context(), "Failed to update payment", "error", err)
