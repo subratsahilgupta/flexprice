@@ -349,6 +349,46 @@ func (s *SubscriptionServiceSuite) TestSubscriptionCoupon_WithHeadroomForEveryCh
 	s.Equal(2, updated.TotalRedemptions, "one redemption per child association")
 }
 
+// TestSubscriptionCoupon_AssociationResponseCarriesCouponDetails guards the payload, not the
+// discount. CouponAssociationResponse.Coupon and the embedded domain model's Coupon both marshal
+// to "coupon" and the outer field wins, so a nil outer field silently discards a coupon the
+// repository always eager-loads — leaving clients to render raw IDs with no name, code or amount.
+// Asserted without expand=coupon, which is how the subscription detail endpoint calls it.
+func (s *SubscriptionServiceSuite) TestSubscriptionCoupon_AssociationResponseCarriesCouponDetails() {
+	seatPlan := s.setupSeatFeePlan()
+	c := s.seedCouponPercentOff("coupon_response_shape", 25, 0)
+
+	resp, err := s.createStandaloneSub(seatPlan.ID, 0, []dto.SubscriptionCouponInput{
+		{CouponCode: *c.CouponCode, PriceID: lo.ToPtr(s.planPriceIDOf(seatPlan.ID))},
+	})
+	s.Require().NoError(err)
+
+	couponAssociationService := NewCouponAssociationService(ServiceParams{
+		Logger:                   s.GetLogger(),
+		Config:                   s.GetConfig(),
+		DB:                       s.GetDB(),
+		CouponAssociationRepo:    s.GetStores().CouponAssociationRepo,
+		CouponRepo:               s.GetStores().CouponRepo,
+		SubRepo:                  s.GetStores().SubscriptionRepo,
+		SubscriptionLineItemRepo: s.GetStores().SubscriptionLineItemRepo,
+	})
+
+	filter := types.NewCouponAssociationFilter()
+	filter.SubscriptionIDs = []string{resp.ID}
+	listed, err := couponAssociationService.ListCouponAssociations(s.GetContext(), filter)
+	s.Require().NoError(err)
+	s.Require().Len(listed.Items, 1)
+
+	got := listed.Items[0]
+	s.Require().NotNil(got.Coupon, "coupon must be present without an explicit expand")
+	s.Equal(c.ID, got.Coupon.ID)
+	s.Equal(c.Name, got.Coupon.Name, "name renders in the UI's Coupon Name column")
+	s.Require().NotNil(got.Coupon.CouponCode)
+	s.Equal(*c.CouponCode, *got.Coupon.CouponCode)
+	s.Require().NotNil(got.Coupon.PercentageOff, "discount column needs the amount")
+	s.True(decimal.NewFromInt(25).Equal(*got.Coupon.PercentageOff))
+}
+
 // ─── discount matrix: where the discount lands on the invoice ──────────────────────────────────
 
 // 1. Standalone subscription, coupon on its plan charge.
