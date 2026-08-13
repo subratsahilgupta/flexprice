@@ -207,7 +207,10 @@ type KafkaConfig struct {
 	// do not define their own per-consumer-group topic_dlq. Empty disables DLQ for
 	// those handlers.
 	TopicDLQ string `mapstructure:"topic_dlq" default:""`
-	TLS      bool   `mapstructure:"tls"` // set to true if using 9094 port else can set to false
+	// OffsetRetention overrides the broker's offsets.retention.minutes for this client.
+	// Zero leaves retention to the broker.
+	OffsetRetention time.Duration `mapstructure:"offset_retention"`
+	TLS             bool          `mapstructure:"tls"` // set to true if using 9094 port else can set to false
 	// TLSCACertFile is the path to a PEM-encoded CA bundle used to verify the
 	// broker certificate. Empty (the default) means the OS trust store is used,
 	// which is correct for brokers with publicly-trusted certs (MSK, Confluent
