@@ -239,7 +239,7 @@ func (s *couponApplicationService) ApplyCouponsToInvoice(ctx context.Context, re
 			CouponAssociationID: couponAssociationID,
 			InvoiceID:           inv.ID,
 			InvoiceLineItemID:   &targetLineItem.ID,
-			SubscriptionID:      inv.SubscriptionID,
+			SubscriptionID:      lo.CoalesceOrEmpty(targetLineItem.SubscriptionID, inv.SubscriptionID),
 			AppliedAt:           time.Now(),
 			OriginalPrice:       targetLineItem.Amount,
 			FinalPrice:          discountResult.FinalPrice,

@@ -1223,7 +1223,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 	referencePoint := params.ReferencePoint
 	excludeInvoiceID := params.ExcludeInvoiceID
 	// Validate that the billing period respects subscription end date
-	if err := s.validatePeriodAgainstSubscriptionEndDate(sub, periodStart, periodEnd); err != nil {
+	if err := s.validatePeriodAgainstSubscriptionEndDate(sub, periodStart); err != nil {
 		return nil, err
 	}
 
@@ -1592,6 +1592,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 				}
 			}
 			invReq.LineItems = append(invReq.LineItems, childReq.LineItems...)
+			invReq.LineItemCoupons = append(invReq.LineItemCoupons, childReq.LineItemCoupons...)
 		}
 		// Recalculate totals from merged line items
 		if len(children) > 0 {
@@ -1611,8 +1612,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 // validatePeriodAgainstSubscriptionEndDate ensures billing periods don't exceed subscription end date
 func (s *billingService) validatePeriodAgainstSubscriptionEndDate(
 	sub *subscription.Subscription,
-	periodStart,
-	periodEnd time.Time,
+	periodStart time.Time,
 ) error {
 	// If no end date, no validation needed
 	if sub.EndDate == nil {
