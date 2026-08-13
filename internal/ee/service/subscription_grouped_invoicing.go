@@ -244,9 +244,9 @@ func (s *subscriptionService) validateRemoveFromGroupedInvoicingDryRun(
 	return nil
 }
 
-// groupedInvoicingChildren returns the children whose charges belong on this parent's invoice.
+// getGroupedInvoicingChildren returns the children whose charges belong on this parent's invoice.
 // Empty for any subscription that is not a parent.
-func groupedInvoicingChildren(
+func getGroupedInvoicingChildren(
 	ctx context.Context,
 	sp ServiceParams,
 	parent *subscription.Subscription,

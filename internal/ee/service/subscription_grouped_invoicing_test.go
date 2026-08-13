@@ -342,7 +342,7 @@ func (s *SubscriptionGroupedInvoicingTestSuite) TestGroupedInvoicingChildren_Ret
 		sub.SubscriptionStatus = types.SubscriptionStatusCancelled
 	})
 
-	subs, err := groupedInvoicingChildren(ctx, s.subscriptionService.ServiceParams, parent, false)
+	subs, err := getGroupedInvoicingChildren(ctx, s.subscriptionService.ServiceParams, parent, false)
 	require.NoError(s.T(), err)
 	require.Len(s.T(), subs, 2)
 
@@ -360,7 +360,7 @@ func (s *SubscriptionGroupedInvoicingTestSuite) TestGroupedInvoicingChildren_Ret
 		sub.ParentSubscriptionID = &parent.ID
 		sub.SubscriptionStatus = types.SubscriptionStatusDraft
 	})
-	subs, err = groupedInvoicingChildren(ctx, s.subscriptionService.ServiceParams, parent, false)
+	subs, err = getGroupedInvoicingChildren(ctx, s.subscriptionService.ServiceParams, parent, false)
 	require.NoError(s.T(), err)
 	require.Len(s.T(), subs, 2, "draft child must be excluded under an active parent")
 }

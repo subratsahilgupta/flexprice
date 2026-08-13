@@ -3426,7 +3426,7 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 
 	// Fetch grouped_invoicing children once (before the transaction) so both the
 	// per-period invoice loop and the post-loop period-advancement step can reuse them.
-	groupedChildren, gErr := groupedInvoicingChildren(ctx, s.ServiceParams, sub, false)
+	groupedChildren, gErr := getGroupedInvoicingChildren(ctx, s.ServiceParams, sub, false)
 	if gErr != nil {
 		return gErr
 	}

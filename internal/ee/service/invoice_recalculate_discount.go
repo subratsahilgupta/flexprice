@@ -114,7 +114,7 @@ func (s *invoiceService) resolveCurrentInvoiceCoupons(ctx context.Context, inv *
 		return nil, nil, err
 	}
 
-	children, err := groupedInvoicingChildren(ctx, s.ServiceParams, sub, true)
+	children, err := getGroupedInvoicingChildren(ctx, s.ServiceParams, sub, true)
 	if err != nil {
 		return nil, nil, err
 	}

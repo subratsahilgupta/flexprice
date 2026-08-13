@@ -1548,7 +1548,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 
 	// For parent subscriptions, merge line items from all grouped_invoicing children.
 	if sub.SubscriptionType == types.SubscriptionTypeParent {
-		children, err := groupedInvoicingChildren(ctx, s.ServiceParams, sub, false)
+		children, err := getGroupedInvoicingChildren(ctx, s.ServiceParams, sub, false)
 		if err != nil {
 			return nil, err
 		}
