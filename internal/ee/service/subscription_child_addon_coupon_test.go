@@ -222,6 +222,101 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_SubscriptionCoupon_Unk
 	s.True(ierr.IsValidation(err), "expected a validation error, got %v", err)
 }
 
+// seedLimitedCoupon publishes a 100%-off coupon capped at maxRedemptions.
+func (s *SubscriptionServiceSuite) seedLimitedCoupon(couponID string, maxRedemptions int) *coupon.Coupon {
+	c := s.seedFullDiscountCoupon(couponID)
+	c.MaxRedemptions = lo.ToPtr(maxRedemptions)
+	s.Require().NoError(s.GetStores().CouponRepo.Update(s.GetContext(), c))
+	return c
+}
+
+// TestCreateSubscription_CouponWithoutRedemptionHeadroom_IsRejected covers the cost of fanning
+// out: each line item becomes its own association and consumes its own redemption, so a
+// single-use coupon cannot cover an addon attached twice. CouponValidationService re-reads the
+// coupon before each association, so the second one is refused there.
+func (s *SubscriptionServiceSuite) TestCreateSubscription_CouponWithoutRedemptionHeadroom_IsRejected() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	addonID := "addon_headroom"
+	addonPriceID := "price_addon_headroom"
+	s.seedSharedAddon(addonID, addonPriceID)
+	c := s.seedLimitedCoupon("coupon_headroom_one", 1)
+
+	_, err := s.service.CreateSubscription(ctx, dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+			Addons: []dto.AddAddonToSubscriptionRequest{
+				{AddonID: addonID},
+				{AddonID: addonID},
+			},
+			SubscriptionCoupons: []dto.SubscriptionCouponInput{
+				{CouponCode: *c.CouponCode, PriceID: lo.ToPtr(addonPriceID)},
+			},
+		},
+	})
+	s.Require().Error(err)
+	s.True(ierr.IsValidation(err), "expected a validation error, got %v", err)
+	s.Contains(err.Error(), "redemption", "the error must name the redemption shortfall")
+}
+
+// TestCreateSubscription_CouponWithHeadroomForEveryChild_Succeeds is the counterpart: the same
+// coupon across two grouped children needs two redemptions, and having exactly that many is enough.
+func (s *SubscriptionServiceSuite) TestCreateSubscription_CouponWithHeadroomForEveryChild_Succeeds() {
+	ctx := s.GetContext()
+	seatPlan := s.setupSeatFeePlan()
+
+	addonID := "addon_headroom_children"
+	addonPriceID := "price_addon_headroom_children"
+	s.seedSharedAddon(addonID, addonPriceID)
+	c := s.seedLimitedCoupon("coupon_headroom_two", 2)
+
+	ws1 := s.seedChildCustomer("ext_ws1_headroom")
+	ws2 := s.seedChildCustomer("ext_ws2_headroom")
+
+	childReq := func(externalID string) dto.GroupedInvoicingChildRequest {
+		return dto.GroupedInvoicingChildRequest{
+			PlanID:             seatPlan.ID,
+			ExternalCustomerID: externalID,
+			SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+				Addons: []dto.AddAddonToSubscriptionRequest{{AddonID: addonID}},
+				SubscriptionCoupons: []dto.SubscriptionCouponInput{
+					{CouponCode: *c.CouponCode, PriceID: lo.ToPtr(addonPriceID)},
+				},
+			},
+		}
+	}
+
+	resp, err := s.service.CreateSubscription(ctx, dto.CreateSubscriptionRequest{
+		CustomerID:         s.testData.customer.ID,
+		PlanID:             seatPlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodSendInvoice),
+		Inheritance: &dto.SubscriptionInheritanceConfig{
+			GroupedInvoicingChildrenToCreate: []dto.GroupedInvoicingChildRequest{
+				childReq(ws1.ExternalID),
+				childReq(ws2.ExternalID),
+			},
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(s.groupedChildrenOf(resp.ID), 2)
+
+	updated, err := s.GetStores().CouponRepo.Get(ctx, c.ID)
+	s.NoError(err)
+	s.Equal(2, updated.TotalRedemptions, "one redemption per child association")
+}
+
 // TestCreateSubscription_SubscriptionCoupon_PlanPriceStillResolves guards the path that already
 // worked: a plan price must keep resolving to its line item now that the map is rebuilt from
 // persisted line items rather than the plan-derived ones.

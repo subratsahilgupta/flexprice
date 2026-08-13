@@ -4744,31 +4744,22 @@ func (s *subscriptionService) buildPriceToLineItemsMap(
 
 	priceToLineItems := make(map[string][]string, len(lineItems))
 	seen := make(map[string]bool, len(lineItems))
-	add := func(priceID, lineItemID string) {
-		if priceID == "" || lineItemID == "" || seen[priceID+"|"+lineItemID] {
-			return
+	for _, item := range lineItems {
+		if item.PriceID == "" || item.ID == "" {
+			continue
 		}
-		seen[priceID+"|"+lineItemID] = true
+		seen[item.PriceID+"|"+item.ID] = true
+		priceToLineItems[item.PriceID] = append(priceToLineItems[item.PriceID], item.ID)
+	}
+
+	for priceID, lineItemID := range originalPriceToLineItemMap {
+		if priceID == "" || lineItemID == "" || seen[priceID+"|"+lineItemID] {
+			continue
+		}
 		priceToLineItems[priceID] = append(priceToLineItems[priceID], lineItemID)
 	}
-	for _, item := range lineItems {
-		add(item.PriceID, item.ID)
-	}
-	for priceID, lineItemID := range originalPriceToLineItemMap {
-		add(priceID, lineItemID)
-	}
-	return priceToLineItems, nil
-}
 
-func resolveCouponTargetLineItems(priceID string, priceToLineItems map[string][]string) ([]string, error) {
-	lineItemIDs := priceToLineItems[priceID]
-	if len(lineItemIDs) == 0 {
-		return nil, ierr.NewError("price_id does not match any line item on this subscription").
-			WithHintf("No line item on this subscription uses price '%s'", priceID).
-			WithReportableDetails(map[string]interface{}{"price_id": priceID}).
-			Mark(ierr.ErrValidation)
-	}
-	return lineItemIDs, nil
+	return priceToLineItems, nil
 }
 
 // handleSubCoupons processes coupons for a subscription
@@ -4783,7 +4774,7 @@ func (s *subscriptionService) handleSubCoupons(
 	if err != nil {
 		return err
 	}
-	
+
 	// Convert deprecated fields to SubscriptionCouponRequest format
 	var subscriptionCoupons []dto.SubscriptionCouponRequest
 	for _, couponID := range req.Coupons {
@@ -4801,12 +4792,14 @@ func (s *subscriptionService) handleSubCoupons(
 			if couponID == "" {
 				continue
 			}
-			lineItemIDs, err := resolveCouponTargetLineItems(priceID, priceToLineItems)
-			if err != nil {
-				return ierr.WithError(err).
-					WithHintf("Cannot apply coupon '%s' to price '%s'", couponID, priceID).
+			lineItemIDs := priceToLineItems[priceID]
+			if len(lineItemIDs) == 0 {
+				return ierr.NewError("price_id does not match any line item on this subscription").
+					WithHintf("Cannot apply coupon '%s': no line item on this subscription uses price '%s'", couponID, priceID).
+					WithReportableDetails(map[string]interface{}{"coupon_id": couponID, "price_id": priceID}).
 					Mark(ierr.ErrValidation)
 			}
+
 			for _, lineItemID := range lineItemIDs {
 				subscriptionCoupons = append(subscriptionCoupons, dto.SubscriptionCouponRequest{
 					CouponID:   couponID,
@@ -4844,12 +4837,14 @@ func (s *subscriptionService) handleSubCoupons(
 			continue
 		}
 
-		lineItemIDs, err := resolveCouponTargetLineItems(*input.PriceID, priceToLineItems)
-		if err != nil {
-			return ierr.WithError(err).
-				WithHintf("Cannot apply coupon '%s' to price '%s'", input.CouponCode, *input.PriceID).
+		lineItemIDs := priceToLineItems[*input.PriceID]
+		if len(lineItemIDs) == 0 {
+			return ierr.NewError("price_id does not match any line item on this subscription").
+				WithHintf("Cannot apply coupon '%s': no line item on this subscription uses price '%s'", input.CouponCode, *input.PriceID).
+				WithReportableDetails(map[string]interface{}{"coupon_code": input.CouponCode, "price_id": *input.PriceID}).
 				Mark(ierr.ErrValidation)
 		}
+		
 		for _, lineItemID := range lineItemIDs {
 			scoped := couponReq
 			scoped.LineItemID = lo.ToPtr(lineItemID)
