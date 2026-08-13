@@ -141,7 +141,12 @@ func (s *invoiceService) resolveCurrentInvoiceCoupons(ctx context.Context, inv *
 			continue
 		}
 		lineItemCoupons = append(lineItemCoupons, lo.Map(assocs, func(a *coupon_association.CouponAssociation, _ int) dto.InvoiceLineItemCoupon {
-			return dto.InvoiceLineItemCoupon{LineItemID: priceID, CouponID: a.CouponID, CouponAssociationID: &a.ID}
+			return dto.InvoiceLineItemCoupon{
+				LineItemID:             priceID,
+				SubscriptionLineItemID: lo.ToPtr(sliID),
+				CouponID:               a.CouponID,
+				CouponAssociationID:    &a.ID,
+			}
 		})...)
 	}
 

@@ -2036,9 +2036,10 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 		}
 		for _, assoc := range assocs {
 			validLineItemCoupons = append(validLineItemCoupons, dto.InvoiceLineItemCoupon{
-				LineItemID:          priceID,
-				CouponID:            assoc.CouponID,
-				CouponAssociationID: &assoc.ID,
+				LineItemID:             priceID,
+				SubscriptionLineItemID: lo.ToPtr(sliID),
+				CouponID:               assoc.CouponID,
+				CouponAssociationID:    &assoc.ID,
 			})
 		}
 	}
