@@ -22,6 +22,15 @@ func loadTimezone(tz string) *time.Location {
 	return time.UTC
 }
 
+// FloorToStartOfDay returns the start of the calendar day (00:00:00.000)
+// containing t, evaluated in the given IANA timezone. Empty or unknown tz
+// falls back to UTC (matching loadTimezone). The returned instant is UTC.
+func FloorToStartOfDay(t time.Time, tz string) time.Time {
+	loc := loadTimezone(tz)
+	local := t.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc).UTC()
+}
+
 // NextBillingDateParams holds the inputs for NextBillingDate.
 //
 // The BillingAnchor determines the reference point for billing cycles:
