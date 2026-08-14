@@ -10,6 +10,7 @@ import (
 	workflowModels "github.com/flexprice/flexprice/internal/temporal/models"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
+	"github.com/samber/lo"
 )
 
 type SettingsService interface {
@@ -42,6 +43,35 @@ func isTenantLevelSetting(key types.SettingKey) bool {
 	// because the pre-login endpoints run with no environment in context.
 	return key == types.SettingKeyTenantConfig ||
 		key == types.SettingKeySAMLConfig
+}
+
+// requireSuperAdminForAuthSetting refuses a write to a setting that decides how
+// people authenticate unless the caller is a super_admin user.
+//
+// The settings route is shared by every key, so its entity/action gate is the
+// same broad setting:write that an all_writer holds. That is too weak here: a
+// SAML configuration names the identity provider we trust, so an all_writer who
+// points it at a provider they control can have themselves provisioned into this
+// tenant. Gating on the key rather than the route keeps every other setting on
+// the existing permission.
+//
+// Deletes are covered as well as updates: removing the configuration turns SSO
+// off for the tenant, which is the same decision in the other direction.
+//
+// Service accounts are refused whatever roles their key carries, matching
+// middleware.SuperAdminOnly — administering how people log in is not a machine
+// action.
+func requireSuperAdminForAuthSetting(ctx context.Context, key types.SettingKey) error {
+	if key != types.SettingKeySAMLConfig {
+		return nil
+	}
+
+	if types.IsServiceAccount(ctx) || !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
+		return ierr.NewError("saml configuration requires a super admin user").
+			WithHint("This action requires a user account with Super Admin access").
+			Mark(ierr.ErrPermissionDenied)
+	}
+	return nil
 }
 
 // fetchSetting fetches a setting from the repository
@@ -263,6 +293,10 @@ func (s *settingsService) GetSettingByKey(ctx context.Context, key types.Setting
 //   - Don't use in business logic if you want to replace the entire setting
 //   - Don't call repository methods directly - always use service methods
 func (s *settingsService) UpdateSettingByKey(ctx context.Context, key types.SettingKey, req *dto.UpdateSettingRequest) (*dto.SettingResponse, error) {
+	if err := requireSuperAdminForAuthSetting(ctx, key); err != nil {
+		return nil, err
+	}
+
 	if err := req.Validate(key); err != nil {
 		return nil, err
 	}
@@ -312,6 +346,10 @@ func (s *settingsService) UpdateSettingByKey(ctx context.Context, key types.Sett
 // WHEN NOT TO USE:
 //   - Don't call repository methods directly - always use service methods
 func (s *settingsService) DeleteSettingByKey(ctx context.Context, key types.SettingKey) error {
+	if err := requireSuperAdminForAuthSetting(ctx, key); err != nil {
+		return err
+	}
+
 	// Check if setting exists
 	_, err := s.fetchSetting(ctx, key)
 	if ent.IsNotFound(err) {

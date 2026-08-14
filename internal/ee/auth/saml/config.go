@@ -105,7 +105,18 @@ func (c Config) Validate() error {
 // validateDefaultRole keeps just-in-time provisioning inside the roles a human
 // user may hold, so a configuration change cannot mint a role the RBAC model
 // does not recognise.
+//
+// super_admin is excluded even though a user may hold it. Provisioning happens
+// on the strength of an assertion alone, so a default of super_admin would grant
+// tenant administration to whoever the identity provider lets through — and to
+// anyone who can reach the ACS endpoint with an assertion it accepts. An
+// administrator is promoted deliberately afterwards, through the user-roles
+// endpoint, which is itself super_admin-only.
 func validateDefaultRole(role string) error {
+	if role == string(types.RoleSuperAdmin) {
+		return fmt.Errorf("default_role %q may not be granted by just-in-time provisioning; promote an administrator explicitly after their first login", role)
+	}
+
 	for _, allowed := range types.UserTypeUser.AllowedRoles() {
 		if string(allowed) == role {
 			return nil

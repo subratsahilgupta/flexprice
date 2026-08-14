@@ -86,6 +86,11 @@ func TestConfigValidateRejectsIncompleteEnabled(t *testing.T) {
 // role, or a typo that would otherwise be stored verbatim on the user row.
 func TestDefaultRoleMustBeAssignable(t *testing.T) {
 	for _, role := range types.UserTypeUser.AllowedRoles() {
+		// super_admin is assignable to a user but not by provisioning; it has
+		// its own test below.
+		if role == types.RoleSuperAdmin {
+			continue
+		}
 		if err := validateDefaultRole(string(role)); err != nil {
 			t.Errorf("role %q should be assignable to a user: %v", role, err)
 		}
@@ -95,6 +100,29 @@ func TestDefaultRoleMustBeAssignable(t *testing.T) {
 		if err := validateDefaultRole(role); err == nil {
 			t.Errorf("role %q must not be assignable to a user", role)
 		}
+	}
+}
+
+// TestDefaultRoleRejectsSuperAdmin covers the escalation path: provisioning
+// happens on the strength of an assertion alone, so a default of super_admin
+// would hand tenant administration to whoever the identity provider lets
+// through. An administrator is promoted deliberately after their first login.
+func TestDefaultRoleRejectsSuperAdmin(t *testing.T) {
+	if err := validateDefaultRole(string(types.RoleSuperAdmin)); err == nil {
+		t.Fatal("super_admin must not be grantable by just-in-time provisioning")
+	}
+
+	// The rule has to hold through the stored-config path too, since that is
+	// what an API write actually goes through.
+	value := defaultConfig()
+	value["enabled"] = true
+	value["idp_entity_id"] = "https://idp.example.com/metadata"
+	value["idp_sso_url"] = "https://idp.example.com/sso"
+	value["idp_certificate"] = testCertPEM
+	value["default_role"] = string(types.RoleSuperAdmin)
+
+	if err := validateStoredConfig(value); err == nil {
+		t.Fatal("a stored config defaulting to super_admin must be rejected at write time")
 	}
 }
 
