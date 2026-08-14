@@ -97,8 +97,6 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 			return err
 		}
 
-		// lockedInv.LineItems was already populated by GetForUpdate — swap the archived
-		// item for its replacement in memory instead of refetching via ListByInvoiceID.
 		remaining := make([]*invoice.InvoiceLineItem, 0, len(lockedInv.LineItems))
 		for _, li := range lockedInv.LineItems {
 			if li.ID == existingItem.ID {
@@ -166,8 +164,6 @@ func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, 
 			return err
 		}
 
-		// lockedInv.LineItems was already populated by GetForUpdate (it internally
-		// calls ListByInvoiceID) — reuse it instead of refetching.
 		publishedLineItems = make([]*invoice.InvoiceLineItem, 0, len(lockedInv.LineItems)+len(newItems))
 		publishedLineItems = append(publishedLineItems, lockedInv.LineItems...)
 		publishedLineItems = append(publishedLineItems, newItems...)
@@ -207,9 +203,6 @@ func (s *invoiceService) RemoveBulkLineItem(ctx context.Context, invoiceID strin
 		}
 		lockedInv = inv
 
-		// Per-ID Get() is required here, not a lockedInv.LineItems lookup: LineItems is
-		// published-only, so an already-deleted id would be indistinguishable from a
-		// nonexistent/wrong-invoice one, collapsing a Validation error into NotFound.
 		removedIDs := make(map[string]bool, len(req.LineItemIDs))
 		for _, lineItemID := range req.LineItemIDs {
 			existingItem, err := s.InvoiceLineItemRepo.Get(txCtx, lineItemID)
@@ -233,8 +226,6 @@ func (s *invoiceService) RemoveBulkLineItem(ctx context.Context, invoiceID strin
 			return err
 		}
 
-		// lockedInv.LineItems was already populated by GetForUpdate — filter out the
-		// removed ids in memory instead of refetching via ListByInvoiceID.
 		remaining := make([]*invoice.InvoiceLineItem, 0, len(lockedInv.LineItems))
 		for _, li := range lockedInv.LineItems {
 			if removedIDs[li.ID] {
