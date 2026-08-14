@@ -1003,10 +1003,48 @@ func (r *AddLineItemRequest) Validate() error {
 	return nil
 }
 
+// AddBulkLineItemRequest adds one or more line items to a draft invoice in a single call.
+type AddBulkLineItemRequest struct {
+	Items []AddLineItemRequest `json:"items" validate:"required,min=1,max=100"`
+	// MarkManuallyEdited stamps invoice.IsManuallyEdited = true when set. Omitted/false
+	// leaves the flag untouched (does not clear an existing true value).
+	MarkManuallyEdited bool `json:"mark_manually_edited,omitempty"`
+}
+
+func (r *AddBulkLineItemRequest) Validate() error {
+	if len(r.Items) == 0 {
+		return ierr.NewError("at least one line item is required").
+			WithHint("please provide at least one line item to add").
+			Mark(ierr.ErrValidation)
+	}
+
+	if len(r.Items) > 100 {
+		return ierr.NewError("too many line items in bulk request").
+			WithHint("maximum 100 line items allowed per request").
+			Mark(ierr.ErrValidation)
+	}
+
+	for i, item := range r.Items {
+		if err := item.Validate(); err != nil {
+			return ierr.WithError(err).
+				WithHintf("line item at index %d is invalid", i).
+				WithReportableDetails(map[string]any{
+					"index": i,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
 type UpdateLineItemRequest struct {
 	DisplayName *string          `json:"display_name,omitempty"`
 	Amount      *decimal.Decimal `json:"amount,omitempty" swaggertype:"string"`
 	Quantity    *decimal.Decimal `json:"quantity,omitempty" swaggertype:"string"`
+	// MarkManuallyEdited stamps invoice.IsManuallyEdited = true when set. Omitted/false
+	// leaves the flag untouched (does not clear an existing true value).
+	MarkManuallyEdited bool `json:"mark_manually_edited,omitempty"`
 }
 
 func (r *UpdateLineItemRequest) Validate() error {
@@ -1031,6 +1069,30 @@ func (r *UpdateLineItemRequest) Validate() error {
 			WithReportableDetails(map[string]any{
 				"quantity": r.Quantity.String(),
 			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// RemoveBulkLineItemRequest removes one or more line items from a draft invoice in a single call.
+type RemoveBulkLineItemRequest struct {
+	LineItemIDs []string `json:"line_item_ids" validate:"required,min=1,max=100"`
+	// MarkManuallyEdited stamps invoice.IsManuallyEdited = true when set. Omitted/false
+	// leaves the flag untouched (does not clear an existing true value).
+	MarkManuallyEdited bool `json:"mark_manually_edited,omitempty"`
+}
+
+func (r *RemoveBulkLineItemRequest) Validate() error {
+	if len(r.LineItemIDs) == 0 {
+		return ierr.NewError("at least one line item id is required").
+			WithHint("please provide at least one line item id to remove").
+			Mark(ierr.ErrValidation)
+	}
+
+	if len(r.LineItemIDs) > 100 {
+		return ierr.NewError("too many line item ids in bulk request").
+			WithHint("maximum 100 line item ids allowed per request").
 			Mark(ierr.ErrValidation)
 	}
 
