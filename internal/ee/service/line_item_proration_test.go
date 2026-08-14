@@ -626,7 +626,7 @@ func (s *LineItemProrationServiceSuite) TestApply_AddItem_CreatesOneOffInvoice()
 		}},
 	}
 
-	err := s.svc.Apply(ctx, req)
+	_, err := s.svc.Apply(ctx, req)
 	s.NoError(err)
 
 	invoices, listErr := s.GetStores().InvoiceRepo.List(ctx, &types.InvoiceFilter{
@@ -674,7 +674,7 @@ func (s *LineItemProrationServiceSuite) TestApply_TwoChangesSameEffectiveDate_Bi
 	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, secondLineItem))
 
 	applyAdd := func(lineItem *subscription.SubscriptionLineItem, p *price.Price, key string) error {
-		return s.svc.Apply(ctx, LineItemProrationRequest{
+		_, applyErr := s.svc.Apply(ctx, LineItemProrationRequest{
 			Subscription:   s.subCopyWithPeriod(s.td.periodStart, s.td.periodEnd),
 			EffectiveDate:  effectiveDate,
 			Behavior:       types.ProrationBehaviorCreateProrations,
@@ -686,6 +686,7 @@ func (s *LineItemProrationServiceSuite) TestApply_TwoChangesSameEffectiveDate_Bi
 				NewQuantity: lineItem.Quantity,
 			}},
 		})
+		return applyErr
 	}
 
 	s.NoError(applyAdd(s.td.lineItem, s.td.fixedPrice, "addon_add_assoc_one"))
@@ -730,8 +731,9 @@ func (s *LineItemProrationServiceSuite) TestApply_SameChangeTwice_IsIdempotent()
 		}},
 	}
 
-	s.NoError(s.svc.Apply(ctx, req))
-	_ = s.svc.Apply(ctx, req)
+	_, applyErr := s.svc.Apply(ctx, req)
+	s.NoError(applyErr)
+	_, _ = s.svc.Apply(ctx, req)
 
 	invoices, err := s.GetStores().InvoiceRepo.List(ctx, &types.InvoiceFilter{
 		QueryFilter: types.NewDefaultQueryFilter(),
@@ -758,7 +760,7 @@ func (s *LineItemProrationServiceSuite) TestApply_RemoveItem_CreatesWalletCredit
 		}},
 	}
 
-	err := s.svc.Apply(ctx, req)
+	_, err := s.svc.Apply(ctx, req)
 	s.NoError(err)
 
 	wallets, listErr := s.GetStores().WalletRepo.GetWalletsByFilter(ctx, &types.WalletFilter{
@@ -789,7 +791,7 @@ func (s *LineItemProrationServiceSuite) TestApply_NoneProrationBehavior_IsNoOp()
 		}},
 	}
 
-	err := s.svc.Apply(ctx, req)
+	_, err := s.svc.Apply(ctx, req)
 	s.NoError(err)
 
 	invoices, _ := s.GetStores().InvoiceRepo.List(ctx, &types.InvoiceFilter{
@@ -822,7 +824,7 @@ func (s *LineItemProrationServiceSuite) TestApply_OnetimeRemove_IsNoOp() {
 		}},
 	}
 
-	err := s.svc.Apply(ctx, req)
+	_, err := s.svc.Apply(ctx, req)
 	s.NoError(err)
 
 	wallets, _ := s.GetStores().WalletRepo.GetWalletsByFilter(ctx, &types.WalletFilter{
@@ -849,10 +851,10 @@ func (s *LineItemProrationServiceSuite) TestApply_RemoveItem_IdempotencyKeyUsed(
 		}},
 	}
 
-	err := s.svc.Apply(ctx, req)
+	_, err := s.svc.Apply(ctx, req)
 	s.NoError(err)
 
-	err = s.svc.Apply(ctx, req)
+	_, err = s.svc.Apply(ctx, req)
 	s.NoError(err, "duplicate Apply call with same idempotency key must not error")
 }
 
