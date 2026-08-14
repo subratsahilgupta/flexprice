@@ -114,6 +114,9 @@ type addonChangeResponse struct {
 	endedLineItems   []*subscription.SubscriptionLineItem
 	changedInvoices  []dto.ChangedInvoice
 
+	// effectiveDate is when the change takes effect — the date ended line items stop at.
+	effectiveDate time.Time
+
 	// checkoutSession and invoice are set only on a pay-first attach, where nothing has been
 	// applied yet and the customer still owes the charge on the draft invoice.
 	checkoutSession *dto.CheckoutSessionResponse
@@ -146,6 +149,13 @@ func (o *addonChangeResponse) getChangedInvoices() []dto.ChangedInvoice {
 		return nil
 	}
 	return o.changedInvoices
+}
+
+func (o *addonChangeResponse) getEffectiveDate() time.Time {
+	if o == nil {
+		return time.Time{}
+	}
+	return o.effectiveDate
 }
 
 func (o *addonChangeResponse) getCheckoutSession() *dto.CheckoutSessionResponse {
@@ -187,6 +197,7 @@ func (s *subscriptionService) attachAddon(
 		association:      params.getAssociation(),
 		createdLineItems: params.getLineItems(),
 		changedInvoices:  s.settleAddonAttachPayLater(ctx, params),
+		effectiveDate:    params.getEffectiveDate(),
 	}, nil
 }
 
@@ -252,6 +263,7 @@ func (s *subscriptionService) attachAddonPayFirst(
 		association:      params.getAssociation(),
 		createdLineItems: params.getLineItems(),
 		changedInvoices:  s.settleAddonAttachPayLater(ctx, params),
+		effectiveDate:    params.getEffectiveDate(),
 	}, nil
 }
 
@@ -280,6 +292,7 @@ func (s *subscriptionService) previewAttachAddon(
 		association:      params.getAssociation(),
 		createdLineItems: params.getLineItems(),
 		changedInvoices:  changedInvoices,
+		effectiveDate:    params.getEffectiveDate(),
 	}, nil
 }
 
@@ -589,8 +602,9 @@ func (s *subscriptionService) applyAddAddonRef(
 func (s *subscriptionService) detachAddon(
 	ctx context.Context,
 	req *dto.RemoveAddonRequest,
+	subscriptionId string,
 ) (*addonChangeResponse, error) {
-	params, err := s.createAddonDetachParams(ctx, req)
+	params, err := s.createAddonDetachParams(ctx, req, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -603,6 +617,7 @@ func (s *subscriptionService) detachAddon(
 		association:     params.getAssociation(),
 		endedLineItems:  params.getLineItems(),
 		changedInvoices: s.settleAddonDetach(ctx, params),
+		effectiveDate:   params.getEffectiveDate(),
 	}, nil
 }
 
@@ -610,8 +625,9 @@ func (s *subscriptionService) detachAddon(
 func (s *subscriptionService) previewDetachAddon(
 	ctx context.Context,
 	req *dto.RemoveAddonRequest,
+	subscriptionId string,
 ) (*addonChangeResponse, error) {
-	params, err := s.createAddonDetachParams(ctx, req)
+	params, err := s.createAddonDetachParams(ctx, req, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -637,6 +653,7 @@ func (s *subscriptionService) previewDetachAddon(
 		association:     cancelled,
 		endedLineItems:  params.getLineItems(),
 		changedInvoices: changedInvoices,
+		effectiveDate:   params.getEffectiveDate(),
 	}, nil
 }
 
@@ -748,6 +765,7 @@ func (p *addonDetachParams) prorationIdempotencyKey() string {
 func (s *subscriptionService) createAddonDetachParams(
 	ctx context.Context,
 	req *dto.RemoveAddonRequest,
+	subscriptionId string,
 ) (*addonDetachParams, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -756,6 +774,16 @@ func (s *subscriptionService) createAddonDetachParams(
 	association, err := s.AddonAssociationRepo.GetByID(ctx, req.AddonAssociationID)
 	if err != nil {
 		return nil, err
+	}
+
+	if subscriptionId != "" && association.EntityID != subscriptionId {
+		return nil, ierr.NewError("addon association does not belong to this subscription").
+			WithHint("The addon association belongs to a different subscription").
+			WithReportableDetails(map[string]interface{}{
+				"addon_association_id": association.ID,
+				"subscription_id":      subscriptionId,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 
 	if association.AddonStatus == types.AddonStatusPending {

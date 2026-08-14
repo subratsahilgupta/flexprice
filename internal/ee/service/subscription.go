@@ -5422,7 +5422,7 @@ func (s *subscriptionService) cancelAddonsForSubscription(ctx context.Context, s
 
 // RemoveAddonFromSubscription removes an addon from a subscription by addon association ID
 func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, req *dto.RemoveAddonRequest) error {
-	outcome, err := s.detachAddon(ctx, req)
+	outcome, err := s.detachAddon(ctx, req, "")
 	if err != nil {
 		return err
 	}
