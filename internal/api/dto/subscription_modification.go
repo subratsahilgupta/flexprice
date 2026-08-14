@@ -378,6 +378,7 @@ func (r *ExecuteSubscriptionModifyRequest) Validate() error {
 	case SubscriptionModifyTypeAddon:
 		if r.AddonParams == nil {
 			return ierr.NewError("addon_params is required for type 'addon'").
+				WithHint("Provide addon_params with an action of add or remove").
 				Mark(ierr.ErrValidation)
 		}
 		err = r.AddonParams.Validate()

@@ -4854,7 +4854,7 @@ func (s *subscriptionService) handleSubscriptionAddons(
 			addonReq.StartDate = &subscription.StartDate
 		}
 
-		if _, err := s.attachAddon(ctx, subscription, lo.ToPtr(addonReq), nil); err != nil {
+		if _, err := s.AttachAddon(ctx, subscription, lo.ToPtr(addonReq), nil); err != nil {
 			return err
 		}
 	}
@@ -4878,21 +4878,21 @@ func (s *subscriptionService) AddAddonToSubscription(
 	}
 	sub.LineItems = lineItems
 
-	resp, err := s.attachAddon(ctx, sub, &req.AddAddonToSubscriptionRequest, req.Checkout)
+	resp, err := s.AttachAddon(ctx, sub, &req.AddAddonToSubscriptionRequest, req.Checkout)
 	if err != nil {
 		return nil, err
 	}
 
 	// A pay-first attach has changed nothing yet — the association is pending and the line
 	// items appear only once payment lands, so there is no subscription update to announce.
-	if resp.getCheckoutSession() == nil {
+	if !resp.PaymentPending() {
 		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, req.SubscriptionID)
 	}
 
 	return &dto.AddAddonToSubscriptionResponse{
-		AddonAssociation: resp.getAssociation(),
-		CheckoutSession:  resp.getCheckoutSession(),
-		Invoice:          resp.getInvoice(),
+		AddonAssociation: resp.GetAssociation(),
+		CheckoutSession:  resp.GetCheckoutSession(),
+		Invoice:          resp.GetInvoice(),
 	}, nil
 }
 
@@ -5422,12 +5422,12 @@ func (s *subscriptionService) cancelAddonsForSubscription(ctx context.Context, s
 
 // RemoveAddonFromSubscription removes an addon from a subscription by addon association ID
 func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, req *dto.RemoveAddonRequest) error {
-	outcome, err := s.detachAddon(ctx, req, "")
+	outcome, err := s.DetachAddon(ctx, req, "")
 	if err != nil {
 		return err
 	}
 
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, outcome.getAssociation().EntityID)
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, outcome.GetAssociation().EntityID)
 	return nil
 }
 

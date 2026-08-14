@@ -11,31 +11,27 @@ import (
 
 const previewCreatedLineItemID = "(preview-created)"
 
-func (s *subscriptionModificationService) subscriptionService() *subscriptionService {
-	return NewSubscriptionService(s.serviceParams).(*subscriptionService)
-}
-
 func (s *subscriptionModificationService) executeAddonModification(
 	ctx context.Context,
 	subscriptionID string,
 	params *dto.SubModifyAddonParams,
 	checkout *dto.CheckoutParams,
 ) (*dto.SubscriptionModifyResponse, error) {
-	subSvc := s.subscriptionService()
+	subSvc := NewSubscriptionService(s.serviceParams)
 
 	var (
-		outcome *addonChangeResponse
-		err     error
+		result *dto.AddonChangeResult
+		err    error
 	)
 
 	switch params.Action {
 	case dto.SubscriptionModificationActionAdd:
 		var sub *subscription.Subscription
 		if sub, err = s.loadSubscriptionWithLineItems(ctx, subscriptionID); err == nil {
-			outcome, err = subSvc.attachAddon(ctx, sub, params.Add, checkout)
+			result, err = subSvc.AttachAddon(ctx, sub, params.Add, checkout)
 		}
 	case dto.SubscriptionModificationActionRemove:
-		outcome, err = subSvc.detachAddon(ctx, params.Remove, subscriptionID)
+		result, err = subSvc.DetachAddon(ctx, params.Remove, subscriptionID)
 	default:
 		return nil, ierr.NewError("invalid action, action must be add or remove").Mark(ierr.ErrValidation)
 	}
@@ -45,11 +41,11 @@ func (s *subscriptionModificationService) executeAddonModification(
 
 	// A pay-first attach has changed nothing yet — the association is pending and the line
 	// items appear only once payment lands, so there is no subscription update to announce.
-	if outcome.getCheckoutSession() == nil {
+	if !result.PaymentPending() {
 		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subscriptionID)
 	}
 
-	return s.addonModifyResponse(ctx, subscriptionID, outcome, false)
+	return s.addonModifyResponse(ctx, subscriptionID, result, false)
 }
 
 func (s *subscriptionModificationService) previewAddonModification(
@@ -57,20 +53,23 @@ func (s *subscriptionModificationService) previewAddonModification(
 	subscriptionID string,
 	params *dto.SubModifyAddonParams,
 ) (*dto.SubscriptionModifyResponse, error) {
-	subSvc := s.subscriptionService()
+	subSvc := NewSubscriptionService(s.serviceParams)
 
 	var (
-		outcome *addonChangeResponse
-		err     error
+		result *dto.AddonChangeResult
+		err    error
 	)
+
 	switch params.Action {
 	case dto.SubscriptionModificationActionAdd:
 		var sub *subscription.Subscription
 		if sub, err = s.loadSubscriptionWithLineItems(ctx, subscriptionID); err == nil {
-			outcome, err = subSvc.previewAttachAddon(ctx, sub, params.Add)
+			params.Add.PreviewOnly = true
+			result, err = subSvc.AttachAddon(ctx, sub, params.Add, nil)
 		}
 	case dto.SubscriptionModificationActionRemove:
-		outcome, err = subSvc.previewDetachAddon(ctx, params.Remove, subscriptionID)
+		params.Remove.PreviewOnly = true
+		result, err = subSvc.DetachAddon(ctx, params.Remove, subscriptionID)
 	default:
 		return nil, ierr.NewError("invalid action, action must be add or remove").Mark(ierr.ErrValidation)
 	}
@@ -78,7 +77,7 @@ func (s *subscriptionModificationService) previewAddonModification(
 		return nil, err
 	}
 
-	return s.addonModifyResponse(ctx, subscriptionID, outcome, true)
+	return s.addonModifyResponse(ctx, subscriptionID, result, true)
 }
 
 func (s *subscriptionModificationService) loadSubscriptionWithLineItems(
@@ -97,7 +96,7 @@ func (s *subscriptionModificationService) loadSubscriptionWithLineItems(
 func (s *subscriptionModificationService) addonModifyResponse(
 	ctx context.Context,
 	subscriptionID string,
-	outcome *addonChangeResponse,
+	result *dto.AddonChangeResult,
 	isPreview bool,
 ) (*dto.SubscriptionModifyResponse, error) {
 	subResp, err := NewSubscriptionService(s.serviceParams).GetSubscription(ctx, subscriptionID)
@@ -108,16 +107,16 @@ func (s *subscriptionModificationService) addonModifyResponse(
 	return &dto.SubscriptionModifyResponse{
 		Subscription: subResp,
 		ChangedResources: dto.ChangedResources{
-			LineItems: addonChangedLineItems(outcome, isPreview),
-			Invoices:  outcome.getChangedInvoices(),
+			LineItems: addonChangedLineItems(result, isPreview),
+			Invoices:  result.GetChangedInvoices(),
 		},
-		CheckoutSession: outcome.getCheckoutSession(),
+		CheckoutSession: result.GetCheckoutSession(),
 	}, nil
 }
 
-func addonChangedLineItems(outcome *addonChangeResponse, isPreview bool) []dto.ChangedLineItem {
-	created := outcome.getCreatedLineItems()
-	ended := outcome.getEndedLineItems()
+func addonChangedLineItems(result *dto.AddonChangeResult, isPreview bool) []dto.ChangedLineItem {
+	created := result.GetCreatedLineItems()
+	ended := result.GetEndedLineItems()
 	if len(created)+len(ended) == 0 {
 		return nil
 	}
@@ -145,7 +144,7 @@ func addonChangedLineItems(outcome *addonChangeResponse, isPreview bool) []dto.C
 		items = append(items, changed)
 	}
 
-	endDate := outcome.getEffectiveDate()
+	endDate := result.GetEffectiveDate()
 	for _, li := range ended {
 		startDate := li.StartDate
 		items = append(items, dto.ChangedLineItem{

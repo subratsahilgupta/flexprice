@@ -60,7 +60,7 @@ func emptyProrationSummary(sub *subscription.Subscription) *LineItemProrationSum
 	if sub != nil {
 		summary.Currency = sub.Currency
 	}
-	
+
 	return summary
 }
 
@@ -165,7 +165,7 @@ func (s *lineItemProrationService) Apply(ctx context.Context, req LineItemProrat
 		if err != nil {
 			return nil, err
 		}
-	
+
 		settled = append(settled, dto.ChangedInvoice{
 			ID:      inv.ID,
 			Action:  dto.ChangedInvoiceActionCreated,
@@ -182,7 +182,7 @@ func (s *lineItemProrationService) Apply(ctx context.Context, req LineItemProrat
 		)
 		if err != nil {
 			s.params.Logger.Error(ctx, "failed to issue wallet credit for proration", "error", err)
-			return nil, err
+			return settled, err
 		}
 		settled = append(settled, walletCreditChangedInvoice(walletTx, dto.ChangedInvoiceStatusWalletIssued))
 	}
