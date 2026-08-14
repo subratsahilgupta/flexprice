@@ -93,6 +93,16 @@ func extractEmail(assertion *saml.Assertion, cfg Config) (string, error) {
 				}
 				for _, v := range a.Values {
 					if value := strings.TrimSpace(v.Value); value != "" {
+						// Checked here as well as on the NameID path. An
+						// identity provider can map the configured attribute to
+						// a username or an employee number, and users.email is
+						// globally unique — provisioning one of those writes a
+						// permanent row that blocks the real address later.
+						if !strings.Contains(value, "@") {
+							return "", ierr.NewErrorf("assertion %s attribute is not an email address", attr).
+								WithHint("The identity provider sent something other than an email address in the configured attribute").
+								Mark(ierr.ErrValidation)
+						}
 						return normaliseEmail(value), nil
 					}
 				}

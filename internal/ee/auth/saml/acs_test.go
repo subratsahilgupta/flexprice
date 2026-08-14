@@ -134,3 +134,28 @@ func TestResolveUserLooksUpAcrossTenants(t *testing.T) {
 			"cross-tenant refusal never fires")
 	}
 }
+
+// TestExtractEmailRejectsNonEmailAttribute closes the gap between the two
+// extraction paths. The NameID path has always required an "@"; the attribute
+// path did not, so an identity provider mapping the configured attribute to a
+// username or an employee number produced a user whose email column held that
+// value. users.email is globally unique, so the row is permanent and blocks the
+// real address from ever being provisioned.
+func TestExtractEmailRejectsNonEmailAttribute(t *testing.T) {
+	cfg := Config{EmailAttribute: "email"}
+
+	for _, value := range []string{"jsmith", "EMP-00417", "user1"} {
+		if _, err := extractEmail(assertionWithAttribute("email", value), cfg); err == nil {
+			t.Errorf("attribute value %q was accepted as an email address", value)
+		}
+	}
+
+	// A real address still works, and is still normalised.
+	got, err := extractEmail(assertionWithAttribute("email", "  Alice@Example.com "), cfg)
+	if err != nil {
+		t.Fatalf("a valid address must be accepted: %v", err)
+	}
+	if got != "alice@example.com" {
+		t.Errorf("extractEmail() = %q, want it trimmed and lowercased", got)
+	}
+}

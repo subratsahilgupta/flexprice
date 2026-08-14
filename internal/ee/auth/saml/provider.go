@@ -94,7 +94,12 @@ func (p *samlProvider) SignUp(ctx context.Context, req auth.AuthRequest) (*auth.
 // provisioning clean: the user service only writes a password row when one is
 // returned, so an SSO user exists with no credential of its own.
 func (p *samlProvider) UserInvite(ctx context.Context, req auth.UserInviteRequest) (*auth.UserInviteResponse, error) {
-	return &auth.UserInviteResponse{}, nil
+	// An ID is still required: the caller writes it as the new user's primary
+	// key, so returning an empty response persists a row keyed on "". No auth
+	// record accompanies it — that absence is what leaves the user with no
+	// credential of their own until they arrive through their identity
+	// provider.
+	return &auth.UserInviteResponse{ID: types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER)}, nil
 }
 
 func (p *samlProvider) AssignUserToTenant(ctx context.Context, userID, tenantID string) error {
