@@ -192,6 +192,19 @@ func (s *authService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		return nil, err
 	}
 
+	// Refused before the credentials are checked, so no token is ever minted for
+	// a login the tenant does not allow. Doing it afterwards meant the provider
+	// had already issued one — discarded here, but for a provider that keeps
+	// server-side session state, established there.
+	//
+	// The cost is that a caller learns enforcement is on for an email that
+	// exists, without knowing the password. That is a narrow signal: the address
+	// has to be a real user's, and what it reveals — this organisation uses SSO —
+	// is something its own login page tells anyone who visits it.
+	if err := s.refusePasswordLoginUnderSSO(ctx, user); err != nil {
+		return nil, err
+	}
+
 	var auth *auth.Auth
 	if s.authProvider.GetProvider() == types.AuthProviderFlexprice {
 		auth, err = s.AuthRepo.GetAuthByUserID(ctx, user.ID)
@@ -219,13 +232,6 @@ func (s *authService) Login(ctx context.Context, req *dto.LoginRequest) (*dto.Au
 		return nil, ierr.NewError("invalid credentials").
 			WithHint("Invalid email or password").
 			Mark(ierr.ErrPermissionDenied)
-	}
-
-	// Checked only after the password has been verified, so the response cannot
-	// be used to discover which tenants enforce SSO: a wrong password fails
-	// identically whether or not enforcement is on.
-	if err := s.refusePasswordLoginUnderSSO(ctx, user); err != nil {
-		return nil, err
 	}
 
 	response := &dto.AuthResponse{
