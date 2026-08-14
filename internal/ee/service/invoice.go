@@ -1848,6 +1848,12 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 		}
 	}
 
+	// Invoice is fully paid — dispatch mark-paid to whichever providers are connected.
+	if status == types.PaymentStatusSucceeded {
+		paymentProcessorService := NewPaymentProcessorService(s.ServiceParams)
+		paymentProcessorService.DispatchMarkPaid(ctx, inv.ID)
+	}
+
 	// Publish webhook events
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdatePayment, inv.ID)
 
@@ -1974,6 +1980,14 @@ func (s *invoiceService) ReconcilePaymentStatus(ctx context.Context, id string, 
 				}
 			}
 		}
+	}
+
+	// Invoice is fully paid — dispatch mark-paid to whichever providers are connected.
+	// This is the reconciliation path used by checkout and every payment gateway integration,
+	// separate from ProcessPayment's own invoice-update logic which dispatches independently.
+	if status == types.PaymentStatusSucceeded || status == types.PaymentStatusOverpaid {
+		paymentProcessorService := NewPaymentProcessorService(s.ServiceParams)
+		paymentProcessorService.DispatchMarkPaid(ctx, inv.ID)
 	}
 
 	// Publish webhook events

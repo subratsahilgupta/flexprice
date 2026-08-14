@@ -16,6 +16,10 @@ type Repository interface {
 	// that run without a tenant context can discover the connections to process; each returned
 	// connection carries its own tenant and environment for the caller to apply.
 	ListPublishedByProvider(ctx context.Context, provider types.SecretProvider) ([]*Connection, error)
+	// ListAllPublished returns every published connection for the current tenant and environment
+	// (scoped via ctx), across all providers. Useful for checking which integrations are connected
+	// before dispatching provider-specific work, without a GetByProvider call per provider.
+	ListAllPublished(ctx context.Context) ([]*Connection, error)
 	List(ctx context.Context, filter *types.ConnectionFilter) ([]*Connection, error)
 	Count(ctx context.Context, filter *types.ConnectionFilter) (int, error)
 	Update(ctx context.Context, connection *Connection) error
