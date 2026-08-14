@@ -874,6 +874,7 @@ var (
 		{Name: "grant_measure", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "grant_duration_value", Type: field.TypeInt, Nullable: true},
 		{Name: "grant_duration_unit", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(10)"}},
+		{Name: "grant_allocation_behavior", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "grant_quota", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(25,15)"}},
 		{Name: "aggregation_mode", Type: field.TypeString, Default: "additive", SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "addon_entitlements", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
@@ -886,7 +887,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "entitlements_addons_entitlements",
-				Columns:    []*schema.Column{EntitlementsColumns[27]},
+				Columns:    []*schema.Column{EntitlementsColumns[28]},
 				RefColumns: []*schema.Column{AddonsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
