@@ -327,7 +327,7 @@ func (h *Handler) ACS(c *gin.Context) {
 	h.logger.Info(ctx, "saml login succeeded",
 		"tenant_id", tenantID, "user_id", userID)
 
-	c.Redirect(http.StatusFound, dashboardRedirect(h.cfg, token))
+	c.Redirect(http.StatusFound, dashboardRedirect(h.cfg, tenantID, token))
 }
 
 // dashboardRedirect hands the token back to the browser application.
@@ -344,7 +344,12 @@ func (h *Handler) ACS(c *gin.Context) {
 // Removing that exposure altogether needs a single-use code exchanged for the
 // token, or an HttpOnly cookie set by this handler — both change the contract
 // with the dashboard and are worth doing deliberately rather than here.
-func dashboardRedirect(cfg *config.Configuration, token string) string {
+// The tenant travels with it so the dashboard can confirm the callback answers
+// the login that browser started. It is not trusted as an identity — the
+// dashboard compares it against the tenant it recorded when it began the flow
+// and refuses a mismatch, which is what stops a token minted for one tenant
+// being planted on a browser mid-login to another.
+func dashboardRedirect(cfg *config.Configuration, tenantID, token string) string {
 	base := cfg.Auth.SAML.DashboardURL
 	if base == "" {
 		base = "/"
@@ -353,7 +358,11 @@ func dashboardRedirect(cfg *config.Configuration, token string) string {
 	if err != nil {
 		return "/"
 	}
-	u.Fragment = "token=" + token
+
+	fragment := url.Values{}
+	fragment.Set("token", token)
+	fragment.Set("tenant_id", tenantID)
+	u.Fragment = fragment.Encode()
 	return u.String()
 }
 

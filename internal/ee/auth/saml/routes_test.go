@@ -251,12 +251,24 @@ func TestDashboardRedirectCarriesToken(t *testing.T) {
 	cfg := &config.Configuration{}
 	cfg.Auth.SAML.DashboardURL = "http://localhost:3000/auth/callback"
 
-	got := dashboardRedirect(cfg, "the-token")
+	got := dashboardRedirect(cfg, "tenant_abc", "the-token")
 	if !strings.HasPrefix(got, "http://localhost:3000/auth/callback#") {
 		t.Errorf("redirect = %q, want the configured dashboard URL with a fragment", got)
 	}
 	if !strings.Contains(got, "token=the-token") {
 		t.Errorf("redirect = %q, want it to carry the token", got)
+	}
+
+	// The tenant must travel with the token. The dashboard compares it against
+	// the tenant it recorded when the login began and refuses a mismatch, and it
+	// treats a missing value as a refusal — so omitting it here would break every
+	// login rather than merely weakening the check.
+	fragment, err := url.ParseQuery(strings.TrimPrefix(got[strings.Index(got, "#"):], "#"))
+	if err != nil {
+		t.Fatalf("fragment is not parseable: %v", err)
+	}
+	if fragment.Get("tenant_id") != "tenant_abc" {
+		t.Errorf("fragment tenant_id = %q, want the tenant the login was served for", fragment.Get("tenant_id"))
 	}
 
 	// The token must be in the fragment, never the query. A fragment is not sent
@@ -270,7 +282,7 @@ func TestDashboardRedirectCarriesToken(t *testing.T) {
 	}
 
 	empty := &config.Configuration{}
-	if got := dashboardRedirect(empty, "t"); !strings.HasPrefix(got, "/") {
+	if got := dashboardRedirect(empty, "tenant_abc", "t"); !strings.HasPrefix(got, "/") {
 		t.Errorf("unconfigured redirect = %q, want a relative path rather than an absolute URL", got)
 	}
 }
