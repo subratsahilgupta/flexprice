@@ -134,6 +134,11 @@ func (s *InvoiceService) SyncInvoiceToZoho(ctx context.Context, req ZohoInvoiceS
 	if err != nil {
 		return nil, err
 	}
+	s.logger.Info(ctx, "resolved Zoho invoice currency for sync",
+		"invoice_id", req.InvoiceID,
+		"flexprice_currency", flexInvoice.Currency,
+		"zoho_currency_code", curCode,
+		"zoho_exchange_rate", exchRate)
 	reqPayload.CurrencyCode = curCode
 	reqPayload.ExchangeRate = exchRate
 
@@ -288,6 +293,11 @@ func (s *InvoiceService) buildLineItems(ctx context.Context, flexInvoice *invoic
 	if err != nil {
 		return nil, ierr.WithError(err).WithHint("failed to resolve tax for invoice").Mark(ierr.ErrInternal)
 	}
+	s.logger.Info(ctx, "resolved Zoho tax for invoice sync",
+		"invoice_id", flexInvoice.ID,
+		"is_taxable", taxRes.IsTaxable,
+		"tax_id", taxRes.TaxID,
+		"tax_exemption_id", taxRes.TaxExemptionID)
 
 	priceToItemID := map[string]string{}
 	if len(inputs) > 0 {
@@ -314,16 +324,22 @@ func (s *InvoiceService) buildLineItems(ctx context.Context, flexInvoice *invoic
 		qty, rate := s.normalizeRateAndQuantity(li, settings, flexInvoice.BillingPeriod)
 		name := lo.FromPtrOr(li.DisplayName, "Charge")
 		childName := childCustomerIDToName[lineItemIDToChildCustomer[li.ID]]
-		out = append(out, InvoiceLineItem{
+		lineItem := InvoiceLineItem{
 			Name:        name,
 			Description: formatPeriodDescription(childName, li.PeriodStart, li.PeriodEnd),
 			Quantity:    qty,
 			Rate:        rate,
 			Discount:    li.LineItemDiscount.Add(li.InvoiceLevelDiscount),
 			ItemID:      priceToItemID[lo.FromPtr(li.PriceID)],
-			//TaxID:          taxRes.TaxID,
-			//TaxExemptionID: taxRes.TaxExemptionID,
-		})
+		}
+		if taxRes != nil {
+			if taxRes.IsTaxable {
+				lineItem.TaxID = taxRes.TaxID
+			} else {
+				lineItem.TaxExemptionID = taxRes.TaxExemptionID
+			}
+		}
+		out = append(out, lineItem)
 	}
 	return out, nil
 }

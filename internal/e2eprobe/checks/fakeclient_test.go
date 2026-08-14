@@ -736,13 +736,14 @@ func (f *fakeCoupons) Query(_ context.Context, filter types.CouponFilter) (*dtos
 func (f *fakeCoupons) GetByCode(_ context.Context, code string) (*dtos.GetCouponByCodeResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	id, ok := f.byCode[code]
+	norm := normalizeCouponCode(code)
+	id, ok := f.byCode[norm]
 	if !ok {
 		return nil, &sdkerrors.ErrorResponse{
 			HTTPStatusCode: int64Ptr(http.StatusNotFound),
 		}
 	}
-	c := code
+	c := norm
 	return &dtos.GetCouponByCodeResponse{
 		CouponResponse: &types.CouponResponse{ID: &id, CouponCode: &c},
 	}, nil

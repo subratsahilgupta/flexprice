@@ -329,28 +329,24 @@ func (s *SeedEnsure) ensureFeatures(ctx context.Context, out *e2eprobe.Seeds) er
 
 // ensureCoupons idempotently provisions the shared E2EPROBE_COUPON_10PCT
 // coupon reused by coupon-application-probe and by seed's attachment on
-// persistent cust #1. Lookup is by CouponCode (the SDK's canonical id for
-// coupons — CreateCouponRequest has no lookup_key field).
+// persistent cust #1.
+//
+// Idempotency uses GetCouponByCode (GET /coupons/code/{code}) rather than
+// the search endpoint. The repo lowercases coupon_code on INSERT and the
+// GetByCode path normalizes the query and filters to StatusPublished
+// (see internal/repository/ent/coupon.go:159) — the search endpoint's
+// CouponCodes filter is case-sensitive and was silently missing the
+// stored lowercase row on staging, causing the create below to 409 on
+// every run.
 func (s *SeedEnsure) ensureCoupons(ctx context.Context, out *e2eprobe.Seeds) error {
-	// The coupon repo lowercases coupon_code on INSERT (see
-	// internal/repository/ent/coupon.go:80), so the stored code differs from
-	// SharedCouponCode's on-the-wire casing. Query with the same
-	// normalization so idempotency works — otherwise the existence check
-	// misses and CREATE returns 409 on the next run.
-	normalizedCode := strings.ToLower(strings.TrimSpace(SharedCouponCode))
-	existResp, err := s.client.Coupons().Query(ctx, types.CouponFilter{
-		CouponCodes: []string{normalizedCode},
-	})
-	if err != nil {
-		return e2eprobe.Errorf(map[string]string{"step": "query_coupons"}, "query coupons: %w", err)
-	}
-	if existResp.ListCouponsResponse != nil && len(existResp.ListCouponsResponse.Items) > 0 {
-		c := existResp.ListCouponsResponse.Items[0]
-		if c.ID != nil {
-			out.SharedCouponID = *c.ID
-		}
+	existResp, err := s.client.Coupons().GetByCode(ctx, SharedCouponCode)
+	if err == nil && existResp != nil && existResp.CouponResponse != nil && existResp.CouponResponse.ID != nil {
+		out.SharedCouponID = *existResp.CouponResponse.ID
 		out.SharedCouponCode = SharedCouponCode
 		return nil
+	}
+	if err != nil && !isNotFound(err) {
+		return e2eprobe.Errorf(map[string]string{"step": "get_coupon_by_code", "coupon_code": SharedCouponCode}, "lookup coupon by code: %w", err)
 	}
 
 	code := SharedCouponCode
@@ -368,17 +364,12 @@ func (s *SeedEnsure) ensureCoupons(ctx context.Context, out *e2eprobe.Seeds) err
 	})
 	if err != nil {
 		// A concurrent seed run (or a manual create) can win the race between
-		// the query above and this create; re-query to recover the ID so the
-		// caller still has SharedCouponID populated.
+		// the lookup above and this create; re-fetch by code so the caller
+		// still has SharedCouponID populated.
 		if isAlreadyExists(err) {
-			retryResp, retryErr := s.client.Coupons().Query(ctx, types.CouponFilter{
-				CouponCodes: []string{normalizedCode},
-			})
-			if retryErr == nil && retryResp.ListCouponsResponse != nil && len(retryResp.ListCouponsResponse.Items) > 0 {
-				c := retryResp.ListCouponsResponse.Items[0]
-				if c.ID != nil {
-					out.SharedCouponID = *c.ID
-				}
+			retryResp, retryErr := s.client.Coupons().GetByCode(ctx, SharedCouponCode)
+			if retryErr == nil && retryResp != nil && retryResp.CouponResponse != nil && retryResp.CouponResponse.ID != nil {
+				out.SharedCouponID = *retryResp.CouponResponse.ID
 				out.SharedCouponCode = SharedCouponCode
 				return nil
 			}
@@ -1080,7 +1071,10 @@ func (s *SeedEnsure) ensurePersistentTaxAssociation(ctx context.Context, out *e2
 	}
 	subID := out.PersistentSubIDs[0]
 
-	entityType := "SUBSCRIPTION"
+	// Server enum is lowercase ("subscription"); passing uppercase fails
+	// validation with "Invalid tax rate entity type" (see
+	// internal/types/taxrate.go:72). Use the SDK constant to avoid drift.
+	entityType := string(types.TaxRateEntityTypeSubscription)
 	listResp, err := s.client.TaxAssociations().List(ctx, &entityType, &subID, nil, nil)
 	if err != nil {
 		return e2eprobe.Errorf(map[string]string{"subscription_id": subID, "tax_rate_code": out.SharedTaxRateCode}, "list tax associations: %w", err)

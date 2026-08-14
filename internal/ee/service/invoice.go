@@ -84,6 +84,12 @@ type InvoiceService interface {
 	// RecalculateTaxesOnInvoice applies subscription auto-apply taxes and updates
 	// total_tax / total / amount_due. Idempotent via tax-applied records.
 	RecalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error)
+
+	UpdateLineItem(ctx context.Context, invoiceID, lineItemID string, req dto.UpdateLineItemRequest) (*dto.InvoiceResponse, error)
+
+	AddBulkLineItem(ctx context.Context, invoiceID string, req dto.AddBulkLineItemRequest) (*dto.InvoiceResponse, error)
+
+	RemoveBulkLineItem(ctx context.Context, invoiceID string, req dto.RemoveBulkLineItemRequest) (*dto.InvoiceResponse, error)
 }
 
 type invoiceService struct {
@@ -1842,6 +1848,12 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 		}
 	}
 
+	// Invoice is fully paid — dispatch mark-paid to whichever providers are connected.
+	if status == types.PaymentStatusSucceeded {
+		paymentProcessorService := NewPaymentProcessorService(s.ServiceParams)
+		paymentProcessorService.DispatchMarkPaid(ctx, inv.ID)
+	}
+
 	// Publish webhook events
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdatePayment, inv.ID)
 
@@ -1968,6 +1980,14 @@ func (s *invoiceService) ReconcilePaymentStatus(ctx context.Context, id string, 
 				}
 			}
 		}
+	}
+
+	// Invoice is fully paid — dispatch mark-paid to whichever providers are connected.
+	// This is the reconciliation path used by checkout and every payment gateway integration,
+	// separate from ProcessPayment's own invoice-update logic which dispatches independently.
+	if status == types.PaymentStatusSucceeded || status == types.PaymentStatusOverpaid {
+		paymentProcessorService := NewPaymentProcessorService(s.ServiceParams)
+		paymentProcessorService.DispatchMarkPaid(ctx, inv.ID)
 	}
 
 	// Publish webhook events
@@ -2109,7 +2129,7 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error) {
 	billingService := NewBillingService(s.ServiceParams)
 
-	sub, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	sub, err := s.SubRepo.Get(ctx, req.SubscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -2133,8 +2153,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		return nil, err
 	}
 
-	s.Logger.Info(ctx, "prepared invoice request for preview",
-		"invoice_request", invReq)
+	s.Logger.Info(ctx, "prepared invoice request for preview", "invoice_request", invReq)
 
 	if req.HideZeroChargesLineItems {
 		invReq.LineItems = lo.Filter(invReq.LineItems, func(item dto.CreateInvoiceLineItemRequest, _ int) bool {

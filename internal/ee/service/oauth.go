@@ -593,6 +593,9 @@ func (s *oauthService) BuildOAuthURL(provider types.OAuthProvider, clientID, red
 				"ZohoBooks.invoices.READ",
 				"ZohoBooks.invoices.CREATE",
 				"ZohoBooks.invoices.UPDATE",
+				"ZohoBooks.customerpayments.READ",
+				"ZohoBooks.customerpayments.CREATE",
+				"ZohoBooks.customerpayments.UPDATE",
 			}, ",")
 		}
 		params.Set("scope", scopes)
