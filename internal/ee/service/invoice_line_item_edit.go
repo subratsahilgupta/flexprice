@@ -116,7 +116,7 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 	return dto.NewInvoiceResponse(lockedInv), nil
 }
 
-func (s *invoiceService) AddLineItem(ctx context.Context, invoiceID string, req dto.AddLineItemRequest) (*dto.InvoiceResponse, error) {
+func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, req dto.AddBulkLineItemRequest) (*dto.InvoiceResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -136,34 +136,37 @@ func (s *invoiceService) AddLineItem(ctx context.Context, invoiceID string, req 
 		}
 		lockedInv = inv
 
-		newItem := &invoice.InvoiceLineItem{
-			ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
-			InvoiceID:     inv.ID,
-			CustomerID:    inv.CustomerID,
-			EnvironmentID: inv.EnvironmentID,
-			DisplayName:   lo.ToPtr(req.DisplayName),
-			Amount:        req.Amount,
-			Quantity:      req.Quantity,
-			Currency:      inv.Currency,
-			BaseModel:     types.GetDefaultBaseModel(txCtx),
+		newItems := make([]*invoice.InvoiceLineItem, len(req.Items))
+		for i, item := range req.Items {
+			newItem := &invoice.InvoiceLineItem{
+				ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+				InvoiceID:     inv.ID,
+				CustomerID:    inv.CustomerID,
+				EnvironmentID: inv.EnvironmentID,
+				DisplayName:   lo.ToPtr(item.DisplayName),
+				Amount:        item.Amount,
+				Quantity:      item.Quantity,
+				Currency:      inv.Currency,
+				BaseModel:     types.GetDefaultBaseModel(txCtx),
+			}
+			if err := newItem.Validate(); err != nil {
+				return err
+			}
+			newItems[i] = newItem
 		}
 
-		if err := newItem.Validate(); err != nil {
+		if err := s.InvoiceLineItemRepo.CreateBulk(txCtx, newItems); err != nil {
 			return err
 		}
 
-		if err := s.InvoiceLineItemRepo.Create(txCtx, newItem); err != nil {
-			return err
-		}
-
-		lineItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(txCtx, invoiceID)
-		if err != nil {
-			return err
-		}
-		publishedLineItems = lineItems
+		// lockedInv.LineItems was already populated by GetForUpdate (it internally
+		// calls ListByInvoiceID) — reuse it instead of refetching.
+		publishedLineItems = append(append([]*invoice.InvoiceLineItem{}, lockedInv.LineItems...), newItems...)
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
-		lockedInv.IsManuallyEdited = true
+		if req.MarkManuallyEdited {
+			lockedInv.IsManuallyEdited = true
+		}
 
 		return s.InvoiceRepo.Update(txCtx, lockedInv)
 	})

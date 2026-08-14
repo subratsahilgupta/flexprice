@@ -143,10 +143,14 @@ func (s *LineItemEditSuite) TestAddAddsNewPublishedLineItem() {
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice(ctx, decimal.Zero)
 
-	resp, err := s.service.AddLineItem(ctx, inv.ID, dto.AddLineItemRequest{
-		DisplayName: "New Item",
-		Amount:      decimal.NewFromInt(100),
-		Quantity:    decimal.NewFromInt(2),
+	resp, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: []dto.AddLineItemRequest{
+			{
+				DisplayName: "New Item",
+				Amount:      decimal.NewFromInt(100),
+				Quantity:    decimal.NewFromInt(2),
+			},
+		},
 	})
 	s.NoError(err)
 	s.NotNil(resp)
@@ -182,10 +186,15 @@ func (s *LineItemEditSuite) TestAddRecalculatesTotalsAndFlagsManuallyEdited() {
 	}
 	s.NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, existing))
 
-	resp, err := s.service.AddLineItem(ctx, inv.ID, dto.AddLineItemRequest{
-		DisplayName: "New Item",
-		Amount:      decimal.NewFromInt(100),
-		Quantity:    decimal.NewFromInt(2),
+	resp, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: []dto.AddLineItemRequest{
+			{
+				DisplayName: "New Item",
+				Amount:      decimal.NewFromInt(100),
+				Quantity:    decimal.NewFromInt(2),
+			},
+		},
+		MarkManuallyEdited: true,
 	})
 	s.NoError(err)
 
@@ -199,16 +208,62 @@ func (s *LineItemEditSuite) TestAddRecalculatesTotalsAndFlagsManuallyEdited() {
 	s.True(updatedInv.IsManuallyEdited)
 }
 
+func (s *LineItemEditSuite) TestAddDoesNotMarkManuallyEditedByDefault() {
+	ctx := s.GetContext()
+	inv := s.createDraftInvoice(ctx, decimal.Zero)
+
+	_, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: []dto.AddLineItemRequest{
+			{
+				DisplayName: "New Item",
+				Amount:      decimal.NewFromInt(100),
+				Quantity:    decimal.NewFromInt(2),
+			},
+		},
+	})
+	s.NoError(err)
+
+	updatedInv, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.NoError(err)
+	s.False(updatedInv.IsManuallyEdited)
+}
+
+func (s *LineItemEditSuite) TestAddDoesNotResetManuallyEditedFlagWhenNotRequested() {
+	ctx := s.GetContext()
+	inv := s.createDraftInvoice(ctx, decimal.Zero)
+	inv.IsManuallyEdited = true
+	s.NoError(s.GetStores().InvoiceRepo.Update(ctx, inv))
+
+	_, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: []dto.AddLineItemRequest{
+			{
+				DisplayName: "New Item",
+				Amount:      decimal.NewFromInt(100),
+				Quantity:    decimal.NewFromInt(2),
+			},
+		},
+	})
+	s.NoError(err)
+
+	updatedInv, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.NoError(err)
+	s.True(updatedInv.IsManuallyEdited)
+}
+
 func (s *LineItemEditSuite) TestAddRejectsOnNonDraftInvoice() {
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice(ctx, decimal.Zero)
 	inv.InvoiceStatus = types.InvoiceStatusFinalized
 	s.NoError(s.GetStores().InvoiceRepo.Update(ctx, inv))
 
-	_, err := s.service.AddLineItem(ctx, inv.ID, dto.AddLineItemRequest{
-		DisplayName: "Should Not Be Added",
-		Amount:      decimal.NewFromInt(100),
-		Quantity:    decimal.NewFromInt(1),
+	_, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: []dto.AddLineItemRequest{
+			{
+				DisplayName: "Should Not Be Added",
+				Amount:      decimal.NewFromInt(100),
+				Quantity:    decimal.NewFromInt(1),
+			},
+		},
 	})
 	s.Error(err)
 	s.True(ierr.IsValidation(err))
@@ -222,10 +277,14 @@ func (s *LineItemEditSuite) TestAddRejectsNegativeAmount() {
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice(ctx, decimal.Zero)
 
-	_, err := s.service.AddLineItem(ctx, inv.ID, dto.AddLineItemRequest{
-		DisplayName: "Bad Item",
-		Amount:      decimal.NewFromInt(-10),
-		Quantity:    decimal.NewFromInt(1),
+	_, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: []dto.AddLineItemRequest{
+			{
+				DisplayName: "Bad Item",
+				Amount:      decimal.NewFromInt(-10),
+				Quantity:    decimal.NewFromInt(1),
+			},
+		},
 	})
 	s.Error(err)
 	s.True(ierr.IsValidation(err))
@@ -235,10 +294,75 @@ func (s *LineItemEditSuite) TestAddRejectsNegativeQuantity() {
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice(ctx, decimal.Zero)
 
-	_, err := s.service.AddLineItem(ctx, inv.ID, dto.AddLineItemRequest{
-		DisplayName: "Bad Item",
-		Amount:      decimal.NewFromInt(10),
-		Quantity:    decimal.NewFromInt(-1),
+	_, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: []dto.AddLineItemRequest{
+			{
+				DisplayName: "Bad Item",
+				Amount:      decimal.NewFromInt(10),
+				Quantity:    decimal.NewFromInt(-1),
+			},
+		},
+	})
+	s.Error(err)
+	s.True(ierr.IsValidation(err))
+}
+
+func (s *LineItemEditSuite) TestAddMultipleLineItemsInOneCall() {
+	ctx := s.GetContext()
+	inv := s.createDraftInvoice(ctx, decimal.Zero)
+
+	resp, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: []dto.AddLineItemRequest{
+			{
+				DisplayName: "First Item",
+				Amount:      decimal.NewFromInt(100),
+				Quantity:    decimal.NewFromInt(1),
+			},
+			{
+				DisplayName: "Second Item",
+				Amount:      decimal.NewFromInt(50),
+				Quantity:    decimal.NewFromInt(2),
+			},
+		},
+	})
+	s.NoError(err)
+	s.Require().Len(resp.LineItems, 2)
+	s.True(resp.Subtotal.Equal(decimal.NewFromInt(150)))
+
+	published, err := s.GetStores().InvoiceLineItemRepo.ListByInvoiceID(ctx, inv.ID)
+	s.NoError(err)
+	s.Require().Len(published, 2)
+
+	names := []string{lo.FromPtr(published[0].DisplayName), lo.FromPtr(published[1].DisplayName)}
+	s.ElementsMatch([]string{"First Item", "Second Item"}, names)
+}
+
+func (s *LineItemEditSuite) TestAddBulkLineItemRejectsEmptyBatch() {
+	ctx := s.GetContext()
+	inv := s.createDraftInvoice(ctx, decimal.Zero)
+
+	_, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: []dto.AddLineItemRequest{},
+	})
+	s.Error(err)
+	s.True(ierr.IsValidation(err))
+}
+
+func (s *LineItemEditSuite) TestAddBulkLineItemRejectsOversizedBatch() {
+	ctx := s.GetContext()
+	inv := s.createDraftInvoice(ctx, decimal.Zero)
+
+	items := make([]dto.AddLineItemRequest, 101)
+	for i := range items {
+		items[i] = dto.AddLineItemRequest{
+			DisplayName: "Item",
+			Amount:      decimal.NewFromInt(1),
+			Quantity:    decimal.NewFromInt(1),
+		}
+	}
+
+	_, err := s.service.AddBulkLineItem(ctx, inv.ID, dto.AddBulkLineItemRequest{
+		Items: items,
 	})
 	s.Error(err)
 	s.True(ierr.IsValidation(err))
