@@ -1,0 +1,113 @@
+package saml
+
+import (
+	"testing"
+
+	"github.com/crewjam/saml"
+)
+
+func assertionWithNameID(value string) *saml.Assertion {
+	return &saml.Assertion{
+		Subject: &saml.Subject{
+			NameID: &saml.NameID{Value: value},
+		},
+	}
+}
+
+func assertionWithAttribute(name, value string) *saml.Assertion {
+	return &saml.Assertion{
+		AttributeStatements: []saml.AttributeStatement{
+			{
+				Attributes: []saml.Attribute{
+					{
+						Name:   name,
+						Values: []saml.AttributeValue{{Value: value}},
+					},
+				},
+			},
+		},
+	}
+}
+
+// TestExtractEmailFromNameID covers the default path, where the identity
+// provider sends the email as the NameID.
+func TestExtractEmailFromNameID(t *testing.T) {
+	got, err := extractEmail(assertionWithNameID("Alice@Example.com"), Config{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Casing is normalised so an identity provider that changes case cannot
+	// create a second account for someone who already exists.
+	if got != "alice@example.com" {
+		t.Errorf("got %q, want the lowercased address", got)
+	}
+}
+
+func TestExtractEmailFromConfiguredAttribute(t *testing.T) {
+	cfg := Config{EmailAttribute: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"}
+	assertion := assertionWithAttribute(cfg.EmailAttribute, "bob@example.com")
+
+	got, err := extractEmail(assertion, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "bob@example.com" {
+		t.Errorf("got %q, want bob@example.com", got)
+	}
+}
+
+// TestExtractEmailRejectsUnusableAssertions is the important one: an assertion
+// that authenticates someone we cannot identify must fail, never fall back to a
+// guess. A wrong answer here logs a user into the wrong account.
+func TestExtractEmailRejectsUnusableAssertions(t *testing.T) {
+	cases := []struct {
+		name      string
+		assertion *saml.Assertion
+		cfg       Config
+	}{
+		{
+			name:      "no subject at all",
+			assertion: &saml.Assertion{},
+		},
+		{
+			name:      "NameID is an opaque identifier, not an email",
+			assertion: assertionWithNameID("a7f3c9e1-persistent-id"),
+		},
+		{
+			name:      "NameID empty",
+			assertion: assertionWithNameID("   "),
+		},
+		{
+			name:      "configured attribute absent",
+			assertion: assertionWithAttribute("some_other_claim", "carol@example.com"),
+			cfg:       Config{EmailAttribute: "email"},
+		},
+		{
+			name:      "configured attribute present but empty",
+			assertion: assertionWithAttribute("email", "  "),
+			cfg:       Config{EmailAttribute: "email"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := extractEmail(tc.assertion, tc.cfg)
+			if err == nil {
+				t.Fatalf("expected rejection, got email %q", got)
+			}
+		})
+	}
+}
+
+// TestConfiguredAttributeDoesNotFallBackToNameID pins a deliberate choice: when
+// an administrator names an email attribute, a NameID must not silently satisfy
+// it. Falling back would mean a misconfigured attribute quietly authenticates
+// users off whatever the identity provider happens to put in the NameID.
+func TestConfiguredAttributeDoesNotFallBackToNameID(t *testing.T) {
+	assertion := assertionWithNameID("dave@example.com")
+	cfg := Config{EmailAttribute: "email"}
+
+	if got, err := extractEmail(assertion, cfg); err == nil {
+		t.Errorf("configured attribute fell back to NameID, yielding %q", got)
+	}
+}

@@ -32,6 +32,7 @@ const (
 	SettingKeyBonusCreditsTopupConfig     SettingKey = "bonus_credits_topup_config"
 	SettingKeyPaymentMandateLimits        SettingKey = "payment_mandate_limits"
 	SettingKeyDraftInvoiceRecomputeConfig SettingKey = "draft_invoice_recompute_config"
+	SettingKeySAMLConfig                  SettingKey = "saml_config"
 )
 
 func (s *SettingKey) Validate() error {
@@ -50,6 +51,7 @@ func (s *SettingKey) Validate() error {
 		SettingKeyBonusCreditsTopupConfig,
 		SettingKeyPaymentMandateLimits,
 		SettingKeyDraftInvoiceRecomputeConfig,
+		SettingKeySAMLConfig,
 	}
 
 	if !lo.Contains(allowedKeys, *s) {
@@ -754,6 +756,18 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 			DefaultValue: defaultPaymentMandateLimitsMap,
 			Description:  "Per-rail auto-charge ceilings (e.g. UPI Autopay) used to cap mandate amounts; not an opt-in switch",
 		},
+		SettingKeySAMLConfig: {
+			Key: SettingKeySAMLConfig,
+			DefaultValue: map[string]interface{}{
+				"enabled":         false,
+				"idp_entity_id":   "",
+				"idp_sso_url":     "",
+				"idp_certificate": "",
+				"email_attribute": "",
+				"default_role":    string(RoleAllReader),
+			},
+			Description: "SAML 2.0 identity provider configuration for dashboard single sign-on",
+		},
 		SettingKeyDraftInvoiceRecomputeConfig: {
 			Key:          SettingKeyDraftInvoiceRecomputeConfig,
 			DefaultValue: defaultDraftInvoiceRecomputeConfigMap,
@@ -886,6 +900,13 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 		}
 		return config.Validate()
 
+	case SettingKeySAMLConfig:
+		config, err := utils.ToStruct[SAMLConfig](value)
+		if err != nil {
+			return err
+		}
+		return config.Validate()
+
 	default:
 		return ierr.NewErrorf("unknown setting key: %s", key).
 			WithHintf("Unknown setting key: %s", key).
@@ -949,3 +970,36 @@ func ValidateTimezone(timezone string) error {
 	_, err := time.LoadLocation(resolvedTimezone)
 	return err
 }
+
+// SAMLConfig is a tenant's SAML identity provider configuration.
+//
+// Stored as a tenant-level setting rather than its own table: an identity
+// provider is per-organisation, and tenant-level settings are readable without
+// an environment in context, which the pre-login SSO endpoints require.
+//
+// Only the identity provider's public signing certificate is held here, so
+// plain JSONB storage is appropriate.
+type SAMLConfig struct {
+	Enabled bool `json:"enabled"`
+
+	// IDPEntityID identifies the identity provider; it must match the Issuer of
+	// every assertion we accept.
+	IDPEntityID string `json:"idp_entity_id"`
+	// IDPSSOUrl is where a user is redirected to authenticate.
+	IDPSSOUrl string `json:"idp_sso_url"`
+	// IDPCertificate is the PEM-encoded X.509 certificate whose key signs
+	// assertions. Assertions signed by anything else are rejected.
+	IDPCertificate string `json:"idp_certificate"`
+
+	// EmailAttribute names the assertion attribute carrying the user's email.
+	// Empty means use the NameID.
+	EmailAttribute string `json:"email_attribute"`
+
+	// DefaultRole is granted to just-in-time provisioned users.
+	DefaultRole string `json:"default_role"`
+}
+
+// Validate implements SettingConfig. The substantive checks live with the SAML
+// implementation, which owns the certificate parsing and URL rules; this keeps
+// the generic settings path satisfied.
+func (c SAMLConfig) Validate() error { return nil }
