@@ -83,6 +83,10 @@ func (r *fakeConnectionRepo) List(_ context.Context, _ *types.ConnectionFilter) 
 	return out, nil
 }
 
+func (r *fakeConnectionRepo) ListAllPublished(ctx context.Context) ([]*connection.Connection, error) {
+	return r.List(ctx, nil)
+}
+
 func (r *fakeConnectionRepo) Count(_ context.Context, _ *types.ConnectionFilter) (int, error) {
 	return len(r.byProvider), nil
 }
