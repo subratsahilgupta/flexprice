@@ -455,16 +455,35 @@ func (s *entitlementGrantService) computeGrantWindow(
 		"cycleEnd", cycleEnd,
 		"eventTime", at,
 		"grantDuration", dur,
+		"durationUnit", ec.GrantDurationUnit,
+		"allocationBehavior", ec.GrantAllocationBehavior,
 	)
 
-	// The clamp to cycle_end keeps next-cycle events (sub object not yet rolled)
-	// out; an empty/inverted range simply finds nothing.
+	// Presence gate is uniform: no uncovered usage in the cycle → no grant.
 	firstUncoveredEventAt, err := s.earliestUncoveredUsage(ctx, meta, sub, ec, coveredUntil, searchUntil)
 	if err != nil || firstUncoveredEventAt == nil {
 		return time.Time{}, time.Time{}, false, err
 	}
 
+	// subscription_period: window is the whole cycle; the event timestamp is
+	// only used as the presence gate above.
+	if ec.GrantDurationUnit == types.EntitlementGrantDurationUnitSubscriptionPeriod {
+		s.Logger.Debug(ctx, "computed grant window (subscription_period)",
+			"validFrom", cycleStart, "validTo", cycleEnd)
+		return cycleStart, cycleEnd, true, nil
+	}
+
 	validFrom := *firstUncoveredEventAt
+
+	// day + unit_start: floor to start-of-day in the sub's TZ, clamped forward
+	// to coveredUntil so we never regress before the cycle start or a previous
+	// grant's validTo.
+	if ec.GrantDurationUnit == types.EntitlementGrantDurationUnitDay &&
+		ec.GrantAllocationBehavior == types.EntitlementGrantAllocationBehaviorUnitStart {
+		aligned := types.FloorToStartOfDay(*firstUncoveredEventAt, sub.Timezone)
+		validFrom = latestOf(aligned, coveredUntil)
+	}
+
 	validTo := validFrom.Add(dur)
 	// Cap at cycle_end AND absorb a sub-minimum trailing remainder in one rule
 	if cycleEnd.Sub(validTo) < types.EntitlementGrantMinDuration {
