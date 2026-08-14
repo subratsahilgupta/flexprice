@@ -127,25 +127,6 @@ func NewHandler(cfg *config.Configuration, serviceParams service.ServiceParams, 
 	}
 }
 
-// RegisterRoutes mounts the SAML endpoints on the public group. They run before
-// a session exists: the login redirect starts the flow, and the ACS callback is
-// posted by the identity provider, which carries no Flexprice credentials.
-//
-// A deployment with SAML switched off mounts nothing, so the endpoints 404 as
-// though the feature did not exist rather than announcing a disabled one.
-func (h *Handler) RegisterRoutes(public *gin.RouterGroup) {
-	if !h.cfg.Auth.SAML.Enabled {
-		return
-	}
-
-	group := public.Group("/auth/saml/:tenant")
-	{
-		group.GET("/metadata", h.Metadata)
-		group.GET("/login", h.Login)
-		group.POST("/acs", h.ACS)
-	}
-}
-
 // tenantConfig loads a tenant's identity provider configuration.
 //
 // The tenant comes from the URL rather than a session, so it is attacker-chosen.

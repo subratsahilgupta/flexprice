@@ -146,11 +146,19 @@ func NewRouter(
 		v1Public.POST("/auth/signup", handlers.Auth.SignUp)
 		v1Public.POST("/auth/login", handlers.Auth.Login)
 
-		// SAML single sign-on. Public because these run before a session
-		// exists: the login redirect starts the flow, and the ACS callback is
-		// posted by the identity provider, which carries no credentials.
-		if handlers.SAML != nil {
-			handlers.SAML.RegisterRoutes(v1Public)
+		// SAML single sign-on. Public because these run before a session exists:
+		// the login redirect starts the flow, and the ACS callback is posted by
+		// the identity provider, which carries no credentials.
+		//
+		// Mounted only when the deployment offers SAML, so the endpoints 404 as
+		// though the feature did not exist rather than announcing a disabled one.
+		if handlers.SAML != nil && cfg.Auth.SAML.Enabled {
+			saml := v1Public.Group("/auth/saml/:tenant")
+			{
+				saml.GET("/metadata", handlers.SAML.Metadata)
+				saml.GET("/login", handlers.SAML.Login)
+				saml.POST("/acs", handlers.SAML.ACS)
+			}
 		}
 	}
 
