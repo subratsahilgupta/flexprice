@@ -10,7 +10,6 @@ import (
 	workflowModels "github.com/flexprice/flexprice/internal/temporal/models"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
-	"github.com/samber/lo"
 )
 
 type SettingsService interface {
@@ -59,48 +58,23 @@ func isTenantLevelSetting(key types.SettingKey) bool {
 		key == types.SettingKeySAMLConfig
 }
 
-// requireSuperAdminForAuthSetting refuses access to a setting that decides how
-// people authenticate unless the caller is a super_admin user.
+// requireSAMLEnabled refuses a saml_config request on a deployment that does not
+// offer SAML.
 //
-// The settings route is shared by every key, so its entity/action gate is the
-// same broad setting:write that an all_writer holds. That is too weak here: a
-// SAML configuration names the identity provider we trust, so an all_writer who
-// points it at a provider they control can have themselves provisioned into this
-// tenant. Gating on the key rather than the route keeps every other setting on
-// the existing permission.
-//
-// Deletes are covered as well as updates: removing the configuration turns SSO
-// off for the tenant, which is the same decision in the other direction.
-//
-// Reads are covered too. The settings GET carries no permission middleware at
-// all, so every authenticated member of the tenant could otherwise read this
-// key: which identity provider the tenant trusts, and whether it has been
-// approved. Nothing in it is secret today — the certificate is the provider's
-// public one — but it is a map of what to attack, and the fields most likely to
-// be added next (an SP private key, a directory-sync token) would be secret. A
-// caller who may not change how people log in has no reason to read it either.
-//
-// Service accounts are refused whatever roles their key carries, matching
-// middleware.SuperAdminOnly — administering how people log in is not a machine
-// action.
-func (s *settingsService) requireSuperAdminForAuthSetting(ctx context.Context, key types.SettingKey) error {
+// Who may reach this key is the router's business — every settings route
+// requires a super_admin user, so the permission is enforced there. What the
+// router cannot know is whether the feature exists at all: with
+// auth.saml.enabled false no SAML routes are served, and a stored configuration
+// could only sit there looking as though SSO were set up.
+func (s *settingsService) requireSAMLEnabled(key types.SettingKey) error {
 	if key != types.SettingKeySAMLConfig {
 		return nil
 	}
 
-	// A deployment with SAML switched off serves no SAML routes, so a stored
-	// configuration could only sit there looking as though SSO were set up.
-	// Refusing the write keeps the feature genuinely absent.
 	if s.Config == nil || !s.Config.Auth.SAML.Enabled {
 		return ierr.NewError("saml is not enabled for this deployment").
 			WithHint("SAML single sign-on is not available on this deployment").
 			Mark(ierr.ErrNotFound)
-	}
-
-	if types.IsServiceAccount(ctx) || !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
-		return ierr.NewError("saml configuration requires a super admin user").
-			WithHint("This action requires a user account with Super Admin access").
-			Mark(ierr.ErrPermissionDenied)
 	}
 	return nil
 }
@@ -322,7 +296,7 @@ func UpdateSetting[T types.SettingConfig](s *settingsService, ctx context.Contex
 //   - Don't use if you need to work with the typed config directly
 //   - Don't call repository methods directly - always use service methods
 func (s *settingsService) GetSettingByKey(ctx context.Context, key types.SettingKey) (*dto.SettingResponse, error) {
-	if err := s.requireSuperAdminForAuthSetting(ctx, key); err != nil {
+	if err := s.requireSAMLEnabled(key); err != nil {
 		return nil, err
 	}
 	return s.GetSettingByKeyUnchecked(ctx, key)
@@ -379,7 +353,7 @@ func (s *settingsService) GetSettingByKeyUnchecked(ctx context.Context, key type
 //   - Don't use in business logic if you want to replace the entire setting
 //   - Don't call repository methods directly - always use service methods
 func (s *settingsService) UpdateSettingByKey(ctx context.Context, key types.SettingKey, req *dto.UpdateSettingRequest) (*dto.SettingResponse, error) {
-	if err := s.requireSuperAdminForAuthSetting(ctx, key); err != nil {
+	if err := s.requireSAMLEnabled(key); err != nil {
 		return nil, err
 	}
 
@@ -432,7 +406,7 @@ func (s *settingsService) UpdateSettingByKey(ctx context.Context, key types.Sett
 // WHEN NOT TO USE:
 //   - Don't call repository methods directly - always use service methods
 func (s *settingsService) DeleteSettingByKey(ctx context.Context, key types.SettingKey) error {
-	if err := s.requireSuperAdminForAuthSetting(ctx, key); err != nil {
+	if err := s.requireSAMLEnabled(key); err != nil {
 		return err
 	}
 

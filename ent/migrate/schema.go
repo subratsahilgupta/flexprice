@@ -1917,9 +1917,12 @@ var (
 		PrimaryKey: []*schema.Column{SettingsColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "settings_tenant_id_environment_id_status_key",
+				Name:    "settings_tenant_id_environment_id_key",
 				Unique:  true,
-				Columns: []*schema.Column{SettingsColumns[1], SettingsColumns[7], SettingsColumns[2], SettingsColumns[8]},
+				Columns: []*schema.Column{SettingsColumns[1], SettingsColumns[7], SettingsColumns[8]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "((status)::text = 'published'::text)",
+				},
 			},
 		},
 	}

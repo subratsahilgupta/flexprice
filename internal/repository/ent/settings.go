@@ -263,27 +263,6 @@ func (r *settingsRepository) GetTenantLevelSettingByKey(ctx context.Context, key
 	return setting, nil
 }
 
-// clearArchivedSetting removes any already-archived row for a key before another
-// one is archived in its place.
-//
-// settings is uniquely indexed on (tenant_id, environment_id, status, key), so
-// status is part of the key: at most one archived row can exist per setting. A
-// second delete of the same key — delete, recreate, delete again — would archive
-// a row onto that slot and fail the constraint, surfacing as a 500 while the
-// setting stayed live. Discarding the older tombstone keeps the delete
-// idempotent; the retained row is always the most recent deletion.
-func clearArchivedSetting(ctx context.Context, client *ent.Client, key types.SettingKey, environmentID string) error {
-	_, err := client.Settings.Delete().
-		Where(
-			settings.Key(string(key)),
-			settings.TenantID(types.GetTenantID(ctx)),
-			settings.EnvironmentID(environmentID),
-			settings.Status(string(types.StatusArchived)),
-		).
-		Exec(ctx)
-	return err
-}
-
 func (r *settingsRepository) DeleteByKey(ctx context.Context, key types.SettingKey) error {
 	// Get the setting first for cache invalidation
 	setting, err := r.GetByKey(ctx, key)
@@ -302,23 +281,14 @@ func (r *settingsRepository) DeleteByKey(ctx context.Context, key types.SettingK
 	return nil
 }
 
-// archiveSetting retires the published row for a key, discarding any older
-// tombstone first.
+// archiveSetting retires the published row for a key.
 //
-// Both statements run in one transaction. settings is uniquely indexed on
-// (tenant_id, environment_id, status, key), so only one archived row can exist
-// per setting: if the cleanup committed and the archive then failed, the
-// previous deletion would be gone and the setting would still be live. Rolling
-// both back together keeps the stored state one or the other.
+// Deletion history is kept: uniqueness applies only to published rows, so
+// archived rows accumulate and a key can be deleted, recreated and deleted
+// again without colliding with its own tombstone.
 func (r *settingsRepository) archiveSetting(ctx context.Context, key types.SettingKey, environmentID, failureHint string) error {
 	return r.client.WithTx(ctx, func(ctx context.Context) error {
 		client := r.client.Writer(ctx)
-
-		if err := clearArchivedSetting(ctx, client, key, environmentID); err != nil {
-			return ierr.WithError(err).
-				WithHint(failureHint).
-				Mark(ierr.ErrDatabase)
-		}
 
 		archived, err := client.Settings.Update().
 			Where(
@@ -341,9 +311,8 @@ func (r *settingsRepository) archiveSetting(ctx context.Context, key types.Setti
 		// A bulk update matching nothing returns (0, nil) rather than a
 		// not-found error, so the count is the only way to notice. The caller
 		// checks the setting exists before getting here, but that check and this
-		// update are separate statements: a concurrent delete between them would
-		// otherwise clear the archived row, archive nothing, and report success —
-		// leaving the setting live while reporting it deleted.
+		// update are separate statements, and a concurrent delete between them
+		// would otherwise archive nothing and report success.
 		if archived == 0 {
 			return ierr.NewErrorf("setting with key %s was not found", string(key)).
 				WithHintf("Setting with key %s was not found", string(key)).

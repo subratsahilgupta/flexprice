@@ -705,12 +705,19 @@ func NewRouter(
 		webhooks.POST("/whop/:tenant_id/:environment_id", handlers.Webhook.HandleWhopWebhook)
 	}
 
-	// Settings routes
+	// Settings routes.
+	//
+	// Super admin throughout, reads included. The route is shared by every
+	// settings key, and some of them decide how people authenticate — a SAML
+	// configuration names the identity provider the tenant trusts, so an
+	// all_writer who could change it can have themselves provisioned in, and
+	// anyone who could read it learns which provider to attack and whether it
+	// has been approved.
 	settings := v1Private.Group("/settings")
 	{
-		settings.GET("/:key", handlers.Settings.GetSettingByKey)
-		settings.PUT("/:key", write(types.EntitySetting, types.ActionWrite), handlers.Settings.UpdateSettingByKey)
-		settings.DELETE("/:key", write(types.EntitySetting, types.ActionWrite), handlers.Settings.DeleteSettingByKey)
+		settings.GET("/:key", read(types.EntitySetting, types.ActionRead, superAdminOnly), handlers.Settings.GetSettingByKey)
+		settings.PUT("/:key", write(types.EntitySetting, types.ActionWrite, superAdminOnly), handlers.Settings.UpdateSettingByKey)
+		settings.DELETE("/:key", write(types.EntitySetting, types.ActionWrite, superAdminOnly), handlers.Settings.DeleteSettingByKey)
 	}
 
 	// Alert routes

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/config"
@@ -10,112 +9,38 @@ import (
 	"github.com/samber/lo"
 )
 
-// samlEnabledService builds the minimum service needed to exercise the gate on
-// a deployment that offers SAML.
+// samlEnabledService builds the minimum service needed to exercise the
+// deployment switch.
 func samlEnabledService(enabled bool) *settingsService {
 	cfg := &config.Configuration{}
 	cfg.Auth.SAML.Enabled = enabled
 	return &settingsService{ServiceParams: ServiceParams{Config: cfg}}
 }
 
-func ctxWithRoles(userType types.UserType, roles ...string) context.Context {
-	ctx := context.WithValue(context.Background(), types.CtxRoles, roles)
-	return context.WithValue(ctx, types.CtxUserType, string(userType))
-}
-
-// TestRequireSuperAdminForAuthSetting covers the escalation path the gate
-// exists to close: the shared settings route is gated on setting:write, which
-// an all_writer holds, but a SAML configuration names the identity provider
-// this tenant trusts.
-func TestRequireSuperAdminForAuthSetting(t *testing.T) {
-	tests := []struct {
-		name    string
-		ctx     context.Context
-		key     types.SettingKey
-		wantErr bool
-	}{
-		{
-			name: "super_admin user may configure saml",
-			ctx:  ctxWithRoles(types.UserTypeUser, types.RoleSuperAdmin.String()),
-			key:  types.SettingKeySAMLConfig,
-		},
-		{
-			name:    "all_writer may not configure saml",
-			ctx:     ctxWithRoles(types.UserTypeUser, types.RoleAllWriter.String()),
-			key:     types.SettingKeySAMLConfig,
-			wantErr: true,
-		},
-		{
-			name:    "all_reader may not configure saml",
-			ctx:     ctxWithRoles(types.UserTypeUser, types.RoleAllReader.String()),
-			key:     types.SettingKeySAMLConfig,
-			wantErr: true,
-		},
-		{
-			name:    "caller with no roles may not configure saml",
-			ctx:     ctxWithRoles(types.UserTypeUser),
-			key:     types.SettingKeySAMLConfig,
-			wantErr: true,
-		},
-		{
-			// Administering how people log in is not a machine action, so a
-			// service account is refused even holding super_admin. Matches
-			// middleware.SuperAdminOnly.
-			name:    "service account may not configure saml even as super_admin",
-			ctx:     ctxWithRoles(types.UserTypeServiceAccount, types.RoleSuperAdmin.String()),
-			key:     types.SettingKeySAMLConfig,
-			wantErr: true,
-		},
-		{
-			// The gate is key-specific: every other setting keeps the broad
-			// setting:write permission the route already enforces.
-			name: "unrelated setting is unaffected for all_writer",
-			ctx:  ctxWithRoles(types.UserTypeUser, types.RoleAllWriter.String()),
-			key:  types.SettingKeyInvoiceConfig,
-		},
+// TestRequireSAMLEnabled covers the deployment-level kill switch. Who may reach
+// the key is the router's business — every settings route requires a super_admin
+// user — but the router cannot know whether the feature exists at all, and a
+// configuration stored on a deployment serving no SAML routes would only sit
+// there looking as though SSO were set up.
+func TestRequireSAMLEnabled(t *testing.T) {
+	if err := samlEnabledService(true).requireSAMLEnabled(types.SettingKeySAMLConfig); err != nil {
+		t.Fatalf("a deployment offering SAML must accept the key: %v", err)
 	}
 
-	svc := samlEnabledService(true)
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := svc.requireSuperAdminForAuthSetting(tc.ctx, tc.key)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected the write to be refused")
-				}
-				// Must surface as 403, not 500 — the caller needs to know it is
-				// a permission problem, not a server fault.
-				if !ierr.IsPermissionDenied(err) {
-					t.Errorf("expected a permission-denied error, got %v", err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("expected the write to be allowed, got %v", err)
-			}
-		})
-	}
-}
-
-// TestSAMLConfigRefusedWhenDeploymentDisablesSAML covers the deployment-level
-// kill switch: with SAML off, no tenant may store a configuration, so the
-// feature cannot look half-set-up on a deployment that serves no SAML routes.
-func TestSAMLConfigRefusedWhenDeploymentDisablesSAML(t *testing.T) {
-	svc := samlEnabledService(false)
-	ctx := ctxWithRoles(types.UserTypeUser, types.RoleSuperAdmin.String())
-
-	err := svc.requireSuperAdminForAuthSetting(ctx, types.SettingKeySAMLConfig)
+	err := samlEnabledService(false).requireSAMLEnabled(types.SettingKeySAMLConfig)
 	if err == nil {
-		t.Fatal("a deployment with SAML disabled must refuse the write, even for a super admin")
+		t.Fatal("a deployment with SAML disabled must refuse the key")
 	}
 	// Reported as absent rather than forbidden: the feature does not exist here.
 	if !ierr.IsNotFound(err) {
 		t.Errorf("expected a not-found error, got %v", err)
 	}
 
-	// Other settings are untouched by the SAML switch.
-	if err := svc.requireSuperAdminForAuthSetting(ctx, types.SettingKeyInvoiceConfig); err != nil {
-		t.Errorf("an unrelated setting must not be gated on the SAML switch: %v", err)
+	// Every other setting is untouched by the SAML switch.
+	for _, key := range []types.SettingKey{types.SettingKeyInvoiceConfig, types.SettingKeyTenantConfig} {
+		if err := samlEnabledService(false).requireSAMLEnabled(key); err != nil {
+			t.Errorf("setting %q must not be gated on the SAML switch: %v", key, err)
+		}
 	}
 }
 
