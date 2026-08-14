@@ -320,7 +320,7 @@ func (r *settingsRepository) archiveSetting(ctx context.Context, key types.Setti
 				Mark(ierr.ErrDatabase)
 		}
 
-		_, err := client.Settings.Update().
+		archived, err := client.Settings.Update().
 			Where(
 				settings.Key(string(key)),
 				settings.TenantID(types.GetTenantID(ctx)),
@@ -333,17 +333,24 @@ func (r *settingsRepository) archiveSetting(ctx context.Context, key types.Setti
 			Save(ctx)
 
 		if err != nil {
-			if ent.IsNotFound(err) {
-				return ierr.WithError(err).
-					WithHintf("Setting with key %s was not found", string(key)).
-					WithReportableDetails(map[string]any{
-						"key": string(key),
-					}).
-					Mark(ierr.ErrNotFound)
-			}
 			return ierr.WithError(err).
 				WithHint(failureHint).
 				Mark(ierr.ErrDatabase)
+		}
+
+		// A bulk update matching nothing returns (0, nil) rather than a
+		// not-found error, so the count is the only way to notice. The caller
+		// checks the setting exists before getting here, but that check and this
+		// update are separate statements: a concurrent delete between them would
+		// otherwise clear the archived row, archive nothing, and report success —
+		// leaving the setting live while reporting it deleted.
+		if archived == 0 {
+			return ierr.NewErrorf("setting with key %s was not found", string(key)).
+				WithHintf("Setting with key %s was not found", string(key)).
+				WithReportableDetails(map[string]any{
+					"key": string(key),
+				}).
+				Mark(ierr.ErrNotFound)
 		}
 		return nil
 	})
