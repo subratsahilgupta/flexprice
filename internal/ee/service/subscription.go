@@ -5509,171 +5509,17 @@ func (s *subscriptionService) cancelAddonsForSubscription(ctx context.Context, s
 
 // RemoveAddonFromSubscription removes an addon from a subscription by addon association ID
 func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, req *dto.RemoveAddonRequest) error {
-	// Validate request
-	if err := req.Validate(); err != nil {
-		return err
-	}
-
-	// Get addon association
-	association, err := s.AddonAssociationRepo.GetByID(ctx, req.AddonAssociationID)
+	params, err := s.createAddonDetachParams(ctx, req)
 	if err != nil {
 		return err
 	}
 
-	if association.AddonStatus == types.AddonStatusPending {
-		return ierr.NewError("addon attach is pending payment").
-			WithHint("Complete or cancel the pending checkout for this addon first").
-			WithReportableDetails(map[string]interface{}{
-				"addon_association_id": association.ID,
-				"addon_id":             association.AddonID,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// check if association already has end date i.e. scheduled to be removed
-	if association.EndDate != nil {
-		return ierr.NewError("addon is already scheduled to be removed").
-			WithHint("This addon is already marked for removal").
-			WithReportableDetails(map[string]interface{}{
-				"addon_association_id": association.ID,
-				"end_date":             association.EndDate,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Fetch line items early — needed both for the onetime-cadence guard and for proration.
-	lineItemFilter := types.NewSubscriptionLineItemFilter()
-	lineItemFilter.SubscriptionIDs = []string{association.EntityID}
-	lineItemFilter.EntityIDs = []string{association.AddonID}
-	lineItemFilter.EntityType = lo.ToPtr(types.SubscriptionLineItemEntityTypeAddon)
-	lineItemFilter.AddonAssociationIDs = []string{association.ID}
-
-	lineItems, err := s.SubscriptionLineItemRepo.List(ctx, lineItemFilter)
-	if err != nil {
+	if err := s.persistAddonDetach(ctx, params); err != nil {
 		return err
 	}
 
-	// Onetime addons have EndDate set on ALL their line items — they are already scheduled to end.
-	// We check ALL items: if any item has no EndDate (recurring), the addon is cancellable.
-	// This handles the case where a previous association was cancelled at period-end (EndDate set)
-	// while a new recurring association was added on top (EndDate zero).
-	var onetimeEndDate time.Time
-	allOnetime := len(lineItems) > 0
-	for _, li := range lineItems {
-		if li.EndDate.IsZero() {
-			allOnetime = false
-			break
-		}
-		onetimeEndDate = li.EndDate
-	}
-	if allOnetime {
-		return ierr.NewError("addon is already scheduled to end").
-			WithHintf("This addon is already scheduled to end at %s", onetimeEndDate.Format("2 Jan 2006")).
-			WithReportableDetails(map[string]interface{}{
-				"addon_association_id": association.ID,
-				"expires_at":           onetimeEndDate,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Keep only line items that are NOT already scheduled to end.
-	// Line items from a previous association cancelled at period-end have EndDate set
-	// and must be excluded — they are already handled and must not be re-processed.
-	var activeLineItems []*subscription.SubscriptionLineItem
-	for _, li := range lineItems {
-		if li.EndDate.IsZero() {
-			activeLineItems = append(activeLineItems, li)
-		}
-	}
-	lineItems = activeLineItems
-
-	// get cancel at date from subscription
-	var effectiveEndDate *time.Time
-	var sub *subscription.Subscription
-
-	if association.EntityType == types.AddonAssociationEntityTypeSubscription {
-		var err error
-		sub, err = s.SubRepo.Get(ctx, association.EntityID)
-		if err != nil {
-			return err
-		}
-
-		if req.EffectiveDate != nil {
-			// Validate that the provided date falls within [CurrentPeriodStart, CurrentPeriodEnd].
-			ed := *req.EffectiveDate
-			if ed.Before(sub.CurrentPeriodStart) || ed.After(sub.CurrentPeriodEnd) {
-				return ierr.NewError("effective_date is outside the current billing period").
-					WithHint("effective_date must be between the subscription's current period start and end").
-					WithReportableDetails(map[string]any{
-						"effective_date":       ed,
-						"current_period_start": sub.CurrentPeriodStart,
-						"current_period_end":   sub.CurrentPeriodEnd,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-			effectiveEndDate = lo.ToPtr(ed)
-		} else {
-			effectiveEndDate = lo.ToPtr(sub.CurrentPeriodEnd)
-		}
-	}
-
-	endReason := "Cancelled by API"
-	if req.Reason != "" {
-		endReason = req.Reason
-	}
-
-	association.AddonStatus = types.AddonStatusCancelled
-	association.CancellationReason = endReason
-	association.CancelledAt = effectiveEndDate
-	association.EndDate = effectiveEndDate
-
-	if err := s.DB.WithTx(ctx, func(ctx context.Context) error {
-		if err := s.AddonAssociationRepo.Update(ctx, association); err != nil {
-			return err
-		}
-
-		deleteReq := dto.DeleteSubscriptionLineItemRequest{EffectiveFrom: effectiveEndDate}
-		for _, lineItem := range lineItems {
-			if _, err := s.deleteSubscriptionLineItem(ctx, lineItem.ID, deleteReq); err != nil {
-				return err
-			}
-		}
-
-		// Cancel future applications of credit grants materialized from THIS addon only
-		// (scoped by addon_id provenance). Already-granted credits are not clawed back;
-		// plan-sourced and other-addon grants are left untouched.
-		creditGrantService := NewCreditGrantService(s.ServiceParams)
-		if err := creditGrantService.CancelFutureSubscriptionGrants(ctx, dto.CancelFutureSubscriptionGrantsRequest{
-			SubscriptionID: association.EntityID,
-			AddonID:        lo.ToPtr(association.AddonID),
-			EffectiveDate:  effectiveEndDate,
-		}); err != nil {
-			return err
-		}
-
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	// Issue wallet credit for unused prepaid time if proration is requested.
-	// Onetime addons (EndDate set) are skipped automatically inside LineItemProrationService.
-	if sub != nil && effectiveEndDate != nil {
-		if err := s.applyAddonRemoveProration(
-			ctx, sub, lineItems,
-			association.ID, *effectiveEndDate,
-			req.ProrationBehavior, endReason,
-		); err != nil {
-			s.Logger.Error(ctx, "failed to issue proration credit for addon remove; removal was persisted and the credit is UNISSUED",
-				"error", err,
-				"association_id", association.ID,
-				"addon_id", association.AddonID,
-				"subscription_id", sub.ID,
-			)
-		}
-	}
-
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, association.EntityID)
+	s.settleAddonDetach(ctx, params)
+	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, params.getAssociation().EntityID)
 	return nil
 }
 
@@ -5851,6 +5697,7 @@ func addonPeriodEndForStartDate(sub *subscription.Subscription, startDate time.T
 func (s *subscriptionService) buildAddonProrationEntries(
 	ctx context.Context,
 	lineItems []*subscription.SubscriptionLineItem,
+	action types.ProrationAction,
 ) ([]LineItemProrationEntry, error) {
 	priceSvc := NewPriceService(s.ServiceParams)
 
@@ -5863,7 +5710,7 @@ func (s *subscriptionService) buildAddonProrationEntries(
 		entries = append(entries, LineItemProrationEntry{
 			LineItem: lineItem,
 			Price:    priceResp.Price,
-			Action:   types.ProrationActionAddItem,
+			Action:   action,
 		})
 	}
 
@@ -5885,61 +5732,19 @@ func (s *subscriptionService) applyAddonAddProration(
 		return nil
 	}
 
-	entries, err := s.buildAddonProrationEntries(ctx, lineItems)
+	entries, err := s.buildAddonProrationEntries(ctx, lineItems, types.ProrationActionAddItem)
 	if err != nil {
 		return err
 	}
 
-	return NewLineItemProrationService(s.ServiceParams).Apply(ctx, LineItemProrationRequest{
+	_, err = NewLineItemProrationService(s.ServiceParams).Apply(ctx, LineItemProrationRequest{
 		Subscription:   sub,
 		Entries:        entries,
 		EffectiveDate:  effectiveDate,
 		Behavior:       behavior,
 		IdempotencyKey: idempotencyKey,
 	})
-}
-
-// applyAddonRemoveProration issues a wallet credit for unused prepaid time when a recurring addon
-// is removed mid-period. Onetime addons are rejected before reaching this point.
-// Usage-type prices are skipped by LineItemProrationService.
-func (s *subscriptionService) applyAddonRemoveProration(
-	ctx context.Context,
-	sub *subscription.Subscription,
-	lineItems []*subscription.SubscriptionLineItem,
-	associationID string,
-	effectiveDate time.Time,
-	behavior types.ProrationBehavior,
-	reason string,
-) error {
-	if behavior == types.ProrationBehaviorNone {
-		return nil
-	}
-
-	priceSvc := NewPriceService(s.ServiceParams)
-
-	var entries []LineItemProrationEntry
-	for _, lineItem := range lineItems {
-		priceResp, err := priceSvc.GetPrice(ctx, lineItem.PriceID)
-		if err != nil {
-			return err
-		}
-		entries = append(entries, LineItemProrationEntry{
-			LineItem: lineItem,
-			Price:    priceResp.Price,
-			Action:   types.ProrationActionRemoveItem,
-		})
-	}
-
-	idempotencyKey := fmt.Sprintf("addon_remove_%s_%d", associationID, effectiveDate.Unix())
-
-	return NewLineItemProrationService(s.ServiceParams).Apply(ctx, LineItemProrationRequest{
-		Subscription:   sub,
-		Entries:        entries,
-		EffectiveDate:  effectiveDate,
-		Behavior:       behavior,
-		Reason:         reason,
-		IdempotencyKey: idempotencyKey,
-	})
+	return err
 }
 
 // ActivateIncompleteSubscription activates a subscription that is in incomplete status

@@ -113,14 +113,10 @@ func (s *subscriptionService) calculateAddonProration(
 	req := params.getRequest()
 
 	if req.ProrationBehavior != types.ProrationBehaviorCreateProrations {
-		return &LineItemProrationSummary{
-			Currency:          sub.Currency,
-			TotalChargeAmount: decimal.Zero,
-			TotalCreditAmount: decimal.Zero,
-		}, nil
+		return emptyProrationSummary(sub), nil
 	}
 
-	entries, err := s.buildAddonProrationEntries(ctx, params.getLineItems())
+	entries, err := s.buildAddonProrationEntries(ctx, params.getLineItems(), types.ProrationActionAddItem)
 	if err != nil {
 		return nil, err
 	}
@@ -363,4 +359,282 @@ func (s *subscriptionService) applyAddAddonRef(
 	}
 
 	return s.persistAddonAttach(ctx, params)
+}
+
+// addonDetachParams is a fully-resolved addon removal that has not been written yet, so it can
+// be priced before anyone decides whether to persist it. createAddonDetachParams builds it,
+// calculateAddonDetachProration prices it, persistAddonDetach writes it.
+type addonDetachParams struct {
+	subscription  *subscription.Subscription
+	association   *addonassociation.AddonAssociation
+	lineItems     []*subscription.SubscriptionLineItem
+	effectiveDate time.Time
+	behavior      types.ProrationBehavior
+	reason        string
+}
+
+func (p *addonDetachParams) getSubscription() *subscription.Subscription {
+	if p == nil {
+		return nil
+	}
+	return p.subscription
+}
+
+func (p *addonDetachParams) getAssociation() *addonassociation.AddonAssociation {
+	if p == nil {
+		return nil
+	}
+	return p.association
+}
+
+func (p *addonDetachParams) getLineItems() []*subscription.SubscriptionLineItem {
+	if p == nil {
+		return nil
+	}
+	return p.lineItems
+}
+
+func (p *addonDetachParams) getEffectiveDate() time.Time {
+	if p == nil {
+		return time.Time{}
+	}
+	return p.effectiveDate
+}
+
+func (p *addonDetachParams) getBehavior() types.ProrationBehavior {
+	if p == nil {
+		return ""
+	}
+	return p.behavior
+}
+
+func (p *addonDetachParams) getReason() string {
+	if p == nil {
+		return ""
+	}
+	return p.reason
+}
+
+func (p *addonDetachParams) prorationIdempotencyKey() string {
+	association := p.getAssociation()
+	if association == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("addon_remove_%s_%s_%d",
+		association.EntityID, association.ID, p.getEffectiveDate().Unix())
+}
+
+// createAddonDetachParams resolves everything a removal needs — validations, the association,
+// the line items still to close and the effective date — and writes NOTHING.
+func (s *subscriptionService) createAddonDetachParams(
+	ctx context.Context,
+	req *dto.RemoveAddonRequest,
+) (*addonDetachParams, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	association, err := s.AddonAssociationRepo.GetByID(ctx, req.AddonAssociationID)
+	if err != nil {
+		return nil, err
+	}
+
+	if association.AddonStatus == types.AddonStatusPending {
+		return nil, ierr.NewError("addon attach is pending payment").
+			WithHint("Complete or cancel the pending checkout for this addon first").
+			WithReportableDetails(map[string]interface{}{
+				"addon_association_id": association.ID,
+				"addon_id":             association.AddonID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if association.EndDate != nil {
+		return nil, ierr.NewError("addon is already scheduled to be removed").
+			WithHint("This addon is already marked for removal").
+			WithReportableDetails(map[string]interface{}{
+				"addon_association_id": association.ID,
+				"end_date":             association.EndDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	lineItemFilter := types.NewSubscriptionLineItemFilter()
+	lineItemFilter.SubscriptionIDs = []string{association.EntityID}
+	lineItemFilter.EntityIDs = []string{association.AddonID}
+	lineItemFilter.EntityType = lo.ToPtr(types.SubscriptionLineItemEntityTypeAddon)
+	lineItemFilter.AddonAssociationIDs = []string{association.ID}
+
+	lineItems, err := s.SubscriptionLineItemRepo.List(ctx, lineItemFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	// Onetime addons have EndDate set on ALL their line items — they are already scheduled to end.
+	// We check ALL items: if any item has no EndDate (recurring), the addon is cancellable.
+	// This handles the case where a previous association was cancelled at period-end (EndDate set)
+	// while a new recurring association was added on top (EndDate zero).
+	var onetimeEndDate time.Time
+	allOnetime := len(lineItems) > 0
+	for _, li := range lineItems {
+		if li.EndDate.IsZero() {
+			allOnetime = false
+			break
+		}
+		onetimeEndDate = li.EndDate
+	}
+	if allOnetime {
+		return nil, ierr.NewError("addon is already scheduled to end").
+			WithHintf("This addon is already scheduled to end at %s", onetimeEndDate.Format("2 Jan 2006")).
+			WithReportableDetails(map[string]interface{}{
+				"addon_association_id": association.ID,
+				"expires_at":           onetimeEndDate,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Keep only line items that are NOT already scheduled to end.
+	// Line items from a previous association cancelled at period-end have EndDate set
+	// and must be excluded — they are already handled and must not be re-processed.
+	var activeLineItems []*subscription.SubscriptionLineItem
+	for _, li := range lineItems {
+		if li.EndDate.IsZero() {
+			activeLineItems = append(activeLineItems, li)
+		}
+	}
+
+	sub, err := s.SubRepo.Get(ctx, association.EntityID)
+	if err != nil {
+		return nil, err
+	}
+
+	effectiveEndDate := sub.CurrentPeriodEnd
+	if req.EffectiveDate != nil {
+		effectiveEndDate = *req.EffectiveDate
+		if effectiveEndDate.Before(sub.CurrentPeriodStart) || effectiveEndDate.After(sub.CurrentPeriodEnd) {
+			return nil, ierr.NewError("effective_date is outside the current billing period").
+				WithHint("effective_date must be between the subscription's current period start and end").
+				WithReportableDetails(map[string]any{
+					"effective_date":       effectiveEndDate,
+					"current_period_start": sub.CurrentPeriodStart,
+					"current_period_end":   sub.CurrentPeriodEnd,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return &addonDetachParams{
+		subscription:  sub,
+		association:   association,
+		lineItems:     activeLineItems,
+		effectiveDate: effectiveEndDate,
+		behavior:      req.ProrationBehavior,
+		reason:        req.Reason,
+	}, nil
+}
+
+// addonDetachProrationRequest builds the removal's proration request. ok is false when there is
+// nothing to prorate, so neither preview nor settlement has to repeat the condition.
+func (s *subscriptionService) addonDetachProrationRequest(
+	ctx context.Context,
+	params *addonDetachParams,
+) (LineItemProrationRequest, bool, error) {
+	if params.getBehavior() != types.ProrationBehaviorCreateProrations {
+		return LineItemProrationRequest{}, false, nil
+	}
+
+	entries, err := s.buildAddonProrationEntries(ctx, params.getLineItems(), types.ProrationActionRemoveItem)
+	if err != nil {
+		return LineItemProrationRequest{}, false, err
+	}
+
+	return LineItemProrationRequest{
+		Subscription:   params.getSubscription(),
+		Entries:        entries,
+		EffectiveDate:  params.getEffectiveDate(),
+		Behavior:       params.getBehavior(),
+		Reason:         params.getReason(),
+		IdempotencyKey: params.prorationIdempotencyKey(),
+	}, true, nil
+}
+
+func (s *subscriptionService) calculateAddonDetachProration(
+	ctx context.Context,
+	params *addonDetachParams,
+) (*LineItemProrationSummary, error) {
+	req, ok, err := s.addonDetachProrationRequest(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return emptyProrationSummary(params.getSubscription()), nil
+	}
+
+	return NewLineItemProrationService(s.ServiceParams).Compute(ctx, req)
+}
+
+// persistAddonDetach cancels the association, ends its line items and stops future credit grants
+// in one transaction. It raises no credit — that is settleAddonDetach's job.
+func (s *subscriptionService) persistAddonDetach(ctx context.Context, params *addonDetachParams) error {
+	association := addonassociation.NewAddonAssociationBuilder(params.getAssociation()).
+		WithCancellation(params.getEffectiveDate(), params.getReason()).
+		Build()
+
+	if err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		if err := s.AddonAssociationRepo.Update(ctx, association); err != nil {
+			return err
+		}
+
+		deleteReq := dto.DeleteSubscriptionLineItemRequest{EffectiveFrom: lo.ToPtr(params.getEffectiveDate())}
+		for _, lineItem := range params.getLineItems() {
+			if _, err := s.deleteSubscriptionLineItem(ctx, lineItem.ID, deleteReq); err != nil {
+				return err
+			}
+		}
+
+		// Cancel future applications of credit grants materialized from THIS addon only
+		// (scoped by addon_id provenance). Already-granted credits are not clawed back;
+		// plan-sourced and other-addon grants are left untouched.
+		creditGrantService := NewCreditGrantService(s.ServiceParams)
+		return creditGrantService.CancelFutureSubscriptionGrants(ctx, dto.CancelFutureSubscriptionGrantsRequest{
+			SubscriptionID: association.EntityID,
+			AddonID:        lo.ToPtr(association.AddonID),
+			EffectiveDate:  lo.ToPtr(params.getEffectiveDate()),
+		})
+	}); err != nil {
+		return err
+	}
+
+	params.association = association
+	return nil
+}
+
+// settleAddonDetach credits unused prepaid time for an already-persisted removal.
+// Failure is logged, not returned: the addon is already detached and must not be rolled back.
+// Onetime addons (EndDate set) are skipped inside LineItemProrationService.
+func (s *subscriptionService) settleAddonDetach(
+	ctx context.Context,
+	params *addonDetachParams,
+) []dto.ChangedInvoice {
+	prorationReq, ok, err := s.addonDetachProrationRequest(ctx, params)
+	if err == nil {
+		if !ok {
+			return nil
+		}
+
+		var settled []dto.ChangedInvoice
+		if settled, err = NewLineItemProrationService(s.ServiceParams).Apply(ctx, prorationReq); err == nil {
+			return settled
+		}
+	}
+
+	association := params.getAssociation()
+	s.Logger.Error(ctx, "failed to issue proration credit for addon remove; removal was persisted and the credit is UNISSUED",
+		"error", err,
+		"association_id", association.ID,
+		"addon_id", association.AddonID,
+		"subscription_id", association.EntityID,
+	)
+	return nil
 }

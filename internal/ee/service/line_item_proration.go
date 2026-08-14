@@ -50,6 +50,20 @@ type LineItemProrationSummary struct {
 	IsPreview bool
 }
 
+// emptyProrationSummary is the zero quote for callers that resolved to "nothing to prorate".
+func emptyProrationSummary(sub *subscription.Subscription) *LineItemProrationSummary {
+	summary := &LineItemProrationSummary{
+		TotalChargeAmount: decimal.Zero,
+		TotalCreditAmount: decimal.Zero,
+	}
+
+	if sub != nil {
+		summary.Currency = sub.Currency
+	}
+	
+	return summary
+}
+
 func (s *LineItemProrationSummary) NetAmount() decimal.Decimal {
 	if s == nil {
 		return decimal.Zero
@@ -61,10 +75,7 @@ type LineItemProrationService interface {
 	Compute(ctx context.Context, req LineItemProrationRequest) (*LineItemProrationSummary, error)
 	// Apply settles Compute: charge invoice if net > 0, wallet credit if net < 0.
 	// No-op when Behavior != CreateProrations.
-	Apply(ctx context.Context, req LineItemProrationRequest) error
-	// SettleSummary is Apply for callers that already hold a summary and need to report
-	// what settlement produced. Charges and credits are settled independently, not netted.
-	SettleSummary(ctx context.Context, req LineItemProrationRequest, summary *LineItemProrationSummary) ([]dto.ChangedInvoice, error)
+	Apply(ctx context.Context, req LineItemProrationRequest) ([]dto.ChangedInvoice, error)
 }
 
 type lineItemProrationService struct {
@@ -135,27 +146,14 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 	return summary, nil
 }
 
-func (s *lineItemProrationService) Apply(ctx context.Context, req LineItemProrationRequest) error {
+func (s *lineItemProrationService) Apply(ctx context.Context, req LineItemProrationRequest) ([]dto.ChangedInvoice, error) {
 	if req.Behavior != types.ProrationBehaviorCreateProrations {
-		return nil
+		return nil, nil
 	}
 
 	summary, err := s.Compute(ctx, req)
 	if err != nil {
-		return err
-	}
-
-	_, err = s.SettleSummary(ctx, req, summary)
-	return err
-}
-
-func (s *lineItemProrationService) SettleSummary(
-	ctx context.Context,
-	req LineItemProrationRequest,
-	summary *LineItemProrationSummary,
-) ([]dto.ChangedInvoice, error) {
-	if req.Behavior != types.ProrationBehaviorCreateProrations || summary == nil {
-		return nil, nil
+		return nil, err
 	}
 
 	sub := req.Subscription
