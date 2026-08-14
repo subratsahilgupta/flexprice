@@ -161,7 +161,9 @@ func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, 
 
 		// lockedInv.LineItems was already populated by GetForUpdate (it internally
 		// calls ListByInvoiceID) — reuse it instead of refetching.
-		publishedLineItems = append(append([]*invoice.InvoiceLineItem{}, lockedInv.LineItems...), newItems...)
+		publishedLineItems = make([]*invoice.InvoiceLineItem, 0, len(lockedInv.LineItems)+len(newItems))
+		publishedLineItems = append(publishedLineItems, lockedInv.LineItems...)
+		publishedLineItems = append(publishedLineItems, newItems...)
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
 		if req.MarkManuallyEdited {
