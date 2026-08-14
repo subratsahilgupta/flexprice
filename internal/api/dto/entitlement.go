@@ -31,11 +31,12 @@ type CreateEntitlementRequest struct {
 	ConfigValue         map[string]interface{}            `json:"config_value,omitempty"`
 
 	// Grant config — optional. All-or-nothing; see entitlement.validateGrantConfig.
-	GrantMeasure       types.EntitlementGrantMeasure      `json:"grant_measure,omitempty"`
-	GrantDurationValue *int                               `json:"grant_duration_value,omitempty"`
-	GrantDurationUnit  types.EntitlementGrantDurationUnit `json:"grant_duration_unit,omitempty"`
-	GrantQuota         *decimal.Decimal                   `json:"grant_quota,omitempty" swaggertype:"string"`
-	AggregationMode    types.EntitlementAggregationMode   `json:"aggregation_mode,omitempty"`
+	GrantMeasure            types.EntitlementGrantMeasure            `json:"grant_measure,omitempty"`
+	GrantDurationValue      *int                                     `json:"grant_duration_value,omitempty"`
+	GrantDurationUnit       types.EntitlementGrantDurationUnit       `json:"grant_duration_unit,omitempty"`
+	GrantAllocationBehavior types.EntitlementGrantAllocationBehavior `json:"grant_allocation_behavior,omitempty"`
+	GrantQuota              *decimal.Decimal                         `json:"grant_quota,omitempty" swaggertype:"string"`
+	AggregationMode         types.EntitlementAggregationMode         `json:"aggregation_mode,omitempty"`
 }
 
 func (r *CreateEntitlementRequest) Validate() error {
@@ -122,11 +123,12 @@ func (r *CreateEntitlementRequest) ToEntitlement(ctx context.Context) *entitleme
 		ParentEntitlementID: r.ParentEntitlementID,
 		StartDate:           r.StartDate,
 		EndDate:             r.EndDate,
-		GrantMeasure:        r.GrantMeasure,
-		GrantDurationValue:  r.GrantDurationValue,
-		GrantDurationUnit:   r.GrantDurationUnit,
-		GrantQuota:          r.GrantQuota,
-		AggregationMode:     r.AggregationMode,
+		GrantMeasure:            r.GrantMeasure,
+		GrantDurationValue:      r.GrantDurationValue,
+		GrantDurationUnit:       r.GrantDurationUnit,
+		GrantAllocationBehavior: r.GrantAllocationBehavior,
+		GrantQuota:              r.GrantQuota,
+		AggregationMode:         r.AggregationMode,
 		EnvironmentID:       types.GetEnvironmentID(ctx),
 		BaseModel:           types.GetDefaultBaseModel(ctx),
 	}
@@ -144,12 +146,13 @@ type UpdateEntitlementRequest struct {
 
 	// Grant config — nil fields leave the current value alone.
 	// ClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).
-	ClearGrantConfig   *bool                               `json:"clear_grant_config,omitempty"`
-	GrantMeasure       *types.EntitlementGrantMeasure      `json:"grant_measure,omitempty"`
-	GrantDurationValue *int                                `json:"grant_duration_value,omitempty"`
-	GrantDurationUnit  *types.EntitlementGrantDurationUnit `json:"grant_duration_unit,omitempty"`
-	GrantQuota         *decimal.Decimal                    `json:"grant_quota,omitempty" swaggertype:"string"`
-	AggregationMode    *types.EntitlementAggregationMode   `json:"aggregation_mode,omitempty"`
+	ClearGrantConfig        *bool                                     `json:"clear_grant_config,omitempty"`
+	GrantMeasure            *types.EntitlementGrantMeasure            `json:"grant_measure,omitempty"`
+	GrantDurationValue      *int                                      `json:"grant_duration_value,omitempty"`
+	GrantDurationUnit       *types.EntitlementGrantDurationUnit       `json:"grant_duration_unit,omitempty"`
+	GrantAllocationBehavior *types.EntitlementGrantAllocationBehavior `json:"grant_allocation_behavior,omitempty"`
+	GrantQuota              *decimal.Decimal                          `json:"grant_quota,omitempty" swaggertype:"string"`
+	AggregationMode         *types.EntitlementAggregationMode         `json:"aggregation_mode,omitempty"`
 }
 
 // Validate validates the update entitlement request
