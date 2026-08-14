@@ -113,7 +113,7 @@ func (Entitlement) Fields() []ent.Field {
 			Optional().
 			Default("").
 			GoType(types.EntitlementGrantAllocationBehavior("")).
-			Comment("How to anchor validFrom when opening a grant; only meaningful for grant_duration_unit=day. Empty = first_usage."),
+			Comment("How to anchor validFrom when opening a grant; meaningful for hour, day, and week duration units. Empty = first_usage."),
 
 		field.Other("grant_quota", decimal.Decimal{}).
 			SchemaType(map[string]string{"postgres": "numeric(25,15)"}).
