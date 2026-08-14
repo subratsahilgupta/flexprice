@@ -69,21 +69,22 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 				Mark(ierr.ErrValidation)
 		}
 
-		newItem := *existingItem
-		newItem.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM)
-		newItem.ParentLineItemID = &existingItem.ID
-		newItem.BaseModel = types.GetDefaultBaseModel(txCtx)
+		builder := invoice.NewInvoiceLineItemBuilder(existingItem).
+			WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM)).
+			WithParentLineItemID(lo.ToPtr(existingItem.ID)).
+			WithBaseModel(types.GetDefaultBaseModel(txCtx))
 
 		if req.DisplayName != nil {
-			newItem.DisplayName = req.DisplayName
+			builder = builder.WithDisplayName(req.DisplayName)
 		}
 		if req.Amount != nil {
-			newItem.Amount = *req.Amount
+			builder = builder.WithAmount(*req.Amount)
 		}
 		if req.Quantity != nil {
-			newItem.Quantity = *req.Quantity
+			builder = builder.WithQuantity(*req.Quantity)
 		}
 
+		newItem := builder.Build()
 		if err := newItem.Validate(); err != nil {
 			return err
 		}
@@ -93,7 +94,7 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 			return err
 		}
 
-		if err := s.InvoiceLineItemRepo.Create(txCtx, &newItem); err != nil {
+		if err := s.InvoiceLineItemRepo.Create(txCtx, newItem); err != nil {
 			return err
 		}
 
@@ -104,7 +105,7 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 			}
 			remaining = append(remaining, li)
 		}
-		publishedLineItems = append(remaining, &newItem)
+		publishedLineItems = append(remaining, newItem)
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
 		lockedInv.IsManuallyEdited = true
@@ -139,23 +140,23 @@ func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, 
 		}
 		lockedInv = inv
 
-		newItems := make([]*invoice.InvoiceLineItem, len(req.Items))
-		for i, item := range req.Items {
-			newItem := &invoice.InvoiceLineItem{
-				ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
-				InvoiceID:     inv.ID,
-				CustomerID:    inv.CustomerID,
-				EnvironmentID: inv.EnvironmentID,
-				DisplayName:   lo.ToPtr(item.DisplayName),
-				Amount:        item.Amount,
-				Quantity:      item.Quantity,
-				Currency:      inv.Currency,
-				BaseModel:     types.GetDefaultBaseModel(txCtx),
-			}
+		newItems := lo.Map(req.Items, func(item dto.AddLineItemRequest, _ int) *invoice.InvoiceLineItem {
+			return invoice.NewInvoiceLineItemBuilder(nil).
+				WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM)).
+				WithInvoiceID(inv.ID).
+				WithCustomerID(inv.CustomerID).
+				WithEnvironmentID(inv.EnvironmentID).
+				WithDisplayName(lo.ToPtr(item.DisplayName)).
+				WithAmount(item.Amount).
+				WithQuantity(item.Quantity).
+				WithCurrency(inv.Currency).
+				WithBaseModel(types.GetDefaultBaseModel(txCtx)).
+				Build()
+		})
+		for _, newItem := range newItems {
 			if err := newItem.Validate(); err != nil {
 				return err
 			}
-			newItems[i] = newItem
 		}
 
 		if err := s.InvoiceLineItemRepo.CreateBulk(txCtx, newItems); err != nil {
