@@ -2,6 +2,7 @@ package saml
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -46,7 +47,19 @@ func validateAssertion(
 ) (*assertionResult, error) {
 	assertion, err := sp.ParseResponse(req, possibleRequestIDs)
 	if err != nil {
-		return nil, ierr.NewError("saml assertion rejected").
+		// crewjam reports the real cause — expired condition window, audience
+		// mismatch, unknown InResponseTo, bad signature — on PrivateErr, and its
+		// Error() deliberately says nothing useful so it is safe to return to a
+		// caller. Keep the response generic, but carry the detail so an operator
+		// integrating an identity provider can see which check failed; without
+		// it every failure is indistinguishable and the only recourse is
+		// guessing.
+		cause := err
+		var invalid *saml.InvalidResponseError
+		if errors.As(err, &invalid) && invalid.PrivateErr != nil {
+			cause = invalid.PrivateErr
+		}
+		return nil, ierr.WithError(cause).
 			WithHint("The identity provider's response could not be validated").
 			Mark(ierr.ErrPermissionDenied)
 	}
