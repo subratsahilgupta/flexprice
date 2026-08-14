@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -105,28 +106,251 @@ func (p *addonAttachParams) prorationIdempotencyKey() string {
 	return fmt.Sprintf("addon_add_%s_%d", association.ID, p.getEffectiveDate().Unix())
 }
 
-func (s *subscriptionService) calculateAddonProration(
-	ctx context.Context,
-	params *addonAttachParams,
-) (*LineItemProrationSummary, error) {
-	sub := params.getSubscription()
-	req := params.getRequest()
+// addonChangeResponse is what an attach or detach produced. The deprecated addon endpoints and
+// the modify surface both report from it, so neither can drift from what actually happened.
+type addonChangeResponse struct {
+	association      *addonassociation.AddonAssociation
+	createdLineItems []*subscription.SubscriptionLineItem
+	endedLineItems   []*subscription.SubscriptionLineItem
+	changedInvoices  []dto.ChangedInvoice
 
-	if req.ProrationBehavior != types.ProrationBehaviorCreateProrations {
-		return emptyProrationSummary(sub), nil
+	// checkoutSession and invoice are set only on a pay-first attach, where nothing has been
+	// applied yet and the customer still owes the charge on the draft invoice.
+	checkoutSession *dto.CheckoutSessionResponse
+	invoice         *dto.InvoiceResponse
+}
+
+func (o *addonChangeResponse) getAssociation() *addonassociation.AddonAssociation {
+	if o == nil {
+		return nil
+	}
+	return o.association
+}
+
+func (o *addonChangeResponse) getCreatedLineItems() []*subscription.SubscriptionLineItem {
+	if o == nil {
+		return nil
+	}
+	return o.createdLineItems
+}
+
+func (o *addonChangeResponse) getEndedLineItems() []*subscription.SubscriptionLineItem {
+	if o == nil {
+		return nil
+	}
+	return o.endedLineItems
+}
+
+func (o *addonChangeResponse) getChangedInvoices() []dto.ChangedInvoice {
+	if o == nil {
+		return nil
+	}
+	return o.changedInvoices
+}
+
+func (o *addonChangeResponse) getCheckoutSession() *dto.CheckoutSessionResponse {
+	if o == nil {
+		return nil
+	}
+	return o.checkoutSession
+}
+
+func (o *addonChangeResponse) getInvoice() *dto.InvoiceResponse {
+	if o == nil {
+		return nil
+	}
+	return o.invoice
+}
+
+// attachAddon attaches an addon and settles the proration it raises. With checkout set and a
+// positive charge the attach is payment-gated instead: nothing is applied until payment lands.
+func (s *subscriptionService) attachAddon(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	req *dto.AddAddonToSubscriptionRequest,
+	checkout *dto.CheckoutParams,
+) (*addonChangeResponse, error) {
+	if checkout != nil {
+		return s.attachAddonPayFirst(ctx, sub, req, checkout)
 	}
 
-	entries, err := s.buildAddonProrationEntries(ctx, params.getLineItems(), types.ProrationActionAddItem)
+	params, err := s.createAddonAttachParams(ctx, sub, req, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewLineItemProrationService(s.ServiceParams).Compute(ctx, LineItemProrationRequest{
-		Subscription:  sub,
-		Entries:       entries,
-		EffectiveDate: params.getEffectiveDate(),
-		Behavior:      req.ProrationBehavior,
-	})
+	if err := s.persistAddonAttach(ctx, params); err != nil {
+		return nil, err
+	}
+
+	return &addonChangeResponse{
+		association:      params.getAssociation(),
+		createdLineItems: params.getLineItems(),
+		changedInvoices:  s.settleAddonAttachPayLater(ctx, params),
+	}, nil
+}
+
+func (s *subscriptionService) attachAddonPayFirst(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	req *dto.AddAddonToSubscriptionRequest,
+	checkout *dto.CheckoutParams,
+) (*addonChangeResponse, error) {
+	if err := checkout.Validate(); err != nil {
+		return nil, err
+	}
+
+	if len(req.OverrideLineItems) > 0 || len(req.LineItemCommitments) > 0 {
+		return nil, ierr.NewError("override_line_items and line_item_commitments are not supported with checkout").
+			WithHint("Attach without checkout to use price overrides or line item commitments").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": sub.ID,
+				"addon_id":        req.AddonID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
+		return nil, ierr.NewError("subscription status does not allow a payment-gated addon attach").
+			WithHint("Checkout is only supported for active subscriptions").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id":     sub.ID,
+				"subscription_status": sub.SubscriptionStatus,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	params, err := s.createAddonAttachParams(ctx, sub, req, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	summary, err := s.calculateAddonProration(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	if summary.TotalChargeAmount.GreaterThan(decimal.Zero) {
+		resp, err := s.settleAddAddonPayFirst(ctx, params, summary, checkout)
+		if err != nil {
+			return nil, err
+		}
+
+		return &addonChangeResponse{
+			association:     resp.AddonAssociation,
+			checkoutSession: resp.CheckoutSession,
+			invoice:         resp.Invoice,
+		}, nil
+	}
+
+	// Zero or negative net → nothing to collect, so attach immediately and ignore the checkout.
+	if err := s.persistAddonAttach(ctx, params); err != nil {
+		return nil, err
+	}
+
+	return &addonChangeResponse{
+		association:      params.getAssociation(),
+		createdLineItems: params.getLineItems(),
+		changedInvoices:  s.settleAddonAttachPayLater(ctx, params),
+	}, nil
+}
+
+// previewAttachAddon quotes an attach without writing anything.
+func (s *subscriptionService) previewAttachAddon(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	req *dto.AddAddonToSubscriptionRequest,
+) (*addonChangeResponse, error) {
+	params, err := s.createAddonAttachParams(ctx, sub, req, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	summary, err := s.calculateAddonProration(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	changedInvoices, err := s.previewAddonSettlement(ctx, sub, summary, params.getEffectiveDate())
+	if err != nil {
+		return nil, err
+	}
+
+	return &addonChangeResponse{
+		association:      params.getAssociation(),
+		createdLineItems: params.getLineItems(),
+		changedInvoices:  changedInvoices,
+	}, nil
+}
+
+// addonAttachProrationRequest builds the attach's proration request. ok is false when there is
+// nothing to prorate, so neither preview nor settlement has to repeat the condition.
+func (s *subscriptionService) addonAttachProrationRequest(
+	ctx context.Context,
+	params *addonAttachParams,
+) (LineItemProrationRequest, bool, error) {
+	behavior := params.getRequest().ProrationBehavior
+	if behavior != types.ProrationBehaviorCreateProrations {
+		return LineItemProrationRequest{}, false, nil
+	}
+
+	entries, err := s.buildAddonProrationEntries(ctx, params.getLineItems(), types.ProrationActionAddItem)
+	if err != nil {
+		return LineItemProrationRequest{}, false, err
+	}
+
+	return LineItemProrationRequest{
+		Subscription:   params.getSubscription(),
+		Entries:        entries,
+		EffectiveDate:  params.getEffectiveDate(),
+		Behavior:       behavior,
+		IdempotencyKey: params.prorationIdempotencyKey(),
+	}, true, nil
+}
+
+func (s *subscriptionService) calculateAddonProration(
+	ctx context.Context,
+	params *addonAttachParams,
+) (*LineItemProrationSummary, error) {
+	req, ok, err := s.addonAttachProrationRequest(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return emptyProrationSummary(params.getSubscription()), nil
+	}
+
+	return NewLineItemProrationService(s.ServiceParams).Compute(ctx, req)
+}
+
+// settleAddonAttachPayLater raises the mid-period proration charge for an already-persisted
+// attach. Failure is logged, not returned: the addon is live and must not be rolled back.
+func (s *subscriptionService) settleAddonAttachPayLater(
+	ctx context.Context,
+	params *addonAttachParams,
+) []dto.ChangedInvoice {
+	prorationReq, ok, err := s.addonAttachProrationRequest(ctx, params)
+	if err == nil {
+		if !ok {
+			return nil
+		}
+
+		var settled []dto.ChangedInvoice
+		if settled, err = NewLineItemProrationService(s.ServiceParams).Apply(ctx, prorationReq); err == nil {
+			return settled
+		}
+	}
+
+	association := params.getAssociation()
+	s.Logger.Error(ctx, "failed to create proration invoice for addon add; addon was persisted and is UNBILLED for this period",
+		"error", err,
+		"association_id", association.ID,
+		"addon_id", params.getRequest().AddonID,
+		"subscription_id", params.getSubscription().ID,
+		"effective_date", params.getEffectiveDate(),
+		"idempotency_key", params.prorationIdempotencyKey(),
+	)
+	return nil
 }
 
 func (s *subscriptionService) settleAddAddonPayFirst(
@@ -359,6 +583,100 @@ func (s *subscriptionService) applyAddAddonRef(
 	}
 
 	return s.persistAddonAttach(ctx, params)
+}
+
+// detachAddon removes an addon and credits back the unused prepaid time it paid for.
+func (s *subscriptionService) detachAddon(
+	ctx context.Context,
+	req *dto.RemoveAddonRequest,
+) (*addonChangeResponse, error) {
+	params, err := s.createAddonDetachParams(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.persistAddonDetach(ctx, params); err != nil {
+		return nil, err
+	}
+
+	return &addonChangeResponse{
+		association:     params.getAssociation(),
+		endedLineItems:  params.getLineItems(),
+		changedInvoices: s.settleAddonDetach(ctx, params),
+	}, nil
+}
+
+// previewDetachAddon quotes a removal without writing anything.
+func (s *subscriptionService) previewDetachAddon(
+	ctx context.Context,
+	req *dto.RemoveAddonRequest,
+) (*addonChangeResponse, error) {
+	params, err := s.createAddonDetachParams(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	summary, err := s.calculateAddonDetachProration(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	changedInvoices, err := s.previewAddonSettlement(
+		ctx, params.getSubscription(), summary, params.getEffectiveDate(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// The cancelled association persistAddonDetach would write, built but not saved.
+	cancelled := addonassociation.NewAddonAssociationBuilder(params.getAssociation()).
+		WithCancellation(params.getEffectiveDate(), params.getReason()).
+		Build()
+
+	return &addonChangeResponse{
+		association:     cancelled,
+		endedLineItems:  params.getLineItems(),
+		changedInvoices: changedInvoices,
+	}, nil
+}
+
+// previewAddonSettlement quotes what Apply would raise, through the same invoice request builder
+// and the same two independent branches, so preview and execute cannot drift.
+func (s *subscriptionService) previewAddonSettlement(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	summary *LineItemProrationSummary,
+	effectiveDate time.Time,
+) ([]dto.ChangedInvoice, error) {
+	quoted := make([]dto.ChangedInvoice, 0, 2)
+
+	if summary.TotalChargeAmount.GreaterThan(decimal.Zero) && len(summary.ChargeLineItems) > 0 {
+		inv, err := NewInvoiceService(s.ServiceParams).CreatePreviewInvoice(
+			ctx, buildLineItemProrationChargeInvoiceRequest(sub, summary, effectiveDate, ""),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		quoted = append(quoted, dto.ChangedInvoice{
+			Action:  dto.ChangedInvoiceActionCreated,
+			Status:  dto.ChangedInvoiceStatusPreview,
+			Invoice: inv,
+		})
+	}
+
+	if summary.TotalCreditAmount.GreaterThan(decimal.Zero) {
+		quoted = append(quoted, walletCreditChangedInvoice(&dto.WalletTransactionResponse{
+			Transaction: &wallet.Transaction{
+				CustomerID:        sub.GetInvoicingCustomerID(),
+				Amount:            summary.TotalCreditAmount,
+				Currency:          sub.Currency,
+				TransactionReason: types.TransactionReasonSubscriptionCredit,
+			},
+		}, dto.ChangedInvoiceStatusPreview))
+	}
+
+	return quoted, nil
 }
 
 // addonDetachParams is a fully-resolved addon removal that has not been written yet, so it can
