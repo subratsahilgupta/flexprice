@@ -272,6 +272,7 @@ func main() {
 			service.NewSubscriptionChangeService,
 			service.NewSubscriptionModificationService,
 			service.NewSubscriptionScheduleService,
+			service.NewInvoiceModificationService,
 			service.NewAlertLogsService,
 			service.NewAlertService,
 			service.NewGroupService,
