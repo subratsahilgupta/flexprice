@@ -68,7 +68,7 @@ type Entitlement struct {
 	GrantDurationValue *int `json:"grant_duration_value,omitempty"`
 	// GrantDurationUnit holds the value of the "grant_duration_unit" field.
 	GrantDurationUnit types.EntitlementGrantDurationUnit `json:"grant_duration_unit,omitempty"`
-	// How to anchor validFrom when opening a grant; only meaningful for grant_duration_unit=day. Empty = first_usage.
+	// How to anchor validFrom when opening a grant; meaningful for hour, day, and week duration units.
 	GrantAllocationBehavior types.EntitlementGrantAllocationBehavior `json:"grant_allocation_behavior,omitempty"`
 	// GrantQuota holds the value of the "grant_quota" field.
 	GrantQuota *decimal.Decimal `json:"grant_quota,omitempty"`
