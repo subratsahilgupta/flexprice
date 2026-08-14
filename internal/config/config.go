@@ -195,18 +195,24 @@ type SAMLConfig struct {
 	//
 	// Defaults to off: SSO is opt-in per deployment.
 	Enabled bool `mapstructure:"enabled"`
-	// BaseURL is the externally reachable origin of this deployment. It builds
-	// the SP entity ID and ACS URL published in our metadata, so it must match
-	// what the identity provider is configured to call back.
+
+	// BaseURL is the externally reachable origin of this deployment — scheme and
+	// host only; the SAML paths are built onto it. It is deployment-level rather
+	// than per-tenant because a deployment has exactly one API origin, and
+	// because it must not come from the inbound request: it is signed into the
+	// AuthnRequest as the ACS URL and checked again when the assertion arrives,
+	// so a request-derived origin would let a caller controlling the Host header
+	// have assertions delivered to a host of their choosing.
+	//
+	// Nothing tenant-specific lives here. The tenant appears in the path, which
+	// the SP builds, so one origin serves every tenant.
 	BaseURL string `mapstructure:"base_url"`
+
 	// DashboardURL receives the browser redirect after a successful assertion,
-	// carrying the minted token.
+	// carrying the minted token. Deployment-level for the same reason: it names
+	// this deployment's own frontend, and taking it from the request would make
+	// the callback an open redirect.
 	DashboardURL string `mapstructure:"dashboard_url"`
-	// EnforceSSO rejects password login deployment-wide.
-	EnforceSSO bool `mapstructure:"enforce_sso"`
-	// DefaultTenantID lets a single-tenant deployment use "default" in place of
-	// a tenant UUID in the SAML URLs. Empty disables the alias.
-	DefaultTenantID string `mapstructure:"default_tenant_id"`
 }
 
 type SupabaseConfig struct {

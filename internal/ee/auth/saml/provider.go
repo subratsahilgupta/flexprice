@@ -17,7 +17,6 @@ import (
 	"github.com/flexprice/flexprice/internal/auth"
 	"github.com/flexprice/flexprice/internal/config"
 	domainauth "github.com/flexprice/flexprice/internal/domain/auth"
-	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -52,26 +51,13 @@ func (p *samlProvider) baseURL() string {
 	return strings.TrimSuffix(p.cfg.Auth.SAML.BaseURL, "/")
 }
 
-// TenantAlias is the path segment a single-tenant deployment may use instead of
-// a tenant UUID.
-const TenantAlias = "default"
-
 // resolveTenant maps the tenant path segment to a tenant ID.
 //
-// A self-hosted install has exactly one tenant whose ID is identical on every
-// install, so requiring it in the URL means the operator hand-copies a UUID into
-// their identity provider — an easy thing to get subtly wrong, and the failure
-// (audience mismatch) does not point at the cause. Configuring
-// auth.saml.default_tenant_id lets those URLs read /v1/auth/saml/default/...
-//
-// The alias resolves only when configured. A multi-tenant deployment leaves it
-// empty, and "default" is then treated as an ordinary tenant ID that will not
-// match anything.
+// Every SAML URL names its tenant explicitly. There is no deployment-wide
+// default: SSO is configured per tenant, so a URL that did not say which tenant
+// it meant would have nothing to resolve against.
 func (p *samlProvider) resolveTenant(segment string) string {
-	if segment != TenantAlias {
-		return segment
-	}
-	return p.cfg.Auth.SAML.DefaultTenantID
+	return segment
 }
 
 func base64DER(cert *x509.Certificate) string {
@@ -83,15 +69,11 @@ func (p *samlProvider) GetProvider() types.AuthProvider { return ProviderName }
 // Login is not password-based for SAML. The browser flow runs through the
 // endpoints in routes.go and finishes at the ACS callback.
 //
-// Reaching this method means a user posted credentials to /auth/login while the
-// tenant is configured for SSO. Whether that is allowed is a deployment
-// decision, so it is gated by config rather than rejected outright.
+// Reaching this method means a user posted credentials to /auth/login. Whether
+// that is allowed is a per-tenant decision, enforced by the auth service against
+// the tenant's own saml_config before it gets here — a deployment-wide rule
+// would refuse password login for tenants that have never configured SSO.
 func (p *samlProvider) Login(ctx context.Context, req auth.AuthRequest, userAuthInfo *domainauth.Auth) (*auth.AuthResponse, error) {
-	if p.cfg.Auth.SAML.EnforceSSO {
-		return nil, ierr.NewError("password login is disabled for this deployment").
-			WithHint("Sign in through your identity provider").
-			Mark(ierr.ErrPermissionDenied)
-	}
 	return p.tokens.Login(ctx, req, userAuthInfo)
 }
 

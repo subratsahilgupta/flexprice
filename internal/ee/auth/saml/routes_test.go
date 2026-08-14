@@ -213,72 +213,44 @@ func TestMetadataWorksBeforeConfiguration(t *testing.T) {
 	}
 }
 
-// TestDefaultTenantAlias covers the single-tenant convenience: a self-hosted
-// install has one tenant whose ID is identical everywhere, so requiring it in
-// the URL means hand-copying a UUID into an identity provider.
-func TestDefaultTenantAlias(t *testing.T) {
-	const onPremTenant = "00000000-0000-0000-0000-000000000000"
+// TestTenantComesOnlyFromTheURL pins the removal of the deployment-wide default
+// tenant. SSO is configured per tenant, so there is nothing for a URL that does
+// not name its tenant to resolve against, and "default" is now an ordinary
+// segment that will match no tenant rather than silently selecting one.
+func TestTenantComesOnlyFromTheURL(t *testing.T) {
+	provider := newTestProvider("https://billing.acme.com")
 
-	configured := newTestProvider("https://billing.acme.com")
-	configured.cfg.Auth.SAML.DefaultTenantID = onPremTenant
-
-	if got := configured.resolveTenant("default"); got != onPremTenant {
-		t.Errorf("resolveTenant(default) = %q, want the configured tenant", got)
+	for _, segment := range []string{"tenant_xyz", "00000000-0000-0000-0000-000000000000", "default"} {
+		if got := provider.resolveTenant(segment); got != segment {
+			t.Errorf("resolveTenant(%q) = %q, want it passed through unchanged", segment, got)
+		}
 	}
 
-	// An explicit ID is never rewritten, so a multi-tenant deployment behaves
-	// exactly as before.
-	if got := configured.resolveTenant("tenant_xyz"); got != "tenant_xyz" {
-		t.Errorf("resolveTenant(tenant_xyz) = %q, want it passed through", got)
-	}
-
-	// Unconfigured, the alias resolves to nothing rather than silently picking
-	// a tenant — the handler then rejects the request.
-	unconfigured := newTestProvider("https://billing.acme.com")
-	if got := unconfigured.resolveTenant("default"); got != "" {
-		t.Errorf("unconfigured alias = %q, want empty so the request is rejected", got)
+	// An empty segment stays empty so the handler rejects the request rather
+	// than falling back to some tenant.
+	if got := provider.resolveTenant(""); got != "" {
+		t.Errorf("resolveTenant(\"\") = %q, want empty so the request is rejected", got)
 	}
 }
 
-// TestAliasAndUUIDProduceIdenticalMetadata is the trap worth guarding. If the
-// alias produced metadata under the literal string "default" while the ACS
-// endpoint validated against the resolved UUID, every assertion would fail
-// audience validation — and the error would point at signatures, not at the
-// URL. Both paths must yield byte-identical metadata.
-func TestAliasAndUUIDProduceIdenticalMetadata(t *testing.T) {
-	const onPremTenant = "00000000-0000-0000-0000-000000000000"
+// TestMetadataCarriesTheTenantFromTheURL guards the trap that mattered when the
+// alias existed and still matters now: metadata must be published under the same
+// tenant the ACS endpoint validates against, or every assertion fails audience
+// validation with an error that points at signatures rather than the URL.
+func TestMetadataCarriesTheTenantFromTheURL(t *testing.T) {
+	const tenantID = "tenant_acme"
 
 	provider := newTestProvider("https://billing.acme.com")
-	provider.cfg.Auth.SAML.DefaultTenantID = onPremTenant
-
-	viaAlias, err := provider.metadataOnlyServiceProvider(provider.resolveTenant("default"))
+	sp, err := provider.metadataOnlyServiceProvider(provider.resolveTenant(tenantID))
 	if err != nil {
-		t.Fatalf("alias path: %v", err)
-	}
-	viaUUID, err := provider.metadataOnlyServiceProvider(provider.resolveTenant(onPremTenant))
-	if err != nil {
-		t.Fatalf("uuid path: %v", err)
+		t.Fatalf("metadata: %v", err)
 	}
 
-	// Compare identity, not the whole document: Metadata() stamps a validUntil
-	// from the clock, so two calls always differ by a few milliseconds.
-	if viaAlias.EntityID != viaUUID.EntityID {
-		t.Errorf("entity ID differs between alias and UUID paths: %q vs %q — assertions would fail audience validation",
-			viaAlias.EntityID, viaUUID.EntityID)
-	}
-	if viaAlias.AcsURL.String() != viaUUID.AcsURL.String() {
-		t.Errorf("ACS URL differs: %q vs %q — the identity provider would post to the wrong endpoint",
-			viaAlias.AcsURL.String(), viaUUID.AcsURL.String())
-	}
-
-	aliasXML, err := marshalMetadata(viaAlias)
+	xml, err := marshalMetadata(sp)
 	if err != nil {
-		t.Fatalf("marshal alias metadata: %v", err)
+		t.Fatalf("marshal metadata: %v", err)
 	}
-	if !strings.Contains(string(aliasXML), onPremTenant) {
-		t.Error("metadata does not carry the resolved tenant ID")
-	}
-	if strings.Contains(string(aliasXML), "/default/") {
-		t.Error("metadata leaks the alias instead of the resolved tenant ID")
+	if !strings.Contains(string(xml), tenantID) {
+		t.Error("metadata does not carry the tenant ID from the URL")
 	}
 }

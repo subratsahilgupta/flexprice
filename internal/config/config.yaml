@@ -12,19 +12,19 @@ auth:
   saml:
     # Deployment-wide switch for the whole feature. Off means the SAML routes
     # are not mounted and no tenant may store a configuration.
+    #
+    # This is the only SAML policy that is set here. Everything about how a
+    # tenant authenticates — its identity provider, whether SSO is on, whether
+    # password login is refused — lives in that tenant's saml_config setting.
     enabled: false
-    # Externally reachable origin. Builds the SP entity ID and ACS URL in our
-    # metadata, so it must match what the identity provider calls back.
+    # This deployment's own origin (scheme and host); the SAML paths are built
+    # onto it. Not per-tenant: one deployment has one API origin, and the tenant
+    # appears in the path rather than the origin. It must not be taken from the
+    # request, because it is signed into the AuthnRequest as the ACS URL.
     base_url: "http://localhost:8080"
-    # Where the browser lands after a successful assertion, carrying the token.
+    # This deployment's frontend, where the browser lands after a successful
+    # assertion, carrying the token.
     dashboard_url: "http://localhost:3000/auth/callback"
-    # Refuse password login deployment-wide, regardless of tenant. Per-tenant
-    # enforcement lives in the tenant's saml_config (enforce_sso), which exempts
-    # super admins; this one does not and is intended for single-tenant on-prem.
-    enforce_sso: false
-    # Single-tenant deployments can use /v1/auth/saml/default/... instead of the
-    # tenant UUID. Leave empty for multi-tenant.
-    default_tenant_id: "00000000-0000-0000-0000-000000000000"
   supabase:
     base_url: "http://localhost:54321"
     service_key: "<supabase service key>"

@@ -138,7 +138,7 @@ func (h *Handler) tenantConfig(c *gin.Context) (string, Config, error) {
 	tenantID := newSAMLProvider(h.cfg).resolveTenant(c.Param("tenant"))
 	if tenantID == "" {
 		return "", Config{}, ierr.NewError("tenant is required").
-			WithHint("Use the tenant ID in the path, or set auth.saml.default_tenant_id to use /default").
+			WithHint("Use the tenant ID in the path: /v1/auth/saml/{tenant_id}/...").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -172,7 +172,7 @@ func (h *Handler) Metadata(c *gin.Context) {
 	tenantID := provider.resolveTenant(c.Param("tenant"))
 	if tenantID == "" {
 		c.Error(ierr.NewError("tenant is required").
-			WithHint("Use the tenant ID in the path, or set auth.saml.default_tenant_id to use /default").
+			WithHint("Use the tenant ID in the path: /v1/auth/saml/{tenant_id}/...").
 			Mark(ierr.ErrValidation))
 		return
 	}
