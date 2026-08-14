@@ -263,6 +263,27 @@ func (r *settingsRepository) GetTenantLevelSettingByKey(ctx context.Context, key
 	return setting, nil
 }
 
+// clearArchivedSetting removes any already-archived row for a key before another
+// one is archived in its place.
+//
+// settings is uniquely indexed on (tenant_id, environment_id, status, key), so
+// status is part of the key: at most one archived row can exist per setting. A
+// second delete of the same key — delete, recreate, delete again — would archive
+// a row onto that slot and fail the constraint, surfacing as a 500 while the
+// setting stayed live. Discarding the older tombstone keeps the delete
+// idempotent; the retained row is always the most recent deletion.
+func clearArchivedSetting(ctx context.Context, client *ent.Client, key types.SettingKey, environmentID string) error {
+	_, err := client.Settings.Delete().
+		Where(
+			settings.Key(string(key)),
+			settings.TenantID(types.GetTenantID(ctx)),
+			settings.EnvironmentID(environmentID),
+			settings.Status(string(types.StatusArchived)),
+		).
+		Exec(ctx)
+	return err
+}
+
 func (r *settingsRepository) DeleteByKey(ctx context.Context, key types.SettingKey) error {
 	// Get the setting first for cache invalidation
 	setting, err := r.GetByKey(ctx, key)
@@ -273,6 +294,12 @@ func (r *settingsRepository) DeleteByKey(ctx context.Context, key types.SettingK
 	client := r.client.Writer(ctx)
 
 	r.log.Debug(ctx, "deleting setting by key", "key", string(key))
+
+	if err := clearArchivedSetting(ctx, client, key, types.GetEnvironmentID(ctx)); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to delete setting by key").
+			Mark(ierr.ErrDatabase)
+	}
 
 	_, err = client.Settings.Update().
 		Where(
@@ -315,6 +342,14 @@ func (r *settingsRepository) DeleteTenantLevelSettingByKey(ctx context.Context, 
 	client := r.client.Writer(ctx)
 
 	r.log.Debug(ctx, "deleting tenant-level setting by key", "key", string(key))
+
+	// Tenant-level rows carry an empty environment_id; same unique-index
+	// collision as DeleteByKey (see clearArchivedSetting).
+	if err := clearArchivedSetting(ctx, client, key, ""); err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to delete tenant-level setting by key").
+			Mark(ierr.ErrDatabase)
+	}
 
 	_, err = client.Settings.Update().
 		Where(
