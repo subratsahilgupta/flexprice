@@ -62,6 +62,9 @@ type LineItemProrationService interface {
 	// Apply settles Compute: charge invoice if net > 0, wallet credit if net < 0.
 	// No-op when Behavior != CreateProrations.
 	Apply(ctx context.Context, req LineItemProrationRequest) error
+	// SettleSummary is Apply for callers that already hold a summary and need to report
+	// what settlement produced. Charges and credits are settled independently, not netted.
+	SettleSummary(ctx context.Context, req LineItemProrationRequest, summary *LineItemProrationSummary) ([]dto.ChangedInvoice, error)
 }
 
 type lineItemProrationService struct {
@@ -142,27 +145,51 @@ func (s *lineItemProrationService) Apply(ctx context.Context, req LineItemProrat
 		return err
 	}
 
+	_, err = s.SettleSummary(ctx, req, summary)
+	return err
+}
+
+func (s *lineItemProrationService) SettleSummary(
+	ctx context.Context,
+	req LineItemProrationRequest,
+	summary *LineItemProrationSummary,
+) ([]dto.ChangedInvoice, error) {
+	if req.Behavior != types.ProrationBehaviorCreateProrations || summary == nil {
+		return nil, nil
+	}
+
 	sub := req.Subscription
+	settled := make([]dto.ChangedInvoice, 0, 2)
 
 	if summary.TotalChargeAmount.GreaterThan(decimal.Zero) && len(summary.ChargeLineItems) > 0 {
 		invoiceSvc := NewInvoiceService(s.params)
-		if err := s.settleCharge(ctx, sub, summary, req.EffectiveDate, prorationChargeInvoiceKey(req), invoiceSvc); err != nil {
-			return err
+		inv, err := s.settleCharge(ctx, sub, summary, req.EffectiveDate, prorationChargeInvoiceKey(req), invoiceSvc)
+		if err != nil {
+			return nil, err
 		}
+	
+		settled = append(settled, dto.ChangedInvoice{
+			ID:      inv.ID,
+			Action:  dto.ChangedInvoiceActionCreated,
+			Status:  dto.ChangedInvoiceStatusFromPaymentStatus(inv.PaymentStatus),
+			Invoice: inv,
+		})
 	}
 
 	if summary.TotalCreditAmount.GreaterThan(decimal.Zero) {
 		walletSvc := NewWalletService(s.params)
 		billingCustomer := sub.GetInvoicingCustomerID()
-		if _, err := walletSvc.TopUpWalletForProratedCharge(
+		walletTx, err := walletSvc.TopUpWalletForProratedCharge(
 			ctx, billingCustomer, summary.TotalCreditAmount, sub.Currency, req.IdempotencyKey,
-		); err != nil {
+		)
+		if err != nil {
 			s.params.Logger.Error(ctx, "failed to issue wallet credit for proration", "error", err)
-			return err
+			return nil, err
 		}
+		settled = append(settled, walletCreditChangedInvoice(walletTx, dto.ChangedInvoiceStatusWalletIssued))
 	}
 
-	return nil
+	return settled, nil
 }
 
 // Cap removal credits at amounts actually billed (list price never binds).
@@ -340,11 +367,11 @@ func (s *lineItemProrationService) settleCharge(
 	effectiveDate time.Time,
 	idempotencyKey string,
 	invoiceSvc InvoiceService,
-) error {
+) (*dto.InvoiceResponse, error) {
 	inv, err := invoiceSvc.CreateInvoice(ctx, buildLineItemProrationChargeInvoiceRequest(sub, summary, effectiveDate, idempotencyKey))
 	if err != nil {
 		s.params.Logger.Error(ctx, "failed to create proration charge invoice", "error", err)
-		return err
+		return nil, err
 	}
 
 	if err := invoiceSvc.AttemptPayment(ctx, inv.ID); err != nil {
@@ -352,5 +379,12 @@ func (s *lineItemProrationService) settleCharge(
 			"error", err, "invoice_id", inv.ID)
 	}
 
-	return nil
+	if latest, err := s.params.InvoiceRepo.Get(ctx, inv.ID); err == nil && latest != nil {
+		inv.InvoiceStatus = latest.InvoiceStatus
+		inv.PaymentStatus = latest.PaymentStatus
+		inv.AmountPaid = latest.AmountPaid
+		inv.AmountRemaining = latest.AmountRemaining
+	}
+
+	return inv, nil
 }
