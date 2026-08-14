@@ -145,7 +145,11 @@ func (h *Handler) tenantConfig(c *gin.Context) (string, Config, error) {
 	ctx := types.SetTenantID(c.Request.Context(), tenantID)
 	settingsSvc := service.NewSettingsService(h.serviceParams)
 
-	resp, err := settingsSvc.GetSettingByKey(ctx, SettingKeySAML)
+	// Unchecked because these endpoints run before a session exists: there is no
+	// caller to authorise, and the browser arriving here is precisely the one
+	// trying to establish who it is. What the configuration permits is decided
+	// below, from the configuration itself.
+	resp, err := settingsSvc.GetSettingByKeyUnchecked(ctx, SettingKeySAML)
 	if err != nil {
 		return "", Config{}, err
 	}

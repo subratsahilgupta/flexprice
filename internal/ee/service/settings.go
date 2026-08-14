@@ -16,7 +16,21 @@ import (
 type SettingsService interface {
 	// GetSettingByKey returns a setting as a DTO response (for API endpoints)
 	// Use this when you need the full Setting object with metadata (ID, timestamps, etc.)
+	//
+	// Access-checked: keys governing authentication are refused to callers who
+	// may not administer them. Server-side code acting with no user in context
+	// must use GetSettingByKeyUnchecked instead.
 	GetSettingByKey(ctx context.Context, key types.SettingKey) (*dto.SettingResponse, error)
+
+	// GetSettingByKeyUnchecked returns a setting without the caller checks that
+	// GetSettingByKey applies.
+	//
+	// It exists for work the server does on its own behalf, where there is no
+	// user to check: the SAML endpoints run before a session exists and must
+	// read the tenant's identity provider configuration to serve a login at all.
+	// Never call it while handling a request on behalf of a caller — that is
+	// what GetSettingByKey is for.
+	GetSettingByKeyUnchecked(ctx context.Context, key types.SettingKey) (*dto.SettingResponse, error)
 
 	// UpdateSettingByKey updates a setting with partial values (merges with existing)
 	// Use this for API endpoints that accept partial updates
@@ -45,7 +59,7 @@ func isTenantLevelSetting(key types.SettingKey) bool {
 		key == types.SettingKeySAMLConfig
 }
 
-// requireSuperAdminForAuthSetting refuses a write to a setting that decides how
+// requireSuperAdminForAuthSetting refuses access to a setting that decides how
 // people authenticate unless the caller is a super_admin user.
 //
 // The settings route is shared by every key, so its entity/action gate is the
@@ -57,6 +71,14 @@ func isTenantLevelSetting(key types.SettingKey) bool {
 //
 // Deletes are covered as well as updates: removing the configuration turns SSO
 // off for the tenant, which is the same decision in the other direction.
+//
+// Reads are covered too. The settings GET carries no permission middleware at
+// all, so every authenticated member of the tenant could otherwise read this
+// key: which identity provider the tenant trusts, and whether it has been
+// approved. Nothing in it is secret today — the certificate is the provider's
+// public one — but it is a map of what to attack, and the fields most likely to
+// be added next (an SP private key, a directory-sync token) would be secret. A
+// caller who may not change how people log in has no reason to read it either.
 //
 // Service accounts are refused whatever roles their key carries, matching
 // middleware.SuperAdminOnly — administering how people log in is not a machine
@@ -300,6 +322,15 @@ func UpdateSetting[T types.SettingConfig](s *settingsService, ctx context.Contex
 //   - Don't use if you need to work with the typed config directly
 //   - Don't call repository methods directly - always use service methods
 func (s *settingsService) GetSettingByKey(ctx context.Context, key types.SettingKey) (*dto.SettingResponse, error) {
+	if err := s.requireSuperAdminForAuthSetting(ctx, key); err != nil {
+		return nil, err
+	}
+	return s.GetSettingByKeyUnchecked(ctx, key)
+}
+
+// GetSettingByKeyUnchecked is the read itself, with no caller checks. See the
+// interface for when it is legitimate to call.
+func (s *settingsService) GetSettingByKeyUnchecked(ctx context.Context, key types.SettingKey) (*dto.SettingResponse, error) {
 	switch key {
 	case types.SettingKeyInvoiceConfig:
 		return getSettingByKey[types.InvoiceConfig](s, ctx, key)
