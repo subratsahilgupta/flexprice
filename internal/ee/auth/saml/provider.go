@@ -33,12 +33,19 @@ type samlProvider struct {
 	tokens auth.Provider
 }
 
-// init registers this package as the SAML implementation. internal/auth cannot
-// import this package (it would be a cycle), so registration runs the other way.
+// init registers this package as the SAML implementation. internal/auth and
+// internal/types cannot import this package (it would be a cycle), so
+// registration runs the other way.
 func init() {
 	auth.RegisterSAMLProvider(func(cfg *config.Configuration) auth.Provider {
 		return newSAMLProvider(cfg)
 	})
+
+	// Without this the settings API would accept any saml_config it could
+	// decode: the generic path has no way to parse a certificate or judge a
+	// role, so an unvalidated identity provider would be stored and only fail
+	// at login, after a user has already authenticated.
+	types.RegisterSAMLConfigValidator(validateStoredConfig)
 }
 
 func newSAMLProvider(cfg *config.Configuration) *samlProvider {

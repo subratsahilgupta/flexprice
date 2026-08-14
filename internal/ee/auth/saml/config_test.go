@@ -220,3 +220,32 @@ func TestShouldEnforceSSO(t *testing.T) {
 		t.Error("enforcement must not apply when the tenant has not asked for it")
 	}
 }
+
+// TestValidatorIsRegisteredWithTypes is the regression test for a bug that unit
+// tests could not have caught: every rule in this file was correct, and none of
+// them ran.
+//
+// The settings API validates through types.ValidateSettingValue, which had no
+// way to reach this package (importing it would be a cycle) and so accepted any
+// saml_config it could decode — a garbage certificate, a plaintext identity
+// provider, or default_role: super_admin. The registration in this package's
+// init is what connects the two, and nothing else fails if it is removed.
+func TestValidatorIsRegisteredWithTypes(t *testing.T) {
+	value := defaultConfig()
+	value["enabled"] = true
+	value["idp_entity_id"] = "https://idp.example.com/metadata"
+	value["idp_sso_url"] = "https://idp.example.com/sso"
+	value["idp_certificate"] = testCertPEM
+	value["default_role"] = string(types.RoleSuperAdmin)
+
+	// Goes through the generic settings path, exactly as an API write does.
+	if err := types.ValidateSettingValue(types.SettingKeySAMLConfig, value); err == nil {
+		t.Fatal("types.ValidateSettingValue accepted a super_admin default role — " +
+			"the SAML validator is not wired into the settings path")
+	}
+
+	value["default_role"] = string(types.RoleAllReader)
+	if err := types.ValidateSettingValue(types.SettingKeySAMLConfig, value); err != nil {
+		t.Fatalf("a valid config must pass the settings path: %v", err)
+	}
+}

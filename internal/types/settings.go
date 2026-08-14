@@ -903,11 +903,10 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 		return config.Validate()
 
 	case SettingKeySAMLConfig:
-		config, err := utils.ToStruct[SAMLConfig](value)
-		if err != nil {
-			return err
-		}
-		return config.Validate()
+		// Validated against the raw value rather than the decoded struct: the
+		// rules that matter (certificate parses, identity provider is https,
+		// role is one a user may actually hold) live in the SAML package.
+		return validateSAMLConfig(value)
 
 	default:
 		return ierr.NewErrorf("unknown setting key: %s", key).
@@ -1012,7 +1011,39 @@ type SAMLConfig struct {
 	DefaultRole string `json:"default_role"`
 }
 
-// Validate implements SettingConfig. The substantive checks live with the SAML
-// implementation, which owns the certificate parsing and URL rules; this keeps
-// the generic settings path satisfied.
+// samlConfigValidator holds the SAML package's validation function.
+//
+// The real checks — certificate parsing, the https rule, the assignable-role
+// rule — need the SAML implementation, which this package cannot import: the
+// SAML package already imports types, so a direct call would be a cycle.
+// Registration runs the other way instead, exactly as the auth provider does.
+var samlConfigValidator func(value map[string]interface{}) error
+
+// RegisterSAMLConfigValidator installs the SAML package's validator. Called from
+// that package's init, so importing it anywhere in the binary is enough.
+func RegisterSAMLConfigValidator(fn func(value map[string]interface{}) error) {
+	samlConfigValidator = fn
+}
+
+// validateSAMLConfig runs the registered validator against a raw settings value.
+//
+// A missing validator means the SAML package is not linked into this binary, so
+// the key cannot be configured here. Refusing is the safe direction: accepting
+// the write would store a configuration nothing had checked, which is precisely
+// how an unvalidated certificate or an http identity provider would get in.
+func validateSAMLConfig(value map[string]interface{}) error {
+	if samlConfigValidator == nil {
+		return ierr.NewError("saml is not available in this build").
+			WithHint("SAML single sign-on is not available on this deployment").
+			Mark(ierr.ErrNotFound)
+	}
+	return samlConfigValidator(value)
+}
+
+// Validate implements SettingConfig.
+//
+// It is deliberately empty: this type is the decoded shape, and the substantive
+// checks run through validateSAMLConfig against the raw value, which is what the
+// settings path calls. Putting rules here as well would mean two places to keep
+// in step.
 func (c SAMLConfig) Validate() error { return nil }
