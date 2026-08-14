@@ -82,15 +82,10 @@ func (s *subscriptionService) AttachAddon(
 		return nil, err
 	}
 
-	changedInvoices, err := s.settleAddonAttach(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
 	return &dto.AddonChangeResult{
 		Association:      params.getAssociation(),
 		CreatedLineItems: params.getLineItems(),
-		ChangedInvoices:  changedInvoices,
+		ChangedInvoices:  s.settleAddonAttach(ctx, params),
 		EffectiveDate:    params.getEffectiveDate(),
 	}, nil
 }
@@ -167,23 +162,34 @@ func (s *subscriptionService) calculateAddonProration(
 func (s *subscriptionService) settleAddonAttach(
 	ctx context.Context,
 	params *addonAttachParams,
-) ([]dto.ChangedInvoice, error) {
+) []dto.ChangedInvoice {
+	logFailure := func(cause error) {
+		s.Logger.Error(ctx, "failed to create proration invoice for addon add; addon was persisted and is UNBILLED for this period",
+			"error", cause,
+			"association_id", params.getAssociation().ID,
+			"addon_id", params.getRequest().AddonID,
+			"subscription_id", params.getSubscription().ID,
+			"effective_date", params.getEffectiveDate(),
+			"idempotency_key", params.prorationIdempotencyKey(),
+		)
+	}
+
 	prorationReq, err := s.addonAttachProrationRequest(ctx, params)
 	if err != nil {
-		s.Logger.Error(ctx, "failed to build proration request for addon add", "error", err)
-		return nil, err
+		logFailure(err)
+		return nil
 	}
 	if prorationReq == nil {
-		return nil, nil
+		return nil
 	}
 
 	settled, err := NewLineItemProrationService(s.ServiceParams).Apply(ctx, *prorationReq)
 	if err != nil {
-		s.Logger.Error(ctx, "failed to apply proration request for addon add", "error", err)
-		return nil, err
+		logFailure(err)
+		return nil
 	}
 
-	return settled, nil
+	return settled
 }
 
 func (s *subscriptionService) settleAddAddonPayFirst(
@@ -459,15 +465,10 @@ func (s *subscriptionService) DetachAddon(
 		return nil, err
 	}
 
-	changedInvoices, err := s.settleAddonDetach(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
 	return &dto.AddonChangeResult{
 		Association:     params.getAssociation(),
 		EndedLineItems:  params.getLineItems(),
-		ChangedInvoices: changedInvoices,
+		ChangedInvoices: s.settleAddonDetach(ctx, params),
 		EffectiveDate:   params.getEffectiveDate(),
 	}, nil
 }
@@ -708,21 +709,31 @@ func (s *subscriptionService) persistAddonDetach(ctx context.Context, params *ad
 func (s *subscriptionService) settleAddonDetach(
 	ctx context.Context,
 	params *addonDetachParams,
-) ([]dto.ChangedInvoice, error) {
+) []dto.ChangedInvoice {
+	logFailure := func(cause error) {
+		association := params.getAssociation()
+		s.Logger.Error(ctx, "failed to issue proration credit for addon remove; removal was persisted and the credit is UNISSUED",
+			"error", cause,
+			"association_id", association.ID,
+			"addon_id", association.AddonID,
+			"subscription_id", association.EntityID,
+		)
+	}
+
 	prorationReq, err := s.addonDetachProrationRequest(ctx, params)
 	if err != nil {
-		s.Logger.Error(ctx, "failed to build proration request for addon remove", "error", err)
-		return nil, err
+		logFailure(err)
+		return nil
 	}
 	if prorationReq == nil {
-		return nil, nil
+		return nil
 	}
 
 	settled, err := NewLineItemProrationService(s.ServiceParams).Apply(ctx, *prorationReq)
 	if err != nil {
-		s.Logger.Error(ctx, "failed to apply proration request for addon remove", "error", err)
-		return nil, err
+		logFailure(err)
+		return nil
 	}
 
-	return settled, nil
+	return settled
 }
