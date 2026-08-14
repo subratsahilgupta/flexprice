@@ -1,12 +1,14 @@
 package saml
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -121,43 +123,125 @@ func TestLoginRedirectsToIdentityProvider(t *testing.T) {
 // assertion twice produced two successful logins. Live testing against
 // SimpleSAMLphp caught it — the second post returned 302 instead of 403.
 func TestRequestTrackerClaimRetiresTheAnsweredID(t *testing.T) {
-	tr := newRequestTracker()
-	tr.remember("id-1", time.Now().Add(authnRequestTTL))
+	ctx := context.Background()
+	tr := newRequestTracker(newFakeRedis())
+	tr.remember(ctx, "tenant_a", "id-1")
 
-	ids := tr.claim("id-1")
-	if len(ids) != 1 || ids[0] != "id-1" {
-		t.Fatalf("first claim = %v, want [id-1] so the assertion validates", ids)
+	ids, consumed := tr.claim(ctx, "tenant_a", "id-1")
+	if !consumed || len(ids) != 1 || ids[0] != "id-1" {
+		t.Fatalf("first claim = %v (consumed=%v), want [id-1] so the assertion validates", ids, consumed)
 	}
 
-	if ids := tr.claim("id-1"); len(ids) != 0 {
-		t.Errorf("second claim = %v, want empty — the replayed assertion would validate again", ids)
+	if ids, consumed := tr.claim(ctx, "tenant_a", "id-1"); consumed || len(ids) != 0 {
+		t.Errorf("second claim = %v (consumed=%v), want nothing — the replayed assertion would validate again", ids, consumed)
+	}
+}
+
+// TestRequestTrackerIsScopedByTenant stops one tenant's outstanding request from
+// satisfying another tenant's assertion.
+func TestRequestTrackerIsScopedByTenant(t *testing.T) {
+	ctx := context.Background()
+	tr := newRequestTracker(newFakeRedis())
+	tr.remember(ctx, "tenant_a", "id-1")
+
+	if _, consumed := tr.claim(ctx, "tenant_b", "id-1"); consumed {
+		t.Error("a request issued for one tenant was consumed by another tenant's assertion")
+	}
+	if _, consumed := tr.claim(ctx, "tenant_a", "id-1"); !consumed {
+		t.Error("the owning tenant's request was disturbed by another tenant's attempt")
 	}
 }
 
 // TestRequestTrackerClaimKeepsOtherRequests makes sure retiring one request does
 // not disturb another browser's outstanding login.
 func TestRequestTrackerClaimKeepsOtherRequests(t *testing.T) {
-	tr := newRequestTracker()
-	tr.remember("id-1", time.Now().Add(authnRequestTTL))
-	tr.remember("id-2", time.Now().Add(authnRequestTTL))
+	ctx := context.Background()
+	tr := newRequestTracker(newFakeRedis())
+	tr.remember(ctx, "tenant_a", "id-1")
+	tr.remember(ctx, "tenant_a", "id-2")
 
-	tr.claim("id-1")
+	tr.claim(ctx, "tenant_a", "id-1")
 
-	ids := tr.claim("")
-	if len(ids) != 1 || ids[0] != "id-2" {
-		t.Errorf("after retiring id-1, outstanding = %v, want [id-2]", ids)
+	if _, consumed := tr.claim(ctx, "tenant_a", "id-2"); !consumed {
+		t.Error("retiring one request also retired another browser's outstanding login")
 	}
 }
 
-// TestRequestTrackerExpires stops an outstanding request from being accepted
-// forever, which would leave the replay window open indefinitely.
-func TestRequestTrackerExpires(t *testing.T) {
-	tr := newRequestTracker()
+// TestRequestTrackerRestoreReopensAFailedLogin covers the retry path: a response
+// that fails validation must not burn the request, or an identity provider
+// retrying — or a browser reposting once a clock skew resolves — has nothing
+// left to answer.
+func TestRequestTrackerRestoreReopensAFailedLogin(t *testing.T) {
+	ctx := context.Background()
+	tr := newRequestTracker(newFakeRedis())
+	tr.remember(ctx, "tenant_a", "id-1")
 
-	tr.remember("stale", time.Now().Add(-time.Minute))
-	if ids := tr.claim(""); len(ids) != 0 {
-		t.Errorf("expired request ID still offered: %v", ids)
+	tr.claim(ctx, "tenant_a", "id-1")
+	tr.restore(ctx, "tenant_a", "id-1")
+
+	if _, consumed := tr.claim(ctx, "tenant_a", "id-1"); !consumed {
+		t.Error("a restored request could not be claimed, so the retry would fail permanently")
 	}
+}
+
+// TestRequestTrackerIgnoresAnEmptyID covers an assertion carrying no
+// InResponseTo at all: there is nothing to consume, and it must not be treated
+// as answering an outstanding request.
+func TestRequestTrackerIgnoresAnEmptyID(t *testing.T) {
+	ctx := context.Background()
+	tr := newRequestTracker(newFakeRedis())
+	tr.remember(ctx, "tenant_a", "id-1")
+
+	if ids, consumed := tr.claim(ctx, "tenant_a", ""); consumed || len(ids) != 0 {
+		t.Errorf("claim(\"\") = %v (consumed=%v), want nothing", ids, consumed)
+	}
+}
+
+// fakeRedis is the slice of cache.RedisCache the tracker uses. Only Get, Set and
+// Delete are exercised; the rest satisfy the interface.
+type fakeRedis struct {
+	mu     sync.Mutex
+	values map[string]interface{}
+}
+
+func newFakeRedis() *fakeRedis { return &fakeRedis{values: map[string]interface{}{}} }
+
+func (f *fakeRedis) Get(_ context.Context, key string) (interface{}, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v, ok := f.values[key]
+	return v, ok
+}
+
+func (f *fakeRedis) Set(_ context.Context, key string, value interface{}, _ time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.values[key] = value
+}
+
+func (f *fakeRedis) Delete(_ context.Context, key string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.values, key)
+}
+
+func (f *fakeRedis) IsEnabled() bool                        { return true }
+func (f *fakeRedis) IsRedisCache() bool                     { return true }
+func (f *fakeRedis) DeleteByPrefix(context.Context, string) {}
+func (f *fakeRedis) Flush(context.Context) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.values = map[string]interface{}{}
+}
+func (f *fakeRedis) ForceCacheGetWithTTL(context.Context, string) (interface{}, time.Duration, bool) {
+	return nil, 0, false
+}
+func (f *fakeRedis) ForceCacheDelete(ctx context.Context, key string) { f.Delete(ctx, key) }
+func (f *fakeRedis) ForceCacheGet(ctx context.Context, key string) (interface{}, bool) {
+	return f.Get(ctx, key)
+}
+func (f *fakeRedis) ForceCacheSet(ctx context.Context, key string, value interface{}, ttl time.Duration) {
+	f.Set(ctx, key, value, ttl)
 }
 
 // TestDashboardRedirectCarriesToken checks the browser hand-back: the token has
@@ -168,11 +252,21 @@ func TestDashboardRedirectCarriesToken(t *testing.T) {
 	cfg.Auth.SAML.DashboardURL = "http://localhost:3000/auth/callback"
 
 	got := dashboardRedirect(cfg, "the-token")
-	if !strings.HasPrefix(got, "http://localhost:3000/auth/callback?") {
-		t.Errorf("redirect = %q, want the configured dashboard URL", got)
+	if !strings.HasPrefix(got, "http://localhost:3000/auth/callback#") {
+		t.Errorf("redirect = %q, want the configured dashboard URL with a fragment", got)
 	}
 	if !strings.Contains(got, "token=the-token") {
 		t.Errorf("redirect = %q, want it to carry the token", got)
+	}
+
+	// The token must be in the fragment, never the query. A fragment is not sent
+	// to a server, so it stays out of proxy and CDN access logs and out of the
+	// Referer header of every request the dashboard makes after it loads; a
+	// query parameter reaches all of those, and this token lasts thirty days.
+	if u, err := url.Parse(got); err != nil {
+		t.Fatalf("redirect is not a URL: %v", err)
+	} else if u.Query().Get("token") != "" {
+		t.Errorf("redirect = %q, want the token out of the query string", got)
 	}
 
 	empty := &config.Configuration{}

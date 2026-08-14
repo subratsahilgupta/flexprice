@@ -2,20 +2,21 @@ package saml
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/xml"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/crewjam/saml"
 	"github.com/gin-gonic/gin"
 
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/ee/service"
-	"github.com/flexprice/flexprice/internal/logger"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -29,79 +30,101 @@ const (
 	tokenExpiryHours = 24 * 30
 )
 
-// requestTracker remembers the AuthnRequest IDs this deployment issued.
+// requestTracker records the AuthnRequest IDs this deployment issued, so an
+// assertion can be checked against a request we actually made.
 //
-// An assertion must answer a request we made: without that check an attacker who
-// obtains any valid assertion for our service provider can replay it at the ACS
-// endpoint. Entries expire with the request they describe.
+// Without that check an attacker holding any valid assertion for our service
+// provider can post it at the ACS endpoint and be logged in; with it, an
+// assertion is usable exactly once.
 //
-// This is process-local, which means a deployment running several API replicas
-// behind a load balancer can bounce a user whose callback lands on a different
-// replica. Moving it to Redis is the obvious next step; it is called out in the
-// handler so the limitation is not discovered in production.
+// State lives in Redis rather than in process memory. The redirect that starts a
+// login and the callback that finishes it are separate requests, and a load
+// balancer is free to send them to different replicas: with the IDs held in one
+// process, roughly (N-1)/N of logins would fail on an N-replica deployment, at
+// random, looking like an identity provider fault. Redis is therefore required
+// for SAML, which is enforced at boot rather than discovered here.
 type requestTracker struct {
-	mu  sync.Mutex
-	ids map[string]time.Time
+	cache cache.RedisCache
 }
 
-func newRequestTracker() *requestTracker {
-	return &requestTracker{ids: map[string]time.Time{}}
+func newRequestTracker(c cache.RedisCache) *requestTracker {
+	return &requestTracker{cache: c}
 }
 
-func (t *requestTracker) remember(id string, expiry time.Time) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+// trackerKeyPrefix namespaces outstanding requests. The tenant is part of the
+// key so one tenant's request can never satisfy another's assertion.
+const trackerKeyPrefix = "saml:authn_request:v1:"
 
-	t.evictExpiredLocked()
-	t.ids[id] = expiry
+func trackerKey(tenantID, id string) string {
+	return trackerKeyPrefix + tenantID + ":" + id
 }
 
-// claim atomically takes the outstanding request IDs and removes the one the
-// assertion answers, so a second post of the same assertion finds nothing to
-// match and is rejected.
+// remember records an outstanding request. It expires on its own, so an
+// abandoned login leaves nothing behind and the replay window stays bounded.
+func (t *requestTracker) remember(ctx context.Context, tenantID, id string) {
+	t.cache.Set(ctx, trackerKey(tenantID, id), true, authnRequestTTL)
+}
+
+// claim consumes the request an assertion answers, reporting whether it was
+// outstanding.
 //
-// Taking and removing under one lock is what makes this a replay defence rather
-// than a hint: two concurrent posts of the same assertion cannot both observe
-// the ID as outstanding.
-func (t *requestTracker) claim(inResponseTo string) []string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	t.evictExpiredLocked()
-
-	out := make([]string, 0, len(t.ids))
-	for id := range t.ids {
-		out = append(out, id)
+// The delete is what makes this single-use: the ID is gone before validation
+// runs, so a second post of the same assertion finds nothing to consume. It
+// cannot be deferred until after validation — two concurrent replays would then
+// both observe the ID as outstanding and both succeed.
+//
+// The returned slice is what crewjam validates InResponseTo against. It holds
+// only the answered ID: an assertion answering anything else is rejected, which
+// is the same outcome as the previous behaviour of returning every outstanding
+// ID, without needing to enumerate them.
+func (t *requestTracker) claim(ctx context.Context, tenantID, inResponseTo string) ([]string, bool) {
+	if inResponseTo == "" {
+		return nil, false
 	}
 
-	// Remove the answered ID. An assertion carrying an unknown InResponseTo is
-	// left for crewjam/saml to reject against the list we just returned.
-	if inResponseTo != "" {
-		delete(t.ids, inResponseTo)
+	key := trackerKey(tenantID, inResponseTo)
+	if _, found := t.cache.Get(ctx, key); !found {
+		return nil, false
 	}
-	return out
+	t.cache.Delete(ctx, key)
+
+	return []string{inResponseTo}, true
 }
 
-func (t *requestTracker) evictExpiredLocked() {
-	now := time.Now()
-	for id, exp := range t.ids {
-		if now.After(exp) {
-			delete(t.ids, id)
-		}
+// restore puts back a request that claim consumed for a login that then failed
+// validation.
+//
+// Without it any rejected response burns the outstanding request, so an identity
+// provider retrying after a transient failure — or a browser reposting once a
+// clock skew resolves — has nothing left to answer and the login fails
+// permanently. Only called after validation has failed, so a consumed assertion
+// is never resurrected.
+//
+// The full TTL is granted again rather than the remainder. The window this
+// reopens is bounded by the same ten minutes, and tracking the original expiry
+// across replicas would cost more than it protects.
+func (t *requestTracker) restore(ctx context.Context, tenantID, id string) {
+	if id == "" {
+		return
 	}
+	t.cache.Set(ctx, trackerKey(tenantID, id), true, authnRequestTTL)
 }
-
-var tracker = newRequestTracker()
 
 // Handler serves the SAML browser-flow endpoints.
 type Handler struct {
 	cfg           *config.Configuration
 	serviceParams service.ServiceParams
 	logger        *logger.Logger
+	tracker       *requestTracker
 }
 
 func NewHandler(cfg *config.Configuration, serviceParams service.ServiceParams, logger *logger.Logger) *Handler {
-	return &Handler{cfg: cfg, serviceParams: serviceParams, logger: logger}
+	return &Handler{
+		cfg:           cfg,
+		serviceParams: serviceParams,
+		logger:        logger,
+		tracker:       newRequestTracker(serviceParams.RedisCache),
+	}
 }
 
 // RegisterRoutes mounts the SAML endpoints on the public group. They run before
@@ -122,7 +145,6 @@ func (h *Handler) RegisterRoutes(public *gin.RouterGroup) {
 		group.POST("/acs", h.ACS)
 	}
 }
-
 
 // tenantConfig loads a tenant's identity provider configuration.
 //
@@ -231,7 +253,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	tracker.remember(authnRequest.ID, time.Now().Add(authnRequestTTL))
+	h.tracker.remember(c.Request.Context(), tenantID, authnRequest.ID)
 
 	redirectURL, err := authnRequest.Redirect("", sp)
 	if err != nil {
@@ -264,10 +286,20 @@ func (h *Handler) ACS(c *gin.Context) {
 	// The InResponseTo is read before validation purely to know which
 	// outstanding request to retire; nothing is trusted from it, since the
 	// assertion is validated against the returned list immediately after.
-	possibleIDs := tracker.claim(inResponseTo(c.Request))
+	answeredID := inResponseTo(c.Request)
+	possibleIDs, consumed := h.tracker.claim(c.Request.Context(), tenantID, answeredID)
 
 	result, err := validateAssertion(sp, c.Request, possibleIDs, cfg)
 	if err != nil {
+		// Put the request back. It was consumed before validation so a
+		// concurrent replay could not also observe it, but this response never
+		// became a login: leaving it consumed would mean an identity provider
+		// retrying after a transient failure, or a browser reposting once a
+		// clock skew resolves, has nothing left to answer.
+		if consumed {
+			h.tracker.restore(c.Request.Context(), tenantID, answeredID)
+		}
+
 		h.logger.Error(c.Request.Context(), "saml assertion rejected",
 			"error", err, "tenant_id", tenantID)
 		c.Error(err)
@@ -299,6 +331,19 @@ func (h *Handler) ACS(c *gin.Context) {
 }
 
 // dashboardRedirect hands the token back to the browser application.
+//
+// The token travels in the URL fragment rather than the query string. A
+// fragment is never sent to a server: it stays out of access logs at every
+// proxy and CDN in the path, and out of the Referer header of every request the
+// dashboard makes once it loads. A query parameter reaches all of those, and
+// this token is valid for thirty days, so each of them is a durable copy of a
+// live credential.
+//
+// The fragment is still visible in browser history and to script on the page,
+// which is why the dashboard clears it from the URL as soon as it has read it.
+// Removing that exposure altogether needs a single-use code exchanged for the
+// token, or an HttpOnly cookie set by this handler — both change the contract
+// with the dashboard and are worth doing deliberately rather than here.
 func dashboardRedirect(cfg *config.Configuration, token string) string {
 	base := cfg.Auth.SAML.DashboardURL
 	if base == "" {
@@ -308,9 +353,7 @@ func dashboardRedirect(cfg *config.Configuration, token string) string {
 	if err != nil {
 		return "/"
 	}
-	q := u.Query()
-	q.Set("token", token)
-	u.RawQuery = q.Encode()
+	u.Fragment = "token=" + token
 	return u.String()
 }
 

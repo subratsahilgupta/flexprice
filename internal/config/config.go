@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -213,6 +214,74 @@ type SAMLConfig struct {
 	// this deployment's own frontend, and taking it from the request would make
 	// the callback an open redirect.
 	DashboardURL string `mapstructure:"dashboard_url"`
+}
+
+// validate refuses a SAML deployment that cannot serve a working login.
+//
+// Only enforced when the feature is on, so a deployment that does not offer SSO
+// is unaffected by any of it.
+//
+// Both URLs must be absolute: BaseURL builds the entity ID and ACS URL published
+// in our metadata, and a relative value produces endpoints an identity provider
+// cannot call back. Both must be https away from loopback: the assertion and the
+// minted token both travel through the browser, so plaintext exposes them in
+// transit. Loopback is exempt because it never leaves the machine and is how
+// this is developed against a local identity provider.
+func (c SAMLConfig) validate() error {
+	if !c.Enabled {
+		return nil
+	}
+
+	for _, field := range []struct{ name, raw string }{
+		{"auth.saml.base_url", c.BaseURL},
+		{"auth.saml.dashboard_url", c.DashboardURL},
+	} {
+		value := strings.TrimSpace(field.raw)
+		if value == "" {
+			return fmt.Errorf("%s is required when auth.saml.enabled is true", field.name)
+		}
+
+		u, err := url.Parse(value)
+		if err != nil || u.Host == "" {
+			return fmt.Errorf("%s must be an absolute URL (got %q)", field.name, field.raw)
+		}
+		if u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
+			return fmt.Errorf("%s must use https (plain http is allowed only for localhost) (got %q)", field.name, field.raw)
+		}
+	}
+	return nil
+}
+
+// validateSAMLDependencies refuses to start a SAML deployment without Redis.
+//
+// The AuthnRequest IDs that make an assertion single-use are held in Redis. The
+// redirect that starts a login and the callback that finishes it are separate
+// requests, and a load balancer may route them to different replicas, so
+// process-local state fails roughly (N-1)/N of logins on an N-replica
+// deployment — at random, and looking like an identity provider fault rather
+// than a Flexprice one.
+//
+// Failing at boot is much kinder than that: a deployment either has the state
+// store SAML needs, or it does not offer SAML.
+func (c Configuration) validateSAMLDependencies() error {
+	if !c.Auth.SAML.Enabled {
+		return nil
+	}
+	if !c.Cache.Enabled || !c.Cache.Redis.Enabled {
+		return fmt.Errorf("auth.saml.enabled requires cache.enabled and cache.redis.enabled: " +
+			"SAML keeps outstanding login requests in Redis so a login started on one replica " +
+			"can be completed on another")
+	}
+	return nil
+}
+
+// isLoopbackHost reports whether a host never leaves this machine.
+func isLoopbackHost(host string) bool {
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }
 
 type SupabaseConfig struct {
@@ -1035,6 +1104,22 @@ func NewValidatedConfig() (*Configuration, error) {
 	// clean via a staging deploy.
 	if err := cfg.validateSecrets(); err != nil {
 		log.Printf("[config] WARNING: %v", err)
+	}
+
+	// Scoped hard fail, unlike the warn-only check above. It applies only when
+	// auth.saml.enabled is on, so a deployment that does not offer SSO cannot be
+	// taken down by it — the risk that made the rest of this function warn-only.
+	//
+	// Failing at boot is the right trade here because the alternative is worse
+	// than a crash: with an empty or relative base URL the SP metadata a
+	// customer uploads to their identity provider contains unusable endpoints,
+	// and the failure surfaces much later as an audience mismatch on every
+	// assertion, pointing at signatures rather than at configuration.
+	if err := cfg.Auth.SAML.validate(); err != nil {
+		return nil, err
+	}
+	if err := cfg.validateSAMLDependencies(); err != nil {
+		return nil, err
 	}
 	return cfg, nil
 }
