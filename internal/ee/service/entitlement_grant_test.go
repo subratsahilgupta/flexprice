@@ -1534,3 +1534,49 @@ func TestEntitlementGrantOverage(t *testing.T) {
 		t.Fatalf("under-quota overage must be zero, got %s", under.Overage())
 	}
 }
+
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_HourUnitStart_UTC_FloorsToTopOfHour() {
+	svc := s.grantService.(*entitlementGrantService)
+	fx := s.newWindowFixture("hour-unitstart", 1)
+	fx.sub.Timezone = "UTC"
+	fx.ec.GrantDurationUnit = types.EntitlementGrantDurationUnitHour
+	val := 1
+	fx.ec.GrantDurationValue = &val
+	fx.ec.GrantAllocationBehavior = types.EntitlementGrantAllocationBehaviorUnitStart
+
+	eventAt := time.Date(2026, 7, 13, 14, 37, 15, 0, time.UTC)
+	s.seedMeterUsage(fx.extID, fx.meterID, eventAt, 1)
+
+	meta, last := s.windowArgs(fx)
+	from, to, ok, err := svc.computeGrantWindow(s.GetContext(), fx.ec, fx.sub, meta, last, eventAt.Add(1*time.Minute), 1*time.Hour)
+	s.NoError(err)
+	s.True(ok)
+	s.True(from.Equal(time.Date(2026, 7, 13, 14, 0, 0, 0, time.UTC)), "expected 14:00Z, got %s", from)
+	s.True(to.Equal(time.Date(2026, 7, 13, 15, 0, 0, 0, time.UTC)), "expected 15:00Z, got %s", to)
+}
+
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_WeekUnitStart_UTC_FloorsToMonday() {
+	svc := s.grantService.(*entitlementGrantService)
+	fx := s.newWindowFixture("week-unitstart", 168) // 7*24
+	fx.sub.Timezone = "UTC"
+	// Ensure the cycle covers the whole week so no clamp bites.
+	fx.sub.CurrentPeriodStart = time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	fx.sub.CurrentPeriodEnd = time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	fx.cycleStart = fx.sub.CurrentPeriodStart
+	fx.cycleEnd = fx.sub.CurrentPeriodEnd
+	fx.ec.GrantDurationUnit = types.EntitlementGrantDurationUnitWeek
+	val := 1
+	fx.ec.GrantDurationValue = &val
+	fx.ec.GrantAllocationBehavior = types.EntitlementGrantAllocationBehaviorUnitStart
+
+	// 2026-07-16 is a Thursday. ISO Monday of that week is 2026-07-13.
+	eventAt := time.Date(2026, 7, 16, 14, 37, 0, 0, time.UTC)
+	s.seedMeterUsage(fx.extID, fx.meterID, eventAt, 1)
+
+	meta, last := s.windowArgs(fx)
+	from, to, ok, err := svc.computeGrantWindow(s.GetContext(), fx.ec, fx.sub, meta, last, eventAt.Add(1*time.Minute), 7*24*time.Hour)
+	s.NoError(err)
+	s.True(ok)
+	s.True(from.Equal(time.Date(2026, 7, 13, 0, 0, 0, 0, time.UTC)), "expected Mon 2026-07-13T00:00Z, got %s", from)
+	s.True(to.Equal(time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)), "expected Mon 2026-07-20T00:00Z, got %s", to)
+}

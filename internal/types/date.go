@@ -31,6 +31,30 @@ func FloorToStartOfDay(t time.Time, tz string) time.Time {
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc).UTC()
 }
 
+// FloorToStartOfHour returns the start of the hour containing t, evaluated
+// in the given IANA timezone (empty → UTC). The returned instant is UTC.
+// Note: half-hour and quarter-hour offset zones (IST +5:30, NPT +5:45) shift
+// the top-of-hour instant relative to UTC — this is the desired behaviour when
+// callers reason about "the hour the user sees in their timezone".
+func FloorToStartOfHour(t time.Time, tz string) time.Time {
+	loc := loadTimezone(tz)
+	local := t.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day(), local.Hour(), 0, 0, 0, loc).UTC()
+}
+
+// FloorToStartOfWeek returns Monday 00:00:00 of the ISO 8601 week containing t,
+// evaluated in the given IANA timezone (empty → UTC). Monday-first is hardcoded;
+// per-tenant/customer week-start configuration is a documented follow-up.
+func FloorToStartOfWeek(t time.Time, tz string) time.Time {
+	loc := loadTimezone(tz)
+	local := t.In(loc)
+	// Go's Weekday: Sunday=0, Monday=1, ..., Saturday=6.
+	// Days since ISO Monday: Mon=0, Tue=1, ..., Sun=6.
+	daysSinceMonday := (int(local.Weekday()) + 6) % 7
+	startOfDay := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	return startOfDay.AddDate(0, 0, -daysSinceMonday).UTC()
+}
+
 // NextBillingDateParams holds the inputs for NextBillingDate.
 //
 // The BillingAnchor determines the reference point for billing cycles:

@@ -2715,3 +2715,101 @@ func TestFloorToStartOfDay(t *testing.T) {
 		})
 	}
 }
+
+func TestFloorToStartOfHour(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Time
+		tz   string
+		want time.Time
+	}{
+		{
+			name: "UTC, mid-hour input",
+			in:   time.Date(2026, 8, 13, 14, 37, 15, 0, time.UTC),
+			tz:   "UTC",
+			want: time.Date(2026, 8, 13, 14, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "UTC, empty tz",
+			in:   time.Date(2026, 8, 13, 14, 37, 15, 0, time.UTC),
+			tz:   "",
+			want: time.Date(2026, 8, 13, 14, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "Asia/Kolkata (+5:30) — top-of-local-hour is offset from UTC hour",
+			// 14:37 UTC = 20:07 IST; local top-of-hour = 20:00 IST = 14:30 UTC.
+			in:   time.Date(2026, 8, 13, 14, 37, 0, 0, time.UTC),
+			tz:   "Asia/Kolkata",
+			want: time.Date(2026, 8, 13, 14, 30, 0, 0, time.UTC),
+		},
+		{
+			name: "Asia/Kathmandu (+5:45) — quarter-hour offset",
+			// 14:37 UTC = 20:22 NPT; local top-of-hour = 20:00 NPT = 14:15 UTC.
+			in:   time.Date(2026, 8, 13, 14, 37, 0, 0, time.UTC),
+			tz:   "Asia/Kathmandu",
+			want: time.Date(2026, 8, 13, 14, 15, 0, 0, time.UTC),
+		},
+		{
+			name: "unknown tz falls back to UTC",
+			in:   time.Date(2026, 8, 13, 14, 37, 15, 0, time.UTC),
+			tz:   "Not/A_Real_Zone",
+			want: time.Date(2026, 8, 13, 14, 0, 0, 0, time.UTC),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FloorToStartOfHour(tc.in, tc.tz)
+			require.Equal(t, tc.want.UTC(), got.UTC())
+		})
+	}
+}
+
+func TestFloorToStartOfWeek(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Time
+		tz   string
+		want time.Time
+	}{
+		{
+			name: "UTC, Thursday event → Monday of same ISO week",
+			// 2026-08-13 is a Thursday; ISO week 33 starts Mon 2026-08-10.
+			in:   time.Date(2026, 8, 13, 14, 37, 0, 0, time.UTC),
+			tz:   "UTC",
+			want: time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "UTC, Monday morning → same Monday at 00:00",
+			in:   time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC),
+			tz:   "UTC",
+			want: time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "UTC, Sunday evening → Monday BEFORE (ISO week starts Monday)",
+			// 2026-08-16 is a Sunday; still ISO week starting Mon 2026-08-10.
+			in:   time.Date(2026, 8, 16, 20, 0, 0, 0, time.UTC),
+			tz:   "UTC",
+			want: time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "Asia/Kolkata — Monday early-morning IST is previous Sunday in UTC",
+			// 2026-08-10 04:00 IST = 2026-08-09 22:30 UTC; but "Monday 04:00 IST" is inside the
+			// ISO week that starts on Mon 2026-08-10 IST = 2026-08-09 18:30 UTC.
+			in:   time.Date(2026, 8, 9, 22, 30, 0, 0, time.UTC),
+			tz:   "Asia/Kolkata",
+			want: time.Date(2026, 8, 9, 18, 30, 0, 0, time.UTC),
+		},
+		{
+			name: "empty tz falls back to UTC",
+			in:   time.Date(2026, 8, 13, 14, 37, 0, 0, time.UTC),
+			tz:   "",
+			want: time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := FloorToStartOfWeek(tc.in, tc.tz)
+			require.Equal(t, tc.want.UTC(), got.UTC())
+		})
+	}
+}

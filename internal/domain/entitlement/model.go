@@ -245,18 +245,6 @@ func (e *Entitlement) validateGrantConfig() error {
 		}
 	}
 
-	// unit_start is only meaningful for day-scoped grants.
-	if e.GrantAllocationBehavior == types.EntitlementGrantAllocationBehaviorUnitStart &&
-		e.GrantDurationUnit != types.EntitlementGrantDurationUnitDay {
-		return ierr.NewError("grant_allocation_behavior=unit_start is only allowed for grant_duration_unit=day").
-			WithHint("Set grant_duration_unit to day, or leave grant_allocation_behavior unset").
-			WithReportableDetails(map[string]interface{}{
-				"grant_allocation_behavior": e.GrantAllocationBehavior,
-				"grant_duration_unit":       e.GrantDurationUnit,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
 	dur, err := e.GrantDuration()
 	if err != nil {
 		return err

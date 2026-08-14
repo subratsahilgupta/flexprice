@@ -149,21 +149,21 @@ func TestEntitlement_Validate_DayEmptyBehaviorAccepted(t *testing.T) {
 	}
 }
 
-func TestEntitlement_Validate_WeekUnitStartRejected(t *testing.T) {
+func TestEntitlement_Validate_WeekUnitStartAccepted(t *testing.T) {
 	e := fullGrant()
 	e.GrantDurationUnit = types.EntitlementGrantDurationUnitWeek
 	e.GrantAllocationBehavior = types.EntitlementGrantAllocationBehaviorUnitStart
-	if err := e.Validate(); err == nil {
-		t.Fatalf("week + unit_start must be rejected")
+	if err := e.Validate(); err != nil {
+		t.Fatalf("week + unit_start should validate, got %v", err)
 	}
 }
 
-func TestEntitlement_Validate_HourUnitStartRejected(t *testing.T) {
+func TestEntitlement_Validate_HourUnitStartAccepted(t *testing.T) {
 	e := fullGrant()
 	e.GrantDurationUnit = types.EntitlementGrantDurationUnitHour
 	e.GrantAllocationBehavior = types.EntitlementGrantAllocationBehaviorUnitStart
-	if err := e.Validate(); err == nil {
-		t.Fatalf("hour + unit_start must be rejected")
+	if err := e.Validate(); err != nil {
+		t.Fatalf("hour + unit_start should validate, got %v", err)
 	}
 }
 

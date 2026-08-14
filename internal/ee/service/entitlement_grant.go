@@ -475,13 +475,19 @@ func (s *entitlementGrantService) computeGrantWindow(
 
 	validFrom := *firstUncoveredEventAt
 
-	// day + unit_start: floor to start-of-day in the sub's TZ, clamped forward
-	// to coveredUntil so we never regress before the cycle start or a previous
-	// grant's validTo.
-	if ec.GrantDurationUnit == types.EntitlementGrantDurationUnitDay &&
-		ec.GrantAllocationBehavior == types.EntitlementGrantAllocationBehaviorUnitStart {
-		aligned := types.FloorToStartOfDay(*firstUncoveredEventAt, sub.Timezone)
-		validFrom = latestOf(aligned, coveredUntil)
+	if ec.GrantAllocationBehavior == types.EntitlementGrantAllocationBehaviorUnitStart {
+		var aligned time.Time
+		switch ec.GrantDurationUnit {
+		case types.EntitlementGrantDurationUnitHour:
+			aligned = types.FloorToStartOfHour(*firstUncoveredEventAt, sub.Timezone)
+		case types.EntitlementGrantDurationUnitDay:
+			aligned = types.FloorToStartOfDay(*firstUncoveredEventAt, sub.Timezone)
+		case types.EntitlementGrantDurationUnitWeek:
+			aligned = types.FloorToStartOfWeek(*firstUncoveredEventAt, sub.Timezone)
+		}
+		if !aligned.IsZero() {
+			validFrom = latestOf(aligned, coveredUntil)
+		}
 	}
 
 	validTo := validFrom.Add(dur)
