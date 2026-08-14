@@ -144,7 +144,10 @@ func (s *authService) refusePasswordLoginUnderSSO(ctx context.Context, user *use
 	cfg, err := GetSetting[types.SAMLConfig](
 		NewSettingsService(s.ServiceParams).(*settingsService), tenantCtx, types.SettingKeySAMLConfig)
 	if err != nil {
-		s.Logger.Error(ctx, "could not read saml settings while checking sso enforcement; allowing password login",
+		// Info rather than Error: the login proceeds, so this records a decision
+		// the code recovered from rather than a failure. It is still worth
+		// seeing — a tenant that has enforcement on is not getting it.
+		s.Logger.Info(ctx, "could not read saml settings while checking sso enforcement; allowing password login",
 			"error", err,
 			"tenant_id", user.TenantID,
 			"user_id", user.ID,
