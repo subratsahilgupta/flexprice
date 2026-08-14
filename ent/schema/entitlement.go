@@ -104,7 +104,7 @@ func (Entitlement) Fields() []ent.Field {
 			Nillable(),
 
 		field.String("grant_duration_unit").
-			SchemaType(map[string]string{"postgres": "varchar(10)"}).
+			SchemaType(map[string]string{"postgres": "varchar(20)"}).
 			Optional().
 			GoType(types.EntitlementGrantDurationUnit("")),
 
