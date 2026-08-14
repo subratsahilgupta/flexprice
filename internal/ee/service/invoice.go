@@ -508,6 +508,12 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 			return lockErr
 		}
 
+		if inv.IsManuallyEdited {
+			return ierr.NewError("invoice has manual line-item edits").
+				WithHint("manual line-item edits are not supported for computed invoices").
+				Mark(ierr.ErrValidation)
+		}
+
 		// Re-check status under lock: allow SKIPPED invoices to be re-computed
 		// (usage may have accumulated since the invoice was first marked SKIPPED).
 		if inv.InvoiceStatus == types.InvoiceStatusSkipped {
