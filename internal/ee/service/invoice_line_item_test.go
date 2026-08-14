@@ -555,7 +555,10 @@ func (s *LineItemEditSuite) TestRemoveSoftDeletesLineItem() {
 	ctx := s.GetContext()
 	inv, li := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
 
-	resp, err := s.service.RemoveLineItem(ctx, inv.ID, li.ID)
+	resp, err := s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs:        []string{li.ID},
+		MarkManuallyEdited: true,
+	})
 	s.NoError(err)
 	s.NotNil(resp)
 
@@ -574,6 +577,20 @@ func (s *LineItemEditSuite) TestRemoveSoftDeletesLineItem() {
 	s.True(updatedInv.IsManuallyEdited)
 }
 
+func (s *LineItemEditSuite) TestRemoveDoesNotMarkManuallyEditedByDefault() {
+	ctx := s.GetContext()
+	inv, li := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
+
+	_, err := s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: []string{li.ID},
+	})
+	s.NoError(err)
+
+	updatedInv, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.NoError(err)
+	s.False(updatedInv.IsManuallyEdited)
+}
+
 func (s *LineItemEditSuite) TestRemoveRecalculatesTotalsExcludingRemovedItem() {
 	ctx := s.GetContext()
 	inv, li1 := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
@@ -590,7 +607,9 @@ func (s *LineItemEditSuite) TestRemoveRecalculatesTotalsExcludingRemovedItem() {
 	}
 	s.NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, li2))
 
-	resp, err := s.service.RemoveLineItem(ctx, inv.ID, li1.ID)
+	resp, err := s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: []string{li1.ID},
+	})
 	s.NoError(err)
 
 	s.True(resp.Subtotal.Equal(decimal.NewFromInt(50)))
@@ -607,7 +626,9 @@ func (s *LineItemEditSuite) TestRemoveRejectsOnFinalizedInvoice() {
 	inv.InvoiceStatus = types.InvoiceStatusFinalized
 	s.NoError(s.GetStores().InvoiceRepo.Update(ctx, inv))
 
-	_, err := s.service.RemoveLineItem(ctx, inv.ID, li.ID)
+	_, err := s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: []string{li.ID},
+	})
 	s.Error(err)
 	s.True(ierr.IsValidation(err))
 
@@ -622,7 +643,9 @@ func (s *LineItemEditSuite) TestRemoveRejectsLineItemFromDifferentInvoice() {
 	inv2, li2 := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(200), decimal.NewFromInt(5))
 	_ = inv2
 
-	_, err := s.service.RemoveLineItem(ctx, inv1.ID, li2.ID)
+	_, err := s.service.RemoveBulkLineItem(ctx, inv1.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: []string{li2.ID},
+	})
 	s.Error(err)
 	s.True(ierr.IsNotFound(err))
 
@@ -635,10 +658,14 @@ func (s *LineItemEditSuite) TestRemoveRejectsAlreadyDeletedLineItem() {
 	ctx := s.GetContext()
 	inv, li := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
 
-	_, err := s.service.RemoveLineItem(ctx, inv.ID, li.ID)
+	_, err := s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: []string{li.ID},
+	})
 	s.Require().NoError(err)
 
-	_, err = s.service.RemoveLineItem(ctx, inv.ID, li.ID)
+	_, err = s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: []string{li.ID},
+	})
 	s.Error(err)
 	s.True(ierr.IsValidation(err))
 }
@@ -647,7 +674,73 @@ func (s *LineItemEditSuite) TestRemoveRejectsNonExistentLineItem() {
 	ctx := s.GetContext()
 	inv, _ := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
 
-	_, err := s.service.RemoveLineItem(ctx, inv.ID, "li_does_not_exist")
+	_, err := s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: []string{"li_does_not_exist"},
+	})
 	s.Error(err)
 	s.True(ierr.IsNotFound(err))
+}
+
+func (s *LineItemEditSuite) TestRemoveMultipleLineItemsInOneCall() {
+	ctx := s.GetContext()
+	inv, li1 := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
+
+	li2 := &invoice.InvoiceLineItem{
+		ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+		InvoiceID:   inv.ID,
+		CustomerID:  inv.CustomerID,
+		DisplayName: lo.ToPtr("Second Item"),
+		Amount:      decimal.NewFromInt(50),
+		Quantity:    decimal.NewFromInt(1),
+		Currency:    "usd",
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, li2))
+
+	li3 := &invoice.InvoiceLineItem{
+		ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+		InvoiceID:   inv.ID,
+		CustomerID:  inv.CustomerID,
+		DisplayName: lo.ToPtr("Third Item"),
+		Amount:      decimal.NewFromInt(25),
+		Quantity:    decimal.NewFromInt(1),
+		Currency:    "usd",
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, li3))
+
+	resp, err := s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: []string{li1.ID, li2.ID},
+	})
+	s.NoError(err)
+	s.Require().Len(resp.LineItems, 1)
+	s.Equal(li3.ID, resp.LineItems[0].ID)
+	s.True(resp.Subtotal.Equal(decimal.NewFromInt(25)))
+}
+
+func (s *LineItemEditSuite) TestRemoveBulkLineItemRejectsEmptyBatch() {
+	ctx := s.GetContext()
+	inv, _ := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
+
+	_, err := s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: []string{},
+	})
+	s.Error(err)
+	s.True(ierr.IsValidation(err))
+}
+
+func (s *LineItemEditSuite) TestRemoveBulkLineItemRejectsOversizedBatch() {
+	ctx := s.GetContext()
+	inv, _ := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
+
+	ids := make([]string, 101)
+	for i := range ids {
+		ids[i] = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM)
+	}
+
+	_, err := s.service.RemoveBulkLineItem(ctx, inv.ID, dto.RemoveBulkLineItemRequest{
+		LineItemIDs: ids,
+	})
+	s.Error(err)
+	s.True(ierr.IsValidation(err))
 }

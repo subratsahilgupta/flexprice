@@ -180,7 +180,11 @@ func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, 
 	return dto.NewInvoiceResponse(lockedInv), nil
 }
 
-func (s *invoiceService) RemoveLineItem(ctx context.Context, invoiceID, lineItemID string) (*dto.InvoiceResponse, error) {
+func (s *invoiceService) RemoveBulkLineItem(ctx context.Context, invoiceID string, req dto.RemoveBulkLineItemRequest) (*dto.InvoiceResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
 	var lockedInv *invoice.Invoice
 	var publishedLineItems []*invoice.InvoiceLineItem
 
@@ -196,33 +200,42 @@ func (s *invoiceService) RemoveLineItem(ctx context.Context, invoiceID, lineItem
 		}
 		lockedInv = inv
 
-		existingItem, err := s.InvoiceLineItemRepo.Get(txCtx, lineItemID)
-		if err != nil {
-			return err
-		}
-		if existingItem.InvoiceID != invoiceID {
-			return ierr.NewError("line item not found").
-				WithHintf("line item %s does not belong to invoice %s", lineItemID, invoiceID).
-				Mark(ierr.ErrNotFound)
-		}
-		if existingItem.Status != types.StatusPublished {
-			return ierr.NewError("line item is not removable").
-				WithHintf("line item %s has status %s and is not the current version", lineItemID, existingItem.Status).
-				Mark(ierr.ErrValidation)
+		removedIDs := make(map[string]bool, len(req.LineItemIDs))
+		for _, lineItemID := range req.LineItemIDs {
+			existingItem, err := s.InvoiceLineItemRepo.Get(txCtx, lineItemID)
+			if err != nil {
+				return err
+			}
+			if existingItem.InvoiceID != invoiceID {
+				return ierr.NewError("line item not found").
+					WithHintf("line item %s does not belong to invoice %s", lineItemID, invoiceID).
+					Mark(ierr.ErrNotFound)
+			}
+			if existingItem.Status != types.StatusPublished {
+				return ierr.NewError("line item is not removable").
+					WithHintf("line item %s has status %s and is not the current version", lineItemID, existingItem.Status).
+					Mark(ierr.ErrValidation)
+			}
+			removedIDs[lineItemID] = true
 		}
 
-		if err := s.InvoiceRepo.RemoveLineItems(txCtx, invoiceID, []string{lineItemID}); err != nil {
+		if err := s.InvoiceRepo.RemoveLineItems(txCtx, invoiceID, req.LineItemIDs); err != nil {
 			return err
 		}
 
-		lineItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(txCtx, invoiceID)
-		if err != nil {
-			return err
+		remaining := make([]*invoice.InvoiceLineItem, 0, len(lockedInv.LineItems))
+		for _, li := range lockedInv.LineItems {
+			if removedIDs[li.ID] {
+				continue
+			}
+			remaining = append(remaining, li)
 		}
-		publishedLineItems = lineItems
+		publishedLineItems = remaining
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
-		lockedInv.IsManuallyEdited = true
+		if req.MarkManuallyEdited {
+			lockedInv.IsManuallyEdited = true
+		}
 
 		return s.InvoiceRepo.Update(txCtx, lockedInv)
 	})
