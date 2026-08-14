@@ -1,11 +1,11 @@
 package saml
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/xml"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sync"
 	"time"
 
@@ -317,6 +317,19 @@ func dashboardRedirect(cfg *config.Configuration, token string) string {
 // inResponseTo extracts the AuthnRequest ID an assertion claims to answer,
 // without validating anything — the value is used only to retire the matching
 // outstanding request.
+//
+// Parsed as XML rather than matched with a pattern. The value decides which
+// outstanding request is retired, so failing to find it silently disables the
+// replay defence: claim("") retires nothing and the same assertion can be
+// posted again until the request expires. A pattern would have to agree with
+// every identity provider's serialisation to avoid that — single-quoted
+// attributes and whitespace around "=" are both valid XML — and it would also
+// have to avoid matching InResponseTo on nested elements such as
+// SubjectConfirmationData, which appears before the Response attribute in some
+// documents and would retire the wrong ID.
+//
+// Only the root element's attribute is read; the decoder stops at the first
+// token, so a malformed or hostile document costs nothing to reject.
 func inResponseTo(r *http.Request) string {
 	raw := r.PostFormValue("SAMLResponse")
 	if raw == "" {
@@ -326,11 +339,24 @@ func inResponseTo(r *http.Request) string {
 	if err != nil {
 		return ""
 	}
-	m := inResponseToPattern.FindSubmatch(decoded)
-	if len(m) < 2 {
+
+	decoder := xml.NewDecoder(bytes.NewReader(decoded))
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return ""
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			// Skip the XML declaration, comments and whitespace preceding the
+			// root element.
+			continue
+		}
+		for _, attr := range start.Attr {
+			if attr.Name.Local == "InResponseTo" {
+				return attr.Value
+			}
+		}
 		return ""
 	}
-	return string(m[1])
 }
-
-var inResponseToPattern = regexp.MustCompile(`InResponseTo="([^"]+)"`)

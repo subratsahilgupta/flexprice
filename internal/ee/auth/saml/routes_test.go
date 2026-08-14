@@ -1,9 +1,11 @@
 package saml
 
 import (
+	"encoding/base64"
 	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -252,5 +254,58 @@ func TestMetadataCarriesTheTenantFromTheURL(t *testing.T) {
 	}
 	if !strings.Contains(string(xml), tenantID) {
 		t.Error("metadata does not carry the tenant ID from the URL")
+	}
+}
+
+// TestInResponseToAcceptsEveryValidSerialisation covers the replay defence
+// against identity providers that serialise XML differently from ours.
+//
+// The extracted ID decides which outstanding request is retired. Failing to
+// find it does not fail loudly — claim("") retires nothing, so the assertion
+// stays replayable for the request's whole lifetime. A pattern matching only
+// double-quoted attributes silently lost that defence against any provider
+// emitting single quotes or whitespace around "=", both valid XML.
+func TestInResponseToAcceptsEveryValidSerialisation(t *testing.T) {
+	cases := []struct {
+		name string
+		xml  string
+		want string
+	}{
+		{"double quotes", `<Response InResponseTo="id-abc" Version="2.0"></Response>`, "id-abc"},
+		{"single quotes", `<Response InResponseTo='id-abc' Version='2.0'></Response>`, "id-abc"},
+		{"whitespace around equals", `<Response InResponseTo = "id-abc"></Response>`, "id-abc"},
+		{"namespaced root", `<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" InResponseTo="id-abc"></samlp:Response>`, "id-abc"},
+		{"xml declaration first", `<?xml version="1.0"?><Response InResponseTo="id-abc"></Response>`, "id-abc"},
+		{"absent attribute", `<Response Version="2.0"></Response>`, ""},
+		{"not xml at all", `this is not xml`, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := url.Values{"SAMLResponse": {base64.StdEncoding.EncodeToString([]byte(tc.xml))}}
+			req := httptest.NewRequest(http.MethodPost, "/acs", strings.NewReader(body.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			if got := inResponseTo(req); got != tc.want {
+				t.Errorf("inResponseTo() = %q, want %q — a missed ID leaves the assertion replayable", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestInResponseToReadsTheRootElementOnly guards against retiring the wrong
+// request. SubjectConfirmationData also carries InResponseTo, and in a document
+// where it appears before the Response attribute a scan of the whole payload
+// would take that value instead, leaving the real request outstanding.
+func TestInResponseToReadsTheRootElementOnly(t *testing.T) {
+	doc := `<Response InResponseTo="id-correct"><Assertion><Subject><SubjectConfirmation>` +
+		`<SubjectConfirmationData InResponseTo="id-nested"/></SubjectConfirmation></Subject></Assertion></Response>`
+
+	body := url.Values{"SAMLResponse": {base64.StdEncoding.EncodeToString([]byte(doc))}}
+	req := httptest.NewRequest(http.MethodPost, "/acs", strings.NewReader(body.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	if got := inResponseTo(req); got != "id-correct" {
+		t.Errorf("inResponseTo() = %q, want the root element's value", got)
 	}
 }
