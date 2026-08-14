@@ -15,8 +15,7 @@ import (
 
 type InvoiceModificationServiceSuite struct {
 	testutil.BaseServiceTestSuite
-	invoiceService InvoiceService
-	service        InvoiceModificationService
+	service InvoiceService
 }
 
 func TestInvoiceModification(t *testing.T) {
@@ -25,20 +24,13 @@ func TestInvoiceModification(t *testing.T) {
 
 func (s *InvoiceModificationServiceSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
-	s.invoiceService = NewInvoiceService(ServiceParams{
+	s.service = NewInvoiceService(ServiceParams{
 		Logger:              s.GetLogger(),
 		Config:              s.GetConfig(),
 		DB:                  s.GetDB(),
 		InvoiceRepo:         s.GetStores().InvoiceRepo,
 		InvoiceLineItemRepo: s.GetStores().InvoiceLineItemRepo,
 	})
-	s.service = NewInvoiceModificationService(ServiceParams{
-		Logger:              s.GetLogger(),
-		Config:              s.GetConfig(),
-		DB:                  s.GetDB(),
-		InvoiceRepo:         s.GetStores().InvoiceRepo,
-		InvoiceLineItemRepo: s.GetStores().InvoiceLineItemRepo,
-	}, s.invoiceService)
 }
 
 func (s *InvoiceModificationServiceSuite) createDraftInvoice() *invoice.Invoice {

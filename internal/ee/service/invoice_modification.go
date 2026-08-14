@@ -7,25 +7,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
-// InvoiceModificationService is the unified entry point for draft-invoice modification
-// actions, mirroring SubscriptionModificationService's Type/Action dispatch shape.
-type InvoiceModificationService interface {
-	Execute(ctx context.Context, invoiceID string, req dto.ExecuteInvoiceModifyRequest) (*dto.InvoiceModifyResponse, error)
-}
-
-type invoiceModificationService struct {
-	ServiceParams
-	invoiceService InvoiceService
-}
-
-func NewInvoiceModificationService(params ServiceParams, invoiceService InvoiceService) InvoiceModificationService {
-	return &invoiceModificationService{
-		ServiceParams:  params,
-		invoiceService: invoiceService,
-	}
-}
-
-func (s *invoiceModificationService) Execute(ctx context.Context, invoiceID string, req dto.ExecuteInvoiceModifyRequest) (*dto.InvoiceModifyResponse, error) {
+func (s *invoiceService) Execute(ctx context.Context, invoiceID string, req dto.ExecuteInvoiceModifyRequest) (*dto.InvoiceModifyResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -40,10 +22,10 @@ func (s *invoiceModificationService) Execute(ctx context.Context, invoiceID stri
 	}
 }
 
-func (s *invoiceModificationService) executeLineItemModification(ctx context.Context, invoiceID string, params *dto.InvoiceModifyLineItemParams) (*dto.InvoiceModifyResponse, error) {
+func (s *invoiceService) executeLineItemModification(ctx context.Context, invoiceID string, params *dto.InvoiceModifyLineItemParams) (*dto.InvoiceModifyResponse, error) {
 	switch params.Action {
 	case dto.InvoiceModifyLineItemActionAdd:
-		resp, err := s.invoiceService.AddBulkLineItem(ctx, invoiceID, dto.AddBulkLineItemRequest{
+		resp, err := s.AddBulkLineItem(ctx, invoiceID, dto.AddBulkLineItemRequest{
 			Items: params.Items,
 		})
 		if err != nil {
@@ -51,7 +33,7 @@ func (s *invoiceModificationService) executeLineItemModification(ctx context.Con
 		}
 		return &dto.InvoiceModifyResponse{Invoice: resp}, nil
 	case dto.InvoiceModifyLineItemActionRemove:
-		resp, err := s.invoiceService.RemoveBulkLineItem(ctx, invoiceID, dto.RemoveBulkLineItemRequest{
+		resp, err := s.RemoveBulkLineItem(ctx, invoiceID, dto.RemoveBulkLineItemRequest{
 			LineItemIDs: params.LineItemIDs,
 		})
 		if err != nil {

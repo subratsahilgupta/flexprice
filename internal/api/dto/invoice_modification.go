@@ -4,17 +4,13 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
-// InvoiceModifyType selects the modification area for ExecuteInvoiceModifyRequest.
-// Only "line_item" exists today; a future invoice-level coupon/tax modify type would
-// be a new value here plus a new *Params field, not a restructuring.
 type InvoiceModifyType string
 
 const (
 	InvoiceModifyTypeLineItem InvoiceModifyType = "line_item"
 )
 
-// ExecuteInvoiceModifyRequest is the unified body for invoice-modify actions.
-// Exactly one of the *Params fields must be set, matching Type.
+// ExecuteInvoiceModifyRequest: exactly one of the *Params fields must be set, matching Type.
 type ExecuteInvoiceModifyRequest struct {
 	Type           InvoiceModifyType            `json:"type" validate:"required"`
 	LineItemParams *InvoiceModifyLineItemParams `json:"line_item_params,omitempty"`
@@ -35,7 +31,6 @@ func (r *ExecuteInvoiceModifyRequest) Validate() error {
 	}
 }
 
-// InvoiceModifyLineItemAction selects add vs remove within a "line_item" modification.
 type InvoiceModifyLineItemAction string
 
 const (
@@ -43,7 +38,6 @@ const (
 	InvoiceModifyLineItemActionRemove InvoiceModifyLineItemAction = "remove"
 )
 
-// InvoiceModifyLineItemParams reuses AddLineItemRequest (per-item shape) for Items.
 type InvoiceModifyLineItemParams struct {
 	Action      InvoiceModifyLineItemAction `json:"action" validate:"required"`
 	Items       []AddLineItemRequest        `json:"items,omitempty"`
@@ -72,7 +66,6 @@ func (p *InvoiceModifyLineItemParams) Validate() error {
 	return nil
 }
 
-// InvoiceModifyResponse wraps the updated invoice after an InvoiceModify call.
 type InvoiceModifyResponse struct {
 	Invoice *InvoiceResponse `json:"invoice"`
 }
