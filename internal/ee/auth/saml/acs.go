@@ -122,7 +122,12 @@ func normaliseEmail(email string) string {
 // tenant B, and the failure has to be explicit rather than a silent login into
 // the wrong tenant.
 func (p *samlProvider) resolveUser(ctx context.Context, params service.ServiceParams, tenantID, email string, cfg Config) (string, error) {
-	existing, err := params.UserRepo.GetByEmail(ctx, email)
+	// Look the user up without a tenant in context. GetByEmail filters by tenant
+	// when one is set, which would hide a user belonging to another
+	// organisation — the caller would then fall through to provisioning and hit
+	// the global unique index on users.email as an opaque database error rather
+	// than the explicit refusal below.
+	existing, err := params.UserRepo.GetByEmail(types.SetTenantID(ctx, ""), email)
 	if err == nil && existing != nil {
 		if existing.TenantID != tenantID {
 			return "", ierr.NewError("user belongs to a different organisation").

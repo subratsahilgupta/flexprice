@@ -1,6 +1,8 @@
 package saml
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/crewjam/saml"
@@ -109,5 +111,26 @@ func TestConfiguredAttributeDoesNotFallBackToNameID(t *testing.T) {
 
 	if got, err := extractEmail(assertion, cfg); err == nil {
 		t.Errorf("configured attribute fell back to NameID, yielding %q", got)
+	}
+}
+
+// TestResolveUserLooksUpAcrossTenants pins the fix for a real failure found by
+// live testing: the lookup ran with the assertion's tenant in context, and
+// GetByEmail filters by tenant when one is set. A user belonging to another
+// organisation was therefore invisible, so the flow fell through to
+// provisioning and hit the global unique index on users.email — surfacing as a
+// 500 database error instead of the explicit 403 refusal.
+//
+// The lookup must clear the tenant so the cross-tenant branch is reachable.
+func TestResolveUserLooksUpAcrossTenants(t *testing.T) {
+	src, err := os.ReadFile("acs.go")
+	if err != nil {
+		t.Fatalf("read acs.go: %v", err)
+	}
+
+	if !strings.Contains(string(src), `GetByEmail(types.SetTenantID(ctx, "")`) {
+		t.Error("resolveUser must look the user up with no tenant in context, " +
+			"otherwise a user in another organisation is invisible and the " +
+			"cross-tenant refusal never fires")
 	}
 }
