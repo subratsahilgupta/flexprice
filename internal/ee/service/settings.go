@@ -61,9 +61,18 @@ func isTenantLevelSetting(key types.SettingKey) bool {
 // Service accounts are refused whatever roles their key carries, matching
 // middleware.SuperAdminOnly — administering how people log in is not a machine
 // action.
-func requireSuperAdminForAuthSetting(ctx context.Context, key types.SettingKey) error {
+func (s *settingsService) requireSuperAdminForAuthSetting(ctx context.Context, key types.SettingKey) error {
 	if key != types.SettingKeySAMLConfig {
 		return nil
+	}
+
+	// A deployment with SAML switched off serves no SAML routes, so a stored
+	// configuration could only sit there looking as though SSO were set up.
+	// Refusing the write keeps the feature genuinely absent.
+	if s.Config == nil || !s.Config.Auth.SAML.Enabled {
+		return ierr.NewError("saml is not enabled for this deployment").
+			WithHint("SAML single sign-on is not available on this deployment").
+			Mark(ierr.ErrNotFound)
 	}
 
 	if types.IsServiceAccount(ctx) || !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
@@ -72,6 +81,52 @@ func requireSuperAdminForAuthSetting(ctx context.Context, key types.SettingKey) 
 			Mark(ierr.ErrPermissionDenied)
 	}
 	return nil
+}
+
+// apiImmutableSettingFields lists the fields of a setting that the settings API
+// may never write, whatever the caller's role.
+//
+// The settings API is generic: it merges whatever keys a request carries into
+// the stored value. That is fine for configuration a tenant owns, but not for a
+// field that records a Flexprice-side decision about that tenant — the tenant
+// would be able to grant it to itself in the same request that sets everything
+// else.
+//
+// Fields listed here are carried over from the stored value on update and are
+// changed out of band, directly in the database.
+func apiImmutableSettingFields(key types.SettingKey) []string {
+	if key == types.SettingKeySAMLConfig {
+		// "active" is Flexprice's approval that this tenant may serve SSO at
+		// all, granted after its claim to the identity provider is checked.
+		// A tenant that could set it would be approving itself.
+		return []string{"active"}
+	}
+	return nil
+}
+
+// mergePreservingImmutableFields applies a partial update over the stored value
+// while holding the key's API-immutable fields at what is already stored.
+//
+// A request naming a protected field is ignored rather than rejected: the field
+// is not part of the API's contract, so a caller is not expected to know it
+// exists — a configuration blob round-tripped through GET and back through PUT
+// would otherwise fail on a field the caller never meant to set.
+func mergePreservingImmutableFields(key types.SettingKey, stored, update map[string]interface{}) map[string]interface{} {
+	protected := map[string]interface{}{}
+	for _, field := range apiImmutableSettingFields(key) {
+		if v, ok := stored[field]; ok {
+			protected[field] = v
+		}
+	}
+
+	for k, v := range update {
+		stored[k] = v
+	}
+
+	for field, v := range protected {
+		stored[field] = v
+	}
+	return stored
 }
 
 // fetchSetting fetches a setting from the repository
@@ -293,7 +348,7 @@ func (s *settingsService) GetSettingByKey(ctx context.Context, key types.Setting
 //   - Don't use in business logic if you want to replace the entire setting
 //   - Don't call repository methods directly - always use service methods
 func (s *settingsService) UpdateSettingByKey(ctx context.Context, key types.SettingKey, req *dto.UpdateSettingRequest) (*dto.SettingResponse, error) {
-	if err := requireSuperAdminForAuthSetting(ctx, key); err != nil {
+	if err := s.requireSuperAdminForAuthSetting(ctx, key); err != nil {
 		return nil, err
 	}
 
@@ -346,7 +401,7 @@ func (s *settingsService) UpdateSettingByKey(ctx context.Context, key types.Sett
 // WHEN NOT TO USE:
 //   - Don't call repository methods directly - always use service methods
 func (s *settingsService) DeleteSettingByKey(ctx context.Context, key types.SettingKey) error {
-	if err := requireSuperAdminForAuthSetting(ctx, key); err != nil {
+	if err := s.requireSuperAdminForAuthSetting(ctx, key); err != nil {
 		return err
 	}
 
@@ -418,9 +473,7 @@ func updateSettingByKey[T types.SettingConfig](s *settingsService, ctx context.C
 	}
 
 	// Merge request values with current values
-	for k, v := range req.Value {
-		currentMap[k] = v
-	}
+	currentMap = mergePreservingImmutableFields(key, currentMap, req.Value)
 
 	// Convert merged map back to typed struct for validation
 	merged, err := utils.ToStruct[T](currentMap)

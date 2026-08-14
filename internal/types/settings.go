@@ -760,6 +760,8 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 			Key: SettingKeySAMLConfig,
 			DefaultValue: map[string]interface{}{
 				"enabled":         false,
+				"active":          false,
+				"enforce_sso":     false,
 				"idp_entity_id":   "",
 				"idp_sso_url":     "",
 				"idp_certificate": "",
@@ -980,7 +982,18 @@ func ValidateTimezone(timezone string) error {
 // Only the identity provider's public signing certificate is held here, so
 // plain JSONB storage is appropriate.
 type SAMLConfig struct {
+	// Enabled is the tenant's own switch, set through the settings API.
 	Enabled bool `json:"enabled"`
+
+	// Active is Flexprice's approval that this tenant may serve SSO. It is not
+	// settable through the API (see apiImmutableSettingFields) and is flipped
+	// directly in the database once the tenant's claim to its identity provider
+	// has been checked. Both flags must be on before a login is served.
+	Active bool `json:"active"`
+
+	// EnforceSSO refuses password login for this tenant's users, super admins
+	// excepted so an identity provider outage is recoverable.
+	EnforceSSO bool `json:"enforce_sso"`
 
 	// IDPEntityID identifies the identity provider; it must match the Issuer of
 	// every assertion we accept.

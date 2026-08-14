@@ -167,3 +167,56 @@ func TestLoopbackIdPAllowsPlainHTTP(t *testing.T) {
 		t.Error("plain http to a remote identity provider must be rejected")
 	}
 }
+
+// TestIsLiveRequiresBothFlags covers the ops gate: a tenant may switch its own
+// SSO off, but cannot switch it on without Flexprice's approval.
+func TestIsLiveRequiresBothFlags(t *testing.T) {
+	cases := []struct {
+		enabled, active, want bool
+	}{
+		{enabled: true, active: true, want: true},
+		{enabled: true, active: false, want: false},
+		{enabled: false, active: true, want: false},
+		{enabled: false, active: false, want: false},
+	}
+
+	for _, tc := range cases {
+		cfg := Config{Enabled: tc.enabled, Active: tc.active}
+		if got := cfg.IsLive(); got != tc.want {
+			t.Errorf("IsLive() with enabled=%v active=%v = %v, want %v",
+				tc.enabled, tc.active, got, tc.want)
+		}
+	}
+}
+
+// TestShouldEnforceSSO covers the breakglass rule. A super admin keeps password
+// login so an identity provider outage does not lock the tenant out of its own
+// account, and enforcement does not begin before SSO can actually serve a login.
+func TestShouldEnforceSSO(t *testing.T) {
+	live := Config{Enabled: true, Active: true, EnforceSSO: true}
+	reader := []string{string(types.RoleAllReader)}
+	admin := []string{string(types.RoleSuperAdmin)}
+
+	if !live.ShouldEnforceSSO(reader) {
+		t.Error("a regular user must be refused password login when SSO is enforced")
+	}
+	if live.ShouldEnforceSSO(admin) {
+		t.Error("a super admin must keep password login as the recovery path")
+	}
+	// A user carrying no roles is not a super admin, so enforcement applies.
+	if !live.ShouldEnforceSSO(nil) {
+		t.Error("a user with no roles is not a super admin and must be enforced")
+	}
+
+	// Not yet approved: enforcement must not begin, or the tenant locks itself
+	// out of a login SAML cannot yet perform.
+	pending := Config{Enabled: true, Active: false, EnforceSSO: true}
+	if pending.ShouldEnforceSSO(reader) {
+		t.Error("enforcement must not apply before Flexprice has approved the tenant")
+	}
+
+	off := Config{Enabled: true, Active: true, EnforceSSO: false}
+	if off.ShouldEnforceSSO(reader) {
+		t.Error("enforcement must not apply when the tenant has not asked for it")
+	}
+}

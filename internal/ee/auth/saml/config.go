@@ -8,6 +8,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
+	"github.com/samber/lo"
 )
 
 // SettingKeySAML is the tenant-level settings key holding a tenant's identity
@@ -24,7 +25,32 @@ const SettingKeySAML types.SettingKey = "saml_config"
 // plain JSONB storage is appropriate. An SP private key would need
 // internal/security's EncryptionService instead.
 type Config struct {
+	// Enabled is the tenant's own switch, set by its super admin through the
+	// settings API.
 	Enabled bool `json:"enabled"`
+
+	// Active is the Flexprice-side approval, and is deliberately not settable
+	// through the API — it is flipped directly in the database once the tenant's
+	// claim to its identity provider has been checked out of band.
+	//
+	// It exists because a tenant configuring SSO for itself decides which
+	// identity provider Flexprice will trust for its users, and nothing in the
+	// settings write proves the tenant controls that provider. Both flags must
+	// be on before a login is served, so a tenant can turn its own SSO off but
+	// cannot turn it on unilaterally.
+	//
+	// This stands in for per-domain verification: when email-domain discovery
+	// arrives, a verified domain becomes the thing that grants Active
+	// automatically.
+	Active bool `json:"active"`
+
+	// EnforceSSO refuses password login for this tenant's users, so enabling SSO
+	// closes the password path rather than adding a second way in.
+	//
+	// Super admins stay exempt (see ShouldEnforceSSO): an identity provider
+	// outage would otherwise lock the tenant out of its own account with no way
+	// back that does not involve direct database access.
+	EnforceSSO bool `json:"enforce_sso"`
 
 	// IDPEntityID identifies the identity provider; it must match the Issuer of
 	// every assertion we accept.
@@ -47,12 +73,41 @@ type Config struct {
 func defaultConfig() map[string]interface{} {
 	return map[string]interface{}{
 		"enabled":         false,
+		"active":          false,
+		"enforce_sso":     false,
 		"idp_entity_id":   "",
 		"idp_sso_url":     "",
 		"idp_certificate": "",
 		"email_attribute": "",
 		"default_role":    string(types.RoleAllReader),
 	}
+}
+
+// IsLive reports whether this tenant's SSO may actually serve a login.
+//
+// Both the tenant's own switch and the Flexprice-side approval must be on. Every
+// decision that turns on "is SAML usable for this tenant" goes through here, so
+// the two flags cannot fall out of step between the login redirect, the
+// assertion callback, and password enforcement.
+func (c Config) IsLive() bool {
+	return c.Enabled && c.Active
+}
+
+// ShouldEnforceSSO reports whether password login must be refused for a user
+// holding the given roles.
+//
+// Enforcement only applies once SSO is actually live: a tenant that set the flag
+// while still waiting for approval would otherwise lock itself out of a login
+// that SAML cannot yet serve.
+//
+// Super admins are exempt so an identity provider outage leaves a way back in.
+// The exemption is narrow by design — it is the same group already trusted to
+// configure SAML, and their password is the tenant's recovery path.
+func (c Config) ShouldEnforceSSO(roles []string) bool {
+	if !c.IsLive() || !c.EnforceSSO {
+		return false
+	}
+	return !lo.Contains(roles, types.RoleSuperAdmin.String())
 }
 
 // Validate rejects a configuration that cannot produce a safe login.

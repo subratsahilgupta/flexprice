@@ -107,7 +107,14 @@ func NewHandler(cfg *config.Configuration, serviceParams service.ServiceParams, 
 // RegisterRoutes mounts the SAML endpoints on the public group. They run before
 // a session exists: the login redirect starts the flow, and the ACS callback is
 // posted by the identity provider, which carries no Flexprice credentials.
+//
+// A deployment with SAML switched off mounts nothing, so the endpoints 404 as
+// though the feature did not exist rather than announcing a disabled one.
 func (h *Handler) RegisterRoutes(public *gin.RouterGroup) {
+	if !h.cfg.Auth.SAML.Enabled {
+		return
+	}
+
 	group := public.Group("/auth/saml/:tenant")
 	{
 		group.GET("/metadata", h.Metadata)
@@ -147,7 +154,10 @@ func (h *Handler) tenantConfig(c *gin.Context) (string, Config, error) {
 	if err != nil {
 		return "", Config{}, err
 	}
-	if !cfg.Enabled {
+	// Both the tenant's switch and the Flexprice-side approval must be on. The
+	// two are reported identically: whether a tenant is unapproved rather than
+	// unconfigured is not something an unauthenticated caller should learn.
+	if !cfg.IsLive() {
 		return "", Config{}, ierr.NewError("saml is not enabled for this organisation").
 			Mark(ierr.ErrNotFound)
 	}

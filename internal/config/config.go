@@ -188,6 +188,13 @@ type AuthConfig struct {
 // SAMLConfig holds deployment-level SAML settings. Per-tenant identity provider
 // details live in the tenant's saml_config setting, not here.
 type SAMLConfig struct {
+	// Enabled is the deployment-wide switch for the whole SAML feature. When it
+	// is off the SAML routes are not mounted at all and no tenant may store a
+	// configuration, so a deployment that does not offer SSO exposes none of it
+	// and cannot accumulate configurations that silently do nothing.
+	//
+	// Defaults to off: SSO is opt-in per deployment.
+	Enabled bool `mapstructure:"enabled"`
 	// BaseURL is the externally reachable origin of this deployment. It builds
 	// the SP entity ID and ACS URL published in our metadata, so it must match
 	// what the identity provider is configured to call back.
