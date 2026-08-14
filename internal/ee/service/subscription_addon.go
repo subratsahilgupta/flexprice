@@ -174,8 +174,7 @@ func (s *subscriptionService) settleAddonAttach(
 		return nil, err
 	}
 	if prorationReq == nil {
-		s.Logger.Error(ctx, "no proration request to settle addon add")
-		return nil, ierr.NewError("no proration request to settle addon add").Mark(ierr.ErrInternal)
+		return nil, nil
 	}
 
 	settled, err := NewLineItemProrationService(s.ServiceParams).Apply(ctx, *prorationReq)
@@ -716,8 +715,7 @@ func (s *subscriptionService) settleAddonDetach(
 		return nil, err
 	}
 	if prorationReq == nil {
-		s.Logger.Error(ctx, "no proration request to settle addon remove")
-		return nil, ierr.NewError("no proration request to settle addon remove").Mark(ierr.ErrInternal)
+		return nil, nil
 	}
 
 	settled, err := NewLineItemProrationService(s.ServiceParams).Apply(ctx, *prorationReq)
