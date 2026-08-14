@@ -374,7 +374,8 @@ func (s *LineItemEditSuite) TestUpdateArchivesOldCreatesNew() {
 
 	newName := "New Name"
 	resp, err := s.service.UpdateLineItem(ctx, inv.ID, li.ID, dto.UpdateLineItemRequest{
-		DisplayName: &newName,
+		DisplayName:        &newName,
+		MarkManuallyEdited: true,
 	})
 	s.NoError(err)
 	s.NotNil(resp)
@@ -403,6 +404,21 @@ func (s *LineItemEditSuite) TestUpdateArchivesOldCreatesNew() {
 	updatedInv, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
 	s.NoError(err)
 	s.True(updatedInv.IsManuallyEdited)
+}
+
+func (s *LineItemEditSuite) TestUpdateDoesNotMarkManuallyEditedByDefault() {
+	ctx := s.GetContext()
+	inv, li := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
+
+	newName := "New Name"
+	_, err := s.service.UpdateLineItem(ctx, inv.ID, li.ID, dto.UpdateLineItemRequest{
+		DisplayName: &newName,
+	})
+	s.NoError(err)
+
+	updatedInv, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.NoError(err)
+	s.False(updatedInv.IsManuallyEdited)
 }
 
 func (s *LineItemEditSuite) TestUpdateChainsLineageAcrossMultipleEdits() {

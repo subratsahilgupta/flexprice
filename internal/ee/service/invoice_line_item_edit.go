@@ -97,14 +97,21 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 			return err
 		}
 
-		lineItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(txCtx, invoiceID)
-		if err != nil {
-			return err
+		// lockedInv.LineItems was already populated by GetForUpdate — swap the archived
+		// item for its replacement in memory instead of refetching via ListByInvoiceID.
+		remaining := make([]*invoice.InvoiceLineItem, 0, len(lockedInv.LineItems))
+		for _, li := range lockedInv.LineItems {
+			if li.ID == existingItem.ID {
+				continue
+			}
+			remaining = append(remaining, li)
 		}
-		publishedLineItems = lineItems
+		publishedLineItems = append(remaining, &newItem)
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
-		lockedInv.IsManuallyEdited = true
+		if req.MarkManuallyEdited {
+			lockedInv.IsManuallyEdited = true
+		}
 
 		return s.InvoiceRepo.Update(txCtx, lockedInv)
 	})
