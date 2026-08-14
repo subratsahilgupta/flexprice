@@ -32,8 +32,6 @@ func (s *invoiceService) recalculateTotalsFromLineItems(inv *invoice.Invoice, li
 	}
 }
 
-// UpdateLineItem is archive-and-replace, not an in-place update: it archives the
-// existing row and creates a replacement with parent_line_item_id pointing back.
 func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItemID string, req dto.UpdateLineItemRequest) (*dto.InvoiceResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -118,8 +116,6 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 	return dto.NewInvoiceResponse(lockedInv), nil
 }
 
-// AddLineItem creates a new line item on a draft invoice; Currency and CustomerID are
-// inherited from the invoice since the request carries neither.
 func (s *invoiceService) AddLineItem(ctx context.Context, invoiceID string, req dto.AddLineItemRequest) (*dto.InvoiceResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -179,8 +175,6 @@ func (s *invoiceService) AddLineItem(ctx context.Context, invoiceID string, req 
 	return dto.NewInvoiceResponse(lockedInv), nil
 }
 
-// RemoveLineItem soft-deletes via InvoiceRepo.RemoveLineItems, which silently no-ops
-// if nothing matches - the check below exists to surface a clear error instead.
 func (s *invoiceService) RemoveLineItem(ctx context.Context, invoiceID, lineItemID string) (*dto.InvoiceResponse, error) {
 	var lockedInv *invoice.Invoice
 	var publishedLineItems []*invoice.InvoiceLineItem

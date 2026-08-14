@@ -85,19 +85,10 @@ type InvoiceService interface {
 	// total_tax / total / amount_due. Idempotent via tax-applied records.
 	RecalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error)
 
-	// UpdateLineItem archives the existing line item and creates its replacement with
-	// display_name/quantity/amount updated (archive-and-replace, see CR-06 in
-	// specs/invoice-draft-editing/spec.md). Draft-only.
 	UpdateLineItem(ctx context.Context, invoiceID, lineItemID string, req dto.UpdateLineItemRequest) (*dto.InvoiceResponse, error)
 
-	// AddLineItem creates a brand-new line item on a draft invoice. Unlike
-	// UpdateLineItem, there is no prior row to archive - ParentLineItemID is nil.
-	// Draft-only.
 	AddLineItem(ctx context.Context, invoiceID string, req dto.AddLineItemRequest) (*dto.InvoiceResponse, error)
 
-	// RemoveLineItem soft-deletes a line item on a draft invoice (status=deleted, see
-	// CR-07 in specs/invoice-draft-editing/spec.md). Unlike UpdateLineItem, there is no
-	// replacement row - the item is simply gone from totals and future listings. Draft-only.
 	RemoveLineItem(ctx context.Context, invoiceID, lineItemID string) (*dto.InvoiceResponse, error)
 }
 

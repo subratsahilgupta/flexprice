@@ -971,7 +971,6 @@ func (r *UpdateInvoiceRequest) Validate() error {
 	return nil
 }
 
-// AddLineItemRequest represents the request payload for adding a new line item to a draft invoice
 type AddLineItemRequest struct {
 	DisplayName string          `json:"display_name" validate:"required"`
 	Amount      decimal.Decimal `json:"amount" validate:"required" swaggertype:"string"`
@@ -1004,8 +1003,6 @@ func (r *AddLineItemRequest) Validate() error {
 	return nil
 }
 
-// UpdateLineItemRequest represents the request payload for partially updating an existing line item on a draft invoice.
-// DisplayName, Amount, and Quantity are independent optional overrides - setting one never implies or derives another.
 type UpdateLineItemRequest struct {
 	DisplayName *string          `json:"display_name,omitempty"`
 	Amount      *decimal.Decimal `json:"amount,omitempty" swaggertype:"string"`
@@ -1040,8 +1037,6 @@ func (r *UpdateLineItemRequest) Validate() error {
 	return nil
 }
 
-// ApplyCouponRequest represents the request payload for applying a coupon to a draft invoice.
-// A nil LineItemID applies the coupon at the invoice level; a non-nil LineItemID scopes it to that line item.
 type ApplyCouponRequest struct {
 	CouponID   string  `json:"coupon_id" validate:"required"`
 	LineItemID *string `json:"line_item_id,omitempty"`
