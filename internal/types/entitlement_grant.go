@@ -170,8 +170,8 @@ func EntitlementGrantDurationOf(value int, unit EntitlementGrantDurationUnit) (t
 const EntitlementGrantMinDuration = time.Hour
 
 // EntitlementGrantAllocationBehavior controls how validFrom is anchored when a
-// grant is opened. Only meaningful when grant_duration_unit=day; ignored
-// otherwise. Empty string is treated as first_usage.
+// grant is opened. Only meaningful for fixed-duration units (hour, day, week);
+// ignored for subscription_period. Empty string is treated as first_usage.
 type EntitlementGrantAllocationBehavior string
 
 const (
