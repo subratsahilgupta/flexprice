@@ -107,9 +107,7 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 		publishedLineItems = append(remaining, &newItem)
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
-		if req.MarkManuallyEdited {
-			lockedInv.IsManuallyEdited = true
-		}
+		lockedInv.IsManuallyEdited = true
 
 		return s.InvoiceRepo.Update(txCtx, lockedInv)
 	})
@@ -169,9 +167,7 @@ func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, 
 		publishedLineItems = append(publishedLineItems, newItems...)
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
-		if req.MarkManuallyEdited {
-			lockedInv.IsManuallyEdited = true
-		}
+		lockedInv.IsManuallyEdited = true
 
 		return s.InvoiceRepo.Update(txCtx, lockedInv)
 	})
@@ -236,9 +232,7 @@ func (s *invoiceService) RemoveBulkLineItem(ctx context.Context, invoiceID strin
 		publishedLineItems = remaining
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
-		if req.MarkManuallyEdited {
-			lockedInv.IsManuallyEdited = true
-		}
+		lockedInv.IsManuallyEdited = true
 
 		return s.InvoiceRepo.Update(txCtx, lockedInv)
 	})

@@ -114,7 +114,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteRemoveLineItem() {
 	s.Len(resp.Invoice.LineItems, 0)
 }
 
-func (s *InvoiceModificationServiceSuite) TestExecuteForcesMarkManuallyEdited() {
+func (s *InvoiceModificationServiceSuite) TestExecuteMarksInvoiceAsManuallyEdited() {
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice()
 

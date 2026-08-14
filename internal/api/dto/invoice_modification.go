@@ -43,10 +43,7 @@ const (
 	InvoiceModifyLineItemActionRemove InvoiceModifyLineItemAction = "remove"
 )
 
-// InvoiceModifyLineItemParams reuses AddLineItemRequest (per-item shape, no
-// MarkManuallyEdited) for Items rather than AddBulkLineItemRequest directly —
-// MarkManuallyEdited is always forced true by the service layer for invoice-modify
-// calls, so exposing it here would be a silently-ignored field on the wire.
+// InvoiceModifyLineItemParams reuses AddLineItemRequest (per-item shape) for Items.
 type InvoiceModifyLineItemParams struct {
 	Action      InvoiceModifyLineItemAction `json:"action" validate:"required"`
 	Items       []AddLineItemRequest        `json:"items,omitempty"`

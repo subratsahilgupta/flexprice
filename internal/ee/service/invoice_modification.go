@@ -44,8 +44,7 @@ func (s *invoiceModificationService) executeLineItemModification(ctx context.Con
 	switch params.Action {
 	case dto.InvoiceModifyLineItemActionAdd:
 		resp, err := s.invoiceService.AddBulkLineItem(ctx, invoiceID, dto.AddBulkLineItemRequest{
-			Items:              params.Items,
-			MarkManuallyEdited: true,
+			Items: params.Items,
 		})
 		if err != nil {
 			return nil, err
@@ -53,8 +52,7 @@ func (s *invoiceModificationService) executeLineItemModification(ctx context.Con
 		return &dto.InvoiceModifyResponse{Invoice: resp}, nil
 	case dto.InvoiceModifyLineItemActionRemove:
 		resp, err := s.invoiceService.RemoveBulkLineItem(ctx, invoiceID, dto.RemoveBulkLineItemRequest{
-			LineItemIDs:        params.LineItemIDs,
-			MarkManuallyEdited: true,
+			LineItemIDs: params.LineItemIDs,
 		})
 		if err != nil {
 			return nil, err
