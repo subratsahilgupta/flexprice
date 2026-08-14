@@ -84,6 +84,12 @@ type InvoiceService interface {
 	// RecalculateTaxesOnInvoice applies subscription auto-apply taxes and updates
 	// total_tax / total / amount_due. Idempotent via tax-applied records.
 	RecalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error)
+
+	UpdateLineItem(ctx context.Context, invoiceID, lineItemID string, req dto.UpdateLineItemRequest) (*dto.InvoiceResponse, error)
+
+	AddBulkLineItem(ctx context.Context, invoiceID string, req dto.AddBulkLineItemRequest) (*dto.InvoiceResponse, error)
+
+	RemoveBulkLineItem(ctx context.Context, invoiceID string, req dto.RemoveBulkLineItemRequest) (*dto.InvoiceResponse, error)
 }
 
 type invoiceService struct {
