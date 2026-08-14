@@ -44,11 +44,12 @@ const (
 // random, looking like an identity provider fault. Redis is therefore required
 // for SAML, which is enforced at boot rather than discovered here.
 type requestTracker struct {
-	cache cache.RedisCache
+	cache  cache.RedisCache
+	locker cache.Locker
 }
 
-func newRequestTracker(c cache.RedisCache) *requestTracker {
-	return &requestTracker{cache: c}
+func newRequestTracker(c cache.RedisCache, l cache.Locker) *requestTracker {
+	return &requestTracker{cache: c, locker: l}
 }
 
 // trackerKeyPrefix namespaces outstanding requests. The tenant is part of the
@@ -59,56 +60,56 @@ func trackerKey(tenantID, id string) string {
 	return trackerKeyPrefix + tenantID + ":" + id
 }
 
+// consumedKey marks a request as already answered. Separate from the
+// outstanding key so the two can be reasoned about independently: one records
+// that a login began, the other that it has been completed exactly once.
+func consumedKey(tenantID, id string) string {
+	return trackerKeyPrefix + "consumed:" + tenantID + ":" + id
+}
+
 // remember records an outstanding request. It expires on its own, so an
 // abandoned login leaves nothing behind and the replay window stays bounded.
 func (t *requestTracker) remember(ctx context.Context, tenantID, id string) {
 	t.cache.Set(ctx, trackerKey(tenantID, id), true, authnRequestTTL)
 }
 
-// claim consumes the request an assertion answers, reporting whether it was
-// outstanding.
+// claim consumes the request an assertion answers, reporting whether this
+// caller is the one that consumed it.
 //
-// The delete is what makes this single-use: the ID is gone before validation
-// runs, so a second post of the same assertion finds nothing to consume. It
-// cannot be deferred until after validation — two concurrent replays would then
-// both observe the ID as outstanding and both succeed.
+// Single use is enforced by taking a lock on the request ID, which is a Redis
+// SETNX: exactly one caller can create the key, so two concurrent posts of the
+// same assertion cannot both proceed. Reading the outstanding key and then
+// deleting it would not do — the two calls are separate round trips, and both
+// callers could observe the key as present before either removed it, which is
+// the race this defence exists to prevent.
+//
+// The lock is never released. It is not mutual exclusion around a critical
+// section; it is the record that this request has been answered, and it expires
+// with the request itself.
 //
 // The returned slice is what crewjam validates InResponseTo against. It holds
-// only the answered ID: an assertion answering anything else is rejected, which
-// is the same outcome as the previous behaviour of returning every outstanding
-// ID, without needing to enumerate them.
+// only the answered ID, so an assertion answering anything else is rejected.
 func (t *requestTracker) claim(ctx context.Context, tenantID, inResponseTo string) ([]string, bool) {
 	if inResponseTo == "" {
 		return nil, false
 	}
 
-	key := trackerKey(tenantID, inResponseTo)
-	if _, found := t.cache.Get(ctx, key); !found {
+	// The request must have been issued by this deployment.
+	if _, found := t.cache.Get(ctx, trackerKey(tenantID, inResponseTo)); !found {
 		return nil, false
 	}
-	t.cache.Delete(ctx, key)
+
+	lock, err := t.locker.AcquireLock(ctx, consumedKey(tenantID, inResponseTo), authnRequestTTL)
+	if err != nil || lock == nil || !lock.AcquiredSuccessfully() {
+		// Either Redis is unreachable or someone else already consumed this
+		// request. Both must refuse: allowing the login when the single-use
+		// check cannot be made is what a replay would rely on.
+		return nil, false
+	}
 
 	return []string{inResponseTo}, true
 }
 
-// restore puts back a request that claim consumed for a login that then failed
-// validation.
-//
-// Without it any rejected response burns the outstanding request, so an identity
-// provider retrying after a transient failure — or a browser reposting once a
-// clock skew resolves — has nothing left to answer and the login fails
-// permanently. Only called after validation has failed, so a consumed assertion
-// is never resurrected.
-//
-// The full TTL is granted again rather than the remainder. The window this
-// reopens is bounded by the same ten minutes, and tracking the original expiry
-// across replicas would cost more than it protects.
-func (t *requestTracker) restore(ctx context.Context, tenantID, id string) {
-	if id == "" {
-		return
-	}
-	t.cache.Set(ctx, trackerKey(tenantID, id), true, authnRequestTTL)
-}
 
 // Handler serves the SAML browser-flow endpoints.
 type Handler struct {
@@ -123,7 +124,7 @@ func NewHandler(cfg *config.Configuration, serviceParams service.ServiceParams, 
 		cfg:           cfg,
 		serviceParams: serviceParams,
 		logger:        logger,
-		tracker:       newRequestTracker(serviceParams.RedisCache),
+		tracker:       newRequestTracker(serviceParams.RedisCache, serviceParams.Locker),
 	}
 }
 
@@ -268,19 +269,17 @@ func (h *Handler) ACS(c *gin.Context) {
 	// outstanding request to retire; nothing is trusted from it, since the
 	// assertion is validated against the returned list immediately after.
 	answeredID := inResponseTo(c.Request)
-	possibleIDs, consumed := h.tracker.claim(c.Request.Context(), tenantID, answeredID)
+	possibleIDs, _ := h.tracker.claim(c.Request.Context(), tenantID, answeredID)
 
+	// A rejected response leaves the request consumed rather than reopening it.
+	// Reopening would mean releasing a marker taken atomically on whichever
+	// replica served this request, and no replica can release another's — so the
+	// alternative is a window in which the same assertion is claimable twice.
+	// The cost is that a genuine retry must start a fresh login, which is what
+	// the identity provider does anyway when the browser returns to the login
+	// endpoint.
 	result, err := validateAssertion(sp, c.Request, possibleIDs, cfg)
 	if err != nil {
-		// Put the request back. It was consumed before validation so a
-		// concurrent replay could not also observe it, but this response never
-		// became a login: leaving it consumed would mean an identity provider
-		// retrying after a transient failure, or a browser reposting once a
-		// clock skew resolves, has nothing left to answer.
-		if consumed {
-			h.tracker.restore(c.Request.Context(), tenantID, answeredID)
-		}
-
 		h.logger.Error(c.Request.Context(), "saml assertion rejected",
 			"error", err, "tenant_id", tenantID)
 		c.Error(err)

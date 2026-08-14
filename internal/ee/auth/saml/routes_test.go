@@ -15,6 +15,7 @@ import (
 	"github.com/crewjam/saml"
 	"github.com/gin-gonic/gin"
 
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/config"
 )
 
@@ -124,7 +125,7 @@ func TestLoginRedirectsToIdentityProvider(t *testing.T) {
 // SimpleSAMLphp caught it — the second post returned 302 instead of 403.
 func TestRequestTrackerClaimRetiresTheAnsweredID(t *testing.T) {
 	ctx := context.Background()
-	tr := newRequestTracker(newFakeRedis())
+	tr := newRequestTracker(newFakeRedis(), newFakeLocker())
 	tr.remember(ctx, "tenant_a", "id-1")
 
 	ids, consumed := tr.claim(ctx, "tenant_a", "id-1")
@@ -141,7 +142,7 @@ func TestRequestTrackerClaimRetiresTheAnsweredID(t *testing.T) {
 // satisfying another tenant's assertion.
 func TestRequestTrackerIsScopedByTenant(t *testing.T) {
 	ctx := context.Background()
-	tr := newRequestTracker(newFakeRedis())
+	tr := newRequestTracker(newFakeRedis(), newFakeLocker())
 	tr.remember(ctx, "tenant_a", "id-1")
 
 	if _, consumed := tr.claim(ctx, "tenant_b", "id-1"); consumed {
@@ -156,7 +157,7 @@ func TestRequestTrackerIsScopedByTenant(t *testing.T) {
 // not disturb another browser's outstanding login.
 func TestRequestTrackerClaimKeepsOtherRequests(t *testing.T) {
 	ctx := context.Background()
-	tr := newRequestTracker(newFakeRedis())
+	tr := newRequestTracker(newFakeRedis(), newFakeLocker())
 	tr.remember(ctx, "tenant_a", "id-1")
 	tr.remember(ctx, "tenant_a", "id-2")
 
@@ -167,20 +168,23 @@ func TestRequestTrackerClaimKeepsOtherRequests(t *testing.T) {
 	}
 }
 
-// TestRequestTrackerRestoreReopensAFailedLogin covers the retry path: a response
-// that fails validation must not burn the request, or an identity provider
-// retrying — or a browser reposting once a clock skew resolves — has nothing
-// left to answer.
-func TestRequestTrackerRestoreReopensAFailedLogin(t *testing.T) {
+// TestRequestTrackerClaimIsFinal pins a deliberate choice: a consumed request
+// stays consumed even when the assertion that consumed it was then rejected.
+//
+// Reopening it would mean releasing a marker taken atomically on whichever
+// replica served the request, and no replica can release another's — so the
+// alternative is a window in which the same assertion is claimable twice. A
+// genuine retry starts a fresh login instead.
+func TestRequestTrackerClaimIsFinal(t *testing.T) {
 	ctx := context.Background()
-	tr := newRequestTracker(newFakeRedis())
+	tr := newRequestTracker(newFakeRedis(), newFakeLocker())
 	tr.remember(ctx, "tenant_a", "id-1")
 
-	tr.claim(ctx, "tenant_a", "id-1")
-	tr.restore(ctx, "tenant_a", "id-1")
-
 	if _, consumed := tr.claim(ctx, "tenant_a", "id-1"); !consumed {
-		t.Error("a restored request could not be claimed, so the retry would fail permanently")
+		t.Fatal("the first claim must succeed")
+	}
+	if _, consumed := tr.claim(ctx, "tenant_a", "id-1"); consumed {
+		t.Error("a consumed request was claimable again — the assertion could be replayed")
 	}
 }
 
@@ -189,7 +193,7 @@ func TestRequestTrackerRestoreReopensAFailedLogin(t *testing.T) {
 // as answering an outstanding request.
 func TestRequestTrackerIgnoresAnEmptyID(t *testing.T) {
 	ctx := context.Background()
-	tr := newRequestTracker(newFakeRedis())
+	tr := newRequestTracker(newFakeRedis(), newFakeLocker())
 	tr.remember(ctx, "tenant_a", "id-1")
 
 	if ids, consumed := tr.claim(ctx, "tenant_a", ""); consumed || len(ids) != 0 {
@@ -413,5 +417,80 @@ func TestInResponseToReadsTheRootElementOnly(t *testing.T) {
 
 	if got := inResponseTo(req); got != "id-correct" {
 		t.Errorf("inResponseTo() = %q, want the root element's value", got)
+	}
+}
+
+// fakeLocker reproduces the property the tracker depends on: AcquireLock is a
+// SETNX, so exactly one caller can take a given key. A fake that always
+// succeeded would hide the race this replaces.
+type fakeLocker struct {
+	mu   sync.Mutex
+	held map[string]bool
+}
+
+func newFakeLocker() *fakeLocker { return &fakeLocker{held: map[string]bool{}} }
+
+func (l *fakeLocker) AcquireLock(_ context.Context, key string, _ time.Duration) (cache.Lock, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.held[key] {
+		return &fakeLock{acquired: false}, nil
+	}
+	l.held[key] = true
+	return &fakeLock{acquired: true, locker: l, key: key}, nil
+}
+
+type fakeLock struct {
+	acquired bool
+	locker   *fakeLocker
+	key      string
+}
+
+func (k *fakeLock) AcquiredSuccessfully() bool { return k.acquired }
+func (k *fakeLock) Release(context.Context) error {
+	if k.locker != nil {
+		k.locker.mu.Lock()
+		delete(k.locker.held, k.key)
+		k.locker.mu.Unlock()
+	}
+	return nil
+}
+
+// TestRequestTrackerClaimIsAtomicUnderConcurrency is the regression test for a
+// real race: claim previously read the outstanding key and then deleted it in a
+// second round trip, so two concurrent posts of the same assertion could both
+// observe it as present before either removed it, and both logins succeeded.
+//
+// Exactly one caller must win, however many arrive at once.
+func TestRequestTrackerClaimIsAtomicUnderConcurrency(t *testing.T) {
+	ctx := context.Background()
+	tr := newRequestTracker(newFakeRedis(), newFakeLocker())
+	tr.remember(ctx, "tenant_a", "id-1")
+
+	const attempts = 32
+	var wg sync.WaitGroup
+	results := make([]bool, attempts)
+	start := make(chan struct{})
+
+	for i := range attempts {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start // release them together to maximise overlap
+			_, consumed := tr.claim(ctx, "tenant_a", "id-1")
+			results[i] = consumed
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	won := 0
+	for _, ok := range results {
+		if ok {
+			won++
+		}
+	}
+	if won != 1 {
+		t.Errorf("%d of %d concurrent claims succeeded, want exactly 1 — a replayed assertion would mint that many sessions", won, attempts)
 	}
 }
