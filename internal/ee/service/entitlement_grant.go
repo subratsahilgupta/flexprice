@@ -476,16 +476,34 @@ func (s *entitlementGrantService) computeGrantWindow(
 	validFrom := *firstUncoveredEventAt
 
 	if ec.GrantAllocationBehavior == types.EntitlementGrantAllocationBehaviorUnitStart {
-		var aligned time.Time
+		// N-unit buckets anchored at the unit boundary containing cycleStart,
+		// then floor firstEvent to the previous bucket. Fixed-duration bucket
+		// math — DST timezones may drift ~1h per DST transition within a bucket.
+		var anchor time.Time
+		var unitDur time.Duration
 		switch ec.GrantDurationUnit {
 		case types.EntitlementGrantDurationUnitHour:
-			aligned = types.FloorToStartOfHour(*firstUncoveredEventAt, sub.Timezone)
+			anchor = types.FloorToStartOfHour(cycleStart, sub.Timezone)
+			unitDur = time.Hour
 		case types.EntitlementGrantDurationUnitDay:
-			aligned = types.FloorToStartOfDay(*firstUncoveredEventAt, sub.Timezone)
+			anchor = types.FloorToStartOfDay(cycleStart, sub.Timezone)
+			unitDur = 24 * time.Hour
 		case types.EntitlementGrantDurationUnitWeek:
-			aligned = types.FloorToStartOfWeek(*firstUncoveredEventAt, sub.Timezone)
+			anchor = types.FloorToStartOfWeek(cycleStart, sub.Timezone)
+			unitDur = 7 * 24 * time.Hour
 		}
-		if !aligned.IsZero() {
+		if !anchor.IsZero() {
+			n := lo.FromPtr(ec.GrantDurationValue)
+			if n < 1 {
+				n = 1
+			}
+			bucketDur := time.Duration(n) * unitDur
+			delta := (*firstUncoveredEventAt).Sub(anchor)
+			if delta < 0 {
+				delta = 0
+			}
+			bucketIndex := int64(delta / bucketDur)
+			aligned := anchor.Add(time.Duration(bucketIndex) * bucketDur)
 			validFrom = latestOf(aligned, coveredUntil)
 		}
 	}
