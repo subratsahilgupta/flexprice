@@ -28,6 +28,12 @@ const (
 
 	// tokenExpiryHours matches the community login token lifetime.
 	tokenExpiryHours = 24 * 30
+
+	// maxRelayStateBytes is the limit the SAML profile puts on RelayState
+	// (SAMLProfiles section 3.6.3.1). Identity providers are entitled to reject
+	// or truncate anything longer, so a value over this would break the login
+	// rather than protect it.
+	maxRelayStateBytes = 80
 )
 
 // requestTracker records the AuthnRequest IDs this deployment issued, so an
@@ -237,7 +243,24 @@ func (h *Handler) Login(c *gin.Context) {
 
 	h.tracker.remember(c.Request.Context(), tenantID, authnRequest.ID)
 
-	redirectURL, err := authnRequest.Redirect("", sp)
+	// The browser's own nonce, echoed through the identity provider as
+	// RelayState and handed back at the callback. It ties the response to the
+	// single login this browser started: the tenant alone cannot do that,
+	// because every login to a tenant carries the same value.
+	//
+	// Not trusted for anything else. RelayState is unauthenticated and capped at
+	// 80 bytes by the SAML profile, so it is only ever compared against a value
+	// the browser already holds — never read as an assertion about who the user
+	// is. It is bounded here so an over-long value cannot be reflected onward.
+	relayState := c.Query("state")
+	if len(relayState) > maxRelayStateBytes {
+		c.Error(ierr.NewError("state is too long").
+			WithHintf("state must be at most %d characters", maxRelayStateBytes).
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	redirectURL, err := authnRequest.Redirect(relayState, sp)
 	if err != nil {
 		c.Error(err)
 		return
@@ -307,7 +330,15 @@ func (h *Handler) ACS(c *gin.Context) {
 	h.logger.Info(ctx, "saml login succeeded",
 		"tenant_id", tenantID, "user_id", userID)
 
-	c.Redirect(http.StatusFound, dashboardRedirect(h.cfg, tenantID, token))
+	// RelayState comes back from the identity provider exactly as it was sent.
+	// It is passed straight through to the dashboard, which compares it against
+	// the nonce it generated before the redirect; nothing here trusts it.
+	relayState := c.Request.PostFormValue("RelayState")
+	if len(relayState) > maxRelayStateBytes {
+		relayState = ""
+	}
+
+	c.Redirect(http.StatusFound, dashboardRedirect(h.cfg, tenantID, token, relayState))
 }
 
 // dashboardRedirect hands the token back to the browser application.
@@ -329,7 +360,7 @@ func (h *Handler) ACS(c *gin.Context) {
 // dashboard compares it against the tenant it recorded when it began the flow
 // and refuses a mismatch, which is what stops a token minted for one tenant
 // being planted on a browser mid-login to another.
-func dashboardRedirect(cfg *config.Configuration, tenantID, token string) string {
+func dashboardRedirect(cfg *config.Configuration, tenantID, token, relayState string) string {
 	base := cfg.Auth.SAML.DashboardURL
 	if base == "" {
 		base = "/"
@@ -342,6 +373,9 @@ func dashboardRedirect(cfg *config.Configuration, tenantID, token string) string
 	fragment := url.Values{}
 	fragment.Set("token", token)
 	fragment.Set("tenant_id", tenantID)
+	if relayState != "" {
+		fragment.Set("state", relayState)
+	}
 	u.Fragment = fragment.Encode()
 	return u.String()
 }

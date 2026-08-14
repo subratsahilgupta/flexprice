@@ -255,7 +255,7 @@ func TestDashboardRedirectCarriesToken(t *testing.T) {
 	cfg := &config.Configuration{}
 	cfg.Auth.SAML.DashboardURL = "http://localhost:3000/auth/callback"
 
-	got := dashboardRedirect(cfg, "tenant_abc", "the-token")
+	got := dashboardRedirect(cfg, "tenant_abc", "the-token", "nonce-123")
 	if !strings.HasPrefix(got, "http://localhost:3000/auth/callback#") {
 		t.Errorf("redirect = %q, want the configured dashboard URL with a fragment", got)
 	}
@@ -286,7 +286,7 @@ func TestDashboardRedirectCarriesToken(t *testing.T) {
 	}
 
 	empty := &config.Configuration{}
-	if got := dashboardRedirect(empty, "tenant_abc", "t"); !strings.HasPrefix(got, "/") {
+	if got := dashboardRedirect(empty, "tenant_abc", "t", ""); !strings.HasPrefix(got, "/") {
 		t.Errorf("unconfigured redirect = %q, want a relative path rather than an absolute URL", got)
 	}
 }
@@ -492,5 +492,35 @@ func TestRequestTrackerClaimIsAtomicUnderConcurrency(t *testing.T) {
 	}
 	if won != 1 {
 		t.Errorf("%d of %d concurrent claims succeeded, want exactly 1 — a replayed assertion would mint that many sessions", won, attempts)
+	}
+}
+
+// TestDashboardRedirectCarriesRelayState covers the per-login nonce. The tenant
+// binds a callback to a tenant, but every login to that tenant carries the same
+// value; the nonce is what ties a response to one specific attempt. It travels
+// as SAML RelayState and must reach the dashboard unchanged.
+func TestDashboardRedirectCarriesRelayState(t *testing.T) {
+	cfg := &config.Configuration{}
+	cfg.Auth.SAML.DashboardURL = "http://localhost:3000/auth/callback"
+
+	got := dashboardRedirect(cfg, "tenant_abc", "the-token", "nonce-abc123")
+	fragment, err := url.ParseQuery(strings.TrimPrefix(got[strings.Index(got, "#"):], "#"))
+	if err != nil {
+		t.Fatalf("fragment is not parseable: %v", err)
+	}
+	if fragment.Get("state") != "nonce-abc123" {
+		t.Errorf("state = %q, want the nonce the browser generated", fragment.Get("state"))
+	}
+
+	// An identity provider that drops RelayState must not produce a literal
+	// empty state, which the dashboard would compare against its stored nonce
+	// and reject anyway — the absence is clearer than an empty string.
+	plain := dashboardRedirect(cfg, "tenant_abc", "the-token", "")
+	plainFragment, err := url.ParseQuery(strings.TrimPrefix(plain[strings.Index(plain, "#"):], "#"))
+	if err != nil {
+		t.Fatalf("fragment is not parseable: %v", err)
+	}
+	if _, present := plainFragment["state"]; present {
+		t.Error("an empty RelayState should be omitted rather than sent as an empty value")
 	}
 }
