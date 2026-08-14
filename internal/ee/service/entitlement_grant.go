@@ -476,35 +476,41 @@ func (s *entitlementGrantService) computeGrantWindow(
 	validFrom := *firstUncoveredEventAt
 
 	if ec.GrantAllocationBehavior == types.EntitlementGrantAllocationBehaviorUnitStart {
-		// N-unit buckets anchored at the unit boundary containing cycleStart,
-		// then floor firstEvent to the previous bucket. Fixed-duration bucket
-		// math — DST timezones may drift ~1h per DST transition within a bucket.
+		// N-unit buckets anchored at the unit boundary containing cycleStart.
+		// Count strides until the next stride starts after firstEvent; the
+		// containing stride is the aligned start. Uses calendar arithmetic
+		// (AddDate) for day/week so DST transitions do not drift the boundary.
+		// Hour uses fixed .Add because top-of-hour instants remain stable in
+		// UTC across DST transitions.
+		n := lo.FromPtr(ec.GrantDurationValue)
+		if n < 1 {
+			n = 1
+		}
+		tz := sub.Timezone
 		var anchor time.Time
-		var unitDur time.Duration
+		var advance func(time.Time) time.Time
 		switch ec.GrantDurationUnit {
 		case types.EntitlementGrantDurationUnitHour:
-			anchor = types.FloorToStartOfHour(cycleStart, sub.Timezone)
-			unitDur = time.Hour
+			anchor = types.FloorToStartOfHour(cycleStart, tz)
+			stride := time.Duration(n) * time.Hour
+			advance = func(t time.Time) time.Time { return t.Add(stride) }
 		case types.EntitlementGrantDurationUnitDay:
-			anchor = types.FloorToStartOfDay(cycleStart, sub.Timezone)
-			unitDur = 24 * time.Hour
+			anchor = types.FloorToStartOfDay(cycleStart, tz)
+			advance = func(t time.Time) time.Time { return types.AdvanceDays(t, n, tz) }
 		case types.EntitlementGrantDurationUnitWeek:
-			anchor = types.FloorToStartOfWeek(cycleStart, sub.Timezone)
-			unitDur = 7 * 24 * time.Hour
+			anchor = types.FloorToStartOfWeek(cycleStart, tz)
+			advance = func(t time.Time) time.Time { return types.AdvanceDays(t, 7*n, tz) }
 		}
-		if !anchor.IsZero() {
-			n := lo.FromPtr(ec.GrantDurationValue)
-			if n < 1 {
-				n = 1
+		if !anchor.IsZero() && advance != nil {
+			bucket := anchor
+			for {
+				next := advance(bucket)
+				if firstUncoveredEventAt.Before(next) {
+					break
+				}
+				bucket = next
 			}
-			bucketDur := time.Duration(n) * unitDur
-			delta := (*firstUncoveredEventAt).Sub(anchor)
-			if delta < 0 {
-				delta = 0
-			}
-			bucketIndex := int64(delta / bucketDur)
-			aligned := anchor.Add(time.Duration(bucketIndex) * bucketDur)
-			validFrom = latestOf(aligned, coveredUntil)
+			validFrom = latestOf(bucket, coveredUntil)
 		}
 	}
 

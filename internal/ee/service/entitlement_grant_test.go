@@ -1665,3 +1665,31 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_WeekUnitStart_Value2_Clam
 	s.True(from.Equal(fx.cycleStart), "expected clamp to cycleStart 2026-07-08, got %s", from)
 	s.True(to.Equal(fx.cycleStart.Add(2*7*24*time.Hour)), "expected cycleStart+2w = 2026-07-22, got %s", to)
 }
+
+// DST spring-forward: strides must land on local midnight, not drift by 1h.
+// cycleStart = Fri 2026-03-06T00:00 EST (T05:00Z), DST forward on Sun 2026-03-08.
+// Event Tue 2026-03-10T10:00 EDT (T14:00Z) — 5 calendar days after cycleStart.
+// Aligned = 2026-03-10T00:00 EDT (T04:00Z). Fixed 24h*5 math would give T05:00Z.
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_DayUnitStart_DSTSpringForward() {
+	svc := s.grantService.(*entitlementGrantService)
+	fx := s.newWindowFixture("day-unitstart-dst-spring", 24)
+	fx.sub.Timezone = "America/New_York"
+	fx.sub.CurrentPeriodStart = time.Date(2026, 3, 6, 5, 0, 0, 0, time.UTC)
+	fx.sub.CurrentPeriodEnd = time.Date(2026, 4, 6, 4, 0, 0, 0, time.UTC)
+	fx.cycleStart = fx.sub.CurrentPeriodStart
+	fx.cycleEnd = fx.sub.CurrentPeriodEnd
+	fx.ec.GrantDurationUnit = types.EntitlementGrantDurationUnitDay
+	val := 1
+	fx.ec.GrantDurationValue = &val
+	fx.ec.GrantAllocationBehavior = types.EntitlementGrantAllocationBehaviorUnitStart
+
+	eventAt := time.Date(2026, 3, 10, 14, 0, 0, 0, time.UTC)
+	s.seedMeterUsage(fx.extID, fx.meterID, eventAt, 1)
+
+	meta, last := s.windowArgs(fx)
+	from, _, ok, err := svc.computeGrantWindow(s.GetContext(), fx.ec, fx.sub, meta, last, eventAt.Add(1*time.Minute), 24*time.Hour)
+	s.NoError(err)
+	s.True(ok)
+	s.True(from.Equal(time.Date(2026, 3, 10, 4, 0, 0, 0, time.UTC)),
+		"expected 2026-03-10T04:00Z (00:00 EDT, calendar-safe across DST), got %s", from)
+}

@@ -55,6 +55,16 @@ func FloorToStartOfWeek(t time.Time, tz string) time.Time {
 	return startOfDay.AddDate(0, 0, -daysSinceMonday).UTC()
 }
 
+// AdvanceDays returns t plus n calendar days in the given timezone. Uses
+// calendar arithmetic (time.Time.AddDate in the local zone) so DST transitions
+// are handled correctly: adding "1 day" to a local midnight returns the next
+// local midnight, even if the intervening calendar day is 23 or 25 hours long.
+// Callers that add "24 * time.Hour" instead will drift by ±1h across DST.
+func AdvanceDays(t time.Time, n int, tz string) time.Time {
+	loc := loadTimezone(tz)
+	return t.In(loc).AddDate(0, 0, n).UTC()
+}
+
 // NextBillingDateParams holds the inputs for NextBillingDate.
 //
 // The BillingAnchor determines the reference point for billing cycles:

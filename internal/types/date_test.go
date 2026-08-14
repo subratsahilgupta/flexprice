@@ -2813,3 +2813,61 @@ func TestFloorToStartOfWeek(t *testing.T) {
 		})
 	}
 }
+
+func TestAdvanceDays(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Time
+		n    int
+		tz   string
+		want time.Time
+	}{
+		{
+			name: "UTC — simple day addition preserves time-of-day",
+			in:   time.Date(2026, 7, 13, 12, 34, 56, 0, time.UTC),
+			n:    3,
+			tz:   "UTC",
+			want: time.Date(2026, 7, 16, 12, 34, 56, 0, time.UTC),
+		},
+		{
+			name: "UTC — negative n moves backward",
+			in:   time.Date(2026, 7, 13, 0, 0, 0, 0, time.UTC),
+			n:    -5,
+			tz:   "UTC",
+			want: time.Date(2026, 7, 8, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			// 2026-03-05 00:00 EST = T05:00Z. DST spring-forward Sun 2026-03-08
+			// 02:00 EST → 03:00 EDT. 2026-03-10 00:00 EDT = T04:00Z.
+			// Calendar-safe +5 lands on T04:00Z (00:00 EDT).
+			// Fixed 120h math would give T05:00Z (01:00 EDT) — 1h drift.
+			name: "America/New_York — crosses DST spring-forward",
+			in:   time.Date(2026, 3, 5, 5, 0, 0, 0, time.UTC),
+			n:    5,
+			tz:   "America/New_York",
+			want: time.Date(2026, 3, 10, 4, 0, 0, 0, time.UTC),
+		},
+		{
+			// 2026-10-30 00:00 EDT = T04:00Z. DST fall-back Sun 2026-11-01
+			// 02:00 EDT → 01:00 EST. 2026-11-02 00:00 EST = T05:00Z.
+			name: "America/New_York — crosses DST fall-back",
+			in:   time.Date(2026, 10, 30, 4, 0, 0, 0, time.UTC),
+			n:    3,
+			tz:   "America/New_York",
+			want: time.Date(2026, 11, 2, 5, 0, 0, 0, time.UTC),
+		},
+		{
+			name: "unknown tz falls back to UTC",
+			in:   time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC),
+			n:    3,
+			tz:   "Not/A_Real_Zone",
+			want: time.Date(2026, 7, 16, 12, 0, 0, 0, time.UTC),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := AdvanceDays(tc.in, tc.n, tc.tz)
+			require.Equal(t, tc.want.UTC(), got.UTC())
+		})
+	}
+}
