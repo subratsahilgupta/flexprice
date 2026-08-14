@@ -3426,13 +3426,9 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 
 	// Fetch grouped_invoicing children once (before the transaction) so both the
 	// per-period invoice loop and the post-loop period-advancement step can reuse them.
-	var groupedChildren []*subscription.Subscription
-	if sub.SubscriptionType == types.SubscriptionTypeParent {
-		var gErr error
-		groupedChildren, gErr = s.getGroupedInvoicingSubscriptions(ctx, sub.ID)
-		if gErr != nil {
-			return gErr
-		}
+	groupedChildren, gErr := getGroupedInvoicingChildren(ctx, s.ServiceParams, sub, false)
+	if gErr != nil {
+		return gErr
 	}
 
 	// Initialize services
@@ -4729,6 +4725,39 @@ func (s *subscriptionService) ProcessSubscriptionRenewalDueAlert(ctx context.Con
 	return nil
 }
 
+func (s *subscriptionService) buildPriceToLineItemsMap(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	originalPriceToLineItemMap map[string]string,
+) (map[string][]string, error) {
+	filter := types.NewNoLimitSubscriptionLineItemFilter()
+	filter.SubscriptionIDs = []string{sub.ID}
+	filter.ActiveFilter = true
+	lineItems, err := s.SubscriptionLineItemRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	priceToLineItems := make(map[string][]string, len(lineItems))
+	seen := make(map[string]bool, len(lineItems))
+	for _, item := range lineItems {
+		if item.PriceID == "" || item.ID == "" {
+			continue
+		}
+		seen[item.PriceID+"|"+item.ID] = true
+		priceToLineItems[item.PriceID] = append(priceToLineItems[item.PriceID], item.ID)
+	}
+
+	for priceID, lineItemID := range originalPriceToLineItemMap {
+		if priceID == "" || lineItemID == "" || seen[priceID+"|"+lineItemID] {
+			continue
+		}
+		priceToLineItems[priceID] = append(priceToLineItems[priceID], lineItemID)
+	}
+
+	return priceToLineItems, nil
+}
+
 // handleSubCoupons processes coupons for a subscription
 // Converts deprecated Coupons and LineItemCoupons fields to SubscriptionCouponRequest format and applies them
 func (s *subscriptionService) handleSubCoupons(
@@ -4737,6 +4766,11 @@ func (s *subscriptionService) handleSubCoupons(
 	req dto.CreateSubscriptionRequest,
 	originalPriceToLineItemMap map[string]string,
 ) error {
+	priceToLineItems, err := s.buildPriceToLineItemsMap(ctx, sub, originalPriceToLineItemMap)
+	if err != nil {
+		return err
+	}
+
 	// Convert deprecated fields to SubscriptionCouponRequest format
 	var subscriptionCoupons []dto.SubscriptionCouponRequest
 	for _, couponID := range req.Coupons {
@@ -4748,24 +4782,26 @@ func (s *subscriptionService) handleSubCoupons(
 		}
 	}
 
-	// Process LineItemCoupons - use originalPriceToLineItemMap to convert priceID to lineItemID
+	// Process LineItemCoupons - resolve priceID to lineItemID
 	for priceID, couponIDs := range req.LineItemCoupons {
 		for _, couponID := range couponIDs {
-			if couponID != "" {
-				// Get lineItemID from the original price mapping
-				if lineItemID, exists := originalPriceToLineItemMap[priceID]; exists {
-					subscriptionCoupons = append(subscriptionCoupons, dto.SubscriptionCouponRequest{
-						CouponID:   couponID,
-						LineItemID: lo.ToPtr(lineItemID),
-						StartDate:  sub.StartDate,
-					})
-				} else {
-					// Log warning but continue processing other coupons
-					s.Logger.Info(context.Background(), "coupon priceID not found in subscription, skipping",
-						"price_id", priceID,
-						"coupon_id", couponID,
-						"subscription_id", sub.ID)
-				}
+			if couponID == "" {
+				continue
+			}
+			lineItemIDs := priceToLineItems[priceID]
+			if len(lineItemIDs) == 0 {
+				return ierr.NewError("price_id does not match any line item on this subscription").
+					WithHintf("Cannot apply coupon '%s': no line item on this subscription uses price '%s'", couponID, priceID).
+					WithReportableDetails(map[string]interface{}{"coupon_id": couponID, "price_id": priceID}).
+					Mark(ierr.ErrValidation)
+			}
+
+			for _, lineItemID := range lineItemIDs {
+				subscriptionCoupons = append(subscriptionCoupons, dto.SubscriptionCouponRequest{
+					CouponID:   couponID,
+					LineItemID: lo.ToPtr(lineItemID),
+					StartDate:  sub.StartDate,
+				})
 			}
 		}
 	}
@@ -4792,17 +4828,24 @@ func (s *subscriptionService) handleSubCoupons(
 			StartDate: startDate,
 			EndDate:   input.EndDate,
 		}
-		if input.PriceID != nil {
-			if lineItemID, exists := originalPriceToLineItemMap[*input.PriceID]; exists {
-				couponReq.LineItemID = lo.ToPtr(lineItemID)
-			} else {
-				s.Logger.Info(ctx, "subscription_coupons price_id not found in line items, skipping line-item targeting",
-					"price_id", *input.PriceID,
-					"coupon_code", input.CouponCode,
-					"subscription_id", sub.ID)
-			}
+		if input.PriceID == nil {
+			subscriptionCoupons = append(subscriptionCoupons, couponReq)
+			continue
 		}
-		subscriptionCoupons = append(subscriptionCoupons, couponReq)
+
+		lineItemIDs := priceToLineItems[*input.PriceID]
+		if len(lineItemIDs) == 0 {
+			return ierr.NewError("price_id does not match any line item on this subscription").
+				WithHintf("Cannot apply coupon '%s': no line item on this subscription uses price '%s'", input.CouponCode, *input.PriceID).
+				WithReportableDetails(map[string]interface{}{"coupon_code": input.CouponCode, "price_id": *input.PriceID}).
+				Mark(ierr.ErrValidation)
+		}
+
+		for _, lineItemID := range lineItemIDs {
+			scoped := couponReq
+			scoped.LineItemID = lo.ToPtr(lineItemID)
+			subscriptionCoupons = append(subscriptionCoupons, scoped)
+		}
 	}
 
 	if len(subscriptionCoupons) == 0 {
@@ -4814,8 +4857,7 @@ func (s *subscriptionService) handleSubCoupons(
 		"coupon_count", len(subscriptionCoupons))
 
 	couponAssociationService := NewCouponAssociationService(s.ServiceParams)
-	err := couponAssociationService.ApplyCouponsToSubscription(ctx, sub, subscriptionCoupons)
-	if err != nil {
+	if err := couponAssociationService.ApplyCouponsToSubscription(ctx, sub, subscriptionCoupons); err != nil {
 		return ierr.WithError(err).
 			WithHint("Failed to apply coupons to subscription").
 			WithReportableDetails(map[string]interface{}{

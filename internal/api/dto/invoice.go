@@ -21,12 +21,12 @@ type InvoiceCoupon struct {
 }
 
 // InvoiceLineItemCoupon represents a coupon applied to a specific invoice line item.
-// LineItemID is the price_id used to match the coupon to the correct line item.
 // Only coupon ID is needed - the service will fetch and validate the coupon.
 type InvoiceLineItemCoupon struct {
-	LineItemID          string  `json:"line_item_id" validate:"required"` // price_id used to match the line item
-	CouponID            string  `json:"coupon_id" validate:"required"`
-	CouponAssociationID *string `json:"coupon_association_id,omitempty"`
+	LineItemID             string  `json:"line_item_id" validate:"required"` // price_id used to match the line item
+	SubscriptionLineItemID *string `json:"subscription_line_item_id,omitempty"`
+	CouponID               string  `json:"coupon_id" validate:"required"`
+	CouponAssociationID    *string `json:"coupon_association_id,omitempty"`
 }
 
 // CreateInvoiceRequest represents the request payload for creating a new invoice
