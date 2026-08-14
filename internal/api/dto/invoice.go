@@ -1006,8 +1006,8 @@ func (r *AddLineItemRequest) Validate() error {
 // AddBulkLineItemRequest adds one or more line items to a draft invoice in a single call.
 type AddBulkLineItemRequest struct {
 	Items []AddLineItemRequest `json:"items" validate:"required,min=1,max=100"`
-	// MarkManuallyEdited stamps invoice.IsManuallyEdited = true when set. Omitted/false
-	// leaves the flag untouched (does not clear an existing true value).
+
+	// MarkManuallyEdited stamps invoice.IsManuallyEdited = true when set.
 	MarkManuallyEdited bool `json:"mark_manually_edited,omitempty"`
 }
 
@@ -1042,8 +1042,7 @@ type UpdateLineItemRequest struct {
 	DisplayName *string          `json:"display_name,omitempty"`
 	Amount      *decimal.Decimal `json:"amount,omitempty" swaggertype:"string"`
 	Quantity    *decimal.Decimal `json:"quantity,omitempty" swaggertype:"string"`
-	// MarkManuallyEdited stamps invoice.IsManuallyEdited = true when set. Omitted/false
-	// leaves the flag untouched (does not clear an existing true value).
+	// MarkManuallyEdited stamps invoice.IsManuallyEdited = true when set.
 	MarkManuallyEdited bool `json:"mark_manually_edited,omitempty"`
 }
 
@@ -1078,8 +1077,7 @@ func (r *UpdateLineItemRequest) Validate() error {
 // RemoveBulkLineItemRequest removes one or more line items from a draft invoice in a single call.
 type RemoveBulkLineItemRequest struct {
 	LineItemIDs []string `json:"line_item_ids" validate:"required,min=1,max=100"`
-	// MarkManuallyEdited stamps invoice.IsManuallyEdited = true when set. Omitted/false
-	// leaves the flag untouched (does not clear an existing true value).
+	// MarkManuallyEdited stamps invoice.IsManuallyEdited = true when set.
 	MarkManuallyEdited bool `json:"mark_manually_edited,omitempty"`
 }
 
