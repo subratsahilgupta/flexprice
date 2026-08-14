@@ -324,22 +324,16 @@ func (s *InvoiceService) buildLineItems(ctx context.Context, flexInvoice *invoic
 		qty, rate := s.normalizeRateAndQuantity(li, settings, flexInvoice.BillingPeriod)
 		name := lo.FromPtrOr(li.DisplayName, "Charge")
 		childName := childCustomerIDToName[lineItemIDToChildCustomer[li.ID]]
-		lineItem := InvoiceLineItem{
+		out = append(out, InvoiceLineItem{
 			Name:        name,
 			Description: formatPeriodDescription(childName, li.PeriodStart, li.PeriodEnd),
 			Quantity:    qty,
 			Rate:        rate,
 			Discount:    li.LineItemDiscount.Add(li.InvoiceLevelDiscount),
 			ItemID:      priceToItemID[lo.FromPtr(li.PriceID)],
-		}
-		if taxRes != nil {
-			if taxRes.IsTaxable {
-				lineItem.TaxID = taxRes.TaxID
-			} else {
-				lineItem.TaxExemptionID = taxRes.TaxExemptionID
-			}
-		}
-		out = append(out, lineItem)
+			//TaxID:          taxRes.TaxID,
+			//TaxExemptionID: taxRes.TaxExemptionID,
+		})
 	}
 	return out, nil
 }
