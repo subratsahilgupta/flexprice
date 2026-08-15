@@ -707,15 +707,19 @@ func NewRouter(
 
 	// Settings routes.
 	//
-	// Super admin throughout, reads included. The route is shared by every
-	// settings key, and some of them decide how people authenticate — a SAML
-	// configuration names the identity provider the tenant trusts, so an
-	// all_writer who could change it can have themselves provisioned in, and
-	// anyone who could read it learns which provider to attack and whether it
-	// has been approved.
+	// Writes require a super admin: the route is shared by every settings key,
+	// and one of them decides how people authenticate — a SAML configuration
+	// names the identity provider the tenant trusts, so anyone who can change it
+	// can have themselves provisioned into the tenant.
+	//
+	// Reads keep the ordinary setting:read permission. Most settings are
+	// configuration the dashboard shows to any member, and requiring an
+	// administrator to read an invoice prefix helps nobody. saml_config is the
+	// exception and is refused to non-administrators in the service, where the
+	// key is known.
 	settings := v1Private.Group("/settings")
 	{
-		settings.GET("/:key", read(types.EntitySetting, types.ActionRead, superAdminOnly), handlers.Settings.GetSettingByKey)
+		settings.GET("/:key", read(types.EntitySetting, types.ActionRead), handlers.Settings.GetSettingByKey)
 		settings.PUT("/:key", write(types.EntitySetting, types.ActionWrite, superAdminOnly), handlers.Settings.UpdateSettingByKey)
 		settings.DELETE("/:key", write(types.EntitySetting, types.ActionWrite, superAdminOnly), handlers.Settings.DeleteSettingByKey)
 	}

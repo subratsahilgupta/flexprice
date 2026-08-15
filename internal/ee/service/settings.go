@@ -10,6 +10,7 @@ import (
 	workflowModels "github.com/flexprice/flexprice/internal/temporal/models"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
+	"github.com/samber/lo"
 )
 
 type SettingsService interface {
@@ -61,11 +62,10 @@ func isTenantLevelSetting(key types.SettingKey) bool {
 // requireSAMLEnabled refuses a saml_config request on a deployment that does not
 // offer SAML.
 //
-// Who may reach this key is the router's business — every settings route
-// requires a super_admin user, so the permission is enforced there. What the
-// router cannot know is whether the feature exists at all: with
-// auth.saml.enabled false no SAML routes are served, and a stored configuration
-// could only sit there looking as though SSO were set up.
+// Writes are already restricted to super admins by the router. What the router
+// cannot know is whether the feature exists at all: with auth.saml.enabled
+// false no SAML routes are served, and a stored configuration could only sit
+// there looking as though SSO were set up.
 func (s *settingsService) requireSAMLEnabled(key types.SettingKey) error {
 	if key != types.SettingKeySAMLConfig {
 		return nil
@@ -75,6 +75,33 @@ func (s *settingsService) requireSAMLEnabled(key types.SettingKey) error {
 		return ierr.NewError("saml is not enabled for this deployment").
 			WithHint("SAML single sign-on is not available on this deployment").
 			Mark(ierr.ErrNotFound)
+	}
+	return nil
+}
+
+// requireSuperAdminToReadSAMLConfig keeps the identity provider configuration
+// away from callers who may not administer it.
+//
+// Settings reads carry the ordinary setting:read permission, which most keys
+// should: an invoice prefix is configuration the dashboard shows to any member.
+// This one is different. It names the identity provider the tenant trusts and
+// whether Flexprice has approved it, which is a map of what to attack, and the
+// fields most likely to be added next — an SP private key, a directory-sync
+// token — would be secret outright. Someone who may not change how people log
+// in has no reason to read it either.
+//
+// Checked here rather than on the route because the route is shared by every
+// key, and gating all of them on super_admin would take reads away from the
+// settings the dashboard legitimately shows to everyone.
+func requireSuperAdminToReadSAMLConfig(ctx context.Context, key types.SettingKey) error {
+	if key != types.SettingKeySAMLConfig {
+		return nil
+	}
+
+	if types.IsServiceAccount(ctx) || !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
+		return ierr.NewError("saml configuration requires a super admin user").
+			WithHint("This action requires a user account with Super Admin access").
+			Mark(ierr.ErrPermissionDenied)
 	}
 	return nil
 }
@@ -297,6 +324,9 @@ func UpdateSetting[T types.SettingConfig](s *settingsService, ctx context.Contex
 //   - Don't call repository methods directly - always use service methods
 func (s *settingsService) GetSettingByKey(ctx context.Context, key types.SettingKey) (*dto.SettingResponse, error) {
 	if err := s.requireSAMLEnabled(key); err != nil {
+		return nil, err
+	}
+	if err := requireSuperAdminToReadSAMLConfig(ctx, key); err != nil {
 		return nil, err
 	}
 	return s.GetSettingByKeyUnchecked(ctx, key)
