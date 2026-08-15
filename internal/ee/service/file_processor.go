@@ -42,24 +42,12 @@ type FileProcessor struct {
 // - MaxMemoryFileSize: 10MB (files smaller than this are processed in memory)
 // - MaxFileSize: 1GB (maximum file size allowed)
 func NewFileProcessor(client httpclient.Client, logger *logger.Logger) *FileProcessor {
-	// Configure retryable HTTP client
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = 3
-	retryClient.RetryWaitMin = 1 * time.Second
-	retryClient.RetryWaitMax = 30 * time.Second
-	retryClient.Logger = logger.GetRetryableHTTPLogger()
-	// Instrument outbound file downloads for SigNoz External API Monitoring.
-	retryClient.HTTPClient.Transport = httpclient.OtelTransport(retryClient.HTTPClient.Transport)
-	// Refuse redirects: file_url is caller-supplied and only the initial URL is
-	// validated, so a redirect would reach an unvalidated host (VAPT F16).
-	retryClient.HTTPClient.CheckRedirect = httpclient.RejectRedirects
-
 	return &FileProcessor{
 		StreamingProcessor: NewStreamingProcessor(client, logger),
 		ProviderRegistry:   NewFileProviderRegistry(),
 		CSVProcessor:       NewCSVProcessor(logger),
 		JSONProcessor:      NewJSONProcessor(logger),
-		RetryClient:        retryClient,
+		RetryClient:        newGuardedDownloadClient(logger),
 		MaxMemoryFileSize:  10 * 1024 * 1024,   // 10MB
 		MaxFileSize:        1024 * 1024 * 1024, // 1GB
 	}
