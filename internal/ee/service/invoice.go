@@ -1268,9 +1268,13 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 			}
 		}
 
-		// Refund AmountPaid + TotalPrepaidCreditsApplied back to the customer's wallet.
-		// Both represent value the customer already provided for this invoice.
-		refundAmount := inv.AmountPaid.Add(inv.TotalPrepaidCreditsApplied)
+		// Refund only the remaining customer value that has not already been returned.
+		// RefundedAmount tracks prior refunds (e.g. refund credit notes), so voiding must
+		// not credit more than the total value provided for the invoice.
+		refundAmount := inv.AmountPaid.Add(inv.TotalPrepaidCreditsApplied).Sub(inv.RefundedAmount)
+		if refundAmount.IsNegative() {
+			refundAmount = decimal.Zero
+		}
 		if refundAmount.IsPositive() {
 			walletService := NewWalletService(s.ServiceParams)
 

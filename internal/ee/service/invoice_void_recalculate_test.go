@@ -559,7 +559,9 @@ func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_PrepaidCreditsOnlyRefund()
 }
 
 func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_PartiallyRefundedStatus() {
-	// PARTIALLY_REFUNDED is an allowed payment status for voiding
+	// PARTIALLY_REFUNDED is an allowed payment status for voiding.
+	// Voiding must only return the value that has NOT already been refunded,
+	// so cumulative RefundedAmount can never exceed the funded value.
 	prevRefunded := decimal.NewFromFloat(10.00)
 	amountPaid := decimal.NewFromFloat(60.00)
 	inv := s.buildFinalizedInvoice("inv_partial_refund", amountPaid, decimal.Zero, types.PaymentStatusPartiallyRefunded)
@@ -578,10 +580,76 @@ func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_PartiallyRefundedStatus() 
 	s.Equal(types.InvoiceStatusVoided, updated.InvoiceStatus)
 	s.Equal(types.PaymentStatusRefunded, updated.PaymentStatus)
 
-	// RefundedAmount = previous ($10) + new refund ($60)
-	expectedTotal := prevRefunded.Add(amountPaid)
-	s.True(expectedTotal.Equal(updated.RefundedAmount),
-		"expected refunded_amount=%s, got=%s", expectedTotal, updated.RefundedAmount)
+	// Cumulative refunded value must equal the funded value ($60), not $60 on top of $10.
+	s.True(amountPaid.Equal(updated.RefundedAmount),
+		"expected refunded_amount=%s, got=%s", amountPaid, updated.RefundedAmount)
+}
+
+func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_PartiallyRefundedDoesNotOverRefund() {
+	// Regression: voiding a partially refunded invoice must credit only the
+	// remaining unreimbursed value, never the full historical funded value.
+	// Funded = AmountPaid $100 + prepaid credits $20 = $120; $30 already refunded
+	// via a refund credit note, so voiding may return at most $90.
+	prevRefunded := decimal.NewFromFloat(30.00)
+	amountPaid := decimal.NewFromFloat(100.00)
+	prepaidCredits := decimal.NewFromFloat(20.00)
+	funded := amountPaid.Add(prepaidCredits)
+
+	existingWallet := s.buildPrepaidWallet("wallet_over_refund", decimal.NewFromFloat(40.00))
+	initialBalance := existingWallet.Balance
+
+	inv := s.buildFinalizedInvoice("inv_over_refund", amountPaid, prepaidCredits, types.PaymentStatusPartiallyRefunded)
+	stored, err := s.invoiceRepo.Get(s.GetContext(), inv.ID)
+	s.NoError(err)
+	stored.RefundedAmount = prevRefunded
+	s.NoError(s.invoiceRepo.Update(s.GetContext(), stored))
+
+	err = s.service.VoidInvoice(s.GetContext(), inv.ID, dto.InvoiceVoidRequest{})
+	s.NoError(err)
+
+	updated, err := s.invoiceRepo.Get(s.GetContext(), inv.ID)
+	s.NoError(err)
+	s.Equal(types.InvoiceStatusVoided, updated.InvoiceStatus)
+
+	// Cumulative refunded value must never exceed the total funded value.
+	s.True(funded.Equal(updated.RefundedAmount),
+		"expected cumulative refunded_amount=%s, got=%s", funded, updated.RefundedAmount)
+	s.False(updated.RefundedAmount.GreaterThan(funded),
+		"cumulative refunded amount %s exceeds funded value %s", updated.RefundedAmount, funded)
+
+	expectedRefund := funded.Sub(prevRefunded) // $90
+	expectedBalance := initialBalance.Add(expectedRefund)
+	updatedWallet, err := s.walletRepo.GetWalletByID(s.GetContext(), existingWallet.ID)
+	s.NoError(err)
+	s.True(expectedBalance.Equal(updatedWallet.Balance),
+		"expected wallet balance=%s, got=%s", expectedBalance, updatedWallet.Balance)
+
+	txns := s.refundTxns(existingWallet.ID)
+	s.Len(txns, 1, "expected exactly one INVOICE_VOID_REFUND transaction")
+	s.True(expectedRefund.Equal(txns[0].CreditAmount),
+		"expected txn credit amount=%s, got=%s", expectedRefund, txns[0].CreditAmount)
+}
+
+func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_FullyRefundedValueYieldsNoWalletCredit() {
+	// Everything the customer funded has already been returned, so voiding
+	// must not credit the wallet again.
+	amountPaid := decimal.NewFromFloat(80.00)
+	inv := s.buildFinalizedInvoice("inv_fully_refunded_value", amountPaid, decimal.Zero, types.PaymentStatusPartiallyRefunded)
+
+	stored, err := s.invoiceRepo.Get(s.GetContext(), inv.ID)
+	s.NoError(err)
+	stored.RefundedAmount = amountPaid
+	s.NoError(s.invoiceRepo.Update(s.GetContext(), stored))
+
+	err = s.service.VoidInvoice(s.GetContext(), inv.ID, dto.InvoiceVoidRequest{})
+	s.NoError(err)
+
+	updated, err := s.invoiceRepo.Get(s.GetContext(), inv.ID)
+	s.NoError(err)
+	s.Equal(types.InvoiceStatusVoided, updated.InvoiceStatus)
+	s.True(amountPaid.Equal(updated.RefundedAmount),
+		"expected refunded_amount to stay at %s, got=%s", amountPaid, updated.RefundedAmount)
+	s.Len(s.walletsByCustomer(), 0, "no wallet credit when nothing remains to refund")
 }
 
 func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_Idempotency() {
