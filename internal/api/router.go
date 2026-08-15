@@ -178,7 +178,9 @@ func NewRouter(
 			user.PUT("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateServiceAccount)
 			user.PUT("/:id/roles", write(types.EntityUser, types.ActionWrite, superAdminOnly), handlers.User.UpdateUserRoles)
 			user.DELETE("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.DeleteUser)
-			user.POST("/search", handlers.User.QueryUsers)
+			// Enumerating users and service accounts exposes the principals whose
+			// roles an API key can inherit, so it is an administrative read.
+			user.POST("/search", read(types.EntityUser, types.ActionRead, superAdminOnly), handlers.User.QueryUsers)
 			user.POST("/chat/verify", handlers.User.CreateSupportChatToken)
 		}
 
@@ -531,7 +533,9 @@ func NewRouter(
 			// API Key routes
 			apiKeys := secrets.Group("/api/keys")
 			{
-				apiKeys.GET("", handlers.Secret.ListAPIKeys)
+				// Results are scoped to the caller in the service layer; a
+				// super_admin sees the whole environment.
+				apiKeys.GET("", read(types.EntitySecret, types.ActionRead), handlers.Secret.ListAPIKeys)
 				apiKeys.POST("", write(types.EntitySecret, types.ActionWrite), handlers.Secret.CreateAPIKey)
 				apiKeys.DELETE("/:id", write(types.EntitySecret, types.ActionWrite), handlers.Secret.DeleteAPIKey)
 			}
