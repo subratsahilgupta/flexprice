@@ -18,13 +18,33 @@ import (
 // fakeSyncZohoClient captures the InvoiceCreateRequest that SyncInvoiceToZoho builds.
 type fakeSyncZohoClient struct {
 	ZohoClient
-	createInvoiceReq *InvoiceCreateRequest
-	syncConfig       *types.SyncConfig
+	createInvoiceReq   *InvoiceCreateRequest
+	syncConfig         *types.SyncConfig
+	getInvoiceResp     *InvoiceResponse
+	createPaymentCalls int
+	createPaymentReq   *CustomerPaymentCreateRequest
 }
 
 func (f *fakeSyncZohoClient) CreateInvoice(_ context.Context, req *InvoiceCreateRequest) (*InvoiceResponse, error) {
 	f.createInvoiceReq = req
 	return &InvoiceResponse{InvoiceID: "zoho_inv_new", InvoiceNumber: "INV-000058", Status: "draft"}, nil
+}
+
+func (f *fakeSyncZohoClient) GetInvoice(_ context.Context, _ string) (*InvoiceResponse, error) {
+	if f.getInvoiceResp != nil {
+		return f.getInvoiceResp, nil
+	}
+	return &InvoiceResponse{
+		InvoiceID:  "zoho_inv_new",
+		CustomerID: "zoho_cust_1",
+		Balance:    decimal.NewFromInt(100),
+	}, nil
+}
+
+func (f *fakeSyncZohoClient) CreateCustomerPayment(_ context.Context, req *CustomerPaymentCreateRequest) (*CustomerPaymentResponse, error) {
+	f.createPaymentCalls++
+	f.createPaymentReq = req
+	return NewCustomerPaymentResponse("zoho_payment_1"), nil
 }
 
 func (f *fakeSyncZohoClient) ResolveInvoiceCurrency(_ context.Context, invoiceCurrency string) (string, float64, error) {
@@ -35,18 +55,28 @@ func (f *fakeSyncZohoClient) GetZohoBooksSyncConfig(_ context.Context) (*types.S
 	return f.syncConfig, nil
 }
 
-// fakeSyncMappingRepo reports no existing mapping so the sync path runs end to end.
+// fakeSyncMappingRepo stores mappings so MarkInvoicePaidInZoho can see a row
+// created earlier in the same SyncInvoiceToZoho call.
 type fakeSyncMappingRepo struct {
 	entityintegrationmapping.Repository
-	created *entityintegrationmapping.EntityIntegrationMapping
+	mappings []*entityintegrationmapping.EntityIntegrationMapping
+	created  *entityintegrationmapping.EntityIntegrationMapping
 }
 
-func (f *fakeSyncMappingRepo) List(_ context.Context, _ *types.EntityIntegrationMappingFilter) ([]*entityintegrationmapping.EntityIntegrationMapping, error) {
-	return nil, nil
+func (f *fakeSyncMappingRepo) List(_ context.Context, filter *types.EntityIntegrationMappingFilter) ([]*entityintegrationmapping.EntityIntegrationMapping, error) {
+	var out []*entityintegrationmapping.EntityIntegrationMapping
+	for _, m := range f.mappings {
+		if filter != nil && filter.EntityID != "" && m.EntityID != filter.EntityID {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }
 
 func (f *fakeSyncMappingRepo) Create(_ context.Context, m *entityintegrationmapping.EntityIntegrationMapping) error {
 	f.created = m
+	f.mappings = append(f.mappings, m)
 	return nil
 }
 
@@ -360,4 +390,96 @@ func TestTotalLineItemDiscount(t *testing.T) {
 		{Discount: decimal.NewFromInt(400)},
 		{Discount: decimal.NewFromInt(200)},
 	})))
+}
+
+func TestSyncInvoiceToZoho_MarksPaidWhenFlexpriceAlreadyPaid(t *testing.T) {
+	paidLine := []testLineItem{
+		{name: "Charge", priceID: "price_1", amount: "100", lineDisc: "0", invDisc: "0"},
+	}
+
+	tests := []struct {
+		name              string
+		paymentStatus     types.PaymentStatus
+		existingMapping   bool
+		wantCreateInvoice bool
+		wantCreatePayment bool
+	}{
+		{
+			name:              "pending first sync does not record payment",
+			paymentStatus:     types.PaymentStatusPending,
+			wantCreateInvoice: true,
+		},
+		{
+			name:              "succeeded first sync records payment after create",
+			paymentStatus:     types.PaymentStatusSucceeded,
+			wantCreateInvoice: true,
+			wantCreatePayment: true,
+		},
+		{
+			name:              "overpaid first sync records payment after create",
+			paymentStatus:     types.PaymentStatusOverpaid,
+			wantCreateInvoice: true,
+			wantCreatePayment: true,
+		},
+		{
+			name:              "succeeded existing mapping records payment without create",
+			paymentStatus:     types.PaymentStatusSucceeded,
+			existingMapping:   true,
+			wantCreatePayment: true,
+		},
+		{
+			name:            "pending existing mapping does not record payment",
+			paymentStatus:   types.PaymentStatusPending,
+			existingMapping: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			inv := buildTestInvoice("INR", "0", "", "", paidLine)
+			inv.PaymentStatus = tc.paymentStatus
+
+			mappingRepo := &fakeSyncMappingRepo{}
+			if tc.existingMapping {
+				mappingRepo.mappings = []*entityintegrationmapping.EntityIntegrationMapping{
+					{EntityID: inv.ID, ProviderEntityID: "zoho_inv_existing"},
+				}
+			}
+
+			client := &fakeSyncZohoClient{
+				getInvoiceResp: &InvoiceResponse{
+					InvoiceID:  "zoho_inv_existing",
+					CustomerID: "zoho_cust_1",
+					Balance:    decimal.NewFromInt(100),
+				},
+			}
+			svc := &InvoiceService{
+				client:       client,
+				customerSvc:  fakeSyncCustomerSvc{},
+				itemSyncSvc:  fakeSyncItemSyncSvc{},
+				taxSvc:       fakeSyncTaxSvc{},
+				customerRepo: &fakeSyncCustomerRepo{},
+				invoiceRepo:  &fakeSyncInvoiceRepo{inv: inv},
+				mappingRepo:  mappingRepo,
+				logger:       logger.NewNoopLogger(),
+			}
+
+			_, err := svc.SyncInvoiceToZoho(context.Background(), ZohoInvoiceSyncRequest{InvoiceID: inv.ID})
+			require.NoError(t, err)
+
+			if tc.wantCreateInvoice {
+				require.NotNil(t, client.createInvoiceReq)
+			} else {
+				assert.Nil(t, client.createInvoiceReq)
+			}
+
+			if tc.wantCreatePayment {
+				assert.Equal(t, 1, client.createPaymentCalls)
+				require.NotNil(t, client.createPaymentReq)
+				assert.True(t, decimal.NewFromInt(100).Equal(client.createPaymentReq.Amount()))
+			} else {
+				assert.Equal(t, 0, client.createPaymentCalls)
+			}
+		})
+	}
 }

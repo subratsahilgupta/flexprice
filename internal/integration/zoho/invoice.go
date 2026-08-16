@@ -88,6 +88,11 @@ func (s *InvoiceService) SyncInvoiceToZoho(ctx context.Context, req ZohoInvoiceS
 				"invoice_id", req.InvoiceID,
 				"zoho_invoice_id", zohoID)
 		}
+
+		if err := s.markPaidIfFlexpricePaid(ctx, req.InvoiceID); err != nil {
+			return nil, err
+		}
+
 		return &ZohoInvoiceSyncResponse{
 			ZohoInvoiceID: zohoID,
 			Status:        status,
@@ -174,12 +179,36 @@ func (s *InvoiceService) SyncInvoiceToZoho(ctx context.Context, req ZohoInvoiceS
 			"zoho_invoice_id", zohoInv.InvoiceID)
 	}
 
+	if err := s.markPaidIfFlexpricePaid(ctx, req.InvoiceID); err != nil {
+		return nil, err
+	}
+
 	return &ZohoInvoiceSyncResponse{
 		ZohoInvoiceID: zohoInv.InvoiceID,
 		Status:        zohoInv.Status,
 		Total:         zohoInv.Total,
 		Currency:      flexInvoice.Currency,
 	}, nil
+}
+
+// markPaidIfFlexpricePaid re-reads the FlexPrice invoice and records a Zoho customer
+// payment when it is already succeeded or overpaid. Re-fetch is required because
+// checkout can mark the invoice paid while CreateInvoice is still in flight.
+func (s *InvoiceService) markPaidIfFlexpricePaid(ctx context.Context, flexpriceInvoiceID string) error {
+	flex, err := s.invoiceRepo.Get(ctx, flexpriceInvoiceID)
+	if err != nil {
+		return err
+	}
+	if flex == nil {
+		return nil
+	}
+	
+	switch flex.PaymentStatus {
+	case types.PaymentStatusSucceeded, types.PaymentStatusOverpaid:
+		return s.MarkInvoicePaidInZoho(ctx, flex.ID)
+	default:
+		return nil
+	}
 }
 
 // MarkInvoicePaidInZoho records a Zoho customer payment for the invoice's current
