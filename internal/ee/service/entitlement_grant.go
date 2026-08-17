@@ -459,15 +459,17 @@ func (s *entitlementGrantService) computeGrantWindow(
 		"allocationBehavior", ec.GrantAllocationBehavior,
 	)
 
-	// subscription_period: window is the whole cycle; the event timestamp is
-	// only used as the presence gate above.
+	// subscription_period: window is the whole cycle. Skip the earliestUncoveredUsage
+	// query — the event timestamp is not used for validFrom, and openIfSlotFree
+	// terminates after one grant per cycle (lastEnd == cycleEnd on the next pass).
 	if ec.GrantDurationUnit == types.EntitlementGrantDurationUnitSubscriptionPeriod {
 		s.Logger.Debug(ctx, "computed grant window (subscription_period)",
 			"validFrom", cycleStart, "validTo", cycleEnd)
 		return cycleStart, cycleEnd, true, nil
 	}
 
-	// Presence gate is uniform: no uncovered usage in the cycle → no grant.
+	// hour/day/week: no uncovered usage in the cycle → no grant (windows are
+	// anchored to first-event time, so nothing to anchor without an event).
 	firstUncoveredEventAt, err := s.earliestUncoveredUsage(ctx, meta, sub, ec, coveredUntil, searchUntil)
 	if err != nil || firstUncoveredEventAt == nil {
 		return time.Time{}, time.Time{}, false, err

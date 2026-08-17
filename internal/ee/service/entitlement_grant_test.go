@@ -540,16 +540,23 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_SubscriptionPeriod_UsesCy
 	s.True(to.Equal(fx.cycleEnd), "validTo should equal cycleEnd: got %s want %s", to, fx.cycleEnd)
 }
 
-func (s *EntitlementGrantSuite) TestComputeGrantWindow_SubscriptionPeriod_NoUsage_NoGrant() {
+// subscription_period grants are unconditionally opened at cycle boundaries —
+// they carry no first-event-anchored validFrom, so there is nothing to gate on.
+// This spares a per-slot ClickHouse round-trip (no earliestUncoveredUsage call)
+// and gives billing/reporting a stable [cycleStart, cycleEnd) window even when
+// the customer never emits usage for the feature.
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_SubscriptionPeriod_NoUsage_StillOpensCycleWindow() {
 	svc := s.grantService.(*entitlementGrantService)
 	fx := s.newWindowFixture("subperiod-idle", 0)
 	fx.ec.GrantDurationUnit = types.EntitlementGrantDurationUnitSubscriptionPeriod
 	fx.ec.GrantDurationValue = nil
 
 	meta, last := s.windowArgs(fx)
-	_, _, ok, err := svc.computeGrantWindow(s.GetContext(), fx.ec, fx.sub, meta, last, fx.cycleStart.Add(1*time.Hour), 0)
+	from, to, ok, err := svc.computeGrantWindow(s.GetContext(), fx.ec, fx.sub, meta, last, fx.cycleStart.Add(1*time.Hour), 0)
 	s.NoError(err)
-	s.False(ok, "no usage → no grant")
+	s.True(ok, "subscription_period should open even without usage")
+	s.True(from.Equal(fx.cycleStart), "validFrom should equal cycleStart: got %s want %s", from, fx.cycleStart)
+	s.True(to.Equal(fx.cycleEnd), "validTo should equal cycleEnd: got %s want %s", to, fx.cycleEnd)
 }
 
 func (s *EntitlementGrantSuite) TestComputeGrantWindow_DayUnitStart_UTC_FloorsToStartOfDay() {
