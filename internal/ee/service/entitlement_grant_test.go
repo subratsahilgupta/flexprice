@@ -1703,8 +1703,8 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_DayUnitStart_DSTSpringFor
 // Event on Tue 2026-08-25 → bucket 3 → aligned = 08-17.
 func (s *EntitlementGrantSuite) TestComputeGrantWindow_WeekUnitStart_Value2_WalksMultipleBuckets_Week1() {
 	s.assertWeekValue2BucketAligned(
-		time.Date(2026, 7, 7, 10, 0, 0, 0, time.UTC),  // event Tue of week 1
-		time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),   // → bucket 0
+		time.Date(2026, 7, 7, 10, 0, 0, 0, time.UTC), // event Tue of week 1
+		time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),  // → bucket 0
 	)
 }
 
@@ -1773,7 +1773,7 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_WeekUnitStart_Value2_DSTF
 	fx := s.newWindowFixture("week-v2-dst-fallback", 2*7*24)
 	fx.sub.Timezone = "America/New_York"
 	fx.sub.CurrentPeriodStart = time.Date(2026, 9, 7, 4, 0, 0, 0, time.UTC) // Mon 00:00 EDT
-	fx.sub.CurrentPeriodEnd = time.Date(2026, 12, 7, 5, 0, 0, 0, time.UTC) // ~3 months later, safely post-DST
+	fx.sub.CurrentPeriodEnd = time.Date(2026, 12, 7, 5, 0, 0, 0, time.UTC)  // ~3 months later, safely post-DST
 	fx.cycleStart = fx.sub.CurrentPeriodStart
 	fx.cycleEnd = fx.sub.CurrentPeriodEnd
 	fx.ec.GrantDurationUnit = types.EntitlementGrantDurationUnitWeek
