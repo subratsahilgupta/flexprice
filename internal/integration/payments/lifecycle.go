@@ -270,9 +270,54 @@ func (l *PaymentLifecycle) RecordPaymentSuccess(ctx context.Context, params Reco
 	return nil
 }
 
-// RecordPaymentFailure transitions the payment to FAILED. Called from the
-// webhook handler on payment_failed or equivalent gateway event.
-//
+func (l *PaymentLifecycle) RecordFailedAttempt(ctx context.Context, params RecordFailedAttemptParams) error {
+	if params.FlexpricePaymentID == "" {
+		return ierr.NewError("flexprice_payment_id is required").Mark(ierr.ErrValidation)
+	}
+
+	if err := l.paymentService.RecordFailedAttempt(ctx, params.FlexpricePaymentID, apidto.RecordFailedAttemptRequest{
+		ErrorMessage:     params.ErrorMessage,
+		GatewayAttemptID: params.GatewayPaymentID,
+	}); err != nil {
+		l.logger.Error(ctx, "failed to record failed payment attempt",
+			"flexprice_payment_id", params.FlexpricePaymentID,
+			"gateway_payment_id", params.GatewayPaymentID,
+			"error", err,
+		)
+		return ierr.WithError(err).
+			WithHint("Failed to record failed payment attempt").
+			WithReportableDetails(map[string]any{
+				"flexprice_payment_id": params.FlexpricePaymentID,
+			}).
+			Mark(ierr.ErrSystem)
+	}
+
+	if params.ErrorMessage != "" {
+		updateReq := apidto.UpdatePaymentRequest{ErrorMessage: lo.ToPtr(params.ErrorMessage)}
+		if _, err := l.paymentService.UpdatePayment(ctx, params.FlexpricePaymentID, updateReq); err != nil {
+			l.logger.Error(ctx, "failed to persist failed details on payment",
+				"flexprice_payment_id", params.FlexpricePaymentID,
+				"gateway_payment_id", params.GatewayPaymentID,
+				"error", err,
+			)
+			return ierr.WithError(err).
+				WithHint("Failed to persist failed details on payment").
+				WithReportableDetails(map[string]any{
+					"flexprice_payment_id": params.FlexpricePaymentID,
+				}).
+				Mark(ierr.ErrSystem)
+		}
+	}
+
+	l.logger.Info(ctx, "payment attempt failed, payment left open for retry",
+		"flexprice_payment_id", params.FlexpricePaymentID,
+		"gateway_payment_id", params.GatewayPaymentID,
+		"error_message", params.ErrorMessage,
+	)
+
+	return nil
+}
+
 // Idempotent: if the payment is already FAILED, logs and returns nil.
 func (l *PaymentLifecycle) RecordPaymentFailure(ctx context.Context, params RecordPaymentFailureParams) error {
 	l.logger.Info(ctx, "recording payment failure",
@@ -322,10 +367,13 @@ func (l *PaymentLifecycle) RecordPaymentFailure(ctx context.Context, params Reco
 		failedAt = time.Now().UTC()
 	}
 	updateReq := apidto.UpdatePaymentRequest{
-		PaymentStatus:    lo.ToPtr(string(types.PaymentStatusFailed)),
-		GatewayPaymentID: lo.ToPtr(params.GatewayPaymentID),
-		FailedAt:         lo.ToPtr(failedAt),
-		ErrorMessage:     lo.ToPtr(params.ErrorMessage),
+		PaymentStatus: lo.ToPtr(string(types.PaymentStatusFailed)),
+		FailedAt:      lo.ToPtr(failedAt),
+		ErrorMessage:  lo.ToPtr(params.ErrorMessage),
+	}
+
+	if params.GatewayPaymentID != "" {
+		updateReq.GatewayPaymentID = lo.ToPtr(params.GatewayPaymentID)
 	}
 
 	_, err = l.paymentService.UpdatePayment(ctx, params.FlexpricePaymentID, updateReq)

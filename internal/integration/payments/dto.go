@@ -30,6 +30,14 @@ type RecordPaymentSuccessParams struct {
 	SucceededAt        time.Time
 }
 
+// RecordFailedAttemptParams holds inputs for recording a single gateway failure
+// while the payment vehicle is still open.
+type RecordFailedAttemptParams struct {
+	FlexpricePaymentID string
+	GatewayPaymentID   string
+	ErrorMessage       string
+}
+
 // RecordPaymentFailureParams holds inputs for marking a payment FAILED.
 type RecordPaymentFailureParams struct {
 	FlexpricePaymentID string

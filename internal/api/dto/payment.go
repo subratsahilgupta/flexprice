@@ -87,6 +87,12 @@ type UpdatePaymentRequest struct {
 	ErrorMessage     *string          `json:"error_message,omitempty"`
 }
 
+// RecordFailedAttemptRequest captures a gateway decline for a single attempt.
+type RecordFailedAttemptRequest struct {
+	ErrorMessage     string `json:"error_message,omitempty"`
+	GatewayAttemptID string `json:"gateway_attempt_id,omitempty"`
+}
+
 // PaymentResponse represents a payment response
 type PaymentResponse struct {
 	ID                     string                       `json:"id"`
