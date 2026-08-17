@@ -1693,3 +1693,101 @@ func (s *EntitlementGrantSuite) TestComputeGrantWindow_DayUnitStart_DSTSpringFor
 	s.True(from.Equal(time.Date(2026, 3, 10, 4, 0, 0, 0, time.UTC)),
 		"expected 2026-03-10T04:00Z (00:00 EDT, calendar-safe across DST), got %s", from)
 }
+
+// User semantic: value=2 week, unit_start.
+// cycleStart = Mon 2026-07-06T00:00Z (week-aligned so buckets start on cycleStart).
+// Buckets: [07-06, 07-20), [07-20, 08-03), [08-03, 08-17), [08-17, 08-31), ...
+// Event on Tue 2026-07-07 → bucket 0 → aligned = cycleStart (07-06).
+// Event on Tue 2026-07-14 → bucket 0 → aligned = cycleStart (07-06).
+// Event on Tue 2026-07-21 → bucket 1 → aligned = 07-20.
+// Event on Tue 2026-08-25 → bucket 3 → aligned = 08-17.
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_WeekUnitStart_Value2_WalksMultipleBuckets_Week1() {
+	s.assertWeekValue2BucketAligned(
+		time.Date(2026, 7, 7, 10, 0, 0, 0, time.UTC),  // event Tue of week 1
+		time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),   // → bucket 0
+	)
+}
+
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_WeekUnitStart_Value2_WalksMultipleBuckets_Week2() {
+	s.assertWeekValue2BucketAligned(
+		time.Date(2026, 7, 14, 10, 0, 0, 0, time.UTC), // event Tue of week 2
+		time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),   // → bucket 0 (same as week 1)
+	)
+}
+
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_WeekUnitStart_Value2_WalksMultipleBuckets_Week3() {
+	s.assertWeekValue2BucketAligned(
+		time.Date(2026, 7, 21, 10, 0, 0, 0, time.UTC), // event Tue of week 3
+		time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC),  // → bucket 1
+	)
+}
+
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_WeekUnitStart_Value2_WalksMultipleBuckets_Week8() {
+	s.assertWeekValue2BucketAligned(
+		time.Date(2026, 8, 25, 10, 0, 0, 0, time.UTC), // event Tue of week 8
+		time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC),  // → bucket 3
+	)
+}
+
+// Shared setup for the value=2 week bucket-position tests above. cycleStart is
+// week-aligned (Mon 2026-07-06) so buckets begin at cycleStart, matching the
+// user's "start from subscription current period start" semantic.
+func (s *EntitlementGrantSuite) assertWeekValue2BucketAligned(eventAt, wantFrom time.Time) {
+	svc := s.grantService.(*entitlementGrantService)
+	tag := "week-v2-" + eventAt.Format("0102")
+	fx := s.newWindowFixture(tag, 2*7*24)
+	fx.sub.Timezone = "UTC"
+	fx.sub.CurrentPeriodStart = time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
+	fx.sub.CurrentPeriodEnd = time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC)
+	fx.cycleStart = fx.sub.CurrentPeriodStart
+	fx.cycleEnd = fx.sub.CurrentPeriodEnd
+	fx.ec.GrantDurationUnit = types.EntitlementGrantDurationUnitWeek
+	val := 2
+	fx.ec.GrantDurationValue = &val
+	fx.ec.GrantAllocationBehavior = types.EntitlementGrantAllocationBehaviorUnitStart
+
+	s.seedMeterUsage(fx.extID, fx.meterID, eventAt, 1)
+
+	meta, last := s.windowArgs(fx)
+	from, _, ok, err := svc.computeGrantWindow(s.GetContext(), fx.ec, fx.sub, meta, last, eventAt.Add(1*time.Minute), 2*7*24*time.Hour)
+	s.NoError(err)
+	s.True(ok)
+	s.True(from.Equal(wantFrom), "event=%s: expected validFrom=%s, got %s", eventAt, wantFrom, from)
+}
+
+// DST + multi-iteration: value=2 week, cycleStart pre-DST (EDT), event several
+// buckets in and post-DST (EST). Verifies AdvanceDays is invoked once per
+// stride and each stride handles the DST offset change correctly.
+// cycleStart = Mon 2026-09-07T00:00 EDT = T04:00Z. Buckets:
+//
+//	[09-07 EDT, 09-21 EDT), [09-21 EDT, 10-05 EDT), [10-05 EDT, 10-19 EDT),
+//	[10-19 EDT, 11-02 EST)  — crosses DST fall-back on 11-01
+//	[11-02 EST, 11-16 EST), [11-16 EST, 11-30 EST), ...
+//
+// Event Tue 2026-11-10T20:00 EST (= 2026-11-11T01:00Z) is in bucket 4.
+// Aligned = Mon 2026-11-02T00:00 EST = 2026-11-02T05:00Z.
+// Fixed-duration math (cycleStart + 4*14*24h) would give 2026-11-02T04:00Z,
+// which is 23:00 EST on Nov 1 — an hour off due to DST fall-back drift.
+func (s *EntitlementGrantSuite) TestComputeGrantWindow_WeekUnitStart_Value2_DSTFallBackAcrossMultipleBuckets() {
+	svc := s.grantService.(*entitlementGrantService)
+	fx := s.newWindowFixture("week-v2-dst-fallback", 2*7*24)
+	fx.sub.Timezone = "America/New_York"
+	fx.sub.CurrentPeriodStart = time.Date(2026, 9, 7, 4, 0, 0, 0, time.UTC) // Mon 00:00 EDT
+	fx.sub.CurrentPeriodEnd = time.Date(2026, 12, 7, 5, 0, 0, 0, time.UTC) // ~3 months later, safely post-DST
+	fx.cycleStart = fx.sub.CurrentPeriodStart
+	fx.cycleEnd = fx.sub.CurrentPeriodEnd
+	fx.ec.GrantDurationUnit = types.EntitlementGrantDurationUnitWeek
+	val := 2
+	fx.ec.GrantDurationValue = &val
+	fx.ec.GrantAllocationBehavior = types.EntitlementGrantAllocationBehaviorUnitStart
+
+	eventAt := time.Date(2026, 11, 11, 1, 0, 0, 0, time.UTC) // Tue Nov 10 20:00 EST
+	s.seedMeterUsage(fx.extID, fx.meterID, eventAt, 1)
+
+	meta, last := s.windowArgs(fx)
+	from, _, ok, err := svc.computeGrantWindow(s.GetContext(), fx.ec, fx.sub, meta, last, eventAt.Add(1*time.Minute), 2*7*24*time.Hour)
+	s.NoError(err)
+	s.True(ok)
+	s.True(from.Equal(time.Date(2026, 11, 2, 5, 0, 0, 0, time.UTC)),
+		"expected 2026-11-02T05:00Z (Mon 00:00 EST, DST-safe across multiple strides), got %s", from)
+}
