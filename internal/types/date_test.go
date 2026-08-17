@@ -2755,6 +2755,19 @@ func TestFloorToStartOfHour(t *testing.T) {
 			tz:   "Not/A_Real_Zone",
 			want: time.Date(2026, 8, 13, 14, 0, 0, 0, time.UTC),
 		},
+		{
+			// DST fall-back day: 2026-11-01 in America/New_York rolls 02:00 EDT
+			// back to 01:00 EST at T06:00Z, so 01:00 local occurs twice — first
+			// as 01:00 EDT (T05:00Z), then as 01:00 EST (T06:00Z).
+			// Input T06:30Z is 01:30 EST (30 min into the second occurrence).
+			// Correct floor preserves the EST instance → T06:00Z.
+			// A time.Date reconstruction would pick the first (EDT) occurrence
+			// and rewind to T05:00Z.
+			name: "America/New_York — DST fall-back preserves the EST occurrence of 01:00",
+			in:   time.Date(2026, 11, 1, 6, 30, 0, 0, time.UTC),
+			tz:   "America/New_York",
+			want: time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

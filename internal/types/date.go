@@ -36,10 +36,20 @@ func FloorToStartOfDay(t time.Time, tz string) time.Time {
 // Note: half-hour and quarter-hour offset zones (IST +5:30, NPT +5:45) shift
 // the top-of-hour instant relative to UTC — this is the desired behaviour when
 // callers reason about "the hour the user sees in their timezone".
+//
+// On DST fall-back days a local hour repeats (e.g. 01:00 EDT and 01:00 EST both
+// exist in New York on the fall-back Sunday). We floor by subtracting sub-hour
+// parts from the ORIGINAL instant so the caller keeps the ambiguous-hour
+// instance they passed in — reconstructing via time.Date always picks the first
+// occurrence (EDT), which would silently rewind the second (EST) occurrence.
 func FloorToStartOfHour(t time.Time, tz string) time.Time {
 	loc := loadTimezone(tz)
 	local := t.In(loc)
-	return time.Date(local.Year(), local.Month(), local.Day(), local.Hour(), 0, 0, 0, loc).UTC()
+	return t.Add(
+		-time.Duration(local.Minute())*time.Minute -
+			time.Duration(local.Second())*time.Second -
+			time.Duration(local.Nanosecond())*time.Nanosecond,
+	).UTC()
 }
 
 // FloorToStartOfWeek returns Monday 00:00:00 of the ISO 8601 week containing t,
