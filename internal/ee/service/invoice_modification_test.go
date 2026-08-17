@@ -52,7 +52,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteAddLineItem() {
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice()
 
-	resp, err := s.service.Execute(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+	resp, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
 		Type: dto.InvoiceModifyTypeLineItem,
 		LineItemParams: &dto.InvoiceModifyLineItemParams{
 			Action: dto.InvoiceModifyLineItemActionAdd,
@@ -93,7 +93,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteRemoveLineItem() {
 	}
 	s.NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, li))
 
-	resp, err := s.service.Execute(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+	resp, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
 		Type: dto.InvoiceModifyTypeLineItem,
 		LineItemParams: &dto.InvoiceModifyLineItemParams{
 			Action:      dto.InvoiceModifyLineItemActionRemove,
@@ -110,7 +110,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteMarksInvoiceAsManuallyEdite
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice()
 
-	_, err := s.service.Execute(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+	_, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
 		Type: dto.InvoiceModifyTypeLineItem,
 		LineItemParams: &dto.InvoiceModifyLineItemParams{
 			Action: dto.InvoiceModifyLineItemActionAdd,
@@ -134,7 +134,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteRejectsUnknownType() {
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice()
 
-	_, err := s.service.Execute(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+	_, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
 		Type: "bogus",
 	})
 	s.Error(err)
@@ -145,7 +145,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteRejectsUnknownAction() {
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice()
 
-	_, err := s.service.Execute(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+	_, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
 		Type: dto.InvoiceModifyTypeLineItem,
 		LineItemParams: &dto.InvoiceModifyLineItemParams{
 			Action: "bogus",
@@ -159,7 +159,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteRejectsMissingLineItemParam
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice()
 
-	_, err := s.service.Execute(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+	_, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
 		Type: dto.InvoiceModifyTypeLineItem,
 	})
 	s.Error(err)
@@ -172,7 +172,7 @@ func (s *InvoiceModificationServiceSuite) TestExecutePropagatesUnderlyingErrors(
 	inv.InvoiceStatus = types.InvoiceStatusFinalized
 	s.NoError(s.GetStores().InvoiceRepo.Update(ctx, inv))
 
-	_, err := s.service.Execute(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+	_, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
 		Type: dto.InvoiceModifyTypeLineItem,
 		LineItemParams: &dto.InvoiceModifyLineItemParams{
 			Action: dto.InvoiceModifyLineItemActionAdd,
