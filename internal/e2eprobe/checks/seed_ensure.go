@@ -872,11 +872,15 @@ func (s *SeedEnsure) ensureEntitlementGrants(ctx context.Context, out *e2eprobe.
 	}
 
 	// Create the additive grant entitlement.
+	// Server enum is uppercase ("PLAN"/"SUBSCRIPTION"/"ADDON"); passing
+	// lowercase fails validation with "Only PLAN, ADDON, and SUBSCRIPTION
+	// entity types are supported" (see internal/types/entitlement.go:51 and
+	// internal/ee/service/entitlement.go:107). Use the SDK constant to avoid drift.
 	createReq := e2eprobe.GrantEntitlementInput{
 		FeatureID:          featID,
 		FeatureType:        "metered",
 		PlanID:             planID,
-		EntityType:         "plan",
+		EntityType:         string(types.EntitlementEntityTypePlan),
 		EntityID:           planID,
 		IsEnabled:          true,
 		GrantMeasure:       "quantity",
