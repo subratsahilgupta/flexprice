@@ -207,17 +207,21 @@ func (m *InMemoryPaymentStore) Delete(ctx context.Context, id string) error {
 	return m.InMemoryStore.Update(ctx, id, p)
 }
 
-// GetByIdempotencyKey retrieves a payment by idempotency key
+// GetByIdempotencyKey retrieves a payment by idempotency key.
+//
+// This scans directly rather than going through List: the real repository matches
+// only on (idempotency_key, tenant_id, environment_id) with no status predicate, so
+// it still finds an archived payment. List applies the published-only default, which
+// would hide one and turn an idempotency conflict into a spurious not-found.
 func (m *InMemoryPaymentStore) GetByIdempotencyKey(ctx context.Context, key string) (*payment.Payment, error) {
-	payments, err := m.List(ctx, &types.PaymentFilter{
-		QueryFilter: types.NewNoLimitQueryFilter(),
-	})
-	if err != nil {
-		return nil, err
-	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
-	for _, p := range payments {
-		if p.IdempotencyKey == key {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	for _, p := range m.createdInOrder {
+		if p.IdempotencyKey == key && p.TenantID == tenantID && p.EnvironmentID == environmentID {
 			return p, nil
 		}
 	}
@@ -400,6 +404,16 @@ func paymentFilterFn(ctx context.Context, p *payment.Payment, filter interface{}
 
 	// Apply environment filter
 	if !CheckEnvironmentFilter(ctx, p.EnvironmentID) {
+		return false
+	}
+
+	// Mirror PaymentQueryOptions.ApplyStatusFilter: an unset status means published only,
+	// so archived payments drop out of listings here exactly as they do in the repository.
+	if f.GetStatus() == "" {
+		if p.Status != types.StatusPublished {
+			return false
+		}
+	} else if string(p.Status) != f.GetStatus() {
 		return false
 	}
 

@@ -154,7 +154,11 @@ func (h *Handler) handlePaymentCaptured(ctx context.Context, event *RazorpayWebh
 	}
 
 	// Mandate checkouts only send payment.captured — handle like payment_link.paid below.
-	if h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, payment.ID, services) {
+	handled, err := h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, payment.ID, services)
+	if err != nil {
+		return err
+	}
+	if handled {
 		return nil
 	}
 
@@ -292,30 +296,31 @@ func (h *Handler) handlePaymentFailed(ctx context.Context, event *RazorpayWebhoo
 		errorMsg = payment.ErrorDescription
 	}
 
-	session, err := h.findCheckoutSessionForPayment(ctx, flexpricePaymentID, services)
-	if err != nil {
-		h.logger.Error(ctx, "failed to look up checkout session, leaving payment open",
-			"error", err,
-			"flexprice_payment_id", flexpricePaymentID,
-			"razorpay_payment_id", payment.ID)
-		return nil
-	}
-
-	canRetryPayment := paymentRecord.PaymentMethodType == types.PaymentMethodTypePaymentLink &&
-		(session == nil || session.CheckoutStatus == types.CheckoutStatusPending)
-
-	if canRetryPayment {
-		if err := h.lifecycle.RecordFailedAttempt(ctx, payments.RecordFailedAttemptParams{
-			FlexpricePaymentID: flexpricePaymentID,
-			GatewayPaymentID:   payment.ID,
-			ErrorMessage:       errorMsg,
-		}); err != nil {
-			h.logger.Error(ctx, "failed to record failed attempt for payment link",
+	if paymentRecord.PaymentMethodType == types.PaymentMethodTypePaymentLink {
+		session, err := h.findCheckoutSessionForPayment(ctx, flexpricePaymentID, services)
+		if err != nil {
+			h.logger.Error(ctx, "failed to look up checkout session, leaving payment open",
 				"error", err,
 				"flexprice_payment_id", flexpricePaymentID,
 				"razorpay_payment_id", payment.ID)
+			return nil
 		}
-		return nil
+
+		// A session that is no longer pending has already been cleaned up, so nothing
+		// can settle this payment now and the decline is final.
+		if session == nil || session.CheckoutStatus == types.CheckoutStatusPending {
+			if err := h.lifecycle.RecordFailedAttempt(ctx, payments.RecordFailedAttemptParams{
+				FlexpricePaymentID: flexpricePaymentID,
+				GatewayPaymentID:   payment.ID,
+				ErrorMessage:       errorMsg,
+			}); err != nil {
+				h.logger.Error(ctx, "failed to record failed attempt for payment link",
+					"error", err,
+					"flexprice_payment_id", flexpricePaymentID,
+					"razorpay_payment_id", payment.ID)
+			}
+			return nil
+		}
 	}
 
 	// Update payment status to failed
@@ -390,8 +395,8 @@ func (h *Handler) handlePaymentLinkPaid(ctx context.Context, event *RazorpayWebh
 		return nil
 	}
 
-	h.handleCheckoutSessionForPayment(ctx, mappings.Items[0].EntityID, event.Payload.Payment.Entity.ID, services)
-	return nil
+	_, err = h.handleCheckoutSessionForPayment(ctx, mappings.Items[0].EntityID, event.Payload.Payment.Entity.ID, services)
+	return err
 }
 
 // handlePaymentLinkFailed processes payment_link.cancelled and payment_link.expired webhook events.
@@ -455,7 +460,7 @@ func (h *Handler) handleCheckoutSessionForPayment(
 	flexpricePaymentID string,
 	razorpayPaymentID string,
 	services *ServiceDependencies,
-) bool {
+) (bool, error) {
 	session, err := h.findCheckoutSessionForPayment(ctx, flexpricePaymentID, services)
 	if err != nil {
 		h.logger.Error(ctx, "failed to look up checkout session for payment",
@@ -463,10 +468,10 @@ func (h *Handler) handleCheckoutSessionForPayment(
 			"flexprice_payment_id", flexpricePaymentID,
 			"razorpay_payment_id", razorpayPaymentID,
 		)
-		return false
+		return false, err
 	}
 	if session == nil {
-		return false
+		return false, nil
 	}
 
 	switch session.CheckoutStatus {
@@ -497,7 +502,8 @@ func (h *Handler) handleCheckoutSessionForPayment(
 			"razorpay_payment_id", razorpayPaymentID,
 		)
 	}
-	return true
+
+	return true, nil
 }
 
 // Checkout session for this payment ID, any status. Nil if not a checkout.

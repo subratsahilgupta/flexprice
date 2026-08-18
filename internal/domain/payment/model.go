@@ -150,7 +150,7 @@ func (pa *PaymentAttempt) Validate() error {
 			WithHint("Attempt number is invalid").
 			Mark(ierr.ErrValidation)
 	}
-	
+
 	switch pa.PaymentStatus {
 	case types.PaymentStatusProcessing, types.PaymentStatusSucceeded, types.PaymentStatusFailed:
 	default:

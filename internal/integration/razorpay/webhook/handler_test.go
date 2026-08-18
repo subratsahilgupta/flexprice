@@ -416,6 +416,41 @@ func (s *WebhookCheckoutBranchingSuite) TestPaymentFailed_SessionLookupError_Doe
 		"an unreadable session must fail open: sealing a live payment loses the capture")
 }
 
+// A card charge is finished when it declines, so a checkout-session outage must not
+// stop it sealing. Only payment links need the lookup at all.
+func (s *WebhookCheckoutBranchingSuite) TestPaymentFailed_NonLinkSealsEvenIfSessionLookupFails() {
+	s.checkoutSvc.listErr = ierr.NewError("db unavailable").Mark(ierr.ErrDatabase)
+	s.paymentSvc.payment.PaymentMethodType = types.PaymentMethodTypeCard
+	s.paymentSvc.payment.PaymentStatus = types.PaymentStatusPending
+
+	err := s.handler.handlePaymentFailed(s.ctx, s.makeFailedEvent(), s.services)
+
+	s.NoError(err)
+	s.Equal(types.PaymentStatusFailed, s.paymentSvc.payment.PaymentStatus,
+		"a card decline must seal regardless of checkout-session availability")
+}
+
+// If the lookup fails we cannot tell whether this payment belongs to a dead checkout.
+// Falling through to the standalone branch would settle it and reconcile an archived
+// invoice instead of refunding the late capture; leaving it PENDING is recoverable.
+func (s *WebhookCheckoutBranchingSuite) TestPaymentCaptured_SessionLookupError_DoesNotSettle() {
+	s.checkoutSvc.listErr = ierr.NewError("db unavailable").Mark(ierr.ErrDatabase)
+	s.paymentSvc.payment.PaymentStatus = types.PaymentStatusPending
+
+	captured := &RazorpayWebhookEvent{Event: string(EventPaymentCaptured)}
+	captured.Payload.Payment.Entity.ID = "pay_rzp_late"
+	captured.Payload.Payment.Entity.Amount = 50000
+	captured.Payload.Payment.Entity.Currency = "INR"
+	captured.Payload.Payment.Entity.Notes = map[string]interface{}{"flexprice_payment_id": "pay_flex_001"}
+
+	err := s.handler.handlePaymentCaptured(s.ctx, captured, s.services)
+
+	s.Error(err, "an unreadable session is surfaced, not swallowed")
+	s.Equal(types.PaymentStatusPending, s.paymentSvc.payment.PaymentStatus,
+		"an unreadable session must not be treated as 'no session' and settled")
+	s.Empty(s.client.refundCalls)
+}
+
 func (s *WebhookCheckoutBranchingSuite) TestPaymentFailed_ThenCaptured_Succeeds() {
 	s.pendingSession()
 	s.paymentSvc.payment.PaymentStatus = types.PaymentStatusPending
