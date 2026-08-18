@@ -41,12 +41,12 @@ func TestFileDownloadRefusesLoopbackDestination(t *testing.T) {
 
 	t.Run("streaming processor", func(t *testing.T) {
 		serverHit.Store(false)
-		sp := NewStreamingProcessor(httpclient.NewDefaultClient(), log)
+		sp := NewStreamingProcessor(log)
 
 		start := time.Now()
 		body, err := sp.downloadFileStream(context.Background(), loopbackTask)
 		if err == nil {
-			body.Close()
+			require.NoError(t, body.Close())
 		}
 
 		require.Error(t, err, "loopback download should be refused")
@@ -60,7 +60,7 @@ func TestFileDownloadRefusesLoopbackDestination(t *testing.T) {
 
 	t.Run("file processor", func(t *testing.T) {
 		serverHit.Store(false)
-		fp := NewFileProcessor(httpclient.NewDefaultClient(), log)
+		fp := NewFileProcessor(log)
 
 		_, err := fp.DownloadFile(context.Background(), loopbackTask)
 

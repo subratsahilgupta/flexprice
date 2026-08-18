@@ -41,9 +41,12 @@ type FileProcessor struct {
 // Default settings:
 // - MaxMemoryFileSize: 10MB (files smaller than this are processed in memory)
 // - MaxFileSize: 1GB (maximum file size allowed)
-func NewFileProcessor(client httpclient.Client, logger *logger.Logger) *FileProcessor {
+//
+// It takes no client for the same reason as NewStreamingProcessor: the URLs it
+// fetches are caller-supplied and must go through the guarded client.
+func NewFileProcessor(logger *logger.Logger) *FileProcessor {
 	return &FileProcessor{
-		StreamingProcessor: NewStreamingProcessor(client, logger),
+		StreamingProcessor: NewStreamingProcessor(logger),
 		ProviderRegistry:   NewFileProviderRegistry(),
 		CSVProcessor:       NewCSVProcessor(logger),
 		JSONProcessor:      NewJSONProcessor(logger),

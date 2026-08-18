@@ -72,10 +72,11 @@ type StreamingProcessor struct {
 
 // NewStreamingProcessor creates a new streaming processor.
 //
-// The injected client is ignored: it is the shared default one, which internal
-// callers also use against private hosts. Every URL fetched here is
-// caller-controlled, so this processor always uses the guarded client instead.
-func NewStreamingProcessor(_ httpclient.Client, logger *logger.Logger) *StreamingProcessor {
+// It deliberately takes no client: every URL this processor fetches is the
+// caller-supplied file_url, so the destination must always be re-checked at
+// dial time. Accepting a client would let a caller substitute an unguarded one
+// and silently reopen the SSRF hole this guard closes (VAPT F16).
+func NewStreamingProcessor(logger *logger.Logger) *StreamingProcessor {
 	return &StreamingProcessor{
 		Client:           httpclient.NewPublicOnlySendClient(downloadTimeout),
 		Logger:           logger,
