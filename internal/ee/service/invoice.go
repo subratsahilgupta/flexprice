@@ -2134,6 +2134,38 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 	return dto.NewInvoiceResponse(inv), nil
 }
 
+// applyPreviewCoupons computes the coupon discounts a preview invoice would
+// carry and updates its totals. Nothing is persisted and no redemption is
+// counted — previewing an invoice must not consume a coupon.
+//
+// Returns the per-coupon breakdown for the response.
+func (s *invoiceService) applyPreviewCoupons(ctx context.Context, inv *invoice.Invoice, invReq *dto.CreateInvoiceRequest) ([]*dto.CouponApplicationResponse, error) {
+	if inv == nil || invReq == nil {
+		return nil, nil
+	}
+	if len(invReq.InvoiceCoupons) == 0 && len(invReq.LineItemCoupons) == 0 {
+		return nil, nil
+	}
+
+	couponApplicationService := NewCouponApplicationService(s.ServiceParams)
+	result, err := couponApplicationService.CalculateCouponsForInvoice(ctx, dto.ApplyCouponsToInvoiceRequest{
+		Invoice:         inv,
+		InvoiceCoupons:  invReq.InvoiceCoupons,
+		LineItemCoupons: invReq.LineItemCoupons,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, nil
+	}
+
+	inv.TotalDiscount = result.TotalDiscountAmount
+	dto.RecalculatePreviewTotals(inv, invReq.PreparedTaxRates)
+
+	return result.AppliedCoupons, nil
+}
+
 func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error) {
 	billingService := NewBillingService(s.ServiceParams)
 
@@ -2175,13 +2207,25 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		return nil, err
 	}
 
+	// Coupons: compute (never persist) the discounts this invoice would carry,
+	// then bring tax and totals back in step — ToInvoice taxed the
+	// undiscounted subtotal because discounts resolve at this layer.
+	couponApplications, err := s.applyPreviewCoupons(ctx, inv, invReq)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
 
-	// Previews persist no tax_applied rows, so synthesise the per-rate
-	// breakdown that WithTaxes would otherwise load from the DB — without it
-	// the response carries total_tax but an empty taxes[] array.
+	// Previews persist no tax_applied or coupon_application rows, so
+	// synthesise the breakdowns that WithTaxes / the DB load would otherwise
+	// provide — without them the response carries totals with nothing to
+	// explain them.
 	response.WithTaxes(dto.BuildPreviewTaxes(inv, invReq.PreparedTaxRates))
+	if len(couponApplications) > 0 {
+		response.CouponApplications = couponApplications
+	}
 
 	// Get customer information
 	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
@@ -2235,13 +2279,25 @@ func (s *invoiceService) GetInternalPreviewInvoice(ctx context.Context, req dto.
 		return nil, err
 	}
 
+	// Coupons: compute (never persist) the discounts this invoice would carry,
+	// then bring tax and totals back in step — ToInvoice taxed the
+	// undiscounted subtotal because discounts resolve at this layer.
+	couponApplications, err := s.applyPreviewCoupons(ctx, inv, invReq)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
 
-	// Previews persist no tax_applied rows, so synthesise the per-rate
-	// breakdown that WithTaxes would otherwise load from the DB — without it
-	// the response carries total_tax but an empty taxes[] array.
+	// Previews persist no tax_applied or coupon_application rows, so
+	// synthesise the breakdowns that WithTaxes / the DB load would otherwise
+	// provide — without them the response carries totals with nothing to
+	// explain them.
 	response.WithTaxes(dto.BuildPreviewTaxes(inv, invReq.PreparedTaxRates))
+	if len(couponApplications) > 0 {
+		response.CouponApplications = couponApplications
+	}
 
 	// Get customer information
 	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
