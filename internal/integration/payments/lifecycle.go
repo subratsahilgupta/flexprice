@@ -320,23 +320,6 @@ func (l *PaymentLifecycle) RecordFailedAttempt(ctx context.Context, params Recor
 			Mark(ierr.ErrSystem)
 	}
 
-	if params.ErrorMessage != "" {
-		updateReq := apidto.UpdatePaymentRequest{ErrorMessage: lo.ToPtr(params.ErrorMessage)}
-		if _, err := l.paymentService.UpdatePayment(ctx, params.FlexpricePaymentID, updateReq); err != nil {
-			l.logger.Error(ctx, "failed to persist failed details on payment",
-				"flexprice_payment_id", params.FlexpricePaymentID,
-				"gateway_payment_id", params.GatewayPaymentID,
-				"error", err,
-			)
-			return ierr.WithError(err).
-				WithHint("Failed to persist failed details on payment").
-				WithReportableDetails(map[string]any{
-					"flexprice_payment_id": params.FlexpricePaymentID,
-				}).
-				Mark(ierr.ErrSystem)
-		}
-	}
-
 	l.logger.Info(ctx, "payment attempt failed, payment left open for retry",
 		"flexprice_payment_id", params.FlexpricePaymentID,
 		"gateway_payment_id", params.GatewayPaymentID,
