@@ -305,6 +305,7 @@ func (f *Factory) GetRazorpayIntegration(ctx context.Context) (*RazorpayIntegrat
 		razorpayClient,
 		paymentSvc,
 		f.entityIntegrationMappingRepo,
+		f.lifecycle,
 		f.logger,
 	)
 
@@ -314,6 +315,7 @@ func (f *Factory) GetRazorpayIntegration(ctx context.Context) (*RazorpayIntegrat
 		PaymentSvc:     paymentSvc,
 		InvoiceSyncSvc: invoiceSyncSvc,
 		WebhookHandler: webhookHandler,
+		Lifecycle:      f.lifecycle,
 	}, nil
 }
 
@@ -847,6 +849,7 @@ type RazorpayIntegration struct {
 	PaymentSvc     *razorpay.PaymentService
 	InvoiceSyncSvc *razorpay.InvoiceSyncService
 	WebhookHandler *razorpaywebhook.Handler
+	Lifecycle      *payments.PaymentLifecycle
 }
 
 func (r *RazorpayIntegration) PullAndUpdateInvoice(ctx context.Context, invoiceID string) error {
