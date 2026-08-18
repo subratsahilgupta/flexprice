@@ -12,6 +12,7 @@ import (
 	"github.com/crewjam/saml"
 	"github.com/gin-gonic/gin"
 
+	"github.com/flexprice/flexprice/internal/auth"
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/ee/service"
@@ -318,10 +319,14 @@ func (h *Handler) ACS(c *gin.Context) {
 		return
 	}
 
-	// The token is minted by the built-in provider, so its claims are
-	// identical to a password login and every existing middleware validates
-	// it unchanged.
-	token, _, err := provider.tokens.GenerateDevToken(tenantID, "", userID, result.Email, tokenExpiryHours)
+	// Minted by the SSO issuer rather than the deployment's password-login
+	// provider. The user an assertion authenticates exists only in our own
+	// database — there is no Supabase account for Supabase to have issued a
+	// token for — so a deployment using Supabase for password login could not
+	// validate a token minted through that provider, and every request after a
+	// successful SSO login was refused. The issuer marks the token so
+	// AuthenticateMiddleware routes it to the matching validator.
+	token, _, err := auth.NewSSOTokenIssuer(provider.cfg).Issue(tenantID, userID, tokenExpiryHours)
 	if err != nil {
 		c.Error(err)
 		return
