@@ -29,6 +29,7 @@ type UserService interface {
 	UpdateUserRoles(ctx context.Context, id string, req *dto.UpdateUserRolesRequest) (*dto.UpdateUserRolesResponse, error)
 	DeleteUser(ctx context.Context, id string) error
 	ListUsersByFilter(ctx context.Context, filter *types.UserFilter) (*dto.ListUsersResponse, error)
+	CreateSupportChatToken(ctx context.Context) (*dto.SupportChatTokenResponse, error)
 }
 
 type userService struct {
