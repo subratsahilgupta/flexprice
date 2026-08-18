@@ -2,6 +2,7 @@ package zoho
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -72,8 +73,8 @@ func TestFormatPeriodDescription(t *testing.T) {
 
 // period_end is exclusive in FlexPrice; the invoice must show the inclusive last day.
 func TestInclusiveEnd(t *testing.T) {
-	assert.Equal(t, "30/04/2026", inclusiveEnd(tPtr("2026-05-01T00:00:00Z")).Format(zohoDateFormat))
-	assert.Equal(t, "31/12/2026", inclusiveEnd(tPtr("2027-01-01T00:00:00Z")).Format(zohoDateFormat))
+	assert.Equal(t, "2026-04-30", inclusiveEnd(tPtr("2026-05-01T00:00:00Z")).Format(zohoAPIDateFormat))
+	assert.Equal(t, "2026-12-31", inclusiveEnd(tPtr("2027-01-01T00:00:00Z")).Format(zohoAPIDateFormat))
 }
 
 func TestServicePeriodCustomFields(t *testing.T) {
@@ -81,16 +82,16 @@ func TestServicePeriodCustomFields(t *testing.T) {
 	end := tPtr("2026-05-01T00:00:00Z")
 	configured := &types.InvoiceSyncSettings{
 		ServicePeriodCustomFields: &types.ServicePeriodCustomFields{
-			StartFieldID: "cf_start",
-			EndFieldID:   "cf_end",
+			StartFieldID: "4069923000000000001",
+			EndFieldID:   "4069923000000000002",
 		},
 	}
 
-	t.Run("populated when configured", func(t *testing.T) {
+	t.Run("populated when configured with numeric ids", func(t *testing.T) {
 		got := servicePeriodCustomFields(configured, start, end)
 		assert.Equal(t, []CustomField{
-			{CustomFieldID: "cf_start", Value: "01/04/2026"},
-			{CustomFieldID: "cf_end", Value: "30/04/2026"},
+			{CustomFieldID: "4069923000000000001", Value: "2026-04-01"},
+			{CustomFieldID: "4069923000000000002", Value: "2026-04-30"},
 		}, got)
 	})
 
@@ -104,7 +105,7 @@ func TestServicePeriodCustomFields(t *testing.T) {
 
 	t.Run("nil when only one field ID is set", func(t *testing.T) {
 		half := &types.InvoiceSyncSettings{
-			ServicePeriodCustomFields: &types.ServicePeriodCustomFields{StartFieldID: "cf_start"},
+			ServicePeriodCustomFields: &types.ServicePeriodCustomFields{StartFieldID: "cf_service_period_start"},
 		}
 		assert.Nil(t, servicePeriodCustomFields(half, start, end),
 			"a start date with no end date would render a broken header")
@@ -196,8 +197,8 @@ func TestSyncInvoiceSendsGSTHeaderFields(t *testing.T) {
 
 	assert.Equal(t, "27", client.createInvoiceReq.PlaceOfSupply, "derived from the customer GSTIN")
 	assert.Equal(t, []CustomField{
-		{CustomFieldID: "cf_start", Value: "01/04/2026"},
-		{CustomFieldID: "cf_end", Value: "30/04/2026"},
+		{APIName: "cf_start", Value: "2026-04-01"},
+		{APIName: "cf_end", Value: "2026-04-30"},
 	}, client.createInvoiceReq.CustomFields)
 
 	require.Len(t, client.createInvoiceReq.LineItems, 1)
@@ -231,4 +232,55 @@ func TestSyncInvoiceOmitsGSTFieldsForNonIndianCustomer(t *testing.T) {
 
 	assert.Empty(t, client.createInvoiceReq.PlaceOfSupply)
 	assert.Empty(t, client.createInvoiceReq.CustomFields, "no custom fields when the connection has none configured")
+}
+
+func TestCustomFieldRefRouting(t *testing.T) {
+	tests := []struct {
+		name        string
+		ref         string
+		wantAPIName string
+		wantID      string
+	}{
+		{"api_name from Zoho's UI", "cf_service_period_start", "cf_service_period_start", ""},
+		{"api_name with stray whitespace", "  cf_service_period_end  ", "cf_service_period_end", ""},
+		{"numeric customfield_id", "4069923000000123456", "", "4069923000000123456"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cf := NewCustomField(tt.ref, "01/04/2026")
+			assert.Equal(t, tt.wantAPIName, cf.APIName)
+			assert.Equal(t, tt.wantID, cf.CustomFieldID)
+			assert.Equal(t, "01/04/2026", cf.Value)
+		})
+	}
+}
+
+// Zoho rejects an api_name sent as customfield_id with "Invalid value passed for
+// customfield_id", so only the matching key may appear on the wire.
+func TestCustomFieldSerialisesOnlyOneKey(t *testing.T) {
+	byName, err := json.Marshal(NewCustomField("cf_service_period_start", "01/04/2026"))
+	require.NoError(t, err)
+	assert.Contains(t, string(byName), `"api_name":"cf_service_period_start"`)
+	assert.NotContains(t, string(byName), "customfield_id")
+
+	byID, err := json.Marshal(NewCustomField("4069923000000123456", "30/04/2026"))
+	require.NoError(t, err)
+	assert.Contains(t, string(byID), `"customfield_id":"4069923000000123456"`)
+	assert.NotContains(t, string(byID), "api_name")
+}
+
+func TestServicePeriodCustomFieldsUsesAPINames(t *testing.T) {
+	settings := &types.InvoiceSyncSettings{
+		ServicePeriodCustomFields: &types.ServicePeriodCustomFields{
+			StartFieldID: "cf_service_period_start",
+			EndFieldID:   "cf_service_period_end",
+		},
+	}
+	got := servicePeriodCustomFields(settings, tPtr("2026-04-01T00:00:00Z"), tPtr("2026-05-01T00:00:00Z"))
+	require.Len(t, got, 2)
+	assert.Equal(t, "cf_service_period_start", got[0].APIName)
+	assert.Equal(t, "2026-04-01", got[0].Value, "ISO on the wire; Zoho renders dd/MM/yyyy per org locale")
+	assert.Equal(t, "cf_service_period_end", got[1].APIName)
+	assert.Equal(t, "2026-04-30", got[1].Value, "period_end is exclusive; the invoice shows the prior day")
+	assert.Empty(t, got[0].CustomFieldID)
 }

@@ -428,8 +428,7 @@ func (s *InvoiceService) normalizeRateAndQuantity(li *invoice.InvoiceLineItem, s
 
 }
 
-// zohoDateFormat is the display format used on the Indian tax invoice template.
-const zohoDateFormat = "02/01/2006"
+const zohoAPIDateFormat = "2006-01-02"
 
 func formatPeriodDescription(fallback string, start, end *time.Time) string {
 	if start == nil || end == nil {
@@ -459,8 +458,8 @@ func servicePeriodCustomFields(settings *types.InvoiceSyncSettings, start, end *
 	}
 
 	return []CustomField{
-		{CustomFieldID: settings.ServicePeriodCustomFields.StartFieldID, Value: start.Format(zohoDateFormat)},
-		{CustomFieldID: settings.ServicePeriodCustomFields.EndFieldID, Value: inclusiveEnd(end).Format(zohoDateFormat)},
+		NewCustomField(settings.ServicePeriodCustomFields.StartFieldID, start.Format(zohoAPIDateFormat)),
+		NewCustomField(settings.ServicePeriodCustomFields.EndFieldID, inclusiveEnd(end).Format(zohoAPIDateFormat)),
 	}
 }
 

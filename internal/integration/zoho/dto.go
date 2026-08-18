@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/shopspring/decimal"
 )
@@ -118,8 +119,22 @@ type InvoiceLineItem struct {
 // CustomField carries a Zoho custom field value. The field must already exist in
 // the Zoho org; its ID comes from the connection's sync config.
 type CustomField struct {
-	CustomFieldID string `json:"customfield_id"`
+	CustomFieldID string `json:"customfield_id,omitempty"`
+	APIName       string `json:"api_name,omitempty"`
 	Value         string `json:"value"`
+}
+
+// apiNamePrefix marks a configured reference as an api_name rather than a numeric
+// customfield_id. Zoho generates these as "cf_<label_slug>".
+const apiNamePrefix = "cf_"
+
+func NewCustomField(ref, value string) CustomField {
+	ref = strings.TrimSpace(ref)
+	if strings.HasPrefix(ref, apiNamePrefix) {
+		return CustomField{APIName: ref, Value: value}
+	}
+
+	return CustomField{CustomFieldID: ref, Value: value}
 }
 
 type InvoiceCreateRequest struct {
