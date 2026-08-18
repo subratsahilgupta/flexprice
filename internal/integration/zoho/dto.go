@@ -49,8 +49,18 @@ type ContactCreateRequest struct {
 	ContactType     string          `json:"contact_type,omitempty"`
 	CustomerSubType string          `json:"customer_sub_type,omitempty"`
 	BillingAddress  *ContactAddress `json:"billing_address,omitempty"`
+	ShippingAddress *ContactAddress `json:"shipping_address,omitempty"`
 	ContactPersons  []ContactPerson `json:"contact_persons,omitempty"`
+
+	// India (GST) edition fields. Omitted entirely for non-Indian contacts.
+	GSTNo          string `json:"gst_no,omitempty"`
+	PlaceOfContact string `json:"place_of_contact,omitempty"`
+	PANNo          string `json:"pan_no,omitempty"`
 }
+
+// ContactUpdateRequest is the body for PUT /books/v3/contacts/{id}. Zoho replaces
+// the contact wholesale, so this carries the same shape as the create request.
+type ContactUpdateRequest = ContactCreateRequest
 
 type ContactResponse struct {
 	ContactID      string `json:"contact_id"`
