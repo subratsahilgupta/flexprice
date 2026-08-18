@@ -83,6 +83,10 @@ func (p *CommitmentTrueUpProbe) Run(ctx context.Context) error {
 		CommitmentAmount:   &commitAmount,
 		CommitmentDuration: &commitDuration,
 		OverageFactor:      &overageFactor,
+		// Without enable_true_up the billing service skips the true-up line
+		// item entirely (see billingService.CalculateUsageCharges), so the
+		// under-leg assertion below can never pass.
+		EnableTrueUp: boolPtr(true),
 		Metadata: map[string]string{
 			"e2eprobe":        "true",
 			"e2eprobe_cohort": "ephemeral",
@@ -100,11 +104,17 @@ func (p *CommitmentTrueUpProbe) Run(ctx context.Context) error {
 	p.reg.RegisterEphemeral("subscription", subID, now)
 
 	// Ingest e2eprobe_sum events (priced at $0.01/unit); amount=1 per event.
+	// expectedUsage is the COMMITMENT-ADJUSTED usage amount the subscription
+	// usage API reports once every event has landed — not the raw
+	// units × price total. Over the commitment the API already applies the
+	// 1.5x overage factor ($5 committed + $2 overage × 1.5 = $8.00), so
+	// polling for the raw $7.00 returns while ~10% of the events are still
+	// draining and the preview below is then short by that remainder.
 	n := 100
 	expectedUsage := 1.00
 	if overLeg {
 		n = 700
-		expectedUsage = 7.00
+		expectedUsage = 8.00
 	}
 	for i := 0; i < n; i++ {
 		if _, err := p.client.Events().Ingest(ctx, types.IngestEventRequest{
