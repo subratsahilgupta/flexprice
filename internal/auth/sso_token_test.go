@@ -166,6 +166,18 @@ func TestSSOIssuerRequiresIdentity(t *testing.T) {
 	require.Error(t, err, "minting without a user must fail")
 }
 
+// A non-positive expiry would mint an already-expired token while returning a
+// future expiresAt, so the login looks successful and fails on the first
+// request instead — the shape this type exists to prevent.
+func TestSSOIssuerRejectsNonPositiveExpiry(t *testing.T) {
+	cfg := ssoTestConfig(types.AuthProviderSupabase, true)
+
+	for _, hours := range []int{0, -1, -24} {
+		_, _, err := NewSSOTokenIssuer(cfg).Issue("tenant_1", "user_1", hours)
+		require.Error(t, err, "expiryHours=%d must be refused", hours)
+	}
+}
+
 // ── Adversarial cases ───────────────────────────────────────────────────────
 //
 // Both providers sign with the same auth.secret, so these establish that

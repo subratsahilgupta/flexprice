@@ -272,6 +272,21 @@ func (c Configuration) validateSAMLDependencies() error {
 			"SAML keeps outstanding login requests in Redis so a login started on one replica " +
 			"can be completed on another")
 	}
+
+	// auth.secret is the HMAC key the SSO token is signed with. An empty key
+	// still produces a verifiable signature, so a deployment that boots without
+	// one accepts a token anybody can mint — the forger names any user in any
+	// tenant, and the middleware then loads that user and grants their roles.
+	//
+	// The warn-only validateSecrets does not cover this: it checks auth.secret
+	// only under the Flexprice provider, so a Supabase deployment offering SSO
+	// with no secret set started silently. Hard-failing is safe here for the
+	// same reason as the checks above — it applies only when SSO is switched
+	// on, so it cannot take down a deployment that does not offer it.
+	if strings.TrimSpace(c.Auth.Secret) == "" {
+		return fmt.Errorf("auth.saml.enabled requires a non-empty auth.secret (FLEXPRICE_AUTH_SECRET): " +
+			"it signs the SSO token, and an empty key lets anyone mint one naming any user")
+	}
 	return nil
 }
 

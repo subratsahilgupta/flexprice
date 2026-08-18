@@ -58,14 +58,26 @@ func (i *SSOTokenIssuer) Issue(tenantID, userID string, expiryHours int) (string
 			WithHint("A SSO token must name the user it belongs to").
 			Mark(ierr.ErrValidation)
 	}
+	// A non-positive expiry mints a token that is already expired while still
+	// returning a future expiresAt to the caller, so the login appears to
+	// succeed and fails as a 401 on the first dashboard request — the same
+	// mint-succeeds-verify-fails shape this type exists to prevent.
+	if expiryHours <= 0 {
+		return "", time.Time{}, ierr.NewError("expiryHours must be positive").
+			WithHint("A SSO token must expire in the future").
+			Mark(ierr.ErrValidation)
+	}
 
-	expiresAt := time.Now().Add(time.Duration(expiryHours) * time.Hour)
+	// One clock reading for both claims: taken separately, iat can land after
+	// exp for a sufficiently small expiry.
+	now := time.Now()
+	expiresAt := now.Add(time.Duration(expiryHours) * time.Hour)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		ssoClaimTenantID: tenantID,
 		ssoClaimUserID:   userID,
 		ssoTokenClaim:    true,
 		"exp":            expiresAt.Unix(),
-		"iat":            time.Now().Unix(),
+		"iat":            now.Unix(),
 	})
 
 	signed, err := token.SignedString([]byte(i.secret))

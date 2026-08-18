@@ -72,6 +72,7 @@ func TestSAMLConfigValidate(t *testing.T) {
 func TestValidateSAMLDependencies(t *testing.T) {
 	withRedis := Configuration{}
 	withRedis.Auth.SAML.Enabled = true
+	withRedis.Auth.Secret = "a-real-signing-secret-at-least-32b!"
 	withRedis.Cache.Enabled = true
 	withRedis.Cache.Redis.Enabled = true
 
@@ -101,5 +102,46 @@ func TestValidateSAMLDependencies(t *testing.T) {
 	off := Configuration{}
 	if err := off.validateSAMLDependencies(); err != nil {
 		t.Errorf("a non-SAML deployment must not require Redis: %v", err)
+	}
+}
+
+// TestValidateSAMLDependenciesRequiresSigningSecret pins the signing secret as a
+// hard requirement whenever SSO is on.
+//
+// auth.secret is the HMAC key for the SSO token. An empty key still produces a
+// verifiable signature, so a deployment that boots without one accepts a token
+// anybody can mint: the forger names any user in any tenant and the middleware
+// then loads that user and grants their roles. validateSecrets does not cover
+// this — it is warn-only, and checks auth.secret only under the Flexprice
+// provider, so a Supabase deployment with SSO enabled and no secret started
+// silently.
+//
+// The check is scoped to SAML being enabled, so it cannot take down a
+// deployment that does not offer SSO — the same reasoning that keeps the rest
+// of the secret validation warn-only.
+func TestValidateSAMLDependenciesRequiresSigningSecret(t *testing.T) {
+	base := Configuration{}
+	base.Auth.SAML.Enabled = true
+	base.Cache.Enabled = true
+	base.Cache.Redis.Enabled = true
+
+	for _, secret := range []string{"", "   ", "\t"} {
+		cfg := base
+		cfg.Auth.Secret = secret
+		if err := cfg.validateSAMLDependencies(); err == nil {
+			t.Errorf("SAML must not start with a blank auth.secret (%q)", secret)
+		}
+	}
+
+	cfg := base
+	cfg.Auth.Secret = "a-real-signing-secret-at-least-32b!"
+	if err := cfg.validateSAMLDependencies(); err != nil {
+		t.Errorf("SAML with a signing secret must start: %v", err)
+	}
+
+	// A deployment that does not offer SSO is unaffected, even with no secret.
+	off := Configuration{}
+	if err := off.validateSAMLDependencies(); err != nil {
+		t.Errorf("a non-SAML deployment must not require a signing secret: %v", err)
 	}
 }
