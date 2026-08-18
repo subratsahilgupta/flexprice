@@ -446,9 +446,6 @@ func inclusiveEnd(end *time.Time) time.Time {
 	return end.Add(-time.Nanosecond)
 }
 
-// servicePeriodCustomFields maps the invoice's service period onto the Zoho custom
-// fields configured for the connection. Returns nil when unconfigured, leaving the
-// dates visible only in the line descriptions.
 func servicePeriodCustomFields(settings *types.InvoiceSyncSettings, start, end *time.Time) []CustomField {
 	if settings == nil || !settings.ServicePeriodCustomFields.IsConfigured() {
 		return nil
