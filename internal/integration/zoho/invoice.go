@@ -139,6 +139,14 @@ func (s *InvoiceService) SyncInvoiceToZoho(ctx context.Context, req ZohoInvoiceS
 		reqPayload.Date = time.Now().UTC().Format("2006-01-02")
 	}
 
+	settings, err := s.getInvoiceSyncSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	reqPayload.PlaceOfSupply = types.TaxMetadataFromMap(flexCustomer.Metadata).PlaceOfSupply()
+	reqPayload.CustomFields = servicePeriodCustomFields(settings, flexInvoice.PeriodStart, flexInvoice.PeriodEnd)
+
 	curCode, exchRate, err := s.client.ResolveInvoiceCurrency(ctx, flexInvoice.Currency)
 	if err != nil {
 		return nil, err
@@ -420,14 +428,40 @@ func (s *InvoiceService) normalizeRateAndQuantity(li *invoice.InvoiceLineItem, s
 
 }
 
+// zohoDateFormat is the display format used on the Indian tax invoice template.
+const zohoDateFormat = "02/01/2006"
+
 func formatPeriodDescription(fallback string, start, end *time.Time) string {
 	if start == nil || end == nil {
 		return fallback
 	}
 	if fallback != "" {
-		return fmt.Sprintf("%s\n(%s - %s)", fallback, start.Format("2006-01-02"), end.Add(-time.Nanosecond).Format("2006-01-02"))
+		return fmt.Sprintf("%s\n(%s - %s)", fallback, start.Format("2006-01-02"), inclusiveEnd(end).Format("2006-01-02"))
 	}
-	return fmt.Sprintf("(%s - %s)", start.Format("2006-01-02"), end.Add(-time.Nanosecond).Format("2006-01-02"))
+	return fmt.Sprintf("(%s - %s)", start.Format("2006-01-02"), inclusiveEnd(end).Format("2006-01-02"))
+}
+
+// inclusiveEnd converts FlexPrice's exclusive period end into the inclusive last
+// day a tax invoice displays: a period ending 2026-05-01T00:00 reads as 30/04/2026.
+func inclusiveEnd(end *time.Time) time.Time {
+	return end.Add(-time.Nanosecond)
+}
+
+// servicePeriodCustomFields maps the invoice's service period onto the Zoho custom
+// fields configured for the connection. Returns nil when unconfigured, leaving the
+// dates visible only in the line descriptions.
+func servicePeriodCustomFields(settings *types.InvoiceSyncSettings, start, end *time.Time) []CustomField {
+	if settings == nil || !settings.ServicePeriodCustomFields.IsConfigured() {
+		return nil
+	}
+	if start == nil || end == nil {
+		return nil
+	}
+
+	return []CustomField{
+		{CustomFieldID: settings.ServicePeriodCustomFields.StartFieldID, Value: start.Format(zohoDateFormat)},
+		{CustomFieldID: settings.ServicePeriodCustomFields.EndFieldID, Value: inclusiveEnd(end).Format(zohoDateFormat)},
+	}
 }
 
 func (s *InvoiceService) resolveHSNSAC(ctx context.Context, inputs []ItemSyncInput) map[string]string {

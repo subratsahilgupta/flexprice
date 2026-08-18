@@ -115,6 +115,13 @@ type InvoiceLineItem struct {
 	HSNOrSAC       string          `json:"hsn_or_sac,omitempty"`
 }
 
+// CustomField carries a Zoho custom field value. The field must already exist in
+// the Zoho org; its ID comes from the connection's sync config.
+type CustomField struct {
+	CustomFieldID string `json:"customfield_id"`
+	Value         string `json:"value"`
+}
+
 type InvoiceCreateRequest struct {
 	CustomerID          string            `json:"customer_id"`
 	CurrencyCode        string            `json:"currency_code,omitempty"`
@@ -128,6 +135,12 @@ type InvoiceCreateRequest struct {
 	Adjustment          decimal.Decimal   `json:"adjustment,omitzero"`
 	DiscountType        string            `json:"discount_type,omitempty"`
 	IsDiscountBeforeTax bool              `json:"is_discount_before_tax,omitempty"`
+
+	// PlaceOfSupply is the GST state code the supply is made to. It drives Zoho's
+	// IGST vs CGST/SGST split. Zoho falls back to the contact's place_of_contact
+	// when omitted, but sending it pins the value at invoice time.
+	PlaceOfSupply string        `json:"place_of_supply,omitempty"`
+	CustomFields  []CustomField `json:"custom_fields,omitempty"`
 }
 
 type InvoiceResponse struct {
