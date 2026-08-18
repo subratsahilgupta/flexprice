@@ -255,6 +255,10 @@ type fakeSubscriptions struct {
 	cancelErr           error
 	getEntitlementsResp *dtos.GetSubscriptionEntitlementsResponse
 	getEntitlementsErr  error
+	// queryReturnsAll makes Query ignore the filter and return every stored
+	// sub, for tests that look subs up by external customer id (which this
+	// fake does not index).
+	queryReturnsAll bool
 }
 
 func (f *fakeSubscriptions) Create(_ context.Context, req types.CreateSubscriptionRequest) (*dtos.CreateSubscriptionResponse, error) {
@@ -303,7 +307,7 @@ func (f *fakeSubscriptions) Query(_ context.Context, filter types.SubscriptionFi
 	defer f.mu.Unlock()
 	var matched []types.SubscriptionResponse
 	for _, sub := range f.subs {
-		if filter.ExternalCustomerID != nil || filter.PlanID != nil {
+		if !f.queryReturnsAll && (filter.ExternalCustomerID != nil || filter.PlanID != nil) {
 			// Only return if it matches all provided filters; since fakeSubscriptions
 			// stores by ID and doesn't track ExternalCustomerID/PlanID, return empty
 			// unless the caller pre-populated desired subs via direct map manipulation.
