@@ -334,11 +334,9 @@ func (m *InMemoryPaymentStore) ListAttempts(ctx context.Context, paymentID strin
 		}
 	}
 
-	if len(result) == 0 {
-		return nil, ierr.NewError("no attempts found").
-			WithHint(fmt.Sprintf("No attempts found for payment: %s", paymentID)).
-			Mark(ierr.ErrNotFound)
-	}
+	// No not-found here: the real repository runs a plain query and returns an empty
+	// slice for a payment with no attempts. Inventing an error would let code that
+	// mishandles "no attempts yet" pass against this store and fail against Postgres.
 
 	// Sort by attempt number (ascending)
 	sort.Slice(result, func(i, j int) bool {
