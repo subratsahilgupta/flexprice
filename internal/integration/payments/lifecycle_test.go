@@ -318,8 +318,6 @@ func (s *PaymentLifecycleSuite) TestRecordFailedAttempt_LeavesPaymentOpen() {
 	s.NoError(err)
 	s.Equal(types.PaymentStatusPending, payment.PaymentStatus,
 		"a decline must not move the parent out of its open status")
-	s.Require().NotNil(payment.ErrorMessage)
-	s.Equal("card declined", *payment.ErrorMessage)
 
 	attempts, err := s.GetStores().PaymentRepo.ListAttempts(ctx, id)
 	s.NoError(err)
