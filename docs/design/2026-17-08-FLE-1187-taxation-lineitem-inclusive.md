@@ -194,29 +194,51 @@ negative. Clamp-and-log mirrors how `calculateTaxAmount` already logs-and-skips 
 
 ### 5.3 Mixed inclusive + exclusive on one invoice
 
-Handled by partitioning, not by forcing every rate on an invoice to agree:
+Handled by partitioning, not by forcing every rate on an invoice to agree — but the two groups are
+**not independent**. This is the one place in the doc where documented industry practice corrected an
+earlier draft of this design: the first version computed `inclusive_tax` and `exclusive_tax` both
+against the same untouched `base`, in parallel. That's wrong. The exclusive group has to be computed
+against `base` *with the inclusive tax already carved out*, not against the raw `base` — the inclusive
+tax already claimed part of that price, so the exclusive rate shouldn't act as if that money were still
+fully available to tax again.
 
 ```mermaid
 flowchart TD
     S["base"] --> P["Partition by resolved tax_behavior"]
     P --> IN["Inclusive group → §5.2/§5.2.1"]
-    P --> EX["Exclusive group → §5.1, unchanged"]
-    IN --> ITAX["inclusive_tax — display only"]
-    EX --> ETAX["exclusive_tax — added to base"]
+    IN --> ITAX["inclusive_tax — extracted, display only"]
+    ITAX --> REM["remaining = base - inclusive_tax"]
+    P --> EX["Exclusive group → §5.1 loop, math unchanged"]
+    REM --> EX
+    EX --> ETAX["exclusive_tax = §5.1's loop, run against REMAINING, not base"]
     ETAX --> TOTAL["total = base + exclusive_tax"]
     ITAX --> SUMMARY["Shown separately:<br/>'Included in price' vs 'Added'"]
 ```
 
-**Only exclusive rates ever change the total.** Example, base = $1,000, 10% inclusive + 18% exclusive:
+Order of operations, every time both groups are present:
 
 ```
-inclusive_tax = 1000 × 10/110 = 90.91   ← label only, already inside the $1,000
-exclusive_tax = 1000 × 18/100 = 180.00  ← added
-total = 1000 + 180.00 = 1180.00
+1. inclusive_tax = combined-extract from base (§5.2 / §5.2.1) — unchanged, still base, not remaining
+2. remaining      = base − inclusive_tax
+3. exclusive_tax  = §5.1's existing per-rate loop, run against `remaining` instead of `base`
+4. total          = base + exclusive_tax    (still only exclusive_tax gets added — that part holds)
 ```
 
-A single merged `TotalTax` (`90.91+180.00=270.91`) would misrepresent this — the invoice only moved by
-$180. Needs a split field or `included`/`added` breakdown — G2, §7.
+Example, base = $1,000, 10% inclusive + 18% exclusive (9%+9%, still summed independently per §5.1
+since that part of exclusive math is unchanged):
+
+```
+inclusive_tax = 1000 × 10/110 = 90.91          ← same as before, extraction itself didn't change
+remaining     = 1000 − 90.91 = 909.09
+exclusive_tax = 909.09 × 18/100 = 163.64        ← 18% of what's LEFT, not of the original 1000
+total         = 1000 + 163.64 = 1163.64          ← was 1180.00 under the old, wrong, parallel model
+```
+
+**Still true: only exclusive tax ever changes the total** — inclusive tax is still purely a display
+label, `base` itself is still untouched. What changed is *what number* the exclusive rates run
+against: `remaining`, not `base`. A single merged `TotalTax` (`90.91+163.64=254.55`) would still
+misrepresent this — the invoice only moved by $163.64, not $254.55. Needs a split field or
+`included`/`added` breakdown — G2, §7.
 
 ### 5.4 Rounding
 
@@ -301,6 +323,6 @@ here — see §6.
 | `ent/schema/taxassociation.go`, `ent/schema/taxapplied.go` | Add `tax_behavior` field |
 | `internal/types/taxassociation.go` (or new file) | `ExclusiveTaxCurrencies` map — no schema, not persisted |
 | `internal/domain/taxassociation/model.go`, `internal/domain/taxapplied/model.go` | Add field to domain structs |
-| `internal/ee/service/tax.go` | `calculateTaxLines` → partition by behavior; new `calculateInclusiveTaxLines` (§5.2, §5.2.1); exclusive loop untouched |
+| `internal/ee/service/tax.go` | `calculateTaxLines` → partition by behavior; new `calculateInclusiveTaxLines` (§5.2, §5.2.1); exclusive loop's own math untouched, but now called with `remaining` (base minus inclusive_tax) when both groups are present, not always raw `base` (§5.3) |
 | `internal/api/dto/taxassociation.go` | `tax_behavior` on create/update DTOs |
 | `internal/api/dto/invoice.go` | Split `TotalTax` into included/added (§5.3, G2) |
