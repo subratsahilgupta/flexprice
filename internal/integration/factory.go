@@ -681,6 +681,7 @@ func (f *Factory) GetZohoBooksIntegration(ctx context.Context) (*ZohoBooksIntegr
 		taxSvc,
 		f.customerRepo,
 		f.invoiceRepo,
+		f.priceRepo,
 		f.entityIntegrationMappingRepo,
 		f.logger,
 	)
