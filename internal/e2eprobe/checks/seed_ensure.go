@@ -173,6 +173,11 @@ type featureSpec struct {
 	expression  *string
 	filters     []types.MeterFilter
 	aggLabel    string
+	// noEntitlement keeps ensurePlanEntitlements from provisioning the
+	// standard 100-unit monthly entitlement on this feature. Probes that
+	// assert exact billed amounts need a meter whose usage is never
+	// partially absorbed by an entitlement allowance.
+	noEntitlement bool
 }
 
 var seedFeatureSpecs = func() []featureSpec {
@@ -236,6 +241,14 @@ var seedFeatureSpecs = func() []featureSpec {
 			lookupKey: "e2eprobe_max_day_feature", eventName: "e2eprobe_max_day",
 			displayName: "E2EProbe Max Day", aggType: types.AggregationTypeMax,
 			field: strPtr("amount"), bucketSize: bucketSizePtr(types.WindowSizeDay), aggLabel: "max_day",
+		},
+		{
+			// Reserved for CommitmentTrueUpProbe: entitlement-free so the
+			// billed amount equals units x price with nothing absorbed by an
+			// allowance. See CommitmentEventName.
+			lookupKey: "e2eprobe_sum_commit_feature", eventName: CommitmentEventName,
+			displayName: "E2EProbe Sum (commitment)", aggType: types.AggregationTypeSum,
+			field: strPtr("amount"), aggLabel: "sum_commit", noEntitlement: true,
 		},
 	}
 }()
@@ -488,6 +501,22 @@ var bucketedFeatureLookupKeys = func() map[string]bool {
 	return m
 }()
 
+// entitlementExemptLookupKeys is every feature ensurePlanEntitlements must
+// leave alone: bucketed meters (server rejects entitlements on them) plus
+// specs that opted out via noEntitlement.
+var entitlementExemptLookupKeys = func() map[string]bool {
+	m := map[string]bool{}
+	for k := range bucketedFeatureLookupKeys {
+		m[k] = true
+	}
+	for _, spec := range seedFeatureSpecs {
+		if spec.noEntitlement {
+			m[spec.lookupKey] = true
+		}
+	}
+	return m
+}()
+
 // grantOnlyFeatures is the set of feature lookup keys reserved for
 // grant entitlements. ensurePlanEntitlements skips these; the grant
 // entitlement is created by ensureEntitlementGrants instead. The DB
@@ -528,7 +557,7 @@ func (s *SeedEnsure) ensurePlanEntitlements(ctx context.Context, out *e2eprobe.S
 	// slot, and adding a soft-limit here would DB-conflict.
 	lookupKeys := make([]string, 0, len(seedFeatureSpecs))
 	for _, spec := range seedFeatureSpecs {
-		if bucketedFeatureLookupKeys[spec.lookupKey] {
+		if entitlementExemptLookupKeys[spec.lookupKey] {
 			continue
 		}
 		if grantOnlyFeatures[spec.lookupKey] {
@@ -1161,7 +1190,6 @@ func (s *SeedEnsure) ensureSubscriptionPriceSync(ctx context.Context, seeds *e2e
 	}
 	return nil
 }
-
 
 // isSyncInProgress reports whether the error is the plan price sync's
 // "a sync is already running" 409.
