@@ -579,7 +579,7 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 	}
 
 	for _, tr := range r.PreparedTaxRates {
-		taxAmount, ok := previewTaxAmount(tr, taxableAmount)
+		taxAmount, ok := previewTaxAmount(tr, taxableAmount, inv.Currency)
 		if !ok {
 			continue
 		}
@@ -606,8 +606,10 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 //
 // Shared by the preview total (ToInvoice) and the preview breakdown
 // (BuildPreviewTaxes) so the two can never drift apart.
-func previewTaxAmount(tr *TaxRateResponse, taxableAmount decimal.Decimal) (decimal.Decimal, bool) {
-	if tr == nil {
+func previewTaxAmount(tr *TaxRateResponse, taxableAmount decimal.Decimal, currency string) (decimal.Decimal, bool) {
+	// TaxRateResponse embeds *taxrate.TaxRate, so a zero-value response
+	// dereferences nil on the field reads below.
+	if tr == nil || tr.TaxRate == nil {
 		return decimal.Zero, false
 	}
 	var taxAmount decimal.Decimal
@@ -628,7 +630,10 @@ func previewTaxAmount(tr *TaxRateResponse, taxableAmount decimal.Decimal) (decim
 	if taxAmount.IsNegative() {
 		taxAmount = decimal.Zero
 	}
-	return taxAmount, true
+	// Round per line, matching the persisted tax path — otherwise a rate that
+	// produces more precision than the currency carries shows fractional-cent
+	// entries that don't add up to what is eventually charged.
+	return taxAmount.Round(types.GetCurrencyPrecision(currency)), true
 }
 
 // BuildPreviewTaxes synthesises the per-rate tax breakdown for an invoice
@@ -650,7 +655,7 @@ func BuildPreviewTaxes(inv *invoice.Invoice, preparedTaxRates []*TaxRateResponse
 
 	taxes := make([]*TaxAppliedResponse, 0, len(preparedTaxRates))
 	for _, tr := range preparedTaxRates {
-		taxAmount, ok := previewTaxAmount(tr, taxableAmount)
+		taxAmount, ok := previewTaxAmount(tr, taxableAmount, inv.Currency)
 		if !ok {
 			continue
 		}
@@ -664,6 +669,10 @@ func BuildPreviewTaxes(inv *invoice.Invoice, preparedTaxRates []*TaxRateResponse
 				Currency:      inv.Currency,
 				AppliedAt:     time.Now().UTC(),
 				EnvironmentID: inv.EnvironmentID,
+				BaseModel: types.BaseModel{
+					TenantID: inv.TenantID,
+					Status:   types.StatusPublished,
+				},
 			},
 			TaxRate: tr,
 		})

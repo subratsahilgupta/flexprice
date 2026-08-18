@@ -1192,22 +1192,20 @@ func (s *SeedEnsure) ensureSubscriptionPriceSync(ctx context.Context, seeds *e2e
 }
 
 // isSyncInProgress reports whether the error is the plan price sync's
-// "a sync is already running" 409.
+// "a sync is already running for this plan" conflict.
+//
+// A bare 409 is deliberately not enough: an unrelated conflict would then be
+// swallowed as "someone else is syncing" and never reach the caller's error
+// path. Match the sync's own already_exists code instead.
 func isSyncInProgress(err error) bool {
 	if err == nil {
 		return false
 	}
 	var errResp *sdkerrors.ErrorResponse
-	if errors.As(err, &errResp) {
-		if errResp.HTTPStatusCode != nil && *errResp.HTTPStatusCode == http.StatusConflict {
-			return true
-		}
-	}
-	var apiErr *sdkerrors.APIError
-	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
+	if errors.As(err, &errResp) && errResp.Code != nil && *errResp.Code == types.ErrorCodeAlreadyExists {
 		return true
 	}
-	return strings.Contains(err.Error(), "already_exists")
+	return strings.Contains(err.Error(), string(types.ErrorCodeAlreadyExists))
 }
 
 // sortedKeys returns the map keys in stable order so log lines and error

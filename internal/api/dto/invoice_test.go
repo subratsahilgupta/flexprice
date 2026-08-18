@@ -101,3 +101,31 @@ func TestBuildPreviewTaxes_DiscountBeyondSubtotalClampsToZero(t *testing.T) {
 	assert.True(t, taxes[0].TaxableAmount.IsZero(), "taxable amount: %s", taxes[0].TaxableAmount)
 	assert.True(t, taxes[0].TaxAmount.IsZero(), "tax amount: %s", taxes[0].TaxAmount)
 }
+
+func TestBuildPreviewTaxes_NilEmbeddedTaxRate(t *testing.T) {
+	// TaxRateResponse embeds *taxrate.TaxRate; a zero-value entry must be
+	// skipped rather than dereferenced.
+	inv := &invoice.Invoice{ID: "inv_preview", Currency: "usd", Subtotal: decimal.NewFromInt(100)}
+	assert.NotPanics(t, func() {
+		assert.Nil(t, BuildPreviewTaxes(inv, []*TaxRateResponse{{}}))
+	})
+}
+
+func TestBuildPreviewTaxes_RoundsToCurrencyPrecision(t *testing.T) {
+	// 7.5% of 100.01 = 7.50075 — must not surface fractional cents that the
+	// charged amount will never match.
+	pct := decimal.NewFromFloat(7.5)
+	inv := &invoice.Invoice{
+		ID:        "inv_preview",
+		Currency:  "usd",
+		Subtotal:  decimal.NewFromFloat(100.01),
+		BaseModel: types.BaseModel{TenantID: "tenant_1"},
+	}
+	taxes := BuildPreviewTaxes(inv, []*TaxRateResponse{
+		{TaxRate: &taxrate.TaxRate{ID: "taxrate_pct", TaxRateType: types.TaxRateTypePercentage, PercentageValue: &pct}},
+	})
+
+	assert.Len(t, taxes, 1)
+	assert.Equal(t, "7.5", taxes[0].TaxAmount.String())
+	assert.Equal(t, "tenant_1", taxes[0].TenantID)
+}

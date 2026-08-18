@@ -71,9 +71,14 @@ func (p *BucketedMeterProbe) Run(ctx context.Context) error {
 	}
 	values := []int{10, 20, 30}
 
+	// The bucket-aligned timestamp repeats for every Run inside the same
+	// bucket, so the id must also carry this Run's nonce — otherwise an
+	// earlier Run's row satisfies the verification below and the check passes
+	// without its own events ever landing.
+	nonce := now.UnixNano()
 	eventIDs := make([]string, 3)
 	for i, t := range ts {
-		evID := fmt.Sprintf("e2eprobe-bkt-%s-%d-%d", spec.eventName, t.UnixNano(), i)
+		evID := fmt.Sprintf("e2eprobe-bkt-%s-%d-%d-%d", spec.eventName, t.UnixNano(), i, nonce)
 		eventIDs[i] = evID
 		tsStr := t.Format(time.RFC3339Nano)
 		if _, err := p.client.Events().Ingest(ctx, types.IngestEventRequest{

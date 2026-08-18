@@ -105,7 +105,7 @@ func (p *MeterAggregationProbe) Run(ctx context.Context) error {
 		}, "resolve subscription line items for %s: %w", extCustID, err)
 	}
 	if !onSub {
-		p.logDebug(ctx, "meter-aggregation-probe: meter not on customer's active subscription, skipping",
+		p.logInfo(ctx, "meter-aggregation-probe: meter not on customer's active subscription, skipping",
 			"event_name", eventName,
 			"external_customer_id", extCustID,
 			"run_id", p.runID)
@@ -152,7 +152,11 @@ func (p *MeterAggregationProbe) meterOnActiveSubscription(ctx context.Context, e
 		return true, nil
 	}
 	ext := extCustID
-	listResp, err := p.client.Subscriptions().Query(ctx, types.SubscriptionFilter{ExternalCustomerID: &ext})
+	active := types.SubscriptionStatusActive
+	listResp, err := p.client.Subscriptions().Query(ctx, types.SubscriptionFilter{
+		ExternalCustomerID: &ext,
+		SubscriptionStatus: []types.SubscriptionStatus{active},
+	})
 	if err != nil {
 		return false, err
 	}
@@ -161,6 +165,11 @@ func (p *MeterAggregationProbe) meterOnActiveSubscription(ctx context.Context, e
 	}
 	for _, sub := range listResp.ListSubscriptionsResponse.Items {
 		if sub.ID == nil {
+			continue
+		}
+		// Belt and braces: a server that ignores the status filter must not
+		// let a cancelled sub's line items mask a real aggregation failure.
+		if sub.SubscriptionStatus != nil && *sub.SubscriptionStatus != active {
 			continue
 		}
 		subResp, err := p.client.Subscriptions().Get(ctx, *sub.ID)
@@ -187,6 +196,13 @@ func sortedMeterEventNames(meterIDs map[string]string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func (p *MeterAggregationProbe) logInfo(ctx context.Context, msg string, kv ...any) {
+	if p.logger == nil {
+		return
+	}
+	p.logger.Info(ctx, msg, kv...)
 }
 
 func (p *MeterAggregationProbe) logDebug(ctx context.Context, msg string, kv ...any) {
