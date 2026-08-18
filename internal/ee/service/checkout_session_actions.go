@@ -382,6 +382,17 @@ func (s *checkoutSessionService) finalizeCheckoutInvoiceAndPayment(
 	paymentID string,
 	providerResult *types.CheckoutProviderResult,
 ) error {
+	invSvc := NewInvoiceService(s.ServiceParams)
+	invResp, err := invSvc.GetInvoice(ctx, invoiceID)
+	if err != nil {
+		return err
+	}
+	if invResp.InvoiceStatus != types.InvoiceStatusFinalized {
+		if err := invSvc.FinalizeInvoice(ctx, invoiceID); err != nil {
+			return err
+		}
+	}
+
 	statusStr := string(types.PaymentStatusSucceeded)
 	now := time.Now().UTC()
 	updateReq := dto.UpdatePaymentRequest{
@@ -396,24 +407,14 @@ func (s *checkoutSessionService) finalizeCheckoutInvoiceAndPayment(
 	}
 
 	paySvc := NewPaymentService(s.ServiceParams)
-	if err := paySvc.RecordAttempt(ctx, paymentID, attemptReq); err != nil {
-		s.Logger.Error(ctx, "failed to record succeeded attempt",
-			"payment_id", paymentID, "error", err)
-	}
-
 	if _, err := paySvc.UpdatePayment(ctx, paymentID, updateReq); err != nil {
 		return err
 	}
 
-	invSvc := NewInvoiceService(s.ServiceParams)
-	invResp, err := invSvc.GetInvoice(ctx, invoiceID)
-	if err != nil {
-		return err
-	}
-	if invResp.InvoiceStatus != types.InvoiceStatusFinalized {
-		if err := invSvc.FinalizeInvoice(ctx, invoiceID); err != nil {
-			return err
-		}
+	// After the settle, so a payment that never succeeded leaves no succeeded attempt.
+	if err := paySvc.RecordAttempt(ctx, paymentID, attemptReq); err != nil {
+		s.Logger.Error(ctx, "failed to record succeeded attempt",
+			"payment_id", paymentID, "error", err)
 	}
 
 	return invSvc.ReconcilePaymentStatus(ctx, invoiceID, types.PaymentStatusSucceeded, nil)

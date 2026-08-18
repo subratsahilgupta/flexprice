@@ -527,10 +527,42 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupArchive
 	s.Equal(types.CheckoutStatusExpired, cleaned.CheckoutStatus)
 }
 
-// The payment must settle before the invoice is finalized. With the old order a failure
-// in the payment update left a finalized, unreconciled invoice whose subscription never
-// activated — money collected at the gateway with nothing in our books saying so.
-func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_FinalizeSettlesPaymentBeforeInvoice() {
+// Ordering guard. The end state is identical whichever way round these run, so this
+// asserts the thing that actually differs: when the invoice step fails, the payment must
+// still be unsettled. Settling first would strand a SUCCEEDED payment against an
+// unfinalized invoice — the gateway sync skips SUCCEEDED rows and the already-SUCCEEDED
+// webhook guard blocks replays, so nothing could repair it.
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_InvoiceFailureLeavesPaymentUnsettled() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_finalize_guard", decimal.NewFromInt(50), 0)
+
+	session, _, _ := s.seedPayFirstSubscriptionCheckout("plan_finalize_guard")
+	paymentID := *session.CheckoutPaymentID
+
+	before, err := s.GetStores().PaymentRepo.Get(ctx, paymentID)
+	s.Require().NoError(err)
+	s.Require().NotEqual(types.PaymentStatusSucceeded, before.PaymentStatus)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	err = checkoutSvc.finalizeCheckoutInvoiceAndPayment(ctx, "inv_does_not_exist", paymentID,
+		&types.CheckoutProviderResult{ProviderPaymentIntentID: "pay_never_collected"})
+	s.Require().Error(err, "an unresolvable invoice must abort before the payment is touched")
+
+	after, err := s.GetStores().PaymentRepo.Get(ctx, paymentID)
+	s.Require().NoError(err)
+	s.Equal(before.PaymentStatus, after.PaymentStatus,
+		"the payment must not settle when the invoice step fails")
+	s.Nil(after.GatewayPaymentID, "no transaction may be claimed by a failed finalize")
+
+	attempts, err := s.GetStores().PaymentRepo.ListAttempts(ctx, paymentID)
+	s.NoError(err)
+	s.Empty(attempts, "a payment that never settled must not carry a succeeded attempt")
+}
+
+// Happy path: the invoice ends finalized AND reconciled, the payment settled, and the
+// collecting transaction is recorded once in the attempt ledger.
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_FinalizeSettlesAndReconciles() {
 	ctx := s.GetContext()
 	subService := s.service.(*subscriptionService)
 	s.seedFixedPricePlan("plan_finalize_order", decimal.NewFromInt(50), 0)
@@ -556,6 +588,30 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_FinalizeSettle
 	s.Require().NoError(err)
 	s.Equal(types.InvoiceStatusFinalized, inv.InvoiceStatus)
 	s.Equal(types.PaymentStatusSucceeded, inv.PaymentStatus, "the invoice must end reconciled")
+}
+
+// Re-delivery must be safe: the checkout reconcile passes a nil amount, which is absolute
+// (AmountPaid = AmountDue) rather than additive, so replaying cannot overpay the invoice.
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_FinalizeIsReplaySafe() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_finalize_replay", decimal.NewFromInt(50), 0)
+
+	session, _, draft := s.seedPayFirstSubscriptionCheckout("plan_finalize_replay")
+	paymentID := *session.CheckoutPaymentID
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	res := &types.CheckoutProviderResult{ProviderPaymentIntentID: "pay_replay_001"}
+
+	s.Require().NoError(checkoutSvc.finalizeCheckoutInvoiceAndPayment(ctx, draft.ID, paymentID, res))
+	first, err := s.GetStores().InvoiceRepo.Get(ctx, draft.ID)
+	s.Require().NoError(err)
+
+	s.Require().NoError(checkoutSvc.finalizeCheckoutInvoiceAndPayment(ctx, draft.ID, paymentID, res))
+	again, err := s.GetStores().InvoiceRepo.Get(ctx, draft.ID)
+	s.Require().NoError(err)
+
+	s.True(first.AmountPaid.Equal(again.AmountPaid), "replay must not change amount_paid")
+	s.Equal(types.PaymentStatusSucceeded, again.PaymentStatus, "replay must not flip to OVERPAID")
 }
 
 // A session that completed and only later expired must leave the live subscription alone.
