@@ -40,20 +40,46 @@ type Address struct {
 	country    string
 }
 
-func (a *Address) Line1() string { return addrField(a, func(a *Address) string { return a.line1 }) }
-func (a *Address) Line2() string { return addrField(a, func(a *Address) string { return a.line2 }) }
-func (a *Address) City() string  { return addrField(a, func(a *Address) string { return a.city }) }
-func (a *Address) State() string { return addrField(a, func(a *Address) string { return a.state }) }
-func (a *Address) PostalCode() string {
-	return addrField(a, func(a *Address) string { return a.postalCode })
-}
-func (a *Address) Country() string { return addrField(a, func(a *Address) string { return a.country }) }
-
-func addrField(a *Address, get func(*Address) string) string {
+func (a *Address) Line1() string {
 	if a == nil {
 		return ""
 	}
-	return get(a)
+	return a.line1
+}
+
+func (a *Address) Line2() string {
+	if a == nil {
+		return ""
+	}
+	return a.line2
+}
+
+func (a *Address) City() string {
+	if a == nil {
+		return ""
+	}
+	return a.city
+}
+
+func (a *Address) State() string {
+	if a == nil {
+		return ""
+	}
+	return a.state
+}
+
+func (a *Address) PostalCode() string {
+	if a == nil {
+		return ""
+	}
+	return a.postalCode
+}
+
+func (a *Address) Country() string {
+	if a == nil {
+		return ""
+	}
+	return a.country
 }
 
 // IsEmpty reports whether no address component was present.
@@ -81,6 +107,7 @@ func TaxMetadataFromMap(m map[string]string) *TaxMetadata {
 	if m == nil {
 		return nil
 	}
+
 	t := &TaxMetadata{
 		gstin:         normaliseTaxID(m[MetadataKeyGSTIN]),
 		pan:           normaliseTaxID(m[MetadataKeyPAN]),
@@ -199,10 +226,8 @@ func (t *TaxMetadata) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if t.hsnSAC != "" && !hsnSACRegex.MatchString(t.hsnSAC) {
-		return ierr.NewError("invalid HSN/SAC code").
-			WithHint("HSN/SAC must be 4, 6 or 8 digits, e.g. \"998415\"").
-			Mark(ierr.ErrValidation)
+	if err := ValidateHSNSAC(t.hsnSAC); err != nil {
+		return err
 	}
 
 	return nil
@@ -211,4 +236,18 @@ func (t *TaxMetadata) Validate() error {
 // ValidateTaxMetadata parses and validates the tax identity in a metadata map.
 func ValidateTaxMetadata(m map[string]string) error {
 	return TaxMetadataFromMap(m).Validate()
+}
+
+// ValidateHSNSAC checks a standalone HSN/SAC code, for callers that hold one
+// outside a metadata map.
+func ValidateHSNSAC(code string) error {
+	if code == "" {
+		return nil
+	}
+	if !hsnSACRegex.MatchString(code) {
+		return ierr.NewError("invalid HSN/SAC code").
+			WithHint("HSN/SAC must be 4, 6 or 8 digits, e.g. \"998415\"").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
 }

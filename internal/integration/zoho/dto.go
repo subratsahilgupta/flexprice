@@ -79,6 +79,8 @@ type ItemCreateRequest struct {
 	TaxID          string  `json:"tax_id,omitempty"`
 	IsTaxable      *bool   `json:"is_taxable,omitempty"`
 	TaxExemptionID string  `json:"tax_exemption_id,omitempty"`
+	// HSNOrSAC classifies the service for Indian GST. Ignored by non-India orgs.
+	HSNOrSAC string `json:"hsn_or_sac,omitempty"`
 }
 
 type ItemResponse struct {
@@ -110,6 +112,7 @@ type InvoiceLineItem struct {
 	Discount       decimal.Decimal `json:"discount,omitzero"`
 	TaxID          string          `json:"tax_id,omitempty"`
 	TaxExemptionID string          `json:"tax_exemption_id,omitempty"`
+	HSNOrSAC       string          `json:"hsn_or_sac,omitempty"`
 }
 
 type InvoiceCreateRequest struct {
