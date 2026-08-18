@@ -299,9 +299,9 @@ func (s *PaymentLifecycleSuite) TestRecordPaymentSuccess_TerminalStateError() {
 	s.Error(err)
 }
 
-// ── RecordDeclinedAttempt ────────────────────────────────────────────────────
+// ── RecordFailedAttempt ────────────────────────────────────────────────────
 
-func (s *PaymentLifecycleSuite) TestRecordDeclinedAttempt_LeavesPaymentOpen() {
+func (s *PaymentLifecycleSuite) TestRecordFailedAttempt_LeavesPaymentOpen() {
 	ctx := s.GetContext()
 	id, err := s.lifecycle.InitiatePayment(ctx, s.invoiceParams())
 	s.NoError(err)
@@ -328,7 +328,7 @@ func (s *PaymentLifecycleSuite) TestRecordDeclinedAttempt_LeavesPaymentOpen() {
 	s.Equal(1, attempts[0].AttemptNumber)
 }
 
-func (s *PaymentLifecycleSuite) TestRecordDeclinedAttempt_IncrementsAttemptNumber() {
+func (s *PaymentLifecycleSuite) TestRecordFailedAttempt_IncrementsAttemptNumber() {
 	ctx := s.GetContext()
 	id, err := s.lifecycle.InitiatePayment(ctx, s.invoiceParams())
 	s.NoError(err)
@@ -352,7 +352,7 @@ func (s *PaymentLifecycleSuite) TestRecordDeclinedAttempt_IncrementsAttemptNumbe
 	s.Equal(types.PaymentStatusPending, payment.PaymentStatus)
 }
 
-func (s *PaymentLifecycleSuite) TestRecordDeclinedAttempt_ThenSuccessSettlesPayment() {
+func (s *PaymentLifecycleSuite) TestRecordFailedAttempt_ThenSuccessSettlesPayment() {
 	ctx := s.GetContext()
 	id, err := s.lifecycle.InitiatePayment(ctx, s.invoiceParams())
 	s.NoError(err)
@@ -383,7 +383,7 @@ func (s *PaymentLifecycleSuite) TestRecordDeclinedAttempt_ThenSuccessSettlesPaym
 // names the transaction that settled the payment, and syncPaymentStatusFromGateway
 // prefers it over GatewayTrackingID. Pointing it at a dead transaction would make the
 // sync fetch FAILED and seal a payment the customer can still retry.
-func (s *PaymentLifecycleSuite) TestRecordDeclinedAttempt_DoesNotClaimGatewayPaymentID() {
+func (s *PaymentLifecycleSuite) TestRecordFailedAttempt_DoesNotClaimGatewayPaymentID() {
 	ctx := s.GetContext()
 	id, err := s.lifecycle.InitiatePayment(ctx, s.invoiceParams())
 	s.NoError(err)
@@ -406,7 +406,40 @@ func (s *PaymentLifecycleSuite) TestRecordDeclinedAttempt_DoesNotClaimGatewayPay
 		"the declined transaction belongs on the attempt")
 }
 
-func (s *PaymentLifecycleSuite) TestRecordDeclinedAttempt_RequiresPaymentID() {
+func (s *PaymentLifecycleSuite) TestRecordSucceededAttempt_AppendsWithoutSettlingParent() {
+	ctx := s.GetContext()
+	id, err := s.lifecycle.InitiatePayment(ctx, s.invoiceParams())
+	s.NoError(err)
+	s.NoError(s.lifecycle.ConfirmGatewayPayment(ctx, id, "gw_pay_030"))
+
+	s.NoError(s.lifecycle.RecordFailedAttempt(ctx, payments.RecordFailedAttemptParams{
+		FlexpricePaymentID: id,
+		GatewayPaymentID:   "gw_pay_030",
+		ErrorMessage:       "card declined",
+	}))
+	s.NoError(s.lifecycle.RecordSucceededAttempt(ctx, payments.RecordSucceededAttemptParams{
+		FlexpricePaymentID: id,
+		GatewayPaymentID:   "gw_pay_031",
+	}))
+
+	attempts, err := s.GetStores().PaymentRepo.ListAttempts(ctx, id)
+	s.NoError(err)
+	s.Require().Len(attempts, 2)
+
+	byNumber := map[int]types.PaymentStatus{}
+	for _, a := range attempts {
+		byNumber[a.AttemptNumber] = a.PaymentStatus
+	}
+	s.Equal(types.PaymentStatusFailed, byNumber[1])
+	s.Equal(types.PaymentStatusSucceeded, byNumber[2])
+
+	payment, err := s.GetStores().PaymentRepo.Get(ctx, id)
+	s.NoError(err)
+	s.Equal(types.PaymentStatusPending, payment.PaymentStatus,
+		"recording an attempt must not settle the parent — that is RecordPaymentSuccess's job")
+}
+
+func (s *PaymentLifecycleSuite) TestRecordFailedAttempt_RequiresPaymentID() {
 	s.Error(s.lifecycle.RecordFailedAttempt(s.GetContext(), payments.RecordFailedAttemptParams{}))
 }
 

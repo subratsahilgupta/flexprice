@@ -471,10 +471,10 @@ func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.U
 	return dto.NewPaymentResponse(p), nil
 }
 
-// RecordFailedAttempt appends a FAILED PaymentAttempt for a gateway decline without
-// touching the parent payment's status. A decline is the gateway's outcome for one
-// try, not our decision to stop, so the parent stays open for a retry to settle it.
-func (s *paymentService) RecordFailedAttempt(ctx context.Context, paymentID string, req dto.RecordFailedAttemptRequest) error {
+// RecordAttempt appends a PaymentAttempt carrying the gateway's outcome for one charge
+// attempt, without touching the parent payment's status. A per-attempt outcome is the
+// gateway's verdict on one try, not our decision about the payment as a whole.
+func (s *paymentService) RecordAttempt(ctx context.Context, paymentID string, req dto.RecordAttemptRequest) error {
 	if paymentID == "" {
 		return ierr.NewError("payment_id is required").
 			WithHint("Payment ID is required").
@@ -504,7 +504,7 @@ func (s *paymentService) RecordFailedAttempt(ctx context.Context, paymentID stri
 		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PAYMENT_ATTEMPT),
 		PaymentID:     paymentID,
 		AttemptNumber: attemptNumber,
-		PaymentStatus: types.PaymentStatusFailed,
+		PaymentStatus: req.PaymentStatus,
 		Metadata:      types.Metadata{},
 		EnvironmentID: types.GetEnvironmentID(ctx),
 		BaseModel:     types.GetDefaultBaseModel(ctx),
@@ -516,13 +516,18 @@ func (s *paymentService) RecordFailedAttempt(ctx context.Context, paymentID stri
 		attempt.GatewayAttemptID = lo.ToPtr(req.GatewayAttemptID)
 	}
 
+	if err := attempt.Validate(); err != nil {
+		return err
+	}
+
 	if err := s.PaymentRepo.CreateAttempt(ctx, attempt); err != nil {
 		return err
 	}
 
-	s.Logger.Info(ctx, "recorded declined payment attempt",
+	s.Logger.Info(ctx, "recorded payment attempt",
 		"payment_id", paymentID,
 		"attempt_number", attemptNumber,
+		"attempt_status", req.PaymentStatus,
 		"gateway_attempt_id", req.GatewayAttemptID,
 	)
 

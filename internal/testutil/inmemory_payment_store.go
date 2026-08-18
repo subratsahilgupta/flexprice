@@ -190,31 +190,21 @@ func (m *InMemoryPaymentStore) DeleteWithExpectedStatus(ctx context.Context, id 
 	return m.Delete(ctx, id)
 }
 
+// Delete archives the payment, mirroring the real repository: the row survives with
+// status=archived and its payment_status intact, so callers can still read why the
+// payment ended.
 func (m *InMemoryPaymentStore) Delete(ctx context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// First check if the payment exists
-	_, err := m.InMemoryStore.Get(ctx, id)
+	p, err := m.InMemoryStore.Get(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	// Remove from InMemoryStore
-	err = m.InMemoryStore.Delete(ctx, id)
-	if err != nil {
-		return err
-	}
+	p.Status = types.StatusArchived
 
-	// Remove from createdInOrder
-	for i, payment := range m.createdInOrder {
-		if payment.ID == id {
-			m.createdInOrder = append(m.createdInOrder[:i], m.createdInOrder[i+1:]...)
-			break
-		}
-	}
-
-	return nil
+	return m.InMemoryStore.Update(ctx, id, p)
 }
 
 // GetByIdempotencyKey retrieves a payment by idempotency key

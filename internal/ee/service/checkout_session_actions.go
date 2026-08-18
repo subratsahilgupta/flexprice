@@ -403,7 +403,18 @@ func (s *checkoutSessionService) finalizeCheckoutInvoiceAndPayment(
 		id := providerResult.ProviderPaymentIntentID
 		updateReq.GatewayPaymentID = &id
 	}
+
 	paySvc := NewPaymentService(s.ServiceParams)
+	attemptReq := dto.RecordAttemptRequest{PaymentStatus: types.PaymentStatusSucceeded}
+	if providerResult != nil {
+		attemptReq.GatewayAttemptID = providerResult.ProviderPaymentIntentID
+	}
+	
+	if err := paySvc.RecordAttempt(ctx, paymentID, attemptReq); err != nil {
+		s.Logger.Error(ctx, "failed to record succeeded attempt",
+			"payment_id", paymentID, "error", err)
+	}
+
 	if _, err := paySvc.UpdatePayment(ctx, paymentID, updateReq); err != nil {
 		return err
 	}

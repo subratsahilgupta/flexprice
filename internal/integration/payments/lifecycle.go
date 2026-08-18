@@ -270,12 +270,40 @@ func (l *PaymentLifecycle) RecordPaymentSuccess(ctx context.Context, params Reco
 	return nil
 }
 
+// RecordSucceededAttempt records the charge attempt that settled the payment. It only
+// appends the attempt; moving the parent to SUCCEEDED is RecordPaymentSuccess's job.
+func (l *PaymentLifecycle) RecordSucceededAttempt(ctx context.Context, params RecordSucceededAttemptParams) error {
+	if params.FlexpricePaymentID == "" {
+		return ierr.NewError("flexprice_payment_id is required").Mark(ierr.ErrValidation)
+	}
+
+	if err := l.paymentService.RecordAttempt(ctx, params.FlexpricePaymentID, apidto.RecordAttemptRequest{
+		PaymentStatus:    types.PaymentStatusSucceeded,
+		GatewayAttemptID: params.GatewayPaymentID,
+	}); err != nil {
+		l.logger.Error(ctx, "failed to record succeeded payment attempt",
+			"flexprice_payment_id", params.FlexpricePaymentID,
+			"gateway_payment_id", params.GatewayPaymentID,
+			"error", err,
+		)
+		return ierr.WithError(err).
+			WithHint("Failed to record succeeded payment attempt").
+			WithReportableDetails(map[string]any{
+				"flexprice_payment_id": params.FlexpricePaymentID,
+			}).
+			Mark(ierr.ErrSystem)
+	}
+
+	return nil
+}
+
 func (l *PaymentLifecycle) RecordFailedAttempt(ctx context.Context, params RecordFailedAttemptParams) error {
 	if params.FlexpricePaymentID == "" {
 		return ierr.NewError("flexprice_payment_id is required").Mark(ierr.ErrValidation)
 	}
 
-	if err := l.paymentService.RecordFailedAttempt(ctx, params.FlexpricePaymentID, apidto.RecordFailedAttemptRequest{
+	if err := l.paymentService.RecordAttempt(ctx, params.FlexpricePaymentID, apidto.RecordAttemptRequest{
+		PaymentStatus:    types.PaymentStatusFailed,
 		ErrorMessage:     params.ErrorMessage,
 		GatewayAttemptID: params.GatewayPaymentID,
 	}); err != nil {

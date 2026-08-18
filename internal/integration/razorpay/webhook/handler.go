@@ -186,6 +186,16 @@ func (h *Handler) handlePaymentCaptured(ctx context.Context, event *RazorpayWebh
 		"payment_method_id", paymentMethodID,
 		"amount", amount.String())
 
+	if err := h.lifecycle.RecordSucceededAttempt(ctx, payments.RecordSucceededAttemptParams{
+		FlexpricePaymentID: flexpricePaymentID,
+		GatewayPaymentID:   payment.ID,
+	}); err != nil {
+		h.logger.Error(ctx, "failed to record succeeded attempt",
+			"error", err,
+			"flexprice_payment_id", flexpricePaymentID,
+			"razorpay_payment_id", payment.ID)
+	}
+
 	_, err = services.PaymentService.UpdatePayment(ctx, flexpricePaymentID, updateReq)
 	if err != nil {
 		h.logger.Error(ctx, "failed to update payment",
