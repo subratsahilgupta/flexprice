@@ -382,6 +382,29 @@ func (s *checkoutSessionService) finalizeCheckoutInvoiceAndPayment(
 	paymentID string,
 	providerResult *types.CheckoutProviderResult,
 ) error {
+	statusStr := string(types.PaymentStatusSucceeded)
+	now := time.Now().UTC()
+	updateReq := dto.UpdatePaymentRequest{
+		PaymentStatus: &statusStr,
+		SucceededAt:   &now,
+	}
+	attemptReq := dto.RecordAttemptRequest{PaymentStatus: types.PaymentStatusSucceeded}
+	if providerResult != nil && providerResult.ProviderPaymentIntentID != "" {
+		id := providerResult.ProviderPaymentIntentID
+		updateReq.GatewayPaymentID = &id
+		attemptReq.GatewayAttemptID = id
+	}
+
+	paySvc := NewPaymentService(s.ServiceParams)
+	if err := paySvc.RecordAttempt(ctx, paymentID, attemptReq); err != nil {
+		s.Logger.Error(ctx, "failed to record succeeded attempt",
+			"payment_id", paymentID, "error", err)
+	}
+
+	if _, err := paySvc.UpdatePayment(ctx, paymentID, updateReq); err != nil {
+		return err
+	}
+
 	invSvc := NewInvoiceService(s.ServiceParams)
 	invResp, err := invSvc.GetInvoice(ctx, invoiceID)
 	if err != nil {
@@ -391,32 +414,6 @@ func (s *checkoutSessionService) finalizeCheckoutInvoiceAndPayment(
 		if err := invSvc.FinalizeInvoice(ctx, invoiceID); err != nil {
 			return err
 		}
-	}
-
-	statusStr := string(types.PaymentStatusSucceeded)
-	now := time.Now().UTC()
-	updateReq := dto.UpdatePaymentRequest{
-		PaymentStatus: &statusStr,
-		SucceededAt:   &now,
-	}
-	if providerResult != nil && providerResult.ProviderPaymentIntentID != "" {
-		id := providerResult.ProviderPaymentIntentID
-		updateReq.GatewayPaymentID = &id
-	}
-
-	paySvc := NewPaymentService(s.ServiceParams)
-	attemptReq := dto.RecordAttemptRequest{PaymentStatus: types.PaymentStatusSucceeded}
-	if providerResult != nil {
-		attemptReq.GatewayAttemptID = providerResult.ProviderPaymentIntentID
-	}
-	
-	if err := paySvc.RecordAttempt(ctx, paymentID, attemptReq); err != nil {
-		s.Logger.Error(ctx, "failed to record succeeded attempt",
-			"payment_id", paymentID, "error", err)
-	}
-
-	if _, err := paySvc.UpdatePayment(ctx, paymentID, updateReq); err != nil {
-		return err
 	}
 
 	return invSvc.ReconcilePaymentStatus(ctx, invoiceID, types.PaymentStatusSucceeded, nil)

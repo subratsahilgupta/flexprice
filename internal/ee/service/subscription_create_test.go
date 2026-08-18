@@ -527,6 +527,37 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupArchive
 	s.Equal(types.CheckoutStatusExpired, cleaned.CheckoutStatus)
 }
 
+// The payment must settle before the invoice is finalized. With the old order a failure
+// in the payment update left a finalized, unreconciled invoice whose subscription never
+// activated — money collected at the gateway with nothing in our books saying so.
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_FinalizeSettlesPaymentBeforeInvoice() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_finalize_order", decimal.NewFromInt(50), 0)
+
+	session, _, draft := s.seedPayFirstSubscriptionCheckout("plan_finalize_order")
+	paymentID := *session.CheckoutPaymentID
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.finalizeCheckoutInvoiceAndPayment(ctx, draft.ID, paymentID,
+		&types.CheckoutProviderResult{ProviderPaymentIntentID: "pay_order_001"}))
+
+	settled, err := s.GetStores().PaymentRepo.Get(ctx, paymentID)
+	s.Require().NoError(err)
+	s.Equal(types.PaymentStatusSucceeded, settled.PaymentStatus)
+	s.Equal("pay_order_001", lo.FromPtr(settled.GatewayPaymentID))
+
+	attempts, err := s.GetStores().PaymentRepo.ListAttempts(ctx, paymentID)
+	s.Require().NoError(err)
+	s.Require().Len(attempts, 1, "the settling charge must appear in the attempt ledger")
+	s.Equal(types.PaymentStatusSucceeded, attempts[0].PaymentStatus)
+
+	inv, err := s.GetStores().InvoiceRepo.Get(ctx, draft.ID)
+	s.Require().NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, inv.InvoiceStatus)
+	s.Equal(types.PaymentStatusSucceeded, inv.PaymentStatus, "the invoice must end reconciled")
+}
+
 // A session that completed and only later expired must leave the live subscription alone.
 func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupSkipsActivatedSubscription() {
 	ctx := s.GetContext()
