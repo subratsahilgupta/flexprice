@@ -78,24 +78,8 @@ type Configuration struct {
 }
 
 type PylonConfig struct {
-	AppID          string        `mapstructure:"app_id"`
-	IdentitySecret string        `mapstructure:"identity_secret"`
-	TokenTTL       time.Duration `mapstructure:"token_ttl"`
-}
-
-const (
-	defaultPylonTokenTTL = 10 * time.Minute
-	maxPylonTokenTTL     = 15 * time.Minute
-)
-
-func (c PylonConfig) GetTokenTTL() time.Duration {
-	if c.TokenTTL <= 0 {
-		return defaultPylonTokenTTL
-	}
-	if c.TokenTTL > maxPylonTokenTTL {
-		return maxPylonTokenTTL
-	}
-	return c.TokenTTL
+	AppID          string `mapstructure:"app_id"`
+	IdentitySecret string `mapstructure:"identity_secret"`
 }
 
 type OnboardingConfig struct {

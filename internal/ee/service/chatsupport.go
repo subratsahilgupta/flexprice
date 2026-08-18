@@ -9,6 +9,8 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
+const pylonTokenTTL = 2 * time.Hour
+
 type pylonClaims struct {
 	Email             string `json:"email"`
 	Name              string `json:"name,omitempty"`
@@ -36,7 +38,7 @@ func (s *userService) CreateSupportChatToken(ctx context.Context) (*dto.SupportC
 	}
 
 	now := time.Now().UTC()
-	expiresAt := now.Add(s.cfg.Pylon.GetTokenTTL())
+	expiresAt := now.Add(pylonTokenTTL)
 
 	claims := pylonClaims{
 		Email:             user.Email,

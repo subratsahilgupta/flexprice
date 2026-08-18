@@ -548,4 +548,3 @@ onboarding:
 pylon:
   app_id: ""
   identity_secret: ""
-  token_ttl: 10m
