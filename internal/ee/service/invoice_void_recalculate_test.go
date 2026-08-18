@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -650,6 +651,71 @@ func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_FullyRefundedValueYieldsNo
 	s.True(amountPaid.Equal(updated.RefundedAmount),
 		"expected refunded_amount to stay at %s, got=%s", amountPaid, updated.RefundedAmount)
 	s.Len(s.walletsByCustomer(), 0, "no wallet credit when nothing remains to refund")
+	// The funded value is fully returned, so the invoice must land on the terminal
+	// refunded status even though this void issued no additional credit.
+	s.Equal(types.PaymentStatusRefunded, updated.PaymentStatus)
+}
+
+// A refund credit note can land between the pre-transaction status check and the
+// refund calculation. The void must read the invoice under a row lock inside the
+// transaction so it credits the remaining value, not a stale larger one.
+func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_ConcurrentRefundDoesNotOverRefund() {
+	amountPaid := decimal.NewFromFloat(120.00)
+	concurrentRefund := decimal.NewFromFloat(50.00)
+
+	initialBalance := decimal.NewFromFloat(10.00)
+	existingWallet := s.buildPrepaidWallet("wallet_concurrent_refund", initialBalance)
+
+	inv := s.buildFinalizedInvoice("inv_concurrent_refund", amountPaid, decimal.Zero, types.PaymentStatusSucceeded)
+
+	// Simulate a refund credit note committing after VoidInvoice's initial read
+	// but before it takes the lock.
+	var once sync.Once
+	s.invoiceRepo.BeforeGetForUpdate = func(id string) {
+		if id != inv.ID {
+			return
+		}
+		once.Do(func() {
+			stored, err := s.invoiceRepo.Get(s.GetContext(), id)
+			s.NoError(err)
+			stored.RefundedAmount = concurrentRefund
+			stored.PaymentStatus = types.PaymentStatusPartiallyRefunded
+			s.NoError(s.invoiceRepo.Update(s.GetContext(), stored))
+		})
+	}
+	defer func() { s.invoiceRepo.BeforeGetForUpdate = nil }()
+
+	err := s.service.VoidInvoice(s.GetContext(), inv.ID, dto.InvoiceVoidRequest{})
+	s.NoError(err)
+
+	updated, err := s.invoiceRepo.Get(s.GetContext(), inv.ID)
+	s.NoError(err)
+	s.Equal(types.InvoiceStatusVoided, updated.InvoiceStatus)
+	s.True(amountPaid.Equal(updated.RefundedAmount),
+		"cumulative refunded_amount must settle at funded value %s, got=%s", amountPaid, updated.RefundedAmount)
+
+	expectedRefund := amountPaid.Sub(concurrentRefund) // $70, not the stale $120
+	txns := s.refundTxns(existingWallet.ID)
+	s.Len(txns, 1)
+	s.True(expectedRefund.Equal(txns[0].CreditAmount),
+		"expected txn credit amount=%s, got=%s", expectedRefund, txns[0].CreditAmount)
+
+	updatedWallet, err := s.walletRepo.GetWalletByID(s.GetContext(), existingWallet.ID)
+	s.NoError(err)
+	s.True(initialBalance.Add(expectedRefund).Equal(updatedWallet.Balance),
+		"expected wallet balance=%s, got=%s", initialBalance.Add(expectedRefund), updatedWallet.Balance)
+}
+
+// The refund calculation must read invoice state only after the row lock is taken.
+func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_TakesRowLockBeforeRefund() {
+	inv := s.buildFinalizedInvoice("inv_lock_order", decimal.NewFromFloat(40.00), decimal.Zero, types.PaymentStatusSucceeded)
+	s.buildPrepaidWallet("wallet_lock_order", decimal.Zero)
+	s.invoiceRepo.ResetInvoiceAccessLog(inv.ID)
+
+	s.NoError(s.service.VoidInvoice(s.GetContext(), inv.ID, dto.InvoiceVoidRequest{}))
+
+	s.Contains(s.invoiceRepo.InvoiceAccessLog(inv.ID), "get_for_update",
+		"void must re-read the invoice under a row lock inside the transaction")
 }
 
 func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_Idempotency() {
