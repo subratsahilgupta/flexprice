@@ -2,6 +2,7 @@
 
 Status: **Proposed** — v0 (Phase 1: invoice-level)
 Date: 2026-08-17
+Author: Subrat Sahil Gupta
 Related: `internal/ee/service/tax.go`, `ent/schema/taxassociation.go`, `ent/schema/taxapplied.go`, `internal/types/taxassociation.go`
 
 ---
