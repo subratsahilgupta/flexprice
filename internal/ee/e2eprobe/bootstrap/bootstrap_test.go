@@ -44,8 +44,8 @@ func okMint(w http.ResponseWriter, r *http.Request) {
 
 func TestRun_HappyPath(t *testing.T) {
 	srv := routes(t, map[string]func(http.ResponseWriter, *http.Request){
-		"/auth/signup":     okSignup,
-		"/environments":    okEnvs,
+		"/auth/signup":      okSignup,
+		"/environments":     okEnvs,
 		"/secrets/api/keys": okMint,
 	})
 	defer srv.Close()
