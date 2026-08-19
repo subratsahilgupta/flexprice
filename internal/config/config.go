@@ -31,50 +31,47 @@ type Configuration struct {
 	// (non-nil) every event is published to it in addition to the local `kafka` cluster;
 	// when nil, publishing is single-cluster. The `kafka` block is this deployment's own
 	// local cluster — consumed AND always written. See infrastructure/docs/GCP-CUTOVER-STEPWISE.md.
-	KafkaSecondary             *KafkaConfig                     `mapstructure:"kafka_secondary" validate:"omitempty"`
-	ClickHouse                 ClickHouseConfig                 `validate:"required"`
-	Logging                    LoggingConfig                    `validate:"required"`
-	Postgres                   PostgresConfig                   `validate:"required"`
-	Sentry                     SentryConfig                     `validate:"required"`
-	Otel                       OtelConfig                       `validate:"omitempty"`
-	Pyroscope                  PyroscopeConfig                  `validate:"required"`
-	Event                      EventConfig                      `validate:"required"`
-	DynamoDB                   DynamoDBConfig                   `validate:"required"`
-	Temporal                   TemporalConfig                   `validate:"required"`
-	Webhook                    Webhook                          `validate:"omitempty"`
-	Secrets                    SecretsConfig                    `validate:"required"`
-	Billing                    BillingConfig                    `validate:"omitempty"`
-	S3                         S3Config                         `validate:"required"`
-	FlexpriceS3Exports         FlexpriceS3ExportsConfig         `mapstructure:"flexprice_s3_exports" validate:"omitempty"`
-	Marketplace                MarketplaceConfig                `mapstructure:"marketplace" validate:"omitempty"`
-	Cache                      CacheConfig                      `validate:"required"`
-	EventProcessing            EventProcessingConfig            `mapstructure:"event_processing" validate:"required"`
-	EventProcessingLazy        EventProcessingLazyConfig        `mapstructure:"event_processing_lazy" validate:"required"`
-	EventProcessingReplay      EventProcessingReplayConfig      `mapstructure:"event_processing_replay" validate:"required"`
-	CostSheetUsageTracking     CostSheetUsageTrackingConfig     `mapstructure:"costsheet_usage_tracking" validate:"required"`
-	CostSheetUsageTrackingLazy CostSheetUsageTrackingLazyConfig `mapstructure:"costsheet_usage_tracking_lazy" validate:"required"`
-	MeterUsageTracking         MeterUsageTrackingConfig         `mapstructure:"meter_usage_tracking" validate:"required"`
-	MeterUsageTrackingLazy     MeterUsageTrackingLazyConfig     `mapstructure:"meter_usage_tracking_lazy" validate:"required"`
-	BulkEventConsumption       BulkEventConsumptionConfig       `mapstructure:"bulk_event_consumption" validate:"required"`
-	BulkMeterUsageTracking     BulkMeterUsageTrackingConfig     `mapstructure:"bulk_meter_usage_tracking" validate:"required"`
-	UsageAlerts                UsageAlertsConfig                `mapstructure:"usage_alerts" validate:"omitempty"`
-	EnvAccess                  EnvAccessConfig                  `mapstructure:"env_access" json:"env_access" validate:"omitempty"`
-	Email                      EmailConfig                      `mapstructure:"email" validate:"required"`
-	RBAC                       RBACConfig                       `mapstructure:"rbac" validate:"omitempty"`
-	OAuth                      OAuthConfig                      `mapstructure:"oauth" validate:"required"`
-	WalletBalanceAlert         WalletBalanceAlertConfig         `mapstructure:"wallet_balance_alert" validate:"required"`
-	CustomerPortal             CustomerPortalConfig             `mapstructure:"customer_portal" validate:"required"`
-	Checkout                   CheckoutConfig                   `mapstructure:"checkout" validate:"omitempty"`
-	Redis                      RedisConfig                      `mapstructure:"redis" validate:"required"`
-	RawEventsReprocessing      RawEventsReprocessingConfig      `mapstructure:"raw_events_reprocessing" validate:"required"`
-	RawEventConsumption        RawEventConsumptionConfig        `mapstructure:"raw_event_consumption" validate:"required"`
-	IntegrationEvents          IntegrationEventsConfig          `mapstructure:"integration_events" validate:"omitempty"`
-	OnboardingEvents           OnboardingEventsConfig           `mapstructure:"onboarding_events" validate:"omitempty"`
-	WebhookRetryJob            WebhookRetryJobConfig            `mapstructure:"webhook_retry_job" validate:"omitempty"`
-	Gemini                     GeminiConfig                     `mapstructure:"gemini" validate:"omitempty"`
-	Whop                       WhopConfig                       `mapstructure:"whop" validate:"omitempty"`
-	Onboarding                 OnboardingConfig                 `mapstructure:"onboarding" validate:"omitempty"`
-	ChatSupport                ChatSupportConfig                `mapstructure:"chat_support" validate:"omitempty"`
+	KafkaSecondary         *KafkaConfig                 `mapstructure:"kafka_secondary" validate:"omitempty"`
+	ClickHouse             ClickHouseConfig             `validate:"required"`
+	Logging                LoggingConfig                `validate:"required"`
+	Postgres               PostgresConfig               `validate:"required"`
+	Otel                   OtelConfig                   `validate:"omitempty"`
+	Pyroscope              PyroscopeConfig              `validate:"required"`
+	Event                  EventConfig                  `validate:"required"`
+	DynamoDB               DynamoDBConfig               `validate:"required"`
+	Temporal               TemporalConfig               `validate:"required"`
+	Webhook                Webhook                      `validate:"omitempty"`
+	Secrets                SecretsConfig                `validate:"required"`
+	Billing                BillingConfig                `validate:"omitempty"`
+	S3                     S3Config                     `validate:"required"`
+	FlexpriceS3Exports     FlexpriceS3ExportsConfig     `mapstructure:"flexprice_s3_exports" validate:"omitempty"`
+	Marketplace            MarketplaceConfig            `mapstructure:"marketplace" validate:"omitempty"`
+	Cache                  CacheConfig                  `validate:"required"`
+	EventProcessing        EventProcessingConfig        `mapstructure:"event_processing" validate:"required"`
+	EventProcessingLazy    EventProcessingLazyConfig    `mapstructure:"event_processing_lazy" validate:"required"`
+	EventProcessingReplay  EventProcessingReplayConfig  `mapstructure:"event_processing_replay" validate:"required"`
+	MeterUsageTracking     MeterUsageTrackingConfig     `mapstructure:"meter_usage_tracking" validate:"required"`
+	MeterUsageTrackingLazy MeterUsageTrackingLazyConfig `mapstructure:"meter_usage_tracking_lazy" validate:"required"`
+	BulkEventConsumption   BulkEventConsumptionConfig   `mapstructure:"bulk_event_consumption" validate:"required"`
+	BulkMeterUsageTracking BulkMeterUsageTrackingConfig `mapstructure:"bulk_meter_usage_tracking" validate:"required"`
+	UsageAlerts            UsageAlertsConfig            `mapstructure:"usage_alerts" validate:"omitempty"`
+	EnvAccess              EnvAccessConfig              `mapstructure:"env_access" json:"env_access" validate:"omitempty"`
+	Email                  EmailConfig                  `mapstructure:"email" validate:"required"`
+	RBAC                   RBACConfig                   `mapstructure:"rbac" validate:"omitempty"`
+	OAuth                  OAuthConfig                  `mapstructure:"oauth" validate:"required"`
+	WalletBalanceAlert     WalletBalanceAlertConfig     `mapstructure:"wallet_balance_alert" validate:"required"`
+	CustomerPortal         CustomerPortalConfig         `mapstructure:"customer_portal" validate:"required"`
+	Checkout               CheckoutConfig               `mapstructure:"checkout" validate:"omitempty"`
+	Redis                  RedisConfig                  `mapstructure:"redis" validate:"required"`
+	RawEventsReprocessing  RawEventsReprocessingConfig  `mapstructure:"raw_events_reprocessing" validate:"required"`
+	RawEventConsumption    RawEventConsumptionConfig    `mapstructure:"raw_event_consumption" validate:"required"`
+	IntegrationEvents      IntegrationEventsConfig      `mapstructure:"integration_events" validate:"omitempty"`
+	OnboardingEvents       OnboardingEventsConfig       `mapstructure:"onboarding_events" validate:"omitempty"`
+	WebhookRetryJob        WebhookRetryJobConfig        `mapstructure:"webhook_retry_job" validate:"omitempty"`
+	Gemini                 GeminiConfig                 `mapstructure:"gemini" validate:"omitempty"`
+	Whop                   WhopConfig                   `mapstructure:"whop" validate:"omitempty"`
+	Onboarding             OnboardingConfig             `mapstructure:"onboarding" validate:"omitempty"`
+	ChatSupport            ChatSupportConfig            `mapstructure:"chat_support" validate:"omitempty"`
 }
 
 type ChatSupportConfig struct {
@@ -463,16 +460,6 @@ type APIKeyDetails struct {
 	IsActive bool   `mapstructure:"is_active" json:"is_active" default:"true"` // whether this key is active
 }
 
-// SentryConfig is retained only for transitional rollback. Error/exception
-// capture is now OTel-native (see internal/tracing.CaptureException and
-// internal/spanerr); Sentry is no longer the sink and defaults to disabled.
-type SentryConfig struct {
-	Enabled     bool    `mapstructure:"enabled" default:"false"`
-	DSN         string  `mapstructure:"dsn"`
-	Environment string  `mapstructure:"environment"`
-	SampleRate  float64 `mapstructure:"sample_rate" default:"1.0"`
-}
-
 // OtelConfig is the unified OTLP exporter configuration. Each signal (traces,
 // logs) can target a different backend with its own headers — useful when you
 // want, for example, logs to SigNoz and traces to Sentry. Top-level fields act
@@ -697,8 +684,6 @@ type MeterUsageTrackingConfig struct {
 	ConsumerGroup             string `mapstructure:"consumer_group" default:"v1_meter_usage_tracking_service"`
 	TopicDLQ                  string `mapstructure:"topic_dlq" default:""`
 	RedisDeduplicationEnabled bool   `mapstructure:"redis_deduplication_enabled" default:"false"`
-	WalletAlertPushEnabled    bool   `mapstructure:"wallet_alert_push_enabled" default:"false"`
-	SpendAlertWebhookEnabled  bool   `mapstructure:"spend_alert_webhook_enabled" default:"false"`
 
 	// event.rejected webhook (fired when an event produces no meter usage); opt-in.
 	RejectedEventWebhookEnabled bool `mapstructure:"rejected_event_webhook_enabled" default:"false"`
@@ -843,21 +828,6 @@ type EmailConfig struct {
 	ReplyTo          string `mapstructure:"reply_to" validate:"omitempty"`
 	CalendarURL      string `mapstructure:"calendar_url" validate:"omitempty"`
 	ZapierWebhookURL string `mapstructure:"zapier_webhook_url" validate:"omitempty"`
-}
-type CostSheetUsageTrackingConfig struct {
-	Enabled       bool   `mapstructure:"enabled" default:"true"`
-	Topic         string `mapstructure:"topic" default:"events"`
-	RateLimit     int64  `mapstructure:"rate_limit" default:"1"`
-	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_costsheet_usage_tracking_service"`
-	TopicDLQ      string `mapstructure:"topic_dlq" default:""`
-}
-
-type CostSheetUsageTrackingLazyConfig struct {
-	Enabled       bool   `mapstructure:"enabled" default:"true"`
-	Topic         string `mapstructure:"topic" default:"events_lazy"`
-	RateLimit     int64  `mapstructure:"rate_limit" default:"1"`
-	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_costsheet_usage_tracking_service_lazy"`
-	TopicDLQ      string `mapstructure:"topic_dlq" default:""`
 }
 
 type CheckoutConfig struct {
