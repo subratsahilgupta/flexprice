@@ -2913,6 +2913,7 @@ func (s *subscriptionService) GetUsageBySubscription(ctx context.Context, req *d
 		usageRequest := &dto.GetUsageByMeterRequest{
 			MeterID:             meterID,
 			PriceID:             lineItem.PriceID,
+			Price:               priceMap[lineItem.PriceID],
 			Meter:               meter.ToMeter(),
 			ExternalCustomerIDs: externalCustomerIDs,
 			StartTime:           lineItem.GetPeriodStart(usageStartTime),

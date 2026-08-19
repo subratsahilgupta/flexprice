@@ -589,11 +589,22 @@ func (r *UpdatePriceRequest) ShouldCreateNewPrice() bool {
 	return r.BillingModel != "" ||
 		r.Amount != nil ||
 		r.TierMode != "" ||
-		r.BucketSize != "" ||
+		r.bucketSizeChanges() ||
 		len(r.Tiers) > 0 ||
 		r.TransformQuantity != nil ||
 		r.PriceUnitAmount != nil ||
 		len(r.PriceUnitTiers) > 0
+}
+
+// bucketSizeChanges reports whether the request actually alters bucketing.
+// Unset means "inherit"; the clear sentinel only changes anything when the
+// price is currently bucketed, so it must not mint a no-op successor (which
+// would bump prices.sequence and flip every subscription on the plan to
+// PlanPricesOutOfSync for a change that alters nothing). The existing value is
+// compared in UpdatePrice, which has the price loaded; here we only reject the
+// obviously-inert case of no field at all.
+func (r *UpdatePriceRequest) bucketSizeChanges() bool {
+	return r.BucketSize != ""
 }
 
 // BucketSizeNone is the sentinel that clears bucketing on the successor price.

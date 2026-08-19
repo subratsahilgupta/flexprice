@@ -6,6 +6,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/price"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -126,11 +127,10 @@ func validateEntitlementAgainstBucketedPrices(ctx context.Context, p ServicePara
 	if m == nil || m.ID == "" || p.PriceRepo == nil {
 		return nil
 	}
-	// A meter that carries its own bucket size is handled by the existing
-	// meter-level checks; this guard covers the price-level source.
-	if m.Aggregation.BucketSize != "" {
-		return nil
-	}
+	// A legacy meter-level bucket size is partly covered by the meter-level checks
+	// (entitlement.go rejects bucketed MAX), but those predate the non-linear rule.
+	// Do not early-return: a legacy bucketed SUM meter priced TIERED/PACKAGE must
+	// still be rejected, and the loop below evaluates each live price's model.
 
 	// Only currently-effective prices can block an entitlement. A superseded
 	// version that happened to be bucketed must not: the repo already excludes
@@ -147,7 +147,7 @@ func validateEntitlementAgainstBucketedPrices(ctx context.Context, p ServicePara
 
 	isMax := m.Aggregation.Type == types.AggregationMax
 	for _, pr := range prices {
-		if pr == nil || pr.BucketSize == "" {
+		if pr == nil || !price.IsBucketed(pr, m) {
 			continue
 		}
 		if !grantBased && !isMax && isLinearBillingModel(pr.BillingModel) {
@@ -164,7 +164,7 @@ func validateEntitlementAgainstBucketedPrices(ctx context.Context, p ServicePara
 			WithReportableDetails(map[string]interface{}{
 				"meter_id":      m.ID,
 				"price_id":      pr.ID,
-				"bucket_size":   pr.BucketSize,
+				"bucket_size":   price.ResolveBucketSize(pr, m),
 				"billing_model": pr.BillingModel,
 				"grant_based":   grantBased,
 			}).

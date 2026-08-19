@@ -250,13 +250,16 @@ func (m *Meter) Validate() error {
 				Mark(ierr.ErrValidation)
 		}
 	}
-	// Validate group_by is only used with MAX aggregation that has bucket_size
-	if m.Aggregation.GroupBy != "" && !m.IsBucketedMaxMeter() {
-		return ierr.NewError("group_by can only be used with MAX aggregation that has bucket_size").
-			WithHint("GroupBy is only valid for MAX aggregation type with a bucket_size configured").
+	// group_by is a measurement dimension: aggregate per unique value, then sum
+	// the per-group results. It requires MAX, but no longer requires a
+	// meter-level bucket_size — bucketing now lives on the price, and new meters
+	// cannot set one at all. Coupling the two here would make per-group pricing
+	// unconfigurable for every meter created from now on.
+	if m.Aggregation.GroupBy != "" && m.Aggregation.Type != types.AggregationMax {
+		return ierr.NewError("group_by can only be used with MAX aggregation").
+			WithHint("GroupBy is only valid for MAX aggregation type").
 			WithReportableDetails(map[string]interface{}{
 				"aggregation_type": m.Aggregation.Type,
-				"bucket_size":      m.Aggregation.BucketSize,
 				"group_by":         m.Aggregation.GroupBy,
 			}).
 			Mark(ierr.ErrValidation)

@@ -360,6 +360,12 @@ func (s *priceService) CreateBulkPrice(ctx context.Context, req dto.CreateBulkPr
 		prices := make([]*price.Price, 0, len(req.Items))
 
 		for _, priceReq := range req.Items {
+			// Same bucketing guards as the single-create path — otherwise bulk is a
+			// hole through which a second live bucket source can be introduced.
+			if err := s.validateBucketSizeAgainstMeter(txCtx, &priceReq); err != nil {
+				return err
+			}
+
 			// Prepare price for creation (sets display name, converts to Price, applies custom price unit conversion)
 			p, err := s.preparePriceForCreation(txCtx, &priceReq)
 			if err != nil {
