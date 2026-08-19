@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/e2eprobe"
-	checks_pkg "github.com/flexprice/flexprice/internal/e2eprobe/checks"
+	"github.com/flexprice/flexprice/internal/ee/e2eprobe"
+	checks_pkg "github.com/flexprice/flexprice/internal/ee/e2eprobe/checks"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -21,7 +21,7 @@ import (
 // e2eprobe's structured logs land in the same SigNoz/Grafana pipeline as
 // the app's — auth via OTEL_EXPORTER_OTLP_HEADERS (single "name=value" pair).
 //
-// Traces already flow through internal/e2eprobe/otel.go, which uses the
+// Traces already flow through internal/ee/e2eprobe/otel.go, which uses the
 // SDK's implicit env var handling for endpoint/headers. This function
 // only wires LOGS, which take an explicit config path.
 func buildLoggingConfig(cfg *e2eprobe.Config) config.LoggingConfig {
