@@ -581,15 +581,15 @@ func TestAuthenticateMiddleware_JWTRolesComeFromUserRecord(t *testing.T) {
 	}{
 		{
 			name:      "roles on the record are placed in the request context",
-			userRepo:  newUserRepoWith(activeUser([]string{types.RoleReader.String()})),
+			userRepo:  newUserRepoWith(activeUser([]string{types.RoleAllReader.String()})),
 			wantCode:  http.StatusOK,
-			wantRoles: []string{types.RoleReader.String()},
+			wantRoles: []string{types.RoleAllReader.String()},
 		},
 		{
 			name:      "multiple roles are carried through intact",
-			userRepo:  newUserRepoWith(activeUser([]string{types.RoleReader.String(), types.RoleWriter.String()})),
+			userRepo:  newUserRepoWith(activeUser([]string{types.RoleAllReader.String(), types.RoleAllWriter.String()})),
 			wantCode:  http.StatusOK,
-			wantRoles: []string{types.RoleReader.String(), types.RoleWriter.String()},
+			wantRoles: []string{types.RoleAllReader.String(), types.RoleAllWriter.String()},
 		},
 		// An empty role set is no longer read as full access, so it must reach
 		// RequirePermission as-is rather than being substituted for anything.

@@ -344,7 +344,7 @@ func TestRequirePermission_RBAC(t *testing.T) {
 		{
 			name:         "user without the required role is denied",
 			userType:     string(types.UserTypeUser),
-			roles:        []string{types.RoleReader.String()},
+			roles:        []string{types.RoleAllReader.String()},
 			tenantStatus: types.TenantInternalStatusActive,
 			wantCode:     http.StatusForbidden,
 			wantErrMsg:   "insufficient permissions",

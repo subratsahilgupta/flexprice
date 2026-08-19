@@ -622,6 +622,10 @@ type RemoveAddonRequest struct {
 	ProrationBehavior  types.ProrationBehavior `json:"proration_behavior,omitempty"`
 	// EffectiveDate defaults to period end when nil; mid-period with create_prorations issues a wallet credit.
 	EffectiveDate *time.Time `json:"effective_date,omitempty"`
+
+	// PreviewOnly quotes the removal without writing anything. Server-set: callers reach it
+	// through the preview endpoint, never by sending it.
+	PreviewOnly bool `json:"-"`
 }
 
 func (r *RemoveAddonRequest) Validate() error {

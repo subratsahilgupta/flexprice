@@ -804,3 +804,38 @@ func BucketedGroupBy(p *Price, m *meter.Meter) string {
 	}
 	return m.Aggregation.GroupBy
 }
+
+func (p *Price) BillsIdenticallyTo(other *Price) bool {
+	if p == nil || other == nil {
+		return false
+	}
+
+	if p.IsUsage() || other.IsUsage() {
+		return false
+	}
+
+	if len(p.Tiers) > 0 || len(other.Tiers) > 0 {
+		return false
+	}
+
+	// PACKAGE prices at the same amount still differ if they bundle a different
+	// quantity per package.
+	if p.TransformQuantity != other.TransformQuantity {
+		return false
+	}
+
+	// The same number in two pricing units is not the same money.
+	if lo.FromPtr(p.PriceUnitID) != lo.FromPtr(other.PriceUnitID) {
+		return false
+	}
+
+	return p.Amount.Equal(other.Amount) &&
+		p.Currency == other.Currency &&
+		p.Type == other.Type &&
+		p.MeterID == other.MeterID &&
+		p.BillingModel == other.BillingModel &&
+		p.BillingCadence == other.BillingCadence &&
+		p.InvoiceCadence == other.InvoiceCadence &&
+		p.BillingPeriod == other.BillingPeriod &&
+		p.BillingPeriodCount == other.BillingPeriodCount
+}

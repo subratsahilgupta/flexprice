@@ -7,6 +7,7 @@ import (
 	domainEnvironment "github.com/flexprice/flexprice/internal/domain/environment"
 	domainIncomingWebhookEvent "github.com/flexprice/flexprice/internal/domain/incomingwebhookevent"
 	domainUser "github.com/flexprice/flexprice/internal/domain/user"
+	"github.com/flexprice/flexprice/internal/ee/auth/saml"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rbac"
@@ -63,6 +64,9 @@ type Handlers struct {
 	MeterUsage               *v1.MeterUsageHandler
 	CheckoutSession          *v1.CheckoutSessionHandler
 
+	// Enterprise handlers
+	SAML *saml.Handler
+
 	// Portal handlers
 	Onboarding     *v1.OnboardingHandler
 	AIPricing      *v1.AIPricingHandler
@@ -115,8 +119,9 @@ func NewRouter(
 
 	// Initialize permission middleware
 	permissionMW := middleware.NewPermissionMiddleware(rbacService, logger)
-	write := permissionMW.RequirePermission // shorthand used on every write route
-	read := permissionMW.RequirePermission  // shorthand used on read routes that opt in to an RBAC gate
+	write := permissionMW.RequirePermission       // shorthand used on every write route
+	read := permissionMW.RequirePermission        // shorthand used on read routes that opt in to an RBAC gate
+	superAdminOnly := middleware.SuperAdminOnly() // shorthand used on routes accessible only to super_admin users
 
 	// Add middleware to set swagger host dynamically
 	router.Use(func(c *gin.Context) {
@@ -140,6 +145,21 @@ func NewRouter(
 		// Auth routes
 		v1Public.POST("/auth/signup", handlers.Auth.SignUp)
 		v1Public.POST("/auth/login", handlers.Auth.Login)
+
+		// SAML single sign-on. Public because these run before a session exists:
+		// the login redirect starts the flow, and the ACS callback is posted by
+		// the identity provider, which carries no credentials.
+		//
+		// Mounted only when the deployment offers SAML, so the endpoints 404 as
+		// though the feature did not exist rather than announcing a disabled one.
+		if handlers.SAML != nil && cfg.Auth.SAML.Enabled {
+			saml := v1Public.Group("/auth/saml/:tenant")
+			{
+				saml.GET("/metadata", handlers.SAML.Metadata)
+				saml.GET("/login", handlers.SAML.Login)
+				saml.POST("/acs", handlers.SAML.ACS)
+			}
+		}
 	}
 
 	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, environmentRepo, userRepo, logger))
@@ -156,8 +176,10 @@ func NewRouter(
 			user.POST("", write(types.EntityUser, types.ActionWrite), handlers.User.CreateUser)
 			user.PUT("/me", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateUser)
 			user.PUT("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateServiceAccount)
+			user.PUT("/:id/roles", write(types.EntityUser, types.ActionWrite, superAdminOnly), handlers.User.UpdateUserRoles)
 			user.DELETE("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.DeleteUser)
 			user.POST("/search", handlers.User.QueryUsers)
+			user.POST("/chat/verify", handlers.User.CreateSupportChatToken)
 		}
 
 		environment := v1Private.Group("/environments")
@@ -332,6 +354,10 @@ func NewRouter(
 			// Subscription plan changes (upgrade/downgrade)
 			subscription.POST("/:id/change/preview", handlers.SubscriptionChange.PreviewSubscriptionChange)
 			subscription.POST("/:id/change/execute", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionChange.ExecuteSubscriptionChange)
+
+			// Plan change v2 (swap in place). v1 remains for interval/cadence/currency changes.
+			subscription.POST("/:id/change/v2/preview", handlers.Subscription.PreviewSubscriptionPlanChangeV2)
+			subscription.POST("/:id/change/v2/execute", write(types.EntitySubscription, types.ActionWrite), handlers.Subscription.ExecuteSubscriptionPlanChangeV2)
 			subscription.POST(":id/modify/execute", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionModification.Execute)
 			subscription.POST(":id/modify/preview", handlers.SubscriptionModification.Preview)
 
@@ -680,12 +706,23 @@ func NewRouter(
 		webhooks.POST("/whop/:tenant_id/:environment_id", handlers.Webhook.HandleWhopWebhook)
 	}
 
-	// Settings routes
+	// Settings routes.
+	//
+	// Writes require a super admin: the route is shared by every settings key,
+	// and one of them decides how people authenticate — a SAML configuration
+	// names the identity provider the tenant trusts, so anyone who can change it
+	// can have themselves provisioned into the tenant.
+	//
+	// Reads keep the ordinary setting:read permission. Most settings are
+	// configuration the dashboard shows to any member, and requiring an
+	// administrator to read an invoice prefix helps nobody. saml_config is the
+	// exception and is refused to non-administrators in the service, where the
+	// key is known.
 	settings := v1Private.Group("/settings")
 	{
-		settings.GET("/:key", handlers.Settings.GetSettingByKey)
-		settings.PUT("/:key", write(types.EntitySetting, types.ActionWrite), handlers.Settings.UpdateSettingByKey)
-		settings.DELETE("/:key", write(types.EntitySetting, types.ActionWrite), handlers.Settings.DeleteSettingByKey)
+		settings.GET("/:key", read(types.EntitySetting, types.ActionRead), handlers.Settings.GetSettingByKey)
+		settings.PUT("/:key", write(types.EntitySetting, types.ActionWrite, superAdminOnly), handlers.Settings.UpdateSettingByKey)
+		settings.DELETE("/:key", write(types.EntitySetting, types.ActionWrite, superAdminOnly), handlers.Settings.DeleteSettingByKey)
 	}
 
 	// Alert routes
@@ -706,10 +743,10 @@ func NewRouter(
 	}
 
 	// RBAC routes
-	rbac := v1Private.Group("/rbac")
+	rbac := v1Private.Group("/rbac/roles")
 	{
-		rbac.GET("/roles", handlers.RBAC.ListRoles)
-		rbac.GET("/roles/:id", handlers.RBAC.GetRole)
+		rbac.GET("", handlers.RBAC.ListRoles)
+		rbac.GET("/:id", handlers.RBAC.GetRole)
 	}
 
 	// OAuth routes

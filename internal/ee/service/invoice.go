@@ -48,6 +48,7 @@ type InvoiceService interface {
 	ComputeInvoice(ctx context.Context, invoiceID string, req *dto.InvoiceComputeRequest) (*invoice.Invoice, bool, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetInternalPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
+	CreatePreviewInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetCustomerInvoiceSummary(ctx context.Context, customerID string, currency string) (*dto.CustomerInvoiceSummary, error)
 	GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.GetUnpaidInvoicesToBePaidRequest) (*dto.GetUnpaidInvoicesToBePaidResponse, error)
 	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
@@ -83,6 +84,14 @@ type InvoiceService interface {
 	// RecalculateTaxesOnInvoice applies subscription auto-apply taxes and updates
 	// total_tax / total / amount_due. Idempotent via tax-applied records.
 	RecalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error)
+
+	UpdateLineItem(ctx context.Context, invoiceID, lineItemID string, req dto.UpdateLineItemRequest) (*dto.InvoiceResponse, error)
+
+	AddBulkLineItem(ctx context.Context, invoiceID string, req dto.AddBulkLineItemRequest) (*dto.InvoiceResponse, error)
+
+	RemoveBulkLineItem(ctx context.Context, invoiceID string, req dto.RemoveBulkLineItemRequest) (*dto.InvoiceResponse, error)
+
+	ModifyInvoice(ctx context.Context, invoiceID string, req dto.ExecuteInvoiceModifyRequest) (*dto.InvoiceModifyResponse, error)
 }
 
 type invoiceService struct {
@@ -499,6 +508,12 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		inv, lockErr = s.InvoiceRepo.GetForUpdate(txCtx, invoiceID)
 		if lockErr != nil {
 			return lockErr
+		}
+
+		if inv.IsManuallyEdited {
+			return ierr.NewError("invoice has manual line-item edits").
+				WithHint("manual line-item edits are not supported for computed invoices").
+				Mark(ierr.ErrValidation)
 		}
 
 		// Re-check status under lock: allow SKIPPED invoices to be re-computed
@@ -1841,6 +1856,12 @@ func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, sta
 		}
 	}
 
+	// Invoice is fully paid — dispatch mark-paid to whichever providers are connected.
+	if status == types.PaymentStatusSucceeded {
+		paymentProcessorService := NewPaymentProcessorService(s.ServiceParams)
+		paymentProcessorService.DispatchMarkPaid(ctx, inv.ID)
+	}
+
 	// Publish webhook events
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdatePayment, inv.ID)
 
@@ -1969,6 +1990,14 @@ func (s *invoiceService) ReconcilePaymentStatus(ctx context.Context, id string, 
 		}
 	}
 
+	// Invoice is fully paid — dispatch mark-paid to whichever providers are connected.
+	// This is the reconciliation path used by checkout and every payment gateway integration,
+	// separate from ProcessPayment's own invoice-update logic which dispatches independently.
+	if status == types.PaymentStatusSucceeded || status == types.PaymentStatusOverpaid {
+		paymentProcessorService := NewPaymentProcessorService(s.ServiceParams)
+		paymentProcessorService.DispatchMarkPaid(ctx, inv.ID)
+	}
+
 	// Publish webhook events
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdatePayment, inv.ID)
 
@@ -2065,10 +2094,82 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 	return dto.NewInvoiceResponse(inv), subscription, nil
 }
 
+// CreatePreviewInvoice builds the invoice a CreateInvoice request would produce —
+// taxes resolved against the customer, totals computed — and writes nothing. Quote
+// and charge stay in step by construction: callers build one request and send it
+// here to preview it and to CreateInvoice to raise it.
+//
+// Tax is best effort: a customer whose rates cannot be resolved is quoted untaxed
+// rather than refused a quote.
+func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error) {
+	inv, err := req.ToInvoice(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if !inv.Subtotal.IsPositive() {
+		return dto.NewInvoiceResponse(inv), nil
+	}
+
+	taxSvc := NewTaxService(s.ServiceParams)
+	rates, err := taxSvc.PrepareTaxRatesForInvoice(ctx, req)
+	if err != nil {
+		s.Logger.Info(ctx, "could not resolve tax rates for invoice preview; quoting untaxed",
+			"error", err, "customer_id", req.CustomerID)
+		return dto.NewInvoiceResponse(inv), nil
+	}
+
+	// Calculate, never apply: applying writes a tax_applied record per rate, and this
+	// invoice is never created.
+	inv.TotalTax = taxSvc.CalculateTaxesOnInvoice(ctx, inv, rates).TotalTaxAmount
+	inv.Total = inv.Subtotal.
+		Sub(inv.TotalPrepaidCreditsApplied).
+		Sub(inv.TotalDiscount).
+		Add(inv.TotalTax)
+	if inv.Total.IsNegative() {
+		inv.Total = decimal.Zero
+	}
+	inv.AmountDue = inv.Total
+	inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
+	return dto.NewInvoiceResponse(inv), nil
+}
+
+// applyPreviewCoupons computes the coupon discounts a preview invoice would
+// carry and updates its totals. Nothing is persisted and no redemption is
+// counted — previewing an invoice must not consume a coupon.
+//
+// Returns the per-coupon breakdown for the response.
+func (s *invoiceService) applyPreviewCoupons(ctx context.Context, inv *invoice.Invoice, invReq *dto.CreateInvoiceRequest) ([]*dto.CouponApplicationResponse, error) {
+	if inv == nil || invReq == nil {
+		return nil, nil
+	}
+	if len(invReq.InvoiceCoupons) == 0 && len(invReq.LineItemCoupons) == 0 {
+		return nil, nil
+	}
+
+	couponApplicationService := NewCouponApplicationService(s.ServiceParams)
+	result, err := couponApplicationService.CalculateCouponsForInvoice(ctx, dto.ApplyCouponsToInvoiceRequest{
+		Invoice:         inv,
+		InvoiceCoupons:  invReq.InvoiceCoupons,
+		LineItemCoupons: invReq.LineItemCoupons,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, nil
+	}
+
+	inv.TotalDiscount = result.TotalDiscountAmount
+	dto.RecalculatePreviewTotals(inv, invReq.PreparedTaxRates)
+
+	return result.AppliedCoupons, nil
+}
+
 func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error) {
 	billingService := NewBillingService(s.ServiceParams)
 
-	sub, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	sub, err := s.SubRepo.Get(ctx, req.SubscriptionID)
 	if err != nil {
 		return nil, err
 	}
@@ -2092,8 +2193,7 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		return nil, err
 	}
 
-	s.Logger.Info(ctx, "prepared invoice request for preview",
-		"invoice_request", invReq)
+	s.Logger.Info(ctx, "prepared invoice request for preview", "invoice_request", invReq)
 
 	if req.HideZeroChargesLineItems {
 		invReq.LineItems = lo.Filter(invReq.LineItems, func(item dto.CreateInvoiceLineItemRequest, _ int) bool {
@@ -2107,8 +2207,25 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		return nil, err
 	}
 
+	// Coupons: compute (never persist) the discounts this invoice would carry,
+	// then bring tax and totals back in step — ToInvoice taxed the
+	// undiscounted subtotal because discounts resolve at this layer.
+	couponApplications, err := s.applyPreviewCoupons(ctx, inv, invReq)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
+
+	// Previews persist no tax_applied or coupon_application rows, so
+	// synthesise the breakdowns that WithTaxes / the DB load would otherwise
+	// provide — without them the response carries totals with nothing to
+	// explain them.
+	response.WithTaxes(dto.BuildPreviewTaxes(inv, invReq.PreparedTaxRates))
+	if len(couponApplications) > 0 {
+		response.CouponApplications = couponApplications
+	}
 
 	// Get customer information
 	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
@@ -2162,8 +2279,25 @@ func (s *invoiceService) GetInternalPreviewInvoice(ctx context.Context, req dto.
 		return nil, err
 	}
 
+	// Coupons: compute (never persist) the discounts this invoice would carry,
+	// then bring tax and totals back in step — ToInvoice taxed the
+	// undiscounted subtotal because discounts resolve at this layer.
+	couponApplications, err := s.applyPreviewCoupons(ctx, inv, invReq)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
+
+	// Previews persist no tax_applied or coupon_application rows, so
+	// synthesise the breakdowns that WithTaxes / the DB load would otherwise
+	// provide — without them the response carries totals with nothing to
+	// explain them.
+	response.WithTaxes(dto.BuildPreviewTaxes(inv, invReq.PreparedTaxRates))
+	if len(couponApplications) > 0 {
+		response.CouponApplications = couponApplications
+	}
 
 	// Get customer information
 	customer, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
@@ -4577,4 +4711,80 @@ func (s *invoiceService) DistributeInvoiceLevelDiscount(ctx context.Context, lin
 	}
 
 	return nil
+}
+
+func (s *invoiceService) ApplyExternalInvoiceDiscount(ctx context.Context, invoiceID string, req dto.ApplyExternalInvoiceDiscountRequest) error {
+	if err := req.Validate(); err != nil {
+		return err
+	}
+	if req.DiscountAmount.IsZero() {
+		return nil
+	}
+
+	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, invoiceID)
+		if err != nil {
+			return err
+		}
+
+		existingInvoiceLevelDiscount := decimal.Zero
+		for _, li := range inv.LineItems {
+			existingInvoiceLevelDiscount = existingInvoiceLevelDiscount.Add(li.InvoiceLevelDiscount)
+		}
+
+		if err := s.DistributeInvoiceLevelDiscount(txCtx, inv.LineItems, existingInvoiceLevelDiscount.Add(req.DiscountAmount)); err != nil {
+			return err
+		}
+
+		for _, li := range inv.LineItems {
+			if err := s.InvoiceLineItemRepo.Update(txCtx, li); err != nil {
+				return err
+			}
+		}
+
+		inv.TotalDiscount = inv.TotalDiscount.Add(req.DiscountAmount)
+		inv.Total = inv.Total.Sub(req.DiscountAmount)
+		inv.AmountDue = inv.AmountDue.Sub(req.DiscountAmount)
+		inv.AmountRemaining = inv.AmountRemaining.Sub(req.DiscountAmount)
+
+		if req.MetadataJSON != "" && req.MetadataKey != "" {
+			if inv.Metadata == nil {
+				inv.Metadata = types.Metadata{}
+			}
+			merged, err := mergeJSONArrayMetadata(inv.Metadata[req.MetadataKey], req.MetadataJSON)
+			if err != nil {
+				return err
+			}
+			inv.Metadata[req.MetadataKey] = merged
+		}
+
+		if err := inv.Validate(); err != nil {
+			return err
+		}
+
+		return s.InvoiceRepo.Update(txCtx, inv)
+	})
+}
+
+// mergeJSONArrayMetadata appends the entries in newEntriesJSON (a JSON array) onto existing
+// (a JSON array string, or "" if absent), returning the re-marshaled combined array.
+func mergeJSONArrayMetadata(existing string, newEntriesJSON string) (string, error) {
+	var combined []json.RawMessage
+	if existing != "" {
+		if err := json.Unmarshal([]byte(existing), &combined); err != nil {
+			return "", ierr.WithError(err).WithHint("Failed to parse existing discount metadata").Mark(ierr.ErrValidation)
+		}
+	}
+
+	var newEntries []json.RawMessage
+	if err := json.Unmarshal([]byte(newEntriesJSON), &newEntries); err != nil {
+		return "", ierr.WithError(err).WithHint("Failed to parse new discount metadata").Mark(ierr.ErrValidation)
+	}
+	combined = append(combined, newEntries...)
+
+	merged, err := json.Marshal(combined)
+	if err != nil {
+		return "", ierr.WithError(err).WithHint("Failed to marshal merged discount metadata").Mark(ierr.ErrValidation)
+	}
+	return string(merged), nil
 }
