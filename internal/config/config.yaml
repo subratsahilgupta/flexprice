@@ -545,6 +545,6 @@ checkout:
 onboarding:
   default_tenant_name: "Flexprice"
 
-pylon:
+chat_support:
   app_id: ""
   identity_secret: ""

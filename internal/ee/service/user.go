@@ -17,6 +17,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/nedpals/supabase-go"
 	"github.com/samber/lo"
 )
@@ -617,4 +618,66 @@ func (s *userService) DeleteUser(ctx context.Context, id string) error {
 	}
 
 	return s.userRepo.Delete(ctx, id)
+}
+
+const chatSupportTokenTTL = 2 * time.Hour
+
+type chatSupportClaims struct {
+	Email             string `json:"email"`
+	Name              string `json:"name,omitempty"`
+	AccountExternalID string `json:"account_external_id,omitempty"`
+	ContactExternalID string `json:"contact_external_id,omitempty"`
+	jwt.RegisteredClaims
+}
+
+func (s *userService) CreateSupportChatToken(ctx context.Context) (*dto.SupportChatTokenResponse, error) {
+	if s.cfg == nil || s.cfg.ChatSupport.AppID == "" || s.cfg.ChatSupport.IdentitySecret == "" {
+		return nil, ierr.NewError("chat support identity verification is not configured").
+			WithHint("Set chat_support.app_id and chat_support.identity_secret").
+			Mark(ierr.ErrInternal)
+	}
+
+	u, err := s.GetUserInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if u.Email == "" {
+		return nil, ierr.NewError("user has no email").
+			WithHint("Support chat identity verification requires a user with an email").
+			Mark(ierr.ErrValidation)
+	}
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(chatSupportTokenTTL)
+
+	claims := chatSupportClaims{
+		Email:             u.Email,
+		Name:              u.Name,
+		ContactExternalID: u.ID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{s.cfg.ChatSupport.AppID},
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+	}
+	if u.Tenant != nil {
+		claims.AccountExternalID = u.Tenant.ID
+		if claims.Name == "" {
+			claims.Name = u.Tenant.Name
+		}
+	}
+
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.ChatSupport.IdentitySecret))
+	if err != nil {
+		s.logger.Error(ctx, "failed to sign support chat token", "error", err, "user_id", u.ID)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to sign the support chat token").
+			Mark(ierr.ErrInternal)
+	}
+
+	return &dto.SupportChatTokenResponse{
+		Token:     token,
+		ExpiresAt: expiresAt.Format(time.RFC3339),
+	}, nil
 }
