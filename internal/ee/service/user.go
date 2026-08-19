@@ -620,7 +620,7 @@ func (s *userService) DeleteUser(ctx context.Context, id string) error {
 	return s.userRepo.Delete(ctx, id)
 }
 
-const chatSupportTokenTTL = 2 * time.Hour
+const chatSupportTokenTTL = 10 * time.Minute
 
 func (s *userService) CreateSupportChatToken(ctx context.Context) (*dto.SupportChatTokenResponse, error) {
 	if s.cfg == nil || s.cfg.ChatSupport.AppID == "" || s.cfg.ChatSupport.IdentitySecret == "" {

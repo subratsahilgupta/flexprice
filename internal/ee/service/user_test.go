@@ -19,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/suite"
 )
@@ -681,6 +682,50 @@ func (s *UserServiceSuite) TestDeleteUser() {
 		err := s.userService.DeleteUser(ctx, "sa-1")
 		s.NoError(err)
 	})
+}
+
+func (s *UserServiceSuite) TestCreateSupportChatToken() {
+	const (
+		appID  = "pylon-app-id"
+		secret = "raw-identity-secret"
+	)
+
+	ctx := testutil.SetupContext()
+	_ = s.userRepo.Create(ctx, &user.User{
+		ID:        types.DefaultUserID,
+		Email:     "support@example.com",
+		Name:      "Support User",
+		Type:      types.UserTypeUser,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	})
+	s.userService.cfg = &config.Configuration{
+		ChatSupport: config.ChatSupportConfig{
+			AppID:          appID,
+			IdentitySecret: secret,
+		},
+	}
+
+	resp, err := s.userService.CreateSupportChatToken(ctx)
+	s.Require().NoError(err)
+	s.Require().NotNil(resp)
+
+	expiresAt, err := time.Parse(time.RFC3339, resp.ExpiresAt)
+	s.Require().NoError(err)
+
+	parsed, err := jwt.ParseWithClaims(resp.Token, &dto.ChatSupportClaims{}, func(t *jwt.Token) (interface{}, error) {
+		s.Equal(jwt.SigningMethodHS256.Alg(), t.Method.Alg())
+		return []byte(secret), nil
+	})
+	s.Require().NoError(err)
+	s.True(parsed.Valid)
+
+	claims, ok := parsed.Claims.(*dto.ChatSupportClaims)
+	s.Require().True(ok)
+	s.Require().NotNil(claims.IssuedAt)
+	s.Require().NotNil(claims.ExpiresAt)
+	s.Equal(int64(600), claims.ExpiresAt.Unix()-claims.IssuedAt.Unix())
+	s.Equal(10*time.Minute, claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time))
+	s.WithinDuration(claims.IssuedAt.Time.Add(10*time.Minute), expiresAt, time.Second)
 }
 
 // ---------------------------------------------------------------------------
