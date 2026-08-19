@@ -67,6 +67,29 @@ nothing revokes them.
 write, so the credential is logged once instead; otherwise it would be lost.
 In-cluster the key is never logged.
 
+### Deploying the probe on its own
+
+To install a probe-only release — useful for testing bootstrap without touching
+an existing deployment — disable the chart's two hook Jobs as well as the app
+components. Both block the install otherwise: the migration Job runs
+`pre-install` and the Temporal namespace Job runs `post-install`, and each hangs
+waiting for infrastructure a probe-only release does not deploy.
+
+```bash
+helm install <release> . -n <namespace> \
+  --set migration.enabled=false \
+  --set temporalConfig.enabled=false \
+  --set api.enabled=false --set consumer.enabled=false \
+  --set worker.enabled=false --set frontend.enabled=false \
+  --set postgresql.enabled=false --set kafka.enabled=false \
+  --set clickhouse.enabled=false --set temporal.enabled=false \
+  --set e2eprobe.enabled=true --set e2eprobe.bootstrap.enabled=true \
+  --set e2eprobe.env.E2EPROBE_API_HOST=https://<region>.api.flexprice.io/v1
+```
+
+The probe reaches the API over HTTPS and needs no database of its own, so
+skipping the migration Job is safe here — do not skip it for a real deployment.
+
 ## Architecture
 
 The harness is built around three abstractions:
