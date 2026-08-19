@@ -107,7 +107,8 @@ func (s *MeterUsageTrackingEvaluationSuite) TestCheckSpendBreachForEvent_NoAlert
 	// attempting a billing calculation — which would otherwise fail/panic on this bare fixture
 	// (no price/meter usage data behind it).
 	s.NotPanics(func() {
-		NewAlertService(s.svc.ServiceParams).EvaluateSpendAlertsForCustomer(ctx, s.customer)
+		err := NewAlertService(s.svc.ServiceParams).EvaluateSpendAlertsForCustomer(ctx, s.customer)
+		s.NoError(err)
 	})
 	s.Equal(0, s.countAlertLogs())
 }
