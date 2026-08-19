@@ -3551,7 +3551,7 @@ func (s *invoiceService) RecalculateInvoiceV2(ctx context.Context, id string, fi
 	return s.GetInvoice(ctx, id)
 }
 
-// RecalculateVoidedInvoice voids the subscription invoice (if not already voided) and creates a
+// RecalculateInvoice voids the subscription invoice (if not already voided) and creates a
 // fresh replacement invoice covering the same billing period. It validates that:
 //   - The invoice is of type SUBSCRIPTION
 //   - The invoice has never been recalculated (RecalculatedInvoiceID == nil)
@@ -3571,16 +3571,6 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string) (*dt
 		return nil, ierr.NewError("invoice type is not supported").
 			WithHintf("only SUBSCRIPTION invoices can be recalculated, got %s", inv.InvoiceType).
 			Mark(ierr.ErrValidation)
-	}
-
-	if inv.InvoiceStatus != types.InvoiceStatusVoided {
-		if err := s.VoidInvoice(ctx, id, dto.InvoiceVoidRequest{}); err != nil {
-			return nil, err
-		}
-		inv, err = s.InvoiceRepo.Get(ctx, id)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	if inv.RecalculatedInvoiceID != nil {
@@ -3606,6 +3596,17 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string) (*dt
 	sub, _, err := s.SubRepo.GetWithLineItems(ctx, *inv.SubscriptionID)
 	if err != nil {
 		return nil, err
+	}
+
+	// All non-mutating prerequisites passed — safe to void now.
+	if inv.InvoiceStatus != types.InvoiceStatusVoided {
+		if err := s.VoidInvoice(ctx, id, dto.InvoiceVoidRequest{}); err != nil {
+			return nil, err
+		}
+		inv, err = s.InvoiceRepo.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Use the same method as subscription billing (processSubscriptionPeriod): CreateSubscriptionInvoice

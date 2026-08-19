@@ -808,12 +808,7 @@ func (s *InvoiceVoidRecalculateSuite) TestRecalculateInvoice_AutoVoidsNonVoidedI
 			inv := tt.build()
 
 			newInv, err := s.service.RecalculateInvoice(s.GetContext(), inv.ID)
-			if err != nil {
-				// Billing mock may produce no charges for this fixture; accept gracefully,
-				// same as TestRecalculateInvoice_HappyPath.
-				s.T().Logf("RecalculateInvoice returned error (possible mock limitation): %v", err)
-				return
-			}
+			s.Require().NoError(err, "auto-void-then-recalculate must succeed for this fixture")
 			s.NotNil(newInv)
 			s.NotEqual(inv.ID, newInv.ID, "new invoice must have a different ID")
 
