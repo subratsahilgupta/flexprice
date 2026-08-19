@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -14,11 +15,12 @@ import (
 
 // DealSyncService handles synchronization of subscription data with HubSpot deals
 type DealSyncService struct {
-	client           HubSpotClient
-	customerRepo     customer.Repository
-	subscriptionRepo subscription.Repository
-	priceRepo        price.Repository
-	logger           *logger.Logger
+	client                       HubSpotClient
+	customerRepo                 customer.Repository
+	subscriptionRepo             subscription.Repository
+	priceRepo                    price.Repository
+	entityIntegrationMappingRepo entityintegrationmapping.Repository
+	logger                       *logger.Logger
 }
 
 // NewDealSyncService creates a new HubSpot deal sync service
@@ -27,14 +29,16 @@ func NewDealSyncService(
 	customerRepo customer.Repository,
 	subscriptionRepo subscription.Repository,
 	priceRepo price.Repository,
+	entityIntegrationMappingRepo entityintegrationmapping.Repository,
 	logger *logger.Logger,
 ) *DealSyncService {
 	return &DealSyncService{
-		client:           client,
-		customerRepo:     customerRepo,
-		subscriptionRepo: subscriptionRepo,
-		priceRepo:        priceRepo,
-		logger:           logger,
+		client:                       client,
+		customerRepo:                 customerRepo,
+		subscriptionRepo:             subscriptionRepo,
+		priceRepo:                    priceRepo,
+		entityIntegrationMappingRepo: entityIntegrationMappingRepo,
+		logger:                       logger,
 	}
 }
 
