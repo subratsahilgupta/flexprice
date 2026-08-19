@@ -75,6 +75,12 @@ type Configuration struct {
 	Gemini                     GeminiConfig                     `mapstructure:"gemini" validate:"omitempty"`
 	Whop                       WhopConfig                       `mapstructure:"whop" validate:"omitempty"`
 	Onboarding                 OnboardingConfig                 `mapstructure:"onboarding" validate:"omitempty"`
+	ChatSupport                ChatSupportConfig                `mapstructure:"chat_support" validate:"omitempty"`
+}
+
+type ChatSupportConfig struct {
+	AppID          string `mapstructure:"app_id"`
+	IdentitySecret string `mapstructure:"identity_secret"`
 }
 
 type OnboardingConfig struct {

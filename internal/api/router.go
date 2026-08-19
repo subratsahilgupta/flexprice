@@ -179,6 +179,7 @@ func NewRouter(
 			user.PUT("/:id/roles", write(types.EntityUser, types.ActionWrite, superAdminOnly), handlers.User.UpdateUserRoles)
 			user.DELETE("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.DeleteUser)
 			user.POST("/search", handlers.User.QueryUsers)
+			user.POST("/chat/verify", handlers.User.CreateSupportChatToken)
 		}
 
 		environment := v1Private.Group("/environments")
