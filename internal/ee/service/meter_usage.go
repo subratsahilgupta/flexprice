@@ -1578,11 +1578,13 @@ func (s *meterUsageService) getDetailedAnalyticsWithoutSubscriptionContext(
 		params.AggregationTypes = lo.Uniq(aggTypes)
 	}
 
-	// Split meters
+	// Split meters. No subscription was named, so there is no price to resolve
+	// against — nil yields the meter's legacy bucket size, which is the
+	// grandfathered answer for this surface.
 	var bucketedMeterIDs, standardMeterIDs []string
 	for _, m := range meters {
 		switch {
-		case m.IsBucketedMaxMeter(), m.IsBucketedSumMeter():
+		case price.IsBucketedMax(nil, m), price.IsBucketedSum(nil, m):
 			bucketedMeterIDs = append(bucketedMeterIDs, m.ID)
 		default:
 			standardMeterIDs = append(standardMeterIDs, m.ID)
@@ -1612,7 +1614,7 @@ func (s *meterUsageService) getDetailedAnalyticsWithoutSubscriptionContext(
 	} else if len(params.MeterIDs) == 0 {
 		// Catch-all: enumerate every standard meter we already fetched.
 		for _, m := range meters {
-			if !m.IsBucketedMaxMeter() && !m.IsBucketedSumMeter() {
+			if !price.IsBucketedMax(nil, m) && !price.IsBucketedSum(nil, m) {
 				standardTargets = append(standardTargets, m.ID)
 			}
 		}
@@ -2036,7 +2038,7 @@ func (s *meterUsageService) getBucketedMeterAnalytics(
 			StartTime:          params.StartTime,
 			EndTime:            params.EndTime,
 			AggregationType:    m.Aggregation.Type,
-			WindowSize:         m.Aggregation.BucketSize,
+			WindowSize:         price.ResolveBucketSize(nil, m),
 			// Intentionally use only params.GroupBy here. Meter-level
 			// Aggregation.GroupBy is a billing concept (per-KRN pricing); the
 			// analytics fan-out shape is owned by the request. Matches the
@@ -2067,7 +2069,7 @@ func (s *meterUsageService) getBucketedMeterAnalytics(
 		StartTime:          params.StartTime,
 		EndTime:            params.EndTime,
 		AggregationType:    m.Aggregation.Type,
-		WindowSize:         m.Aggregation.BucketSize,
+		WindowSize:         price.ResolveBucketSize(nil, m),
 		GroupBy:            bucketParamsGroupBy,
 		UseFinal:           params.UseFinal,
 		BillingAnchor:      params.BillingAnchor,
@@ -2090,7 +2092,9 @@ func (s *meterUsageService) getBucketedMeterAnalytics(
 		Properties: make(map[string]string),
 	}
 
-	if m.IsBucketedMaxMeter() {
+	// Admin analytics path — no price in scope (see getBucketedMeterAnalytics),
+	// so nil resolves to the meter's legacy bucket size.
+	if price.IsBucketedMax(nil, m) {
 		result.MaxUsage = aggResult.Value
 		result.TotalUsage = aggResult.Value
 	} else {
@@ -2102,7 +2106,7 @@ func (s *meterUsageService) getBucketedMeterAnalytics(
 		points := make([]events.MeterUsageDetailedPoint, 0, len(aggResult.Results))
 		for _, r := range aggResult.Results {
 			p := events.MeterUsageDetailedPoint{WindowStart: r.WindowSize, EventCount: r.EventCount}
-			if m.IsBucketedMaxMeter() {
+			if price.IsBucketedMax(nil, m) {
 				p.MaxUsage = r.Value
 				p.TotalUsage = r.Value
 			} else {
