@@ -470,6 +470,27 @@ e2eprobe:
   secretKeys:
     apiKey: api-key
     slackWebhookUrl: slack-webhook-url
+  # Signup bootstrap, for airgapped deployments with no way to pre-provision an
+  # API key. The probe signs up, mints a key, and patches it into secretName.
+  #
+  # Requires the flexprice-native auth provider (auth.provider: "flexprice",
+  # the chart default). Supabase-backed deployments reject signup outright, and
+  # a tenant enforcing SSO refuses password login.
+  #
+  # Off by default: with this false the probe renders exactly as before, and
+  # its ServiceAccount token stays unmounted.
+  bootstrap:
+    enabled: false
+    # Dedicated Secret holding ONLY the bootstrap output. Keep it separate from
+    # existingSecret above: the probe is granted write access to this object,
+    # so it must never also carry the Slack webhook.
+    secretName: e2eprobe-bootstrap
+    secretKey: api-key
+    # Secret supplying the signup credentials. Never put a password in
+    # e2eprobe.env — the chart rejects that.
+    existingCredentialsSecret: e2eprobe-bootstrap-credentials
+    emailKey: email
+    passwordKey: password
   env: {}                 # E2EPROBE_* non-secret vars, set per region
   service: {port: 8765}
   resources:
