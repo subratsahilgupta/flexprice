@@ -6,6 +6,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
+	"github.com/golang-jwt/jwt/v4"
 )
 
 // CreateUserRequest represents the request to create a new user (service account or user)
@@ -161,6 +162,19 @@ type ActiveAPIKey struct {
 type ActiveEnvironmentAPIKeys struct {
 	EnvName string         `json:"env_name"`
 	APIKeys []ActiveAPIKey `json:"api_keys"`
+}
+
+type SupportChatTokenResponse struct {
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+type ChatSupportClaims struct {
+	Email             string `json:"email"`
+	Name              string `json:"name,omitempty"`
+	AccountExternalID string `json:"account_external_id,omitempty"`
+	ContactExternalID string `json:"contact_external_id,omitempty"`
+	jwt.RegisteredClaims
 }
 
 // ListUsersResponse is the response type for listing users with pagination

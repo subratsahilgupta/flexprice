@@ -43,6 +43,7 @@ metadata:
   annotations:
     checksum/config: {{ include "flexprice/templates/app/configmap.yaml" . | sha256sum }}
     checksum/secret: {{ include "flexprice/templates/app/secret.yaml" . | sha256sum }}
+    {{- if .Values.migration.asHook }}
     "helm.sh/hook": pre-upgrade,pre-install
     "helm.sh/hook-weight": "-5"
     {{- /*
@@ -79,6 +80,7 @@ metadata:
       look while it is still running.
     */}}
     "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
+    {{- end }}
 spec:
   backoffLimit: {{ .Values.migration.backoffLimit | default 3 }}
   {{- if .Values.migration.activeDeadlineSeconds }}
@@ -424,6 +426,30 @@ spec:
         # This init container creates all required topics idempotently.
         - name: create-kafka-topics
           image: "{{ if .Values.kafkaConfig.enabled }}bitnami/kafka:latest{{ else }}confluentinc/cp-kafka:{{ .Values.kafkaConfig.internal.image.tag | default "7.7.1" }}{{ end }}"
+          env:
+            # The JVM sizes its default max heap from the cgroup memory limit --
+            # roughly a quarter of it. At the 256Mi limit this container used to
+            # carry, that is ~64Mi, and the admin client exhausts it while
+            # reading broker metadata over TLS:
+            #
+            #   java.lang.OutOfMemoryError: Java heap space
+            #     at org.apache.kafka.common.network.NetworkReceive.readFrom
+            #   ERROR ... The AdminClient thread has exited. Call: createTopics
+            #
+            # Every topic then fails in turn, so the step reports errors per
+            # topic rather than one cause, and none of them mention memory.
+            # Setting the heap explicitly decouples it from the limit.
+            - name: KAFKA_HEAP_OPTS
+              value: {{ .Values.migration.kafkaTopics.heapOpts | default "-Xmx512m -Xms256m" | quote }}
+            {{- if and .Values.kafkaConfig.useSASL (ne .Values.kafkaConfig.saslMechanism "OAUTHBEARER") }}
+            # Injected rather than templated into the properties file, so the
+            # password is not readable in the rendered Job spec.
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "flexprice.secretName" . }}
+                  key: kafka-sasl-password
+            {{- end }}
           command:
             - sh
             - -c
@@ -437,22 +463,85 @@ spec:
                 KAFKA_TOPICS_CMD="kafka-topics.sh"
               fi
 
-              # Helper: create topic if it does not exist
+              CMD_CONFIG=""
+              {{- if or .Values.kafkaConfig.useSASL .Values.kafkaConfig.tls }}
+              # Client config for the admin protocol.
+              #
+              # The app pods get SASL/TLS from their env, but kafka-topics is a
+              # separate JVM tool that reads NONE of that -- it needs a
+              # properties file. Without one it dials a SASL listener (MSK's
+              # 9096) with PLAINTEXT and no credentials.
+              #
+              # The failure does not look like auth. The TCP connect succeeds,
+              # so the wait-for-kafka port check passes and reports the broker
+              # ready; the handshake then never completes and the tool reports
+              #
+              #   Timed out waiting for a node assignment. Call: createTopics
+              #
+              # or, worse, reads the TLS server response as a Kafka frame
+              # length and allocates against it:
+              #
+              #   java.lang.OutOfMemoryError: Java heap space
+              #
+              # which sends you tuning the heap for a credentials problem.
+              CMD_CONFIG=/tmp/kafka-admin.properties
+              {{- if .Values.kafkaConfig.useSASL }}
+              cat > "${CMD_CONFIG}" <<'PROPS'
+              security.protocol={{ if .Values.kafkaConfig.tls }}SASL_SSL{{ else }}SASL_PLAINTEXT{{ end }}
+              sasl.mechanism={{ .Values.kafkaConfig.saslMechanism }}
+              PROPS
+              {{- $jaas := ternary "org.apache.kafka.common.security.scram.ScramLoginModule" "org.apache.kafka.common.security.plain.PlainLoginModule" (hasPrefix "SCRAM" .Values.kafkaConfig.saslMechanism) }}
+              # Written separately: the password comes from the environment and
+              # must not be baked into the rendered manifest, where it would be
+              # readable by anyone who can get the Job spec.
+              printf 'sasl.jaas.config=%s required username="%s" password="%s";\n' \
+                '{{ $jaas }}' \
+                '{{ .Values.kafkaConfig.saslUser }}' \
+                "${KAFKA_SASL_PASSWORD}" >> "${CMD_CONFIG}"
+              {{- else }}
+              cat > "${CMD_CONFIG}" <<'PROPS'
+              security.protocol=SSL
+              PROPS
+              {{- end }}
+              # The heredocs above are indented for template readability; strip
+              # it, or every key is parsed with leading spaces and ignored.
+              sed -i 's/^[[:space:]]*//' "${CMD_CONFIG}"
+              CMD_CONFIG="--command-config ${CMD_CONFIG}"
+              {{- end }}
+
+              # Count failures rather than swallowing them.
+              #
+              # `|| true` on its own makes this step report success no matter
+              # what: a run where the admin client died on the FIRST topic and
+              # created none still printed "✅ Kafka topics ready" and exited 0.
+              # The app then starts against a broker with no topics and, where
+              # auto-creation is off (the MSK default), fails at first publish
+              # -- a long way from the step that was actually at fault.
+              #
+              # --if-not-exists already makes a re-run a no-op, so a non-zero
+              # exit here means a real failure and not a pre-existing topic.
+              FAILED=0
               create_topic() {
                 TOPIC=$1
                 PARTITIONS=${2:-1}
                 REPLICATION=${3:-1}
                 echo "→ Creating topic: ${TOPIC} (partitions=${PARTITIONS}, replication=${REPLICATION})"
-                $KAFKA_TOPICS_CMD --bootstrap-server "${KAFKA_BROKER}" \
+                if ! $KAFKA_TOPICS_CMD --bootstrap-server "${KAFKA_BROKER}" ${CMD_CONFIG} \
                   --create --if-not-exists \
                   --topic "${TOPIC}" \
                   --partitions "${PARTITIONS}" \
-                  --replication-factor "${REPLICATION}" || true
+                  --replication-factor "${REPLICATION}"; then
+                  echo "  ✗ FAILED to create ${TOPIC}"
+                  FAILED=$((FAILED + 1))
+                fi
               }
 
               # All topics used by FlexPrice
               create_topic "{{ .Values.kafkaConfig.topic }}"
               create_topic "{{ .Values.kafkaConfig.topicLazy }}"
+              {{- with .Values.kafkaConfig.topicBulk }}
+              create_topic "{{ . }}"
+              {{- end }}
               create_topic "{{ .Values.kafkaConfig.topicDLQ | default "events_dlq" }}"
               create_topic "{{ .Values.eventPostProcessing.topic }}"
               create_topic "{{ .Values.eventPostProcessing.topicBackfill }}"
@@ -461,15 +550,27 @@ spec:
               create_topic "wallet_alert"
               create_topic "onboarding_events"
 
+              if [ "${FAILED}" -ne 0 ]; then
+                echo "❌ ${FAILED} topic(s) could not be created."
+                echo "   OutOfMemoryError above means the admin client heap is too"
+                echo "   small: raise migration.kafkaTopics.heapOpts (and keep"
+                echo "   resources.limits.memory comfortably above it)."
+                exit 1
+              fi
+
               echo "✅ Kafka topics ready"
-              $KAFKA_TOPICS_CMD --bootstrap-server "${KAFKA_BROKER}" --list
+
+              # Listing is diagnostic only. It is a second admin-client session
+              # and can OOM on its own after every topic was created, which
+              # would fail the whole migration over a log line.
+              $KAFKA_TOPICS_CMD --bootstrap-server "${KAFKA_BROKER}" ${CMD_CONFIG} --list || \
+                echo "(could not list topics; creation already succeeded)"
+          # Must stay comfortably above KAFKA_HEAP_OPTS above: the limit has to
+          # cover the heap plus JVM overhead (metaspace, thread stacks, direct
+          # buffers), or the kernel OOM-kills the container instead of the JVM
+          # throwing -- which surfaces as exit code 137 and no log line at all.
           resources:
-            limits:
-              cpu: "200m"
-              memory: "256Mi"
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
+            {{- toYaml .Values.migration.kafkaTopics.resources | nindent 12 }}
         {{- end }}
 
       containers:

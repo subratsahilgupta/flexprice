@@ -562,3 +562,7 @@ checkout:
 
 onboarding:
   default_tenant_name: "Flexprice"
+
+chat_support:
+  app_id: ""
+  identity_secret: ""

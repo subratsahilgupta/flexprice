@@ -19,12 +19,25 @@ type CouponCalculationResult struct {
 	TotalDiscountAmount          decimal.Decimal
 	TotalInvoiceLineItemDiscount decimal.Decimal
 	TotalInvoiceLevelDiscount    decimal.Decimal
+	// AppliedCoupons is populated by CalculateCouponsForInvoice so a preview
+	// can surface the same per-coupon breakdown a persisted invoice carries.
+	// ApplyCouponsToInvoice leaves it nil — its callers read the totals and
+	// the persisted rows instead.
+	AppliedCoupons []*dto.CouponApplicationResponse
 }
 
 type CouponApplicationService interface {
 	CreateCouponApplication(ctx context.Context, req dto.CreateCouponApplicationRequest) (*dto.CouponApplicationResponse, error)
 	GetCouponApplication(ctx context.Context, id string) (*dto.CouponApplicationResponse, error)
 	ApplyCouponsToInvoice(ctx context.Context, req dto.ApplyCouponsToInvoiceRequest) (*CouponCalculationResult, error)
+
+	// CalculateCouponsForInvoice runs the same discount computation as
+	// ApplyCouponsToInvoice and stops before any persistence: nothing is
+	// written, no redemption is counted. It exists for invoice previews,
+	// which must show the discounts a real invoice would carry without
+	// consuming the coupon. Line-item discounts are still set on the passed
+	// invoice's in-memory line items.
+	CalculateCouponsForInvoice(ctx context.Context, req dto.ApplyCouponsToInvoiceRequest) (*CouponCalculationResult, error)
 }
 
 type couponApplicationService struct {
@@ -115,10 +128,38 @@ func resolveInvoiceLineItemToBeDiscounted(
 	return target, ok
 }
 
-// ApplyCouponsToInvoice applies both invoice-level and line item-level coupons to an invoice.
-// This is the unified method that handles all coupon application logic.
-// CouponService.ApplyDiscount() handles all validation and calculation.
-func (s *couponApplicationService) ApplyCouponsToInvoice(ctx context.Context, req dto.ApplyCouponsToInvoiceRequest) (*CouponCalculationResult, error) {
+// couponPreparation is the outcome of the pure computation phase: the totals,
+// the entities that would be persisted, and the coupons keyed by id (needed by
+// the persistence phase for redemption limits).
+type couponPreparation struct {
+	appliedCoupons                 []*dto.CouponApplicationResponse
+	lineItemCouponApplications     []*coupon_application.CouponApplication
+	invoiceLevelCouponApplications []*coupon_application.CouponApplication
+	couponsMap                     map[string]*coupon.Coupon
+	totalLineItemDiscount          decimal.Decimal
+	totalInvoiceLevelDiscount      decimal.Decimal
+}
+
+// CalculateCouponsForInvoice computes the discounts without writing anything.
+// See the interface for why previews need this.
+func (s *couponApplicationService) CalculateCouponsForInvoice(ctx context.Context, req dto.ApplyCouponsToInvoiceRequest) (*CouponCalculationResult, error) {
+	prep, err := s.prepareCouponApplications(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &CouponCalculationResult{
+		TotalDiscountAmount:          prep.totalLineItemDiscount.Add(prep.totalInvoiceLevelDiscount),
+		TotalInvoiceLineItemDiscount: prep.totalLineItemDiscount,
+		TotalInvoiceLevelDiscount:    prep.totalInvoiceLevelDiscount,
+		AppliedCoupons:               prep.appliedCoupons,
+	}, nil
+}
+
+// prepareCouponApplications runs the computation shared by
+// ApplyCouponsToInvoice and CalculateCouponsForInvoice. It writes nothing; the
+// only mutation is LineItemDiscount on the passed invoice's in-memory line
+// items, which both callers rely on.
+func (s *couponApplicationService) prepareCouponApplications(ctx context.Context, req dto.ApplyCouponsToInvoiceRequest) (*couponPreparation, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -127,13 +168,12 @@ func (s *couponApplicationService) ApplyCouponsToInvoice(ctx context.Context, re
 	invoiceCoupons := req.InvoiceCoupons
 	lineItemCoupons := req.LineItemCoupons
 
-	result := &CouponCalculationResult{
-		TotalDiscountAmount:          decimal.Zero,
-		TotalInvoiceLineItemDiscount: decimal.Zero,
-		TotalInvoiceLevelDiscount:    decimal.Zero,
-	}
 	if len(invoiceCoupons) == 0 && len(lineItemCoupons) == 0 {
-		return result, nil
+		return &couponPreparation{
+			couponsMap:                make(map[string]*coupon.Coupon),
+			totalLineItemDiscount:     decimal.Zero,
+			totalInvoiceLevelDiscount: decimal.Zero,
+		}, nil
 	}
 
 	s.Logger.Info(ctx, "applying coupons to invoice",
@@ -353,6 +393,31 @@ func (s *couponApplicationService) ApplyCouponsToInvoice(ctx context.Context, re
 			"final_subtotal", discountResult.FinalPrice)
 	}
 
+	return &couponPreparation{
+		appliedCoupons:                 appliedCoupons,
+		lineItemCouponApplications:     lineItemCouponApplications,
+		invoiceLevelCouponApplications: invoiceLevelCouponApplications,
+		couponsMap:                     couponsMap,
+		totalLineItemDiscount:          totalLineItemDiscount,
+		totalInvoiceLevelDiscount:      totalInvoiceLevelDiscount,
+	}, nil
+}
+
+// ApplyCouponsToInvoice applies both invoice-level and line item-level coupons to an invoice.
+// This is the unified method that handles all coupon application logic.
+// CouponService.ApplyDiscount() handles all validation and calculation.
+func (s *couponApplicationService) ApplyCouponsToInvoice(ctx context.Context, req dto.ApplyCouponsToInvoiceRequest) (*CouponCalculationResult, error) {
+	prep, err := s.prepareCouponApplications(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	inv := req.Invoice
+	appliedCoupons := prep.appliedCoupons
+	couponsMap := prep.couponsMap
+	totalLineItemDiscount := prep.totalLineItemDiscount
+	totalInvoiceLevelDiscount := prep.totalInvoiceLevelDiscount
+
 	// Step 3: Apply mutations in transaction (mutations at boundaries)
 	// Computation was pure, now we apply the results
 	totalDiscountAmount := totalLineItemDiscount.Add(totalInvoiceLevelDiscount)
@@ -457,7 +522,7 @@ func (s *couponApplicationService) ApplyCouponsToInvoice(ctx context.Context, re
 	}
 
 	// Build result after mutations are applied
-	result = &CouponCalculationResult{
+	result := &CouponCalculationResult{
 		TotalDiscountAmount:          totalDiscountAmount,
 		TotalInvoiceLineItemDiscount: totalLineItemDiscount,
 		TotalInvoiceLevelDiscount:    totalInvoiceLevelDiscount,
