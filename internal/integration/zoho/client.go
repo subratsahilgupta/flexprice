@@ -23,6 +23,7 @@ type ZohoClient interface {
 	HasZohoBooksConnection(ctx context.Context) bool
 	QueryContactByEmail(ctx context.Context, email string) (*ContactResponse, error)
 	CreateContact(ctx context.Context, req *ContactCreateRequest) (*ContactResponse, error)
+	UpdateContact(ctx context.Context, contactID string, req *ContactUpdateRequest) (*ContactResponse, error)
 	CreateInvoice(ctx context.Context, req *InvoiceCreateRequest) (*InvoiceResponse, error)
 	// GetInvoice fetches a Zoho Books invoice by ID (used to read the live balance/customer_id before mark-paid).
 	GetInvoice(ctx context.Context, zohoInvoiceID string) (*InvoiceResponse, error)
@@ -115,6 +116,17 @@ func (c *Client) CreateContact(ctx context.Context, req *ContactCreateRequest) (
 		Contact ContactResponse `json:"contact"`
 	}
 	if err := c.doBooksRequest(ctx, http.MethodPost, "/books/v3/contacts", nil, req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.Contact, nil
+}
+
+func (c *Client) UpdateContact(ctx context.Context, contactID string, req *ContactUpdateRequest) (*ContactResponse, error) {
+	var resp struct {
+		Contact ContactResponse `json:"contact"`
+	}
+	path := fmt.Sprintf("/books/v3/contacts/%s", contactID)
+	if err := c.doBooksRequest(ctx, http.MethodPut, path, nil, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.Contact, nil
@@ -232,10 +244,20 @@ func (c *Client) ResolveInvoiceCurrency(ctx context.Context, invoiceCurrency str
 		return "", 0, err
 	}
 	if rate <= 0 {
-		return "", 0, ierr.NewError("invalid Zoho exchange rate for invoice currency").
+		err := ierr.NewError("invalid Zoho exchange rate for invoice currency").
 			WithHintf("Set a positive exchange rate for %s under Zoho Books → Settings → Currencies", code).
 			Mark(ierr.ErrValidation)
+		c.logger.Error(ctx, "resolved non-positive Zoho exchange rate",
+			"error", err,
+			"invoice_currency", code,
+			"base_currency", base,
+			"resolved_rate", rate)
+		return "", 0, err
 	}
+	c.logger.Info(ctx, "resolved Zoho exchange rate for invoice currency",
+		"invoice_currency", code,
+		"base_currency", base,
+		"exchange_rate", rate)
 	return code, rate, nil
 }
 
@@ -280,7 +302,11 @@ func (c *Client) getBooksExchangeRate(ctx context.Context, invoiceCurrency strin
 			return cur.ExchangeRate, nil
 		}
 	}
-	return 0, ierr.NewError(fmt.Sprintf("currency %s is not enabled in Zoho Books", want)).
+	available := make([]string, 0, len(resp.Currencies))
+	for _, cur := range resp.Currencies {
+		available = append(available, cur.CurrencyCode)
+	}
+	return 0, ierr.NewError(fmt.Sprintf("currency %s is not enabled in Zoho Books, currencies available: %v", want, available)).
 		WithHint("Add it under Zoho Books → Settings → Currencies with an exchange rate vs your base currency, then retry.").
 		Mark(ierr.ErrValidation)
 }

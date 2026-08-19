@@ -331,6 +331,7 @@ func (r *paymentRepository) update(ctx context.Context, p *domainPayment.Payment
 		Where(predicates...).
 		SetPaymentStatus(string(p.PaymentStatus)).
 		SetPaymentMethodID(p.PaymentMethodID).
+		SetAmount(p.Amount).
 		SetNillablePaymentGateway(p.PaymentGateway).
 		SetNillableGatewayPaymentID(p.GatewayPaymentID).
 		SetNillableGatewayTrackingID(p.GatewayTrackingID).
@@ -428,7 +429,9 @@ func (r *paymentRepository) delete(ctx context.Context, id string, expectedStatu
 
 	affected, err := client.Payment.Update().
 		Where(predicates...).
-		SetPaymentStatus(string(types.StatusArchived)).
+		SetStatus(string(types.StatusArchived)).
+		SetUpdatedBy(types.GetUserID(ctx)).
+		SetUpdatedAt(time.Now().UTC()).
 		Save(ctx)
 
 	if err != nil {
