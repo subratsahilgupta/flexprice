@@ -225,3 +225,14 @@ func truncate(body []byte) string {
 	}
 	return s
 }
+
+// NewCredentialsForTest builds a Credentials outside this package. Test-only:
+// production code obtains one from Run.
+func NewCredentialsForTest(apiKey, tenantID, environmentID, secretID string) *Credentials {
+	return &Credentials{
+		apiKey:        apiKey,
+		tenantID:      tenantID,
+		environmentID: environmentID,
+		secretID:      secretID,
+	}
+}
