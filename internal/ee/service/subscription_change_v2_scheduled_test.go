@@ -7,6 +7,8 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 )
 
 // failingSubRepo turns the locking read into a database error, the shape a
@@ -274,4 +276,106 @@ func (s *SubscriptionChangeV2Suite) TestExecuteScheduledV2_CarriedLineBillsIdent
 	s.True(s.td.starterBase.BillsIdenticallyTo(lateralBase),
 		"carrying is only permitted when the two prices bill identically, so the arrear "+
 			"amount for the closed period is unchanged by the swap")
+}
+
+// elapsePeriodAndSchedule puts the subscription in the state the period scanner finds
+// it in — a period that closed in the past — with a v2 change due at that boundary.
+func (s *SubscriptionChangeV2Suite) elapsePeriodAndSchedule(
+	targetPlanID string,
+) (*subscription.Subscription, *subscription.SubscriptionSchedule) {
+	ctx := s.GetContext()
+
+	elapsedStart := time.Now().UTC().Truncate(time.Hour).AddDate(0, 0, -40)
+	elapsedEnd := elapsedStart.AddDate(0, 0, 30)
+
+	sub := s.currentSub()
+	sub.CurrentPeriodStart = elapsedStart
+	sub.CurrentPeriodEnd = elapsedEnd
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+
+	sched := &subscription.SubscriptionSchedule{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_SCHEDULE),
+		SubscriptionID: sub.ID,
+		ScheduleType:   types.SubscriptionScheduleChangeTypePlanChange,
+		ScheduledAt:    elapsedEnd,
+		Status:         types.ScheduleStatusPending,
+		TenantID:       types.GetTenantID(ctx),
+		EnvironmentID:  types.GetEnvironmentID(ctx),
+		StatusColumn:   types.StatusPublished,
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+	}
+	s.Require().NoError(sched.SetPlanChangeV2Config(&subscription.PlanChangeV2Configuration{
+		TargetPlanID: targetPlanID,
+	}))
+	s.Require().NoError(s.GetStores().SubscriptionScheduleRepo.Create(ctx, sched))
+
+	return sub, sched
+}
+
+// processSubscriptionPeriod's invoice loop computes AND finalizes inline, and a
+// finalized invoice makes a later recompute a no-op. So the v2 swap has to land
+// before the loop: with the v1 hook's position the plan still ends up swapped, but
+// the renewal was already billed on the old plan and cannot be corrected.
+func (s *SubscriptionChangeV2Suite) TestProcessSubscriptionPeriod_V2RunsBeforeInvoicing() {
+	ctx := s.GetContext()
+	sub, sched := s.elapsePeriodAndSchedule(s.td.pro.ID)
+
+	svc, ok := s.svc.(*subscriptionService)
+	s.Require().True(ok)
+	s.Require().NoError(svc.processSubscriptionPeriod(ctx, sub, time.Now().UTC()))
+
+	s.Equal(s.td.pro.ID, s.currentSub().PlanID)
+
+	stored, err := s.GetStores().SubscriptionScheduleRepo.Get(ctx, sched.ID)
+	s.Require().NoError(err)
+	s.Equal(types.ScheduleStatusExecuted, stored.Status)
+
+	filter := types.NewInvoiceFilter()
+	filter.SubscriptionID = sub.ID
+	invoices, err := s.GetStores().InvoiceRepo.List(ctx, filter)
+	s.Require().NoError(err)
+	s.Require().Len(invoices, 1, "one boundary invoice for the closed period")
+
+	boundary := invoices[0]
+	s.Require().Len(boundary.LineItems, 1)
+	advance := boundary.LineItems[0]
+
+	s.Equal(s.td.proBase.ID, lo.FromPtr(advance.PriceID),
+		"the advance charge for the next period must be priced on the new plan; "+
+			"the old plan's price here means the swap landed after the invoice was finalized")
+	s.True(advance.Amount.Equal(decimal.NewFromInt(50)))
+	s.True(advance.PeriodStart.Equal(sched.ScheduledAt),
+		"the advance window opens exactly at the boundary the schedule targeted")
+}
+
+// v1 keeps its original position; only v2 moved ahead of the invoice loop.
+func (s *SubscriptionChangeV2Suite) TestProcessSubscriptionPeriod_V1SchedulePositionUnchanged() {
+	ctx := s.GetContext()
+	sub, sched := s.elapsePeriodAndSchedule(s.td.pro.ID)
+
+	// Overwrite with a v1 configuration, leaving everything else identical.
+	s.Require().NoError(sched.SetPlanChangeConfig(&subscription.PlanChangeConfiguration{
+		TargetPlanID:       s.td.pro.ID,
+		ProrationBehavior:  types.ProrationBehaviorNone,
+		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+	}))
+	s.Require().NoError(s.GetStores().SubscriptionScheduleRepo.Update(ctx, sched))
+
+	config, err := sched.GetPlanChangeV2Config()
+	s.Require().NoError(err)
+	s.Require().False(config.IsV2(), "this row must not be picked up by the v2 pass")
+
+	svc, ok := s.svc.(*subscriptionService)
+	s.Require().True(ok)
+	s.Require().NoError(svc.processPendingPlanChangeV2(ctx, sub),
+		"the v2 pass is a no-op for a v1 row, leaving it to the original hook")
+
+	s.Equal(s.td.starter.ID, s.currentSub().PlanID, "the v2 pass must not swap a v1 schedule")
+
+	stored, err := s.GetStores().SubscriptionScheduleRepo.Get(ctx, sched.ID)
+	s.Require().NoError(err)
+	s.Equal(types.ScheduleStatusPending, stored.Status, "still pending for the v1 hook")
 }
