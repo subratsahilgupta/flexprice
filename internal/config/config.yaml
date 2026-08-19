@@ -49,6 +49,9 @@ kafka:
   bulk_max_batch_size: 200
   bulk_max_batch_bytes: 524288
   topic_dlq: "staging_events_dlq"
+  # Keep this at least as long as the broker's offsets.retention.minutes.
+  # Set to 0s to defer to the broker.
+  offset_retention: 168h
   tls: false
   # Path to a PEM CA bundle for verifying the broker cert. Empty = OS trust
   # store (correct for MSK / Confluent Cloud). Set only for a private or
@@ -112,6 +115,7 @@ kafka:
 #   topic: "events"
 #   topic_lazy: "events_lazy"
 #   topic_dlq: "events_dlq"
+#   offset_retention: 168h
 #   tls: true
 #   use_sasl: true
 #   sasl_mechanism: "OAUTHBEARER"
