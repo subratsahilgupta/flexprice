@@ -145,6 +145,14 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.e2eprobe.existingSecret }}
                   key: {{ .Values.e2eprobe.secretKeys.slackWebhookUrl }}
+                  {{- /*
+                    Optional so a bootstrap-only deployment need not also carry
+                    e2eprobe.existingSecret. Without this the pod fails to start
+                    with `secret "e2eprobe-secrets" not found` even though the
+                    probe treats an empty webhook as "Slack disabled" — which
+                    cost a debugging cycle on a real cluster.
+                  */}}
+                  optional: true
             - name: E2EPROBE_LISTENER_PORT
               value: {{ .Values.e2eprobe.service.port | quote }}
             - name: TMPDIR
