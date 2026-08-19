@@ -596,6 +596,10 @@ func (s *SecretServiceSuite) TestListAPIKeysScopedToCaller() {
 		QueryFilter: types.NewDefaultQueryFilter(),
 	})
 	s.Require().NoError(err)
+	s.Require().NotEmpty(resp.Items, "writer must still see its own key")
+	ids := lo.Map(resp.Items, func(item *dto.SecretResponse, _ int) string { return item.ID })
+	s.Contains(ids, own.ID)
+	s.NotContains(ids, foreign.ID)
 	for _, item := range resp.Items {
 		s.Equal("user_attacker", item.UserID, "writer listed a key owned by another principal")
 	}
@@ -606,6 +610,10 @@ func (s *SecretServiceSuite) TestListAPIKeysScopedToCaller() {
 		UserID:      lo.ToPtr("user_victim"),
 	})
 	s.Require().NoError(err)
+	s.Require().NotEmpty(resp.Items, "the user_id filter must be replaced, not intersected away")
+	ids = lo.Map(resp.Items, func(item *dto.SecretResponse, _ int) string { return item.ID })
+	s.Contains(ids, own.ID)
+	s.NotContains(ids, foreign.ID)
 	for _, item := range resp.Items {
 		s.Equal("user_attacker", item.UserID, "writer read another principal's keys via a user_id filter")
 	}

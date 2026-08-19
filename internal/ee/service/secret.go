@@ -88,15 +88,6 @@ func generateAPIKey(prefix string) string {
 	return types.GenerateUUIDWithPrefix(prefix)
 }
 
-// isSuperAdminUser reports whether the caller may act administratively over
-// other principals' credentials. It mirrors the superAdminOnly route guard: a
-// service account is never administrative, however its stored roles read, so a
-// leaked machine key cannot mint or enumerate credentials beyond its own.
-func isSuperAdminUser(ctx context.Context) bool {
-	return !types.IsServiceAccount(ctx) &&
-		lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String())
-}
-
 func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyRequest) (*secret.Secret, string, error) {
 	if err := req.Validate(); err != nil {
 		return nil, "", err
@@ -115,7 +106,7 @@ func (s *secretService) CreateAPIKey(ctx context.Context, req *dto.CreateAPIKeyR
 	// service account acting through its own key.
 	userID := types.GetUserID(ctx)
 	if req.ServiceAccountID != "" {
-		if !isSuperAdminUser(ctx) {
+		if !types.IsSuperAdminUser(ctx) {
 			return nil, "", ierr.NewError("only super_admin users can create keys for another principal").
 				WithHint("Ask a tenant super_admin to mint or rotate service-account API keys").
 				Mark(ierr.ErrPermissionDenied)
@@ -198,7 +189,7 @@ func (s *secretService) ListAPIKeys(ctx context.Context, filter *types.SecretFil
 	// Only an administrator sees the whole environment's keys. Everyone else is
 	// pinned to their own, overriding any user_id the caller supplied so the
 	// filter cannot be used to read around the scoping.
-	if !isSuperAdminUser(ctx) {
+	if !types.IsSuperAdminUser(ctx) {
 		filter.UserID = lo.ToPtr(types.GetUserID(ctx))
 	}
 
@@ -320,7 +311,7 @@ func (s *secretService) ListIntegrations(ctx context.Context, filter *types.Secr
 func (s *secretService) Delete(ctx context.Context, id string) error {
 	// Revoking a credential the caller does not own is administrative: without
 	// this a writer could disable another principal's key by guessing its id.
-	if !isSuperAdminUser(ctx) {
+	if !types.IsSuperAdminUser(ctx) {
 		existing, err := s.repo.Get(ctx, id)
 		if err != nil {
 			return err
