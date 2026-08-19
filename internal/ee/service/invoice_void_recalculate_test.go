@@ -615,22 +615,6 @@ func (s *InvoiceVoidRecalculateSuite) TestRecalculateInvoice_Validation() {
 			expectedError: "not found",
 		},
 		{
-			name: "invoice_is_draft",
-			setup: func() string {
-				inv := s.buildDraftInvoice("inv_draft_recalc")
-				return inv.ID
-			},
-			expectedError: "not voided",
-		},
-		{
-			name: "invoice_is_finalized",
-			setup: func() string {
-				inv := s.buildFinalizedInvoice("inv_fin_recalc", decimal.Zero, decimal.Zero, types.PaymentStatusPending)
-				return inv.ID
-			},
-			expectedError: "not voided",
-		},
-		{
 			name: "invoice_type_one_off",
 			setup: func() string {
 				now := s.testData.now
@@ -794,6 +778,48 @@ func (s *InvoiceVoidRecalculateSuite) TestRecalculateInvoice_HappyPath() {
 	s.Equal(s.testData.subscription.ID, lo.FromPtr(newInv.SubscriptionID))
 	s.Equal(types.InvoiceTypeSubscription, newInv.InvoiceType)
 	s.NotEqual(types.InvoiceStatusVoided, newInv.InvoiceStatus)
+}
+
+// TestRecalculateInvoice_AutoVoidsNonVoidedInvoice verifies that calling RecalculateInvoice on a
+// DRAFT or FINALIZED subscription invoice voids it first (via VoidInvoice) instead of erroring,
+// then proceeds with the same replacement-invoice flow as an already-voided invoice.
+func (s *InvoiceVoidRecalculateSuite) TestRecalculateInvoice_AutoVoidsNonVoidedInvoice() {
+	tests := []struct {
+		name  string
+		build func() *invoice.Invoice
+	}{
+		{
+			name:  "draft",
+			build: func() *invoice.Invoice { return s.buildDraftInvoice("inv_draft_autovoid") },
+		},
+		{
+			name: "finalized",
+			build: func() *invoice.Invoice {
+				return s.buildFinalizedInvoice("inv_fin_autovoid", decimal.Zero, decimal.Zero, types.PaymentStatusPending)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.BaseServiceTestSuite.ClearStores()
+			s.setupTestData()
+
+			inv := tt.build()
+
+			newInv, err := s.service.RecalculateInvoice(s.GetContext(), inv.ID)
+			s.Require().NoError(err, "auto-void-then-recalculate must succeed for this fixture")
+			s.NotNil(newInv)
+			s.NotEqual(inv.ID, newInv.ID, "new invoice must have a different ID")
+
+			// Original invoice must have been auto-voided and linked to the new invoice.
+			original, err := s.invoiceRepo.Get(s.GetContext(), inv.ID)
+			s.NoError(err)
+			s.Equal(types.InvoiceStatusVoided, original.InvoiceStatus)
+			s.NotNil(original.RecalculatedInvoiceID)
+			s.Equal(newInv.ID, *original.RecalculatedInvoiceID)
+		})
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
