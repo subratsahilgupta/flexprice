@@ -622,14 +622,6 @@ func (s *userService) DeleteUser(ctx context.Context, id string) error {
 
 const chatSupportTokenTTL = 2 * time.Hour
 
-type chatSupportClaims struct {
-	Email             string `json:"email"`
-	Name              string `json:"name,omitempty"`
-	AccountExternalID string `json:"account_external_id,omitempty"`
-	ContactExternalID string `json:"contact_external_id,omitempty"`
-	jwt.RegisteredClaims
-}
-
 func (s *userService) CreateSupportChatToken(ctx context.Context) (*dto.SupportChatTokenResponse, error) {
 	if s.cfg == nil || s.cfg.ChatSupport.AppID == "" || s.cfg.ChatSupport.IdentitySecret == "" {
 		return nil, ierr.NewError("chat support identity verification is not configured").
@@ -651,7 +643,7 @@ func (s *userService) CreateSupportChatToken(ctx context.Context) (*dto.SupportC
 	now := time.Now().UTC()
 	expiresAt := now.Add(chatSupportTokenTTL)
 
-	claims := chatSupportClaims{
+	claims := dto.ChatSupportClaims{
 		Email:             u.Email,
 		Name:              u.Name,
 		ContactExternalID: u.ID,
