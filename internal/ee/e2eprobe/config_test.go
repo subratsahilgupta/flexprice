@@ -188,3 +188,44 @@ func TestLoadConfig_TenantAndEnvironment(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadConfig_APIKeyOptionalWithCredentials(t *testing.T) {
+	t.Setenv("E2EPROBE_API_HOST", "http://localhost:8080/v1")
+	t.Setenv("E2EPROBE_API_KEY", "")
+	t.Setenv("E2EPROBE_EMAIL", "probe@example.com")
+	t.Setenv("E2EPROBE_PASSWORD", "hunter2hunter2")
+
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("expected config to load without an API key, got: %v", err)
+	}
+	if !c.NeedsBootstrap() {
+		t.Fatal("expected NeedsBootstrap() to be true")
+	}
+}
+
+func TestLoadConfig_APIKeyStillRequiredWithoutCredentials(t *testing.T) {
+	t.Setenv("E2EPROBE_API_HOST", "http://localhost:8080/v1")
+	t.Setenv("E2EPROBE_API_KEY", "")
+	t.Setenv("E2EPROBE_EMAIL", "")
+	t.Setenv("E2EPROBE_PASSWORD", "")
+
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected an error naming both auth options")
+	}
+}
+
+func TestLoadConfig_APIKeyWinsOverCredentials(t *testing.T) {
+	t.Setenv("E2EPROBE_API_HOST", "http://localhost:8080/v1")
+	t.Setenv("E2EPROBE_API_KEY", "sk_existing")
+	t.Setenv("E2EPROBE_EMAIL", "probe@example.com")
+	t.Setenv("E2EPROBE_PASSWORD", "hunter2hunter2")
+
+	c, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.NeedsBootstrap() {
+		t.Fatal("an explicit API key must take precedence over credentials")
+	}
+}

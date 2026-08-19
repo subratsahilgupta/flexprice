@@ -23,6 +23,18 @@ type Config struct {
 	TenantID      string // E2EPROBE_TENANT_ID, optional but recommended
 	EnvironmentID string // E2EPROBE_ENVIRONMENT_ID, optional but recommended
 
+	// Email and Password enable signup bootstrap for airgapped deployments
+	// that have no way to pre-provision an API key. Used only when APIKey
+	// is empty. Bootstrap requires the flexprice-native auth provider.
+	Email    string // E2EPROBE_EMAIL
+	Password string // E2EPROBE_PASSWORD
+
+	// BootstrapSecretName/Key name the Kubernetes Secret that bootstrap
+	// patches the minted key into, and PodNamespace is where it lives.
+	BootstrapSecretName string // E2EPROBE_BOOTSTRAP_SECRET_NAME
+	BootstrapSecretKey  string // E2EPROBE_BOOTSTRAP_SECRET_KEY
+	PodNamespace        string // POD_NAMESPACE, via the downward API
+
 	// HeartbeatInterval controls how often a structured "e2eprobe.heartbeat" log
 	// line is emitted summarising run counts and success rate. Set to 0 to disable.
 	HeartbeatInterval time.Duration // E2EPROBE_HEARTBEAT_INTERVAL, default 1h
@@ -90,16 +102,16 @@ var CheckNames = []string{
 }
 
 var checkDefaultIntervals = map[string]time.Duration{
-	"SEED_ENSURE":                    6 * time.Hour,
-	"EVENT_INGEST_DRIVER":            1 * time.Second, // rate-scheduled internally
-	"ANALYTICS_PROBE":                2 * time.Minute,
-	"METER_AGGREGATION_PROBE":        3 * time.Minute,
-	"WALLET_BALANCE_PROBE":           2 * time.Minute,
-	"WALLET_DEBIT_VERIFICATION":      20 * time.Minute,
-	"CYCLE_INVOICE_PROBE":            15 * time.Minute,
-	"ENTITLEMENT_AND_USAGE_PROBE":    5 * time.Minute,
-	"NEW_CUSTOMER_LIFECYCLE":         10 * time.Minute,
-	"CANCEL_CUSTOMER_FLOW":           30 * time.Minute,
+	"SEED_ENSURE":                         6 * time.Hour,
+	"EVENT_INGEST_DRIVER":                 1 * time.Second, // rate-scheduled internally
+	"ANALYTICS_PROBE":                     2 * time.Minute,
+	"METER_AGGREGATION_PROBE":             3 * time.Minute,
+	"WALLET_BALANCE_PROBE":                2 * time.Minute,
+	"WALLET_DEBIT_VERIFICATION":           20 * time.Minute,
+	"CYCLE_INVOICE_PROBE":                 15 * time.Minute,
+	"ENTITLEMENT_AND_USAGE_PROBE":         5 * time.Minute,
+	"NEW_CUSTOMER_LIFECYCLE":              10 * time.Minute,
+	"CANCEL_CUSTOMER_FLOW":                30 * time.Minute,
 	"SUBSCRIPTION_MODIFICATION_FLOW":      20 * time.Minute,
 	"BUCKETED_METER_PROBE":                12 * time.Minute,
 	"COMMITMENT_TRUE_UP_PROBE":            15 * time.Minute,
@@ -109,25 +121,30 @@ var checkDefaultIntervals = map[string]time.Duration{
 	"PERSISTENT_BILLING_INVARIANTS_PROBE": 30 * time.Minute,
 	"ENTITLEMENT_GRANT_ADDITIVE_PROBE":    15 * time.Minute,
 	"LOW_WALLET_ALERT_LISTENER":           0, // listener — not a ticker
-	"LOW_BALANCE_ALERT_PROBE":        5 * time.Minute,
-	"JANITOR":                        1 * time.Hour,
+	"LOW_BALANCE_ALERT_PROBE":             5 * time.Minute,
+	"JANITOR":                             1 * time.Hour,
 }
 
 func LoadConfig() (*Config, error) {
 	var warnings []string
 	c := &Config{
-		APIHost:         os.Getenv("E2EPROBE_API_HOST"),
-		APIKey:          os.Getenv("E2EPROBE_API_KEY"),
-		Enabled:         getBool("E2EPROBE_ENABLED", true),
-		DryRun:          getBool("E2EPROBE_DRY_RUN", false),
-		EventIngestRate: getInt(&warnings, "E2EPROBE_EVENT_INGEST_RATE", 1),
-		EventIngestSeed: getInt64(&warnings, "E2EPROBE_EVENT_INGEST_SEED", 42),
-		ListenerPort:    getInt(&warnings, "E2EPROBE_LISTENER_PORT", 8765),
-		TenantID:          os.Getenv("E2EPROBE_TENANT_ID"),
-		EnvironmentID:     os.Getenv("E2EPROBE_ENVIRONMENT_ID"),
-		HeartbeatInterval: getDuration(&warnings, "E2EPROBE_HEARTBEAT_INTERVAL", 1*time.Hour),
-		JanitorMaxAge:     getDuration(&warnings, "E2EPROBE_JANITOR_MAX_AGE", 1*time.Hour),
-		LogLevel:          getLogLevel(&warnings, "E2EPROBE_LOG_LEVEL", "info"),
+		APIHost:             os.Getenv("E2EPROBE_API_HOST"),
+		APIKey:              os.Getenv("E2EPROBE_API_KEY"),
+		Enabled:             getBool("E2EPROBE_ENABLED", true),
+		DryRun:              getBool("E2EPROBE_DRY_RUN", false),
+		EventIngestRate:     getInt(&warnings, "E2EPROBE_EVENT_INGEST_RATE", 1),
+		EventIngestSeed:     getInt64(&warnings, "E2EPROBE_EVENT_INGEST_SEED", 42),
+		ListenerPort:        getInt(&warnings, "E2EPROBE_LISTENER_PORT", 8765),
+		TenantID:            os.Getenv("E2EPROBE_TENANT_ID"),
+		EnvironmentID:       os.Getenv("E2EPROBE_ENVIRONMENT_ID"),
+		Email:               os.Getenv("E2EPROBE_EMAIL"),
+		Password:            os.Getenv("E2EPROBE_PASSWORD"),
+		BootstrapSecretName: os.Getenv("E2EPROBE_BOOTSTRAP_SECRET_NAME"),
+		BootstrapSecretKey:  os.Getenv("E2EPROBE_BOOTSTRAP_SECRET_KEY"),
+		PodNamespace:        os.Getenv("POD_NAMESPACE"),
+		HeartbeatInterval:   getDuration(&warnings, "E2EPROBE_HEARTBEAT_INTERVAL", 1*time.Hour),
+		JanitorMaxAge:       getDuration(&warnings, "E2EPROBE_JANITOR_MAX_AGE", 1*time.Hour),
+		LogLevel:            getLogLevel(&warnings, "E2EPROBE_LOG_LEVEL", "info"),
 		Slack: SlackConfig{
 			WebhookURL: os.Getenv("E2EPROBE_SLACK_WEBHOOK_URL"),
 			Channel:    os.Getenv("E2EPROBE_SLACK_CHANNEL"),
@@ -147,8 +164,8 @@ func LoadConfig() (*Config, error) {
 	if c.APIHost == "" {
 		return nil, errors.New("E2EPROBE_API_HOST is required")
 	}
-	if c.APIKey == "" {
-		return nil, errors.New("E2EPROBE_API_KEY is required")
+	if c.APIKey == "" && !c.NeedsBootstrap() {
+		return nil, errors.New("no credentials: set E2EPROBE_API_KEY, or set E2EPROBE_EMAIL and E2EPROBE_PASSWORD to bootstrap one (requires the flexprice-native auth provider)")
 	}
 	return c, nil
 }
@@ -211,6 +228,13 @@ func getDuration(warnings *[]string, key string, def time.Duration) time.Duratio
 		return def
 	}
 	return d
+}
+
+// NeedsBootstrap reports whether the probe must provision its own API key.
+// An explicit API key always wins, so an existing deployment never changes
+// behaviour by having credentials present.
+func (c *Config) NeedsBootstrap() bool {
+	return c.APIKey == "" && c.Email != "" && c.Password != ""
 }
 
 func init() {
