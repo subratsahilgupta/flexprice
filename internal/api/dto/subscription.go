@@ -1470,6 +1470,10 @@ type OverrideLineItemRequest struct {
 	// TierMode determines how to calculate the price for a given quantity
 	TierMode types.BillingTier `json:"tier_mode,omitempty"`
 
+	// BucketSize overrides the windowing used to turn this meter's usage into
+	// billable units for this subscription. See CreatePriceRequest.BucketSize.
+	BucketSize types.WindowSize `json:"bucket_size,omitempty"`
+
 	// Tiers determines the pricing tiers for this line item
 	Tiers []CreatePriceTier `json:"tiers,omitempty"`
 

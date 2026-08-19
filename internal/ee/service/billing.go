@@ -525,15 +525,15 @@ func (s *billingService) CalculateUsageCharges(
 			// Handle bucketed meters (max or sum) - calculate cost using bucket values.
 			// Per-group tiered pricing only applies to max meters with group_by;
 			// sum meters don't use per-group pricing.
-			if (meter.IsBucketedMaxMeter() || meter.IsBucketedSumMeter()) && matchingCharge.Price != nil {
-				hasGroupBy := meter.Aggregation.GroupBy != "" && !meter.IsBucketedSumMeter()
+			if matchingCharge.Price != nil && (price.IsBucketedMax(matchingCharge.Price, meter) || price.IsBucketedSum(matchingCharge.Price, meter)) {
+				hasGroupBy := price.BucketedGroupBy(matchingCharge.Price, meter) != ""
 				usageRequest := &dto.GetUsageByMeterRequest{
 					MeterID:             item.MeterID,
 					PriceID:             item.PriceID,
 					ExternalCustomerIDs: extCustomerIDsForUsage,
 					StartTime:           item.GetPeriodStart(periodStart),
 					EndTime:             item.GetPeriodEnd(periodEnd),
-					WindowSize:          meter.Aggregation.BucketSize,
+					WindowSize:          price.ResolveBucketSize(matchingCharge.Price, meter),
 					BillingAnchor:       &sub.BillingAnchor,
 					Filters:             meter.ToFilterMap(),
 					Meter:               meter,
@@ -558,7 +558,7 @@ func (s *billingService) CalculateUsageCharges(
 			// For unlimited entitlements → zero cost. For usage-limited entitlements →
 			// reduce total quantity and recalculate with standard pricing.
 			if !matchingCharge.IsOverage && entitlementOk && matchingEntitlement.IsEnabled &&
-				(meter.IsBucketedMaxMeter() || meter.IsBucketedSumMeter()) {
+				(price.IsBucketedMax(matchingCharge.Price, meter) || price.IsBucketedSum(matchingCharge.Price, meter)) {
 				if matchingEntitlement.UsageLimit != nil {
 					usageAllowed := decimal.NewFromFloat(float64(*matchingEntitlement.UsageLimit))
 					adjustedQuantity := decimal.Max(quantityForCalculation.Sub(usageAllowed), decimal.Zero)
@@ -584,7 +584,7 @@ func (s *billingService) CalculateUsageCharges(
 			// 2. There is a matching entitlement
 			// 3. The entitlement is enabled
 			// 4. This is not a bucketed meter (handled above)
-			if !matchingCharge.IsOverage && entitlementOk && matchingEntitlement.IsEnabled && !meter.IsBucketedMaxMeter() && !meter.IsBucketedSumMeter() {
+			if !matchingCharge.IsOverage && entitlementOk && matchingEntitlement.IsEnabled && !price.IsBucketedMax(matchingCharge.Price, meter) && !price.IsBucketedSum(matchingCharge.Price, meter) {
 				if matchingEntitlement.UsageLimit != nil {
 
 					// consider the usage reset period
@@ -798,7 +798,7 @@ func (s *billingService) CalculateUsageCharges(
 							ExternalCustomerIDs: extCustomerIDsForUsage,
 							StartTime:           item.GetPeriodStart(periodStart),
 							EndTime:             item.GetPeriodEnd(periodEnd),
-							WindowSize:          meter.Aggregation.BucketSize,
+							WindowSize:          price.ResolveBucketSize(matchingCharge.Price, meter),
 							BillingAnchor:       &sub.BillingAnchor,
 							Meter:               meter,
 							Filters:             meter.ToFilterMap(),
@@ -815,7 +815,7 @@ func (s *billingService) CalculateUsageCharges(
 							usageResult,
 							item.GetPeriodStart(periodStart),
 							item.GetPeriodEnd(periodEnd),
-							meter.Aggregation.BucketSize,
+							price.ResolveBucketSize(matchingCharge.Price, meter),
 							&sub.BillingAnchor,
 							meter.Aggregation.Type,
 						)

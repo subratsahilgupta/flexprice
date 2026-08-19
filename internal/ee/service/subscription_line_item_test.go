@@ -1852,7 +1852,7 @@ func (s *SubscriptionLineItemServiceSuite) bucketReqForTests(subID string, start
 
 // TestAddSubscriptionLineItem_BucketValidationErrors covers the array-level
 // bucket validation failures in one table: overlapping buckets, grid
-// misalignment, a non-windowed meter, and conflict with a cumulative
+// misalignment, a missing bucket size, and conflict with a cumulative
 // subscription commitment.
 func (s *SubscriptionLineItemServiceSuite) TestAddSubscriptionLineItem_BucketValidationErrors() {
 	ctx := s.GetContext()
@@ -1913,7 +1913,7 @@ func (s *SubscriptionLineItemServiceSuite) TestAddSubscriptionLineItem_BucketVal
 		},
 		{
 			// Meter without BucketSize — ValidateWindowAlignment rejects it.
-			name: "non-windowed meter",
+			name: "no bucket size",
 			setup: func() (string, dto.CreateSubscriptionLineItemRequest) {
 				subID := s.testData.subscription.ID
 				m := s.createMeterForBucketTests("non_windowed_event", types.AggregationSum, "")
@@ -1929,7 +1929,7 @@ func (s *SubscriptionLineItemServiceSuite) TestAddSubscriptionLineItem_BucketVal
 				withTopCommitment(&req)
 				return subID, req
 			},
-			wantErr: "windowed meter",
+			wantErr: "bucket size",
 		},
 		{
 			// Per-bucket commitment conflicts with a cumulative subscription
