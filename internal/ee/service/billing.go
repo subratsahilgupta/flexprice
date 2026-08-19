@@ -674,6 +674,7 @@ func (s *billingService) CalculateUsageCharges(
 						usageRequest := &dto.GetUsageByMeterRequest{
 							MeterID:             item.MeterID,
 							PriceID:             item.PriceID,
+							Price:               matchingCharge.Price,
 							ExternalCustomerIDs: extCustomerIDsForUsage,
 							StartTime:           item.GetPeriodStart(periodStart),
 							EndTime:             item.GetPeriodEnd(periodEnd),
@@ -797,6 +798,7 @@ func (s *billingService) CalculateUsageCharges(
 						usageRequest := &dto.GetUsageByMeterRequest{
 							MeterID:             item.MeterID,
 							PriceID:             item.PriceID,
+							Price:               matchingCharge.Price,
 							ExternalCustomerIDs: extCustomerIDsForUsage,
 							StartTime:           item.GetPeriodStart(periodStart),
 							EndTime:             item.GetPeriodEnd(periodEnd),

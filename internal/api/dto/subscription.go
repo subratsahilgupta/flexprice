@@ -1535,9 +1535,9 @@ func (r *OverrideLineItemRequest) Validate(
 	}
 
 	// At least one override field must be provided
-	if r.Quantity == nil && r.Amount == nil && r.BillingModel == "" && r.TierMode == "" && len(r.Tiers) == 0 && r.TransformQuantity == nil && r.PriceUnitAmount == nil && len(r.PriceUnitTiers) == 0 {
+	if r.Quantity == nil && r.Amount == nil && r.BillingModel == "" && r.TierMode == "" && r.BucketSize == "" && len(r.Tiers) == 0 && r.TransformQuantity == nil && r.PriceUnitAmount == nil && len(r.PriceUnitTiers) == 0 {
 		return ierr.NewError("at least one override field must be provided").
-			WithHint("Specify at least one of: quantity, amount, billing_model, tier_mode, tiers, transform_quantity, price_unit_amount, or price_unit_tiers for price override").
+			WithHint("Specify at least one of: quantity, amount, billing_model, tier_mode, bucket_size, tiers, transform_quantity, price_unit_amount, or price_unit_tiers for price override").
 			Mark(ierr.ErrValidation)
 	}
 
