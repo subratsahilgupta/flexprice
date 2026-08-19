@@ -447,14 +447,6 @@ wallet_balance_alert:
   rate_limit: 1
   consumer_group: "v1_wallet_alert_service"
 
-feature_flag:
-  # Switch invoice billing to use meter-usage
-  enable_meter_usage_for_billing: false
-  # Per-tenant rollout overrides for meter-usage-for-billing. Resolution order per tenant:
-  #   disabled_tenants > enabled_tenants > global enable_* flag above.
-  meter_usage_for_billing_enabled_tenants: []
-  meter_usage_for_billing_disabled_tenants: []
-
 # Google Gemini (server-side AI pricing parse for dashboard). Set FLEXPRICE_GEMINI_API_KEY in secure environments.
 gemini:
   api_key: ""

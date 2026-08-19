@@ -59,7 +59,6 @@ type Configuration struct {
 	BulkMeterUsageTracking     BulkMeterUsageTrackingConfig     `mapstructure:"bulk_meter_usage_tracking" validate:"required"`
 	UsageAlerts                UsageAlertsConfig                `mapstructure:"usage_alerts" validate:"omitempty"`
 	EnvAccess                  EnvAccessConfig                  `mapstructure:"env_access" json:"env_access" validate:"omitempty"`
-	FeatureFlag                FeatureFlagConfig                `mapstructure:"feature_flag" validate:"required"`
 	Email                      EmailConfig                      `mapstructure:"email" validate:"required"`
 	RBAC                       RBACConfig                       `mapstructure:"rbac" validate:"omitempty"`
 	OAuth                      OAuthConfig                      `mapstructure:"oauth" validate:"required"`
@@ -446,7 +445,6 @@ type PostgresConfig struct {
 	MaxOpenConns           int    `mapstructure:"max_open_conns" default:"10"`
 	MaxIdleConns           int    `mapstructure:"max_idle_conns" default:"5"`
 	ConnMaxLifetimeMinutes int    `mapstructure:"conn_max_lifetime_minutes" default:"60"`
-	AutoMigrate            bool   `mapstructure:"auto_migrate" default:"false"`
 
 	// Reader endpoint configuration for read replicas
 	ReaderHost string `mapstructure:"reader_host"`
@@ -816,28 +814,6 @@ type WebhookRetryJobConfig struct {
 
 type EnvAccessConfig struct {
 	UserEnvMapping map[string]map[string][]string `mapstructure:"user_env_mapping" json:"user_env_mapping" validate:"omitempty"`
-}
-
-type FeatureFlagConfig struct {
-	EnableMeterUsageForBilling bool `mapstructure:"enable_meter_usage_for_billing" validate:"omitempty"`
-
-	// Per-tenant overrides for the meter-usage-for-billing rollout. Resolution order:
-	//   1. disabled_tenants — tenant force-disabled (highest priority)
-	//   2. enabled_tenants  — tenant force-enabled
-	//   3. global flag above — applies to everyone else
-	MeterUsageForBillingEnabledTenants  []string `mapstructure:"meter_usage_for_billing_enabled_tenants" validate:"omitempty"`
-	MeterUsageForBillingDisabledTenants []string `mapstructure:"meter_usage_for_billing_disabled_tenants" validate:"omitempty"`
-}
-
-// IsMeterUsageEnabledForBilling resolves the meter-usage rollout for the
-// billing service for a specific tenant.
-func (c *FeatureFlagConfig) IsMeterUsageEnabledForBilling(tenantID string) bool {
-	return resolveTenantRollout(
-		tenantID,
-		c.EnableMeterUsageForBilling,
-		c.MeterUsageForBillingEnabledTenants,
-		c.MeterUsageForBillingDisabledTenants,
-	)
 }
 
 func resolveTenantRollout(tenantID string, globalEnabled bool, enabledTenants, disabledTenants []string) bool {
