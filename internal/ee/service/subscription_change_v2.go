@@ -486,6 +486,7 @@ func (s *subscriptionService) ExecutePlanChange(
 	ctx context.Context,
 	subscriptionID string,
 	req dto.SubscriptionChangeV2Request,
+	effectiveAt time.Time,
 ) (*dto.SubscriptionChangeV2Response, error) {
 	var resp *dto.SubscriptionChangeV2Response
 
@@ -495,7 +496,7 @@ func (s *subscriptionService) ExecutePlanChange(
 			return err
 		}
 
-		r, err := s.resolvePlanChange(txCtx, sub, req, time.Now().UTC())
+		r, err := s.resolvePlanChange(txCtx, sub, req, effectiveAt)
 		if err != nil {
 			return err
 		}
@@ -843,4 +844,107 @@ func planChangeIdempotencyKey(r *planChangeRequest) string {
 	}
 
 	return idempotency.NewGenerator().GenerateKey(idempotency.ScopePlanChange, inputs)
+}
+
+func PlanChangeV2RequestFromConfig(config *subscription.PlanChangeV2Configuration) dto.SubscriptionChangeV2Request {
+	req := dto.SubscriptionChangeV2Request{
+		TargetPlanID: config.TargetPlanID,
+		// Pinned, not replayed from the blob: a deferred change is only ever
+		// accepted with none, and the boundary invoice already bills the new plan.
+		ProrationBehavior: types.ProrationBehaviorNone,
+		IdempotencyKey:    config.IdempotencyKey,
+		Metadata:          config.ChangeMetadata,
+	}
+
+	if config.EntityPolicies != nil && config.EntityPolicies.Addons != nil {
+		req.EntityPolicies = &dto.SubscriptionChangeEntityPolicies{
+			Addons: &dto.EntityChangePolicy{
+				DefaultBehaviour: config.EntityPolicies.Addons.DefaultBehaviour,
+				Overrides:        config.EntityPolicies.Addons.Overrides,
+			},
+		}
+	}
+
+	return req
+}
+
+func IsTerminalPlanChangeError(err error) bool {
+	return ierr.IsValidation(err) || ierr.IsNotFound(err)
+}
+
+func (s *subscriptionService) ExecuteScheduledPlanChangeV2(
+	ctx context.Context,
+	schedule *subscription.SubscriptionSchedule,
+	config *subscription.PlanChangeV2Configuration,
+	sub *subscription.Subscription,
+) error {
+	if schedule.IsStaleFor(sub) {
+		err := ierr.NewError("scheduled plan change missed its billing period boundary").
+			WithHint("The boundary has already been invoiced. Schedule the change again to apply it at the next period end.").
+			WithReportableDetails(map[string]any{
+				"schedule_id":          schedule.ID,
+				"subscription_id":      schedule.SubscriptionID,
+				"scheduled_at":         schedule.ScheduledAt,
+				"current_period_start": sub.CurrentPeriodStart,
+			}).
+			Mark(ierr.ErrValidation)
+
+		s.failPlanChangeSchedule(ctx, schedule, err)
+		return err
+	}
+
+	resp, err := s.ExecutePlanChange(
+		ctx, schedule.SubscriptionID, PlanChangeV2RequestFromConfig(config), schedule.ScheduledAt,
+	)
+	if err != nil {
+		if !IsTerminalPlanChangeError(err) {
+			s.Logger.Error(ctx, "scheduled plan change failed, leaving schedule pending for retry",
+				"error", err,
+				"schedule_id", schedule.ID,
+				"subscription_id", schedule.SubscriptionID)
+			return err
+		}
+
+		s.failPlanChangeSchedule(ctx, schedule, err)
+		return err
+	}
+
+	schedule.Status = types.ScheduleStatusExecuted
+	schedule.ExecutedAt = lo.ToPtr(time.Now().UTC())
+	if err := schedule.SetPlanChangeV2Result(&subscription.PlanChangeV2Result{
+		SubscriptionID: schedule.SubscriptionID,
+		FromPlanID:     resp.FromPlan.ID,
+		ToPlanID:       resp.ToPlan.ID,
+		ChangeType:     string(resp.ChangeType),
+		EffectiveDate:  resp.EffectiveAt,
+	}); err != nil {
+		s.Logger.Error(ctx, "failed to set scheduled plan change result",
+			"error", err, "schedule_id", schedule.ID)
+	}
+
+	if err := s.SubScheduleRepo.Update(ctx, schedule); err != nil {
+		s.Logger.Error(ctx, "failed to update schedule after plan change",
+			"error", err, "schedule_id", schedule.ID)
+		return err
+	}
+
+	return nil
+}
+
+func (s *subscriptionService) failPlanChangeSchedule(
+	ctx context.Context,
+	schedule *subscription.SubscriptionSchedule,
+	cause error,
+) {
+	schedule.Status = types.ScheduleStatusFailed
+	schedule.ExecutedAt = lo.ToPtr(time.Now().UTC())
+	schedule.ErrorMessage = lo.ToPtr(cause.Error())
+
+	if err := s.SubScheduleRepo.Update(ctx, schedule); err != nil {
+		s.Logger.Error(ctx, "failed to mark scheduled plan change as failed",
+			"error", err,
+			"schedule_id", schedule.ID,
+			"subscription_id", schedule.SubscriptionID,
+			"original_error", cause)
+	}
 }

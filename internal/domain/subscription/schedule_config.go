@@ -154,23 +154,23 @@ func (s *SubscriptionSchedule) SetCancellationResult(result *CancellationResult)
 // from the v1 shape stored under the same schedule_type.
 const PlanChangeConfigVersionV2 = "v2"
 
-// PlanChangeV2Configuration represents the configuration for a plan change v2 schedule
 type PlanChangeV2Configuration struct {
-	Version           string                    `json:"version"`
-	TargetPlanID      string                    `json:"target_plan_id"`
-	ProrationBehavior types.ProrationBehavior   `json:"proration_behavior"`
-	AddonPolicy       *EntityChangePolicyConfig `json:"addon_policy,omitempty"`
-	IdempotencyKey    *string                   `json:"idempotency_key,omitempty"`
-	ChangeMetadata    map[string]string         `json:"change_metadata,omitempty"`
+	Version        string                      `json:"version"`
+	TargetPlanID   string                      `json:"target_plan_id"`
+	EntityPolicies *EntityChangePoliciesConfig `json:"entity_policies,omitempty"`
+	IdempotencyKey *string                     `json:"idempotency_key,omitempty"`
+	ChangeMetadata map[string]string           `json:"change_metadata,omitempty"`
 }
 
-// EntityChangePolicyConfig mirrors the API entity change policy without importing dto
+type EntityChangePoliciesConfig struct {
+	Addons *EntityChangePolicyConfig `json:"addons,omitempty"`
+}
+
 type EntityChangePolicyConfig struct {
 	DefaultBehaviour types.EntityChangeBehaviour            `json:"default_behaviour,omitempty"`
 	Overrides        map[string]types.EntityChangeBehaviour `json:"overrides,omitempty"`
 }
 
-// PlanChangeV2Result represents the result of a plan change v2 execution
 type PlanChangeV2Result struct {
 	SubscriptionID string    `json:"subscription_id"`
 	FromPlanID     string    `json:"from_plan_id"`
@@ -179,20 +179,16 @@ type PlanChangeV2Result struct {
 	EffectiveDate  time.Time `json:"effective_date"`
 }
 
-// IsPlanChangeV2 reports whether the schedule carries a plan change v2 configuration
-func (s *SubscriptionSchedule) IsPlanChangeV2() bool {
-	if s.ScheduleType != types.SubscriptionScheduleChangeTypePlanChange || len(s.Configuration) == 0 {
+func (s *SubscriptionSchedule) IsStaleFor(sub *Subscription) bool {
+	if sub == nil {
 		return false
 	}
 
-	var probe struct {
-		Version string `json:"version"`
-	}
-	if err := json.Unmarshal(s.Configuration, &probe); err != nil {
-		return false
-	}
+	return s.ScheduledAt.Before(sub.CurrentPeriodStart)
+}
 
-	return probe.Version == PlanChangeConfigVersionV2
+func (c *PlanChangeV2Configuration) IsV2() bool {
+	return c != nil && c.Version == PlanChangeConfigVersionV2
 }
 
 // GetPlanChangeV2Config parses and returns the plan change v2 configuration

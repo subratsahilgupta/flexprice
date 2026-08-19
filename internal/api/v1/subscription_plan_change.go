@@ -2,6 +2,7 @@ package v1
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -59,7 +60,7 @@ func (h *SubscriptionHandler) ExecuteSubscriptionPlanChangeV2(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.ExecutePlanChange(c.Request.Context(), subscriptionID, req)
+	resp, err := h.service.ExecutePlanChange(c.Request.Context(), subscriptionID, req, time.Now().UTC())
 	if err != nil {
 		c.Error(err)
 		return
