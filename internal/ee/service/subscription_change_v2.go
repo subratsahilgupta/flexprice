@@ -461,7 +461,7 @@ func (s *subscriptionService) PreviewPlanChange(
 		return nil, err
 	}
 
-	r, err := s.resolvePlanChange(ctx, sub, req, time.Now().UTC())
+	r, err := s.resolvePlanChange(ctx, sub, req, resolveEffectiveAt(sub, req))
 	if err != nil {
 		return nil, err
 	}
@@ -483,6 +483,27 @@ func (s *subscriptionService) PreviewPlanChange(
 }
 
 func (s *subscriptionService) ExecutePlanChange(
+	ctx context.Context,
+	subscriptionID string,
+	req dto.SubscriptionChangeV2Request,
+	effectiveAt time.Time,
+) (*dto.SubscriptionChangeV2Response, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	if err := s.checkNoPendingPlanChangeSchedule(ctx, subscriptionID); err != nil {
+		return nil, err
+	}
+
+	if req.IsDeferred() {
+		return s.schedulePlanChangeForPeriodEnd(ctx, subscriptionID, req)
+	}
+
+	return s.executePlanChangeAt(ctx, subscriptionID, req, effectiveAt)
+}
+
+func (s *subscriptionService) executePlanChangeAt(
 	ctx context.Context,
 	subscriptionID string,
 	req dto.SubscriptionChangeV2Request,
@@ -893,7 +914,7 @@ func (s *subscriptionService) ExecuteScheduledPlanChangeV2(
 		return err
 	}
 
-	resp, err := s.ExecutePlanChange(
+	resp, err := s.executePlanChangeAt(
 		ctx, schedule.SubscriptionID, PlanChangeV2RequestFromConfig(config), schedule.ScheduledAt,
 	)
 	if err != nil {
@@ -947,4 +968,108 @@ func (s *subscriptionService) failPlanChangeSchedule(
 			"subscription_id", schedule.SubscriptionID,
 			"original_error", cause)
 	}
+}
+
+// checkNoPendingPlanChangeSchedule rejects a second plan change while one is already
+// queued.
+func (s *subscriptionService) checkNoPendingPlanChangeSchedule(ctx context.Context, subscriptionID string) error {
+	existing, err := s.SubScheduleRepo.GetPendingBySubscriptionAndType(
+		ctx, subscriptionID, types.SubscriptionScheduleChangeTypePlanChange,
+	)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return nil
+	}
+
+	return ierr.NewError("a plan change is already scheduled for this subscription").
+		WithHint("Cancel the existing schedule before requesting another one.").
+		WithReportableDetails(map[string]any{
+			"subscription_id": subscriptionID,
+			"schedule_id":     existing.ID,
+			"scheduled_at":    existing.ScheduledAt,
+		}).
+		Mark(ierr.ErrValidation)
+}
+
+// resolveEffectiveAt is the instant a request would take effect: the period boundary
+// when deferred, otherwise now. Preview uses it so the quote is priced at the same
+// instant the change will actually be applied.
+func resolveEffectiveAt(sub *subscription.Subscription, req dto.SubscriptionChangeV2Request) time.Time {
+	if req.IsDeferred() {
+		return sub.CurrentPeriodEnd
+	}
+	
+	return time.Now().UTC()
+}
+
+// schedulePlanChangeForPeriodEnd records a deferred change.
+func (s *subscriptionService) schedulePlanChangeForPeriodEnd(
+	ctx context.Context,
+	subscriptionID string,
+	req dto.SubscriptionChangeV2Request,
+) (*dto.SubscriptionChangeV2Response, error) {
+	sub, err := s.loadSubscriptionForPlanChange(ctx, subscriptionID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	scheduledAt := sub.CurrentPeriodEnd
+	r, err := s.resolvePlanChange(ctx, sub, req, scheduledAt)
+	if err != nil {
+		return nil, err
+	}
+
+	schedule := &subscription.SubscriptionSchedule{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_SCHEDULE),
+		SubscriptionID: subscriptionID,
+		ScheduleType:   types.SubscriptionScheduleChangeTypePlanChange,
+		ScheduledAt:    scheduledAt,
+		Status:         types.ScheduleStatusPending,
+		TenantID:       sub.TenantID,
+		EnvironmentID:  sub.EnvironmentID,
+		CreatedAt:      time.Now().UTC(),
+		UpdatedAt:      time.Now().UTC(),
+		CreatedBy:      types.GetUserID(ctx),
+		UpdatedBy:      types.GetUserID(ctx),
+		StatusColumn:   types.StatusPublished,
+	}
+
+	config := &subscription.PlanChangeV2Configuration{
+		TargetPlanID:   req.TargetPlanID,
+		IdempotencyKey: req.IdempotencyKey,
+		ChangeMetadata: req.Metadata,
+	}
+	if req.EntityPolicies != nil && req.EntityPolicies.Addons != nil {
+		config.EntityPolicies = &subscription.EntityChangePoliciesConfig{
+			Addons: &subscription.EntityChangePolicyConfig{
+				DefaultBehaviour: req.EntityPolicies.Addons.DefaultBehaviour,
+				Overrides:        req.EntityPolicies.Addons.Overrides,
+			},
+		}
+	}
+	if err := schedule.SetPlanChangeV2Config(config); err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to serialize the plan change configuration").
+			Mark(ierr.ErrInternal)
+	}
+
+	if err := s.SubScheduleRepo.Create(ctx, schedule); err != nil {
+		return nil, err
+	}
+
+	s.Logger.Info(ctx, "plan change scheduled for period end",
+		"subscription_id", subscriptionID,
+		"schedule_id", schedule.ID,
+		"scheduled_at", schedule.ScheduledAt,
+		"target_plan_id", req.TargetPlanID,
+		"change_type", r.changeType)
+
+	resp := buildPlanChangeResponse(r, sub, req)
+	resp.ChangedResources.LineItems = planChangeChangedLineItems(r)
+	resp.IsScheduled = true
+	resp.ScheduleID = &schedule.ID
+	resp.ScheduledAt = &schedule.ScheduledAt
+	return resp, nil
 }
