@@ -252,7 +252,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_UpgradeSwapsInPlace() {
 	ctx := s.GetContext()
 	effectiveFrom := time.Now().UTC()
 
-	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations), time.Now().UTC())
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations), effectiveFrom)
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
 
@@ -275,7 +275,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_UpgradeSwapsInPlace() {
 	closed, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.td.baseLine.ID)
 	s.Require().NoError(err)
 	s.False(closed.EndDate.IsZero(), "the old line is closed, not deleted")
-	s.True(!closed.EndDate.Before(effectiveFrom), "closed at the effective date")
+	s.True(closed.EndDate.Equal(effectiveFrom), "closed exactly at the effective date")
 	s.True(live[0].StartDate.Equal(closed.EndDate), "line items must tile with no gap or overlap")
 }
 

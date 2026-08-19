@@ -1000,7 +1000,7 @@ func resolveEffectiveAt(sub *subscription.Subscription, req dto.SubscriptionChan
 	if req.IsDeferred() {
 		return sub.CurrentPeriodEnd
 	}
-	
+
 	return time.Now().UTC()
 }
 
@@ -1021,21 +1021,6 @@ func (s *subscriptionService) schedulePlanChangeForPeriodEnd(
 		return nil, err
 	}
 
-	schedule := &subscription.SubscriptionSchedule{
-		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_SCHEDULE),
-		SubscriptionID: subscriptionID,
-		ScheduleType:   types.SubscriptionScheduleChangeTypePlanChange,
-		ScheduledAt:    scheduledAt,
-		Status:         types.ScheduleStatusPending,
-		TenantID:       sub.TenantID,
-		EnvironmentID:  sub.EnvironmentID,
-		CreatedAt:      time.Now().UTC(),
-		UpdatedAt:      time.Now().UTC(),
-		CreatedBy:      types.GetUserID(ctx),
-		UpdatedBy:      types.GetUserID(ctx),
-		StatusColumn:   types.StatusPublished,
-	}
-
 	config := &subscription.PlanChangeV2Configuration{
 		TargetPlanID:   req.TargetPlanID,
 		IdempotencyKey: req.IdempotencyKey,
@@ -1049,6 +1034,9 @@ func (s *subscriptionService) schedulePlanChangeForPeriodEnd(
 			},
 		}
 	}
+	schedule := subscription.NewPendingScheduleBuilder(
+		ctx, sub, types.SubscriptionScheduleChangeTypePlanChange, scheduledAt,
+	).Build()
 	if err := schedule.SetPlanChangeV2Config(config); err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to serialize the plan change configuration").
@@ -1056,6 +1044,12 @@ func (s *subscriptionService) schedulePlanChangeForPeriodEnd(
 	}
 
 	if err := s.SubScheduleRepo.Create(ctx, schedule); err != nil {
+		if ierr.IsAlreadyExists(err) {
+			return nil, ierr.WithError(err).
+				WithHint("A plan change is already scheduled for this subscription. Cancel it before requesting another one.").
+				WithReportableDetails(map[string]any{"subscription_id": subscriptionID}).
+				Mark(ierr.ErrValidation)
+		}
 		return nil, err
 	}
 

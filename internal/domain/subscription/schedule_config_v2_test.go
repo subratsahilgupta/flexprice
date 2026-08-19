@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -200,5 +201,65 @@ func TestSubscriptionSchedule_IsStaleFor(t *testing.T) {
 
 	if (&SubscriptionSchedule{ScheduledAt: boundary}).IsStaleFor(nil) {
 		t.Fatal("IsStaleFor(nil) = true; a missing subscription is not evidence of staleness")
+	}
+}
+
+func TestNewPendingScheduleBuilder_FillsBoilerplate(t *testing.T) {
+	ctx := context.Background()
+	sub := &Subscription{ID: "subs_1", EnvironmentID: "env_1", BaseModel: types.BaseModel{TenantID: "tenant_1"}}
+	scheduledAt := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+
+	schedule := NewPendingScheduleBuilder(
+		ctx, sub, types.SubscriptionScheduleChangeTypePlanChange, scheduledAt,
+	).Build()
+	if err := schedule.SetPlanChangeV2Config(&PlanChangeV2Configuration{TargetPlanID: "plan_b"}); err != nil {
+		t.Fatalf("SetPlanChangeV2Config: %v", err)
+	}
+
+	if schedule.ID == "" || schedule.CreatedAt.IsZero() || schedule.UpdatedAt.IsZero() {
+		t.Fatalf("boilerplate not filled: %+v", schedule)
+	}
+	if schedule.SubscriptionID != "subs_1" || schedule.TenantID != "tenant_1" || schedule.EnvironmentID != "env_1" {
+		t.Fatalf("tenancy not copied from the subscription: %+v", schedule)
+	}
+	if schedule.Status != types.ScheduleStatusPending || schedule.StatusColumn != types.StatusPublished {
+		t.Fatalf("unexpected status: %v / %v", schedule.Status, schedule.StatusColumn)
+	}
+	if !schedule.ScheduledAt.Equal(scheduledAt) {
+		t.Fatalf("scheduled_at = %v, want %v", schedule.ScheduledAt, scheduledAt)
+	}
+
+	config, err := schedule.GetPlanChangeV2Config()
+	if err != nil || !config.IsV2() || config.TargetPlanID != "plan_b" {
+		t.Fatalf("config not applied: %+v (%v)", config, err)
+	}
+}
+
+func TestNewSubscriptionScheduleBuilder_CopiesRatherThanAliases(t *testing.T) {
+	original := &SubscriptionSchedule{
+		ID:           "sched_1",
+		ScheduleType: types.SubscriptionScheduleChangeTypePlanChange,
+		Status:       types.ScheduleStatusPending,
+		Metadata:     types.Metadata{"k": "v"},
+	}
+
+	updated := NewSubscriptionScheduleBuilder(original).
+		WithStatus(types.ScheduleStatusExecuted).
+		WithErrorMessage("boom").
+		Build()
+
+	if original.Status != types.ScheduleStatusPending {
+		t.Fatal("the builder mutated the original schedule")
+	}
+	if original.ErrorMessage != nil {
+		t.Fatal("the builder wrote an error message onto the original")
+	}
+	if updated.Status != types.ScheduleStatusExecuted || *updated.ErrorMessage != "boom" {
+		t.Fatalf("updates not applied: %+v", updated)
+	}
+
+	updated.Metadata["k"] = "changed"
+	if original.Metadata["k"] != "v" {
+		t.Fatal("metadata is aliased between the original and the copy")
 	}
 }

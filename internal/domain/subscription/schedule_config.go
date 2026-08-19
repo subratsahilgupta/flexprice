@@ -210,7 +210,6 @@ func (s *SubscriptionSchedule) SetPlanChangeV2Config(config *PlanChangeV2Configu
 	if s.ScheduleType != types.SubscriptionScheduleChangeTypePlanChange {
 		return ErrInvalidScheduleType
 	}
-
 	config.Version = PlanChangeConfigVersionV2
 	data, err := json.Marshal(config)
 	if err != nil {
@@ -243,7 +242,6 @@ func (s *SubscriptionSchedule) SetPlanChangeV2Result(result *PlanChangeV2Result)
 	if s.ScheduleType != types.SubscriptionScheduleChangeTypePlanChange {
 		return ErrInvalidScheduleType
 	}
-
 	data, err := json.Marshal(result)
 	if err != nil {
 		return err

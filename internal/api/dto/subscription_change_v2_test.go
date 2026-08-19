@@ -88,3 +88,21 @@ func TestSubscriptionChangeV2Request_IsDeferred(t *testing.T) {
 		})
 	}
 }
+
+// nil already means "unset"; an explicit empty string is malformed input that
+// ScheduleType.Validate() would otherwise let through.
+func TestSubscriptionChangeV2Request_Validate_RejectsEmptyChangeAt(t *testing.T) {
+	req := &SubscriptionChangeV2Request{
+		TargetPlanID:      "plan_123",
+		ProrationBehavior: types.ProrationBehaviorNone,
+		ChangeAt:          lo.ToPtr(types.ScheduleType("")),
+	}
+
+	err := req.Validate()
+	if err == nil {
+		t.Fatal("expected an error for an empty change_at, got nil")
+	}
+	if !strings.Contains(err.Error(), "schedule type cannot be empty string") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
