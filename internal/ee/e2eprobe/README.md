@@ -36,6 +36,37 @@ meter that isn't yet on the customer's subscription rather than paging.
 
 Every step is idempotent: re-running seed-ensure against a tenant that already has all entities is a no-op.
 
+## Airgapped bootstrap
+
+An airgapped deployment has no dashboard and no existing key, so there is no way
+to provision `E2EPROBE_API_KEY` up front. Supply `E2EPROBE_EMAIL` and
+`E2EPROBE_PASSWORD` instead and the probe provisions its own:
+
+1. `POST /auth/signup` — on `409 already_exists`, falls back to `POST /auth/login`.
+2. `GET /environments` — signup creates exactly one.
+3. `POST /secrets/api/keys` — mints a private key.
+4. Patches the key into the Secret named by `E2EPROBE_BOOTSTRAP_SECRET_NAME`.
+
+An explicit `E2EPROBE_API_KEY` always wins, so existing deployments are
+unaffected. Enable it in the chart with `e2eprobe.bootstrap.enabled=true`, which
+also mounts the ServiceAccount token and creates a Role scoped by name to that
+one Secret (`get` and `patch` only).
+
+**Requires the flexprice-native auth provider** (`auth.provider: "flexprice"`,
+the chart default). Supabase-backed deployments reject signup with 403/500, and
+a tenant enforcing SSO refuses password login. The probe reports both cases
+explicitly rather than as a bare status code.
+
+**Restarts do not mint a second key.** Bootstrap reads the Secret first and
+reuses a stored key. This matters because environment variables resolve at
+container start: a restart inside the same pod re-reads the original empty
+value, so without the read a crash loop would mint keys indefinitely — and
+nothing revokes them.
+
+**Outside Kubernetes** (`make run-e2eprobe`, plain Docker) there is no Secret to
+write, so the credential is logged once instead; otherwise it would be lost.
+In-cluster the key is never logged.
+
 ## Architecture
 
 The harness is built around three abstractions:
@@ -51,7 +82,12 @@ Adding a new probe: write `internal/ee/e2eprobe/checks/<name>.go` implementing `
 | Var | Purpose | Default |
 | --- | ------- | ------- |
 | `E2EPROBE_API_HOST` | Flexprice API base URL (include /v1) | required |
-| `E2EPROBE_API_KEY` | API key for the e2eprobe tenant | required |
+| `E2EPROBE_API_KEY` | API key for the e2eprobe tenant | required, unless `E2EPROBE_EMAIL` + `E2EPROBE_PASSWORD` are set |
+| `E2EPROBE_EMAIL` | Signup email for airgapped bootstrap. Used only when `E2EPROBE_API_KEY` is empty | empty |
+| `E2EPROBE_PASSWORD` | Signup password (minimum 8 characters) | empty |
+| `E2EPROBE_BOOTSTRAP_SECRET_NAME` | Kubernetes Secret the minted key is written to | empty |
+| `E2EPROBE_BOOTSTRAP_SECRET_KEY` | Field within that Secret | empty |
+| `POD_NAMESPACE` | Namespace of that Secret; set by the chart via the downward API | empty |
 | `E2EPROBE_ENABLED` | Master kill switch | `true` |
 | `E2EPROBE_DRY_RUN` | Log mutating calls without sending | `false` |
 | `E2EPROBE_TENANT_ID` | Tenant ID included in every Slack/OTEL alert for context | empty (optional but recommended) |
