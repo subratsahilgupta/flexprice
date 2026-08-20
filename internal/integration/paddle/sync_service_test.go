@@ -938,6 +938,12 @@ func (m *mockSubscriptionService) AddAddonToSubscription(ctx context.Context, re
 func (m *mockSubscriptionService) RemoveAddonFromSubscription(ctx context.Context, req *apidto.RemoveAddonRequest) error {
 	return nil
 }
+func (m *mockSubscriptionService) AttachAddon(ctx context.Context, sub *subscription.Subscription, req *apidto.AddAddonToSubscriptionRequest, checkout *apidto.CheckoutParams) (*apidto.AddonChangeResult, error) {
+	return nil, nil
+}
+func (m *mockSubscriptionService) DetachAddon(ctx context.Context, req *apidto.RemoveAddonRequest, subscriptionID string) (*apidto.AddonChangeResult, error) {
+	return nil, nil
+}
 func (m *mockSubscriptionService) AddSubscriptionLineItem(ctx context.Context, subscriptionID string, req apidto.CreateSubscriptionLineItemRequest) (*apidto.SubscriptionLineItemResponse, error) {
 	return nil, nil
 }

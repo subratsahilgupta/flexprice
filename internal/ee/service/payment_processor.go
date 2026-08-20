@@ -23,6 +23,9 @@ import (
 
 type PaymentProcessorService interface {
 	ProcessPayment(ctx context.Context, id string) (*payment.Payment, error)
+	// DispatchMarkPaid notifies the provider integrations holding a copy of the invoice
+	// (Zoho Books, Whop) that it has been paid in FlexPrice.
+	DispatchMarkPaid(ctx context.Context, invoiceID string)
 }
 
 type paymentProcessor struct {
@@ -63,15 +66,6 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 					"status":     paymentObj.PaymentStatus,
 				}).
 				Mark(ierr.ErrInvalidOperation)
-		}
-	}
-
-	// Create a new payment attempt if tracking is enabled
-	var attempt *payment.PaymentAttempt
-	if paymentObj.TrackAttempts {
-		attempt, err = p.createNewAttempt(ctx, paymentObj)
-		if err != nil {
-			return paymentObj, err
 		}
 	}
 
@@ -130,31 +124,6 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 				"payment_id": paymentObj.ID,
 			}).
 			Mark(ierr.ErrInvalidOperation)
-	}
-
-	// Update attempt status if tracking is enabled
-	if paymentObj.TrackAttempts && attempt != nil {
-		if processErr != nil {
-			// For payment links, keep attempt as pending even on error
-			if paymentObj.PaymentMethodType == types.PaymentMethodTypePaymentLink {
-				attempt.PaymentStatus = types.PaymentStatusPending
-				attempt.ErrorMessage = lo.ToPtr(processErr.Error())
-			} else {
-				attempt.PaymentStatus = types.PaymentStatusFailed
-				attempt.ErrorMessage = lo.ToPtr(processErr.Error())
-			}
-		} else {
-			// For payment links, keep attempt as pending
-			if paymentObj.PaymentMethodType == types.PaymentMethodTypePaymentLink {
-				attempt.PaymentStatus = types.PaymentStatusPending
-			} else {
-				attempt.PaymentStatus = types.PaymentStatusSucceeded
-			}
-		}
-		attempt.UpdatedAt = time.Now().UTC()
-		if err := p.PaymentRepo.UpdateAttempt(ctx, attempt); err != nil {
-			p.Logger.Error(ctx, "failed to update payment attempt", "error", err)
-		}
 	}
 
 	// Update payment status based on processing result
@@ -738,42 +707,12 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 			"error", err)
 	}
 
-	// Invoice is fully paid — dispatch Whop and Zoho mark-paid directly if a mapping exists.
+	// Invoice is fully paid — dispatch mark-paid to whichever providers are connected.
 	if invoice.PaymentStatus == types.PaymentStatusSucceeded {
-		p.dispatchWhopMarkPaid(ctx, invoice.ID)
-		p.dispatchZohoMarkPaid(ctx, invoice.ID)
+		p.DispatchMarkPaid(ctx, invoice.ID)
 	}
 
 	return nil
-}
-
-func (p *paymentProcessor) createNewAttempt(ctx context.Context, paymentObj *payment.Payment) (*payment.PaymentAttempt, error) {
-	// Get latest attempt to determine attempt number
-	latestAttempt, err := p.PaymentRepo.GetLatestAttempt(ctx, paymentObj.ID)
-	if err != nil && !ierr.IsNotFound(err) {
-		return nil, err
-	}
-
-	attemptNumber := 1
-	if latestAttempt != nil {
-		attemptNumber = latestAttempt.AttemptNumber + 1
-	}
-
-	attempt := &payment.PaymentAttempt{
-		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PAYMENT_ATTEMPT),
-		PaymentID:     paymentObj.ID,
-		AttemptNumber: attemptNumber,
-		PaymentStatus: types.PaymentStatusProcessing,
-		Metadata:      types.Metadata{},
-		EnvironmentID: types.GetEnvironmentID(ctx),
-		BaseModel:     types.GetDefaultBaseModel(ctx),
-	}
-
-	if err := p.PaymentRepo.CreateAttempt(ctx, attempt); err != nil {
-		return nil, err
-	}
-
-	return attempt, nil
 }
 
 func (p *paymentProcessor) dispatchWhopMarkPaid(ctx context.Context, invoiceID string) {
@@ -803,6 +742,34 @@ func (p *paymentProcessor) dispatchZohoMarkPaid(ctx context.Context, invoiceID s
 	input := temporalmodels.NewZohoBooksInvoiceMarkPaidWorkflowInput(invoiceID, types.GetTenantID(ctx), types.GetEnvironmentID(ctx))
 	if _, err := temporalSvc.ExecuteWorkflow(ctx, types.TemporalZohoBooksInvoiceMarkPaidWorkflow, input); err != nil {
 		p.Logger.Error(ctx, "failed to start Zoho mark-paid workflow", "error", err, "invoice_id", invoiceID)
+	}
+}
+
+// DispatchMarkPaid lists the tenant's published connections once and only dispatches to providers
+// that are actually connected, instead of starting a workflow per provider blind and letting it
+// fail downstream with "connection not configured" for the ones that aren't.
+func (p *paymentProcessor) DispatchMarkPaid(ctx context.Context, invoiceID string) {
+	if p.ConnectionRepo == nil {
+		return
+	}
+
+	connections, err := p.ConnectionRepo.ListAllPublished(ctx)
+	if err != nil {
+		p.Logger.Error(ctx, "failed to list published connections, skipping mark-paid dispatch",
+			"error", err, "invoice_id", invoiceID)
+		return
+	}
+
+	connected := make(map[types.SecretProvider]bool, len(connections))
+	for _, c := range connections {
+		connected[c.ProviderType] = true
+	}
+
+	if connected[types.SecretProviderZohoBooks] {
+		p.dispatchZohoMarkPaid(ctx, invoiceID)
+	}
+	if connected[types.SecretProviderWhop] {
+		p.dispatchWhopMarkPaid(ctx, invoiceID)
 	}
 }
 

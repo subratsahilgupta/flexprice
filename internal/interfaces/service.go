@@ -34,6 +34,9 @@ type PaymentService interface {
 	DeletePayment(ctx context.Context, id string) error
 	GetPaymentByGatewayTrackingID(ctx context.Context, gatewayTrackingID, gateway string) (*dto.PaymentResponse, error)
 	PaymentExistsByGatewayPaymentID(ctx context.Context, gatewayPaymentID string) (bool, error)
+	// RecordAttempt appends the gateway's outcome for one charge attempt, leaving the
+	// parent payment's status untouched.
+	RecordAttempt(ctx context.Context, paymentID string, req dto.RecordAttemptRequest) error
 	// CreatePaymentForCheckout creates a minimal INITIATED payment record for a checkout
 	// session without triggering payment lifecycle processing.
 	// TODO: migrate to full payment lifecycle method when payment lifecycle service is released
@@ -120,6 +123,9 @@ type SubscriptionService interface {
 
 	AddAddonToSubscription(ctx context.Context, req *dto.AddAddonRequest) (*dto.AddAddonToSubscriptionResponse, error)
 	RemoveAddonFromSubscription(ctx context.Context, req *dto.RemoveAddonRequest) error
+
+	AttachAddon(ctx context.Context, sub *subscription.Subscription, req *dto.AddAddonToSubscriptionRequest, checkout *dto.CheckoutParams) (*dto.AddonChangeResult, error)
+	DetachAddon(ctx context.Context, req *dto.RemoveAddonRequest, subscriptionID string) (*dto.AddonChangeResult, error)
 
 	// Line item management
 	AddSubscriptionLineItem(ctx context.Context, subscriptionID string, req dto.CreateSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error)

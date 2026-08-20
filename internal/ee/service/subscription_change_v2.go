@@ -676,7 +676,7 @@ func (s *subscriptionService) settlePlanChange(
 			return nil, err
 		}
 
-		return []dto.ChangedInvoice{planChangeWalletCredit(txn, dto.ChangedInvoiceStatusWalletIssued)}, nil
+		return []dto.ChangedInvoice{walletCreditChangedInvoice(txn, dto.ChangedInvoiceStatusWalletIssued)}, nil
 	default:
 		return nil, nil
 	}
@@ -743,7 +743,7 @@ func planChangeSummary(p *plan.Plan) dto.PlanSummary {
 
 // A wallet credit and a charge invoice are the two shapes of one settlement, so
 // both are reported through ChangedInvoice (Action tells them apart).
-func planChangeWalletCredit(txn *dto.WalletTransactionResponse, status dto.ChangedInvoiceStatus) dto.ChangedInvoice {
+func walletCreditChangedInvoice(txn *dto.WalletTransactionResponse, status dto.ChangedInvoiceStatus) dto.ChangedInvoice {
 	credit := dto.ChangedInvoice{
 		Action:            dto.ChangedInvoiceActionWalletCredit,
 		Status:            status,
@@ -807,7 +807,7 @@ func (s *subscriptionService) previewPlanChangeSettlement(
 
 	// A net credit is paid to the wallet, never invoiced.
 	if quote.NetAmount().IsNegative() {
-		return []dto.ChangedInvoice{planChangeWalletCredit(&dto.WalletTransactionResponse{
+		return []dto.ChangedInvoice{walletCreditChangedInvoice(&dto.WalletTransactionResponse{
 			Transaction: &wallet.Transaction{
 				CustomerID:        r.sub.GetInvoicingCustomerID(),
 				Amount:            quote.NetAmount().Abs(),
