@@ -563,7 +563,6 @@ func NewRouter(
 			costsheets.DELETE("/:id", write(types.EntityCostsheet, types.ActionWrite), handlers.Costsheet.DeleteCostsheet)
 			costsheets.GET("/active", handlers.Costsheet.GetActiveCostsheetForTenant)
 			costsheets.POST("/analytics", handlers.RevenueAnalytics.GetDetailedCostAnalytics)
-			costsheets.POST("/analytics-v2", handlers.RevenueAnalytics.GetDetailedCostAnalyticsV2)
 		}
 
 		// Credit note routes

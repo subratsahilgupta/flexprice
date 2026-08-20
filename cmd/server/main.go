@@ -663,8 +663,6 @@ func registerRouterHandlers(
 		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
 		eventConsumptionSvc.RegisterHandlerReplay(router, cfg)
 		eventConsumptionSvc.RegisterBulkHandler(router, cfg)
-		costSheetUsageSvc.RegisterHandler(router, cfg)
-		costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
 		walletBalanceAlertSvc.RegisterHandler(router, cfg)
 		rawEventConsumptionSvc.RegisterHandler(router, cfg)
 		meterUsageTrackingSvc.RegisterHandler(router, cfg)
