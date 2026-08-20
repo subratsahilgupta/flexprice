@@ -1047,58 +1047,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/costs/analytics-v2": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Use when you need the same revenue/cost/ROI analytics but computed from the costsheet usage-tracking pipeline (e.g. for consistency with usage-based cost data).",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Costs"
-                ],
-                "summary": "Get combined revenue and cost analytics (V2)",
-                "operationId": "getDetailedCostAnalyticsV2",
-                "parameters": [
-                    {
-                        "description": "Combined analytics request (start_time/end_time optional - defaults to last 7 days)",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/GetCostAnalyticsRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/GetDetailedCostAnalyticsResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/costs/search": {
             "post": {
                 "security": [
@@ -7415,7 +7363,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Use when adding an optional product or add-on to an existing subscription (e.g. extra storage or support tier).",
+                "description": "Deprecated: use POST /subscriptions/{id}/modify/execute with type \"addon\" and action \"add\", which also supports previewing the proration charge first.\nUse when adding an optional product or add-on to an existing subscription (e.g. extra storage or support tier).",
                 "consumes": [
                     "application/json"
                 ],
@@ -7427,6 +7375,7 @@ const docTemplate = `{
                 ],
                 "summary": "Add addon to subscription",
                 "operationId": "addSubscriptionAddon",
+                "deprecated": true,
                 "parameters": [
                     {
                         "description": "Add Addon Request",
@@ -7465,7 +7414,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Use when removing an add-on from a subscription (e.g. downgrade or opt-out).",
+                "description": "Deprecated: use POST /subscriptions/{id}/modify/execute with type \"addon\" and action \"remove\", which also supports previewing the proration credit first.\nUse when removing an add-on from a subscription (e.g. downgrade or opt-out).",
                 "consumes": [
                     "application/json"
                 ],
@@ -7477,6 +7426,7 @@ const docTemplate = `{
                 ],
                 "summary": "Remove addon from subscription",
                 "operationId": "removeSubscriptionAddon",
+                "deprecated": true,
                 "parameters": [
                     {
                         "description": "Remove Addon Request",
@@ -8198,7 +8148,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Change a subscription's plan in place. Subscription id, billing anchor and period bounds are preserved; line items are sliced and settled in one transaction.",
+                "description": "Change a subscription's plan in place. Subscription id, billing anchor and period bounds are preserved; line items are sliced and settled in one transaction.\n\nchange_at controls timing. Omitted or 'immediate' applies the change now. 'end_of_period' records a pending schedule that executes at the subscription's current period end: the response returns is_scheduled, schedule_id and scheduled_at instead of a completed change, and nothing is swapped or billed until the boundary.\n\nscheduled_at is resolved from the subscription's current period end at request time. If that period end is already in the past (a backdated start date, a resumed pause, or worker downtime can all leave a subscription behind), the change is due immediately and fires on the next billing scan rather than a period away — inspect scheduled_at to see this.\n\nOnly one plan change may be pending per subscription; request a second one and this returns 400. Cancel the existing schedule via POST /subscriptions/schedules/{schedule_id}/cancel first. Pending schedules are listable via GET /subscriptions/{id}/schedules.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8236,7 +8186,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid request, or a change this endpoint cannot make (interval, currency, hierarchy, phases, paused)",
+                        "description": "Invalid request, a change this endpoint cannot make (interval, currency, hierarchy, phases, paused), a deferred change with proration, or a plan change already scheduled",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -8514,7 +8464,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, or tax).",
+                "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove).",
                 "consumes": [
                     "application/json"
                 ],
@@ -8580,7 +8530,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, or tax) without committing changes.",
+                "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove) without committing changes.",
                 "consumes": [
                     "application/json"
                 ],
@@ -17857,6 +17807,9 @@ const docTemplate = `{
                 "type"
             ],
             "properties": {
+                "addon_params": {
+                    "$ref": "#/definitions/SubModifyAddonParams"
+                },
                 "checkout": {
                     "$ref": "#/definitions/CheckoutParams"
                 },
@@ -18918,6 +18871,9 @@ const docTemplate = `{
                 },
                 "line_item_id": {
                     "description": "price_id used to match the line item",
+                    "type": "string"
+                },
+                "subscription_line_item_id": {
                     "type": "string"
                 }
             }
@@ -20592,6 +20548,23 @@ const docTemplate = `{
                 }
             }
         },
+        "SubModifyAddonParams": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "action": {
+                    "$ref": "#/definitions/SubscriptionModificationAction"
+                },
+                "add": {
+                    "$ref": "#/definitions/AddAddonToSubscriptionRequest"
+                },
+                "remove": {
+                    "$ref": "#/definitions/RemoveAddonRequest"
+                }
+            }
+        },
         "SubModifyCouponAction": {
             "type": "string",
             "enum": [
@@ -21006,6 +20979,14 @@ const docTemplate = `{
                 "target_plan_id"
             ],
             "properties": {
+                "change_at": {
+                    "description": "ChangeAt controls when the change takes effect. nil or \"immediate\" applies\nit now; \"end_of_period\" schedules it at the subscription's current period end.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
+                },
                 "entity_policies": {
                     "$ref": "#/definitions/SubscriptionChangeEntityPolicies"
                 },
@@ -21047,11 +21028,21 @@ const docTemplate = `{
                 "from_plan": {
                     "$ref": "#/definitions/PlanSummary"
                 },
+                "is_scheduled": {
+                    "description": "IsScheduled is true when the change was deferred to the period end instead\nof being applied immediately.",
+                    "type": "boolean"
+                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
+                },
+                "schedule_id": {
+                    "type": "string"
+                },
+                "scheduled_at": {
+                    "type": "string"
                 },
                 "subscription": {
                     "$ref": "#/definitions/SubscriptionResponse"
@@ -21292,6 +21283,17 @@ const docTemplate = `{
                 }
             }
         },
+        "SubscriptionModificationAction": {
+            "type": "string",
+            "enum": [
+                "add",
+                "remove"
+            ],
+            "x-enum-varnames": [
+                "SubscriptionModificationActionAdd",
+                "SubscriptionModificationActionRemove"
+            ]
+        },
         "SubscriptionModifyResponse": {
             "type": "object",
             "properties": {
@@ -21329,7 +21331,8 @@ const docTemplate = `{
                 "grouped_invoicing",
                 "trial_end",
                 "coupon",
-                "tax"
+                "tax",
+                "addon"
             ],
             "x-enum-varnames": [
                 "SubscriptionModifyTypeInheritance",
@@ -21337,7 +21340,8 @@ const docTemplate = `{
                 "SubscriptionModifyTypeGroupedInvoicing",
                 "SubscriptionModifyTypeTrialEnd",
                 "SubscriptionModifyTypeCoupon",
-                "SubscriptionModifyTypeTax"
+                "SubscriptionModifyTypeTax",
+                "SubscriptionModifyTypeAddon"
             ]
         },
         "SubscriptionPhaseCreateRequest": {
@@ -26834,7 +26838,8 @@ const docTemplate = `{
                 "item",
                 "item_price",
                 "price",
-                "invoice_line_item"
+                "invoice_line_item",
+                "subscription_line_item"
             ],
             "x-enum-varnames": [
                 "IntegrationEntityTypeCustomer",
@@ -26847,7 +26852,8 @@ const docTemplate = `{
                 "IntegrationEntityTypeItem",
                 "IntegrationEntityTypeItemPrice",
                 "IntegrationEntityTypePrice",
-                "IntegrationEntityTypeInvoiceLineItem"
+                "IntegrationEntityTypeInvoiceLineItem",
+                "IntegrationEntityTypeSubscriptionLineItem"
             ]
         },
         "types.InvoiceBillingReason": {
@@ -27042,6 +27048,14 @@ const docTemplate = `{
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.BillingPeriod"
+                        }
+                    ]
+                },
+                "service_period_custom_fields": {
+                    "description": "ServicePeriodCustomFields names the Zoho custom fields that receive the\ninvoice's service start and end dates.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ServicePeriodCustomFields"
                         }
                     ]
                 }
@@ -27860,6 +27874,17 @@ const docTemplate = `{
                 "SecretTypePublishableKey",
                 "SecretTypeIntegration"
             ]
+        },
+        "types.ServicePeriodCustomFields": {
+            "type": "object",
+            "properties": {
+                "end_field_id": {
+                    "type": "string"
+                },
+                "start_field_id": {
+                    "type": "string"
+                }
+            }
         },
         "types.SortCondition": {
             "type": "object",
@@ -29124,6 +29149,9 @@ const docTemplate = `{
                 "email": {
                     "type": "string"
                 },
+                "environment_id": {
+                    "type": "string"
+                },
                 "external_id": {
                     "type": "string"
                 },
@@ -29274,6 +29302,9 @@ const docTemplate = `{
                 "due_date": {
                     "type": "string"
                 },
+                "environment_id": {
+                    "type": "string"
+                },
                 "finalized_at": {
                     "type": "string"
                 },
@@ -29366,7 +29397,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.WebhookEventName"
                 },
                 "invoice": {
-                    "$ref": "#/definitions/webhookDto.Invoice"
+                    "$ref": "#/definitions/InvoiceResponse"
                 }
             }
         },

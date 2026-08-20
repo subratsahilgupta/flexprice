@@ -252,7 +252,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_UpgradeSwapsInPlace() {
 	ctx := s.GetContext()
 	effectiveFrom := time.Now().UTC()
 
-	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations))
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations), effectiveFrom)
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
 
@@ -275,7 +275,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_UpgradeSwapsInPlace() {
 	closed, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.td.baseLine.ID)
 	s.Require().NoError(err)
 	s.False(closed.EndDate.IsZero(), "the old line is closed, not deleted")
-	s.True(!closed.EndDate.Before(effectiveFrom), "closed at the effective date")
+	s.True(closed.EndDate.Equal(effectiveFrom), "closed exactly at the effective date")
 	s.True(live[0].StartDate.Equal(closed.EndDate), "line items must tile with no gap or overlap")
 }
 
@@ -287,7 +287,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_LateralIdenticalPrice_CarriesLin
 
 	invoicesBefore := s.countInvoices()
 
-	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(lateral.ID, types.ProrationBehaviorCreateProrations))
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(lateral.ID, types.ProrationBehaviorCreateProrations), time.Now().UTC())
 	s.Require().NoError(err)
 	s.Equal(types.SubscriptionChangeTypeLateral, resp.ChangeType)
 
@@ -316,7 +316,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_ProrationNone_SwapsWithoutMoney(
 	ctx := s.GetContext()
 	invoicesBefore := s.countInvoices()
 
-	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone))
+	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone), time.Now().UTC())
 	s.Require().NoError(err)
 
 	reloaded, err := s.GetStores().SubscriptionRepo.Get(ctx, s.td.sub.ID)
@@ -342,7 +342,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_DowngradeCreditsWallet() {
 	// Need a billed charge so the removal credit has a basis.
 	s.recordBilled(s.td.baseLine.ID, s.td.proBase.Amount)
 
-	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.starter.ID, types.ProrationBehaviorCreateProrations))
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.starter.ID, types.ProrationBehaviorCreateProrations), time.Now().UTC())
 	s.Require().NoError(err)
 	s.Equal(types.SubscriptionChangeTypeDowngrade, resp.ChangeType)
 
@@ -381,7 +381,7 @@ func (s *SubscriptionChangeV2Suite) TestPreviewMatchesExecute() {
 	s.Require().Len(preview.ChangedResources.Invoices, 1)
 	quoted := preview.ChangedResources.Invoices[0].Invoice.AmountDue
 
-	executed, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req)
+	executed, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req, time.Now().UTC())
 	s.Require().NoError(err)
 	s.Require().Len(executed.ChangedResources.Invoices, 1)
 	charged := executed.ChangedResources.Invoices[0].Invoice.AmountDue
@@ -417,7 +417,7 @@ func (s *SubscriptionChangeV2Suite) TestPreviewMatchesExecute_OnADowngradeCredit
 	s.True(quoted.WalletTransaction.Amount.IsPositive(), "the credit is quoted as an amount owed to the customer")
 
 	invoicesBefore := s.countInvoices()
-	executed, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req)
+	executed, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req, time.Now().UTC())
 	s.Require().NoError(err)
 	s.Require().Len(executed.ChangedResources.Invoices, 1)
 	settled := executed.ChangedResources.Invoices[0]
@@ -440,7 +440,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_PlanSurvivesAStaleConcurrentUpda
 	staleCopy := *stale
 	s.Require().Equal(s.td.starter.ID, staleCopy.PlanID)
 
-	_, err = s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone))
+	_, err = s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone), time.Now().UTC())
 	s.Require().NoError(err)
 
 	// Whatever that caller was actually updating — status, period, metadata — it
@@ -503,7 +503,7 @@ func (s *SubscriptionChangeV2Suite) TestPreconditionsRejectBeforeAnyWrite() {
 				target = s.td.pro.ID
 			}
 
-			_, err = s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(target, types.ProrationBehaviorCreateProrations))
+			_, err = s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(target, types.ProrationBehaviorCreateProrations), time.Now().UTC())
 			s.Error(err, tt.because)
 
 			after, getErr := s.GetStores().SubscriptionRepo.Get(ctx, s.td.sub.ID)
@@ -523,7 +523,7 @@ func (s *SubscriptionChangeV2Suite) TestPreconditionsRejectBeforeAnyWrite() {
 func (s *SubscriptionChangeV2Suite) TestExecute_ReanchorsPriceSyncSequence() {
 	ctx := s.GetContext()
 
-	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations))
+	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations), time.Now().UTC())
 	s.Require().NoError(err)
 
 	expected, err := s.GetStores().PlanPriceSyncRepo.CurrentPlanSequence(ctx, s.td.pro.ID)
@@ -550,7 +550,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_NettedInvoiceCarriesCreditLine()
 	s.recordBilled(s.td.baseLine.ID, s.td.starterBase.Amount)
 
 	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID,
-		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations))
+		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations), time.Now().UTC())
 	s.Require().NoError(err)
 	s.Require().Len(resp.ChangedResources.Invoices, 1)
 
@@ -642,7 +642,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonCarriesByDefault() {
 	_, assoc, addonLine := s.attachAddon("priority_support", 10)
 
 	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID,
-		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations))
+		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorCreateProrations), time.Now().UTC())
 	s.Require().NoError(err)
 
 	reloadedAssoc, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, assoc.ID)
@@ -663,7 +663,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropClosesAttachment() {
 	ctx := s.GetContext()
 	_, assoc, addonLine := s.attachAddon("priority_support", 10)
 
-	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID), time.Now().UTC())
 	s.Require().NoError(err)
 
 	reloadedAssoc, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, assoc.ID)
@@ -687,7 +687,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropSettlesOnTheChangeInvoi
 
 	invoicesBefore := s.countInvoices()
 
-	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID), time.Now().UTC())
 	s.Require().NoError(err)
 
 	s.Equal(invoicesBefore+1, s.countInvoices(), "one invoice for the whole change, not one per moving part")
@@ -712,7 +712,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropWithProrationNone() {
 	req := s.dropAddonRequest(s.td.pro.ID, assoc.ID)
 	req.ProrationBehavior = types.ProrationBehaviorNone
 
-	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req)
+	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req, time.Now().UTC())
 	s.Require().NoError(err)
 
 	reloadedAssoc, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, assoc.ID)
@@ -725,7 +725,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_UnknownAddonOverrideWarnsRatherT
 	ctx := s.GetContext()
 
 	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID,
-		s.dropAddonRequest(s.td.pro.ID, "addon_assoc_does_not_exist"))
+		s.dropAddonRequest(s.td.pro.ID, "addon_assoc_does_not_exist"), time.Now().UTC())
 	s.Require().NoError(err, "a stale override key must not fail the change")
 	s.Require().Len(resp.Warnings, 1)
 	s.Contains(resp.Warnings[0], "addon_assoc_does_not_exist")
@@ -757,7 +757,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropDoesNotSkewChangeType()
 	ctx := s.GetContext()
 	_, assoc, _ := s.attachAddon("priority_support", 10)
 
-	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID), time.Now().UTC())
 	s.Require().NoError(err)
 
 	s.Equal(types.SubscriptionChangeTypeUpgrade, resp.ChangeType,
@@ -768,7 +768,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropIsReportedAsAChangedLin
 	ctx := s.GetContext()
 	_, assoc, addonLine := s.attachAddon("priority_support", 10)
 
-	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID))
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.dropAddonRequest(s.td.pro.ID, assoc.ID), time.Now().UTC())
 	s.Require().NoError(err)
 
 	var sawAddonLine bool
@@ -786,7 +786,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_CarriedLineFollowsTheSubscriptio
 	lateral := s.createPlan("Lateral", "lateral")
 	s.createFixedPrice(lateral.ID, "base_fee", 20)
 
-	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(lateral.ID, types.ProrationBehaviorCreateProrations))
+	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.changeRequest(lateral.ID, types.ProrationBehaviorCreateProrations), time.Now().UTC())
 	s.Require().NoError(err)
 
 	live := s.liveLineItems()

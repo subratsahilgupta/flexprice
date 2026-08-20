@@ -3,6 +3,7 @@ package dto
 import (
 	"time"
 
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 )
@@ -14,7 +15,15 @@ type SubscriptionChangeV2Request struct {
 	EntityPolicies *SubscriptionChangeEntityPolicies `json:"entity_policies,omitempty"`
 	IdempotencyKey *string                           `json:"idempotency_key,omitempty" validate:"omitempty"`
 
+	// ChangeAt controls when the change takes effect. nil or "immediate" applies
+	// it now; "end_of_period" schedules it at the subscription's current period end.
+	ChangeAt *types.ScheduleType `json:"change_at,omitempty"`
+
 	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+func (r *SubscriptionChangeV2Request) IsDeferred() bool {
+	return r != nil && r.ChangeAt != nil && *r.ChangeAt == types.ScheduleTypePeriodEnd
 }
 
 type SubscriptionChangeEntityPolicies struct {
@@ -74,6 +83,18 @@ func (r *SubscriptionChangeV2Request) Validate() error {
 		return err
 	}
 
+	if r.ChangeAt != nil {
+		if err := r.ChangeAt.Validate(); err != nil {
+			return err
+		}
+	}
+
+	if r.IsDeferred() && r.ProrationBehavior == types.ProrationBehaviorCreateProrations {
+		return ierr.NewError("proration is not applicable for an end_of_period plan change").
+			WithHint("Set proration_behavior to 'none'. At a period boundary the renewal invoice already bills the new plan.").
+			Mark(ierr.ErrValidation)
+	}
+
 	if r.EntityPolicies != nil {
 		return r.EntityPolicies.Addons.Validate()
 	}
@@ -90,6 +111,12 @@ type SubscriptionChangeV2Response struct {
 	ToPlan      PlanSummary                  `json:"to_plan"`
 
 	EntityChanges []*EntityChangeResult `json:"entity_changes,omitempty"`
+
+	// IsScheduled is true when the change was deferred to the period end instead
+	// of being applied immediately.
+	IsScheduled bool       `json:"is_scheduled"`
+	ScheduleID  *string    `json:"schedule_id,omitempty"`
+	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
 
 	Warnings []string          `json:"warnings,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`

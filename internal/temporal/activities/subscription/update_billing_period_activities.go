@@ -16,6 +16,7 @@ import (
 	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
+	"go.temporal.io/sdk/temporal"
 )
 
 type BillingActivities struct {
@@ -455,7 +456,7 @@ func (s *BillingActivities) ProcessPendingPlanChangesActivity(
 	changeService := service.NewSubscriptionChangeService(s.serviceParams)
 
 	// Execute the scheduled plan change
-	err = s.executeScheduledPlanChange(ctx, schedule, changeService, subscriptionService)
+	err = s.executeScheduledPlanChange(ctx, schedule, changeService, subscriptionService, sub)
 	if err != nil {
 		s.logger.Error(ctx, "failed to execute scheduled plan change",
 			"schedule_id", schedule.ID,
@@ -480,7 +481,21 @@ func (s *BillingActivities) executeScheduledPlanChange(
 	schedule *subscription.SubscriptionSchedule,
 	changeService service.SubscriptionChangeService,
 	subscriptionService service.SubscriptionService,
+	sub *subscription.Subscription,
 ) error {
+	v2Config, err := schedule.GetPlanChangeV2Config()
+	if err != nil {
+		return fmt.Errorf("failed to parse plan change configuration: %w", err)
+	}
+	if v2Config.IsV2() {
+		err := subscriptionService.ExecuteScheduledPlanChangeV2(ctx, schedule, v2Config, sub)
+		if err != nil && service.IsTerminalPlanChangeError(err) {
+			return temporal.NewNonRetryableApplicationError(
+				"scheduled plan change cannot succeed", "TerminalPlanChangeFailure", err)
+		}
+		return err
+	}
+
 	// Get the plan change configuration
 	config, err := schedule.GetPlanChangeConfig()
 	if err != nil {
