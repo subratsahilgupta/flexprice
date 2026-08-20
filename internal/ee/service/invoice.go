@@ -1225,17 +1225,9 @@ func (s *invoiceService) updateMetadata(inv *invoice.Invoice, req dto.InvoiceVoi
 	return nil
 }
 
-func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) error {
-
-	if err := req.Validate(); err != nil {
-		return err
-	}
-
-	inv, err := s.InvoiceRepo.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-
+// validateInvoiceVoidable checks the invoice and payment statuses that allow voiding.
+// It runs both before the transaction and again on the row-locked invoice inside it.
+func validateInvoiceVoidable(inv *invoice.Invoice) error {
 	allowedInvoiceStatuses := []types.InvoiceStatus{
 		types.InvoiceStatusDraft,
 		types.InvoiceStatusFinalized,
@@ -1266,7 +1258,35 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 			Mark(ierr.ErrValidation)
 	}
 
+	return nil
+}
+
+func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) error {
+
+	if err := req.Validate(); err != nil {
+		return err
+	}
+
+	inv, err := s.InvoiceRepo.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if err := validateInvoiceVoidable(inv); err != nil {
+		return err
+	}
+
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
+		// Re-read under a row lock so a concurrent refund cannot make RefundedAmount
+		// stale between the pre-check and the refund calculation below.
+		inv, err = s.InvoiceRepo.GetForUpdate(tx, id)
+		if err != nil {
+			return err
+		}
+		if err := validateInvoiceVoidable(inv); err != nil {
+			return err
+		}
+
 		now := time.Now().UTC()
 		inv.InvoiceStatus = types.InvoiceStatusVoided
 		inv.VoidedAt = &now
@@ -1276,9 +1296,14 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 			}
 		}
 
-		// Refund AmountPaid + TotalPrepaidCreditsApplied back to the customer's wallet.
-		// Both represent value the customer already provided for this invoice.
-		refundAmount := inv.AmountPaid.Add(inv.TotalPrepaidCreditsApplied)
+		// Refund only the remaining customer value that has not already been returned.
+		// RefundedAmount tracks prior refunds (e.g. refund credit notes), so voiding must
+		// not credit more than the total value provided for the invoice.
+		fundedAmount := inv.AmountPaid.Add(inv.TotalPrepaidCreditsApplied)
+		refundAmount := fundedAmount.Sub(inv.RefundedAmount)
+		if refundAmount.IsNegative() {
+			refundAmount = decimal.Zero
+		}
 		if refundAmount.IsPositive() {
 			walletService := NewWalletService(s.ServiceParams)
 
@@ -1320,6 +1345,12 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 			}
 
 			inv.RefundedAmount = inv.RefundedAmount.Add(refundAmount)
+		}
+
+		// Once voided, any invoice whose funded value has been fully returned is
+		// terminally REFUNDED — including the case where prior refunds already
+		// covered it and this void issued no additional credit.
+		if fundedAmount.IsPositive() && inv.RefundedAmount.GreaterThanOrEqual(fundedAmount) {
 			inv.PaymentStatus = types.PaymentStatusRefunded
 		}
 
