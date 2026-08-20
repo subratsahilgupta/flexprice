@@ -3527,6 +3527,14 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 	isSubscriptionCancelled := false
 	// Use db's WithTx for atomic operations
 	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		if sub.SubscriptionStatus == types.SubscriptionStatusActive {
+			if err := s.processPendingPlanChangeV2(ctx, sub); err != nil {
+				s.Logger.Error(ctx, "failed to process pending v2 plan change",
+					"error", err,
+					"subscription_id", sub.ID)
+			}
+		}
+
 		// Process all periods except the last one (which becomes the new current period)
 		for i := 0; i < len(periods)-1; i++ {
 			period := periods[i]
@@ -3739,7 +3747,7 @@ func (s *subscriptionService) processPendingPlanChanges(
 
 	// Execute the plan change
 	changeService := NewSubscriptionChangeService(s.ServiceParams)
-	if err := s.executeScheduledPlanChange(ctx, schedule, changeService); err != nil {
+	if err := s.executeScheduledPlanChange(ctx, schedule, changeService, sub); err != nil {
 		return fmt.Errorf("failed to execute scheduled plan change: %w", err)
 	}
 
@@ -3755,7 +3763,16 @@ func (s *subscriptionService) executeScheduledPlanChange(
 	ctx context.Context,
 	schedule *subscription.SubscriptionSchedule,
 	changeService SubscriptionChangeService,
+	sub *subscription.Subscription,
 ) error {
+	v2Config, err := schedule.GetPlanChangeV2Config()
+	if err != nil {
+		return fmt.Errorf("failed to parse plan change configuration: %w", err)
+	}
+	if v2Config.IsV2() {
+		return s.ExecuteScheduledPlanChangeV2(ctx, schedule, v2Config, sub)
+	}
+
 	// Get the plan change configuration
 	config, err := schedule.GetPlanChangeConfig()
 	if err != nil {
@@ -8243,4 +8260,34 @@ func (s *subscriptionService) triggerMarketplaceSubscriptionFinalUsageFlushWorkf
 	s.Logger.Info(ctx, "marketplace subscription flush workflow started successfully",
 		"subscription_id", subscriptionID,
 		"workflow_id", workflowRun.GetID())
+}
+
+func (s *subscriptionService) processPendingPlanChangeV2(
+	ctx context.Context,
+	sub *subscription.Subscription,
+) error {
+	schedule, err := s.SubScheduleRepo.GetPendingBySubscriptionAndType(
+		ctx, sub.ID, types.SubscriptionScheduleChangeTypePlanChange,
+	)
+	if err != nil {
+		return err
+	}
+	if schedule == nil || schedule.ScheduledAt.After(time.Now().UTC()) {
+		return nil
+	}
+
+	config, err := schedule.GetPlanChangeV2Config()
+	if err != nil {
+		return err
+	}
+	if !config.IsV2() {
+		return nil
+	}
+
+	s.Logger.Info(ctx, "executing pending v2 plan change before period invoices",
+		"schedule_id", schedule.ID,
+		"subscription_id", sub.ID,
+		"scheduled_at", schedule.ScheduledAt)
+
+	return s.ExecuteScheduledPlanChangeV2(ctx, schedule, config, sub)
 }
