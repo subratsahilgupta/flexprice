@@ -608,7 +608,7 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 		s.triggerHubSpotQuoteSyncWorkflow(ctx, result.Sub.ID, result.Customer.ID)
 		s.runPaddleSubscriptionSync(ctx, result.Sub)
 	} else {
-		s.triggerHubSpotDealSyncWorkflow(ctx, result.Sub.ID, result.Customer.ID)
+		triggerHubSpotDealSync(ctx, s.ServiceParams, result.Sub.ID)
 		s.runPaddleSubscriptionSync(ctx, result.Sub)
 	}
 	return response, nil
@@ -820,105 +820,86 @@ func (s *subscriptionService) ActivateDraftSubscription(ctx context.Context, sub
 	return response, nil
 }
 
-// triggerHubSpotDealSyncWorkflow triggers the Temporal workflow to sync subscription to HubSpot deal
-func (s *subscriptionService) triggerHubSpotDealSyncWorkflow(ctx context.Context, subscriptionID, customerID string) {
-	// Copy necessary context values
-	tenantID := types.GetTenantID(ctx)
-	envID := types.GetEnvironmentID(ctx)
-
-	s.Logger.Info(ctx, "triggering HubSpot deal sync workflow",
-		"subscription_id", subscriptionID,
-		"customer_id", customerID,
-		"tenant_id", tenantID,
-		"environment_id", envID)
-
-	// Check if HubSpot connection exists and deal outbound sync is enabled
-	if s.ConnectionRepo == nil {
-		s.Logger.Debug(ctx, "ConnectionRepo not available, skipping HubSpot deal sync",
-			"subscription_id", subscriptionID,
-			"customer_id", customerID)
+// triggerHubSpotDealSync starts the Temporal workflow that reconciles a subscription's line
+// items into its HubSpot deal. Never returns an error and never blocks the caller: a missing
+// connection, a customer with no deal, or an unavailable Temporal is a no-op, not a failure.
+func triggerHubSpotDealSync(ctx context.Context, sp ServiceParams, subscriptionID string) {
+	if sp.ConnectionRepo == nil {
 		return
 	}
 
-	conn, err := s.ConnectionRepo.GetByProvider(ctx, types.SecretProviderHubSpot)
+	conn, err := sp.ConnectionRepo.GetByProvider(ctx, types.SecretProviderHubSpot)
 	if err != nil || conn == nil {
-		s.Logger.Debug(ctx, "HubSpot connection not found, skipping deal sync",
-			"error", err,
-			"subscription_id", subscriptionID,
-			"customer_id", customerID)
+		sp.Logger.Debug(ctx, "HubSpot connection not found, skipping deal sync",
+			"subscription_id", subscriptionID)
 		return
 	}
 
 	if !conn.IsDealOutboundEnabled() {
-		s.Logger.Debug(ctx, "HubSpot deal outbound sync disabled, skipping deal sync",
+		sp.Logger.Debug(ctx, "HubSpot deal outbound sync disabled, skipping deal sync",
 			"subscription_id", subscriptionID,
-			"customer_id", customerID,
 			"connection_id", conn.ID)
 		return
 	}
 
-	// Fetch customer to check for HubSpot deal ID
-	cust, err := s.CustomerRepo.Get(ctx, customerID)
+	sub, err := sp.SubRepo.Get(ctx, subscriptionID)
 	if err != nil {
-		s.Logger.Error(ctx, "failed to fetch customer for HubSpot deal sync",
+		sp.Logger.Error(ctx, "failed to fetch subscription for HubSpot deal sync",
 			"error", err,
-			"customer_id", customerID,
 			"subscription_id", subscriptionID)
 		return
 	}
 
-	// Check if customer has HubSpot deal ID in metadata
+	cust, err := sp.CustomerRepo.Get(ctx, sub.CustomerID)
+	if err != nil {
+		sp.Logger.Error(ctx, "failed to fetch customer for HubSpot deal sync",
+			"error", err,
+			"customer_id", sub.CustomerID,
+			"subscription_id", subscriptionID)
+		return
+	}
+
 	dealID, ok := cust.Metadata["hubspot_deal_id"]
 	if !ok || dealID == "" {
-		s.Logger.Debug(ctx, "customer does not have HubSpot deal ID, skipping sync",
-			"customer_id", customerID,
+		sp.Logger.Debug(ctx, "customer has no HubSpot deal ID, skipping deal sync",
+			"customer_id", cust.ID,
 			"subscription_id", subscriptionID)
-		return // Not an error - customer might not be from HubSpot
+		return
 	}
 
-	// Prepare workflow input with all necessary IDs
 	input := &models.HubSpotDealSyncWorkflowInput{
 		SubscriptionID: subscriptionID,
-		CustomerID:     customerID,
+		CustomerID:     cust.ID,
 		DealID:         dealID,
-		TenantID:       tenantID,
-		EnvironmentID:  envID,
+		TenantID:       types.GetTenantID(ctx),
+		EnvironmentID:  types.GetEnvironmentID(ctx),
 	}
 
-	// Validate input
 	if err := input.Validate(); err != nil {
-		s.Logger.Error(ctx, "invalid workflow input for HubSpot deal sync",
+		sp.Logger.Error(ctx, "invalid workflow input for HubSpot deal sync",
 			"error", err,
 			"subscription_id", subscriptionID,
-			"customer_id", customerID,
 			"deal_id", dealID)
 		return
 	}
 
-	// Get global temporal service
 	temporalSvc := temporalservice.GetGlobalTemporalService()
 	if temporalSvc == nil {
-		s.Logger.Info(ctx, "temporal service not available for HubSpot deal sync",
+		sp.Logger.Info(ctx, "temporal service not available for HubSpot deal sync",
 			"subscription_id", subscriptionID)
 		return
 	}
 
-	// Start workflow - Temporal handles async execution, no need for goroutines
-	workflowRun, err := temporalSvc.ExecuteWorkflow(
-		ctx,
-		types.TemporalHubSpotDealSyncWorkflow,
-		input,
-	)
+	workflowRun, err := temporalSvc.ExecuteWorkflow(ctx, types.TemporalHubSpotDealSyncWorkflow, input)
 	if err != nil {
-		s.Logger.Error(ctx, "failed to start HubSpot deal sync workflow",
+		sp.Logger.Error(ctx, "failed to start HubSpot deal sync workflow",
 			"error", err,
 			"subscription_id", subscriptionID,
-			"customer_id", customerID,
 			"deal_id", dealID)
 		return
 	}
 
-	s.Logger.Info(ctx, "HubSpot deal sync workflow started successfully",
+	sp.Logger.Info(ctx, "HubSpot deal sync workflow started",
 		"subscription_id", subscriptionID,
 		"workflow_id", workflowRun.GetID())
 }
