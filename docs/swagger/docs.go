@@ -6424,6 +6424,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
+                    "404": {
+                        "description": "Price not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Server error",
                         "schema": {
@@ -10248,6 +10254,57 @@ const docTemplate = `{
                 }
             }
         },
+        "/usage-records/search": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Lists usage records. Also accepts filters/sort for a filtered query.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Usage Records"
+                ],
+                "summary": "List usage records",
+                "parameters": [
+                    {
+                        "description": "Usage record filter",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.UsageRecordFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ListUsageRecordsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "post": {
                 "security": [
@@ -13044,6 +13101,20 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/TaxAssociationResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
+        "ListUsageRecordsResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/UsageRecordResponse"
                     }
                 },
                 "pagination": {
@@ -16927,7 +16998,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "credits": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "environment_id": {
                     "type": "string"
@@ -17584,7 +17655,7 @@ const docTemplate = `{
                     ]
                 },
                 "grant_quota": {
-                    "type": "number"
+                    "type": "string"
                 },
                 "id": {
                     "type": "string"
@@ -23703,6 +23774,71 @@ const docTemplate = `{
                 }
             }
         },
+        "UsageRecordResponse": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_external_id": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "number"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "synced": {
+                    "type": "boolean"
+                },
+                "syncs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/types.UsageRecordSyncEntry"
+                    }
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
         "UsageResult": {
             "type": "object",
             "properties": {
@@ -27043,6 +27179,13 @@ const docTemplate = `{
         "types.InvoiceSyncSettings": {
             "type": "object",
             "properties": {
+                "metadata_custom_fields": {
+                    "description": "MetadataCustomFields copies metadata values onto Zoho invoice custom fields\nverbatim.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.MetadataCustomField"
+                    }
+                },
                 "normalize_fixed_to": {
                     "description": "NormalizeFixedTo re-expresses fixed-charge line items in a smaller billing period.\nFor example, a quarterly fixed charge of $300 with NormalizeFixedTo=MONTHLY becomes\nqty=3, rate=$100. Empty string means no normalization (keep original).",
                     "allOf": [
@@ -27093,6 +27236,31 @@ const docTemplate = `{
             "additionalProperties": {
                 "type": "string"
             }
+        },
+        "types.MetadataCustomField": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "metadata_key": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/types.MetadataCustomFieldSource"
+                }
+            }
+        },
+        "types.MetadataCustomFieldSource": {
+            "type": "string",
+            "enum": [
+                "customer",
+                "invoice"
+            ],
+            "x-enum-varnames": [
+                "MetadataCustomFieldSourceCustomer",
+                "MetadataCustomFieldSourceInvoice"
+            ]
         },
         "types.ModifySubscriptionLineItem": {
             "type": "object",
@@ -28481,6 +28649,103 @@ const docTemplate = `{
                 "TransactionTypeCredit",
                 "TransactionTypeDebit"
             ]
+        },
+        "types.UsageRecordFilter": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "customer_external_id": {
+                    "type": "string"
+                },
+                "customer_id": {
+                    "type": "string"
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "filters": {
+                    "description": "Generic predicate and ordering escape hatch, for comparisons that have no dedicated field\nbelow — a range such as period_end at or after a cutoff goes here.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "description": "Exact-match on the window boundaries. Together with SubscriptionID these identify a single row:\nthey are the columns the table's unique index is built on.",
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "synced": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "types.UsageRecordSyncEntry": {
+            "type": "object",
+            "properties": {
+                "agreement_id": {
+                    "description": "AgreementID is the subscription's identifier on this marketplace: license_arn on AWS,\nusage_reporting_id on GCP, resource_id on Azure. It records which agreement the usage was\nbilled against, which stays meaningful after the connection that reported it is replaced.",
+                    "type": "string"
+                },
+                "connection_id": {
+                    "description": "ConnectionID is the connection that reported this entry, kept for tracing which credentials\nwere used. It is deliberately not part of the map key: a replaced connection must not make an\nalready reported record look unreported.",
+                    "type": "string"
+                },
+                "reporting_id": {
+                    "type": "string"
+                },
+                "skip_reason": {
+                    "type": "string"
+                },
+                "skipped": {
+                    "type": "boolean"
+                },
+                "synced_at": {
+                    "description": "SyncedAt is when the marketplace accepted the record. Zero on a skip, since nothing was sent.",
+                    "type": "string"
+                }
+            }
         },
         "types.UserFilter": {
             "type": "object",
