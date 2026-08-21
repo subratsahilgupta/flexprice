@@ -19948,6 +19948,20 @@ const docTemplate = `{
                 }
             }
         },
+        "PlanPriceSyncStatusResponse": {
+            "type": "object",
+            "properties": {
+                "current_sequence": {
+                    "type": "integer"
+                },
+                "synced": {
+                    "type": "boolean"
+                },
+                "unsynced_subscription_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "PlanResponse": {
             "type": "object",
             "properties": {
@@ -19989,6 +20003,14 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "price_sync_status": {
+                    "description": "PriceSyncStatus reports how many subscriptions are still behind this\nplan's current price sequence. Only populated on the list/search\nendpoint (GetPlans) when ` + "`" + `expand=price_sync_status` + "`" + ` is requested,\nsince computing it is extra per-plan work most callers don't need.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/PlanPriceSyncStatusResponse"
+                        }
+                    ]
                 },
                 "prices": {
                     "description": "TODO: Add inline addons",

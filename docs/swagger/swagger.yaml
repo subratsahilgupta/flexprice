@@ -5128,6 +5128,15 @@ definitions:
       voided_at:
         type: string
     type: object
+  PlanPriceSyncStatusResponse:
+    properties:
+      current_sequence:
+        type: integer
+      synced:
+        type: boolean
+      unsynced_subscription_count:
+        type: integer
+    type: object
   PlanResponse:
     properties:
       created_at:
@@ -5156,6 +5165,14 @@ definitions:
         $ref: '#/definitions/types.Metadata'
       name:
         type: string
+      price_sync_status:
+        allOf:
+        - $ref: '#/definitions/PlanPriceSyncStatusResponse'
+        description: |-
+          PriceSyncStatus reports how many subscriptions are still behind this
+          plan's current price sequence. Only populated on the list/search
+          endpoint (GetPlans) when `expand=price_sync_status` is requested,
+          since computing it is extra per-plan work most callers don't need.
       prices:
         description: 'TODO: Add inline addons'
         items:
