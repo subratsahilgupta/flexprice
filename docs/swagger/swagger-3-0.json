@@ -7751,6 +7751,16 @@
               }
             }
           },
+          "404": {
+            "description": "Price not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Server error",
             "content": {
@@ -12337,6 +12347,64 @@
         ]
       }
     },
+    "/usage-records/search": {
+      "post": {
+        "tags": [
+          "Usage Records"
+        ],
+        "summary": "List usage records",
+        "description": "Lists usage records. Also accepts filters/sort for a filtered query.",
+        "requestBody": {
+          "description": "Usage record filter",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/types.UsageRecordFilter"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListUsageRecordsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-codegen-request-body-name": "request"
+      }
+    },
     "/users": {
       "post": {
         "tags": [
@@ -15279,6 +15347,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaxAssociationResponse"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/types.PaginationResponse"
+          }
+        }
+      },
+      "ListUsageRecordsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageRecordResponse"
             }
           },
           "pagination": {
@@ -18939,7 +19021,7 @@
             "type": "string"
           },
           "credits": {
-            "type": "number"
+            "type": "string"
           },
           "environment_id": {
             "type": "string"
@@ -19564,7 +19646,7 @@
             "$ref": "#/components/schemas/types.EntitlementGrantMeasure"
           },
           "grant_quota": {
-            "type": "number"
+            "type": "string"
           },
           "id": {
             "type": "string"
@@ -25415,6 +25497,75 @@
           }
         }
       },
+      "UsageRecordResponse": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customer_external_id": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          },
+          "environment_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "synced": {
+            "type": "boolean"
+          },
+          "syncs": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/types.UsageRecordSyncEntry"
+            }
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        }
+      },
       "UsageResult": {
         "type": "object",
         "properties": {
@@ -28832,6 +28983,13 @@
       "types.InvoiceSyncSettings": {
         "type": "object",
         "properties": {
+          "metadata_custom_fields": {
+            "type": "array",
+            "description": "MetadataCustomFields copies metadata values onto Zoho invoice custom fields\nverbatim.",
+            "items": {
+              "$ref": "#/components/schemas/types.MetadataCustomField"
+            }
+          },
           "normalize_fixed_to": {
             "$ref": "#/components/schemas/types.BillingPeriod"
           },
@@ -28876,6 +29034,33 @@
           "type": "string"
         },
         "x-speakeasy-name-override": "Metadata"
+      },
+      "types.MetadataCustomField": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "metadata_key": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/types.MetadataCustomFieldSource"
+          }
+        },
+        "x-speakeasy-name-override": "MetadataCustomField"
+      },
+      "types.MetadataCustomFieldSource": {
+        "type": "string",
+        "enum": [
+          "customer",
+          "invoice"
+        ],
+        "x-enum-varnames": [
+          "MetadataCustomFieldSourceCustomer",
+          "MetadataCustomFieldSourceInvoice"
+        ],
+        "x-speakeasy-name-override": "MetadataCustomFieldSource"
       },
       "types.ModifySubscriptionLineItem": {
         "type": "object",
@@ -30284,6 +30469,110 @@
           "TransactionTypeDebit"
         ],
         "x-speakeasy-name-override": "TransactionType"
+      },
+      "types.UsageRecordFilter": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "customer_external_id": {
+            "type": "string"
+          },
+          "customer_id": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expand": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "array",
+            "description": "Generic predicate and ordering escape hatch, for comparisons that have no dedicated field\nbelow \u2014 a range such as period_end at or after a cutoff goes here.",
+            "items": {
+              "$ref": "#/components/schemas/types.FilterCondition"
+            }
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "period_start": {
+            "type": "string",
+            "description": "Exact-match on the window boundaries. Together with SubscriptionID these identify a single row:\nthey are the columns the table's unique index is built on.",
+            "format": "date-time"
+          },
+          "plan_id": {
+            "type": "string"
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.SortCondition"
+            }
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "synced": {
+            "type": "boolean"
+          }
+        },
+        "x-speakeasy-name-override": "UsageRecordFilter"
+      },
+      "types.UsageRecordSyncEntry": {
+        "type": "object",
+        "properties": {
+          "agreement_id": {
+            "type": "string",
+            "description": "AgreementID is the subscription's identifier on this marketplace: license_arn on AWS,\nusage_reporting_id on GCP, resource_id on Azure. It records which agreement the usage was\nbilled against, which stays meaningful after the connection that reported it is replaced."
+          },
+          "connection_id": {
+            "type": "string",
+            "description": "ConnectionID is the connection that reported this entry, kept for tracing which credentials\nwere used. It is deliberately not part of the map key: a replaced connection must not make an\nalready reported record look unreported."
+          },
+          "reporting_id": {
+            "type": "string"
+          },
+          "skip_reason": {
+            "type": "string"
+          },
+          "skipped": {
+            "type": "boolean"
+          },
+          "synced_at": {
+            "type": "string",
+            "description": "SyncedAt is when the marketplace accepted the record. Zero on a skip, since nothing was sent.",
+            "format": "date-time"
+          }
+        },
+        "x-speakeasy-name-override": "UsageRecordSyncEntry"
       },
       "types.UserFilter": {
         "type": "object",
