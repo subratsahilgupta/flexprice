@@ -58,7 +58,7 @@ func (s *NewCustomerLifecycle) Run(ctx context.Context) error {
 
 	if _, err := s.client.Customers().Create(ctx, types.CreateCustomerRequest{
 		ExternalID: ext,
-		Name:       strPtr("E2EProbe Ephemeral"),
+		Name:       "E2EProbe Ephemeral",
 		Metadata: map[string]string{
 			"e2eprobe": "true",
 			"e2eprobe_cohort": "ephemeral",
