@@ -53,7 +53,7 @@ type ExpandConfig struct {
 var (
 	// PlanExpandConfig defines what can be expanded on a plan
 	PlanExpandConfig = ExpandConfig{
-		AllowedFields: []ExpandableField{ExpandPrices, ExpandMeters, ExpandEntitlements, ExpandCreditGrant, ExpandPriceUnit, ExpandFeatures},
+		AllowedFields: []ExpandableField{ExpandPrices, ExpandMeters, ExpandEntitlements, ExpandCreditGrant, ExpandPriceUnit},
 		NestedExpands: map[ExpandableField][]ExpandableField{
 			ExpandPrices:       {ExpandMeters, ExpandPriceUnit, ExpandFeatures},
 			ExpandEntitlements: {ExpandFeatures},

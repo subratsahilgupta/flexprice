@@ -451,10 +451,8 @@ func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceRespo
 		}
 		response.Meter = dto.ToMeterResponse(meter)
 
-		featureFilter := types.NewNoLimitFeatureFilter()
-		featureFilter.MeterIDs = []string{price.MeterID}
-		featureFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
-		features, err := s.FeatureRepo.List(ctx, featureFilter)
+		// A meter has at most one published feature, so features[0] is unambiguous.
+		features, err := s.FeatureRepo.GetFeaturesByMeterIDs(ctx, []string{price.MeterID})
 		if err != nil {
 			s.Logger.Info(ctx, "failed to fetch feature for reporting unit", "meter_id", price.MeterID, "error", err)
 		} else if len(features) > 0 && features[0].ReportingUnit != nil {
@@ -630,7 +628,8 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		s.Logger.Debug(ctx, "fetched meters for prices", "count", len(metersResponse.Items))
 	}
 
-	// If features are requested to be expanded, fetch the metered feature (for reporting unit) per meter in one query
+	// If features are requested to be expanded, fetch the metered feature (for reporting unit) per meter in one query.
+	// A meter has at most one published feature, so keying by MeterID is unambiguous.
 	var featuresByMeterID map[string]*feature.Feature
 	if filter.GetExpand().Has(types.ExpandFeatures) && len(prices) > 0 {
 		meterIDs := lo.Uniq(lo.FilterMap(prices, func(p *price.Price, _ int) (string, bool) {
@@ -638,23 +637,27 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		}))
 
 		if len(meterIDs) > 0 {
-			featureFilter := types.NewNoLimitFeatureFilter()
-			featureFilter.MeterIDs = meterIDs
-			featureFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
-
-			features, err := s.FeatureRepo.List(ctx, featureFilter)
+			features, err := s.FeatureRepo.GetFeaturesByMeterIDs(ctx, meterIDs)
 			if err != nil {
-				return nil, err
-			}
-
-			featuresByMeterID = make(map[string]*feature.Feature, len(features))
-			for _, f := range features {
-				if f.MeterID != "" {
+				s.Logger.Info(ctx, "failed to fetch features in bulk", "error", err)
+				// Don't fail the request, just continue without reporting units
+				featuresByMeterID = make(map[string]*feature.Feature)
+			} else {
+				featuresByMeterID = make(map[string]*feature.Feature, len(features))
+				for _, f := range features {
+					if f.MeterID == "" {
+						continue
+					}
+					if existing, ok := featuresByMeterID[f.MeterID]; ok {
+						s.Logger.Info(ctx, "multiple published features for meter, keeping first match",
+							"meter_id", f.MeterID, "kept_feature_id", existing.ID, "ignored_feature_id", f.ID)
+						continue
+					}
 					featuresByMeterID[f.MeterID] = f
 				}
-			}
 
-			s.Logger.Debug(ctx, "fetched features for prices", "count", len(features))
+				s.Logger.Debug(ctx, "fetched features for prices", "count", len(features))
+			}
 		}
 	}
 
