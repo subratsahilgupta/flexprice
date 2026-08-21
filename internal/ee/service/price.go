@@ -6,7 +6,10 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -1418,7 +1421,7 @@ func (s *priceService) validateBucketSizeAgainstMeter(ctx context.Context, req *
 			Mark(ierr.ErrValidation)
 	}
 
-	return validateBucketedPriceAgainstEntitlements(ctx, s.ServiceParams, m, req.BucketSize, req.BillingModel)
+	return s.validateBucketedPriceAgainstEntitlements(ctx, m, req.BucketSize, req.BillingModel)
 }
 
 // validateGroup validates that a group exists and is of type "price"
@@ -1692,4 +1695,86 @@ func (s *priceService) GetByLookupKey(ctx context.Context, lookupKey string) (*d
 	}
 
 	return &dto.PriceResponse{Price: price}, nil
+}
+
+// entitlementsForMeter returns the entitlements attached to the features backed
+// by the given meter. Empty meter ID, no features, or no entitlements all yield
+// an empty slice rather than an error.
+func (s *priceService) entitlementsForMeter(ctx context.Context, meterID string) ([]*entitlement.Entitlement, error) {
+	// Partially-wired ServiceParams (unit tests, narrow constructors) leave these
+	// repositories nil. The guard is a cross-entity check, so it can only run
+	// when both sides are reachable.
+	if meterID == "" || s.FeatureRepo == nil || s.EntitlementRepo == nil {
+		return nil, nil
+	}
+
+	featureFilter := types.NewNoLimitFeatureFilter()
+	featureFilter.MeterIDs = []string{meterID}
+	features, err := s.FeatureRepo.List(ctx, featureFilter)
+	if err != nil {
+		return nil, err
+	}
+	if len(features) == 0 {
+		return nil, nil
+	}
+
+	featureIDs := lo.Map(features, func(f *feature.Feature, _ int) string { return f.ID })
+
+	entFilter := types.NewNoLimitEntitlementFilter()
+	entFilter.FeatureIDs = featureIDs
+	return s.EntitlementRepo.List(ctx, entFilter)
+}
+
+// validateBucketedPriceAgainstEntitlements rejects a bucketed price when the
+// meter's feature already carries an entitlement that cannot coexist with
+// windowed pricing. Called on price create.
+func (s *priceService) validateBucketedPriceAgainstEntitlements(ctx context.Context, m *meter.Meter, bucketSize types.WindowSize, billingModel types.BillingModel) error {
+	if bucketSize == "" || m == nil {
+		return nil
+	}
+
+	ents, err := s.entitlementsForMeter(ctx, m.ID)
+	if err != nil {
+		return err
+	}
+
+	isMax := m.Aggregation.Type == types.AggregationMax
+	for _, e := range ents {
+		if e == nil {
+			continue
+		}
+		if e.HasGrantConfig() {
+			return ierr.NewError("grant-based entitlements are not supported for bucketed meters").
+				WithHint("Remove the grant-based entitlement on this feature before pricing it per window").
+				WithReportableDetails(map[string]interface{}{
+					"meter_id":       m.ID,
+					"entitlement_id": e.ID,
+					"bucket_size":    bucketSize,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+		if !price.IsLinearBillingModel(billingModel) {
+			return ierr.NewError("entitlements are not supported for bucketed non-linear pricing").
+				WithHint("Applying an entitlement re-prices on the period total, which grants a tiered or packaged allowance once instead of once per window. Remove the entitlement, or use a flat-fee price.").
+				WithReportableDetails(map[string]interface{}{
+					"meter_id":       m.ID,
+					"entitlement_id": e.ID,
+					"bucket_size":    bucketSize,
+					"billing_model":  billingModel,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+		if isMax {
+			return ierr.NewError("entitlements are not supported for bucketed max meters").
+				WithHint("Bucketed max pricing charges each window independently, so a feature entitlement has no single window to draw down. Remove the entitlement before pricing this meter per window.").
+				WithReportableDetails(map[string]interface{}{
+					"meter_id":       m.ID,
+					"entitlement_id": e.ID,
+					"bucket_size":    bucketSize,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
 }

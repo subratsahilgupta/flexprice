@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
-	"github.com/flexprice/flexprice/internal/ee/service"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -32,6 +32,10 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 		return
 	}
 
+	// Captured before the service drops them, so the caller is told what was
+	// ignored rather than silently losing the field.
+	warnings := req.DeprecationWarnings()
+
 	meter, err := h.service.CreateMeter(ctx, &req)
 	if err != nil {
 		h.log.Error(c.Request.Context(), "Failed to create meter", "error", err)
@@ -39,7 +43,9 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, dto.ToMeterResponse(meter))
+	resp := dto.ToMeterResponse(meter)
+	resp.Warnings = warnings
+	c.JSON(http.StatusCreated, resp)
 }
 
 func (h *MeterHandler) GetAllMeters(c *gin.Context) {

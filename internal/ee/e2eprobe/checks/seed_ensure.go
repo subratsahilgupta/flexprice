@@ -306,8 +306,9 @@ func (s *SeedEnsure) ensureFeatures(ctx context.Context, out *e2eprobe.Seeds) er
 		if spec.field != nil {
 			meterReq.Aggregation.Field = spec.field
 		}
-		// bucketSize is no longer settable on a meter — bucketing moved to the
-		// price. The published go-sdk does not yet carry bucket_size on
+		// bucketSize is deprecated on meters — bucketing moved to the price, and
+		// the server now ignores the field (returning a warning) rather than
+		// rejecting it. The published go-sdk does not yet carry bucket_size on
 		// CreatePriceRequest, so these specs seed UNBUCKETED meters until the SDK
 		// is regenerated. spec.bucketSize is retained as a marker: it still drives
 		// BucketedFeatureIDs and the entitlement skip list below.

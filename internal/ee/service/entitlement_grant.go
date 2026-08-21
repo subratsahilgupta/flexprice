@@ -621,7 +621,7 @@ func (s *entitlementService) validateEntitlementGrantShape(
 			Mark(ierr.ErrValidation)
 	}
 	// Same rule for the price-level bucketing source.
-	if err := validateEntitlementAgainstBucketedPrices(ctx, s.ServiceParams, m, true); err != nil {
+	if err := s.validateEntitlementAgainstBucketedPrices(ctx, m, true); err != nil {
 		return err
 	}
 

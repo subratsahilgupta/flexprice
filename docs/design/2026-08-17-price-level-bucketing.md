@@ -13,7 +13,7 @@ This document is canonical. Requirement IDs referenced below:
 | R3 | Exactly one resolver decides the effective bucket size; no code reads either column directly |
 | R4 | Price wins over meter; a price may not set one when the meter already has one |
 | R5 | Callers with no price get the meter's value only |
-| R6 | New meters cannot set a bucket size |
+| R6 | New meters cannot set a bucket size — accepted but ignored, with a deprecation warning on the response |
 | R7 | Bucketing/entitlement conflicts rejected at both write points (§2.7) |
 | R8 | Configured on the plan charge, not the feature |
 | R9 | Setting or changing it warns that the billable unit changes |
@@ -327,7 +327,7 @@ expressed.
 | 3 | A caller with no price passes nil and gets rule 2 only |
 | 4 | A price may **not** set `bucket_size` when its meter already has one — no override |
 | 5 | `bucket_size` on a price is valid only for `USAGE` type whose meter aggregates `MAX` or `SUM` |
-| 6 | New meters may not set `bucket_size`; existing rows keep theirs |
+| 6 | New meters may not set `bucket_size`. Soft-deprecated: the field is accepted, dropped, and reported in `warnings` on the create response, so existing integrations keep working. Existing rows keep theirs |
 | 7 | `bucket_size` is a scalar column on `prices`, not a nested JSON object |
 
 Rule 4 is what prevents a two-live-source pairing, where precedence silently becomes a behaviour
