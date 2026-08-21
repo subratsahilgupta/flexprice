@@ -154,6 +154,15 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
+  ListUsageRecordsResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/UsageRecordResponse'
+        type: array
+      pagination:
+        $ref: '#/definitions/types.PaginationResponse'
+    type: object
   ListUsersResponse:
     properties:
       items:
@@ -2953,7 +2962,7 @@ definitions:
       credit_grant_id:
         type: string
       credits:
-        type: number
+        type: string
       environment_id:
         type: string
       failure_reason:
@@ -3427,7 +3436,7 @@ definitions:
           Grant config; all-or-nothing set (see validateGrantConfig). Presence of a
           grant config turns the entitlement into a time-boxed bucket source.
       grant_quota:
-        type: number
+        type: string
       id:
         type: string
       is_enabled:
@@ -7865,6 +7874,49 @@ definitions:
           additional context)
         type: string
     type: object
+  UsageRecordResponse:
+    properties:
+      amount:
+        type: number
+      created_at:
+        type: string
+      created_by:
+        type: string
+      currency:
+        type: string
+      customer_external_id:
+        type: string
+      customer_id:
+        type: string
+      environment_id:
+        type: string
+      id:
+        type: string
+      period_end:
+        type: string
+      period_start:
+        type: string
+      plan_id:
+        type: string
+      quantity:
+        type: number
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        type: string
+      synced:
+        type: boolean
+      syncs:
+        additionalProperties:
+          $ref: '#/definitions/types.UsageRecordSyncEntry'
+        type: object
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+    type: object
   UsageResult:
     properties:
       value:
@@ -10335,6 +10387,13 @@ definitions:
     - InvoiceStatusSkipped
   types.InvoiceSyncSettings:
     properties:
+      metadata_custom_fields:
+        description: |-
+          MetadataCustomFields copies metadata values onto Zoho invoice custom fields
+          verbatim.
+        items:
+          $ref: '#/definitions/types.MetadataCustomField'
+        type: array
       normalize_fixed_to:
         allOf:
         - $ref: '#/definitions/types.BillingPeriod'
@@ -10372,6 +10431,23 @@ definitions:
     additionalProperties:
       type: string
     type: object
+  types.MetadataCustomField:
+    properties:
+      field:
+        type: string
+      metadata_key:
+        type: string
+      source:
+        $ref: '#/definitions/types.MetadataCustomFieldSource'
+    type: object
+  types.MetadataCustomFieldSource:
+    enum:
+    - customer
+    - invoice
+    type: string
+    x-enum-varnames:
+    - MetadataCustomFieldSourceCustomer
+    - MetadataCustomFieldSourceInvoice
   types.ModifySubscriptionLineItem:
     properties:
       effective_date:
@@ -11404,6 +11480,84 @@ definitions:
     x-enum-varnames:
     - TransactionTypeCredit
     - TransactionTypeDebit
+  types.UsageRecordFilter:
+    properties:
+      currency:
+        type: string
+      customer_external_id:
+        type: string
+      customer_id:
+        type: string
+      end_time:
+        type: string
+      expand:
+        type: string
+      filters:
+        description: |-
+          Generic predicate and ordering escape hatch, for comparisons that have no dedicated field
+          below — a range such as period_end at or after a cutoff goes here.
+        items:
+          $ref: '#/definitions/types.FilterCondition'
+        type: array
+      limit:
+        maximum: 1000
+        minimum: 1
+        type: integer
+      offset:
+        minimum: 0
+        type: integer
+      order:
+        enum:
+        - asc
+        - desc
+        type: string
+      period_end:
+        type: string
+      period_start:
+        description: |-
+          Exact-match on the window boundaries. Together with SubscriptionID these identify a single row:
+          they are the columns the table's unique index is built on.
+        type: string
+      plan_id:
+        type: string
+      sort:
+        items:
+          $ref: '#/definitions/types.SortCondition'
+        type: array
+      start_time:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      subscription_id:
+        type: string
+      synced:
+        type: boolean
+    type: object
+  types.UsageRecordSyncEntry:
+    properties:
+      agreement_id:
+        description: |-
+          AgreementID is the subscription's identifier on this marketplace: license_arn on AWS,
+          usage_reporting_id on GCP, resource_id on Azure. It records which agreement the usage was
+          billed against, which stays meaningful after the connection that reported it is replaced.
+        type: string
+      connection_id:
+        description: |-
+          ConnectionID is the connection that reported this entry, kept for tracing which credentials
+          were used. It is deliberately not part of the map key: a replaced connection must not make an
+          already reported record look unreported.
+        type: string
+      reporting_id:
+        type: string
+      skip_reason:
+        type: string
+      skipped:
+        type: boolean
+      synced_at:
+        description: SyncedAt is when the marketplace accepted the record. Zero on
+          a skip, since nothing was sent.
+        type: string
+    type: object
   types.UserFilter:
     properties:
       end_time:
@@ -16670,6 +16824,10 @@ paths:
           description: Invalid request
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Price not found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
         "500":
           description: Server error
           schema:
@@ -19115,6 +19273,38 @@ paths:
       summary: Update a tenant
       tags:
       - Tenants
+  /usage-records/search:
+    post:
+      consumes:
+      - application/json
+      description: Lists usage records. Also accepts filters/sort for a filtered query.
+      parameters:
+      - description: Usage record filter
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/types.UsageRecordFilter'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ListUsageRecordsResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List usage records
+      tags:
+      - Usage Records
   /users:
     post:
       consumes:
