@@ -641,23 +641,11 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 			if err != nil {
 				s.Logger.Info(ctx, "failed to fetch features in bulk", "error", err)
 				// Don't fail the request, just continue without reporting units
-				featuresByMeterID = make(map[string]*feature.Feature)
+				features = nil
 			} else {
-				featuresByMeterID = make(map[string]*feature.Feature, len(features))
-				for _, f := range features {
-					if f.MeterID == "" {
-						continue
-					}
-					if existing, ok := featuresByMeterID[f.MeterID]; ok {
-						s.Logger.Info(ctx, "multiple published features for meter, keeping first match",
-							"meter_id", f.MeterID, "kept_feature_id", existing.ID, "ignored_feature_id", f.ID)
-						continue
-					}
-					featuresByMeterID[f.MeterID] = f
-				}
-
 				s.Logger.Debug(ctx, "fetched features for prices", "count", len(features))
 			}
+			featuresByMeterID = s.buildFeaturesByMeterID(ctx, features)
 		}
 	}
 
@@ -826,6 +814,26 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 	}
 
 	return response, nil
+}
+
+// buildFeaturesByMeterID maps each feature by its meter ID. A meter has at most one
+// published feature; if more than one is found, the first is kept and the rest are
+// logged (not treated as an error, since it's a recovered/skipped condition).
+func (s *priceService) buildFeaturesByMeterID(ctx context.Context, features []*feature.Feature) map[string]*feature.Feature {
+	byMeterID := make(map[string]*feature.Feature, len(features))
+	for _, f := range features {
+		if f.MeterID == "" {
+			continue
+		}
+		existing, ok := byMeterID[f.MeterID]
+		if !ok {
+			byMeterID[f.MeterID] = f
+			continue
+		}
+		s.Logger.Info(ctx, "multiple published features for meter, keeping first match",
+			"meter_id", f.MeterID, "kept_feature_id", existing.ID, "ignored_feature_id", f.ID)
+	}
+	return byMeterID
 }
 
 func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.UpdatePriceRequest) (*dto.PriceResponse, error) {

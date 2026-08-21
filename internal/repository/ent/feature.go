@@ -271,6 +271,13 @@ func (r *featureRepository) Update(ctx context.Context, f *domainFeature.Feature
 	})
 	defer FinishSpan(span)
 
+	// Capture the previous meter ID so its by-meter-ID cache entry can be invalidated
+	// too if this update moves the feature to a different meter.
+	var previousMeterID string
+	if previous, err := r.Get(ctx, f.ID); err == nil && previous != nil {
+		previousMeterID = previous.MeterID
+	}
+
 	updateQuery := client.Feature.Update().
 		Where(
 			feature.ID(f.ID),
@@ -327,6 +334,10 @@ func (r *featureRepository) Update(ctx context.Context, f *domainFeature.Feature
 
 	SetSpanSuccess(span)
 	r.DeleteCache(ctx, f.ID)
+	r.deleteFeatureCacheByMeterID(ctx, f.MeterID)
+	if previousMeterID != "" && previousMeterID != f.MeterID {
+		r.deleteFeatureCacheByMeterID(ctx, previousMeterID)
+	}
 	return nil
 }
 
@@ -343,6 +354,12 @@ func (r *featureRepository) Delete(ctx context.Context, id string) error {
 		"feature_id": id,
 	})
 	defer FinishSpan(span)
+
+	// Capture the meter ID before archiving so its by-meter-ID cache entry can be invalidated.
+	var meterID string
+	if existing, err := r.Get(ctx, id); err == nil && existing != nil {
+		meterID = existing.MeterID
+	}
 
 	_, err := client.Feature.Update().
 		Where(
@@ -376,6 +393,7 @@ func (r *featureRepository) Delete(ctx context.Context, id string) error {
 
 	SetSpanSuccess(span)
 	r.DeleteCache(ctx, id)
+	r.deleteFeatureCacheByMeterID(ctx, meterID)
 	return nil
 }
 
@@ -773,4 +791,17 @@ func (r *featureRepository) getFeatureCacheByMeterID(ctx context.Context, meterI
 		return nil
 	}
 	return f
+}
+
+func (r *featureRepository) deleteFeatureCacheByMeterID(ctx context.Context, meterID string) {
+	if meterID == "" {
+		return
+	}
+	span, ctx := cache.StartRedisCacheSpan(ctx, "feature", "delete_by_meter_id", map[string]interface{}{
+		"meter_id": meterID,
+	})
+	defer cache.FinishSpan(span)
+
+	cacheKey := cache.GenerateKey(ctx, cache.PrefixMeterFeature, meterID)
+	r.redisCache.ForceCacheDelete(ctx, cacheKey)
 }
