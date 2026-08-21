@@ -1,6 +1,9 @@
 package types
 
 import (
+	"fmt"
+	"strings"
+
 	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
@@ -64,6 +67,78 @@ type InvoiceSyncSettings struct {
 	// ServicePeriodCustomFields names the Zoho custom fields that receive the
 	// invoice's service start and end dates.
 	ServicePeriodCustomFields *ServicePeriodCustomFields `json:"service_period_custom_fields,omitempty"`
+
+	// MetadataCustomFields copies metadata values onto Zoho invoice custom fields
+	// verbatim.
+	MetadataCustomFields []MetadataCustomField `json:"metadata_custom_fields,omitempty"`
+}
+
+type MetadataCustomFieldSource string
+
+const (
+	MetadataCustomFieldSourceCustomer MetadataCustomFieldSource = "customer"
+	MetadataCustomFieldSourceInvoice  MetadataCustomFieldSource = "invoice"
+)
+
+type MetadataCustomField struct {
+	Source      MetadataCustomFieldSource `json:"source"`
+	MetadataKey string                    `json:"metadata_key"`
+	Field       string                    `json:"field"`
+}
+
+func (m MetadataCustomField) Validate() error {
+	switch m.Source {
+	case MetadataCustomFieldSourceCustomer, MetadataCustomFieldSourceInvoice:
+	default:
+		return ierr.NewError("invalid metadata custom field source").
+			WithHint(fmt.Sprintf("source must be %q or %q",
+				MetadataCustomFieldSourceCustomer, MetadataCustomFieldSourceInvoice)).
+			Mark(ierr.ErrValidation)
+	}
+
+	if strings.TrimSpace(m.MetadataKey) == "" {
+		return ierr.NewError("metadata custom field key is required").
+			WithHint("Provide the metadata key to copy from").
+			Mark(ierr.ErrValidation)
+	}
+
+	if strings.TrimSpace(m.Field) == "" {
+		return ierr.NewError("metadata custom field target is required").
+			WithHint("Provide the Zoho custom field API name or ID to write to").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// Two mappings may not write to the same Zoho field, and neither may claim a field the
+// service period already uses.
+func (s *InvoiceSyncSettings) ValidateMetadataCustomFields() error {
+	if s == nil || len(s.MetadataCustomFields) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(s.MetadataCustomFields)+2)
+	if s.ServicePeriodCustomFields.IsConfigured() {
+		seen[s.ServicePeriodCustomFields.StartFieldID] = struct{}{}
+		seen[s.ServicePeriodCustomFields.EndFieldID] = struct{}{}
+	}
+
+	for _, m := range s.MetadataCustomFields {
+		if err := m.Validate(); err != nil {
+			return err
+		}
+
+		field := strings.TrimSpace(m.Field)
+		if _, dup := seen[field]; dup {
+			return ierr.NewError("duplicate zoho custom field mapping").
+				WithHint(fmt.Sprintf("Zoho custom field %q is mapped more than once", field)).
+				Mark(ierr.ErrValidation)
+		}
+		seen[field] = struct{}{}
+	}
+
+	return nil
 }
 
 // ServicePeriodCustomFields holds the Zoho custom field IDs for the service period.
@@ -191,6 +266,9 @@ func (s *SyncConfig) Validate() error {
 
 	if s.InvoiceSyncSettings != nil {
 		if err := s.InvoiceSyncSettings.ServicePeriodCustomFields.Validate(); err != nil {
+			return err
+		}
+		if err := s.InvoiceSyncSettings.ValidateMetadataCustomFields(); err != nil {
 			return err
 		}
 	}
