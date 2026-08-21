@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -449,6 +450,16 @@ func (s *priceService) GetPrice(ctx context.Context, id string) (*dto.PriceRespo
 			return nil, err
 		}
 		response.Meter = dto.ToMeterResponse(meter)
+
+		featureFilter := types.NewNoLimitFeatureFilter()
+		featureFilter.MeterIDs = []string{price.MeterID}
+		featureFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+		features, err := s.FeatureRepo.List(ctx, featureFilter)
+		if err != nil {
+			s.Logger.Info(ctx, "failed to fetch feature for reporting unit", "meter_id", price.MeterID, "error", err)
+		} else if len(features) > 0 && features[0].ReportingUnit != nil {
+			response.Feature = &dto.PriceFeatureResponse{ReportingUnit: features[0].ReportingUnit}
+		}
 	}
 
 	if price.GroupID != "" {
@@ -619,6 +630,34 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		s.Logger.Debug(ctx, "fetched meters for prices", "count", len(metersResponse.Items))
 	}
 
+	// If features are requested to be expanded, fetch the metered feature (for reporting unit) per meter in one query
+	var featuresByMeterID map[string]*feature.Feature
+	if filter.GetExpand().Has(types.ExpandFeatures) && len(prices) > 0 {
+		meterIDs := lo.Uniq(lo.FilterMap(prices, func(p *price.Price, _ int) (string, bool) {
+			return p.MeterID, p.MeterID != ""
+		}))
+
+		if len(meterIDs) > 0 {
+			featureFilter := types.NewNoLimitFeatureFilter()
+			featureFilter.MeterIDs = meterIDs
+			featureFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+
+			features, err := s.FeatureRepo.List(ctx, featureFilter)
+			if err != nil {
+				return nil, err
+			}
+
+			featuresByMeterID = make(map[string]*feature.Feature, len(features))
+			for _, f := range features {
+				if f.MeterID != "" {
+					featuresByMeterID[f.MeterID] = f
+				}
+			}
+
+			s.Logger.Debug(ctx, "fetched features for prices", "count", len(features))
+		}
+	}
+
 	// Collect entity IDs based on entity type for efficient bulk fetching
 	var planIDs []string
 	var addonIDs []string
@@ -744,6 +783,13 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 		if filter.GetExpand().Has(types.ExpandMeters) && p.MeterID != "" {
 			if m, ok := metersByID[p.MeterID]; ok {
 				response.Items[i].Meter = m
+			}
+		}
+
+		// Add feature (reporting unit) if requested and available
+		if filter.GetExpand().Has(types.ExpandFeatures) && p.MeterID != "" {
+			if f, ok := featuresByMeterID[p.MeterID]; ok && f.ReportingUnit != nil {
+				response.Items[i].Feature = &dto.PriceFeatureResponse{ReportingUnit: f.ReportingUnit}
 			}
 		}
 
