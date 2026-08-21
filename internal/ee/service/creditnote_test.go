@@ -1130,12 +1130,15 @@ func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 
 func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() {
 	// Two drafts, each individually valid (100 <= 110 max), whose combined total (200)
-	// exceeds what the invoice can actually refund.
-	draftReq := func() *dto.CreateCreditNoteRequest {
+	// exceeds what the invoice can actually refund. The keys are explicit because identical
+	// request content hashes to the same idempotency key, which would return the first draft
+	// again instead of creating a second one.
+	draftReq := func(idempotencyKey string) *dto.CreateCreditNoteRequest {
 		return &dto.CreateCreditNoteRequest{
 			InvoiceID:         s.testData.invoices.finalized.ID,
 			Reason:            types.CreditNoteReasonUnsatisfactory,
 			ProcessCreditNote: false,
+			IdempotencyKey:    lo.ToPtr(idempotencyKey),
 			LineItems: []dto.CreateCreditNoteLineItemRequest{
 				{InvoiceLineItemID: "line_1", Amount: decimal.NewFromFloat(50.00)},
 				{InvoiceLineItemID: "line_2", Amount: decimal.NewFromFloat(50.00)},
@@ -1143,13 +1146,14 @@ func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() 
 		}
 	}
 
-	first, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	first, err := s.service.CreateCreditNote(s.GetContext(), draftReq("refund_capacity_first"))
 	s.NoError(err)
 	s.Equal(types.CreditNoteStatusDraft, first.CreditNoteStatus)
 
-	second, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	second, err := s.service.CreateCreditNote(s.GetContext(), draftReq("refund_capacity_second"))
 	s.NoError(err)
 	s.Equal(types.CreditNoteStatusDraft, second.CreditNoteStatus)
+	s.NotEqual(first.ID, second.ID, "the capacity race needs two distinct drafts")
 
 	walletBefore, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), s.testData.wallets.usd.ID)
 	s.NoError(err)
@@ -1176,23 +1180,25 @@ func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() 
 func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_AdjustmentCapacityRecheck() {
 	// Same race as the refund case, but for ADJUSTMENT type, which has no wallet
 	// idempotency backstop against a double-applied recalculation.
-	draftReq := func() *dto.CreateCreditNoteRequest {
+	draftReq := func(idempotencyKey string) *dto.CreateCreditNoteRequest {
 		return &dto.CreateCreditNoteRequest{
 			InvoiceID:         s.testData.invoices.pending.ID,
 			Reason:            types.CreditNoteReasonBillingError,
 			ProcessCreditNote: false,
+			IdempotencyKey:    lo.ToPtr(idempotencyKey),
 			LineItems: []dto.CreateCreditNoteLineItemRequest{
 				{InvoiceLineItemID: "line_3", Amount: decimal.NewFromFloat(80.00)},
 			},
 		}
 	}
 
-	first, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	first, err := s.service.CreateCreditNote(s.GetContext(), draftReq("adjustment_capacity_first"))
 	s.NoError(err)
 	s.Equal(types.CreditNoteTypeAdjustment, first.CreditNoteType)
 
-	second, err := s.service.CreateCreditNote(s.GetContext(), draftReq())
+	second, err := s.service.CreateCreditNote(s.GetContext(), draftReq("adjustment_capacity_second"))
 	s.NoError(err)
+	s.NotEqual(first.ID, second.ID, "the capacity race needs two distinct drafts")
 
 	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID))
 
