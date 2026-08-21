@@ -1753,7 +1753,10 @@ func (s *priceService) validateBucketedPriceAgainstEntitlements(ctx context.Cont
 				}).
 				Mark(ierr.ErrValidation)
 		}
-		if !price.IsLinearBillingModel(billingModel) {
+		// Only FLAT_FEE is linear: cost(a+b) == cost(a)+cost(b). Under TIERED or
+		// PACKAGE the entitlement path re-prices on the period total and grants the
+		// allowance once instead of once per window (design doc section 9).
+		if billingModel != types.BILLING_MODEL_FLAT_FEE {
 			return ierr.NewError("entitlements are not supported for bucketed non-linear pricing").
 				WithHint("Applying an entitlement re-prices on the period total, which grants a tiered or packaged allowance once instead of once per window. Remove the entitlement, or use a flat-fee price.").
 				WithReportableDetails(map[string]interface{}{

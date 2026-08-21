@@ -871,13 +871,13 @@ func (s *entitlementService) validateEntitlementAgainstBucketedPrices(ctx contex
 		if pr == nil || !price.IsBucketed(pr, m) {
 			continue
 		}
-		if !grantBased && !isMax && price.IsLinearBillingModel(pr.BillingModel) {
+		if !grantBased && !isMax && pr.BillingModel == types.BILLING_MODEL_FLAT_FEE {
 			continue
 		}
 		hint := "This meter is priced per window on at least one price. Remove the bucket size from that price before adding an entitlement."
 		if grantBased {
 			hint = "This meter is priced per window on at least one price. Grant-based entitlements cannot be used with windowed pricing."
-		} else if !price.IsLinearBillingModel(pr.BillingModel) {
+		} else if pr.BillingModel != types.BILLING_MODEL_FLAT_FEE {
 			hint = "This meter is priced per window with tiered or packaged pricing. An entitlement would re-price on the period total and grant the allowance once instead of once per window."
 		}
 		return ierr.NewError("meter is priced per window").

@@ -839,17 +839,3 @@ func (p *Price) BillsIdenticallyTo(other *Price) bool {
 		p.BillingPeriod == other.BillingPeriod &&
 		p.BillingPeriodCount == other.BillingPeriodCount
 }
-
-// IsLinearBillingModel reports whether cost is a plain linear function of
-// quantity, i.e. cost(a+b) == cost(a)+cost(b). Only FLAT_FEE satisfies that.
-//
-// It matters because the entitlement adjustment path re-prices on the aggregate
-// (billing_meter_usage.go, adjustMeterUsageEntitlement) and discards the
-// per-bucket cost. Under a linear model the two agree, so the discard is
-// harmless. Under TIERED or PACKAGE they do not: the tier allowance is granted
-// once per bucket by the bucketed path and once for the whole period by the
-// aggregate path, so applying an entitlement can move the bill in either
-// direction. See docs/design/2026-08-17-price-level-bucketing.md section 9.
-func IsLinearBillingModel(m types.BillingModel) bool {
-	return m == types.BILLING_MODEL_FLAT_FEE
-}
