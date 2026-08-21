@@ -89,12 +89,24 @@ func TestSupabaseEmailVerifiedClaim(t *testing.T) {
 		assert.True(t, claims.EmailVerified)
 	})
 
-	t.Run("reads email_verified nested in user_metadata", func(t *testing.T) {
+	// user_metadata is writable by the user through the client SDK, so a copy
+	// of the flag there proves nothing about the provider's confirmation state
+	// and must never satisfy the signup guard on its own.
+	t.Run("ignores email_verified nested in user_metadata", func(t *testing.T) {
 		claims, err := a.ValidateToken(context.Background(), sign(t, map[string]interface{}{
 			"user_metadata": map[string]interface{}{"email_verified": true},
 		}))
 		require.NoError(t, err)
-		assert.True(t, claims.EmailVerified)
+		assert.False(t, claims.EmailVerified)
+	})
+
+	t.Run("ignores user_metadata even when the top-level claim is false", func(t *testing.T) {
+		claims, err := a.ValidateToken(context.Background(), sign(t, map[string]interface{}{
+			"email_verified": false,
+			"user_metadata":  map[string]interface{}{"email_verified": true},
+		}))
+		require.NoError(t, err)
+		assert.False(t, claims.EmailVerified)
 	})
 
 	t.Run("reports false when the claim is absent", func(t *testing.T) {
