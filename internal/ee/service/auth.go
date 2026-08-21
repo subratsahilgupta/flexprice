@@ -163,7 +163,7 @@ func (s *authService) refuseUnverifiedEmail(ctx context.Context, token, email st
 	}
 
 	if !strings.EqualFold(strings.TrimSpace(claims.Email), strings.TrimSpace(email)) {
-		s.Logger.Warn(ctx, "signup refused because the token email does not match the registered email",
+		s.Logger.Info(ctx, "signup refused because the token email does not match the registered email",
 			"token_email", claims.Email,
 			"request_email", email,
 		)
@@ -173,7 +173,7 @@ func (s *authService) refuseUnverifiedEmail(ctx context.Context, token, email st
 	}
 
 	if !claims.EmailVerified {
-		s.Logger.Warn(ctx, "signup refused because the email is not verified",
+		s.Logger.Info(ctx, "signup refused because the email is not verified",
 			"email", email,
 		)
 		return ierr.NewError("email is not verified").
