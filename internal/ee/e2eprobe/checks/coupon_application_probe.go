@@ -50,7 +50,7 @@ func (p *CouponApplicationProbe) Run(ctx context.Context) error {
 	ext := fmt.Sprintf("e2eprobe-cust-eph-coupon-%d", now.UnixNano())
 	if _, err := p.client.Customers().Create(ctx, types.CreateCustomerRequest{
 		ExternalID: ext,
-		Name:       strPtr("E2EProbe Ephemeral Coupon"),
+		Name:       "E2EProbe Ephemeral Coupon",
 		Metadata: map[string]string{
 			"e2eprobe":        "true",
 			"e2eprobe_cohort": "ephemeral",

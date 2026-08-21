@@ -351,9 +351,9 @@ func (o invoiceOps) Query(ctx context.Context, f types.InvoiceFilter) (*dtos.Que
 	return o.s.QueryInvoice(ctx, f)
 }
 
-// Get passes nil for optional expandBySource and groupBy parameters (not exposed in the interface).
+// Get passes nil for optional expandBySource, groupBy, and expand parameters (not exposed in the interface).
 func (o invoiceOps) Get(ctx context.Context, id string) (*dtos.GetInvoiceResponse, error) {
-	return o.s.GetInvoice(ctx, id, nil, nil)
+	return o.s.GetInvoice(ctx, id, nil, nil, nil)
 }
 func (o invoiceOps) GetPreview(ctx context.Context, req types.GetPreviewInvoiceRequest) (*dtos.GetInvoicePreviewResponse, error) {
 	return o.s.GetInvoicePreview(ctx, req)

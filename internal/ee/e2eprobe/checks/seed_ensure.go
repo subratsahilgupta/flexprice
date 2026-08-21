@@ -624,7 +624,7 @@ func (s *SeedEnsure) ensureCustomers(ctx context.Context, out *e2eprobe.Seeds) e
 		}
 		req := types.CreateCustomerRequest{
 			ExternalID: ext,
-			Name:       strPtr(fmt.Sprintf("E2EProbe Persistent %d", i)),
+			Name:       fmt.Sprintf("E2EProbe Persistent %d", i),
 			Email:      strPtr(fmt.Sprintf("%s@e2eprobe.flexprice.invalid", ext)),
 			Metadata: map[string]string{
 				"e2eprobe":        "true",
@@ -673,7 +673,7 @@ func (s *SeedEnsure) ensureAlertCanaryCustomer(ctx context.Context) error {
 	}
 	req := types.CreateCustomerRequest{
 		ExternalID: ext,
-		Name:       strPtr("E2EProbe Alert Canary"),
+		Name:       "E2EProbe Alert Canary",
 		Email:      strPtr(fmt.Sprintf("%s@e2eprobe.flexprice.invalid", ext)),
 		Metadata: map[string]string{
 			"e2eprobe":        "true",

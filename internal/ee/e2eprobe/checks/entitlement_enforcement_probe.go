@@ -83,7 +83,7 @@ func (p *EntitlementEnforcementProbe) Run(ctx context.Context) error {
 	ext := fmt.Sprintf("e2eprobe-cust-eph-ent-%d", now.UnixNano())
 	if _, err := p.client.Customers().Create(ctx, types.CreateCustomerRequest{
 		ExternalID: ext,
-		Name:       strPtr("E2EProbe Ephemeral Entitlement"),
+		Name:       "E2EProbe Ephemeral Entitlement",
 		Metadata: map[string]string{
 			"e2eprobe":        "true",
 			"e2eprobe_cohort": "ephemeral",
