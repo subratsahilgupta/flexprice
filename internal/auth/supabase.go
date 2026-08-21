@@ -151,7 +151,32 @@ func (s *supabaseAuth) ValidateToken(ctx context.Context, token string) (*auth.C
 		TenantID:      tenantID,
 		Email:         email,
 		EnvironmentID: environmentID,
+		EmailVerified: supabaseEmailVerified(claims),
 	}, nil
+}
+
+// supabaseEmailVerified reads Supabase's email-confirmation flag from a
+// validated token's claims.
+//
+// The flag has lived in two places across Supabase versions: nested under
+// user_metadata, and mirrored as a top-level claim. Both are checked and either
+// one being true is taken as verified, so the guard keeps working across an
+// upgrade in either direction rather than silently flipping every signup to
+// "unverified" — which would fail closed and block all new accounts.
+//
+// A token with neither key present yields false. That is the safe default: a
+// provider that does not tell us the email was confirmed is treated as not
+// having confirmed it.
+func supabaseEmailVerified(claims jwt.MapClaims) bool {
+	if verified, ok := claims["email_verified"].(bool); ok && verified {
+		return true
+	}
+	if userMetadata, ok := claims["user_metadata"].(map[string]interface{}); ok {
+		if verified, ok := userMetadata["email_verified"].(bool); ok && verified {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *supabaseAuth) AssignUserToTenant(ctx context.Context, userID string, tenantID string) error {
