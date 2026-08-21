@@ -5,6 +5,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 )
 
 // UsageRecordService reads the usage_records table written by the marketplace snapshot cron and
@@ -23,12 +24,23 @@ func NewUsageRecordService(params ServiceParams) UsageRecordService {
 }
 
 func (s *usageRecordService) ListUsageRecords(ctx context.Context, filter *types.UsageRecordFilter) (*dto.ListUsageRecordsResponse, error) {
-	if err := filter.Validate(); err != nil {
-		return nil, err
+	if filter == nil {
+		filter = types.NewUsageRecordFilter()
 	}
 
 	if filter.QueryFilter == nil {
 		filter.QueryFilter = types.NewDefaultQueryFilter()
+	}
+
+	// GetLimit() is 0 both for an unset limit and for an explicitly unlimited filter, so the
+	// unlimited case has to be read before normalizing and reused for the count below.
+	isUnlimited := filter.IsUnlimited()
+	if !isUnlimited && filter.GetLimit() <= 0 {
+		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
+	}
+
+	if err := filter.Validate(); err != nil {
+		return nil, err
 	}
 
 	records, err := s.UsageRecordRepo.List(ctx, filter)
@@ -44,7 +56,7 @@ func (s *usageRecordService) ListUsageRecords(ctx context.Context, filter *types
 	// len(records) is only the current page's count; an unlimited filter already returns every
 	// matching row, but a paginated one needs the true total from a separate count query.
 	total := len(responses)
-	if !filter.IsUnlimited() {
+	if !isUnlimited {
 		total, err = s.UsageRecordRepo.Count(ctx, filter)
 		if err != nil {
 			return nil, err
@@ -53,10 +65,10 @@ func (s *usageRecordService) ListUsageRecords(ctx context.Context, filter *types
 
 	return &dto.ListUsageRecordsResponse{
 		Items: responses,
-		Pagination: types.PaginationResponse{
-			Limit:  filter.GetLimit(),
-			Offset: filter.GetOffset(),
-			Total:  total,
-		},
+		Pagination: types.NewPaginationResponse(
+			total,
+			filter.GetLimit(),
+			filter.GetOffset(),
+		),
 	}, nil
 }

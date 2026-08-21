@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/usagerecord"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -66,7 +67,9 @@ func (s *UsageRecordServiceSuite) TestListUsageRecords_TotalIsIndependentOfPageL
 	require.Len(s.T(), resp.Items, 1, "the returned page respects the requested limit")
 	require.Equal(s.T(), 3, resp.Pagination.Total, "the total must reflect every matching row, not just this page")
 	require.Equal(s.T(), 1, resp.Pagination.Limit)
-	require.Equal(s.T(), 0, resp.Pagination.Offset)
+	// types.NewPaginationResponse reports the next page's offset (offset + limit), as every other
+	// list endpoint does.
+	require.Equal(s.T(), 1, resp.Pagination.Offset)
 }
 
 func (s *UsageRecordServiceSuite) TestListUsageRecords_AppliesNamedSubscriptionFilter() {
@@ -92,6 +95,16 @@ func (s *UsageRecordServiceSuite) TestListUsageRecords_DefaultsLimitWhenUnset() 
 	require.Len(s.T(), resp.Items, 1)
 }
 
+func (s *UsageRecordServiceSuite) TestListUsageRecords_NilFilterGetsDefaultPagination() {
+	s.seedRecord("ur_1", "sub_1", time.Hour)
+
+	resp, err := s.svc.ListUsageRecords(s.GetContext(), nil)
+
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), types.NewDefaultQueryFilter().GetLimit(), resp.Pagination.Limit)
+	require.Len(s.T(), resp.Items, 1)
+}
+
 func (s *UsageRecordServiceSuite) TestListUsageRecords_RejectsAnInvalidFilterCondition() {
 	_, err := s.svc.ListUsageRecords(s.GetContext(), &types.UsageRecordFilter{
 		Filters: []*types.FilterCondition{
@@ -99,5 +112,20 @@ func (s *UsageRecordServiceSuite) TestListUsageRecords_RejectsAnInvalidFilterCon
 		},
 	})
 
-	require.Error(s.T(), err, "an incomplete DSL filter condition must fail validation before hitting the repo")
+	require.Error(s.T(), err)
+	require.True(s.T(), ierr.IsValidation(err), "an incomplete DSL filter must fail validation before hitting the repo, got: %v", err)
+	require.Contains(s.T(), err.Error(), "operator is required")
+}
+
+func (s *UsageRecordServiceSuite) TestListUsageRecords_UnlimitedFilterIsNotClobbered() {
+	s.seedRecord("ur_1", "sub_1", time.Hour)
+
+	filter := types.NewNoLimitUsageRecordFilter()
+	resp, err := s.svc.ListUsageRecords(s.GetContext(), filter)
+
+	require.NoError(s.T(), err)
+	require.True(s.T(), filter.IsUnlimited(), "GetLimit()==0 must not replace a no-limit filter with the default page size")
+	require.Equal(s.T(), 0, resp.Pagination.Limit)
+	require.Len(s.T(), resp.Items, 1)
+	require.Equal(s.T(), 1, resp.Pagination.Total)
 }
