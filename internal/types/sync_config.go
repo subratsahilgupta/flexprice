@@ -12,6 +12,7 @@ type SyncConfig struct {
 	Invoice      *EntitySyncConfig `json:"invoice,omitempty"`
 	Customer     *EntitySyncConfig `json:"customer,omitempty"`
 	Payment      *EntitySyncConfig `json:"payment,omitempty"` // Payment sync (QuickBooks bidirectional)
+	Price        *EntitySyncConfig `json:"price,omitempty"`   // Price sync (Stripe only) — outbound only, see Validate()
 	// CRM sync (HubSpot, Salesforce, etc.)
 	Deal  *EntitySyncConfig `json:"deal,omitempty"`
 	Quote *EntitySyncConfig `json:"quote,omitempty"`
@@ -59,6 +60,37 @@ type InvoiceSyncSettings struct {
 	// For example, a quarterly fixed charge of $300 with NormalizeFixedTo=MONTHLY becomes
 	// qty=3, rate=$100. Empty string means no normalization (keep original).
 	NormalizeFixedTo BillingPeriod `json:"normalize_fixed_to,omitempty"`
+
+	// ServicePeriodCustomFields names the Zoho custom fields that receive the
+	// invoice's service start and end dates.
+	ServicePeriodCustomFields *ServicePeriodCustomFields `json:"service_period_custom_fields,omitempty"`
+}
+
+// ServicePeriodCustomFields holds the Zoho custom field IDs for the service period.
+type ServicePeriodCustomFields struct {
+	StartFieldID string `json:"start_field_id,omitempty"`
+	EndFieldID   string `json:"end_field_id,omitempty"`
+}
+
+// IsConfigured reports whether both field IDs are present. A half-configured pair
+// would render a start date with no end date, so both are required together.
+func (s *ServicePeriodCustomFields) IsConfigured() bool {
+	if s == nil {
+		return false
+	}
+	return s.StartFieldID != "" && s.EndFieldID != ""
+}
+
+func (s *ServicePeriodCustomFields) Validate() error {
+	if s == nil {
+		return nil
+	}
+	if (s.StartFieldID == "") != (s.EndFieldID == "") {
+		return ierr.NewError("service period custom fields must be set together").
+			WithHint("Provide both start_field_id and end_field_id, or neither").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
 }
 
 // NormalizedFixedQuantity returns how many units of NormalizeFixedTo fit between start and end.
@@ -98,6 +130,7 @@ func DefaultSyncConfig() *SyncConfig {
 		Invoice:      &EntitySyncConfig{Inbound: false, Outbound: false},
 		Customer:     &EntitySyncConfig{Inbound: false, Outbound: false},
 		Payment:      &EntitySyncConfig{Inbound: false, Outbound: false},
+		Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 		// CRM sync
 		Deal:  &EntitySyncConfig{Inbound: false, Outbound: false},
 		Quote: &EntitySyncConfig{Inbound: false, Outbound: false},
@@ -130,6 +163,10 @@ func (s *SyncConfig) Validate() error {
 		return ierr.NewError("quote inbound sync is not allowed").Mark(ierr.ErrValidation)
 	}
 
+	if s.Price != nil && s.Price.Inbound {
+		return ierr.NewError("price inbound sync is not allowed").Mark(ierr.ErrValidation)
+	}
+
 	// Validate S3 export config if present
 	if s.S3 != nil {
 		if err := s.S3.Validate(); err != nil {
@@ -152,6 +189,12 @@ func (s *SyncConfig) Validate() error {
 		}
 	}
 
+	if s.InvoiceSyncSettings != nil {
+		if err := s.InvoiceSyncSettings.ServicePeriodCustomFields.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -166,6 +209,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        off,
 			Deal:         off,
 			Quote:        off,
 		}
@@ -176,6 +220,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -186,6 +231,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -196,6 +242,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -206,6 +253,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -216,6 +264,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -226,6 +275,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -236,6 +286,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -246,6 +297,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -256,6 +308,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}
@@ -266,6 +319,7 @@ func ProviderBaseSyncConfig(provider SecretProvider) *SyncConfig {
 			Payment:      off,
 			Plan:         off,
 			Subscription: off,
+			Price:        &EntitySyncConfig{Inbound: false, Outbound: false},
 			Deal:         off,
 			Quote:        off,
 		}

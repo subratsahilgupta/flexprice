@@ -115,19 +115,15 @@ func (s *InMemorySubscriptionScheduleStore) GetBySubscriptionID(ctx context.Cont
 func (s *InMemorySubscriptionScheduleStore) GetPendingBySubscriptionAndType(ctx context.Context, subscriptionID string, scheduleType types.SubscriptionScheduleChangeType) (*subscription.SubscriptionSchedule, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	schedules, exists := s.schedulesBySubscription[subscriptionID]
-	if !exists {
-		return nil, ierr.NewError("subscription schedule not found").Mark(ierr.ErrNotFound)
-	}
-
-	for _, schedule := range schedules {
+	// Matches the ent repository: no pending schedule is not an error.
+	for _, schedule := range s.schedulesBySubscription[subscriptionID] {
 		if schedule.ScheduleType == scheduleType &&
 			schedule.Status == types.ScheduleStatusPending {
 			return schedule, nil
 		}
 	}
 
-	return nil, ierr.NewError("subscription schedule not found").Mark(ierr.ErrNotFound)
+	return nil, nil
 }
 
 // List retrieves schedules with filters

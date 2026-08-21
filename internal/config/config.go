@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -30,50 +31,52 @@ type Configuration struct {
 	// (non-nil) every event is published to it in addition to the local `kafka` cluster;
 	// when nil, publishing is single-cluster. The `kafka` block is this deployment's own
 	// local cluster — consumed AND always written. See infrastructure/docs/GCP-CUTOVER-STEPWISE.md.
-	KafkaSecondary             *KafkaConfig                     `mapstructure:"kafka_secondary" validate:"omitempty"`
-	ClickHouse                 ClickHouseConfig                 `validate:"required"`
-	Logging                    LoggingConfig                    `validate:"required"`
-	Postgres                   PostgresConfig                   `validate:"required"`
-	Sentry                     SentryConfig                     `validate:"required"`
-	Otel                       OtelConfig                       `validate:"omitempty"`
-	Pyroscope                  PyroscopeConfig                  `validate:"required"`
-	Event                      EventConfig                      `validate:"required"`
-	DynamoDB                   DynamoDBConfig                   `validate:"required"`
-	Temporal                   TemporalConfig                   `validate:"required"`
-	Webhook                    Webhook                          `validate:"omitempty"`
-	Secrets                    SecretsConfig                    `validate:"required"`
-	Billing                    BillingConfig                    `validate:"omitempty"`
-	S3                         S3Config                         `validate:"required"`
-	FlexpriceS3Exports         FlexpriceS3ExportsConfig         `mapstructure:"flexprice_s3_exports" validate:"omitempty"`
-	Marketplace                MarketplaceConfig                `mapstructure:"marketplace" validate:"omitempty"`
-	Cache                      CacheConfig                      `validate:"required"`
-	EventProcessing            EventProcessingConfig            `mapstructure:"event_processing" validate:"required"`
-	EventProcessingLazy        EventProcessingLazyConfig        `mapstructure:"event_processing_lazy" validate:"required"`
-	EventProcessingReplay      EventProcessingReplayConfig      `mapstructure:"event_processing_replay" validate:"required"`
-	CostSheetUsageTracking     CostSheetUsageTrackingConfig     `mapstructure:"costsheet_usage_tracking" validate:"required"`
-	CostSheetUsageTrackingLazy CostSheetUsageTrackingLazyConfig `mapstructure:"costsheet_usage_tracking_lazy" validate:"required"`
-	MeterUsageTracking         MeterUsageTrackingConfig         `mapstructure:"meter_usage_tracking" validate:"required"`
-	MeterUsageTrackingLazy     MeterUsageTrackingLazyConfig     `mapstructure:"meter_usage_tracking_lazy" validate:"required"`
-	BulkEventConsumption       BulkEventConsumptionConfig       `mapstructure:"bulk_event_consumption" validate:"required"`
-	BulkMeterUsageTracking     BulkMeterUsageTrackingConfig     `mapstructure:"bulk_meter_usage_tracking" validate:"required"`
-	UsageAlerts                UsageAlertsConfig                `mapstructure:"usage_alerts" validate:"omitempty"`
-	EnvAccess                  EnvAccessConfig                  `mapstructure:"env_access" json:"env_access" validate:"omitempty"`
-	FeatureFlag                FeatureFlagConfig                `mapstructure:"feature_flag" validate:"required"`
-	Email                      EmailConfig                      `mapstructure:"email" validate:"required"`
-	RBAC                       RBACConfig                       `mapstructure:"rbac" validate:"omitempty"`
-	OAuth                      OAuthConfig                      `mapstructure:"oauth" validate:"required"`
-	WalletBalanceAlert         WalletBalanceAlertConfig         `mapstructure:"wallet_balance_alert" validate:"required"`
-	CustomerPortal             CustomerPortalConfig             `mapstructure:"customer_portal" validate:"required"`
-	Checkout                   CheckoutConfig                   `mapstructure:"checkout" validate:"omitempty"`
-	Redis                      RedisConfig                      `mapstructure:"redis" validate:"required"`
-	RawEventsReprocessing      RawEventsReprocessingConfig      `mapstructure:"raw_events_reprocessing" validate:"required"`
-	RawEventConsumption        RawEventConsumptionConfig        `mapstructure:"raw_event_consumption" validate:"required"`
-	IntegrationEvents          IntegrationEventsConfig          `mapstructure:"integration_events" validate:"omitempty"`
-	OnboardingEvents           OnboardingEventsConfig           `mapstructure:"onboarding_events" validate:"omitempty"`
-	WebhookRetryJob            WebhookRetryJobConfig            `mapstructure:"webhook_retry_job" validate:"omitempty"`
-	Gemini                     GeminiConfig                     `mapstructure:"gemini" validate:"omitempty"`
-	Whop                       WhopConfig                       `mapstructure:"whop" validate:"omitempty"`
-	Onboarding                 OnboardingConfig                 `mapstructure:"onboarding" validate:"omitempty"`
+	KafkaSecondary         *KafkaConfig                 `mapstructure:"kafka_secondary" validate:"omitempty"`
+	ClickHouse             ClickHouseConfig             `validate:"required"`
+	Logging                LoggingConfig                `validate:"required"`
+	Postgres               PostgresConfig               `validate:"required"`
+	Otel                   OtelConfig                   `validate:"omitempty"`
+	Pyroscope              PyroscopeConfig              `validate:"required"`
+	Event                  EventConfig                  `validate:"required"`
+	DynamoDB               DynamoDBConfig               `validate:"required"`
+	Temporal               TemporalConfig               `validate:"required"`
+	Webhook                Webhook                      `validate:"omitempty"`
+	Secrets                SecretsConfig                `validate:"required"`
+	Billing                BillingConfig                `validate:"omitempty"`
+	S3                     S3Config                     `validate:"required"`
+	FlexpriceS3Exports     FlexpriceS3ExportsConfig     `mapstructure:"flexprice_s3_exports" validate:"omitempty"`
+	Marketplace            MarketplaceConfig            `mapstructure:"marketplace" validate:"omitempty"`
+	Cache                  CacheConfig                  `validate:"required"`
+	EventProcessing        EventProcessingConfig        `mapstructure:"event_processing" validate:"required"`
+	EventProcessingLazy    EventProcessingLazyConfig    `mapstructure:"event_processing_lazy" validate:"required"`
+	EventProcessingReplay  EventProcessingReplayConfig  `mapstructure:"event_processing_replay" validate:"required"`
+	MeterUsageTracking     MeterUsageTrackingConfig     `mapstructure:"meter_usage_tracking" validate:"required"`
+	MeterUsageTrackingLazy MeterUsageTrackingLazyConfig `mapstructure:"meter_usage_tracking_lazy" validate:"required"`
+	BulkEventConsumption   BulkEventConsumptionConfig   `mapstructure:"bulk_event_consumption" validate:"required"`
+	BulkMeterUsageTracking BulkMeterUsageTrackingConfig `mapstructure:"bulk_meter_usage_tracking" validate:"required"`
+	UsageAlerts            UsageAlertsConfig            `mapstructure:"usage_alerts" validate:"omitempty"`
+	EnvAccess              EnvAccessConfig              `mapstructure:"env_access" json:"env_access" validate:"omitempty"`
+	Email                  EmailConfig                  `mapstructure:"email" validate:"required"`
+	RBAC                   RBACConfig                   `mapstructure:"rbac" validate:"omitempty"`
+	OAuth                  OAuthConfig                  `mapstructure:"oauth" validate:"required"`
+	WalletBalanceAlert     WalletBalanceAlertConfig     `mapstructure:"wallet_balance_alert" validate:"required"`
+	CustomerPortal         CustomerPortalConfig         `mapstructure:"customer_portal" validate:"required"`
+	Checkout               CheckoutConfig               `mapstructure:"checkout" validate:"omitempty"`
+	Redis                  RedisConfig                  `mapstructure:"redis" validate:"required"`
+	RawEventsReprocessing  RawEventsReprocessingConfig  `mapstructure:"raw_events_reprocessing" validate:"required"`
+	RawEventConsumption    RawEventConsumptionConfig    `mapstructure:"raw_event_consumption" validate:"required"`
+	IntegrationEvents      IntegrationEventsConfig      `mapstructure:"integration_events" validate:"omitempty"`
+	OnboardingEvents       OnboardingEventsConfig       `mapstructure:"onboarding_events" validate:"omitempty"`
+	WebhookRetryJob        WebhookRetryJobConfig        `mapstructure:"webhook_retry_job" validate:"omitempty"`
+	Gemini                 GeminiConfig                 `mapstructure:"gemini" validate:"omitempty"`
+	Whop                   WhopConfig                   `mapstructure:"whop" validate:"omitempty"`
+	Onboarding             OnboardingConfig             `mapstructure:"onboarding" validate:"omitempty"`
+	ChatSupport            ChatSupportConfig            `mapstructure:"chat_support" validate:"omitempty"`
+}
+
+type ChatSupportConfig struct {
+	AppID          string `mapstructure:"app_id"`
+	IdentitySecret string `mapstructure:"identity_secret"`
 }
 
 type OnboardingConfig struct {
@@ -180,8 +183,122 @@ type ServerConfig struct {
 type AuthConfig struct {
 	Provider types.AuthProvider `mapstructure:"provider" validate:"required"`
 	Secret   string             `mapstructure:"secret" validate:"required"`
+	SAML     SAMLConfig         `mapstructure:"saml"`
 	Supabase SupabaseConfig     `mapstructure:"supabase"`
 	APIKey   APIKeyConfig       `mapstructure:"api_key"`
+}
+
+// SAMLConfig holds deployment-level SAML settings. Per-tenant identity provider
+// details live in the tenant's saml_config setting, not here.
+type SAMLConfig struct {
+	// Enabled is the deployment-wide switch for the whole SAML feature. When it
+	// is off the SAML routes are not mounted at all and no tenant may store a
+	// configuration, so a deployment that does not offer SSO exposes none of it
+	// and cannot accumulate configurations that silently do nothing.
+	//
+	// Defaults to off: SSO is opt-in per deployment.
+	Enabled bool `mapstructure:"enabled"`
+
+	// BaseURL is the externally reachable origin of this deployment — scheme and
+	// host only; the SAML paths are built onto it. It is deployment-level rather
+	// than per-tenant because a deployment has exactly one API origin, and
+	// because it must not come from the inbound request: it is signed into the
+	// AuthnRequest as the ACS URL and checked again when the assertion arrives,
+	// so a request-derived origin would let a caller controlling the Host header
+	// have assertions delivered to a host of their choosing.
+	//
+	// Nothing tenant-specific lives here. The tenant appears in the path, which
+	// the SP builds, so one origin serves every tenant.
+	BaseURL string `mapstructure:"base_url"`
+
+	// DashboardURL receives the browser redirect after a successful assertion,
+	// carrying the minted token. Deployment-level for the same reason: it names
+	// this deployment's own frontend, and taking it from the request would make
+	// the callback an open redirect.
+	DashboardURL string `mapstructure:"dashboard_url"`
+}
+
+// validate refuses a SAML deployment that cannot serve a working login.
+//
+// Only enforced when the feature is on, so a deployment that does not offer SSO
+// is unaffected by any of it.
+//
+// Both URLs must be absolute: BaseURL builds the entity ID and ACS URL published
+// in our metadata, and a relative value produces endpoints an identity provider
+// cannot call back. Both must be https away from loopback: the assertion and the
+// minted token both travel through the browser, so plaintext exposes them in
+// transit. Loopback is exempt because it never leaves the machine and is how
+// this is developed against a local identity provider.
+func (c SAMLConfig) validate() error {
+	if !c.Enabled {
+		return nil
+	}
+
+	for _, field := range []struct{ name, raw string }{
+		{"auth.saml.base_url", c.BaseURL},
+		{"auth.saml.dashboard_url", c.DashboardURL},
+	} {
+		value := strings.TrimSpace(field.raw)
+		if value == "" {
+			return fmt.Errorf("%s is required when auth.saml.enabled is true", field.name)
+		}
+
+		u, err := url.Parse(value)
+		if err != nil || u.Host == "" {
+			return fmt.Errorf("%s must be an absolute URL (got %q)", field.name, field.raw)
+		}
+		if u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
+			return fmt.Errorf("%s must use https (plain http is allowed only for localhost) (got %q)", field.name, field.raw)
+		}
+	}
+	return nil
+}
+
+// validateSAMLDependencies refuses to start a SAML deployment without Redis.
+//
+// The AuthnRequest IDs that make an assertion single-use are held in Redis. The
+// redirect that starts a login and the callback that finishes it are separate
+// requests, and a load balancer may route them to different replicas, so
+// process-local state fails roughly (N-1)/N of logins on an N-replica
+// deployment — at random, and looking like an identity provider fault rather
+// than a Flexprice one.
+//
+// Failing at boot is much kinder than that: a deployment either has the state
+// store SAML needs, or it does not offer SAML.
+func (c Configuration) validateSAMLDependencies() error {
+	if !c.Auth.SAML.Enabled {
+		return nil
+	}
+	if !c.Cache.Enabled || !c.Cache.Redis.Enabled {
+		return fmt.Errorf("auth.saml.enabled requires cache.enabled and cache.redis.enabled: " +
+			"SAML keeps outstanding login requests in Redis so a login started on one replica " +
+			"can be completed on another")
+	}
+
+	// auth.secret is the HMAC key the SSO token is signed with. An empty key
+	// still produces a verifiable signature, so a deployment that boots without
+	// one accepts a token anybody can mint — the forger names any user in any
+	// tenant, and the middleware then loads that user and grants their roles.
+	//
+	// The warn-only validateSecrets does not cover this: it checks auth.secret
+	// only under the Flexprice provider, so a Supabase deployment offering SSO
+	// with no secret set started silently. Hard-failing is safe here for the
+	// same reason as the checks above — it applies only when SSO is switched
+	// on, so it cannot take down a deployment that does not offer it.
+	if strings.TrimSpace(c.Auth.Secret) == "" {
+		return fmt.Errorf("auth.saml.enabled requires a non-empty auth.secret (FLEXPRICE_AUTH_SECRET): " +
+			"it signs the SSO token, and an empty key lets anyone mint one naming any user")
+	}
+	return nil
+}
+
+// isLoopbackHost reports whether a host never leaves this machine.
+func isLoopbackHost(host string) bool {
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }
 
 type SupabaseConfig struct {
@@ -207,7 +324,10 @@ type KafkaConfig struct {
 	// do not define their own per-consumer-group topic_dlq. Empty disables DLQ for
 	// those handlers.
 	TopicDLQ string `mapstructure:"topic_dlq" default:""`
-	TLS      bool   `mapstructure:"tls"` // set to true if using 9094 port else can set to false
+	// OffsetRetention overrides the broker's offsets.retention.minutes for this client.
+	// Zero leaves retention to the broker.
+	OffsetRetention time.Duration `mapstructure:"offset_retention"`
+	TLS             bool          `mapstructure:"tls"` // set to true if using 9094 port else can set to false
 	// TLSCACertFile is the path to a PEM-encoded CA bundle used to verify the
 	// broker certificate. Empty (the default) means the OS trust store is used,
 	// which is correct for brokers with publicly-trusted certs (MSK, Confluent
@@ -280,7 +400,16 @@ type ClickHouseConfig struct {
 	// environments whose ClickHouse serves a self-signed certificate (equivalent to
 	// SSL=true with SSL_MODE=NONE); it removes MITM protection, so leave it false
 	// everywhere else and trust the CA instead.
-	TLSSkipVerify  bool   `mapstructure:"tls_skip_verify"`
+	TLSSkipVerify bool `mapstructure:"tls_skip_verify"`
+	// Protocol selects the ClickHouse wire protocol: "native" (default) or "http".
+	// The two protocols listen on different ports and are not interchangeable — a
+	// native client pointed at an HTTP port fails with
+	// "[handshake] unexpected packet [72] from server" (72 is 'H' of "HTTP/1.1").
+	// Ports: native 9000 / 9440 (TLS), http 8123 / 8443 (TLS). Set this to "http"
+	// when ClickHouse is only reachable through an HTTP(S) endpoint, e.g. behind a
+	// TLS-terminating load balancer that exposes 8443. Empty means native so
+	// existing deployments keep their current behaviour.
+	Protocol       string `mapstructure:"protocol" validate:"omitempty,oneof=native http"`
 	Username       string `mapstructure:"username" validate:"required"`
 	Password       string `mapstructure:"password" validate:"required"`
 	Database       string `mapstructure:"database" validate:"required"`
@@ -316,7 +445,6 @@ type PostgresConfig struct {
 	MaxOpenConns           int    `mapstructure:"max_open_conns" default:"10"`
 	MaxIdleConns           int    `mapstructure:"max_idle_conns" default:"5"`
 	ConnMaxLifetimeMinutes int    `mapstructure:"conn_max_lifetime_minutes" default:"60"`
-	AutoMigrate            bool   `mapstructure:"auto_migrate" default:"false"`
 
 	// Reader endpoint configuration for read replicas
 	ReaderHost string `mapstructure:"reader_host"`
@@ -333,16 +461,6 @@ type APIKeyDetails struct {
 	UserID   string `mapstructure:"user_id" json:"user_id" validate:"required"`
 	Name     string `mapstructure:"name" json:"name" validate:"required"`      // description of what this key is for
 	IsActive bool   `mapstructure:"is_active" json:"is_active" default:"true"` // whether this key is active
-}
-
-// SentryConfig is retained only for transitional rollback. Error/exception
-// capture is now OTel-native (see internal/tracing.CaptureException and
-// internal/spanerr); Sentry is no longer the sink and defaults to disabled.
-type SentryConfig struct {
-	Enabled     bool    `mapstructure:"enabled" default:"false"`
-	DSN         string  `mapstructure:"dsn"`
-	Environment string  `mapstructure:"environment"`
-	SampleRate  float64 `mapstructure:"sample_rate" default:"1.0"`
 }
 
 // OtelConfig is the unified OTLP exporter configuration. Each signal (traces,
@@ -569,8 +687,6 @@ type MeterUsageTrackingConfig struct {
 	ConsumerGroup             string `mapstructure:"consumer_group" default:"v1_meter_usage_tracking_service"`
 	TopicDLQ                  string `mapstructure:"topic_dlq" default:""`
 	RedisDeduplicationEnabled bool   `mapstructure:"redis_deduplication_enabled" default:"false"`
-	WalletAlertPushEnabled    bool   `mapstructure:"wallet_alert_push_enabled" default:"false"`
-	SpendAlertWebhookEnabled  bool   `mapstructure:"spend_alert_webhook_enabled" default:"false"`
 
 	// event.rejected webhook (fired when an event produces no meter usage); opt-in.
 	RejectedEventWebhookEnabled bool `mapstructure:"rejected_event_webhook_enabled" default:"false"`
@@ -688,28 +804,6 @@ type EnvAccessConfig struct {
 	UserEnvMapping map[string]map[string][]string `mapstructure:"user_env_mapping" json:"user_env_mapping" validate:"omitempty"`
 }
 
-type FeatureFlagConfig struct {
-	EnableMeterUsageForBilling bool `mapstructure:"enable_meter_usage_for_billing" validate:"omitempty"`
-
-	// Per-tenant overrides for the meter-usage-for-billing rollout. Resolution order:
-	//   1. disabled_tenants — tenant force-disabled (highest priority)
-	//   2. enabled_tenants  — tenant force-enabled
-	//   3. global flag above — applies to everyone else
-	MeterUsageForBillingEnabledTenants  []string `mapstructure:"meter_usage_for_billing_enabled_tenants" validate:"omitempty"`
-	MeterUsageForBillingDisabledTenants []string `mapstructure:"meter_usage_for_billing_disabled_tenants" validate:"omitempty"`
-}
-
-// IsMeterUsageEnabledForBilling resolves the meter-usage rollout for the
-// billing service for a specific tenant.
-func (c *FeatureFlagConfig) IsMeterUsageEnabledForBilling(tenantID string) bool {
-	return resolveTenantRollout(
-		tenantID,
-		c.EnableMeterUsageForBilling,
-		c.MeterUsageForBillingEnabledTenants,
-		c.MeterUsageForBillingDisabledTenants,
-	)
-}
-
 func resolveTenantRollout(tenantID string, globalEnabled bool, enabledTenants, disabledTenants []string) bool {
 	if tenantID != "" {
 		if slices.Contains(disabledTenants, tenantID) {
@@ -737,21 +831,6 @@ type EmailConfig struct {
 	ReplyTo          string `mapstructure:"reply_to" validate:"omitempty"`
 	CalendarURL      string `mapstructure:"calendar_url" validate:"omitempty"`
 	ZapierWebhookURL string `mapstructure:"zapier_webhook_url" validate:"omitempty"`
-}
-type CostSheetUsageTrackingConfig struct {
-	Enabled       bool   `mapstructure:"enabled" default:"true"`
-	Topic         string `mapstructure:"topic" default:"events"`
-	RateLimit     int64  `mapstructure:"rate_limit" default:"1"`
-	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_costsheet_usage_tracking_service"`
-	TopicDLQ      string `mapstructure:"topic_dlq" default:""`
-}
-
-type CostSheetUsageTrackingLazyConfig struct {
-	Enabled       bool   `mapstructure:"enabled" default:"true"`
-	Topic         string `mapstructure:"topic" default:"events_lazy"`
-	RateLimit     int64  `mapstructure:"rate_limit" default:"1"`
-	ConsumerGroup string `mapstructure:"consumer_group" default:"v1_costsheet_usage_tracking_service_lazy"`
-	TopicDLQ      string `mapstructure:"topic_dlq" default:""`
 }
 
 type CheckoutConfig struct {
@@ -996,6 +1075,22 @@ func NewValidatedConfig() (*Configuration, error) {
 	if err := cfg.validateSecrets(); err != nil {
 		log.Printf("[config] WARNING: %v", err)
 	}
+
+	// Scoped hard fail, unlike the warn-only check above. It applies only when
+	// auth.saml.enabled is on, so a deployment that does not offer SSO cannot be
+	// taken down by it — the risk that made the rest of this function warn-only.
+	//
+	// Failing at boot is the right trade here because the alternative is worse
+	// than a crash: with an empty or relative base URL the SP metadata a
+	// customer uploads to their identity provider contains unusable endpoints,
+	// and the failure surfaces much later as an audience mismatch on every
+	// assertion, pointing at signatures rather than at configuration.
+	if err := cfg.Auth.SAML.validate(); err != nil {
+		return nil, err
+	}
+	if err := cfg.validateSAMLDependencies(); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -1049,6 +1144,16 @@ func GetDefaultConfig() *Configuration {
 	}
 }
 
+// protocol maps the configured protocol name onto the driver's enum. An unset or
+// unrecognised value yields clickhouse.Native, which is both the driver's zero
+// value and the behaviour every deployment had before this field existed.
+func (c ClickHouseConfig) protocol() clickhouse.Protocol {
+	if strings.EqualFold(c.Protocol, "http") {
+		return clickhouse.HTTP
+	}
+	return clickhouse.Native
+}
+
 func (c ClickHouseConfig) GetClientOptions() *clickhouse.Options {
 	options := &clickhouse.Options{
 		Addr: []string{c.Address},
@@ -1079,6 +1184,7 @@ func (c ClickHouseConfig) GetClientOptions() *clickhouse.Options {
 	if c.TLS {
 		options.TLS = &tls.Config{InsecureSkipVerify: c.TLSSkipVerify} // #nosec G402 -- opt-in, dev-only self-signed certs
 	}
+	options.Protocol = c.protocol()
 
 	maxMemoryUsageBytes := c.MaxMemoryUsage * int64(1024) * int64(1024) * int64(1024)
 	options.Settings = clickhouse.Settings{

@@ -92,6 +92,10 @@ type AddAddonToSubscriptionRequest struct {
 	// This is used when we are adding an addon to a subscription that already has an active instance of the addon
 	// In that case we don't need to check the entitlement compatibility
 	SkipEntityValidation bool `json:"-"`
+
+	// PreviewOnly quotes the attach without writing anything. Server-set: callers reach it
+	// through the preview endpoint, never by sending it.
+	PreviewOnly bool `json:"-"`
 }
 
 func (a *AddAddonToSubscriptionRequest) ToAddonAssociation(ctx context.Context, enitiyId string, enitityType types.AddonAssociationEntityType) *addonassociation.AddonAssociation {
@@ -154,6 +158,12 @@ type AddonAssociationResponse struct {
 
 // ListAddonAssociationsResponse represents the response for listing addon associations
 type ListAddonAssociationsResponse = types.ListResponse[*AddonAssociationResponse]
+
+type AddAddonToSubscriptionResponse struct {
+	*addonassociation.AddonAssociation
+	CheckoutSession *CheckoutSessionResponse `json:"checkout_session,omitempty"`
+	Invoice         *InvoiceResponse         `json:"invoice,omitempty"`
+}
 
 // GetActiveAddonAssociationRequest represents the request to get active addon associations
 type GetActiveAddonAssociationRequest struct {

@@ -8,13 +8,16 @@ import (
 	authProvider "github.com/flexprice/flexprice/internal/auth"
 	"github.com/flexprice/flexprice/internal/config"
 	domainAuth "github.com/flexprice/flexprice/internal/domain/auth"
+	domainEnvironment "github.com/flexprice/flexprice/internal/domain/environment"
 	domainSecret "github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
 	"github.com/flexprice/flexprice/internal/domain/user"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/nedpals/supabase-go"
 	"github.com/samber/lo"
 )
@@ -24,8 +27,10 @@ type UserService interface {
 	CreateUser(ctx context.Context, req *dto.CreateUserRequest) (*dto.CreateUserResponse, error)
 	UpdateUser(ctx context.Context, req *dto.UpdateUserRequest) (*dto.UpdateUserResponse, error)
 	UpdateServiceAccount(ctx context.Context, id string, req *dto.UpdateServiceAccountRequest) (*dto.UpdateServiceAccountResponse, error)
+	UpdateUserRoles(ctx context.Context, id string, req *dto.UpdateUserRolesRequest) (*dto.UpdateUserRolesResponse, error)
 	DeleteUser(ctx context.Context, id string) error
 	ListUsersByFilter(ctx context.Context, filter *types.UserFilter) (*dto.ListUsersResponse, error)
+	CreateSupportChatToken(ctx context.Context) (*dto.SupportChatTokenResponse, error)
 }
 
 type userService struct {
@@ -33,6 +38,8 @@ type userService struct {
 	tenantRepo      tenant.Repository
 	authRepo        domainAuth.Repository
 	secretRepo      domainSecret.Repository
+	environmentRepo domainEnvironment.Repository
+	db              postgres.IClient
 	cfg             *config.Configuration
 	rbacService     *rbac.RBACService
 	supabaseAuth    *supabase.Client
@@ -45,6 +52,8 @@ func NewUserService(
 	tenantRepo tenant.Repository,
 	authRepo domainAuth.Repository,
 	secretRepo domainSecret.Repository,
+	environmentRepo domainEnvironment.Repository,
+	db postgres.IClient,
 	cfg *config.Configuration,
 	rbacService *rbac.RBACService,
 	supabaseAuth *supabase.Client,
@@ -56,6 +65,8 @@ func NewUserService(
 		tenantRepo:      tenantRepo,
 		authRepo:        authRepo,
 		secretRepo:      secretRepo,
+		environmentRepo: environmentRepo,
+		db:              db,
 		cfg:             cfg,
 		rbacService:     rbacService,
 		supabaseAuth:    supabaseAuth,
@@ -133,18 +144,11 @@ func (s *userService) CreateUser(ctx context.Context, req *dto.CreateUserRequest
 				WithHint("Service accounts require RBAC for role validation; provide a non-nil RBAC service.").
 				Mark(ierr.ErrValidation)
 		}
-		for _, role := range req.Roles {
-			if !s.rbacService.ValidateRole(role) {
-				return nil, ierr.NewError("invalid role").
-					WithHint("Role '" + role + "' does not exist").
-					WithReportableDetails(map[string]interface{}{"role": role}).
-					Mark(ierr.ErrValidation)
-			}
+		if err := s.rbacService.ValidateRoles(req.Type, req.Roles); err != nil {
+			return nil, err
 		}
-		if lo.Contains(req.Roles, "super_admin") && len(req.Roles) > 1 {
-			return nil, ierr.NewError("super admin role need not be combined with other roles").
-				WithHint("When super_admin is selected, no other roles need to be assigned").
-				Mark(ierr.ErrValidation)
+		if err := s.rbacService.CanGrantRoles(types.GetRoles(ctx), req.Roles); err != nil {
+			return nil, err
 		}
 		newUser = &user.User{
 			ID:    types.GenerateUUIDWithPrefix(types.UUID_PREFIX_USER),
@@ -314,10 +318,181 @@ func (s *userService) UpdateServiceAccount(ctx context.Context, id string, req *
 	return &dto.UpdateServiceAccountResponse{UserResponse: dto.NewUserResponse(existingUser, tenant)}, nil
 }
 
+// UpdateUserRoles updates the roles of a user account. Only a super_admin may
+// call it, and nobody may change their own roles — so a tenant can never be
+// left without a super_admin. Service accounts are excluded: their roles are
+// fixed at creation.
+func (s *userService) UpdateUserRoles(ctx context.Context, id string, req *dto.UpdateUserRolesRequest) (*dto.UpdateUserRolesResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+	if id == "" {
+		return nil, ierr.NewError("user ID is required").
+			WithHint("Provide a valid user ID").
+			Mark(ierr.ErrValidation)
+	}
+
+	tenantID := types.GetTenantID(ctx)
+	if tenantID == "" {
+		return nil, ierr.NewError("tenant ID is required").
+			WithHint("Tenant ID is required").
+			Mark(ierr.ErrValidation)
+	}
+
+	if !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
+		return nil, ierr.NewError("only super_admin can update roles").
+			WithHint("Ask a tenant super_admin to update roles").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	callerID := types.GetUserID(ctx)
+	if id == callerID {
+		return nil, ierr.NewError("cannot update your own roles").
+			WithHint("Ask another super_admin to change your roles").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	existingUser, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if existingUser.Type != types.UserTypeUser {
+		return nil, ierr.NewError("role updates are only supported for user accounts").
+			WithHint("Service account roles are fixed at creation and cannot be changed").
+			WithReportableDetails(map[string]interface{}{"id": id, "type": existingUser.Type}).
+			Mark(ierr.ErrValidation)
+	}
+	if existingUser.Status == types.StatusArchived {
+		return nil, ierr.NewError("user is archived").
+			WithHint("Archived users cannot have their roles updated").
+			WithReportableDetails(map[string]interface{}{"id": id}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if s.rbacService == nil {
+		return nil, ierr.NewError("RBAC not configured").
+			WithHint("Role assignment requires RBAC for role validation; provide a non-nil RBAC service.").
+			Mark(ierr.ErrValidation)
+	}
+	if err := s.rbacService.ValidateRoles(existingUser.Type, req.Roles); err != nil {
+		return nil, err
+	}
+
+	if err := s.db.WithTx(ctx, func(txCtx context.Context) error {
+		if err := s.ensureNoActiveAPIKeys(txCtx, id); err != nil {
+			return err
+		}
+		return s.userRepo.UpdateRoles(txCtx, id, req.Roles)
+	}); err != nil {
+		return nil, err
+	}
+
+	s.logger.Info(ctx, "user roles updated",
+		"user_id", id, "tenant_id", tenantID, "actor_id", callerID,
+		"old_roles", existingUser.Roles, "new_roles", req.Roles)
+
+	// UpdateRoles invalidated the cache, so this reads the new state back and
+	// repopulates it — the response reflects what was actually stored, and the
+	// user's next /users/me is warm rather than waiting out the TTL.
+	updatedUser, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	tenant, err := s.tenantRepo.GetByID(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.UpdateUserRolesResponse{UserResponse: dto.NewUserResponse(updatedUser, tenant)}, nil
+}
+
+// ensureNoActiveAPIKeys fails if the user still holds an active (published,
+// unexpired) API key anywhere in the tenant. A key snapshots its owner's roles
+// at creation and never re-reads them (see ent/schema/secret.go), so changing
+// the owner's roles would leave the key running on the old ones indefinitely.
+// The error names the offending keys, grouped by environment ID, so the caller
+// can tell the user exactly what to expire before retrying.
+//
+// Secrets are environment-scoped while roles are tenant-wide, hence the search
+// across every environment rather than just the caller's.
+func (s *userService) ensureNoActiveAPIKeys(ctx context.Context, userID string) error {
+	now := time.Now().UTC()
+	tenantCtx := types.SetEnvironmentID(ctx, "")
+
+	secrets, err := s.secretRepo.ListAll(tenantCtx, &types.SecretFilter{
+		QueryFilter:  types.NewNoLimitPublishedQueryFilter(),
+		UserID:       &userID,
+		NotExpiredAt: &now,
+	})
+	if err != nil {
+		return err
+	}
+	if len(secrets) == 0 {
+		return nil
+	}
+
+	secretsByEnv := lo.GroupBy(secrets, func(sec *domainSecret.Secret) string {
+		return sec.EnvironmentID
+	})
+
+	keysByEnv := make(map[string]dto.ActiveEnvironmentAPIKeys, len(secretsByEnv))
+	for envID, envSecrets := range secretsByEnv {
+		env, err := s.environmentRepo.Get(ctx, envID)
+		if err != nil {
+			return err
+		}
+		keysByEnv[envID] = dto.ActiveEnvironmentAPIKeys{
+			EnvName: env.Name,
+			APIKeys: lo.Map(envSecrets, func(sec *domainSecret.Secret, _ int) dto.ActiveAPIKey {
+				return dto.ActiveAPIKey{ID: sec.ID, KeyName: sec.Name}
+			}),
+		}
+	}
+
+	return ierr.NewError("user has active API keys").
+		WithHint("Expire this user's existing API keys before changing their role").
+		WithReportableDetails(map[string]interface{}{
+			"id":                   userID,
+			"active_api_keys":      keysByEnv,
+			"active_api_key_count": len(secrets),
+		}).
+		Mark(ierr.ErrValidation)
+}
+
 // InviteUser invites a user to the tenant
 func (s *userService) InviteUser(ctx context.Context, req *dto.CreateUserRequest, currentUserID string) (*user.User, *string, error) {
 
 	var userID string
+
+	// Admitting someone to the tenant is an administrative act, so it is
+	// restricted to super_admins regardless of which role the invitee is given.
+	if !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
+		return nil, nil, ierr.NewError("only super_admin can invite users").
+			WithHint("Ask a tenant super_admin to invite this user").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	// Resolve and check the roles up front. Everything below provisions state —
+	// a provider identity, an auth record — that this function does not roll
+	// back, so a rejected role must fail before any of it is created rather than
+	// leaving an orphaned account behind holding the invitee's email.
+	// Invited users default to super_admin when no roles are specified.
+	roles := req.Roles
+	if len(roles) == 0 {
+		roles = []string{types.RoleSuperAdmin.String()}
+	} else {
+		if s.rbacService == nil {
+			return nil, nil, ierr.NewError("RBAC not configured").
+				WithHint("Role assignment requires RBAC for role validation; provide a non-nil RBAC service.").
+				Mark(ierr.ErrValidation)
+		}
+		if err := s.rbacService.ValidateRoles(types.UserTypeUser, roles); err != nil {
+			return nil, nil, err
+		}
+		if err := s.rbacService.CanGrantRoles(types.GetRoles(ctx), roles); err != nil {
+			return nil, nil, err
+		}
+	}
 
 	// Check if user by email already exists
 	existingUser, err := s.userRepo.GetByEmail(ctx, req.Email)
@@ -391,7 +566,7 @@ func (s *userService) InviteUser(ctx context.Context, req *dto.CreateUserRequest
 		ID:    userID,
 		Email: req.Email,
 		Type:  types.UserTypeUser,
-		Roles: []string{},
+		Roles: roles,
 	}
 	newUser.BaseModel = types.GetDefaultBaseModel(ctx)
 	newUser.BaseModel.CreatedBy = currentUserID
@@ -443,4 +618,58 @@ func (s *userService) DeleteUser(ctx context.Context, id string) error {
 	}
 
 	return s.userRepo.Delete(ctx, id)
+}
+
+const chatSupportTokenTTL = 2 * time.Hour
+
+func (s *userService) CreateSupportChatToken(ctx context.Context) (*dto.SupportChatTokenResponse, error) {
+	if s.cfg == nil || s.cfg.ChatSupport.AppID == "" || s.cfg.ChatSupport.IdentitySecret == "" {
+		return nil, ierr.NewError("chat support identity verification is not configured").
+			WithHint("Set chat_support.app_id and chat_support.identity_secret").
+			Mark(ierr.ErrInternal)
+	}
+
+	u, err := s.GetUserInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if u.Email == "" {
+		return nil, ierr.NewError("user has no email").
+			WithHint("Support chat identity verification requires a user with an email").
+			Mark(ierr.ErrValidation)
+	}
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(chatSupportTokenTTL)
+
+	claims := dto.ChatSupportClaims{
+		Email:             u.Email,
+		Name:              u.Name,
+		ContactExternalID: u.ID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{s.cfg.ChatSupport.AppID},
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+	}
+	if u.Tenant != nil {
+		claims.AccountExternalID = u.Tenant.ID
+		if claims.Name == "" {
+			claims.Name = u.Tenant.Name
+		}
+	}
+
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.ChatSupport.IdentitySecret))
+	if err != nil {
+		s.logger.Error(ctx, "failed to sign support chat token", "error", err, "user_id", u.ID)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to sign the support chat token").
+			Mark(ierr.ErrInternal)
+	}
+
+	return &dto.SupportChatTokenResponse{
+		Token:     token,
+		ExpiresAt: expiresAt.Format(time.RFC3339),
+	}, nil
 }

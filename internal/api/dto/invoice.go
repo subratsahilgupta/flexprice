@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/domain/taxapplied"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
@@ -21,12 +22,12 @@ type InvoiceCoupon struct {
 }
 
 // InvoiceLineItemCoupon represents a coupon applied to a specific invoice line item.
-// LineItemID is the price_id used to match the coupon to the correct line item.
 // Only coupon ID is needed - the service will fetch and validate the coupon.
 type InvoiceLineItemCoupon struct {
-	LineItemID          string  `json:"line_item_id" validate:"required"` // price_id used to match the line item
-	CouponID            string  `json:"coupon_id" validate:"required"`
-	CouponAssociationID *string `json:"coupon_association_id,omitempty"`
+	LineItemID             string  `json:"line_item_id" validate:"required"` // price_id used to match the line item
+	SubscriptionLineItemID *string `json:"subscription_line_item_id,omitempty"`
+	CouponID               string  `json:"coupon_id" validate:"required"`
+	CouponAssociationID    *string `json:"coupon_association_id,omitempty"`
 }
 
 // CreateInvoiceRequest represents the request payload for creating a new invoice
@@ -570,46 +571,134 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 	// be handled at the service layer. For now, we skip coupon preview calculations here.
 	totalDiscount := decimal.Zero
 
-	// 3) Taxes on (subtotal - totalDiscount) using prepared tax rates
-	totalTax := decimal.Zero
-	taxableAmount := inv.Subtotal.Sub(totalDiscount)
+	// 3) Taxes are applied on (subtotal - totalDiscount) by
+	// RecalculatePreviewTotals below.
+
+	// 4) Update invoice preview totals
+	inv.TotalDiscount = totalDiscount
+	RecalculatePreviewTotals(inv, r.PreparedTaxRates)
+
+	return inv, nil
+}
+
+// RecalculatePreviewTotals recomputes a preview invoice's tax and totals from
+// its current subtotal and TotalDiscount, in the order a real invoice applies
+// them: discounts first, tax on what remains.
+//
+// Coupon discounts are resolved at the service layer (they need coupon
+// validation and the coupon repository), so the preview path sets
+// inv.TotalDiscount afterwards and calls this to bring tax and totals back in
+// step. Without the second pass, tax would stay computed against the
+// undiscounted subtotal.
+func RecalculatePreviewTotals(inv *invoice.Invoice, preparedTaxRates []*TaxRateResponse) {
+	if inv == nil {
+		return
+	}
+	taxableAmount := inv.Subtotal.Sub(inv.TotalDiscount)
 	if taxableAmount.IsNegative() {
 		taxableAmount = decimal.Zero
 	}
 
-	if len(r.PreparedTaxRates) > 0 {
-		for _, tr := range r.PreparedTaxRates {
-			var taxAmount decimal.Decimal
-			switch tr.TaxRateType {
-			case types.TaxRateTypePercentage:
-				if tr.PercentageValue != nil {
-					taxAmount = taxableAmount.Mul(*tr.PercentageValue).Div(decimal.NewFromInt(100))
-				}
-			case types.TaxRateTypeFixed:
-				if tr.FixedValue != nil {
-					taxAmount = *tr.FixedValue
-				}
-			default:
-				continue
-			}
-			if taxAmount.IsNegative() {
-				taxAmount = decimal.Zero
-			}
-			totalTax = totalTax.Add(taxAmount)
+	totalTax := decimal.Zero
+	for _, tr := range preparedTaxRates {
+		taxAmount, ok := previewTaxAmount(tr, taxableAmount, inv.Currency)
+		if !ok {
+			continue
 		}
+		totalTax = totalTax.Add(taxAmount)
 	}
 
-	// 4) Update invoice preview totals
-	inv.TotalDiscount = totalDiscount
 	inv.TotalTax = totalTax
-	inv.Total = inv.Subtotal.Sub(totalDiscount).Add(totalTax)
+	inv.Total = taxableAmount.Add(totalTax)
 	if inv.Total.IsNegative() {
 		inv.Total = decimal.Zero
 	}
 	inv.AmountDue = inv.Total
 	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
+}
 
-	return inv, nil
+// previewTaxAmount computes the tax owed on taxableAmount for a single
+// prepared tax rate. The second return is false when the rate carries no
+// usable value (nil percentage/fixed amount, or an unknown rate type), in
+// which case the caller skips it.
+//
+// Shared by the preview total (ToInvoice) and the preview breakdown
+// (BuildPreviewTaxes) so the two can never drift apart.
+func previewTaxAmount(tr *TaxRateResponse, taxableAmount decimal.Decimal, currency string) (decimal.Decimal, bool) {
+	// TaxRateResponse embeds *taxrate.TaxRate, so a zero-value response
+	// dereferences nil on the field reads below.
+	if tr == nil || tr.TaxRate == nil {
+		return decimal.Zero, false
+	}
+	var taxAmount decimal.Decimal
+	switch tr.TaxRateType {
+	case types.TaxRateTypePercentage:
+		if tr.PercentageValue == nil {
+			return decimal.Zero, false
+		}
+		taxAmount = taxableAmount.Mul(*tr.PercentageValue).Div(decimal.NewFromInt(100))
+	case types.TaxRateTypeFixed:
+		if tr.FixedValue == nil {
+			return decimal.Zero, false
+		}
+		taxAmount = *tr.FixedValue
+	default:
+		return decimal.Zero, false
+	}
+	if taxAmount.IsNegative() {
+		taxAmount = decimal.Zero
+	}
+	// Round per line, matching the persisted tax path — otherwise a rate that
+	// produces more precision than the currency carries shows fractional-cent
+	// entries that don't add up to what is eventually charged.
+	return taxAmount.Round(types.GetCurrencyPrecision(currency)), true
+}
+
+// BuildPreviewTaxes synthesises the per-rate tax breakdown for an invoice
+// preview.
+//
+// Persisted invoices carry tax_applied rows that the response loads via
+// WithTaxes. A preview writes nothing, so without this the response reports
+// a non-zero total_tax with an empty taxes[] array and callers cannot see
+// which rate produced the charge. The records are in-memory only: no ID and
+// no persistence, mirroring the rest of the preview invoice.
+func BuildPreviewTaxes(inv *invoice.Invoice, preparedTaxRates []*TaxRateResponse) []*TaxAppliedResponse {
+	if inv == nil || len(preparedTaxRates) == 0 {
+		return nil
+	}
+	taxableAmount := inv.Subtotal.Sub(inv.TotalDiscount)
+	if taxableAmount.IsNegative() {
+		taxableAmount = decimal.Zero
+	}
+
+	taxes := make([]*TaxAppliedResponse, 0, len(preparedTaxRates))
+	for _, tr := range preparedTaxRates {
+		taxAmount, ok := previewTaxAmount(tr, taxableAmount, inv.Currency)
+		if !ok {
+			continue
+		}
+		taxes = append(taxes, &TaxAppliedResponse{
+			TaxApplied: taxapplied.TaxApplied{
+				TaxRateID:     tr.ID,
+				EntityType:    types.TaxRateEntityTypeInvoice,
+				EntityID:      inv.ID,
+				TaxableAmount: taxableAmount,
+				TaxAmount:     taxAmount,
+				Currency:      inv.Currency,
+				AppliedAt:     time.Now().UTC(),
+				EnvironmentID: inv.EnvironmentID,
+				BaseModel: types.BaseModel{
+					TenantID: inv.TenantID,
+					Status:   types.StatusPublished,
+				},
+			},
+			TaxRate: tr,
+		})
+	}
+	if len(taxes) == 0 {
+		return nil
+	}
+	return taxes
 }
 
 // Validate validates the invoice coupon DTO
@@ -947,6 +1036,8 @@ type UpdateInvoiceRequest struct {
 	DueDate       *time.Time `json:"due_date,omitempty"`
 	// Invoice metadata will be overridden with the request metadata
 	Metadata *types.Metadata `json:"metadata,omitempty"`
+	// When true, recalculates discount from existing coupon associations (draft invoices only).
+	ApplyDiscount bool `json:"apply_discount,omitempty"`
 }
 
 func (r *UpdateInvoiceRequest) Validate() error {
@@ -967,6 +1058,143 @@ func (r *UpdateInvoiceRequest) Validate() error {
 	}
 
 	return nil
+}
+
+type AddLineItemRequest struct {
+	DisplayName string          `json:"display_name" validate:"required"`
+	Amount      decimal.Decimal `json:"amount" validate:"required" swaggertype:"string"`
+	Quantity    decimal.Decimal `json:"quantity" validate:"required" swaggertype:"string"`
+}
+
+func (r *AddLineItemRequest) Validate() error {
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	if r.Amount.IsNegative() {
+		return ierr.NewError("amount must be non-negative").
+			WithHint("amount must be non-negative").
+			WithReportableDetails(map[string]any{
+				"amount": r.Amount.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.Quantity.IsNegative() {
+		return ierr.NewError("quantity must be non-negative").
+			WithHint("quantity must be non-negative").
+			WithReportableDetails(map[string]any{
+				"quantity": r.Quantity.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// AddBulkLineItemRequest adds one or more line items to a draft invoice in a single call.
+type AddBulkLineItemRequest struct {
+	Items []AddLineItemRequest `json:"items" validate:"required,min=1,max=100"`
+}
+
+func (r *AddBulkLineItemRequest) Validate() error {
+	if len(r.Items) == 0 {
+		return ierr.NewError("at least one line item is required").
+			WithHint("please provide at least one line item to add").
+			Mark(ierr.ErrValidation)
+	}
+
+	if len(r.Items) > 100 {
+		return ierr.NewError("too many line items in bulk request").
+			WithHint("maximum 100 line items allowed per request").
+			Mark(ierr.ErrValidation)
+	}
+
+	for i, item := range r.Items {
+		if err := item.Validate(); err != nil {
+			return ierr.WithError(err).
+				WithHintf("line item at index %d is invalid", i).
+				WithReportableDetails(map[string]any{
+					"index": i,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
+type UpdateLineItemRequest struct {
+	DisplayName *string          `json:"display_name,omitempty"`
+	Amount      *decimal.Decimal `json:"amount,omitempty" swaggertype:"string"`
+	Quantity    *decimal.Decimal `json:"quantity,omitempty" swaggertype:"string"`
+}
+
+func (r *UpdateLineItemRequest) Validate() error {
+	if r.DisplayName == nil && r.Amount == nil && r.Quantity == nil {
+		return ierr.NewError("at least one field must be provided").
+			WithHint("at least one of display_name, amount, or quantity must be provided").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.Amount != nil && r.Amount.IsNegative() {
+		return ierr.NewError("amount must be non-negative").
+			WithHint("amount must be non-negative").
+			WithReportableDetails(map[string]any{
+				"amount": r.Amount.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.Quantity != nil && r.Quantity.IsNegative() {
+		return ierr.NewError("quantity must be non-negative").
+			WithHint("quantity must be non-negative").
+			WithReportableDetails(map[string]any{
+				"quantity": r.Quantity.String(),
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// RemoveBulkLineItemRequest removes one or more line items from a draft invoice in a single call.
+type RemoveBulkLineItemRequest struct {
+	LineItemIDs []string `json:"line_item_ids" validate:"required,min=1,max=100"`
+}
+
+func (r *RemoveBulkLineItemRequest) Validate() error {
+	if len(r.LineItemIDs) == 0 {
+		return ierr.NewError("at least one line item id is required").
+			WithHint("please provide at least one line item id to remove").
+			Mark(ierr.ErrValidation)
+	}
+
+	if len(r.LineItemIDs) > 100 {
+		return ierr.NewError("too many line item ids in bulk request").
+			WithHint("maximum 100 line item ids allowed per request").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+type ApplyCouponRequest struct {
+	CouponID   string  `json:"coupon_id" validate:"required"`
+	LineItemID *string `json:"line_item_id,omitempty"`
+}
+
+func (r *ApplyCouponRequest) Validate() error {
+	return validator.ValidateRequest(r)
+}
+
+// ApplyTaxRequest represents the request payload for applying a tax rate to a draft invoice
+type ApplyTaxRequest struct {
+	TaxRateID string `json:"tax_rate_id" validate:"required"`
+}
+
+func (r *ApplyTaxRequest) Validate() error {
+	return validator.ValidateRequest(r)
 }
 
 // InvoiceResponse represents the response payload containing invoice information
@@ -1412,4 +1640,17 @@ type GetUnpaidInvoicesToBePaidResponse struct {
 
 	// total paid invoice amount
 	TotalPaidInvoiceAmount decimal.Decimal `json:"total_paid_invoice_amount" swaggertype:"string"`
+}
+
+type ApplyExternalInvoiceDiscountRequest struct {
+	DiscountAmount decimal.Decimal `json:"discount_amount"`
+	MetadataKey    string          `json:"metadata_key,omitempty"`
+	MetadataJSON   string          `json:"metadata_json,omitempty"`
+}
+
+func (r *ApplyExternalInvoiceDiscountRequest) Validate() error {
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+	return nil
 }

@@ -321,6 +321,27 @@ type SubscriptionInheritanceConfig struct {
 	GroupedInvoicingChildrenToCreate []GroupedInvoicingChildRequest `json:"grouped_invoicing_children_to_create,omitempty" validate:"omitempty,dive"`
 }
 
+func (c *SubscriptionInheritanceConfig) checkoutUnsupportedFields() bool {
+	if c == nil {
+		return false
+	}
+
+	if len(c.ExternalCustomerIDsToInheritSubscription) > 0 {
+		return true
+	}
+	if c.ParentSubscriptionID != "" {
+		return true
+	}
+	if c.InvoicingCustomerExternalID != nil {
+		return true
+	}
+	if len(c.SubscriptionsIDsForGroupedInvoicing) > 0 {
+		return true
+	}
+
+	return false
+}
+
 func (c *SubscriptionInheritanceConfig) Validate() error {
 	if c == nil {
 		return nil
@@ -554,12 +575,45 @@ type CreateSubscriptionRequest struct {
 	// OpeningInvoiceAdjustmentAmount nets the opening invoice against a proration/cancel credit (e.g. on plan change). Internal only.
 	OpeningInvoiceAdjustmentAmount *decimal.Decimal `json:"-"`
 
+	Checkout *CheckoutParams `json:"checkout,omitempty"`
+
 	SubscriptionCreationConfig
 }
 
 type AddAddonRequest struct {
-	SubscriptionID                string `json:"subscription_id" validate:"required"`
+	SubscriptionID                string          `json:"subscription_id" validate:"required"`
+	Checkout                      *CheckoutParams `json:"checkout,omitempty"`
 	AddAddonToSubscriptionRequest `json:",inline"`
+}
+
+func (r *AddAddonRequest) Validate() error {
+	if err := validator.ValidateRequest(r); err != nil {
+		return err
+	}
+
+	if err := r.AddAddonToSubscriptionRequest.Validate(); err != nil {
+		return err
+	}
+
+	if err := r.Checkout.Validate(); err != nil {
+		return err
+	}
+
+	if r.Checkout != nil {
+		if len(r.OverrideLineItems) > 0 {
+			return ierr.NewError("override_line_items is not supported with checkout").
+				WithHint("Remove checkout to use override_line_items, or remove override_line_items to gate this addon behind payment").
+				Mark(ierr.ErrValidation)
+		}
+
+		if len(r.LineItemCommitments) > 0 {
+			return ierr.NewError("line_item_commitments is not supported with checkout").
+				WithHint("Remove checkout to use line_item_commitments, or remove line_item_commitments to gate this addon behind payment").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
 }
 
 type RemoveAddonRequest struct {
@@ -568,6 +622,10 @@ type RemoveAddonRequest struct {
 	ProrationBehavior  types.ProrationBehavior `json:"proration_behavior,omitempty"`
 	// EffectiveDate defaults to period end when nil; mid-period with create_prorations issues a wallet credit.
 	EffectiveDate *time.Time `json:"effective_date,omitempty"`
+
+	// PreviewOnly quotes the removal without writing anything. Server-set: callers reach it
+	// through the preview endpoint, never by sending it.
+	PreviewOnly bool `json:"-"`
 }
 
 func (r *RemoveAddonRequest) Validate() error {
@@ -754,6 +812,8 @@ type SubscriptionResponse struct {
 	// the search filter's expand string. Each entry is a feature with its
 	// aggregated entitlement info (same shape as CustomerEntitlementsResponse.Features).
 	Entitlements []*AggregatedFeature `json:"entitlements,omitempty"`
+
+	CheckoutSession *CheckoutSessionResponse `json:"checkout_session,omitempty"`
 }
 
 // ListSubscriptionsResponse represents the response for listing subscriptions
@@ -792,10 +852,62 @@ type SubscriptionResponseV2 struct {
 	PlanPricesOutOfSync bool `json:"plan_prices_out_of_sync"`
 }
 
-func (r *CreateSubscriptionRequest) Validate() error {
+func (r *CreateSubscriptionRequest) validateCheckoutCompatibility() error {
+	if err := r.Checkout.Validate(); err != nil {
+		return err
+	}
 
+	if r.Checkout == nil {
+		return nil
+	}
+
+	// A grouped_invoicing child is built by createGroupedInvoicingChildren, which
+	// sets parent_subscription_id and passes the parent's checkout down. That
+	// combination is rejected by checkoutUnsupportedFields below, so the
+	// inheritance check alone is skipped for this type. The status and phase
+	// checks still apply: the generated child sets neither, and a request that
+	// does set them is as unsupported here as anywhere else.
+	isGroupedInvoicingChild := r.SubscriptionType == types.SubscriptionTypeGroupedInvoicing
+
+	if r.SubscriptionStatus != "" {
+		return ierr.NewError("subscription_status is not supported with checkout").
+			WithHint("Remove subscription_status; a checkout-gated subscription is created as draft and activated once payment succeeds").
+			WithReportableDetails(map[string]any{"subscription_status": r.SubscriptionStatus}).
+			Mark(ierr.ErrValidation)
+	}
+
+	if len(r.Phases) > 0 {
+		return ierr.NewError("phases is not supported with checkout").
+			WithHint("Remove checkout to use phases, or remove phases to gate this subscription behind payment").
+			Mark(ierr.ErrValidation)
+	}
+
+	if !isGroupedInvoicingChild && r.Inheritance.checkoutUnsupportedFields() {
+		return ierr.NewError("inheritance field is not supported with checkout").
+			WithHint("Only grouped_invoicing_children_to_create is supported with checkout; remove the other inheritance fields, or remove checkout").
+			Mark(ierr.ErrValidation)
+	}
+
+	if r.Inheritance != nil {
+		for i, child := range r.Inheritance.GroupedInvoicingChildrenToCreate {
+			if len(child.Phases) > 0 {
+				return ierr.NewError("phases is not supported with checkout").
+					WithHintf("Remove phases from grouped_invoicing_children_to_create[%d], or remove checkout", i).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *CreateSubscriptionRequest) Validate() error {
 	err := validator.ValidateRequest(r)
 	if err != nil {
+		return err
+	}
+
+	if err := r.validateCheckoutCompatibility(); err != nil {
 		return err
 	}
 

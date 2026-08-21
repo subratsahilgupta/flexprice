@@ -11,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/dynamodb"
+	"github.com/flexprice/flexprice/internal/ee/auth/saml"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	integrationevents "github.com/flexprice/flexprice/internal/integration/events"
@@ -40,8 +41,10 @@ import (
 	"go.uber.org/fx"
 
 	_ "github.com/flexprice/flexprice/docs/swagger"
+	"github.com/flexprice/flexprice/internal/domain/environment"
 	"github.com/flexprice/flexprice/internal/domain/incomingwebhookevent"
 	"github.com/flexprice/flexprice/internal/domain/proration"
+	"github.com/flexprice/flexprice/internal/domain/user"
 	syncExport "github.com/flexprice/flexprice/internal/ee/service/sync/export"
 	"github.com/flexprice/flexprice/internal/integration"
 	"github.com/flexprice/flexprice/internal/interfaces"
@@ -241,6 +244,7 @@ func main() {
 			service.NewCustomerService,
 			service.NewPlanService,
 			service.NewSubscriptionService,
+			service.NewSubscriptionPhaseService,
 			service.NewWalletService,
 			service.NewInvoiceService,
 			service.NewFeatureService,
@@ -312,6 +316,7 @@ func main() {
 func provideHandlers(
 	cfg *config.Configuration,
 	logger *logger.Logger,
+	serviceParams service.ServiceParams,
 	redisCache cache.RedisCache,
 	locker cache.Locker,
 	meterService service.MeterService,
@@ -423,6 +428,7 @@ func provideHandlers(
 		Dashboard:                v1.NewDashboardHandler(dashboardService, logger),
 		Workflow:                 v1.NewWorkflowHandler(workflowService, logger),
 		MeterUsage:               v1.NewMeterUsageHandler(meterUsageService, logger),
+		SAML:                     saml.NewHandler(cfg, serviceParams, logger),
 		CheckoutSession:          v1.NewCheckoutSessionHandler(checkoutSessionService, logger),
 	}
 }
@@ -436,6 +442,8 @@ func provideRouter(
 	rbacService *rbac.RBACService,
 	tenantService service.TenantService,
 	webhookRequestRepo incomingwebhookevent.Repository,
+	environmentRepo environment.Repository,
+	userRepo user.Repository,
 ) *gin.Engine {
 	return api.NewRouter(
 		handlers,
@@ -446,6 +454,8 @@ func provideRouter(
 		rbacService,
 		tenantService,
 		webhookRequestRepo,
+		environmentRepo,
+		userRepo,
 	)
 }
 
@@ -656,8 +666,6 @@ func registerRouterHandlers(
 		eventConsumptionSvc.RegisterHandlerLazy(router, cfg)
 		eventConsumptionSvc.RegisterHandlerReplay(router, cfg)
 		eventConsumptionSvc.RegisterBulkHandler(router, cfg)
-		costSheetUsageSvc.RegisterHandler(router, cfg)
-		costSheetUsageSvc.RegisterHandlerLazy(router, cfg)
 		walletBalanceAlertSvc.RegisterHandler(router, cfg)
 		rawEventConsumptionSvc.RegisterHandler(router, cfg)
 		meterUsageTrackingSvc.RegisterHandler(router, cfg)

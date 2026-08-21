@@ -62,7 +62,7 @@ type Service struct {
 	// App-level metrics (independent of span export; see initMeter).
 	meterProvider  *sdkmetric.MeterProvider
 	metricsEnabled bool
-	meterInitDone  bool // true after a successful enable or deliberate skip (idempotent)
+	meterInitDone  bool                    // true after a successful enable or deliberate skip (idempotent)
 	dbDuration     metric.Float64Histogram // db.client.duration (ms) — {operation, db_system, status}
 	cacheRequests  metric.Int64Counter     // cache.requests — {operation, result}
 }
@@ -96,9 +96,6 @@ func NewService(cfg *config.Configuration, log *logger.Logger) *Service {
 func RegisterHooks(lc fx.Lifecycle, s *Service) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			if err := s.initSentry(); err != nil {
-				return err
-			}
 			if err := s.initTracer(ctx); err != nil {
 				return err
 			}
@@ -112,29 +109,6 @@ func RegisterHooks(lc fx.Lifecycle, s *Service) {
 			return nil
 		},
 	})
-}
-
-func (s *Service) initSentry() error {
-	if !s.cfg.Sentry.Enabled {
-		s.logger.Info(context.Background(), "Sentry is disabled")
-		return nil
-	}
-
-	err := sentry.Init(sentry.ClientOptions{
-		Dsn:           s.cfg.Sentry.DSN,
-		Environment:   s.cfg.Sentry.Environment,
-		EnableTracing: false, // Tracing is handled by OTel; Sentry is errors-only.
-	})
-	if err != nil {
-		s.logger.Error(context.Background(), "Failed to initialize Sentry", "error", err)
-		return err
-	}
-
-	s.sentryEnabled = true
-	s.logger.Info(context.Background(), "Sentry initialized (errors-only mode)",
-		"environment", s.cfg.Sentry.Environment,
-	)
-	return nil
 }
 
 func (s *Service) initTracer(ctx context.Context) error {
@@ -259,9 +233,6 @@ func (s *Service) baseResourceAttrs() []attribute.KeyValue {
 	// deployment.environment — emit both old and new semconv keys for broad
 	// backend compatibility (Sentry relay reads the legacy key).
 	env := s.cfg.Logging.Environment
-	if env == "" {
-		env = s.cfg.Sentry.Environment
-	}
 	if env != "" {
 		attrs = append(attrs,
 			semconv.DeploymentEnvironmentName(env),          // deployment.environment.name (OTel v1.22+)

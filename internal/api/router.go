@@ -4,7 +4,10 @@ import (
 	"github.com/flexprice/flexprice/docs/swagger"
 	v1 "github.com/flexprice/flexprice/internal/api/v1"
 	"github.com/flexprice/flexprice/internal/config"
+	domainEnvironment "github.com/flexprice/flexprice/internal/domain/environment"
 	domainIncomingWebhookEvent "github.com/flexprice/flexprice/internal/domain/incomingwebhookevent"
+	domainUser "github.com/flexprice/flexprice/internal/domain/user"
+	"github.com/flexprice/flexprice/internal/ee/auth/saml"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rbac"
@@ -62,6 +65,9 @@ type Handlers struct {
 	MeterUsage               *v1.MeterUsageHandler
 	CheckoutSession          *v1.CheckoutSessionHandler
 
+	// Enterprise handlers
+	SAML *saml.Handler
+
 	// Portal handlers
 	Onboarding     *v1.OnboardingHandler
 	AIPricing      *v1.AIPricingHandler
@@ -77,6 +83,8 @@ func NewRouter(
 	rbacService *rbac.RBACService,
 	tenantService service.TenantService,
 	webhookRequestRepo domainIncomingWebhookEvent.Repository,
+	environmentRepo domainEnvironment.Repository,
+	userRepo domainUser.Repository,
 ) *gin.Engine {
 	// gin.SetMode(gin.ReleaseMode)
 
@@ -112,7 +120,9 @@ func NewRouter(
 
 	// Initialize permission middleware
 	permissionMW := middleware.NewPermissionMiddleware(rbacService, logger)
-	write := permissionMW.RequirePermission // shorthand used on every write route
+	write := permissionMW.RequirePermission       // shorthand used on every write route
+	read := permissionMW.RequirePermission        // shorthand used on read routes that opt in to an RBAC gate
+	superAdminOnly := middleware.SuperAdminOnly() // shorthand used on routes accessible only to super_admin users
 
 	// Add middleware to set swagger host dynamically
 	router.Use(func(c *gin.Context) {
@@ -136,9 +146,24 @@ func NewRouter(
 		// Auth routes
 		v1Public.POST("/auth/signup", handlers.Auth.SignUp)
 		v1Public.POST("/auth/login", handlers.Auth.Login)
+
+		// SAML single sign-on. Public because these run before a session exists:
+		// the login redirect starts the flow, and the ACS callback is posted by
+		// the identity provider, which carries no credentials.
+		//
+		// Mounted only when the deployment offers SAML, so the endpoints 404 as
+		// though the feature did not exist rather than announcing a disabled one.
+		if handlers.SAML != nil && cfg.Auth.SAML.Enabled {
+			saml := v1Public.Group("/auth/saml/:tenant")
+			{
+				saml.GET("/metadata", handlers.SAML.Metadata)
+				saml.GET("/login", handlers.SAML.Login)
+				saml.POST("/acs", handlers.SAML.ACS)
+			}
+		}
 	}
 
-	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, logger))
+	private := router.Group("/", middleware.AuthenticateMiddleware(cfg, secretService, environmentRepo, userRepo, logger))
 	private.Use(middleware.TenantStatusMiddleware(tenantService, logger))
 	private.Use(middleware.EnvAccessMiddleware(envAccessService, logger))
 	private.Use(middleware.TenantContextMiddleware)
@@ -152,15 +177,17 @@ func NewRouter(
 			user.POST("", write(types.EntityUser, types.ActionWrite), handlers.User.CreateUser)
 			user.PUT("/me", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateUser)
 			user.PUT("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.UpdateServiceAccount)
+			user.PUT("/:id/roles", write(types.EntityUser, types.ActionWrite, superAdminOnly), handlers.User.UpdateUserRoles)
 			user.DELETE("/:id", write(types.EntityUser, types.ActionWrite), handlers.User.DeleteUser)
-			user.POST("/search", handlers.User.QueryUsers)
+			user.POST("/search", read(types.EntityUser, types.ActionRead), handlers.User.QueryUsers)
+			user.POST("/chat/verify", handlers.User.CreateSupportChatToken)
 		}
 
 		environment := v1Private.Group("/environments")
 		{
 			environment.POST("", write(types.EntityEnvironment, types.ActionWrite), handlers.Environment.CreateEnvironment)
-			environment.GET("", handlers.Environment.GetEnvironments)
-			environment.GET("/:id", handlers.Environment.GetEnvironment)
+			environment.GET("", read(types.EntityEnvironment, types.ActionRead), handlers.Environment.GetEnvironments)
+			environment.GET("/:id", read(types.EntityEnvironment, types.ActionRead), handlers.Environment.GetEnvironment)
 			environment.PUT("/:id", write(types.EntityEnvironment, types.ActionWrite), handlers.Environment.UpdateEnvironment)
 			environment.POST("/:id/clone", write(types.EntityEnvironment, types.ActionWrite), handlers.Environment.CloneEnvironment)
 		}
@@ -168,8 +195,14 @@ func NewRouter(
 		// Events routes
 		events := v1Private.Group("/events")
 		{
-			events.POST("", write(types.EntityEvent, types.ActionWrite), handlers.Events.IngestEvent)
-			events.POST("/bulk", write(types.EntityEvent, types.ActionWrite), handlers.Events.BulkIngestEvent)
+			// Ingestion is the only caller-supplied-payload surface here, so the
+			// body cap goes on those three routes rather than the whole group —
+			// the query/analytics routes take small filter bodies and reprocess
+			// takes none.
+			ingestBodyLimit := middleware.BodyLimitMiddleware(middleware.MaxEventIngestionBodyBytes)
+
+			events.POST("", ingestBodyLimit, write(types.EntityEvent, types.ActionWrite), handlers.Events.IngestEvent)
+			events.POST("/bulk", ingestBodyLimit, write(types.EntityEvent, types.ActionWrite), handlers.Events.BulkIngestEvent)
 			events.GET("", handlers.Events.GetEvents)
 			events.GET("/lookup", handlers.Events.GetEventByID)
 			events.GET("/:id", handlers.Events.GetEventByID) // legacy alias, remove once no caller uses /events/:id
@@ -179,7 +212,7 @@ func NewRouter(
 			events.POST("/analytics", handlers.Events.GetUsageAnalytics)
 			events.POST("/huggingface-billing", handlers.Events.GetHuggingFaceBillingData)
 			events.GET("/monitoring", handlers.Events.GetMonitoringData)
-			events.POST("/raw/bulk", write(types.EntityEvent, types.ActionWrite), handlers.Events.BulkIngestRawEvent)
+			events.POST("/raw/bulk", ingestBodyLimit, write(types.EntityEvent, types.ActionWrite), handlers.Events.BulkIngestRawEvent)
 			events.POST("/raw/reprocess/all", write(types.EntityEvent, types.ActionWrite), handlers.Events.ReprocessRawEvents)
 			events.POST("/raw/reprocess/pending", write(types.EntityEvent, types.ActionWrite), handlers.Events.ReprocessUnprocessedRawEvents)
 		}
@@ -322,6 +355,10 @@ func NewRouter(
 			// Subscription plan changes (upgrade/downgrade)
 			subscription.POST("/:id/change/preview", handlers.SubscriptionChange.PreviewSubscriptionChange)
 			subscription.POST("/:id/change/execute", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionChange.ExecuteSubscriptionChange)
+
+			// Plan change v2 (swap in place). v1 remains for interval/cadence/currency changes.
+			subscription.POST("/:id/change/v2/preview", handlers.Subscription.PreviewSubscriptionPlanChangeV2)
+			subscription.POST("/:id/change/v2/execute", write(types.EntitySubscription, types.ActionWrite), handlers.Subscription.ExecuteSubscriptionPlanChangeV2)
 			subscription.POST(":id/modify/execute", write(types.EntitySubscription, types.ActionWrite), handlers.SubscriptionModification.Execute)
 			subscription.POST(":id/modify/preview", handlers.SubscriptionModification.Preview)
 
@@ -452,7 +489,6 @@ func NewRouter(
 
 		tasks := v1Private.Group("/tasks")
 		{
-			tasks.POST("", write(types.EntityTask, types.ActionWrite), handlers.Task.CreateTask)
 			tasks.GET("", handlers.Task.ListTasks)
 			tasks.GET("/:id", handlers.Task.GetTask)
 			tasks.PUT("/:id/status", write(types.EntityTask, types.ActionWrite), handlers.Task.UpdateTaskStatus)
@@ -496,7 +532,9 @@ func NewRouter(
 			// API Key routes
 			apiKeys := secrets.Group("/api/keys")
 			{
-				apiKeys.GET("", handlers.Secret.ListAPIKeys)
+				// Results are scoped to the caller in the service layer; a
+				// super_admin sees the whole environment.
+				apiKeys.GET("", read(types.EntitySecret, types.ActionRead), handlers.Secret.ListAPIKeys)
 				apiKeys.POST("", write(types.EntitySecret, types.ActionWrite), handlers.Secret.CreateAPIKey)
 				apiKeys.DELETE("/:id", write(types.EntitySecret, types.ActionWrite), handlers.Secret.DeleteAPIKey)
 			}
@@ -533,7 +571,6 @@ func NewRouter(
 			costsheets.DELETE("/:id", write(types.EntityCostsheet, types.ActionWrite), handlers.Costsheet.DeleteCostsheet)
 			costsheets.GET("/active", handlers.Costsheet.GetActiveCostsheetForTenant)
 			costsheets.POST("/analytics", handlers.RevenueAnalytics.GetDetailedCostAnalytics)
-			costsheets.POST("/analytics-v2", handlers.RevenueAnalytics.GetDetailedCostAnalyticsV2)
 		}
 
 		// Credit note routes
@@ -580,7 +617,7 @@ func NewRouter(
 
 		// Admin routes (API Key only)
 		adminRoutes := v1Private.Group("/admin")
-		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, secretService, logger))
+		adminRoutes.Use(middleware.APIKeyAuthMiddleware(cfg, secretService, environmentRepo, logger))
 		{
 			// All admin routes to go here
 		}
@@ -615,11 +652,15 @@ func NewRouter(
 	// Customer Dashboard - Customer-facing APIs (requires dashboard token)
 	customerPortalAPI := router.Group("/v1/customer/portal")
 	customerPortalAPI.Use(middleware.SessionTokenAuthMiddleware(cfg, logger))
+	// The session token carries the tenant, so the portal is subject to the same
+	// tenant suspension rules as the rest of the API. Without this a suspended
+	// tenant's customers could keep mutating data through the portal.
+	customerPortalAPI.Use(middleware.TenantStatusMiddleware(tenantService, logger))
 	customerPortalAPI.Use(middleware.ErrorHandler())
 	{
 		// Customer specific
 		customerPortalAPI.GET("/info", handlers.CustomerPortal.GetCustomer)
-		customerPortalAPI.PUT("/info", handlers.CustomerPortal.UpdateCustomer)
+		customerPortalAPI.PUT("/info", write(types.EntityCustomer, types.ActionWrite), handlers.CustomerPortal.UpdateCustomer)
 		customerPortalAPI.GET("/usage", handlers.CustomerPortal.GetUsageSummary)
 
 		// Subscriptions
@@ -672,12 +713,23 @@ func NewRouter(
 		webhooks.POST("/whop/:tenant_id/:environment_id", handlers.Webhook.HandleWhopWebhook)
 	}
 
-	// Settings routes
+	// Settings routes.
+	//
+	// Writes require a super admin: the route is shared by every settings key,
+	// and one of them decides how people authenticate — a SAML configuration
+	// names the identity provider the tenant trusts, so anyone who can change it
+	// can have themselves provisioned into the tenant.
+	//
+	// Reads keep the ordinary setting:read permission. Most settings are
+	// configuration the dashboard shows to any member, and requiring an
+	// administrator to read an invoice prefix helps nobody. saml_config is the
+	// exception and is refused to non-administrators in the service, where the
+	// key is known.
 	settings := v1Private.Group("/settings")
 	{
-		settings.GET("/:key", handlers.Settings.GetSettingByKey)
-		settings.PUT("/:key", write(types.EntitySetting, types.ActionWrite), handlers.Settings.UpdateSettingByKey)
-		settings.DELETE("/:key", write(types.EntitySetting, types.ActionWrite), handlers.Settings.DeleteSettingByKey)
+		settings.GET("/:key", read(types.EntitySetting, types.ActionRead), handlers.Settings.GetSettingByKey)
+		settings.PUT("/:key", write(types.EntitySetting, types.ActionWrite, superAdminOnly), handlers.Settings.UpdateSettingByKey)
+		settings.DELETE("/:key", write(types.EntitySetting, types.ActionWrite, superAdminOnly), handlers.Settings.DeleteSettingByKey)
 	}
 
 	// Alert routes
@@ -698,10 +750,10 @@ func NewRouter(
 	}
 
 	// RBAC routes
-	rbac := v1Private.Group("/rbac")
+	rbac := v1Private.Group("/rbac/roles")
 	{
-		rbac.GET("/roles", handlers.RBAC.ListRoles)
-		rbac.GET("/roles/:id", handlers.RBAC.GetRole)
+		rbac.GET("", handlers.RBAC.ListRoles)
+		rbac.GET("/:id", handlers.RBAC.GetRole)
 	}
 
 	// OAuth routes
@@ -718,14 +770,18 @@ func NewRouter(
 		dashboardRoutes.POST("/revenue-dashboard", handlers.Dashboard.GetRevenueDashboard)
 	}
 
-	// Workflow monitoring routes
+	// Workflow monitoring routes.
+	// These expose Temporal workflow history, which embeds third-party (Stripe,
+	// QuickBooks, Zoho) error payloads, so they are gated on workflow:read even
+	// though they are reads. Search and batch are POST for their request bodies
+	// but are read-only, hence ActionRead rather than ActionWrite.
 	workflows := v1Private.Group("/workflows")
 	{
-		workflows.POST("/search", handlers.Workflow.QueryWorkflows)
-		workflows.POST("/batch", handlers.Workflow.GetWorkflowsBatch)
-		workflows.GET("/:workflow_id/:run_id/summary", handlers.Workflow.GetWorkflowSummary)
-		workflows.GET("/:workflow_id/:run_id/timeline", handlers.Workflow.GetWorkflowTimeline)
-		workflows.GET("/:workflow_id/:run_id", handlers.Workflow.GetWorkflowDetails)
+		workflows.POST("/search", read(types.EntityWorkflow, types.ActionRead), handlers.Workflow.QueryWorkflows)
+		workflows.POST("/batch", read(types.EntityWorkflow, types.ActionRead), handlers.Workflow.GetWorkflowsBatch)
+		workflows.GET("/:workflow_id/:run_id/summary", read(types.EntityWorkflow, types.ActionRead), handlers.Workflow.GetWorkflowSummary)
+		workflows.GET("/:workflow_id/:run_id/timeline", read(types.EntityWorkflow, types.ActionRead), handlers.Workflow.GetWorkflowTimeline)
+		workflows.GET("/:workflow_id/:run_id", read(types.EntityWorkflow, types.ActionRead), handlers.Workflow.GetWorkflowDetails)
 	}
 
 	return router

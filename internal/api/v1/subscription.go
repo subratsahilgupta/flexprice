@@ -404,13 +404,15 @@ func (h *SubscriptionHandler) QuerySubscriptions(c *gin.Context) {
 
 // @Summary Add addon to subscription
 // @ID addSubscriptionAddon
+// @Description Deprecated: use POST /subscriptions/{id}/modify/execute with type "addon" and action "add", which also supports previewing the proration charge first.
 // @Description Use when adding an optional product or add-on to an existing subscription (e.g. extra storage or support tier).
+// @Deprecated true
 // @Tags Subscriptions
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
 // @Param request body dto.AddAddonRequest true "Add Addon Request"
-// @Success 200 {object} dto.AddonAssociationResponse
+// @Success 200 {object} dto.AddAddonToSubscriptionResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
 // @Router /subscriptions/addon [post]
@@ -424,7 +426,7 @@ func (h *SubscriptionHandler) AddAddonToSubscription(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.service.AddAddonToSubscription(c.Request.Context(), req.SubscriptionID, &req.AddAddonToSubscriptionRequest)
+	resp, err := h.service.AddAddonToSubscription(c.Request.Context(), &req)
 	if err != nil {
 		h.log.Error(c.Request.Context(), "Failed to add addon to subscription", "error", err)
 		c.Error(err)
@@ -436,7 +438,9 @@ func (h *SubscriptionHandler) AddAddonToSubscription(c *gin.Context) {
 
 // @Summary Remove addon from subscription
 // @ID removeSubscriptionAddon
+// @Description Deprecated: use POST /subscriptions/{id}/modify/execute with type "addon" and action "remove", which also supports previewing the proration credit first.
 // @Description Use when removing an add-on from a subscription (e.g. downgrade or opt-out).
+// @Deprecated true
 // @Tags Subscriptions
 // @Accept json
 // @Produce json
