@@ -630,22 +630,17 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 
 	// If features are requested to be expanded, fetch the metered feature (for reporting unit) per meter in one query.
 	// A meter has at most one published feature, so keying by MeterID is unambiguous.
-	var featuresByMeterID map[string]*feature.Feature
+	featuresByMeterID := make(map[string]*feature.Feature)
 	if filter.GetExpand().Has(types.ExpandFeatures) && len(prices) > 0 {
 		meterIDs := lo.Uniq(lo.FilterMap(prices, func(p *price.Price, _ int) (string, bool) {
 			return p.MeterID, p.MeterID != ""
 		}))
 
-		if len(meterIDs) > 0 {
-			features, err := s.FeatureRepo.GetFeaturesByMeterIDs(ctx, meterIDs)
-			if err != nil {
-				s.Logger.Info(ctx, "failed to fetch features in bulk", "error", err)
-				// Don't fail the request, just continue without reporting units
-				features = nil
-			} else {
-				s.Logger.Debug(ctx, "fetched features for prices", "count", len(features))
-			}
-			featuresByMeterID = s.buildFeaturesByMeterID(ctx, features)
+		features, err := s.FeatureRepo.GetFeaturesByMeterIDs(ctx, meterIDs)
+		if err != nil {
+			s.Logger.Info(ctx, "failed to fetch features in bulk", "error", err)
+		} else {
+			featuresByMeterID = lo.KeyBy(features, func(f *feature.Feature) string { return f.MeterID })
 		}
 	}
 
@@ -779,7 +774,7 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 
 		// Add feature (reporting unit) if requested and available
 		if filter.GetExpand().Has(types.ExpandFeatures) && p.MeterID != "" {
-			if f, ok := featuresByMeterID[p.MeterID]; ok && f.ReportingUnit != nil {
+			if f, ok := featuresByMeterID[p.MeterID]; ok && f != nil && f.ReportingUnit != nil {
 				response.Items[i].Feature = &dto.PriceFeatureResponse{ReportingUnit: f.ReportingUnit}
 			}
 		}
@@ -814,26 +809,6 @@ func (s *priceService) GetPrices(ctx context.Context, filter *types.PriceFilter)
 	}
 
 	return response, nil
-}
-
-// buildFeaturesByMeterID maps each feature by its meter ID. A meter has at most one
-// published feature; if more than one is found, the first is kept and the rest are
-// logged (not treated as an error, since it's a recovered/skipped condition).
-func (s *priceService) buildFeaturesByMeterID(ctx context.Context, features []*feature.Feature) map[string]*feature.Feature {
-	byMeterID := make(map[string]*feature.Feature, len(features))
-	for _, f := range features {
-		if f.MeterID == "" {
-			continue
-		}
-		existing, ok := byMeterID[f.MeterID]
-		if !ok {
-			byMeterID[f.MeterID] = f
-			continue
-		}
-		s.Logger.Info(ctx, "multiple published features for meter, keeping first match",
-			"meter_id", f.MeterID, "kept_feature_id", existing.ID, "ignored_feature_id", f.ID)
-	}
-	return byMeterID
 }
 
 func (s *priceService) UpdatePrice(ctx context.Context, id string, req dto.UpdatePriceRequest) (*dto.PriceResponse, error) {

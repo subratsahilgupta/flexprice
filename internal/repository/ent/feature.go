@@ -271,13 +271,6 @@ func (r *featureRepository) Update(ctx context.Context, f *domainFeature.Feature
 	})
 	defer FinishSpan(span)
 
-	// Capture the previous meter ID so its by-meter-ID cache entry can be invalidated
-	// too if this update moves the feature to a different meter.
-	var previousMeterID string
-	if previous, err := r.Get(ctx, f.ID); err == nil && previous != nil {
-		previousMeterID = previous.MeterID
-	}
-
 	updateQuery := client.Feature.Update().
 		Where(
 			feature.ID(f.ID),
@@ -335,9 +328,6 @@ func (r *featureRepository) Update(ctx context.Context, f *domainFeature.Feature
 	SetSpanSuccess(span)
 	r.DeleteCache(ctx, f.ID)
 	r.deleteFeatureCacheByMeterID(ctx, f.MeterID)
-	if previousMeterID != "" && previousMeterID != f.MeterID {
-		r.deleteFeatureCacheByMeterID(ctx, previousMeterID)
-	}
 	return nil
 }
 
