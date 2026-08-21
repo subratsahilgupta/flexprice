@@ -76,6 +76,13 @@ type InvoiceSyncSettings struct {
 type MetadataCustomFieldSource string
 
 const (
+	// MaxMetadataCustomFields bounds the mapping list; a Zoho org supports far fewer
+	// custom fields per module than this.
+	MaxMetadataCustomFields = 50
+	maxCustomFieldRefLen    = 255
+)
+
+const (
 	MetadataCustomFieldSourceCustomer MetadataCustomFieldSource = "customer"
 	MetadataCustomFieldSourceInvoice  MetadataCustomFieldSource = "invoice"
 )
@@ -96,15 +103,27 @@ func (m MetadataCustomField) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if strings.TrimSpace(m.MetadataKey) == "" {
+	key := strings.TrimSpace(m.MetadataKey)
+	if key == "" {
 		return ierr.NewError("metadata custom field key is required").
 			WithHint("Provide the metadata key to copy from").
 			Mark(ierr.ErrValidation)
 	}
+	if len(key) > maxCustomFieldRefLen {
+		return ierr.NewError("metadata custom field key is too long").
+			WithHint(fmt.Sprintf("metadata_key must be at most %d characters", maxCustomFieldRefLen)).
+			Mark(ierr.ErrValidation)
+	}
 
-	if strings.TrimSpace(m.Field) == "" {
+	field := strings.TrimSpace(m.Field)
+	if field == "" {
 		return ierr.NewError("metadata custom field target is required").
 			WithHint("Provide the Zoho custom field API name or ID to write to").
+			Mark(ierr.ErrValidation)
+	}
+	if len(field) > maxCustomFieldRefLen {
+		return ierr.NewError("metadata custom field target is too long").
+			WithHint(fmt.Sprintf("field must be at most %d characters", maxCustomFieldRefLen)).
 			Mark(ierr.ErrValidation)
 	}
 
@@ -116,6 +135,12 @@ func (m MetadataCustomField) Validate() error {
 func (s *InvoiceSyncSettings) ValidateMetadataCustomFields() error {
 	if s == nil || len(s.MetadataCustomFields) == 0 {
 		return nil
+	}
+
+	if len(s.MetadataCustomFields) > MaxMetadataCustomFields {
+		return ierr.NewError("too many metadata custom field mappings").
+			WithHint(fmt.Sprintf("At most %d metadata custom fields may be mapped", MaxMetadataCustomFields)).
+			Mark(ierr.ErrValidation)
 	}
 
 	seen := make(map[string]struct{}, len(s.MetadataCustomFields)+2)

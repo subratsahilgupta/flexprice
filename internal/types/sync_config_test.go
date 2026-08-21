@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,6 +21,9 @@ func TestMetadataCustomFieldValidate(t *testing.T) {
 		{"unknown source", MetadataCustomField{"subscription", "brand_name", "cf_brand"}, true},
 		{"blank metadata key", MetadataCustomField{MetadataCustomFieldSourceCustomer, "  ", "cf_brand"}, true},
 		{"blank field", MetadataCustomField{MetadataCustomFieldSourceCustomer, "brand_name", ""}, true},
+		{"key at cap", MetadataCustomField{MetadataCustomFieldSourceCustomer, strings.Repeat("k", maxCustomFieldRefLen), "cf_brand"}, false},
+		{"key over cap", MetadataCustomField{MetadataCustomFieldSourceCustomer, strings.Repeat("k", maxCustomFieldRefLen+1), "cf_brand"}, true},
+		{"field over cap", MetadataCustomField{MetadataCustomFieldSourceCustomer, "brand_name", strings.Repeat("f", maxCustomFieldRefLen+1)}, true},
 	}
 
 	for _, tt := range tests {
@@ -65,6 +70,19 @@ func TestValidateMetadataCustomFields(t *testing.T) {
 			},
 		}
 		assert.Error(t, s.ValidateMetadataCustomFields())
+	})
+
+	t.Run("too many mappings", func(t *testing.T) {
+		many := make([]MetadataCustomField, 0, MaxMetadataCustomFields+1)
+		for i := 0; i <= MaxMetadataCustomFields; i++ {
+			many = append(many, MetadataCustomField{
+				MetadataCustomFieldSourceCustomer,
+				fmt.Sprintf("key_%d", i),
+				fmt.Sprintf("cf_%d", i),
+			})
+		}
+		assert.Error(t, (&InvoiceSyncSettings{MetadataCustomFields: many}).ValidateMetadataCustomFields())
+		assert.NoError(t, (&InvoiceSyncSettings{MetadataCustomFields: many[:MaxMetadataCustomFields]}).ValidateMetadataCustomFields())
 	})
 
 	t.Run("nil and empty", func(t *testing.T) {
