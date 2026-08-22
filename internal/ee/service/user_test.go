@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -19,7 +22,6 @@ import (
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/suite"
 )
@@ -687,13 +689,14 @@ func (s *UserServiceSuite) TestDeleteUser() {
 func (s *UserServiceSuite) TestCreateSupportChatToken() {
 	const (
 		appID  = "pylon-app-id"
-		secret = "raw-identity-secret"
+		secret = "deadbeefdeadbeefdeadbeefdeadbeef"
+		email  = "support@example.com"
 	)
 
 	ctx := testutil.SetupContext()
 	_ = s.userRepo.Create(ctx, &user.User{
 		ID:        types.DefaultUserID,
-		Email:     "support@example.com",
+		Email:     email,
 		Name:      "Support User",
 		Type:      types.UserTypeUser,
 		BaseModel: types.GetDefaultBaseModel(ctx),
@@ -708,24 +711,34 @@ func (s *UserServiceSuite) TestCreateSupportChatToken() {
 	resp, err := s.userService.CreateSupportChatToken(ctx)
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
+	s.Empty(resp.ExpiresAt)
 
-	expiresAt, err := time.Parse(time.RFC3339, resp.ExpiresAt)
+	secretBytes, err := hex.DecodeString(secret)
 	s.Require().NoError(err)
+	mac := hmac.New(sha256.New, secretBytes)
+	_, err = mac.Write([]byte(email))
+	s.Require().NoError(err)
+	s.Equal(hex.EncodeToString(mac.Sum(nil)), resp.Token)
+}
 
-	parsed, err := jwt.ParseWithClaims(resp.Token, &dto.ChatSupportClaims{}, func(t *jwt.Token) (interface{}, error) {
-		s.Equal(jwt.SigningMethodHS256.Alg(), t.Method.Alg())
-		return []byte(secret), nil
+func (s *UserServiceSuite) TestCreateSupportChatToken_InvalidHexSecret() {
+	ctx := testutil.SetupContext()
+	_ = s.userRepo.Create(ctx, &user.User{
+		ID:        types.DefaultUserID,
+		Email:     "support@example.com",
+		Type:      types.UserTypeUser,
+		BaseModel: types.GetDefaultBaseModel(ctx),
 	})
-	s.Require().NoError(err)
-	s.True(parsed.Valid)
+	s.userService.cfg = &config.Configuration{
+		ChatSupport: config.ChatSupportConfig{
+			AppID:          "pylon-app-id",
+			IdentitySecret: "not-a-hex-string",
+		},
+	}
 
-	claims, ok := parsed.Claims.(*dto.ChatSupportClaims)
-	s.Require().True(ok)
-	s.Require().NotNil(claims.IssuedAt)
-	s.Require().NotNil(claims.ExpiresAt)
-	s.Equal(int64(600), claims.ExpiresAt.Unix()-claims.IssuedAt.Unix())
-	s.Equal(10*time.Minute, claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time))
-	s.WithinDuration(claims.IssuedAt.Time.Add(10*time.Minute), expiresAt, time.Second)
+	resp, err := s.userService.CreateSupportChatToken(ctx)
+	s.Require().Error(err)
+	s.Nil(resp)
 }
 
 // ---------------------------------------------------------------------------
