@@ -526,34 +526,58 @@ spec:
               # --if-not-exists already makes a re-run a no-op, so a non-zero
               # exit here means a real failure and not a pre-existing topic.
               FAILED=0
+              # $1=topic $2=partitions $3=replication-factor, followed by zero
+              # or more "key=value" pairs turned into repeated --config flags
+              # (retention.ms, cleanup.policy, min.insync.replicas, ...).
               create_topic() {
                 TOPIC=$1
                 PARTITIONS=${2:-1}
                 REPLICATION=${3:-1}
-                echo "→ Creating topic: ${TOPIC} (partitions=${PARTITIONS}, replication=${REPLICATION})"
+                # All call sites below always pass topic/partitions/replication,
+                # so there are always >=3 positional args to drop here before
+                # collecting the optional trailing key=value config pairs.
+                shift 3
+                CONFIG_ARGS=""
+                for KV in "$@"; do
+                  CONFIG_ARGS="${CONFIG_ARGS} --config ${KV}"
+                done
+                echo "→ Creating topic: ${TOPIC} (partitions=${PARTITIONS}, replication=${REPLICATION}${CONFIG_ARGS:+, configs:${CONFIG_ARGS}})"
                 if ! $KAFKA_TOPICS_CMD --bootstrap-server "${KAFKA_BROKER}" ${CMD_CONFIG} \
                   --create --if-not-exists \
                   --topic "${TOPIC}" \
                   --partitions "${PARTITIONS}" \
-                  --replication-factor "${REPLICATION}"; then
+                  --replication-factor "${REPLICATION}" \
+                  ${CONFIG_ARGS}; then
                   echo "  ✗ FAILED to create ${TOPIC}"
                   FAILED=$((FAILED + 1))
                 fi
               }
 
-              # All topics used by FlexPrice
-              create_topic "{{ .Values.kafkaConfig.topic }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}"
-              create_topic "{{ .Values.kafkaConfig.topicLazy }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}"
+              # All built-in topics used by FlexPrice. These 10 calls are
+              # unconditional and always run with today's names/defaults —
+              # migration.kafkaTopics.topics (below) is purely additive, so
+              # leaving it empty (the default) changes nothing here.
+              create_topic "{{ .Values.kafkaConfig.topic }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
+              create_topic "{{ .Values.kafkaConfig.topicLazy }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
               {{- with .Values.kafkaConfig.topicBulk }}
-              create_topic "{{ . }}" "{{ $.Values.migration.kafkaTopics.partitions | default 3 }}"
+              create_topic "{{ . }}" "{{ $.Values.migration.kafkaTopics.partitions | default 3 }}" "{{ $.Values.migration.kafkaTopics.replicationFactor | default 1 }}"
               {{- end }}
-              create_topic "{{ .Values.kafkaConfig.topicDLQ | default "events_dlq" }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}"
-              create_topic "{{ .Values.eventPostProcessing.topic }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}"
-              create_topic "{{ .Values.eventPostProcessing.topicBackfill }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}"
-              create_topic "{{ .Values.webhook.topic }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}"
-              create_topic "events_backfill" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}"
-              create_topic "wallet_alert" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}"
-              create_topic "onboarding_events" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}"
+              create_topic "{{ .Values.kafkaConfig.topicDLQ | default "events_dlq" }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
+              create_topic "{{ .Values.eventPostProcessing.topic }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
+              create_topic "{{ .Values.eventPostProcessing.topicBackfill }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
+              create_topic "{{ .Values.webhook.topic }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
+              create_topic "events_backfill" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
+              create_topic "wallet_alert" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
+              create_topic "onboarding_events" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
+
+              # Client-declared extra/override topics (migration.kafkaTopics.topics).
+              # Empty by default -- this loop then emits nothing and behavior
+              # is identical to before this feature existed.
+              {{- range .Values.migration.kafkaTopics.topics }}
+              create_topic "{{ .name }}" \
+                "{{ .partitions | default $.Values.migration.kafkaTopics.partitions | default 3 }}" \
+                "{{ .replicationFactor | default $.Values.migration.kafkaTopics.replicationFactor | default 1 }}"{{ range $k, $v := .configs }} "{{ $k }}={{ $v }}"{{ end }}
+              {{- end }}
 
               if [ "${FAILED}" -ne 0 ]; then
                 echo "❌ ${FAILED} topic(s) could not be created."
