@@ -21950,6 +21950,20 @@
           }
         }
       },
+      "PlanPriceSyncStatusResponse": {
+        "type": "object",
+        "properties": {
+          "current_sequence": {
+            "type": "integer"
+          },
+          "synced": {
+            "type": "boolean"
+          },
+          "unsynced_subscription_count": {
+            "type": "integer"
+          }
+        }
+      },
       "PlanResponse": {
         "type": "object",
         "properties": {
@@ -21992,6 +22006,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "price_sync_status": {
+            "$ref": "#/components/schemas/PlanPriceSyncStatusResponse"
           },
           "prices": {
             "type": "array",
