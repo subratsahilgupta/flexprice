@@ -137,17 +137,19 @@ func (s *authService) SignUp(ctx context.Context, req *dto.SignUpRequest) (*dto.
 	return response, nil
 }
 
-// refuseUnverifiedEmail blocks account creation when the Supabase token does
-// not assert that the email has been confirmed.
+// refuseUnverifiedEmail blocks account creation when Supabase has not recorded
+// a confirmed email for the signing-in user.
 //
 // The token is re-validated here rather than trusting anything the caller sent
 // alongside it: the signup handler accepts the token from the request body or
-// an Authorization header, so the email and the verification flag are only
-// trustworthy once the signature has been checked.
+// an Authorization header, so the identity on it is only trustworthy once the
+// signature has been checked.
 //
-// The email on the token is also required to match the email being registered,
-// so a token issued for one address cannot be used to create an account for
-// another.
+// The email on the token must also match the email being registered, so a token
+// issued for one address cannot create an account for another.
+//
+// Confirmation itself is read from the provider rather than from the token. See
+// supabaseAuth.EmailConfirmed for why the token's own claim cannot be trusted.
 func (s *authService) refuseUnverifiedEmail(ctx context.Context, token, email string) error {
 	if token == "" {
 		return ierr.NewError("token is required").
@@ -172,8 +174,22 @@ func (s *authService) refuseUnverifiedEmail(ctx context.Context, token, email st
 			Mark(ierr.ErrPermissionDenied)
 	}
 
-	if !claims.EmailVerified {
-		s.Logger.Info(ctx, "signup refused because the email is not verified",
+	checker, ok := s.authProvider.(authProvider.EmailConfirmChecker)
+	if !ok {
+		// SignUp only calls this for the Supabase provider, which implements the
+		// interface. Reaching here means the wiring changed, and treating an
+		// unknown provider as verified would silently drop the guard.
+		return ierr.NewError("auth provider cannot report email confirmation").
+			WithHint("A verified sign-in is required to create an account").
+			Mark(ierr.ErrSystem)
+	}
+
+	confirmed, err := checker.EmailConfirmed(ctx, claims.UserID)
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		s.Logger.Info(ctx, "signup refused because the email is not confirmed",
 			"email", email,
 		)
 		return ierr.NewError("email is not verified").

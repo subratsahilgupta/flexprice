@@ -175,8 +175,17 @@ func (s *AuthServiceSuite) TestSignUp() {
 // other call panics loudly rather than silently returning a zero value.
 type fakeSupabaseProvider struct {
 	authProvider.Provider
-	claims *auth.Claims
-	err    error
+	claims     *auth.Claims
+	err        error
+	confirmed  bool
+	confirmErr error
+}
+
+// EmailConfirmed stands in for the Admin API lookup. The guard reads
+// confirmation from here, not from the token, so a token that asserts
+// verification while the provider has not confirmed the address is refused.
+func (f *fakeSupabaseProvider) EmailConfirmed(_ context.Context, _ string) (bool, error) {
+	return f.confirmed, f.confirmErr
 }
 
 func (f *fakeSupabaseProvider) GetProvider() types.AuthProvider {
@@ -207,37 +216,45 @@ func (s *AuthServiceSuite) TestSignUpRefusesUnverifiedEmail() {
 		name        string
 		claims      *auth.Claims
 		validateErr error
+		confirmed   bool
+		confirmErr  error
 		token       string
 		email       string
 		wantErr     bool
 	}{
 		{
-			name:    "admits a verified email",
-			claims:  &auth.Claims{UserID: "user_1", Email: "victim@example.com", EmailVerified: true},
-			token:   "token",
-			email:   "victim@example.com",
-			wantErr: false,
+			name:      "admits an email the provider has confirmed",
+			claims:    &auth.Claims{UserID: "user_1", Email: "victim@example.com"},
+			confirmed: true,
+			token:     "token",
+			email:     "victim@example.com",
+			wantErr:   false,
 		},
 		{
-			name:    "refuses an unverified email",
-			claims:  &auth.Claims{UserID: "user_1", Email: "victim@example.com", EmailVerified: false},
-			token:   "token",
-			email:   "victim@example.com",
-			wantErr: true,
+			// The provider is authoritative: a token asserting verification in
+			// user_metadata must not admit an address GoTrue has not confirmed.
+			name:      "refuses an email the provider has not confirmed",
+			claims:    &auth.Claims{UserID: "user_1", Email: "victim@example.com"},
+			confirmed: false,
+			token:     "token",
+			email:     "victim@example.com",
+			wantErr:   true,
 		},
 		{
-			name:    "refuses a verified token registering a different email",
-			claims:  &auth.Claims{UserID: "user_1", Email: "attacker@example.com", EmailVerified: true},
-			token:   "token",
-			email:   "victim@example.com",
-			wantErr: true,
+			name:      "refuses a confirmed token registering a different email",
+			claims:    &auth.Claims{UserID: "user_1", Email: "attacker@example.com"},
+			confirmed: true,
+			token:     "token",
+			email:     "victim@example.com",
+			wantErr:   true,
 		},
 		{
-			name:    "refuses a missing token",
-			claims:  &auth.Claims{UserID: "user_1", Email: "victim@example.com", EmailVerified: true},
-			token:   "",
-			email:   "victim@example.com",
-			wantErr: true,
+			name:      "refuses a missing token",
+			claims:    &auth.Claims{UserID: "user_1", Email: "victim@example.com"},
+			confirmed: true,
+			token:     "",
+			email:     "victim@example.com",
+			wantErr:   true,
 		},
 		{
 			name:        "refuses when the token fails validation",
@@ -246,6 +263,16 @@ func (s *AuthServiceSuite) TestSignUpRefusesUnverifiedEmail() {
 			email:       "victim@example.com",
 			wantErr:     true,
 		},
+		{
+			// A failed lookup must not admit the signup: the guard cannot tell a
+			// confirmed address from an unconfirmed one, so it refuses.
+			name:       "refuses when the confirmation lookup fails",
+			claims:     &auth.Claims{UserID: "user_1", Email: "victim@example.com"},
+			confirmErr: errors.New("admin api unavailable"),
+			token:      "token",
+			email:      "victim@example.com",
+			wantErr:    true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -253,7 +280,10 @@ func (s *AuthServiceSuite) TestSignUpRefusesUnverifiedEmail() {
 			s.BaseServiceTestSuite.ClearStores()
 			svc := s.authService.(*authService)
 			original := svc.authProvider
-			svc.authProvider = &fakeSupabaseProvider{claims: tc.claims, err: tc.validateErr}
+			svc.authProvider = &fakeSupabaseProvider{
+				claims: tc.claims, err: tc.validateErr,
+				confirmed: tc.confirmed, confirmErr: tc.confirmErr,
+			}
 			defer func() { svc.authProvider = original }()
 
 			_, err := svc.SignUp(s.GetContext(), &dto.SignUpRequest{

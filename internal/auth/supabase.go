@@ -155,33 +155,37 @@ func (s *supabaseAuth) ValidateToken(ctx context.Context, token string) (*auth.C
 		TenantID:      tenantID,
 		Email:         email,
 		EnvironmentID: environmentID,
-		EmailVerified: supabaseEmailVerified(claims),
 	}, nil
 }
 
-// supabaseEmailVerified reads Supabase's email-confirmation flag from a
-// validated token's claims.
+// EmailConfirmed reports whether Supabase itself has recorded a confirmed
+// email for userID, read from the Admin API rather than from the access token.
 //
-// Only the top-level claim is trusted. GoTrue sets it from the identity
-// provider, so it reflects the provider's own confirmation state.
+// The token is not usable for this. GoTrue on this project puts email_verified
+// only inside user_metadata, which is writable by the user through the ordinary
+// client SDK (auth.updateUser with a data field, which this codebase already
+// calls from the browser during password reset). A caller could therefore mark
+// their own unconfirmed address verified and walk through the signup guard.
+// app_metadata would be server-controlled, but GoTrue does not put the flag
+// there, and a top-level claim is absent on this project's tokens.
 //
-// The copy nested under user_metadata is deliberately NOT consulted, even
-// though it is often present and carries the same name. user_metadata is
-// writable by the user through the ordinary client SDK — auth.updateUser with a
-// data field, which this codebase already calls from the browser during
-// password reset — so treating it as proof of confirmation would let a caller
-// mark their own unconfirmed address verified and walk straight through the
-// signup guard. Supabase's own guidance is that user_metadata is for
-// non-sensitive profile data and app_metadata is the server-controlled
-// equivalent; a verification flag belongs in neither, so only the provider's
-// top-level claim is authoritative here.
-//
-// A token without the claim yields false. That is the safe default: a provider
-// that does not tell us the email was confirmed is treated as not having
-// confirmed it.
-func supabaseEmailVerified(claims jwt.MapClaims) bool {
-	verified, ok := claims["email_verified"].(bool)
-	return ok && verified
+// auth.users.email_confirmed_at is set by GoTrue when the confirmation link is
+// followed or when an OAuth identity supplies a confirmed address, and no
+// client-side call can write it. That makes it the only trustworthy source.
+func (s *supabaseAuth) EmailConfirmed(ctx context.Context, userID string) (bool, error) {
+	user, err := s.client.Admin.GetUser(ctx, userID)
+	if err != nil {
+		return false, ierr.WithError(err).
+			WithHint("Failed to read the user's email confirmation status").
+			Mark(ierr.ErrSystem)
+	}
+	if user == nil {
+		return false, ierr.NewError("user not found in auth provider").
+			WithHint("Failed to read the user's email confirmation status").
+			Mark(ierr.ErrSystem)
+	}
+
+	return user.EmailConfirmedAt != nil, nil
 }
 
 func (s *supabaseAuth) AssignUserToTenant(ctx context.Context, userID string, tenantID string) error {
