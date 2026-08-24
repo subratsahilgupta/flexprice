@@ -29,19 +29,48 @@ func (f *fakeMappingRepo) List(_ context.Context, filter *types.EntityIntegratio
 	return out, nil
 }
 
-// fakeZohoClient is a minimal ZohoClient for these tests. Only GetInvoice and
-// CreateCustomerPayment are exercised; all other methods panic if called.
+// fakeZohoClient is a minimal ZohoClient for these tests. Only GetInvoice,
+// CreateCustomerPayment, SubmitInvoiceForApproval and GetZohoBooksSyncConfig are
+// exercised; all other methods panic if called.
 type fakeZohoClient struct {
 	ZohoClient
 	getInvoiceResp     *InvoiceResponse
 	getInvoiceErr      error
+	getInvoiceCalls    int
 	createPaymentReq   *CustomerPaymentCreateRequest
 	createPaymentErr   error
 	createPaymentCalls int
+	submitErr          error
+	submitCalls        int
+	syncConfig         *types.SyncConfig
+	syncConfigErr      error
+	// statusSequence, when set, overrides getInvoiceResp.Status on successive GetInvoice
+	// calls so a test can walk an invoice from draft to approved. The last entry sticks
+	// once the sequence is exhausted.
+	statusSequence []string
 }
 
 func (f *fakeZohoClient) GetInvoice(_ context.Context, _ string) (*InvoiceResponse, error) {
-	return f.getInvoiceResp, f.getInvoiceErr
+	f.getInvoiceCalls++
+	if f.getInvoiceErr != nil {
+		return nil, f.getInvoiceErr
+	}
+	if len(f.statusSequence) == 0 || f.getInvoiceResp == nil {
+		return f.getInvoiceResp, nil
+	}
+	idx := min(f.getInvoiceCalls-1, len(f.statusSequence)-1)
+	clone := *f.getInvoiceResp
+	clone.Status = f.statusSequence[idx]
+	return &clone, nil
+}
+
+func (f *fakeZohoClient) SubmitInvoiceForApproval(_ context.Context, _ string) error {
+	f.submitCalls++
+	return f.submitErr
+}
+
+func (f *fakeZohoClient) GetZohoBooksSyncConfig(_ context.Context) (*types.SyncConfig, error) {
+	return f.syncConfig, f.syncConfigErr
 }
 
 func (f *fakeZohoClient) CreateCustomerPayment(_ context.Context, req *CustomerPaymentCreateRequest) (*CustomerPaymentResponse, error) {

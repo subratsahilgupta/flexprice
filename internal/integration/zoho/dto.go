@@ -167,6 +167,23 @@ type InvoiceResponse struct {
 	Balance       decimal.Decimal `json:"balance,omitempty"`
 }
 
+// Zoho Books invoice statuses, as returned by the API and sent on inbound webhooks.
+// Draft, PendingApproval and Rejected are the approval-flow states: Zoho refuses a
+// customer payment against an invoice sitting in any of them.
+const (
+	InvoiceStatusDraft           = "draft"
+	InvoiceStatusPendingApproval = "pending_approval"
+	InvoiceStatusRejected        = "rejected"
+	InvoiceStatusPaid            = "paid"
+	InvoiceStatusVoid            = "void"
+	InvoiceStatusVoided          = "voided"
+)
+
+// NormalizeInvoiceStatus lowercases a Zoho status for comparison against the constants above.
+func NormalizeInvoiceStatus(status string) string {
+	return strings.ToLower(strings.TrimSpace(status))
+}
+
 // CustomerPaymentInvoiceApply links a recorded Zoho customer payment to an invoice it settles.
 type CustomerPaymentInvoiceApply struct {
 	invoiceID     string
