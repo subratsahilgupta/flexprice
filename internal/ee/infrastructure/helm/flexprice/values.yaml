@@ -1359,28 +1359,6 @@ app:
   customerPortalUrl: ""   # e.g. "https://admin.flexprice.io/customer-portal"
   oauthRedirectUri: ""    # e.g. "https://admin.flexprice.io/tools/integrations/oauth/callback"
 
-  # Observability (Sentry error tracking + Pyroscope continuous profiling)
-  observability:
-    # Sentry configuration
-    sentry:
-      enabled: false
-      dsn: "https://1234567890@sentry.io/1234567890" # Set via secret
-      environment: "production"
-      sampleRate: 1.0
-
-    # Pyroscope configuration
-    pyroscope:
-      enabled: false
-      serverAddress: ""
-      applicationName: "flexprice"
-      basicAuthUser: ""
-      basicAuthPassword: "" # Required only when pyroscope.basicAuthUser is set — set via secret
-      sampleRate: 100
-      disableGCRuns: false
-      profileTypes:
-        - "cpu"
-        - "memory"
-
   # Email configuration
   email:
     enabled: false
