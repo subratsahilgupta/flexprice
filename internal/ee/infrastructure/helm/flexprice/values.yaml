@@ -239,10 +239,11 @@ consumer:
     enabled: false
     minReplicas: 1
     maxReplicas: 10
-    lagThreshold: 1000          # messages of consumer-group lag per replica
+    lagThreshold: 1000          # default messages of consumer-group lag per replica (used as fallback for topics without their own lagThreshold)
     pollingInterval: 15         # seconds between KEDA polls
     cooldownPeriod: 300         # seconds before scaling down to minReplicas
     offsetResetPolicy: "earliest"
+    topics: []                  # list of {topic, lagThreshold} objects, one kafka trigger each; empty = single trigger on kafkaConfig.topic using lagThreshold above (back-compat)
     cpuValue: ""                # target CPU utilization % for the cpu trigger; empty = trigger omitted
     memValue: ""                # target memory utilization % for the memory trigger; empty = trigger omitted
     fallback: {}                # KEDA fallback (e.g. failureThreshold + replicas)
