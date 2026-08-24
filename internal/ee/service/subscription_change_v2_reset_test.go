@@ -14,7 +14,17 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// resetRequest restarts the term and credits the unused remainder of the outgoing
+// plan. See forfeitResetRequest for the variant that keeps the remainder.
 func (s *SubscriptionChangeV2Suite) resetRequest(targetPlanID string) dto.SubscriptionChangeV2Request {
+	req := s.changeRequest(targetPlanID, types.ProrationBehaviorCreateProrations)
+	req.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
+	return req
+}
+
+// forfeitResetRequest restarts the term and settles nothing for the period it cut
+// short: the customer keeps no credit for the days they paid for and will not use.
+func (s *SubscriptionChangeV2Suite) forfeitResetRequest(targetPlanID string) dto.SubscriptionChangeV2Request {
 	req := s.changeRequest(targetPlanID, types.ProrationBehaviorNone)
 	req.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 	return req
@@ -49,12 +59,11 @@ func (s *SubscriptionChangeV2Suite) TestExecute_BillingPeriodBehaviourValidation
 			},
 		},
 		{
-			name: "reset_at_effect with prorations is rejected",
+			name: "anchor_at_effect with prorations is accepted — it asks for the credit",
 			mutate: func(r *dto.SubscriptionChangeV2Request) {
 				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 				r.ProrationBehavior = types.ProrationBehaviorCreateProrations
 			},
-			wantErr: "proration is not applicable when the billing period is reset",
 		},
 		{
 			name: "reset_at is rejected rather than inferred",
@@ -297,6 +306,47 @@ func (s *SubscriptionChangeV2Suite) TestExecute_ResetDoesNotRebillTheOutgoingPla
 }
 
 // A downgrade can credit more than the new plan costs; the excess must reach the wallet.
+// proration_behavior selects what happens to the period the reset cut short.
+// none forfeits it: the new plan is billed in full and nothing is credited back, which
+// is the only way to ask for a clean restart. Before this, none was the *required*
+// value and the credit was issued anyway, so no caller could express either intent.
+func (s *SubscriptionChangeV2Suite) TestExecute_ResetWithoutProrationsForfeitsTheRemainder() {
+	ctx := s.GetContext()
+
+	s.recordBilled(s.td.baseLine.ID, s.td.starterBase.Amount)
+
+	forfeited, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.forfeitResetRequest(s.td.pro.ID), time.Now().UTC())
+	s.Require().NoError(err)
+
+	invoice := s.resetInvoice(forfeited)
+	s.Require().NotNil(invoice, "the new plan is still billed for its full period")
+	s.Equal(s.td.proBase.Amount.String(), invoice.AmountDue.String(),
+		"the full price of the new plan, with nothing credited back")
+
+	for _, li := range invoice.LineItems {
+		s.False(li.Amount.IsNegative(), "a forfeited remainder must not appear as a credit line")
+	}
+}
+
+// The same change asking for the credit bills strictly less, and the difference is the
+// unused remainder of the outgoing plan.
+func (s *SubscriptionChangeV2Suite) TestExecute_ResetWithProrationsCreditsTheRemainder() {
+	ctx := s.GetContext()
+
+	s.recordBilled(s.td.baseLine.ID, s.td.starterBase.Amount)
+
+	credited, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.resetRequest(s.td.pro.ID), time.Now().UTC())
+	s.Require().NoError(err)
+
+	invoice := s.resetInvoice(credited)
+	s.Require().NotNil(invoice)
+	s.True(invoice.AmountDue.LessThan(s.td.proBase.Amount),
+		"asking for prorations must bill less than the full price, got %s", invoice.AmountDue)
+	s.True(lo.SomeBy(invoice.LineItems, func(li *dto.InvoiceLineItemResponse) bool {
+		return li.Amount.IsNegative()
+	}), "the credit for the outgoing plan is a line on the settlement")
+}
+
 func (s *SubscriptionChangeV2Suite) TestExecute_ResetRoutesExcessCreditToTheWallet() {
 	ctx := s.GetContext()
 

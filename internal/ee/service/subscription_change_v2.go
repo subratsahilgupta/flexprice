@@ -52,7 +52,7 @@ type planChangeRequest struct {
 	closingEntitlementOverrides []*entitlement.Entitlement
 	closingEntitlementGrants    []*entitlementgrant.EntitlementGrant
 
-	resetAnchor bool
+	anchorAtEffect bool
 
 	// outgoingUsage bills the outgoing plan's usage and is set only under a reset; settlementQuote is
 	// the net of credits against charges, nil when the change settles no money.
@@ -124,7 +124,7 @@ func (s *subscriptionService) resolvePlanChange(
 		effectiveAt:    effectiveAt,
 		behavior:       req.ProrationBehavior,
 		idempotencyKey: lo.FromPtr(req.IdempotencyKey),
-		resetAnchor:    req.ResetsAnchorAtEffective() && !req.IsDeferred(),
+		anchorAtEffect: req.AnchorAtEffect() && !req.IsDeferred(),
 	}
 
 	updatedSub, err := projectSubscriptionAfterChange(r)
@@ -155,7 +155,7 @@ func (s *subscriptionService) resolvePlanChange(
 
 	// The settlement is resolved here, before any write, so preview and execute quote the
 	// same documents and settling them is order-independent.
-	if r.resetAnchor {
+	if r.anchorAtEffect {
 		if r.outgoingUsage, err = s.outgoingUsageInvoiceRequest(ctx, r); err != nil {
 			return nil, err
 		}
@@ -468,7 +468,7 @@ func (s *subscriptionService) checkPlanChangePreconditions(
 			map[string]any{"subscription_id": sub.ID})
 	}
 
-	if req.ResetsAnchorAtEffective() && sub.BillingCycle == types.BillingCycleCalendar {
+	if req.AnchorAtEffect() && sub.BillingCycle == types.BillingCycleCalendar {
 		return fail("the billing period cannot be reset on a calendar-aligned subscription",
 			"Calendar billing keeps every period on a calendar boundary. Use billing_period_behaviour='unchanged', or move the subscription to anniversary billing.",
 			map[string]any{"subscription_id": sub.ID, "billing_cycle": sub.BillingCycle})
@@ -1005,7 +1005,7 @@ func (s *subscriptionService) applyAnchorReset(
 	r *planChangeRequest,
 	swapped *subscription.Subscription,
 ) (*subscription.Subscription, error) {
-	if !r.resetAnchor {
+	if !r.anchorAtEffect {
 		return swapped, nil
 	}
 
@@ -1036,7 +1036,7 @@ func projectSubscriptionAfterChange(r *planChangeRequest) (*subscription.Subscri
 	projected := *r.currentSub
 	projected.PlanID = r.toPlan.ID
 
-	if !r.resetAnchor {
+	if !r.anchorAtEffect {
 		return &projected, nil
 	}
 
@@ -1073,15 +1073,19 @@ func (s *subscriptionService) resetQuote(
 ) (*LineItemProrationSummary, error) {
 	prorationSvc := NewLineItemProrationService(s.ServiceParams)
 
-	credit, err := prorationSvc.Compute(ctx, LineItemProrationRequest{
-		Subscription:  r.currentSub,
-		Entries:       prorationEntries(types.ProrationActionRemoveItem, r.closingLineItems, r.carriedLineItems),
-		EffectiveDate: r.effectiveAt,
-		Behavior:      types.ProrationBehaviorCreateProrations,
-		Reason:        "plan change with billing period reset",
-	})
-	if err != nil {
-		return nil, err
+	var credit *LineItemProrationSummary
+	if r.behavior == types.ProrationBehaviorCreateProrations {
+		var err error
+		credit, err = prorationSvc.Compute(ctx, LineItemProrationRequest{
+			Subscription:  r.currentSub,
+			Entries:       prorationEntries(types.ProrationActionRemoveItem, r.closingLineItems, r.carriedLineItems),
+			EffectiveDate: r.effectiveAt,
+			Behavior:      types.ProrationBehaviorCreateProrations,
+			Reason:        "plan change with billing period reset",
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	charge, err := prorationSvc.Compute(ctx, LineItemProrationRequest{

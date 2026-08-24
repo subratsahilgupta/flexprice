@@ -51,9 +51,9 @@ func (r *SubscriptionChangeV2Request) EffectiveBillingPeriodBehaviour() types.Bi
 	return r.BillingPeriodBehaviour
 }
 
-// ResetsAnchorAtEffective reports whether the change restarts the term at the instant it
+// AnchorAtEffect reports whether the change restarts the term at the instant it
 // takes effect.
-func (r *SubscriptionChangeV2Request) ResetsAnchorAtEffective() bool {
+func (r *SubscriptionChangeV2Request) AnchorAtEffect() bool {
 	return r != nil && r.BillingPeriodBehaviour == types.BillingPeriodBehaviourAnchorAtEffect
 }
 
@@ -195,18 +195,6 @@ func (r *SubscriptionChangeV2Request) validateBillingPeriodBehaviour() error {
 					types.BillingPeriodBehaviourAnchorAtEffect,
 				},
 			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	if !r.ResetsAnchorAtEffective() {
-		return nil
-	}
-
-	// A reset settles the whole term in one close-out invoice, so a prorated delta on
-	// top of it would charge the new plan twice.
-	if r.ProrationBehavior == types.ProrationBehaviorCreateProrations {
-		return ierr.NewError("proration is not applicable when the billing period is reset").
-			WithHint("Set proration_behavior to 'none'. Resetting the anchor settles the outgoing period and bills the new plan in full.").
 			Mark(ierr.ErrValidation)
 	}
 

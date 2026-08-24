@@ -101,13 +101,17 @@ func (s *SubscriptionChangeV2Suite) TestExecute_MigratesCreditGrantsToTheTargetP
 // materialisePlanGrants creates the subscription-scoped grants a plan would produce at
 // subscription creation, through the same mapping the service uses.
 func (s *SubscriptionChangeV2Suite) materialisePlanGrants(planID string) []*creditgrant.CreditGrant {
+	return s.materialisePlanGrantsFor(s.td.sub, planID)
+}
+
+func (s *SubscriptionChangeV2Suite) materialisePlanGrantsFor(sub *subscription.Subscription, planID string) []*creditgrant.CreditGrant {
 	ctx := s.GetContext()
 	planGrants, err := NewCreditGrantService(s.serviceParams()).GetCreditGrantsByPlan(ctx, planID)
 	s.Require().NoError(err)
 
 	created := make([]*creditgrant.CreditGrant, 0, len(planGrants.Items))
 	for _, pg := range planGrants.Items {
-		req := dto.NewSubscriptionScopedCreditGrantRequest(pg, s.td.sub.ID, planID)
+		req := dto.NewSubscriptionScopedCreditGrantRequest(pg, sub.ID, planID)
 		cg := &creditgrant.CreditGrant{
 			ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CREDIT_GRANT),
 			Name:           req.Name,
