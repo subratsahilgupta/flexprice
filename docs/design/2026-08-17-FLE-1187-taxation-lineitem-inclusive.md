@@ -1,6 +1,6 @@
 # Taxation — Inclusive / Exclusive / Exemption — Design ERD
 
-Status: **Proposed** — v1 (invoice level)
+Status: **Finalized** — v1 (invoice level). All open questions resolved (§11).
 Date: 2026-08-17
 Author: Subrat Sahil Gupta
 Related: `internal/ee/service/tax.go`, `ent/schema/taxassociation.go`, `ent/schema/taxapplied.go`
@@ -55,7 +55,7 @@ erDiagram
 
     CUSTOMER {
         string id PK
-        string tax_exempt_status "NEW: none or exempt — Q1"
+        string taxability "NEW: taxable (default) or exempt"
     }
 
     TAX_RATE {
@@ -86,9 +86,9 @@ erDiagram
         string subscription_id FK
         decimal subtotal
         decimal total_discount
-        decimal total_tax "semantics change — Q3"
+        decimal total_tax "semantics change — see §6.3"
         decimal total
-        string tax_exemption_reason_code "NEW: null or customer_exempt"
+        string tax_exemption_reason_code "NEW: null when tax charged, else a reason"
     }
 
     TAX_APPLIED {
@@ -118,12 +118,13 @@ const (
     TaxBehaviorExclusive TaxBehavior = "exclusive"
 )
 
-type TaxExemptStatus string
+// Taxability is the customer's tax treatment. Defaults to taxable.
+type Taxability string
 
 const (
-    TaxExemptStatusNone   TaxExemptStatus = "none"
-    TaxExemptStatusExempt TaxExemptStatus = "exempt"
-    // "reverse" reserved, not implemented in v1
+    TaxabilityTaxable Taxability = "taxable"
+    TaxabilityExempt  Taxability = "exempt"
+    // "reverse_charge" reserved, not implemented in v1
 )
 
 // TaxExemptionReason is stored in invoices.tax_exemption_reason_code and surfaced
@@ -131,7 +132,8 @@ const (
 type TaxExemptionReason string
 
 const (
-    TaxExemptionReasonCustomerExempt TaxExemptionReason = "customer_exempt"
+    TaxExemptionReasonCustomerExempt  TaxExemptionReason = "customer_exempt"
+    TaxExemptionReasonNoTaxConfigured TaxExemptionReason = "no_tax_configured"
     // "reverse_charge" reserved, not implemented in v1
 )
 
@@ -140,6 +142,8 @@ func (r TaxExemptionReason) DisplayLabel() string {
     switch r {
     case TaxExemptionReasonCustomerExempt:
         return "Customer is tax exempt"
+    case TaxExemptionReasonNoTaxConfigured:
+        return "No tax configured"
     default:
         return string(r)
     }
@@ -173,15 +177,30 @@ reword it, and block localisation.
 
 **No per-row exemption reason on `TaxApplied`** — exemption in v1 is one customer-level flag applied
 uniformly, so every zeroed row on an invoice is zeroed for the same reason, stated once on the invoice.
-A `$0` row stays unambiguous: invoice reason set → exemption; `null` → ordinary reason (0% rate, or
-`base` zero after full discount). Only **partial exemption** (per rate / jurisdiction / product) would
-require it, and that is not v1.
+A `$0` row stays unambiguous — the invoice's reason code says why (§6.4). Only **partial exemption**
+(per rate / jurisdiction / product) would need a per-row reason, and that is not v1.
+
+**`Customer.taxability`** — `taxable` (default) or `exempt`. Every customer is taxable unless
+explicitly marked otherwise, so existing rows need no backfill beyond the column default. Customer
+level because exemption is a property of the buying entity — a non-profit is exempt regardless of plan.
+On `TaxAssociation` it would need setting repeatedly; on `Subscription` the same legal entity could be
+exempt on one subscription and not another, which is not what exemption means.
 
 **`priority`** — accepted by the API, validated, persisted, never read in the resolution path. Every
 `auto_apply = true` association applies; nothing sorts by priority. Unchanged in v1, noted so nobody
 assumes otherwise.
 
-### 3.3 Currency default
+### 3.3 Validation
+
+| Rule | Where | Reason |
+|---|---|---|
+| `percentage_value` and `fixed_value` mutually exclusive | Exists today (`internal/api/dto/taxrate.go:90-124`) | A rate is one or the other |
+| `percentage_value` in 0–100 | Exists today | — |
+| **A percentage rate above 100% cannot be `inclusive`** | New, at association creation | An inclusive rate above 100% means the tax exceeds the tax-free price it is derived from. The extraction still computes (`base × r/(100+r)` stays below `base` for any positive `r`), so nothing breaks numerically — it is rejected because it is a configuration error, not because the math fails. Reject at creation rather than clamping at compute, so it never reaches an invoice |
+| Combined inclusive rate is **not** capped at 100% | — | Multiple valid rates can sum past 100 (60% + 50%). The per-rate check is the guard; the combined figure is only used for extraction |
+| **A subscription cannot resolve an inclusive association while `taxability = exempt`** | New, at subscription creation | §4.2 |
+
+### 3.4 Currency default
 
 ```go
 // internal/types
@@ -216,12 +235,27 @@ concrete `Currency` from creation. So the currency list is consulted once, at th
 currency is known and the row being created is the one invoices will actually read. Invoice compute
 never touches the list.
 
-### 4.2 Exemption checked before associations are created
+### 4.2 Exemption is validated at subscription creation, not skipped
 
-If the customer is exempt when a subscription is created, **no subscription-level associations are
-created**. Nothing to resolve later means nothing to compute later.
+Tax associations are created for **every** subscription, including an exempt customer's — there is no
+"skip creation for exempt customers" path. What gates an exempt customer is validation, not omission:
 
-This creates a behavioral split that must be understood before implementing — §8.1, and Q2.
+**If `customer.taxability = exempt` and the association being linked resolves to
+`tax_behavior = inclusive`, subscription creation is rejected.**
+
+This is a product convention as much as a technical one: a tenant selling both tax-inclusive and
+tax-exclusive priced plans must put an exempt customer on the exclusive one. An inclusive price is a
+statement that tax is baked into what the customer sees — an exempt customer must be quoted a price
+that was never computed with tax in it to begin with.
+
+Exclusive associations, and subscriptions with no tax association at all, are unaffected by this check
+— both already converge to `total = base` for an exempt customer whether or not the association exists
+(§6.3), so there is nothing to reject.
+
+This closes the two-different-totals problem (§8.1) for every **new** subscription. It does not reach a
+customer who becomes exempt *after* they are already on an inclusive-tax subscription — that is a
+`taxability` update, not a subscription-creation event, and this check only runs at creation. §8.1
+covers what happens there.
 
 ### 4.3 Sequence
 
@@ -234,34 +268,38 @@ sequenceDiagram
     participant DB as TaxAssociationRepo
 
     SS->>SS: create subscription — currency now concrete
-    SS->>CR: get customer.tax_exempt_status
-    CR-->>SS: none | exempt
+    SS->>CR: get customer.taxability
+    CR-->>SS: taxable | exempt
 
-    alt exempt
-        SS->>SS: skip association creation
-        SS->>SS: log skip (subscription_id, customer_id, reason)
-        Note over DB: no rows — invoices carry no tax
-    else not exempt
-        alt TaxRateOverrides on request
-            SS->>TS: LinkTaxRatesToEntity(subscription, overrides)
-        else
-            SS->>TS: customer associations where auto_apply = true
-            TS-->>SS: templates (tax_behavior null)
-            SS->>TS: LinkTaxRatesToEntity(subscription, templates)
+    alt TaxRateOverrides on request
+        SS->>TS: LinkTaxRatesToEntity(subscription, overrides)
+    else
+        SS->>TS: customer associations where auto_apply = true
+        TS-->>SS: templates (tax_behavior null)
+        SS->>TS: LinkTaxRatesToEntity(subscription, templates)
+    end
+
+    loop per association being linked
+        alt behavior given explicitly
+            TS->>TS: resolved behavior = given input
+        else behavior is null
+            TS->>TY: DefaultTaxBehaviorForCurrency(currency)
+            TY-->>TS: exclusive if currency in list, else inclusive
+            TS->>TS: resolved behavior = currency default
         end
 
-        loop per association
-            alt behavior given explicitly
-                TS->>DB: create with that behavior
-            else null
-                TS->>TY: DefaultTaxBehaviorForCurrency(currency)
-                TY-->>TS: exclusive if in list, else inclusive
-                TS->>DB: create with resolved behavior stamped
-                TS->>TS: log (subscription_id, currency, behavior, source)
-            end
+        alt customer exempt AND resolved behavior = inclusive
+            TS->>TS: log rejection (subscription_id, customer_id, tax_rate_id, resolved_behavior)
+            TS-->>SS: validation error — subscription creation rejected
+        else
+            TS->>DB: create with resolved behavior stamped on the row
+            TS->>TS: log (subscription_id, tax_rate_id, currency, behavior, source)
         end
     end
 ```
+
+Every association creation is logged, whether stamped from the currency default or from explicit
+input, and the rejection path is logged separately — nothing about this flow is silent (§9).
 
 ### 4.4 Rollout backfill
 
@@ -403,25 +441,33 @@ Only exclusive tax moves the total.
 
 | Group | Invariant | Rule |
 |---|---|---|
-| Inclusive | `net + inclusive_tax == base` exactly | Round the combined result once, then split. Stray cent goes to one deterministic line — Q4 |
+| Inclusive | `net + inclusive_tax == base` exactly | Round the combined result once, then split proportionally. Independently-rounded shares can sum a cent off the rounded whole — assign the stray cent to one deterministic rate (largest share, or largest unrounded remainder). Precision handling, picked once during implementation and never varied afterward — not a design-level question |
 | Exclusive | Unchanged | Round each rate, then sum |
 
 Rounding happens before exemption is applied, so exemption never interacts with remainder assignment.
+Whatever rule is picked must stay fixed — a rule that can vary between runs makes the same invoice,
+recomputed, produce different per-rate `TaxApplied` lines for identical total tax, which breaks
+reproducibility.
 
 ---
 
 ## 6. Exemption
 
-### 6.1 Two paths
+### 6.1 Associations always exist; exemption is enforced by validation and by zeroing at compute
 
-| Path | When | Invoice sees | Result |
-|---|---|---|---|
-| **A** | Customer already exempt at subscription creation (§4.2) | No associations | No tax computed. `total = base` |
-| **B** | Customer became exempt after the subscription existed | Associations resolve normally | Tax computed in full, then zeroed. Inclusive tax comes out of the total |
+Every subscription gets its tax associations, exempt customer or not (§4.2). Two things keep an exempt
+customer from being charged:
 
-They produce different totals for the same plan — §8.1, Q2.
+1. **At subscription creation** — an inclusive association is rejected outright for an exempt customer
+   (§4.2). An exempt customer's subscription can only resolve exclusive associations, or none.
+2. **At every invoice compute** — regardless of (1), the general formula (§6.3) zeros both
+   `inclusive_charged` and `exclusive_charged` for an exempt customer. This is what actually protects
+   revenue-correctness; (1) exists so the common case never even reaches an interesting formula.
 
-### 6.2 Path B — back out the tax
+What (1) cannot reach: a customer already on an inclusive-tax subscription who becomes exempt
+afterward. Their invoices fall through to (2) and get the full back-out treatment (§6.2) — see §8.1.
+
+### 6.2 Backing out the tax
 
 Tax is computed **as though the customer were not exempt**, then zeroed. For inclusive rates the
 extracted amount also comes out of what the customer pays: an inclusive rate states that part of the
@@ -429,7 +475,7 @@ listed price is tax; if that tax is not owed, it should not be collected.
 
 `base = 100`, one 10% rate:
 
-| | Not exempt | Exempt |
+| | Taxable | Exempt |
 |---|---|---|
 | 10% inclusive | pays **100.00** (9.09 collected) | pays **90.91** (0 collected) |
 | 10% exclusive | pays **110.00** (10.00 collected) | pays **100.00** (0 collected) |
@@ -441,7 +487,7 @@ inclusive_tax     = extracted per 5.2 / 5.2.1     computed regardless of exempti
 net               = base − inclusive_tax          computed regardless of exemption
 exclusive_tax     = 5.1 loop against net          computed regardless of exemption
 
-exempt            = customer.tax_exempt_status != none
+exempt            = customer.taxability == exempt
 
 inclusive_charged = exempt ? 0 : inclusive_tax
 exclusive_charged = exempt ? 0 : exclusive_tax
@@ -451,16 +497,16 @@ total = net + inclusive_charged + exclusive_charged
 
 | Case | `net` | `total` |
 |---|---|---|
-| Not exempt, exclusive only | `base` | `base + exclusive_tax` — today's behavior |
-| Not exempt, inclusive only | `base − inclusive_tax` | `base` |
-| Not exempt, mixed | `base − inclusive_tax` | `base + exclusive_tax` |
-| Exempt B, exclusive only | `base` | `base` |
-| Exempt B, inclusive only | `base − inclusive_tax` | `net` |
-| Exempt B, mixed | `base − inclusive_tax` | `net` |
-| Exempt A | `base` | `base` |
+| Taxable, exclusive only | `base` | `base + exclusive_tax` — today's behavior |
+| Taxable, inclusive only | `base − inclusive_tax` | `base` |
+| Taxable, mixed | `base − inclusive_tax` | `base + exclusive_tax` |
+| Exempt, exclusive only | `base` | `base` |
+| Exempt, inclusive only | `base − inclusive_tax` | `net` |
+| Exempt, mixed | `base − inclusive_tax` | `net` |
 
-Under path B with inclusive rates `total` drops **below** `base`, so `total = base + total_tax` no
-longer holds. This is the one existing invariant v1 changes, intentionally.
+Under exemption with an inclusive association, `total` drops **below** `base`, so
+`total = base + total_tax` no longer holds. This is the one existing invariant v1 changes,
+intentionally.
 
 **Why exemption cannot skip the calculation:** `inclusive_tax` is load-bearing — `total = net` depends
 on it. `exclusive_tax` is genuinely discardable when exempt (it is zeroed and appears nowhere else),
@@ -469,19 +515,24 @@ the calculation, and to keep the waived figure available for logging (§9).
 
 ### 6.4 Recorded once, on the invoice
 
-Under path A no `TaxApplied` rows exist, so nothing per-row can carry the flag:
+An invoice with no charged tax states why, rather than leaving the caller to infer it:
 
-| Situation | `taxes[]` | `total_tax` | Distinguishable? |
+| Situation | `taxability` | `taxes[]` | `tax_exemption_reason_code` |
 |---|---|---|---|
-| No tax configured, not exempt | empty | 0 | — |
-| Exempt, path A | empty | 0 | **No — identical** |
+| No tax configured for this subscription | `taxable` | empty | `no_tax_configured` |
+| Customer is exempt | `exempt` | empty or `$0` rows | `customer_exempt` |
+| Tax charged normally | `taxable` | populated, nonzero | `null` |
 
-`Invoice.tax_exemption_reason_code` is the only thing separating them. `Customer.tax_exempt_status`
-stays the live source of truth; the invoice column is a frozen snapshot at compute time, so changing a
-customer's status later does not rewrite historical invoices.
+Without this column, "no tax configured" and "exempt customer, nothing resolved" are byte-identical —
+empty `taxes[]`, zero `total_tax`, nothing to tell them apart. `tax_exemption_reason_code` is the only
+thing that does. It is `null` **only** when tax was actually charged.
 
-Under path B, `TaxApplied` rows are still written at `tax_amount = 0` with their `tax_behavior` — never
-omitted, so the audit trail records which rates were evaluated.
+`Customer.taxability` stays the live source of truth; the invoice column is a frozen snapshot at
+compute time, so changing a customer's taxability later does not rewrite historical invoices.
+
+When associations do resolve for an exempt customer, `TaxApplied` rows are still written at
+`tax_amount = 0` with their `tax_behavior` — never omitted, so the audit trail records which rates were
+evaluated.
 
 ### 6.5 Compute sequence
 
@@ -497,9 +548,9 @@ sequenceDiagram
     TS-->>IS: resolved rates with stamped tax_behavior
 
     alt no rates resolved
-        IS->>CR: get tax_exempt_status
+        IS->>CR: get customer.taxability
         IS->>IS: total = base
-        IS->>IS: stamp reason code if exempt
+        IS->>IS: stamp reason_code — customer_exempt if exempt, else no_tax_configured
     else rates resolved
         IS->>TS: ApplyTaxesOnInvoice(inv, rates)
         TS->>TS: partition by tax_behavior
@@ -509,24 +560,90 @@ sequenceDiagram
         TS->>TS: exclusive_tax = loop against net
         TS->>TS: round, assign remainder
 
-        TS->>CR: get tax_exempt_status
-        alt exempt (path B)
+        TS->>CR: get customer.taxability
+        alt exempt
             TS->>TS: both charged = 0
             TS->>TS: log computed-then-zeroed amounts
             TS->>TA: rows at 0, tax_behavior preserved
-        else
+        else taxable
             TS->>TA: rows with real amounts
         end
 
         TS-->>IS: TaxCalculationResult
         IS->>IS: total = net + inclusive_charged + exclusive_charged
-        IS->>IS: stamp reason code if exempt
+        IS->>IS: stamp reason_code if exempt
     end
 ```
 
 Resolution (§4) and calculation (§5) are both exemption-agnostic. Exemption applies at exactly one
 point, after everything is computed — that is what prevents an `exempt × inclusive × fixed × mixed`
 matrix of special cases.
+
+### 6.6 Changing taxability on an existing subscription — no retroactive effect
+
+Marking a customer exempt, or removing that status, is a plain state change on `Customer.taxability` —
+no migration, no recomputation, no attempt to fix invoices that already exist. This is the resolution
+to Q2, and it is a deliberate design principle, not an implementation shortcut:
+
+**A `taxability` change takes effect starting with the next invoice generated for that customer, and
+never alters an invoice already issued.**
+
+This falls out of something the design already does — §6.5's compute sequence reads
+`customer.taxability` fresh every time an invoice is generated. Nothing needs to change about that
+mechanism; what changes is stating the guarantee explicitly, as a documented contract, not just as an
+incidental property of the code. This belongs in the public API documentation, not only in this ERD.
+
+What this means for the two states a subscription can be in when a customer becomes exempt:
+
+- **Association is exclusive, or there is none.** Nothing to reconcile. The next invoice computes
+  `exclusive_charged = 0` and `total = base`, exactly as §6.3 already specifies. This was already
+  correct and needs no special handling.
+- **Association is inclusive.** The next invoice applies §6.2's back-out treatment — `total` drops from
+  `base` to `net`. This is intended, not a defect. A tenant who does not want that outcome going forward
+  has three ways to act on the same subscription, not just one:
+  1. Update the subscription's tax association (`tax_behavior` is updatable, §8.5).
+  2. Move the customer to a different, exclusive-priced plan.
+  3. Override the subscription's own price down to the pre-tax amount, independently of the plan or
+     the tax association — subscriptions already support price overrides for exactly this kind of
+     per-customer adjustment.
+  The system does none of these automatically — that is exactly why §4.2 recommends tenants maintain
+  separate inclusive- and exclusive-priced plans in the first place: it turns "fix this subscription"
+  into one deliberate action instead of something easy to forget.
+
+This resolves Q2 in a different sense than "prevent the divergence from ever happening." Instead, every
+invoice is correct for the state that existed **when it was generated**, and no later status change
+silently rewrites one that already exists.
+
+### 6.7 Correcting an already-issued invoice
+
+An invoice generated while a customer was `taxable`, carrying inclusive tax, keeps that amount when the
+customer is later marked exempt (§6.6) — it is never touched retroactively. Correcting it is always
+tenant-initiated, never automatic: nothing in this design fires a credit note on its own when
+`taxability` changes.
+
+**Rejected: void + regenerate the invoice (`RecalculateInvoice`, already built).** Not used for this,
+even though it exists and would cost nothing to reuse. An already-finalized invoice is a document that
+was issued to the customer and, in most jurisdictions, on the books for tax purposes — voiding and
+replacing it removes that record instead of correcting it in place. This is not a guess: it is the
+documented recommendation of the industry system this design otherwise follows for tax behavior
+(void-and-replace flows are explicitly called out as needing legal review in at least one jurisdiction,
+and are unavailable entirely for subscription invoices in that system — the exact invoice type this
+correction applies to). Voiding stays available as a separate, general invoice operation; it is not the
+mechanism for this specific correction.
+
+**Decided: the existing credit note mechanism, unchanged, at line-item level.** No new schema, no new
+capability, no invoice-level credit note. `CreditNoteLineItem` keeps requiring an `InvoiceLineItemID`
+exactly as it does today (`ent/schema/creditnote_line_item.go:39-44`). The tenant computes the correct
+tax figure themselves — using the same math this document specifies (§5.2/§6.2) — and issues a credit
+note against whichever invoice line item(s) they choose, through the existing flow. Flexprice does not
+attribute the correction to a specific `TaxApplied` row and does not validate the credited amount
+against what was actually charged; that responsibility sits with the tenant.
+
+This is a deliberate scope line, not an oversight: v1 tax has no natural line item to attach a
+tax-specific credit to (§2 — tax is invoice-level, not line-item-level), and building a dedicated
+tax-aware credit note capability to solve that is out of scope here. If that gap is felt in practice,
+it is Phase 2 territory, once tax itself becomes line-item-scoped and a natural attachment point exists
+without inventing one.
 
 ---
 
@@ -579,10 +696,13 @@ matrix of special cases.
 The inclusive row's `taxable_amount` is `base`; the exclusive row's is `net`. That difference is the
 §5.3 cascade visible in the response.
 
-`total_tax` is the sum of both kinds, but `total` only moved by the exclusive portion — **this changes
-what `total_tax` means**, Q3.
+`total_tax` is the sum of both kinds; `total` moved only by the exclusive portion. Reconstruct a total
+with `tax_summary.exclusive_tax`, never with `total_tax` (§6.3).
 
 ### 7.2 Exempt
+
+A customer marked exempt, subscribed to a plan whose only association is exclusive (inclusive is
+rejected at subscription creation, §4.2):
 
 ```jsonc
 {
@@ -602,47 +722,73 @@ what `total_tax` means**, Q3.
   "total": "1000.00",
   "amount_due": "1000.00",
 
+  "taxes": [
+    {
+      "id": "taxapp_...",
+      "tax_rate_id": "txr_vat",
+      "entity_type": "invoice",
+      "entity_id": "inv_...",
+      "tax_behavior": "exclusive",
+      "taxable_amount": "1000.00",
+      "tax_amount": "0.00",
+      "currency": "USD"
+    }
+  ]
+}
+```
+
+`taxes[]` is populated at `$0` because the association exists — associations are always created (§6.1).
+It is only empty for an exempt customer on a subscription with no tax association at all, which also
+carries `reason_code = customer_exempt`. `reason_code` is the stored enum; `reason` is derived (§3.2).
+
+### 7.3 No tax configured
+
+Same shape, different reason — the invoice states why it is untaxed rather than leaving the caller to
+infer it (§6.4):
+
+```jsonc
+{
+  "subtotal": "1000.00",
+  "total_discount": "0.00",
+  "total_tax": "0.00",
+
+  "tax_summary": {
+    "inclusive_tax": "0.00",
+    "exclusive_tax": "0.00",
+    "exemption": {
+      "reason_code": "no_tax_configured",
+      "reason": "No tax configured"
+    }
+  },
+
+  "total": "1000.00",
+  "amount_due": "1000.00",
+
   "taxes": []
 }
 ```
 
-Path A — no associations existed, `taxes` empty, `total = base`. Under path B, `taxes[]` is populated
-with rows at `"0.00"` and `total` is `net` if any inclusive rate was involved. The `exemption` object
-is identical in both paths and is the only thing distinguishing an exempt invoice from an ordinary
-untaxed one.
+`exemption` is null **only** when tax was actually charged.
 
-`reason_code` is the stored enum; `reason` is derived (§3.2).
+### 7.4 Existing response characteristics
+
+Decimals serialize as strings (`swaggertype:"string"`). Domain structs are inlined with
+`json:",inline"`, so `TaxApplied` fields appear flat. `tax_rate` is nil unless the caller passes
+`expand=tax_applied.tax_rate` (`internal/ee/service/invoice.go:4181-4191`).
 
 ---
 
 ## 8. Edge cases
 
-### 8.1 Same customer, same plan, two different totals
+### 8.1 Same customer, same plan, taxability changes over time
 
-Customer on a `1000` plan with one 10% inclusive rate at customer level:
+An exempt customer on an inclusive-tax plan pays `1000.00` or `909.09` for the identical plan,
+depending on whether they were exempt when the subscription was created or became exempt afterward.
+§4.2's validation blocks the first path for every new subscription. The second — a `taxability` change
+on an existing subscription — is not blocked; it is handled correctly and deliberately at the next
+invoice instead. Full resolution and the tenant's remediation options: §6.6, §6.7.
 
-| Order of events | Result |
-|---|---|
-| Marked exempt **first**, then subscribed | §4.2 skips associations. No rates resolve. Pays **1000.00** |
-| Subscribed **first**, then marked exempt | Associations exist. Tax computed, zeroed, inclusive backed out. Pays **909.09** |
-
-Same customer, same plan, same exemption status at invoice time — **90.91 difference**, decided by the
-order of two unrelated actions weeks apart.
-
-Path A optimizes by never creating associations, so the invoice has no way to know what rates *would*
-have applied and nothing to back out. Path B knows because the rows survive. Not a bug in either path
-alone; a consequence of having both. **Q2.**
-
-### 8.2 Exemption removed later
-
-Under path A no associations were ever created. Removing the exemption later does **nothing** —
-nothing re-runs the customer → subscription copy-down after creation
-(`internal/ee/service/subscription.go:1032-1069`), so the subscription stays untaxed indefinitely.
-
-Whoever removes the exemption must also create the subscription-level associations, or the customer is
-silently never taxed.
-
-### 8.3 Inclusive tax exceeds base
+### 8.2 Inclusive tax exceeds base
 
 A fixed inclusive rate of `100` on a `base` of `30` would compute `net = −70`. The clamp forces
 `inclusive_tax = 30`, `net = 0`, customer pays nothing.
@@ -651,12 +797,13 @@ Strange invoice, correct outcome for a nonsensical config. Rejecting instead wou
 silently stops billing that customer entirely — worse. The clamp keeps billing running and surfaces
 the problem through logs.
 
-### 8.4 No rates resolve, customer not exempt
+### 8.3 No rates resolve
 
-`taxes` empty, `total_tax` zero, `exemption` null, `total = base`. Legitimate and common — most tenants
-have no tax configured. Distinguished from an exempt invoice purely by `exemption` being null (§6.4).
+`taxes` empty, `total_tax` zero, `total = base`. `tax_exemption_reason_code` distinguishes why —
+`no_tax_configured` for a taxable customer, `customer_exempt` for an exempt one (§6.4). `exemption` is
+never null on an untaxed invoice.
 
-### 8.5 Currency outside the exclusive list, no explicit behavior
+### 8.4 Currency outside the exclusive list, no explicit behavior
 
 An INR subscription with no explicit `tax_behavior` is stamped `inclusive`, because INR is not in the
 list. Intended, but **silent** — it changes how much the customer is charged, and nothing in the
@@ -665,16 +812,18 @@ request said so. Hence the `source=currency_default` log (§9).
 Safer pattern: always pass `tax_behavior` explicitly; treat the currency default as a fallback for
 callers that do not care.
 
-### 8.6 Behavior changed after invoices exist
+### 8.5 Behavior changed after invoices exist
 
-`tax_behavior` is frozen onto every `TaxApplied` row at apply time, so historical invoices keep what
-was frozen. But **recomputing** an existing invoice picks up the new behavior and produces a different
-total than the original. Whether recompute should be blocked when behavior changed since first compute
-is not decided in v1.
+`tax_behavior` is updatable on an existing association. New invoices, and any invoice that gets
+recomputed, use the updated behavior. Historical invoices that are not recomputed are unaffected —
+`tax_behavior` is frozen onto every `TaxApplied` row at apply time (§3.2), so an invoice that is never
+touched again keeps exactly what was true when it was issued. Recomputing is the only action that
+changes an existing invoice's total, and that is expected: recompute means "reflect current state," and
+current state now includes the new behavior.
 
-### 8.7 Inclusive consumes everything, exclusive still charges
+### 8.6 Inclusive consumes everything, exclusive still charges
 
-If `inclusive_tax` clamps to `base` (§8.3), `net = 0`, so percentage exclusive rates compute to zero.
+If `inclusive_tax` clamps to `base` (§8.2), `net = 0`, so percentage exclusive rates compute to zero.
 **Fixed exclusive rates are unaffected** — they never multiply against anything (§5.1), so a fixed
 exclusive rate of `50` still adds `50`. An invoice can end up `total = 50` on a `base` of `30`.
 Degenerate but well-defined.
@@ -687,25 +836,26 @@ Convention: `internal/logger`, ctx first, literal `"error"` key on `Error`, no `
 bootstrap-only per `AGENTS.md`, so recovered and skipped conditions log at `Info`.
 
 Everything below must be logged. Tax math that cannot be reconstructed from logs is not debuggable
-after the fact — the intermediate values exist nowhere in the response.
+after the fact — the intermediate values exist nowhere in the response. Every copy-down step is logged
+individually, not just the outcome (§4.3).
 
 | # | Event | Level | Fields |
 |---|---|---|---|
-| L1 | Behavior stamped from currency default (§4.3) | Info | `subscription_id`, `tax_rate_id`, `currency`, `resolved_behavior`, `source=currency_default` |
-| L2 | Behavior taken from explicit input (§4.3) | Info | `subscription_id`, `tax_rate_id`, `behavior`, `source=explicit` |
-| L3 | Association creation skipped, exempt customer (§4.2) | Info | `subscription_id`, `customer_id`, `reason=customer_exempt` |
+| L1 | Behavior stamped from currency default, during copy-down (§4.3) | Info | `subscription_id`, `tax_rate_id`, `currency`, `resolved_behavior`, `source=currency_default` |
+| L2 | Behavior taken from explicit input, during copy-down (§4.3) | Info | `subscription_id`, `tax_rate_id`, `behavior`, `source=explicit` |
+| L3 | Subscription creation rejected — exempt customer, inclusive association (§4.2) | Info | `subscription_id`, `customer_id`, `tax_rate_id`, `resolved_behavior=inclusive` |
 | L4 | Rollout backfill (§4.4) | Info | `rows_scanned`, `rows_updated` |
 | L5 | Inclusive extraction computed (§5.2.1) | Info | `invoice_id`, `base`, `fixed_total`, `combined_rate`, `percentage_tax`, `inclusive_tax`, `net` |
 | L6 | Clamp triggered (§5.2.1) | Info | everything in L5 plus `pre_clamp_inclusive_tax`, `clamped_to` |
 | L7 | Exclusive computed against net (§5.3) | Info | `invoice_id`, `net`, per-rate `tax_rate_id` and amount, `exclusive_tax` |
 | L8 | Rounding remainder assigned (§5.4) | Info | `invoice_id`, `tax_rate_id` that absorbed it, `remainder` |
-| L9 | Exemption applied, path B (§6.2) | Info | `invoice_id`, `customer_id`, `waived_inclusive_tax`, `waived_exclusive_tax`, `total_before`, `total_after` |
-| L10 | Exemption applied, path A (§6.1) | Info | `invoice_id`, `customer_id`, `rates_resolved=0` |
-| L11 | Zero rates resolved, not exempt (§8.4) | Info | `invoice_id`, `subscription_id` |
-| L12 | Rate skipped — missing percentage or fixed value | Info | `invoice_id`, `tax_rate_id`, `tax_rate_type` (existing behavior, `internal/ee/service/tax.go:1103-1106`) |
+| L9 | Exemption applied at compute (§6.2) | Info | `invoice_id`, `customer_id`, `waived_inclusive_tax`, `waived_exclusive_tax`, `total_before`, `total_after` |
+| L10 | Reason code stamped, no rates resolved (§6.4) | Info | `invoice_id`, `customer_id`, `reason_code` |
+| L11 | Rate skipped — missing percentage or fixed value | Info | `invoice_id`, `tax_rate_id`, `tax_rate_type` (existing behavior, `internal/ee/service/tax.go:1103-1106`) |
 
 L5 and L7 together let any invoice's tax be recomputed by hand from logs alone. L9 is the only record
-of what was waived — those amounts appear nowhere in the response or the DB.
+of what was waived — those amounts appear nowhere in the response or the DB. L1–L3 together give a full
+trail of every association creation attempt at subscription time, accepted or rejected.
 
 ---
 
@@ -729,83 +879,46 @@ Line-item-level tax (`invoice_line_item` below `invoice`). Blocked on discount c
 reading `inv.Subtotal` internally. Phase 2 calls the same functions per line with that line's base and
 rolls results up — the math does not change, only what computes `base` and how results aggregate.
 
-
 ---
 
-## 11. Open questions
+## 11. Design decisions
 
-| # | Question | Blocks |
+| # | Question | Resolution |
 |---|---|---|
-| Q1 | Is `Customer.tax_exempt_status` the right home for exemption? | Schema |
-| Q2 | Path A vs B produce different totals (§8.1) — which wins? | Implementation |
-| Q3 | Does `total_tax` change meaning? | API contract |
-| Q4 | Rounding remainder — which line absorbs the cent? | Implementation |
-| Q5 | Is `tax_behavior` updatable on an existing association? | API contract |
+| Q1 | Where does exemption live? | `Customer.taxability` (`taxable` default, `exempt`) — §3.2 |
+| Q2 | Same customer/plan, two different totals | Resolved — new subscriptions blocked by validation (§4.2); status changes on existing subscriptions never touch past invoices and are handled correctly at the next one, by design (§6.6) |
+| Q3 | Does `total_tax` change meaning? | Stays the sum of both kinds for reporting; a total is reconstructed from `tax_summary.exclusive_tax`, never from `total_tax` (§6.3) |
+| Q4 | Rounding remainder | Implementation-time precision handling (§5.4), not a design question |
+| Q5 | Is `tax_behavior` updatable? | Yes — new and recomputed invoices reflect it; historical, non-recomputed invoices keep their frozen `tax_behavior` (§3.2, §8.5) |
+| Q6 | How does a credit note refund tax on an already-issued invoice? | Resolved — the existing line-item credit note mechanism, unchanged, no new capability. Void + regenerate rejected as the mechanism. Tenant computes the correction and picks the line item(s) themselves (§6.7) |
 
-**Q1 — exemption home.** *Proposed:* enum column on `Customer` (`none` / `exempt`), mutable, live
-source of truth; invoices snapshot it at compute time. Customer level because exemption is a property
-of the buying entity — a non-profit is exempt regardless of plan. On `TaxAssociation` it would need
-setting repeatedly; on `Subscription` the same legal entity could be exempt on one subscription and not
-another, which is not what exemption means.
+**Q2 detail.** The earlier framing treated this as picking between three ways to reconcile two
+computation paths. The actual resolution rejects that framing: there are not two paths to reconcile.
+`customer.taxability` is read fresh at every invoice generation (§6.5) — it always was — so every
+invoice is correct for the state that existed when it was generated, by construction, with no
+recomputation and no attempt to make history consistent. Validation at subscription creation (§4.2)
+prevents the common mistake up front; §6.6 states the "no retroactive effect" guarantee explicitly as a
+documented contract; §6.7 covers what a tenant does when they want a past invoice corrected anyway.
+None of this required choosing between the original (a)/(b)/(c) options — the premise that one of them
+had to be picked was the thing to drop.
 
-*Open:* whether one flag is enough, or exemption needs scoping — per jurisdiction, per subscription, or
-with validity dates (a certificate that expires). v1 has one flag, no expiry, no scope.
-
-**Q2 — path A vs path B (§8.1).** *Proposed:* both paths as described. *Problem:* they disagree by
-90.91 on identical inputs.
-
-- **(a) Always create associations, never skip.** Drop §4.2. Exemption applies only at compute via
-  §6.3. One code path, one outcome. Costs some rows that always compute to zero. Removes §8.1 and §8.2
-  outright.
-- **(b) Keep the skip, accept the inconsistency.** Cheapest; the divergence will eventually be reported
-  as a billing bug.
-- **(c) Keep the skip, re-run copy-down when exemption is removed.** Also fixes §8.2, but nothing today
-  re-runs copy-down after subscription creation — new machinery.
-
-**Q3 — `total_tax` semantics.** *Proposed (§7.1):* `total_tax` becomes inclusive + exclusive, with
-`tax_summary` carrying the split.
-
-*Problem:* today `total = subtotal − discount + total_tax` always holds. Under the proposal it does
-not — a consumer computing a total from `subtotal` and `total_tax` gets `1254.55` instead of `1163.64`.
-Breaking semantic change to an existing field, and it breaks silently.
-
-*Alternative not chosen:* keep `total_tax` meaning exactly what it means today (exclusive only) and put
-the extracted figure in a new sibling field. Non-breaking, but leaves two fields that both look like
-"the tax on this invoice."
-
-If the proposal stands, every existing consumer of `total_tax` needs auditing before release.
-
-**Q4 — rounding remainder.** The proportional split rarely divides into whole cents. Three rates —
-9%, 5%, 3% (`R = 17`) — on `base = 1000`:
+**Q3 detail.** `subtotal` already contains any inclusive tax — the line amounts were never computed
+without it. So `subtotal = net + inclusive_tax`, and inclusive tax was never *added* to reach a total,
+only exclusive tax ever is:
 
 ```
-total_tax = 1000 × 17/117 = 145.2991... → rounded = 145.30
-shares    = 76.9235... / 42.7353... / 25.6412...
-rounded   = 76.92 + 42.74 + 25.64 = 145.30    reconciles here
+total = subtotal − discount + exclusive_tax
 ```
 
-Other inputs do not — independently rounded parts can sum to 145.29 or 145.31 against a `total_tax` of
-145.30. One line must absorb the difference:
-
-| Rule | Trade-off |
+| Case | Reduces to |
 |---|---|
-| Largest rate absorbs | Simple; that line stops being a clean function of its own rate |
-| Largest unrounded remainder absorbs | Most defensible; slightly more code |
-| First / last by rate ID | Simplest; weakest explanation to a customer |
+| Exclusive only | `subtotal − discount + exclusive_tax` |
+| Inclusive only | `subtotal − discount` (`exclusive_tax = 0`) |
+| Mixed | `subtotal − discount + exclusive_tax` |
+| Exempt, inclusive present | `subtotal − discount − inclusive_tax` |
 
-Must be fixed permanently — a varying rule means the same invoice recomputed produces different
-per-rate lines for identical total tax, breaking reproducibility and making `TaxApplied` useless for
-audit.
-
-**Q5 — is `tax_behavior` updatable?** *Proposed:* yes, on `TaxAssociationUpdateRequest`.
-
-*Against:* `UpdateTaxAssociation` currently allows `priority`, `auto_apply`, `metadata`
-(`internal/ee/service/tax.go:664-674`) — all affecting only future invoices in obvious ways.
-`tax_behavior` changes the arithmetic of every future invoice, and retroactively changes any invoice
-that gets recomputed (§8.6). Precedent exists for blocking this: `UpdateTaxRate` refuses to update a
-rate that has any associations or applied records (`internal/ee/service/tax.go:178-220`).
-
-- **(a) Allow freely.** Simplest; recompute risk unguarded.
-- **(b) Block entirely.** Archive-and-replace is already the delete semantic
-  (`internal/repository/ent/taxassociation.go:194-203`), so this costs nothing structurally.
-- **(c) Allow only when no `TaxApplied` row references the association**, mirroring `UpdateTaxRate`.
+`total_tax` keeps meaning "how much tax is on this invoice" (`inclusive_tax + exclusive_tax`), which is
+the reporting question it is actually asked. The relationship `total = subtotal − discount + total_tax`
+no longer holds once inclusive tax is present — every existing consumer of `total_tax` for arithmetic
+rather than reporting needs auditing before release; arithmetic belongs on
+`tax_summary.exclusive_tax`.
