@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"fmt"
 	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -182,13 +183,22 @@ func (r *SubscriptionChangeV2Request) validateBillingPeriodBehaviour() error {
 
 	if r.BillingPeriodConfig != nil {
 		return ierr.NewError("billing_period_config is not supported yet").
-			WithHint("Remove billing_period_config. Use billing_period_behaviour='reset_at_effect' to restart the term at the change instant.").
+			WithHint(fmt.Sprintf(
+				"Remove billing_period_config. Use billing_period_behaviour='%s' to restart the term at the change instant.",
+				types.BillingPeriodBehaviourAnchorAtEffect,
+			)).
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.BillingPeriodBehaviour == types.BillingPeriodBehaviourUpdateToConfig {
-		return ierr.NewError("billing_period_behaviour 'reset_at' is not supported yet").
-			WithHint("Use 'reset_at_effect' to restart the term at the change instant.").
+	if r.BillingPeriodBehaviour == types.BillingPeriodBehaviourAnchorAtConfig {
+		return ierr.NewError(fmt.Sprintf(
+			"billing_period_behaviour '%s' is not supported yet",
+			types.BillingPeriodBehaviourAnchorAtConfig,
+		)).
+			WithHint(fmt.Sprintf(
+				"Use '%s' to restart the term at the change instant.",
+				types.BillingPeriodBehaviourAnchorAtEffect,
+			)).
 			WithReportableDetails(map[string]any{
 				"supported": []types.BillingPeriodBehaviour{
 					types.BillingPeriodBehaviourUnchanged,

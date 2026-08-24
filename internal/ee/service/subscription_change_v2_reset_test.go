@@ -53,7 +53,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_BillingPeriodBehaviourValidation
 			},
 		},
 		{
-			name: "reset_at_effect on an immediate change is accepted",
+			name: "anchor_at_effect on an immediate change is accepted",
 			mutate: func(r *dto.SubscriptionChangeV2Request) {
 				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 			},
@@ -66,11 +66,11 @@ func (s *SubscriptionChangeV2Suite) TestExecute_BillingPeriodBehaviourValidation
 			},
 		},
 		{
-			name: "reset_at is rejected rather than inferred",
+			name: "anchor_at_config is rejected rather than inferred",
 			mutate: func(r *dto.SubscriptionChangeV2Request) {
-				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourUpdateToConfig
+				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtConfig
 			},
-			wantErr: "'reset_at' is not supported yet",
+			wantErr: "'anchor_at_config' is not supported yet",
 		},
 		{
 			name: "billing_period is reserved",

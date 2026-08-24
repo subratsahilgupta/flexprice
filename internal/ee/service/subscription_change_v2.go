@@ -1030,7 +1030,7 @@ func (s *subscriptionService) applyAnchorReset(
 }
 
 // projectSubscriptionAfterChange is the subscription the change would leave behind,
-// computed without writing anything. Under reset_at_effect the term restarts at
+// computed without writing anything. Under anchor_at_effect the term restarts at
 // effectiveAt, so the new period is a full period and never the remainder of the old one.
 func projectSubscriptionAfterChange(r *planChangeRequest) (*subscription.Subscription, error) {
 	projected := *r.currentSub

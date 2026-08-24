@@ -91,14 +91,19 @@ const (
 	// instant is already the anchor, so nothing moves.
 	BillingPeriodBehaviourAnchorAtEffect BillingPeriodBehaviour = "anchor_at_effect"
 
-	// BillingPeriodBehaviourUpdateToConfig resets to a caller-supplied instant.
-	BillingPeriodBehaviourUpdateToConfig BillingPeriodBehaviour = "update_to_config"
+	// BillingPeriodBehaviourAnchorAtConfig moves the anchor to a caller-supplied
+	// instant in billing_period_config. Not supported yet: the request validator
+	// rejects it.
+	BillingPeriodBehaviourAnchorAtConfig BillingPeriodBehaviour = "anchor_at_config"
 )
 
+// BillingPeriodBehaviourValues is the parse set, not the accepted set: it admits
+// anchor_at_config so a caller sending it gets "not supported yet" rather than
+// "invalid billing_period_behaviour".
 var BillingPeriodBehaviourValues = []BillingPeriodBehaviour{
 	BillingPeriodBehaviourUnchanged,
 	BillingPeriodBehaviourAnchorAtEffect,
-	BillingPeriodBehaviourUpdateToConfig,
+	BillingPeriodBehaviourAnchorAtConfig,
 }
 
 func (b BillingPeriodBehaviour) String() string { return string(b) }
