@@ -890,10 +890,38 @@ migration:
   # cover heap plus JVM overhead, or the kernel OOM-kills the container (exit
   # 137, no logs) instead of the JVM reporting it.
   kafkaTopics:
-    # Partitions for every topic the create-kafka-topics step makes. Default 3 so
-    # even dev has room to parallelise consumers; 1 was too few. Fresh topics only —
+    # Partitions for every one of the built-in topics the create-kafka-topics
+    # step makes (events, events_lazy, events_bulk, events_dlq,
+    # events_post_processing, events_post_processing_backfill, system_events,
+    # events_backfill, wallet_alert, onboarding_events). Default 3 so even dev
+    # has room to parallelise consumers; 1 was too few. Fresh topics only —
     # raising an existing topic's partitions needs kafka-topics --alter.
     partitions: 3
+    # Replication factor for the same built-in topics. Default 1 to match a
+    # single-broker dev/Bitnami-subchart Kafka; raise it (e.g. 3) once the
+    # client points at a real multi-broker/MSK cluster.
+    replicationFactor: 1
+    # Extra client-declared topics, created IN ADDITION to the built-in list
+    # above. Leave empty (the default) to change nothing about today's
+    # behavior — this list is purely additive/override, never a replacement
+    # for the built-in topics.
+    #
+    # Each entry:
+    #   name:              (required) topic name
+    #   partitions:         optional, falls back to kafkaTopics.partitions above
+    #   replicationFactor:  optional, falls back to kafkaTopics.replicationFactor above
+    #   configs:            optional map of `kafka-topics --config key=value` pairs,
+    #                       e.g. retention.ms, cleanup.policy, min.insync.replicas
+    #
+    # Example:
+    # topics:
+    #   - name: custom_topic
+    #     partitions: 6
+    #     replicationFactor: 3
+    #     configs:
+    #       retention.ms: "604800000"
+    #       cleanup.policy: "delete"
+    topics: []
     heapOpts: "-Xmx512m -Xms256m"
     resources:
       limits:
