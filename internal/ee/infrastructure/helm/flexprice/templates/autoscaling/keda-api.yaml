@@ -3,6 +3,15 @@
 {{- fail "api: enable either api.autoscaling (HPA) or api.keda (KEDA), not both — they fight over the same Deployment" }}
 {{- end }}
 {{- /*
+  api's three triggers (request/cpu/memory) are each individually gated below,
+  so with all three off the triggers list renders empty. The KEDA CRD enforces
+  MinItems=1 on spec.triggers, so an empty list is rejected server-side with an
+  opaque admission error. Fail here instead, naming the fix.
+*/}}
+{{- if not (or .Values.api.keda.request.enabled .Values.api.keda.cpuValue .Values.api.keda.memValue) }}
+{{- fail "api.keda is enabled but no trigger is: set at least one of api.keda.request.enabled, api.keda.cpuValue, or api.keda.memValue" }}
+{{- end }}
+{{- /*
   KEDA ScaledObject for the api Deployment. Combines ALB request-rate
   (aws-cloudwatch scaler on RequestCountPerTarget) with native cpu/memory
   triggers — KEDA scales to the max demand across all configured triggers.
