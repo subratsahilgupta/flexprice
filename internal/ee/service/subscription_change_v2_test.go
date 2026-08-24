@@ -712,7 +712,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_AddonCarriesByDefault() {
 
 	s.Require().Len(resp.EntityChanges, 1)
 	s.Equal(types.EntityChangeBehaviourCarry, resp.EntityChanges[0].Behaviour)
-	s.Equal(assoc.ID, resp.EntityChanges[0].ReferenceID)
+	s.Equal(assoc.ID, resp.EntityChanges[0].EntityID)
 }
 
 func (s *SubscriptionChangeV2Suite) TestExecute_AddonDropClosesAttachment() {

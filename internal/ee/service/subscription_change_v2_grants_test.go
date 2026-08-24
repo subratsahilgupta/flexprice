@@ -183,12 +183,12 @@ func (s *SubscriptionChangeV2Suite) TestPreview_ReportsGrantMigrationWithoutWrit
 
 	dropped, added := changes[0], changes[1]
 	s.Equal(types.EntityChangeBehaviourDrop, dropped.Behaviour)
-	s.Equal(materialised[0].ID, dropped.ReferenceID)
-	s.Equal(s.td.starter.ID, dropped.EntityID)
+	s.Equal(materialised[0].ID, dropped.EntityID)
+	s.Equal(s.td.starter.ID, dropped.ReferenceID)
 
 	s.Equal(types.EntityChangeBehaviourAdd, added.Behaviour)
-	s.Equal(proGrant.ID, added.ReferenceID, "preview names the plan grant it would materialise")
-	s.Equal(s.td.pro.ID, added.EntityID)
+	s.Equal(proGrant.ID, added.EntityID, "preview names the plan grant it would materialise")
+	s.Equal(s.td.pro.ID, added.ReferenceID)
 
 	s.Require().Len(s.subscriptionGrants(), 1, "preview created nothing")
 	s.Nil(s.subscriptionGrants()[0].EndDate, "preview cancelled nothing")
@@ -301,8 +301,8 @@ func (s *SubscriptionChangeV2Suite) TestExecute_ClosesStaleEntitlementOverrides(
 		return c.EntityType == types.SubscriptionChangeEntityTypeEntitlement
 	})
 	s.Require().Len(reported, 1)
-	s.Equal(override.ID, reported[0].ReferenceID)
-	s.Equal(f.ID, reported[0].EntityID)
+	s.Equal(override.ID, reported[0].EntityID)
+	s.Equal(f.ID, reported[0].ReferenceID)
 	s.Equal(types.EntityChangeBehaviourDrop, reported[0].Behaviour)
 }
 
@@ -384,8 +384,8 @@ func (s *SubscriptionChangeV2Suite) TestExecute_ClosesEntitlementGrantsFromTheOu
 		return c.EntityType == types.SubscriptionChangeEntityTypeEntitlementGrant
 	})
 	s.Require().Len(reported, 1)
-	s.Equal(closing.ID, reported[0].ReferenceID)
-	s.Equal(f.ID, reported[0].EntityID)
+	s.Equal(closing.ID, reported[0].EntityID)
+	s.Equal(f.ID, reported[0].ReferenceID)
 	s.Equal(types.EntityChangeBehaviourDrop, reported[0].Behaviour)
 }
 
@@ -463,7 +463,7 @@ func (s *SubscriptionChangeV2Suite) TestPreview_ReportsGrantClosureWithoutWritin
 		return c.EntityType == types.SubscriptionChangeEntityTypeEntitlementGrant
 	})
 	s.Require().Len(reported, 1)
-	s.Equal(grant.ID, reported[0].ReferenceID)
+	s.Equal(grant.ID, reported[0].EntityID)
 
 	s.True(s.storedGrant(grant.ID).ValidTo.Equal(s.td.periodEnd), "preview closed nothing")
 }

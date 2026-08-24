@@ -48,7 +48,7 @@ type planChangeRequest struct {
 	closingLineItems []*lineItemChange
 	openingLineItems []*lineItemChange
 
-	grants                      *planChangeGrants
+	creditGrants                *planChangeCreditGrants
 	closingEntitlementOverrides []*entitlement.Entitlement
 	closingEntitlementGrants    []*entitlementgrant.EntitlementGrant
 
@@ -65,9 +65,9 @@ type planChangeRequest struct {
 	changeType types.SubscriptionChangeType
 }
 
-// planChangeGrants is the credit-grant migration a plan change performs. Plan-level
+// planChangeCreditGrants is the credit-grant migration a plan change performs. Plan-level
 // grants are materialised per subscription at creation time.
-type planChangeGrants struct {
+type planChangeCreditGrants struct {
 	// cancel holds the subscription's grants materialised from the outgoing plan.
 	cancel []*creditgrant.CreditGrant
 
@@ -197,7 +197,7 @@ func (s *subscriptionService) resolveCreditGrantMigration(ctx context.Context, r
 		return err
 	}
 
-	grants := &planChangeGrants{}
+	grants := &planChangeCreditGrants{}
 	for _, cg := range outgoing {
 		// Already closed at or before the change instant: nothing future to cancel.
 		if cg.EndDate != nil && !cg.EndDate.After(r.effectiveAt) {
@@ -212,13 +212,13 @@ func (s *subscriptionService) resolveCreditGrantMigration(ctx context.Context, r
 		}
 		grants.opening = append(grants.opening, cg)
 	}
-	r.grants = grants
+	r.creditGrants = grants
 
 	for _, cg := range grants.cancel {
 		r.changes = append(r.changes, &dto.EntityChangeResult{
 			EntityType:  types.SubscriptionChangeEntityTypeCreditGrant,
-			ReferenceID: cg.ID,
-			EntityID:    r.fromPlan.ID,
+			ReferenceID: r.fromPlan.ID,
+			EntityID:    cg.ID,
 			Behaviour:   types.EntityChangeBehaviourDrop,
 		})
 	}
@@ -226,8 +226,8 @@ func (s *subscriptionService) resolveCreditGrantMigration(ctx context.Context, r
 	for _, cg := range grants.opening {
 		r.changes = append(r.changes, &dto.EntityChangeResult{
 			EntityType:  types.SubscriptionChangeEntityTypeCreditGrant,
-			ReferenceID: cg.ID,
-			EntityID:    r.toPlan.ID,
+			ReferenceID: r.toPlan.ID,
+			EntityID:    cg.ID,
 			Behaviour:   types.EntityChangeBehaviourAdd,
 		})
 	}
@@ -283,8 +283,8 @@ func (s *subscriptionService) resolveClosingEntitlements(ctx context.Context, r 
 		r.closingEntitlementOverrides = append(r.closingEntitlementOverrides, ent.Entitlement)
 		r.changes = append(r.changes, &dto.EntityChangeResult{
 			EntityType:  types.SubscriptionChangeEntityTypeEntitlement,
-			ReferenceID: ent.ID,
-			EntityID:    ent.FeatureID,
+			ReferenceID: ent.FeatureID,
+			EntityID:    ent.ID,
 			Behaviour:   types.EntityChangeBehaviourDrop,
 		})
 	}
@@ -301,6 +301,13 @@ func (s *subscriptionService) resolveClosingEntitlementGrants(
 ) error {
 	// Grants key off the entitlement the subscription actually resolves to, which is the
 	// override where one is active and the plan entitlement otherwise.
+
+	// NOTE: This logic doesnot close entitlement grants that are additive and derived from
+	// some entities which are not being closed like addon. There is no way to be certain on
+	// what qouta had been used in that grant and associate it to different constituent grant qoutas.
+	// If needed, later on a prorated handling could be added to close the existing grant and open a
+	// new one with prorated qouta.
+
 	configIDs := lo.Keys(fromPlanEntIDs)
 	for _, ent := range r.closingEntitlementOverrides {
 		configIDs = append(configIDs, ent.ID)
@@ -324,8 +331,8 @@ func (s *subscriptionService) resolveClosingEntitlementGrants(
 		r.closingEntitlementGrants = append(r.closingEntitlementGrants, g)
 		r.changes = append(r.changes, &dto.EntityChangeResult{
 			EntityType:  types.SubscriptionChangeEntityTypeEntitlementGrant,
-			ReferenceID: g.ID,
-			EntityID:    g.FeatureID(),
+			ReferenceID: g.FeatureID(),
+			EntityID:    g.ID,
 			Behaviour:   types.EntityChangeBehaviourDrop,
 		})
 	}
@@ -341,11 +348,11 @@ func (s *subscriptionService) resolveClosingEntitlementGrants(
 // that period remains. addonCreditGrantProration (subscription.go) already solves this
 // exact shape for addons and is the intended reuse.
 func (s *subscriptionService) migrateCreditGrants(ctx context.Context, r *planChangeRequest) error {
-	if r.grants == nil {
+	if r.creditGrants == nil {
 		return nil
 	}
 
-	if len(r.grants.cancel) > 0 {
+	if len(r.creditGrants.cancel) > 0 {
 		if err := NewCreditGrantService(s.ServiceParams).CancelFutureSubscriptionGrants(ctx, dto.CancelFutureSubscriptionGrantsRequest{
 			SubscriptionID: r.currentSub.ID,
 			PlanID:         lo.ToPtr(r.fromPlan.ID),
@@ -355,8 +362,8 @@ func (s *subscriptionService) migrateCreditGrants(ctx context.Context, r *planCh
 		}
 	}
 
-	create := make([]dto.CreateCreditGrantRequest, 0, len(r.grants.opening))
-	for _, cg := range r.grants.opening {
+	create := make([]dto.CreateCreditGrantRequest, 0, len(r.creditGrants.opening))
+	for _, cg := range r.creditGrants.opening {
 		create = append(create, dto.NewSubscriptionScopedCreditGrantRequest(cg, r.currentSub.ID, r.toPlan.ID))
 	}
 
@@ -368,8 +375,8 @@ func (s *subscriptionService) migrateCreditGrants(ctx context.Context, r *planCh
 		"subscription_id", r.currentSub.ID,
 		"from_plan_id", r.fromPlan.ID,
 		"to_plan_id", r.toPlan.ID,
-		"cancelled_grants", len(r.grants.cancel),
-		"created_grants", len(r.grants.opening),
+		"cancelled_grants", len(r.creditGrants.cancel),
+		"created_grants", len(r.creditGrants.opening),
 		"effective_at", r.effectiveAt)
 
 	return nil
@@ -625,8 +632,8 @@ func (s *subscriptionService) resolveAddonChanges(
 		behaviour := policy.BehaviourFor(association.ID)
 		changes = append(changes, &dto.EntityChangeResult{
 			EntityType:  types.SubscriptionChangeEntityTypeAddon,
-			ReferenceID: association.ID,
-			EntityID:    association.AddonID,
+			ReferenceID: association.AddonID,
+			EntityID:    association.ID,
 			Behaviour:   behaviour,
 		})
 
@@ -643,10 +650,10 @@ func (s *subscriptionService) resolveAddonChanges(
 
 	// Stale override keys (e.g. preview→execute race) warn instead of failing.
 	if policy != nil {
-		for referenceID := range policy.Overrides {
-			if !seen[referenceID] {
+		for entityID := range policy.Overrides {
+			if !seen[entityID] {
 				warnings = append(warnings,
-					"ignored addon behaviour for unknown or inactive association "+referenceID)
+					"ignored addon behaviour for unknown or inactive association "+entityID)
 			}
 		}
 	}

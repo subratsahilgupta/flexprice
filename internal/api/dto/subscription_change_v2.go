@@ -89,6 +89,7 @@ type EntityChangePolicy struct {
 	DefaultBehaviour types.EntityChangeBehaviour `json:"default_behaviour,omitempty"`
 
 	// Overrides is keyed by addon_associations.id (instance), not catalogue addon_id.
+	// That is the id an EntityChangeResult reports as EntityID.
 	Overrides map[string]types.EntityChangeBehaviour `json:"overrides,omitempty"`
 }
 
@@ -109,11 +110,11 @@ func (p *EntityChangePolicy) Validate() error {
 	return nil
 }
 
-func (p *EntityChangePolicy) BehaviourFor(referenceID string) types.EntityChangeBehaviour {
+func (p *EntityChangePolicy) BehaviourFor(entityID string) types.EntityChangeBehaviour {
 	if p == nil {
 		return types.EntityChangeBehaviourCarry
 	}
-	if d, ok := p.Overrides[referenceID]; ok && d != "" {
+	if d, ok := p.Overrides[entityID]; ok && d != "" {
 		return d
 	}
 	if p.DefaultBehaviour != "" {
@@ -122,6 +123,10 @@ func (p *EntityChangePolicy) BehaviourFor(referenceID string) types.EntityChange
 	return types.EntityChangeBehaviourCarry
 }
 
+// EntityChangeResult is one entity the change touched. EntityID identifies the entity
+// itself and is the id an addon override is keyed by; ReferenceID is what that entity
+// refers to — the catalogue addon, the plan a credit grant belongs to, the feature an
+// entitlement covers.
 type EntityChangeResult struct {
 	EntityType  types.SubscriptionChangeEntityType `json:"entity_type"`
 	ReferenceID string                             `json:"reference_id"`
