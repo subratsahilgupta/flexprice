@@ -21,10 +21,11 @@ var EntityChangeBehaviourValues = []EntityChangeBehaviour{
 type SubscriptionChangeEntityType string
 
 const (
-	SubscriptionChangeEntityTypePlan        SubscriptionChangeEntityType = "plan"
-	SubscriptionChangeEntityTypeAddon       SubscriptionChangeEntityType = "addon"
-	SubscriptionChangeEntityTypeCreditGrant SubscriptionChangeEntityType = "credit_grant"
-	SubscriptionChangeEntityTypeEntitlement SubscriptionChangeEntityType = "entitlement"
+	SubscriptionChangeEntityTypePlan             SubscriptionChangeEntityType = "plan"
+	SubscriptionChangeEntityTypeAddon            SubscriptionChangeEntityType = "addon"
+	SubscriptionChangeEntityTypeCreditGrant      SubscriptionChangeEntityType = "credit_grant"
+	SubscriptionChangeEntityTypeEntitlement      SubscriptionChangeEntityType = "entitlement"
+	SubscriptionChangeEntityTypeEntitlementGrant SubscriptionChangeEntityType = "entitlement_grant"
 )
 
 func (t SubscriptionChangeEntityType) String() string { return string(t) }
@@ -85,19 +86,19 @@ const (
 	// BillingPeriodBehaviourUnchanged keeps the anchor and period bounds. Default.
 	BillingPeriodBehaviourUnchanged BillingPeriodBehaviour = "unchanged"
 
-	// BillingPeriodBehaviourResetAtEffect moves the anchor to the moment the change
+	// BillingPeriodBehaviourAnchorAtEffect moves the anchor to the moment the change
 	// takes effect and starts a full new period there. For a period-end change that
 	// instant is already the anchor, so nothing moves.
-	BillingPeriodBehaviourResetAtEffect BillingPeriodBehaviour = "reset_at_effect"
+	BillingPeriodBehaviourAnchorAtEffect BillingPeriodBehaviour = "anchor_at_effect"
 
-	// BillingPeriodBehaviourResetAt resets to a caller-supplied instant.
-	BillingPeriodBehaviourResetAt BillingPeriodBehaviour = "reset_at"
+	// BillingPeriodBehaviourUpdateToConfig resets to a caller-supplied instant.
+	BillingPeriodBehaviourUpdateToConfig BillingPeriodBehaviour = "update_to_config"
 )
 
 var BillingPeriodBehaviourValues = []BillingPeriodBehaviour{
 	BillingPeriodBehaviourUnchanged,
-	BillingPeriodBehaviourResetAtEffect,
-	BillingPeriodBehaviourResetAt,
+	BillingPeriodBehaviourAnchorAtEffect,
+	BillingPeriodBehaviourUpdateToConfig,
 }
 
 func (b BillingPeriodBehaviour) String() string { return string(b) }

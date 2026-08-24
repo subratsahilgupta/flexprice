@@ -223,3 +223,29 @@ func (s *SubscriptionChangeV2Suite) TestExecute_RejectsAnUnknownConflictPolicy()
 	s.True(ierr.IsValidation(err))
 	s.Equal(s.td.starter.ID, s.currentSub().PlanID)
 }
+
+// Preview is only useful as a rehearsal if it refuses on the same grounds execute will.
+func (s *SubscriptionChangeV2Suite) TestPreview_RejectsTheConflictExecuteWouldReject() {
+	ctx := s.GetContext()
+
+	scheduled, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, s.deferredRequest(s.td.pro.ID), time.Now().UTC())
+	s.Require().NoError(err)
+
+	req := s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone)
+
+	_, previewErr := s.svc.PreviewPlanChange(ctx, s.td.sub.ID, req)
+	s.Require().Error(previewErr)
+	s.True(ierr.IsValidation(previewErr))
+
+	_, executeErr := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req, time.Now().UTC())
+	s.Require().Error(executeErr)
+	s.Equal(executeErr.Error(), previewErr.Error(), "both refuse for the same stated reason")
+
+	details := s.errorDetails(previewErr)
+	s.Equal(*scheduled.ScheduleID, details["schedule_id"])
+	s.Equal("on_conflict_policies.on_pending_schedule", details["policy_field"])
+
+	pending := s.pendingPlanChange()
+	s.Require().NotNil(pending, "a refused preview leaves the queued change alone")
+	s.Equal(types.ScheduleStatusPending, pending.Status)
+}

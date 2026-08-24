@@ -53,7 +53,7 @@ func TestPlanChangeType_CountsQuantity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := planChangeType(&planChangeRequest{closing: tt.closing, opening: tt.opening})
+			got := planChangeType(&planChangeRequest{closingLineItems: tt.closing, openingLineItems: tt.opening})
 			assert.Equal(t, tt.want, got)
 		})
 	}

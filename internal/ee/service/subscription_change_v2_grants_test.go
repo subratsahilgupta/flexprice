@@ -6,7 +6,9 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
 	"github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -237,11 +239,19 @@ func (s *SubscriptionChangeV2Suite) createPlanEntitlement(planID, featureID stri
 }
 
 func (s *SubscriptionChangeV2Suite) createSubscriptionOverride(parent *entitlement.Entitlement, limit int64) *entitlement.Entitlement {
+	return s.createSubscriptionOverrideFor(s.td.sub, parent, limit)
+}
+
+func (s *SubscriptionChangeV2Suite) createSubscriptionOverrideFor(
+	sub *subscription.Subscription,
+	parent *entitlement.Entitlement,
+	limit int64,
+) *entitlement.Entitlement {
 	ctx := s.GetContext()
 	e := &entitlement.Entitlement{
 		ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT),
 		EntityType:          types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION,
-		EntityID:            s.td.sub.ID,
+		EntityID:            sub.ID,
 		FeatureID:           parent.FeatureID,
 		FeatureType:         parent.FeatureType,
 		IsEnabled:           true,
@@ -307,4 +317,149 @@ func (s *SubscriptionChangeV2Suite) TestExecute_LeavesUnrelatedOverridesAlone() 
 	stored, err := s.GetStores().EntitlementRepo.Get(ctx, override.ID)
 	s.Require().NoError(err)
 	s.Nil(stored.EndDate)
+}
+
+func (s *SubscriptionChangeV2Suite) createEntitlementGrant(
+	sub *subscription.Subscription,
+	configID, featureID string,
+	validFrom, validTo time.Time,
+) *entitlementgrant.EntitlementGrant {
+	ctx := s.GetContext()
+	g := &entitlementgrant.EntitlementGrant{
+		ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT_GRANT),
+		EntitlementConfigID: configID,
+		CustomerID:          sub.CustomerID,
+		SubscriptionID:      sub.ID,
+		ScopeEntityType:     types.EntitlementGrantScopeFeature,
+		ScopeEntityID:       featureID,
+		Measure:             types.EntitlementGrantMeasureQuantity,
+		Quota:               decimal.NewFromInt(1000),
+		Usage:               decimal.Zero,
+		ValidFrom:           validFrom,
+		ValidTo:             validTo,
+		GrantStatus:         types.EntitlementGrantStatusActive,
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		BaseModel:           types.GetDefaultBaseModel(ctx),
+	}
+	_, err := s.GetStores().EntitlementGrantRepo.Create(ctx, g)
+	s.Require().NoError(err)
+	return g
+}
+
+func (s *SubscriptionChangeV2Suite) storedGrant(id string) *entitlementgrant.EntitlementGrant {
+	g, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), id)
+	s.Require().NoError(err)
+	return g
+}
+
+// A window left open keeps granting the outgoing plan's quota after the swap, and billing
+// reads its overage as [quota_crossed_at, valid_to] — so it would charge overage on the old
+// plan's terms for time already spent on the new one.
+func (s *SubscriptionChangeV2Suite) TestExecute_ClosesEntitlementGrantsFromTheOutgoingPlan() {
+	ctx := s.GetContext()
+
+	f := s.createFeature("api_calls")
+	starterEnt := s.createPlanEntitlement(s.td.starter.ID, f.ID, 1000)
+	proEnt := s.createPlanEntitlement(s.td.pro.ID, f.ID, 5000)
+
+	closing := s.createEntitlementGrant(s.td.sub, starterEnt.ID, f.ID, s.td.periodStart, s.td.periodEnd)
+	surviving := s.createEntitlementGrant(s.td.sub, proEnt.ID, f.ID, s.td.periodStart, s.td.periodEnd)
+
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID,
+		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone), time.Now().UTC())
+	s.Require().NoError(err)
+
+	closed := s.storedGrant(closing.ID)
+	s.True(closed.ValidTo.Equal(resp.EffectiveAt), "the outgoing plan's window ends at the swap")
+	s.True(closed.ValidFrom.Equal(s.td.periodStart), "closing must not move the window start")
+
+	untouched := s.storedGrant(surviving.ID)
+	s.True(untouched.ValidTo.Equal(s.td.periodEnd), "a window on the target plan's config is not ours to close")
+
+	reported := lo.Filter(resp.EntityChanges, func(c *dto.EntityChangeResult, _ int) bool {
+		return c.EntityType == types.SubscriptionChangeEntityTypeEntitlementGrant
+	})
+	s.Require().Len(reported, 1)
+	s.Equal(closing.ID, reported[0].ReferenceID)
+	s.Equal(f.ID, reported[0].EntityID)
+	s.Equal(types.EntityChangeBehaviourDrop, reported[0].Behaviour)
+}
+
+// Grants key off whichever entitlement the subscription actually resolves to, so an
+// overridden feature's window carries the override's id rather than the plan entitlement's.
+func (s *SubscriptionChangeV2Suite) TestExecute_ClosesGrantsKeyedByAClosingOverride() {
+	ctx := s.GetContext()
+
+	f := s.createFeature("api_calls")
+	starterEnt := s.createPlanEntitlement(s.td.starter.ID, f.ID, 1000)
+	override := s.createSubscriptionOverride(starterEnt, 2000)
+	grant := s.createEntitlementGrant(s.td.sub, override.ID, f.ID, s.td.periodStart, s.td.periodEnd)
+
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID,
+		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone), time.Now().UTC())
+	s.Require().NoError(err)
+
+	s.True(s.storedGrant(grant.ID).ValidTo.Equal(resp.EffectiveAt))
+}
+
+// Grant windows are per subscription, and so is the close.
+func (s *SubscriptionChangeV2Suite) TestExecute_LeavesAnotherSubscriptionsGrantsAlone() {
+	ctx := s.GetContext()
+
+	f := s.createFeature("api_calls")
+	starterEnt := s.createPlanEntitlement(s.td.starter.ID, f.ID, 1000)
+
+	other := s.createSubscription(s.td.starter.ID)
+	otherGrant := s.createEntitlementGrant(other, starterEnt.ID, f.ID, s.td.periodStart, s.td.periodEnd)
+	otherOverride := s.createSubscriptionOverrideFor(other, starterEnt, 2000)
+
+	_, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID,
+		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone), time.Now().UTC())
+	s.Require().NoError(err)
+
+	s.True(s.storedGrant(otherGrant.ID).ValidTo.Equal(s.td.periodEnd),
+		"another subscription on the same outgoing plan keeps its window")
+
+	stored, err := s.GetStores().EntitlementRepo.Get(ctx, otherOverride.ID)
+	s.Require().NoError(err)
+	s.Nil(stored.EndDate, "and keeps its override")
+}
+
+// A window that already ended before the change has nothing left to close.
+func (s *SubscriptionChangeV2Suite) TestExecute_IgnoresAlreadyClosedGrantWindows() {
+	ctx := s.GetContext()
+
+	f := s.createFeature("api_calls")
+	starterEnt := s.createPlanEntitlement(s.td.starter.ID, f.ID, 1000)
+	expiredAt := s.td.periodStart.AddDate(0, 0, 1)
+	expired := s.createEntitlementGrant(s.td.sub, starterEnt.ID, f.ID, s.td.periodStart, expiredAt)
+
+	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID,
+		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone), time.Now().UTC())
+	s.Require().NoError(err)
+
+	s.True(s.storedGrant(expired.ID).ValidTo.Equal(expiredAt))
+	s.Empty(lo.Filter(resp.EntityChanges, func(c *dto.EntityChangeResult, _ int) bool {
+		return c.EntityType == types.SubscriptionChangeEntityTypeEntitlementGrant
+	}))
+}
+
+func (s *SubscriptionChangeV2Suite) TestPreview_ReportsGrantClosureWithoutWriting() {
+	ctx := s.GetContext()
+
+	f := s.createFeature("api_calls")
+	starterEnt := s.createPlanEntitlement(s.td.starter.ID, f.ID, 1000)
+	grant := s.createEntitlementGrant(s.td.sub, starterEnt.ID, f.ID, s.td.periodStart, s.td.periodEnd)
+
+	preview, err := s.svc.PreviewPlanChange(ctx, s.td.sub.ID,
+		s.changeRequest(s.td.pro.ID, types.ProrationBehaviorNone))
+	s.Require().NoError(err)
+
+	reported := lo.Filter(preview.EntityChanges, func(c *dto.EntityChangeResult, _ int) bool {
+		return c.EntityType == types.SubscriptionChangeEntityTypeEntitlementGrant
+	})
+	s.Require().Len(reported, 1)
+	s.Equal(grant.ID, reported[0].ReferenceID)
+
+	s.True(s.storedGrant(grant.ID).ValidTo.Equal(s.td.periodEnd), "preview closed nothing")
 }

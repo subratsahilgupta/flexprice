@@ -16,7 +16,7 @@ import (
 
 func (s *SubscriptionChangeV2Suite) resetRequest(targetPlanID string) dto.SubscriptionChangeV2Request {
 	req := s.changeRequest(targetPlanID, types.ProrationBehaviorNone)
-	req.BillingPeriodBehaviour = types.BillingPeriodBehaviourResetAtEffect
+	req.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 	return req
 }
 
@@ -45,13 +45,13 @@ func (s *SubscriptionChangeV2Suite) TestExecute_BillingPeriodBehaviourValidation
 		{
 			name: "reset_at_effect on an immediate change is accepted",
 			mutate: func(r *dto.SubscriptionChangeV2Request) {
-				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourResetAtEffect
+				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 			},
 		},
 		{
 			name: "reset_at_effect with prorations is rejected",
 			mutate: func(r *dto.SubscriptionChangeV2Request) {
-				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourResetAtEffect
+				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 				r.ProrationBehavior = types.ProrationBehaviorCreateProrations
 			},
 			wantErr: "proration is not applicable when the billing period is reset",
@@ -59,7 +59,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_BillingPeriodBehaviourValidation
 		{
 			name: "reset_at is rejected rather than inferred",
 			mutate: func(r *dto.SubscriptionChangeV2Request) {
-				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourResetAt
+				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourUpdateToConfig
 			},
 			wantErr: "'reset_at' is not supported yet",
 		},
@@ -75,7 +75,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_BillingPeriodBehaviourValidation
 		{
 			name: "billing_period is reserved even alongside a supported behaviour",
 			mutate: func(r *dto.SubscriptionChangeV2Request) {
-				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourResetAtEffect
+				r.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 				r.BillingPeriodConfig = &dto.BillingPeriodConfig{}
 			},
 			wantErr: "billing_period_config is not supported yet",
@@ -152,7 +152,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_ResetMovesTheAnchorToTheChangeIn
 	s.True(sub.CurrentPeriodEnd.Equal(expectedEnd), "the new period is a full period, never a stub")
 	s.False(sub.CurrentPeriodEnd.Equal(s.td.periodEnd), "the old boundary is gone")
 
-	s.Equal(types.BillingPeriodBehaviourResetAtEffect, resp.BillingPeriod.Behaviour)
+	s.Equal(types.BillingPeriodBehaviourAnchorAtEffect, resp.BillingPeriod.Behaviour)
 	s.True(resp.BillingPeriod.BillingAnchor.Equal(at))
 	s.True(resp.BillingPeriod.CurrentPeriodStart.Equal(at))
 	s.True(resp.BillingPeriod.CurrentPeriodEnd.Equal(expectedEnd))
@@ -180,7 +180,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_DeferredResetIsANoOp() {
 	ctx := s.GetContext()
 
 	req := s.deferredRequest(s.td.pro.ID)
-	req.BillingPeriodBehaviour = types.BillingPeriodBehaviourResetAtEffect
+	req.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 
 	resp, err := s.svc.ExecutePlanChange(ctx, s.td.sub.ID, req, time.Now().UTC())
 	s.Require().NoError(err)
@@ -194,7 +194,7 @@ func (s *SubscriptionChangeV2Suite) TestExecute_DeferredResetIsANoOp() {
 	s.Require().NotNil(sched)
 	config, err := sched.GetPlanChangeV2Config()
 	s.Require().NoError(err)
-	s.Equal(types.BillingPeriodBehaviourResetAtEffect, config.BillingPeriodBehaviour,
+	s.Equal(types.BillingPeriodBehaviourAnchorAtEffect, config.BillingPeriodBehaviour,
 		"the behaviour round-trips through the schedule blob")
 }
 
@@ -214,7 +214,7 @@ func (s *SubscriptionChangeV2Suite) TestExecuteScheduledV2_DeferredResetKeepsMon
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
 
 	sched, config := s.createV2Schedule(s.td.pro.ID, feb28)
-	config.BillingPeriodBehaviour = types.BillingPeriodBehaviourResetAtEffect
+	config.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 	s.rollPeriodTo(feb28, time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC))
 
 	s.Require().NoError(s.svc.ExecuteScheduledPlanChangeV2(ctx, sched, config, s.currentSub()))
@@ -397,7 +397,7 @@ func (s *SubscriptionChangeV2Suite) TestPreview_ResetEchoesTheProjectedAnchor() 
 	preview, err := s.svc.PreviewPlanChange(ctx, s.td.sub.ID, s.resetRequest(s.td.pro.ID))
 	s.Require().NoError(err)
 
-	s.Equal(types.BillingPeriodBehaviourResetAtEffect, preview.BillingPeriod.Behaviour)
+	s.Equal(types.BillingPeriodBehaviourAnchorAtEffect, preview.BillingPeriod.Behaviour)
 	s.True(preview.BillingPeriod.BillingAnchor.Equal(preview.EffectiveAt),
 		"the projected anchor is the change instant")
 	s.True(preview.BillingPeriod.CurrentPeriodStart.Equal(preview.EffectiveAt))
@@ -416,7 +416,7 @@ func (s *SubscriptionChangeV2Suite) TestPreview_DeferredResetEchoesAnUnmovedAnch
 	ctx := s.GetContext()
 
 	req := s.deferredRequest(s.td.pro.ID)
-	req.BillingPeriodBehaviour = types.BillingPeriodBehaviourResetAtEffect
+	req.BillingPeriodBehaviour = types.BillingPeriodBehaviourAnchorAtEffect
 
 	preview, err := s.svc.PreviewPlanChange(ctx, s.td.sub.ID, req)
 	s.Require().NoError(err)

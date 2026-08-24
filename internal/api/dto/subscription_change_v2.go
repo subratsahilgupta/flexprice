@@ -54,7 +54,7 @@ func (r *SubscriptionChangeV2Request) EffectiveBillingPeriodBehaviour() types.Bi
 // ResetsAnchorAtEffective reports whether the change restarts the term at the instant it
 // takes effect.
 func (r *SubscriptionChangeV2Request) ResetsAnchorAtEffective() bool {
-	return r != nil && r.BillingPeriodBehaviour == types.BillingPeriodBehaviourResetAtEffect
+	return r != nil && r.BillingPeriodBehaviour == types.BillingPeriodBehaviourAnchorAtEffect
 }
 
 // SubscriptionChangeConflictPolicies decides how the change reacts to state that
@@ -186,13 +186,13 @@ func (r *SubscriptionChangeV2Request) validateBillingPeriodBehaviour() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.BillingPeriodBehaviour == types.BillingPeriodBehaviourResetAt {
+	if r.BillingPeriodBehaviour == types.BillingPeriodBehaviourUpdateToConfig {
 		return ierr.NewError("billing_period_behaviour 'reset_at' is not supported yet").
 			WithHint("Use 'reset_at_effect' to restart the term at the change instant.").
 			WithReportableDetails(map[string]any{
 				"supported": []types.BillingPeriodBehaviour{
 					types.BillingPeriodBehaviourUnchanged,
-					types.BillingPeriodBehaviourResetAtEffect,
+					types.BillingPeriodBehaviourAnchorAtEffect,
 				},
 			}).
 			Mark(ierr.ErrValidation)
