@@ -157,6 +157,10 @@ func (f *fakePriceOps) Create(_ context.Context, _ types.CreatePriceRequest) (*d
 	atomic.AddInt32(&f.createCalled, 1)
 	return &dtos.CreatePriceResponse{}, nil
 }
+func (f *fakePriceOps) CreateBucketed(_ context.Context, _ types.CreatePriceRequest, _ string) (string, error) {
+	atomic.AddInt32(&f.createCalled, 1)
+	return "price_fake", nil
+}
 func (f *fakePriceOps) Query(_ context.Context, _ types.PriceFilter) (*dtos.QueryPriceResponse, error) {
 	return &dtos.QueryPriceResponse{}, nil
 }

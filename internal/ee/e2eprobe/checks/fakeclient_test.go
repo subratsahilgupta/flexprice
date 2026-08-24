@@ -183,6 +183,9 @@ func (f *fakePlans) SyncPrices(_ context.Context, planID string) (*dtos.SyncPlan
 type fakePrices struct {
 	mu      sync.Mutex
 	created []types.CreatePriceRequest
+	// bucketSizes records the price-level bucket passed alongside each created
+	// price, keyed by lookup key. Empty string means the price is unbucketed.
+	bucketSizes map[string]string
 }
 
 func (f *fakePrices) Create(_ context.Context, req types.CreatePriceRequest) (*dtos.CreatePriceResponse, error) {
@@ -190,6 +193,18 @@ func (f *fakePrices) Create(_ context.Context, req types.CreatePriceRequest) (*d
 	defer f.mu.Unlock()
 	f.created = append(f.created, req)
 	return &dtos.CreatePriceResponse{}, nil
+}
+func (f *fakePrices) CreateBucketed(_ context.Context, req types.CreatePriceRequest, bucketSize string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.created = append(f.created, req)
+	if f.bucketSizes == nil {
+		f.bucketSizes = map[string]string{}
+	}
+	if req.LookupKey != nil {
+		f.bucketSizes[*req.LookupKey] = bucketSize
+	}
+	return "price_fake", nil
 }
 func (f *fakePrices) Query(_ context.Context, _ types.PriceFilter) (*dtos.QueryPriceResponse, error) {
 	return &dtos.QueryPriceResponse{}, nil
