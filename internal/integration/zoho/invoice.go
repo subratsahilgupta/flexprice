@@ -264,6 +264,14 @@ func (s *InvoiceService) MarkInvoicePaidInZoho(ctx context.Context, flexpriceInv
 		return nil
 	}
 
+	payable, err := s.ensureApprovedForPayment(ctx, flexpriceInvoiceID, zohoInv)
+	if err != nil {
+		return err
+	}
+	if !payable {
+		return nil
+	}
+
 	// Zoho's total is tax-inclusive while Flexprice's is tax-exclusive, so log both sides of the
 	// amount being settled to explain any mismatch between the two systems' figures.
 	s.logger.Info(ctx, "recording Zoho customer payment for synced invoice",

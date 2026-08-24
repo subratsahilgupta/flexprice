@@ -185,3 +185,70 @@ func TestMarkInvoicePaidInZoho_GetInvoiceError_Propagates(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, 0, client.createPaymentCalls)
 }
+
+func markPaidTestMapping() *fakeMappingRepo {
+	return &fakeMappingRepo{
+		mappings: []*entityintegrationmapping.EntityIntegrationMapping{
+			{EntityID: "inv_1", ProviderEntityID: "zoho_inv_1"},
+		},
+	}
+}
+
+// The approval guard must not disturb tenants that never opted in: their invoices sit in
+// draft too, and payments have always been recorded against them.
+func TestMarkInvoicePaidInZoho_ApprovalDisabled_DraftStillPaid(t *testing.T) {
+	client := &fakeZohoClient{
+		getInvoiceResp: &InvoiceResponse{
+			InvoiceID:  "zoho_inv_1",
+			CustomerID: "zoho_cust_1",
+			Status:     InvoiceStatusDraft,
+			Balance:    decimal.NewFromInt(100),
+		},
+		syncConfig: syncConfigWithApproval(false),
+	}
+	svc := newTestInvoiceService(client, markPaidTestMapping())
+
+	err := svc.MarkInvoicePaidInZoho(context.Background(), "inv_1")
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, client.createPaymentCalls)
+	assert.Equal(t, 0, client.submitCalls)
+}
+
+func TestMarkInvoicePaidInZoho_ApprovalEnabled_RejectedIsNotPaid(t *testing.T) {
+	client := &fakeZohoClient{
+		getInvoiceResp: &InvoiceResponse{
+			InvoiceID:  "zoho_inv_1",
+			CustomerID: "zoho_cust_1",
+			Status:     InvoiceStatusRejected,
+			Balance:    decimal.NewFromInt(100),
+		},
+		syncConfig: syncConfigWithApproval(true),
+	}
+	svc := newTestInvoiceService(client, markPaidTestMapping())
+
+	err := svc.MarkInvoicePaidInZoho(context.Background(), "inv_1")
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, client.createPaymentCalls)
+}
+
+// An invoice that already cleared approval pays without re-submitting or waiting.
+func TestMarkInvoicePaidInZoho_ApprovalEnabled_SentIsPaid(t *testing.T) {
+	client := &fakeZohoClient{
+		getInvoiceResp: &InvoiceResponse{
+			InvoiceID:  "zoho_inv_1",
+			CustomerID: "zoho_cust_1",
+			Status:     "sent",
+			Balance:    decimal.NewFromInt(100),
+		},
+		syncConfig: syncConfigWithApproval(true),
+	}
+	svc := newTestInvoiceService(client, markPaidTestMapping())
+
+	err := svc.MarkInvoicePaidInZoho(context.Background(), "inv_1")
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, client.createPaymentCalls)
+	assert.Equal(t, 0, client.submitCalls)
+}

@@ -23,12 +23,13 @@ func awaitingApproval(status string) bool {
 
 // ensureApprovedForPayment takes a synced Zoho invoice out of draft so a payment can be
 // recorded against it, and reports whether the invoice ended up payable.
-func (s *InvoiceService) ensureApprovedForPayment(ctx context.Context, zohoInv *InvoiceResponse) (bool, error) {
-	return s.ensureApprovedForPaymentWithin(ctx, zohoInv, approvalWait, approvalMaxPolls)
+func (s *InvoiceService) ensureApprovedForPayment(ctx context.Context, flexpriceInvoiceID string, zohoInv *InvoiceResponse) (bool, error) {
+	return s.ensureApprovedForPaymentWithin(ctx, flexpriceInvoiceID, zohoInv, approvalWait, approvalMaxPolls)
 }
 
 func (s *InvoiceService) ensureApprovedForPaymentWithin(
 	ctx context.Context,
+	flexpriceInvoiceID string,
 	zohoInv *InvoiceResponse,
 	wait time.Duration,
 	maxPolls int,
@@ -51,10 +52,12 @@ func (s *InvoiceService) ensureApprovedForPaymentWithin(
 			return false, err
 		}
 		s.logger.Info(ctx, "submitted Zoho invoice for approval",
+			"invoice_id", flexpriceInvoiceID,
 			"zoho_invoice_id", zohoInv.InvoiceID)
 	case InvoiceStatusPendingApproval:
+		// Already queued; re-submitting would make Zoho error. Fall through and wait.
 	case InvoiceStatusRejected:
-		return false, s.logRejected(ctx, zohoInv.InvoiceID)
+		return false, s.logRejected(ctx, flexpriceInvoiceID, zohoInv.InvoiceID)
 	default:
 		// Approved, sent, partially paid, paid: nothing blocks a payment.
 		return true, nil
@@ -78,7 +81,7 @@ func (s *InvoiceService) ensureApprovedForPaymentWithin(
 
 		status = current.Status
 		if NormalizeInvoiceStatus(status) == InvoiceStatusRejected {
-			return false, s.logRejected(ctx, zohoInv.InvoiceID)
+			return false, s.logRejected(ctx, flexpriceInvoiceID, zohoInv.InvoiceID)
 		}
 		if !awaitingApproval(status) {
 			return true, nil
@@ -86,6 +89,7 @@ func (s *InvoiceService) ensureApprovedForPaymentWithin(
 	}
 
 	s.logger.Info(ctx, "Zoho invoice still awaiting approval after wait, skipping mark-paid",
+		"invoice_id", flexpriceInvoiceID,
 		"zoho_invoice_id", zohoInv.InvoiceID,
 		"zoho_status", status,
 		"polls", maxPolls,
@@ -95,8 +99,9 @@ func (s *InvoiceService) ensureApprovedForPaymentWithin(
 
 // logRejected records the terminal case where an approver turned the invoice down. It
 // returns a nil error so the caller skips mark-paid without failing the sync.
-func (s *InvoiceService) logRejected(ctx context.Context, zohoInvoiceID string) error {
+func (s *InvoiceService) logRejected(ctx context.Context, flexpriceInvoiceID, zohoInvoiceID string) error {
 	s.logger.Info(ctx, "Zoho invoice was rejected in approval, skipping mark-paid",
+		"invoice_id", flexpriceInvoiceID,
 		"zoho_invoice_id", zohoInvoiceID)
 	return nil
 }

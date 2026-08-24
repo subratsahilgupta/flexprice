@@ -187,7 +187,7 @@ func TestEnsureApprovedForPayment(t *testing.T) {
 			}
 			svc := newTestInvoiceService(client, &fakeMappingRepo{})
 
-			payable, err := svc.ensureApprovedForPaymentWithin(context.Background(), &InvoiceResponse{
+			payable, err := svc.ensureApprovedForPaymentWithin(context.Background(), "inv_1", &InvoiceResponse{
 				InvoiceID:  "zoho_inv_1",
 				CustomerID: "zoho_cust_1",
 				Status:     tt.status,
@@ -210,7 +210,7 @@ func TestEnsureApprovedForPayment_NilInvoice(t *testing.T) {
 	client := &fakeZohoClient{syncConfig: syncConfigWithApproval(true)}
 	svc := newTestInvoiceService(client, &fakeMappingRepo{})
 
-	payable, err := svc.ensureApprovedForPaymentWithin(context.Background(), nil, 0, approvalMaxPolls)
+	payable, err := svc.ensureApprovedForPaymentWithin(context.Background(), "inv_1", nil, 0, approvalMaxPolls)
 
 	require.NoError(t, err)
 	assert.False(t, payable)
