@@ -272,6 +272,10 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		}
 	}
 
+	if err := s.validateLineItemCommitments(ctx, lineItems); err != nil {
+		return nil, err
+	}
+
 	sub.LineItems = lineItems
 
 	// Multi-cadence validations: interval alignment and proration mutual exclusion
@@ -5503,6 +5507,10 @@ func (s *subscriptionService) buildAddonLineItems(
 		}
 		if cfg != nil && len(cfg.CommitmentTimeBuckets) > 0 {
 			lineItemBucketCfgs[lineItem.ID] = cfg
+		}
+		// Addons carry no price overrides, so PriceID is already final here.
+		if err := s.validateLineItemCommitment(ctx, lineItem); err != nil {
+			return nil, nil, err
 		}
 		lineItems = append(lineItems, lineItem)
 	}

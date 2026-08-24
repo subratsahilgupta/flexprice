@@ -654,6 +654,20 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 	}
 }
 
+// validateLineItemCommitments validates commitment config across line items.
+// Call it only once each line item's PriceID is final: the windowed-commitment
+// rule resolves the bucket size from the price, and price overrides replace
+// PriceID after the commitment config is applied. Validating any earlier tests
+// the plan price and rejects a bucket size the override supplies.
+func (s *subscriptionService) validateLineItemCommitments(ctx context.Context, lineItems []*subscription.SubscriptionLineItem) error {
+	for _, item := range lineItems {
+		if err := s.validateLineItemCommitment(ctx, item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateLineItemCommitment validates commitment configuration for a subscription line item
 func (s *subscriptionService) validateLineItemCommitment(ctx context.Context, lineItem *subscription.SubscriptionLineItem) error {
 	if lineItem == nil {
@@ -782,8 +796,12 @@ func (s *subscriptionService) validateLineItemCommitment(ctx context.Context, li
 // per-bucket commitments, a SUBSCRIPTION-scoped price is materialized per bucket.
 //
 // Returns the matched config (nil when the line item has none) so callers can
-// key it by line item ID for createBucketPricesForLineItems — the lookup here
-// uses the line item's CURRENT PriceID, which price overrides may mutate later.
+// key it by line item ID for createBucketPricesForLineItems.
+//
+// Applies only — the caller owns validation. The map is keyed by the PLAN price
+// id, so this must run before price overrides, but validation reads the line
+// item's price, which overrides replace. Callers run
+// validateLineItemCommitments once PriceID is final.
 func (s *subscriptionService) applyLineItemCommitmentFromMap(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -827,9 +845,6 @@ func (s *subscriptionService) applyLineItemCommitmentFromMap(
 		// invoke createBucketPricesForLineItems inside that transaction so price
 		// rows roll back together with the line items.
 		lineItem.CommitmentTimeBuckets = cfg.ToDomainBuckets()
-	}
-	if err := s.validateLineItemCommitment(ctx, lineItem); err != nil {
-		return nil, err
 	}
 
 	return cfg, nil
