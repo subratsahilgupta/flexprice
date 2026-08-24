@@ -1,4 +1,7 @@
 {{- if and .Values.consumer.enabled .Values.consumer.keda.enabled -}}
+{{- if .Values.consumer.autoscaling.enabled }}
+{{- fail "consumer: enable either consumer.autoscaling (HPA) or consumer.keda (KEDA), not both — they fight over the same Deployment" }}
+{{- end }}
 {{- /*
   KEDA ScaledObject for the consumer Deployment. Scales on Kafka consumer-group
   lag rather than CPU — the right signal for a Kafka consumer where each

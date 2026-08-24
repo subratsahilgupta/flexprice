@@ -301,6 +301,19 @@ worker:
     minReplicas: 1
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
+  keda:
+    # Temporal task-queue-depth autoscaling for the worker Deployment.
+    # Requires KEDA >= v2.17 (native temporal scaler) installed cluster-wide.
+    # Enable EITHER worker.autoscaling (HPA) OR worker.keda — never both (render fails). Off by default.
+    enabled: false
+    endpoint: "temporal-frontend.temporal.svc:7233"   # in-cluster Temporal frontend gRPC (host:port); override for Temporal Cloud
+    pollingInterval: 15
+    cooldownPeriod: 300
+    minReplicas: 1
+    maxReplicas: 3
+    targetQueueSize: 100    # pending tasks per replica (1->N scaling ratio)
+    fallback: {}
+    authenticationRef: {}   # in-cluster plaintext temporal needs none; set for Temporal Cloud
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
