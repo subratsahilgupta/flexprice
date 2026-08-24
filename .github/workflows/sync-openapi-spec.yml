@@ -1,12 +1,8 @@
-# On every published release, regenerate the OpenAPI spec and open a PR in
-# each downstream repo that embeds or publishes it.
+# On release, regenerate the OpenAPI spec and open a PR in each downstream repo.
 #
-# Regenerates with `make swagger` rather than copying the committed
-# docs/swagger/swagger-3-0.json: nothing guarantees that file was refreshed
-# before the release was cut, and silently syncing a stale spec downstream is
-# the exact failure this pipeline exists to prevent.
-#
-# Actions are SHA-pinned: this workflow carries a cross-repo write token.
+# - Regenerates rather than copying the committed spec: nothing guarantees that
+#   file was refreshed before the release was cut.
+# - Actions are SHA-pinned: this workflow carries a cross-repo write token.
 name: Sync OpenAPI spec downstream
 
 on:
@@ -26,7 +22,7 @@ jobs:
   sync:
     if: ${{ github.event_name == 'workflow_dispatch' || (!github.event.release.prerelease && !github.event.release.draft) }}
     strategy:
-      # One target failing must not stop the other from getting its PR.
+      # One target failing must not block the other's PR.
       fail-fast: false
       matrix:
         include:
@@ -45,9 +41,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # make swagger shells out to Node (fix_swagger_internal_types.mjs) and
-      # Python (fix_swagger_refs.sh, update_swagger_servers.sh), so both are
-      # required even though this is a Go project.
+      # make swagger shells out to Node and Python, so both are required here
+      # even though this is a Go project.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
@@ -59,10 +54,8 @@ jobs:
       - name: Regenerate the OpenAPI spec
         run: make swagger
 
-      # make swagger-3-0 posts to converter.swagger.io, an external service.
-      # If it is down or rate-limited, the conversion can write an empty or
-      # malformed file rather than failing outright — so validate before
-      # propagating it downstream.
+      # make swagger-3-0 posts to converter.swagger.io; when that service
+      # misbehaves it writes a truncated file rather than failing outright.
       - name: Verify the regenerated spec is valid
         run: |
           SPEC=docs/swagger/swagger-3-0.json
@@ -115,10 +108,8 @@ jobs:
             const body = `Workflow run failed: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\nTriggered by: ${context.eventName}`;
             const { owner, repo } = context.repo;
 
-            // Search by title rather than by label: the automation-failure
-            // label may not exist in this repo, and a label-filtered query
-            // would then silently return nothing and open a duplicate issue
-            // on every failure.
+            // Search by title, not label: the label may not exist here, and a
+            // label-filtered query would then open a duplicate every failure.
             const existing = await github.rest.issues.listForRepo({
               owner, repo, state: 'open', per_page: 100,
             });
@@ -129,8 +120,7 @@ jobs:
                 owner, repo, issue_number: match.number, body,
               });
             } else {
-              // Try labelled first; fall back to unlabelled if the label is
-              // missing. A missing label must never swallow a failure report.
+              // A missing label must never swallow a failure report.
               try {
                 await github.rest.issues.create({
                   owner, repo, title, body, labels: ['automation-failure'],
