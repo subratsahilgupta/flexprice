@@ -41,7 +41,7 @@ func NewNewCustomerLifecycle(c e2eprobe.Client, r e2eprobe.Registry, runID strin
 	return &NewCustomerLifecycle{client: c, reg: r, runID: runID, opts: opts}
 }
 
-func (s *NewCustomerLifecycle) Name() string         { return "new-customer-lifecycle" }
+func (s *NewCustomerLifecycle) Name() string        { return "new-customer-lifecycle" }
 func (s *NewCustomerLifecycle) Kind() e2eprobe.Kind { return e2eprobe.KindScenario }
 
 func (s *NewCustomerLifecycle) Run(ctx context.Context) error {
@@ -58,9 +58,9 @@ func (s *NewCustomerLifecycle) Run(ctx context.Context) error {
 
 	if _, err := s.client.Customers().Create(ctx, types.CreateCustomerRequest{
 		ExternalID: ext,
-		Name:       strPtr("E2EProbe Ephemeral"),
+		Name:       "E2EProbe Ephemeral",
 		Metadata: map[string]string{
-			"e2eprobe": "true",
+			"e2eprobe":        "true",
 			"e2eprobe_cohort": "ephemeral",
 			"e2eprobe_role":   "ephemeral",
 			"e2eprobe_run_id": s.runID,
@@ -99,7 +99,7 @@ func (s *NewCustomerLifecycle) Run(ctx context.Context) error {
 			EventName:          "e2eprobe_count",
 			ExternalCustomerID: ext,
 			Properties: map[string]string{
-				"e2eprobe": "true",
+				"e2eprobe":        "true",
 				"e2eprobe_run_id": s.runID,
 			},
 		}); err != nil {

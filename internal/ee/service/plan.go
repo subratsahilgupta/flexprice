@@ -170,6 +170,12 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 			expandFields = append(expandFields, string(types.ExpandPriceUnit))
 		}
 
+		// If features should be expanded (root level or nested under prices), propagate to prices
+		// so each price's reporting unit (e.g. usage displayed in "minutes" vs raw "seconds") is attached
+		if filter.GetExpand().Has(types.ExpandFeatures) || filter.GetExpand().GetNested(types.ExpandPrices).Has(types.ExpandFeatures) {
+			expandFields = append(expandFields, string(types.ExpandFeatures))
+		}
+
 		// Set expand string if any expansions are requested
 		if len(expandFields) > 0 {
 			priceFilter = priceFilter.WithExpand(strings.Join(expandFields, ","))
@@ -650,6 +656,16 @@ func (s *planService) SyncPlanPricesV2(ctx context.Context, planID string) (*dto
 
 			subFilter := types.NewNoLimitSubscriptionFilter()
 			subFilter.SubscriptionIDs = subscriptionIDs
+			// Must mirror the discovery query in ListPlanLineItemsToCreateV2 —
+			// SubRepo.List defaults to subscription_status=active when unset,
+			// which would silently drop trialing/draft/incomplete subs and
+			// surface as "price or subscription not found for v2 sync".
+			subFilter.SubscriptionStatus = []types.SubscriptionStatus{
+				types.SubscriptionStatusActive,
+				types.SubscriptionStatusTrialing,
+				types.SubscriptionStatusDraft,
+				types.SubscriptionStatusIncomplete,
+			}
 			subs, serr := s.SubRepo.List(ctx, subFilter)
 			if serr != nil {
 				return nil, serr

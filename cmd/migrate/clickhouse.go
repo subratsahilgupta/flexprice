@@ -21,6 +21,7 @@ import (
 func newClickHouseCmd() *cobra.Command {
 	var timeout int
 	var chDir string
+	var chFile string
 
 	cmd := &cobra.Command{
 		Use:   "clickhouse",
@@ -39,7 +40,7 @@ func newClickHouseCmd() *cobra.Command {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 			defer cancel()
 			l.Info(ctx, "Running ClickHouse migrations...", "address", cfg.ClickHouse.Address, "database", cfg.ClickHouse.Database, "tls", cfg.ClickHouse.TLS)
-			if err := runClickHouseMigrations(ctx, cfg, chDir, l); err != nil {
+			if err := runClickHouseMigrations(ctx, cfg, chDir, chFile, l); err != nil {
 				l.Fatal(ctx, "ClickHouse migration failed", "error", err)
 			}
 			l.Info(ctx, "ClickHouse migrations completed successfully")
@@ -50,6 +51,7 @@ func newClickHouseCmd() *cobra.Command {
 
 	cmd.Flags().IntVar(&timeout, "timeout", 300, "Timeout in seconds for the migration")
 	cmd.Flags().StringVar(&chDir, "clickhouse-dir", "migrations/clickhouse", "Directory of ClickHouse .sql migration files")
+	cmd.Flags().StringVar(&chFile, "file", "", "Apply a single .sql file (e.g. a baseline) instead of scanning --clickhouse-dir")
 
 	return cmd
 }
@@ -65,7 +67,10 @@ var validCHIdent = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 //
 // It ensures the target database exists first, then executes each statement in
 // each file individually (the native protocol runs one statement per Exec).
-func runClickHouseMigrations(ctx context.Context, cfg *config.Configuration, dir string, log *logger.Logger) error {
+//
+// When file is non-empty, only that single .sql file is applied and dir is
+// ignored -- used to apply a baseline snapshot instead of the whole directory.
+func runClickHouseMigrations(ctx context.Context, cfg *config.Configuration, dir, file string, log *logger.Logger) error {
 	opts := cfg.ClickHouse.GetClientOptions()
 	db := cfg.ClickHouse.Database
 
@@ -109,13 +114,21 @@ func runClickHouseMigrations(ctx context.Context, cfg *config.Configuration, dir
 	}
 	defer dbConn.Close()
 
-	files, err := filepath.Glob(filepath.Join(dir, "*.sql"))
-	if err != nil {
-		return fmt.Errorf("glob %s: %w", dir, err)
-	}
-	sort.Strings(files)
-	if len(files) == 0 {
-		return fmt.Errorf("no .sql files found in %s", dir)
+	var files []string
+	if file != "" {
+		if _, err := os.Stat(file); err != nil {
+			return fmt.Errorf("stat %s: %w", file, err)
+		}
+		files = []string{file}
+	} else {
+		files, err = filepath.Glob(filepath.Join(dir, "*.sql"))
+		if err != nil {
+			return fmt.Errorf("glob %s: %w", dir, err)
+		}
+		sort.Strings(files)
+		if len(files) == 0 {
+			return fmt.Errorf("no .sql files found in %s", dir)
+		}
 	}
 
 	for _, f := range files {
