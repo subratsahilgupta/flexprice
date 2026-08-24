@@ -32,10 +32,6 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 		return
 	}
 
-	// Captured before the service drops them, so the caller is told what was
-	// ignored rather than silently losing the field.
-	warnings := req.DeprecationWarnings()
-
 	meter, err := h.service.CreateMeter(ctx, &req)
 	if err != nil {
 		h.log.Error(c.Request.Context(), "Failed to create meter", "error", err)
@@ -43,9 +39,7 @@ func (h *MeterHandler) CreateMeter(c *gin.Context) {
 		return
 	}
 
-	resp := dto.ToMeterResponse(meter)
-	resp.Warnings = warnings
-	c.JSON(http.StatusCreated, resp)
+	c.JSON(http.StatusCreated, dto.ToMeterResponse(meter))
 }
 
 func (h *MeterHandler) GetAllMeters(c *gin.Context) {

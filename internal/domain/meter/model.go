@@ -69,9 +69,15 @@ type Aggregation struct {
 	// to scale up by a factor of 1000. If not provided, it will be null.
 	Multiplier *decimal.Decimal `json:"multiplier,omitempty" swaggertype:"string"`
 
-	// BucketSize is used only for MAX aggregation when windowed aggregation is needed
-	// It defines the size of time windows to calculate max values within
-	BucketSize types.WindowSize `json:"bucket_size,omitempty"`
+	// BucketSize windows the aggregation: the meter aggregates within each window
+	// and the window results are summed.
+	//
+	// Deprecated: configure bucket_size on the price instead. Still read and
+	// honoured — meters that carry it keep billing exactly as before, and new
+	// meters may still set it — but a price-level bucket_size takes precedence
+	// and is the only place new configuration should go. See
+	// price.ResolveBucketSize.
+	BucketSize types.WindowSize `json:"bucket_size,omitempty" extensions:"x-speakeasy-deprecation-message=Deprecated: set bucket_size on the price instead. Still honoured for existing meters."`
 
 	// GroupBy is the property name in event.properties to group by before aggregating.
 	// Requires MAX aggregation. Windowing comes from the price, so this no longer

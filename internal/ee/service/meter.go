@@ -42,16 +42,6 @@ func (s *meterService) CreateMeter(ctx context.Context, req *dto.CreateMeterRequ
 			Mark(ierr.ErrValidation)
 	}
 
-	// Bucketing is configured on the price, not the meter. Existing meters keep
-	// their bucket_size and continue to resolve through it, but new ones must not
-	// add a second source of truth.
-	//
-	// DEPRECATION: this is a soft rejection — the field is dropped and the caller
-	// is told, rather than the request failing. Existing integrations that still
-	// send it keep working, and their meter is created unbucketed. Once callers
-	// have migrated, swap this for a hard ErrValidation.
-	req.DropDeprecatedFields()
-
 	meter := req.ToMeter(types.GetTenantID(ctx), types.GetUserID(ctx))
 	meter.EnvironmentID = types.GetEnvironmentID(ctx)
 

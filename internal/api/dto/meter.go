@@ -18,25 +18,6 @@ type CreateMeterRequest struct {
 	ResetUsage  types.ResetUsage  `json:"reset_usage" binding:"required"`
 }
 
-// DeprecationWarnings reports request fields that are accepted for backwards
-// compatibility but no longer honoured. Callers get a 201 plus this notice
-// rather than a hard failure, so existing integrations keep working while they
-// migrate.
-func (r *CreateMeterRequest) DeprecationWarnings() []string {
-	var w []string
-	if r.Aggregation.BucketSize != "" {
-		w = append(w, "aggregation.bucket_size is deprecated on meters and was ignored — bucketing is configured on the price. Set bucket_size on the plan charge instead.")
-	}
-	return w
-}
-
-// DropDeprecatedFields clears fields reported by DeprecationWarnings so they
-// never reach persistence. Call DeprecationWarnings first if the notices are
-// needed; this is destructive.
-func (r *CreateMeterRequest) DropDeprecatedFields() {
-	r.Aggregation.BucketSize = ""
-}
-
 // UpdateMeterRequest represents the request payload for updating a meter
 type UpdateMeterRequest struct {
 	Filters []meter.Filter `json:"filters"`
@@ -51,12 +32,9 @@ type MeterResponse struct {
 	Aggregation meter.Aggregation `json:"aggregation"`
 	Filters     []meter.Filter    `json:"filters"`
 	ResetUsage  types.ResetUsage  `json:"reset_usage"`
-	// Warnings carries non-fatal notices about the request, e.g. deprecated
-	// fields that were accepted but ignored. Empty on a clean request.
-	Warnings  []string  `json:"warnings,omitempty"`
-	CreatedAt time.Time `json:"created_at" example:"2024-03-20T15:04:05Z"`
-	UpdatedAt time.Time `json:"updated_at" example:"2024-03-20T15:04:05Z"`
-	Status    string    `json:"status" example:"published"`
+	CreatedAt   time.Time         `json:"created_at" example:"2024-03-20T15:04:05Z"`
+	UpdatedAt   time.Time         `json:"updated_at" example:"2024-03-20T15:04:05Z"`
+	Status      string            `json:"status" example:"published"`
 }
 
 func (r *MeterResponse) ToMeter() *meter.Meter {
