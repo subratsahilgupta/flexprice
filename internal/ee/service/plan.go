@@ -235,8 +235,11 @@ func (s *planService) GetPlans(ctx context.Context, filter *types.PlanFilter) (*
 	// Fetch price sync status if requested. Not bulk-fetchable (each plan has
 	// its own current sequence and stale-subscription count), so this is one
 	// query pair per plan — fine for the opt-in, small-N callers (e.g. a
-	// single-plan lookup by ID) this expand is meant for; avoid requesting it
-	// on large unfiltered plan listings.
+	// single-plan lookup by ID) this expand is meant for.
+	// TODO(perf): serial per-plan fetch degrades on a large unfiltered
+	// listing (up to QueryFilter's 1000-row cap, i.e. up to 2000 sequential
+	// queries). Consider a bulk repository method or a bounded errgroup if
+	// this expand starts getting combined with wide plan listings.
 	syncStatusByPlanID := make(map[string]*dto.PlanPriceSyncStatusResponse)
 	if filter.GetExpand().Has(types.ExpandPriceSyncStatus) {
 		for _, planID := range planIDs {
