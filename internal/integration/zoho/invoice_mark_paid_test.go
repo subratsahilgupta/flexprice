@@ -48,6 +48,9 @@ type fakeZohoClient struct {
 	// calls so a test can walk an invoice from draft to approved. The last entry sticks
 	// once the sequence is exhausted.
 	statusSequence []string
+	// balanceSequence mirrors statusSequence for the invoice balance, so a test can have
+	// Zoho settle the invoice midway through the approval wait.
+	balanceSequence []decimal.Decimal
 }
 
 func (f *fakeZohoClient) GetInvoice(_ context.Context, _ string) (*InvoiceResponse, error) {
@@ -55,12 +58,16 @@ func (f *fakeZohoClient) GetInvoice(_ context.Context, _ string) (*InvoiceRespon
 	if f.getInvoiceErr != nil {
 		return nil, f.getInvoiceErr
 	}
-	if len(f.statusSequence) == 0 || f.getInvoiceResp == nil {
+	if f.getInvoiceResp == nil || (len(f.statusSequence) == 0 && len(f.balanceSequence) == 0) {
 		return f.getInvoiceResp, nil
 	}
-	idx := min(f.getInvoiceCalls-1, len(f.statusSequence)-1)
 	clone := *f.getInvoiceResp
-	clone.Status = f.statusSequence[idx]
+	if len(f.statusSequence) > 0 {
+		clone.Status = f.statusSequence[min(f.getInvoiceCalls-1, len(f.statusSequence)-1)]
+	}
+	if len(f.balanceSequence) > 0 {
+		clone.Balance = f.balanceSequence[min(f.getInvoiceCalls-1, len(f.balanceSequence)-1)]
+	}
 	return &clone, nil
 }
 

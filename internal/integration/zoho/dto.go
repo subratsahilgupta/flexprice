@@ -168,8 +168,6 @@ type InvoiceResponse struct {
 }
 
 // Zoho Books invoice statuses, as returned by the API and sent on inbound webhooks.
-// Draft, PendingApproval and Rejected are the approval-flow states: Zoho refuses a
-// customer payment against an invoice sitting in any of them.
 const (
 	InvoiceStatusDraft           = "draft"
 	InvoiceStatusPendingApproval = "pending_approval"

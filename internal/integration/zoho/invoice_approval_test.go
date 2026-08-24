@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -195,13 +196,52 @@ func TestEnsureApprovedForPayment(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.False(t, payable)
+				assert.Nil(t, payable)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tt.wantPayable, payable)
+				assert.Equal(t, tt.wantPayable, payable != nil)
 				assert.Equal(t, tt.wantGetInvoiceCalls, client.getInvoiceCalls, "poll reads")
 			}
 			assert.Equal(t, tt.wantSubmitCalls, client.submitCalls, "submit calls")
+		})
+	}
+}
+
+// Zoho can settle the invoice (inbound webhook, or a human) during the approval wait, so
+// the caller must settle against the post-poll read rather than the stale pre-wait one.
+func TestEnsureApprovedForPayment_ReturnsPostPollInvoice(t *testing.T) {
+	tests := []struct {
+		name        string
+		pollBalance decimal.Decimal
+	}{
+		{name: "balance reduced during approval", pollBalance: decimal.NewFromInt(60)},
+		{name: "balance settled during approval", pollBalance: decimal.Zero},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &fakeZohoClient{
+				getInvoiceResp: &InvoiceResponse{
+					InvoiceID:  "zoho_inv_1",
+					CustomerID: "zoho_cust_1",
+				},
+				statusSequence:  []string{"approved"},
+				balanceSequence: []decimal.Decimal{tt.pollBalance},
+				syncConfig:      syncConfigWithApproval(true),
+			}
+			svc := newTestInvoiceService(client, &fakeMappingRepo{})
+
+			payable, err := svc.ensureApprovedForPaymentWithin(context.Background(), "inv_1", &InvoiceResponse{
+				InvoiceID:  "zoho_inv_1",
+				CustomerID: "zoho_cust_1",
+				Status:     InvoiceStatusDraft,
+				Balance:    decimal.NewFromInt(100),
+			}, 0, approvalMaxPolls)
+
+			require.NoError(t, err)
+			require.NotNil(t, payable)
+			assert.True(t, tt.pollBalance.Equal(payable.Balance),
+				"want post-poll balance %s, got %s", tt.pollBalance, payable.Balance)
 		})
 	}
 }
@@ -213,6 +253,6 @@ func TestEnsureApprovedForPayment_NilInvoice(t *testing.T) {
 	payable, err := svc.ensureApprovedForPaymentWithin(context.Background(), "inv_1", nil, 0, approvalMaxPolls)
 
 	require.NoError(t, err)
-	assert.False(t, payable)
+	assert.Nil(t, payable)
 	assert.Equal(t, 0, client.submitCalls)
 }

@@ -264,11 +264,17 @@ func (s *InvoiceService) MarkInvoicePaidInZoho(ctx context.Context, flexpriceInv
 		return nil
 	}
 
-	payable, err := s.ensureApprovedForPayment(ctx, flexpriceInvoiceID, zohoInv)
+	zohoInv, err = s.ensureApprovedForPayment(ctx, flexpriceInvoiceID, zohoInv)
 	if err != nil {
 		return err
 	}
-	if !payable {
+	if zohoInv == nil {
+		return nil
+	}
+	if !zohoInv.Balance.IsPositive() {
+		s.logger.Info(ctx, "Zoho invoice balance settled while awaiting approval, skipping mark-paid",
+			"invoice_id", flexpriceInvoiceID,
+			"zoho_invoice_id", zohoInvoiceID)
 		return nil
 	}
 
