@@ -164,6 +164,23 @@ api:
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 80
+  # KEDA ScaledObject combining ALB request-rate (aws-cloudwatch) with cpu/mem
+  # triggers for the api Deployment. Enable EITHER api.autoscaling (HPA) OR
+  # api.keda — never both (render fails). Off by default.
+  keda:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    pollingInterval: 30
+    cooldownPeriod: 300
+    cpuValue: ""     # target CPU utilization % for the cpu trigger; empty = trigger omitted
+    memValue: ""     # target memory utilization % for the memory trigger; empty = trigger omitted
+    request:
+      enabled: false
+      targetGroup: ""    # ALB target group name/ARN suffix (CloudWatch TargetGroup dimension)
+      targetValue: 1000  # target RequestCountPerTarget
+      awsRegion: ""
+      authenticationRef: {}   # TriggerAuthentication for IRSA (podIdentity: aws) built in infra
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
@@ -226,6 +243,8 @@ consumer:
     pollingInterval: 15         # seconds between KEDA polls
     cooldownPeriod: 300         # seconds before scaling down to minReplicas
     offsetResetPolicy: "earliest"
+    cpuValue: ""                # target CPU utilization % for the cpu trigger; empty = trigger omitted
+    memValue: ""                # target memory utilization % for the memory trigger; empty = trigger omitted
     fallback: {}                # KEDA fallback (e.g. failureThreshold + replicas)
     # Reference to a KEDA TriggerAuthentication when Kafka needs SASL/IAM.
     # Example:
@@ -312,6 +331,9 @@ worker:
     minReplicas: 1
     maxReplicas: 3
     targetQueueSize: 100    # pending tasks per replica (1->N scaling ratio)
+    queues: []               # task queues to watch, one temporal trigger each; empty = single trigger on temporalConfig.taskQueue (back-compat)
+    cpuValue: ""             # target CPU utilization % for the cpu trigger; empty = trigger omitted
+    memValue: ""             # target memory utilization % for the memory trigger; empty = trigger omitted
     fallback: {}
     authenticationRef: {}   # in-cluster plaintext temporal needs none; set for Temporal Cloud
   podDisruptionBudget:

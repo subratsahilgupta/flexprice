@@ -28,14 +28,29 @@ spec:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   triggers:
+    {{- $queues := .Values.worker.keda.queues | default (list (.Values.temporalConfig.taskQueue | default "billing-task-queue")) }}
+    {{- range $q := $queues }}
     - type: temporal
       metadata:
-        endpoint: {{ .Values.worker.keda.endpoint | default "temporal-frontend.temporal.svc:7233" | quote }}
-        namespace: {{ .Values.temporalConfig.namespace | quote }}
-        taskQueue: {{ .Values.temporalConfig.taskQueue | default "billing-task-queue" | quote }}
-        targetQueueSize: {{ .Values.worker.keda.targetQueueSize | default 100 | quote }}
-      {{- with .Values.worker.keda.authenticationRef }}
+        endpoint: {{ $.Values.worker.keda.endpoint | default "temporal-frontend.temporal.svc:7233" | quote }}
+        namespace: {{ $.Values.temporalConfig.namespace | quote }}
+        taskQueue: {{ $q | quote }}
+        targetQueueSize: {{ $.Values.worker.keda.targetQueueSize | default 100 | quote }}
+      {{- with $.Values.worker.keda.authenticationRef }}
       authenticationRef:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+    {{- end }}
+    {{- if $.Values.worker.keda.cpuValue }}
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: {{ $.Values.worker.keda.cpuValue | quote }}
+    {{- end }}
+    {{- if $.Values.worker.keda.memValue }}
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: {{ $.Values.worker.keda.memValue | quote }}
+    {{- end }}
 {{- end }}

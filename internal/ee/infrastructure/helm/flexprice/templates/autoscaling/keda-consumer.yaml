@@ -75,4 +75,16 @@ spec:
       authenticationRef:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+    {{- if .Values.consumer.keda.cpuValue }}
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: {{ .Values.consumer.keda.cpuValue | quote }}
+    {{- end }}
+    {{- if .Values.consumer.keda.memValue }}
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: {{ .Values.consumer.keda.memValue | quote }}
+    {{- end }}
 {{- end }}
