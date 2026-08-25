@@ -1,0 +1,74 @@
+# Static Application Security Testing (SAST) at PR time.
+#
+# Phase 1 (this file): SOFT-FAIL. Semgrep and gosec run on every PR and report
+# findings, but never block the merge — we need a clean baseline triage first.
+# Phase 2: flip to blocking on high-confidence rules once the baseline is
+# triaged (drop the `|| true` / add `--error` for semgrep, `-fail` for gosec).
+#
+# Scope boundaries (don't duplicate what already runs):
+#   - Secrets scanning is delegated to GitGuardian — no secret rules here.
+#   - Dependency CVEs are delegated to the Trivy fs scan — no govulncheck here.
+#
+# Tools run via their CLIs (pip/go install) rather than third-party actions, so
+# there is no unverified action SHA to pin; actions/checkout is SHA-pinned per
+# repo convention.
+name: SAST
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep (soft-fail)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      # SOFT phase-1: `|| true` so findings report but never block the PR.
+      # SARIF is uploaded best-effort below.
+      - name: Semgrep scan
+        run: |
+          semgrep scan \
+            --config p/default \
+            --config p/golang \
+            --metrics=off \
+            --sarif --output semgrep.sarif \
+            . || true
+
+      # continue-on-error + hashFiles guard: a private repo without GitHub code
+      # scanning enabled will reject the upload, and that must not fail the job
+      # (learned the hard way with Checkov).
+      - name: Upload Semgrep SARIF
+        if: always() && hashFiles('semgrep.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+
+  gosec:
+    name: gosec (soft-fail)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      # SOFT phase-1: `-no-fail` so findings report but the job exits 0.
+      - name: gosec scan
+        run: gosec -no-fail -fmt text ./...
