@@ -116,6 +116,16 @@ var environmentDiscoveryRoutes = map[string]map[string]struct{}{
 	"/v1/users": {
 		http.MethodPost: {},
 	},
+	// User admin is tenant-scoped, not environment-scoped: it acts on
+	// users/service-accounts/roles, never on an environment, so an unbound
+	// dashboard JWT must reach it during bootstrap like the other user routes.
+	"/v1/users/:id": {
+		http.MethodPut:    {},
+		http.MethodDelete: {},
+	},
+	"/v1/users/:id/roles": {
+		http.MethodPut: {},
+	},
 	"/v1/users/search": {
 		http.MethodPost: {},
 	},

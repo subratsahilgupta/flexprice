@@ -449,6 +449,9 @@ func TestAuthenticateMiddleware_EnvironmentDiscoveryWithoutHeader(t *testing.T) 
 		r.GET("/v1/users/me", handler)
 		r.PUT("/v1/users/me", handler)
 		r.POST("/v1/users", handler)
+		r.PUT("/v1/users/:id", handler)
+		r.PUT("/v1/users/:id/roles", handler)
+		r.DELETE("/v1/users/:id", handler)
 		r.GET("/v1/environments", handler)
 		r.GET("/v1/environments/:id", handler)
 		r.POST("/v1/environments", handler)
@@ -494,6 +497,9 @@ func TestAuthenticateMiddleware_EnvironmentDiscoveryWithoutHeader(t *testing.T) 
 		}{
 			{http.MethodPut, "/v1/users/me"},
 			{http.MethodPost, "/v1/users"},
+			{http.MethodPut, "/v1/users/some_id"},
+			{http.MethodDelete, "/v1/users/some_id"},
+			{http.MethodPut, "/v1/users/some_id/roles"},
 			{http.MethodPost, "/v1/environments"},
 			{http.MethodPut, "/v1/tenants/update"},
 		} {
