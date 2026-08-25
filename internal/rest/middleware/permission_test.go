@@ -339,4 +339,19 @@ func TestPortalSession_AllowsWriter(t *testing.T) {
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/customers/portal/victim-ext", nil))
 
 	assert.Equal(t, http.StatusOK, w.Code, "a writer principal must still be able to create a portal session")
+	assert.Contains(t, w.Body.String(), "portal-jwt", "the session token must be returned on the allowed path")
+}
+
+// TestPortalSession_AllowsSuperAdmin confirms a super_admin principal (wildcard
+// grant in the real roles.json) can also create a portal session.
+func TestPortalSession_AllowsSuperAdmin(t *testing.T) {
+	rbacSvc := realRBACService(t)
+	router := newPortalSessionTestRouter(t, rbacSvc, string(types.UserTypeUser),
+		[]string{types.RoleSuperAdmin.String()})
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/customers/portal/victim-ext", nil))
+
+	assert.Equal(t, http.StatusOK, w.Code, "a super_admin principal must be able to create a portal session")
+	assert.Contains(t, w.Body.String(), "portal-jwt", "the session token must be returned on the allowed path")
 }
