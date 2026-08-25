@@ -666,6 +666,22 @@ func (s *userService) RemoveUser(ctx context.Context, id string) error {
 			Mark(ierr.ErrValidation)
 	}
 
+	// Mirrors UpdateUserRoles: the route also carries superAdminOnly, but removing a
+	// person deletes their auth-provider identity with a global service-role key, so
+	// the rule is enforced here too rather than living only in the router.
+	if !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
+		return ierr.NewError("only super_admin can remove users").
+			WithHint("Ask a tenant super_admin to remove this user").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
+	actorUserID := types.GetUserID(ctx)
+	if id == actorUserID {
+		return ierr.NewError("cannot remove yourself").
+			WithHint("Ask another super_admin to remove you").
+			Mark(ierr.ErrPermissionDenied)
+	}
+
 	existingUser, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
@@ -686,22 +702,6 @@ func (s *userService) RemoveUser(ctx context.Context, id string) error {
 		return ierr.NewError("user not found").
 			WithHint("User does not belong to your tenant").
 			Mark(ierr.ErrNotFound)
-	}
-
-	// Mirrors UpdateUserRoles: the route also carries superAdminOnly, but removing a
-	// person deletes their auth-provider identity with a global service-role key, so
-	// the rule is enforced here too rather than living only in the router.
-	if !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
-		return ierr.NewError("only super_admin can remove users").
-			WithHint("Ask a tenant super_admin to remove this user").
-			Mark(ierr.ErrPermissionDenied)
-	}
-
-	actorUserID := types.GetUserID(ctx)
-	if id == actorUserID {
-		return ierr.NewError("cannot remove yourself").
-			WithHint("Ask another super_admin to remove you").
-			Mark(ierr.ErrPermissionDenied)
 	}
 
 	if existingUser.Type != types.UserTypeUser {
