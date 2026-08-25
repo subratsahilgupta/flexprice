@@ -666,9 +666,6 @@ func (s *userService) RemoveUser(ctx context.Context, id string) error {
 			Mark(ierr.ErrValidation)
 	}
 
-	// Mirrors UpdateUserRoles: the route also carries superAdminOnly, but removing a
-	// person deletes their auth-provider identity with a global service-role key, so
-	// the rule is enforced here too rather than living only in the router.
 	if !lo.Contains(types.GetRoles(ctx), types.RoleSuperAdmin.String()) {
 		return ierr.NewError("only super_admin can remove users").
 			WithHint("Ask a tenant super_admin to remove this user").
@@ -687,11 +684,6 @@ func (s *userService) RemoveUser(ctx context.Context, id string) error {
 		return err
 	}
 
-	// Defense-in-depth tenant scoping: userRepo.GetByID already filters by the caller's
-	// tenant for the production Ent-backed repository, but that's an implicit property of
-	// one implementation (the in-memory test store used elsewhere does not enforce it), and
-	// this method deletes the target's identity with a global Supabase service-role key —
-	// too security-sensitive to rely on an implicit contract across repository layers.
 	authTenantID := types.GetTenantID(ctx)
 	if authTenantID == "" {
 		return ierr.NewError("tenant ID is required").
@@ -719,10 +711,6 @@ func (s *userService) RemoveUser(ctx context.Context, id string) error {
 	tenantID := existingUser.TenantID
 	provider := authProvider.NewProvider(s.cfg)
 
-	// Serialize concurrent removals for this tenant: without a lock, two concurrent
-	// requests can both observe more than one human user, both pass the check below,
-	// and both archive a different user — leaving the tenant with none. The invariant
-	// check and the archive must be atomic together.
 	err = s.db.WithTx(ctx, func(ctx context.Context) error {
 		if err := s.db.LockWithWait(ctx, postgres.LockRequest{Key: "user_removal:" + tenantID}); err != nil {
 			return ierr.WithError(err).
@@ -743,8 +731,6 @@ func (s *userService) RemoveUser(ctx context.Context, id string) error {
 				Mark(ierr.ErrValidation)
 		}
 
-		// The user is only considered removed once the auth provider identity is gone;
-		// the local record must not be touched if that fails.
 		if err := provider.RemoveUser(ctx, id); err != nil {
 			return err
 		}

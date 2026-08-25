@@ -182,19 +182,12 @@ func (s *supabaseAuth) AssignUserToTenant(ctx context.Context, userID string, te
 	return nil
 }
 
-// RemoveUser permanently deletes the user's identity from Supabase. It first confirms the
-// user exists via Admin.GetUser, then issues the delete. The vendored supabase-go Admin
-// client has no delete wrapper, so the delete is built directly against the same admin
-// endpoint/credentials the rest of the client uses.
+// RemoveUser permanently deletes the user's identity from Supabase.
 func (s *supabaseAuth) RemoveUser(ctx context.Context, userID string) error {
 	_, err := s.client.Admin.GetUser(ctx, userID)
 	if err != nil {
 		var errRes *supabase.ErrorResponse
 		if errors.As(err, &errRes) && errRes.Code == http.StatusNotFound {
-			// A prior call may have already deleted the Supabase identity but failed before
-			// the local user could be archived (e.g. the archive step errored after this
-			// succeeded). Treat "already gone" as success so a retry of the whole removal
-			// can still complete the local archival.
 			s.logger.Info(ctx, "user already removed from Supabase", "target_user_id", userID)
 			return nil
 		}
@@ -215,9 +208,6 @@ func (s *supabaseAuth) RemoveUser(ctx context.Context, userID string) error {
 
 	if delResp.StatusCode < http.StatusOK || delResp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(delResp.Body)
-		// The upstream body is logged server-side only, not returned to the caller:
-		// WithReportableDetails is surfaced to API clients, and Supabase's error body
-		// could contain internal provider details we don't want to leak to a tenant admin.
 		s.logger.Error(ctx, "supabase admin delete user request failed",
 			"error", fmt.Sprintf("status %d", delResp.StatusCode),
 			"target_user_id", userID,
@@ -236,9 +226,7 @@ func (s *supabaseAuth) RemoveUser(ctx context.Context, userID string) error {
 	return nil
 }
 
-// deleteUser issues a DELETE against the Supabase admin users/{id} endpoint. The vendored
-// supabase-go Admin client has no delete wrapper, so this uses the same base URL and
-// service-role credentials as the rest of the client.
+// deleteUser issues a DELETE against the Supabase admin users/{id} endpoint.
 func (s *supabaseAuth) deleteUser(ctx context.Context, userID string) (*http.Response, error) {
 	reqURL := fmt.Sprintf("%s/%s/users/%s", s.client.BaseURL, supabase.AdminEndpoint, url.PathEscape(userID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)

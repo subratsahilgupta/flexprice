@@ -188,8 +188,7 @@ func (f *flexpriceAuth) AssignUserToTenant(ctx context.Context, userID string, t
 	return nil
 }
 
-// RemoveUser is a no-op for Flexprice auth: there is no separate identity to delete, and
-// GetByEmail/GetByID already exclude archived users, which blocks further logins.
+// RemoveUser is a no-op for Flexprice auth: there is no separate identity to delete.
 func (f *flexpriceAuth) RemoveUser(ctx context.Context, userID string) error {
 	return nil
 }

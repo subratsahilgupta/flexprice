@@ -58,8 +58,6 @@ type Provider interface {
 	AssignUserToTenant(ctx context.Context, userID string, tenantID string) error
 
 	// RemoveUser permanently deletes the user's identity from the auth provider.
-	// Callers should treat a non-nil error as a failed removal and must not remove
-	// the corresponding local user record in that case.
 	RemoveUser(ctx context.Context, userID string) error
 
 	// Customer Dashboard Token Management

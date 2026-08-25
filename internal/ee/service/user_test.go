@@ -857,8 +857,6 @@ func (s *UserServiceSuite) TestRemoveUser() {
 	s.Run("last_human_user_returns_validation_error", func() {
 		s.userRepo = testutil.NewInMemoryUserStore()
 		s.secretRepo = testutil.NewInMemorySecretStore()
-		// Self-removal is rejected earlier, so the guard is only reachable when the
-		// actor's own record is already gone while their token still carries the ID.
 		_ = s.userRepo.Create(ctx, &user.User{
 			ID:        "user-1",
 			Email:     "u@example.com",

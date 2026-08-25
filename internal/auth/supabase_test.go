@@ -104,9 +104,6 @@ func TestSupabaseRemoveUser(t *testing.T) {
 	})
 
 	t.Run("succeeds without deleting when the user is already gone from Supabase", func(t *testing.T) {
-		// A prior call may have already deleted the identity but failed before the local
-		// user could be archived. A retry must treat "not found" as already-removed so the
-		// caller can complete the local archival, instead of failing forever.
 		var sawDelete bool
 		a, srv := newAuth(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodDelete {
