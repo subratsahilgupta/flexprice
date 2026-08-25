@@ -63,7 +63,11 @@ func (s *supabaseAuth) SignUp(ctx context.Context, req AuthRequest) (*AuthRespon
 			Mark(ierr.ErrPermissionDenied)
 	}
 
-	if claims.Email != req.Email {
+	// Compared case-insensitively so this agrees with the signup guard, which
+	// normalizes both sides. An exact comparison here would let a case-variant
+	// address clear the guard and then fail this check, surfacing a permission
+	// problem as an opaque system error.
+	if !strings.EqualFold(strings.TrimSpace(claims.Email), strings.TrimSpace(req.Email)) {
 		return nil, ierr.NewError("email mismatch").
 			Mark(ierr.ErrPermissionDenied)
 	}
@@ -152,6 +156,36 @@ func (s *supabaseAuth) ValidateToken(ctx context.Context, token string) (*auth.C
 		Email:         email,
 		EnvironmentID: environmentID,
 	}, nil
+}
+
+// EmailConfirmed reports whether Supabase itself has recorded a confirmed
+// email for userID, read from the Admin API rather than from the access token.
+//
+// The token is not usable for this. GoTrue on this project puts email_verified
+// only inside user_metadata, which is writable by the user through the ordinary
+// client SDK (auth.updateUser with a data field, which this codebase already
+// calls from the browser during password reset). A caller could therefore mark
+// their own unconfirmed address verified and walk through the signup guard.
+// app_metadata would be server-controlled, but GoTrue does not put the flag
+// there, and a top-level claim is absent on this project's tokens.
+//
+// auth.users.email_confirmed_at is set by GoTrue when the confirmation link is
+// followed or when an OAuth identity supplies a confirmed address, and no
+// client-side call can write it. That makes it the only trustworthy source.
+func (s *supabaseAuth) EmailConfirmed(ctx context.Context, userID string) (bool, error) {
+	user, err := s.client.Admin.GetUser(ctx, userID)
+	if err != nil {
+		return false, ierr.WithError(err).
+			WithHint("Failed to read the user's email confirmation status").
+			Mark(ierr.ErrSystem)
+	}
+	if user == nil {
+		return false, ierr.NewError("user not found in auth provider").
+			WithHint("Failed to read the user's email confirmation status").
+			Mark(ierr.ErrSystem)
+	}
+
+	return user.EmailConfirmedAt != nil, nil
 }
 
 func (s *supabaseAuth) AssignUserToTenant(ctx context.Context, userID string, tenantID string) error {
