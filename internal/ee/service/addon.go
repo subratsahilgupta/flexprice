@@ -557,6 +557,7 @@ func (s *addonService) GetActiveAddonAssociation(ctx context.Context, req dto.Ge
 	})
 	filter.StartDate = periodStart
 	filter.EndDate = periodEnd
+	filter.ActiveAt = req.ActiveAt
 
 	// Always expand addon details for active association lookup
 	filter.QueryFilter.Expand = lo.ToPtr(string(types.ExpandAddons))

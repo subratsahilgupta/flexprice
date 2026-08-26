@@ -5498,7 +5498,7 @@ func (s *subscriptionService) buildAddonLineItems(
 	lineItemBucketCfgs := make(map[string]*dto.LineItemCommitmentConfig)
 
 	for _, priceResponse := range validPrices {
-		lineItem := s.createLineItemFromPrice(ctx, priceResponse, sub, req.AddonID, addonName, associationID, requestedStart)
+		lineItem := s.createLineItemFromPrice(ctx, priceResponse, sub, req.AddonID, associationID, requestedStart)
 
 		// Onetime: end at the period boundary containing the start date.
 		// Recurring: no end date (renews each period).
@@ -5524,7 +5524,7 @@ func (s *subscriptionService) buildAddonLineItems(
 }
 
 // createLineItemFromPrice creates a subscription line item from a price for addon additions.
-func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, priceResponse *dto.PriceResponse, sub *subscription.Subscription, addonID, addonName, addonAssociationID string, addonRequestedStart time.Time) *subscription.SubscriptionLineItem {
+func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, priceResponse *dto.PriceResponse, sub *subscription.Subscription, addonID, addonAssociationID string, addonRequestedStart time.Time) *subscription.SubscriptionLineItem {
 	price := priceResponse.Price
 
 	lineItemStart := addonRequestedStart
@@ -6583,6 +6583,30 @@ func (s *subscriptionService) GetSubscriptionEntitlements(ctx context.Context, s
 	return s.GetSubscriptionEntitlementsForSubscription(ctx, sub)
 }
 
+// withAssociationWindow copies an addon's catalog entitlement into a view scoped to
+// one association's window. The entitlement itself is a catalog row shared by every
+// association of the addon, so it carries no notion of when this subscription
+// actually acquired it — without the copy, an addon attached mid-cycle looks like it
+// was there from the cycle start and its grant window backdates over usage that
+// predates it. The narrower of the two windows wins where both are set.
+func withAssociationWindow(ent *dto.EntitlementResponse, assoc *dto.AddonAssociationResponse) *dto.EntitlementResponse {
+	if ent == nil || ent.Entitlement == nil || assoc == nil {
+		return ent
+	}
+
+	updatedEntResp := *ent
+	updatedEnt := *ent.Entitlement
+	if assoc.StartDate != nil && (updatedEnt.StartDate == nil || assoc.StartDate.After(*updatedEnt.StartDate)) {
+		updatedEnt.StartDate = assoc.StartDate
+	}
+	if assoc.EndDate != nil && (updatedEnt.EndDate == nil || assoc.EndDate.Before(*updatedEnt.EndDate)) {
+		updatedEnt.EndDate = assoc.EndDate
+	}
+
+	updatedEntResp.Entitlement = &updatedEnt
+	return &updatedEntResp
+}
+
 func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription) ([]*dto.EntitlementResponse, error) {
 	if sub == nil {
 		return nil, ierr.NewError("subscription is required").
@@ -6613,6 +6637,10 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 		StartDate:     &sub.CurrentPeriodStart,
 		EndDate:       &sub.CurrentPeriodEnd,
 		AddonStatuses: []types.AddonStatus{types.AddonStatusActive, types.AddonStatusCancelled},
+		// A cancellation dated at period end keeps the entitlement to the boundary the
+		// customer paid through; one dated mid-period revokes it there. Both write
+		// addon_status=cancelled, so end_date is the only thing that tells them apart.
+		ActiveAt: lo.ToPtr(time.Now().UTC()),
 	})
 	if err != nil {
 		return nil, ierr.WithError(err).
@@ -6661,9 +6689,8 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 			if assoc == nil || assoc.AddonID == "" {
 				continue
 			}
-			ents := addonEntitlementsByID[assoc.AddonID]
-			for _, ent := range ents {
-				addonEntitlements = append(addonEntitlements, ent)
+			for _, ent := range addonEntitlementsByID[assoc.AddonID] {
+				addonEntitlements = append(addonEntitlements, withAssociationWindow(ent, assoc))
 			}
 		}
 	}

@@ -31,7 +31,7 @@ type EntitlementGrantService interface {
 	// built during the pass so the evaluator can reuse them.
 	EnsureGrantsForSubscriptions(ctx context.Context, cust *customer.Customer, subs []*subscription.Subscription, at time.Time) ([]*entitlementgrant.EntitlementGrant, *grantEvalMeta, error)
 
-	CloseEntitlementGrants(ctx context.Context, grants []*entitlementgrant.EntitlementGrant) (map[string]*entitlementgrant.EntitlementGrant, error)
+	CloseEntitlementGrants(ctx context.Context, grants []*entitlementgrant.EntitlementGrant, closeAt time.Time) (map[string]*entitlementgrant.EntitlementGrant, error)
 	OpenFeatureBasedEntitlementGrants(ctx context.Context, reqs []OpenFeatureBasedEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
 }
 
@@ -58,6 +58,7 @@ type OpenFeatureBasedEntitlementGrantsRequest struct {
 func (s *entitlementGrantService) CloseEntitlementGrants(
 	ctx context.Context,
 	grants []*entitlementgrant.EntitlementGrant,
+	closeAt time.Time,
 ) (map[string]*entitlementgrant.EntitlementGrant, error) {
 	closed := make(map[string]*entitlementgrant.EntitlementGrant, len(grants))
 
@@ -66,13 +67,15 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 			continue
 		}
 
-		boundary := lo.FromPtr(g.LastComputedAt)
+		lastComputed := lo.FromPtr(g.LastComputedAt)
 
 		// Never evaluated, so the window has no measurable life. Closing it would leave both
 		// windows permitting the same quota, because the usage it really saw was never
 		// measured into the successor's balance. Remove it instead and let the successor
 		// span the original window, where every event still counts against one pool.
-		if !boundary.After(g.ValidFrom) {
+		// Keyed on last_computed_at rather than the close boundary: a window nothing has
+		// measured cannot be split at any instant, however the caller dates the change.
+		if !lastComputed.After(g.ValidFrom) {
 			if err := s.EntitlementGrantRepo.Delete(ctx, g.ID); err != nil {
 				return nil, err
 			}
@@ -88,6 +91,10 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 				Build()
 			continue
 		}
+
+		// The change owns the boundary, so a future-dated one hands the successor its quota
+		// when the change is actually live rather than now.
+		boundary := earliestOf(latestOf(closeAt, lastComputed), g.ValidTo)
 
 		// Leaves usage, grant_status and last_computed_at alone: last_computed_at < valid_to
 		// is what keeps a closed row in the evaluator's unfinalized set for its final
@@ -178,6 +185,9 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 			WithQuota(quota).
 			WithWindow(validFrom, req.New.ValidTo).
 			WithGrantStatus(types.EntitlementGrantStatusActive).
+			WithUsage(decimal.Zero).
+			WithLastComputedAt(nil).
+			WithQuotaCrossedAt(nil).
 			WithEnvironmentID(types.GetEnvironmentID(ctx)).
 			WithBaseModel(types.GetDefaultBaseModel(ctx)).
 			Build()
@@ -410,6 +420,12 @@ func (s *entitlementGrantService) listActiveSubscriptions(
 type grantCandidate struct {
 	ec    *entitlement.Entitlement
 	quota decimal.Decimal
+
+	// startDate is the earliest instant any contributing EC was live from — an
+	// addon's association start, typically. Zero when every contributor runs for
+	// the whole cycle. The window cannot open before it, or a slot introduced
+	// mid-cycle would backdate to the cycle start and eat usage that predates it.
+	startDate time.Time
 }
 
 // openMissingGrants opens missing grants per feature: parallel = one grant per
@@ -477,19 +493,31 @@ func (s *entitlementGrantService) eligibleGrantConfigsByFeature(
 func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCandidate {
 	if featureIsParallel(featureECs) {
 		return lo.Map(featureECs, func(ec *entitlement.Entitlement, _ int) grantCandidate {
-			return grantCandidate{ec: ec, quota: lo.FromPtr(ec.GrantQuota)}
+			return grantCandidate{
+				ec:        ec,
+				quota:     lo.FromPtr(ec.GrantQuota),
+				startDate: lo.FromPtr(ec.StartDate),
+			}
 		})
 	}
 
 	primary := featureECs[0]
 	total := decimal.Zero
+	var earliest time.Time
+
 	for _, ec := range featureECs {
 		if ec.ID < primary.ID {
 			primary = ec
 		}
 		total = total.Add(lo.FromPtr(ec.GrantQuota))
+
+		start := lo.FromPtr(ec.StartDate)
+		if earliest.IsZero() || start.Before(earliest) {
+			earliest = start
+		}
 	}
-	return []grantCandidate{{ec: primary, quota: total}}
+
+	return []grantCandidate{{ec: primary, quota: total, startDate: earliest}}
 }
 
 // openIfSlotFree opens grants on the candidate's slot until it is caught up:
@@ -516,7 +544,7 @@ func (s *entitlementGrantService) openIfSlotFree(
 			return opened, nil
 		}
 
-		g, err := s.openOneGrant(ctx, sub, candidate.ec, lastEnd, meta, at, candidate.quota)
+		g, err := s.openOneGrant(ctx, sub, candidate, lastEnd, meta, at)
 		if err != nil {
 			return opened, err
 		}
@@ -534,18 +562,20 @@ func (s *entitlementGrantService) openIfSlotFree(
 func (s *entitlementGrantService) openOneGrant(
 	ctx context.Context,
 	sub *subscription.Subscription,
-	ec *entitlement.Entitlement,
+	candidate grantCandidate,
 	lastWindowEnd time.Time,
 	meta *grantEvalMeta,
 	at time.Time,
-	quota decimal.Decimal,
 ) (*entitlementgrant.EntitlementGrant, error) {
+	ec := candidate.ec
+	quota := candidate.quota
+
 	dur, err := ec.GrantDuration()
 	if err != nil {
 		return nil, err
 	}
 
-	validFrom, validTo, ok, err := s.computeGrantWindow(ctx, ec, sub, meta, lastWindowEnd, at, dur)
+	validFrom, validTo, ok, err := s.computeGrantWindow(ctx, candidate, sub, meta, lastWindowEnd, at, dur)
 	if err != nil {
 		return nil, err
 	}
@@ -592,16 +622,20 @@ func (s *entitlementGrantService) openOneGrant(
 // coverage beats window-length aesthetics.
 func (s *entitlementGrantService) computeGrantWindow(
 	ctx context.Context,
-	ec *entitlement.Entitlement,
+	candidate grantCandidate,
 	sub *subscription.Subscription,
 	meta *grantEvalMeta,
 	lastWindowEnd time.Time,
 	at time.Time,
 	dur time.Duration,
 ) (time.Time, time.Time, bool, error) {
+	ec := candidate.ec
 	cycleStart := sub.CurrentPeriodStart
 	cycleEnd := sub.CurrentPeriodEnd
-	coveredUntil := latestOf(lastWindowEnd, cycleStart)
+
+	// A slot whose configs only became live mid-cycle starts there, not at the cycle
+	// start: backdating it would hand the window usage recorded before it existed.
+	coveredUntil := latestOf(latestOf(lastWindowEnd, cycleStart), candidate.startDate)
 	searchUntil := earliestOf(at, cycleEnd)
 
 	s.Logger.Debug(ctx, "computing grant window",

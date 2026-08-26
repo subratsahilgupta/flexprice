@@ -306,14 +306,6 @@ func (s *subscriptionService) resolveClosingEntitlementGrants(
 	for _, ent := range r.closingEntitlementOverrides {
 		configIDs = append(configIDs, ent.ID)
 	}
-	closing := lo.SliceToMap(configIDs, func(id string) (string, bool) { return id, true })
-
-	// The feature's full grant EC set, so a pooled window can be told apart from one the
-	// outgoing plan owns alone.
-	ecsByFeature, err := s.GetSubscriptionGrantECsByFeature(ctx, r.currentSub)
-	if err != nil {
-		return err
-	}
 
 	filter := types.NewNoLimitEntitlementGrantFilter().
 		WithSubscriptionIDs(r.currentSub.ID).
@@ -327,21 +319,6 @@ func (s *subscriptionService) resolveClosingEntitlementGrants(
 
 	for _, g := range grants {
 		if g == nil {
-			continue
-		}
-
-		// An additive window pools every EC's quota on one row, so a contributor that
-		// survives the change — an addon's entitlement, typically — keeps the window alive.
-		// Closing it would revoke allowance the subscription still pays for, and the used
-		// quota cannot be split back across the constituents to prorate a successor.
-		featureECs := ecsByFeature[g.FeatureID()]
-		if !featureIsParallel(featureECs) && lo.SomeBy(featureECs, func(ec *entitlement.Entitlement) bool {
-			return !closing[ec.ID]
-		}) {
-			s.Logger.Info(ctx, "keeping pooled entitlement grant window open on plan change; a contributing entitlement survives",
-				"subscription_id", r.currentSub.ID,
-				"grant_id", g.ID,
-				"feature_id", g.FeatureID())
 			continue
 		}
 

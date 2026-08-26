@@ -149,7 +149,7 @@ func (s *subscriptionService) materialiseEntitlementGrants(
 		return liveByFeature[g.FeatureID()]
 	})
 
-	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, toClose)
+	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, toClose, effectiveDate)
 	if err != nil {
 		return err
 	}
@@ -267,6 +267,21 @@ func (s *subscriptionService) handleGrantsForRemovedECs(
 		}
 
 		pooled := lo.FirstOrEmpty(live)
+
+		// Nothing left to hand forward, and the successor would have to carry a zero
+		// quota — which the grant model rejects. Leaving the spent window open keeps the
+		// slot covered, so the tick cannot re-derive a fresh allowance from the surviving
+		// configs and hand back quota the pool already consumed.
+		if pooled.Remaining().IsZero() {
+			s.Logger.Info(ctx, "keeping the spent entitlement grant window open; nothing to carry forward",
+				"subscription_id", sub.ID,
+				"grant_id", pooled.ID,
+				"feature_id", featureID,
+				"quota", pooled.Quota.String(),
+				"usage", pooled.Usage.String())
+			continue
+		}
+
 		toClose = append(toClose, pooled)
 
 		// all ECs that are not removed
@@ -286,7 +301,7 @@ func (s *subscriptionService) handleGrantsForRemovedECs(
 
 	grantSvc := NewEntitlementGrantService(s.ServiceParams)
 
-	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, toClose)
+	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, toClose, effectiveDate)
 	if err != nil {
 		return err
 	}

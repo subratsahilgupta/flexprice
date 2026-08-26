@@ -456,6 +456,16 @@ func (o AddonAssociationQueryOptions) applyEntityQueryOptions(ctx context.Contex
 		query = o.applyActiveAddonAssociationFilter(query, f.StartDate, f.EndDate, f.AddonStatuses)
 	}
 
+	if f.ActiveAt != nil {
+		query = query.Where(
+			addonassociation.StartDateLTE(*f.ActiveAt),
+			addonassociation.Or(
+				addonassociation.EndDateIsNil(),
+				addonassociation.EndDateGT(*f.ActiveAt),
+			),
+		)
+	}
+
 	// Apply time range filters if specified
 	if f.TimeRangeFilter != nil {
 		if f.StartTime != nil {

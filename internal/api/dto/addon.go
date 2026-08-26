@@ -174,6 +174,9 @@ type GetActiveAddonAssociationRequest struct {
 	EndDate    *time.Time                       `json:"end_date,omitempty"`
 
 	AddonStatuses []types.AddonStatus `json:"addon_statuses,omitempty"`
+
+	// ActiveAt narrows to associations live at that instant. See AddonAssociationFilter.
+	ActiveAt *time.Time `json:"active_at,omitempty"`
 }
 
 func (r *GetActiveAddonAssociationRequest) Validate() error {
