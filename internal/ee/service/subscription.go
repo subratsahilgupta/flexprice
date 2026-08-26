@@ -5076,7 +5076,7 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 	}
 
 	proratedGrants, err := s.resolveGrantProration(
-		ctx, sub, addonGrantECs, existingGrantECs, addonRequestedStart, req.ProrationBehavior, "addon_attach")
+		ctx, sub, addonGrantECs, addonRequestedStart, req.ProrationBehavior, "addon_attach")
 	if err != nil {
 		return err
 	}

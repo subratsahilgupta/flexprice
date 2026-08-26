@@ -862,6 +862,12 @@ func (s *entitlementService) validateGrantSiblingCoherence(ctx context.Context, 
 	return nil
 }
 
+func featureIsParallel(featureECs []*entitlement.Entitlement) bool {
+	return lo.SomeBy(featureECs, func(ec *entitlement.Entitlement) bool {
+		return defaultedMode(ec.AggregationMode) == types.EntitlementAggregationModeParallel
+	})
+}
+
 func defaultedMode(m types.EntitlementAggregationMode) types.EntitlementAggregationMode {
 	if m == "" {
 		return types.EntitlementAggregationModeAdditive
