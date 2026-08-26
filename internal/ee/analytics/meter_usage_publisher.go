@@ -20,16 +20,22 @@ type messagePublisher interface {
 	Publish(topic string, messages ...*message.Message) error
 }
 
-// MeterUsagePublisher publishes meter_usage records to the analytics meter_usage topics
+// MeterUsagePublisher is the exported dependency the service depends on. The concrete impl
+// (*meterUsagePublisher) stays private per repo convention; consumers use this interface.
+type MeterUsagePublisher interface {
+	PublishMeterUsage(ctx context.Context, records []*events.MeterUsage)
+}
+
+// meterUsagePublisher publishes meter_usage records to the analytics meter_usage topics
 // AFTER they are written to ClickHouse. It is ADDITIVE and FIRE-AND-FORGET: ClickHouse stays
 // authoritative, so a publish failure here is logged and swallowed — it must never fail the
 // caller or affect billing. Gated on cfg.Analytics.Enabled: when the feed is off (or the main
-// topic is unset) the fx provider returns nil, and every method is a no-op.
+// topic is unset) the fx provider returns an untyped-nil interface, and every method is a no-op.
 //
 // Routing per record: on-time records go to the main topic; late records (ingested_at -
 // timestamp > lateThreshold) go to the lazy topic. If the lazy topic is unset, late records
 // fall back to the main topic (never dropped).
-type MeterUsagePublisher struct {
+type meterUsagePublisher struct {
 	publisher     messagePublisher
 	topic         string
 	lazyTopic     string
@@ -39,13 +45,14 @@ type MeterUsagePublisher struct {
 
 // NewMeterUsagePublisher is the fx provider. It reuses the local-cluster producer that
 // already carries source events. Gated: unless the analytics feed is enabled AND a main topic is
-// configured AND a producer exists, it returns nil (no-op), mirroring the presence gating used
-// for the KafkaSecondary dual-write path.
-func NewMeterUsagePublisher(primaryProducer *kafka.Producer, cfg *config.Configuration, logger *logger.Logger) *MeterUsagePublisher {
+// configured AND a producer exists, it returns an untyped-nil interface, mirroring the presence
+// gating used for the KafkaSecondary dual-write path. Returning untyped nil (not a typed-nil
+// *meterUsagePublisher) keeps the caller's `!= nil` guard FALSE so the method is never called.
+func NewMeterUsagePublisher(primaryProducer *kafka.Producer, cfg *config.Configuration, logger *logger.Logger) MeterUsagePublisher {
 	if !cfg.Analytics.Enabled || cfg.Analytics.MeterUsageTopic == "" || primaryProducer == nil {
 		return nil
 	}
-	return &MeterUsagePublisher{
+	return &meterUsagePublisher{
 		publisher:     primaryProducer,
 		topic:         cfg.Analytics.MeterUsageTopic,
 		lazyTopic:     cfg.Analytics.MeterUsageLazyTopic,
@@ -58,7 +65,7 @@ func NewMeterUsagePublisher(primaryProducer *kafka.Producer, cfg *config.Configu
 // dedup key). ingested_at is stamped when unset so the lake has a version column. Late records
 // route to the lazy topic (falling back to the main topic when it is unset). Fire-and-forget:
 // per-record errors are logged, never returned.
-func (p *MeterUsagePublisher) PublishMeterUsage(ctx context.Context, records []*events.MeterUsage) {
+func (p *meterUsagePublisher) PublishMeterUsage(ctx context.Context, records []*events.MeterUsage) {
 	// nil publisher (feed disabled) ⇒ no-op.
 	if p == nil || p.publisher == nil {
 		return

@@ -59,14 +59,14 @@ type meterUsageTrackingService struct {
 	// analyticsPublisher is optional (nil unless the analytics feed is configured). When set,
 	// meter_usage records are additively published to the analytics topics AFTER a
 	// successful ClickHouse insert. fx injects it from the graph; nil = no-op.
-	analyticsPublisher *analytics.MeterUsagePublisher
+	analyticsPublisher analytics.MeterUsagePublisher
 }
 
 // NewMeterUsageTrackingService creates a new meter usage tracking service
 func NewMeterUsageTrackingService(
 	params ServiceParams,
 	meterUsageRepo events.MeterUsageRepository,
-	analyticsPublisher *analytics.MeterUsagePublisher,
+	analyticsPublisher analytics.MeterUsagePublisher,
 ) MeterUsageTrackingService {
 	svc := &meterUsageTrackingService{
 		ServiceParams:       params,
@@ -365,7 +365,10 @@ func (s *meterUsageTrackingService) processBulkMessage(ctx context.Context, msg 
 	// Additive, fire-and-forget analytics publish AFTER the ClickHouse write commits. ClickHouse
 	// stays authoritative: PublishMeterUsage swallows its own errors and is a no-op when no
 	// analytics publisher is configured, so this can never fail the insert or affect billing.
-	s.analyticsPublisher.PublishMeterUsage(ctx, records)
+	// nil interface (feed disabled) ⇒ skip: calling a method on a nil interface panics.
+	if s.analyticsPublisher != nil {
+		s.analyticsPublisher.PublishMeterUsage(ctx, records)
+	}
 
 	s.Logger.Debug(ctx, "bulk meter usage batch inserted",
 		"record_count", len(records),
@@ -530,7 +533,10 @@ func (s *meterUsageTrackingService) processEvent(ctx context.Context, event *eve
 	// Additive, fire-and-forget analytics publish AFTER the ClickHouse write commits. ClickHouse
 	// stays authoritative: PublishMeterUsage swallows its own errors and is a no-op when no
 	// analytics publisher is configured, so this can never fail the insert or affect billing.
-	s.analyticsPublisher.PublishMeterUsage(ctx, records)
+	// nil interface (feed disabled) ⇒ skip: calling a method on a nil interface panics.
+	if s.analyticsPublisher != nil {
+		s.analyticsPublisher.PublishMeterUsage(ctx, records)
+	}
 
 	s.Logger.Debug(ctx, "meter usage records inserted",
 		"event_id", event.ID,

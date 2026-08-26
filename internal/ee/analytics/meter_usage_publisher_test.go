@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/shopspring/decimal"
@@ -66,8 +67,8 @@ func sampleMeterUsage() *events.MeterUsage {
 
 // newAnalyticsPub builds a MeterUsagePublisher over a fake, on the analytics topics with a
 // 24h late threshold (the config default).
-func newAnalyticsPub(pub messagePublisher) *MeterUsagePublisher {
-	return &MeterUsagePublisher{
+func newAnalyticsPub(pub messagePublisher) *meterUsagePublisher {
+	return &meterUsagePublisher{
 		publisher:     pub,
 		topic:         "analytics.meter_usage",
 		lazyTopic:     "analytics.meter_usage.lazy",
@@ -288,6 +289,19 @@ func TestPublishMeterUsage_SwallowsPublisherError(t *testing.T) {
 
 // A nil (unconfigured) publisher is a no-op, never a panic.
 func TestPublishMeterUsage_NilPublisherIsNoop(t *testing.T) {
-	var p *MeterUsagePublisher
+	var p *meterUsagePublisher
 	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{sampleMeterUsage()})
+}
+
+// When the feed is disabled the constructor must return an untyped-nil interface (not a
+// typed-nil impl), so the service's `if pub != nil` guard is FALSE and PublishMeterUsage is
+// never called — a nil interface method call would panic.
+func TestNewMeterUsagePublisher_DisabledReturnsNilInterface(t *testing.T) {
+	cfg := &config.Configuration{}
+	cfg.Analytics.Enabled = false
+
+	pub := NewMeterUsagePublisher(nil, cfg, logger.NewNoopLogger())
+	if pub != nil {
+		t.Fatalf("disabled feed must yield a nil interface, got %#v", pub)
+	}
 }
