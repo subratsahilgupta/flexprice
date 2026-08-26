@@ -152,10 +152,12 @@ jobs:
       - name: Set image output
         id: set-image
         env:
-          ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
-          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
           GITHUB_SHA: ${{ github.sha }}
-        run: echo "image=${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+        # ECS now deploys the GHCR image (same immutable :<sha> the build job pushed
+        # to GHCR alongside ECR). ECR is still pushed for cache/rollback; the deploy
+        # target is GHCR. The composite action injects repositoryCredentials for it.
+        run: echo "image=${GHCR_IMAGE}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
 
   # ──────────────────────────────────────────────────────────────────────────
   # Job 2: Resolve deployment targets (production only)
@@ -384,8 +386,10 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.preprod_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -508,8 +512,10 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.api_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
 
   deploy-consumer:
@@ -545,8 +551,10 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.consumer_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
 
   deploy-worker:
@@ -582,6 +590,8 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.worker_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
