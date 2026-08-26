@@ -513,10 +513,10 @@ func (c DraftInvoiceRecomputeConfig) Validate() error {
 	return nil
 }
 
-// WalletTopupConfig holds org-level guard rails for wallet top-up operations.
+// WalletTopupConfig holds guard rails for wallet top-up operations.
 type WalletTopupConfig struct {
 	// FreeCreditLimitPerTransaction is the maximum currency amount allowed for a single
-	// FREE_CREDIT_GRANT transaction. Zero or negative means no limit is enforced.
+	// FREE_CREDIT_GRANT transaction. Zero means no limit is enforced.
 	FreeCreditLimitPerTransaction decimal.Decimal `json:"free_credit_limit_per_transaction" swaggertype:"string"`
 }
 
@@ -805,7 +805,7 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 		SettingKeyWalletTopupConfig: {
 			Key:          SettingKeyWalletTopupConfig,
 			DefaultValue: defaultWalletTopupConfigMap,
-			Description:  "Org-level guard rails for wallet top-up operations (e.g. free credit limit per transaction)",
+			Description:  "Guard rails for wallet top-up operations (e.g. free credit limit per transaction)",
 		},
 	}, nil
 }

@@ -588,7 +588,6 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 			Mark(ierr.ErrValidation)
 	}
 
-	// Enforce org-level free credit limit per transaction.
 	if req.TransactionReason == types.TransactionReasonFreeCredit {
 		settingsSvc := &settingsService{ServiceParams: s.ServiceParams}
 		topupCfg, err := GetSetting[types.WalletTopupConfig](settingsSvc, ctx, types.SettingKeyWalletTopupConfig)
