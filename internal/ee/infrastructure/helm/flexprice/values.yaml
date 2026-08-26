@@ -298,6 +298,38 @@ consumer:
   tolerations: []
   affinity: {}
 
+# Extra consumer Deployments (plural MAP) — OPTIONAL, additive.
+# Each key becomes its own Deployment "<fullname>-<key>" running the SAME image
+# in deployment.mode=consumer, isolated purely by its own extraEnv. Mirrors prod,
+# where flexprice-prod-consumer and flexprice-prod-consumer-bulk are two task defs
+# off one image differing only in FLEXPRICE_*_ENABLED / _TOPIC / _CONSUMER_GROUP.
+#
+# The singular `consumer:` above is unaffected — leave `consumers` empty and
+# nothing extra renders. Per-entry keys: enabled (default true), replicaCount,
+# resources, strategy, nodeSelector, tolerations, affinity, extraEnv (list of
+# {name,value}), preStop {enabled,sleepSeconds}, and keda
+# {enabled,minReplicas,maxReplicas,lagThreshold,topics,authenticationRef,
+#  cpuValue,memValue,...} — same shape as consumer.keda above. resources,
+# strategy and terminationGracePeriodSeconds fall back to the singular consumer's
+# when omitted.
+#
+# Example:
+#   consumers:
+#     consumer-billing:
+#       replicaCount: 2
+#       extraEnv:
+#         - {name: FLEXPRICE_BULK_EVENT_CONSUMPTION_ENABLED, value: "true"}
+#         - {name: FLEXPRICE_BULK_EVENT_CONSUMPTION_TOPIC,   value: "events_billing"}
+#         - {name: FLEXPRICE_BULK_EVENT_CONSUMPTION_CONSUMER_GROUP, value: "billing_consumer"}
+#       keda:
+#         enabled: true
+#         topics:
+#           - {topic: events_billing, lagThreshold: 500}
+#     consumer-events:
+#       extraEnv:
+#         - {name: FLEXPRICE_KAFKA_TOPIC, value: "events"}
+consumers: {}
+
 # Temporal Worker deployment configuration
 worker:
   enabled: true
