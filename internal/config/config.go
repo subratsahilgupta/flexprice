@@ -314,6 +314,10 @@ type KafkaConfig struct {
 	// TopicBulk is this cluster's batched-ingest topic. Per-cluster because a shared prod
 	// cluster renames topics (FLEXPRICE_KAFKA_TOPICS).
 	TopicBulk string `mapstructure:"topic_bulk"`
+	// LakeTopic, when set, enables an additive fire-and-forget publish of meter_usage records
+	// to this topic after they are written to ClickHouse, so the analytics lake's Iceberg sink
+	// can ingest them. Empty (the default) disables lake publishing entirely (no-op).
+	LakeTopic string `mapstructure:"lake_topic"`
 	// Batching bounds for PublishBatch; a batch closes at whichever is hit first.
 	// BulkMaxBatchBytes must stay under the topic's max.message.bytes (1 MB default on MSK).
 	// Read from the LOCAL cluster only: both clusters must receive byte-identical payloads to

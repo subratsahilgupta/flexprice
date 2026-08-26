@@ -44,6 +44,10 @@ kafka:
   topic: "staging_events"
   topic_lazy: "staging_events_lazy"
   topic_bulk: "staging_events_bulk"
+  # lake_topic, when set, additively publishes meter_usage records to this topic after the
+  # ClickHouse write (fire-and-forget) so the analytics lake can ingest them. Empty = disabled.
+  # Enable per deployment via FLEXPRICE_KAFKA_LAKE_TOPIC (e.g. "analytics.meter_usage").
+  lake_topic: ""
   # Batching bounds for the bulk publish path; whichever is hit first closes the batch.
   # Keep bulk_max_batch_bytes under the topic's max.message.bytes (1 MB default on MSK).
   bulk_max_batch_size: 200
