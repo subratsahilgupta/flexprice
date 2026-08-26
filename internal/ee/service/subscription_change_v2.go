@@ -302,6 +302,12 @@ func (s *subscriptionService) resolveClosingEntitlementGrants(
 	// Grants key off the entitlement the subscription actually resolves to, which is the
 	// override where one is active and the plan entitlement otherwise.
 
+	// NOTE: This logic doesnot close entitlement grants that are additive and derived from
+	// some entities which are not being closed like addon. There is no way to be certain on
+	// what qouta had been used in that grant and associate it to different constituent grant qoutas.
+	// If needed, later on a prorated handling could be added to close the existing grant and open a
+	// new one with prorated qouta.
+
 	configIDs := lo.Keys(fromPlanEntIDs)
 	for _, ent := range r.closingEntitlementOverrides {
 		configIDs = append(configIDs, ent.ID)

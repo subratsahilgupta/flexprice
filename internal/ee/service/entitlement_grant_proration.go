@@ -54,6 +54,15 @@ func (s *subscriptionService) resolveGrantProration(
 		return nil, nil
 	}
 
+	if !p.Start.Before(sub.CurrentPeriodEnd) {
+		s.Logger.Info(ctx, "skipping entitlement grant proration; the change lands in a later billing cycle",
+			"subscription_id", sub.ID,
+			"effective_date", effectiveDate,
+			"resolved_period_start", p.Start,
+			"current_period_end", sub.CurrentPeriodEnd)
+		return nil, nil
+	}
+
 	grants := make([]*entitlementgrant.EntitlementGrant, 0, len(incoming))
 	for featureID, featureECs := range lo.GroupBy(incoming, func(ec *entitlement.Entitlement) string {
 		return ec.FeatureID
@@ -130,36 +139,37 @@ func (s *subscriptionService) materialiseEntitlementGrants(
 	existingByFeature map[string][]*entitlement.Entitlement,
 	effectiveDate time.Time,
 ) error {
-	if len(newGrants) == 0 {
-		return nil
-	}
-
-	liveByFeature, err := s.liveGrantsByFeature(ctx, sub, effectiveDate)
-	if err != nil {
-		return err
-	}
-
-	grantSvc := NewEntitlementGrantService(s.ServiceParams)
-
-	// Every live row of a feature the change touches, whatever its aggregation mode. A row
-	// this path will not reopen is left to the tick, which opens the slot again from the
-	// close boundary — at the EC's full quota, since only the pooled path carries a balance
-	// forward.
-	toClose := lo.FlatMap(newGrants, func(g *entitlementgrant.EntitlementGrant, _ int) []*entitlementgrant.EntitlementGrant {
-		return liveByFeature[g.FeatureID()]
-	})
-
-	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, toClose, effectiveDate)
-	if err != nil {
-		return err
-	}
-
 	incomingByFeature := lo.GroupBy(
 		lo.Filter(incomingECs, func(ec *entitlement.Entitlement, _ int) bool {
 			return ec != nil && ec.HasGrantConfig()
 		}),
 		func(ec *entitlement.Entitlement) string { return ec.FeatureID },
 	)
+	if len(incomingByFeature) == 0 {
+		return nil
+	}
+
+	at := latestOf(effectiveDate, time.Now().UTC())
+	liveByFeature, err := s.liveGrantsByFeature(ctx, sub, at)
+	if err != nil {
+		return err
+	}
+
+	grantSvc := NewEntitlementGrantService(s.ServiceParams)
+
+	// Close every live window of every feature the change touches, not only the ones this
+	// path reopens. A window this path does not own — a day cadence, or a parallel slot —
+	// would otherwise hold its slot until it expires and hide the incoming quota until
+	// then. Closing hands the slot back to the tick, which reopens it at the config's full quota.
+	toClose := make([]*entitlementgrant.EntitlementGrant, 0, len(incomingByFeature))
+	for featureID := range incomingByFeature {
+		toClose = append(toClose, liveByFeature[featureID]...)
+	}
+
+	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, toClose, at)
+	if err != nil {
+		return err
+	}
 
 	reqs := make([]OpenFeatureBasedEntitlementGrantsRequest, 0, len(newGrants))
 	for _, g := range newGrants {
@@ -235,7 +245,10 @@ func (s *subscriptionService) handleGrantsForRemovedECs(
 		return nil
 	}
 
-	liveByFeature, err := s.liveGrantsByFeature(ctx, sub, effectiveDate)
+	// See materialiseEntitlementGrants: a removal dated in the past cannot re-cut windows
+	// that have already been measured and succeeded.
+	at := latestOf(effectiveDate, time.Now().UTC())
+	liveByFeature, err := s.liveGrantsByFeature(ctx, sub, at)
 	if err != nil {
 		return err
 	}
@@ -301,7 +314,7 @@ func (s *subscriptionService) handleGrantsForRemovedECs(
 
 	grantSvc := NewEntitlementGrantService(s.ServiceParams)
 
-	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, toClose, effectiveDate)
+	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, toClose, at)
 	if err != nil {
 		return err
 	}

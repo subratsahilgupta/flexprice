@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -149,6 +150,50 @@ func (s *SubscriptionServiceSuite) expectedProrated(quota int64) decimal.Decimal
 // -----------------------------------------------------------------------------
 // tests
 // -----------------------------------------------------------------------------
+
+// End-to-end through the real attach path: a PARALLEL addon owns its own slot, so
+// the attach writes nothing and the tick opens it. The tick must anchor that slot at
+// the association's start, not at the cycle start — otherwise the addon's first
+// window bills for usage recorded before the customer had the entitlement.
+func (s *SubscriptionServiceSuite) TestAddonParallelGrant_TickAnchorsAtAssociationStart() {
+	featureID := s.seedGrantFeature("feat_eg_par_anchor")
+	s.seedGrantEC("ent_aaa_plan_par", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+		s.testData.plan.ID, 500, types.EntitlementAggregationModeParallel)
+	s.seedGrantAddon("addon_eg_par_anchor", "ent_zzz_addon_par", featureID, 400,
+		types.EntitlementAggregationModeParallel)
+
+	sub := s.testData.subscription
+	attachedAt := s.testData.now
+	s.Require().True(attachedAt.After(sub.CurrentPeriodStart), "fixture must attach mid-cycle")
+	s.Require().NoError(s.attachAddon("addon_eg_par_anchor", attachedAt, types.ProrationBehaviorCreateProrations))
+
+	// The tick, exactly as the evaluator runs it.
+	cust, err := s.GetStores().CustomerRepo.Get(s.GetContext(), sub.CustomerID)
+	s.Require().NoError(err)
+	grantSvc := NewEntitlementGrantService(s.service.(*subscriptionService).ServiceParams)
+	_, _, err = grantSvc.EnsureGrantsForSubscriptions(s.GetContext(), cust,
+		[]*subscription.Subscription{sub}, attachedAt.Add(time.Minute))
+	s.Require().NoError(err)
+
+	rows := s.sortedGrantsForFeature(featureID)
+	byEC := lo.SliceToMap(rows, func(g *entitlementgrant.EntitlementGrant) (string, *entitlementgrant.EntitlementGrant) {
+		return g.EntitlementConfigID, g
+	})
+
+	plan := byEC["ent_aaa_plan_par"]
+	s.Require().NotNil(plan, "the plan's own parallel slot must still exist")
+	s.True(plan.ValidFrom.Equal(sub.CurrentPeriodStart),
+		"the plan's slot is untouched by the attach: got %s want %s", plan.ValidFrom, sub.CurrentPeriodStart)
+
+	addonRow := byEC["ent_zzz_addon_par"]
+	s.Require().NotNil(addonRow, "the addon's parallel slot must be opened by the tick")
+	s.True(addonRow.Quota.Equal(decimal.NewFromInt(400)),
+		"parallel carries its own quota, not the pool: got %s", addonRow.Quota)
+	s.True(addonRow.ValidFrom.Equal(attachedAt),
+		"the addon's slot must start when it was attached, not at the cycle start: got %s want %s",
+		addonRow.ValidFrom, attachedAt)
+	s.False(addonRow.ValidFrom.Equal(sub.CurrentPeriodStart), "must not backdate to the cycle start")
+}
 
 // sortedGrantsForFeature returns the feature's rows oldest window first, so a
 // segmented cycle reads as the sequence it is.
@@ -345,9 +390,11 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_ZeroQuota_Skips
 }
 
 // A parallel EC owns its own slot, and the evaluator opens that slot with the EC's full
-// quota — a standalone budget, not a top-up of a pool. Nothing for the attach to correct, so
-// it writes no row and leaves the plan's budget untouched.
-func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_Parallel_LeftToEvaluator() {
+// quota — a standalone budget, not a top-up of a pool. So the attach writes no row of its
+// own; it only ends the feature's live windows at the change, which hands every slot back
+// to the evaluator to reissue. The allowance is replenished rather than prorated: an
+// immutable window cannot be topped up in place, so a mid-cycle addon resets the feature.
+func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_Parallel_ClosedForEvaluatorToReissue() {
 	featureID := s.seedGrantFeature("feat_eg_par")
 	s.seedGrantEC("ent_aaa_plan", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID,
 		1000, types.EntitlementAggregationModeParallel)
@@ -357,14 +404,17 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_Parallel_LeftTo
 	s.Require().NoError(s.attachAddon("addon_eg_par", s.testData.now, types.ProrationBehaviorCreateProrations))
 
 	rows := s.grantsForFeature(featureID)
-	s.Require().Len(rows, 1, "the attach must not write parallel rows, got %d", len(rows))
+	s.Require().Len(rows, 1, "the attach must not write parallel rows itself, got %d", len(rows))
 
 	got := rows[0]
-	s.Equal(planRow.ID, got.ID, "the plan's budget is untouched")
+	s.Equal(planRow.ID, got.ID, "the plan's row is closed in place, not replaced")
 	s.Equal("ent_aaa_plan", got.EntitlementConfigID)
-	s.True(got.Quota.Equal(decimal.NewFromInt(1000)))
-	s.True(got.ValidFrom.Equal(s.testData.subscription.CurrentPeriodStart), "its window must not move")
-	s.True(got.ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd), "its window must not move")
+	s.True(got.Quota.Equal(decimal.NewFromInt(1000)), "the closed window keeps the quota it ran with")
+	s.True(got.ValidFrom.Equal(s.testData.subscription.CurrentPeriodStart), "the window's start never moves")
+	s.False(got.ValidTo.Before(s.testData.now),
+		"the window must end at the change so the evaluator can reissue the slot: got %s, change at %s",
+		got.ValidTo, s.testData.now)
+	s.True(got.ValidTo.Before(s.testData.subscription.CurrentPeriodEnd), "it must no longer run to the cycle end")
 }
 
 // hour/day/week grants are usage-anchored and open post-attach on their own, so
