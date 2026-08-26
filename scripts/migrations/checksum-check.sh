@@ -2,13 +2,18 @@
 # dbmate records only the version, never the file contents, so editing a migration
 # that already ran on a client database is silent. This adds the missing guarantee.
 #
+# It covers migrations/baseline/ as well as migrations/versioned/. The baseline is
+# FROZEN once any deployment has adopted: regenerating it would put a schema change
+# into fresh installs while every existing deployment silently misses it, since
+# nothing in the timeline carries the change. New schema goes in a migration.
+#
 # The manifest is authoritative and is NOT rewritten here: if it were, CI would
 # quietly accept whatever it found, and a migration added in one PR would never be
 # recorded for the next one to compare against. Regenerate deliberately with
 #   ./checksum-check.sh <dir> <lock> --update
 set -euo pipefail
-DIR="${1:-migrations/versioned}"
-LOCK="${2:-migrations/versioned/.hashes}"
+DIR="${1:-migrations}"
+LOCK="${2:-migrations/.hashes}"
 UPDATE="${3:-}"
 
 NEW="$(mktemp)"

@@ -3,15 +3,62 @@
 Every schema change ships as a reviewed SQL file. `dbmate` applies what a database
 has not seen yet and records it in `schema_migrations`.
 
-This replaces Ent AutoMigrate as the deploy mechanism. Ent stays as the *source of
-truth* for the schema and as the CI oracle — it is no longer what runs against a
-production database.
+This replaces Ent AutoMigrate as the deploy mechanism. Ent stays the *source of
+truth* for the schema and the CI oracle; it no longer runs against a production
+database.
 
 ```text
-migrations/versioned/postgres/     dbmate, ledger `schema_migrations`
-migrations/versioned/clickhouse/   dbmate, one statement per file
-scripts/migrations/                adoption + the CI gates
+migrations/baseline/     fresh databases only — dbmate NEVER runs these
+migrations/versioned/    the timeline: what every database applies from here on
+scripts/migrations/      adoption + the CI gates
 ```
+
+## The fleet is not homogeneous — read this first
+
+There is no single baseline that describes every deployment, and there never was.
+India prod grew under AutoMigrate. GCP staging was DMS-migrated from AWS into
+AlloyDB and then diverged. Each client is its own lineage. Measured on 2026-08-26,
+staging differed from a prod-derived baseline by **610 catalog lines**.
+
+So the timeline does not try to reconcile history. It starts with a **marker**
+(`20260819000000`) that executes nothing and claims only:
+
+> whatever this database contains, it does not need anything before here
+
+Every deployment adopts at that marker — prod, staging, each client — with zero
+DDL. Differences existing at that point stay, unreconciled. **The goal is not a
+uniform fleet; it is that divergence stops growing.**
+
+Two rules follow, and both are load-bearing:
+
+**Every migration after the marker must be safe on a database it has never seen.**
+No assumptions about starting state. Guard on `to_regclass(...)` before touching a
+table, match indexes on shape rather than Ent-derived name, and make re-running a
+no-op. `20260825000100_entitlements_uniq_exclude_parallel.sql` is the worked
+example — it narrows any unique index of the right shape whose predicate has not
+been narrowed, and does nothing anywhere else.
+
+**The baseline is frozen.** Once anything has adopted, regenerating it would put a
+schema change into fresh installs while every existing deployment silently misses
+it — nothing in the timeline carries the change. New schema goes in a migration.
+`make migrate-check-checksum` enforces this; it covers `migrations/baseline/` too.
+
+## Where the baseline comes from
+
+Generated from the **Ent schema**, not from a `pg_dump` of production:
+
+```bash
+go run ./cmd/migrate postgres --dry-run    # against an empty database
+```
+
+A prod dump carries prod's accumulated past into every new client — dead columns,
+orphaned indexes, ad-hoc tables like `connections_backup_20260805`. A new database
+should start from what the code declares.
+
+What Ent omits — functions, standalone sequences, extensions, views, triggers — was
+checked before choosing this: production's three sequence functions have zero Go
+references, `uuid_generate` is referenced nowhere, and `prices.sequence` is created
+by its `bigserial` column. Nothing omitted is used.
 
 ## Everyday change
 

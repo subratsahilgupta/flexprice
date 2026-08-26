@@ -1,30 +1,54 @@
--- migrate:up transaction:false
--- Step 1 of 3. Build the corrected index alongside the existing one.
+-- migrate:up
+-- Narrow the entitlements uniqueness rule to exclude aggregation_mode='parallel'.
 --
--- ent/schema/entitlement.go narrowed this predicate on 2026-07-25 (ae95c9d54) to
--- exclude aggregation_mode='parallel'. AutoMigrate never applied it — ModifyIndex
--- is in the skip set — so production still enforces uniqueness across ALL published
--- rows, which is broader than the code intends.
+-- ent/schema/entitlement.go changed this predicate on 2026-07-25 (ae95c9d54).
+-- AutoMigrate never applied it — ModifyIndex is in its skip set — so India prod
+-- still enforces uniqueness across ALL published rows, which is broader than the
+-- code intends.
 --
--- Built under a temporary name so the old index keeps enforcing throughout: there is
--- no window where uniqueness is unenforced. Steps 2 and 3 drop and rename.
+-- Written to be safe on a database it has never seen, because the fleet is not
+-- homogeneous: India prod, GCP staging (AlloyDB, DMS-migrated from AWS) and each
+-- client hold different index sets under different names. Every step below checks
+-- before acting and is a no-op where the condition does not hold.
 --
--- statement_timeout must be 0 on the connection: a build killed by a timeout leaves
--- an INVALID index behind.
---
--- Deliberately NO 'IF NOT EXISTS'. With it, a retry after such a failure skips the
--- broken index silently — and then 000200 drops the index that was still enforcing
--- and 000300 renames the invalid one over it, leaving the table with no effective
--- uniqueness. Without it the retry fails loudly with "relation already exists", and
--- the operator clears it first:
---
---   DROP INDEX CONCURRENTLY IF EXISTS entitlement_uniq_v2;
---
--- Check for one before running this migration:
---   SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
-CREATE UNIQUE INDEX CONCURRENTLY entitlement_uniq_v2
-  ON entitlements (tenant_id, environment_id, entity_type, entity_id, feature_id)
-  WHERE (((status)::text = 'published'::text) AND ((aggregation_mode)::text <> 'parallel'::text));
+-- Plain DDL rather than CONCURRENTLY: entitlements is ~365 rows / <1 MB, so the
+-- ACCESS EXCLUSIVE lock lasts milliseconds. That trade would be wrong on events or
+-- feature_usage — do not copy this shape onto a large table.
+SET lock_timeout = '3s';
 
--- migrate:down transaction:false
-DROP INDEX CONCURRENTLY IF EXISTS entitlement_uniq_v2;
+DO $$
+DECLARE
+  want text := '(((status)::text = ''published''::text) AND ((aggregation_mode)::text <> ''parallel''::text))';
+  cols text := 'tenant_id, environment_id, entity_type, entity_id, feature_id';
+  r    record;
+BEGIN
+  IF to_regclass('public.entitlements') IS NULL THEN
+    RAISE NOTICE 'entitlements does not exist here; nothing to do';
+    RETURN;
+  END IF;
+
+  -- Any UNIQUE index on exactly these columns whose predicate has not been
+  -- narrowed yet. Matched on shape, not on name: the name is Ent-derived and
+  -- differs between deployments.
+  FOR r IN
+    SELECT i.indexname, i.indexdef
+    FROM pg_indexes i
+    WHERE i.schemaname = 'public'
+      AND i.tablename  = 'entitlements'
+      AND i.indexdef LIKE 'CREATE UNIQUE INDEX%'
+      AND i.indexdef LIKE '%(' || cols || ')%'
+      AND i.indexdef NOT LIKE '%aggregation_mode%'
+  LOOP
+    RAISE NOTICE 'narrowing %', r.indexname;
+    EXECUTE format('DROP INDEX public.%I', r.indexname);
+    EXECUTE format(
+      'CREATE UNIQUE INDEX %I ON public.entitlements (%s) WHERE %s',
+      r.indexname, cols, want);
+  END LOOP;
+END $$;
+
+-- migrate:down
+-- Deliberately not reversible. Widening the predicate again would re-introduce a
+-- uniqueness rule the application does not expect, and could reject writes that
+-- are valid under the current code.
+SELECT 'not reversible' AS note;
