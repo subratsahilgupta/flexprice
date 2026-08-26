@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/customer"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // CustomerCreate is the builder for creating a Customer entity.
@@ -254,6 +255,20 @@ func (cc *CustomerCreate) SetNillableTimezone(s *string) *CustomerCreate {
 	return cc
 }
 
+// SetTaxability sets the "taxability" field.
+func (cc *CustomerCreate) SetTaxability(t types.Taxability) *CustomerCreate {
+	cc.mutation.SetTaxability(t)
+	return cc
+}
+
+// SetNillableTaxability sets the "taxability" field if the given value is not nil.
+func (cc *CustomerCreate) SetNillableTaxability(t *types.Taxability) *CustomerCreate {
+	if t != nil {
+		cc.SetTaxability(*t)
+	}
+	return cc
+}
+
 // SetID sets the "id" field.
 func (cc *CustomerCreate) SetID(s string) *CustomerCreate {
 	cc.mutation.SetID(s)
@@ -315,6 +330,10 @@ func (cc *CustomerCreate) defaults() {
 		v := customer.DefaultTimezone
 		cc.mutation.SetTimezone(v)
 	}
+	if _, ok := cc.mutation.Taxability(); !ok {
+		v := customer.DefaultTaxability
+		cc.mutation.SetTaxability(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -350,6 +369,14 @@ func (cc *CustomerCreate) check() error {
 	if v, ok := cc.mutation.Name(); ok {
 		if err := customer.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Customer.name": %w`, err)}
+		}
+	}
+	if _, ok := cc.mutation.Taxability(); !ok {
+		return &ValidationError{Name: "taxability", err: errors.New(`ent: missing required field "Customer.taxability"`)}
+	}
+	if v, ok := cc.mutation.Taxability(); ok {
+		if err := customer.TaxabilityValidator(string(v)); err != nil {
+			return &ValidationError{Name: "taxability", err: fmt.Errorf(`ent: validator failed for field "Customer.taxability": %w`, err)}
 		}
 	}
 	return nil
@@ -462,6 +489,10 @@ func (cc *CustomerCreate) createSpec() (*Customer, *sqlgraph.CreateSpec) {
 	if value, ok := cc.mutation.Timezone(); ok {
 		_spec.SetField(customer.FieldTimezone, field.TypeString, value)
 		_node.Timezone = value
+	}
+	if value, ok := cc.mutation.Taxability(); ok {
+		_spec.SetField(customer.FieldTaxability, field.TypeString, value)
+		_node.Taxability = value
 	}
 	return _node, _spec
 }

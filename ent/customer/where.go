@@ -7,6 +7,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // ID filters vertices based on their ID field.
@@ -152,6 +153,12 @@ func AddressCountry(v string) predicate.Customer {
 // Timezone applies equality check predicate on the "timezone" field. It's identical to TimezoneEQ.
 func Timezone(v string) predicate.Customer {
 	return predicate.Customer(sql.FieldEQ(FieldTimezone, v))
+}
+
+// Taxability applies equality check predicate on the "taxability" field. It's identical to TaxabilityEQ.
+func Taxability(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldEQ(FieldTaxability, vc))
 }
 
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
@@ -1402,6 +1409,90 @@ func TimezoneEqualFold(v string) predicate.Customer {
 // TimezoneContainsFold applies the ContainsFold predicate on the "timezone" field.
 func TimezoneContainsFold(v string) predicate.Customer {
 	return predicate.Customer(sql.FieldContainsFold(FieldTimezone, v))
+}
+
+// TaxabilityEQ applies the EQ predicate on the "taxability" field.
+func TaxabilityEQ(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldEQ(FieldTaxability, vc))
+}
+
+// TaxabilityNEQ applies the NEQ predicate on the "taxability" field.
+func TaxabilityNEQ(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldNEQ(FieldTaxability, vc))
+}
+
+// TaxabilityIn applies the In predicate on the "taxability" field.
+func TaxabilityIn(vs ...types.Taxability) predicate.Customer {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Customer(sql.FieldIn(FieldTaxability, v...))
+}
+
+// TaxabilityNotIn applies the NotIn predicate on the "taxability" field.
+func TaxabilityNotIn(vs ...types.Taxability) predicate.Customer {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.Customer(sql.FieldNotIn(FieldTaxability, v...))
+}
+
+// TaxabilityGT applies the GT predicate on the "taxability" field.
+func TaxabilityGT(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldGT(FieldTaxability, vc))
+}
+
+// TaxabilityGTE applies the GTE predicate on the "taxability" field.
+func TaxabilityGTE(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldGTE(FieldTaxability, vc))
+}
+
+// TaxabilityLT applies the LT predicate on the "taxability" field.
+func TaxabilityLT(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldLT(FieldTaxability, vc))
+}
+
+// TaxabilityLTE applies the LTE predicate on the "taxability" field.
+func TaxabilityLTE(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldLTE(FieldTaxability, vc))
+}
+
+// TaxabilityContains applies the Contains predicate on the "taxability" field.
+func TaxabilityContains(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldContains(FieldTaxability, vc))
+}
+
+// TaxabilityHasPrefix applies the HasPrefix predicate on the "taxability" field.
+func TaxabilityHasPrefix(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldHasPrefix(FieldTaxability, vc))
+}
+
+// TaxabilityHasSuffix applies the HasSuffix predicate on the "taxability" field.
+func TaxabilityHasSuffix(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldHasSuffix(FieldTaxability, vc))
+}
+
+// TaxabilityEqualFold applies the EqualFold predicate on the "taxability" field.
+func TaxabilityEqualFold(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldEqualFold(FieldTaxability, vc))
+}
+
+// TaxabilityContainsFold applies the ContainsFold predicate on the "taxability" field.
+func TaxabilityContainsFold(v types.Taxability) predicate.Customer {
+	vc := string(v)
+	return predicate.Customer(sql.FieldContainsFold(FieldTaxability, vc))
 }
 
 // And groups predicates with the AND operator between them.

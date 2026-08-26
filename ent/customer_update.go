@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/customer"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // CustomerUpdate is the builder for updating Customer entities.
@@ -288,6 +289,20 @@ func (cu *CustomerUpdate) ClearTimezone() *CustomerUpdate {
 	return cu
 }
 
+// SetTaxability sets the "taxability" field.
+func (cu *CustomerUpdate) SetTaxability(t types.Taxability) *CustomerUpdate {
+	cu.mutation.SetTaxability(t)
+	return cu
+}
+
+// SetNillableTaxability sets the "taxability" field if the given value is not nil.
+func (cu *CustomerUpdate) SetNillableTaxability(t *types.Taxability) *CustomerUpdate {
+	if t != nil {
+		cu.SetTaxability(*t)
+	}
+	return cu
+}
+
 // Mutation returns the CustomerMutation object of the builder.
 func (cu *CustomerUpdate) Mutation() *CustomerMutation {
 	return cu.mutation
@@ -339,6 +354,11 @@ func (cu *CustomerUpdate) check() error {
 	if v, ok := cu.mutation.Name(); ok {
 		if err := customer.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Customer.name": %w`, err)}
+		}
+	}
+	if v, ok := cu.mutation.Taxability(); ok {
+		if err := customer.TaxabilityValidator(string(v)); err != nil {
+			return &ValidationError{Name: "taxability", err: fmt.Errorf(`ent: validator failed for field "Customer.taxability": %w`, err)}
 		}
 	}
 	return nil
@@ -439,6 +459,9 @@ func (cu *CustomerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if cu.mutation.TimezoneCleared() {
 		_spec.ClearField(customer.FieldTimezone, field.TypeString)
+	}
+	if value, ok := cu.mutation.Taxability(); ok {
+		_spec.SetField(customer.FieldTaxability, field.TypeString, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, cu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -720,6 +743,20 @@ func (cuo *CustomerUpdateOne) ClearTimezone() *CustomerUpdateOne {
 	return cuo
 }
 
+// SetTaxability sets the "taxability" field.
+func (cuo *CustomerUpdateOne) SetTaxability(t types.Taxability) *CustomerUpdateOne {
+	cuo.mutation.SetTaxability(t)
+	return cuo
+}
+
+// SetNillableTaxability sets the "taxability" field if the given value is not nil.
+func (cuo *CustomerUpdateOne) SetNillableTaxability(t *types.Taxability) *CustomerUpdateOne {
+	if t != nil {
+		cuo.SetTaxability(*t)
+	}
+	return cuo
+}
+
 // Mutation returns the CustomerMutation object of the builder.
 func (cuo *CustomerUpdateOne) Mutation() *CustomerMutation {
 	return cuo.mutation
@@ -784,6 +821,11 @@ func (cuo *CustomerUpdateOne) check() error {
 	if v, ok := cuo.mutation.Name(); ok {
 		if err := customer.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Customer.name": %w`, err)}
+		}
+	}
+	if v, ok := cuo.mutation.Taxability(); ok {
+		if err := customer.TaxabilityValidator(string(v)); err != nil {
+			return &ValidationError{Name: "taxability", err: fmt.Errorf(`ent: validator failed for field "Customer.taxability": %w`, err)}
 		}
 	}
 	return nil
@@ -901,6 +943,9 @@ func (cuo *CustomerUpdateOne) sqlSave(ctx context.Context) (_node *Customer, err
 	}
 	if cuo.mutation.TimezoneCleared() {
 		_spec.ClearField(customer.FieldTimezone, field.TypeString)
+	}
+	if value, ok := cuo.mutation.Taxability(); ok {
+		_spec.SetField(customer.FieldTaxability, field.TypeString, value)
 	}
 	_node = &Customer{config: cuo.config}
 	_spec.Assign = _node.assignValues

@@ -47,6 +47,8 @@ const (
 	FieldMetadata = "metadata"
 	// FieldIdempotencyKey holds the string denoting the idempotency_key field in the database.
 	FieldIdempotencyKey = "idempotency_key"
+	// FieldTaxBehavior holds the string denoting the tax_behavior field in the database.
+	FieldTaxBehavior = "tax_behavior"
 	// Table holds the table name of the taxapplied in the database.
 	Table = "tax_applieds"
 )
@@ -71,6 +73,7 @@ var Columns = []string{
 	FieldAppliedAt,
 	FieldMetadata,
 	FieldIdempotencyKey,
+	FieldTaxBehavior,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -106,6 +109,8 @@ var (
 	CurrencyValidator func(string) error
 	// DefaultAppliedAt holds the default value on creation for the "applied_at" field.
 	DefaultAppliedAt func() time.Time
+	// TaxBehaviorValidator is a validator for the "tax_behavior" field. It is called by the builders before save.
+	TaxBehaviorValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the TaxApplied queries.
@@ -194,4 +199,9 @@ func ByAppliedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByIdempotencyKey orders the results by the idempotency_key field.
 func ByIdempotencyKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldIdempotencyKey, opts...).ToFunc()
+}
+
+// ByTaxBehavior orders the results by the tax_behavior field.
+func ByTaxBehavior(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTaxBehavior, opts...).ToFunc()
 }

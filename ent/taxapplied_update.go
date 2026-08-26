@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/taxapplied"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -149,6 +150,20 @@ func (tau *TaxAppliedUpdate) ClearIdempotencyKey() *TaxAppliedUpdate {
 	return tau
 }
 
+// SetTaxBehavior sets the "tax_behavior" field.
+func (tau *TaxAppliedUpdate) SetTaxBehavior(tb types.TaxBehavior) *TaxAppliedUpdate {
+	tau.mutation.SetTaxBehavior(tb)
+	return tau
+}
+
+// SetNillableTaxBehavior sets the "tax_behavior" field if the given value is not nil.
+func (tau *TaxAppliedUpdate) SetNillableTaxBehavior(tb *types.TaxBehavior) *TaxAppliedUpdate {
+	if tb != nil {
+		tau.SetTaxBehavior(*tb)
+	}
+	return tau
+}
+
 // Mutation returns the TaxAppliedMutation object of the builder.
 func (tau *TaxAppliedUpdate) Mutation() *TaxAppliedMutation {
 	return tau.mutation
@@ -190,7 +205,20 @@ func (tau *TaxAppliedUpdate) defaults() {
 	}
 }
 
+// check runs all checks and user-defined validators on the builder.
+func (tau *TaxAppliedUpdate) check() error {
+	if v, ok := tau.mutation.TaxBehavior(); ok {
+		if err := taxapplied.TaxBehaviorValidator(string(v)); err != nil {
+			return &ValidationError{Name: "tax_behavior", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.tax_behavior": %w`, err)}
+		}
+	}
+	return nil
+}
+
 func (tau *TaxAppliedUpdate) sqlSave(ctx context.Context) (n int, err error) {
+	if err := tau.check(); err != nil {
+		return n, err
+	}
 	_spec := sqlgraph.NewUpdateSpec(taxapplied.Table, taxapplied.Columns, sqlgraph.NewFieldSpec(taxapplied.FieldID, field.TypeString))
 	if ps := tau.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -240,6 +268,9 @@ func (tau *TaxAppliedUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if tau.mutation.IdempotencyKeyCleared() {
 		_spec.ClearField(taxapplied.FieldIdempotencyKey, field.TypeString)
+	}
+	if value, ok := tau.mutation.TaxBehavior(); ok {
+		_spec.SetField(taxapplied.FieldTaxBehavior, field.TypeString, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, tau.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -381,6 +412,20 @@ func (tauo *TaxAppliedUpdateOne) ClearIdempotencyKey() *TaxAppliedUpdateOne {
 	return tauo
 }
 
+// SetTaxBehavior sets the "tax_behavior" field.
+func (tauo *TaxAppliedUpdateOne) SetTaxBehavior(tb types.TaxBehavior) *TaxAppliedUpdateOne {
+	tauo.mutation.SetTaxBehavior(tb)
+	return tauo
+}
+
+// SetNillableTaxBehavior sets the "tax_behavior" field if the given value is not nil.
+func (tauo *TaxAppliedUpdateOne) SetNillableTaxBehavior(tb *types.TaxBehavior) *TaxAppliedUpdateOne {
+	if tb != nil {
+		tauo.SetTaxBehavior(*tb)
+	}
+	return tauo
+}
+
 // Mutation returns the TaxAppliedMutation object of the builder.
 func (tauo *TaxAppliedUpdateOne) Mutation() *TaxAppliedMutation {
 	return tauo.mutation
@@ -435,7 +480,20 @@ func (tauo *TaxAppliedUpdateOne) defaults() {
 	}
 }
 
+// check runs all checks and user-defined validators on the builder.
+func (tauo *TaxAppliedUpdateOne) check() error {
+	if v, ok := tauo.mutation.TaxBehavior(); ok {
+		if err := taxapplied.TaxBehaviorValidator(string(v)); err != nil {
+			return &ValidationError{Name: "tax_behavior", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.tax_behavior": %w`, err)}
+		}
+	}
+	return nil
+}
+
 func (tauo *TaxAppliedUpdateOne) sqlSave(ctx context.Context) (_node *TaxApplied, err error) {
+	if err := tauo.check(); err != nil {
+		return _node, err
+	}
 	_spec := sqlgraph.NewUpdateSpec(taxapplied.Table, taxapplied.Columns, sqlgraph.NewFieldSpec(taxapplied.FieldID, field.TypeString))
 	id, ok := tauo.mutation.ID()
 	if !ok {
@@ -502,6 +560,9 @@ func (tauo *TaxAppliedUpdateOne) sqlSave(ctx context.Context) (_node *TaxApplied
 	}
 	if tauo.mutation.IdempotencyKeyCleared() {
 		_spec.ClearField(taxapplied.FieldIdempotencyKey, field.TypeString)
+	}
+	if value, ok := tauo.mutation.TaxBehavior(); ok {
+		_spec.SetField(taxapplied.FieldTaxBehavior, field.TypeString, value)
 	}
 	_node = &TaxApplied{config: tauo.config}
 	_spec.Assign = _node.assignValues

@@ -797,6 +797,12 @@ func init() {
 	customerDescTimezone := customerFields[11].Descriptor()
 	// customer.DefaultTimezone holds the default value on creation for the timezone field.
 	customer.DefaultTimezone = customerDescTimezone.Default.(string)
+	// customerDescTaxability is the schema descriptor for taxability field.
+	customerDescTaxability := customerFields[12].Descriptor()
+	// customer.DefaultTaxability holds the default value on creation for the taxability field.
+	customer.DefaultTaxability = types.Taxability(customerDescTaxability.Default.(string))
+	// customer.TaxabilityValidator is a validator for the "taxability" field. It is called by the builders before save.
+	customer.TaxabilityValidator = customerDescTaxability.Validators[0].(func(string) error)
 	entitlementMixin := schema.Entitlement{}.Mixin()
 	entitlementMixinFields0 := entitlementMixin[0].Fields()
 	_ = entitlementMixinFields0
@@ -2351,6 +2357,10 @@ func init() {
 	taxappliedDescAppliedAt := taxappliedFields[8].Descriptor()
 	// taxapplied.DefaultAppliedAt holds the default value on creation for the applied_at field.
 	taxapplied.DefaultAppliedAt = taxappliedDescAppliedAt.Default.(func() time.Time)
+	// taxappliedDescTaxBehavior is the schema descriptor for tax_behavior field.
+	taxappliedDescTaxBehavior := taxappliedFields[11].Descriptor()
+	// taxapplied.TaxBehaviorValidator is a validator for the "tax_behavior" field. It is called by the builders before save.
+	taxapplied.TaxBehaviorValidator = taxappliedDescTaxBehavior.Validators[0].(func(string) error)
 	taxassociationMixin := schema.TaxAssociation{}.Mixin()
 	taxassociationMixinFields0 := taxassociationMixin[0].Fields()
 	_ = taxassociationMixinFields0
@@ -2459,10 +2469,6 @@ func init() {
 	taxrateDescPercentageValue := taxrateFields[7].Descriptor()
 	// taxrate.DefaultPercentageValue holds the default value on creation for the percentage_value field.
 	taxrate.DefaultPercentageValue = taxrateDescPercentageValue.Default.(decimal.Decimal)
-	// taxrateDescFixedValue is the schema descriptor for fixed_value field.
-	taxrateDescFixedValue := taxrateFields[8].Descriptor()
-	// taxrate.DefaultFixedValue holds the default value on creation for the fixed_value field.
-	taxrate.DefaultFixedValue = taxrateDescFixedValue.Default.(decimal.Decimal)
 	tenantFields := schema.Tenant{}.Fields()
 	_ = tenantFields
 	// tenantDescName is the schema descriptor for name field.

@@ -262,6 +262,9 @@ func (s *customerService) UpdateCustomer(ctx context.Context, id string, req dto
 	if req.Timezone != nil {
 		cust.Timezone = *req.Timezone
 	}
+	if req.Taxability != nil {
+		cust.Taxability = *req.Taxability
+	}
 
 	// Update metadata if provided
 	if req.Metadata != nil {
