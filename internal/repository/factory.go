@@ -49,7 +49,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/user"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/domain/workflowexecution"
-	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	clickhouseRepo "github.com/flexprice/flexprice/internal/repository/clickhouse"
@@ -78,9 +77,6 @@ type RepositoryParams struct {
 	ClickHouseDB  *clickhouse.ClickHouseStore
 	InMemoryCache cache.InMemoryCache
 	RedisCache    cache.RedisCache
-	// MeterUsageLakePublisher is optional: nil unless kafka.lake_topic is configured.
-	// When present, meter_usage records are additively published to the analytics lake.
-	MeterUsageLakePublisher *kafka.MeterUsagePublisher `optional:"true"`
 }
 
 func NewEventRepository(p RepositoryParams) events.Repository {
@@ -292,7 +288,7 @@ func NewCostSheetUsageRepository(p RepositoryParams) events.CostSheetUsageReposi
 }
 
 func NewMeterUsageRepository(p RepositoryParams) events.MeterUsageRepository {
-	return clickhouseRepo.NewMeterUsageRepository(p.ClickHouseDB, p.Logger, p.MeterUsageLakePublisher)
+	return clickhouseRepo.NewMeterUsageRepository(p.ClickHouseDB, p.Logger)
 }
 
 func NewWorkflowExecutionRepository(p RepositoryParams) workflowexecution.Repository {
