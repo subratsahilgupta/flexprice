@@ -503,7 +503,10 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 
 	primary := featureECs[0]
 	total := decimal.Zero
-	var earliest time.Time
+
+	// Earliest, not latest: the pool opens as soon as any contributor is live, so a
+	// mid-cycle addition never pushes back quota that was already running.
+	earliest := lo.FromPtr(featureECs[0].StartDate)
 
 	for _, ec := range featureECs {
 		if ec.ID < primary.ID {
@@ -511,8 +514,7 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 		}
 		total = total.Add(lo.FromPtr(ec.GrantQuota))
 
-		start := lo.FromPtr(ec.StartDate)
-		if earliest.IsZero() || start.Before(earliest) {
+		if start := lo.FromPtr(ec.StartDate); start.Before(earliest) {
 			earliest = start
 		}
 	}
@@ -876,6 +878,7 @@ func (s *entitlementService) validateGrantSiblingCoherence(ctx context.Context, 
 		}
 		if sib.GrantMeasure != e.GrantMeasure {
 			return ierr.NewError("grant_measure must match the other entitlements on this feature").
+				WithHint("A feature's entitlements all meter the same thing: either quantity or amount").
 				WithReportableDetails(map[string]interface{}{
 					"feature_id":       e.FeatureID,
 					"entitlement_id":   sib.ID,
