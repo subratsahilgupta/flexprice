@@ -234,9 +234,14 @@ func (s *InMemoryEntitlementGrantStore) CloseWindow(ctx context.Context, id stri
 		return nil
 	}
 
-	existing.ValidTo = validTo.UTC()
-	existing.UpdatedAt = time.Now().UTC()
-	return s.InMemoryStore.Update(ctx, id, existing)
+	// Write to a copy: the Ent repo maps a fresh struct on every read, so a caller
+	// that still holds a grant it listed earlier must not see its valid_to move
+	// under it. Aliasing here made close-then-open paths read a window that had
+	// already collapsed to the close boundary.
+	updated := *existing
+	updated.ValidTo = validTo.UTC()
+	updated.UpdatedAt = time.Now().UTC()
+	return s.InMemoryStore.Update(ctx, id, &updated)
 }
 
 func (s *InMemoryEntitlementGrantStore) LatestWindowEndBySlot(
