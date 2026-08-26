@@ -1,15 +1,24 @@
-package kafka
+package analytics
 
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
 )
+
+// messagePublisher is the minimal publish surface this package needs. *kafka.Producer
+// satisfies it. Declared locally so the analytics package does not depend on kafka's
+// internal interface — it only needs "publish a message to a topic".
+type messagePublisher interface {
+	Publish(topic string, messages ...*message.Message) error
+}
 
 // MeterUsagePublisher publishes meter_usage records to the analytics meter_usage topics
 // AFTER they are written to ClickHouse. It is ADDITIVE and FIRE-AND-FORGET: ClickHouse stays
@@ -28,11 +37,11 @@ type MeterUsagePublisher struct {
 	logger        *logger.Logger
 }
 
-// NewMeterUsagePublisher is the fx provider. It reuses the local-cluster producer that already
-// carries source events. Gated: unless the analytics feed is enabled AND a main topic is
+// NewMeterUsagePublisher is the fx provider. It reuses the local-cluster producer that
+// already carries source events. Gated: unless the analytics feed is enabled AND a main topic is
 // configured AND a producer exists, it returns nil (no-op), mirroring the presence gating used
 // for the KafkaSecondary dual-write path.
-func NewMeterUsagePublisher(primaryProducer *Producer, cfg *config.Configuration, logger *logger.Logger) *MeterUsagePublisher {
+func NewMeterUsagePublisher(primaryProducer *kafka.Producer, cfg *config.Configuration, logger *logger.Logger) *MeterUsagePublisher {
 	if !cfg.Analytics.Enabled || cfg.Analytics.MeterUsageTopic == "" || primaryProducer == nil {
 		return nil
 	}
@@ -64,12 +73,26 @@ func (p *MeterUsagePublisher) PublishMeterUsage(ctx context.Context, records []*
 
 		// Late events (ingested well after their timestamp) route to the lazy topic. When no lazy
 		// topic is configured, late records fall back to the main topic so they are never dropped.
+		// Compute lateness ONCE here: it both drives routing and is stamped as an explicit signal
+		// (header + payload) so downstream need not infer it from the topic name.
+		late := record.IngestedAt.Sub(record.Timestamp) > p.lateThreshold
 		topic := p.topic
-		if record.IngestedAt.Sub(record.Timestamp) > p.lateThreshold && p.lazyTopic != "" {
+		if late && p.lazyTopic != "" {
 			topic = p.lazyTopic
 		}
 
-		payload, err := json.Marshal(record)
+		// Marshal a lightweight wrapper: *events.MeterUsage embeds flat (its json-tagged fields
+		// stay top-level), plus two analytics-only fields prefixed "_" to keep them distinct.
+		// The domain struct is left untouched (shared with the CH write path).
+		payload, err := json.Marshal(struct {
+			*events.MeterUsage
+			Late                 bool    `json:"_late"`
+			LateThresholdSeconds float64 `json:"_late_threshold_seconds"`
+		}{
+			MeterUsage:           record,
+			Late:                 late,
+			LateThresholdSeconds: p.lateThreshold.Seconds(),
+		})
 		if err != nil {
 			p.logger.Ctx(ctx).With("event_id", record.ID, "error", err).
 				Error("analytics meter_usage marshal failed")
@@ -79,6 +102,7 @@ func (p *MeterUsagePublisher) PublishMeterUsage(ctx context.Context, records []*
 		msg := message.NewMessage(record.ID, payload)
 		msg.Metadata.Set("tenant_id", record.TenantID)
 		msg.Metadata.Set("environment_id", record.EnvironmentID)
+		msg.Metadata.Set("late", strconv.FormatBool(late))
 
 		if err := p.publisher.Publish(topic, msg); err != nil {
 			p.logger.Ctx(ctx).With(

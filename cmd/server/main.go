@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/internal/ee/service"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	integrationevents "github.com/flexprice/flexprice/internal/integration/events"
+	"github.com/flexprice/flexprice/internal/ee/analytics"
 	"github.com/flexprice/flexprice/internal/kafka"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/pdf"
@@ -125,7 +126,7 @@ func main() {
 			// Producers and Consumers
 			kafka.NewProducer,
 			kafka.NewSecondaryProducer,
-			kafka.NewMeterUsagePublisher,
+			analytics.NewMeterUsagePublisher,
 			kafka.NewConsumer,
 
 			// Event Publisher
