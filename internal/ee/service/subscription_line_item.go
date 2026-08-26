@@ -519,6 +519,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			TierMode:          req.TierMode,
 			Tiers:             req.Tiers,
 			TransformQuantity: req.TransformQuantity,
+			BucketSize:        req.BucketSize,
 		}
 
 		priceMap := map[string]*dto.PriceResponse{existingLineItem.PriceID: price}
