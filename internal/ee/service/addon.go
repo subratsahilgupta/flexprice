@@ -548,7 +548,9 @@ func (s *addonService) GetActiveAddonAssociation(ctx context.Context, req dto.Ge
 	filter.QueryFilter = types.NewNoLimitQueryFilter()
 	filter.EntityIDs = []string{req.EntityID}
 	filter.EntityType = &req.EntityType
-	filter.AddonStatus = lo.ToPtr(string(types.AddonStatusActive))
+	filter.AddonStatuses = lo.Map(req.AddonStatuses, func(status types.AddonStatus, _ int) string {
+		return string(status)
+	})
 	filter.StartDate = periodStart
 	filter.EndDate = periodEnd
 

@@ -5076,7 +5076,7 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 	}
 
 	proratedGrants, err := s.resolveGrantProration(
-		ctx, sub, addonGrantECs, addonRequestedStart, req.ProrationBehavior, "addon_attach")
+		ctx, sub, addonGrantECs, existingGrantECs, params.getEffectiveDate(), req.ProrationBehavior, "addon_attach")
 	if err != nil {
 		return err
 	}
@@ -5121,7 +5121,7 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 		// Close this cycle's grant windows and open their prorated successors. The
 		// evaluator opens grants lazily from a usage-driven tick with no request in scope,
 		// so the attach has to write the segment itself for the proration to exist at all.
-		if err := s.materialiseEntitlementGrants(ctx, sub, proratedGrants, addonGrantECs, existingGrantECs, addonRequestedStart); err != nil {
+		if err := s.materialiseEntitlementGrants(ctx, sub, proratedGrants, addonGrantECs, existingGrantECs, params.getEffectiveDate()); err != nil {
 			return err
 		}
 
@@ -6608,10 +6608,11 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 	// Step 2: Get active addon associations using current period start
 	addonService := NewAddonService(s.ServiceParams)
 	activeAddons, err := addonService.GetActiveAddonAssociation(ctx, dto.GetActiveAddonAssociationRequest{
-		EntityID:   sub.ID,
-		EntityType: types.AddonAssociationEntityTypeSubscription,
-		StartDate:  &sub.CurrentPeriodStart,
-		EndDate:    &sub.CurrentPeriodEnd,
+		EntityID:      sub.ID,
+		EntityType:    types.AddonAssociationEntityTypeSubscription,
+		StartDate:     &sub.CurrentPeriodStart,
+		EndDate:       &sub.CurrentPeriodEnd,
+		AddonStatuses: []types.AddonStatus{types.AddonStatusActive, types.AddonStatusCancelled},
 	})
 	if err != nil {
 		return nil, ierr.WithError(err).

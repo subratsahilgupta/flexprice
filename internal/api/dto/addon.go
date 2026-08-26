@@ -172,6 +172,8 @@ type GetActiveAddonAssociationRequest struct {
 	EntityType types.AddonAssociationEntityType `json:"entity_type" validate:"required"`
 	StartDate  *time.Time                       `json:"start_date,omitempty"`
 	EndDate    *time.Time                       `json:"end_date,omitempty"`
+
+	AddonStatuses []types.AddonStatus `json:"addon_statuses,omitempty"`
 }
 
 func (r *GetActiveAddonAssociationRequest) Validate() error {

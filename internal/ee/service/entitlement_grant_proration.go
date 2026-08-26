@@ -21,6 +21,7 @@ func (s *subscriptionService) resolveGrantProration(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	incomingECs []*entitlement.Entitlement,
+	existingByFeature map[string][]*entitlement.Entitlement,
 	effectiveDate time.Time,
 	behavior types.ProrationBehavior,
 	source string,
@@ -85,13 +86,18 @@ func (s *subscriptionService) resolveGrantProration(
 			continue
 		}
 
+		coverageStart := effectiveDate
+		if len(existingByFeature[featureID]) > 0 {
+			coverageStart = p.Start
+		}
+
 		grants = append(grants, entitlementgrant.NewEntitlementGrantBuilder(nil).
 			WithCustomerID(sub.CustomerID).
 			WithSubscriptionID(sub.ID).
 			WithScope(types.EntitlementGrantScopeFeature, featureID).
 			WithMeasure(featureECs[0].GrantMeasure).
 			WithQuota(delta).
-			WithWindow(effectiveDate, p.End).
+			WithWindow(coverageStart, p.End).
 			WithMetadata(proration.AuditMetadata(proration.AuditParams{
 				Source:        source,
 				Coefficient:   coefficient,

@@ -468,10 +468,7 @@ func (s *entitlementGrantService) eligibleGrantConfigsByFeature(
 // grantCandidatesForFeature: parallel → one candidate per EC; additive → one
 // candidate on the primary (lowest-ID) EC with the summed quota.
 func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCandidate {
-	parallel := lo.SomeBy(featureECs, func(ec *entitlement.Entitlement) bool {
-		return ec.AggregationMode == types.EntitlementAggregationModeParallel
-	})
-	if parallel {
+	if featureIsParallel(featureECs) {
 		return lo.Map(featureECs, func(ec *entitlement.Entitlement, _ int) grantCandidate {
 			return grantCandidate{ec: ec, quota: lo.FromPtr(ec.GrantQuota)}
 		})
