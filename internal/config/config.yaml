@@ -116,6 +116,14 @@ kafka:
       partitions: 3
     onboarding_events:
       partitions: 3
+    # Analytics feed topics — MUST stay in sync with the analytics.* topic names above
+    # (meter_usage_topic / meter_usage_lazy_topic). Overriding either via
+    # FLEXPRICE_ANALYTICS_METER_USAGE_TOPIC also requires updating this set
+    # (or FLEXPRICE_KAFKA_TOPICS) so `migrate kafka` still creates the topic.
+    "analytics.meter_usage":
+      partitions: 6
+    "analytics.meter_usage.lazy":
+      partitions: 6
 
 # Optional SECOND Kafka cluster for the AWS→GCP migration (GCP-CUTOVER-STEPWISE.md).
 # `kafka` above = this deployment's own/local cluster (consumed AND always written).
