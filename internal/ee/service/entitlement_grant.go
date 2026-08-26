@@ -118,9 +118,16 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 
 	for _, req := range reqs {
 		featureECs := append(append([]*entitlement.Entitlement{}, req.ExistingECs...), req.IncomingECs...)
-		if req.New == nil || len(req.IncomingECs) == 0 || !shouldOpenGrantManually(featureECs) {
+		if req.New == nil || len(featureECs) == 0 || featureIsParallel(featureECs) {
 			s.Logger.Info(ctx, "skipping entitlement grant open",
 				"feature_id", req.FeatureID)
+			continue
+		}
+
+		if req.Closed == nil && !req.New.Quota.IsPositive() {
+			s.Logger.Info(ctx, "skipping entitlement grant open; resulting quota is not positive",
+				"feature_id", req.FeatureID,
+				"quota", req.New.Quota.String())
 			continue
 		}
 

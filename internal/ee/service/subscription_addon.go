@@ -691,12 +691,12 @@ func (s *subscriptionService) persistAddonDetach(ctx context.Context, params *ad
 
 		// End the entitlement grant windows this addon owns on its own slots. Pooled
 		// (additive) windows survive the detach — see closeGrantsForRemovedECs.
-		addonECs, err := NewEntitlementService(s.ServiceParams).
-			GetGrantEntitlements(ctx, types.ENTITLEMENT_ENTITY_TYPE_ADDON, association.AddonID)
+		addonEnts, err := NewEntitlementService(s.ServiceParams).GetAddonEntitlements(ctx, association.AddonID)
 		if err != nil {
 			return err
 		}
-		if err := s.closeGrantsForRemovedECs(ctx, params.getSubscription(), addonECs, params.getEffectiveDate()); err != nil {
+		addonECs := dto.ToEntitlements(addonEnts)
+		if err := s.handleGrantsForRemovedECs(ctx, params.getSubscription(), addonECs, params.getEffectiveDate(), "addon_detach"); err != nil {
 			return err
 		}
 

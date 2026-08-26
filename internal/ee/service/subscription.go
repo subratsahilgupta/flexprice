@@ -5064,11 +5064,11 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 	existing := params.isReplayAttach()
 
 	creditGrantProration := s.addonCreditGrantProration(ctx, sub, addonRequestedStart, req.ProrationBehavior)
-	addonGrantECs, err := NewEntitlementService(s.ServiceParams).
-		GetGrantEntitlements(ctx, types.ENTITLEMENT_ENTITY_TYPE_ADDON, req.AddonID)
+	addonEnts, err := NewEntitlementService(s.ServiceParams).GetAddonEntitlements(ctx, req.AddonID)
 	if err != nil {
 		return err
 	}
+	addonGrantECs := dto.ToEntitlements(addonEnts)
 
 	existingGrantECs, err := s.GetSubscriptionGrantECsByFeature(ctx, sub)
 	if err != nil {

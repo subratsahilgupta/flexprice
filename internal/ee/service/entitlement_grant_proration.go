@@ -54,24 +54,29 @@ func (s *subscriptionService) resolveGrantProration(
 		return nil, nil
 	}
 
-	prorationDate := p.Start
-	if behavior == types.ProrationBehaviorCreateProrations && effectiveDate.After(p.Start) {
-		prorationDate = effectiveDate
-	}
-
-	coefficient, err := proration.Coefficient(p.Start, p.End, prorationDate, types.StrategySecondBased)
-	if err != nil {
-		s.Logger.Info(ctx, "skipping entitlement grant proration; coefficient could not be computed",
-			"subscription_id", sub.ID,
-			"effective_date", effectiveDate,
-			"error", err.Error())
-		return nil, nil
-	}
-
 	grants := make([]*entitlementgrant.EntitlementGrant, 0, len(incoming))
 	for featureID, featureECs := range lo.GroupBy(incoming, func(ec *entitlement.Entitlement) string {
 		return ec.FeatureID
 	}) {
+		if !shouldOpenGrantManually(featureECs) {
+			continue
+		}
+
+		prorationDate := p.Start
+		if behavior == types.ProrationBehaviorCreateProrations && effectiveDate.After(p.Start) {
+			prorationDate = effectiveDate
+		}
+
+		coefficient, err := proration.Coefficient(p.Start, p.End, prorationDate, types.StrategySecondBased)
+		if err != nil {
+			s.Logger.Info(ctx, "skipping entitlement grant proration; coefficient could not be computed",
+				"subscription_id", sub.ID,
+				"feature_id", featureID,
+				"effective_date", effectiveDate,
+				"error", err.Error())
+			continue
+		}
+
 		originalQuota := decimal.Zero
 		for _, ec := range featureECs {
 			originalQuota = originalQuota.Add(lo.FromPtr(ec.GrantQuota))
@@ -204,55 +209,115 @@ func shouldOpenGrantManually(featureECs []*entitlement.Entitlement) bool {
 	})
 }
 
-// closeGrantsForRemovedECs ends the grant windows the removed ECs own outright: a parallel
-// EC holds its own slot, so dropping it drops that budget. An additive feature is left alone
-// — its live row pools the removed quota with whatever else feeds the feature, and there is
-// no way to tell which side the usage came from, so the pooled window runs out its cycle.
+// handleGrantsForRemovedECs settles the grant windows the removed ECs fed. A parallel EC owns
+// its slot outright, so its row is closed and nothing succeeds it. An additive feature pools
+// the removed quota with whatever else feeds it: the live row is closed and, while any EC
+// survives, a successor carries the remaining balance through the rest of the window.
 // No-op when the removal is future-dated, since no window is live at that instant.
-func (s *subscriptionService) closeGrantsForRemovedECs(
+func (s *subscriptionService) handleGrantsForRemovedECs(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	removedECs []*entitlement.Entitlement,
 	effectiveDate time.Time,
+	source string,
 ) error {
 	if s.EntitlementGrantRepo == nil || len(removedECs) == 0 {
 		return nil
 	}
 
-	slotECIDs := make([]string, 0, len(removedECs))
-	for _, featureECs := range lo.GroupBy(
+	removedByFeature := lo.GroupBy(
 		lo.Filter(removedECs, func(ec *entitlement.Entitlement, _ int) bool {
 			return ec != nil && ec.HasGrantConfig()
 		}),
 		func(ec *entitlement.Entitlement) string { return ec.FeatureID },
-	) {
-		if !featureIsParallel(featureECs) {
-			continue
-		}
-
-		slotECIDs = append(slotECIDs, lo.Map(featureECs, func(ec *entitlement.Entitlement, _ int) string {
-			return ec.ID
-		})...)
-	}
-	if len(slotECIDs) == 0 {
+	)
+	if len(removedByFeature) == 0 {
 		return nil
 	}
 
-	filter := types.NewNoLimitEntitlementGrantFilter().
-		WithCustomerIDs(sub.CustomerID).
-		WithSubscriptionIDs(sub.ID).
-		WithEntitlementConfigIDs(slotECIDs...).
-		WithLiveOnly(effectiveDate)
-
-	rows, err := s.EntitlementGrantRepo.List(ctx, filter)
+	liveByFeature, err := s.liveGrantsByFeature(ctx, sub, effectiveDate)
 	if err != nil {
 		return err
 	}
-	if len(rows) == 0 {
+
+	ecsByFeature, err := s.GetSubscriptionGrantECsByFeature(ctx, sub)
+	if err != nil {
+		return err
+	}
+
+	toClose := make([]*entitlementgrant.EntitlementGrant, 0, len(removedByFeature))
+	pooledByFeature := make(map[string]*entitlementgrant.EntitlementGrant, len(removedByFeature))
+	survivingByFeature := make(map[string][]*entitlement.Entitlement, len(removedByFeature))
+
+	for featureID, removed := range removedByFeature {
+		live := liveByFeature[featureID]
+		if len(live) == 0 {
+			continue
+		}
+
+		removedIDs := lo.SliceToMap(removed, func(ec *entitlement.Entitlement) (string, bool) {
+			return ec.ID, true
+		})
+
+		if featureIsParallel(removed) {
+			toClose = append(toClose, lo.Filter(live, func(g *entitlementgrant.EntitlementGrant, _ int) bool {
+				return removedIDs[g.EntitlementConfigID]
+			})...)
+			continue
+		}
+
+		pooled := lo.FirstOrEmpty(live)
+		toClose = append(toClose, pooled)
+
+		// all ECs that are not removed
+		surviving := lo.Filter(ecsByFeature[featureID], func(ec *entitlement.Entitlement, _ int) bool {
+			return ec != nil && !removedIDs[ec.ID]
+		})
+		if len(surviving) == 0 {
+			continue
+		}
+
+		pooledByFeature[featureID] = pooled
+		survivingByFeature[featureID] = surviving
+	}
+	if len(toClose) == 0 {
 		return nil
 	}
 
-	_, err = NewEntitlementGrantService(s.ServiceParams).CloseEntitlementGrants(ctx, rows)
+	grantSvc := NewEntitlementGrantService(s.ServiceParams)
+
+	closedByID, err := grantSvc.CloseEntitlementGrants(ctx, toClose)
+	if err != nil {
+		return err
+	}
+
+	reqs := make([]OpenFeatureBasedEntitlementGrantsRequest, 0, len(pooledByFeature))
+	for featureID, pooled := range pooledByFeature {
+		closed := closedByID[pooled.ID]
+		if closed == nil {
+			continue
+		}
+
+		// Zero delta: the successor's quota is whatever the closed window had left.
+		reqs = append(reqs, OpenFeatureBasedEntitlementGrantsRequest{
+			FeatureID: featureID,
+			Closed:    closed,
+			New: entitlementgrant.NewEntitlementGrantBuilder(pooled).
+				WithQuota(decimal.Zero).
+				WithWindow(closed.ValidTo, pooled.ValidTo).
+				WithMetadata(types.Metadata{
+					"source":             source,
+					"carry_forward_from": pooled.ID,
+				}).
+				Build(),
+			ExistingECs: survivingByFeature[featureID],
+		})
+	}
+	if len(reqs) == 0 {
+		return nil
+	}
+
+	_, err = grantSvc.OpenFeatureBasedEntitlementGrants(ctx, reqs)
 	return err
 }
 

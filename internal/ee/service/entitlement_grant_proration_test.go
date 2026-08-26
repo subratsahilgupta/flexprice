@@ -345,10 +345,9 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_ZeroQuota_Skips
 }
 
 // A parallel EC owns its own slot, and the evaluator opens that slot with the EC's full
-// quota — a standalone budget, not a top-up of a pool. The attach writes no successor for
-// it: it closes the live window and leaves the reopen to the tick, which starts the next
-// segment at the close boundary with the EC's full quota. No balance is carried forward.
-func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_Parallel_ClosedForTickToReopen() {
+// quota — a standalone budget, not a top-up of a pool. Nothing for the attach to correct, so
+// it writes no row and leaves the plan's budget untouched.
+func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_Parallel_LeftToEvaluator() {
 	featureID := s.seedGrantFeature("feat_eg_par")
 	s.seedGrantEC("ent_aaa_plan", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID,
 		1000, types.EntitlementAggregationModeParallel)
@@ -361,12 +360,11 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_Parallel_Closed
 	s.Require().Len(rows, 1, "the attach must not write parallel rows, got %d", len(rows))
 
 	got := rows[0]
-	s.Equal(planRow.ID, got.ID, "the plan's row is closed, not replaced")
+	s.Equal(planRow.ID, got.ID, "the plan's budget is untouched")
 	s.Equal("ent_aaa_plan", got.EntitlementConfigID)
-	s.True(got.Quota.Equal(decimal.NewFromInt(1000)), "a closed window keeps the quota it was opened with")
-	s.True(got.ValidFrom.Equal(s.testData.subscription.CurrentPeriodStart), "its start must not move")
-	s.True(got.ValidTo.Equal(lo.FromPtr(planRow.LastComputedAt)),
-		"the window closes where usage was last measured, got %s", got.ValidTo)
+	s.True(got.Quota.Equal(decimal.NewFromInt(1000)))
+	s.True(got.ValidFrom.Equal(s.testData.subscription.CurrentPeriodStart), "its window must not move")
+	s.True(got.ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd), "its window must not move")
 }
 
 // hour/day/week grants are usage-anchored and open post-attach on their own, so
