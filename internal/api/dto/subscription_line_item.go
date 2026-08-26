@@ -592,6 +592,15 @@ func (r *UpdateSubscriptionLineItemRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
+	// BucketSizeNone is the explicit-clear sentinel, not a window, so it skips the
+	// enum check. Validating here stops a bad window reaching the price layer,
+	// where it surfaces only after the override has already been built.
+	if r.BucketSize != "" && r.BucketSize != BucketSizeNone {
+		if err := r.BucketSize.Validate(); err != nil {
+			return err
+		}
+	}
+
 	// Validate commitment fields if provided
 	if err := r.validateCommitmentFields(); err != nil {
 		return err
