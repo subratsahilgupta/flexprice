@@ -519,6 +519,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			TierMode:          req.TierMode,
 			Tiers:             req.Tiers,
 			TransformQuantity: req.TransformQuantity,
+			BucketSize:        req.BucketSize,
 		}
 
 		priceMap := map[string]*dto.PriceResponse{existingLineItem.PriceID: price}
@@ -567,6 +568,15 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 				if err := s.createBucketPrices(ctx, newLineItem.ID, existingLineItem.SubscriptionID, *req.CommitmentTimeBuckets, newLineItem.CommitmentTimeBuckets, existingLineItem.CommitmentTimeBuckets); err != nil {
 					return err
 				}
+			}
+
+			// Buckets are validated against the window they will actually bill in,
+			// so re-check whenever EITHER input moved: the buckets themselves, or
+			// the bucket size they must align to. Validating only on resent buckets
+			// misses `{"bucket_size": "FIFTEEN_MIN"}` on a line item whose
+			// hour-aligned buckets are inherited by ToSubscriptionLineItem — the
+			// window narrows and the stale buckets carry over unchecked.
+			if (req.CommitmentTimeBuckets != nil || req.BucketSize != "") && len(newLineItem.CommitmentTimeBuckets) > 0 {
 				_, _, hasCumulative := getSubscriptionCommitmentPeriodBounds(sub, sub.CurrentPeriodStart)
 				if err := s.validateBucketArray(ctx, newLineItem.MeterID, newLineItem.PriceID, newLineItem.CommitmentWindowed, hasCumulative, newLineItem.CommitmentTimeBuckets); err != nil {
 					return err
