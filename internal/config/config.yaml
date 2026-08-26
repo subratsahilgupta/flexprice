@@ -37,6 +37,23 @@ auth:
         name: "Local Dev API Key"
         is_active: true
 
+# Additive, fire-and-forget analytics meter_usage feed. After a meter_usage record
+# is written to ClickHouse it is also published to Kafka for the analytics lake.
+analytics:
+  # Master gate for the WHOLE feed. Off (the default) means nothing is published,
+  # regardless of the topic settings below. Enable per deployment via
+  # FLEXPRICE_ANALYTICS_ENABLED.
+  enabled: false
+  # On-time records go here (FLEXPRICE_ANALYTICS_METER_USAGE_TOPIC).
+  meter_usage_topic: "analytics.meter_usage"
+  # Late records (ingested_at - timestamp > late_threshold) go here instead, so the
+  # lake can process them out of band (FLEXPRICE_ANALYTICS_METER_USAGE_LAZY_TOPIC).
+  # Empty ⇒ late records fall back to meter_usage_topic (never dropped).
+  meter_usage_lazy_topic: "analytics.meter_usage.lazy"
+  # A record whose (ingested_at - timestamp) exceeds this is "late" and routes to the
+  # lazy topic (FLEXPRICE_ANALYTICS_LATE_THRESHOLD).
+  late_threshold: 24h
+
 kafka:
   brokers: "localhost:29092" # For local mode
   # Will be overridden by FLEXPRICE_KAFKA_BROKERS env var in Docker

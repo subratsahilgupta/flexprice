@@ -72,6 +72,17 @@ type Configuration struct {
 	Whop                   WhopConfig                   `mapstructure:"whop" validate:"omitempty"`
 	Onboarding             OnboardingConfig             `mapstructure:"onboarding" validate:"omitempty"`
 	ChatSupport            ChatSupportConfig            `mapstructure:"chat_support" validate:"omitempty"`
+	Analytics              AnalyticsConfig              `mapstructure:"analytics" validate:"omitempty"`
+}
+
+// AnalyticsConfig gates the additive, fire-and-forget analytics meter_usage feed.
+// Enabled is the master switch for the WHOLE feed. Late events (ingested_at - timestamp
+// > LateThreshold) route to MeterUsageLazyTopic instead of MeterUsageTopic.
+type AnalyticsConfig struct {
+	Enabled             bool          `mapstructure:"enabled" default:"false"`
+	MeterUsageTopic     string        `mapstructure:"meter_usage_topic"`
+	MeterUsageLazyTopic string        `mapstructure:"meter_usage_lazy_topic"`
+	LateThreshold       time.Duration `mapstructure:"late_threshold" default:"24h"`
 }
 
 type ChatSupportConfig struct {
