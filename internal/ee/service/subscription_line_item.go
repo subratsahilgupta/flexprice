@@ -576,8 +576,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			// misses `{"bucket_size": "FIFTEEN_MIN"}` on a line item whose
 			// hour-aligned buckets are inherited by ToSubscriptionLineItem — the
 			// window narrows and the stale buckets carry over unchecked.
-			// validateBucketArray no-ops on an empty bucket array.
-			if req.CommitmentTimeBuckets != nil || req.BucketSize != "" {
+			if (req.CommitmentTimeBuckets != nil || req.BucketSize != "") && len(newLineItem.CommitmentTimeBuckets) > 0 {
 				_, _, hasCumulative := getSubscriptionCommitmentPeriodBounds(sub, sub.CurrentPeriodStart)
 				if err := s.validateBucketArray(ctx, newLineItem.MeterID, newLineItem.PriceID, newLineItem.CommitmentWindowed, hasCumulative, newLineItem.CommitmentTimeBuckets); err != nil {
 					return err
