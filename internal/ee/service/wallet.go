@@ -588,6 +588,28 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 			Mark(ierr.ErrValidation)
 	}
 
+	// Enforce org-level free credit limit per transaction.
+	if req.TransactionReason == types.TransactionReasonFreeCredit {
+		settingsSvc := &settingsService{ServiceParams: s.ServiceParams}
+		topupCfg, err := GetSetting[types.WalletTopupConfig](settingsSvc, ctx, types.SettingKeyWalletTopupConfig)
+		if err != nil {
+			return nil, err
+		}
+		if topupCfg.FreeCreditLimitPerTransaction.IsPositive() {
+			// currency amount = credits * topup_conversion_rate
+			txAmountInCurrency := req.CreditsToAdd.Mul(w.TopupConversionRate)
+			if txAmountInCurrency.GreaterThan(topupCfg.FreeCreditLimitPerTransaction) {
+				return nil, ierr.NewError("free credit amount exceeds the per-transaction limit").
+					WithHint("Reduce the credit amount to stay within the configured limit").
+					WithReportableDetails(map[string]interface{}{
+						"requested_amount": txAmountInCurrency,
+						"limit":            topupCfg.FreeCreditLimitPerTransaction,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+
 	// Resolve bonus credits from the tenant's slab config when the caller didn't pass an
 	// explicit override. Only "purchased" (paid) top-up reasons trigger slab resolution;
 	// req.BonusCreditsToAdd is mutated in place so every downstream step just reads it.
