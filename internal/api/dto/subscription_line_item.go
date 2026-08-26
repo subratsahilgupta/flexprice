@@ -137,6 +137,10 @@ type UpdateSubscriptionLineItemRequest struct {
 	// TransformQuantity determines how to transform the quantity for this line item
 	TransformQuantity *price.TransformQuantity `json:"transform_quantity,omitempty"`
 
+	// BucketSize overrides the windowing used to turn this meter's usage into
+	// billable units for this line item. See CreatePriceRequest.BucketSize.
+	BucketSize types.WindowSize `json:"bucket_size,omitempty"`
+
 	// Metadata for the new line item
 	Metadata map[string]string `json:"metadata,omitempty"`
 
@@ -584,8 +588,17 @@ func (r *UpdateSubscriptionLineItemRequest) Validate() error {
 	// If EffectiveFrom is provided, at least one critical field must be present
 	if r.EffectiveFrom != nil && !r.ShouldCreateNewLineItem() {
 		return ierr.NewError("effective_from requires at least one critical field").
-			WithHint("When providing effective_from, you must also provide one of: amount, billing_model, tier_mode, tiers, transform_quantity, or commitment fields").
+			WithHint("When providing effective_from, you must also provide one of: amount, billing_model, tier_mode, tiers, transform_quantity, bucket_size, or commitment fields").
 			Mark(ierr.ErrValidation)
+	}
+
+	// BucketSizeNone is the explicit-clear sentinel, not a window, so it skips the
+	// enum check. Validating here stops a bad window reaching the price layer,
+	// where it surfaces only after the override has already been built.
+	if r.BucketSize != "" && r.BucketSize != BucketSizeNone {
+		if err := r.BucketSize.Validate(); err != nil {
+			return err
+		}
 	}
 
 	// Validate commitment fields if provided
@@ -779,6 +792,7 @@ func (r *UpdateSubscriptionLineItemRequest) ShouldCreateNewLineItem() bool {
 		r.TierMode != "" ||
 		len(r.Tiers) > 0 ||
 		r.TransformQuantity != nil ||
+		r.BucketSize != "" ||
 		r.HasCommitment() ||
 		r.CommitmentOverageFactor != nil ||
 		r.CommitmentTrueUpEnabled != nil ||
