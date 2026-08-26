@@ -397,20 +397,16 @@ func (s *SubscriptionServiceSuite) TestAddAddonToSubscription_ProratesFirstCredi
 
 	// The fixture's period is [now-24h, now+6d) and the addon attaches at `now`,
 	// leaving 6 of 7 days.
-	expected, err := proration.CalculateCreditGrantProration(proration.CreditGrantProrationParams{
-		PeriodStart:     sub.CurrentPeriodStart,
-		PeriodEnd:       sub.CurrentPeriodEnd,
-		ProrationDate:   now,
-		Strategy:        types.StrategySecondBased,
-		OriginalCredits: decimal.NewFromInt(100),
-	})
+	coefficient, err := proration.Coefficient(
+		sub.CurrentPeriodStart, sub.CurrentPeriodEnd, now, types.StrategySecondBased)
 	s.NoError(err)
-	s.True(expected.ProratedCredits.LessThan(decimal.NewFromInt(100)),
+	expectedCredits := decimal.NewFromInt(100).Mul(coefficient).Round(creditGrantCreditsScale)
+	s.True(expectedCredits.LessThan(decimal.NewFromInt(100)),
 		"sanity: a mid-period attach must yield less than the full grant")
 
 	app := s.firstApplicationFor(grant.ID)
 	s.Require().NotNil(app)
-	s.Equal(expected.ProratedCredits.String(), app.Credits.String())
+	s.Equal(expectedCredits.String(), app.Credits.String())
 	s.Equal("true", app.Metadata["proration_applied"])
 	s.Equal("100", app.Metadata["proration_original_credits"])
 

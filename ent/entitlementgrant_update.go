@@ -70,20 +70,6 @@ func (egu *EntitlementGrantUpdate) ClearUpdatedBy() *EntitlementGrantUpdate {
 	return egu
 }
 
-// SetQuota sets the "quota" field.
-func (egu *EntitlementGrantUpdate) SetQuota(d decimal.Decimal) *EntitlementGrantUpdate {
-	egu.mutation.SetQuota(d)
-	return egu
-}
-
-// SetNillableQuota sets the "quota" field if the given value is not nil.
-func (egu *EntitlementGrantUpdate) SetNillableQuota(d *decimal.Decimal) *EntitlementGrantUpdate {
-	if d != nil {
-		egu.SetQuota(*d)
-	}
-	return egu
-}
-
 // SetUsage sets the "usage" field.
 func (egu *EntitlementGrantUpdate) SetUsage(d decimal.Decimal) *EntitlementGrantUpdate {
 	egu.mutation.SetUsage(d)
@@ -246,9 +232,6 @@ func (egu *EntitlementGrantUpdate) sqlSave(ctx context.Context) (n int, err erro
 	if egu.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(entitlementgrant.FieldEnvironmentID, field.TypeString)
 	}
-	if value, ok := egu.mutation.Quota(); ok {
-		_spec.SetField(entitlementgrant.FieldQuota, field.TypeOther, value)
-	}
 	if value, ok := egu.mutation.Usage(); ok {
 		_spec.SetField(entitlementgrant.FieldUsage, field.TypeOther, value)
 	}
@@ -333,20 +316,6 @@ func (eguo *EntitlementGrantUpdateOne) SetNillableUpdatedBy(s *string) *Entitlem
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (eguo *EntitlementGrantUpdateOne) ClearUpdatedBy() *EntitlementGrantUpdateOne {
 	eguo.mutation.ClearUpdatedBy()
-	return eguo
-}
-
-// SetQuota sets the "quota" field.
-func (eguo *EntitlementGrantUpdateOne) SetQuota(d decimal.Decimal) *EntitlementGrantUpdateOne {
-	eguo.mutation.SetQuota(d)
-	return eguo
-}
-
-// SetNillableQuota sets the "quota" field if the given value is not nil.
-func (eguo *EntitlementGrantUpdateOne) SetNillableQuota(d *decimal.Decimal) *EntitlementGrantUpdateOne {
-	if d != nil {
-		eguo.SetQuota(*d)
-	}
 	return eguo
 }
 
@@ -541,9 +510,6 @@ func (eguo *EntitlementGrantUpdateOne) sqlSave(ctx context.Context) (_node *Enti
 	}
 	if eguo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(entitlementgrant.FieldEnvironmentID, field.TypeString)
-	}
-	if value, ok := eguo.mutation.Quota(); ok {
-		_spec.SetField(entitlementgrant.FieldQuota, field.TypeOther, value)
 	}
 	if value, ok := eguo.mutation.Usage(); ok {
 		_spec.SetField(entitlementgrant.FieldUsage, field.TypeOther, value)
