@@ -28,9 +28,9 @@ type EntitlementGrant struct {
 	LastComputedAt      *time.Time                            `json:"last_computed_at,omitempty"`
 	// QuotaCrossedAt is set once, when the evaluator first sees usage >= quota
 	// It holds the evaluation time, not the exact event-level crossing.
-	QuotaCrossedAt *time.Time `json:"quota_crossed_at,omitempty"`
-	Metadata      types.Metadata `json:"metadata,omitempty"`
-	EnvironmentID string         `json:"environment_id"`
+	QuotaCrossedAt *time.Time     `json:"quota_crossed_at,omitempty"`
+	Metadata       types.Metadata `json:"metadata,omitempty"`
+	EnvironmentID  string         `json:"environment_id"`
 	types.BaseModel
 }
 
@@ -74,6 +74,19 @@ func (g *EntitlementGrant) Overage() decimal.Decimal {
 		return decimal.Zero
 	}
 	return over
+}
+
+// Remaining is the unspent balance, clamped at zero. The mirror of Overage: a window that
+// ran past its quota hands nothing forward, so debt never crosses into a successor.
+func (g *EntitlementGrant) Remaining() decimal.Decimal {
+	if g == nil {
+		return decimal.Zero
+	}
+	remaining := g.Quota.Sub(g.Usage)
+	if remaining.IsNegative() {
+		return decimal.Zero
+	}
+	return remaining
 }
 
 // MetadataValue reads one metadata key, nil-safe on both the grant and the map.

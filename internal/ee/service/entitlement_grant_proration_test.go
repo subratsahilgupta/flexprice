@@ -346,7 +346,10 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_ZeroQuota_Skips
 
 // Parallel is not special-cased away: the addon's EC owns its own slot, so it
 // gets its own prorated row alongside the plan's.
-func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_Parallel_GetsOwnRow() {
+// A parallel EC owns its own slot, and the evaluator opens that slot with the EC's full
+// quota — a standalone budget, not a top-up of a pool. Nothing for the attach to correct,
+// so it writes no row and leaves the plan's budget alone.
+func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_Parallel_LeftToEvaluator() {
 	featureID := s.seedGrantFeature("feat_eg_par")
 	s.seedGrantEC("ent_aaa_plan", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID,
 		1000, types.EntitlementAggregationModeParallel)
@@ -356,19 +359,13 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_Parallel_GetsOw
 	s.Require().NoError(s.attachAddon("addon_eg_par", s.testData.now, types.ProrationBehaviorCreateProrations))
 
 	rows := s.grantsForFeature(featureID)
-	s.Require().Len(rows, 2, "parallel budgets are independent rows, got %d", len(rows))
+	s.Require().Len(rows, 1, "the attach must not write parallel rows, got %d", len(rows))
 
-	byEC := lo.SliceToMap(rows, func(g *entitlementgrant.EntitlementGrant) (string, *entitlementgrant.EntitlementGrant) {
-		return g.EntitlementConfigID, g
-	})
-	s.True(byEC["ent_aaa_plan"].Quota.Equal(decimal.NewFromInt(1000)), "the plan's budget is untouched")
-	s.Equal(planRow.ID, byEC["ent_aaa_plan"].ID)
-
-	addonRow := byEC["ent_par_addon"]
-	s.Require().NotNil(addonRow)
-	want := s.expectedProrated(600)
-	s.True(addonRow.Quota.Equal(want), "expected prorated %s, got %s", want, addonRow.Quota)
-	s.True(addonRow.ValidFrom.Equal(s.testData.now), "a parallel budget meters only post-attach usage")
+	s.Equal(planRow.ID, rows[0].ID, "the plan's budget is untouched")
+	s.Equal("ent_aaa_plan", rows[0].EntitlementConfigID)
+	s.True(rows[0].Quota.Equal(decimal.NewFromInt(1000)))
+	s.True(rows[0].ValidFrom.Equal(s.testData.subscription.CurrentPeriodStart), "its window must not move")
+	s.True(rows[0].ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd))
 }
 
 // hour/day/week grants are usage-anchored and open post-attach on their own, so

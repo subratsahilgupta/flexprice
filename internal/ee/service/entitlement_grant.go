@@ -30,6 +30,9 @@ type EntitlementGrantService interface {
 	// The returned meta carries the lookups (features, meters, external ids)
 	// built during the pass so the evaluator can reuse them.
 	EnsureGrantsForSubscriptions(ctx context.Context, cust *customer.Customer, subs []*subscription.Subscription, at time.Time) ([]*entitlementgrant.EntitlementGrant, *grantEvalMeta, error)
+
+	CloseEntitlementGrants(ctx context.Context, grants []*entitlementgrant.EntitlementGrant) (map[string]*entitlementgrant.EntitlementGrant, error)
+	OpenFeatureBasedEntitlementGrants(ctx context.Context, reqs []OpenFeatureBasedEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
 }
 
 type entitlementGrantService struct {
@@ -42,6 +45,155 @@ func NewEntitlementGrantService(params ServiceParams) EntitlementGrantService {
 
 func (s *entitlementGrantService) GetGrant(ctx context.Context, id string) (*entitlementgrant.EntitlementGrant, error) {
 	return s.EntitlementGrantRepo.Get(ctx, id)
+}
+
+type OpenFeatureBasedEntitlementGrantsRequest struct {
+	FeatureID   string
+	Closed      *entitlementgrant.EntitlementGrant // If any for the same feature
+	New         *entitlementgrant.EntitlementGrant
+	ExistingECs []*entitlement.Entitlement
+	IncomingECs []*entitlement.Entitlement
+}
+
+func (s *entitlementGrantService) CloseEntitlementGrants(
+	ctx context.Context,
+	grants []*entitlementgrant.EntitlementGrant,
+) (map[string]*entitlementgrant.EntitlementGrant, error) {
+	closed := make(map[string]*entitlementgrant.EntitlementGrant, len(grants))
+
+	for _, g := range grants {
+		if g == nil {
+			continue
+		}
+
+		boundary := lo.FromPtr(g.LastComputedAt)
+
+		// Never evaluated, so the window has no measurable life. Closing it would leave both
+		// windows permitting the same quota, because the usage it really saw was never
+		// measured into the successor's balance. Remove it instead and let the successor
+		// span the original window, where every event still counts against one pool.
+		if !boundary.After(g.ValidFrom) {
+			if err := s.EntitlementGrantRepo.Delete(ctx, g.ID); err != nil {
+				return nil, err
+			}
+
+			s.Logger.Info(ctx, "removed un-evaluated entitlement grant window",
+				"grant_id", g.ID,
+				"valid_from", g.ValidFrom)
+
+			// Carries a zero-length window on purpose: valid_to is where the successor
+			// starts, and for a removed row that is its own valid_from. Never persisted.
+			closed[g.ID] = entitlementgrant.NewEntitlementGrantBuilder(g).
+				WithWindow(g.ValidFrom, g.ValidFrom).
+				Build()
+			continue
+		}
+
+		// Leaves usage, grant_status and last_computed_at alone: last_computed_at < valid_to
+		// is what keeps a closed row in the evaluator's unfinalized set for its final
+		// refresh, so tail events still reach the billing reads.
+		if err := s.EntitlementGrantRepo.CloseWindow(ctx, g.ID, boundary); err != nil {
+			return nil, err
+		}
+
+		s.Logger.Info(ctx, "closed entitlement grant window",
+			"grant_id", g.ID,
+			"closed_at", boundary,
+			"quota", g.Quota.String(),
+			"usage", g.Usage.String())
+
+		closed[g.ID] = entitlementgrant.NewEntitlementGrantBuilder(g).
+			WithWindow(g.ValidFrom, boundary).
+			Build()
+	}
+
+	return closed, nil
+}
+
+func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
+	ctx context.Context,
+	reqs []OpenFeatureBasedEntitlementGrantsRequest,
+) ([]*entitlementgrant.EntitlementGrant, error) {
+	opened := make([]*entitlementgrant.EntitlementGrant, 0, len(reqs))
+
+	for _, req := range reqs {
+		featureECs := append(append([]*entitlement.Entitlement{}, req.ExistingECs...), req.IncomingECs...)
+		if req.New == nil || len(req.IncomingECs) == 0 || !shouldOpenGrantManually(featureECs) {
+			s.Logger.Info(ctx, "skipping entitlement grant open",
+				"feature_id", req.FeatureID)
+			continue
+		}
+
+		// The predecessor holds the slot for the rest of the cycle; only a cycle with no row
+		// re-derives it, and then from the same lowest-id tie-break the tick would use.
+		slotECID := grantCandidatesForFeature(featureECs)[0].ec.ID
+		validFrom := req.New.ValidFrom
+		quota := req.New.Quota
+
+		if req.Closed != nil {
+			if !validFrom.IsZero() && !validFrom.Equal(req.Closed.ValidTo) {
+				return nil, ierr.NewError("successor window does not tile with the closed grant").
+					WithHint("A grant segment must start where the window it succeeds ended").
+					WithReportableDetails(map[string]interface{}{
+						"feature_id":       req.FeatureID,
+						"closed_grant_id":  req.Closed.ID,
+						"closed_valid_to":  req.Closed.ValidTo,
+						"opening_valid_at": validFrom,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+
+			quota = req.Closed.Remaining().Add(req.New.Quota)
+		} else {
+			for _, ec := range req.ExistingECs {
+				quota = quota.Add(lo.FromPtr(ec.GrantQuota))
+			}
+		}
+
+		if !validFrom.Before(req.New.ValidTo) {
+			s.Logger.Info(ctx, "skipping entitlement grant open; no window left in the cycle",
+				"feature_id", req.FeatureID,
+				"valid_from", validFrom,
+				"valid_to", req.New.ValidTo)
+			continue
+		}
+
+		if !quota.IsPositive() {
+			s.Logger.Info(ctx, "skipping entitlement grant open; resulting quota is not positive",
+				"feature_id", req.FeatureID,
+				"quota", quota.String())
+			continue
+		}
+
+		grant := entitlementgrant.NewEntitlementGrantBuilder(req.New).
+			WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT_GRANT)).
+			WithEntitlementConfigID(slotECID).
+			WithQuota(quota).
+			WithWindow(validFrom, req.New.ValidTo).
+			WithGrantStatus(types.EntitlementGrantStatusActive).
+			WithEnvironmentID(types.GetEnvironmentID(ctx)).
+			WithBaseModel(types.GetDefaultBaseModel(ctx)).
+			Build()
+		if err := grant.Validate(); err != nil {
+			return nil, err
+		}
+
+		created, err := s.EntitlementGrantRepo.Create(ctx, grant)
+		if err != nil {
+			return nil, err
+		}
+
+		s.Logger.Info(ctx, "opened entitlement grant segment",
+			"grant_id", created.ID,
+			"feature_id", req.FeatureID,
+			"valid_from", validFrom,
+			"quota", quota.String(),
+			"delta", req.New.Quota.String())
+
+		opened = append(opened, created)
+	}
+
+	return opened, nil
 }
 
 // grantEvalMeta is the per-pass lookup bundle shared by grant opening and the
@@ -619,10 +771,6 @@ func (s *entitlementService) validateEntitlementGrantShape(
 				"bucket_size": m.Aggregation.BucketSize,
 			}).
 			Mark(ierr.ErrValidation)
-	}
-	// Same rule for the price-level bucketing source.
-	if err := s.validateEntitlementAgainstBucketedPrices(ctx, m, true); err != nil {
-		return err
 	}
 
 	if err := s.validateGrantSiblingCoherence(ctx, e); err != nil {

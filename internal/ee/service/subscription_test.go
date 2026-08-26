@@ -415,7 +415,7 @@ func (s *SubscriptionServiceSuite) TestAddAddonToSubscription_ProratesFirstCredi
 	// the application's schedule rather than the anchor.
 	s.Equal(types.ApplicationStatusApplied, app.ApplicationStatus,
 		"credits must land at attach time, not wait for the 15-minute cron")
-	s.assertWalletToppedUpBy(grant.ID, expected.ProratedCredits.String())
+	s.assertWalletToppedUpBy(grant.ID, expectedCredits.String())
 }
 
 // assertWalletToppedUpBy checks a wallet transaction carrying the grant's provenance

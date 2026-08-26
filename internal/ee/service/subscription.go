@@ -5064,13 +5064,24 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 	existing := params.isReplayAttach()
 
 	creditGrantProration := s.addonCreditGrantProration(ctx, sub, addonRequestedStart, req.ProrationBehavior)
+	addonGrantECs, err := NewEntitlementService(s.ServiceParams).
+		GetGrantEntitlements(ctx, types.ENTITLEMENT_ENTITY_TYPE_ADDON, req.AddonID)
+	if err != nil {
+		return err
+	}
 
-	// Resolved BEFORE the association exists, so the pre-addon entitlement set is
-	// what decides each feature's pooled slot and its unprorated quota.
-	entitlementGrantProration := s.addonEntitlementGrantProration(
-		ctx, sub, addonRequestedStart, req.ProrationBehavior, req.AddonID, addonAssociation.ID)
+	existingGrantECs, err := s.GetSubscriptionGrantECsByFeature(ctx, sub)
+	if err != nil {
+		return err
+	}
 
-	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+	proratedGrants, err := s.resolveGrantProration(
+		ctx, sub, addonGrantECs, existingGrantECs, addonRequestedStart, req.ProrationBehavior, "addon_attach")
+	if err != nil {
+		return err
+	}
+
+	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
 		if len(req.OverrideLineItems) > 0 {
 			if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
 				return err
@@ -5107,11 +5118,10 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 			return err
 		}
 
-		// Materialize this cycle's prorated quota by closing the live grant window and
-		// opening its successor. The evaluator opens grants lazily from a usage-driven
-		// tick with no request in scope, so the attach has to write the segment itself
-		// for the proration to exist at all.
-		if err := s.materializeAddonEntitlementGrantProration(ctx, sub, entitlementGrantProration); err != nil {
+		// Close this cycle's grant windows and open their prorated successors. The
+		// evaluator opens grants lazily from a usage-driven tick with no request in scope,
+		// so the attach has to write the segment itself for the proration to exist at all.
+		if err := s.materialiseEntitlementGrants(ctx, sub, proratedGrants, addonGrantECs, existingGrantECs, addonRequestedStart); err != nil {
 			return err
 		}
 

@@ -5,6 +5,7 @@ import (
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -59,5 +60,40 @@ func calculateProrationCoefficient(
 		return decimal.Zero, ierr.NewError("invalid proration strategy").
 			WithHintf("invalid proration strategy: %s", strategy).
 			Mark(ierr.ErrValidation)
+	}
+}
+
+type AuditParams struct {
+	Source        string
+	Coefficient   decimal.Decimal
+	OriginalKey   string
+	OriginalValue decimal.Decimal
+	PeriodStart   time.Time
+	PeriodEnd     time.Time
+	ProrationDate time.Time
+	Strategy      types.ProrationStrategy
+}
+
+func Coefficient(periodStart, periodEnd, prorationDate time.Time, strategy types.ProrationStrategy) (decimal.Decimal, error) {
+	if strategy == "" {
+		strategy = types.StrategySecondBased
+	}
+	return calculateProrationCoefficient(periodStart, periodEnd, prorationDate, time.UTC, strategy)
+}
+
+func AuditMetadata(p AuditParams) types.Metadata {
+	strategy := p.Strategy
+	if strategy == "" {
+		strategy = types.StrategySecondBased
+	}
+	return types.Metadata{
+		"proration_applied":      lo.Ternary(p.Coefficient.LessThan(decimal.NewFromInt(1)), "true", "false"),
+		"proration_coefficient":  p.Coefficient.String(),
+		p.OriginalKey:            p.OriginalValue.String(),
+		"proration_period_start": p.PeriodStart.UTC().Format(time.RFC3339),
+		"proration_period_end":   p.PeriodEnd.UTC().Format(time.RFC3339),
+		"proration_date":         p.ProrationDate.UTC().Format(time.RFC3339),
+		"proration_strategy":     string(strategy),
+		"proration_source":       p.Source,
 	}
 }

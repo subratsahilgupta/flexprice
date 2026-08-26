@@ -30,6 +30,7 @@ type EntitlementService interface {
 	GetPlanEntitlements(ctx context.Context, planID string) (*dto.ListEntitlementsResponse, error)
 	GetPlanFeatureEntitlements(ctx context.Context, planID, featureID string) (*dto.ListEntitlementsResponse, error)
 	GetAddonEntitlements(ctx context.Context, addonID string) (*dto.ListEntitlementsResponse, error)
+	GetGrantEntitlements(ctx context.Context, entityType types.EntitlementEntityType, entityID string) ([]*entitlement.Entitlement, error)
 }
 
 type entitlementService struct {
@@ -800,6 +801,20 @@ func (s *entitlementService) GetPlanFeatureEntitlements(ctx context.Context, pla
 
 	// Use the standard list function to get the entitlements with expansion
 	return s.ListEntitlements(ctx, filter)
+}
+
+func (s *entitlementService) GetGrantEntitlements(
+	ctx context.Context,
+	entityType types.EntitlementEntityType,
+	entityID string,
+) ([]*entitlement.Entitlement, error) {
+	filter := types.NewNoLimitEntitlementFilter().
+		WithEntityType(entityType).
+		WithEntityIDs([]string{entityID}).
+		WithStatus(types.StatusPublished)
+	filter.HasGrantConfig = lo.ToPtr(true)
+
+	return s.EntitlementRepo.List(ctx, filter)
 }
 
 func (s *entitlementService) GetAddonEntitlements(ctx context.Context, addonID string) (*dto.ListEntitlementsResponse, error) {
