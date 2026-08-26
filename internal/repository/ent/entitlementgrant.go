@@ -2,11 +2,9 @@ package ent
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
-	"github.com/shopspring/decimal"
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/ent/entitlementgrant"
@@ -229,83 +227,44 @@ func (r *entitlementGrantRepository) UpdateSnapshot(ctx context.Context, g *doma
 	return nil
 }
 
-// quota_crossed_at is resolved against the snapshot usage already on the row
-// (an UPDATE's right-hand sides all see the pre-update values, so
-// `usage < quota + delta` tests the NEW quota):
+// CloseWindow ends a live window early so a successor can open beside it.
 //
-//   - never crossed          → stays NULL. GREATEST would return the top-up
-//     time here and invent an overage window on a healthy grant.
-//   - top up restored headroom → cleared. Leaving it set would bill
-//     [topUpTime, valid_to) on a bucket that is no longer exhausted, which is
-//     the normal outcome of attaching an addon.
-//   - still over the new quota → advanced, never rewound, so the billable
-//     window can only shrink under replay or out-of-order calls.
-func (r *entitlementGrantRepository) TopUpQuota(
-	ctx context.Context,
-	id string,
-	delta decimal.Decimal,
-	at time.Time,
-	meta types.Metadata,
-) (*domainGrant.EntitlementGrant, error) {
-	span := StartRepositorySpan(ctx, "entitlement_grant", "top_up_quota", map[string]interface{}{
+// The valid_to predicate makes the write monotonic: a window can only shrink,
+// never extend, so a replayed or out-of-order close cannot hand back coverage
+// that was already given up. A rejected guard is a no-op, not an error.
+//
+// usage, grant_status and last_computed_at are left alone deliberately —
+// last_computed_at < valid_to is exactly what keeps the row in the evaluator's
+// unfinalized set for its final refresh, and stamping any of them here would drop
+// the tail events that land between the last tick and the close.
+func (r *entitlementGrantRepository) CloseWindow(ctx context.Context, id string, validTo time.Time) error {
+	span := StartRepositorySpan(ctx, "entitlement_grant", "close_window", map[string]interface{}{
 		"id":        id,
-		"delta":     delta.String(),
+		"valid_to":  validTo,
 		"tenant_id": types.GetTenantID(ctx),
 	})
 	defer FinishSpan(span)
 
-	metaJSON, err := json.Marshal(defaultedMetadata(meta))
-	if err != nil {
+	if _, err := r.client.Writer(ctx).EntitlementGrant.Update().
+		Where(
+			entitlementgrant.ID(id),
+			entitlementgrant.TenantID(types.GetTenantID(ctx)),
+			entitlementgrant.EnvironmentID(types.GetEnvironmentID(ctx)),
+			entitlementgrant.ValidToGT(validTo),
+		).
+		SetValidTo(validTo.UTC()).
+		SetUpdatedAt(time.Now().UTC()).
+		SetUpdatedBy(types.GetUserID(ctx)).
+		Save(ctx); err != nil {
 		SetSpanError(span, err)
-		return nil, ierr.WithError(err).
-			WithHint("Failed to encode entitlement grant metadata").
-			Mark(ierr.ErrValidation)
-	}
-
-	const query = `
-		UPDATE entitlement_grants
-		SET quota            = quota + $1::numeric,
-		    metadata         = COALESCE(metadata, '{}'::jsonb) || $2::jsonb,
-		    quota_crossed_at = CASE
-		                         WHEN quota_crossed_at IS NULL       THEN NULL
-		                         WHEN usage < quota + $1::numeric    THEN NULL
-		                         WHEN quota_crossed_at < $3          THEN $3
-		                         ELSE quota_crossed_at
-		                       END,
-		    updated_at       = $4,
-		    updated_by       = $5
-		WHERE id             = $6
-		  AND tenant_id      = $7
-		  AND environment_id = $8
-	`
-	res, err := r.client.Writer(ctx).ExecContext(
-		ctx, query,
-		delta.String(),
-		string(metaJSON),
-		at.UTC(),
-		time.Now().UTC(),
-		types.GetUserID(ctx),
-		id,
-		types.GetTenantID(ctx),
-		types.GetEnvironmentID(ctx),
-	)
-	if err != nil {
-		SetSpanError(span, err)
-		return nil, ierr.WithError(err).
-			WithHint("Failed to top up entitlement grant quota").
-			WithReportableDetails(map[string]interface{}{"id": id, "delta": delta.String()}).
+		return ierr.WithError(err).
+			WithHint("Failed to close entitlement grant window").
+			WithReportableDetails(map[string]interface{}{"id": id, "valid_to": validTo}).
 			Mark(ierr.ErrDatabase)
 	}
-	if affected, aerr := res.RowsAffected(); aerr == nil && affected == 0 {
-		return nil, ierr.NewError("entitlement grant not found for quota top up").
-			WithHint("Entitlement grant not found").
-			WithReportableDetails(map[string]interface{}{"id": id}).
-			Mark(ierr.ErrNotFound)
-	}
 
-	// Re-read inside the caller's transaction so the returned row reflects the
-	// increment that just landed.
-	return r.Get(ctx, id)
+	SetSpanSuccess(span)
+	return nil
 }
 
 func (r *entitlementGrantRepository) LatestWindowEndBySlot(

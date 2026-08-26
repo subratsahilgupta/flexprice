@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -64,7 +65,7 @@ func CalculateEntitlementGrantProration(params EntitlementGrantProrationParams) 
 
 func (r *EntitlementGrantProrationResult) AuditMetadata(source string) types.Metadata {
 	return types.Metadata{
-		"proration_applied":        "true",
+		"proration_applied":        lo.Ternary(r.Coefficient.LessThan(decimal.NewFromInt(1)), "true", "false"),
 		"proration_coefficient":    r.Coefficient.String(),
 		"proration_original_quota": r.OriginalQuota.String(),
 		"proration_period_start":   r.PeriodStart.UTC().Format(time.RFC3339),

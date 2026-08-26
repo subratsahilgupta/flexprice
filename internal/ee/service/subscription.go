@@ -5107,10 +5107,11 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 			return err
 		}
 
-		// Materialize this cycle's prorated quota. The evaluator opens grants
-		// lazily from a usage-driven tick with no request in scope, so the attach
-		// has to write the cycle's row itself for the proration to exist at all.
-		if err := s.materializeAddonEntitlementGrantProration(ctx, sub, entitlementGrantProration, addonAssociation.ID); err != nil {
+		// Materialize this cycle's prorated quota by closing the live grant window and
+		// opening its successor. The evaluator opens grants lazily from a usage-driven
+		// tick with no request in scope, so the attach has to write the segment itself
+		// for the proration to exist at all.
+		if err := s.materializeAddonEntitlementGrantProration(ctx, sub, entitlementGrantProration); err != nil {
 			return err
 		}
 

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/shopspring/decimal"
 )
 
 // SlotWindowEnd is one (config, subscription) slot's latest window end —
@@ -47,7 +46,10 @@ type Repository interface {
 	// Used only to re-read the winner after losing the INSERT race.
 	FindLastBySlot(ctx context.Context, entitlementConfigID, customerID, subscriptionID string) (*EntitlementGrant, error)
 
-	// TopUpQuota adds delta to the grant's quota and merges meta over the
-	// existing metadata.
-	TopUpQuota(ctx context.Context, id string, delta decimal.Decimal, at time.Time, meta types.Metadata) (*EntitlementGrant, error)
+	// CloseWindow shortens a live grant's window to validTo. Grants are immutable
+	// facts, so a mid-cycle entitlement change ends the current window here and
+	// opens a successor beside it rather than editing quota in place. Guarded so a
+	// window can only ever shrink, and it leaves usage, grant_status and
+	// last_computed_at untouched — the closed row still owes its final refresh.
+	CloseWindow(ctx context.Context, id string, validTo time.Time) error
 }

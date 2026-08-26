@@ -16,23 +16,15 @@ import (
 // entitlementGrantProrationSource labels the audit metadata written by this path.
 const entitlementGrantProrationSource = "addon_attach"
 
-// addonEntitlementGrantProrationKey is the per-association idempotency marker.
-// persistAddonAttach also runs on the payment-gated replay, so a top-up that has
-// already landed must be recognised and skipped. Keying by association (rather
-// than by addon) also lets the same addon be attached twice, each attachment
-// adding its own delta under its own key.
-func addonEntitlementGrantProrationKey(associationID string) string {
-	return "proration_addon_assoc_" + associationID
-}
-
 // addonEntitlementGrantProrationEntry is one feature's prorated allowance,
 // resolved before the attach transaction and applied inside it.
 type addonEntitlementGrantProrationEntry struct {
 	// slotECID is the entitlement config whose slot the cycle's row lives on —
 	// the row to top up, or the row to create when the slot is empty.
-	slotECID  string
-	featureID string
-	measure   types.EntitlementGrantMeasure
+	slotECID     string
+	featureID    string
+	measure      types.EntitlementGrantMeasure
+	durationUnit types.EntitlementGrantDurationUnit
 
 	// proratedDelta is the addon's quota scaled to the part of the period it covers.
 	proratedDelta decimal.Decimal
@@ -154,15 +146,13 @@ func (s *subscriptionService) resolveAddonGrantProrationEntry(
 	entry := addonEntitlementGrantProrationEntry{
 		featureID:     addonEC.FeatureID,
 		measure:       addonEC.GrantMeasure,
+		durationUnit:  addonEC.GrantDurationUnit,
 		proratedDelta: res.ProratedQuota,
 		cycleStart:    cycleStart,
 		cycleEnd:      cycleEnd,
 		coverageStart: cycleStart,
 		metadata:      res.AuditMetadata(entitlementGrantProrationSource),
 	}
-
-	entry.metadata["proration_applied"] = lo.Ternary(shouldProrate, "true", "false")
-	entry.metadata[addonEntitlementGrantProrationKey(associationID)] = res.Coefficient.String()
 
 	// Parallel: every EC owns its own slot, so the addon's grant is a new budget
 	// on its own row and there is nothing to pool with. Its window starts at the
@@ -210,44 +200,49 @@ func (s *subscriptionService) materializeAddonEntitlementGrantProration(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	entries []addonEntitlementGrantProrationEntry,
-	associationID string,
 ) error {
 	if len(entries) == 0 {
 		return nil
 	}
 
 	for _, entry := range entries {
+		if entry.durationUnit != types.EntitlementGrantDurationUnitSubscriptionPeriod {
+			s.Logger.Info(ctx, "skipping entitlement grant proration; cadence is not subscription_period",
+				"subscription_id", sub.ID,
+				"feature_id", entry.featureID,
+				"grant_duration_unit", entry.durationUnit)
+			continue
+		}
+
 		existing, err := s.EntitlementGrantRepo.FindLastBySlot(ctx, entry.slotECID, sub.CustomerID, sub.ID)
 		if err != nil {
 			return err
 		}
 
-		// Only a row covering THIS cycle can be topped up; an older window on the
-		// same slot is history.
-		if existing != nil && existing.ValidTo.After(entry.cycleStart) {
-			if existing.HasMetadataKey(addonEntitlementGrantProrationKey(associationID)) {
-				s.Logger.Info(ctx, "entitlement grant proration already applied for this association, skipping",
-					"subscription_id", sub.ID,
-					"grant_id", existing.ID,
-					"association_id", associationID)
-				continue
-			}
+		validFrom := entry.coverageStart
+		quota := entry.preAddonQuotaSum.Add(entry.proratedDelta)
 
-			if _, err := s.EntitlementGrantRepo.TopUpQuota(
-				ctx, existing.ID, entry.proratedDelta, time.Now().UTC(), entry.metadata,
-			); err != nil {
+		// Only a window covering THIS cycle hands a balance forward; an older window
+		// on the same slot is history.
+		if existing != nil && existing.ValidTo.After(entry.cycleStart) {
+			boundary, err := s.closeGrantForSuccessor(ctx, existing)
+			if err != nil {
 				return err
 			}
 
-			s.Logger.Info(ctx, "topped up entitlement grant quota for addon attach",
+			validFrom = boundary
+			quota = remainingQuota(existing).Add(entry.proratedDelta)
+		}
+
+		if !validFrom.Before(entry.cycleEnd) {
+			s.Logger.Info(ctx, "skipping entitlement grant proration; no window left in the cycle",
 				"subscription_id", sub.ID,
-				"grant_id", existing.ID,
 				"feature_id", entry.featureID,
-				"delta", entry.proratedDelta.String())
+				"valid_from", validFrom,
+				"cycle_end", entry.cycleEnd)
 			continue
 		}
 
-		quota := entry.preAddonQuotaSum.Add(entry.proratedDelta)
 		if !quota.IsPositive() {
 			s.Logger.Info(ctx, "skipping entitlement grant proration; resulting quota is not positive",
 				"subscription_id", sub.ID,
@@ -264,7 +259,7 @@ func (s *subscriptionService) materializeAddonEntitlementGrantProration(
 			WithScope(types.EntitlementGrantScopeFeature, entry.featureID).
 			WithMeasure(entry.measure).
 			WithQuota(quota).
-			WithWindow(entry.coverageStart, entry.cycleEnd).
+			WithWindow(validFrom, entry.cycleEnd).
 			WithGrantStatus(types.EntitlementGrantStatusActive).
 			WithMetadata(entry.metadata).
 			WithEnvironmentID(types.GetEnvironmentID(ctx)).
@@ -280,13 +275,67 @@ func (s *subscriptionService) materializeAddonEntitlementGrantProration(
 		if _, err := s.EntitlementGrantRepo.Create(ctx, grant); err != nil {
 			return err
 		}
-		s.Logger.Info(ctx, "created prorated entitlement grant for addon attach",
+
+		s.Logger.Info(ctx, "opened prorated entitlement grant segment for addon attach",
 			"subscription_id", sub.ID,
 			"grant_id", grant.ID,
 			"feature_id", entry.featureID,
-			"quota", quota.String())
+			"valid_from", validFrom,
+			"quota", quota.String(),
+			"delta", entry.proratedDelta.String())
 	}
 	return nil
+}
+
+// closeGrantForSuccessor ends `existing` and returns where its successor starts.
+//
+// The boundary is the row's own last_computed_at: measurement and window end then
+// coincide, so the successor's quota is exact without re-measuring usage here, and
+// no status or crossing has to be re-derived outside the evaluator. persistAddonAttach
+// refreshes the customer's grants immediately before the transaction so this value is
+// fresh and set.
+//
+// A row that has never been evaluated (or whose boundary would not advance past its
+// own start) has no measurable life: usage over a zero-length window is provably 0,
+// so it is replaced outright rather than closed into a window Validate would reject.
+func (s *subscriptionService) closeGrantForSuccessor(
+	ctx context.Context,
+	existing *entitlementgrant.EntitlementGrant,
+) (time.Time, error) {
+	boundary := lo.FromPtr(existing.LastComputedAt)
+
+	if !boundary.After(existing.ValidFrom) {
+		s.Logger.Info(ctx, "replacing un-evaluated entitlement grant window",
+			"grant_id", existing.ID,
+			"valid_from", existing.ValidFrom,
+			"last_computed_at", existing.LastComputedAt)
+
+		if err := s.EntitlementGrantRepo.Delete(ctx, existing.ID); err != nil {
+			return time.Time{}, err
+		}
+		return existing.ValidFrom, nil
+	}
+
+	if err := s.EntitlementGrantRepo.CloseWindow(ctx, existing.ID, boundary); err != nil {
+		return time.Time{}, err
+	}
+
+	s.Logger.Info(ctx, "closed entitlement grant window for successor",
+		"grant_id", existing.ID,
+		"closed_at", boundary,
+		"quota", existing.Quota.String(),
+		"usage", existing.Usage.String())
+
+	return boundary, nil
+}
+
+func remainingQuota(g *entitlementgrant.EntitlementGrant) decimal.Decimal {
+	remaining := g.Quota.Sub(g.Usage)
+	if remaining.IsNegative() {
+		return decimal.Zero
+	}
+
+	return remaining
 }
 
 // -----------------------------------------------------------------------------

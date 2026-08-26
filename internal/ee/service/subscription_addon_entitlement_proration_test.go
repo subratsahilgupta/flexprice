@@ -1,6 +1,7 @@
 package service
 
 import (
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -158,10 +159,18 @@ func (s *SubscriptionServiceSuite) expectedProrated(quota int64) decimal.Decimal
 // tests
 // -----------------------------------------------------------------------------
 
-// The feature already has this cycle's pooled row: the attach tops it up in
-// place and leaves the window alone, because the matching line item is the
-// plan's full-cycle one and consumption must carry forward.
-func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_ExistingFeature_TopsUpInPlace() {
+// sortedGrantsForFeature returns the feature's rows oldest window first, so a
+// segmented cycle reads as the sequence it is.
+func (s *SubscriptionServiceSuite) sortedGrantsForFeature(featureID string) []*entitlementgrant.EntitlementGrant {
+	rows := s.grantsForFeature(featureID)
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ValidFrom.Before(rows[j].ValidFrom) })
+	return rows
+}
+
+// The feature already has this cycle's pooled row. Grants are immutable, so the
+// attach closes that window and opens a successor beside it carrying the remaining
+// balance plus the addon's prorated delta. The two segments tile the cycle.
+func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_ExistingFeature_ClosesAndOpensSuccessor() {
 	featureID := s.seedGrantFeature("feat_eg_topup")
 	s.seedGrantEC("ent_aaa_plan", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID, 1000, "")
 	existing := s.seedCycleGrant("ent_aaa_plan", featureID, 1000)
@@ -169,17 +178,26 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_ExistingFeature
 	s.seedGrantAddon("addon_eg_topup", "ent_zzz_addon", featureID, 600, "")
 	s.Require().NoError(s.attachAddon("addon_eg_topup", s.testData.now, types.ProrationBehaviorCreateProrations))
 
-	rows := s.grantsForFeature(featureID)
-	s.Require().Len(rows, 1, "the pool must stay one row, got %d", len(rows))
-	got := rows[0]
+	rows := s.sortedGrantsForFeature(featureID)
+	s.Require().Len(rows, 2, "the cycle must be two tiling segments, got %d", len(rows))
+	closed, live := rows[0], rows[1]
 
-	s.Equal(existing.ID, got.ID, "the existing row must be topped up, not replaced")
+	s.Equal(existing.ID, closed.ID, "the first segment is the row that already existed")
+	s.True(closed.Quota.Equal(decimal.NewFromInt(1000)), "a closed window keeps the quota it was opened with")
+	s.True(closed.ValidFrom.Equal(s.testData.subscription.CurrentPeriodStart))
+
+	s.Equal("ent_aaa_plan", live.EntitlementConfigID, "the successor stays on the incumbent slot")
 	want := decimal.NewFromInt(1000).Add(s.expectedProrated(600))
-	s.True(got.Quota.Equal(want), "expected quota %s, got %s", want, got.Quota)
-	s.True(got.ValidFrom.Equal(s.testData.subscription.CurrentPeriodStart), "window start must not move")
-	s.True(got.ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd), "window end must not move")
-	s.Equal("true", got.Metadata["proration_applied"], "a mid-cycle attach is scaled")
-	s.NotEmpty(got.Metadata["proration_coefficient"])
+	s.True(live.Quota.Equal(want), "expected quota %s, got %s", want, live.Quota)
+	s.True(live.ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd))
+
+	s.True(closed.ValidTo.Equal(live.ValidFrom),
+		"segments must tile with no gap or overlap: closed ends %s, successor starts %s",
+		closed.ValidTo, live.ValidFrom)
+
+	assocID := s.associationIDFor("addon_eg_topup")
+	s.Equal("true", live.Metadata["proration."+assocID+".applied"], "a mid-cycle attach is scaled")
+	s.Equal(closed.ID, live.Metadata["proration."+assocID+".supersedes"])
 }
 
 // The feature is new to the subscription: a row is created starting at the
@@ -202,8 +220,8 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_NewFeature_Crea
 	s.True(got.ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd))
 }
 
-// Two addons on one feature accumulate into the same pooled row, each under its
-// own association marker.
+// Each attach segments the cycle again, and the live segment carries the pooled
+// balance forward, so the allowance accumulates without any row being mutated.
 func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_MultipleAddonsAccumulate() {
 	featureID := s.seedGrantFeature("feat_eg_multi")
 	s.seedGrantEC("ent_aaa_plan", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID, 1000, "")
@@ -214,49 +232,24 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_MultipleAddonsA
 	s.Require().NoError(s.attachAddon("addon_eg_m1", s.testData.now, types.ProrationBehaviorCreateProrations))
 	s.Require().NoError(s.attachAddon("addon_eg_m2", s.testData.now, types.ProrationBehaviorCreateProrations))
 
-	rows := s.grantsForFeature(featureID)
-	s.Require().Len(rows, 1, "both addons pool into one row, got %d", len(rows))
+	rows := s.sortedGrantsForFeature(featureID)
+	s.Require().Len(rows, 3, "two attaches segment the cycle twice, got %d rows", len(rows))
+	live := rows[len(rows)-1]
 
 	want := decimal.NewFromInt(1000).Add(s.expectedProrated(600)).Add(s.expectedProrated(300))
-	s.True(rows[0].Quota.Equal(want), "expected %s, got %s", want, rows[0].Quota)
+	s.True(live.Quota.Equal(want), "expected %s, got %s", want, live.Quota)
+	s.True(live.ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd))
 
-	markers := 0
-	for k := range rows[0].Metadata {
-		if len(k) > len("proration_addon_assoc_") && k[:len("proration_addon_assoc_")] == "proration_addon_assoc_" {
-			markers++
-		}
+	for i := 1; i < len(rows); i++ {
+		s.True(rows[i-1].ValidTo.Equal(rows[i].ValidFrom),
+			"segment %d must start where %d ended", i, i-1)
 	}
-	s.Equal(2, markers, "each attach must leave its own idempotency marker")
-}
 
-// persistAddonAttach also runs on the payment-gated replay, so the top-up must
-// not apply twice.
-func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_ReplayAppliesOnce() {
-	featureID := s.seedGrantFeature("feat_eg_replay")
-	s.seedGrantEC("ent_aaa_plan", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID, 1000, "")
-	existing := s.seedCycleGrant("ent_aaa_plan", featureID, 1000)
-
-	s.seedGrantAddon("addon_eg_replay", "ent_replay", featureID, 600, "")
-	s.Require().NoError(s.attachAddon("addon_eg_replay", s.testData.now, types.ProrationBehaviorCreateProrations))
-
-	afterFirst, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), existing.ID)
-	s.Require().NoError(err)
-
-	// The payment-gated replay re-runs the same association through the same
-	// resolve-then-materialize pair. Re-applying it must be inert.
-	subService := s.service.(*subscriptionService)
-	assocID := s.associationIDFor("addon_eg_replay")
-	entries := subService.addonEntitlementGrantProration(
-		s.GetContext(), s.testData.subscription, s.testData.now,
-		types.ProrationBehaviorCreateProrations, "addon_eg_replay", assocID)
-	s.Require().NotEmpty(entries, "the replay must resolve the same entry it applied first")
-	s.Require().NoError(subService.materializeAddonEntitlementGrantProration(
-		s.GetContext(), s.testData.subscription, entries, assocID))
-
-	afterReplay, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), existing.ID)
-	s.Require().NoError(err)
-	s.True(afterReplay.Quota.Equal(afterFirst.Quota),
-		"replay must not top up twice: %s became %s", afterFirst.Quota, afterReplay.Quota)
+	// Each attach writes its audit under its own change scope, so the second one
+	// cannot overwrite the first one's trail.
+	a1, a2 := s.associationIDFor("addon_eg_m1"), s.associationIDFor("addon_eg_m2")
+	s.NotEmpty(rows[1].Metadata["proration."+a1+".coefficient"])
+	s.NotEmpty(live.Metadata["proration."+a2+".coefficient"])
 }
 
 // proration_behavior only decides whether the addon's allowance is SCALED, not
@@ -270,13 +263,18 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_BehaviorNone_Gr
 	s.seedGrantAddon("addon_eg_none", "ent_none", featureID, 600, "")
 	s.Require().NoError(s.attachAddon("addon_eg_none", s.testData.now, types.ProrationBehaviorNone))
 
-	got, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), existing.ID)
-	s.Require().NoError(err)
-	s.True(got.Quota.Equal(decimal.NewFromInt(1600)),
-		"unprorated attach adds the addon's full quota, expected 1600, got %s", got.Quota)
-	s.Equal("false", got.Metadata["proration_applied"], "the delta was not scaled")
-	s.Equal("1", got.Metadata["proration_coefficient"])
-	s.True(got.ValidFrom.Equal(s.testData.subscription.CurrentPeriodStart), "window must not move")
+	rows := s.sortedGrantsForFeature(featureID)
+	s.Require().Len(rows, 2)
+	closed, live := rows[0], rows[1]
+	s.Equal(existing.ID, closed.ID)
+
+	s.True(live.Quota.Equal(decimal.NewFromInt(1600)),
+		"unprorated attach carries the full balance plus the full quota, expected 1600, got %s", live.Quota)
+
+	assocID := s.associationIDFor("addon_eg_none")
+	s.Equal("false", live.Metadata["proration."+assocID+".applied"], "the delta was not scaled")
+	s.Equal("1", live.Metadata["proration."+assocID+".coefficient"])
+	s.True(live.ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd))
 }
 
 // An attach at the period start covers the whole cycle, so the coefficient is 1
@@ -291,11 +289,14 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_AtPeriodStart_G
 	s.Require().NoError(s.attachAddon("addon_eg_start",
 		s.testData.subscription.CurrentPeriodStart, types.ProrationBehaviorCreateProrations))
 
-	got, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), existing.ID)
-	s.Require().NoError(err)
-	s.True(got.Quota.Equal(decimal.NewFromInt(1600)),
-		"a full-period attach adds the full quota, expected 1600, got %s", got.Quota)
-	s.Equal("1", got.Metadata["proration_coefficient"])
+	rows := s.sortedGrantsForFeature(featureID)
+	s.Require().Len(rows, 2)
+	closed, live := rows[0], rows[1]
+	s.Equal(existing.ID, closed.ID)
+
+	s.True(live.Quota.Equal(decimal.NewFromInt(1600)),
+		"a full-period attach adds the full quota, expected 1600, got %s", live.Quota)
+	s.Equal("1", live.Metadata["proration."+s.associationIDFor("addon_eg_start")+".coefficient"])
 }
 
 // An attach in the last instant of a period prorates to a sliver. numeric(25,15)

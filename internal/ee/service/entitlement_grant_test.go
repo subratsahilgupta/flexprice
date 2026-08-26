@@ -1865,9 +1865,53 @@ func (s *EntitlementGrantSuite) TestEvaluate_DerivedExhaustion_NoOpWhileUsageOnl
 	s.Equal(0, okCount)
 }
 
-// A quota top-up is the one event that moves a grant back under quota. The
-// top-up itself never touches grant_status; the next tick derives it.
-func (s *EntitlementGrantSuite) TestEvaluate_QuotaTopUpUnExhaustsGrant() {
+// segmentGrant reproduces what a mid-cycle addon attach does to a live grant:
+// close the window at its own last_computed_at and open a successor carrying the
+// remaining balance plus the addon's prorated delta, clamped at zero so debt never
+// crosses the boundary. Returns the successor.
+func (s *EntitlementGrantSuite) segmentGrant(
+	existing *entitlementgrant.EntitlementGrant,
+	delta decimal.Decimal,
+) *entitlementgrant.EntitlementGrant {
+	s.Require().NotNil(existing.LastComputedAt, "a live row must have been evaluated before it is segmented")
+	boundary := *existing.LastComputedAt
+
+	// Read the window and balance BEFORE closing: the successor inherits the end of
+	// the window it supersedes, and the close moves that end.
+	cycleEnd := existing.ValidTo
+	remaining := existing.Quota.Sub(existing.Usage)
+
+	s.Require().NoError(s.GetStores().EntitlementGrantRepo.CloseWindow(
+		s.GetContext(), existing.ID, boundary))
+
+	if remaining.IsNegative() {
+		remaining = decimal.Zero
+	}
+
+	successor := entitlementgrant.NewEntitlementGrantBuilder(nil).
+		WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT_GRANT)).
+		WithEntitlementConfigID(existing.EntitlementConfigID).
+		WithCustomerID(existing.CustomerID).
+		WithSubscriptionID(existing.SubscriptionID).
+		WithScope(types.EntitlementGrantScopeFeature, existing.FeatureID()).
+		WithMeasure(existing.Measure).
+		WithQuota(remaining.Add(delta)).
+		WithWindow(boundary, cycleEnd).
+		WithGrantStatus(types.EntitlementGrantStatusActive).
+		WithEnvironmentID(types.GetEnvironmentID(s.GetContext())).
+		WithBaseModel(types.GetDefaultBaseModel(s.GetContext())).
+		Build()
+
+	created, err := s.GetStores().EntitlementGrantRepo.Create(s.GetContext(), successor)
+	s.Require().NoError(err)
+	return created
+}
+
+// An addon attaching mid-cycle opens a successor segment rather than raising the
+// live row's quota. The exhausted row keeps its quota, its usage and its crossing —
+// so the overage it accrued BEFORE the addon existed still bills from its own
+// window — while the successor starts clean on the quota that was actually bought.
+func (s *EntitlementGrantSuite) TestEvaluate_SuccessorSegmentOpensCleanAfterExhaustion() {
 	_, sub, cust := s.setupCustomerSubWithGrantEC(types.EntitlementGrantMeasureQuantity)
 
 	first := sub.CurrentPeriodStart.Add(30 * time.Minute)
@@ -1878,24 +1922,99 @@ func (s *EntitlementGrantSuite) TestEvaluate_QuotaTopUpUnExhaustsGrant() {
 	s.Equal(types.EntitlementGrantStatusExhausted, crossed.GrantStatus)
 	s.Require().NotNil(crossed.QuotaCrossedAt)
 
-	// Addon attaches mid-cycle: quota 100 -> 150, usage stays 110.
-	toppedUp, err := s.GetStores().EntitlementGrantRepo.TopUpQuota(
-		s.GetContext(), crossed.ID, decimal.NewFromInt(50),
-		sub.CurrentPeriodStart.Add(150*time.Minute), types.Metadata{"proration_addon_assoc_a1": "0.5"})
-	s.Require().NoError(err)
-	s.True(toppedUp.Quota.Equal(decimal.NewFromInt(150)))
-	s.Equal(types.EntitlementGrantStatusExhausted, toppedUp.GrantStatus,
-		"the top up must leave grant_status to the evaluator")
-	s.Nil(toppedUp.QuotaCrossedAt, "the top up restored headroom, so the overage window is dropped")
+	// Addon attaches: usage 110 already exceeds the quota of 100, so the clamp
+	// hands the successor the delta alone instead of paying down the 10 of debt.
+	successor := s.segmentGrant(crossed, decimal.NewFromInt(50))
+	s.True(successor.Quota.Equal(decimal.NewFromInt(50)),
+		"debt must not cross the boundary, expected 50, got %s", successor.Quota)
 
 	t2 := sub.CurrentPeriodStart.Add(3 * time.Hour)
 	after := s.tick(cust, sub, t2)
+	s.Equal(successor.ID, after.ID, "the tick must evaluate the live successor")
 
-	s.True(after.Quota.Equal(decimal.NewFromInt(150)), "the tick must not roll the quota back")
-	s.True(after.Usage.Equal(decimal.NewFromInt(110)))
-	s.Equal(types.EntitlementGrantStatusActive, after.GrantStatus, "back under quota, so active again")
+	s.True(after.Quota.Equal(decimal.NewFromInt(50)))
+	s.True(after.Usage.IsZero(), "the successor meters only its own window, got %s", after.Usage)
+	s.Equal(types.EntitlementGrantStatusActive, after.GrantStatus)
 	s.Nil(after.QuotaCrossedAt)
-	s.Equal("0.5", after.Metadata["proration_addon_assoc_a1"], "the tick must not wipe the top-up metadata")
+
+	closed, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), crossed.ID)
+	s.Require().NoError(err)
+	s.True(closed.Quota.Equal(decimal.NewFromInt(100)), "the closed row keeps the quota it was opened with")
+	s.True(closed.Usage.Equal(decimal.NewFromInt(110)))
+	s.Equal(types.EntitlementGrantStatusExhausted, closed.GrantStatus,
+		"an immutable window stays exhausted; the addon cannot un-bill what it already overran")
+	s.Require().NotNil(closed.QuotaCrossedAt)
+	s.True(closed.QuotaCrossedAt.Equal(t1), "the pre-addon overage window must survive the close")
+	s.True(closed.ValidTo.Equal(t1), "the window closes at its own last_computed_at")
+}
+
+// Segments tile the cycle: usage is attributed to the window it falls in, so the
+// two rows never double-count the same event.
+func (s *EntitlementGrantSuite) TestEvaluate_SegmentsSplitUsageByWindow() {
+	_, sub, cust := s.setupCustomerSubWithGrantEC(types.EntitlementGrantMeasureQuantity)
+
+	s.seedMeterUsage(cust.ExternalID, "meter-quantity", sub.CurrentPeriodStart.Add(30*time.Minute), 40)
+
+	t1 := sub.CurrentPeriodStart.Add(2 * time.Hour)
+	before := s.tick(cust, sub, t1)
+	s.True(before.Usage.Equal(decimal.NewFromInt(40)))
+
+	// Unused balance carries forward: (100 - 40) + 50.
+	successor := s.segmentGrant(before, decimal.NewFromInt(50))
+	s.True(successor.Quota.Equal(decimal.NewFromInt(110)),
+		"expected 110, got %s", successor.Quota)
+
+	s.seedMeterUsage(cust.ExternalID, "meter-quantity", sub.CurrentPeriodStart.Add(150*time.Minute), 25)
+	t2 := sub.CurrentPeriodStart.Add(3 * time.Hour)
+	after := s.tick(cust, sub, t2)
+
+	s.True(after.Usage.Equal(decimal.NewFromInt(25)),
+		"the successor must count only post-boundary usage, got %s", after.Usage)
+
+	closed, err := s.GetStores().EntitlementGrantRepo.Get(s.GetContext(), before.ID)
+	s.Require().NoError(err)
+	s.True(closed.Usage.Equal(decimal.NewFromInt(40)),
+		"the closed window must not absorb usage that landed after it, got %s", closed.Usage)
+
+	// The cycle's total allowance is what was bought, not the sum of the rows:
+	// 100 before the addon, then 110 for the rest, of which 60 was already unused.
+	s.True(closed.Usage.Add(after.Usage).Equal(decimal.NewFromInt(65)),
+		"segments must tile without double counting")
+}
+
+// The customer is still told about a second exhaustion — it lands on the successor
+// row, which alerts under its own id rather than being deduped against the closed
+// row's alarm.
+func (s *EntitlementGrantSuite) TestEvaluate_ReExhaustionOnSuccessorAlerts() {
+	_, sub, cust := s.setupCustomerSubWithGrantEC(types.EntitlementGrantMeasureQuantity)
+
+	s.seedMeterUsage(cust.ExternalID, "meter-quantity", sub.CurrentPeriodStart.Add(30*time.Minute), 110)
+
+	t1 := sub.CurrentPeriodStart.Add(2 * time.Hour)
+	crossed := s.tick(cust, sub, t1)
+	inAlarm, okCount := s.alertLogsFor(crossed.ID)
+	s.Equal(1, inAlarm, "first exhaustion alerts")
+	s.Equal(0, okCount)
+
+	successor := s.segmentGrant(crossed, decimal.NewFromInt(100))
+
+	// Blow through the successor's own quota.
+	s.seedMeterUsage(cust.ExternalID, "meter-quantity", sub.CurrentPeriodStart.Add(210*time.Minute), 120)
+	t3 := sub.CurrentPeriodStart.Add(4 * time.Hour)
+	reExhausted := s.tick(cust, sub, t3)
+
+	s.Equal(successor.ID, reExhausted.ID)
+	s.Equal(types.EntitlementGrantStatusExhausted, reExhausted.GrantStatus)
+	s.Require().NotNil(reExhausted.QuotaCrossedAt)
+	s.True(reExhausted.QuotaCrossedAt.Equal(t3),
+		"the successor's crossing is its own, stamped at the re-exhaustion tick")
+
+	inAlarm, _ = s.alertLogsFor(successor.ID)
+	s.Equal(1, inAlarm, "the successor must raise its own alarm")
+
+	inAlarm, okCount = s.alertLogsFor(crossed.ID)
+	s.Equal(1, inAlarm, "the closed row's alarm is history and must not re-fire")
+	s.Equal(0, okCount)
 }
 
 // The derived rule is also the safety net for a crossing left behind by any
@@ -1921,49 +2040,6 @@ func (s *EntitlementGrantSuite) TestEvaluate_ClearsStaleCrossingWhenUnderQuota()
 	after := s.tick(cust, sub, sub.CurrentPeriodStart.Add(3*time.Hour))
 	s.Equal(types.EntitlementGrantStatusActive, after.GrantStatus)
 	s.Nil(after.QuotaCrossedAt, "usage < quota must clear the crossing outright")
-}
-
-// Without an `ok` transition the alert-log dedup swallows the second
-// exhaustion, so a customer who tops up and exhausts again is never told.
-func (s *EntitlementGrantSuite) TestEvaluate_ReExhaustionAfterTopUpFiresSecondAlert() {
-	_, sub, cust := s.setupCustomerSubWithGrantEC(types.EntitlementGrantMeasureQuantity)
-
-	first := sub.CurrentPeriodStart.Add(30 * time.Minute)
-	s.seedMeterUsage(cust.ExternalID, "meter-quantity", first, 110)
-
-	t1 := sub.CurrentPeriodStart.Add(2 * time.Hour)
-	g := s.tick(cust, sub, t1)
-	inAlarm, okCount := s.alertLogsFor(g.ID)
-	s.Equal(1, inAlarm, "first exhaustion alerts")
-	s.Equal(0, okCount)
-
-	// Top up well clear of current usage, then let the tick record the recovery.
-	_, err := s.GetStores().EntitlementGrantRepo.TopUpQuota(
-		s.GetContext(), g.ID, decimal.NewFromInt(100),
-		sub.CurrentPeriodStart.Add(150*time.Minute), nil)
-	s.Require().NoError(err)
-
-	t2 := sub.CurrentPeriodStart.Add(3 * time.Hour)
-	recovered := s.tick(cust, sub, t2)
-	s.Equal(types.EntitlementGrantStatusActive, recovered.GrantStatus)
-	inAlarm, okCount = s.alertLogsFor(g.ID)
-	s.Equal(1, inAlarm)
-	s.Equal(1, okCount, "recovery must be logged so the next exhaustion is a state change")
-
-	// Blow through the raised quota: 110 + 100 = 210 > 200.
-	s.seedMeterUsage(cust.ExternalID, "meter-quantity", sub.CurrentPeriodStart.Add(210*time.Minute), 100)
-	t3 := sub.CurrentPeriodStart.Add(4 * time.Hour)
-	reExhausted := s.tick(cust, sub, t3)
-
-	s.True(reExhausted.Usage.Equal(decimal.NewFromInt(210)))
-	s.Equal(types.EntitlementGrantStatusExhausted, reExhausted.GrantStatus)
-	s.Require().NotNil(reExhausted.QuotaCrossedAt)
-	s.True(reExhausted.QuotaCrossedAt.Equal(t3),
-		"the second crossing is a NEW one, stamped at the re-exhaustion tick")
-
-	inAlarm, okCount = s.alertLogsFor(g.ID)
-	s.Equal(2, inAlarm, "re-exhaustion must alert again instead of being deduped away")
-	s.Equal(1, okCount)
 }
 
 // A grant that never crosses must stay silent — LogAlert skips `ok` when there
