@@ -79,9 +79,15 @@ make migrate-generate name=add_currency_to_invoices
 make migrate-check
 ```
 
-`migrate-generate` builds a throwaway database from the committed migrations, asks
-Ent what is still missing, and writes that DDL into a new dbmate file. You do not
-write SQL from scratch. If nothing is missing it says so and writes nothing.
+`migrate-generate` builds a throwaway database the way a fresh install is built,
+asks Ent what is still missing, and writes that DDL into a new dbmate file. You do
+not write SQL from scratch. If nothing is missing it says so and writes nothing.
+
+Columns and tables come out with `IF NOT EXISTS` already applied — deployments hold
+different schemas, so a migration may meet something that already exists. Index
+creation deliberately does not: the draft is meant to gain `CONCURRENTLY` by hand,
+and `IF NOT EXISTS` on a concurrent build silently skips an INVALID index left by an
+earlier failure.
 
 **The draft is not the answer.** It has no `CONCURRENTLY`, no lane placement, and a
 `TODO` where the down block goes. Editing it is the review step, and it is where the
