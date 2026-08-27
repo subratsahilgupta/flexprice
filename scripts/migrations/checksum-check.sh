@@ -21,6 +21,21 @@
 set -euo pipefail
 UPDATE=""
 if [ "${1:-}" = "--update" ]; then UPDATE="--update"; shift; fi
+
+# --update anywhere but first used to be silently treated as a path, so the script
+# ran in CHECK mode against nothing and reported every tracked file as modified.
+for a in "$@"; do
+  if [ "$a" = "--update" ]; then
+    echo "usage: $0 [--update] [path ...]   (--update must come FIRST)" >&2
+    exit 2
+  fi
+  case "$a" in
+    *.hashes)
+      echo "The manifest path is no longer an argument — it is migrations/.hashes." >&2
+      echo "usage: $0 [--update] [path ...]" >&2
+      exit 2 ;;
+  esac
+done
 LOCK="${LOCK:-migrations/.hashes}"
 TARGETS=("$@")
 [ ${#TARGETS[@]} -gt 0 ] || TARGETS=(
