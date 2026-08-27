@@ -11,33 +11,43 @@
 # quietly accept whatever it found, and a migration added in one PR would never be
 # recorded for the next one to compare against. Regenerate deliberately with
 #   ./checksum-check.sh <dir> <lock> --update
-#   ./checksum-check.sh [--update] [dir ...]
+#   ./checksum-check.sh [--update] [glob ...]
 #
-# Directories are named explicitly rather than scanning all of migrations/, which
-# would also sweep in the legacy migrations/postgres/V*.sql and
-# migrations/clickhouse/ sets — neither is part of the versioned timeline, and
-# freezing them would fail this gate for edits unrelated to it.
+# Postgres only, and named explicitly. The legacy migrations/postgres/V*.sql and
+# migrations/clickhouse/ sets are not part of the versioned timeline. The
+# ClickHouse set under migrations/versioned/ is inert — its gate is disabled and
+# the set is known not to describe the real cluster — so freezing it would block
+# the fix rather than protect anything.
 set -euo pipefail
 UPDATE=""
 if [ "${1:-}" = "--update" ]; then UPDATE="--update"; shift; fi
 LOCK="${LOCK:-migrations/.hashes}"
-DIRS=("$@")
-[ ${#DIRS[@]} -gt 0 ] || DIRS=(migrations/versioned migrations/baseline)
+TARGETS=("$@")
+[ ${#TARGETS[@]} -gt 0 ] || TARGETS=(
+  "migrations/versioned/postgres"
+  "migrations/baseline/postgres_baseline_ent_*.sql"
+)
 
 NEW="$(mktemp)"
-for d in "${DIRS[@]}"; do
-  [ -d "$d" ] || continue
-  find "$d" -name '*.sql' -print0 2>/dev/null | sort -z \
-    | xargs -0 -I{} shasum -a 256 {} >> "$NEW" 2>/dev/null || true
+for t in "${TARGETS[@]}"; do
+  if [ -d "$t" ]; then
+    find "$t" -name '*.sql' -print0 2>/dev/null \
+      | xargs -0 -I{} shasum -a 256 {} >> "$NEW" 2>/dev/null || true
+  else
+    for f in $t; do
+      [ -f "$f" ] && shasum -a 256 "$f" >> "$NEW" 2>/dev/null || true
+    done
+  fi
 done
-sort -o "$NEW" "$NEW"
+# sorted by PATH, not by hash — the file is read by humans when the gate fails
+sort -k2 -o "$NEW" "$NEW"
 
 if [ "$UPDATE" = "--update" ] || [ ! -f "$LOCK" ]; then
   cp "$NEW" "$LOCK"; echo "wrote $LOCK — commit it"; exit 0
 fi
 
 # Any line in the manifest that is not still present means a tracked file changed.
-CHANGED="$(comm -23 <(sort "$LOCK") <(sort "$NEW") || true)"
+CHANGED="$(comm -23 <(sort -k2 "$LOCK") <(sort -k2 "$NEW") || true)"
 if [ -n "$CHANGED" ]; then
   echo "FAIL: a previously-committed migration was modified:" >&2
   echo "$CHANGED" >&2
@@ -46,7 +56,7 @@ fi
 
 # And any file not in the manifest was added without recording it, so a later edit
 # would have nothing to compare against.
-MISSING="$(comm -13 <(sort "$LOCK") <(sort "$NEW") || true)"
+MISSING="$(comm -13 <(sort -k2 "$LOCK") <(sort -k2 "$NEW") || true)"
 if [ -n "$MISSING" ]; then
   echo "FAIL: migrations are not recorded in $LOCK:" >&2
   echo "$MISSING" >&2

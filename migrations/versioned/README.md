@@ -41,9 +41,11 @@ been narrowed, and does nothing anywhere else.
 **The baseline is frozen.** Once anything has adopted, regenerating it would put a
 schema change into fresh installs while every existing deployment silently misses
 it — nothing in the timeline carries the change. New schema goes in a migration.
-`make migrate-check-checksum` enforces this; it covers `migrations/versioned/` and
-`migrations/baseline/`, and deliberately not the legacy `migrations/postgres/V*.sql`
-or `migrations/clickhouse/` sets.
+`make migrate-check-checksum` enforces this. It covers Postgres only —
+`migrations/versioned/postgres/` and the Ent baseline. Not the legacy
+`migrations/postgres/V*.sql`, not the superseded `pg_dump` baseline, and not
+ClickHouse: that set is inert, its gate is disabled, and freezing it would block
+the fix rather than protect anything.
 
 ## Where the baseline comes from
 
