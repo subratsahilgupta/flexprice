@@ -270,7 +270,7 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{CheckoutSessionsColumns[1], CheckoutSessionsColumns[7], CheckoutSessionsColumns[18]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "idempotency_key IS NOT NULL AND checkout_status IN ('initiated', 'pending')",
+					Where: "((idempotency_key IS NOT NULL) AND ((checkout_status)::text = ANY (ARRAY[('initiated'::character varying)::text, ('pending'::character varying)::text])))",
 				},
 			},
 			{
@@ -283,7 +283,7 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{CheckoutSessionsColumns[22]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "checkout_status IN ('initiated', 'pending')",
+					Where: "((checkout_status)::text = ANY (ARRAY[('initiated'::character varying)::text, ('pending'::character varying)::text]))",
 				},
 			},
 		},
@@ -949,6 +949,7 @@ var (
 		{Name: "grant_status", Type: field.TypeString, Default: "active", SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "last_computed_at", Type: field.TypeTime, Nullable: true},
 		{Name: "quota_crossed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "metadata", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 	}
 	// EntitlementGrantsTable holds the schema information for the "entitlement_grants" table.
 	EntitlementGrantsTable = &schema.Table{
@@ -2541,7 +2542,7 @@ var (
 				Unique:  true,
 				Columns: []*schema.Column{UsageRecordsColumns[1], UsageRecordsColumns[7], UsageRecordsColumns[10], UsageRecordsColumns[15], UsageRecordsColumns[16]},
 				Annotation: &entsql.IndexAnnotation{
-					Where: "status = 'published'",
+					Where: "((status)::text = 'published'::text)",
 				},
 			},
 		},
