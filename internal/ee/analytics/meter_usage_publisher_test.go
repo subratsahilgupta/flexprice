@@ -65,15 +65,12 @@ func sampleMeterUsage() *events.MeterUsage {
 	return mu
 }
 
-// newAnalyticsPub builds a MeterUsagePublisher over a fake, on the analytics topics with a
-// 24h late threshold (the config default).
+// newAnalyticsPub builds a MeterUsagePublisher over a fake, on the analytics topic.
 func newAnalyticsPub(pub messagePublisher) *meterUsagePublisher {
 	return &meterUsagePublisher{
-		publisher:     pub,
-		topic:         "analytics.meter_usage",
-		lazyTopic:     "analytics.meter_usage.lazy",
-		lateThreshold: 24 * time.Hour,
-		logger:        logger.NewNoopLogger(),
+		publisher: pub,
+		topic:     "analytics.meter_usage",
+		logger:    logger.NewNoopLogger(),
 	}
 }
 
@@ -82,7 +79,7 @@ func TestPublishMeterUsage_MarshalsRecordToMainTopic(t *testing.T) {
 	p := newAnalyticsPub(fake)
 
 	rec := sampleMeterUsage()
-	rec.IngestedAt = rec.Timestamp // on-time: ingested == timestamp
+	rec.IngestedAt = rec.Timestamp
 
 	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{rec})
 
@@ -116,8 +113,7 @@ func TestPublishMeterUsage_MarshalsRecordToMainTopic(t *testing.T) {
 	}
 }
 
-// A zero ingested_at is stamped, and (now - old timestamp) exceeds the threshold, so the
-// record routes to the lazy topic.
+// A zero ingested_at is stamped before publish.
 func TestPublishMeterUsage_StampsIngestedAt(t *testing.T) {
 	fake := &fakePublisher{}
 	p := newAnalyticsPub(fake)
@@ -135,147 +131,17 @@ func TestPublishMeterUsage_StampsIngestedAt(t *testing.T) {
 	}
 }
 
-// On-time record (ingested within threshold of timestamp) → main topic.
-func TestPublishMeterUsage_OnTimeGoesToMainTopic(t *testing.T) {
+// Every record, regardless of ingestion recency, goes to the single main topic.
+func TestPublishMeterUsage_AlwaysGoesToMainTopic(t *testing.T) {
 	fake := &fakePublisher{}
 	p := newAnalyticsPub(fake)
 
 	rec := sampleMeterUsage()
-	rec.IngestedAt = rec.Timestamp.Add(1 * time.Hour) // < 24h late
+	rec.IngestedAt = rec.Timestamp.Add(48 * time.Hour) // arbitrarily "late"; must not matter
 
 	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{rec})
 	if fake.topics[0] != "analytics.meter_usage" {
-		t.Fatalf("on-time record must go to main topic, got %q", fake.topics[0])
-	}
-}
-
-// Late record (ingested - timestamp > threshold) → lazy topic.
-func TestPublishMeterUsage_LateGoesToLazyTopic(t *testing.T) {
-	fake := &fakePublisher{}
-	p := newAnalyticsPub(fake)
-
-	rec := sampleMeterUsage()
-	rec.IngestedAt = rec.Timestamp.Add(25 * time.Hour) // > 24h late
-
-	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{rec})
-	if fake.topics[0] != "analytics.meter_usage.lazy" {
-		t.Fatalf("late record must go to lazy topic, got %q", fake.topics[0])
-	}
-}
-
-// Late record but lazy topic unset → falls back to the main topic (never dropped).
-func TestPublishMeterUsage_LateFallsBackWhenLazyUnset(t *testing.T) {
-	fake := &fakePublisher{}
-	p := newAnalyticsPub(fake)
-	p.lazyTopic = "" // no lazy topic configured
-
-	rec := sampleMeterUsage()
-	rec.IngestedAt = rec.Timestamp.Add(25 * time.Hour) // > 24h late
-
-	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{rec})
-	if fake.topics[0] != "analytics.meter_usage" {
-		t.Fatalf("late record with no lazy topic must fall back to main, got %q", fake.topics[0])
-	}
-}
-
-// Boundary: exactly at the threshold is NOT late (routing uses strictly greater-than).
-func TestPublishMeterUsage_ThresholdBoundary(t *testing.T) {
-	fake := &fakePublisher{}
-	p := newAnalyticsPub(fake)
-
-	// exactly 24h => not late => main topic
-	onEdge := sampleMeterUsage()
-	onEdge.IngestedAt = onEdge.Timestamp.Add(24 * time.Hour)
-	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{onEdge})
-	if fake.topics[0] != "analytics.meter_usage" {
-		t.Fatalf("exactly at threshold must NOT be late (main topic), got %q", fake.topics[0])
-	}
-
-	// one nanosecond over => late => lazy topic
-	fake2 := &fakePublisher{}
-	p2 := newAnalyticsPub(fake2)
-	over := sampleMeterUsage()
-	over.IngestedAt = over.Timestamp.Add(24*time.Hour + time.Nanosecond)
-	p2.PublishMeterUsage(context.Background(), []*events.MeterUsage{over})
-	if fake2.topics[0] != "analytics.meter_usage.lazy" {
-		t.Fatalf("just over threshold must be late (lazy topic), got %q", fake2.topics[0])
-	}
-}
-
-// On-time record → header late=="false" AND payload _late==false, with original record
-// fields (id, meter_id) still present flat at the top level alongside the analytics fields.
-func TestPublishMeterUsage_OnTimeStampsLateFalse(t *testing.T) {
-	fake := &fakePublisher{}
-	p := newAnalyticsPub(fake)
-
-	rec := sampleMeterUsage()
-	rec.IngestedAt = rec.Timestamp.Add(1 * time.Hour) // < 24h late
-
-	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{rec})
-
-	msg := fake.only()
-	if msg == nil {
-		t.Fatal("expected exactly one message")
-	}
-	if got := msg.Metadata.Get("late"); got != "false" {
-		t.Errorf("expected header late==\"false\", got %q", got)
-	}
-
-	var got map[string]interface{}
-	if err := json.Unmarshal(msg.Payload, &got); err != nil {
-		t.Fatalf("payload not JSON: %v", err)
-	}
-	if got["_late"] != false {
-		t.Errorf("expected payload _late==false, got %v", got["_late"])
-	}
-	// original record fields must remain flat at the top level
-	if got["id"] != "evt_1" {
-		t.Errorf("missing/wrong flat id: %v", got["id"])
-	}
-	if got["meter_id"] != "meter_1" {
-		t.Errorf("missing/wrong flat meter_id: %v", got["meter_id"])
-	}
-	// threshold basis is stamped so the consumer knows what "late" was measured against
-	if got["_late_threshold_seconds"] != (24 * time.Hour).Seconds() {
-		t.Errorf("expected _late_threshold_seconds==%v, got %v", (24 * time.Hour).Seconds(), got["_late_threshold_seconds"])
-	}
-}
-
-// Late record → header late=="true" AND payload _late==true, AND it still routes to the
-// lazy topic (existing routing behavior unchanged).
-func TestPublishMeterUsage_LateStampsLateTrue(t *testing.T) {
-	fake := &fakePublisher{}
-	p := newAnalyticsPub(fake)
-
-	rec := sampleMeterUsage()
-	rec.IngestedAt = rec.Timestamp.Add(25 * time.Hour) // > 24h late
-
-	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{rec})
-
-	if fake.topics[0] != "analytics.meter_usage.lazy" {
-		t.Fatalf("late record must still route to lazy topic, got %q", fake.topics[0])
-	}
-
-	msg := fake.only()
-	if msg == nil {
-		t.Fatal("expected exactly one message")
-	}
-	if got := msg.Metadata.Get("late"); got != "true" {
-		t.Errorf("expected header late==\"true\", got %q", got)
-	}
-
-	var got map[string]interface{}
-	if err := json.Unmarshal(msg.Payload, &got); err != nil {
-		t.Fatalf("payload not JSON: %v", err)
-	}
-	if got["_late"] != true {
-		t.Errorf("expected payload _late==true, got %v", got["_late"])
-	}
-	if got["id"] != "evt_1" {
-		t.Errorf("missing/wrong flat id: %v", got["id"])
-	}
-	if got["_late_threshold_seconds"] != (24 * time.Hour).Seconds() {
-		t.Errorf("expected _late_threshold_seconds==%v, got %v", (24 * time.Hour).Seconds(), got["_late_threshold_seconds"])
+		t.Fatalf("record must go to main topic, got %q", fake.topics[0])
 	}
 }
 

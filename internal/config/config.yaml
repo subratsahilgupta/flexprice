@@ -44,15 +44,8 @@ analytics:
   # regardless of the topic settings below. Enable per deployment via
   # FLEXPRICE_ANALYTICS_ENABLED.
   enabled: false
-  # On-time records go here (FLEXPRICE_ANALYTICS_METER_USAGE_TOPIC).
+  # All records go here (FLEXPRICE_ANALYTICS_METER_USAGE_TOPIC).
   meter_usage_topic: "analytics.meter_usage"
-  # Late records (ingested_at - timestamp > late_threshold) go here instead, so the
-  # lake can process them out of band (FLEXPRICE_ANALYTICS_METER_USAGE_LAZY_TOPIC).
-  # Empty ⇒ late records fall back to meter_usage_topic (never dropped).
-  meter_usage_lazy_topic: "analytics.meter_usage.lazy"
-  # A record whose (ingested_at - timestamp) exceeds this is "late" and routes to the
-  # lazy topic (FLEXPRICE_ANALYTICS_LATE_THRESHOLD).
-  late_threshold: 24h
 
 kafka:
   brokers: "localhost:29092" # For local mode
@@ -116,13 +109,10 @@ kafka:
       partitions: 3
     onboarding_events:
       partitions: 3
-    # Analytics feed topics — MUST stay in sync with the analytics.* topic names above
-    # (meter_usage_topic / meter_usage_lazy_topic). Overriding either via
-    # FLEXPRICE_ANALYTICS_METER_USAGE_TOPIC also requires updating this set
-    # (or FLEXPRICE_KAFKA_TOPICS) so `migrate kafka` still creates the topic.
+    # Analytics feed topic — MUST stay in sync with the analytics.meter_usage_topic name
+    # above. Overriding it via FLEXPRICE_ANALYTICS_METER_USAGE_TOPIC also requires
+    # updating this set (or FLEXPRICE_KAFKA_TOPICS) so `migrate kafka` still creates it.
     "analytics.meter_usage":
-      partitions: 6
-    "analytics.meter_usage.lazy":
       partitions: 6
 
 # Optional SECOND Kafka cluster for the AWS→GCP migration (GCP-CUTOVER-STEPWISE.md).
