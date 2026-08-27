@@ -178,12 +178,13 @@ a failed connection still exits 0 and hashes the empty string —
 means recording it deliberately:
 
 ```bash
-./scripts/migrations/checksum-check.sh migrations/versioned migrations/versioned/.hashes --update
-git add migrations/versioned/.hashes
+./scripts/migrations/checksum-check.sh --update
+git add migrations/.hashes
 ```
 
-The sync check builds two throwaway databases — one from migrations alone, one from
-migrations plus Ent — and compares schema fingerprints. It compares **end states,
+The sync check builds two throwaway databases the way a fresh install is built —
+baseline, then migrations — and applies Ent to one of them, then compares schema
+fingerprints. It compares **end states,
 not proposed statements**, because Ent emits permanent noise for any index predicate
 whose spelling differs from Postgres' canonical form. "Is the diff empty?" can never
 be a pass/fail test; "do the two schemas match?" can.
