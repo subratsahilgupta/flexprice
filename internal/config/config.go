@@ -75,11 +75,10 @@ type Configuration struct {
 	Analytics              AnalyticsConfig              `mapstructure:"analytics" validate:"omitempty"`
 }
 
-// AnalyticsConfig gates the additive, fire-and-forget analytics meter_usage feed.
-// Enabled is the master switch for the WHOLE feed. All records publish to MeterUsageTopic.
+// AnalyticsConfig gates the fire-and-forget analytics meter_usage feed.
 type AnalyticsConfig struct {
-	Enabled         bool   `mapstructure:"enabled" default:"false"`
-	MeterUsageTopic string `mapstructure:"meter_usage_topic"`
+	Enabled             bool   `mapstructure:"enabled" default:"false"`
+	MeterUsageSinkTopic string `mapstructure:"meter_usage_sink_topic"`
 }
 
 type ChatSupportConfig struct {

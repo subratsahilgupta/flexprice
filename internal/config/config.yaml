@@ -37,15 +37,11 @@ auth:
         name: "Local Dev API Key"
         is_active: true
 
-# Additive, fire-and-forget analytics meter_usage feed. After a meter_usage record
-# is written to ClickHouse it is also published to Kafka for the analytics lake.
+# Fire-and-forget analytics meter_usage feed to Kafka after ClickHouse write.
 analytics:
-  # Master gate for the WHOLE feed. Off (the default) means nothing is published,
-  # regardless of the topic settings below. Enable per deployment via
-  # FLEXPRICE_ANALYTICS_ENABLED.
-  enabled: false
-  # All records go here (FLEXPRICE_ANALYTICS_METER_USAGE_TOPIC).
-  meter_usage_topic: "analytics.meter_usage"
+  enabled: false # FLEXPRICE_ANALYTICS_ENABLED
+  # FLEXPRICE_ANALYTICS_METER_USAGE_SINK_TOPIC. Future: .sink.backfill / .sink.lazy
+  meter_usage_sink_topic: "analytics.meter_usage.sink.realtime"
 
 kafka:
   brokers: "localhost:29092" # For local mode
@@ -109,10 +105,8 @@ kafka:
       partitions: 3
     onboarding_events:
       partitions: 3
-    # Analytics feed topic — MUST stay in sync with the analytics.meter_usage_topic name
-    # above. Overriding it via FLEXPRICE_ANALYTICS_METER_USAGE_TOPIC also requires
-    # updating this set (or FLEXPRICE_KAFKA_TOPICS) so `migrate kafka` still creates it.
-    "analytics.meter_usage":
+    # Must stay in sync with analytics.meter_usage_sink_topic above.
+    "analytics.meter_usage.sink.realtime":
       partitions: 6
 
 # Optional SECOND Kafka cluster for the AWS→GCP migration (GCP-CUTOVER-STEPWISE.md).

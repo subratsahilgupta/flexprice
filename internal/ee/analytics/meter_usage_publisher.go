@@ -25,38 +25,28 @@ type MeterUsagePublisher interface {
 	PublishMeterUsage(ctx context.Context, records []*events.MeterUsage)
 }
 
-// meterUsagePublisher publishes meter_usage records to the analytics meter_usage topic AFTER
-// they are written to ClickHouse. It is ADDITIVE and FIRE-AND-FORGET: ClickHouse stays
-// authoritative, so a publish failure here is logged and swallowed — it must never fail the
-// caller or affect billing. Gated on cfg.Analytics.Enabled: when the feed is off (or the topic
-// is unset) the fx provider returns an untyped-nil interface, and every method is a no-op.
-// Recency (late/on-time) is handled downstream by the dedup worker's two-cadence design on the
-// ClickHouse side — every record here publishes to the single main topic.
+// meterUsagePublisher is fire-and-forget: ClickHouse stays authoritative, so a publish
+// failure here is logged and swallowed, never propagated to the caller.
 type meterUsagePublisher struct {
 	publisher messagePublisher
 	topic     string
 	logger    *logger.Logger
 }
 
-// NewMeterUsagePublisher is the fx provider. It reuses the local-cluster producer that
-// already carries source events. Gated: unless the analytics feed is enabled AND a main topic is
-// configured AND a producer exists, it returns an untyped-nil interface, mirroring the presence
-// gating used for the KafkaSecondary dual-write path. Returning untyped nil (not a typed-nil
-// *meterUsagePublisher) keeps the caller's `!= nil` guard FALSE so the method is never called.
+// NewMeterUsagePublisher is the fx provider. Returns untyped nil (not a typed-nil
+// *meterUsagePublisher) when disabled, so the caller's `!= nil` guard is FALSE.
 func NewMeterUsagePublisher(primaryProducer *kafka.Producer, cfg *config.Configuration, logger *logger.Logger) MeterUsagePublisher {
-	if !cfg.Analytics.Enabled || cfg.Analytics.MeterUsageTopic == "" || primaryProducer == nil {
+	if !cfg.Analytics.Enabled || cfg.Analytics.MeterUsageSinkTopic == "" || primaryProducer == nil {
 		return nil
 	}
 	return &meterUsagePublisher{
 		publisher: primaryProducer,
-		topic:     cfg.Analytics.MeterUsageTopic,
+		topic:     cfg.Analytics.MeterUsageSinkTopic,
 		logger:    logger,
 	}
 }
 
-// PublishMeterUsage publishes each record as one JSON message keyed by event id (the lake's
-// dedup key) to the single main topic. ingested_at is stamped when unset so the lake has a
-// version column. Fire-and-forget: per-record errors are logged, never returned.
+// PublishMeterUsage publishes each record as one JSON message keyed by event id (the lake's dedup key).
 func (p *meterUsagePublisher) PublishMeterUsage(ctx context.Context, records []*events.MeterUsage) {
 	// nil publisher (feed disabled) ⇒ no-op.
 	if p == nil || p.publisher == nil {
@@ -64,8 +54,7 @@ func (p *meterUsagePublisher) PublishMeterUsage(ctx context.Context, records []*
 	}
 
 	for _, record := range records {
-		// The lake dedups on (id, ingested_at). BulkInsert relies on the ClickHouse DEFAULT for
-		// ingested_at, so records reach here with it zero — stamp it now to give the lake a version.
+		// Lake dedups on (id, ingested_at); stamp it since BulkInsert leaves it zero.
 		if record.IngestedAt.IsZero() {
 			record.IngestedAt = time.Now().UTC()
 		}

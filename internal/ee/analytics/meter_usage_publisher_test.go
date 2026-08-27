@@ -69,7 +69,7 @@ func sampleMeterUsage() *events.MeterUsage {
 func newAnalyticsPub(pub messagePublisher) *meterUsagePublisher {
 	return &meterUsagePublisher{
 		publisher: pub,
-		topic:     "analytics.meter_usage",
+		topic:     "analytics.meter_usage.sink.realtime",
 		logger:    logger.NewNoopLogger(),
 	}
 }
@@ -86,7 +86,7 @@ func TestPublishMeterUsage_MarshalsRecordToMainTopic(t *testing.T) {
 	if fake.callCount() != 1 {
 		t.Fatalf("expected 1 publish, got %d", fake.callCount())
 	}
-	if fake.topics[0] != "analytics.meter_usage" {
+	if fake.topics[0] != "analytics.meter_usage.sink.realtime" {
 		t.Fatalf("expected topic analytics.meter_usage, got %q", fake.topics[0])
 	}
 
@@ -140,7 +140,7 @@ func TestPublishMeterUsage_AlwaysGoesToMainTopic(t *testing.T) {
 	rec.IngestedAt = rec.Timestamp.Add(48 * time.Hour) // arbitrarily "late"; must not matter
 
 	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{rec})
-	if fake.topics[0] != "analytics.meter_usage" {
+	if fake.topics[0] != "analytics.meter_usage.sink.realtime" {
 		t.Fatalf("record must go to main topic, got %q", fake.topics[0])
 	}
 }
