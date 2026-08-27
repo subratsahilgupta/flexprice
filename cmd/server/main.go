@@ -396,6 +396,7 @@ func provideHandlers(
 		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
 		SubscriptionChange:       v1.NewSubscriptionChangeHandler(subscriptionChangeService, logger),
 		SubscriptionModification: v1.NewSubscriptionModificationHandler(subscriptionModificationService, logger),
+		InvoiceModification:      v1.NewInvoiceModificationHandler(invoiceService, logger),
 		SubscriptionSchedule:     v1.NewSubscriptionScheduleHandler(subscriptionScheduleService),
 		Wallet:                   v1.NewWalletHandler(walletService, logger),
 		Tenant:                   v1.NewTenantHandler(tenantService, logger),
