@@ -22,6 +22,8 @@ DIR="${1:-migrations/versioned/postgres}"
 BASE="postgres://$PGUSER_@$PGHOST_:$PGPORT_"
 export PGPASSWORD="$PGPASS_"
 
+"$(dirname "$0")/ensure-pg.sh"
+
 for db in sync_a sync_b; do
   psql "$BASE/postgres?sslmode=disable" -q -c "DROP DATABASE IF EXISTS $db;" \
                                         -c "CREATE DATABASE $db;" >/dev/null

@@ -17,6 +17,8 @@ PGUSER_="${PGUSER_:-flexprice}"; PGPASS_="${PGPASS_:-flexprice123}"
 BASE="postgres://$PGUSER_@$PGHOST_:$PGPORT_"
 export PGPASSWORD="$PGPASS_"
 
+"$(dirname "$0")/ensure-pg.sh"
+
 # ent/ is generated from ent/schema/, and everything below compares against the
 # generated ent/migrate/schema.go. A stale ent/ makes `go run ./cmd/migrate` panic
 # with an index-out-of-range that names nothing useful. Regenerating is idempotent —
