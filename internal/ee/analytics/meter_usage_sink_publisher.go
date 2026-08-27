@@ -19,27 +19,27 @@ type messagePublisher interface {
 	Publish(topic string, messages ...*message.Message) error
 }
 
-// MeterUsagePublisher is the exported dependency the service depends on. The concrete impl
-// (*meterUsagePublisher) stays private per repo convention; consumers use this interface.
-type MeterUsagePublisher interface {
+// MeterUsageSinkPublisher is the exported dependency the service depends on. The concrete impl
+// (*meterUsageSinkPublisher) stays private per repo convention; consumers use this interface.
+type MeterUsageSinkPublisher interface {
 	PublishMeterUsage(ctx context.Context, records []*events.MeterUsage)
 }
 
-// meterUsagePublisher is fire-and-forget: ClickHouse stays authoritative, so a publish
+// meterUsageSinkPublisher is fire-and-forget: ClickHouse stays authoritative, so a publish
 // failure here is logged and swallowed, never propagated to the caller.
-type meterUsagePublisher struct {
+type meterUsageSinkPublisher struct {
 	publisher messagePublisher
 	topic     string
 	logger    *logger.Logger
 }
 
-// NewMeterUsagePublisher is the fx provider. Returns untyped nil (not a typed-nil
-// *meterUsagePublisher) when disabled, so the caller's `!= nil` guard is FALSE.
-func NewMeterUsagePublisher(primaryProducer *kafka.Producer, cfg *config.Configuration, logger *logger.Logger) MeterUsagePublisher {
+// NewMeterUsageSinkPublisher is the fx provider. Returns untyped nil (not a typed-nil
+// *meterUsageSinkPublisher) when disabled, so the caller's `!= nil` guard is FALSE.
+func NewMeterUsageSinkPublisher(primaryProducer *kafka.Producer, cfg *config.Configuration, logger *logger.Logger) MeterUsageSinkPublisher {
 	if !cfg.Analytics.Enabled || cfg.Analytics.MeterUsageSinkTopic == "" || primaryProducer == nil {
 		return nil
 	}
-	return &meterUsagePublisher{
+	return &meterUsageSinkPublisher{
 		publisher: primaryProducer,
 		topic:     cfg.Analytics.MeterUsageSinkTopic,
 		logger:    logger,
@@ -47,7 +47,7 @@ func NewMeterUsagePublisher(primaryProducer *kafka.Producer, cfg *config.Configu
 }
 
 // PublishMeterUsage publishes each record as one JSON message keyed by event id (the lake's dedup key).
-func (p *meterUsagePublisher) PublishMeterUsage(ctx context.Context, records []*events.MeterUsage) {
+func (p *meterUsageSinkPublisher) PublishMeterUsage(ctx context.Context, records []*events.MeterUsage) {
 	// nil publisher (feed disabled) ⇒ no-op.
 	if p == nil || p.publisher == nil {
 		return

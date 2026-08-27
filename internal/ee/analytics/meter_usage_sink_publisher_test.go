@@ -65,9 +65,9 @@ func sampleMeterUsage() *events.MeterUsage {
 	return mu
 }
 
-// newAnalyticsPub builds a MeterUsagePublisher over a fake, on the analytics topic.
-func newAnalyticsPub(pub messagePublisher) *meterUsagePublisher {
-	return &meterUsagePublisher{
+// newAnalyticsPub builds a MeterUsageSinkPublisher over a fake, on the analytics topic.
+func newAnalyticsPub(pub messagePublisher) *meterUsageSinkPublisher {
+	return &meterUsageSinkPublisher{
 		publisher: pub,
 		topic:     "analytics.meter_usage.sink.realtime",
 		logger:    logger.NewNoopLogger(),
@@ -155,18 +155,18 @@ func TestPublishMeterUsage_SwallowsPublisherError(t *testing.T) {
 
 // A nil (unconfigured) publisher is a no-op, never a panic.
 func TestPublishMeterUsage_NilPublisherIsNoop(t *testing.T) {
-	var p *meterUsagePublisher
+	var p *meterUsageSinkPublisher
 	p.PublishMeterUsage(context.Background(), []*events.MeterUsage{sampleMeterUsage()})
 }
 
 // When the feed is disabled the constructor must return an untyped-nil interface (not a
 // typed-nil impl), so the service's `if pub != nil` guard is FALSE and PublishMeterUsage is
 // never called — a nil interface method call would panic.
-func TestNewMeterUsagePublisher_DisabledReturnsNilInterface(t *testing.T) {
+func TestNewMeterUsageSinkPublisher_DisabledReturnsNilInterface(t *testing.T) {
 	cfg := &config.Configuration{}
 	cfg.Analytics.Enabled = false
 
-	pub := NewMeterUsagePublisher(nil, cfg, logger.NewNoopLogger())
+	pub := NewMeterUsageSinkPublisher(nil, cfg, logger.NewNoopLogger())
 	if pub != nil {
 		t.Fatalf("disabled feed must yield a nil interface, got %#v", pub)
 	}

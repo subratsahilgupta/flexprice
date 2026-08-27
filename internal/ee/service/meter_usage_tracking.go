@@ -16,8 +16,8 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
-	"github.com/flexprice/flexprice/internal/expression"
 	"github.com/flexprice/flexprice/internal/ee/analytics"
+	"github.com/flexprice/flexprice/internal/expression"
 	"github.com/flexprice/flexprice/internal/pubsub"
 	"github.com/flexprice/flexprice/internal/pubsub/kafka"
 	pubsubRouter "github.com/flexprice/flexprice/internal/pubsub/router"
@@ -56,17 +56,14 @@ type meterUsageTrackingService struct {
 	bulkPubSub          pubsub.PubSub
 	meterUsageRepo      events.MeterUsageRepository
 	expressionEvaluator expression.Evaluator
-	// analyticsPublisher is optional (nil unless the analytics feed is configured). When set,
-	// meter_usage records are additively published to the analytics topics AFTER a
-	// successful ClickHouse insert. fx injects it from the graph; nil = no-op.
-	analyticsPublisher analytics.MeterUsagePublisher
+	analyticsPublisher  analytics.MeterUsageSinkPublisher
 }
 
 // NewMeterUsageTrackingService creates a new meter usage tracking service
 func NewMeterUsageTrackingService(
 	params ServiceParams,
 	meterUsageRepo events.MeterUsageRepository,
-	analyticsPublisher analytics.MeterUsagePublisher,
+	analyticsPublisher analytics.MeterUsageSinkPublisher,
 ) MeterUsageTrackingService {
 	svc := &meterUsageTrackingService{
 		ServiceParams:       params,
@@ -362,10 +359,6 @@ func (s *meterUsageTrackingService) processBulkMessage(ctx context.Context, msg 
 		return fmt.Errorf("bulk insert meter usage: %w", err)
 	}
 
-	// Additive, fire-and-forget analytics publish AFTER the ClickHouse write commits. ClickHouse
-	// stays authoritative: PublishMeterUsage swallows its own errors and is a no-op when no
-	// analytics publisher is configured, so this can never fail the insert or affect billing.
-	// nil interface (feed disabled) ⇒ skip: calling a method on a nil interface panics.
 	if s.analyticsPublisher != nil {
 		s.analyticsPublisher.PublishMeterUsage(ctx, records)
 	}
@@ -530,10 +523,6 @@ func (s *meterUsageTrackingService) processEvent(ctx context.Context, event *eve
 		return fmt.Errorf("failed to bulk insert meter usage: %w", err)
 	}
 
-	// Additive, fire-and-forget analytics publish AFTER the ClickHouse write commits. ClickHouse
-	// stays authoritative: PublishMeterUsage swallows its own errors and is a no-op when no
-	// analytics publisher is configured, so this can never fail the insert or affect billing.
-	// nil interface (feed disabled) ⇒ skip: calling a method on a nil interface panics.
 	if s.analyticsPublisher != nil {
 		s.analyticsPublisher.PublishMeterUsage(ctx, records)
 	}
