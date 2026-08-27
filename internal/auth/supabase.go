@@ -2,8 +2,12 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -210,6 +214,62 @@ func (s *supabaseAuth) AssignUserToTenant(ctx context.Context, userID string, te
 	)
 
 	return nil
+}
+
+// RemoveUser permanently deletes the user's identity from Supabase.
+func (s *supabaseAuth) RemoveUser(ctx context.Context, userID string) error {
+	_, err := s.client.Admin.GetUser(ctx, userID)
+	if err != nil {
+		var errRes *supabase.ErrorResponse
+		if errors.As(err, &errRes) && errRes.Code == http.StatusNotFound {
+			s.logger.Info(ctx, "user already removed from Supabase", "target_user_id", userID)
+			return nil
+		}
+		return ierr.WithError(err).
+			WithHint("Failed to check user in Supabase").
+			WithReportableDetails(map[string]interface{}{"user_id": userID}).
+			Mark(ierr.ErrSystem)
+	}
+
+	delResp, err := s.deleteUser(ctx, userID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to delete user from Supabase").
+			WithReportableDetails(map[string]interface{}{"user_id": userID}).
+			Mark(ierr.ErrSystem)
+	}
+	defer delResp.Body.Close()
+
+	if delResp.StatusCode < http.StatusOK || delResp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(delResp.Body)
+		s.logger.Error(ctx, "supabase admin delete user request failed",
+			"error", fmt.Sprintf("status %d", delResp.StatusCode),
+			"target_user_id", userID,
+			"body", string(body),
+		)
+		return ierr.NewError("failed to delete user from Supabase").
+			WithHint("Supabase admin delete user request failed").
+			WithReportableDetails(map[string]interface{}{
+				"user_id":     userID,
+				"status_code": delResp.StatusCode,
+			}).
+			Mark(ierr.ErrSystem)
+	}
+
+	s.logger.Info(ctx, "deleted user from Supabase", "target_user_id", userID)
+	return nil
+}
+
+// deleteUser issues a DELETE against the Supabase admin users/{id} endpoint.
+func (s *supabaseAuth) deleteUser(ctx context.Context, userID string) (*http.Response, error) {
+	reqURL := fmt.Sprintf("%s/%s/users/%s", s.client.BaseURL, supabase.AdminEndpoint, url.PathEscape(userID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.AuthConfig.Supabase.ServiceKey)
+	req.Header.Set("apikey", s.AuthConfig.Supabase.ServiceKey)
+	return s.client.HTTPClient.Do(req)
 }
 
 // GenerateDevToken creates a short-lived JWT that matches the Supabase claim schema so it

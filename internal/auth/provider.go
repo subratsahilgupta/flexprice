@@ -68,6 +68,9 @@ type Provider interface {
 	ValidateToken(ctx context.Context, token string) (*auth.Claims, error)
 	AssignUserToTenant(ctx context.Context, userID string, tenantID string) error
 
+	// RemoveUser permanently deletes the user's identity from the auth provider.
+	RemoveUser(ctx context.Context, userID string) error
+
 	// Customer Dashboard Token Management
 	GenerateSessionToken(customerID, externalCustomerID, tenantID, environmentID string, timeoutHours int) (string, time.Time, error)
 	ValidateSessionToken(ctx context.Context, token string) (*auth.SessionClaims, error)

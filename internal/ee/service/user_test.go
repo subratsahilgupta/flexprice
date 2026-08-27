@@ -50,7 +50,6 @@ func (s *UserServiceSuite) SetupTest() {
 		secretRepo:      s.secretRepo,
 		db:              testutil.NewMockPostgresClient(nil),
 		rbacService:     nil,
-		supabaseAuth:    nil,
 		settingsService: nil,
 	}
 
@@ -93,10 +92,9 @@ func (s *UserServiceSuite) TestGetUserInfo() {
 		s.Run(tc.name, func() {
 			s.userRepo = testutil.NewInMemoryUserStore()
 			s.userService = &userService{
-				userRepo:     s.userRepo,
-				tenantRepo:   s.tenantRepo,
-				rbacService:  nil,
-				supabaseAuth: nil,
+				userRepo:    s.userRepo,
+				tenantRepo:  s.tenantRepo,
+				rbacService: nil,
 			}
 
 			ctx := testutil.SetupContext()
@@ -147,7 +145,6 @@ func (s *UserServiceSuite) TestCreateUser_TableDriven() {
 					userRepo:        s.userRepo,
 					tenantRepo:      s.tenantRepo,
 					rbacService:     nil,
-					supabaseAuth:    nil,
 					settingsService: nil,
 				}
 			},
@@ -162,7 +159,6 @@ func (s *UserServiceSuite) TestCreateUser_TableDriven() {
 					userRepo:        s.userRepo,
 					tenantRepo:      s.tenantRepo,
 					rbacService:     nil,
-					supabaseAuth:    nil,
 					settingsService: nil,
 				}
 			},
@@ -177,7 +173,6 @@ func (s *UserServiceSuite) TestCreateUser_TableDriven() {
 					userRepo:        s.userRepo,
 					tenantRepo:      s.tenantRepo,
 					rbacService:     nil,
-					supabaseAuth:    nil,
 					settingsService: nil,
 				}
 			},
@@ -201,7 +196,6 @@ func (s *UserServiceSuite) TestCreateUser_TableDriven() {
 					userRepo:        s.userRepo,
 					tenantRepo:      s.tenantRepo,
 					rbacService:     rbacSvc,
-					supabaseAuth:    nil,
 					settingsService: nil,
 				}
 			},
@@ -224,7 +218,6 @@ func (s *UserServiceSuite) TestCreateUser_TableDriven() {
 					userRepo:        s.userRepo,
 					tenantRepo:      s.tenantRepo,
 					rbacService:     rbacSvc,
-					supabaseAuth:    nil,
 					settingsService: nil,
 				}
 			},
@@ -739,6 +732,147 @@ func (s *UserServiceSuite) TestCreateSupportChatToken_InvalidHexSecret() {
 	resp, err := s.userService.CreateSupportChatToken(ctx)
 	s.Require().Error(err)
 	s.Nil(resp)
+}
+
+func (s *UserServiceSuite) TestRemoveUser() {
+	ctx := testutil.SetupContext()
+	ctx = context.WithValue(ctx, types.CtxTenantID, types.DefaultTenantID)
+	ctx = context.WithValue(ctx, types.CtxUserID, "actor-1")
+	ctx = context.WithValue(ctx, types.CtxRoles, []string{types.RoleSuperAdmin.String()})
+
+	baseModel := types.GetDefaultBaseModel(ctx)
+	baseModel.TenantID = types.DefaultTenantID
+
+	seedStore := func() {
+		s.userRepo = testutil.NewInMemoryUserStore()
+		s.secretRepo = testutil.NewInMemorySecretStore()
+		_ = s.userRepo.Create(ctx, &user.User{
+			ID:        "actor-1",
+			Email:     "actor@example.com",
+			Type:      types.UserTypeUser,
+			BaseModel: baseModel,
+		})
+		_ = s.userRepo.Create(ctx, &user.User{
+			ID:        "user-1",
+			Email:     "u@example.com",
+			Type:      types.UserTypeUser,
+			BaseModel: baseModel,
+		})
+		_ = s.userRepo.Create(ctx, &user.User{
+			ID:        "sa-1",
+			Type:      types.UserTypeServiceAccount,
+			BaseModel: baseModel,
+		})
+		s.userService = &userService{db: testutil.NewMockPostgresClient(testLogger(s.T())), userRepo: s.userRepo, tenantRepo: s.tenantRepo, secretRepo: s.secretRepo, cfg: &config.Configuration{}, logger: testLogger(s.T())}
+	}
+
+	s.Run("success_user_removed_api_key_retained", func() {
+		seedStore()
+		_ = s.secretRepo.Create(ctx, &domainSecret.Secret{
+			ID:       "key-1",
+			UserID:   "user-1",
+			UserType: string(types.UserTypeUser),
+			BaseModel: types.BaseModel{
+				TenantID: types.DefaultTenantID,
+				Status:   types.StatusPublished,
+			},
+		})
+		err := s.userService.RemoveUser(ctx, "user-1")
+		s.NoError(err)
+
+		removedUser, err := s.userRepo.GetByID(ctx, "user-1")
+		s.NoError(err)
+		s.Equal(types.StatusArchived, removedUser.Status)
+
+		key, err := s.secretRepo.Get(ctx, "key-1")
+		s.NoError(err, "the user's API key must remain active after removal")
+		s.Equal(types.StatusPublished, key.Status)
+	})
+
+	s.Run("empty_id_returns_validation_error", func() {
+		seedStore()
+		err := s.userService.RemoveUser(ctx, "")
+		s.Error(err)
+		s.Contains(err.Error(), "user ID is required")
+	})
+
+	s.Run("unknown_id_returns_not_found", func() {
+		seedStore()
+		err := s.userService.RemoveUser(ctx, "user-unknown")
+		s.Error(err)
+	})
+
+	s.Run("cross_tenant_target_returns_not_found", func() {
+		seedStore()
+		otherTenantModel := baseModel
+		otherTenantModel.TenantID = "other-tenant"
+		_ = s.userRepo.Create(ctx, &user.User{
+			ID:        "other-tenant-user",
+			Email:     "other@example.com",
+			Type:      types.UserTypeUser,
+			BaseModel: otherTenantModel,
+		})
+
+		err := s.userService.RemoveUser(ctx, "other-tenant-user")
+		s.Error(err)
+		s.Contains(err.Error(), "user not found")
+
+		otherCtx := context.WithValue(ctx, types.CtxTenantID, "other-tenant")
+		untouched, getErr := s.userRepo.GetByID(otherCtx, "other-tenant-user")
+		s.NoError(getErr)
+		s.Equal(types.StatusPublished, untouched.Status)
+	})
+
+	s.Run("service_account_returns_validation_error", func() {
+		seedStore()
+		err := s.userService.RemoveUser(ctx, "sa-1")
+		s.Error(err)
+		s.Contains(err.Error(), "only human users can be removed")
+	})
+
+	s.Run("self_removal_returns_permission_error", func() {
+		seedStore()
+		err := s.userService.RemoveUser(ctx, "actor-1")
+		s.Error(err)
+		s.Contains(err.Error(), "cannot remove yourself")
+
+		untouched, getErr := s.userRepo.GetByID(ctx, "actor-1")
+		s.NoError(getErr)
+		s.Equal(types.StatusPublished, untouched.Status)
+	})
+
+	s.Run("non_super_admin_returns_permission_error", func() {
+		seedStore()
+		readerCtx := context.WithValue(ctx, types.CtxRoles, []string{types.RoleAllReader.String()})
+
+		err := s.userService.RemoveUser(readerCtx, "user-1")
+		s.Error(err)
+		s.Contains(err.Error(), "only super_admin can remove users")
+
+		untouched, getErr := s.userRepo.GetByID(ctx, "user-1")
+		s.NoError(getErr)
+		s.Equal(types.StatusPublished, untouched.Status)
+	})
+
+	s.Run("last_human_user_returns_validation_error", func() {
+		s.userRepo = testutil.NewInMemoryUserStore()
+		s.secretRepo = testutil.NewInMemorySecretStore()
+		_ = s.userRepo.Create(ctx, &user.User{
+			ID:        "user-1",
+			Email:     "u@example.com",
+			Type:      types.UserTypeUser,
+			BaseModel: baseModel,
+		})
+		s.userService = &userService{db: testutil.NewMockPostgresClient(testLogger(s.T())), userRepo: s.userRepo, tenantRepo: s.tenantRepo, secretRepo: s.secretRepo, cfg: &config.Configuration{}, logger: testLogger(s.T())}
+
+		err := s.userService.RemoveUser(ctx, "user-1")
+		s.Error(err)
+		s.Contains(err.Error(), "cannot remove the last user")
+
+		untouched, getErr := s.userRepo.GetByID(ctx, "user-1")
+		s.NoError(getErr)
+		s.Equal(types.StatusPublished, untouched.Status)
+	})
 }
 
 // ---------------------------------------------------------------------------

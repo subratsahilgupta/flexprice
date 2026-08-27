@@ -249,3 +249,25 @@ func (h *UserHandler) CreateSupportChatToken(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
+// @Summary Remove user from tenant
+// @ID removeUser
+// @Description Remove a human user (type=user) from the current tenant. Not supported for service accounts; use DELETE /users/{id} for those.
+// @Tags Users
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "User ID"
+// @Success 204 "No content"
+// @Failure 400 {object} ierr.ErrorResponse "Invalid request"
+// @Failure 404 {object} ierr.ErrorResponse "Not found"
+// @Failure 500 {object} ierr.ErrorResponse "Server error"
+// @Router /users/{id}/remove [post]
+func (h *UserHandler) RemoveUser(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.userService.RemoveUser(c.Request.Context(), id); err != nil {
+		h.logger.Error(c.Request.Context(), "failed to remove user", "error", err)
+		c.Error(err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
