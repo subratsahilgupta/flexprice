@@ -31,12 +31,14 @@ uniform fleet; it is that divergence stops growing.**
 
 Two rules follow, and both are load-bearing:
 
-**Every migration after the marker must be safe on a database it has never seen.**
-No assumptions about starting state. Guard on `to_regclass(...)` before touching a
-table, match indexes on shape rather than Ent-derived name, and make re-running a
-no-op. `20260825000100_entitlements_uniq_exclude_parallel.sql` is the worked
-example — it narrows any unique index of the right shape whose predicate has not
-been narrowed, and does nothing anywhere else.
+**Every migration after the marker should be safe on a database it has never seen.**
+Guard on `to_regclass(...)` before touching a table, prefer matching indexes on
+shape over Ent-derived names, and make re-running a no-op.
+
+The `20260825000100`–`000400` entitlements migrations are the exception: they
+assume India prod's index layout and are applied there by hand. `000400` in
+particular drops an index that is an orphan in prod and the **live** uniqueness
+index in GCP staging.
 
 **The baseline is frozen.** Once anything has adopted, regenerating it would put a
 schema change into fresh installs while every existing deployment silently misses
