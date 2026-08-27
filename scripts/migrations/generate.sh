@@ -10,14 +10,12 @@
 set -euo pipefail
 NAME="${1:?usage: generate.sh <migration_name>}"
 DIR="${MIGRATIONS_PG:-migrations/versioned/postgres}"
-PGHOST_="${PGHOST_:-localhost}"; PGPORT_="${PGPORT_:-5440}"
+PGHOST_="${PGHOST_:-localhost}"; PGPORT_="${PGPORT_:-5432}"
 PGUSER_="${PGUSER_:-flexprice}"; PGPASS_="${PGPASS_:-flexprice123}"
 # Password via PGPASSWORD only — a URL passed as an argument is visible in
 # `ps aux`, CI logs and Kubernetes audit records.
 BASE="postgres://$PGUSER_@$PGHOST_:$PGPORT_"
 export PGPASSWORD="$PGPASS_"
-
-"$(dirname "$0")/ensure-pg.sh"
 
 # ent/ is generated from ent/schema/, and everything below compares against the
 # generated ent/migrate/schema.go. A stale ent/ makes `go run ./cmd/migrate` panic

@@ -15,14 +15,12 @@
 # deploy mechanism.
 set -euo pipefail
 
-PGHOST_="${PGHOST_:-localhost}"; PGPORT_="${PGPORT_:-5440}"
+PGHOST_="${PGHOST_:-localhost}"; PGPORT_="${PGPORT_:-5432}"
 PGUSER_="${PGUSER_:-flexprice}"; PGPASS_="${PGPASS_:-flexprice123}"
 DIR="${1:-migrations/versioned/postgres}"
 # Password via PGPASSWORD only — never in argv.
 BASE="postgres://$PGUSER_@$PGHOST_:$PGPORT_"
 export PGPASSWORD="$PGPASS_"
-
-"$(dirname "$0")/ensure-pg.sh"
 
 for db in sync_a sync_b; do
   psql "$BASE/postgres?sslmode=disable" -q -c "DROP DATABASE IF EXISTS $db;" \

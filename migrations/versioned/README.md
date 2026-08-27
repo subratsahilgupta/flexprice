@@ -189,13 +189,9 @@ not proposed statements**, because Ent emits permanent noise for any index predi
 whose spelling differs from Postgres' canonical form. "Is the diff empty?" can never
 be a pass/fail test; "do the two schemas match?" can.
 
-It needs a scratch Postgres, and starts one itself the first time
-(`scripts/migrations/ensure-pg.sh`, `postgres:17` on `:5440`, container
-`flexprice-mig-pg`). Nothing to set up.
-
-It does nothing when something already answers on that port, which covers CI's
-service container and a developer who already has one. Point it elsewhere with
-`PGPORT_` / `PGHOST_`.
+It builds throwaway databases on your local Postgres — the one
+`docker compose up -d postgres` provides on `:5432`. Point it elsewhere with
+`PGHOST_` / `PGPORT_`.
 
 ## Orphaned indexes — a known, unsolved gap
 
