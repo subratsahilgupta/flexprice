@@ -49,7 +49,7 @@ jobs:
           POSTGRES_USER: flexprice
           POSTGRES_PASSWORD: flexprice123
           POSTGRES_DB: postgres
-        ports: [ '5440:5432' ]
+        ports: [ '5432:5432' ]
         options: >-
           --health-cmd "pg_isready -U flexprice"
           --health-interval 5s --health-timeout 5s --health-retries 10
@@ -108,14 +108,18 @@ jobs:
       #   run: make migrate-check-clickhouse
 
       - name: Replay from zero — does a fresh install work?
-        # The gates above prove the set matches Ent. This proves it also applies
-        # cleanly to an empty database, which is what a new client gets.
+        # Exactly what a new client gets: the baseline snapshot, then the timeline.
+        # The baseline lives outside migrations/versioned/ and dbmate never runs it,
+        # so applying only the migrations would leave an empty schema and every
+        # migration referencing a table would fail.
         env:
           PGPASSWORD: flexprice123
         run: |
-          psql -h localhost -p 5440 -U flexprice -d postgres -q \
+          psql -h localhost -p 5432 -U flexprice -d postgres -q \
             -c "DROP DATABASE IF EXISTS fresh_install;" -c "CREATE DATABASE fresh_install;"
-          DATABASE_URL="postgres://flexprice:flexprice123@localhost:5440/fresh_install?sslmode=disable" \
+          BASELINE="$(ls -1 migrations/baseline/postgres_baseline_ent_*.sql | tail -1)"
+          psql -h localhost -p 5432 -U flexprice -d fresh_install -q -v ON_ERROR_STOP=1 -f "$BASELINE"
+          DATABASE_URL="postgres://flexprice:flexprice123@localhost:5432/fresh_install?sslmode=disable" \
             dbmate --migrations-dir migrations/versioned/postgres --no-dump-schema up
 
       - name: Show the DDL this PR will run

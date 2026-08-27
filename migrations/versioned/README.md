@@ -3,15 +3,68 @@
 Every schema change ships as a reviewed SQL file. `dbmate` applies what a database
 has not seen yet and records it in `schema_migrations`.
 
-This replaces Ent AutoMigrate as the deploy mechanism. Ent stays as the *source of
-truth* for the schema and as the CI oracle — it is no longer what runs against a
-production database.
+This replaces Ent AutoMigrate as the deploy mechanism. Ent stays the *source of
+truth* for the schema and the CI oracle; it no longer runs against a production
+database.
 
 ```text
-migrations/versioned/postgres/     dbmate, ledger `schema_migrations`
-migrations/versioned/clickhouse/   dbmate, one statement per file
-scripts/migrations/                adoption + the CI gates
+migrations/baseline/     fresh databases only — dbmate NEVER runs these
+migrations/versioned/    the timeline: what every database applies from here on
+scripts/migrations/      adoption + the CI gates
 ```
+
+## The fleet is not homogeneous — read this first
+
+There is no single baseline that describes every deployment, and there never was.
+India prod grew under AutoMigrate. GCP staging was DMS-migrated from AWS into
+AlloyDB and then diverged. Each client is its own lineage. Measured on 2026-08-26,
+staging differed from a prod-derived baseline by **610 catalog lines**.
+
+So the timeline does not try to reconcile history. It starts with a **marker**
+(`20260819000000`) that executes nothing and claims only:
+
+> whatever this database contains, it does not need anything before here
+
+Every deployment adopts at that marker — prod, staging, each client — with zero
+DDL. Differences existing at that point stay, unreconciled. **The goal is not a
+uniform fleet; it is that divergence stops growing.**
+
+Two rules follow, and both are load-bearing:
+
+**Every migration after the marker should be safe on a database it has never seen.**
+Guard on `to_regclass(...)` before touching a table, prefer matching indexes on
+shape over Ent-derived names, and make re-running a no-op.
+
+The `20260825000100`–`000400` entitlements migrations are the exception: they
+assume India prod's index layout and are applied there by hand. `000400` in
+particular drops an index that is an orphan in prod and the **live** uniqueness
+index in GCP staging.
+
+**The baseline is frozen.** Once anything has adopted, regenerating it would put a
+schema change into fresh installs while every existing deployment silently misses
+it — nothing in the timeline carries the change. New schema goes in a migration.
+`make migrate-check-checksum` enforces this. It covers Postgres only —
+`migrations/versioned/postgres/` and the Ent baseline. Not the legacy
+`migrations/postgres/V*.sql`, not the superseded `pg_dump` baseline, and not
+ClickHouse: that set is inert, its gate is disabled, and freezing it would block
+the fix rather than protect anything.
+
+## Where the baseline comes from
+
+Generated from the **Ent schema**, not from a `pg_dump` of production:
+
+```bash
+go run ./cmd/migrate postgres --dry-run    # against an empty database
+```
+
+A prod dump carries prod's accumulated past into every new client — dead columns,
+orphaned indexes, ad-hoc tables like `connections_backup_20260805`. A new database
+should start from what the code declares.
+
+What Ent omits — functions, standalone sequences, extensions, views, triggers — was
+checked before choosing this: production's three sequence functions have zero Go
+references, `uuid_generate` is referenced nowhere, and `prices.sequence` is created
+by its `bigserial` column. Nothing omitted is used.
 
 ## Everyday change
 
@@ -26,9 +79,15 @@ make migrate-generate name=add_currency_to_invoices
 make migrate-check
 ```
 
-`migrate-generate` builds a throwaway database from the committed migrations, asks
-Ent what is still missing, and writes that DDL into a new dbmate file. You do not
-write SQL from scratch. If nothing is missing it says so and writes nothing.
+`migrate-generate` builds a throwaway database the way a fresh install is built,
+asks Ent what is still missing, and writes that DDL into a new dbmate file. You do
+not write SQL from scratch. If nothing is missing it says so and writes nothing.
+
+Columns and tables come out with `IF NOT EXISTS` already applied — deployments hold
+different schemas, so a migration may meet something that already exists. Index
+creation deliberately does not: the draft is meant to gain `CONCURRENTLY` by hand,
+and `IF NOT EXISTS` on a concurrent build silently skips an INVALID index left by an
+earlier failure.
 
 **The draft is not the answer.** It has no `CONCURRENTLY`, no lane placement, and a
 `TODO` where the down block goes. Editing it is the review step, and it is where the
@@ -119,23 +178,20 @@ a failed connection still exits 0 and hashes the empty string —
 means recording it deliberately:
 
 ```bash
-./scripts/migrations/checksum-check.sh migrations/versioned migrations/versioned/.hashes --update
-git add migrations/versioned/.hashes
+./scripts/migrations/checksum-check.sh --update
+git add migrations/.hashes
 ```
 
-The sync check builds two throwaway databases — one from migrations alone, one from
-migrations plus Ent — and compares schema fingerprints. It compares **end states,
+The sync check builds two throwaway databases the way a fresh install is built —
+baseline, then migrations — and applies Ent to one of them, then compares schema
+fingerprints. It compares **end states,
 not proposed statements**, because Ent emits permanent noise for any index predicate
 whose spelling differs from Postgres' canonical form. "Is the diff empty?" can never
 be a pass/fail test; "do the two schemas match?" can.
 
-It needs a scratch Postgres:
-
-```bash
-docker run -d --name mig-pg -e POSTGRES_USER=flexprice \
-  -e POSTGRES_PASSWORD=flexprice123 -e POSTGRES_DB=postgres \
-  -p 5440:5432 postgres:16
-```
+It builds throwaway databases on your local Postgres — the one
+`docker compose up -d postgres` provides on `:5432`. Point it elsewhere with
+`PGHOST_` / `PGPORT_`.
 
 ## Orphaned indexes — a known, unsolved gap
 

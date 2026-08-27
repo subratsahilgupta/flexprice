@@ -280,7 +280,7 @@ migrate-check-sync:
 
 .PHONY: migrate-check-checksum
 migrate-check-checksum:
-	@./scripts/migrations/checksum-check.sh migrations/versioned
+	@./scripts/migrations/checksum-check.sh
 
 .PHONY: migrate-check-order
 migrate-check-order:
