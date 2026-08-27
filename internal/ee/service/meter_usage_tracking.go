@@ -16,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/ee/analytics"
 	"github.com/flexprice/flexprice/internal/expression"
 	"github.com/flexprice/flexprice/internal/pubsub"
 	"github.com/flexprice/flexprice/internal/pubsub/kafka"
@@ -55,17 +56,20 @@ type meterUsageTrackingService struct {
 	bulkPubSub          pubsub.PubSub
 	meterUsageRepo      events.MeterUsageRepository
 	expressionEvaluator expression.Evaluator
+	analyticsPublisher  analytics.MeterUsageSinkPublisher
 }
 
 // NewMeterUsageTrackingService creates a new meter usage tracking service
 func NewMeterUsageTrackingService(
 	params ServiceParams,
 	meterUsageRepo events.MeterUsageRepository,
+	analyticsPublisher analytics.MeterUsageSinkPublisher,
 ) MeterUsageTrackingService {
 	svc := &meterUsageTrackingService{
 		ServiceParams:       params,
 		meterUsageRepo:      meterUsageRepo,
 		expressionEvaluator: expression.NewCELEvaluator(),
+		analyticsPublisher:  analyticsPublisher,
 	}
 
 	ps, err := kafka.NewPubSubFromConfig(
@@ -355,6 +359,10 @@ func (s *meterUsageTrackingService) processBulkMessage(ctx context.Context, msg 
 		return fmt.Errorf("bulk insert meter usage: %w", err)
 	}
 
+	if s.analyticsPublisher != nil {
+		s.analyticsPublisher.PublishMeterUsage(ctx, records)
+	}
+
 	s.Logger.Debug(ctx, "bulk meter usage batch inserted",
 		"record_count", len(records),
 		"batch_size", len(batch.Events),
@@ -513,6 +521,10 @@ func (s *meterUsageTrackingService) processEvent(ctx context.Context, event *eve
 	stampIngestedAt(records)
 	if err := s.meterUsageRepo.BulkInsertMeterUsage(ctx, records); err != nil {
 		return fmt.Errorf("failed to bulk insert meter usage: %w", err)
+	}
+
+	if s.analyticsPublisher != nil {
+		s.analyticsPublisher.PublishMeterUsage(ctx, records)
 	}
 
 	s.Logger.Debug(ctx, "meter usage records inserted",
