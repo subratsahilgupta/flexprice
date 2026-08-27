@@ -174,35 +174,6 @@ func TestBuilder_CopiesAndUpdates(t *testing.T) {
 	}
 }
 
-func TestMetadataAccessors_NilSafe(t *testing.T) {
-	var nilGrant *EntitlementGrant
-	if _, ok := nilGrant.MetadataValue("k"); ok {
-		t.Fatal("nil grant must not report a metadata value")
-	}
-	if nilGrant.HasMetadataKey("k") {
-		t.Fatal("nil grant must not report a metadata key")
-	}
-
-	g := baseGrant() // Metadata is nil
-	if _, ok := g.MetadataValue("k"); ok {
-		t.Fatal("nil metadata map must not report a value")
-	}
-	if g.HasMetadataKey("k") {
-		t.Fatal("nil metadata map must not report a key")
-	}
-
-	// An empty-string value must still count as present — the idempotency
-	// marker is looked up by key, not by truthiness.
-	g.Metadata = types.Metadata{"marker": ""}
-	v, ok := g.MetadataValue("marker")
-	if !ok || v != "" {
-		t.Fatalf("expected present empty value, got (%q, %v)", v, ok)
-	}
-	if !g.HasMetadataKey("marker") {
-		t.Fatal("expected HasMetadataKey to see an empty-valued key")
-	}
-}
-
 func TestFromEnt_CarriesMetadata(t *testing.T) {
 	md := types.Metadata{"proration_coefficient": "0.5", "proration_addon_assoc_a1": "0.5"}
 	got := FromEnt(&ent.EntitlementGrant{
@@ -253,46 +224,18 @@ func TestBuilder_WithMetadataReplaces(t *testing.T) {
 	}
 }
 
-func TestBuilder_WithMergedMetadataMergesAndOverrides(t *testing.T) {
-	g := baseGrant()
-	g.Metadata = types.Metadata{"keep": "1", "overwrite": "old"}
-
-	got := NewEntitlementGrantBuilder(g).
-		WithMergedMetadata(types.Metadata{"overwrite": "new", "added": "2"}).
-		Build()
-
-	if got.Metadata["keep"] != "1" {
-		t.Fatalf("merge dropped an existing key: %v", got.Metadata)
-	}
-	if got.Metadata["overwrite"] != "new" {
-		t.Fatalf("merge did not override: %v", got.Metadata)
-	}
-	if got.Metadata["added"] != "2" {
-		t.Fatalf("merge did not add: %v", got.Metadata)
-	}
-}
-
-func TestBuilder_WithMergedMetadataEmptyIsNoOp(t *testing.T) {
-	g := baseGrant()
-	g.Metadata = types.Metadata{"keep": "1"}
-
-	got := NewEntitlementGrantBuilder(g).WithMergedMetadata(nil).Build()
-	if got.Metadata["keep"] != "1" {
-		t.Fatalf("nil merge must not clear metadata, got %v", got.Metadata)
-	}
-}
-
 // The builder copies the source grant, so a merge must not mutate the original —
 // the attach path builds off a grant it also still reads.
+// The builder copies the source grant, so mutating what it produced must not
+// reach back into the original — the attach path builds off a grant it still reads.
 func TestBuilder_MetadataIsDeepCopied(t *testing.T) {
 	g := baseGrant()
 	g.Metadata = types.Metadata{"keep": "1"}
 
-	_ = NewEntitlementGrantBuilder(g).
-		WithMergedMetadata(types.Metadata{"added": "2"}).
-		Build()
+	got := NewEntitlementGrantBuilder(g).Build()
+	got.Metadata["added"] = "2"
 
 	if _, leaked := g.Metadata["added"]; leaked {
-		t.Fatalf("builder mutated the source grant's metadata: %v", g.Metadata)
+		t.Fatalf("builder shares the source grant's metadata map: %v", g.Metadata)
 	}
 }

@@ -5,7 +5,6 @@ import (
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -81,19 +80,23 @@ func Coefficient(periodStart, periodEnd, prorationDate time.Time, strategy types
 	return calculateProrationCoefficient(periodStart, periodEnd, prorationDate, time.UTC, strategy)
 }
 
+// AuditMetadata renders the calculation for storage. The coefficient alone says
+// whether proration applied — a value of 1 means it did not.
 func AuditMetadata(p AuditParams) types.Metadata {
 	strategy := p.Strategy
 	if strategy == "" {
 		strategy = types.StrategySecondBased
 	}
-	return types.Metadata{
-		"proration_applied":      lo.Ternary(p.Coefficient.LessThan(decimal.NewFromInt(1)), "true", "false"),
+	m := types.Metadata{
 		"proration_coefficient":  p.Coefficient.String(),
 		p.OriginalKey:            p.OriginalValue.String(),
 		"proration_period_start": p.PeriodStart.UTC().Format(time.RFC3339),
 		"proration_period_end":   p.PeriodEnd.UTC().Format(time.RFC3339),
 		"proration_date":         p.ProrationDate.UTC().Format(time.RFC3339),
 		"proration_strategy":     string(strategy),
-		"proration_source":       p.Source,
 	}
+	if p.Source != "" {
+		m["proration_source"] = p.Source
+	}
+	return m
 }

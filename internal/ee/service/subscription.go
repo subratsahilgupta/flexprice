@@ -1592,7 +1592,7 @@ func (s *subscriptionService) addonCreditGrantProration(
 		PeriodEnd:     p.End,
 		ProrationDate: startDate,
 		Strategy:      types.StrategySecondBased,
-		Source:        "addon_attach",
+		Source:        grantProrationSourceAddonAttach.String(),
 	}
 }
 
@@ -5076,7 +5076,7 @@ func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *ad
 	}
 
 	proratedGrants, err := s.resolveGrantProration(
-		ctx, sub, addonGrantECs, existingGrantECs, params.getEffectiveDate(), req.ProrationBehavior, "addon_attach")
+		ctx, sub, addonGrantECs, existingGrantECs, params.getEffectiveDate(), req.ProrationBehavior, grantProrationSourceAddonAttach)
 	if err != nil {
 		return err
 	}

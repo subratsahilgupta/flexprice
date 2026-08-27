@@ -89,21 +89,6 @@ func (g *EntitlementGrant) Remaining() decimal.Decimal {
 	return remaining
 }
 
-// MetadataValue reads one metadata key, nil-safe on both the grant and the map.
-func (g *EntitlementGrant) MetadataValue(key string) (string, bool) {
-	if g == nil || g.Metadata == nil {
-		return "", false
-	}
-	v, ok := g.Metadata[key]
-	return v, ok
-}
-
-// HasMetadataKey reports whether the key is present, regardless of its value.
-func (g *EntitlementGrant) HasMetadataKey(key string) bool {
-	_, ok := g.MetadataValue(key)
-	return ok
-}
-
 func (g *EntitlementGrant) Validate() error {
 	if g.EntitlementConfigID == "" {
 		return ierr.NewError("entitlement_config_id is required").

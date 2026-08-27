@@ -407,7 +407,7 @@ func (s *SubscriptionServiceSuite) TestAddAddonToSubscription_ProratesFirstCredi
 	app := s.firstApplicationFor(grant.ID)
 	s.Require().NotNil(app)
 	s.Equal(expectedCredits.String(), app.Credits.String())
-	s.Equal("true", app.Metadata["proration_applied"])
+	s.Equal(coefficient.String(), app.Metadata["proration_coefficient"])
 	s.Equal("100", app.Metadata["proration_original_credits"])
 
 	// Computing the right amount is worthless if the credits never reach the wallet.

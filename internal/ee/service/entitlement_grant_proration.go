@@ -17,6 +17,18 @@ import (
 // entitlementGrantQuotaScale matches the numeric(25,15) precision of entitlement_grants.quota.
 const entitlementGrantQuotaScale = 15
 
+// grantProrationSource names the subscription change that wrote a grant segment.
+// It lands in the segment's metadata as proration_source, so a window can always
+// be traced back to what cut it.
+type grantProrationSource string
+
+const (
+	grantProrationSourceAddonAttach grantProrationSource = "addon_attach"
+	grantProrationSourceAddonDetach grantProrationSource = "addon_detach"
+)
+
+func (s grantProrationSource) String() string { return string(s) }
+
 func (s *subscriptionService) resolveGrantProration(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -24,7 +36,7 @@ func (s *subscriptionService) resolveGrantProration(
 	existingByFeature map[string][]*entitlement.Entitlement,
 	effectiveDate time.Time,
 	behavior types.ProrationBehavior,
-	source string,
+	source grantProrationSource,
 ) ([]*entitlementgrant.EntitlementGrant, error) {
 	if s.EntitlementGrantRepo == nil || s.EntitlementRepo == nil {
 		return nil, nil
@@ -113,7 +125,7 @@ func (s *subscriptionService) resolveGrantProration(
 			WithQuota(delta).
 			WithWindow(coverageStart, p.End).
 			WithMetadata(proration.AuditMetadata(proration.AuditParams{
-				Source:        source,
+				Source:        source.String(),
 				Coefficient:   coefficient,
 				OriginalKey:   "proration_original_quota",
 				OriginalValue: originalQuota,
@@ -229,7 +241,7 @@ func (s *subscriptionService) handleGrantsForRemovedECs(
 	sub *subscription.Subscription,
 	removedECs []*entitlement.Entitlement,
 	effectiveDate time.Time,
-	source string,
+	source grantProrationSource,
 ) error {
 	if s.EntitlementGrantRepo == nil || len(removedECs) == 0 {
 		return nil
@@ -272,7 +284,7 @@ func (s *subscriptionService) handleGrantsForRemovedECs(
 			return ec.ID, true
 		})
 
-		if featureIsParallel(removed) {
+		if hasParallelECs(removed) {
 			toClose = append(toClose, lo.Filter(live, func(g *entitlementgrant.EntitlementGrant, _ int) bool {
 				return removedIDs[g.EntitlementConfigID]
 			})...)
@@ -334,7 +346,7 @@ func (s *subscriptionService) handleGrantsForRemovedECs(
 				WithQuota(decimal.Zero).
 				WithWindow(closed.ValidTo, pooled.ValidTo).
 				WithMetadata(types.Metadata{
-					"source":             source,
+					"proration_source":   source.String(),
 					"carry_forward_from": pooled.ID,
 				}).
 				Build(),

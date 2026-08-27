@@ -125,7 +125,7 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 
 	for _, req := range reqs {
 		featureECs := append(append([]*entitlement.Entitlement{}, req.ExistingECs...), req.IncomingECs...)
-		if req.New == nil || len(featureECs) == 0 || featureIsParallel(featureECs) {
+		if req.New == nil || len(featureECs) == 0 || hasParallelECs(featureECs) {
 			s.Logger.Info(ctx, "skipping entitlement grant open",
 				"feature_id", req.FeatureID)
 			continue
@@ -491,7 +491,7 @@ func (s *entitlementGrantService) eligibleGrantConfigsByFeature(
 // grantCandidatesForFeature: parallel → one candidate per EC; additive → one
 // candidate on the primary (lowest-ID) EC with the summed quota.
 func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCandidate {
-	if featureIsParallel(featureECs) {
+	if hasParallelECs(featureECs) {
 		return lo.Map(featureECs, func(ec *entitlement.Entitlement, _ int) grantCandidate {
 			return grantCandidate{
 				ec:        ec,
@@ -813,6 +813,11 @@ func (s *entitlementService) validateEntitlementGrantShape(
 			Mark(ierr.ErrValidation)
 	}
 
+	// Same rule for the price-level bucketing source.
+	if err := s.validateEntitlementAgainstBucketedPrices(ctx, m, true); err != nil {
+		return err
+	}
+
 	if err := s.validateGrantSiblingCoherence(ctx, e); err != nil {
 		return err
 	}
@@ -903,7 +908,7 @@ func (s *entitlementService) validateGrantSiblingCoherence(ctx context.Context, 
 	return nil
 }
 
-func featureIsParallel(featureECs []*entitlement.Entitlement) bool {
+func hasParallelECs(featureECs []*entitlement.Entitlement) bool {
 	return lo.SomeBy(featureECs, func(ec *entitlement.Entitlement) bool {
 		return defaultedMode(ec.AggregationMode) == types.EntitlementAggregationModeParallel
 	})

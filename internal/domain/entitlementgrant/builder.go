@@ -135,29 +135,12 @@ func (b *entitlementGrantBuilder) WithQuotaCrossedAt(t *time.Time) *entitlementG
 	return b
 }
 
-// WithMetadata replaces the metadata map wholesale. Use WithMergedMetadata to
-// add keys without dropping an existing audit trail.
+// WithMetadata replaces the metadata map wholesale.
 func (b *entitlementGrantBuilder) WithMetadata(m types.Metadata) *entitlementGrantBuilder {
 	if b == nil || b.grant == nil {
 		return b
 	}
 	b.grant.Metadata = m
-	return b
-}
-
-// WithMergedMetadata layers m over whatever the grant already carries.
-func (b *entitlementGrantBuilder) WithMergedMetadata(m types.Metadata) *entitlementGrantBuilder {
-	if b == nil || b.grant == nil || len(m) == 0 {
-		return b
-	}
-	merged := make(types.Metadata, len(b.grant.Metadata)+len(m))
-	for k, v := range b.grant.Metadata {
-		merged[k] = v
-	}
-	for k, v := range m {
-		merged[k] = v
-	}
-	b.grant.Metadata = merged
 	return b
 }
 

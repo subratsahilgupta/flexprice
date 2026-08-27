@@ -696,7 +696,7 @@ func (s *subscriptionService) persistAddonDetach(ctx context.Context, params *ad
 			return err
 		}
 		addonECs := dto.ToEntitlements(addonEnts)
-		if err := s.handleGrantsForRemovedECs(ctx, params.getSubscription(), addonECs, params.getEffectiveDate(), "addon_detach"); err != nil {
+		if err := s.handleGrantsForRemovedECs(ctx, params.getSubscription(), addonECs, params.getEffectiveDate(), grantProrationSourceAddonDetach); err != nil {
 			return err
 		}
 

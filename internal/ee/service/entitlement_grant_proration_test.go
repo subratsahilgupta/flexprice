@@ -231,8 +231,12 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_ExistingFeature
 		"segments must tile with no gap or overlap: closed ends %s, successor starts %s",
 		closed.ValidTo, live.ValidFrom)
 
-	s.Equal("true", live.Metadata["proration_applied"], "a mid-cycle attach is scaled")
-	s.NotEmpty(live.Metadata["proration_coefficient"])
+	coefficient, err := decimal.NewFromString(live.Metadata["proration_coefficient"])
+	s.Require().NoError(err)
+	s.True(coefficient.LessThan(decimal.NewFromInt(1)),
+		"a mid-cycle attach is scaled, got coefficient %s", coefficient)
+	s.Equal(grantProrationSourceAddonAttach.String(), live.Metadata["proration_source"],
+		"a segment must name the change that cut it")
 }
 
 // The feature is new to the subscription: a row is created starting at the
@@ -334,8 +338,7 @@ func (s *SubscriptionServiceSuite) TestAddonEntitlementProration_BehaviorNone_Gr
 	s.True(live.Quota.Equal(decimal.NewFromInt(1600)),
 		"unprorated attach carries the full balance plus the full quota, expected 1600, got %s", live.Quota)
 
-	s.Equal("false", live.Metadata["proration_applied"], "the delta was not scaled")
-	s.Equal("1", live.Metadata["proration_coefficient"])
+	s.Equal("1", live.Metadata["proration_coefficient"], "the delta was not scaled")
 	s.True(live.ValidTo.Equal(s.testData.subscription.CurrentPeriodEnd))
 }
 
