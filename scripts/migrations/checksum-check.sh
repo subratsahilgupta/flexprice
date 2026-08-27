@@ -11,14 +11,26 @@
 # quietly accept whatever it found, and a migration added in one PR would never be
 # recorded for the next one to compare against. Regenerate deliberately with
 #   ./checksum-check.sh <dir> <lock> --update
+#   ./checksum-check.sh [--update] [dir ...]
+#
+# Directories are named explicitly rather than scanning all of migrations/, which
+# would also sweep in the legacy migrations/postgres/V*.sql and
+# migrations/clickhouse/ sets — neither is part of the versioned timeline, and
+# freezing them would fail this gate for edits unrelated to it.
 set -euo pipefail
-DIR="${1:-migrations}"
-LOCK="${2:-migrations/.hashes}"
-UPDATE="${3:-}"
+UPDATE=""
+if [ "${1:-}" = "--update" ]; then UPDATE="--update"; shift; fi
+LOCK="${LOCK:-migrations/.hashes}"
+DIRS=("$@")
+[ ${#DIRS[@]} -gt 0 ] || DIRS=(migrations/versioned migrations/baseline)
 
 NEW="$(mktemp)"
-find "$DIR" -name '*.sql' -print0 2>/dev/null | sort -z \
-  | xargs -0 -I{} shasum -a 256 {} > "$NEW" 2>/dev/null || true
+for d in "${DIRS[@]}"; do
+  [ -d "$d" ] || continue
+  find "$d" -name '*.sql' -print0 2>/dev/null | sort -z \
+    | xargs -0 -I{} shasum -a 256 {} >> "$NEW" 2>/dev/null || true
+done
+sort -o "$NEW" "$NEW"
 
 if [ "$UPDATE" = "--update" ] || [ ! -f "$LOCK" ]; then
   cp "$NEW" "$LOCK"; echo "wrote $LOCK — commit it"; exit 0
@@ -38,7 +50,7 @@ MISSING="$(comm -13 <(sort "$LOCK") <(sort "$NEW") || true)"
 if [ -n "$MISSING" ]; then
   echo "FAIL: migrations are not recorded in $LOCK:" >&2
   echo "$MISSING" >&2
-  echo "run: ./scripts/migrations/checksum-check.sh $DIR $LOCK --update && git add $LOCK" >&2
+  echo "run: ./scripts/migrations/checksum-check.sh --update && git add $LOCK" >&2
   exit 1
 fi
 

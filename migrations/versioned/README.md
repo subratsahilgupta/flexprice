@@ -41,7 +41,9 @@ been narrowed, and does nothing anywhere else.
 **The baseline is frozen.** Once anything has adopted, regenerating it would put a
 schema change into fresh installs while every existing deployment silently misses
 it — nothing in the timeline carries the change. New schema goes in a migration.
-`make migrate-check-checksum` enforces this; it covers `migrations/baseline/` too.
+`make migrate-check-checksum` enforces this; it covers `migrations/versioned/` and
+`migrations/baseline/`, and deliberately not the legacy `migrations/postgres/V*.sql`
+or `migrations/clickhouse/` sets.
 
 ## Where the baseline comes from
 
