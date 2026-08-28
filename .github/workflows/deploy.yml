@@ -149,7 +149,7 @@ jobs:
         run: echo "image=${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Job 2: Resolve deployment targets from branch or manual input
+  # Job 2: Resolve deployment targets (production only)
   #
   # Targets are stored as a single JSON variable per environment so that
   # each region can have its own cluster and service names:
@@ -298,12 +298,12 @@ jobs:
   # Job 3: Canary — deploy preprod service(s) for targets that define one.
   # Runs BEFORE the approval gate; production rollout only proceeds after a
   # human validates these preprod deployments and approves the gate.
-  # Skipped entirely when no target defines preprod_service (e.g. staging).
+  # Skipped entirely when no target defines preprod_service.
   # ──────────────────────────────────────────────────────────────────────────
   deploy-preprod:
     name: Deploy Preprod (${{ strategy.job-index }})
     needs: [build, resolve-config, migrate]
-    # `always()` is required so a skipped approval-gate does not block staging, but it
+    # `always()` is required so a skipped approval-gate does not block the run, but it
     # also cancels the implicit "skip on failed needs" rule — so every dependency this
     # job actually relies on must be asserted explicitly. `needs.build.result` is the
     # one that matters: without it a failed image build still reaches the deploy step,
@@ -428,7 +428,6 @@ jobs:
   deploy-api:
     name: Deploy API (${{ strategy.job-index }})
     needs: [build, resolve-config, migrate, approval-gate]
-    # staging: deploys immediately (gate is skipped / irrelevant)
     # production: requires the approval-gate to have been approved
     # dry-run: bypasses the gate; composite action prints plan only
     if: >-
@@ -466,7 +465,6 @@ jobs:
   deploy-consumer:
     name: Deploy Consumer (${{ strategy.job-index }})
     needs: [build, resolve-config, migrate, approval-gate]
-    # staging: deploys immediately (gate is skipped / irrelevant)
     # production: requires the approval-gate to have been approved
     # dry-run: bypasses the gate; composite action prints plan only
     if: >-
@@ -504,7 +502,6 @@ jobs:
   deploy-worker:
     name: Deploy Worker (${{ strategy.job-index }})
     needs: [build, resolve-config, migrate, approval-gate]
-    # staging: deploys immediately (gate is skipped / irrelevant)
     # production: requires the approval-gate to have been approved
     # dry-run: bypasses the gate; composite action prints plan only
     if: >-
