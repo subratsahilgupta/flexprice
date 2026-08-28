@@ -29,6 +29,11 @@ type CloudDetector struct {
 }
 
 func NewCloudDetector(gcpMetadataURL, awsMetadataURL string, timeout time.Duration) *CloudDetector {
+	if timeout <= 0 {
+		// A zero timeout disables http.Client's deadline, so an unresponsive
+		// metadata endpoint would block Detect indefinitely.
+		timeout = defaultProbeTimeout
+	}
 	return &CloudDetector{
 		gcpMetadataURL: gcpMetadataURL,
 		awsMetadataURL: awsMetadataURL,
@@ -45,6 +50,10 @@ func NewDefaultCloudDetector() *CloudDetector {
 // Detect returns ProviderGCS or ProviderS3 based on which metadata endpoint
 // responds, or "" if neither is reachable (e.g. local dev, bare metal).
 func (d *CloudDetector) Detect(ctx context.Context) Provider {
+	// Bound the whole sequential probe by a single timeout; without this the
+	// per-request client timeout lets two slow endpoints consume ~2*timeout.
+	ctx, cancel := context.WithTimeout(ctx, d.timeout)
+	defer cancel()
 	if d.probeGCP(ctx) {
 		return ProviderGCS
 	}
@@ -64,7 +73,7 @@ func (d *CloudDetector) probeGCP(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.Header.Get("Metadata-Flavor") == "Google" && resp.StatusCode == http.StatusOK
 }
 
@@ -78,6 +87,6 @@ func (d *CloudDetector) probeAWS(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode == http.StatusOK
 }

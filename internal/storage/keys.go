@@ -15,8 +15,8 @@ func ObjectKey(prefix, entityType, filename, format string, compressed bool) str
 	}
 
 	parts := make([]string, 0, 3)
-	if prefix != "" {
-		parts = append(parts, strings.Trim(prefix, "/"))
+	if p := strings.Trim(prefix, "/"); p != "" {
+		parts = append(parts, p)
 	}
 	if entityType != "" {
 		parts = append(parts, entityType)

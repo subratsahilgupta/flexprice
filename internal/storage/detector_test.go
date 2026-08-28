@@ -35,10 +35,10 @@ func TestCloudDetector_DetectsGCP(t *testing.T) {
 // /latest/meta-data/ (the old, wrong target) returns 403 on real AWS
 // infrastructure and would never satisfy this contract.
 func TestCloudDetector_DetectsAWS(t *testing.T) {
-	var gotMethod, gotTTLHeader string
+	type captured struct{ method, ttlHeader string }
+	reqCh := make(chan captured, 1)
 	awsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod = r.Method
-		gotTTLHeader = r.Header.Get("X-aws-ec2-metadata-token-ttl-seconds")
+		reqCh <- captured{method: r.Method, ttlHeader: r.Header.Get("X-aws-ec2-metadata-token-ttl-seconds")}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("fake-imdsv2-token"))
 	}))
@@ -49,9 +49,10 @@ func TestCloudDetector_DetectsAWS(t *testing.T) {
 	d := storage.NewCloudDetector(unreachableGCP, awsServer.URL, 200*time.Millisecond)
 	provider := d.Detect(context.Background())
 
+	got := <-reqCh
 	assert.Equal(t, storage.ProviderS3, provider)
-	assert.Equal(t, http.MethodPut, gotMethod, "IMDSv2 token endpoint must be called with PUT")
-	assert.Equal(t, "21600", gotTTLHeader, "IMDSv2 token request must set the TTL header")
+	assert.Equal(t, http.MethodPut, got.method, "IMDSv2 token endpoint must be called with PUT")
+	assert.Equal(t, "21600", got.ttlHeader, "IMDSv2 token request must set the TTL header")
 }
 
 func TestCloudDetector_NeitherReachable_ReturnsUnknown(t *testing.T) {
@@ -61,18 +62,23 @@ func TestCloudDetector_NeitherReachable_ReturnsUnknown(t *testing.T) {
 }
 
 func TestCloudDetector_SlowResponder_BoundedByTimeout(t *testing.T) {
-	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(2 * time.Second) // longer than the detector's timeout
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer slowServer.Close()
+	})
+	slowGCP := httptest.NewServer(slow)
+	defer slowGCP.Close()
+	slowAWS := httptest.NewServer(slow)
+	defer slowAWS.Close()
 
-	d := storage.NewCloudDetector(slowServer.URL, "http://127.0.0.1:1", 200*time.Millisecond)
+	// Both endpoints slow: proves the single detection timeout bounds the whole
+	// sequence, not each request independently (which would allow ~2*timeout).
+	d := storage.NewCloudDetector(slowGCP.URL, slowAWS.URL, 200*time.Millisecond)
 
 	start := time.Now()
 	provider := d.Detect(context.Background())
 	elapsed := time.Since(start)
 
 	assert.Equal(t, storage.Provider(""), provider)
-	assert.Less(t, elapsed, 1*time.Second, "Detect should be bounded by the configured timeout, not block on a slow responder")
+	assert.Less(t, elapsed, 1*time.Second, "Detect should be bounded by the single configured timeout across both probes")
 }
