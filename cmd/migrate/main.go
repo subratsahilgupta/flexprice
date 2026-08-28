@@ -15,7 +15,6 @@ func main() {
 	root.AddCommand(newPostgresCmd())
 	root.AddCommand(newClickHouseCmd())
 	root.AddCommand(newKafkaCmd())
-	root.AddCommand(newKafkaACLsCmd())
 	root.AddCommand(newSvixCmd())
 
 	if err := root.Execute(); err != nil {

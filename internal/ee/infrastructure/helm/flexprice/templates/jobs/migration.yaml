@@ -371,13 +371,16 @@ spec:
         {{- end }}
 
         {{- if and .Values.migration.steps.kafka (and .Values.kafkaConfig.useSASL (ne .Values.kafkaConfig.saslMechanism "OAUTHBEARER")) }}
-        # ── Seed allow-all Kafka ACLs (MSK lockout safety net) ─────────────────
+        # ── Run Kafka migration: topic reconcile + allow-all ACL seed ─────────
         # SCRAM clusters (MSK) enforce ACLs once SASL is on; without an
         # allow-all rule set, every client -- including the app itself -- is
-        # locked out the moment auth is enabled. Same gate as the
-        # verify-migrations Kafka check below: kafka enabled AND SASL AND not
-        # OAUTHBEARER (OAUTHBEARER clusters use IAM-style authz, not Kafka ACLs).
-        - name: run-kafka-acls
+        # locked out the moment auth is enabled. `migrate kafka` reconciles
+        # topics against the desired spec AND seeds the allow-all ACLs in one
+        # pass (ACL seed is itself gated to SCRAM internally, a no-op
+        # elsewhere). Same gate as the verify-migrations Kafka check below:
+        # kafka enabled AND SASL AND not OAUTHBEARER (OAUTHBEARER clusters use
+        # IAM-style authz, not Kafka ACLs).
+        - name: run-kafka-migrate
           image: "{{ include "flexprice.image" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
@@ -385,7 +388,7 @@ spec:
             - -c
             - |
               set -e
-              echo "Seeding allow-all Kafka ACLs (MSK lockout safety net)..."
+              echo "Running Kafka migration (topics + ACLs)..."
               MIGRATE_BINARY=""
               if [ -f /app/migrate ] && [ -x /app/migrate ]; then
                 MIGRATE_BINARY="/app/migrate"
@@ -396,8 +399,8 @@ spec:
                 exit 1
               fi
               echo "Using: ${MIGRATE_BINARY}"
-              ${MIGRATE_BINARY} kafka-acls || exit 1
-              echo "✅ Kafka ACLs seeded"
+              ${MIGRATE_BINARY} kafka || exit 1
+              echo "✅ Kafka migration complete"
           env:
             {{- include "flexprice.env" . | nindent 12 }}
           {{- if or (not .Values.env) .Values.kafkaConfig.tlsCASecret.name }}
