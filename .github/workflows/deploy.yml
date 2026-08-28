@@ -2,7 +2,7 @@ name: Build, Push & Deploy to AWS ECS
 
 on:
   push:
-    branches: [develop, main]
+    branches: [main]
     tags: ['v*']
   # Manual trigger: lets you validate config or force-deploy without a push
   workflow_dispatch:
@@ -10,8 +10,8 @@ on:
       environment:
         description: "Target environment"
         type: choice
-        default: staging
-        options: [staging, production]
+        default: production
+        options: [production]
       dry_run:
         description: "Dry run — validate config & print plan, skip register/deploy"
         type: boolean
@@ -86,7 +86,6 @@ jobs:
           # legacy output used by deploy jobs
           echo "tag=${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
 
-          IS_DEVELOP="${{ github.ref_name == 'develop' }}"
           IS_MAIN="${{ github.ref_name == 'main' }}"
 
           {
@@ -95,8 +94,6 @@ jobs:
             if [ "$IS_RELEASE" = "true" ]; then
               echo "${GHCR_IMAGE}:${GITHUB_REF_NAME}"
               echo "${GHCR_IMAGE}:latest"
-            elif [ "$IS_DEVELOP" = "true" ]; then
-              echo "${GHCR_IMAGE}:develop"
             # NOTE: on main we intentionally do NOT push :main here. The build job
             # publishes only the immutable :<sha> tag. The :main tag — which the GCP
             # ArgoCD image-updater watches — is promoted in the 'promote-main-ghcr'
@@ -106,7 +103,7 @@ jobs:
             echo "TAGS_EOF"
           } >> $GITHUB_OUTPUT
 
-          if [ "$IS_RELEASE" = "true" ] || [ "$IS_DEVELOP" = "true" ] || [ "$IS_MAIN" = "true" ]; then
+          if [ "$IS_RELEASE" = "true" ] || [ "$IS_MAIN" = "true" ]; then
             echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
           else
             echo "platforms=linux/arm64" >> $GITHUB_OUTPUT
@@ -157,7 +154,7 @@ jobs:
   # Targets are stored as a single JSON variable per environment so that
   # each region can have its own cluster and service names:
   #
-  #   PROD_DEPLOY_TARGETS / STAGING_DEPLOY_TARGETS
+  #   PROD_DEPLOY_TARGETS
   #   (GitHub Actions → Settings → Variables)
   #
   #   Format (one object per region):
@@ -183,10 +180,9 @@ jobs:
   #   Targets that define it are deployed to preprod first; production rollout
   #   then waits for manual approval (GitHub Environment: prod-approval).
   #
-  #   Trigger mapping:
-  #     push to main    → production targets
-  #     push to develop → staging targets
-  #     workflow_dispatch → chosen via "environment" input
+  #   Trigger mapping (staging ECS deprovisioned — production only):
+  #     push to main      → production targets
+  #     workflow_dispatch → production targets
   # ──────────────────────────────────────────────────────────────────────────
   resolve-config:
     name: Resolve deployment targets
@@ -198,33 +194,24 @@ jobs:
       dry_run: ${{ steps.config.outputs.dry_run }}
 
     steps:
-      - name: Select targets based on branch / input
+      - name: Select targets based on input
         id: config
         env:
           PROD_TARGETS: ${{ vars.PROD_DEPLOY_TARGETS }}
-          STAGING_TARGETS: ${{ vars.STAGING_DEPLOY_TARGETS }}
         run: |
-          # Determine environment
+          # Only production targets exist (staging ECS deprovisioned).
+          ENV="production"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ENV="${{ github.event.inputs.environment }}"
             # Default dry_run to false when not explicitly set
             DRY_RUN="${{ github.event.inputs.dry_run }}"
             if [ -z "$DRY_RUN" ]; then DRY_RUN="false"; fi
-          elif [ "${{ github.ref_name }}" = "main" ]; then
-            ENV="production"
-            DRY_RUN="false"
           else
-            ENV="staging"
             DRY_RUN="false"
           fi
 
           echo "Environment and dry_run configured (values redacted for public logs)"
 
-          if [ "$ENV" = "production" ]; then
-            TARGETS_JSON="$PROD_TARGETS"
-          else
-            TARGETS_JSON="$STAGING_TARGETS"
-          fi
+          TARGETS_JSON="$PROD_TARGETS"
 
           # Targets that also define a preprod_service get a canary deploy +
           # manual approval gate before the full production rollout.
@@ -387,7 +374,7 @@ jobs:
   # published only the immutable :<sha>; after a reviewer approves the GCP gate we
   # retag :<sha> -> :main (manifest-only, no rebuild), so GCP deploys only
   # post-approval. Runs after the preprod canary (like the AWS gate); production +
-  # non-dry-run only. Staging (develop) is unaffected.
+  # non-dry-run only.
   #
   # SETUP (required): create the `gcp-prod-approval` Environment in repo Settings →
   # Environments with required reviewers (mirror `prod-approval`) — otherwise the
