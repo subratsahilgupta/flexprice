@@ -19,10 +19,17 @@ import (
 // resolve once at bootstrap and pass the result down rather than calling this
 // per request. Resolver does exactly that.
 func ResolveProvider(ctx context.Context, cfg *config.Configuration) Provider {
+	return resolveProviderWith(ctx, cfg, NewDefaultCloudDetector())
+}
+
+// resolveProviderWith is the injectable core of ResolveProvider; tests supply a
+// detector pointed at controlled endpoints so the fallback path does not depend
+// on the ambient cloud metadata of whatever host the test runs on.
+func resolveProviderWith(ctx context.Context, cfg *config.Configuration, detector *CloudDetector) Provider {
 	if provider := Provider(cfg.Storage.Provider); provider != "" {
 		return provider
 	}
-	if provider := NewDefaultCloudDetector().Detect(ctx); provider != "" {
+	if provider := detector.Detect(ctx); provider != "" {
 		return provider
 	}
 	return ProviderS3
@@ -80,7 +87,7 @@ func NewPlatformStorage(ctx context.Context, cfg *config.Configuration, provider
 			s3Cfg.AWSSecretAccessKey = cfg.FlexpriceS3Exports.AWSSecretAccessKey
 			s3Cfg.AWSSessionToken = cfg.FlexpriceS3Exports.AWSSessionToken
 		}
-		if purpose == PurposeExport && cfg.FlexpriceS3Exports.FederationEnabled {
+		if purpose == PurposeExport && cfg.FlexpriceS3Exports.ResolvedCredentialSource() == config.CredentialSourceFederation {
 			// FederationTokenSource is wired in Plan 2 once the companion
 			// Terraform+Go GCP-identity-token-minting implementation exists.
 			// Until then there is no way to actually federate, and letting

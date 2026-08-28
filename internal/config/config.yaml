@@ -410,6 +410,9 @@ flexprice_s3_exports:
   # credential chain, no per-mechanism config), or "federation" (GCP->AWS OIDC via
   # federation_role_arn). Left empty, it is derived: federation_enabled=true -> "federation",
   # both AWS keys set -> "static", otherwise -> "ambient".
+  # NOTE: a *derived* "ambient" is rejected by validation — to run ambient you must set
+  # credential_source: "ambient" explicitly (this preserves the historic "no credential
+  # source configured" error for an otherwise-empty config).
 
 # GCS counterpart of flexprice_s3_exports, used when the deployment runs on GCP.
 # Authentication is ambient Workload Identity — there is deliberately no service

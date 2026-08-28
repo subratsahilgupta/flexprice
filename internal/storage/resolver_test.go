@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -20,12 +21,14 @@ func TestResolveProvider(t *testing.T) {
 	})
 
 	t.Run("falls back to S3 when provider empty and detection inconclusive", func(t *testing.T) {
-		// No cloud metadata server is reachable in the test environment, so
-		// CloudDetector.Detect returns "" and ResolveProvider falls back to S3.
+		// Inject a detector pointed at dead endpoints so detection is
+		// inconclusive regardless of the host's real cloud metadata (a GCP
+		// CI runner would otherwise detect GCS and fail this fallback test).
 		cfg := &config.Configuration{
 			Storage: config.StorageConfig{Provider: ""},
 		}
-		got := ResolveProvider(context.Background(), cfg)
+		detector := NewCloudDetector("http://127.0.0.1:1", "http://127.0.0.1:2", 100*time.Millisecond)
+		got := resolveProviderWith(context.Background(), cfg, detector)
 		assert.Equal(t, ProviderS3, got)
 	})
 }
