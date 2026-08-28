@@ -589,7 +589,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 	}
 
 	if req.TransactionReason == types.TransactionReasonFreeCredit {
-		settingsSvc := &settingsService{ServiceParams: s.ServiceParams}
+		settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
 		topupCfg, err := GetSetting[types.WalletTopupConfig](settingsSvc, ctx, types.SettingKeyWalletTopupConfig)
 		if err != nil {
 			return nil, err

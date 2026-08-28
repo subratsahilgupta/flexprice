@@ -3596,7 +3596,7 @@ func (s *WalletServiceSuite) TestBonusCreditsTopupConfig_APIDispatch() {
 }
 
 func (s *WalletServiceSuite) seedFreeCreditLimit(limit decimal.Decimal) {
-	svc := &settingsService{ServiceParams: s.service.(*walletService).ServiceParams}
+	svc := NewSettingsService(s.service.(*walletService).ServiceParams).(*settingsService)
 	s.NoError(UpdateSetting(svc, s.GetContext(), types.SettingKeyWalletTopupConfig, types.WalletTopupConfig{
 		FreeCreditLimitPerTransaction: limit,
 	}))
@@ -3606,7 +3606,7 @@ func (s *WalletServiceSuite) seedFreeCreditLimit(limit decimal.Decimal) {
 // be registered in — types.ValidateSettingValue plus the service's Get/Update dispatchers — none
 // of which the generic GetSetting/UpdateSetting helpers exercise.
 func (s *WalletServiceSuite) TestWalletTopupConfig_APIDispatch() {
-	svc := &settingsService{ServiceParams: s.service.(*walletService).ServiceParams}
+	svc := NewSettingsService(s.service.(*walletService).ServiceParams)
 
 	updateResp, err := svc.UpdateSettingByKey(s.GetContext(), types.SettingKeyWalletTopupConfig, &dto.UpdateSettingRequest{
 		Value: map[string]interface{}{"free_credit_limit_per_transaction": "500"},
@@ -3620,7 +3620,7 @@ func (s *WalletServiceSuite) TestWalletTopupConfig_APIDispatch() {
 }
 
 func (s *WalletServiceSuite) TestWalletTopupConfig_RejectsNegativeLimit() {
-	svc := &settingsService{ServiceParams: s.service.(*walletService).ServiceParams}
+	svc := NewSettingsService(s.service.(*walletService).ServiceParams)
 
 	_, err := svc.UpdateSettingByKey(s.GetContext(), types.SettingKeyWalletTopupConfig, &dto.UpdateSettingRequest{
 		Value: map[string]interface{}{"free_credit_limit_per_transaction": "-1"},
