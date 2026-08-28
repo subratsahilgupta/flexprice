@@ -1,6 +1,21 @@
 # Deploy wiring: `migrate kafka-acls`
 
-## Finding
+## Status: WIRED
+
+`run-kafka-acls` is now a real initContainer in
+`internal/ee/infrastructure/helm/flexprice/templates/jobs/migration.yaml`,
+immediately after `run-ent-migrations`, guarded by
+`{{- if and .Values.migration.steps.kafka (and .Values.kafkaConfig.useSASL (ne .Values.kafkaConfig.saslMechanism "OAUTHBEARER")) }}`
+(same SCRAM/MSK gate used by the `verify-migrations` Kafka check). Every
+deploy that renders this chart — including BYOC installs that consume it —
+gets the ACL seed automatically on SCRAM clusters; no separate action needed.
+
+The rest of this doc (below) is now historical/reference: it explains why no
+step existed before, and remains useful for any **non-chart** deploy path
+(a BYOC script that runs migrations without this Helm chart) that still needs
+to call `./migrate kafka-acls` manually.
+
+## Finding (historical — pre-wiring)
 
 Exhaustively grepped this worktree (Helm chart, Makefile, config, all
 `.github/workflows/*.yml`, BYOC scripts in the infra repo) for any deploy-time
