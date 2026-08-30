@@ -370,16 +370,17 @@ spec:
             {{- toYaml .Values.migration.resources | nindent 12 }}
         {{- end }}
 
-        {{- if and .Values.migration.steps.kafka (and .Values.kafkaConfig.useSASL (ne .Values.kafkaConfig.saslMechanism "OAUTHBEARER")) }}
+        {{- if .Values.migration.steps.kafka }}
         # ── Run Kafka migration: topic reconcile + allow-all ACL seed ─────────
+        # `migrate kafka` reconciles topics against the desired spec (partition
+        # growth, retention, FLEXPRICE_KAFKA_TOPICS) AND seeds the allow-all
+        # ACLs in one pass. Run it for EVERY kafka-enabled deploy so topic
+        # reconcile happens everywhere; the ACL seed is gated to SASL/SCRAM
+        # (MSK) internally, a no-op on plaintext and OAUTHBEARER clusters.
         # SCRAM clusters (MSK) enforce ACLs once SASL is on; without an
         # allow-all rule set, every client -- including the app itself -- is
-        # locked out the moment auth is enabled. `migrate kafka` reconciles
-        # topics against the desired spec AND seeds the allow-all ACLs in one
-        # pass (ACL seed is itself gated to SCRAM internally, a no-op
-        # elsewhere). Same gate as the verify-migrations Kafka check below:
-        # kafka enabled AND SASL AND not OAUTHBEARER (OAUTHBEARER clusters use
-        # IAM-style authz, not Kafka ACLs).
+        # locked out the moment auth is enabled. OAUTHBEARER clusters use
+        # IAM-style authz, not Kafka ACLs, so the seed skips them.
         - name: run-kafka-migrate
           image: "{{ include "flexprice.image" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}

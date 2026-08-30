@@ -12,9 +12,9 @@ func TestAllowAllACLRules_ShapeAndClusterName(t *testing.T) {
 	rules := AllowAllACLRules()
 	require.Len(t, rules, 4)
 
-	byType := map[sarama.AclResourceType]ACLRule{}
+	byType := map[sarama.AclResourceType]aclRule{}
 	for _, r := range rules {
-		byType[r.Resource.ResourceType] = r
+		byType[r.Resource().ResourceType] = r
 	}
 
 	// All four resource types present.
@@ -26,11 +26,11 @@ func TestAllowAllACLRules_ShapeAndClusterName(t *testing.T) {
 	}
 
 	// Cluster MUST be kafka-cluster, not "*".
-	assert.Equal(t, "kafka-cluster", byType[sarama.AclResourceCluster].Resource.ResourceName)
+	assert.Equal(t, "kafka-cluster", byType[sarama.AclResourceCluster].Resource().ResourceName)
 	// The other three are "*".
-	assert.Equal(t, "*", byType[sarama.AclResourceTopic].Resource.ResourceName)
-	assert.Equal(t, "*", byType[sarama.AclResourceGroup].Resource.ResourceName)
-	assert.Equal(t, "*", byType[sarama.AclResourceTransactionalID].Resource.ResourceName)
+	assert.Equal(t, "*", byType[sarama.AclResourceTopic].Resource().ResourceName)
+	assert.Equal(t, "*", byType[sarama.AclResourceGroup].Resource().ResourceName)
+	assert.Equal(t, "*", byType[sarama.AclResourceTransactionalID].Resource().ResourceName)
 
 	// No DelegationToken rule.
 	_, hasDT := byType[sarama.AclResourceDelegationToken]
@@ -38,11 +38,11 @@ func TestAllowAllACLRules_ShapeAndClusterName(t *testing.T) {
 
 	// Common shape on every rule.
 	for _, r := range rules {
-		assert.Equal(t, sarama.AclPatternLiteral, r.Resource.ResourcePatternType)
-		assert.Equal(t, "User:*", r.Acl.Principal)
-		assert.Equal(t, "*", r.Acl.Host)
-		assert.Equal(t, sarama.AclOperationAll, r.Acl.Operation)
-		assert.Equal(t, sarama.AclPermissionAllow, r.Acl.PermissionType)
+		assert.Equal(t, sarama.AclPatternLiteral, r.Resource().ResourcePatternType)
+		assert.Equal(t, "User:*", r.Acl().Principal)
+		assert.Equal(t, "*", r.Acl().Host)
+		assert.Equal(t, sarama.AclOperationAll, r.Acl().Operation)
+		assert.Equal(t, sarama.AclPermissionAllow, r.Acl().PermissionType)
 	}
 }
 

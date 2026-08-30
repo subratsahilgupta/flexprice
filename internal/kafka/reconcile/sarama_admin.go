@@ -61,35 +61,39 @@ func (s *SaramaAdmin) CreateACL(r sarama.Resource, a sarama.Acl) error {
 	return s.Admin.CreateACL(r, a)
 }
 
-// ACLRule is one resource+acl binding to seed.
-type ACLRule struct {
-	Resource sarama.Resource
-	Acl      sarama.Acl
+// aclRule is one resource+acl binding to seed.
+type aclRule struct {
+	resource sarama.Resource
+	acl      sarama.Acl
 }
+
+func (r aclRule) Resource() sarama.Resource { return r.resource }
+
+func (r aclRule) Acl() sarama.Acl { return r.acl }
 
 // AllowAllACLRules returns the four allow-everyone bindings that reproduce the
 // effect of allow.everyone.if.no.acl.found=true for the resource types an MSK
 // SASL/SCRAM app uses. Cluster MUST be "kafka-cluster" (the only valid cluster
 // resource name); a "*" there matches nothing. DelegationToken is excluded by
 // design (owner-keyed, unused by MSK SASL apps).
-func AllowAllACLRules() []ACLRule {
+func AllowAllACLRules() []aclRule {
 	allow := sarama.Acl{
 		Principal:      "User:*",
 		Host:           "*",
 		Operation:      sarama.AclOperationAll,
 		PermissionType: sarama.AclPermissionAllow,
 	}
-	rule := func(rt sarama.AclResourceType, name string) ACLRule {
-		return ACLRule{
-			Resource: sarama.Resource{
+	rule := func(rt sarama.AclResourceType, name string) aclRule {
+		return aclRule{
+			resource: sarama.Resource{
 				ResourceType:        rt,
 				ResourceName:        name,
 				ResourcePatternType: sarama.AclPatternLiteral,
 			},
-			Acl: allow,
+			acl: allow,
 		}
 	}
-	return []ACLRule{
+	return []aclRule{
 		rule(sarama.AclResourceCluster, "kafka-cluster"),
 		rule(sarama.AclResourceTopic, "*"),
 		rule(sarama.AclResourceGroup, "*"),

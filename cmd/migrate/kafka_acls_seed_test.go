@@ -8,11 +8,14 @@ import (
 )
 
 func TestSeedACLsEnabled_OnlySCRAM(t *testing.T) {
-	assert.True(t, seedACLsEnabled(sarama.SASLTypeSCRAMSHA256))
-	assert.True(t, seedACLsEnabled(sarama.SASLTypeSCRAMSHA512))
+	assert.True(t, seedACLsEnabled(true, sarama.SASLTypeSCRAMSHA256))
+	assert.True(t, seedACLsEnabled(true, sarama.SASLTypeSCRAMSHA512))
 	// OAUTHBEARER (GCP) must NOT seed — even though UseSASL is true there.
-	assert.False(t, seedACLsEnabled(sarama.SASLTypeOAuth))
+	assert.False(t, seedACLsEnabled(true, sarama.SASLTypeOAuth))
 	// Plaintext / PLAIN dev must NOT seed.
-	assert.False(t, seedACLsEnabled(sarama.SASLTypePlaintext))
-	assert.False(t, seedACLsEnabled(""))
+	assert.False(t, seedACLsEnabled(true, sarama.SASLTypePlaintext))
+	assert.False(t, seedACLsEnabled(true, ""))
+	// SCRAM mechanism but SASL disabled — unauthenticated admin, must NOT seed.
+	assert.False(t, seedACLsEnabled(false, sarama.SASLTypeSCRAMSHA256))
+	assert.False(t, seedACLsEnabled(false, sarama.SASLTypeSCRAMSHA512))
 }
