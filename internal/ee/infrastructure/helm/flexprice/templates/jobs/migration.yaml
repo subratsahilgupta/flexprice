@@ -400,7 +400,11 @@ spec:
                 exit 1
               fi
               echo "Using: ${MIGRATE_BINARY}"
+              {{- if .Values.migration.seedKafkaACLs }}
+              ${MIGRATE_BINARY} kafka --seed-acls || exit 1
+              {{- else }}
               ${MIGRATE_BINARY} kafka || exit 1
+              {{- end }}
               echo "✅ Kafka migration complete"
           env:
             {{- include "flexprice.env" . | nindent 12 }}

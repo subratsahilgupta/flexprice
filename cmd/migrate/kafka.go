@@ -14,16 +14,18 @@ import (
 
 func newKafkaCmd() *cobra.Command {
 	var dryRun bool
+	var seedACLs bool
 
 	cmd := &cobra.Command{
 		Use:   "kafka",
 		Short: "Reconcile Kafka topics against the desired topic spec",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runKafkaMigration(dryRun)
+			return runKafkaMigration(dryRun, seedACLs)
 		},
 	}
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "log intended actions without applying")
+	cmd.Flags().BoolVar(&seedACLs, "seed-acls", false, "seed allow-all MSK ACLs (SCRAM only); off by default")
 
 	return cmd
 }
@@ -42,7 +44,11 @@ func seedACLsEnabled(useSASL bool, m sarama.SASLMechanism) bool {
 // admin the topic reconcile already opened. Gated to SCRAM (MSK); a no-op on
 // any other mechanism. Idempotent — CreateACL on an existing binding is a
 // broker no-op. Never touches allow.everyone.if.no.acl.found.
-func seedAllowAllACLs(sa *reconcile.SaramaAdmin, useSASL bool, mechanism sarama.SASLMechanism, dryRun bool) error {
+func seedAllowAllACLs(sa *reconcile.SaramaAdmin, seedACLs bool, useSASL bool, mechanism sarama.SASLMechanism, dryRun bool) error {
+	if !seedACLs {
+		log.Printf("kafka-migrate: ACL seed disabled (--seed-acls not set) — skipping")
+		return nil
+	}
 	if !seedACLsEnabled(useSASL, mechanism) {
 		log.Printf("kafka-migrate: not a SASL/SCRAM (MSK) cluster (use_sasl=%v mechanism=%q) — skipping ACL seed", useSASL, mechanism)
 		return nil
@@ -67,7 +73,7 @@ func seedAllowAllACLs(sa *reconcile.SaramaAdmin, useSASL bool, mechanism sarama.
 	return nil
 }
 
-func runKafkaMigration(dryRun bool) (err error) {
+func runKafkaMigration(dryRun bool, seedACLs bool) (err error) {
 	cfg, err := config.NewConfig()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -125,7 +131,7 @@ func runKafkaMigration(dryRun bool) (err error) {
 		for _, act := range plan {
 			logKafkaAction(act)
 		}
-		if err := seedAllowAllACLs(saramaAdmin, cfg.Kafka.UseSASL, cfg.Kafka.SASLMechanism, true); err != nil {
+		if err := seedAllowAllACLs(saramaAdmin, seedACLs, cfg.Kafka.UseSASL, cfg.Kafka.SASLMechanism, true); err != nil {
 			return err
 		}
 		return nil
@@ -140,7 +146,7 @@ func runKafkaMigration(dryRun bool) (err error) {
 	}
 	log.Printf("kafka-migrate done: created=%d grown=%d unchanged=%d skipped-shrink=%d rf-mismatch=%d retention-mismatch=%d",
 		res.Created, res.Grown, res.Unchanged, res.SkippedShrink, res.RFMismatch, res.RetentionMismatch)
-	if err := seedAllowAllACLs(saramaAdmin, cfg.Kafka.UseSASL, cfg.Kafka.SASLMechanism, false); err != nil {
+	if err := seedAllowAllACLs(saramaAdmin, seedACLs, cfg.Kafka.UseSASL, cfg.Kafka.SASLMechanism, false); err != nil {
 		return err
 	}
 	return nil
