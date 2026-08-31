@@ -139,6 +139,7 @@ func (s *SubscriptionServiceSuite) TestValidateAndFilterPricesForSubscriptionRej
 				tc.entityType,
 				nil,
 				nil,
+				nil,
 			)
 
 			s.Error(err)

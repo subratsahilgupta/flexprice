@@ -566,6 +566,20 @@ type CreateSubscriptionRequest struct {
 	// Standalone subscriptions only; all plan prices must be usage-based. Immutable after creation.
 	AutoInvoiceThreshold *decimal.Decimal `json:"auto_invoice_threshold,omitempty" swaggertype:"string"`
 
+	// IncludePriceIDs is an authoritative list of plan prices to attach to this subscription.
+	// Semantics by wire value:
+	//   nil / omitted        -> attach every plan price whose (billing_period, billing_period_count)
+	//                            exactly matches the subscription's, plus ONETIME. This is the
+	//                            default; multi-cadence attachment requires opt-in via this field.
+	//   empty slice ([])     -> attach NO plan prices. The subscription can still carry LineItems
+	//                            extras from SubscriptionCreationConfig.
+	//   non-empty [X, Y, …]  -> attach exactly the intersection of {X, Y, …} with the plan's
+	//                            compatible-price set. Every listed ID must (a) belong to the plan
+	//                            and (b) be cadence-compatible with the subscription (equal, strict
+	//                            divisor, or strict multiple) - else 400 naming the offending IDs.
+	// Pointer-slice is required to distinguish nil from []; do not collapse.
+	IncludePriceIDs *[]string `json:"include_price_ids,omitempty" validate:"omitempty,dive,required"`
+
 	// Inheritance groups customer-hierarchy fields; providing child IDs makes this a PARENT subscription.
 	Inheritance *SubscriptionInheritanceConfig `json:"inheritance,omitempty"`
 
@@ -922,6 +936,19 @@ func (r *CreateSubscriptionRequest) Validate() error {
 				"auto_invoice_threshold": r.AutoInvoiceThreshold.String(),
 			}).
 			Mark(ierr.ErrValidation)
+	}
+
+	if r.IncludePriceIDs != nil {
+		seen := make(map[string]struct{}, len(*r.IncludePriceIDs))
+		for _, id := range *r.IncludePriceIDs {
+			if _, dup := seen[id]; dup {
+				return ierr.NewError("include_price_ids contains duplicate id").
+					WithHint("Each price id in include_price_ids must appear at most once.").
+					WithReportableDetails(map[string]any{"duplicate_id": id}).
+					Mark(ierr.ErrValidation)
+			}
+			seen[id] = struct{}{}
+		}
 	}
 
 	// Case- Both are absent

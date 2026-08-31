@@ -304,3 +304,45 @@ func TestCreateSubscriptionRequestValidate_GroupedInvoicingChildrenToCreate_Requ
 		}
 	})
 }
+
+func TestCreateSubscriptionRequestValidate_IncludePriceIDs(t *testing.T) {
+	// nil - unset field is valid (default behavior)
+	t.Run("nil is valid", func(t *testing.T) {
+		req := baseCreateSubscriptionRequest()
+		req.IncludePriceIDs = nil
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	})
+
+	// empty slice - legal (means "attach no plan prices")
+	t.Run("empty slice is valid", func(t *testing.T) {
+		req := baseCreateSubscriptionRequest()
+		req.IncludePriceIDs = &[]string{}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	})
+
+	// unique non-empty list
+	t.Run("unique ids valid", func(t *testing.T) {
+		req := baseCreateSubscriptionRequest()
+		req.IncludePriceIDs = &[]string{"price_a", "price_b", "price_c"}
+		if err := req.Validate(); err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+	})
+
+	// duplicate ids rejected at DTO validation
+	t.Run("duplicate ids rejected", func(t *testing.T) {
+		req := baseCreateSubscriptionRequest()
+		req.IncludePriceIDs = &[]string{"price_a", "price_b", "price_a"}
+		err := req.Validate()
+		if err == nil {
+			t.Fatal("expected duplicate-id validation error, got nil")
+		}
+		if !strings.Contains(err.Error(), "duplicate") {
+			t.Fatalf("expected error to mention duplicate, got: %v", err)
+		}
+	})
+}
