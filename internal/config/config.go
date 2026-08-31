@@ -228,8 +228,8 @@ func (c *FlexpriceS3ExportsConfig) Validate() error {
 	switch c.ResolvedCredentialSource() {
 	case CredentialSourceFederation:
 		if !hasFederation {
-			return ierr.NewError("federation_enabled is true but federation_role_arn is not set").
-				WithHint("Set flexprice_s3_exports.federation_role_arn when enabling federation").
+			return ierr.NewError("federation credentials are selected but federation_role_arn is not set").
+				WithHint("Set flexprice_s3_exports.federation_role_arn, or change credential_source/federation_enabled to another source").
 				Mark(ierr.ErrValidation)
 		}
 	case CredentialSourceAmbient:

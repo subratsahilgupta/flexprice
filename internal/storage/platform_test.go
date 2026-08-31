@@ -147,7 +147,7 @@ func TestNewPlatformStorage_S3Provider_FederationEnabledWithoutRoleARN(t *testin
 	s, err := storage.NewPlatformStorage(context.Background(), cfg, storage.ProviderS3, storage.PurposeExport, "flexprice-exports", "ap-south-1", "", logger.NewNoopLogger())
 	require.Error(t, err)
 	require.Nil(t, s)
-	require.Contains(t, err.Error(), "federation_enabled is true but federation_role_arn is not set")
+	require.Contains(t, err.Error(), "federation credentials are selected but federation_role_arn is not set")
 }
 
 // TestNewPlatformStorage_S3Provider_FederationEnabledWithRoleARN_FailsLoud verifies
