@@ -809,7 +809,7 @@ var (
 		{Name: "address_postal_code", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "address_country", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(2)"}},
 		{Name: "timezone", Type: field.TypeString, Nullable: true, Default: "UTC", SchemaType: map[string]string{"postgres": "varchar(50)"}},
-		{Name: "taxability", Type: field.TypeString, Default: "taxable", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tax_treatment", Type: field.TypeString, Default: "taxable", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// CustomersTable holds the schema information for the "customers" table.
 	CustomersTable = &schema.Table{

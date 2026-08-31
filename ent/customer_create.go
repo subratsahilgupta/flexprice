@@ -255,16 +255,16 @@ func (cc *CustomerCreate) SetNillableTimezone(s *string) *CustomerCreate {
 	return cc
 }
 
-// SetTaxability sets the "taxability" field.
-func (cc *CustomerCreate) SetTaxability(t types.Taxability) *CustomerCreate {
-	cc.mutation.SetTaxability(t)
+// SetTaxTreatment sets the "tax_treatment" field.
+func (cc *CustomerCreate) SetTaxTreatment(tt types.TaxTreatment) *CustomerCreate {
+	cc.mutation.SetTaxTreatment(tt)
 	return cc
 }
 
-// SetNillableTaxability sets the "taxability" field if the given value is not nil.
-func (cc *CustomerCreate) SetNillableTaxability(t *types.Taxability) *CustomerCreate {
-	if t != nil {
-		cc.SetTaxability(*t)
+// SetNillableTaxTreatment sets the "tax_treatment" field if the given value is not nil.
+func (cc *CustomerCreate) SetNillableTaxTreatment(tt *types.TaxTreatment) *CustomerCreate {
+	if tt != nil {
+		cc.SetTaxTreatment(*tt)
 	}
 	return cc
 }
@@ -330,9 +330,9 @@ func (cc *CustomerCreate) defaults() {
 		v := customer.DefaultTimezone
 		cc.mutation.SetTimezone(v)
 	}
-	if _, ok := cc.mutation.Taxability(); !ok {
-		v := customer.DefaultTaxability
-		cc.mutation.SetTaxability(v)
+	if _, ok := cc.mutation.TaxTreatment(); !ok {
+		v := customer.DefaultTaxTreatment
+		cc.mutation.SetTaxTreatment(v)
 	}
 }
 
@@ -371,12 +371,12 @@ func (cc *CustomerCreate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Customer.name": %w`, err)}
 		}
 	}
-	if _, ok := cc.mutation.Taxability(); !ok {
-		return &ValidationError{Name: "taxability", err: errors.New(`ent: missing required field "Customer.taxability"`)}
+	if _, ok := cc.mutation.TaxTreatment(); !ok {
+		return &ValidationError{Name: "tax_treatment", err: errors.New(`ent: missing required field "Customer.tax_treatment"`)}
 	}
-	if v, ok := cc.mutation.Taxability(); ok {
-		if err := customer.TaxabilityValidator(string(v)); err != nil {
-			return &ValidationError{Name: "taxability", err: fmt.Errorf(`ent: validator failed for field "Customer.taxability": %w`, err)}
+	if v, ok := cc.mutation.TaxTreatment(); ok {
+		if err := customer.TaxTreatmentValidator(string(v)); err != nil {
+			return &ValidationError{Name: "tax_treatment", err: fmt.Errorf(`ent: validator failed for field "Customer.tax_treatment": %w`, err)}
 		}
 	}
 	return nil
@@ -490,9 +490,9 @@ func (cc *CustomerCreate) createSpec() (*Customer, *sqlgraph.CreateSpec) {
 		_spec.SetField(customer.FieldTimezone, field.TypeString, value)
 		_node.Timezone = value
 	}
-	if value, ok := cc.mutation.Taxability(); ok {
-		_spec.SetField(customer.FieldTaxability, field.TypeString, value)
-		_node.Taxability = value
+	if value, ok := cc.mutation.TaxTreatment(); ok {
+		_spec.SetField(customer.FieldTaxTreatment, field.TypeString, value)
+		_node.TaxTreatment = value
 	}
 	return _node, _spec
 }

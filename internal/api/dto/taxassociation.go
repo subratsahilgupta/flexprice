@@ -186,12 +186,12 @@ type InvoiceTaxRates struct {
 }
 
 // NewInvoiceTaxRates pairs resolved rates with the customer they will be billed to, so invoice
-// computation gets both together. cust must be read fresh for this invoice: taxability is never
-// cached, so an invoice reflects the exemption status at the time it was generated.
+// computation gets both together. cust must be read fresh for this invoice: tax treatment is
+// never cached, so an invoice reflects the exemption status at the time it was generated.
 func NewInvoiceTaxRates(rates []*TaxRateWithBehavior, cust *customer.Customer) *InvoiceTaxRates {
 	return &InvoiceTaxRates{
 		Rates:  rates,
-		Exempt: cust != nil && cust.Taxability == types.TaxabilityExempt,
+		Exempt: cust != nil && cust.TaxTreatment == types.TaxTreatmentExempt,
 	}
 }
 

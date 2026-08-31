@@ -94,12 +94,12 @@ func (Customer) Fields() []ent.Field {
 			}).
 			Default("UTC").
 			Optional(),
-		field.String("taxability").
-			GoType(types.Taxability("")).
+		field.String("tax_treatment").
+			GoType(types.TaxTreatment("")).
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			Default(string(types.TaxabilityTaxable)).
+			Default(string(types.TaxTreatmentTaxable)).
 			NotEmpty(),
 	}
 }

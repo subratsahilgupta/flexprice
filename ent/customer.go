@@ -57,8 +57,8 @@ type Customer struct {
 	AddressCountry string `json:"address_country,omitempty"`
 	// Timezone holds the value of the "timezone" field.
 	Timezone string `json:"timezone,omitempty"`
-	// Taxability holds the value of the "taxability" field.
-	Taxability   types.Taxability `json:"taxability,omitempty"`
+	// TaxTreatment holds the value of the "tax_treatment" field.
+	TaxTreatment types.TaxTreatment `json:"tax_treatment,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -69,7 +69,7 @@ func (*Customer) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case customer.FieldMetadata:
 			values[i] = new([]byte)
-		case customer.FieldID, customer.FieldTenantID, customer.FieldStatus, customer.FieldCreatedBy, customer.FieldUpdatedBy, customer.FieldEnvironmentID, customer.FieldExternalID, customer.FieldName, customer.FieldEmail, customer.FieldContact, customer.FieldAddressLine1, customer.FieldAddressLine2, customer.FieldAddressCity, customer.FieldAddressState, customer.FieldAddressPostalCode, customer.FieldAddressCountry, customer.FieldTimezone, customer.FieldTaxability:
+		case customer.FieldID, customer.FieldTenantID, customer.FieldStatus, customer.FieldCreatedBy, customer.FieldUpdatedBy, customer.FieldEnvironmentID, customer.FieldExternalID, customer.FieldName, customer.FieldEmail, customer.FieldContact, customer.FieldAddressLine1, customer.FieldAddressLine2, customer.FieldAddressCity, customer.FieldAddressState, customer.FieldAddressPostalCode, customer.FieldAddressCountry, customer.FieldTimezone, customer.FieldTaxTreatment:
 			values[i] = new(sql.NullString)
 		case customer.FieldCreatedAt, customer.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -211,11 +211,11 @@ func (c *Customer) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				c.Timezone = value.String
 			}
-		case customer.FieldTaxability:
+		case customer.FieldTaxTreatment:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field taxability", values[i])
+				return fmt.Errorf("unexpected type %T for field tax_treatment", values[i])
 			} else if value.Valid {
-				c.Taxability = types.Taxability(value.String)
+				c.TaxTreatment = types.TaxTreatment(value.String)
 			}
 		default:
 			c.selectValues.Set(columns[i], values[i])
@@ -312,8 +312,8 @@ func (c *Customer) String() string {
 	builder.WriteString("timezone=")
 	builder.WriteString(c.Timezone)
 	builder.WriteString(", ")
-	builder.WriteString("taxability=")
-	builder.WriteString(fmt.Sprintf("%v", c.Taxability))
+	builder.WriteString("tax_treatment=")
+	builder.WriteString(fmt.Sprintf("%v", c.TaxTreatment))
 	builder.WriteByte(')')
 	return builder.String()
 }

@@ -31,24 +31,24 @@ func (t TaxBehavior) Validate() error {
 	return nil
 }
 
-// Taxability is the customer's tax treatment. Defaults to taxable.
-type Taxability string
+// TaxTreatment is the customer's tax treatment. Defaults to taxable.
+type TaxTreatment string
 
 const (
-	TaxabilityTaxable Taxability = "taxable"
-	TaxabilityExempt  Taxability = "exempt"
+	TaxTreatmentTaxable TaxTreatment = "taxable"
+	TaxTreatmentExempt  TaxTreatment = "exempt"
 	// "reverse_charge" reserved, not implemented in v1
 )
 
-func (t Taxability) String() string {
+func (t TaxTreatment) String() string {
 	return string(t)
 }
 
-func (t Taxability) Validate() error {
-	allowedValues := []string{string(TaxabilityTaxable), string(TaxabilityExempt)}
+func (t TaxTreatment) Validate() error {
+	allowedValues := []string{string(TaxTreatmentTaxable), string(TaxTreatmentExempt)}
 	if !slices.Contains(allowedValues, string(t)) {
-		return ierr.NewError("invalid taxability").
-			WithHint("Taxability must be either taxable or exempt").
+		return ierr.NewError("invalid tax treatment").
+			WithHint("Tax treatment must be either taxable or exempt").
 			Mark(ierr.ErrValidation)
 	}
 

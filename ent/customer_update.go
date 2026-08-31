@@ -289,16 +289,16 @@ func (cu *CustomerUpdate) ClearTimezone() *CustomerUpdate {
 	return cu
 }
 
-// SetTaxability sets the "taxability" field.
-func (cu *CustomerUpdate) SetTaxability(t types.Taxability) *CustomerUpdate {
-	cu.mutation.SetTaxability(t)
+// SetTaxTreatment sets the "tax_treatment" field.
+func (cu *CustomerUpdate) SetTaxTreatment(tt types.TaxTreatment) *CustomerUpdate {
+	cu.mutation.SetTaxTreatment(tt)
 	return cu
 }
 
-// SetNillableTaxability sets the "taxability" field if the given value is not nil.
-func (cu *CustomerUpdate) SetNillableTaxability(t *types.Taxability) *CustomerUpdate {
-	if t != nil {
-		cu.SetTaxability(*t)
+// SetNillableTaxTreatment sets the "tax_treatment" field if the given value is not nil.
+func (cu *CustomerUpdate) SetNillableTaxTreatment(tt *types.TaxTreatment) *CustomerUpdate {
+	if tt != nil {
+		cu.SetTaxTreatment(*tt)
 	}
 	return cu
 }
@@ -356,9 +356,9 @@ func (cu *CustomerUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Customer.name": %w`, err)}
 		}
 	}
-	if v, ok := cu.mutation.Taxability(); ok {
-		if err := customer.TaxabilityValidator(string(v)); err != nil {
-			return &ValidationError{Name: "taxability", err: fmt.Errorf(`ent: validator failed for field "Customer.taxability": %w`, err)}
+	if v, ok := cu.mutation.TaxTreatment(); ok {
+		if err := customer.TaxTreatmentValidator(string(v)); err != nil {
+			return &ValidationError{Name: "tax_treatment", err: fmt.Errorf(`ent: validator failed for field "Customer.tax_treatment": %w`, err)}
 		}
 	}
 	return nil
@@ -460,8 +460,8 @@ func (cu *CustomerUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if cu.mutation.TimezoneCleared() {
 		_spec.ClearField(customer.FieldTimezone, field.TypeString)
 	}
-	if value, ok := cu.mutation.Taxability(); ok {
-		_spec.SetField(customer.FieldTaxability, field.TypeString, value)
+	if value, ok := cu.mutation.TaxTreatment(); ok {
+		_spec.SetField(customer.FieldTaxTreatment, field.TypeString, value)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, cu.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -743,16 +743,16 @@ func (cuo *CustomerUpdateOne) ClearTimezone() *CustomerUpdateOne {
 	return cuo
 }
 
-// SetTaxability sets the "taxability" field.
-func (cuo *CustomerUpdateOne) SetTaxability(t types.Taxability) *CustomerUpdateOne {
-	cuo.mutation.SetTaxability(t)
+// SetTaxTreatment sets the "tax_treatment" field.
+func (cuo *CustomerUpdateOne) SetTaxTreatment(tt types.TaxTreatment) *CustomerUpdateOne {
+	cuo.mutation.SetTaxTreatment(tt)
 	return cuo
 }
 
-// SetNillableTaxability sets the "taxability" field if the given value is not nil.
-func (cuo *CustomerUpdateOne) SetNillableTaxability(t *types.Taxability) *CustomerUpdateOne {
-	if t != nil {
-		cuo.SetTaxability(*t)
+// SetNillableTaxTreatment sets the "tax_treatment" field if the given value is not nil.
+func (cuo *CustomerUpdateOne) SetNillableTaxTreatment(tt *types.TaxTreatment) *CustomerUpdateOne {
+	if tt != nil {
+		cuo.SetTaxTreatment(*tt)
 	}
 	return cuo
 }
@@ -823,9 +823,9 @@ func (cuo *CustomerUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Customer.name": %w`, err)}
 		}
 	}
-	if v, ok := cuo.mutation.Taxability(); ok {
-		if err := customer.TaxabilityValidator(string(v)); err != nil {
-			return &ValidationError{Name: "taxability", err: fmt.Errorf(`ent: validator failed for field "Customer.taxability": %w`, err)}
+	if v, ok := cuo.mutation.TaxTreatment(); ok {
+		if err := customer.TaxTreatmentValidator(string(v)); err != nil {
+			return &ValidationError{Name: "tax_treatment", err: fmt.Errorf(`ent: validator failed for field "Customer.tax_treatment": %w`, err)}
 		}
 	}
 	return nil
@@ -944,8 +944,8 @@ func (cuo *CustomerUpdateOne) sqlSave(ctx context.Context) (_node *Customer, err
 	if cuo.mutation.TimezoneCleared() {
 		_spec.ClearField(customer.FieldTimezone, field.TypeString)
 	}
-	if value, ok := cuo.mutation.Taxability(); ok {
-		_spec.SetField(customer.FieldTaxability, field.TypeString, value)
+	if value, ok := cuo.mutation.TaxTreatment(); ok {
+		_spec.SetField(customer.FieldTaxTreatment, field.TypeString, value)
 	}
 	_node = &Customer{config: cuo.config}
 	_spec.Assign = _node.assignValues

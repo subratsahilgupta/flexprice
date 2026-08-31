@@ -58,8 +58,8 @@ type CreateCustomerRequest struct {
 	// Defaults to "UTC" if not provided
 	Timezone string `json:"timezone" validate:"omitempty,timezone"`
 
-	// taxability is the customer's tax treatment. Defaults to "taxable" if not provided.
-	Taxability types.Taxability `json:"taxability,omitempty"`
+	// tax_treatment is the customer's tax treatment. Defaults to "taxable" if not provided.
+	TaxTreatment types.TaxTreatment `json:"tax_treatment,omitempty"`
 
 	// metadata contains additional key-value pairs for storing extra information
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -115,8 +115,8 @@ type UpdateCustomerRequest struct {
 	// timezone is the updated IANA timezone name for the customer (e.g. "Asia/Kolkata", "America/New_York")
 	Timezone *string `json:"timezone" validate:"omitempty,timezone"`
 
-	// taxability is the updated tax treatment for the customer
-	Taxability *types.Taxability `json:"taxability,omitempty"`
+	// tax_treatment is the updated tax treatment for the customer
+	TaxTreatment *types.TaxTreatment `json:"tax_treatment,omitempty"`
 
 	// metadata contains updated key-value pairs that will replace existing metadata
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -183,8 +183,8 @@ func (r *CreateCustomerRequest) Validate() error {
 		return err
 	}
 
-	if r.Taxability != "" {
-		if err := r.Taxability.Validate(); err != nil {
+	if r.TaxTreatment != "" {
+		if err := r.TaxTreatment.Validate(); err != nil {
 			return err
 		}
 	}
@@ -197,9 +197,9 @@ func (r *CreateCustomerRequest) ToCustomer(ctx context.Context) *customer.Custom
 	if tz == "" {
 		tz = types.DefaultTimezone
 	}
-	taxability := r.Taxability
-	if taxability == "" {
-		taxability = types.TaxabilityTaxable
+	taxTreatment := r.TaxTreatment
+	if taxTreatment == "" {
+		taxTreatment = types.TaxTreatmentTaxable
 	}
 	return &customer.Customer{
 		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
@@ -214,7 +214,7 @@ func (r *CreateCustomerRequest) ToCustomer(ctx context.Context) *customer.Custom
 		AddressPostalCode: r.AddressPostalCode,
 		AddressCountry:    r.AddressCountry,
 		Timezone:          tz,
-		Taxability:        taxability,
+		TaxTreatment:      taxTreatment,
 		Metadata:          r.Metadata,
 		EnvironmentID:     types.GetEnvironmentID(ctx),
 		BaseModel:         types.GetDefaultBaseModel(ctx),
@@ -239,8 +239,8 @@ func (r *UpdateCustomerRequest) Validate() error {
 		return err
 	}
 
-	if r.Taxability != nil {
-		if err := r.Taxability.Validate(); err != nil {
+	if r.TaxTreatment != nil {
+		if err := r.TaxTreatment.Validate(); err != nil {
 			return err
 		}
 	}

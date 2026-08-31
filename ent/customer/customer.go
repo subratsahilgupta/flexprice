@@ -52,8 +52,8 @@ const (
 	FieldAddressCountry = "address_country"
 	// FieldTimezone holds the string denoting the timezone field in the database.
 	FieldTimezone = "timezone"
-	// FieldTaxability holds the string denoting the taxability field in the database.
-	FieldTaxability = "taxability"
+	// FieldTaxTreatment holds the string denoting the tax_treatment field in the database.
+	FieldTaxTreatment = "tax_treatment"
 	// Table holds the table name of the customer in the database.
 	Table = "customers"
 )
@@ -80,7 +80,7 @@ var Columns = []string{
 	FieldAddressPostalCode,
 	FieldAddressCountry,
 	FieldTimezone,
-	FieldTaxability,
+	FieldTaxTreatment,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -112,10 +112,10 @@ var (
 	NameValidator func(string) error
 	// DefaultTimezone holds the default value on creation for the "timezone" field.
 	DefaultTimezone string
-	// DefaultTaxability holds the default value on creation for the "taxability" field.
-	DefaultTaxability types.Taxability
-	// TaxabilityValidator is a validator for the "taxability" field. It is called by the builders before save.
-	TaxabilityValidator func(string) error
+	// DefaultTaxTreatment holds the default value on creation for the "tax_treatment" field.
+	DefaultTaxTreatment types.TaxTreatment
+	// TaxTreatmentValidator is a validator for the "tax_treatment" field. It is called by the builders before save.
+	TaxTreatmentValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the Customer queries.
@@ -216,7 +216,7 @@ func ByTimezone(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTimezone, opts...).ToFunc()
 }
 
-// ByTaxability orders the results by the taxability field.
-func ByTaxability(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTaxability, opts...).ToFunc()
+// ByTaxTreatment orders the results by the tax_treatment field.
+func ByTaxTreatment(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTaxTreatment, opts...).ToFunc()
 }

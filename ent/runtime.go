@@ -797,12 +797,12 @@ func init() {
 	customerDescTimezone := customerFields[11].Descriptor()
 	// customer.DefaultTimezone holds the default value on creation for the timezone field.
 	customer.DefaultTimezone = customerDescTimezone.Default.(string)
-	// customerDescTaxability is the schema descriptor for taxability field.
-	customerDescTaxability := customerFields[12].Descriptor()
-	// customer.DefaultTaxability holds the default value on creation for the taxability field.
-	customer.DefaultTaxability = types.Taxability(customerDescTaxability.Default.(string))
-	// customer.TaxabilityValidator is a validator for the "taxability" field. It is called by the builders before save.
-	customer.TaxabilityValidator = customerDescTaxability.Validators[0].(func(string) error)
+	// customerDescTaxTreatment is the schema descriptor for tax_treatment field.
+	customerDescTaxTreatment := customerFields[12].Descriptor()
+	// customer.DefaultTaxTreatment holds the default value on creation for the tax_treatment field.
+	customer.DefaultTaxTreatment = types.TaxTreatment(customerDescTaxTreatment.Default.(string))
+	// customer.TaxTreatmentValidator is a validator for the "tax_treatment" field. It is called by the builders before save.
+	customer.TaxTreatmentValidator = customerDescTaxTreatment.Validators[0].(func(string) error)
 	entitlementMixin := schema.Entitlement{}.Mixin()
 	entitlementMixinFields0 := entitlementMixin[0].Fields()
 	_ = entitlementMixinFields0

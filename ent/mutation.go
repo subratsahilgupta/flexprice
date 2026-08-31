@@ -22088,7 +22088,7 @@ type CustomerMutation struct {
 	address_postal_code *string
 	address_country     *string
 	timezone            *string
-	taxability          *types.Taxability
+	tax_treatment       *types.TaxTreatment
 	clearedFields       map[string]struct{}
 	done                bool
 	oldValue            func(context.Context) (*Customer, error)
@@ -23052,40 +23052,40 @@ func (m *CustomerMutation) ResetTimezone() {
 	delete(m.clearedFields, customer.FieldTimezone)
 }
 
-// SetTaxability sets the "taxability" field.
-func (m *CustomerMutation) SetTaxability(t types.Taxability) {
-	m.taxability = &t
+// SetTaxTreatment sets the "tax_treatment" field.
+func (m *CustomerMutation) SetTaxTreatment(tt types.TaxTreatment) {
+	m.tax_treatment = &tt
 }
 
-// Taxability returns the value of the "taxability" field in the mutation.
-func (m *CustomerMutation) Taxability() (r types.Taxability, exists bool) {
-	v := m.taxability
+// TaxTreatment returns the value of the "tax_treatment" field in the mutation.
+func (m *CustomerMutation) TaxTreatment() (r types.TaxTreatment, exists bool) {
+	v := m.tax_treatment
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldTaxability returns the old "taxability" field's value of the Customer entity.
+// OldTaxTreatment returns the old "tax_treatment" field's value of the Customer entity.
 // If the Customer object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *CustomerMutation) OldTaxability(ctx context.Context) (v types.Taxability, err error) {
+func (m *CustomerMutation) OldTaxTreatment(ctx context.Context) (v types.TaxTreatment, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldTaxability is only allowed on UpdateOne operations")
+		return v, errors.New("OldTaxTreatment is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldTaxability requires an ID field in the mutation")
+		return v, errors.New("OldTaxTreatment requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldTaxability: %w", err)
+		return v, fmt.Errorf("querying old value for OldTaxTreatment: %w", err)
 	}
-	return oldValue.Taxability, nil
+	return oldValue.TaxTreatment, nil
 }
 
-// ResetTaxability resets all changes to the "taxability" field.
-func (m *CustomerMutation) ResetTaxability() {
-	m.taxability = nil
+// ResetTaxTreatment resets all changes to the "tax_treatment" field.
+func (m *CustomerMutation) ResetTaxTreatment() {
+	m.tax_treatment = nil
 }
 
 // Where appends a list predicates to the CustomerMutation builder.
@@ -23180,8 +23180,8 @@ func (m *CustomerMutation) Fields() []string {
 	if m.timezone != nil {
 		fields = append(fields, customer.FieldTimezone)
 	}
-	if m.taxability != nil {
-		fields = append(fields, customer.FieldTaxability)
+	if m.tax_treatment != nil {
+		fields = append(fields, customer.FieldTaxTreatment)
 	}
 	return fields
 }
@@ -23229,8 +23229,8 @@ func (m *CustomerMutation) Field(name string) (ent.Value, bool) {
 		return m.AddressCountry()
 	case customer.FieldTimezone:
 		return m.Timezone()
-	case customer.FieldTaxability:
-		return m.Taxability()
+	case customer.FieldTaxTreatment:
+		return m.TaxTreatment()
 	}
 	return nil, false
 }
@@ -23278,8 +23278,8 @@ func (m *CustomerMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldAddressCountry(ctx)
 	case customer.FieldTimezone:
 		return m.OldTimezone(ctx)
-	case customer.FieldTaxability:
-		return m.OldTaxability(ctx)
+	case customer.FieldTaxTreatment:
+		return m.OldTaxTreatment(ctx)
 	}
 	return nil, fmt.Errorf("unknown Customer field %s", name)
 }
@@ -23422,12 +23422,12 @@ func (m *CustomerMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTimezone(v)
 		return nil
-	case customer.FieldTaxability:
-		v, ok := value.(types.Taxability)
+	case customer.FieldTaxTreatment:
+		v, ok := value.(types.TaxTreatment)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetTaxability(v)
+		m.SetTaxTreatment(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)
@@ -23616,8 +23616,8 @@ func (m *CustomerMutation) ResetField(name string) error {
 	case customer.FieldTimezone:
 		m.ResetTimezone()
 		return nil
-	case customer.FieldTaxability:
-		m.ResetTaxability()
+	case customer.FieldTaxTreatment:
+		m.ResetTaxTreatment()
 		return nil
 	}
 	return fmt.Errorf("unknown Customer field %s", name)

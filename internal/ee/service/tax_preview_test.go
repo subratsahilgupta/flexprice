@@ -563,13 +563,13 @@ func (s *TaxCalculationSuite) TearDownTest() {
 
 // ---------- fixtures ----------
 
-func (s *TaxCalculationSuite) newCustomer(taxability types.Taxability) *customer.Customer {
+func (s *TaxCalculationSuite) newCustomer(taxTreatment types.TaxTreatment) *customer.Customer {
 	cust := &customer.Customer{
 		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
 		ExternalID: types.GenerateUUIDWithPrefix("ext"),
-		Name:       "Tax Test Customer",
-		Taxability: taxability,
-		BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+		Name:         "Tax Test Customer",
+		TaxTreatment: taxTreatment,
+		BaseModel:    types.GetDefaultBaseModel(s.GetContext()),
 	}
 	s.Require().NoError(s.GetStores().CustomerRepo.Create(s.GetContext(), cust))
 	return cust
@@ -638,9 +638,9 @@ func (s *TaxCalculationSuite) association(taxRateID, subscriptionID string, beha
 }
 
 // invoiceFor builds an unsaved invoice at the given subtotal for a customer of the given
-// taxability — the shared fixture for the scenarios below.
-func (s *TaxCalculationSuite) invoiceFor(taxability types.Taxability, subtotal decimal.Decimal) *invoice.Invoice {
-	cust := s.newCustomer(taxability)
+// tax treatment — the shared fixture for the scenarios below.
+func (s *TaxCalculationSuite) invoiceFor(taxTreatment types.TaxTreatment, subtotal decimal.Decimal) *invoice.Invoice {
+	cust := s.newCustomer(taxTreatment)
 	return &invoice.Invoice{
 		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
 		CustomerID: cust.ID,
@@ -691,7 +691,7 @@ func (s *TaxCalculationSuite) taxAppliedFor(invoiceID string) []*dto.TaxAppliedR
 // A quote is not a charge. Applying writes one tax_applied row per rate, and a previewed
 // invoice is never created — those rows would point at nothing forever.
 func (s *TaxCalculationSuite) TestCalculateWritesNothingWhileApplyPersists() {
-	inv := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(100))
+	inv := s.invoiceFor(types.TaxTreatmentTaxable, decimal.NewFromInt(100))
 	rates := &dto.InvoiceTaxRates{Rates: []*dto.TaxRateWithBehavior{s.rate("vat_10", 10, types.TaxBehaviorExclusive)}}
 
 	quoted := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv, rates)
@@ -757,8 +757,8 @@ func taxShapes() []taxShape {
 	}
 }
 
-func (s *TaxCalculationSuite) shapeInvoice(taxability types.Taxability) *invoice.Invoice {
-	inv := s.invoiceFor(taxability, decimal.NewFromInt(shapeSubtotal))
+func (s *TaxCalculationSuite) shapeInvoice(taxTreatment types.TaxTreatment) *invoice.Invoice {
+	inv := s.invoiceFor(taxTreatment, decimal.NewFromInt(shapeSubtotal))
 	inv.TotalDiscount = decimal.NewFromInt(shapeDiscount)
 	return inv
 }
@@ -779,7 +779,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_TaxableCustomer() {
 	for _, shape := range taxShapes() {
 		s.Run(shape.name, func() {
 			exp := want[shape.name]
-			inv := s.shapeInvoice(types.TaxabilityTaxable)
+			inv := s.shapeInvoice(types.TaxTreatmentTaxable)
 
 			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv,
 				&dto.InvoiceTaxRates{Rates: shape.rates(s)})
@@ -810,7 +810,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_ExemptCustomer() {
 	for _, shape := range taxShapes() {
 		s.Run(shape.name, func() {
 			exp := want[shape.name]
-			inv := s.shapeInvoice(types.TaxabilityExempt)
+			inv := s.shapeInvoice(types.TaxTreatmentExempt)
 
 			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv,
 				&dto.InvoiceTaxRates{Exempt: true, Rates: shape.rates(s)})
@@ -846,7 +846,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_DiscountReducesInclusi
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			inv := s.invoiceFor(types.TaxabilityTaxable, decimal.RequireFromString(tt.subtotal))
+			inv := s.invoiceFor(types.TaxTreatmentTaxable, decimal.RequireFromString(tt.subtotal))
 			inv.TotalDiscount = decimal.RequireFromString(tt.discount)
 
 			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv,
@@ -874,7 +874,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_MatchesStripeExemptTab
 
 	for _, tt := range tests {
 		s.Run(string(tt.behavior), func() {
-			inv := s.invoiceFor(types.TaxabilityExempt, decimal.NewFromInt(100))
+			inv := s.invoiceFor(types.TaxTreatmentExempt, decimal.NewFromInt(100))
 
 			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv, &dto.InvoiceTaxRates{
 				Exempt: true,
@@ -892,7 +892,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_MatchesStripeExemptTab
 // 15.00 subtotal, 10%% discount, 5%% inclusive, 7%% exclusive.
 // https://docs.stripe.com/tax/tax-rates#both-inclusive-and-exclusive-tax-with-discount-example
 func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_MatchesStripeWorkedExample() {
-	inv := s.invoiceFor(types.TaxabilityTaxable, decimal.RequireFromString("15.00"))
+	inv := s.invoiceFor(types.TaxTreatmentTaxable, decimal.RequireFromString("15.00"))
 	inv.TotalDiscount = decimal.RequireFromString("1.50")
 
 	result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv, &dto.InvoiceTaxRates{
@@ -919,7 +919,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_MatchesStripeWorkedExa
 // an exempt customer's rows are written at zero, never omitted, so the audit trail
 // records which rates were evaluated rather than looking identical to "nothing configured".
 func (s *TaxCalculationSuite) TestApplyTaxesOnInvoice_ExemptCustomerPersistsZeroRows() {
-	inv := s.invoiceFor(types.TaxabilityExempt, decimal.NewFromInt(100))
+	inv := s.invoiceFor(types.TaxTreatmentExempt, decimal.NewFromInt(100))
 	rates := &dto.InvoiceTaxRates{Exempt: true, Rates: []*dto.TaxRateWithBehavior{
 		s.rate("vat", 10, types.TaxBehaviorExclusive),
 		s.rate("gst", 5, types.TaxBehaviorInclusive),
@@ -939,7 +939,7 @@ func (s *TaxCalculationSuite) TestApplyTaxesOnInvoice_ExemptCustomerPersistsZero
 // The persisted row is the audit trail, so every field on it has to be right — not just the
 // amount. taxable_amount in particular differs per behavior.
 func (s *TaxCalculationSuite) TestApplyTaxesOnInvoice_PersistedRowFields() {
-	inv := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(1000))
+	inv := s.invoiceFor(types.TaxTreatmentTaxable, decimal.NewFromInt(1000))
 	inclusive := s.rate("gst", 10, types.TaxBehaviorInclusive)
 	exclusive := s.rate("vat", 18, types.TaxBehaviorExclusive)
 
@@ -972,7 +972,7 @@ func (s *TaxCalculationSuite) TestApplyTaxesOnInvoice_PersistedRowFields() {
 // Applying twice must update the existing row rather than writing a second one — invoices get
 // recomputed, and a duplicate row would double-count in every rollup that reads them.
 func (s *TaxCalculationSuite) TestApplyTaxesOnInvoice_IsIdempotent() {
-	inv := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(100))
+	inv := s.invoiceFor(types.TaxTreatmentTaxable, decimal.NewFromInt(100))
 	rates := &dto.InvoiceTaxRates{Rates: []*dto.TaxRateWithBehavior{s.rate("vat", 10, types.TaxBehaviorExclusive)}}
 
 	first, err := s.svc.ApplyTaxesOnInvoice(s.GetContext(), inv, rates)
@@ -990,7 +990,7 @@ func (s *TaxCalculationSuite) TestApplyTaxesOnInvoice_IsIdempotent() {
 // Recomputing after the taxable amount changes must rewrite the row to the new figure —
 // idempotency must not mean "frozen at whatever was written first".
 func (s *TaxCalculationSuite) TestApplyTaxesOnInvoice_RecomputeUpdatesTheAmount() {
-	inv := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(100))
+	inv := s.invoiceFor(types.TaxTreatmentTaxable, decimal.NewFromInt(100))
 	rates := &dto.InvoiceTaxRates{Rates: []*dto.TaxRateWithBehavior{s.rate("vat", 10, types.TaxBehaviorExclusive)}}
 
 	_, err := s.svc.ApplyTaxesOnInvoice(s.GetContext(), inv, rates)
@@ -1025,11 +1025,11 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_NoRates() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			taxability := types.TaxabilityTaxable
+			taxTreatment := types.TaxTreatmentTaxable
 			if tt.exempt {
-				taxability = types.TaxabilityExempt
+				taxTreatment = types.TaxTreatmentExempt
 			}
-			inv := s.invoiceFor(taxability, decimal.NewFromInt(100))
+			inv := s.invoiceFor(taxTreatment, decimal.NewFromInt(100))
 
 			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv, tt.taxRates)
 			applyTaxResultToInvoice(inv, result)
@@ -1047,7 +1047,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_NoRates() {
 // A rate with no percentage_value cannot be computed with. It is skipped and logged (L11)
 // rather than treated as zero, and the rates around it still apply.
 func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_SkipsRateMissingPercentageValue() {
-	inv := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(100))
+	inv := s.invoiceFor(types.TaxTreatmentTaxable, decimal.NewFromInt(100))
 
 	broken := s.rate("broken", 10, types.TaxBehaviorExclusive)
 	broken.PercentageValue = nil
@@ -1063,7 +1063,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_SkipsRateMissingPercen
 
 // If every rate is unusable the invoice reads as untaxed, with the reason code to say so.
 func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_AllRatesUnusable() {
-	inv := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(100))
+	inv := s.invoiceFor(types.TaxTreatmentTaxable, decimal.NewFromInt(100))
 	broken := s.rate("broken", 10, types.TaxBehaviorExclusive)
 	broken.PercentageValue = nil
 
@@ -1079,7 +1079,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_AllRatesUnusable() {
 
 // discounts apply before tax, so a discount changes what tax is computed against.
 func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_TaxIsComputedAfterDiscount() {
-	inv := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(100))
+	inv := s.invoiceFor(types.TaxTreatmentTaxable, decimal.NewFromInt(100))
 	inv.TotalDiscount = decimal.NewFromInt(10)
 
 	result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv,
@@ -1098,7 +1098,7 @@ func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_TaxIsComputedAfterDisc
 // merging with them.
 func (s *TaxCalculationSuite) TestPrepareTaxRates_OverridesWinOverSubscriptionAssociations() {
 	ctx := s.GetContext()
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	sub := s.newSubscription(cust.ID, "usd")
 
 	subRate := s.persistedRate("sub_level", 10)
@@ -1137,7 +1137,7 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_OverrideWithoutBehaviorUsesCur
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			cust := s.newCustomer(types.TaxabilityTaxable)
+			cust := s.newCustomer(types.TaxTreatmentTaxable)
 			rate := s.persistedRate("override_"+tt.currency, 10)
 
 			resolved, err := s.svc.PrepareTaxRatesForInvoice(s.GetContext(), dto.CreateInvoiceRequest{
@@ -1160,7 +1160,7 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_OverrideWithoutBehaviorUsesCur
 // through a different path and is deliberately not consulted here: the documented gap.
 func (s *TaxCalculationSuite) TestPrepareTaxRates_RawTaxRatesUseCurrencyOnly() {
 	ctx := s.GetContext()
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	rate := s.persistedRate("raw_rate_gap", 10)
 
 	// A customer-level template saying inclusive — what the hierarchy would resolve to if it
@@ -1189,7 +1189,7 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_RawTaxRatesUseCurrencyOnly() {
 // An unknown rate ID on the raw path is a hard failure, not a silently dropped rate — a
 // mistyped ID must not quietly produce an untaxed invoice.
 func (s *TaxCalculationSuite) TestPrepareTaxRates_RawTaxRatesUnknownIDFails() {
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 
 	_, err := s.svc.PrepareTaxRatesForInvoice(s.GetContext(), dto.CreateInvoiceRequest{
 		CustomerID: cust.ID,
@@ -1204,7 +1204,7 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_RawTaxRatesUnknownIDFails() {
 // on the same subscription can legitimately disagree.
 func (s *TaxCalculationSuite) TestPrepareTaxRates_SubscriptionAssociationsKeepTheirOwnBehavior() {
 	ctx := s.GetContext()
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	sub := s.newSubscription(cust.ID, "usd")
 
 	inclusiveRate := s.persistedRate("assoc_inclusive", 10)
@@ -1246,7 +1246,7 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_AssociationWithNullBehaviorFal
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			cust := s.newCustomer(types.TaxabilityTaxable)
+			cust := s.newCustomer(types.TaxTreatmentTaxable)
 			sub := s.newSubscription(cust.ID, tt.currency)
 			rate := s.persistedRate("null_behavior_"+tt.currency, 10)
 			s.association(rate.ID, sub.ID, nil) // written directly: CreateTaxAssociation would never produce this
@@ -1267,7 +1267,7 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_AssociationWithNullBehaviorFal
 // a subscription with no associations resolves to no rates, without error. The customer
 // still has to be looked up, because the exemption flag rides along with the rates.
 func (s *TaxCalculationSuite) TestPrepareTaxRates_SubscriptionWithNoAssociations() {
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	sub := s.newSubscription(cust.ID, "usd")
 
 	resolved, err := s.svc.PrepareTaxRatesForInvoice(s.GetContext(), dto.CreateInvoiceRequest{
@@ -1284,7 +1284,7 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_SubscriptionWithNoAssociations
 // Associations that are not auto_apply are not picked up by invoice resolution.
 func (s *TaxCalculationSuite) TestPrepareTaxRates_SkipsAssociationsThatAreNotAutoApply() {
 	ctx := s.GetContext()
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	sub := s.newSubscription(cust.ID, "usd")
 	rate := s.persistedRate("manual_only", 10)
 
@@ -1303,20 +1303,20 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_SkipsAssociationsThatAreNotAut
 }
 
 // the exemption flag is resolved alongside the rates, from the customer's live
-// taxability, on every path.
+// tax treatment, on every path.
 func (s *TaxCalculationSuite) TestPrepareTaxRates_ExemptionFlagTracksTheCustomer() {
 	tests := []struct {
 		name       string
-		taxability types.Taxability
-		want       bool
+		taxTreatment types.TaxTreatment
+		want         bool
 	}{
-		{name: "taxable customer", taxability: types.TaxabilityTaxable, want: false},
-		{name: "exempt customer", taxability: types.TaxabilityExempt, want: true},
+		{name: "taxable customer", taxTreatment: types.TaxTreatmentTaxable, want: false},
+		{name: "exempt customer", taxTreatment: types.TaxTreatmentExempt, want: true},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			cust := s.newCustomer(tt.taxability)
+			cust := s.newCustomer(tt.taxTreatment)
 			rate := s.persistedRate("exempt_flag", 10)
 
 			resolved, err := s.svc.PrepareTaxRatesForInvoice(s.GetContext(), dto.CreateInvoiceRequest{
@@ -1343,7 +1343,7 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_UnknownCustomerFails() {
 
 // No subscription, no overrides, no raw rates: nothing to resolve, and that is not an error.
 func (s *TaxCalculationSuite) TestPrepareTaxRates_NothingToResolve() {
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 
 	resolved, err := s.svc.PrepareTaxRatesForInvoice(s.GetContext(), dto.CreateInvoiceRequest{
 		CustomerID: cust.ID,
@@ -1381,7 +1381,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_SubscriptionBehaviorDefau
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			cust := s.newCustomer(types.TaxabilityTaxable)
+			cust := s.newCustomer(types.TaxTreatmentTaxable)
 			sub := s.newSubscription(cust.ID, tt.currency)
 			rate := s.persistedRate("assoc_"+tt.currency, 10)
 
@@ -1414,7 +1414,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExplicitBehaviorOverrides
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			cust := s.newCustomer(types.TaxabilityTaxable)
+			cust := s.newCustomer(types.TaxTreatmentTaxable)
 			sub := s.newSubscription(cust.ID, tt.currency)
 			rate := s.persistedRate("explicit_"+tt.currency, 10)
 
@@ -1448,7 +1448,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_NonSubscriptionLevelsAreN
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			cust := s.newCustomer(types.TaxabilityTaxable)
+			cust := s.newCustomer(types.TaxTreatmentTaxable)
 			rate := s.persistedRate("template_"+string(tt.entityType), 10)
 
 			resp, err := s.svc.CreateTaxAssociation(s.GetContext(), &dto.CreateTaxAssociationRequest{
@@ -1467,7 +1467,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_NonSubscriptionLevelsAreN
 // A template created with an explicit behavior keeps it verbatim — "not stamped" means the
 // currency default is not consulted, not that the request's own value is discarded.
 func (s *TaxCalculationSuite) TestCreateTaxAssociation_CustomerLevelKeepsExplicitBehavior() {
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	rate := s.persistedRate("template_explicit", 10)
 
 	resp, err := s.svc.CreateTaxAssociation(s.GetContext(), &dto.CreateTaxAssociationRequest{
@@ -1500,7 +1500,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExemptCustomerSubscriptio
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			cust := s.newCustomer(types.TaxabilityExempt)
+			cust := s.newCustomer(types.TaxTreatmentExempt)
 			sub := s.newSubscription(cust.ID, tt.currency)
 			rate := s.persistedRate("exempt_reject", 10)
 
@@ -1522,7 +1522,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExemptCustomerSubscriptio
 // not rejected — it is a template, not a live association, and the check that matters fires
 // when it is copied down to a subscription.
 func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExemptCustomerLevelTemplateIsAllowed() {
-	cust := s.newCustomer(types.TaxabilityExempt)
+	cust := s.newCustomer(types.TaxTreatmentExempt)
 	rate := s.persistedRate("exempt_template", 10)
 
 	_, err := s.svc.CreateTaxAssociation(s.GetContext(), &dto.CreateTaxAssociationRequest{
@@ -1571,7 +1571,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_InclusiveRateAboveHundred
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			cust := s.newCustomer(types.TaxabilityTaxable)
+			cust := s.newCustomer(types.TaxTreatmentTaxable)
 			sub := s.newSubscription(cust.ID, tt.currency)
 			// Written straight to the repo: the create-rate DTO caps percentage_value at 100,
 			// so this guard is defense in depth against a rate that arrived another way.
@@ -1598,7 +1598,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_InclusiveRateAboveHundred
 // the same >100% guard applies to a tenant/customer-level row carrying an explicit
 // inclusive behavior, which has no subscription and is never stamped.
 func (s *TaxCalculationSuite) TestCreateTaxAssociation_InclusiveOverHundredRejectedAtCustomerLevelToo() {
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	rate := s.persistedRate("template_over_limit", 150)
 
 	_, err := s.svc.CreateTaxAssociation(s.GetContext(), &dto.CreateTaxAssociationRequest{
@@ -1615,7 +1615,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_InclusiveOverHundredRejec
 // An archived rate must not be linkable — an association pointing at one would resolve to a
 // rate the tenant has already retired.
 func (s *TaxCalculationSuite) TestCreateTaxAssociation_InactiveRateIsRejected() {
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	sub := s.newSubscription(cust.ID, "usd")
 	rate := s.persistedRateWithStatus("archived", 10, types.TaxRateStatusInactive)
 
@@ -1631,7 +1631,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_InactiveRateIsRejected() 
 }
 
 func (s *TaxCalculationSuite) TestCreateTaxAssociation_UnknownRateCodeIsRejected() {
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	sub := s.newSubscription(cust.ID, "usd")
 
 	_, err := s.svc.CreateTaxAssociation(s.GetContext(), &dto.CreateTaxAssociationRequest{
@@ -1662,7 +1662,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_UnknownSubscriptionIsReje
 // external_customer_id is a customer-level shorthand: it resolves the customer and rewrites
 // the request to target them.
 func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExternalCustomerIDResolvesToCustomerLevel() {
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	rate := s.persistedRate("by_external_id", 10)
 
 	resp, err := s.svc.CreateTaxAssociation(s.GetContext(), &dto.CreateTaxAssociationRequest{
@@ -1679,8 +1679,8 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExternalCustomerIDResolve
 // Passing both, pointing at different customers, is a contradiction rather than a precedence
 // question — it is rejected instead of silently picking one.
 func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExternalCustomerIDConflictingWithEntityIDIsRejected() {
-	first := s.newCustomer(types.TaxabilityTaxable)
-	second := s.newCustomer(types.TaxabilityTaxable)
+	first := s.newCustomer(types.TaxTreatmentTaxable)
+	second := s.newCustomer(types.TaxTreatmentTaxable)
 	rate := s.persistedRate("conflicting_ids", 10)
 
 	_, err := s.svc.CreateTaxAssociation(s.GetContext(), &dto.CreateTaxAssociationRequest{
@@ -1715,7 +1715,7 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_UnknownExternalCustomerID
 // frozen at apply time, not live-linked to the association.
 func (s *TaxCalculationSuite) TestUpdateTaxAssociationBehavior_DoesNotRewriteHistoricalRows() {
 	ctx := s.GetContext()
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	sub := s.newSubscription(cust.ID, "usd")
 	rate := s.persistedRate("behavior_change", 10)
 
@@ -1729,7 +1729,7 @@ func (s *TaxCalculationSuite) TestUpdateTaxAssociationBehavior_DoesNotRewriteHis
 	})
 	s.Require().NoError(err)
 
-	firstInvoice := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(100))
+	firstInvoice := s.invoiceFor(types.TaxTreatmentTaxable, decimal.NewFromInt(100))
 	firstInvoice.CustomerID = cust.ID
 	_, err = s.svc.ApplyTaxesOnInvoice(ctx, firstInvoice, &dto.InvoiceTaxRates{
 		Rates: []*dto.TaxRateWithBehavior{{
@@ -1756,7 +1756,7 @@ func (s *TaxCalculationSuite) TestUpdateTaxAssociationBehavior_DoesNotRewriteHis
 // the same rule: recompute means "reflect current state".
 func (s *TaxCalculationSuite) TestUpdateTaxAssociationBehavior_AppliesToTheNextInvoice() {
 	ctx := s.GetContext()
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	sub := s.newSubscription(cust.ID, "usd")
 	rate := s.persistedRate("behavior_change_next", 10)
 
@@ -1785,25 +1785,25 @@ func (s *TaxCalculationSuite) TestUpdateTaxAssociationBehavior_AppliesToTheNextI
 	s.Equal(types.TaxBehaviorExclusive, resolved.GetRates()[0].TaxBehavior)
 }
 
-// a taxability change takes effect from the next invoice and never alters one already
-// issued. customer.taxability is read fresh at every compute, so the change is picked up
+// a tax treatment change takes effect from the next invoice and never alters one already
+// issued. customer.tax_treatment is read fresh at every compute, so the change is picked up
 // immediately going forward, and nothing already written is touched.
-func (s *TaxCalculationSuite) TestTaxabilityChange_AppliesGoingForwardOnly() {
+func (s *TaxCalculationSuite) TestTaxTreatmentChange_AppliesGoingForwardOnly() {
 	ctx := s.GetContext()
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	rate := s.persistedRate("retro_check", 10)
 	rates := &dto.InvoiceTaxRates{Rates: []*dto.TaxRateWithBehavior{{
 		TaxRateResponse: &dto.TaxRateResponse{TaxRate: rate},
 		TaxBehavior:     types.TaxBehaviorExclusive,
 	}}}
 
-	firstInvoice := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(100))
+	firstInvoice := s.invoiceFor(types.TaxTreatmentTaxable, decimal.NewFromInt(100))
 	firstInvoice.CustomerID = cust.ID
 	charged, err := s.svc.ApplyTaxesOnInvoice(ctx, firstInvoice, rates)
 	s.Require().NoError(err)
 	s.True(decimal.NewFromInt(10).Equal(charged.TotalTaxAmount), "the customer was taxable when this was charged")
 
-	cust.Taxability = types.TaxabilityExempt
+	cust.TaxTreatment = types.TaxTreatmentExempt
 	s.Require().NoError(s.GetStores().CustomerRepo.Update(ctx, cust))
 
 	// Already issued: untouched.
@@ -1830,7 +1830,7 @@ func (s *TaxCalculationSuite) TestTaxabilityChange_AppliesGoingForwardOnly() {
 // linked associations come out stamped exactly as a direct create would stamp them.
 func (s *TaxCalculationSuite) TestLinkTaxRatesToEntity_StampsEachOverride() {
 	ctx := s.GetContext()
-	cust := s.newCustomer(types.TaxabilityTaxable)
+	cust := s.newCustomer(types.TaxTreatmentTaxable)
 	sub := s.newSubscription(cust.ID, "inr")
 	first := s.persistedRate("link_first", 10)
 	second := s.persistedRate("link_second", 18)
@@ -1865,7 +1865,7 @@ func (s *TaxCalculationSuite) TestLinkTaxRatesToEntity_StampsEachOverride() {
 // transaction leaves nothing behind.
 func (s *TaxCalculationSuite) TestLinkTaxRatesToEntity_ExemptCustomerSubscriptionIsRejected() {
 	ctx := s.GetContext()
-	cust := s.newCustomer(types.TaxabilityExempt)
+	cust := s.newCustomer(types.TaxTreatmentExempt)
 	sub := s.newSubscription(cust.ID, "usd")
 	rate := s.persistedRate("link_exempt", 10)
 

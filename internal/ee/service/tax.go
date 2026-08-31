@@ -606,7 +606,7 @@ func (s *taxService) CreateTaxAssociation(ctx context.Context, req *dto.CreateTa
 		// An exempt customer is never taxed, so the association would be dead configuration
 		// that looks live. Rejected whatever it would have resolved to — hence before
 		// resolution.
-		if cust.Taxability == types.TaxabilityExempt {
+		if cust.TaxTreatment == types.TaxTreatmentExempt {
 			s.Logger.Info(ctx, "subscription tax association rejected — exempt customer",
 				"subscription_id", sub.ID,
 				"customer_id", cust.ID,
@@ -1425,6 +1425,7 @@ type inclusiveShare struct {
 // or above zero, so netTaxableAmount is never negative.
 func calculateTaxBreakdown(taxableAmount decimal.Decimal, rates []taxRateLine, currency string) *taxCalculationBreakdown {
 	precision := types.GetCurrencyPrecision(currency)
+	hundred := decimal.NewFromInt(100)
 
 	var combinedInclusiveRate decimal.Decimal
 	var inclusiveLines, exclusiveLines []taxRateLine
@@ -1442,7 +1443,8 @@ func calculateTaxBreakdown(taxableAmount decimal.Decimal, rates []taxRateLine, c
 	// 0%% rate panic.
 	var unroundedInclusiveTax decimal.Decimal
 	if !combinedInclusiveRate.IsZero() {
-		unroundedInclusiveTax = extractInclusiveTax(taxableAmount, combinedInclusiveRate)
+		// amount * rate / (100 + rate) — the tax already inside amount at this combined rate.
+		unroundedInclusiveTax = taxableAmount.Mul(combinedInclusiveRate).Div(hundred.Add(combinedInclusiveRate))
 	}
 	inclusiveTax := unroundedInclusiveTax.Round(precision)
 
@@ -1455,7 +1457,8 @@ func calculateTaxBreakdown(taxableAmount decimal.Decimal, rates []taxRateLine, c
 		for i, r := range inclusiveLines {
 			var amount decimal.Decimal
 			if !combinedInclusiveRate.IsZero() {
-				amount = proportionalShare(unroundedInclusiveTax, *r.percentageValue, combinedInclusiveRate).Round(precision)
+				// this rate's share of the combined tax, proportional to its own rate.
+				amount = unroundedInclusiveTax.Mul(*r.percentageValue).Div(combinedInclusiveRate).Round(precision)
 			}
 			shares[i] = inclusiveShare{rate: r, amount: amount}
 			sumRounded = sumRounded.Add(amount)
@@ -1485,7 +1488,7 @@ func calculateTaxBreakdown(taxableAmount decimal.Decimal, rates []taxRateLine, c
 
 	var exclusiveTax decimal.Decimal
 	for _, r := range exclusiveLines {
-		amount := exclusiveTaxFor(netTaxableAmount, *r.percentageValue).Round(precision)
+		amount := netTaxableAmount.Mul(*r.percentageValue).Div(hundred).Round(precision)
 		lines = append(lines, &taxLineResult{
 			rateID:        r.id,
 			taxBehavior:   types.TaxBehaviorExclusive,
@@ -1500,26 +1503,4 @@ func calculateTaxBreakdown(taxableAmount decimal.Decimal, rates []taxRateLine, c
 		exclusiveTax: exclusiveTax,
 		lines:        lines,
 	}
-}
-
-// exclusiveTaxFor is the tax an exclusive rate adds on top: amount * rate / 100.
-func exclusiveTaxFor(amount, ratePercentage decimal.Decimal) decimal.Decimal {
-	return amount.Mul(ratePercentage).Div(decimal.NewFromInt(100))
-}
-
-// extractInclusiveTax recovers the tax already contained in amount, for a rate (or a combined
-// rate) expressed as a percentage.
-//
-// Deriving it: an inclusive price is the tax-free amount plus its own tax, so
-// amount = net * (100+rate)/100. Solving for net gives net = amount * 100/(100+rate), and the
-// tax is the difference: amount - net, which reduces to amount * rate/(100+rate).
-func extractInclusiveTax(amount, combinedRatePercentage decimal.Decimal) decimal.Decimal {
-	return amount.Mul(combinedRatePercentage).Div(decimal.NewFromInt(100).Add(combinedRatePercentage))
-}
-
-// proportionalShare gives one rate's slice of an already-extracted combined amount, in
-// proportion to that rate's contribution to the combined rate. Never an equal division: of a
-// combined 14% made up of 9% and 5%, the 9% line must carry more, in the ratio 9:5.
-func proportionalShare(combinedAmount, ratePercentage, combinedRatePercentage decimal.Decimal) decimal.Decimal {
-	return combinedAmount.Mul(ratePercentage).Div(combinedRatePercentage)
 }
