@@ -92,15 +92,26 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 			}
 		}
 
-		// Line item cadence must be equal to, longer than, or a strict divisor of
-		// the subscription cadence. Longer-than case remains supported via
-		// FindMatchingLineItemPeriodForInvoice (once-per-N-invoices billing);
-		// shorter-that-divides is the new fan-out case (e.g. monthly price on
-		// quarterly sub → 3 monthly invoice line items).
-		if types.BillingPeriodGreaterThan(sub.BillingPeriod, lineItem.BillingPeriod) &&
-			!types.IsCadenceCompatible(sub.BillingPeriod, sub.BillingPeriodCount, lineItem.BillingPeriod, lineItem.BillingPeriodCount) {
-			return ierr.NewError("line item billing period must equal or divide subscription billing period").
-				WithHint("A shorter line-item cadence is only allowed when it strictly divides the subscription cadence (e.g. monthly on quarterly, monthly on annual).").
+		// Cadence-compatibility check — four acceptable relationships:
+		//   0. ONETIME line-item cadence — always allowed, not tied to sub cadence.
+		//   1. Identical cadence (same period AND count).
+		//   2. Line-item cadence strictly divides sub cadence (fan-out;
+		//      e.g. monthly price on quarterly sub → 3 monthly invoice lines).
+		//   3. Line-item cadence is a strict multiple of sub cadence (longer;
+		//      e.g. quarterly on monthly, billed once every 3 invoices via
+		//      FindMatchingLineItemPeriodForInvoice).
+		// Anything else — including same BillingPeriod with counts that don't
+		// divide either way (e.g. MONTHLY×3 sub vs MONTHLY×2 line item, since
+		// 3 % 2 ≠ 0 AND 2 % 3 ≠ 0) — is rejected.
+		//
+		// This runs after the DTO validator, which enforces the same rule for
+		// request-path callers. Keeping it here is defense-in-depth for
+		// internal callers that construct SubscriptionLineItems directly.
+		itemDividesSub := types.IsCadenceCompatible(sub.BillingPeriod, sub.BillingPeriodCount, lineItem.BillingPeriod, lineItem.BillingPeriodCount)
+		subDividesItem := types.IsCadenceCompatible(lineItem.BillingPeriod, lineItem.BillingPeriodCount, sub.BillingPeriod, sub.BillingPeriodCount)
+		if lineItem.BillingPeriod != types.BILLING_PERIOD_ONETIME && !itemDividesSub && !subDividesItem {
+			return ierr.NewError("line item billing cadence is not compatible with subscription cadence").
+				WithHint("The line item's effective duration (billing_period × billing_period_count) must equal, strictly divide, or be a strict multiple of the subscription's effective duration.").
 				WithReportableDetails(map[string]interface{}{
 					"subscription_id":                   sub.ID,
 					"subscription_billing_period":       sub.BillingPeriod,

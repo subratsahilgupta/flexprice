@@ -338,6 +338,13 @@ func TestCreateSubscriptionLineItemRequest_Validate_CadenceMustDivideSub(t *test
 		// Zero counts default to 1: quarterly (period=QUARTER, count=0→1) with
 		// monthly price (period=MONTHLY, count=0→1) → 3 % 1 = 0 → allowed.
 		{"zero-counts-default-to-one", types.BILLING_PERIOD_QUARTER, 0, types.BILLING_PERIOD_MONTHLY, 0, false},
+		// Same BillingPeriod, incompatible counts: MONTHLY×3 (3mo) sub vs
+		// MONTHLY×2 (2mo) price. 3 % 2 = 1 → not a divisor. Must be rejected —
+		// the same-BillingPeriod fast path only accepts identical counts.
+		{"same-period-incompatible-counts-rejected", types.BILLING_PERIOD_MONTHLY, 3, types.BILLING_PERIOD_MONTHLY, 2, true},
+		// Same BillingPeriod, price divides sub: MONTHLY×6 (6mo) sub vs
+		// MONTHLY×2 (2mo) price. 6 % 2 = 0 → allowed (fan-out into 3 sub-windows).
+		{"same-period-price-divides-sub-ok", types.BILLING_PERIOD_MONTHLY, 6, types.BILLING_PERIOD_MONTHLY, 2, false},
 	}
 
 	for _, tc := range cases {

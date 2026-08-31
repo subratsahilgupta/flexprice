@@ -404,39 +404,17 @@ func (r *planPriceSyncRepository) ListPlanLineItemsToCreate(
 			s.customer_id AS customer_id
 		FROM
 			subs_batch s
+			-- TODO(multi-cadence): this exact-match join silently drops prices whose
+			-- cadence merely divides the sub cadence (e.g. monthly price on a
+			-- quarterly sub) - the plan-price sync worker will not propagate them.
+			-- Follow-up: relax to accept exact-match OR ONETIME OR (both month-based
+			-- AND sub_effective_months mod price_effective_months = 0), matching
+			-- types.CompatibleBillingPeriodsFor + IsCadenceCompatible semantics.
+			-- Also normalize billing_period_count to max(count, 1) before the modulo
+			-- to guard against 0 counts (zero-divisor / broad-match risk).
 			JOIN plan_prices p ON lower(p.currency) = lower(s.currency)
-				AND (
-					-- Same cadence (period + count). Covers the historical exact-match
-					-- case and sub-month periods (DAILY/WEEKLY) where month math
-					-- doesn't apply.
-					(p.billing_period = s.billing_period AND p.billing_period_count = s.billing_period_count)
-					OR
-					-- ONETIME prices apply regardless of the sub cadence.
-					(p.billing_period = 'ONETIME')
-					OR
-					-- Price cadence strictly divides sub cadence (fan-out).
-					-- Both sides must be month-based; effective_months = period_months × count.
-					(
-						p.billing_period IN ('MONTHLY', 'QUARTER', 'HALF_YEAR', 'ANNUAL')
-						AND s.billing_period IN ('MONTHLY', 'QUARTER', 'HALF_YEAR', 'ANNUAL')
-						AND (
-							(CASE s.billing_period
-								WHEN 'MONTHLY' THEN 1
-								WHEN 'QUARTER' THEN 3
-								WHEN 'HALF_YEAR' THEN 6
-								WHEN 'ANNUAL' THEN 12
-							END) * s.billing_period_count
-						) %%
-						(
-							(CASE p.billing_period
-								WHEN 'MONTHLY' THEN 1
-								WHEN 'QUARTER' THEN 3
-								WHEN 'HALF_YEAR' THEN 6
-								WHEN 'ANNUAL' THEN 12
-							END) * p.billing_period_count
-						) = 0
-					)
-				)
+				AND p.billing_period = s.billing_period
+				AND p.billing_period_count = s.billing_period_count
 		WHERE
 			(p.end_date IS NULL OR s.start_date <= p.end_date)
 			AND NOT EXISTS (
