@@ -207,6 +207,38 @@ func TestValidateIncludePriceIDs_UnknownAndIncompatible(t *testing.T) {
 	}
 }
 
+func TestValidateIncludePriceIDs_WrongCurrency(t *testing.T) {
+	svc := &subscriptionService{}
+	sub := mkSub(types.BILLING_PERIOD_MONTHLY, 1)
+	// Sub currency is "usd" (see mkSub). Build a plan price with a mismatched
+	// currency but otherwise cadence-compatible.
+	planPrices := []*dto.PriceResponse{
+		mkPrice("m_usd", types.BILLING_PERIOD_MONTHLY, 1),
+	}
+	planPrices = append(planPrices, &dto.PriceResponse{
+		Price: &price.Price{
+			ID:                 "m_eur",
+			Currency:           "eur",
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+		},
+	})
+
+	// Same-currency id passes.
+	if err := svc.validateIncludePriceIDs("plan_test", sub, []string{"m_usd"}, planPrices); err != nil {
+		t.Fatalf("expected no error for same-currency id, got: %v", err)
+	}
+
+	// Mismatched-currency id is caught explicitly with its own bucket in details.
+	err := svc.validateIncludePriceIDs("plan_test", sub, []string{"m_eur"}, planPrices)
+	if err == nil {
+		t.Fatal("expected error for mismatched-currency id")
+	}
+	if !containsAll(err.Error(), "m_eur", "wrong_currency") {
+		t.Fatalf("error should name the wrong-currency id and category; got: %v", err)
+	}
+}
+
 func assertSameIDs(t *testing.T, want, got []string) {
 	t.Helper()
 	if len(want) != len(got) {

@@ -4129,8 +4129,13 @@ func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 }
 
 // validateIncludePriceIDs verifies every id in the caller-supplied include list
-// (a) resolves to a price on the plan and (b) is cadence-compatible with the
-// subscription. Returns a single all-or-nothing error naming every offending id.
+//
+//	(a) resolves to a price on the plan,
+//	(b) matches the subscription currency, and
+//	(c) is cadence-compatible with the subscription (equal or strict divisor —
+//	    multiples are not supported by the fan-out path).
+//
+// Returns a single all-or-nothing error naming every offending id.
 func (s *subscriptionService) validateIncludePriceIDs(
 	planID string,
 	sub *subscription.Subscription,
@@ -4142,11 +4147,18 @@ func (s *subscriptionService) validateIncludePriceIDs(
 		planPriceByID[p.Price.ID] = p
 	}
 
-	var unknown, incompatible []string
+	var unknown, wrongCurrency, incompatible []string
 	for _, id := range includeIDs {
 		p, ok := planPriceByID[id]
 		if !ok {
 			unknown = append(unknown, id)
+			continue
+		}
+		// Currency is authoritative: catch it explicitly here rather than
+		// letting the downstream filter silently drop the price (which would
+		// surface as a confusing "attached fewer prices than requested").
+		if !types.IsMatchingCurrency(p.Price.Currency, sub.Currency) {
+			wrongCurrency = append(wrongCurrency, id)
 			continue
 		}
 		if p.Price.BillingPeriod == types.BILLING_PERIOD_ONETIME {
@@ -4156,7 +4168,7 @@ func (s *subscriptionService) validateIncludePriceIDs(
 			incompatible = append(incompatible, id)
 		}
 	}
-	if len(unknown) == 0 && len(incompatible) == 0 {
+	if len(unknown) == 0 && len(wrongCurrency) == 0 && len(incompatible) == 0 {
 		return nil
 	}
 
@@ -4165,16 +4177,20 @@ func (s *subscriptionService) validateIncludePriceIDs(
 		"plan_id":                           planID,
 		"subscription_billing_period":       sub.BillingPeriod,
 		"subscription_billing_period_count": lo.Ternary(sub.BillingPeriodCount > 0, sub.BillingPeriodCount, 1),
+		"subscription_currency":             sub.Currency,
 	}
 	if len(unknown) > 0 {
 		details["unknown_price_ids"] = unknown
 	}
+	if len(wrongCurrency) > 0 {
+		details["wrong_currency_price_ids"] = wrongCurrency
+	}
 	if len(incompatible) > 0 {
 		details["incompatible_price_ids"] = incompatible
 	}
-	return ierr.NewErrorf("include_price_ids is invalid for plan %s (billing period %s): unknown=%v incompatible=%v",
-		planID, subCadence, unknown, incompatible).
-		WithHint("Every id in include_price_ids must belong to the plan AND be cadence-compatible with the subscription (equal, strict divisor, or strict multiple).").
+	return ierr.NewErrorf("include_price_ids is invalid for plan %s (billing period %s, currency %s): unknown=%v wrong_currency=%v incompatible=%v",
+		planID, subCadence, sub.Currency, unknown, wrongCurrency, incompatible).
+		WithHint("Every id in include_price_ids must belong to the plan, match the subscription currency, AND have a cadence that equals or strictly divides the subscription cadence.").
 		WithReportableDetails(details).
 		Mark(ierr.ErrValidation)
 }
