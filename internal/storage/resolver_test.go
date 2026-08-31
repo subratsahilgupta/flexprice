@@ -2,9 +2,11 @@ package storage
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
+	cockroachErrors "github.com/cockroachdb/errors"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/stretchr/testify/assert"
@@ -121,7 +123,10 @@ func TestResolver_BucketConfigFor_EmptyBucket(t *testing.T) {
 			r := newTestResolver(t, tt.provider, cfg)
 			_, err := r.BucketConfigFor(tt.purpose)
 			require.Error(t, err)
-			assert.Contains(t, missingBucketHint(tt.provider, tt.purpose), tt.wantHintSub)
+			// Assert the hint on the emitted error, not a recomputed one, so a
+			// generic error or a wrong hint from BucketConfigFor fails here.
+			hints := strings.Join(cockroachErrors.GetAllHints(err), " ")
+			assert.Contains(t, hints, tt.wantHintSub)
 		})
 	}
 }
