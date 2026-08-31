@@ -1407,23 +1407,22 @@ type inclusiveShare struct {
 	amount decimal.Decimal
 }
 
-// calculateTaxBreakdown splits rates by behavior and computes what each one charges.
+// calculateTaxBreakdown splits rates by behavior and computes what each one charges. Both run
+// on the discounted amount, matching Stripe's tax-rate ordering:
 //
-// Inclusive rates state that the tax is already contained in the taxable amount, so their tax
-// is recovered by working backwards from it rather than added to it. Several simultaneous
-// inclusive rates cannot each do that independently — each one would implicitly claim the
-// whole difference between the taxable amount and the tax-free price, giving as many
-// contradictory tax-free prices as there are rates. So they are combined into a single rate,
-// extracted once, and the result split back across them in proportion to each rate's share of
-// that combined rate.
+//  1. Inclusive tax is recovered from taxableAmount (already post-discount). Discounting a
+//     tax-inclusive price reduces the tax inside it too.
+//  2. Exclusive tax runs on taxableAmount less that inclusive portion, never on taxableAmount
+//     directly, which would tax money the inclusive portion already accounts for.
+//  3. Total is taxableAmount plus the exclusive tax.
 //
-// Exclusive rates are then run against what is left after the inclusive tax is removed
-// (netTaxableAmount), not against the original taxable amount: the inclusive tax has already
-// claimed part of that money, and charging both against the same base would tax it twice.
+// Several simultaneous inclusive rates cannot each be extracted independently: each would claim
+// the whole gap between the amount and its tax-free price, giving as many contradictory
+// tax-free prices as there are rates. They are combined, extracted once, then split
+// proportionally.
 //
-// The inclusive tax can never reach the taxable amount, because rate/(100+rate) is below 1 for
-// any rate at or above zero — extraction always leaves something behind. That holds only
-// because every tax rate is a percentage; a fixed-amount rate would have no such ceiling.
+// Inclusive tax can never reach taxableAmount, since rate/(100+rate) is below 1 for any rate at
+// or above zero, so netTaxableAmount is never negative.
 func calculateTaxBreakdown(taxableAmount decimal.Decimal, rates []taxRateLine, currency string) *taxCalculationBreakdown {
 	precision := types.GetCurrencyPrecision(currency)
 
@@ -1481,9 +1480,7 @@ func calculateTaxBreakdown(taxableAmount decimal.Decimal, rates []taxRateLine, c
 		}
 	}
 
-	// netTaxableAmount is the tax-free amount: the taxable amount with the portion the
-	// inclusive rates already claimed removed. Exclusive rates run against this, never against
-	// taxableAmount directly.
+	// What is left to be taxed on top, once the inclusive portion is accounted for.
 	netTaxableAmount := taxableAmount.Sub(inclusiveTax)
 
 	var exclusiveTax decimal.Decimal

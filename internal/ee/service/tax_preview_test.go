@@ -707,102 +707,212 @@ func (s *TaxCalculationSuite) TestCalculateWritesNothingWhileApplyPersists() {
 	s.Equal(1, s.countTaxApplied(), "charging is what records the tax")
 }
 
-// The three rows for a taxable customer, end to end through the service.
-func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_TaxableCustomer() {
-	tests := []struct {
-		name          string
-		subtotal      int64
-		rates         []*dto.TaxRateWithBehavior
-		wantInclusive string
-		wantExclusive string
-		wantTotal     string
-		wantTotalTax  string
-	}{
-		{
-			name: "exclusive only", subtotal: 100,
-			rates:         []*dto.TaxRateWithBehavior{s.rate("vat", 10, types.TaxBehaviorExclusive)},
-			wantInclusive: "0", wantExclusive: "10", wantTotal: "110", wantTotalTax: "10",
-		},
-		{
-			name: "inclusive only", subtotal: 100,
-			rates:         []*dto.TaxRateWithBehavior{s.rate("gst", 10, types.TaxBehaviorInclusive)},
-			wantInclusive: "9.09", wantExclusive: "0", wantTotal: "100", wantTotalTax: "9.09",
-		},
-		{
-			name: "mixed", subtotal: 1000,
-			rates: []*dto.TaxRateWithBehavior{
+// The seven rate arrangements, all run against subtotal 1000 with a 100 discount so the
+// discount actually participates: both kinds of tax are computed on the discounted amount.
+type taxShape struct {
+	name  string
+	rates func(s *TaxCalculationSuite) []*dto.TaxRateWithBehavior
+}
+
+const (
+	shapeSubtotal = 1000
+	shapeDiscount = 100
+)
+
+func taxShapes() []taxShape {
+	return []taxShape{
+		{"no tax", func(s *TaxCalculationSuite) []*dto.TaxRateWithBehavior { return nil }},
+		{"one inclusive", func(s *TaxCalculationSuite) []*dto.TaxRateWithBehavior {
+			return []*dto.TaxRateWithBehavior{s.rate("gst", 10, types.TaxBehaviorInclusive)}
+		}},
+		{"one exclusive", func(s *TaxCalculationSuite) []*dto.TaxRateWithBehavior {
+			return []*dto.TaxRateWithBehavior{s.rate("vat", 18, types.TaxBehaviorExclusive)}
+		}},
+		{"one of each", func(s *TaxCalculationSuite) []*dto.TaxRateWithBehavior {
+			return []*dto.TaxRateWithBehavior{
 				s.rate("gst", 10, types.TaxBehaviorInclusive),
 				s.rate("vat", 18, types.TaxBehaviorExclusive),
-			},
-			wantInclusive: "90.91", wantExclusive: "163.64", wantTotal: "1163.64", wantTotalTax: "254.55",
-		},
+			}
+		}},
+		{"several inclusive", func(s *TaxCalculationSuite) []*dto.TaxRateWithBehavior {
+			return []*dto.TaxRateWithBehavior{
+				s.rate("gst", 9, types.TaxBehaviorInclusive),
+				s.rate("cess", 5, types.TaxBehaviorInclusive),
+			}
+		}},
+		{"several exclusive", func(s *TaxCalculationSuite) []*dto.TaxRateWithBehavior {
+			return []*dto.TaxRateWithBehavior{
+				s.rate("state", 8, types.TaxBehaviorExclusive),
+				s.rate("county", 2, types.TaxBehaviorExclusive),
+			}
+		}},
+		{"several of each", func(s *TaxCalculationSuite) []*dto.TaxRateWithBehavior {
+			return []*dto.TaxRateWithBehavior{
+				s.rate("gst", 9, types.TaxBehaviorInclusive),
+				s.rate("cess", 5, types.TaxBehaviorInclusive),
+				s.rate("state", 8, types.TaxBehaviorExclusive),
+				s.rate("county", 2, types.TaxBehaviorExclusive),
+			}
+		}},
+	}
+}
+
+func (s *TaxCalculationSuite) shapeInvoice(taxability types.Taxability) *invoice.Invoice {
+	inv := s.invoiceFor(taxability, decimal.NewFromInt(shapeSubtotal))
+	inv.TotalDiscount = decimal.NewFromInt(shapeDiscount)
+	return inv
+}
+
+// Inclusive tax is recovered from subtotal and only reported; exclusive tax runs on net and is
+// the only thing that moves the total.
+func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_TaxableCustomer() {
+	want := map[string]struct{ inclusive, exclusive, total, totalTax string }{
+		"no tax":            {"0", "0", "900", "0"},
+		"one inclusive":     {"81.82", "0", "900", "81.82"},
+		"one exclusive":     {"0", "162", "1062", "162"},
+		"one of each":       {"81.82", "147.27", "1047.27", "229.09"},
+		"several inclusive": {"110.53", "0", "900", "110.53"},
+		"several exclusive": {"0", "90", "990", "90"},
+		"several of each":   {"110.53", "78.95", "978.95", "189.48"},
 	}
 
-	for _, tt := range tests {
-		s.Run(tt.name, func() {
-			inv := s.invoiceFor(types.TaxabilityTaxable, decimal.NewFromInt(tt.subtotal))
-			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv, &dto.InvoiceTaxRates{Rates: tt.rates})
+	for _, shape := range taxShapes() {
+		s.Run(shape.name, func() {
+			exp := want[shape.name]
+			inv := s.shapeInvoice(types.TaxabilityTaxable)
+
+			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv,
+				&dto.InvoiceTaxRates{Rates: shape.rates(s)})
 			applyTaxResultToInvoice(inv, result)
 
-			s.True(decimal.RequireFromString(tt.wantInclusive).Equal(result.InclusiveTax), "inclusive_tax got %s", result.InclusiveTax)
-			s.True(decimal.RequireFromString(tt.wantExclusive).Equal(result.ExclusiveTax), "exclusive_tax got %s", result.ExclusiveTax)
-			s.True(decimal.RequireFromString(tt.wantTotal).Equal(inv.Total), "total got %s", inv.Total)
-			s.True(decimal.RequireFromString(tt.wantTotalTax).Equal(inv.TotalTax), "total_tax got %s", inv.TotalTax)
+			s.True(decimal.RequireFromString(exp.inclusive).Equal(result.InclusiveTax), "inclusive_tax got %s", result.InclusiveTax)
+			s.True(decimal.RequireFromString(exp.exclusive).Equal(result.ExclusiveTax), "exclusive_tax got %s", result.ExclusiveTax)
+			s.True(decimal.RequireFromString(exp.total).Equal(inv.Total), "total got %s", inv.Total)
+			s.True(decimal.RequireFromString(exp.totalTax).Equal(inv.TotalTax), "total_tax got %s", inv.TotalTax)
 			s.False(result.Exempt)
-			s.Nil(inv.TaxExemptionReasonCode, "tax was charged, so reason_code must be null")
 		})
 	}
 }
 
-// The same three shapes for an exempt customer. The gross amounts are still computed —
-// exemption is a single override at the end, not a branch inside the calculation — but nothing
-// is charged, and an inclusive portion is backed out of what they owe.
+// Nothing is charged, and the inclusive portion comes back out of what is owed. The gross
+// amounts are still computed: exemption is one override at the end, not a branch in the maths.
 func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_ExemptCustomer() {
+	want := map[string]struct{ inclusive, total string }{
+		"no tax":            {"0", "900"},
+		"one inclusive":     {"81.82", "818.18"},
+		"one exclusive":     {"0", "900"},
+		"one of each":       {"81.82", "818.18"},
+		"several inclusive": {"110.53", "789.47"},
+		"several exclusive": {"0", "900"},
+		"several of each":   {"110.53", "789.47"},
+	}
+
+	for _, shape := range taxShapes() {
+		s.Run(shape.name, func() {
+			exp := want[shape.name]
+			inv := s.shapeInvoice(types.TaxabilityExempt)
+
+			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv,
+				&dto.InvoiceTaxRates{Exempt: true, Rates: shape.rates(s)})
+			applyTaxResultToInvoice(inv, result)
+
+			s.True(result.Exempt)
+			s.True(decimal.RequireFromString(exp.inclusive).Equal(result.InclusiveTax),
+				"inclusive_tax is still computed when exempt, got %s", result.InclusiveTax)
+			s.True(result.TotalTaxAmount.IsZero(), "charged %s", result.TotalTaxAmount)
+			s.True(decimal.RequireFromString(exp.total).Equal(inv.Total), "total got %s", inv.Total)
+			s.Require().NotNil(inv.TaxExemptionReasonCode)
+			s.Equal(types.TaxExemptionReasonCustomerExempt, *inv.TaxExemptionReasonCode)
+		})
+	}
+}
+
+// Discounting a tax-inclusive price reduces the tax inside it, because the tax rate has to stay
+// correct against what the customer actually pays. Stripe: "we recalculate taxes based on the
+// remaining amount. This reduction has the side effect of reducing the tax amount due."
+//
+// Their illustration: a 5.00 item at 5% inclusive with a 10% discount is taxed 0.21, not 0.24.
+func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_DiscountReducesInclusiveTax() {
 	tests := []struct {
-		name          string
-		subtotal      int64
-		rates         []*dto.TaxRateWithBehavior
-		wantInclusive string
-		wantTotal     string
-		why           string
+		name      string
+		subtotal  string
+		discount  string
+		wantTax   string
+		wantTotal string
 	}{
-		{
-			name: "exclusive only — total equals the taxable amount", subtotal: 100,
-			rates:         []*dto.TaxRateWithBehavior{s.rate("vat", 10, types.TaxBehaviorExclusive)},
-			wantInclusive: "0", wantTotal: "100",
-			why: "nothing was ever inside the price to back out",
-		},
-		{
-			name: "inclusive only — total drops below the taxable amount", subtotal: 100,
-			rates:         []*dto.TaxRateWithBehavior{s.rate("gst", 10, types.TaxBehaviorInclusive)},
-			wantInclusive: "9.09", wantTotal: "90.91",
-			why: "an inclusive price states tax is baked in; if it is not owed it should not be collected",
-		},
-		{
-			name: "mixed — only the inclusive portion comes out", subtotal: 1000,
-			rates: []*dto.TaxRateWithBehavior{
-				s.rate("gst", 10, types.TaxBehaviorInclusive),
-				s.rate("vat", 18, types.TaxBehaviorExclusive),
-			},
-			wantInclusive: "90.91", wantTotal: "909.09",
-			why: "the exclusive portion was never in the total to begin with, it is simply not added",
-		},
+		{"undiscounted", "5.00", "0", "0.24", "5.00"},
+		{"10% discount", "5.00", "0.50", "0.21", "4.50"},
 	}
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			inv := s.invoiceFor(types.TaxabilityExempt, decimal.NewFromInt(tt.subtotal))
-			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv, &dto.InvoiceTaxRates{Exempt: true, Rates: tt.rates})
+			inv := s.invoiceFor(types.TaxabilityTaxable, decimal.RequireFromString(tt.subtotal))
+			inv.TotalDiscount = decimal.RequireFromString(tt.discount)
+
+			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv,
+				&dto.InvoiceTaxRates{Rates: []*dto.TaxRateWithBehavior{s.rate("gst", 5, types.TaxBehaviorInclusive)}})
 			applyTaxResultToInvoice(inv, result)
 
-			s.True(result.Exempt, "the result must carry the exemption forward")
-			s.True(decimal.RequireFromString(tt.wantInclusive).Equal(result.InclusiveTax),
-				"inclusive_tax is still computed for an exempt customer, got %s", result.InclusiveTax)
-			s.True(result.TotalTaxAmount.IsZero(), "an exempt customer is charged zero, got %s", result.TotalTaxAmount)
-			s.True(decimal.RequireFromString(tt.wantTotal).Equal(inv.Total), "total got %s. %s", inv.Total, tt.why)
-			s.Require().NotNil(inv.TaxExemptionReasonCode)
-			s.Equal(types.TaxExemptionReasonCustomerExempt, *inv.TaxExemptionReasonCode)
+			s.True(decimal.RequireFromString(tt.wantTax).Equal(result.InclusiveTax), "inclusive tax, got %s", result.InclusiveTax)
+			s.True(decimal.RequireFromString(tt.wantTotal).Equal(inv.Total),
+				"an inclusive rate never moves the total off the discounted amount, got %s", inv.Total)
 		})
+	}
+}
+
+// Stripe's exempt/reverse table: for an inclusive rate the customer pays the price minus the tax
+// that would have been due; for an exclusive rate they pay the price unchanged.
+// 10% on 100 -> 90.91 inclusive, 100 exclusive.
+func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_MatchesStripeExemptTable() {
+	tests := []struct {
+		behavior  types.TaxBehavior
+		wantTotal string
+	}{
+		{types.TaxBehaviorInclusive, "90.91"},
+		{types.TaxBehaviorExclusive, "100"},
+	}
+
+	for _, tt := range tests {
+		s.Run(string(tt.behavior), func() {
+			inv := s.invoiceFor(types.TaxabilityExempt, decimal.NewFromInt(100))
+
+			result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv, &dto.InvoiceTaxRates{
+				Exempt: true,
+				Rates:  []*dto.TaxRateWithBehavior{s.rate("tax", 10, tt.behavior)},
+			})
+			applyTaxResultToInvoice(inv, result)
+
+			s.True(result.TotalTaxAmount.IsZero(), "tax due must be zero, got %s", result.TotalTaxAmount)
+			s.True(decimal.RequireFromString(tt.wantTotal).Equal(inv.Total), "total, got %s", inv.Total)
+		})
+	}
+}
+
+// Stripe's own worked example for inclusive + exclusive + discount, at invoice level:
+// 15.00 subtotal, 10%% discount, 5%% inclusive, 7%% exclusive.
+// https://docs.stripe.com/tax/tax-rates#both-inclusive-and-exclusive-tax-with-discount-example
+func (s *TaxCalculationSuite) TestCalculateTaxesOnInvoice_MatchesStripeWorkedExample() {
+	inv := s.invoiceFor(types.TaxabilityTaxable, decimal.RequireFromString("15.00"))
+	inv.TotalDiscount = decimal.RequireFromString("1.50")
+
+	result := s.svc.CalculateTaxesOnInvoice(s.GetContext(), inv, &dto.InvoiceTaxRates{
+		Rates: []*dto.TaxRateWithBehavior{
+			s.rate("gst", 5, types.TaxBehaviorInclusive),
+			s.rate("vat", 7, types.TaxBehaviorExclusive),
+		},
+	})
+	applyTaxResultToInvoice(inv, result)
+
+	s.True(decimal.RequireFromString("0.64").Equal(result.InclusiveTax), "inclusive tax, got %s", result.InclusiveTax)
+	s.True(decimal.RequireFromString("0.90").Equal(result.ExclusiveTax), "exclusive tax, got %s", result.ExclusiveTax)
+	s.True(decimal.RequireFromString("14.40").Equal(inv.Total), "total, got %s", inv.Total)
+
+	// "Post Discount, Less Incl. Tax" — the base the exclusive rate ran against.
+	for _, line := range result.TaxAppliedRecords {
+		if line.TaxBehavior == types.TaxBehaviorExclusive {
+			s.True(decimal.RequireFromString("12.86").Equal(line.TaxableAmount),
+				"exclusive base, got %s", line.TaxableAmount)
+		}
 	}
 }
 
