@@ -2133,9 +2133,7 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 	taxSvc := NewTaxService(s.ServiceParams)
 	rates, err := taxSvc.PrepareTaxRatesForInvoice(ctx, req)
 	if err != nil {
-		// PrepareTaxRatesForInvoice returns a nil error when nothing is configured —
-		// anything reaching this branch is a genuine failure (bad customer_id, a repo error),
-		// not a routine skip, so this is logged as a failure rather than swallowed quietly.
+		// Nothing-configured returns a nil error, so anything here is a real failure.
 		s.Logger.Error(ctx, "could not resolve tax rates for invoice preview; quoting untaxed",
 			"error", err, "customer_id", req.CustomerID)
 		return dto.NewInvoiceResponse(inv), nil
@@ -3710,9 +3708,8 @@ func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.I
 		prepared, err := taxService.PrepareTaxRatesForInvoice(ctx, dto.CreateInvoiceRequest{
 			SubscriptionID: inv.SubscriptionID,
 			CustomerID:     inv.CustomerID,
-			// Currency is what an unstamped association's behavior defaults from —
-			// omitting it resolves every such association against an empty currency, which
-			// is not in the exclusive list and so silently defaults them all to inclusive.
+			// An unstamped association defaults its behavior from this. Omit it and they all
+			// resolve against an empty currency, which silently means inclusive.
 			Currency: inv.Currency,
 		})
 		if err != nil {
@@ -3725,8 +3722,7 @@ func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.I
 		taxRates = prepared
 	}
 
-	// ApplyTaxesOnInvoice handles a nil/empty taxRates correctly on its own — no rates
-	// reduces to zero tax and states why via TaxExemptionReasonCode.
+	// A nil/empty taxRates is handled by the same path: zero tax, with the reason recorded.
 	taxResult, err := taxService.ApplyTaxesOnInvoice(ctx, inv, taxRates)
 	if err != nil {
 		return err
@@ -3736,21 +3732,18 @@ func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.I
 	return nil
 }
 
-// applyTaxResultToInvoice applies a TaxCalculationResult to an invoice's totals and exemption
-// reason. Shared by every path that computes tax on an invoice, persisted or preview alike,
-// so the total formula and the exemption-reason rule live in exactly one place.
+// applyTaxResultToInvoice writes a result onto an invoice's totals and exemption reason.
+// Shared by the persisted and preview paths so the formula lives in one place.
 func applyTaxResultToInvoice(inv *invoice.Invoice, result *TaxCalculationResult) {
 	inv.TotalTax = result.TotalTaxAmount
 
 	inv.Total = inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount)
 	if result.Exempt {
-		// An exempt customer pays neither the tax added on top nor the tax baked into
-		// the listed price, so the inclusive portion comes back out of what they owe.
+		// An exempt customer pays neither kind, so the tax baked into the price comes back out.
 		inv.Total = inv.Total.Sub(result.InclusiveTax)
 	} else {
-		// Inclusive tax is already inside subtotal — it is reverse-engineered only to report
-		// how much of the price was tax, never added back. Only exclusive tax moves
-		// the total, exactly as it did before inclusive tax existed.
+		// Inclusive tax is already inside subtotal and only reported, never added back. Only
+		// exclusive tax moves the total.
 		inv.Total = inv.Total.Add(result.ExclusiveTax)
 	}
 

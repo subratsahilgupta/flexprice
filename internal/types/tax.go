@@ -81,6 +81,18 @@ func (r TaxExemptionReasonCode) DisplayLabel() string {
 	}
 }
 
+// TaxBehaviorSource records how a subscription-level association's tax_behavior was decided.
+// Diagnostic only — it is logged at resolution, never stored.
+type TaxBehaviorSource string
+
+const (
+	// TaxBehaviorSourceExplicit means the request stated the behavior.
+	TaxBehaviorSourceExplicit TaxBehaviorSource = "explicit"
+	// TaxBehaviorSourceCurrencyDefault means the request said nothing and the behavior came
+	// from the subscription currency.
+	TaxBehaviorSourceCurrencyDefault TaxBehaviorSource = "currency_default"
+)
+
 // ExclusiveTaxCurrencies lists currencies whose default tax behavior is exclusive when
 // an association is created without an explicit behavior. Everything else defaults to
 // inclusive. Compiled-in convention — no UI, no API, no per-tenant override.

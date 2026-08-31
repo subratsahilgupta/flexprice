@@ -1200,9 +1200,9 @@ func (r *InvoiceResponse) WithCustomer(customer *CustomerResponse) *InvoiceRespo
 	return r
 }
 
-// WithTaxes adds tax applied records to the invoice response and derives TaxSummary from
-// them plus the already-set TaxExemptionReasonCode — inclusive_tax/exclusive_tax are
-// not persisted columns, only recoverable by summing the loaded tax rows by behavior.
+// WithTaxes sets the tax rows and derives TaxSummary from them plus the already-set
+// TaxExemptionReasonCode. inclusive_tax/exclusive_tax are not columns — they only exist by
+// summing the rows by behavior.
 func (r *InvoiceResponse) WithTaxes(taxes []*TaxAppliedResponse) *InvoiceResponse {
 	r.Taxes = taxes
 	r.TaxSummary = buildTaxSummary(taxes, r.TaxExemptionReasonCode)
@@ -1556,8 +1556,7 @@ type TaxExemptionSummary struct {
 }
 
 func buildTaxSummary(taxes []*TaxAppliedResponse, reasonCode *types.TaxExemptionReasonCode) *TaxSummary {
-	// A reason code is set only when no tax was charged, so the totals are zero by
-	// definition — state why instead of restating three zeroes.
+	// A reason code means nothing was charged, so the totals are zero by definition.
 	if reasonCode != nil {
 		return &TaxSummary{
 			Exemption: &TaxExemptionSummary{

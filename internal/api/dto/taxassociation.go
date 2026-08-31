@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	taxassociation "github.com/flexprice/flexprice/internal/domain/taxassociation"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -182,6 +183,16 @@ type TaxRateWithBehavior struct {
 type InvoiceTaxRates struct {
 	Rates  []*TaxRateWithBehavior `json:"rates,omitempty"`
 	Exempt bool                   `json:"exempt"`
+}
+
+// NewInvoiceTaxRates pairs resolved rates with the customer they will be billed to, so invoice
+// computation gets both together. cust must be read fresh for this invoice: taxability is never
+// cached, so an invoice reflects the exemption status at the time it was generated.
+func NewInvoiceTaxRates(rates []*TaxRateWithBehavior, cust *customer.Customer) *InvoiceTaxRates {
+	return &InvoiceTaxRates{
+		Rates:  rates,
+		Exempt: cust != nil && cust.Taxability == types.TaxabilityExempt,
+	}
 }
 
 func (t *InvoiceTaxRates) GetRates() []*TaxRateWithBehavior {

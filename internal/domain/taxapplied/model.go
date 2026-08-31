@@ -36,7 +36,7 @@ func FromEnt(ent *ent.TaxApplied) *TaxApplied {
 		TaxAssociationID: ent.TaxAssociationID,
 		TaxableAmount:    ent.TaxableAmount,
 		TaxAmount:        ent.TaxAmount,
-		TaxBehavior:      types.TaxBehavior(ent.TaxBehavior),
+		TaxBehavior:      ent.TaxBehavior,
 		Currency:         ent.Currency,
 		AppliedAt:        ent.AppliedAt,
 		EnvironmentID:    ent.EnvironmentID,

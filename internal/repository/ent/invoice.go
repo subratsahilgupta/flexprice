@@ -582,8 +582,6 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetTotalDiscount(inv.TotalDiscount).
 		AddVersion(1) // Increment version atomically
 
-	// Set-or-clear rather than SetNillable: nil means tax was actually charged, so a recompute
-	// that goes from untaxed to taxed has to wipe the stale reason, not leave it behind.
 	if inv.TaxExemptionReasonCode != nil {
 		query.SetTaxExemptionReasonCode(*inv.TaxExemptionReasonCode)
 	} else {

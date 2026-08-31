@@ -54,7 +54,7 @@ func FromEnt(ent *ent.TaxAssociation) *TaxAssociation {
 		Metadata:      ent.Metadata,
 		StartDate:     lo.FromPtrOr(ent.StartDate, time.Now().UTC()),
 		EndDate:       ent.EndDate,
-		TaxBehavior:   (*types.TaxBehavior)(ent.TaxBehavior),
+		TaxBehavior:   ent.TaxBehavior,
 		BaseModel: types.BaseModel{
 			TenantID:  ent.TenantID,
 			Status:    types.Status(ent.Status),

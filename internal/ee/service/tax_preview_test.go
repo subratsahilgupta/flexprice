@@ -39,7 +39,7 @@ func pctDec(id string, value string, behavior types.TaxBehavior) taxRateLine {
 
 // amountByRateID indexes a breakdown's lines so assertions can name a rate instead of
 // depending on the order lines happen to come back in.
-func amountByRateID(b taxCalculationBreakdown) map[string]decimal.Decimal {
+func amountByRateID(b *taxCalculationBreakdown) map[string]decimal.Decimal {
 	out := make(map[string]decimal.Decimal, len(b.lines))
 	for _, l := range b.lines {
 		out[l.rateID] = l.taxAmount
@@ -264,7 +264,7 @@ func TestCalculateTaxBreakdown_LineTaxableAmountsShowTheCascade(t *testing.T) {
 		pct("vat", 18, types.TaxBehaviorExclusive),
 	}, "usd")
 
-	byID := make(map[string]taxLineResult, len(got.lines))
+	byID := make(map[string]*taxLineResult, len(got.lines))
 	for _, l := range got.lines {
 		byID[l.rateID] = l
 	}
