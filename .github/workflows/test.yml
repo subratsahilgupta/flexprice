@@ -25,7 +25,14 @@ jobs:
 
       - name: Run Tests
         run: |
-          make test
+          make test-coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   lint:
     name: Run Loglint
