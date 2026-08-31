@@ -39,7 +39,7 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
-  # Job 1: Build the Docker image and push it to ECR
+  # Job 1: Build the Docker image and push it to GHCR
   # Skipped on dry-run dispatches (no code change, no reason to rebuild)
   # ──────────────────────────────────────────────────────────────────────────
   build:
@@ -58,15 +58,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-cicd
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
       - name: Login to GitHub Container Registry
         # Best-effort on non-main branches; REQUIRED on main — GCP prod deploys off
         # the GHCR :<sha> this pushes (promoted to :main post-approval), so a GHCR
@@ -81,17 +72,12 @@ jobs:
       - name: Prepare image tags
         id: image-tag
         env:
-          ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
-          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
           IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          echo "ecr_tag=${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
-          # legacy output used by deploy jobs
-          echo "tag=${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
-
+          IS_DEVELOP="${{ github.ref_name == 'develop' }}"
           IS_MAIN="${{ github.ref_name == 'main' }}"
           IS_DEVELOP="${{ github.ref_name == 'develop' }}"
 
@@ -118,27 +104,8 @@ jobs:
             echo "platforms=linux/arm64" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build & push image to ECR
-        id: build-ecr
+      - name: Build & push image to GHCR
         uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile
-          platforms: ${{ steps.image-tag.outputs.platforms }}
-          push: true
-          tags: ${{ steps.image-tag.outputs.ecr_tag }}
-          provenance: false
-          # Shared layer cache in GHCR (both AWS + GCP self-hosted runners reach it).
-          # First build of a commit populates it; rebuilds and the GHCR step below hit it.
-          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
-
-      - name: Push image to GHCR
-        uses: docker/build-push-action@v7
-        # Best-effort on non-main branches; REQUIRED on main — GCP prod deploys off
-        # the GHCR :<sha> this pushes (promoted to :main post-approval), so a GHCR
-        # failure on main must fail the build, not slip through silently.
-        continue-on-error: ${{ github.ref_name != 'main' }}
         with:
           context: .
           file: Dockerfile
@@ -146,17 +113,15 @@ jobs:
           push: true
           tags: ${{ steps.image-tag.outputs.ghcr_tags }}
           provenance: false
-          # Reuses the cache the ECR build just populated -> all layers hit, no rebuild.
+          # Shared layer cache in GHCR (both AWS + GCP self-hosted runners reach it).
           cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
 
       - name: Set image output
         id: set-image
         env:
           GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
           GITHUB_SHA: ${{ github.sha }}
-        # ECS now deploys the GHCR image (same immutable :<sha> the build job pushed
-        # to GHCR alongside ECR). ECR is still pushed for cache/rollback; the deploy
-        # target is GHCR. The composite action injects repositoryCredentials for it.
         run: echo "image=${GHCR_IMAGE}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -342,7 +307,7 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.api_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
 
