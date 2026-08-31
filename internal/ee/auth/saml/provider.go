@@ -106,6 +106,10 @@ func (p *samlProvider) AssignUserToTenant(ctx context.Context, userID, tenantID 
 	return nil
 }
 
+func (p *samlProvider) RemoveUser(ctx context.Context, userID string) error {
+	return p.tokens.RemoveUser(ctx, userID)
+}
+
 // The remaining methods are identity-provider agnostic and delegate unchanged.
 
 func (p *samlProvider) ValidateToken(ctx context.Context, token string) (*domainauth.Claims, error) {

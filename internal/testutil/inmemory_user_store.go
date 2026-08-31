@@ -131,6 +131,10 @@ func (r *InMemoryUserStore) ListByFilter(ctx context.Context, filter *types.User
 			continue
 		}
 
+		if u.Status != types.StatusPublished {
+			continue
+		}
+
 		// Filter by type if specified
 		if filter.Type != nil && u.Type != *filter.Type {
 			continue

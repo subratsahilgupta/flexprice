@@ -33,6 +33,7 @@ const (
 	SettingKeyPaymentMandateLimits        SettingKey = "payment_mandate_limits"
 	SettingKeyDraftInvoiceRecomputeConfig SettingKey = "draft_invoice_recompute_config"
 	SettingKeySAMLConfig                  SettingKey = "saml_config"
+	SettingKeyWalletTopupConfig           SettingKey = "wallet_topup_config"
 )
 
 func (s *SettingKey) Validate() error {
@@ -52,6 +53,7 @@ func (s *SettingKey) Validate() error {
 		SettingKeyPaymentMandateLimits,
 		SettingKeyDraftInvoiceRecomputeConfig,
 		SettingKeySAMLConfig,
+		SettingKeyWalletTopupConfig,
 	}
 
 	if !lo.Contains(allowedKeys, *s) {
@@ -511,6 +513,23 @@ func (c DraftInvoiceRecomputeConfig) Validate() error {
 	return nil
 }
 
+// WalletTopupConfig holds guard rails for wallet top-up operations.
+type WalletTopupConfig struct {
+	// FreeCreditLimitPerTransaction is the maximum currency amount allowed for a single
+	// FREE_CREDIT_GRANT transaction. Zero means no limit is enforced.
+	FreeCreditLimitPerTransaction decimal.Decimal `json:"free_credit_limit_per_transaction" swaggertype:"string"`
+}
+
+// Validate implements SettingConfig.
+func (c WalletTopupConfig) Validate() error {
+	if c.FreeCreditLimitPerTransaction.IsNegative() {
+		return ierr.NewError("free_credit_limit_per_transaction cannot be negative").
+			WithHint("Set to zero to disable the limit, or provide a positive value").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
 // GetDefaultSettings returns the default settings configuration for all setting keys
 // Uses typed structs and converts them to maps using ToMap utility from conversion.go
 func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
@@ -693,6 +712,14 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 		return nil, err
 	}
 
+	defaultWalletTopupConfig := WalletTopupConfig{
+		FreeCreditLimitPerTransaction: decimal.Zero,
+	}
+	defaultWalletTopupConfigMap, err := utils.ToMap(defaultWalletTopupConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	return map[SettingKey]DefaultSettingValue{
 		SettingKeyInvoiceConfig: {
 			Key:          SettingKeyInvoiceConfig,
@@ -774,6 +801,11 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 			Key:          SettingKeyDraftInvoiceRecomputeConfig,
 			DefaultValue: defaultDraftInvoiceRecomputeConfigMap,
 			Description:  "Gates the daily draft-and-compute job: when enabled, every active subscription's current-period draft invoice is created if missing and recomputed once per day (never finalized)",
+		},
+		SettingKeyWalletTopupConfig: {
+			Key:          SettingKeyWalletTopupConfig,
+			DefaultValue: defaultWalletTopupConfigMap,
+			Description:  "Guard rails for wallet top-up operations (e.g. free credit limit per transaction)",
 		},
 	}, nil
 }
@@ -907,6 +939,13 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 		// rules that matter (certificate parses, identity provider is https,
 		// role is one a user may actually hold) live in the SAML package.
 		return validateSAMLConfig(value)
+
+	case SettingKeyWalletTopupConfig:
+		config, err := utils.ToStruct[WalletTopupConfig](value)
+		if err != nil {
+			return err
+		}
+		return config.Validate()
 
 	default:
 		return ierr.NewErrorf("unknown setting key: %s", key).

@@ -72,6 +72,13 @@ type Configuration struct {
 	Whop                   WhopConfig                   `mapstructure:"whop" validate:"omitempty"`
 	Onboarding             OnboardingConfig             `mapstructure:"onboarding" validate:"omitempty"`
 	ChatSupport            ChatSupportConfig            `mapstructure:"chat_support" validate:"omitempty"`
+	Analytics              AnalyticsConfig              `mapstructure:"analytics" validate:"omitempty"`
+}
+
+// AnalyticsConfig gates the fire-and-forget analytics meter_usage feed.
+type AnalyticsConfig struct {
+	Enabled             bool   `mapstructure:"enabled" default:"false"`
+	MeterUsageSinkTopic string `mapstructure:"meter_usage_sink_topic"`
 }
 
 type ChatSupportConfig struct {

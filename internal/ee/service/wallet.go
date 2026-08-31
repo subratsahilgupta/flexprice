@@ -503,7 +503,7 @@ func (s *walletService) loadUsersForExpansion(ctx context.Context, expand types.
 	}
 
 	// Fetch users in bulk
-	userService := NewUserService(s.UserRepo, s.TenantRepo, nil, nil, nil, nil, nil, nil, nil, nil, s.Logger)
+	userService := NewUserService(s.UserRepo, s.TenantRepo, s.AuthRepo, s.SecretRepo, s.EnvironmentRepo, s.DB, s.Config, nil, nil, s.Logger)
 	userFilter := &types.UserFilter{
 		QueryFilter: types.NewNoLimitQueryFilter(),
 		UserIDs:     userIDs,
@@ -586,6 +586,27 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		return nil, ierr.WithError(err).
 			WithHint("Invalid top up wallet request").
 			Mark(ierr.ErrValidation)
+	}
+
+	if req.TransactionReason == types.TransactionReasonFreeCredit {
+		settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+		topupCfg, err := GetSetting[types.WalletTopupConfig](settingsSvc, ctx, types.SettingKeyWalletTopupConfig)
+		if err != nil {
+			return nil, err
+		}
+		if topupCfg.FreeCreditLimitPerTransaction.IsPositive() {
+			// currency amount = credits * topup_conversion_rate
+			txAmountInCurrency := req.CreditsToAdd.Mul(w.TopupConversionRate)
+			if txAmountInCurrency.GreaterThan(topupCfg.FreeCreditLimitPerTransaction) {
+				return nil, ierr.NewError("free credit amount exceeds the per-transaction limit").
+					WithHint("Reduce the credit amount to stay within the configured limit").
+					WithReportableDetails(map[string]interface{}{
+						"requested_amount": txAmountInCurrency,
+						"limit":            topupCfg.FreeCreditLimitPerTransaction,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
 	}
 
 	// Resolve bonus credits from the tenant's slab config when the caller didn't pass an

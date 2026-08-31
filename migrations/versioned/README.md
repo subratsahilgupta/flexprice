@@ -3,14 +3,84 @@
 Every schema change ships as a reviewed SQL file. `dbmate` applies what a database
 has not seen yet and records it in `schema_migrations`.
 
-This replaces Ent AutoMigrate as the deploy mechanism. Ent stays as the *source of
-truth* for the schema and as the CI oracle — it is no longer what runs against a
-production database.
+This replaces Ent AutoMigrate as the deploy mechanism. Ent stays the *source of
+truth* for the schema and the CI oracle; it no longer runs against a real database.
 
 ```text
-migrations/versioned/postgres/     dbmate, ledger `schema_migrations`
-migrations/versioned/clickhouse/   dbmate, one statement per file
-scripts/migrations/                adoption + the CI gates
+migrations/versioned/postgres/   the timeline, baseline first
+scripts/migrations/              adoption + the CI gates
+```
+
+## Two kinds of database
+
+**A new one** gets the whole timeline. `20260819000000_baseline.sql` builds the
+schema, then everything after it applies. Nothing special to run.
+
+**An existing one is adopted** — its versions are recorded and nothing executes:
+
+```bash
+make migrate-adopt url="postgres://..." dry=1   # print the plan, write nothing
+make migrate-adopt url="postgres://..."         # record everything written so far
+```
+
+Run the dry pass first. This is done by hand, once per deployment and per client,
+against production.
+
+Only migrations added *after* that point ever run there. That is deliberate: the
+existing files describe history each deployment already lived through by its own
+route. India prod grew under AutoMigrate, GCP staging was DMS-migrated from AWS into
+AlloyDB and then diverged — measured on 2026-08-26, by 610 catalog lines. Replaying
+that history would be wrong, and `20260825000400` would drop a live uniqueness index
+on staging.
+
+**Forgetting to adopt is safe.** The baseline is the first migration, so it hits
+`CREATE TABLE` on a table that already exists and stops with nothing recorded —
+rather than applying later migrations to a schema nobody checked.
+
+Once every current deployment is adopted, adoption is only needed for a database
+that predates all this. New ones take the normal path.
+
+## The rule for everything after the baseline
+
+Migrations run on deployments you cannot inspect, so **do not assume a starting
+state**. Guard on `to_regclass(...)` before touching a table, prefer matching
+indexes on shape over Ent-derived names, and make re-running a no-op.
+
+The `20260825000100`–`000400` entitlements migrations predate this rule and assume
+India prod's layout. They are applied there by hand.
+
+## How it runs on a deployment
+
+Nobody applies migrations by hand. Both deploy paths run the same command,
+`./migrate postgres up`, from the image being deployed — so the migrations that
+run are always the ones that shipped with the code.
+
+**Kubernetes / Helm** (GCP, and every client running the chart). The migration
+Job is a `pre-install,pre-upgrade` hook, so it completes before any pod rolls.
+Step 7 of that Job is `run-postgres-migrations`, gated on
+`migration.steps.dbmate`. A client who will not allow a migration Job sets
+`migration.enabled: false` and runs the same command themselves.
+
+**AWS / ECS.** The `migrate` job in `.github/workflows/deploy.yml` runs one
+task per target before the canary and before the production rollout, built from
+the API service's own task definition so it inherits the same secrets, role,
+subnets and security groups the application uses. A non-zero exit blocks every
+deploy job.
+
+Migrations therefore land **before** the new code, and on ECS before the
+production approval gate. That only works because migrations are additive by the
+rule above: the running old code keeps working against the migrated schema, and
+a rejected approval leaves a schema the old image still serves.
+
+The Job prints `--status` before applying, so the log says what was pending even
+when a migration then fails. dbmate commits one file at a time, so a failed run
+leaves the database at a known prefix of the timeline — never a half-applied
+file.
+
+To see what a database would receive without touching it:
+
+```bash
+./migrate postgres up --status
 ```
 
 ## Everyday change
@@ -26,9 +96,15 @@ make migrate-generate name=add_currency_to_invoices
 make migrate-check
 ```
 
-`migrate-generate` builds a throwaway database from the committed migrations, asks
-Ent what is still missing, and writes that DDL into a new dbmate file. You do not
-write SQL from scratch. If nothing is missing it says so and writes nothing.
+`migrate-generate` builds a throwaway database the way a fresh install is built,
+asks Ent what is still missing, and writes that DDL into a new dbmate file. You do
+not write SQL from scratch. If nothing is missing it says so and writes nothing.
+
+Columns and tables come out with `IF NOT EXISTS` already applied — deployments hold
+different schemas, so a migration may meet something that already exists. Index
+creation deliberately does not: the draft is meant to gain `CONCURRENTLY` by hand,
+and `IF NOT EXISTS` on a concurrent build silently skips an INVALID index left by an
+earlier failure.
 
 **The draft is not the answer.** It has no `CONCURRENTLY`, no lane placement, and a
 `TODO` where the down block goes. Editing it is the review step, and it is where the
@@ -75,8 +151,17 @@ bodies outright. Enforced by `make migrate-check-clickhouse`.
 Records the baseline as applied and executes nothing.
 
 ```bash
-make migrate-adopt url="postgres://..." version=20260819000000
+make migrate-adopt url="postgres://..."          # adopts at head
 ```
+
+**Head is the normal choice for an existing deployment.** Everything already
+written is recorded as applied and nothing runs, so only migrations added *after*
+this point ever execute there. The existing files describe history each deployment
+already lived through by its own route — replaying them would be wrong, and on GCP
+staging `20260825000400` would drop a live uniqueness index.
+
+Pass `version=<timestamp>` only when a deployment genuinely needs some of the
+existing set applied.
 
 Adoption records a **claim** that the database already contains everything those
 migrations would have created. Nothing verifies it afterwards, and if the claim is
@@ -119,23 +204,20 @@ a failed connection still exits 0 and hashes the empty string —
 means recording it deliberately:
 
 ```bash
-./scripts/migrations/checksum-check.sh migrations/versioned migrations/versioned/.hashes --update
-git add migrations/versioned/.hashes
+./scripts/migrations/checksum-check.sh --update
+git add migrations/.hashes
 ```
 
-The sync check builds two throwaway databases — one from migrations alone, one from
-migrations plus Ent — and compares schema fingerprints. It compares **end states,
+The sync check builds two throwaway databases the way a fresh install is built —
+baseline, then migrations — and applies Ent to one of them, then compares schema
+fingerprints. It compares **end states,
 not proposed statements**, because Ent emits permanent noise for any index predicate
 whose spelling differs from Postgres' canonical form. "Is the diff empty?" can never
 be a pass/fail test; "do the two schemas match?" can.
 
-It needs a scratch Postgres:
-
-```bash
-docker run -d --name mig-pg -e POSTGRES_USER=flexprice \
-  -e POSTGRES_PASSWORD=flexprice123 -e POSTGRES_DB=postgres \
-  -p 5440:5432 postgres:16
-```
+It builds throwaway databases on your local Postgres — the one
+`docker compose up -d postgres` provides on `:5432`. Point it elsewhere with
+`PGHOST_` / `PGPORT_`.
 
 ## Orphaned indexes — a known, unsolved gap
 

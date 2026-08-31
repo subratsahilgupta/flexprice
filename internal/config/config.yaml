@@ -37,6 +37,12 @@ auth:
         name: "Local Dev API Key"
         is_active: true
 
+# Fire-and-forget analytics meter_usage feed to Kafka after ClickHouse write.
+analytics:
+  enabled: false # FLEXPRICE_ANALYTICS_ENABLED
+  # FLEXPRICE_ANALYTICS_METER_USAGE_SINK_TOPIC. Future: .sink.backfill / .sink.lazy
+  meter_usage_sink_topic: "analytics.meter_usage.sink.realtime"
+
 kafka:
   brokers: "localhost:29092" # For local mode
   # Will be overridden by FLEXPRICE_KAFKA_BROKERS env var in Docker
@@ -99,6 +105,9 @@ kafka:
       partitions: 3
     onboarding_events:
       partitions: 3
+    # Must stay in sync with analytics.meter_usage_sink_topic above.
+    "analytics.meter_usage.sink.realtime":
+      partitions: 6
 
 # Optional SECOND Kafka cluster for the AWS→GCP migration (GCP-CUTOVER-STEPWISE.md).
 # `kafka` above = this deployment's own/local cluster (consumed AND always written).

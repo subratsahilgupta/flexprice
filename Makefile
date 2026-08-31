@@ -258,9 +258,11 @@ migrate-generate:
 
 .PHONY: migrate-adopt
 migrate-adopt:
-	@test -n "$(url)" -a -n "$(version)" || \
-	  (echo "usage: make migrate-adopt url=postgres://... version=20260819000000"; exit 1)
-	@./scripts/migrations/adopt.sh "$(url)" $(MIGRATIONS_PG) $(version)
+	@test -n "$(url)" || \
+	  (echo "usage: make migrate-adopt url=postgres://... [version=head] [dry=1] [reference=postgres://...]"; exit 1)
+	@./scripts/migrations/adopt.sh "$(url)" $(MIGRATIONS_PG) $(or $(version),head) \
+	  $(if $(reference),--reference "$(reference)",) \
+	  $(if $(dry),--dry-run,)
 
 .PHONY: migrate-fingerprint
 migrate-fingerprint:
@@ -280,7 +282,7 @@ migrate-check-sync:
 
 .PHONY: migrate-check-checksum
 migrate-check-checksum:
-	@./scripts/migrations/checksum-check.sh migrations/versioned
+	@./scripts/migrations/checksum-check.sh
 
 .PHONY: migrate-check-order
 migrate-check-order:

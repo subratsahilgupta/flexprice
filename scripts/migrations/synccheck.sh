@@ -15,7 +15,7 @@
 # deploy mechanism.
 set -euo pipefail
 
-PGHOST_="${PGHOST_:-localhost}"; PGPORT_="${PGPORT_:-5440}"
+PGHOST_="${PGHOST_:-localhost}"; PGPORT_="${PGPORT_:-5432}"
 PGUSER_="${PGUSER_:-flexprice}"; PGPASS_="${PGPASS_:-flexprice123}"
 DIR="${1:-migrations/versioned/postgres}"
 # Password via PGPASSWORD only — never in argv.
@@ -27,8 +27,9 @@ for db in sync_a sync_b; do
                                         -c "CREATE DATABASE $db;" >/dev/null
 done
 
-DATABASE_URL="$BASE/sync_a?sslmode=disable" dbmate --migrations-dir "$DIR" --no-dump-schema up >/dev/null
-DATABASE_URL="$BASE/sync_b?sslmode=disable" dbmate --migrations-dir "$DIR" --no-dump-schema up >/dev/null
+for db in sync_a sync_b; do
+  DATABASE_URL="$BASE/$db?sslmode=disable" dbmate --migrations-dir "$DIR" --no-dump-schema up >/dev/null
+done
 
 FLEXPRICE_POSTGRES_HOST="$PGHOST_" FLEXPRICE_POSTGRES_PORT="$PGPORT_" \
 FLEXPRICE_POSTGRES_USER="$PGUSER_" FLEXPRICE_POSTGRES_PASSWORD="$PGPASS_" \
