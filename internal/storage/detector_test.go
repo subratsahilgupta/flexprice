@@ -73,12 +73,15 @@ func TestCloudDetector_SlowResponder_BoundedByTimeout(t *testing.T) {
 
 	// Both endpoints slow: proves the single detection timeout bounds the whole
 	// sequence, not each request independently (which would allow ~2*timeout).
-	d := storage.NewCloudDetector(slowGCP.URL, slowAWS.URL, 200*time.Millisecond)
+	const timeout = 200 * time.Millisecond
+	d := storage.NewCloudDetector(slowGCP.URL, slowAWS.URL, timeout)
 
 	start := time.Now()
 	provider := d.Detect(context.Background())
 	elapsed := time.Since(start)
 
+	// Bound below 2*timeout so per-request timeouts (sequential ~2*timeout)
+	// would fail this; the margin covers scheduling jitter.
 	assert.Equal(t, storage.Provider(""), provider)
-	assert.Less(t, elapsed, 1*time.Second, "Detect should be bounded by the single configured timeout across both probes")
+	assert.Less(t, elapsed, timeout+100*time.Millisecond, "Detect should be bounded by the single configured timeout across both probes")
 }
