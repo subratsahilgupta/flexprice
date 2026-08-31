@@ -26,7 +26,6 @@ import (
 	"github.com/flexprice/flexprice/internal/pyroscope"
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/repository"
-	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/svix"
 	"github.com/flexprice/flexprice/internal/temporal"
@@ -95,9 +94,6 @@ func main() {
 
 			// RBAC
 			rbac.NewRBACService,
-
-			// storage
-			s3.NewService,
 
 			// Monitoring
 			tracing.NewService,

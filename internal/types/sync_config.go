@@ -19,8 +19,8 @@ type SyncConfig struct {
 	// CRM sync (HubSpot, Salesforce, etc.)
 	Deal  *EntitySyncConfig `json:"deal,omitempty"`
 	Quote *EntitySyncConfig `json:"quote,omitempty"`
-	// S3 connection metadata (for Flexprice-managed S3 connections)
-	S3 *S3ExportConfig `json:"s3,omitempty"`
+	// Tag stays "s3" for back-compat.
+	Storage *StorageExportConfig `json:"s3,omitempty"`
 	// AWSMarketplace connection metadata
 	AWSMarketplace *AWSMarketplaceSyncConfig `json:"aws_marketplace,omitempty"`
 	// InvoiceSyncSettings controls line-item transformation during outbound invoice sync
@@ -249,7 +249,7 @@ func DefaultSyncConfig() *SyncConfig {
 	}
 }
 
-// Validate validates the SyncConfig
+// Ent calls this without provider context; skips Region.
 func (s *SyncConfig) Validate() error {
 	if s == nil {
 		return nil
@@ -279,9 +279,8 @@ func (s *SyncConfig) Validate() error {
 		return ierr.NewError("price inbound sync is not allowed").Mark(ierr.ErrValidation)
 	}
 
-	// Validate S3 export config if present
-	if s.S3 != nil {
-		if err := s.S3.Validate(); err != nil {
+	if s.Storage != nil {
+		if err := s.Storage.Validate(); err != nil {
 			return err
 		}
 	}
@@ -306,6 +305,25 @@ func (s *SyncConfig) Validate() error {
 			return err
 		}
 		if err := s.InvoiceSyncSettings.ValidateMetadataCustomFields(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Enforces S3-only Region rule.
+func (s *SyncConfig) ValidateForProvider(providerType SecretProvider) error {
+	if s == nil {
+		return nil
+	}
+
+	if err := s.Validate(); err != nil {
+		return err
+	}
+
+	if s.Storage != nil {
+		if err := s.Storage.ValidateForProvider(providerType); err != nil {
 			return err
 		}
 	}
