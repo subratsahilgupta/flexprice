@@ -142,6 +142,35 @@ type S3ExportConfig struct {
 	IsFlexpriceManaged bool              `json:"is_flexprice_managed,omitempty"` // If true, use Flexprice-managed S3 credentials instead of user-provided
 }
 
+// Enforces S3-only Region rule.
+func (s *S3ExportConfig) ValidateForProvider(providerType SecretProvider) error {
+	if s == nil {
+		return nil
+	}
+	if s.IsFlexpriceManaged {
+		return nil
+	}
+
+	if s.Bucket == "" {
+		return ierr.NewError("bucket is required").
+			WithHint("Storage bucket name is required").
+			Mark(ierr.ErrValidation)
+	}
+	if providerType != SecretProviderGCS && s.Region == "" {
+		return ierr.NewError("region is required").
+			WithHint("AWS region is required").
+			Mark(ierr.ErrValidation)
+	}
+	if err := s.Compression.Validate(); err != nil {
+		return err
+	}
+	if err := s.Encryption.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Validate validates the S3 export configuration
 func (s *S3ExportConfig) Validate() error {
 	if s == nil {
@@ -187,6 +216,8 @@ type S3JobConfig struct {
 	EndpointURL          string               `json:"endpoint_url,omitempty"`           // Custom S3-compatible endpoint URL; must be https on a publicly routable host
 	UsePathStyle         bool                 `json:"use_path_style,omitempty"`         // Use path-style addressing (required for MinIO)
 	ExportMetadataFields ExportMetadataFields `json:"export_metadata_fields,omitempty"` // Optional user-selected metadata columns
+	// Empty means S3 for back-compat.
+	Provider SecretProvider `json:"provider,omitempty"`
 }
 
 // Validate validates the S3 job configuration
