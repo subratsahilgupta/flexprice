@@ -11,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/clickhouse"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/dynamodb"
+	"github.com/flexprice/flexprice/internal/ee/analytics"
 	"github.com/flexprice/flexprice/internal/ee/auth/saml"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	"github.com/flexprice/flexprice/internal/httpclient"
@@ -125,6 +126,7 @@ func main() {
 			// Producers and Consumers
 			kafka.NewProducer,
 			kafka.NewSecondaryProducer,
+			analytics.NewMeterUsageSinkPublisher,
 			kafka.NewConsumer,
 
 			// Event Publisher
