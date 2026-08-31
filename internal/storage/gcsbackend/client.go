@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -61,6 +62,14 @@ func New(ctx context.Context, cfg *Config, log *logger.Logger) (fpstorage.Storag
 		opts = append(opts, gcsoption.WithCredentialsJSON(cfg.ServiceAccountJSON))
 	}
 	if cfg.EndpointURL != "" {
+		// A plaintext endpoint carrying real credentials would transmit them in
+		// cleartext (CWE-319). HTTP is allowed only on the unauthenticated
+		// emulator path (DisableAuth).
+		if !cfg.DisableAuth && !strings.HasPrefix(cfg.EndpointURL, "https://") {
+			return nil, ierr.NewError("insecure GCS endpoint override").
+				WithHint("endpoint_url must use https when authentication is enabled; set disable_auth only for an unauthenticated emulator").
+				Mark(ierr.ErrValidation)
+		}
 		opts = append(opts, gcsoption.WithEndpoint(cfg.EndpointURL))
 	}
 

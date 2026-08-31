@@ -413,6 +413,28 @@ func TestNew_RejectsMalformedServiceAccountJSON(t *testing.T) {
 	require.Error(t, err, "malformed service account JSON must not fall back to ambient credentials")
 }
 
+func TestNew_RejectsPlaintextEndpointWhenAuthenticated(t *testing.T) {
+	cfg := &gcsbackend.Config{
+		Bucket:             "customer-bucket",
+		EndpointURL:        "http://insecure.example.com",
+		ServiceAccountJSON: []byte(`{"type":"service_account"}`),
+		// DisableAuth left false: real creds over a plaintext endpoint (CWE-319).
+	}
+
+	_, err := gcsbackend.New(context.Background(), cfg, logger.NewNoopLogger())
+	require.Error(t, err, "authenticated client must reject a non-https endpoint override")
+
+	// The unauthenticated emulator path may still use http.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	_, err = gcsbackend.New(context.Background(), &gcsbackend.Config{
+		Bucket:      "customer-bucket",
+		EndpointURL: srv.URL, // http, but DisableAuth
+		DisableAuth: true,
+	}, logger.NewNoopLogger())
+	require.NoError(t, err, "unauthenticated emulator may use a plaintext endpoint")
+}
+
 // syntheticServiceAccountJSON builds a service_account key file with a freshly
 // generated RSA key, so the test depends on no real credential and no network.
 func syntheticServiceAccountJSON(t *testing.T) []byte {
