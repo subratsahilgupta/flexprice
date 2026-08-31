@@ -675,6 +675,7 @@ func NewRouter(
 		// Invoices
 		customerPortalAPI.POST("/invoices", handlers.CustomerPortal.GetInvoices)
 		customerPortalAPI.GET("/invoices/:id", handlers.CustomerPortal.GetInvoice)
+		customerPortalAPI.POST("/invoices/:id/pay", handlers.CustomerPortal.PayInvoice)
 		customerPortalAPI.GET("/invoices/:id/pdf", handlers.CustomerPortal.GetInvoicePDF)
 
 		// Wallets
