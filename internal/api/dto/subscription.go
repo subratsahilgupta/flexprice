@@ -566,21 +566,11 @@ type CreateSubscriptionRequest struct {
 	// Standalone subscriptions only; all plan prices must be usage-based. Immutable after creation.
 	AutoInvoiceThreshold *decimal.Decimal `json:"auto_invoice_threshold,omitempty" swaggertype:"string"`
 
-	// IncludePriceIDs is an authoritative list of plan prices to attach to this subscription.
-	// Semantics by wire value:
-	//   nil / omitted        -> attach every plan price whose billing_period matches the
-	//                            subscription's, plus ONETIME. Matches historical behavior on
-	//                            main; multi-cadence attachment requires opt-in via this field.
-	//   empty slice ([])     -> attach NO plan prices. The subscription can still carry LineItems
-	//                            extras from SubscriptionCreationConfig.
-	//   non-empty [X, Y, …]  -> attach exactly the intersection of {X, Y, …} with the plan's
-	//                            compatible-price set. Every listed ID must (a) belong to the plan,
-	//                            (b) match the subscription currency, and (c) have a cadence that
-	//                            equals or strictly divides the subscription cadence - else 400
-	//                            naming the offending IDs. Strict-multiple cadences (e.g. quarterly
-	//                            price on monthly sub) are NOT supported here; use direct line-item
-	//                            add for that pattern.
-	// Pointer-slice is required to distinguish nil from []; do not collapse.
+	// IncludePriceIDs selects which plan prices to attach. Nil/omitted attaches matching-cadence
+	// prices plus ONETIME; [] attaches none (LineItems extras still apply); a non-empty list
+	// attaches only those IDs. Each listed ID must belong to the plan, match the subscription
+	// currency, and have a cadence that equals or strictly divides the subscription cadence.
+	// Pointer-slice distinguishes nil from [].
 	IncludePriceIDs *[]string `json:"include_price_ids,omitempty" validate:"omitempty,dive,required"`
 
 	// Inheritance groups customer-hierarchy fields; providing child IDs makes this a PARENT subscription.
