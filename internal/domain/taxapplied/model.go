@@ -18,6 +18,7 @@ type TaxApplied struct {
 	TaxAssociationID *string                 `json:"tax_association_id,omitempty"`
 	TaxableAmount    decimal.Decimal         `json:"taxable_amount,omitempty" swaggertype:"string"`
 	TaxAmount        decimal.Decimal         `json:"tax_amount,omitempty" swaggertype:"string"`
+	TaxBehavior      types.TaxBehavior       `json:"tax_behavior,omitempty"`
 	Currency         string                  `json:"currency,omitempty"`
 	AppliedAt        time.Time               `json:"applied_at,omitempty"`
 	EnvironmentID    string                  `json:"environment_id,omitempty"`
@@ -35,6 +36,7 @@ func FromEnt(ent *ent.TaxApplied) *TaxApplied {
 		TaxAssociationID: ent.TaxAssociationID,
 		TaxableAmount:    ent.TaxableAmount,
 		TaxAmount:        ent.TaxAmount,
+		TaxBehavior:      ent.TaxBehavior,
 		Currency:         ent.Currency,
 		AppliedAt:        ent.AppliedAt,
 		EnvironmentID:    ent.EnvironmentID,

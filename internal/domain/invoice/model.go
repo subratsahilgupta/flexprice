@@ -127,6 +127,9 @@ type Invoice struct {
 	// total_tax is the sum of all taxes combined at the invoice level.
 	TotalTax decimal.Decimal `json:"total_tax" swaggertype:"string"`
 
+	// tax_exemption_reason_code is why no tax was charged; null only when tax was actually charged.
+	TaxExemptionReasonCode *types.TaxExemptionReasonCode `json:"tax_exemption_reason_code,omitempty"`
+
 	// total_prepaid_credits_applied is the total amount of prepaid credits applied to this invoice.
 	TotalPrepaidCreditsApplied decimal.Decimal `json:"total_prepaid_credits_applied" swaggertype:"string"`
 
@@ -183,6 +186,7 @@ func FromEnt(e *ent.Invoice) *Invoice {
 		Total:                  e.Total,
 		TotalDiscount:          lo.FromPtrOr(e.TotalDiscount, decimal.Zero),
 		TotalTax:               lo.FromPtrOr(e.TotalTax, decimal.Zero),
+		TaxExemptionReasonCode: e.TaxExemptionReasonCode,
 		AmountRemaining:        e.AmountRemaining,
 		AdjustmentAmount:       e.AdjustmentAmount,
 		RefundedAmount:         e.RefundedAmount,

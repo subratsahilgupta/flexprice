@@ -58,6 +58,9 @@ type CreateCustomerRequest struct {
 	// Defaults to "UTC" if not provided
 	Timezone string `json:"timezone" validate:"omitempty,timezone"`
 
+	// tax_treatment is the customer's tax treatment. Defaults to "taxable" if not provided.
+	TaxTreatment types.TaxTreatment `json:"tax_treatment,omitempty"`
+
 	// metadata contains additional key-value pairs for storing extra information
 	Metadata map[string]string `json:"metadata,omitempty"`
 
@@ -111,6 +114,9 @@ type UpdateCustomerRequest struct {
 
 	// timezone is the updated IANA timezone name for the customer (e.g. "Asia/Kolkata", "America/New_York")
 	Timezone *string `json:"timezone" validate:"omitempty,timezone"`
+
+	// tax_treatment is the updated tax treatment for the customer
+	TaxTreatment *types.TaxTreatment `json:"tax_treatment,omitempty"`
 
 	// metadata contains updated key-value pairs that will replace existing metadata
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -177,6 +183,12 @@ func (r *CreateCustomerRequest) Validate() error {
 		return err
 	}
 
+	if r.TaxTreatment != "" {
+		if err := r.TaxTreatment.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -184,6 +196,10 @@ func (r *CreateCustomerRequest) ToCustomer(ctx context.Context) *customer.Custom
 	tz := r.Timezone
 	if tz == "" {
 		tz = types.DefaultTimezone
+	}
+	taxTreatment := r.TaxTreatment
+	if taxTreatment == "" {
+		taxTreatment = types.TaxTreatmentTaxable
 	}
 	return &customer.Customer{
 		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
@@ -198,6 +214,7 @@ func (r *CreateCustomerRequest) ToCustomer(ctx context.Context) *customer.Custom
 		AddressPostalCode: r.AddressPostalCode,
 		AddressCountry:    r.AddressCountry,
 		Timezone:          tz,
+		TaxTreatment:      taxTreatment,
 		Metadata:          r.Metadata,
 		EnvironmentID:     types.GetEnvironmentID(ctx),
 		BaseModel:         types.GetDefaultBaseModel(ctx),
@@ -220,6 +237,12 @@ func (r *UpdateCustomerRequest) Validate() error {
 
 	if err := types.ValidateTaxMetadata(r.Metadata); err != nil {
 		return err
+	}
+
+	if r.TaxTreatment != nil {
+		if err := r.TaxTreatment.Validate(); err != nil {
+			return err
+		}
 	}
 
 	return nil

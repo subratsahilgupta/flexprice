@@ -90,6 +90,7 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetUpdatedAt(inv.UpdatedAt).
 		SetCreatedBy(inv.CreatedBy).
 		SetTotalTax(inv.TotalTax).
+		SetNillableTaxExemptionReasonCode(inv.TaxExemptionReasonCode).
 		SetUpdatedBy(inv.UpdatedBy).
 		SetNillablePeriodStart(inv.PeriodStart).
 		SetNillablePeriodEnd(inv.PeriodEnd).
@@ -175,6 +176,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			SetAmountDue(inv.AmountDue).
 			SetAmountPaid(inv.AmountPaid).
 			SetTotalTax(inv.TotalTax).
+			SetNillableTaxExemptionReasonCode(inv.TaxExemptionReasonCode).
 			SetAmountRemaining(inv.AmountRemaining).
 			SetIdempotencyKey(lo.FromPtr(inv.IdempotencyKey)).
 			SetInvoiceNumber(lo.FromPtr(inv.InvoiceNumber)).
@@ -579,6 +581,12 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetSubtotal(inv.Subtotal).
 		SetTotalDiscount(inv.TotalDiscount).
 		AddVersion(1) // Increment version atomically
+
+	if inv.TaxExemptionReasonCode != nil {
+		query.SetTaxExemptionReasonCode(*inv.TaxExemptionReasonCode)
+	} else {
+		query.ClearTaxExemptionReasonCode()
+	}
 
 	// Monotonic: only ever set the lock, never clear it here - a caller
 	// passing the Go zero-value false must not silently unlock the invoice.

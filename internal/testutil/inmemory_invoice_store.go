@@ -124,6 +124,7 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 		LineItems:                  lineItems,
 		Metadata:                   inv.Metadata,
 		Version:                    inv.Version,
+		TaxExemptionReasonCode:     inv.TaxExemptionReasonCode,
 		EnvironmentID:              inv.EnvironmentID,
 		RecalculatedInvoiceID:      inv.RecalculatedInvoiceID,
 		LastComputedAt:             inv.LastComputedAt,

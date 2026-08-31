@@ -586,6 +586,20 @@ func (ic *InvoiceCreate) SetNillableIsManuallyEdited(b *bool) *InvoiceCreate {
 	return ic
 }
 
+// SetTaxExemptionReasonCode sets the "tax_exemption_reason_code" field.
+func (ic *InvoiceCreate) SetTaxExemptionReasonCode(terc types.TaxExemptionReasonCode) *InvoiceCreate {
+	ic.mutation.SetTaxExemptionReasonCode(terc)
+	return ic
+}
+
+// SetNillableTaxExemptionReasonCode sets the "tax_exemption_reason_code" field if the given value is not nil.
+func (ic *InvoiceCreate) SetNillableTaxExemptionReasonCode(terc *types.TaxExemptionReasonCode) *InvoiceCreate {
+	if terc != nil {
+		ic.SetTaxExemptionReasonCode(*terc)
+	}
+	return ic
+}
+
 // SetID sets the "id" field.
 func (ic *InvoiceCreate) SetID(s string) *InvoiceCreate {
 	ic.mutation.SetID(s)
@@ -1016,6 +1030,10 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 	if value, ok := ic.mutation.IsManuallyEdited(); ok {
 		_spec.SetField(invoice.FieldIsManuallyEdited, field.TypeBool, value)
 		_node.IsManuallyEdited = value
+	}
+	if value, ok := ic.mutation.TaxExemptionReasonCode(); ok {
+		_spec.SetField(invoice.FieldTaxExemptionReasonCode, field.TypeString, value)
+		_node.TaxExemptionReasonCode = &value
 	}
 	if nodes := ic.mutation.LineItemsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

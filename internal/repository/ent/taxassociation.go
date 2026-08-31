@@ -56,6 +56,7 @@ func (r *taxAssociationRepository) Create(ctx context.Context, t *domainTaxConfi
 		SetNillableCurrency(lo.EmptyableToPtr(t.Currency)).
 		SetPriority(t.Priority).
 		SetAutoApply(t.AutoApply).
+		SetNillableTaxBehavior(t.TaxBehavior).
 		SetMetadata(t.Metadata).
 		SetEnvironmentID(t.EnvironmentID).
 		SetEntityID(t.EntityID).
@@ -156,6 +157,7 @@ func (r *taxAssociationRepository) Update(ctx context.Context, t *domainTaxConfi
 		SetEntityID(t.EntityID).
 		SetPriority(t.Priority).
 		SetAutoApply(t.AutoApply).
+		SetNillableTaxBehavior(t.TaxBehavior).
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx)).
 		SetNillableEndDate(t.EndDate).
