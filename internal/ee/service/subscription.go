@@ -3956,10 +3956,12 @@ func filterAddonPricesForSubscription(prices []*dto.PriceResponse, subscription 
 // filterValidPricesForSubscription filters prices attachable to a subscription.
 //
 // Cadence gating depends on whether the caller passed an explicit include list:
-//   - includeIDs == nil (default): STRICT-EQUAL cadence — only prices whose
-//     (billing_period, billing_period_count) exactly match the sub's are
-//     attached. ONETIME prices always attach. Multi-cadence attachment
-//     (monthly-on-quarterly etc.) requires opt-in via include_price_ids.
+//   - includeIDs == nil (default): PERIOD-EQUAL cadence — only prices whose
+//     billing_period matches the sub's are attached (mirrors the historical
+//     pre-multi-cadence behavior on main, so callers who omit include_price_ids
+//     see no behavior change). billing_period_count is not compared, matching
+//     the historical check exactly. ONETIME prices always attach. Multi-cadence
+//     attachment (monthly-on-quarterly etc.) requires opt-in via include_price_ids.
 //   - includeIDs == []: attach nothing.
 //   - includeIDs == [X, Y, …]: attach the intersection of {X, Y, …} with the
 //     count-aware compatibility set (IsCadenceCompatible: equal or divides).
@@ -3977,11 +3979,6 @@ func filterValidPricesForSubscription(
 		for _, id := range *includeIDs {
 			include[id] = struct{}{}
 		}
-	}
-
-	subCount := subscription.BillingPeriodCount
-	if subCount <= 0 {
-		subCount = 1
 	}
 
 	var validPrices []*dto.PriceResponse
@@ -4002,12 +3999,10 @@ func filterValidPricesForSubscription(
 			continue
 		}
 		if include == nil {
-			// Default: strict-equal cadence (period + count).
-			priceCount := p.Price.BillingPeriodCount
-			if priceCount <= 0 {
-				priceCount = 1
-			}
-			if p.Price.BillingPeriod == subscription.BillingPeriod && priceCount == subCount {
+			// Default: match main's period-only equality. Count is intentionally
+			// NOT compared — historical behavior didn't check it, and preserving
+			// that keeps this PR non-breaking for callers who don't opt in.
+			if p.Price.BillingPeriod == subscription.BillingPeriod {
 				validPrices = append(validPrices, p)
 			}
 			continue

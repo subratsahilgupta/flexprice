@@ -132,17 +132,21 @@ func TestFilterValidPricesForSubscription_StrictEqualDefaultDoesNotFanOut(t *tes
 	assertSameIDs(t, []string{"m1", "m2"}, idsOf(got))
 }
 
-func TestFilterValidPricesForSubscription_CountAwareStrictEqual(t *testing.T) {
-	// MONTHLY×3 sub. Only MONTHLY×3 or ONETIME should attach by default.
+func TestFilterValidPricesForSubscription_DefaultIsPeriodOnlyEqualityMatchingMain(t *testing.T) {
+	// Historical (pre-multi-cadence) behavior on main used period-only equality
+	// and did NOT compare billing_period_count. Preserving that keeps this PR
+	// non-breaking for callers who omit include_price_ids. MONTHLY×3 sub +
+	// MONTHLY×1 price → attached by default (period-equal). Callers who want
+	// the strict count-aware behavior must opt in via include_price_ids.
 	prices := []*dto.PriceResponse{
-		mkPrice("m1", types.BILLING_PERIOD_MONTHLY, 1), // count mismatch
-		mkPrice("m3", types.BILLING_PERIOD_MONTHLY, 3), // exact
-		mkPrice("q1", types.BILLING_PERIOD_QUARTER, 1), // same effective months (3), different period — strict-equal rejects
+		mkPrice("m1", types.BILLING_PERIOD_MONTHLY, 1), // period matches, count differs — attached under historical rule
+		mkPrice("m3", types.BILLING_PERIOD_MONTHLY, 3), // exact period match
+		mkPrice("q1", types.BILLING_PERIOD_QUARTER, 1), // different period → not attached even though effective months match
 	}
 	sub := mkSub(types.BILLING_PERIOD_MONTHLY, 3)
 
 	got := idsOf(filterValidPricesForSubscription(prices, sub, nil))
-	assertSameIDs(t, []string{"m3"}, got)
+	assertSameIDs(t, []string{"m1", "m3"}, got)
 }
 
 func TestFilterAddonPricesForSubscription_PreservesCompatSemantics(t *testing.T) {
