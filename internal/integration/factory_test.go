@@ -170,18 +170,16 @@ func seedS3ConnectionWithEmptyCredentials(ctx context.Context, t *testing.T, sto
 	return conn
 }
 
-func seedGCSConnectionWithEmptyCredentials(ctx context.Context, t *testing.T, store *testutil.InMemoryConnectionStore) *connection.Connection {
+// seedGCSCustomerConnection builds a customer (non-managed) GCS connection. GCS BYOB is
+// out of scope: buildGCSStorage must refuse it regardless of what credentials it carries.
+func seedGCSCustomerConnection(ctx context.Context, t *testing.T, store *testutil.InMemoryConnectionStore) *connection.Connection {
 	t.Helper()
 
 	conn := &connection.Connection{
-		ID:           "conn_gcs_empty_creds_test",
-		Name:         "Test GCS Connection With Empty Credentials",
-		ProviderType: types.SecretProviderGCS,
-		EncryptedSecretData: types.ConnectionMetadata{
-			GCS: &types.GCSConnectionMetadata{
-				ServiceAccountJSON: "",
-			},
-		},
+		ID:                  "conn_gcs_customer_test",
+		Name:                "Test GCS Customer Connection",
+		ProviderType:        types.SecretProviderGCS,
+		EncryptedSecretData: types.ConnectionMetadata{},
 		SyncConfig: &types.SyncConfig{
 			Storage: &types.StorageExportConfig{
 				Bucket: "test-bucket",
@@ -320,92 +318,6 @@ func TestFactory_GetStorageProvider_GCSFlexpriceManagedNoBucket_ReturnsValidatio
 	require.True(t, ierr.IsValidation(err), "expected validation error, got: %v", err)
 }
 
-// Regression guard: adding the managed ambient-credential path must not weaken the
-// refusal to fall back to ambient credentials for customer BYO connections, even
-// when a Flexprice bucket happens to be configured.
-func TestFactory_GetStorageProvider_GCSCustomerBYOEmptyCreds_StillRefusesAmbient(t *testing.T) {
-	ctx := buildFactoryTestContext()
-	connRepo := testutil.NewInMemoryConnectionStore()
-
-	cfg := &config.Configuration{
-		Secrets: config.SecretsConfig{EncryptionKey: "test-encryption-key-for-unit-tests-only"},
-	}
-	cfg.FlexpriceGCSExports.Bucket = "flexprice-managed-bucket"
-	log := logger.NewNoopLogger()
-	encSvc, err := security.NewEncryptionService(cfg, log)
-	require.NoError(t, err)
-	factory := buildStorageTestFactoryWithRepo(connRepo, cfg, log, encSvc)
-
-	conn := seedGCSConnectionWithEmptyCredentials(ctx, t, connRepo)
-
-	got, err := factory.GetStorageProvider(ctx, conn.ID)
-	require.Error(t, err)
-	require.Nil(t, got)
-	require.True(t, ierr.IsValidation(err), "expected validation error, got: %v", err)
-}
-
-// seedS3AssumeRoleConnection builds a customer BYOB S3 connection using assume_role access
-// mode. It carries NO EncryptedSecretData.S3 on purpose: assume_role has no secret to store,
-// only the tenant-supplied role ARN and external ID in sync_config.
-func seedS3AssumeRoleConnection(ctx context.Context, t *testing.T, store *testutil.InMemoryConnectionStore) *connection.Connection {
-	t.Helper()
-
-	conn := &connection.Connection{
-		ID:                  "conn_s3_assume_role_test",
-		Name:                "Test S3 AssumeRole Connection",
-		ProviderType:        types.SecretProviderS3,
-		EncryptedSecretData: types.ConnectionMetadata{},
-		SyncConfig: &types.SyncConfig{
-			Storage: &types.StorageExportConfig{
-				Bucket:     "test-bucket",
-				Region:     "us-east-1",
-				AccessMode: types.StorageAccessModeAssumeRole,
-				RoleARN:    "arn:aws:iam::123456789012:role/flexprice-export",
-				ExternalID: "ext-tenant-abc",
-			},
-		},
-		EnvironmentID: types.GetEnvironmentID(ctx),
-		BaseModel: types.BaseModel{
-			TenantID: types.GetTenantID(ctx),
-			Status:   types.StatusPublished,
-		},
-	}
-	require.NoError(t, store.Create(ctx, conn))
-	return conn
-}
-
-// assume_role dispatch must succeed without any EncryptedSecretData.S3 present, as long as
-// Flexprice's own Marketplace.AWS caller identity is configured.
-// assume_role is implemented but DISABLED pending a dedicated per-environment
-// Flexprice IAM principal (see the branch comment in Factory.buildS3Storage).
-// A legacy row that already carries assume_role must fail closed rather than
-// build a backend against a shared principal — including when Flexprice's own
-// AWS caller identity IS configured, so this cannot silently re-enable itself
-// as a side effect of unrelated config.
-func TestFactory_GetStorageProvider_S3AssumeRole_IsDisabled(t *testing.T) {
-	ctx := buildFactoryTestContext()
-	connRepo := testutil.NewInMemoryConnectionStore()
-
-	cfg := &config.Configuration{
-		Secrets: config.SecretsConfig{EncryptionKey: "test-encryption-key-for-unit-tests-only"},
-	}
-	cfg.Marketplace.AWS.Region = "us-east-1"
-	cfg.Marketplace.AWS.AccessKeyID = "AKIAMARKETPLACE"
-	cfg.Marketplace.AWS.SecretAccessKey = "marketplace-secret"
-
-	log := logger.NewNoopLogger()
-	encSvc, err := security.NewEncryptionService(cfg, log)
-	require.NoError(t, err)
-	factory := buildStorageTestFactoryWithRepo(connRepo, cfg, log, encSvc)
-
-	conn := seedS3AssumeRoleConnection(ctx, t, connRepo)
-
-	got, err := factory.GetStorageProvider(ctx, conn.ID)
-	require.Error(t, err)
-	require.Nil(t, got)
-	require.True(t, ierr.IsValidation(err), "expected validation error, got: %v", err)
-}
-
 func TestFactory_GetStorageProvider_S3EmptyCredentials_ReturnsValidationError(t *testing.T) {
 	ctx := buildFactoryTestContext()
 	connRepo := testutil.NewInMemoryConnectionStore()
@@ -419,12 +331,14 @@ func TestFactory_GetStorageProvider_S3EmptyCredentials_ReturnsValidationError(t 
 	require.True(t, ierr.IsValidation(err), "expected validation error, got: %v", err)
 }
 
-func TestFactory_GetStorageProvider_GCSEmptyCredentials_ReturnsValidationError(t *testing.T) {
+// GCS BYOB (customer service-account-JSON connections) is out of scope: buildGCSStorage
+// must refuse a non-managed GCS connection outright, regardless of credentials.
+func TestFactory_GetStorageProvider_GCSCustomer_ReturnsValidationError(t *testing.T) {
 	ctx := buildFactoryTestContext()
 	connRepo := testutil.NewInMemoryConnectionStore()
 	factory, _ := buildStorageTestFactory(connRepo)
 
-	conn := seedGCSConnectionWithEmptyCredentials(ctx, t, connRepo)
+	conn := seedGCSCustomerConnection(ctx, t, connRepo)
 
 	got, err := factory.GetStorageProvider(ctx, conn.ID)
 	require.Error(t, err)

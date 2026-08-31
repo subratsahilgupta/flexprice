@@ -91,15 +91,22 @@ func newConnectionServiceForTest(t *testing.T) (ConnectionService, *testutil.InM
 // in internal/types/secret.go — the same exemption S3 already has, since customers can have
 // multiple GCS buckets, one connection per bucket.
 func TestCreateConnection_SecondPublishedGCSConnection_Succeeds(t *testing.T) {
-	svc, _ := newConnectionServiceForTest(t)
+	cfg := &config.Configuration{
+		Secrets: config.SecretsConfig{
+			EncryptionKey: "test-encryption-key-for-unit-tests-only",
+		},
+	}
+	cfg.FlexpriceGCSExports.Bucket = "flexprice-managed-gcs-bucket"
+
+	svc, _ := newConnectionServiceForTestWithConfig(t, cfg)
 	ctx := testutil.SetupContext()
 
 	req1 := dto.CreateConnectionRequest{
 		Name:         "GCS Connection 1",
 		ProviderType: types.SecretProviderGCS,
-		EncryptedSecretData: types.ConnectionMetadata{
-			GCS: &types.GCSConnectionMetadata{
-				ServiceAccountJSON: `{"type":"service_account"}`,
+		SyncConfig: &types.SyncConfig{
+			Storage: &types.StorageExportConfig{
+				IsFlexpriceManaged: true,
 			},
 		},
 	}
@@ -110,9 +117,9 @@ func TestCreateConnection_SecondPublishedGCSConnection_Succeeds(t *testing.T) {
 	req2 := dto.CreateConnectionRequest{
 		Name:         "GCS Connection 2",
 		ProviderType: types.SecretProviderGCS,
-		EncryptedSecretData: types.ConnectionMetadata{
-			GCS: &types.GCSConnectionMetadata{
-				ServiceAccountJSON: `{"type":"service_account"}`,
+		SyncConfig: &types.SyncConfig{
+			Storage: &types.StorageExportConfig{
+				IsFlexpriceManaged: true,
 			},
 		},
 	}
@@ -296,15 +303,22 @@ func TestCreateConnection_SecondPublishedStripeConnection_Fails(t *testing.T) {
 // IntegrationFactory — some test/bootstrap paths do this, mirroring the existing
 // QuickBooks post-create block's own nil guard.
 func TestCreateConnection_NilIntegrationFactory_StorageConnectionStillCreated(t *testing.T) {
-	svc, connRepo := newConnectionServiceForTest(t)
+	cfg := &config.Configuration{
+		Secrets: config.SecretsConfig{
+			EncryptionKey: "test-encryption-key-for-unit-tests-only",
+		},
+	}
+	cfg.FlexpriceGCSExports.Bucket = "flexprice-managed-gcs-bucket"
+
+	svc, connRepo := newConnectionServiceForTestWithConfig(t, cfg)
 	ctx := testutil.SetupContext()
 
 	req := dto.CreateConnectionRequest{
-		Name:         "Customer GCS Connection",
+		Name:         "Managed GCS Connection",
 		ProviderType: types.SecretProviderGCS,
-		EncryptedSecretData: types.ConnectionMetadata{
-			GCS: &types.GCSConnectionMetadata{
-				ServiceAccountJSON: `{"type":"service_account"}`,
+		SyncConfig: &types.SyncConfig{
+			Storage: &types.StorageExportConfig{
+				IsFlexpriceManaged: true,
 			},
 		},
 	}
@@ -417,9 +431,11 @@ func TestCreateConnection_S3EmptyCredentials_FailsBeforePersistAndNoRowIsWritten
 	require.Empty(t, all, "no S3 connection row must be persisted when pre-create validation fails")
 }
 
-// TestCreateConnection_GCSEmptyCredentials_FailsBeforePersistAndNoRowIsWritten is the GCS
-// counterpart to the S3 test above.
-func TestCreateConnection_GCSEmptyCredentials_FailsBeforePersistAndNoRowIsWritten(t *testing.T) {
+// TestCreateConnection_GCSCustomer_FailsBeforePersistAndNoRowIsWritten is the GCS
+// counterpart to the S3 test above: GCS BYOB (customer service-account-JSON connections) is
+// out of scope, so a non-managed GCS connection must fail pre-persist validation regardless
+// of credentials.
+func TestCreateConnection_GCSCustomer_FailsBeforePersistAndNoRowIsWritten(t *testing.T) {
 	cfg := &config.Configuration{
 		Secrets: config.SecretsConfig{
 			EncryptionKey: "test-encryption-key-for-unit-tests-only",
@@ -436,15 +452,10 @@ func TestCreateConnection_GCSEmptyCredentials_FailsBeforePersistAndNoRowIsWritte
 				Bucket: "customer-bucket",
 			},
 		},
-		EncryptedSecretData: types.ConnectionMetadata{
-			GCS: &types.GCSConnectionMetadata{
-				ServiceAccountJSON: "",
-			},
-		},
 	}
 
 	resp, err := svc.CreateConnection(ctx, req)
-	require.Error(t, err, "empty GCS credentials must fail validation before the row is persisted")
+	require.Error(t, err, "GCS BYOB connections must fail validation before the row is persisted")
 	require.Nil(t, resp)
 
 	all, err := connRepo.List(ctx, &types.ConnectionFilter{ProviderType: types.SecretProviderGCS})

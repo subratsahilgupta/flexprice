@@ -99,17 +99,6 @@ func (s *connectionService) encryptMetadata(encryptedSecretData types.Connection
 			}
 		}
 
-	case types.SecretProviderGCS:
-		if encryptedSecretData.GCS != nil {
-			encryptedSAJSON, err := s.encryptionService.Encrypt(encryptedSecretData.GCS.ServiceAccountJSON)
-			if err != nil {
-				return types.ConnectionMetadata{}, err
-			}
-			encryptedMetadata.GCS = &types.GCSConnectionMetadata{
-				ServiceAccountJSON: encryptedSAJSON,
-			}
-		}
-
 	case types.SecretProviderHubSpot:
 		if encryptedSecretData.HubSpot != nil {
 			encryptedAccessToken, err := s.encryptionService.Encrypt(encryptedSecretData.HubSpot.AccessToken)

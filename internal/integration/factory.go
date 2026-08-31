@@ -1416,56 +1416,45 @@ func (f *Factory) buildS3Storage(ctx context.Context, conn *connection.Connectio
 			s3Cfg.AWSSessionToken = f.config.FlexpriceS3Exports.AWSSessionToken
 		case config.CredentialSourceAmbient:
 			// Uses AWS default chain.
-		case config.CredentialSourceFederation:
-			s3Cfg.FederationRoleARN = f.config.FlexpriceS3Exports.FederationRoleARN
 		}
 
 		return s3backend.New(ctx, s3Cfg, f.logger)
 	}
 
-	switch jobConfig.ResolvedAccessMode() {
-	case types.StorageAccessModeAssumeRole:
-		// Disabled: needs per-environment IAM principal.
-		return nil, ierr.NewError("assume_role storage connections are not enabled").
-			WithHint("Cross-account AssumeRole for customer buckets is implemented but disabled: it requires a dedicated per-environment Flexprice IAM principal that does not exist yet. Use access_mode 'static_key' with customer-supplied credentials for now.").
-			Mark(ierr.ErrValidation)
-
-	default: // types.StorageAccessModeStaticKey and empty (legacy rows)
-		if conn.EncryptedSecretData.S3 == nil {
-			return nil, ierr.NewError("no S3 credentials found on connection").Mark(ierr.ErrValidation)
-		}
-
-		accessKey, err := f.encryptionService.Decrypt(conn.EncryptedSecretData.S3.AWSAccessKeyID)
-		if err != nil {
-			return nil, ierr.NewError("failed to decrypt AWS access key").Mark(ierr.ErrInternal)
-		}
-		secretKey, err := f.encryptionService.Decrypt(conn.EncryptedSecretData.S3.AWSSecretAccessKey)
-		if err != nil {
-			return nil, ierr.NewError("failed to decrypt AWS secret key").Mark(ierr.ErrInternal)
-		}
-		if accessKey == "" || secretKey == "" {
-			return nil, ierr.NewError("empty S3 credentials on connection").
-				WithHint("AWS access key and secret key must be non-empty; refusing to fall back to ambient AWS credentials").
-				Mark(ierr.ErrValidation)
-		}
-		var sessionToken string
-		if conn.EncryptedSecretData.S3.AWSSessionToken != "" {
-			sessionToken, err = f.encryptionService.Decrypt(conn.EncryptedSecretData.S3.AWSSessionToken)
-			if err != nil {
-				return nil, ierr.NewError("failed to decrypt AWS session token").Mark(ierr.ErrInternal)
-			}
-		}
-
-		return s3backend.New(ctx, &s3backend.Config{
-			Bucket:             jobConfig.Bucket,
-			Region:             jobConfig.Region,
-			CompressionGzip:    jobConfig.Compression == types.S3CompressionTypeGzip,
-			ServerSideEncrypt:  string(jobConfig.Encryption),
-			AWSAccessKeyID:     accessKey,
-			AWSSecretAccessKey: secretKey,
-			AWSSessionToken:    sessionToken,
-		}, f.logger)
+	if conn.EncryptedSecretData.S3 == nil {
+		return nil, ierr.NewError("no S3 credentials found on connection").Mark(ierr.ErrValidation)
 	}
+
+	accessKey, err := f.encryptionService.Decrypt(conn.EncryptedSecretData.S3.AWSAccessKeyID)
+	if err != nil {
+		return nil, ierr.NewError("failed to decrypt AWS access key").Mark(ierr.ErrInternal)
+	}
+	secretKey, err := f.encryptionService.Decrypt(conn.EncryptedSecretData.S3.AWSSecretAccessKey)
+	if err != nil {
+		return nil, ierr.NewError("failed to decrypt AWS secret key").Mark(ierr.ErrInternal)
+	}
+	if accessKey == "" || secretKey == "" {
+		return nil, ierr.NewError("empty S3 credentials on connection").
+			WithHint("AWS access key and secret key must be non-empty; refusing to fall back to ambient AWS credentials").
+			Mark(ierr.ErrValidation)
+	}
+	var sessionToken string
+	if conn.EncryptedSecretData.S3.AWSSessionToken != "" {
+		sessionToken, err = f.encryptionService.Decrypt(conn.EncryptedSecretData.S3.AWSSessionToken)
+		if err != nil {
+			return nil, ierr.NewError("failed to decrypt AWS session token").Mark(ierr.ErrInternal)
+		}
+	}
+
+	return s3backend.New(ctx, &s3backend.Config{
+		Bucket:             jobConfig.Bucket,
+		Region:             jobConfig.Region,
+		CompressionGzip:    jobConfig.Compression == types.S3CompressionTypeGzip,
+		ServerSideEncrypt:  string(jobConfig.Encryption),
+		AWSAccessKeyID:     accessKey,
+		AWSSecretAccessKey: secretKey,
+		AWSSessionToken:    sessionToken,
+	}, f.logger)
 }
 
 func (f *Factory) buildGCSStorage(ctx context.Context, conn *connection.Connection) (storage.Storage, error) {
@@ -1490,25 +1479,9 @@ func (f *Factory) buildGCSStorage(ctx context.Context, conn *connection.Connecti
 		}, f.logger)
 	}
 
-	if conn.EncryptedSecretData.GCS == nil {
-		return nil, ierr.NewError("no GCS credentials found on connection").Mark(ierr.ErrValidation)
-	}
-
-	saJSON, err := f.encryptionService.Decrypt(conn.EncryptedSecretData.GCS.ServiceAccountJSON)
-	if err != nil {
-		return nil, ierr.NewError("failed to decrypt GCS service account JSON").Mark(ierr.ErrInternal)
-	}
-	if saJSON == "" {
-		return nil, ierr.NewError("empty GCS credentials on connection").
-			WithHint("GCS service account JSON must be non-empty; refusing to fall back to ambient application default credentials").
-			Mark(ierr.ErrValidation)
-	}
-
-	return gcsbackend.New(ctx, &gcsbackend.Config{
-		Bucket:             jobConfig.Bucket,
-		CompressionGzip:    jobConfig.Compression == types.S3CompressionTypeGzip,
-		ServiceAccountJSON: []byte(saJSON),
-	}, f.logger)
+	return nil, ierr.NewError("GCS BYOB connections are not supported").
+		WithHint("Customer-provided GCS credentials are not supported; use Flexprice-managed GCS exports instead").
+		Mark(ierr.ErrValidation)
 }
 
 // GetPaymentMethodProvider returns the PaymentMethodProvider adapter for the given
