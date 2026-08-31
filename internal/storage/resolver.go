@@ -9,9 +9,8 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 )
 
-// Purpose identifies which Flexprice-owned bucket a platform storage request
-// targets. Invoice PDFs and exports live in different buckets even though both
-// are platform-owned, and each has its own key prefix and presign expiry.
+// Purpose selects which Flexprice-owned bucket a request targets. Invoice PDFs
+// and exports live in different buckets with their own prefix and presign expiry.
 type Purpose string
 
 const (
@@ -19,32 +18,23 @@ const (
 	PurposeExport  Purpose = "export"
 )
 
-// Resolver answers "which Storage for this operation?" for both storage classes.
-//
-// Platform storage (invoice PDFs, Flexprice-managed exports) is same-cloud by
-// definition: the bucket follows the deployment's own cloud, and credentials
-// come from that cloud's ambient identity or configured keys. It is resolved
-// once and cached.
-//
-// Connection storage (customer bring-your-own-bucket) is resolved per call
-// against the database, because credentials live on the connection row and may
-// change between calls.
+// Resolver selects the Storage for an operation. Platform storage (invoices,
+// managed exports) follows the deployment's own cloud and is resolved once and
+// cached; connection storage (customer BYOB) is resolved per call from the DB,
+// since credentials live on the connection row.
 type Resolver interface {
 	ForPlatform(ctx context.Context, purpose Purpose) (Storage, error)
 	ForConnection(ctx context.Context, connectionID string) (Storage, error)
-	// Provider reports the resolved platform storage provider.
 	Provider() Provider
-	// BucketConfigFor returns the bucket settings (key prefix, presign expiry)
-	// for a platform purpose under the resolved provider. Callers need this
-	// because key layout and presign expiry are provider-specific config, and
-	// reading cfg.S3.* directly is what hardcoded the invoice path to S3.
+	// BucketConfigFor returns provider-specific bucket settings (prefix, presign
+	// expiry) for a purpose. Reading cfg.S3.* directly is what hardcoded the
+	// invoice path to S3.
 	BucketConfigFor(purpose Purpose) (config.BucketConfig, error)
 }
 
 // ConnectionStorageProvider is the narrow slice of internal/integration.Factory
-// that the resolver needs. Declared here rather than imported because
-// internal/integration already imports this package; depending on it directly
-// would create a cycle. cmd/server wires the concrete factory in.
+// the resolver needs. Declared here, not imported, to avoid an import cycle
+// (internal/integration already imports this package). cmd/server wires it in.
 type ConnectionStorageProvider interface {
 	GetStorageProvider(ctx context.Context, connectionID string) (Storage, error)
 }
@@ -59,10 +49,8 @@ type resolver struct {
 	platform map[Purpose]Storage
 }
 
-// NewResolver constructs the Resolver. The platform storage provider is resolved
-// once here, at application bootstrap: CloudDetector performs blocking metadata
-// probes (500ms timeout each), so resolving per call would add that latency to
-// every request and could yield inconsistent answers if a probe flaked.
+// NewResolver resolves the platform provider once at bootstrap (CloudDetector
+// blocks on metadata probes, so it must not run per call).
 func NewResolver(ctx context.Context, cfg *config.Configuration, connSvc ConnectionStorageProvider, log *logger.Logger) Resolver {
 	provider := ResolveProvider(ctx, cfg)
 	log.Info(ctx, "resolved platform storage provider", "provider", string(provider))
@@ -76,9 +64,6 @@ func NewResolver(ctx context.Context, cfg *config.Configuration, connSvc Connect
 	}
 }
 
-// Provider returns the resolved platform storage provider. Callers that need to
-// select provider-specific configuration (bucket, key prefix, presign expiry)
-// use this rather than re-running detection.
 func (r *resolver) Provider() Provider { return r.provider }
 
 func (r *resolver) ForPlatform(ctx context.Context, purpose Purpose) (Storage, error) {
@@ -121,19 +106,10 @@ func (r *resolver) ForConnection(ctx context.Context, connectionID string) (Stor
 	return r.connSvc.GetStorageProvider(ctx, connectionID)
 }
 
-// signerFor selects the signing identity for a purpose under the resolved
-// provider. GCS presigned GET URLs need a service account the ambient
-// Workload Identity credentials can impersonate (they cannot self-sign);
-// invoice and export buckets can be signed by different identities even
-// though both are platform-owned, so this mirrors platformBucket/
-// BucketConfigFor's purpose-to-config mapping rather than living in
-// NewPlatformStorage. S3 returns empty: presigned S3 URLs are signed with the
-// request credentials themselves, with no separate signer identity.
-//
-// GCS+invoice with an empty signer is rejected here rather than left to fail
-// silently at first presign: uploads would succeed (no signer needed to PUT),
-// but every presigned GET for an invoice PDF would fail, which otherwise only
-// surfaces the first time a customer clicks a download link.
+// signerFor returns the GCS signing identity for a purpose (S3 signs with the
+// request credentials, so it returns empty). A missing signer is rejected here,
+// not at first presign: uploads would still succeed, but every presigned GET
+// would fail — surfacing only when a customer clicks a download link.
 func (r *resolver) signerFor(purpose Purpose) (string, error) {
 	if r.provider != ProviderGCS {
 		return "", nil
@@ -143,9 +119,8 @@ func (r *resolver) signerFor(purpose Purpose) (string, error) {
 	case PurposeInvoice:
 		signer := r.cfg.GCS.SignerServiceAccountEmail
 		if signer == "" {
-			// The env var name goes in the message, not just the hint: ierr's
-			// Error() renders only "Code: Message", so a hint-only name is
-			// invisible in logs and in any error string a caller inspects.
+			// Env var name goes in the message: ierr's Error() renders only
+			// "Code: Message", so a hint-only name is invisible in logs.
 			return "", ierr.NewError("no GCS signer service account configured for invoice storage; set FLEXPRICE_GCS_SIGNER_SERVICE_ACCOUNT_EMAIL").
 				WithHint("Set gcs.signer_service_account_email (FLEXPRICE_GCS_SIGNER_SERVICE_ACCOUNT_EMAIL) to a service account with roles/iam.serviceAccountTokenCreator; uploads would succeed but every presigned invoice PDF download link would fail without it").
 				Mark(ierr.ErrValidation)
@@ -154,10 +129,6 @@ func (r *resolver) signerFor(purpose Purpose) (string, error) {
 	case PurposeExport:
 		signer := r.cfg.FlexpriceGCSExports.SignerServiceAccountEmail
 		if signer == "" {
-			// Same asymmetry as invoice: managed GCS export uploads succeed with no
-			// signer, but every presigned download URL (task download endpoint) then
-			// fails under ambient Workload Identity, which cannot self-sign. Reject
-			// at construction rather than at first download.
 			return "", ierr.NewError("no GCS signer service account configured for export storage; set FLEXPRICE_FLEXPRICE_GCS_EXPORTS_SIGNER_SERVICE_ACCOUNT_EMAIL").
 				WithHint("Set flexprice_gcs_exports.signer_service_account_email (FLEXPRICE_FLEXPRICE_GCS_EXPORTS_SIGNER_SERVICE_ACCOUNT_EMAIL) to a service account with roles/iam.serviceAccountTokenCreator; uploads would succeed but every presigned export download link would fail without it").
 				Mark(ierr.ErrValidation)
@@ -168,20 +139,10 @@ func (r *resolver) signerFor(purpose Purpose) (string, error) {
 	}
 }
 
-// checkProviderEnabled enforces the s3.enabled / gcs.enabled kill switch for
-// invoice storage.
-//
-// Before the storage refactor, s3.NewService returned a nil Service when
-// s3.enabled was false and GetInvoicePDFUrl failed fast with "s3 is not
-// enabled". Routing invoice PDFs through the Resolver dropped that gate, so a
-// deployment that had deliberately turned storage off would instead construct a
-// live backend and issue real bucket calls against whatever bucket the config
-// defaults happened to name.
-//
-// Scoped to PurposeInvoice: the flag has only ever gated invoice PDFs. Exports
-// are governed by their own flexprice_*_exports config and by whether an export
-// connection exists, and were never covered by s3.enabled — gating them here
-// would disable working export deployments that never set the flag.
+// checkProviderEnabled enforces the s3.enabled / gcs.enabled kill switch, which
+// has only ever gated invoice PDFs (exports have their own config). Preserves the
+// pre-refactor behavior where storage-off deployments failed fast instead of
+// issuing live bucket calls.
 func (r *resolver) checkProviderEnabled(purpose Purpose) error {
 	if purpose != PurposeInvoice {
 		return nil
@@ -205,9 +166,8 @@ func (r *resolver) checkProviderEnabled(purpose Purpose) error {
 	return nil
 }
 
-// platformBucket selects the bucket and region for a purpose under the resolved
-// provider. Region is meaningless for GCS — a bucket's location is fixed at
-// creation — so it is returned empty there.
+// platformBucket returns the bucket and region for a purpose. Region is empty
+// for GCS (bucket location is fixed at creation).
 func (r *resolver) platformBucket(purpose Purpose) (bucket, region string, err error) {
 	bc, err := r.BucketConfigFor(purpose)
 	if err != nil {
@@ -226,19 +186,9 @@ func (r *resolver) platformBucket(purpose Purpose) (bucket, region string, err e
 	return bc.Bucket, region, nil
 }
 
-// BucketConfigFor returns the bucket settings for a platform purpose under the
-// resolved provider.
-//
-// Invoice buckets already carry a full config.BucketConfig (bucket, key prefix,
-// presign expiry) in the S3/GCS config sections. Export buckets do not: the
-// Flexprice-managed exports config (FlexpriceS3ExportsConfig /
-// FlexpriceGCSExportsConfig) is a flat struct describing the Flexprice-owned
-// bucket and its credentials/identity, with no KeyPrefix or
-// PresignExpiryDuration fields — export key prefixes are per-connection
-// (SyncConfig), not global. So for PurposeExport this synthesizes a
-// BucketConfig: bucket from the exports config, empty KeyPrefix, and
-// PresignExpiryDuration hardcoded to "30m" to match defaultPresignExpiry in
-// both s3backend and gcsbackend.
+// BucketConfigFor returns bucket settings for a purpose. Invoice buckets carry a
+// full config.BucketConfig; export config is flat (no prefix/expiry fields), so
+// export synthesizes one with expiry "30m" to match defaultPresignExpiry.
 func (r *resolver) BucketConfigFor(purpose Purpose) (config.BucketConfig, error) {
 	var bc config.BucketConfig
 

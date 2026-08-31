@@ -133,19 +133,13 @@ type BucketConfig struct {
 	KeyPrefix             string `mapstructure:"key_prefix" validate:"omitempty"`
 }
 
-// Credential source constants for FlexpriceS3ExportsConfig.CredentialSource /
-// ResolvedCredentialSource(). Exactly one value is active per deployment.
+// Credential sources for FlexpriceS3ExportsConfig. Exactly one is active per
+// deployment. "ambient" covers every AWS-default-chain shape (IRSA, Pod Identity,
+// ECS task role, EC2 instance profile) with no per-mechanism value.
 const (
-	// CredentialSourceStatic uses explicit AWSAccessKeyID/AWSSecretAccessKey.
-	CredentialSourceStatic = "static"
-	// CredentialSourceAmbient covers ALL ambient-credential deployment shapes —
-	// EKS IRSA, EKS Pod Identity, ECS task roles, EC2 instance profiles — which
-	// all resolve through the same AWS default credential chain
-	// (awsConfig.LoadDefaultConfig) with no explicit credentials configured here.
-	// There is deliberately no per-mechanism value or config.
-	CredentialSourceAmbient = "ambient"
-	// CredentialSourceFederation uses GCP-to-AWS OIDC federation (AssumeRoleWithWebIdentity).
-	CredentialSourceFederation = "federation"
+	CredentialSourceStatic     = "static"
+	CredentialSourceAmbient    = "ambient"
+	CredentialSourceFederation = "federation" // GCP-to-AWS OIDC
 )
 
 type FlexpriceS3ExportsConfig struct {
@@ -154,26 +148,16 @@ type FlexpriceS3ExportsConfig struct {
 	AWSAccessKeyID     string `mapstructure:"aws_access_key_id" validate:"omitempty"`
 	AWSSecretAccessKey string `mapstructure:"aws_secret_access_key" validate:"omitempty"`
 	AWSSessionToken    string `mapstructure:"aws_session_token,omitempty"`
-	// FederationRoleARN enables GCP-to-AWS OIDC federation (AssumeRoleWithWebIdentity)
-	// in place of static keys. Empty means federation is not configured.
-	FederationRoleARN string `mapstructure:"federation_role_arn,omitempty"`
-	FederationEnabled bool   `mapstructure:"federation_enabled" default:"false"`
-	// CredentialSource selects how AWS credentials are obtained: "static" (explicit
-	// keys), "ambient" (EKS IRSA / EKS Pod Identity / ECS task role / EC2 instance
-	// profile — all resolved by the AWS default credential chain), or "federation"
-	// (GCP-to-AWS OIDC). Empty is derived for backward compatibility.
+	FederationRoleARN  string `mapstructure:"federation_role_arn,omitempty"`
+	FederationEnabled  bool   `mapstructure:"federation_enabled" default:"false"`
+	// CredentialSource selects how AWS credentials are obtained; empty is derived
+	// by ResolvedCredentialSource for backward compatibility.
 	CredentialSource string `mapstructure:"credential_source" validate:"omitempty,oneof=static ambient federation"`
 }
 
-// ResolvedCredentialSource derives the effective credential source so no existing
-// deployment must change config to keep working:
-//   - CredentialSource, if explicitly set, always wins.
-//   - Otherwise FederationEnabled=true, or a FederationRoleARN is present (the
-//     historic signal, predating the FederationEnabled flag), means "federation".
-//   - Otherwise both static keys present means "static".
-//   - Otherwise "ambient" — this is the mode that lets a managed connection run with
-//     no credentials configured at all (EKS IRSA / Pod Identity / ECS task role / EC2
-//     instance profile), rather than treating "nothing configured" as an error.
+// ResolvedCredentialSource derives the effective source so existing deployments
+// need no config change: explicit CredentialSource wins; else federation (flag or
+// legacy FederationRoleARN); else static (both keys present); else ambient.
 func (c *FlexpriceS3ExportsConfig) ResolvedCredentialSource() string {
 	if c.CredentialSource != "" {
 		return c.CredentialSource
@@ -187,29 +171,11 @@ func (c *FlexpriceS3ExportsConfig) ResolvedCredentialSource() string {
 	return CredentialSourceAmbient
 }
 
-// Validate enforces the requirements of the resolved credential source (see
-// ResolvedCredentialSource). "ambient" is a first-class mode here: when explicitly
-// selected (CredentialSource == "ambient"), it deliberately requires no credentials
-// at all, because that is the entire point of the AWS default credential chain
-// (EKS IRSA / EKS Pod Identity / ECS task role / EC2 instance profile) —
-// config-load time cannot and should not require secrets that ambient compute
-// identity supplies for free.
-//
-// Backward compatibility: when CredentialSource is left empty AND neither static
-// keys nor federation are configured, this preserves the historic behavior of
-// erroring ("no credential source configured") rather than silently resolving to
-// ambient. That keeps existing deployments that rely on this error (e.g. to catch
-// a genuinely unconfigured section) failing exactly as before. Ambient must be
-// requested explicitly via credential_source: "ambient" to skip the credential
-// requirement — callers that intentionally run ambient (e.g. the managed-S3
-// factory/connection-create paths) set that explicitly.
-//
-// NOTE: this method is not invoked from Configuration.Validate() — see
-// task-6-report.md for why (Configuration.Validate() is dead code on the real boot
-// path; NewValidatedConfig() deliberately skips it after a prior incident where dormant
-// `validate:"required"` tags crashlooped non-local pods). Callers that actually consume
-// this section (platform storage bootstrap, the managed-S3 factory branch, managed-S3
-// connection creation) call FlexpriceS3Exports.Validate() explicitly themselves.
+// Validate enforces the resolved credential source's requirements. Explicit
+// "ambient" requires no credentials (that's the point of the default chain); an
+// empty source with nothing configured still errors, preserving historic behavior
+// rather than silently resolving to ambient. Consumers call this explicitly —
+// it is not reached from Configuration.Validate() (dead on the boot path).
 func (c *FlexpriceS3ExportsConfig) Validate() error {
 	if c.Bucket == "" {
 		return ierr.NewError("flexprice S3 exports bucket is not configured").
@@ -233,17 +199,13 @@ func (c *FlexpriceS3ExportsConfig) Validate() error {
 				Mark(ierr.ErrValidation)
 		}
 	case CredentialSourceAmbient:
+		// Derived ambient (nothing configured) still errors; only explicit ambient
+		// skips the credential requirement.
 		if c.CredentialSource != CredentialSourceAmbient {
-			// Nothing configured and ambient was not explicitly requested: preserve
-			// the historic error rather than silently falling back to the AWS
-			// default credential chain.
 			return ierr.NewError("no credential source configured for flexprice_s3_exports").
 				WithHint("Set either aws_access_key_id/aws_secret_access_key, federation_role_arn, or credential_source: \"ambient\" to explicitly use the AWS default credential chain").
 				Mark(ierr.ErrValidation)
 		}
-		// Explicitly requested ambient: no credential requirement. The AWS default
-		// credential chain supplies them (EKS IRSA / EKS Pod Identity / ECS task
-		// role / EC2 instance profile).
 	case CredentialSourceStatic:
 		if !hasStaticKeys {
 			return ierr.NewError("no credential source configured for flexprice_s3_exports").
@@ -251,11 +213,8 @@ func (c *FlexpriceS3ExportsConfig) Validate() error {
 				Mark(ierr.ErrValidation)
 		}
 	default:
-		// ResolvedCredentialSource returns CredentialSource verbatim when set, so an
-		// unrecognized value (a typo like "amibent") reaches here. Reject it rather
-		// than falling through to unintended ambient credentials — the boot path
-		// skips Configuration.Validate() and its oneof struct tag, so this is the
-		// only place a direct caller catches the typo.
+		// A typo'd credential_source reaches here (the boot path skips the oneof
+		// tag); reject rather than fall through to ambient.
 		return ierr.NewError("invalid flexprice_s3_exports.credential_source").
 			WithHint("credential_source must be one of \"static\", \"ambient\", or \"federation\"").
 			Mark(ierr.ErrValidation)
@@ -273,12 +232,9 @@ type StorageConfig struct {
 type GCSConfig struct {
 	Enabled             bool         `mapstructure:"enabled" default:"false"`
 	InvoiceBucketConfig BucketConfig `mapstructure:"invoice" validate:"omitempty"`
-	// SignerServiceAccountEmail is the identity used to sign presigned GET URLs
-	// for invoice PDFs. Under Workload Identity the ambient credentials cannot
-	// self-sign, so this must name a service account the running identity may
-	// impersonate (roles/iam.serviceAccountTokenCreator). Empty means invoice
-	// PDFs upload fine but every presigned download link fails, so the resolver
-	// rejects an empty value when the resolved provider is GCS.
+	// SignerServiceAccountEmail signs presigned GET URLs (Workload Identity can't
+	// self-sign; needs roles/iam.serviceAccountTokenCreator). The resolver rejects
+	// an empty value under GCS.
 	SignerServiceAccountEmail string `mapstructure:"signer_service_account_email" validate:"omitempty"`
 }
 
@@ -286,19 +242,12 @@ type GCSConfig struct {
 // the Flexprice-owned bucket that Flexprice-managed export connections write to
 // when the deployment runs on GCP.
 //
-// There is deliberately no service-account-key field. On GCP, Flexprice's own
-// identity comes from Workload Identity (ambient ADC), and projects commonly
-// enforce constraints/iam.disableServiceAccountKeyCreation, which makes exported
-// SA keys unavailable. Customer BYO GCS connections still require an explicit
-// key on the connection row — see Factory.buildGCSStorage.
+// No SA-key field by design: on GCP Flexprice uses Workload Identity, and
+// iam.disableServiceAccountKeyCreation commonly blocks exported keys. Customer
+// BYO GCS connections still carry a key on the connection row.
 type FlexpriceGCSExportsConfig struct {
 	Bucket string `mapstructure:"bucket" validate:"omitempty"`
-	// SignerServiceAccountEmail is the identity used to sign presigned GET URLs.
-	// Under Workload Identity the ambient credentials cannot self-sign, so this
-	// must name a service account the running identity may impersonate
-	// (roles/iam.serviceAccountTokenCreator). Empty means export uploads succeed
-	// but every presigned download link fails, so the resolver rejects an empty
-	// value when the resolved provider is GCS (mirrors the invoice signer).
+	// See GCSConfig.SignerServiceAccountEmail; same signer requirement for exports.
 	SignerServiceAccountEmail string `mapstructure:"signer_service_account_email" validate:"omitempty"`
 }
 
