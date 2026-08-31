@@ -143,3 +143,5 @@ shannon-setup/
 
 # compiled migrate binary from `go build ./cmd/migrate`
 /migrate
+
+.context/
