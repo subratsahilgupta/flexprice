@@ -129,24 +129,12 @@ func (s *invoiceService) CreateOneOffInvoice(ctx context.Context, req dto.Create
 
 	// Prepare tax rates
 	taxService := NewTaxService(s.ServiceParams)
-	finalTaxRates := make([]*dto.TaxRateResponse, 0)
-	if len(req.TaxRateOverrides) > 0 {
-		preparedTaxRates, err := taxService.PrepareTaxRatesForInvoice(ctx, req)
-		if err != nil {
-			s.Logger.Error(ctx, "failed to prepare tax rates from overrides", "error", err)
-			return nil, err
-		}
-		finalTaxRates = preparedTaxRates
-	} else if len(req.TaxRates) > 0 {
-		for _, taxRateID := range req.TaxRates {
-			tr, err := taxService.GetTaxRate(ctx, taxRateID)
-			if err != nil {
-				return nil, err
-			}
-			finalTaxRates = append(finalTaxRates, tr)
-		}
+	preparedTaxRates, err := taxService.PrepareTaxRatesForInvoice(ctx, req)
+	if err != nil {
+		s.Logger.Error(ctx, "failed to prepare tax rates for invoice", "error", err)
+		return nil, err
 	}
-	req.PreparedTaxRates = finalTaxRates
+	req.PreparedTaxRates = preparedTaxRates
 
 	// Delegate to CreateInvoice which handles draft-first flow: create draft, compute, finalize, webhook
 	resp, err := s.CreateInvoice(ctx, req)
@@ -2145,29 +2133,26 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 	taxSvc := NewTaxService(s.ServiceParams)
 	rates, err := taxSvc.PrepareTaxRatesForInvoice(ctx, req)
 	if err != nil {
-		s.Logger.Info(ctx, "could not resolve tax rates for invoice preview; quoting untaxed",
+		// Nothing-configured returns a nil error, so anything here is a real failure.
+		s.Logger.Error(ctx, "could not resolve tax rates for invoice preview; quoting untaxed",
 			"error", err, "customer_id", req.CustomerID)
 		return dto.NewInvoiceResponse(inv), nil
 	}
 
 	// Calculate, never apply: applying writes a tax_applied record per rate, and this
 	// invoice is never created.
-	inv.TotalTax = taxSvc.CalculateTaxesOnInvoice(ctx, inv, rates).TotalTaxAmount
-	inv.Total = inv.Subtotal.
-		Sub(inv.TotalPrepaidCreditsApplied).
-		Sub(inv.TotalDiscount).
-		Add(inv.TotalTax)
-	if inv.Total.IsNegative() {
-		inv.Total = decimal.Zero
-	}
-	inv.AmountDue = inv.Total
-	inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
-	return dto.NewInvoiceResponse(inv), nil
+	result := taxSvc.CalculateTaxesOnInvoice(ctx, inv, rates)
+	applyTaxResultToInvoice(inv, result)
+
+	response := dto.NewInvoiceResponse(inv)
+	response.WithTaxes(result.TaxAppliedRecords)
+	return response, nil
 }
 
-// applyPreviewCoupons computes the coupon discounts a preview invoice would
-// carry and updates its totals. Nothing is persisted and no redemption is
-// counted — previewing an invoice must not consume a coupon.
+// applyPreviewCoupons computes the coupon discounts a preview invoice would carry and sets
+// inv.TotalDiscount. Nothing is persisted and no redemption is counted — previewing an
+// invoice must not consume a coupon. Tax is computed separately, by the caller, once
+// TotalDiscount here is final, since discounts apply before tax.
 //
 // Returns the per-coupon breakdown for the response.
 func (s *invoiceService) applyPreviewCoupons(ctx context.Context, inv *invoice.Invoice, invReq *dto.CreateInvoiceRequest) ([]*dto.CouponApplicationResponse, error) {
@@ -2192,8 +2177,6 @@ func (s *invoiceService) applyPreviewCoupons(ctx context.Context, inv *invoice.I
 	}
 
 	inv.TotalDiscount = result.TotalDiscountAmount
-	dto.RecalculatePreviewTotals(inv, invReq.PreparedTaxRates)
-
 	return result.AppliedCoupons, nil
 }
 
@@ -2232,28 +2215,27 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		})
 	}
 
-	// Create a draft invoice object for preview; ToInvoice applies preview discounts and taxes
+	// Create a draft invoice object for preview; ToInvoice does not resolve discounts or tax
 	inv, err := invReq.ToInvoice(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Coupons: compute (never persist) the discounts this invoice would carry,
-	// then bring tax and totals back in step — ToInvoice taxed the
-	// undiscounted subtotal because discounts resolve at this layer.
+	// Coupons first: discounts apply before tax, and the tax step below reads inv.TotalDiscount.
 	couponApplications, err := s.applyPreviewCoupons(ctx, inv, invReq)
 	if err != nil {
 		return nil, err
 	}
 
+	// Calculate, never apply: applying writes a tax_applied record per rate, and this
+	// invoice is never created.
+	taxSvc := NewTaxService(s.ServiceParams)
+	result := taxSvc.CalculateTaxesOnInvoice(ctx, inv, invReq.PreparedTaxRates)
+	applyTaxResultToInvoice(inv, result)
+
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
-
-	// Previews persist no tax_applied or coupon_application rows, so
-	// synthesise the breakdowns that WithTaxes / the DB load would otherwise
-	// provide — without them the response carries totals with nothing to
-	// explain them.
-	response.WithTaxes(dto.BuildPreviewTaxes(inv, invReq.PreparedTaxRates))
+	response.WithTaxes(result.TaxAppliedRecords)
 	if len(couponApplications) > 0 {
 		response.CouponApplications = couponApplications
 	}
@@ -2304,28 +2286,27 @@ func (s *invoiceService) GetInternalPreviewInvoice(ctx context.Context, req dto.
 		})
 	}
 
-	// Create a draft invoice object for preview; ToInvoice applies preview discounts and taxes
+	// Create a draft invoice object for preview; ToInvoice does not resolve discounts or tax
 	inv, err := invReq.ToInvoice(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Coupons: compute (never persist) the discounts this invoice would carry,
-	// then bring tax and totals back in step — ToInvoice taxed the
-	// undiscounted subtotal because discounts resolve at this layer.
+	// Coupons first: discounts apply before tax, and the tax step below reads inv.TotalDiscount.
 	couponApplications, err := s.applyPreviewCoupons(ctx, inv, invReq)
 	if err != nil {
 		return nil, err
 	}
 
+	// Calculate, never apply: applying writes a tax_applied record per rate, and this
+	// invoice is never created.
+	taxSvc := NewTaxService(s.ServiceParams)
+	result := taxSvc.CalculateTaxesOnInvoice(ctx, inv, invReq.PreparedTaxRates)
+	applyTaxResultToInvoice(inv, result)
+
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
-
-	// Previews persist no tax_applied or coupon_application rows, so
-	// synthesise the breakdowns that WithTaxes / the DB load would otherwise
-	// provide — without them the response carries totals with nothing to
-	// explain them.
-	response.WithTaxes(dto.BuildPreviewTaxes(inv, invReq.PreparedTaxRates))
+	response.WithTaxes(result.TaxAppliedRecords)
 	if len(couponApplications) > 0 {
 		response.CouponApplications = couponApplications
 	}
@@ -3719,18 +3700,18 @@ func (s *invoiceService) RecalculateTaxesOnInvoice(ctx context.Context, inv *inv
 // For subscription invoices, prepares tax rates from subscription associations.
 func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.Invoice, req dto.InvoiceComputeRequest) error {
 	taxService := NewTaxService(s.ServiceParams)
-	var taxRates []*dto.TaxRateResponse
+	taxRates := req.PreparedTaxRates
 
-	if len(req.PreparedTaxRates) > 0 {
-		// Use prepared tax rates (from one-off invoices or billing service)
-		taxRates = req.PreparedTaxRates
-	} else if inv.SubscriptionID != nil {
-		// Prepare tax rates for subscription invoices
-		taxPrepareReq := dto.CreateInvoiceRequest{
+	if taxRates == nil && inv.SubscriptionID != nil {
+		// Not already resolved by the caller (one-off invoices, billing service) — resolve
+		// from the subscription's own associations.
+		prepared, err := taxService.PrepareTaxRatesForInvoice(ctx, dto.CreateInvoiceRequest{
 			SubscriptionID: inv.SubscriptionID,
 			CustomerID:     inv.CustomerID,
-		}
-		preparedTaxRates, err := taxService.PrepareTaxRatesForInvoice(ctx, taxPrepareReq)
+			// An unstamped association defaults its behavior from this. Omit it and they all
+			// resolve against an empty currency, which silently means inclusive.
+			Currency: inv.Currency,
+		})
 		if err != nil {
 			s.Logger.Error(ctx, "failed to prepare tax rates for invoice",
 				"error", err,
@@ -3738,30 +3719,48 @@ func (s *invoiceService) applyTaxesToInvoice(ctx context.Context, inv *invoice.I
 				"subscription_id", *inv.SubscriptionID)
 			return err
 		}
-		taxRates = preparedTaxRates
+		taxRates = prepared
 	}
 
-	// Apply taxes if we have any tax rates
-	if len(taxRates) == 0 {
-		return nil
-	}
-
+	// A nil/empty taxRates is handled by the same path: zero tax, with the reason recorded.
 	taxResult, err := taxService.ApplyTaxesOnInvoice(ctx, inv, taxRates)
 	if err != nil {
 		return err
 	}
 
-	// Update the invoice with calculated tax amounts
-	inv.TotalTax = taxResult.TotalTaxAmount
-	// Discount-first-then-tax: total = subtotal - prepaid credits - discount + tax
-	inv.Total = inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(taxResult.TotalTaxAmount)
+	applyTaxResultToInvoice(inv, taxResult)
+	return nil
+}
+
+// applyTaxResultToInvoice writes a result onto an invoice's totals and exemption reason.
+// Shared by the persisted and preview paths so the formula lives in one place.
+func applyTaxResultToInvoice(inv *invoice.Invoice, result *TaxCalculationResult) {
+	inv.TotalTax = result.TotalTaxAmount
+
+	inv.Total = inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount)
+	if result.Exempt {
+		// An exempt customer pays neither kind, so the tax baked into the price comes back out.
+		inv.Total = inv.Total.Sub(result.InclusiveTax)
+	} else {
+		// Inclusive tax is already inside subtotal and only reported, never added back. Only
+		// exclusive tax moves the total.
+		inv.Total = inv.Total.Add(result.ExclusiveTax)
+	}
+
 	if inv.Total.IsNegative() {
 		inv.Total = decimal.Zero
 	}
 	inv.AmountDue = inv.Total
 	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
 
-	return nil
+	switch {
+	case result.Exempt:
+		inv.TaxExemptionReasonCode = lo.ToPtr(types.TaxExemptionReasonCustomerExempt)
+	case len(result.TaxAppliedRecords) == 0:
+		inv.TaxExemptionReasonCode = lo.ToPtr(types.TaxExemptionReasonNoTaxConfigured)
+	default:
+		inv.TaxExemptionReasonCode = nil
+	}
 }
 
 func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.UpdateInvoiceRequest) (*dto.InvoiceResponse, error) {
@@ -4388,8 +4387,6 @@ func (s *invoiceService) getAppliedTaxesForPDF(ctx context.Context, invoiceID st
 			taxType = string(appliedTax.TaxRate.TaxRateType)
 			if appliedTax.TaxRate.TaxRateType == types.TaxRateTypePercentage && appliedTax.TaxRate.PercentageValue != nil {
 				taxRateValue, _ = appliedTax.TaxRate.PercentageValue.Round(precision).Float64()
-			} else if appliedTax.TaxRate.TaxRateType == types.TaxRateTypeFixed && appliedTax.TaxRate.FixedValue != nil {
-				taxRateValue, _ = appliedTax.TaxRate.FixedValue.Round(precision).Float64()
 			}
 		} else {
 			// Fallback if tax rate not expanded - this should not happen if expand works

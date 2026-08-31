@@ -809,6 +809,7 @@ var (
 		{Name: "address_postal_code", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(20)"}},
 		{Name: "address_country", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(2)"}},
 		{Name: "timezone", Type: field.TypeString, Nullable: true, Default: "UTC", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tax_treatment", Type: field.TypeString, Default: "taxable", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// CustomersTable holds the schema information for the "customers" table.
 	CustomersTable = &schema.Table{
@@ -1231,6 +1232,7 @@ var (
 		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(100)"}},
 		{Name: "recalculated_invoice_id", Type: field.TypeString, Nullable: true},
 		{Name: "is_manually_edited", Type: field.TypeBool, Default: false},
+		{Name: "tax_exemption_reason_code", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// InvoicesTable holds the schema information for the "invoices" table.
 	InvoicesTable = &schema.Table{
@@ -2387,6 +2389,7 @@ var (
 		{Name: "applied_at", Type: field.TypeTime},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tax_behavior", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// TaxAppliedsTable holds the schema information for the "tax_applieds" table.
 	TaxAppliedsTable = &schema.Table{
@@ -2425,6 +2428,7 @@ var (
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "start_date", Type: field.TypeTime, Nullable: true},
 		{Name: "end_date", Type: field.TypeTime, Nullable: true},
+		{Name: "tax_behavior", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 	}
 	// TaxAssociationsTable holds the schema information for the "tax_associations" table.
 	TaxAssociationsTable = &schema.Table{
@@ -2461,7 +2465,6 @@ var (
 		{Name: "tax_rate_type", Type: field.TypeString, Default: "percentage"},
 		{Name: "scope", Type: field.TypeString},
 		{Name: "percentage_value", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(9,6)"}},
-		{Name: "fixed_value", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(9,6)"}},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 	}
 	// TaxRatesTable holds the schema information for the "tax_rates" table.
