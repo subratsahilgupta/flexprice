@@ -70600,9 +70600,22 @@ func (m *TaxAppliedMutation) OldTaxBehavior(ctx context.Context) (v types.TaxBeh
 	return oldValue.TaxBehavior, nil
 }
 
+// ClearTaxBehavior clears the value of the "tax_behavior" field.
+func (m *TaxAppliedMutation) ClearTaxBehavior() {
+	m.tax_behavior = nil
+	m.clearedFields[taxapplied.FieldTaxBehavior] = struct{}{}
+}
+
+// TaxBehaviorCleared returns if the "tax_behavior" field was cleared in this mutation.
+func (m *TaxAppliedMutation) TaxBehaviorCleared() bool {
+	_, ok := m.clearedFields[taxapplied.FieldTaxBehavior]
+	return ok
+}
+
 // ResetTaxBehavior resets all changes to the "tax_behavior" field.
 func (m *TaxAppliedMutation) ResetTaxBehavior() {
 	m.tax_behavior = nil
+	delete(m.clearedFields, taxapplied.FieldTaxBehavior)
 }
 
 // Where appends a list predicates to the TaxAppliedMutation builder.
@@ -70966,6 +70979,9 @@ func (m *TaxAppliedMutation) ClearedFields() []string {
 	if m.FieldCleared(taxapplied.FieldIdempotencyKey) {
 		fields = append(fields, taxapplied.FieldIdempotencyKey)
 	}
+	if m.FieldCleared(taxapplied.FieldTaxBehavior) {
+		fields = append(fields, taxapplied.FieldTaxBehavior)
+	}
 	return fields
 }
 
@@ -70997,6 +71013,9 @@ func (m *TaxAppliedMutation) ClearField(name string) error {
 		return nil
 	case taxapplied.FieldIdempotencyKey:
 		m.ClearIdempotencyKey()
+		return nil
+	case taxapplied.FieldTaxBehavior:
+		m.ClearTaxBehavior()
 		return nil
 	}
 	return fmt.Errorf("unknown TaxApplied nullable field %s", name)

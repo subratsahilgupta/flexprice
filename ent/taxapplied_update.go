@@ -164,6 +164,12 @@ func (tau *TaxAppliedUpdate) SetNillableTaxBehavior(tb *types.TaxBehavior) *TaxA
 	return tau
 }
 
+// ClearTaxBehavior clears the value of the "tax_behavior" field.
+func (tau *TaxAppliedUpdate) ClearTaxBehavior() *TaxAppliedUpdate {
+	tau.mutation.ClearTaxBehavior()
+	return tau
+}
+
 // Mutation returns the TaxAppliedMutation object of the builder.
 func (tau *TaxAppliedUpdate) Mutation() *TaxAppliedMutation {
 	return tau.mutation
@@ -205,20 +211,7 @@ func (tau *TaxAppliedUpdate) defaults() {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (tau *TaxAppliedUpdate) check() error {
-	if v, ok := tau.mutation.TaxBehavior(); ok {
-		if err := taxapplied.TaxBehaviorValidator(string(v)); err != nil {
-			return &ValidationError{Name: "tax_behavior", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.tax_behavior": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (tau *TaxAppliedUpdate) sqlSave(ctx context.Context) (n int, err error) {
-	if err := tau.check(); err != nil {
-		return n, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(taxapplied.Table, taxapplied.Columns, sqlgraph.NewFieldSpec(taxapplied.FieldID, field.TypeString))
 	if ps := tau.mutation.predicates; len(ps) > 0 {
 		_spec.Predicate = func(selector *sql.Selector) {
@@ -271,6 +264,9 @@ func (tau *TaxAppliedUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := tau.mutation.TaxBehavior(); ok {
 		_spec.SetField(taxapplied.FieldTaxBehavior, field.TypeString, value)
+	}
+	if tau.mutation.TaxBehaviorCleared() {
+		_spec.ClearField(taxapplied.FieldTaxBehavior, field.TypeString)
 	}
 	if n, err = sqlgraph.UpdateNodes(ctx, tau.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -426,6 +422,12 @@ func (tauo *TaxAppliedUpdateOne) SetNillableTaxBehavior(tb *types.TaxBehavior) *
 	return tauo
 }
 
+// ClearTaxBehavior clears the value of the "tax_behavior" field.
+func (tauo *TaxAppliedUpdateOne) ClearTaxBehavior() *TaxAppliedUpdateOne {
+	tauo.mutation.ClearTaxBehavior()
+	return tauo
+}
+
 // Mutation returns the TaxAppliedMutation object of the builder.
 func (tauo *TaxAppliedUpdateOne) Mutation() *TaxAppliedMutation {
 	return tauo.mutation
@@ -480,20 +482,7 @@ func (tauo *TaxAppliedUpdateOne) defaults() {
 	}
 }
 
-// check runs all checks and user-defined validators on the builder.
-func (tauo *TaxAppliedUpdateOne) check() error {
-	if v, ok := tauo.mutation.TaxBehavior(); ok {
-		if err := taxapplied.TaxBehaviorValidator(string(v)); err != nil {
-			return &ValidationError{Name: "tax_behavior", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.tax_behavior": %w`, err)}
-		}
-	}
-	return nil
-}
-
 func (tauo *TaxAppliedUpdateOne) sqlSave(ctx context.Context) (_node *TaxApplied, err error) {
-	if err := tauo.check(); err != nil {
-		return _node, err
-	}
 	_spec := sqlgraph.NewUpdateSpec(taxapplied.Table, taxapplied.Columns, sqlgraph.NewFieldSpec(taxapplied.FieldID, field.TypeString))
 	id, ok := tauo.mutation.ID()
 	if !ok {
@@ -563,6 +552,9 @@ func (tauo *TaxAppliedUpdateOne) sqlSave(ctx context.Context) (_node *TaxApplied
 	}
 	if value, ok := tauo.mutation.TaxBehavior(); ok {
 		_spec.SetField(taxapplied.FieldTaxBehavior, field.TypeString, value)
+	}
+	if tauo.mutation.TaxBehaviorCleared() {
+		_spec.ClearField(taxapplied.FieldTaxBehavior, field.TypeString)
 	}
 	_node = &TaxApplied{config: tauo.config}
 	_spec.Assign = _node.assignValues

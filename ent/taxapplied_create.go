@@ -202,6 +202,14 @@ func (tac *TaxAppliedCreate) SetTaxBehavior(tb types.TaxBehavior) *TaxAppliedCre
 	return tac
 }
 
+// SetNillableTaxBehavior sets the "tax_behavior" field if the given value is not nil.
+func (tac *TaxAppliedCreate) SetNillableTaxBehavior(tb *types.TaxBehavior) *TaxAppliedCreate {
+	if tb != nil {
+		tac.SetTaxBehavior(*tb)
+	}
+	return tac
+}
+
 // SetID sets the "id" field.
 func (tac *TaxAppliedCreate) SetID(s string) *TaxAppliedCreate {
 	tac.mutation.SetID(s)
@@ -325,11 +333,8 @@ func (tac *TaxAppliedCreate) check() error {
 	if _, ok := tac.mutation.AppliedAt(); !ok {
 		return &ValidationError{Name: "applied_at", err: errors.New(`ent: missing required field "TaxApplied.applied_at"`)}
 	}
-	if _, ok := tac.mutation.TaxBehavior(); !ok {
-		return &ValidationError{Name: "tax_behavior", err: errors.New(`ent: missing required field "TaxApplied.tax_behavior"`)}
-	}
 	if v, ok := tac.mutation.TaxBehavior(); ok {
-		if err := taxapplied.TaxBehaviorValidator(string(v)); err != nil {
+		if err := v.Validate(); err != nil {
 			return &ValidationError{Name: "tax_behavior", err: fmt.Errorf(`ent: validator failed for field "TaxApplied.tax_behavior": %w`, err)}
 		}
 	}
