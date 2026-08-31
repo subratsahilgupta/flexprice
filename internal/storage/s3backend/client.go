@@ -221,6 +221,11 @@ func (c *client) Upload(ctx context.Context, req *storagetypes.UploadRequest) (*
 		Body:        bytes.NewReader(data),
 		ContentType: aws.String(contentType),
 	}
+	if req.Compress && c.cfg.CompressionGzip {
+		// Without this, S3 serves the gzipped bytes as-is and clients receive
+		// compressed data instead of the original payload.
+		input.ContentEncoding = aws.String("gzip")
+	}
 	switch c.cfg.ServerSideEncrypt {
 	case "": // no server-side encryption requested
 	case "AES256":
@@ -264,7 +269,7 @@ func (c *client) Download(ctx context.Context, key string) ([]byte, error) {
 			WithMessagef("bucket:%s, key:%s", c.cfg.Bucket, key).
 			Mark(ierr.ErrHTTPClient)
 	}
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 	return io.ReadAll(result.Body)
 }
 

@@ -26,7 +26,6 @@ func TestNew_WithStaticCredentials_ReturnsStorage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, s)
 
-	var _ storage.Storage = s
 	assert.Equal(t, storage.ProviderS3, s.Provider())
 }
 
