@@ -2,7 +2,6 @@ package dto
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -96,14 +95,12 @@ func (r *CreateTaskRequest) Validate() error {
 	return validator.ValidateRequest(r)
 }
 
-// ToTask assembles the domain task. The service passes the imports bucket and
-// key prefix from config so the caller never influences either — the persisted
-// FileURL is s3://<bucket>/<prefix><upload_id>.csv, which the CSVBoxProvider
-// later presigns for the streaming download.
-func (r *CreateTaskRequest) ToTask(ctx context.Context, importsBucket, keyPrefix string) *task.Task {
-	key := fmt.Sprintf("%s%s.csv", keyPrefix, r.UploadID)
-	fileURL := fmt.Sprintf("s3://%s/%s", importsBucket, key)
-
+// ToTask assembles the domain task. Nothing caller-supplied lands in the S3
+// key path: the service recomposes the key from config + ctx (tenant, env) +
+// upload_id at process time, so the persisted metadata is treated as an
+// audit log, not a source of truth. FileURL is intentionally empty — there
+// is no URL to persist; the object is addressed by key derivation.
+func (r *CreateTaskRequest) ToTask(ctx context.Context) *task.Task {
 	metadata := r.Metadata
 	if metadata == nil {
 		metadata = make(map[string]interface{})
@@ -115,7 +112,6 @@ func (r *CreateTaskRequest) ToTask(ctx context.Context, importsBucket, keyPrefix
 		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TASK),
 		TaskType:      r.TaskType,
 		EntityType:    r.EntityType,
-		FileURL:       fileURL,
 		FileName:      r.FileName,
 		FileType:      r.FileType,
 		TaskStatus:    types.TaskStatusPending,

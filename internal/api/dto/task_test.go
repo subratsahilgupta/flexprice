@@ -102,18 +102,17 @@ func TestCreateTaskRequest_Validate(t *testing.T) {
 	}
 }
 
-// ToTask must derive the S3 URL deterministically from server-side config plus
-// the validated upload_id — never anything caller-supplied. That's what makes
-// the trust boundary work: even a malicious caller can only address a key
-// under the configured prefix in the configured bucket.
-func TestCreateTaskRequest_ToTask_DerivesS3URL(t *testing.T) {
+// ToTask preserves only what's needed for the audit trail; the S3 key is
+// derived at process time from ctx + config + upload_id, not stored, so
+// the caller can never influence what object gets fetched.
+func TestCreateTaskRequest_ToTask_PersistsAuditMetadata(t *testing.T) {
 	r := validCreateTaskRequest()
 	if err := r.Validate(); err != nil {
 		t.Fatalf("unexpected validation error: %v", err)
 	}
-	tsk := r.ToTask(context.Background(), "flexprice-imports-test", "csvbox/")
-	if got, want := tsk.FileURL, "s3://flexprice-imports-test/csvbox/abc_123-XYZ.csv"; got != want {
-		t.Fatalf("FileURL = %q, want %q", got, want)
+	tsk := r.ToTask(context.Background())
+	if tsk.FileURL != "" {
+		t.Fatalf("FileURL should be empty; key is derived at process time, got %q", tsk.FileURL)
 	}
 	if tsk.Metadata["upload_id"] != r.UploadID {
 		t.Fatalf("metadata upload_id not preserved: %#v", tsk.Metadata)
