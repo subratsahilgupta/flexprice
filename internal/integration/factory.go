@@ -1416,6 +1416,11 @@ func (f *Factory) buildS3Storage(ctx context.Context, conn *connection.Connectio
 			s3Cfg.AWSSessionToken = f.config.FlexpriceS3Exports.AWSSessionToken
 		case config.CredentialSourceAmbient:
 			// Uses AWS default chain.
+		default:
+			// Reject rather than silently fall through to the ambient chain.
+			return nil, ierr.NewError("unsupported managed S3 credential source").
+				WithHint("flexprice_s3_exports.credential_source must be 'static' or 'ambient'; federation is not wired").
+				Mark(ierr.ErrValidation)
 		}
 
 		return s3backend.New(ctx, s3Cfg, f.logger)

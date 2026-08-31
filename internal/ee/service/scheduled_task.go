@@ -188,6 +188,12 @@ func (s *scheduledTaskService) CreateScheduledTask(ctx context.Context, req dto.
 			return nil, err
 		}
 	} else {
+		// Custom GCS is not supported; only managed GCS.
+		if conn.ProviderType == types.SecretProviderGCS {
+			return nil, ierr.NewError("custom GCS storage is not supported").
+				WithHint("Only Flexprice-managed GCS storage is supported").
+				Mark(ierr.ErrValidation)
+		}
 		// Provider from connection, not caller JSON.
 		if req.JobConfig != nil {
 			req.JobConfig.Provider = conn.ProviderType
