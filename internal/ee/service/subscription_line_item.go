@@ -92,14 +92,22 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 			}
 		}
 
-		if types.BillingPeriodGreaterThan(sub.BillingPeriod, lineItem.BillingPeriod) {
-			return ierr.NewError("line item billing period cannot be shorter than subscription billing period").
-				WithHint("The line item's billing period must be equal to or longer than the subscription").
+		// Line item cadence must be equal to, longer than, or a strict divisor of
+		// the subscription cadence. Longer-than case remains supported via
+		// FindMatchingLineItemPeriodForInvoice (once-per-N-invoices billing);
+		// shorter-that-divides is the new fan-out case (e.g. monthly price on
+		// quarterly sub → 3 monthly invoice line items).
+		if types.BillingPeriodGreaterThan(sub.BillingPeriod, lineItem.BillingPeriod) &&
+			!types.IsCadenceCompatible(sub.BillingPeriod, sub.BillingPeriodCount, lineItem.BillingPeriod, lineItem.BillingPeriodCount) {
+			return ierr.NewError("line item billing period must equal or divide subscription billing period").
+				WithHint("A shorter line-item cadence is only allowed when it strictly divides the subscription cadence (e.g. monthly on quarterly, monthly on annual).").
 				WithReportableDetails(map[string]interface{}{
-					"subscription_id":             sub.ID,
-					"subscription_billing_period": sub.BillingPeriod,
-					"line_item_id":                lineItem.ID,
-					"line_item_billing_period":    lineItem.BillingPeriod,
+					"subscription_id":                   sub.ID,
+					"subscription_billing_period":       sub.BillingPeriod,
+					"subscription_billing_period_count": sub.BillingPeriodCount,
+					"line_item_id":                      lineItem.ID,
+					"line_item_billing_period":          lineItem.BillingPeriod,
+					"line_item_billing_period_count":    lineItem.BillingPeriodCount,
 				}).
 				Mark(ierr.ErrValidation)
 		}
