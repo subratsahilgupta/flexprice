@@ -2361,10 +2361,6 @@ func init() {
 	taxappliedDescAppliedAt := taxappliedFields[8].Descriptor()
 	// taxapplied.DefaultAppliedAt holds the default value on creation for the applied_at field.
 	taxapplied.DefaultAppliedAt = taxappliedDescAppliedAt.Default.(func() time.Time)
-	// taxappliedDescTaxBehavior is the schema descriptor for tax_behavior field.
-	taxappliedDescTaxBehavior := taxappliedFields[11].Descriptor()
-	// taxapplied.TaxBehaviorValidator is a validator for the "tax_behavior" field. It is called by the builders before save.
-	taxapplied.TaxBehaviorValidator = taxappliedDescTaxBehavior.Validators[0].(func(string) error)
 	taxassociationMixin := schema.TaxAssociation{}.Mixin()
 	taxassociationMixinFields0 := taxassociationMixin[0].Fields()
 	_ = taxassociationMixinFields0

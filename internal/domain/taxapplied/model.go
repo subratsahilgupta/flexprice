@@ -28,6 +28,13 @@ type TaxApplied struct {
 }
 
 func FromEnt(ent *ent.TaxApplied) *TaxApplied {
+	// Rows written before tax_behavior existed have none, and exclusive is the only
+	// behavior that was ever charged back then.
+	taxBehavior := ent.TaxBehavior
+	if taxBehavior == "" {
+		taxBehavior = types.TaxBehaviorExclusive
+	}
+
 	return &TaxApplied{
 		ID:               ent.ID,
 		TaxRateID:        ent.TaxRateID,
@@ -36,7 +43,7 @@ func FromEnt(ent *ent.TaxApplied) *TaxApplied {
 		TaxAssociationID: ent.TaxAssociationID,
 		TaxableAmount:    ent.TaxableAmount,
 		TaxAmount:        ent.TaxAmount,
-		TaxBehavior:      ent.TaxBehavior,
+		TaxBehavior:      taxBehavior,
 		Currency:         ent.Currency,
 		AppliedAt:        ent.AppliedAt,
 		EnvironmentID:    ent.EnvironmentID,

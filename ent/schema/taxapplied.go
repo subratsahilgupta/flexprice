@@ -119,7 +119,7 @@ func (TaxApplied) Fields() []ent.Field {
 			SchemaType(map[string]string{
 				"postgres": "varchar(50)",
 			}).
-			NotEmpty().
+			Optional().
 			Comment("inclusive or exclusive, frozen at apply time"),
 	}
 }

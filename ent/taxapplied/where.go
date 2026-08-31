@@ -1199,6 +1199,16 @@ func TaxBehaviorHasSuffix(v types.TaxBehavior) predicate.TaxApplied {
 	return predicate.TaxApplied(sql.FieldHasSuffix(FieldTaxBehavior, vc))
 }
 
+// TaxBehaviorIsNil applies the IsNil predicate on the "tax_behavior" field.
+func TaxBehaviorIsNil() predicate.TaxApplied {
+	return predicate.TaxApplied(sql.FieldIsNull(FieldTaxBehavior))
+}
+
+// TaxBehaviorNotNil applies the NotNil predicate on the "tax_behavior" field.
+func TaxBehaviorNotNil() predicate.TaxApplied {
+	return predicate.TaxApplied(sql.FieldNotNull(FieldTaxBehavior))
+}
+
 // TaxBehaviorEqualFold applies the EqualFold predicate on the "tax_behavior" field.
 func TaxBehaviorEqualFold(v types.TaxBehavior) predicate.TaxApplied {
 	vc := string(v)

@@ -109,8 +109,6 @@ var (
 	CurrencyValidator func(string) error
 	// DefaultAppliedAt holds the default value on creation for the "applied_at" field.
 	DefaultAppliedAt func() time.Time
-	// TaxBehaviorValidator is a validator for the "tax_behavior" field. It is called by the builders before save.
-	TaxBehaviorValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the TaxApplied queries.
