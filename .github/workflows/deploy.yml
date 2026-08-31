@@ -122,7 +122,7 @@ jobs:
         env:
           GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
           GITHUB_SHA: ${{ github.sha }}
-        run: echo "image=${GHCR_IMAGE}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+        run: echo "image=${GHCR_IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
   # ──────────────────────────────────────────────────────────────────────────
   # Job 2: Resolve deployment targets (production only)
