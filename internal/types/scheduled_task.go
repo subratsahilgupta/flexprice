@@ -131,18 +131,6 @@ func (e S3EncryptionType) Validate() error {
 		Mark(ierr.ErrValidation)
 }
 
-// Empty defaults to static_key for back-compat.
-type StorageAccessMode string
-
-const (
-	StorageAccessModeStaticKey  StorageAccessMode = "static_key"
-	StorageAccessModeAssumeRole StorageAccessMode = "assume_role"
-	// Reserved; not implemented.
-	StorageAccessModeImpersonation StorageAccessMode = "impersonation"
-	StorageAccessModeDirectGrant   StorageAccessMode = "direct_grant"
-	StorageAccessModeWIF           StorageAccessMode = "wif"
-)
-
 // S3ExportConfig represents S3 export configuration (non-sensitive settings)
 // This goes in the sync_config column
 type S3ExportConfig struct {
@@ -152,16 +140,6 @@ type S3ExportConfig struct {
 	Compression        S3CompressionType `json:"compression,omitempty"`          // Compression type: "gzip", "none" (default: "none")
 	Encryption         S3EncryptionType  `json:"encryption,omitempty"`           // Encryption type: "AES256", "aws:kms", "aws:kms:dsse" (default: "AES256")
 	IsFlexpriceManaged bool              `json:"is_flexprice_managed,omitempty"` // If true, use Flexprice-managed S3 credentials instead of user-provided
-	AccessMode         StorageAccessMode `json:"access_mode,omitempty"`
-	RoleARN            string            `json:"role_arn,omitempty"`
-	ExternalID         string            `json:"external_id,omitempty"`
-}
-
-func (s *S3ExportConfig) ResolvedAccessMode() StorageAccessMode {
-	if s == nil || s.AccessMode == "" {
-		return StorageAccessModeStaticKey
-	}
-	return s.AccessMode
 }
 
 // Enforces S3-only Region rule.
@@ -188,23 +166,6 @@ func (s *S3ExportConfig) ValidateForProvider(providerType SecretProvider) error 
 	}
 	if err := s.Encryption.Validate(); err != nil {
 		return err
-	}
-
-	switch s.ResolvedAccessMode() {
-	case StorageAccessModeStaticKey:
-	case StorageAccessModeAssumeRole:
-		// Disabled pending per-environment IAM principal.
-		return ierr.NewError("assume_role access mode is not enabled").
-			WithHint("Cross-account AssumeRole for customer buckets is implemented but disabled pending a dedicated per-environment Flexprice IAM principal. Use access_mode 'static_key' with customer-supplied credentials for now.").
-			Mark(ierr.ErrValidation)
-	case StorageAccessModeImpersonation, StorageAccessModeDirectGrant, StorageAccessModeWIF:
-		return ierr.NewError("access mode is not yet supported").
-			WithHintf("access_mode %q is reserved for future GCP BYOB support and is not implemented yet", s.AccessMode).
-			Mark(ierr.ErrValidation)
-	default:
-		return ierr.NewError("invalid access_mode").
-			WithHintf("access_mode %q is not recognized", s.AccessMode).
-			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -256,21 +217,7 @@ type S3JobConfig struct {
 	UsePathStyle         bool                 `json:"use_path_style,omitempty"`         // Use path-style addressing (required for MinIO)
 	ExportMetadataFields ExportMetadataFields `json:"export_metadata_fields,omitempty"` // Optional user-selected metadata columns
 	// Empty means S3 for back-compat.
-	Provider   SecretProvider    `json:"provider,omitempty"`
-	AccessMode StorageAccessMode `json:"access_mode,omitempty"`
-	RoleARN    string            `json:"role_arn,omitempty"`
-	ExternalID string            `json:"external_id,omitempty"`
-}
-
-func (s *S3JobConfig) ResolvedAccessMode() StorageAccessMode {
-	if s == nil || s.AccessMode == "" {
-		return StorageAccessModeStaticKey
-	}
-	return s.AccessMode
-}
-
-func (s *S3JobConfig) isGCS() bool {
-	return s.Provider == SecretProviderGCS
+	Provider SecretProvider `json:"provider,omitempty"`
 }
 
 // Validate validates the S3 job configuration
