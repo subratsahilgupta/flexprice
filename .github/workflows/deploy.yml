@@ -2,7 +2,9 @@ name: Build, Push & Deploy to AWS ECS
 
 on:
   push:
-    branches: [main]
+    # develop builds + publishes the GHCR :develop image only; no ECS deploy
+    # (staging ECS is deprovisioned). main runs the full production pipeline.
+    branches: [develop, main]
     tags: ['v*']
   # Manual trigger: lets you validate config or force-deploy without a push
   workflow_dispatch:
@@ -37,7 +39,7 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
-  # Job 1: Build the Docker image and push it to ECR
+  # Job 1: Build the Docker image and push it to GHCR
   # Skipped on dry-run dispatches (no code change, no reason to rebuild)
   # ──────────────────────────────────────────────────────────────────────────
   build:
@@ -48,29 +50,20 @@ jobs:
       image: ${{ steps.set-image.outputs.image }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-cicd
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GitHub Container Registry
         # Best-effort on non-main branches; REQUIRED on main — GCP prod deploys off
         # the GHCR :<sha> this pushes (promoted to :main post-approval), so a GHCR
         # failure on main must fail the build, not slip through silently.
         continue-on-error: ${{ github.ref_name != 'main' }}
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ vars.GHCR_USERNAME || github.actor }}
@@ -79,18 +72,14 @@ jobs:
       - name: Prepare image tags
         id: image-tag
         env:
-          ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
-          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
           GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
           IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          echo "ecr_tag=${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
-          # legacy output used by deploy jobs
-          echo "tag=${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
-
+          IS_DEVELOP="${{ github.ref_name == 'develop' }}"
           IS_MAIN="${{ github.ref_name == 'main' }}"
+          IS_DEVELOP="${{ github.ref_name == 'develop' }}"
 
           {
             echo "ghcr_tags<<TAGS_EOF"
@@ -98,6 +87,8 @@ jobs:
             if [ "$IS_RELEASE" = "true" ]; then
               echo "${GHCR_IMAGE}:${GITHUB_REF_NAME}"
               echo "${GHCR_IMAGE}:latest"
+            elif [ "$IS_DEVELOP" = "true" ]; then
+              echo "${GHCR_IMAGE}:develop"
             # NOTE: on main we intentionally do NOT push :main here. The build job
             # publishes only the immutable :<sha> tag. The :main tag — which the GCP
             # ArgoCD image-updater watches — is promoted in the 'promote-main-ghcr'
@@ -107,33 +98,14 @@ jobs:
             echo "TAGS_EOF"
           } >> $GITHUB_OUTPUT
 
-          if [ "$IS_RELEASE" = "true" ] || [ "$IS_MAIN" = "true" ]; then
+          if [ "$IS_RELEASE" = "true" ] || [ "$IS_MAIN" = "true" ] || [ "$IS_DEVELOP" = "true" ]; then
             echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
           else
             echo "platforms=linux/arm64" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build & push image to ECR
-        id: build-ecr
+      - name: Build & push image to GHCR
         uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile
-          platforms: ${{ steps.image-tag.outputs.platforms }}
-          push: true
-          tags: ${{ steps.image-tag.outputs.ecr_tag }}
-          provenance: false
-          # Shared layer cache in GHCR (both AWS + GCP self-hosted runners reach it).
-          # First build of a commit populates it; rebuilds and the GHCR step below hit it.
-          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
-
-      - name: Push image to GHCR
-        uses: docker/build-push-action@v7
-        # Best-effort on non-main branches; REQUIRED on main — GCP prod deploys off
-        # the GHCR :<sha> this pushes (promoted to :main post-approval), so a GHCR
-        # failure on main must fail the build, not slip through silently.
-        continue-on-error: ${{ github.ref_name != 'main' }}
         with:
           context: .
           file: Dockerfile
@@ -141,16 +113,16 @@ jobs:
           push: true
           tags: ${{ steps.image-tag.outputs.ghcr_tags }}
           provenance: false
-          # Reuses the cache the ECR build just populated -> all layers hit, no rebuild.
+          # Shared layer cache in GHCR (both AWS + GCP self-hosted runners reach it).
           cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
 
       - name: Set image output
         id: set-image
         env:
-          ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
-          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
           GITHUB_SHA: ${{ github.sha }}
-        run: echo "image=${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+        run: echo "image=${GHCR_IMAGE}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
   # ──────────────────────────────────────────────────────────────────────────
   # Job 2: Resolve deployment targets (production only)
@@ -190,6 +162,9 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   resolve-config:
     name: Resolve deployment targets
+    # develop only builds/publishes the GHCR image (staging ECS deprovisioned).
+    # Skipping here cascades: every deploy job needs this one, so none run.
+    if: ${{ github.ref_name != 'develop' }}
     runs-on: self-hosted
     outputs:
       targets: ${{ steps.config.outputs.targets }}
@@ -318,10 +293,10 @@ jobs:
       # Both actions are pinned to a commit SHA rather than a tag. A tag can be
       # repointed by its owner (see the trivy-action and kics-github-action
       # compromises); the rest of this workflow predates that rule.
-      - uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-cicd
           aws-region: ${{ matrix.target.region }}
@@ -332,8 +307,10 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.api_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -365,7 +342,7 @@ jobs:
 
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-cicd
           aws-region: ${{ matrix.target.region }}
@@ -376,8 +353,10 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.preprod_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -436,14 +415,14 @@ jobs:
     environment: gcp-prod-approval
     steps:
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ vars.GHCR_USERNAME || github.actor }}
           password: ${{ secrets.GHCR_PUBLISH_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Retag :<sha> -> :main (manifest copy, no rebuild)
         env:
@@ -489,7 +468,7 @@ jobs:
 
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-cicd
           aws-region: ${{ matrix.target.region }}
@@ -500,8 +479,10 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.api_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
 
   deploy-consumer:
@@ -526,7 +507,7 @@ jobs:
 
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-cicd
           aws-region: ${{ matrix.target.region }}
@@ -537,8 +518,10 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.consumer_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
 
   deploy-worker:
@@ -563,7 +546,7 @@ jobs:
 
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-cicd
           aws-region: ${{ matrix.target.region }}
@@ -574,6 +557,8 @@ jobs:
           cluster: ${{ matrix.target.cluster }}
           region: ${{ matrix.target.region }}
           service_name: ${{ matrix.target.worker_service }}
-          image: ${{ needs.build.outputs.image || format('{0}/{1}:{2}', env.ECR_REGISTRY, env.ECR_REPOSITORY, github.sha) }}
+          image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}

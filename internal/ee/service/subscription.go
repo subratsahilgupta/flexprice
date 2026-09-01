@@ -129,7 +129,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	s.overRideSubscriptionBasedOnIntegration(ctx, sub, &req)
 
 	// Validate and filter prices
-	validPrices, err := s.ValidateAndFilterPricesForSubscription(ctx, plan.ID, types.PRICE_ENTITY_TYPE_PLAN, sub, req.Workflow)
+	validPrices, err := s.ValidateAndFilterPricesForSubscription(ctx, plan.ID, types.PRICE_ENTITY_TYPE_PLAN, sub, req.Workflow, req.IncludePriceIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -3932,37 +3932,108 @@ func createChargeResponse(priceObj *price.Price, quantity decimal.Decimal, cost 
 	return charge
 }
 
-// filterValidPricesForSubscription filters prices that are valid for a subscription.
-// A price is valid when its currency matches and its billing period is equal to or a
-// valid multiple of the subscription billing period (enabling multi-cadence subscriptions).
-func filterValidPricesForSubscription(prices []*dto.PriceResponse, subscription *subscription.Subscription) []*dto.PriceResponse {
+// filterAddonPricesForSubscription filters addon prices for a subscription
+// using count-aware cadence compatibility (equal, strict divisor, or strict
+// multiple). This is the pre-include_price_ids default behavior, preserved on
+// the addon path since AddAddonRequest does not carry an include list.
+func filterAddonPricesForSubscription(prices []*dto.PriceResponse, subscription *subscription.Subscription) []*dto.PriceResponse {
 	var validPrices []*dto.PriceResponse
 	for _, p := range prices {
 		if !types.IsMatchingCurrency(p.Price.Currency, subscription.Currency) {
 			continue
 		}
-		// ONETIME prices always apply — they are not tied to the subscription billing period
 		if p.Price.BillingPeriod == types.BILLING_PERIOD_ONETIME {
 			validPrices = append(validPrices, p)
 			continue
 		}
-		periodOK := p.Price.BillingPeriod == subscription.BillingPeriod ||
-			types.IsBillingPeriodMultiple(subscription.BillingPeriod, p.Price.BillingPeriod)
-		if periodOK {
+		if types.IsCadenceCompatible(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
 			validPrices = append(validPrices, p)
 		}
 	}
 	return validPrices
 }
 
+// filterValidPricesForSubscription filters prices attachable to a subscription.
+//
+// Cadence gating depends on whether the caller passed an explicit include list:
+//   - includeIDs == nil (default): PERIOD-EQUAL cadence — only prices whose
+//     billing_period matches the sub's are attached (mirrors the historical
+//     pre-multi-cadence behavior on main, so callers who omit include_price_ids
+//     see no behavior change). billing_period_count is not compared, matching
+//     the historical check exactly. ONETIME prices always attach. Multi-cadence
+//     attachment (monthly-on-quarterly etc.) requires opt-in via include_price_ids.
+//   - includeIDs == []: attach nothing.
+//   - includeIDs == [X, Y, …]: attach the intersection of {X, Y, …} with the
+//     count-aware compatibility set (IsCadenceCompatible: equal or divides).
+//     Callers upstream (ValidateAndFilterPricesForSubscription) must have
+//     already validated that each id resolves to a plan price and is
+//     cadence-compatible, so this loop trusts the include set.
+func filterValidPricesForSubscription(
+	prices []*dto.PriceResponse,
+	subscription *subscription.Subscription,
+	includeIDs *[]string,
+) []*dto.PriceResponse {
+	var include map[string]struct{}
+	if includeIDs != nil {
+		include = make(map[string]struct{}, len(*includeIDs))
+		for _, id := range *includeIDs {
+			include[id] = struct{}{}
+		}
+	}
+
+	var validPrices []*dto.PriceResponse
+	for _, p := range prices {
+		if !types.IsMatchingCurrency(p.Price.Currency, subscription.Currency) {
+			continue
+		}
+		// ONETIME prices are cadence-agnostic. Still subject to the inclusion
+		// gate when the caller sent an explicit list.
+		if p.Price.BillingPeriod == types.BILLING_PERIOD_ONETIME {
+			if include == nil {
+				validPrices = append(validPrices, p)
+				continue
+			}
+			if _, ok := include[p.Price.ID]; ok {
+				validPrices = append(validPrices, p)
+			}
+			continue
+		}
+		if include == nil {
+			// Default: match main's period-only equality. Count is intentionally
+			// NOT compared — historical behavior didn't check it, and preserving
+			// that keeps this PR non-breaking for callers who don't opt in.
+			if p.Price.BillingPeriod == subscription.BillingPeriod {
+				validPrices = append(validPrices, p)
+			}
+			continue
+		}
+		// Explicit include list: compat gate then intersect. Upstream already
+		// validated per-id, but re-check defensively so a stray incompatible
+		// entry can't slip through if a caller bypasses the validator.
+		if !types.IsCadenceCompatible(subscription.BillingPeriod, subscription.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
+			continue
+		}
+		if _, ok := include[p.Price.ID]; !ok {
+			continue
+		}
+		validPrices = append(validPrices, p)
+	}
+	return validPrices
+}
+
 // ValidateAndFilterPricesForSubscription validates and filters prices for a subscription
-// This method follows the same validation pattern as plans and can be reused for addons
+// This method follows the same validation pattern as plans and can be reused for addons.
+//
+// includePriceIDs is an authoritative opt-in list, applicable only on the PLAN path.
+// See CreateSubscriptionRequest.IncludePriceIDs for wire semantics. On the ADDON path
+// the argument is ignored (addons always attach every compatible price they carry).
 func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 	ctx context.Context,
 	entityID string,
 	entityType types.PriceEntityType,
 	subscription *subscription.Subscription,
 	workflowType *types.TemporalWorkflowType,
+	includePriceIDs *[]string,
 ) ([]*dto.PriceResponse, error) {
 	// Get prices for the entity (plan or addon)
 	priceService := NewPriceService(s.ServiceParams)
@@ -3970,17 +4041,27 @@ func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 	var pricesResponse *dto.ListPricesResponse
 	var err error
 
+	// The include-list path needs to see EVERY plan price (regardless of cadence)
+	// so it can distinguish "unknown id" from "known-but-incompatible id" in
+	// error messages. When no include list is set, the strict-equal default only
+	// needs prices whose period matches or is ONETIME - narrow the query.
+	var planBillingPeriods []types.BillingPeriod
+	if entityType == types.PRICE_ENTITY_TYPE_PLAN && includePriceIDs == nil {
+		planBillingPeriods = []types.BillingPeriod{subscription.BillingPeriod, types.BILLING_PERIOD_ONETIME}
+	}
+
 	switch entityType {
 	case types.PRICE_ENTITY_TYPE_PLAN:
 		pricesResponse, err = priceService.GetPricesByPlanID(ctx, dto.GetPricesByPlanRequest{
-			PlanID:       entityID,
-			AllowExpired: false,
-			BillingPeriods: []types.BillingPeriod{
-				subscription.BillingPeriod,
-				types.BILLING_PERIOD_ONETIME,
-			},
+			PlanID:         entityID,
+			AllowExpired:   false,
+			BillingPeriods: planBillingPeriods, // nil → no BillingPeriods filter (fetch all)
 		})
 	case types.PRICE_ENTITY_TYPE_ADDON:
+		// Addon path: includePriceIDs is intentionally ignored (documented on the
+		// DTO field). Pass nil to filterValidPricesForSubscription so addons keep
+		// the strict-equal default (matches plan default).
+		includePriceIDs = nil
 		pricesResponse, err = priceService.GetPricesByAddonID(ctx, entityID)
 	default:
 		return nil, ierr.NewError("unsupported price entity type").
@@ -3995,6 +4076,24 @@ func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 		return nil, err
 	}
 
+	// Authoritative validation of the include list against the fetched plan prices.
+	// Rejects the whole request on any unknown or incompatible id (fail-closed,
+	// all-or-nothing per spec).
+	if entityType == types.PRICE_ENTITY_TYPE_PLAN && includePriceIDs != nil && len(*includePriceIDs) > 0 {
+		if err := s.validateIncludePriceIDs(entityID, subscription, *includePriceIDs, pricesResponse.Items); err != nil {
+			return nil, err
+		}
+	}
+
+	// Filter based on entity type: addons preserve historical divisor-compat
+	// semantics; plans use the strict-equal-or-include-list semantics.
+	filter := func(items []*dto.PriceResponse) []*dto.PriceResponse {
+		if entityType == types.PRICE_ENTITY_TYPE_ADDON {
+			return filterAddonPricesForSubscription(items, subscription)
+		}
+		return filterValidPricesForSubscription(items, subscription, includePriceIDs)
+	}
+
 	// Check if empty prices are allowed for this workflow type
 	if !s.allowsEmptyPrices(workflowType) {
 		if len(pricesResponse.Items) == 0 {
@@ -4007,9 +4106,13 @@ func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 				Mark(ierr.ErrValidation)
 		}
 
-		// Filter prices for subscription that are valid for the entity
-		validPrices := filterValidPricesForSubscription(pricesResponse.Items, subscription)
+		validPrices := filter(pricesResponse.Items)
 		if len(validPrices) == 0 {
+			// An empty include list on the plan path is a legal way to attach
+			// zero plan prices — don't treat it as a "no valid prices" error.
+			if entityType == types.PRICE_ENTITY_TYPE_PLAN && includePriceIDs != nil && len(*includePriceIDs) == 0 {
+				return validPrices, nil
+			}
 			return nil, ierr.NewError("no valid prices found for subscription").
 				WithHint("No prices match the subscription criteria").
 				WithReportableDetails(map[string]interface{}{
@@ -4022,9 +4125,74 @@ func (s *subscriptionService) ValidateAndFilterPricesForSubscription(
 	}
 
 	// For workflows that allow empty prices, filter and return (even if empty)
-	validPrices := filterValidPricesForSubscription(pricesResponse.Items, subscription)
+	return filter(pricesResponse.Items), nil
+}
 
-	return validPrices, nil
+// validateIncludePriceIDs verifies every id in the caller-supplied include list
+//
+//	(a) resolves to a price on the plan,
+//	(b) matches the subscription currency, and
+//	(c) is cadence-compatible with the subscription (equal or strict divisor —
+//	    multiples are not supported by the fan-out path).
+//
+// Returns a single all-or-nothing error naming every offending id.
+func (s *subscriptionService) validateIncludePriceIDs(
+	planID string,
+	sub *subscription.Subscription,
+	includeIDs []string,
+	planPrices []*dto.PriceResponse,
+) error {
+	planPriceByID := make(map[string]*dto.PriceResponse, len(planPrices))
+	for _, p := range planPrices {
+		planPriceByID[p.Price.ID] = p
+	}
+
+	var unknown, wrongCurrency, incompatible []string
+	for _, id := range includeIDs {
+		p, ok := planPriceByID[id]
+		if !ok {
+			unknown = append(unknown, id)
+			continue
+		}
+		// Currency is authoritative: catch it explicitly here rather than
+		// letting the downstream filter silently drop the price (which would
+		// surface as a confusing "attached fewer prices than requested").
+		if !types.IsMatchingCurrency(p.Price.Currency, sub.Currency) {
+			wrongCurrency = append(wrongCurrency, id)
+			continue
+		}
+		if p.Price.BillingPeriod == types.BILLING_PERIOD_ONETIME {
+			continue // always compatible
+		}
+		if !types.IsCadenceCompatible(sub.BillingPeriod, sub.BillingPeriodCount, p.Price.BillingPeriod, p.Price.BillingPeriodCount) {
+			incompatible = append(incompatible, id)
+		}
+	}
+	if len(unknown) == 0 && len(wrongCurrency) == 0 && len(incompatible) == 0 {
+		return nil
+	}
+
+	subCadence := fmt.Sprintf("%s × %d", sub.BillingPeriod, lo.Ternary(sub.BillingPeriodCount > 0, sub.BillingPeriodCount, 1))
+	details := map[string]interface{}{
+		"plan_id":                           planID,
+		"subscription_billing_period":       sub.BillingPeriod,
+		"subscription_billing_period_count": lo.Ternary(sub.BillingPeriodCount > 0, sub.BillingPeriodCount, 1),
+		"subscription_currency":             sub.Currency,
+	}
+	if len(unknown) > 0 {
+		details["unknown_price_ids"] = unknown
+	}
+	if len(wrongCurrency) > 0 {
+		details["wrong_currency_price_ids"] = wrongCurrency
+	}
+	if len(incompatible) > 0 {
+		details["incompatible_price_ids"] = incompatible
+	}
+	return ierr.NewErrorf("include_price_ids is invalid for plan %s (billing period %s, currency %s): unknown=%v wrong_currency=%v incompatible=%v",
+		planID, subCadence, sub.Currency, unknown, wrongCurrency, incompatible).
+		WithHint("Every id in include_price_ids must belong to the plan, match the subscription currency, AND have a cadence that equals or strictly divides the subscription cadence.").
+		WithReportableDetails(details).
+		Mark(ierr.ErrValidation)
 }
 
 // allowsEmptyPrices checks if the given workflow type allows empty prices
@@ -4973,7 +5141,7 @@ func (s *subscriptionService) createAddonAttachParams(
 	}
 
 	// Validate and filter prices for the addon
-	validPrices, err := s.ValidateAndFilterPricesForSubscription(ctx, req.AddonID, types.PRICE_ENTITY_TYPE_ADDON, sub, nil)
+	validPrices, err := s.ValidateAndFilterPricesForSubscription(ctx, req.AddonID, types.PRICE_ENTITY_TYPE_ADDON, sub, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -8101,18 +8269,25 @@ func (s *subscriptionService) processAutoInvoiceThresholdSubscription(
 	item *dto.AutoInvoiceThresholdBillingResultItem,
 ) error {
 
-	// Calculate current-period usage amount from meter_usage.
-	usageResp, err := s.GetMeterUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
-		SubscriptionID: sub.ID,
-		StartTime:      sub.CurrentPeriodStart,
-		EndTime:        effectiveTime,
-		Source:         string(types.UsageSourceInvoiceCreation),
-	})
+	// Calculate current-period usage amount using the same per-cadence-group
+	// fan-out that invoice generation uses (see billingService.calculateMeterUsageCharges).
+	// Matters for mixed-cadence subs (e.g. monthly meter on quarterly sub with tiered
+	// pricing): a single GetMeterUsageBySubscription over the whole period wouldn't
+	// reset tiers per sub-window, so the threshold check could drift from the
+	// amount the resulting invoice actually charges.
+	//
+	// The batched loader (GetSubscriptionsWithAutoInvoiceThreshold) doesn't populate
+	// LineItems, so reload the sub here.
+	subWithItems, lineItems, err := s.SubRepo.GetWithLineItems(ctx, sub.ID)
 	if err != nil {
 		return err
 	}
-
-	usageAmount := decimal.NewFromFloat(usageResp.Amount)
+	subWithItems.LineItems = lineItems
+	billingSvc := NewBillingService(s.ServiceParams)
+	usageAmount, err := billingSvc.SumUsageAmountForSubscription(ctx, subWithItems, sub.CurrentPeriodStart, effectiveTime)
+	if err != nil {
+		return err
+	}
 	if usageAmount.LessThan(lo.FromPtr(sub.AutoInvoiceThreshold)) {
 		return nil
 	}

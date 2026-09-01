@@ -15,6 +15,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/Shopify/sarama"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 	"github.com/joho/godotenv"
@@ -44,7 +45,11 @@ type Configuration struct {
 	Secrets                SecretsConfig                `validate:"required"`
 	Billing                BillingConfig                `validate:"omitempty"`
 	S3                     S3Config                     `validate:"required"`
+	Storage                StorageConfig                `mapstructure:"storage" validate:"omitempty"`
+	GCS                    GCSConfig                    `mapstructure:"gcs" validate:"omitempty"`
 	FlexpriceS3Exports     FlexpriceS3ExportsConfig     `mapstructure:"flexprice_s3_exports" validate:"omitempty"`
+	FlexpriceGCSExports    FlexpriceGCSExportsConfig    `mapstructure:"flexprice_gcs_exports" validate:"omitempty"`
+	FlexpriceS3Imports     FlexpriceS3ImportsConfig     `mapstructure:"flexprice_s3_imports" validate:"omitempty"`
 	Marketplace            MarketplaceConfig            `mapstructure:"marketplace" validate:"omitempty"`
 	Cache                  CacheConfig                  `validate:"required"`
 	EventProcessing        EventProcessingConfig        `mapstructure:"event_processing" validate:"required"`
@@ -129,11 +134,146 @@ type BucketConfig struct {
 	KeyPrefix             string `mapstructure:"key_prefix" validate:"omitempty"`
 }
 
+// Credential sources for FlexpriceS3ExportsConfig. Exactly one is active per
+// deployment. "ambient" covers every AWS-default-chain shape (IRSA, Pod Identity,
+// ECS task role, EC2 instance profile) with no per-mechanism value.
+const (
+	CredentialSourceStatic     = "static"
+	CredentialSourceAmbient    = "ambient"
+	CredentialSourceFederation = "federation" // GCP-to-AWS OIDC
+)
+
 type FlexpriceS3ExportsConfig struct {
 	Bucket             string `mapstructure:"bucket" validate:"required"`
 	Region             string `mapstructure:"region" validate:"required"`
-	AWSAccessKeyID     string `mapstructure:"aws_access_key_id" validate:"required"`
-	AWSSecretAccessKey string `mapstructure:"aws_secret_access_key" validate:"required"`
+	AWSAccessKeyID     string `mapstructure:"aws_access_key_id" validate:"omitempty"`
+	AWSSecretAccessKey string `mapstructure:"aws_secret_access_key" validate:"omitempty"`
+	AWSSessionToken    string `mapstructure:"aws_session_token,omitempty"`
+	FederationRoleARN  string `mapstructure:"federation_role_arn,omitempty"`
+	FederationEnabled  bool   `mapstructure:"federation_enabled" default:"false"`
+	// CredentialSource selects how AWS credentials are obtained; empty is derived
+	// by ResolvedCredentialSource for backward compatibility.
+	CredentialSource string `mapstructure:"credential_source" validate:"omitempty,oneof=static ambient federation"`
+}
+
+// ResolvedCredentialSource derives the effective source so existing deployments
+// need no config change: explicit CredentialSource wins; else federation (flag or
+// legacy FederationRoleARN); else static (both keys present); else ambient.
+func (c *FlexpriceS3ExportsConfig) ResolvedCredentialSource() string {
+	if c.CredentialSource != "" {
+		return c.CredentialSource
+	}
+	if c.FederationEnabled || c.FederationRoleARN != "" {
+		return CredentialSourceFederation
+	}
+	if c.AWSAccessKeyID != "" && c.AWSSecretAccessKey != "" {
+		return CredentialSourceStatic
+	}
+	return CredentialSourceAmbient
+}
+
+// Validate enforces the resolved credential source's requirements. Explicit
+// "ambient" requires no credentials (that's the point of the default chain); an
+// empty source with nothing configured still errors, preserving historic behavior
+// rather than silently resolving to ambient. Consumers call this explicitly —
+// it is not reached from Configuration.Validate() (dead on the boot path).
+func (c *FlexpriceS3ExportsConfig) Validate() error {
+	if c.Bucket == "" {
+		return ierr.NewError("flexprice S3 exports bucket is not configured").
+			WithHint("Set flexprice_s3_exports.bucket (FLEXPRICE_FLEXPRICE_S3_EXPORTS_BUCKET)").
+			Mark(ierr.ErrValidation)
+	}
+	if c.Region == "" {
+		return ierr.NewError("flexprice S3 exports region is not configured").
+			WithHint("Set flexprice_s3_exports.region (FLEXPRICE_FLEXPRICE_S3_EXPORTS_REGION)").
+			Mark(ierr.ErrValidation)
+	}
+
+	hasStaticKeys := c.AWSAccessKeyID != "" && c.AWSSecretAccessKey != ""
+	hasFederation := c.FederationRoleARN != ""
+
+	switch c.ResolvedCredentialSource() {
+	case CredentialSourceFederation:
+		if !hasFederation {
+			return ierr.NewError("federation credentials are selected but federation_role_arn is not set").
+				WithHint("Set flexprice_s3_exports.federation_role_arn, or change credential_source/federation_enabled to another source").
+				Mark(ierr.ErrValidation)
+		}
+	case CredentialSourceAmbient:
+		// Derived ambient (nothing configured) still errors; only explicit ambient
+		// skips the credential requirement.
+		if c.CredentialSource != CredentialSourceAmbient {
+			return ierr.NewError("no credential source configured for flexprice_s3_exports").
+				WithHint("Set either aws_access_key_id/aws_secret_access_key, federation_role_arn, or credential_source: \"ambient\" to explicitly use the AWS default credential chain").
+				Mark(ierr.ErrValidation)
+		}
+	case CredentialSourceStatic:
+		if !hasStaticKeys {
+			return ierr.NewError("no credential source configured for flexprice_s3_exports").
+				WithHint("Set both aws_access_key_id and aws_secret_access_key (FLEXPRICE_FLEXPRICE_S3_EXPORTS_AWS_ACCESS_KEY_ID / FLEXPRICE_FLEXPRICE_S3_EXPORTS_AWS_SECRET_ACCESS_KEY), or set credential_source to \"ambient\" or \"federation\"").
+				Mark(ierr.ErrValidation)
+		}
+	default:
+		// A typo'd credential_source reaches here (the boot path skips the oneof
+		// tag); reject rather than fall through to ambient.
+		return ierr.NewError("invalid flexprice_s3_exports.credential_source").
+			WithHint("credential_source must be one of \"static\", \"ambient\", or \"federation\"").
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
+// StorageConfig lets deployments explicitly pin the platform storage backend,
+// overriding CloudDetector's auto-detection. Empty Provider means "auto-detect".
+type StorageConfig struct {
+	Provider string `mapstructure:"provider" validate:"omitempty,oneof=s3 gcs"`
+}
+
+type GCSConfig struct {
+	Enabled             bool         `mapstructure:"enabled" default:"false"`
+	InvoiceBucketConfig BucketConfig `mapstructure:"invoice" validate:"omitempty"`
+	// SignerServiceAccountEmail signs presigned GET URLs (Workload Identity can't
+	// self-sign; needs roles/iam.serviceAccountTokenCreator). The resolver rejects
+	// an empty value under GCS.
+	SignerServiceAccountEmail string `mapstructure:"signer_service_account_email" validate:"omitempty"`
+}
+
+// FlexpriceGCSExportsConfig is the GCS counterpart to FlexpriceS3ExportsConfig:
+// the Flexprice-owned bucket that Flexprice-managed export connections write to
+// when the deployment runs on GCP.
+//
+// No SA-key field by design: on GCP Flexprice uses Workload Identity, and
+// iam.disableServiceAccountKeyCreation commonly blocks exported keys. Customer
+// BYO GCS connections still carry a key on the connection row.
+type FlexpriceGCSExportsConfig struct {
+	Bucket string `mapstructure:"bucket" validate:"omitempty"`
+	// See GCSConfig.SignerServiceAccountEmail; same signer requirement for exports.
+	SignerServiceAccountEmail string `mapstructure:"signer_service_account_email" validate:"omitempty"`
+}
+
+// Validate ensures the section is usable when a Flexprice-managed GCS export
+// connection actually consumes it.
+func (c *FlexpriceGCSExportsConfig) Validate() error {
+	if c.Bucket == "" {
+		return ierr.NewError("flexprice GCS exports bucket is not configured").
+			WithHint("Set flexprice_gcs_exports.bucket (FLEXPRICE_FLEXPRICE_GCS_EXPORTS_BUCKET) to the Flexprice-owned GCS bucket").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+// FlexpriceS3ImportsConfig points at the Flexprice-managed bucket that CSV Box
+// (and any other trusted upstream uploader) writes into. The import API resolves
+// an upload id to s3://<Bucket>/<KeyPrefix><upload_id>.csv and presigns a GET
+// against those credentials — the caller never supplies a URL.
+type FlexpriceS3ImportsConfig struct {
+	Enabled            bool   `mapstructure:"enabled"`
+	Bucket             string `mapstructure:"bucket" validate:"required_if=Enabled true"`
+	Region             string `mapstructure:"region" validate:"required_if=Enabled true"`
+	KeyPrefix          string `mapstructure:"key_prefix"`
+	AWSAccessKeyID     string `mapstructure:"aws_access_key_id" validate:"required_if=Enabled true"`
+	AWSSecretAccessKey string `mapstructure:"aws_secret_access_key" validate:"required_if=Enabled true"`
 	AWSSessionToken    string `mapstructure:"aws_session_token,omitempty"`
 }
 

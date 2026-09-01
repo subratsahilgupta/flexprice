@@ -1127,6 +1127,118 @@ func (s *SeedEnsure) ensureSubscriptions(ctx context.Context, seeds *e2eprobe.Se
 			}
 		}
 	}
+	// Multi-cadence coverage: one persistent quarterly sub for cust #0 so the
+	// fan-out (monthly prices on quarterly sub → N monthly line items) is
+	// exercised on every invoice cycle. Idempotent: query by metadata cohort
+	// and reuse if present.
+	if err := s.ensureMultiCadenceSubscription(ctx, seeds, planID); err != nil {
+		return err
+	}
+	return nil
+}
+
+// multiCadenceCohort tags the quarterly-with-monthly-charges seed sub so
+// ensureMultiCadenceSubscription can find it without name collision against
+// the standard PersistentSub cohort.
+const multiCadenceCohort = "multi_cadence_quarterly"
+
+func (s *SeedEnsure) ensureMultiCadenceSubscription(
+	ctx context.Context, seeds *e2eprobe.Seeds, planID string,
+) error {
+	if len(seeds.PersistentCustomerIDs) == 0 {
+		return nil
+	}
+	// Use a dedicated customer to keep this sub isolated from other probes'
+	// assumptions (cycle-invoice-probe, entitlement-and-usage, etc. iterate
+	// PersistentSubIDs which we deliberately do NOT append this sub to).
+	extID := persistentExternalCustomerID(0)
+
+	existResp, err := s.client.Subscriptions().Query(ctx, types.SubscriptionFilter{
+		ExternalCustomerID: &extID,
+		PlanID:             &planID,
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "multi_cadence_query", "external_customer_id": extID, "plan_id": planID}, "query subs: %w", err)
+	}
+	if existResp.ListSubscriptionsResponse != nil {
+		for _, sub := range existResp.ListSubscriptionsResponse.Items {
+			if sub.ID == nil || sub.Metadata == nil {
+				continue
+			}
+			cohort, ok := sub.Metadata["e2eprobe_cohort"]
+			if !ok || cohort != multiCadenceCohort {
+				continue
+			}
+			// Found the seed sub. If it's still Draft (previous tick's activation
+			// failed or was skipped), retry activation now — otherwise the probe
+			// silently waits forever with no observable invoices. Only mark the
+			// seed complete once activation succeeds so a failure re-runs next tick.
+			if sub.SubscriptionStatus != nil && *sub.SubscriptionStatus == types.SubscriptionStatusDraft {
+				if err := s.activateMultiCadenceSub(ctx, *sub.ID, extID, time.Now().UTC()); err != nil {
+					return err
+				}
+			}
+			seeds.MultiCadenceSubID = *sub.ID
+			return nil
+		}
+	}
+
+	billingCycle := types.BillingCycleAnniversary
+	now := time.Now().UTC()
+	req := types.CreateSubscriptionRequest{
+		ExternalCustomerID: &extID,
+		PlanID:             planID,
+		Currency:           "usd",
+		BillingPeriod:      types.BillingPeriodQuarterly,
+		BillingPeriodCount: int64Ptr(1),
+		BillingCycle:       &billingCycle,
+		StartDate:          &now,
+		Metadata: map[string]string{
+			"e2eprobe":        "true",
+			"e2eprobe_role":   "seed",
+			"e2eprobe_cohort": multiCadenceCohort,
+		},
+	}
+	createResp, err := s.client.Subscriptions().Create(ctx, req)
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "multi_cadence_create", "external_customer_id": extID, "plan_id": planID}, "create quarterly sub: %w", err)
+	}
+	if createResp.SubscriptionResponse == nil || createResp.SubscriptionResponse.ID == nil {
+		return nil
+	}
+	subID := *createResp.SubscriptionResponse.ID
+
+	if createResp.SubscriptionResponse.SubscriptionStatus != nil &&
+		*createResp.SubscriptionResponse.SubscriptionStatus == types.SubscriptionStatusDraft {
+		if err := s.activateMultiCadenceSub(ctx, subID, extID, now); err != nil {
+			// Do NOT record MultiCadenceSubID — leaves the sub for retry on next
+			// tick (query-by-cohort will find it and activate again).
+			return err
+		}
+	}
+	seeds.MultiCadenceSubID = subID
+	return nil
+}
+
+// activateMultiCadenceSub attempts to activate a draft multi-cadence seed sub.
+// Returns a wrapped error if activation fails so the caller can propagate it
+// and the next tick can retry.
+func (s *SeedEnsure) activateMultiCadenceSub(ctx context.Context, subID, extID string, startDate time.Time) error {
+	if _, err := s.client.Subscriptions().ActivateSubscription(ctx, subID,
+		types.ActivateDraftSubscriptionRequest{StartDate: startDate}); err != nil {
+		if s.logger != nil {
+			s.logger.Info(ctx, "multi-cadence sub activation failed; will retry next tick",
+				"subscription_id", subID,
+				"external_customer_id", extID,
+				"error", err.Error(),
+			)
+		}
+		return e2eprobe.Errorf(map[string]string{
+			"step":                 "multi_cadence_activate",
+			"subscription_id":      subID,
+			"external_customer_id": extID,
+		}, "activate multi-cadence sub %s: %w", subID, err)
+	}
 	return nil
 }
 
