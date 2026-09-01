@@ -325,10 +325,11 @@ func (f *AlertSettingsFilter) GetExpand() Expand {
 }
 
 type AlertSettings struct {
-	Critical     *AlertThreshold `json:"critical"`
-	Warning      *AlertThreshold `json:"warning"`
-	Info         *AlertThreshold `json:"info"`
-	AlertEnabled *bool           `json:"alert_enabled"`
+	Critical     *AlertThreshold    `json:"critical"`
+	Warning      *AlertThreshold    `json:"warning"`
+	Info         *AlertThreshold    `json:"info"`
+	AlertEnabled *bool              `json:"alert_enabled"`
+	Type         AlertThresholdType `json:"type,omitempty"`
 }
 
 func (at *AlertSettings) Validate() error {
@@ -337,6 +338,24 @@ func (at *AlertSettings) Validate() error {
 		if at.Critical == nil && at.Warning == nil && at.Info == nil {
 			return ierr.NewError("at least one threshold (critical, warning, or info) is required when alert_enabled is true").
 				WithHint("Please provide at least one threshold configuration").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	if at.Type == AlertThresholdTypePercentage {
+		if at.Critical != nil && (at.Critical.Threshold.LessThan(decimal.Zero) || at.Critical.Threshold.GreaterThan(decimal.NewFromInt(100))) {
+			return ierr.NewError("critical percentage threshold must be between 0 and 100").
+				WithHint("Please provide a critical percentage threshold between 0 and 100").
+				Mark(ierr.ErrValidation)
+		}
+		if at.Warning != nil && (at.Warning.Threshold.LessThan(decimal.Zero) || at.Warning.Threshold.GreaterThan(decimal.NewFromInt(100))) {
+			return ierr.NewError("warning percentage threshold must be between 0 and 100").
+				WithHint("Please provide a warning percentage threshold between 0 and 100").
+				Mark(ierr.ErrValidation)
+		}
+		if at.Info != nil && (at.Info.Threshold.LessThan(decimal.Zero) || at.Info.Threshold.GreaterThan(decimal.NewFromInt(100))) {
+			return ierr.NewError("info percentage threshold must be between 0 and 100").
+				WithHint("Please provide an info percentage threshold between 0 and 100").
 				Mark(ierr.ErrValidation)
 		}
 	}
@@ -472,6 +491,16 @@ func (at *AlertThreshold) Validate() error {
 	}
 	return nil
 }
+
+// AlertThresholdType distinguishes a threshold expressed as an absolute
+// credit amount from one expressed as a percentage of topped up credits.
+// Empty value is treated as AlertThresholdTypeAbsolute.
+type AlertThresholdType string
+
+const (
+	AlertThresholdTypeAbsolute   AlertThresholdType = "absolute"
+	AlertThresholdTypePercentage AlertThresholdType = "percentage"
+)
 
 type AlertCondition string
 
