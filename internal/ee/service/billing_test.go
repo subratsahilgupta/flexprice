@@ -3127,8 +3127,18 @@ func (s *BillingServiceSuite) TestCalculateMeterUsageCharges_CumulativeCommitmen
 	sub.CurrentPeriodEnd = time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC)
 	sub.BillingAnchor = sub.CurrentPeriodEnd
 
-	apiCallsLineItem := sub.LineItems[1]                                                     // Usage line item
-	sub.LineItems = []*subscription.SubscriptionLineItem{sub.LineItems[0], apiCallsLineItem} // Fixed + API Calls (default)
+	// Realign the copied line items' StartDate to the overridden sub.StartDate.
+	// setupTestData built them with StartDate = now - 30d, which is AFTER the
+	// 2025 periods we've mocked here — that would cause the meter-usage
+	// emit path to skip the items entirely (item inactive during the invoice
+	// window). Copy each item, then repoint StartDate, so we don't mutate
+	// shared testData.
+	fixedCopy := *sub.LineItems[0]
+	fixedCopy.StartDate = sub.StartDate
+	usageCopy := *sub.LineItems[1]
+	usageCopy.StartDate = sub.StartDate
+	sub.LineItems = []*subscription.SubscriptionLineItem{&fixedCopy, &usageCopy} // Fixed + API Calls (default)
+	apiCallsLineItem := &usageCopy
 
 	// Second usage line item for multi-line-item test
 	featureBLineItem := &subscription.SubscriptionLineItem{
