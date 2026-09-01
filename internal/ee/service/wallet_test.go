@@ -2448,6 +2448,8 @@ func (s *WalletAutoTopupInvoiceSuite) setupService() {
 		TaxAssociationRepo:       stores.TaxAssociationRepo,
 		TaxRateRepo:              stores.TaxRateRepo,
 		TaxAppliedRepo:           stores.TaxAppliedRepo,
+		ConnectionRepo:           stores.ConnectionRepo,
+		IntegrationFactory:       s.GetIntegrationFactory(),
 	})
 }
 
@@ -2969,6 +2971,8 @@ func (s *CheckWalletBalanceAlertSuite) setupService() {
 		TaxAssociationRepo:       stores.TaxAssociationRepo,
 		TaxRateRepo:              stores.TaxRateRepo,
 		TaxAppliedRepo:           stores.TaxAppliedRepo,
+		ConnectionRepo:           stores.ConnectionRepo,
+		IntegrationFactory:       s.GetIntegrationFactory(),
 	})
 }
 

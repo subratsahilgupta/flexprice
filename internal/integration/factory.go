@@ -376,15 +376,19 @@ func (f *Factory) GetChargebeeIntegration(ctx context.Context) (*ChargebeeIntegr
 		Logger:                       f.logger,
 	})
 
+	paymentSvc := chargebee.NewPaymentService(chargebeeClient, f.locker, f.logger)
+
 	// Create webhook handler
 	webhookHandler := chargebeewebhook.NewHandler(
 		chargebeeClient,
 		invoiceSvc.(*chargebee.InvoiceService),
+		paymentSvc,
 		f.logger,
 	)
 
 	return &ChargebeeIntegration{
 		Client:         chargebeeClient,
+		PaymentSvc:     paymentSvc,
 		ItemFamilySvc:  itemFamilySvc,
 		ItemSvc:        itemSvc,
 		ItemPriceSvc:   itemPriceSvc,
@@ -866,6 +870,7 @@ type ChargebeeIntegration struct {
 	ItemPriceSvc   chargebee.ChargebeeItemPriceService
 	CustomerSvc    chargebee.ChargebeeCustomerService
 	InvoiceSvc     chargebee.ChargebeeInvoiceService
+	PaymentSvc     *chargebee.PaymentService
 	PlanSyncSvc    chargebee.ChargebeePlanSyncService
 	WebhookHandler *chargebeewebhook.Handler
 }
@@ -1371,6 +1376,29 @@ func (f *Factory) GetS3Client(ctx context.Context) (*s3.Client, error) {
 	return f.s3Client, nil
 }
 
+// GetPaymentMethodProvider returns the PaymentMethodProvider adapter for the given
+// gateway. ErrNotImplemented means the provider cannot manage saved methods at all
+// — the permanent answer for Razorpay, whose tokens need a mandate — and callers
+// must treat it as a capability answer rather than a failure.
+func (f *Factory) GetPaymentMethodProvider(ctx context.Context, gateway types.PaymentGatewayType, customerSvc interfaces.CustomerService) (interfaces.PaymentMethodProvider, error) {
+	switch gateway {
+	case types.PaymentGatewayTypeChargebee:
+		i, err := f.GetChargebeeIntegration(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &chargebee.PaymentMethodAdapter{
+			Client:      i.Client,
+			CustomerSvc: i.CustomerSvc.(*chargebee.CustomerService),
+			Logger:      f.logger,
+		}, nil
+	default:
+		return nil, ierr.NewError("saved payment methods are not supported for this provider").
+			WithHintf("%s cannot manage saved payment methods", gateway).
+			Mark(ierr.ErrNotImplemented)
+	}
+}
+
 // GetCheckoutProvider returns the CheckoutProvider adapter for the given payment provider.
 // Returns ErrValidation for providers that do not support hosted checkout.
 func (f *Factory) GetCheckoutProvider(ctx context.Context, provider types.CheckoutPaymentProvider, customerSvc interfaces.CustomerService, invoiceSvc interfaces.InvoiceService) (interfaces.CheckoutProvider, error) {
@@ -1381,6 +1409,17 @@ func (f *Factory) GetCheckoutProvider(ctx context.Context, provider types.Checko
 			return nil, err
 		}
 		return &razorpay.CheckoutAdapter{Svc: i.PaymentSvc, CustomerSvc: customerSvc, InvoiceSvc: invoiceSvc}, nil
+	case types.CheckoutPaymentProviderChargebee:
+		i, err := f.GetChargebeeIntegration(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &chargebee.CheckoutAdapter{
+			Client:      i.Client,
+			CustomerSvc: i.CustomerSvc.(*chargebee.CustomerService),
+			InvoiceSvc:  i.InvoiceSvc.(*chargebee.InvoiceService),
+			Logger:      f.logger,
+		}, nil
 	default:
 		return nil, ierr.NewError("payment provider not supported for checkout").
 			WithHintf("%s does not support hosted checkout sessions", provider).

@@ -660,6 +660,11 @@ func NewRouter(
 	// The session token carries the tenant, so the portal is subject to the same
 	// tenant suspension rules as the rest of the API. Without this a suspended
 	// tenant's customers could keep mutating data through the portal.
+	
+	// No RBAC middleware: the portal authenticates with a session token, which
+	// carries no API-key role, so any permission check here denies every caller.
+	// The session token is itself the authorization — it names the one customer
+	// this handler may write.
 	customerPortalAPI.Use(middleware.TenantStatusMiddleware(tenantService, logger))
 	customerPortalAPI.Use(middleware.ErrorHandler())
 	{
@@ -675,15 +680,31 @@ func NewRouter(
 		// Invoices
 		customerPortalAPI.POST("/invoices", handlers.CustomerPortal.GetInvoices)
 		customerPortalAPI.GET("/invoices/:id", handlers.CustomerPortal.GetInvoice)
+		customerPortalAPI.POST("/invoices/:id/pay", handlers.CustomerPortal.PayInvoice)
 		customerPortalAPI.GET("/invoices/:id/pdf", handlers.CustomerPortal.GetInvoicePDF)
 
 		// Wallets
 		customerPortalAPI.POST("/wallets", handlers.CustomerPortal.GetWallets)
 		customerPortalAPI.GET("/wallets/:id", handlers.CustomerPortal.GetWallet)
 		customerPortalAPI.GET("/wallets/:id/transactions", handlers.CustomerPortal.GetWalletTransactions)
+		customerPortalAPI.POST("/wallets/:id/top-up", handlers.CustomerPortal.TopUpWallet)
+		customerPortalAPI.PUT("/wallets/:id/auto-topup", handlers.CustomerPortal.UpdateAutoTopup)
 
-		// Portal config (theme, sections, tabs)
+		// Checkout
+		customerPortalAPI.GET("/checkout-sessions/:id", handlers.CustomerPortal.GetCheckoutSession)
+		customerPortalAPI.POST("/checkout-sessions/:id/cancel", handlers.CustomerPortal.CancelCheckoutSession)
+
+		// Payment methods
+		customerPortalAPI.GET("/payment-methods", handlers.CustomerPortal.ListPaymentMethods)
+		customerPortalAPI.POST("/payment-methods", handlers.CustomerPortal.AddPaymentMethod)
+		customerPortalAPI.POST("/payment-methods/delete", handlers.CustomerPortal.DeletePaymentMethod)
+		customerPortalAPI.POST("/payment-methods/default", handlers.CustomerPortal.SetDefaultPaymentMethod)
+
+		// Portal config (theme, sections, tabs) — tenant-authored
 		customerPortalAPI.GET("/config", handlers.CustomerPortal.GetPortalConfig)
+
+		// Payment integrations — server-derived from the tenant's connections
+		customerPortalAPI.GET("/integrations", handlers.CustomerPortal.GetIntegrations)
 
 		// Analytics
 		customerPortalAPI.POST("/analytics/revenue", handlers.CustomerPortal.GetAnalytics)
