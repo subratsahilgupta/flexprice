@@ -133,10 +133,14 @@ func (c *refundClient) RefundTransaction(_ context.Context, _ string, amountMino
 type fakePaymentService struct {
 	interfaces.PaymentService
 	payment    *dto.PaymentResponse
+	getErr     error
 	updateReqs []dto.UpdatePaymentRequest
 }
 
 func (s *fakePaymentService) GetPayment(_ context.Context, _ string) (*dto.PaymentResponse, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	return s.payment, nil
 }
 
@@ -212,6 +216,17 @@ func (s *ChargebeeWebhookCheckoutSuite) seedSession(status types.CheckoutStatus)
 	}
 	s.checkoutSvc.session = session
 	return session
+}
+
+// contentForInvoice builds event content against a specific Chargebee invoice id,
+// so a test can choose whether that id has a FlexPrice mapping.
+func (s *ChargebeeWebhookCheckoutSuite) contentForInvoice(chargebeeInvoiceID string) json.RawMessage {
+	content, err := json.Marshal(map[string]any{
+		"transaction": map[string]any{"id": testChargebeeTxnID, "amount": 10000, "currency_code": "USD"},
+		"invoice":     map[string]any{"id": chargebeeInvoiceID, "po_number": testFlexpricePaymentID},
+	})
+	s.Require().NoError(err)
+	return content
 }
 
 func (s *ChargebeeWebhookCheckoutSuite) event(eventType ChargebeeEventType) *ChargebeeWebhookEvent {
@@ -370,4 +385,71 @@ func (s *ChargebeeWebhookCheckoutSuite) TestHostedPageWebhook_UnmappedInvoiceCom
 	}, "env_test", s.services))
 
 	s.Equal([]string{session.ID}, s.checkoutSvc.completeCalls)
+}
+
+// ── interfaces.InvoiceService fake: records reconciliations ──────────────────
+
+type fakeInvoiceService struct {
+	interfaces.InvoiceService
+	reconciled []string
+}
+
+func (s *fakeInvoiceService) ReconcilePaymentStatus(_ context.Context, id string, _ types.PaymentStatus, _ *decimal.Decimal) error {
+	s.reconciled = append(s.reconciled, id)
+	return nil
+}
+
+// A payment link issued for an existing invoice has no checkout session, and the
+// hosted page invoices the charge on a Chargebee invoice of its own — so neither
+// route that predates it can settle the money. po_number is the only thread back.
+func (s *ChargebeeWebhookCheckoutSuite) TestPaymentSucceeded_LinkPaymentIsSettledViaPONumber() {
+	invoiceSvc := &fakeInvoiceService{}
+	s.services.InvoiceService = invoiceSvc
+	s.paymentSvc.payment.PaymentStatus = types.PaymentStatusPending
+	s.paymentSvc.payment.DestinationType = types.PaymentDestinationTypeInvoice
+	s.paymentSvc.payment.DestinationID = testFlexpriceInvoiceID
+
+	event := s.event(EventPaymentSucceeded)
+	event.Content = s.contentForInvoice("cb_inv_unmapped")
+
+	s.Require().NoError(s.handler.handlePaymentSucceeded(s.ctx, event, s.services))
+
+	s.Require().Len(s.paymentSvc.updateReqs, 1, "the payment itself must move to SUCCEEDED")
+	s.Equal(string(types.PaymentStatusSucceeded), *s.paymentSvc.updateReqs[0].PaymentStatus)
+	s.Equal(testChargebeeTxnID, *s.paymentSvc.updateReqs[0].GatewayPaymentID)
+	s.Equal([]string{testFlexpriceInvoiceID}, invoiceSvc.reconciled)
+}
+
+// po_number is free text a tenant can set on any Chargebee invoice, so anything
+// that is not one of our payment ids must be left alone.
+func (s *ChargebeeWebhookCheckoutSuite) TestPaymentSucceeded_UnknownPONumberIsIgnored() {
+	invoiceSvc := &fakeInvoiceService{}
+	s.services.InvoiceService = invoiceSvc
+	s.paymentSvc.getErr = ierr.NewError("not found").Mark(ierr.ErrNotFound)
+
+	event := s.event(EventPaymentSucceeded)
+	event.Content = s.contentForInvoice("cb_inv_unmapped")
+
+	s.Require().NoError(s.handler.handlePaymentSucceeded(s.ctx, event, s.services))
+
+	s.Empty(s.paymentSvc.updateReqs)
+	s.Empty(invoiceSvc.reconciled)
+}
+
+// A checkout session still wins: settling the payment directly would skip the
+// wallet credit the session completion performs.
+func (s *ChargebeeWebhookCheckoutSuite) TestPaymentSucceeded_SessionWinsOverLinkSettlement() {
+	invoiceSvc := &fakeInvoiceService{}
+	s.services.InvoiceService = invoiceSvc
+	session := s.seedSession(types.CheckoutStatusPending)
+	s.paymentSvc.payment.PaymentStatus = types.PaymentStatusPending
+
+	event := s.event(EventPaymentSucceeded)
+	event.Content = s.contentForInvoice("cb_inv_unmapped")
+
+	s.Require().NoError(s.handler.handlePaymentSucceeded(s.ctx, event, s.services))
+
+	s.Equal([]string{session.ID}, s.checkoutSvc.completeCalls)
+	s.Empty(s.paymentSvc.updateReqs, "the session owns settlement")
+	s.Empty(invoiceSvc.reconciled)
 }

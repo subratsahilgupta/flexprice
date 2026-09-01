@@ -42,6 +42,14 @@ func (s *customerPortalService) PayInvoice(ctx context.Context, invoiceID string
 		return nil, err
 	}
 
+	// A live link for this invoice is reusable: without this a second tap creates a
+	// second full-amount link, and two links can both be paid.
+	if existing, err := s.livePaymentLink(ctx, inv.ID, gateway); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return existing, nil
+	}
+
 	payReq := &dto.CreatePaymentRequest{
 		IdempotencyKey:    lo.FromPtr(req.IdempotencyKey),
 		DestinationType:   types.PaymentDestinationTypeInvoice,
@@ -67,6 +75,46 @@ func (s *customerPortalService) PayInvoice(ctx context.Context, invoiceID string
 		Amount:        payResp.Amount,
 		Currency:      payResp.Currency,
 		PaymentAction: paymentActionFrom(payResp),
+	}, nil
+}
+
+// livePaymentLink returns the payment for an unexpired link already issued for this
+// invoice on this gateway, or nil when there is none to reuse. A link whose payment
+// carries no URL is not reusable — there would be nothing to send the customer to.
+func (s *customerPortalService) livePaymentLink(
+	ctx context.Context,
+	invoiceID string,
+	gateway types.PaymentGatewayType,
+) (*dto.PortalPayInvoiceResponse, error) {
+	filter := types.NewNoLimitPaymentFilter()
+	filter.DestinationType = lo.ToPtr(string(types.PaymentDestinationTypeInvoice))
+	filter.DestinationID = lo.ToPtr(invoiceID)
+	filter.PaymentMethodType = lo.ToPtr(string(types.PaymentMethodTypePaymentLink))
+	filter.PaymentStatus = lo.ToPtr(string(types.PaymentStatusPending))
+	filter.PaymentGateway = lo.ToPtr(string(gateway))
+	filter.Limit = lo.ToPtr(1)
+
+	payments, err := NewPaymentService(s.ServiceParams).ListPayments(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	if payments == nil || len(payments.Items) == 0 {
+		return nil, nil
+	}
+
+	latest := payments.Items[0]
+	action := paymentActionFrom(latest)
+	if action == nil {
+		return nil, nil
+	}
+
+	return &dto.PortalPayInvoiceResponse{
+		PaymentID:     latest.ID,
+		InvoiceID:     invoiceID,
+		Status:        latest.PaymentStatus,
+		Amount:        latest.Amount,
+		Currency:      latest.Currency,
+		PaymentAction: action,
 	}, nil
 }
 

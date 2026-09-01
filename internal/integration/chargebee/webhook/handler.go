@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/integration/chargebee"
+	"github.com/flexprice/flexprice/internal/integration/payments"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
@@ -112,8 +113,17 @@ func (h *Handler) handlePaymentSucceeded(ctx context.Context, event *ChargebeeWe
 		return nil
 	}
 
+	// A payment link created for an existing invoice has no checkout session, and the
+	// hosted page invoices the charge on a Chargebee invoice of its own, so there is no
+	// mapping either — po_number is the only thread back. Settle that payment directly.
+	if handled, err := h.settleLinkedPayment(ctx, flexpricePaymentID, transaction.ID, services); err != nil {
+		return nil // Already logged; don't fail webhook processing
+	} else if handled {
+		return nil
+	}
+
 	if flexpriceInvoiceID == "" {
-		h.logger.Info(ctx, "no checkout session and no mapped invoice for chargebee payment, ignoring",
+		h.logger.Info(ctx, "no checkout session, payment or mapped invoice for chargebee payment, ignoring",
 			"chargebee_invoice_id", invoice.ID,
 			"flexprice_payment_id", flexpricePaymentID,
 			"event_id", event.ID)
@@ -271,6 +281,51 @@ func (h *Handler) handleCheckoutSessionForPayment(
 			"chargebee_transaction_id", chargebeeTransactionID)
 	}
 
+	return true, nil
+}
+
+// settleLinkedPayment settles the FlexPrice payment named by po_number when no
+// checkout session owns it — the /invoices/{id}/pay link path. Returns false when
+// po_number names no payment of ours, leaving the caller its invoice-mapping route.
+//
+// Settlement goes through PaymentLifecycle (not ReconcileInvoicePayment) so the
+// payment record itself moves to SUCCEEDED and the invoice is reconciled by the
+// same path every other gateway's webhook uses.
+func (h *Handler) settleLinkedPayment(
+	ctx context.Context,
+	flexpricePaymentID, chargebeeTransactionID string,
+	services *ServiceDependencies,
+) (bool, error) {
+	if flexpricePaymentID == "" || services == nil ||
+		services.PaymentService == nil || services.InvoiceService == nil {
+		return false, nil
+	}
+
+	// po_number is free text on a Chargebee invoice, so anything that is not one of
+	// our payment ids simply is not ours to settle.
+	if _, err := services.PaymentService.GetPayment(ctx, flexpricePaymentID); err != nil {
+		return false, nil
+	}
+
+	// Settlement books the payment's own amount and does not check it against
+	// transaction.Amount: the hosted page charges exactly what the link was created
+	// for, so the two agree. A capture short of the payment amount — if Chargebee
+	// ever allowed one — would mark the invoice paid in full for less money.
+	lifecycle := payments.NewPaymentLifecycle(services.PaymentService, services.InvoiceService, h.logger)
+	if err := lifecycle.RecordPaymentSuccess(ctx, payments.RecordPaymentSuccessParams{
+		FlexpricePaymentID: flexpricePaymentID,
+		GatewayPaymentID:   chargebeeTransactionID,
+	}); err != nil {
+		h.logger.Error(ctx, "failed to settle chargebee payment link payment",
+			"error", err,
+			"flexprice_payment_id", flexpricePaymentID,
+			"chargebee_transaction_id", chargebeeTransactionID)
+		return false, err
+	}
+
+	h.logger.Info(ctx, "settled chargebee payment link payment",
+		"flexprice_payment_id", flexpricePaymentID,
+		"chargebee_transaction_id", chargebeeTransactionID)
 	return true, nil
 }
 

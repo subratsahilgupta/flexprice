@@ -94,7 +94,6 @@ type PortalUpdateAutoTopupRequest struct {
 type PortalPayInvoiceRequest struct {
 	RedirectionParams
 	PaymentProvider *types.PaymentGatewayType `json:"payment_provider,omitempty"`
-	UseSavedMethod  bool                      `json:"use_saved_method,omitempty"`
 	IdempotencyKey  *string                   `json:"idempotency_key,omitempty"`
 }
 

@@ -660,12 +660,17 @@ func NewRouter(
 	// The session token carries the tenant, so the portal is subject to the same
 	// tenant suspension rules as the rest of the API. Without this a suspended
 	// tenant's customers could keep mutating data through the portal.
+	
+	// No RBAC middleware: the portal authenticates with a session token, which
+	// carries no API-key role, so any permission check here denies every caller.
+	// The session token is itself the authorization — it names the one customer
+	// this handler may write.
 	customerPortalAPI.Use(middleware.TenantStatusMiddleware(tenantService, logger))
 	customerPortalAPI.Use(middleware.ErrorHandler())
 	{
 		// Customer specific
 		customerPortalAPI.GET("/info", handlers.CustomerPortal.GetCustomer)
-		customerPortalAPI.PUT("/info", write(types.EntityCustomer, types.ActionWrite), handlers.CustomerPortal.UpdateCustomer)
+		customerPortalAPI.PUT("/info", handlers.CustomerPortal.UpdateCustomer)
 		customerPortalAPI.GET("/usage", handlers.CustomerPortal.GetUsageSummary)
 
 		// Subscriptions
