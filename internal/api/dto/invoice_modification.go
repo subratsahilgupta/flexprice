@@ -40,9 +40,11 @@ const (
 )
 
 type InvoiceModifyLineItemParams struct {
-	Action      InvoiceModifyLineItemAction `json:"action" validate:"required"`
-	Items       []AddLineItemRequest        `json:"items,omitempty"`
-	LineItemIDs []string                    `json:"line_item_ids,omitempty"`
+	Action InvoiceModifyLineItemAction `json:"action" validate:"required"`
+	// Required for action 'add'. Must contain at least one line item.
+	Items []AddLineItemRequest `json:"items,omitempty" validate:"omitempty,min=1"`
+	// Required for action 'remove'. Must contain at least one line item ID.
+	LineItemIDs []string `json:"line_item_ids,omitempty" validate:"omitempty,min=1"`
 	// LineItemID and Update are required for action 'update' (one line item per call;
 	// the update is versioned, so the item id changes after each edit).
 	LineItemID string                 `json:"line_item_id,omitempty"`

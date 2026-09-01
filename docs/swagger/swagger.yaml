@@ -4613,8 +4613,10 @@ definitions:
       action:
         $ref: '#/definitions/InvoiceModifyLineItemAction'
       items:
+        description: Required for action 'add'. Must contain at least one line item.
         items:
           $ref: '#/definitions/AddLineItemRequest'
+        minItems: 1
         type: array
       line_item_id:
         description: |-
@@ -4622,8 +4624,11 @@ definitions:
           the update is versioned, so the item id changes after each edit).
         type: string
       line_item_ids:
+        description: Required for action 'remove'. Must contain at least one line
+          item ID.
         items:
           type: string
+        minItems: 1
         type: array
       update:
         $ref: '#/definitions/UpdateLineItemRequest'

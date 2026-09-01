@@ -19251,7 +19251,9 @@ const docTemplate = `{
                     "$ref": "#/definitions/InvoiceModifyLineItemAction"
                 },
                 "items": {
+                    "description": "Required for action 'add'. Must contain at least one line item.",
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "$ref": "#/definitions/AddLineItemRequest"
                     }
@@ -19261,7 +19263,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "line_item_ids": {
+                    "description": "Required for action 'remove'. Must contain at least one line item ID.",
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "type": "string"
                     }
