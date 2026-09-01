@@ -1416,7 +1416,7 @@ func (s *walletService) logCreditBalanceAlert(ctx context.Context, w *wallet.Wal
 		}
 	}
 
-	if alertSettings.Type == types.AlertThresholdTypePercentage {
+	if alertSettings.AlertThresholdType == types.AlertThresholdTypePercentage {
 		s.Logger.Debug(ctx, "low_credit_balance alert does not support percentage thresholds, skipping",
 			"wallet_id", w.ID,
 		)
@@ -2151,6 +2151,8 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			return err
 		}
 
+		s.Logger.Debug(ctx, "wallet retrieved", "wallet_id", w.ID, "wallet alert settings", w.AlertSettings)
+
 		// Step 3: Validate operation
 		if err := s.validateWalletOperation(w, req); err != nil {
 			return err
@@ -2268,7 +2270,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			return err
 		}
 
-		s.Logger.Debug(ctx, "Wallet operation completed")
+		s.Logger.Debug(ctx, "Wallet operation completed", "wallet_alert_settings", w.AlertSettings)
 		return nil
 	})
 	if err != nil {
@@ -2278,6 +2280,8 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 	// Publish webhook event after transaction commits
 	s.publishInternalTransactionWebhookEvent(ctx, types.WebhookEventWalletTransactionCreated, tx.ID)
 
+	s.Logger.Debug(ctx, "credit balance alert starting point", "wallet alert settings", w.AlertSettings)
+
 	// Log credit balance alert after wallet operation
 	if err := s.logCreditBalanceAlert(ctx, w, newCreditBalance); err != nil {
 		// Don't fail the transaction if alert logging fails
@@ -2286,6 +2290,8 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			"wallet_id", w.ID,
 		)
 	}
+	s.Logger.Debug(ctx, "credit balance alert after logging", "wallet alert settings", w.AlertSettings)
+	s.Logger.Debug(ctx, "evaluating alerts for wallet", "wallet_id", w.ID, "wallet alert settings", w.AlertSettings)
 
 	// Only the wallet we just changed can have moved its alert state, so drive
 	// the per-wallet path directly instead of fanning out to every customer wallet.
@@ -2296,6 +2302,8 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			"customer_id", w.CustomerID,
 		)
 	}
+
+	s.Logger.Debug(ctx, "alerts evaluated for wallet", "wallet_id", w.ID, "wallet alert settings", w.AlertSettings)
 
 	return nil
 }
@@ -2635,15 +2643,11 @@ func (s *walletService) GetWallets(ctx context.Context, filter *types.WalletFilt
 
 // UpdateWalletAlertState updates the alert state of a wallet
 func (s *walletService) UpdateWalletAlertState(ctx context.Context, walletID string, state types.AlertState) error {
-	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
-	if err != nil {
-		return err
-	}
-
-	// Update alert state directly
-	w.AlertState = state
-
-	return s.WalletRepo.UpdateWallet(ctx, walletID, w)
+	// Only alert_state is sent: UpdateWallet skips zero/nil fields, so this cannot rewrite
+	// alert_settings or anything else. Reading the wallet first would hand back the cached
+	// pointer and persist whatever that copy holds, which is how a stale cache entry
+	// overwrites the stored alert settings on every state transition.
+	return s.WalletRepo.UpdateWallet(ctx, walletID, &wallet.Wallet{AlertState: state})
 }
 
 // PublishEvent publishes a webhook event for a wallet
@@ -3384,7 +3388,9 @@ func (s *walletService) EvaluateAlertsForWallet(ctx context.Context, w *wallet.W
 		return nil
 	}
 	settingsSvc := &settingsService{ServiceParams: s.ServiceParams}
+	s.Logger.Debug(ctx, "resolving wallet alert settings", "wallet_id", w.ID, "alert_settings", w.AlertSettings)
 	alertSettings, err := s.resolveWalletAlertSettings(ctx, w, settingsSvc)
+	s.Logger.Debug(ctx, "resolved wallet alert settings", "wallet_id", w.ID, "alert_settings", alertSettings)
 	hasWalletAlert := false
 	if err != nil {
 		s.Logger.Error(ctx, "wallet alerts: failed to resolve wallet alert settings", "error", err, "wallet_id", w.ID)
@@ -3416,9 +3422,11 @@ func (s *walletService) EvaluateAlertsForWallet(ctx context.Context, w *wallet.W
 
 	if hasWalletAlert {
 		eventID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_ALERT)
+		s.Logger.Debug(ctx, "processing wallet balance alert", "alert_settings", alertSettings)
 		if err := s.processWalletBalanceAlert(ctx, w, ongoingBalance, alertSettings, alertLogs, eventID); err != nil {
 			s.Logger.Error(ctx, "failed to process wallet balance alert", "error", err, "wallet_id", w.ID)
 		}
+		s.Logger.Debug(ctx, "wallet balance alert processed", "alert_settings", alertSettings)
 	}
 
 	if autoTopupEnabled {
@@ -3504,16 +3512,7 @@ func (s *walletService) resolvePercentageBase(ctx context.Context, w *wallet.Wal
 		txFilter.TimeRangeFilter = &types.TimeRangeFilter{StartTime: windowStart}
 	}
 
-	txs, err := s.WalletRepo.ListAllWalletTransactions(ctx, txFilter)
-	if err != nil {
-		return decimal.Zero, err
-	}
-
-	total := decimal.Zero
-	for _, tx := range txs {
-		total = total.Add(tx.CreditAmount)
-	}
-	return total, nil
+	return s.WalletRepo.SumCreditAmountsByFilter(ctx, txFilter)
 }
 
 // processFeatureWalletBalanceAlert checks and logs feature-level wallet balance alerts for a wallet.
@@ -3587,7 +3586,7 @@ func (s *walletService) processFeatureWalletBalanceAlert(ctx context.Context, w 
 func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet.Wallet, ongoingBalance decimal.Decimal, alertSettings *types.AlertSettings, alertLogsService AlertLogsService, eventID string) error {
 	value := ongoingBalance
 
-	if alertSettings.Type == types.AlertThresholdTypePercentage {
+	if alertSettings.AlertThresholdType == types.AlertThresholdTypePercentage {
 		base, err := s.resolvePercentageBase(ctx, w)
 		if err != nil {
 			s.Logger.Error(ctx, "failed to resolve percentage base for wallet alert", "error", err, "wallet_id", w.ID)
@@ -3677,6 +3676,7 @@ func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet
 			"old_state", currentWallet.AlertState,
 			"new_state", alertStatus,
 			"event_id", eventID,
+			"alert_settings", alertSettings,
 		)
 		if err := s.UpdateWalletAlertState(ctx, w.ID, alertStatus); err != nil {
 			s.Logger.Error(ctx, "failed to update wallet alert state",
@@ -3693,6 +3693,7 @@ func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet
 			"old_state", currentWallet.AlertState,
 			"new_state", alertStatus,
 			"event_id", eventID,
+			"alert_settings", alertSettings,
 		)
 	} else {
 		s.Logger.Debug(ctx, "wallet alert state unchanged, skipping update",

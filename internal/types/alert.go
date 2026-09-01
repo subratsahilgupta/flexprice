@@ -325,20 +325,20 @@ func (f *AlertSettingsFilter) GetExpand() Expand {
 }
 
 type AlertSettings struct {
-	Critical     *AlertThreshold    `json:"critical"`
-	Warning      *AlertThreshold    `json:"warning"`
-	Info         *AlertThreshold    `json:"info"`
-	AlertEnabled *bool              `json:"alert_enabled"`
-	Type         AlertThresholdType `json:"type,omitempty"`
+	Critical           *AlertThreshold    `json:"critical"`
+	Warning            *AlertThreshold    `json:"warning"`
+	Info               *AlertThreshold    `json:"info"`
+	AlertEnabled       *bool              `json:"alert_enabled"`
+	AlertThresholdType AlertThresholdType `json:"alert_threshold_type,omitempty"`
 }
 
 func (at *AlertSettings) Validate() error {
 	// Unset type defaults to and is persisted as absolute — pre-existing wallet/tenant
 	// configs have no type stored and must keep evaluating as absolute without a migration.
-	if at.Type == "" {
-		at.Type = AlertThresholdTypeAbsolute
+	if at.AlertThresholdType == "" {
+		at.AlertThresholdType = AlertThresholdTypeAbsolute
 	}
-	if at.Type != AlertThresholdTypeAbsolute && at.Type != AlertThresholdTypePercentage {
+	if at.AlertThresholdType != AlertThresholdTypeAbsolute && at.AlertThresholdType != AlertThresholdTypePercentage {
 		return ierr.NewError("invalid threshold type").
 			WithHint("Please provide a valid threshold type: absolute or percentage").
 			Mark(ierr.ErrValidation)
@@ -352,7 +352,7 @@ func (at *AlertSettings) Validate() error {
 		}
 	}
 
-	if at.Type == AlertThresholdTypePercentage {
+	if at.AlertThresholdType == AlertThresholdTypePercentage {
 		if at.Critical != nil && (at.Critical.Threshold.LessThan(decimal.Zero) || at.Critical.Threshold.GreaterThan(decimal.NewFromInt(100))) {
 			return ierr.NewError("critical percentage threshold must be between 0 and 100").
 				WithHint("Please provide a critical percentage threshold between 0 and 100").

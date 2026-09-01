@@ -735,6 +735,55 @@ func (r *walletRepository) CountWalletTransactions(ctx context.Context, f *types
 	return count, nil
 }
 
+func (r *walletRepository) SumCreditAmountsByFilter(ctx context.Context, f *types.WalletTransactionFilter) (decimal.Decimal, error) {
+	// Start a span for this repository operation
+	span := StartRepositorySpan(ctx, "wallet", "sum_wallet_transactions_credit_amount", map[string]interface{}{
+		"filter": f,
+	})
+	defer FinishSpan(span)
+
+	if f == nil {
+		f = types.NewNoLimitWalletTransactionFilter()
+	}
+
+	client := r.client.Reader(ctx)
+	query := client.WalletTransaction.Query()
+	query = ApplyBaseFilters(ctx, query, f, r.queryOpts)
+	var err error
+	if f != nil {
+		query, err = r.queryOpts.applyEntityQueryOptions(ctx, f, query)
+		if err != nil {
+			return decimal.Zero, err
+		}
+	}
+
+	// COALESCE guards the zero-rows case: SUM() over no rows is NULL, and decimal.Decimal
+	// has no NULL representation to scan it into. The alias is required — the scanner maps
+	// result columns onto struct fields by name, and an unaliased expression comes back as
+	// "coalesce", matching nothing.
+	sumCreditAmount := func(s *sql.Selector) string {
+		return sql.As(fmt.Sprintf("COALESCE(%s, 0)", sql.Sum(s.C(wallettransaction.FieldCreditAmount))), "sum")
+	}
+
+	var result []struct {
+		Sum decimal.Decimal `json:"sum"`
+	}
+	if err := query.Aggregate(sumCreditAmount).Scan(ctx, &result); err != nil {
+		return decimal.Zero, ierr.WithError(err).
+			WithHint("Failed to sum wallet transactions").
+			WithReportableDetails(map[string]interface{}{
+				"wallet_id": f.WalletID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	if len(result) == 0 {
+		return decimal.Zero, nil
+	}
+
+	return result[0].Sum, nil
+}
+
 func (r *walletRepository) UpdateTransactionStatus(ctx context.Context, id string, status types.TransactionStatus) error {
 	// Start a span for this repository operation
 	span := StartRepositorySpan(ctx, "wallet", "update_transaction_status", map[string]interface{}{

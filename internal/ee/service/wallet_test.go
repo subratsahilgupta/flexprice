@@ -3496,11 +3496,11 @@ func (s *CheckWalletBalanceAlertSuite) TestAutoTopupNotBlockedByDisabledAlerts()
 // warning<25, info<50 (below condition, ascending as required).
 func (s *CheckWalletBalanceAlertSuite) percentageAlertSettings() *types.AlertSettings {
 	return &types.AlertSettings{
-		AlertEnabled: lo.ToPtr(true),
-		Type:         types.AlertThresholdTypePercentage,
-		Critical:     &types.AlertThreshold{Threshold: decimal.NewFromInt(10), Condition: types.AlertConditionBelow},
-		Warning:      &types.AlertThreshold{Threshold: decimal.NewFromInt(25), Condition: types.AlertConditionBelow},
-		Info:         &types.AlertThreshold{Threshold: decimal.NewFromInt(50), Condition: types.AlertConditionBelow},
+		AlertEnabled:       lo.ToPtr(true),
+		AlertThresholdType: types.AlertThresholdTypePercentage,
+		Critical:           &types.AlertThreshold{Threshold: decimal.NewFromInt(10), Condition: types.AlertConditionBelow},
+		Warning:            &types.AlertThreshold{Threshold: decimal.NewFromInt(25), Condition: types.AlertConditionBelow},
+		Info:               &types.AlertThreshold{Threshold: decimal.NewFromInt(50), Condition: types.AlertConditionBelow},
 	}
 }
 
