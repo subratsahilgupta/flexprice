@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/connection"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -39,6 +40,16 @@ func (s *PortalWalletSuite) SetupTest() {
 	s.svc = NewCustomerPortalService(params, NewCustomerService(params), nil)
 	s.ctx = types.SetCustomerID(s.GetContext(), "cust_portal")
 	s.walletID = "wallet_portal"
+
+	// Invoice creation reads the customer to resolve tax rates and exemption, so the
+	// row has to exist even for tests that only care about the wallet.
+	s.NoError(s.GetStores().CustomerRepo.Create(s.ctx, &customer.Customer{
+		ID:         "cust_portal",
+		ExternalID: "ext_cust_portal",
+		Name:       "Portal Customer",
+		Email:      "portal@example.com",
+		BaseModel:  types.GetDefaultBaseModel(s.ctx),
+	}))
 
 	w := &wallet.Wallet{
 		ID:                  s.walletID,

@@ -158,7 +158,7 @@ func (a *CheckoutAdapter) hostedCheckout(
 	resp := &interfaces.CheckoutProviderResponse{
 		ProviderSessionID: page.Id,
 		NextAction: types.PaymentAction{
-			Type: types.PaymentActionTypeCheckoutURL,
+			Type: types.PaymentActionTypePaymentLink,
 			URL:  page.Url,
 		},
 		ProviderMetadata: map[string]string{
