@@ -3383,12 +3383,42 @@ func (s *invoiceService) reconcileLineItems(
 		return newItems, nil
 	}
 
-	// Update-in-place path
-	existingBySubLineItemID := make(map[string]*invoice.InvoiceLineItem, len(existing))
-	for _, item := range existing {
-		if item.SubscriptionLineItemID != nil {
-			existingBySubLineItemID[lo.FromPtr(item.SubscriptionLineItemID)] = item
+	// Update-in-place path.
+	//
+	// Multi-cadence fan-out (added by PR #2699) means one subscription line item
+	// can produce N invoice line items in a single compute — one per sub-window
+	// (e.g., a monthly price on a quarterly sub emits 3 monthly invoice lines,
+	// each with a distinct [PeriodStart, PeriodEnd)). Keying reconcile by
+	// SubscriptionLineItemID alone would collapse those N into 1 map entry
+	// (last-write-wins), so re-runs would silently orphan the N-1 that never
+	// got a chance to match — every recompute would then append fresh copies,
+	// producing duplicate persisted lines. Key by (sub-line-item, window) to
+	// give each fanned-out line item its own reconcile identity.
+	type reconcileKey struct {
+		SubLineItemID string
+		PeriodStart   time.Time
+		PeriodEnd     time.Time
+	}
+	keyOf := func(subLineItemID *string, periodStart, periodEnd *time.Time) (reconcileKey, bool) {
+		if subLineItemID == nil || periodStart == nil || periodEnd == nil {
+			return reconcileKey{}, false
 		}
+		return reconcileKey{
+			SubLineItemID: *subLineItemID,
+			PeriodStart:   *periodStart,
+			PeriodEnd:     *periodEnd,
+		}, true
+	}
+
+	// Items missing PeriodStart/PeriodEnd (legacy pre-migration or hand-crafted) are silently ignored here
+	// same contract as the pre-fan-out reconciler, which ignored items missing SubscriptionLineItemID. They stay in the DB untouched.
+	existingByKey := make(map[reconcileKey]*invoice.InvoiceLineItem, len(existing))
+	for _, item := range existing {
+		k, ok := keyOf(item.SubscriptionLineItemID, item.PeriodStart, item.PeriodEnd)
+		if !ok {
+			continue
+		}
+		existingByKey[k] = item
 	}
 
 	var toInsert []*invoice.InvoiceLineItem
@@ -3400,7 +3430,12 @@ func (s *invoiceService) reconcileLineItems(
 			toInsert = append(toInsert, newItem)
 			continue
 		}
-		if old, ok := existingBySubLineItemID[lo.FromPtr(newItem.SubscriptionLineItemID)]; ok {
+		k, ok := keyOf(newItem.SubscriptionLineItemID, newItem.PeriodStart, newItem.PeriodEnd)
+		if !ok {
+			toInsert = append(toInsert, newItem)
+			continue
+		}
+		if old, exists := existingByKey[k]; exists {
 			// Replace the entire computed payload, then restore immutable identity/audit fields.
 			// This ensures every field produced by ToInvoiceLineItem is refreshed (PriceID,
 			// MeterID, PriceType, PeriodStart/End, display names, etc.) without requiring
@@ -3415,15 +3450,16 @@ func (s *invoiceService) reconcileLineItems(
 			newItem.LineItemDiscount = decimal.Zero
 			newItem.InvoiceLevelDiscount = decimal.Zero
 			toUpdate = append(toUpdate, newItem)
-			delete(existingBySubLineItemID, lo.FromPtr(newItem.SubscriptionLineItemID))
+			delete(existingByKey, k)
 		} else {
 			toInsert = append(toInsert, newItem)
 		}
 	}
 
-	// Archive old items that no longer appear in the new calculation
+	// Archive old items that no longer appear in the new calculation.
+	// An existing invoice line item whose (sub-line-item, start, end) is not re-emitted by the fresh calculation gets archived.
 	var toArchiveIDs []string
-	for _, item := range existingBySubLineItemID {
+	for _, item := range existingByKey {
 		toArchiveIDs = append(toArchiveIDs, item.ID)
 	}
 	if len(toArchiveIDs) > 0 {
@@ -3511,6 +3547,12 @@ func (s *invoiceService) RecalculateInvoiceV2(ctx context.Context, id string, fi
 			PeriodStart:    *inv.PeriodStart,
 			PeriodEnd:      *inv.PeriodEnd,
 			ReferencePoint: referencePoint,
+			// Exclude THIS invoice from FilterLineItemsToBeInvoiced's already-invoiced check
+			// otherwise the draft's own line items (which sit in [periodStart, periodEnd)) get filtered out of
+			// the fresh compute and the recalc returns $0. Was silently masked pre-fan-out because tests exercised draft rows with
+			// nil PeriodStart/PeriodEnd, which the filter couldn't match on; once reconcile started requiring PeriodStart/PeriodEnd to
+			// key its update-in-place map, the missing exclusion surfaced.
+			ExcludeInvoiceID: inv.ID,
 		})
 		if err != nil {
 			return err
