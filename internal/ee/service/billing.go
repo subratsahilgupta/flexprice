@@ -476,28 +476,50 @@ func splitInvoicePeriodByLineItemCadence(
 
 	subMonths := types.EffectiveMonths(sub.BillingPeriod, subCount)
 	itemMonths := types.EffectiveMonths(lineItem.BillingPeriod, itemCount)
-	windows := make([]periodWindow, 0, subMonths/itemMonths)
+	expected := subMonths / itemMonths
+	if expected < 1 {
+		expected = 1
+	}
+
+	// Anchor at sub.BillingAnchor — the same anchor NextBillingDate uses
+	// to compute the sub's own period boundaries.
+	// Fallback to invoicePeriodStart preserves behavior when the sub has
+	// no anchor set (older test fixtures / degenerate data).
+	anchor := invoicePeriodStart
+	if !sub.BillingAnchor.IsZero() {
+		anchor = sub.BillingAnchor
+	}
+	windows := make([]periodWindow, 0, expected)
 	current := invoicePeriodStart
-	for current.Before(invoicePeriodEnd) {
-		next, err := types.NextBillingDate(&types.NextBillingDateParams{
-			CurrentPeriodStart: current,
-			BillingAnchor:      invoicePeriodStart,
-			Unit:               itemCount,
-			Period:             lineItem.BillingPeriod,
-			Timezone:           sub.Timezone,
-		})
-		if err != nil {
-			return nil, err
-		}
-		// Defensive: never emit a window that overruns the invoice period; clamp to invoicePeriodEnd.
-		if next.After(invoicePeriodEnd) {
+	for i := 0; i < expected; i++ {
+		var next time.Time
+		if i == expected-1 {
+			//  window ends exactly at invoicePeriodEnd. With a correct
+			// anchLastor this equals what NextBillingDate would return anyway;
+			// forcing it also defends against misconfigured anchors so we
+			// never emit a trailing sliver.
 			next = invoicePeriodEnd
+		} else {
+			var err error
+			next, err = types.NextBillingDate(&types.NextBillingDateParams{
+				CurrentPeriodStart: current,
+				BillingAnchor:      anchor,
+				Unit:               itemCount,
+				Period:             lineItem.BillingPeriod,
+				Timezone:           sub.Timezone,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if !next.After(current) || !next.Before(invoicePeriodEnd) {
+				next = invoicePeriodEnd
+			}
 		}
 		windows = append(windows, periodWindow{Start: current, End: next})
-		if !next.After(current) {
-			break // safety against infinite loop on degenerate input
-		}
 		current = next
+		if !current.Before(invoicePeriodEnd) {
+			break
+		}
 	}
 	return windows, nil
 }
