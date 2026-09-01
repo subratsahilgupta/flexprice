@@ -305,6 +305,21 @@ func (s *billingService) CalculateMeterUsageCharges(
 				}
 			}
 
+			// Clip the invoice period against the line item's own active range.
+			psStart := item.GetPeriodStart(periodStart)
+			psEnd := item.GetPeriodEnd(periodEnd)
+			if !psEnd.After(psStart) {
+				s.Logger.Debug(ctx, "skipping meter-usage line item: item inactive during invoice window",
+					"subscription_id", sub.ID,
+					"line_item_id", item.ID,
+					"price_id", item.PriceID,
+					"invoice_period_start", periodStart,
+					"invoice_period_end", periodEnd,
+					"item_start_date", item.StartDate,
+					"item_end_date", item.EndDate,
+				)
+				continue
+			}
 			usageCharges = append(usageCharges, dto.CreateInvoiceLineItemRequest{
 				EntityID:                    lo.ToPtr(item.EntityID),
 				EntityType:                  lo.ToPtr(string(item.EntityType)),
@@ -319,8 +334,8 @@ func (s *billingService) CalculateMeterUsageCharges(
 				Amount:                      lineItemAmount,
 				Quantity:                    quantityForCalculation,
 				AdjustedEntitlementQuantity: entitlementAdjustedQty,
-				PeriodStart:                 lo.ToPtr(item.GetPeriodStart(periodStart)),
-				PeriodEnd:                   lo.ToPtr(item.GetPeriodEnd(periodEnd)),
+				PeriodStart:                 lo.ToPtr(psStart),
+				PeriodEnd:                   lo.ToPtr(psEnd),
 				SubscriptionLineItemID:      lo.ToPtr(item.ID),
 				Metadata:                    metadata,
 				CommitmentInfo:              commitmentInfo,
@@ -682,6 +697,21 @@ func (s *billingService) buildCumulativeCommitmentCharges(
 	totalCost := decimal.Zero
 
 	for _, bc := range baseCharges {
+		// Skip items that weren't active during the invoice window
+		psStart := bc.item.GetPeriodStart(periodStart)
+		psEnd := bc.item.GetPeriodEnd(periodEnd)
+		if !psEnd.After(psStart) {
+			s.Logger.Debug(context.Background(), "skipping cumulative-commitment line item: item inactive during invoice window",
+				"subscription_id", sub.ID,
+				"line_item_id", bc.item.ID,
+				"price_id", bc.item.PriceID,
+				"invoice_period_start", periodStart,
+				"invoice_period_end", periodEnd,
+				"item_start_date", bc.item.StartDate,
+				"item_end_date", bc.item.EndDate,
+			)
+			continue
+		}
 		var allocatedAmount decimal.Decimal
 		if totalCurrentBase.GreaterThan(decimal.Zero) {
 			allocatedAmount = bc.baseAmount.Div(totalCurrentBase).Mul(result.WithinCommitment)
@@ -706,8 +736,8 @@ func (s *billingService) buildCumulativeCommitmentCharges(
 			Amount:                      rounded,
 			Quantity:                    displayQty,
 			AdjustedEntitlementQuantity: bc.adjustedEntitlementQuantity,
-			PeriodStart:                 lo.ToPtr(bc.item.GetPeriodStart(periodStart)),
-			PeriodEnd:                   lo.ToPtr(bc.item.GetPeriodEnd(periodEnd)),
+			PeriodStart:                 lo.ToPtr(psStart),
+			PeriodEnd:                   lo.ToPtr(psEnd),
 			SubscriptionLineItemID:      lo.ToPtr(bc.item.ID),
 			Metadata:                    bc.metadata,
 		})

@@ -3127,8 +3127,18 @@ func (s *BillingServiceSuite) TestCalculateMeterUsageCharges_CumulativeCommitmen
 	sub.CurrentPeriodEnd = time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC)
 	sub.BillingAnchor = sub.CurrentPeriodEnd
 
-	apiCallsLineItem := sub.LineItems[1]                                                     // Usage line item
-	sub.LineItems = []*subscription.SubscriptionLineItem{sub.LineItems[0], apiCallsLineItem} // Fixed + API Calls (default)
+	// Realign the copied line items' StartDate to the overridden sub.StartDate.
+	// setupTestData built them with StartDate = now - 30d, which is AFTER the
+	// 2025 periods we've mocked here — that would cause the meter-usage
+	// emit path to skip the items entirely (item inactive during the invoice
+	// window). Copy each item, then repoint StartDate, so we don't mutate
+	// shared testData.
+	fixedCopy := *sub.LineItems[0]
+	fixedCopy.StartDate = sub.StartDate
+	usageCopy := *sub.LineItems[1]
+	usageCopy.StartDate = sub.StartDate
+	sub.LineItems = []*subscription.SubscriptionLineItem{&fixedCopy, &usageCopy} // Fixed + API Calls (default)
+	apiCallsLineItem := &usageCopy
 
 	// Second usage line item for multi-line-item test
 	featureBLineItem := &subscription.SubscriptionLineItem{
@@ -5062,6 +5072,75 @@ func (s *BillingServiceSuite) TestSplitInvoicePeriodByLineItemCadence_MonthlyOnQ
 	s.Equal(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), windows[1].End)
 	s.Equal(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), windows[2].Start)
 	s.Equal(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC), windows[2].End)
+}
+
+func (s *BillingServiceSuite) TestSplitInvoicePeriodByLineItemCadence_AnchorPreservesDayOfMonth() {
+	// Regression: real prod invoice for a QUARTERLY sub with
+	// BillingAnchor = 2026-03-31T18:30:00Z (Apr 1 IST, day-of-month 31)
+	// produced 4 addon line items for Q3 (Sep 30 → Dec 31 UTC = 92 days)
+	// instead of 3. Root cause: fan-out anchored at invoicePeriodStart
+	// (Sep 30, day-30 — sub's day-31 preference already lost to Sep's
+	// calendar clamp), so monthly steps land on day-30 and never climb
+	// back to 31 — leaving a trailing 1-day sliver [Dec 30, Dec 31].
+	//
+	// Fix: anchor fan-out at sub.BillingAnchor (same anchor
+	// NextBillingDate uses to compute the sub's own period boundaries).
+	// Day-31 is restored whenever the target month allows, so the walk
+	// lands exactly on invoicePeriodEnd (Dec 31) by construction.
+	q3Start := time.Date(2026, 9, 30, 18, 30, 0, 0, time.UTC)
+	q3End := time.Date(2026, 12, 31, 18, 30, 0, 0, time.UTC)
+	sub := &subscription.Subscription{
+		BillingPeriod:      types.BILLING_PERIOD_QUARTER,
+		BillingPeriodCount: 1,
+		BillingAnchor:      time.Date(2026, 3, 31, 18, 30, 0, 0, time.UTC),
+		Timezone:           "UTC",
+	}
+	item := &subscription.SubscriptionLineItem{
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+	}
+
+	windows, err := splitInvoicePeriodByLineItemCadence(q3Start, q3End, item, sub)
+	s.Require().NoError(err)
+	s.Require().Len(windows, 3, "monthly-on-quarterly with day-31 sub anchor must land cleanly on Dec 31 in 3 windows")
+	// Oct restores 31 from the anchor
+	s.Equal(q3Start, windows[0].Start)
+	s.Equal(time.Date(2026, 10, 31, 18, 30, 0, 0, time.UTC), windows[0].End)
+	// Nov has 30 days, clamps
+	s.Equal(time.Date(2026, 10, 31, 18, 30, 0, 0, time.UTC), windows[1].Start)
+	s.Equal(time.Date(2026, 11, 30, 18, 30, 0, 0, time.UTC), windows[1].End)
+	// Dec restores 31 from the anchor — matches invoicePeriodEnd exactly
+	s.Equal(time.Date(2026, 11, 30, 18, 30, 0, 0, time.UTC), windows[2].Start)
+	s.Equal(q3End, windows[2].End, "last window must end exactly at invoicePeriodEnd")
+}
+
+func (s *BillingServiceSuite) TestSplitInvoicePeriodByLineItemCadence_FallsBackToInvoiceStartWhenNoAnchor() {
+	// If sub.BillingAnchor is unset (older test fixtures / degenerate data),
+	// fan-out anchors at invoicePeriodStart to preserve prior behavior.
+	q3Start := time.Date(2026, 9, 30, 18, 30, 0, 0, time.UTC)
+	q3End := time.Date(2026, 12, 31, 18, 30, 0, 0, time.UTC)
+	sub := &subscription.Subscription{
+		BillingPeriod:      types.BILLING_PERIOD_QUARTER,
+		BillingPeriodCount: 1,
+		Timezone:           "UTC",
+		// BillingAnchor intentionally zero
+	}
+	item := &subscription.SubscriptionLineItem{
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+	}
+
+	windows, err := splitInvoicePeriodByLineItemCadence(q3Start, q3End, item, sub)
+	s.Require().NoError(err)
+	s.Require().Len(windows, 3, "still exactly 3 windows even when the fallback anchor would otherwise drift")
+	// With invoicePeriodStart anchor (day-30), monthly steps stay on day-30.
+	// The last window is force-clamped to invoicePeriodEnd so no sliver leaks.
+	s.Equal(q3Start, windows[0].Start)
+	s.Equal(time.Date(2026, 10, 30, 18, 30, 0, 0, time.UTC), windows[0].End)
+	s.Equal(time.Date(2026, 10, 30, 18, 30, 0, 0, time.UTC), windows[1].Start)
+	s.Equal(time.Date(2026, 11, 30, 18, 30, 0, 0, time.UTC), windows[1].End)
+	s.Equal(time.Date(2026, 11, 30, 18, 30, 0, 0, time.UTC), windows[2].Start)
+	s.Equal(q3End, windows[2].End, "fallback path: last window force-clamps to invoicePeriodEnd instead of emitting a sliver")
 }
 
 func (s *BillingServiceSuite) TestSplitInvoicePeriodByLineItemCadence_NonDivisibleRejected() {
