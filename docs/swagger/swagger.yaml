@@ -2790,7 +2790,6 @@ definitions:
     required:
     - billing_period
     - currency
-    - include_price_ids
     - plan_id
     type: object
   CreateTaskRequest:
