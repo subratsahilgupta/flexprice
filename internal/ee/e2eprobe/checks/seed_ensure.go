@@ -1183,6 +1183,38 @@ func (s *SeedEnsure) ensureMultiCadenceSubscription(
 		}
 	}
 
+	// Fetch every published plan price so we can pass their IDs via
+	// include_price_ids. Without the opt-in, the plan-attach filter now
+	// defaults to strict-equal cadence (post-PR #2713) and a QUARTERLY sub
+	// against a MONTHLY-only plan returns "no prices found for entity".
+	published := types.StatusPublished
+	pricesResp, err := s.client.Prices().Query(ctx, types.PriceFilter{
+		PlanIds: []string{planID},
+		Status:  &published,
+	})
+	if err != nil {
+		return e2eprobe.Errorf(map[string]string{"step": "multi_cadence_prices_query", "plan_id": planID}, "list plan prices: %w", err)
+	}
+	var includePriceIDs []string
+	if pricesResp != nil && pricesResp.ListPricesResponse != nil {
+		for _, p := range pricesResp.ListPricesResponse.Items {
+			if p.ID != nil && *p.ID != "" {
+				includePriceIDs = append(includePriceIDs, *p.ID)
+			}
+		}
+	}
+	if len(includePriceIDs) == 0 {
+		// No plan prices found → an empty include_price_ids would create a sub
+		// with zero attached prices, which fails downstream. Skip and let the
+		// next tick retry after the plan's price seeding catches up.
+		if s.logger != nil {
+			s.logger.Info(ctx, "multi-cadence seed sub: skipping create — plan has no published prices yet",
+				"plan_id", planID,
+			)
+		}
+		return nil
+	}
+
 	billingCycle := types.BillingCycleAnniversary
 	now := time.Now().UTC()
 	req := types.CreateSubscriptionRequest{
@@ -1193,6 +1225,9 @@ func (s *SeedEnsure) ensureMultiCadenceSubscription(
 		BillingPeriodCount: int64Ptr(1),
 		BillingCycle:       &billingCycle,
 		StartDate:          &now,
+		// Opt into multi-cadence: attach every monthly plan price to the
+		// quarterly sub. Invoice generation fans each out per sub-window.
+		IncludePriceIds: includePriceIDs,
 		Metadata: map[string]string{
 			"e2eprobe":        "true",
 			"e2eprobe_role":   "seed",
