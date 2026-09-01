@@ -31,6 +31,13 @@ inputs:
   ecr_repo_prefix:
     description: 'ECR repository prefix identifying the application container'
     required: true
+  ghcr_repo_prefix:
+    description: 'GHCR repository prefix (e.g. ghcr.io/owner/flexprice) — matches taskdefs already migrated to GHCR so the container is found post-cutover'
+    required: true
+  ghcr_credentials_arn:
+    description: 'Secrets Manager ARN of the GHCR pull credentials. Injected as repositoryCredentials when the migration image is a private GHCR image; required for Fargate to pull it.'
+    required: false
+    default: ''
   dry_run:
     description: 'If true, print the plan and do not run anything'
     required: true
@@ -51,6 +58,8 @@ runs:
         SERVICE: ${{ inputs.service_name }}
         IMAGE: ${{ inputs.image }}
         ECR_REPO_PREFIX: ${{ inputs.ecr_repo_prefix }}
+        GHCR_REPO_PREFIX: ${{ inputs.ghcr_repo_prefix }}
+        GHCR_CREDENTIALS_ARN: ${{ inputs.ghcr_credentials_arn }}
         DRY_RUN: ${{ inputs.dry_run }}
         TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
       run: |
@@ -96,17 +105,33 @@ runs:
         # role, log configuration -- comes across unchanged. Sidecars are dropped:
         # a log shipper or proxy has nothing to do here and would keep the task
         # RUNNING after the migration container exits, so the task never stops.
-        NEW_TASK_DEF=$(echo "$TASK_DEF" | ECR_REPO_PREFIX="$ECR_REPO_PREFIX" IMAGE="$IMAGE" python3 -c "
+        NEW_TASK_DEF=$(echo "$TASK_DEF" \
+          | ECR_REPO_PREFIX="$ECR_REPO_PREFIX" \
+            GHCR_REPO_PREFIX="$GHCR_REPO_PREFIX" \
+            GHCR_CREDENTIALS_ARN="$GHCR_CREDENTIALS_ARN" \
+            IMAGE="$IMAGE" python3 -c "
         import json, sys, os
-        ecr_prefix = os.environ['ECR_REPO_PREFIX']
-        new_image  = os.environ['IMAGE']
+        ecr_prefix  = os.environ['ECR_REPO_PREFIX']
+        ghcr_prefix = os.environ['GHCR_REPO_PREFIX']
+        ghcr_creds  = os.environ.get('GHCR_CREDENTIALS_ARN', '')
+        new_image   = os.environ['IMAGE']
+        new_is_ghcr = new_image.startswith(ghcr_prefix)
         td = json.load(sys.stdin)
 
-        app = [c for c in td.get('containerDefinitions', []) if c.get('image','').startswith(ecr_prefix)]
+        # Match whether the service is still on ECR or already cut over to GHCR.
+        app = [c for c in td.get('containerDefinitions', [])
+               if c.get('image','').startswith(ecr_prefix) or c.get('image','').startswith(ghcr_prefix)]
         if len(app) != 1:
-            sys.exit('expected exactly one container matching the ECR prefix, found %d' % len(app))
+            sys.exit('expected exactly one container matching the ECR/GHCR prefix, found %d' % len(app))
         c = app[0]
         c['image'] = new_image
+        if new_is_ghcr:
+            # Private GHCR package -> Fargate needs pull credentials.
+            if not ghcr_creds:
+                sys.exit('GHCR image requires ghcr_credentials_arn but none was provided')
+            c['repositoryCredentials'] = {'credentialsParameter': ghcr_creds}
+        else:
+            c.pop('repositoryCredentials', None)
         c['essential'] = True
         # dependsOn would reference sidecars that no longer exist in this task.
         c.pop('dependsOn', None)
@@ -196,11 +221,13 @@ runs:
         # Print the migration's own output. Without this a failure shows only an
         # exit code, and the message that says which migration broke -- or that the
         # database was never adopted -- stays in CloudWatch where nobody looks.
-        LOG_CFG=$(echo "$TASK_DEF" | ECR_REPO_PREFIX="$ECR_REPO_PREFIX" python3 -c "
+        LOG_CFG=$(echo "$TASK_DEF" | ECR_REPO_PREFIX="$ECR_REPO_PREFIX" GHCR_REPO_PREFIX="$GHCR_REPO_PREFIX" python3 -c "
         import json, sys, os
+        ecr_prefix  = os.environ['ECR_REPO_PREFIX']
+        ghcr_prefix = os.environ['GHCR_REPO_PREFIX']
         td = json.load(sys.stdin)
         for c in td['containerDefinitions']:
-            if c.get('image','').startswith(os.environ['ECR_REPO_PREFIX']):
+            if c.get('image','').startswith(ecr_prefix) or c.get('image','').startswith(ghcr_prefix):
                 o = (c.get('logConfiguration') or {}).get('options', {})
                 print(o.get('awslogs-group',''))
                 print(o.get('awslogs-stream-prefix',''))

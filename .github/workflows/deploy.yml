@@ -309,6 +309,8 @@ jobs:
           service_name: ${{ matrix.target.api_service }}
           image: ${{ needs.build.outputs.image || format('{0}:{1}', env.GHCR_IMAGE, github.sha) }}
           ecr_repo_prefix: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          ghcr_repo_prefix: ${{ env.GHCR_IMAGE }}
+          ghcr_credentials_arn: ${{ vars.ECS_GHCR_PULL_CREDENTIALS_ARN }}
           dry_run: ${{ needs.resolve-config.outputs.dry_run }}
 
   # ──────────────────────────────────────────────────────────────────────────
