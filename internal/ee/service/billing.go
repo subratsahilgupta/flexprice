@@ -480,14 +480,9 @@ func splitInvoicePeriodByLineItemCadence(
 	if expected < 1 {
 		expected = 1
 	}
+
 	// Anchor at sub.BillingAnchor — the same anchor NextBillingDate uses
-	// to compute the sub's own period boundaries. If we anchored at
-	// invoicePeriodStart instead, its day-of-month has already been
-	// calendar-clamped for months < 31 days (e.g. Sep 30 loses the sub's
-	// day-31 preference), and monthly steps would never climb back to 31
-	// — producing a trailing 1-day sliver window against an invoice period
-	// that DOES end on 31. Anchoring at sub.BillingAnchor makes the
-	// N×itemPeriod walk land exactly on invoicePeriodEnd by construction.
+	// to compute the sub's own period boundaries.
 	// Fallback to invoicePeriodStart preserves behavior when the sub has
 	// no anchor set (older test fixtures / degenerate data).
 	anchor := invoicePeriodStart
@@ -499,8 +494,8 @@ func splitInvoicePeriodByLineItemCadence(
 	for i := 0; i < expected; i++ {
 		var next time.Time
 		if i == expected-1 {
-			// Last window ends exactly at invoicePeriodEnd. With a correct
-			// anchor this equals what NextBillingDate would return anyway;
+			//  window ends exactly at invoicePeriodEnd. With a correct
+			// anchLastor this equals what NextBillingDate would return anyway;
 			// forcing it also defends against misconfigured anchors so we
 			// never emit a trailing sliver.
 			next = invoicePeriodEnd
