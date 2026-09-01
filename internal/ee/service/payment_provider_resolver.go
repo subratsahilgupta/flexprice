@@ -56,19 +56,10 @@ func (s *paymentProviderResolver) ListProviders(ctx context.Context, customerID 
 		return len(gatewayCapabilities[gw]) > 0
 	})
 
-	providersPer := map[types.IntegrationCapabilityType]int{}
-	for _, gw := range usable {
-		for _, c := range gatewayCapabilities[gw] {
-			providersPer[c]++
-		}
-	}
-
 	out := make([]interfaces.ProviderCapabilities, 0, len(usable))
 	for _, gw := range usable {
 		caps := lo.Map(gatewayCapabilities[gw], func(c types.IntegrationCapabilityType, _ int) types.IntegrationCapability {
-			// Sole provider of a capability == what ResolveProvider picks for it with
-			// no request, so the two can never disagree about what "default" means.
-			return types.IntegrationCapability{Type: c, IsDefault: providersPer[c] == 1}
+			return types.IntegrationCapability{Type: c}
 		})
 		out = append(out, interfaces.ProviderCapabilities{Gateway: gw, Capabilities: caps})
 	}

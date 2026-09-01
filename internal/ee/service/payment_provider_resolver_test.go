@@ -130,11 +130,11 @@ func (s *PaymentProviderResolverSuite) TestListProvidersSkipsUnusableAndNonPayme
 	s.Len(got, 1)
 	s.Equal(types.PaymentGatewayTypeChargebee, got[0].Gateway)
 	s.ElementsMatch([]types.IntegrationCapability{
-		{Type: types.IntegrationCapabilityCheckout, IsDefault: true},
-		{Type: types.IntegrationCapabilityPaymentLink, IsDefault: true},
-		{Type: types.IntegrationCapabilityAutoCharge, IsDefault: true},
-		{Type: types.IntegrationCapabilityPaymentMethodManagement, IsDefault: true},
-		{Type: types.IntegrationCapabilitySetDefaultMethod, IsDefault: true},
+		{Type: types.IntegrationCapabilityCheckout},
+		{Type: types.IntegrationCapabilityPaymentLink},
+		{Type: types.IntegrationCapabilityAutoCharge},
+		{Type: types.IntegrationCapabilityPaymentMethodManagement},
+		{Type: types.IntegrationCapabilitySetDefaultMethod},
 	}, got[0].Capabilities)
 }
 
@@ -148,80 +148,6 @@ func (s *PaymentProviderResolverSuite) TestListProvidersIsOrdered() {
 		types.PaymentGatewayTypeNomod,
 		types.PaymentGatewayTypeStripe,
 	}, []types.PaymentGatewayType{got[0].Gateway, got[1].Gateway, got[2].Gateway})
-}
-
-// The case a single provider-level is_default could not express: one tenant, two
-// gateways, a different default per capability.
-func (s *PaymentProviderResolverSuite) TestDefaultIsPerCapability() {
-	s.connect(types.SecretProviderChargebee, types.SecretProviderStripe)
-
-	got, err := s.svc.ListProviders(s.GetContext(), "cust_1")
-	s.NoError(err)
-	s.Require().Len(got, 2)
-
-	// payment_link is contested between the two, so neither is its default.
-	s.ElementsMatch([]types.IntegrationCapabilityType{
-		types.IntegrationCapabilityCheckout,
-		types.IntegrationCapabilityAutoCharge,
-		types.IntegrationCapabilityPaymentMethodManagement,
-		types.IntegrationCapabilitySetDefaultMethod,
-	}, defaultTypes(got, types.PaymentGatewayTypeChargebee))
-	s.Empty(defaultTypes(got, types.PaymentGatewayTypeStripe))
-}
-
-// A contested capability has no default on any provider; ResolveProvider must
-// refuse it for the same reason, or the portal would offer a provider the
-// resolver then rejects.
-func (s *PaymentProviderResolverSuite) TestContestedCapabilityHasNoDefault() {
-	s.connect(types.SecretProviderChargebee, types.SecretProviderRazorpay)
-	ctx := s.GetContext()
-
-	got, err := s.svc.ListProviders(ctx, "cust_1")
-	s.NoError(err)
-	for _, p := range got {
-		s.NotContains(defaultTypes(got, p.Gateway), types.IntegrationCapabilityCheckout,
-			"%s claims a default for a contested capability", p.Gateway)
-	}
-
-	_, err = s.svc.ResolveProvider(ctx, "cust_1", types.IntegrationCapabilityCheckout, "")
-	s.True(ierr.IsValidation(err))
-}
-
-// Every IsDefault capability must be exactly what ResolveProvider returns with no
-// request, and nothing without the flag may resolve without one.
-func (s *PaymentProviderResolverSuite) TestDefaultAgreesWithResolveProvider() {
-	s.connect(types.SecretProviderChargebee, types.SecretProviderStripe, types.SecretProviderRazorpay)
-	ctx := s.GetContext()
-
-	got, err := s.svc.ListProviders(ctx, "cust_1")
-	s.NoError(err)
-
-	for _, p := range got {
-		for _, c := range p.Capabilities {
-			gw, err := s.svc.ResolveProvider(ctx, "cust_1", c.Type, "")
-			if c.IsDefault {
-				s.NoError(err, "%s is default for %s but does not resolve", p.Gateway, c.Type)
-				s.Equal(p.Gateway, gw)
-				continue
-			}
-			s.Error(err, "%s resolves %s without being its default", p.Gateway, c.Type)
-		}
-	}
-}
-
-func defaultTypes(providers []interfaces.ProviderCapabilities, gw types.PaymentGatewayType) []types.IntegrationCapabilityType {
-	var out []types.IntegrationCapabilityType
-	for _, p := range providers {
-		if p.Gateway != gw {
-			continue
-		}
-		for _, c := range p.Capabilities {
-			if c.IsDefault {
-				out = append(out, c.Type)
-			}
-		}
-	}
-	return out
 }
 
 func (s *PaymentProviderResolverSuite) TestCapabilityRequired() {

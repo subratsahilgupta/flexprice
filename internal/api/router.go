@@ -670,7 +670,7 @@ func NewRouter(
 	{
 		// Customer specific
 		customerPortalAPI.GET("/info", handlers.CustomerPortal.GetCustomer)
-		customerPortalAPI.PUT("/info", handlers.CustomerPortal.UpdateCustomer)
+		customerPortalAPI.PUT("/info", write(types.EntityCustomer, types.ActionWrite), handlers.CustomerPortal.UpdateCustomer)
 		customerPortalAPI.GET("/usage", handlers.CustomerPortal.GetUsageSummary)
 
 		// Subscriptions

@@ -19,14 +19,6 @@ type PaymentMethodAdapter struct {
 	Logger      *logger.Logger
 }
 
-func (a *PaymentMethodAdapter) Capabilities() []types.IntegrationCapabilityType {
-	return []types.IntegrationCapabilityType{
-		types.IntegrationCapabilityCheckout,
-		types.IntegrationCapabilityAutoCharge,
-		types.IntegrationCapabilitySetDefaultMethod,
-	}
-}
-
 func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustomerID string) ([]interfaces.ProviderPaymentMethod, error) {
 	cbCustomerID, err := a.CustomerSvc.GetChargebeeCustomerID(ctx, flexCustomerID)
 	if err != nil {

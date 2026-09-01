@@ -140,10 +140,6 @@ const (
 	IntegrationCapabilityPaymentMethodManagement = types.IntegrationCapabilityPaymentMethodManagement
 )
 
-// Derived from connections rows at read time, not stored alongside
-// CustomerPortalConfig: that blob is tenant-writable and a copy there could be
-// edited into a lie. Carries no client credentials — the portal drives every
-// provider through hosted links, so no browser initialises a provider SDK.
 type PaymentIntegration struct {
 	Provider     types.PaymentGatewayType `json:"provider"`
 	Capabilities []IntegrationCapability  `json:"capabilities"`

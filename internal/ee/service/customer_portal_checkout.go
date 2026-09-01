@@ -50,10 +50,6 @@ func (s *customerPortalService) CancelCheckoutSession(ctx context.Context, sessi
 	return toPortalCheckoutSession(dto.ToCheckoutSessionResponse(final)), nil
 }
 
-// toPortalCheckoutSession narrows the admin response to what the browser may see.
-// Takes the already-scrubbed dto form rather than the domain session so provider
-// credentials cannot leak by construction; payment_action is the only channel
-// through which provider data reaches the client.
 func toPortalCheckoutSession(resp *dto.CheckoutSessionResponse) *dto.PortalCheckoutSessionResponse {
 	if resp == nil || resp.CheckoutSession == nil {
 		return nil

@@ -90,9 +90,6 @@ func (s *customerPortalService) SetDefaultPaymentMethod(ctx context.Context, req
 		return nil, ierr.NewError("request is required").Mark(ierr.ErrValidation)
 	}
 
-	// set_default_method, not payment_method_management: a provider can list and
-	// delete vaulted methods with no notion of a default (a Razorpay mandate has no
-	// primary flag), and must not be offered here.
 	return s.mutateSavedMethod(ctx, types.IntegrationCapabilitySetDefaultMethod,
 		req.PaymentProvider, req.PaymentMethodID,
 		func(ctx context.Context, provider interfaces.PaymentMethodProvider, customerID, methodID string) error {

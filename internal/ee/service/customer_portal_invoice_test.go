@@ -139,7 +139,7 @@ func (s *PortalWalletSuite) TestPayInvoiceActivationGuard() {
 				BillingReason:  string(tt.reason),
 			}}
 
-			err := portal.refuseIfActivationWouldBeLost(s.ctx, inv)
+			err := portal.shouldAllowToPayInvoice(s.ctx, inv)
 			if tt.wantRefuse {
 				s.Error(err, "payment would settle the invoice and leave the subscription behind")
 				return
@@ -153,7 +153,7 @@ func (s *PortalWalletSuite) TestPayInvoiceActivationGuard() {
 func (s *PortalWalletSuite) TestPayInvoiceActivationGuardIgnoresOneOffInvoices() {
 	portal := s.svc.(*customerPortalService)
 
-	err := portal.refuseIfActivationWouldBeLost(s.ctx, &dto.InvoiceResponse{
+	err := portal.shouldAllowToPayInvoice(s.ctx, &dto.InvoiceResponse{
 		Invoice: invoice.Invoice{ID: "inv_oneoff", BillingReason: string(types.InvoiceBillingReasonSubscriptionCreate)},
 	})
 	s.NoError(err)

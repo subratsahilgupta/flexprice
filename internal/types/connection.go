@@ -131,11 +131,6 @@ func (r *RazorpayConnectionMetadata) Validate() error {
 type ChargebeeConnectionMetadata struct {
 	Site   string `json:"site"`    // Chargebee site name (not encrypted)
 	APIKey string `json:"api_key"` // Chargebee API key (encrypted)
-	// PublishableKey is Chargebee's scope-limited client-side key. Chargebee.js
-	// requires it (it becomes the _jsapi_key request param); without it every
-	// component call fails auth and gateway lookup. Safe to expose to the browser —
-	// verified it cannot read customers or list api keys.
-	PublishableKey  string `json:"publishable_key,omitempty"`
 	WebhookSecret   string `json:"webhook_secret,omitempty"`   // Chargebee Webhook Secret (encrypted, optional, NOT USED in v2)
 	WebhookUsername string `json:"webhook_username,omitempty"` // Basic Auth username for webhooks (encrypted)
 	WebhookPassword string `json:"webhook_password,omitempty"` // Basic Auth password for webhooks (encrypted)

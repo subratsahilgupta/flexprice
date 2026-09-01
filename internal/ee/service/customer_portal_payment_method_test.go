@@ -71,17 +71,15 @@ func (s *PortalPaymentMethodSuite) TestGetIntegrationsReportsCapabilities() {
 	s.Contains(byProvider, types.PaymentGatewayTypeChargebee)
 	s.Contains(byProvider, types.PaymentGatewayTypeStripe)
 
-	// Both gateways can create payment links, so neither is the default for it —
-	// is_default: false on both is the signal that the caller must choose.
 	s.ElementsMatch([]dto.IntegrationCapability{
-		{Type: types.IntegrationCapabilityPaymentLink, IsDefault: false},
+		{Type: types.IntegrationCapabilityPaymentLink},
 	}, byProvider[types.PaymentGatewayTypeStripe])
 	s.ElementsMatch([]dto.IntegrationCapability{
-		{Type: types.IntegrationCapabilityCheckout, IsDefault: true},
-		{Type: types.IntegrationCapabilityPaymentLink, IsDefault: false},
-		{Type: types.IntegrationCapabilityAutoCharge, IsDefault: true},
-		{Type: types.IntegrationCapabilityPaymentMethodManagement, IsDefault: true},
-		{Type: types.IntegrationCapabilitySetDefaultMethod, IsDefault: true},
+		{Type: types.IntegrationCapabilityCheckout},
+		{Type: types.IntegrationCapabilityPaymentLink},
+		{Type: types.IntegrationCapabilityAutoCharge},
+		{Type: types.IntegrationCapabilityPaymentMethodManagement},
+		{Type: types.IntegrationCapabilitySetDefaultMethod},
 	}, byProvider[types.PaymentGatewayTypeChargebee])
 }
 

@@ -3,8 +3,6 @@ package interfaces
 import (
 	"context"
 	"time"
-
-	"github.com/flexprice/flexprice/internal/types"
 )
 
 // PaymentMethodProvider is implemented by each gateway that can vault a payment
@@ -21,10 +19,6 @@ type PaymentMethodProvider interface {
 
 	// CreateSetupLink returns a hosted page on which the customer adds a method.
 	CreateSetupLink(ctx context.Context, req SetupLinkRequest) (*SetupLinkResponse, error)
-
-	// Capabilities reports what this provider supports, so callers branch on
-	// capability rather than on provider name.
-	Capabilities() []types.IntegrationCapabilityType
 }
 
 // SetupLinkRequest asks a provider for a hosted add-a-payment-method page.

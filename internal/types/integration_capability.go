@@ -14,11 +14,6 @@ const (
 
 func (t IntegrationCapabilityType) String() string { return string(t) }
 
-// IntegrationCapability is one operation a provider supports, plus how it is
-// configured for the tenant.
 type IntegrationCapability struct {
 	Type IntegrationCapabilityType `json:"type"`
-	// IsDefault marks the capability this provider is chosen for when the caller
-	// names none. Per capability, because a tenant's default differs by operation.
-	IsDefault bool `json:"is_default"`
 }

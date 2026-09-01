@@ -32,7 +32,7 @@ func (s *customerPortalService) PayInvoice(ctx context.Context, invoiceID string
 	if err := validateInvoiceIsPayable(inv); err != nil {
 		return nil, err
 	}
-	if err := s.refuseIfActivationWouldBeLost(ctx, inv); err != nil {
+	if err := s.shouldAllowToPayInvoice(ctx, inv); err != nil {
 		return nil, err
 	}
 
@@ -148,7 +148,7 @@ func validateInvoiceIsPayable(inv *dto.InvoiceResponse) error {
 	return nil
 }
 
-// refuseIfActivationWouldBeLost blocks only the case that actually breaks: an
+// shouldAllowToPayInvoice blocks only the case that actually breaks: an
 // invoice whose payment is supposed to activate a subscription still sitting
 // unactivated. The link path settles the invoice but skips
 // HandleIncompleteSubscriptionPayment, so the money would be taken and the
@@ -159,7 +159,7 @@ func validateInvoiceIsPayable(inv *dto.InvoiceResponse) error {
 // so those invoices stay payable, as do renewals and one-off invoices.
 //
 // TODO: delete once ReconcileInvoicePayment delegates to ReconcilePaymentStatus.
-func (s *customerPortalService) refuseIfActivationWouldBeLost(ctx context.Context, inv *dto.InvoiceResponse) error {
+func (s *customerPortalService) shouldAllowToPayInvoice(ctx context.Context, inv *dto.InvoiceResponse) error {
 	reason := types.InvoiceBillingReason(inv.BillingReason)
 	if inv.SubscriptionID == nil || !reason.IsFirstSubscriptionOpenInvoiceReason() {
 		return nil
