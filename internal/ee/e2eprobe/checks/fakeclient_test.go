@@ -184,31 +184,70 @@ func (f *fakePlans) SyncPrices(_ context.Context, planID string) (*dtos.SyncPlan
 type fakePrices struct {
 	mu      sync.Mutex
 	created []types.CreatePriceRequest
+	// ids parallels created — one fabricated fake id per create call, so
+	// Query can return items with realistic IDs. Callers looking up
+	// created[i] can pair it with ids[i].
+	ids []string
 	// bucketSizes records the price-level bucket passed alongside each created
 	// price, keyed by lookup key. Empty string means the price is unbucketed.
 	bucketSizes map[string]string
 }
 
+func (f *fakePrices) nextID() string {
+	// Callers already hold f.mu.
+	return fmt.Sprintf("price_fake_%d", len(f.created)+1)
+}
+
 func (f *fakePrices) Create(_ context.Context, req types.CreatePriceRequest) (*dtos.CreatePriceResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	id := f.nextID()
 	f.created = append(f.created, req)
+	f.ids = append(f.ids, id)
 	return &dtos.CreatePriceResponse{}, nil
 }
 func (f *fakePrices) CreateBucketed(_ context.Context, req types.CreatePriceRequest, bucketSize string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	id := f.nextID()
 	f.created = append(f.created, req)
+	f.ids = append(f.ids, id)
 	if f.bucketSizes == nil {
 		f.bucketSizes = map[string]string{}
 	}
 	if req.LookupKey != nil {
 		f.bucketSizes[*req.LookupKey] = bucketSize
 	}
-	return "price_fake", nil
+	return id, nil
 }
-func (f *fakePrices) Query(_ context.Context, _ types.PriceFilter) (*dtos.QueryPriceResponse, error) {
-	return &dtos.QueryPriceResponse{}, nil
+func (f *fakePrices) Query(_ context.Context, filter types.PriceFilter) (*dtos.QueryPriceResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Filter by PlanIds when provided (the seed's multi-cadence lookup uses
+	// this). Callers that pass no filter get every created price back.
+	var items []types.PriceResponse
+	for i, req := range f.created {
+		if len(filter.PlanIds) > 0 {
+			if req.EntityID == "" {
+				continue
+			}
+			matched := false
+			for _, pid := range filter.PlanIds {
+				if req.EntityID == pid {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				continue
+			}
+		}
+		id := f.ids[i]
+		items = append(items, types.PriceResponse{ID: &id})
+	}
+	return &dtos.QueryPriceResponse{
+		ListPricesResponse: &types.ListPricesResponse{Items: items},
+	}, nil
 }
 
 // --- Features ---
