@@ -2,7 +2,9 @@ name: Build, Push & Deploy to AWS ECS
 
 on:
   push:
-    branches: [main]
+    # develop builds + publishes the GHCR :develop image only; no ECS deploy
+    # (staging ECS is deprovisioned). main runs the full production pipeline.
+    branches: [develop, main]
     tags: ['v*']
   # Manual trigger: lets you validate config or force-deploy without a push
   workflow_dispatch:
@@ -91,6 +93,7 @@ jobs:
           echo "tag=${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}" >> $GITHUB_OUTPUT
 
           IS_MAIN="${{ github.ref_name == 'main' }}"
+          IS_DEVELOP="${{ github.ref_name == 'develop' }}"
 
           {
             echo "ghcr_tags<<TAGS_EOF"
@@ -98,6 +101,8 @@ jobs:
             if [ "$IS_RELEASE" = "true" ]; then
               echo "${GHCR_IMAGE}:${GITHUB_REF_NAME}"
               echo "${GHCR_IMAGE}:latest"
+            elif [ "$IS_DEVELOP" = "true" ]; then
+              echo "${GHCR_IMAGE}:develop"
             # NOTE: on main we intentionally do NOT push :main here. The build job
             # publishes only the immutable :<sha> tag. The :main tag — which the GCP
             # ArgoCD image-updater watches — is promoted in the 'promote-main-ghcr'
@@ -107,7 +112,7 @@ jobs:
             echo "TAGS_EOF"
           } >> $GITHUB_OUTPUT
 
-          if [ "$IS_RELEASE" = "true" ] || [ "$IS_MAIN" = "true" ]; then
+          if [ "$IS_RELEASE" = "true" ] || [ "$IS_MAIN" = "true" ] || [ "$IS_DEVELOP" = "true" ]; then
             echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
           else
             echo "platforms=linux/arm64" >> $GITHUB_OUTPUT
@@ -190,6 +195,9 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   resolve-config:
     name: Resolve deployment targets
+    # develop only builds/publishes the GHCR image (staging ECS deprovisioned).
+    # Skipping here cascades: every deploy job needs this one, so none run.
+    if: ${{ github.ref_name != 'develop' }}
     runs-on: self-hosted
     outputs:
       targets: ${{ steps.config.outputs.targets }}
