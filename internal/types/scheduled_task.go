@@ -131,54 +131,23 @@ func (e S3EncryptionType) Validate() error {
 		Mark(ierr.ErrValidation)
 }
 
-// S3ExportConfig represents S3 export configuration (non-sensitive settings)
-// This goes in the sync_config column
-type S3ExportConfig struct {
-	Bucket             string            `json:"bucket"`                         // S3 bucket name
-	Region             string            `json:"region"`                         // AWS region (e.g., "us-west-2")
-	KeyPrefix          string            `json:"key_prefix,omitempty"`           // Optional prefix for S3 keys (e.g., "flexprice-exports/")
+type StorageExportConfig struct {
+	Bucket             string            `json:"bucket"`                         // Storage bucket name
+	Region             string            `json:"region"`                         // Cloud region (e.g., "us-west-2"); unused for GCS
+	KeyPrefix          string            `json:"key_prefix,omitempty"`           // Optional prefix for object keys (e.g., "flexprice-exports/")
 	Compression        S3CompressionType `json:"compression,omitempty"`          // Compression type: "gzip", "none" (default: "none")
 	Encryption         S3EncryptionType  `json:"encryption,omitempty"`           // Encryption type: "AES256", "aws:kms", "aws:kms:dsse" (default: "AES256")
-	IsFlexpriceManaged bool              `json:"is_flexprice_managed,omitempty"` // If true, use Flexprice-managed S3 credentials instead of user-provided
+	IsFlexpriceManaged bool              `json:"is_flexprice_managed,omitempty"` // If true, use Flexprice-managed storage credentials instead of user-provided
 }
 
-// Enforces S3-only Region rule.
-func (s *S3ExportConfig) ValidateForProvider(providerType SecretProvider) error {
-	if s == nil {
-		return nil
-	}
-	if s.IsFlexpriceManaged {
-		return nil
-	}
-
-	if s.Bucket == "" {
-		return ierr.NewError("bucket is required").
-			WithHint("Storage bucket name is required").
-			Mark(ierr.ErrValidation)
-	}
-	if providerType != SecretProviderGCS && s.Region == "" {
-		return ierr.NewError("region is required").
-			WithHint("AWS region is required").
-			Mark(ierr.ErrValidation)
-	}
-	if err := s.Compression.Validate(); err != nil {
-		return err
-	}
-	if err := s.Encryption.Validate(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Validate validates the S3 export configuration
-func (s *S3ExportConfig) Validate() error {
+// Ent calls this without provider context; skips Region.
+func (s *StorageExportConfig) Validate() error {
 	if s == nil {
 		return nil
 	}
 
 	if s.IsFlexpriceManaged {
-		return nil // No validation needed for Flexprice-managed connections
+		return nil
 	}
 
 	if s.Bucket == "" {
@@ -186,20 +155,31 @@ func (s *S3ExportConfig) Validate() error {
 			WithHint("S3 bucket name is required").
 			Mark(ierr.ErrValidation)
 	}
-	if s.Region == "" {
-		return ierr.NewError("region is required").
-			WithHint("AWS region is required").
-			Mark(ierr.ErrValidation)
-	}
 
-	// Validate compression type if provided
 	if err := s.Compression.Validate(); err != nil {
 		return err
 	}
 
-	// Validate encryption type if provided
 	if err := s.Encryption.Validate(); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// Enforces S3-only Region rule.
+func (s *StorageExportConfig) ValidateForProvider(providerType SecretProvider) error {
+	if err := s.Validate(); err != nil {
+		return err
+	}
+	if s == nil || s.IsFlexpriceManaged {
+		return nil
+	}
+
+	if providerType != SecretProviderGCS && s.Region == "" {
+		return ierr.NewError("region is required").
+			WithHint("AWS region is required").
+			Mark(ierr.ErrValidation)
 	}
 
 	return nil
@@ -220,10 +200,7 @@ type S3JobConfig struct {
 	Provider SecretProvider `json:"provider,omitempty"`
 }
 
-// Validate validates the S3 job configuration
-// This should only be called AFTER determining if the connection is Flexprice-managed
-// For Flexprice-managed: bucket/region/key_prefix should already be populated by service layer
-// For custom S3: user must provide all required fields
+// Ent calls this without provider context; skips Region.
 func (s *S3JobConfig) Validate() error {
 	if s == nil {
 		return ierr.NewError("S3 job config is required").
@@ -231,13 +208,13 @@ func (s *S3JobConfig) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	// Bucket and region are required (should be populated by now)
 	if s.Bucket == "" {
 		return ierr.NewError("bucket is required").
-			WithHint("S3 bucket name is required").
+			WithHint("Storage bucket name is required").
 			Mark(ierr.ErrValidation)
 	}
-	if s.Region == "" {
+
+	if s.Region == "" && s.Provider != SecretProviderGCS {
 		return ierr.NewError("region is required").
 			WithHint("AWS region is required").
 			Mark(ierr.ErrValidation)

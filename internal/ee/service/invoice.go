@@ -24,7 +24,7 @@ import (
 	"github.com/flexprice/flexprice/internal/integration/stripe"
 	"github.com/flexprice/flexprice/internal/integration/zoho"
 	"github.com/flexprice/flexprice/internal/interfaces"
-	"github.com/flexprice/flexprice/internal/s3"
+	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
 	"github.com/samber/lo"
@@ -1346,6 +1346,32 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 	})
 	if err != nil {
 		return err
+	}
+
+	// A voided invoice will never be paid, so a purchased-credit transaction still
+	// waiting on it must not stay pending: it blocks the wallet's auto-topup guard
+	// indefinitely and is unrecoverable without a manual DB edit.
+	if inv.Metadata != nil {
+		if walletTransactionID, ok := inv.Metadata["wallet_transaction_id"]; ok && walletTransactionID != "" {
+			walletService := NewWalletService(s.ServiceParams)
+			failErr := walletService.FailPurchasedCreditTransaction(ctx, walletTransactionID,
+				fmt.Sprintf("invoice %s voided", inv.ID))
+			switch {
+			case failErr == nil:
+			case ierr.IsInvalidOperation(failErr):
+				// Already settled — a paid invoice being voided is refunded, not un-credited.
+				s.Logger.Info(ctx, "purchased credit transaction not pending on void, left unchanged",
+					"invoice_id", inv.ID,
+					"wallet_transaction_id", walletTransactionID,
+				)
+			default:
+				s.Logger.Error(ctx, "failed to fail purchased credit transaction on void",
+					"error", failErr,
+					"invoice_id", inv.ID,
+					"wallet_transaction_id", walletTransactionID,
+				)
+			}
+		}
 	}
 
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
@@ -2793,37 +2819,50 @@ func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string, forceG
 		return lo.FromPtr(inv.InvoicePDFURL), nil
 	}
 
-	if s.S3 == nil {
-		return "", ierr.NewError("s3 is not enabled").
-			WithHint("s3 is not enabled but is required to generate invoice pdf url.").
-			Mark(ierr.ErrSystem)
+	store, err := s.StorageResolver.ForPlatform(ctx, storage.PurposeInvoice)
+	if err != nil {
+		return "", err
 	}
 
-	key := fmt.Sprintf("%s/%s", inv.TenantID, id)
+	bc, err := s.StorageResolver.BucketConfigFor(storage.PurposeInvoice)
+	if err != nil {
+		return "", err
+	}
+
+	key := storage.ObjectKey(bc.KeyPrefix, "", fmt.Sprintf("%s/%s", inv.TenantID, id), "pdf", false)
+
+	presignExpiry, parseErr := time.ParseDuration(bc.PresignExpiryDuration)
+	if parseErr != nil {
+		return "", ierr.WithError(parseErr).
+			WithHint("Invalid invoice PDF presign expiry duration").
+			Mark(ierr.ErrValidation)
+	}
 
 	if !forceGenerate {
-		// Check if the file already exists in S3 and return a presigned URL without regenerating
-		exists, err := s.S3.Exists(ctx, key, s3.DocumentTypeInvoice)
+		exists, err := store.Exists(ctx, key)
 		if err != nil {
 			return "", err
 		}
 		if exists {
-			return s.S3.GetPresignedUrl(ctx, key, s3.DocumentTypeInvoice)
+			return store.PresignGet(ctx, key, presignExpiry)
 		}
 	}
 
-	// Generate the PDF and upload to S3
 	data, err := s.GetInvoicePDF(ctx, id)
 	if err != nil {
 		return "", err
 	}
 
-	err = s.S3.UploadDocument(ctx, s3.NewPdfDocument(key, data, s3.DocumentTypeInvoice))
+	_, err = store.Upload(ctx, &storage.UploadRequest{
+		Key:    key,
+		Data:   data,
+		Format: storage.UploadFormatPDF,
+	})
 	if err != nil {
 		return "", err
 	}
 
-	return s.S3.GetPresignedUrl(ctx, key, s3.DocumentTypeInvoice)
+	return store.PresignGet(ctx, key, presignExpiry)
 }
 
 // GetInvoicePDF implements InvoiceService.

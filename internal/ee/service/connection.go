@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/connection"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/security"
 	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
@@ -151,11 +152,12 @@ func (s *connectionService) encryptMetadata(encryptedSecretData types.Connection
 			}
 
 			encryptedMetadata.Chargebee = &types.ChargebeeConnectionMetadata{
-				Site:            encryptedSecretData.Chargebee.Site, // Site name is not sensitive
-				APIKey:          encryptedAPIKey,
-				WebhookSecret:   encryptedWebhookSecret,
-				WebhookUsername: encryptedWebhookUsername,
-				WebhookPassword: encryptedWebhookPassword,
+				Site:             encryptedSecretData.Chargebee.Site, // Site name is not sensitive
+				APIKey:           encryptedAPIKey,
+				WebhookSecret:    encryptedWebhookSecret,
+				WebhookUsername:  encryptedWebhookUsername,
+				WebhookPassword:  encryptedWebhookPassword,
+				GatewayAccountID: encryptedSecretData.Chargebee.GatewayAccountID, // Not a secret
 			}
 		}
 
@@ -547,7 +549,7 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 		return nil, err
 	}
 
-	if err := req.SyncConfig.Validate(); err != nil {
+	if err := req.SyncConfig.ValidateForProvider(req.ProviderType); err != nil {
 		return nil, err
 	}
 
@@ -566,6 +568,7 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 	for _, existingConn := range existingConnections {
 		if existingConn.ProviderType == req.ProviderType &&
 			existingConn.ProviderType != types.SecretProviderS3 &&
+			existingConn.ProviderType != types.SecretProviderGCS &&
 			existingConn.Status == types.StatusPublished {
 			return nil, ierr.NewError("connection already exists").
 				WithHintf("A published connection for provider '%s' already exists in this environment", req.ProviderType).
@@ -745,38 +748,8 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 		}
 	}
 
-	// Check if this is a Flexprice-managed S3 connection
-	if conn.ProviderType == types.SecretProviderS3 && conn.SyncConfig != nil && conn.SyncConfig.S3 != nil && conn.SyncConfig.S3.IsFlexpriceManaged {
-		s.Logger.Info(ctx, "creating flexprice-managed S3 connection",
-			"tenant_id", conn.TenantID,
-			"connection_id", conn.ID)
-
-		// Validate that Flexprice config has required credentials
-		if s.Config.FlexpriceS3Exports.AWSAccessKeyID == "" || s.Config.FlexpriceS3Exports.AWSSecretAccessKey == "" {
-			return nil, ierr.NewError("flexprice S3 exports not configured").
-				WithHint("FlexpriceS3Exports credentials are missing from configuration").
-				Mark(ierr.ErrSystem)
-		}
-
-		// Inject Flexprice credentials from config
-		conn.EncryptedSecretData.S3 = &types.S3ConnectionMetadata{
-			AWSAccessKeyID:     s.Config.FlexpriceS3Exports.AWSAccessKeyID,
-			AWSSecretAccessKey: s.Config.FlexpriceS3Exports.AWSSecretAccessKey,
-			AWSSessionToken:    s.Config.FlexpriceS3Exports.AWSSessionToken,
-		}
-
-		// Set bucket and region from config
-		conn.SyncConfig.S3.Bucket = s.Config.FlexpriceS3Exports.Bucket
-		conn.SyncConfig.S3.Region = s.Config.FlexpriceS3Exports.Region
-		// Tenant + Environment isolation: tenant_id/environment_id
-		conn.SyncConfig.S3.KeyPrefix = fmt.Sprintf("%s/%s", conn.TenantID, conn.EnvironmentID)
-
-		s.Logger.Info(ctx, "injected flexprice S3 credentials",
-			"bucket", conn.SyncConfig.S3.Bucket,
-			"region", conn.SyncConfig.S3.Region,
-			"key_prefix", conn.SyncConfig.S3.KeyPrefix,
-			"tenant_id", conn.TenantID,
-			"environment_id", conn.EnvironmentID)
+	if err := s.applyManagedStorageConfig(ctx, conn); err != nil {
+		return nil, err
 	}
 
 	// Encrypt metadata
@@ -792,6 +765,11 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 		return nil, err
 	}
 	conn.EncryptedSecretData = encryptedMetadata
+
+	// Validate reachability before persisting.
+	if err := s.validateStorageReachable(ctx, conn); err != nil {
+		return nil, err
+	}
 
 	// Create the connection
 	if err := s.ConnectionRepo.Create(ctx, conn); err != nil {
@@ -826,6 +804,46 @@ func (s *connectionService) CreateConnection(ctx context.Context, req dto.Create
 	}
 
 	return dto.ToConnectionResponse(conn), nil
+}
+
+func (s *connectionService) validateStorageReachable(ctx context.Context, conn *connection.Connection) error {
+	if conn.ProviderType != types.SecretProviderS3 && conn.ProviderType != types.SecretProviderGCS {
+		return nil
+	}
+	if s.IntegrationFactory == nil {
+		return nil
+	}
+
+	var bucket string
+	if conn.SyncConfig != nil && conn.SyncConfig.Storage != nil {
+		bucket = conn.SyncConfig.Storage.Bucket
+	}
+
+	storageProvider, err := s.IntegrationFactory.GetStorageProviderForConnection(ctx, conn)
+	if err != nil {
+		s.Logger.Error(ctx, "failed to build storage provider for connection validation",
+			"connection_id", conn.ID,
+			"provider_type", conn.ProviderType,
+			"error", err)
+		return ierr.WithError(err).
+			WithHintf("Could not validate the %s connection for bucket %q.", conn.ProviderType, bucket).
+			Mark(ierr.ErrValidation)
+	}
+
+	// Bound a slow bucket probe.
+	verifyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	err = storageProvider.ValidateConnection(verifyCtx)
+	cancel()
+	if err != nil {
+		// Allow: export creds may be object-scoped.
+		s.Logger.Info(ctx, "storage connection reachability probe failed; allowing connection (bucket-level probe may lack permission an object-scoped export credential does not need)",
+			"connection_id", conn.ID,
+			"provider_type", conn.ProviderType,
+			"bucket", bucket,
+			"error", err)
+	}
+
+	return nil
 }
 
 func (s *connectionService) GetConnection(ctx context.Context, id string) (*dto.ConnectionResponse, error) {
@@ -864,17 +882,60 @@ func (s *connectionService) GetConnections(ctx context.Context, filter *types.Co
 	}, nil
 }
 
+// Forces bucket/prefix to prevent cross-tenant access.
+func (s *connectionService) applyManagedStorageConfig(ctx context.Context, conn *connection.Connection) error {
+	if conn.SyncConfig == nil || conn.SyncConfig.Storage == nil || !conn.SyncConfig.Storage.IsFlexpriceManaged {
+		return nil
+	}
+
+	keyPrefix := fmt.Sprintf("%s/%s", conn.TenantID, conn.EnvironmentID)
+
+	switch conn.ProviderType {
+	case types.SecretProviderS3:
+		if err := s.Config.FlexpriceS3Exports.Validate(); err != nil {
+			return err
+		}
+		conn.SyncConfig.Storage.Bucket = s.Config.FlexpriceS3Exports.Bucket
+		conn.SyncConfig.Storage.Region = s.Config.FlexpriceS3Exports.Region
+		conn.SyncConfig.Storage.KeyPrefix = keyPrefix
+		s.Logger.Info(ctx, "configured flexprice-managed S3 destination",
+			"connection_id", conn.ID,
+			"bucket", conn.SyncConfig.Storage.Bucket,
+			"region", conn.SyncConfig.Storage.Region,
+			"key_prefix", conn.SyncConfig.Storage.KeyPrefix,
+			"credential_source", s.Config.FlexpriceS3Exports.ResolvedCredentialSource(),
+			"tenant_id", conn.TenantID,
+			"environment_id", conn.EnvironmentID)
+	case types.SecretProviderGCS:
+		if err := s.Config.FlexpriceGCSExports.Validate(); err != nil {
+			return err
+		}
+		conn.SyncConfig.Storage.Bucket = s.Config.FlexpriceGCSExports.Bucket
+		// GCS has no region.
+		conn.SyncConfig.Storage.Region = ""
+		conn.SyncConfig.Storage.KeyPrefix = keyPrefix
+		s.Logger.Info(ctx, "configured flexprice-managed GCS destination",
+			"connection_id", conn.ID,
+			"bucket", conn.SyncConfig.Storage.Bucket,
+			"key_prefix", conn.SyncConfig.Storage.KeyPrefix,
+			"tenant_id", conn.TenantID,
+			"environment_id", conn.EnvironmentID)
+	}
+
+	return nil
+}
+
 func (s *connectionService) UpdateConnection(ctx context.Context, id string, req dto.UpdateConnectionRequest) (*dto.ConnectionResponse, error) {
 	s.Logger.Debug(ctx, "updating connection", "connection_id", id)
-
-	if err := req.SyncConfig.Validate(); err != nil {
-		return nil, err
-	}
 
 	// Get existing connection
 	conn, err := s.ConnectionRepo.Get(ctx, id)
 	if err != nil {
 		s.Logger.Error(ctx, "failed to get connection for update", "error", err, "connection_id", id)
+		return nil, err
+	}
+
+	if err := req.SyncConfig.ValidateForProvider(conn.ProviderType); err != nil {
 		return nil, err
 	}
 
@@ -890,6 +951,11 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 
 	if req.SyncConfig != nil {
 		conn.SyncConfig = req.SyncConfig
+	}
+
+	// Re-apply to block cross-tenant redirect.
+	if err := s.applyManagedStorageConfig(ctx, conn); err != nil {
+		return nil, err
 	}
 
 	// Update encrypted_secret_data if provided (e.g., webhook_verifier_token)
@@ -996,6 +1062,11 @@ func (s *connectionService) UpdateConnection(ctx context.Context, id string, req
 
 	conn.UpdatedAt = time.Now()
 	conn.UpdatedBy = types.GetUserID(ctx)
+
+	// Validate reachability before persisting.
+	if err := s.validateStorageReachable(ctx, conn); err != nil {
+		return nil, err
+	}
 
 	// Update the connection
 	if err := s.ConnectionRepo.Update(ctx, conn); err != nil {

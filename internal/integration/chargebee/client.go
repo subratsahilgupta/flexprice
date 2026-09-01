@@ -10,11 +10,15 @@ import (
 	itemAction "github.com/chargebee/chargebee-go/v3/actions/item"
 	itemFamilyAction "github.com/chargebee/chargebee-go/v3/actions/itemfamily"
 	itemPriceAction "github.com/chargebee/chargebee-go/v3/actions/itemprice"
+	"github.com/chargebee/chargebee-go/v3/enum"
 	"github.com/chargebee/chargebee-go/v3/models/customer"
+	hostedPageModel "github.com/chargebee/chargebee-go/v3/models/hostedpage"
 	chargebeeInvoice "github.com/chargebee/chargebee-go/v3/models/invoice"
 	"github.com/chargebee/chargebee-go/v3/models/item"
 	"github.com/chargebee/chargebee-go/v3/models/itemfamily"
 	"github.com/chargebee/chargebee-go/v3/models/itemprice"
+	paymentSourceModel "github.com/chargebee/chargebee-go/v3/models/paymentsource"
+	transactionModel "github.com/chargebee/chargebee-go/v3/models/transaction"
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/httpclient"
@@ -27,11 +31,9 @@ import (
 type ChargebeeClient interface {
 	// Configuration and initialization
 	GetChargebeeConfig(ctx context.Context) (*ChargebeeConfig, error)
-	GetDecryptedChargebeeConfig(conn *connection.Connection) (*ChargebeeConfig, error)
 	HasChargebeeConnection(ctx context.Context) bool
 	GetConnection(ctx context.Context) (*connection.Connection, error)
 	InitializeChargebeeSDK(ctx context.Context) error
-	VerifyWebhookSignature(ctx context.Context, payload []byte, signature string) error
 	VerifyWebhookBasicAuth(ctx context.Context, username, password string) error
 
 	// Item Family API wrappers
@@ -48,11 +50,21 @@ type ChargebeeClient interface {
 
 	// Customer API wrappers
 	CreateCustomer(ctx context.Context, params *customer.CreateRequestParams) (*chargebee.Result, error)
-	RetrieveCustomer(ctx context.Context, customerID string) (*chargebee.Result, error)
 
 	// Invoice API wrappers
 	CreateInvoice(ctx context.Context, params *chargebeeInvoice.CreateForChargeItemsAndChargesRequestParams) (*chargebee.Result, error)
 	RetrieveInvoice(ctx context.Context, invoiceID string, params *chargebeeInvoice.RetrieveRequestParams) (*chargebee.Result, error)
+
+	CreateAdHocInvoice(ctx context.Context, chargebeeCustomerID, currency string, amountMinor int64, description, poNumber, idempotencyKey string, autoCollect, customerPresent bool) (*chargebeeInvoice.Invoice, error)
+	VoidInvoice(ctx context.Context, chargebeeInvoiceID, comment string) error
+	CreateCheckoutOneTimePage(ctx context.Context, chargebeeCustomerID, currency string, amountMinor int64, description, redirectURL, gatewayAccountID, poNumber string) (*hostedPageModel.HostedPage, error)
+	ListPaymentSources(ctx context.Context, chargebeeCustomerID string) ([]*paymentSourceModel.PaymentSource, error)
+	RetrieveCustomer(ctx context.Context, chargebeeCustomerID string) (*customer.Customer, error)
+	RetrieveTransaction(ctx context.Context, transactionID string) (*transactionModel.Transaction, error)
+	RefundTransaction(ctx context.Context, transactionID string, amountMinor int64, idempotencyKey string) (*transactionModel.Transaction, error)
+	CreateManagePaymentSourcesPage(ctx context.Context, chargebeeCustomerID, redirectURL, gatewayAccountID string) (*hostedPageModel.HostedPage, error)
+	AssignPaymentRole(ctx context.Context, chargebeeCustomerID, paymentSourceID string, role enum.Role) error
+	DeletePaymentSource(ctx context.Context, paymentSourceID string) error
 }
 
 // Client handles Chargebee API client setup and configuration
@@ -70,6 +82,9 @@ type ChargebeeConfig struct {
 	WebhookSecret   string // Webhook secret for verification (optional, NOT USED in v2)
 	WebhookUsername string // Basic Auth username for webhook verification (Chargebee v2 security)
 	WebhookPassword string // Basic Auth password for webhook verification (Chargebee v2 security)
+	// GatewayAccountID optionally pins where new cards are vaulted. Empty defers to
+	// the site's own gateway routing.
+	GatewayAccountID string
 }
 
 // NewClient creates a new Chargebee client
@@ -161,6 +176,10 @@ func (c *Client) GetDecryptedChargebeeConfig(conn *connection.Connection) (*Char
 		chargebeeConfig.WebhookPassword = webhookPassword
 	}
 
+	if gatewayAccountID, exists := decryptedMetadata["gateway_account_id"]; exists {
+		chargebeeConfig.GatewayAccountID = gatewayAccountID
+	}
+
 	c.logger.Info(context.Background(), "retrieved Chargebee config",
 		"site", chargebeeConfig.Site,
 		"has_api_key", chargebeeConfig.APIKey != "",
@@ -229,11 +248,12 @@ func (c *Client) decryptConnectionMetadata(conn *connection.Connection) (types.M
 		}
 
 		decryptedMetadata := types.Metadata{
-			"site":             site,
-			"api_key":          apiKey,
-			"webhook_secret":   webhookSecret,
-			"webhook_username": webhookUsername,
-			"webhook_password": webhookPassword,
+			"site":               site,
+			"api_key":            apiKey,
+			"webhook_secret":     webhookSecret,
+			"webhook_username":   webhookUsername,
+			"webhook_password":   webhookPassword,
+			"gateway_account_id": conn.EncryptedSecretData.Chargebee.GatewayAccountID,
 		}
 
 		c.logger.Info(context.Background(), "successfully decrypted chargebee credentials",
@@ -297,13 +317,6 @@ func (c *Client) InitializeChargebeeSDK(ctx context.Context) error {
 	c.logger.Info(ctx, "initialized Chargebee SDK",
 		"site", config.Site)
 
-	return nil
-}
-
-// VerifyWebhookSignature verifies the Chargebee webhook signature
-func (c *Client) VerifyWebhookSignature(ctx context.Context, payload []byte, signature string) error {
-	c.logger.Debug(ctx, "Chargebee v2 webhook signature verification skipped - not supported",
-		"note", "Use Basic Auth and IP whitelisting for security")
 	return nil
 }
 
@@ -481,25 +494,6 @@ func (c *Client) CreateCustomer(ctx context.Context, params *customer.CreateRequ
 		return nil, ierr.WithError(err).
 			WithHint("Failed to create customer in Chargebee").
 			Mark(ierr.ErrValidation)
-	}
-
-	return result, nil
-}
-
-// RetrieveCustomer retrieves a customer from Chargebee
-func (c *Client) RetrieveCustomer(ctx context.Context, customerID string) (*chargebee.Result, error) {
-	if err := c.InitializeChargebeeSDK(ctx); err != nil {
-		return nil, err
-	}
-
-	result, err := customerAction.Retrieve(customerID).Request()
-	if err != nil {
-		c.logger.Error(ctx, "failed to retrieve customer from Chargebee API",
-			"customer_id", customerID,
-			"error", err)
-		return nil, ierr.WithError(err).
-			WithHint("Failed to retrieve customer from Chargebee").
-			Mark(ierr.ErrNotFound)
 	}
 
 	return result, nil
