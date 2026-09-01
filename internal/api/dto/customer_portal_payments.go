@@ -27,11 +27,9 @@ type PortalCheckoutParams struct {
 // transaction_reason, expiry and priority are pinned server-side so a portal
 // customer cannot grant themselves free credits or reorder consumption.
 type PortalTopUpWalletRequest struct {
-	CreditsToAdd decimal.Decimal `json:"credits_to_add" swaggertype:"string"`
-	Amount       decimal.Decimal `json:"amount,omitempty" swaggertype:"string"`
-	// Required: WalletService.TopUpWallet falls back to a timestamp-derived key,
-	// so two identical submits a second apart both dedup-miss and double-credit.
-	IdempotencyKey *string               `json:"idempotency_key" binding:"required"`
+	CreditsToAdd   decimal.Decimal       `json:"credits_to_add" swaggertype:"string"`
+	Amount         decimal.Decimal       `json:"amount,omitempty" swaggertype:"string"`
+	IdempotencyKey *string               `json:"idempotency_key,omitempty"`
 	Description    string                `json:"description,omitempty"`
 	Checkout       *PortalCheckoutParams `json:"checkout,omitempty"`
 }

@@ -635,17 +635,9 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		}
 	}
 
-	// Generate idempotency key
-	var idempotencyKey string
-	if lo.FromPtr(req.IdempotencyKey) != "" {
-		idempotencyKey = lo.FromPtr(req.IdempotencyKey)
-	} else {
-		idempotencyKey = s.idempGen.GenerateKey(idempotency.ScopeWalletTopUp, map[string]interface{}{
-			"wallet_id":          walletID,
-			"credits_to_add":     req.CreditsToAdd,
-			"transaction_reason": req.TransactionReason,
-			"timestamp":          time.Now().UTC().Format(time.RFC3339),
-		})
+	idempotencyKey := lo.FromPtr(req.IdempotencyKey)
+	if idempotencyKey == "" {
+		idempotencyKey = s.derivedTopupIdempotencyKey(walletID, req, time.Now().UTC())
 	}
 
 	// Handle purchased credits with invoice (pay-later / auto-complete, or pay-first checkout).
@@ -779,6 +771,15 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		InvoiceID:         nil,
 		Wallet:            walletResp,
 	}, nil
+}
+
+func (s *walletService) derivedTopupIdempotencyKey(walletID string, req *dto.TopUpWalletRequest, now time.Time) string {
+	return s.idempGen.GenerateKey(idempotency.ScopeWalletTopUp, map[string]interface{}{
+		"wallet_id":          walletID,
+		"credits_to_add":     req.CreditsToAdd,
+		"transaction_reason": req.TransactionReason,
+		"timestamp":          now.Truncate(time.Minute).Format(time.RFC3339),
+	})
 }
 
 func (s *walletService) getAnyPendingCheckoutSession(ctx context.Context, customerID string, walletID string) ([]*checkout.CheckoutSession, error) {
@@ -3965,6 +3966,51 @@ func (s *walletService) hasPendingAutoTopupInvoice(ctx context.Context, customer
 	return len(invoices) > 0, nil
 }
 
+// An unpaid invoice is its own brake on repeat top-ups; a charge that settles in
+// seconds is not, so an unattended charge needs a floor between attempts when the
+// wallet configures no cooloff of its own.
+func withinDefaultAutoChargeCooldown(w *wallet.Wallet, last *wallet.Transaction, now time.Time) bool {
+	if w.AutoTopup == nil || w.AutoTopup.Cooldown.IsSet() || last == nil {
+		return false
+	}
+
+	return now.Before(last.CreatedAt.Add(defaultAutoChargeCooldown))
+}
+
+// autoTopupCheckout returns the params that charge a saved method off-session, or
+// nil to raise an invoice instead. Unattended by definition, so CustomerPresent is
+// false: it is what declares the charge merchant-initiated at the card network.
+func (s *walletService) autoTopupCheckout(ctx context.Context, w *wallet.Wallet, isInvoiced bool) *dto.CheckoutParams {
+	if !isInvoiced {
+		return nil
+	}
+
+	gateway, err := fetchGatewayWithAutoChargeSupport(ctx, s.ServiceParams, NewCustomerService(s.ServiceParams), w.CustomerID)
+	if err != nil {
+		s.Logger.Error(ctx, "could not resolve an auto-chargeable method, falling back to an invoice",
+			"error", err, "wallet_id", w.ID, "customer_id", w.CustomerID)
+		return nil
+	}
+	if gateway == "" {
+		return nil
+	}
+
+	provider, ok := types.CheckoutProviderFromGateway(gateway)
+	if !ok {
+		return nil
+	}
+
+	return &dto.CheckoutParams{
+		PaymentParams: dto.PaymentParams{
+			PaymentProvider: provider,
+			PaymentProviderConfig: &types.CheckoutPaymentProviderConfig{
+				CollectionMethod: types.CollectionMethodChargeAutomatically,
+				CustomerPresent:  false,
+			},
+		},
+	}
+}
+
 func (s *walletService) isWithinAutoTopupCooldown(w *wallet.Wallet, last *wallet.Transaction) (bool, error) {
 	if w.AutoTopup == nil || !w.AutoTopup.Cooldown.IsSet() || last == nil {
 		return false, nil
@@ -4067,7 +4113,8 @@ func (s *walletService) triggerAutoTopup(ctx context.Context, w *wallet.Wallet, 
 		if idempotencyKey == "" {
 			idempotencyKey = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION)
 		}
-		_, err = s.TopUpWallet(ctx, w.ID, &dto.TopUpWalletRequest{
+
+		topupReq := &dto.TopUpWalletRequest{
 			CreditsToAdd:      *w.AutoTopup.Amount,
 			Amount:            *w.AutoTopup.Amount,
 			TransactionReason: transactionReason,
@@ -4075,7 +4122,30 @@ func (s *walletService) triggerAutoTopup(ctx context.Context, w *wallet.Wallet, 
 			IdempotencyKey:    lo.ToPtr(idempotencyKey),
 			Description:       "Auto top-up triggered for low ongoing balance",
 			Metadata:          types.Metadata{types.WalletMetadataKeyAutoTopup: "true"},
-		})
+		}
+
+		checkout := s.autoTopupCheckout(ctx, w, isInvoiced)
+		if checkout != nil && withinDefaultAutoChargeCooldown(w, lastAutoTopup, time.Now().UTC()) {
+			s.Logger.Info(ctx, "auto top-up charge within default cooloff, skipping",
+				"wallet_id", w.ID,
+				"last_auto_topup_at", lastAutoTopup.CreatedAt,
+			)
+			return nil
+		}
+		topupReq.Checkout = checkout
+
+		_, err = s.TopUpWallet(ctx, w.ID, topupReq)
+		if err != nil && checkout != nil {
+			s.Logger.Error(ctx, "auto top-up charge failed, falling back to an invoice",
+				"error", err,
+				"wallet_id", w.ID,
+				"payment_provider", checkout.PaymentProvider,
+			)
+
+			topupReq.Checkout = nil
+			topupReq.IdempotencyKey = lo.ToPtr(idempotencyKey + "-invoice")
+			_, err = s.TopUpWallet(ctx, w.ID, topupReq)
+		}
 		if err != nil {
 			s.Logger.Error(ctx, "failed to top up wallet for auto top-up",
 				"error", err,
@@ -4085,11 +4155,12 @@ func (s *walletService) triggerAutoTopup(ctx context.Context, w *wallet.Wallet, 
 			)
 			return err
 		}
-		s.Logger.Debug(ctx, "auto top-up triggered",
+		s.Logger.Info(ctx, "auto top-up triggered",
 			"wallet_id", w.ID,
 			"auto_topup_threshold", *w.AutoTopup.Threshold,
 			"auto_topup_amount", *w.AutoTopup.Amount,
 			"invoiced", isInvoiced,
+			"charged", checkout != nil,
 		)
 	}
 

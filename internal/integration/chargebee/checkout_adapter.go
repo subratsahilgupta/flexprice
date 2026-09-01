@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	paymentSourceEnum "github.com/chargebee/chargebee-go/v3/models/paymentsource/enum"
-	transactionModel "github.com/chargebee/chargebee-go/v3/models/transaction"
+	invoiceModel "github.com/chargebee/chargebee-go/v3/models/invoice"
+	invoiceEnum "github.com/chargebee/chargebee-go/v3/models/invoice/enum"
 	transactionEnum "github.com/chargebee/chargebee-go/v3/models/transaction/enum"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -22,75 +22,6 @@ type CheckoutAdapter struct {
 	CustomerSvc *CustomerService
 	InvoiceSvc  *InvoiceService
 	Logger      *logger.Logger
-}
-
-// mirrorInvoice creates (or reuses) the Chargebee ad-hoc invoice that mirrors a
-// Flexprice invoice, and returns the Chargebee customer id and invoice id.
-//
-// Only the off-session charge path needs this: collect_payment's invoice_allocations
-// must point at a Chargebee invoice for the charged amount to match what we quoted.
-// Hosted checkout does not mirror — that page creates its own invoice.
-//
-// flexPaymentID doubles as the correlation key (stamped as po_number, matching the
-// hosted page) and as the idempotency-key seed.
-func (a *CheckoutAdapter) mirrorInvoice(
-	ctx context.Context,
-	flexCustomerID, flexInvoiceID, currency string,
-	amount decimal.Decimal,
-	flexPaymentID string,
-) (chargebeeCustomerID string, chargebeeInvoiceID string, err error) {
-	cust, err := a.CustomerSvc.EnsureCustomerSyncedToChargebee(ctx, flexCustomerID)
-	if err != nil {
-		return "", "", err
-	}
-	chargebeeCustomerID = cust.Metadata["chargebee_customer_id"]
-	if chargebeeCustomerID == "" {
-		chargebeeCustomerID, err = a.CustomerSvc.GetChargebeeCustomerID(ctx, flexCustomerID)
-		if err != nil {
-			return "", "", err
-		}
-	}
-
-	// Reuse an already-mirrored invoice so a retry does not create a second one.
-	if existing, mapErr := a.InvoiceSvc.getExistingChargebeeMapping(ctx, flexInvoiceID); mapErr == nil && existing != nil {
-		return chargebeeCustomerID, existing.ProviderEntityID, nil
-	}
-
-	amountMinor := amountToMinorUnits(amount, currency)
-	inv, err := a.Client.CreateAdHocInvoice(
-		ctx,
-		chargebeeCustomerID,
-		currency,
-		amountMinor,
-		fmt.Sprintf("Flexprice invoice %s", flexInvoiceID),
-		flexPaymentID,
-		// Chargebee scopes chargebee-idempotency-key GLOBALLY, not per endpoint:
-		// reusing one key across two different calls fails with 422
-		// "already been used for a different request". Namespace per operation.
-		idempotencyScoped(flexPaymentID, "invoice"),
-	)
-	if err != nil {
-		return "", "", err
-	}
-	chargebeeInvoiceID = inv.Id
-	if chargebeeInvoiceID == "" {
-		return "", "", missingPayload("invoice id")
-	}
-
-	// Record the mapping so the payment_succeeded webhook can find its way back
-	// to the Flexprice invoice.
-	if err := a.InvoiceSvc.LinkInvoiceMapping(ctx, flexInvoiceID, chargebeeInvoiceID); err != nil {
-		a.Logger.Error(ctx, "failed to map chargebee invoice",
-			"error", err, "flexprice_invoice_id", flexInvoiceID, "chargebee_invoice_id", chargebeeInvoiceID)
-	}
-
-	a.Logger.Info(ctx, "mirrored flexprice invoice to chargebee",
-		"flexprice_invoice_id", flexInvoiceID,
-		"chargebee_invoice_id", chargebeeInvoiceID,
-		"amount_minor", amountMinor,
-		"currency", currency)
-
-	return chargebeeCustomerID, chargebeeInvoiceID, nil
 }
 
 // CreatePaymentLink returns a Chargebee-hosted checkout page for an exact ad-hoc
@@ -174,143 +105,126 @@ func (a *CheckoutAdapter) hostedCheckout(
 
 // TryAutoChargingSavedMethod charges the customer's stored card off-session.
 //
-// charged=false (with a nil error) means "no usable saved method" so the caller
-// can fall back. Chargebee signals that as HTTP 400 payment_method_not_present,
-// which we translate rather than propagate.
+// Unattended, creating the invoice with auto-collection on charges it in the same
+// call, which is also how Chargebee books it as merchant-initiated. Attended, the
+// charge has to be its own call: only collect_payment can declare it
+// customer-initiated.
 func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 	ctx context.Context,
 	req interfaces.AuthorizationLinkRequest,
 ) (*interfaces.CheckoutProviderResponse, bool, error) {
-	cbCustomerID, cbInvoiceID, err := a.mirrorInvoice(
-		ctx, req.CustomerID, req.InvoiceID, req.Currency, req.Amount, req.PaymentID)
+	cust, err := a.CustomerSvc.EnsureCustomerSyncedToChargebee(ctx, req.CustomerID)
 	if err != nil {
 		return nil, false, err
 	}
-
-	// Resolve the source explicitly. customers/{id}/collect_payment does NOT fall
-	// back to the customer's primary source — it rejects with
-	// "Either of card or tmpToken input should be specified". (The invoice-scoped
-	// collect_payment DOES fall back, but it cannot pin invoice_allocations, which
-	// is what makes the charged amount match the amount we quoted.)
-	sourceID, err := a.resolvePaymentSourceID(ctx, cbCustomerID)
-	if err != nil {
-		return nil, false, err
-	}
-	if sourceID == "" {
-		a.Logger.Info(ctx, "chargebee auto-charge: no saved payment source",
-			"customer_id", req.CustomerID, "invoice_id", req.InvoiceID)
-		return nil, false, nil
+	cbCustomerID := cust.Metadata["chargebee_customer_id"]
+	if cbCustomerID == "" {
+		if cbCustomerID, err = a.CustomerSvc.GetChargebeeCustomerID(ctx, req.CustomerID); err != nil {
+			return nil, false, err
+		}
 	}
 
-	txn, err := a.Client.CollectPayment(ctx, collectParams(req, cbCustomerID, cbInvoiceID, sourceID))
+	inv, err := a.Client.CreateAdHocInvoice(
+		ctx,
+		cbCustomerID,
+		req.Currency,
+		amountToMinorUnits(req.Amount, req.Currency),
+		fmt.Sprintf("Flexprice invoice %s", req.InvoiceID),
+		req.PaymentID,
+		idempotencyScoped(req.PaymentID, "invoice"),
+		true,
+		req.CustomerPresent,
+	)
 	if err != nil {
+		// Collecting on creation makes a customer with no card fail the create itself,
+		// so no invoice exists to abandon and there is nothing to charge.
 		if IsNoPaymentMethod(err) {
-			a.Logger.Info(ctx, "chargebee auto-charge: no valid card on file",
+			a.Logger.Info(ctx, "chargebee auto-charge: no card on file to collect against",
 				"customer_id", req.CustomerID, "invoice_id", req.InvoiceID)
 			return nil, false, nil
 		}
 		return nil, false, err
 	}
+	if inv.Id == "" {
+		return nil, false, missingPayload("invoice id")
+	}
 
-	resp := a.responseFromCollect(ctx, txn, cbInvoiceID)
+	// The payment_succeeded webhook finds its way back through this mapping.
+	if err := a.InvoiceSvc.LinkInvoiceMapping(ctx, req.InvoiceID, inv.Id); err != nil {
+		a.Logger.Error(ctx, "failed to map chargebee invoice",
+			"error", err, "flexprice_invoice_id", req.InvoiceID, "chargebee_invoice_id", inv.Id)
+	}
 
-	// collect_payment is synchronous, so the returned status is the outcome — but
-	// "settled" is only one of three. A declined charge that came back 200 must fail
-	// the checkout rather than leave it pending until expiry.
-	if classifyTransaction(txn.Status) == transactionFailed {
+	settled, failed := lastLinkedPayment(inv)
+	switch {
+	case inv.Status == invoiceEnum.StatusPaid || settled != nil:
+		return a.responseFromAutoCollect(ctx, req, inv, settled), true, nil
+
+	case failed != nil:
+		a.voidAbandonedInvoice(ctx, inv.Id, "off-session charge declined")
 		return nil, false, ierr.NewError("chargebee off-session charge did not succeed").
-			WithHintf("The saved payment method was declined (transaction status %s)", txn.Status).
+			WithHintf("The saved payment method was declined (transaction status %s)", failed.TxnStatus).
 			WithReportableDetails(map[string]any{
-				"transaction_status":   txn.Status,
-				"chargebee_invoice_id": cbInvoiceID,
+				"transaction_status":   failed.TxnStatus,
+				"chargebee_invoice_id": inv.Id,
 				"invoice_id":           req.InvoiceID,
 			}).
 			Mark(ierr.ErrHTTPClient)
-	}
 
-	return resp, true, nil
-}
-
-// collectParams builds the off-session charge. CustomerPresent is what declares the
-// transaction customer-initiated at the card network; it must reflect whether the
-// customer is really there, not what is convenient.
-func collectParams(req interfaces.AuthorizationLinkRequest, cbCustomerID, cbInvoiceID, sourceID string) CollectPaymentParams {
-	return CollectPaymentParams{
-		ChargebeeCustomerID: cbCustomerID,
-		ChargebeeInvoiceID:  cbInvoiceID,
-		AmountMinor:         amountToMinorUnits(req.Amount, req.Currency),
-		PaymentSourceID:     sourceID,
-		CustomerPresent:     req.CustomerPresent,
-		IdempotencyKey:      idempotencyScoped(req.PaymentID, "collect"),
+	default:
+		a.Logger.Info(ctx, "chargebee auto-charge: invoice created but nothing was collected",
+			"customer_id", req.CustomerID, "invoice_id", req.InvoiceID,
+			"chargebee_invoice_id", inv.Id, "status", inv.Status)
+		a.voidAbandonedInvoice(ctx, inv.Id, "nothing collected on the mirrored invoice")
+		return nil, false, nil
 	}
 }
 
-// resolvePaymentSourceID returns the customer's primary vaulted source, falling
-// back to the first valid one. Empty string means the customer has no usable card.
-func (a *CheckoutAdapter) resolvePaymentSourceID(ctx context.Context, cbCustomerID string) (string, error) {
-	sources, err := a.Client.ListPaymentSources(ctx, cbCustomerID)
-	if err != nil {
-		return "", err
-	}
-	if len(sources) == 0 {
-		return "", nil
-	}
+func (a *CheckoutAdapter) responseFromAutoCollect(
+	ctx context.Context,
+	req interfaces.AuthorizationLinkRequest,
+	inv *invoiceModel.Invoice,
+	settled *invoiceModel.LinkedPayment,
+) *interfaces.CheckoutProviderResponse {
+	a.Logger.Info(ctx, "chargebee collected the invoice on creation",
+		"chargebee_invoice_id", inv.Id,
+		"invoice_id", req.InvoiceID,
+		"status", inv.Status)
 
-	primary := ""
-	if cust, err := a.Client.RetrieveCustomer(ctx, cbCustomerID); err == nil {
-		primary = cust.PrimaryPaymentSourceId
+	meta := map[string]string{"chargebee_invoice_id": inv.Id}
+	resp := &interfaces.CheckoutProviderResponse{
+		ProviderSessionID: inv.Id,
+		ProviderMetadata:  meta,
 	}
+	if settled != nil {
+		resp.ProviderPaymentIntentID = settled.TxnId
+		meta["transaction_status"] = string(settled.TxnStatus)
+	}
+	return resp
+}
 
-	first := ""
-	for _, src := range sources {
-		if src == nil || src.Status != paymentSourceEnum.StatusValid {
+// voidAbandonedInvoice closes a mirror nobody will pay. Best effort: the caller is
+// already falling back, and a failure here only leaves an unpaid invoice behind.
+func (a *CheckoutAdapter) voidAbandonedInvoice(ctx context.Context, chargebeeInvoiceID, reason string) {
+	if err := a.Client.VoidInvoice(ctx, chargebeeInvoiceID, reason); err != nil {
+		a.Logger.Error(ctx, "failed to void abandoned chargebee invoice",
+			"error", err, "chargebee_invoice_id", chargebeeInvoiceID, "reason", reason)
+	}
+}
+
+func lastLinkedPayment(inv *invoiceModel.Invoice) (settled, failed *invoiceModel.LinkedPayment) {
+	for _, p := range inv.LinkedPayments {
+		if p == nil {
 			continue
 		}
-		if src.Id == primary {
-			return src.Id, nil
+		switch classifyTransaction(p.TxnStatus) {
+		case transactionSettled:
+			settled = p
+		case transactionFailed:
+			failed = p
 		}
-		if first == "" {
-			first = src.Id
-		}
 	}
-	return first, nil
-}
-
-// responseFromCollect normalizes a collect_payment transaction.
-//
-// IdAtGateway is stored verbatim: it is NOT always a Stripe ch_* id — cards
-// vaulted through different flows land on different gateway accounts, producing
-// cb_* ids from Chargebee's own test gateway.
-func (a *CheckoutAdapter) responseFromCollect(
-	ctx context.Context,
-	txn *transactionModel.Transaction,
-	cbInvoiceID string,
-) *interfaces.CheckoutProviderResponse {
-	a.Logger.Info(ctx, "chargebee collect_payment settled",
-		"chargebee_invoice_id", cbInvoiceID,
-		"transaction_id", txn.Id,
-		"status", txn.Status,
-		"id_at_gateway", txn.IdAtGateway,
-		"initiator_type", txn.InitiatorType)
-
-	meta := map[string]string{
-		"chargebee_invoice_id": cbInvoiceID,
-		"transaction_status":   string(txn.Status),
-	}
-	if txn.IdAtGateway != "" {
-		meta["id_at_gateway"] = txn.IdAtGateway
-	}
-	if txn.PaymentSourceId != "" {
-		meta["payment_source_id"] = txn.PaymentSourceId
-	}
-
-	return &interfaces.CheckoutProviderResponse{
-		ProviderSessionID:       cbInvoiceID,
-		ProviderPaymentIntentID: txn.Id,
-		ProviderMetadata:        meta,
-		// No NextAction: the charge is settled off-session, nothing is asked of
-		// the customer.
-	}
+	return settled, failed
 }
 
 // amountToMinorUnits shifts the decimal to the currency's minor unit. Going via

@@ -144,8 +144,14 @@ func (s *customerPortalService) UpdateAutoTopup(ctx context.Context, walletID st
 		if err := s.validateTopupAmount(ctx, w, *req.Amount); err != nil {
 			return nil, err
 		}
-		if err := s.requireAutoChargeableMethod(ctx, w.CustomerID); err != nil {
+		gateway, err := fetchGatewayWithAutoChargeSupport(ctx, s.ServiceParams, s.customerService, w.CustomerID)
+		if err != nil {
 			return nil, err
+		}
+		if gateway == "" {
+			return nil, ierr.NewError("no payment method can be charged automatically").
+				WithHint("Add a payment method that supports automatic charges before enabling auto top-up").
+				Mark(ierr.ErrInvalidOperation)
 		}
 	}
 
@@ -156,35 +162,6 @@ func (s *customerPortalService) UpdateAutoTopup(ctx context.Context, walletID st
 		return nil, err
 	}
 	return dto.FromWallet(updated), nil
-}
-
-// requireAutoChargeableMethod refuses to store a preference that could never be
-// honoured. Vaulting depends on a per-tenant provider setting, so "no saved card"
-// is an ordinary state rather than an edge case.
-func (s *customerPortalService) requireAutoChargeableMethod(ctx context.Context, customerID string) error {
-	gateways, err := s.methodManagementProviders(ctx, customerID, nil)
-	if err != nil {
-		return err
-	}
-
-	for _, gw := range gateways {
-		if !lo.Contains(gatewayCapabilities[gw], types.IntegrationCapabilityAutoCharge) {
-			continue
-		}
-		group := s.readSavedMethods(ctx, customerID, gw)
-		if group.Error != nil {
-			return ierr.NewError("could not verify a saved payment method").
-				WithHint("The payment provider could not be reached; try again shortly").
-				Mark(ierr.ErrHTTPClient)
-		}
-		if lo.ContainsBy(group.Items, func(m *dto.SavedPaymentMethod) bool { return m.CanAutoCharge }) {
-			return nil
-		}
-	}
-
-	return ierr.NewError("no payment method can be charged automatically").
-		WithHint("Add a payment method that supports automatic charges before enabling auto top-up").
-		Mark(ierr.ErrInvalidOperation)
 }
 
 // resolveCheckoutProvider turns an optional caller choice into the one gateway that

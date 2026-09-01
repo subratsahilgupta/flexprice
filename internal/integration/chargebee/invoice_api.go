@@ -22,6 +22,7 @@ func (c *Client) CreateAdHocInvoice(
 	chargebeeCustomerID, currency string,
 	amountMinor int64,
 	description, poNumber, idempotencyKey string,
+	autoCollect, customerPresent bool,
 ) (*invoiceModel.Invoice, error) {
 	env, err := c.env(ctx)
 	if err != nil {
@@ -36,12 +37,14 @@ func (c *Client) CreateAdHocInvoice(
 			Description: description,
 		}},
 		PoNumber: poNumber,
-		// This invoice exists only as the allocation target for the collect_payment
-		// call the caller makes next, so Chargebee must not also try to collect it:
-		// two charges would race for the same amount. Auto-charge is not lost — it
-		// is that explicit call, which is also what pins the amount and declares
-		// CIT/MIT.
-		AutoCollection: enum.AutoCollectionOff,
+		// autoCollect charges the customer's primary source as part of this call,
+		// which Chargebee books as merchant-initiated. Off leaves the invoice as the
+		// allocation target for an explicit collect_payment, the only way to declare
+		// the charge customer-initiated — and the caller must then collect, or nothing
+		// charges at all.
+		AutoCollection: lo.Ternary(autoCollect, enum.AutoCollectionOn, enum.AutoCollectionOff),
+		PaymentInitiator: lo.Ternary(customerPresent,
+			enum.PaymentInitiatorCustomer, enum.PaymentInitiatorMerchant),
 	})
 	if idempotencyKey != "" {
 		req = req.SetIdempotencyKey(idempotencyKey)
@@ -55,4 +58,22 @@ func (c *Client) CreateAdHocInvoice(
 		return nil, missingPayload("invoice")
 	}
 	return res.Invoice, nil
+}
+
+// VoidInvoice abandons an invoice at Chargebee. An ad-hoc invoice created with
+// auto-collection on is a live receivable: left unpaid it can be dunned and charged
+// later, long after the caller gave up on it.
+func (c *Client) VoidInvoice(ctx context.Context, chargebeeInvoiceID, comment string) error {
+	env, err := c.env(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = invoice.VoidInvoice(chargebeeInvoiceID, &invoiceModel.VoidInvoiceRequestParams{
+		Comment: comment,
+	}).RequestWithEnv(env)
+	if err != nil {
+		return wrapAPIError(err, "Failed to void Chargebee invoice")
+	}
+	return nil
 }
