@@ -603,22 +603,15 @@ func (s *taxService) CreateTaxAssociation(ctx context.Context, req *dto.CreateTa
 			return nil, err
 		}
 
-		// An exempt customer is never taxed, so the association would be dead configuration
-		// that looks live. Rejected whatever it would have resolved to — hence before
-		// resolution.
+		// An exempt customer is never taxed, so a subscription-level association would be
+		// dead configuration. Skip it rather than fail so subscription creation still
+		// succeeds, just with zero tax associations.
 		if cust.TaxTreatment == types.TaxTreatmentExempt {
-			s.Logger.Info(ctx, "subscription tax association rejected — exempt customer",
+			s.Logger.Info(ctx, "skipping subscription tax association — exempt customer",
 				"subscription_id", sub.ID,
 				"customer_id", cust.ID,
 				"tax_rate_id", taxRate.ID)
-			return nil, ierr.NewError("cannot create a tax association for an exempt customer's subscription").
-				WithHint("This customer is tax exempt; no tax association can be linked to their subscriptions, exclusive or inclusive").
-				WithReportableDetails(map[string]interface{}{
-					"subscription_id": sub.ID,
-					"customer_id":     cust.ID,
-					"tax_rate_id":     taxRate.ID,
-				}).
-				Mark(ierr.ErrValidation)
+			return nil, nil
 		}
 	}
 

@@ -923,7 +923,7 @@ func (m *mockSubscriptionService) CalculatePauseImpact(ctx context.Context, subs
 func (m *mockSubscriptionService) CalculateResumeImpact(ctx context.Context, subscriptionID string, req *apidto.ResumeSubscriptionRequest) (*types.BillingImpactDetails, error) {
 	return nil, nil
 }
-func (m *mockSubscriptionService) ValidateAndFilterPricesForSubscription(ctx context.Context, entityID string, entityType types.PriceEntityType, sub *subscription.Subscription, workflowType *types.TemporalWorkflowType) ([]*apidto.PriceResponse, error) {
+func (m *mockSubscriptionService) ValidateAndFilterPricesForSubscription(ctx context.Context, entityID string, entityType types.PriceEntityType, sub *subscription.Subscription, workflowType *types.TemporalWorkflowType, includePriceIDs *[]string) ([]*apidto.PriceResponse, error) {
 	return nil, nil
 }
 func (m *mockSubscriptionService) PreviewPlanChange(ctx context.Context, subscriptionID string, req apidto.SubscriptionChangeV2Request) (*apidto.SubscriptionChangeV2Response, error) {

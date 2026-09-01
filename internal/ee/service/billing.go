@@ -67,6 +67,14 @@ type BillingService interface {
 	// CalculateMeterUsageCharges computes usage-based invoice line items from meter_usage.
 	CalculateMeterUsageCharges(ctx context.Context, sub *subscription.Subscription, usage *dto.GetUsageBySubscriptionResponse, periodStart, periodEnd time.Time, source types.UsageSource) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal, error)
 
+	// SumUsageAmountForSubscription returns the total usage cost for a subscription over
+	// [periodStart, periodEnd) using the same per-cadence-group fan-out as invoice
+	// generation. Callers comparing usage against a threshold (e.g. auto-invoice threshold
+	// checks) get the same amount they'd see on the resulting invoice — matters for subs
+	// with mixed cadences (e.g. monthly meter on quarterly sub with tiered pricing).
+	// Requires sub.LineItems to be populated by the caller.
+	SumUsageAmountForSubscription(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (decimal.Decimal, error)
+
 	// CreateInvoiceRequestForCharges creates an invoice creation request for the given charges.
 	CreateInvoiceRequestForCharges(ctx context.Context, params *dto.CreateInvoiceRequestForChargesParams) (*dto.CreateInvoiceRequest, error)
 
@@ -181,7 +189,12 @@ func (s *billingService) CalculateFixedCharges(
 			} else {
 				linePeriodEnd = item.EndDate
 			}
-			// fall through to shared rounding + line item build below
+			line, roundedAmount, include := s.buildFixedInvoiceLineItem(ctx, sub, item, amount, linePeriodStart, linePeriodEnd)
+			if !include {
+				continue
+			}
+			fixedCostLineItems = append(fixedCostLineItems, line)
+			fixedCost = fixedCost.Add(roundedAmount)
 		} else if types.BillingPeriodGreaterThan(item.BillingPeriod, sub.BillingPeriod) {
 			// Line item has longer cadence than subscription (e.g. quarterly line on monthly sub):
 			// Advance: include when line-item period start falls in [periodStart, periodEnd).
@@ -209,89 +222,74 @@ func (s *billingService) CalculateFixedCharges(
 			// Full amount for the matched period
 			amount = priceService.CalculateCost(ctx, price.Price, item.Quantity)
 			linePeriodStart, linePeriodEnd = res.LineItemPeriodStart, res.LineItemPeriodEnd
+			line, roundedAmount, include := s.buildFixedInvoiceLineItem(ctx, sub, item, amount, linePeriodStart, linePeriodEnd)
+			if !include {
+				continue
+			}
+			fixedCostLineItems = append(fixedCostLineItems, line)
+			fixedCost = fixedCost.Add(roundedAmount)
 		} else {
-			// Same or shorter cadence: proration, invoice period as service period
-			amount = priceService.CalculateCost(ctx, price.Price, item.Quantity)
-			effectiveStart, effectiveEnd := item.GetPeriod(periodStart, periodEnd)
-			if !effectiveEnd.After(effectiveStart) {
-				s.Logger.Debug(ctx, "skipping line item: not active in invoice period",
-					"line_item_id", item.ID,
-					"effective_start", effectiveStart,
-					"effective_end", effectiveEnd)
-				continue
+			// Same or shorter cadence than subscription. Fan out per sub-window so a
+			// monthly price on a quarterly sub emits 3 line items (one per month)
+			// instead of a single prorated line covering the whole quarter.
+			//
+			// When line-item cadence == subscription cadence, splitInvoicePeriodByLineItemCadence
+			// returns exactly one window == [periodStart, periodEnd) and this loop
+			// reduces to today's behavior byte-for-byte.
+			windows, err := splitInvoicePeriodByLineItemCadence(periodStart, periodEnd, item, sub)
+			if err != nil {
+				return nil, err
 			}
 
-			totalDuration := periodEnd.Sub(periodStart)
-			effectiveDuration := effectiveEnd.Sub(effectiveStart)
-			if effectiveDuration < totalDuration {
-				// Partial-period line item (versioned mid-cycle): scale by time ratio
-				ratio := decimal.NewFromFloat(effectiveDuration.Seconds()).
-					Div(decimal.NewFromFloat(totalDuration.Seconds()))
-				amount = amount.Mul(ratio)
-				linePeriodStart, linePeriodEnd = effectiveStart, effectiveEnd
-			} else {
-				// Full-period line item: apply existing proration logic (first-period, cancellation, etc.)
-				proratedAmount, err := s.applyProrationToLineItem(ctx, sub, item, price.Price, amount, &periodStart, &periodEnd)
-				if err != nil {
-					s.Logger.Info(context.Background(), "failed to apply proration to line item, using original amount",
-						"error", err,
-						"subscription_id", sub.ID,
+			for _, w := range windows {
+				wAmount := priceService.CalculateCost(ctx, price.Price, item.Quantity)
+				effectiveStart, effectiveEnd := item.GetPeriod(w.Start, w.End)
+				if !effectiveEnd.After(effectiveStart) {
+					s.Logger.Debug(ctx, "skipping line item window: not active in invoice sub-period",
 						"line_item_id", item.ID,
-						"price_id", item.PriceID)
-					proratedAmount = amount
+						"window_start", w.Start,
+						"window_end", w.End,
+						"effective_start", effectiveStart,
+						"effective_end", effectiveEnd)
+					continue
 				}
-				amount = proratedAmount
-				linePeriodStart, linePeriodEnd = effectiveStart, effectiveEnd
+
+				windowDuration := w.End.Sub(w.Start)
+				effectiveDuration := effectiveEnd.Sub(effectiveStart)
+				var wLinePeriodStart, wLinePeriodEnd time.Time
+				if effectiveDuration < windowDuration {
+					// Partial-period line item (versioned mid-cycle) inside this sub-window: scale by time ratio, same as today.
+					ratio := decimal.NewFromFloat(effectiveDuration.Seconds()).
+						Div(decimal.NewFromFloat(windowDuration.Seconds()))
+					wAmount = wAmount.Mul(ratio)
+					wLinePeriodStart, wLinePeriodEnd = effectiveStart, effectiveEnd
+				} else {
+					// Full sub-window: apply existing proration logic (first-period, cancellation, etc.) scoped to this window.
+					wStart, wEnd := w.Start, w.End
+					proratedAmount, err := s.applyProrationToLineItem(ctx, sub, item, price.Price, wAmount, &wStart, &wEnd)
+					if err != nil {
+						s.Logger.Info(ctx, "failed to apply proration to line item window, using original amount",
+							"error", err,
+							"subscription_id", sub.ID,
+							"line_item_id", item.ID,
+							"price_id", item.PriceID,
+							"window_start", w.Start,
+							"window_end", w.End)
+						proratedAmount = wAmount
+					}
+					wAmount = proratedAmount
+					wLinePeriodStart, wLinePeriodEnd = effectiveStart, effectiveEnd
+				}
+
+				// Shared: price unit + rounding. Emit one invoice line item per window.
+				line, roundedAmount, include := s.buildFixedInvoiceLineItem(ctx, sub, item, wAmount, wLinePeriodStart, wLinePeriodEnd)
+				if !include {
+					continue
+				}
+				fixedCostLineItems = append(fixedCostLineItems, line)
+				fixedCost = fixedCost.Add(roundedAmount)
 			}
 		}
-
-		// Shared: price unit amount, round, build and append invoice line item
-		var priceUnitAmount decimal.Decimal
-		if item.PriceUnit != nil {
-			priceUnit, err := s.PriceUnitRepo.GetByCode(ctx, lo.FromPtr(item.PriceUnit))
-			if err != nil {
-				s.Logger.Info(context.Background(), "failed to get price unit",
-					"error", err,
-					"price_unit", lo.ToPtr(item.PriceUnit),
-					"subscription_id", sub.ID,
-					"line_item_id", item.ID)
-				continue
-			}
-			priceUnitAmount, err = priceunit.ConvertToPriceUnitAmount(ctx, amount, priceUnit.ConversionRate, priceUnit.BaseCurrency)
-			if err != nil {
-				s.Logger.Info(context.Background(), "failed to convert amount to price unit",
-					"error", err,
-					"price_unit", lo.FromPtr(item.PriceUnit),
-					"subscription_id", sub.ID,
-					"line_item_id", item.ID)
-				continue
-			}
-		}
-
-		// Round fixed charge amount to currency precision before creating invoice line item
-		// This ensures all line items use proper currency precision from the start
-		// Example: $10.278798 → $10.28 for USD (2 decimals), ¥1023.45 → ¥1023 for JPY (0 decimals)
-		roundedAmount := types.RoundToCurrencyPrecision(amount, sub.Currency)
-
-		fixedCostLineItems = append(fixedCostLineItems, dto.CreateInvoiceLineItemRequest{
-			EntityID:               lo.ToPtr(item.EntityID),
-			EntityType:             lo.ToPtr(string(item.EntityType)),
-			PlanDisplayName:        lo.ToPtr(item.PlanDisplayName),
-			PriceID:                lo.ToPtr(item.PriceID),
-			PriceType:              lo.ToPtr(string(item.PriceType)),
-			PriceUnit:              item.PriceUnit,
-			PriceUnitAmount:        lo.ToPtr(priceUnitAmount),
-			DisplayName:            lo.ToPtr(item.DisplayName),
-			Amount:                 roundedAmount,
-			Quantity:               item.Quantity,
-			PeriodStart:            lo.ToPtr(linePeriodStart),
-			PeriodEnd:              lo.ToPtr(linePeriodEnd),
-			SubscriptionLineItemID: lo.ToPtr(item.ID),
-			Metadata: types.Metadata{
-				"description": fmt.Sprintf("%s (Fixed Charge)", item.DisplayName),
-			},
-		})
-		fixedCost = fixedCost.Add(roundedAmount)
 	}
 
 	// Optional opening-invoice credit (e.g. plan-change netting): reduce fixed line amounts in order,
@@ -311,6 +309,64 @@ func (s *billingService) CalculateFixedCharges(
 	}
 
 	return &dto.CalculateFixedChargesResult{LineItems: fixedCostLineItems, TotalAmount: fixedCost}, nil
+}
+
+// buildFixedInvoiceLineItem constructs an invoice line item for a single
+// fixed charge and returns it alongside the rounded amount the caller should
+// add to the running total. include=false signals the caller to skip this
+// line item (currently only when the price-unit lookup or conversion fails,
+// matching pre-refactor behavior). Extracted from CalculateFixedCharges so
+// the ONETIME, longer-cadence, and per-window fan-out paths share it.
+func (s *billingService) buildFixedInvoiceLineItem(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	item *subscription.SubscriptionLineItem,
+	amount decimal.Decimal,
+	linePeriodStart, linePeriodEnd time.Time,
+) (line dto.CreateInvoiceLineItemRequest, roundedAmount decimal.Decimal, include bool) {
+	var priceUnitAmount decimal.Decimal
+	if item.PriceUnit != nil {
+		priceUnit, err := s.PriceUnitRepo.GetByCode(ctx, lo.FromPtr(item.PriceUnit))
+		if err != nil {
+			s.Logger.Info(ctx, "failed to get price unit",
+				"error", err,
+				"price_unit", lo.ToPtr(item.PriceUnit),
+				"subscription_id", sub.ID,
+				"line_item_id", item.ID)
+			return dto.CreateInvoiceLineItemRequest{}, decimal.Zero, false
+		}
+		priceUnitAmount, err = priceunit.ConvertToPriceUnitAmount(ctx, amount, priceUnit.ConversionRate, priceUnit.BaseCurrency)
+		if err != nil {
+			s.Logger.Info(ctx, "failed to convert amount to price unit",
+				"error", err,
+				"price_unit", lo.FromPtr(item.PriceUnit),
+				"subscription_id", sub.ID,
+				"line_item_id", item.ID)
+			return dto.CreateInvoiceLineItemRequest{}, decimal.Zero, false
+		}
+	}
+
+	roundedAmount = types.RoundToCurrencyPrecision(amount, sub.Currency)
+
+	line = dto.CreateInvoiceLineItemRequest{
+		EntityID:               lo.ToPtr(item.EntityID),
+		EntityType:             lo.ToPtr(string(item.EntityType)),
+		PlanDisplayName:        lo.ToPtr(item.PlanDisplayName),
+		PriceID:                lo.ToPtr(item.PriceID),
+		PriceType:              lo.ToPtr(string(item.PriceType)),
+		PriceUnit:              item.PriceUnit,
+		PriceUnitAmount:        lo.ToPtr(priceUnitAmount),
+		DisplayName:            lo.ToPtr(item.DisplayName),
+		Amount:                 roundedAmount,
+		Quantity:               item.Quantity,
+		PeriodStart:            lo.ToPtr(linePeriodStart),
+		PeriodEnd:              lo.ToPtr(linePeriodEnd),
+		SubscriptionLineItemID: lo.ToPtr(item.ID),
+		Metadata: types.Metadata{
+			"description": fmt.Sprintf("%s (Fixed Charge)", item.DisplayName),
+		},
+	}
+	return line, roundedAmount, true
 }
 
 // applyOpeningInvoiceAdjustmentToLineItems reduces line Amounts in slice order: for each line, take min(remaining credit, line amount).
@@ -359,6 +415,91 @@ func endDateBoundaryForMatching(periodEnd time.Time, billingPeriod types.Billing
 	default:
 		return periodEnd.AddDate(1, 0, 0) // fallback: 1 year
 	}
+}
+
+// periodWindow is a half-open [Start, End) sub-range of an invoice period.
+type periodWindow struct {
+	Start time.Time
+	End   time.Time
+}
+
+// splitInvoicePeriodByLineItemCadence returns the sub-windows this line item
+// contributes to within [invoicePeriodStart, invoicePeriodEnd).
+//
+// Contract:
+//   - Line item cadence equal to sub cadence (both period and count): returns
+//     exactly one window = the full invoice period. This is today's behavior;
+//     the common path stays byte-identical.
+//   - Line item cadence strictly divides the sub cadence (e.g. MONTHLY on
+//     QUARTER): returns the N sub-windows walked via types.NextBillingDate
+//     with the line item's cadence, anchored at invoicePeriodStart, using
+//     sub.Timezone for local-boundary semantics.
+//   - Anything else: error. Line-item creation validates the divides-or-equal
+//     relationship (dto.CreateSubscriptionLineItemRequest.Validate), so an
+//     error here is a data-integrity signal, not a routine skip.
+func splitInvoicePeriodByLineItemCadence(
+	invoicePeriodStart, invoicePeriodEnd time.Time,
+	lineItem *subscription.SubscriptionLineItem,
+	sub *subscription.Subscription,
+) ([]periodWindow, error) {
+	itemCount := lineItem.BillingPeriodCount
+	if itemCount <= 0 {
+		itemCount = 1
+	}
+	subCount := sub.BillingPeriodCount
+	if subCount <= 0 {
+		subCount = 1
+	}
+
+	// Same cadence (period + count) → single window (today's behavior).
+	// Covers month-based AND sub-month periods (DAILY/WEEKLY) uniformly.
+	// The fan-out path below relies on month math that doesn't apply to
+	// sub-month periods, so DAILY×N-on-DAILY×N must take this fast path.
+	if lineItem.BillingPeriod == sub.BillingPeriod && itemCount == subCount {
+		return []periodWindow{{Start: invoicePeriodStart, End: invoicePeriodEnd}}, nil
+	}
+
+	// Require: sub cadence is an integer multiple of line-item cadence in months.
+	// IsCadenceCompatible rejects sub-month combinations that aren't identical
+	// (period + count), so passing it here guarantees positive month math below.
+	if !types.IsCadenceCompatible(sub.BillingPeriod, subCount, lineItem.BillingPeriod, itemCount) {
+		return nil, ierr.NewError("line item cadence does not divide subscription cadence").
+			WithHint("line item billing_period must equal or strictly divide the subscription billing_period").
+			WithReportableDetails(map[string]interface{}{
+				"sub_billing_period":        sub.BillingPeriod,
+				"sub_billing_period_count":  subCount,
+				"line_billing_period":       lineItem.BillingPeriod,
+				"line_billing_period_count": itemCount,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	subMonths := types.EffectiveMonths(sub.BillingPeriod, subCount)
+	itemMonths := types.EffectiveMonths(lineItem.BillingPeriod, itemCount)
+	windows := make([]periodWindow, 0, subMonths/itemMonths)
+	current := invoicePeriodStart
+	for current.Before(invoicePeriodEnd) {
+		next, err := types.NextBillingDate(&types.NextBillingDateParams{
+			CurrentPeriodStart: current,
+			BillingAnchor:      invoicePeriodStart,
+			Unit:               itemCount,
+			Period:             lineItem.BillingPeriod,
+			Timezone:           sub.Timezone,
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Defensive: never emit a window that overruns the invoice period; clamp to invoicePeriodEnd.
+		if next.After(invoicePeriodEnd) {
+			next = invoicePeriodEnd
+		}
+		windows = append(windows, periodWindow{Start: current, End: next})
+		if !next.After(current) {
+			break // safety against infinite loop on degenerate input
+		}
+		current = next
+	}
+	return windows, nil
 }
 
 // Used when the line item has a longer cadence than the subscription (e.g. quarterly on monthly).
@@ -1879,9 +2020,33 @@ func (s *billingService) CalculateCharges(
 	})
 }
 
-// calculateMeterUsageCharges fetches usage from the meter_usage table via
-// SubscriptionService.GetMeterUsageBySubscription and delegates to the
-// existing charge calculation pipeline.
+// SumUsageAmountForSubscription is a thin public wrapper over
+// calculateMeterUsageCharges that returns just the summed USAGE cost. Used by
+// callers (e.g. auto-invoice threshold checks) that need the priced-usage
+// number the resulting invoice would show, not raw meter aggregation.
+func (s *billingService) SumUsageAmountForSubscription(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	periodStart, periodEnd time.Time,
+) (decimal.Decimal, error) {
+	result, err := s.calculateMeterUsageCharges(ctx, sub, sub.LineItems, periodStart, periodEnd, true)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	total := decimal.Zero
+	for _, line := range result.UsageCharges {
+		total = total.Add(line.Amount)
+	}
+	return total, nil
+}
+
+// calculateMeterUsageCharges computes fixed + usage charges for the given
+// line items over [periodStart, periodEnd).
+//
+// Fan-out contract: USAGE line items whose cadence strictly divides the
+// subscription cadence (e.g. monthly metered on quarterly sub) trigger one
+// GetMeterUsageBySubscription call per sub-window and emit one line item per
+// sub-window. Same-cadence USAGE line items keep today's single-call behavior.
 func (s *billingService) calculateMeterUsageCharges(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -1893,23 +2058,77 @@ func (s *billingService) calculateMeterUsageCharges(
 	filteredSub := *sub
 	filteredSub.LineItems = lineItems
 
-	var usage *dto.GetUsageBySubscriptionResponse
-	var err error
+	// Fixed charges (all of them, one call — CalculateFixedCharges fans out per item).
+	fixedResult, err := s.CalculateFixedCharges(ctx, &dto.CalculateFixedChargesParams{
+		Subscription: &filteredSub,
+		PeriodStart:  periodStart,
+		PeriodEnd:    periodEnd,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	allUsage := make([]dto.CreateInvoiceLineItemRequest, 0)
+	totalUsage := decimal.Zero
 
 	if includeUsage {
 		subscriptionService := NewSubscriptionService(s.ServiceParams)
-		usage, err = subscriptionService.GetMeterUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
-			SubscriptionID: sub.ID,
-			StartTime:      periodStart,
-			EndTime:        periodEnd,
-			Source:         string(types.UsageSourceInvoiceCreation),
-		})
-		if err != nil {
-			return nil, err
+
+		// Partition USAGE line items by cadence key (period + count). Items in
+		// the same cadence group share window boundaries, so one usage query
+		// per (group, window) covers them all.
+		type cadenceKey struct {
+			Period types.BillingPeriod
+			Count  int
+		}
+		groups := make(map[cadenceKey][]*subscription.SubscriptionLineItem)
+		for _, item := range lineItems {
+			if item.PriceType != types.PRICE_TYPE_USAGE {
+				continue
+			}
+			count := item.BillingPeriodCount
+			if count <= 0 {
+				count = 1
+			}
+			k := cadenceKey{Period: item.BillingPeriod, Count: count}
+			groups[k] = append(groups[k], item)
+		}
+
+		for _, groupItems := range groups {
+			windows, err := splitInvoicePeriodByLineItemCadence(periodStart, periodEnd, groupItems[0], sub)
+			if err != nil {
+				return nil, err
+			}
+			for _, w := range windows {
+				windowSub := *sub
+				windowSub.LineItems = groupItems
+
+				usage, err := subscriptionService.GetMeterUsageBySubscription(ctx, &dto.GetUsageBySubscriptionRequest{
+					SubscriptionID: sub.ID,
+					StartTime:      w.Start,
+					EndTime:        w.End,
+					Source:         string(types.UsageSourceInvoiceCreation),
+				})
+				if err != nil {
+					return nil, err
+				}
+
+				lines, cost, err := s.CalculateMeterUsageCharges(ctx, &windowSub, usage, w.Start, w.End, types.UsageSourceInvoiceCreation)
+				if err != nil {
+					return nil, err
+				}
+				allUsage = append(allUsage, lines...)
+				totalUsage = totalUsage.Add(cost)
+			}
 		}
 	}
 
-	return s.calculateAllMeterUsageCharges(ctx, &filteredSub, usage, periodStart, periodEnd)
+	return &dto.BillingCalculationResult{
+		FixedCharges: fixedResult.LineItems,
+		UsageCharges: allUsage,
+		TotalAmount:  fixedResult.TotalAmount.Add(totalUsage),
+		Currency:     sub.Currency,
+	}, nil
 }
 
 // CreateInvoiceRequestForCharges creates an invoice for the given charges

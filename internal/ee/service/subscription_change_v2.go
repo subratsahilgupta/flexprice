@@ -99,8 +99,11 @@ func (s *subscriptionService) resolvePlanChange(
 		return nil, err
 	}
 
+	// Plan change v2 does not currently support caller-driven price selection —
+	// pass nil so the strict-equal default applies (matches historical behavior
+	// on this path).
 	targetPrices, err := s.ValidateAndFilterPricesForSubscription(
-		ctx, toPlan.Plan.ID, types.PRICE_ENTITY_TYPE_PLAN, sub, nil,
+		ctx, toPlan.Plan.ID, types.PRICE_ENTITY_TYPE_PLAN, sub, nil, nil,
 	)
 	if err != nil {
 		return nil, err

@@ -565,8 +565,8 @@ func (s *TaxCalculationSuite) TearDownTest() {
 
 func (s *TaxCalculationSuite) newCustomer(taxTreatment types.TaxTreatment) *customer.Customer {
 	cust := &customer.Customer{
-		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
-		ExternalID: types.GenerateUUIDWithPrefix("ext"),
+		ID:           types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID:   types.GenerateUUIDWithPrefix("ext"),
 		Name:         "Tax Test Customer",
 		TaxTreatment: taxTreatment,
 		BaseModel:    types.GetDefaultBaseModel(s.GetContext()),
@@ -618,8 +618,9 @@ func (s *TaxCalculationSuite) persistedRateWithStatus(name string, percentage in
 }
 
 // association writes a subscription-level association straight to the repo, bypassing
-// CreateTaxAssociation — the only way to produce rows CreateTaxAssociation would reject
-// (a null tax_behavior, an exempt customer's row) so resolution can be tested against them.
+// CreateTaxAssociation — the only way to produce rows CreateTaxAssociation would skip
+// or never stamp (a null tax_behavior, an exempt customer's row) so resolution can be
+// tested against them.
 func (s *TaxCalculationSuite) association(taxRateID, subscriptionID string, behavior *types.TaxBehavior) *taxassociation.TaxAssociation {
 	assoc := &taxassociation.TaxAssociation{
 		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TAX_ASSOCIATION),
@@ -1306,7 +1307,7 @@ func (s *TaxCalculationSuite) TestPrepareTaxRates_SkipsAssociationsThatAreNotAut
 // tax treatment, on every path.
 func (s *TaxCalculationSuite) TestPrepareTaxRates_ExemptionFlagTracksTheCustomer() {
 	tests := []struct {
-		name       string
+		name         string
 		taxTreatment types.TaxTreatment
 		want         bool
 	}{
@@ -1483,10 +1484,10 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_CustomerLevelKeepsExplici
 	s.Equal(types.TaxBehaviorInclusive, *resp.TaxBehavior)
 }
 
-// an exempt customer's subscription can never get a tax association, whatever behavior
-// it would have resolved to. Rejecting it keeps the invariant simple: an exempt customer's
-// subscription has zero tax associations, so there is no inert configuration to misread later.
-func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExemptCustomerSubscriptionIsRejected() {
+// an exempt customer's subscription never gets a tax association, whatever behavior
+// it would have resolved to. The create is skipped (not rejected) so the caller —
+// typically subscription creation — still succeeds with zero associations.
+func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExemptCustomerSubscriptionIsSkipped() {
 	tests := []struct {
 		name     string
 		currency string
@@ -1502,9 +1503,9 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExemptCustomerSubscriptio
 		s.Run(tt.name, func() {
 			cust := s.newCustomer(types.TaxTreatmentExempt)
 			sub := s.newSubscription(cust.ID, tt.currency)
-			rate := s.persistedRate("exempt_reject", 10)
+			rate := s.persistedRate("exempt_skip", 10)
 
-			_, err := s.svc.CreateTaxAssociation(s.GetContext(), &dto.CreateTaxAssociationRequest{
+			resp, err := s.svc.CreateTaxAssociation(s.GetContext(), &dto.CreateTaxAssociationRequest{
 				TaxRateCode: rate.Code,
 				EntityType:  types.TaxRateEntityTypeSubscription,
 				EntityID:    sub.ID,
@@ -1512,15 +1513,23 @@ func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExemptCustomerSubscriptio
 				AutoApply:   true,
 				TaxBehavior: tt.behavior,
 			})
+			s.Require().NoError(err)
+			s.Nil(resp)
 
-			s.Require().Error(err, "an exempt customer's subscription must never get an association")
+			resolved, err := s.svc.PrepareTaxRatesForInvoice(s.GetContext(), dto.CreateInvoiceRequest{
+				CustomerID:     cust.ID,
+				Currency:       tt.currency,
+				SubscriptionID: &sub.ID,
+			})
+			s.Require().NoError(err)
+			s.Empty(resolved.GetRates(), "the skipped create must not have persisted an association")
 		})
 	}
 }
 
 // runs at subscription level only. A customer-level template for an exempt customer is
-// not rejected — it is a template, not a live association, and the check that matters fires
-// when it is copied down to a subscription.
+// still allowed — it is a template, not a live association, and the skip fires when it
+// is copied down to a subscription.
 func (s *TaxCalculationSuite) TestCreateTaxAssociation_ExemptCustomerLevelTemplateIsAllowed() {
 	cust := s.newCustomer(types.TaxTreatmentExempt)
 	rate := s.persistedRate("exempt_template", 10)
@@ -1861,9 +1870,9 @@ func (s *TaxCalculationSuite) TestLinkTaxRatesToEntity_StampsEachOverride() {
 	s.Equal(types.TaxBehaviorExclusive, behaviorByID[second.ID], "the explicit behavior is kept")
 }
 
-// through the batch path: linking to an exempt customer's subscription fails, and the
-// transaction leaves nothing behind.
-func (s *TaxCalculationSuite) TestLinkTaxRatesToEntity_ExemptCustomerSubscriptionIsRejected() {
+// through the batch path: linking to an exempt customer's subscription is skipped,
+// the link itself succeeds, and nothing is persisted.
+func (s *TaxCalculationSuite) TestLinkTaxRatesToEntity_ExemptCustomerSubscriptionIsSkipped() {
 	ctx := s.GetContext()
 	cust := s.newCustomer(types.TaxTreatmentExempt)
 	sub := s.newSubscription(cust.ID, "usd")
@@ -1877,7 +1886,7 @@ func (s *TaxCalculationSuite) TestLinkTaxRatesToEntity_ExemptCustomerSubscriptio
 		},
 	})
 
-	s.Require().Error(err)
+	s.Require().NoError(err)
 
 	resolved, err := s.svc.PrepareTaxRatesForInvoice(ctx, dto.CreateInvoiceRequest{
 		CustomerID:     cust.ID,
@@ -1885,5 +1894,5 @@ func (s *TaxCalculationSuite) TestLinkTaxRatesToEntity_ExemptCustomerSubscriptio
 		SubscriptionID: &sub.ID,
 	})
 	s.Require().NoError(err)
-	s.Empty(resolved.GetRates(), "the rejected link must not have created anything")
+	s.Empty(resolved.GetRates(), "the skipped link must not have created anything")
 }

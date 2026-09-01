@@ -116,7 +116,7 @@ type SubscriptionService interface {
 	CalculatePauseImpact(ctx context.Context, subscriptionID string, req *dto.PauseSubscriptionRequest) (*types.BillingImpactDetails, error)
 	CalculateResumeImpact(ctx context.Context, subscriptionID string, req *dto.ResumeSubscriptionRequest) (*types.BillingImpactDetails, error)
 
-	ValidateAndFilterPricesForSubscription(ctx context.Context, entityID string, entityType types.PriceEntityType, subscription *subscription.Subscription, workflowType *types.TemporalWorkflowType) ([]*dto.PriceResponse, error)
+	ValidateAndFilterPricesForSubscription(ctx context.Context, entityID string, entityType types.PriceEntityType, subscription *subscription.Subscription, workflowType *types.TemporalWorkflowType, includePriceIDs *[]string) ([]*dto.PriceResponse, error)
 
 	PreviewPlanChange(ctx context.Context, subscriptionID string, req dto.SubscriptionChangeV2Request) (*dto.SubscriptionChangeV2Response, error)
 	ExecutePlanChange(ctx context.Context, subscriptionID string, req dto.SubscriptionChangeV2Request, effectiveAt time.Time) (*dto.SubscriptionChangeV2Response, error)

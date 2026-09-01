@@ -8150,7 +8150,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Change a subscription's plan in place. Subscription id, billing anchor and period bounds are preserved; line items are sliced and settled in one transaction.\n\nchange_at controls timing. Omitted or 'immediate' applies the change now. 'end_of_period' records a pending schedule that executes at the subscription's current period end: the response returns is_scheduled, schedule_id and scheduled_at instead of a completed change, and nothing is swapped or billed until the boundary.\n\nscheduled_at is resolved from the subscription's current period end at request time. If that period end is already in the past (a backdated start date, a resumed pause, or worker downtime can all leave a subscription behind), the change is due immediately and fires on the next billing scan rather than a period away — inspect scheduled_at to see this.\n\nOnly one plan change may be pending per subscription. By default (on_conflict_policies.on_pending_schedule = 'reject') a second request returns 400; cancel the existing schedule via POST /subscriptions/schedules/{schedule_id}/cancel first. Pending schedules are listable via GET /subscriptions/{id}/schedules.\n\nSet on_conflict_policies.on_pending_schedule to 'supersede' to replace the queued change instead: the pending schedule is cancelled and this request applied in the same transaction, so both land or neither does. The cancelled schedule ids are returned in superseded_schedules, and preview reports the same list without writing.",
+                "description": "Change a subscription's plan in place. Subscription id, billing anchor and period bounds are preserved; line items are sliced and settled in one transaction.\n\nchange_at controls timing. Omitted or 'immediate' applies the change now. 'end_of_period' records a pending schedule that executes at the subscription's current period end: the response returns is_scheduled, schedule_id and scheduled_at instead of a completed change, and nothing is swapped or billed until the boundary.\n\nscheduled_at is resolved from the subscription's current period end at request time. If that period end is already in the past (a backdated start date, a resumed pause, or worker downtime can all leave a subscription behind), the change is due immediately and fires on the next billing scan rather than a period away \u2014 inspect scheduled_at to see this.\n\nOnly one plan change may be pending per subscription. By default (on_conflict_policies.on_pending_schedule = 'reject') a second request returns 400; cancel the existing schedule via POST /subscriptions/schedules/{schedule_id}/cancel first. Pending schedules are listable via GET /subscriptions/{id}/schedules.\n\nSet on_conflict_policies.on_pending_schedule to 'supersede' to replace the queued change instead: the pending schedule is cancelled and this request applied in the same transaction, so both land or neither does. The cancelled schedule ids are returned in superseded_schedules, and preview reports the same list without writing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8799,6 +8799,57 @@
                         }
                     }
                 }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use to submit a CSV of usage events for async ingestion. The CSV must already have been uploaded to the Flexprice-managed imports bucket (currently via CSV Box) \u2014 pass the upload_id and the backend fetches the file from S3 and streams rows into ClickHouse. Returns the task ID and Temporal workflow IDs for polling.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "Import a CSV of usage events",
+                "operationId": "createTask",
+                "parameters": [
+                    {
+                        "description": "Import request",
+                        "name": "task",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/CreateTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.TemporalWorkflowResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "write"
             }
         },
         "/tasks/result": {
@@ -10606,6 +10657,56 @@
                 }
             }
         },
+        "/users/{id}/remove": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Remove a human user (type=user) from the current tenant. Not supported for service accounts; use DELETE /users/{id} for those.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Remove user from tenant",
+                "operationId": "removeUser",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/users/{id}/roles": {
             "put": {
                 "security": [
@@ -10613,7 +10714,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Update the roles of a user account (not service accounts — their roles are fixed at creation). Restricted to super_admin; a caller cannot update their own roles. Blocked with a 400 if the user has any active (published, unexpired) API key in any environment, since a key's permissions are snapshotted at creation time and would otherwise silently keep running on the old roles; the error lists the active keys grouped by environment ID so the caller can prompt to expire them first, then retry.",
+                "description": "Update the roles of a user account (not service accounts \u2014 their roles are fixed at creation). Restricted to super_admin; a caller cannot update their own roles. Blocked with a 400 if the user has any active (published, unexpired) API key in any environment, since a key's permissions are snapshotted at creation time and would otherwise silently keep running on the old roles; the error lists the active keys grouped by environment ID so the caller can prompt to expire them first, then retry.",
                 "consumes": [
                     "application/json"
                 ],
@@ -11778,7 +11879,7 @@
         },
         "/webhook-events/event.rejected": {
             "post": {
-                "description": "Fired when an ingested usage event produces no meter usage — either no meter is registered for its event name, or meters exist for the name but the event matched none of their filters. Throttled to at most once per configured window per event name. Doc-only for parsing.",
+                "description": "Fired when an ingested usage event produces no meter usage \u2014 either no meter is registered for its event name, or meters exist for the name but the event matched none of their filters. Throttled to at most once per configured window per event name. Doc-only for parsing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -13477,19 +13578,19 @@
                     "type": "boolean"
                 },
                 "customer_aws_account_id": {
-                    "description": "-\u003e BatchMeterUsage's CustomerAWSAccountId",
+                    "description": "-> BatchMeterUsage's CustomerAWSAccountId",
                     "type": "string"
                 },
                 "dimension": {
-                    "description": "-\u003e BatchMeterUsage's Dimension (always \"usage_fee\" in the cents model)",
+                    "description": "-> BatchMeterUsage's Dimension (always \"usage_fee\" in the cents model)",
                     "type": "string"
                 },
                 "license_arn": {
-                    "description": "-\u003e BatchMeterUsage's LicenseArn; identifies the buyer's agreement",
+                    "description": "-> BatchMeterUsage's LicenseArn; identifies the buyer's agreement",
                     "type": "string"
                 },
                 "product_code": {
-                    "description": "-\u003e BatchMeterUsage's ProductCode (omitted when ConcurrentAgreements)",
+                    "description": "-> BatchMeterUsage's ProductCode (omitted when ConcurrentAgreements)",
                     "type": "string"
                 }
             }
@@ -14024,15 +14125,15 @@
                     "type": "string"
                 },
                 "dimension": {
-                    "description": "-\u003e usageEvent's dimension (always \"usage_fee\" in the cents model)",
+                    "description": "-> usageEvent's dimension (always \"usage_fee\" in the cents model)",
                     "type": "string"
                 },
                 "plan_id": {
-                    "description": "-\u003e usageEvent's planId; Azure's plan id, distinct from the request's top-level PlanID",
+                    "description": "-> usageEvent's planId; Azure's plan id, distinct from the request's top-level PlanID",
                     "type": "string"
                 },
                 "resource_id": {
-                    "description": "-\u003e usageEvent's resourceId; the Azure SaaS subscription id",
+                    "description": "-> usageEvent's resourceId; the Azure SaaS subscription id",
                     "type": "string"
                 }
             }
@@ -14197,7 +14298,7 @@
             ],
             "properties": {
                 "cancel_at": {
-                    "description": "CancelAt is the exact date/time when the subscription should be cancelled.\nRequired for cancellation_type \"scheduled_date\"; optional for \"immediate\" (past dates only — backdated cancellation).\nFor \"scheduled_date\", accepts both future dates (deferred cancellation) and past dates (backdated cancellation).\nFor \"immediate\", accepts past/current dates only; use \"scheduled_date\" for future dates.",
+                    "description": "CancelAt is the exact date/time when the subscription should be cancelled.\nRequired for cancellation_type \"scheduled_date\"; optional for \"immediate\" (past dates only \u2014 backdated cancellation).\nFor \"scheduled_date\", accepts both future dates (deferred cancellation) and past dates (backdated cancellation).\nFor \"immediate\", accepts past/current dates only; use \"scheduled_date\" for future dates.",
                     "type": "string"
                 },
                 "cancel_immediately_inovice_policy": {
@@ -15530,6 +15631,10 @@
                         "$ref": "#/definitions/TaxRateOverride"
                     }
                 },
+                "tax_treatment": {
+                    "description": "tax_treatment is the customer's tax treatment. Defaults to \"taxable\" if not provided.",
+                    "$ref": "#/definitions/types.TaxTreatment"
+                },
                 "timezone": {
                     "description": "timezone is the customer's IANA timezone name (e.g. \"Asia/Kolkata\", \"America/New_York\")\nDefaults to \"UTC\" if not provided",
                     "type": "string"
@@ -15575,7 +15680,7 @@
                     "type": "integer"
                 },
                 "grant_measure": {
-                    "description": "Grant config — optional. All-or-nothing; see entitlement.validateGrantConfig.",
+                    "description": "Grant config \u2014 optional. All-or-nothing; see entitlement.validateGrantConfig.",
                     "$ref": "#/definitions/types.EntitlementGrantMeasure"
                 },
                 "grant_quota": {
@@ -15917,13 +16022,6 @@
                     "description": "period_start is the start date of the billing period",
                     "type": "string"
                 },
-                "prepared_tax_rates": {
-                    "description": "prepared_tax_rates contains the tax rates pre-resolved by the caller (e.g., billing service)",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/TaxRateResponse"
-                    }
-                },
                 "subscription_id": {
                     "description": "subscription_id is the optional unique identifier of the subscription associated with this invoice",
                     "type": "string"
@@ -16091,6 +16189,10 @@
                 "billing_period_count": {
                     "type": "integer",
                     "default": 1
+                },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price. The meter\naggregates within each window and the window results are summed, so the\nbillable unit becomes per-window (e.g. seats -> seat-hours). Valid only on\nUSAGE prices whose meter aggregates MAX or SUM.",
+                    "$ref": "#/definitions/types.WindowSize"
                 },
                 "currency": {
                     "type": "string"
@@ -16390,7 +16492,7 @@
                     "type": "string"
                 },
                 "billing_cycle": {
-                    "description": "BillingCycle controls the billing anchor. anniversary = start_date; calendar = period boundary\n(e.g. monthly with start 2025-04-15 → calendar anchor is 2025-05-01).",
+                    "description": "BillingCycle controls the billing anchor. anniversary = start_date; calendar = period boundary\n(e.g. monthly with start 2025-04-15 \u2192 calendar anchor is 2025-05-01).",
                     "$ref": "#/definitions/types.BillingCycle"
                 },
                 "billing_period": {
@@ -16444,6 +16546,13 @@
                 },
                 "gateway_payment_method_id": {
                     "type": "string"
+                },
+                "include_price_ids": {
+                    "description": "IncludePriceIDs selects which plan prices to attach. Nil/omitted attaches matching-cadence\nprices plus ONETIME; [] attaches none (LineItems extras still apply); a non-empty list\nattaches only those IDs. Each listed ID must belong to the plan, match the subscription\ncurrency, and have a cadence that equals or strictly divides the subscription cadence.\nPointer-slice distinguishes nil from [].",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "inheritance": {
                     "description": "Inheritance groups customer-hierarchy fields; providing child IDs makes this a PARENT subscription.",
@@ -16541,8 +16650,42 @@
                     "type": "string"
                 },
                 "trial_period_days": {
-                    "description": "TrialPeriodDays: nil = inherit from plan prices, 0 = no trial, \u003e0 = override in days.",
+                    "description": "TrialPeriodDays: nil = inherit from plan prices, 0 = no trial, >0 = override in days.",
                     "type": "integer"
+                }
+            }
+        },
+        "CreateTaskRequest": {
+            "type": "object",
+            "required": [
+                "entity_type",
+                "file_provider",
+                "file_type",
+                "task_type",
+                "upload_id"
+            ],
+            "properties": {
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntityType"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "file_provider": {
+                    "type": "string"
+                },
+                "file_type": {
+                    "$ref": "#/definitions/types.FileType"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "task_type": {
+                    "$ref": "#/definitions/types.TaskType"
+                },
+                "upload_id": {
+                    "type": "string"
                 }
             }
         },
@@ -16584,6 +16727,10 @@
                     "description": "StartDate sets when this association becomes active. Defaults to now if omitted.",
                     "type": "string"
                 },
+                "tax_behavior": {
+                    "description": "TaxBehavior is inclusive or exclusive. Settable at any level. If left empty on a\nsubscription-level association, it resolves from the currency default at creation\ntime (internal/types.DefaultTaxBehaviorForCurrency) \u2014 tenant/customer-level templates\nonly need this set explicitly if the tenant wants one; otherwise it stays null and is\nresolved when the template is copied down to a subscription.",
+                    "$ref": "#/definitions/types.TaxBehavior"
+                },
                 "tax_rate_code": {
                     "type": "string"
                 }
@@ -16604,10 +16751,6 @@
                     "description": "description is an optional text description providing details about the tax rate",
                     "type": "string"
                 },
-                "fixed_value": {
-                    "description": "fixed_value is the fixed monetary amount when tax_rate_type is \"fixed\"",
-                    "type": "string"
-                },
                 "metadata": {
                     "description": "metadata contains additional key-value pairs for storing extra information",
                     "type": "object",
@@ -16620,7 +16763,7 @@
                     "type": "string"
                 },
                 "percentage_value": {
-                    "description": "percentage_value is the percentage value (0-100) when tax_rate_type is \"percentage\"",
+                    "description": "percentage_value is the percentage value (0-100)",
                     "type": "string"
                 },
                 "scope": {
@@ -16628,7 +16771,7 @@
                     "$ref": "#/definitions/types.TaxRateScope"
                 },
                 "tax_rate_type": {
-                    "description": "tax_rate_type determines how the tax is calculated (\"percentage\" or \"fixed\")",
+                    "description": "tax_rate_type is always \"percentage\" \u2014 fixed-amount tax rates are not supported",
                     "$ref": "#/definitions/types.TaxRateType"
                 }
             }
@@ -17222,6 +17365,10 @@
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
+                "tax_treatment": {
+                    "description": "TaxTreatment is the customer's tax treatment \u2014 taxable (default) or exempt.",
+                    "$ref": "#/definitions/types.TaxTreatment"
+                },
                 "tenant_id": {
                     "type": "string"
                 },
@@ -17795,15 +17942,15 @@
                     "type": "string"
                 },
                 "metric_name": {
-                    "description": "-\u003e services.report's metricName (always \"{service_name}/usage_fee\")",
+                    "description": "-> services.report's metricName (always \"{service_name}/usage_fee\")",
                     "type": "string"
                 },
                 "service_name": {
-                    "description": "-\u003e services.report URL's service_name; identifies the product",
+                    "description": "-> services.report URL's service_name; identifies the product",
                     "type": "string"
                 },
                 "usage_reporting_id": {
-                    "description": "-\u003e services.report's consumerId; identifies the buyer",
+                    "description": "-> services.report's consumerId; identifies the buyer",
                     "type": "string"
                 }
             }
@@ -17833,7 +17980,7 @@
                     }
                 },
                 "include_children": {
-                    "description": "IncludeChildren, when true and ExternalCustomerID belongs to a parent\ncustomer, aggregates every inherited-child customer's usage into the\nrevenue and cost totals. Default (false) restricts the query to the\ncustomer's own usage — mirrors the meter-usage analytics contract.",
+                    "description": "IncludeChildren, when true and ExternalCustomerID belongs to a parent\ncustomer, aggregates every inherited-child customer's usage into the\nrevenue and cost totals. Default (false) restricts the query to the\ncustomer's own usage \u2014 mirrors the meter-usage analytics contract.",
                     "type": "boolean"
                 },
                 "limit": {
@@ -18120,7 +18267,7 @@
                     }
                 },
                 "group_by": {
-                    "description": "allowed values: \"source\", \"feature_id\", \"properties.\u003cfield_name\u003e\"",
+                    "description": "allowed values: \"source\", \"feature_id\", \"properties.<field_name>\"",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -18351,14 +18498,14 @@
                     }
                 },
                 "group_by": {
-                    "description": "GroupBy lists the analytics group_by dimensions.\n  - \"source\"        — group by event source column\n  - \"properties.X\"  — group by JSON property X",
+                    "description": "GroupBy lists the analytics group_by dimensions.\n  - \"source\"        \u2014 group by event source column\n  - \"properties.X\"  \u2014 group by JSON property X",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "group_by_property": {
-                    "description": "GroupByProperty is the property name in event.properties to group by before aggregating.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.\n\nDeprecated: prefer GroupBy []string{\"properties.\u003cX\u003e\"} for parity with\nother analytics endpoints. ToUsageParams translates this field into\nGroupBy when GroupBy is otherwise empty.",
+                    "description": "GroupByProperty is the property name in event.properties to group by before aggregating.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.\n\nDeprecated: prefer GroupBy []string{\"properties.<X>\"} for parity with\nother analytics endpoints. ToUsageParams translates this field into\nGroupBy when GroupBy is otherwise empty.",
                     "type": "string"
                 },
                 "multiplier": {
@@ -18552,7 +18699,7 @@
                     }
                 },
                 "trial_period_days": {
-                    "description": "TrialPeriodDays: nil = inherit from plan prices, 0 = no trial, \u003e0 = override in days.",
+                    "description": "TrialPeriodDays: nil = inherit from plan prices, 0 = no trial, >0 = override in days.",
                     "type": "integer"
                 }
             }
@@ -19009,7 +19156,7 @@
                     "type": "string"
                 },
                 "recalculated_invoice_id": {
-                    "description": "recalculated_invoice_id is the ID of the replacement invoice created when this invoice was voided and recalculated.\nWhen set, it forms a parent→child link from this (voided) invoice to the new replacement invoice.",
+                    "description": "recalculated_invoice_id is the ID of the replacement invoice created when this invoice was voided and recalculated.\nWhen set, it forms a parent\u2192child link from this (voided) invoice to the new replacement invoice.",
                     "type": "string"
                 },
                 "refunded_amount": {
@@ -19034,6 +19181,14 @@
                 "subtotal": {
                     "description": "subtotal is the sum of all line items before any taxes, discounts, or additional fees",
                     "type": "string"
+                },
+                "tax_exemption_reason_code": {
+                    "description": "tax_exemption_reason_code is why no tax was charged; null only when tax was actually charged.",
+                    "$ref": "#/definitions/types.TaxExemptionReasonCode"
+                },
+                "tax_summary": {
+                    "description": "tax_summary breaks total_tax down by behavior and states why no tax was charged, when\nnone was. Set by WithTaxes once Taxes and TaxExemptionReasonCode are both known.",
+                    "$ref": "#/definitions/TaxSummary"
                 },
                 "taxes": {
                     "description": "tax_applied_records contains the tax applied records associated with this invoice",
@@ -19460,6 +19615,10 @@
                 "billing_model": {
                     "$ref": "#/definitions/types.BillingModel"
                 },
+                "bucket_size": {
+                    "description": "BucketSize overrides the windowing used to turn this meter's usage into\nbillable units for this subscription. See CreatePriceRequest.BucketSize.",
+                    "$ref": "#/definitions/types.WindowSize"
+                },
                 "price_id": {
                     "description": "PriceID references the plan price to override",
                     "type": "string"
@@ -19798,6 +19957,10 @@
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
                     "type": "integer",
                     "default": 1
+                },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price: the meter\naggregates within each window and the window results are summed. Empty\nmeans unbucketed. Only valid on USAGE prices whose meter aggregates MAX\nor SUM. Resolved through ResolveBucketSize, never read directly.",
+                    "$ref": "#/definitions/types.WindowSize"
                 },
                 "conversion_rate": {
                     "description": "ConversionRate is the conversion rate of the price unit to the fiat currency",
@@ -20395,7 +20558,7 @@
             "type": "object",
             "properties": {
                 "action": {
-                    "description": "Action is \"add\" or \"remove\". Defaults to \"add\" when omitted — fully backward-compatible.",
+                    "description": "Action is \"add\" or \"remove\". Defaults to \"add\" when omitted \u2014 fully backward-compatible.",
                     "$ref": "#/definitions/InheritanceAction"
                 },
                 "external_customer_ids_to_inherit_subscription": {
@@ -21170,6 +21333,10 @@
                 "billing_period_count": {
                     "type": "integer"
                 },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price. See\nCreatePriceRequest.BucketSize.",
+                    "$ref": "#/definitions/types.WindowSize"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -21637,7 +21804,7 @@
                     "type": "string"
                 },
                 "plan_prices_out_of_sync": {
-                    "description": "PlanPricesOutOfSync is true when the subscription's synced_price_sequence\nis behind the plan's current max prices.sequence — i.e. plan-price\nchanges have not yet been reconciled into this subscription's line items.",
+                    "description": "PlanPricesOutOfSync is true when the subscription's synced_price_sequence\nis behind the plan's current max prices.sequence \u2014 i.e. plan-price\nchanges have not yet been reconciled into this subscription's line items.",
                     "type": "boolean"
                 },
                 "proration_behavior": {
@@ -21966,6 +22133,9 @@
                 "tax_association_id": {
                     "type": "string"
                 },
+                "tax_behavior": {
+                    "$ref": "#/definitions/types.TaxBehavior"
+                },
                 "tax_rate": {
                     "$ref": "#/definitions/TaxRateResponse"
                 },
@@ -22041,6 +22211,10 @@
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
+                "tax_behavior": {
+                    "description": "TaxBehavior is inclusive or exclusive; null on tenant/customer-level rows,\nresolved when copied down to a subscription",
+                    "$ref": "#/definitions/types.TaxBehavior"
+                },
                 "tax_rate": {
                     "$ref": "#/definitions/TaxRateResponse"
                 },
@@ -22073,6 +22247,20 @@
                 },
                 "priority": {
                     "type": "integer"
+                },
+                "tax_behavior": {
+                    "$ref": "#/definitions/types.TaxBehavior"
+                }
+            }
+        },
+        "TaxExemptionSummary": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "reason_code": {
+                    "$ref": "#/definitions/types.TaxExemptionReasonCode"
                 }
             }
         },
@@ -22099,6 +22287,9 @@
                 "priority": {
                     "type": "integer"
                 },
+                "tax_behavior": {
+                    "$ref": "#/definitions/types.TaxBehavior"
+                },
                 "tax_rate_code": {
                     "type": "string"
                 }
@@ -22120,9 +22311,6 @@
                     "type": "string"
                 },
                 "environment_id": {
-                    "type": "string"
-                },
-                "fixed_value": {
                     "type": "string"
                 },
                 "id": {
@@ -22159,6 +22347,23 @@
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "TaxSummary": {
+            "type": "object",
+            "properties": {
+                "exclusive_tax": {
+                    "type": "string"
+                },
+                "exemption": {
+                    "$ref": "#/definitions/TaxExemptionSummary"
+                },
+                "inclusive_tax": {
+                    "type": "string"
+                },
+                "total_tax": {
                     "type": "string"
                 }
             }
@@ -22488,6 +22693,10 @@
                     "description": "name is the updated name or company name for the customer",
                     "type": "string"
                 },
+                "tax_treatment": {
+                    "description": "tax_treatment is the updated tax treatment for the customer",
+                    "$ref": "#/definitions/types.TaxTreatment"
+                },
                 "timezone": {
                     "description": "timezone is the updated IANA timezone name for the customer (e.g. \"Asia/Kolkata\", \"America/New_York\")",
                     "type": "string"
@@ -22501,7 +22710,7 @@
                     "$ref": "#/definitions/types.EntitlementAggregationMode"
                 },
                 "clear_grant_config": {
-                    "description": "Grant config — nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).",
+                    "description": "Grant config \u2014 nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).",
                     "type": "boolean"
                 },
                 "config_value": {
@@ -22677,6 +22886,10 @@
                 "billing_model": {
                     "$ref": "#/definitions/types.BillingModel"
                 },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price. Changing it\nchanges the billable unit, so it versions the price rather than editing\nit in place. Send \"none\" to remove bucketing from the successor.",
+                    "$ref": "#/definitions/types.WindowSize"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -22804,6 +23017,10 @@
                 "billing_model": {
                     "$ref": "#/definitions/types.BillingModel"
                 },
+                "bucket_size": {
+                    "description": "BucketSize overrides the windowing used to turn this meter's usage into\nbillable units for this line item. See CreatePriceRequest.BucketSize.",
+                    "$ref": "#/definitions/types.WindowSize"
+                },
                 "commitment_amount": {
                     "description": "Commitment fields",
                     "type": "number"
@@ -22913,7 +23130,7 @@
                     "type": "string"
                 },
                 "tax_rate_status": {
-                    "description": "tax_rate_type determines how the tax is calculated (\"percentage\" or \"fixed\")",
+                    "description": "tax_rate_status is the updated status of the tax rate",
                     "$ref": "#/definitions/types.TaxRateStatus"
                 }
             }
@@ -23123,7 +23340,7 @@
                     "type": "string"
                 },
                 "properties": {
-                    "description": "Stores property values for flexible grouping (e.g., org_id -\u003e \"org123\")",
+                    "description": "Stores property values for flexible grouping (e.g., org_id -> \"org123\")",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -23188,7 +23405,7 @@
             "type": "object",
             "properties": {
                 "buckets": {
-                    "description": "Buckets lists every commitment bucket this (possibly rolled-up) window\noverlaps — only populated when BreakdownBucket=true and the line item has\nCommitmentTimeBuckets. A coarse window can overlap more than one bucket, and\nonly partially, so this is a list. Empty when the window touches no bucket.\nIt is an informational HINT only: the point's single cost/computed_* totals\nmix all overlapped buckets and out-of-bucket time and CANNOT be split per\nbucket — read bucket_summaries for exact per-bucket cost.",
+                    "description": "Buckets lists every commitment bucket this (possibly rolled-up) window\noverlaps \u2014 only populated when BreakdownBucket=true and the line item has\nCommitmentTimeBuckets. A coarse window can overlap more than one bucket, and\nonly partially, so this is a list. Empty when the window touches no bucket.\nIt is an informational HINT only: the point's single cost/computed_* totals\nmix all overlapped buckets and out-of-bucket time and CANNOT be split per\nbucket \u2014 read bucket_summaries for exact per-bucket cost.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/PointBucket"
@@ -23924,6 +24141,10 @@
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
+                "tax_treatment": {
+                    "description": "TaxTreatment is the customer's tax treatment \u2014 taxable (default) or exempt.",
+                    "$ref": "#/definitions/types.TaxTreatment"
+                },
                 "tenant_id": {
                     "type": "string"
                 },
@@ -24268,8 +24489,9 @@
             "type": "object",
             "properties": {
                 "bucket_size": {
-                    "description": "BucketSize is used only for MAX aggregation when windowed aggregation is needed\nIt defines the size of time windows to calculate max values within",
-                    "$ref": "#/definitions/types.WindowSize"
+                    "description": "BucketSize windows the aggregation: the meter aggregates within each window\nand the window results are summed.\n\nDeprecated: configure bucket_size on the price instead. Still read and\nhonoured \u2014 meters that carry it keep billing exactly as before, and new\nmeters may still set it \u2014 but a price-level bucket_size takes precedence\nand is the only place new configuration should go. See\nprice.ResolveBucketSize.",
+                    "$ref": "#/definitions/types.WindowSize",
+                    "x-speakeasy-deprecation-message": "Deprecated: set bucket_size on the price instead. Still honoured for existing meters."
                 },
                 "expression": {
                     "description": "Expression is an optional CEL expression to compute per-event quantity from event.properties.\nWhen set, it replaces Field-based extraction. Property names are used directly (e.g., token * duration * pixel).",
@@ -24280,7 +24502,7 @@
                     "type": "string"
                 },
                 "group_by": {
-                    "description": "GroupBy is the property name in event.properties to group by before aggregating.\nCurrently only supported for MAX aggregation with bucket_size.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.",
+                    "description": "GroupBy is the property name in event.properties to group by before aggregating.\nRequires MAX aggregation. Windowing comes from the price, so this no longer\nimplies a meter-level bucket_size.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.",
                     "type": "string"
                 },
                 "multiplier": {
@@ -24424,6 +24646,10 @@
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
                     "type": "integer",
                     "default": 1
+                },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price: the meter\naggregates within each window and the window results are summed. Empty\nmeans unbucketed. Only valid on USAGE prices whose meter aggregates MAX\nor SUM. Resolved through ResolveBucketSize, never read directly.",
+                    "$ref": "#/definitions/types.WindowSize"
                 },
                 "conversion_rate": {
                     "description": "ConversionRate is the conversion rate of the price unit to the fiat currency",
@@ -26552,19 +26778,19 @@
                     }
                 },
                 "period_end_gte": {
-                    "description": "period_end_gte filters invoices with period_end \u003e= value",
+                    "description": "period_end_gte filters invoices with period_end >= value",
                     "type": "string"
                 },
                 "period_end_lte": {
-                    "description": "period_end_lte filters invoices with period_end \u003c= value",
+                    "description": "period_end_lte filters invoices with period_end <= value",
                     "type": "string"
                 },
                 "period_start_gte": {
-                    "description": "period_start_gte filters invoices with period_start \u003e= value",
+                    "description": "period_start_gte filters invoices with period_start >= value",
                     "type": "string"
                 },
                 "period_start_lte": {
-                    "description": "period_start_lte filters invoices with period_start \u003c= value",
+                    "description": "period_start_lte filters invoices with period_start <= value",
                     "type": "string"
                 },
                 "skip_line_items": {
@@ -26628,6 +26854,10 @@
                 "service_period_custom_fields": {
                     "description": "ServicePeriodCustomFields names the Zoho custom fields that receive the\ninvoice's service start and end dates.",
                     "$ref": "#/definitions/types.ServicePeriodCustomFields"
+                },
+                "submit_for_approval": {
+                    "description": "SubmitForApproval submits the synced invoice into the merchant's Zoho Books approval\nflow before recording payment. Zoho rejects payments on draft invoices, and merchants\nconfigure a Zoho auto-approval rule for FlexPrice-sent invoices, so we submit, wait for\nthat rule to fire, then pay.",
+                    "type": "boolean"
                 }
             }
         },
@@ -27204,7 +27434,7 @@
             "type": "object",
             "properties": {
                 "conversion_rate": {
-                    "description": "Multiplier: reporting_unit_value = unit_value * conversion_rate; must be \u003e 0",
+                    "description": "Multiplier: reporting_unit_value = unit_value * conversion_rate; must be > 0",
                     "type": "number"
                 },
                 "unit_plural": {
@@ -27335,6 +27565,10 @@
                     "description": "Optional prefix for S3 keys (e.g., \"flexprice-exports/\")",
                     "type": "string"
                 },
+                "provider": {
+                    "description": "Empty means S3 for back-compat.",
+                    "$ref": "#/definitions/types.SecretProvider"
+                },
                 "region": {
                     "description": "AWS region (e.g., \"us-west-2\")",
                     "type": "string"
@@ -27416,6 +27650,7 @@
                 "flexprice",
                 "stripe",
                 "s3",
+                "gcs",
                 "hubspot",
                 "razorpay",
                 "chargebee",
@@ -27431,12 +27666,14 @@
                 "azure_marketplace"
             ],
             "x-enum-comments": {
+                "SecretProviderGCS": "supports multiple connections per environment, service-account JSON creds",
                 "SecretProviderS3": "supports multiple connections per environment"
             },
             "x-enum-varnames": [
                 "SecretProviderFlexPrice",
                 "SecretProviderStripe",
                 "SecretProviderS3",
+                "SecretProviderGCS",
                 "SecretProviderHubSpot",
                 "SecretProviderRazorpay",
                 "SecretProviderChargebee",
@@ -27574,7 +27811,7 @@
                     }
                 },
                 "effective_date_for_update": {
-                    "description": "EffectiveDateForUpdate selects subscriptions that need a billing-period pass on or before this time:\ncurrent_period_end \u003c= date OR (cancel_at IS NOT NULL AND cancel_at \u003c= date).\nWhen nil, period/cancel cutoff logic is not applied by this field (see TimeRangeFilter for legacy period-end filtering).",
+                    "description": "EffectiveDateForUpdate selects subscriptions that need a billing-period pass on or before this time:\ncurrent_period_end <= date OR (cancel_at IS NOT NULL AND cancel_at <= date).\nWhen nil, period/cancel cutoff logic is not applied by this field (see TimeRangeFilter for legacy period-end filtering).",
                     "type": "string"
                 },
                 "end_time": {
@@ -27660,7 +27897,7 @@
                     }
                 },
                 "trial_end_due_lte": {
-                    "description": "TrialEndDueLTE, when set, restricts to subscriptions with trial_end not nil and trial_end \u003c= trial_end_due_lte.\nUse with subscription_status trialing for trial-end cron processing.",
+                    "description": "TrialEndDueLTE, when set, restricts to subscriptions with trial_end not nil and trial_end <= trial_end_due_lte.\nUse with subscription_status trialing for trial-end cron processing.",
                     "type": "string"
                 },
                 "with_coupon_associations": {
@@ -27873,7 +28110,7 @@
                     "$ref": "#/definitions/types.EntitySyncConfig"
                 },
                 "price": {
-                    "description": "Price sync (Stripe only) — outbound only, see Validate()",
+                    "description": "Price sync (Stripe only) \u2014 outbound only, see Validate()",
                     "$ref": "#/definitions/types.EntitySyncConfig"
                 },
                 "quote": {
@@ -27912,6 +28149,28 @@
             "x-enum-varnames": [
                 "TaskTypeImport",
                 "TaskTypeExport"
+            ]
+        },
+        "types.TaxBehavior": {
+            "type": "string",
+            "enum": [
+                "inclusive",
+                "exclusive"
+            ],
+            "x-enum-varnames": [
+                "TaxBehaviorInclusive",
+                "TaxBehaviorExclusive"
+            ]
+        },
+        "types.TaxExemptionReasonCode": {
+            "type": "string",
+            "enum": [
+                "customer_exempt",
+                "no_tax_configured"
+            ],
+            "x-enum-varnames": [
+                "TaxExemptionReasonCustomerExempt",
+                "TaxExemptionReasonNoTaxConfigured"
             ]
         },
         "types.TaxRateEntityType": {
@@ -27956,12 +28215,21 @@
         "types.TaxRateType": {
             "type": "string",
             "enum": [
-                "percentage",
-                "fixed"
+                "percentage"
             ],
             "x-enum-varnames": [
-                "TaxRateTypePercentage",
-                "TaxRateTypeFixed"
+                "TaxRateTypePercentage"
+            ]
+        },
+        "types.TaxTreatment": {
+            "type": "string",
+            "enum": [
+                "taxable",
+                "exempt"
+            ],
+            "x-enum-varnames": [
+                "TaxTreatmentTaxable",
+                "TaxTreatmentExempt"
             ]
         },
         "types.TimeOfDayBucket": {
@@ -28080,7 +28348,7 @@
                     "type": "string"
                 },
                 "filters": {
-                    "description": "Generic predicate and ordering escape hatch, for comparisons that have no dedicated field\nbelow — a range such as period_end at or after a cutoff goes here.",
+                    "description": "Generic predicate and ordering escape hatch, for comparisons that have no dedicated field\nbelow \u2014 a range such as period_end at or after a cutoff goes here.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/types.FilterCondition"
@@ -29306,6 +29574,9 @@
         "webhookDto.SubscriptionWebhookPayload": {
             "type": "object",
             "properties": {
+                "customer": {
+                    "$ref": "#/definitions/webhookDto.Customer"
+                },
                 "event_type": {
                     "$ref": "#/definitions/types.WebhookEventName"
                 },
@@ -29447,6 +29718,9 @@
                 "alert": {
                     "$ref": "#/definitions/webhookDto.WalletAlertInfo"
                 },
+                "customer": {
+                    "$ref": "#/definitions/webhookDto.Customer"
+                },
                 "event_type": {
                     "$ref": "#/definitions/types.WebhookEventName"
                 },
@@ -29458,7 +29732,7 @@
     },
     "securityDefinitions": {
         "ApiKeyAuth": {
-            "description": "Enter your API key in the format *x-api-key \u0026lt;api-key\u0026gt;**",
+            "description": "Enter your API key in the format *x-api-key &lt;api-key&gt;**",
             "type": "apiKey",
             "name": "x-api-key",
             "in": "header"
