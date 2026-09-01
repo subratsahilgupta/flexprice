@@ -480,22 +480,35 @@ func splitInvoicePeriodByLineItemCadence(
 	if expected < 1 {
 		expected = 1
 	}
-	// Emit exactly `expected` windows. Force the LAST window to end at
-	// invoicePeriodEnd so any drift between item-cadence months and the
-	// invoice period's calendar length (e.g. Q3 = 92 UTC days vs 3×30-day
-	// UTC-anchored months) is absorbed into the last window — instead of
-	// leaking as a trailing 1-day sliver line item.
+	// Anchor at sub.BillingAnchor — the same anchor NextBillingDate uses
+	// to compute the sub's own period boundaries. If we anchored at
+	// invoicePeriodStart instead, its day-of-month has already been
+	// calendar-clamped for months < 31 days (e.g. Sep 30 loses the sub's
+	// day-31 preference), and monthly steps would never climb back to 31
+	// — producing a trailing 1-day sliver window against an invoice period
+	// that DOES end on 31. Anchoring at sub.BillingAnchor makes the
+	// N×itemPeriod walk land exactly on invoicePeriodEnd by construction.
+	// Fallback to invoicePeriodStart preserves behavior when the sub has
+	// no anchor set (older test fixtures / degenerate data).
+	anchor := invoicePeriodStart
+	if !sub.BillingAnchor.IsZero() {
+		anchor = sub.BillingAnchor
+	}
 	windows := make([]periodWindow, 0, expected)
 	current := invoicePeriodStart
 	for i := 0; i < expected; i++ {
 		var next time.Time
 		if i == expected-1 {
+			// Last window ends exactly at invoicePeriodEnd. With a correct
+			// anchor this equals what NextBillingDate would return anyway;
+			// forcing it also defends against misconfigured anchors so we
+			// never emit a trailing sliver.
 			next = invoicePeriodEnd
 		} else {
 			var err error
 			next, err = types.NextBillingDate(&types.NextBillingDateParams{
 				CurrentPeriodStart: current,
-				BillingAnchor:      invoicePeriodStart,
+				BillingAnchor:      anchor,
 				Unit:               itemCount,
 				Period:             lineItem.BillingPeriod,
 				Timezone:           sub.Timezone,
@@ -503,8 +516,6 @@ func splitInvoicePeriodByLineItemCadence(
 			if err != nil {
 				return nil, err
 			}
-			// If NextBillingDate would jump past (or exactly to) invoicePeriodEnd,
-			// or fail to advance, collapse the remaining iterations into this window.
 			if !next.After(current) || !next.Before(invoicePeriodEnd) {
 				next = invoicePeriodEnd
 			}
