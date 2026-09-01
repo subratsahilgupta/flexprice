@@ -333,6 +333,16 @@ type AlertSettings struct {
 }
 
 func (at *AlertSettings) Validate() error {
+	// Unset type defaults to and is persisted as absolute — pre-existing wallet/tenant
+	// configs have no type stored and must keep evaluating as absolute without a migration.
+	if at.Type == "" {
+		at.Type = AlertThresholdTypeAbsolute
+	}
+	if at.Type != AlertThresholdTypeAbsolute && at.Type != AlertThresholdTypePercentage {
+		return ierr.NewError("invalid threshold type").
+			WithHint("Please provide a valid threshold type: absolute or percentage").
+			Mark(ierr.ErrValidation)
+	}
 	// If alert_enabled is true, at least one threshold must be provided
 	if at.AlertEnabled != nil && *at.AlertEnabled {
 		if at.Critical == nil && at.Warning == nil && at.Info == nil {

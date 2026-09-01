@@ -3499,6 +3499,7 @@ func (s *walletService) resolvePercentageBase(ctx context.Context, w *wallet.Wal
 	txFilter.WalletID = &w.ID
 	txFilter.Type = lo.ToPtr(types.TransactionTypeCredit)
 	txFilter.TransactionStatus = lo.ToPtr(types.TransactionStatusCompleted)
+	txFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
 	if windowStart != nil {
 		txFilter.TimeRangeFilter = &types.TimeRangeFilter{StartTime: windowStart}
 	}

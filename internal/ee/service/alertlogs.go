@@ -384,13 +384,13 @@ var alertWebhookMapping = map[types.AlertType]map[types.AlertState]WebhookEventM
 	},
 	types.AlertTypeLowCreditBalance: {
 		types.AlertStateInAlarm: {
-			WebhookEvent: types.WebhookEventWalletCreditBalanceDropped, // "wallet.ongoing_balance.dropped"
+			WebhookEvent: types.WebhookEventWalletCreditBalanceDropped, // "wallet.credit_balance.dropped"
 		},
 		types.AlertStateWarning: {
-			WebhookEvent: types.WebhookEventWalletCreditBalanceDropped, // "wallet.ongoing_balance.dropped"
+			WebhookEvent: types.WebhookEventWalletCreditBalanceDropped, // "wallet.credit_balance.dropped"
 		},
 		types.AlertStateInfo: {
-			WebhookEvent: types.WebhookEventWalletCreditBalanceDropped, // "wallet.ongoing_balance.dropped"
+			WebhookEvent: types.WebhookEventWalletCreditBalanceDropped, // "wallet.credit_balance.dropped"
 		},
 		types.AlertStateOk: {
 			WebhookEvent: types.WebhookEventWalletCreditBalanceRecovered, // "wallet.credit_balance.recovered"
