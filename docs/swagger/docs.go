@@ -4960,6 +4960,72 @@ const docTemplate = `{
                 "x-scope": "delete"
             }
         },
+        "/invoices/{id}/modify/execute": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Execute a modification on a draft invoice. Currently supports line item changes: add (bulk), update (one line item per call; the edit is versioned, so the line item id changes), and remove (bulk, soft delete). Totals are recalculated from the remaining line items; a manual edit marks the invoice as manually edited, which disables recompute.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Execute invoice modification",
+                "operationId": "executeInvoiceModify",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invoice ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Modification request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ExecuteInvoiceModifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/InvoiceModifyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "write"
+            }
+        },
         "/invoices/{id}/payment": {
             "put": {
                 "security": [
@@ -13672,6 +13738,25 @@ const docTemplate = `{
                 }
             }
         },
+        "AddLineItemRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "display_name",
+                "quantity"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                }
+            }
+        },
         "AddonAssociationResponse": {
             "type": "object",
             "properties": {
@@ -17889,6 +17974,20 @@ const docTemplate = `{
                 }
             }
         },
+        "ExecuteInvoiceModifyRequest": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "line_item_params": {
+                    "$ref": "#/definitions/InvoiceModifyLineItemParams"
+                },
+                "type": {
+                    "$ref": "#/definitions/InvoiceModifyType"
+                }
+            }
+        },
         "ExecuteSubscriptionModifyRequest": {
             "type": "object",
             "required": [
@@ -19128,6 +19227,66 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "InvoiceModifyLineItemAction": {
+            "type": "string",
+            "enum": [
+                "add",
+                "update",
+                "remove"
+            ],
+            "x-enum-varnames": [
+                "InvoiceModifyLineItemActionAdd",
+                "InvoiceModifyLineItemActionUpdate",
+                "InvoiceModifyLineItemActionRemove"
+            ]
+        },
+        "InvoiceModifyLineItemParams": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "action": {
+                    "$ref": "#/definitions/InvoiceModifyLineItemAction"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AddLineItemRequest"
+                    }
+                },
+                "line_item_id": {
+                    "description": "LineItemID and Update are required for action 'update' (one line item per call;\nthe update is versioned, so the item id changes after each edit).",
+                    "type": "string"
+                },
+                "line_item_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "update": {
+                    "$ref": "#/definitions/UpdateLineItemRequest"
+                }
+            }
+        },
+        "InvoiceModifyResponse": {
+            "type": "object",
+            "properties": {
+                "invoice": {
+                    "$ref": "#/definitions/InvoiceResponse"
+                }
+            }
+        },
+        "InvoiceModifyType": {
+            "type": "string",
+            "enum": [
+                "line_item"
+            ],
+            "x-enum-varnames": [
+                "InvoiceModifyTypeLineItem"
+            ]
         },
         "InvoicePreview": {
             "type": "object",
@@ -23157,6 +23316,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/types.Metadata"
                         }
                     ]
+                }
+            }
+        },
+        "UpdateLineItemRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
                 }
             }
         },
@@ -27320,6 +27493,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/types.ServicePeriodCustomFields"
                         }
                     ]
+                },
+                "submit_for_approval": {
+                    "description": "SubmitForApproval submits the synced invoice into the merchant's Zoho Books approval\nflow before recording payment. Zoho rejects payments on draft invoices, and merchants\nconfigure a Zoho auto-approval rule for FlexPrice-sent invoices, so we submit, wait for\nthat rule to fire, then pay.",
+                    "type": "boolean"
                 }
             }
         },

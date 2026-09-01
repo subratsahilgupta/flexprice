@@ -545,6 +545,19 @@ definitions:
       updated_by:
         type: string
     type: object
+  AddLineItemRequest:
+    properties:
+      amount:
+        type: string
+      display_name:
+        type: string
+      quantity:
+        type: string
+    required:
+    - amount
+    - display_name
+    - quantity
+    type: object
   AddonAssociationResponse:
     properties:
       addon:
@@ -3644,6 +3657,15 @@ definitions:
       requestId:
         type: string
     type: object
+  ExecuteInvoiceModifyRequest:
+    properties:
+      line_item_params:
+        $ref: '#/definitions/InvoiceModifyLineItemParams'
+      type:
+        $ref: '#/definitions/InvoiceModifyType'
+    required:
+    - type
+    type: object
   ExecuteSubscriptionModifyRequest:
     properties:
       addon_params:
@@ -4576,6 +4598,49 @@ definitions:
           $ref: '#/definitions/UsageBreakdownItem'
         type: array
     type: object
+  InvoiceModifyLineItemAction:
+    enum:
+    - add
+    - update
+    - remove
+    type: string
+    x-enum-varnames:
+    - InvoiceModifyLineItemActionAdd
+    - InvoiceModifyLineItemActionUpdate
+    - InvoiceModifyLineItemActionRemove
+  InvoiceModifyLineItemParams:
+    properties:
+      action:
+        $ref: '#/definitions/InvoiceModifyLineItemAction'
+      items:
+        items:
+          $ref: '#/definitions/AddLineItemRequest'
+        type: array
+      line_item_id:
+        description: |-
+          LineItemID and Update are required for action 'update' (one line item per call;
+          the update is versioned, so the item id changes after each edit).
+        type: string
+      line_item_ids:
+        items:
+          type: string
+        type: array
+      update:
+        $ref: '#/definitions/UpdateLineItemRequest'
+    required:
+    - action
+    type: object
+  InvoiceModifyResponse:
+    properties:
+      invoice:
+        $ref: '#/definitions/InvoiceResponse'
+    type: object
+  InvoiceModifyType:
+    enum:
+    - line_item
+    type: string
+    x-enum-varnames:
+    - InvoiceModifyTypeLineItem
   InvoicePreview:
     properties:
       currency:
@@ -7563,6 +7628,15 @@ definitions:
         allOf:
         - $ref: '#/definitions/types.Metadata'
         description: Invoice metadata will be overridden with the request metadata
+    type: object
+  UpdateLineItemRequest:
+    properties:
+      amount:
+        type: string
+      display_name:
+        type: string
+      quantity:
+        type: string
     type: object
   UpdatePaymentRequest:
     properties:
@@ -15971,6 +16045,53 @@ paths:
       tags:
       - Invoices
       x-scope: delete
+  /invoices/{id}/modify/execute:
+    post:
+      consumes:
+      - application/json
+      description: 'Execute a modification on a draft invoice. Currently supports
+        line item changes: add (bulk), update (one line item per call; the edit is
+        versioned, so the line item id changes), and remove (bulk, soft delete). Totals
+        are recalculated from the remaining line items; a manual edit marks the invoice
+        as manually edited, which disables recompute.'
+      operationId: executeInvoiceModify
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Modification request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/ExecuteInvoiceModifyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/InvoiceModifyResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Resource not found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Execute invoice modification
+      tags:
+      - Invoices
+      x-scope: write
   /invoices/{id}/payment:
     put:
       consumes:
