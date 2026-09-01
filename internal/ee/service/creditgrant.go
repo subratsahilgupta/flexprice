@@ -690,25 +690,12 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 
 			duration := lo.FromPtr(grant.ExpirationDuration)
 
-			switch lo.FromPtr(grant.ExpirationDurationUnit) {
-
-			case types.CreditGrantExpiryDurationUnitDays:
-				expiry := effectiveDate.Add(time.Duration(duration) * 24 * time.Hour)
-				expiryDate = lo.ToPtr(expiry)
-
-			case types.CreditGrantExpiryDurationUnitWeeks:
-				expiry := effectiveDate.Add(time.Duration(duration) * 7 * 24 * time.Hour)
-				expiryDate = lo.ToPtr(expiry)
-
-			case types.CreditGrantExpiryDurationUnitMonths:
-				expiry := effectiveDate.AddDate(0, duration, 0)
-				expiryDate = lo.ToPtr(expiry)
-
-			case types.CreditGrantExpiryDurationUnitYears:
-				expiry := effectiveDate.AddDate(duration, 0, 0)
-				expiryDate = lo.ToPtr(expiry)
-
-			default:
+			// The boundary is computed in the subscription's timezone, matching how the grant's
+			// own period end is derived. Without this an IST customer whose period rolls on the
+			// 1st local would see a one-month expiry land three days early, because the stored
+			// UTC instant falls on the 28th.
+			expiry, ok := types.AddExpiryDuration(effectiveDate, duration, lo.FromPtr(grant.ExpirationDurationUnit), subscription.Timezone)
+			if !ok {
 				return nil, ierr.NewError("invalid expiration duration unit").
 					WithHint("Please provide a valid expiration duration unit").
 					WithReportableDetails(map[string]interface{}{
@@ -716,6 +703,7 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 					}).
 					Mark(ierr.ErrValidation)
 			}
+			expiryDate = lo.ToPtr(expiry)
 		}
 	}
 

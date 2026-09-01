@@ -1,4 +1,7 @@
 {{- if .Values.migration.enabled }}
+{{- if and .Values.migration.steps.ent .Values.migration.steps.dbmate }}
+{{- fail "migration.steps.ent and migration.steps.dbmate are both true. They are two implementations of the same step: dbmate applies the reviewed .sql files in migrations/versioned/postgres, Ent auto-migration infers DDL from a live schema diff. Set exactly one. Upgrading from a chart older than 1.4.0: remove any explicit `migration.steps.ent: true` from your values." }}
+{{- end }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -74,15 +77,33 @@ metadata:
       northamerica-northeast2 bring-up — the migration had failed once, and
       every later sync silently declined to try again.
 
-      ttlSecondsAfterFinished still bounds the window, but only after an hour;
-      this makes the retry immediate. Logs are lost on failure, which is the
-      accepted trade — the Job is re-runnable and the pod logs are the place to
-      look while it is still running.
+      That reasoning still holds, but `hook-failed` is no longer how it is
+      satisfied. It deleted the Job -- and its logs -- the instant the migration
+      ended, so the one artefact explaining WHY a migration failed disappeared
+      before anyone could read it. During the 2026-08-31 staging bring-up the
+      only way to see a failure was to race the deletion with `kubectl logs`.
+      At 3am, against production, nobody wins that race.
+
+      The default is now `before-hook-creation`: the previous Job is removed
+      just before the next one is created, which prevents the same-name
+      collision described above WITHOUT destroying the evidence. A finished Job
+      and its pod survive until ttlSecondsAfterFinished (1h) or the next
+      migration, whichever comes first.
+
+      Set migration.hookDeletePolicy back to "hook-succeeded,hook-failed" to
+      restore the previous behaviour for a deployment that needs it.
+
+      Note this does NOT make a re-Sync re-run migrations. ArgoCD tracks hooks
+      per revision, so an unchanged revision skips the hook whether or not a Job
+      object is present. Migrations run when the image or config changes.
     */}}
-    "helm.sh/hook-delete-policy": hook-succeeded,hook-failed
+    "helm.sh/hook-delete-policy": {{ .Values.migration.hookDeletePolicy | default "before-hook-creation" | quote }}
     {{- end }}
 spec:
-  backoffLimit: {{ .Values.migration.backoffLimit | default 3 }}
+  {{- /* NOT `| default 3`: Helm's default treats 0 as empty, so an explicit
+         backoffLimit: 0 -- the value that stops a killed migration from being
+         retried -- would silently render as 3. */}}
+  backoffLimit: {{ if kindIs "invalid" .Values.migration.backoffLimit }}3{{ else }}{{ .Values.migration.backoffLimit }}{{ end }}
   {{- if .Values.migration.activeDeadlineSeconds }}
   activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
   {{- end }}
@@ -328,8 +349,52 @@ spec:
               memory: "128Mi"
         {{- end }}
 
+        {{- if .Values.migration.steps.dbmate }}
+        # ── 7. Apply versioned PostgreSQL migrations (dbmate) ────────────────
+        #
+        # Applies the .sql files in migrations/versioned/postgres that this
+        # database has not recorded yet, and records them in schema_migrations.
+        # Replaces the Ent auto-migration step below.
+        #
+        # `--status` runs first so the log states what is pending BEFORE
+        # anything is applied. When a migration fails, that listing is the only
+        # record of what the Job intended to do.
+        #
+        # The command sets lock_timeout=3s and statement_timeout=0 on the
+        # connection itself (see cmd/migrate/postgres_up.go): a blocked ALTER
+        # must give up rather than queue every query in the database behind it
+        # (RCA: prod DDL-lock incident 2026-06-25), while a CREATE INDEX
+        # CONCURRENTLY must not be killed part-way, which would leave an
+        # INVALID index that nothing retries.
+        - name: run-postgres-migrations
+          image: "{{ include "flexprice.image" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              /app/migrate postgres up --status
+              /app/migrate postgres up
+              echo "✅ PostgreSQL migrations complete"
+          env:
+            {{- include "flexprice.env" . | nindent 12 }}
+          {{- if or (not .Values.env) .Values.kafkaConfig.tlsCASecret.name }}
+          volumeMounts:
+            {{- if not .Values.env }}
+            - name: config
+              mountPath: /app/config/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            {{- end }}
+            {{- include "flexprice.kafkaTLSVolumeMounts" . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+        {{- end }}
+
         {{- if .Values.migration.steps.ent }}
-        # ── 7. Run Ent framework migrations ──────────────────────────────────
+        # ── 7b. Run Ent framework migrations (legacy) ────────────────────────
         - name: run-ent-migrations
           image: "{{ include "flexprice.image" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -364,6 +429,67 @@ spec:
             {{- /* This step receives FLEXPRICE_KAFKA_TLS_CA_CERT_FILE via
                    "flexprice.env"; mount the CA so the path it names always
                    resolves, rather than dangling. */}}
+            {{- include "flexprice.kafkaTLSVolumeMounts" . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+        {{- end }}
+
+        {{- if .Values.migration.steps.kafka }}
+        # ── Run Kafka migration: topic reconcile + allow-all ACL seed ─────────
+        # `migrate kafka` is the SOLE topic-creation path (the old separate
+        # create-kafka-topics CLI init container was removed -- it duplicated
+        # this step's coverage, hardcoded 10 topic names, and could drift from
+        # the binary's config.yaml `kafka.topics` map). It reconciles topics
+        # against the desired spec (create, partition growth, retention,
+        # FLEXPRICE_KAFKA_TOPICS) AND seeds the allow-all ACLs in one pass. Run
+        # it for EVERY kafka-enabled deploy so topic reconcile happens
+        # everywhere; the ACL seed is gated to SASL/SCRAM (MSK) internally, a
+        # no-op on plaintext and OAUTHBEARER clusters. SCRAM clusters (MSK)
+        # enforce ACLs once SASL is on; without an allow-all rule set, every
+        # client -- including the app itself -- is locked out the moment auth
+        # is enabled. OAUTHBEARER clusters use IAM-style authz, not Kafka
+        # ACLs, so the seed skips them.
+        #
+        # Extra client-declared topics used to be supported via
+        # migration.kafkaTopics.topics (CLI step, now removed). That path is
+        # gone: any topic not in config.yaml's `kafka.topics` map must now be
+        # added via FLEXPRICE_KAFKA_TOPICS (JSON) instead.
+        - name: run-kafka-migrate
+          image: "{{ include "flexprice.image" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Running Kafka migration (topics + ACLs)..."
+              MIGRATE_BINARY=""
+              if [ -f /app/migrate ] && [ -x /app/migrate ]; then
+                MIGRATE_BINARY="/app/migrate"
+              elif [ -f /app/bin/migrate ] && [ -x /app/bin/migrate ]; then
+                MIGRATE_BINARY="/app/bin/migrate"
+              else
+                echo "❌ Migration binary not found at /app/migrate or /app/bin/migrate"
+                exit 1
+              fi
+              echo "Using: ${MIGRATE_BINARY}"
+              {{- if .Values.migration.seedKafkaACLs }}
+              ${MIGRATE_BINARY} kafka --seed-acls || exit 1
+              {{- else }}
+              ${MIGRATE_BINARY} kafka || exit 1
+              {{- end }}
+              echo "✅ Kafka migration complete"
+          env:
+            {{- include "flexprice.env" . | nindent 12 }}
+          {{- if or (not .Values.env) .Values.kafkaConfig.tlsCASecret.name }}
+          volumeMounts:
+            {{- if not .Values.env }}
+            - name: config
+              mountPath: /app/config/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            {{- end }}
             {{- include "flexprice.kafkaTLSVolumeMounts" . | nindent 12 }}
           {{- end }}
           resources:
@@ -425,183 +551,6 @@ spec:
               memory: "32Mi"
         {{- end }}
 
-        {{- if .Values.migration.steps.kafka }}
-        # ── 9. Create Kafka topics ────────────────────────────────────────────
-        # Topics are NOT auto-created by the broker (autoCreateTopicsEnable: false).
-        # This init container creates all required topics idempotently.
-        - name: create-kafka-topics
-          image: "{{ if .Values.kafkaConfig.enabled }}bitnami/kafka:latest{{ else }}confluentinc/cp-kafka:{{ .Values.kafkaConfig.internal.image.tag | default "7.7.1" }}{{ end }}"
-          env:
-            # The JVM sizes its default max heap from the cgroup memory limit --
-            # roughly a quarter of it. At the 256Mi limit this container used to
-            # carry, that is ~64Mi, and the admin client exhausts it while
-            # reading broker metadata over TLS:
-            #
-            #   java.lang.OutOfMemoryError: Java heap space
-            #     at org.apache.kafka.common.network.NetworkReceive.readFrom
-            #   ERROR ... The AdminClient thread has exited. Call: createTopics
-            #
-            # Every topic then fails in turn, so the step reports errors per
-            # topic rather than one cause, and none of them mention memory.
-            # Setting the heap explicitly decouples it from the limit.
-            - name: KAFKA_HEAP_OPTS
-              value: {{ .Values.migration.kafkaTopics.heapOpts | default "-Xmx512m -Xms256m" | quote }}
-            {{- if and .Values.kafkaConfig.useSASL (ne .Values.kafkaConfig.saslMechanism "OAUTHBEARER") }}
-            # Injected rather than templated into the properties file, so the
-            # password is not readable in the rendered Job spec.
-            - name: KAFKA_SASL_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "flexprice.secretName" . }}
-                  key: kafka-sasl-password
-            {{- end }}
-          command:
-            - sh
-            - -c
-            - |
-              KAFKA_BROKER="{{ include "flexprice.kafkaBrokers" . }}"
-              echo "Creating Kafka topics on ${KAFKA_BROKER}..."
-
-              # cp-kafka uses /usr/bin/kafka-topics; bitnami uses kafka-topics.sh
-              KAFKA_TOPICS_CMD="kafka-topics"
-              if command -v kafka-topics.sh >/dev/null 2>&1; then
-                KAFKA_TOPICS_CMD="kafka-topics.sh"
-              fi
-
-              CMD_CONFIG=""
-              {{- if or .Values.kafkaConfig.useSASL .Values.kafkaConfig.tls }}
-              # Client config for the admin protocol.
-              #
-              # The app pods get SASL/TLS from their env, but kafka-topics is a
-              # separate JVM tool that reads NONE of that -- it needs a
-              # properties file. Without one it dials a SASL listener (MSK's
-              # 9096) with PLAINTEXT and no credentials.
-              #
-              # The failure does not look like auth. The TCP connect succeeds,
-              # so the wait-for-kafka port check passes and reports the broker
-              # ready; the handshake then never completes and the tool reports
-              #
-              #   Timed out waiting for a node assignment. Call: createTopics
-              #
-              # or, worse, reads the TLS server response as a Kafka frame
-              # length and allocates against it:
-              #
-              #   java.lang.OutOfMemoryError: Java heap space
-              #
-              # which sends you tuning the heap for a credentials problem.
-              CMD_CONFIG=/tmp/kafka-admin.properties
-              {{- if .Values.kafkaConfig.useSASL }}
-              cat > "${CMD_CONFIG}" <<'PROPS'
-              security.protocol={{ if .Values.kafkaConfig.tls }}SASL_SSL{{ else }}SASL_PLAINTEXT{{ end }}
-              sasl.mechanism={{ .Values.kafkaConfig.saslMechanism }}
-              PROPS
-              {{- $jaas := ternary "org.apache.kafka.common.security.scram.ScramLoginModule" "org.apache.kafka.common.security.plain.PlainLoginModule" (hasPrefix "SCRAM" .Values.kafkaConfig.saslMechanism) }}
-              # Written separately: the password comes from the environment and
-              # must not be baked into the rendered manifest, where it would be
-              # readable by anyone who can get the Job spec.
-              printf 'sasl.jaas.config=%s required username="%s" password="%s";\n' \
-                '{{ $jaas }}' \
-                '{{ .Values.kafkaConfig.saslUser }}' \
-                "${KAFKA_SASL_PASSWORD}" >> "${CMD_CONFIG}"
-              {{- else }}
-              cat > "${CMD_CONFIG}" <<'PROPS'
-              security.protocol=SSL
-              PROPS
-              {{- end }}
-              # The heredocs above are indented for template readability; strip
-              # it, or every key is parsed with leading spaces and ignored.
-              sed -i 's/^[[:space:]]*//' "${CMD_CONFIG}"
-              CMD_CONFIG="--command-config ${CMD_CONFIG}"
-              {{- end }}
-
-              # Count failures rather than swallowing them.
-              #
-              # `|| true` on its own makes this step report success no matter
-              # what: a run where the admin client died on the FIRST topic and
-              # created none still printed "✅ Kafka topics ready" and exited 0.
-              # The app then starts against a broker with no topics and, where
-              # auto-creation is off (the MSK default), fails at first publish
-              # -- a long way from the step that was actually at fault.
-              #
-              # --if-not-exists already makes a re-run a no-op, so a non-zero
-              # exit here means a real failure and not a pre-existing topic.
-              FAILED=0
-              # $1=topic $2=partitions $3=replication-factor, followed by zero
-              # or more "key=value" pairs turned into repeated --config flags
-              # (retention.ms, cleanup.policy, min.insync.replicas, ...).
-              create_topic() {
-                TOPIC=$1
-                PARTITIONS=${2:-1}
-                REPLICATION=${3:-1}
-                # All call sites below always pass topic/partitions/replication,
-                # so there are always >=3 positional args to drop here before
-                # collecting the optional trailing key=value config pairs.
-                shift 3
-                CONFIG_ARGS=""
-                for KV in "$@"; do
-                  CONFIG_ARGS="${CONFIG_ARGS} --config ${KV}"
-                done
-                echo "→ Creating topic: ${TOPIC} (partitions=${PARTITIONS}, replication=${REPLICATION}${CONFIG_ARGS:+, configs:${CONFIG_ARGS}})"
-                if ! $KAFKA_TOPICS_CMD --bootstrap-server "${KAFKA_BROKER}" ${CMD_CONFIG} \
-                  --create --if-not-exists \
-                  --topic "${TOPIC}" \
-                  --partitions "${PARTITIONS}" \
-                  --replication-factor "${REPLICATION}" \
-                  ${CONFIG_ARGS}; then
-                  echo "  ✗ FAILED to create ${TOPIC}"
-                  FAILED=$((FAILED + 1))
-                fi
-              }
-
-              # All built-in topics used by FlexPrice. These 10 calls are
-              # unconditional and always run with today's names/defaults —
-              # migration.kafkaTopics.topics (below) is purely additive, so
-              # leaving it empty (the default) changes nothing here.
-              create_topic "{{ .Values.kafkaConfig.topic }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-              create_topic "{{ .Values.kafkaConfig.topicLazy }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-              {{- with .Values.kafkaConfig.topicBulk }}
-              create_topic "{{ . }}" "{{ $.Values.migration.kafkaTopics.partitions | default 3 }}" "{{ $.Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-              {{- end }}
-              create_topic "{{ .Values.kafkaConfig.topicDLQ | default "events_dlq" }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-              create_topic "{{ .Values.eventPostProcessing.topic }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-              create_topic "{{ .Values.eventPostProcessing.topicBackfill }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-              create_topic "{{ .Values.webhook.topic }}" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-              create_topic "events_backfill" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-              create_topic "wallet_alert" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-              create_topic "onboarding_events" "{{ .Values.migration.kafkaTopics.partitions | default 3 }}" "{{ .Values.migration.kafkaTopics.replicationFactor | default 1 }}"
-
-              # Client-declared extra/override topics (migration.kafkaTopics.topics).
-              # Empty by default -- this loop then emits nothing and behavior
-              # is identical to before this feature existed.
-              {{- range .Values.migration.kafkaTopics.topics }}
-              create_topic "{{ .name }}" \
-                "{{ .partitions | default $.Values.migration.kafkaTopics.partitions | default 3 }}" \
-                "{{ .replicationFactor | default $.Values.migration.kafkaTopics.replicationFactor | default 1 }}"{{ range $k, $v := .configs }} "{{ $k }}={{ $v }}"{{ end }}
-              {{- end }}
-
-              if [ "${FAILED}" -ne 0 ]; then
-                echo "❌ ${FAILED} topic(s) could not be created."
-                echo "   OutOfMemoryError above means the admin client heap is too"
-                echo "   small: raise migration.kafkaTopics.heapOpts (and keep"
-                echo "   resources.limits.memory comfortably above it)."
-                exit 1
-              fi
-
-              echo "✅ Kafka topics ready"
-
-              # Listing is diagnostic only. It is a second admin-client session
-              # and can OOM on its own after every topic was created, which
-              # would fail the whole migration over a log line.
-              $KAFKA_TOPICS_CMD --bootstrap-server "${KAFKA_BROKER}" ${CMD_CONFIG} --list || \
-                echo "(could not list topics; creation already succeeded)"
-          # Must stay comfortably above KAFKA_HEAP_OPTS above: the limit has to
-          # cover the heap plus JVM overhead (metaspace, thread stacks, direct
-          # buffers), or the kernel OOM-kills the container instead of the JVM
-          # throwing -- which surfaces as exit code 137 and no log line at all.
-          resources:
-            {{- toYaml .Values.migration.kafkaTopics.resources | nindent 12 }}
-        {{- end }}
-
         {{- if .Values.migration.steps.verify }}
         # ── 10. Post-migration sanity check ───────────────────────────────────
         # Fatal gate: asserts the ClickHouse tables and Kafka topics the prior
@@ -631,7 +580,19 @@ spec:
               {{- if .Values.migration.steps.clickhouse }}
               echo "verify: ClickHouse tables"
               CH_HTTP_HOST="{{ if eq .Values.clickhouse.mode "external" }}{{ index (splitList ":" .Values.clickhouse.address) 0 }}{{ else if eq .Values.clickhouse.mode "altinity" }}chi-{{ include "flexprice.fullname" . }}-flexprice-0-0{{ if .Values.clickhouse.namespace }}.{{ .Values.clickhouse.namespace }}.svc.cluster.local{{ end }}{{ else }}{{ include "flexprice.clickhouseServiceHost" . }}{{ end }}"
-              CH_HTTP_PORT="{{ if eq .Values.clickhouse.mode "external" }}{{ index (splitList ":" .Values.clickhouse.address) 1 }}{{ else if eq .Values.clickhouse.mode "altinity" }}8123{{ else }}{{ .Values.clickhouse.standalone.service.httpPort }}{{ end }}"
+              {{- /*
+                External mode used to take this port from clickhouse.address by
+                splitting on ":". That address is the NATIVE protocol endpoint the
+                application connects with (9000), not the HTTP one, so this check
+                issued an HTTP GET against a native-protocol port. wget failed,
+                the `|| echo 0` below turned that into n=0, and every table was
+                reported MISSING against a ClickHouse that was perfectly healthy.
+                Cost half an investigation on GCP staging, 2026-08-31.
+
+                8123 matches what altinity mode already hardcodes. Override with
+                clickhouse.httpPort if a deployment moves it.
+              */}}
+              CH_HTTP_PORT="{{ if eq .Values.clickhouse.mode "external" }}{{ .Values.clickhouse.httpPort | default 8123 }}{{ else if eq .Values.clickhouse.mode "altinity" }}{{ .Values.clickhouse.httpPort | default 8123 }}{{ else }}{{ .Values.clickhouse.standalone.service.httpPort }}{{ end }}"
               CH_SCHEME="{{ if .Values.clickhouse.tls }}https{{ else }}http{{ end }}"
               # Resolved into a variable instead of templated inline at the end of
               # the wget call. Inline, the left-chomp on the conditional eats the
@@ -649,12 +610,24 @@ spec:
               {{- if $.Values.clickhouse.tlsSkipVerify }}
               CH_INSECURE="--no-check-certificate"
               {{- end }}
+              # A failed query is NOT a missing table. `|| echo 0` used to collapse
+              # every failure -- unreachable host, wrong port, bad credentials --
+              # into "MISSING", which sends whoever is on call to look at a schema
+              # that was never the problem. Separate the two outcomes and say which.
               for t in events meter_usage; do
-                n=$(wget -qO- "${CH_SCHEME}://${CH_HTTP_HOST}:${CH_HTTP_PORT}/?query=SELECT+count()+FROM+system.tables+WHERE+database='{{ .Values.clickhouse.database }}'+AND+name='${t}'" \
+                if ! n=$(wget -qO- "${CH_SCHEME}://${CH_HTTP_HOST}:${CH_HTTP_PORT}/?query=SELECT+count()+FROM+system.tables+WHERE+database='{{ .Values.clickhouse.database }}'+AND+name='${t}'" \
                     --header="X-ClickHouse-User: ${FLEXPRICE_CLICKHOUSE_USERNAME}" \
                     --header="X-ClickHouse-Key: ${FLEXPRICE_CLICKHOUSE_PASSWORD}" \
-                    ${CH_INSECURE} 2>/dev/null || echo 0)
-                [ "$n" = "1" ] || { echo "❌ MISSING ClickHouse table: ${t}"; exit 1; }
+                    ${CH_INSECURE} 2>&1); then
+                  echo "❌ CANNOT QUERY ClickHouse at ${CH_SCHEME}://${CH_HTTP_HOST}:${CH_HTTP_PORT}"
+                  echo "   This is a connectivity/auth failure, NOT a missing table."
+                  echo "   wget said: ${n}"
+                  echo "   Check clickhouse.address, clickhouse.httpPort (HTTP is 8123,"
+                  echo "   the native protocol is 9000) and the credentials."
+                  exit 1
+                fi
+                n="$(echo "$n" | tr -d '[:space:]')"
+                [ "$n" = "1" ] || { echo "❌ MISSING ClickHouse table: ${t} (database '{{ .Values.clickhouse.database }}' returned count=${n})"; exit 1; }
                 echo "  ✅ ${t}"
               done
               {{- end }}
@@ -667,18 +640,18 @@ spec:
               elif command -v kafka-topics.sh >/dev/null 2>&1; then
                 KAFKA_TOPICS_CMD="kafka-topics.sh"
               fi
-              # Unlike create-kafka-topics, which runs in the cp-kafka image, this
-              # step runs in the APPLICATION image -- which ships no Kafka CLI. The
-              # previous default assumed `kafka-topics` was present. When it is not,
-              # the --list below fails, its stderr is swallowed by 2>/dev/null,
-              # EXISTING comes back empty, and every topic is reported MISSING
-              # against a broker that holds all of them.
+              # This step runs in the APPLICATION image -- which ships no Kafka
+              # CLI. The previous default assumed `kafka-topics` was present.
+              # When it is not, the --list below fails, its stderr is
+              # swallowed by 2>/dev/null, EXISTING comes back empty, and every
+              # topic is reported MISSING against a broker that holds all of
+              # them.
               #
               # A verification that cannot run is worse than one that is skipped: it
               # fails the deploy and blames the infrastructure. Skip and say so.
               if [ -z "${KAFKA_TOPICS_CMD}" ]; then
                 echo "  (kafka CLI not present in this image -- skipping topic verification)"
-                echo "  topics are created and listed by the create-kafka-topics step"
+                echo "  topics are created and listed by the run-kafka-migrate step"
               else
               # NOTE: this branch is deliberately NOT indented. It contains a
               # <<'PROPS' heredoc whose terminator must land at column 0 after YAML

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/invoice"
-	"github.com/flexprice/flexprice/internal/domain/taxapplied"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
@@ -110,8 +109,11 @@ type CreateInvoiceRequest struct {
 	// tax_rate_overrides is the tax rate overrides to be applied to the invoice
 	TaxRateOverrides []*TaxRateOverride `json:"tax_rate_overrides,omitempty"`
 
-	// prepared_tax_rates contains the tax rates pre-resolved by the caller (e.g., billing service)
-	PreparedTaxRates []*TaxRateResponse `json:"prepared_tax_rates,omitempty"`
+	// PreparedTaxRates carries tax rates already resolved by the caller (e.g. CreateOneOffInvoice
+	// after calling PrepareTaxRatesForInvoice) through to whatever builds the invoice next.
+	// json:"-" — this request is bound directly from client JSON (POST /invoices), and a
+	// resolved rate set must never be settable over the wire; it is only ever set server-side.
+	PreparedTaxRates *InvoiceTaxRates `json:"-"`
 
 	// invoice_pdf_url is the URL where customers can download the PDF version of this invoice
 	InvoicePDFURL *string `json:"invoice_pdf_url,omitempty"`
@@ -290,15 +292,17 @@ func (r *CreateDraftInvoiceRequest) ToDraftInvoice(ctx context.Context) (*invoic
 // No customer, subscription, or period info — those are already on the invoice. This is purely
 // the computed line items, amounts, coupons, and taxes to populate.
 type InvoiceComputeRequest struct {
-	LineItems        []CreateInvoiceLineItemRequest `json:"line_items"`
-	Subtotal         decimal.Decimal                `json:"subtotal" swaggertype:"string"`
-	Total            decimal.Decimal                `json:"total" swaggertype:"string"`
-	AmountDue        decimal.Decimal                `json:"amount_due" swaggertype:"string"`
-	Description      string                         `json:"description,omitempty"`
-	DueDate          *time.Time                     `json:"due_date,omitempty"`
-	InvoiceCoupons   []InvoiceCoupon                `json:"invoice_coupons,omitempty"`
-	LineItemCoupons  []InvoiceLineItemCoupon        `json:"line_item_coupons,omitempty"`
-	PreparedTaxRates []*TaxRateResponse             `json:"prepared_tax_rates,omitempty"`
+	LineItems       []CreateInvoiceLineItemRequest `json:"line_items"`
+	Subtotal        decimal.Decimal                `json:"subtotal" swaggertype:"string"`
+	Total           decimal.Decimal                `json:"total" swaggertype:"string"`
+	AmountDue       decimal.Decimal                `json:"amount_due" swaggertype:"string"`
+	Description     string                         `json:"description,omitempty"`
+	DueDate         *time.Time                     `json:"due_date,omitempty"`
+	InvoiceCoupons  []InvoiceCoupon                `json:"invoice_coupons,omitempty"`
+	LineItemCoupons []InvoiceLineItemCoupon        `json:"line_item_coupons,omitempty"`
+	// PreparedTaxRates is set server-side only — see CreateInvoiceRequest.PreparedTaxRates.
+	// json:"-" — this request is also bound directly from client JSON (POST /invoices/{id}/compute).
+	PreparedTaxRates *InvoiceTaxRates `json:"-"`
 
 	// OpeningInvoiceAdjustmentAmount is internal: transport field only — read by ComputeInvoice and
 	// forwarded to PrepareSubscriptionInvoiceRequestParams.OpeningInvoiceAdjustmentAmount, which applies it
@@ -565,140 +569,13 @@ func (r *CreateInvoiceRequest) ToInvoice(ctx context.Context) (*invoice.Invoice,
 		}
 	}
 
-	// Apply preview-only discounts and taxes (no DB operations)
-	// Note: Coupon discount calculations are now handled by CouponService.ApplyDiscount()
-	// which requires service context for validation. Preview coupon calculations should
-	// be handled at the service layer. For now, we skip coupon preview calculations here.
-	totalDiscount := decimal.Zero
-
-	// 3) Taxes are applied on (subtotal - totalDiscount) by
-	// RecalculatePreviewTotals below.
-
-	// 4) Update invoice preview totals
-	inv.TotalDiscount = totalDiscount
-	RecalculatePreviewTotals(inv, r.PreparedTaxRates)
+	// Discounts and taxes are business logic (coupon validation, tax rate resolution and
+	// calculation) and require service-layer context this package does not have — the
+	// service layer resolves them and sets TotalDiscount/TotalTax/Total itself once this
+	// bare invoice exists (see TaxService.CalculateTaxesOnInvoice).
+	inv.TotalDiscount = decimal.Zero
 
 	return inv, nil
-}
-
-// RecalculatePreviewTotals recomputes a preview invoice's tax and totals from
-// its current subtotal and TotalDiscount, in the order a real invoice applies
-// them: discounts first, tax on what remains.
-//
-// Coupon discounts are resolved at the service layer (they need coupon
-// validation and the coupon repository), so the preview path sets
-// inv.TotalDiscount afterwards and calls this to bring tax and totals back in
-// step. Without the second pass, tax would stay computed against the
-// undiscounted subtotal.
-func RecalculatePreviewTotals(inv *invoice.Invoice, preparedTaxRates []*TaxRateResponse) {
-	if inv == nil {
-		return
-	}
-	taxableAmount := inv.Subtotal.Sub(inv.TotalDiscount)
-	if taxableAmount.IsNegative() {
-		taxableAmount = decimal.Zero
-	}
-
-	totalTax := decimal.Zero
-	for _, tr := range preparedTaxRates {
-		taxAmount, ok := previewTaxAmount(tr, taxableAmount, inv.Currency)
-		if !ok {
-			continue
-		}
-		totalTax = totalTax.Add(taxAmount)
-	}
-
-	inv.TotalTax = totalTax
-	inv.Total = taxableAmount.Add(totalTax)
-	if inv.Total.IsNegative() {
-		inv.Total = decimal.Zero
-	}
-	inv.AmountDue = inv.Total
-	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
-}
-
-// previewTaxAmount computes the tax owed on taxableAmount for a single
-// prepared tax rate. The second return is false when the rate carries no
-// usable value (nil percentage/fixed amount, or an unknown rate type), in
-// which case the caller skips it.
-//
-// Shared by the preview total (ToInvoice) and the preview breakdown
-// (BuildPreviewTaxes) so the two can never drift apart.
-func previewTaxAmount(tr *TaxRateResponse, taxableAmount decimal.Decimal, currency string) (decimal.Decimal, bool) {
-	// TaxRateResponse embeds *taxrate.TaxRate, so a zero-value response
-	// dereferences nil on the field reads below.
-	if tr == nil || tr.TaxRate == nil {
-		return decimal.Zero, false
-	}
-	var taxAmount decimal.Decimal
-	switch tr.TaxRateType {
-	case types.TaxRateTypePercentage:
-		if tr.PercentageValue == nil {
-			return decimal.Zero, false
-		}
-		taxAmount = taxableAmount.Mul(*tr.PercentageValue).Div(decimal.NewFromInt(100))
-	case types.TaxRateTypeFixed:
-		if tr.FixedValue == nil {
-			return decimal.Zero, false
-		}
-		taxAmount = *tr.FixedValue
-	default:
-		return decimal.Zero, false
-	}
-	if taxAmount.IsNegative() {
-		taxAmount = decimal.Zero
-	}
-	// Round per line, matching the persisted tax path — otherwise a rate that
-	// produces more precision than the currency carries shows fractional-cent
-	// entries that don't add up to what is eventually charged.
-	return taxAmount.Round(types.GetCurrencyPrecision(currency)), true
-}
-
-// BuildPreviewTaxes synthesises the per-rate tax breakdown for an invoice
-// preview.
-//
-// Persisted invoices carry tax_applied rows that the response loads via
-// WithTaxes. A preview writes nothing, so without this the response reports
-// a non-zero total_tax with an empty taxes[] array and callers cannot see
-// which rate produced the charge. The records are in-memory only: no ID and
-// no persistence, mirroring the rest of the preview invoice.
-func BuildPreviewTaxes(inv *invoice.Invoice, preparedTaxRates []*TaxRateResponse) []*TaxAppliedResponse {
-	if inv == nil || len(preparedTaxRates) == 0 {
-		return nil
-	}
-	taxableAmount := inv.Subtotal.Sub(inv.TotalDiscount)
-	if taxableAmount.IsNegative() {
-		taxableAmount = decimal.Zero
-	}
-
-	taxes := make([]*TaxAppliedResponse, 0, len(preparedTaxRates))
-	for _, tr := range preparedTaxRates {
-		taxAmount, ok := previewTaxAmount(tr, taxableAmount, inv.Currency)
-		if !ok {
-			continue
-		}
-		taxes = append(taxes, &TaxAppliedResponse{
-			TaxApplied: taxapplied.TaxApplied{
-				TaxRateID:     tr.ID,
-				EntityType:    types.TaxRateEntityTypeInvoice,
-				EntityID:      inv.ID,
-				TaxableAmount: taxableAmount,
-				TaxAmount:     taxAmount,
-				Currency:      inv.Currency,
-				AppliedAt:     time.Now().UTC(),
-				EnvironmentID: inv.EnvironmentID,
-				BaseModel: types.BaseModel{
-					TenantID: inv.TenantID,
-					Status:   types.StatusPublished,
-				},
-			},
-			TaxRate: tr,
-		})
-	}
-	if len(taxes) == 0 {
-		return nil
-	}
-	return taxes
 }
 
 // Validate validates the invoice coupon DTO
@@ -1213,6 +1090,10 @@ type InvoiceResponse struct {
 	// tax_applied_records contains the tax applied records associated with this invoice
 	Taxes []*TaxAppliedResponse `json:"taxes,omitempty"`
 
+	// tax_summary breaks total_tax down by behavior and states why no tax was charged, when
+	// none was. Set by WithTaxes once Taxes and TaxExemptionReasonCode are both known.
+	TaxSummary *TaxSummary `json:"tax_summary,omitempty"`
+
 	// line_items contains the individual items that make up this invoice (overrides embedded field)
 	LineItems []*InvoiceLineItemResponse `json:"line_items,omitempty"`
 
@@ -1319,9 +1200,12 @@ func (r *InvoiceResponse) WithCustomer(customer *CustomerResponse) *InvoiceRespo
 	return r
 }
 
-// WithTaxes adds tax applied records to the invoice response
+// WithTaxes sets the tax rows and derives TaxSummary from them plus the already-set
+// TaxExemptionReasonCode. inclusive_tax/exclusive_tax are not columns — they only exist by
+// summing the rows by behavior.
 func (r *InvoiceResponse) WithTaxes(taxes []*TaxAppliedResponse) *InvoiceResponse {
 	r.Taxes = taxes
+	r.TaxSummary = buildTaxSummary(taxes, r.TaxExemptionReasonCode)
 	return r
 }
 
@@ -1653,4 +1537,48 @@ func (r *ApplyExternalInvoiceDiscountRequest) Validate() error {
 		return err
 	}
 	return nil
+}
+
+// TaxSummary breaks an invoice's total_tax down by behavior and states why no tax was
+// charged, when none was.
+type TaxSummary struct {
+	TotalInclusiveTax decimal.Decimal      `json:"inclusive_tax" swaggertype:"string"`
+	TotalExclusiveTax decimal.Decimal      `json:"exclusive_tax" swaggertype:"string"`
+	TotalTax          decimal.Decimal      `json:"total_tax" swaggertype:"string"`
+	Exemption         *TaxExemptionSummary `json:"exemption"`
+}
+
+// TaxExemptionSummary is non-nil only when no tax was charged. Its Reason is
+// derived via TaxExemptionReasonCode.DisplayLabel(), never stored.
+type TaxExemptionSummary struct {
+	ReasonCode types.TaxExemptionReasonCode `json:"reason_code"`
+	Reason     string                       `json:"reason"`
+}
+
+func buildTaxSummary(taxes []*TaxAppliedResponse, reasonCode *types.TaxExemptionReasonCode) *TaxSummary {
+	// A reason code means nothing was charged, so the totals are zero by definition.
+	if reasonCode != nil {
+		return &TaxSummary{
+			Exemption: &TaxExemptionSummary{
+				ReasonCode: *reasonCode,
+				Reason:     reasonCode.DisplayLabel(),
+			},
+		}
+	}
+
+	var inclusiveTax, exclusiveTax decimal.Decimal
+	for _, t := range taxes {
+		switch t.TaxBehavior {
+		case types.TaxBehaviorInclusive:
+			inclusiveTax = inclusiveTax.Add(t.TaxAmount)
+		case types.TaxBehaviorExclusive:
+			exclusiveTax = exclusiveTax.Add(t.TaxAmount)
+		}
+	}
+
+	return &TaxSummary{
+		TotalInclusiveTax: inclusiveTax,
+		TotalExclusiveTax: exclusiveTax,
+		TotalTax:          inclusiveTax.Add(exclusiveTax),
+	}
 }

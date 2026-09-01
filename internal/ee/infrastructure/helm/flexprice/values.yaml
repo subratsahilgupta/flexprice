@@ -330,6 +330,70 @@ consumer:
 #         - {name: FLEXPRICE_KAFKA_TOPIC, value: "events"}
 consumers: {}
 
+# Bento collector — OPTIONAL stream collector (Kafka/MSK -> in-cluster Flexprice
+# API). Off by default. Not a Flexprice binary: it runs its own image and its
+# own config, so it does NOT share the app's flexprice.env / configmap. It is
+# config-agnostic — you supply the image, the baked config path, and the source
+# connection details via `env`. The container POSTs to the in-cluster api
+# Service (<release>-api on :80, http) so ingest never leaves the cluster.
+#
+# MSK SCRAM creds are reused from the same Secret the app uses
+# (secrets.existingSecret / <release>-secrets), keys `kafka-sasl-username` and
+# `kafka-sasl-password` — BYOC bootstraps those from AWS Secrets Manager. Point
+# bento at a different Secret with `envSecretName` (mounted via envFrom) if your
+# source creds live elsewhere.
+#
+# IRSA (MSK IAM auth instead of SCRAM): set serviceAccount.perComponent=true and
+# put the role ARN under serviceAccount.components.bento.annotations. SCRAM (the
+# default) needs no IAM role.
+bento:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: ghcr.io/flexprice/bento-collector
+    tag: "v1.2.5"      # empty falls back to the chart appVersion
+    digest: ""         # pin by digest (wins over tag) where the registry allows
+    pullPolicy: IfNotPresent
+  # Config baked into the image, selected with `-c`. Pick the pipeline for your
+  # source, e.g. /app/internal/aws-kafka-to-flexprice.yaml (MSK -> Flexprice).
+  configPath: /app/internal/aws-kafka-to-flexprice.yaml
+  # In-cluster Flexprice API target. Defaults point at the api Service; override
+  # only to send events somewhere else.
+  apiHost: ""          # empty = <release>-api (in-cluster Service)
+  apiScheme: http      # http for the in-cluster Service (no TLS hop)
+  # Extra Secret mounted wholesale via envFrom (source creds that are NOT the
+  # reused kafka-sasl-* keys). Empty = not mounted.
+  envSecretName: ""
+  # Free-form plain env for the collector (brokers, topic, consumer group, TLS,
+  # mechanism, batching knobs). Non-secret values only — secrets belong in a
+  # Secret referenced above. See docs/BENTO-DEPLOY-SARVAM.md for the var names.
+  env: {}
+  labels: {}
+  podLabels: {}
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1024Mi"
+  # Bento's HTTP server (health + metrics). 4195 is the bento default.
+  httpPort: 4195
+  terminationGracePeriodSeconds: 60
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Per-component ServiceAccount overrides. The `bento` entry is only consumed
+# when serviceAccount.perComponent=true (MSK IAM / IRSA path); with the default
+# SCRAM auth bento uses the shared ServiceAccount and this is ignored.
+# serviceAccount:
+#   perComponent: true
+#   components:
+#     bento:
+#       annotations:
+#         eks.amazonaws.com/role-arn: arn:aws:iam::<acct>:role/flexprice-bento
+
 # Temporal Worker deployment configuration
 worker:
   enabled: true
@@ -738,6 +802,11 @@ postgres:
 #                           Install: kubectl apply -f shared/clickhouse/operator/install-bundle.yaml
 #   external              — point to ClickHouse Cloud or any self-managed endpoint.
 clickhouse:
+  # HTTP port used ONLY by the migration Job's verify step, which queries over
+  # HTTP rather than the native protocol. `address` below is the NATIVE endpoint
+  # (9000) the application uses; the two are not interchangeable, and deriving
+  # one from the other is what made verify report healthy tables as MISSING.
+  httpPort: 8123
   mode: standalone   # standalone | altinity | external
 
   # Namespace for the in-cluster ClickHouse (standalone/altinity modes). Empty =
@@ -910,6 +979,7 @@ kafkaConfig:
 # Set enabled=true to run database migrations as a Kubernetes Job
 migration:
   enabled: true  # Set to true to enable migration job
+  seedKafkaACLs: false  # seed allow-all MSK ACLs (SCRAM/MSK only); opt-in, off by default
 
   # Install the migration Job as a Helm pre-install/pre-upgrade HOOK (default),
   # or as an ordinary chart resource.
@@ -926,9 +996,50 @@ migration:
   #         false and no external applier means migrations never run.
   asHook: true
   timeout: 300  # Timeout in seconds for migration
-  backoffLimit: 3  # Number of retries before marking job as failed
-  activeDeadlineSeconds: 900  # Maximum time in seconds for the job to run (increased for all migrations)
+
+  # 0 = do not retry a failed migration Job.
+  #
+  # A retry is only useful when the failure was transient. A migration that was
+  # KILLED part-way is the opposite: if it died during CREATE INDEX CONCURRENTLY
+  # the index is left INVALID, and `CREATE INDEX CONCURRENTLY IF NOT EXISTS`
+  # skips an invalid index -- so the retry would report success, record the
+  # migration as applied, and leave the index permanently broken.
+  #
+  # `migrate postgres up` now refuses to start while any invalid index exists, so
+  # a retry fails loudly rather than silently. 0 keeps it from burning the
+  # deadline on an attempt that cannot succeed.
+  backoffLimit: 0
+
+  # Hard kill for the whole Job. Kubernetes SIGKILLs the pod at this deadline;
+  # for a running CREATE INDEX CONCURRENTLY that means an aborted build and an
+  # INVALID index, because the migration and the thing watching it are the same
+  # process here (unlike the ECS path, where the workflow only watches a task
+  # that keeps running).
+  #
+  # 900s is sized for the current migrations, which are small. Before deploying a
+  # migration that builds an index on a large table, set this to null: the field
+  # is then omitted, nothing kills the Job, and Helm or ArgoCD giving up waiting
+  # no longer stops the index from finishing.
+  activeDeadlineSeconds: 900
   ttlSecondsAfterFinished: 3600  # Time to keep completed job (1 hour)
+
+  # When the migration Job (and its pod, and therefore its LOGS) is deleted.
+  #
+  # before-hook-creation  the previous Job is removed just before the next one
+  #                       is created. A finished Job survives until
+  #                       ttlSecondsAfterFinished above, so the logs of a failed
+  #                       migration are still there when someone goes looking.
+  #                       This is the default and what you want on call.
+  #
+  # hook-succeeded,hook-failed
+  #                       the previous behaviour: delete the moment the Job ends,
+  #                       either way. Retries never collide with a stale Job, but
+  #                       a failed migration erases the only record of why.
+  #
+  # Either value prevents the stale-Job collision that stalled the
+  # northamerica-northeast2 bring-up; they differ only in when the deletion
+  # happens, and therefore in whether the logs outlive the failure.
+  hookDeletePolicy: before-hook-creation
   command: ""  # Custom command to run (if empty, uses default migration steps)
   # Apply a SINGLE ClickHouse baseline .sql via `migrate clickhouse --file`
   # instead of scanning migrations/clickhouse/. Empty = scan the directory (the
@@ -938,66 +1049,31 @@ migration:
   # does not. Requires a migrate binary that supports --file (flexprice #2617).
   clickhouseFile: ""
 
-  # Migration steps to run (all enabled by default)
+  # Migration steps to run
+  #
+  # `dbmate` and `ent` are two implementations of the SAME step and are mutually
+  # exclusive — enabling both renders an error rather than running the schema
+  # through two mechanisms in one Job.
   steps:
     postgresSetup: true  # Create schema and extensions in PostgreSQL
     clickhouse: true     # Run ClickHouse migrations
     kafka: true          # Create Kafka topics (idempotent, safe to re-run)
-    ent: true            # Run Ent framework migrations
+    # Apply the reviewed .sql files in migrations/versioned/postgres and record
+    # them in schema_migrations. This is the supported path: what ran is a fact
+    # in a table, the same files run on every region and every client, and a
+    # change is reviewed as SQL before it reaches a database.
+    dbmate: true
+    # Ent auto-migration — the previous mechanism. It diffs the live schema
+    # against the Go models at deploy time and applies whatever it infers, so
+    # what runs is never reviewed and never recorded. Kept in the image so
+    # rolling back is flipping these two flags, not rebuilding.
+    #
+    # An EXISTING database must be adopted once before dbmate runs against it
+    # (`make migrate-adopt`); the Job fails with instructions if it was not.
+    ent: false
     seed: false          # Run seed data (optional, set to true to enable)
     verify: true         # Fatally assert CH tables + kafka topics exist post-migration
 
-  # The create-kafka-topics init container runs the JVM-based kafka-topics
-  # tool. Its heap is set explicitly rather than left to the JVM's default,
-  # which derives from the cgroup limit (~1/4 of it) and at the previous
-  # hardcoded 256Mi came to ~64Mi -- too little for the admin client to read
-  # broker metadata over TLS. It died with OutOfMemoryError once per topic, and
-  # no message named memory as the cause.
-  #
-  # Keep `resources.limits.memory` well above the -Xmx value: the limit must
-  # cover heap plus JVM overhead, or the kernel OOM-kills the container (exit
-  # 137, no logs) instead of the JVM reporting it.
-  kafkaTopics:
-    # Partitions for every one of the built-in topics the create-kafka-topics
-    # step makes (events, events_lazy, events_bulk, events_dlq,
-    # events_post_processing, events_post_processing_backfill, system_events,
-    # events_backfill, wallet_alert, onboarding_events). Default 3 so even dev
-    # has room to parallelise consumers; 1 was too few. Fresh topics only —
-    # raising an existing topic's partitions needs kafka-topics --alter.
-    partitions: 3
-    # Replication factor for the same built-in topics. Default 1 to match a
-    # single-broker dev/Bitnami-subchart Kafka; raise it (e.g. 3) once the
-    # client points at a real multi-broker/MSK cluster.
-    replicationFactor: 1
-    # Extra client-declared topics, created IN ADDITION to the built-in list
-    # above. Leave empty (the default) to change nothing about today's
-    # behavior — this list is purely additive/override, never a replacement
-    # for the built-in topics.
-    #
-    # Each entry:
-    #   name:              (required) topic name
-    #   partitions:         optional, falls back to kafkaTopics.partitions above
-    #   replicationFactor:  optional, falls back to kafkaTopics.replicationFactor above
-    #   configs:            optional map of `kafka-topics --config key=value` pairs,
-    #                       e.g. retention.ms, cleanup.policy, min.insync.replicas
-    #
-    # Example:
-    # topics:
-    #   - name: custom_topic
-    #     partitions: 6
-    #     replicationFactor: 3
-    #     configs:
-    #       retention.ms: "604800000"
-    #       cleanup.policy: "delete"
-    topics: []
-    heapOpts: "-Xmx512m -Xms256m"
-    resources:
-      limits:
-        cpu: "500m"
-        memory: "1Gi"
-      requests:
-        cpu: "100m"
-        memory: "512Mi"
   # Pinned helper images used by the migration Job init containers. Override
   # `registry` per image if your cluster only allows pulls from a private
   # mirror (common in regulated AWS accounts). All three images are multi-arch.

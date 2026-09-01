@@ -566,6 +566,17 @@ type CreateSubscriptionRequest struct {
 	// Standalone subscriptions only; all plan prices must be usage-based. Immutable after creation.
 	AutoInvoiceThreshold *decimal.Decimal `json:"auto_invoice_threshold,omitempty" swaggertype:"string"`
 
+	// IncludePriceIDs selects which plan prices to attach. Nil/omitted attaches matching-cadence
+	// prices plus ONETIME; [] attaches none (LineItems extras still apply); a non-empty list
+	// attaches only those IDs. Each listed ID must belong to the plan, match the subscription
+	// currency, and have a cadence that equals or strictly divides the subscription cadence.
+	// Pointer-slice distinguishes nil from [].
+	// NOTE: no `dive,required` on this tag — swaggo misinterprets `required`
+	// inside `dive` as marking the whole field required, which then shows up
+	// in the OpenAPI schema and breaks callers that omit the field. Per-element
+	// non-emptiness is enforced explicitly in Validate() below.
+	IncludePriceIDs *[]string `json:"include_price_ids,omitempty"`
+
 	// Inheritance groups customer-hierarchy fields; providing child IDs makes this a PARENT subscription.
 	Inheritance *SubscriptionInheritanceConfig `json:"inheritance,omitempty"`
 
@@ -922,6 +933,24 @@ func (r *CreateSubscriptionRequest) Validate() error {
 				"auto_invoice_threshold": r.AutoInvoiceThreshold.String(),
 			}).
 			Mark(ierr.ErrValidation)
+	}
+
+	if r.IncludePriceIDs != nil {
+		seen := make(map[string]struct{}, len(*r.IncludePriceIDs))
+		for _, id := range *r.IncludePriceIDs {
+			if id == "" {
+				return ierr.NewError("include_price_ids contains empty id").
+					WithHint("Each price id in include_price_ids must be a non-empty string.").
+					Mark(ierr.ErrValidation)
+			}
+			if _, dup := seen[id]; dup {
+				return ierr.NewError("include_price_ids contains duplicate id").
+					WithHint("Each price id in include_price_ids must appear at most once.").
+					WithReportableDetails(map[string]any{"duplicate_id": id}).
+					Mark(ierr.ErrValidation)
+			}
+			seen[id] = struct{}{}
+		}
 	}
 
 	// Case- Both are absent

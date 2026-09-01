@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/task"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -32,7 +34,7 @@ type TaskService interface {
 
 type taskService struct {
 	ServiceParams
-	fileProcessor *FileProcessor
+	streaming *StreamingProcessor
 }
 
 func NewTaskService(
@@ -40,13 +42,121 @@ func NewTaskService(
 ) TaskService {
 	return &taskService{
 		ServiceParams: serviceParams,
-		fileProcessor: NewFileProcessor(serviceParams.Logger),
+		streaming:     NewStreamingProcessor(serviceParams.Logger),
+	}
+}
+
+// importObjectKey composes the S3 key CSV Box wrote to. The convention is
+// <prefix>/<upload_id>_<customer_id>.csv where we set CSV Box's customer_id
+// to <tenant_id>__<environment_id>. That means the key is fully determined
+// by (config prefix, request upload_id, ctx tenant, ctx environment); a
+// caller cannot address any other tenant's uploads because the tenant/env
+// come from the authenticated ctx, not the request body.
+func importObjectKey(prefix, uploadID, tenantID, environmentID string) string {
+	trimmed := strings.Trim(prefix, "/")
+	filename := fmt.Sprintf("%s_%s__%s.csv", uploadID, tenantID, environmentID)
+	if trimmed == "" {
+		return filename
+	}
+	return trimmed + "/" + filename
+}
+
+// openImportReader downloads the task's CSV from the imports bucket and
+// returns a reader over the bytes. It re-derives the key from ctx +
+// upload_id, never from anything on the task row that a caller could have
+// influenced — the persisted metadata is treated as an audit log, not a
+// source of truth.
+func (s *taskService) openImportReader(ctx context.Context, t *task.Task) (*bytes.Reader, error) {
+	uploadID, _ := t.Metadata["upload_id"].(string)
+	if uploadID == "" {
+		return nil, ierr.NewError("task has no upload_id in metadata").
+			WithHint("Cannot process an import task that was not created via the CSV Box path").
+			Mark(ierr.ErrInvalidOperation)
+	}
+
+	store, err := s.StorageResolver.ForPlatform(ctx, storage.PurposeImport)
+	if err != nil {
+		return nil, err
+	}
+
+	key := importObjectKey(
+		s.Config.FlexpriceS3Imports.KeyPrefix,
+		uploadID,
+		types.GetTenantID(ctx),
+		types.GetEnvironmentID(ctx),
+	)
+	s.Logger.Info(ctx, "downloading import object",
+		"task_id", t.ID,
+		"bucket", s.Config.FlexpriceS3Imports.Bucket,
+		"key", key)
+
+	data, err := store.Download(ctx, key)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to download import object; verify the upload_id and that CSV Box has finished uploading").
+			WithReportableDetails(map[string]interface{}{
+				"task_id":   t.ID,
+				"upload_id": uploadID,
+			}).
+			Mark(ierr.ErrHTTPClient)
+	}
+
+	return bytes.NewReader(data), nil
+}
+
+// chunkProcessorFor returns the entity-specific ChunkProcessor. Today the
+// DTO only accepts events, so this is effectively a one-branch switch — the
+// other cases stay wired so re-enabling an entity type is a DTO change, not
+// a service change.
+func (s *taskService) chunkProcessorFor(entityType types.EntityType) (ChunkProcessor, error) {
+	switch entityType {
+	case types.EntityTypeEvents:
+		eventSvc := NewEventService(
+			s.EventRepo,
+			s.MeterRepo,
+			s.EventPublisher,
+			s.Logger,
+			s.Config,
+			s.TracingSvc,
+		)
+		return &EventsChunkProcessor{eventService: eventSvc, logger: s.Logger}, nil
+	case types.EntityTypeCustomers:
+		return &CustomersChunkProcessor{
+			customerService: NewCustomerService(s.ServiceParams),
+			logger:          s.Logger,
+		}, nil
+	case types.EntityTypePrices:
+		return &PricesChunkProcessor{
+			priceService: NewPriceService(s.ServiceParams),
+			logger:       s.Logger,
+		}, nil
+	case types.EntityTypeFeatures:
+		return &FeaturesChunkProcessor{
+			featureService: NewFeatureService(s.ServiceParams),
+			logger:         s.Logger,
+		}, nil
+	default:
+		return nil, ierr.NewError("unsupported entity type").
+			WithHint("Unsupported entity type").
+			WithReportableDetails(map[string]interface{}{
+				"entity_type": entityType,
+			}).
+			Mark(ierr.ErrInvalidOperation)
 	}
 }
 
 func (s *taskService) CreateTask(ctx context.Context, req dto.CreateTaskRequest) (*dto.TaskResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
+	}
+
+	// Imports must be explicitly enabled on this deployment. Fail fast here
+	// so the caller sees a clear error instead of a download failure later
+	// when the workflow tries to hit an unconfigured bucket.
+	if !s.Config.FlexpriceS3Imports.Enabled || s.Config.FlexpriceS3Imports.Bucket == "" {
+		return nil, ierr.NewError("csv imports are not configured on this deployment").
+			WithHint("Set flexprice_s3_imports.enabled=true and provide bucket/credentials").
+			Mark(ierr.ErrInvalidOperation)
 	}
 
 	t := req.ToTask(ctx)
@@ -173,9 +283,10 @@ func isValidStatusTransition(from, to types.TaskStatus) bool {
 	return false
 }
 
-// ProcessTaskWithStreaming processes a task using streaming for large files
+// ProcessTaskWithStreaming downloads the CSV from the imports bucket and
+// streams it into the entity-specific chunk processor. Idempotent for
+// Temporal retries.
 func (s *taskService) ProcessTaskWithStreaming(ctx context.Context, id string) error {
-	// Get task first to check current status
 	t, err := s.TaskRepo.Get(ctx, id)
 	if err != nil {
 		return ierr.WithError(err).
@@ -183,8 +294,8 @@ func (s *taskService) ProcessTaskWithStreaming(ctx context.Context, id string) e
 			Mark(ierr.ErrValidation)
 	}
 
-	// Only update status to processing if not already processing
-	// This makes the method idempotent for Temporal retries
+	// Idempotent status flip: a Temporal retry lands here with the task
+	// already PROCESSING; that must not be treated as an invalid transition.
 	if t.TaskStatus != types.TaskStatusProcessing {
 		if err := s.UpdateTaskStatus(ctx, id, types.TaskStatusProcessing); err != nil {
 			return ierr.WithError(err).
@@ -193,66 +304,27 @@ func (s *taskService) ProcessTaskWithStreaming(ctx context.Context, id string) e
 		}
 	}
 
-	// Create a context with extended timeout for streaming file processing
-	// This ensures we have enough time for large file downloads and processing
 	processingCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 
-	// Use the file processor for streaming
-	streamingProcessor := s.fileProcessor.StreamingProcessor
-
-	// Process based on entity type
-	var processor ChunkProcessor
-	switch t.EntityType {
-	case types.EntityTypeEvents:
-		// Create event service for chunk processor
-		eventSvc := NewEventService(
-			s.EventRepo,
-			s.MeterRepo,
-			s.EventPublisher,
-			s.Logger,
-			s.Config,
-			s.TracingSvc,
-		)
-		processor = &EventsChunkProcessor{
-			eventService: eventSvc,
-			logger:       s.Logger,
+	processor, err := s.chunkProcessorFor(t.EntityType)
+	if err != nil {
+		if updateErr := s.UpdateTaskStatus(ctx, id, types.TaskStatusFailed); updateErr != nil {
+			s.Logger.Error(ctx, "failed to update task status", "error", updateErr)
 		}
-	case types.EntityTypeCustomers:
-		// Create customer service for chunk processor
-		customerSvc := NewCustomerService(s.ServiceParams)
-		processor = &CustomersChunkProcessor{
-			customerService: customerSvc,
-			logger:          s.Logger,
-		}
-	case types.EntityTypePrices:
-		// Create price service for chunk processor
-		priceSvc := NewPriceService(s.ServiceParams)
-		processor = &PricesChunkProcessor{
-			priceService: priceSvc,
-			logger:       s.Logger,
-		}
-	case types.EntityTypeFeatures:
-		// Create feature service for chunk processor
-		featureSvc := NewFeatureService(s.ServiceParams)
-		processor = &FeaturesChunkProcessor{
-			featureService: featureSvc,
-			logger:         s.Logger,
-		}
-	default:
-		return ierr.NewError("unsupported entity type").
-			WithHint("Unsupported entity type").
-			WithReportableDetails(map[string]interface{}{
-				"entity_type": t.EntityType,
-			}).
-			Mark(ierr.ErrInvalidOperation)
+		return err
 	}
 
-	// Process file with streaming using the extended context
-	config := DefaultStreamingConfig()
-	err = streamingProcessor.ProcessFileStream(processingCtx, t, processor, config)
+	reader, err := s.openImportReader(processingCtx, t)
 	if err != nil {
-		// Update task status to failed
+		if updateErr := s.UpdateTaskStatus(ctx, id, types.TaskStatusFailed); updateErr != nil {
+			s.Logger.Error(ctx, "failed to update task status", "error", updateErr)
+		}
+		return err
+	}
+
+	err = s.streaming.ProcessFileStream(processingCtx, t, reader, processor, DefaultStreamingConfig())
+	if err != nil {
 		if updateErr := s.UpdateTaskStatus(ctx, id, types.TaskStatusFailed); updateErr != nil {
 			s.Logger.Error(ctx, "failed to update task status", "error", updateErr)
 		}
