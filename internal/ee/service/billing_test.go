@@ -5074,6 +5074,40 @@ func (s *BillingServiceSuite) TestSplitInvoicePeriodByLineItemCadence_MonthlyOnQ
 	s.Equal(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC), windows[2].End)
 }
 
+func (s *BillingServiceSuite) TestSplitInvoicePeriodByLineItemCadence_AbsorbsDriftIntoLastWindow() {
+	// Regression: real prod invoice for a QUARTERLY sub anchored at
+	// 2026-03-31T18:30:00Z (Apr 1 IST) produced 4 addon line items for the
+	// Q3 period (Sep 30 → Dec 31 UTC = 92 days) instead of 3. Root cause:
+	// UTC-anchored MONTHLY steps land on day-30 (Oct 30, Nov 30, Dec 30),
+	// which is 1 day short of invoicePeriodEnd (Dec 31), so the loop emitted
+	// a trailing 1-day sliver [Dec 30, Dec 31].
+	//
+	// Fix: emit exactly subMonths/itemMonths windows and absorb the drift
+	// into the last window (so the last window is 31 days, not two windows
+	// of 30 + 1).
+	q3Start := time.Date(2026, 9, 30, 18, 30, 0, 0, time.UTC)
+	q3End := time.Date(2026, 12, 31, 18, 30, 0, 0, time.UTC)
+	sub := &subscription.Subscription{
+		BillingPeriod:      types.BILLING_PERIOD_QUARTER,
+		BillingPeriodCount: 1,
+		Timezone:           "UTC",
+	}
+	item := &subscription.SubscriptionLineItem{
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+	}
+
+	windows, err := splitInvoicePeriodByLineItemCadence(q3Start, q3End, item, sub)
+	s.Require().NoError(err)
+	s.Require().Len(windows, 3, "monthly-on-quarterly must produce exactly 3 windows even when calendar drift would otherwise create a 4th sliver")
+	s.Equal(q3Start, windows[0].Start)
+	s.Equal(time.Date(2026, 10, 30, 18, 30, 0, 0, time.UTC), windows[0].End)
+	s.Equal(time.Date(2026, 10, 30, 18, 30, 0, 0, time.UTC), windows[1].Start)
+	s.Equal(time.Date(2026, 11, 30, 18, 30, 0, 0, time.UTC), windows[1].End)
+	s.Equal(time.Date(2026, 11, 30, 18, 30, 0, 0, time.UTC), windows[2].Start)
+	s.Equal(q3End, windows[2].End, "last window must end exactly at invoicePeriodEnd, absorbing the 1-day drift")
+}
+
 func (s *BillingServiceSuite) TestSplitInvoicePeriodByLineItemCadence_NonDivisibleRejected() {
 	// Half-yearly (6mo) on quarterly (3mo) — line item is LONGER, not a divisor.
 	// Fixed-charge code handles this via the "longer cadence" branch (line 185-211),

@@ -476,28 +476,44 @@ func splitInvoicePeriodByLineItemCadence(
 
 	subMonths := types.EffectiveMonths(sub.BillingPeriod, subCount)
 	itemMonths := types.EffectiveMonths(lineItem.BillingPeriod, itemCount)
-	windows := make([]periodWindow, 0, subMonths/itemMonths)
+	expected := subMonths / itemMonths
+	if expected < 1 {
+		expected = 1
+	}
+	// Emit exactly `expected` windows. Force the LAST window to end at
+	// invoicePeriodEnd so any drift between item-cadence months and the
+	// invoice period's calendar length (e.g. Q3 = 92 UTC days vs 3×30-day
+	// UTC-anchored months) is absorbed into the last window — instead of
+	// leaking as a trailing 1-day sliver line item.
+	windows := make([]periodWindow, 0, expected)
 	current := invoicePeriodStart
-	for current.Before(invoicePeriodEnd) {
-		next, err := types.NextBillingDate(&types.NextBillingDateParams{
-			CurrentPeriodStart: current,
-			BillingAnchor:      invoicePeriodStart,
-			Unit:               itemCount,
-			Period:             lineItem.BillingPeriod,
-			Timezone:           sub.Timezone,
-		})
-		if err != nil {
-			return nil, err
-		}
-		// Defensive: never emit a window that overruns the invoice period; clamp to invoicePeriodEnd.
-		if next.After(invoicePeriodEnd) {
+	for i := 0; i < expected; i++ {
+		var next time.Time
+		if i == expected-1 {
 			next = invoicePeriodEnd
+		} else {
+			var err error
+			next, err = types.NextBillingDate(&types.NextBillingDateParams{
+				CurrentPeriodStart: current,
+				BillingAnchor:      invoicePeriodStart,
+				Unit:               itemCount,
+				Period:             lineItem.BillingPeriod,
+				Timezone:           sub.Timezone,
+			})
+			if err != nil {
+				return nil, err
+			}
+			// If NextBillingDate would jump past (or exactly to) invoicePeriodEnd,
+			// or fail to advance, collapse the remaining iterations into this window.
+			if !next.After(current) || !next.Before(invoicePeriodEnd) {
+				next = invoicePeriodEnd
+			}
 		}
 		windows = append(windows, periodWindow{Start: current, End: next})
-		if !next.After(current) {
-			break // safety against infinite loop on degenerate input
-		}
 		current = next
+		if !current.Before(invoicePeriodEnd) {
+			break
+		}
 	}
 	return windows, nil
 }
