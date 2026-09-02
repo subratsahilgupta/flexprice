@@ -2360,8 +2360,26 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice_FreezesCustomCurrencyRateAndAm
 		Total:           decimal.NewFromFloat(15),
 		CustomCurrency:  &types.CustomCurrency{CustomCurrencyCode: "mac"},
 		BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+				CustomerID: s.testData.customer.ID,
+				Amount:     decimal.NewFromFloat(10),
+				Quantity:   decimal.NewFromInt(1),
+				Currency:   "usd",
+				BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+			},
+			{
+				ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+				CustomerID: s.testData.customer.ID,
+				Amount:     decimal.NewFromFloat(5),
+				Quantity:   decimal.NewFromInt(1),
+				Currency:   "usd",
+				BaseModel:  types.GetDefaultBaseModel(s.GetContext()),
+			},
+		},
 	}
-	s.NoError(s.invoiceRepo.Create(s.GetContext(), draft))
+	s.NoError(s.invoiceRepo.CreateWithLineItems(s.GetContext(), draft))
 
 	s.NoError(s.service.FinalizeInvoice(s.GetContext(), draft.ID))
 
@@ -2382,6 +2400,53 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice_FreezesCustomCurrencyRateAndAm
 	s.True(inv.Total.Equal(decimal.NewFromFloat(1.5)), "total, got %s", inv.Total)
 	s.True(inv.Subtotal.Equal(decimal.NewFromFloat(1.5)), "subtotal, got %s", inv.Subtotal)
 	s.True(inv.AmountRemaining.Equal(decimal.NewFromFloat(1.5)), "amount_remaining, got %s", inv.AmountRemaining)
+
+	// Line items are deliberately left in the custom currency: converting each and
+	// rounding it would lose money against the once-converted total.
+	s.Require().Len(inv.LineItems, 2)
+	lineItemTotal := decimal.Zero
+	for _, item := range inv.LineItems {
+		lineItemTotal = lineItemTotal.Add(item.Amount)
+		s.True(item.Quantity.Equal(decimal.NewFromInt(1)), "quantity is a count and must not convert")
+	}
+	s.True(lineItemTotal.Equal(inv.CustomCurrency.CustomCurrencyAmount),
+		"line items sum to the custom total, got %s vs %s", lineItemTotal, inv.CustomCurrency.CustomCurrencyAmount)
+}
+
+// Line items stay in the custom currency and are labelled with it.
+func (s *InvoiceServiceSuite) TestLineItemCarriesCustomCurrency() {
+	s.seedCustomCurrencyConfig()
+
+	resp, err := s.service.CreateEmptyDraftInvoice(s.GetContext(), dto.CreateDraftInvoiceRequest{
+		CustomerID:  s.testData.customer.ID,
+		InvoiceType: types.InvoiceTypeOneOff,
+		Currency:    "mac",
+	})
+	s.NoError(err)
+	s.Equal("usd", resp.Currency)
+
+	item := (&dto.CreateInvoiceLineItemRequest{
+		Amount:   decimal.NewFromInt(1),
+		Quantity: decimal.NewFromInt(1),
+	}).ToInvoiceLineItem(s.GetContext(), &resp.Invoice)
+	s.Equal("mac", item.Currency, "line item amounts are computed in the custom currency")
+}
+
+// With no custom currency configured, line items keep the invoice's fiat currency.
+func (s *InvoiceServiceSuite) TestLineItemKeepsFiatWhenUnconfigured() {
+	resp, err := s.service.CreateEmptyDraftInvoice(s.GetContext(), dto.CreateDraftInvoiceRequest{
+		CustomerID:  s.testData.customer.ID,
+		InvoiceType: types.InvoiceTypeOneOff,
+		Currency:    "usd",
+	})
+	s.NoError(err)
+	s.Nil(resp.CustomCurrency)
+
+	item := (&dto.CreateInvoiceLineItemRequest{
+		Amount:   decimal.NewFromInt(1),
+		Quantity: decimal.NewFromInt(1),
+	}).ToInvoiceLineItem(s.GetContext(), &resp.Invoice)
+	s.Equal("usd", item.Currency)
 }
 
 // An invoice with no custom currency finalizes without gaining one.
