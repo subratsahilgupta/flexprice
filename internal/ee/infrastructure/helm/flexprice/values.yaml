@@ -858,6 +858,18 @@ clickhouse:
       nativePort: 9000
     nodeSelector: {}
     tolerations: []
+    # The clickhouse-server process already runs as uid 101 (data dir is 101-owned);
+    # runAsUser: 101 matches existing ownership so no fsGroup chown is triggered on
+    # the data PVC. Clears the GKE RUN_AS_NONROOT + PRIVILEGE_ESCALATION findings.
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 101
+      runAsGroup: 101
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+      seccompProfile:
+        type: RuntimeDefault
 
   # ── altinity mode ─────────────────────────────────────────────────────────────
   # ClickHouseInstallation CRD. Operator creates service: chi-<fullname>-flexprice-0-0
