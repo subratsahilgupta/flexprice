@@ -287,8 +287,10 @@ func (s *refundService) settleToWallet(ctx context.Context, row *refund.Refund) 
 		}
 
 		reason := types.TransactionReasonInvoiceVoidRefund
+		metadata := types.Metadata{"refund_id": row.ID, "invoice_id": row.InvoiceID}
 		if row.CreditNoteID != nil {
 			reason = types.TransactionReasonCreditNote
+			metadata["credit_note_id"] = *row.CreditNoteID
 		}
 
 		// Keyed on the refund row, not the credit note: one credit note can fan out
@@ -296,7 +298,7 @@ func (s *refundService) settleToWallet(ctx context.Context, row *refund.Refund) 
 		topUp, err := walletService.TopUpWallet(tx, w.ID, &dto.TopUpWalletRequest{
 			Amount:            row.Amount,
 			TransactionReason: reason,
-			Metadata:          types.Metadata{"refund_id": row.ID, "invoice_id": row.InvoiceID},
+			Metadata:          metadata,
 			IdempotencyKey:    lo.ToPtr(row.ID),
 			Description:       fmt.Sprintf("Refund for invoice %s", lo.FromPtrOr(inv.InvoiceNumber, inv.ID)),
 		})
