@@ -205,14 +205,6 @@ definitions:
     properties:
       collection_method:
         $ref: '#/definitions/types.CollectionMethod'
-      customer_present:
-        description: |-
-          CustomerPresent declares the charge as customer-initiated (CIT) rather than
-          merchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may
-          claim and who carries chargeback liability, so it must describe reality: true
-          only when the customer is actually at the keyboard, as in a portal one-click
-          top-up. Unattended charges (auto top-up, dunning) leave it false.
-        type: boolean
       max_mandate_limit:
         type: string
       payment_method:
@@ -2713,10 +2705,6 @@ definitions:
           attaches only those IDs. Each listed ID must belong to the plan, match the subscription
           currency, and have a cadence that equals or strictly divides the subscription cadence.
           Pointer-slice distinguishes nil from [].
-          NOTE: no `dive,required` on this tag — swaggo misinterprets `required`
-          inside `dive` as marking the whole field required, which then shows up
-          in the OpenAPI schema and breaks callers that omit the field. Per-element
-          non-emptiness is enforced explicitly in Validate() below.
         items:
           type: string
         type: array
@@ -4938,15 +4926,6 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
-  ListRefundsResponse:
-    properties:
-      items:
-        items:
-          $ref: '#/definitions/RefundResponse'
-        type: array
-      pagination:
-        $ref: '#/definitions/types.PaginationResponse'
-    type: object
   ListSecretsResponse:
     properties:
       items:
@@ -5577,72 +5556,6 @@ definitions:
         type: string
       proration_date:
         description: proration_date is the date used for proration calculations
-        type: string
-    type: object
-  RefundResponse:
-    properties:
-      amount:
-        type: string
-      attempt:
-        type: integer
-      cancelled_at:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: string
-      credit_note_id:
-        type: string
-      currency:
-        type: string
-      environment_id:
-        type: string
-      failed_at:
-        type: string
-      failure_reason:
-        type: string
-      gateway_idempotency_token:
-        type: string
-      gateway_metadata:
-        additionalProperties: true
-        type: object
-      gateway_refund_id:
-        type: string
-      gateway_tracking_id:
-        type: string
-      id:
-        type: string
-      idempotency_key:
-        type: string
-      initiated_at:
-        type: string
-      invoice_id:
-        type: string
-      metadata:
-        $ref: '#/definitions/types.Metadata'
-      payment_gateway:
-        type: string
-      payment_id:
-        type: string
-      refund_destination:
-        $ref: '#/definitions/types.RefundDestination'
-      refund_destination_id:
-        type: string
-      refund_reason:
-        $ref: '#/definitions/types.RefundReason'
-      refund_status:
-        $ref: '#/definitions/types.RefundStatus'
-      settled_amount:
-        type: string
-      status:
-        $ref: '#/definitions/types.Status'
-      succeeded_at:
-        type: string
-      tenant_id:
-        type: string
-      updated_at:
-        type: string
-      updated_by:
         type: string
     type: object
   RegisterMarketplaceAgreementRequest:
@@ -9810,23 +9723,13 @@ definitions:
   types.CheckoutPaymentProvider:
     enum:
     - razorpay
-    - chargebee
     type: string
     x-enum-varnames:
     - CheckoutPaymentProviderRazorpay
-    - CheckoutPaymentProviderChargebee
   types.CheckoutPaymentProviderConfig:
     properties:
       collection_method:
         $ref: '#/definitions/types.CollectionMethod'
-      customer_present:
-        description: |-
-          CustomerPresent declares the charge as customer-initiated (CIT) rather than
-          merchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may
-          claim and who carries chargeback liability, so it must describe reality: true
-          only when the customer is actually at the keyboard, as in a portal one-click
-          top-up. Unattended charges (auto top-up, dunning) leave it false.
-        type: boolean
       max_mandate_limit:
         type: string
       payment_method:
@@ -10889,7 +10792,6 @@ definitions:
     - moyasar
     - paddle
     - whop
-    - chargebee
     type: string
     x-enum-varnames:
     - PaymentGatewayTypeStripe
@@ -10898,7 +10800,6 @@ definitions:
     - PaymentGatewayTypeMoyasar
     - PaymentGatewayTypePaddle
     - PaymentGatewayTypeWhop
-    - PaymentGatewayTypeChargebee
   types.PaymentMethodType:
     enum:
     - CARD
@@ -11155,46 +11056,6 @@ definitions:
       status:
         $ref: '#/definitions/types.Status'
     type: object
-  types.RefundDestination:
-    enum:
-    - GATEWAY
-    - WALLET
-    - OUT_OF_BAND
-    type: string
-    x-enum-varnames:
-    - RefundDestinationGateway
-    - RefundDestinationWallet
-    - RefundDestinationOutOfBand
-  types.RefundReason:
-    enum:
-    - DUPLICATE
-    - FRAUDULENT
-    - REQUESTED_BY_CUSTOMER
-    - ORDER_CHANGE
-    - SERVICE_ISSUE
-    - OTHER
-    type: string
-    x-enum-varnames:
-    - RefundReasonDuplicate
-    - RefundReasonFraudulent
-    - RefundReasonRequestedByCustomer
-    - RefundReasonOrderChange
-    - RefundReasonServiceIssue
-    - RefundReasonOther
-  types.RefundStatus:
-    enum:
-    - PENDING
-    - PROCESSING
-    - SUCCEEDED
-    - FAILED
-    - CANCELLED
-    type: string
-    x-enum-varnames:
-    - RefundStatusPending
-    - RefundStatusProcessing
-    - RefundStatusSucceeded
-    - RefundStatusFailed
-    - RefundStatusCancelled
   types.RejectedEventReason:
     enum:
     - no_meter_for_event_name
@@ -11260,6 +11121,30 @@ definitions:
     - S3EncryptionTypeAES256
     - S3EncryptionTypeAwsKms
     - S3EncryptionTypeAwsKmsDsse
+  types.S3ExportConfig:
+    properties:
+      bucket:
+        description: S3 bucket name
+        type: string
+      compression:
+        allOf:
+        - $ref: '#/definitions/types.S3CompressionType'
+        description: 'Compression type: "gzip", "none" (default: "none")'
+      encryption:
+        allOf:
+        - $ref: '#/definitions/types.S3EncryptionType'
+        description: 'Encryption type: "AES256", "aws:kms", "aws:kms:dsse" (default:
+          "AES256")'
+      is_flexprice_managed:
+        description: If true, use Flexprice-managed S3 credentials instead of user-provided
+        type: boolean
+      key_prefix:
+        description: Optional prefix for S3 keys (e.g., "flexprice-exports/")
+        type: string
+      region:
+        description: AWS region (e.g., "us-west-2")
+        type: string
+    type: object
   types.S3JobConfig:
     properties:
       bucket:
@@ -11433,31 +11318,6 @@ definitions:
     - StatusPublished
     - StatusDeleted
     - StatusArchived
-  types.StorageExportConfig:
-    properties:
-      bucket:
-        description: Storage bucket name
-        type: string
-      compression:
-        allOf:
-        - $ref: '#/definitions/types.S3CompressionType'
-        description: 'Compression type: "gzip", "none" (default: "none")'
-      encryption:
-        allOf:
-        - $ref: '#/definitions/types.S3EncryptionType'
-        description: 'Encryption type: "AES256", "aws:kms", "aws:kms:dsse" (default:
-          "AES256")'
-      is_flexprice_managed:
-        description: If true, use Flexprice-managed storage credentials instead of
-          user-provided
-        type: boolean
-      key_prefix:
-        description: Optional prefix for object keys (e.g., "flexprice-exports/")
-        type: string
-      region:
-        description: Cloud region (e.g., "us-west-2"); unused for GCS
-        type: string
-    type: object
   types.SubscriptionChangeEntityType:
     enum:
     - plan
@@ -11751,8 +11611,8 @@ definitions:
         $ref: '#/definitions/types.EntitySyncConfig'
       s3:
         allOf:
-        - $ref: '#/definitions/types.StorageExportConfig'
-        description: Tag stays "s3" for back-compat.
+        - $ref: '#/definitions/types.S3ExportConfig'
+        description: S3 connection metadata (for Flexprice-managed S3 connections)
       subscription:
         $ref: '#/definitions/types.EntitySyncConfig'
     type: object
@@ -12217,9 +12077,6 @@ definitions:
     - payment.failed
     - payment.success
     - payment.pending
-    - refund.created
-    - refund.succeeded
-    - refund.failed
     - customer.created
     - customer.updated
     - customer.deleted
@@ -12279,9 +12136,6 @@ definitions:
     - WebhookEventPaymentFailed
     - WebhookEventPaymentSuccess
     - WebhookEventPaymentPending
-    - WebhookEventRefundCreated
-    - WebhookEventRefundSucceeded
-    - WebhookEventRefundFailed
     - WebhookEventCustomerCreated
     - WebhookEventCustomerUpdated
     - WebhookEventCustomerDeleted
@@ -12700,52 +12554,6 @@ definitions:
         $ref: '#/definitions/types.WebhookEventName'
       payment:
         $ref: '#/definitions/webhookDto.Payment'
-    type: object
-  webhookDto.Refund:
-    properties:
-      amount:
-        type: string
-      attempt:
-        type: integer
-      credit_note_id:
-        type: string
-      currency:
-        type: string
-      failed_at:
-        type: string
-      failure_reason:
-        type: string
-      gateway_refund_id:
-        type: string
-      id:
-        type: string
-      invoice_id:
-        type: string
-      metadata:
-        $ref: '#/definitions/types.Metadata'
-      payment_gateway:
-        type: string
-      payment_id:
-        type: string
-      refund_destination:
-        $ref: '#/definitions/types.RefundDestination'
-      refund_destination_id:
-        type: string
-      refund_reason:
-        $ref: '#/definitions/types.RefundReason'
-      refund_status:
-        $ref: '#/definitions/types.RefundStatus'
-      settled_amount:
-        type: string
-      succeeded_at:
-        type: string
-    type: object
-  webhookDto.RefundWebhookPayload:
-    properties:
-      event_type:
-        $ref: '#/definitions/types.WebhookEventName'
-      refund:
-        $ref: '#/definitions/webhookDto.Refund'
     type: object
   webhookDto.RejectedEventData:
     properties:
@@ -17692,167 +17500,6 @@ paths:
       summary: Get a specific RBAC role
       tags:
       - RBAC
-  /refunds:
-    get:
-      description: Use to see where refunded money actually went and whether it has
-        settled. Filter by invoice_ids to get every settlement row for one invoice.
-      operationId: listRefunds
-      parameters:
-      - collectionFormat: csv
-        description: Filter by invoice IDs
-        in: query
-        items:
-          type: string
-        name: invoice_ids
-        type: array
-      - collectionFormat: csv
-        description: Filter by payment IDs
-        in: query
-        items:
-          type: string
-        name: payment_ids
-        type: array
-      - collectionFormat: csv
-        description: Filter by credit note IDs
-        in: query
-        items:
-          type: string
-        name: credit_note_ids
-        type: array
-      - collectionFormat: csv
-        description: Filter by refund status
-        in: query
-        items:
-          type: string
-        name: refund_statuses
-        type: array
-      - collectionFormat: csv
-        description: Filter by refund destination
-        in: query
-        items:
-          type: string
-        name: refund_destinations
-        type: array
-      - description: Filter by payment gateway
-        in: query
-        name: gateway
-        type: string
-      - description: Only refunds that have settled
-        in: query
-        name: only_settled
-        type: boolean
-      - description: Limit
-        in: query
-        name: limit
-        type: integer
-      - description: Offset
-        in: query
-        name: offset
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/ListRefundsResponse'
-        "400":
-          description: Invalid request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: List refunds
-      tags:
-      - Refunds
-      x-scope: read
-  /refunds/{id}:
-    get:
-      description: 'Use to inspect a single refund: its destination, settled amount
-        and failure reason.'
-      operationId: getRefund
-      parameters:
-      - description: Refund ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/RefundResponse'
-        "400":
-          description: Invalid request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "404":
-          description: Resource not found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Get refund
-      tags:
-      - Refunds
-      x-scope: read
-  /refunds/{id}/retry:
-    post:
-      consumes:
-      - application/json
-      description: Use when a refund failed or is stuck pending. A failed gateway
-        refund is retried into the customer's wallet; an already-settled refund is
-        rejected.
-      operationId: retryRefund
-      parameters:
-      - description: Refund ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/RefundResponse'
-        "400":
-          description: Invalid request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "404":
-          description: Resource not found
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Retry refund
-      tags:
-      - Refunds
-      x-scope: write
   /secrets/api/keys:
     get:
       consumes:
@@ -21284,54 +20931,6 @@ paths:
           schema:
             $ref: '#/definitions/webhookDto.PaymentWebhookPayload'
       summary: payment.updated
-      tags:
-      - Webhook Events
-  /webhook-events/refund.created:
-    post:
-      consumes:
-      - application/json
-      description: Fired when a refund is planned against an invoice, before the money
-        moves. Doc-only for parsing.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Webhook payload
-          schema:
-            $ref: '#/definitions/webhookDto.RefundWebhookPayload'
-      summary: refund.created
-      tags:
-      - Webhook Events
-  /webhook-events/refund.failed:
-    post:
-      consumes:
-      - application/json
-      description: Fired when a refund fails. A gateway refund that fails is retried
-        into the customer's wallet. Doc-only for parsing.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Webhook payload
-          schema:
-            $ref: '#/definitions/webhookDto.RefundWebhookPayload'
-      summary: refund.failed
-      tags:
-      - Webhook Events
-  /webhook-events/refund.succeeded:
-    post:
-      consumes:
-      - application/json
-      description: Fired when a refund settles, to the original payment gateway or
-        to a wallet. Doc-only for parsing.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Webhook payload
-          schema:
-            $ref: '#/definitions/webhookDto.RefundWebhookPayload'
-      summary: refund.succeeded
       tags:
       - Webhook Events
   /webhook-events/subscription.activated:

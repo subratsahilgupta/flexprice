@@ -7148,244 +7148,6 @@
                 }
             }
         },
-        "/refunds": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Use to see where refunded money actually went and whether it has settled. Filter by invoice_ids to get every settlement row for one invoice.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Refunds"
-                ],
-                "summary": "List refunds",
-                "operationId": "listRefunds",
-                "parameters": [
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "collectionFormat": "csv",
-                        "description": "Filter by invoice IDs",
-                        "name": "invoice_ids",
-                        "in": "query"
-                    },
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "collectionFormat": "csv",
-                        "description": "Filter by payment IDs",
-                        "name": "payment_ids",
-                        "in": "query"
-                    },
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "collectionFormat": "csv",
-                        "description": "Filter by credit note IDs",
-                        "name": "credit_note_ids",
-                        "in": "query"
-                    },
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "collectionFormat": "csv",
-                        "description": "Filter by refund status",
-                        "name": "refund_statuses",
-                        "in": "query"
-                    },
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "collectionFormat": "csv",
-                        "description": "Filter by refund destination",
-                        "name": "refund_destinations",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Filter by payment gateway",
-                        "name": "gateway",
-                        "in": "query"
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "Only refunds that have settled",
-                        "name": "only_settled",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Limit",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Offset",
-                        "name": "offset",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/ListRefundsResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                },
-                "x-scope": "read"
-            }
-        },
-        "/refunds/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Use to inspect a single refund: its destination, settled amount and failure reason.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Refunds"
-                ],
-                "summary": "Get refund",
-                "operationId": "getRefund",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Refund ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/RefundResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Resource not found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                },
-                "x-scope": "read"
-            }
-        },
-        "/refunds/{id}/retry": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Use when a refund failed or is stuck pending. A failed gateway refund is retried into the customer's wallet; an already-settled refund is rejected.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Refunds"
-                ],
-                "summary": "Retry refund",
-                "operationId": "retryRefund",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Refund ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/RefundResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Resource not found",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                },
-                "x-scope": "write"
-            }
-        },
         "/secrets/api/keys": {
             "get": {
                 "security": [
@@ -8388,7 +8150,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Change a subscription's plan in place. Subscription id, billing anchor and period bounds are preserved; line items are sliced and settled in one transaction.\n\nchange_at controls timing. Omitted or 'immediate' applies the change now. 'end_of_period' records a pending schedule that executes at the subscription's current period end: the response returns is_scheduled, schedule_id and scheduled_at instead of a completed change, and nothing is swapped or billed until the boundary.\n\nscheduled_at is resolved from the subscription's current period end at request time. If that period end is already in the past (a backdated start date, a resumed pause, or worker downtime can all leave a subscription behind), the change is due immediately and fires on the next billing scan rather than a period away — inspect scheduled_at to see this.\n\nOnly one plan change may be pending per subscription. By default (on_conflict_policies.on_pending_schedule = 'reject') a second request returns 400; cancel the existing schedule via POST /subscriptions/schedules/{schedule_id}/cancel first. Pending schedules are listable via GET /subscriptions/{id}/schedules.\n\nSet on_conflict_policies.on_pending_schedule to 'supersede' to replace the queued change instead: the pending schedule is cancelled and this request applied in the same transaction, so both land or neither does. The cancelled schedule ids are returned in superseded_schedules, and preview reports the same list without writing.",
+                "description": "Change a subscription's plan in place. Subscription id, billing anchor and period bounds are preserved; line items are sliced and settled in one transaction.\n\nchange_at controls timing. Omitted or 'immediate' applies the change now. 'end_of_period' records a pending schedule that executes at the subscription's current period end: the response returns is_scheduled, schedule_id and scheduled_at instead of a completed change, and nothing is swapped or billed until the boundary.\n\nscheduled_at is resolved from the subscription's current period end at request time. If that period end is already in the past (a backdated start date, a resumed pause, or worker downtime can all leave a subscription behind), the change is due immediately and fires on the next billing scan rather than a period away \u2014 inspect scheduled_at to see this.\n\nOnly one plan change may be pending per subscription. By default (on_conflict_policies.on_pending_schedule = 'reject') a second request returns 400; cancel the existing schedule via POST /subscriptions/schedules/{schedule_id}/cancel first. Pending schedules are listable via GET /subscriptions/{id}/schedules.\n\nSet on_conflict_policies.on_pending_schedule to 'supersede' to replace the queued change instead: the pending schedule is cancelled and this request applied in the same transaction, so both land or neither does. The cancelled schedule ids are returned in superseded_schedules, and preview reports the same list without writing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9044,7 +8806,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Use to submit a CSV of usage events for async ingestion. The CSV must already have been uploaded to the Flexprice-managed imports bucket (currently via CSV Box) — pass the upload_id and the backend fetches the file from S3 and streams rows into ClickHouse. Returns the task ID and Temporal workflow IDs for polling.",
+                "description": "Use to submit a CSV of usage events for async ingestion. The CSV must already have been uploaded to the Flexprice-managed imports bucket (currently via CSV Box) \u2014 pass the upload_id and the backend fetches the file from S3 and streams rows into ClickHouse. Returns the task ID and Temporal workflow IDs for polling.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10952,7 +10714,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Update the roles of a user account (not service accounts — their roles are fixed at creation). Restricted to super_admin; a caller cannot update their own roles. Blocked with a 400 if the user has any active (published, unexpired) API key in any environment, since a key's permissions are snapshotted at creation time and would otherwise silently keep running on the old roles; the error lists the active keys grouped by environment ID so the caller can prompt to expire them first, then retry.",
+                "description": "Update the roles of a user account (not service accounts \u2014 their roles are fixed at creation). Restricted to super_admin; a caller cannot update their own roles. Blocked with a 400 if the user has any active (published, unexpired) API key in any environment, since a key's permissions are snapshotted at creation time and would otherwise silently keep running on the old roles; the error lists the active keys grouped by environment ID so the caller can prompt to expire them first, then retry.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12117,7 +11879,7 @@
         },
         "/webhook-events/event.rejected": {
             "post": {
-                "description": "Fired when an ingested usage event produces no meter usage — either no meter is registered for its event name, or meters exist for the name but the event matched none of their filters. Throttled to at most once per configured window per event name. Doc-only for parsing.",
+                "description": "Fired when an ingested usage event produces no meter usage \u2014 either no meter is registered for its event name, or meters exist for the name but the event matched none of their filters. Throttled to at most once per configured window per event name. Doc-only for parsing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12501,75 +12263,6 @@
                         "description": "Webhook payload",
                         "schema": {
                             "$ref": "#/definitions/webhookDto.PaymentWebhookPayload"
-                        }
-                    }
-                }
-            }
-        },
-        "/webhook-events/refund.created": {
-            "post": {
-                "description": "Fired when a refund is planned against an invoice, before the money moves. Doc-only for parsing.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Webhook Events"
-                ],
-                "summary": "refund.created",
-                "responses": {
-                    "200": {
-                        "description": "Webhook payload",
-                        "schema": {
-                            "$ref": "#/definitions/webhookDto.RefundWebhookPayload"
-                        }
-                    }
-                }
-            }
-        },
-        "/webhook-events/refund.failed": {
-            "post": {
-                "description": "Fired when a refund fails. A gateway refund that fails is retried into the customer's wallet. Doc-only for parsing.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Webhook Events"
-                ],
-                "summary": "refund.failed",
-                "responses": {
-                    "200": {
-                        "description": "Webhook payload",
-                        "schema": {
-                            "$ref": "#/definitions/webhookDto.RefundWebhookPayload"
-                        }
-                    }
-                }
-            }
-        },
-        "/webhook-events/refund.succeeded": {
-            "post": {
-                "description": "Fired when a refund settles, to the original payment gateway or to a wallet. Doc-only for parsing.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Webhook Events"
-                ],
-                "summary": "refund.succeeded",
-                "responses": {
-                    "200": {
-                        "description": "Webhook payload",
-                        "schema": {
-                            "$ref": "#/definitions/webhookDto.RefundWebhookPayload"
                         }
                     }
                 }
@@ -13591,10 +13284,6 @@
                 "collection_method": {
                     "$ref": "#/definitions/types.CollectionMethod"
                 },
-                "customer_present": {
-                    "description": "CustomerPresent declares the charge as customer-initiated (CIT) rather than\nmerchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may\nclaim and who carries chargeback liability, so it must describe reality: true\nonly when the customer is actually at the keyboard, as in a portal one-click\ntop-up. Unattended charges (auto top-up, dunning) leave it false.",
-                    "type": "boolean"
-                },
                 "max_mandate_limit": {
                     "type": "string"
                 },
@@ -13889,19 +13578,19 @@
                     "type": "boolean"
                 },
                 "customer_aws_account_id": {
-                    "description": "-\u003e BatchMeterUsage's CustomerAWSAccountId",
+                    "description": "-> BatchMeterUsage's CustomerAWSAccountId",
                     "type": "string"
                 },
                 "dimension": {
-                    "description": "-\u003e BatchMeterUsage's Dimension (always \"usage_fee\" in the cents model)",
+                    "description": "-> BatchMeterUsage's Dimension (always \"usage_fee\" in the cents model)",
                     "type": "string"
                 },
                 "license_arn": {
-                    "description": "-\u003e BatchMeterUsage's LicenseArn; identifies the buyer's agreement",
+                    "description": "-> BatchMeterUsage's LicenseArn; identifies the buyer's agreement",
                     "type": "string"
                 },
                 "product_code": {
-                    "description": "-\u003e BatchMeterUsage's ProductCode (omitted when ConcurrentAgreements)",
+                    "description": "-> BatchMeterUsage's ProductCode (omitted when ConcurrentAgreements)",
                     "type": "string"
                 }
             }
@@ -14436,15 +14125,15 @@
                     "type": "string"
                 },
                 "dimension": {
-                    "description": "-\u003e usageEvent's dimension (always \"usage_fee\" in the cents model)",
+                    "description": "-> usageEvent's dimension (always \"usage_fee\" in the cents model)",
                     "type": "string"
                 },
                 "plan_id": {
-                    "description": "-\u003e usageEvent's planId; Azure's plan id, distinct from the request's top-level PlanID",
+                    "description": "-> usageEvent's planId; Azure's plan id, distinct from the request's top-level PlanID",
                     "type": "string"
                 },
                 "resource_id": {
-                    "description": "-\u003e usageEvent's resourceId; the Azure SaaS subscription id",
+                    "description": "-> usageEvent's resourceId; the Azure SaaS subscription id",
                     "type": "string"
                 }
             }
@@ -14609,7 +14298,7 @@
             ],
             "properties": {
                 "cancel_at": {
-                    "description": "CancelAt is the exact date/time when the subscription should be cancelled.\nRequired for cancellation_type \"scheduled_date\"; optional for \"immediate\" (past dates only — backdated cancellation).\nFor \"scheduled_date\", accepts both future dates (deferred cancellation) and past dates (backdated cancellation).\nFor \"immediate\", accepts past/current dates only; use \"scheduled_date\" for future dates.",
+                    "description": "CancelAt is the exact date/time when the subscription should be cancelled.\nRequired for cancellation_type \"scheduled_date\"; optional for \"immediate\" (past dates only \u2014 backdated cancellation).\nFor \"scheduled_date\", accepts both future dates (deferred cancellation) and past dates (backdated cancellation).\nFor \"immediate\", accepts past/current dates only; use \"scheduled_date\" for future dates.",
                     "type": "string"
                 },
                 "cancel_immediately_inovice_policy": {
@@ -15991,7 +15680,7 @@
                     "type": "integer"
                 },
                 "grant_measure": {
-                    "description": "Grant config — optional. All-or-nothing; see entitlement.validateGrantConfig.",
+                    "description": "Grant config \u2014 optional. All-or-nothing; see entitlement.validateGrantConfig.",
                     "$ref": "#/definitions/types.EntitlementGrantMeasure"
                 },
                 "grant_quota": {
@@ -16502,7 +16191,7 @@
                     "default": 1
                 },
                 "bucket_size": {
-                    "description": "BucketSize windows the meter's aggregation for this price. The meter\naggregates within each window and the window results are summed, so the\nbillable unit becomes per-window (e.g. seats -\u003e seat-hours). Valid only on\nUSAGE prices whose meter aggregates MAX or SUM.",
+                    "description": "BucketSize windows the meter's aggregation for this price. The meter\naggregates within each window and the window results are summed, so the\nbillable unit becomes per-window (e.g. seats -> seat-hours). Valid only on\nUSAGE prices whose meter aggregates MAX or SUM.",
                     "$ref": "#/definitions/types.WindowSize"
                 },
                 "currency": {
@@ -16803,7 +16492,7 @@
                     "type": "string"
                 },
                 "billing_cycle": {
-                    "description": "BillingCycle controls the billing anchor. anniversary = start_date; calendar = period boundary\n(e.g. monthly with start 2025-04-15 → calendar anchor is 2025-05-01).",
+                    "description": "BillingCycle controls the billing anchor. anniversary = start_date; calendar = period boundary\n(e.g. monthly with start 2025-04-15 \u2192 calendar anchor is 2025-05-01).",
                     "$ref": "#/definitions/types.BillingCycle"
                 },
                 "billing_period": {
@@ -16859,7 +16548,7 @@
                     "type": "string"
                 },
                 "include_price_ids": {
-                    "description": "IncludePriceIDs selects which plan prices to attach. Nil/omitted attaches matching-cadence\nprices plus ONETIME; [] attaches none (LineItems extras still apply); a non-empty list\nattaches only those IDs. Each listed ID must belong to the plan, match the subscription\ncurrency, and have a cadence that equals or strictly divides the subscription cadence.\nPointer-slice distinguishes nil from [].\nNOTE: no `dive,required` on this tag — swaggo misinterprets `required`\ninside `dive` as marking the whole field required, which then shows up\nin the OpenAPI schema and breaks callers that omit the field. Per-element\nnon-emptiness is enforced explicitly in Validate() below.",
+                    "description": "IncludePriceIDs selects which plan prices to attach. Nil/omitted attaches matching-cadence\nprices plus ONETIME; [] attaches none (LineItems extras still apply); a non-empty list\nattaches only those IDs. Each listed ID must belong to the plan, match the subscription\ncurrency, and have a cadence that equals or strictly divides the subscription cadence.\nPointer-slice distinguishes nil from [].",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -16961,7 +16650,7 @@
                     "type": "string"
                 },
                 "trial_period_days": {
-                    "description": "TrialPeriodDays: nil = inherit from plan prices, 0 = no trial, \u003e0 = override in days.",
+                    "description": "TrialPeriodDays: nil = inherit from plan prices, 0 = no trial, >0 = override in days.",
                     "type": "integer"
                 }
             }
@@ -17039,7 +16728,7 @@
                     "type": "string"
                 },
                 "tax_behavior": {
-                    "description": "TaxBehavior is inclusive or exclusive. Settable at any level. If left empty on a\nsubscription-level association, it resolves from the currency default at creation\ntime (internal/types.DefaultTaxBehaviorForCurrency) — tenant/customer-level templates\nonly need this set explicitly if the tenant wants one; otherwise it stays null and is\nresolved when the template is copied down to a subscription.",
+                    "description": "TaxBehavior is inclusive or exclusive. Settable at any level. If left empty on a\nsubscription-level association, it resolves from the currency default at creation\ntime (internal/types.DefaultTaxBehaviorForCurrency) \u2014 tenant/customer-level templates\nonly need this set explicitly if the tenant wants one; otherwise it stays null and is\nresolved when the template is copied down to a subscription.",
                     "$ref": "#/definitions/types.TaxBehavior"
                 },
                 "tax_rate_code": {
@@ -17082,7 +16771,7 @@
                     "$ref": "#/definitions/types.TaxRateScope"
                 },
                 "tax_rate_type": {
-                    "description": "tax_rate_type is always \"percentage\" — fixed-amount tax rates are not supported",
+                    "description": "tax_rate_type is always \"percentage\" \u2014 fixed-amount tax rates are not supported",
                     "$ref": "#/definitions/types.TaxRateType"
                 }
             }
@@ -17677,7 +17366,7 @@
                     "$ref": "#/definitions/types.Status"
                 },
                 "tax_treatment": {
-                    "description": "TaxTreatment is the customer's tax treatment — taxable (default) or exempt.",
+                    "description": "TaxTreatment is the customer's tax treatment \u2014 taxable (default) or exempt.",
                     "$ref": "#/definitions/types.TaxTreatment"
                 },
                 "tenant_id": {
@@ -18253,15 +17942,15 @@
                     "type": "string"
                 },
                 "metric_name": {
-                    "description": "-\u003e services.report's metricName (always \"{service_name}/usage_fee\")",
+                    "description": "-> services.report's metricName (always \"{service_name}/usage_fee\")",
                     "type": "string"
                 },
                 "service_name": {
-                    "description": "-\u003e services.report URL's service_name; identifies the product",
+                    "description": "-> services.report URL's service_name; identifies the product",
                     "type": "string"
                 },
                 "usage_reporting_id": {
-                    "description": "-\u003e services.report's consumerId; identifies the buyer",
+                    "description": "-> services.report's consumerId; identifies the buyer",
                     "type": "string"
                 }
             }
@@ -18291,7 +17980,7 @@
                     }
                 },
                 "include_children": {
-                    "description": "IncludeChildren, when true and ExternalCustomerID belongs to a parent\ncustomer, aggregates every inherited-child customer's usage into the\nrevenue and cost totals. Default (false) restricts the query to the\ncustomer's own usage — mirrors the meter-usage analytics contract.",
+                    "description": "IncludeChildren, when true and ExternalCustomerID belongs to a parent\ncustomer, aggregates every inherited-child customer's usage into the\nrevenue and cost totals. Default (false) restricts the query to the\ncustomer's own usage \u2014 mirrors the meter-usage analytics contract.",
                     "type": "boolean"
                 },
                 "limit": {
@@ -18578,7 +18267,7 @@
                     }
                 },
                 "group_by": {
-                    "description": "allowed values: \"source\", \"feature_id\", \"properties.\u003cfield_name\u003e\"",
+                    "description": "allowed values: \"source\", \"feature_id\", \"properties.<field_name>\"",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -18809,14 +18498,14 @@
                     }
                 },
                 "group_by": {
-                    "description": "GroupBy lists the analytics group_by dimensions.\n  - \"source\"        — group by event source column\n  - \"properties.X\"  — group by JSON property X",
+                    "description": "GroupBy lists the analytics group_by dimensions.\n  - \"source\"        \u2014 group by event source column\n  - \"properties.X\"  \u2014 group by JSON property X",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "group_by_property": {
-                    "description": "GroupByProperty is the property name in event.properties to group by before aggregating.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.\n\nDeprecated: prefer GroupBy []string{\"properties.\u003cX\u003e\"} for parity with\nother analytics endpoints. ToUsageParams translates this field into\nGroupBy when GroupBy is otherwise empty.",
+                    "description": "GroupByProperty is the property name in event.properties to group by before aggregating.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.\n\nDeprecated: prefer GroupBy []string{\"properties.<X>\"} for parity with\nother analytics endpoints. ToUsageParams translates this field into\nGroupBy when GroupBy is otherwise empty.",
                     "type": "string"
                 },
                 "multiplier": {
@@ -19010,7 +18699,7 @@
                     }
                 },
                 "trial_period_days": {
-                    "description": "TrialPeriodDays: nil = inherit from plan prices, 0 = no trial, \u003e0 = override in days.",
+                    "description": "TrialPeriodDays: nil = inherit from plan prices, 0 = no trial, >0 = override in days.",
                     "type": "integer"
                 }
             }
@@ -19467,7 +19156,7 @@
                     "type": "string"
                 },
                 "recalculated_invoice_id": {
-                    "description": "recalculated_invoice_id is the ID of the replacement invoice created when this invoice was voided and recalculated.\nWhen set, it forms a parent→child link from this (voided) invoice to the new replacement invoice.",
+                    "description": "recalculated_invoice_id is the ID of the replacement invoice created when this invoice was voided and recalculated.\nWhen set, it forms a parent\u2192child link from this (voided) invoice to the new replacement invoice.",
                     "type": "string"
                 },
                 "refunded_amount": {
@@ -19699,20 +19388,6 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/PaymentResponse"
-                    }
-                },
-                "pagination": {
-                    "$ref": "#/definitions/types.PaginationResponse"
-                }
-            }
-        },
-        "ListRefundsResponse": {
-            "type": "object",
-            "properties": {
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/RefundResponse"
                     }
                 },
                 "pagination": {
@@ -20588,105 +20263,6 @@
                 }
             }
         },
-        "RefundResponse": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "string"
-                },
-                "attempt": {
-                    "type": "integer"
-                },
-                "cancelled_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "credit_note_id": {
-                    "type": "string"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "environment_id": {
-                    "type": "string"
-                },
-                "failed_at": {
-                    "type": "string"
-                },
-                "failure_reason": {
-                    "type": "string"
-                },
-                "gateway_idempotency_token": {
-                    "type": "string"
-                },
-                "gateway_metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "gateway_refund_id": {
-                    "type": "string"
-                },
-                "gateway_tracking_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "idempotency_key": {
-                    "type": "string"
-                },
-                "initiated_at": {
-                    "type": "string"
-                },
-                "invoice_id": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
-                },
-                "payment_gateway": {
-                    "type": "string"
-                },
-                "payment_id": {
-                    "type": "string"
-                },
-                "refund_destination": {
-                    "$ref": "#/definitions/types.RefundDestination"
-                },
-                "refund_destination_id": {
-                    "type": "string"
-                },
-                "refund_reason": {
-                    "$ref": "#/definitions/types.RefundReason"
-                },
-                "refund_status": {
-                    "$ref": "#/definitions/types.RefundStatus"
-                },
-                "settled_amount": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "succeeded_at": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                }
-            }
-        },
         "RegisterMarketplaceAgreementRequest": {
             "type": "object",
             "required": [
@@ -20982,7 +20558,7 @@
             "type": "object",
             "properties": {
                 "action": {
-                    "description": "Action is \"add\" or \"remove\". Defaults to \"add\" when omitted — fully backward-compatible.",
+                    "description": "Action is \"add\" or \"remove\". Defaults to \"add\" when omitted \u2014 fully backward-compatible.",
                     "$ref": "#/definitions/InheritanceAction"
                 },
                 "external_customer_ids_to_inherit_subscription": {
@@ -22228,7 +21804,7 @@
                     "type": "string"
                 },
                 "plan_prices_out_of_sync": {
-                    "description": "PlanPricesOutOfSync is true when the subscription's synced_price_sequence\nis behind the plan's current max prices.sequence — i.e. plan-price\nchanges have not yet been reconciled into this subscription's line items.",
+                    "description": "PlanPricesOutOfSync is true when the subscription's synced_price_sequence\nis behind the plan's current max prices.sequence \u2014 i.e. plan-price\nchanges have not yet been reconciled into this subscription's line items.",
                     "type": "boolean"
                 },
                 "proration_behavior": {
@@ -23134,7 +22710,7 @@
                     "$ref": "#/definitions/types.EntitlementAggregationMode"
                 },
                 "clear_grant_config": {
-                    "description": "Grant config — nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).",
+                    "description": "Grant config \u2014 nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).",
                     "type": "boolean"
                 },
                 "config_value": {
@@ -23764,7 +23340,7 @@
                     "type": "string"
                 },
                 "properties": {
-                    "description": "Stores property values for flexible grouping (e.g., org_id -\u003e \"org123\")",
+                    "description": "Stores property values for flexible grouping (e.g., org_id -> \"org123\")",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -23829,7 +23405,7 @@
             "type": "object",
             "properties": {
                 "buckets": {
-                    "description": "Buckets lists every commitment bucket this (possibly rolled-up) window\noverlaps — only populated when BreakdownBucket=true and the line item has\nCommitmentTimeBuckets. A coarse window can overlap more than one bucket, and\nonly partially, so this is a list. Empty when the window touches no bucket.\nIt is an informational HINT only: the point's single cost/computed_* totals\nmix all overlapped buckets and out-of-bucket time and CANNOT be split per\nbucket — read bucket_summaries for exact per-bucket cost.",
+                    "description": "Buckets lists every commitment bucket this (possibly rolled-up) window\noverlaps \u2014 only populated when BreakdownBucket=true and the line item has\nCommitmentTimeBuckets. A coarse window can overlap more than one bucket, and\nonly partially, so this is a list. Empty when the window touches no bucket.\nIt is an informational HINT only: the point's single cost/computed_* totals\nmix all overlapped buckets and out-of-bucket time and CANNOT be split per\nbucket \u2014 read bucket_summaries for exact per-bucket cost.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/PointBucket"
@@ -24566,7 +24142,7 @@
                     "$ref": "#/definitions/types.Status"
                 },
                 "tax_treatment": {
-                    "description": "TaxTreatment is the customer's tax treatment — taxable (default) or exempt.",
+                    "description": "TaxTreatment is the customer's tax treatment \u2014 taxable (default) or exempt.",
                     "$ref": "#/definitions/types.TaxTreatment"
                 },
                 "tenant_id": {
@@ -24913,7 +24489,7 @@
             "type": "object",
             "properties": {
                 "bucket_size": {
-                    "description": "BucketSize windows the aggregation: the meter aggregates within each window\nand the window results are summed.\n\nDeprecated: configure bucket_size on the price instead. Still read and\nhonoured — meters that carry it keep billing exactly as before, and new\nmeters may still set it — but a price-level bucket_size takes precedence\nand is the only place new configuration should go. See\nprice.ResolveBucketSize.",
+                    "description": "BucketSize windows the aggregation: the meter aggregates within each window\nand the window results are summed.\n\nDeprecated: configure bucket_size on the price instead. Still read and\nhonoured \u2014 meters that carry it keep billing exactly as before, and new\nmeters may still set it \u2014 but a price-level bucket_size takes precedence\nand is the only place new configuration should go. See\nprice.ResolveBucketSize.",
                     "$ref": "#/definitions/types.WindowSize",
                     "x-speakeasy-deprecation-message": "Deprecated: set bucket_size on the price instead. Still honoured for existing meters."
                 },
@@ -26081,12 +25657,10 @@
         "types.CheckoutPaymentProvider": {
             "type": "string",
             "enum": [
-                "razorpay",
-                "chargebee"
+                "razorpay"
             ],
             "x-enum-varnames": [
-                "CheckoutPaymentProviderRazorpay",
-                "CheckoutPaymentProviderChargebee"
+                "CheckoutPaymentProviderRazorpay"
             ]
         },
         "types.CheckoutPaymentProviderConfig": {
@@ -26094,10 +25668,6 @@
             "properties": {
                 "collection_method": {
                     "$ref": "#/definitions/types.CollectionMethod"
-                },
-                "customer_present": {
-                    "description": "CustomerPresent declares the charge as customer-initiated (CIT) rather than\nmerchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may\nclaim and who carries chargeback liability, so it must describe reality: true\nonly when the customer is actually at the keyboard, as in a portal one-click\ntop-up. Unattended charges (auto top-up, dunning) leave it false.",
-                    "type": "boolean"
                 },
                 "max_mandate_limit": {
                     "type": "string"
@@ -27208,19 +26778,19 @@
                     }
                 },
                 "period_end_gte": {
-                    "description": "period_end_gte filters invoices with period_end \u003e= value",
+                    "description": "period_end_gte filters invoices with period_end >= value",
                     "type": "string"
                 },
                 "period_end_lte": {
-                    "description": "period_end_lte filters invoices with period_end \u003c= value",
+                    "description": "period_end_lte filters invoices with period_end <= value",
                     "type": "string"
                 },
                 "period_start_gte": {
-                    "description": "period_start_gte filters invoices with period_start \u003e= value",
+                    "description": "period_start_gte filters invoices with period_start >= value",
                     "type": "string"
                 },
                 "period_start_lte": {
-                    "description": "period_start_lte filters invoices with period_start \u003c= value",
+                    "description": "period_start_lte filters invoices with period_start <= value",
                     "type": "string"
                 },
                 "skip_line_items": {
@@ -27488,8 +27058,7 @@
                 "nomod",
                 "moyasar",
                 "paddle",
-                "whop",
-                "chargebee"
+                "whop"
             ],
             "x-enum-varnames": [
                 "PaymentGatewayTypeStripe",
@@ -27497,8 +27066,7 @@
                 "PaymentGatewayTypeNomod",
                 "PaymentGatewayTypeMoyasar",
                 "PaymentGatewayTypePaddle",
-                "PaymentGatewayTypeWhop",
-                "PaymentGatewayTypeChargebee"
+                "PaymentGatewayTypeWhop"
             ]
         },
         "types.PaymentMethodType": {
@@ -27851,55 +27419,6 @@
                 }
             }
         },
-        "types.RefundDestination": {
-            "type": "string",
-            "enum": [
-                "GATEWAY",
-                "WALLET",
-                "OUT_OF_BAND"
-            ],
-            "x-enum-varnames": [
-                "RefundDestinationGateway",
-                "RefundDestinationWallet",
-                "RefundDestinationOutOfBand"
-            ]
-        },
-        "types.RefundReason": {
-            "type": "string",
-            "enum": [
-                "DUPLICATE",
-                "FRAUDULENT",
-                "REQUESTED_BY_CUSTOMER",
-                "ORDER_CHANGE",
-                "SERVICE_ISSUE",
-                "OTHER"
-            ],
-            "x-enum-varnames": [
-                "RefundReasonDuplicate",
-                "RefundReasonFraudulent",
-                "RefundReasonRequestedByCustomer",
-                "RefundReasonOrderChange",
-                "RefundReasonServiceIssue",
-                "RefundReasonOther"
-            ]
-        },
-        "types.RefundStatus": {
-            "type": "string",
-            "enum": [
-                "PENDING",
-                "PROCESSING",
-                "SUCCEEDED",
-                "FAILED",
-                "CANCELLED"
-            ],
-            "x-enum-varnames": [
-                "RefundStatusPending",
-                "RefundStatusProcessing",
-                "RefundStatusSucceeded",
-                "RefundStatusFailed",
-                "RefundStatusCancelled"
-            ]
-        },
         "types.RejectedEventReason": {
             "type": "string",
             "enum": [
@@ -27915,7 +27434,7 @@
             "type": "object",
             "properties": {
                 "conversion_rate": {
-                    "description": "Multiplier: reporting_unit_value = unit_value * conversion_rate; must be \u003e 0",
+                    "description": "Multiplier: reporting_unit_value = unit_value * conversion_rate; must be > 0",
                     "type": "number"
                 },
                 "unit_plural": {
@@ -27986,6 +27505,35 @@
                 "S3EncryptionTypeAwsKms",
                 "S3EncryptionTypeAwsKmsDsse"
             ]
+        },
+        "types.S3ExportConfig": {
+            "type": "object",
+            "properties": {
+                "bucket": {
+                    "description": "S3 bucket name",
+                    "type": "string"
+                },
+                "compression": {
+                    "description": "Compression type: \"gzip\", \"none\" (default: \"none\")",
+                    "$ref": "#/definitions/types.S3CompressionType"
+                },
+                "encryption": {
+                    "description": "Encryption type: \"AES256\", \"aws:kms\", \"aws:kms:dsse\" (default: \"AES256\")",
+                    "$ref": "#/definitions/types.S3EncryptionType"
+                },
+                "is_flexprice_managed": {
+                    "description": "If true, use Flexprice-managed S3 credentials instead of user-provided",
+                    "type": "boolean"
+                },
+                "key_prefix": {
+                    "description": "Optional prefix for S3 keys (e.g., \"flexprice-exports/\")",
+                    "type": "string"
+                },
+                "region": {
+                    "description": "AWS region (e.g., \"us-west-2\")",
+                    "type": "string"
+                }
+            }
         },
         "types.S3JobConfig": {
             "type": "object",
@@ -28200,35 +27748,6 @@
                 "StatusArchived"
             ]
         },
-        "types.StorageExportConfig": {
-            "type": "object",
-            "properties": {
-                "bucket": {
-                    "description": "Storage bucket name",
-                    "type": "string"
-                },
-                "compression": {
-                    "description": "Compression type: \"gzip\", \"none\" (default: \"none\")",
-                    "$ref": "#/definitions/types.S3CompressionType"
-                },
-                "encryption": {
-                    "description": "Encryption type: \"AES256\", \"aws:kms\", \"aws:kms:dsse\" (default: \"AES256\")",
-                    "$ref": "#/definitions/types.S3EncryptionType"
-                },
-                "is_flexprice_managed": {
-                    "description": "If true, use Flexprice-managed storage credentials instead of user-provided",
-                    "type": "boolean"
-                },
-                "key_prefix": {
-                    "description": "Optional prefix for object keys (e.g., \"flexprice-exports/\")",
-                    "type": "string"
-                },
-                "region": {
-                    "description": "Cloud region (e.g., \"us-west-2\"); unused for GCS",
-                    "type": "string"
-                }
-            }
-        },
         "types.SubscriptionChangeEntityType": {
             "type": "string",
             "enum": [
@@ -28292,7 +27811,7 @@
                     }
                 },
                 "effective_date_for_update": {
-                    "description": "EffectiveDateForUpdate selects subscriptions that need a billing-period pass on or before this time:\ncurrent_period_end \u003c= date OR (cancel_at IS NOT NULL AND cancel_at \u003c= date).\nWhen nil, period/cancel cutoff logic is not applied by this field (see TimeRangeFilter for legacy period-end filtering).",
+                    "description": "EffectiveDateForUpdate selects subscriptions that need a billing-period pass on or before this time:\ncurrent_period_end <= date OR (cancel_at IS NOT NULL AND cancel_at <= date).\nWhen nil, period/cancel cutoff logic is not applied by this field (see TimeRangeFilter for legacy period-end filtering).",
                     "type": "string"
                 },
                 "end_time": {
@@ -28378,7 +27897,7 @@
                     }
                 },
                 "trial_end_due_lte": {
-                    "description": "TrialEndDueLTE, when set, restricts to subscriptions with trial_end not nil and trial_end \u003c= trial_end_due_lte.\nUse with subscription_status trialing for trial-end cron processing.",
+                    "description": "TrialEndDueLTE, when set, restricts to subscriptions with trial_end not nil and trial_end <= trial_end_due_lte.\nUse with subscription_status trialing for trial-end cron processing.",
                     "type": "string"
                 },
                 "with_coupon_associations": {
@@ -28591,15 +28110,15 @@
                     "$ref": "#/definitions/types.EntitySyncConfig"
                 },
                 "price": {
-                    "description": "Price sync (Stripe only) — outbound only, see Validate()",
+                    "description": "Price sync (Stripe only) \u2014 outbound only, see Validate()",
                     "$ref": "#/definitions/types.EntitySyncConfig"
                 },
                 "quote": {
                     "$ref": "#/definitions/types.EntitySyncConfig"
                 },
                 "s3": {
-                    "description": "Tag stays \"s3\" for back-compat.",
-                    "$ref": "#/definitions/types.StorageExportConfig"
+                    "description": "S3 connection metadata (for Flexprice-managed S3 connections)",
+                    "$ref": "#/definitions/types.S3ExportConfig"
                 },
                 "subscription": {
                     "$ref": "#/definitions/types.EntitySyncConfig"
@@ -28829,7 +28348,7 @@
                     "type": "string"
                 },
                 "filters": {
-                    "description": "Generic predicate and ordering escape hatch, for comparisons that have no dedicated field\nbelow — a range such as period_end at or after a cutoff goes here.",
+                    "description": "Generic predicate and ordering escape hatch, for comparisons that have no dedicated field\nbelow \u2014 a range such as period_end at or after a cutoff goes here.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/types.FilterCondition"
@@ -29211,9 +28730,6 @@
                 "payment.failed",
                 "payment.success",
                 "payment.pending",
-                "refund.created",
-                "refund.succeeded",
-                "refund.failed",
                 "customer.created",
                 "customer.updated",
                 "customer.deleted",
@@ -29273,9 +28789,6 @@
                 "WebhookEventPaymentFailed",
                 "WebhookEventPaymentSuccess",
                 "WebhookEventPaymentPending",
-                "WebhookEventRefundCreated",
-                "WebhookEventRefundSucceeded",
-                "WebhookEventRefundFailed",
                 "WebhookEventCustomerCreated",
                 "WebhookEventCustomerUpdated",
                 "WebhookEventCustomerDeleted",
@@ -29886,76 +29399,6 @@
                 }
             }
         },
-        "webhookDto.Refund": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "string"
-                },
-                "attempt": {
-                    "type": "integer"
-                },
-                "credit_note_id": {
-                    "type": "string"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "failed_at": {
-                    "type": "string"
-                },
-                "failure_reason": {
-                    "type": "string"
-                },
-                "gateway_refund_id": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "invoice_id": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/types.Metadata"
-                },
-                "payment_gateway": {
-                    "type": "string"
-                },
-                "payment_id": {
-                    "type": "string"
-                },
-                "refund_destination": {
-                    "$ref": "#/definitions/types.RefundDestination"
-                },
-                "refund_destination_id": {
-                    "type": "string"
-                },
-                "refund_reason": {
-                    "$ref": "#/definitions/types.RefundReason"
-                },
-                "refund_status": {
-                    "$ref": "#/definitions/types.RefundStatus"
-                },
-                "settled_amount": {
-                    "type": "string"
-                },
-                "succeeded_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "webhookDto.RefundWebhookPayload": {
-            "type": "object",
-            "properties": {
-                "event_type": {
-                    "$ref": "#/definitions/types.WebhookEventName"
-                },
-                "refund": {
-                    "$ref": "#/definitions/webhookDto.Refund"
-                }
-            }
-        },
         "webhookDto.RejectedEventData": {
             "type": "object",
             "properties": {
@@ -30289,7 +29732,7 @@
     },
     "securityDefinitions": {
         "ApiKeyAuth": {
-            "description": "Enter your API key in the format *x-api-key \u0026lt;api-key\u0026gt;**",
+            "description": "Enter your API key in the format *x-api-key &lt;api-key&gt;**",
             "type": "apiKey",
             "name": "x-api-key",
             "in": "header"
