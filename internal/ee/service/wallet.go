@@ -2151,7 +2151,6 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			return err
 		}
 
-		s.Logger.Debug(ctx, "wallet retrieved", "wallet_id", w.ID, "wallet alert settings", w.AlertSettings)
 
 		// Step 3: Validate operation
 		if err := s.validateWalletOperation(w, req); err != nil {
@@ -2270,7 +2269,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			return err
 		}
 
-		s.Logger.Debug(ctx, "Wallet operation completed", "wallet_alert_settings", w.AlertSettings)
+		s.Logger.Debug(ctx, "Wallet operation completed")
 		return nil
 	})
 	if err != nil {
@@ -2280,7 +2279,6 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 	// Publish webhook event after transaction commits
 	s.publishInternalTransactionWebhookEvent(ctx, types.WebhookEventWalletTransactionCreated, tx.ID)
 
-	s.Logger.Debug(ctx, "credit balance alert starting point", "wallet alert settings", w.AlertSettings)
 
 	// Log credit balance alert after wallet operation
 	if err := s.logCreditBalanceAlert(ctx, w, newCreditBalance); err != nil {
@@ -2290,7 +2288,6 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			"wallet_id", w.ID,
 		)
 	}
-	s.Logger.Debug(ctx, "credit balance alert after logging", "wallet alert settings", w.AlertSettings)
 	s.Logger.Debug(ctx, "evaluating alerts for wallet", "wallet_id", w.ID, "wallet alert settings", w.AlertSettings)
 
 	// Only the wallet we just changed can have moved its alert state, so drive
@@ -2303,7 +2300,6 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 		)
 	}
 
-	s.Logger.Debug(ctx, "alerts evaluated for wallet", "wallet_id", w.ID, "wallet alert settings", w.AlertSettings)
 
 	return nil
 }
@@ -3388,9 +3384,7 @@ func (s *walletService) EvaluateAlertsForWallet(ctx context.Context, w *wallet.W
 		return nil
 	}
 	settingsSvc := &settingsService{ServiceParams: s.ServiceParams}
-	s.Logger.Debug(ctx, "resolving wallet alert settings", "wallet_id", w.ID, "alert_settings", w.AlertSettings)
 	alertSettings, err := s.resolveWalletAlertSettings(ctx, w, settingsSvc)
-	s.Logger.Debug(ctx, "resolved wallet alert settings", "wallet_id", w.ID, "alert_settings", alertSettings)
 	hasWalletAlert := false
 	if err != nil {
 		s.Logger.Error(ctx, "wallet alerts: failed to resolve wallet alert settings", "error", err, "wallet_id", w.ID)
@@ -3422,11 +3416,9 @@ func (s *walletService) EvaluateAlertsForWallet(ctx context.Context, w *wallet.W
 
 	if hasWalletAlert {
 		eventID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_ALERT)
-		s.Logger.Debug(ctx, "processing wallet balance alert", "alert_settings", alertSettings)
 		if err := s.processWalletBalanceAlert(ctx, w, ongoingBalance, alertSettings, alertLogs, eventID); err != nil {
 			s.Logger.Error(ctx, "failed to process wallet balance alert", "error", err, "wallet_id", w.ID)
 		}
-		s.Logger.Debug(ctx, "wallet balance alert processed", "alert_settings", alertSettings)
 	}
 
 	if autoTopupEnabled {
