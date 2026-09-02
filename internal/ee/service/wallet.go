@@ -1525,6 +1525,13 @@ func (s *walletService) logCreditBalanceAlert(ctx context.Context, w *wallet.Wal
 		}
 	}
 
+	if alertSettings.AlertThresholdType == types.AlertThresholdTypePercentage {
+		s.Logger.Debug(ctx, "low_credit_balance alert does not support percentage thresholds, skipping",
+			"wallet_id", w.ID,
+		)
+		return nil
+	}
+
 	// Determine alert status based on balance vs alert settings
 	var err error
 	alertStatus, err = alertSettings.AlertState(newCreditBalance)
@@ -2253,6 +2260,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			return err
 		}
 
+
 		// Step 3: Validate operation
 		if err := s.validateWalletOperation(w, req); err != nil {
 			return err
@@ -2380,6 +2388,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 	// Publish webhook event after transaction commits
 	s.publishInternalTransactionWebhookEvent(ctx, types.WebhookEventWalletTransactionCreated, tx.ID)
 
+
 	// Log credit balance alert after wallet operation
 	if err := s.logCreditBalanceAlert(ctx, w, newCreditBalance); err != nil {
 		// Don't fail the transaction if alert logging fails
@@ -2398,6 +2407,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			"customer_id", w.CustomerID,
 		)
 	}
+
 
 	return nil
 }
@@ -2737,15 +2747,11 @@ func (s *walletService) GetWallets(ctx context.Context, filter *types.WalletFilt
 
 // UpdateWalletAlertState updates the alert state of a wallet
 func (s *walletService) UpdateWalletAlertState(ctx context.Context, walletID string, state types.AlertState) error {
-	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
-	if err != nil {
-		return err
-	}
-
-	// Update alert state directly
-	w.AlertState = state
-
-	return s.WalletRepo.UpdateWallet(ctx, walletID, w)
+	// Only alert_state is sent: UpdateWallet skips zero/nil fields, so this cannot rewrite
+	// alert_settings or anything else. Reading the wallet first would hand back the cached
+	// pointer and persist whatever that copy holds, which is how a stale cache entry
+	// overwrites the stored alert settings on every state transition.
+	return s.WalletRepo.UpdateWallet(ctx, walletID, &wallet.Wallet{AlertState: state})
 }
 
 // PublishEvent publishes a webhook event for a wallet
@@ -3577,6 +3583,38 @@ func (s *walletService) resolveWalletAlertSettings(ctx context.Context, w *walle
 	return &walletAlertSettings, nil
 }
 
+// resolvePercentageBase sums completed credit transactions since the earliest
+// current_period_start across the customer's active/trialing subscriptions.
+// With no such subscription it falls back to the wallet's full history.
+func (s *walletService) resolvePercentageBase(ctx context.Context, w *wallet.Wallet) (decimal.Decimal, error) {
+	subFilter := types.NewNoLimitSubscriptionFilter()
+	subFilter.CustomerID = w.CustomerID
+	subFilter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive, types.SubscriptionStatusTrialing}
+
+	subs, err := s.SubRepo.List(ctx, subFilter)
+	if err != nil {
+		return decimal.Zero, err
+	}
+
+	var windowStart *time.Time
+	for _, sub := range subs {
+		if windowStart == nil || sub.CurrentPeriodStart.Before(*windowStart) {
+			windowStart = &sub.CurrentPeriodStart
+		}
+	}
+
+	txFilter := types.NewNoLimitWalletTransactionFilter()
+	txFilter.WalletID = &w.ID
+	txFilter.Type = lo.ToPtr(types.TransactionTypeCredit)
+	txFilter.TransactionStatus = lo.ToPtr(types.TransactionStatusCompleted)
+	txFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+	if windowStart != nil {
+		txFilter.TimeRangeFilter = &types.TimeRangeFilter{StartTime: windowStart}
+	}
+
+	return s.WalletRepo.SumCreditAmountsByFilter(ctx, txFilter)
+}
+
 // processFeatureWalletBalanceAlert checks and logs feature-level wallet balance alerts for a wallet.
 // Errors on individual features are logged and skipped; the method always returns nil.
 func (s *walletService) processFeatureWalletBalanceAlert(ctx context.Context, w *wallet.Wallet, ongoingBalance decimal.Decimal, featuresWithAlerts []*dto.FeatureResponse, alertLogsService AlertLogsService) error {
@@ -3646,11 +3684,30 @@ func (s *walletService) processFeatureWalletBalanceAlert(ctx context.Context, w 
 // processWalletBalanceAlert checks and logs the ongoing balance alert for a wallet
 // and updates the wallet's alert state if it changed.
 func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet.Wallet, ongoingBalance decimal.Decimal, alertSettings *types.AlertSettings, alertLogsService AlertLogsService, eventID string) error {
-	alertStatus, err := alertSettings.AlertState(ongoingBalance)
+	value := ongoingBalance
+
+	if alertSettings.AlertThresholdType == types.AlertThresholdTypePercentage {
+		base, err := s.resolvePercentageBase(ctx, w)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to resolve percentage base for wallet alert", "error", err, "wallet_id", w.ID)
+			return err
+		}
+		if base.IsZero() {
+			s.Logger.Info(ctx, "wallet percentage alert base is zero, skipping evaluation",
+				"wallet_id", w.ID,
+				"ongoing_balance", ongoingBalance,
+			)
+			return nil
+		}
+		value = ongoingBalance.Div(base).Mul(decimal.NewFromInt(100))
+	}
+
+	alertStatus, err := alertSettings.AlertState(value)
 	if err != nil {
 		s.Logger.Error(ctx, "failed to determine wallet alert status",
 			"wallet_id", w.ID,
 			"ongoing_balance", ongoingBalance,
+			"value", value,
 			"error", err,
 		)
 		return err
@@ -3659,6 +3716,7 @@ func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet
 	s.Logger.Debug(ctx, "ongoing balance alert check - determined status",
 		"wallet_id", w.ID,
 		"ongoing_balance", ongoingBalance,
+		"value", value,
 		"alert_settings", alertSettings,
 		"alert_status", alertStatus,
 		"event_id", eventID,
@@ -3677,7 +3735,7 @@ func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet
 		AlertStatus: alertStatus,
 		AlertInfo: types.AlertInfo{
 			AlertSettings: alertSettings,
-			ValueAtTime:   ongoingBalance,
+			ValueAtTime:   value,
 			Timestamp:     time.Now().UTC(),
 		},
 	})

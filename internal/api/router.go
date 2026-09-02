@@ -33,6 +33,7 @@ type Handlers struct {
 	Subscription             *v1.SubscriptionHandler
 	SubscriptionChange       *v1.SubscriptionChangeHandler
 	SubscriptionModification *v1.SubscriptionModificationHandler
+	InvoiceModification      *v1.InvoiceModificationHandler
 	SubscriptionSchedule     *v1.SubscriptionScheduleHandler
 	Wallet                   *v1.WalletHandler
 	Tenant                   *v1.TenantHandler
@@ -423,6 +424,7 @@ func NewRouter(
 			invoices.GET("", handlers.Invoice.ListInvoices)
 			invoices.GET("/:id", handlers.Invoice.GetInvoice)
 			invoices.PUT("/:id", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.UpdateInvoice)
+			invoices.POST("/:id/modify/execute", write(types.EntityInvoice, types.ActionWrite), handlers.InvoiceModification.Execute)
 			invoices.POST("/:id/finalize", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.FinalizeInvoice)
 			invoices.POST("/:id/compute", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.ComputeInvoice)
 			invoices.POST("/:id/void", write(types.EntityInvoice, types.ActionWrite), handlers.Invoice.VoidInvoice)

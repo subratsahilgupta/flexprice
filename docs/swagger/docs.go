@@ -4960,6 +4960,72 @@ const docTemplate = `{
                 "x-scope": "delete"
             }
         },
+        "/invoices/{id}/modify/execute": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Execute a modification on a draft invoice. Currently supports line item changes: add (bulk), update (one line item per call; the edit is versioned, so the line item id changes), and remove (bulk, soft delete). Totals are recalculated from the remaining line items; a manual edit marks the invoice as manually edited, which disables recompute.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invoices"
+                ],
+                "summary": "Execute invoice modification",
+                "operationId": "executeInvoiceModify",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invoice ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Modification request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ExecuteInvoiceModifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/InvoiceModifyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Resource not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "write"
+            }
+        },
         "/invoices/{id}/payment": {
             "put": {
                 "security": [
@@ -8803,6 +8869,57 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use to submit a CSV of usage events for async ingestion. The CSV must already have been uploaded to the Flexprice-managed imports bucket (currently via CSV Box) — pass the upload_id and the backend fetches the file from S3 and streams rows into ClickHouse. Returns the task ID and Temporal workflow IDs for polling.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "Import a CSV of usage events",
+                "operationId": "createTask",
+                "parameters": [
+                    {
+                        "description": "Import request",
+                        "name": "task",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/CreateTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.TemporalWorkflowResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "write"
             }
         },
         "/tasks/result": {
@@ -10580,6 +10697,56 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Service Account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}/remove": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Remove a human user (type=user) from the current tenant. Not supported for service accounts; use DELETE /users/{id} for those.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Remove user from tenant",
+                "operationId": "removeUser",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -13187,6 +13354,10 @@ const docTemplate = `{
                 "collection_method": {
                     "$ref": "#/definitions/types.CollectionMethod"
                 },
+                "customer_present": {
+                    "description": "CustomerPresent declares the charge as customer-initiated (CIT) rather than\nmerchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may\nclaim and who carries chargeback liability, so it must describe reality: true\nonly when the customer is actually at the keyboard, as in a portal one-click\ntop-up. Unattended charges (auto top-up, dunning) leave it false.",
+                    "type": "boolean"
+                },
                 "max_mandate_limit": {
                     "type": "string"
                 },
@@ -13668,6 +13839,25 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "AddLineItemRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "display_name",
+                "quantity"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "quantity": {
                     "type": "string"
                 }
             }
@@ -15682,6 +15872,14 @@ const docTemplate = `{
                         "$ref": "#/definitions/TaxRateOverride"
                     }
                 },
+                "tax_treatment": {
+                    "description": "tax_treatment is the customer's tax treatment. Defaults to \"taxable\" if not provided.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxTreatment"
+                        }
+                    ]
+                },
                 "timezone": {
                     "description": "timezone is the customer's IANA timezone name (e.g. \"Asia/Kolkata\", \"America/New_York\")\nDefaults to \"UTC\" if not provided",
                     "type": "string"
@@ -16101,13 +16299,6 @@ const docTemplate = `{
                     "description": "period_start is the start date of the billing period",
                     "type": "string"
                 },
-                "prepared_tax_rates": {
-                    "description": "prepared_tax_rates contains the tax rates pre-resolved by the caller (e.g., billing service)",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/TaxRateResponse"
-                    }
-                },
                 "subscription_id": {
                     "description": "subscription_id is the optional unique identifier of the subscription associated with this invoice",
                     "type": "string"
@@ -16275,6 +16466,14 @@ const docTemplate = `{
                 "billing_period_count": {
                     "type": "integer",
                     "default": 1
+                },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price. The meter\naggregates within each window and the window results are summed, so the\nbillable unit becomes per-window (e.g. seats -\u003e seat-hours). Valid only on\nUSAGE prices whose meter aggregates MAX or SUM.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ]
                 },
                 "currency": {
                     "type": "string"
@@ -16649,6 +16848,13 @@ const docTemplate = `{
                 "gateway_payment_method_id": {
                     "type": "string"
                 },
+                "include_price_ids": {
+                    "description": "IncludePriceIDs selects which plan prices to attach. Nil/omitted attaches matching-cadence\nprices plus ONETIME; [] attaches none (LineItems extras still apply); a non-empty list\nattaches only those IDs. Each listed ID must belong to the plan, match the subscription\ncurrency, and have a cadence that equals or strictly divides the subscription cadence.\nPointer-slice distinguishes nil from [].\nNOTE: no ` + "`" + `dive,required` + "`" + ` on this tag — swaggo misinterprets ` + "`" + `required` + "`" + `\ninside ` + "`" + `dive` + "`" + ` as marking the whole field required, which then shows up\nin the OpenAPI schema and breaks callers that omit the field. Per-element\nnon-emptiness is enforced explicitly in Validate() below.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "inheritance": {
                     "description": "Inheritance groups customer-hierarchy fields; providing child IDs makes this a PARENT subscription.",
                     "allOf": [
@@ -16762,6 +16968,40 @@ const docTemplate = `{
                 }
             }
         },
+        "CreateTaskRequest": {
+            "type": "object",
+            "required": [
+                "entity_type",
+                "file_provider",
+                "file_type",
+                "task_type",
+                "upload_id"
+            ],
+            "properties": {
+                "entity_type": {
+                    "$ref": "#/definitions/types.EntityType"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "file_provider": {
+                    "type": "string"
+                },
+                "file_type": {
+                    "$ref": "#/definitions/types.FileType"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "task_type": {
+                    "$ref": "#/definitions/types.TaskType"
+                },
+                "upload_id": {
+                    "type": "string"
+                }
+            }
+        },
         "CreateTaxAssociationRequest": {
             "type": "object",
             "required": [
@@ -16800,6 +17040,14 @@ const docTemplate = `{
                     "description": "StartDate sets when this association becomes active. Defaults to now if omitted.",
                     "type": "string"
                 },
+                "tax_behavior": {
+                    "description": "TaxBehavior is inclusive or exclusive. Settable at any level. If left empty on a\nsubscription-level association, it resolves from the currency default at creation\ntime (internal/types.DefaultTaxBehaviorForCurrency) — tenant/customer-level templates\nonly need this set explicitly if the tenant wants one; otherwise it stays null and is\nresolved when the template is copied down to a subscription.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxBehavior"
+                        }
+                    ]
+                },
                 "tax_rate_code": {
                     "type": "string"
                 }
@@ -16820,10 +17068,6 @@ const docTemplate = `{
                     "description": "description is an optional text description providing details about the tax rate",
                     "type": "string"
                 },
-                "fixed_value": {
-                    "description": "fixed_value is the fixed monetary amount when tax_rate_type is \"fixed\"",
-                    "type": "string"
-                },
                 "metadata": {
                     "description": "metadata contains additional key-value pairs for storing extra information",
                     "type": "object",
@@ -16836,7 +17080,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "percentage_value": {
-                    "description": "percentage_value is the percentage value (0-100) when tax_rate_type is \"percentage\"",
+                    "description": "percentage_value is the percentage value (0-100)",
                     "type": "string"
                 },
                 "scope": {
@@ -16848,7 +17092,7 @@ const docTemplate = `{
                     ]
                 },
                 "tax_rate_type": {
-                    "description": "tax_rate_type determines how the tax is calculated (\"percentage\" or \"fixed\")",
+                    "description": "tax_rate_type is always \"percentage\" — fixed-amount tax rates are not supported",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.TaxRateType"
@@ -17490,6 +17734,14 @@ const docTemplate = `{
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
+                "tax_treatment": {
+                    "description": "TaxTreatment is the customer's tax treatment — taxable (default) or exempt.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxTreatment"
+                        }
+                    ]
+                },
                 "tenant_id": {
                     "type": "string"
                 },
@@ -17886,6 +18138,20 @@ const docTemplate = `{
                 },
                 "requestId": {
                     "type": "string"
+                }
+            }
+        },
+        "ExecuteInvoiceModifyRequest": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "line_item_params": {
+                    "$ref": "#/definitions/InvoiceModifyLineItemParams"
+                },
+                "type": {
+                    "$ref": "#/definitions/InvoiceModifyType"
                 }
             }
         },
@@ -19129,6 +19395,70 @@ const docTemplate = `{
                 }
             }
         },
+        "InvoiceModifyLineItemAction": {
+            "type": "string",
+            "enum": [
+                "add",
+                "update",
+                "remove"
+            ],
+            "x-enum-varnames": [
+                "InvoiceModifyLineItemActionAdd",
+                "InvoiceModifyLineItemActionUpdate",
+                "InvoiceModifyLineItemActionRemove"
+            ]
+        },
+        "InvoiceModifyLineItemParams": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "action": {
+                    "$ref": "#/definitions/InvoiceModifyLineItemAction"
+                },
+                "items": {
+                    "description": "Required for action 'add'. Must contain at least one line item.",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/AddLineItemRequest"
+                    }
+                },
+                "line_item_id": {
+                    "description": "LineItemID and Update are required for action 'update' (one line item per call;\nthe update is versioned, so the item id changes after each edit).",
+                    "type": "string"
+                },
+                "line_item_ids": {
+                    "description": "Required for action 'remove'. Must contain at least one line item ID.",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "update": {
+                    "$ref": "#/definitions/UpdateLineItemRequest"
+                }
+            }
+        },
+        "InvoiceModifyResponse": {
+            "type": "object",
+            "properties": {
+                "invoice": {
+                    "$ref": "#/definitions/InvoiceResponse"
+                }
+            }
+        },
+        "InvoiceModifyType": {
+            "type": "string",
+            "enum": [
+                "line_item"
+            ],
+            "x-enum-varnames": [
+                "InvoiceModifyTypeLineItem"
+            ]
+        },
         "InvoicePreview": {
             "type": "object",
             "properties": {
@@ -19350,6 +19680,22 @@ const docTemplate = `{
                 "subtotal": {
                     "description": "subtotal is the sum of all line items before any taxes, discounts, or additional fees",
                     "type": "string"
+                },
+                "tax_exemption_reason_code": {
+                    "description": "tax_exemption_reason_code is why no tax was charged; null only when tax was actually charged.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxExemptionReasonCode"
+                        }
+                    ]
+                },
+                "tax_summary": {
+                    "description": "tax_summary breaks total_tax down by behavior and states why no tax was charged, when\nnone was. Set by WithTaxes once Taxes and TaxExemptionReasonCode are both known.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/TaxSummary"
+                        }
+                    ]
                 },
                 "taxes": {
                     "description": "tax_applied_records contains the tax applied records associated with this invoice",
@@ -19780,6 +20126,14 @@ const docTemplate = `{
                 "billing_model": {
                     "$ref": "#/definitions/types.BillingModel"
                 },
+                "bucket_size": {
+                    "description": "BucketSize overrides the windowing used to turn this meter's usage into\nbillable units for this subscription. See CreatePriceRequest.BucketSize.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ]
+                },
                 "price_id": {
                     "description": "PriceID references the plan price to override",
                     "type": "string"
@@ -20130,6 +20484,14 @@ const docTemplate = `{
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
                     "type": "integer",
                     "default": 1
+                },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price: the meter\naggregates within each window and the window results are summed. Empty\nmeans unbucketed. Only valid on USAGE prices whose meter aggregates MAX\nor SUM. Resolved through ResolveBucketSize, never read directly.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ]
                 },
                 "conversion_rate": {
                     "description": "ConversionRate is the conversion rate of the price unit to the fiat currency",
@@ -21650,6 +22012,14 @@ const docTemplate = `{
                 "billing_period_count": {
                     "type": "integer"
                 },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price. See\nCreatePriceRequest.BucketSize.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ]
+                },
                 "description": {
                     "type": "string"
                 },
@@ -22502,6 +22872,9 @@ const docTemplate = `{
                 "tax_association_id": {
                     "type": "string"
                 },
+                "tax_behavior": {
+                    "$ref": "#/definitions/types.TaxBehavior"
+                },
                 "tax_rate": {
                     "$ref": "#/definitions/TaxRateResponse"
                 },
@@ -22581,6 +22954,14 @@ const docTemplate = `{
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
+                "tax_behavior": {
+                    "description": "TaxBehavior is inclusive or exclusive; null on tenant/customer-level rows,\nresolved when copied down to a subscription",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxBehavior"
+                        }
+                    ]
+                },
                 "tax_rate": {
                     "$ref": "#/definitions/TaxRateResponse"
                 },
@@ -22613,6 +22994,20 @@ const docTemplate = `{
                 },
                 "priority": {
                     "type": "integer"
+                },
+                "tax_behavior": {
+                    "$ref": "#/definitions/types.TaxBehavior"
+                }
+            }
+        },
+        "TaxExemptionSummary": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "reason_code": {
+                    "$ref": "#/definitions/types.TaxExemptionReasonCode"
                 }
             }
         },
@@ -22639,6 +23034,9 @@ const docTemplate = `{
                 "priority": {
                     "type": "integer"
                 },
+                "tax_behavior": {
+                    "$ref": "#/definitions/types.TaxBehavior"
+                },
                 "tax_rate_code": {
                     "type": "string"
                 }
@@ -22660,9 +23058,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "environment_id": {
-                    "type": "string"
-                },
-                "fixed_value": {
                     "type": "string"
                 },
                 "id": {
@@ -22699,6 +23094,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "TaxSummary": {
+            "type": "object",
+            "properties": {
+                "exclusive_tax": {
+                    "type": "string"
+                },
+                "exemption": {
+                    "$ref": "#/definitions/TaxExemptionSummary"
+                },
+                "inclusive_tax": {
+                    "type": "string"
+                },
+                "total_tax": {
                     "type": "string"
                 }
             }
@@ -23048,6 +23460,14 @@ const docTemplate = `{
                     "description": "name is the updated name or company name for the customer",
                     "type": "string"
                 },
+                "tax_treatment": {
+                    "description": "tax_treatment is the updated tax treatment for the customer",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxTreatment"
+                        }
+                    ]
+                },
                 "timezone": {
                     "description": "timezone is the updated IANA timezone name for the customer (e.g. \"Asia/Kolkata\", \"America/New_York\")",
                     "type": "string"
@@ -23160,6 +23580,20 @@ const docTemplate = `{
                 }
             }
         },
+        "UpdateLineItemRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                }
+            }
+        },
         "UpdatePaymentRequest": {
             "type": "object",
             "properties": {
@@ -23244,6 +23678,14 @@ const docTemplate = `{
                 },
                 "billing_model": {
                     "$ref": "#/definitions/types.BillingModel"
+                },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price. Changing it\nchanges the billable unit, so it versions the price rather than editing\nit in place. Send \"none\" to remove bucketing from the successor.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ]
                 },
                 "description": {
                     "type": "string"
@@ -23380,6 +23822,14 @@ const docTemplate = `{
                 "billing_model": {
                     "$ref": "#/definitions/types.BillingModel"
                 },
+                "bucket_size": {
+                    "description": "BucketSize overrides the windowing used to turn this meter's usage into\nbillable units for this line item. See CreatePriceRequest.BucketSize.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ]
+                },
                 "commitment_amount": {
                     "description": "Commitment fields",
                     "type": "number"
@@ -23497,7 +23947,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tax_rate_status": {
-                    "description": "tax_rate_type determines how the tax is calculated (\"percentage\" or \"fixed\")",
+                    "description": "tax_rate_status is the updated status of the tax rate",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.TaxRateStatus"
@@ -24548,6 +24998,14 @@ const docTemplate = `{
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
+                "tax_treatment": {
+                    "description": "TaxTreatment is the customer's tax treatment — taxable (default) or exempt.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TaxTreatment"
+                        }
+                    ]
+                },
                 "tenant_id": {
                     "type": "string"
                 },
@@ -24896,12 +25354,13 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "bucket_size": {
-                    "description": "BucketSize is used only for MAX aggregation when windowed aggregation is needed\nIt defines the size of time windows to calculate max values within",
+                    "description": "BucketSize windows the aggregation: the meter aggregates within each window\nand the window results are summed.\n\nDeprecated: configure bucket_size on the price instead. Still read and\nhonoured — meters that carry it keep billing exactly as before, and new\nmeters may still set it — but a price-level bucket_size takes precedence\nand is the only place new configuration should go. See\nprice.ResolveBucketSize.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.WindowSize"
                         }
-                    ]
+                    ],
+                    "x-speakeasy-deprecation-message": "Deprecated: set bucket_size on the price instead. Still honoured for existing meters."
                 },
                 "expression": {
                     "description": "Expression is an optional CEL expression to compute per-event quantity from event.properties.\nWhen set, it replaces Field-based extraction. Property names are used directly (e.g., token * duration * pixel).",
@@ -24912,7 +25371,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "group_by": {
-                    "description": "GroupBy is the property name in event.properties to group by before aggregating.\nCurrently only supported for MAX aggregation with bucket_size.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.",
+                    "description": "GroupBy is the property name in event.properties to group by before aggregating.\nRequires MAX aggregation. Windowing comes from the price, so this no longer\nimplies a meter-level bucket_size.\nWhen set, aggregation is applied per unique value of this property within each bucket,\nthen the per-group results are summed to produce the bucket total.",
                     "type": "string"
                 },
                 "multiplier": {
@@ -25068,6 +25527,14 @@ const docTemplate = `{
                     "description": "BillingPeriodCount is the count of the billing period ex 1, 3, 6, 12",
                     "type": "integer",
                     "default": 1
+                },
+                "bucket_size": {
+                    "description": "BucketSize windows the meter's aggregation for this price: the meter\naggregates within each window and the window results are summed. Empty\nmeans unbucketed. Only valid on USAGE prices whose meter aggregates MAX\nor SUM. Resolved through ResolveBucketSize, never read directly.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.WindowSize"
+                        }
+                    ]
                 },
                 "conversion_rate": {
                     "description": "ConversionRate is the conversion rate of the price unit to the fiat currency",
@@ -26103,10 +26570,12 @@ const docTemplate = `{
         "types.CheckoutPaymentProvider": {
             "type": "string",
             "enum": [
-                "razorpay"
+                "razorpay",
+                "chargebee"
             ],
             "x-enum-varnames": [
-                "CheckoutPaymentProviderRazorpay"
+                "CheckoutPaymentProviderRazorpay",
+                "CheckoutPaymentProviderChargebee"
             ]
         },
         "types.CheckoutPaymentProviderConfig": {
@@ -26114,6 +26583,10 @@ const docTemplate = `{
             "properties": {
                 "collection_method": {
                     "$ref": "#/definitions/types.CollectionMethod"
+                },
+                "customer_present": {
+                    "description": "CustomerPresent declares the charge as customer-initiated (CIT) rather than\nmerchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may\nclaim and who carries chargeback liability, so it must describe reality: true\nonly when the customer is actually at the keyboard, as in a portal one-click\ntop-up. Unattended charges (auto top-up, dunning) leave it false.",
+                    "type": "boolean"
                 },
                 "max_mandate_limit": {
                     "type": "string"
@@ -27320,6 +27793,10 @@ const docTemplate = `{
                             "$ref": "#/definitions/types.ServicePeriodCustomFields"
                         }
                     ]
+                },
+                "submit_for_approval": {
+                    "description": "SubmitForApproval submits the synced invoice into the merchant's Zoho Books approval\nflow before recording payment. Zoho rejects payments on draft invoices, and merchants\nconfigure a Zoho auto-approval rule for FlexPrice-sent invoices, so we submit, wait for\nthat rule to fire, then pay.",
+                    "type": "boolean"
                 }
             }
         },
@@ -27520,7 +27997,8 @@ const docTemplate = `{
                 "nomod",
                 "moyasar",
                 "paddle",
-                "whop"
+                "whop",
+                "chargebee"
             ],
             "x-enum-varnames": [
                 "PaymentGatewayTypeStripe",
@@ -27528,7 +28006,8 @@ const docTemplate = `{
                 "PaymentGatewayTypeNomod",
                 "PaymentGatewayTypeMoyasar",
                 "PaymentGatewayTypePaddle",
-                "PaymentGatewayTypeWhop"
+                "PaymentGatewayTypeWhop",
+                "PaymentGatewayTypeChargebee"
             ]
         },
         "types.PaymentMethodType": {
@@ -27968,43 +28447,6 @@ const docTemplate = `{
                 "S3EncryptionTypeAwsKmsDsse"
             ]
         },
-        "types.S3ExportConfig": {
-            "type": "object",
-            "properties": {
-                "bucket": {
-                    "description": "S3 bucket name",
-                    "type": "string"
-                },
-                "compression": {
-                    "description": "Compression type: \"gzip\", \"none\" (default: \"none\")",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.S3CompressionType"
-                        }
-                    ]
-                },
-                "encryption": {
-                    "description": "Encryption type: \"AES256\", \"aws:kms\", \"aws:kms:dsse\" (default: \"AES256\")",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.S3EncryptionType"
-                        }
-                    ]
-                },
-                "is_flexprice_managed": {
-                    "description": "If true, use Flexprice-managed S3 credentials instead of user-provided",
-                    "type": "boolean"
-                },
-                "key_prefix": {
-                    "description": "Optional prefix for S3 keys (e.g., \"flexprice-exports/\")",
-                    "type": "string"
-                },
-                "region": {
-                    "description": "AWS region (e.g., \"us-west-2\")",
-                    "type": "string"
-                }
-            }
-        },
         "types.S3JobConfig": {
             "type": "object",
             "properties": {
@@ -28042,6 +28484,14 @@ const docTemplate = `{
                 "key_prefix": {
                     "description": "Optional prefix for S3 keys (e.g., \"flexprice-exports/\")",
                     "type": "string"
+                },
+                "provider": {
+                    "description": "Empty means S3 for back-compat.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.SecretProvider"
+                        }
+                    ]
                 },
                 "region": {
                     "description": "AWS region (e.g., \"us-west-2\")",
@@ -28124,6 +28574,7 @@ const docTemplate = `{
                 "flexprice",
                 "stripe",
                 "s3",
+                "gcs",
                 "hubspot",
                 "razorpay",
                 "chargebee",
@@ -28139,12 +28590,14 @@ const docTemplate = `{
                 "azure_marketplace"
             ],
             "x-enum-comments": {
+                "SecretProviderGCS": "supports multiple connections per environment, service-account JSON creds",
                 "SecretProviderS3": "supports multiple connections per environment"
             },
             "x-enum-varnames": [
                 "SecretProviderFlexPrice",
                 "SecretProviderStripe",
                 "SecretProviderS3",
+                "SecretProviderGCS",
                 "SecretProviderHubSpot",
                 "SecretProviderRazorpay",
                 "SecretProviderChargebee",
@@ -28218,6 +28671,43 @@ const docTemplate = `{
                 "StatusDeleted",
                 "StatusArchived"
             ]
+        },
+        "types.StorageExportConfig": {
+            "type": "object",
+            "properties": {
+                "bucket": {
+                    "description": "Storage bucket name",
+                    "type": "string"
+                },
+                "compression": {
+                    "description": "Compression type: \"gzip\", \"none\" (default: \"none\")",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.S3CompressionType"
+                        }
+                    ]
+                },
+                "encryption": {
+                    "description": "Encryption type: \"AES256\", \"aws:kms\", \"aws:kms:dsse\" (default: \"AES256\")",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.S3EncryptionType"
+                        }
+                    ]
+                },
+                "is_flexprice_managed": {
+                    "description": "If true, use Flexprice-managed storage credentials instead of user-provided",
+                    "type": "boolean"
+                },
+                "key_prefix": {
+                    "description": "Optional prefix for object keys (e.g., \"flexprice-exports/\")",
+                    "type": "string"
+                },
+                "region": {
+                    "description": "Cloud region (e.g., \"us-west-2\"); unused for GCS",
+                    "type": "string"
+                }
+            }
         },
         "types.SubscriptionChangeEntityType": {
             "type": "string",
@@ -28612,10 +29102,10 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.EntitySyncConfig"
                 },
                 "s3": {
-                    "description": "S3 connection metadata (for Flexprice-managed S3 connections)",
+                    "description": "Tag stays \"s3\" for back-compat.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/types.S3ExportConfig"
+                            "$ref": "#/definitions/types.StorageExportConfig"
                         }
                     ]
                 },
@@ -28648,6 +29138,28 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "TaskTypeImport",
                 "TaskTypeExport"
+            ]
+        },
+        "types.TaxBehavior": {
+            "type": "string",
+            "enum": [
+                "inclusive",
+                "exclusive"
+            ],
+            "x-enum-varnames": [
+                "TaxBehaviorInclusive",
+                "TaxBehaviorExclusive"
+            ]
+        },
+        "types.TaxExemptionReasonCode": {
+            "type": "string",
+            "enum": [
+                "customer_exempt",
+                "no_tax_configured"
+            ],
+            "x-enum-varnames": [
+                "TaxExemptionReasonCustomerExempt",
+                "TaxExemptionReasonNoTaxConfigured"
             ]
         },
         "types.TaxRateEntityType": {
@@ -28692,12 +29204,21 @@ const docTemplate = `{
         "types.TaxRateType": {
             "type": "string",
             "enum": [
-                "percentage",
-                "fixed"
+                "percentage"
             ],
             "x-enum-varnames": [
-                "TaxRateTypePercentage",
-                "TaxRateTypeFixed"
+                "TaxRateTypePercentage"
+            ]
+        },
+        "types.TaxTreatment": {
+            "type": "string",
+            "enum": [
+                "taxable",
+                "exempt"
+            ],
+            "x-enum-varnames": [
+                "TaxTreatmentTaxable",
+                "TaxTreatmentExempt"
             ]
         },
         "types.TimeOfDayBucket": {
@@ -30046,6 +30567,9 @@ const docTemplate = `{
         "webhookDto.SubscriptionWebhookPayload": {
             "type": "object",
             "properties": {
+                "customer": {
+                    "$ref": "#/definitions/webhookDto.Customer"
+                },
                 "event_type": {
                     "$ref": "#/definitions/types.WebhookEventName"
                 },
@@ -30186,6 +30710,9 @@ const docTemplate = `{
             "properties": {
                 "alert": {
                     "$ref": "#/definitions/webhookDto.WalletAlertInfo"
+                },
+                "customer": {
+                    "$ref": "#/definitions/webhookDto.Customer"
                 },
                 "event_type": {
                     "$ref": "#/definitions/types.WebhookEventName"

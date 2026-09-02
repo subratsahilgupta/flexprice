@@ -565,6 +565,19 @@ func (s *InMemoryWalletStore) CountWalletTransactions(ctx context.Context, f *ty
 	return count, nil
 }
 
+func (s *InMemoryWalletStore) SumCreditAmountsByFilter(ctx context.Context, f *types.WalletTransactionFilter) (decimal.Decimal, error) {
+	transactions, err := s.ListAllWalletTransactions(ctx, f)
+	if err != nil {
+		return decimal.Zero, err
+	}
+
+	total := decimal.Zero
+	for _, tx := range transactions {
+		total = total.Add(tx.CreditAmount)
+	}
+	return total, nil
+}
+
 func (s *InMemoryWalletStore) UpdateTransactionStatus(ctx context.Context, id string, status types.TransactionStatus) error {
 	txn, err := s.GetTransactionByID(ctx, id)
 	if err != nil {
@@ -661,8 +674,17 @@ func (s *InMemoryWalletStore) UpdateWallet(ctx context.Context, id string, w *wa
 	if w.AutoTopup != nil {
 		existing.AutoTopup = w.AutoTopup
 	}
-	// Update config if provided (WalletConfig is a struct type, so we always update it)
-	existing.Config = w.Config
+	// Field guards mirror the ent repository: a caller may send a partially populated
+	// wallet to update a single column, and unset fields must be left alone.
+	if w.Config.AllowedPriceTypes != nil {
+		existing.Config = w.Config
+	}
+	if w.AlertSettings != nil {
+		existing.AlertSettings = w.AlertSettings
+	}
+	if w.AlertState != "" {
+		existing.AlertState = w.AlertState
+	}
 
 	// Update metadata
 	existing.UpdatedBy = types.GetUserID(ctx)

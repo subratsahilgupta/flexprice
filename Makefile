@@ -202,8 +202,8 @@ test-verbose:
 	$(call run-go-test,-v ./internal/... ./cmd/server)
 
 # Run tests with coverage report
-test-coverage:
-	go test -coverprofile=coverage.out ./internal/... ./cmd/server
+test-coverage: install-typst
+	$(call run-go-test,-race -coverprofile=coverage.out ./internal/... ./cmd/server)
 	go tool cover -html=coverage.out -o coverage.html
 
 # Database related targets
