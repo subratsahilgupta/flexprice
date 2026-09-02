@@ -54,6 +54,10 @@ type WalletService interface {
 	// maxLiveSeconds controls cache staleness: if non-nil, cached entries older than this are skipped
 	GetWalletBalanceFromCache(ctx context.Context, walletID string, maxLiveSeconds *int64) (*dto.WalletBalanceResponse, error)
 
+	// EnsurePrepaidWallet returns the customer's active prepaid wallet in the given
+	// currency, creating one when there is none.
+	EnsurePrepaidWallet(ctx context.Context, customerID, currency string) (*dto.WalletResponse, error)
+
 	// TerminateWallet terminates a wallet by closing it and debiting remaining balance
 	TerminateWallet(ctx context.Context, walletID string) error
 
@@ -276,6 +280,34 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	s.publishInternalWalletWebhookEvent(ctx, types.WebhookEventWalletCreated, w.ID)
 
 	return response, nil
+}
+
+func (s *walletService) EnsurePrepaidWallet(ctx context.Context, customerID, currency string) (*dto.WalletResponse, error) {
+	if customerID == "" || currency == "" {
+		return nil, ierr.NewError("customer id and currency are required").
+			WithHint("A customer ID and currency are required to resolve a wallet.").
+			Mark(ierr.ErrValidation)
+	}
+
+	wallets, err := s.GetWalletsByCustomerID(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, w := range wallets {
+		if w.WalletStatus == types.WalletStatusActive &&
+			types.IsMatchingCurrency(w.Currency, currency) &&
+			w.WalletType == types.WalletTypePrePaid {
+			return w, nil
+		}
+	}
+
+	return s.CreateWallet(ctx, &dto.CreateWalletRequest{
+		CustomerID:     customerID,
+		Currency:       currency,
+		ConversionRate: decimal.NewFromInt(1),
+		WalletType:     types.WalletTypePrePaid,
+	})
 }
 
 func (s *walletService) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*dto.WalletResponse, error) {

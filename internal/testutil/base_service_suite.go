@@ -35,6 +35,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	"github.com/flexprice/flexprice/internal/domain/proration"
+	"github.com/flexprice/flexprice/internal/domain/refund"
 	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -76,6 +77,7 @@ type Stores struct {
 	InvoiceLineItemRepo          invoice.LineItemRepository
 	WalletRepo                   wallet.Repository
 	PaymentRepo                  payment.Repository
+	RefundRepo                   refund.Repository
 	AuthRepo                     auth.Repository
 	UserRepo                     user.Repository
 	TenantRepo                   tenant.Repository
@@ -231,6 +233,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 		InvoiceLineItemRepo:          invLineItemStore,
 		WalletRepo:                   NewInMemoryWalletStore(),
 		PaymentRepo:                  NewInMemoryPaymentStore(),
+		RefundRepo:                   NewInMemoryRefundStore(),
 		AuthRepo:                     NewInMemoryAuthRepository(),
 		UserRepo:                     NewInMemoryUserStore(),
 		TenantRepo:                   NewInMemoryTenantStore(),
@@ -290,6 +293,7 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.InvoiceLineItemRepo.(*InMemoryInvoiceLineItemStore).Clear()
 	s.stores.WalletRepo.(*InMemoryWalletStore).Clear()
 	s.stores.PaymentRepo.(*InMemoryPaymentStore).Clear()
+	s.stores.RefundRepo.(*InMemoryRefundStore).Clear()
 	s.stores.AuthRepo.(*InMemoryAuthRepository).Clear()
 	s.stores.UserRepo.(*InMemoryUserStore).Clear()
 	s.stores.TenantRepo.(*InMemoryTenantStore).Clear()

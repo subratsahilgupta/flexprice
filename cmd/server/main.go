@@ -264,6 +264,7 @@ func main() {
 			service.NewCostsheetService,
 			service.NewRevenueAnalyticsService,
 			service.NewCreditNoteService,
+			service.NewRefundService,
 			service.NewConnectionService,
 			service.NewMarketplaceService,
 			service.NewUsageRecordService,
