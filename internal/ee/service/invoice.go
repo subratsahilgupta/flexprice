@@ -1293,43 +1293,19 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 			refundAmount = decimal.Zero
 		}
 		if refundAmount.IsPositive() {
-			walletService := NewWalletService(s.ServiceParams)
+			refundService := NewRefundService(s.ServiceParams)
 
-			wallets, err := walletService.GetWalletsByCustomerID(tx, inv.CustomerID)
+			refunds, err := refundService.PrepareRefundsForVoidedInvoice(tx, inv, refundAmount)
 			if err != nil {
 				return err
 			}
 
-			var selectedWallet *dto.WalletResponse
-			for _, w := range wallets {
-				if types.IsMatchingCurrency(w.Currency, inv.Currency) && w.WalletType == types.WalletTypePrePaid {
-					selectedWallet = w
-					break
-				}
-			}
-			if selectedWallet == nil {
-				walletReq := &dto.CreateWalletRequest{
-					Name:           "Subscription Wallet",
-					CustomerID:     inv.CustomerID,
-					Currency:       inv.Currency,
-					ConversionRate: decimal.NewFromInt(1),
-					WalletType:     types.WalletTypePrePaid,
-				}
-				selectedWallet, err = walletService.CreateWallet(tx, walletReq)
-				if err != nil {
+			// A void never refunds to a gateway, so these rows settle to the wallet with no
+			// external I/O and can be dispatched inside this transaction.
+			for _, row := range refunds {
+				if err := refundService.Dispatch(tx, row.ID); err != nil {
 					return err
 				}
-			}
-
-			walletTxnReq := &dto.TopUpWalletRequest{
-				Amount:            refundAmount,
-				TransactionReason: types.TransactionReasonInvoiceVoidRefund,
-				Metadata:          types.Metadata{"invoice_id": inv.ID},
-				IdempotencyKey:    lo.ToPtr(inv.ID),
-				Description:       fmt.Sprintf("Refund for voided invoice: %s", lo.FromPtrOr(inv.InvoiceNumber, inv.ID)),
-			}
-			if _, err = walletService.TopUpWallet(tx, selectedWallet.ID, walletTxnReq); err != nil {
-				return err
 			}
 
 			inv.RefundedAmount = inv.RefundedAmount.Add(refundAmount)

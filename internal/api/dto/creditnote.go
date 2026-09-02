@@ -37,11 +37,23 @@ type CreateCreditNoteRequest struct {
 
 	// process_credit_note is a flag to process the credit note after creation
 	ProcessCreditNote bool `json:"process_credit_note" validate:"omitempty" default:"true"`
+
+	// refund_target asks where a refund credit note should send the money: BACK_TO_SOURCE
+	// returns it the way it arrived, PREPAID_WALLET (the default) keeps it as customer credit.
+	// Only honoured when the credit note is processed by this same call; a separately
+	// finalized credit note takes it from the finalize request instead.
+	RefundTarget *types.RefundTarget `json:"refund_target" validate:"omitempty"`
 }
 
 func (r *CreateCreditNoteRequest) Validate() error {
 	if err := validator.ValidateRequest(r); err != nil {
 		return err
+	}
+
+	if r.RefundTarget != nil {
+		if err := r.RefundTarget.Validate(); err != nil {
+			return err
+		}
 	}
 
 	if err := r.Reason.Validate(); err != nil {
@@ -128,6 +140,20 @@ func (r *CreateCreditNoteLineItemRequest) ToCreditNoteLineItem(ctx context.Conte
 		BaseModel:         types.GetDefaultBaseModel(ctx),
 		EnvironmentID:     types.GetEnvironmentID(ctx),
 	}
+}
+
+// FinalizeCreditNoteRequest is the optional body of the finalize call.
+type FinalizeCreditNoteRequest struct {
+	// refund_target asks where a refund credit note should send the money: BACK_TO_SOURCE
+	// returns it the way it arrived, PREPAID_WALLET (the default) keeps it as customer credit.
+	RefundTarget *types.RefundTarget `json:"refund_target" validate:"omitempty"`
+}
+
+func (r *FinalizeCreditNoteRequest) Validate() error {
+	if r == nil || r.RefundTarget == nil {
+		return nil
+	}
+	return r.RefundTarget.Validate()
 }
 
 // CreditNoteResponse represents the response payload containing credit note information

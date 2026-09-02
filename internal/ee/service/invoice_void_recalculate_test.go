@@ -11,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/refund"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/testutil"
@@ -85,6 +86,7 @@ func (s *InvoiceVoidRecalculateSuite) setupService() {
 		AuthRepo:                     stores.AuthRepo,
 		WalletRepo:                   s.walletRepo,
 		PaymentRepo:                  stores.PaymentRepo,
+		RefundRepo:                   stores.RefundRepo,
 		CreditNoteRepo:               stores.CreditNoteRepo,
 		CouponRepo:                   stores.CouponRepo,
 		CouponAssociationRepo:        stores.CouponAssociationRepo,
@@ -329,6 +331,16 @@ func (s *InvoiceVoidRecalculateSuite) refundTxns(walletID string) []*wallet.Tran
 }
 
 // walletsByCustomer returns all prepaid wallets for the test customer.
+// refundRows returns the settlement ledger rows written for an invoice.
+func (s *InvoiceVoidRecalculateSuite) refundRows(invoiceID string) []*refund.Refund {
+	rows, err := s.GetStores().RefundRepo.List(s.GetContext(), &types.RefundFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		InvoiceIDs:  []string{invoiceID},
+	})
+	s.NoError(err)
+	return rows
+}
+
 func (s *InvoiceVoidRecalculateSuite) walletsByCustomer() []*dto.WalletResponse {
 	svc := NewWalletService(ServiceParams{
 		Logger:                   s.GetLogger(),
@@ -502,8 +514,13 @@ func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_RefundWithExistingWallet()
 	s.Equal(types.TransactionReasonInvoiceVoidRefund, txns[0].TransactionReason)
 	s.True(expectedRefund.Equal(txns[0].CreditAmount),
 		"expected txn credit amount=%s, got=%s", expectedRefund, txns[0].CreditAmount)
-	// Idempotency key must equal the invoice ID
-	s.Equal(inv.ID, txns[0].IdempotencyKey)
+	// The top-up is now keyed on the refund row that settled it, not the invoice.
+	refunds := s.refundRows(inv.ID)
+	s.Len(refunds, 1)
+	s.Equal(refunds[0].ID, txns[0].IdempotencyKey)
+	s.Equal(types.RefundStatusSucceeded, refunds[0].RefundStatus)
+	s.Equal(types.RefundDestinationWallet, refunds[0].RefundDestination)
+	s.True(expectedRefund.Equal(refunds[0].SettledAmount))
 }
 
 func (s *InvoiceVoidRecalculateSuite) TestVoidInvoice_RefundCreatesNewWallet() {

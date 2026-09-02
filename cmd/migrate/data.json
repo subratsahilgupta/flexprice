@@ -117,6 +117,18 @@
             "description": "Fired when payment details are updated"
         },
         {
+            "name": "refund.created",
+            "description": "Fired when a refund is planned against an invoice, before the money moves"
+        },
+        {
+            "name": "refund.failed",
+            "description": "Fired when a refund could not be settled at its destination"
+        },
+        {
+            "name": "refund.succeeded",
+            "description": "Fired when a refund has settled and the money has reached its destination"
+        },
+        {
             "name": "subscription.activated",
             "description": "Whenever a subscription moves from incomplete state to active state"
         },

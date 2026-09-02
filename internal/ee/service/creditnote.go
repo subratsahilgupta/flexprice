@@ -15,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/creditnote"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/domain/refund"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
@@ -32,7 +33,7 @@ type CreditNoteService interface {
 
 	// This method is used to finalize a credit note
 	// this can be done when credit note is a adjustment and not a refund so we can cancel the adjustment
-	FinalizeCreditNote(ctx context.Context, id string) error
+	FinalizeCreditNote(ctx context.Context, id string, refundTarget *types.RefundTarget) error
 }
 
 type creditNoteService struct {
@@ -163,7 +164,7 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 	}
 
 	if req.ProcessCreditNote && creditNote.CreditNoteStatus == types.CreditNoteStatusDraft {
-		if err := s.FinalizeCreditNote(ctx, creditNote.ID); err != nil {
+		if err := s.FinalizeCreditNote(ctx, creditNote.ID, req.RefundTarget); err != nil {
 			return nil, err
 		}
 	}
@@ -527,7 +528,7 @@ func creditNoteAlreadyProcessedError(status types.CreditNoteStatus) error {
 		Mark(ierr.ErrValidation)
 }
 
-func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) error {
+func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string, refundTarget *types.RefundTarget) error {
 	if id == "" {
 		return ierr.NewError("missing credit note ID").
 			WithHint("Please provide a valid credit note ID to finalize.").
@@ -553,7 +554,8 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			Mark(ierr.ErrValidation)
 	}
 
-	walletService := NewWalletService(s.ServiceParams)
+	refundService := NewRefundService(s.ServiceParams)
+	var plannedRefunds []*refund.Refund
 
 	// Process the credit note in transaction
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
@@ -597,52 +599,17 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 			return err
 		}
 
-		// Handle refund credit notes (wallet top-up logic)
+		// Refund credit notes get a settlement ledger row per funding source. The rows are
+		// planned here so they commit with the credit note; the money moves in Dispatch below,
+		// after the transaction, because a gateway refund is external I/O.
 		if cn.CreditNoteType == types.CreditNoteTypeRefund {
-			// Find or create wallet using transaction context
-			wallets, err := walletService.GetWalletsByCustomerID(tx, lockedInv.CustomerID)
-			if err != nil {
-				return err
-			}
-
-			var selectedWallet *dto.WalletResponse
-			for _, w := range wallets {
-				if types.IsMatchingCurrency(w.Currency, lockedInv.Currency) {
-					selectedWallet = w
-					break
-				}
-			}
-			if selectedWallet == nil {
-				// Create new wallet using transaction context
-				walletReq := &dto.CreateWalletRequest{
-					CustomerID:     lockedInv.CustomerID,
-					Currency:       lockedInv.Currency,
-					ConversionRate: decimal.NewFromInt(1), // Set default conversion rate to avoid division by zero
-					WalletType:     types.WalletTypePrePaid,
-				}
-
-				selectedWallet, err = walletService.CreateWallet(tx, walletReq)
-				if err != nil {
-					return err
-				}
-			}
-
-			// Top up wallet using transaction context
-			walletTxnReq := &dto.TopUpWalletRequest{
-				Amount:            cn.TotalAmount,
-				TransactionReason: types.TransactionReasonCreditNote,
-				Metadata:          types.Metadata{"credit_note_id": cn.ID},
-				IdempotencyKey:    &cn.ID, // Use credit note ID as idempotency key
-				Description:       fmt.Sprintf("Credit note refund: %s", cn.CreditNoteNumber),
-			}
-
-			_, err = walletService.TopUpWallet(tx, selectedWallet.ID, walletTxnReq)
+			plannedRefunds, err = refundService.PrepareRefundsForCreditNote(tx, cn, lockedInv, refundTarget)
 			if err != nil {
 				return err
 			}
 		}
 
-		// Same tx as the wallet top-up above, so both commit/roll back together.
+		// Same tx as the refund rows above, so both commit/roll back together.
 		if err := s.RecalculateInvoiceAmountsForCreditNote(tx, lockedInv, cn); err != nil {
 			return err
 		}
@@ -660,6 +627,18 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 				"invoice_id", cn.InvoiceID)
 		}
 		return err
+	}
+
+	// A dispatch failure leaves a PENDING row that RetryRefund can pick up; the credit note
+	// itself is already finalized and must not be rolled back for it.
+	for _, row := range plannedRefunds {
+		if err := refundService.Dispatch(ctx, row.ID); err != nil {
+			s.Logger.Error(ctx, "failed to dispatch refund for credit note",
+				"error", err,
+				"refund_id", row.ID,
+				"credit_note_id", cn.ID,
+				"invoice_id", cn.InvoiceID)
+		}
 	}
 
 	// Publish webhook event after successful transaction

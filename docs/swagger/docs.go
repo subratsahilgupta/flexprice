@@ -12064,7 +12064,7 @@ const docTemplate = `{
         },
         "/webhook-events/invoice.communication.triggered": {
             "post": {
-                "description": "Fired when an invoice communication (e.g. email notification) is triggered. Doc-only for parsing.",
+                "description": "Fired when an invoice communication (e.g. email notification) is triggered. ` + "`" + `invoice.line_items` + "`" + ` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and ` + "`" + `invoice.subscription.plan.prices` + "`" + ` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12087,7 +12087,7 @@ const docTemplate = `{
         },
         "/webhook-events/invoice.create.drafted": {
             "post": {
-                "description": "Fired when a new invoice is created in draft state. Doc-only for parsing.",
+                "description": "Fired when a new invoice is created in draft state. ` + "`" + `invoice.line_items` + "`" + ` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and ` + "`" + `invoice.subscription.plan.prices` + "`" + ` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12110,7 +12110,7 @@ const docTemplate = `{
         },
         "/webhook-events/invoice.payment.overdue": {
             "post": {
-                "description": "Fired when an invoice payment is overdue past the due date. Doc-only for parsing.",
+                "description": "Fired when an invoice payment is overdue past the due date. ` + "`" + `invoice.line_items` + "`" + ` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and ` + "`" + `invoice.subscription.plan.prices` + "`" + ` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12133,7 +12133,7 @@ const docTemplate = `{
         },
         "/webhook-events/invoice.update": {
             "post": {
-                "description": "Fired when an invoice is updated. Doc-only for parsing.",
+                "description": "Fired when an invoice is updated. ` + "`" + `invoice.line_items` + "`" + ` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and ` + "`" + `invoice.subscription.plan.prices` + "`" + ` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12156,7 +12156,7 @@ const docTemplate = `{
         },
         "/webhook-events/invoice.update.finalized": {
             "post": {
-                "description": "Fired when an invoice is finalized and locked for payment. Doc-only for parsing.",
+                "description": "Fired when an invoice is finalized and locked for payment. ` + "`" + `invoice.line_items` + "`" + ` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and ` + "`" + `invoice.subscription.plan.prices` + "`" + ` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12179,7 +12179,7 @@ const docTemplate = `{
         },
         "/webhook-events/invoice.update.payment": {
             "post": {
-                "description": "Fired when an invoice payment status changes. Doc-only for parsing.",
+                "description": "Fired when an invoice payment status changes. ` + "`" + `invoice.line_items` + "`" + ` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and ` + "`" + `invoice.subscription.plan.prices` + "`" + ` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12202,7 +12202,7 @@ const docTemplate = `{
         },
         "/webhook-events/invoice.update.voided": {
             "post": {
-                "description": "Fired when an invoice is voided (e.g. order cancelled or duplicate). Doc-only for parsing.",
+                "description": "Fired when an invoice is voided (e.g. order cancelled or duplicate). ` + "`" + `invoice.line_items` + "`" + ` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and ` + "`" + `invoice.subscription.plan.prices` + "`" + ` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -30000,6 +30000,86 @@ const docTemplate = `{
                 }
             }
         },
+        "webhookDto.CouponApplication": {
+            "type": "object",
+            "properties": {
+                "applied_at": {
+                    "type": "string"
+                },
+                "coupon_association_id": {
+                    "type": "string"
+                },
+                "coupon_id": {
+                    "type": "string"
+                },
+                "coupon_snapshot": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "discount_percentage": {
+                    "type": "string"
+                },
+                "discount_type": {
+                    "$ref": "#/definitions/types.CouponType"
+                },
+                "discounted_amount": {
+                    "type": "string"
+                },
+                "final_price": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_line_item_id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "original_price": {
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "webhookDto.CouponAssociation": {
+            "type": "object",
+            "properties": {
+                "coupon_id": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "subscription_line_item_id": {
+                    "type": "string"
+                }
+            }
+        },
         "webhookDto.CreditNote": {
             "type": "object",
             "properties": {
@@ -30220,7 +30300,22 @@ const docTemplate = `{
                 "amount_remaining": {
                     "type": "string"
                 },
+                "billing_period": {
+                    "type": "string"
+                },
                 "billing_reason": {
+                    "type": "string"
+                },
+                "billing_sequence": {
+                    "type": "integer"
+                },
+                "coupon_applications": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webhookDto.CouponApplication"
+                    }
+                },
+                "created_at": {
                     "type": "string"
                 },
                 "currency": {
@@ -30230,6 +30325,9 @@ const docTemplate = `{
                     "$ref": "#/definitions/webhookDto.Customer"
                 },
                 "customer_id": {
+                    "type": "string"
+                },
+                "description": {
                     "type": "string"
                 },
                 "due_date": {
@@ -30242,6 +30340,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "idempotency_key": {
                     "type": "string"
                 },
                 "invoice_number": {
@@ -30286,7 +30387,28 @@ const docTemplate = `{
                 "subtotal": {
                     "type": "string"
                 },
+                "tax_summary": {
+                    "$ref": "#/definitions/TaxSummary"
+                },
+                "taxes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webhookDto.TaxApplied"
+                    }
+                },
                 "total": {
+                    "type": "string"
+                },
+                "total_discount": {
+                    "type": "string"
+                },
+                "total_prepaid_credits_applied": {
+                    "type": "string"
+                },
+                "total_tax": {
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 },
                 "voided_at": {
@@ -30297,13 +30419,43 @@ const docTemplate = `{
         "webhookDto.InvoiceLineItem": {
             "type": "object",
             "properties": {
+                "adjusted_entitlement_quantity": {
+                    "type": "string"
+                },
                 "amount": {
+                    "type": "string"
+                },
+                "commitment_info": {
+                    "$ref": "#/definitions/types.CommitmentInfo"
+                },
+                "currency": {
                     "type": "string"
                 },
                 "display_name": {
                     "type": "string"
                 },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "type": "string"
+                },
                 "id": {
+                    "type": "string"
+                },
+                "invoice_level_discount": {
+                    "type": "string"
+                },
+                "line_item_discount": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "meter_display_name": {
+                    "type": "string"
+                },
+                "meter_id": {
                     "type": "string"
                 },
                 "period_end": {
@@ -30315,10 +30467,25 @@ const docTemplate = `{
                 "plan_display_name": {
                     "type": "string"
                 },
+                "prepaid_credits_applied": {
+                    "type": "string"
+                },
                 "price_id": {
                     "type": "string"
                 },
+                "price_type": {
+                    "type": "string"
+                },
+                "price_unit": {
+                    "type": "string"
+                },
+                "price_unit_amount": {
+                    "type": "string"
+                },
                 "quantity": {
+                    "type": "string"
+                },
+                "subscription_line_item_id": {
                     "type": "string"
                 }
             }
@@ -30330,7 +30497,27 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.WebhookEventName"
                 },
                 "invoice": {
-                    "$ref": "#/definitions/InvoiceResponse"
+                    "$ref": "#/definitions/webhookDto.Invoice"
+                }
+            }
+        },
+        "webhookDto.Meter": {
+            "type": "object",
+            "properties": {
+                "aggregation": {
+                    "$ref": "#/definitions/meter.Aggregation"
+                },
+                "event_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reset_usage": {
+                    "$ref": "#/definitions/types.ResetUsage"
                 }
             }
         },
@@ -30389,6 +30576,106 @@ const docTemplate = `{
                 },
                 "payment": {
                     "$ref": "#/definitions/webhookDto.Payment"
+                }
+            }
+        },
+        "webhookDto.Plan": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/types.Metadata"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webhookDto.Price"
+                    }
+                }
+            }
+        },
+        "webhookDto.Price": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "billing_cadence": {
+                    "$ref": "#/definitions/types.BillingCadence"
+                },
+                "billing_model": {
+                    "$ref": "#/definitions/types.BillingModel"
+                },
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_count": {
+                    "type": "integer"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_amount": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "display_price_unit_amount": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "lookup_key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/price.JSONBMetadata"
+                },
+                "meter": {
+                    "$ref": "#/definitions/webhookDto.Meter"
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "price_unit": {
+                    "type": "string"
+                },
+                "price_unit_amount": {
+                    "type": "string"
+                },
+                "tier_mode": {
+                    "$ref": "#/definitions/types.BillingTier"
+                },
+                "tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/price.PriceTier"
+                    }
+                },
+                "transform_quantity": {
+                    "$ref": "#/definitions/price.JSONBTransformQuantity"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.PriceType"
                 }
             }
         },
@@ -30483,6 +30770,12 @@ const docTemplate = `{
                 "cancelled_at": {
                     "type": "string"
                 },
+                "coupon_associations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webhookDto.CouponAssociation"
+                    }
+                },
                 "currency": {
                     "type": "string"
                 },
@@ -30504,6 +30797,12 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "line_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/webhookDto.SubscriptionLineItem"
+                    }
+                },
                 "lookup_key": {
                     "type": "string"
                 },
@@ -30515,6 +30814,14 @@ const docTemplate = `{
                 },
                 "pause_status": {
                     "$ref": "#/definitions/types.PauseStatus"
+                },
+                "plan": {
+                    "description": "Plan, LineItems and CouponAssociations are populated only on the invoice\nwebhook (newInvoiceSubscription), where a consumer needs to price a line.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/webhookDto.Plan"
+                        }
+                    ]
                 },
                 "plan_id": {
                     "type": "string"
@@ -30532,6 +30839,74 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trial_start": {
+                    "type": "string"
+                }
+            }
+        },
+        "webhookDto.SubscriptionLineItem": {
+            "type": "object",
+            "properties": {
+                "billing_period": {
+                    "$ref": "#/definitions/types.BillingPeriod"
+                },
+                "billing_period_count": {
+                    "type": "integer"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "entity_type": {
+                    "$ref": "#/definitions/types.SubscriptionLineItemEntityType"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "invoice_cadence": {
+                    "$ref": "#/definitions/types.InvoiceCadence"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "meter_display_name": {
+                    "type": "string"
+                },
+                "meter_id": {
+                    "type": "string"
+                },
+                "plan_display_name": {
+                    "type": "string"
+                },
+                "price": {
+                    "$ref": "#/definitions/webhookDto.Price"
+                },
+                "price_id": {
+                    "type": "string"
+                },
+                "price_type": {
+                    "$ref": "#/definitions/types.PriceType"
+                },
+                "price_unit": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "subscription_id": {
                     "type": "string"
                 }
             }
@@ -30575,6 +30950,64 @@ const docTemplate = `{
                 },
                 "subscription": {
                     "$ref": "#/definitions/webhookDto.Subscription"
+                }
+            }
+        },
+        "webhookDto.TaxApplied": {
+            "type": "object",
+            "properties": {
+                "applied_at": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "tax_amount": {
+                    "type": "string"
+                },
+                "tax_behavior": {
+                    "$ref": "#/definitions/types.TaxBehavior"
+                },
+                "tax_rate": {
+                    "$ref": "#/definitions/webhookDto.TaxRate"
+                },
+                "tax_rate_id": {
+                    "type": "string"
+                },
+                "taxable_amount": {
+                    "type": "string"
+                }
+            }
+        },
+        "webhookDto.TaxRate": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "percentage_value": {
+                    "type": "string"
+                },
+                "tax_rate_type": {
+                    "$ref": "#/definitions/types.TaxRateType"
                 }
             }
         },
