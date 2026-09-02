@@ -440,7 +440,12 @@ func lookupJSONPath(root any, path string) any {
 	return cur
 }
 
-func TestNewInvoice_LargeInvoiceStaysUnderSvixPayloadLimit(t *testing.T) {
+// TestNewInvoice_LineItemEncodingCostStaysWithinBudget guards the per-line-item
+// encoding cost against regression; it is not a delivery-time guarantee. Enough
+// line items, or large enough per-line metadata, can still exceed the limit —
+// there is deliberately no size enforcement in the delivery path, so an oversized
+// payload fails and is recorded on the system_event with its failure reason.
+func TestNewInvoice_LineItemEncodingCostStaysWithinBudget(t *testing.T) {
 	const svixPayloadLimitBytes = 1024 * 1024
 
 	lineItems := make([]*dto.InvoiceLineItemResponse, 0, 1000)
