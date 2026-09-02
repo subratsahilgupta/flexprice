@@ -1,6 +1,6 @@
 # Refund Architecture — Credit Notes, Refund Ledger & Settlement — ERD
 
-Status: **Proposed**  
+Status: **Implemented**  
 Date: 2026-08-28  
 Author: Harshit Gupta ([harshit.gupta@flexprice.io](mailto:harshit.gupta@flexprice.io))
 
@@ -8,54 +8,56 @@ Author: Harshit Gupta ([harshit.gupta@flexprice.io](mailto:harshit.gupta@flexpri
 
 ## 1. Scope
 
-Today a refund credit note is finalised and the money is returned by a single inline wallet
-top-up inside `FinalizeCreditNote` ([creditnote.go:601](../../internal/ee/service/creditnote.go#L601)).  
+Before this change a refund credit note was finalised and the money returned by a single inline
+wallet top-up inside `FinalizeCreditNote`.
 
-There is no record of *how* the money went back, no way to return it to the original payment
+There was no record of *how* the money went back, no way to return it to the original payment
 instrument, and no way to distinguish "we promised the customer a refund" from "the money
-actually left". The `refunds` table exists and is wired into DI ([factory.go:178](../../internal/repository/factory.go#L178), [main.go:162](../../cmd/server/main.go#L162))
-but no service reads or writes it.
+actually left". The `refunds` table existed and was wired into DI
+([factory.go:178](../../internal/repository/factory.go#L178), [main.go:161](../../cmd/server/main.go#L161))
+but no service read or wrote it.
 
 This design separates the two concerns:
 
 - **Credit note** — the accounting document. Says what the customer is owed. Immediate, transactional.
-- **Refund row** — the money-movement ledger. One row per source per attempt. Asynchronous, retryable.
+- **Refund row** — the money-movement ledger. One row per funding source per attempt. Asynchronous, retryable.
 
-**In scope:**
-
-
-| Area                  | Change                                                                                                               |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Refund ledger         | `refunds` reshaped around `source_type`/`source_id` + `refund_target`; becomes the settlement record                 |
-| Invoice money columns | New `credited_amount` (promised); `refunded_amount` redefined as settled cash                                        |
-| Payment money columns | New `refunded_amount`                                                                                                |
-| CN finalize           | Inline wallet top-up replaced by allocation into refund rows + out-of-tx dispatch                                    |
-| Refund service        | `PlanRefundsForCreditNote`, `DispatchRefund`, `CompleteRefund`, `ReconcileInvoiceRefunds`, `TriggerRefundForPayment` |
-| Reconciliation        | Refund-row-driven sweep; failed gateway refunds fall back to wallet credit                                           |
-| Void safety           | `SkipRefund` on `InvoiceVoidRequest` so a void does not double-credit an in-flight refund                            |
+**Shipped:**
 
 
-**Explicitly out of scope** — see §8:
+| Area              | Change                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Refund ledger     | `refunds` gains `invoice_id`, `credit_note_id`, `refund_destination`, `refund_destination_id`, `settled_amount`, `attempt` |
+| Invoice columns   | None. `invoice.refunded_amount` keeps its meaning — the sum of finalized refund credit notes                              |
+| Payment columns   | None. Per-payment settled cash is derived from refund rows                                                                |
+| CN finalize       | Inline wallet top-up replaced by allocation into refund rows + dispatch after the commit                                  |
+| Invoice void      | Plans refund rows for the same amount it used to top up; wallet-only, dispatched inside the void transaction              |
+| Refund service    | `PrepareRefundsForCreditNote`, `PrepareRefundsForVoidedInvoice`, `Dispatch`, `Settle`, `Fail`, `RetryRefund`               |
+| Gateway abstraction | `interfaces.RefundProvider` + Razorpay and Chargebee adapters resolved through `Factory.GetRefundProvider`               |
+| Webhooks          | Inbound Razorpay / Chargebee refund events settle rows; outbound `refund.created` / `refund.succeeded` / `refund.failed`  |
+| API               | `GET /refunds`, `GET /refunds/{id}`, `POST /refunds/{id}/retry`, and `refund_target` on credit note create + finalize     |
 
 
-| Deferred                                | Note                                                                                |
-| --------------------------------------- | ----------------------------------------------------------------------------------- |
-| Prepaid credits as a refund source      | §8.1 — schema supports it (`source_type = WALLET_CREDIT`); allocation does not yet  |
-| `OUT_OF_BAND` refund target             | §8.2 — enum value defined, offline payments route to `WALLET` for now               |
-| Overpayment (`PaymentStatusOverpaid`)   | §8.3 — CN bound is authoritative, drift is an alert not an abort                    |
-| Refunds on partially-paid invoices      | §8.4 — CN type is server-derived; adjustment first, then refund                     |
-| Caller-specified credit note type       | §8.5 — moves to the DTO later                                                       |
-| 3-strikes retry policy                  | §8.6 — `attempt` column lands now, the policy later                                 |
-| Refund fallback policy (tenant setting) | §10.3 — v1 hardcodes wallet fallback; the setting and the write-off path come later |
+**Not shipped** — see §8:
+
+
+| Deferred                              | Note                                                                                     |
+| ------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `invoices.credited_amount`            | §8.1 — rejected. `refunded_amount` keeps its meaning; settled cash is derived, not stored |
+| `payments.refunded_amount`            | §8.1 — same reason; per-payment settled cash is a query over refund rows                 |
+| Prepaid credits as a distinct source  | §8.2 — they produce no payment row, so they fall into the single no-payment wallet row   |
+| `OUT_OF_BAND` destination             | §8.3 — enum value ships, nothing produces it and the API rejects it as a target          |
+| Reconciler                            | §8.4 — a stuck row is recovered by `POST /refunds/{id}/retry`, not by a sweep            |
+| Payment-only refunds                  | §8.5 — checkout reversals still refund at the gateway without writing a row              |
+| `credit_notes.refund_status`          | §8.6 — column still exists and is still never written                                    |
+| Moyasar / Stripe refunds              | §8.7 — no adapter; the row fails and falls back to the wallet                            |
+| 3-strikes retry policy                | §8.8 — `attempt` counts, nothing enforces a ceiling                                      |
+| Refund fallback policy (tenant setting) | §10.3 — the caller chooses per credit note instead                                     |
 
 
 ---
 
-
-
 ## 2. Data model
-
-
 
 ### 2.1 ERD
 
@@ -66,13 +68,13 @@ erDiagram
 
     INVOICES ||--o{ CREDIT_NOTES : invoice_id
     INVOICES ||--o{ PAYMENTS : "destination_id (destination_type=INVOICE)"
+    INVOICES ||--o{ REFUNDS : "invoice_id (required — the only guaranteed anchor)"
 
-    CREDIT_NOTES ||--o{ REFUNDS : "credit_note_id (null for payment-only refunds)"
-    PAYMENTS     ||--o{ REFUNDS : "source_id (source_type=PAYMENT)"
+    CREDIT_NOTES ||--o{ REFUNDS : "credit_note_id (null for void refunds)"
+    PAYMENTS     ||--o{ REFUNDS : "payment_id (null when no payment funded the amount)"
 
     WALLETS ||--o{ WALLET_TRANSACTIONS : wallet_id
-    WALLET_TRANSACTIONS ||--o| REFUNDS : "refund_target_id (refund_target=WALLET)"
-    WALLET_TRANSACTIONS ||--o{ REFUNDS : "source_id (source_type=WALLET_CREDIT, deferred)"
+    WALLET_TRANSACTIONS ||--o| REFUNDS : "refund_destination_id (refund_destination=WALLET)"
 
     INVOICES {
         string  id PK
@@ -87,8 +89,7 @@ erDiagram
         numeric amount_paid "20,8"
         numeric amount_remaining "20,8"
         numeric total_prepaid_credits_applied "20,8 — wallet credits applied at compute time"
-        numeric credited_amount "20,8 — NEW: sum of finalized REFUND credit notes (promised)"
-        numeric refunded_amount "20,8 — REDEFINED: sum of settled refund rows (actual)"
+        numeric refunded_amount "20,8 — UNCHANGED: sum of finalized REFUND credit notes (promised)"
     }
 
     CREDIT_NOTES {
@@ -99,7 +100,7 @@ erDiagram
         string  credit_note_number
         string  credit_note_type "ADJUSTMENT | REFUND — server-derived from invoice.payment_status"
         string  credit_note_status "DRAFT | FINALIZED | VOIDED"
-        string  refund_status "REPURPOSED: CN-level settlement rollup, null for ADJUSTMENT"
+        string  refund_status "still never written"
         numeric total_amount "20,8"
         string  currency
         string  idempotency_key UK
@@ -116,7 +117,6 @@ erDiagram
         string  payment_gateway "null for OFFLINE / CREDITS"
         string  gateway_payment_id
         numeric amount "20,8 — captured amount; no partial capture in the system"
-        numeric refunded_amount "20,8 — NEW: sum of settled refunds against this payment"
         string  payment_status "SUCCEEDED | OVERPAID | PARTIALLY_REFUNDED | REFUNDED | ..."
         string  currency
         datetime succeeded_at
@@ -128,24 +128,24 @@ erDiagram
         string  id PK
         string  tenant_id
         string  environment_id
-        string  source_type "CHANGED from payment_id: PAYMENT | WALLET_CREDIT | OUT_OF_BAND"
-        string  source_id FK "payment_id | originating wallet_txn_id | operator reference"
-        string  credit_note_id FK "NEW: null for payment-only refunds (draft-invoice / checkout)"
-        string  refund_target "NEW: BACK_TO_SOURCE | WALLET | OUT_OF_BAND"
-        string  refund_target_id "NEW: wallet_txn_id or gateway_refund_id — written once, at settlement"
-        int     attempt "NEW: per (credit_note_id, source_id); discriminates the wallet fallback row"
+        string  invoice_id FK "NEW: required, indexed"
+        string  payment_id FK "CHANGED: now optional — null when no payment funded the amount"
+        string  credit_note_id FK "NEW: optional, not indexed — null for void refunds"
+        string  refund_destination "NEW: GATEWAY | WALLET | OUT_OF_BAND"
+        string  refund_destination_id "NEW: wallet_txn_id or gateway_refund_id — written at settlement"
+        int     attempt "NEW: 1 for a planned row, +1 per wallet fallback"
         numeric amount "20,8 — requested"
-        numeric settled_amount "20,8 — NEW: gateway/wallet confirmed; feeds invoice.refunded_amount"
+        numeric settled_amount "20,8 — NEW: gateway/wallet confirmed"
         string  currency
         string  refund_status "PENDING | PROCESSING | SUCCEEDED | FAILED | CANCELLED"
         string  refund_reason
-        string  idempotency_key UK "ScopeRefund{credit_note_id, source_id, attempt}"
-        string  payment_gateway "CHANGED: NotEmpty -> Optional (null for WALLET target)"
-        string  gateway_idempotency_token "CHANGED: NotEmpty -> Optional; required for BACK_TO_SOURCE"
-        string  gateway_refund_id "operational key — webhook lookup, unique per tenant+env"
+        string  idempotency_key UK "(tenant, env, idempotency_key)"
+        string  payment_gateway "CHANGED: NotEmpty -> Optional (null for WALLET rows)"
+        string  gateway_idempotency_token "CHANGED: NotEmpty -> Optional; the row's own idempotency key"
+        string  gateway_refund_id "operational key — webhook lookup, indexed, not unique"
         string  gateway_tracking_id
         string  failure_reason
-        json    metadata "replaced_refund_id, wallet_id, allocation trace"
+        json    metadata "fallback_refund_id / retry_of"
         json    gateway_metadata
         datetime initiated_at
         datetime succeeded_at
@@ -154,361 +154,367 @@ erDiagram
     }
 ```
 
+### 2.2 What changed in the schema
 
 
+| Table     | Field                                          | Change                                                            | Why                                                                                                                                                                                     |
+| --------- | ---------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `refunds` | `invoice_id`                                   | **New**, required, indexed                                        | A void refund of prepaid credits has neither a payment nor a credit note, so the invoice is the only link guaranteed to exist. It also backs `GET /refunds?invoice_ids=`, the only way to read settled cash. |
+| `refunds` | `payment_id`                                   | `NotEmpty` → **Optional**, index unchanged                        | Refunds exist with no payment row at all — manual mark-paid, `amount_paid` pre-set at creation, prepaid credits on void. Kept over a `source_type`/`source_id` pair: nullable says the same thing with one column. |
+| `refunds` | `credit_note_id`                               | **New**, optional, **not indexed**                                | Provenance that `invoice_id` cannot recover when an invoice has several credit notes. It has one query — `ListByInvoice` plus an in-memory filter — and rows per invoice are bounded by (credit notes × payments). |
+| `refunds` | `refund_destination`, `refund_destination_id`  | **New**                                                           | Where the money actually went. `refund_destination_id` is the wallet transaction id or the gateway refund id, written at settlement.                                                     |
+| `refunds` | `settled_amount`                               | **New**, default 0                                                | `amount` is requested, `settled_amount` is confirmed. Only the latter counts as cash.                                                                                                    |
+| `refunds` | `attempt`                                      | **New**, default 1                                                | The failed-gateway → wallet fallback row shares its parent's key prefix and would otherwise collide on the idempotency unique index. Starts at 1 to match `payment_attempts.attempt_number`. |
+| `refunds` | `payment_gateway`, `gateway_idempotency_token` | `NotEmpty` → **Optional**                                         | Wallet rows touch no gateway.                                                                                                                                                           |
+| `refunds` | `Idx_refund_tenant_invoice`                    | **New** `(tenant_id, environment_id, invoice_id)`                 | Drives every read path: list by invoice, and the per-payment capacity sums which are invoice-scoped.                                                                                     |
+| `refunds` | `Idx_refund_tenant_status`                     | **Unchanged** `(tenant_id, environment_id, refund_status)`        | Widening it with `updated_at` was for the reconciler's stuck-row scan, which is not built (§8.4).                                                                                       |
+| `refunds` | `idx_refund_gateway_refund_id`                 | **Unchanged**, still not unique                                   | A replayed webhook is stopped by the status transition guard, not by an index.                                                                                                          |
 
 
-### 2.2 What changes in the schema
-
-
-| Table          | Field                                          | Change                                                                                                               | Why                                                                                                                                                                                                    |
-| -------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `refunds`      | `payment_id`                                   | **Renamed** to `source_id`, plus new `source_type`                                                                   | Prepaid credits are a refund source with no payment row (§8.1). Two overlapping pointers later is worse than one rename now, while the table is dormant.                                               |
-| `refunds`      | `credit_note_id`                               | **New**, optional, indexed                                                                                           | Ties refund rows to the document that authorised them. Null for `TriggerRefundForPayment`.                                                                                                             |
-| `refunds`      | `refund_target`, `refund_target_id`            | **New**                                                                                                              | Where the money actually went. `refund_target_id` is polymorphic and **write-once at settlement**.                                                                                                     |
-| `refunds`      | `settled_amount`                               | **New**                                                                                                              | `amount` is requested, `settled_amount` is confirmed. Only the latter rolls up.                                                                                                                        |
-| `refunds`      | `attempt`                                      | **New**, default 0                                                                                                   | The failed-gateway → wallet fallback row shares `(credit_note_id, source_id)` with the row it replaces and would otherwise collide on the idempotency unique index. Also the future 3-strikes counter. |
-| `refunds`      | `payment_gateway`, `gateway_idempotency_token` | `NotEmpty` → **Optional**                                                                                            | Wallet-target refunds touch no gateway. Enforced at the domain layer for `BACK_TO_SOURCE` instead.                                                                                                     |
-| `refunds`      | `Idx_refund_tenant_status`                     | **Widened** to `(tenant_id, environment_id, refund_status, updated_at)`                                              | The reconciler scans stuck rows by status + age.                                                                                                                                                       |
-| `refunds`      | `Idx_refund_tenant_payment`                    | **Follows the rename** to `(tenant, env, source_type, source_id)`; new `(tenant, env, credit_note_id)`               | The two access paths. The source index is not new — recon re-derives `payment.refunded_amount` from rows on every settlement, and payment-only rows have no `credit_note_id` to reach them by.         |
-| `refunds`      | `gateway_refund_id` index                      | `Idx_refund_gateway_refund_id` → **unique** on `(tenant, env, gateway_refund_id)`                                    | A replayed gateway webhook must not be able to mint a second row.                                                                                                                                      |
-| `invoices`     | `credited_amount`                              | **New**, default 0                                                                                                   | Sum of finalized refund CNs — what today's `refunded_amount` means.                                                                                                                                    |
-| `invoices`     | `refunded_amount`                              | **Redefined** (no DDL)                                                                                               | Becomes settled cash only. See §7 for the migration order.                                                                                                                                             |
-| `payments`     | `refunded_amount`                              | **New**, default 0                                                                                                   | Per-payment settled total; drives `PARTIALLY_REFUNDED` / `REFUNDED`.                                                                                                                                   |
-| `credit_notes` | `refund_status`                                | **Repurposed** — column already exists and is never written ([creditnote.go:85](../../ent/schema/creditnote.go#L85)) | CN-level settlement rollup. Keeps the `PaymentStatus` GoType so the vocabulary matches `invoice.payment_status`: `PENDING → PARTIALLY_REFUNDED → REFUNDED`.                                            |
-
-
-
+Nothing was added to `invoices` or `payments`, and there is no backfill — see §8.1.
 
 ### 2.3 The money columns, stated once
 
 ```
 inv.adjustment_amount = Σ finalized ADJUSTMENT credit notes
 inv.amount_due        = inv.total - inv.adjustment_amount
-inv.credited_amount   = Σ finalized REFUND credit notes          -- promised
-inv.refunded_amount   = Σ settled_amount of SUCCEEDED refunds    -- actual
-payment.refunded_amount = Σ settled_amount of SUCCEEDED refunds where source_id = payment.id
+inv.refunded_amount   = Σ finalized REFUND credit notes           -- promised
+settled cash          = Σ settled_amount of SUCCEEDED refund rows -- derived, never stored
 ```
 
-`credited_amount` is **incremented** at CN finalize (transactional, single writer).
-`refunded_amount` is **derived** — recomputed from the refund rows on every settlement, never incremented. Refunds retry, settle partially, and complete out of order; derived is the only form that survives that.
+`refunded_amount` is **incremented** at CN finalize and at void, under the invoice row lock,
+exactly as before. Settled cash has no column: it is read from the refund rows when needed, so
+there is no counter to drift and a duplicate webhook cannot double-count.
+
+The field name reads misleadingly — it means promised, not cash. The rename is declined: it
+ships in the invoice API response, the CSV export and the generated SDKs.
 
 ---
-
-
 
 ## 3. Bounds and invariants
 
 ```
-ADJUSTMENT CN ≤ inv.total - inv.adjustment_amount - inv.amount_paid        (unchanged today)
-REFUND CN     ≤ inv.amount_paid + inv.total_prepaid_credits_applied
-                  - inv.credited_amount
+ADJUSTMENT CN ≤ inv.total - inv.adjustment_amount - inv.amount_paid
+REFUND CN     ≤ inv.amount_paid - inv.refunded_amount
 
-invariant A:  inv.refunded_amount ≤ inv.credited_amount
-              gap = in-flight or failed refunds → reconciler's queue
-invariant B:  cn.total_amount == Σ amount of non-CANCELLED refund rows for that CN
-invariant C:  Σ settled_amount per payment ≤ payment.amount
+invariant A:  Σ settled_amount for an invoice ≤ inv.refunded_amount
+              gap = in-flight or failed refunds
+invariant B:  cn.total_amount == Σ settled_amount of that CN's rows, once they all settle
+invariant C:  per payment, Σ settled + Σ in-flight ≤ payment.amount
 ```
 
-The credit-note bound is **authoritative**. Allocation does not impose a second bound: if the
-sources cannot cover a CN that passed the bound, that is data drift (manual `UpdatePayment`,
-overpayment, backfill), and it surfaces as a stuck refund row plus an alert — never as a
-rejected credit note. The one exception is a *structurally* impossible allocation (no source
-rows at all), which fails the CN transaction outright rather than writing rows that can never
-settle.
+The credit-note bound is **authoritative** and is unchanged by this design. Allocation imposes a
+second, per-payment bound (invariant C) which cannot reject a credit note: an amount no payment
+can cover becomes a single wallet row with `payment_id = NULL`.
+
+Invariant B is stated over settled cash, not over `amount`. A failed gateway row keeps its
+`amount` and is replaced by a fallback row carrying the same amount, so summing `amount` over
+non-cancelled rows double-counts every fallback.
 
 ---
 
-
-
 ## 4. Control flow
-
-
 
 ### 4.1 Refund credit note on a paid invoice
 
 ```
 BEGIN
-  GetForUpdate(invoice)                       -- existing lock, creditnote.go:78
-  re-check cn.total ≤ max creditable          -- now against credited_amount
+  GetForUpdate(invoice)                       -- existing lock
+  re-check cn.total ≤ max creditable
   cn.status = FINALIZED, assign number
-  inv.credited_amount += cn.total_amount
-  cn.refund_status = PENDING
-  PlanRefundsForCreditNote(cn) -> refund rows, all PENDING
+  inv.refunded_amount += cn.total_amount
+  PrepareRefundsForCreditNote(cn, inv) -> refund rows, all PENDING
 COMMIT
-for each row: DispatchRefund(row.id)          -- outside the tx, one commit per row
+for each row: Dispatch(row.id)                -- outside the tx, one commit per row
 ```
 
-`PlanRefundsForCreditNote` is pure DB — no gateway calls, no wallet writes:
+A dispatch failure is logged, not returned: the credit note is already finalized and the row
+stays `PENDING` for `RetryRefund`.
+
+`PrepareRefundsForCreditNote` is pure DB — no gateway calls, no wallet writes:
 
 
-| Step              | Rule                                                                                                                                                                                                                                                                                                       |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Candidate sources | payments on the invoice with status `SUCCEEDED`, `OVERPAID`, `PARTIALLY_REFUNDED`, where `amount - refunded_amount > 0`                                                                                                                                                                                    |
-| Order             | LIFO by `succeeded_at` (`recorded_at` for offline). Prepaid credits will slot in ahead of payments when §8.1 lands.                                                                                                                                                                                        |
-| Target per source | `payment_method_type = CREDITS` → `WALLET` (forced — the source *was* the wallet). `payment_gateway IS NULL` (offline) → `WALLET` for now, `OUT_OF_BAND` later. Otherwise the requested source.                                                                                                            |
-| Wallet selection  | first `WalletType = PRE_PAID` wallet matching the invoice currency, creating one if absent — the [VoidInvoice](../../internal/ee/service/invoice.go#L1310) rule, not the CN rule, which currently matches on currency alone and can pick a non-prepaid wallet                                              |
-| Idempotency       | `ScopeRefund{credit_note_id, source_id, attempt}` — replaying the planner after a crash produces the same keys, and the unique index physically blocks double allocation of the same source to the same CN. Two credit notes against the same payment carry different `credit_note_id` and coexist freely. |
-
-
+| Step              | Rule                                                                                                                                                                                        |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Candidate sources | payments on the invoice with status `SUCCEEDED`, in the invoice's currency                                                                                                                  |
+| Order             | oldest first by `created_at`, then `id`, so allocation is reproducible regardless of repository ordering                                                                                     |
+| Capacity          | `payment.amount - settled - in-flight`, both sums scoped to this invoice. In-flight is counted so a second credit note cannot draw a balance an unsettled refund has already claimed         |
+| Remainder         | anything no payment can cover becomes one row with `payment_id = NULL`, destination `WALLET`                                                                                                 |
+| Destination       | `WALLET` unless the caller asked for `BACK_TO_SOURCE` **and** the payment is gateway-refundable: method in `{CARD, PAYMENT_LINK, UPI}`, non-null `payment_gateway`, non-empty `gateway_payment_id`. `ACH` is deliberately excluded — no adapter refunds it |
+| Wallet selection  | `EnsurePrepaidWallet` — the first active `PRE_PAID` wallet in the invoice currency, creating one if absent                                                                                   |
+| Idempotency       | `<credit_note_id>-<index>`. The unique index on `(tenant, env, idempotency_key)` is what stops the same credit note being planned twice                                                      |
 
 
 ### 4.2 Adjustment credit note
 
 Unchanged. No refund rows, no money movement — `adjustment_amount` rises, `amount_due` falls.
 
-### 4.3 Payment-only refund (draft invoice / checkout)
+### 4.3 Invoice void
 
 ```
-TriggerRefundForPayment(paymentID, amount, idempotencyKey)   -- key is caller-supplied
-  → one refund row, credit_note_id = NULL, source_type = PAYMENT
-  → DispatchRefund
-  → VoidInvoice(invoiceID, {SkipRefund: true})
+BEGIN
+  GetForUpdate(invoice)
+  refundAmount = (amount_paid + total_prepaid_credits_applied) - refunded_amount
+  PrepareRefundsForVoidedInvoice(inv, refundAmount)
+  for each row: Dispatch(row.id)              -- inside the tx: wallet only, no external I/O
+  inv.refunded_amount += refundAmount
+COMMIT
 ```
 
-`SkipRefund` is required, not optional. `VoidInvoice` computes
-`refundAmount = (amount_paid + prepaid_applied) - refunded_amount` and tops up the wallet
-([invoice.go:1302](../../internal/ee/service/invoice.go#L1302)); draft invoices with a`SUCCEEDED` payment status are voidable ([invoice.go:1230](../../internal/ee/service/invoice.go#L1230)).
+Void rows are never gateway-targeted, carry no `credit_note_id`, and key on
+`<invoice_id>-void-<index>`. Subtracting `refunded_amount` is what prevents paying an in-flight
+refund twice. Observable behaviour is unchanged from before this design; the money now has a
+ledger row.
 
-With a gateway refund still in flight, `refunded_amount` is 0 and the void credits the wallet
-for money that is already on its way back to the card. There is no CN in this path, so
-`credited_amount` does not protect it either.
+### 4.4 Dispatch
 
-This path also absorbs [RefundLateCapturedPayment](../../internal/integration/razorpay/payment.go#L1021), which today refunds at Razorpay and flips the payment status while writing nothing to the ledger.
+`Dispatch` is a no-op on a terminal row, and branches on the destination:
 
-### 4.4 Settlement and reconciliation
+- **`WALLET`** — one transaction: lock the row, `EnsurePrepaidWallet`, `TopUpWallet` keyed on the
+refund row id, `Settle`. The top-up is keyed on the row rather than the credit note because one
+credit note can fan out into several rows.
+- **`GATEWAY`** — claim `PENDING → PROCESSING` under the row lock in a short transaction, call
+the provider **outside** it, then `Settle`, `Fail`, or record the gateway's acceptance and wait
+for the webhook. Claiming first means a concurrent dispatch cannot issue a second refund for the
+same money.
 
-`CompleteRefund(ctx, refundID, outcome)` is the single leaf for both paths — gateway webhook,
-gateway poll, and synchronous wallet settlement all funnel through it.
+A gateway with no adapter resolves to `ErrNotImplemented` and routes to `Fail` — not an error.
 
-```go
-type RefundOutcome struct {
-    Status          types.RefundStatus // SUCCEEDED | FAILED
-    SettledAmount   decimal.Decimal    // ≤ refund.Amount
-    GatewayRefundID *string
-    FailureReason   *string
-    SettledAt       time.Time
-    GatewayMetadata map[string]any
-}
-```
+### 4.5 Settlement
 
-Each gateway's handler builds the outcome from its own payload, so `CompleteRefund` stays
-gateway-agnostic. It sets `settled_amount`, `refund_target_id`
-(`coalesce(walletTxnID, outcome.GatewayRefundID)` — one writer, one place), and then branches:
+`Settle(refundID, settledAmount, destinationID, gatewayMetadata)` is the single leaf: inline
+wallet settlement, the Razorpay `refund.processed` webhook and Chargebee's `payment_refunded`
+all funnel through it. Under the row lock it:
 
-- row **has** `credit_note_id` → `ReconcileInvoiceRefunds(cn.invoice_id)`: recompute
-`inv.refunded_amount`, `payment.refunded_amount`, payment statuses, `cn.refund_status`;
-when `refunded_amount == credited_amount`, dispatch the integration resync
-- row **has no** `credit_note_id` → stop after the payment-level update
+1. rejects the call if the row cannot transition to `SUCCEEDED` — this is what makes a
+   redelivered webhook a no-op, and it is the only thing settlement idempotency rests on;
+2. rejects a `settled_amount` greater than the row's `amount`;
+3. writes `settled_amount`, `succeeded_at`, `refund_destination_id`, and — for gateway rows —
+   `gateway_refund_id`, so the two cannot drift.
 
+`refund.succeeded` is published only when the transition actually applied.
 
+### 4.6 Failure fallback
 
-### 4.5 Failure fallback
-
-A `FAILED` gateway refund is credited to the wallet rather than retried indefinitely:
+`Fail` records the failure and, for a gateway row only, creates the one wallet row that replaces
+it:
 
 ```
-old row: refund_status = CANCELLED, metadata.replaced_by_refund_id = new.id
-new row: attempt = old.attempt + 1, refund_target = WALLET,
-         metadata.replaced_refund_id = old.id
+failed row: refund_status = FAILED, failure_reason, metadata.fallback_refund_id = new.id
+new row:    attempt = old.attempt + 1, refund_destination = WALLET,
+            idempotency_key = <old key>-fb-<attempt>, metadata.retry_of = old.id
 ```
 
-Invariant B holds throughout because the cancelled row leaves the sum. The metadata link
-carries the UX trail; `attempt` carries the retry count.
+The failed row is **not** cancelled — it keeps its amount and its failure reason as the audit
+trail, which is why invariant B is stated over settled cash. Because the link is written on the
+failed row, `RetryRefund` returns the existing fallback instead of minting a second one. Wallet
+rows never spawn a fallback, so there is no loop.
 
-### 4.6 Reconciler
+### 4.7 Retry
 
-The sweep starts from the refunds table, **not** from invoices — that is what lets it handle
-CN-backed and payment-only rows in one loop, and it is why the refund row needs no `invoice_id`
-column (payment rows reach the invoice via `payment.destination_id`, CN rows via
-`cn.invoice_id`).
-
-```
-stuck:  refund_status IN (PENDING, PROCESSING) AND updated_at < now() - threshold
-failed: refund_status = FAILED AND attempt < 3
-```
-
-Per row: re-query the gateway → `CompleteRefund` → branch as in §4.4. Failed rows past the
-threshold take the §4.5 fallback.
+`POST /refunds/{id}/retry` is the only recovery path. A `PENDING` row is dispatched again; a
+`FAILED` row gets its fallback (existing or new) dispatched; anything else is rejected. There is
+no sweep — see §8.4.
 
 ---
-
-
 
 ## 5. Refund state machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING : PlanRefundsForCreditNote / TriggerRefundForPayment
-    PENDING --> PROCESSING : DispatchRefund (BACK_TO_SOURCE)
-    PENDING --> SUCCEEDED : DispatchRefund (WALLET — settles inline)
-    PROCESSING --> SUCCEEDED : CompleteRefund(SUCCEEDED)
-    PROCESSING --> FAILED : CompleteRefund(FAILED)
-    FAILED --> CANCELLED : reconciler fallback → new WALLET row
+    [*] --> PENDING : PrepareRefundsForCreditNote / PrepareRefundsForVoidedInvoice
+    PENDING --> PROCESSING : Dispatch (GATEWAY)
+    PENDING --> SUCCEEDED : Dispatch (WALLET — settles inline)
+    PENDING --> FAILED : Dispatch (gateway rejected / no adapter)
+    PROCESSING --> SUCCEEDED : Settle
+    PROCESSING --> FAILED : Fail
+    FAILED --> [*] : replaced by a new WALLET row (§4.6)
     SUCCEEDED --> [*]
-    CANCELLED --> [*]
 ```
 
+`SUCCEEDED` and `FAILED` are terminal — the transition table maps them to an empty set, so
+`SUCCEEDED → SUCCEEDED` is rejected and a replayed webhook changes nothing. `CANCELLED` is a
+legal target from `PENDING` and `PROCESSING` but nothing issues it today.
 
+Wallet rows skip `PROCESSING` — the top-up is a DB write in the dispatcher's own transaction.
+Gateway rows are moved to `PROCESSING` **before the gateway is called**, so a webhook that lands
+before the HTTP response returns finds a row to attach to.
 
-`CANCELLED` therefore means exactly one thing: superseded by a fallback row (§4.5). There is no
-"allocation superseded" path — rows are planned inside the CN finalize transaction under the
-invoice row lock, so nothing can invalidate them between planning and dispatch.
-
-Wallet-target rows skip `PROCESSING` — the top-up is a DB write in the dispatcher's own
-transaction. Gateway rows are written `PENDING` **before the gateway is called**, so a webhook that lands
-before the HTTP response returns finds a row to attach to. This race is real for both Stripe and
-Razorpay: the event can be delivered while the request connection is still open, or the response
-can be lost after the gateway has already fired.
-
-Webhook matching goes `gateway_refund_id` → **our refund id echoed in the gateway's metadata
-field** (Razorpay `notes`, already modelled as `FlexibleNotes` in[webhook/types.go:96](../../internal/integration/razorpay/webhook/types.go#L96); Stripe
-`metadata`) → requeue. It never creates a row. 
+Webhook matching is `gateway_refund_id` → row, and nothing else. An unresolvable id is logged
+and skipped; the handler never creates a row and always answers 200.
 
 ### 5.1 Two idempotency keys, two jobs
 
 
 | Key                                 | Scope               | Dedupes                                                                                            |
 | ----------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------- |
-| `refunds.idempotency_key`           | ours                | **planning** — a replayed planner cannot allocate the same source to the same CN twice             |
+| `refunds.idempotency_key`           | ours                | **planning** — a replayed planner cannot allocate the same credit note twice                       |
 | `refunds.gateway_idempotency_token` | sent to the gateway | **dispatch** — a retried gateway call returns the original refund instead of creating a second one |
 
 
-The gateway token already exists in the codebase as Razorpay's `X-Refund-Idempotency`
-([client.go:563](../../internal/integration/razorpay/client.go#L563)), but it is derived as`"refund_" + paymentID` — correct only while that flow issues one full refund per payment, as its own comment notes. With partial refunds it must become per-row: `RefundPayment` takes the token as
-a parameter, sourced from `refund.gateway_idempotency_token`.
+Neither dedupes settlement; the status transition guard does.
+
+The gateway token is the row's own idempotency key. `RefundPayment` takes it as a parameter
+([client.go:558](../../internal/integration/razorpay/client.go#L558)); it previously hardcoded
+`"refund_" + paymentID`, which is correct only while a flow issues one full refund per payment.
+Under the ledger a payment can be refunded several times, and reusing that key makes Razorpay
+return the **first** refund instead of creating the second — a silent under-refund.
 
 ---
-
-
 
 ## 6. Service API
 
 ```go
 // in tx, pure DB — no gateway I/O, no wallet writes
-PlanRefundsForCreditNote(ctx, cn *creditnote.CreditNote) ([]*refund.Refund, error)
+PrepareRefundsForCreditNote(ctx, cn *creditnote.CreditNote, inv *invoice.Invoice, target *types.RefundTarget) ([]*refund.Refund, error)
+PrepareRefundsForVoidedInvoice(ctx, inv *invoice.Invoice, amount decimal.Decimal) ([]*refund.Refund, error)
 
-// out of tx, per row, each committed independently
-DispatchRefund(ctx, refundID string) error
+// moves one row towards settlement; must run outside a transaction for gateway rows
+Dispatch(ctx, refundID string) error
 
-// single settlement leaf — webhook, poll, and inline wallet all land here
-CompleteRefund(ctx, refundID string, outcome RefundOutcome) error
+// single settlement leaf — webhook and inline wallet both land here
+Settle(ctx, req *dto.SettleRefundRequest) error
+Fail(ctx, refundID, reason string) error
 
-// derived roll-up; idempotent, safe to re-run
-ReconcileInvoiceRefunds(ctx, invoiceID string) error
-
-// no credit note; draft-invoice / checkout path.
-// idempotencyKey is caller-supplied and required — see below.
-TriggerRefundForPayment(ctx, paymentID string, amount decimal.Decimal, idempotencyKey string) (*refund.Refund, error)
+// read + recovery
+GetRefund(ctx, id string) (*dto.RefundResponse, error)
+GetRefundByGatewayRefundID(ctx, gateway, gatewayRefundID string) (*dto.RefundResponse, error)
+ListRefunds(ctx, filter *types.RefundFilter) (*dto.ListRefundsResponse, error)
+RetryRefund(ctx, id string) (*dto.RefundResponse, error)
 ```
 
----
+### 6.1 Choosing where the money goes
+
+The caller asks for an outcome, not a mechanism — it does not know whether a payment went
+through a gateway. `types.RefundTarget` is therefore separate from the stored
+`refund_destination`:
 
 
+| Layer                                                    | Values                             |
+| -------------------------------------------------------- | ---------------------------------- |
+| request body `refund_target`                             | `PREPAID_WALLET`, `BACK_TO_SOURCE` |
+| stored column / response / webhook `refund_destination`  | `GATEWAY`, `WALLET`, `OUT_OF_BAND` |
 
-## 7. Migration order
 
-The redefinition of `invoices.refunded_amount` is the one step that can silently double-credit
-if sequenced wrong. Three PRs:
-
-1. **Schema + backfill.** Add `invoices.credited_amount`, `payments.refunded_amount`, reshape
-  `refunds`. Backfill `UPDATE invoices SET credited_amount = refunded_amount`. No behaviour change.
-2. **Reader flip.** Point all four readers of `refunded_amount` at `credited_amount`:
-  [calculateMaxCreditableAmount](../../internal/ee/service/creditnote.go#L776),
-   [RecalculateInvoiceAmounts](../../internal/ee/service/invoice.go#L3245),
-   [RecalculateInvoiceAmountsForCreditNote](../../internal/ee/service/creditnote.go#L874),
-   [VoidInvoice](../../internal/ee/service/invoice.go#L1303). `refunded_amount` still tracks
-   CN totals at this point — the two columns are equal, so this is a no-op at runtime.
-3. **RefundService.** CN finalize stops topping up the wallet inline and starts planning refund
-  rows; `refunded_amount` becomes settled-only and is written exclusively by
-   `ReconcileInvoiceRefunds`. Add `SkipRefund` and wire the checkout path.
-
-Steps 2 and 3 in one PR is where the double-credit slips through: `refunded_amount` means
-settled cash while `VoidInvoice` still reads it as the promised total.
+`refund_target` is accepted on `POST /creditnotes` and on `POST /creditnotes/{id}/finalize`, and
+is read at the moment the credit note is processed — it is not persisted, so a credit note
+drafted now and finalized later takes it from the finalize call. The default is
+`PREPAID_WALLET`. `BACK_TO_SOURCE` falls back to the wallet for any payment the gateway cannot
+refund. Void refunds accept no target.
 
 ---
 
+## 7. Migration
 
+Two files, both touching `refunds` only:
+
+1. The `ALTER TABLE` statements — catalog-only on PG 11+.
+2. `CREATE INDEX CONCURRENTLY` for `(tenant_id, environment_id, invoice_id)`, in its own
+   `transaction:false` file holding exactly one statement.
+
+`refunds` is empty on every deployment — confirm with `SELECT count(*) FROM refunds` before
+applying. There is no backfill and no DDL on `invoices` or `payments`, so no ACCESS EXCLUSIVE
+lock is taken on the two hottest tables. Old and new code both increment `refunded_amount`
+identically at finalize, so the rollout window is safe in both directions.
+
+---
 
 ## 8. Deferred — and what is already in place for it
 
+### 8.1 `credited_amount`, and settled cash as a column
 
+The original design added `invoices.credited_amount` (promised) and redefined `refunded_amount`
+as settled cash, plus `payments.refunded_amount`. Both halves were rejected.
 
-### 8.1 Prepaid credits as a refund source
+Tracing who needs settled cash, it gates no money decision except per-payment allocation
+headroom: the credit-note capacity guard, the invoice payment status and the void arithmetic all
+read `refunded_amount` as the promise. Redefining it would break every consumer — the invoice API
+response, the CSV export and the generated SDKs — and adding a second column means a backfill and
+a counter that can drift.
 
-`total_prepaid_credits_applied` is applied at invoice compute time
-([invoice.go:4565](../../internal/ee/service/invoice.go#L4565)) and produces **no payment row**.
-An invoice funded entirely by wallet credits has `amount_paid = 0` and no payments, so
-allocation over payments alone finds nothing to refund — while the CN bound (which includes
-`total_prepaid_credits_applied`, mirroring `VoidInvoice`) correctly permits the credit note.
+So settled cash is a query. `SumSettledByPaymentIDs` and `SumInFlightByPaymentIDs` return it per
+payment for an invoice, in one grouped index scan each. If it is later wanted on the invoice,
+add it then as a computed field backed by a batched sum — or as a materialized column at that
+point, when there is a concrete filter or sort requirement to justify one.
 
-Currently prepaid credits apply to usage charges only, so this is low-frequency. The schema
-already carries it: `source_type = WALLET_CREDIT`, `source_id` = the originating wallet
-transaction, target always `WALLET`. Only the allocator in `PlanRefundsForCreditNote` needs the
-extra branch, ordered ahead of payments. Back-to-source therefore becomes genuinely
-multi-source — this is why the planner returns a **list** from day one.
+### 8.2 Prepaid credits as a distinct source
 
-### 8.2 `OUT_OF_BAND` target
+`total_prepaid_credits_applied` is applied at invoice compute time and produces **no payment
+row**. An invoice funded entirely by wallet credits has `amount_paid = 0`, so allocation over
+payments finds nothing — the whole amount lands in the single `payment_id = NULL` wallet row,
+which is the right destination for it. What is missing is only the provenance: the ledger cannot
+say which wallet transaction funded it.
 
-The enum value ships now (validation only). Offline payments route to `WALLET` today. Adding
-real out-of-band handling is then a routing-table change plus an operator-confirmation
-endpoint that supplies the bank reference into `refund_target_id` — no type or schema change.
+### 8.3 `OUT_OF_BAND` destination
 
-### 8.3 Overpayment
+The enum value ships (validation only). Nothing produces it and the API rejects it as a target,
+since `Dispatch` has no branch for it. Adding real out-of-band handling is a routing change plus
+an operator-confirmation endpoint that supplies the bank reference into `refund_destination_id`
+— no type or schema change.
 
-`PaymentStatusOverpaid` exists and already transitions to `PARTIALLY_REFUNDED` / `REFUNDED`
-([payment.go:58](../../internal/types/payment.go#L58)). `Σ payment.amount` can exceed
-`invoice.amount_paid`. The CN bound governs; the excess is not refundable through this path
-and shows up as allocation drift.
+### 8.4 Reconciler
 
-### 8.4 Refunds on partially-paid invoices
+There is no sweep. A row left `PENDING` by a crash, or `PROCESSING` because a gateway webhook
+never arrived, stays there until someone calls `POST /refunds/{id}/retry`. `refund_status` and
+`updated_at` are both on the row, so the query a sweep would need is available; the job, its
+schedule and its alerting are not built.
 
-A partially-paid invoice keeps `payment_status = PENDING`
-([invoice.go:3519](../../internal/ee/service/invoice.go#L3519)), so
-[getCreditNoteType](../../internal/ee/service/creditnote.go#L840) returns `ADJUSTMENT`,
-bounded by `total - adjusted - paid`. The paid portion cannot be refunded directly: clear the
-due with an adjustment, then refund. Worth a comment on `getCreditNoteType` so this reads as a
-decision rather than an oversight.
+### 8.5 Payment-only refunds
 
-### 8.5 Caller-specified credit note type
+When a payment is captured after its checkout session expired or failed, the money is handed
+straight back to the card by `ensureRefunded` in the Razorpay and Chargebee integrations,
+bypassing the refund service. Those reversals stay invisible to the ledger, and the gateway
+webhooks they produce resolve to no row and are skipped.
 
-The type is server-derived and is hashed into the credit note's idempotency key
-([creditnote.go:184](../../internal/ee/service/creditnote.go#L184)), so exposing it on the DTO
-changes the key. Deliberate, deferred.
+Two things are missing, and the second is a decision rather than wiring. An entry point —
+something like `PrepareRefundForPayment(payment, reason)` producing one gateway row — and a
+resolution for invariant A, which a reversal breaks: it returns money that was never promised, so
+`refunded_amount` stays 0 while a row settles a real amount against that invoice. Either the
+invariant is qualified to cover only credit-note and void rows, or reversal rows carry a
+distinguishing marker.
 
-### 8.6 Retry policy
+### 8.6 `credit_notes.refund_status`
 
-`attempt` lands with the schema; the 3-strikes rule and its alerting land with the reconciler's
-second iteration.
+The column exists and is still never written. A CN-level settlement rollup would be derived from
+its rows; nothing needs it yet.
+
+### 8.7 Gateways without a refund adapter
+
+Razorpay and Chargebee resolve; everything else, Moyasar and Stripe included, returns
+`ErrNotImplemented` and the row falls back to the wallet. Moyasar's API is full-refund-only,
+which is why it was not adapted.
+
+Related: Razorpay's amount conversion is a fixed ×100 that ignores the currency. That is true of
+every amount conversion in the package, so it was left consistent rather than made a one-off; it
+is wrong for zero-decimal and three-decimal currencies.
+
+### 8.8 Retry policy
+
+`attempt` counts fallbacks. Nothing enforces a ceiling, and no alert fires on a row that has
+exhausted its attempts.
 
 ---
-
-
 
 ## 9. Invariants to preserve
 
-1. `inv.refunded_amount ≤ inv.credited_amount`, always. A gap is in-flight work, never an error state.
-2. `cn.total_amount == Σ amount of non-CANCELLED refund rows for that CN`.
-3. `refunded_amount` is derived from refund rows, never incremented in place.
-4. `credited_amount` is incremented only inside the CN finalize transaction, under the invoice row lock.
+1. Σ settled cash for an invoice ≤ `inv.refunded_amount`. A gap is in-flight work, never an error
+   state. Holds for credit-note and void rows; a checkout reversal would break it (§8.5).
+2. `refunded_amount` is incremented only under the invoice row lock, at CN finalize or at void.
+3. A refund row reaches `SUCCEEDED` at most once, enforced by the status transition guard. This
+   is the only thing settlement idempotency rests on — the builder does not check.
+4. `cn.total_amount == Σ settled_amount` of that credit note's rows, once they all settle.
 5. No gateway I/O inside a database transaction.
-6. A gateway refund row exists with its idempotency token **before** the gateway is called.
-7. `refund_target_id` is written exactly once, in `CompleteRefund`, and is never used as a lookup key.
-8. Every path that returns money to a customer writes a refund row — including
-  `VoidInvoice`'s wallet credit and the Razorpay late-capture refund.
-9. `credited_amount - refunded_amount` is a **reportable liability**, not an internal queue. It is
-  exported, it ages, and it is never silently written off.
+6. A gateway row is `PROCESSING` with its idempotency token **before** the gateway is called.
+7. `settled_amount` never exceeds the row's `amount`.
 
 ---
-
-
 
 ## 10. Accounting treatment
 
 There is no GL module in this repo — journal posting happens downstream, off the exports in
 [sync/export/](../../internal/ee/service/sync/export/) and the accounting sync. The design's job
-is therefore to make *promised* and *settled* distinguishable to whatever books them. That is
-exactly what `credited_amount` and `refunded_amount` are for.
+is therefore to make *promised* and *settled* distinguishable to whatever books them:
+`invoice.refunded_amount` is the promise, the refund rows are the cash.
 
 ### 10.1 Why finalising before the money moves is correct
 
@@ -526,53 +532,47 @@ Cr  Refunds Payable              (liability)
 **At settlement** — the liability is discharged:
 
 ```
-BACK_TO_SOURCE:  Dr Refunds Payable    Cr Cash / Bank
-WALLET:          Dr Refunds Payable    Cr Customer Credits (contract liability)
+GATEWAY:  Dr Refunds Payable    Cr Cash / Bank
+WALLET:   Dr Refunds Payable    Cr Customer Credits (contract liability)
 ```
 
 So the gap between finalize and settlement is not an anomaly — **the gap *is* the refund
-liability**, and `credited_amount - refunded_amount` is its balance. Under ASC 606 / IFRS 15 a
-refund liability is recognised when the entity becomes obligated, not when cash leaves.
+liability**. Under ASC 606 / IFRS 15 a refund liability is recognised when the entity becomes
+obligated, not when cash leaves.
 
-The wallet fallback (§4.5) does not conjure a liability either — it **transfers** one: Refunds
+The wallet fallback (§4.6) does not conjure a liability either — it **transfers** one: Refunds
 Payable becomes Customer Credits. Both are liabilities; it stays a liability until the customer
 consumes the credits (then revenue) or it expires (breakage). No revenue is double-counted and
 none leaks.
 
 The inverse ordering — settle first, finalise after — is strictly worse: a customer would be owed
-money with no document on the books, no revenue reversal, and no `credited_amount` for concurrent
-credit notes to be bounded against (§3).
+money with no document on the books, no revenue reversal, and no bound for concurrent credit
+notes to be checked against (§3).
 
 ### 10.2 What this requires of the code
 
 
-| Requirement                                           | Change                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The liability must be visible downstream              | [invoice_export.go:204](../../internal/ee/service/sync/export/invoice_export.go#L204) exports `adjustment_amount` and `refunded_amount` but not `credited_amount` — without it the books cannot see the promised-but-unsettled balance at all. Add it in the same PR as the column. |
-| Cash-out and liability-transfer are different entries | `refund_target` is the GL discriminator: `BACK_TO_SOURCE` → cash, `WALLET` → contract liability, `OUT_OF_BAND` → cash. Whoever wires the accounting export must not collapse them.                                                                                                  |
-| A finalized refund CN cannot be erased                | Already true — [creditnote.go:431](../../internal/ee/service/creditnote.go#L431) rejects voiding a finalized refund CN. Once revenue is reversed and the liability incurred, you issue a new document; you do not unwind the old one.                                               |
-
-
+| Requirement                                           | Status                                                                                                                                                                                              |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The liability must be visible downstream              | `invoice.refunded_amount` is already exported ([invoice_export.go:205](../../internal/ee/service/sync/export/invoice_export.go#L205)) and is the promise. Settled cash is not exported — read it from `GET /refunds?invoice_ids=` |
+| Cash-out and liability-transfer are different entries | `refund_destination` is the GL discriminator: `GATEWAY` → cash, `WALLET` → contract liability. Whoever wires the accounting export must not collapse them                                            |
+| A finalized refund CN cannot be erased                | Already true — [creditnote.go:434](../../internal/ee/service/creditnote.go#L434) rejects voiding a finalized refund CN, so a finalize has no in-flight rows to cancel                                |
+| A refunded invoice must reach the billing providers   | **Not built.** Vendor sync is driven by `invoice.update.finalized` and `invoice.update.payment`; nothing publishes on refund settlement or on void, so a refunded invoice still reads as paid at Zoho, QuickBooks and Chargebee |
 
 
 ### 10.3 Where the real exposure is — consent, not accounting
 
 Converting a card refund into store credit is clean on the books but is a consumer-protection
 question in several jurisdictions (EU/UK/India): money owed against a card payment generally
-returns to the card unless the customer agrees otherwise. So the wallet fallback should be a
-**tenant-level policy**, not a silent default — a `SettingKey` alongside the existing keys in
-[settings.go:22](../../internal/types/settings.go#L22):
+returns to the card unless the customer agrees otherwise.
 
+This is why the choice is a per-credit-note input (§6.1) rather than a silent default. The
+default is `PREPAID_WALLET`, so returning money to the card is something the caller asks for
+explicitly, having established consent — the system never silently converts a card refund into
+credit at the point of request.
 
-| Policy   | Behaviour on a permanently failed gateway refund                                      |
-| -------- | ------------------------------------------------------------------------------------- |
-| `WALLET` | §4.5 fallback — cancel, credit the wallet, record the substitution in refund metadata |
-| `NONE`   | Row stays `FAILED`, alert fires, liability stays open, an operator resolves it        |
-
-
-v1 hardcodes `WALLET`; the setting lands with the reconciler's second iteration. Either way the
-substitution is recorded in refund metadata (which policy, when), so the trail exists.
-
-`NONE` needs a terminal path for a refund that can never settle — write-off to other income, or
-escalation. Without one the liability ages indefinitely, which is an audit finding and, past a
-threshold, an unclaimed-property question.
+It still does so on failure: `BACK_TO_SOURCE` that the gateway rejects falls back to the wallet
+(§4.6) rather than staying open. The substitution is recorded on both rows, so the trail exists,
+but the policy is hardcoded. A tenant-level setting with a `NONE` option — leave the row `FAILED`,
+alert, let an operator resolve it — is the natural next step, and needs a terminal path for a
+refund that can never settle. Without one the liability ages indefinitely.
