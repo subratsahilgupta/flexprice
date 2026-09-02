@@ -144,12 +144,12 @@ func (s *refundService) allocateAcrossPayments(
 	if len(payments) > 0 {
 		paymentIDs := lo.Map(payments, func(p *payment.Payment, _ int) string { return p.ID })
 
-		settled, err = s.RefundRepo.SumSettledByPaymentIDs(ctx, paymentIDs)
+		settled, err = s.RefundRepo.SumSettledByPaymentIDs(ctx, inv.ID, paymentIDs)
 		if err != nil {
 			return nil, err
 		}
 
-		inFlight, err = s.RefundRepo.SumInFlightByPaymentIDs(ctx, paymentIDs)
+		inFlight, err = s.RefundRepo.SumInFlightByPaymentIDs(ctx, inv.ID, paymentIDs)
 		if err != nil {
 			return nil, err
 		}

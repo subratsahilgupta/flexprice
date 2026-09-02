@@ -171,7 +171,7 @@ func (h *CreditNoteHandler) FinalizeCreditNote(c *gin.Context) {
 
 	// The body is optional; an empty finalize keeps the default routing.
 	var req dto.FinalizeCreditNoteRequest
-	if c.Request.ContentLength > 0 {
+	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.Error(ierr.WithError(err).
 				WithHint("Invalid request format").

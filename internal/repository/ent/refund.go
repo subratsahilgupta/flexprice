@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
-	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/refund"
 	domainRefund "github.com/flexprice/flexprice/internal/domain/refund"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -535,58 +534,50 @@ func (r *refundRepository) ListByInvoice(ctx context.Context, invoiceID string) 
 	return domainRefund.FromEntList(refunds), nil
 }
 
-func (r *refundRepository) SumSettledByPaymentIDs(ctx context.Context, paymentIDs []string) (map[string]decimal.Decimal, error) {
-	return r.sumGroupedBy(ctx, refund.FieldPaymentID, refund.PaymentIDIn(paymentIDs...), paymentIDs,
+func (r *refundRepository) SumSettledByPaymentIDs(ctx context.Context, invoiceID string, paymentIDs []string) (map[string]decimal.Decimal, error) {
+	return r.sumByPaymentIDs(ctx, invoiceID, paymentIDs,
 		[]string{string(types.RefundStatusSucceeded)}, refund.FieldSettledAmount)
 }
 
-func (r *refundRepository) SumSettledByInvoiceIDs(ctx context.Context, invoiceIDs []string) (map[string]decimal.Decimal, error) {
-	return r.sumGroupedBy(ctx, refund.FieldInvoiceID, refund.InvoiceIDIn(invoiceIDs...), invoiceIDs,
-		[]string{string(types.RefundStatusSucceeded)}, refund.FieldSettledAmount)
-}
-
-func (r *refundRepository) SumInFlightByPaymentIDs(ctx context.Context, paymentIDs []string) (map[string]decimal.Decimal, error) {
-	return r.sumGroupedBy(ctx, refund.FieldPaymentID, refund.PaymentIDIn(paymentIDs...), paymentIDs,
+func (r *refundRepository) SumInFlightByPaymentIDs(ctx context.Context, invoiceID string, paymentIDs []string) (map[string]decimal.Decimal, error) {
+	return r.sumByPaymentIDs(ctx, invoiceID, paymentIDs,
 		[]string{string(types.RefundStatusPending), string(types.RefundStatusProcessing)}, refund.FieldAmount)
 }
 
-func (r *refundRepository) sumGroupedBy(
+func (r *refundRepository) sumByPaymentIDs(
 	ctx context.Context,
-	groupField string,
-	in predicate.Refund,
-	ids []string,
+	invoiceID string,
+	paymentIDs []string,
 	refundStatuses []string,
 	sumField string,
 ) (map[string]decimal.Decimal, error) {
-	span := StartRepositorySpan(ctx, "refund", "sum", map[string]interface{}{
-		"group_field": groupField,
-		"sum_field":   sumField,
-		"ids_count":   len(ids),
+	span := StartRepositorySpan(ctx, "refund", "sum_by_payment_ids", map[string]interface{}{
+		"invoice_id": invoiceID,
+		"sum_field":  sumField,
+		"ids_count":  len(paymentIDs),
 	})
 	defer FinishSpan(span)
 
-	result := make(map[string]decimal.Decimal, len(ids))
-	if len(ids) == 0 {
+	result := make(map[string]decimal.Decimal, len(paymentIDs))
+	if len(paymentIDs) == 0 {
 		return result, nil
 	}
 
-	// Both group columns are declared because ent names the grouped column after
-	// the field itself; only the one being grouped on comes back in the result set.
 	var rows []struct {
 		PaymentID string          `json:"payment_id"`
-		InvoiceID string          `json:"invoice_id"`
 		Total     decimal.Decimal `json:"total"`
 	}
 
 	err := r.client.Reader(ctx).Refund.Query().
 		Where(
-			in,
+			refund.InvoiceID(invoiceID),
+			refund.PaymentIDIn(paymentIDs...),
 			refund.RefundStatusIn(refundStatuses...),
 			refund.StatusEQ(string(types.StatusPublished)),
 			refund.EnvironmentID(types.GetEnvironmentID(ctx)),
 			refund.TenantID(types.GetTenantID(ctx)),
 		).
-		GroupBy(groupField).
+		GroupBy(refund.FieldPaymentID).
 		Aggregate(ent.As(ent.Sum(sumField), "total")).
 		Scan(ctx, &rows)
 	if err != nil {
@@ -594,20 +585,16 @@ func (r *refundRepository) sumGroupedBy(
 		return nil, ierr.WithError(err).
 			WithHint("Failed to sum refund amounts").
 			WithReportableDetails(map[string]interface{}{
-				"group_field": groupField,
+				"invoice_id": invoiceID,
 			}).
 			Mark(ierr.ErrDatabase)
 	}
 
 	for _, row := range rows {
-		key := row.InvoiceID
-		if groupField == refund.FieldPaymentID {
-			key = row.PaymentID
-		}
-		if key == "" {
+		if row.PaymentID == "" {
 			continue
 		}
-		result[key] = row.Total
+		result[row.PaymentID] = row.Total
 	}
 
 	return result, nil
