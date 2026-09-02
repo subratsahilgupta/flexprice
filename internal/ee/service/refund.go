@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -17,6 +18,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/types"
+	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 )
 
 type RefundService interface {
@@ -32,6 +34,7 @@ type RefundService interface {
 	Fail(ctx context.Context, refundID, reason string) error
 
 	GetRefund(ctx context.Context, id string) (*dto.RefundResponse, error)
+	GetRefundByGatewayRefundID(ctx context.Context, gateway, gatewayRefundID string) (*dto.RefundResponse, error)
 	ListRefunds(ctx context.Context, filter *types.RefundFilter) (*dto.ListRefundsResponse, error)
 	RetryRefund(ctx context.Context, id string) (*dto.RefundResponse, error)
 }
@@ -97,6 +100,9 @@ func (s *refundService) persist(ctx context.Context, rows []*refund.Refund) ([]*
 	}
 	if err := s.RefundRepo.CreateBulk(ctx, rows); err != nil {
 		return nil, err
+	}
+	for _, row := range rows {
+		s.publishSystemEvent(ctx, types.WebhookEventRefundCreated, row.ID)
 	}
 	return rows, nil
 }
@@ -445,7 +451,8 @@ func (s *refundService) Settle(ctx context.Context, req *dto.SettleRefundRequest
 		return err
 	}
 
-	return s.DB.WithTx(ctx, func(tx context.Context) error {
+	settled := false
+	err := s.DB.WithTx(ctx, func(tx context.Context) error {
 		row, err := s.RefundRepo.GetForUpdate(tx, req.RefundID)
 		if err != nil {
 			return err
@@ -475,8 +482,18 @@ func (s *refundService) Settle(ctx context.Context, req *dto.SettleRefundRequest
 			builder = builder.WithGatewayMetadata(req.GatewayMetadata)
 		}
 
-		return s.RefundRepo.Update(tx, builder.Build())
+		if err := s.RefundRepo.Update(tx, builder.Build()); err != nil {
+			return err
+		}
+		settled = true
+		return nil
 	})
+	if err != nil || !settled {
+		return err
+	}
+
+	s.publishSystemEvent(ctx, types.WebhookEventRefundSucceeded, req.RefundID)
+	return nil
 }
 
 func (s *refundService) Fail(ctx context.Context, refundID, reason string) error {
@@ -505,6 +522,8 @@ func (s *refundService) Fail(ctx context.Context, refundID, reason string) error
 	if err != nil || failed == nil {
 		return err
 	}
+
+	s.publishSystemEvent(ctx, types.WebhookEventRefundFailed, failed.ID)
 
 	if failed.RefundDestination != types.RefundDestinationGateway {
 		return nil
@@ -579,6 +598,43 @@ func (s *refundService) GetRefund(ctx context.Context, id string) (*dto.RefundRe
 		return nil, err
 	}
 	return dto.NewRefundResponse(row), nil
+}
+
+func (s *refundService) GetRefundByGatewayRefundID(ctx context.Context, gateway, gatewayRefundID string) (*dto.RefundResponse, error) {
+	row, err := s.RefundRepo.GetByGatewayRefundID(ctx, gateway, gatewayRefundID)
+	if err != nil {
+		return nil, err
+	}
+	return dto.NewRefundResponse(row), nil
+}
+
+func (s *refundService) publishSystemEvent(ctx context.Context, eventName types.WebhookEventName, refundID string) {
+	payload, err := json.Marshal(webhookDto.InternalRefundEvent{
+		RefundID: refundID,
+		TenantID: types.GetTenantID(ctx),
+	})
+	if err != nil {
+		s.Logger.Error(ctx, "failed to marshal refund webhook payload", "error", err, "refund_id", refundID)
+		return
+	}
+
+	event := &types.WebhookEvent{
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SYSTEM_EVENT),
+		EventName:     eventName,
+		TenantID:      types.GetTenantID(ctx),
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		UserID:        types.GetUserID(ctx),
+		Timestamp:     time.Now().UTC(),
+		Payload:       json.RawMessage(payload),
+		EntityType:    types.SystemEntityTypeRefund,
+		EntityID:      refundID,
+	}
+	if err := s.WebhookPublisher.PublishWebhook(ctx, event); err != nil {
+		s.Logger.Error(ctx, "failed to publish refund webhook event",
+			"error", err,
+			"event_name", eventName,
+			"refund_id", refundID)
+	}
 }
 
 func (s *refundService) ListRefunds(ctx context.Context, filter *types.RefundFilter) (*dto.ListRefundsResponse, error) {

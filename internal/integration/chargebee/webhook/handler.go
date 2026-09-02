@@ -58,6 +58,12 @@ func (h *Handler) HandleWebhookEvent(ctx context.Context, event *ChargebeeWebhoo
 		return h.handlePaymentSucceeded(ctx, event, services)
 	case EventPaymentFailed:
 		return h.handlePaymentFailed(ctx, event, services)
+	case EventPaymentRefunded:
+		return h.handleRefund(ctx, event, services)
+	case EventRefundInitiated:
+		// The refund row is already PROCESSING from the API call that created it.
+		h.logger.Info(ctx, "received refund_initiated webhook", "event_id", event.ID)
+		return nil
 	default:
 		h.logger.Info(ctx, "unhandled Chargebee webhook event type", "type", event.EventType)
 		return nil // Not an error, just unhandled
@@ -377,4 +383,59 @@ func (h *Handler) parseContent(ctx context.Context, event *ChargebeeWebhookEvent
 	}
 
 	return &content, true
+}
+
+// handleRefund records the outcome Chargebee reports for a refund transaction.
+// Chargebee redelivers this event; the transition guards inside Settle and Fail are
+// what make the second delivery a no-op.
+func (h *Handler) handleRefund(ctx context.Context, event *ChargebeeWebhookEvent, services *ServiceDependencies) error {
+	var content ChargebeeWebhookContent
+	if err := json.Unmarshal(event.Content, &content); err != nil {
+		h.logger.Error(ctx, "failed to parse refund webhook content", "error", err, "event_id", event.ID)
+		return nil
+	}
+	if content.Transaction == nil {
+		h.logger.Info(ctx, "no transaction in refund event content", "event_id", event.ID)
+		return nil
+	}
+	txn := content.Transaction
+
+	row, err := services.RefundService.GetRefundByGatewayRefundID(ctx, string(types.PaymentGatewayTypeChargebee), txn.ID)
+	if err != nil {
+		h.logger.Info(ctx, "no refund row for chargebee transaction, skipping event",
+			"chargebee_transaction_id", txn.ID,
+			"error", err)
+		return nil
+	}
+
+	if refundTransactionFailed(txn.Status) {
+		if err := services.RefundService.Fail(ctx, row.ID, "chargebee reported the refund as "+txn.Status); err != nil {
+			h.logger.Error(ctx, "failed to record refund failure from webhook",
+				"error", err,
+				"refund_id", row.ID,
+				"chargebee_transaction_id", txn.ID)
+		}
+		return nil
+	}
+
+	err = services.RefundService.Settle(ctx, &dto.SettleRefundRequest{
+		RefundID:      row.ID,
+		SettledAmount: decimal.NewFromInt(txn.Amount).Shift(-types.GetCurrencyPrecision(txn.CurrencyCode)),
+		DestinationID: lo.ToPtr(txn.ID),
+		GatewayMetadata: map[string]interface{}{
+			"status":       txn.Status,
+			"amount_minor": txn.Amount,
+		},
+	})
+	if err != nil {
+		h.logger.Error(ctx, "failed to settle refund from webhook",
+			"error", err,
+			"refund_id", row.ID,
+			"chargebee_transaction_id", txn.ID)
+	}
+	return nil
+}
+
+func refundTransactionFailed(status string) bool {
+	return status == "failure" || status == "timeout"
 }

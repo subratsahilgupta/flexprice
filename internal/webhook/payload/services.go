@@ -24,6 +24,7 @@ type Services struct {
 	PaymentService           service.PaymentService
 	Tracing                  *tracing.Service
 	CreditNoteService        service.CreditNoteService
+	RefundService            service.RefundService
 	CheckoutSessionService   interfaces.CheckoutSessionService
 	GroupService             service.GroupService
 	EntitlementGrantSvc      service.EntitlementGrantService
@@ -43,6 +44,7 @@ func NewServices(
 	paymentService service.PaymentService,
 	tracingSvc *tracing.Service,
 	creditNoteService service.CreditNoteService,
+	refundService service.RefundService,
 	checkoutSessionService interfaces.CheckoutSessionService,
 	groupService service.GroupService,
 	entitlementGrantSvc service.EntitlementGrantService,
@@ -60,6 +62,7 @@ func NewServices(
 		PaymentService:           paymentService,
 		Tracing:                  tracingSvc,
 		CreditNoteService:        creditNoteService,
+		RefundService:            refundService,
 		CheckoutSessionService:   checkoutSessionService,
 		GroupService:             groupService,
 		EntitlementGrantSvc:      entitlementGrantSvc,

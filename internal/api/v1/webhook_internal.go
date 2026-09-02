@@ -26,6 +26,7 @@ var _ = []any{
 	(*webhookDto.TransactionWebhookPayload)(nil),
 	(*webhookDto.TransactionUpdatedWebhookPayload)(nil),
 	(*webhookDto.CreditNoteWebhookPayload)(nil),
+	(*webhookDto.RefundWebhookPayload)(nil),
 	(*webhookDto.CheckoutSessionWebhookPayload)(nil),
 	(*webhookDto.RejectedEventWebhookPayload)(nil),
 }
@@ -549,6 +550,36 @@ func WebhookEventCreditNoteCreated() {}
 // @Success 200 {object} webhookDto.CreditNoteWebhookPayload "Webhook payload"
 // @Router /webhook-events/credit_note.updated [post]
 func WebhookEventCreditNoteUpdated() {}
+
+// WebhookEventRefundCreated godoc
+// @Summary refund.created
+// @Description Fired when a refund is planned against an invoice, before the money moves. Doc-only for parsing.
+// @Tags Webhook Events
+// @Accept json
+// @Produce json
+// @Success 200 {object} webhookDto.RefundWebhookPayload "Webhook payload"
+// @Router /webhook-events/refund.created [post]
+func WebhookEventRefundCreated() {}
+
+// WebhookEventRefundSucceeded godoc
+// @Summary refund.succeeded
+// @Description Fired when a refund settles, to the original payment gateway or to a wallet. Doc-only for parsing.
+// @Tags Webhook Events
+// @Accept json
+// @Produce json
+// @Success 200 {object} webhookDto.RefundWebhookPayload "Webhook payload"
+// @Router /webhook-events/refund.succeeded [post]
+func WebhookEventRefundSucceeded() {}
+
+// WebhookEventRefundFailed godoc
+// @Summary refund.failed
+// @Description Fired when a refund fails. A gateway refund that fails is retried into the customer's wallet. Doc-only for parsing.
+// @Tags Webhook Events
+// @Accept json
+// @Produce json
+// @Success 200 {object} webhookDto.RefundWebhookPayload "Webhook payload"
+// @Router /webhook-events/refund.failed [post]
+func WebhookEventRefundFailed() {}
 
 // WebhookEventCheckoutSessionInitiated godoc
 // @Summary checkout.session.initiated
