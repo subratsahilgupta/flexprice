@@ -1779,7 +1779,7 @@ var (
 		{Name: "refund_reason", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "refund_destination", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "refund_destination_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
-		{Name: "attempt", Type: field.TypeInt, Default: 0},
+		{Name: "attempt", Type: field.TypeInt, Default: 1},
 		{Name: "idempotency_key", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "gateway_idempotency_token", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(255)"}},
 		{Name: "failure_reason", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},

@@ -250,6 +250,15 @@ func (m *InMemoryRefundStore) SumSettledByInvoiceIDs(ctx context.Context, invoic
 	})
 }
 
+func (m *InMemoryRefundStore) SumInFlightByPaymentIDs(ctx context.Context, paymentIDs []string) (map[string]decimal.Decimal, error) {
+	return m.sumInFlight(ctx, paymentIDs, func(r *refund.Refund) string {
+		if r.PaymentID == nil {
+			return ""
+		}
+		return *r.PaymentID
+	})
+}
+
 func (m *InMemoryRefundStore) sumSettled(
 	ctx context.Context,
 	ids []string,
@@ -275,6 +284,35 @@ func (m *InMemoryRefundStore) sumSettled(
 			continue
 		}
 		result[k] = result[k].Add(r.SettledAmount)
+	}
+
+	return result, nil
+}
+
+func (m *InMemoryRefundStore) sumInFlight(
+	ctx context.Context,
+	ids []string,
+	key func(*refund.Refund) string,
+) (map[string]decimal.Decimal, error) {
+	result := make(map[string]decimal.Decimal, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	refunds, err := m.List(ctx, &types.RefundFilter{
+		QueryFilter:    types.NewNoLimitQueryFilter(),
+		RefundStatuses: []types.RefundStatus{types.RefundStatusPending, types.RefundStatusProcessing},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, r := range refunds {
+		k := key(r)
+		if k == "" || !slices.Contains(ids, k) {
+			continue
+		}
+		result[k] = result[k].Add(r.Amount)
 	}
 
 	return result, nil

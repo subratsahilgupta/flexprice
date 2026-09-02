@@ -116,7 +116,7 @@ func (Refund) Fields() []ent.Field {
 			Optional().
 			Nillable(),
 		field.Int("attempt").
-			Default(0),
+			Default(1),
 		field.String("idempotency_key").
 			SchemaType(map[string]string{
 				"postgres": "varchar(255)",

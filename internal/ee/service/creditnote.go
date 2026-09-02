@@ -33,7 +33,7 @@ type CreditNoteService interface {
 
 	// This method is used to finalize a credit note
 	// this can be done when credit note is a adjustment and not a refund so we can cancel the adjustment
-	FinalizeCreditNote(ctx context.Context, id string) error
+	FinalizeCreditNote(ctx context.Context, id string, refundTarget *types.RefundTarget) error
 }
 
 type creditNoteService struct {
@@ -164,7 +164,7 @@ func (s *creditNoteService) CreateCreditNote(ctx context.Context, req *dto.Creat
 	}
 
 	if req.ProcessCreditNote && creditNote.CreditNoteStatus == types.CreditNoteStatusDraft {
-		if err := s.FinalizeCreditNote(ctx, creditNote.ID); err != nil {
+		if err := s.FinalizeCreditNote(ctx, creditNote.ID, req.RefundTarget); err != nil {
 			return nil, err
 		}
 	}
@@ -528,7 +528,7 @@ func creditNoteAlreadyProcessedError(status types.CreditNoteStatus) error {
 		Mark(ierr.ErrValidation)
 }
 
-func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) error {
+func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string, refundTarget *types.RefundTarget) error {
 	if id == "" {
 		return ierr.NewError("missing credit note ID").
 			WithHint("Please provide a valid credit note ID to finalize.").
@@ -603,7 +603,7 @@ func (s *creditNoteService) FinalizeCreditNote(ctx context.Context, id string) e
 		// planned here so they commit with the credit note; the money moves in Dispatch below,
 		// after the transaction, because a gateway refund is external I/O.
 		if cn.CreditNoteType == types.CreditNoteTypeRefund {
-			plannedRefunds, err = refundService.PrepareRefundsForCreditNote(tx, cn, lockedInv)
+			plannedRefunds, err = refundService.PrepareRefundsForCreditNote(tx, cn, lockedInv, refundTarget)
 			if err != nil {
 				return err
 			}

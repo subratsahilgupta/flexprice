@@ -123,6 +123,39 @@ func (t RefundDestination) Validate() error {
 	return nil
 }
 
+// RefundTarget is what a caller asks for. It is deliberately not RefundDestination:
+// the caller knows whether the money should come back the way it arrived, not which
+// gateway (if any) carried it.
+type RefundTarget string
+
+const (
+	RefundTargetPrepaidWallet RefundTarget = "PREPAID_WALLET"
+	RefundTargetBackToSource  RefundTarget = "BACK_TO_SOURCE"
+)
+
+func (t RefundTarget) String() string {
+	return string(t)
+}
+
+func (t RefundTarget) Validate() error {
+	allowed := []RefundTarget{RefundTargetPrepaidWallet, RefundTargetBackToSource}
+	if !lo.Contains(allowed, t) {
+		return ierr.NewError("invalid refund target").
+			WithHint("A refund can go back to the original payment method or into the customer's prepaid wallet").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
+// AllowsBackToSource is false for an unset target: money stays with the customer as
+// credit unless the caller asks for it to be returned.
+func (t *RefundTarget) AllowsBackToSource() bool {
+	return t != nil && *t == RefundTargetBackToSource
+}
+
 // RefundReason is the reason a gateway refund was issued.
 type RefundReason string
 

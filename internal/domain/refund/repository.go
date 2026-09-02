@@ -34,4 +34,8 @@ type Repository interface {
 	// Ids with no settled refunds are absent from the returned map.
 	SumSettledByPaymentIDs(ctx context.Context, paymentIDs []string) (map[string]decimal.Decimal, error)
 	SumSettledByInvoiceIDs(ctx context.Context, invoiceIDs []string) (map[string]decimal.Decimal, error)
+
+	// SumInFlightByPaymentIDs sums the requested amount of refunds that have claimed money
+	// but not yet settled, so a second allocation cannot draw the same balance again.
+	SumInFlightByPaymentIDs(ctx context.Context, paymentIDs []string) (map[string]decimal.Decimal, error)
 }

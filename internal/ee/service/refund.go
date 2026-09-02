@@ -24,7 +24,7 @@ import (
 type RefundService interface {
 	// PrepareRefundsForCreditNote and PrepareRefundsForVoidedInvoice persist PENDING refund rows in the caller's
 	// transaction. They touch no gateway; Dispatch does that after the commit.
-	PrepareRefundsForCreditNote(ctx context.Context, cn *creditnote.CreditNote, inv *invoice.Invoice) ([]*refund.Refund, error)
+	PrepareRefundsForCreditNote(ctx context.Context, cn *creditnote.CreditNote, inv *invoice.Invoice, target *types.RefundTarget) ([]*refund.Refund, error)
 	PrepareRefundsForVoidedInvoice(ctx context.Context, inv *invoice.Invoice, amount decimal.Decimal) ([]*refund.Refund, error)
 
 	// Dispatch moves one planned row towards settlement. Must run outside a transaction.
@@ -55,18 +55,24 @@ var gatewayRefundableMethods = []types.PaymentMethodType{
 	types.PaymentMethodTypeUPI,
 }
 
-func (s *refundService) PrepareRefundsForCreditNote(ctx context.Context, cn *creditnote.CreditNote, inv *invoice.Invoice) ([]*refund.Refund, error) {
+func (s *refundService) PrepareRefundsForCreditNote(ctx context.Context, cn *creditnote.CreditNote, inv *invoice.Invoice, target *types.RefundTarget) ([]*refund.Refund, error) {
 	if cn == nil || inv == nil {
 		return nil, ierr.NewError("missing credit note or invoice").
 			WithHint("A refund plan needs both a credit note and its invoice.").
 			Mark(ierr.ErrValidation)
 	}
 
+	if target != nil {
+		if err := target.Validate(); err != nil {
+			return nil, err
+		}
+	}
+
 	rows, err := s.allocateAcrossPayments(ctx, inv, cn.TotalAmount, allocationContext{
 		creditNoteID:   lo.ToPtr(cn.ID),
 		reason:         refundReasonFromCreditNote(cn.Reason),
 		idempotencyKey: cn.ID,
-		allowGateway:   true,
+		allowGateway:   target.AllowsBackToSource(),
 	})
 	if err != nil {
 		return nil, err
@@ -115,8 +121,9 @@ type allocationContext struct {
 }
 
 // allocateAcrossPayments splits amount over the invoice's succeeded payments, bounded
-// by what each payment can still give back: what it took in, less what already
-// settled back out of it. Anything no payment can cover becomes a single wallet row.
+// by what each payment can still give back: what it took in, less what has already
+// gone back out of it, settled or still in flight. Anything no payment can cover
+// becomes a single wallet row.
 func (s *refundService) allocateAcrossPayments(
 	ctx context.Context,
 	inv *invoice.Invoice,
@@ -133,10 +140,16 @@ func (s *refundService) allocateAcrossPayments(
 	}
 
 	settled := map[string]decimal.Decimal{}
+	inFlight := map[string]decimal.Decimal{}
 	if len(payments) > 0 {
-		settled, err = s.RefundRepo.SumSettledByPaymentIDs(ctx, lo.Map(payments, func(p *payment.Payment, _ int) string {
-			return p.ID
-		}))
+		paymentIDs := lo.Map(payments, func(p *payment.Payment, _ int) string { return p.ID })
+
+		settled, err = s.RefundRepo.SumSettledByPaymentIDs(ctx, paymentIDs)
+		if err != nil {
+			return nil, err
+		}
+
+		inFlight, err = s.RefundRepo.SumInFlightByPaymentIDs(ctx, paymentIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +166,7 @@ func (s *refundService) allocateAcrossPayments(
 			continue
 		}
 
-		remainingPaymentRefundCapacity := p.Amount.Sub(settled[p.ID])
+		remainingPaymentRefundCapacity := p.Amount.Sub(settled[p.ID]).Sub(inFlight[p.ID])
 		if !remainingPaymentRefundCapacity.IsPositive() {
 			continue
 		}
@@ -221,8 +234,8 @@ func (s *refundService) newRow(
 		WithCurrency(inv.Currency).
 		WithStatus(types.RefundStatusPending).
 		WithRefundReason(alloc.reason).
-		WithDestination(types.RefundDestinationWallet).
-		WithAttempt(0).
+		WithDestination(types.RefundDestinationWallet). // default to wallet, 100% success rate
+		WithAttempt(1).
 		WithIdempotencyKey(fmt.Sprintf("%s-%d", alloc.idempotencyKey, index)).
 		WithEnvironmentID(types.GetEnvironmentID(ctx)).
 		WithBaseModel(types.GetDefaultBaseModel(ctx)).
@@ -467,6 +480,18 @@ func (s *refundService) Settle(ctx context.Context, req *dto.SettleRefundRequest
 			return nil
 		}
 
+		// The gateway reports the settled amount; it can never exceed what was planned.
+		if req.SettledAmount.GreaterThan(row.Amount) {
+			return ierr.NewError("settled amount exceeds the refund amount").
+				WithHint("A refund cannot settle for more than it was planned for.").
+				WithReportableDetails(map[string]any{
+					"refund_id":      row.ID,
+					"refund_amount":  row.Amount,
+					"settled_amount": req.SettledAmount,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
 		now := time.Now().UTC()
 		builder := refund.NewRefundBuilder(row).
 			WithStatus(types.RefundStatusSucceeded).
@@ -577,10 +602,11 @@ func (s *refundService) refundToWalletAsFallbackToFailure(ctx context.Context, f
 		if err := s.RefundRepo.Create(tx, fallback); err != nil {
 			return err
 		}
+		s.publishSystemEvent(tx, types.WebhookEventRefundCreated, fallback.ID)
 
-		metadata := row.Metadata
-		if metadata == nil {
-			metadata = types.Metadata{}
+		metadata := types.Metadata{}
+		for k, v := range row.Metadata {
+			metadata[k] = v
 		}
 		metadata["fallback_refund_id"] = fallback.ID
 

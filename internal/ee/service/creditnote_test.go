@@ -1036,7 +1036,7 @@ func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RecalculationFailureIsPr
 	// shared publisher, so assert no *new* webhook was published rather than empty.
 	webhookCountBefore := len(s.GetPublishedWebhooks())
 
-	err := failingService.FinalizeCreditNote(s.GetContext(), cn.ID)
+	err := failingService.FinalizeCreditNote(s.GetContext(), cn.ID, nil)
 
 	s.Error(err)
 	s.Contains(err.Error(), "forced invoice update failure for test")
@@ -1176,7 +1176,7 @@ func (s *CreditNoteServiceSuite) TestProcessDraftCreditNote() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			err := s.service.FinalizeCreditNote(s.GetContext(), tt.id)
+			err := s.service.FinalizeCreditNote(s.GetContext(), tt.id, nil)
 
 			if tt.wantErr {
 				s.Error(err)
@@ -1227,9 +1227,9 @@ func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_RefundCapacityRecheck() 
 	// In-memory wallet store returns a live pointer, so snapshot the balance now.
 	balanceBefore := walletBefore.Balance
 
-	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID))
+	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID, nil))
 
-	err = s.service.FinalizeCreditNote(s.GetContext(), second.ID)
+	err = s.service.FinalizeCreditNote(s.GetContext(), second.ID, nil)
 	s.Error(err)
 	s.Contains(err.Error(), "credit amount exceeds available limit")
 
@@ -1269,9 +1269,9 @@ func (s *CreditNoteServiceSuite) TestFinalizeCreditNote_AdjustmentCapacityRechec
 	s.NoError(err)
 	s.NotEqual(first.ID, second.ID)
 
-	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID))
+	s.NoError(s.service.FinalizeCreditNote(s.GetContext(), first.ID, nil))
 
-	err = s.service.FinalizeCreditNote(s.GetContext(), second.ID)
+	err = s.service.FinalizeCreditNote(s.GetContext(), second.ID, nil)
 	s.Error(err)
 	s.Contains(err.Error(), "credit amount exceeds available limit")
 
@@ -1923,7 +1923,7 @@ func (s *CreditNoteServiceSuite) TestVoidCreditNoteRefetchesUnderLock() {
 			return
 		}
 		once = true
-		s.Require().NoError(s.service.FinalizeCreditNote(s.GetContext(), resp.ID))
+		s.Require().NoError(s.service.FinalizeCreditNote(s.GetContext(), resp.ID, nil))
 	}
 	defer func() { invStore.BeforeGetForUpdate = nil }()
 

@@ -38,14 +38,14 @@ This design separates the two concerns:
 **Explicitly out of scope** — see §8:
 
 
-| Deferred                              | Note                                                                               |
-| ------------------------------------- | ---------------------------------------------------------------------------------- |
-| Prepaid credits as a refund source    | §8.1 — schema supports it (`source_type = WALLET_CREDIT`); allocation does not yet |
-| `OUT_OF_BAND` refund target           | §8.2 — enum value defined, offline payments route to `WALLET` for now              |
-| Overpayment (`PaymentStatusOverpaid`) | §8.3 — CN bound is authoritative, drift is an alert not an abort                   |
-| Refunds on partially-paid invoices    | §8.4 — CN type is server-derived; adjustment first, then refund                    |
-| Caller-specified credit note type     | §8.5 — moves to the DTO later                                                      |
-| 3-strikes retry policy                | §8.6 — `attempt` column lands now, the policy later                                |
+| Deferred                                | Note                                                                                |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| Prepaid credits as a refund source      | §8.1 — schema supports it (`source_type = WALLET_CREDIT`); allocation does not yet  |
+| `OUT_OF_BAND` refund target             | §8.2 — enum value defined, offline payments route to `WALLET` for now               |
+| Overpayment (`PaymentStatusOverpaid`)   | §8.3 — CN bound is authoritative, drift is an alert not an abort                    |
+| Refunds on partially-paid invoices      | §8.4 — CN type is server-derived; adjustment first, then refund                     |
+| Caller-specified credit note type       | §8.5 — moves to the DTO later                                                       |
+| 3-strikes retry policy                  | §8.6 — `attempt` column lands now, the policy later                                 |
 | Refund fallback policy (tenant setting) | §10.3 — v1 hardcodes wallet fallback; the setting and the write-off path come later |
 
 
@@ -497,10 +497,11 @@ second iteration.
 8. Every path that returns money to a customer writes a refund row — including
   `VoidInvoice`'s wallet credit and the Razorpay late-capture refund.
 9. `credited_amount - refunded_amount` is a **reportable liability**, not an internal queue. It is
-   exported, it ages, and it is never silently written off.
-
+  exported, it ages, and it is never silently written off.
 
 ---
+
+
 
 ## 10. Accounting treatment
 
@@ -529,7 +530,7 @@ BACK_TO_SOURCE:  Dr Refunds Payable    Cr Cash / Bank
 WALLET:          Dr Refunds Payable    Cr Customer Credits (contract liability)
 ```
 
-So the gap between finalize and settlement is not an anomaly — **the gap _is_ the refund
+So the gap between finalize and settlement is not an anomaly — **the gap *is* the refund
 liability**, and `credited_amount - refunded_amount` is its balance. Under ASC 606 / IFRS 15 a
 refund liability is recognised when the entity becomes obligated, not when cash leaves.
 
@@ -544,11 +545,15 @@ credit notes to be bounded against (§3).
 
 ### 10.2 What this requires of the code
 
-| Requirement | Change |
-| --- | --- |
-| The liability must be visible downstream | [invoice_export.go:204](../../internal/ee/service/sync/export/invoice_export.go#L204) exports `adjustment_amount` and `refunded_amount` but not `credited_amount` — without it the books cannot see the promised-but-unsettled balance at all. Add it in the same PR as the column. |
-| Cash-out and liability-transfer are different entries | `refund_target` is the GL discriminator: `BACK_TO_SOURCE` → cash, `WALLET` → contract liability, `OUT_OF_BAND` → cash. Whoever wires the accounting export must not collapse them. |
-| A finalized refund CN cannot be erased | Already true — [creditnote.go:431](../../internal/ee/service/creditnote.go#L431) rejects voiding a finalized refund CN. Once revenue is reversed and the liability incurred, you issue a new document; you do not unwind the old one. |
+
+| Requirement                                           | Change                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The liability must be visible downstream              | [invoice_export.go:204](../../internal/ee/service/sync/export/invoice_export.go#L204) exports `adjustment_amount` and `refunded_amount` but not `credited_amount` — without it the books cannot see the promised-but-unsettled balance at all. Add it in the same PR as the column. |
+| Cash-out and liability-transfer are different entries | `refund_target` is the GL discriminator: `BACK_TO_SOURCE` → cash, `WALLET` → contract liability, `OUT_OF_BAND` → cash. Whoever wires the accounting export must not collapse them.                                                                                                  |
+| A finalized refund CN cannot be erased                | Already true — [creditnote.go:431](../../internal/ee/service/creditnote.go#L431) rejects voiding a finalized refund CN. Once revenue is reversed and the liability incurred, you issue a new document; you do not unwind the old one.                                               |
+
+
+
 
 ### 10.3 Where the real exposure is — consent, not accounting
 
@@ -558,10 +563,12 @@ returns to the card unless the customer agrees otherwise. So the wallet fallback
 **tenant-level policy**, not a silent default — a `SettingKey` alongside the existing keys in
 [settings.go:22](../../internal/types/settings.go#L22):
 
-| Policy | Behaviour on a permanently failed gateway refund |
-| --- | --- |
+
+| Policy   | Behaviour on a permanently failed gateway refund                                      |
+| -------- | ------------------------------------------------------------------------------------- |
 | `WALLET` | §4.5 fallback — cancel, credit the wallet, record the substitution in refund metadata |
-| `NONE` | Row stays `FAILED`, alert fires, liability stays open, an operator resolves it |
+| `NONE`   | Row stays `FAILED`, alert fires, liability stays open, an operator resolves it        |
+
 
 v1 hardcodes `WALLET`; the setting lands with the reconciler's second iteration. Either way the
 substitution is recorded in refund metadata (which policy, when), so the trail exists.

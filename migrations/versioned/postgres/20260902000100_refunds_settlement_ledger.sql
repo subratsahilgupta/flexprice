@@ -22,7 +22,7 @@ ALTER TABLE "refunds" ADD COLUMN IF NOT EXISTS "credit_note_id" character varyin
 ALTER TABLE "refunds" ADD COLUMN IF NOT EXISTS "settled_amount" numeric(20,8) NOT NULL;
 ALTER TABLE "refunds" ADD COLUMN IF NOT EXISTS "refund_destination" character varying(50) NOT NULL DEFAULT '';
 ALTER TABLE "refunds" ADD COLUMN IF NOT EXISTS "refund_destination_id" character varying(50) NULL;
-ALTER TABLE "refunds" ADD COLUMN IF NOT EXISTS "attempt" bigint NOT NULL DEFAULT 0;
+ALTER TABLE "refunds" ADD COLUMN IF NOT EXISTS "attempt" bigint NOT NULL DEFAULT 1;
 
 -- migrate:down
 SET lock_timeout = '3s';

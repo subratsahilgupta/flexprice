@@ -118,6 +118,10 @@ func (s *RefundServiceSuite) createPayment(id string, amount decimal.Decimal, me
 	return p
 }
 
+func backToSource() *types.RefundTarget {
+	return lo.ToPtr(types.RefundTargetBackToSource)
+}
+
 func (s *RefundServiceSuite) creditNote(amount decimal.Decimal) *creditnote.CreditNote {
 	return &creditnote.CreditNote{
 		ID:               "cn_refund_1",
@@ -137,7 +141,7 @@ func (s *RefundServiceSuite) creditNote(amount decimal.Decimal) *creditnote.Cred
 func (s *RefundServiceSuite) TestPrepareRefundsForCreditNoteSingleCardPayment() {
 	s.createPayment("pay_card", decimal.NewFromInt(100), types.PaymentMethodTypeCard, lo.ToPtr("razorpay"), s.testData.now)
 
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(40)), s.testData.invoice)
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(40)), s.testData.invoice, backToSource())
 	s.NoError(err)
 	s.Len(rows, 1)
 
@@ -151,7 +155,7 @@ func (s *RefundServiceSuite) TestPrepareRefundsForCreditNoteSingleCardPayment() 
 	s.Equal(types.RefundStatusPending, r.RefundStatus)
 	s.Equal(types.RefundReasonDuplicate, r.RefundReason)
 	s.True(r.Amount.Equal(decimal.NewFromInt(40)))
-	s.Equal(0, r.Attempt)
+	s.Equal(1, r.Attempt)
 
 	stored, err := s.GetStores().RefundRepo.ListByInvoice(s.GetContext(), s.testData.invoice.ID)
 	s.NoError(err)
@@ -162,7 +166,7 @@ func (s *RefundServiceSuite) TestPrepareRefundsForCreditNoteSplitsAcrossPayments
 	s.createPayment("pay_card", decimal.NewFromInt(60), types.PaymentMethodTypeCard, lo.ToPtr("razorpay"), s.testData.now)
 	s.createPayment("pay_credits", decimal.NewFromInt(40), types.PaymentMethodTypeCredits, nil, s.testData.now.Add(time.Minute))
 
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(100)), s.testData.invoice)
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(100)), s.testData.invoice, backToSource())
 	s.NoError(err)
 	s.Len(rows, 2)
 
@@ -176,7 +180,7 @@ func (s *RefundServiceSuite) TestPrepareRefundsForCreditNoteSplitsAcrossPayments
 }
 
 func (s *RefundServiceSuite) TestPrepareRefundsForCreditNoteWithoutPaymentRows() {
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(100)), s.testData.invoice)
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(100)), s.testData.invoice, nil)
 	s.NoError(err)
 	s.Len(rows, 1)
 	s.Nil(rows[0].PaymentID)
@@ -187,13 +191,13 @@ func (s *RefundServiceSuite) TestPrepareRefundsForCreditNoteWithoutPaymentRows()
 func (s *RefundServiceSuite) TestPrepareRefundsRespectsPerPaymentCapacity() {
 	s.createPayment("pay_card", decimal.NewFromInt(100), types.PaymentMethodTypeCard, lo.ToPtr("razorpay"), s.testData.now)
 
-	first, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(70)), s.testData.invoice)
+	first, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(70)), s.testData.invoice, backToSource())
 	s.NoError(err)
 	s.NoError(s.service.Settle(s.GetContext(), &dto.SettleRefundRequest{RefundID: first[0].ID, SettledAmount: first[0].Amount}))
 
 	cn := s.creditNote(decimal.NewFromInt(50))
 	cn.ID = "cn_refund_2"
-	second, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), cn, s.testData.invoice)
+	second, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), cn, s.testData.invoice, backToSource())
 	s.NoError(err)
 	s.Len(second, 2)
 
@@ -222,7 +226,7 @@ func (s *RefundServiceSuite) TestPrepareRefundsForZeroAmountCreatesNothing() {
 }
 
 func (s *RefundServiceSuite) TestSettleIsIdempotent() {
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(25)), s.testData.invoice)
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(25)), s.testData.invoice, nil)
 	s.NoError(err)
 
 	req := &dto.SettleRefundRequest{
@@ -250,10 +254,85 @@ func (s *RefundServiceSuite) TestSettleIsIdempotent() {
 	s.Equal(firstSucceededAt, replayed.SucceededAt)
 }
 
+func (s *RefundServiceSuite) TestUnsetTargetKeepsMoneyInTheWallet() {
+	s.createPayment("pay_card", decimal.NewFromInt(100), types.PaymentMethodTypeCard, lo.ToPtr("razorpay"), s.testData.now)
+
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(40)), s.testData.invoice, nil)
+	s.NoError(err)
+	s.Len(rows, 1)
+	s.Equal(types.RefundDestinationWallet, rows[0].RefundDestination)
+	s.Equal("pay_card", lo.FromPtr(rows[0].PaymentID))
+	s.Nil(rows[0].PaymentGateway)
+	s.Nil(rows[0].GatewayIdempotencyToken)
+}
+
+func (s *RefundServiceSuite) TestPrepaidWalletTargetMatchesTheDefault() {
+	s.createPayment("pay_card", decimal.NewFromInt(100), types.PaymentMethodTypeCard, lo.ToPtr("razorpay"), s.testData.now)
+
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(40)), s.testData.invoice,
+		lo.ToPtr(types.RefundTargetPrepaidWallet))
+	s.NoError(err)
+	s.Len(rows, 1)
+	s.Equal(types.RefundDestinationWallet, rows[0].RefundDestination)
+}
+
+func (s *RefundServiceSuite) TestBackToSourceFallsBackToWalletWhenNotRefundableAtTheGateway() {
+	s.createPayment("pay_offline", decimal.NewFromInt(100), types.PaymentMethodTypeOffline, nil, s.testData.now)
+
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(40)), s.testData.invoice, backToSource())
+	s.NoError(err)
+	s.Len(rows, 1)
+	s.Equal(types.RefundDestinationWallet, rows[0].RefundDestination)
+}
+
+func (s *RefundServiceSuite) TestUnknownTargetIsRejected() {
+	_, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(40)), s.testData.invoice,
+		lo.ToPtr(types.RefundTarget("GATEWAY")))
+	s.Error(err)
+}
+
+func (s *RefundServiceSuite) TestSettleRejectsAmountAboveTheRefund() {
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(25)), s.testData.invoice, nil)
+	s.NoError(err)
+
+	err = s.service.Settle(s.GetContext(), &dto.SettleRefundRequest{
+		RefundID:      rows[0].ID,
+		SettledAmount: decimal.NewFromInt(26),
+	})
+	s.Error(err)
+
+	after, err := s.GetStores().RefundRepo.Get(s.GetContext(), rows[0].ID)
+	s.NoError(err)
+	s.Equal(types.RefundStatusPending, after.RefundStatus)
+	s.True(after.SettledAmount.IsZero())
+}
+
+func (s *RefundServiceSuite) TestInFlightRefundsReducePaymentCapacity() {
+	s.createPayment("pay_first", decimal.NewFromInt(150), types.PaymentMethodTypeCard, lo.ToPtr("razorpay"), s.testData.now)
+	s.createPayment("pay_second", decimal.NewFromInt(50), types.PaymentMethodTypeOffline, nil, s.testData.now.Add(time.Minute))
+
+	first, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(100)), s.testData.invoice, nil)
+	s.NoError(err)
+	s.Len(first, 1)
+	s.Equal("pay_first", lo.FromPtr(first[0].PaymentID))
+
+	second := s.creditNote(decimal.NewFromInt(100))
+	second.ID = "cn_refund_2"
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), second, s.testData.invoice, nil)
+	s.NoError(err)
+
+	// pay_first has 50 left once the in-flight 100 is reserved; the rest cannot come from a payment.
+	s.Len(rows, 2)
+	s.Equal("pay_first", lo.FromPtr(rows[0].PaymentID))
+	s.True(rows[0].Amount.Equal(decimal.NewFromInt(50)))
+	s.Equal("pay_second", lo.FromPtr(rows[1].PaymentID))
+	s.True(rows[1].Amount.Equal(decimal.NewFromInt(50)))
+}
+
 func (s *RefundServiceSuite) TestFailFallsBackToWallet() {
 	s.createPayment("pay_card", decimal.NewFromInt(100), types.PaymentMethodTypeCard, lo.ToPtr("razorpay"), s.testData.now)
 
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(100)), s.testData.invoice)
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(100)), s.testData.invoice, backToSource())
 	s.NoError(err)
 	original := rows[0]
 
@@ -265,7 +344,7 @@ func (s *RefundServiceSuite) TestFailFallsBackToWallet() {
 	s.Equal("gateway declined", lo.FromPtr(failed.FailureReason))
 
 	fallback := s.fallbackOf(failed)
-	s.Equal(1, fallback.Attempt)
+	s.Equal(2, fallback.Attempt)
 	s.Equal(types.RefundDestinationWallet, fallback.RefundDestination)
 	s.Equal(original.ID, fallback.Metadata["retry_of"])
 	s.True(fallback.Amount.Equal(decimal.NewFromInt(100)))
@@ -280,7 +359,7 @@ func (s *RefundServiceSuite) TestFailFallsBackToWallet() {
 }
 
 func (s *RefundServiceSuite) TestFailOnSettledRowIsNoOp() {
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(30)), s.testData.invoice)
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(30)), s.testData.invoice, nil)
 	s.NoError(err)
 	s.NoError(s.service.Settle(s.GetContext(), &dto.SettleRefundRequest{RefundID: rows[0].ID, SettledAmount: rows[0].Amount}))
 
@@ -296,7 +375,7 @@ func (s *RefundServiceSuite) TestFailOnSettledRowIsNoOp() {
 }
 
 func (s *RefundServiceSuite) TestDispatchWalletRowSettlesOnce() {
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(80)), s.testData.invoice)
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(80)), s.testData.invoice, nil)
 	s.NoError(err)
 
 	s.NoError(s.service.Dispatch(s.GetContext(), rows[0].ID))
@@ -314,7 +393,7 @@ func (s *RefundServiceSuite) TestDispatchWalletRowSettlesOnce() {
 func (s *RefundServiceSuite) TestRetryFailedRefundReusesFallback() {
 	s.createPayment("pay_card", decimal.NewFromInt(50), types.PaymentMethodTypeCard, lo.ToPtr("razorpay"), s.testData.now)
 
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(50)), s.testData.invoice)
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(50)), s.testData.invoice, backToSource())
 	s.NoError(err)
 	s.NoError(s.service.Fail(s.GetContext(), rows[0].ID, "gateway declined"))
 
@@ -332,7 +411,7 @@ func (s *RefundServiceSuite) TestRetryFailedRefundReusesFallback() {
 }
 
 func (s *RefundServiceSuite) TestRetrySettledRefundRejected() {
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(10)), s.testData.invoice)
+	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(10)), s.testData.invoice, nil)
 	s.NoError(err)
 	s.NoError(s.service.Settle(s.GetContext(), &dto.SettleRefundRequest{RefundID: rows[0].ID, SettledAmount: rows[0].Amount}))
 
@@ -341,7 +420,7 @@ func (s *RefundServiceSuite) TestRetrySettledRefundRejected() {
 }
 
 func (s *RefundServiceSuite) TestListRefundsByInvoice() {
-	_, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(10)), s.testData.invoice)
+	_, err := s.service.PrepareRefundsForCreditNote(s.GetContext(), s.creditNote(decimal.NewFromInt(10)), s.testData.invoice, nil)
 	s.NoError(err)
 
 	resp, err := s.service.ListRefunds(s.GetContext(), &types.RefundFilter{
