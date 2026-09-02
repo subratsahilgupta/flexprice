@@ -3493,6 +3493,143 @@ func (s *CheckWalletBalanceAlertSuite) TestAutoTopupNotBlockedByDisabledAlerts()
 }
 
 // ---------------------------------------------------------------------------
+// Percentage-type wallet alerts (low_ongoing_balance)
+// ---------------------------------------------------------------------------
+
+// percentageAlertSettings returns a percentage-type AlertSettings: critical<10,
+// warning<25, info<50 (below condition, ascending as required).
+func (s *CheckWalletBalanceAlertSuite) percentageAlertSettings() *types.AlertSettings {
+	return &types.AlertSettings{
+		AlertEnabled:       lo.ToPtr(true),
+		AlertThresholdType: types.AlertThresholdTypePercentage,
+		Critical:           &types.AlertThreshold{Threshold: decimal.NewFromInt(10), Condition: types.AlertConditionBelow},
+		Warning:            &types.AlertThreshold{Threshold: decimal.NewFromInt(25), Condition: types.AlertConditionBelow},
+		Info:               &types.AlertThreshold{Threshold: decimal.NewFromInt(50), Condition: types.AlertConditionBelow},
+	}
+}
+
+// makeCreditTransaction persists a wallet transaction with the given type/status/timestamp.
+func (s *CheckWalletBalanceAlertSuite) makeCreditTransaction(id, walletID string, amount decimal.Decimal, txStatus types.TransactionStatus, status types.Status, createdAt time.Time) *wallet.Transaction {
+	ctx := s.GetContext()
+	base := types.GetDefaultBaseModel(ctx)
+	base.Status = status
+	base.CreatedAt = createdAt
+	base.UpdatedAt = createdAt
+	tx := &wallet.Transaction{
+		ID:           id,
+		WalletID:     walletID,
+		CustomerID:   s.customer.ID,
+		Type:         types.TransactionTypeCredit,
+		Amount:       amount,
+		CreditAmount: amount,
+		TxStatus:     txStatus,
+		Currency:     "usd",
+		BaseModel:    base,
+	}
+	s.Require().NoError(s.GetStores().WalletRepo.CreateTransaction(ctx, tx))
+	return tx
+}
+
+// makeActiveSubscription persists a minimal active subscription with the given period start,
+// used to drive the percentage-alert window.
+func (s *CheckWalletBalanceAlertSuite) makeActiveSubscription(id string, periodStart time.Time) *subscription.Subscription {
+	ctx := s.GetContext()
+	sub := &subscription.Subscription{
+		ID:                 id,
+		CustomerID:         s.customer.ID,
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		Currency:           "usd",
+		BillingAnchor:      periodStart,
+		StartDate:          periodStart,
+		CurrentPeriodStart: periodStart,
+		CurrentPeriodEnd:   periodStart.AddDate(0, 1, 0),
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, sub))
+	return sub
+}
+
+// TestPercentageAlerts_NoSubscriptions_LifetimeSumFallback: no active/trialing subscription
+// exists, so the base falls back to the wallet's full transaction history. balance=25,
+// base=100 (one topup) → 25% → below warning(25) → warning.
+func (s *CheckWalletBalanceAlertSuite) TestPercentageAlerts_NoSubscriptions_LifetimeSumFallback() {
+	w := s.makeWallet("wallet_pct_no_subs", decimal.NewFromInt(25), s.percentageAlertSettings(), nil)
+	s.makeCreditTransaction("wtxn_pct_no_subs", w.ID, decimal.NewFromInt(100),
+		types.TransactionStatusCompleted, types.StatusPublished, time.Now().UTC().Add(-time.Hour))
+
+	err := s.service.CheckWalletBalanceAlert(s.GetContext(), s.makeEvent())
+	s.NoError(err)
+
+	logs, err := s.GetStores().AlertLogsRepo.ListByEntity(s.GetContext(), types.AlertEntityTypeWallet, w.ID, 10)
+	s.NoError(err)
+	s.Require().Len(logs, 1, "expected one alert log")
+	s.Equal(types.AlertStateWarning, logs[0].AlertStatus)
+	s.True(decimal.NewFromInt(25).Equal(logs[0].AlertInfo.ValueAtTime), "value_at_time must be the percentage, not the raw balance")
+}
+
+// TestPercentageAlerts_WindowedByActiveSubscription: a topup before the subscription's
+// current_period_start must not count toward the base. balance=25, in-window topup=100,
+// pre-window topup=900 (would swamp the base if wrongly included) → 25% → warning.
+func (s *CheckWalletBalanceAlertSuite) TestPercentageAlerts_WindowedByActiveSubscription() {
+	periodStart := time.Now().UTC().Add(-24 * time.Hour)
+	s.makeActiveSubscription("sub_pct_window", periodStart)
+
+	w := s.makeWallet("wallet_pct_window", decimal.NewFromInt(25), s.percentageAlertSettings(), nil)
+	s.makeCreditTransaction("wtxn_pct_window_before", w.ID, decimal.NewFromInt(900),
+		types.TransactionStatusCompleted, types.StatusPublished, periodStart.Add(-time.Hour))
+	s.makeCreditTransaction("wtxn_pct_window_after", w.ID, decimal.NewFromInt(100),
+		types.TransactionStatusCompleted, types.StatusPublished, periodStart.Add(time.Hour))
+
+	err := s.service.CheckWalletBalanceAlert(s.GetContext(), s.makeEvent())
+	s.NoError(err)
+
+	logs, err := s.GetStores().AlertLogsRepo.ListByEntity(s.GetContext(), types.AlertEntityTypeWallet, w.ID, 10)
+	s.NoError(err)
+	s.Require().Len(logs, 1, "expected one alert log")
+	s.Equal(types.AlertStateWarning, logs[0].AlertStatus, "pre-window topup must not lower the percentage into in_alarm")
+	s.True(decimal.NewFromInt(25).Equal(logs[0].AlertInfo.ValueAtTime))
+}
+
+// TestPercentageAlerts_ExcludesArchivedAndPendingTopups: an archived transaction and a
+// pending transaction must not count toward the base, even though both are type=credit.
+func (s *CheckWalletBalanceAlertSuite) TestPercentageAlerts_ExcludesArchivedAndPendingTopups() {
+	w := s.makeWallet("wallet_pct_excludes", decimal.NewFromInt(25), s.percentageAlertSettings(), nil)
+	s.makeCreditTransaction("wtxn_pct_excl_published", w.ID, decimal.NewFromInt(100),
+		types.TransactionStatusCompleted, types.StatusPublished, time.Now().UTC().Add(-time.Hour))
+	s.makeCreditTransaction("wtxn_pct_excl_archived", w.ID, decimal.NewFromInt(900),
+		types.TransactionStatusCompleted, types.StatusArchived, time.Now().UTC().Add(-time.Hour))
+	s.makeCreditTransaction("wtxn_pct_excl_pending", w.ID, decimal.NewFromInt(900),
+		types.TransactionStatusPending, types.StatusPublished, time.Now().UTC().Add(-time.Hour))
+
+	err := s.service.CheckWalletBalanceAlert(s.GetContext(), s.makeEvent())
+	s.NoError(err)
+
+	logs, err := s.GetStores().AlertLogsRepo.ListByEntity(s.GetContext(), types.AlertEntityTypeWallet, w.ID, 10)
+	s.NoError(err)
+	s.Require().Len(logs, 1, "expected one alert log")
+	s.Equal(types.AlertStateWarning, logs[0].AlertStatus, "archived/pending topups must not be counted in the base")
+	s.True(decimal.NewFromInt(25).Equal(logs[0].AlertInfo.ValueAtTime))
+}
+
+// TestPercentageAlerts_ZeroBase_SkipsEvaluation: no completed topups at all → base is
+// zero → evaluation must be skipped entirely, not divide by zero.
+func (s *CheckWalletBalanceAlertSuite) TestPercentageAlerts_ZeroBase_SkipsEvaluation() {
+	w := s.makeWallet("wallet_pct_zero_base", decimal.NewFromInt(25), s.percentageAlertSettings(), nil)
+	before, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), w.ID)
+	s.NoError(err)
+
+	err = s.service.CheckWalletBalanceAlert(s.GetContext(), s.makeEvent())
+	s.NoError(err)
+	s.Equal(0, s.countWalletAlertLogs(w.ID), "zero base must skip evaluation, not log an alert")
+
+	updated, err := s.GetStores().WalletRepo.GetWalletByID(s.GetContext(), w.ID)
+	s.NoError(err)
+	s.Equal(before.AlertState, updated.AlertState, "wallet alert state must be left untouched when evaluation is skipped")
+}
+
+// ---------------------------------------------------------------------------
 // Bonus credit top-up (ERD: bonus_credits.md) — §8.2-8.5
 // ---------------------------------------------------------------------------
 

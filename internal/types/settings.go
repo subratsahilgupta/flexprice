@@ -599,6 +599,9 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 			Condition: AlertConditionBelow,
 		},
 		AlertEnabled: lo.ToPtr(false), // Disabled by default, users must explicitly enable
+		// Stated explicitly: this default is the base map that stored tenant values are
+		// overlaid onto, so omitting it leaves the resolved config with no threshold type.
+		AlertThresholdType: AlertThresholdTypeAbsolute,
 	}
 
 	// Defaults for prepare_processed_events_config (plan_id intentionally omitted from action)

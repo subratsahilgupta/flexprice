@@ -87,6 +87,12 @@ func (r *UpdateWalletRequest) Validate() error {
 		}
 	}
 
+	if r.AlertSettings != nil {
+		if err := r.AlertSettings.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return validator.ValidateRequest(r)
 }
 
