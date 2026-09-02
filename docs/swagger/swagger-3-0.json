@@ -14420,7 +14420,7 @@
           "Webhook Events"
         ],
         "summary": "invoice.communication.triggered",
-        "description": "Fired when an invoice communication (e.g. email notification) is triggered. Doc-only for parsing.",
+        "description": "Fired when an invoice communication (e.g. email notification) is triggered. `invoice.line_items` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and `invoice.subscription.plan.prices` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
         "responses": {
           "200": {
             "description": "Webhook payload",
@@ -14441,7 +14441,7 @@
           "Webhook Events"
         ],
         "summary": "invoice.create.drafted",
-        "description": "Fired when a new invoice is created in draft state. Doc-only for parsing.",
+        "description": "Fired when a new invoice is created in draft state. `invoice.line_items` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and `invoice.subscription.plan.prices` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
         "responses": {
           "200": {
             "description": "Webhook payload",
@@ -14462,7 +14462,7 @@
           "Webhook Events"
         ],
         "summary": "invoice.payment.overdue",
-        "description": "Fired when an invoice payment is overdue past the due date. Doc-only for parsing.",
+        "description": "Fired when an invoice payment is overdue past the due date. `invoice.line_items` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and `invoice.subscription.plan.prices` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
         "responses": {
           "200": {
             "description": "Webhook payload",
@@ -14483,7 +14483,7 @@
           "Webhook Events"
         ],
         "summary": "invoice.update",
-        "description": "Fired when an invoice is updated. Doc-only for parsing.",
+        "description": "Fired when an invoice is updated. `invoice.line_items` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and `invoice.subscription.plan.prices` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
         "responses": {
           "200": {
             "description": "Webhook payload",
@@ -14504,7 +14504,7 @@
           "Webhook Events"
         ],
         "summary": "invoice.update.finalized",
-        "description": "Fired when an invoice is finalized and locked for payment. Doc-only for parsing.",
+        "description": "Fired when an invoice is finalized and locked for payment. `invoice.line_items` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and `invoice.subscription.plan.prices` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
         "responses": {
           "200": {
             "description": "Webhook payload",
@@ -14525,7 +14525,7 @@
           "Webhook Events"
         ],
         "summary": "invoice.update.payment",
-        "description": "Fired when an invoice payment status changes. Doc-only for parsing.",
+        "description": "Fired when an invoice payment status changes. `invoice.line_items` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and `invoice.subscription.plan.prices` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
         "responses": {
           "200": {
             "description": "Webhook payload",
@@ -14546,7 +14546,7 @@
           "Webhook Events"
         ],
         "summary": "invoice.update.voided",
-        "description": "Fired when an invoice is voided (e.g. order cancelled or duplicate). Doc-only for parsing.",
+        "description": "Fired when an invoice is voided (e.g. order cancelled or duplicate). `invoice.line_items` omits line items with neither an amount nor a quantity (period fan-out emits one per window whether or not usage landed in it), and `invoice.subscription.plan.prices` carries only the prices this invoice references, not the plan's full catalogue. Doc-only for parsing.",
         "responses": {
           "200": {
             "description": "Webhook payload",
@@ -31789,6 +31789,89 @@
           }
         }
       },
+      "webhookDto.CouponApplication": {
+        "type": "object",
+        "properties": {
+          "applied_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "coupon_association_id": {
+            "type": "string"
+          },
+          "coupon_id": {
+            "type": "string"
+          },
+          "coupon_snapshot": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "currency": {
+            "type": "string"
+          },
+          "discount_percentage": {
+            "type": "string"
+          },
+          "discount_type": {
+            "$ref": "#/components/schemas/types.CouponType"
+          },
+          "discounted_amount": {
+            "type": "string"
+          },
+          "final_price": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "invoice_line_item_id": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "original_price": {
+            "type": "string"
+          },
+          "subscription_id": {
+            "type": "string"
+          }
+        }
+      },
+      "webhookDto.CouponAssociation": {
+        "type": "object",
+        "properties": {
+          "coupon_id": {
+            "type": "string"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "subscription_line_item_id": {
+            "type": "string"
+          }
+        }
+      },
       "webhookDto.CreditNote": {
         "type": "object",
         "properties": {
@@ -32011,8 +32094,24 @@
           "amount_remaining": {
             "type": "string"
           },
+          "billing_period": {
+            "type": "string"
+          },
           "billing_reason": {
             "type": "string"
+          },
+          "billing_sequence": {
+            "type": "integer"
+          },
+          "coupon_applications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/webhookDto.CouponApplication"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
           },
           "currency": {
             "type": "string"
@@ -32021,6 +32120,9 @@
             "$ref": "#/components/schemas/webhookDto.Customer"
           },
           "customer_id": {
+            "type": "string"
+          },
+          "description": {
             "type": "string"
           },
           "due_date": {
@@ -32035,6 +32137,9 @@
             "format": "date-time"
           },
           "id": {
+            "type": "string"
+          },
+          "idempotency_key": {
             "type": "string"
           },
           "invoice_number": {
@@ -32082,8 +32187,30 @@
           "subtotal": {
             "type": "string"
           },
+          "tax_summary": {
+            "$ref": "#/components/schemas/TaxSummary"
+          },
+          "taxes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/webhookDto.TaxApplied"
+            }
+          },
           "total": {
             "type": "string"
+          },
+          "total_discount": {
+            "type": "string"
+          },
+          "total_prepaid_credits_applied": {
+            "type": "string"
+          },
+          "total_tax": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
           },
           "voided_at": {
             "type": "string",
@@ -32094,13 +32221,43 @@
       "webhookDto.InvoiceLineItem": {
         "type": "object",
         "properties": {
+          "adjusted_entitlement_quantity": {
+            "type": "string"
+          },
           "amount": {
+            "type": "string"
+          },
+          "commitment_info": {
+            "$ref": "#/components/schemas/types.CommitmentInfo"
+          },
+          "currency": {
             "type": "string"
           },
           "display_name": {
             "type": "string"
           },
+          "entity_id": {
+            "type": "string"
+          },
+          "entity_type": {
+            "type": "string"
+          },
           "id": {
+            "type": "string"
+          },
+          "invoice_level_discount": {
+            "type": "string"
+          },
+          "line_item_discount": {
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/types.Metadata"
+          },
+          "meter_display_name": {
+            "type": "string"
+          },
+          "meter_id": {
             "type": "string"
           },
           "period_end": {
@@ -32114,10 +32271,25 @@
           "plan_display_name": {
             "type": "string"
           },
+          "prepaid_credits_applied": {
+            "type": "string"
+          },
           "price_id": {
             "type": "string"
           },
+          "price_type": {
+            "type": "string"
+          },
+          "price_unit": {
+            "type": "string"
+          },
+          "price_unit_amount": {
+            "type": "string"
+          },
           "quantity": {
+            "type": "string"
+          },
+          "subscription_line_item_id": {
             "type": "string"
           }
         }
@@ -32129,7 +32301,27 @@
             "$ref": "#/components/schemas/types.WebhookEventName"
           },
           "invoice": {
-            "$ref": "#/components/schemas/InvoiceResponse"
+            "$ref": "#/components/schemas/webhookDto.Invoice"
+          }
+        }
+      },
+      "webhookDto.Meter": {
+        "type": "object",
+        "properties": {
+          "aggregation": {
+            "$ref": "#/components/schemas/meter.Aggregation"
+          },
+          "event_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reset_usage": {
+            "$ref": "#/components/schemas/types.ResetUsage"
           }
         }
       },
@@ -32192,6 +32384,106 @@
           },
           "payment": {
             "$ref": "#/components/schemas/webhookDto.Payment"
+          }
+        }
+      },
+      "webhookDto.Plan": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lookup_key": {
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/types.Metadata"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/webhookDto.Price"
+            }
+          }
+        }
+      },
+      "webhookDto.Price": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "billing_cadence": {
+            "$ref": "#/components/schemas/types.BillingCadence"
+          },
+          "billing_model": {
+            "$ref": "#/components/schemas/types.BillingModel"
+          },
+          "billing_period": {
+            "$ref": "#/components/schemas/types.BillingPeriod"
+          },
+          "billing_period_count": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "display_amount": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "display_price_unit_amount": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "invoice_cadence": {
+            "$ref": "#/components/schemas/types.InvoiceCadence"
+          },
+          "lookup_key": {
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/price.JSONBMetadata"
+          },
+          "meter": {
+            "$ref": "#/components/schemas/webhookDto.Meter"
+          },
+          "meter_id": {
+            "type": "string"
+          },
+          "price_unit": {
+            "type": "string"
+          },
+          "price_unit_amount": {
+            "type": "string"
+          },
+          "tier_mode": {
+            "$ref": "#/components/schemas/types.BillingTier"
+          },
+          "tiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/price.PriceTier"
+            }
+          },
+          "transform_quantity": {
+            "$ref": "#/components/schemas/price.JSONBTransformQuantity"
+          },
+          "type": {
+            "$ref": "#/components/schemas/types.PriceType"
           }
         }
       },
@@ -32289,6 +32581,12 @@
             "type": "string",
             "format": "date-time"
           },
+          "coupon_associations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/webhookDto.CouponAssociation"
+            }
+          },
           "currency": {
             "type": "string"
           },
@@ -32313,6 +32611,12 @@
           "id": {
             "type": "string"
           },
+          "line_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/webhookDto.SubscriptionLineItem"
+            }
+          },
           "lookup_key": {
             "type": "string"
           },
@@ -32324,6 +32628,9 @@
           },
           "pause_status": {
             "$ref": "#/components/schemas/types.PauseStatus"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/webhookDto.Plan"
           },
           "plan_id": {
             "type": "string"
@@ -32345,6 +32652,76 @@
           "trial_start": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "webhookDto.SubscriptionLineItem": {
+        "type": "object",
+        "properties": {
+          "billing_period": {
+            "$ref": "#/components/schemas/types.BillingPeriod"
+          },
+          "billing_period_count": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entity_id": {
+            "type": "string"
+          },
+          "entity_type": {
+            "$ref": "#/components/schemas/types.SubscriptionLineItemEntityType"
+          },
+          "id": {
+            "type": "string"
+          },
+          "invoice_cadence": {
+            "$ref": "#/components/schemas/types.InvoiceCadence"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "meter_display_name": {
+            "type": "string"
+          },
+          "meter_id": {
+            "type": "string"
+          },
+          "plan_display_name": {
+            "type": "string"
+          },
+          "price": {
+            "$ref": "#/components/schemas/webhookDto.Price"
+          },
+          "price_id": {
+            "type": "string"
+          },
+          "price_type": {
+            "$ref": "#/components/schemas/types.PriceType"
+          },
+          "price_unit": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "subscription_id": {
+            "type": "string"
           }
         }
       },
@@ -32389,6 +32766,65 @@
           },
           "subscription": {
             "$ref": "#/components/schemas/webhookDto.Subscription"
+          }
+        }
+      },
+      "webhookDto.TaxApplied": {
+        "type": "object",
+        "properties": {
+          "applied_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "tax_amount": {
+            "type": "string"
+          },
+          "tax_behavior": {
+            "$ref": "#/components/schemas/types.TaxBehavior"
+          },
+          "tax_rate": {
+            "$ref": "#/components/schemas/webhookDto.TaxRate"
+          },
+          "tax_rate_id": {
+            "type": "string"
+          },
+          "taxable_amount": {
+            "type": "string"
+          }
+        }
+      },
+      "webhookDto.TaxRate": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "percentage_value": {
+            "type": "string"
+          },
+          "tax_rate_type": {
+            "$ref": "#/components/schemas/types.TaxRateType"
           }
         }
       },
