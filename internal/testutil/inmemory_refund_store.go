@@ -115,16 +115,20 @@ func refundFilterFn(ctx context.Context, r *refund.Refund, filter interface{}) b
 		return false
 	}
 
-	if f.PaymentIDs != nil && !slices.Contains(f.PaymentIDs, r.PaymentID) {
-		return false
+	if f.PaymentIDs != nil {
+		if r.PaymentID == nil || !slices.Contains(f.PaymentIDs, *r.PaymentID) {
+			return false
+		}
 	}
 
 	if f.RefundStatuses != nil && !slices.Contains(f.RefundStatuses, r.RefundStatus) {
 		return false
 	}
 
-	if f.Gateway != nil && r.PaymentGateway != *f.Gateway {
-		return false
+	if f.Gateway != nil {
+		if r.PaymentGateway == nil || *r.PaymentGateway != *f.Gateway {
+			return false
+		}
 	}
 
 	// Filter by time range

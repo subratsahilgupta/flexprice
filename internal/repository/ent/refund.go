@@ -51,16 +51,22 @@ func (r *refundRepository) Create(ctx context.Context, ref *domainRefund.Refund)
 
 	created, err := client.Refund.Create().
 		SetID(ref.ID).
-		SetPaymentID(ref.PaymentID).
-		SetPaymentGateway(ref.PaymentGateway).
+		SetNillablePaymentID(ref.PaymentID).
+		SetInvoiceID(ref.InvoiceID).
+		SetNillableCreditNoteID(ref.CreditNoteID).
+		SetNillablePaymentGateway(ref.PaymentGateway).
 		SetNillableGatewayRefundID(ref.GatewayRefundID).
 		SetNillableGatewayTrackingID(ref.GatewayTrackingID).
 		SetAmount(ref.Amount).
 		SetCurrency(ref.Currency).
 		SetRefundStatus(string(ref.RefundStatus)).
 		SetRefundReason(string(ref.RefundReason)).
+		SetRefundDestination(string(ref.RefundDestination)).
+		SetNillableRefundDestinationID(ref.RefundDestinationID).
+		SetSettledAmount(ref.SettledAmount).
+		SetAttempt(ref.Attempt).
 		SetIdempotencyKey(ref.IdempotencyKey).
-		SetGatewayIdempotencyToken(ref.GatewayIdempotencyToken).
+		SetNillableGatewayIdempotencyToken(ref.GatewayIdempotencyToken).
 		SetNillableFailureReason(ref.FailureReason).
 		SetMetadata(ref.Metadata).
 		SetGatewayMetadata(ref.GatewayMetadata).

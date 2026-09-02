@@ -44,6 +44,19 @@ func (s RefundStatus) Validate() error {
 	return nil
 }
 
+// RefundDestination is where the refunded money goes.
+type RefundDestination string
+
+const (
+	RefundDestinationGateway   RefundDestination = "GATEWAY"
+	RefundDestinationWallet    RefundDestination = "WALLET"
+	RefundDestinationOutOfBand RefundDestination = "OUT_OF_BAND"
+)
+
+func (t RefundDestination) String() string {
+	return string(t)
+}
+
 // RefundReason is the reason a gateway refund was issued.
 type RefundReason string
 
