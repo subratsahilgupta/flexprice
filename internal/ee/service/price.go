@@ -12,7 +12,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
-	"github.com/flexprice/flexprice/internal/ee/service/customcurrency"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
@@ -169,12 +168,14 @@ func (s *priceService) preparePriceForCreation(ctx context.Context, req *dto.Cre
 		}
 	}
 
-	ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
-	currency, err := ccSvc.EnforceOrgCustomCurrency(ctx, p.Currency)
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+	ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, ctx, types.SettingKeyCustomCurrencyConfig)
 	if err != nil {
 		return nil, err
 	}
-	p.Currency = currency
+	if err := ccCfg.EnforceCurrency(p.Currency); err != nil {
+		return nil, err
+	}
 
 	return p, nil
 }

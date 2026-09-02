@@ -99,6 +99,7 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 		Currency:                   inv.Currency,
 		AmountDue:                  inv.AmountDue,
 		AmountPaid:                 inv.AmountPaid,
+		CustomCurrency:             inv.CustomCurrency,
 		Subtotal:                   inv.Subtotal,
 		Total:                      inv.Total,
 		TotalTax:                   inv.TotalTax,

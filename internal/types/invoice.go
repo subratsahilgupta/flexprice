@@ -559,12 +559,3 @@ func (f *InvoiceFilter) IsUnlimited() bool {
 	}
 	return f.QueryFilter.IsUnlimited()
 }
-
-// TargetCurrency is populated on an invoice only when its currency is the tenant's
-// custom currency — the fiat equivalent, computed alongside it. Nil for an invoice
-// already in plain fiat, since there is nothing to convert.
-type TargetCurrency struct {
-	FiatCurrencyCode   string          `json:"fiat_currency_code"`
-	FiatConversionRate decimal.Decimal `json:"fiat_conversion_rate" swaggertype:"string"`
-	FiatAmount         decimal.Decimal `json:"fiat_amount" swaggertype:"string"`
-}

@@ -14,9 +14,11 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
+	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/utils"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
@@ -2908,4 +2910,79 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityExistenceValidation() {
 		s.Require().NotNil(resp)
 		s.Len(resp.Items, 1)
 	})
+}
+
+// A tenant with custom currencies restricts prices to those currencies or its
+// default fiat currency.
+func (s *PriceServiceSuite) TestCreatePrice_CustomCurrencyEnforcement() {
+	settingsStore := testutil.NewInMemorySettingsStore()
+
+	cfg := types.CustomCurrencyConfig{
+		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
+			"mac": {
+				Name:                  "MoEngage AI Credits",
+				Symbol:                "MAC",
+				FiatConversionFactors: map[string]decimal.Decimal{"usd": decimal.NewFromFloat(0.1)},
+			},
+		},
+		DefaultFiatCurrency: "usd",
+	}
+	s.NoError(cfg.Validate())
+	value, err := utils.ToMap(cfg)
+	s.NoError(err)
+	s.NoError(settingsStore.Create(s.ctx, &settings.Setting{
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SETTING),
+		Key:           types.SettingKeyCustomCurrencyConfig,
+		Value:         value,
+		EnvironmentID: types.GetEnvironmentID(s.ctx),
+		BaseModel:     types.GetDefaultBaseModel(s.ctx),
+	}))
+
+	priceSvc := NewPriceService(ServiceParams{
+		PriceRepo:     s.priceRepo,
+		MeterRepo:     s.meterRepo,
+		PlanRepo:      s.planRepo,
+		AddonRepo:     s.addonRepo,
+		SubRepo:       testutil.NewInMemorySubscriptionStore(),
+		PriceUnitRepo: s.priceUnitRepo,
+		FeatureRepo:   s.featureRepo,
+		SettingsRepo:  settingsStore,
+		Logger:        s.logger,
+		DB:            testutil.NewMockPostgresClient(s.logger),
+	})
+
+	testPlan := &plan.Plan{ID: "plan-cc", Name: "Custom Currency Plan", BaseModel: types.GetDefaultBaseModel(s.ctx)}
+	s.NoError(s.planRepo.Create(s.ctx, testPlan))
+
+	tests := []struct {
+		name     string
+		currency string
+		wantErr  bool
+	}{
+		{name: "configured custom currency is allowed", currency: "mac"},
+		{name: "default fiat currency is allowed", currency: "usd"},
+		{name: "unconfigured currency is rejected", currency: "eur", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			amount := decimal.NewFromInt(100)
+			_, err := priceSvc.CreatePrice(s.ctx, dto.CreatePriceRequest{
+				Amount:             &amount,
+				Currency:           tt.currency,
+				EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+				EntityID:           testPlan.ID,
+				Type:               types.PRICE_TYPE_FIXED,
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+				InvoiceCadence:     types.InvoiceCadenceArrear,
+			})
+			if tt.wantErr {
+				s.Error(err)
+				return
+			}
+			s.NoError(err)
+		})
+	}
 }

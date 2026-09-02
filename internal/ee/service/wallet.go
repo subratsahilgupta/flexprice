@@ -12,7 +12,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
-	"github.com/flexprice/flexprice/internal/ee/service/customcurrency"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -210,12 +209,14 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	// Convert to domain wallet model
 	w := req.ToWallet(ctx)
 
-	ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
-	currency, err := ccSvc.EnforceOrgCustomCurrency(ctx, w.Currency)
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+	ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, ctx, types.SettingKeyCustomCurrencyConfig)
 	if err != nil {
 		return nil, err
 	}
-	w.Currency = currency
+	if err := ccCfg.EnforceCurrency(w.Currency); err != nil {
+		return nil, err
+	}
 
 	for _, existing := range existingWallets {
 		if existing.WalletStatus == types.WalletStatusActive && existing.Currency == w.Currency && existing.WalletType == w.WalletType {

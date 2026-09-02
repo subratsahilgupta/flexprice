@@ -143,7 +143,7 @@ func (Invoice) Fields() []ent.Field {
 			}).
 			Optional().
 			Default(decimal.Zero),
-		field.JSON("target_currency", &types.TargetCurrency{}).
+		field.JSON("custom_currency", &types.CustomCurrency{}).
 			SchemaType(map[string]string{
 				"postgres": "jsonb",
 			}).

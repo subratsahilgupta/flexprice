@@ -62,8 +62,8 @@ const (
 	FieldTotalDiscount = "total_discount"
 	// FieldTotal holds the string denoting the total field in the database.
 	FieldTotal = "total"
-	// FieldTargetCurrency holds the string denoting the target_currency field in the database.
-	FieldTargetCurrency = "target_currency"
+	// FieldCustomCurrency holds the string denoting the custom_currency field in the database.
+	FieldCustomCurrency = "custom_currency"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
 	// FieldDueDate holds the string denoting the due_date field in the database.
@@ -154,7 +154,7 @@ var Columns = []string{
 	FieldTotalTax,
 	FieldTotalDiscount,
 	FieldTotal,
-	FieldTargetCurrency,
+	FieldCustomCurrency,
 	FieldDescription,
 	FieldDueDate,
 	FieldPaidAt,

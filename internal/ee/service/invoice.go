@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -15,7 +16,6 @@ import (
 	domainPrice "github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
-	"github.com/flexprice/flexprice/internal/ee/service/customcurrency"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/integration/chargebee"
@@ -280,19 +280,17 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 		inv.BillingSequence = billingSeq
 		inv.InvoiceStatus = types.InvoiceStatusDraft
 
-		ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
-		currency, err := ccSvc.EnforceOrgCustomCurrency(txCtx, inv.Currency)
+		// Entities bill in the custom currency, invoices in fiat, so downstream
+		// payment flows are unchanged. The equivalent is filled in at finalization.
+		settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+		ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, txCtx, types.SettingKeyCustomCurrencyConfig)
 		if err != nil {
 			return err
 		}
-		inv.Currency = currency
-
-		fiatCurrency, err := ccSvc.ResolveFiatCurrency(txCtx, inv.Currency, req.TargetCurrency)
-		if err != nil {
-			return err
-		}
-		if fiatCurrency != "" {
-			inv.TargetCurrency = &types.TargetCurrency{FiatCurrencyCode: fiatCurrency}
+		code := strings.ToLower(req.Currency)
+		if _, ok := ccCfg.CustomCurrencies[code]; ok {
+			inv.Currency = ccCfg.DefaultFiatCurrency
+			inv.CustomCurrency = &types.CustomCurrency{CustomCurrencyCode: code}
 		}
 
 		// Validate invoice
@@ -1077,17 +1075,32 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		lockedInv.InvoiceStatus = types.InvoiceStatusFinalized
 		lockedInv.FinalizedAt = &now
 
-		// Freeze the fiat rate at finalization — immutable after this.
-		if lockedInv.TargetCurrency != nil {
-			ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
-			rate, err := ccSvc.FiatConversionRate(txCtx, lockedInv.Currency, lockedInv.TargetCurrency.FiatCurrencyCode)
+		// Amounts are computed in the custom currency, since prices and subscriptions
+		// are denominated in it. Convert the invoice totals to fiat here so payments
+		// and gateways see fiat, keeping the custom total on the object. The rate is
+		// frozen at the same time — later config edits must not restate a sealed
+		// invoice. Runs once: finalization only ever acts on a draft.
+		if lockedInv.CustomCurrency != nil {
+			settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+			ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, txCtx, types.SettingKeyCustomCurrencyConfig)
 			if err != nil {
 				return err
 			}
-			if rate != nil {
-				lockedInv.TargetCurrency.FiatConversionRate = *rate
-				amtInFiat := lockedInv.AmountDue.Mul(*rate)
-				lockedInv.TargetCurrency.FiatAmount = types.RoundToCurrencyPrecision(amtInFiat, lockedInv.TargetCurrency.FiatCurrencyCode)
+			code := lockedInv.CustomCurrency.CustomCurrencyCode
+			rate := ccCfg.CustomCurrencies[code].FiatConversionFactors[lockedInv.Currency]
+			if rate.IsPositive() {
+				cc := lockedInv.CustomCurrency
+				fiat := lockedInv.Currency
+				cc.CustomConversionRate = rate
+				cc.CustomCurrencyAmount = lockedInv.AmountDue
+
+				lockedInv.Subtotal = cc.ToFiat(lockedInv.Subtotal, fiat)
+				lockedInv.TotalDiscount = cc.ToFiat(lockedInv.TotalDiscount, fiat)
+				lockedInv.TotalTax = cc.ToFiat(lockedInv.TotalTax, fiat)
+				lockedInv.Total = cc.ToFiat(lockedInv.Total, fiat)
+				lockedInv.AmountDue = cc.ToFiat(lockedInv.AmountDue, fiat)
+				lockedInv.AmountPaid = cc.ToFiat(lockedInv.AmountPaid, fiat)
+				lockedInv.AmountRemaining = cc.ToFiat(lockedInv.AmountRemaining, fiat)
 			}
 		}
 
@@ -3278,15 +3291,6 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 		return err
 	}
 
-	// Reuse the frozen rate — never re-fetched here.
-	if inv.TargetCurrency != nil {
-		amtInFiat := inv.AmountDue.Mul(inv.TargetCurrency.FiatConversionRate)
-		inv.TargetCurrency.FiatAmount = types.RoundToCurrencyPrecision(amtInFiat, inv.TargetCurrency.FiatCurrencyCode)
-		if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -3565,23 +3569,6 @@ func (s *invoiceService) RecalculateInvoiceV2(ctx context.Context, id string, fi
 			return err
 		}
 
-		// Draft: nothing frozen yet, uses the live current factor.
-		if inv.TargetCurrency != nil {
-			ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
-			rate, err := ccSvc.FiatConversionRate(txCtx, inv.Currency, inv.TargetCurrency.FiatCurrencyCode)
-			if err != nil {
-				return err
-			}
-			if rate != nil {
-				inv.TargetCurrency.FiatConversionRate = *rate
-				amtInFiat := inv.AmountDue.Mul(*rate)
-				inv.TargetCurrency.FiatAmount = types.RoundToCurrencyPrecision(amtInFiat, inv.TargetCurrency.FiatCurrencyCode)
-				if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
-					return err
-				}
-			}
-		}
-
 		s.Logger.Info(ctx, "successfully recalculated invoice with fresh calculation",
 			"invoice_id", inv.ID,
 			"subscription_id", *inv.SubscriptionID,
@@ -3706,15 +3693,6 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string) (*dt
 		return nil, ierr.NewError("recalculation produced no invoice").
 			WithHint("recalculation resulted in zero subtotal for this period").
 			Mark(ierr.ErrValidation)
-	}
-
-	// Carry over the fiat currency the voided invoice was billed in — not its rate
-	// or amount, which the new invoice computes fresh at its own finalization.
-	if inv.TargetCurrency != nil && newInv.TargetCurrency == nil {
-		newInv.TargetCurrency = &types.TargetCurrency{FiatCurrencyCode: inv.TargetCurrency.FiatCurrencyCode}
-		if err := s.InvoiceRepo.Update(ctx, &newInv.Invoice); err != nil {
-			return nil, err
-		}
 	}
 
 	// Link the original voided invoice to the new replacement invoice.

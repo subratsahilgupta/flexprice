@@ -14,10 +14,12 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/utils"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -2270,4 +2272,138 @@ func createLineItem(id string, amount decimal.Decimal) *invoice.InvoiceLineItem 
 		PrepaidCreditsApplied: decimal.Zero,
 		LineItemDiscount:      decimal.Zero,
 	}
+}
+
+// seedCustomCurrencyConfig configures "mac" at 1 mac = 0.10 usd with usd as the
+// tenant's default fiat currency.
+func (s *InvoiceServiceSuite) seedCustomCurrencyConfig() {
+	cfg := types.CustomCurrencyConfig{
+		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
+			"mac": {
+				Name:                  "MoEngage AI Credits",
+				Symbol:                "MAC",
+				FiatConversionFactors: map[string]decimal.Decimal{"usd": decimal.NewFromFloat(0.1)},
+			},
+		},
+		DefaultFiatCurrency: "usd",
+	}
+	s.NoError(cfg.Validate())
+	value, err := utils.ToMap(cfg)
+	s.NoError(err)
+	s.NoError(s.GetStores().SettingsRepo.Create(s.GetContext(), &settings.Setting{
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SETTING),
+		Key:           types.SettingKeyCustomCurrencyConfig,
+		Value:         value,
+		EnvironmentID: types.GetEnvironmentID(s.GetContext()),
+		BaseModel:     types.GetDefaultBaseModel(s.GetContext()),
+	}))
+}
+
+// An invoice requested in a custom currency is denominated in the tenant's fiat
+// currency, carrying the custom currency alongside it.
+func (s *InvoiceServiceSuite) TestCreateDraftInvoice_CustomCurrencyBillsInFiat() {
+	s.seedCustomCurrencyConfig()
+
+	resp, err := s.service.CreateEmptyDraftInvoice(s.GetContext(), dto.CreateDraftInvoiceRequest{
+		CustomerID:  s.testData.customer.ID,
+		InvoiceType: types.InvoiceTypeOneOff,
+		Currency:    "mac",
+	})
+	s.NoError(err)
+	s.Equal("usd", resp.Currency, "invoice must be denominated in the tenant's fiat currency")
+	s.Require().NotNil(resp.CustomCurrency)
+	s.Equal("mac", resp.CustomCurrency.CustomCurrencyCode)
+	s.True(resp.CustomCurrency.CustomConversionRate.IsZero(), "rate is only frozen at finalization")
+}
+
+// A plain fiat invoice is untouched — no custom currency object.
+func (s *InvoiceServiceSuite) TestCreateDraftInvoice_FiatCurrencyUnchanged() {
+	s.seedCustomCurrencyConfig()
+
+	resp, err := s.service.CreateEmptyDraftInvoice(s.GetContext(), dto.CreateDraftInvoiceRequest{
+		CustomerID:  s.testData.customer.ID,
+		InvoiceType: types.InvoiceTypeOneOff,
+		Currency:    "usd",
+	})
+	s.NoError(err)
+	s.Equal("usd", resp.Currency)
+	s.Nil(resp.CustomCurrency)
+}
+
+// A tenant with no custom currency configured is entirely unaffected.
+func (s *InvoiceServiceSuite) TestCreateDraftInvoice_UnconfiguredTenantUnaffected() {
+	resp, err := s.service.CreateEmptyDraftInvoice(s.GetContext(), dto.CreateDraftInvoiceRequest{
+		CustomerID:  s.testData.customer.ID,
+		InvoiceType: types.InvoiceTypeOneOff,
+		Currency:    "usd",
+	})
+	s.NoError(err)
+	s.Equal("usd", resp.Currency)
+	s.Nil(resp.CustomCurrency)
+}
+
+// Finalization freezes the rate and back-computes the custom amount from amount_due.
+func (s *InvoiceServiceSuite) TestFinalizeInvoice_FreezesCustomCurrencyRateAndAmount() {
+	s.seedCustomCurrencyConfig()
+
+	draft := &invoice.Invoice{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+		CustomerID:      s.testData.customer.ID,
+		InvoiceType:     types.InvoiceTypeOneOff,
+		InvoiceStatus:   types.InvoiceStatusDraft,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromFloat(15),
+		AmountPaid:      decimal.Zero,
+		AmountRemaining: decimal.NewFromFloat(15),
+		Subtotal:        decimal.NewFromFloat(15),
+		Total:           decimal.NewFromFloat(15),
+		CustomCurrency:  &types.CustomCurrency{CustomCurrencyCode: "mac"},
+		BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.invoiceRepo.Create(s.GetContext(), draft))
+
+	s.NoError(s.service.FinalizeInvoice(s.GetContext(), draft.ID))
+
+	inv, err := s.invoiceRepo.Get(s.GetContext(), draft.ID)
+	s.NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, inv.InvoiceStatus)
+	s.Equal("usd", inv.Currency, "finalization must not move the invoice off fiat")
+	s.Require().NotNil(inv.CustomCurrency)
+	s.True(inv.CustomCurrency.CustomConversionRate.Equal(decimal.NewFromFloat(0.1)),
+		"rate stored verbatim from config, got %s", inv.CustomCurrency.CustomConversionRate)
+
+	// The 15 computed pre-finalization is a MAC amount, preserved as-is on the object.
+	s.True(inv.CustomCurrency.CustomCurrencyAmount.Equal(decimal.NewFromInt(15)),
+		"expected 15 mac, got %s", inv.CustomCurrency.CustomCurrencyAmount)
+
+	// fiat = custom * rate, so 15 mac * 0.1 = 1.50 usd across every total.
+	s.True(inv.AmountDue.Equal(decimal.NewFromFloat(1.5)), "amount_due, got %s", inv.AmountDue)
+	s.True(inv.Total.Equal(decimal.NewFromFloat(1.5)), "total, got %s", inv.Total)
+	s.True(inv.Subtotal.Equal(decimal.NewFromFloat(1.5)), "subtotal, got %s", inv.Subtotal)
+	s.True(inv.AmountRemaining.Equal(decimal.NewFromFloat(1.5)), "amount_remaining, got %s", inv.AmountRemaining)
+}
+
+// An invoice with no custom currency finalizes without gaining one.
+func (s *InvoiceServiceSuite) TestFinalizeInvoice_NoCustomCurrencyStaysNil() {
+	s.seedCustomCurrencyConfig()
+
+	draft := &invoice.Invoice{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+		CustomerID:      s.testData.customer.ID,
+		InvoiceType:     types.InvoiceTypeOneOff,
+		InvoiceStatus:   types.InvoiceStatusDraft,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromFloat(15),
+		AmountRemaining: decimal.NewFromFloat(15),
+		BaseModel:       types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.invoiceRepo.Create(s.GetContext(), draft))
+
+	s.NoError(s.service.FinalizeInvoice(s.GetContext(), draft.ID))
+
+	inv, err := s.invoiceRepo.Get(s.GetContext(), draft.ID)
+	s.NoError(err)
+	s.Nil(inv.CustomCurrency)
 }

@@ -32826,7 +32826,7 @@ type InvoiceMutation struct {
 	total_tax                     *decimal.Decimal
 	total_discount                *decimal.Decimal
 	total                         *decimal.Decimal
-	target_currency               **types.TargetCurrency
+	custom_currency               **types.CustomCurrency
 	description                   *string
 	due_date                      *time.Time
 	paid_at                       *time.Time
@@ -33937,53 +33937,53 @@ func (m *InvoiceMutation) ResetTotal() {
 	delete(m.clearedFields, invoice.FieldTotal)
 }
 
-// SetTargetCurrency sets the "target_currency" field.
-func (m *InvoiceMutation) SetTargetCurrency(tc *types.TargetCurrency) {
-	m.target_currency = &tc
+// SetCustomCurrency sets the "custom_currency" field.
+func (m *InvoiceMutation) SetCustomCurrency(tc *types.CustomCurrency) {
+	m.custom_currency = &tc
 }
 
-// TargetCurrency returns the value of the "target_currency" field in the mutation.
-func (m *InvoiceMutation) TargetCurrency() (r *types.TargetCurrency, exists bool) {
-	v := m.target_currency
+// CustomCurrency returns the value of the "custom_currency" field in the mutation.
+func (m *InvoiceMutation) CustomCurrency() (r *types.CustomCurrency, exists bool) {
+	v := m.custom_currency
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldTargetCurrency returns the old "target_currency" field's value of the Invoice entity.
+// OldCustomCurrency returns the old "custom_currency" field's value of the Invoice entity.
 // If the Invoice object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *InvoiceMutation) OldTargetCurrency(ctx context.Context) (v *types.TargetCurrency, err error) {
+func (m *InvoiceMutation) OldCustomCurrency(ctx context.Context) (v *types.CustomCurrency, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldTargetCurrency is only allowed on UpdateOne operations")
+		return v, errors.New("OldCustomCurrency is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldTargetCurrency requires an ID field in the mutation")
+		return v, errors.New("OldCustomCurrency requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldTargetCurrency: %w", err)
+		return v, fmt.Errorf("querying old value for OldCustomCurrency: %w", err)
 	}
-	return oldValue.TargetCurrency, nil
+	return oldValue.CustomCurrency, nil
 }
 
-// ClearTargetCurrency clears the value of the "target_currency" field.
-func (m *InvoiceMutation) ClearTargetCurrency() {
-	m.target_currency = nil
-	m.clearedFields[invoice.FieldTargetCurrency] = struct{}{}
+// ClearCustomCurrency clears the value of the "custom_currency" field.
+func (m *InvoiceMutation) ClearCustomCurrency() {
+	m.custom_currency = nil
+	m.clearedFields[invoice.FieldCustomCurrency] = struct{}{}
 }
 
-// TargetCurrencyCleared returns if the "target_currency" field was cleared in this mutation.
-func (m *InvoiceMutation) TargetCurrencyCleared() bool {
-	_, ok := m.clearedFields[invoice.FieldTargetCurrency]
+// CustomCurrencyCleared returns if the "custom_currency" field was cleared in this mutation.
+func (m *InvoiceMutation) CustomCurrencyCleared() bool {
+	_, ok := m.clearedFields[invoice.FieldCustomCurrency]
 	return ok
 }
 
-// ResetTargetCurrency resets all changes to the "target_currency" field.
-func (m *InvoiceMutation) ResetTargetCurrency() {
-	m.target_currency = nil
-	delete(m.clearedFields, invoice.FieldTargetCurrency)
+// ResetCustomCurrency resets all changes to the "custom_currency" field.
+func (m *InvoiceMutation) ResetCustomCurrency() {
+	m.custom_currency = nil
+	delete(m.clearedFields, invoice.FieldCustomCurrency)
 }
 
 // SetDescription sets the "description" field.
@@ -35242,8 +35242,8 @@ func (m *InvoiceMutation) Fields() []string {
 	if m.total != nil {
 		fields = append(fields, invoice.FieldTotal)
 	}
-	if m.target_currency != nil {
-		fields = append(fields, invoice.FieldTargetCurrency)
+	if m.custom_currency != nil {
+		fields = append(fields, invoice.FieldCustomCurrency)
 	}
 	if m.description != nil {
 		fields = append(fields, invoice.FieldDescription)
@@ -35362,8 +35362,8 @@ func (m *InvoiceMutation) Field(name string) (ent.Value, bool) {
 		return m.TotalDiscount()
 	case invoice.FieldTotal:
 		return m.Total()
-	case invoice.FieldTargetCurrency:
-		return m.TargetCurrency()
+	case invoice.FieldCustomCurrency:
+		return m.CustomCurrency()
 	case invoice.FieldDescription:
 		return m.Description()
 	case invoice.FieldDueDate:
@@ -35461,8 +35461,8 @@ func (m *InvoiceMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldTotalDiscount(ctx)
 	case invoice.FieldTotal:
 		return m.OldTotal(ctx)
-	case invoice.FieldTargetCurrency:
-		return m.OldTargetCurrency(ctx)
+	case invoice.FieldCustomCurrency:
+		return m.OldCustomCurrency(ctx)
 	case invoice.FieldDescription:
 		return m.OldDescription(ctx)
 	case invoice.FieldDueDate:
@@ -35675,12 +35675,12 @@ func (m *InvoiceMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTotal(v)
 		return nil
-	case invoice.FieldTargetCurrency:
-		v, ok := value.(*types.TargetCurrency)
+	case invoice.FieldCustomCurrency:
+		v, ok := value.(*types.CustomCurrency)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetTargetCurrency(v)
+		m.SetCustomCurrency(v)
 		return nil
 	case invoice.FieldDescription:
 		v, ok := value.(string)
@@ -35919,8 +35919,8 @@ func (m *InvoiceMutation) ClearedFields() []string {
 	if m.FieldCleared(invoice.FieldTotal) {
 		fields = append(fields, invoice.FieldTotal)
 	}
-	if m.FieldCleared(invoice.FieldTargetCurrency) {
-		fields = append(fields, invoice.FieldTargetCurrency)
+	if m.FieldCleared(invoice.FieldCustomCurrency) {
+		fields = append(fields, invoice.FieldCustomCurrency)
 	}
 	if m.FieldCleared(invoice.FieldDescription) {
 		fields = append(fields, invoice.FieldDescription)
@@ -36026,8 +36026,8 @@ func (m *InvoiceMutation) ClearField(name string) error {
 	case invoice.FieldTotal:
 		m.ClearTotal()
 		return nil
-	case invoice.FieldTargetCurrency:
-		m.ClearTargetCurrency()
+	case invoice.FieldCustomCurrency:
+		m.ClearCustomCurrency()
 		return nil
 	case invoice.FieldDescription:
 		m.ClearDescription()
@@ -36163,8 +36163,8 @@ func (m *InvoiceMutation) ResetField(name string) error {
 	case invoice.FieldTotal:
 		m.ResetTotal()
 		return nil
-	case invoice.FieldTargetCurrency:
-		m.ResetTargetCurrency()
+	case invoice.FieldCustomCurrency:
+		m.ResetCustomCurrency()
 		return nil
 	case invoice.FieldDescription:
 		m.ResetDescription()

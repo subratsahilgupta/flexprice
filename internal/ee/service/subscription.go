@@ -14,7 +14,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	domainMeter "github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
-	"github.com/flexprice/flexprice/internal/ee/service/customcurrency"
 	"github.com/flexprice/flexprice/internal/interfaces"
 
 	"github.com/flexprice/flexprice/internal/domain/price"
@@ -121,12 +120,14 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 			Mark(ierr.ErrValidation)
 	}
 	sub := req.ToSubscription(ctx)
-	ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
-	currency, err := ccSvc.EnforceOrgCustomCurrency(ctx, sub.Currency)
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+	ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, ctx, types.SettingKeyCustomCurrencyConfig)
 	if err != nil {
 		return nil, err
 	}
-	sub.Currency = currency
+	if err := ccCfg.EnforceCurrency(sub.Currency); err != nil {
+		return nil, err
+	}
 	// Always inherit timezone from the customer record.
 	// The timezone field in the API request is intentionally ignored.
 	sub.Timezone = customer.Timezone
