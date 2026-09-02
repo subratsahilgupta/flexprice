@@ -1512,6 +1512,30 @@ func (f *Factory) GetPaymentMethodProvider(ctx context.Context, gateway types.Pa
 	}
 }
 
+// GetRefundProvider returns ErrNotImplemented for gateways without a v1 refund
+// adapter — Moyasar's API refunds only in full, so it cannot back this ledger.
+func (f *Factory) GetRefundProvider(ctx context.Context, gateway types.PaymentGatewayType) (interfaces.RefundProvider, error) {
+	switch gateway {
+	case types.PaymentGatewayTypeRazorpay:
+		i, err := f.GetRazorpayIntegration(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &razorpay.RefundAdapter{Client: i.Client, Logger: f.logger}, nil
+	case types.PaymentGatewayTypeChargebee:
+		i, err := f.GetChargebeeIntegration(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &chargebee.RefundAdapter{Client: i.Client, Logger: f.logger}, nil
+	default:
+		return nil, ierr.NewError("gateway refunds are not supported for this provider").
+			WithHintf("%s cannot issue gateway refunds", gateway).
+			WithReportableDetails(map[string]interface{}{"gateway": gateway}).
+			Mark(ierr.ErrNotImplemented)
+	}
+}
+
 // GetCheckoutProvider returns the CheckoutProvider adapter for the given payment provider.
 // Returns ErrValidation for providers that do not support hosted checkout.
 func (f *Factory) GetCheckoutProvider(ctx context.Context, provider types.CheckoutPaymentProvider, customerSvc interfaces.CustomerService, invoiceSvc interfaces.InvoiceService) (interfaces.CheckoutProvider, error) {

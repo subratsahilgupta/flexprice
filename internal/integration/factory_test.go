@@ -652,3 +652,32 @@ func TestFactory_GetStorageProvider_RepositoryFailure_PreservesOriginalErrorKind
 	require.False(t, ierr.IsNotFound(err), "database failure was incorrectly reclassified as NotFound: %v", err)
 	require.ErrorIs(t, err, dbErr)
 }
+
+func TestFactory_GetRefundProvider(t *testing.T) {
+	ctx := buildFactoryTestContext()
+	factory, _ := buildStorageTestFactory(testutil.NewInMemoryConnectionStore())
+
+	supported := []types.PaymentGatewayType{
+		types.PaymentGatewayTypeRazorpay,
+		types.PaymentGatewayTypeChargebee,
+	}
+	for _, gateway := range supported {
+		provider, err := factory.GetRefundProvider(ctx, gateway)
+		require.NoError(t, err, "gateway %s", gateway)
+		require.NotNil(t, provider, "gateway %s", gateway)
+	}
+
+	// Moyasar refunds only in full, so it has no v1 adapter.
+	unsupported := []types.PaymentGatewayType{
+		types.PaymentGatewayTypeMoyasar,
+		types.PaymentGatewayTypeStripe,
+		types.PaymentGatewayTypeNomod,
+		types.PaymentGatewayTypePaddle,
+		types.PaymentGatewayTypeWhop,
+	}
+	for _, gateway := range unsupported {
+		_, err := factory.GetRefundProvider(ctx, gateway)
+		require.Error(t, err, "gateway %s", gateway)
+		require.True(t, ierr.IsNotImplemented(err), "gateway %s: want ErrNotImplemented, got %v", gateway, err)
+	}
+}

@@ -27,13 +27,11 @@ type Repository interface {
 	// GetByIdempotencyKey looks up a refund by (tenant_id, environment_id, idempotency_key).
 	GetByIdempotencyKey(ctx context.Context, key string) (*Refund, error)
 
-	// GetByGatewayRefundID resolves the row a provider webhook refers to.
 	GetByGatewayRefundID(ctx context.Context, gateway, gatewayRefundID string) (*Refund, error)
 
 	ListByInvoice(ctx context.Context, invoiceID string) ([]*Refund, error)
 
-	// SumSettledByPaymentIDs and SumSettledByInvoiceIDs each issue one grouped
-	// query. Ids with no settled refunds are absent from the returned map.
+	// Ids with no settled refunds are absent from the returned map.
 	SumSettledByPaymentIDs(ctx context.Context, paymentIDs []string) (map[string]decimal.Decimal, error)
 	SumSettledByInvoiceIDs(ctx context.Context, invoiceIDs []string) (map[string]decimal.Decimal, error)
 }

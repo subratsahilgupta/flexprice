@@ -192,7 +192,6 @@ func (m *InMemoryRefundStore) Count(ctx context.Context, filter *types.RefundFil
 	return m.InMemoryStore.Count(ctx, filter, refundFilterFn)
 }
 
-// CreateBulk stores multiple refunds
 func (m *InMemoryRefundStore) CreateBulk(ctx context.Context, refunds []*refund.Refund) error {
 	for _, r := range refunds {
 		if err := m.Create(ctx, r); err != nil {
@@ -202,12 +201,11 @@ func (m *InMemoryRefundStore) CreateBulk(ctx context.Context, refunds []*refund.
 	return nil
 }
 
-// GetForUpdate retrieves a refund by ID; the in-memory store takes no locks
+// The in-memory store takes no locks.
 func (m *InMemoryRefundStore) GetForUpdate(ctx context.Context, id string) (*refund.Refund, error) {
 	return m.Get(ctx, id)
 }
 
-// GetByGatewayRefundID retrieves a refund by gateway and gateway refund ID
 func (m *InMemoryRefundStore) GetByGatewayRefundID(ctx context.Context, gateway, gatewayRefundID string) (*refund.Refund, error) {
 	refunds, err := m.List(ctx, &types.RefundFilter{
 		QueryFilter: types.NewNoLimitQueryFilter(),
@@ -230,7 +228,6 @@ func (m *InMemoryRefundStore) GetByGatewayRefundID(ctx context.Context, gateway,
 		Mark(ierr.ErrNotFound)
 }
 
-// ListByInvoice returns all published refunds for an invoice
 func (m *InMemoryRefundStore) ListByInvoice(ctx context.Context, invoiceID string) ([]*refund.Refund, error) {
 	return m.List(ctx, &types.RefundFilter{
 		QueryFilter: types.NewNoLimitQueryFilter(),
@@ -238,7 +235,6 @@ func (m *InMemoryRefundStore) ListByInvoice(ctx context.Context, invoiceID strin
 	})
 }
 
-// SumSettledByPaymentIDs sums settled amounts grouped by payment ID
 func (m *InMemoryRefundStore) SumSettledByPaymentIDs(ctx context.Context, paymentIDs []string) (map[string]decimal.Decimal, error) {
 	return m.sumSettled(ctx, paymentIDs, func(r *refund.Refund) string {
 		if r.PaymentID == nil {
@@ -248,7 +244,6 @@ func (m *InMemoryRefundStore) SumSettledByPaymentIDs(ctx context.Context, paymen
 	})
 }
 
-// SumSettledByInvoiceIDs sums settled amounts grouped by invoice ID
 func (m *InMemoryRefundStore) SumSettledByInvoiceIDs(ctx context.Context, invoiceIDs []string) (map[string]decimal.Decimal, error) {
 	return m.sumSettled(ctx, invoiceIDs, func(r *refund.Refund) string {
 		return r.InvoiceID

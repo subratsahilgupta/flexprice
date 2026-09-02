@@ -405,7 +405,6 @@ func (r *refundRepository) CreateBulk(ctx context.Context, refunds []*domainRefu
 	return nil
 }
 
-// GetForUpdate retrieves a refund with a row-level lock (SELECT FOR UPDATE).
 // Must be called within a transaction so the lock is held until commit/rollback.
 func (r *refundRepository) GetForUpdate(ctx context.Context, id string) (*domainRefund.Refund, error) {
 	span := StartRepositorySpan(ctx, "refund", "get_for_update", map[string]interface{}{
@@ -423,7 +422,7 @@ func (r *refundRepository) GetForUpdate(ctx context.Context, id string) (*domain
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).WithHint("Failed to lock refund").Mark(ierr.ErrDatabase)
 	}
-	// Rows must be drained and closed before reusing the connection for the load below.
+	// Must be drained and closed before reusing the connection for the load below.
 	hasRow := rows.Next()
 	rowErr := rows.Err()
 	rows.Close()
