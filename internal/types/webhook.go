@@ -146,6 +146,13 @@ const (
 	WebhookEventPaymentPending WebhookEventName = "payment.pending"
 )
 
+// refund event names
+const (
+	WebhookEventRefundCreated   WebhookEventName = "refund.created"
+	WebhookEventRefundSucceeded WebhookEventName = "refund.succeeded"
+	WebhookEventRefundFailed    WebhookEventName = "refund.failed"
+)
+
 // customer event names
 const (
 	WebhookEventCustomerCreated WebhookEventName = "customer.created"

@@ -271,13 +271,15 @@ func (s *invoiceService) executeLineItemModification(ctx context.Context, invoic
 		resp, err = s.AddBulkLineItem(ctx, invoiceID, dto.AddBulkLineItemRequest{
 			Items: params.Items,
 		})
+	case dto.InvoiceModifyLineItemActionUpdate:
+		resp, err = s.UpdateLineItem(ctx, invoiceID, params.LineItemID, *params.Update)
 	case dto.InvoiceModifyLineItemActionRemove:
 		resp, err = s.RemoveBulkLineItem(ctx, invoiceID, dto.RemoveBulkLineItemRequest{
 			LineItemIDs: params.LineItemIDs,
 		})
 	default:
 		return nil, ierr.NewError("unknown line item action: " + string(params.Action)).
-			WithHint("valid values: add, remove").
+			WithHint("valid values: add, update, remove").
 			Mark(ierr.ErrValidation)
 	}
 	if err != nil {

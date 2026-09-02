@@ -1720,38 +1720,42 @@ func init() {
 	refundDescEnvironmentID := refundMixinFields1[0].Descriptor()
 	// refund.DefaultEnvironmentID holds the default value on creation for the environment_id field.
 	refund.DefaultEnvironmentID = refundDescEnvironmentID.Default.(string)
-	// refundDescPaymentID is the schema descriptor for payment_id field.
-	refundDescPaymentID := refundFields[1].Descriptor()
-	// refund.PaymentIDValidator is a validator for the "payment_id" field. It is called by the builders before save.
-	refund.PaymentIDValidator = refundDescPaymentID.Validators[0].(func(string) error)
-	// refundDescPaymentGateway is the schema descriptor for payment_gateway field.
-	refundDescPaymentGateway := refundFields[2].Descriptor()
-	// refund.PaymentGatewayValidator is a validator for the "payment_gateway" field. It is called by the builders before save.
-	refund.PaymentGatewayValidator = refundDescPaymentGateway.Validators[0].(func(string) error)
+	// refundDescInvoiceID is the schema descriptor for invoice_id field.
+	refundDescInvoiceID := refundFields[2].Descriptor()
+	// refund.InvoiceIDValidator is a validator for the "invoice_id" field. It is called by the builders before save.
+	refund.InvoiceIDValidator = refundDescInvoiceID.Validators[0].(func(string) error)
 	// refundDescAmount is the schema descriptor for amount field.
-	refundDescAmount := refundFields[5].Descriptor()
+	refundDescAmount := refundFields[7].Descriptor()
 	// refund.DefaultAmount holds the default value on creation for the amount field.
 	refund.DefaultAmount = refundDescAmount.Default.(decimal.Decimal)
+	// refundDescSettledAmount is the schema descriptor for settled_amount field.
+	refundDescSettledAmount := refundFields[8].Descriptor()
+	// refund.DefaultSettledAmount holds the default value on creation for the settled_amount field.
+	refund.DefaultSettledAmount = refundDescSettledAmount.Default.(decimal.Decimal)
 	// refundDescCurrency is the schema descriptor for currency field.
-	refundDescCurrency := refundFields[6].Descriptor()
+	refundDescCurrency := refundFields[9].Descriptor()
 	// refund.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	refund.CurrencyValidator = refundDescCurrency.Validators[0].(func(string) error)
 	// refundDescRefundStatus is the schema descriptor for refund_status field.
-	refundDescRefundStatus := refundFields[7].Descriptor()
+	refundDescRefundStatus := refundFields[10].Descriptor()
 	// refund.RefundStatusValidator is a validator for the "refund_status" field. It is called by the builders before save.
 	refund.RefundStatusValidator = refundDescRefundStatus.Validators[0].(func(string) error)
 	// refundDescRefundReason is the schema descriptor for refund_reason field.
-	refundDescRefundReason := refundFields[8].Descriptor()
+	refundDescRefundReason := refundFields[11].Descriptor()
 	// refund.RefundReasonValidator is a validator for the "refund_reason" field. It is called by the builders before save.
 	refund.RefundReasonValidator = refundDescRefundReason.Validators[0].(func(string) error)
+	// refundDescRefundDestination is the schema descriptor for refund_destination field.
+	refundDescRefundDestination := refundFields[12].Descriptor()
+	// refund.DefaultRefundDestination holds the default value on creation for the refund_destination field.
+	refund.DefaultRefundDestination = refundDescRefundDestination.Default.(string)
+	// refundDescAttempt is the schema descriptor for attempt field.
+	refundDescAttempt := refundFields[14].Descriptor()
+	// refund.DefaultAttempt holds the default value on creation for the attempt field.
+	refund.DefaultAttempt = refundDescAttempt.Default.(int)
 	// refundDescIdempotencyKey is the schema descriptor for idempotency_key field.
-	refundDescIdempotencyKey := refundFields[9].Descriptor()
+	refundDescIdempotencyKey := refundFields[15].Descriptor()
 	// refund.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
 	refund.IdempotencyKeyValidator = refundDescIdempotencyKey.Validators[0].(func(string) error)
-	// refundDescGatewayIdempotencyToken is the schema descriptor for gateway_idempotency_token field.
-	refundDescGatewayIdempotencyToken := refundFields[10].Descriptor()
-	// refund.GatewayIdempotencyTokenValidator is a validator for the "gateway_idempotency_token" field. It is called by the builders before save.
-	refund.GatewayIdempotencyTokenValidator = refundDescGatewayIdempotencyToken.Validators[0].(func(string) error)
 	scheduledtaskMixin := schema.ScheduledTask{}.Mixin()
 	scheduledtaskMixinFields0 := scheduledtaskMixin[0].Fields()
 	_ = scheduledtaskMixinFields0

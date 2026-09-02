@@ -51,7 +51,12 @@ type ChargebeeTransaction struct {
 
 // ChargebeeInvoice represents an invoice in the webhook content
 type ChargebeeInvoice struct {
-	ID             string                     `json:"id"`
+	ID string `json:"id"`
+	// PONumber carries the Flexprice payment id for invoices created by a hosted
+	// checkout page. That page's invoice is created by Chargebee, so this is the
+	// only link back to a Flexprice entity. Empty on invoices we mirrored ourselves,
+	// which are resolved through the entity mapping instead.
+	PONumber       string                     `json:"po_number,omitempty"`
 	CustomerID     string                     `json:"customer_id"`
 	SubscriptionID string                     `json:"subscription_id,omitempty"`
 	CurrencyCode   string                     `json:"currency_code"`
@@ -120,6 +125,8 @@ const (
 	EventPaymentFailed    ChargebeeEventType = "payment_failed"
 	EventInvoiceGenerated ChargebeeEventType = "invoice_generated"
 	EventInvoiceUpdated   ChargebeeEventType = "invoice_updated"
+	EventPaymentRefunded  ChargebeeEventType = "payment_refunded"
+	EventRefundInitiated  ChargebeeEventType = "refund_initiated"
 )
 
 // timestampToTime converts a Unix timestamp (int64) to time.Time

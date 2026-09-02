@@ -26,7 +26,6 @@ import (
 	"github.com/flexprice/flexprice/internal/pyroscope"
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/repository"
-	s3 "github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/svix"
 	"github.com/flexprice/flexprice/internal/temporal"
@@ -95,9 +94,6 @@ func main() {
 
 			// RBAC
 			rbac.NewRBACService,
-
-			// storage
-			s3.NewService,
 
 			// Monitoring
 			tracing.NewService,
@@ -268,6 +264,7 @@ func main() {
 			service.NewCostsheetService,
 			service.NewRevenueAnalyticsService,
 			service.NewCreditNoteService,
+			service.NewRefundService,
 			service.NewConnectionService,
 			service.NewMarketplaceService,
 			service.NewUsageRecordService,
@@ -353,6 +350,7 @@ func provideHandlers(
 	costsheetService service.CostsheetService,
 	revenueAnalyticsService service.RevenueAnalyticsService,
 	creditNoteService service.CreditNoteService,
+	refundService service.RefundService,
 	connectionService service.ConnectionService,
 	marketplaceService service.MarketplaceService,
 	usageRecordService service.UsageRecordService,
@@ -400,6 +398,7 @@ func provideHandlers(
 		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
 		SubscriptionChange:       v1.NewSubscriptionChangeHandler(subscriptionChangeService, logger),
 		SubscriptionModification: v1.NewSubscriptionModificationHandler(subscriptionModificationService, logger),
+		InvoiceModification:      v1.NewInvoiceModificationHandler(invoiceService, logger),
 		SubscriptionSchedule:     v1.NewSubscriptionScheduleHandler(subscriptionScheduleService),
 		Wallet:                   v1.NewWalletHandler(walletService, logger),
 		Tenant:                   v1.NewTenantHandler(tenantService, logger),
@@ -416,12 +415,13 @@ func provideHandlers(
 		Costsheet:                v1.NewCostsheetHandler(costsheetService, logger),
 		RevenueAnalytics:         v1.NewRevenueAnalyticsHandler(revenueAnalyticsService, costsheetUsageTrackingService, cfg, logger),
 		CreditNote:               v1.NewCreditNoteHandler(creditNoteService, logger),
+		Refund:                   v1.NewRefundHandler(refundService, logger),
 		Connection:               v1.NewConnectionHandler(connectionService, logger),
 		Marketplace:              v1.NewMarketplaceHandler(marketplaceService, logger),
 		UsageRecord:              v1.NewUsageRecordHandler(usageRecordService, logger),
 		Integration:              v1.NewIntegrationHandler(integrationSyncService, entityIntegrationMappingService, connectionService, logger),
 		Paddle:                   v1.NewPaddleHandler(integrationFactory, logger),
-		Webhook:                  v1.NewWebhookHandler(cfg, svixClient, logger, integrationFactory, customerService, paymentService, invoiceService, planService, subscriptionService, entityIntegrationMappingService, checkoutSessionService, db, webhookService),
+		Webhook:                  v1.NewWebhookHandler(cfg, svixClient, logger, integrationFactory, customerService, paymentService, invoiceService, planService, subscriptionService, entityIntegrationMappingService, checkoutSessionService, refundService, db, webhookService),
 		Coupon:                   v1.NewCouponHandler(couponService, couponAssociationService, logger),
 		Addon:                    v1.NewAddonHandler(addonService, entitlementService, logger),
 		Settings:                 v1.NewSettingsHandler(settingsService, logger),

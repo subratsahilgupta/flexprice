@@ -54,6 +54,10 @@ type WalletService interface {
 	// maxLiveSeconds controls cache staleness: if non-nil, cached entries older than this are skipped
 	GetWalletBalanceFromCache(ctx context.Context, walletID string, maxLiveSeconds *int64) (*dto.WalletBalanceResponse, error)
 
+	// EnsurePrepaidWallet returns the customer's active prepaid wallet in the given
+	// currency, creating one when there is none.
+	EnsurePrepaidWallet(ctx context.Context, customerID, currency string) (*dto.WalletResponse, error)
+
 	// TerminateWallet terminates a wallet by closing it and debiting remaining balance
 	TerminateWallet(ctx context.Context, walletID string) error
 
@@ -101,6 +105,10 @@ type WalletService interface {
 
 	// CompletePurchasedCreditTransaction completes a pending wallet transaction when payment succeeds
 	CompletePurchasedCreditTransactionWithRetry(ctx context.Context, walletTransactionID string) error
+
+	// FailPurchasedCreditTransaction marks a pending purchased-credit transaction failed
+	// when its payment never settles. Balance-neutral: the pending path never credited.
+	FailPurchasedCreditTransaction(ctx context.Context, walletTransactionID, reason string) error
 
 	// TODO: Cleanup this method, moved to `EvaluateAlertsForWallet`
 	CheckWalletBalanceAlert(ctx context.Context, req *wallet.WalletBalanceAlertEvent) error
@@ -281,6 +289,34 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	s.publishInternalWalletWebhookEvent(ctx, types.WebhookEventWalletCreated, w.ID)
 
 	return response, nil
+}
+
+func (s *walletService) EnsurePrepaidWallet(ctx context.Context, customerID, currency string) (*dto.WalletResponse, error) {
+	if customerID == "" || currency == "" {
+		return nil, ierr.NewError("customer id and currency are required").
+			WithHint("A customer ID and currency are required to resolve a wallet.").
+			Mark(ierr.ErrValidation)
+	}
+
+	wallets, err := s.GetWalletsByCustomerID(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, w := range wallets {
+		if w.WalletStatus == types.WalletStatusActive &&
+			types.IsMatchingCurrency(w.Currency, currency) &&
+			w.WalletType == types.WalletTypePrePaid {
+			return w, nil
+		}
+	}
+
+	return s.CreateWallet(ctx, &dto.CreateWalletRequest{
+		CustomerID:     customerID,
+		Currency:       currency,
+		ConversionRate: decimal.NewFromInt(1),
+		WalletType:     types.WalletTypePrePaid,
+	})
 }
 
 func (s *walletService) GetWalletsByCustomerID(ctx context.Context, customerID string) ([]*dto.WalletResponse, error) {
@@ -640,17 +676,9 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 		}
 	}
 
-	// Generate idempotency key
-	var idempotencyKey string
-	if lo.FromPtr(req.IdempotencyKey) != "" {
-		idempotencyKey = lo.FromPtr(req.IdempotencyKey)
-	} else {
-		idempotencyKey = s.idempGen.GenerateKey(idempotency.ScopeWalletTopUp, map[string]interface{}{
-			"wallet_id":          walletID,
-			"credits_to_add":     req.CreditsToAdd,
-			"transaction_reason": req.TransactionReason,
-			"timestamp":          time.Now().UTC().Format(time.RFC3339),
-		})
+	idempotencyKey := lo.FromPtr(req.IdempotencyKey)
+	if idempotencyKey == "" {
+		idempotencyKey = s.derivedTopupIdempotencyKey(walletID, req, time.Now().UTC())
 	}
 
 	// Handle purchased credits with invoice (pay-later / auto-complete, or pay-first checkout).
@@ -786,6 +814,15 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 	}, nil
 }
 
+func (s *walletService) derivedTopupIdempotencyKey(walletID string, req *dto.TopUpWalletRequest, now time.Time) string {
+	return s.idempGen.GenerateKey(idempotency.ScopeWalletTopUp, map[string]interface{}{
+		"wallet_id":          walletID,
+		"credits_to_add":     req.CreditsToAdd,
+		"transaction_reason": req.TransactionReason,
+		"timestamp":          now.Truncate(time.Minute).Format(time.RFC3339),
+	})
+}
+
 func (s *walletService) getAnyPendingCheckoutSession(ctx context.Context, customerID string, walletID string) ([]*checkout.CheckoutSession, error) {
 	pendingFilter := &types.CheckoutSessionFilter{
 		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
@@ -849,8 +886,10 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 	}
 
 	// Check if auto-complete is enabled. Pay-first checkout always forces pending
-	// so credits are not applied before payment succeeds.
-	autoCompleteEnabled := invoiceConfig.AutoCompletePurchasedCreditTransaction && !isPayFirst
+	// so credits are not applied before payment succeeds, and so does a top-up an
+	// end customer drove themselves.
+	autoCompleteEnabled := invoiceConfig.AutoCompletePurchasedCreditTransaction &&
+		!isPayFirst && !req.TriggeringActor.IsEndCustomer()
 
 	s.Logger.Debug(ctx, "processing purchased credit transaction",
 		"wallet_id", walletID,
@@ -1394,6 +1433,108 @@ func (s *walletService) completePurchasedCreditTransaction(ctx context.Context, 
 	return nil
 }
 
+// FailPurchasedCreditTransaction marks a pending purchased-credit transaction failed.
+//
+// Balance-neutral by construction: a pending purchased-credit transaction never
+// moved the balance, so there is nothing to reverse. Runs under the same wallet
+// lock as completion so a webhook settling the payment and a cleanup expiring the
+// session cannot both win.
+func (s *walletService) FailPurchasedCreditTransaction(ctx context.Context, walletTransactionID, reason string) error {
+	if walletTransactionID == "" {
+		return ierr.NewError("wallet transaction ID is required").
+			WithHint("Wallet transaction ID cannot be empty").
+			Mark(ierr.ErrValidation)
+	}
+
+	var failed bool
+	var walletID string
+
+	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		tx, err := s.WalletRepo.GetTransactionByID(ctx, walletTransactionID)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to get wallet transaction").
+				Mark(ierr.ErrNotFound)
+		}
+		walletID = tx.WalletID
+
+		if err := s.DB.LockWithWait(ctx, postgres.LockRequest{Key: tx.WalletID}); err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to acquire wallet lock").
+				Mark(ierr.ErrInternal)
+		}
+
+		// Re-read under the lock: a concurrent completer may have settled this
+		// transaction while we waited.
+		tx, err = s.WalletRepo.GetTransactionByID(ctx, walletTransactionID)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to get wallet transaction").
+				Mark(ierr.ErrNotFound)
+		}
+
+		if tx.TxStatus == types.TransactionStatusFailed {
+			return nil
+		}
+		if tx.TxStatus != types.TransactionStatusPending {
+			return ierr.NewError("wallet transaction is not in pending state").
+				WithHint("Only pending transactions can be failed").
+				WithReportableDetails(map[string]interface{}{
+					"wallet_transaction_id": walletTransactionID,
+					"current_status":        tx.TxStatus,
+				}).
+				Mark(ierr.ErrInvalidOperation)
+		}
+
+		markFailed := func(t *wallet.Transaction) error {
+			t.TxStatus = types.TransactionStatusFailed
+			if reason != "" {
+				if t.Metadata == nil {
+					t.Metadata = types.Metadata{}
+				}
+				t.Metadata[types.WalletMetadataKeyFailureReason] = reason
+			}
+			t.UpdatedAt = time.Now().UTC()
+			return s.WalletRepo.UpdateTransaction(ctx, t)
+		}
+
+		if err := markFailed(tx); err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to update wallet transaction").
+				Mark(ierr.ErrInternal)
+		}
+
+		// A bonus grant earned from this purchase is pending on the same payment;
+		// leaving it behind would strand a credit that is never granted or failed.
+		bonusTx, err := s.WalletRepo.GetPendingTransactionByParent(ctx, tx.ID)
+		if err != nil && !ierr.IsNotFound(err) {
+			return err
+		}
+		if bonusTx != nil {
+			if err := markFailed(bonusTx); err != nil {
+				return ierr.WithError(err).
+					WithHint("Failed to update bonus wallet transaction").
+					Mark(ierr.ErrInternal)
+			}
+		}
+
+		failed = true
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if failed {
+		s.Logger.Info(ctx, "failed purchased credit transaction",
+			"wallet_transaction_id", walletTransactionID,
+			"wallet_id", walletID,
+			"reason", reason,
+		)
+	}
+	return nil
+}
+
 // logCreditBalanceAlert logs a credit balance alert for a wallet after a balance change
 func (s *walletService) logCreditBalanceAlert(ctx context.Context, w *wallet.Wallet, newCreditBalance decimal.Decimal) error {
 	// Check credit balance alerts after wallet operation
@@ -1423,6 +1564,13 @@ func (s *walletService) logCreditBalanceAlert(ctx context.Context, w *wallet.Wal
 		} else {
 			alertSettings = &walletAlertSettings
 		}
+	}
+
+	if alertSettings.AlertThresholdType == types.AlertThresholdTypePercentage {
+		s.Logger.Debug(ctx, "low_credit_balance alert does not support percentage thresholds, skipping",
+			"wallet_id", w.ID,
+		)
+		return nil
 	}
 
 	// Determine alert status based on balance vs alert settings
@@ -2153,6 +2301,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			return err
 		}
 
+
 		// Step 3: Validate operation
 		if err := s.validateWalletOperation(w, req); err != nil {
 			return err
@@ -2280,6 +2429,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 	// Publish webhook event after transaction commits
 	s.publishInternalTransactionWebhookEvent(ctx, types.WebhookEventWalletTransactionCreated, tx.ID)
 
+
 	// Log credit balance alert after wallet operation
 	if err := s.logCreditBalanceAlert(ctx, w, newCreditBalance); err != nil {
 		// Don't fail the transaction if alert logging fails
@@ -2298,6 +2448,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			"customer_id", w.CustomerID,
 		)
 	}
+
 
 	return nil
 }
@@ -2637,15 +2788,11 @@ func (s *walletService) GetWallets(ctx context.Context, filter *types.WalletFilt
 
 // UpdateWalletAlertState updates the alert state of a wallet
 func (s *walletService) UpdateWalletAlertState(ctx context.Context, walletID string, state types.AlertState) error {
-	w, err := s.WalletRepo.GetWalletByID(ctx, walletID)
-	if err != nil {
-		return err
-	}
-
-	// Update alert state directly
-	w.AlertState = state
-
-	return s.WalletRepo.UpdateWallet(ctx, walletID, w)
+	// Only alert_state is sent: UpdateWallet skips zero/nil fields, so this cannot rewrite
+	// alert_settings or anything else. Reading the wallet first would hand back the cached
+	// pointer and persist whatever that copy holds, which is how a stale cache entry
+	// overwrites the stored alert settings on every state transition.
+	return s.WalletRepo.UpdateWallet(ctx, walletID, &wallet.Wallet{AlertState: state})
 }
 
 // PublishEvent publishes a webhook event for a wallet
@@ -3477,6 +3624,38 @@ func (s *walletService) resolveWalletAlertSettings(ctx context.Context, w *walle
 	return &walletAlertSettings, nil
 }
 
+// resolvePercentageBase sums completed credit transactions since the earliest
+// current_period_start across the customer's active/trialing subscriptions.
+// With no such subscription it falls back to the wallet's full history.
+func (s *walletService) resolvePercentageBase(ctx context.Context, w *wallet.Wallet) (decimal.Decimal, error) {
+	subFilter := types.NewNoLimitSubscriptionFilter()
+	subFilter.CustomerID = w.CustomerID
+	subFilter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive, types.SubscriptionStatusTrialing}
+
+	subs, err := s.SubRepo.List(ctx, subFilter)
+	if err != nil {
+		return decimal.Zero, err
+	}
+
+	var windowStart *time.Time
+	for _, sub := range subs {
+		if windowStart == nil || sub.CurrentPeriodStart.Before(*windowStart) {
+			windowStart = &sub.CurrentPeriodStart
+		}
+	}
+
+	txFilter := types.NewNoLimitWalletTransactionFilter()
+	txFilter.WalletID = &w.ID
+	txFilter.Type = lo.ToPtr(types.TransactionTypeCredit)
+	txFilter.TransactionStatus = lo.ToPtr(types.TransactionStatusCompleted)
+	txFilter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+	if windowStart != nil {
+		txFilter.TimeRangeFilter = &types.TimeRangeFilter{StartTime: windowStart}
+	}
+
+	return s.WalletRepo.SumCreditAmountsByFilter(ctx, txFilter)
+}
+
 // processFeatureWalletBalanceAlert checks and logs feature-level wallet balance alerts for a wallet.
 // Errors on individual features are logged and skipped; the method always returns nil.
 func (s *walletService) processFeatureWalletBalanceAlert(ctx context.Context, w *wallet.Wallet, ongoingBalance decimal.Decimal, featuresWithAlerts []*dto.FeatureResponse, alertLogsService AlertLogsService) error {
@@ -3546,11 +3725,30 @@ func (s *walletService) processFeatureWalletBalanceAlert(ctx context.Context, w 
 // processWalletBalanceAlert checks and logs the ongoing balance alert for a wallet
 // and updates the wallet's alert state if it changed.
 func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet.Wallet, ongoingBalance decimal.Decimal, alertSettings *types.AlertSettings, alertLogsService AlertLogsService, eventID string) error {
-	alertStatus, err := alertSettings.AlertState(ongoingBalance)
+	value := ongoingBalance
+
+	if alertSettings.AlertThresholdType == types.AlertThresholdTypePercentage {
+		base, err := s.resolvePercentageBase(ctx, w)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to resolve percentage base for wallet alert", "error", err, "wallet_id", w.ID)
+			return err
+		}
+		if base.IsZero() {
+			s.Logger.Info(ctx, "wallet percentage alert base is zero, skipping evaluation",
+				"wallet_id", w.ID,
+				"ongoing_balance", ongoingBalance,
+			)
+			return nil
+		}
+		value = ongoingBalance.Div(base).Mul(decimal.NewFromInt(100))
+	}
+
+	alertStatus, err := alertSettings.AlertState(value)
 	if err != nil {
 		s.Logger.Error(ctx, "failed to determine wallet alert status",
 			"wallet_id", w.ID,
 			"ongoing_balance", ongoingBalance,
+			"value", value,
 			"error", err,
 		)
 		return err
@@ -3559,6 +3757,7 @@ func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet
 	s.Logger.Debug(ctx, "ongoing balance alert check - determined status",
 		"wallet_id", w.ID,
 		"ongoing_balance", ongoingBalance,
+		"value", value,
 		"alert_settings", alertSettings,
 		"alert_status", alertStatus,
 		"event_id", eventID,
@@ -3577,7 +3776,7 @@ func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet
 		AlertStatus: alertStatus,
 		AlertInfo: types.AlertInfo{
 			AlertSettings: alertSettings,
-			ValueAtTime:   ongoingBalance,
+			ValueAtTime:   value,
 			Timestamp:     time.Now().UTC(),
 		},
 	})
@@ -3866,6 +4065,50 @@ func (s *walletService) hasPendingAutoTopupInvoice(ctx context.Context, customer
 	return len(invoices) > 0, nil
 }
 
+// An unpaid invoice is its own brake on repeat top-ups; a charge that settles in
+// seconds is not, so an unattended charge needs a floor between attempts when the
+// wallet configures no cooloff of its own.
+func withinDefaultAutoChargeCooldown(w *wallet.Wallet, last *wallet.Transaction, now time.Time) bool {
+	if w.AutoTopup == nil || w.AutoTopup.Cooldown.IsSet() || last == nil {
+		return false
+	}
+
+	return now.Before(last.CreatedAt.Add(defaultAutoChargeCooldown))
+}
+
+// autoTopupCheckout returns the params that charge a saved method off-session, or
+// nil to raise an invoice instead. Unattended, so CustomerNotPresent is true.
+func (s *walletService) autoTopupCheckout(ctx context.Context, w *wallet.Wallet, isInvoiced bool) *dto.CheckoutParams {
+	if !isInvoiced {
+		return nil
+	}
+
+	gateway, err := fetchGatewayWithAutoChargeSupport(ctx, s.ServiceParams, NewCustomerService(s.ServiceParams), w.CustomerID)
+	if err != nil {
+		s.Logger.Error(ctx, "could not resolve an auto-chargeable method, falling back to an invoice",
+			"error", err, "wallet_id", w.ID, "customer_id", w.CustomerID)
+		return nil
+	}
+	if gateway == "" {
+		return nil
+	}
+
+	provider, ok := types.CheckoutProviderFromGateway(gateway)
+	if !ok {
+		return nil
+	}
+
+	return &dto.CheckoutParams{
+		PaymentParams: dto.PaymentParams{
+			PaymentProvider: provider,
+			PaymentProviderConfig: &types.CheckoutPaymentProviderConfig{
+				CollectionMethod:   types.CollectionMethodChargeAutomatically,
+				CustomerNotPresent: true,
+			},
+		},
+	}
+}
+
 func (s *walletService) isWithinAutoTopupCooldown(w *wallet.Wallet, last *wallet.Transaction) (bool, error) {
 	if w.AutoTopup == nil || !w.AutoTopup.Cooldown.IsSet() || last == nil {
 		return false, nil
@@ -3968,7 +4211,8 @@ func (s *walletService) triggerAutoTopup(ctx context.Context, w *wallet.Wallet, 
 		if idempotencyKey == "" {
 			idempotencyKey = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_WALLET_TRANSACTION)
 		}
-		_, err = s.TopUpWallet(ctx, w.ID, &dto.TopUpWalletRequest{
+
+		topupReq := &dto.TopUpWalletRequest{
 			CreditsToAdd:      *w.AutoTopup.Amount,
 			Amount:            *w.AutoTopup.Amount,
 			TransactionReason: transactionReason,
@@ -3976,7 +4220,30 @@ func (s *walletService) triggerAutoTopup(ctx context.Context, w *wallet.Wallet, 
 			IdempotencyKey:    lo.ToPtr(idempotencyKey),
 			Description:       "Auto top-up triggered for low ongoing balance",
 			Metadata:          types.Metadata{types.WalletMetadataKeyAutoTopup: "true"},
-		})
+		}
+
+		checkout := s.autoTopupCheckout(ctx, w, isInvoiced)
+		if checkout != nil && withinDefaultAutoChargeCooldown(w, lastAutoTopup, time.Now().UTC()) {
+			s.Logger.Info(ctx, "auto top-up charge within default cooloff, skipping",
+				"wallet_id", w.ID,
+				"last_auto_topup_at", lastAutoTopup.CreatedAt,
+			)
+			return nil
+		}
+		topupReq.Checkout = checkout
+
+		_, err = s.TopUpWallet(ctx, w.ID, topupReq)
+		if err != nil && checkout != nil {
+			s.Logger.Error(ctx, "auto top-up charge failed, falling back to an invoice",
+				"error", err,
+				"wallet_id", w.ID,
+				"payment_provider", checkout.PaymentProvider,
+			)
+
+			topupReq.Checkout = nil
+			topupReq.IdempotencyKey = lo.ToPtr(idempotencyKey + "-invoice")
+			_, err = s.TopUpWallet(ctx, w.ID, topupReq)
+		}
 		if err != nil {
 			s.Logger.Error(ctx, "failed to top up wallet for auto top-up",
 				"error", err,
@@ -3986,11 +4253,12 @@ func (s *walletService) triggerAutoTopup(ctx context.Context, w *wallet.Wallet, 
 			)
 			return err
 		}
-		s.Logger.Debug(ctx, "auto top-up triggered",
+		s.Logger.Info(ctx, "auto top-up triggered",
 			"wallet_id", w.ID,
 			"auto_topup_threshold", *w.AutoTopup.Threshold,
 			"auto_topup_amount", *w.AutoTopup.Amount,
 			"invoiced", isInvoiced,
+			"charged", checkout != nil,
 		)
 	}
 

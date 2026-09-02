@@ -780,6 +780,68 @@ func (s *InvoiceModificationServiceSuite) TestExecuteRemoveLineItem() {
 	s.Len(resp.Invoice.LineItems, 0)
 }
 
+func (s *InvoiceModificationServiceSuite) TestExecuteUpdateLineItem() {
+	ctx := s.GetContext()
+	inv := s.createDraftInvoice()
+
+	li := &invoice.InvoiceLineItem{
+		ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+		InvoiceID:   inv.ID,
+		CustomerID:  inv.CustomerID,
+		DisplayName: lo.ToPtr("Original Name"),
+		Amount:      decimal.NewFromInt(100),
+		Quantity:    decimal.NewFromInt(1),
+		Currency:    "usd",
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, li))
+
+	resp, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action:     dto.InvoiceModifyLineItemActionUpdate,
+			LineItemID: li.ID,
+			Update: &dto.UpdateLineItemRequest{
+				DisplayName: lo.ToPtr("Updated Name"),
+				Amount:      lo.ToPtr(decimal.NewFromInt(250)),
+			},
+		},
+	})
+	s.NoError(err)
+	s.Require().NotNil(resp)
+	s.Require().NotNil(resp.Invoice)
+	s.Require().Len(resp.Invoice.LineItems, 1)
+	updated := resp.Invoice.LineItems[0]
+	// The update is versioned: a new line item replaces the original.
+	s.NotEqual(li.ID, updated.ID)
+	s.Equal("Updated Name", lo.FromPtr(updated.DisplayName))
+	s.True(updated.Amount.Equal(decimal.NewFromInt(250)))
+	s.True(resp.Invoice.Subtotal.Equal(decimal.NewFromInt(250)))
+}
+
+func (s *InvoiceModificationServiceSuite) TestExecuteUpdateLineItemRequiresIDAndFields() {
+	ctx := s.GetContext()
+	inv := s.createDraftInvoice()
+
+	_, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action: dto.InvoiceModifyLineItemActionUpdate,
+			Update: &dto.UpdateLineItemRequest{DisplayName: lo.ToPtr("x")},
+		},
+	})
+	s.Error(err)
+
+	_, err = s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action:     dto.InvoiceModifyLineItemActionUpdate,
+			LineItemID: "li_missing_update",
+		},
+	})
+	s.Error(err)
+}
+
 func (s *InvoiceModificationServiceSuite) TestExecuteMarksInvoiceAsManuallyEdited() {
 	ctx := s.GetContext()
 	inv := s.createDraftInvoice()

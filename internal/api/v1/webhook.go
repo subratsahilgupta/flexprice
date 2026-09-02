@@ -45,6 +45,7 @@ type WebhookHandler struct {
 	subscriptionService             interfaces.SubscriptionService
 	entityIntegrationMappingService interfaces.EntityIntegrationMappingService
 	checkoutSessionService          interfaces.CheckoutSessionService
+	refundService                   interfaces.RefundService
 	db                              postgres.IClient
 	webhookService                  *flexwebhook.WebhookService
 }
@@ -62,6 +63,7 @@ func NewWebhookHandler(
 	subscriptionService interfaces.SubscriptionService,
 	entityIntegrationMappingService interfaces.EntityIntegrationMappingService,
 	checkoutSessionService interfaces.CheckoutSessionService,
+	refundService interfaces.RefundService,
 	db postgres.IClient,
 	webhookService *flexwebhook.WebhookService,
 ) *WebhookHandler {
@@ -77,6 +79,7 @@ func NewWebhookHandler(
 		subscriptionService:             subscriptionService,
 		entityIntegrationMappingService: entityIntegrationMappingService,
 		checkoutSessionService:          checkoutSessionService,
+		refundService:                   refundService,
 		db:                              db,
 		webhookService:                  webhookService,
 	}
@@ -513,6 +516,7 @@ func (h *WebhookHandler) HandleRazorpayWebhook(c *gin.Context) {
 		SubscriptionService:             h.subscriptionService,
 		EntityIntegrationMappingService: h.entityIntegrationMappingService,
 		CheckoutSessionService:          h.checkoutSessionService,
+		RefundService:                   h.refundService,
 		DB:                              h.db,
 	}
 
@@ -665,8 +669,21 @@ func (h *WebhookHandler) HandleChargebeeWebhook(c *gin.Context) {
 		"event_type", event.EventType,
 		"occurred_at", event.OccurredAt)
 
+	// Create service dependencies for webhook handler
+	serviceDeps := &chargebeewebhook.ServiceDependencies{
+		CustomerService:                 h.customerService,
+		PaymentService:                  h.paymentService,
+		InvoiceService:                  h.invoiceService,
+		PlanService:                     h.planService,
+		SubscriptionService:             h.subscriptionService,
+		EntityIntegrationMappingService: h.entityIntegrationMappingService,
+		CheckoutSessionService:          h.checkoutSessionService,
+		RefundService:                   h.refundService,
+		DB:                              h.db,
+	}
+
 	// Handle the event
-	err = chargebeeIntegration.WebhookHandler.HandleWebhookEvent(ctx, &event, environmentID)
+	err = chargebeeIntegration.WebhookHandler.HandleWebhookEvent(ctx, &event, environmentID, serviceDeps)
 	if err != nil {
 		h.logger.Error(context.Background(), "error processing Chargebee webhook event",
 			"error", err,

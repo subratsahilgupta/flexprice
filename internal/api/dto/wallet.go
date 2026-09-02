@@ -87,6 +87,12 @@ func (r *UpdateWalletRequest) Validate() error {
 		}
 	}
 
+	if r.AlertSettings != nil {
+		if err := r.AlertSettings.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return validator.ValidateRequest(r)
 }
 
@@ -355,6 +361,11 @@ type TopUpWalletRequest struct {
 	// When set, credits are applied only after checkout payment succeeds.
 	// Omit for today's pay-later / auto-complete behavior.
 	Checkout *CheckoutParams `json:"checkout,omitempty"`
+
+	// TriggeringActor records who drove this top-up. An end customer never gets
+	// auto-complete: granting credits before the invoice is paid is a net-terms
+	// arrangement a tenant makes, not one a customer may take for itself.
+	TriggeringActor types.TriggeringActor `json:"-"`
 }
 
 func (r *TopUpWalletRequest) Validate() error {

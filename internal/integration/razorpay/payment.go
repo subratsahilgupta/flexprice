@@ -1100,7 +1100,7 @@ func (s *PaymentService) ensureRefunded(ctx context.Context, razorpayPaymentID s
 		return "", nil
 	}
 
-	refundResp, err := s.client.RefundPayment(ctx, razorpayPaymentID, amountPaise)
+	refundResp, err := s.client.RefundPayment(ctx, razorpayPaymentID, amountPaise, "")
 	if err != nil {
 		return "", err
 	}

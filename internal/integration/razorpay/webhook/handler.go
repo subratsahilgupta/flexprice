@@ -84,6 +84,14 @@ func (h *Handler) HandleWebhookEvent(ctx context.Context, event *RazorpayWebhook
 		return h.handlePaymentLinkPaid(ctx, event, services)
 	case EventPaymentLinkCancelled, EventPaymentLinkExpired:
 		return h.handlePaymentLinkFailed(ctx, event, services)
+	case EventRefundProcessed:
+		return h.handleRefundProcessed(ctx, event, services)
+	case EventRefundFailed:
+		return h.handleRefundFailed(ctx, event, services)
+	case EventRefundCreated:
+		// The refund row is already PROCESSING from the API call that created it.
+		h.logger.Info(ctx, "received refund.created webhook", "razorpay_refund_id", event.Payload.Refund.Entity.ID)
+		return nil
 	default:
 		h.logger.Info(ctx, "unhandled Razorpay webhook event type", "type", event.Event)
 		return nil // Not an error, just unhandled
@@ -547,4 +555,66 @@ func convertPaymentToMap(payment Payment) map[string]interface{} {
 	}
 
 	return paymentMap
+}
+
+// handleRefundProcessed settles the refund row Razorpay has now paid out. Razorpay
+// redelivers this event; the settle transition guard is what makes it a no-op the
+// second time.
+func (h *Handler) handleRefundProcessed(ctx context.Context, event *RazorpayWebhookEvent, services *ServiceDependencies) error {
+	entity := event.Payload.Refund.Entity
+
+	row := h.resolveRefund(ctx, entity.ID, services)
+	if row == nil {
+		return nil
+	}
+
+	err := services.RefundService.Settle(ctx, &dto.SettleRefundRequest{
+		RefundID:      row.ID,
+		SettledAmount: decimal.NewFromInt(entity.Amount).Div(decimal.NewFromInt(100)),
+		DestinationID: lo.ToPtr(entity.ID),
+		GatewayMetadata: map[string]interface{}{
+			"status":              entity.Status,
+			"razorpay_payment_id": entity.PaymentID,
+		},
+	})
+	if err != nil {
+		h.logger.Error(ctx, "failed to settle refund from webhook",
+			"error", err,
+			"refund_id", row.ID,
+			"razorpay_refund_id", entity.ID)
+	}
+	return nil
+}
+
+func (h *Handler) handleRefundFailed(ctx context.Context, event *RazorpayWebhookEvent, services *ServiceDependencies) error {
+	entity := event.Payload.Refund.Entity
+
+	row := h.resolveRefund(ctx, entity.ID, services)
+	if row == nil {
+		return nil
+	}
+
+	if err := services.RefundService.Fail(ctx, row.ID, "razorpay reported the refund as failed"); err != nil {
+		h.logger.Error(ctx, "failed to record refund failure from webhook",
+			"error", err,
+			"refund_id", row.ID,
+			"razorpay_refund_id", entity.ID)
+	}
+	return nil
+}
+
+func (h *Handler) resolveRefund(ctx context.Context, razorpayRefundID string, services *ServiceDependencies) *dto.RefundResponse {
+	if razorpayRefundID == "" {
+		h.logger.Info(ctx, "refund webhook carried no refund id")
+		return nil
+	}
+
+	row, err := services.RefundService.GetRefundByGatewayRefundID(ctx, string(types.PaymentGatewayTypeRazorpay), razorpayRefundID)
+	if err != nil {
+		h.logger.Info(ctx, "no refund row for razorpay refund, skipping event",
+			"razorpay_refund_id", razorpayRefundID,
+			"error", err)
+		return nil
+	}
+	return row
 }

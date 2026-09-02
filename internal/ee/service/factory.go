@@ -33,6 +33,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	"github.com/flexprice/flexprice/internal/domain/proration"
+	"github.com/flexprice/flexprice/internal/domain/refund"
 	"github.com/flexprice/flexprice/internal/domain/scheduledtask"
 	"github.com/flexprice/flexprice/internal/domain/secret"
 	"github.com/flexprice/flexprice/internal/domain/settings"
@@ -53,7 +54,6 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/publisher"
 	"github.com/flexprice/flexprice/internal/pubsub"
-	"github.com/flexprice/flexprice/internal/s3"
 	"github.com/flexprice/flexprice/internal/security"
 	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/tracing"
@@ -64,12 +64,11 @@ import (
 // ServiceParams holds common dependencies for services
 // TODO: start using this for all services init
 type ServiceParams struct {
-	Logger        *logger.Logger
-	Config        *config.Configuration
-	DB            postgres.IClient
-	PDFGenerator  pdf.Generator
-	S3            s3.Service
-	TracingSvc    *tracing.Service
+	Logger          *logger.Logger
+	Config          *config.Configuration
+	DB              postgres.IClient
+	PDFGenerator    pdf.Generator
+	TracingSvc      *tracing.Service
 	InMemoryCache cache.InMemoryCache
 	RedisCache    cache.RedisCache
 	Locker        cache.Locker
@@ -99,6 +98,7 @@ type ServiceParams struct {
 	EntitlementRepo              entitlement.Repository
 	EntitlementGrantRepo         entitlementgrant.Repository
 	PaymentRepo                  payment.Repository
+	RefundRepo                   refund.Repository
 	SecretRepo                   secret.Repository
 	EnvironmentRepo              environment.Repository
 	TaskRepo                     task.Repository
@@ -188,6 +188,7 @@ func NewServiceParams(
 	entitlementRepo entitlement.Repository,
 	entitlementGrantRepo entitlementgrant.Repository,
 	paymentRepo payment.Repository,
+	refundRepo refund.Repository,
 	secretRepo secret.Repository,
 	environmentRepo environment.Repository,
 	creditGrantRepo creditgrant.Repository,
@@ -203,7 +204,7 @@ func NewServiceParams(
 	couponApplicationRepo coupon_application.Repository,
 	eventPublisher publisher.EventPublisher,
 	webhookPublisher webhookPublisher.WebhookPublisher,
-	s3Service s3.Service,
+	storageResolver storage.Resolver,
 	client httpclient.Client,
 	addonRepo addon.Repository,
 	addonAssociationRepo addonassociation.Repository,
@@ -216,7 +217,6 @@ func NewServiceParams(
 	scheduledTaskRepo scheduledtask.Repository,
 	prorationCalculator proration.Calculator,
 	integrationFactory *integration.Factory,
-	storageResolver storage.Resolver,
 	walletBalanceAlertPubSub types.WalletBalanceAlertPubSub,
 	webhookPubSub pubsub.PubSub,
 	planPriceSyncRepo planpricesync.Repository,
@@ -258,6 +258,7 @@ func NewServiceParams(
 		EntitlementRepo:              entitlementRepo,
 		EntitlementGrantRepo:         entitlementGrantRepo,
 		PaymentRepo:                  paymentRepo,
+		RefundRepo:                   refundRepo,
 		SecretRepo:                   secretRepo,
 		EnvironmentRepo:              environmentRepo,
 		CreditGrantRepo:              creditGrantRepo,
@@ -271,7 +272,7 @@ func NewServiceParams(
 		TaxAppliedRepo:               taxAppliedRepo,
 		EventPublisher:               eventPublisher,
 		WebhookPublisher:             webhookPublisher,
-		S3:                           s3Service,
+		StorageResolver:              storageResolver,
 		Client:                       client,
 		CouponRepo:                   couponRepo,
 		CouponAssociationRepo:        couponAssociationRepo,
@@ -288,7 +289,6 @@ func NewServiceParams(
 		ScheduledTaskRepo:            scheduledTaskRepo,
 		ProrationCalculator:          prorationCalculator,
 		IntegrationFactory:           integrationFactory,
-		StorageResolver:              storageResolver,
 		EncryptionService:            encryptionService,
 		WalletBalanceAlertPubSub:     walletBalanceAlertPubSub,
 		WebhookPubSub:                webhookPubSub,

@@ -292,6 +292,11 @@ type CheckoutPaymentProviderConfig struct {
 	CollectionMethod CollectionMethod  `json:"collection_method,omitempty"`
 	PaymentMethod    PaymentMethodType `json:"payment_method,omitempty"`
 	MaxMandateLimit  *decimal.Decimal  `json:"max_mandate_limit,omitempty" swaggertype:"string"`
+
+	// CustomerNotPresent is the unattended/MIT opt-in. Zero value (omitted) means
+	// the customer is present, so a missed auto-charge may fall back to a hosted
+	// authorization link. Set true only from merchant-initiated paths (auto top-up).
+	CustomerNotPresent bool `json:"customer_not_present,omitempty"`
 }
 
 func (c *CheckoutPaymentProviderConfig) Validate() error {

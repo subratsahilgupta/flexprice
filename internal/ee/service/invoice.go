@@ -25,7 +25,7 @@ import (
 	"github.com/flexprice/flexprice/internal/integration/stripe"
 	"github.com/flexprice/flexprice/internal/integration/zoho"
 	"github.com/flexprice/flexprice/internal/interfaces"
-	"github.com/flexprice/flexprice/internal/s3"
+	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
 	"github.com/samber/lo"
@@ -1336,43 +1336,19 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 			refundAmount = decimal.Zero
 		}
 		if refundAmount.IsPositive() {
-			walletService := NewWalletService(s.ServiceParams)
+			refundService := NewRefundService(s.ServiceParams)
 
-			wallets, err := walletService.GetWalletsByCustomerID(tx, inv.CustomerID)
+			refunds, err := refundService.PrepareRefundsForVoidedInvoice(tx, inv, refundAmount)
 			if err != nil {
 				return err
 			}
 
-			var selectedWallet *dto.WalletResponse
-			for _, w := range wallets {
-				if types.IsMatchingCurrency(w.Currency, inv.Currency) && w.WalletType == types.WalletTypePrePaid {
-					selectedWallet = w
-					break
-				}
-			}
-			if selectedWallet == nil {
-				walletReq := &dto.CreateWalletRequest{
-					Name:           "Subscription Wallet",
-					CustomerID:     inv.CustomerID,
-					Currency:       inv.Currency,
-					ConversionRate: decimal.NewFromInt(1),
-					WalletType:     types.WalletTypePrePaid,
-				}
-				selectedWallet, err = walletService.CreateWallet(tx, walletReq)
-				if err != nil {
+			// A void never refunds to a gateway, so these rows settle to the wallet with no
+			// external I/O and can be dispatched inside this transaction.
+			for _, row := range refunds {
+				if err := refundService.Dispatch(tx, row.ID); err != nil {
 					return err
 				}
-			}
-
-			walletTxnReq := &dto.TopUpWalletRequest{
-				Amount:            refundAmount,
-				TransactionReason: types.TransactionReasonInvoiceVoidRefund,
-				Metadata:          types.Metadata{"invoice_id": inv.ID},
-				IdempotencyKey:    lo.ToPtr(inv.ID),
-				Description:       fmt.Sprintf("Refund for voided invoice: %s", lo.FromPtrOr(inv.InvoiceNumber, inv.ID)),
-			}
-			if _, err = walletService.TopUpWallet(tx, selectedWallet.ID, walletTxnReq); err != nil {
-				return err
 			}
 
 			inv.RefundedAmount = inv.RefundedAmount.Add(refundAmount)
@@ -1389,6 +1365,32 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 	})
 	if err != nil {
 		return err
+	}
+
+	// A voided invoice will never be paid, so a purchased-credit transaction still
+	// waiting on it must not stay pending: it blocks the wallet's auto-topup guard
+	// indefinitely and is unrecoverable without a manual DB edit.
+	if inv.Metadata != nil {
+		if walletTransactionID, ok := inv.Metadata["wallet_transaction_id"]; ok && walletTransactionID != "" {
+			walletService := NewWalletService(s.ServiceParams)
+			failErr := walletService.FailPurchasedCreditTransaction(ctx, walletTransactionID,
+				fmt.Sprintf("invoice %s voided", inv.ID))
+			switch {
+			case failErr == nil:
+			case ierr.IsInvalidOperation(failErr):
+				// Already settled — a paid invoice being voided is refunded, not un-credited.
+				s.Logger.Info(ctx, "purchased credit transaction not pending on void, left unchanged",
+					"invoice_id", inv.ID,
+					"wallet_transaction_id", walletTransactionID,
+				)
+			default:
+				s.Logger.Error(ctx, "failed to fail purchased credit transaction on void",
+					"error", failErr,
+					"invoice_id", inv.ID,
+					"wallet_transaction_id", walletTransactionID,
+				)
+			}
+		}
 	}
 
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
@@ -2836,37 +2838,50 @@ func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string, forceG
 		return lo.FromPtr(inv.InvoicePDFURL), nil
 	}
 
-	if s.S3 == nil {
-		return "", ierr.NewError("s3 is not enabled").
-			WithHint("s3 is not enabled but is required to generate invoice pdf url.").
-			Mark(ierr.ErrSystem)
+	store, err := s.StorageResolver.ForPlatform(ctx, storage.PurposeInvoice)
+	if err != nil {
+		return "", err
 	}
 
-	key := fmt.Sprintf("%s/%s", inv.TenantID, id)
+	bc, err := s.StorageResolver.BucketConfigFor(storage.PurposeInvoice)
+	if err != nil {
+		return "", err
+	}
+
+	key := storage.ObjectKey(bc.KeyPrefix, "", fmt.Sprintf("%s/%s", inv.TenantID, id), "pdf", false)
+
+	presignExpiry, parseErr := time.ParseDuration(bc.PresignExpiryDuration)
+	if parseErr != nil {
+		return "", ierr.WithError(parseErr).
+			WithHint("Invalid invoice PDF presign expiry duration").
+			Mark(ierr.ErrValidation)
+	}
 
 	if !forceGenerate {
-		// Check if the file already exists in S3 and return a presigned URL without regenerating
-		exists, err := s.S3.Exists(ctx, key, s3.DocumentTypeInvoice)
+		exists, err := store.Exists(ctx, key)
 		if err != nil {
 			return "", err
 		}
 		if exists {
-			return s.S3.GetPresignedUrl(ctx, key, s3.DocumentTypeInvoice)
+			return store.PresignGet(ctx, key, presignExpiry)
 		}
 	}
 
-	// Generate the PDF and upload to S3
 	data, err := s.GetInvoicePDF(ctx, id)
 	if err != nil {
 		return "", err
 	}
 
-	err = s.S3.UploadDocument(ctx, s3.NewPdfDocument(key, data, s3.DocumentTypeInvoice))
+	_, err = store.Upload(ctx, &storage.UploadRequest{
+		Key:    key,
+		Data:   data,
+		Format: storage.UploadFormatPDF,
+	})
 	if err != nil {
 		return "", err
 	}
 
-	return s.S3.GetPresignedUrl(ctx, key, s3.DocumentTypeInvoice)
+	return store.PresignGet(ctx, key, presignExpiry)
 }
 
 // GetInvoicePDF implements InvoiceService.
@@ -3387,12 +3402,42 @@ func (s *invoiceService) reconcileLineItems(
 		return newItems, nil
 	}
 
-	// Update-in-place path
-	existingBySubLineItemID := make(map[string]*invoice.InvoiceLineItem, len(existing))
-	for _, item := range existing {
-		if item.SubscriptionLineItemID != nil {
-			existingBySubLineItemID[lo.FromPtr(item.SubscriptionLineItemID)] = item
+	// Update-in-place path.
+	//
+	// Multi-cadence fan-out (added by PR #2699) means one subscription line item
+	// can produce N invoice line items in a single compute — one per sub-window
+	// (e.g., a monthly price on a quarterly sub emits 3 monthly invoice lines,
+	// each with a distinct [PeriodStart, PeriodEnd)). Keying reconcile by
+	// SubscriptionLineItemID alone would collapse those N into 1 map entry
+	// (last-write-wins), so re-runs would silently orphan the N-1 that never
+	// got a chance to match — every recompute would then append fresh copies,
+	// producing duplicate persisted lines. Key by (sub-line-item, window) to
+	// give each fanned-out line item its own reconcile identity.
+	type reconcileKey struct {
+		SubLineItemID string
+		PeriodStart   time.Time
+		PeriodEnd     time.Time
+	}
+	keyOf := func(subLineItemID *string, periodStart, periodEnd *time.Time) (reconcileKey, bool) {
+		if subLineItemID == nil || periodStart == nil || periodEnd == nil {
+			return reconcileKey{}, false
 		}
+		return reconcileKey{
+			SubLineItemID: *subLineItemID,
+			PeriodStart:   *periodStart,
+			PeriodEnd:     *periodEnd,
+		}, true
+	}
+
+	// Items missing PeriodStart/PeriodEnd (legacy pre-migration or hand-crafted) are silently ignored here
+	// same contract as the pre-fan-out reconciler, which ignored items missing SubscriptionLineItemID. They stay in the DB untouched.
+	existingByKey := make(map[reconcileKey]*invoice.InvoiceLineItem, len(existing))
+	for _, item := range existing {
+		k, ok := keyOf(item.SubscriptionLineItemID, item.PeriodStart, item.PeriodEnd)
+		if !ok {
+			continue
+		}
+		existingByKey[k] = item
 	}
 
 	var toInsert []*invoice.InvoiceLineItem
@@ -3404,7 +3449,12 @@ func (s *invoiceService) reconcileLineItems(
 			toInsert = append(toInsert, newItem)
 			continue
 		}
-		if old, ok := existingBySubLineItemID[lo.FromPtr(newItem.SubscriptionLineItemID)]; ok {
+		k, ok := keyOf(newItem.SubscriptionLineItemID, newItem.PeriodStart, newItem.PeriodEnd)
+		if !ok {
+			toInsert = append(toInsert, newItem)
+			continue
+		}
+		if old, exists := existingByKey[k]; exists {
 			// Replace the entire computed payload, then restore immutable identity/audit fields.
 			// This ensures every field produced by ToInvoiceLineItem is refreshed (PriceID,
 			// MeterID, PriceType, PeriodStart/End, display names, etc.) without requiring
@@ -3419,15 +3469,16 @@ func (s *invoiceService) reconcileLineItems(
 			newItem.LineItemDiscount = decimal.Zero
 			newItem.InvoiceLevelDiscount = decimal.Zero
 			toUpdate = append(toUpdate, newItem)
-			delete(existingBySubLineItemID, lo.FromPtr(newItem.SubscriptionLineItemID))
+			delete(existingByKey, k)
 		} else {
 			toInsert = append(toInsert, newItem)
 		}
 	}
 
-	// Archive old items that no longer appear in the new calculation
+	// Archive old items that no longer appear in the new calculation.
+	// An existing invoice line item whose (sub-line-item, start, end) is not re-emitted by the fresh calculation gets archived.
 	var toArchiveIDs []string
-	for _, item := range existingBySubLineItemID {
+	for _, item := range existingByKey {
 		toArchiveIDs = append(toArchiveIDs, item.ID)
 	}
 	if len(toArchiveIDs) > 0 {
@@ -3515,6 +3566,12 @@ func (s *invoiceService) RecalculateInvoiceV2(ctx context.Context, id string, fi
 			PeriodStart:    *inv.PeriodStart,
 			PeriodEnd:      *inv.PeriodEnd,
 			ReferencePoint: referencePoint,
+			// Exclude THIS invoice from FilterLineItemsToBeInvoiced's already-invoiced check
+			// otherwise the draft's own line items (which sit in [periodStart, periodEnd)) get filtered out of
+			// the fresh compute and the recalc returns $0. Was silently masked pre-fan-out because tests exercised draft rows with
+			// nil PeriodStart/PeriodEnd, which the filter couldn't match on; once reconcile started requiring PeriodStart/PeriodEnd to
+			// key its update-in-place map, the missing exclusion surfaced.
+			ExcludeInvoiceID: inv.ID,
 		})
 		if err != nil {
 			return err

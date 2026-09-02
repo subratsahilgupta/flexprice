@@ -123,6 +123,20 @@ func (ru *RefundUpdate) SetNillableAmount(d *decimal.Decimal) *RefundUpdate {
 	return ru
 }
 
+// SetSettledAmount sets the "settled_amount" field.
+func (ru *RefundUpdate) SetSettledAmount(d decimal.Decimal) *RefundUpdate {
+	ru.mutation.SetSettledAmount(d)
+	return ru
+}
+
+// SetNillableSettledAmount sets the "settled_amount" field if the given value is not nil.
+func (ru *RefundUpdate) SetNillableSettledAmount(d *decimal.Decimal) *RefundUpdate {
+	if d != nil {
+		ru.SetSettledAmount(*d)
+	}
+	return ru
+}
+
 // SetRefundStatus sets the "refund_status" field.
 func (ru *RefundUpdate) SetRefundStatus(s string) *RefundUpdate {
 	ru.mutation.SetRefundStatus(s)
@@ -148,6 +162,61 @@ func (ru *RefundUpdate) SetNillableRefundReason(s *string) *RefundUpdate {
 	if s != nil {
 		ru.SetRefundReason(*s)
 	}
+	return ru
+}
+
+// SetRefundDestination sets the "refund_destination" field.
+func (ru *RefundUpdate) SetRefundDestination(s string) *RefundUpdate {
+	ru.mutation.SetRefundDestination(s)
+	return ru
+}
+
+// SetNillableRefundDestination sets the "refund_destination" field if the given value is not nil.
+func (ru *RefundUpdate) SetNillableRefundDestination(s *string) *RefundUpdate {
+	if s != nil {
+		ru.SetRefundDestination(*s)
+	}
+	return ru
+}
+
+// SetRefundDestinationID sets the "refund_destination_id" field.
+func (ru *RefundUpdate) SetRefundDestinationID(s string) *RefundUpdate {
+	ru.mutation.SetRefundDestinationID(s)
+	return ru
+}
+
+// SetNillableRefundDestinationID sets the "refund_destination_id" field if the given value is not nil.
+func (ru *RefundUpdate) SetNillableRefundDestinationID(s *string) *RefundUpdate {
+	if s != nil {
+		ru.SetRefundDestinationID(*s)
+	}
+	return ru
+}
+
+// ClearRefundDestinationID clears the value of the "refund_destination_id" field.
+func (ru *RefundUpdate) ClearRefundDestinationID() *RefundUpdate {
+	ru.mutation.ClearRefundDestinationID()
+	return ru
+}
+
+// SetAttempt sets the "attempt" field.
+func (ru *RefundUpdate) SetAttempt(i int) *RefundUpdate {
+	ru.mutation.ResetAttempt()
+	ru.mutation.SetAttempt(i)
+	return ru
+}
+
+// SetNillableAttempt sets the "attempt" field if the given value is not nil.
+func (ru *RefundUpdate) SetNillableAttempt(i *int) *RefundUpdate {
+	if i != nil {
+		ru.SetAttempt(*i)
+	}
+	return ru
+}
+
+// AddAttempt adds i to the "attempt" field.
+func (ru *RefundUpdate) AddAttempt(i int) *RefundUpdate {
+	ru.mutation.AddAttempt(i)
 	return ru
 }
 
@@ -361,6 +430,15 @@ func (ru *RefundUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if ru.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(refund.FieldEnvironmentID, field.TypeString)
 	}
+	if ru.mutation.PaymentIDCleared() {
+		_spec.ClearField(refund.FieldPaymentID, field.TypeString)
+	}
+	if ru.mutation.CreditNoteIDCleared() {
+		_spec.ClearField(refund.FieldCreditNoteID, field.TypeString)
+	}
+	if ru.mutation.PaymentGatewayCleared() {
+		_spec.ClearField(refund.FieldPaymentGateway, field.TypeString)
+	}
 	if value, ok := ru.mutation.GatewayRefundID(); ok {
 		_spec.SetField(refund.FieldGatewayRefundID, field.TypeString, value)
 	}
@@ -376,11 +454,32 @@ func (ru *RefundUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := ru.mutation.Amount(); ok {
 		_spec.SetField(refund.FieldAmount, field.TypeOther, value)
 	}
+	if value, ok := ru.mutation.SettledAmount(); ok {
+		_spec.SetField(refund.FieldSettledAmount, field.TypeOther, value)
+	}
 	if value, ok := ru.mutation.RefundStatus(); ok {
 		_spec.SetField(refund.FieldRefundStatus, field.TypeString, value)
 	}
 	if value, ok := ru.mutation.RefundReason(); ok {
 		_spec.SetField(refund.FieldRefundReason, field.TypeString, value)
+	}
+	if value, ok := ru.mutation.RefundDestination(); ok {
+		_spec.SetField(refund.FieldRefundDestination, field.TypeString, value)
+	}
+	if value, ok := ru.mutation.RefundDestinationID(); ok {
+		_spec.SetField(refund.FieldRefundDestinationID, field.TypeString, value)
+	}
+	if ru.mutation.RefundDestinationIDCleared() {
+		_spec.ClearField(refund.FieldRefundDestinationID, field.TypeString)
+	}
+	if value, ok := ru.mutation.Attempt(); ok {
+		_spec.SetField(refund.FieldAttempt, field.TypeInt, value)
+	}
+	if value, ok := ru.mutation.AddedAttempt(); ok {
+		_spec.AddField(refund.FieldAttempt, field.TypeInt, value)
+	}
+	if ru.mutation.GatewayIdempotencyTokenCleared() {
+		_spec.ClearField(refund.FieldGatewayIdempotencyToken, field.TypeString)
 	}
 	if value, ok := ru.mutation.FailureReason(); ok {
 		_spec.SetField(refund.FieldFailureReason, field.TypeString, value)
@@ -538,6 +637,20 @@ func (ruo *RefundUpdateOne) SetNillableAmount(d *decimal.Decimal) *RefundUpdateO
 	return ruo
 }
 
+// SetSettledAmount sets the "settled_amount" field.
+func (ruo *RefundUpdateOne) SetSettledAmount(d decimal.Decimal) *RefundUpdateOne {
+	ruo.mutation.SetSettledAmount(d)
+	return ruo
+}
+
+// SetNillableSettledAmount sets the "settled_amount" field if the given value is not nil.
+func (ruo *RefundUpdateOne) SetNillableSettledAmount(d *decimal.Decimal) *RefundUpdateOne {
+	if d != nil {
+		ruo.SetSettledAmount(*d)
+	}
+	return ruo
+}
+
 // SetRefundStatus sets the "refund_status" field.
 func (ruo *RefundUpdateOne) SetRefundStatus(s string) *RefundUpdateOne {
 	ruo.mutation.SetRefundStatus(s)
@@ -563,6 +676,61 @@ func (ruo *RefundUpdateOne) SetNillableRefundReason(s *string) *RefundUpdateOne 
 	if s != nil {
 		ruo.SetRefundReason(*s)
 	}
+	return ruo
+}
+
+// SetRefundDestination sets the "refund_destination" field.
+func (ruo *RefundUpdateOne) SetRefundDestination(s string) *RefundUpdateOne {
+	ruo.mutation.SetRefundDestination(s)
+	return ruo
+}
+
+// SetNillableRefundDestination sets the "refund_destination" field if the given value is not nil.
+func (ruo *RefundUpdateOne) SetNillableRefundDestination(s *string) *RefundUpdateOne {
+	if s != nil {
+		ruo.SetRefundDestination(*s)
+	}
+	return ruo
+}
+
+// SetRefundDestinationID sets the "refund_destination_id" field.
+func (ruo *RefundUpdateOne) SetRefundDestinationID(s string) *RefundUpdateOne {
+	ruo.mutation.SetRefundDestinationID(s)
+	return ruo
+}
+
+// SetNillableRefundDestinationID sets the "refund_destination_id" field if the given value is not nil.
+func (ruo *RefundUpdateOne) SetNillableRefundDestinationID(s *string) *RefundUpdateOne {
+	if s != nil {
+		ruo.SetRefundDestinationID(*s)
+	}
+	return ruo
+}
+
+// ClearRefundDestinationID clears the value of the "refund_destination_id" field.
+func (ruo *RefundUpdateOne) ClearRefundDestinationID() *RefundUpdateOne {
+	ruo.mutation.ClearRefundDestinationID()
+	return ruo
+}
+
+// SetAttempt sets the "attempt" field.
+func (ruo *RefundUpdateOne) SetAttempt(i int) *RefundUpdateOne {
+	ruo.mutation.ResetAttempt()
+	ruo.mutation.SetAttempt(i)
+	return ruo
+}
+
+// SetNillableAttempt sets the "attempt" field if the given value is not nil.
+func (ruo *RefundUpdateOne) SetNillableAttempt(i *int) *RefundUpdateOne {
+	if i != nil {
+		ruo.SetAttempt(*i)
+	}
+	return ruo
+}
+
+// AddAttempt adds i to the "attempt" field.
+func (ruo *RefundUpdateOne) AddAttempt(i int) *RefundUpdateOne {
+	ruo.mutation.AddAttempt(i)
 	return ruo
 }
 
@@ -806,6 +974,15 @@ func (ruo *RefundUpdateOne) sqlSave(ctx context.Context) (_node *Refund, err err
 	if ruo.mutation.EnvironmentIDCleared() {
 		_spec.ClearField(refund.FieldEnvironmentID, field.TypeString)
 	}
+	if ruo.mutation.PaymentIDCleared() {
+		_spec.ClearField(refund.FieldPaymentID, field.TypeString)
+	}
+	if ruo.mutation.CreditNoteIDCleared() {
+		_spec.ClearField(refund.FieldCreditNoteID, field.TypeString)
+	}
+	if ruo.mutation.PaymentGatewayCleared() {
+		_spec.ClearField(refund.FieldPaymentGateway, field.TypeString)
+	}
 	if value, ok := ruo.mutation.GatewayRefundID(); ok {
 		_spec.SetField(refund.FieldGatewayRefundID, field.TypeString, value)
 	}
@@ -821,11 +998,32 @@ func (ruo *RefundUpdateOne) sqlSave(ctx context.Context) (_node *Refund, err err
 	if value, ok := ruo.mutation.Amount(); ok {
 		_spec.SetField(refund.FieldAmount, field.TypeOther, value)
 	}
+	if value, ok := ruo.mutation.SettledAmount(); ok {
+		_spec.SetField(refund.FieldSettledAmount, field.TypeOther, value)
+	}
 	if value, ok := ruo.mutation.RefundStatus(); ok {
 		_spec.SetField(refund.FieldRefundStatus, field.TypeString, value)
 	}
 	if value, ok := ruo.mutation.RefundReason(); ok {
 		_spec.SetField(refund.FieldRefundReason, field.TypeString, value)
+	}
+	if value, ok := ruo.mutation.RefundDestination(); ok {
+		_spec.SetField(refund.FieldRefundDestination, field.TypeString, value)
+	}
+	if value, ok := ruo.mutation.RefundDestinationID(); ok {
+		_spec.SetField(refund.FieldRefundDestinationID, field.TypeString, value)
+	}
+	if ruo.mutation.RefundDestinationIDCleared() {
+		_spec.ClearField(refund.FieldRefundDestinationID, field.TypeString)
+	}
+	if value, ok := ruo.mutation.Attempt(); ok {
+		_spec.SetField(refund.FieldAttempt, field.TypeInt, value)
+	}
+	if value, ok := ruo.mutation.AddedAttempt(); ok {
+		_spec.AddField(refund.FieldAttempt, field.TypeInt, value)
+	}
+	if ruo.mutation.GatewayIdempotencyTokenCleared() {
+		_spec.ClearField(refund.FieldGatewayIdempotencyToken, field.TypeString)
 	}
 	if value, ok := ruo.mutation.FailureReason(); ok {
 		_spec.SetField(refund.FieldFailureReason, field.TypeString, value)

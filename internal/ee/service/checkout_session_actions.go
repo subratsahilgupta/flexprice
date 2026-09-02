@@ -97,6 +97,7 @@ func (s *checkoutSessionService) callCheckoutProvider(
 		}
 
 		authReq := interfaces.AuthorizationLinkRequest{
+			CustomerPresent: !cfg.CustomerNotPresent,
 			InvoiceID:       req.InvoiceID,
 			CustomerID:      req.CustomerID,
 			PaymentID:       req.PaymentID,
@@ -116,6 +117,19 @@ func (s *checkoutSessionService) callCheckoutProvider(
 		} else if charged {
 			resp = chargedResp
 			break
+		}
+
+		// A link is only worth issuing to someone who can click it. Unattended, it
+		// would leave a session pending until expiry with nobody to act on it, so the
+		// caller is told the charge did not happen and can fall back its own way.
+		if cfg.CustomerNotPresent {
+			return nil, ierr.NewError("no saved payment method could be charged").
+				WithHint("The customer has no payment method that can be charged automatically").
+				WithReportableDetails(map[string]any{
+					"customer_id": req.CustomerID,
+					"invoice_id":  req.InvoiceID,
+				}).
+				Mark(ierr.ErrInvalidOperation)
 		}
 
 		resp, err = provider.CreateAuthorizationLink(ctx, authReq)
