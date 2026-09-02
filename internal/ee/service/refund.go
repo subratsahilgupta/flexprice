@@ -639,7 +639,13 @@ func (s *refundService) publishSystemEvent(ctx context.Context, eventName types.
 
 func (s *refundService) ListRefunds(ctx context.Context, filter *types.RefundFilter) (*dto.ListRefundsResponse, error) {
 	if filter == nil {
-		filter = &types.RefundFilter{QueryFilter: types.NewDefaultQueryFilter()}
+		filter = types.NewRefundFilter()
+	}
+	if filter.QueryFilter == nil {
+		filter.QueryFilter = types.NewDefaultQueryFilter()
+	}
+	if filter.GetLimit() == 0 {
+		filter.Limit = lo.ToPtr(types.GetDefaultFilter().Limit)
 	}
 	if err := filter.Validate(); err != nil {
 		return nil, err

@@ -164,13 +164,23 @@ type RefundFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
 
-	PaymentIDs         []string
-	CreditNoteIDs      []string
-	InvoiceIDs         []string
-	RefundStatuses     []RefundStatus
-	RefundDestinations []RefundDestination
-	Gateway            *string
-	OnlySettled        *bool
+	PaymentIDs         []string            `json:"payment_ids,omitempty" form:"payment_ids"`
+	CreditNoteIDs      []string            `json:"credit_note_ids,omitempty" form:"credit_note_ids"`
+	InvoiceIDs         []string            `json:"invoice_ids,omitempty" form:"invoice_ids"`
+	RefundStatuses     []RefundStatus      `json:"refund_statuses,omitempty" form:"refund_statuses"`
+	RefundDestinations []RefundDestination `json:"refund_destinations,omitempty" form:"refund_destinations"`
+	Gateway            *string             `json:"gateway,omitempty" form:"gateway"`
+	OnlySettled        *bool               `json:"only_settled,omitempty" form:"only_settled"`
+}
+
+// NewRefundFilter creates a refund filter with default pagination.
+func NewRefundFilter() *RefundFilter {
+	return &RefundFilter{QueryFilter: NewDefaultQueryFilter()}
+}
+
+// NewNoLimitRefundFilter creates a refund filter without pagination.
+func NewNoLimitRefundFilter() *RefundFilter {
+	return &RefundFilter{QueryFilter: NewNoLimitQueryFilter()}
 }
 
 // Validate validates the refund filter.

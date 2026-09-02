@@ -46,6 +46,7 @@ type Handlers struct {
 	Costsheet                *v1.CostsheetHandler
 	RevenueAnalytics         *v1.RevenueAnalyticsHandler
 	CreditNote               *v1.CreditNoteHandler
+	Refund                   *v1.RefundHandler
 	Tax                      *v1.TaxHandler
 	Coupon                   *v1.CouponHandler
 	Webhook                  *v1.WebhookHandler
@@ -579,6 +580,13 @@ func NewRouter(
 		}
 
 		// Credit note routes
+		refunds := v1Private.Group("/refunds")
+		{
+			refunds.GET("", handlers.Refund.ListRefunds)
+			refunds.GET("/:id", handlers.Refund.GetRefund)
+			refunds.POST("/:id/retry", write(types.EntityPayment, types.ActionWrite), handlers.Refund.RetryRefund)
+		}
+
 		creditNotes := v1Private.Group("/creditnotes")
 		{
 			creditNotes.POST("", write(types.EntityCreditNote, types.ActionWrite), handlers.CreditNote.CreateCreditNote)
@@ -660,7 +668,7 @@ func NewRouter(
 	// The session token carries the tenant, so the portal is subject to the same
 	// tenant suspension rules as the rest of the API. Without this a suspended
 	// tenant's customers could keep mutating data through the portal.
-	
+
 	// No RBAC middleware: the portal authenticates with a session token, which
 	// carries no API-key role, so any permission check here denies every caller.
 	// The session token is itself the authorization — it names the one customer

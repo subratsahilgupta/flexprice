@@ -414,6 +414,7 @@ func provideHandlers(
 		Costsheet:                v1.NewCostsheetHandler(costsheetService, logger),
 		RevenueAnalytics:         v1.NewRevenueAnalyticsHandler(revenueAnalyticsService, costsheetUsageTrackingService, cfg, logger),
 		CreditNote:               v1.NewCreditNoteHandler(creditNoteService, logger),
+		Refund:                   v1.NewRefundHandler(refundService, logger),
 		Connection:               v1.NewConnectionHandler(connectionService, logger),
 		Marketplace:              v1.NewMarketplaceHandler(marketplaceService, logger),
 		UsageRecord:              v1.NewUsageRecordHandler(usageRecordService, logger),
