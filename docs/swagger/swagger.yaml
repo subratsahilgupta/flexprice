@@ -205,6 +205,14 @@ definitions:
     properties:
       collection_method:
         $ref: '#/definitions/types.CollectionMethod'
+      customer_present:
+        description: |-
+          CustomerPresent declares the charge as customer-initiated (CIT) rather than
+          merchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may
+          claim and who carries chargeback liability, so it must describe reality: true
+          only when the customer is actually at the keyboard, as in a portal one-click
+          top-up. Unattended charges (auto top-up, dunning) leave it false.
+        type: boolean
       max_mandate_limit:
         type: string
       payment_method:
@@ -544,6 +552,19 @@ definitions:
         type: string
       updated_by:
         type: string
+    type: object
+  AddLineItemRequest:
+    properties:
+      amount:
+        type: string
+      display_name:
+        type: string
+      quantity:
+        type: string
+    required:
+    - amount
+    - display_name
+    - quantity
     type: object
   AddonAssociationResponse:
     properties:
@@ -2705,6 +2726,10 @@ definitions:
           attaches only those IDs. Each listed ID must belong to the plan, match the subscription
           currency, and have a cadence that equals or strictly divides the subscription cadence.
           Pointer-slice distinguishes nil from [].
+          NOTE: no `dive,required` on this tag — swaggo misinterprets `required`
+          inside `dive` as marking the whole field required, which then shows up
+          in the OpenAPI schema and breaks callers that omit the field. Per-element
+          non-emptiness is enforced explicitly in Validate() below.
         items:
           type: string
         type: array
@@ -3644,6 +3669,15 @@ definitions:
       requestId:
         type: string
     type: object
+  ExecuteInvoiceModifyRequest:
+    properties:
+      line_item_params:
+        $ref: '#/definitions/InvoiceModifyLineItemParams'
+      type:
+        $ref: '#/definitions/InvoiceModifyType'
+    required:
+    - type
+    type: object
   ExecuteSubscriptionModifyRequest:
     properties:
       addon_params:
@@ -4576,6 +4610,54 @@ definitions:
           $ref: '#/definitions/UsageBreakdownItem'
         type: array
     type: object
+  InvoiceModifyLineItemAction:
+    enum:
+    - add
+    - update
+    - remove
+    type: string
+    x-enum-varnames:
+    - InvoiceModifyLineItemActionAdd
+    - InvoiceModifyLineItemActionUpdate
+    - InvoiceModifyLineItemActionRemove
+  InvoiceModifyLineItemParams:
+    properties:
+      action:
+        $ref: '#/definitions/InvoiceModifyLineItemAction'
+      items:
+        description: Required for action 'add'. Must contain at least one line item.
+        items:
+          $ref: '#/definitions/AddLineItemRequest'
+        minItems: 1
+        type: array
+      line_item_id:
+        description: |-
+          LineItemID and Update are required for action 'update' (one line item per call;
+          the update is versioned, so the item id changes after each edit).
+        type: string
+      line_item_ids:
+        description: Required for action 'remove'. Must contain at least one line
+          item ID.
+        items:
+          type: string
+        minItems: 1
+        type: array
+      update:
+        $ref: '#/definitions/UpdateLineItemRequest'
+    required:
+    - action
+    type: object
+  InvoiceModifyResponse:
+    properties:
+      invoice:
+        $ref: '#/definitions/InvoiceResponse'
+    type: object
+  InvoiceModifyType:
+    enum:
+    - line_item
+    type: string
+    x-enum-varnames:
+    - InvoiceModifyTypeLineItem
   InvoicePreview:
     properties:
       currency:
@@ -7564,6 +7646,15 @@ definitions:
         - $ref: '#/definitions/types.Metadata'
         description: Invoice metadata will be overridden with the request metadata
     type: object
+  UpdateLineItemRequest:
+    properties:
+      amount:
+        type: string
+      display_name:
+        type: string
+      quantity:
+        type: string
+    type: object
   UpdatePaymentRequest:
     properties:
       error_message:
@@ -9723,13 +9814,23 @@ definitions:
   types.CheckoutPaymentProvider:
     enum:
     - razorpay
+    - chargebee
     type: string
     x-enum-varnames:
     - CheckoutPaymentProviderRazorpay
+    - CheckoutPaymentProviderChargebee
   types.CheckoutPaymentProviderConfig:
     properties:
       collection_method:
         $ref: '#/definitions/types.CollectionMethod'
+      customer_present:
+        description: |-
+          CustomerPresent declares the charge as customer-initiated (CIT) rather than
+          merchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may
+          claim and who carries chargeback liability, so it must describe reality: true
+          only when the customer is actually at the keyboard, as in a portal one-click
+          top-up. Unattended charges (auto top-up, dunning) leave it false.
+        type: boolean
       max_mandate_limit:
         type: string
       payment_method:
@@ -10792,6 +10893,7 @@ definitions:
     - moyasar
     - paddle
     - whop
+    - chargebee
     type: string
     x-enum-varnames:
     - PaymentGatewayTypeStripe
@@ -10800,6 +10902,7 @@ definitions:
     - PaymentGatewayTypeMoyasar
     - PaymentGatewayTypePaddle
     - PaymentGatewayTypeWhop
+    - PaymentGatewayTypeChargebee
   types.PaymentMethodType:
     enum:
     - CARD
@@ -11121,30 +11224,6 @@ definitions:
     - S3EncryptionTypeAES256
     - S3EncryptionTypeAwsKms
     - S3EncryptionTypeAwsKmsDsse
-  types.S3ExportConfig:
-    properties:
-      bucket:
-        description: S3 bucket name
-        type: string
-      compression:
-        allOf:
-        - $ref: '#/definitions/types.S3CompressionType'
-        description: 'Compression type: "gzip", "none" (default: "none")'
-      encryption:
-        allOf:
-        - $ref: '#/definitions/types.S3EncryptionType'
-        description: 'Encryption type: "AES256", "aws:kms", "aws:kms:dsse" (default:
-          "AES256")'
-      is_flexprice_managed:
-        description: If true, use Flexprice-managed S3 credentials instead of user-provided
-        type: boolean
-      key_prefix:
-        description: Optional prefix for S3 keys (e.g., "flexprice-exports/")
-        type: string
-      region:
-        description: AWS region (e.g., "us-west-2")
-        type: string
-    type: object
   types.S3JobConfig:
     properties:
       bucket:
@@ -11318,6 +11397,31 @@ definitions:
     - StatusPublished
     - StatusDeleted
     - StatusArchived
+  types.StorageExportConfig:
+    properties:
+      bucket:
+        description: Storage bucket name
+        type: string
+      compression:
+        allOf:
+        - $ref: '#/definitions/types.S3CompressionType'
+        description: 'Compression type: "gzip", "none" (default: "none")'
+      encryption:
+        allOf:
+        - $ref: '#/definitions/types.S3EncryptionType'
+        description: 'Encryption type: "AES256", "aws:kms", "aws:kms:dsse" (default:
+          "AES256")'
+      is_flexprice_managed:
+        description: If true, use Flexprice-managed storage credentials instead of
+          user-provided
+        type: boolean
+      key_prefix:
+        description: Optional prefix for object keys (e.g., "flexprice-exports/")
+        type: string
+      region:
+        description: Cloud region (e.g., "us-west-2"); unused for GCS
+        type: string
+    type: object
   types.SubscriptionChangeEntityType:
     enum:
     - plan
@@ -11611,8 +11715,8 @@ definitions:
         $ref: '#/definitions/types.EntitySyncConfig'
       s3:
         allOf:
-        - $ref: '#/definitions/types.S3ExportConfig'
-        description: S3 connection metadata (for Flexprice-managed S3 connections)
+        - $ref: '#/definitions/types.StorageExportConfig'
+        description: Tag stays "s3" for back-compat.
       subscription:
         $ref: '#/definitions/types.EntitySyncConfig'
     type: object
@@ -15971,6 +16075,53 @@ paths:
       tags:
       - Invoices
       x-scope: delete
+  /invoices/{id}/modify/execute:
+    post:
+      consumes:
+      - application/json
+      description: 'Execute a modification on a draft invoice. Currently supports
+        line item changes: add (bulk), update (one line item per call; the edit is
+        versioned, so the line item id changes), and remove (bulk, soft delete). Totals
+        are recalculated from the remaining line items; a manual edit marks the invoice
+        as manually edited, which disables recompute.'
+      operationId: executeInvoiceModify
+      parameters:
+      - description: Invoice ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Modification request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/ExecuteInvoiceModifyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/InvoiceModifyResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Resource not found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Execute invoice modification
+      tags:
+      - Invoices
+      x-scope: write
   /invoices/{id}/payment:
     put:
       consumes:
