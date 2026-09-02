@@ -116,6 +116,8 @@ func (Invoice) Fields() []ent.Field {
 			Optional().
 			Default(decimal.Zero),
 
+		// Promised, not settled: the sum of finalized refund credit notes.
+		// Settled cash lives on refunds.settled_amount.
 		field.Other("refunded_amount", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(20,8)",

@@ -50743,13 +50743,20 @@ type RefundMutation struct {
 	updated_by                *string
 	environment_id            *string
 	payment_id                *string
+	invoice_id                *string
+	credit_note_id            *string
 	payment_gateway           *string
 	gateway_refund_id         *string
 	gateway_tracking_id       *string
 	amount                    *decimal.Decimal
+	settled_amount            *decimal.Decimal
 	currency                  *string
 	refund_status             *string
 	refund_reason             *string
+	refund_destination        *string
+	refund_destination_id     *string
+	attempt                   *int
+	addattempt                *int
 	idempotency_key           *string
 	gateway_idempotency_token *string
 	failure_reason            *string
@@ -51177,7 +51184,7 @@ func (m *RefundMutation) PaymentID() (r string, exists bool) {
 // OldPaymentID returns the old "payment_id" field's value of the Refund entity.
 // If the Refund object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *RefundMutation) OldPaymentID(ctx context.Context) (v string, err error) {
+func (m *RefundMutation) OldPaymentID(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldPaymentID is only allowed on UpdateOne operations")
 	}
@@ -51191,9 +51198,107 @@ func (m *RefundMutation) OldPaymentID(ctx context.Context) (v string, err error)
 	return oldValue.PaymentID, nil
 }
 
+// ClearPaymentID clears the value of the "payment_id" field.
+func (m *RefundMutation) ClearPaymentID() {
+	m.payment_id = nil
+	m.clearedFields[refund.FieldPaymentID] = struct{}{}
+}
+
+// PaymentIDCleared returns if the "payment_id" field was cleared in this mutation.
+func (m *RefundMutation) PaymentIDCleared() bool {
+	_, ok := m.clearedFields[refund.FieldPaymentID]
+	return ok
+}
+
 // ResetPaymentID resets all changes to the "payment_id" field.
 func (m *RefundMutation) ResetPaymentID() {
 	m.payment_id = nil
+	delete(m.clearedFields, refund.FieldPaymentID)
+}
+
+// SetInvoiceID sets the "invoice_id" field.
+func (m *RefundMutation) SetInvoiceID(s string) {
+	m.invoice_id = &s
+}
+
+// InvoiceID returns the value of the "invoice_id" field in the mutation.
+func (m *RefundMutation) InvoiceID() (r string, exists bool) {
+	v := m.invoice_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInvoiceID returns the old "invoice_id" field's value of the Refund entity.
+// If the Refund object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RefundMutation) OldInvoiceID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInvoiceID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInvoiceID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInvoiceID: %w", err)
+	}
+	return oldValue.InvoiceID, nil
+}
+
+// ResetInvoiceID resets all changes to the "invoice_id" field.
+func (m *RefundMutation) ResetInvoiceID() {
+	m.invoice_id = nil
+}
+
+// SetCreditNoteID sets the "credit_note_id" field.
+func (m *RefundMutation) SetCreditNoteID(s string) {
+	m.credit_note_id = &s
+}
+
+// CreditNoteID returns the value of the "credit_note_id" field in the mutation.
+func (m *RefundMutation) CreditNoteID() (r string, exists bool) {
+	v := m.credit_note_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreditNoteID returns the old "credit_note_id" field's value of the Refund entity.
+// If the Refund object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RefundMutation) OldCreditNoteID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreditNoteID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreditNoteID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreditNoteID: %w", err)
+	}
+	return oldValue.CreditNoteID, nil
+}
+
+// ClearCreditNoteID clears the value of the "credit_note_id" field.
+func (m *RefundMutation) ClearCreditNoteID() {
+	m.credit_note_id = nil
+	m.clearedFields[refund.FieldCreditNoteID] = struct{}{}
+}
+
+// CreditNoteIDCleared returns if the "credit_note_id" field was cleared in this mutation.
+func (m *RefundMutation) CreditNoteIDCleared() bool {
+	_, ok := m.clearedFields[refund.FieldCreditNoteID]
+	return ok
+}
+
+// ResetCreditNoteID resets all changes to the "credit_note_id" field.
+func (m *RefundMutation) ResetCreditNoteID() {
+	m.credit_note_id = nil
+	delete(m.clearedFields, refund.FieldCreditNoteID)
 }
 
 // SetPaymentGateway sets the "payment_gateway" field.
@@ -51213,7 +51318,7 @@ func (m *RefundMutation) PaymentGateway() (r string, exists bool) {
 // OldPaymentGateway returns the old "payment_gateway" field's value of the Refund entity.
 // If the Refund object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *RefundMutation) OldPaymentGateway(ctx context.Context) (v string, err error) {
+func (m *RefundMutation) OldPaymentGateway(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldPaymentGateway is only allowed on UpdateOne operations")
 	}
@@ -51227,9 +51332,22 @@ func (m *RefundMutation) OldPaymentGateway(ctx context.Context) (v string, err e
 	return oldValue.PaymentGateway, nil
 }
 
+// ClearPaymentGateway clears the value of the "payment_gateway" field.
+func (m *RefundMutation) ClearPaymentGateway() {
+	m.payment_gateway = nil
+	m.clearedFields[refund.FieldPaymentGateway] = struct{}{}
+}
+
+// PaymentGatewayCleared returns if the "payment_gateway" field was cleared in this mutation.
+func (m *RefundMutation) PaymentGatewayCleared() bool {
+	_, ok := m.clearedFields[refund.FieldPaymentGateway]
+	return ok
+}
+
 // ResetPaymentGateway resets all changes to the "payment_gateway" field.
 func (m *RefundMutation) ResetPaymentGateway() {
 	m.payment_gateway = nil
+	delete(m.clearedFields, refund.FieldPaymentGateway)
 }
 
 // SetGatewayRefundID sets the "gateway_refund_id" field.
@@ -51366,6 +51484,42 @@ func (m *RefundMutation) ResetAmount() {
 	m.amount = nil
 }
 
+// SetSettledAmount sets the "settled_amount" field.
+func (m *RefundMutation) SetSettledAmount(d decimal.Decimal) {
+	m.settled_amount = &d
+}
+
+// SettledAmount returns the value of the "settled_amount" field in the mutation.
+func (m *RefundMutation) SettledAmount() (r decimal.Decimal, exists bool) {
+	v := m.settled_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSettledAmount returns the old "settled_amount" field's value of the Refund entity.
+// If the Refund object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RefundMutation) OldSettledAmount(ctx context.Context) (v decimal.Decimal, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSettledAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSettledAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSettledAmount: %w", err)
+	}
+	return oldValue.SettledAmount, nil
+}
+
+// ResetSettledAmount resets all changes to the "settled_amount" field.
+func (m *RefundMutation) ResetSettledAmount() {
+	m.settled_amount = nil
+}
+
 // SetCurrency sets the "currency" field.
 func (m *RefundMutation) SetCurrency(s string) {
 	m.currency = &s
@@ -51474,6 +51628,147 @@ func (m *RefundMutation) ResetRefundReason() {
 	m.refund_reason = nil
 }
 
+// SetRefundDestination sets the "refund_destination" field.
+func (m *RefundMutation) SetRefundDestination(s string) {
+	m.refund_destination = &s
+}
+
+// RefundDestination returns the value of the "refund_destination" field in the mutation.
+func (m *RefundMutation) RefundDestination() (r string, exists bool) {
+	v := m.refund_destination
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundDestination returns the old "refund_destination" field's value of the Refund entity.
+// If the Refund object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RefundMutation) OldRefundDestination(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundDestination is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundDestination requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundDestination: %w", err)
+	}
+	return oldValue.RefundDestination, nil
+}
+
+// ResetRefundDestination resets all changes to the "refund_destination" field.
+func (m *RefundMutation) ResetRefundDestination() {
+	m.refund_destination = nil
+}
+
+// SetRefundDestinationID sets the "refund_destination_id" field.
+func (m *RefundMutation) SetRefundDestinationID(s string) {
+	m.refund_destination_id = &s
+}
+
+// RefundDestinationID returns the value of the "refund_destination_id" field in the mutation.
+func (m *RefundMutation) RefundDestinationID() (r string, exists bool) {
+	v := m.refund_destination_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRefundDestinationID returns the old "refund_destination_id" field's value of the Refund entity.
+// If the Refund object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RefundMutation) OldRefundDestinationID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRefundDestinationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRefundDestinationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRefundDestinationID: %w", err)
+	}
+	return oldValue.RefundDestinationID, nil
+}
+
+// ClearRefundDestinationID clears the value of the "refund_destination_id" field.
+func (m *RefundMutation) ClearRefundDestinationID() {
+	m.refund_destination_id = nil
+	m.clearedFields[refund.FieldRefundDestinationID] = struct{}{}
+}
+
+// RefundDestinationIDCleared returns if the "refund_destination_id" field was cleared in this mutation.
+func (m *RefundMutation) RefundDestinationIDCleared() bool {
+	_, ok := m.clearedFields[refund.FieldRefundDestinationID]
+	return ok
+}
+
+// ResetRefundDestinationID resets all changes to the "refund_destination_id" field.
+func (m *RefundMutation) ResetRefundDestinationID() {
+	m.refund_destination_id = nil
+	delete(m.clearedFields, refund.FieldRefundDestinationID)
+}
+
+// SetAttempt sets the "attempt" field.
+func (m *RefundMutation) SetAttempt(i int) {
+	m.attempt = &i
+	m.addattempt = nil
+}
+
+// Attempt returns the value of the "attempt" field in the mutation.
+func (m *RefundMutation) Attempt() (r int, exists bool) {
+	v := m.attempt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAttempt returns the old "attempt" field's value of the Refund entity.
+// If the Refund object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RefundMutation) OldAttempt(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAttempt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAttempt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAttempt: %w", err)
+	}
+	return oldValue.Attempt, nil
+}
+
+// AddAttempt adds i to the "attempt" field.
+func (m *RefundMutation) AddAttempt(i int) {
+	if m.addattempt != nil {
+		*m.addattempt += i
+	} else {
+		m.addattempt = &i
+	}
+}
+
+// AddedAttempt returns the value that was added to the "attempt" field in this mutation.
+func (m *RefundMutation) AddedAttempt() (r int, exists bool) {
+	v := m.addattempt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAttempt resets all changes to the "attempt" field.
+func (m *RefundMutation) ResetAttempt() {
+	m.attempt = nil
+	m.addattempt = nil
+}
+
 // SetIdempotencyKey sets the "idempotency_key" field.
 func (m *RefundMutation) SetIdempotencyKey(s string) {
 	m.idempotency_key = &s
@@ -51527,7 +51822,7 @@ func (m *RefundMutation) GatewayIdempotencyToken() (r string, exists bool) {
 // OldGatewayIdempotencyToken returns the old "gateway_idempotency_token" field's value of the Refund entity.
 // If the Refund object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *RefundMutation) OldGatewayIdempotencyToken(ctx context.Context) (v string, err error) {
+func (m *RefundMutation) OldGatewayIdempotencyToken(ctx context.Context) (v *string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldGatewayIdempotencyToken is only allowed on UpdateOne operations")
 	}
@@ -51541,9 +51836,22 @@ func (m *RefundMutation) OldGatewayIdempotencyToken(ctx context.Context) (v stri
 	return oldValue.GatewayIdempotencyToken, nil
 }
 
+// ClearGatewayIdempotencyToken clears the value of the "gateway_idempotency_token" field.
+func (m *RefundMutation) ClearGatewayIdempotencyToken() {
+	m.gateway_idempotency_token = nil
+	m.clearedFields[refund.FieldGatewayIdempotencyToken] = struct{}{}
+}
+
+// GatewayIdempotencyTokenCleared returns if the "gateway_idempotency_token" field was cleared in this mutation.
+func (m *RefundMutation) GatewayIdempotencyTokenCleared() bool {
+	_, ok := m.clearedFields[refund.FieldGatewayIdempotencyToken]
+	return ok
+}
+
 // ResetGatewayIdempotencyToken resets all changes to the "gateway_idempotency_token" field.
 func (m *RefundMutation) ResetGatewayIdempotencyToken() {
 	m.gateway_idempotency_token = nil
+	delete(m.clearedFields, refund.FieldGatewayIdempotencyToken)
 }
 
 // SetFailureReason sets the "failure_reason" field.
@@ -51923,7 +52231,7 @@ func (m *RefundMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RefundMutation) Fields() []string {
-	fields := make([]string, 0, 24)
+	fields := make([]string, 0, 30)
 	if m.tenant_id != nil {
 		fields = append(fields, refund.FieldTenantID)
 	}
@@ -51948,6 +52256,12 @@ func (m *RefundMutation) Fields() []string {
 	if m.payment_id != nil {
 		fields = append(fields, refund.FieldPaymentID)
 	}
+	if m.invoice_id != nil {
+		fields = append(fields, refund.FieldInvoiceID)
+	}
+	if m.credit_note_id != nil {
+		fields = append(fields, refund.FieldCreditNoteID)
+	}
 	if m.payment_gateway != nil {
 		fields = append(fields, refund.FieldPaymentGateway)
 	}
@@ -51960,6 +52274,9 @@ func (m *RefundMutation) Fields() []string {
 	if m.amount != nil {
 		fields = append(fields, refund.FieldAmount)
 	}
+	if m.settled_amount != nil {
+		fields = append(fields, refund.FieldSettledAmount)
+	}
 	if m.currency != nil {
 		fields = append(fields, refund.FieldCurrency)
 	}
@@ -51968,6 +52285,15 @@ func (m *RefundMutation) Fields() []string {
 	}
 	if m.refund_reason != nil {
 		fields = append(fields, refund.FieldRefundReason)
+	}
+	if m.refund_destination != nil {
+		fields = append(fields, refund.FieldRefundDestination)
+	}
+	if m.refund_destination_id != nil {
+		fields = append(fields, refund.FieldRefundDestinationID)
+	}
+	if m.attempt != nil {
+		fields = append(fields, refund.FieldAttempt)
 	}
 	if m.idempotency_key != nil {
 		fields = append(fields, refund.FieldIdempotencyKey)
@@ -52020,6 +52346,10 @@ func (m *RefundMutation) Field(name string) (ent.Value, bool) {
 		return m.EnvironmentID()
 	case refund.FieldPaymentID:
 		return m.PaymentID()
+	case refund.FieldInvoiceID:
+		return m.InvoiceID()
+	case refund.FieldCreditNoteID:
+		return m.CreditNoteID()
 	case refund.FieldPaymentGateway:
 		return m.PaymentGateway()
 	case refund.FieldGatewayRefundID:
@@ -52028,12 +52358,20 @@ func (m *RefundMutation) Field(name string) (ent.Value, bool) {
 		return m.GatewayTrackingID()
 	case refund.FieldAmount:
 		return m.Amount()
+	case refund.FieldSettledAmount:
+		return m.SettledAmount()
 	case refund.FieldCurrency:
 		return m.Currency()
 	case refund.FieldRefundStatus:
 		return m.RefundStatus()
 	case refund.FieldRefundReason:
 		return m.RefundReason()
+	case refund.FieldRefundDestination:
+		return m.RefundDestination()
+	case refund.FieldRefundDestinationID:
+		return m.RefundDestinationID()
+	case refund.FieldAttempt:
+		return m.Attempt()
 	case refund.FieldIdempotencyKey:
 		return m.IdempotencyKey()
 	case refund.FieldGatewayIdempotencyToken:
@@ -52077,6 +52415,10 @@ func (m *RefundMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldEnvironmentID(ctx)
 	case refund.FieldPaymentID:
 		return m.OldPaymentID(ctx)
+	case refund.FieldInvoiceID:
+		return m.OldInvoiceID(ctx)
+	case refund.FieldCreditNoteID:
+		return m.OldCreditNoteID(ctx)
 	case refund.FieldPaymentGateway:
 		return m.OldPaymentGateway(ctx)
 	case refund.FieldGatewayRefundID:
@@ -52085,12 +52427,20 @@ func (m *RefundMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldGatewayTrackingID(ctx)
 	case refund.FieldAmount:
 		return m.OldAmount(ctx)
+	case refund.FieldSettledAmount:
+		return m.OldSettledAmount(ctx)
 	case refund.FieldCurrency:
 		return m.OldCurrency(ctx)
 	case refund.FieldRefundStatus:
 		return m.OldRefundStatus(ctx)
 	case refund.FieldRefundReason:
 		return m.OldRefundReason(ctx)
+	case refund.FieldRefundDestination:
+		return m.OldRefundDestination(ctx)
+	case refund.FieldRefundDestinationID:
+		return m.OldRefundDestinationID(ctx)
+	case refund.FieldAttempt:
+		return m.OldAttempt(ctx)
 	case refund.FieldIdempotencyKey:
 		return m.OldIdempotencyKey(ctx)
 	case refund.FieldGatewayIdempotencyToken:
@@ -52174,6 +52524,20 @@ func (m *RefundMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetPaymentID(v)
 		return nil
+	case refund.FieldInvoiceID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInvoiceID(v)
+		return nil
+	case refund.FieldCreditNoteID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreditNoteID(v)
+		return nil
 	case refund.FieldPaymentGateway:
 		v, ok := value.(string)
 		if !ok {
@@ -52202,6 +52566,13 @@ func (m *RefundMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAmount(v)
 		return nil
+	case refund.FieldSettledAmount:
+		v, ok := value.(decimal.Decimal)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSettledAmount(v)
+		return nil
 	case refund.FieldCurrency:
 		v, ok := value.(string)
 		if !ok {
@@ -52222,6 +52593,27 @@ func (m *RefundMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRefundReason(v)
+		return nil
+	case refund.FieldRefundDestination:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundDestination(v)
+		return nil
+	case refund.FieldRefundDestinationID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRefundDestinationID(v)
+		return nil
+	case refund.FieldAttempt:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAttempt(v)
 		return nil
 	case refund.FieldIdempotencyKey:
 		v, ok := value.(string)
@@ -52293,13 +52685,21 @@ func (m *RefundMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *RefundMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addattempt != nil {
+		fields = append(fields, refund.FieldAttempt)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *RefundMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case refund.FieldAttempt:
+		return m.AddedAttempt()
+	}
 	return nil, false
 }
 
@@ -52308,6 +52708,13 @@ func (m *RefundMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *RefundMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case refund.FieldAttempt:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAttempt(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Refund numeric field %s", name)
 }
@@ -52325,11 +52732,26 @@ func (m *RefundMutation) ClearedFields() []string {
 	if m.FieldCleared(refund.FieldEnvironmentID) {
 		fields = append(fields, refund.FieldEnvironmentID)
 	}
+	if m.FieldCleared(refund.FieldPaymentID) {
+		fields = append(fields, refund.FieldPaymentID)
+	}
+	if m.FieldCleared(refund.FieldCreditNoteID) {
+		fields = append(fields, refund.FieldCreditNoteID)
+	}
+	if m.FieldCleared(refund.FieldPaymentGateway) {
+		fields = append(fields, refund.FieldPaymentGateway)
+	}
 	if m.FieldCleared(refund.FieldGatewayRefundID) {
 		fields = append(fields, refund.FieldGatewayRefundID)
 	}
 	if m.FieldCleared(refund.FieldGatewayTrackingID) {
 		fields = append(fields, refund.FieldGatewayTrackingID)
+	}
+	if m.FieldCleared(refund.FieldRefundDestinationID) {
+		fields = append(fields, refund.FieldRefundDestinationID)
+	}
+	if m.FieldCleared(refund.FieldGatewayIdempotencyToken) {
+		fields = append(fields, refund.FieldGatewayIdempotencyToken)
 	}
 	if m.FieldCleared(refund.FieldFailureReason) {
 		fields = append(fields, refund.FieldFailureReason)
@@ -52375,11 +52797,26 @@ func (m *RefundMutation) ClearField(name string) error {
 	case refund.FieldEnvironmentID:
 		m.ClearEnvironmentID()
 		return nil
+	case refund.FieldPaymentID:
+		m.ClearPaymentID()
+		return nil
+	case refund.FieldCreditNoteID:
+		m.ClearCreditNoteID()
+		return nil
+	case refund.FieldPaymentGateway:
+		m.ClearPaymentGateway()
+		return nil
 	case refund.FieldGatewayRefundID:
 		m.ClearGatewayRefundID()
 		return nil
 	case refund.FieldGatewayTrackingID:
 		m.ClearGatewayTrackingID()
+		return nil
+	case refund.FieldRefundDestinationID:
+		m.ClearRefundDestinationID()
+		return nil
+	case refund.FieldGatewayIdempotencyToken:
+		m.ClearGatewayIdempotencyToken()
 		return nil
 	case refund.FieldFailureReason:
 		m.ClearFailureReason()
@@ -52434,6 +52871,12 @@ func (m *RefundMutation) ResetField(name string) error {
 	case refund.FieldPaymentID:
 		m.ResetPaymentID()
 		return nil
+	case refund.FieldInvoiceID:
+		m.ResetInvoiceID()
+		return nil
+	case refund.FieldCreditNoteID:
+		m.ResetCreditNoteID()
+		return nil
 	case refund.FieldPaymentGateway:
 		m.ResetPaymentGateway()
 		return nil
@@ -52446,6 +52889,9 @@ func (m *RefundMutation) ResetField(name string) error {
 	case refund.FieldAmount:
 		m.ResetAmount()
 		return nil
+	case refund.FieldSettledAmount:
+		m.ResetSettledAmount()
+		return nil
 	case refund.FieldCurrency:
 		m.ResetCurrency()
 		return nil
@@ -52454,6 +52900,15 @@ func (m *RefundMutation) ResetField(name string) error {
 		return nil
 	case refund.FieldRefundReason:
 		m.ResetRefundReason()
+		return nil
+	case refund.FieldRefundDestination:
+		m.ResetRefundDestination()
+		return nil
+	case refund.FieldRefundDestinationID:
+		m.ResetRefundDestinationID()
+		return nil
+	case refund.FieldAttempt:
+		m.ResetAttempt()
 		return nil
 	case refund.FieldIdempotencyKey:
 		m.ResetIdempotencyKey()

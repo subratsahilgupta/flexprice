@@ -151,6 +151,7 @@ func (h *CreditNoteHandler) VoidCreditNote(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param id path string true "Credit note ID"
+// @Param request body dto.FinalizeCreditNoteRequest false "Finalize options"
 // @Success 200 {object} dto.CreditNoteResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 401 {object} ierr.ErrorResponse "Unauthorized"
@@ -168,7 +169,22 @@ func (h *CreditNoteHandler) FinalizeCreditNote(c *gin.Context) {
 		return
 	}
 
-	err := h.creditNoteService.FinalizeCreditNote(c.Request.Context(), id)
+	// The body is optional; an empty finalize keeps the default routing.
+	var req dto.FinalizeCreditNoteRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.Error(ierr.WithError(err).
+				WithHint("Invalid request format").
+				Mark(ierr.ErrValidation))
+			return
+		}
+	}
+	if err := req.Validate(); err != nil {
+		c.Error(err)
+		return
+	}
+
+	err := h.creditNoteService.FinalizeCreditNote(c.Request.Context(), id, req.RefundTarget)
 	if err != nil {
 		c.Error(err)
 		return

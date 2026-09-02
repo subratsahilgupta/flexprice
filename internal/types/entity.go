@@ -11,6 +11,7 @@ const (
 	SystemEntityTypeInvoice         SystemEntityType = "invoice"
 	SystemEntityTypePayment         SystemEntityType = "payment"
 	SystemEntityTypeCreditNote      SystemEntityType = "credit_note"
+	SystemEntityTypeRefund          SystemEntityType = "refund"
 	SystemEntityTypeWallet          SystemEntityType = "wallet"
 	SystemEntityTypeEntitlement     SystemEntityType = "entitlement"
 	SystemEntityTypeCheckoutSession SystemEntityType = "checkout_session"

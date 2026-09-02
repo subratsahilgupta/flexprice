@@ -125,6 +125,8 @@ const (
 	EventPaymentFailed    ChargebeeEventType = "payment_failed"
 	EventInvoiceGenerated ChargebeeEventType = "invoice_generated"
 	EventInvoiceUpdated   ChargebeeEventType = "invoice_updated"
+	EventPaymentRefunded  ChargebeeEventType = "payment_refunded"
+	EventRefundInitiated  ChargebeeEventType = "refund_initiated"
 )
 
 // timestampToTime converts a Unix timestamp (int64) to time.Time

@@ -117,9 +117,45 @@ func (rc *RefundCreate) SetPaymentID(s string) *RefundCreate {
 	return rc
 }
 
+// SetNillablePaymentID sets the "payment_id" field if the given value is not nil.
+func (rc *RefundCreate) SetNillablePaymentID(s *string) *RefundCreate {
+	if s != nil {
+		rc.SetPaymentID(*s)
+	}
+	return rc
+}
+
+// SetInvoiceID sets the "invoice_id" field.
+func (rc *RefundCreate) SetInvoiceID(s string) *RefundCreate {
+	rc.mutation.SetInvoiceID(s)
+	return rc
+}
+
+// SetCreditNoteID sets the "credit_note_id" field.
+func (rc *RefundCreate) SetCreditNoteID(s string) *RefundCreate {
+	rc.mutation.SetCreditNoteID(s)
+	return rc
+}
+
+// SetNillableCreditNoteID sets the "credit_note_id" field if the given value is not nil.
+func (rc *RefundCreate) SetNillableCreditNoteID(s *string) *RefundCreate {
+	if s != nil {
+		rc.SetCreditNoteID(*s)
+	}
+	return rc
+}
+
 // SetPaymentGateway sets the "payment_gateway" field.
 func (rc *RefundCreate) SetPaymentGateway(s string) *RefundCreate {
 	rc.mutation.SetPaymentGateway(s)
+	return rc
+}
+
+// SetNillablePaymentGateway sets the "payment_gateway" field if the given value is not nil.
+func (rc *RefundCreate) SetNillablePaymentGateway(s *string) *RefundCreate {
+	if s != nil {
+		rc.SetPaymentGateway(*s)
+	}
 	return rc
 }
 
@@ -165,6 +201,20 @@ func (rc *RefundCreate) SetNillableAmount(d *decimal.Decimal) *RefundCreate {
 	return rc
 }
 
+// SetSettledAmount sets the "settled_amount" field.
+func (rc *RefundCreate) SetSettledAmount(d decimal.Decimal) *RefundCreate {
+	rc.mutation.SetSettledAmount(d)
+	return rc
+}
+
+// SetNillableSettledAmount sets the "settled_amount" field if the given value is not nil.
+func (rc *RefundCreate) SetNillableSettledAmount(d *decimal.Decimal) *RefundCreate {
+	if d != nil {
+		rc.SetSettledAmount(*d)
+	}
+	return rc
+}
+
 // SetCurrency sets the "currency" field.
 func (rc *RefundCreate) SetCurrency(s string) *RefundCreate {
 	rc.mutation.SetCurrency(s)
@@ -183,6 +233,48 @@ func (rc *RefundCreate) SetRefundReason(s string) *RefundCreate {
 	return rc
 }
 
+// SetRefundDestination sets the "refund_destination" field.
+func (rc *RefundCreate) SetRefundDestination(s string) *RefundCreate {
+	rc.mutation.SetRefundDestination(s)
+	return rc
+}
+
+// SetNillableRefundDestination sets the "refund_destination" field if the given value is not nil.
+func (rc *RefundCreate) SetNillableRefundDestination(s *string) *RefundCreate {
+	if s != nil {
+		rc.SetRefundDestination(*s)
+	}
+	return rc
+}
+
+// SetRefundDestinationID sets the "refund_destination_id" field.
+func (rc *RefundCreate) SetRefundDestinationID(s string) *RefundCreate {
+	rc.mutation.SetRefundDestinationID(s)
+	return rc
+}
+
+// SetNillableRefundDestinationID sets the "refund_destination_id" field if the given value is not nil.
+func (rc *RefundCreate) SetNillableRefundDestinationID(s *string) *RefundCreate {
+	if s != nil {
+		rc.SetRefundDestinationID(*s)
+	}
+	return rc
+}
+
+// SetAttempt sets the "attempt" field.
+func (rc *RefundCreate) SetAttempt(i int) *RefundCreate {
+	rc.mutation.SetAttempt(i)
+	return rc
+}
+
+// SetNillableAttempt sets the "attempt" field if the given value is not nil.
+func (rc *RefundCreate) SetNillableAttempt(i *int) *RefundCreate {
+	if i != nil {
+		rc.SetAttempt(*i)
+	}
+	return rc
+}
+
 // SetIdempotencyKey sets the "idempotency_key" field.
 func (rc *RefundCreate) SetIdempotencyKey(s string) *RefundCreate {
 	rc.mutation.SetIdempotencyKey(s)
@@ -192,6 +284,14 @@ func (rc *RefundCreate) SetIdempotencyKey(s string) *RefundCreate {
 // SetGatewayIdempotencyToken sets the "gateway_idempotency_token" field.
 func (rc *RefundCreate) SetGatewayIdempotencyToken(s string) *RefundCreate {
 	rc.mutation.SetGatewayIdempotencyToken(s)
+	return rc
+}
+
+// SetNillableGatewayIdempotencyToken sets the "gateway_idempotency_token" field if the given value is not nil.
+func (rc *RefundCreate) SetNillableGatewayIdempotencyToken(s *string) *RefundCreate {
+	if s != nil {
+		rc.SetGatewayIdempotencyToken(*s)
+	}
 	return rc
 }
 
@@ -338,6 +438,18 @@ func (rc *RefundCreate) defaults() {
 		v := refund.DefaultAmount
 		rc.mutation.SetAmount(v)
 	}
+	if _, ok := rc.mutation.SettledAmount(); !ok {
+		v := refund.DefaultSettledAmount
+		rc.mutation.SetSettledAmount(v)
+	}
+	if _, ok := rc.mutation.RefundDestination(); !ok {
+		v := refund.DefaultRefundDestination
+		rc.mutation.SetRefundDestination(v)
+	}
+	if _, ok := rc.mutation.Attempt(); !ok {
+		v := refund.DefaultAttempt
+		rc.mutation.SetAttempt(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -359,24 +471,19 @@ func (rc *RefundCreate) check() error {
 	if _, ok := rc.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "Refund.updated_at"`)}
 	}
-	if _, ok := rc.mutation.PaymentID(); !ok {
-		return &ValidationError{Name: "payment_id", err: errors.New(`ent: missing required field "Refund.payment_id"`)}
+	if _, ok := rc.mutation.InvoiceID(); !ok {
+		return &ValidationError{Name: "invoice_id", err: errors.New(`ent: missing required field "Refund.invoice_id"`)}
 	}
-	if v, ok := rc.mutation.PaymentID(); ok {
-		if err := refund.PaymentIDValidator(v); err != nil {
-			return &ValidationError{Name: "payment_id", err: fmt.Errorf(`ent: validator failed for field "Refund.payment_id": %w`, err)}
-		}
-	}
-	if _, ok := rc.mutation.PaymentGateway(); !ok {
-		return &ValidationError{Name: "payment_gateway", err: errors.New(`ent: missing required field "Refund.payment_gateway"`)}
-	}
-	if v, ok := rc.mutation.PaymentGateway(); ok {
-		if err := refund.PaymentGatewayValidator(v); err != nil {
-			return &ValidationError{Name: "payment_gateway", err: fmt.Errorf(`ent: validator failed for field "Refund.payment_gateway": %w`, err)}
+	if v, ok := rc.mutation.InvoiceID(); ok {
+		if err := refund.InvoiceIDValidator(v); err != nil {
+			return &ValidationError{Name: "invoice_id", err: fmt.Errorf(`ent: validator failed for field "Refund.invoice_id": %w`, err)}
 		}
 	}
 	if _, ok := rc.mutation.Amount(); !ok {
 		return &ValidationError{Name: "amount", err: errors.New(`ent: missing required field "Refund.amount"`)}
+	}
+	if _, ok := rc.mutation.SettledAmount(); !ok {
+		return &ValidationError{Name: "settled_amount", err: errors.New(`ent: missing required field "Refund.settled_amount"`)}
 	}
 	if _, ok := rc.mutation.Currency(); !ok {
 		return &ValidationError{Name: "currency", err: errors.New(`ent: missing required field "Refund.currency"`)}
@@ -402,20 +509,18 @@ func (rc *RefundCreate) check() error {
 			return &ValidationError{Name: "refund_reason", err: fmt.Errorf(`ent: validator failed for field "Refund.refund_reason": %w`, err)}
 		}
 	}
+	if _, ok := rc.mutation.RefundDestination(); !ok {
+		return &ValidationError{Name: "refund_destination", err: errors.New(`ent: missing required field "Refund.refund_destination"`)}
+	}
+	if _, ok := rc.mutation.Attempt(); !ok {
+		return &ValidationError{Name: "attempt", err: errors.New(`ent: missing required field "Refund.attempt"`)}
+	}
 	if _, ok := rc.mutation.IdempotencyKey(); !ok {
 		return &ValidationError{Name: "idempotency_key", err: errors.New(`ent: missing required field "Refund.idempotency_key"`)}
 	}
 	if v, ok := rc.mutation.IdempotencyKey(); ok {
 		if err := refund.IdempotencyKeyValidator(v); err != nil {
 			return &ValidationError{Name: "idempotency_key", err: fmt.Errorf(`ent: validator failed for field "Refund.idempotency_key": %w`, err)}
-		}
-	}
-	if _, ok := rc.mutation.GatewayIdempotencyToken(); !ok {
-		return &ValidationError{Name: "gateway_idempotency_token", err: errors.New(`ent: missing required field "Refund.gateway_idempotency_token"`)}
-	}
-	if v, ok := rc.mutation.GatewayIdempotencyToken(); ok {
-		if err := refund.GatewayIdempotencyTokenValidator(v); err != nil {
-			return &ValidationError{Name: "gateway_idempotency_token", err: fmt.Errorf(`ent: validator failed for field "Refund.gateway_idempotency_token": %w`, err)}
 		}
 	}
 	return nil
@@ -483,11 +588,19 @@ func (rc *RefundCreate) createSpec() (*Refund, *sqlgraph.CreateSpec) {
 	}
 	if value, ok := rc.mutation.PaymentID(); ok {
 		_spec.SetField(refund.FieldPaymentID, field.TypeString, value)
-		_node.PaymentID = value
+		_node.PaymentID = &value
+	}
+	if value, ok := rc.mutation.InvoiceID(); ok {
+		_spec.SetField(refund.FieldInvoiceID, field.TypeString, value)
+		_node.InvoiceID = value
+	}
+	if value, ok := rc.mutation.CreditNoteID(); ok {
+		_spec.SetField(refund.FieldCreditNoteID, field.TypeString, value)
+		_node.CreditNoteID = &value
 	}
 	if value, ok := rc.mutation.PaymentGateway(); ok {
 		_spec.SetField(refund.FieldPaymentGateway, field.TypeString, value)
-		_node.PaymentGateway = value
+		_node.PaymentGateway = &value
 	}
 	if value, ok := rc.mutation.GatewayRefundID(); ok {
 		_spec.SetField(refund.FieldGatewayRefundID, field.TypeString, value)
@@ -501,6 +614,10 @@ func (rc *RefundCreate) createSpec() (*Refund, *sqlgraph.CreateSpec) {
 		_spec.SetField(refund.FieldAmount, field.TypeOther, value)
 		_node.Amount = value
 	}
+	if value, ok := rc.mutation.SettledAmount(); ok {
+		_spec.SetField(refund.FieldSettledAmount, field.TypeOther, value)
+		_node.SettledAmount = value
+	}
 	if value, ok := rc.mutation.Currency(); ok {
 		_spec.SetField(refund.FieldCurrency, field.TypeString, value)
 		_node.Currency = value
@@ -513,13 +630,25 @@ func (rc *RefundCreate) createSpec() (*Refund, *sqlgraph.CreateSpec) {
 		_spec.SetField(refund.FieldRefundReason, field.TypeString, value)
 		_node.RefundReason = value
 	}
+	if value, ok := rc.mutation.RefundDestination(); ok {
+		_spec.SetField(refund.FieldRefundDestination, field.TypeString, value)
+		_node.RefundDestination = value
+	}
+	if value, ok := rc.mutation.RefundDestinationID(); ok {
+		_spec.SetField(refund.FieldRefundDestinationID, field.TypeString, value)
+		_node.RefundDestinationID = &value
+	}
+	if value, ok := rc.mutation.Attempt(); ok {
+		_spec.SetField(refund.FieldAttempt, field.TypeInt, value)
+		_node.Attempt = value
+	}
 	if value, ok := rc.mutation.IdempotencyKey(); ok {
 		_spec.SetField(refund.FieldIdempotencyKey, field.TypeString, value)
 		_node.IdempotencyKey = value
 	}
 	if value, ok := rc.mutation.GatewayIdempotencyToken(); ok {
 		_spec.SetField(refund.FieldGatewayIdempotencyToken, field.TypeString, value)
-		_node.GatewayIdempotencyToken = value
+		_node.GatewayIdempotencyToken = &value
 	}
 	if value, ok := rc.mutation.FailureReason(); ok {
 		_spec.SetField(refund.FieldFailureReason, field.TypeString, value)

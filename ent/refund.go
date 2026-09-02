@@ -34,25 +34,37 @@ type Refund struct {
 	// EnvironmentID holds the value of the "environment_id" field.
 	EnvironmentID string `json:"environment_id,omitempty"`
 	// PaymentID holds the value of the "payment_id" field.
-	PaymentID string `json:"payment_id,omitempty"`
+	PaymentID *string `json:"payment_id,omitempty"`
+	// InvoiceID holds the value of the "invoice_id" field.
+	InvoiceID string `json:"invoice_id,omitempty"`
+	// CreditNoteID holds the value of the "credit_note_id" field.
+	CreditNoteID *string `json:"credit_note_id,omitempty"`
 	// PaymentGateway holds the value of the "payment_gateway" field.
-	PaymentGateway string `json:"payment_gateway,omitempty"`
+	PaymentGateway *string `json:"payment_gateway,omitempty"`
 	// GatewayRefundID holds the value of the "gateway_refund_id" field.
 	GatewayRefundID *string `json:"gateway_refund_id,omitempty"`
 	// GatewayTrackingID holds the value of the "gateway_tracking_id" field.
 	GatewayTrackingID *string `json:"gateway_tracking_id,omitempty"`
 	// Amount holds the value of the "amount" field.
 	Amount decimal.Decimal `json:"amount,omitempty"`
+	// SettledAmount holds the value of the "settled_amount" field.
+	SettledAmount decimal.Decimal `json:"settled_amount,omitempty"`
 	// Currency holds the value of the "currency" field.
 	Currency string `json:"currency,omitempty"`
 	// RefundStatus holds the value of the "refund_status" field.
 	RefundStatus string `json:"refund_status,omitempty"`
 	// RefundReason holds the value of the "refund_reason" field.
 	RefundReason string `json:"refund_reason,omitempty"`
+	// RefundDestination holds the value of the "refund_destination" field.
+	RefundDestination string `json:"refund_destination,omitempty"`
+	// RefundDestinationID holds the value of the "refund_destination_id" field.
+	RefundDestinationID *string `json:"refund_destination_id,omitempty"`
+	// Attempt holds the value of the "attempt" field.
+	Attempt int `json:"attempt,omitempty"`
 	// IdempotencyKey holds the value of the "idempotency_key" field.
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 	// GatewayIdempotencyToken holds the value of the "gateway_idempotency_token" field.
-	GatewayIdempotencyToken string `json:"gateway_idempotency_token,omitempty"`
+	GatewayIdempotencyToken *string `json:"gateway_idempotency_token,omitempty"`
 	// FailureReason holds the value of the "failure_reason" field.
 	FailureReason *string `json:"failure_reason,omitempty"`
 	// Metadata holds the value of the "metadata" field.
@@ -77,9 +89,11 @@ func (*Refund) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case refund.FieldMetadata, refund.FieldGatewayMetadata:
 			values[i] = new([]byte)
-		case refund.FieldAmount:
+		case refund.FieldAmount, refund.FieldSettledAmount:
 			values[i] = new(decimal.Decimal)
-		case refund.FieldID, refund.FieldTenantID, refund.FieldStatus, refund.FieldCreatedBy, refund.FieldUpdatedBy, refund.FieldEnvironmentID, refund.FieldPaymentID, refund.FieldPaymentGateway, refund.FieldGatewayRefundID, refund.FieldGatewayTrackingID, refund.FieldCurrency, refund.FieldRefundStatus, refund.FieldRefundReason, refund.FieldIdempotencyKey, refund.FieldGatewayIdempotencyToken, refund.FieldFailureReason:
+		case refund.FieldAttempt:
+			values[i] = new(sql.NullInt64)
+		case refund.FieldID, refund.FieldTenantID, refund.FieldStatus, refund.FieldCreatedBy, refund.FieldUpdatedBy, refund.FieldEnvironmentID, refund.FieldPaymentID, refund.FieldInvoiceID, refund.FieldCreditNoteID, refund.FieldPaymentGateway, refund.FieldGatewayRefundID, refund.FieldGatewayTrackingID, refund.FieldCurrency, refund.FieldRefundStatus, refund.FieldRefundReason, refund.FieldRefundDestination, refund.FieldRefundDestinationID, refund.FieldIdempotencyKey, refund.FieldGatewayIdempotencyToken, refund.FieldFailureReason:
 			values[i] = new(sql.NullString)
 		case refund.FieldCreatedAt, refund.FieldUpdatedAt, refund.FieldInitiatedAt, refund.FieldSucceededAt, refund.FieldFailedAt, refund.FieldCancelledAt:
 			values[i] = new(sql.NullTime)
@@ -150,13 +164,28 @@ func (r *Refund) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field payment_id", values[i])
 			} else if value.Valid {
-				r.PaymentID = value.String
+				r.PaymentID = new(string)
+				*r.PaymentID = value.String
+			}
+		case refund.FieldInvoiceID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field invoice_id", values[i])
+			} else if value.Valid {
+				r.InvoiceID = value.String
+			}
+		case refund.FieldCreditNoteID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field credit_note_id", values[i])
+			} else if value.Valid {
+				r.CreditNoteID = new(string)
+				*r.CreditNoteID = value.String
 			}
 		case refund.FieldPaymentGateway:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field payment_gateway", values[i])
 			} else if value.Valid {
-				r.PaymentGateway = value.String
+				r.PaymentGateway = new(string)
+				*r.PaymentGateway = value.String
 			}
 		case refund.FieldGatewayRefundID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -178,6 +207,12 @@ func (r *Refund) assignValues(columns []string, values []any) error {
 			} else if value != nil {
 				r.Amount = *value
 			}
+		case refund.FieldSettledAmount:
+			if value, ok := values[i].(*decimal.Decimal); !ok {
+				return fmt.Errorf("unexpected type %T for field settled_amount", values[i])
+			} else if value != nil {
+				r.SettledAmount = *value
+			}
 		case refund.FieldCurrency:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field currency", values[i])
@@ -196,6 +231,25 @@ func (r *Refund) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				r.RefundReason = value.String
 			}
+		case refund.FieldRefundDestination:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field refund_destination", values[i])
+			} else if value.Valid {
+				r.RefundDestination = value.String
+			}
+		case refund.FieldRefundDestinationID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field refund_destination_id", values[i])
+			} else if value.Valid {
+				r.RefundDestinationID = new(string)
+				*r.RefundDestinationID = value.String
+			}
+		case refund.FieldAttempt:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field attempt", values[i])
+			} else if value.Valid {
+				r.Attempt = int(value.Int64)
+			}
 		case refund.FieldIdempotencyKey:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field idempotency_key", values[i])
@@ -206,7 +260,8 @@ func (r *Refund) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field gateway_idempotency_token", values[i])
 			} else if value.Valid {
-				r.GatewayIdempotencyToken = value.String
+				r.GatewayIdempotencyToken = new(string)
+				*r.GatewayIdempotencyToken = value.String
 			}
 		case refund.FieldFailureReason:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -316,11 +371,23 @@ func (r *Refund) String() string {
 	builder.WriteString("environment_id=")
 	builder.WriteString(r.EnvironmentID)
 	builder.WriteString(", ")
-	builder.WriteString("payment_id=")
-	builder.WriteString(r.PaymentID)
+	if v := r.PaymentID; v != nil {
+		builder.WriteString("payment_id=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
-	builder.WriteString("payment_gateway=")
-	builder.WriteString(r.PaymentGateway)
+	builder.WriteString("invoice_id=")
+	builder.WriteString(r.InvoiceID)
+	builder.WriteString(", ")
+	if v := r.CreditNoteID; v != nil {
+		builder.WriteString("credit_note_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := r.PaymentGateway; v != nil {
+		builder.WriteString("payment_gateway=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := r.GatewayRefundID; v != nil {
 		builder.WriteString("gateway_refund_id=")
@@ -335,6 +402,9 @@ func (r *Refund) String() string {
 	builder.WriteString("amount=")
 	builder.WriteString(fmt.Sprintf("%v", r.Amount))
 	builder.WriteString(", ")
+	builder.WriteString("settled_amount=")
+	builder.WriteString(fmt.Sprintf("%v", r.SettledAmount))
+	builder.WriteString(", ")
 	builder.WriteString("currency=")
 	builder.WriteString(r.Currency)
 	builder.WriteString(", ")
@@ -344,11 +414,24 @@ func (r *Refund) String() string {
 	builder.WriteString("refund_reason=")
 	builder.WriteString(r.RefundReason)
 	builder.WriteString(", ")
+	builder.WriteString("refund_destination=")
+	builder.WriteString(r.RefundDestination)
+	builder.WriteString(", ")
+	if v := r.RefundDestinationID; v != nil {
+		builder.WriteString("refund_destination_id=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	builder.WriteString("attempt=")
+	builder.WriteString(fmt.Sprintf("%v", r.Attempt))
+	builder.WriteString(", ")
 	builder.WriteString("idempotency_key=")
 	builder.WriteString(r.IdempotencyKey)
 	builder.WriteString(", ")
-	builder.WriteString("gateway_idempotency_token=")
-	builder.WriteString(r.GatewayIdempotencyToken)
+	if v := r.GatewayIdempotencyToken; v != nil {
+		builder.WriteString("gateway_idempotency_token=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := r.FailureReason; v != nil {
 		builder.WriteString("failure_reason=")

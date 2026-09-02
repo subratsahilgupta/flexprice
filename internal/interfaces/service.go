@@ -258,6 +258,14 @@ type CheckoutSessionService interface {
 	StartPayFirstCheckoutSession(ctx context.Context, req *dto.PayFirstCheckoutRequest) (*dto.CheckoutSessionResponse, error)
 }
 
+// RefundService is the slice of the refund service a gateway webhook handler needs:
+// resolve the row the provider is talking about, then record the outcome.
+type RefundService interface {
+	GetRefundByGatewayRefundID(ctx context.Context, gateway, gatewayRefundID string) (*dto.RefundResponse, error)
+	Settle(ctx context.Context, req *dto.SettleRefundRequest) error
+	Fail(ctx context.Context, refundID, reason string) error
+}
+
 type ServiceDependencies struct {
 	CustomerService                 CustomerService
 	PaymentService                  PaymentService
@@ -268,6 +276,7 @@ type ServiceDependencies struct {
 	PriceUnitService                PriceUnitService
 	CreditAdjustmentService         CreditAdjustmentService
 	CheckoutSessionService          CheckoutSessionService
+	RefundService                   RefundService
 	DB                              postgres.IClient
 }
 

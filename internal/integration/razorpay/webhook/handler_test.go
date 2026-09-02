@@ -35,7 +35,7 @@ func (c *webhookTestRazorpayClient) FetchPayment(_ context.Context, _ string) (m
 	return map[string]interface{}{"refund_status": nil}, nil
 }
 
-func (c *webhookTestRazorpayClient) RefundPayment(_ context.Context, paymentID string, _ int64) (map[string]interface{}, error) {
+func (c *webhookTestRazorpayClient) RefundPayment(_ context.Context, paymentID string, _ int64, _ string) (map[string]interface{}, error) {
 	c.refundCalls = append(c.refundCalls, paymentID)
 	return map[string]interface{}{"id": "rfnd_test001"}, nil
 }
