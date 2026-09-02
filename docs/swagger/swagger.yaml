@@ -205,6 +205,14 @@ definitions:
     properties:
       collection_method:
         $ref: '#/definitions/types.CollectionMethod'
+      customer_present:
+        description: |-
+          CustomerPresent declares the charge as customer-initiated (CIT) rather than
+          merchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may
+          claim and who carries chargeback liability, so it must describe reality: true
+          only when the customer is actually at the keyboard, as in a portal one-click
+          top-up. Unattended charges (auto top-up, dunning) leave it false.
+        type: boolean
       max_mandate_limit:
         type: string
       payment_method:
@@ -2718,6 +2726,10 @@ definitions:
           attaches only those IDs. Each listed ID must belong to the plan, match the subscription
           currency, and have a cadence that equals or strictly divides the subscription cadence.
           Pointer-slice distinguishes nil from [].
+          NOTE: no `dive,required` on this tag — swaggo misinterprets `required`
+          inside `dive` as marking the whole field required, which then shows up
+          in the OpenAPI schema and breaks callers that omit the field. Per-element
+          non-emptiness is enforced explicitly in Validate() below.
         items:
           type: string
         type: array
@@ -9802,13 +9814,23 @@ definitions:
   types.CheckoutPaymentProvider:
     enum:
     - razorpay
+    - chargebee
     type: string
     x-enum-varnames:
     - CheckoutPaymentProviderRazorpay
+    - CheckoutPaymentProviderChargebee
   types.CheckoutPaymentProviderConfig:
     properties:
       collection_method:
         $ref: '#/definitions/types.CollectionMethod'
+      customer_present:
+        description: |-
+          CustomerPresent declares the charge as customer-initiated (CIT) rather than
+          merchant-initiated (MIT). It changes which SCA/3DS exemptions the gateway may
+          claim and who carries chargeback liability, so it must describe reality: true
+          only when the customer is actually at the keyboard, as in a portal one-click
+          top-up. Unattended charges (auto top-up, dunning) leave it false.
+        type: boolean
       max_mandate_limit:
         type: string
       payment_method:
@@ -10871,6 +10893,7 @@ definitions:
     - moyasar
     - paddle
     - whop
+    - chargebee
     type: string
     x-enum-varnames:
     - PaymentGatewayTypeStripe
@@ -10879,6 +10902,7 @@ definitions:
     - PaymentGatewayTypeMoyasar
     - PaymentGatewayTypePaddle
     - PaymentGatewayTypeWhop
+    - PaymentGatewayTypeChargebee
   types.PaymentMethodType:
     enum:
     - CARD
@@ -11200,30 +11224,6 @@ definitions:
     - S3EncryptionTypeAES256
     - S3EncryptionTypeAwsKms
     - S3EncryptionTypeAwsKmsDsse
-  types.S3ExportConfig:
-    properties:
-      bucket:
-        description: S3 bucket name
-        type: string
-      compression:
-        allOf:
-        - $ref: '#/definitions/types.S3CompressionType'
-        description: 'Compression type: "gzip", "none" (default: "none")'
-      encryption:
-        allOf:
-        - $ref: '#/definitions/types.S3EncryptionType'
-        description: 'Encryption type: "AES256", "aws:kms", "aws:kms:dsse" (default:
-          "AES256")'
-      is_flexprice_managed:
-        description: If true, use Flexprice-managed S3 credentials instead of user-provided
-        type: boolean
-      key_prefix:
-        description: Optional prefix for S3 keys (e.g., "flexprice-exports/")
-        type: string
-      region:
-        description: AWS region (e.g., "us-west-2")
-        type: string
-    type: object
   types.S3JobConfig:
     properties:
       bucket:
@@ -11397,6 +11397,31 @@ definitions:
     - StatusPublished
     - StatusDeleted
     - StatusArchived
+  types.StorageExportConfig:
+    properties:
+      bucket:
+        description: Storage bucket name
+        type: string
+      compression:
+        allOf:
+        - $ref: '#/definitions/types.S3CompressionType'
+        description: 'Compression type: "gzip", "none" (default: "none")'
+      encryption:
+        allOf:
+        - $ref: '#/definitions/types.S3EncryptionType'
+        description: 'Encryption type: "AES256", "aws:kms", "aws:kms:dsse" (default:
+          "AES256")'
+      is_flexprice_managed:
+        description: If true, use Flexprice-managed storage credentials instead of
+          user-provided
+        type: boolean
+      key_prefix:
+        description: Optional prefix for object keys (e.g., "flexprice-exports/")
+        type: string
+      region:
+        description: Cloud region (e.g., "us-west-2"); unused for GCS
+        type: string
+    type: object
   types.SubscriptionChangeEntityType:
     enum:
     - plan
@@ -11690,8 +11715,8 @@ definitions:
         $ref: '#/definitions/types.EntitySyncConfig'
       s3:
         allOf:
-        - $ref: '#/definitions/types.S3ExportConfig'
-        description: S3 connection metadata (for Flexprice-managed S3 connections)
+        - $ref: '#/definitions/types.StorageExportConfig'
+        description: Tag stays "s3" for back-compat.
       subscription:
         $ref: '#/definitions/types.EntitySyncConfig'
     type: object
