@@ -256,6 +256,10 @@ spec:
             - name: clickhouse
               image: "{{ .Values.clickhouse.altinity.image.repository }}:{{ .Values.clickhouse.altinity.image.tag }}"
               imagePullPolicy: {{ .Values.clickhouse.altinity.image.pullPolicy }}
+              {{- with .Values.clickhouse.altinity.securityContext }}
+              securityContext:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
               ports:
                 - containerPort: 8123
                 - containerPort: 9000
