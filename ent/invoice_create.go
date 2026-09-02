@@ -314,6 +314,12 @@ func (ic *InvoiceCreate) SetNillableTotal(d *decimal.Decimal) *InvoiceCreate {
 	return ic
 }
 
+// SetTargetCurrency sets the "target_currency" field.
+func (ic *InvoiceCreate) SetTargetCurrency(tc *types.TargetCurrency) *InvoiceCreate {
+	ic.mutation.SetTargetCurrency(tc)
+	return ic
+}
+
 // SetDescription sets the "description" field.
 func (ic *InvoiceCreate) SetDescription(s string) *InvoiceCreate {
 	ic.mutation.SetDescription(s)
@@ -950,6 +956,10 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 	if value, ok := ic.mutation.Total(); ok {
 		_spec.SetField(invoice.FieldTotal, field.TypeOther, value)
 		_node.Total = value
+	}
+	if value, ok := ic.mutation.TargetCurrency(); ok {
+		_spec.SetField(invoice.FieldTargetCurrency, field.TypeJSON, value)
+		_node.TargetCurrency = value
 	}
 	if value, ok := ic.mutation.Description(); ok {
 		_spec.SetField(invoice.FieldDescription, field.TypeString, value)

@@ -57,6 +57,7 @@ func (s *PriceServiceSuite) SetupTest() {
 		SubRepo:       testutil.NewInMemorySubscriptionStore(),
 		PriceUnitRepo: s.priceUnitRepo,
 		FeatureRepo:   s.featureRepo,
+		SettingsRepo:  testutil.NewInMemorySettingsStore(),
 		Logger:        s.logger,
 		DB:            testutil.NewMockPostgresClient(s.logger),
 	}
@@ -2471,6 +2472,7 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 			AddonRepo:     s.addonRepo,
 			SubRepo:       testutil.NewInMemorySubscriptionStore(),
 			PriceUnitRepo: s.priceUnitRepo,
+			SettingsRepo:  testutil.NewInMemorySettingsStore(),
 			Logger:        s.logger,
 			DB:            testutil.NewMockPostgresClient(s.logger),
 		}
@@ -2524,6 +2526,7 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 			AddonRepo:     s.addonRepo,
 			SubRepo:       testutil.NewInMemorySubscriptionStore(),
 			PriceUnitRepo: s.priceUnitRepo,
+			SettingsRepo:  testutil.NewInMemorySettingsStore(),
 			Logger:        s.logger,
 			DB:            testutil.NewMockPostgresClient(s.logger),
 		}
@@ -2610,6 +2613,7 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 			AddonRepo:     s.addonRepo,
 			SubRepo:       testutil.NewInMemorySubscriptionStore(),
 			PriceUnitRepo: s.priceUnitRepo,
+			SettingsRepo:  testutil.NewInMemorySettingsStore(),
 			Logger:        s.logger,
 			DB:            testutil.NewMockPostgresClient(s.logger),
 		}
@@ -2677,6 +2681,7 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 			AddonRepo:     s.addonRepo,
 			SubRepo:       testutil.NewInMemorySubscriptionStore(),
 			PriceUnitRepo: s.priceUnitRepo,
+			SettingsRepo:  testutil.NewInMemorySettingsStore(),
 			Logger:        s.logger,
 			DB:            testutil.NewMockPostgresClient(s.logger),
 		}
@@ -2744,6 +2749,7 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityPriceLimitValidation() {
 			AddonRepo:     s.addonRepo,
 			SubRepo:       testutil.NewInMemorySubscriptionStore(),
 			PriceUnitRepo: s.priceUnitRepo,
+			SettingsRepo:  testutil.NewInMemorySettingsStore(),
 			Logger:        s.logger,
 			DB:            testutil.NewMockPostgresClient(s.logger),
 		}
@@ -2818,6 +2824,7 @@ func (s *PriceServiceSuite) TestCreateBulkPrice_EntityExistenceValidation() {
 		AddonRepo:     s.addonRepo,
 		SubRepo:       testutil.NewInMemorySubscriptionStore(),
 		PriceUnitRepo: s.priceUnitRepo,
+		SettingsRepo:  testutil.NewInMemorySettingsStore(),
 		Logger:        s.logger,
 		DB:            testutil.NewMockPostgresClient(s.logger),
 	})

@@ -34,6 +34,7 @@ const (
 	SettingKeyDraftInvoiceRecomputeConfig SettingKey = "draft_invoice_recompute_config"
 	SettingKeySAMLConfig                  SettingKey = "saml_config"
 	SettingKeyWalletTopupConfig           SettingKey = "wallet_topup_config"
+	SettingKeyOrgCustomCurrencyConfig     SettingKey = "org_custom_currency_config"
 )
 
 func (s *SettingKey) Validate() error {
@@ -54,6 +55,7 @@ func (s *SettingKey) Validate() error {
 		SettingKeyDraftInvoiceRecomputeConfig,
 		SettingKeySAMLConfig,
 		SettingKeyWalletTopupConfig,
+		SettingKeyOrgCustomCurrencyConfig,
 	}
 
 	if !lo.Contains(allowedKeys, *s) {
@@ -530,6 +532,69 @@ func (c WalletTopupConfig) Validate() error {
 	return nil
 }
 
+// OrgCurrencyConfig lists the tenant's custom currencies and fiat conversion factors. Empty CustomCurrencies: no enforcement.
+// Named CustomCurrency not PricingUnit: unrelated to the existing PriceUnit entity.
+type OrgCurrencyConfig struct {
+	// CustomCurrencies is keyed by currency code — never duplicated inside the value.
+	// dive: validates each map value's own tags too.
+	CustomCurrencies map[string]CustomCurrency `json:"custom_currencies" validate:"dive"`
+	// DefaultFiatCurrency: fallback when a request/factor doesn't resolve. Every CustomCurrency must carry a factor for it.
+	DefaultFiatCurrency string `json:"default_fiat_currency"`
+}
+
+// CustomCurrency is one tenant-defined currency, keyed by its code in OrgCurrencyConfig.CustomCurrencies — never change the key once referenced.
+type CustomCurrency struct {
+	Name                  string                     `json:"name" validate:"required"`
+	Symbol                string                     `json:"symbol" validate:"required"`
+	FiatConversionFactors map[string]decimal.Decimal `json:"fiat_conversion_factors" validate:"required,min=1"`
+}
+
+// Validate implements SettingConfig. Pointer receiver: it lowercases codes in place.
+func (c *OrgCurrencyConfig) Validate() error {
+	if len(c.CustomCurrencies) == 0 {
+		return nil
+	}
+
+	if c.DefaultFiatCurrency == "" {
+		return ierr.NewError("default_fiat_currency is required when custom_currencies is set").
+			WithHint("default_fiat_currency is required when custom_currencies is set").
+			Mark(ierr.ErrValidation)
+	}
+	c.DefaultFiatCurrency = strings.ToLower(c.DefaultFiatCurrency)
+	defaultCode := c.DefaultFiatCurrency
+
+	normalized := make(map[string]CustomCurrency, len(c.CustomCurrencies))
+	for key, cur := range c.CustomCurrencies {
+		code := strings.ToLower(key)
+		if code == defaultCode {
+			return ierr.NewErrorf("default_fiat_currency %q cannot also be a custom currency code", defaultCode).
+				WithHintf("default_fiat_currency %q cannot also be a custom currency code", defaultCode).
+				Mark(ierr.ErrValidation)
+		}
+
+		factors := make(map[string]decimal.Decimal, len(cur.FiatConversionFactors))
+		for fiat, rate := range cur.FiatConversionFactors {
+			if rate.LessThanOrEqual(decimal.Zero) {
+				return ierr.NewErrorf("custom currency %q: conversion factor for %q must be positive", code, fiat).
+					WithHintf("custom currency %q: conversion factor for %q must be positive", code, fiat).
+					Mark(ierr.ErrValidation)
+			}
+			factors[strings.ToLower(fiat)] = rate
+		}
+		if _, ok := factors[defaultCode]; !ok {
+			return ierr.NewErrorf("custom currency %q must have a conversion factor for the default fiat currency %q", code, defaultCode).
+				WithHintf("custom currency %q must have a conversion factor for the default fiat currency %q", code, defaultCode).
+				Mark(ierr.ErrValidation)
+		}
+
+		cur.FiatConversionFactors = factors
+		normalized[code] = cur
+	}
+	c.CustomCurrencies = normalized
+
+	return validator.ValidateRequest(c)
+}
+
 // GetDefaultSettings returns the default settings configuration for all setting keys
 // Uses typed structs and converts them to maps using ToMap utility from conversion.go
 func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
@@ -807,6 +872,14 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 			DefaultValue: defaultWalletTopupConfigMap,
 			Description:  "Guard rails for wallet top-up operations (e.g. free credit limit per transaction)",
 		},
+		SettingKeyOrgCustomCurrencyConfig: {
+			Key: SettingKeyOrgCustomCurrencyConfig,
+			DefaultValue: map[string]interface{}{
+				"custom_currencies":     map[string]interface{}{},
+				"default_fiat_currency": "",
+			},
+			Description: "Tenant-defined custom currencies and their fiat conversion factors. Empty means no enforcement",
+		},
 	}, nil
 }
 
@@ -946,6 +1019,10 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 			return err
 		}
 		return config.Validate()
+
+	case SettingKeyOrgCustomCurrencyConfig:
+		// Lenient here: a partial update fragment may omit required fields the merged result already has.
+		return nil
 
 	default:
 		return ierr.NewErrorf("unknown setting key: %s", key).

@@ -44,6 +44,9 @@ type Invoice struct {
 	// amount_paid is the amount that has already been paid towards this invoice
 	AmountPaid decimal.Decimal `json:"amount_paid" swaggertype:"string"`
 
+	// target_currency: nil unless Currency is the tenant's custom currency
+	TargetCurrency *types.TargetCurrency `json:"target_currency,omitempty"`
+
 	// subtotal is the sum of all line items before any taxes, discounts, or additional fees
 	Subtotal decimal.Decimal `json:"subtotal" swaggertype:"string"`
 
@@ -182,6 +185,7 @@ func FromEnt(e *ent.Invoice) *Invoice {
 		Currency:               e.Currency,
 		AmountDue:              e.AmountDue,
 		AmountPaid:             e.AmountPaid,
+		TargetCurrency:         e.TargetCurrency,
 		Subtotal:               e.Subtotal,
 		Total:                  e.Total,
 		TotalDiscount:          lo.FromPtrOr(e.TotalDiscount, decimal.Zero),

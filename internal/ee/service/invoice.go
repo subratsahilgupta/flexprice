@@ -15,6 +15,7 @@ import (
 	domainPrice "github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/tenant"
+	"github.com/flexprice/flexprice/internal/ee/service/customcurrency"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/integration/chargebee"
@@ -278,6 +279,21 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 		inv.IdempotencyKey = &idempKey
 		inv.BillingSequence = billingSeq
 		inv.InvoiceStatus = types.InvoiceStatusDraft
+
+		ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
+		currency, err := ccSvc.EnforceOrgCustomCurrency(txCtx, inv.Currency)
+		if err != nil {
+			return err
+		}
+		inv.Currency = currency
+
+		fiatCurrency, err := ccSvc.ResolveFiatCurrency(txCtx, inv.Currency, req.TargetCurrency)
+		if err != nil {
+			return err
+		}
+		if fiatCurrency != "" {
+			inv.TargetCurrency = &types.TargetCurrency{FiatCurrencyCode: fiatCurrency}
+		}
 
 		// Validate invoice
 		if err := inv.Validate(); err != nil {
@@ -1060,6 +1076,20 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		now := time.Now().UTC()
 		lockedInv.InvoiceStatus = types.InvoiceStatusFinalized
 		lockedInv.FinalizedAt = &now
+
+		// Freeze the fiat rate at finalization — immutable after this.
+		if lockedInv.TargetCurrency != nil {
+			ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
+			rate, err := ccSvc.FiatConversionRate(txCtx, lockedInv.Currency, lockedInv.TargetCurrency.FiatCurrencyCode)
+			if err != nil {
+				return err
+			}
+			if rate != nil {
+				lockedInv.TargetCurrency.FiatConversionRate = *rate
+				amtInFiat := lockedInv.AmountDue.Mul(*rate)
+				lockedInv.TargetCurrency.FiatAmount = types.RoundToCurrencyPrecision(amtInFiat, lockedInv.TargetCurrency.FiatCurrencyCode)
+			}
+		}
 
 		if err := s.InvoiceRepo.Update(txCtx, lockedInv); err != nil {
 			return err
@@ -3248,6 +3278,15 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 		return err
 	}
 
+	// Reuse the frozen rate — never re-fetched here.
+	if inv.TargetCurrency != nil {
+		amtInFiat := inv.AmountDue.Mul(inv.TargetCurrency.FiatConversionRate)
+		inv.TargetCurrency.FiatAmount = types.RoundToCurrencyPrecision(amtInFiat, inv.TargetCurrency.FiatCurrencyCode)
+		if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -3526,6 +3565,23 @@ func (s *invoiceService) RecalculateInvoiceV2(ctx context.Context, id string, fi
 			return err
 		}
 
+		// Draft: nothing frozen yet, uses the live current factor.
+		if inv.TargetCurrency != nil {
+			ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
+			rate, err := ccSvc.FiatConversionRate(txCtx, inv.Currency, inv.TargetCurrency.FiatCurrencyCode)
+			if err != nil {
+				return err
+			}
+			if rate != nil {
+				inv.TargetCurrency.FiatConversionRate = *rate
+				amtInFiat := inv.AmountDue.Mul(*rate)
+				inv.TargetCurrency.FiatAmount = types.RoundToCurrencyPrecision(amtInFiat, inv.TargetCurrency.FiatCurrencyCode)
+				if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
+					return err
+				}
+			}
+		}
+
 		s.Logger.Info(ctx, "successfully recalculated invoice with fresh calculation",
 			"invoice_id", inv.ID,
 			"subscription_id", *inv.SubscriptionID,
@@ -3650,6 +3706,15 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string) (*dt
 		return nil, ierr.NewError("recalculation produced no invoice").
 			WithHint("recalculation resulted in zero subtotal for this period").
 			Mark(ierr.ErrValidation)
+	}
+
+	// Carry over the fiat currency the voided invoice was billed in — not its rate
+	// or amount, which the new invoice computes fresh at its own finalization.
+	if inv.TargetCurrency != nil && newInv.TargetCurrency == nil {
+		newInv.TargetCurrency = &types.TargetCurrency{FiatCurrencyCode: inv.TargetCurrency.FiatCurrencyCode}
+		if err := s.InvoiceRepo.Update(ctx, &newInv.Invoice); err != nil {
+			return nil, err
+		}
 	}
 
 	// Link the original voided invoice to the new replacement invoice.

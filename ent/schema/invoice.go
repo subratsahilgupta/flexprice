@@ -143,6 +143,11 @@ func (Invoice) Fields() []ent.Field {
 			}).
 			Optional().
 			Default(decimal.Zero),
+		field.JSON("target_currency", &types.TargetCurrency{}).
+			SchemaType(map[string]string{
+				"postgres": "jsonb",
+			}).
+			Optional(),
 		field.String("description").
 			Optional(),
 		field.Time("due_date").

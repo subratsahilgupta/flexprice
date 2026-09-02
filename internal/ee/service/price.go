@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
+	"github.com/flexprice/flexprice/internal/ee/service/customcurrency"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
@@ -125,9 +126,9 @@ func (s *priceService) CreatePrice(ctx context.Context, req dto.CreatePriceReque
 	return response, nil
 }
 
-// preparePriceForCreation prepares a price for creation by setting display name,
-// converting the request to a Price domain object, and applying custom price unit conversion if needed.
-// This encapsulates the common price preparation logic used by both CreatePrice and CreateBulkPrice.
+// preparePriceForCreation prepares a price for creation: display name, converting the
+// request to a Price domain object, price unit conversion, and org currency enforcement.
+// Shared by CreatePrice and CreateBulkPrice.
 func (s *priceService) preparePriceForCreation(ctx context.Context, req *dto.CreatePriceRequest) (*price.Price, error) {
 	// Get display name if needed (before price creation)
 	s.setDisplayName(ctx, req)
@@ -167,6 +168,13 @@ func (s *priceService) preparePriceForCreation(ctx context.Context, req *dto.Cre
 			return nil, err
 		}
 	}
+
+	ccSvc := customcurrency.NewService(s.SettingsRepo, s.Logger)
+	currency, err := ccSvc.EnforceOrgCustomCurrency(ctx, p.Currency)
+	if err != nil {
+		return nil, err
+	}
+	p.Currency = currency
 
 	return p, nil
 }

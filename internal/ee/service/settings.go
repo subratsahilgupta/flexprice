@@ -366,6 +366,8 @@ func (s *settingsService) GetSettingByKeyUnchecked(ctx context.Context, key type
 		return getSettingByKey[types.SAMLConfig](s, ctx, key)
 	case types.SettingKeyWalletTopupConfig:
 		return getSettingByKey[types.WalletTopupConfig](s, ctx, key)
+	case types.SettingKeyOrgCustomCurrencyConfig:
+		return getSettingByKey[types.OrgCurrencyConfig](s, ctx, key)
 	default:
 		return nil, ierr.NewErrorf("unknown setting key: %s", key).
 			WithHintf("Unknown setting key: %s", key).
@@ -424,6 +426,8 @@ func (s *settingsService) UpdateSettingByKey(ctx context.Context, key types.Sett
 		return updateSettingByKey[types.SAMLConfig](s, ctx, key, req)
 	case types.SettingKeyWalletTopupConfig:
 		return updateSettingByKey[types.WalletTopupConfig](s, ctx, key, req)
+	case types.SettingKeyOrgCustomCurrencyConfig:
+		return updateSettingByKey[*types.OrgCurrencyConfig](s, ctx, key, req)
 	default:
 		return nil, ierr.NewErrorf("unknown setting key: %s", key).
 			WithHintf("Unknown setting key: %s", key).

@@ -282,6 +282,18 @@ func (iu *InvoiceUpdate) ClearTotal() *InvoiceUpdate {
 	return iu
 }
 
+// SetTargetCurrency sets the "target_currency" field.
+func (iu *InvoiceUpdate) SetTargetCurrency(tc *types.TargetCurrency) *InvoiceUpdate {
+	iu.mutation.SetTargetCurrency(tc)
+	return iu
+}
+
+// ClearTargetCurrency clears the value of the "target_currency" field.
+func (iu *InvoiceUpdate) ClearTargetCurrency() *InvoiceUpdate {
+	iu.mutation.ClearTargetCurrency()
+	return iu
+}
+
 // SetDescription sets the "description" field.
 func (iu *InvoiceUpdate) SetDescription(s string) *InvoiceUpdate {
 	iu.mutation.SetDescription(s)
@@ -836,6 +848,12 @@ func (iu *InvoiceUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if iu.mutation.TotalCleared() {
 		_spec.ClearField(invoice.FieldTotal, field.TypeOther)
 	}
+	if value, ok := iu.mutation.TargetCurrency(); ok {
+		_spec.SetField(invoice.FieldTargetCurrency, field.TypeJSON, value)
+	}
+	if iu.mutation.TargetCurrencyCleared() {
+		_spec.ClearField(invoice.FieldTargetCurrency, field.TypeJSON)
+	}
 	if value, ok := iu.mutation.Description(); ok {
 		_spec.SetField(invoice.FieldDescription, field.TypeString, value)
 	}
@@ -1310,6 +1328,18 @@ func (iuo *InvoiceUpdateOne) SetNillableTotal(d *decimal.Decimal) *InvoiceUpdate
 // ClearTotal clears the value of the "total" field.
 func (iuo *InvoiceUpdateOne) ClearTotal() *InvoiceUpdateOne {
 	iuo.mutation.ClearTotal()
+	return iuo
+}
+
+// SetTargetCurrency sets the "target_currency" field.
+func (iuo *InvoiceUpdateOne) SetTargetCurrency(tc *types.TargetCurrency) *InvoiceUpdateOne {
+	iuo.mutation.SetTargetCurrency(tc)
+	return iuo
+}
+
+// ClearTargetCurrency clears the value of the "target_currency" field.
+func (iuo *InvoiceUpdateOne) ClearTargetCurrency() *InvoiceUpdateOne {
+	iuo.mutation.ClearTargetCurrency()
 	return iuo
 }
 
@@ -1896,6 +1926,12 @@ func (iuo *InvoiceUpdateOne) sqlSave(ctx context.Context) (_node *Invoice, err e
 	}
 	if iuo.mutation.TotalCleared() {
 		_spec.ClearField(invoice.FieldTotal, field.TypeOther)
+	}
+	if value, ok := iuo.mutation.TargetCurrency(); ok {
+		_spec.SetField(invoice.FieldTargetCurrency, field.TypeJSON, value)
+	}
+	if iuo.mutation.TargetCurrencyCleared() {
+		_spec.ClearField(invoice.FieldTargetCurrency, field.TypeJSON)
 	}
 	if value, ok := iuo.mutation.Description(); ok {
 		_spec.SetField(invoice.FieldDescription, field.TypeString, value)

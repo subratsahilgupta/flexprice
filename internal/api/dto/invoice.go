@@ -49,6 +49,9 @@ type CreateInvoiceRequest struct {
 	// currency is the three-letter ISO currency code (e.g., USD, EUR) for the invoice
 	Currency string `json:"currency" validate:"required"`
 
+	// target_currency: fiat currency to bill in; falls back to the org default when omitted.
+	TargetCurrency string `json:"target_currency,omitempty"`
+
 	// amount_due is the total amount that needs to be paid for this invoice
 	AmountDue decimal.Decimal `json:"amount_due" validate:"required" swaggertype:"string"`
 
@@ -137,6 +140,7 @@ func (r *CreateInvoiceRequest) ToDraftRequest() CreateDraftInvoiceRequest {
 		SubscriptionID: r.SubscriptionID,
 		InvoiceType:    r.InvoiceType,
 		Currency:       r.Currency,
+		TargetCurrency: r.TargetCurrency,
 		PeriodStart:    r.PeriodStart,
 		PeriodEnd:      r.PeriodEnd,
 		BillingPeriod:  r.BillingPeriod,
@@ -193,6 +197,7 @@ type CreateDraftInvoiceRequest struct {
 	SubscriptionCustomerID *string                    `json:"-"`
 	InvoiceType            types.InvoiceType          `json:"invoice_type" validate:"required"`
 	Currency               string                     `json:"currency" validate:"required"`
+	TargetCurrency         string                     `json:"target_currency,omitempty"`
 	PeriodStart            *time.Time                 `json:"period_start,omitempty"`
 	PeriodEnd              *time.Time                 `json:"period_end,omitempty"`
 	BillingPeriod          *string                    `json:"billing_period,omitempty"`

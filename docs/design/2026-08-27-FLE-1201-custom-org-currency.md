@@ -28,31 +28,36 @@ Fiat appears at exactly one boundary: artifacts handed to the tenant's **end cus
 
 ### 2.1 The setting
 
-Key `org_currency_config` (name and scope open, §7.1). Settings are already tenant/environment-isolated at the row level — `EnvironmentID` comes from request context, never from the payload (`internal/api/dto/settings.go:47`), and tenant-level keys leave it unset (`isTenantLevelSetting`, `internal/ee/service/settings.go:55`). No scoping fields appear in the value.
+Key `org_custom_currency_config` (name and scope open, §7.1). Settings are already tenant/environment-isolated at the row level — `EnvironmentID` comes from request context, never from the payload (`internal/api/dto/settings.go:47`), and tenant-level keys leave it unset (`isTenantLevelSetting`, `internal/ee/service/settings.go:55`). No scoping fields appear in the value.
 
 ```go
 // OrgCurrencyConfig defines the tenant's operating currencies and the fiat currency
 // used when an invoice does not name one, or when a requested factor is missing.
+//
+// Named CustomCurrency internally, not PricingUnit: this codebase already has an
+// unrelated PriceUnit entity with no interaction with this feature (§6) — sharing
+// the name would suggest a connection that doesn't exist. The wire format still
+// uses "pricing_units" as the JSON key.
 type OrgCurrencyConfig struct {
-	// CustomCurrencies is keyed by currency code — the same value as each entry's own
-	// Code field. A map because every read is a lookup by code, and because it makes
-	// duplicate codes structurally impossible rather than a validation rule.
-	CustomCurrencies map[string]CustomCurrency `json:"custom_currencies" validate:"dive"`
+	// CustomCurrencies is keyed by currency code. The code lives only as the map
+	// key, never duplicated inside the value — nothing to drift out of sync with it.
+	CustomCurrencies map[string]CustomCurrency `json:"pricing_units" validate:"dive"`
 
 	// DefaultFiatCurrency is the guaranteed-available fiat currency. Every entry in
-	// CustomCurrencies must carry a factor for its Code (enforced in Validate), which
-	// is what makes the §2.7 fallback safe: there is always a real factor to fall
+	// CustomCurrencies must carry a factor for it (enforced in Validate), which is
+	// what makes the §2.7 fallback safe: there is always a real factor to fall
 	// back to, never a guessed one.
 	DefaultFiatCurrency FiatCurrency `json:"default_fiat_currency"`
 }
 
-// CustomCurrency is one tenant-defined operating currency.
+// CustomCurrency is one tenant-defined operating currency, keyed by its code in
+// OrgCurrencyConfig.CustomCurrencies.
 //
-// Code is IMMUTABLE — other tables store it as their currency value, so changing or
-// removing it orphans them (§2.7). Name and Symbol are freely editable: they are read
-// from this config at render time and are stored nowhere else.
+// The code is IMMUTABLE — other tables store it as their currency value, so
+// changing or removing the map key orphans them (§2.7). Name and Symbol are
+// freely editable: they are read from this config at render time and are stored
+// nowhere else.
 type CustomCurrency struct {
-	Code                  string                     `json:"code" validate:"required,len=3"`
 	Name                  string                     `json:"name" validate:"required"`
 	Symbol                string                     `json:"symbol" validate:"required"`
 	FiatConversionFactors map[string]decimal.Decimal `json:"fiat_conversion_factors" validate:"required,min=1"`
@@ -67,17 +72,15 @@ type FiatCurrency struct {
 
 ```json
 {
-  "key": "org_currency_config",
+  "key": "org_custom_currency_config",
   "value": {
-    "custom_currencies": {
+    "pricing_units": {
       "FXP": {
-        "code": "FXP",
         "name": "Flexprice Credits",
         "symbol": "FXP",
         "fiat_conversion_factors": { "USD": "0.10", "INR": "8.50" }
       },
       "MAC": {
-        "code": "MAC",
         "name": "MoEngage AI Credits",
         "symbol": "MAC",
         "fiat_conversion_factors": { "USD": "0.05", "INR": "4.25" }
@@ -90,7 +93,6 @@ type FiatCurrency struct {
 
 `Validate()` enforces:
 
-- Map key equals the entry's `Code`.
 - Every factor is positive.
 - `DefaultFiatCurrency` is present whenever `CustomCurrencies` is non-empty.
 - `DefaultFiatCurrency.Code` is not itself a custom currency code.
@@ -110,7 +112,7 @@ A custom currency code is exactly 3 characters, so it passes every currency vali
 
 So `"fxp"` is, to all existing validation, just a 3-character string. Nothing is relaxed or rewritten.
 
-**The one new check.** When creating a Price, Subscription, or Wallet, read `org_currency_config`:
+**The one new check.** When creating a Price, Subscription, or Wallet, read `org_custom_currency_config`:
 
 - Tenant has custom currencies configured → the request's `currency` must be one of those codes, else reject.
 - Tenant has none configured → nothing changes; any 3-character currency is accepted exactly as today.
@@ -128,10 +130,10 @@ No new columns. `Price.Currency`, `Subscription.Currency`, `Wallet.Currency` alr
 
 ### 2.4 Invoice — the fiat boundary
 
-**At creation**, the request names the fiat currency to bill in:
+**At creation**, the request names the fiat currency to bill in via `target_currency`, resolved into the stored `fiat_currency`:
 
 ```
-POST /invoices { ..., "fiat_currency": "inr" }
+POST /invoices { ..., "target_currency": "inr" }
 ```
 
 - Given, and the custom currency has a factor for it → used.
@@ -227,24 +229,24 @@ for k, v := range update {
 }
 ```
 
-`OrgCurrencyConfig`'s top-level keys are `custom_currencies` and `default_fiat_currency`. So sending
+`OrgCurrencyConfig`'s top-level keys are `pricing_units` and `default_fiat_currency`. So sending
 
 ```json
-{ "custom_currencies": { "FXP": { ...corrected factor... } } }
+{ "pricing_units": { "FXP": { ...corrected factor... } } }
 ```
 
-merges at the top level correctly — `default_fiat_currency` survives untouched — but assigns the entire `custom_currencies` map to what was sent. **`MAC` is silently deleted**, by an admin who was only fixing `FXP`.
+merges at the top level correctly — `default_fiat_currency` survives untouched — but assigns the entire `pricing_units` map to what was sent. **`MAC` is silently deleted**, by an admin who was only fixing `FXP`.
 
 #### The solution — merge deeper for this key, don't guard against it
 
-Rather than a guard that rejects partial payloads, `org_currency_config` merges at three levels: the top-level keys, then per currency code inside `custom_currencies`, then per fiat code inside `fiat_conversion_factors`. Every write becomes strictly add-or-update:
+Rather than a guard that rejects partial payloads, `org_custom_currency_config` merges at three levels: the top-level keys, then per currency code inside `pricing_units`, then per fiat code inside `fiat_conversion_factors`. Every write becomes strictly add-or-update:
 
 | Payload | Effect |
 | --- | --- |
-| `{"custom_currencies": {"FXP": {...}}}` | `FXP` updated, `MAC` untouched |
-| `{"custom_currencies": {"FXP": {"symbol": "F"}}}` | Only `FXP.symbol` changes; its `name`, `code`, and factors are preserved |
-| `{"custom_currencies": {"FXP": {"fiat_conversion_factors": {"USD": "0.12"}}}}` | Only the `USD` factor changes; `INR` survives |
-| `{"custom_currencies": {"EUR": {...}}}` | New currency added alongside the existing ones |
+| `{"pricing_units": {"FXP": {...}}}` | `FXP` updated, `MAC` untouched |
+| `{"pricing_units": {"FXP": {"symbol": "F"}}}` | Only `FXP.symbol` changes; its `name` and factors are preserved |
+| `{"pricing_units": {"FXP": {"fiat_conversion_factors": {"USD": "0.12"}}}}` | Only the `USD` factor changes; `INR` survives |
+| `{"pricing_units": {"EUR": {...}}}` | New currency added alongside the existing ones |
 
 This makes removal **structurally inexpressible** — there is no payload that deletes a currency, a display field, or a factor, because merging can only add or overwrite. That is exactly the v1 position: removing a custom currency means migrating every balance, price, and subscription denominated in it across a cross-rate, as an audited ledger movement, and nothing in v1 needs it (§7.4).
 
@@ -266,10 +268,10 @@ Two new columns on `INVOICE`. Every other table is structurally unchanged — th
 
 ```mermaid
 erDiagram
-    SETTING ||--o{ PRICE : "custom_currencies key == currency"
-    SETTING ||--o{ SUBSCRIPTION : "custom_currencies key == currency"
-    SETTING ||--o{ WALLET : "custom_currencies key == currency"
-    SETTING ||--o{ INVOICE : "custom_currencies key == currency"
+    SETTING ||--o{ PRICE : "pricing_units key == currency"
+    SETTING ||--o{ SUBSCRIPTION : "pricing_units key == currency"
+    SETTING ||--o{ WALLET : "pricing_units key == currency"
+    SETTING ||--o{ INVOICE : "pricing_units key == currency"
     CUSTOMER ||--o{ SUBSCRIPTION : "customer_id"
     CUSTOMER ||--o{ WALLET : "customer_id"
     CUSTOMER ||--o{ INVOICE : "customer_id"
@@ -279,8 +281,8 @@ erDiagram
 
     SETTING {
         string id PK
-        string key "org_currency_config"
-        jsonb value "custom_currencies map, default_fiat_currency"
+        string key "org_custom_currency_config"
+        jsonb value "pricing_units map, default_fiat_currency"
     }
     PRICE {
         string id PK
@@ -345,7 +347,7 @@ sequenceDiagram
     participant PriceAPI
     participant PriceSvc
 
-    Admin->>SettingsAPI: PUT /settings/org_currency_config, only FXP in the payload
+    Admin->>SettingsAPI: PUT /settings/org_custom_currency_config, only FXP in the payload
     SettingsAPI->>SettingsSvc: UpdateSettingByKey
     SettingsSvc->>SettingsSvc: fetch stored value
     SettingsSvc->>SettingsSvc: merge per currency code, MAC preserved
@@ -354,15 +356,15 @@ sequenceDiagram
 
     Admin->>PriceAPI: POST /prices, currency FXP
     PriceAPI->>PriceSvc: CreatePrice
-    PriceSvc->>SettingsSvc: GetSetting org_currency_config
-    SettingsSvc-->>PriceSvc: custom_currencies FXP, MAC
+    PriceSvc->>SettingsSvc: GetSetting org_custom_currency_config
+    SettingsSvc-->>PriceSvc: pricing_units FXP, MAC
     PriceSvc->>PriceSvc: FXP is a configured code
     PriceSvc-->>Admin: 201 Created
 
     Admin->>PriceAPI: POST /prices, currency EUR
     PriceAPI->>PriceSvc: CreatePrice
-    PriceSvc->>SettingsSvc: GetSetting org_currency_config
-    SettingsSvc-->>PriceSvc: custom_currencies FXP, MAC
+    PriceSvc->>SettingsSvc: GetSetting org_custom_currency_config
+    SettingsSvc-->>PriceSvc: pricing_units FXP, MAC
     PriceSvc->>PriceSvc: EUR is not a configured code
     PriceSvc-->>Admin: 400 Rejected
 ```
@@ -378,12 +380,12 @@ sequenceDiagram
     participant Admin
 
     Workflow->>InvoiceSvc: create Invoice, FXP, amount_due 500, fiat_currency inr
-    InvoiceSvc->>SettingsSvc: GetSetting org_currency_config
+    InvoiceSvc->>SettingsSvc: GetSetting org_custom_currency_config
     SettingsSvc-->>InvoiceSvc: FXP has an INR factor
     InvoiceSvc->>InvoiceSvc: store fiat_currency inr, rate stays NULL
 
     Customer->>InvoiceSvc: view draft
-    InvoiceSvc->>SettingsSvc: GetSetting org_currency_config
+    InvoiceSvc->>SettingsSvc: GetSetting org_custom_currency_config
     SettingsSvc-->>InvoiceSvc: INR factor 8.50
     InvoiceSvc-->>Customer: 500 FXP and INR 4250.00, current factor
 
@@ -392,7 +394,7 @@ sequenceDiagram
     InvoiceSvc-->>Customer: 600 FXP and INR 5100.00, follows the draft
 
     Workflow->>InvoiceSvc: FinalizeInvoice
-    InvoiceSvc->>SettingsSvc: GetSetting org_currency_config
+    InvoiceSvc->>SettingsSvc: GetSetting org_custom_currency_config
     SettingsSvc-->>InvoiceSvc: INR factor 8.50
     InvoiceSvc->>InvoiceSvc: freeze fiat_conversion_rate 8.50 in the finalize txn
 
@@ -431,7 +433,7 @@ GET /invoices/inv_A/line-items
       "fiat_amount": "1275.00", "fiat_currency": "inr" } ]
 
 // requested fiat currency has no factor — logged, falls back to the default
-POST /invoices { "fiat_currency": "gbp", ... }
+POST /invoices { "target_currency": "gbp", ... }
 → 201 { "fiat_currency": "usd" }   // Error logged: no factor for fxp→gbp
 ```
 
@@ -442,18 +444,18 @@ POST /invoices { "fiat_currency": "gbp", ... }
 - Add `SettingKeyOrgCurrencyConfig` to `allowedKeys` (`internal/types/settings.go:39-53`), and decide its scope in `isTenantLevelSetting` (`ee/service/settings.go:55`) — §7.1.
 - Add `fiat_currency` (string, nullable) and `fiat_conversion_rate` (decimal, nullable) to `invoices`. No backfill: existing invoices are already fiat-denominated, so `currency` is the payable currency and `amount_due` the payable amount.
 - Hook rate freezing into `performFinalizeInvoiceActions` (`ee/service/invoice.go:972`), inside the existing finalize transaction.
-- Deepen the merge for `org_currency_config` (§2.7). `mergePreservingImmutableFields` (`ee/service/settings.go:137`) is a flat top-level loop; this key needs it applied per currency code and per fiat factor. Either extend that helper with a per-key merge depth or add a key-specific merge alongside it — the surrounding fetch-merge-put flow in `updateSettingByKey` (`:495`) is unchanged either way.
+- Deepen the merge for `org_custom_currency_config` (§2.7). `mergePreservingImmutableFields` (`ee/service/settings.go:137`) is a flat top-level loop; this key needs it applied per currency code and per fiat factor. Either extend that helper with a per-key merge depth or add a key-specific merge alongside it — the surrounding fetch-merge-put flow in `updateSettingByKey` (`:495`) is unchanged either way.
 - Nothing on `prices`, `subscriptions`, `wallets`, `payments`, `invoice_line_items`; no existing currency validator changes (§2.2).
 
 ---
 
 ## 6. Scenarios
 
-Configured: `custom_currencies` = `FXP`, `MAC`; `default_fiat_currency` = `USD`.
+Configured: `pricing_units` = `FXP`, `MAC`; `default_fiat_currency` = `USD`.
 
 | # | Scenario | Result |
 | --- | --- | --- |
-| 1 | No `org_currency_config`, or `custom_currencies` empty | Today's behavior — any 3-character currency code, unrestricted |
+| 1 | No `org_custom_currency_config`, or `pricing_units` empty | Today's behavior — any 3-character currency code, unrestricted |
 | 2 | Create a Price with `currency: "fxp"` | `FXP` is a configured code — created |
 | 3 | Create a Price with `currency: "eur"` | Passes the length check but isn't a configured code — `400 currency must be one of: fxp, mac` |
 | 4 | Save a config where `MAC` has factors for `INR` only, with `default_fiat_currency` = `USD` | Rejected — every custom currency must carry a factor for the default fiat currency (§2.1) |
@@ -472,8 +474,8 @@ Configured: `custom_currencies` = `FXP`, `MAC`; `default_fiat_currency` = `USD`.
 | 16 | Admin edits `FXP`'s `name` or `symbol` | Allowed, no migration — display values are read from config at render, so every surface picks them up on the next read |
 | 17 | Admin adds an `EUR` factor to `FXP` | Allowed — purely additive, opens `EUR` as a billable fiat currency |
 | 18 | Admin sends a payload containing only `FXP`, intending just to fix its factor | `FXP` updated, **`MAC` untouched** — the merge is per currency code, so omission is never deletion (§2.7) |
-| 19 | Admin sends `{"custom_currencies": {"FXP": {"symbol": "F"}}}` | Only `FXP.symbol` changes; its `name`, `code`, and both factors are preserved by the same merge |
-| 20 | Admin sends `{"custom_currencies": {"FXP": {"fiat_conversion_factors": {"USD": "0.12"}}}}` | Only the `USD` factor changes; the `INR` factor survives |
+| 19 | Admin sends `{"pricing_units": {"FXP": {"symbol": "F"}}}` | Only `FXP.symbol` changes; its `name` and both factors are preserved by the same merge |
+| 20 | Admin sends `{"pricing_units": {"FXP": {"fiat_conversion_factors": {"USD": "0.12"}}}}` | Only the `USD` factor changes; the `INR` factor survives |
 | 20a | Admin tries to rename `FXP`'s code to `FXC` | Not a rename — `FXC` is added as a new currency and `FXP` remains. Correct, since other tables store the string `fxp` |
 | 20b | Admin wants to delete `MAC` outright | **Not expressible in v1.** No payload removes a currency; merge only adds or overwrites (§2.7). Deferred to §7.4 |
 | 21 | A code is missing at runtime anyway (direct DB edit, bad migration) | Operation **fails and logs at Error**. Never substituted 1:1 with the default — valuing `500 FXP` as `$500` would misprice everything on that code invisibly. Already-finalized invoices are unaffected, since they carry their own frozen rate |

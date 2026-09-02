@@ -99,6 +99,7 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetRefundedAmount(inv.RefundedAmount).
 		SetTotalPrepaidCreditsApplied(inv.TotalPrepaidCreditsApplied).
 		SetNillableIssueDate(inv.IssueDate).
+		SetTargetCurrency(inv.TargetCurrency).
 		Save(ctx)
 
 	if err != nil {
@@ -206,6 +207,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			SetEnvironmentID(inv.EnvironmentID).
 			SetTotalPrepaidCreditsApplied(inv.TotalPrepaidCreditsApplied).
 			SetNillableIssueDate(inv.IssueDate).
+			SetTargetCurrency(inv.TargetCurrency).
 			Save(ctx)
 		if err != nil {
 			if ent.IsConstraintError(err) {
@@ -581,6 +583,12 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetSubtotal(inv.Subtotal).
 		SetTotalDiscount(inv.TotalDiscount).
 		AddVersion(1) // Increment version atomically
+
+	if inv.TargetCurrency != nil {
+		query.SetTargetCurrency(inv.TargetCurrency)
+	} else {
+		query.ClearTargetCurrency()
+	}
 
 	if inv.TaxExemptionReasonCode != nil {
 		query.SetTaxExemptionReasonCode(*inv.TaxExemptionReasonCode)

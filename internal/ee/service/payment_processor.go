@@ -186,6 +186,24 @@ func (p *paymentProcessor) ProcessPayment(ctx context.Context, id string) (*paym
 	return paymentObj, nil
 }
 
+// resolveGatewayCurrencyAmount converts a payment to the invoice's target fiat currency for
+// gateway calls — real payment gateways don't understand a tenant's custom currency. Returns
+// the payment's own currency/amount unchanged when the invoice has no target currency.
+func (p *paymentProcessor) resolveGatewayCurrencyAmount(paymentObj *payment.Payment, inv *invoice.Invoice) (string, decimal.Decimal, error) {
+	if inv == nil || inv.TargetCurrency == nil {
+		return paymentObj.Currency, paymentObj.Amount, nil
+	}
+	rate := inv.TargetCurrency.FiatConversionRate
+	if rate.IsZero() {
+		return "", decimal.Zero, ierr.NewErrorf("invoice %s has no frozen conversion rate to %s", inv.ID, inv.TargetCurrency.FiatCurrencyCode).
+			WithHintf("Invoice %s has no frozen conversion rate to %s", inv.ID, inv.TargetCurrency.FiatCurrencyCode).
+			Mark(ierr.ErrValidation)
+	}
+	amtInFiat := paymentObj.Amount.Mul(rate)
+	amtInFiatRounded := types.RoundToCurrencyPrecision(amtInFiat, inv.TargetCurrency.FiatCurrencyCode)
+	return inv.TargetCurrency.FiatCurrencyCode, amtInFiatRounded, nil
+}
+
 func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymentObj *payment.Payment) error {
 	// Get the invoice to get customer information
 	invoice, err := p.InvoiceRepo.Get(ctx, paymentObj.DestinationID)
@@ -197,6 +215,11 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 				"invoice_id": paymentObj.DestinationID,
 			}).
 			Mark(ierr.ErrValidation)
+	}
+
+	gatewayCurrency, gatewayAmount, err := p.resolveGatewayCurrencyAmount(paymentObj, invoice)
+	if err != nil {
+		return err
 	}
 
 	// Determine which gateway to use based on payment_gateway field
@@ -212,11 +235,11 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 	// Route to appropriate gateway
 	switch gatewayType {
 	case types.PaymentGatewayTypeStripe:
-		return p.handleStripePaymentLinkCreation(ctx, paymentObj, invoice)
+		return p.handleStripePaymentLinkCreation(ctx, paymentObj, invoice, gatewayCurrency, gatewayAmount)
 	case types.PaymentGatewayTypeRazorpay:
-		return p.handleRazorpayPaymentLinkCreation(ctx, paymentObj, invoice)
+		return p.handleRazorpayPaymentLinkCreation(ctx, paymentObj, invoice, gatewayCurrency, gatewayAmount)
 	case types.PaymentGatewayTypeNomod:
-		return p.handleNomodPaymentLinkCreation(ctx, paymentObj, invoice)
+		return p.handleNomodPaymentLinkCreation(ctx, paymentObj, invoice, gatewayCurrency, gatewayAmount)
 	default:
 		return ierr.NewError("unsupported payment gateway").
 			WithHint("Payment gateway not supported for payment links").
@@ -228,7 +251,7 @@ func (p *paymentProcessor) handlePaymentLinkCreation(ctx context.Context, paymen
 	}
 }
 
-func (p *paymentProcessor) handleStripePaymentLinkCreation(ctx context.Context, paymentObj *payment.Payment, invoice *invoice.Invoice) error {
+func (p *paymentProcessor) handleStripePaymentLinkCreation(ctx context.Context, paymentObj *payment.Payment, invoice *invoice.Invoice, gatewayCurrency string, gatewayAmount decimal.Decimal) error {
 	// Extract success URL and cancel URL from gateway metadata
 	successURL := ""
 	cancelURL := ""
@@ -259,8 +282,8 @@ func (p *paymentProcessor) handleStripePaymentLinkCreation(ctx context.Context, 
 	paymentLinkReq := &dto.CreateStripePaymentLinkRequest{
 		InvoiceID:  paymentObj.DestinationID,
 		CustomerID: invoice.CustomerID,
-		Amount:     paymentObj.Amount,
-		Currency:   paymentObj.Currency,
+		Amount:     gatewayAmount,
+		Currency:   gatewayCurrency,
 		SuccessURL: successURL,
 		CancelURL:  cancelURL,
 		SaveCardAndMakeDefault: func() bool {
@@ -329,7 +352,7 @@ func (p *paymentProcessor) handleStripePaymentLinkCreation(ctx context.Context, 
 	return nil
 }
 
-func (p *paymentProcessor) handleRazorpayPaymentLinkCreation(ctx context.Context, paymentObj *payment.Payment, invoice *invoice.Invoice) error {
+func (p *paymentProcessor) handleRazorpayPaymentLinkCreation(ctx context.Context, paymentObj *payment.Payment, invoice *invoice.Invoice, gatewayCurrency string, gatewayAmount decimal.Decimal) error {
 	// Extract success URL and cancel URL from metadata
 	successURL := ""
 	cancelURL := ""
@@ -361,8 +384,8 @@ func (p *paymentProcessor) handleRazorpayPaymentLinkCreation(ctx context.Context
 	paymentLinkReq := &razorpay.CreatePaymentLinkRequest{
 		InvoiceID:  paymentObj.DestinationID,
 		CustomerID: invoice.CustomerID,
-		Amount:     paymentObj.Amount,
-		Currency:   paymentObj.Currency,
+		Amount:     gatewayAmount,
+		Currency:   gatewayCurrency,
 		SuccessURL: successURL,
 		CancelURL:  cancelURL,
 		Metadata:   linkMetadata,
@@ -421,7 +444,7 @@ func (p *paymentProcessor) handleRazorpayPaymentLinkCreation(ctx context.Context
 	return nil
 }
 
-func (p *paymentProcessor) handleNomodPaymentLinkCreation(ctx context.Context, paymentObj *payment.Payment, invoice *invoice.Invoice) error {
+func (p *paymentProcessor) handleNomodPaymentLinkCreation(ctx context.Context, paymentObj *payment.Payment, invoice *invoice.Invoice, gatewayCurrency string, gatewayAmount decimal.Decimal) error {
 	// Extract success URL and cancel URL from metadata
 	successURL := ""
 	cancelURL := ""
@@ -453,8 +476,8 @@ func (p *paymentProcessor) handleNomodPaymentLinkCreation(ctx context.Context, p
 	paymentLinkReq := nomod.CreatePaymentLinkReq{
 		InvoiceID:  paymentObj.DestinationID,
 		CustomerID: invoice.CustomerID,
-		Amount:     paymentObj.Amount,
-		Currency:   paymentObj.Currency,
+		Amount:     gatewayAmount,
+		Currency:   gatewayCurrency,
 		SuccessURL: successURL,
 		FailureURL: cancelURL,
 		Metadata:   linkMetadata,
@@ -809,31 +832,38 @@ func (p *paymentProcessor) handleCardPayment(ctx context.Context, paymentObj *pa
 		"amount", paymentObj.Amount.String(),
 	)
 
-	// Get customer ID from metadata or destination
+	// Get customer ID from metadata or destination, and the destination invoice (if any) for
+	// gateway currency resolution — real gateways don't understand a tenant's custom currency.
 	customerID, exists := paymentObj.Metadata["customer_id"]
-	if !exists || customerID == "" {
-		// Try to get customer from invoice if destination is invoice
-		if paymentObj.DestinationType == types.PaymentDestinationTypeInvoice {
-			invoiceService := NewInvoiceService(p.ServiceParams)
-			invoiceResp, err := invoiceService.GetInvoice(ctx, paymentObj.DestinationID)
-			if err != nil {
-				return ierr.WithError(err).
-					WithHint("Failed to get invoice for card payment").
-					WithReportableDetails(map[string]interface{}{
-						"payment_id": paymentObj.ID,
-						"invoice_id": paymentObj.DestinationID,
-					}).
-					Mark(ierr.ErrValidation)
-			}
-			customerID = invoiceResp.CustomerID
-		} else {
-			return ierr.NewError("customer_id not found").
-				WithHint("Customer ID is required for card payments").
+	var destInvoice *invoice.Invoice
+	if paymentObj.DestinationType == types.PaymentDestinationTypeInvoice {
+		invoiceService := NewInvoiceService(p.ServiceParams)
+		invoiceResp, err := invoiceService.GetInvoice(ctx, paymentObj.DestinationID)
+		if err != nil {
+			return ierr.WithError(err).
+				WithHint("Failed to get invoice for card payment").
 				WithReportableDetails(map[string]interface{}{
 					"payment_id": paymentObj.ID,
+					"invoice_id": paymentObj.DestinationID,
 				}).
 				Mark(ierr.ErrValidation)
 		}
+		destInvoice = &invoiceResp.Invoice
+		if !exists || customerID == "" {
+			customerID = destInvoice.CustomerID
+		}
+	} else if !exists || customerID == "" {
+		return ierr.NewError("customer_id not found").
+			WithHint("Customer ID is required for card payments").
+			WithReportableDetails(map[string]interface{}{
+				"payment_id": paymentObj.ID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	gatewayCurrency, gatewayAmount, err := p.resolveGatewayCurrencyAmount(paymentObj, destInvoice)
+	if err != nil {
+		return err
 	}
 
 	p.Logger.Info(ctx, "processing card payment for customer",
@@ -888,8 +918,8 @@ func (p *paymentProcessor) handleCardPayment(ctx context.Context, paymentObj *pa
 	chargeReq := &dto.ChargeSavedPaymentMethodRequest{
 		CustomerID:      customerID,
 		PaymentMethodID: paymentObj.PaymentMethodID,
-		Amount:          paymentObj.Amount,
-		Currency:        paymentObj.Currency,
+		Amount:          gatewayAmount,
+		Currency:        gatewayCurrency,
 		InvoiceID:       paymentObj.DestinationID,
 		PaymentID:       paymentObj.ID,
 	}
