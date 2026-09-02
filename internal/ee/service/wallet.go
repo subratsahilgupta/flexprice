@@ -2288,7 +2288,6 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			"wallet_id", w.ID,
 		)
 	}
-	s.Logger.Debug(ctx, "evaluating alerts for wallet", "wallet_id", w.ID, "wallet alert settings", w.AlertSettings)
 
 	// Only the wallet we just changed can have moved its alert state, so drive
 	// the per-wallet path directly instead of fanning out to every customer wallet.
