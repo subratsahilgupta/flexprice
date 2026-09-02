@@ -4,12 +4,18 @@ import (
 	"context"
 
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 )
 
 // Repository defines the persistence interface for Refund entities.
 type Repository interface {
 	Create(ctx context.Context, refund *Refund) error
+	CreateBulk(ctx context.Context, refunds []*Refund) error
 	Get(ctx context.Context, id string) (*Refund, error)
+
+	// GetForUpdate row-locks the refund. Must be called inside a transaction.
+	GetForUpdate(ctx context.Context, id string) (*Refund, error)
+
 	Update(ctx context.Context, refund *Refund) error
 
 	// Delete soft-deletes a refund (sets status to archived).
@@ -20,4 +26,14 @@ type Repository interface {
 
 	// GetByIdempotencyKey looks up a refund by (tenant_id, environment_id, idempotency_key).
 	GetByIdempotencyKey(ctx context.Context, key string) (*Refund, error)
+
+	// GetByGatewayRefundID resolves the row a provider webhook refers to.
+	GetByGatewayRefundID(ctx context.Context, gateway, gatewayRefundID string) (*Refund, error)
+
+	ListByInvoice(ctx context.Context, invoiceID string) ([]*Refund, error)
+
+	// SumSettledByPaymentIDs and SumSettledByInvoiceIDs each issue one grouped
+	// query. Ids with no settled refunds are absent from the returned map.
+	SumSettledByPaymentIDs(ctx context.Context, paymentIDs []string) (map[string]decimal.Decimal, error)
+	SumSettledByInvoiceIDs(ctx context.Context, invoiceIDs []string) (map[string]decimal.Decimal, error)
 }

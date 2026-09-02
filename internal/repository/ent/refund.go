@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/ent"
+	"github.com/flexprice/flexprice/ent/predicate"
 	"github.com/flexprice/flexprice/ent/refund"
 	domainRefund "github.com/flexprice/flexprice/internal/domain/refund"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -12,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
 )
 
 type refundRepository struct {
@@ -158,6 +160,8 @@ func (r *refundRepository) Update(ctx context.Context, ref *domainRefund.Refund)
 		SetRefundStatus(string(ref.RefundStatus)).
 		SetNillableGatewayRefundID(ref.GatewayRefundID).
 		SetNillableGatewayTrackingID(ref.GatewayTrackingID).
+		SetSettledAmount(ref.SettledAmount).
+		SetAttempt(ref.Attempt).
 		SetNillableFailureReason(ref.FailureReason).
 		SetGatewayMetadata(ref.GatewayMetadata).
 		SetMetadata(ref.Metadata).
@@ -330,6 +334,274 @@ func (r *refundRepository) GetByIdempotencyKey(ctx context.Context, key string) 
 	return domainRefund.FromEnt(ref), nil
 }
 
+func (r *refundRepository) CreateBulk(ctx context.Context, refunds []*domainRefund.Refund) error {
+	span := StartRepositorySpan(ctx, "refund", "create_bulk", map[string]interface{}{
+		"refunds_count": len(refunds),
+	})
+	defer FinishSpan(span)
+
+	if len(refunds) == 0 {
+		return nil
+	}
+
+	client := r.client.Writer(ctx)
+	builders := make([]*ent.RefundCreate, len(refunds))
+
+	for i, ref := range refunds {
+		if ref.EnvironmentID == "" {
+			ref.EnvironmentID = types.GetEnvironmentID(ctx)
+		}
+
+		builders[i] = client.Refund.Create().
+			SetID(ref.ID).
+			SetNillablePaymentID(ref.PaymentID).
+			SetInvoiceID(ref.InvoiceID).
+			SetNillableCreditNoteID(ref.CreditNoteID).
+			SetNillablePaymentGateway(ref.PaymentGateway).
+			SetNillableGatewayRefundID(ref.GatewayRefundID).
+			SetNillableGatewayTrackingID(ref.GatewayTrackingID).
+			SetAmount(ref.Amount).
+			SetCurrency(ref.Currency).
+			SetRefundStatus(string(ref.RefundStatus)).
+			SetRefundReason(string(ref.RefundReason)).
+			SetRefundDestination(string(ref.RefundDestination)).
+			SetNillableRefundDestinationID(ref.RefundDestinationID).
+			SetSettledAmount(ref.SettledAmount).
+			SetAttempt(ref.Attempt).
+			SetIdempotencyKey(ref.IdempotencyKey).
+			SetNillableGatewayIdempotencyToken(ref.GatewayIdempotencyToken).
+			SetNillableFailureReason(ref.FailureReason).
+			SetMetadata(ref.Metadata).
+			SetGatewayMetadata(ref.GatewayMetadata).
+			SetNillableInitiatedAt(ref.InitiatedAt).
+			SetNillableSucceededAt(ref.SucceededAt).
+			SetNillableFailedAt(ref.FailedAt).
+			SetNillableCancelledAt(ref.CancelledAt).
+			SetTenantID(ref.TenantID).
+			SetStatus(string(ref.Status)).
+			SetCreatedAt(ref.CreatedAt).
+			SetUpdatedAt(ref.UpdatedAt).
+			SetCreatedBy(ref.CreatedBy).
+			SetUpdatedBy(ref.UpdatedBy).
+			SetEnvironmentID(ref.EnvironmentID)
+	}
+
+	created, err := client.Refund.CreateBulk(builders...).Save(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		return ierr.WithError(err).
+			WithHint("Failed to create refunds in bulk").
+			WithReportableDetails(map[string]interface{}{
+				"refunds_count": len(refunds),
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	for i, c := range created {
+		*refunds[i] = *domainRefund.FromEnt(c)
+	}
+
+	SetSpanSuccess(span)
+	return nil
+}
+
+// GetForUpdate retrieves a refund with a row-level lock (SELECT FOR UPDATE).
+// Must be called within a transaction so the lock is held until commit/rollback.
+func (r *refundRepository) GetForUpdate(ctx context.Context, id string) (*domainRefund.Refund, error) {
+	span := StartRepositorySpan(ctx, "refund", "get_for_update", map[string]interface{}{
+		"refund_id": id,
+	})
+	defer FinishSpan(span)
+
+	client := r.client.Writer(ctx)
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	lockQuery := `SELECT id FROM refunds WHERE id = $1 AND tenant_id = $2 AND environment_id = $3 FOR UPDATE`
+	rows, err := client.QueryContext(ctx, lockQuery, id, tenantID, environmentID)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("Failed to lock refund").Mark(ierr.ErrDatabase)
+	}
+	// Rows must be drained and closed before reusing the connection for the load below.
+	hasRow := rows.Next()
+	rowErr := rows.Err()
+	rows.Close()
+	if rowErr != nil {
+		SetSpanError(span, rowErr)
+		return nil, ierr.WithError(rowErr).WithHint("Failed to lock refund").Mark(ierr.ErrDatabase)
+	}
+	if !hasRow {
+		return nil, ierr.NewError("refund not found").
+			WithHint("Refund not found").
+			WithReportableDetails(map[string]interface{}{"refund_id": id}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	ref, err := client.Refund.Query().
+		Where(
+			refund.ID(id),
+			refund.TenantID(tenantID),
+			refund.EnvironmentID(environmentID),
+		).
+		Only(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		if ent.IsNotFound(err) {
+			return nil, ierr.WithError(err).
+				WithHint("Refund not found").
+				WithReportableDetails(map[string]interface{}{"refund_id": id}).
+				Mark(ierr.ErrNotFound)
+		}
+		return nil, ierr.WithError(err).
+			WithHint("Failed to retrieve refund").
+			WithReportableDetails(map[string]interface{}{"refund_id": id}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	return domainRefund.FromEnt(ref), nil
+}
+
+func (r *refundRepository) GetByGatewayRefundID(ctx context.Context, gateway, gatewayRefundID string) (*domainRefund.Refund, error) {
+	span := StartRepositorySpan(ctx, "refund", "get_by_gateway_refund_id", map[string]interface{}{
+		"gateway":           gateway,
+		"gateway_refund_id": gatewayRefundID,
+	})
+	defer FinishSpan(span)
+
+	client := r.client.Reader(ctx)
+
+	ref, err := client.Refund.Query().
+		Where(
+			refund.PaymentGatewayEQ(gateway),
+			refund.GatewayRefundID(gatewayRefundID),
+			refund.EnvironmentID(types.GetEnvironmentID(ctx)),
+			refund.TenantID(types.GetTenantID(ctx)),
+		).
+		Only(ctx)
+
+	if err != nil {
+		SetSpanError(span, err)
+		if ent.IsNotFound(err) {
+			return nil, ierr.WithError(err).
+				WithHint("Refund not found").
+				WithReportableDetails(map[string]interface{}{
+					"gateway":           gateway,
+					"gateway_refund_id": gatewayRefundID,
+				}).
+				Mark(ierr.ErrNotFound)
+		}
+		return nil, ierr.WithError(err).
+			WithHint("Failed to get refund by gateway refund id").
+			WithReportableDetails(map[string]interface{}{
+				"gateway":           gateway,
+				"gateway_refund_id": gatewayRefundID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	return domainRefund.FromEnt(ref), nil
+}
+
+func (r *refundRepository) ListByInvoice(ctx context.Context, invoiceID string) ([]*domainRefund.Refund, error) {
+	span := StartRepositorySpan(ctx, "refund", "list_by_invoice", map[string]interface{}{
+		"invoice_id": invoiceID,
+	})
+	defer FinishSpan(span)
+
+	client := r.client.Reader(ctx)
+
+	refunds, err := client.Refund.Query().
+		Where(
+			refund.InvoiceID(invoiceID),
+			refund.StatusEQ(string(types.StatusPublished)),
+			refund.EnvironmentID(types.GetEnvironmentID(ctx)),
+			refund.TenantID(types.GetTenantID(ctx)),
+		).
+		Order(ent.Desc(refund.FieldCreatedAt)).
+		All(ctx)
+
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list refunds for invoice").
+			WithReportableDetails(map[string]interface{}{
+				"invoice_id": invoiceID,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	return domainRefund.FromEntList(refunds), nil
+}
+
+func (r *refundRepository) SumSettledByPaymentIDs(ctx context.Context, paymentIDs []string) (map[string]decimal.Decimal, error) {
+	return r.sumSettledGroupedBy(ctx, refund.FieldPaymentID, refund.PaymentIDIn(paymentIDs...), paymentIDs)
+}
+
+func (r *refundRepository) SumSettledByInvoiceIDs(ctx context.Context, invoiceIDs []string) (map[string]decimal.Decimal, error) {
+	return r.sumSettledGroupedBy(ctx, refund.FieldInvoiceID, refund.InvoiceIDIn(invoiceIDs...), invoiceIDs)
+}
+
+func (r *refundRepository) sumSettledGroupedBy(
+	ctx context.Context,
+	groupField string,
+	in predicate.Refund,
+	ids []string,
+) (map[string]decimal.Decimal, error) {
+	span := StartRepositorySpan(ctx, "refund", "sum_settled", map[string]interface{}{
+		"group_field": groupField,
+		"ids_count":   len(ids),
+	})
+	defer FinishSpan(span)
+
+	result := make(map[string]decimal.Decimal, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	// Both group columns are declared because ent names the grouped column after
+	// the field itself; only the one being grouped on comes back in the result set.
+	var rows []struct {
+		PaymentID     string          `json:"payment_id"`
+		InvoiceID     string          `json:"invoice_id"`
+		SettledAmount decimal.Decimal `json:"settled_amount"`
+	}
+
+	err := r.client.Reader(ctx).Refund.Query().
+		Where(
+			in,
+			refund.RefundStatusEQ(string(types.RefundStatusSucceeded)),
+			refund.StatusEQ(string(types.StatusPublished)),
+			refund.EnvironmentID(types.GetEnvironmentID(ctx)),
+			refund.TenantID(types.GetTenantID(ctx)),
+		).
+		GroupBy(groupField).
+		Aggregate(ent.As(ent.Sum(refund.FieldSettledAmount), "settled_amount")).
+		Scan(ctx, &rows)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to sum settled refund amounts").
+			WithReportableDetails(map[string]interface{}{
+				"group_field": groupField,
+			}).
+			Mark(ierr.ErrDatabase)
+	}
+
+	for _, row := range rows {
+		key := row.InvoiceID
+		if groupField == refund.FieldPaymentID {
+			key = row.PaymentID
+		}
+		if key == "" {
+			continue
+		}
+		result[key] = row.SettledAmount
+	}
+
+	return result, nil
+}
+
 // RefundQuery type alias for better readability
 type RefundQuery = *ent.RefundQuery
 
@@ -386,6 +658,21 @@ func (o RefundQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.
 
 	if f.PaymentIDs != nil {
 		query = query.Where(refund.PaymentIDIn(f.PaymentIDs...))
+	}
+	if f.CreditNoteIDs != nil {
+		query = query.Where(refund.CreditNoteIDIn(f.CreditNoteIDs...))
+	}
+	if f.InvoiceIDs != nil {
+		query = query.Where(refund.InvoiceIDIn(f.InvoiceIDs...))
+	}
+	if f.RefundDestinations != nil {
+		destinations := lo.Map(f.RefundDestinations, func(d types.RefundDestination, _ int) string {
+			return string(d)
+		})
+		query = query.Where(refund.RefundDestinationIn(destinations...))
+	}
+	if f.OnlySettled != nil && *f.OnlySettled {
+		query = query.Where(refund.RefundStatusEQ(string(types.RefundStatusSucceeded)))
 	}
 	if f.RefundStatuses != nil {
 
