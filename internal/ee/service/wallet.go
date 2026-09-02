@@ -3667,7 +3667,6 @@ func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet
 			"old_state", currentWallet.AlertState,
 			"new_state", alertStatus,
 			"event_id", eventID,
-			"alert_settings", alertSettings,
 		)
 		if err := s.UpdateWalletAlertState(ctx, w.ID, alertStatus); err != nil {
 			s.Logger.Error(ctx, "failed to update wallet alert state",
@@ -3684,7 +3683,6 @@ func (s *walletService) processWalletBalanceAlert(ctx context.Context, w *wallet
 			"old_state", currentWallet.AlertState,
 			"new_state", alertStatus,
 			"event_id", eventID,
-			"alert_settings", alertSettings,
 		)
 	} else {
 		s.Logger.Debug(ctx, "wallet alert state unchanged, skipping update",
