@@ -41,6 +41,15 @@ spec:
           {{- if not .Values.frontend.gcs.bucket }}
           {{- fail "frontend.mode=gcsproxy requires frontend.gcs.bucket" }}
           {{- end }}
+          {{- /*
+            Clears RUN_AS_NONROOT + PRIVILEGE_ESCALATION. readOnlyRootFilesystem
+            is left off for gcsproxy (unlike nginx) — it's a third-party binary
+            with no dedicated scratch volume, and RO rootfs is not what the SCC
+            findings require.
+          */}}
+          securityContext:
+            {{- toYaml (omit .Values.securityContext "readOnlyRootFilesystem") | nindent 12 }}
+            readOnlyRootFilesystem: false
           image: {{ .Values.frontend.gcs.image | quote }}
           args:
             - "-bucket"
@@ -59,6 +68,13 @@ spec:
           resources:
             {{- toYaml .Values.frontend.gcs.resources | nindent 12 }}
         - name: nginx
+          {{- /*
+            nginx (RO rootfs from .Values.securityContext) writes only to the
+            emptyDir mounts below (/var/cache/nginx, /var/run); listens on 3000,
+            an unprivileged port, so dropping ALL caps + no-new-privs is safe.
+          */}}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           image: {{ .Values.frontend.nginx.image | quote }}
           ports:
             - name: http
