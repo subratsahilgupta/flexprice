@@ -99,3 +99,25 @@ func FromEntList(refunds []*ent.Refund) []*Refund {
 	}
 	return result
 }
+
+func (r *Refund) IsSettled() bool {
+	if r == nil {
+		return false
+	}
+	return r.RefundStatus.IsSettled()
+}
+
+func (r *Refund) NeedsGatewayDispatch() bool {
+	if r == nil {
+		return false
+	}
+	return r.RefundDestination == types.RefundDestinationGateway &&
+		r.RefundStatus == types.RefundStatusPending
+}
+
+func (r *Refund) SettledOrZero() decimal.Decimal {
+	if r == nil || !r.IsSettled() {
+		return decimal.Zero
+	}
+	return r.SettledAmount
+}

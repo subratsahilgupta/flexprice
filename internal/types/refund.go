@@ -25,6 +25,55 @@ func (s RefundStatus) IsTerminal() bool {
 	return s == RefundStatusSucceeded || s == RefundStatusFailed || s == RefundStatusCancelled
 }
 
+func (s RefundStatus) IsSettled() bool {
+	return s == RefundStatusSucceeded
+}
+
+var refundStatusTransitions = map[RefundStatus][]RefundStatus{
+	RefundStatusPending: {
+		RefundStatusProcessing,
+		RefundStatusSucceeded,
+		RefundStatusFailed,
+		RefundStatusCancelled,
+	},
+	RefundStatusProcessing: {
+		RefundStatusSucceeded,
+		RefundStatusFailed,
+		RefundStatusCancelled,
+	},
+	RefundStatusSucceeded: {},
+	RefundStatusFailed:    {},
+	RefundStatusCancelled: {},
+}
+
+// ValidateTransitionTo reports whether a refund may move from s to target.
+// Terminal states admit nothing, so a redelivered gateway webhook settling an
+// already-SUCCEEDED row is rejected here rather than paying the customer twice.
+func (s RefundStatus) ValidateTransitionTo(target RefundStatus) error {
+	if err := target.Validate(); err != nil {
+		return err
+	}
+
+	allowed, ok := refundStatusTransitions[s]
+	if !ok {
+		return ierr.NewError("invalid current refund status").
+			WithHintf("Refund is in an unrecognised status: %s", s).
+			Mark(ierr.ErrValidation)
+	}
+
+	if lo.Contains(allowed, target) {
+		return nil
+	}
+
+	return ierr.NewError("invalid refund status transition").
+		WithHintf("Refund status cannot change from %s to %s", s, target).
+		WithReportableDetails(map[string]any{
+			"current_status":   s,
+			"allowed_statuses": allowed,
+		}).
+		Mark(ierr.ErrValidation)
+}
+
 func (s RefundStatus) Validate() error {
 	allowed := []RefundStatus{
 		RefundStatusPending,
@@ -55,6 +104,23 @@ const (
 
 func (t RefundDestination) String() string {
 	return string(t)
+}
+
+func (t RefundDestination) Validate() error {
+	allowed := []RefundDestination{
+		RefundDestinationGateway,
+		RefundDestinationWallet,
+		RefundDestinationOutOfBand,
+	}
+	if !lo.Contains(allowed, t) {
+		return ierr.NewError("invalid refund destination").
+			WithHint("Please provide a valid refund destination").
+			WithReportableDetails(map[string]any{
+				"allowed": allowed,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
 }
 
 // RefundReason is the reason a gateway refund was issued.
@@ -98,9 +164,13 @@ type RefundFilter struct {
 	*QueryFilter
 	*TimeRangeFilter
 
-	PaymentIDs     []string
-	RefundStatuses []RefundStatus
-	Gateway        *string
+	PaymentIDs         []string
+	CreditNoteIDs      []string
+	InvoiceIDs         []string
+	RefundStatuses     []RefundStatus
+	RefundDestinations []RefundDestination
+	Gateway            *string
+	OnlySettled        *bool
 }
 
 // Validate validates the refund filter.
