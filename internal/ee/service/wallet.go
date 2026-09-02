@@ -4036,8 +4036,7 @@ func withinDefaultAutoChargeCooldown(w *wallet.Wallet, last *wallet.Transaction,
 }
 
 // autoTopupCheckout returns the params that charge a saved method off-session, or
-// nil to raise an invoice instead. Unattended by definition, so CustomerPresent is
-// false: it is what declares the charge merchant-initiated at the card network.
+// nil to raise an invoice instead. Unattended, so CustomerNotPresent is true.
 func (s *walletService) autoTopupCheckout(ctx context.Context, w *wallet.Wallet, isInvoiced bool) *dto.CheckoutParams {
 	if !isInvoiced {
 		return nil
@@ -4062,8 +4061,8 @@ func (s *walletService) autoTopupCheckout(ctx context.Context, w *wallet.Wallet,
 		PaymentParams: dto.PaymentParams{
 			PaymentProvider: provider,
 			PaymentProviderConfig: &types.CheckoutPaymentProviderConfig{
-				CollectionMethod: types.CollectionMethodChargeAutomatically,
-				CustomerPresent:  false,
+				CollectionMethod:   types.CollectionMethodChargeAutomatically,
+				CustomerNotPresent: true,
 			},
 		},
 	}
