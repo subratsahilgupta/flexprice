@@ -39,9 +39,7 @@ jobs:
       - name: Install zizmor
         run: pip install zizmor==1.5.2
 
-      # --offline: no network, so no GH token needed and no rate-limit flakiness;
-      # trades away the online-only audits (fine for phase 1). continue-on-error
-      # keeps findings non-blocking while the baseline is triaged.
+      # --offline: no token, no rate-limit flakiness (skips online audits).
       - name: Run zizmor
         continue-on-error: true
         run: zizmor --offline --format sarif . > zizmor.sarif

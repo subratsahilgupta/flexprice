@@ -34,8 +34,7 @@ jobs:
     name: Build, scan, publish multi-arch e2eprobe image
     runs-on: ubuntu-latest
     steps:
-      # Pins runner egress and audits outbound calls: this job holds
-      # GHCR_PUBLISH_TOKEN, so a poisoned build dep phoning home is in scope.
+      # Audits runner egress; job holds GHCR_PUBLISH_TOKEN.
       - name: Harden runner
         uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
         with:
@@ -155,8 +154,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
 
-      # Keyless signature bound to the scanned digest. No verify gate today;
-      # makes the artifact verifiable once a policy gate exists.
+      # Signs the scanned digest, not a mutable tag.
       - name: Sign image (keyless)
         env:
           IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
