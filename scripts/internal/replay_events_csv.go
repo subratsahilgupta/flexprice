@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -242,7 +243,7 @@ func postSingleEvent(client *http.Client, endpoint, apiKey string, event *dto.In
 			time.Sleep(replayInitialBackoff * time.Duration(attempt))
 		}
 
-		req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body)) // #nosec G704 -- endpoint from env, replays to own API
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewReader(body)) // #nosec G704 -- endpoint from env, replays to own API
 		if err != nil {
 			return fmt.Errorf("create request: %w", err)
 		}
