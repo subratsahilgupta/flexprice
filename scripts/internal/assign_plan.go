@@ -195,7 +195,7 @@ func newAssignPlanScript() (*assignPlanScript, error) {
 	subscriptionRepo := entRepo.NewSubscriptionRepository(client, log, redisCache)
 	priceRepo := entRepo.NewPriceRepository(client, log, redisCache)
 	meterRepo := entRepo.NewMeterRepository(client, log, cacheClient)
-	invoiceRepo := entRepo.NewInvoiceRepository(client, log, redisCache)
+	invoiceRepo := entRepo.NewInvoiceRepository(client, log)
 	featureRepo := entRepo.NewFeatureRepository(client, log, cacheClient, redisCache)
 	entitlementRepo := entRepo.NewEntitlementRepository(client, log, cacheClient, redisCache)
 	eventRepo := chRepo.NewEventRepository(chStore, log)
