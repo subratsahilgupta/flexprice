@@ -126,8 +126,8 @@ func TestBuildOptions_CredentialSplit(t *testing.T) {
 	}
 }
 
-// TestBuildOptions_TLS guards the hardening: TLS verifies by default, honours a
-// ServerName override, and only skips verification when explicitly opted in.
+// TestBuildOptions_TLS guards the TLS wiring: skip-verify is configurable (not
+// hardcoded), ServerName is honoured, and MinVersion is TLS 1.2.
 func TestBuildOptions_TLS(t *testing.T) {
 	t.Run("no TLS -> nil config", func(t *testing.T) {
 		opts, _, err := buildOptions(config.RedisConfig{Host: "r", Port: 6379})
@@ -139,8 +139,8 @@ func TestBuildOptions_TLS(t *testing.T) {
 		}
 	})
 
-	t.Run("TLS default verifies", func(t *testing.T) {
-		opts, _, err := buildOptions(config.RedisConfig{Host: "r", Port: 6379, UseTLS: true, TLSServerName: "cache.example.com"})
+	t.Run("verify opt-in wires ServerName", func(t *testing.T) {
+		opts, _, err := buildOptions(config.RedisConfig{Host: "r", Port: 6379, UseTLS: true, TLSSkipVerify: false, TLSServerName: "cache.example.com"})
 		if err != nil {
 			t.Fatalf("buildOptions() error: %v", err)
 		}
@@ -148,7 +148,7 @@ func TestBuildOptions_TLS(t *testing.T) {
 			t.Fatal("TLSConfig = nil, want set when UseTLS is true")
 		}
 		if opts.TLSConfig.InsecureSkipVerify {
-			t.Error("InsecureSkipVerify = true by default, want false")
+			t.Error("InsecureSkipVerify = true, want false when TLSSkipVerify is false")
 		}
 		if opts.TLSConfig.ServerName != "cache.example.com" {
 			t.Errorf("ServerName = %q, want cache.example.com", opts.TLSConfig.ServerName)
@@ -158,7 +158,7 @@ func TestBuildOptions_TLS(t *testing.T) {
 		}
 	})
 
-	t.Run("skip-verify only when opted in", func(t *testing.T) {
+	t.Run("skip-verify honoured", func(t *testing.T) {
 		opts, _, err := buildOptions(config.RedisConfig{Host: "r", Port: 6379, UseTLS: true, TLSSkipVerify: true})
 		if err != nil {
 			t.Fatalf("buildOptions() error: %v", err)

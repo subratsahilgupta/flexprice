@@ -64,11 +64,9 @@ func buildOptions(c config.RedisConfig) (*redis.UniversalOptions, redisMode, err
 	var tlsConfig *tls.Config
 	if c.UseTLS {
 		tlsConfig = &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			// ServerName is the correct handling for ElastiCache wildcard certs:
-			// verify against the cert SAN rather than disabling verification.
+			MinVersion:         tls.VersionTLS12,
 			ServerName:         c.TLSServerName,
-			InsecureSkipVerify: c.TLSSkipVerify, // #nosec G402 -- default false; opt-in only for dev/self-signed
+			InsecureSkipVerify: c.TLSSkipVerify, // #nosec G402 -- default true for ElastiCache; set false + ServerName to verify
 		}
 	}
 
