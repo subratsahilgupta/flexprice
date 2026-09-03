@@ -164,6 +164,10 @@ func CopyPlanChargesToAddons() error {
 		if err != nil {
 			return fmt.Errorf("failed to write JSON file: %w", err)
 		}
+		// WriteFile keeps an existing file's mode; force 0600 on reruns.
+		if err := os.Chmod(filename, 0600); err != nil {
+			return fmt.Errorf("failed to chmod JSON file: %w", err)
+		}
 
 		log.Infow("Dry run completed - output written to file", "filename", filename, "prices_to_create", len(newPrices))
 		fmt.Printf("✅ Dry run completed! Output written to: %s\n", filename)

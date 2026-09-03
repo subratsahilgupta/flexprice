@@ -188,6 +188,10 @@ func outputTenantsToSync(tenants []*dto.TenantResponse, tenantsToSync []*tenant.
 		if err != nil {
 			logger.Errorw("Failed to write tenants to file", "error", err)
 		} else {
+			// WriteFile keeps an existing file's mode; force 0600 on reruns.
+			if cerr := os.Chmod("tenants_to_sync.json", 0600); cerr != nil {
+				logger.Errorw("Failed to chmod tenants file", "error", cerr)
+			}
 			fmt.Printf("\nTenants to sync have been written to tenants_to_sync.json for review\n")
 		}
 	}
