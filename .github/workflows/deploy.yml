@@ -120,18 +120,21 @@ jobs:
           cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
 
+      # Sign only when the build actually pushed a digest. GHCR login is
+      # best-effort on non-main (continue-on-error), so a failed login leaves an
+      # empty digest and nothing to sign — the digest guard covers that for every
+      # trigger, without singling out a branch.
       - name: Install cosign
-        # Skipped on develop where GHCR login is best-effort: an unauthenticated
-        # push may not have landed, so there is nothing to sign.
-        if: ${{ github.ref_name != 'develop' }}
+        if: ${{ steps.build.outputs.digest != '' }}
         uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
 
       # Keyless signature bound to the pushed digest. One signature covers every
-      # tag on that digest (:<sha>, :main, :latest, :develop). This is the image
-      # ECS and GCP ArgoCD actually run, so it matters most that it is signed.
-      # No verify gate exists at deploy today; makes it verifiable once one does.
+      # tag on that digest (:<sha>, :develop, and the post-approval :main/:latest
+      # retag, which copies the same digest). This is the image ECS and GCP
+      # ArgoCD actually run. No verify gate at deploy today; makes it verifiable
+      # once one exists.
       - name: Sign image (keyless)
-        if: ${{ github.ref_name != 'develop' && steps.build.outputs.digest != '' }}
+        if: ${{ steps.build.outputs.digest != '' }}
         env:
           GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
           DIGEST: ${{ steps.build.outputs.digest }}
