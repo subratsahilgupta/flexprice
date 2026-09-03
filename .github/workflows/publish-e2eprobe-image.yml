@@ -152,6 +152,17 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      # Keyless signature bound to the scanned digest. No verify gate today;
+      # makes the artifact verifiable once a policy gate exists.
+      - name: Sign image (keyless)
+        env:
+          IMG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMG}@${DIGEST}"
+
       - name: Summary
         env:
           TAGS: ${{ steps.tag.outputs.all_tags }}
