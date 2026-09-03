@@ -4190,8 +4190,8 @@ func (s *WalletServiceSuite) TestCreateWallet_CustomCurrencyEnforcement() {
 		currency string
 		wantErr  bool
 	}{
-		{name: "configured custom currency is allowed", currency: "mac"},
 		{name: "default fiat currency is allowed so wallets can pay invoices", currency: "usd"},
+		{name: "custom currency is rejected - a wallet could never match a fiat invoice", currency: "mac", wantErr: true},
 		{name: "unconfigured currency is rejected", currency: "eur", wantErr: true},
 	}
 

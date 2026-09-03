@@ -264,14 +264,13 @@ Changing a `code` is likewise not expressible: sending a new code adds a currenc
 
 ## 3. ERD
 
-Two new columns on `INVOICE`. Every other table is structurally unchanged — they already had a `currency` string column.
+One new column on `INVOICE`. Every other table is structurally unchanged.
 
 ```mermaid
 erDiagram
-    SETTING ||--o{ PRICE : "pricing_units key == currency"
-    SETTING ||--o{ SUBSCRIPTION : "pricing_units key == currency"
-    SETTING ||--o{ WALLET : "pricing_units key == currency"
-    SETTING ||--o{ INVOICE : "pricing_units key == currency"
+    SETTING ||--o{ PRICE : "custom_currencies key == currency"
+    SETTING ||--o{ SUBSCRIPTION : "custom_currencies key == currency"
+    SETTING ||--o{ INVOICE : "default_fiat_currency == currency"
     CUSTOMER ||--o{ SUBSCRIPTION : "customer_id"
     CUSTOMER ||--o{ WALLET : "customer_id"
     CUSTOMER ||--o{ INVOICE : "customer_id"
@@ -281,14 +280,14 @@ erDiagram
 
     SETTING {
         string id PK
-        string key "org_custom_currency_config"
-        jsonb value "pricing_units map, default_fiat_currency"
+        string key "custom_currency_config"
+        jsonb value "custom_currencies map, default_fiat_currency"
     }
     PRICE {
         string id PK
         string plan_id FK
         string currency "custom currency code"
-        decimal amount "numeric(25,15), custom currency"
+        decimal amount "custom currency"
     }
     SUBSCRIPTION {
         string id PK
@@ -298,40 +297,38 @@ erDiagram
     WALLET {
         string id PK
         string customer_id FK
-        string currency "custom currency code"
-        decimal balance "custom currency"
-        decimal conversion_rate "credits to wallet currency, unrelated axis"
+        string currency "fiat only - it pays fiat invoices"
+        decimal balance "fiat"
     }
     INVOICE {
         string id PK
         string customer_id FK
         string subscription_id FK
-        string invoice_status "DRAFT or FINALIZED"
-        string currency "custom currency code, what charges are computed in"
-        decimal amount_due "custom currency, changes on recompute and recalc"
-        string fiat_currency "NEW, from create request or default, never changes"
-        decimal fiat_conversion_rate "NEW, NULL while DRAFT, frozen at finalization"
+        string currency "always fiat = default_fiat_currency"
+        decimal amount_due "fiat, converted at finalization"
+        jsonb custom_currency "NEW, nullable: code, rate, amount"
     }
     INVOICE_LINE_ITEM {
         string id PK
         string invoice_id FK
-        decimal quantity "units consumed"
-        decimal unit_price "custom currency per unit"
-        decimal amount "custom currency, quantity x unit_price"
+        string currency "custom currency code, never converted"
+        decimal amount "custom currency"
     }
     PAYMENT {
         string id PK
         string invoice_id FK
-        string currency "= invoice.fiat_currency, always fiat"
-        decimal amount "fiat, at the invoice frozen rate"
+        string currency "= invoice.currency, always fiat"
     }
 ```
 
-Three things the diagram cannot express, stated instead:
+### Decisions
 
-- **No fiat amount is stored anywhere.** `INVOICE` and `INVOICE_LINE_ITEM` hold only custom-currency amounts; every fiat figure on the rendered invoice (§2.5) is derived as `amount × invoice.fiat_conversion_rate` at read time. Storing it would create a second value that recalculation could leave stale.
-- **`INVOICE_LINE_ITEM` has no currency or row-kind column.** Every stored line is a charge in the invoice's `currency`. The fiat conversion rows shown in §2.5 are generated at render time from those charges and the invoice's single `fiat_conversion_rate` — which is what keeps the conversion rows, the subtotal, and the total due arithmetically consistent. If conversion rows were instead persisted (§7.6), this table would need both columns.
-- **A `CustomCurrency` is never a row.** It exists only inside `SETTING.value`, so each `SETTING` edge above is an application-level string match, not a database foreign key — nothing at the DB level enforces that a `WALLET.currency` of `FXP` refers to anything. What stands in for referential integrity is that §2.7's merge semantics make deleting a referenced code inexpressible, with runtime fallbacks as the backstop.
+- **The invoice is the fiat boundary.** Prices and subscriptions bill in the custom currency; `INVOICE.currency` is always `default_fiat_currency`, so payments, gateways and wallets need no changes.
+- **One conversion, at finalization.** Amounts are computed in the custom currency, then `subtotal`/`total`/`amount_due`/`amount_paid`/`amount_remaining` are converted in place. `custom_currency` keeps the pre-conversion total plus the rate, frozen so later config edits can't restate a sealed invoice.
+- **`fiat = custom × rate`**, matching `priceunit.ConvertToFiatCurrencyAmount` and the wallet's `amount = credits × conversion_rate`. So a `mac→usd` factor of 10 means 1 MAC = 10 USD.
+- **Line items are not converted.** Rounding each line and re-deriving the total loses money against converting the total once, so they keep the custom currency and say so in their own `currency` column. Consequence: line items sum to `custom_currency.custom_currency_amount`, not to `subtotal`.
+- **Wallets must be fiat.** A wallet in a custom currency could never match a fiat invoice. Custom-currency subscriptions still count toward pending charges — their usage is converted at read time.
+- **A custom currency is never a row.** It lives only in `SETTING.value`, so each `SETTING` edge is a string match, not a foreign key.
 
 ---
 
