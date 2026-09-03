@@ -137,7 +137,8 @@ func (c *compiler) Compile(opts CompileOpts) (string, error) {
 
 	// binaryPath is configured, not user input; args are separate argv elements,
 	// not shell-interpreted, so neither can inject a command.
-	cmd := exec.Command(c.binaryPath, args...) // #nosec G204 -- fixed binary, argv not shell // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	cmd := exec.Command(c.binaryPath, args...) // #nosec G204 -- fixed binary, argv not shell
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
