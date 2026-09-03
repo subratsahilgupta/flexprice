@@ -184,7 +184,7 @@ func outputTenantsToSync(tenants []*dto.TenantResponse, tenantsToSync []*tenant.
 	if err != nil {
 		logger.Errorw("Failed to marshal tenants to JSON", "error", err)
 	} else {
-		err = os.WriteFile("tenants_to_sync.json", jsonData, 0644)
+		err = os.WriteFile("tenants_to_sync.json", jsonData, 0600)
 		if err != nil {
 			logger.Errorw("Failed to write tenants to file", "error", err)
 		} else {

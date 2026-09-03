@@ -160,7 +160,7 @@ func CopyPlanChargesToAddons() error {
 			return fmt.Errorf("failed to marshal JSON: %w", err)
 		}
 
-		err = os.WriteFile(filename, jsonData, 0644)
+		err = os.WriteFile(filename, jsonData, 0600)
 		if err != nil {
 			return fmt.Errorf("failed to write JSON file: %w", err)
 		}
