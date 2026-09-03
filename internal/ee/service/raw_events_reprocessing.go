@@ -277,7 +277,7 @@ func (s *rawEventsReprocessingService) publishEvent(ctx context.Context, event *
 	}
 
 	// Make UUID truly unique by adding nanosecond precision timestamp and random bytes
-	uniqueID := fmt.Sprintf("%s-%d-%d", event.ID, time.Now().UnixNano(), rand.Int63())
+	uniqueID := fmt.Sprintf("%s-%d-%d", event.ID, time.Now().UnixNano(), rand.Int63()) // #nosec G404 -- dedup salt, not security-sensitive
 
 	msg := message.NewMessage(uniqueID, payload)
 
