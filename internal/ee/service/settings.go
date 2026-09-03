@@ -352,6 +352,8 @@ func (s *settingsService) GetSettingByKeyUnchecked(ctx context.Context, key type
 		return getSettingByKey[types.CustomAnalyticsConfig](s, ctx, key)
 	case types.SettingKeyWalletBalanceAlertConfig:
 		return getSettingByKey[types.AlertSettings](s, ctx, key)
+	case types.SettingKeySubscriptionAlertConfig, types.SettingKeyEntitlementAlertConfig:
+		return getSettingByKey[types.AlertToggleConfig](s, ctx, key)
 	case types.SettingKeyCustomerPortalConfig:
 		return getSettingByKey[types.CustomerPortalConfig](s, ctx, key)
 	case types.SettingKeyEventIngestionFilter:
@@ -410,6 +412,8 @@ func (s *settingsService) UpdateSettingByKey(ctx context.Context, key types.Sett
 		return updateSettingByKey[types.CustomAnalyticsConfig](s, ctx, key, req)
 	case types.SettingKeyWalletBalanceAlertConfig:
 		return updateSettingByKey[*types.AlertSettings](s, ctx, key, req)
+	case types.SettingKeySubscriptionAlertConfig, types.SettingKeyEntitlementAlertConfig:
+		return updateSettingByKey[*types.AlertToggleConfig](s, ctx, key, req)
 	case types.SettingKeyCustomerPortalConfig:
 		return updateSettingByKey[types.CustomerPortalConfig](s, ctx, key, req)
 	case types.SettingKeyEventIngestionFilter:
