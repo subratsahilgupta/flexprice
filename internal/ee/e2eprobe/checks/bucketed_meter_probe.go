@@ -188,7 +188,10 @@ func (p *BucketedMeterProbe) pollRawEvents(ctx context.Context, spec bucketedSpe
 
 func (p *BucketedMeterProbe) pollAnalytics(ctx context.Context, spec bucketedSpec, custExt, featID string, start, end time.Time, wantValues []int) error {
 	windowSize := spec.window
-	deadline := time.Now().Add(90 * time.Second)
+	// Day-granularity rollups materialize slower than the 15m/hour specs, so the
+	// analytics view occasionally lags past 90s under load. Raw ingestion is
+	// verified separately, so this only waits on aggregation.
+	deadline := time.Now().Add(180 * time.Second)
 	for {
 		resp, err := p.client.Events().GetUsageAnalytics(ctx, types.GetUsageAnalyticsRequest{
 			ExternalCustomerID: &custExt,
