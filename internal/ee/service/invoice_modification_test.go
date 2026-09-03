@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -98,6 +99,7 @@ func (s *LineItemEditSuite) SetupTest() {
 		DB:                  s.GetDB(),
 		InvoiceRepo:         s.GetStores().InvoiceRepo,
 		InvoiceLineItemRepo: s.GetStores().InvoiceLineItemRepo,
+		WebhookPublisher:    s.GetWebhookPublisher(),
 	})
 }
 
@@ -704,6 +706,7 @@ func (s *InvoiceModificationServiceSuite) SetupTest() {
 		DB:                  s.GetDB(),
 		InvoiceRepo:         s.GetStores().InvoiceRepo,
 		InvoiceLineItemRepo: s.GetStores().InvoiceLineItemRepo,
+		WebhookPublisher:    s.GetWebhookPublisher(),
 	})
 }
 
@@ -923,4 +926,153 @@ func (s *InvoiceModificationServiceSuite) TestExecutePropagatesUnderlyingErrors(
 	})
 	s.Error(err)
 	s.True(ierr.IsValidation(err))
+}
+
+// ---- finalized-invoice edit flow (void and recreate as draft) ----
+
+func (s *InvoiceModificationServiceSuite) createFinalizedInvoiceWithLineItem() (*invoice.Invoice, *invoice.InvoiceLineItem) {
+	ctx := s.GetContext()
+	periodStart := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, 8, 31, 23, 59, 59, 0, time.UTC)
+	dueDate := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+	inv := &invoice.Invoice{
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+		CustomerID:    "cust_test",
+		InvoiceType:   types.InvoiceTypeOneOff,
+		InvoiceStatus: types.InvoiceStatusFinalized,
+		PaymentStatus: types.PaymentStatusPending,
+		Currency:      "usd",
+		Description:   "August platform charges",
+		BillingPeriod: lo.ToPtr("MONTHLY"),
+		PeriodStart:   &periodStart,
+		PeriodEnd:     &periodEnd,
+		DueDate:       &dueDate,
+		Metadata:      types.Metadata{"po_number": "PO-42"},
+		Subtotal:      decimal.NewFromInt(100),
+		Total:         decimal.NewFromInt(100),
+		AmountDue:     decimal.NewFromInt(100),
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().InvoiceRepo.Create(ctx, inv))
+
+	liPeriodStart := periodStart
+	liPeriodEnd := periodEnd
+	li := &invoice.InvoiceLineItem{
+		ID:          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
+		InvoiceID:   inv.ID,
+		CustomerID:  inv.CustomerID,
+		DisplayName: lo.ToPtr("Platform fee"),
+		Amount:      decimal.NewFromInt(100),
+		Quantity:    decimal.NewFromInt(1),
+		Currency:    "usd",
+		PeriodStart: &liPeriodStart,
+		PeriodEnd:   &liPeriodEnd,
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, li))
+	return inv, li
+}
+
+func (s *InvoiceModificationServiceSuite) TestExecuteUpdateOnFinalizedVoidsAndRecreatesDraft() {
+	ctx := s.GetContext()
+	inv, li := s.createFinalizedInvoiceWithLineItem()
+
+	resp, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action:     dto.InvoiceModifyLineItemActionUpdate,
+			LineItemID: li.ID,
+			Update:     &dto.UpdateLineItemRequest{Amount: lo.ToPtr(decimal.NewFromInt(250))},
+		},
+	})
+	s.NoError(err)
+	s.Require().NotNil(resp)
+	s.Require().NotNil(resp.Invoice)
+
+	// The response is a NEW draft invoice, not the original.
+	s.NotEqual(inv.ID, resp.Invoice.ID)
+	s.Equal(types.InvoiceStatusDraft, resp.Invoice.InvoiceStatus)
+	s.True(resp.Invoice.IsManuallyEdited)
+
+	// Copied invoice fields survive — description and the billing interval in particular.
+	s.Equal("August platform charges", resp.Invoice.Description)
+	s.Equal("MONTHLY", lo.FromPtr(resp.Invoice.BillingPeriod))
+	s.Require().NotNil(resp.Invoice.PeriodStart)
+	s.True(inv.PeriodStart.Equal(*resp.Invoice.PeriodStart))
+	s.Require().NotNil(resp.Invoice.PeriodEnd)
+	s.True(inv.PeriodEnd.Equal(*resp.Invoice.PeriodEnd))
+	s.Require().NotNil(resp.Invoice.DueDate)
+	s.True(inv.DueDate.Equal(*resp.Invoice.DueDate))
+	s.Equal("PO-42", resp.Invoice.Metadata["po_number"])
+
+	// The modification landed on the copy (versioned update on the copied item).
+	s.Require().Len(resp.Invoice.LineItems, 1)
+	updated := resp.Invoice.LineItems[0]
+	s.True(updated.Amount.Equal(decimal.NewFromInt(250)))
+	s.Equal("Platform fee", lo.FromPtr(updated.DisplayName))
+	s.Require().NotNil(updated.PeriodStart)
+	s.True(li.PeriodStart.Equal(*updated.PeriodStart))
+	s.Require().NotNil(updated.PeriodEnd)
+	s.True(li.PeriodEnd.Equal(*updated.PeriodEnd))
+	s.True(resp.Invoice.Subtotal.Equal(decimal.NewFromInt(250)))
+
+	// The original is voided and linked to the replacement.
+	original, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.NoError(err)
+	s.Equal(types.InvoiceStatusVoided, original.InvoiceStatus)
+	s.Equal(resp.Invoice.ID, lo.FromPtr(original.RecalculatedInvoiceID))
+}
+
+func (s *InvoiceModificationServiceSuite) TestExecuteRemoveOnFinalizedTranslatesOriginalLineItemIDs() {
+	ctx := s.GetContext()
+	inv, li := s.createFinalizedInvoiceWithLineItem()
+
+	// Remove using the ORIGINAL invoice's line item id; the copy has a new id.
+	resp, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action:      dto.InvoiceModifyLineItemActionRemove,
+			LineItemIDs: []string{li.ID},
+		},
+	})
+	s.NoError(err)
+	s.Require().NotNil(resp.Invoice)
+	s.NotEqual(inv.ID, resp.Invoice.ID)
+	s.Len(resp.Invoice.LineItems, 0)
+	s.True(resp.Invoice.Subtotal.IsZero())
+}
+
+func (s *InvoiceModificationServiceSuite) TestExecuteOnVoidedOriginalRedirectsToReplacementDraft() {
+	ctx := s.GetContext()
+	inv, li := s.createFinalizedInvoiceWithLineItem()
+
+	// First call voids and recreates.
+	first, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action:     dto.InvoiceModifyLineItemActionUpdate,
+			LineItemID: li.ID,
+			Update:     &dto.UpdateLineItemRequest{DisplayName: lo.ToPtr("Platform fee (edited)")},
+		},
+	})
+	s.NoError(err)
+	draftID := first.Invoice.ID
+
+	// Second call still targets the ORIGINAL (now voided) invoice id — it must land on the draft.
+	second, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action: dto.InvoiceModifyLineItemActionAdd,
+			Items:  []dto.AddLineItemRequest{{DisplayName: "Setup fee", Amount: decimal.NewFromInt(50), Quantity: decimal.NewFromInt(1)}},
+		},
+	})
+	s.NoError(err)
+	s.Equal(draftID, second.Invoice.ID)
+	s.Len(second.Invoice.LineItems, 2)
+
+	// A finalized invoice is only ever recreated once.
+	original, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.NoError(err)
+	s.Equal(draftID, lo.FromPtr(original.RecalculatedInvoiceID))
 }

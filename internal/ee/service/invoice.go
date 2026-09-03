@@ -3825,6 +3825,27 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
+	// Applying a discount changes the invoice's financials, so on a FINALIZED invoice it
+	// runs through the void-and-recreate flow: the finalized invoice is voided, a draft
+	// copy is created, and this update (discount included) lands on the copy. Plain field
+	// updates (due date, PDF URL, metadata) keep editing the finalized invoice in place.
+	if req.ApplyDiscount {
+		inv, err := s.InvoiceRepo.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		switch {
+		case inv.InvoiceStatus == types.InvoiceStatusVoided && inv.RecalculatedInvoiceID != nil:
+			id = *inv.RecalculatedInvoiceID
+		case inv.InvoiceStatus == types.InvoiceStatusFinalized:
+			draft, err := s.voidAndRecreateDraftForEdit(ctx, inv)
+			if err != nil {
+				return nil, err
+			}
+			id = draft.ID
+		}
+	}
+
 	var updatedInv *invoice.Invoice
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, id)
