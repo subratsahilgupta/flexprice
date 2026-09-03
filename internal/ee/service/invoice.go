@@ -1088,19 +1088,31 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 			}
 			code := lockedInv.CustomCurrency.CustomCurrencyCode
 			rate := ccCfg.CustomCurrencies[code].FiatConversionFactors[lockedInv.Currency]
-			if rate.IsPositive() {
-				cc := lockedInv.CustomCurrency
-				fiat := lockedInv.Currency
-				cc.CustomConversionRate = rate
-				cc.CustomCurrencyAmount = lockedInv.AmountDue
+			// Without a rate the totals would stay in the custom currency while the
+			// invoice claims to be fiat, so refuse rather than seal a wrong amount.
+			if !rate.IsPositive() {
+				return ierr.NewErrorf("no conversion factor from %s to %s", code, lockedInv.Currency).
+					WithHintf("custom_currency_config must define a %s to %s conversion factor", code, lockedInv.Currency).
+					Mark(ierr.ErrValidation)
+			}
 
-				lockedInv.Subtotal = cc.ToFiat(lockedInv.Subtotal, fiat)
-				lockedInv.TotalDiscount = cc.ToFiat(lockedInv.TotalDiscount, fiat)
-				lockedInv.TotalTax = cc.ToFiat(lockedInv.TotalTax, fiat)
-				lockedInv.Total = cc.ToFiat(lockedInv.Total, fiat)
-				lockedInv.AmountDue = cc.ToFiat(lockedInv.AmountDue, fiat)
-				lockedInv.AmountPaid = cc.ToFiat(lockedInv.AmountPaid, fiat)
-				lockedInv.AmountRemaining = cc.ToFiat(lockedInv.AmountRemaining, fiat)
+			cc := lockedInv.CustomCurrency
+			fiat := lockedInv.Currency
+			cc.CustomConversionRate = rate
+			cc.CustomCurrencyAmount = lockedInv.AmountDue
+
+			lockedInv.Subtotal = cc.ToFiat(lockedInv.Subtotal, fiat)
+			lockedInv.TotalDiscount = cc.ToFiat(lockedInv.TotalDiscount, fiat)
+			lockedInv.TotalTax = cc.ToFiat(lockedInv.TotalTax, fiat)
+			lockedInv.Total = cc.ToFiat(lockedInv.Total, fiat)
+			lockedInv.AmountDue = cc.ToFiat(lockedInv.AmountDue, fiat)
+			lockedInv.AmountPaid = cc.ToFiat(lockedInv.AmountPaid, fiat)
+			lockedInv.AmountRemaining = cc.ToFiat(lockedInv.AmountRemaining, fiat)
+
+			// A tiny custom amount can round to zero fiat, and the zero-total check
+			// above ran before this conversion.
+			if lockedInv.Total.IsZero() && !isTrialStart {
+				lockedInv.PaymentStatus = types.PaymentStatusSucceeded
 			}
 		}
 

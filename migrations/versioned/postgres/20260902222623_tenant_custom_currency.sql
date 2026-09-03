@@ -10,4 +10,10 @@ SET statement_timeout = '30s';
 ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "custom_currency" jsonb NULL;
 
 -- migrate:down
--- TODO: write the reversal, or state why it is unsafe.
+-- Drops the custom-currency equivalent recorded on each invoice. The invoice's own
+-- currency and amounts are fiat and untouched by this column, so removing it loses
+-- only the presentation figures, not billed amounts.
+SET lock_timeout = '3s';
+SET statement_timeout = '30s';
+
+ALTER TABLE "invoices" DROP COLUMN IF EXISTS "custom_currency";

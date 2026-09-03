@@ -67,6 +67,13 @@ func (c *CustomCurrencyConfig) Validate() error {
 	normalized := make(map[string]CustomCurrencyDefinition, len(c.CustomCurrencies))
 	for key, cur := range c.CustomCurrencies {
 		code := strings.ToLower(key)
+		// Map order is undefined, so two keys normalizing to the same code would
+		// silently keep whichever landed last.
+		if _, exists := normalized[code]; exists {
+			return ierr.NewErrorf("duplicate custom currency code %q", code).
+				WithHintf("Custom currency codes are case-insensitive; %q is defined more than once", code).
+				Mark(ierr.ErrValidation)
+		}
 		if code == defaultCode {
 			return ierr.NewErrorf("default_fiat_currency %q cannot also be a custom currency code", defaultCode).
 				WithHintf("default_fiat_currency %q cannot also be a custom currency code", defaultCode).
@@ -75,6 +82,11 @@ func (c *CustomCurrencyConfig) Validate() error {
 
 		factors := make(map[string]decimal.Decimal, len(cur.FiatConversionFactors))
 		for fiat, rate := range cur.FiatConversionFactors {
+			if _, exists := factors[strings.ToLower(fiat)]; exists {
+				return ierr.NewErrorf("custom currency %q: duplicate conversion factor for %q", code, strings.ToLower(fiat)).
+					WithHintf("Fiat currency codes are case-insensitive; %q is defined more than once", strings.ToLower(fiat)).
+					Mark(ierr.ErrValidation)
+			}
 			if rate.LessThanOrEqual(decimal.Zero) {
 				return ierr.NewErrorf("custom currency %q: conversion factor for %q must be positive", code, fiat).
 					WithHintf("custom currency %q: conversion factor for %q must be positive", code, fiat).

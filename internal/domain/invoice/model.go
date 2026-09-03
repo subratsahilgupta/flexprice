@@ -283,7 +283,13 @@ func (i *Invoice) Validate() error {
 	// validate line items if present
 	if i.LineItems != nil {
 		for _, item := range i.LineItems {
-			if item.Currency != i.Currency {
+			// Charges are computed in the custom currency while the invoice itself is
+			// fiat, so a line item may carry either.
+			matchesCurrency := item.Currency == i.Currency
+			if !matchesCurrency && i.CustomCurrency != nil {
+				matchesCurrency = item.Currency == i.CustomCurrency.CustomCurrencyCode
+			}
+			if !matchesCurrency {
 				return ierr.NewError("invoice validation failed").WithHint("line_items currency must match invoice currency").Mark(ierr.ErrValidation)
 			}
 			if err := item.Validate(); err != nil {
