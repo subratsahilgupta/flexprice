@@ -590,7 +590,7 @@ func (s *Service) Flush(timeout uint) bool {
 		return true
 	}
 	if s.sentryEnabled {
-		return sentry.Flush(time.Duration(timeout) * time.Second)
+		return sentry.Flush(time.Duration(timeout) * time.Second) // #nosec G115 -- shutdown timeout constant, small
 	}
 	return true
 }

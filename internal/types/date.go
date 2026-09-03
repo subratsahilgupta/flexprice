@@ -669,7 +669,7 @@ func isBetween(eventTimestamp time.Time, periodStart time.Time, periodEnd time.T
 }
 
 func calculatePeriodID(periodStart time.Time) uint64 {
-	return uint64(periodStart.Unix() * 1000)
+	return uint64(periodStart.Unix() * 1000) // #nosec G115 -- billing period post-epoch, never negative
 }
 
 // GetNextUsageResetAtParams holds the inputs for GetNextUsageResetAt.

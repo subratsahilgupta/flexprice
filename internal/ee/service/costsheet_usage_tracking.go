@@ -206,7 +206,7 @@ func (s *costsheetUsageTrackingService) GetCostAnalyticsFromMeterUsage(
 			Properties:    item.Properties,
 			TotalCost:     totalCost,
 			TotalQuantity: item.TotalUsage,
-			TotalEvents:   int64(item.EventCount),
+			TotalEvents:   int64(item.EventCount), // #nosec G115 -- event count bounded by real usage volume
 			Currency:      csPrice.Currency,
 			PriceID:       csPrice.ID,
 			CostsheetID:   costSheet.ID,
@@ -223,7 +223,7 @@ func (s *costsheetUsageTrackingService) GetCostAnalyticsFromMeterUsage(
 					Timestamp:  pt.Timestamp,
 					Cost:       pointCost,
 					Quantity:   pt.Usage,
-					EventCount: int64(pt.EventCount),
+					EventCount: int64(pt.EventCount), // #nosec G115 -- event count bounded by real usage volume
 				})
 			}
 		}
@@ -231,7 +231,7 @@ func (s *costsheetUsageTrackingService) GetCostAnalyticsFromMeterUsage(
 		response.CostAnalytics = append(response.CostAnalytics, costItem)
 		response.TotalCost = response.TotalCost.Add(totalCost)
 		response.TotalQuantity = response.TotalQuantity.Add(item.TotalUsage)
-		response.TotalEvents += int64(item.EventCount)
+		response.TotalEvents += int64(item.EventCount) // #nosec G115 -- event count bounded by real usage volume
 		if response.Currency == "" && csPrice.Currency != "" {
 			response.Currency = csPrice.Currency
 		}

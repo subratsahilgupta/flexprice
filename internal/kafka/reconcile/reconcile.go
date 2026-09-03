@@ -119,12 +119,13 @@ func Apply(a Admin, plan []Action) (Result, error) {
 	for _, act := range plan {
 		switch act.Kind {
 		case ActionCreate:
-			if err := a.CreateTopic(act.Topic.Name, int32(act.Topic.Partitions), act.Topic.ReplicationFactor, act.Topic.RetentionMs); err != nil {
+			// Partition counts come from committed topic-spec config, always small.
+			if err := a.CreateTopic(act.Topic.Name, int32(act.Topic.Partitions), act.Topic.ReplicationFactor, act.Topic.RetentionMs); err != nil { // #nosec G115 -- topic spec config, bounded
 				return res, fmt.Errorf("create topic %s: %w", act.Topic.Name, err)
 			}
 			res.Created++
 		case ActionGrow:
-			if err := a.CreatePartitions(act.Topic.Name, int32(act.Topic.Partitions)); err != nil {
+			if err := a.CreatePartitions(act.Topic.Name, int32(act.Topic.Partitions)); err != nil { // #nosec G115 -- topic spec config, bounded
 				return res, fmt.Errorf("grow partitions %s: %w", act.Topic.Name, err)
 			}
 			res.Grown++

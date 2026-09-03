@@ -192,7 +192,7 @@ func (e *UsageAnalyticsExporter) PrepareData(ctx context.Context, request *dto.E
 				FeatureName:        item.FeatureName,
 				FeatureID:          item.FeatureID,
 				EventName:          item.EventName,
-				EventCount:         int64(item.EventCount),
+				EventCount:         int64(item.EventCount), // #nosec G115 -- event count bounded by real usage volume
 				TotalUsage:         item.TotalUsage,
 				TotalCost:          item.TotalCost,
 				Currency:           item.Currency,

@@ -815,7 +815,7 @@ func (s *invoiceService) mapBulkAnalyticsToLineItems(ctx context.Context, analyt
 			}
 
 			if analyticsItem.EventCount > 0 {
-				eventCount := int(analyticsItem.EventCount)
+				eventCount := int(analyticsItem.EventCount) // #nosec G115 -- event count bounded by real usage volume
 				usageItem.EventCount = &eventCount
 			}
 
@@ -4281,7 +4281,7 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(analyticsResponse *dto.
 			}
 
 			if analyticsItem.EventCount > 0 {
-				eventCount := int(analyticsItem.EventCount)
+				eventCount := int(analyticsItem.EventCount) // #nosec G115 -- event count bounded by real usage volume
 				breakdownItem.EventCount = &eventCount
 			}
 
