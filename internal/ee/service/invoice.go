@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"time"
@@ -815,7 +816,13 @@ func (s *invoiceService) mapBulkAnalyticsToLineItems(ctx context.Context, analyt
 			}
 
 			if analyticsItem.EventCount > 0 {
-				eventCount := int(analyticsItem.EventCount) // #nosec G115 -- event count bounded by real usage volume
+				if analyticsItem.EventCount > math.MaxInt {
+					return nil, ierr.NewError("event count exceeds int range").
+						WithHint("Event count exceeds supported range").
+						WithReportableDetails(map[string]any{"event_count": analyticsItem.EventCount}).
+						Mark(ierr.ErrValidation)
+				}
+				eventCount := int(analyticsItem.EventCount) // #nosec G115 -- bounded above before cast
 				usageItem.EventCount = &eventCount
 			}
 
