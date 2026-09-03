@@ -415,7 +415,7 @@ func runVersionedMigrations(dir string, statusOnly bool) error {
 	// suppression must sit on the line DIRECTLY above the call to take effect.
 	//
 	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
-	c := exec.CommandContext(context.Background(), bin, "--migrations-dir", dir, "--no-dump-schema", action)
+	c := exec.CommandContext(context.Background(), bin, "--migrations-dir", dir, "--no-dump-schema", action) // #nosec G204 -- fixed bin, flags not shell
 	c.Env = append(os.Environ(), "DATABASE_URL="+dsn)
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr

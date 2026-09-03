@@ -260,7 +260,7 @@ func postSingleEvent(client *http.Client, endpoint, apiKey string, event *dto.In
 		if err != nil {
 			return fmt.Errorf("read response body: %w", err)
 		}
-		resp.Body.Close()
+		resp.Body.Close() // #nosec G104 -- seed tooling, non-prod
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return nil

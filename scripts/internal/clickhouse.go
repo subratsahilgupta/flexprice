@@ -181,12 +181,12 @@ func ingestEvent(event dto.IngestEventRequest, limiter *rate.Limiter, wg *sync.W
 		}
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			resp.Body.Close()
+			resp.Body.Close() // #nosec G104 -- seed tooling, non-prod
 			results <- time.Since(start)
 			return
 		}
 
-		resp.Body.Close()
+		resp.Body.Close() // #nosec G104 -- seed tooling, non-prod
 		lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 	}
 
