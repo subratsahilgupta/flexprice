@@ -95,7 +95,7 @@ const (
 	// FieldBillingSequence holds the string denoting the billing_sequence field in the database.
 	FieldBillingSequence = "billing_sequence"
 	// FieldTotalPrepaidCreditsApplied holds the string denoting the total_prepaid_credits_applied field in the database.
-	FieldTotalPrepaidCreditsApplied = "total_prepaid_credits_applied" // #nosec G101 -- field name, not a secret
+	FieldTotalPrepaidCreditsApplied = "total_prepaid_credits_applied"
 	// FieldIdempotencyKey holds the string denoting the idempotency_key field in the database.
 	FieldIdempotencyKey = "idempotency_key"
 	// FieldRecalculatedInvoiceID holds the string denoting the recalculated_invoice_id field in the database.
