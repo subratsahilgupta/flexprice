@@ -96,7 +96,8 @@ func SeedEventsFromMeters() error {
 		log.Fatalf("Error creating config: %v", err)
 	}
 
-	log, err := logger.NewLogger(cfg)
+	// Not a loop var; shadows "log" stdlib package intentionally, used synchronously.
+	log, err := logger.NewLogger(cfg) // nosemgrep: trailofbits.go.invalid-usage-of-modified-variable.invalid-usage-of-modified-variable
 	if err != nil {
 		log.Fatalf("Error creating logger: %v", err)
 	}
