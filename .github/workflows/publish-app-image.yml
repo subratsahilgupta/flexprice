@@ -28,7 +28,7 @@ jobs:
     steps:
       # Audits runner egress; job holds GHCR_PUBLISH_TOKEN.
       - name: Harden runner
-        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
@@ -91,10 +91,11 @@ jobs:
             org.opencontainers.image.version=${{ steps.tag.outputs.semver }}
             org.opencontainers.image.licenses=AGPL-3.0-only
 
+      # Scan by digest, not the mutable tag, so Trivy scans the exact image cosign signs.
       - name: Trivy vulnerability scan (fail on HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           format: table
           exit-code: '1'
           severity: HIGH,CRITICAL
