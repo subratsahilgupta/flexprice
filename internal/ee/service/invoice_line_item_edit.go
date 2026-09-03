@@ -265,15 +265,21 @@ func (s *invoiceService) executeLineItemModification(ctx context.Context, invoic
 	// draft copy, and the modification lands on the copy. A call that still targets the
 	// voided original (a retry, or a client that did not chain the returned invoice id)
 	// is redirected to the replacement draft.
-	targetID := invoiceID
 	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case inv.InvoiceStatus == types.InvoiceStatusVoided && inv.RecalculatedInvoiceID != nil:
-		targetID = *inv.RecalculatedInvoiceID
-	case inv.InvoiceStatus == types.InvoiceStatusFinalized:
+	inv, err = s.followReplacementChain(ctx, inv)
+	if err != nil {
+		return nil, err
+	}
+	targetID := inv.ID
+	if inv.InvoiceStatus == types.InvoiceStatusFinalized {
+		// Validate the referenced line items BEFORE voiding: a bad id must fail the
+		// request while the finalized invoice is still intact, not after the void.
+		if err := s.validateLineItemRefsAgainstInvoice(ctx, inv, params); err != nil {
+			return nil, err
+		}
 		draft, err := s.voidAndRecreateDraftForEdit(ctx, inv)
 		if err != nil {
 			return nil, err
@@ -316,6 +322,60 @@ func (s *invoiceService) executeLineItemModification(ctx context.Context, invoic
 	}
 
 	return &dto.InvoiceModifyResponse{Invoice: resp}, nil
+}
+
+// followReplacementChain resolves a voided invoice to its current replacement by
+// following recalculated_invoice_id links — a replacement draft can itself be
+// finalized, edited, and voided again, giving the chain more than one hop.
+func (s *invoiceService) followReplacementChain(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error) {
+	const maxHops = 10
+	current := inv
+	for range maxHops {
+		if current.InvoiceStatus != types.InvoiceStatusVoided || current.RecalculatedInvoiceID == nil {
+			return current, nil
+		}
+		next, err := s.InvoiceRepo.Get(ctx, *current.RecalculatedInvoiceID)
+		if err != nil {
+			return nil, err
+		}
+		current = next
+	}
+	return nil, ierr.NewError("invoice replacement chain is too deep").
+		WithHintf("invoice %s has more than %d voided replacements", inv.ID, maxHops).
+		Mark(ierr.ErrValidation)
+}
+
+// validateLineItemRefsAgainstInvoice checks that every line item id an update/remove
+// references exists (published) on the invoice, so the void-and-recreate flow cannot
+// void a finalized invoice for a request that would fail afterwards.
+func (s *invoiceService) validateLineItemRefsAgainstInvoice(ctx context.Context, inv *invoice.Invoice, params *dto.InvoiceModifyLineItemParams) error {
+	if params.Action != dto.InvoiceModifyLineItemActionUpdate && params.Action != dto.InvoiceModifyLineItemActionRemove {
+		return nil
+	}
+	// List directly rather than trusting inv.LineItems: a cached or partially
+	// hydrated invoice may not carry its line items.
+	items, err := s.InvoiceLineItemRepo.ListByInvoiceID(ctx, inv.ID)
+	if err != nil {
+		return err
+	}
+	published := make(map[string]bool, len(items))
+	for _, li := range items {
+		if li.Status == types.StatusPublished {
+			published[li.ID] = true
+		}
+	}
+	refs := params.LineItemIDs
+	if params.Action == dto.InvoiceModifyLineItemActionUpdate {
+		refs = []string{params.LineItemID}
+	}
+	for _, id := range refs {
+		if !published[id] {
+			return ierr.NewError("line item not found").
+				WithHintf("line item %s does not belong to invoice %s", id, inv.ID).
+				Mark(ierr.ErrNotFound)
+		}
+	}
+	return nil
 }
 
 // resolveLineItemIDForEdit maps a line item id onto the given invoice. Ids already on the
@@ -369,8 +429,14 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 	draftID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE)
 	baseModel := types.GetDefaultBaseModel(ctx)
 
-	lineItems := make([]*invoice.InvoiceLineItem, 0, len(voided.LineItems))
-	for _, li := range voided.LineItems {
+	// List directly rather than trusting voided.LineItems hydration.
+	sourceItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(ctx, voided.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	lineItems := make([]*invoice.InvoiceLineItem, 0, len(sourceItems))
+	for _, li := range sourceItems {
 		if li.Status != types.StatusPublished {
 			continue
 		}
@@ -402,8 +468,12 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 		AmountPaid:                 decimal.Zero,
 		TotalPrepaidCreditsApplied: decimal.Zero,
 		Subtotal:                   voided.Subtotal,
-		TotalDiscount:              voided.TotalDiscount,
-		TotalTax:                   voided.TotalTax,
+		// Discount and tax stay zero: their backing records (coupon applications,
+		// tax-applied rows) reference the voided invoice and are not copied. They are
+		// re-derived on the draft — apply_discount recalculates from current coupon
+		// associations, and taxes are recalculated when the draft is finalized.
+		TotalDiscount: decimal.Zero,
+		TotalTax:      decimal.Zero,
 		Description:                voided.Description,
 		DueDate:                    voided.DueDate,
 		BillingPeriod:              voided.BillingPeriod,
@@ -423,7 +493,16 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 		BaseModel:        baseModel,
 		LineItems:        lineItems,
 	}
-	s.recalculateTotalsFromLineItems(draft, lineItems)
+	if len(lineItems) > 0 {
+		s.recalculateTotalsFromLineItems(draft, lineItems)
+	} else {
+		// A finalized invoice can carry value without line items (e.g. a one-off created
+		// with only amounts). Recomputing from zero copied items would erase that value
+		// after the original was already voided — keep the copied subtotal instead.
+		draft.Total = draft.Subtotal
+		draft.AmountDue = draft.Total
+		draft.AmountRemaining = draft.Total
+	}
 
 	if err := s.InvoiceRepo.CreateWithLineItems(ctx, draft); err != nil {
 		s.Logger.Error(ctx, "finalized invoice edit failed after voiding, invoice left voided with no replacement",

@@ -3834,10 +3834,12 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		if err != nil {
 			return nil, err
 		}
-		switch {
-		case inv.InvoiceStatus == types.InvoiceStatusVoided && inv.RecalculatedInvoiceID != nil:
-			id = *inv.RecalculatedInvoiceID
-		case inv.InvoiceStatus == types.InvoiceStatusFinalized:
+		inv, err = s.followReplacementChain(ctx, inv)
+		if err != nil {
+			return nil, err
+		}
+		id = inv.ID
+		if inv.InvoiceStatus == types.InvoiceStatusFinalized {
 			draft, err := s.voidAndRecreateDraftForEdit(ctx, inv)
 			if err != nil {
 				return nil, err

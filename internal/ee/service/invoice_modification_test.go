@@ -1076,3 +1076,72 @@ func (s *InvoiceModificationServiceSuite) TestExecuteOnVoidedOriginalRedirectsTo
 	s.NoError(err)
 	s.Equal(draftID, lo.FromPtr(original.RecalculatedInvoiceID))
 }
+
+func (s *InvoiceModificationServiceSuite) TestExecuteBadLineItemIDOnFinalizedDoesNotVoid() {
+	ctx := s.GetContext()
+	inv, _ := s.createFinalizedInvoiceWithLineItem()
+
+	// A reference to a nonexistent line item must fail BEFORE the invoice is voided.
+	_, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action:     dto.InvoiceModifyLineItemActionUpdate,
+			LineItemID: "li_does_not_exist",
+			Update:     &dto.UpdateLineItemRequest{Amount: lo.ToPtr(decimal.NewFromInt(1))},
+		},
+	})
+	s.Error(err)
+	s.True(ierr.IsNotFound(err))
+
+	original, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
+	s.NoError(err)
+	s.Equal(types.InvoiceStatusFinalized, original.InvoiceStatus)
+	s.Nil(original.RecalculatedInvoiceID)
+}
+
+func (s *InvoiceModificationServiceSuite) TestExecuteFollowsMultiHopReplacementChain() {
+	ctx := s.GetContext()
+	inv, li := s.createFinalizedInvoiceWithLineItem()
+
+	// Hop 1: edit voids the original and creates draft A.
+	first, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action:     dto.InvoiceModifyLineItemActionUpdate,
+			LineItemID: li.ID,
+			Update:     &dto.UpdateLineItemRequest{Amount: lo.ToPtr(decimal.NewFromInt(150))},
+		},
+	})
+	s.NoError(err)
+	draftA := first.Invoice.ID
+
+	// Draft A gets finalized, then edited again -> voided with replacement draft B.
+	invA, err := s.GetStores().InvoiceRepo.Get(ctx, draftA)
+	s.NoError(err)
+	invA.InvoiceStatus = types.InvoiceStatusFinalized
+	invA.PaymentStatus = types.PaymentStatusPending
+	s.NoError(s.GetStores().InvoiceRepo.Update(ctx, invA))
+
+	second, err := s.service.ModifyInvoice(ctx, draftA, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action: dto.InvoiceModifyLineItemActionAdd,
+			Items:  []dto.AddLineItemRequest{{DisplayName: "Extra", Amount: decimal.NewFromInt(10), Quantity: decimal.NewFromInt(1)}},
+		},
+	})
+	s.NoError(err)
+	draftB := second.Invoice.ID
+	s.NotEqual(draftA, draftB)
+
+	// A request that still targets the FIRST original must resolve across both hops to draft B.
+	third, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action: dto.InvoiceModifyLineItemActionAdd,
+			Items:  []dto.AddLineItemRequest{{DisplayName: "Another", Amount: decimal.NewFromInt(5), Quantity: decimal.NewFromInt(1)}},
+		},
+	})
+	s.NoError(err)
+	s.Equal(draftB, third.Invoice.ID)
+	s.Len(third.Invoice.LineItems, 3)
+}

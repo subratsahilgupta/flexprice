@@ -2152,6 +2152,12 @@ func (s *InvoiceServiceSuite) TestUpdateInvoiceApplyDiscountOnFinalizedVoidsAndR
 	s.Require().Equal(types.InvoiceStatusDraft, updated.InvoiceStatus)
 	s.Require().Equal("August platform charges", updated.Description)
 
+	// The invoice was created with amounts but no line items — the draft must keep
+	// that value rather than recomputing it to zero from zero copied items.
+	s.Require().True(updated.Subtotal.Equal(decimal.NewFromFloat(100.00)), "subtotal: %s", updated.Subtotal)
+	s.Require().True(updated.Total.Equal(decimal.NewFromFloat(100.00)), "total: %s", updated.Total)
+	s.Require().True(updated.AmountDue.Equal(decimal.NewFromFloat(100.00)), "amount_due: %s", updated.AmountDue)
+
 	// The original is voided and linked to the replacement.
 	original, err := s.service.GetInvoice(ctx, inv.ID)
 	s.Require().NoError(err)
