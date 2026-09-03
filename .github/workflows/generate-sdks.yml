@@ -144,7 +144,8 @@ jobs:
 
       # Speakeasy install.sh uses VERSION for CLI version; our workflow sets VERSION for SDK. Unset so install fetches latest CLI.
       - name: Install Speakeasy CLI
-        # Vendor's official installer over HTTPS; runs only in the release pipeline.
+        # Vendor's official installer over HTTPS; it verifies the CLI archive
+        # checksum before install. Release-pipeline only.
         # nosemgrep: yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell
         run: |
           unset VERSION && curl -fsSL https://raw.githubusercontent.com/speakeasy-api/speakeasy/main/install.sh | sh

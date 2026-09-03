@@ -18,9 +18,9 @@ if ! command -v act &> /dev/null; then
         # Linux. Download the pinned installer to a temp file and run it as a
         # separate step (no curl|bash pipe), off a tagged release not master.
         install_sh="$(mktemp)"
+        trap 'rm -f "$install_sh"' EXIT
         curl -fsSL https://raw.githubusercontent.com/nektos/act/v0.2.78/install.sh -o "$install_sh"
         sudo bash "$install_sh"
-        rm -f "$install_sh"
     else
         echo "Unsupported OS. Please install act manually: https://github.com/nektos/act#installation"
         exit 1
