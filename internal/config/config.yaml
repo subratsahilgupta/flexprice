@@ -183,6 +183,8 @@ redis:
   password: "" # Redis password (optional)
   db: 0 # Redis database number
   use_tls: false # Use TLS for Redis connection
+  tls_server_name: "" # Verify server cert against this hostname (set to cert SAN for ElastiCache wildcard certs)
+  tls_skip_verify: false # Disable TLS cert/hostname verification — dev/self-signed only
   pool_size: 10 # Maximum number of connections in the pool
   timeout: 5s # Timeout for Redis operations
   key_prefix: "flexprice:local"

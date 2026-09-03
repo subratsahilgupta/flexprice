@@ -1010,9 +1010,16 @@ type RedisConfig struct {
 	Password  string        `mapstructure:"password" default:""`
 	DB        int           `mapstructure:"db" default:"0"`
 	UseTLS    bool          `mapstructure:"use_tls" default:"false"`
-	PoolSize  int           `mapstructure:"pool_size" default:"10"`
-	Timeout   time.Duration `mapstructure:"timeout" default:"5s"`
-	KeyPrefix string        `mapstructure:"key_prefix" default:"flexprice"`
+	// TLSServerName overrides the hostname verified against the server
+	// certificate. Set it to the cert's SAN when the dial address differs — the
+	// correct fix for ElastiCache wildcard certs, instead of skipping verify.
+	TLSServerName string `mapstructure:"tls_server_name" default:""`
+	// TLSSkipVerify disables server certificate and hostname verification.
+	// Defaults to false (verify on); opt-in only for dev/self-signed setups.
+	TLSSkipVerify bool          `mapstructure:"tls_skip_verify" default:"false"`
+	PoolSize      int           `mapstructure:"pool_size" default:"10"`
+	Timeout       time.Duration `mapstructure:"timeout" default:"5s"`
+	KeyPrefix     string        `mapstructure:"key_prefix" default:"flexprice"`
 	// ClusterMode: true → *redis.ClusterClient (Redis Cluster, ElastiCache
 	// cluster-mode enabled). false → standalone *redis.Client. Default is
 	// true to preserve the pre-1.1 hardcoded behaviour; flip to false for
