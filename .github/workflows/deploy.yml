@@ -107,6 +107,7 @@ jobs:
           fi
 
       - name: Build & push image to GHCR
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
@@ -118,6 +119,23 @@ jobs:
           # Shared layer cache in GHCR (both AWS + GCP self-hosted runners reach it).
           cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
+
+      - name: Install cosign
+        # Skipped on develop where GHCR login is best-effort: an unauthenticated
+        # push may not have landed, so there is nothing to sign.
+        if: ${{ github.ref_name != 'develop' }}
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      # Keyless signature bound to the pushed digest. One signature covers every
+      # tag on that digest (:<sha>, :main, :latest, :develop). This is the image
+      # ECS and GCP ArgoCD actually run, so it matters most that it is signed.
+      # No verify gate exists at deploy today; makes it verifiable once one does.
+      - name: Sign image (keyless)
+        if: ${{ github.ref_name != 'develop' && steps.build.outputs.digest != '' }}
+        env:
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${GHCR_IMAGE}@${DIGEST}"
 
       - name: Set image output
         id: set-image
