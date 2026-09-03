@@ -55,7 +55,7 @@ func SyncBillingCustomers() error {
 	tenantRepo := ent.NewTenantRepository(client, logger, cacheClient, redisCache)
 	customerRepo := ent.NewCustomerRepository(client, logger, redisCache)
 	subscriptionRepo := ent.NewSubscriptionRepository(client, logger, redisCache)
-	invoiceRepo := ent.NewInvoiceRepository(client, logger, redisCache)
+	invoiceRepo := ent.NewInvoiceRepository(client, logger)
 	walletRepo := ent.NewWalletRepository(client, logger, redisCache)
 	planRepo := ent.NewPlanRepository(client, logger, cacheClient)
 	priceRepo := ent.NewPriceRepository(client, logger, redisCache)
