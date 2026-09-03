@@ -67,7 +67,7 @@ func runPostgresSQLFile(file string, dryRun bool, timeout int) error {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 
-	raw, err := os.ReadFile(file)
+	raw, err := os.ReadFile(file) // #nosec G304 -- migration file from dir walk
 	if err != nil {
 		return fmt.Errorf("read %s: %w", file, err)
 	}

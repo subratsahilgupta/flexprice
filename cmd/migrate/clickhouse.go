@@ -132,7 +132,7 @@ func runClickHouseMigrations(ctx context.Context, cfg *config.Configuration, dir
 	}
 
 	for _, f := range files {
-		raw, err := os.ReadFile(f)
+		raw, err := os.ReadFile(f) // #nosec G304 -- migration file from dir walk
 		if err != nil {
 			return fmt.Errorf("read %s: %w", f, err)
 		}
