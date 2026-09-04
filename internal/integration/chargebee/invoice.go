@@ -227,12 +227,7 @@ func (s *InvoiceService) SyncInvoiceToChargebee(
 			"invoice_id", req.InvoiceID,
 			"chargebee_invoice_id", chargebeeInvoiceID)
 
-		if werr := s.writeChargebeeInvoiceMetadata(ctx, flexInvoice, chargebeeInvoiceID); werr != nil {
-			s.Logger.Info(ctx, "failed to update FlexPrice invoice from existing Chargebee mapping",
-				"error", werr,
-				"invoice_id", req.InvoiceID,
-				"chargebee_invoice_id", chargebeeInvoiceID)
-		}
+		s.syncChargebeeInvoiceNumber(ctx, flexInvoice, chargebeeInvoiceID)
 
 		// Fetch existing invoice details and return
 		invoiceResp, err := s.RetrieveInvoice(ctx, chargebeeInvoiceID)
@@ -337,13 +332,6 @@ func (s *InvoiceService) SyncInvoiceToChargebee(
 			"invoice_id", req.InvoiceID,
 			"chargebee_invoice_id", chargebeeInvoiceID)
 		// Don't fail the sync, just log the error
-	}
-
-	if werr := s.writeChargebeeInvoiceMetadata(ctx, flexInvoice, chargebeeInvoiceID); werr != nil {
-		s.Logger.Info(ctx, "failed to update FlexPrice invoice from Chargebee sync",
-			"error", werr,
-			"invoice_id", req.InvoiceID,
-			"chargebee_invoice_id", chargebeeInvoiceID)
 	}
 
 	// Step 9: Build and return response
@@ -616,6 +604,14 @@ func (s *InvoiceService) LinkInvoiceMapping(ctx context.Context, invoiceID, char
 	if err != nil && !ierr.IsNotFound(err) {
 		return err
 	}
+
+	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithHint("Failed to get invoice for Chargebee mapping").
+			Mark(ierr.ErrDatabase)
+	}
+
 	if existing != nil {
 		if existing.ProviderEntityID != chargebeeInvoiceID {
 			s.Logger.Info(ctx, "invoice already mapped to a different chargebee invoice, leaving it",
@@ -623,14 +619,9 @@ func (s *InvoiceService) LinkInvoiceMapping(ctx context.Context, invoiceID, char
 				"mapped_chargebee_invoice_id", existing.ProviderEntityID,
 				"incoming_chargebee_invoice_id", chargebeeInvoiceID)
 		}
+		// The mapping is the truth, not the incoming id.
+		s.syncChargebeeInvoiceNumber(ctx, inv, existing.ProviderEntityID)
 		return nil
-	}
-
-	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
-	if err != nil {
-		return ierr.WithError(err).
-			WithHint("Failed to get invoice for Chargebee mapping").
-			Mark(ierr.ErrDatabase)
 	}
 
 	mapping := &entityintegrationmapping.EntityIntegrationMapping{
@@ -653,11 +644,29 @@ func (s *InvoiceService) LinkInvoiceMapping(ctx context.Context, invoiceID, char
 	s.Logger.Info(ctx, "linked flexprice invoice to chargebee invoice",
 		"invoice_id", invoiceID,
 		"chargebee_invoice_id", chargebeeInvoiceID)
+
+	s.syncChargebeeInvoiceNumber(ctx, inv, chargebeeInvoiceID)
 	return nil
+}
+
+// syncChargebeeInvoiceNumber is the best-effort wrapper the linking path uses: a
+// number that cannot be adopted (the unique index rejects it, say) must not make
+// the mapping itself look like it failed.
+func (s *InvoiceService) syncChargebeeInvoiceNumber(ctx context.Context, flex *invoice.Invoice, chargebeeInvoiceID string) {
+	if err := s.writeChargebeeInvoiceMetadata(ctx, flex, chargebeeInvoiceID); err != nil {
+		s.Logger.Info(ctx, "failed to adopt chargebee invoice number",
+			"error", err,
+			"invoice_id", flex.ID,
+			"chargebee_invoice_id", chargebeeInvoiceID)
+	}
 }
 
 func (s *InvoiceService) writeChargebeeInvoiceMetadata(ctx context.Context, flex *invoice.Invoice, chargebeeInvoiceID string) error {
 	if flex == nil || chargebeeInvoiceID == "" {
+		return nil
+	}
+	if lo.FromPtr(flex.InvoiceNumber) == chargebeeInvoiceID &&
+		flex.Metadata["chargebee_invoice_id"] == chargebeeInvoiceID {
 		return nil
 	}
 
