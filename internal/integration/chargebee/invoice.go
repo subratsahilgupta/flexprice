@@ -25,6 +25,8 @@ type ChargebeeInvoiceService interface {
 	RetrieveInvoice(ctx context.Context, invoiceID string) (*InvoiceResponse, error)
 	SyncInvoiceToChargebee(ctx context.Context, req ChargebeeInvoiceSyncRequest) (*ChargebeeInvoiceSyncResponse, error)
 	LinkInvoiceMapping(ctx context.Context, invoiceID, chargebeeInvoiceID string) error
+	GetFlexPriceInvoiceIDByChargebeeInvoiceID(ctx context.Context, chargebeeInvoiceID string) (string, error)
+	ProcessChargebeePaymentFromWebhook(ctx context.Context, req ChargebeeWebhookPaymentRequest) error
 }
 
 // InvoiceServiceParams holds dependencies for InvoiceService
@@ -54,6 +56,17 @@ func NewInvoiceService(params InvoiceServiceParams) ChargebeeInvoiceService {
 // ChargebeeInvoiceSyncRequest represents a request to sync an invoice to Chargebee
 type ChargebeeInvoiceSyncRequest struct {
 	InvoiceID string `json:"invoice_id" validate:"required"`
+}
+
+// ChargebeeWebhookPaymentRequest represents a settled Chargebee payment to record
+// against a FlexPrice invoice.
+type ChargebeeWebhookPaymentRequest struct {
+	FlexpriceInvoiceID     string          `json:"flexprice_invoice_id" validate:"required"`
+	ChargebeeTransactionID string          `json:"chargebee_transaction_id" validate:"required"`
+	ChargebeeInvoiceID     string          `json:"chargebee_invoice_id"`
+	Amount                 decimal.Decimal `json:"amount"`
+	Currency               string          `json:"currency"`
+	PaymentMethod          string          `json:"payment_method"`
 }
 
 // ChargebeeInvoiceSyncResponse represents the response from syncing an invoice to Chargebee
@@ -812,42 +825,37 @@ func (s *InvoiceService) GetFlexPriceInvoiceIDByChargebeeInvoiceID(ctx context.C
 // ProcessChargebeePaymentFromWebhook processes a Chargebee payment and creates a FlexPrice payment record
 func (s *InvoiceService) ProcessChargebeePaymentFromWebhook(
 	ctx context.Context,
-	flexpriceInvoiceID string,
-	chargebeeTransactionID string,
-	chargebeeInvoiceID string,
-	amount decimal.Decimal,
-	currency string,
-	paymentMethod string,
+	req ChargebeeWebhookPaymentRequest,
 ) error {
 	s.Logger.Info(ctx, "processing Chargebee payment from webhook",
-		"flexprice_invoice_id", flexpriceInvoiceID,
-		"chargebee_invoice_id", chargebeeInvoiceID,
-		"chargebee_transaction_id", chargebeeTransactionID,
-		"amount", amount.String(),
-		"currency", currency)
+		"flexprice_invoice_id", req.FlexpriceInvoiceID,
+		"chargebee_invoice_id", req.ChargebeeInvoiceID,
+		"chargebee_transaction_id", req.ChargebeeTransactionID,
+		"amount", req.Amount.String(),
+		"currency", req.Currency)
 
 	// Step 1: Check if payment already exists (idempotency check)
 	// This prevents duplicate payment records when Chargebee retries webhooks
-	exists, err := s.PaymentExistsByGatewayPaymentID(ctx, chargebeeTransactionID)
+	exists, err := s.PaymentExistsByGatewayPaymentID(ctx, req.ChargebeeTransactionID)
 	if err != nil {
 		s.Logger.Error(ctx, "failed to check if payment exists by gateway payment ID",
 			"error", err,
-			"chargebee_transaction_id", chargebeeTransactionID)
+			"chargebee_transaction_id", req.ChargebeeTransactionID)
 		// Continue processing on error - fail-safe behavior
 	} else if exists {
 		s.Logger.Info(ctx, "payment already exists for this Chargebee transaction, skipping",
-			"chargebee_transaction_id", chargebeeTransactionID,
-			"chargebee_invoice_id", chargebeeInvoiceID,
-			"flexprice_invoice_id", flexpriceInvoiceID)
+			"chargebee_transaction_id", req.ChargebeeTransactionID,
+			"chargebee_invoice_id", req.ChargebeeInvoiceID,
+			"flexprice_invoice_id", req.FlexpriceInvoiceID)
 		return nil
 	}
 
 	// Step 2: Get FlexPrice invoice using repository
-	inv, err := s.InvoiceRepo.Get(ctx, flexpriceInvoiceID)
+	inv, err := s.InvoiceRepo.Get(ctx, req.FlexpriceInvoiceID)
 	if err != nil {
 		s.Logger.Error(ctx, "failed to get FlexPrice invoice",
 			"error", err,
-			"flexprice_invoice_id", flexpriceInvoiceID)
+			"flexprice_invoice_id", req.FlexpriceInvoiceID)
 		return ierr.WithError(err).
 			WithHint("Failed to get FlexPrice invoice").
 			Mark(ierr.ErrDatabase)
@@ -856,25 +864,25 @@ func (s *InvoiceService) ProcessChargebeePaymentFromWebhook(
 	// Step 3: Check if invoice is already succeeded (secondary check)
 	if inv.PaymentStatus == types.PaymentStatusSucceeded {
 		s.Logger.Info(ctx, "invoice already succeeded, skipping duplicate payment",
-			"flexprice_invoice_id", flexpriceInvoiceID,
-			"chargebee_invoice_id", chargebeeInvoiceID)
+			"flexprice_invoice_id", req.FlexpriceInvoiceID,
+			"chargebee_invoice_id", req.ChargebeeInvoiceID)
 		return nil
 	}
 
 	// Step 3: Create payment record in FlexPrice using repository
 	now := time.Now()
 	createPaymentReq := dto.CreatePaymentRequest{
-		IdempotencyKey:    chargebeeTransactionID, // Use transaction ID as idempotency key to prevent duplicates
-		Amount:            amount,
-		Currency:          currency,
+		IdempotencyKey:    req.ChargebeeTransactionID, // Use transaction ID as idempotency key to prevent duplicates
+		Amount:            req.Amount,
+		Currency:          req.Currency,
 		PaymentMethodType: types.PaymentMethodTypeCard, // Default to card
 		DestinationType:   types.PaymentDestinationTypeInvoice,
-		DestinationID:     flexpriceInvoiceID,
+		DestinationID:     req.FlexpriceInvoiceID,
 		ProcessPayment:    false, // Already processed by Chargebee
 		Metadata: types.Metadata{
-			"chargebee_transaction_id": chargebeeTransactionID,
-			"chargebee_invoice_id":     chargebeeInvoiceID,
-			"payment_method":           paymentMethod,
+			"chargebee_transaction_id": req.ChargebeeTransactionID,
+			"chargebee_invoice_id":     req.ChargebeeInvoiceID,
+			"payment_method":           req.PaymentMethod,
 			"source":                   "chargebee_webhook",
 		},
 	}
@@ -883,14 +891,14 @@ func (s *InvoiceService) ProcessChargebeePaymentFromWebhook(
 	if err != nil {
 		s.Logger.Error(ctx, "failed to convert payment request to domain model",
 			"error", err,
-			"flexprice_invoice_id", flexpriceInvoiceID)
+			"flexprice_invoice_id", req.FlexpriceInvoiceID)
 		return ierr.WithError(err).
 			WithHint("Failed to create payment record").
 			Mark(ierr.ErrValidation)
 	}
 
 	// Set gateway payment ID and succeeded status
-	paymentModel.GatewayPaymentID = &chargebeeTransactionID
+	paymentModel.GatewayPaymentID = &req.ChargebeeTransactionID
 	paymentModel.PaymentStatus = types.PaymentStatusSucceeded
 	paymentModel.SucceededAt = &now
 
@@ -898,8 +906,8 @@ func (s *InvoiceService) ProcessChargebeePaymentFromWebhook(
 	if err != nil {
 		s.Logger.Error(ctx, "failed to create payment record",
 			"error", err,
-			"flexprice_invoice_id", flexpriceInvoiceID,
-			"chargebee_transaction_id", chargebeeTransactionID)
+			"flexprice_invoice_id", req.FlexpriceInvoiceID,
+			"chargebee_transaction_id", req.ChargebeeTransactionID)
 		return ierr.WithError(err).
 			WithHint("Failed to create payment record").
 			Mark(ierr.ErrDatabase)
@@ -907,17 +915,17 @@ func (s *InvoiceService) ProcessChargebeePaymentFromWebhook(
 
 	s.Logger.Info(ctx, "created payment record",
 		"payment_id", paymentModel.ID,
-		"flexprice_invoice_id", flexpriceInvoiceID,
-		"chargebee_transaction_id", chargebeeTransactionID,
-		"amount", amount.String())
+		"flexprice_invoice_id", req.FlexpriceInvoiceID,
+		"chargebee_transaction_id", req.ChargebeeTransactionID,
+		"amount", req.Amount.String())
 
 	// Step 4: Reconcile invoice
-	err = s.ReconcileInvoicePayment(ctx, flexpriceInvoiceID, amount)
+	err = s.ReconcileInvoicePayment(ctx, req.FlexpriceInvoiceID, req.Amount)
 	if err != nil {
 		s.Logger.Error(ctx, "failed to reconcile payment with invoice",
 			"error", err,
-			"flexprice_invoice_id", flexpriceInvoiceID,
-			"amount", amount.String())
+			"flexprice_invoice_id", req.FlexpriceInvoiceID,
+			"amount", req.Amount.String())
 		return ierr.WithError(err).
 			WithHint("Failed to reconcile invoice payment").
 			Mark(ierr.ErrDatabase)
@@ -925,8 +933,8 @@ func (s *InvoiceService) ProcessChargebeePaymentFromWebhook(
 
 	s.Logger.Info(ctx, "successfully processed Chargebee payment",
 		"payment_id", paymentModel.ID,
-		"flexprice_invoice_id", flexpriceInvoiceID,
-		"chargebee_transaction_id", chargebeeTransactionID)
+		"flexprice_invoice_id", req.FlexpriceInvoiceID,
+		"chargebee_transaction_id", req.ChargebeeTransactionID)
 
 	return nil
 }

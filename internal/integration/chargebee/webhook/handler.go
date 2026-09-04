@@ -22,7 +22,7 @@ type ServiceDependencies = interfaces.ServiceDependencies
 // Handler handles Chargebee webhook events
 type Handler struct {
 	client     chargebee.ChargebeeClient
-	invoiceSvc *chargebee.InvoiceService
+	invoiceSvc chargebee.ChargebeeInvoiceService
 	paymentSvc *chargebee.PaymentService
 	logger     *logger.Logger
 }
@@ -30,7 +30,7 @@ type Handler struct {
 // NewHandler creates a new Chargebee webhook handler
 func NewHandler(
 	client chargebee.ChargebeeClient,
-	invoiceSvc *chargebee.InvoiceService,
+	invoiceSvc chargebee.ChargebeeInvoiceService,
 	paymentSvc *chargebee.PaymentService,
 	logger *logger.Logger,
 ) *Handler {
@@ -139,16 +139,14 @@ func (h *Handler) handlePaymentSucceeded(ctx context.Context, event *ChargebeeWe
 	paymentAmount := decimal.NewFromInt(transaction.Amount).
 		Shift(-types.GetCurrencyPrecision(transaction.CurrencyCode))
 
-	// Process payment via service method
-	err = h.invoiceSvc.ProcessChargebeePaymentFromWebhook(
-		ctx,
-		flexpriceInvoiceID,
-		transaction.ID,
-		invoice.ID,
-		paymentAmount,
-		transaction.CurrencyCode,
-		transaction.PaymentMethod,
-	)
+	err = h.invoiceSvc.ProcessChargebeePaymentFromWebhook(ctx, chargebee.ChargebeeWebhookPaymentRequest{
+		FlexpriceInvoiceID:     flexpriceInvoiceID,
+		ChargebeeTransactionID: transaction.ID,
+		ChargebeeInvoiceID:     invoice.ID,
+		Amount:                 paymentAmount,
+		Currency:               transaction.CurrencyCode,
+		PaymentMethod:          transaction.PaymentMethod,
+	})
 	if err != nil {
 		h.logger.Error(ctx, "failed to process Chargebee payment",
 			"error", err,
