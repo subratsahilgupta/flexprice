@@ -107,6 +107,7 @@ jobs:
           fi
 
       - name: Build & push image to GHCR
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
@@ -114,10 +115,28 @@ jobs:
           platforms: ${{ steps.image-tag.outputs.platforms }}
           push: true
           tags: ${{ steps.image-tag.outputs.ghcr_tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
           provenance: false
           # Shared layer cache in GHCR (both AWS + GCP self-hosted runners reach it).
           cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
+
+      # Empty digest = best-effort GHCR login failed, nothing pushed to sign.
+      - name: Install cosign
+        if: ${{ steps.build.outputs.digest != '' }}
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      # Signs the digest; every tag on it inherits the signature.
+      - name: Sign image (keyless)
+        if: ${{ steps.build.outputs.digest != '' }}
+        env:
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${GHCR_IMAGE}@${DIGEST}"
 
       - name: Set image output
         id: set-image
