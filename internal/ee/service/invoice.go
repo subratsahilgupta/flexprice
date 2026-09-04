@@ -40,7 +40,6 @@ type InvoiceService interface {
 	CreateEmptyDraftInvoice(ctx context.Context, req dto.CreateDraftInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreateComputedDraftInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, bool, error)
 	FinalizeInvoice(ctx context.Context, id string) error
-	VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) error
 	ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error
 	UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
 	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, paymentParams *dto.PaymentParameters, flowType types.InvoiceFlowType, isDraftSubscription bool) (*dto.InvoiceResponse, *subscription.Subscription, error)
@@ -1249,19 +1248,19 @@ func validateInvoiceVoidable(inv *invoice.Invoice) error {
 	return nil
 }
 
-func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) error {
+func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) (*invoice.Invoice, error) {
 
 	if err := req.Validate(); err != nil {
-		return err
+		return nil, err
 	}
 
 	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := validateInvoiceVoidable(inv); err != nil {
-		return err
+		return nil, err
 	}
 
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
@@ -1321,7 +1320,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 		return s.InvoiceRepo.Update(tx, inv)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// A voided invoice will never be paid, so a purchased-credit transaction still
@@ -1351,7 +1350,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 	}
 
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
-	return nil
+	return inv, nil
 }
 
 func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error {
@@ -3669,10 +3668,7 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string) (*dt
 
 	// All non-mutating prerequisites passed — safe to void now.
 	if inv.InvoiceStatus != types.InvoiceStatusVoided {
-		if err := s.VoidInvoice(ctx, id, dto.InvoiceVoidRequest{}); err != nil {
-			return nil, err
-		}
-		inv, err = s.InvoiceRepo.Get(ctx, id)
+		inv, err = s.VoidInvoice(ctx, id, dto.InvoiceVoidRequest{})
 		if err != nil {
 			return nil, err
 		}
@@ -3840,7 +3836,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		}
 		id = inv.ID
 		if inv.InvoiceStatus == types.InvoiceStatusFinalized {
-			draft, err := s.voidAndRecreateDraftForEdit(ctx, inv)
+			draft, _, err := s.voidAndRecreateDraftForEdit(ctx, inv)
 			if err != nil {
 				return nil, err
 			}

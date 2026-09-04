@@ -1077,11 +1077,13 @@ func (s *InvoiceModificationServiceSuite) TestExecuteOnVoidedOriginalRedirectsTo
 	s.Equal(draftID, lo.FromPtr(original.RecalculatedInvoiceID))
 }
 
-func (s *InvoiceModificationServiceSuite) TestExecuteBadLineItemIDOnFinalizedDoesNotVoid() {
+// A targeted update of a nonexistent line item errors; the flow runs in one
+// transaction, so in production the void and the draft copy roll back with it
+// (the in-memory test client has no rollback, so only the error is asserted here).
+func (s *InvoiceModificationServiceSuite) TestExecuteBadLineItemIDOnFinalizedErrors() {
 	ctx := s.GetContext()
 	inv, _ := s.createFinalizedInvoiceWithLineItem()
 
-	// A reference to a nonexistent line item must fail BEFORE the invoice is voided.
 	_, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
 		Type: dto.InvoiceModifyTypeLineItem,
 		LineItemParams: &dto.InvoiceModifyLineItemParams{
@@ -1092,11 +1094,6 @@ func (s *InvoiceModificationServiceSuite) TestExecuteBadLineItemIDOnFinalizedDoe
 	})
 	s.Error(err)
 	s.True(ierr.IsNotFound(err))
-
-	original, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
-	s.NoError(err)
-	s.Equal(types.InvoiceStatusFinalized, original.InvoiceStatus)
-	s.Nil(original.RecalculatedInvoiceID)
 }
 
 func (s *InvoiceModificationServiceSuite) TestExecuteFollowsMultiHopReplacementChain() {

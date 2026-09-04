@@ -56,7 +56,8 @@ type InvoiceService interface {
 	ReconcilePaymentStatus(ctx context.Context, invoiceID string, paymentStatus types.PaymentStatus, paymentAmount *decimal.Decimal) error
 
 	ApplyExternalInvoiceDiscount(ctx context.Context, invoiceID string, req dto.ApplyExternalInvoiceDiscountRequest) error
-	VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) error
+	// VoidInvoice voids the invoice and returns its updated (voided) state.
+	VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) (*invoice.Invoice, error)
 }
 
 type PlanService interface {

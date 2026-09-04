@@ -310,7 +310,7 @@ func (h *InvoiceHandler) VoidInvoice(c *gin.Context) {
 		}
 	}
 
-	if err := h.invoiceService.VoidInvoice(c.Request.Context(), id, req); err != nil {
+	if _, err := h.invoiceService.VoidInvoice(c.Request.Context(), id, req); err != nil {
 		h.logger.Error(c.Request.Context(), "failed to void invoice", "error", err, "invoice_id", id)
 		c.Error(err)
 		return
