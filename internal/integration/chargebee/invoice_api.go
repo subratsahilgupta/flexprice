@@ -13,8 +13,7 @@ import (
 type AdHocInvoiceRequest struct {
 	ChargebeeCustomerID string
 	Currency            string
-	AmountMinor         int64
-	Description         string
+	Charges             []AdHocCharge
 	// PoNumber is the correlation key the hosted page also carries, so a webhook
 	// resolves the same way whichever path created the invoice.
 	PoNumber       string
@@ -39,13 +38,21 @@ func (c *Client) CreateAdHocInvoice(
 		return nil, err
 	}
 
+	charges := make([]*invoiceModel.CreateForChargeItemsAndChargesChargeParams, 0, len(adHocReq.Charges))
+	for _, ch := range adHocReq.Charges {
+		from, to := ch.dateRange()
+		charges = append(charges, &invoiceModel.CreateForChargeItemsAndChargesChargeParams{
+			Amount:      lo.ToPtr(ch.AmountMinor),
+			Description: ch.Description,
+			DateFrom:    from,
+			DateTo:      to,
+		})
+	}
+
 	req := invoice.CreateForChargeItemsAndCharges(&invoiceModel.CreateForChargeItemsAndChargesRequestParams{
-		CustomerId:   adHocReq.ChargebeeCustomerID,
-		CurrencyCode: strings.ToUpper(adHocReq.Currency),
-		Charges: []*invoiceModel.CreateForChargeItemsAndChargesChargeParams{{
-			Amount:      lo.ToPtr(adHocReq.AmountMinor),
-			Description: adHocReq.Description,
-		}},
+		CustomerId:     adHocReq.ChargebeeCustomerID,
+		CurrencyCode:   strings.ToUpper(adHocReq.Currency),
+		Charges:        charges,
 		PoNumber:       adHocReq.PoNumber,
 		AutoCollection: lo.Ternary(adHocReq.AutoCollect, enum.AutoCollectionOn, enum.AutoCollectionOff),
 		PaymentInitiator: lo.Ternary(adHocReq.CustomerPresent,

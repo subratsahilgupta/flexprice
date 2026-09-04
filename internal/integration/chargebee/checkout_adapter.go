@@ -32,6 +32,7 @@ type checkoutRequest struct {
 	currency       string
 	amount         decimal.Decimal
 	successURL     string
+	lineItems      []interfaces.CheckoutLineItem
 }
 
 func (a *CheckoutAdapter) CreatePaymentLink(
@@ -45,6 +46,7 @@ func (a *CheckoutAdapter) CreatePaymentLink(
 		currency:       req.Currency,
 		amount:         req.Amount,
 		successURL:     req.SuccessURL,
+		lineItems:      req.LineItems,
 	})
 }
 
@@ -59,6 +61,7 @@ func (a *CheckoutAdapter) CreateAuthorizationLink(
 		currency:       req.Currency,
 		amount:         req.Amount,
 		successURL:     req.SuccessURL,
+		lineItems:      req.LineItems,
 	})
 }
 
@@ -85,8 +88,7 @@ func (a *CheckoutAdapter) hostedCheckout(
 	page, err := a.Client.CreateHostedCheckoutPage(ctx, HostedCheckoutPageRequest{
 		ChargebeeCustomerID: cbCustomerID,
 		Currency:            req.currency,
-		AmountMinor:         amountToMinorUnits(req.amount, req.currency),
-		Description:         fmt.Sprintf("Flexprice invoice %s", req.flexInvoiceID),
+		Charges:             a.getLineItems(ctx, req.lineItems, req.amount, req.currency, req.flexInvoiceID),
 		RedirectURL:         req.successURL,
 		GatewayAccountID:    cfg.GatewayAccountID,
 		PoNumber:            req.flexPaymentID,
@@ -145,8 +147,7 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 	inv, err := a.Client.CreateAdHocInvoice(ctx, AdHocInvoiceRequest{
 		ChargebeeCustomerID: cbCustomerID,
 		Currency:            req.Currency,
-		AmountMinor:         amountToMinorUnits(req.Amount, req.Currency),
-		Description:         fmt.Sprintf("Flexprice invoice %s", req.InvoiceID),
+		Charges:             a.getLineItems(ctx, req.LineItems, req.Amount, req.Currency, req.InvoiceID),
 		PoNumber:            req.PaymentID,
 		IdempotencyKey:      idempotencyScoped(req.PaymentID, "invoice"),
 		AutoCollect:         true,
@@ -242,6 +243,47 @@ func lastLinkedPayment(inv *invoiceModel.Invoice) (settled, failed *invoiceModel
 		}
 	}
 	return settled, failed
+}
+
+func (a *CheckoutAdapter) getLineItems(
+	ctx context.Context,
+	lineItems []interfaces.CheckoutLineItem,
+	amount decimal.Decimal,
+	currency, flexInvoiceID string,
+) []AdHocCharge {
+	total := amountToMinorUnits(amount, currency)
+	if len(lineItems) == 0 {
+		return []AdHocCharge{{
+			AmountMinor: total,
+			Description: fmt.Sprintf("Flexprice invoice %s", flexInvoiceID),
+		}}
+	}
+
+	var sum int64
+	charges := make([]AdHocCharge, 0, len(lineItems))
+	for _, li := range lineItems {
+		minor := amountToMinorUnits(li.Amount, currency)
+		sum += minor
+		charges = append(charges, AdHocCharge{
+			AmountMinor: minor,
+			Description: li.Description,
+			PeriodStart: li.PeriodStart,
+			PeriodEnd:   li.PeriodEnd,
+		})
+	}
+
+	// Chargebee collects the sum of the lines, not the total we hand it, so a drift
+	// here is a customer charged an amount our payment record disagrees with.
+	if sum != total {
+		a.Logger.Error(ctx, "chargebee line items do not sum to the payment amount",
+			"error", "line item sum differs from payment amount",
+			"flexprice_invoice_id", flexInvoiceID,
+			"line_item_count", len(lineItems),
+			"line_item_sum_minor", sum,
+			"payment_amount_minor", total,
+			"currency", currency)
+	}
+	return charges
 }
 
 // amountToMinorUnits shifts the decimal to the currency's minor unit. Going via
