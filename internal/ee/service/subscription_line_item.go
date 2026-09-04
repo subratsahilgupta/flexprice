@@ -72,6 +72,7 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 		}
 
 		lineItem = resolvedReq.ToSubscriptionLineItem(txCtx, *params)
+		stripCallerLineageMetadata(lineItem)
 		if usedInlinePrice {
 			s.applySubscriptionScopedLineItemDefaults(lineItem, sub, price)
 		}
@@ -576,17 +577,52 @@ func setSuccessorLineItemID(item *subscription.SubscriptionLineItem, successorID
 	setLineItemMetadataID(item, types.SubscriptionLineItemMetadataKeySuccessorID, successorID)
 }
 
-func clearSuccessorLineItemID(item *subscription.SubscriptionLineItem) {
+// lineageMetadataKeys are service-owned. Callers must never set them: a forged pointer
+// would make delete reopen, or refuse to delete, an unrelated line item.
+var lineageMetadataKeys = []string{
+	types.SubscriptionLineItemMetadataKeyPredecessorID,
+	types.SubscriptionLineItemMetadataKeySuccessorID,
+}
+
+func clearLineItemMetadataIDs(item *subscription.SubscriptionLineItem, keys ...string) {
 	if item == nil || item.Metadata == nil {
 		return
 	}
-	if _, ok := item.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID]; !ok {
+	present := false
+	for _, key := range keys {
+		if _, ok := item.Metadata[key]; ok {
+			present = true
+			break
+		}
+	}
+	if !present {
 		return
 	}
 	copied := make(map[string]string, len(item.Metadata))
 	maps.Copy(copied, item.Metadata)
-	delete(copied, types.SubscriptionLineItemMetadataKeySuccessorID)
+	for _, key := range keys {
+		delete(copied, key)
+	}
 	item.Metadata = copied
+}
+
+func clearSuccessorLineItemID(item *subscription.SubscriptionLineItem) {
+	clearLineItemMetadataIDs(item, types.SubscriptionLineItemMetadataKeySuccessorID)
+}
+
+// stripCallerLineageMetadata drops version pointers that arrived in a request payload.
+func stripCallerLineageMetadata(item *subscription.SubscriptionLineItem) {
+	clearLineItemMetadataIDs(item, lineageMetadataKeys...)
+}
+
+func alreadyScheduledVersionError(lineItemID, successorID string) error {
+	return ierr.NewError("line item already has a scheduled version").
+		WithHint("Update the scheduled version instead, or delete it to revert this line item").
+		WithReportableDetails(map[string]interface{}{
+			"line_item_id":           lineItemID,
+			"successor_line_item_id": successorID,
+		}).
+		Mark(ierr.ErrValidation)
 }
 
 // replaceMetadataPreservingLineage applies caller-supplied metadata without dropping the
@@ -596,12 +632,11 @@ func replaceMetadataPreservingLineage(item *subscription.SubscriptionLineItem, m
 	if item == nil {
 		return
 	}
-	updated := make(map[string]string, len(metadata)+2)
+	updated := make(map[string]string, len(metadata)+len(lineageMetadataKeys))
 	maps.Copy(updated, metadata)
-	for _, key := range []string{
-		types.SubscriptionLineItemMetadataKeyPredecessorID,
-		types.SubscriptionLineItemMetadataKeySuccessorID,
-	} {
+	for _, key := range lineageMetadataKeys {
+		// Drop whatever the caller sent under a reserved key before restoring the stored value.
+		delete(updated, key)
 		if id := item.Metadata[key]; id != "" {
 			updated[key] = id
 		}
@@ -635,17 +670,12 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 
 	// A line item that already has a scheduled version must be edited through that
 	// version. Versioning it again would leave two published lines starting on the
-	// same date and orphan the first successor.
+	// same date and orphan the first successor. The versioning branch re-checks this
+	// under a row lock; this pass just fails fast before any work is done.
 	if successor, err := s.findPublishedSuccessor(ctx, existingLineItem); err != nil {
 		return nil, err
 	} else if successor != nil {
-		return nil, ierr.NewError("line item already has a scheduled version").
-			WithHint("Update the scheduled version instead, or delete it to revert this line item").
-			WithReportableDetails(map[string]interface{}{
-				"line_item_id":           lineItemID,
-				"successor_line_item_id": successor.ID,
-			}).
-			Mark(ierr.ErrValidation)
+		return nil, alreadyScheduledVersionError(lineItemID, successor.ID)
 	}
 
 	// Get the subscription
@@ -673,73 +703,87 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 
 	// Check if we need to create a new line item (with price overrides)
 	if req.ShouldCreateNewLineItem() {
-		// Effective date must not be before the line item's start date (avoids end_date < start_date).
-		// Only the versioning path terminates the line item, so an in-place edit of a line
-		// that starts in the future must not be blocked by the default now() end date.
-		if !existingLineItem.StartDate.IsZero() && endDate.Before(existingLineItem.StartDate) {
-			return nil, ierr.NewError("effective date must be on or after line item start date").
-				WithHint("The effective date for terminating this line item cannot be before the line item's start date").
-				WithReportableDetails(map[string]interface{}{
-					"line_item_id":   lineItemID,
-					"start_date":     existingLineItem.StartDate,
-					"effective_from": endDate,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-
-		if err := validateLineItemEndDateChange(existingLineItem, endDate); err != nil {
-			return nil, err
-		}
-
-		// existingLineItem and the repo's copy are the same object, so this must be
-		// read before deleteSubscriptionLineItem below overwrites EndDate in place.
-		oldEndDate := existingLineItem.EndDate
-
-		// Get price for override logic (and ensure endDate >= existing line item start already validated above)
-		priceService := NewPriceService(s.ServiceParams)
-		price, err := priceService.GetPrice(ctx, existingLineItem.PriceID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Convert request to OverrideLineItemRequest format to reuse existing logic
-		overrideReq := dto.OverrideLineItemRequest{
-			PriceID:           existingLineItem.PriceID,
-			Quantity:          &existingLineItem.Quantity,
-			BillingModel:      req.BillingModel,
-			Amount:            req.Amount,
-			TierMode:          req.TierMode,
-			Tiers:             req.Tiers,
-			TransformQuantity: req.TransformQuantity,
-			BucketSize:        req.BucketSize,
-		}
-
-		priceMap := map[string]*dto.PriceResponse{existingLineItem.PriceID: price}
-
 		// Execute the complex update within a transaction
 		var newLineItem *subscription.SubscriptionLineItem
 		err = s.DB.WithTx(ctx, func(ctx context.Context) error {
-			// Process the price override using existing method
-			lineItems := []*subscription.SubscriptionLineItem{existingLineItem}
-			err = s.ProcessSubscriptionPriceOverrides(ctx, sub, []dto.OverrideLineItemRequest{overrideReq}, lineItems, priceMap)
+			locked, lockErr := s.SubscriptionLineItemRepo.GetForUpdate(ctx, lineItemID)
+			if lockErr != nil {
+				return lockErr
+			}
+			if locked.Status != types.StatusPublished {
+				return ierr.NewError("line item is not active").
+					WithHint("Cannot update an inactive line item").
+					WithReportableDetails(map[string]interface{}{
+						"line_item_id": lineItemID,
+						"status":       locked.Status,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+			if successor, findErr := s.findPublishedSuccessor(ctx, locked); findErr != nil {
+				return findErr
+			} else if successor != nil {
+				return alreadyScheduledVersionError(lineItemID, successor.ID)
+			}
+
+			// Effective date must not be before the line item's start date (avoids end_date < start_date).
+			// Only the versioning path terminates the line item, so an in-place edit of a line
+			// that starts in the future must not be blocked by the default now() end date.
+			if !locked.StartDate.IsZero() && endDate.Before(locked.StartDate) {
+				return ierr.NewError("effective date must be on or after line item start date").
+					WithHint("The effective date for terminating this line item cannot be before the line item's start date").
+					WithReportableDetails(map[string]interface{}{
+						"line_item_id":   lineItemID,
+						"start_date":     locked.StartDate,
+						"effective_from": endDate,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+
+			if err := validateLineItemEndDateChange(locked, endDate); err != nil {
+				return err
+			}
+
+			// locked and the repo's copy can be the same object, so this must be read
+			// before deleteSubscriptionLineItem below overwrites EndDate in place.
+			oldEndDate := locked.EndDate
+
+			price, err := NewPriceService(s.ServiceParams).GetPrice(ctx, locked.PriceID)
 			if err != nil {
 				return err
 			}
 
+			// Convert request to OverrideLineItemRequest format to reuse existing logic
+			overrideReq := dto.OverrideLineItemRequest{
+				PriceID:           locked.PriceID,
+				Quantity:          &locked.Quantity,
+				BillingModel:      req.BillingModel,
+				Amount:            req.Amount,
+				TierMode:          req.TierMode,
+				Tiers:             req.Tiers,
+				TransformQuantity: req.TransformQuantity,
+				BucketSize:        req.BucketSize,
+			}
+			priceMap := map[string]*dto.PriceResponse{locked.PriceID: price}
+
+			// Process the price override using existing method
+			lineItems := []*subscription.SubscriptionLineItem{locked}
+			if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, []dto.OverrideLineItemRequest{overrideReq}, lineItems, priceMap); err != nil {
+				return err
+			}
+
 			// The ProcessSubscriptionPriceOverrides method updates the line item's PriceID
-			newPriceID := existingLineItem.PriceID
+			newPriceID := locked.PriceID
 
 			// Terminate the existing line item using existing method
 			deleteReq := dto.DeleteSubscriptionLineItemRequest{
 				EffectiveFrom: &endDate,
 			}
-			_, err := s.deleteSubscriptionLineItem(ctx, lineItemID, deleteReq)
-			if err != nil {
+			if _, err := s.deleteSubscriptionLineItem(ctx, lineItemID, deleteReq); err != nil {
 				return err
 			}
 
 			// Create new line item using the DTO method
-			newLineItem = req.ToSubscriptionLineItem(ctx, existingLineItem, newPriceID)
+			newLineItem = req.ToSubscriptionLineItem(ctx, locked, newPriceID)
 			newLineItem.StartDate = endDate // Start where the old one ends
 			if !oldEndDate.IsZero() {
 				newLineItem.EndDate = oldEndDate // Fill the gap freed up by the backdate
@@ -759,7 +803,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			// line item's buckets (copied by ToSubscriptionLineItem); supplying an
 			// explicit empty slice clears them.
 			if req.CommitmentTimeBuckets != nil {
-				if err := s.createBucketPrices(ctx, newLineItem.ID, existingLineItem.SubscriptionID, *req.CommitmentTimeBuckets, newLineItem.CommitmentTimeBuckets, existingLineItem.CommitmentTimeBuckets); err != nil {
+				if err := s.createBucketPrices(ctx, newLineItem.ID, locked.SubscriptionID, *req.CommitmentTimeBuckets, newLineItem.CommitmentTimeBuckets, locked.CommitmentTimeBuckets); err != nil {
 					return err
 				}
 			}
@@ -805,7 +849,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 
 		s.Logger.Info(ctx, "updated subscription line item with price overrides",
 			"subscription_id", sub.ID,
-			"old_line_item_id", existingLineItem.ID,
+			"old_line_item_id", lineItemID,
 			"new_line_item_id", newLineItem.ID,
 			"end_date", endDate,
 		)

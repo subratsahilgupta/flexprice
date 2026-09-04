@@ -451,6 +451,65 @@ func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_Schedu
 		"predecessor must still be reverted after a metadata-only edit")
 }
 
+// The lineage keys are reserved. A caller that sends them must not be able to forge a
+// link: the stored predecessor wins, and a successor the service never wrote is dropped
+// rather than locking the line against deletion.
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_MetadataEdit_IgnoresCallerSuppliedLineage() {
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+	successor := s.scheduleVersion(s.testData.lineItem.ID, 75, futureStart)
+	forgedTarget := s.stageLineItem(func(li *subscription.SubscriptionLineItem) {
+		li.EndDate = futureStart
+	})
+
+	_, err := s.service.UpdateSubscriptionLineItem(s.GetContext(), successor.ID, dto.UpdateSubscriptionLineItemRequest{
+		Metadata: map[string]string{
+			types.SubscriptionLineItemMetadataKeyPredecessorID: forgedTarget.ID,
+			types.SubscriptionLineItemMetadataKeySuccessorID:   forgedTarget.ID,
+			"note": "kept",
+		},
+	})
+	s.NoError(err)
+
+	stored := s.reloadLineItem(successor.ID)
+	s.Equal("kept", stored.Metadata["note"])
+	s.Equal(s.testData.lineItem.ID, stored.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID],
+		"a caller must not be able to repoint the predecessor")
+	s.Empty(stored.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID],
+		"a caller must not be able to forge a successor")
+
+	// The forged pointers must not have changed what the revert does.
+	s.NoError(s.revertScheduledVersion(successor.ID))
+	s.True(s.reloadLineItem(s.testData.lineItem.ID).EndDate.IsZero())
+	s.assertEndDate(s.reloadLineItem(forgedTarget.ID), futureStart, "the forged target must be untouched")
+}
+
+// Same reserved keys, other entry point: a future-dated line item created with a forged
+// predecessor would otherwise reopen that line when it is reverted.
+func (s *SubscriptionLineItemServiceSuite) TestAddSubscriptionLineItem_IgnoresCallerSuppliedLineage() {
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+	forgedTarget := s.stageLineItem(func(li *subscription.SubscriptionLineItem) {
+		li.EndDate = futureStart
+	})
+
+	added, err := s.service.AddSubscriptionLineItem(s.GetContext(), s.testData.subscription.ID, dto.CreateSubscriptionLineItemRequest{
+		PriceID:   s.testData.price.ID,
+		Quantity:  decimal.NewFromInt(1),
+		StartDate: &futureStart,
+		Metadata: map[string]string{
+			types.SubscriptionLineItemMetadataKeyPredecessorID: forgedTarget.ID,
+			types.SubscriptionLineItemMetadataKeySuccessorID:   forgedTarget.ID,
+			"note": "kept",
+		},
+	})
+	s.NoError(err)
+	s.Equal("kept", added.SubscriptionLineItem.Metadata["note"])
+	s.Empty(added.SubscriptionLineItem.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID])
+	s.Empty(added.SubscriptionLineItem.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID])
+
+	s.NoError(s.revertScheduledVersion(added.SubscriptionLineItem.ID))
+	s.assertEndDate(s.reloadLineItem(forgedTarget.ID), futureStart, "the forged target must be untouched")
+}
+
 // Amending a pending change goes through the scheduled version: it gets terminated and
 // replaced, and its own predecessor stays closed rather than being reverted.
 func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_ScheduledVersion_TerminatesWithoutRevert() {
