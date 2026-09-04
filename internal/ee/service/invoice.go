@@ -41,7 +41,6 @@ type InvoiceService interface {
 	CreateEmptyDraftInvoice(ctx context.Context, req dto.CreateDraftInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreateComputedDraftInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, bool, error)
 	FinalizeInvoice(ctx context.Context, id string) error
-	VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) error
 	ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error
 	UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
 	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, paymentParams *dto.PaymentParameters, flowType types.InvoiceFlowType, isDraftSubscription bool) (*dto.InvoiceResponse, *subscription.Subscription, error)
@@ -1256,19 +1255,19 @@ func validateInvoiceVoidable(inv *invoice.Invoice) error {
 	return nil
 }
 
-func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) error {
+func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) (*invoice.Invoice, error) {
 
 	if err := req.Validate(); err != nil {
-		return err
+		return nil, err
 	}
 
 	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := validateInvoiceVoidable(inv); err != nil {
-		return err
+		return nil, err
 	}
 
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
@@ -1328,7 +1327,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 		return s.InvoiceRepo.Update(tx, inv)
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// A voided invoice will never be paid, so a purchased-credit transaction still
@@ -1358,7 +1357,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 	}
 
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
-	return nil
+	return inv, nil
 }
 
 func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error {
@@ -3676,10 +3675,7 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string) (*dt
 
 	// All non-mutating prerequisites passed — safe to void now.
 	if inv.InvoiceStatus != types.InvoiceStatusVoided {
-		if err := s.VoidInvoice(ctx, id, dto.InvoiceVoidRequest{}); err != nil {
-			return nil, err
-		}
-		inv, err = s.InvoiceRepo.Get(ctx, id)
+		inv, err = s.VoidInvoice(ctx, id, dto.InvoiceVoidRequest{})
 		if err != nil {
 			return nil, err
 		}
@@ -3832,9 +3828,29 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
+	// Finalized + apply_discount runs void-and-recreate and the update lands on the copy.
 	var updatedInv *invoice.Invoice
+	recreated := false
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, id)
+		targetID := id
+
+		locked, err := s.InvoiceRepo.GetForUpdate(txCtx, id)
+		if err != nil {
+			return err
+		}
+		if err := rejectVoidedInvoiceEdit(locked); err != nil {
+			return err
+		}
+		if locked.InvoiceStatus == types.InvoiceStatusFinalized && req.ApplyDiscount {
+			draft, err := s.voidAndRecreateDraftForEdit(txCtx, locked)
+			if err != nil {
+				return err
+			}
+			recreated = true
+			targetID = draft.ID
+		}
+
+		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, targetID)
 		if err != nil {
 			return err
 		}
@@ -3844,7 +3860,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 			return ierr.NewError("cannot update invoice in current status").
 				WithHint("Invoice can only be updated when in draft or finalized status").
 				WithReportableDetails(map[string]any{
-					"invoice_id":     id,
+					"invoice_id":     targetID,
 					"current_status": inv.InvoiceStatus,
 				}).
 				Mark(ierr.ErrValidation)
@@ -3860,7 +3876,8 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 			inv.Metadata = *req.Metadata
 		}
 
-		if req.ApplyDiscount {
+		if req.ApplyDiscount && !recreated {
+			// Draft path only — the recreate path already applied the discount to the copy.
 			if err := s.recalculateDiscountOnInvoice(txCtx, inv); err != nil {
 				return err
 			}
@@ -3876,7 +3893,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
-	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, id)
+	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, updatedInv.ID)
 	return dto.NewInvoiceResponse(updatedInv), nil
 }
 
