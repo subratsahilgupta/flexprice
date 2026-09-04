@@ -256,7 +256,7 @@ func NewAddonAssociationRepository(p RepositoryParams) addonassociation.Reposito
 }
 
 func NewSettingsRepository(p RepositoryParams) settings.Repository {
-	return entRepo.NewSettingsRepository(p.EntClient, p.Logger, p.RedisCache)
+	return entRepo.NewSettingsRepository(p.EntClient, p.Logger, p.InMemoryCache)
 }
 
 func NewAlertLogsRepository(p RepositoryParams) alertlogs.Repository {
