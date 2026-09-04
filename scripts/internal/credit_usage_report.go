@@ -156,7 +156,7 @@ func GenerateCreditUsageReport() error {
 
 // generateCSVReport generates a CSV file from the report data
 func generateCSVReport(data []CreditUsageReportData, filename string) error {
-	file, err := os.Create(filename)
+	file, err := os.Create(filename) // #nosec G703,G304 -- CLI file path, dev tooling
 	if err != nil {
 		return fmt.Errorf("failed to create CSV file: %w", err)
 	}

@@ -102,7 +102,7 @@ func (c *compiler) Compile(opts CompileOpts) (string, error) {
 	outputFile := filepath.Join(c.outputDir, opts.OutputFile)
 	if opts.OutputFile == "" {
 		tmpFilePath := filepath.Join(c.outputDir, fmt.Sprintf("typst-%d.pdf", time.Now().UnixMilli()))
-		tmpFile, err := os.Create(tmpFilePath)
+		tmpFile, err := os.Create(tmpFilePath) // #nosec G304 -- code-generated temp path
 		if err != nil {
 			return "", ierr.WithError(err).
 				WithMessage("failed to create temporary output file").
@@ -164,7 +164,7 @@ func (c *compiler) CompileToBytes(opts CompileOpts) ([]byte, error) {
 		return nil, err
 	}
 	defer os.Remove(pdfPath)
-	return os.ReadFile(pdfPath)
+	return os.ReadFile(pdfPath) // #nosec G304 -- compiler output path, code-controlled
 }
 
 // CompileTemplate compiles a Typst template with the provided data
@@ -267,7 +267,7 @@ func CopyDir(src, dst string) error {
 
 // CopyFile copies a file from src to dst
 func CopyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
+	sourceFile, err := os.Open(src) // #nosec G304 -- internal asset copy, not user input
 	if err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func CopyFile(src, dst string) error {
 		return fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
-	destFile, err := os.Create(dst)
+	destFile, err := os.Create(dst) // #nosec G304 -- internal asset copy, not user input
 	if err != nil {
 		return err
 	}
