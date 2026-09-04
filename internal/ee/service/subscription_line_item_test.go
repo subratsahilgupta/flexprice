@@ -342,6 +342,62 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Schedu
 	s.Equal(futureStart.Truncate(time.Second).Unix(), untouched.EndDate.Truncate(time.Second).Unix())
 }
 
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_FutureEffectiveFromRejected() {
+	ctx := s.GetContext()
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+
+	scheduled := *s.testData.lineItem
+	scheduled.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
+	scheduled.StartDate = futureStart
+	scheduled.EndDate = time.Time{}
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &scheduled))
+
+	_, err := s.service.DeleteSubscriptionLineItem(ctx, scheduled.ID, dto.DeleteSubscriptionLineItemRequest{
+		EffectiveFrom: &futureStart,
+	})
+	s.Error(err)
+	s.Contains(err.Error(), "cannot schedule deletion of a line item that has not started")
+
+	got, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, scheduled.ID)
+	s.NoError(err)
+	s.Equal(types.StatusPublished, got.Status)
+	s.True(got.EndDate.IsZero())
+}
+
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_ScheduledLine_TerminatesWithoutRevert() {
+	ctx := s.GetContext()
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+	firstAmount := decimal.NewFromInt(75)
+	secondAmount := decimal.NewFromInt(90)
+
+	scheduled, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &firstAmount,
+		EffectiveFrom: &futureStart,
+	})
+	s.NoError(err)
+
+	predecessor, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.Equal(futureStart.Truncate(time.Second).Unix(), predecessor.EndDate.Truncate(time.Second).Unix())
+
+	replaced, err := s.service.UpdateSubscriptionLineItem(ctx, scheduled.SubscriptionLineItem.ID, dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &secondAmount,
+		EffectiveFrom: &futureStart,
+	})
+	s.NoError(err)
+	s.NotEqual(scheduled.SubscriptionLineItem.ID, replaced.SubscriptionLineItem.ID)
+
+	endedScheduled, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, scheduled.SubscriptionLineItem.ID)
+	s.NoError(err)
+	s.Equal(types.StatusPublished, endedScheduled.Status)
+	s.Equal(futureStart.Truncate(time.Second).Unix(), endedScheduled.EndDate.Truncate(time.Second).Unix())
+
+	unchangedPredecessor, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.Equal(futureStart.Truncate(time.Second).Unix(), unchangedPredecessor.EndDate.Truncate(time.Second).Unix(),
+		"update must terminate the scheduled line, not revert its predecessor")
+}
+
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_NoPredecessorIDSkipsRestore() {
 	ctx := s.GetContext()
 	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)

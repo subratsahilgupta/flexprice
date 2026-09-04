@@ -343,8 +343,35 @@ func validateLineItemEndDateChange(lineItem *subscription.SubscriptionLineItem, 
 		Mark(ierr.ErrValidation)
 }
 
-// DeleteSubscriptionLineItem marks a line item as deleted by setting its end date
+// DeleteSubscriptionLineItem is the public delete path. A line item that has
+// not started yet can only be reverted immediately. Scheduling a later delete of a
+// scheduled version is rejected so we do not stack scheduled changes.
 func (s *subscriptionService) DeleteSubscriptionLineItem(ctx context.Context, lineItemID string, req dto.DeleteSubscriptionLineItemRequest) (*dto.SubscriptionLineItemResponse, error) {
+	lineItem, err := s.SubscriptionLineItemRepo.Get(ctx, lineItemID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	if lineItem.StartDate.After(now) {
+		if req.EffectiveFrom != nil && req.EffectiveFrom.UTC().After(now) {
+			return nil, ierr.NewError("cannot schedule deletion of a line item that has not started").
+				WithHint("Omit effective_from to revert the scheduled line item immediately").
+				WithReportableDetails(map[string]interface{}{
+					"line_item_id":   lineItemID,
+					"start_date":     lineItem.StartDate,
+					"effective_from": req.EffectiveFrom.UTC(),
+				}).
+				Mark(ierr.ErrValidation)
+		}
+		resp, err := s.cancelScheduledLineItem(ctx, lineItem)
+		if err != nil {
+			return nil, err
+		}
+		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, resp.SubscriptionID)
+		return resp, nil
+	}
+
 	resp, err := s.deleteSubscriptionLineItem(ctx, lineItemID, req)
 	if err != nil {
 		return nil, err
@@ -371,13 +398,6 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 		effectiveFrom = req.EffectiveFrom.UTC()
 	} else {
 		effectiveFrom = time.Now().UTC()
-	}
-
-	// A version that has not started yet cannot be "terminated" at now — that
-	// is before its start. Treat DELETE (or effective_from on/before start) as
-	// cancelling the scheduled version and reopening its predecessor.
-	if !effectiveFrom.After(lineItem.StartDate) && lineItem.StartDate.After(time.Now().UTC()) {
-		return s.cancelScheduledLineItem(ctx, lineItem)
 	}
 
 	// Validate effective from date is on or after start date
