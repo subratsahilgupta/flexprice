@@ -2,7 +2,6 @@ package chargebee
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	invoiceModel "github.com/chargebee/chargebee-go/v3/models/invoice"
@@ -85,13 +84,18 @@ func (a *CheckoutAdapter) hostedCheckout(
 		return nil, err
 	}
 
+	charges, err := a.getLineItems(ctx, req.lineItems, req.amount, req.currency, req.flexInvoiceID)
+	if err != nil {
+		return nil, err
+	}
+
 	page, err := a.Client.CreateHostedCheckoutPage(ctx, HostedCheckoutPageRequest{
 		ChargebeeCustomerID: cbCustomerID,
 		Currency:            req.currency,
-		Charges:             a.getLineItems(ctx, req.lineItems, req.amount, req.currency, req.flexInvoiceID),
+		Charges:             charges,
 		RedirectURL:         req.successURL,
 		GatewayAccountID:    cfg.GatewayAccountID,
-		PoNumber:            req.flexPaymentID,
+		InvoiceNote:         PaymentNote(req.flexPaymentID),
 	})
 	if err != nil {
 		return nil, err
@@ -144,11 +148,16 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 		}
 	}
 
+	charges, err := a.getLineItems(ctx, req.LineItems, req.Amount, req.Currency, req.InvoiceID)
+	if err != nil {
+		return nil, false, err
+	}
+
 	inv, err := a.Client.CreateAdHocInvoice(ctx, AdHocInvoiceRequest{
 		ChargebeeCustomerID: cbCustomerID,
 		Currency:            req.Currency,
-		Charges:             a.getLineItems(ctx, req.LineItems, req.Amount, req.Currency, req.InvoiceID),
-		PoNumber:            req.PaymentID,
+		Charges:             charges,
+		InvoiceNote:         PaymentNote(req.PaymentID),
 		IdempotencyKey:      idempotencyScoped(req.PaymentID, "invoice"),
 		AutoCollect:         true,
 		CustomerPresent:     req.CustomerPresent,
@@ -250,15 +259,15 @@ func (a *CheckoutAdapter) getLineItems(
 	lineItems []interfaces.CheckoutLineItem,
 	amount decimal.Decimal,
 	currency, flexInvoiceID string,
-) []AdHocCharge {
-	total := amountToMinorUnits(amount, currency)
+) ([]AdHocCharge, error) {
 	if len(lineItems) == 0 {
-		return []AdHocCharge{{
-			AmountMinor: total,
-			Description: fmt.Sprintf("Flexprice invoice %s", flexInvoiceID),
-		}}
+		return nil, ierr.NewError("invoice has no chargeable line items").
+			WithHint("The invoice being charged has no line items to itemise").
+			WithReportableDetails(map[string]any{"invoice_id": flexInvoiceID}).
+			Mark(ierr.ErrValidation)
 	}
 
+	total := amountToMinorUnits(amount, currency)
 	var sum int64
 	charges := make([]AdHocCharge, 0, len(lineItems))
 	for _, li := range lineItems {
@@ -283,7 +292,7 @@ func (a *CheckoutAdapter) getLineItems(
 			"payment_amount_minor", total,
 			"currency", currency)
 	}
-	return charges
+	return charges, nil
 }
 
 // amountToMinorUnits shifts the decimal to the currency's minor unit. Going via

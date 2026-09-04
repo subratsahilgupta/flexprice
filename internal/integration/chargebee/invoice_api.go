@@ -14,9 +14,9 @@ type AdHocInvoiceRequest struct {
 	ChargebeeCustomerID string
 	Currency            string
 	Charges             []AdHocCharge
-	// PoNumber is the correlation key the hosted page also carries, so a webhook
+	// InvoiceNote is the correlation carrier the hosted page also uses, so a webhook
 	// resolves the same way whichever path created the invoice.
-	PoNumber       string
+	InvoiceNote    string
 	IdempotencyKey string
 	// AutoCollect charges the primary source as part of the create call, which
 	// Chargebee books as merchant-initiated. Off leaves the invoice as the allocation
@@ -53,7 +53,7 @@ func (c *Client) CreateAdHocInvoice(
 		CustomerId:     adHocReq.ChargebeeCustomerID,
 		CurrencyCode:   strings.ToUpper(adHocReq.Currency),
 		Charges:        charges,
-		PoNumber:       adHocReq.PoNumber,
+		InvoiceNote:    adHocReq.InvoiceNote,
 		AutoCollection: lo.Ternary(adHocReq.AutoCollect, enum.AutoCollectionOn, enum.AutoCollectionOff),
 		PaymentInitiator: lo.Ternary(adHocReq.CustomerPresent,
 			enum.PaymentInitiatorCustomer, enum.PaymentInitiatorMerchant),

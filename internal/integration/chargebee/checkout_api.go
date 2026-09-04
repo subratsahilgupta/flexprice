@@ -35,11 +35,10 @@ type HostedCheckoutPageRequest struct {
 	Charges             []AdHocCharge
 	RedirectURL         string
 	GatewayAccountID    string
-	// PoNumber stamps a reference onto the invoice this page creates. Verified live:
-	// Chargebee echoes it on payment_succeeded, the only thread tying that webhook
-	// back to a Flexprice entity — the page's invoice is Chargebee's, so no mapping
-	// of ours exists for it.
-	PoNumber string
+	// InvoiceNote lands in notes[] on the invoice this page creates and is echoed on
+	// payment_succeeded — the only thread tying that webhook back to a Flexprice
+	// entity, since the page's invoice is Chargebee's and no mapping of ours exists.
+	InvoiceNote string
 }
 
 // CreateHostedCheckoutPage returns an invoice-scoped hosted checkout for an exact
@@ -74,14 +73,11 @@ func (c *Client) CreateHostedCheckoutPage(
 		CurrencyCode: strings.ToUpper(req.Currency),
 		Charges:      charges,
 		RedirectUrl:  req.RedirectURL,
+		InvoiceNote:  req.InvoiceNote,
 	}
 	if req.GatewayAccountID != "" {
 		params.Card = &hostedPageModel.CheckoutOneTimeForItemsCardParams{GatewayAccountId: req.GatewayAccountID}
 	}
-	if req.PoNumber != "" {
-		params.Invoice = &hostedPageModel.CheckoutOneTimeForItemsInvoiceParams{PoNumber: req.PoNumber}
-	}
-
 	res, err := hostedpage.CheckoutOneTimeForItems(params).RequestWithEnv(env)
 	if err != nil {
 		return nil, wrapAPIError(err, "Failed to create Chargebee hosted checkout page")

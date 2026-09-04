@@ -86,8 +86,8 @@ func (h *Handler) handlePaymentSucceeded(ctx context.Context, event *ChargebeeWe
 	)
 
 	// A hosted checkout page creates its own Chargebee invoice, which has no entity
-	// mapping — po_number carries the Flexprice payment id for those.
-	flexpricePaymentID := invoice.PONumber
+	// mapping — the invoice note carries the Flexprice payment id for those.
+	flexpricePaymentID := invoice.ResolvePaymentID()
 	flexpriceInvoiceID, err := h.invoiceSvc.GetFlexPriceInvoiceIDByChargebeeInvoiceID(ctx, invoice.ID)
 	if err != nil {
 		if flexpricePaymentID == "" {
@@ -121,7 +121,7 @@ func (h *Handler) handlePaymentSucceeded(ctx context.Context, event *ChargebeeWe
 
 	// A payment link created for an existing invoice has no checkout session, and the
 	// hosted page invoices the charge on a Chargebee invoice of its own, so there is no
-	// mapping either — po_number is the only thread back. Settle that payment directly.
+	// mapping either — the note is the only thread back. Settle that payment directly.
 	if handled, err := h.settleLinkedPayment(ctx, flexpricePaymentID, transaction.ID, services); err != nil {
 		return nil // Already logged; don't fail webhook processing
 	} else if handled {
@@ -175,9 +175,10 @@ func (h *Handler) handlePaymentFailed(ctx context.Context, event *ChargebeeWebho
 		return nil
 	}
 
+	flexpricePaymentID := content.Invoice.ResolvePaymentID()
 	flexpriceInvoiceID, err := h.invoiceSvc.GetFlexPriceInvoiceIDByChargebeeInvoiceID(ctx, content.Invoice.ID)
 	if err != nil {
-		if content.Invoice.PONumber == "" {
+		if flexpricePaymentID == "" {
 			h.logger.Info(ctx, "no FlexPrice invoice for failed Chargebee payment, ignoring",
 				"error", err,
 				"chargebee_invoice_id", content.Invoice.ID,
@@ -187,7 +188,7 @@ func (h *Handler) handlePaymentFailed(ctx context.Context, event *ChargebeeWebho
 		flexpriceInvoiceID = ""
 	}
 
-	session, err := h.findCheckoutSessionForPayment(ctx, content.Invoice.PONumber, services)
+	session, err := h.findCheckoutSessionForPayment(ctx, flexpricePaymentID, services)
 	if err != nil || session == nil {
 		return nil
 	}
@@ -290,9 +291,9 @@ func (h *Handler) handleCheckoutSessionForPayment(
 	return true, nil
 }
 
-// settleLinkedPayment settles the FlexPrice payment named by po_number when no
-// checkout session owns it — the /invoices/{id}/pay link path. Returns false when
-// po_number names no payment of ours, leaving the caller its invoice-mapping route.
+// settleLinkedPayment settles the FlexPrice payment named by the invoice note when
+// no checkout session owns it — the /invoices/{id}/pay link path. Returns false when
+// the note names no payment of ours, leaving the caller its invoice-mapping route.
 //
 // Settlement goes through PaymentLifecycle (not ReconcileInvoicePayment) so the
 // payment record itself moves to SUCCEEDED and the invoice is reconciled by the
@@ -307,8 +308,8 @@ func (h *Handler) settleLinkedPayment(
 		return false, nil
 	}
 
-	// po_number is free text on a Chargebee invoice, so anything that is not one of
-	// our payment ids simply is not ours to settle.
+	// A tenant's own notes land in the same array, so anything that is not one of our
+	// payment ids simply is not ours to settle.
 	if _, err := services.PaymentService.GetPayment(ctx, flexpricePaymentID); err != nil {
 		return false, nil
 	}
