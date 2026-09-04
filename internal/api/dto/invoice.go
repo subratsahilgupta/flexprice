@@ -1582,3 +1582,10 @@ func buildTaxSummary(taxes []*TaxAppliedResponse, reasonCode *types.TaxExemption
 		TotalTax:          inclusiveTax.Add(exclusiveTax),
 	}
 }
+
+// InvoicePDFRequest selects which rendering of an invoice to return.
+type InvoicePDFRequest struct {
+	InvoiceID string `json:"invoice_id" validate:"required"`
+	// ForceGenerate re-renders even when a stored PDF exists.
+	ForceGenerate bool `json:"force_generate"`
+}

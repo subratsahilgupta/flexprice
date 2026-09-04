@@ -26,6 +26,8 @@ type ChargebeeInvoiceService interface {
 	SyncInvoiceToChargebee(ctx context.Context, req ChargebeeInvoiceSyncRequest) (*ChargebeeInvoiceSyncResponse, error)
 	LinkInvoiceMapping(ctx context.Context, invoiceID, chargebeeInvoiceID string) error
 	GetFlexPriceInvoiceIDByChargebeeInvoiceID(ctx context.Context, chargebeeInvoiceID string) (string, error)
+	GetExistingChargebeeMapping(ctx context.Context, invoiceID string) (*entityintegrationmapping.EntityIntegrationMapping, error)
+	GetInvoicePDFURL(ctx context.Context, flexpriceInvoiceID string) (string, error)
 	ProcessChargebeePaymentFromWebhook(ctx context.Context, req ChargebeeWebhookPaymentRequest) error
 }
 
@@ -213,7 +215,7 @@ func (s *InvoiceService) SyncInvoiceToChargebee(
 	}
 
 	// Step 3: Check if invoice is already synced to avoid duplicates
-	existingMapping, err := s.getExistingChargebeeMapping(ctx, req.InvoiceID)
+	existingMapping, err := s.GetExistingChargebeeMapping(ctx, req.InvoiceID)
 	if err != nil && !ierr.IsNotFound(err) {
 		return nil, err
 	}
@@ -568,8 +570,7 @@ func (s *InvoiceService) getChargebeeItemPriceIDSimple(ctx context.Context, flex
 	return mappings[0].ProviderEntityID, nil
 }
 
-// getExistingChargebeeMapping checks if invoice is already synced to Chargebee
-func (s *InvoiceService) getExistingChargebeeMapping(ctx context.Context, invoiceID string) (*entityintegrationmapping.EntityIntegrationMapping, error) {
+func (s *InvoiceService) GetExistingChargebeeMapping(ctx context.Context, invoiceID string) (*entityintegrationmapping.EntityIntegrationMapping, error) {
 	filter := types.NewEntityIntegrationMappingFilter()
 	filter.EntityID = invoiceID
 	filter.EntityType = types.IntegrationEntityTypeInvoice
@@ -596,7 +597,7 @@ func (s *InvoiceService) LinkInvoiceMapping(ctx context.Context, invoiceID, char
 		return nil
 	}
 
-	existing, err := s.getExistingChargebeeMapping(ctx, invoiceID)
+	existing, err := s.GetExistingChargebeeMapping(ctx, invoiceID)
 	if err != nil && !ierr.IsNotFound(err) {
 		return err
 	}
@@ -638,6 +639,26 @@ func (s *InvoiceService) LinkInvoiceMapping(ctx context.Context, invoiceID, char
 		"invoice_id", invoiceID,
 		"chargebee_invoice_id", chargebeeInvoiceID)
 	return nil
+}
+
+// GetInvoicePDFURL mints a signed link to Chargebee's rendering of a Flexprice
+// invoice. Links expire in an hour, so they are minted per request.
+func (s *InvoiceService) GetInvoicePDFURL(ctx context.Context, flexpriceInvoiceID string) (string, error) {
+	mapping, err := s.GetExistingChargebeeMapping(ctx, flexpriceInvoiceID)
+	if err != nil {
+		return "", err
+	}
+
+	download, err := s.Client.RetrieveInvoicePDF(ctx, mapping.ProviderEntityID)
+	if err != nil {
+		return "", err
+	}
+
+	s.Logger.Info(ctx, "minted chargebee invoice pdf link",
+		"invoice_id", flexpriceInvoiceID,
+		"chargebee_invoice_id", mapping.ProviderEntityID,
+		"valid_till", download.ValidTill)
+	return download.DownloadUrl, nil
 }
 
 // customerHasPaymentMethod checks if a Chargebee customer has a payment method

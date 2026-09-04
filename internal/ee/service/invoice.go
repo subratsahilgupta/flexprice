@@ -53,8 +53,8 @@ type InvoiceService interface {
 	GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.GetUnpaidInvoicesToBePaidRequest) (*dto.GetUnpaidInvoicesToBePaidResponse, error)
 	GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error)
 	AttemptPayment(ctx context.Context, id string) error
-	GetInvoicePDF(ctx context.Context, id string) ([]byte, error)
-	GetInvoicePDFUrl(ctx context.Context, id string, forceGenerate bool) (string, error)
+	GetInvoicePDF(ctx context.Context, req dto.InvoicePDFRequest) ([]byte, error)
+	GetInvoicePDFUrl(ctx context.Context, req dto.InvoicePDFRequest) (string, error)
 	RecalculateInvoice(ctx context.Context, id string) (*dto.InvoiceResponse, error)
 	RecalculateInvoiceV2(ctx context.Context, id string, finalize bool) (*dto.InvoiceResponse, error)
 	RecalculateInvoiceAmounts(ctx context.Context, invoiceID string) error
@@ -2783,7 +2783,8 @@ func (s *invoiceService) attemptPaymentForSubscriptionInvoice(ctx context.Contex
 	return nil
 }
 
-func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string, forceGenerate bool) (string, error) {
+func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, req dto.InvoicePDFRequest) (string, error) {
+	id := req.InvoiceID
 
 	// get invoice
 	inv, err := s.InvoiceRepo.Get(ctx, id)
@@ -2793,6 +2794,10 @@ func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string, forceG
 
 	if inv.InvoicePDFURL != nil {
 		return lo.FromPtr(inv.InvoicePDFURL), nil
+	}
+
+	if url, err := s.billingProviderPDFURL(ctx, id); err == nil && url != "" {
+		return url, nil
 	}
 
 	store, err := s.StorageResolver.ForPlatform(ctx, storage.PurposeInvoice)
@@ -2814,7 +2819,7 @@ func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string, forceG
 			Mark(ierr.ErrValidation)
 	}
 
-	if !forceGenerate {
+	if !req.ForceGenerate {
 		exists, err := store.Exists(ctx, key)
 		if err != nil {
 			return "", err
@@ -2824,7 +2829,7 @@ func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string, forceG
 		}
 	}
 
-	data, err := s.GetInvoicePDF(ctx, id)
+	data, err := s.GetInvoicePDF(ctx, dto.InvoicePDFRequest{InvoiceID: id})
 	if err != nil {
 		return "", err
 	}
@@ -2841,8 +2846,45 @@ func (s *invoiceService) GetInvoicePDFUrl(ctx context.Context, id string, forceG
 	return store.PresignGet(ctx, key, presignExpiry)
 }
 
+// billingProviderPDFURL returns the enabled billing provider's own rendering of
+// this invoice, or "" when none applies. The first connection with outbound
+// invoice sync enabled wins.
+func (s *invoiceService) billingProviderPDFURL(ctx context.Context, invoiceID string) (string, error) {
+	providers, err := NewBillingProviderResolver(s.ServiceParams).ListProviders(ctx)
+	if err != nil || len(providers) == 0 {
+		return "", err
+	}
+
+	provider := providers[0].Provider
+	url, err := s.providerInvoicePDFURL(ctx, provider, invoiceID)
+	if err != nil {
+		s.Logger.Info(ctx, "billing provider has no pdf for this invoice, rendering our own",
+			"provider", provider, "invoice_id", invoiceID, "reason", err.Error())
+		return "", nil
+	}
+	return url, nil
+}
+
+func (s *invoiceService) providerInvoicePDFURL(ctx context.Context, provider types.SecretProvider, invoiceID string) (string, error) {
+	switch provider {
+	case types.SecretProviderChargebee:
+		integration, err := s.IntegrationFactory.GetChargebeeIntegration(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		return integration.InvoiceSvc.GetInvoicePDFURL(ctx, invoiceID)
+	default:
+		return "", ierr.NewErrorf("provider %s cannot serve invoice PDFs", provider).
+			WithHint("This provider has no on-demand invoice PDF").
+			WithReportableDetails(map[string]any{"provider": provider, "invoice_id": invoiceID}).
+			Mark(ierr.ErrNotImplemented)
+	}
+}
+
 // GetInvoicePDF implements InvoiceService.
-func (s *invoiceService) GetInvoicePDF(ctx context.Context, id string) ([]byte, error) {
+func (s *invoiceService) GetInvoicePDF(ctx context.Context, req dto.InvoicePDFRequest) ([]byte, error) {
+	id := req.InvoiceID
 
 	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
 	pdfConfig, err := GetSetting[types.InvoicePDFConfig](
@@ -2855,17 +2897,17 @@ func (s *invoiceService) GetInvoicePDF(ctx context.Context, id string) ([]byte, 
 	}
 
 	// validate request
-	req := dto.GetInvoiceWithBreakdownRequest{ID: id}
+	breakdownReq := dto.GetInvoiceWithBreakdownRequest{ID: id}
 
 	// Use typed config directly
-	req.GroupBy = pdfConfig.GroupBy
+	breakdownReq.GroupBy = pdfConfig.GroupBy
 	templateName := pdfConfig.TemplateName
-	if err := req.Validate(); err != nil {
+	if err := breakdownReq.Validate(); err != nil {
 		return nil, err
 	}
 
 	// get invoice by id
-	inv, err := s.GetInvoiceWithBreakdown(ctx, req)
+	inv, err := s.GetInvoiceWithBreakdown(ctx, breakdownReq)
 	if err != nil {
 		return nil, err
 	}

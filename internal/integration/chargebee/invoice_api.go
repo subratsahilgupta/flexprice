@@ -6,6 +6,7 @@ import (
 
 	"github.com/chargebee/chargebee-go/v3/actions/invoice"
 	"github.com/chargebee/chargebee-go/v3/enum"
+	downloadModel "github.com/chargebee/chargebee-go/v3/models/download"
 	invoiceModel "github.com/chargebee/chargebee-go/v3/models/invoice"
 	"github.com/samber/lo"
 )
@@ -70,6 +71,26 @@ func (c *Client) CreateAdHocInvoice(
 		return nil, missingPayload("invoice")
 	}
 	return res.Invoice, nil
+}
+
+// RetrieveInvoicePDF returns a signed link to Chargebee's rendering.
+func (c *Client) RetrieveInvoicePDF(ctx context.Context, chargebeeInvoiceID string) (*downloadModel.Download, error) {
+	env, err := c.env(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := invoice.Pdf(chargebeeInvoiceID, &invoiceModel.PdfRequestParams{
+		DispositionType: enum.DispositionTypeAttachment,
+	}).RequestWithEnv(env)
+	if err != nil {
+		return nil, wrapAPIError(err, "Failed to retrieve Chargebee invoice PDF")
+	}
+	if res.Download == nil || res.Download.DownloadUrl == "" {
+		return nil, missingPayload("invoice pdf download")
+	}
+
+	return res.Download, nil
 }
 
 // VoidInvoice abandons an invoice at Chargebee. An ad-hoc invoice created with

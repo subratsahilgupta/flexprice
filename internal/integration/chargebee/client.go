@@ -12,6 +12,7 @@ import (
 	itemPriceAction "github.com/chargebee/chargebee-go/v3/actions/itemprice"
 	"github.com/chargebee/chargebee-go/v3/enum"
 	"github.com/chargebee/chargebee-go/v3/models/customer"
+	downloadModel "github.com/chargebee/chargebee-go/v3/models/download"
 	hostedPageModel "github.com/chargebee/chargebee-go/v3/models/hostedpage"
 	chargebeeInvoice "github.com/chargebee/chargebee-go/v3/models/invoice"
 	"github.com/chargebee/chargebee-go/v3/models/item"
@@ -57,6 +58,7 @@ type ChargebeeClient interface {
 
 	CreateAdHocInvoice(ctx context.Context, req AdHocInvoiceRequest) (*chargebeeInvoice.Invoice, error)
 	VoidInvoice(ctx context.Context, chargebeeInvoiceID, comment string) error
+	RetrieveInvoicePDF(ctx context.Context, chargebeeInvoiceID string) (*downloadModel.Download, error)
 	CreateHostedCheckoutPage(ctx context.Context, req HostedCheckoutPageRequest) (*hostedPageModel.HostedPage, error)
 	ListPaymentSources(ctx context.Context, chargebeeCustomerID string) ([]*paymentSourceModel.PaymentSource, error)
 	RetrieveCustomer(ctx context.Context, chargebeeCustomerID string) (*customer.Customer, error)
