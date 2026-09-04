@@ -396,12 +396,12 @@ func eventPropertiesForMeter(m *meter.Meter) map[string]interface{} {
 	if m.Aggregation.Type == types.AggregationSum ||
 		m.Aggregation.Type == types.AggregationAvg {
 		if m.Aggregation.Field != "" {
-			properties[m.Aggregation.Field] = rand.Int63n(1000) + 1
+			properties[m.Aggregation.Field] = rand.Int63n(1000) + 1 // #nosec G404 -- seed tooling, non-prod
 		}
 	}
 	for _, filter := range m.Filters {
 		if len(filter.Values) > 0 {
-			properties[filter.Key] = filter.Values[rand.Intn(len(filter.Values))]
+			properties[filter.Key] = filter.Values[rand.Intn(len(filter.Values))] // #nosec G404 -- seed tooling, non-prod
 		}
 	}
 	return properties

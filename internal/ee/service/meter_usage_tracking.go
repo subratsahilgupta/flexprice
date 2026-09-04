@@ -121,7 +121,7 @@ func (s *meterUsageTrackingService) PublishEvent(ctx context.Context, event *eve
 		partitionKey = fmt.Sprintf("%s:%s", event.TenantID, event.ExternalCustomerID)
 	}
 
-	uniqueID := fmt.Sprintf("%s-%d-%d", event.ID, time.Now().UnixNano(), rand.Int63())
+	uniqueID := fmt.Sprintf("%s-%d-%d", event.ID, time.Now().UnixNano(), rand.Int63()) // #nosec G404 -- dedup salt, not security-sensitive
 	msg := message.NewMessage(uniqueID, payload)
 	msg.Metadata.Set("tenant_id", event.TenantID)
 	msg.Metadata.Set("environment_id", event.EnvironmentID)

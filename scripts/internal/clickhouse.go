@@ -121,7 +121,7 @@ func generateEvent(index int) dto.IngestEventRequest {
 
 	return dto.IngestEventRequest{
 		EventID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_EVENT),
-		ExternalCustomerID: customerIDs[(index+rand.Intn(10))%len(customerIDs)],
+		ExternalCustomerID: customerIDs[(index+rand.Intn(10))%len(customerIDs)], // #nosec G404 -- seed tooling, non-prod
 		EventName:          meter.Code,
 		Timestamp:          timestamp,
 		Properties:         properties,
@@ -130,7 +130,7 @@ func generateEvent(index int) dto.IngestEventRequest {
 
 // randInt64 generates a random int64 between min and max
 func randInt64(min, max int64) int64 {
-	return min + rand.Int63n(max-min+1)
+	return min + rand.Int63n(max-min+1) // #nosec G404 -- seed tooling, non-prod
 }
 
 func ingestEvent(event dto.IngestEventRequest, limiter *rate.Limiter, wg *sync.WaitGroup, results chan<- time.Duration, errors chan<- error) {
