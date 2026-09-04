@@ -1345,7 +1345,7 @@ func (c ClickHouseConfig) GetClientOptions() *clickhouse.Options {
 		options.ReadTimeout = c.ReadTimeout
 	}
 	if c.TLS {
-		options.TLS = &tls.Config{InsecureSkipVerify: c.TLSSkipVerify} // #nosec G402 -- opt-in, dev-only self-signed certs
+		options.TLS = &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: c.TLSSkipVerify} // #nosec G402 -- opt-in, dev-only self-signed certs
 	}
 	options.Protocol = c.protocol()
 
