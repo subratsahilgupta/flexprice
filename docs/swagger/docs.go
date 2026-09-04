@@ -19762,7 +19762,7 @@ const docTemplate = `{
                     }
                 },
                 "line_item_id": {
-                    "description": "LineItemID and Update are required for action 'update' (one line item per call;\nthe update is versioned, so the item id changes after each edit).",
+                    "description": "Required for action 'update' (one line item per call; edits are versioned, so the id changes).",
                     "type": "string"
                 },
                 "line_item_ids": {

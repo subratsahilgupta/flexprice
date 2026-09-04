@@ -64,11 +64,11 @@ import (
 // ServiceParams holds common dependencies for services
 // TODO: start using this for all services init
 type ServiceParams struct {
-	Logger          *logger.Logger
-	Config          *config.Configuration
-	DB              postgres.IClient
-	PDFGenerator    pdf.Generator
-	TracingSvc      *tracing.Service
+	Logger        *logger.Logger
+	Config        *config.Configuration
+	DB            postgres.IClient
+	PDFGenerator  pdf.Generator
+	TracingSvc    *tracing.Service
 	InMemoryCache cache.InMemoryCache
 	RedisCache    cache.RedisCache
 	Locker        cache.Locker

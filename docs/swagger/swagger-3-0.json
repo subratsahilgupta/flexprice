@@ -21838,7 +21838,7 @@
           },
           "line_item_id": {
             "type": "string",
-            "description": "LineItemID and Update are required for action 'update' (one line item per call;\nthe update is versioned, so the item id changes after each edit)."
+            "description": "Required for action 'update' (one line item per call; edits are versioned, so the id changes)."
           },
           "line_item_ids": {
             "minItems": 1,

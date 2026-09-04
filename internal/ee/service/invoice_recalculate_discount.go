@@ -34,10 +34,8 @@ func (s *invoiceService) recalculateDiscountOnInvoice(ctx context.Context, inv *
 	return s.applyCurrentDiscountToDraft(ctx, inv)
 }
 
-// applyCurrentDiscountToDraft re-derives discount, tax, and totals for a draft invoice
-// from the subscription's current coupon associations. It assumes the invoice has no
-// stale coupon applications — true for the fresh copies created by void-and-recreate;
-// recalculateDiscountOnInvoice wipes existing applications first for in-place drafts.
+// applyCurrentDiscountToDraft re-derives discount, tax, and totals from current coupon
+// associations; assumes no stale coupon applications (recalculateDiscountOnInvoice wipes first).
 func (s *invoiceService) applyCurrentDiscountToDraft(ctx context.Context, inv *invoice.Invoice) error {
 	if inv.InvoiceStatus != types.InvoiceStatusDraft {
 		return ierr.NewError("invoice is not in draft status").

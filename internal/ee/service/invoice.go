@@ -1323,18 +1323,14 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 		return nil, err
 	}
 
-	// Side effects run here only when this void owns its transaction. Inside an
-	// outer edit transaction they are deferred: the caller runs them after commit,
-	// so a rolled-back edit never announces a void that did not happen.
+	// Deferred when nested in an outer transaction — the caller runs them after commit.
 	if s.DB.TxFromContext(ctx) == nil {
 		s.runVoidSideEffects(ctx, inv)
 	}
 	return inv, nil
 }
 
-// runVoidSideEffects performs the non-transactional aftermath of a void: failing a
-// pending purchased-credit wallet transaction and publishing the voided webhook.
-// Callers that void inside a larger transaction invoke this after that commits.
+// runVoidSideEffects fails any pending purchased-credit wallet transaction and publishes the voided webhook.
 func (s *invoiceService) runVoidSideEffects(ctx context.Context, inv *invoice.Invoice) {
 	if inv == nil {
 		return
@@ -3837,10 +3833,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
-	// One transaction, one row lock up front. Applying a discount on a FINALIZED
-	// invoice runs the void-and-recreate flow and the update lands on the draft copy
-	// (discount included, so no second recalculation); on a DRAFT invoice the discount
-	// recalculates in place. A voided id is a hard stop naming the replacement.
+	// Finalized + apply_discount runs void-and-recreate and the update lands on the copy.
 	var updatedInv *invoice.Invoice
 	var voidedOriginal *invoice.Invoice
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
@@ -3889,8 +3882,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		}
 
 		if req.ApplyDiscount && voidedOriginal == nil {
-			// Draft invoice: wipe stale coupon applications and re-derive. The recreate
-			// path already applied the discount to the fresh copy.
+			// Draft path only — the recreate path already applied the discount to the copy.
 			if err := s.recalculateDiscountOnInvoice(txCtx, inv); err != nil {
 				return err
 			}
@@ -3906,8 +3898,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
-	// Void side effects (webhook, wallet cleanup) run only after the commit — a
-	// rolled-back edit must not announce a void that never happened.
+	// Void side effects run only after the commit.
 	if voidedOriginal != nil {
 		s.runVoidSideEffects(ctx, voidedOriginal)
 	}
