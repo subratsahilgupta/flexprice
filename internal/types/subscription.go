@@ -78,6 +78,10 @@ const (
 	SubscriptionLineItemEntityTypeSubscription SubscriptionLineItemEntityType = "subscription"
 )
 
+// SubscriptionLineItemMetadataKeyPredecessorID is stored on a successor line item
+// created by an update so cancellation can restore only that predecessor.
+const SubscriptionLineItemMetadataKeyPredecessorID = "predecessor_line_item_id"
+
 // SubscriptionStatus is the status of a subscription
 // For now taking inspiration from Stripe's subscription statuses
 // https://stripe.com/docs/api/subscriptions/object#subscription_object-status

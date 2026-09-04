@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -137,10 +138,22 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 		return nil, err
 	}
 
+	priceResp, priceErr := NewPriceService(s.ServiceParams).GetPrice(ctx, lineItem.PriceID)
+	if priceErr != nil {
+		s.Logger.Info(ctx, "skipped price expansion for created line item", "line_item_id", lineItem.ID, "price_id", lineItem.PriceID, "error", priceErr)
+	}
+
+	if lineItem != nil && lineItem.IsUsage() && lineItem.Meter == nil {
+		m, err := s.MeterRepo.GetMeter(ctx, lineItem.MeterID)
+		if err != nil {
+			s.Logger.Info(ctx, "skipped meter expansion for line item", "line_item_id", lineItem.ID, "meter_id", lineItem.MeterID, "error", err)
+		}
+		lineItem.Meter = m
+	}
+
 	// Apply proration for the add if requested. Skip usage prices (unknown future consumption).
 	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations &&
 		lineItem.PriceType != types.PRICE_TYPE_USAGE {
-
 		effectiveDate := time.Now().UTC()
 		if req.StartDate != nil {
 			effectiveDate = req.StartDate.UTC()
@@ -160,10 +173,8 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 			return nil, err
 		}
 
-		priceSvc := NewPriceService(s.ServiceParams)
-		priceResp, err := priceSvc.GetPrice(ctx, lineItem.PriceID)
-		if err != nil {
-			return nil, err
+		if priceResp != nil {
+			return nil, priceErr
 		}
 
 		// Temporarily override current period on a copy so LineItemProrationService
@@ -192,7 +203,7 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 		}
 	}
 
-	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem}, nil
+	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem, Price: priceResp}, nil
 }
 
 // buildLineItemParamsForPrice builds LineItemParams for a price, resolving Plan/Addon/Subscription when skipEntitlementCheck is true.
@@ -362,6 +373,13 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 		effectiveFrom = time.Now().UTC()
 	}
 
+	// A version that has not started yet cannot be "terminated" at now — that
+	// is before its start. Treat DELETE (or effective_from on/before start) as
+	// cancelling the scheduled version and reopening its predecessor.
+	if !effectiveFrom.After(lineItem.StartDate) && lineItem.StartDate.After(time.Now().UTC()) {
+		return s.cancelScheduledLineItem(ctx, lineItem)
+	}
+
 	// Validate effective from date is on or after start date
 	if effectiveFrom.Before(lineItem.StartDate) {
 		return nil, ierr.NewError("effective from date must be on or after start date").
@@ -451,6 +469,47 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 	}
 
 	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem}, nil
+}
+
+// cancelScheduledLineItem removes a line item that has not started yet and
+// reopens the predecessor this successor replaced, if one was recorded.
+func (s *subscriptionService) cancelScheduledLineItem(ctx context.Context, lineItem *subscription.SubscriptionLineItem) (*dto.SubscriptionLineItemResponse, error) {
+	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		if predID := predecessorLineItemID(lineItem); predID != "" {
+			pred, err := s.SubscriptionLineItemRepo.Get(ctx, predID)
+			if err != nil {
+				return err
+			}
+			pred.EndDate = lineItem.EndDate
+			if err := s.SubscriptionLineItemRepo.Update(ctx, pred); err != nil {
+				return err
+			}
+		}
+
+		lineItem.Status = types.StatusDeleted
+		return s.SubscriptionLineItemRepo.Update(ctx, lineItem)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem}, nil
+}
+
+func predecessorLineItemID(item *subscription.SubscriptionLineItem) string {
+	if item == nil || item.Metadata == nil {
+		return ""
+	}
+	return item.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID]
+}
+
+func setPredecessorLineItemID(item *subscription.SubscriptionLineItem, predecessorID string) {
+	if item == nil || predecessorID == "" {
+		return
+	}
+	copied := make(map[string]string, len(item.Metadata)+1)
+	maps.Copy(copied, item.Metadata)
+	copied[types.SubscriptionLineItemMetadataKeyPredecessorID] = predecessorID
+	item.Metadata = copied
 }
 
 // UpdateSubscriptionLineItem updates a subscription line item by terminating the existing one and creating a new one
@@ -571,6 +630,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			if !oldEndDate.IsZero() {
 				newLineItem.EndDate = oldEndDate // Fill the gap freed up by the backdate
 			}
+			setPredecessorLineItemID(newLineItem, lineItemID)
 
 			// Materialize bucket prices when the update request carries
 			// commitment_time_buckets: ToSubscriptionLineItem rebuilt
@@ -779,12 +839,11 @@ func (s *subscriptionService) validateLineItemCommitment(ctx context.Context, li
 			Mark(ierr.ErrValidation)
 	}
 
-	// Rule 2: Overage factor must be at least 1.0 when commitment is set.
-	// Exactly 1.0 means usage beyond commitment bills at the base rate (no premium).
+	// Rule 2: Overage factor is optional and defaults to 1.0 when a commitment is
+	// set without one — usage beyond commitment then bills at the base rate.
+	// When supplied it must be at least 1.0.
 	if lineItem.CommitmentOverageFactor == nil {
-		return ierr.NewError("commitment_overage_factor is required when commitment is set").
-			WithHint("Specify a commitment_overage_factor of 1.0 or greater").
-			Mark(ierr.ErrValidation)
+		lineItem.CommitmentOverageFactor = types.DefaultOverageFactor()
 	}
 
 	if lineItem.CommitmentOverageFactor.LessThan(decimal.NewFromInt(1)) {
