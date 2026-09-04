@@ -10,19 +10,29 @@ import (
 	"github.com/samber/lo"
 )
 
-// CreateAdHocInvoice creates a Chargebee invoice carrying a single ad-hoc charge.
-// This is the "mirror" of the Flexprice draft invoice. Ad-hoc is required because
-// a wallet top-up has no Price entity, so there is no item_price to reference —
-// the existing catalog-based sync path rejects such line items outright.
-//
-// poNumber is the correlation key the hosted page also carries, so a webhook
-// resolves the same way whichever path created the invoice.
+type AdHocInvoiceRequest struct {
+	ChargebeeCustomerID string
+	Currency            string
+	AmountMinor         int64
+	Description         string
+	// PoNumber is the correlation key the hosted page also carries, so a webhook
+	// resolves the same way whichever path created the invoice.
+	PoNumber       string
+	IdempotencyKey string
+	// AutoCollect charges the primary source as part of the create call, which
+	// Chargebee books as merchant-initiated. Off leaves the invoice as the allocation
+	// target for an explicit collect_payment, the only way to declare the charge
+	// customer-initiated — and the caller must then collect, or nothing charges at all.
+	AutoCollect     bool
+	CustomerPresent bool
+}
+
+// CreateAdHocInvoice mirrors a Flexprice draft invoice. Ad-hoc is required because
+// a wallet top-up has no Price entity, so there is no item_price to reference — the
+// catalog-based sync path rejects such line items outright.
 func (c *Client) CreateAdHocInvoice(
 	ctx context.Context,
-	chargebeeCustomerID, currency string,
-	amountMinor int64,
-	description, poNumber, idempotencyKey string,
-	autoCollect, customerPresent bool,
+	adHocReq AdHocInvoiceRequest,
 ) (*invoiceModel.Invoice, error) {
 	env, err := c.env(ctx)
 	if err != nil {
@@ -30,24 +40,19 @@ func (c *Client) CreateAdHocInvoice(
 	}
 
 	req := invoice.CreateForChargeItemsAndCharges(&invoiceModel.CreateForChargeItemsAndChargesRequestParams{
-		CustomerId:   chargebeeCustomerID,
-		CurrencyCode: strings.ToUpper(currency),
+		CustomerId:   adHocReq.ChargebeeCustomerID,
+		CurrencyCode: strings.ToUpper(adHocReq.Currency),
 		Charges: []*invoiceModel.CreateForChargeItemsAndChargesChargeParams{{
-			Amount:      lo.ToPtr(amountMinor),
-			Description: description,
+			Amount:      lo.ToPtr(adHocReq.AmountMinor),
+			Description: adHocReq.Description,
 		}},
-		PoNumber: poNumber,
-		// autoCollect charges the customer's primary source as part of this call,
-		// which Chargebee books as merchant-initiated. Off leaves the invoice as the
-		// allocation target for an explicit collect_payment, the only way to declare
-		// the charge customer-initiated — and the caller must then collect, or nothing
-		// charges at all.
-		AutoCollection: lo.Ternary(autoCollect, enum.AutoCollectionOn, enum.AutoCollectionOff),
-		PaymentInitiator: lo.Ternary(customerPresent,
+		PoNumber:       adHocReq.PoNumber,
+		AutoCollection: lo.Ternary(adHocReq.AutoCollect, enum.AutoCollectionOn, enum.AutoCollectionOff),
+		PaymentInitiator: lo.Ternary(adHocReq.CustomerPresent,
 			enum.PaymentInitiatorCustomer, enum.PaymentInitiatorMerchant),
 	})
-	if idempotencyKey != "" {
-		req = req.SetIdempotencyKey(idempotencyKey)
+	if adHocReq.IdempotencyKey != "" {
+		req = req.SetIdempotencyKey(adHocReq.IdempotencyKey)
 	}
 
 	res, err := req.RequestWithEnv(env)

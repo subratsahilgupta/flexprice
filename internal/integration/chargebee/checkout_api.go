@@ -9,29 +9,30 @@ import (
 	"github.com/samber/lo"
 )
 
-// CreateCheckoutOneTimePage returns an INVOICE-SCOPED hosted checkout for an exact
-// ad-hoc amount. This is the correct page type for a top-up — unlike collect_now it
-// charges only what we ask for.
+type HostedCheckoutPageRequest struct {
+	ChargebeeCustomerID string
+	Currency            string
+	AmountMinor         int64
+	Description         string
+	RedirectURL         string
+	GatewayAccountID    string
+	// PoNumber stamps a reference onto the invoice this page creates. Verified live:
+	// Chargebee echoes it on payment_succeeded, the only thread tying that webhook
+	// back to a Flexprice entity — the page's invoice is Chargebee's, so no mapping
+	// of ours exists for it.
+	PoNumber string
+}
+
+// CreateHostedCheckoutPage returns an invoice-scoped hosted checkout for an exact
+// ad-hoc amount — unlike collect_now it charges only what we ask for.
 //
-// Requires One-Time Checkout enabled on the Chargebee site:
-// Settings → Configure Chargebee → Checkout & Self Serve Portal → Configuration →
-// One time payments. Without it Chargebee returns one_time_checkout_not_enabled_in_hp.
-//
-// poNumber stamps a caller-chosen reference onto the invoice this page creates.
-// Verified live: it reaches that invoice AND Chargebee echoes it on the
-// payment_succeeded webhook, which is the only thread tying the webhook back to a
-// Flexprice entity — the page's invoice is created by Chargebee, so no mapping of
-// ours exists for it.
-//
-// This page does NOT vault the card. payment_method_save_policy is a collect_now
-// parameter — measured here: a bogus value is rejected on collect_now but accepted
-// on this endpoint, and a paid page left a zero-source customer with none. Vaulting
-// is a site setting (One time payments → Save customers' payment method).
-func (c *Client) CreateCheckoutOneTimePage(
+// Requires One-Time Checkout enabled on the site (Checkout & Self Serve Portal →
+// One time payments), else Chargebee returns one_time_checkout_not_enabled_in_hp.
+// That same setting, not payment_method_save_policy, controls vaulting: this
+// endpoint accepts the policy param but ignores it, leaving the card unsaved.
+func (c *Client) CreateHostedCheckoutPage(
 	ctx context.Context,
-	chargebeeCustomerID, currency string,
-	amountMinor int64,
-	description, redirectURL, gatewayAccountID, poNumber string,
+	req HostedCheckoutPageRequest,
 ) (*hostedPageModel.HostedPage, error) {
 	env, err := c.env(ctx)
 	if err != nil {
@@ -39,19 +40,19 @@ func (c *Client) CreateCheckoutOneTimePage(
 	}
 
 	params := &hostedPageModel.CheckoutOneTimeForItemsRequestParams{
-		Customer:     &hostedPageModel.CheckoutOneTimeForItemsCustomerParams{Id: chargebeeCustomerID},
-		CurrencyCode: strings.ToUpper(currency),
+		Customer:     &hostedPageModel.CheckoutOneTimeForItemsCustomerParams{Id: req.ChargebeeCustomerID},
+		CurrencyCode: strings.ToUpper(req.Currency),
 		Charges: []*hostedPageModel.CheckoutOneTimeForItemsChargeParams{{
-			Amount:      lo.ToPtr(amountMinor),
-			Description: description,
+			Amount:      lo.ToPtr(req.AmountMinor),
+			Description: req.Description,
 		}},
-		RedirectUrl: redirectURL,
+		RedirectUrl: req.RedirectURL,
 	}
-	if gatewayAccountID != "" {
-		params.Card = &hostedPageModel.CheckoutOneTimeForItemsCardParams{GatewayAccountId: gatewayAccountID}
+	if req.GatewayAccountID != "" {
+		params.Card = &hostedPageModel.CheckoutOneTimeForItemsCardParams{GatewayAccountId: req.GatewayAccountID}
 	}
-	if poNumber != "" {
-		params.Invoice = &hostedPageModel.CheckoutOneTimeForItemsInvoiceParams{PoNumber: poNumber}
+	if req.PoNumber != "" {
+		params.Invoice = &hostedPageModel.CheckoutOneTimeForItemsInvoiceParams{PoNumber: req.PoNumber}
 	}
 
 	res, err := hostedpage.CheckoutOneTimeForItems(params).RequestWithEnv(env)

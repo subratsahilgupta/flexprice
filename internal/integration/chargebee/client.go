@@ -55,9 +55,9 @@ type ChargebeeClient interface {
 	CreateInvoice(ctx context.Context, params *chargebeeInvoice.CreateForChargeItemsAndChargesRequestParams) (*chargebee.Result, error)
 	RetrieveInvoice(ctx context.Context, invoiceID string, params *chargebeeInvoice.RetrieveRequestParams) (*chargebee.Result, error)
 
-	CreateAdHocInvoice(ctx context.Context, chargebeeCustomerID, currency string, amountMinor int64, description, poNumber, idempotencyKey string, autoCollect, customerPresent bool) (*chargebeeInvoice.Invoice, error)
+	CreateAdHocInvoice(ctx context.Context, req AdHocInvoiceRequest) (*chargebeeInvoice.Invoice, error)
 	VoidInvoice(ctx context.Context, chargebeeInvoiceID, comment string) error
-	CreateCheckoutOneTimePage(ctx context.Context, chargebeeCustomerID, currency string, amountMinor int64, description, redirectURL, gatewayAccountID, poNumber string) (*hostedPageModel.HostedPage, error)
+	CreateHostedCheckoutPage(ctx context.Context, req HostedCheckoutPageRequest) (*hostedPageModel.HostedPage, error)
 	ListPaymentSources(ctx context.Context, chargebeeCustomerID string) ([]*paymentSourceModel.PaymentSource, error)
 	RetrieveCustomer(ctx context.Context, chargebeeCustomerID string) (*customer.Customer, error)
 	RetrieveTransaction(ctx context.Context, transactionID string) (*transactionModel.Transaction, error)

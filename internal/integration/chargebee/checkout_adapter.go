@@ -24,36 +24,55 @@ type CheckoutAdapter struct {
 	Logger      *logger.Logger
 }
 
-// CreatePaymentLink returns a Chargebee-hosted checkout page for an exact ad-hoc
-// amount.
+// checkoutRequest normalizes the two interface requests the hosted page serves.
+type checkoutRequest struct {
+	flexCustomerID string
+	flexPaymentID  string
+	flexInvoiceID  string
+	currency       string
+	amount         decimal.Decimal
+	successURL     string
+}
+
 func (a *CheckoutAdapter) CreatePaymentLink(
 	ctx context.Context,
 	req interfaces.CheckoutProviderRequest,
 ) (*interfaces.CheckoutProviderResponse, error) {
-	return a.hostedCheckout(ctx, req.CustomerID, req.PaymentID, req.InvoiceID, req.Currency, req.Amount, req.SuccessURL)
+	return a.hostedCheckout(ctx, checkoutRequest{
+		flexCustomerID: req.CustomerID,
+		flexPaymentID:  req.PaymentID,
+		flexInvoiceID:  req.InvoiceID,
+		currency:       req.Currency,
+		amount:         req.Amount,
+		successURL:     req.SuccessURL,
+	})
 }
 
-// CreateAuthorizationLink is the same hosted page.
 func (a *CheckoutAdapter) CreateAuthorizationLink(
 	ctx context.Context,
 	req interfaces.AuthorizationLinkRequest,
 ) (*interfaces.CheckoutProviderResponse, error) {
-	return a.hostedCheckout(ctx, req.CustomerID, req.PaymentID, req.InvoiceID, req.Currency, req.Amount, req.SuccessURL)
+	return a.hostedCheckout(ctx, checkoutRequest{
+		flexCustomerID: req.CustomerID,
+		flexPaymentID:  req.PaymentID,
+		flexInvoiceID:  req.InvoiceID,
+		currency:       req.Currency,
+		amount:         req.Amount,
+		successURL:     req.SuccessURL,
+	})
 }
 
 func (a *CheckoutAdapter) hostedCheckout(
 	ctx context.Context,
-	flexCustomerID, flexPaymentID, flexInvoiceID, currency string,
-	amount decimal.Decimal,
-	successURL string,
+	req checkoutRequest,
 ) (*interfaces.CheckoutProviderResponse, error) {
-	cust, err := a.CustomerSvc.EnsureCustomerSyncedToChargebee(ctx, flexCustomerID)
+	cust, err := a.CustomerSvc.EnsureCustomerSyncedToChargebee(ctx, req.flexCustomerID)
 	if err != nil {
 		return nil, err
 	}
 	cbCustomerID := cust.Metadata["chargebee_customer_id"]
 	if cbCustomerID == "" {
-		if cbCustomerID, err = a.CustomerSvc.GetChargebeeCustomerID(ctx, flexCustomerID); err != nil {
+		if cbCustomerID, err = a.CustomerSvc.GetChargebeeCustomerID(ctx, req.flexCustomerID); err != nil {
 			return nil, err
 		}
 	}
@@ -63,16 +82,15 @@ func (a *CheckoutAdapter) hostedCheckout(
 		return nil, err
 	}
 
-	page, err := a.Client.CreateCheckoutOneTimePage(
-		ctx,
-		cbCustomerID,
-		currency,
-		amountToMinorUnits(amount, currency),
-		fmt.Sprintf("Flexprice invoice %s", flexInvoiceID),
-		successURL,
-		cfg.GatewayAccountID,
-		flexPaymentID,
-	)
+	page, err := a.Client.CreateHostedCheckoutPage(ctx, HostedCheckoutPageRequest{
+		ChargebeeCustomerID: cbCustomerID,
+		Currency:            req.currency,
+		AmountMinor:         amountToMinorUnits(req.amount, req.currency),
+		Description:         fmt.Sprintf("Flexprice invoice %s", req.flexInvoiceID),
+		RedirectURL:         req.successURL,
+		GatewayAccountID:    cfg.GatewayAccountID,
+		PoNumber:            req.flexPaymentID,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +100,8 @@ func (a *CheckoutAdapter) hostedCheckout(
 
 	a.Logger.Info(ctx, "created chargebee hosted checkout page",
 		"hosted_page_id", page.Id,
-		"flexprice_invoice_id", flexInvoiceID,
-		"flexprice_payment_id", flexPaymentID,
+		"flexprice_invoice_id", req.flexInvoiceID,
+		"flexprice_payment_id", req.flexPaymentID,
 		"expires_at", page.ExpiresAt)
 
 	resp := &interfaces.CheckoutProviderResponse{
@@ -124,17 +142,16 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 		}
 	}
 
-	inv, err := a.Client.CreateAdHocInvoice(
-		ctx,
-		cbCustomerID,
-		req.Currency,
-		amountToMinorUnits(req.Amount, req.Currency),
-		fmt.Sprintf("Flexprice invoice %s", req.InvoiceID),
-		req.PaymentID,
-		idempotencyScoped(req.PaymentID, "invoice"),
-		true,
-		req.CustomerPresent,
-	)
+	inv, err := a.Client.CreateAdHocInvoice(ctx, AdHocInvoiceRequest{
+		ChargebeeCustomerID: cbCustomerID,
+		Currency:            req.Currency,
+		AmountMinor:         amountToMinorUnits(req.Amount, req.Currency),
+		Description:         fmt.Sprintf("Flexprice invoice %s", req.InvoiceID),
+		PoNumber:            req.PaymentID,
+		IdempotencyKey:      idempotencyScoped(req.PaymentID, "invoice"),
+		AutoCollect:         true,
+		CustomerPresent:     req.CustomerPresent,
+	})
 	if err != nil {
 		// Collecting on creation makes a customer with no card fail the create itself,
 		// so no invoice exists to abandon and there is nothing to charge.
