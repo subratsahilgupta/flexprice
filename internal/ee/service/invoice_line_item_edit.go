@@ -390,5 +390,9 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 	s.Logger.Info(ctx, "voided finalized invoice and recreated as draft for editing",
 		"original_invoice_id", voided.ID, "draft_invoice_id", draft.ID)
 
+	// Both invoices announce themselves: VoidInvoice published the voided event for
+	// the original; the replacement draft goes out as an invoice update.
+	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, draft.ID)
+
 	return draft, nil
 }
