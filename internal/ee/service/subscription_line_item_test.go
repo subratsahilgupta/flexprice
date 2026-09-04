@@ -299,6 +299,7 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Schedu
 	})
 	s.NoError(err)
 	s.NotEqual(s.testData.lineItem.ID, updated.SubscriptionLineItem.ID)
+	s.Equal(s.testData.lineItem.ID, updated.SubscriptionLineItem.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID])
 
 	oldLi, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
 	s.NoError(err)
@@ -311,6 +312,56 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Schedu
 	s.NoError(err)
 	s.True(restored.EndDate.IsZero(), "cancelling the scheduled version should reopen the prior line")
 	s.Equal(types.StatusPublished, restored.Status)
+}
+
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_RestoresOnlyReferencedPredecessor() {
+	ctx := s.GetContext()
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+	newAmount := decimal.NewFromInt(75)
+
+	neighbor := *s.testData.lineItem
+	neighbor.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
+	neighbor.EndDate = futureStart
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &neighbor))
+
+	updated, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &newAmount,
+		EffectiveFrom: &futureStart,
+	})
+	s.NoError(err)
+
+	_, err = s.service.DeleteSubscriptionLineItem(ctx, updated.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.NoError(err)
+
+	restored, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.True(restored.EndDate.IsZero(), "only the referenced predecessor should be reopened")
+
+	untouched, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, neighbor.ID)
+	s.NoError(err)
+	s.Equal(futureStart.Truncate(time.Second).Unix(), untouched.EndDate.Truncate(time.Second).Unix())
+}
+
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_NoPredecessorIDSkipsRestore() {
+	ctx := s.GetContext()
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+
+	s.testData.lineItem.EndDate = futureStart
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
+
+	scheduled := *s.testData.lineItem
+	scheduled.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
+	scheduled.StartDate = futureStart
+	scheduled.EndDate = time.Time{}
+	scheduled.Metadata = nil
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &scheduled))
+
+	_, err := s.service.DeleteSubscriptionLineItem(ctx, scheduled.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.NoError(err)
+
+	oldLi, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.Equal(futureStart.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
 }
 
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromOnOrAfterStartDate() {

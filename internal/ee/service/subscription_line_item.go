@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -482,19 +483,14 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 }
 
 // cancelScheduledLineItem removes a line item that has not started yet and
-// reopens the predecessor that was terminated at this item's start date.
+// reopens the predecessor this successor replaced, if one was recorded.
 func (s *subscriptionService) cancelScheduledLineItem(ctx context.Context, lineItem *subscription.SubscriptionLineItem) (*dto.SubscriptionLineItemResponse, error) {
 	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
-		filter := types.NewNoLimitSubscriptionLineItemFilter()
-		filter.SubscriptionIDs = []string{lineItem.SubscriptionID}
-		filter.ActiveFilter = false
-		filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
-		allLineItems, err := s.SubscriptionLineItemRepo.List(ctx, filter)
-		if err != nil {
-			return err
-		}
-
-		for _, pred := range findScheduledLinePredecessors(allLineItems, lineItem) {
+		if predID := predecessorLineItemID(lineItem); predID != "" {
+			pred, err := s.SubscriptionLineItemRepo.Get(ctx, predID)
+			if err != nil {
+				return err
+			}
 			pred.EndDate = lineItem.EndDate
 			if err := s.SubscriptionLineItemRepo.Update(ctx, pred); err != nil {
 				return err
@@ -510,34 +506,21 @@ func (s *subscriptionService) cancelScheduledLineItem(ctx context.Context, lineI
 	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem}, nil
 }
 
-func findScheduledLinePredecessors(allLineItems []*subscription.SubscriptionLineItem, scheduled *subscription.SubscriptionLineItem) []*subscription.SubscriptionLineItem {
-	var byEndDate []*subscription.SubscriptionLineItem
-	for _, item := range allLineItems {
-		if item == nil || item.ID == scheduled.ID {
-			continue
-		}
-		if item.EndDate.IsZero() || item.EndDate.Unix() != scheduled.StartDate.Unix() {
-			continue
-		}
-		byEndDate = append(byEndDate, item)
+func predecessorLineItemID(item *subscription.SubscriptionLineItem) string {
+	if item == nil || item.Metadata == nil {
+		return ""
 	}
-	if len(byEndDate) == 0 {
-		return nil
-	}
+	return item.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID]
+}
 
-	var matched []*subscription.SubscriptionLineItem
-	for _, pred := range byEndDate {
-		if pred.PriceID == scheduled.PriceID || (scheduled.MeterID != "" && pred.MeterID == scheduled.MeterID) {
-			matched = append(matched, pred)
-		}
+func setPredecessorLineItemID(item *subscription.SubscriptionLineItem, predecessorID string) {
+	if item == nil || predecessorID == "" {
+		return
 	}
-	if len(matched) > 0 {
-		return matched
-	}
-	if len(byEndDate) == 1 {
-		return byEndDate
-	}
-	return nil
+	copied := make(map[string]string, len(item.Metadata)+1)
+	maps.Copy(copied, item.Metadata)
+	copied[types.SubscriptionLineItemMetadataKeyPredecessorID] = predecessorID
+	item.Metadata = copied
 }
 
 // UpdateSubscriptionLineItem updates a subscription line item by terminating the existing one and creating a new one
@@ -658,6 +641,7 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 			if !oldEndDate.IsZero() {
 				newLineItem.EndDate = oldEndDate // Fill the gap freed up by the backdate
 			}
+			setPredecessorLineItemID(newLineItem, lineItemID)
 
 			// Materialize bucket prices when the update request carries
 			// commitment_time_buckets: ToSubscriptionLineItem rebuilt
