@@ -268,6 +268,51 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 	s.True(li.EndDate.IsZero(), "line item should remain unterminated")
 }
 
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_DefaultEffectiveFromCancels() {
+	ctx := s.GetContext()
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+
+	scheduled := *s.testData.lineItem
+	scheduled.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
+	scheduled.StartDate = futureStart
+	scheduled.EndDate = time.Time{}
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &scheduled))
+
+	resp, err := s.service.DeleteSubscriptionLineItem(ctx, scheduled.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.NoError(err)
+	s.NotNil(resp)
+	s.Equal(types.StatusDeleted, resp.SubscriptionLineItem.Status)
+
+	got, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, scheduled.ID)
+	s.NoError(err)
+	s.Equal(types.StatusDeleted, got.Status)
+}
+
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_RestoresPredecessor() {
+	ctx := s.GetContext()
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+	newAmount := decimal.NewFromInt(75)
+
+	updated, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &newAmount,
+		EffectiveFrom: &futureStart,
+	})
+	s.NoError(err)
+	s.NotEqual(s.testData.lineItem.ID, updated.SubscriptionLineItem.ID)
+
+	oldLi, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.Equal(futureStart.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
+
+	_, err = s.service.DeleteSubscriptionLineItem(ctx, updated.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.NoError(err)
+
+	restored, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.True(restored.EndDate.IsZero(), "cancelling the scheduled version should reopen the prior line")
+	s.Equal(types.StatusPublished, restored.Status)
+}
+
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromOnOrAfterStartDate() {
 	ctx := s.GetContext()
 	effectiveFrom := s.testData.lineItem.StartDate.Add(24 * time.Hour) // 1 day after start
@@ -2077,4 +2122,85 @@ func (s *SubscriptionLineItemServiceSuite) TestAddSubscriptionLineItemInternal_D
 	})
 	s.Require().NoError(err)
 	s.Equal(0, s.countSubscriptionUpdated())
+}
+
+// TestAddSubscriptionLineItem_ResponseCarriesExpandedPrice asserts the create
+// response embeds the resulting price, so a caller creating an inline price
+// learns its amount and currency without a second call.
+func (s *SubscriptionLineItemServiceSuite) TestAddSubscriptionLineItem_ResponseCarriesExpandedPrice() {
+	ctx := s.GetContext()
+
+	req := dto.CreateSubscriptionLineItemRequest{
+		Price: &dto.SubscriptionPriceCreateRequest{
+			Type:               types.PRICE_TYPE_FIXED,
+			PriceUnitType:      types.PRICE_UNIT_TYPE_FIAT,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			InvoiceCadence:     types.InvoiceCadenceAdvance,
+			Amount:             lo.ToPtr(decimal.NewFromInt(42)),
+			LookupKey:          "inline_price_expansion",
+		},
+		SkipEntitlementCheck: true,
+	}
+
+	resp, err := s.service.AddSubscriptionLineItem(ctx, s.testData.subscription.ID, req)
+	s.Require().NoError(err)
+	s.Require().NotNil(resp.Price, "create response must embed the resulting price")
+	s.Equal(resp.PriceID, resp.Price.ID)
+	s.True(decimal.NewFromInt(42).Equal(resp.Price.Amount), "expected amount 42, got %s", resp.Price.Amount)
+	s.Equal(s.testData.subscription.Currency, resp.Price.Currency)
+}
+
+// TestAddSubscriptionLineItem_CommitmentOverageFactorDefaultsToOne asserts a
+// commitment without commitment_overage_factor is accepted and stored as 1.0,
+// matching the field being optional in the OpenAPI spec.
+func (s *SubscriptionLineItemServiceSuite) TestAddSubscriptionLineItem_CommitmentOverageFactorDefaultsToOne() {
+	ctx := s.GetContext()
+
+	m := &meter.Meter{
+		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_METER),
+		Name:      "Commitment Default Meter",
+		EventName: "commitment_default_event",
+		Aggregation: meter.Aggregation{
+			Type:  types.AggregationSum,
+			Field: "value",
+		},
+		ResetUsage: types.ResetUsageBillingPeriod,
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, m))
+
+	usagePrice := &price.Price{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+		Amount:             decimal.NewFromInt(2),
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_SUBSCRIPTION,
+		EntityID:           s.testData.subscription.ID,
+		Type:               types.PRICE_TYPE_USAGE,
+		MeterID:            m.ID,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		InvoiceCadence:     types.InvoiceCadenceArrear,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, usagePrice))
+
+	req := dto.CreateSubscriptionLineItemRequest{
+		PriceID:              usagePrice.ID,
+		SkipEntitlementCheck: true,
+		CommitmentAmount:     lo.ToPtr(decimal.NewFromInt(100)),
+	}
+
+	resp, err := s.service.AddSubscriptionLineItem(ctx, s.testData.subscription.ID, req)
+	s.Require().NoError(err, "commitment without an overage factor must be accepted")
+	s.Require().NotNil(resp.CommitmentOverageFactor)
+	s.True(decimal.NewFromInt(1).Equal(*resp.CommitmentOverageFactor),
+		"expected default overage factor 1, got %s", resp.CommitmentOverageFactor)
+	s.Equal(types.COMMITMENT_TYPE_AMOUNT, resp.CommitmentType)
+
+	// The create response also carries the meter for usage line items.
+	s.Require().NotNil(resp.Meter, "usage line item response must embed its meter")
+	s.Equal(m.ID, resp.Meter.ID)
 }

@@ -137,9 +137,20 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 		return nil, err
 	}
 
+	priceResp, priceErr := NewPriceService(s.ServiceParams).GetPrice(ctx, lineItem.PriceID)
+	if priceErr != nil {
+		s.Logger.Info(ctx, "skipped price expansion for created line item",
+			"line_item_id", lineItem.ID, "price_id", lineItem.PriceID, "error", priceErr)
+	}
+	s.attachLineItemMeter(ctx, lineItem)
+
 	// Apply proration for the add if requested. Skip usage prices (unknown future consumption).
 	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations &&
 		lineItem.PriceType != types.PRICE_TYPE_USAGE {
+
+		if priceErr != nil {
+			return nil, priceErr
+		}
 
 		effectiveDate := time.Now().UTC()
 		if req.StartDate != nil {
@@ -156,12 +167,6 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 			BillingPeriod:    sub.BillingPeriod,
 			Timezone:         sub.Timezone,
 		})
-		if err != nil {
-			return nil, err
-		}
-
-		priceSvc := NewPriceService(s.ServiceParams)
-		priceResp, err := priceSvc.GetPrice(ctx, lineItem.PriceID)
 		if err != nil {
 			return nil, err
 		}
@@ -192,7 +197,23 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 		}
 	}
 
-	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem}, nil
+	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem, Price: priceResp}, nil
+}
+
+// attachLineItemMeter populates the line item's Meter for usage line items so
+// responses expose it without a follow-up read. A meter lookup failure is not
+// fatal: the line item is already persisted and meter is an optional field.
+func (s *subscriptionService) attachLineItemMeter(ctx context.Context, lineItem *subscription.SubscriptionLineItem) {
+	if lineItem == nil || !lineItem.IsUsage() || lineItem.Meter != nil {
+		return
+	}
+	m, err := s.MeterRepo.GetMeter(ctx, lineItem.MeterID)
+	if err != nil {
+		s.Logger.Info(ctx, "skipped meter expansion for line item",
+			"line_item_id", lineItem.ID, "meter_id", lineItem.MeterID, "error", err)
+		return
+	}
+	lineItem.Meter = m
 }
 
 // buildLineItemParamsForPrice builds LineItemParams for a price, resolving Plan/Addon/Subscription when skipEntitlementCheck is true.
@@ -362,6 +383,13 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 		effectiveFrom = time.Now().UTC()
 	}
 
+	// A version that has not started yet cannot be "terminated" at now — that
+	// is before its start. Treat DELETE (or effective_from on/before start) as
+	// cancelling the scheduled version and reopening its predecessor.
+	if !effectiveFrom.After(lineItem.StartDate) && lineItem.StartDate.After(time.Now().UTC()) {
+		return s.cancelScheduledLineItem(ctx, lineItem)
+	}
+
 	// Validate effective from date is on or after start date
 	if effectiveFrom.Before(lineItem.StartDate) {
 		return nil, ierr.NewError("effective from date must be on or after start date").
@@ -451,6 +479,65 @@ func (s *subscriptionService) deleteSubscriptionLineItem(ctx context.Context, li
 	}
 
 	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem}, nil
+}
+
+// cancelScheduledLineItem removes a line item that has not started yet and
+// reopens the predecessor that was terminated at this item's start date.
+func (s *subscriptionService) cancelScheduledLineItem(ctx context.Context, lineItem *subscription.SubscriptionLineItem) (*dto.SubscriptionLineItemResponse, error) {
+	err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		filter := types.NewNoLimitSubscriptionLineItemFilter()
+		filter.SubscriptionIDs = []string{lineItem.SubscriptionID}
+		filter.ActiveFilter = false
+		filter.QueryFilter.Status = lo.ToPtr(types.StatusPublished)
+		allLineItems, err := s.SubscriptionLineItemRepo.List(ctx, filter)
+		if err != nil {
+			return err
+		}
+
+		for _, pred := range findScheduledLinePredecessors(allLineItems, lineItem) {
+			pred.EndDate = lineItem.EndDate
+			if err := s.SubscriptionLineItemRepo.Update(ctx, pred); err != nil {
+				return err
+			}
+		}
+
+		lineItem.Status = types.StatusDeleted
+		return s.SubscriptionLineItemRepo.Update(ctx, lineItem)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem}, nil
+}
+
+func findScheduledLinePredecessors(allLineItems []*subscription.SubscriptionLineItem, scheduled *subscription.SubscriptionLineItem) []*subscription.SubscriptionLineItem {
+	var byEndDate []*subscription.SubscriptionLineItem
+	for _, item := range allLineItems {
+		if item == nil || item.ID == scheduled.ID {
+			continue
+		}
+		if item.EndDate.IsZero() || item.EndDate.Unix() != scheduled.StartDate.Unix() {
+			continue
+		}
+		byEndDate = append(byEndDate, item)
+	}
+	if len(byEndDate) == 0 {
+		return nil
+	}
+
+	var matched []*subscription.SubscriptionLineItem
+	for _, pred := range byEndDate {
+		if pred.PriceID == scheduled.PriceID || (scheduled.MeterID != "" && pred.MeterID == scheduled.MeterID) {
+			matched = append(matched, pred)
+		}
+	}
+	if len(matched) > 0 {
+		return matched
+	}
+	if len(byEndDate) == 1 {
+		return byEndDate
+	}
+	return nil
 }
 
 // UpdateSubscriptionLineItem updates a subscription line item by terminating the existing one and creating a new one
@@ -779,12 +866,11 @@ func (s *subscriptionService) validateLineItemCommitment(ctx context.Context, li
 			Mark(ierr.ErrValidation)
 	}
 
-	// Rule 2: Overage factor must be at least 1.0 when commitment is set.
-	// Exactly 1.0 means usage beyond commitment bills at the base rate (no premium).
+	// Rule 2: Overage factor is optional and defaults to 1.0 when a commitment is
+	// set without one — usage beyond commitment then bills at the base rate.
+	// When supplied it must be at least 1.0.
 	if lineItem.CommitmentOverageFactor == nil {
-		return ierr.NewError("commitment_overage_factor is required when commitment is set").
-			WithHint("Specify a commitment_overage_factor of 1.0 or greater").
-			Mark(ierr.ErrValidation)
+		lineItem.CommitmentOverageFactor = types.DefaultOverageFactor()
 	}
 
 	if lineItem.CommitmentOverageFactor.LessThan(decimal.NewFromInt(1)) {

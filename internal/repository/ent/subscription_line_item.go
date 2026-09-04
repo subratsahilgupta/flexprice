@@ -221,7 +221,7 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 	)
 
 	client := r.client.Writer(ctx)
-	_, err := client.SubscriptionLineItem.UpdateOneID(item.ID).
+	builder := client.SubscriptionLineItem.UpdateOneID(item.ID).
 		SetNillableEntityID(types.ToNillableString(item.EntityID)).
 		SetNillablePlanDisplayName(types.ToNillableString(item.PlanDisplayName)).
 		SetPriceID(item.PriceID).
@@ -239,7 +239,6 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 		SetCurrency(item.Currency).
 		SetBillingPeriod(item.BillingPeriod).
 		SetNillableStartDate(types.ToNillableTime(item.StartDate)).
-		SetNillableEndDate(types.ToNillableTime(item.EndDate)).
 		SetMetadata(item.Metadata).
 		// Commitment fields
 		SetNillableCommitmentAmount(item.CommitmentAmount).
@@ -251,8 +250,13 @@ func (r *subscriptionLineItemRepository) Update(ctx context.Context, item *subsc
 		SetCommitmentTimeBuckets(item.CommitmentTimeBuckets).
 		SetStatus(string(item.Status)).
 		SetUpdatedBy(item.UpdatedBy).
-		SetUpdatedAt(time.Now()).
-		Save(ctx)
+		SetUpdatedAt(time.Now())
+	if item.EndDate.IsZero() {
+		builder.ClearEndDate()
+	} else {
+		builder.SetEndDate(item.EndDate)
+	}
+	_, err := builder.Save(ctx)
 
 	if err != nil {
 		SetSpanError(span, err)
