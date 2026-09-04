@@ -141,7 +141,7 @@ func SetupDummyBillingCustomer() error {
 	addonAssociationRepo := entRepo.NewAddonAssociationRepository(client, appLogger, redisCache)
 	connectionRepo := entRepo.NewConnectionRepository(client, appLogger, redisCache)
 	entityIntegrationMappingRepo := entRepo.NewEntityIntegrationMappingRepository(client, appLogger, redisCache)
-	settingsRepo := entRepo.NewSettingsRepository(client, appLogger, redisCache)
+	settingsRepo := entRepo.NewSettingsRepository(client, appLogger, cacheClient)
 	taskRepo := entRepo.NewTaskRepository(client, appLogger)
 	costSheetRepo := entRepo.NewCostsheetRepository(client, appLogger)
 	alertLogsRepo := entRepo.NewAlertLogsRepository(client, appLogger)

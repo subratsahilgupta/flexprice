@@ -90,14 +90,15 @@ const (
 	PrefixInvoiceLineItem          = "invoice_line_item:v1:"
 	PrefixWalletAlertThrottle      = "wallet_alert_throttle:v1:"
 	PrefixUsageAlertSchedule       = "usage_alert_schedule:v1:"
+	PrefixSettingsByKey            = "settings_by_key:v1:"
 	PrefixCostsheet                = "costsheet:v1:"
 	PrefixPriceUnit                = "price_unit:v1:"
 	PrefixWalletRealTimeBalance    = "wallet_realtime_balance:v1:"
 	PrefixWorkflowExecution        = "workflow_execution:v1:"
 	// PrefixPriceSyncLock is the Redis key prefix for plan-level price sync lock (used with planID).
 	// Used by both API (acquire) and Temporal activity (release); do not change without updating both.
-	PrefixPriceSyncLock             = "price_sync:plan:"
-	PrefixRazorpayWebhookRefundLock = "razorpay:webhook-refund:"
+	PrefixPriceSyncLock              = "price_sync:plan:"
+	PrefixRazorpayWebhookRefundLock  = "razorpay:webhook-refund:"
 	PrefixChargebeeWebhookRefundLock = "chargebee:webhook-refund:"
 	PrefixTabsInvoiceSyncLock        = "tabs:invoice_sync:"
 	// PrefixStripeCustomerSyncLock guards first-time Stripe customer creation for a
