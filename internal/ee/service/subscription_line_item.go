@@ -72,6 +72,7 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 		}
 
 		lineItem = resolvedReq.ToSubscriptionLineItem(txCtx, *params)
+		stripCallerLineageMetadata(lineItem)
 		if usedInlinePrice {
 			s.applySubscriptionScopedLineItemDefaults(lineItem, sub, price)
 		}
@@ -576,17 +577,52 @@ func setSuccessorLineItemID(item *subscription.SubscriptionLineItem, successorID
 	setLineItemMetadataID(item, types.SubscriptionLineItemMetadataKeySuccessorID, successorID)
 }
 
-func clearSuccessorLineItemID(item *subscription.SubscriptionLineItem) {
+// lineageMetadataKeys are service-owned. Callers must never set them: a forged pointer
+// would make delete reopen, or refuse to delete, an unrelated line item.
+var lineageMetadataKeys = []string{
+	types.SubscriptionLineItemMetadataKeyPredecessorID,
+	types.SubscriptionLineItemMetadataKeySuccessorID,
+}
+
+func clearLineItemMetadataIDs(item *subscription.SubscriptionLineItem, keys ...string) {
 	if item == nil || item.Metadata == nil {
 		return
 	}
-	if _, ok := item.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID]; !ok {
+	present := false
+	for _, key := range keys {
+		if _, ok := item.Metadata[key]; ok {
+			present = true
+			break
+		}
+	}
+	if !present {
 		return
 	}
 	copied := make(map[string]string, len(item.Metadata))
 	maps.Copy(copied, item.Metadata)
-	delete(copied, types.SubscriptionLineItemMetadataKeySuccessorID)
+	for _, key := range keys {
+		delete(copied, key)
+	}
 	item.Metadata = copied
+}
+
+func clearSuccessorLineItemID(item *subscription.SubscriptionLineItem) {
+	clearLineItemMetadataIDs(item, types.SubscriptionLineItemMetadataKeySuccessorID)
+}
+
+// stripCallerLineageMetadata drops version pointers that arrived in a request payload.
+func stripCallerLineageMetadata(item *subscription.SubscriptionLineItem) {
+	clearLineItemMetadataIDs(item, lineageMetadataKeys...)
+}
+
+func alreadyScheduledVersionError(lineItemID, successorID string) error {
+	return ierr.NewError("line item already has a scheduled version").
+		WithHint("Update the scheduled version instead, or delete it to revert this line item").
+		WithReportableDetails(map[string]interface{}{
+			"line_item_id":           lineItemID,
+			"successor_line_item_id": successorID,
+		}).
+		Mark(ierr.ErrValidation)
 }
 
 // replaceMetadataPreservingLineage applies caller-supplied metadata without dropping the
@@ -596,12 +632,11 @@ func replaceMetadataPreservingLineage(item *subscription.SubscriptionLineItem, m
 	if item == nil {
 		return
 	}
-	updated := make(map[string]string, len(metadata)+2)
+	updated := make(map[string]string, len(metadata)+len(lineageMetadataKeys))
 	maps.Copy(updated, metadata)
-	for _, key := range []string{
-		types.SubscriptionLineItemMetadataKeyPredecessorID,
-		types.SubscriptionLineItemMetadataKeySuccessorID,
-	} {
+	for _, key := range lineageMetadataKeys {
+		// Drop whatever the caller sent under a reserved key before restoring the stored value.
+		delete(updated, key)
 		if id := item.Metadata[key]; id != "" {
 			updated[key] = id
 		}
@@ -635,17 +670,12 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 
 	// A line item that already has a scheduled version must be edited through that
 	// version. Versioning it again would leave two published lines starting on the
-	// same date and orphan the first successor.
+	// same date and orphan the first successor. The versioning branch re-checks this
+	// under a row lock; this pass just fails fast before any work is done.
 	if successor, err := s.findPublishedSuccessor(ctx, existingLineItem); err != nil {
 		return nil, err
 	} else if successor != nil {
-		return nil, ierr.NewError("line item already has a scheduled version").
-			WithHint("Update the scheduled version instead, or delete it to revert this line item").
-			WithReportableDetails(map[string]interface{}{
-				"line_item_id":           lineItemID,
-				"successor_line_item_id": successor.ID,
-			}).
-			Mark(ierr.ErrValidation)
+		return nil, alreadyScheduledVersionError(lineItemID, successor.ID)
 	}
 
 	// Get the subscription
@@ -719,6 +749,16 @@ func (s *subscriptionService) UpdateSubscriptionLineItem(ctx context.Context, li
 		// Execute the complex update within a transaction
 		var newLineItem *subscription.SubscriptionLineItem
 		err = s.DB.WithTx(ctx, func(ctx context.Context) error {
+			locked, lockErr := s.SubscriptionLineItemRepo.GetForUpdate(ctx, lineItemID)
+			if lockErr != nil {
+				return lockErr
+			}
+			if successor, findErr := s.findPublishedSuccessor(ctx, locked); findErr != nil {
+				return findErr
+			} else if successor != nil {
+				return alreadyScheduledVersionError(lineItemID, successor.ID)
+			}
+
 			// Process the price override using existing method
 			lineItems := []*subscription.SubscriptionLineItem{existingLineItem}
 			err = s.ProcessSubscriptionPriceOverrides(ctx, sub, []dto.OverrideLineItemRequest{overrideReq}, lineItems, priceMap)
