@@ -42,7 +42,7 @@ func AssignPlanToCustomers() error {
 		return fmt.Errorf("tenant_id, environment_id and plan_id are required")
 	}
 
-	log.Printf("Starting plan assignment for tenant: %s, environment: %s, plan: %s\n", tenantID, environmentID, planID)
+	log.Printf("Starting plan assignment for tenant: %s, environment: %s, plan: %s\n", tenantID, environmentID, planID) // #nosec G706 -- seed tooling, non-prod logging
 
 	// Initialize script
 	script, err := newAssignPlanScript()
@@ -64,7 +64,7 @@ func AssignPlanToCustomers() error {
 		return fmt.Errorf("plan does not belong to the specified tenant")
 	}
 
-	log.Printf("Found plan: %s (%s)\n", p.ID, p.Name)
+	log.Printf("Found plan: %s (%s)\n", p.ID, p.Name) // #nosec G706 -- seed tooling, non-prod logging
 
 	// Get all customers for this tenant/environment
 	customerFilter := &types.CustomerFilter{
@@ -122,7 +122,7 @@ func AssignPlanToCustomers() error {
 
 		// Check if customer already has this plan
 		if customersWithPlan[cust.ID] {
-			log.Printf("Skipping customer %s - already has plan %s\n", cust.ID, planID)
+			log.Printf("Skipping customer %s - already has plan %s\n", cust.ID, planID) // #nosec G706 -- seed tooling, non-prod logging
 			totalSkipped++
 			continue
 		}

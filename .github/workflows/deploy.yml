@@ -79,9 +79,10 @@ jobs:
           GITHUB_REF_NAME: ${{ github.ref_name }}
           IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          IS_DEVELOP="${{ github.ref_name == 'develop' }}"
-          IS_MAIN="${{ github.ref_name == 'main' }}"
-          IS_DEVELOP="${{ github.ref_name == 'develop' }}"
+          # Compare via the env var, not ${{ }} interpolation, so a crafted
+          # branch name cannot inject shell.
+          IS_DEVELOP=$([ "$GITHUB_REF_NAME" = "develop" ] && echo true || echo false)
+          IS_MAIN=$([ "$GITHUB_REF_NAME" = "main" ] && echo true || echo false)
 
           {
             echo "ghcr_tags<<TAGS_EOF"
@@ -198,12 +199,13 @@ jobs:
         id: config
         env:
           PROD_TARGETS: ${{ vars.PROD_DEPLOY_TARGETS }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           # Only production targets exist (staging ECS deprovisioned).
           ENV="production"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Default dry_run to false when not explicitly set
-            DRY_RUN="${{ github.event.inputs.dry_run }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY_RUN="$INPUT_DRY_RUN"
             if [ -z "$DRY_RUN" ]; then DRY_RUN="false"; fi
           else
             DRY_RUN="false"

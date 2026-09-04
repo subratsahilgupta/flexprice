@@ -479,7 +479,7 @@ func (r *invoiceRepository) GetForUpdate(ctx context.Context, id string) (*domai
 	// Must check and close rows BEFORE running another query on the same connection
 	hasRow := rows.Next()
 	rowErr := rows.Err()
-	rows.Close() // Close immediately, not deferred
+	rows.Close() // #nosec G104 -- best-effort close, error non-fatal
 	if rowErr != nil {
 		return nil, ierr.WithError(rowErr).WithHint("invoice lock failed").Mark(ierr.ErrDatabase)
 	}

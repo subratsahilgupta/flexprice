@@ -49,7 +49,7 @@ func GenerateCreditUsageReport() error {
 		return fmt.Errorf("TENANT_ID and ENVIRONMENT_ID are required")
 	}
 
-	log.Printf("Starting credit balance report for tenant: %s, environment: %s\n", tenantID, environmentID)
+	log.Printf("Starting credit balance report for tenant: %s, environment: %s\n", tenantID, environmentID) // #nosec G706 -- seed tooling, non-prod logging
 
 	// Initialize script
 	script, err := newCreditUsageReportScript()
@@ -148,7 +148,7 @@ func GenerateCreditUsageReport() error {
 		return fmt.Errorf("failed to generate CSV report: %w", err)
 	}
 
-	log.Printf("Credit usage report generated successfully: %s\n", outputFile)
+	log.Printf("Credit usage report generated successfully: %s\n", outputFile) // #nosec G706 -- seed tooling, non-prod logging
 	log.Printf("Total customers processed: %d\n", len(reportData))
 
 	return nil

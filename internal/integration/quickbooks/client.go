@@ -917,7 +917,7 @@ func (c *Client) ExchangeAuthCodeForTokens(ctx context.Context) error {
 		"environment", qbConfig.Environment)
 
 	// QuickBooks OAuth token endpoint
-	tokenURL := "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+	tokenURL := "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer" // #nosec G101 -- public API endpoint, not a secret
 
 	// Prepare form data for OAuth 2.0 authorization code grant
 	data := url.Values{}
@@ -1257,7 +1257,7 @@ func (c *Client) makeRequestWithRetry(ctx context.Context, method, endpoint stri
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		// Read response body to check error details
 		bodyBytes, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		resp.Body.Close() // #nosec G104 -- best-effort, error non-fatal
 
 		if readErr == nil {
 			// Create a new response with the body for parsing

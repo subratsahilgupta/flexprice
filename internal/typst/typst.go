@@ -108,7 +108,7 @@ func (c *compiler) Compile(opts CompileOpts) (string, error) {
 				WithMessage("failed to create temporary output file").
 				WithHint("template error").Mark(ierr.ErrSystem)
 		}
-		tmpFile.Close()
+		tmpFile.Close() // #nosec G104 -- best-effort, error non-fatal
 		outputFile = tmpFilePath
 	}
 
@@ -135,7 +135,10 @@ func (c *compiler) Compile(opts CompileOpts) (string, error) {
 
 	c.logger.Debug(context.Background(), "Executing command to compile typst document", "binary", c.binaryPath, "args", args)
 
-	cmd := exec.Command(c.binaryPath, args...)
+	// binaryPath is configured, not user input; args are separate argv elements,
+	// not shell-interpreted, so neither can inject a command.
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	cmd := exec.Command(c.binaryPath, args...) // #nosec G204 -- fixed binary, argv not shell
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -197,7 +200,7 @@ func (c *compiler) CompileTemplate(
 			WithHint("template error").Mark(ierr.ErrSystem)
 	}
 
-	jsonFile.Close()
+	jsonFile.Close() // #nosec G104 -- best-effort, error non-fatal
 
 	// Compile the template
 	compileOpts := CompileOpts{
@@ -218,7 +221,7 @@ func (c *compiler) CompileTemplate(
 func (c *compiler) CleanupGeneratedFiles(files ...string) {
 	for _, file := range files {
 		if file != "" {
-			os.Remove(file)
+			os.Remove(file) // #nosec G104 -- best-effort, error non-fatal
 		}
 	}
 }
