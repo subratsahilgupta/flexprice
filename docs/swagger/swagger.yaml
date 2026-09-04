@@ -16577,7 +16577,8 @@ paths:
         voids it and recreates it as a draft copy carrying all current data (description,
         billing period, due date, metadata, line items); the modification lands on
         the copy and the response returns the new draft — chain subsequent calls to
-        the returned invoice id (calls that still target the voided original are redirected).'
+        the returned invoice id; a call that still targets the voided original is
+        rejected with an error naming the replacement.'
       operationId: executeInvoiceModify
       parameters:
       - description: Invoice ID

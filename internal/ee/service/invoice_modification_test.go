@@ -1043,7 +1043,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteRemoveOnFinalizedTranslates
 	s.True(resp.Invoice.Subtotal.IsZero())
 }
 
-func (s *InvoiceModificationServiceSuite) TestExecuteOnVoidedOriginalRedirectsToReplacementDraft() {
+func (s *InvoiceModificationServiceSuite) TestExecuteOnVoidedOriginalIsRejectedWithReplacement() {
 	ctx := s.GetContext()
 	inv, li := s.createFinalizedInvoiceWithLineItem()
 
@@ -1059,8 +1059,20 @@ func (s *InvoiceModificationServiceSuite) TestExecuteOnVoidedOriginalRedirectsTo
 	s.NoError(err)
 	draftID := first.Invoice.ID
 
-	// Second call still targets the ORIGINAL (now voided) invoice id — it must land on the draft.
-	second, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+	// Hard stop: a call that still targets the voided original is rejected, and the
+	// error names the replacement so the caller can retry against it.
+	_, err = s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action: dto.InvoiceModifyLineItemActionAdd,
+			Items:  []dto.AddLineItemRequest{{DisplayName: "Setup fee", Amount: decimal.NewFromInt(50), Quantity: decimal.NewFromInt(1)}},
+		},
+	})
+	s.Error(err)
+	s.Contains(err.Error(), draftID)
+
+	// The same call against the returned draft id succeeds.
+	second, err := s.service.ModifyInvoice(ctx, draftID, dto.ExecuteInvoiceModifyRequest{
 		Type: dto.InvoiceModifyTypeLineItem,
 		LineItemParams: &dto.InvoiceModifyLineItemParams{
 			Action: dto.InvoiceModifyLineItemActionAdd,
@@ -1070,11 +1082,6 @@ func (s *InvoiceModificationServiceSuite) TestExecuteOnVoidedOriginalRedirectsTo
 	s.NoError(err)
 	s.Equal(draftID, second.Invoice.ID)
 	s.Len(second.Invoice.LineItems, 2)
-
-	// A finalized invoice is only ever recreated once.
-	original, err := s.GetStores().InvoiceRepo.Get(ctx, inv.ID)
-	s.NoError(err)
-	s.Equal(draftID, lo.FromPtr(original.RecalculatedInvoiceID))
 }
 
 // A targeted update of a nonexistent line item errors; the flow runs in one
@@ -1096,7 +1103,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteBadLineItemIDOnFinalizedErr
 	s.True(ierr.IsNotFound(err))
 }
 
-func (s *InvoiceModificationServiceSuite) TestExecuteFollowsMultiHopReplacementChain() {
+func (s *InvoiceModificationServiceSuite) TestExecuteChainedEditsAcrossRecreations() {
 	ctx := s.GetContext()
 	inv, li := s.createFinalizedInvoiceWithLineItem()
 
@@ -1112,7 +1119,7 @@ func (s *InvoiceModificationServiceSuite) TestExecuteFollowsMultiHopReplacementC
 	s.NoError(err)
 	draftA := first.Invoice.ID
 
-	// Draft A gets finalized, then edited again -> voided with replacement draft B.
+	// Draft A gets finalized and edited again -> voided with replacement draft B.
 	invA, err := s.GetStores().InvoiceRepo.Get(ctx, draftA)
 	s.NoError(err)
 	invA.InvoiceStatus = types.InvoiceStatusFinalized
@@ -1130,15 +1137,18 @@ func (s *InvoiceModificationServiceSuite) TestExecuteFollowsMultiHopReplacementC
 	draftB := second.Invoice.ID
 	s.NotEqual(draftA, draftB)
 
-	// A request that still targets the FIRST original must resolve across both hops to draft B.
-	third, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
-		Type: dto.InvoiceModifyTypeLineItem,
-		LineItemParams: &dto.InvoiceModifyLineItemParams{
-			Action: dto.InvoiceModifyLineItemActionAdd,
-			Items:  []dto.AddLineItemRequest{{DisplayName: "Another", Amount: decimal.NewFromInt(5), Quantity: decimal.NewFromInt(1)}},
-		},
+	// Both stale ids are hard-stopped; each error names that invoice's direct replacement.
+	_, err = s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type:           dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{Action: dto.InvoiceModifyLineItemActionAdd, Items: []dto.AddLineItemRequest{{DisplayName: "X", Amount: decimal.NewFromInt(1), Quantity: decimal.NewFromInt(1)}}},
 	})
-	s.NoError(err)
-	s.Equal(draftB, third.Invoice.ID)
-	s.Len(third.Invoice.LineItems, 3)
+	s.Error(err)
+	s.Contains(err.Error(), draftA)
+
+	_, err = s.service.ModifyInvoice(ctx, draftA, dto.ExecuteInvoiceModifyRequest{
+		Type:           dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{Action: dto.InvoiceModifyLineItemActionAdd, Items: []dto.AddLineItemRequest{{DisplayName: "X", Amount: decimal.NewFromInt(1), Quantity: decimal.NewFromInt(1)}}},
+	})
+	s.Error(err)
+	s.Contains(err.Error(), draftB)
 }

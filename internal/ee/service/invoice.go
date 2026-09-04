@@ -3823,30 +3823,44 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 
 	// Applying a discount changes the invoice's financials, so on a FINALIZED invoice it
 	// runs through the void-and-recreate flow: the finalized invoice is voided, a draft
-	// copy is created, and this update (discount included) lands on the copy. Plain field
-	// updates (due date, PDF URL, metadata) keep editing the finalized invoice in place.
+	// copy is created, and this update (discount included) lands on the copy — all in ONE
+	// transaction, so a failed update rolls the void and the copy back together. Plain
+	// field updates (due date, PDF URL, metadata) keep editing the finalized invoice in
+	// place. A voided id is rejected (hard stop) — clients use the id a successful edit
+	// returned.
+	voidAndRecreate := false
 	if req.ApplyDiscount {
 		inv, err := s.InvoiceRepo.Get(ctx, id)
 		if err != nil {
 			return nil, err
 		}
-		inv, err = s.followReplacementChain(ctx, inv)
-		if err != nil {
+		if err := rejectVoidedInvoiceEdit(inv); err != nil {
 			return nil, err
 		}
-		id = inv.ID
-		if inv.InvoiceStatus == types.InvoiceStatusFinalized {
-			draft, _, err := s.voidAndRecreateDraftForEdit(ctx, inv)
-			if err != nil {
-				return nil, err
-			}
-			id = draft.ID
-		}
+		voidAndRecreate = inv.InvoiceStatus == types.InvoiceStatusFinalized
 	}
 
 	var updatedInv *invoice.Invoice
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, id)
+		targetID := id
+		if voidAndRecreate {
+			locked, err := s.InvoiceRepo.GetForUpdate(txCtx, id)
+			if err != nil {
+				return err
+			}
+			if locked.InvoiceStatus != types.InvoiceStatusFinalized {
+				return ierr.NewError("invoice is no longer finalized").
+					WithHintf("invoice %s changed to %s concurrently, retry the update", locked.ID, locked.InvoiceStatus).
+					Mark(ierr.ErrValidation)
+			}
+			draft, _, err := s.voidAndRecreateDraftForEdit(txCtx, locked)
+			if err != nil {
+				return err
+			}
+			targetID = draft.ID
+		}
+
+		inv, err := s.InvoiceRepo.GetForUpdate(txCtx, targetID)
 		if err != nil {
 			return err
 		}
@@ -3856,7 +3870,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 			return ierr.NewError("cannot update invoice in current status").
 				WithHint("Invoice can only be updated when in draft or finalized status").
 				WithReportableDetails(map[string]any{
-					"invoice_id":     id,
+					"invoice_id":     targetID,
 					"current_status": inv.InvoiceStatus,
 				}).
 				Mark(ierr.ErrValidation)
@@ -3888,7 +3902,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
-	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, id)
+	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, updatedInv.ID)
 	return dto.NewInvoiceResponse(updatedInv), nil
 }
 

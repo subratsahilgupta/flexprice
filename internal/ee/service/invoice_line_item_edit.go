@@ -262,15 +262,14 @@ func (s *invoiceService) ModifyInvoice(ctx context.Context, invoiceID string, re
 
 func (s *invoiceService) executeLineItemModification(ctx context.Context, invoiceID string, params *dto.InvoiceModifyLineItemParams) (*dto.InvoiceModifyResponse, error) {
 	// Finalized-invoice edit flow: the finalized invoice is voided and recreated as a
-	// draft copy, and the modification lands on the copy. A call that still targets a
-	// voided original (a retry, or a client that did not chain the returned invoice id)
-	// is redirected to the current replacement.
+	// draft copy, and the modification lands on the copy. Hard stop for voided ids: a
+	// call that still targets a voided original is rejected (the error names the
+	// replacement) — clients must chain the invoice id returned by a successful edit.
 	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
 	if err != nil {
 		return nil, err
 	}
-	inv, err = s.followReplacementChain(ctx, inv)
-	if err != nil {
+	if err := rejectVoidedInvoiceEdit(inv); err != nil {
 		return nil, err
 	}
 
@@ -379,24 +378,22 @@ func translateLineItemParams(params *dto.InvoiceModifyLineItemParams, idMap map[
 	return &translated, nil
 }
 
-// followReplacementChain resolves a voided invoice to its current replacement by
-// following recalculated_invoice_id links — a replacement draft can itself be
-// finalized, edited, and voided again, giving the chain more than one hop.
-func (s *invoiceService) followReplacementChain(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error) {
-	const maxHops = 10
-	current := inv
-	for range maxHops {
-		if current.InvoiceStatus != types.InvoiceStatusVoided || current.RecalculatedInvoiceID == nil {
-			return current, nil
-		}
-		next, err := s.InvoiceRepo.Get(ctx, *current.RecalculatedInvoiceID)
-		if err != nil {
-			return nil, err
-		}
-		current = next
+// rejectVoidedInvoiceEdit hard-stops edits that target a voided invoice. When the
+// invoice was voided by the edit flow, the error names its replacement so the caller
+// can retry against the current draft; redirecting silently would let a stale caller
+// stack a second edit onto a replacement it has never seen.
+func rejectVoidedInvoiceEdit(inv *invoice.Invoice) error {
+	if inv.InvoiceStatus != types.InvoiceStatusVoided {
+		return nil
 	}
-	return nil, ierr.NewError("invoice replacement chain is too deep").
-		WithHintf("invoice %s has more than %d voided replacements", inv.ID, maxHops).
+	if inv.RecalculatedInvoiceID != nil {
+		return ierr.NewError("invoice is voided and was replaced by " + *inv.RecalculatedInvoiceID).
+			WithHintf("invoice %s was voided and replaced by %s — retry the edit against the replacement", inv.ID, *inv.RecalculatedInvoiceID).
+			WithReportableDetails(map[string]any{"recalculated_invoice_id": *inv.RecalculatedInvoiceID}).
+			Mark(ierr.ErrValidation)
+	}
+	return ierr.NewError("invoice is voided").
+		WithHintf("invoice %s is voided and can no longer be edited", inv.ID).
 		Mark(ierr.ErrValidation)
 }
 
