@@ -261,42 +261,30 @@ func (s *invoiceService) ModifyInvoice(ctx context.Context, invoiceID string, re
 }
 
 func (s *invoiceService) executeLineItemModification(ctx context.Context, invoiceID string, params *dto.InvoiceModifyLineItemParams) (*dto.InvoiceModifyResponse, error) {
-	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
-	if err != nil {
-		return nil, err
-	}
-	if err := rejectVoidedInvoiceEdit(inv); err != nil {
-		return nil, err
-	}
-
-	if inv.InvoiceStatus != types.InvoiceStatusFinalized {
-		resp, err := s.applyLineItemAction(ctx, inv.ID, params)
-		if err != nil {
-			return nil, err
-		}
-		return &dto.InvoiceModifyResponse{Invoice: resp}, nil
-	}
-
-	// Finalized: void, recreate as draft, and apply the edit in one transaction.
+	// One transaction, one lock: the locked read decides the branch. A finalized
+	// invoice is voided and recreated as a draft, and the edit lands on the copy.
 	var resp *dto.InvoiceResponse
 	var voidedOriginal *invoice.Invoice
-	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		locked, err := s.InvoiceRepo.GetForUpdate(txCtx, inv.ID)
+	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		locked, err := s.InvoiceRepo.GetForUpdate(txCtx, invoiceID)
 		if err != nil {
 			return err
 		}
-		if locked.InvoiceStatus != types.InvoiceStatusFinalized {
-			return ierr.NewError("invoice is no longer finalized").
-				WithHintf("invoice %s changed to %s concurrently, retry the edit", locked.ID, locked.InvoiceStatus).
-				Mark(ierr.ErrValidation)
+		if err := rejectVoidedInvoiceEdit(locked); err != nil {
+			return err
 		}
 
-		draft, voided, err := s.voidAndRecreateDraftForEdit(txCtx, locked)
-		if err != nil {
-			return err
+		targetID := locked.ID
+		if locked.InvoiceStatus == types.InvoiceStatusFinalized {
+			draft, voided, err := s.voidAndRecreateDraftForEdit(txCtx, locked)
+			if err != nil {
+				return err
+			}
+			voidedOriginal = voided
+			targetID = draft.ID
 		}
-		voidedOriginal = voided
-		resp, err = s.applyLineItemAction(txCtx, draft.ID, params)
+
+		resp, err = s.applyLineItemAction(txCtx, targetID, params)
 		return err
 	})
 	if err != nil {
