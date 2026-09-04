@@ -226,6 +226,14 @@ func (s *InvoiceService) SyncInvoiceToChargebee(
 		s.Logger.Info(ctx, "invoice already synced to Chargebee",
 			"invoice_id", req.InvoiceID,
 			"chargebee_invoice_id", chargebeeInvoiceID)
+
+		if werr := s.writeChargebeeInvoiceMetadata(ctx, flexInvoice, chargebeeInvoiceID); werr != nil {
+			s.Logger.Info(ctx, "failed to update FlexPrice invoice from existing Chargebee mapping",
+				"error", werr,
+				"invoice_id", req.InvoiceID,
+				"chargebee_invoice_id", chargebeeInvoiceID)
+		}
+
 		// Fetch existing invoice details and return
 		invoiceResp, err := s.RetrieveInvoice(ctx, chargebeeInvoiceID)
 		if err != nil {
@@ -329,6 +337,13 @@ func (s *InvoiceService) SyncInvoiceToChargebee(
 			"invoice_id", req.InvoiceID,
 			"chargebee_invoice_id", chargebeeInvoiceID)
 		// Don't fail the sync, just log the error
+	}
+
+	if werr := s.writeChargebeeInvoiceMetadata(ctx, flexInvoice, chargebeeInvoiceID); werr != nil {
+		s.Logger.Info(ctx, "failed to update FlexPrice invoice from Chargebee sync",
+			"error", werr,
+			"invoice_id", req.InvoiceID,
+			"chargebee_invoice_id", chargebeeInvoiceID)
 	}
 
 	// Step 9: Build and return response
@@ -639,6 +654,25 @@ func (s *InvoiceService) LinkInvoiceMapping(ctx context.Context, invoiceID, char
 		"invoice_id", invoiceID,
 		"chargebee_invoice_id", chargebeeInvoiceID)
 	return nil
+}
+
+func (s *InvoiceService) writeChargebeeInvoiceMetadata(ctx context.Context, flex *invoice.Invoice, chargebeeInvoiceID string) error {
+	if flex == nil || chargebeeInvoiceID == "" {
+		return nil
+	}
+
+	if flex.Metadata == nil {
+		flex.Metadata = types.Metadata{}
+	}
+	if current := lo.FromPtr(flex.InvoiceNumber); current != "" && current != chargebeeInvoiceID {
+		if _, kept := flex.Metadata["flexprice_invoice_number"]; !kept {
+			flex.Metadata["flexprice_invoice_number"] = current
+		}
+	}
+
+	flex.InvoiceNumber = lo.ToPtr(chargebeeInvoiceID)
+	flex.Metadata["chargebee_invoice_id"] = chargebeeInvoiceID
+	return s.InvoiceRepo.Update(ctx, flex)
 }
 
 // GetInvoicePDFURL mints a signed link to Chargebee's rendering of a Flexprice
