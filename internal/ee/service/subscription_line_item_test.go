@@ -304,6 +304,7 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Schedu
 	oldLi, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
 	s.NoError(err)
 	s.Equal(futureStart.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
+	s.Equal(updated.SubscriptionLineItem.ID, oldLi.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID])
 
 	_, err = s.service.DeleteSubscriptionLineItem(ctx, updated.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
 	s.NoError(err)
@@ -312,6 +313,49 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Schedu
 	s.NoError(err)
 	s.True(restored.EndDate.IsZero(), "cancelling the scheduled version should reopen the prior line")
 	s.Equal(types.StatusPublished, restored.Status)
+	s.Empty(restored.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID])
+}
+
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_MustDeleteTipFirst() {
+	ctx := s.GetContext()
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+	amountB := decimal.NewFromInt(75)
+	amountC := decimal.NewFromInt(90)
+
+	itemB, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &amountB,
+		EffectiveFrom: &futureStart,
+	})
+	s.NoError(err)
+
+	itemC, err := s.service.UpdateSubscriptionLineItem(ctx, itemB.SubscriptionLineItem.ID, dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &amountC,
+		EffectiveFrom: &futureStart,
+	})
+	s.NoError(err)
+
+	_, err = s.service.DeleteSubscriptionLineItem(ctx, itemB.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.Error(err)
+	s.Contains(err.Error(), "line item has a successor and cannot be deleted")
+
+	_, err = s.service.DeleteSubscriptionLineItem(ctx, itemC.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.NoError(err)
+
+	_, err = s.service.DeleteSubscriptionLineItem(ctx, itemB.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.NoError(err)
+
+	restoredA, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
+	s.NoError(err)
+	s.Equal(types.StatusPublished, restoredA.Status)
+	s.True(restoredA.EndDate.IsZero())
+
+	deletedB, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, itemB.SubscriptionLineItem.ID)
+	s.NoError(err)
+	s.Equal(types.StatusDeleted, deletedB.Status)
+
+	deletedC, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, itemC.SubscriptionLineItem.ID)
+	s.NoError(err)
+	s.Equal(types.StatusDeleted, deletedC.Status)
 }
 
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_RestoresOnlyReferencedPredecessor() {
