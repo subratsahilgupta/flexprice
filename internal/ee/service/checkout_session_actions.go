@@ -70,6 +70,11 @@ func (s *checkoutSessionService) callCheckoutProvider(
 		return nil, err
 	}
 
+	inv, err := s.InvoiceRepo.Get(ctx, *session.CheckoutInvoiceID)
+	if err != nil {
+		return nil, err
+	}
+
 	req := interfaces.CheckoutProviderRequest{
 		InvoiceID:  *session.CheckoutInvoiceID,
 		CustomerID: session.CustomerID,
@@ -80,6 +85,7 @@ func (s *checkoutSessionService) callCheckoutProvider(
 		FailureURL: lo.FromPtr(session.FailureURL),
 		CancelURL:  lo.FromPtr(session.CancelURL),
 		Metadata:   session.Metadata,
+		LineItems:  checkoutLineItemsFor(inv),
 	}
 
 	cfg := lo.FromPtr(session.PaymentProviderConfig.ToCheckoutPaymentProviderConfig())
@@ -108,6 +114,7 @@ func (s *checkoutSessionService) callCheckoutProvider(
 			SuccessURL:      req.SuccessURL,
 			CancelURL:       req.CancelURL,
 			Metadata:        req.Metadata,
+			LineItems:       req.LineItems,
 		}
 
 		// Prefer an existing confirmed token (off-session). If none / amount above

@@ -49,8 +49,16 @@ func NewPlatformStorage(ctx context.Context, cfg *config.Configuration, provider
 		}
 
 		s3Cfg := &s3backend.Config{
-			Bucket: bucket,
-			Region: region,
+			Bucket:       bucket,
+			Region:       region,
+			EndpointURL:  cfg.S3.EndpointURL,
+			UsePathStyle: cfg.S3.UsePathStyle,
+		}
+		// Base static keys for an S3-compatible endpoint (MinIO locally). Purpose-scoped
+		// keys below still win, so an export destination keeps its own credentials.
+		if cfg.S3.AWSAccessKeyID != "" && cfg.S3.AWSSecretAccessKey != "" {
+			s3Cfg.AWSAccessKeyID = cfg.S3.AWSAccessKeyID
+			s3Cfg.AWSSecretAccessKey = cfg.S3.AWSSecretAccessKey
 		}
 		// Export-scoped static keys: invoices must not pick them up.
 		if purpose == PurposeExport && cfg.FlexpriceS3Exports.AWSAccessKeyID != "" {

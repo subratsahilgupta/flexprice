@@ -280,23 +280,3 @@ type ServiceDependencies struct {
 	RefundService                   RefundService
 	DB                              postgres.IClient
 }
-
-// PaymentProviderResolver answers which payment gateway an operation runs
-// against, from the tenant's published connections intersected with the
-// capabilities FlexPrice implements per gateway. Takes a customer id rather than
-// a session so an admin caller resolves identically to a portal one.
-type PaymentProviderResolver interface {
-	// ResolveProvider picks the gateway serving capability. An empty requested
-	// means "the only candidate"; a non-empty one is validated against them.
-	// ErrNotFound when nothing qualifies, ErrValidation when ambiguous or refused.
-	ResolveProvider(ctx context.Context, customerID string, capability types.IntegrationCapabilityType, requested types.PaymentGatewayType) (types.PaymentGatewayType, error)
-
-	// ListProviders returns configured gateways with a usable capability, ordered
-	// by gateway name.
-	ListProviders(ctx context.Context, customerID string) ([]ProviderCapabilities, error)
-}
-
-type ProviderCapabilities struct {
-	Gateway      types.PaymentGatewayType
-	Capabilities []types.IntegrationCapability
-}

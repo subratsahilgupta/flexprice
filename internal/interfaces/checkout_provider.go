@@ -35,6 +35,18 @@ type CheckoutProviderRequest struct {
 	FailureURL string
 	CancelURL  string
 	Metadata   map[string]string
+	LineItems  []CheckoutLineItem
+}
+
+// CheckoutLineItem itemises what is being charged. Providers that can only carry a
+// single total ignore it and charge Amount, which stays authoritative.
+type CheckoutLineItem struct {
+	Description string
+	// Amount is the extended amount for the line, in major units.
+	Amount      decimal.Decimal
+	Quantity    decimal.Decimal
+	PeriodStart *time.Time
+	PeriodEnd   *time.Time
 }
 
 // CheckoutProviderResponse is the unified output from all checkout provider adapters.
@@ -63,6 +75,7 @@ type AuthorizationLinkRequest struct {
 	SuccessURL      string
 	CancelURL       string
 	Metadata        map[string]string
+	LineItems       []CheckoutLineItem
 }
 
 // ProviderPaymentMethod is a normalized view of one active, usable token at the
