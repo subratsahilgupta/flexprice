@@ -730,7 +730,11 @@ func (s *meterUsageTrackingService) convertToDecimal(val interface{}) decimal.De
 	case int32:
 		return decimal.NewFromInt(int64(v))
 	case uint:
-		return decimal.NewFromInt(int64(v))
+		d, err := decimal.NewFromString(fmt.Sprintf("%d", v))
+		if err != nil {
+			return decimal.Zero
+		}
+		return d
 	case uint64:
 		d, err := decimal.NewFromString(fmt.Sprintf("%d", v))
 		if err != nil {

@@ -2,6 +2,7 @@ package chargebee
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/chargebee/chargebee-go/v3/enum"
@@ -81,6 +82,11 @@ func (s *InvoiceService) CreateInvoice(ctx context.Context, req *InvoiceCreateRe
 	if len(req.LineItems) > 0 {
 		itemPrices := make([]*chargebeeInvoice.CreateForChargeItemsAndChargesItemPriceParams, 0, len(req.LineItems))
 		for _, item := range req.LineItems {
+			if item.Quantity > math.MaxInt32 || item.Quantity < math.MinInt32 {
+				return nil, ierr.NewError("line item quantity exceeds Chargebee's supported range").
+					WithHint("Quantity must fit in a 32-bit integer for Chargebee").
+					Mark(ierr.ErrValidation)
+			}
 			itemPrice := &chargebeeInvoice.CreateForChargeItemsAndChargesItemPriceParams{
 				ItemPriceId: item.ItemPriceID,
 				Quantity:    lo.ToPtr(int32(item.Quantity)),
