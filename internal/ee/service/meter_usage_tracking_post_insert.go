@@ -396,19 +396,34 @@ func (s *meterUsageTrackingService) effectiveUsageAlertFlags(ctx context.Context
 	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
 
 	if s.Config.UsageAlerts.WalletAlertsEnabled {
-		if walletCfg, err := GetSetting[types.AlertSettings](settingsSvc, ctx, types.SettingKeyWalletBalanceAlertConfig); err == nil && walletCfg.IsAlertEnabled() {
-			wallet = true
+		walletCfg, err := GetSetting[types.AlertSettings](settingsSvc, ctx, types.SettingKeyWalletBalanceAlertConfig)
+		if err != nil && !ierr.IsNotFound(err) {
+			s.Logger.Error(ctx, "usage alerts: failed to read wallet alert setting, treating as disabled",
+				"error", err,
+				"setting_key", types.SettingKeyWalletBalanceAlertConfig,
+			)
 		}
+		wallet = walletCfg.IsAlertEnabled()
 	}
 	if s.Config.UsageAlerts.SpendAlertsEnabled {
-		if spendCfg, err := GetSetting[types.AlertToggleConfig](settingsSvc, ctx, types.SettingKeySubscriptionAlertConfig); err == nil && spendCfg.IsAlertEnabled() {
-			spend = true
+		spendCfg, err := GetSetting[types.AlertToggleConfig](settingsSvc, ctx, types.SettingKeySubscriptionAlertConfig)
+		if err != nil && !ierr.IsNotFound(err) {
+			s.Logger.Error(ctx, "usage alerts: failed to read subscription alert setting, treating as disabled",
+				"error", err,
+				"setting_key", types.SettingKeySubscriptionAlertConfig,
+			)
 		}
+		spend = spendCfg.IsAlertEnabled()
 	}
 	if s.Config.UsageAlerts.EntitlementAlertsEnabled {
-		if entCfg, err := GetSetting[types.AlertToggleConfig](settingsSvc, ctx, types.SettingKeyEntitlementAlertConfig); err == nil && entCfg.IsAlertEnabled() {
-			entitlement = true
+		entCfg, err := GetSetting[types.AlertToggleConfig](settingsSvc, ctx, types.SettingKeyEntitlementAlertConfig)
+		if err != nil && !ierr.IsNotFound(err) {
+			s.Logger.Error(ctx, "usage alerts: failed to read entitlement alert setting, treating as disabled",
+				"error", err,
+				"setting_key", types.SettingKeyEntitlementAlertConfig,
+			)
 		}
+		entitlement = entCfg.IsAlertEnabled()
 	}
 	return
 }
