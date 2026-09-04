@@ -283,13 +283,7 @@ func (i *Invoice) Validate() error {
 	// validate line items if present
 	if i.LineItems != nil {
 		for _, item := range i.LineItems {
-			// Charges are computed in the custom currency while the invoice itself is
-			// fiat, so a line item may carry either.
-			matchesCurrency := item.Currency == i.Currency
-			if !matchesCurrency && i.CustomCurrency != nil {
-				matchesCurrency = item.Currency == i.CustomCurrency.CustomCurrencyCode
-			}
-			if !matchesCurrency {
+			if item.Currency != i.Currency {
 				return ierr.NewError("invoice validation failed").WithHint("line_items currency must match invoice currency").Mark(ierr.ErrValidation)
 			}
 			if err := item.Validate(); err != nil {
@@ -299,6 +293,81 @@ func (i *Invoice) Validate() error {
 	}
 
 	return nil
+}
+
+// LedgerCurrency is the currency money math runs in: the custom currency when set,
+// the invoice's fiat currency otherwise.
+func (i *Invoice) LedgerCurrency() string {
+	if i.CustomCurrency != nil {
+		return i.CustomCurrency.Code
+	}
+	return i.Currency
+}
+
+// CaptureCustomCurrencyLedger snapshots the computed amounts as the ledger, then
+// projects the fiat columns from it. Compute runs the pricing, coupon and discount
+// pipeline in the subscription's currency; this is where that becomes explicit.
+func (i *Invoice) CaptureCustomCurrencyLedger() {
+	if i.CustomCurrency == nil {
+		return
+	}
+
+	cc := i.CustomCurrency
+	cc.Subtotal = i.Subtotal
+	cc.TotalDiscount = i.TotalDiscount
+	cc.TotalTax = i.TotalTax
+	cc.TotalPrepaidCreditsApplied = i.TotalPrepaidCreditsApplied
+	cc.Total = i.Total
+	cc.AmountDue = i.AmountDue
+
+	for _, item := range i.LineItems {
+		item.CustomCurrency = &types.CustomCurrencyLineItem{
+			Amount:                item.Amount,
+			LineItemDiscount:      item.LineItemDiscount,
+			InvoiceLevelDiscount:  item.InvoiceLevelDiscount,
+			PrepaidCreditsApplied: item.PrepaidCreditsApplied,
+		}
+	}
+
+	i.ProjectCustomCurrency()
+}
+
+// MirrorTaxIntoLedger restates the totals tax moved. Tax is computed and stored in
+// fiat, so it has no ledger form of its own.
+func (i *Invoice) MirrorTaxIntoLedger() {
+	if i.CustomCurrency == nil {
+		return
+	}
+
+	cc := i.CustomCurrency
+	cc.TotalTax = cc.FromFiat(i.TotalTax)
+	cc.Total = cc.FromFiat(i.Total)
+	cc.AmountDue = cc.Total
+}
+
+// ProjectCustomCurrency recomputes the fiat amount columns from the ledger. Runs at
+// compute with the live rate and at finalization with the frozen one.
+func (i *Invoice) ProjectCustomCurrency() {
+	if i.CustomCurrency == nil {
+		return
+	}
+
+	cc := i.CustomCurrency
+	i.Subtotal = cc.ToFiat(cc.Subtotal, i.Currency)
+	i.TotalDiscount = cc.ToFiat(cc.TotalDiscount, i.Currency)
+	i.TotalTax = cc.ToFiat(cc.TotalTax, i.Currency)
+	i.TotalPrepaidCreditsApplied = cc.ToFiat(cc.TotalPrepaidCreditsApplied, i.Currency)
+	i.Total = cc.ToFiat(cc.Total, i.Currency)
+	i.AmountDue = cc.ToFiat(cc.AmountDue, i.Currency)
+
+	i.AmountRemaining = i.AmountDue.Sub(i.AmountPaid)
+	if i.AmountRemaining.IsNegative() {
+		i.AmountRemaining = decimal.Zero
+	}
+
+	for _, item := range i.LineItems {
+		item.ProjectCustomCurrency(cc, i.Currency)
+	}
 }
 
 // PendingProviderInvoice is a lightweight projection of a finalized+unpaid invoice

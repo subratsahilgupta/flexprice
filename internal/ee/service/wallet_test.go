@@ -4162,7 +4162,8 @@ func (s *WalletServiceSuite) TestCompletePurchasedCreditTransaction_WithLinkedBo
 }
 
 // A tenant with custom currencies restricts wallets to those currencies or its
-// default fiat currency. Fiat stays allowed so a wallet can pay a fiat invoice.
+// default fiat currency. Both are allowed: a fiat wallet pays invoices, a custom
+// one applies prepaid credits before conversion.
 func (s *WalletServiceSuite) TestCreateWallet_CustomCurrencyEnforcement() {
 	cfg := types.CustomCurrencyConfig{
 		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
@@ -4191,7 +4192,7 @@ func (s *WalletServiceSuite) TestCreateWallet_CustomCurrencyEnforcement() {
 		wantErr  bool
 	}{
 		{name: "default fiat currency is allowed so wallets can pay invoices", currency: "usd"},
-		{name: "custom currency is rejected - a wallet could never match a fiat invoice", currency: "mac", wantErr: true},
+		{name: "custom currency is allowed so wallets can apply prepaid credits", currency: "mac"},
 		{name: "unconfigured currency is rejected", currency: "eur", wantErr: true},
 	}
 

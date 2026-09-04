@@ -818,15 +818,7 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		subscriptionID = r.SubscriptionID
 	}
 
-	// Line item amounts are computed in the custom currency, so they carry it rather
-	// than the invoice's fiat currency. Only the invoice totals are converted, once,
-	// at finalization — converting per line item would round each one and lose money
-	// against the total.
-	currency := inv.Currency
-	if inv.CustomCurrency != nil {
-		currency = inv.CustomCurrency.CustomCurrencyCode
-	}
-	return &invoice.InvoiceLineItem{
+	lineItem := &invoice.InvoiceLineItem{
 		ID:                          types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
 		InvoiceID:                   inv.ID,
 		CustomerID:                  inv.CustomerID,
@@ -841,9 +833,9 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		PriceUnit:                   r.PriceUnit,
 		PriceUnitAmount:             r.PriceUnitAmount,
 		DisplayName:                 r.DisplayName,
-		Amount:                      types.RoundToCurrencyPrecision(r.Amount, currency),
+		Amount:                      types.RoundToCurrencyPrecision(r.Amount, inv.Currency),
 		Quantity:                    r.Quantity,
-		Currency:                    currency,
+		Currency:                    inv.Currency,
 		PeriodStart:                 r.PeriodStart,
 		PeriodEnd:                   r.PeriodEnd,
 		Metadata:                    r.Metadata,
@@ -856,6 +848,8 @@ func (r *CreateInvoiceLineItemRequest) ToInvoiceLineItem(ctx context.Context, in
 		SubscriptionLineItemID:      r.SubscriptionLineItemID,
 		AdjustedEntitlementQuantity: r.AdjustedEntitlementQuantity,
 	}
+
+	return lineItem
 }
 
 // InvoiceLineItemResponse represents a line item in invoice response payloads

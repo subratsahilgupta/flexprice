@@ -9,30 +9,48 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// CustomCurrency is the custom-currency equivalent of an invoice whose own
-// currency and amounts are always fiat. Nil when the tenant has none.
+// CustomCurrency is an invoice's custom-currency ledger. The invoice's own currency
+// and amount columns are fiat projections of these values. Nil for fiat invoices.
+//
+// AmountPaid and AmountRemaining are absent: payments settle in fiat, so a stored
+// copy would drift. Derive them with FromFiat.
 type CustomCurrency struct {
-	CustomCurrencyCode string `json:"custom_currency_code"`
-	// frozen at finalization; amount_due = custom_currency_amount * rate
-	CustomConversionRate decimal.Decimal `json:"custom_conversion_rate" swaggertype:"string"`
-	// the invoice total as computed, before conversion to fiat
-	CustomCurrencyAmount decimal.Decimal `json:"custom_currency_amount" swaggertype:"string"`
+	Code string `json:"code"`
+
+	// fiat per 1 unit of Code; the live factor while draft, frozen at finalization
+	Rate decimal.Decimal `json:"rate" swaggertype:"string"`
+
+	Subtotal                   decimal.Decimal `json:"subtotal" swaggertype:"string"`
+	TotalDiscount              decimal.Decimal `json:"total_discount" swaggertype:"string"`
+	TotalTax                   decimal.Decimal `json:"total_tax" swaggertype:"string"`
+	TotalPrepaidCreditsApplied decimal.Decimal `json:"total_prepaid_credits_applied" swaggertype:"string"`
+	Total                      decimal.Decimal `json:"total" swaggertype:"string"`
+	AmountDue                  decimal.Decimal `json:"amount_due" swaggertype:"string"`
 }
 
-// ToFiat converts an amount denominated in the custom currency into fiatCurrency.
-//
-//	fiat = custom * rate
-//	custom = fiat / rate
-//
-// rate is fiat per 1 unit of custom currency, matching PriceUnit
-// (fiat_amount = price_unit_amount * conversion_rate) and Wallet
-// (amount = credits * conversion_rate).
-//
-// So a mac→usd factor of 10 means 1 MAC = 10 USD, hence 1 USD = 0.1 MAC.
-// To make 1 USD = 10 MAC instead, store the factor as 0.1.
-func (c *CustomCurrency) ToFiat(amtInCustomCurr decimal.Decimal, fiatCurrency string) decimal.Decimal {
-	converted := amtInCustomCurr.Mul(c.CustomConversionRate)
+// CustomCurrencyLineItem is a line item's custom-currency ledger.
+type CustomCurrencyLineItem struct {
+	Amount                decimal.Decimal `json:"amount" swaggertype:"string"`
+	LineItemDiscount      decimal.Decimal `json:"line_item_discount" swaggertype:"string"`
+	InvoiceLevelDiscount  decimal.Decimal `json:"invoice_level_discount" swaggertype:"string"`
+	PrepaidCreditsApplied decimal.Decimal `json:"prepaid_credits_applied" swaggertype:"string"`
+}
+
+// ToFiat converts a custom-currency amount to fiat: fiat = custom * rate.
+// Rate is fiat per 1 unit, so a mac->usd factor of 0.10 means 1 MAC = $0.10.
+func (c *CustomCurrency) ToFiat(amount decimal.Decimal, fiatCurrency string) decimal.Decimal {
+	converted := amount.Mul(c.Rate)
 	return RoundToCurrencyPrecision(converted, fiatCurrency)
+}
+
+// FromFiat restates a fiat amount in the custom currency. Only for amounts with no
+// ledger form: tax and payments. Read anything else from the ledger directly.
+func (c *CustomCurrency) FromFiat(amount decimal.Decimal) decimal.Decimal {
+	if !c.Rate.IsPositive() {
+		return decimal.Zero
+	}
+	restated := amount.Div(c.Rate)
+	return RoundToCurrencyPrecision(restated, c.Code)
 }
 
 // CustomCurrencyConfig is the tenant's custom currencies. Empty: no enforcement.
@@ -48,6 +66,22 @@ type CustomCurrencyDefinition struct {
 	Name                  string                     `json:"name" validate:"required"`
 	Symbol                string                     `json:"symbol" validate:"required"`
 	FiatConversionFactors map[string]decimal.Decimal `json:"fiat_conversion_factors" validate:"required,min=1"`
+}
+
+// IsCustom reports whether currency is one of the tenant's custom currencies.
+func (c CustomCurrencyConfig) IsCustom(currency string) bool {
+	_, ok := c.CustomCurrencies[strings.ToLower(currency)]
+	return ok
+}
+
+// RateFor returns the conversion factor from a custom currency to fiatCurrency,
+// or zero when either is not configured.
+func (c CustomCurrencyConfig) RateFor(code, fiatCurrency string) decimal.Decimal {
+	cur, ok := c.CustomCurrencies[strings.ToLower(code)]
+	if !ok {
+		return decimal.Zero
+	}
+	return cur.FiatConversionFactors[strings.ToLower(fiatCurrency)]
 }
 
 // Validate implements SettingConfig. Pointer receiver: it lowercases codes in place.
@@ -108,16 +142,14 @@ func (c *CustomCurrencyConfig) Validate() error {
 	return validator.ValidateRequest(c)
 }
 
-// EnforceCurrency restricts an entity — price, subscription, wallet, addon — to one of
-// the tenant's custom currencies or its default fiat currency. Unconfigured tenants are
-// unaffected. Fiat stays allowed because invoices are denominated in it, and a wallet
-// must share the invoice's currency to pay it.
+// EnforceCurrency restricts a price, subscription, wallet or addon to a configured
+// custom currency or the default fiat. Unconfigured tenants are unaffected.
 func (c CustomCurrencyConfig) EnforceCurrency(currency string) error {
 	if len(c.CustomCurrencies) == 0 {
 		return nil
 	}
 	currency = strings.ToLower(currency)
-	if _, ok := c.CustomCurrencies[currency]; ok || currency == c.DefaultFiatCurrency {
+	if c.IsCustom(currency) || currency == c.DefaultFiatCurrency {
 		return nil
 	}
 

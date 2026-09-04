@@ -7,6 +7,7 @@
 SET lock_timeout = '3s';
 SET statement_timeout = '30s';
 
+ALTER TABLE "invoice_line_items" ADD COLUMN IF NOT EXISTS "custom_currency" jsonb NULL;
 ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "custom_currency" jsonb NULL;
 
 -- migrate:down

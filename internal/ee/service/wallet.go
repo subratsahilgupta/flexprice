@@ -222,13 +222,6 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	if err != nil {
 		return nil, err
 	}
-	// Wallets pay invoices, and invoices are always denominated in fiat, so a wallet
-	// in a custom currency could never match one.
-	if _, isCustom := ccCfg.CustomCurrencies[w.Currency]; isCustom {
-		return nil, ierr.NewErrorf("wallet currency must be %s, not the custom currency %s", ccCfg.DefaultFiatCurrency, w.Currency).
-			WithHintf("Wallets pay invoices, which are billed in %s", ccCfg.DefaultFiatCurrency).
-			Mark(ierr.ErrValidation)
-	}
 	if err := ccCfg.EnforceCurrency(w.Currency); err != nil {
 		return nil, err
 	}
@@ -1694,32 +1687,21 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 			return nil, err
 		}
 
-		// A wallet is denominated in fiat, but subscriptions may bill in a custom
-		// currency. Keep those and record the rate so their charges convert below;
-		// skipping them would understate pending charges to nothing.
-		ccSettingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
-		ccCfg, err := GetSetting[types.CustomCurrencyConfig](ccSettingsSvc, ctx, types.SettingKeyCustomCurrencyConfig)
-		if err != nil {
-			return nil, err
-		}
-
+		// Filter subscriptions by currency
 		filteredSubscriptions := make([]*subscription.Subscription, 0)
-		subRates := make(map[string]decimal.Decimal, len(subscriptions))
 		for _, sub := range subscriptions {
-			rate := decimal.NewFromInt(1)
 			if sub.Currency != w.Currency {
-				rate = ccCfg.CustomCurrencies[sub.Currency].FiatConversionFactors[w.Currency]
-				if !rate.IsPositive() {
-					s.Logger.Info(ctx, "skipping subscription - currency mismatch")
-					continue
-				}
+				s.Logger.Info(ctx, "skipping subscription - currency mismatch",
+					"subscription_id", sub.ID,
+					"subscription_currency", sub.Currency,
+					"wallet_currency", w.Currency)
+				continue
 			}
 			if sub.SubscriptionType != types.SubscriptionTypeStandalone && sub.SubscriptionType != types.SubscriptionTypeParent {
 				s.Logger.Info(ctx, "skipping subscription - not a standalone or parent subscription")
 				continue
 			}
 
-			subRates[sub.ID] = rate
 			filteredSubscriptions = append(filteredSubscriptions, sub)
 		}
 
@@ -1756,8 +1738,7 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 				"usage_total", usageResult.TotalAmount,
 				"num_usage_charges", len(usageResult.LineItems))
 
-			cc := types.CustomCurrency{CustomCurrencyCode: sub.Currency, CustomConversionRate: subRates[sub.ID]}
-			totalPendingCharges = totalPendingCharges.Add(cc.ToFiat(usageResult.TotalAmount, w.Currency))
+			totalPendingCharges = totalPendingCharges.Add(usageResult.TotalAmount)
 		}
 	}
 
@@ -3307,31 +3288,21 @@ func (s *walletService) computeRealtimeBalanceDefault(ctx context.Context, w *wa
 			return nil, err
 		}
 
-		// A wallet is denominated in fiat, but subscriptions may bill in a custom
-		// currency. Keep those and record the rate so their charges convert below;
-		// skipping them would understate pending charges to nothing.
-		ccSettingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
-		ccCfg, err := GetSetting[types.CustomCurrencyConfig](ccSettingsSvc, ctx, types.SettingKeyCustomCurrencyConfig)
-		if err != nil {
-			return nil, err
-		}
-
+		// Filter subscriptions by currency
 		filteredSubscriptions := make([]*subscription.Subscription, 0)
-		subRates := make(map[string]decimal.Decimal, len(subscriptions))
 		for _, sub := range subscriptions {
-			rate := decimal.NewFromInt(1)
 			if sub.Currency != w.Currency {
-				rate = ccCfg.CustomCurrencies[sub.Currency].FiatConversionFactors[w.Currency]
-				if !rate.IsPositive() {
-					s.Logger.Info(ctx, "skipping subscription - currency mismatch")
-					continue
-				}
+				s.Logger.Info(ctx, "skipping subscription - currency mismatch",
+					"subscription_id", sub.ID,
+					"subscription_currency", sub.Currency,
+					"wallet_currency", w.Currency)
+				continue
 			}
 			if sub.SubscriptionType != types.SubscriptionTypeStandalone && sub.SubscriptionType != types.SubscriptionTypeParent {
 				s.Logger.Info(ctx, "skipping subscription - not a standalone or parent subscription")
 				continue
 			}
-			subRates[sub.ID] = rate
+
 			filteredSubscriptions = append(filteredSubscriptions, sub)
 		}
 
@@ -3367,8 +3338,7 @@ func (s *walletService) computeRealtimeBalanceDefault(ctx context.Context, w *wa
 				"usage_total", totalAmount,
 				"num_usage_charges", len(lineItems))
 
-			cc := types.CustomCurrency{CustomCurrencyCode: sub.Currency, CustomConversionRate: subRates[sub.ID]}
-			totalPendingCharges = totalPendingCharges.Add(cc.ToFiat(totalAmount, w.Currency))
+			totalPendingCharges = totalPendingCharges.Add(totalAmount)
 		}
 	}
 

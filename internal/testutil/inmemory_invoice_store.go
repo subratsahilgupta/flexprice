@@ -77,6 +77,7 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 			PeriodEnd:                   item.PeriodEnd,
 			Metadata:                    item.Metadata,
 			CommitmentInfo:              item.CommitmentInfo,
+			CustomCurrency:              item.CustomCurrency,
 			PrepaidCreditsApplied:       item.PrepaidCreditsApplied,
 			LineItemDiscount:            item.LineItemDiscount,
 			InvoiceLevelDiscount:        item.InvoiceLevelDiscount,
