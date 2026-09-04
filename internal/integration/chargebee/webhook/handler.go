@@ -136,8 +136,8 @@ func (h *Handler) handlePaymentSucceeded(ctx context.Context, event *ChargebeeWe
 		return nil
 	}
 
-	// Convert amount from cents to standard unit
-	paymentAmount := decimal.NewFromInt(transaction.Amount).Div(decimal.NewFromInt(100))
+	paymentAmount := decimal.NewFromInt(transaction.Amount).
+		Shift(-types.GetCurrencyPrecision(transaction.CurrencyCode))
 
 	// Process payment via service method
 	err = h.invoiceSvc.ProcessChargebeePaymentFromWebhook(

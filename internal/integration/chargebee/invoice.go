@@ -24,6 +24,7 @@ type ChargebeeInvoiceService interface {
 	CreateInvoice(ctx context.Context, req *InvoiceCreateRequest) (*InvoiceResponse, error)
 	RetrieveInvoice(ctx context.Context, invoiceID string) (*InvoiceResponse, error)
 	SyncInvoiceToChargebee(ctx context.Context, req ChargebeeInvoiceSyncRequest) (*ChargebeeInvoiceSyncResponse, error)
+	LinkInvoiceMapping(ctx context.Context, invoiceID, chargebeeInvoiceID string) error
 }
 
 // InvoiceServiceParams holds dependencies for InvoiceService

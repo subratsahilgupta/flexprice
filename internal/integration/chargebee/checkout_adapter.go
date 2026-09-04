@@ -18,8 +18,8 @@ import (
 
 type CheckoutAdapter struct {
 	Client      ChargebeeClient
-	CustomerSvc *CustomerService
-	InvoiceSvc  *InvoiceService
+	CustomerSvc ChargebeeCustomerService
+	InvoiceSvc  ChargebeeInvoiceService
 	Logger      *logger.Logger
 }
 
@@ -182,10 +182,20 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 			"error", err, "flexprice_invoice_id", req.InvoiceID, "chargebee_invoice_id", inv.Id)
 	}
 
-	settled, failed := lastLinkedPayment(inv)
+	settled, pending, failed := lastLinkedPayment(inv)
 	switch {
 	case inv.Status == invoiceEnum.StatusPaid || settled != nil:
-		return a.responseFromAutoCollect(ctx, req, inv, settled), true, nil
+		a.Logger.Info(ctx, "chargebee collected the invoice on creation",
+			"chargebee_invoice_id", inv.Id, "invoice_id", req.InvoiceID, "status", inv.Status)
+		return autoCollectResponse(inv, settled), true, nil
+
+	// ACH and SEPA sit in_progress for days. The collection is live, so the invoice
+	// must not be voided; the session stays PENDING for the webhook to settle.
+	case pending != nil:
+		a.Logger.Info(ctx, "chargebee auto-charge: collection in progress",
+			"customer_id", req.CustomerID, "invoice_id", req.InvoiceID,
+			"chargebee_invoice_id", inv.Id, "transaction_status", pending.TxnStatus)
+		return autoCollectResponse(inv, pending), true, nil
 
 	case failed != nil:
 		a.voidAbandonedInvoice(ctx, inv.Id, "off-session charge declined")
@@ -207,25 +217,19 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 	}
 }
 
-func (a *CheckoutAdapter) responseFromAutoCollect(
-	ctx context.Context,
-	req interfaces.AuthorizationLinkRequest,
+func autoCollectResponse(
 	inv *invoiceModel.Invoice,
-	settled *invoiceModel.LinkedPayment,
+	txn *invoiceModel.LinkedPayment,
 ) *interfaces.CheckoutProviderResponse {
-	a.Logger.Info(ctx, "chargebee collected the invoice on creation",
-		"chargebee_invoice_id", inv.Id,
-		"invoice_id", req.InvoiceID,
-		"status", inv.Status)
-
 	meta := map[string]string{"chargebee_invoice_id": inv.Id}
 	resp := &interfaces.CheckoutProviderResponse{
 		ProviderSessionID: inv.Id,
 		ProviderMetadata:  meta,
 	}
-	if settled != nil {
-		resp.ProviderPaymentIntentID = settled.TxnId
-		meta["transaction_status"] = string(settled.TxnStatus)
+
+	if txn != nil {
+		resp.ProviderPaymentIntentID = txn.TxnId
+		meta["transaction_status"] = string(txn.TxnStatus)
 	}
 	return resp
 }
@@ -239,7 +243,7 @@ func (a *CheckoutAdapter) voidAbandonedInvoice(ctx context.Context, chargebeeInv
 	}
 }
 
-func lastLinkedPayment(inv *invoiceModel.Invoice) (settled, failed *invoiceModel.LinkedPayment) {
+func lastLinkedPayment(inv *invoiceModel.Invoice) (settled, pending, failed *invoiceModel.LinkedPayment) {
 	for _, p := range inv.LinkedPayments {
 		if p == nil {
 			continue
@@ -247,11 +251,13 @@ func lastLinkedPayment(inv *invoiceModel.Invoice) (settled, failed *invoiceModel
 		switch classifyTransaction(p.TxnStatus) {
 		case transactionSettled:
 			settled = p
+		case transactionPending:
+			pending = p
 		case transactionFailed:
 			failed = p
 		}
 	}
-	return settled, failed
+	return settled, pending, failed
 }
 
 func (a *CheckoutAdapter) getLineItems(
@@ -314,7 +320,8 @@ func idempotencyScoped(key, op string) string {
 
 // transactionOutcome is the three-way reading of a Chargebee transaction status.
 // Treating everything non-success as failure is wrong: ACH and SEPA sit in
-// in_progress for days and settle normally.
+// in_progress for days and settle normally, so pending keeps the invoice alive and
+// the caller waits for the webhook.
 type transactionOutcome int
 
 const (
