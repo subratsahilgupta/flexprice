@@ -11,26 +11,25 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// recalculateTotalsFromLineItems re-derives totals from published line items and the already-applied discount/tax.
+// recalculateTotalsFromLineItems re-derives totals from already-applied discount/tax;
+// callers must pass only published line items, and discount/tax are not recomputed here.
 func (s *invoiceService) recalculateTotalsFromLineItems(inv *invoice.Invoice, lineItems []*invoice.InvoiceLineItem) {
 	subtotal := decimal.Zero
 	for _, li := range lineItems {
 		subtotal = subtotal.Add(li.Amount)
 	}
 	inv.Subtotal = subtotal
-	inv.Total = decimal.Max(inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(inv.TotalTax), decimal.Zero)
-	inv.AmountDue = inv.Total
-	inv.AmountRemaining = decimal.Max(inv.Total.Sub(inv.AmountPaid), decimal.Zero)
-}
 
-// requireDraftInvoice guards the line-item edit operations: only drafts are editable.
-func requireDraftInvoice(inv *invoice.Invoice) error {
-	if inv.InvoiceStatus != types.InvoiceStatusDraft {
-		return ierr.NewError("invoice is not in draft status").
-			WithHint("invoice must be in draft status to be edited").
-			Mark(ierr.ErrValidation)
+	// Discount-first-then-tax: total = subtotal - prepaid credits - discount + tax
+	inv.Total = inv.Subtotal.Sub(inv.TotalPrepaidCreditsApplied).Sub(inv.TotalDiscount).Add(inv.TotalTax)
+	if inv.Total.IsNegative() {
+		inv.Total = decimal.Zero
 	}
-	return nil
+	inv.AmountDue = inv.Total
+	inv.AmountRemaining = inv.Total.Sub(inv.AmountPaid)
+	if inv.AmountRemaining.IsNegative() {
+		inv.AmountRemaining = decimal.Zero
+	}
 }
 
 func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItemID string, req dto.UpdateLineItemRequest) (*dto.InvoiceResponse, error) {
@@ -46,8 +45,10 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 		if err != nil {
 			return err
 		}
-		if err := requireDraftInvoice(inv); err != nil {
-			return err
+		if inv.InvoiceStatus != types.InvoiceStatusDraft {
+			return ierr.NewError("invoice is not in draft status").
+				WithHint("invoice must be in draft status to be edited").
+				Mark(ierr.ErrValidation)
 		}
 		lockedInv = inv
 
@@ -90,7 +91,13 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 			return err
 		}
 
-		remaining := lo.Reject(lockedInv.LineItems, func(li *invoice.InvoiceLineItem, _ int) bool { return li.ID == existingItem.ID })
+		remaining := make([]*invoice.InvoiceLineItem, 0, len(lockedInv.LineItems))
+		for _, li := range lockedInv.LineItems {
+			if li.ID == existingItem.ID {
+				continue
+			}
+			remaining = append(remaining, li)
+		}
 		publishedLineItems = append(remaining, newItem)
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
@@ -119,8 +126,10 @@ func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, 
 		if err != nil {
 			return err
 		}
-		if err := requireDraftInvoice(inv); err != nil {
-			return err
+		if inv.InvoiceStatus != types.InvoiceStatusDraft {
+			return ierr.NewError("invoice is not in draft status").
+				WithHint("invoice must be in draft status to be edited").
+				Mark(ierr.ErrValidation)
 		}
 		lockedInv = inv
 
@@ -177,8 +186,10 @@ func (s *invoiceService) RemoveBulkLineItem(ctx context.Context, invoiceID strin
 		if err != nil {
 			return err
 		}
-		if err := requireDraftInvoice(inv); err != nil {
-			return err
+		if inv.InvoiceStatus != types.InvoiceStatusDraft {
+			return ierr.NewError("invoice is not in draft status").
+				WithHint("invoice must be in draft status to be edited").
+				Mark(ierr.ErrValidation)
 		}
 		lockedInv = inv
 
@@ -212,7 +223,14 @@ func (s *invoiceService) RemoveBulkLineItem(ctx context.Context, invoiceID strin
 			return err
 		}
 
-		publishedLineItems = lo.Reject(lockedInv.LineItems, func(li *invoice.InvoiceLineItem, _ int) bool { return removedIDs[li.ID] })
+		remaining := make([]*invoice.InvoiceLineItem, 0, len(lockedInv.LineItems))
+		for _, li := range lockedInv.LineItems {
+			if removedIDs[li.ID] {
+				continue
+			}
+			remaining = append(remaining, li)
+		}
+		publishedLineItems = remaining
 
 		s.recalculateTotalsFromLineItems(lockedInv, publishedLineItems)
 		lockedInv.IsManuallyEdited = true
