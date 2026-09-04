@@ -1323,19 +1323,6 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 		return nil, err
 	}
 
-	// Deferred when nested in an outer transaction — the caller runs them after commit.
-	if s.DB.TxFromContext(ctx) == nil {
-		s.runVoidSideEffects(ctx, inv)
-	}
-	return inv, nil
-}
-
-// runVoidSideEffects fails any pending purchased-credit wallet transaction and publishes the voided webhook.
-func (s *invoiceService) runVoidSideEffects(ctx context.Context, inv *invoice.Invoice) {
-	if inv == nil {
-		return
-	}
-
 	// A voided invoice will never be paid, so a purchased-credit transaction still
 	// waiting on it must not stay pending: it blocks the wallet's auto-topup guard
 	// indefinitely and is unrecoverable without a manual DB edit.
@@ -1363,6 +1350,7 @@ func (s *invoiceService) runVoidSideEffects(ctx context.Context, inv *invoice.In
 	}
 
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
+	return inv, nil
 }
 
 func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error {
@@ -3835,7 +3823,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 
 	// Finalized + apply_discount runs void-and-recreate and the update lands on the copy.
 	var updatedInv *invoice.Invoice
-	var voidedOriginal *invoice.Invoice
+	recreated := false
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		targetID := id
 
@@ -3847,11 +3835,11 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 			return err
 		}
 		if locked.InvoiceStatus == types.InvoiceStatusFinalized && req.ApplyDiscount {
-			draft, voided, err := s.voidAndRecreateDraftForEdit(txCtx, locked)
+			draft, err := s.voidAndRecreateDraftForEdit(txCtx, locked)
 			if err != nil {
 				return err
 			}
-			voidedOriginal = voided
+			recreated = true
 			targetID = draft.ID
 		}
 
@@ -3881,7 +3869,7 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 			inv.Metadata = *req.Metadata
 		}
 
-		if req.ApplyDiscount && voidedOriginal == nil {
+		if req.ApplyDiscount && !recreated {
 			// Draft path only — the recreate path already applied the discount to the copy.
 			if err := s.recalculateDiscountOnInvoice(txCtx, inv); err != nil {
 				return err
@@ -3898,10 +3886,6 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		return nil, err
 	}
 
-	// Void side effects run only after the commit.
-	if voidedOriginal != nil {
-		s.runVoidSideEffects(ctx, voidedOriginal)
-	}
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, updatedInv.ID)
 	return dto.NewInvoiceResponse(updatedInv), nil
 }

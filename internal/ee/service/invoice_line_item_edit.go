@@ -264,7 +264,6 @@ func (s *invoiceService) executeLineItemModification(ctx context.Context, invoic
 	// One transaction, one lock: the locked read decides the branch. A finalized
 	// invoice is voided and recreated as a draft, and the edit lands on the copy.
 	var resp *dto.InvoiceResponse
-	var voidedOriginal *invoice.Invoice
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		locked, err := s.InvoiceRepo.GetForUpdate(txCtx, invoiceID)
 		if err != nil {
@@ -276,11 +275,10 @@ func (s *invoiceService) executeLineItemModification(ctx context.Context, invoic
 
 		targetID := locked.ID
 		if locked.InvoiceStatus == types.InvoiceStatusFinalized {
-			draft, voided, err := s.voidAndRecreateDraftForEdit(txCtx, locked)
+			draft, err := s.voidAndRecreateDraftForEdit(txCtx, locked)
 			if err != nil {
 				return err
 			}
-			voidedOriginal = voided
 			targetID = draft.ID
 		}
 
@@ -290,9 +288,6 @@ func (s *invoiceService) executeLineItemModification(ctx context.Context, invoic
 	if err != nil {
 		return nil, err
 	}
-
-	// Void side effects (webhook, wallet cleanup) run only after the commit.
-	s.runVoidSideEffects(ctx, voidedOriginal)
 
 	return &dto.InvoiceModifyResponse{Invoice: resp}, nil
 }
@@ -331,10 +326,10 @@ func rejectVoidedInvoiceEdit(inv *invoice.Invoice) error {
 
 // voidAndRecreateDraftForEdit voids a finalized invoice and creates a DRAFT copy of it
 // (data + line items, discount re-derived), linking the original to the copy. Run inside a transaction.
-func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *invoice.Invoice) (draft *invoice.Invoice, voided *invoice.Invoice, err error) {
-	voided, err = s.VoidInvoice(ctx, inv.ID, dto.InvoiceVoidRequest{})
+func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error) {
+	voided, err := s.VoidInvoice(ctx, inv.ID, dto.InvoiceVoidRequest{})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	draftID := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE)
@@ -342,7 +337,7 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 
 	sourceItems, err := s.InvoiceLineItemRepo.ListByInvoiceID(ctx, voided.ID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	lineItems := make([]*invoice.InvoiceLineItem, 0, len(sourceItems))
@@ -359,7 +354,7 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 		lineItems = append(lineItems, copied)
 	}
 
-	draft = voided.CopyForDraftEdit(draftID, baseModel)
+	draft := voided.CopyForDraftEdit(draftID, baseModel)
 	draft.LineItems = lineItems
 	if len(lineItems) > 0 {
 		s.recalculateTotalsFromLineItems(draft, lineItems)
@@ -373,15 +368,15 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 	if err := s.InvoiceRepo.CreateWithLineItems(ctx, draft); err != nil {
 		s.Logger.Error(ctx, "finalized invoice edit failed after voiding",
 			"error", err, "invoice_id", voided.ID)
-		return nil, nil, err
+		return nil, err
 	}
 
 	if draft.SubscriptionID != nil {
 		if err := s.applyCurrentDiscountToDraft(ctx, draft); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if err := s.InvoiceRepo.Update(ctx, draft); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
@@ -389,11 +384,11 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 		WithRecalculatedInvoiceID(lo.ToPtr(draft.ID)).
 		Build()
 	if err := s.InvoiceRepo.Update(ctx, voided); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	s.Logger.Info(ctx, "voided finalized invoice and recreated as draft for editing",
 		"original_invoice_id", voided.ID, "draft_invoice_id", draft.ID)
 
-	return draft, voided, nil
+	return draft, nil
 }
