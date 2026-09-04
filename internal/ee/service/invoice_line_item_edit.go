@@ -52,21 +52,14 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 		}
 		lockedInv = inv
 
-		existingItem, err := s.InvoiceLineItemRepo.Get(txCtx, lineItemID)
-		if err != nil {
-			return err
-		}
-		if existingItem.InvoiceID != invoiceID {
+		// GetForUpdate already loaded the invoice's published line items — resolve
+		// against them instead of issuing another repo read. An archived/deleted id
+		// is absent here, which also keeps the lineage chain from branching.
+		existingItem, ok := lo.Find(lockedInv.LineItems, func(li *invoice.InvoiceLineItem) bool { return li.ID == lineItemID })
+		if !ok {
 			return ierr.NewError("line item not found").
-				WithHintf("line item %s does not belong to invoice %s", lineItemID, invoiceID).
+				WithHintf("line item %s does not exist on invoice %s (or is not the current version)", lineItemID, invoiceID).
 				Mark(ierr.ErrNotFound)
-		}
-		if existingItem.Status != types.StatusPublished {
-			// Editing an already-archived/deleted row would branch the lineage
-			// chain instead of extending it, or resurrect a removed item.
-			return ierr.NewError("line item is not editable").
-				WithHintf("line item %s has status %s and is not the current version", lineItemID, existingItem.Status).
-				Mark(ierr.ErrValidation)
 		}
 
 		builder := invoice.NewInvoiceLineItemBuilder(existingItem).
@@ -200,21 +193,17 @@ func (s *invoiceService) RemoveBulkLineItem(ctx context.Context, invoiceID strin
 		}
 		lockedInv = inv
 
+		// Validate against the line items GetForUpdate already loaded — no per-id reads.
+		published := make(map[string]bool, len(lockedInv.LineItems))
+		for _, li := range lockedInv.LineItems {
+			published[li.ID] = true
+		}
 		removedIDs := make(map[string]bool, len(req.LineItemIDs))
 		for _, lineItemID := range req.LineItemIDs {
-			existingItem, err := s.InvoiceLineItemRepo.Get(txCtx, lineItemID)
-			if err != nil {
-				return err
-			}
-			if existingItem.InvoiceID != invoiceID {
+			if !published[lineItemID] {
 				return ierr.NewError("line item not found").
-					WithHintf("line item %s does not belong to invoice %s", lineItemID, invoiceID).
+					WithHintf("line item %s does not exist on invoice %s (or is not the current version)", lineItemID, invoiceID).
 					Mark(ierr.ErrNotFound)
-			}
-			if existingItem.Status != types.StatusPublished {
-				return ierr.NewError("line item is not removable").
-					WithHintf("line item %s has status %s and is not the current version", lineItemID, existingItem.Status).
-					Mark(ierr.ErrValidation)
 			}
 			removedIDs[lineItemID] = true
 		}
@@ -316,26 +305,25 @@ func (s *invoiceService) executeLineItemModification(ctx context.Context, invoic
 }
 
 // applyLineItemAction dispatches one line-item modification against the given invoice.
+// Update/remove ids resolve through ONE line-item listing (by id, then by parent
+// lineage so ids read before a void-and-recreate stay addressable) — no per-id reads.
 func (s *invoiceService) applyLineItemAction(ctx context.Context, invoiceID string, params *dto.InvoiceModifyLineItemParams) (*dto.InvoiceResponse, error) {
 	switch params.Action {
 	case dto.InvoiceModifyLineItemActionAdd:
 		return s.AddBulkLineItem(ctx, invoiceID, dto.AddBulkLineItemRequest{
 			Items: params.Items,
 		})
-	case dto.InvoiceModifyLineItemActionUpdate:
-		lineItemID, err := s.resolveLineItemIDForEdit(ctx, invoiceID, params.LineItemID)
+	case dto.InvoiceModifyLineItemActionUpdate, dto.InvoiceModifyLineItemActionRemove:
+		resolve, err := s.lineItemResolverForInvoice(ctx, invoiceID)
 		if err != nil {
 			return nil, err
 		}
-		return s.UpdateLineItem(ctx, invoiceID, lineItemID, *params.Update)
-	case dto.InvoiceModifyLineItemActionRemove:
+		if params.Action == dto.InvoiceModifyLineItemActionUpdate {
+			return s.UpdateLineItem(ctx, invoiceID, resolve(params.LineItemID), *params.Update)
+		}
 		lineItemIDs := make([]string, 0, len(params.LineItemIDs))
 		for _, id := range params.LineItemIDs {
-			resolved, err := s.resolveLineItemIDForEdit(ctx, invoiceID, id)
-			if err != nil {
-				return nil, err
-			}
-			lineItemIDs = append(lineItemIDs, resolved)
+			lineItemIDs = append(lineItemIDs, resolve(id))
 		}
 		return s.RemoveBulkLineItem(ctx, invoiceID, dto.RemoveBulkLineItemRequest{
 			LineItemIDs: lineItemIDs,
@@ -345,6 +333,37 @@ func (s *invoiceService) applyLineItemAction(ctx context.Context, invoiceID stri
 			WithHint("valid values: add, update, remove").
 			Mark(ierr.ErrValidation)
 	}
+}
+
+// lineItemResolverForInvoice lists the invoice's published line items once and returns a
+// pure resolver: an id already on the invoice passes through, an id whose copy points at
+// it via parent_line_item_id resolves to the copy, and anything else passes through
+// unchanged for the operation itself to reject.
+func (s *invoiceService) lineItemResolverForInvoice(ctx context.Context, invoiceID string) (func(string) string, error) {
+	items, err := s.InvoiceLineItemRepo.ListByInvoiceID(ctx, invoiceID)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]bool, len(items))
+	byParent := make(map[string]string, len(items))
+	for _, li := range items {
+		if li.Status != types.StatusPublished {
+			continue
+		}
+		byID[li.ID] = true
+		if li.ParentLineItemID != nil {
+			byParent[*li.ParentLineItemID] = li.ID
+		}
+	}
+	return func(id string) string {
+		if byID[id] {
+			return id
+		}
+		if mapped, ok := byParent[id]; ok {
+			return mapped
+		}
+		return id
+	}, nil
 }
 
 // translateLineItemParams maps line item ids from the voided original onto the draft copy
@@ -395,31 +414,6 @@ func rejectVoidedInvoiceEdit(inv *invoice.Invoice) error {
 	return ierr.NewError("invoice is voided").
 		WithHintf("invoice %s is voided and can no longer be edited", inv.ID).
 		Mark(ierr.ErrValidation)
-}
-
-// resolveLineItemIDForEdit maps a line item id onto the given invoice. Ids already on the
-// invoice pass through; an id from the voided original of a recreated draft resolves to the
-// copied line item via parent_line_item_id lineage, so clients can keep referencing the ids
-// they read before the void-and-recreate.
-func (s *invoiceService) resolveLineItemIDForEdit(ctx context.Context, invoiceID, lineItemID string) (string, error) {
-	li, err := s.InvoiceLineItemRepo.Get(ctx, lineItemID)
-	if err == nil && li.InvoiceID == invoiceID {
-		return lineItemID, nil
-	}
-
-	items, listErr := s.InvoiceLineItemRepo.ListByInvoiceID(ctx, invoiceID)
-	if listErr != nil {
-		return "", listErr
-	}
-	for _, item := range items {
-		if item.ParentLineItemID != nil && *item.ParentLineItemID == lineItemID && item.Status == types.StatusPublished {
-			return item.ID, nil
-		}
-	}
-	if err != nil {
-		return "", err
-	}
-	return lineItemID, nil
 }
 
 // voidAndRecreateDraftForEdit implements the finalized-invoice edit flow: it voids the

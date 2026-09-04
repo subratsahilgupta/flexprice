@@ -502,7 +502,7 @@ func (s *LineItemEditSuite) TestUpdateRejectsEditOnAlreadyArchivedLineItem() {
 	name3 := "v3-via-stale-id"
 	_, err = s.service.UpdateLineItem(ctx, inv.ID, v1.ID, dto.UpdateLineItemRequest{DisplayName: &name3})
 	s.Error(err)
-	s.True(ierr.IsValidation(err))
+	s.True(ierr.IsNotFound(err))
 
 	published, err := s.GetStores().InvoiceLineItemRepo.ListByInvoiceID(ctx, inv.ID)
 	s.NoError(err)
@@ -611,7 +611,7 @@ func (s *LineItemEditSuite) TestRemoveRejectsAlreadyDeletedLineItem() {
 		LineItemIDs: []string{li.ID},
 	})
 	s.Error(err)
-	s.True(ierr.IsValidation(err))
+	s.True(ierr.IsNotFound(err))
 }
 
 func (s *LineItemEditSuite) TestRemoveRejectsNonExistentLineItem() {
