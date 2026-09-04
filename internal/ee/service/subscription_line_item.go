@@ -140,10 +140,10 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 
 	priceResp, priceErr := NewPriceService(s.ServiceParams).GetPrice(ctx, lineItem.PriceID)
 	if priceErr != nil {
-		return nil, priceErr
+		s.Logger.Info(ctx, "skipped price expansion for created line item", "line_item_id", lineItem.ID, "price_id", lineItem.PriceID, "error", priceErr)
 	}
 
-	if lineItem != nil && !lineItem.IsUsage() && lineItem.Meter == nil {
+	if lineItem != nil && lineItem.IsUsage() && lineItem.Meter == nil {
 		m, err := s.MeterRepo.GetMeter(ctx, lineItem.MeterID)
 		if err != nil {
 			s.Logger.Info(ctx, "skipped meter expansion for line item", "line_item_id", lineItem.ID, "meter_id", lineItem.MeterID, "error", err)
@@ -171,6 +171,10 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 		})
 		if err != nil {
 			return nil, err
+		}
+
+		if priceResp != nil {
+			return nil, priceErr
 		}
 
 		// Temporarily override current period on a copy so LineItemProrationService
