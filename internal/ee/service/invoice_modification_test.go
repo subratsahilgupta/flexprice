@@ -491,7 +491,10 @@ func (s *LineItemEditSuite) TestUpdateRejectsLineItemFromDifferentInvoice() {
 	s.True(ierr.IsNotFound(err))
 }
 
-func (s *LineItemEditSuite) TestUpdateRejectsEditOnAlreadyArchivedLineItem() {
+// A stale version id resolves onto the CURRENT version via parent lineage instead of
+// erroring or branching the chain: the edit lands on the live row, and the invoice
+// still holds exactly one published version afterwards.
+func (s *LineItemEditSuite) TestUpdateViaStaleVersionIDResolvesToCurrentVersion() {
 	ctx := s.GetContext()
 	inv, v1 := s.createDraftInvoiceWithLineItem(ctx, decimal.NewFromInt(100), decimal.NewFromInt(10))
 
@@ -501,13 +504,12 @@ func (s *LineItemEditSuite) TestUpdateRejectsEditOnAlreadyArchivedLineItem() {
 
 	name3 := "v3-via-stale-id"
 	_, err = s.service.UpdateLineItem(ctx, inv.ID, v1.ID, dto.UpdateLineItemRequest{DisplayName: &name3})
-	s.Error(err)
-	s.True(ierr.IsNotFound(err))
+	s.NoError(err)
 
 	published, err := s.GetStores().InvoiceLineItemRepo.ListByInvoiceID(ctx, inv.ID)
 	s.NoError(err)
 	s.Require().Len(published, 1)
-	s.Equal(name2, lo.FromPtr(published[0].DisplayName))
+	s.Equal(name3, lo.FromPtr(published[0].DisplayName))
 }
 
 func (s *LineItemEditSuite) TestRemoveSoftDeletesLineItem() {

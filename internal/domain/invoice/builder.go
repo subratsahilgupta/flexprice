@@ -237,7 +237,6 @@ func (i *Invoice) CopyForDraftEdit(id string, baseModel types.BaseModel) *Invoic
 		WithAdjustmentAmount(decimal.Zero).
 		WithTotalDiscount(decimal.Zero).
 		WithTotalTax(decimal.Zero).
-		WithTaxExemptionReasonCode(nil).
 		WithInvoiceNumber(nil).
 		// Deterministic key: a retried recreate resolves to the same replacement instead
 		// of racing a duplicate (idempotency lookups exclude VOIDED invoices).
