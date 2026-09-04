@@ -484,7 +484,7 @@ func gatewayURL(paymentObj *payment.Payment, key string) string {
 	if url, ok := paymentObj.GatewayMetadata[key]; ok && url != "" {
 		return url
 	}
-
+	
 	return paymentObj.Metadata[key]
 }
 

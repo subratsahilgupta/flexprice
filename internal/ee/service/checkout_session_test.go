@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	taxrate "github.com/flexprice/flexprice/internal/domain/tax"

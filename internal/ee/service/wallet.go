@@ -2292,6 +2292,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			return err
 		}
 
+
 		// Step 3: Validate operation
 		if err := s.validateWalletOperation(w, req); err != nil {
 			return err
@@ -2419,6 +2420,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 	// Publish webhook event after transaction commits
 	s.publishInternalTransactionWebhookEvent(ctx, types.WebhookEventWalletTransactionCreated, tx.ID)
 
+
 	// Log credit balance alert after wallet operation
 	if err := s.logCreditBalanceAlert(ctx, w, newCreditBalance); err != nil {
 		// Don't fail the transaction if alert logging fails
@@ -2437,6 +2439,7 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			"customer_id", w.CustomerID,
 		)
 	}
+
 
 	return nil
 }

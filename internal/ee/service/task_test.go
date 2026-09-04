@@ -539,3 +539,4 @@ type notFoundError struct{ what string }
 
 func (e *notFoundError) Error() string { return "not found: " + e.what }
 func notFoundErr(what string) error    { return &notFoundError{what: what} }
+
