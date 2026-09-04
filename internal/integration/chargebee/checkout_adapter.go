@@ -289,6 +289,27 @@ func (a *CheckoutAdapter) getLineItems(
 
 	// Chargebee collects the sum of the lines, not the total we hand it, so a drift
 	// here is a customer charged an amount our payment record disagrees with.
+	//
+	// KNOWN GAP — the comparison below is against the payment amount, which is the
+	// wrong base, and a drift only logs rather than stopping the charge.
+	//
+	// Line item amounts sum to Subtotal, while the payment amount is
+	// Subtotal - TotalDiscount + TotalTax - prepaid credits - adjustments. Tax is
+	// deliberately not sent: as with Zoho, the tenant configures it on the provider
+	// and Chargebee recomputes it over these charges, so an itemised invoice is
+	// correct precisely when sum(lines) == amount_due - total_tax. Comparing against
+	// the payment amount instead makes this fire on every taxed invoice, which buries
+	// the cases that are genuinely wrong:
+	//
+	//   - discounts, prepaid credits and adjustments reduce amount_due without
+	//     touching line item amounts, so Chargebee collects more than is owed.
+	//   - per-line rounding to minor units can drift a unit from the once-rounded
+	//     total even when nothing else applies.
+	//
+	// Fixing it means comparing against amount_due - total_tax and falling back to a
+	// single charge for the full payment amount when they disagree. That fallback
+	// must be sent with Taxable false, since the amount already includes our tax and
+	// Chargebee would otherwise tax it a second time.
 	if sum != total {
 		a.Logger.Error(ctx, "chargebee line items do not sum to the payment amount",
 			"error", "line item sum differs from payment amount",

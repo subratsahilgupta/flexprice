@@ -540,39 +540,6 @@ func (s *InvoiceService) getChargebeeItemPriceIDAndCheckTiered(ctx context.Conte
 	return chargebeeItemPriceID, isTiered, nil
 }
 
-// getChargebeeItemPriceIDSimple retrieves the Chargebee item price ID from entity mapping
-func (s *InvoiceService) getChargebeeItemPriceIDSimple(ctx context.Context, flexPriceID string) (string, error) {
-	if flexPriceID == "" {
-		return "", ierr.NewError("price ID is required").
-			WithHint("Line item must have a price ID").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Query entity mapping table for price ID
-	filter := types.NewEntityIntegrationMappingFilter()
-	filter.EntityID = flexPriceID
-	filter.EntityType = types.IntegrationEntityTypeItemPrice
-	filter.ProviderTypes = []string{string(types.SecretProviderChargebee)}
-
-	mappings, err := s.EntityIntegrationMappingRepo.List(ctx, filter)
-	if err != nil {
-		return "", ierr.WithError(err).
-			WithHint("Failed to get Chargebee item price mapping").
-			Mark(ierr.ErrDatabase)
-	}
-
-	if len(mappings) == 0 {
-		return "", ierr.NewError("Chargebee item price not found for FlexPrice price").
-			WithHint("Price must be synced to Chargebee before creating invoice").
-			WithReportableDetails(map[string]interface{}{
-				"flexprice_price_id": flexPriceID,
-			}).
-			Mark(ierr.ErrNotFound)
-	}
-
-	return mappings[0].ProviderEntityID, nil
-}
-
 func (s *InvoiceService) GetExistingChargebeeMapping(ctx context.Context, invoiceID string) (*entityintegrationmapping.EntityIntegrationMapping, error) {
 	filter := types.NewEntityIntegrationMappingFilter()
 	filter.EntityID = invoiceID
@@ -654,7 +621,7 @@ func (s *InvoiceService) LinkInvoiceMapping(ctx context.Context, invoiceID, char
 // the mapping itself look like it failed.
 func (s *InvoiceService) syncChargebeeInvoiceNumber(ctx context.Context, flex *invoice.Invoice, chargebeeInvoiceID string) {
 	if err := s.writeChargebeeInvoiceMetadata(ctx, flex, chargebeeInvoiceID); err != nil {
-		s.Logger.Info(ctx, "failed to adopt chargebee invoice number",
+		s.Logger.Error(ctx, "failed to adopt chargebee invoice number",
 			"error", err,
 			"invoice_id", flex.ID,
 			"chargebee_invoice_id", chargebeeInvoiceID)
@@ -935,11 +902,19 @@ func (s *InvoiceService) ProcessChargebeePaymentFromWebhook(
 
 	// Step 3: Create payment record in FlexPrice using repository
 	now := time.Now()
+	methodType, mapped := paymentMethodTypeFor(enum.PaymentMethod(req.PaymentMethod))
+	if !mapped {
+		methodType = types.PaymentMethodTypeCard
+		s.Logger.Info(ctx, "unmapped chargebee payment method, recording as card",
+			"chargebee_payment_method", req.PaymentMethod,
+			"chargebee_transaction_id", req.ChargebeeTransactionID)
+	}
+
 	createPaymentReq := dto.CreatePaymentRequest{
 		IdempotencyKey:    req.ChargebeeTransactionID, // Use transaction ID as idempotency key to prevent duplicates
 		Amount:            req.Amount,
 		Currency:          req.Currency,
-		PaymentMethodType: types.PaymentMethodTypeCard, // Default to card
+		PaymentMethodType: methodType,
 		DestinationType:   types.PaymentDestinationTypeInvoice,
 		DestinationID:     req.FlexpriceInvoiceID,
 		ProcessPayment:    false, // Already processed by Chargebee
