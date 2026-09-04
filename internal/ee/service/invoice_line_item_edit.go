@@ -372,7 +372,7 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 	}
 
 	if draft.SubscriptionID != nil {
-		if err := s.applyCurrentDiscountToDraft(ctx, draft); err != nil {
+		if err := s.applyCurrentDiscountToDraft(ctx, voided, draft); err != nil {
 			return nil, err
 		}
 		if err := s.InvoiceRepo.Update(ctx, draft); err != nil {
