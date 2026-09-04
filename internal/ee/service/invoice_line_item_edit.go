@@ -492,7 +492,9 @@ func (s *invoiceService) voidAndRecreateDraftForEdit(ctx context.Context, inv *i
 		}
 	}
 
-	voided.RecalculatedInvoiceID = lo.ToPtr(draft.ID)
+	voided = invoice.NewInvoiceBuilder(voided).
+		WithRecalculatedInvoiceID(lo.ToPtr(draft.ID)).
+		Build()
 	if err := s.InvoiceRepo.Update(ctx, voided); err != nil {
 		return nil, nil, err
 	}
