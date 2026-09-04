@@ -268,200 +268,209 @@ func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_Effect
 	s.True(li.EndDate.IsZero(), "line item should remain unterminated")
 }
 
-func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_DefaultEffectiveFromCancels() {
-	ctx := s.GetContext()
-	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+// --- Scheduled version lineage ---
+//
+// UpdateSubscriptionLineItem versions a line item by terminating the predecessor and
+// creating a successor that starts where it ended, linking the two with metadata pointers
+// in both directions. Delete uses those pointers to revert a bad scheduled change and to
+// refuse deleting a chain out of order. The tests below cover that round trip, the
+// ordering guard rails, and the edits that must not break the pointers.
 
-	scheduled := *s.testData.lineItem
-	scheduled.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
-	scheduled.StartDate = futureStart
-	scheduled.EndDate = time.Time{}
-	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &scheduled))
-
-	resp, err := s.service.DeleteSubscriptionLineItem(ctx, scheduled.ID, dto.DeleteSubscriptionLineItemRequest{})
-	s.NoError(err)
-	s.NotNil(resp)
-	s.Equal(types.StatusDeleted, resp.SubscriptionLineItem.Status)
-
-	got, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, scheduled.ID)
-	s.NoError(err)
-	s.Equal(types.StatusDeleted, got.Status)
-}
-
-func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_RestoresPredecessor() {
-	ctx := s.GetContext()
-	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
-	newAmount := decimal.NewFromInt(75)
-
-	updated, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
+// scheduleVersion versions lineItemID at effectiveFrom and returns the successor the
+// service created — one link of a predecessor -> successor chain.
+func (s *SubscriptionLineItemServiceSuite) scheduleVersion(lineItemID string, amount int64, effectiveFrom time.Time) *subscription.SubscriptionLineItem {
+	s.T().Helper()
+	newAmount := decimal.NewFromInt(amount)
+	resp, err := s.service.UpdateSubscriptionLineItem(s.GetContext(), lineItemID, dto.UpdateSubscriptionLineItemRequest{
 		Amount:        &newAmount,
-		EffectiveFrom: &futureStart,
+		EffectiveFrom: &effectiveFrom,
 	})
 	s.NoError(err)
-	s.NotEqual(s.testData.lineItem.ID, updated.SubscriptionLineItem.ID)
-	s.Equal(s.testData.lineItem.ID, updated.SubscriptionLineItem.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID])
+	return resp.SubscriptionLineItem
+}
 
-	oldLi, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
-	s.NoError(err)
-	s.Equal(futureStart.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
-	s.Equal(updated.SubscriptionLineItem.ID, oldLi.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID])
+// stageLineItem persists a clone of the suite's line item. Rows created this way carry no
+// version pointers, standing in for line items the versioning flow did not produce.
+func (s *SubscriptionLineItemServiceSuite) stageLineItem(mutate func(*subscription.SubscriptionLineItem)) *subscription.SubscriptionLineItem {
+	s.T().Helper()
+	clone := *s.testData.lineItem
+	clone.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
+	mutate(&clone)
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(s.GetContext(), &clone))
+	return &clone
+}
 
-	_, err = s.service.DeleteSubscriptionLineItem(ctx, updated.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
+func (s *SubscriptionLineItemServiceSuite) reloadLineItem(id string) *subscription.SubscriptionLineItem {
+	s.T().Helper()
+	item, err := s.GetStores().SubscriptionLineItemRepo.Get(s.GetContext(), id)
 	s.NoError(err)
+	return item
+}
 
-	restored, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
-	s.NoError(err)
-	s.True(restored.EndDate.IsZero(), "cancelling the scheduled version should reopen the prior line")
+// revertScheduledVersion is the delete call with no effective_from, the only shape a
+// not-yet-started line item accepts.
+func (s *SubscriptionLineItemServiceSuite) revertScheduledVersion(id string) error {
+	_, err := s.service.DeleteSubscriptionLineItem(s.GetContext(), id, dto.DeleteSubscriptionLineItemRequest{})
+	return err
+}
+
+func (s *SubscriptionLineItemServiceSuite) assertEndDate(item *subscription.SubscriptionLineItem, expected time.Time, msg string) {
+	s.T().Helper()
+	s.Equal(expected.Truncate(time.Second).Unix(), item.EndDate.Truncate(time.Second).Unix(), msg)
+}
+
+// The round trip: versioning links both sides, reverting deletes the successor, reopens
+// the predecessor, and drops the pointer that would otherwise dangle.
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_RevertsPredecessor() {
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+
+	successor := s.scheduleVersion(s.testData.lineItem.ID, 75, futureStart)
+	s.NotEqual(s.testData.lineItem.ID, successor.ID)
+	s.Equal(s.testData.lineItem.ID, successor.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID])
+
+	predecessor := s.reloadLineItem(s.testData.lineItem.ID)
+	s.assertEndDate(predecessor, futureStart, "versioning must terminate the predecessor where the successor starts")
+	s.Equal(successor.ID, predecessor.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID])
+
+	s.NoError(s.revertScheduledVersion(successor.ID))
+
+	s.Equal(types.StatusDeleted, s.reloadLineItem(successor.ID).Status)
+	restored := s.reloadLineItem(s.testData.lineItem.ID)
 	s.Equal(types.StatusPublished, restored.Status)
+	s.True(restored.EndDate.IsZero(), "reverting the scheduled version should reopen the prior line")
 	s.Empty(restored.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID])
 }
 
-func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_MustDeleteTipFirst() {
-	ctx := s.GetContext()
+// Reverting restores exactly the referenced predecessor. A scheduled row with no pointer
+// restores nothing, and a sibling sharing the same meter and price terminated at the same
+// boundary is not a candidate — the flow once matched on meter/price plus boundary rather
+// than on the pointer.
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_RestoresOnlyReferencedPredecessor() {
 	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
-	amountB := decimal.NewFromInt(75)
-	amountC := decimal.NewFromInt(90)
 
-	itemB, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
-		Amount:        &amountB,
-		EffectiveFrom: &futureStart,
+	sibling := s.stageLineItem(func(li *subscription.SubscriptionLineItem) {
+		li.EndDate = futureStart
 	})
-	s.NoError(err)
-
-	itemC, err := s.service.UpdateSubscriptionLineItem(ctx, itemB.SubscriptionLineItem.ID, dto.UpdateSubscriptionLineItemRequest{
-		Amount:        &amountC,
-		EffectiveFrom: &futureStart,
+	unlinked := s.stageLineItem(func(li *subscription.SubscriptionLineItem) {
+		li.StartDate = futureStart
+		li.EndDate = time.Time{}
+		li.Metadata = nil
 	})
-	s.NoError(err)
 
-	_, err = s.service.DeleteSubscriptionLineItem(ctx, itemB.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
+	s.NoError(s.revertScheduledVersion(unlinked.ID))
+	s.Equal(types.StatusDeleted, s.reloadLineItem(unlinked.ID).Status)
+	s.assertEndDate(s.reloadLineItem(sibling.ID), futureStart, "a row without a predecessor pointer must restore nothing")
+
+	successor := s.scheduleVersion(s.testData.lineItem.ID, 75, futureStart)
+	s.NoError(s.revertScheduledVersion(successor.ID))
+
+	s.True(s.reloadLineItem(s.testData.lineItem.ID).EndDate.IsZero(), "only the referenced predecessor should be reopened")
+	s.assertEndDate(s.reloadLineItem(sibling.ID), futureStart, "sibling sharing meter and price must stay terminated")
+}
+
+// Chains unwind from the tip: with A -> B -> C, B cannot be deleted while C exists, so a
+// chain can never develop a deleted middle link.
+func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_MustDeleteTipFirst() {
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+
+	itemB := s.scheduleVersion(s.testData.lineItem.ID, 75, futureStart)
+	itemC := s.scheduleVersion(itemB.ID, 90, futureStart)
+
+	err := s.revertScheduledVersion(itemB.ID)
 	s.Error(err)
 	s.Contains(err.Error(), "line item has a successor and cannot be deleted")
 
-	_, err = s.service.DeleteSubscriptionLineItem(ctx, itemC.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
-	s.NoError(err)
+	s.NoError(s.revertScheduledVersion(itemC.ID))
+	s.NoError(s.revertScheduledVersion(itemB.ID))
 
-	_, err = s.service.DeleteSubscriptionLineItem(ctx, itemB.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
-	s.NoError(err)
-
-	restoredA, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
-	s.NoError(err)
+	restoredA := s.reloadLineItem(s.testData.lineItem.ID)
 	s.Equal(types.StatusPublished, restoredA.Status)
-	s.True(restoredA.EndDate.IsZero())
-
-	deletedB, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, itemB.SubscriptionLineItem.ID)
-	s.NoError(err)
-	s.Equal(types.StatusDeleted, deletedB.Status)
-
-	deletedC, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, itemC.SubscriptionLineItem.ID)
-	s.NoError(err)
-	s.Equal(types.StatusDeleted, deletedC.Status)
+	s.True(restoredA.EndDate.IsZero(), "unwinding the chain must reopen the original line")
+	s.Equal(types.StatusDeleted, s.reloadLineItem(itemB.ID).Status)
+	s.Equal(types.StatusDeleted, s.reloadLineItem(itemC.ID).Status)
 }
 
-func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_RestoresOnlyReferencedPredecessor() {
-	ctx := s.GetContext()
-	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
-	newAmount := decimal.NewFromInt(75)
-
-	neighbor := *s.testData.lineItem
-	neighbor.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
-	neighbor.EndDate = futureStart
-	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &neighbor))
-
-	updated, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
-		Amount:        &newAmount,
-		EffectiveFrom: &futureStart,
-	})
-	s.NoError(err)
-
-	_, err = s.service.DeleteSubscriptionLineItem(ctx, updated.SubscriptionLineItem.ID, dto.DeleteSubscriptionLineItemRequest{})
-	s.NoError(err)
-
-	restored, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
-	s.NoError(err)
-	s.True(restored.EndDate.IsZero(), "only the referenced predecessor should be reopened")
-
-	untouched, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, neighbor.ID)
-	s.NoError(err)
-	s.Equal(futureStart.Truncate(time.Second).Unix(), untouched.EndDate.Truncate(time.Second).Unix())
-}
-
+// A not-yet-started line can only be reverted immediately; scheduling its deletion would
+// stack a scheduled change on top of a scheduled change.
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_FutureEffectiveFromRejected() {
-	ctx := s.GetContext()
 	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+	successor := s.scheduleVersion(s.testData.lineItem.ID, 75, futureStart)
 
-	scheduled := *s.testData.lineItem
-	scheduled.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
-	scheduled.StartDate = futureStart
-	scheduled.EndDate = time.Time{}
-	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &scheduled))
-
-	_, err := s.service.DeleteSubscriptionLineItem(ctx, scheduled.ID, dto.DeleteSubscriptionLineItemRequest{
+	_, err := s.service.DeleteSubscriptionLineItem(s.GetContext(), successor.ID, dto.DeleteSubscriptionLineItemRequest{
 		EffectiveFrom: &futureStart,
 	})
 	s.Error(err)
 	s.Contains(err.Error(), "cannot schedule deletion of a line item that has not started")
 
-	got, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, scheduled.ID)
-	s.NoError(err)
-	s.Equal(types.StatusPublished, got.Status)
-	s.True(got.EndDate.IsZero())
+	unchanged := s.reloadLineItem(successor.ID)
+	s.Equal(types.StatusPublished, unchanged.Status)
+	s.True(unchanged.EndDate.IsZero())
 }
 
-func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_ScheduledLine_TerminatesWithoutRevert() {
-	ctx := s.GetContext()
+// Versioning a line that already has a scheduled version would leave two published lines
+// starting on the same date and orphan the first successor.
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_AlreadyScheduled_Rejected() {
 	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
-	firstAmount := decimal.NewFromInt(75)
-	secondAmount := decimal.NewFromInt(90)
+	nextAmount := decimal.NewFromInt(90)
 
-	scheduled, err := s.service.UpdateSubscriptionLineItem(ctx, s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
-		Amount:        &firstAmount,
+	successor := s.scheduleVersion(s.testData.lineItem.ID, 75, futureStart)
+
+	_, err := s.service.UpdateSubscriptionLineItem(s.GetContext(), s.testData.lineItem.ID, dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &nextAmount,
 		EffectiveFrom: &futureStart,
+	})
+	s.Error(err)
+	s.Contains(err.Error(), "line item already has a scheduled version")
+
+	// Reverting frees the line item for a fresh edit, and the replacement must not inherit
+	// the pointer to the successor that was just deleted.
+	s.NoError(s.revertScheduledVersion(successor.ID))
+	replacement := s.scheduleVersion(s.testData.lineItem.ID, 90, futureStart)
+	s.Equal(s.testData.lineItem.ID, replacement.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID])
+	s.Empty(replacement.Metadata[types.SubscriptionLineItemMetadataKeySuccessorID],
+		"a newly created version must not inherit the predecessor's successor pointer")
+}
+
+// An in-place edit of the scheduled version takes a branch that rewrites metadata
+// wholesale, which must not drop the pointers the revert depends on.
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_ScheduledVersion_MetadataEditKeepsLineage() {
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+	successor := s.scheduleVersion(s.testData.lineItem.ID, 75, futureStart)
+
+	_, err := s.service.UpdateSubscriptionLineItem(s.GetContext(), successor.ID, dto.UpdateSubscriptionLineItemRequest{
+		Metadata: map[string]string{"note": "renamed"},
 	})
 	s.NoError(err)
 
-	predecessor, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
-	s.NoError(err)
-	s.Equal(futureStart.Truncate(time.Second).Unix(), predecessor.EndDate.Truncate(time.Second).Unix())
+	stillLinked := s.reloadLineItem(successor.ID)
+	s.Equal("renamed", stillLinked.Metadata["note"])
+	s.Equal(s.testData.lineItem.ID, stillLinked.Metadata[types.SubscriptionLineItemMetadataKeyPredecessorID])
 
-	replaced, err := s.service.UpdateSubscriptionLineItem(ctx, scheduled.SubscriptionLineItem.ID, dto.UpdateSubscriptionLineItemRequest{
-		Amount:        &secondAmount,
+	s.NoError(s.revertScheduledVersion(successor.ID))
+	s.True(s.reloadLineItem(s.testData.lineItem.ID).EndDate.IsZero(),
+		"predecessor must still be reverted after a metadata-only edit")
+}
+
+// Amending a pending change goes through the scheduled version: it gets terminated and
+// replaced, and its own predecessor stays closed rather than being reverted.
+func (s *SubscriptionLineItemServiceSuite) TestUpdateSubscriptionLineItem_ScheduledVersion_TerminatesWithoutRevert() {
+	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
+	nextAmount := decimal.NewFromInt(90)
+
+	successor := s.scheduleVersion(s.testData.lineItem.ID, 75, futureStart)
+
+	replaced, err := s.service.UpdateSubscriptionLineItem(s.GetContext(), successor.ID, dto.UpdateSubscriptionLineItemRequest{
+		Amount:        &nextAmount,
 		EffectiveFrom: &futureStart,
 	})
 	s.NoError(err)
-	s.NotEqual(scheduled.SubscriptionLineItem.ID, replaced.SubscriptionLineItem.ID)
+	s.NotEqual(successor.ID, replaced.SubscriptionLineItem.ID)
 
-	endedScheduled, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, scheduled.SubscriptionLineItem.ID)
-	s.NoError(err)
-	s.Equal(types.StatusPublished, endedScheduled.Status)
-	s.Equal(futureStart.Truncate(time.Second).Unix(), endedScheduled.EndDate.Truncate(time.Second).Unix())
-
-	unchangedPredecessor, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
-	s.NoError(err)
-	s.Equal(futureStart.Truncate(time.Second).Unix(), unchangedPredecessor.EndDate.Truncate(time.Second).Unix(),
+	ended := s.reloadLineItem(successor.ID)
+	s.Equal(types.StatusPublished, ended.Status, "the replaced line is terminated, not deleted")
+	s.assertEndDate(ended, futureStart, "the scheduled line must be terminated where its replacement starts")
+	s.assertEndDate(s.reloadLineItem(s.testData.lineItem.ID), futureStart,
 		"update must terminate the scheduled line, not revert its predecessor")
-}
-
-func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_ScheduledVersion_NoPredecessorIDSkipsRestore() {
-	ctx := s.GetContext()
-	futureStart := time.Now().UTC().Add(13 * 24 * time.Hour)
-
-	s.testData.lineItem.EndDate = futureStart
-	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, s.testData.lineItem))
-
-	scheduled := *s.testData.lineItem
-	scheduled.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM)
-	scheduled.StartDate = futureStart
-	scheduled.EndDate = time.Time{}
-	scheduled.Metadata = nil
-	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, &scheduled))
-
-	_, err := s.service.DeleteSubscriptionLineItem(ctx, scheduled.ID, dto.DeleteSubscriptionLineItemRequest{})
-	s.NoError(err)
-
-	oldLi, err := s.GetStores().SubscriptionLineItemRepo.Get(ctx, s.testData.lineItem.ID)
-	s.NoError(err)
-	s.Equal(futureStart.Truncate(time.Second).Unix(), oldLi.EndDate.Truncate(time.Second).Unix())
 }
 
 func (s *SubscriptionLineItemServiceSuite) TestDeleteSubscriptionLineItem_EffectiveFromOnOrAfterStartDate() {
