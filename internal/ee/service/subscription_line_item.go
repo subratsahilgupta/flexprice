@@ -140,19 +140,20 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 
 	priceResp, priceErr := NewPriceService(s.ServiceParams).GetPrice(ctx, lineItem.PriceID)
 	if priceErr != nil {
-		s.Logger.Info(ctx, "skipped price expansion for created line item",
-			"line_item_id", lineItem.ID, "price_id", lineItem.PriceID, "error", priceErr)
+		return nil, priceErr
 	}
-	s.attachLineItemMeter(ctx, lineItem)
+
+	if lineItem != nil && !lineItem.IsUsage() && lineItem.Meter == nil {
+		m, err := s.MeterRepo.GetMeter(ctx, lineItem.MeterID)
+		if err != nil {
+			s.Logger.Info(ctx, "skipped meter expansion for line item", "line_item_id", lineItem.ID, "meter_id", lineItem.MeterID, "error", err)
+		}
+		lineItem.Meter = m
+	}
 
 	// Apply proration for the add if requested. Skip usage prices (unknown future consumption).
 	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations &&
 		lineItem.PriceType != types.PRICE_TYPE_USAGE {
-
-		if priceErr != nil {
-			return nil, priceErr
-		}
-
 		effectiveDate := time.Now().UTC()
 		if req.StartDate != nil {
 			effectiveDate = req.StartDate.UTC()
@@ -199,22 +200,6 @@ func (s *subscriptionService) addSubscriptionLineItem(ctx context.Context, subsc
 	}
 
 	return &dto.SubscriptionLineItemResponse{SubscriptionLineItem: lineItem, Price: priceResp}, nil
-}
-
-// attachLineItemMeter populates the line item's Meter for usage line items so
-// responses expose it without a follow-up read. A meter lookup failure is not
-// fatal: the line item is already persisted and meter is an optional field.
-func (s *subscriptionService) attachLineItemMeter(ctx context.Context, lineItem *subscription.SubscriptionLineItem) {
-	if lineItem == nil || !lineItem.IsUsage() || lineItem.Meter != nil {
-		return
-	}
-	m, err := s.MeterRepo.GetMeter(ctx, lineItem.MeterID)
-	if err != nil {
-		s.Logger.Info(ctx, "skipped meter expansion for line item",
-			"line_item_id", lineItem.ID, "meter_id", lineItem.MeterID, "error", err)
-		return
-	}
-	lineItem.Meter = m
 }
 
 // buildLineItemParamsForPrice builds LineItemParams for a price, resolving Plan/Addon/Subscription when skipEntitlementCheck is true.
