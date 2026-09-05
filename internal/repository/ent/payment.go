@@ -60,7 +60,8 @@ func (r *paymentRepository) Create(ctx context.Context, p *domainPayment.Payment
 		p.EnvironmentID = types.GetEnvironmentID(ctx)
 	}
 
-	payment, err := client.Payment.Create().
+	// Not a loop var; local var shadowing package import, used synchronously below.
+	payment, err := client.Payment.Create(). // nosemgrep: trailofbits.go.invalid-usage-of-modified-variable.invalid-usage-of-modified-variable
 		SetID(p.ID).
 		SetIdempotencyKey(p.IdempotencyKey).
 		SetDestinationType(string(p.DestinationType)).

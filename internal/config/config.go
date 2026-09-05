@@ -126,6 +126,13 @@ type S3Config struct {
 	Enabled             bool         `mapstructure:"enabled" validate:"required"`
 	Region              string       `mapstructure:"region" validate:"required"`
 	InvoiceBucketConfig BucketConfig `mapstructure:"invoice" validate:"required"`
+	// EndpointURL, UsePathStyle and the static keys point the platform buckets at
+	// an S3-compatible server instead of AWS — MinIO in local dev. Real deployments
+	// leave all four empty and resolve credentials through the ambient chain.
+	EndpointURL        string `mapstructure:"endpoint_url" validate:"omitempty"`
+	UsePathStyle       bool   `mapstructure:"use_path_style" default:"false"`
+	AWSAccessKeyID     string `mapstructure:"aws_access_key_id" validate:"omitempty"`
+	AWSSecretAccessKey string `mapstructure:"aws_secret_access_key" validate:"omitempty"`
 }
 
 type BucketConfig struct {
@@ -1009,10 +1016,14 @@ type RedisConfig struct {
 	Username  string        `mapstructure:"username" default:""`
 	Password  string        `mapstructure:"password" default:""`
 	DB        int           `mapstructure:"db" default:"0"`
-	UseTLS    bool          `mapstructure:"use_tls" default:"false"`
-	PoolSize  int           `mapstructure:"pool_size" default:"10"`
-	Timeout   time.Duration `mapstructure:"timeout" default:"5s"`
-	KeyPrefix string        `mapstructure:"key_prefix" default:"flexprice"`
+	UseTLS bool `mapstructure:"use_tls" default:"false"`
+	// Set to the cert SAN to verify ElastiCache wildcard certs.
+	TLSServerName string `mapstructure:"tls_server_name" default:""`
+	// Defaults true for ElastiCache compatibility; set false to verify.
+	TLSSkipVerify bool          `mapstructure:"tls_skip_verify" default:"true"`
+	PoolSize      int           `mapstructure:"pool_size" default:"10"`
+	Timeout       time.Duration `mapstructure:"timeout" default:"5s"`
+	KeyPrefix     string        `mapstructure:"key_prefix" default:"flexprice"`
 	// ClusterMode: true → *redis.ClusterClient (Redis Cluster, ElastiCache
 	// cluster-mode enabled). false → standalone *redis.Client. Default is
 	// true to preserve the pre-1.1 hardcoded behaviour; flip to false for
@@ -1341,7 +1352,7 @@ func (c ClickHouseConfig) GetClientOptions() *clickhouse.Options {
 		options.ReadTimeout = c.ReadTimeout
 	}
 	if c.TLS {
-		options.TLS = &tls.Config{InsecureSkipVerify: c.TLSSkipVerify} // #nosec G402 -- opt-in, dev-only self-signed certs
+		options.TLS = &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: c.TLSSkipVerify} // #nosec G402 -- opt-in, dev-only self-signed certs
 	}
 	options.Protocol = c.protocol()
 

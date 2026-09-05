@@ -44,7 +44,7 @@ func NewEventDeck(opts EventDeckOpts) *EventDeck {
 	if len(opts.EventNames) == 0 {
 		panic("e2eprobe: EventDeck requires at least one event name")
 	}
-	return &EventDeck{opts: opts, rnd: rand.New(rand.NewSource(opts.Seed))}
+	return &EventDeck{opts: opts, rnd: rand.New(rand.NewSource(opts.Seed))} // #nosec G404 -- e2e probe test data, non-security
 }
 
 func (d *EventDeck) Next() EventDraw {

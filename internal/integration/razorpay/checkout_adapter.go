@@ -31,6 +31,7 @@ func (a *CheckoutAdapter) CreatePaymentLink(
 	if err != nil {
 		return nil, err
 	}
+
 	return &interfaces.CheckoutProviderResponse{
 		ProviderSessionID: r.ID,
 		NextAction:        types.PaymentAction{Type: types.PaymentActionTypePaymentLink, URL: r.PaymentURL},
