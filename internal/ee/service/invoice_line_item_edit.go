@@ -76,6 +76,15 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 		if req.Quantity != nil {
 			builder = builder.WithQuantity(*req.Quantity)
 		}
+		if req.Description != nil {
+			builder = builder.WithDescription(req.Description)
+		}
+		if req.PeriodStart != nil {
+			builder = builder.WithPeriodStart(req.PeriodStart)
+		}
+		if req.PeriodEnd != nil {
+			builder = builder.WithPeriodEnd(req.PeriodEnd)
+		}
 
 		newItem := builder.Build()
 		if err := newItem.Validate(); err != nil {
@@ -140,6 +149,9 @@ func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, 
 				WithCustomerID(inv.CustomerID).
 				WithEnvironmentID(inv.EnvironmentID).
 				WithDisplayName(lo.ToPtr(item.DisplayName)).
+				WithDescription(item.Description).
+				WithPeriodStart(item.PeriodStart).
+				WithPeriodEnd(item.PeriodEnd).
 				WithAmount(item.Amount).
 				WithQuantity(item.Quantity).
 				WithCurrency(inv.Currency).

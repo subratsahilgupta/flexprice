@@ -14169,7 +14169,16 @@ const docTemplate = `{
                 "amount": {
                     "type": "string"
                 },
+                "description": {
+                    "type": "string"
+                },
                 "display_name": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
                     "type": "string"
                 },
                 "quantity": {
@@ -24035,7 +24044,16 @@ const docTemplate = `{
                 "amount": {
                     "type": "string"
                 },
+                "description": {
+                    "type": "string"
+                },
                 "display_name": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
                     "type": "string"
                 },
                 "quantity": {
@@ -27274,6 +27292,9 @@ const docTemplate = `{
                 "recurring_credit_grant",
                 "onetime_credit_grant"
             ],
+            "x-enum-comments": {
+                "ApplicationReasonFirstTimeRecurringCreditGrant": "#nosec G101 -- enum value name, not a secret"
+            },
             "x-enum-varnames": [
                 "ApplicationReasonFirstTimeRecurringCreditGrant",
                 "ApplicationReasonRecurringCreditGrant",
@@ -29113,7 +29134,9 @@ const docTemplate = `{
                 "azure_marketplace"
             ],
             "x-enum-comments": {
+                "SecretProviderAzureMarketplace": "#nosec G101 -- provider enum value, not a secret",
                 "SecretProviderGCS": "supports multiple connections per environment, service-account JSON creds",
+                "SecretProviderQuickBooks": "#nosec G101 -- enum value name, not a secret",
                 "SecretProviderS3": "supports multiple connections per environment"
             },
             "x-enum-varnames": [
