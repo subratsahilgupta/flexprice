@@ -67,6 +67,19 @@ func (b *invoiceLineItemBuilder) WithDisplayName(displayName *string) *invoiceLi
 	return b
 }
 
+// WithDescription stores the description in Metadata["description"] — the convention
+// the billing engine writes and the invoice PDF renderer reads.
+func (b *invoiceLineItemBuilder) WithDescription(description *string) *invoiceLineItemBuilder {
+	if b == nil || b.item == nil || description == nil {
+		return b
+	}
+	if b.item.Metadata == nil {
+		b.item.Metadata = types.Metadata{}
+	}
+	b.item.Metadata["description"] = *description
+	return b
+}
+
 func (b *invoiceLineItemBuilder) WithPeriodStart(periodStart *time.Time) *invoiceLineItemBuilder {
 	if b == nil || b.item == nil {
 		return b

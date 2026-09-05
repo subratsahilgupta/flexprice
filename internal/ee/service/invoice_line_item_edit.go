@@ -32,18 +32,6 @@ func (s *invoiceService) recalculateTotalsFromLineItems(inv *invoice.Invoice, li
 	}
 }
 
-// setLineItemDescription writes the line item description into metadata["description"] —
-// the existing convention the billing engine writes and the invoice PDF reads.
-func setLineItemDescription(item *invoice.InvoiceLineItem, description *string) {
-	if description == nil {
-		return
-	}
-	if item.Metadata == nil {
-		item.Metadata = types.Metadata{}
-	}
-	item.Metadata["description"] = *description
-}
-
 func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItemID string, req dto.UpdateLineItemRequest) (*dto.InvoiceResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -88,6 +76,9 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 		if req.Quantity != nil {
 			builder = builder.WithQuantity(*req.Quantity)
 		}
+		if req.Description != nil {
+			builder = builder.WithDescription(req.Description)
+		}
 		if req.PeriodStart != nil {
 			builder = builder.WithPeriodStart(req.PeriodStart)
 		}
@@ -96,7 +87,6 @@ func (s *invoiceService) UpdateLineItem(ctx context.Context, invoiceID, lineItem
 		}
 
 		newItem := builder.Build()
-		setLineItemDescription(newItem, req.Description)
 		if err := newItem.Validate(); err != nil {
 			return err
 		}
@@ -153,12 +143,13 @@ func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, 
 		lockedInv = inv
 
 		newItems := lo.Map(req.Items, func(item dto.AddLineItemRequest, _ int) *invoice.InvoiceLineItem {
-			newItem := invoice.NewInvoiceLineItemBuilder(nil).
+			return invoice.NewInvoiceLineItemBuilder(nil).
 				WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM)).
 				WithInvoiceID(inv.ID).
 				WithCustomerID(inv.CustomerID).
 				WithEnvironmentID(inv.EnvironmentID).
 				WithDisplayName(lo.ToPtr(item.DisplayName)).
+				WithDescription(item.Description).
 				WithPeriodStart(item.PeriodStart).
 				WithPeriodEnd(item.PeriodEnd).
 				WithAmount(item.Amount).
@@ -166,8 +157,6 @@ func (s *invoiceService) AddBulkLineItem(ctx context.Context, invoiceID string, 
 				WithCurrency(inv.Currency).
 				WithBaseModel(types.GetDefaultBaseModel(txCtx)).
 				Build()
-			setLineItemDescription(newItem, item.Description)
-			return newItem
 		})
 		for _, newItem := range newItems {
 			if err := newItem.Validate(); err != nil {
