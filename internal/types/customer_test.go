@@ -34,4 +34,10 @@ func TestCustomerFilter_GetStatus(t *testing.T) {
 		f.Filters = statusInPublishedAndArchived
 		assert.Equal(t, string(StatusArchived), f.GetStatus())
 	})
+
+	t.Run("empty query status is treated as unset", func(t *testing.T) {
+		f := NewCustomerFilter()
+		f.Status = lo.ToPtr(Status(""))
+		assert.Equal(t, string(StatusPublished), f.GetStatus())
+	})
 }

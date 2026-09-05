@@ -105,7 +105,9 @@ func (f *CustomerFilter) GetStatus() string {
 		return string(StatusPublished)
 	}
 	if f.QueryFilter != nil && f.QueryFilter.Status != nil {
-		return string(*f.QueryFilter.Status)
+		if status := string(*f.QueryFilter.Status); status != "" {
+			return status
+		}
 	}
 	if HasFieldFilter(f.Filters, "status") {
 		return ""
