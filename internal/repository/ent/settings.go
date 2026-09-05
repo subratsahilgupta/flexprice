@@ -78,7 +78,6 @@ func (r *settingsRepository) Create(ctx context.Context, s *domainSettings.Setti
 	}
 
 	*s = *domainSettings.FromEnt(setting)
-	r.deleteKeyCache(ctx, s.Key)
 	return nil
 }
 
@@ -206,10 +205,6 @@ func (r *settingsRepository) Get(ctx context.Context, id string) (*domainSetting
 }
 
 func (r *settingsRepository) GetByKey(ctx context.Context, key types.SettingKey) (*domainSettings.Setting, error) {
-	if cached := r.getKeyCache(ctx, key); cached != nil {
-		return cached, nil
-	}
-
 	client := r.client.Reader(ctx)
 	r.log.Debug(ctx, "getting setting by key", "key", key)
 
@@ -237,7 +232,6 @@ func (r *settingsRepository) GetByKey(ctx context.Context, key types.SettingKey)
 	}
 
 	setting := domainSettings.FromEnt(s)
-	r.setKeyCache(ctx, setting)
 	return setting, nil
 }
 
@@ -393,7 +387,6 @@ func (r *settingsRepository) DeleteCache(ctx context.Context, setting *domainSet
 
 	cacheKey := cache.GenerateKey(ctx, cache.PrefixSettings, setting.ID)
 	r.redisCache.Delete(ctx, cacheKey)
-	r.deleteKeyCache(ctx, setting.Key)
 }
 
 // ListAllTenantEnvSettingsByKey returns all settings for a given key across all tenants and environments
@@ -474,62 +467,4 @@ func (r *settingsRepository) GetAllTenantEnvSubscriptionSettings(ctx context.Con
 	}
 
 	return subscriptionConfigs, nil
-}
-
-// isKeyCacheable lists the setting keys served from the by-key cache. A key belongs
-// here once its read volume justifies the invalidation it adds.
-func isKeyCacheable(key types.SettingKey) bool {
-	return key == types.SettingKeyCustomCurrencyConfig
-}
-
-// keyCacheKey is scoped by tenant and environment: GenerateKey prefixes both from ctx.
-func keyCacheKey(ctx context.Context, key types.SettingKey) string {
-	return cache.GenerateKey(ctx, cache.PrefixSettings, "key", string(key))
-}
-
-func (r *settingsRepository) getKeyCache(ctx context.Context, key types.SettingKey) *domainSettings.Setting {
-	if !isKeyCacheable(key) {
-		return nil
-	}
-
-	span, ctx := cache.StartRedisCacheSpan(ctx, "settings", "get_by_key", map[string]interface{}{
-		"key": string(key),
-	})
-	defer cache.FinishSpan(span)
-
-	value, found := r.redisCache.Get(ctx, keyCacheKey(ctx, key))
-	if !found {
-		return nil
-	}
-	setting, ok := cache.UnmarshalCacheValue[domainSettings.Setting](value)
-	if !ok {
-		return nil
-	}
-	return setting
-}
-
-func (r *settingsRepository) setKeyCache(ctx context.Context, setting *domainSettings.Setting) {
-	if setting == nil || !isKeyCacheable(setting.Key) {
-		return
-	}
-
-	span, ctx := cache.StartRedisCacheSpan(ctx, "settings", "set_by_key", map[string]interface{}{
-		"key": string(setting.Key),
-	})
-	defer cache.FinishSpan(span)
-
-	r.redisCache.Set(ctx, keyCacheKey(ctx, setting.Key), setting, cache.ExpiryDefaultRedis)
-}
-
-func (r *settingsRepository) deleteKeyCache(ctx context.Context, key types.SettingKey) {
-	if !isKeyCacheable(key) {
-		return
-	}
-
-	span, ctx := cache.StartRedisCacheSpan(ctx, "settings", "delete_by_key", map[string]interface{}{
-		"key": string(key),
-	})
-	defer cache.FinishSpan(span)
-
-	r.redisCache.Delete(ctx, keyCacheKey(ctx, key))
 }
