@@ -19635,9 +19635,6 @@ const docTemplate = `{
                 "customer_id": {
                     "type": "string"
                 },
-                "description": {
-                    "type": "string"
-                },
                 "display_name": {
                     "type": "string"
                 },
@@ -25727,9 +25724,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "customer_id": {
-                    "type": "string"
-                },
-                "description": {
                     "type": "string"
                 },
                 "display_name": {

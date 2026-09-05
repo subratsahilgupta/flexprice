@@ -4551,8 +4551,6 @@ definitions:
         type: string
       customer_id:
         type: string
-      description:
-        type: string
       display_name:
         type: string
       entity_id:
@@ -8931,8 +8929,6 @@ definitions:
       currency:
         type: string
       customer_id:
-        type: string
-      description:
         type: string
       display_name:
         type: string

@@ -1312,7 +1312,6 @@ var (
 		{Name: "price_unit", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "varchar(3)"}},
 		{Name: "price_unit_amount", Type: field.TypeOther, Nullable: true, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "display_name", Type: field.TypeString, Nullable: true},
-		{Name: "description", Type: field.TypeString, Nullable: true},
 		{Name: "amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "quantity", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)"}},
 		{Name: "currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
@@ -1336,7 +1335,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "invoice_line_items_invoices_line_items",
-				Columns:    []*schema.Column{InvoiceLineItemsColumns[35]},
+				Columns:    []*schema.Column{InvoiceLineItemsColumns[34]},
 				RefColumns: []*schema.Column{InvoicesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -1345,7 +1344,7 @@ var (
 			{
 				Name:    "invoicelineitem_tenant_id_environment_id_invoice_id_status",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[35], InvoiceLineItemsColumns[2]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[1], InvoiceLineItemsColumns[7], InvoiceLineItemsColumns[34], InvoiceLineItemsColumns[2]},
 			},
 			{
 				Name:    "invoicelineitem_tenant_id_environment_id_customer_id_status",
@@ -1370,7 +1369,7 @@ var (
 			{
 				Name:    "invoicelineitem_period_start_period_end",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceLineItemsColumns[25], InvoiceLineItemsColumns[26]},
+				Columns: []*schema.Column{InvoiceLineItemsColumns[24], InvoiceLineItemsColumns[25]},
 			},
 			{
 				Name:    "invoicelineitem_subscription_id_status",

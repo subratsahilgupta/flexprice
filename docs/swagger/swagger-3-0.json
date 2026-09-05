@@ -21709,9 +21709,6 @@
           "customer_id": {
             "type": "string"
           },
-          "description": {
-            "type": "string"
-          },
           "display_name": {
             "type": "string"
           },
@@ -27495,9 +27492,6 @@
             "type": "string"
           },
           "customer_id": {
-            "type": "string"
-          },
-          "description": {
             "type": "string"
           },
           "display_name": {

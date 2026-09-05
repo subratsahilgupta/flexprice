@@ -71,26 +71,6 @@ func (iliu *InvoiceLineItemUpdate) ClearUpdatedBy() *InvoiceLineItemUpdate {
 	return iliu
 }
 
-// SetDescription sets the "description" field.
-func (iliu *InvoiceLineItemUpdate) SetDescription(s string) *InvoiceLineItemUpdate {
-	iliu.mutation.SetDescription(s)
-	return iliu
-}
-
-// SetNillableDescription sets the "description" field if the given value is not nil.
-func (iliu *InvoiceLineItemUpdate) SetNillableDescription(s *string) *InvoiceLineItemUpdate {
-	if s != nil {
-		iliu.SetDescription(*s)
-	}
-	return iliu
-}
-
-// ClearDescription clears the value of the "description" field.
-func (iliu *InvoiceLineItemUpdate) ClearDescription() *InvoiceLineItemUpdate {
-	iliu.mutation.ClearDescription()
-	return iliu
-}
-
 // SetAmount sets the "amount" field.
 func (iliu *InvoiceLineItemUpdate) SetAmount(d decimal.Decimal) *InvoiceLineItemUpdate {
 	iliu.mutation.SetAmount(d)
@@ -414,12 +394,6 @@ func (iliu *InvoiceLineItemUpdate) sqlSave(ctx context.Context) (n int, err erro
 	if iliu.mutation.DisplayNameCleared() {
 		_spec.ClearField(invoicelineitem.FieldDisplayName, field.TypeString)
 	}
-	if value, ok := iliu.mutation.Description(); ok {
-		_spec.SetField(invoicelineitem.FieldDescription, field.TypeString, value)
-	}
-	if iliu.mutation.DescriptionCleared() {
-		_spec.ClearField(invoicelineitem.FieldDescription, field.TypeString)
-	}
 	if value, ok := iliu.mutation.Amount(); ok {
 		_spec.SetField(invoicelineitem.FieldAmount, field.TypeOther, value)
 	}
@@ -582,26 +556,6 @@ func (iliuo *InvoiceLineItemUpdateOne) SetNillableUpdatedBy(s *string) *InvoiceL
 // ClearUpdatedBy clears the value of the "updated_by" field.
 func (iliuo *InvoiceLineItemUpdateOne) ClearUpdatedBy() *InvoiceLineItemUpdateOne {
 	iliuo.mutation.ClearUpdatedBy()
-	return iliuo
-}
-
-// SetDescription sets the "description" field.
-func (iliuo *InvoiceLineItemUpdateOne) SetDescription(s string) *InvoiceLineItemUpdateOne {
-	iliuo.mutation.SetDescription(s)
-	return iliuo
-}
-
-// SetNillableDescription sets the "description" field if the given value is not nil.
-func (iliuo *InvoiceLineItemUpdateOne) SetNillableDescription(s *string) *InvoiceLineItemUpdateOne {
-	if s != nil {
-		iliuo.SetDescription(*s)
-	}
-	return iliuo
-}
-
-// ClearDescription clears the value of the "description" field.
-func (iliuo *InvoiceLineItemUpdateOne) ClearDescription() *InvoiceLineItemUpdateOne {
-	iliuo.mutation.ClearDescription()
 	return iliuo
 }
 
@@ -957,12 +911,6 @@ func (iliuo *InvoiceLineItemUpdateOne) sqlSave(ctx context.Context) (_node *Invo
 	}
 	if iliuo.mutation.DisplayNameCleared() {
 		_spec.ClearField(invoicelineitem.FieldDisplayName, field.TypeString)
-	}
-	if value, ok := iliuo.mutation.Description(); ok {
-		_spec.SetField(invoicelineitem.FieldDescription, field.TypeString, value)
-	}
-	if iliuo.mutation.DescriptionCleared() {
-		_spec.ClearField(invoicelineitem.FieldDescription, field.TypeString)
 	}
 	if value, ok := iliuo.mutation.Amount(); ok {
 		_spec.SetField(invoicelineitem.FieldAmount, field.TypeOther, value)

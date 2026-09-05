@@ -1179,7 +1179,7 @@ func (s *InvoiceModificationServiceSuite) TestLineItemDescriptionAndPeriodRoundT
 	s.NoError(err)
 	s.Require().Len(resp.Invoice.LineItems, 1)
 	added := resp.Invoice.LineItems[0]
-	s.Equal("September consulting retainer", lo.FromPtr(added.Description))
+	s.Equal("September consulting retainer", added.Metadata["description"])
 	s.Require().NotNil(added.PeriodStart)
 	s.True(periodStart.Equal(*added.PeriodStart))
 	s.Require().NotNil(added.PeriodEnd)
@@ -1201,7 +1201,7 @@ func (s *InvoiceModificationServiceSuite) TestLineItemDescriptionAndPeriodRoundT
 	s.NoError(err)
 	s.Require().Len(resp.Invoice.LineItems, 1)
 	updated := resp.Invoice.LineItems[0]
-	s.Equal("Sep-Oct consulting retainer", lo.FromPtr(updated.Description))
+	s.Equal("Sep-Oct consulting retainer", updated.Metadata["description"])
 	s.True(periodStart.Equal(*updated.PeriodStart))
 	s.True(newEnd.Equal(*updated.PeriodEnd))
 

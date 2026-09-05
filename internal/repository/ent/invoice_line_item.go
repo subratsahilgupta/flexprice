@@ -69,8 +69,6 @@ func (r *invoiceLineItemRepository) Create(ctx context.Context, item *domaininvo
 		SetNillablePriceUnit(item.PriceUnit).
 		SetNillablePriceUnitAmount(item.PriceUnitAmount).
 		SetNillableDisplayName(item.DisplayName).
-				SetNillableDescription(item.Description).
-		SetNillableDescription(item.Description).
 		SetAmount(item.Amount).
 		SetQuantity(item.Quantity).
 		SetCurrency(item.Currency).

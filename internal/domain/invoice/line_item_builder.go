@@ -67,14 +67,6 @@ func (b *invoiceLineItemBuilder) WithDisplayName(displayName *string) *invoiceLi
 	return b
 }
 
-func (b *invoiceLineItemBuilder) WithDescription(description *string) *invoiceLineItemBuilder {
-	if b == nil || b.item == nil {
-		return b
-	}
-	b.item.Description = description
-	return b
-}
-
 func (b *invoiceLineItemBuilder) WithPeriodStart(periodStart *time.Time) *invoiceLineItemBuilder {
 	if b == nil || b.item == nil {
 		return b

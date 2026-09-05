@@ -294,20 +294,6 @@ func (ilic *InvoiceLineItemCreate) SetNillableDisplayName(s *string) *InvoiceLin
 	return ilic
 }
 
-// SetDescription sets the "description" field.
-func (ilic *InvoiceLineItemCreate) SetDescription(s string) *InvoiceLineItemCreate {
-	ilic.mutation.SetDescription(s)
-	return ilic
-}
-
-// SetNillableDescription sets the "description" field if the given value is not nil.
-func (ilic *InvoiceLineItemCreate) SetNillableDescription(s *string) *InvoiceLineItemCreate {
-	if s != nil {
-		ilic.SetDescription(*s)
-	}
-	return ilic
-}
-
 // SetAmount sets the "amount" field.
 func (ilic *InvoiceLineItemCreate) SetAmount(d decimal.Decimal) *InvoiceLineItemCreate {
 	ilic.mutation.SetAmount(d)
@@ -736,10 +722,6 @@ func (ilic *InvoiceLineItemCreate) createSpec() (*InvoiceLineItem, *sqlgraph.Cre
 	if value, ok := ilic.mutation.DisplayName(); ok {
 		_spec.SetField(invoicelineitem.FieldDisplayName, field.TypeString, value)
 		_node.DisplayName = &value
-	}
-	if value, ok := ilic.mutation.Description(); ok {
-		_spec.SetField(invoicelineitem.FieldDescription, field.TypeString, value)
-		_node.Description = &value
 	}
 	if value, ok := ilic.mutation.Amount(); ok {
 		_spec.SetField(invoicelineitem.FieldAmount, field.TypeOther, value)
