@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	cockroachErrors "github.com/cockroachdb/errors"
 	"sort"
 	"strings"
 	"testing"
@@ -2920,9 +2921,12 @@ func (s *PriceServiceSuite) TestCreatePrice_CustomCurrencyEnforcement() {
 	cfg := types.CustomCurrencyConfig{
 		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
 			"mac": {
-				Name:                  "MoEngage AI Credits",
-				Symbol:                "MAC",
-				FiatConversionFactors: map[string]decimal.Decimal{"usd": decimal.NewFromFloat(0.1)},
+				Name:   "MoEngage AI Credits",
+				Symbol: "MAC",
+				FiatConversionFactors: map[string]decimal.Decimal{
+					"usd": decimal.NewFromFloat(0.1),
+					"inr": decimal.NewFromFloat(8.5),
+				},
 			},
 		},
 		DefaultFiatCurrency: "usd",
@@ -2961,6 +2965,7 @@ func (s *PriceServiceSuite) TestCreatePrice_CustomCurrencyEnforcement() {
 	}{
 		{name: "configured custom currency is allowed", currency: "mac"},
 		{name: "default fiat currency is allowed", currency: "usd"},
+		{name: "a mapped fiat currency is allowed even though it is not the default", currency: "inr"},
 		{name: "unconfigured currency is rejected", currency: "eur", wantErr: true},
 	}
 
@@ -2985,4 +2990,110 @@ func (s *PriceServiceSuite) TestCreatePrice_CustomCurrencyEnforcement() {
 			s.NoError(err)
 		})
 	}
+}
+
+// Accepting any mapped fiat is only safe if every custom currency reaches all of them,
+// so a factor present in one and missing from another is rejected outright.
+func (s *PriceServiceSuite) TestCustomCurrencyConfig_FiatFactorsMustMatchAcrossCurrencies() {
+	cfg := types.CustomCurrencyConfig{
+		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
+			"mac": {
+				Name:   "MoEngage AI Credits",
+				Symbol: "MAC",
+				FiatConversionFactors: map[string]decimal.Decimal{
+					"usd": decimal.NewFromFloat(0.1),
+					"inr": decimal.NewFromFloat(8.5),
+				},
+			},
+			"fxp": {
+				Name:                  "Flexprice Credits",
+				Symbol:                "FXP",
+				FiatConversionFactors: map[string]decimal.Decimal{"usd": decimal.NewFromFloat(0.2)},
+			},
+		},
+		DefaultFiatCurrency: "usd",
+	}
+
+	err := cfg.Validate()
+	s.Error(err)
+	s.Contains(err.Error(), "inr")
+}
+
+// Equal-sized but different factor sets are still a mismatch.
+func (s *PriceServiceSuite) TestCustomCurrencyConfig_DisjointFiatSetsRejected() {
+	cfg := types.CustomCurrencyConfig{
+		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
+			"mac": {
+				Name:   "MoEngage AI Credits",
+				Symbol: "MAC",
+				FiatConversionFactors: map[string]decimal.Decimal{
+					"usd": decimal.NewFromFloat(0.1),
+					"inr": decimal.NewFromFloat(8.5),
+				},
+			},
+			"fxp": {
+				Name:   "Flexprice Credits",
+				Symbol: "FXP",
+				FiatConversionFactors: map[string]decimal.Decimal{
+					"usd": decimal.NewFromFloat(0.2),
+					"eur": decimal.NewFromFloat(0.9),
+				},
+			},
+		},
+		DefaultFiatCurrency: "usd",
+	}
+
+	s.Error(cfg.Validate())
+}
+
+// Matching sets across currencies are accepted.
+func (s *PriceServiceSuite) TestCustomCurrencyConfig_MatchingFiatSetsAccepted() {
+	factors := func() map[string]decimal.Decimal {
+		return map[string]decimal.Decimal{
+			"usd": decimal.NewFromFloat(0.1),
+			"inr": decimal.NewFromFloat(8.5),
+		}
+	}
+	cfg := types.CustomCurrencyConfig{
+		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
+			"mac": {Name: "MoEngage AI Credits", Symbol: "MAC", FiatConversionFactors: factors()},
+			"fxp": {Name: "Flexprice Credits", Symbol: "FXP", FiatConversionFactors: factors()},
+		},
+		DefaultFiatCurrency: "usd",
+	}
+
+	s.NoError(cfg.Validate())
+}
+
+// The rejection names the supported currencies in two groups, not one merged list.
+func (s *PriceServiceSuite) TestEnforceCurrency_ErrorReportsBothGroups() {
+	cfg := types.CustomCurrencyConfig{
+		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
+			"mac": {
+				Name:   "MoEngage AI Credits",
+				Symbol: "MAC",
+				FiatConversionFactors: map[string]decimal.Decimal{
+					"usd": decimal.NewFromFloat(0.1),
+					"inr": decimal.NewFromFloat(8.5),
+				},
+			},
+		},
+		DefaultFiatCurrency: "usd",
+	}
+	s.NoError(cfg.Validate())
+
+	err := cfg.EnforceCurrency("eur")
+	s.Require().Error(err)
+	s.Contains(err.Error(), "eur", "the rejected currency is named")
+
+	hint := strings.Join(cockroachErrors.GetAllHints(err), " ")
+	s.Contains(hint, "Supported custom currencies: mac")
+	s.Contains(hint, "Supported fiat currencies: inr, usd")
+}
+
+// A tenant with no custom currencies configured accepts anything.
+func (s *PriceServiceSuite) TestEnforceCurrency_UnconfiguredTenantAllowsAnything() {
+	var cfg types.CustomCurrencyConfig
+	s.NoError(cfg.EnforceCurrency("eur"))
+	s.NoError(cfg.EnforceCurrency("anything"))
 }

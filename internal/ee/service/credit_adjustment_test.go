@@ -242,7 +242,7 @@ func (s *CreditAdjustmentServiceSuite) seedCustomCurrencyConfig() {
 	}))
 }
 
-// customCurrencyInvoice returns a fiat invoice whose ledger holds macAmount, split
+// customCurrencyInvoice returns a fiat invoice whose denomination holds macAmount, split
 // across a single usage line item.
 func (s *CreditAdjustmentServiceSuite) customCurrencyInvoice(id string, macAmount decimal.Decimal) *invoice.Invoice {
 	li := s.createLineItemForCalculation(decimal.Zero, lo.ToPtr(string(types.PRICE_TYPE_USAGE)), decimal.Zero)
@@ -260,7 +260,7 @@ func (s *CreditAdjustmentServiceSuite) customCurrencyInvoice(id string, macAmoun
 	return inv
 }
 
-// Credits are drawn in the ledger currency, so a mac wallet pays down a mac charge
+// Credits are drawn in the denomination currency, so a mac wallet pays down a mac charge
 // one-for-one rather than being converted.
 func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_CustomCurrencyDrawsFromLedger() {
 	svc := s.getServiceImpl()
@@ -273,7 +273,7 @@ func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_CustomCurr
 
 	s.True(decimal.NewFromInt(30).Equal(debits["wallet_mac"]), "30 mac debited against a 50 mac charge, got %s", debits["wallet_mac"])
 	s.True(decimal.NewFromInt(30).Equal(inv.LineItems[0].CustomCurrency.PrepaidCreditsApplied),
-		"credits recorded on the ledger, got %s", inv.LineItems[0].CustomCurrency.PrepaidCreditsApplied)
+		"credits recorded on the denomination, got %s", inv.LineItems[0].CustomCurrency.PrepaidCreditsApplied)
 }
 
 // The fiat columns are left alone by the calculation itself; projection is what moves them.
@@ -292,7 +292,7 @@ func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_CustomCurr
 }
 
 // A fiat wallet is not a candidate for a custom-currency invoice: ApplyCreditsToInvoice
-// selects wallets by ledger currency, so nothing is applied.
+// selects wallets by denomination currency, so nothing is applied.
 func (s *CreditAdjustmentServiceSuite) TestApplyCreditsToInvoice_FiatWalletSkippedForCustomCurrency() {
 	s.seedCustomCurrencyConfig()
 
@@ -303,14 +303,14 @@ func (s *CreditAdjustmentServiceSuite) TestApplyCreditsToInvoice_FiatWalletSkipp
 
 	result, err := s.service.ApplyCreditsToInvoice(s.GetContext(), inv)
 	s.Require().NoError(err)
-	s.Equal("mac", result.Currency, "result is denominated in the ledger currency")
+	s.Equal("mac", result.Currency, "result is denominated in the denomination currency")
 	s.True(result.TotalPrepaidCreditsApplied.IsZero(),
 		"a usd wallet must not pay down mac charges, got %s", result.TotalPrepaidCreditsApplied)
 }
 
-// Wallet selection is what makes the ledger work: a custom-currency invoice draws
+// Wallet selection is what makes the denomination work: a custom-currency invoice draws
 // only from wallets in that currency.
-func (s *CreditAdjustmentServiceSuite) TestGetWalletsForCreditAdjustment_MatchesLedgerCurrency() {
+func (s *CreditAdjustmentServiceSuite) TestGetWalletsForCreditAdjustment_MatchesDenominationCurrency() {
 	inv := s.customCurrencyInvoice("inv_cc_selection", decimal.NewFromInt(50))
 
 	macWallet := s.createWalletForCalculation("wallet_sel_mac", "mac", decimal.NewFromInt(20))
@@ -319,7 +319,7 @@ func (s *CreditAdjustmentServiceSuite) TestGetWalletsForCreditAdjustment_Matches
 	s.NoError(s.GetStores().WalletRepo.CreateWallet(s.GetContext(), usdWallet))
 
 	walletPaymentService := NewWalletPaymentService(s.getServiceImpl().ServiceParams)
-	selected, err := walletPaymentService.GetWalletsForCreditAdjustment(s.GetContext(), inv.CustomerID, inv.LedgerCurrency())
+	selected, err := walletPaymentService.GetWalletsForCreditAdjustment(s.GetContext(), inv.CustomerID, inv.DenominationCurrency())
 	s.NoError(err)
 	s.Require().Len(selected, 1, "only the mac wallet is eligible")
 	s.Equal("wallet_sel_mac", selected[0].ID)
@@ -330,7 +330,7 @@ func (s *CreditAdjustmentServiceSuite) TestGetWalletsForCreditAdjustment_Matches
 	s.Equal("wallet_sel_usd", fiatSelected[0].ID)
 }
 
-// A fiat invoice keeps the pre-existing behaviour: no ledger, fiat fields used directly.
+// A fiat invoice keeps the pre-existing behaviour: no denomination, fiat fields used directly.
 func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_FiatInvoiceUnaffected() {
 	svc := s.getServiceImpl()
 
@@ -343,5 +343,5 @@ func (s *CreditAdjustmentServiceSuite) TestCalculateCreditAdjustments_FiatInvoic
 
 	s.True(decimal.NewFromInt(30).Equal(debits["wallet_usd"]))
 	s.True(decimal.NewFromInt(30).Equal(inv.LineItems[0].PrepaidCreditsApplied))
-	s.Nil(inv.LineItems[0].CustomCurrency, "no ledger is created for a fiat invoice")
+	s.Nil(inv.LineItems[0].CustomCurrency, "no denomination is created for a fiat invoice")
 }
