@@ -112,9 +112,9 @@ func (i *InvoiceLineItem) FromEnt(e *ent.InvoiceLineItem) *InvoiceLineItem {
 	}
 }
 
-// Ledger returns the amounts money math operates on: the custom-currency values
+// Denomination returns the amounts money math operates on: the custom-currency values
 // when present, the fiat fields otherwise. Read-only.
-func (i *InvoiceLineItem) Ledger() types.CustomCurrencyLineItem {
+func (i *InvoiceLineItem) Denomination() types.CustomCurrencyLineItem {
 	if i.CustomCurrency != nil {
 		return *i.CustomCurrency
 	}
@@ -126,8 +126,9 @@ func (i *InvoiceLineItem) Ledger() types.CustomCurrencyLineItem {
 	}
 }
 
-// SetLedgerPrepaidCreditsApplied writes back into whichever set Ledger reads from.
-func (i *InvoiceLineItem) SetLedgerPrepaidCreditsApplied(applied decimal.Decimal) {
+// SetDenominationPrepaidCreditsApplied writes the applied credits into the field whose
+// currency they were drawn in. Its fiat counterpart follows from ProjectCustomCurrency.
+func (i *InvoiceLineItem) SetDenominationPrepaidCreditsApplied(applied decimal.Decimal) {
 	if i.CustomCurrency != nil {
 		i.CustomCurrency.PrepaidCreditsApplied = applied
 		return
@@ -135,7 +136,7 @@ func (i *InvoiceLineItem) SetLedgerPrepaidCreditsApplied(applied decimal.Decimal
 	i.PrepaidCreditsApplied = applied
 }
 
-// ProjectCustomCurrency recomputes the fiat amounts from the ledger at the invoice's rate.
+// ProjectCustomCurrency recomputes the fiat amounts from the denomination at the invoice's rate.
 func (i *InvoiceLineItem) ProjectCustomCurrency(cc *types.CustomCurrency, fiatCurrency string) {
 	if i.CustomCurrency == nil || cc == nil {
 		return

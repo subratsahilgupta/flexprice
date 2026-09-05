@@ -102,17 +102,19 @@ The example above is internally consistent: `usd: 0.10` and `inr: 8.50` together
 
 A custom currency code is 3 characters, so it passes every existing currency validator unchanged — none of them check that a code is a real world currency, only its length (`internal/types/currency.go:93`, `dto/price.go:19`, `dto/subscription.go:531`).
 
-The one new rule, `CustomCurrencyConfig.EnforceCurrency`: when creating a Price, Subscription, Wallet or Addon, the currency must be **either a configured custom code or `default_fiat_currency`**. Tenants with no config are unaffected.
+The one new rule, `CustomCurrencyConfig.EnforceCurrency`: when creating a Price, Subscription, Wallet, Addon or Coupon, the currency must be **either a configured custom code or any fiat currency the mappings name**. Tenants with no config are unaffected. The error reports the two sets separately — supported custom currencies, supported fiat currencies.
+
+`Validate` requires every custom currency to define factors for the same set of fiat currencies. That is what makes accepting any mapped fiat safe: an entity created in `inr` is reachable from every custom currency, not just the one that happened to list it.
 
 Fiat stays allowed deliberately. A tenant may want some charges billed directly in fiat, and those flow through the existing pipeline with no conversion at all.
 
 **A subscription is in exactly one currency.** Plan charges may exist in both custom and fiat; a subscription bills only the prices matching its own currency. That is existing behaviour and it is intended — but it is a silent drop, so it is logged.
 
-### 2.3 The ledger / projection split
+### 2.3 The denomination / projection split
 
 This is the core of the design.
 
-> **The `custom_currency` object is the ledger. The fiat columns are a projection of it.**
+> **The `custom_currency` object is the denomination. The fiat columns are a projection of it.**
 
 Every monetary computation — subtotal, prepaid credits, discounts, tax — happens in custom-currency space, reading and writing `custom_currency.*`. The fiat columns (`subtotal`, `total`, `amount_due`, …) are then produced by one multiplication and stored so that everything downstream — payments, gateways, vendor sync, PDF, analytics — sees ordinary fiat and needs no knowledge of this feature.
 
@@ -123,7 +125,9 @@ The projection is refreshed twice:
 | Compute | live factor from config | Draft is self-describing and correctly denominated |
 | Finalization | frozen into `custom_currency.rate` | Sealed; later factor edits cannot restate it |
 
-Nothing in the custom pipeline ever reads a fiat column, so the "no conversion until the invoice" property holds exactly.
+Line items are re-persisted at finalization only when the frozen rate differs from the one compute used — otherwise the projection reproduces identical values and the writes are wasted.
+
+Nothing in the custom pipeline ever reads a fiat column, with one exception: **tax**. The tax service is percentage-only and works on the fiat columns, and its `tax_applied` records go to external integrations, so tax is computed in fiat and divided back into the denomination (`MirrorTaxIntoDenomination`). That keeps the denomination's `amount_due` post-tax, matching the invoice's.
 
 **Why not convert per line item.** `sum(round(custom × rate))` ≠ `round(sum(custom) × rate)`. Converting each line and summing loses money against the total. So the subtotal is always derived from the custom sum:
 
@@ -142,6 +146,7 @@ The system already compares currencies before applying money from one entity to 
 | --- | --- | --- |
 | Prepaid credits (wallet → invoice) | subscription / custom currency | Not applied, logged at Info |
 | Coupon discount | `subscription.Currency` — already implemented at `coupon_validation.go:112` | Filtered out before application |
+| Coupon creation | `EnforceCurrency` on the coupon's own currency | Rejected; percentage coupons carry none and are unrestricted |
 | Wallet pays invoice | `invoice.Currency` (fiat) — unchanged | Wallet is not a candidate |
 | Ongoing balance — usage | subscription currency | Not counted |
 | Ongoing balance — pending invoices | custom code when the wallet is custom | Not counted |
@@ -219,6 +224,8 @@ This makes removal structurally inexpressible, which is exactly the v1 position.
 - **Missing `name`/`symbol`** → log at Error, render the raw code. Cosmetic; no amount affected.
 - **Missing currency code entirely** → log at Error and fail the operation. There is no correct number to produce.
 
+`InvoiceRepo.Update` never clears `custom_currency`. It is written once at creation and is what every amount on the row was derived from, so an update from a struct that did not load it must not wipe it.
+
 ---
 
 ## 3. ERD
@@ -261,14 +268,14 @@ erDiagram
         string currency "always default_fiat_currency"
         decimal subtotal "fiat projection"
         decimal amount_due "fiat projection"
-        jsonb custom_currency "NEW nullable - the ledger"
+        jsonb custom_currency "NEW nullable - the denomination"
     }
     INVOICE_LINE_ITEM {
         string id PK
         string invoice_id FK
         string currency "always invoice.currency - fiat"
         decimal amount "fiat projection"
-        jsonb custom_currency "NEW nullable - the ledger"
+        jsonb custom_currency "NEW nullable - the denomination"
     }
     PAYMENT {
         string id PK
@@ -279,7 +286,7 @@ erDiagram
 ### Decisions
 
 - **The invoice is the fiat boundary.** `INVOICE.currency` and `INVOICE_LINE_ITEM.currency` are always `default_fiat_currency`, so payments, gateways, vendor sync, PDF and dashboards need no changes.
-- **The custom object is the ledger; fiat columns are a projection.** All arithmetic runs in custom space; the projection is refreshed at compute (live rate) and at finalization (frozen rate).
+- **The custom object is the denomination; fiat columns are a projection.** All arithmetic runs in custom space; the projection is refreshed at compute (live rate) and at finalization (frozen rate).
 - **One conversion, on the total.** Subtotal comes from the custom sum, never from summing fiat line items. Line items therefore do not sum exactly to the subtotal — accepted.
 - **`fiat = custom × rate`**, matching `priceunit.ConvertToFiatCurrencyAmount` and the wallet's `amount = credits × conversion_rate`. A `mac→usd` factor of `0.10` means 1 MAC = $0.10.
 - **`IsMatchingCurrency` is the guard.** Mismatched wallets and coupons simply do not apply, and say so in the logs.
@@ -305,12 +312,12 @@ The branch currently implements an earlier model where line items carried the cu
 
 ### Step 1 — types
 
-`internal/types/custom_currency.go`. Expand `CustomCurrency` from a single amount to the full ledger:
+`internal/types/custom_currency.go`. Expand `CustomCurrency` from a single amount to the full denomination:
 
 ```
 code, rate,
 subtotal, total_discount, total_tax,
-total_prepaid_credits_applied, amount_due
+total_prepaid_credits_applied, total, amount_due
 ```
 
 `amount_paid` and `amount_remaining` are deliberately absent — derived (§2.5). Add a line-item variant carrying `amount`, `line_item_discount`, `invoice_level_discount`, `prepaid_credits_applied`. Keep `ToFiat` and `EnforceCurrency` as they are.
@@ -428,9 +435,9 @@ Configured: `custom_currencies` = `mac` (factor `usd: 0.10`); `default_fiat_curr
 
 ## 7. Open questions
 
-1. **Scope: tenant-level or tenant × environment?** `isTenantLevelSetting` (`ee/service/settings.go:55`) decides. A currency is an organizational identity (argues tenant-level, like `saml_config`), but factors may need to differ between production and sandbox. One line; must be settled before implementation.
+1. **Settled: tenant × environment.** `custom_currency_config` is environment-scoped — each environment carries its own currencies and factors, and `environment_id` always comes from request context. `GetByKey` caches it in Redis (`isKeyCacheable`), keyed by tenant + environment + key, invalidated on every write path. No other setting key is cached.
 2. **No protection against a wrong factor *value*.** Merge semantics prevent deletion, not `0.10 → 1.00` (scenario 26). A delta check rejecting an edit that moves a factor more than N% in one write would close it.
 3. **Line items do not sum to the subtotal.** Sub-cent, inherent, accepted (§2.3). Worth confirming no downstream consumer asserts exact reconciliation — `calculatePriceTypeAmounts` (`wallet_payment.go`) caps wallet payments per price type from line item sums and will be off by cents against `amount_remaining`.
-4. **Removing a custom currency is deferred, not solved.** Needs a cross-rate through a fiat pivot, wallet balance conversion as an audited ledger movement, and new Price rows with line items repointed rather than mutated. Its own design, arriving as an explicit delete mechanism.
+4. **Removing a custom currency is deferred, not solved.** Needs a cross-rate through a fiat pivot, wallet balance conversion as an audited denomination movement, and new Price rows with line items repointed rather than mutated. Its own design, arriving as an explicit delete mechanism.
 5. **Customer-level fiat currency.** Today every invoice uses the tenant's `default_fiat_currency`. A customer-level override is the natural next step and the schema already supports it — `custom_currency` carries its own rate per invoice, so nothing here assumes one global fiat. No work now; noted so it stays cheap.
 6. **Interaction with the existing `PriceUnit` entity.** `PriceUnit.base_currency` pegs a price unit to a fiat currency. If a PriceUnit-priced Price can land in a currency this config does not recognise, it bypasses §2.2 enforcement. Codes are 3 characters either way, so allowing it needs no schema change — only a resolution order at PriceUnit creation.

@@ -586,10 +586,11 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetTotalDiscount(inv.TotalDiscount).
 		AddVersion(1) // Increment version atomically
 
+	// Never cleared: the denomination is written once at creation and is what every amount on
+	// the row was derived from. An update from a struct that did not load it would
+	// otherwise wipe it and leave the stored amounts unexplainable.
 	if inv.CustomCurrency != nil {
 		query.SetCustomCurrency(inv.CustomCurrency)
-	} else {
-		query.ClearCustomCurrency()
 	}
 
 	if inv.TaxExemptionReasonCode != nil {

@@ -295,19 +295,19 @@ func (i *Invoice) Validate() error {
 	return nil
 }
 
-// LedgerCurrency is the currency money math runs in: the custom currency when set,
+// DenominationCurrency is the currency money math runs in: the custom currency when set,
 // the invoice's fiat currency otherwise.
-func (i *Invoice) LedgerCurrency() string {
+func (i *Invoice) DenominationCurrency() string {
 	if i.CustomCurrency != nil {
 		return i.CustomCurrency.Code
 	}
 	return i.Currency
 }
 
-// CaptureCustomCurrencyLedger snapshots the computed amounts as the ledger, then
+// CaptureCustomCurrencyDenomination snapshots the computed amounts as the denomination, then
 // projects the fiat columns from it. Compute runs the pricing, coupon and discount
 // pipeline in the subscription's currency; this is where that becomes explicit.
-func (i *Invoice) CaptureCustomCurrencyLedger() {
+func (i *Invoice) CaptureCustomCurrencyDenomination() {
 	if i.CustomCurrency == nil {
 		return
 	}
@@ -332,9 +332,10 @@ func (i *Invoice) CaptureCustomCurrencyLedger() {
 	i.ProjectCustomCurrency()
 }
 
-// MirrorTaxIntoLedger restates the totals tax moved. Tax is computed and stored in
-// fiat, so it has no ledger form of its own.
-func (i *Invoice) MirrorTaxIntoLedger() {
+// MirrorTaxIntoDenomination divides the tax totals back into the denomination. Tax is the one
+// amount computed in fiat, so capture cannot be used — it copies. Keeps the denomination's
+// AmountDue post-tax, matching the invoice's.
+func (i *Invoice) MirrorTaxIntoDenomination() {
 	if i.CustomCurrency == nil {
 		return
 	}
@@ -345,7 +346,7 @@ func (i *Invoice) MirrorTaxIntoLedger() {
 	cc.AmountDue = cc.Total
 }
 
-// ProjectCustomCurrency recomputes the fiat amount columns from the ledger. Runs at
+// ProjectCustomCurrency recomputes the fiat amount columns from the denomination. Runs at
 // compute with the live rate and at finalization with the frozen one.
 func (i *Invoice) ProjectCustomCurrency() {
 	if i.CustomCurrency == nil {

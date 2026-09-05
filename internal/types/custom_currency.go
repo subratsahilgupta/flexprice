@@ -6,14 +6,15 @@ import (
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/validator"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
-// CustomCurrency is an invoice's custom-currency ledger. The invoice's own currency
+// CustomCurrency is an invoice's custom-currency denomination. The invoice's own currency
 // and amount columns are fiat projections of these values. Nil for fiat invoices.
 //
-// AmountPaid and AmountRemaining are absent: payments settle in fiat, so a stored
-// copy would drift. Derive them with FromFiat.
+// AmountDue matches the invoice's: tax included. AmountPaid and AmountRemaining are
+// absent — payments settle in fiat, so a stored copy would drift. Derive with FromFiat.
 type CustomCurrency struct {
 	Code string `json:"code"`
 
@@ -28,7 +29,7 @@ type CustomCurrency struct {
 	AmountDue                  decimal.Decimal `json:"amount_due" swaggertype:"string"`
 }
 
-// CustomCurrencyLineItem is a line item's custom-currency ledger.
+// CustomCurrencyLineItem is a line item's custom-currency denomination.
 type CustomCurrencyLineItem struct {
 	Amount                decimal.Decimal `json:"amount" swaggertype:"string"`
 	LineItemDiscount      decimal.Decimal `json:"line_item_discount" swaggertype:"string"`
@@ -44,7 +45,7 @@ func (c *CustomCurrency) ToFiat(amount decimal.Decimal, fiatCurrency string) dec
 }
 
 // FromFiat restates a fiat amount in the custom currency. Only for amounts with no
-// ledger form: tax and payments. Read anything else from the ledger directly.
+// denomination form: tax and payments. Read anything else from the denomination directly.
 func (c *CustomCurrency) FromFiat(amount decimal.Decimal) decimal.Decimal {
 	if !c.Rate.IsPositive() {
 		return decimal.Zero
@@ -139,6 +140,22 @@ func (c *CustomCurrencyConfig) Validate() error {
 	}
 	c.CustomCurrencies = normalized
 
+	// EnforceCurrency allows any mapped fiat, so every custom currency must map the
+	// same set — otherwise an entity could be created in a fiat some invoice cannot reach.
+	fiats := []string{}
+	for _, cur := range c.CustomCurrencies {
+		fiats = lo.Union(fiats, lo.Keys(cur.FiatConversionFactors))
+	}
+	for code, cur := range c.CustomCurrencies {
+		for _, fiat := range fiats {
+			if _, ok := cur.FiatConversionFactors[fiat]; !ok {
+				return ierr.NewErrorf("custom currency %q is missing a conversion factor for %q", code, fiat).
+					WithHintf("%q is configured for another custom currency, so %q needs a factor for it too", fiat, code).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+
 	return validator.ValidateRequest(c)
 }
 
@@ -149,17 +166,25 @@ func (c CustomCurrencyConfig) EnforceCurrency(currency string) error {
 		return nil
 	}
 	currency = strings.ToLower(currency)
-	if c.IsCustom(currency) || currency == c.DefaultFiatCurrency {
+
+	customCodes := lo.Keys(c.CustomCurrencies)
+	fiatCodes := []string{c.DefaultFiatCurrency}
+	for _, cur := range c.CustomCurrencies {
+		fiatCodes = lo.Union(fiatCodes, lo.Keys(cur.FiatConversionFactors))
+	}
+
+	if lo.Contains(customCodes, currency) || lo.Contains(fiatCodes, currency) {
 		return nil
 	}
 
-	allowed := make([]string, 0, len(c.CustomCurrencies)+1)
-	allowed = append(allowed, c.DefaultFiatCurrency)
-	for code := range c.CustomCurrencies {
-		allowed = append(allowed, code)
-	}
-	sort.Strings(allowed)
-	return ierr.NewErrorf("currency must be one of: %s", strings.Join(allowed, ", ")).
-		WithHint("This environment only accepts its configured custom currencies and its default fiat currency").
+	sort.Strings(customCodes)
+	sort.Strings(fiatCodes)
+	return ierr.NewErrorf("currency %q is not configured for this environment", currency).
+		WithHintf("Supported custom currencies: %s. Supported fiat currencies: %s",
+			strings.Join(customCodes, ", "), strings.Join(fiatCodes, ", ")).
+		WithReportableDetails(map[string]any{
+			"custom_currencies": customCodes,
+			"fiat_currencies":   fiatCodes,
+		}).
 		Mark(ierr.ErrValidation)
 }
