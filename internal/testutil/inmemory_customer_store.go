@@ -190,6 +190,47 @@ func customerFilterFn(ctx context.Context, c *customer.Customer, filter interfac
 		}
 	}
 
+	// Mirror CustomerQueryOptions.ApplyStatusFilter: a non-empty GetStatus is an
+	// equality predicate. Empty means skip (DSL owns status, or no default).
+	// Unset customer status is treated as published so test fixtures still match.
+	if status := f.GetStatus(); status != "" {
+		cs := string(c.Status)
+		if cs == "" {
+			cs = string(types.StatusPublished)
+		}
+		if cs != status {
+			return false
+		}
+	}
+
+	for _, cond := range f.Filters {
+		if !customerMatchesStatusFilter(c, cond) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func customerMatchesStatusFilter(c *customer.Customer, cond *types.FilterCondition) bool {
+	if cond == nil || lo.FromPtr(cond.Field) != "status" {
+		return true
+	}
+	status := string(c.Status)
+	if status == "" {
+		status = string(types.StatusPublished)
+	}
+	if cond.Value == nil {
+		return true
+	}
+	switch lo.FromPtr(cond.Operator) {
+	case types.IN:
+		return lo.Contains(cond.Value.Array, status)
+	case types.EQUAL:
+		if cond.Value.String != nil {
+			return status == *cond.Value.String
+		}
+	}
 	return true
 }
 
