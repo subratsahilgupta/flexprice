@@ -1,6 +1,8 @@
 package invoice
 
 import (
+	"time"
+
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -62,6 +64,30 @@ func (b *invoiceLineItemBuilder) WithDisplayName(displayName *string) *invoiceLi
 		return b
 	}
 	b.item.DisplayName = displayName
+	return b
+}
+
+func (b *invoiceLineItemBuilder) WithDescription(description *string) *invoiceLineItemBuilder {
+	if b == nil || b.item == nil {
+		return b
+	}
+	b.item.Description = description
+	return b
+}
+
+func (b *invoiceLineItemBuilder) WithPeriodStart(periodStart *time.Time) *invoiceLineItemBuilder {
+	if b == nil || b.item == nil {
+		return b
+	}
+	b.item.PeriodStart = periodStart
+	return b
+}
+
+func (b *invoiceLineItemBuilder) WithPeriodEnd(periodEnd *time.Time) *invoiceLineItemBuilder {
+	if b == nil || b.item == nil {
+		return b
+	}
+	b.item.PeriodEnd = periodEnd
 	return b
 }
 

@@ -1154,3 +1154,80 @@ func (s *InvoiceModificationServiceSuite) TestExecuteChainedEditsAcrossRecreatio
 	s.Error(err)
 	s.Contains(err.Error(), draftB)
 }
+
+func (s *InvoiceModificationServiceSuite) TestLineItemDescriptionAndPeriodRoundTrip() {
+	ctx := s.GetContext()
+	inv := s.createDraftInvoice()
+	periodStart := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := time.Date(2026, 9, 30, 23, 59, 59, 0, time.UTC)
+
+	// Add carries description and the period interval.
+	resp, err := s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action: dto.InvoiceModifyLineItemActionAdd,
+			Items: []dto.AddLineItemRequest{{
+				DisplayName: "Consulting",
+				Amount:      decimal.NewFromInt(100),
+				Quantity:    decimal.NewFromInt(1),
+				Description: lo.ToPtr("September consulting retainer"),
+				PeriodStart: &periodStart,
+				PeriodEnd:   &periodEnd,
+			}},
+		},
+	})
+	s.NoError(err)
+	s.Require().Len(resp.Invoice.LineItems, 1)
+	added := resp.Invoice.LineItems[0]
+	s.Equal("September consulting retainer", lo.FromPtr(added.Description))
+	s.Require().NotNil(added.PeriodStart)
+	s.True(periodStart.Equal(*added.PeriodStart))
+	s.Require().NotNil(added.PeriodEnd)
+	s.True(periodEnd.Equal(*added.PeriodEnd))
+
+	// Update can change description and shift the interval.
+	newEnd := periodEnd.AddDate(0, 1, 0)
+	resp, err = s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action:     dto.InvoiceModifyLineItemActionUpdate,
+			LineItemID: added.ID,
+			Update: &dto.UpdateLineItemRequest{
+				Description: lo.ToPtr("Sep-Oct consulting retainer"),
+				PeriodEnd:   &newEnd,
+			},
+		},
+	})
+	s.NoError(err)
+	s.Require().Len(resp.Invoice.LineItems, 1)
+	updated := resp.Invoice.LineItems[0]
+	s.Equal("Sep-Oct consulting retainer", lo.FromPtr(updated.Description))
+	s.True(periodStart.Equal(*updated.PeriodStart))
+	s.True(newEnd.Equal(*updated.PeriodEnd))
+
+	// A reversed interval is rejected.
+	bad := periodStart.AddDate(0, -1, 0)
+	_, err = s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action:     dto.InvoiceModifyLineItemActionUpdate,
+			LineItemID: updated.ID,
+			Update:     &dto.UpdateLineItemRequest{PeriodEnd: &bad},
+		},
+	})
+	s.Error(err) // the merged item is validated, so the reversed interval is caught
+	_, err = s.service.ModifyInvoice(ctx, inv.ID, dto.ExecuteInvoiceModifyRequest{
+		Type: dto.InvoiceModifyTypeLineItem,
+		LineItemParams: &dto.InvoiceModifyLineItemParams{
+			Action: dto.InvoiceModifyLineItemActionAdd,
+			Items: []dto.AddLineItemRequest{{
+				DisplayName: "Bad",
+				Amount:      decimal.NewFromInt(1),
+				Quantity:    decimal.NewFromInt(1),
+				PeriodStart: &periodEnd,
+				PeriodEnd:   &periodStart,
+			}},
+		},
+	})
+	s.Error(err)
+}

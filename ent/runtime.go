@@ -1259,27 +1259,27 @@ func init() {
 	// invoicelineitem.CustomerIDValidator is a validator for the "customer_id" field. It is called by the builders before save.
 	invoicelineitem.CustomerIDValidator = invoicelineitemDescCustomerID.Validators[0].(func(string) error)
 	// invoicelineitemDescAmount is the schema descriptor for amount field.
-	invoicelineitemDescAmount := invoicelineitemFields[15].Descriptor()
+	invoicelineitemDescAmount := invoicelineitemFields[16].Descriptor()
 	// invoicelineitem.DefaultAmount holds the default value on creation for the amount field.
 	invoicelineitem.DefaultAmount = invoicelineitemDescAmount.Default.(decimal.Decimal)
 	// invoicelineitemDescQuantity is the schema descriptor for quantity field.
-	invoicelineitemDescQuantity := invoicelineitemFields[16].Descriptor()
+	invoicelineitemDescQuantity := invoicelineitemFields[17].Descriptor()
 	// invoicelineitem.DefaultQuantity holds the default value on creation for the quantity field.
 	invoicelineitem.DefaultQuantity = invoicelineitemDescQuantity.Default.(decimal.Decimal)
 	// invoicelineitemDescCurrency is the schema descriptor for currency field.
-	invoicelineitemDescCurrency := invoicelineitemFields[17].Descriptor()
+	invoicelineitemDescCurrency := invoicelineitemFields[18].Descriptor()
 	// invoicelineitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
 	invoicelineitem.CurrencyValidator = invoicelineitemDescCurrency.Validators[0].(func(string) error)
 	// invoicelineitemDescPrepaidCreditsApplied is the schema descriptor for prepaid_credits_applied field.
-	invoicelineitemDescPrepaidCreditsApplied := invoicelineitemFields[22].Descriptor()
+	invoicelineitemDescPrepaidCreditsApplied := invoicelineitemFields[23].Descriptor()
 	// invoicelineitem.DefaultPrepaidCreditsApplied holds the default value on creation for the prepaid_credits_applied field.
 	invoicelineitem.DefaultPrepaidCreditsApplied = invoicelineitemDescPrepaidCreditsApplied.Default.(decimal.Decimal)
 	// invoicelineitemDescLineItemDiscount is the schema descriptor for line_item_discount field.
-	invoicelineitemDescLineItemDiscount := invoicelineitemFields[23].Descriptor()
+	invoicelineitemDescLineItemDiscount := invoicelineitemFields[24].Descriptor()
 	// invoicelineitem.DefaultLineItemDiscount holds the default value on creation for the line_item_discount field.
 	invoicelineitem.DefaultLineItemDiscount = invoicelineitemDescLineItemDiscount.Default.(decimal.Decimal)
 	// invoicelineitemDescInvoiceLevelDiscount is the schema descriptor for invoice_level_discount field.
-	invoicelineitemDescInvoiceLevelDiscount := invoicelineitemFields[24].Descriptor()
+	invoicelineitemDescInvoiceLevelDiscount := invoicelineitemFields[25].Descriptor()
 	// invoicelineitem.DefaultInvoiceLevelDiscount holds the default value on creation for the invoice_level_discount field.
 	invoicelineitem.DefaultInvoiceLevelDiscount = invoicelineitemDescInvoiceLevelDiscount.Default.(decimal.Decimal)
 	invoicesequenceFields := schema.InvoiceSequence{}.Fields()
