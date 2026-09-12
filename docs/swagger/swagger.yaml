@@ -199,6 +199,101 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
+  analytics.Filter:
+    properties:
+      field:
+        type: string
+      op:
+        type: string
+      optional:
+        type: boolean
+      value: {}
+    type: object
+  analytics.SavedView:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      definition:
+        $ref: '#/definitions/analytics.ViewDefinition'
+      id:
+        type: string
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/types.Status'
+      tenant_id:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      version:
+        type: integer
+    type: object
+  analytics.Shape:
+    enum:
+    - timeseries
+    - breakdown
+    type: string
+    x-enum-varnames:
+    - ShapeTimeseries
+    - ShapeBreakdown
+  analytics.SortSpec:
+    properties:
+      dir:
+        type: string
+      field:
+        type: string
+    type: object
+  analytics.TimeSpecRaw:
+    properties:
+      grain:
+        type: string
+      range: {}
+    type: object
+  analytics.Variable:
+    properties:
+      default: {}
+      name:
+        type: string
+      required:
+        type: boolean
+      type:
+        type: string
+    type: object
+  analytics.ViewDefinition:
+    properties:
+      dimensions:
+        items:
+          type: string
+        type: array
+      filters:
+        items:
+          $ref: '#/definitions/analytics.Filter'
+        type: array
+      limit:
+        type: integer
+      metrics:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      shape:
+        $ref: '#/definitions/analytics.Shape'
+      sort:
+        items:
+          $ref: '#/definitions/analytics.SortSpec'
+        type: array
+      time:
+        $ref: '#/definitions/analytics.TimeSpecRaw'
+      variables:
+        items:
+          $ref: '#/definitions/analytics.Variable'
+        type: array
+    type: object
   costsheet.Filter:
     properties:
       costsheetIDs:
@@ -747,6 +842,16 @@ definitions:
         type: string
       updated_by:
         type: string
+    type: object
+  AnalyticsQueryRequest:
+    properties:
+      definition:
+        $ref: '#/definitions/analytics.ViewDefinition'
+      variables:
+        additionalProperties: {}
+        type: object
+    required:
+    - definition
     type: object
   AttributedToCustomerResult:
     properties:
@@ -2527,6 +2632,16 @@ definitions:
         type: string
       updated_by:
         type: string
+    type: object
+  CreateSavedViewRequest:
+    properties:
+      definition:
+        $ref: '#/definitions/analytics.ViewDefinition'
+      name:
+        type: string
+    required:
+    - definition
+    - name
     type: object
   CreateScheduledTaskRequest:
     properties:
@@ -5746,6 +5861,12 @@ definitions:
         type: string
     required:
     - addon_association_id
+    type: object
+  SavedViewQueryRequest:
+    properties:
+      variables:
+        additionalProperties: {}
+        type: object
     type: object
   ScheduledTaskResponse:
     properties:
@@ -9288,6 +9409,33 @@ definitions:
         allOf:
         - $ref: '#/definitions/types.RoundType'
         description: up or down
+    type: object
+  service.Column:
+    properties:
+      currency:
+        type: string
+      name:
+        type: string
+      role:
+        description: '"dimension" | "metric"'
+        type: string
+      type:
+        type: string
+    type: object
+  service.QueryResult:
+    properties:
+      columns:
+        items:
+          $ref: '#/definitions/service.Column'
+        type: array
+      meta:
+        additionalProperties: {}
+        type: object
+      rows:
+        items:
+          items: {}
+          type: array
+        type: array
     type: object
   subscription.SubscriptionLineItem:
     properties:
@@ -13917,6 +14065,118 @@ paths:
       summary: Query alert settings
       tags:
       - AlertSettings
+      x-scope: read
+  /analytics/query:
+    post:
+      consumes:
+      - application/json
+      description: Resolves the given view definition against the supplied variables
+        and executes it.
+      operationId: queryAnalytics
+      parameters:
+      - description: Analytics query request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/AnalyticsQueryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.QueryResult'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Run an ad-hoc analytics query
+      tags:
+      - Analytics
+      x-scope: read
+  /analytics/views:
+    post:
+      consumes:
+      - application/json
+      description: Persists a named view definition that can later be queried by ID.
+      operationId: createAnalyticsSavedView
+      parameters:
+      - description: Saved view request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/CreateSavedViewRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/analytics.SavedView'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a saved analytics view
+      tags:
+      - Analytics
+  /analytics/views/{id}/query:
+    post:
+      consumes:
+      - application/json
+      description: Resolves the saved view's definition against the supplied variables
+        and executes it.
+      operationId: queryAnalyticsSavedView
+      parameters:
+      - description: Saved view ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Saved view query request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/SavedViewQueryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/service.QueryResult'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "404":
+          description: Saved view not found
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Query a saved analytics view
+      tags:
+      - Analytics
       x-scope: read
   /checkout/sessions:
     post:

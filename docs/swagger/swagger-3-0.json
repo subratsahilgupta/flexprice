@@ -901,6 +901,206 @@
         ]
       }
     },
+    "/analytics/query": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Run an ad-hoc analytics query",
+        "description": "Resolves the given view definition against the supplied variables and executes it.",
+        "operationId": "queryAnalytics",
+        "requestBody": {
+          "description": "Analytics query request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyticsQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/service.QueryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "request"
+      }
+    },
+    "/analytics/views": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Create a saved analytics view",
+        "description": "Persists a named view definition that can later be queried by ID.",
+        "operationId": "createAnalyticsSavedView",
+        "requestBody": {
+          "description": "Saved view request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSavedViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/analytics.SavedView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-codegen-request-body-name": "request"
+      }
+    },
+    "/analytics/views/{id}/query": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Query a saved analytics view",
+        "description": "Resolves the saved view's definition against the supplied variables and executes it.",
+        "operationId": "queryAnalyticsSavedView",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Saved view ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Saved view query request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedViewQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/service.QueryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Saved view not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "request"
+      }
+    },
     "/checkout/sessions": {
       "post": {
         "tags": [
@@ -16069,6 +16269,157 @@
           }
         }
       },
+      "analytics.Filter": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "op": {
+            "type": "string"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "object"
+          }
+        }
+      },
+      "analytics.SavedView": {
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.Status"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        }
+      },
+      "analytics.Shape": {
+        "type": "string",
+        "enum": [
+          "timeseries",
+          "breakdown"
+        ],
+        "x-enum-varnames": [
+          "ShapeTimeseries",
+          "ShapeBreakdown"
+        ]
+      },
+      "analytics.SortSpec": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          }
+        }
+      },
+      "analytics.TimeSpecRaw": {
+        "type": "object",
+        "properties": {
+          "grain": {
+            "type": "string"
+          },
+          "range": {
+            "type": "object"
+          }
+        }
+      },
+      "analytics.Variable": {
+        "type": "object",
+        "properties": {
+          "default": {
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "analytics.ViewDefinition": {
+        "type": "object",
+        "properties": {
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/analytics.Filter"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/analytics.Shape"
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/analytics.SortSpec"
+            }
+          },
+          "time": {
+            "$ref": "#/components/schemas/analytics.TimeSpecRaw"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/analytics.Variable"
+            }
+          }
+        }
+      },
       "costsheet.Filter": {
         "type": "object",
         "properties": {
@@ -16891,6 +17242,23 @@
           },
           "updated_by": {
             "type": "string"
+          }
+        }
+      },
+      "AnalyticsQueryRequest": {
+        "required": [
+          "definition"
+        ],
+        "type": "object",
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
+          },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            }
           }
         }
       },
@@ -19158,6 +19526,21 @@
             "format": "date-time"
           },
           "updated_by": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateSavedViewRequest": {
+        "required": [
+          "definition",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
+          },
+          "name": {
             "type": "string"
           }
         }
@@ -23386,6 +23769,17 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "SavedViewQueryRequest": {
+        "type": "object",
+        "properties": {
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            }
           }
         }
       },
@@ -27954,6 +28348,50 @@
           },
           "round": {
             "$ref": "#/components/schemas/types.RoundType"
+          }
+        }
+      },
+      "service.Column": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "description": "\"dimension\" | \"metric\""
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "service.QueryResult": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/service.Column"
+            }
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
           }
         }
       },
