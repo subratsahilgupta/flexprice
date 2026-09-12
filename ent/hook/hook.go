@@ -57,6 +57,18 @@ func (f AlertSettingsFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AlertSettingsMutation", m)
 }
 
+// The AnalyticsSavedViewFunc type is an adapter to allow the use of ordinary
+// function as AnalyticsSavedView mutator.
+type AnalyticsSavedViewFunc func(context.Context, *ent.AnalyticsSavedViewMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AnalyticsSavedViewFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AnalyticsSavedViewMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AnalyticsSavedViewMutation", m)
+}
+
 // The AuthFunc type is an adapter to allow the use of ordinary
 // function as Auth mutator.
 type AuthFunc func(context.Context, *ent.AuthMutation) (ent.Value, error)

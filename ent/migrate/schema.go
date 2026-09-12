@@ -166,6 +166,33 @@ var (
 			},
 		},
 	}
+	// AnalyticsSavedViewsColumns holds the columns for the "analytics_saved_views" table.
+	AnalyticsSavedViewsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "tenant_id", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "status", Type: field.TypeString, Default: "published", SchemaType: map[string]string{"postgres": "varchar(20)"}},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "created_by", Type: field.TypeString, Nullable: true},
+		{Name: "updated_by", Type: field.TypeString, Nullable: true},
+		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "name", Type: field.TypeString},
+		{Name: "version", Type: field.TypeInt, Default: 1},
+		{Name: "definition", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+	}
+	// AnalyticsSavedViewsTable holds the schema information for the "analytics_saved_views" table.
+	AnalyticsSavedViewsTable = &schema.Table{
+		Name:       "analytics_saved_views",
+		Columns:    AnalyticsSavedViewsColumns,
+		PrimaryKey: []*schema.Column{AnalyticsSavedViewsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "analyticssavedview_tenant_id_environment_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{AnalyticsSavedViewsColumns[1], AnalyticsSavedViewsColumns[7], AnalyticsSavedViewsColumns[2]},
+			},
+		},
+	}
 	// AuthsColumns holds the columns for the "auths" table.
 	AuthsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -2835,6 +2862,7 @@ var (
 		AddonAssociationsTable,
 		AlertLogsTable,
 		AlertSettingsTable,
+		AnalyticsSavedViewsTable,
 		AuthsTable,
 		BillingSequencesTable,
 		CheckoutSessionsTable,

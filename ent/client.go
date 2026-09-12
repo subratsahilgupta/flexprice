@@ -19,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/ent/addonassociation"
 	"github.com/flexprice/flexprice/ent/alertlogs"
 	"github.com/flexprice/flexprice/ent/alertsettings"
+	"github.com/flexprice/flexprice/ent/analyticssavedview"
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/checkoutsession"
@@ -86,6 +87,8 @@ type Client struct {
 	AlertLogs *AlertLogsClient
 	// AlertSettings is the client for interacting with the AlertSettings builders.
 	AlertSettings *AlertSettingsClient
+	// AnalyticsSavedView is the client for interacting with the AnalyticsSavedView builders.
+	AnalyticsSavedView *AnalyticsSavedViewClient
 	// Auth is the client for interacting with the Auth builders.
 	Auth *AuthClient
 	// BillingSequence is the client for interacting with the BillingSequence builders.
@@ -201,6 +204,7 @@ func (c *Client) init() {
 	c.AddonAssociation = NewAddonAssociationClient(c.config)
 	c.AlertLogs = NewAlertLogsClient(c.config)
 	c.AlertSettings = NewAlertSettingsClient(c.config)
+	c.AnalyticsSavedView = NewAnalyticsSavedViewClient(c.config)
 	c.Auth = NewAuthClient(c.config)
 	c.BillingSequence = NewBillingSequenceClient(c.config)
 	c.CheckoutSession = NewCheckoutSessionClient(c.config)
@@ -347,6 +351,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AddonAssociation:         NewAddonAssociationClient(cfg),
 		AlertLogs:                NewAlertLogsClient(cfg),
 		AlertSettings:            NewAlertSettingsClient(cfg),
+		AnalyticsSavedView:       NewAnalyticsSavedViewClient(cfg),
 		Auth:                     NewAuthClient(cfg),
 		BillingSequence:          NewBillingSequenceClient(cfg),
 		CheckoutSession:          NewCheckoutSessionClient(cfg),
@@ -420,6 +425,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AddonAssociation:         NewAddonAssociationClient(cfg),
 		AlertLogs:                NewAlertLogsClient(cfg),
 		AlertSettings:            NewAlertSettingsClient(cfg),
+		AnalyticsSavedView:       NewAnalyticsSavedViewClient(cfg),
 		Auth:                     NewAuthClient(cfg),
 		BillingSequence:          NewBillingSequenceClient(cfg),
 		CheckoutSession:          NewCheckoutSessionClient(cfg),
@@ -499,9 +505,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Addon, c.AddonAssociation, c.AlertLogs, c.AlertSettings, c.Auth,
-		c.BillingSequence, c.CheckoutSession, c.Connection, c.Costsheet, c.Coupon,
-		c.CouponApplication, c.CouponAssociation, c.CreditGrant,
+		c.Addon, c.AddonAssociation, c.AlertLogs, c.AlertSettings, c.AnalyticsSavedView,
+		c.Auth, c.BillingSequence, c.CheckoutSession, c.Connection, c.Costsheet,
+		c.Coupon, c.CouponApplication, c.CouponAssociation, c.CreditGrant,
 		c.CreditGrantApplication, c.CreditNote, c.CreditNoteLineItem, c.Customer,
 		c.Entitlement, c.EntitlementGrant, c.EntityIntegrationMapping, c.Environment,
 		c.Feature, c.Group, c.IncomingWebhookEvent, c.Invoice, c.InvoiceLineItem,
@@ -520,9 +526,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Addon, c.AddonAssociation, c.AlertLogs, c.AlertSettings, c.Auth,
-		c.BillingSequence, c.CheckoutSession, c.Connection, c.Costsheet, c.Coupon,
-		c.CouponApplication, c.CouponAssociation, c.CreditGrant,
+		c.Addon, c.AddonAssociation, c.AlertLogs, c.AlertSettings, c.AnalyticsSavedView,
+		c.Auth, c.BillingSequence, c.CheckoutSession, c.Connection, c.Costsheet,
+		c.Coupon, c.CouponApplication, c.CouponAssociation, c.CreditGrant,
 		c.CreditGrantApplication, c.CreditNote, c.CreditNoteLineItem, c.Customer,
 		c.Entitlement, c.EntitlementGrant, c.EntityIntegrationMapping, c.Environment,
 		c.Feature, c.Group, c.IncomingWebhookEvent, c.Invoice, c.InvoiceLineItem,
@@ -548,6 +554,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AlertLogs.mutate(ctx, m)
 	case *AlertSettingsMutation:
 		return c.AlertSettings.mutate(ctx, m)
+	case *AnalyticsSavedViewMutation:
+		return c.AnalyticsSavedView.mutate(ctx, m)
 	case *AuthMutation:
 		return c.Auth.mutate(ctx, m)
 	case *BillingSequenceMutation:
@@ -1214,6 +1222,139 @@ func (c *AlertSettingsClient) mutate(ctx context.Context, m *AlertSettingsMutati
 		return (&AlertSettingsDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AlertSettings mutation op: %q", m.Op())
+	}
+}
+
+// AnalyticsSavedViewClient is a client for the AnalyticsSavedView schema.
+type AnalyticsSavedViewClient struct {
+	config
+}
+
+// NewAnalyticsSavedViewClient returns a client for the AnalyticsSavedView from the given config.
+func NewAnalyticsSavedViewClient(c config) *AnalyticsSavedViewClient {
+	return &AnalyticsSavedViewClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `analyticssavedview.Hooks(f(g(h())))`.
+func (c *AnalyticsSavedViewClient) Use(hooks ...Hook) {
+	c.hooks.AnalyticsSavedView = append(c.hooks.AnalyticsSavedView, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `analyticssavedview.Intercept(f(g(h())))`.
+func (c *AnalyticsSavedViewClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AnalyticsSavedView = append(c.inters.AnalyticsSavedView, interceptors...)
+}
+
+// Create returns a builder for creating a AnalyticsSavedView entity.
+func (c *AnalyticsSavedViewClient) Create() *AnalyticsSavedViewCreate {
+	mutation := newAnalyticsSavedViewMutation(c.config, OpCreate)
+	return &AnalyticsSavedViewCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AnalyticsSavedView entities.
+func (c *AnalyticsSavedViewClient) CreateBulk(builders ...*AnalyticsSavedViewCreate) *AnalyticsSavedViewCreateBulk {
+	return &AnalyticsSavedViewCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AnalyticsSavedViewClient) MapCreateBulk(slice any, setFunc func(*AnalyticsSavedViewCreate, int)) *AnalyticsSavedViewCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AnalyticsSavedViewCreateBulk{err: fmt.Errorf("calling to AnalyticsSavedViewClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AnalyticsSavedViewCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AnalyticsSavedViewCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AnalyticsSavedView.
+func (c *AnalyticsSavedViewClient) Update() *AnalyticsSavedViewUpdate {
+	mutation := newAnalyticsSavedViewMutation(c.config, OpUpdate)
+	return &AnalyticsSavedViewUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AnalyticsSavedViewClient) UpdateOne(asv *AnalyticsSavedView) *AnalyticsSavedViewUpdateOne {
+	mutation := newAnalyticsSavedViewMutation(c.config, OpUpdateOne, withAnalyticsSavedView(asv))
+	return &AnalyticsSavedViewUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AnalyticsSavedViewClient) UpdateOneID(id string) *AnalyticsSavedViewUpdateOne {
+	mutation := newAnalyticsSavedViewMutation(c.config, OpUpdateOne, withAnalyticsSavedViewID(id))
+	return &AnalyticsSavedViewUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AnalyticsSavedView.
+func (c *AnalyticsSavedViewClient) Delete() *AnalyticsSavedViewDelete {
+	mutation := newAnalyticsSavedViewMutation(c.config, OpDelete)
+	return &AnalyticsSavedViewDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AnalyticsSavedViewClient) DeleteOne(asv *AnalyticsSavedView) *AnalyticsSavedViewDeleteOne {
+	return c.DeleteOneID(asv.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AnalyticsSavedViewClient) DeleteOneID(id string) *AnalyticsSavedViewDeleteOne {
+	builder := c.Delete().Where(analyticssavedview.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AnalyticsSavedViewDeleteOne{builder}
+}
+
+// Query returns a query builder for AnalyticsSavedView.
+func (c *AnalyticsSavedViewClient) Query() *AnalyticsSavedViewQuery {
+	return &AnalyticsSavedViewQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAnalyticsSavedView},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AnalyticsSavedView entity by its id.
+func (c *AnalyticsSavedViewClient) Get(ctx context.Context, id string) (*AnalyticsSavedView, error) {
+	return c.Query().Where(analyticssavedview.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AnalyticsSavedViewClient) GetX(ctx context.Context, id string) *AnalyticsSavedView {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AnalyticsSavedViewClient) Hooks() []Hook {
+	return c.hooks.AnalyticsSavedView
+}
+
+// Interceptors returns the client interceptors.
+func (c *AnalyticsSavedViewClient) Interceptors() []Interceptor {
+	return c.inters.AnalyticsSavedView
+}
+
+func (c *AnalyticsSavedViewClient) mutate(ctx context.Context, m *AnalyticsSavedViewMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AnalyticsSavedViewCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AnalyticsSavedViewUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AnalyticsSavedViewUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AnalyticsSavedViewDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AnalyticsSavedView mutation op: %q", m.Op())
 	}
 }
 
@@ -8494,10 +8635,10 @@ func (c *WorkflowExecutionClient) mutate(ctx context.Context, m *WorkflowExecuti
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Addon, AddonAssociation, AlertLogs, AlertSettings, Auth, BillingSequence,
-		CheckoutSession, Connection, Costsheet, Coupon, CouponApplication,
-		CouponAssociation, CreditGrant, CreditGrantApplication, CreditNote,
-		CreditNoteLineItem, Customer, Entitlement, EntitlementGrant,
+		Addon, AddonAssociation, AlertLogs, AlertSettings, AnalyticsSavedView, Auth,
+		BillingSequence, CheckoutSession, Connection, Costsheet, Coupon,
+		CouponApplication, CouponAssociation, CreditGrant, CreditGrantApplication,
+		CreditNote, CreditNoteLineItem, Customer, Entitlement, EntitlementGrant,
 		EntityIntegrationMapping, Environment, Feature, Group, IncomingWebhookEvent,
 		Invoice, InvoiceLineItem, InvoiceSequence, Meter, Payment, PaymentAttempt,
 		PaymentMethod, Plan, Price, PriceUnit, Refund, ScheduledTask, Secret, Settings,
@@ -8507,10 +8648,10 @@ type (
 		WorkflowExecution []ent.Hook
 	}
 	inters struct {
-		Addon, AddonAssociation, AlertLogs, AlertSettings, Auth, BillingSequence,
-		CheckoutSession, Connection, Costsheet, Coupon, CouponApplication,
-		CouponAssociation, CreditGrant, CreditGrantApplication, CreditNote,
-		CreditNoteLineItem, Customer, Entitlement, EntitlementGrant,
+		Addon, AddonAssociation, AlertLogs, AlertSettings, AnalyticsSavedView, Auth,
+		BillingSequence, CheckoutSession, Connection, Costsheet, Coupon,
+		CouponApplication, CouponAssociation, CreditGrant, CreditGrantApplication,
+		CreditNote, CreditNoteLineItem, Customer, Entitlement, EntitlementGrant,
 		EntityIntegrationMapping, Environment, Feature, Group, IncomingWebhookEvent,
 		Invoice, InvoiceLineItem, InvoiceSequence, Meter, Payment, PaymentAttempt,
 		PaymentMethod, Plan, Price, PriceUnit, Refund, ScheduledTask, Secret, Settings,
