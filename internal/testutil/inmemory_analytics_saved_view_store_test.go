@@ -63,6 +63,37 @@ func TestInMemoryAnalyticsSavedViewStore_GetNotFound(t *testing.T) {
 	assert.True(t, ierr.IsNotFound(err))
 }
 
+func TestInMemoryAnalyticsSavedViewStore_GetCrossTenantNotFound(t *testing.T) {
+	store := NewInMemoryAnalyticsSavedViewStore()
+
+	require.NoError(t, store.Create(testCtx("tenant_1"), &domainAnalytics.SavedView{ID: "v1", Name: "a"}))
+
+	// Owning tenant can fetch it.
+	got, err := store.Get(testCtx("tenant_1"), "v1")
+	require.NoError(t, err)
+	assert.Equal(t, "v1", got.ID)
+
+	// A different tenant must not be able to read it, even by ID.
+	_, err = store.Get(testCtx("tenant_2"), "v1")
+	require.Error(t, err)
+	assert.True(t, ierr.IsNotFound(err))
+}
+
+func TestInMemoryAnalyticsSavedViewStore_GetFiltersUnpublishedStatus(t *testing.T) {
+	store := NewInMemoryAnalyticsSavedViewStore()
+	ctx := testCtx("tenant_1")
+
+	view := &domainAnalytics.SavedView{ID: "v1", Name: "a"}
+	require.NoError(t, store.Create(ctx, view))
+
+	// Simulate an archived view: same tenant, non-published status.
+	view.Status = types.StatusArchived
+
+	_, err := store.Get(ctx, "v1")
+	require.Error(t, err)
+	assert.True(t, ierr.IsNotFound(err))
+}
+
 func TestInMemoryAnalyticsSavedViewStore_ListFiltersByTenant(t *testing.T) {
 	store := NewInMemoryAnalyticsSavedViewStore()
 

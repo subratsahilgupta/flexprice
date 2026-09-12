@@ -4,6 +4,7 @@ import (
 	"context"
 
 	domainAnalytics "github.com/flexprice/flexprice/internal/domain/analytics"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -30,7 +31,23 @@ func (s *InMemoryAnalyticsSavedViewStore) Create(ctx context.Context, v *domainA
 }
 
 func (s *InMemoryAnalyticsSavedViewStore) Get(ctx context.Context, id string) (*domainAnalytics.SavedView, error) {
-	return s.InMemoryStore.Get(ctx, id)
+	v, err := s.InMemoryStore.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Mirror the real ent repo's Get: scoped to tenant + status=published.
+	// EnvironmentID isn't on the domain SavedView struct, so it can't be filtered here.
+	if !CheckTenantFilter(ctx, v.TenantID) || v.Status != types.StatusPublished {
+		return nil, ierr.NewError("item not found").
+			WithHintf("Item with ID %s was not found", id).
+			WithReportableDetails(map[string]any{
+				"id": id,
+			}).
+			Mark(ierr.ErrNotFound)
+	}
+
+	return v, nil
 }
 
 func (s *InMemoryAnalyticsSavedViewStore) List(ctx context.Context) ([]*domainAnalytics.SavedView, error) {
