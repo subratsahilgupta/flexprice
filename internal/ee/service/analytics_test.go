@@ -247,6 +247,25 @@ func (s *AnalyticsServiceSuite) TestCreateView_QuerySavedView_RoundTrip() {
 	s.Equal(direct, viaSaved)
 }
 
+// TestCreateView_DefaultsVersionToOne proves the Version invariant now lives in
+// the service: a caller that leaves Version unset (zero value) still gets a
+// persisted saved view with Version == 1, regardless of what the handler does.
+func (s *AnalyticsServiceSuite) TestCreateView_DefaultsVersionToOne() {
+	ctx := s.GetContext()
+	view := &analytics.SavedView{
+		Name:       "no version set",
+		Definition: s.breakdownDef(),
+	}
+	s.Equal(0, view.Version, "precondition: caller left Version unset")
+
+	s.NoError(s.svc.CreateView(ctx, view))
+	s.Equal(1, view.Version, "CreateView should default Version to 1 on the in-memory value")
+
+	stored, err := s.GetStores().AnalyticsSavedViewRepo.Get(ctx, view.ID)
+	s.NoError(err)
+	s.Equal(1, stored.Version, "CreateView should persist Version == 1")
+}
+
 func (s *AnalyticsServiceSuite) TestCreateView_RejectsInvalidDefinition() {
 	ctx := s.GetContext()
 	view := &analytics.SavedView{

@@ -94,7 +94,6 @@ func (h *AnalyticsHandler) CreateView(c *gin.Context) {
 	v := &analytics.SavedView{
 		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ANALYTICS_SAVED_VIEW),
 		Name:       req.Name,
-		Version:    1,
 		Definition: req.Definition,
 	}
 

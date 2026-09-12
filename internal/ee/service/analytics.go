@@ -126,6 +126,9 @@ func (s *analyticsService) CreateView(ctx context.Context, v *analytics.SavedVie
 	if v.ID == "" {
 		v.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ANALYTICS_SAVED_VIEW)
 	}
+	if v.Version == 0 {
+		v.Version = 1
+	}
 	if err := s.savedViews.Create(ctx, v); err != nil {
 		s.Logger.Error(ctx, "failed to create analytics saved view", "error", err, "saved_view_id", v.ID)
 		return err

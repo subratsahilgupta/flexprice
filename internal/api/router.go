@@ -233,7 +233,7 @@ func NewRouter(
 		analytics := v1Private.Group("/analytics")
 		{
 			analytics.POST("/query", handlers.Analytics.Query)
-			analytics.POST("/views", handlers.Analytics.CreateView)
+			analytics.POST("/views", write(types.EntityAnalytics, types.ActionWrite), handlers.Analytics.CreateView)
 			analytics.POST("/views/:id/query", handlers.Analytics.QuerySavedView)
 		}
 
