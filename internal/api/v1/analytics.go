@@ -71,7 +71,7 @@ func (h *AnalyticsHandler) Query(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Param request body dto.CreateSavedViewRequest true "Saved view request"
-// @Success 201 {object} analytics.SavedView
+// @Success 201 {object} dto.SavedViewResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
 // @Router /analytics/views [post]
@@ -103,7 +103,7 @@ func (h *AnalyticsHandler) CreateView(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, v)
+	c.JSON(http.StatusCreated, dto.NewSavedViewResponse(v))
 }
 
 // QuerySavedView executes a previously saved analytics view by ID.

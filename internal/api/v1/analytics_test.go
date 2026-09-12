@@ -69,8 +69,17 @@ func setupAnalyticsRouter(t *testing.T, svc service.AnalyticsService) *gin.Engin
 	// rely on this middleware to resolve it into a status code + JSON body.
 	router.Use(middleware.ErrorHandler())
 	router.POST("/v1/analytics/query", handler.Query)
+	router.POST("/v1/analytics/views", handler.CreateView)
 
 	return router
+}
+
+func doCreateAnalyticsView(router *gin.Engine, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/v1/analytics/views", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
 }
 
 func doAnalyticsQuery(router *gin.Engine, body string) *httptest.ResponseRecorder {
@@ -143,6 +152,46 @@ func TestAnalyticsQuery_MalformedBody_ReturnsBadRequest(t *testing.T) {
 			require.NotEmpty(t, errResp.Message)
 		})
 	}
+}
+
+// TestAnalyticsCreateView_ResponseIsDTONotDomainModel proves CreateView returns
+// the SavedViewResponse DTO rather than the raw *analytics.SavedView, so
+// tenant_id/status/created_by/timestamps (from the embedded types.BaseModel)
+// are never exposed to the client.
+func TestAnalyticsCreateView_ResponseIsDTONotDomainModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := setupAnalyticsRouter(t, &stubAnalyticsService{})
+
+	body := `{
+		"name": "usage-by-region",
+		"definition": {
+			"name": "usage-by-region",
+			"shape": "breakdown",
+			"metrics": ["usage_quantity"],
+			"dimensions": ["properties.region"],
+			"time": {"range": "last_7_days", "grain": "day"}
+		}
+	}`
+
+	w := doCreateAnalyticsView(router, body)
+
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp), "response body is not valid JSON: %q", w.Body.String())
+
+	require.Contains(t, resp, "id")
+	require.Contains(t, resp, "name")
+	require.Contains(t, resp, "version")
+	require.Contains(t, resp, "definition")
+
+	require.NotContains(t, resp, "tenant_id")
+	require.NotContains(t, resp, "status")
+	require.NotContains(t, resp, "created_by")
+	require.NotContains(t, resp, "created_at")
+	require.NotContains(t, resp, "updated_at")
+	require.NotContains(t, resp, "updated_by")
 }
 
 func TestAnalyticsQuery_ServiceError_MapsToNotFound(t *testing.T) {

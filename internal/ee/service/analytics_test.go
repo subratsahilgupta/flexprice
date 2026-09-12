@@ -209,6 +209,21 @@ func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesUsesMeterAggregation()
 	s.Equal("20", res.Rows[0][1])
 }
 
+// TestExecuteView_TimeseriesRejectsDimensions proves the fail-loud guard: a
+// timeseries view with Dimensions set must return a validation error rather
+// than silently returning an ungrouped series (GetUsage never groups by
+// GroupBy for a single meter, and ShapeTimeseries ignores dimensions).
+func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesRejectsDimensions() {
+	ctx := s.GetContext()
+
+	def := s.timeseriesDef(s.maxMeter.ID)
+	def.Dimensions = []string{"properties.region"}
+
+	_, err := s.svc.ExecuteView(ctx, def, s.drVars())
+	s.Error(err)
+	s.True(ierr.IsValidation(err), "expected a validation error, got: %v", err)
+}
+
 func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesRequiresExactlyOneMeter() {
 	ctx := s.GetContext()
 

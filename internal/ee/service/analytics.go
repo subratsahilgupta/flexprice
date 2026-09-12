@@ -89,6 +89,10 @@ func (s *analyticsService) executeBreakdown(ctx context.Context, rv analytics.Re
 // result. Calling the repo directly mirrors the breakdown path's admin-style
 // (no subscription context) execution.
 func (s *analyticsService) executeTimeseries(ctx context.Context, rv analytics.ResolvedView) (*QueryResult, error) {
+	if err := requireNoDimensions(rv.Dimensions); err != nil {
+		return nil, err
+	}
+
 	meterID, err := singleMeterID(rv.Filters)
 	if err != nil {
 		return nil, err
@@ -155,6 +159,19 @@ func requirePropertyDimensions(dims []string) error {
 				WithHint("phase-1 breakdown views only support properties.* dimensions").
 				Mark(ierr.ErrValidation)
 		}
+	}
+	return nil
+}
+
+// requireNoDimensions fails loud on the timeseries path: MeterUsageRepo.GetUsage
+// never groups by GroupBy for a single-meter query and ShapeTimeseries ignores
+// dimensions, so a view with Dimensions set would otherwise return a silently
+// ungrouped series instead of an error. Mirrors requirePropertyDimensions.
+func requireNoDimensions(dims []string) error {
+	if len(dims) > 0 {
+		return ierr.NewError("dimensions are not supported for timeseries views in this version").
+			WithHint("remove dimensions from the view or use a breakdown shape").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
