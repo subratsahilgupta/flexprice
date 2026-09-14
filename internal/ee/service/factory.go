@@ -126,7 +126,7 @@ type ServiceParams struct {
 	PlanPriceSyncRepo            planpricesync.Repository
 	WorkflowExecutionRepo        workflowexecution.Repository
 	CheckoutSessionRepo          domainCheckout.Repository
-	AnalyticsSavedViewRepo       domainAnalytics.Repository
+	AnalyticsViewRepo            domainAnalytics.Repository
 
 	// Publishers
 	EventPublisher   publisher.EventPublisher
@@ -224,7 +224,7 @@ func NewServiceParams(
 	checkoutSessionRepo domainCheckout.Repository,
 	usageRecordRepo usagerecord.Repository,
 	encryptionService security.EncryptionService,
-	analyticsSavedViewRepo domainAnalytics.Repository,
+	analyticsViewRepo domainAnalytics.Repository,
 ) ServiceParams {
 	return ServiceParams{
 		Logger:                       logger,
@@ -295,6 +295,6 @@ func NewServiceParams(
 		PlanPriceSyncRepo:            planPriceSyncRepo,
 		WorkflowExecutionRepo:        workflowExecutionRepo,
 		CheckoutSessionRepo:          checkoutSessionRepo,
-		AnalyticsSavedViewRepo:       analyticsSavedViewRepo,
+		AnalyticsViewRepo:            analyticsViewRepo,
 	}
 }

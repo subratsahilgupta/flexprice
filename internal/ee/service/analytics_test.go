@@ -63,18 +63,18 @@ func (s *AnalyticsServiceSuite) SetupTest() {
 	s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, s.maxMeter))
 
 	s.svc = NewAnalyticsService(ServiceParams{
-		Logger:                 s.GetLogger(),
-		Config:                 s.GetConfig(),
-		DB:                     s.GetDB(),
-		MeterUsageRepo:         s.meterUsageRepo,
-		MeterRepo:              s.GetStores().MeterRepo,
-		CustomerRepo:           s.GetStores().CustomerRepo,
-		FeatureRepo:            s.GetStores().FeatureRepo,
-		SubRepo:                s.GetStores().SubscriptionRepo,
-		PriceRepo:              s.GetStores().PriceRepo,
-		AddonRepo:              s.GetStores().AddonRepo,
-		GroupRepo:              s.GetStores().GroupRepo,
-		AnalyticsSavedViewRepo: s.GetStores().AnalyticsSavedViewRepo,
+		Logger:            s.GetLogger(),
+		Config:            s.GetConfig(),
+		DB:                s.GetDB(),
+		MeterUsageRepo:    s.meterUsageRepo,
+		MeterRepo:         s.GetStores().MeterRepo,
+		CustomerRepo:      s.GetStores().CustomerRepo,
+		FeatureRepo:       s.GetStores().FeatureRepo,
+		SubRepo:           s.GetStores().SubscriptionRepo,
+		PriceRepo:         s.GetStores().PriceRepo,
+		AddonRepo:         s.GetStores().AddonRepo,
+		GroupRepo:         s.GetStores().GroupRepo,
+		AnalyticsViewRepo: s.GetStores().AnalyticsViewRepo,
 	})
 }
 
@@ -236,15 +236,15 @@ func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesRequiresExactlyOneMete
 }
 
 // ---------------------------------------------------------------------------
-// Saved-view CRUD
+// View CRUD
 // ---------------------------------------------------------------------------
 
-func (s *AnalyticsServiceSuite) TestCreateView_QuerySavedView_RoundTrip() {
+func (s *AnalyticsServiceSuite) TestCreateView_QueryView_RoundTrip() {
 	ctx := s.GetContext()
 	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, map[string]interface{}{"region": "us"})
 	s.insertUsage(ctx, s.sumMeter.ID, s.now, 5, map[string]interface{}{"region": "eu"})
 
-	view := &analytics.SavedView{
+	view := &analytics.View{
 		Name:       "region breakdown",
 		Definition: s.breakdownDef(),
 	}
@@ -257,17 +257,17 @@ func (s *AnalyticsServiceSuite) TestCreateView_QuerySavedView_RoundTrip() {
 	direct, err := s.svc.ExecuteView(ctx, s.breakdownDef(), vars)
 	s.NoError(err)
 
-	viaSaved, err := s.svc.QuerySavedView(ctx, view.ID, vars)
+	viaView, err := s.svc.QueryView(ctx, view.ID, vars)
 	s.NoError(err)
-	s.Equal(direct, viaSaved)
+	s.Equal(direct, viaView)
 }
 
 // TestCreateView_DefaultsVersionToOne proves the Version invariant now lives in
 // the service: a caller that leaves Version unset (zero value) still gets a
-// persisted saved view with Version == 1, regardless of what the handler does.
+// persisted view with Version == 1, regardless of what the handler does.
 func (s *AnalyticsServiceSuite) TestCreateView_DefaultsVersionToOne() {
 	ctx := s.GetContext()
-	view := &analytics.SavedView{
+	view := &analytics.View{
 		Name:       "no version set",
 		Definition: s.breakdownDef(),
 	}
@@ -276,14 +276,14 @@ func (s *AnalyticsServiceSuite) TestCreateView_DefaultsVersionToOne() {
 	s.NoError(s.svc.CreateView(ctx, view))
 	s.Equal(1, view.Version, "CreateView should default Version to 1 on the in-memory value")
 
-	stored, err := s.GetStores().AnalyticsSavedViewRepo.Get(ctx, view.ID)
+	stored, err := s.GetStores().AnalyticsViewRepo.Get(ctx, view.ID)
 	s.NoError(err)
 	s.Equal(1, stored.Version, "CreateView should persist Version == 1")
 }
 
 func (s *AnalyticsServiceSuite) TestCreateView_RejectsInvalidDefinition() {
 	ctx := s.GetContext()
-	view := &analytics.SavedView{
+	view := &analytics.View{
 		Name:       "invalid",
 		Definition: analytics.ViewDefinition{Shape: analytics.ShapeBreakdown}, // no metrics
 	}
@@ -292,9 +292,9 @@ func (s *AnalyticsServiceSuite) TestCreateView_RejectsInvalidDefinition() {
 	s.True(ierr.IsValidation(err))
 }
 
-func (s *AnalyticsServiceSuite) TestQuerySavedView_CrossTenantDoesNotLeak() {
+func (s *AnalyticsServiceSuite) TestQueryView_CrossTenantDoesNotLeak() {
 	ctx := s.GetContext()
-	view := &analytics.SavedView{
+	view := &analytics.View{
 		Name:       "tenant-a view",
 		Definition: s.breakdownDef(),
 	}
@@ -305,7 +305,7 @@ func (s *AnalyticsServiceSuite) TestQuerySavedView_CrossTenantDoesNotLeak() {
 	vars := s.drVars()
 	vars["meter"] = s.sumMeter.ID
 
-	_, err := s.svc.QuerySavedView(otherTenantCtx, view.ID, vars)
+	_, err := s.svc.QueryView(otherTenantCtx, view.ID, vars)
 	s.Error(err)
 	s.True(ierr.IsNotFound(err), "expected not-found error for cross-tenant access, got: %v", err)
 }

@@ -10,11 +10,12 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/flexprice/flexprice/ent/analyticssavedview"
+	"github.com/flexprice/flexprice/ent/analyticsview"
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 )
 
-// AnalyticsSavedView is the model entity for the AnalyticsSavedView schema.
-type AnalyticsSavedView struct {
+// AnalyticsView is the model entity for the AnalyticsView schema.
+type AnalyticsView struct {
 	config `json:"-"`
 	// ID of the ent.
 	ID string `json:"id,omitempty"`
@@ -37,22 +38,22 @@ type AnalyticsSavedView struct {
 	// Version holds the value of the "version" field.
 	Version int `json:"version,omitempty"`
 	// Definition holds the value of the "definition" field.
-	Definition   map[string]interface{} `json:"definition,omitempty"`
+	Definition   analytics.ViewDefinition `json:"definition,omitempty"`
 	selectValues sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
-func (*AnalyticsSavedView) scanValues(columns []string) ([]any, error) {
+func (*AnalyticsView) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case analyticssavedview.FieldDefinition:
+		case analyticsview.FieldDefinition:
 			values[i] = new([]byte)
-		case analyticssavedview.FieldVersion:
+		case analyticsview.FieldVersion:
 			values[i] = new(sql.NullInt64)
-		case analyticssavedview.FieldID, analyticssavedview.FieldTenantID, analyticssavedview.FieldStatus, analyticssavedview.FieldCreatedBy, analyticssavedview.FieldUpdatedBy, analyticssavedview.FieldEnvironmentID, analyticssavedview.FieldName:
+		case analyticsview.FieldID, analyticsview.FieldTenantID, analyticsview.FieldStatus, analyticsview.FieldCreatedBy, analyticsview.FieldUpdatedBy, analyticsview.FieldEnvironmentID, analyticsview.FieldName:
 			values[i] = new(sql.NullString)
-		case analyticssavedview.FieldCreatedAt, analyticssavedview.FieldUpdatedAt:
+		case analyticsview.FieldCreatedAt, analyticsview.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -62,149 +63,149 @@ func (*AnalyticsSavedView) scanValues(columns []string) ([]any, error) {
 }
 
 // assignValues assigns the values that were returned from sql.Rows (after scanning)
-// to the AnalyticsSavedView fields.
-func (asv *AnalyticsSavedView) assignValues(columns []string, values []any) error {
+// to the AnalyticsView fields.
+func (av *AnalyticsView) assignValues(columns []string, values []any) error {
 	if m, n := len(values), len(columns); m < n {
 		return fmt.Errorf("mismatch number of scan values: %d != %d", m, n)
 	}
 	for i := range columns {
 		switch columns[i] {
-		case analyticssavedview.FieldID:
+		case analyticsview.FieldID:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field id", values[i])
 			} else if value.Valid {
-				asv.ID = value.String
+				av.ID = value.String
 			}
-		case analyticssavedview.FieldTenantID:
+		case analyticsview.FieldTenantID:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field tenant_id", values[i])
 			} else if value.Valid {
-				asv.TenantID = value.String
+				av.TenantID = value.String
 			}
-		case analyticssavedview.FieldStatus:
+		case analyticsview.FieldStatus:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field status", values[i])
 			} else if value.Valid {
-				asv.Status = value.String
+				av.Status = value.String
 			}
-		case analyticssavedview.FieldCreatedAt:
+		case analyticsview.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
 			} else if value.Valid {
-				asv.CreatedAt = value.Time
+				av.CreatedAt = value.Time
 			}
-		case analyticssavedview.FieldUpdatedAt:
+		case analyticsview.FieldUpdatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field updated_at", values[i])
 			} else if value.Valid {
-				asv.UpdatedAt = value.Time
+				av.UpdatedAt = value.Time
 			}
-		case analyticssavedview.FieldCreatedBy:
+		case analyticsview.FieldCreatedBy:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field created_by", values[i])
 			} else if value.Valid {
-				asv.CreatedBy = value.String
+				av.CreatedBy = value.String
 			}
-		case analyticssavedview.FieldUpdatedBy:
+		case analyticsview.FieldUpdatedBy:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field updated_by", values[i])
 			} else if value.Valid {
-				asv.UpdatedBy = value.String
+				av.UpdatedBy = value.String
 			}
-		case analyticssavedview.FieldEnvironmentID:
+		case analyticsview.FieldEnvironmentID:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field environment_id", values[i])
 			} else if value.Valid {
-				asv.EnvironmentID = value.String
+				av.EnvironmentID = value.String
 			}
-		case analyticssavedview.FieldName:
+		case analyticsview.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
 			} else if value.Valid {
-				asv.Name = value.String
+				av.Name = value.String
 			}
-		case analyticssavedview.FieldVersion:
+		case analyticsview.FieldVersion:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field version", values[i])
 			} else if value.Valid {
-				asv.Version = int(value.Int64)
+				av.Version = int(value.Int64)
 			}
-		case analyticssavedview.FieldDefinition:
+		case analyticsview.FieldDefinition:
 			if value, ok := values[i].(*[]byte); !ok {
 				return fmt.Errorf("unexpected type %T for field definition", values[i])
 			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &asv.Definition); err != nil {
+				if err := json.Unmarshal(*value, &av.Definition); err != nil {
 					return fmt.Errorf("unmarshal field definition: %w", err)
 				}
 			}
 		default:
-			asv.selectValues.Set(columns[i], values[i])
+			av.selectValues.Set(columns[i], values[i])
 		}
 	}
 	return nil
 }
 
-// Value returns the ent.Value that was dynamically selected and assigned to the AnalyticsSavedView.
+// Value returns the ent.Value that was dynamically selected and assigned to the AnalyticsView.
 // This includes values selected through modifiers, order, etc.
-func (asv *AnalyticsSavedView) Value(name string) (ent.Value, error) {
-	return asv.selectValues.Get(name)
+func (av *AnalyticsView) Value(name string) (ent.Value, error) {
+	return av.selectValues.Get(name)
 }
 
-// Update returns a builder for updating this AnalyticsSavedView.
-// Note that you need to call AnalyticsSavedView.Unwrap() before calling this method if this AnalyticsSavedView
+// Update returns a builder for updating this AnalyticsView.
+// Note that you need to call AnalyticsView.Unwrap() before calling this method if this AnalyticsView
 // was returned from a transaction, and the transaction was committed or rolled back.
-func (asv *AnalyticsSavedView) Update() *AnalyticsSavedViewUpdateOne {
-	return NewAnalyticsSavedViewClient(asv.config).UpdateOne(asv)
+func (av *AnalyticsView) Update() *AnalyticsViewUpdateOne {
+	return NewAnalyticsViewClient(av.config).UpdateOne(av)
 }
 
-// Unwrap unwraps the AnalyticsSavedView entity that was returned from a transaction after it was closed,
+// Unwrap unwraps the AnalyticsView entity that was returned from a transaction after it was closed,
 // so that all future queries will be executed through the driver which created the transaction.
-func (asv *AnalyticsSavedView) Unwrap() *AnalyticsSavedView {
-	_tx, ok := asv.config.driver.(*txDriver)
+func (av *AnalyticsView) Unwrap() *AnalyticsView {
+	_tx, ok := av.config.driver.(*txDriver)
 	if !ok {
-		panic("ent: AnalyticsSavedView is not a transactional entity")
+		panic("ent: AnalyticsView is not a transactional entity")
 	}
-	asv.config.driver = _tx.drv
-	return asv
+	av.config.driver = _tx.drv
+	return av
 }
 
 // String implements the fmt.Stringer.
-func (asv *AnalyticsSavedView) String() string {
+func (av *AnalyticsView) String() string {
 	var builder strings.Builder
-	builder.WriteString("AnalyticsSavedView(")
-	builder.WriteString(fmt.Sprintf("id=%v, ", asv.ID))
+	builder.WriteString("AnalyticsView(")
+	builder.WriteString(fmt.Sprintf("id=%v, ", av.ID))
 	builder.WriteString("tenant_id=")
-	builder.WriteString(asv.TenantID)
+	builder.WriteString(av.TenantID)
 	builder.WriteString(", ")
 	builder.WriteString("status=")
-	builder.WriteString(asv.Status)
+	builder.WriteString(av.Status)
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
-	builder.WriteString(asv.CreatedAt.Format(time.ANSIC))
+	builder.WriteString(av.CreatedAt.Format(time.ANSIC))
 	builder.WriteString(", ")
 	builder.WriteString("updated_at=")
-	builder.WriteString(asv.UpdatedAt.Format(time.ANSIC))
+	builder.WriteString(av.UpdatedAt.Format(time.ANSIC))
 	builder.WriteString(", ")
 	builder.WriteString("created_by=")
-	builder.WriteString(asv.CreatedBy)
+	builder.WriteString(av.CreatedBy)
 	builder.WriteString(", ")
 	builder.WriteString("updated_by=")
-	builder.WriteString(asv.UpdatedBy)
+	builder.WriteString(av.UpdatedBy)
 	builder.WriteString(", ")
 	builder.WriteString("environment_id=")
-	builder.WriteString(asv.EnvironmentID)
+	builder.WriteString(av.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("name=")
-	builder.WriteString(asv.Name)
+	builder.WriteString(av.Name)
 	builder.WriteString(", ")
 	builder.WriteString("version=")
-	builder.WriteString(fmt.Sprintf("%v", asv.Version))
+	builder.WriteString(fmt.Sprintf("%v", av.Version))
 	builder.WriteString(", ")
 	builder.WriteString("definition=")
-	builder.WriteString(fmt.Sprintf("%v", asv.Definition))
+	builder.WriteString(fmt.Sprintf("%v", av.Definition))
 	builder.WriteByte(')')
 	return builder.String()
 }
 
-// AnalyticsSavedViews is a parsable slice of AnalyticsSavedView.
-type AnalyticsSavedViews []*AnalyticsSavedView
+// AnalyticsViews is a parsable slice of AnalyticsView.
+type AnalyticsViews []*AnalyticsView

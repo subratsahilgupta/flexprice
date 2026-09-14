@@ -9,7 +9,7 @@ import (
 	"github.com/flexprice/flexprice/ent/addonassociation"
 	"github.com/flexprice/flexprice/ent/alertlogs"
 	"github.com/flexprice/flexprice/ent/alertsettings"
-	"github.com/flexprice/flexprice/ent/analyticssavedview"
+	"github.com/flexprice/flexprice/ent/analyticsview"
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/checkoutsession"
@@ -239,43 +239,43 @@ func init() {
 	alertsettingsDescEntityID := alertsettingsFields[3].Descriptor()
 	// alertsettings.EntityIDValidator is a validator for the "entity_id" field. It is called by the builders before save.
 	alertsettings.EntityIDValidator = alertsettingsDescEntityID.Validators[0].(func(string) error)
-	analyticssavedviewMixin := schema.AnalyticsSavedView{}.Mixin()
-	analyticssavedviewMixinFields0 := analyticssavedviewMixin[0].Fields()
-	_ = analyticssavedviewMixinFields0
-	analyticssavedviewMixinFields1 := analyticssavedviewMixin[1].Fields()
-	_ = analyticssavedviewMixinFields1
-	analyticssavedviewFields := schema.AnalyticsSavedView{}.Fields()
-	_ = analyticssavedviewFields
-	// analyticssavedviewDescTenantID is the schema descriptor for tenant_id field.
-	analyticssavedviewDescTenantID := analyticssavedviewMixinFields0[0].Descriptor()
-	// analyticssavedview.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
-	analyticssavedview.TenantIDValidator = analyticssavedviewDescTenantID.Validators[0].(func(string) error)
-	// analyticssavedviewDescStatus is the schema descriptor for status field.
-	analyticssavedviewDescStatus := analyticssavedviewMixinFields0[1].Descriptor()
-	// analyticssavedview.DefaultStatus holds the default value on creation for the status field.
-	analyticssavedview.DefaultStatus = analyticssavedviewDescStatus.Default.(string)
-	// analyticssavedviewDescCreatedAt is the schema descriptor for created_at field.
-	analyticssavedviewDescCreatedAt := analyticssavedviewMixinFields0[2].Descriptor()
-	// analyticssavedview.DefaultCreatedAt holds the default value on creation for the created_at field.
-	analyticssavedview.DefaultCreatedAt = analyticssavedviewDescCreatedAt.Default.(func() time.Time)
-	// analyticssavedviewDescUpdatedAt is the schema descriptor for updated_at field.
-	analyticssavedviewDescUpdatedAt := analyticssavedviewMixinFields0[3].Descriptor()
-	// analyticssavedview.DefaultUpdatedAt holds the default value on creation for the updated_at field.
-	analyticssavedview.DefaultUpdatedAt = analyticssavedviewDescUpdatedAt.Default.(func() time.Time)
-	// analyticssavedview.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
-	analyticssavedview.UpdateDefaultUpdatedAt = analyticssavedviewDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// analyticssavedviewDescEnvironmentID is the schema descriptor for environment_id field.
-	analyticssavedviewDescEnvironmentID := analyticssavedviewMixinFields1[0].Descriptor()
-	// analyticssavedview.DefaultEnvironmentID holds the default value on creation for the environment_id field.
-	analyticssavedview.DefaultEnvironmentID = analyticssavedviewDescEnvironmentID.Default.(string)
-	// analyticssavedviewDescName is the schema descriptor for name field.
-	analyticssavedviewDescName := analyticssavedviewFields[1].Descriptor()
-	// analyticssavedview.NameValidator is a validator for the "name" field. It is called by the builders before save.
-	analyticssavedview.NameValidator = analyticssavedviewDescName.Validators[0].(func(string) error)
-	// analyticssavedviewDescVersion is the schema descriptor for version field.
-	analyticssavedviewDescVersion := analyticssavedviewFields[2].Descriptor()
-	// analyticssavedview.DefaultVersion holds the default value on creation for the version field.
-	analyticssavedview.DefaultVersion = analyticssavedviewDescVersion.Default.(int)
+	analyticsviewMixin := schema.AnalyticsView{}.Mixin()
+	analyticsviewMixinFields0 := analyticsviewMixin[0].Fields()
+	_ = analyticsviewMixinFields0
+	analyticsviewMixinFields1 := analyticsviewMixin[1].Fields()
+	_ = analyticsviewMixinFields1
+	analyticsviewFields := schema.AnalyticsView{}.Fields()
+	_ = analyticsviewFields
+	// analyticsviewDescTenantID is the schema descriptor for tenant_id field.
+	analyticsviewDescTenantID := analyticsviewMixinFields0[0].Descriptor()
+	// analyticsview.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	analyticsview.TenantIDValidator = analyticsviewDescTenantID.Validators[0].(func(string) error)
+	// analyticsviewDescStatus is the schema descriptor for status field.
+	analyticsviewDescStatus := analyticsviewMixinFields0[1].Descriptor()
+	// analyticsview.DefaultStatus holds the default value on creation for the status field.
+	analyticsview.DefaultStatus = analyticsviewDescStatus.Default.(string)
+	// analyticsviewDescCreatedAt is the schema descriptor for created_at field.
+	analyticsviewDescCreatedAt := analyticsviewMixinFields0[2].Descriptor()
+	// analyticsview.DefaultCreatedAt holds the default value on creation for the created_at field.
+	analyticsview.DefaultCreatedAt = analyticsviewDescCreatedAt.Default.(func() time.Time)
+	// analyticsviewDescUpdatedAt is the schema descriptor for updated_at field.
+	analyticsviewDescUpdatedAt := analyticsviewMixinFields0[3].Descriptor()
+	// analyticsview.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	analyticsview.DefaultUpdatedAt = analyticsviewDescUpdatedAt.Default.(func() time.Time)
+	// analyticsview.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	analyticsview.UpdateDefaultUpdatedAt = analyticsviewDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// analyticsviewDescEnvironmentID is the schema descriptor for environment_id field.
+	analyticsviewDescEnvironmentID := analyticsviewMixinFields1[0].Descriptor()
+	// analyticsview.DefaultEnvironmentID holds the default value on creation for the environment_id field.
+	analyticsview.DefaultEnvironmentID = analyticsviewDescEnvironmentID.Default.(string)
+	// analyticsviewDescName is the schema descriptor for name field.
+	analyticsviewDescName := analyticsviewFields[1].Descriptor()
+	// analyticsview.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	analyticsview.NameValidator = analyticsviewDescName.Validators[0].(func(string) error)
+	// analyticsviewDescVersion is the schema descriptor for version field.
+	analyticsviewDescVersion := analyticsviewFields[2].Descriptor()
+	// analyticsview.DefaultVersion holds the default value on creation for the version field.
+	analyticsview.DefaultVersion = analyticsviewDescVersion.Default.(int)
 	authFields := schema.Auth{}.Fields()
 	_ = authFields
 	// authDescProvider is the schema descriptor for provider field.

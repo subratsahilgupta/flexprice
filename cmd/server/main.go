@@ -191,7 +191,7 @@ func main() {
 			repository.NewWorkflowExecutionRepository,
 			repository.NewCheckoutSessionRepository,
 			repository.NewRawEventRepository,
-			repository.NewAnalyticsSavedViewRepository,
+			repository.NewAnalyticsViewRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,

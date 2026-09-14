@@ -108,7 +108,7 @@ type Stores struct {
 	PlanPriceSyncRepo            planpricesync.Repository
 	CheckoutSessionRepo          domainCheckout.Repository
 	UsageRecordRepo              usagerecord.Repository
-	AnalyticsSavedViewRepo       domainAnalytics.Repository
+	AnalyticsViewRepo            domainAnalytics.Repository
 }
 
 // BaseServiceTestSuite provides common functionality for all service test suites
@@ -267,7 +267,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 		PlanPriceSyncRepo:            planPriceSyncStore,
 		CheckoutSessionRepo:          NewInMemoryCheckoutSessionStore(),
 		UsageRecordRepo:              NewInMemoryUsageRecordStore(),
-		AnalyticsSavedViewRepo:       NewInMemoryAnalyticsSavedViewStore(),
+		AnalyticsViewRepo:            NewInMemoryAnalyticsViewStore(),
 	}
 
 	// Cache stores
@@ -330,7 +330,7 @@ func (s *BaseServiceTestSuite) clearStores() {
 	s.stores.PlanPriceSyncRepo.(*InMemoryPlanPriceSyncStore).Clear()
 	s.stores.CheckoutSessionRepo.(*InMemoryCheckoutSessionStore).Clear()
 	s.stores.UsageRecordRepo.(*InMemoryUsageRecordStore).Clear()
-	s.stores.AnalyticsSavedViewRepo.(*InMemoryAnalyticsSavedViewStore).Clear()
+	s.stores.AnalyticsViewRepo.(*InMemoryAnalyticsViewStore).Clear()
 }
 
 func (s *BaseServiceTestSuite) ClearStores() {

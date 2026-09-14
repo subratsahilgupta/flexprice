@@ -5,23 +5,24 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/flexprice/flexprice/ent/schema/mixin"
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 )
 
-// AnalyticsSavedView holds the schema definition for the AnalyticsSavedView entity.
-type AnalyticsSavedView struct {
+// AnalyticsView holds the schema definition for the AnalyticsView entity.
+type AnalyticsView struct {
 	ent.Schema
 }
 
-// Mixin of the AnalyticsSavedView.
-func (AnalyticsSavedView) Mixin() []ent.Mixin {
+// Mixin of the AnalyticsView.
+func (AnalyticsView) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		mixin.BaseMixin{},
 		mixin.EnvironmentMixin{},
 	}
 }
 
-// Fields of the AnalyticsSavedView.
-func (AnalyticsSavedView) Fields() []ent.Field {
+// Fields of the AnalyticsView.
+func (AnalyticsView) Fields() []ent.Field {
 	return []ent.Field{
 		field.String("id").
 			SchemaType(map[string]string{
@@ -33,20 +34,20 @@ func (AnalyticsSavedView) Fields() []ent.Field {
 			NotEmpty(),
 		field.Int("version").
 			Default(1),
-		field.JSON("definition", map[string]interface{}{}).
+		field.JSON("definition", analytics.ViewDefinition{}).
 			SchemaType(map[string]string{
 				"postgres": "jsonb",
 			}),
 	}
 }
 
-// Edges of the AnalyticsSavedView.
-func (AnalyticsSavedView) Edges() []ent.Edge {
+// Edges of the AnalyticsView.
+func (AnalyticsView) Edges() []ent.Edge {
 	return []ent.Edge{}
 }
 
-// Indexes of the AnalyticsSavedView.
-func (AnalyticsSavedView) Indexes() []ent.Index {
+// Indexes of the AnalyticsView.
+func (AnalyticsView) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "environment_id", "status"),
 	}

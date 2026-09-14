@@ -300,6 +300,6 @@ func NewCheckoutSessionRepository(p RepositoryParams) checkout.Repository {
 	return entRepo.NewCheckoutSessionRepository(p.EntClient, p.Logger)
 }
 
-func NewAnalyticsSavedViewRepository(p RepositoryParams) domainAnalytics.Repository {
-	return entRepo.NewAnalyticsSavedViewRepository(p.EntClient, p.Logger)
+func NewAnalyticsViewRepository(p RepositoryParams) domainAnalytics.Repository {
+	return entRepo.NewAnalyticsViewRepository(p.EntClient, p.Logger)
 }

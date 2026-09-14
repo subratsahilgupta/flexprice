@@ -16,7 +16,7 @@ import (
 	"github.com/flexprice/flexprice/ent/addonassociation"
 	"github.com/flexprice/flexprice/ent/alertlogs"
 	"github.com/flexprice/flexprice/ent/alertsettings"
-	"github.com/flexprice/flexprice/ent/analyticssavedview"
+	"github.com/flexprice/flexprice/ent/analyticsview"
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/checkoutsession"
@@ -131,7 +131,7 @@ func checkColumn(table, column string) error {
 			addonassociation.Table:         addonassociation.ValidColumn,
 			alertlogs.Table:                alertlogs.ValidColumn,
 			alertsettings.Table:            alertsettings.ValidColumn,
-			analyticssavedview.Table:       analyticssavedview.ValidColumn,
+			analyticsview.Table:            analyticsview.ValidColumn,
 			auth.Table:                     auth.ValidColumn,
 			billingsequence.Table:          billingsequence.ValidColumn,
 			checkoutsession.Table:          checkoutsession.ValidColumn,

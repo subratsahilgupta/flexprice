@@ -15,41 +15,41 @@ func (r *AnalyticsQueryRequest) Validate() error {
 	return validator.ValidateRequest(r)
 }
 
-// CreateSavedViewRequest is the request for POST /v1/analytics/views.
-type CreateSavedViewRequest struct {
+// CreateViewRequest is the request for POST /v1/analytics/views.
+type CreateViewRequest struct {
 	Name       string                   `json:"name" validate:"required"`
 	Definition analytics.ViewDefinition `json:"definition" validate:"required"`
 }
 
-func (r *CreateSavedViewRequest) Validate() error {
+func (r *CreateViewRequest) Validate() error {
 	return validator.ValidateRequest(r)
 }
 
-// SavedViewQueryRequest is the request for POST /v1/analytics/views/{id}/query.
-type SavedViewQueryRequest struct {
+// ViewQueryRequest is the request for POST /v1/analytics/views/{id}/query.
+type ViewQueryRequest struct {
 	Variables map[string]any `json:"variables"`
 }
 
-func (r *SavedViewQueryRequest) Validate() error {
+func (r *ViewQueryRequest) Validate() error {
 	return validator.ValidateRequest(r)
 }
 
-// SavedViewResponse is the response for POST /v1/analytics/views. It exposes
-// only the fields a client needs, unlike the domain analytics.SavedView which
+// ViewResponse is the response for POST /v1/analytics/views. It exposes
+// only the fields a client needs, unlike the domain analytics.View which
 // embeds types.BaseModel (tenant_id, status, created_by, timestamps, ...).
-type SavedViewResponse struct {
+type ViewResponse struct {
 	ID         string                   `json:"id"`
 	Name       string                   `json:"name"`
 	Version    int                      `json:"version"`
 	Definition analytics.ViewDefinition `json:"definition"`
 }
 
-// NewSavedViewResponse maps a domain analytics.SavedView onto its response DTO.
-func NewSavedViewResponse(v *analytics.SavedView) *SavedViewResponse {
+// NewViewResponse maps a domain analytics.View onto its response DTO.
+func NewViewResponse(v *analytics.View) *ViewResponse {
 	if v == nil {
 		return nil
 	}
-	return &SavedViewResponse{
+	return &ViewResponse{
 		ID:         v.ID,
 		Name:       v.Name,
 		Version:    v.Version,

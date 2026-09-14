@@ -32,11 +32,11 @@ func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ analytics.ViewDe
 	return s.result, s.err
 }
 
-func (s *stubAnalyticsService) CreateView(_ context.Context, _ *analytics.SavedView) error {
+func (s *stubAnalyticsService) CreateView(_ context.Context, _ *analytics.View) error {
 	return s.err
 }
 
-func (s *stubAnalyticsService) QuerySavedView(_ context.Context, _ string, _ map[string]any) (*service.QueryResult, error) {
+func (s *stubAnalyticsService) QueryView(_ context.Context, _ string, _ map[string]any) (*service.QueryResult, error) {
 	return s.result, s.err
 }
 
@@ -155,7 +155,7 @@ func TestAnalyticsQuery_MalformedBody_ReturnsBadRequest(t *testing.T) {
 }
 
 // TestAnalyticsCreateView_ResponseIsDTONotDomainModel proves CreateView returns
-// the SavedViewResponse DTO rather than the raw *analytics.SavedView, so
+// the ViewResponse DTO rather than the raw *analytics.View, so
 // tenant_id/status/created_by/timestamps (from the embedded types.BaseModel)
 // are never exposed to the client.
 func TestAnalyticsCreateView_ResponseIsDTONotDomainModel(t *testing.T) {

@@ -15,25 +15,25 @@ import (
 // AnalyticsService is the integration hub for Phase-1 analytics: it resolves a
 // view definition against variables, translates + executes it through the
 // existing meter_usage query engine, and shapes the result for rendering. It
-// also owns saved-view CRUD.
+// also owns view CRUD.
 type AnalyticsService interface {
 	ExecuteView(ctx context.Context, def analytics.ViewDefinition, vars map[string]any) (*QueryResult, error)
-	CreateView(ctx context.Context, v *analytics.SavedView) error
-	QuerySavedView(ctx context.Context, id string, vars map[string]any) (*QueryResult, error)
+	CreateView(ctx context.Context, v *analytics.View) error
+	QueryView(ctx context.Context, id string, vars map[string]any) (*QueryResult, error)
 }
 
 type analyticsService struct {
 	ServiceParams
-	savedViews analytics.Repository
+	views      analytics.Repository
 	meterUsage MeterUsageService
 }
 
-// NewAnalyticsService constructs the AnalyticsService. The saved-view repo is
-// threaded through ServiceParams.AnalyticsSavedViewRepo.
+// NewAnalyticsService constructs the AnalyticsService. The view repo is
+// threaded through ServiceParams.AnalyticsViewRepo.
 func NewAnalyticsService(params ServiceParams) AnalyticsService {
 	return &analyticsService{
 		ServiceParams: params,
-		savedViews:    params.AnalyticsSavedViewRepo,
+		views:         params.AnalyticsViewRepo,
 		meterUsage:    NewMeterUsageService(params),
 	}
 }
@@ -120,28 +120,28 @@ func (s *analyticsService) executeTimeseries(ctx context.Context, rv analytics.R
 	return &res, nil
 }
 
-func (s *analyticsService) CreateView(ctx context.Context, v *analytics.SavedView) error {
+func (s *analyticsService) CreateView(ctx context.Context, v *analytics.View) error {
 	if v == nil {
-		return ierr.NewError("saved view is required").Mark(ierr.ErrValidation)
+		return ierr.NewError("view is required").Mark(ierr.ErrValidation)
 	}
 	if err := v.Definition.Validate(); err != nil {
 		return err
 	}
 	if v.ID == "" {
-		v.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ANALYTICS_SAVED_VIEW)
+		v.ID = types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ANALYTICS_VIEW)
 	}
 	if v.Version == 0 {
 		v.Version = 1
 	}
-	if err := s.savedViews.Create(ctx, v); err != nil {
-		s.Logger.Error(ctx, "failed to create analytics saved view", "error", err, "saved_view_id", v.ID)
+	if err := s.views.Create(ctx, v); err != nil {
+		s.Logger.Error(ctx, "failed to create analytics view", "error", err, "view_id", v.ID)
 		return err
 	}
 	return nil
 }
 
-func (s *analyticsService) QuerySavedView(ctx context.Context, id string, vars map[string]any) (*QueryResult, error) {
-	v, err := s.savedViews.Get(ctx, id)
+func (s *analyticsService) QueryView(ctx context.Context, id string, vars map[string]any) (*QueryResult, error) {
+	v, err := s.views.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}

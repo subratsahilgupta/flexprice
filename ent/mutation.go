@@ -15,7 +15,7 @@ import (
 	"github.com/flexprice/flexprice/ent/addonassociation"
 	"github.com/flexprice/flexprice/ent/alertlogs"
 	"github.com/flexprice/flexprice/ent/alertsettings"
-	"github.com/flexprice/flexprice/ent/analyticssavedview"
+	"github.com/flexprice/flexprice/ent/analyticsview"
 	"github.com/flexprice/flexprice/ent/auth"
 	"github.com/flexprice/flexprice/ent/billingsequence"
 	"github.com/flexprice/flexprice/ent/checkoutsession"
@@ -68,6 +68,7 @@ import (
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
 	"github.com/flexprice/flexprice/ent/workflowexecution"
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -85,7 +86,7 @@ const (
 	TypeAddonAssociation         = "AddonAssociation"
 	TypeAlertLogs                = "AlertLogs"
 	TypeAlertSettings            = "AlertSettings"
-	TypeAnalyticsSavedView       = "AnalyticsSavedView"
+	TypeAnalyticsView            = "AnalyticsView"
 	TypeAuth                     = "Auth"
 	TypeBillingSequence          = "BillingSequence"
 	TypeCheckoutSession          = "CheckoutSession"
@@ -4937,8 +4938,8 @@ func (m *AlertSettingsMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown AlertSettings edge %s", name)
 }
 
-// AnalyticsSavedViewMutation represents an operation that mutates the AnalyticsSavedView nodes in the graph.
-type AnalyticsSavedViewMutation struct {
+// AnalyticsViewMutation represents an operation that mutates the AnalyticsView nodes in the graph.
+type AnalyticsViewMutation struct {
 	config
 	op             Op
 	typ            string
@@ -4953,24 +4954,24 @@ type AnalyticsSavedViewMutation struct {
 	name           *string
 	version        *int
 	addversion     *int
-	definition     *map[string]interface{}
+	definition     *analytics.ViewDefinition
 	clearedFields  map[string]struct{}
 	done           bool
-	oldValue       func(context.Context) (*AnalyticsSavedView, error)
-	predicates     []predicate.AnalyticsSavedView
+	oldValue       func(context.Context) (*AnalyticsView, error)
+	predicates     []predicate.AnalyticsView
 }
 
-var _ ent.Mutation = (*AnalyticsSavedViewMutation)(nil)
+var _ ent.Mutation = (*AnalyticsViewMutation)(nil)
 
-// analyticssavedviewOption allows management of the mutation configuration using functional options.
-type analyticssavedviewOption func(*AnalyticsSavedViewMutation)
+// analyticsviewOption allows management of the mutation configuration using functional options.
+type analyticsviewOption func(*AnalyticsViewMutation)
 
-// newAnalyticsSavedViewMutation creates new mutation for the AnalyticsSavedView entity.
-func newAnalyticsSavedViewMutation(c config, op Op, opts ...analyticssavedviewOption) *AnalyticsSavedViewMutation {
-	m := &AnalyticsSavedViewMutation{
+// newAnalyticsViewMutation creates new mutation for the AnalyticsView entity.
+func newAnalyticsViewMutation(c config, op Op, opts ...analyticsviewOption) *AnalyticsViewMutation {
+	m := &AnalyticsViewMutation{
 		config:        c,
 		op:            op,
-		typ:           TypeAnalyticsSavedView,
+		typ:           TypeAnalyticsView,
 		clearedFields: make(map[string]struct{}),
 	}
 	for _, opt := range opts {
@@ -4979,20 +4980,20 @@ func newAnalyticsSavedViewMutation(c config, op Op, opts ...analyticssavedviewOp
 	return m
 }
 
-// withAnalyticsSavedViewID sets the ID field of the mutation.
-func withAnalyticsSavedViewID(id string) analyticssavedviewOption {
-	return func(m *AnalyticsSavedViewMutation) {
+// withAnalyticsViewID sets the ID field of the mutation.
+func withAnalyticsViewID(id string) analyticsviewOption {
+	return func(m *AnalyticsViewMutation) {
 		var (
 			err   error
 			once  sync.Once
-			value *AnalyticsSavedView
+			value *AnalyticsView
 		)
-		m.oldValue = func(ctx context.Context) (*AnalyticsSavedView, error) {
+		m.oldValue = func(ctx context.Context) (*AnalyticsView, error) {
 			once.Do(func() {
 				if m.done {
 					err = errors.New("querying old values post mutation is not allowed")
 				} else {
-					value, err = m.Client().AnalyticsSavedView.Get(ctx, id)
+					value, err = m.Client().AnalyticsView.Get(ctx, id)
 				}
 			})
 			return value, err
@@ -5001,10 +5002,10 @@ func withAnalyticsSavedViewID(id string) analyticssavedviewOption {
 	}
 }
 
-// withAnalyticsSavedView sets the old AnalyticsSavedView of the mutation.
-func withAnalyticsSavedView(node *AnalyticsSavedView) analyticssavedviewOption {
-	return func(m *AnalyticsSavedViewMutation) {
-		m.oldValue = func(context.Context) (*AnalyticsSavedView, error) {
+// withAnalyticsView sets the old AnalyticsView of the mutation.
+func withAnalyticsView(node *AnalyticsView) analyticsviewOption {
+	return func(m *AnalyticsViewMutation) {
+		m.oldValue = func(context.Context) (*AnalyticsView, error) {
 			return node, nil
 		}
 		m.id = &node.ID
@@ -5013,7 +5014,7 @@ func withAnalyticsSavedView(node *AnalyticsSavedView) analyticssavedviewOption {
 
 // Client returns a new `ent.Client` from the mutation. If the mutation was
 // executed in a transaction (ent.Tx), a transactional client is returned.
-func (m AnalyticsSavedViewMutation) Client() *Client {
+func (m AnalyticsViewMutation) Client() *Client {
 	client := &Client{config: m.config}
 	client.init()
 	return client
@@ -5021,7 +5022,7 @@ func (m AnalyticsSavedViewMutation) Client() *Client {
 
 // Tx returns an `ent.Tx` for mutations that were executed in transactions;
 // it returns an error otherwise.
-func (m AnalyticsSavedViewMutation) Tx() (*Tx, error) {
+func (m AnalyticsViewMutation) Tx() (*Tx, error) {
 	if _, ok := m.driver.(*txDriver); !ok {
 		return nil, errors.New("ent: mutation is not running in a transaction")
 	}
@@ -5031,14 +5032,14 @@ func (m AnalyticsSavedViewMutation) Tx() (*Tx, error) {
 }
 
 // SetID sets the value of the id field. Note that this
-// operation is only accepted on creation of AnalyticsSavedView entities.
-func (m *AnalyticsSavedViewMutation) SetID(id string) {
+// operation is only accepted on creation of AnalyticsView entities.
+func (m *AnalyticsViewMutation) SetID(id string) {
 	m.id = &id
 }
 
 // ID returns the ID value in the mutation. Note that the ID is only available
 // if it was provided to the builder or after it was returned from the database.
-func (m *AnalyticsSavedViewMutation) ID() (id string, exists bool) {
+func (m *AnalyticsViewMutation) ID() (id string, exists bool) {
 	if m.id == nil {
 		return
 	}
@@ -5049,7 +5050,7 @@ func (m *AnalyticsSavedViewMutation) ID() (id string, exists bool) {
 // That means, if the mutation is applied within a transaction with an isolation level such
 // as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
 // or updated by the mutation.
-func (m *AnalyticsSavedViewMutation) IDs(ctx context.Context) ([]string, error) {
+func (m *AnalyticsViewMutation) IDs(ctx context.Context) ([]string, error) {
 	switch {
 	case m.op.Is(OpUpdateOne | OpDeleteOne):
 		id, exists := m.ID()
@@ -5058,19 +5059,19 @@ func (m *AnalyticsSavedViewMutation) IDs(ctx context.Context) ([]string, error) 
 		}
 		fallthrough
 	case m.op.Is(OpUpdate | OpDelete):
-		return m.Client().AnalyticsSavedView.Query().Where(m.predicates...).IDs(ctx)
+		return m.Client().AnalyticsView.Query().Where(m.predicates...).IDs(ctx)
 	default:
 		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
 	}
 }
 
 // SetTenantID sets the "tenant_id" field.
-func (m *AnalyticsSavedViewMutation) SetTenantID(s string) {
+func (m *AnalyticsViewMutation) SetTenantID(s string) {
 	m.tenant_id = &s
 }
 
 // TenantID returns the value of the "tenant_id" field in the mutation.
-func (m *AnalyticsSavedViewMutation) TenantID() (r string, exists bool) {
+func (m *AnalyticsViewMutation) TenantID() (r string, exists bool) {
 	v := m.tenant_id
 	if v == nil {
 		return
@@ -5078,10 +5079,10 @@ func (m *AnalyticsSavedViewMutation) TenantID() (r string, exists bool) {
 	return *v, true
 }
 
-// OldTenantID returns the old "tenant_id" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldTenantID returns the old "tenant_id" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldTenantID(ctx context.Context) (v string, err error) {
+func (m *AnalyticsViewMutation) OldTenantID(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
 	}
@@ -5096,17 +5097,17 @@ func (m *AnalyticsSavedViewMutation) OldTenantID(ctx context.Context) (v string,
 }
 
 // ResetTenantID resets all changes to the "tenant_id" field.
-func (m *AnalyticsSavedViewMutation) ResetTenantID() {
+func (m *AnalyticsViewMutation) ResetTenantID() {
 	m.tenant_id = nil
 }
 
 // SetStatus sets the "status" field.
-func (m *AnalyticsSavedViewMutation) SetStatus(s string) {
+func (m *AnalyticsViewMutation) SetStatus(s string) {
 	m.status = &s
 }
 
 // Status returns the value of the "status" field in the mutation.
-func (m *AnalyticsSavedViewMutation) Status() (r string, exists bool) {
+func (m *AnalyticsViewMutation) Status() (r string, exists bool) {
 	v := m.status
 	if v == nil {
 		return
@@ -5114,10 +5115,10 @@ func (m *AnalyticsSavedViewMutation) Status() (r string, exists bool) {
 	return *v, true
 }
 
-// OldStatus returns the old "status" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldStatus returns the old "status" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldStatus(ctx context.Context) (v string, err error) {
+func (m *AnalyticsViewMutation) OldStatus(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
 	}
@@ -5132,17 +5133,17 @@ func (m *AnalyticsSavedViewMutation) OldStatus(ctx context.Context) (v string, e
 }
 
 // ResetStatus resets all changes to the "status" field.
-func (m *AnalyticsSavedViewMutation) ResetStatus() {
+func (m *AnalyticsViewMutation) ResetStatus() {
 	m.status = nil
 }
 
 // SetCreatedAt sets the "created_at" field.
-func (m *AnalyticsSavedViewMutation) SetCreatedAt(t time.Time) {
+func (m *AnalyticsViewMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
 }
 
 // CreatedAt returns the value of the "created_at" field in the mutation.
-func (m *AnalyticsSavedViewMutation) CreatedAt() (r time.Time, exists bool) {
+func (m *AnalyticsViewMutation) CreatedAt() (r time.Time, exists bool) {
 	v := m.created_at
 	if v == nil {
 		return
@@ -5150,10 +5151,10 @@ func (m *AnalyticsSavedViewMutation) CreatedAt() (r time.Time, exists bool) {
 	return *v, true
 }
 
-// OldCreatedAt returns the old "created_at" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldCreatedAt returns the old "created_at" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+func (m *AnalyticsViewMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
 	}
@@ -5168,17 +5169,17 @@ func (m *AnalyticsSavedViewMutation) OldCreatedAt(ctx context.Context) (v time.T
 }
 
 // ResetCreatedAt resets all changes to the "created_at" field.
-func (m *AnalyticsSavedViewMutation) ResetCreatedAt() {
+func (m *AnalyticsViewMutation) ResetCreatedAt() {
 	m.created_at = nil
 }
 
 // SetUpdatedAt sets the "updated_at" field.
-func (m *AnalyticsSavedViewMutation) SetUpdatedAt(t time.Time) {
+func (m *AnalyticsViewMutation) SetUpdatedAt(t time.Time) {
 	m.updated_at = &t
 }
 
 // UpdatedAt returns the value of the "updated_at" field in the mutation.
-func (m *AnalyticsSavedViewMutation) UpdatedAt() (r time.Time, exists bool) {
+func (m *AnalyticsViewMutation) UpdatedAt() (r time.Time, exists bool) {
 	v := m.updated_at
 	if v == nil {
 		return
@@ -5186,10 +5187,10 @@ func (m *AnalyticsSavedViewMutation) UpdatedAt() (r time.Time, exists bool) {
 	return *v, true
 }
 
-// OldUpdatedAt returns the old "updated_at" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldUpdatedAt returns the old "updated_at" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+func (m *AnalyticsViewMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
 	}
@@ -5204,17 +5205,17 @@ func (m *AnalyticsSavedViewMutation) OldUpdatedAt(ctx context.Context) (v time.T
 }
 
 // ResetUpdatedAt resets all changes to the "updated_at" field.
-func (m *AnalyticsSavedViewMutation) ResetUpdatedAt() {
+func (m *AnalyticsViewMutation) ResetUpdatedAt() {
 	m.updated_at = nil
 }
 
 // SetCreatedBy sets the "created_by" field.
-func (m *AnalyticsSavedViewMutation) SetCreatedBy(s string) {
+func (m *AnalyticsViewMutation) SetCreatedBy(s string) {
 	m.created_by = &s
 }
 
 // CreatedBy returns the value of the "created_by" field in the mutation.
-func (m *AnalyticsSavedViewMutation) CreatedBy() (r string, exists bool) {
+func (m *AnalyticsViewMutation) CreatedBy() (r string, exists bool) {
 	v := m.created_by
 	if v == nil {
 		return
@@ -5222,10 +5223,10 @@ func (m *AnalyticsSavedViewMutation) CreatedBy() (r string, exists bool) {
 	return *v, true
 }
 
-// OldCreatedBy returns the old "created_by" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldCreatedBy returns the old "created_by" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldCreatedBy(ctx context.Context) (v string, err error) {
+func (m *AnalyticsViewMutation) OldCreatedBy(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
 	}
@@ -5240,30 +5241,30 @@ func (m *AnalyticsSavedViewMutation) OldCreatedBy(ctx context.Context) (v string
 }
 
 // ClearCreatedBy clears the value of the "created_by" field.
-func (m *AnalyticsSavedViewMutation) ClearCreatedBy() {
+func (m *AnalyticsViewMutation) ClearCreatedBy() {
 	m.created_by = nil
-	m.clearedFields[analyticssavedview.FieldCreatedBy] = struct{}{}
+	m.clearedFields[analyticsview.FieldCreatedBy] = struct{}{}
 }
 
 // CreatedByCleared returns if the "created_by" field was cleared in this mutation.
-func (m *AnalyticsSavedViewMutation) CreatedByCleared() bool {
-	_, ok := m.clearedFields[analyticssavedview.FieldCreatedBy]
+func (m *AnalyticsViewMutation) CreatedByCleared() bool {
+	_, ok := m.clearedFields[analyticsview.FieldCreatedBy]
 	return ok
 }
 
 // ResetCreatedBy resets all changes to the "created_by" field.
-func (m *AnalyticsSavedViewMutation) ResetCreatedBy() {
+func (m *AnalyticsViewMutation) ResetCreatedBy() {
 	m.created_by = nil
-	delete(m.clearedFields, analyticssavedview.FieldCreatedBy)
+	delete(m.clearedFields, analyticsview.FieldCreatedBy)
 }
 
 // SetUpdatedBy sets the "updated_by" field.
-func (m *AnalyticsSavedViewMutation) SetUpdatedBy(s string) {
+func (m *AnalyticsViewMutation) SetUpdatedBy(s string) {
 	m.updated_by = &s
 }
 
 // UpdatedBy returns the value of the "updated_by" field in the mutation.
-func (m *AnalyticsSavedViewMutation) UpdatedBy() (r string, exists bool) {
+func (m *AnalyticsViewMutation) UpdatedBy() (r string, exists bool) {
 	v := m.updated_by
 	if v == nil {
 		return
@@ -5271,10 +5272,10 @@ func (m *AnalyticsSavedViewMutation) UpdatedBy() (r string, exists bool) {
 	return *v, true
 }
 
-// OldUpdatedBy returns the old "updated_by" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldUpdatedBy returns the old "updated_by" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldUpdatedBy(ctx context.Context) (v string, err error) {
+func (m *AnalyticsViewMutation) OldUpdatedBy(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldUpdatedBy is only allowed on UpdateOne operations")
 	}
@@ -5289,30 +5290,30 @@ func (m *AnalyticsSavedViewMutation) OldUpdatedBy(ctx context.Context) (v string
 }
 
 // ClearUpdatedBy clears the value of the "updated_by" field.
-func (m *AnalyticsSavedViewMutation) ClearUpdatedBy() {
+func (m *AnalyticsViewMutation) ClearUpdatedBy() {
 	m.updated_by = nil
-	m.clearedFields[analyticssavedview.FieldUpdatedBy] = struct{}{}
+	m.clearedFields[analyticsview.FieldUpdatedBy] = struct{}{}
 }
 
 // UpdatedByCleared returns if the "updated_by" field was cleared in this mutation.
-func (m *AnalyticsSavedViewMutation) UpdatedByCleared() bool {
-	_, ok := m.clearedFields[analyticssavedview.FieldUpdatedBy]
+func (m *AnalyticsViewMutation) UpdatedByCleared() bool {
+	_, ok := m.clearedFields[analyticsview.FieldUpdatedBy]
 	return ok
 }
 
 // ResetUpdatedBy resets all changes to the "updated_by" field.
-func (m *AnalyticsSavedViewMutation) ResetUpdatedBy() {
+func (m *AnalyticsViewMutation) ResetUpdatedBy() {
 	m.updated_by = nil
-	delete(m.clearedFields, analyticssavedview.FieldUpdatedBy)
+	delete(m.clearedFields, analyticsview.FieldUpdatedBy)
 }
 
 // SetEnvironmentID sets the "environment_id" field.
-func (m *AnalyticsSavedViewMutation) SetEnvironmentID(s string) {
+func (m *AnalyticsViewMutation) SetEnvironmentID(s string) {
 	m.environment_id = &s
 }
 
 // EnvironmentID returns the value of the "environment_id" field in the mutation.
-func (m *AnalyticsSavedViewMutation) EnvironmentID() (r string, exists bool) {
+func (m *AnalyticsViewMutation) EnvironmentID() (r string, exists bool) {
 	v := m.environment_id
 	if v == nil {
 		return
@@ -5320,10 +5321,10 @@ func (m *AnalyticsSavedViewMutation) EnvironmentID() (r string, exists bool) {
 	return *v, true
 }
 
-// OldEnvironmentID returns the old "environment_id" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldEnvironmentID returns the old "environment_id" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
+func (m *AnalyticsViewMutation) OldEnvironmentID(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldEnvironmentID is only allowed on UpdateOne operations")
 	}
@@ -5338,30 +5339,30 @@ func (m *AnalyticsSavedViewMutation) OldEnvironmentID(ctx context.Context) (v st
 }
 
 // ClearEnvironmentID clears the value of the "environment_id" field.
-func (m *AnalyticsSavedViewMutation) ClearEnvironmentID() {
+func (m *AnalyticsViewMutation) ClearEnvironmentID() {
 	m.environment_id = nil
-	m.clearedFields[analyticssavedview.FieldEnvironmentID] = struct{}{}
+	m.clearedFields[analyticsview.FieldEnvironmentID] = struct{}{}
 }
 
 // EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
-func (m *AnalyticsSavedViewMutation) EnvironmentIDCleared() bool {
-	_, ok := m.clearedFields[analyticssavedview.FieldEnvironmentID]
+func (m *AnalyticsViewMutation) EnvironmentIDCleared() bool {
+	_, ok := m.clearedFields[analyticsview.FieldEnvironmentID]
 	return ok
 }
 
 // ResetEnvironmentID resets all changes to the "environment_id" field.
-func (m *AnalyticsSavedViewMutation) ResetEnvironmentID() {
+func (m *AnalyticsViewMutation) ResetEnvironmentID() {
 	m.environment_id = nil
-	delete(m.clearedFields, analyticssavedview.FieldEnvironmentID)
+	delete(m.clearedFields, analyticsview.FieldEnvironmentID)
 }
 
 // SetName sets the "name" field.
-func (m *AnalyticsSavedViewMutation) SetName(s string) {
+func (m *AnalyticsViewMutation) SetName(s string) {
 	m.name = &s
 }
 
 // Name returns the value of the "name" field in the mutation.
-func (m *AnalyticsSavedViewMutation) Name() (r string, exists bool) {
+func (m *AnalyticsViewMutation) Name() (r string, exists bool) {
 	v := m.name
 	if v == nil {
 		return
@@ -5369,10 +5370,10 @@ func (m *AnalyticsSavedViewMutation) Name() (r string, exists bool) {
 	return *v, true
 }
 
-// OldName returns the old "name" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldName returns the old "name" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldName(ctx context.Context) (v string, err error) {
+func (m *AnalyticsViewMutation) OldName(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldName is only allowed on UpdateOne operations")
 	}
@@ -5387,18 +5388,18 @@ func (m *AnalyticsSavedViewMutation) OldName(ctx context.Context) (v string, err
 }
 
 // ResetName resets all changes to the "name" field.
-func (m *AnalyticsSavedViewMutation) ResetName() {
+func (m *AnalyticsViewMutation) ResetName() {
 	m.name = nil
 }
 
 // SetVersion sets the "version" field.
-func (m *AnalyticsSavedViewMutation) SetVersion(i int) {
+func (m *AnalyticsViewMutation) SetVersion(i int) {
 	m.version = &i
 	m.addversion = nil
 }
 
 // Version returns the value of the "version" field in the mutation.
-func (m *AnalyticsSavedViewMutation) Version() (r int, exists bool) {
+func (m *AnalyticsViewMutation) Version() (r int, exists bool) {
 	v := m.version
 	if v == nil {
 		return
@@ -5406,10 +5407,10 @@ func (m *AnalyticsSavedViewMutation) Version() (r int, exists bool) {
 	return *v, true
 }
 
-// OldVersion returns the old "version" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldVersion returns the old "version" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldVersion(ctx context.Context) (v int, err error) {
+func (m *AnalyticsViewMutation) OldVersion(ctx context.Context) (v int, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldVersion is only allowed on UpdateOne operations")
 	}
@@ -5424,7 +5425,7 @@ func (m *AnalyticsSavedViewMutation) OldVersion(ctx context.Context) (v int, err
 }
 
 // AddVersion adds i to the "version" field.
-func (m *AnalyticsSavedViewMutation) AddVersion(i int) {
+func (m *AnalyticsViewMutation) AddVersion(i int) {
 	if m.addversion != nil {
 		*m.addversion += i
 	} else {
@@ -5433,7 +5434,7 @@ func (m *AnalyticsSavedViewMutation) AddVersion(i int) {
 }
 
 // AddedVersion returns the value that was added to the "version" field in this mutation.
-func (m *AnalyticsSavedViewMutation) AddedVersion() (r int, exists bool) {
+func (m *AnalyticsViewMutation) AddedVersion() (r int, exists bool) {
 	v := m.addversion
 	if v == nil {
 		return
@@ -5442,18 +5443,18 @@ func (m *AnalyticsSavedViewMutation) AddedVersion() (r int, exists bool) {
 }
 
 // ResetVersion resets all changes to the "version" field.
-func (m *AnalyticsSavedViewMutation) ResetVersion() {
+func (m *AnalyticsViewMutation) ResetVersion() {
 	m.version = nil
 	m.addversion = nil
 }
 
 // SetDefinition sets the "definition" field.
-func (m *AnalyticsSavedViewMutation) SetDefinition(value map[string]interface{}) {
-	m.definition = &value
+func (m *AnalyticsViewMutation) SetDefinition(ad analytics.ViewDefinition) {
+	m.definition = &ad
 }
 
 // Definition returns the value of the "definition" field in the mutation.
-func (m *AnalyticsSavedViewMutation) Definition() (r map[string]interface{}, exists bool) {
+func (m *AnalyticsViewMutation) Definition() (r analytics.ViewDefinition, exists bool) {
 	v := m.definition
 	if v == nil {
 		return
@@ -5461,10 +5462,10 @@ func (m *AnalyticsSavedViewMutation) Definition() (r map[string]interface{}, exi
 	return *v, true
 }
 
-// OldDefinition returns the old "definition" field's value of the AnalyticsSavedView entity.
-// If the AnalyticsSavedView object wasn't provided to the builder, the object is fetched from the database.
+// OldDefinition returns the old "definition" field's value of the AnalyticsView entity.
+// If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsSavedViewMutation) OldDefinition(ctx context.Context) (v map[string]interface{}, err error) {
+func (m *AnalyticsViewMutation) OldDefinition(ctx context.Context) (v analytics.ViewDefinition, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldDefinition is only allowed on UpdateOne operations")
 	}
@@ -5479,19 +5480,19 @@ func (m *AnalyticsSavedViewMutation) OldDefinition(ctx context.Context) (v map[s
 }
 
 // ResetDefinition resets all changes to the "definition" field.
-func (m *AnalyticsSavedViewMutation) ResetDefinition() {
+func (m *AnalyticsViewMutation) ResetDefinition() {
 	m.definition = nil
 }
 
-// Where appends a list predicates to the AnalyticsSavedViewMutation builder.
-func (m *AnalyticsSavedViewMutation) Where(ps ...predicate.AnalyticsSavedView) {
+// Where appends a list predicates to the AnalyticsViewMutation builder.
+func (m *AnalyticsViewMutation) Where(ps ...predicate.AnalyticsView) {
 	m.predicates = append(m.predicates, ps...)
 }
 
-// WhereP appends storage-level predicates to the AnalyticsSavedViewMutation builder. Using this method,
+// WhereP appends storage-level predicates to the AnalyticsViewMutation builder. Using this method,
 // users can use type-assertion to append predicates that do not depend on any generated package.
-func (m *AnalyticsSavedViewMutation) WhereP(ps ...func(*sql.Selector)) {
-	p := make([]predicate.AnalyticsSavedView, len(ps))
+func (m *AnalyticsViewMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AnalyticsView, len(ps))
 	for i := range ps {
 		p[i] = ps[i]
 	}
@@ -5499,54 +5500,54 @@ func (m *AnalyticsSavedViewMutation) WhereP(ps ...func(*sql.Selector)) {
 }
 
 // Op returns the operation name.
-func (m *AnalyticsSavedViewMutation) Op() Op {
+func (m *AnalyticsViewMutation) Op() Op {
 	return m.op
 }
 
 // SetOp allows setting the mutation operation.
-func (m *AnalyticsSavedViewMutation) SetOp(op Op) {
+func (m *AnalyticsViewMutation) SetOp(op Op) {
 	m.op = op
 }
 
-// Type returns the node type of this mutation (AnalyticsSavedView).
-func (m *AnalyticsSavedViewMutation) Type() string {
+// Type returns the node type of this mutation (AnalyticsView).
+func (m *AnalyticsViewMutation) Type() string {
 	return m.typ
 }
 
 // Fields returns all fields that were changed during this mutation. Note that in
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
-func (m *AnalyticsSavedViewMutation) Fields() []string {
+func (m *AnalyticsViewMutation) Fields() []string {
 	fields := make([]string, 0, 10)
 	if m.tenant_id != nil {
-		fields = append(fields, analyticssavedview.FieldTenantID)
+		fields = append(fields, analyticsview.FieldTenantID)
 	}
 	if m.status != nil {
-		fields = append(fields, analyticssavedview.FieldStatus)
+		fields = append(fields, analyticsview.FieldStatus)
 	}
 	if m.created_at != nil {
-		fields = append(fields, analyticssavedview.FieldCreatedAt)
+		fields = append(fields, analyticsview.FieldCreatedAt)
 	}
 	if m.updated_at != nil {
-		fields = append(fields, analyticssavedview.FieldUpdatedAt)
+		fields = append(fields, analyticsview.FieldUpdatedAt)
 	}
 	if m.created_by != nil {
-		fields = append(fields, analyticssavedview.FieldCreatedBy)
+		fields = append(fields, analyticsview.FieldCreatedBy)
 	}
 	if m.updated_by != nil {
-		fields = append(fields, analyticssavedview.FieldUpdatedBy)
+		fields = append(fields, analyticsview.FieldUpdatedBy)
 	}
 	if m.environment_id != nil {
-		fields = append(fields, analyticssavedview.FieldEnvironmentID)
+		fields = append(fields, analyticsview.FieldEnvironmentID)
 	}
 	if m.name != nil {
-		fields = append(fields, analyticssavedview.FieldName)
+		fields = append(fields, analyticsview.FieldName)
 	}
 	if m.version != nil {
-		fields = append(fields, analyticssavedview.FieldVersion)
+		fields = append(fields, analyticsview.FieldVersion)
 	}
 	if m.definition != nil {
-		fields = append(fields, analyticssavedview.FieldDefinition)
+		fields = append(fields, analyticsview.FieldDefinition)
 	}
 	return fields
 }
@@ -5554,27 +5555,27 @@ func (m *AnalyticsSavedViewMutation) Fields() []string {
 // Field returns the value of a field with the given name. The second boolean
 // return value indicates that this field was not set, or was not defined in the
 // schema.
-func (m *AnalyticsSavedViewMutation) Field(name string) (ent.Value, bool) {
+func (m *AnalyticsViewMutation) Field(name string) (ent.Value, bool) {
 	switch name {
-	case analyticssavedview.FieldTenantID:
+	case analyticsview.FieldTenantID:
 		return m.TenantID()
-	case analyticssavedview.FieldStatus:
+	case analyticsview.FieldStatus:
 		return m.Status()
-	case analyticssavedview.FieldCreatedAt:
+	case analyticsview.FieldCreatedAt:
 		return m.CreatedAt()
-	case analyticssavedview.FieldUpdatedAt:
+	case analyticsview.FieldUpdatedAt:
 		return m.UpdatedAt()
-	case analyticssavedview.FieldCreatedBy:
+	case analyticsview.FieldCreatedBy:
 		return m.CreatedBy()
-	case analyticssavedview.FieldUpdatedBy:
+	case analyticsview.FieldUpdatedBy:
 		return m.UpdatedBy()
-	case analyticssavedview.FieldEnvironmentID:
+	case analyticsview.FieldEnvironmentID:
 		return m.EnvironmentID()
-	case analyticssavedview.FieldName:
+	case analyticsview.FieldName:
 		return m.Name()
-	case analyticssavedview.FieldVersion:
+	case analyticsview.FieldVersion:
 		return m.Version()
-	case analyticssavedview.FieldDefinition:
+	case analyticsview.FieldDefinition:
 		return m.Definition()
 	}
 	return nil, false
@@ -5583,117 +5584,117 @@ func (m *AnalyticsSavedViewMutation) Field(name string) (ent.Value, bool) {
 // OldField returns the old value of the field from the database. An error is
 // returned if the mutation operation is not UpdateOne, or the query to the
 // database failed.
-func (m *AnalyticsSavedViewMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+func (m *AnalyticsViewMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
 	switch name {
-	case analyticssavedview.FieldTenantID:
+	case analyticsview.FieldTenantID:
 		return m.OldTenantID(ctx)
-	case analyticssavedview.FieldStatus:
+	case analyticsview.FieldStatus:
 		return m.OldStatus(ctx)
-	case analyticssavedview.FieldCreatedAt:
+	case analyticsview.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
-	case analyticssavedview.FieldUpdatedAt:
+	case analyticsview.FieldUpdatedAt:
 		return m.OldUpdatedAt(ctx)
-	case analyticssavedview.FieldCreatedBy:
+	case analyticsview.FieldCreatedBy:
 		return m.OldCreatedBy(ctx)
-	case analyticssavedview.FieldUpdatedBy:
+	case analyticsview.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
-	case analyticssavedview.FieldEnvironmentID:
+	case analyticsview.FieldEnvironmentID:
 		return m.OldEnvironmentID(ctx)
-	case analyticssavedview.FieldName:
+	case analyticsview.FieldName:
 		return m.OldName(ctx)
-	case analyticssavedview.FieldVersion:
+	case analyticsview.FieldVersion:
 		return m.OldVersion(ctx)
-	case analyticssavedview.FieldDefinition:
+	case analyticsview.FieldDefinition:
 		return m.OldDefinition(ctx)
 	}
-	return nil, fmt.Errorf("unknown AnalyticsSavedView field %s", name)
+	return nil, fmt.Errorf("unknown AnalyticsView field %s", name)
 }
 
 // SetField sets the value of a field with the given name. It returns an error if
 // the field is not defined in the schema, or if the type mismatched the field
 // type.
-func (m *AnalyticsSavedViewMutation) SetField(name string, value ent.Value) error {
+func (m *AnalyticsViewMutation) SetField(name string, value ent.Value) error {
 	switch name {
-	case analyticssavedview.FieldTenantID:
+	case analyticsview.FieldTenantID:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTenantID(v)
 		return nil
-	case analyticssavedview.FieldStatus:
+	case analyticsview.FieldStatus:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStatus(v)
 		return nil
-	case analyticssavedview.FieldCreatedAt:
+	case analyticsview.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCreatedAt(v)
 		return nil
-	case analyticssavedview.FieldUpdatedAt:
+	case analyticsview.FieldUpdatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedAt(v)
 		return nil
-	case analyticssavedview.FieldCreatedBy:
+	case analyticsview.FieldCreatedBy:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCreatedBy(v)
 		return nil
-	case analyticssavedview.FieldUpdatedBy:
+	case analyticsview.FieldUpdatedBy:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetUpdatedBy(v)
 		return nil
-	case analyticssavedview.FieldEnvironmentID:
+	case analyticsview.FieldEnvironmentID:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetEnvironmentID(v)
 		return nil
-	case analyticssavedview.FieldName:
+	case analyticsview.FieldName:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetName(v)
 		return nil
-	case analyticssavedview.FieldVersion:
+	case analyticsview.FieldVersion:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetVersion(v)
 		return nil
-	case analyticssavedview.FieldDefinition:
-		v, ok := value.(map[string]interface{})
+	case analyticsview.FieldDefinition:
+		v, ok := value.(analytics.ViewDefinition)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDefinition(v)
 		return nil
 	}
-	return fmt.Errorf("unknown AnalyticsSavedView field %s", name)
+	return fmt.Errorf("unknown AnalyticsView field %s", name)
 }
 
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
-func (m *AnalyticsSavedViewMutation) AddedFields() []string {
+func (m *AnalyticsViewMutation) AddedFields() []string {
 	var fields []string
 	if m.addversion != nil {
-		fields = append(fields, analyticssavedview.FieldVersion)
+		fields = append(fields, analyticsview.FieldVersion)
 	}
 	return fields
 }
@@ -5701,9 +5702,9 @@ func (m *AnalyticsSavedViewMutation) AddedFields() []string {
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
-func (m *AnalyticsSavedViewMutation) AddedField(name string) (ent.Value, bool) {
+func (m *AnalyticsViewMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
-	case analyticssavedview.FieldVersion:
+	case analyticsview.FieldVersion:
 		return m.AddedVersion()
 	}
 	return nil, false
@@ -5712,9 +5713,9 @@ func (m *AnalyticsSavedViewMutation) AddedField(name string) (ent.Value, bool) {
 // AddField adds the value to the field with the given name. It returns an error if
 // the field is not defined in the schema, or if the type mismatched the field
 // type.
-func (m *AnalyticsSavedViewMutation) AddField(name string, value ent.Value) error {
+func (m *AnalyticsViewMutation) AddField(name string, value ent.Value) error {
 	switch name {
-	case analyticssavedview.FieldVersion:
+	case analyticsview.FieldVersion:
 		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
@@ -5722,133 +5723,133 @@ func (m *AnalyticsSavedViewMutation) AddField(name string, value ent.Value) erro
 		m.AddVersion(v)
 		return nil
 	}
-	return fmt.Errorf("unknown AnalyticsSavedView numeric field %s", name)
+	return fmt.Errorf("unknown AnalyticsView numeric field %s", name)
 }
 
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
-func (m *AnalyticsSavedViewMutation) ClearedFields() []string {
+func (m *AnalyticsViewMutation) ClearedFields() []string {
 	var fields []string
-	if m.FieldCleared(analyticssavedview.FieldCreatedBy) {
-		fields = append(fields, analyticssavedview.FieldCreatedBy)
+	if m.FieldCleared(analyticsview.FieldCreatedBy) {
+		fields = append(fields, analyticsview.FieldCreatedBy)
 	}
-	if m.FieldCleared(analyticssavedview.FieldUpdatedBy) {
-		fields = append(fields, analyticssavedview.FieldUpdatedBy)
+	if m.FieldCleared(analyticsview.FieldUpdatedBy) {
+		fields = append(fields, analyticsview.FieldUpdatedBy)
 	}
-	if m.FieldCleared(analyticssavedview.FieldEnvironmentID) {
-		fields = append(fields, analyticssavedview.FieldEnvironmentID)
+	if m.FieldCleared(analyticsview.FieldEnvironmentID) {
+		fields = append(fields, analyticsview.FieldEnvironmentID)
 	}
 	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
 // cleared in this mutation.
-func (m *AnalyticsSavedViewMutation) FieldCleared(name string) bool {
+func (m *AnalyticsViewMutation) FieldCleared(name string) bool {
 	_, ok := m.clearedFields[name]
 	return ok
 }
 
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
-func (m *AnalyticsSavedViewMutation) ClearField(name string) error {
+func (m *AnalyticsViewMutation) ClearField(name string) error {
 	switch name {
-	case analyticssavedview.FieldCreatedBy:
+	case analyticsview.FieldCreatedBy:
 		m.ClearCreatedBy()
 		return nil
-	case analyticssavedview.FieldUpdatedBy:
+	case analyticsview.FieldUpdatedBy:
 		m.ClearUpdatedBy()
 		return nil
-	case analyticssavedview.FieldEnvironmentID:
+	case analyticsview.FieldEnvironmentID:
 		m.ClearEnvironmentID()
 		return nil
 	}
-	return fmt.Errorf("unknown AnalyticsSavedView nullable field %s", name)
+	return fmt.Errorf("unknown AnalyticsView nullable field %s", name)
 }
 
 // ResetField resets all changes in the mutation for the field with the given name.
 // It returns an error if the field is not defined in the schema.
-func (m *AnalyticsSavedViewMutation) ResetField(name string) error {
+func (m *AnalyticsViewMutation) ResetField(name string) error {
 	switch name {
-	case analyticssavedview.FieldTenantID:
+	case analyticsview.FieldTenantID:
 		m.ResetTenantID()
 		return nil
-	case analyticssavedview.FieldStatus:
+	case analyticsview.FieldStatus:
 		m.ResetStatus()
 		return nil
-	case analyticssavedview.FieldCreatedAt:
+	case analyticsview.FieldCreatedAt:
 		m.ResetCreatedAt()
 		return nil
-	case analyticssavedview.FieldUpdatedAt:
+	case analyticsview.FieldUpdatedAt:
 		m.ResetUpdatedAt()
 		return nil
-	case analyticssavedview.FieldCreatedBy:
+	case analyticsview.FieldCreatedBy:
 		m.ResetCreatedBy()
 		return nil
-	case analyticssavedview.FieldUpdatedBy:
+	case analyticsview.FieldUpdatedBy:
 		m.ResetUpdatedBy()
 		return nil
-	case analyticssavedview.FieldEnvironmentID:
+	case analyticsview.FieldEnvironmentID:
 		m.ResetEnvironmentID()
 		return nil
-	case analyticssavedview.FieldName:
+	case analyticsview.FieldName:
 		m.ResetName()
 		return nil
-	case analyticssavedview.FieldVersion:
+	case analyticsview.FieldVersion:
 		m.ResetVersion()
 		return nil
-	case analyticssavedview.FieldDefinition:
+	case analyticsview.FieldDefinition:
 		m.ResetDefinition()
 		return nil
 	}
-	return fmt.Errorf("unknown AnalyticsSavedView field %s", name)
+	return fmt.Errorf("unknown AnalyticsView field %s", name)
 }
 
 // AddedEdges returns all edge names that were set/added in this mutation.
-func (m *AnalyticsSavedViewMutation) AddedEdges() []string {
+func (m *AnalyticsViewMutation) AddedEdges() []string {
 	edges := make([]string, 0, 0)
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
-func (m *AnalyticsSavedViewMutation) AddedIDs(name string) []ent.Value {
+func (m *AnalyticsViewMutation) AddedIDs(name string) []ent.Value {
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
-func (m *AnalyticsSavedViewMutation) RemovedEdges() []string {
+func (m *AnalyticsViewMutation) RemovedEdges() []string {
 	edges := make([]string, 0, 0)
 	return edges
 }
 
 // RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
 // the given name in this mutation.
-func (m *AnalyticsSavedViewMutation) RemovedIDs(name string) []ent.Value {
+func (m *AnalyticsViewMutation) RemovedIDs(name string) []ent.Value {
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
-func (m *AnalyticsSavedViewMutation) ClearedEdges() []string {
+func (m *AnalyticsViewMutation) ClearedEdges() []string {
 	edges := make([]string, 0, 0)
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
-func (m *AnalyticsSavedViewMutation) EdgeCleared(name string) bool {
+func (m *AnalyticsViewMutation) EdgeCleared(name string) bool {
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
-func (m *AnalyticsSavedViewMutation) ClearEdge(name string) error {
-	return fmt.Errorf("unknown AnalyticsSavedView unique edge %s", name)
+func (m *AnalyticsViewMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown AnalyticsView unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
-func (m *AnalyticsSavedViewMutation) ResetEdge(name string) error {
-	return fmt.Errorf("unknown AnalyticsSavedView edge %s", name)
+func (m *AnalyticsViewMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown AnalyticsView edge %s", name)
 }
 
 // AuthMutation represents an operation that mutates the Auth nodes in the graph.

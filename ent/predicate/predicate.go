@@ -18,8 +18,8 @@ type AlertLogs func(*sql.Selector)
 // AlertSettings is the predicate function for alertsettings builders.
 type AlertSettings func(*sql.Selector)
 
-// AnalyticsSavedView is the predicate function for analyticssavedview builders.
-type AnalyticsSavedView func(*sql.Selector)
+// AnalyticsView is the predicate function for analyticsview builders.
+type AnalyticsView func(*sql.Selector)
 
 // Auth is the predicate function for auth builders.
 type Auth func(*sql.Selector)

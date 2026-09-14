@@ -16,11 +16,11 @@ func testCtx(tenantID string) context.Context {
 	return context.WithValue(ctx, types.CtxTenantID, tenantID)
 }
 
-func TestInMemoryAnalyticsSavedViewStore_CreateGet(t *testing.T) {
-	store := NewInMemoryAnalyticsSavedViewStore()
+func TestInMemoryAnalyticsViewStore_CreateGet(t *testing.T) {
+	store := NewInMemoryAnalyticsViewStore()
 	ctx := testCtx("tenant_1")
 
-	view := &domainAnalytics.SavedView{
+	view := &domainAnalytics.View{
 		ID:      "view_1",
 		Name:    "My View",
 		Version: 1,
@@ -42,20 +42,20 @@ func TestInMemoryAnalyticsSavedViewStore_CreateGet(t *testing.T) {
 	assert.Equal(t, domainAnalytics.ShapeBreakdown, got.Definition.Shape)
 }
 
-func TestInMemoryAnalyticsSavedViewStore_CreateDuplicate(t *testing.T) {
-	store := NewInMemoryAnalyticsSavedViewStore()
+func TestInMemoryAnalyticsViewStore_CreateDuplicate(t *testing.T) {
+	store := NewInMemoryAnalyticsViewStore()
 	ctx := testCtx("tenant_1")
 
-	view := &domainAnalytics.SavedView{ID: "view_1", Name: "v1"}
+	view := &domainAnalytics.View{ID: "view_1", Name: "v1"}
 	require.NoError(t, store.Create(ctx, view))
 
-	err := store.Create(ctx, &domainAnalytics.SavedView{ID: "view_1", Name: "v2"})
+	err := store.Create(ctx, &domainAnalytics.View{ID: "view_1", Name: "v2"})
 	require.Error(t, err)
 	assert.True(t, ierr.IsAlreadyExists(err))
 }
 
-func TestInMemoryAnalyticsSavedViewStore_GetNotFound(t *testing.T) {
-	store := NewInMemoryAnalyticsSavedViewStore()
+func TestInMemoryAnalyticsViewStore_GetNotFound(t *testing.T) {
+	store := NewInMemoryAnalyticsViewStore()
 	ctx := testCtx("tenant_1")
 
 	_, err := store.Get(ctx, "missing")
@@ -63,10 +63,10 @@ func TestInMemoryAnalyticsSavedViewStore_GetNotFound(t *testing.T) {
 	assert.True(t, ierr.IsNotFound(err))
 }
 
-func TestInMemoryAnalyticsSavedViewStore_GetCrossTenantNotFound(t *testing.T) {
-	store := NewInMemoryAnalyticsSavedViewStore()
+func TestInMemoryAnalyticsViewStore_GetCrossTenantNotFound(t *testing.T) {
+	store := NewInMemoryAnalyticsViewStore()
 
-	require.NoError(t, store.Create(testCtx("tenant_1"), &domainAnalytics.SavedView{ID: "v1", Name: "a"}))
+	require.NoError(t, store.Create(testCtx("tenant_1"), &domainAnalytics.View{ID: "v1", Name: "a"}))
 
 	// Owning tenant can fetch it.
 	got, err := store.Get(testCtx("tenant_1"), "v1")
@@ -79,11 +79,11 @@ func TestInMemoryAnalyticsSavedViewStore_GetCrossTenantNotFound(t *testing.T) {
 	assert.True(t, ierr.IsNotFound(err))
 }
 
-func TestInMemoryAnalyticsSavedViewStore_GetFiltersUnpublishedStatus(t *testing.T) {
-	store := NewInMemoryAnalyticsSavedViewStore()
+func TestInMemoryAnalyticsViewStore_GetFiltersUnpublishedStatus(t *testing.T) {
+	store := NewInMemoryAnalyticsViewStore()
 	ctx := testCtx("tenant_1")
 
-	view := &domainAnalytics.SavedView{ID: "v1", Name: "a"}
+	view := &domainAnalytics.View{ID: "v1", Name: "a"}
 	require.NoError(t, store.Create(ctx, view))
 
 	// Simulate an archived view: same tenant, non-published status.
@@ -94,11 +94,11 @@ func TestInMemoryAnalyticsSavedViewStore_GetFiltersUnpublishedStatus(t *testing.
 	assert.True(t, ierr.IsNotFound(err))
 }
 
-func TestInMemoryAnalyticsSavedViewStore_ListFiltersByTenant(t *testing.T) {
-	store := NewInMemoryAnalyticsSavedViewStore()
+func TestInMemoryAnalyticsViewStore_ListFiltersByTenant(t *testing.T) {
+	store := NewInMemoryAnalyticsViewStore()
 
-	require.NoError(t, store.Create(testCtx("tenant_1"), &domainAnalytics.SavedView{ID: "v1", Name: "a"}))
-	require.NoError(t, store.Create(testCtx("tenant_2"), &domainAnalytics.SavedView{ID: "v2", Name: "b"}))
+	require.NoError(t, store.Create(testCtx("tenant_1"), &domainAnalytics.View{ID: "v1", Name: "a"}))
+	require.NoError(t, store.Create(testCtx("tenant_2"), &domainAnalytics.View{ID: "v2", Name: "b"}))
 
 	views, err := store.List(testCtx("tenant_1"))
 	require.NoError(t, err)
@@ -106,11 +106,11 @@ func TestInMemoryAnalyticsSavedViewStore_ListFiltersByTenant(t *testing.T) {
 	assert.Equal(t, "v1", views[0].ID)
 }
 
-func TestInMemoryAnalyticsSavedViewStore_Clear(t *testing.T) {
-	store := NewInMemoryAnalyticsSavedViewStore()
+func TestInMemoryAnalyticsViewStore_Clear(t *testing.T) {
+	store := NewInMemoryAnalyticsViewStore()
 	ctx := testCtx("tenant_1")
 
-	require.NoError(t, store.Create(ctx, &domainAnalytics.SavedView{ID: "v1", Name: "a"}))
+	require.NoError(t, store.Create(ctx, &domainAnalytics.View{ID: "v1", Name: "a"}))
 	store.Clear()
 
 	views, err := store.List(ctx)
