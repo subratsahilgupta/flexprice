@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -27,7 +28,7 @@ type SubscriptionScheduleResponse struct {
 	Status types.ScheduleStatus `json:"status"`
 
 	// configuration contains type-specific configuration (e.g., target_plan_id for plan changes)
-	Configuration interface{} `json:"configuration,omitempty"`
+	Configuration map[string]interface{} `json:"configuration,omitempty"`
 
 	// executed_at is when the schedule was executed
 	ExecutedAt *time.Time `json:"executed_at,omitempty"`
@@ -36,7 +37,7 @@ type SubscriptionScheduleResponse struct {
 	CancelledAt *time.Time `json:"cancelled_at,omitempty"`
 
 	// execution_result contains type-specific execution result
-	ExecutionResult interface{} `json:"execution_result,omitempty"`
+	ExecutionResult map[string]interface{} `json:"execution_result,omitempty"`
 
 	// error_message contains the error if execution failed
 	ErrorMessage *string `json:"error_message,omitempty"`
@@ -131,25 +132,42 @@ func SubscriptionScheduleResponseFromDomain(s *subscription.SubscriptionSchedule
 		v2Config, err := s.GetPlanChangeV2Config()
 		switch {
 		case err == nil && v2Config.IsV2():
-			response.Configuration = v2Config
+			response.Configuration = structToMap(v2Config)
 			if s.ExecutionResult != nil {
 				if result, err := s.GetPlanChangeV2Result(); err == nil {
-					response.ExecutionResult = result
+					response.ExecutionResult = structToMap(result)
 				}
 			}
 		default:
 			if config, err := s.GetPlanChangeConfig(); err == nil {
-				response.Configuration = config
+				response.Configuration = structToMap(config)
 			}
 			if s.ExecutionResult != nil {
 				if result, err := s.GetPlanChangeResult(); err == nil {
-					response.ExecutionResult = result
+					response.ExecutionResult = structToMap(result)
 				}
 			}
 		}
 	}
 
 	return response
+}
+
+// structToMap marshals a typed schedule config/result into an open map so the
+// OpenAPI spec renders additionalProperties (keys survive SDK schema parsing).
+func structToMap(v interface{}) map[string]interface{} {
+	if v == nil {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil
+	}
+	return m
 }
 
 // SubscriptionScheduleListResponseFromDomain converts a list of domain schedules to DTOs

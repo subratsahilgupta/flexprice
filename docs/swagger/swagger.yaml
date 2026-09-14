@@ -2822,10 +2822,10 @@ definitions:
         - $ref: '#/definitions/types.TaxBehavior'
         description: |-
           TaxBehavior is inclusive or exclusive. Settable at any level. If left empty on a
-          subscription-level association, it resolves from the currency default at creation
-          time (internal/types.DefaultTaxBehaviorForCurrency) — tenant/customer-level templates
-          only need this set explicitly if the tenant wants one; otherwise it stays null and is
-          resolved when the template is copied down to a subscription.
+          subscription-level association, it defaults to exclusive at creation time —
+          tenant/customer-level templates only need this set explicitly if the tenant wants
+          one; otherwise it stays null and is resolved when the template is copied down to
+          a subscription.
       tax_rate_code:
         type: string
     required:
@@ -4801,6 +4801,8 @@ definitions:
           refunded_amount is the total sum of credit notes of type "refund".
           These are actual refunds issued to the customer.
         type: string
+      source_type:
+        $ref: '#/definitions/types.InvoiceSourceType'
       status:
         $ref: '#/definitions/types.Status'
       subscription:
@@ -7006,8 +7008,10 @@ definitions:
         description: cancelled_at is when the schedule was cancelled
         type: string
       configuration:
+        additionalProperties: true
         description: configuration contains type-specific configuration (e.g., target_plan_id
           for plan changes)
+        type: object
       created_at:
         description: created_at timestamp
         type: string
@@ -7021,7 +7025,9 @@ definitions:
         description: executed_at is when the schedule was executed
         type: string
       execution_result:
+        additionalProperties: true
         description: execution_result contains type-specific execution result
+        type: object
       id:
         description: id of the schedule
         type: string
@@ -7256,8 +7262,8 @@ definitions:
         allOf:
         - $ref: '#/definitions/types.TaxBehavior'
         description: |-
-          TaxBehavior is inclusive or exclusive; null on tenant/customer-level rows,
-          resolved when copied down to a subscription
+          TaxBehavior is inclusive or exclusive. Absent means exclusive; inclusive is only
+          ever set explicitly.
       tax_rate:
         $ref: '#/definitions/TaxRateResponse'
       tax_rate_id:
@@ -10832,6 +10838,12 @@ definitions:
           Only returns invoices that were created as part of the specified subscription's billing
         type: string
     type: object
+  types.InvoiceSourceType:
+    enum:
+    - checkout
+    type: string
+    x-enum-varnames:
+    - InvoiceSourceTypeCheckout
   types.InvoiceStatus:
     enum:
     - DRAFT

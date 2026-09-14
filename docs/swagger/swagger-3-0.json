@@ -22015,6 +22015,9 @@
             "type": "string",
             "description": "refunded_amount is the total sum of credit notes of type \"refund\".\nThese are actual refunds issued to the customer."
           },
+          "source_type": {
+            "$ref": "#/components/schemas/types.InvoiceSourceType"
+          },
           "status": {
             "$ref": "#/components/schemas/types.Status"
           },
@@ -24860,6 +24863,7 @@
           },
           "configuration": {
             "type": "object",
+            "additionalProperties": true,
             "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)"
           },
           "created_at": {
@@ -24882,6 +24886,7 @@
           },
           "execution_result": {
             "type": "object",
+            "additionalProperties": true,
             "description": "execution_result contains type-specific execution result"
           },
           "id": {
@@ -30068,6 +30073,16 @@
           }
         },
         "x-speakeasy-name-override": "InvoiceFilter"
+      },
+      "types.InvoiceSourceType": {
+        "type": "string",
+        "enum": [
+          "checkout"
+        ],
+        "x-enum-varnames": [
+          "InvoiceSourceTypeCheckout"
+        ],
+        "x-speakeasy-name-override": "InvoiceSourceType"
       },
       "types.InvoiceStatus": {
         "type": "string",
