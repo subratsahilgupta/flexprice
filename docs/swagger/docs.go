@@ -789,7 +789,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/service.QueryResult"
+                            "$ref": "#/definitions/AnalyticsQueryResult"
                         }
                     },
                     "400": {
@@ -825,16 +825,16 @@ const docTemplate = `{
                 "tags": [
                     "Analytics"
                 ],
-                "summary": "Create a saved analytics view",
-                "operationId": "createAnalyticsSavedView",
+                "summary": "Create an analytics view",
+                "operationId": "createAnalyticsView",
                 "parameters": [
                     {
-                        "description": "Saved view request",
+                        "description": "View request",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/CreateSavedViewRequest"
+                            "$ref": "#/definitions/CreateViewRequest"
                         }
                     }
                 ],
@@ -842,7 +842,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/analytics.SavedView"
+                            "$ref": "#/definitions/ViewResponse"
                         }
                     },
                     "400": {
@@ -867,7 +867,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Resolves the saved view's definition against the supplied variables and executes it.",
+                "description": "Resolves the view's definition against the supplied variables and executes it.",
                 "consumes": [
                     "application/json"
                 ],
@@ -877,23 +877,23 @@ const docTemplate = `{
                 "tags": [
                     "Analytics"
                 ],
-                "summary": "Query a saved analytics view",
-                "operationId": "queryAnalyticsSavedView",
+                "summary": "Query an analytics view",
+                "operationId": "queryAnalyticsView",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Saved view ID",
+                        "description": "View ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "Saved view query request",
+                        "description": "View query request",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/SavedViewQueryRequest"
+                            "$ref": "#/definitions/ViewQueryRequest"
                         }
                     }
                 ],
@@ -901,7 +901,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/service.QueryResult"
+                            "$ref": "#/definitions/AnalyticsQueryResult"
                         }
                     },
                     "400": {
@@ -911,7 +911,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "Saved view not found",
+                        "description": "View not found",
                         "schema": {
                             "$ref": "#/definitions/errors.ErrorResponse"
                         }
@@ -13895,41 +13895,6 @@ const docTemplate = `{
                 "value": {}
             }
         },
-        "analytics.SavedView": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "string"
-                },
-                "definition": {
-                    "$ref": "#/definitions/analytics.ViewDefinition"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/types.Status"
-                },
-                "tenant_id": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
         "analytics.Shape": {
             "type": "string",
             "enum": [
@@ -14836,6 +14801,24 @@ const docTemplate = `{
                 }
             }
         },
+        "AnalyticsColumn": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "role": {
+                    "description": "\"dimension\" | \"metric\"",
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "AnalyticsQueryRequest": {
             "type": "object",
             "required": [
@@ -14848,6 +14831,28 @@ const docTemplate = `{
                 "variables": {
                     "type": "object",
                     "additionalProperties": {}
+                }
+            }
+        },
+        "AnalyticsQueryResult": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AnalyticsColumn"
+                    }
+                },
+                "meta": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {}
+                    }
                 }
             }
         },
@@ -17289,21 +17294,6 @@ const docTemplate = `{
                 }
             }
         },
-        "CreateSavedViewRequest": {
-            "type": "object",
-            "required": [
-                "definition",
-                "name"
-            ],
-            "properties": {
-                "definition": {
-                    "$ref": "#/definitions/analytics.ViewDefinition"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
         "CreateScheduledTaskRequest": {
             "type": "object",
             "required": [
@@ -17824,6 +17814,21 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.UserType"
+                }
+            }
+        },
+        "CreateViewRequest": {
+            "type": "object",
+            "required": [
+                "definition",
+                "name"
+            ],
+            "properties": {
+                "definition": {
+                    "$ref": "#/definitions/analytics.ViewDefinition"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },
@@ -21704,15 +21709,6 @@ const docTemplate = `{
                 }
             }
         },
-        "SavedViewQueryRequest": {
-            "type": "object",
-            "properties": {
-                "variables": {
-                    "type": "object",
-                    "additionalProperties": {}
-                }
-            }
-        },
         "ScheduledTaskResponse": {
             "type": "object",
             "properties": {
@@ -24975,6 +24971,10 @@ const docTemplate = `{
                 "event_name": {
                     "type": "string"
                 },
+                "external_customer_id": {
+                    "description": "Populated only when \"external_customer_id\" is a group_by dimension",
+                    "type": "string"
+                },
                 "feature": {
                     "description": "Full feature object (only if expand includes \"feature\")",
                     "allOf": [
@@ -25288,6 +25288,32 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.UserType"
+                }
+            }
+        },
+        "ViewQueryRequest": {
+            "type": "object",
+            "properties": {
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "ViewResponse": {
+            "type": "object",
+            "properties": {
+                "definition": {
+                    "$ref": "#/definitions/analytics.ViewDefinition"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -26578,46 +26604,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/types.RoundType"
                         }
                     ]
-                }
-            }
-        },
-        "service.Column": {
-            "type": "object",
-            "properties": {
-                "currency": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "role": {
-                    "description": "\"dimension\" | \"metric\"",
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
-        "service.QueryResult": {
-            "type": "object",
-            "properties": {
-                "columns": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/service.Column"
-                    }
-                },
-                "meta": {
-                    "type": "object",
-                    "additionalProperties": {}
-                },
-                "rows": {
-                    "type": "array",
-                    "items": {
-                        "type": "array",
-                        "items": {}
-                    }
                 }
             }
         },

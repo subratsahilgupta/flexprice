@@ -209,29 +209,6 @@ definitions:
         type: boolean
       value: {}
     type: object
-  analytics.SavedView:
-    properties:
-      created_at:
-        type: string
-      created_by:
-        type: string
-      definition:
-        $ref: '#/definitions/analytics.ViewDefinition'
-      id:
-        type: string
-      name:
-        type: string
-      status:
-        $ref: '#/definitions/types.Status'
-      tenant_id:
-        type: string
-      updated_at:
-        type: string
-      updated_by:
-        type: string
-      version:
-        type: integer
-    type: object
   analytics.Shape:
     enum:
     - timeseries
@@ -843,6 +820,18 @@ definitions:
       updated_by:
         type: string
     type: object
+  AnalyticsColumn:
+    properties:
+      currency:
+        type: string
+      name:
+        type: string
+      role:
+        description: '"dimension" | "metric"'
+        type: string
+      type:
+        type: string
+    type: object
   AnalyticsQueryRequest:
     properties:
       definition:
@@ -852,6 +841,21 @@ definitions:
         type: object
     required:
     - definition
+    type: object
+  AnalyticsQueryResult:
+    properties:
+      columns:
+        items:
+          $ref: '#/definitions/AnalyticsColumn'
+        type: array
+      meta:
+        additionalProperties: {}
+        type: object
+      rows:
+        items:
+          items: {}
+          type: array
+        type: array
     type: object
   AttributedToCustomerResult:
     properties:
@@ -2633,16 +2637,6 @@ definitions:
       updated_by:
         type: string
     type: object
-  CreateSavedViewRequest:
-    properties:
-      definition:
-        $ref: '#/definitions/analytics.ViewDefinition'
-      name:
-        type: string
-    required:
-    - definition
-    - name
-    type: object
   CreateScheduledTaskRequest:
     properties:
       connection_id:
@@ -3024,6 +3018,16 @@ definitions:
         $ref: '#/definitions/TenantResponse'
       type:
         $ref: '#/definitions/types.UserType'
+    type: object
+  CreateViewRequest:
+    properties:
+      definition:
+        $ref: '#/definitions/analytics.ViewDefinition'
+      name:
+        type: string
+    required:
+    - definition
+    - name
     type: object
   CreateWalletRequest:
     properties:
@@ -5862,12 +5866,6 @@ definitions:
     required:
     - addon_association_id
     type: object
-  SavedViewQueryRequest:
-    properties:
-      variables:
-        additionalProperties: {}
-        type: object
-    type: object
   ScheduledTaskResponse:
     properties:
       connection_id:
@@ -8219,6 +8217,9 @@ definitions:
         type: integer
       event_name:
         type: string
+      external_customer_id:
+        description: Populated only when "external_customer_id" is a group_by dimension
+        type: string
       feature:
         allOf:
         - $ref: '#/definitions/Feature'
@@ -8436,6 +8437,23 @@ definitions:
         $ref: '#/definitions/TenantResponse'
       type:
         $ref: '#/definitions/types.UserType'
+    type: object
+  ViewQueryRequest:
+    properties:
+      variables:
+        additionalProperties: {}
+        type: object
+    type: object
+  ViewResponse:
+    properties:
+      definition:
+        $ref: '#/definitions/analytics.ViewDefinition'
+      id:
+        type: string
+      name:
+        type: string
+      version:
+        type: integer
     type: object
   WalletBalanceResponse:
     properties:
@@ -9409,33 +9427,6 @@ definitions:
         allOf:
         - $ref: '#/definitions/types.RoundType'
         description: up or down
-    type: object
-  service.Column:
-    properties:
-      currency:
-        type: string
-      name:
-        type: string
-      role:
-        description: '"dimension" | "metric"'
-        type: string
-      type:
-        type: string
-    type: object
-  service.QueryResult:
-    properties:
-      columns:
-        items:
-          $ref: '#/definitions/service.Column'
-        type: array
-      meta:
-        additionalProperties: {}
-        type: object
-      rows:
-        items:
-          items: {}
-          type: array
-        type: array
     type: object
   subscription.SubscriptionLineItem:
     properties:
@@ -14086,7 +14077,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/service.QueryResult'
+            $ref: '#/definitions/AnalyticsQueryResult'
         "400":
           description: Invalid request
           schema:
@@ -14106,21 +14097,21 @@ paths:
       consumes:
       - application/json
       description: Persists a named view definition that can later be queried by ID.
-      operationId: createAnalyticsSavedView
+      operationId: createAnalyticsView
       parameters:
-      - description: Saved view request
+      - description: View request
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/CreateSavedViewRequest'
+          $ref: '#/definitions/CreateViewRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/analytics.SavedView'
+            $ref: '#/definitions/ViewResponse'
         "400":
           description: Invalid request
           schema:
@@ -14131,41 +14122,41 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Create a saved analytics view
+      summary: Create an analytics view
       tags:
       - Analytics
   /analytics/views/{id}/query:
     post:
       consumes:
       - application/json
-      description: Resolves the saved view's definition against the supplied variables
-        and executes it.
-      operationId: queryAnalyticsSavedView
+      description: Resolves the view's definition against the supplied variables and
+        executes it.
+      operationId: queryAnalyticsView
       parameters:
-      - description: Saved view ID
+      - description: View ID
         in: path
         name: id
         required: true
         type: string
-      - description: Saved view query request
+      - description: View query request
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/SavedViewQueryRequest'
+          $ref: '#/definitions/ViewQueryRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/service.QueryResult'
+            $ref: '#/definitions/AnalyticsQueryResult'
         "400":
           description: Invalid request
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
         "404":
-          description: Saved view not found
+          description: View not found
           schema:
             $ref: '#/definitions/errors.ErrorResponse'
         "500":
@@ -14174,7 +14165,7 @@ paths:
             $ref: '#/definitions/errors.ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Query a saved analytics view
+      summary: Query an analytics view
       tags:
       - Analytics
       x-scope: read

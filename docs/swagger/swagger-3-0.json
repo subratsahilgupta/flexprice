@@ -926,7 +926,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/service.QueryResult"
+                  "$ref": "#/components/schemas/AnalyticsQueryResult"
                 }
               }
             }
@@ -966,15 +966,15 @@
         "tags": [
           "Analytics"
         ],
-        "summary": "Create a saved analytics view",
+        "summary": "Create an analytics view",
         "description": "Persists a named view definition that can later be queried by ID.",
-        "operationId": "createAnalyticsSavedView",
+        "operationId": "createAnalyticsView",
         "requestBody": {
-          "description": "Saved view request",
+          "description": "View request",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateSavedViewRequest"
+                "$ref": "#/components/schemas/CreateViewRequest"
               }
             }
           },
@@ -986,7 +986,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/analytics.SavedView"
+                  "$ref": "#/components/schemas/ViewResponse"
                 }
               }
             }
@@ -1025,14 +1025,14 @@
         "tags": [
           "Analytics"
         ],
-        "summary": "Query a saved analytics view",
-        "description": "Resolves the saved view's definition against the supplied variables and executes it.",
-        "operationId": "queryAnalyticsSavedView",
+        "summary": "Query an analytics view",
+        "description": "Resolves the view's definition against the supplied variables and executes it.",
+        "operationId": "queryAnalyticsView",
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Saved view ID",
+            "description": "View ID",
             "required": true,
             "schema": {
               "type": "string"
@@ -1040,11 +1040,11 @@
           }
         ],
         "requestBody": {
-          "description": "Saved view query request",
+          "description": "View query request",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SavedViewQueryRequest"
+                "$ref": "#/components/schemas/ViewQueryRequest"
               }
             }
           },
@@ -1056,7 +1056,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/service.QueryResult"
+                  "$ref": "#/components/schemas/AnalyticsQueryResult"
                 }
               }
             }
@@ -1072,7 +1072,7 @@
             }
           },
           "404": {
-            "description": "Saved view not found",
+            "description": "View not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -16286,43 +16286,6 @@
           }
         }
       },
-      "analytics.SavedView": {
-        "type": "object",
-        "properties": {
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "created_by": {
-            "type": "string"
-          },
-          "definition": {
-            "$ref": "#/components/schemas/analytics.ViewDefinition"
-          },
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/types.Status"
-          },
-          "tenant_id": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updated_by": {
-            "type": "string"
-          },
-          "version": {
-            "type": "integer"
-          }
-        }
-      },
       "analytics.Shape": {
         "type": "string",
         "enum": [
@@ -17245,6 +17208,24 @@
           }
         }
       },
+      "AnalyticsColumn": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "description": "\"dimension\" | \"metric\""
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
       "AnalyticsQueryRequest": {
         "required": [
           "definition"
@@ -17258,6 +17239,32 @@
             "type": "object",
             "additionalProperties": {
               "type": "object"
+            }
+          }
+        }
+      },
+      "AnalyticsQueryResult": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsColumn"
+            }
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            }
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
             }
           }
         }
@@ -19530,21 +19537,6 @@
           }
         }
       },
-      "CreateSavedViewRequest": {
-        "required": [
-          "definition",
-          "name"
-        ],
-        "type": "object",
-        "properties": {
-          "definition": {
-            "$ref": "#/components/schemas/analytics.ViewDefinition"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
       "CreateScheduledTaskRequest": {
         "required": [
           "connection_id",
@@ -20002,6 +19994,21 @@
           },
           "type": {
             "$ref": "#/components/schemas/types.UserType"
+          }
+        }
+      },
+      "CreateViewRequest": {
+        "required": [
+          "definition",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -23772,17 +23779,6 @@
           }
         }
       },
-      "SavedViewQueryRequest": {
-        "type": "object",
-        "properties": {
-          "variables": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object"
-            }
-          }
-        }
-      },
       "ScheduledTaskResponse": {
         "type": "object",
         "properties": {
@@ -26801,6 +26797,10 @@
           "event_name": {
             "type": "string"
           },
+          "external_customer_id": {
+            "type": "string",
+            "description": "Populated only when \"external_customer_id\" is a group_by dimension"
+          },
           "feature": {
             "$ref": "#/components/schemas/Feature"
           },
@@ -27078,6 +27078,34 @@
           },
           "type": {
             "$ref": "#/components/schemas/types.UserType"
+          }
+        }
+      },
+      "ViewQueryRequest": {
+        "type": "object",
+        "properties": {
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "ViewResponse": {
+        "type": "object",
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
           }
         }
       },
@@ -28348,50 +28376,6 @@
           },
           "round": {
             "$ref": "#/components/schemas/types.RoundType"
-          }
-        }
-      },
-      "service.Column": {
-        "type": "object",
-        "properties": {
-          "currency": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "role": {
-            "type": "string",
-            "description": "\"dimension\" | \"metric\""
-          },
-          "type": {
-            "type": "string"
-          }
-        }
-      },
-      "service.QueryResult": {
-        "type": "object",
-        "properties": {
-          "columns": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/service.Column"
-            }
-          },
-          "meta": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object"
-            }
-          },
-          "rows": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "object"
-              }
-            }
           }
         }
       },
