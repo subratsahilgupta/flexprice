@@ -569,7 +569,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	if req.Checkout != nil && result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft {
 		invResp, skipped, err := buildCheckoutDraftInvoice(ctx, s.ServiceParams, response)
 		if err != nil {
-			s.archiveDraftCheckoutSubscription(ctx, response.ID)
+			if archErr := s.archiveDraftCheckoutSubscription(ctx, response.ID); archErr != nil {
+				s.Logger.Error(ctx, "failed to archive draft checkout subscription", "error", archErr, "subscription_id", response.ID)
+			}
 			return nil, err
 		}
 
@@ -578,7 +580,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 				invSvc := NewInvoiceService(s.ServiceParams)
 
 				if err := invSvc.FinalizeInvoice(ctx, invResp.ID, dto.FinalizeInvoiceRequest{}); err != nil {
-					s.archiveDraftCheckoutSubscription(ctx, response.ID)
+					if archErr := s.archiveDraftCheckoutSubscription(ctx, response.ID); archErr != nil {
+						s.Logger.Error(ctx, "failed to archive draft checkout subscription", "error", archErr, "subscription_id", response.ID)
+					}
 					return nil, err
 				}
 				if refreshed, err := invSvc.GetInvoice(ctx, invResp.ID); err == nil {
@@ -588,7 +592,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			}
 
 			if err := s.activateDraftSubscription(ctx, response.Subscription); err != nil {
-				s.archiveDraftCheckoutSubscription(ctx, response.ID)
+				if archErr := s.archiveDraftCheckoutSubscription(ctx, response.ID); archErr != nil {
+					s.Logger.Error(ctx, "failed to archive draft checkout subscription", "error", archErr, "subscription_id", response.ID)
+				}
 				return nil, err
 			}
 		} else {

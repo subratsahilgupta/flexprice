@@ -132,6 +132,31 @@ func (s *WalletServiceSuite) TestCleanupCheckoutSession_CompletedSessionUntouche
 	s.Equal(types.TransactionStatusCompleted, tx.TxStatus)
 }
 
+// A concurrent cancel holds a copy that still says pending after Complete has claimed
+// the row. Cleanup must not overwrite completed or reverse the credit.
+func (s *WalletServiceSuite) TestCleanupCheckoutSession_StalePendingCopyDoesNotClobberCompleted() {
+	s.seedAutoComplete(false)
+	ctx := s.GetContext()
+
+	txID, session := s.seedPayFirstTopupSession("cleanup-stale-pending", decimal.NewFromInt(200), nil)
+	stale := *session
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.buildServiceParams()}
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, session.ID, &types.CheckoutProviderResult{
+		ProviderPaymentIntentID: "pay_stale_cleanup_001",
+	}))
+
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, &stale, nil))
+
+	stored, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusCompleted, stored.CheckoutStatus)
+
+	tx, err := s.GetStores().WalletRepo.GetTransactionByID(ctx, txID)
+	s.Require().NoError(err)
+	s.Equal(types.TransactionStatusCompleted, tx.TxStatus)
+}
+
 // B2: Delete must reach a terminal checkout_status, not just archive the row —
 // otherwise it keeps holding the idempotency key and blocking the pending guard.
 func (s *WalletServiceSuite) TestDeleteCheckoutSession_CleansUpBeforeArchiving() {

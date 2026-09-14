@@ -14,9 +14,9 @@ import (
 type InMemoryCheckoutSessionStore struct {
 	*InMemoryStore[*domainCheckout.CheckoutSession]
 
-	// claimMu makes MarkCompleted atomic. The real repository claims a session with a
-	// conditional UPDATE, so a double that read, checked and wrote without a lock would
-	// let two callers both win the claim — the opposite of what it stands in for.
+	// claimMu makes MarkCompleted / MarkTerminal atomic. The real repository claims a
+	// session with a conditional UPDATE, so a double that read, checked and wrote without
+	// a lock would let two callers both win the claim — the opposite of what it stands in for.
 	claimMu sync.Mutex
 }
 
@@ -241,6 +241,31 @@ func (s *InMemoryCheckoutSessionStore) MarkCompleted(ctx context.Context, sessio
 	if providerResult != nil {
 		session.ProviderResult = (*domainCheckout.JSONBCheckoutProviderResult)(providerResult)
 	}
+	if err := s.InMemoryStore.Update(ctx, sessionID, session); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *InMemoryCheckoutSessionStore) MarkTerminal(ctx context.Context, sessionID string, status types.CheckoutStatus, failureReason *string) (bool, error) {
+	if status != types.CheckoutStatusExpired && status != types.CheckoutStatusFailed {
+		return false, ierr.NewError("invalid terminal checkout status").
+			WithHint("MarkTerminal accepts expired or failed").
+			Mark(ierr.ErrValidation)
+	}
+
+	s.claimMu.Lock()
+	defer s.claimMu.Unlock()
+
+	session, err := s.Get(ctx, sessionID)
+	if err != nil {
+		return false, err
+	}
+	if session.CheckoutStatus != types.CheckoutStatusPending && session.CheckoutStatus != types.CheckoutStatusInitiated {
+		return false, nil
+	}
+	session.CheckoutStatus = status
+	session.FailureReason = failureReason
 	if err := s.InMemoryStore.Update(ctx, sessionID, session); err != nil {
 		return false, err
 	}

@@ -955,7 +955,7 @@ func (s *SubscriptionServiceSuite) TestArchiveDraftCheckoutSubscription_Cascades
 	inheritedChild := s.seedChildSubscription(parent, types.SubscriptionTypeInherited, types.SubscriptionStatusDraft)
 	groupedChild := s.seedChildSubscription(parent, types.SubscriptionTypeGroupedInvoicing, types.SubscriptionStatusDraft)
 
-	subService.archiveDraftCheckoutSubscription(ctx, parent.ID)
+	s.Require().NoError(subService.archiveDraftCheckoutSubscription(ctx, parent.ID))
 
 	for _, id := range []string{parent.ID, inheritedChild.ID, groupedChild.ID} {
 		archived, err := s.GetStores().SubscriptionRepo.Get(ctx, id)
