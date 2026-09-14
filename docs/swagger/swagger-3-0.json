@@ -1075,6 +1075,73 @@
         ]
       }
     },
+    "/checkout/sessions/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Checkout"
+        ],
+        "summary": "Cancel checkout session",
+        "operationId": "cancelCheckoutSession",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Checkout session ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/costs": {
       "post": {
         "tags": [
@@ -22015,6 +22082,9 @@
             "type": "string",
             "description": "refunded_amount is the total sum of credit notes of type \"refund\".\nThese are actual refunds issued to the customer."
           },
+          "source_type": {
+            "$ref": "#/components/schemas/types.InvoiceSourceType"
+          },
           "status": {
             "$ref": "#/components/schemas/types.Status"
           },
@@ -30068,6 +30138,16 @@
           }
         },
         "x-speakeasy-name-override": "InvoiceFilter"
+      },
+      "types.InvoiceSourceType": {
+        "type": "string",
+        "enum": [
+          "checkout"
+        ],
+        "x-enum-varnames": [
+          "InvoiceSourceTypeCheckout"
+        ],
+        "x-speakeasy-name-override": "InvoiceSourceType"
       },
       "types.InvoiceStatus": {
         "type": "string",
