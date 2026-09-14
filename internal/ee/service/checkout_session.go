@@ -223,6 +223,38 @@ func (s *checkoutSessionService) Delete(ctx context.Context, id string) error {
 	return s.CheckoutSessionRepo.Delete(ctx, id)
 }
 
+func (s *checkoutSessionService) Cancel(ctx context.Context, id string) (*dto.CheckoutSessionResponse, error) {
+	if id == "" {
+		return nil, ierr.NewError("id is required").
+			WithHint("checkout session ID cannot be empty").
+			Mark(ierr.ErrValidation)
+	}
+
+	session, err := s.CheckoutSessionRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	switch session.CheckoutStatus {
+	case types.CheckoutStatusCompleted:
+		return nil, ierr.NewError("checkout session already completed").
+			WithHint("A completed session cannot be cancelled").
+			Mark(ierr.ErrValidation)
+	case types.CheckoutStatusFailed, types.CheckoutStatusExpired:
+		return s.toPollableResponse(ctx, session, false), nil
+	}
+
+	if err := s.cleanupCheckoutSession(ctx, session, nil); err != nil {
+		return nil, err
+	}
+
+	final, err := s.CheckoutSessionRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.toPollableResponse(ctx, final, false), nil
+}
+
 func (s *checkoutSessionService) CleanupCheckoutSession(ctx context.Context, sessionID string, reason error) error {
 	if sessionID == "" {
 		return ierr.NewError("session ID is required").
