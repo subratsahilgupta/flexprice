@@ -527,6 +527,79 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupArchive
 	s.Equal(types.CheckoutStatusExpired, cleaned.CheckoutStatus)
 }
 
+// executeCheckoutAction stores the same payment/invoice/subscription ids on Result and on the
+// session columns. Cleanup must use one of those, not delete twice — the second SubRepo.Delete
+// is not-found on Postgres and rolls back MarkTerminal.
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupWithDuplicatedResultIDs() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_cleanup_result_dup", decimal.NewFromInt(50), 0)
+
+	session, draftSub, draft := s.seedPayFirstSubscriptionCheckout("plan_cleanup_result_dup")
+	session.Result = domainCheckout.ToJSONBCheckoutResult(&types.CheckoutResult{
+		CreateSubscriptionResult: &types.CreateSubscriptionResult{
+			SubscriptionID: draftSub.ID,
+			InvoiceID:      draft.ID,
+			PaymentID:      *session.CheckoutPaymentID,
+		},
+	})
+	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Update(ctx, session))
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
+
+	archived, err := s.GetStores().SubscriptionRepo.Get(ctx, draftSub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusArchived, archived.Status)
+
+	payment, err := s.GetStores().PaymentRepo.Get(ctx, *session.CheckoutPaymentID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusArchived, payment.Status)
+
+	archivedDraft, err := s.GetStores().InvoiceRepo.Get(ctx, draft.ID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusDeleted, archivedDraft.Status)
+
+	cleaned, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusExpired, cleaned.CheckoutStatus)
+}
+
+// Legacy sessions keep ids only in Result; cleanup must still archive the draft.
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupLegacyResultShape() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_cleanup_legacy", decimal.NewFromInt(50), 0)
+
+	session, draftSub, draft := s.seedPayFirstSubscriptionCheckout("plan_cleanup_legacy")
+	session.Configuration = domainCheckout.ToJSONBCheckoutConfiguration(types.CheckoutConfiguration{
+		CreateSubscriptionParams: &types.CreateSubscriptionParams{
+			PlanID:        "plan_cleanup_legacy",
+			Currency:      "usd",
+			BillingPeriod: types.BILLING_PERIOD_MONTHLY,
+		},
+	})
+	session.Result = domainCheckout.ToJSONBCheckoutResult(&types.CheckoutResult{
+		CreateSubscriptionResult: &types.CreateSubscriptionResult{
+			SubscriptionID: draftSub.ID,
+			InvoiceID:      draft.ID,
+			PaymentID:      *session.CheckoutPaymentID,
+		},
+	})
+	s.Require().NoError(s.GetStores().CheckoutSessionRepo.Update(ctx, session))
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
+
+	archived, err := s.GetStores().SubscriptionRepo.Get(ctx, draftSub.ID)
+	s.Require().NoError(err)
+	s.Equal(types.StatusArchived, archived.Status)
+
+	cleaned, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusExpired, cleaned.CheckoutStatus)
+}
+
 // Ordering guard. The end state is identical whichever way round these run, so this
 // asserts the thing that actually differs: when the invoice step fails, the payment must
 // still be unsettled. Settling first would strand a SUCCEEDED payment against an
@@ -632,6 +705,36 @@ func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupSkipsAc
 	s.Require().NoError(err)
 	s.Equal(types.StatusPublished, live.Status, "cleanup must not archive an activated subscription")
 	s.Equal(types.SubscriptionStatusActive, live.SubscriptionStatus)
+}
+
+func (s *SubscriptionServiceSuite) TestCreateSubscriptionCheckout_CleanupArchivesCreditGrants() {
+	ctx := s.GetContext()
+	subService := s.service.(*subscriptionService)
+	s.seedFixedPricePlan("plan_cleanup_grants", decimal.NewFromInt(50), 0)
+
+	session, draftSub, _ := s.seedPayFirstSubscriptionCheckoutWithGrants("plan_cleanup_grants")
+
+	grants, err := s.GetStores().CreditGrantRepo.List(ctx, &types.CreditGrantFilter{
+		QueryFilter:     types.NewNoLimitQueryFilter(),
+		SubscriptionIDs: []string{draftSub.ID},
+	})
+	s.Require().NoError(err)
+	s.Require().Len(grants, 1)
+	grantID := grants[0].ID
+	s.Require().NotNil(s.firstApplicationFor(grantID))
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: subService.ServiceParams}
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, session, nil))
+
+	published := types.NewNoLimitQueryFilter()
+	published.Status = lo.ToPtr(types.StatusPublished)
+	remaining, err := s.GetStores().CreditGrantRepo.List(ctx, &types.CreditGrantFilter{
+		QueryFilter:     published,
+		SubscriptionIDs: []string{draftSub.ID},
+	})
+	s.Require().NoError(err)
+	s.Empty(remaining, "cleanup must archive the draft's credit grants")
+	s.Nil(s.firstApplicationFor(grantID), "cleanup must not leave a grant application for the cron")
 }
 
 // The other gap this work closes: a checkout-created subscription's credit grants stayed pending
@@ -955,7 +1058,7 @@ func (s *SubscriptionServiceSuite) TestArchiveDraftCheckoutSubscription_Cascades
 	inheritedChild := s.seedChildSubscription(parent, types.SubscriptionTypeInherited, types.SubscriptionStatusDraft)
 	groupedChild := s.seedChildSubscription(parent, types.SubscriptionTypeGroupedInvoicing, types.SubscriptionStatusDraft)
 
-	subService.archiveDraftCheckoutSubscription(ctx, parent.ID)
+	s.Require().NoError(subService.archiveDraftCheckoutSubscription(ctx, parent.ID))
 
 	for _, id := range []string{parent.ID, inheritedChild.ID, groupedChild.ID} {
 		archived, err := s.GetStores().SubscriptionRepo.Get(ctx, id)

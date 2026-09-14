@@ -5,6 +5,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -131,6 +132,31 @@ func (s *WalletServiceSuite) TestCleanupCheckoutSession_CompletedSessionUntouche
 	s.Equal(types.TransactionStatusCompleted, tx.TxStatus)
 }
 
+// A concurrent cancel holds a copy that still says pending after Complete has claimed
+// the row. Cleanup must not overwrite completed or reverse the credit.
+func (s *WalletServiceSuite) TestCleanupCheckoutSession_StalePendingCopyDoesNotClobberCompleted() {
+	s.seedAutoComplete(false)
+	ctx := s.GetContext()
+
+	txID, session := s.seedPayFirstTopupSession("cleanup-stale-pending", decimal.NewFromInt(200), nil)
+	stale := *session
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.buildServiceParams()}
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, session.ID, &types.CheckoutProviderResult{
+		ProviderPaymentIntentID: "pay_stale_cleanup_001",
+	}))
+
+	s.Require().NoError(checkoutSvc.cleanupCheckoutSession(ctx, &stale, nil))
+
+	stored, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusCompleted, stored.CheckoutStatus)
+
+	tx, err := s.GetStores().WalletRepo.GetTransactionByID(ctx, txID)
+	s.Require().NoError(err)
+	s.Equal(types.TransactionStatusCompleted, tx.TxStatus)
+}
+
 // B2: Delete must reach a terminal checkout_status, not just archive the row —
 // otherwise it keeps holding the idempotency key and blocking the pending guard.
 func (s *WalletServiceSuite) TestDeleteCheckoutSession_CleansUpBeforeArchiving() {
@@ -149,6 +175,66 @@ func (s *WalletServiceSuite) TestDeleteCheckoutSession_CleansUpBeforeArchiving()
 	deleted, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
 	s.Require().NoError(err)
 	s.Equal(types.CheckoutStatusExpired, deleted.CheckoutStatus)
+}
+
+func (s *WalletServiceSuite) TestCancelCheckoutSession_ExpiresInFlightAndKeepsPublished() {
+	s.seedAutoComplete(false)
+	ctx := s.GetContext()
+
+	txID, session := s.seedPayFirstTopupSession("cancel-in-flight", decimal.NewFromInt(150), nil)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.buildServiceParams()}
+	resp, err := checkoutSvc.Cancel(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusExpired, resp.CheckoutStatus)
+	s.True(resp.Terminal)
+
+	tx, err := s.GetStores().WalletRepo.GetTransactionByID(ctx, txID)
+	s.Require().NoError(err)
+	s.Equal(types.TransactionStatusFailed, tx.TxStatus)
+
+	stored, err := s.GetStores().CheckoutSessionRepo.Get(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusExpired, stored.CheckoutStatus)
+	s.Equal(types.StatusPublished, stored.Status)
+}
+
+func (s *WalletServiceSuite) TestCancelCheckoutSession_RejectsCompleted() {
+	s.seedAutoComplete(false)
+	ctx := s.GetContext()
+
+	txID, session := s.seedPayFirstTopupSession("cancel-after-complete", decimal.NewFromInt(200), nil)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.buildServiceParams()}
+	s.Require().NoError(checkoutSvc.CompleteCheckoutSession(ctx, session.ID, &types.CheckoutProviderResult{
+		ProviderPaymentIntentID: "pay_cancel_guard_001",
+	}))
+
+	resp, err := checkoutSvc.Cancel(ctx, session.ID)
+	s.Nil(resp)
+	s.True(ierr.IsValidation(err))
+
+	tx, err := s.GetStores().WalletRepo.GetTransactionByID(ctx, txID)
+	s.Require().NoError(err)
+	s.Equal(types.TransactionStatusCompleted, tx.TxStatus)
+}
+
+func (s *WalletServiceSuite) TestCancelCheckoutSession_AlreadyTerminalIsNoop() {
+	s.seedAutoComplete(false)
+	ctx := s.GetContext()
+
+	txID, session := s.seedPayFirstTopupSession("cancel-already-expired", decimal.NewFromInt(100), nil)
+
+	checkoutSvc := &checkoutSessionService{ServiceParams: s.buildServiceParams()}
+	s.Require().NoError(checkoutSvc.CleanupCheckoutSession(ctx, session.ID, nil))
+
+	resp, err := checkoutSvc.Cancel(ctx, session.ID)
+	s.Require().NoError(err)
+	s.Equal(types.CheckoutStatusExpired, resp.CheckoutStatus)
+
+	tx, err := s.GetStores().WalletRepo.GetTransactionByID(ctx, txID)
+	s.Require().NoError(err)
+	s.Equal(types.TransactionStatusFailed, tx.TxStatus)
 }
 
 // The auto-topup pending guard reads the last auto_topup-tagged transaction, so a
