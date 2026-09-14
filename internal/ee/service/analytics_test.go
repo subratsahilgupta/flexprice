@@ -295,7 +295,6 @@ func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesUsesMeterAggregation()
 
 	// MAX(5, 20, 10) == 20. If AggregationType had silently defaulted to SUM
 	// (the bug Ruling A guards against), this would be 35 instead.
-	s.Equal("20", res.Meta["total"])
 	s.Require().Len(res.Rows, 1)
 	s.Equal("20", res.Rows[0][1])
 }

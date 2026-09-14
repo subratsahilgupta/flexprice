@@ -198,8 +198,8 @@ func TestAnalyticsCreateView_ResponseIsDTONotDomainModel(t *testing.T) {
 func TestAnalyticsQuery_ServiceError_MapsToNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	svcErr := ierr.NewError("saved view not found").
-		WithHint("no such saved view").
+	svcErr := ierr.NewError("view not found").
+		WithHint("no such view").
 		Mark(ierr.ErrNotFound)
 	router := setupAnalyticsRouter(t, &stubAnalyticsService{err: svcErr})
 
@@ -220,5 +220,5 @@ func TestAnalyticsQuery_ServiceError_MapsToNotFound(t *testing.T) {
 
 	var errResp ierr.ErrorResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &errResp))
-	require.Equal(t, "no such saved view", errResp.Message)
+	require.Equal(t, "no such view", errResp.Message)
 }

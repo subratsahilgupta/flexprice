@@ -78,14 +78,16 @@ func TestShapeTimeseries_ColumnsAndRows(t *testing.T) {
 	assert.Len(t, got.Rows, 2)
 	assert.Equal(t, t1, got.Rows[0][0])
 	assert.Equal(t, "100", got.Rows[0][1])
-	assert.Equal(t, "150", got.Meta["total"])
 	assert.Equal(t, "meter_usage", got.Meta["query_source"])
+	_, hasTotal := got.Meta["total"]
+	assert.False(t, hasTotal, "timeseries meta must not include a cross-bucket total")
 }
 
 func TestShapeTimeseries_EmptyPoints(t *testing.T) {
 	got := shapeTimeseries(nil, nil)
 	assert.Len(t, got.Rows, 0)
-	assert.Equal(t, "0", got.Meta["total"])
+	_, hasTotal := got.Meta["total"]
+	assert.False(t, hasTotal, "timeseries meta must not include a cross-bucket total")
 }
 
 // TestShapeTimeseries_WithDimensionAndWindow proves a split-by dimension is
@@ -108,7 +110,8 @@ func TestShapeTimeseries_WithDimensionAndWindow(t *testing.T) {
 	assert.Len(t, got.Rows, 2)
 	assert.Equal(t, []any{t1, "us", "10"}, got.Rows[0])
 	assert.Equal(t, []any{t1, "eu", "20"}, got.Rows[1])
-	assert.Equal(t, "30", got.Meta["total"])
+	_, hasTotal := got.Meta["total"]
+	assert.False(t, hasTotal, "timeseries meta must not include a cross-bucket total")
 }
 
 func columnNames(cols []*dto.AnalyticsColumn) []string {

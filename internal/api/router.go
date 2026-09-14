@@ -229,7 +229,7 @@ func NewRouter(
 			meterUsage.POST("/detailed-analytics", handlers.MeterUsage.GetDetailedAnalytics)
 		}
 
-		// Analytics query + saved-view endpoints
+		// Analytics query + view endpoints
 		analytics := v1Private.Group("/analytics")
 		{
 			analytics.POST("/query", read(types.EntityAnalytics, types.ActionRead), handlers.Analytics.Query)

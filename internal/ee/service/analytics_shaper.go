@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/shopspring/decimal"
 )
 
 // dimensionValue reads dim's value off a detailed usage-analytics item. dim
@@ -54,7 +53,9 @@ func shapeBreakdown(items []dto.UsageAnalyticItem, dims []string) dto.AnalyticsQ
 // shapeTimeseries converts detailed usage-analytics items' time-bucketed
 // points into a window_start(+dims)+usage_quantity table: one row per
 // (item, point) pair. point.Usage is the bucket's resolved aggregation
-// value, mirroring item.TotalUsage for breakdown.
+// value, mirroring item.TotalUsage for breakdown. No cross-bucket total is
+// computed in meta — summing bucket values is only correct for additive
+// aggregations (e.g. SUM), not MAX/LATEST/COUNT_UNIQUE.
 func shapeTimeseries(items []dto.UsageAnalyticItem, dims []string) dto.AnalyticsQueryResult {
 	cols := make([]*dto.AnalyticsColumn, 0, len(dims)+2)
 	cols = append(cols, &dto.AnalyticsColumn{Name: "window_start", Type: "datetime", Role: "dimension"})
@@ -64,7 +65,6 @@ func shapeTimeseries(items []dto.UsageAnalyticItem, dims []string) dto.Analytics
 	cols = append(cols, &dto.AnalyticsColumn{Name: "usage_quantity", Type: "decimal", Role: "metric"})
 
 	rows := make([][]any, 0)
-	total := decimal.Zero
 	for _, it := range items {
 		for _, p := range it.Points {
 			row := make([]any, 0, len(dims)+2)
@@ -74,12 +74,11 @@ func shapeTimeseries(items []dto.UsageAnalyticItem, dims []string) dto.Analytics
 			}
 			row = append(row, p.Usage.String())
 			rows = append(rows, row)
-			total = total.Add(p.Usage)
 		}
 	}
 	return dto.AnalyticsQueryResult{
 		Columns: cols,
 		Rows:    rows,
-		Meta:    map[string]any{"query_source": "meter_usage", "total": total.String()},
+		Meta:    map[string]any{"query_source": "meter_usage"},
 	}
 }
