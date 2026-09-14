@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/ee/service"
@@ -24,11 +25,11 @@ import (
 // from the real translate/execute/shape pipeline already covered by
 // internal/ee/service/analytics_test.go.
 type stubAnalyticsService struct {
-	result *service.QueryResult
+	result *dto.AnalyticsQueryResult
 	err    error
 }
 
-func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ analytics.ViewDefinition, _ map[string]any) (*service.QueryResult, error) {
+func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ analytics.ViewDefinition, _ map[string]any) (*dto.AnalyticsQueryResult, error) {
 	return s.result, s.err
 }
 
@@ -36,15 +37,15 @@ func (s *stubAnalyticsService) CreateView(_ context.Context, _ *analytics.View) 
 	return s.err
 }
 
-func (s *stubAnalyticsService) QueryView(_ context.Context, _ string, _ map[string]any) (*service.QueryResult, error) {
+func (s *stubAnalyticsService) QueryView(_ context.Context, _ string, _ map[string]any) (*dto.AnalyticsQueryResult, error) {
 	return s.result, s.err
 }
 
-// canned QueryResult mirroring what ShapeBreakdown produces for a
+// canned AnalyticsQueryResult mirroring what shapeBreakdown produces for a
 // properties.region dimension plus a usage_quantity metric.
-func cannedBreakdownResult() *service.QueryResult {
-	return &service.QueryResult{
-		Columns: []service.Column{
+func cannedBreakdownResult() *dto.AnalyticsQueryResult {
+	return &dto.AnalyticsQueryResult{
+		Columns: []dto.AnalyticsColumn{
 			{Name: "region", Type: "string", Role: "dimension"},
 			{Name: "usage_quantity", Type: "decimal", Role: "metric"},
 		},
@@ -110,7 +111,7 @@ func TestAnalyticsQuery_Success(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var result service.QueryResult
+	var result dto.AnalyticsQueryResult
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result), "response body is not valid JSON: %q", w.Body.String())
 
 	require.Len(t, result.Columns, 2)

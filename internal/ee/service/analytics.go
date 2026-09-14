@@ -2,14 +2,11 @@ package service
 
 import (
 	"context"
-	"strings"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
-	"github.com/flexprice/flexprice/internal/domain/events"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 )
 
 // AnalyticsService is the integration hub for Phase-1 analytics: it resolves a
@@ -17,9 +14,9 @@ import (
 // existing meter_usage query engine, and shapes the result for rendering. It
 // also owns view CRUD.
 type AnalyticsService interface {
-	ExecuteView(ctx context.Context, def analytics.ViewDefinition, vars map[string]any) (*QueryResult, error)
+	ExecuteView(ctx context.Context, def analytics.ViewDefinition, vars map[string]any) (*dto.AnalyticsQueryResult, error)
 	CreateView(ctx context.Context, v *analytics.View) error
-	QueryView(ctx context.Context, id string, vars map[string]any) (*QueryResult, error)
+	QueryView(ctx context.Context, id string, vars map[string]any) (*dto.AnalyticsQueryResult, error)
 }
 
 type analyticsService struct {
@@ -38,7 +35,7 @@ func NewAnalyticsService(params ServiceParams) AnalyticsService {
 	}
 }
 
-func (s *analyticsService) ExecuteView(ctx context.Context, def analytics.ViewDefinition, vars map[string]any) (*QueryResult, error) {
+func (s *analyticsService) ExecuteView(ctx context.Context, def analytics.ViewDefinition, vars map[string]any) (*dto.AnalyticsQueryResult, error) {
 	rv, err := analytics.ResolveVariables(def, vars)
 	if err != nil {
 		return nil, err
@@ -57,14 +54,10 @@ func (s *analyticsService) ExecuteView(ctx context.Context, def analytics.ViewDe
 // executeBreakdown translates + executes a breakdown view through
 // MeterUsageService.GetDetailedAnalytics, which (for admin-style queries with
 // no external_customer_id) resolves each meter's own aggregation type via
-// getDetailedAnalyticsWithoutSubscriptionContext — so, unlike the timeseries
-// path, no manual aggregation-type derivation is needed here.
-func (s *analyticsService) executeBreakdown(ctx context.Context, rv analytics.ResolvedView) (*QueryResult, error) {
-	if err := requirePropertyDimensions(rv.Dimensions); err != nil {
-		return nil, err
-	}
-
-	params, err := TranslateBreakdown(ctx, rv)
+// getDetailedAnalyticsWithoutSubscriptionContext. Dimensions are optional —
+// an empty GroupBy yields one row per meter.
+func (s *analyticsService) executeBreakdown(ctx context.Context, rv analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
+	params, err := translateBreakdown(ctx, rv)
 	if err != nil {
 		return nil, err
 	}
@@ -75,48 +68,29 @@ func (s *analyticsService) executeBreakdown(ctx context.Context, rv analytics.Re
 		return nil, err
 	}
 
-	res := ShapeBreakdown(toDetailedResults(resp.Items), rv.Dimensions)
+	res := shapeBreakdown(resp.Items, rv.Dimensions)
 	return &res, nil
 }
 
-// executeTimeseries requires the view to target exactly one meter so the
-// meter's real aggregation type can be resolved and set on the query params.
-// It calls MeterUsageRepo.GetUsage directly rather than
-// MeterUsageService.GetUsage: the service method gates results on the meter
-// being an active subscription line item for a supplied external_customer_id
-// (activeSubscriptionMeterIDs), and Phase-1 admin-style views have no
-// customer filter — going through the service would always return a zeroed
-// result. Calling the repo directly mirrors the breakdown path's admin-style
-// (no subscription context) execution.
-func (s *analyticsService) executeTimeseries(ctx context.Context, rv analytics.ResolvedView) (*QueryResult, error) {
-	if err := requireNoDimensions(rv.Dimensions); err != nil {
-		return nil, err
-	}
-
-	meterID, err := singleMeterID(rv.Filters)
+// executeTimeseries translates + executes a timeseries view through the same
+// MeterUsageService.GetDetailedAnalytics engine as breakdown (unlike the
+// earlier Phase-1 cut, which called MeterUsageRepo.GetUsage directly and
+// required exactly one meter with no dimensions). Dimensions act as a
+// split-by; multiple meters are allowed since the engine derives each
+// meter's real aggregation type on its own.
+func (s *analyticsService) executeTimeseries(ctx context.Context, rv analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
+	params, err := translateTimeseries(ctx, rv)
 	if err != nil {
 		return nil, err
 	}
 
-	m, err := s.MeterRepo.GetMeter(ctx, meterID)
+	resp, err := s.meterUsage.GetDetailedAnalytics(ctx, params)
 	if err != nil {
+		s.Logger.Error(ctx, "analytics timeseries execution failed", "error", err)
 		return nil, err
 	}
 
-	params, err := TranslateTimeseries(ctx, rv)
-	if err != nil {
-		return nil, err
-	}
-	params.MeterID = meterID
-	params.AggregationType = m.Aggregation.Type
-
-	agg, err := s.MeterUsageRepo.GetUsage(ctx, params)
-	if err != nil {
-		s.Logger.Error(ctx, "analytics timeseries execution failed", "error", err, "meter_id", meterID)
-		return nil, err
-	}
-
-	res := ShapeTimeseries(agg)
+	res := shapeTimeseries(resp.Items, rv.Dimensions)
 	return &res, nil
 }
 
@@ -140,74 +114,10 @@ func (s *analyticsService) CreateView(ctx context.Context, v *analytics.View) er
 	return nil
 }
 
-func (s *analyticsService) QueryView(ctx context.Context, id string, vars map[string]any) (*QueryResult, error) {
+func (s *analyticsService) QueryView(ctx context.Context, id string, vars map[string]any) (*dto.AnalyticsQueryResult, error) {
 	v, err := s.views.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	return s.ExecuteView(ctx, v.Definition, vars)
-}
-
-// requirePropertyDimensions enforces Ruling C: Phase-1 breakdown dimensions
-// are property-based only. A dimension that ShapeBreakdown can't map (e.g. a
-// structural-entity dimension like feature_id, which needs a join — out of
-// scope here) must fail loudly rather than silently shape to empty strings.
-func requirePropertyDimensions(dims []string) error {
-	for _, d := range dims {
-		if !strings.HasPrefix(d, "properties.") {
-			return ierr.NewErrorf("unsupported breakdown dimension %q", d).
-				WithHint("phase-1 breakdown views only support properties.* dimensions").
-				Mark(ierr.ErrValidation)
-		}
-	}
-	return nil
-}
-
-// requireNoDimensions fails loud on the timeseries path: MeterUsageRepo.GetUsage
-// never groups by GroupBy for a single-meter query and ShapeTimeseries ignores
-// dimensions, so a view with Dimensions set would otherwise return a silently
-// ungrouped series instead of an error. Mirrors requirePropertyDimensions.
-func requireNoDimensions(dims []string) error {
-	if len(dims) > 0 {
-		return ierr.NewError("dimensions are not supported for timeseries views in this version").
-			WithHint("remove dimensions from the view or use a breakdown shape").
-			Mark(ierr.ErrValidation)
-	}
-	return nil
-}
-
-// singleMeterID extracts the one meter_id a timeseries view must filter on
-// (Ruling A: phase-1 timeseries requires exactly one meter so its real
-// aggregation type can be resolved).
-func singleMeterID(filters []analytics.Filter) (string, error) {
-	var ids []string
-	for _, f := range filters {
-		if f.Field == "meter_id" {
-			ids = append(ids, toAnalyticsStringSlice(f.Value)...)
-		}
-	}
-	ids = lo.Uniq(ids)
-	if len(ids) != 1 {
-		return "", ierr.NewError("timeseries requires exactly one meter").
-			WithHint("filter on exactly one meter_id for timeseries views").
-			Mark(ierr.ErrValidation)
-	}
-	return ids[0], nil
-}
-
-// toDetailedResults unwraps the dto response from MeterUsageService.GetDetailedAnalytics
-// into the []events.MeterUsageDetailedResult shape ShapeBreakdown consumes.
-func toDetailedResults(items []dto.UsageAnalyticItem) []events.MeterUsageDetailedResult {
-	out := make([]events.MeterUsageDetailedResult, 0, len(items))
-	for _, it := range items {
-		out = append(out, events.MeterUsageDetailedResult{
-			MeterID:    it.MeterID,
-			Source:     it.Source,
-			Sources:    it.Sources,
-			Properties: it.Properties,
-			TotalUsage: it.TotalUsage,
-			EventCount: it.EventCount,
-		})
-	}
-	return out
 }

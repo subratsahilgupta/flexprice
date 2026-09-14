@@ -56,3 +56,20 @@ func NewViewResponse(v *analytics.View) *ViewResponse {
 		Definition: v.Definition,
 	}
 }
+
+// AnalyticsColumn describes one column of a shaped AnalyticsQueryResult.
+type AnalyticsColumn struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Role     string `json:"role"` // "dimension" | "metric"
+	Currency string `json:"currency,omitempty"`
+}
+
+// AnalyticsQueryResult is the visualization-agnostic shape every analytics
+// query renders into — the response body for POST /analytics/query and
+// POST /analytics/views/{id}/query.
+type AnalyticsQueryResult struct {
+	Columns []AnalyticsColumn `json:"columns"`
+	Rows    [][]any           `json:"rows"`
+	Meta    map[string]any    `json:"meta"`
+}

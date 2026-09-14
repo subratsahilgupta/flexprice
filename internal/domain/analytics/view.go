@@ -32,9 +32,12 @@ type Variable struct {
 	Default  any    `json:"default,omitempty"`
 }
 
-// TimeSpecRaw is the unresolved time spec (Range may be a "{{var}}").
+// TimeSpecRaw is the unresolved time spec. Range may be a "{{var}}"
+// placeholder, an absolute {"from":"YYYY-MM-DD","to":"YYYY-MM-DD"} map, a
+// relative range token (see resolveTime — "last_N_days", "last_N_hours",
+// "today", "yesterday"), or omitted entirely (defaults to "last_7_days").
 type TimeSpecRaw struct {
-	Range any    `json:"range"`
+	Range any    `json:"range,omitempty"`
 	Grain string `json:"grain"`
 }
 

@@ -30,7 +30,7 @@ func NewAnalyticsHandler(svc service.AnalyticsService, log *logger.Logger) *Anal
 // @Produce json
 // @Security ApiKeyAuth
 // @Param request body dto.AnalyticsQueryRequest true "Analytics query request"
-// @Success 200 {object} service.QueryResult
+// @Success 200 {object} dto.AnalyticsQueryResult
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
 // @x-scope "read"
@@ -114,7 +114,7 @@ func (h *AnalyticsHandler) CreateView(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Param id path string true "View ID"
 // @Param request body dto.ViewQueryRequest true "View query request"
-// @Success 200 {object} service.QueryResult
+// @Success 200 {object} dto.AnalyticsQueryResult
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 404 {object} ierr.ErrorResponse "View not found"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"

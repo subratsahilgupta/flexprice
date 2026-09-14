@@ -122,6 +122,75 @@ func TestResolveVariables_InvalidDefinitionSurfacesValidateError(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestResolveVariables_RelativeTimeRange proves a literal relative-range
+// token ("last_N_days") resolves to a [now-N*24h, now] UTC window.
+func TestResolveVariables_RelativeTimeRange(t *testing.T) {
+	def := ViewDefinition{
+		Shape:   ShapeBreakdown,
+		Metrics: []string{"usage_quantity"},
+		Time:    TimeSpecRaw{Range: "last_7_days", Grain: "day"},
+	}
+	before := time.Now().UTC()
+	rv, err := ResolveVariables(def, map[string]any{})
+	after := time.Now().UTC()
+	require.NoError(t, err)
+
+	assert.WithinDuration(t, before, rv.Time.To, after.Sub(before)+time.Second)
+	assert.WithinDuration(t, rv.Time.To.Add(-7*24*time.Hour), rv.Time.From, time.Second)
+	assert.Equal(t, "day", rv.Time.Grain)
+}
+
+// TestResolveVariables_RelativeTimeRangeHours proves the "last_N_hours" form.
+func TestResolveVariables_RelativeTimeRangeHours(t *testing.T) {
+	def := ViewDefinition{
+		Shape:   ShapeTimeseries,
+		Metrics: []string{"usage_quantity"},
+		Time:    TimeSpecRaw{Range: "last_24_hours", Grain: "hour"},
+	}
+	rv, err := ResolveVariables(def, map[string]any{})
+	require.NoError(t, err)
+	assert.WithinDuration(t, rv.Time.To.Add(-24*time.Hour), rv.Time.From, time.Second)
+}
+
+// TestResolveVariables_RelativeTimeRangeToday proves the "today" token.
+func TestResolveVariables_RelativeTimeRangeToday(t *testing.T) {
+	def := ViewDefinition{
+		Shape:   ShapeBreakdown,
+		Metrics: []string{"usage_quantity"},
+		Time:    TimeSpecRaw{Range: "today", Grain: "hour"},
+	}
+	rv, err := ResolveVariables(def, map[string]any{})
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	assert.Equal(t, time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC), rv.Time.From)
+}
+
+// TestResolveVariables_RelativeTimeRangeUnrecognizedToken proves an
+// unrecognized relative token is a validation error, not a silent no-op.
+func TestResolveVariables_RelativeTimeRangeUnrecognizedToken(t *testing.T) {
+	def := ViewDefinition{
+		Shape:   ShapeBreakdown,
+		Metrics: []string{"usage_quantity"},
+		Time:    TimeSpecRaw{Range: "last_week", Grain: "day"},
+	}
+	_, err := ResolveVariables(def, map[string]any{})
+	require.Error(t, err)
+}
+
+// TestResolveVariables_OmittedTimeDefaultsToLast7Days proves time is
+// optional: a ViewDefinition with no Time set at all still resolves,
+// defaulting to a 7-day window rather than erroring.
+func TestResolveVariables_OmittedTimeDefaultsToLast7Days(t *testing.T) {
+	def := ViewDefinition{
+		Shape:   ShapeBreakdown,
+		Metrics: []string{"usage_quantity"},
+		// Time intentionally left zero-valued.
+	}
+	rv, err := ResolveVariables(def, map[string]any{})
+	require.NoError(t, err)
+	assert.WithinDuration(t, rv.Time.To.Add(-7*24*time.Hour), rv.Time.From, time.Second)
+}
+
 func TestResolveVariables_PreservesShapeMetricsDimensionsSortLimit(t *testing.T) {
 	def := ViewDefinition{
 		Shape:      ShapeBreakdown,

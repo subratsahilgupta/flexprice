@@ -3,56 +3,83 @@ package service
 import (
 	"strings"
 
-	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/shopspring/decimal"
 )
 
-// Column describes one column of a shaped QueryResult.
-type Column struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Role     string `json:"role"` // "dimension" | "metric"
-	Currency string `json:"currency,omitempty"`
-}
-
-// QueryResult is the visualization-agnostic shape all analytics queries render into.
-type QueryResult struct {
-	Columns []Column       `json:"columns"`
-	Rows    [][]any        `json:"rows"`
-	Meta    map[string]any `json:"meta"`
-}
-
-// ShapeBreakdown converts detailed meter_usage results into a dimension+metric
-// table: one row per item, one column per requested dimension plus usage_quantity.
-func ShapeBreakdown(items []events.MeterUsageDetailedResult, dims []string) QueryResult {
-	cols := make([]Column, 0, len(dims)+1)
-	for _, d := range dims {
-		cols = append(cols, Column{Name: d, Type: "string", Role: "dimension"})
+// dimensionValue reads dim's value off a detailed usage-analytics item. dim
+// is the ORIGINAL dimension name the view requested (pre alias-translation —
+// see translateDimensions), so "customer_id" and "external_customer_id" both
+// resolve to item.ExternalCustomerID.
+func dimensionValue(item dto.UsageAnalyticItem, dim string) any {
+	switch {
+	case dim == "meter_id":
+		return item.MeterID
+	case dim == "source":
+		return item.Source
+	case dim == "customer_id" || dim == "external_customer_id":
+		return item.ExternalCustomerID
+	case strings.HasPrefix(dim, "properties."):
+		return item.Properties[strings.TrimPrefix(dim, "properties.")]
+	default:
+		return nil
 	}
-	cols = append(cols, Column{Name: "usage_quantity", Type: "decimal", Role: "metric"})
+}
+
+// shapeBreakdown converts detailed usage-analytics items into a
+// dimension+metric table: one row per item, one column per requested
+// dimension plus usage_quantity. item.TotalUsage is already the meter's
+// resolved aggregation value (SUM/MAX/LATEST/COUNT_UNIQUE — see
+// buildMeterUsageAggregationColumns), so no per-aggregation routing is
+// needed here.
+func shapeBreakdown(items []dto.UsageAnalyticItem, dims []string) dto.AnalyticsQueryResult {
+	cols := make([]dto.AnalyticsColumn, 0, len(dims)+1)
+	for _, d := range dims {
+		cols = append(cols, dto.AnalyticsColumn{Name: d, Type: "string", Role: "dimension"})
+	}
+	cols = append(cols, dto.AnalyticsColumn{Name: "usage_quantity", Type: "decimal", Role: "metric"})
 
 	rows := make([][]any, 0, len(items))
 	for _, it := range items {
 		row := make([]any, 0, len(dims)+1)
 		for _, d := range dims {
-			key := strings.TrimPrefix(d, "properties.")
-			row = append(row, it.Properties[key])
+			row = append(row, dimensionValue(it, d))
 		}
 		row = append(row, it.TotalUsage.String())
 		rows = append(rows, row)
 	}
-	return QueryResult{Columns: cols, Rows: rows, Meta: map[string]any{"query_source": "meter_usage"}}
+	return dto.AnalyticsQueryResult{Columns: cols, Rows: rows, Meta: map[string]any{"query_source": "meter_usage"}}
 }
 
-// ShapeTimeseries converts an aggregated meter_usage result's time-bucketed
-// points into a window_start+usage_quantity table.
-func ShapeTimeseries(res *events.MeterUsageAggregationResult) QueryResult {
-	cols := []Column{
-		{Name: "window_start", Type: "datetime", Role: "dimension"},
-		{Name: "usage_quantity", Type: "decimal", Role: "metric"},
+// shapeTimeseries converts detailed usage-analytics items' time-bucketed
+// points into a window_start(+dims)+usage_quantity table: one row per
+// (item, point) pair. point.Usage is the bucket's resolved aggregation
+// value, mirroring item.TotalUsage for breakdown.
+func shapeTimeseries(items []dto.UsageAnalyticItem, dims []string) dto.AnalyticsQueryResult {
+	cols := make([]dto.AnalyticsColumn, 0, len(dims)+2)
+	cols = append(cols, dto.AnalyticsColumn{Name: "window_start", Type: "datetime", Role: "dimension"})
+	for _, d := range dims {
+		cols = append(cols, dto.AnalyticsColumn{Name: d, Type: "string", Role: "dimension"})
 	}
-	rows := make([][]any, 0, len(res.Points))
-	for _, p := range res.Points {
-		rows = append(rows, []any{p.WindowStart, p.Value.String()})
+	cols = append(cols, dto.AnalyticsColumn{Name: "usage_quantity", Type: "decimal", Role: "metric"})
+
+	rows := make([][]any, 0)
+	total := decimal.Zero
+	for _, it := range items {
+		for _, p := range it.Points {
+			row := make([]any, 0, len(dims)+2)
+			row = append(row, p.Timestamp)
+			for _, d := range dims {
+				row = append(row, dimensionValue(it, d))
+			}
+			row = append(row, p.Usage.String())
+			rows = append(rows, row)
+			total = total.Add(p.Usage)
+		}
 	}
-	return QueryResult{Columns: cols, Rows: rows, Meta: map[string]any{"query_source": "meter_usage", "total": res.TotalValue.String()}}
+	return dto.AnalyticsQueryResult{
+		Columns: cols,
+		Rows:    rows,
+		Meta:    map[string]any{"query_source": "meter_usage", "total": total.String()},
+	}
 }

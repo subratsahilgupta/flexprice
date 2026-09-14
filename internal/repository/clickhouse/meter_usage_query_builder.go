@@ -570,6 +570,11 @@ func (qb *MeterUsageQueryBuilder) BuildDetailedGroupByColumns(params *events.Met
 			result.Columns = append(result.Columns, "source")
 			result.Aliases = append(result.Aliases, "source")
 			result.FieldMapping["source"] = "source"
+		case groupBy == "external_customer_id":
+			// Real, indexed column on meter_usage — select/group directly, no JSONExtract.
+			result.Columns = append(result.Columns, "external_customer_id")
+			result.Aliases = append(result.Aliases, "external_customer_id")
+			result.FieldMapping["external_customer_id"] = "external_customer_id"
 		case strings.HasPrefix(groupBy, "properties."):
 			propertyName := strings.TrimPrefix(groupBy, "properties.")
 			if propertyName == "" || !validMeterUsageGroupByPattern.MatchString(propertyName) {
@@ -581,7 +586,7 @@ func (qb *MeterUsageQueryBuilder) BuildDetailedGroupByColumns(params *events.Met
 			result.Aliases = append(result.Aliases, fmt.Sprintf("%s AS %s", jsonExpr, alias))
 			result.FieldMapping[groupBy] = alias
 		default:
-			return nil, fmt.Errorf("invalid group_by value: %s (allowed: meter_id, source, properties.<field>)", groupBy)
+			return nil, fmt.Errorf("invalid group_by value: %s (allowed: meter_id, source, external_customer_id, properties.<field>)", groupBy)
 		}
 	}
 
@@ -613,6 +618,10 @@ func (qb *MeterUsageQueryBuilder) BuildDetailedPointsQuery(
 	if result.Source != "" {
 		where += " AND source = ?"
 		args = append(args, result.Source)
+	}
+	if result.ExternalCustomerID != "" {
+		where += " AND external_customer_id = ?"
+		args = append(args, result.ExternalCustomerID)
 	}
 	for propName, propValue := range result.Properties {
 		if propValue != "" {
