@@ -111,7 +111,7 @@ func TestShapeTimeseries_WithDimensionAndWindow(t *testing.T) {
 	assert.Equal(t, "30", got.Meta["total"])
 }
 
-func columnNames(cols []dto.AnalyticsColumn) []string {
+func columnNames(cols []*dto.AnalyticsColumn) []string {
 	out := make([]string, len(cols))
 	for i, c := range cols {
 		out[i] = c.Name

@@ -13,37 +13,46 @@ type ResolvedView struct {
 	Shape      Shape
 	Metrics    []string
 	Dimensions []string
-	Filters    []Filter // concrete values; optional-with-unsupplied dropped
+	Filters    []*Filter // concrete values; optional-with-unsupplied dropped
 	Time       TimeSpec
-	Sort       []SortSpec
+	Sort       []*SortSpec
 	Limit      int
 }
 
-func ResolveVariables(def ViewDefinition, supplied map[string]any) (ResolvedView, error) {
+func ResolveVariables(def *ViewDefinition, supplied map[string]any) (*ResolvedView, error) {
+	if def == nil {
+		return nil, ierr.NewError("view definition is required").Mark(ierr.ErrValidation)
+	}
 	if err := def.Validate(); err != nil {
-		return ResolvedView{}, err
+		return nil, err
 	}
 	for _, va := range def.Variables {
+		if va == nil {
+			continue
+		}
 		if _, ok := supplied[va.Name]; !ok && va.Required {
-			return ResolvedView{}, ierr.NewError(fmt.Sprintf("missing required variable %q", va.Name)).Mark(ierr.ErrValidation)
+			return nil, ierr.NewError(fmt.Sprintf("missing required variable %q", va.Name)).Mark(ierr.ErrValidation)
 		}
 	}
-	rv := ResolvedView{Shape: def.Shape, Metrics: def.Metrics, Dimensions: def.Dimensions, Sort: def.Sort, Limit: def.Limit}
+	rv := &ResolvedView{Shape: def.Shape, Metrics: def.Metrics, Dimensions: def.Dimensions, Sort: def.Sort, Limit: def.Limit}
 
 	for _, f := range def.Filters {
+		if f == nil {
+			continue
+		}
 		val, present := resolveValue(f.Value, supplied)
 		if !present {
 			if f.Optional {
 				continue // drop optional filter with no value
 			}
-			return ResolvedView{}, ierr.NewError(fmt.Sprintf("filter %q has no value", f.Field)).Mark(ierr.ErrValidation)
+			return nil, ierr.NewError(fmt.Sprintf("filter %q has no value", f.Field)).Mark(ierr.ErrValidation)
 		}
-		rv.Filters = append(rv.Filters, Filter{Field: f.Field, Op: f.Op, Value: val})
+		rv.Filters = append(rv.Filters, &Filter{Field: f.Field, Op: f.Op, Value: val})
 	}
 
 	ts, err := resolveTime(def.Time, supplied)
 	if err != nil {
-		return ResolvedView{}, err
+		return nil, err
 	}
 	rv.Time = ts
 	return rv, nil

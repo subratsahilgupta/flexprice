@@ -33,11 +33,11 @@ func dimensionValue(item dto.UsageAnalyticItem, dim string) any {
 // buildMeterUsageAggregationColumns), so no per-aggregation routing is
 // needed here.
 func shapeBreakdown(items []dto.UsageAnalyticItem, dims []string) dto.AnalyticsQueryResult {
-	cols := make([]dto.AnalyticsColumn, 0, len(dims)+1)
+	cols := make([]*dto.AnalyticsColumn, 0, len(dims)+1)
 	for _, d := range dims {
-		cols = append(cols, dto.AnalyticsColumn{Name: d, Type: "string", Role: "dimension"})
+		cols = append(cols, &dto.AnalyticsColumn{Name: d, Type: "string", Role: "dimension"})
 	}
-	cols = append(cols, dto.AnalyticsColumn{Name: "usage_quantity", Type: "decimal", Role: "metric"})
+	cols = append(cols, &dto.AnalyticsColumn{Name: "usage_quantity", Type: "decimal", Role: "metric"})
 
 	rows := make([][]any, 0, len(items))
 	for _, it := range items {
@@ -56,12 +56,12 @@ func shapeBreakdown(items []dto.UsageAnalyticItem, dims []string) dto.AnalyticsQ
 // (item, point) pair. point.Usage is the bucket's resolved aggregation
 // value, mirroring item.TotalUsage for breakdown.
 func shapeTimeseries(items []dto.UsageAnalyticItem, dims []string) dto.AnalyticsQueryResult {
-	cols := make([]dto.AnalyticsColumn, 0, len(dims)+2)
-	cols = append(cols, dto.AnalyticsColumn{Name: "window_start", Type: "datetime", Role: "dimension"})
+	cols := make([]*dto.AnalyticsColumn, 0, len(dims)+2)
+	cols = append(cols, &dto.AnalyticsColumn{Name: "window_start", Type: "datetime", Role: "dimension"})
 	for _, d := range dims {
-		cols = append(cols, dto.AnalyticsColumn{Name: d, Type: "string", Role: "dimension"})
+		cols = append(cols, &dto.AnalyticsColumn{Name: d, Type: "string", Role: "dimension"})
 	}
-	cols = append(cols, dto.AnalyticsColumn{Name: "usage_quantity", Type: "decimal", Role: "metric"})
+	cols = append(cols, &dto.AnalyticsColumn{Name: "usage_quantity", Type: "decimal", Role: "metric"})
 
 	rows := make([][]any, 0)
 	total := decimal.Zero

@@ -129,14 +129,14 @@ func (s *AnalyticsServiceSuite) drVars() map[string]any {
 	}
 }
 
-func (s *AnalyticsServiceSuite) breakdownDef() analytics.ViewDefinition {
-	return analytics.ViewDefinition{
+func (s *AnalyticsServiceSuite) breakdownDef() *analytics.ViewDefinition {
+	return &analytics.ViewDefinition{
 		Shape:      analytics.ShapeBreakdown,
 		Metrics:    []string{"usage_quantity"},
 		Dimensions: []string{"properties.region"},
-		Filters:    []analytics.Filter{{Field: "meter_id", Op: "eq", Value: "{{meter}}"}},
+		Filters:    []*analytics.Filter{{Field: "meter_id", Op: "eq", Value: "{{meter}}"}},
 		Time:       analytics.TimeSpecRaw{Range: "{{dr}}", Grain: "day"},
-		Variables: []analytics.Variable{
+		Variables: []*analytics.Variable{
 			{Name: "meter", Type: "string", Required: true},
 			{Name: "dr", Type: "date_range", Required: true},
 		},
@@ -266,13 +266,13 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownGroupsByExternalCustome
 // ExecuteView — timeseries
 // ---------------------------------------------------------------------------
 
-func (s *AnalyticsServiceSuite) timeseriesDef(meterID string) analytics.ViewDefinition {
-	return analytics.ViewDefinition{
+func (s *AnalyticsServiceSuite) timeseriesDef(meterID string) *analytics.ViewDefinition {
+	return &analytics.ViewDefinition{
 		Shape:   analytics.ShapeTimeseries,
 		Metrics: []string{"usage_quantity"},
-		Filters: []analytics.Filter{{Field: "meter_id", Op: "eq", Value: meterID}},
+		Filters: []*analytics.Filter{{Field: "meter_id", Op: "eq", Value: meterID}},
 		Time:    analytics.TimeSpecRaw{Range: "{{dr}}", Grain: "day"},
-		Variables: []analytics.Variable{
+		Variables: []*analytics.Variable{
 			{Name: "dr", Type: "date_range", Required: true},
 		},
 	}
@@ -399,7 +399,7 @@ func (s *AnalyticsServiceSuite) TestCreateView_RejectsInvalidDefinition() {
 	ctx := s.GetContext()
 	view := &analytics.View{
 		Name:       "invalid",
-		Definition: analytics.ViewDefinition{Shape: analytics.ShapeBreakdown}, // no metrics
+		Definition: &analytics.ViewDefinition{Shape: analytics.ShapeBreakdown}, // no metrics
 	}
 	err := s.svc.CreateView(ctx, view)
 	s.Error(err)

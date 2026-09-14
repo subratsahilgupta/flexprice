@@ -49,12 +49,15 @@ func NewViewResponse(v *analytics.View) *ViewResponse {
 	if v == nil {
 		return nil
 	}
-	return &ViewResponse{
-		ID:         v.ID,
-		Name:       v.Name,
-		Version:    v.Version,
-		Definition: v.Definition,
+	resp := &ViewResponse{
+		ID:      v.ID,
+		Name:    v.Name,
+		Version: v.Version,
 	}
+	if v.Definition != nil {
+		resp.Definition = *v.Definition
+	}
+	return resp
 }
 
 // AnalyticsColumn describes one column of a shaped AnalyticsQueryResult.
@@ -69,7 +72,7 @@ type AnalyticsColumn struct {
 // query renders into — the response body for POST /analytics/query and
 // POST /analytics/views/{id}/query.
 type AnalyticsQueryResult struct {
-	Columns []AnalyticsColumn `json:"columns"`
-	Rows    [][]any           `json:"rows"`
-	Meta    map[string]any    `json:"meta"`
+	Columns []*AnalyticsColumn `json:"columns"`
+	Rows    [][]any            `json:"rows"`
+	Meta    map[string]any     `json:"meta"`
 }

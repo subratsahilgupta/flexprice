@@ -53,8 +53,11 @@ func translateDimensions(dims []string) []string {
 // applyAnalyticsFilters splits a ResolvedView's filters into the typed slices
 // the meter_usage params expect (meter_id/customer_id/source); anything else
 // is treated as a raw property name and becomes a property filter.
-func applyAnalyticsFilters(filters []analytics.Filter, meterIDs, customerIDs, sources *[]string, props map[string][]string) {
+func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, sources *[]string, props map[string][]string) {
 	for _, f := range filters {
+		if f == nil {
+			continue
+		}
 		vals := toAnalyticsStringSlice(f.Value)
 		switch f.Field {
 		case "meter_id":
@@ -109,7 +112,10 @@ func toAnalyticsStringSlice(v any) []string {
 // engine already defaults to one row per meter (see
 // getDetailedAnalyticsWithoutSubscriptionContext), so an empty GroupBy is not
 // rejected here.
-func translateBreakdown(ctx context.Context, rv analytics.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
+func translateBreakdown(ctx context.Context, rv *analytics.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
+	if rv == nil {
+		return nil, ierr.NewError("resolved view is required").Mark(ierr.ErrValidation)
+	}
 	if err := validateAnalyticsDimensions(rv.Dimensions); err != nil {
 		return nil, err
 	}
@@ -134,7 +140,10 @@ func translateBreakdown(ctx context.Context, rv analytics.ResolvedView) (*events
 // engine derives each meter's own aggregation type
 // (getDetailedAnalyticsWithoutSubscriptionContext splits by AggType), so the
 // caller never needs to set AggregationTypes.
-func translateTimeseries(ctx context.Context, rv analytics.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
+func translateTimeseries(ctx context.Context, rv *analytics.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
+	if rv == nil {
+		return nil, ierr.NewError("resolved view is required").Mark(ierr.ErrValidation)
+	}
 	if err := validateAnalyticsDimensions(rv.Dimensions); err != nil {
 		return nil, err
 	}

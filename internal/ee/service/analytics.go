@@ -14,7 +14,7 @@ import (
 // existing meter_usage query engine, and shapes the result for rendering. It
 // also owns view CRUD.
 type AnalyticsService interface {
-	ExecuteView(ctx context.Context, def analytics.ViewDefinition, vars map[string]any) (*dto.AnalyticsQueryResult, error)
+	ExecuteView(ctx context.Context, def *analytics.ViewDefinition, vars map[string]any) (*dto.AnalyticsQueryResult, error)
 	CreateView(ctx context.Context, v *analytics.View) error
 	QueryView(ctx context.Context, id string, vars map[string]any) (*dto.AnalyticsQueryResult, error)
 }
@@ -35,7 +35,7 @@ func NewAnalyticsService(params ServiceParams) AnalyticsService {
 	}
 }
 
-func (s *analyticsService) ExecuteView(ctx context.Context, def analytics.ViewDefinition, vars map[string]any) (*dto.AnalyticsQueryResult, error) {
+func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewDefinition, vars map[string]any) (*dto.AnalyticsQueryResult, error) {
 	rv, err := analytics.ResolveVariables(def, vars)
 	if err != nil {
 		return nil, err
@@ -56,7 +56,7 @@ func (s *analyticsService) ExecuteView(ctx context.Context, def analytics.ViewDe
 // no external_customer_id) resolves each meter's own aggregation type via
 // getDetailedAnalyticsWithoutSubscriptionContext. Dimensions are optional —
 // an empty GroupBy yields one row per meter.
-func (s *analyticsService) executeBreakdown(ctx context.Context, rv analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
+func (s *analyticsService) executeBreakdown(ctx context.Context, rv *analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
 	params, err := translateBreakdown(ctx, rv)
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (s *analyticsService) executeBreakdown(ctx context.Context, rv analytics.Re
 // required exactly one meter with no dimensions). Dimensions act as a
 // split-by; multiple meters are allowed since the engine derives each
 // meter's real aggregation type on its own.
-func (s *analyticsService) executeTimeseries(ctx context.Context, rv analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
+func (s *analyticsService) executeTimeseries(ctx context.Context, rv *analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
 	params, err := translateTimeseries(ctx, rv)
 	if err != nil {
 		return nil, err
@@ -97,6 +97,9 @@ func (s *analyticsService) executeTimeseries(ctx context.Context, rv analytics.R
 func (s *analyticsService) CreateView(ctx context.Context, v *analytics.View) error {
 	if v == nil {
 		return ierr.NewError("view is required").Mark(ierr.ErrValidation)
+	}
+	if v.Definition == nil {
+		return ierr.NewError("view definition is required").Mark(ierr.ErrValidation)
 	}
 	if err := v.Definition.Validate(); err != nil {
 		return err

@@ -52,11 +52,11 @@ type ViewDefinition struct {
 	Shape      Shape       `json:"shape"`
 	Metrics    []string    `json:"metrics"`
 	Dimensions []string    `json:"dimensions,omitempty"`
-	Filters    []Filter    `json:"filters,omitempty"`
+	Filters    []*Filter   `json:"filters,omitempty"`
 	Time       TimeSpecRaw `json:"time"`
-	Sort       []SortSpec  `json:"sort,omitempty"`
+	Sort       []*SortSpec `json:"sort,omitempty"`
 	Limit      int         `json:"limit,omitempty"`
-	Variables  []Variable  `json:"variables,omitempty"`
+	Variables  []*Variable `json:"variables,omitempty"`
 }
 
 // NewViewDefinition builds a ViewDefinition from its constituent parts.
@@ -65,11 +65,11 @@ func NewViewDefinition(
 	shape Shape,
 	metrics []string,
 	dimensions []string,
-	filters []Filter,
+	filters []*Filter,
 	timeSpec TimeSpecRaw,
-	sort []SortSpec,
+	sort []*SortSpec,
 	limit int,
-	variables []Variable,
+	variables []*Variable,
 ) ViewDefinition {
 	return ViewDefinition{
 		Name:       name,

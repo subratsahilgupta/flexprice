@@ -11,7 +11,7 @@ type View struct {
 	ID         string
 	Name       string
 	Version    int
-	Definition ViewDefinition
+	Definition *ViewDefinition
 	types.BaseModel
 }
 

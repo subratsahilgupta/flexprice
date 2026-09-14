@@ -19,10 +19,10 @@ func TestTranslateBreakdown_InjectsRLSAndGroupBy(t *testing.T) {
 		Shape:      analytics.ShapeBreakdown,
 		Metrics:    []string{"usage_quantity"},
 		Dimensions: []string{"properties.region"},
-		Filters:    []analytics.Filter{{Field: "meter_id", Op: "eq", Value: "meter_1"}},
+		Filters:    []*analytics.Filter{{Field: "meter_id", Op: "eq", Value: "meter_1"}},
 		Time:       analytics.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: "day"},
 	}
-	p, err := translateBreakdown(ctx, rv)
+	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
 	assert.Equal(t, "tenant_1", p.TenantID)
 	assert.Equal(t, "env_1", p.EnvironmentID)
@@ -36,7 +36,7 @@ func TestTranslateBreakdown_RejectsIllegalDimension(t *testing.T) {
 		Shape: analytics.ShapeBreakdown, Metrics: []string{"usage_quantity"},
 		Dimensions: []string{"properties.region; DROP TABLE"},
 	}
-	_, err := translateBreakdown(ctx, rv)
+	_, err := translateBreakdown(ctx, &rv)
 	require.Error(t, err)
 }
 
@@ -47,14 +47,14 @@ func TestTranslateTimeseries_InjectsRLSAndFilters(t *testing.T) {
 	rv := analytics.ResolvedView{
 		Shape:   analytics.ShapeTimeseries,
 		Metrics: []string{"usage_quantity"},
-		Filters: []analytics.Filter{
+		Filters: []*analytics.Filter{
 			{Field: "meter_id", Op: "eq", Value: "meter_1"},
 			{Field: "customer_id", Op: "eq", Value: "cust_1"},
 			{Field: "source", Op: "eq", Value: "api"},
 		},
 		Time: analytics.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: "hour"},
 	}
-	p, err := translateTimeseries(ctx, rv)
+	p, err := translateTimeseries(ctx, &rv)
 	require.NoError(t, err)
 	assert.Equal(t, "tenant_1", p.TenantID)
 	assert.Equal(t, "env_1", p.EnvironmentID)
@@ -72,7 +72,7 @@ func TestTranslateTimeseries_RejectsIllegalDimension(t *testing.T) {
 		Metrics:    []string{"usage_quantity"},
 		Dimensions: []string{"properties.region; DROP TABLE"},
 	}
-	_, err := translateTimeseries(ctx, rv)
+	_, err := translateTimeseries(ctx, &rv)
 	require.Error(t, err)
 }
 
@@ -81,9 +81,9 @@ func TestTranslateBreakdown_PropertyFilterFallsThrough(t *testing.T) {
 	rv := analytics.ResolvedView{
 		Shape:   analytics.ShapeBreakdown,
 		Metrics: []string{"usage_quantity"},
-		Filters: []analytics.Filter{{Field: "model", Op: "eq", Value: "gpt-4"}},
+		Filters: []*analytics.Filter{{Field: "model", Op: "eq", Value: "gpt-4"}},
 	}
-	p, err := translateBreakdown(ctx, rv)
+	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
 	assert.Contains(t, p.PropertyFilters["model"], "gpt-4")
 }
@@ -98,7 +98,7 @@ func TestTranslateBreakdown_LeavesWindowSizeUnset(t *testing.T) {
 		Metrics: []string{"usage_quantity"},
 		Time:    analytics.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: "day"},
 	}
-	p, err := translateBreakdown(ctx, rv)
+	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
 	assert.Equal(t, types.WindowSize(""), p.WindowSize)
 }
@@ -112,7 +112,7 @@ func TestTranslateBreakdown_EmptyDimensionsAllowed(t *testing.T) {
 		Shape:   analytics.ShapeBreakdown,
 		Metrics: []string{"usage_quantity"},
 	}
-	p, err := translateBreakdown(ctx, rv)
+	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
 	assert.Empty(t, p.GroupBy)
 }
@@ -127,7 +127,7 @@ func TestTranslateBreakdown_CustomerIDDimensionAliasesToExternalCustomerID(t *te
 		Metrics:    []string{"usage_quantity"},
 		Dimensions: []string{"customer_id"},
 	}
-	p, err := translateBreakdown(ctx, rv)
+	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"external_customer_id"}, p.GroupBy)
 }
@@ -140,9 +140,9 @@ func TestTranslateTimeseries_CustomerIDFilterAliasesToExternalCustomerID(t *test
 	rv := analytics.ResolvedView{
 		Shape:   analytics.ShapeTimeseries,
 		Metrics: []string{"usage_quantity"},
-		Filters: []analytics.Filter{{Field: "customer_id", Op: "eq", Value: "cust_1"}},
+		Filters: []*analytics.Filter{{Field: "customer_id", Op: "eq", Value: "cust_1"}},
 	}
-	p, err := translateTimeseries(ctx, rv)
+	p, err := translateTimeseries(ctx, &rv)
 	require.NoError(t, err)
 	assert.Contains(t, p.ExternalCustomerIDs, "cust_1")
 }

@@ -29,7 +29,7 @@ type stubAnalyticsService struct {
 	err    error
 }
 
-func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ analytics.ViewDefinition, _ map[string]any) (*dto.AnalyticsQueryResult, error) {
+func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ *analytics.ViewDefinition, _ map[string]any) (*dto.AnalyticsQueryResult, error) {
 	return s.result, s.err
 }
 
@@ -45,7 +45,7 @@ func (s *stubAnalyticsService) QueryView(_ context.Context, _ string, _ map[stri
 // properties.region dimension plus a usage_quantity metric.
 func cannedBreakdownResult() *dto.AnalyticsQueryResult {
 	return &dto.AnalyticsQueryResult{
-		Columns: []dto.AnalyticsColumn{
+		Columns: []*dto.AnalyticsColumn{
 			{Name: "region", Type: "string", Role: "dimension"},
 			{Name: "usage_quantity", Type: "decimal", Role: "metric"},
 		},

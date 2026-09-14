@@ -30,9 +30,9 @@ func TestValidate_RejectsNilMetrics(t *testing.T) {
 }
 
 func TestNewViewDefinition_SetsAllFields(t *testing.T) {
-	filters := []Filter{{Field: "meter_id", Op: "eq", Value: "meter_1"}}
-	sort := []SortSpec{{Field: "usage_quantity", Dir: "desc"}}
-	variables := []Variable{{Name: "meter", Type: "string", Required: true}}
+	filters := []*Filter{{Field: "meter_id", Op: "eq", Value: "meter_1"}}
+	sort := []*SortSpec{{Field: "usage_quantity", Dir: "desc"}}
+	variables := []*Variable{{Name: "meter", Type: "string", Required: true}}
 	timeSpec := TimeSpecRaw{Range: "{{date_range}}", Grain: "day"}
 
 	def := NewViewDefinition(

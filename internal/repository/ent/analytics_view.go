@@ -23,6 +23,10 @@ func NewAnalyticsViewRepository(client postgres.IClient, log *logger.Logger) dom
 }
 
 func (r *analyticsViewRepository) Create(ctx context.Context, v *domainAnalytics.View) error {
+	if v.Definition == nil {
+		return ierr.NewError("view definition is required").Mark(ierr.ErrValidation)
+	}
+
 	span := StartRepositorySpan(ctx, "analytics_view", "create", map[string]interface{}{
 		"view_id":   v.ID,
 		"name":      v.Name,
@@ -46,7 +50,7 @@ func (r *analyticsViewRepository) Create(ctx context.Context, v *domainAnalytics
 		SetEnvironmentID(types.GetEnvironmentID(ctx)).
 		SetName(v.Name).
 		SetVersion(v.Version).
-		SetDefinition(v.Definition).
+		SetDefinition(*v.Definition).
 		Save(ctx)
 
 	if err != nil {
@@ -154,7 +158,7 @@ func viewFromEnt(e *ent.AnalyticsView) *domainAnalytics.View {
 		ID:         e.ID,
 		Name:       e.Name,
 		Version:    e.Version,
-		Definition: e.Definition,
+		Definition: &e.Definition,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),
