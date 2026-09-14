@@ -365,9 +365,28 @@ func (s *checkoutSessionService) cleanupCheckoutResources(ctx context.Context, s
 		}
 	}
 
-	if cfg.CreateSubscriptionParams != nil && cfg.CreateSubscriptionParams.SubscriptionID != "" {
+	subID := ""
+	if cfg.CreateSubscriptionParams != nil {
+		subID = cfg.CreateSubscriptionParams.SubscriptionID
+	}
+	paymentID := lo.FromPtr(session.CheckoutPaymentID)
+	invoiceID := lo.FromPtr(session.CheckoutInvoiceID)
+	if session.Result != nil && session.Result.CreateSubscriptionResult != nil {
+		res := session.Result.CreateSubscriptionResult
+		if subID == "" {
+			subID = res.SubscriptionID
+		}
+		if paymentID == "" {
+			paymentID = res.PaymentID
+		}
+		if invoiceID == "" {
+			invoiceID = res.InvoiceID
+		}
+	}
+
+	if subID != "" {
 		subSvc := &subscriptionService{ServiceParams: s.ServiceParams}
-		if err := subSvc.archiveDraftCheckoutSubscription(ctx, cfg.CreateSubscriptionParams.SubscriptionID); err != nil {
+		if err := subSvc.archiveDraftCheckoutSubscription(ctx, subID); err != nil {
 			return err
 		}
 	}
@@ -389,36 +408,17 @@ func (s *checkoutSessionService) cleanupCheckoutResources(ctx context.Context, s
 		}
 	}
 
-	if session.Result != nil && session.Result.CreateSubscriptionResult != nil {
-		res := session.Result.CreateSubscriptionResult
-		if res.PaymentID != "" {
-			if err := s.PaymentRepo.Delete(ctx, res.PaymentID); err != nil {
-				return err
-			}
-		}
-		if res.InvoiceID != "" {
-			if err := s.InvoiceRepo.Delete(ctx, res.InvoiceID); err != nil {
-				return err
-			}
-		}
-		if res.SubscriptionID != "" {
-			if err := s.SubRepo.Delete(ctx, res.SubscriptionID); err != nil {
-				return err
-			}
-		}
-	}
-
-	if session.CheckoutPaymentID != nil && *session.CheckoutPaymentID != "" {
-		if err := s.PaymentRepo.Delete(ctx, *session.CheckoutPaymentID); err != nil {
+	if paymentID != "" {
+		if err := s.PaymentRepo.Delete(ctx, paymentID); err != nil {
 			return err
 		}
 	}
 
-	if session.CheckoutInvoiceID != nil && *session.CheckoutInvoiceID != "" {
-		if err := s.voidCheckoutInvoiceIfPartiallyPaid(ctx, session, *session.CheckoutInvoiceID); err != nil {
+	if invoiceID != "" {
+		if err := s.voidCheckoutInvoiceIfPartiallyPaid(ctx, session, invoiceID); err != nil {
 			return err
 		}
-		if err := s.InvoiceRepo.Delete(ctx, *session.CheckoutInvoiceID); err != nil {
+		if err := s.InvoiceRepo.Delete(ctx, invoiceID); err != nil {
 			return err
 		}
 	}

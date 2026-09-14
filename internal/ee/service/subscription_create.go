@@ -127,29 +127,31 @@ func (s *subscriptionService) archiveDraftCheckoutSubscription(ctx context.Conte
 	}
 
 	for _, child := range children {
-		s.archiveDraftSubscriptionDependencies(ctx, child.ID)
+		if err := s.archiveDraftSubscriptionDependencies(ctx, child.ID); err != nil {
+			return err
+		}
 		if err := s.SubRepo.Delete(ctx, child.ID); err != nil {
 			return err
 		}
 	}
 
-	s.archiveDraftSubscriptionDependencies(ctx, subscriptionID)
+	if err := s.archiveDraftSubscriptionDependencies(ctx, subscriptionID); err != nil {
+		return err
+	}
 	return s.SubRepo.Delete(ctx, subscriptionID)
 }
 
-func (s *subscriptionService) archiveDraftSubscriptionDependencies(ctx context.Context, subscriptionID string) {
+func (s *subscriptionService) archiveDraftSubscriptionDependencies(ctx context.Context, subscriptionID string) error {
 	addonFilter := types.NewNoLimitAddonAssociationFilter()
 	addonFilter.EntityType = lo.ToPtr(types.AddonAssociationEntityTypeSubscription)
 	addonFilter.EntityIDs = []string{subscriptionID}
-	if associations, err := s.AddonAssociationRepo.List(ctx, addonFilter); err != nil {
-		s.Logger.Error(ctx, "failed to list addon associations for draft subscription cleanup",
-			"error", err, "subscription_id", subscriptionID)
-	} else {
-		for _, association := range associations {
-			if err := s.AddonAssociationRepo.Delete(ctx, association.ID); err != nil {
-				s.Logger.Error(ctx, "failed to archive addon association for draft subscription",
-					"error", err, "subscription_id", subscriptionID, "association_id", association.ID)
-			}
+	associations, err := s.AddonAssociationRepo.List(ctx, addonFilter)
+	if err != nil {
+		return err
+	}
+	for _, association := range associations {
+		if err := s.AddonAssociationRepo.Delete(ctx, association.ID); err != nil {
+			return err
 		}
 	}
 
@@ -157,15 +159,13 @@ func (s *subscriptionService) archiveDraftSubscriptionDependencies(ctx context.C
 		QueryFilter:     types.NewNoLimitQueryFilter(),
 		SubscriptionIDs: []string{subscriptionID},
 	}
-	if associations, err := s.CouponAssociationRepo.List(ctx, couponFilter); err != nil {
-		s.Logger.Error(ctx, "failed to list coupon associations for draft subscription cleanup",
-			"error", err, "subscription_id", subscriptionID)
-	} else {
-		for _, association := range associations {
-			if err := s.CouponAssociationRepo.Delete(ctx, association.ID); err != nil {
-				s.Logger.Error(ctx, "failed to archive coupon association for draft subscription",
-					"error", err, "subscription_id", subscriptionID, "association_id", association.ID)
-			}
+	couponAssociations, err := s.CouponAssociationRepo.List(ctx, couponFilter)
+	if err != nil {
+		return err
+	}
+	for _, association := range couponAssociations {
+		if err := s.CouponAssociationRepo.Delete(ctx, association.ID); err != nil {
+			return err
 		}
 	}
 
@@ -173,29 +173,25 @@ func (s *subscriptionService) archiveDraftSubscriptionDependencies(ctx context.C
 	// archiving their grant is the one ordering that could still credit a wallet.
 	applicationFilter := types.NewNoLimitCreditGrantApplicationFilter()
 	applicationFilter.SubscriptionIDs = []string{subscriptionID}
-	if applications, err := s.CreditGrantApplicationRepo.List(ctx, applicationFilter); err != nil {
-		s.Logger.Error(ctx, "failed to list credit grant applications for draft subscription cleanup",
-			"error", err, "subscription_id", subscriptionID)
-	} else {
-		for _, application := range applications {
-			if err := s.CreditGrantApplicationRepo.Delete(ctx, application); err != nil {
-				s.Logger.Error(ctx, "failed to archive credit grant application for draft subscription",
-					"error", err, "subscription_id", subscriptionID, "application_id", application.ID)
-			}
+	applications, err := s.CreditGrantApplicationRepo.List(ctx, applicationFilter)
+	if err != nil {
+		return err
+	}
+	for _, application := range applications {
+		if err := s.CreditGrantApplicationRepo.Delete(ctx, application); err != nil {
+			return err
 		}
 	}
 
 	grantFilter := types.NewNoLimitCreditGrantFilter()
 	grantFilter.SubscriptionIDs = []string{subscriptionID}
-	if grants, err := s.CreditGrantRepo.List(ctx, grantFilter); err != nil {
-		s.Logger.Error(ctx, "failed to list credit grants for draft subscription cleanup",
-			"error", err, "subscription_id", subscriptionID)
-	} else {
-		for _, grant := range grants {
-			if err := s.CreditGrantRepo.Delete(ctx, grant.ID); err != nil {
-				s.Logger.Error(ctx, "failed to archive credit grant for draft subscription",
-					"error", err, "subscription_id", subscriptionID, "credit_grant_id", grant.ID)
-			}
+	grants, err := s.CreditGrantRepo.List(ctx, grantFilter)
+	if err != nil {
+		return err
+	}
+	for _, grant := range grants {
+		if err := s.CreditGrantRepo.Delete(ctx, grant.ID); err != nil {
+			return err
 		}
 	}
 
@@ -204,15 +200,14 @@ func (s *subscriptionService) archiveDraftSubscriptionDependencies(ctx context.C
 		EntityType:  types.TaxRateEntityTypeSubscription,
 		EntityID:    subscriptionID,
 	}
-	if associations, err := s.TaxAssociationRepo.List(ctx, taxFilter); err != nil {
-		s.Logger.Error(ctx, "failed to list tax associations for draft subscription cleanup",
-			"error", err, "subscription_id", subscriptionID)
-	} else {
-		for _, association := range associations {
-			if err := s.TaxAssociationRepo.Delete(ctx, association); err != nil {
-				s.Logger.Error(ctx, "failed to archive tax association for draft subscription",
-					"error", err, "subscription_id", subscriptionID, "tax_association_id", association.ID)
-			}
+	taxAssociations, err := s.TaxAssociationRepo.List(ctx, taxFilter)
+	if err != nil {
+		return err
+	}
+	for _, association := range taxAssociations {
+		if err := s.TaxAssociationRepo.Delete(ctx, association); err != nil {
+			return err
 		}
 	}
+	return nil
 }
