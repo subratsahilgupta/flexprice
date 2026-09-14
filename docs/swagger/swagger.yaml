@@ -7008,8 +7008,10 @@ definitions:
         description: cancelled_at is when the schedule was cancelled
         type: string
       configuration:
+        additionalProperties: true
         description: configuration contains type-specific configuration (e.g., target_plan_id
           for plan changes)
+        type: object
       created_at:
         description: created_at timestamp
         type: string
@@ -7023,7 +7025,9 @@ definitions:
         description: executed_at is when the schedule was executed
         type: string
       execution_result:
+        additionalProperties: true
         description: execution_result contains type-specific execution result
+        type: object
       id:
         description: id of the schedule
         type: string

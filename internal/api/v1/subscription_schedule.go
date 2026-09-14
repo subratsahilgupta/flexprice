@@ -160,6 +160,11 @@ func (h *SubscriptionScheduleHandler) ListSchedules(c *gin.Context) {
 		return
 	}
 
+	// Accept singular subscription_id (documented param) in addition to subscription_ids.
+	if subID := c.Query("subscription_id"); subID != "" {
+		filter.SubscriptionIDs = append(filter.SubscriptionIDs, subID)
+	}
+
 	schedules, err := h.scheduleService.List(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve schedules"})

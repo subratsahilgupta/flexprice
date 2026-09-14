@@ -23078,7 +23078,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "configuration": {
-                    "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)"
+                    "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)",
+                    "type": "object",
+                    "additionalProperties": true
                 },
                 "created_at": {
                     "description": "created_at timestamp",
@@ -23097,7 +23099,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "execution_result": {
-                    "description": "execution_result contains type-specific execution result"
+                    "description": "execution_result contains type-specific execution result",
+                    "type": "object",
+                    "additionalProperties": true
                 },
                 "id": {
                     "description": "id of the schedule",

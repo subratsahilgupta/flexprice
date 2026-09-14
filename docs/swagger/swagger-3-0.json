@@ -24930,6 +24930,7 @@
           },
           "configuration": {
             "type": "object",
+            "additionalProperties": true,
             "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)"
           },
           "created_at": {
@@ -24952,6 +24953,7 @@
           },
           "execution_result": {
             "type": "object",
+            "additionalProperties": true,
             "description": "execution_result contains type-specific execution result"
           },
           "id": {
