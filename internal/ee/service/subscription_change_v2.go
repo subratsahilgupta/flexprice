@@ -1129,21 +1129,7 @@ func (s *subscriptionService) resetQuote(
 		return nil, err
 	}
 
-	merged := emptyProrationSummary(r.currentSub)
-	summaries := []*LineItemProrationSummary{credit, charge}
-	for _, summary := range summaries {
-		if summary == nil {
-			continue
-		}
-
-		merged.Results = append(merged.Results, summary.Results...)
-		merged.ChargeLineItems = append(merged.ChargeLineItems, summary.ChargeLineItems...)
-		merged.CreditLineItems = append(merged.CreditLineItems, summary.CreditLineItems...)
-		merged.TotalChargeAmount = merged.TotalChargeAmount.Add(summary.TotalChargeAmount)
-		merged.TotalCreditAmount = merged.TotalCreditAmount.Add(summary.TotalCreditAmount)
-	}
-
-	return merged, nil
+	return emptyProrationSummary(r.currentSub).Merge(credit, charge), nil
 }
 
 // outgoingUsageInvoiceRequest bills the usage consumed on the outgoing plan before the
