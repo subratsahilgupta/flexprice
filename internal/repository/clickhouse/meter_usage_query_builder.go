@@ -610,16 +610,29 @@ func (qb *MeterUsageQueryBuilder) BuildDetailedPointsQuery(
 	// Start with the base WHERE from the detailed params
 	where, args := qb.BuildDetailedWhereClause(params)
 
-	// Narrow to this specific group
-	if result.MeterID != "" {
+	// Narrow to this specific group. A structural dimension is constrained
+	// whenever it was in the aggregate query's GROUP BY (keyed off
+	// groupByResult, not result.X != ""), so a group whose value is empty —
+	// e.g. events with no external_customer_id — still gets its predicate. Using
+	// result.X != "" would drop the predicate for an empty group, letting the
+	// points query sum every value while the aggregate row holds only the empty
+	// group.
+	grouped := func(field string) bool {
+		if groupByResult == nil {
+			return false
+		}
+		_, ok := groupByResult.FieldMapping[field]
+		return ok
+	}
+	if grouped("meter_id") {
 		where += " AND meter_id = ?"
 		args = append(args, result.MeterID)
 	}
-	if result.Source != "" {
+	if grouped("source") {
 		where += " AND source = ?"
 		args = append(args, result.Source)
 	}
-	if result.ExternalCustomerID != "" {
+	if grouped("external_customer_id") {
 		where += " AND external_customer_id = ?"
 		args = append(args, result.ExternalCustomerID)
 	}

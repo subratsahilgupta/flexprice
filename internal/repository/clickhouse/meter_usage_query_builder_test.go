@@ -69,6 +69,54 @@ func TestBuildDetailedPointsQuery_NarrowsByExternalCustomerID(t *testing.T) {
 	require.Equal(t, 1, strings.Count(query, "external_customer_id = ?"))
 }
 
+// TestBuildDetailedPointsQuery_ConstrainsEmptyCustomerGroup proves the points
+// sub-query still constrains external_customer_id for the empty-ID group (events
+// with no customer). Without the group predicate the sub-query would sum every
+// customer allowed by the base filters, disagreeing with the aggregate row that
+// only holds the empty-ID group.
+func TestBuildDetailedPointsQuery_ConstrainsEmptyCustomerGroup(t *testing.T) {
+	qb := NewMeterUsageQueryBuilder()
+
+	params := &events.MeterUsageDetailedAnalyticsParams{
+		TenantID:      "tenant_1",
+		EnvironmentID: "env_1",
+		WindowSize:    types.WindowSizeDay,
+	}
+	groupByResult, err := qb.BuildDetailedGroupByColumns(&events.MeterUsageDetailedAnalyticsParams{
+		GroupBy: []string{"external_customer_id"},
+	})
+	require.NoError(t, err)
+
+	result := &events.MeterUsageDetailedResult{ExternalCustomerID: ""} // empty-ID group
+	query, args := qb.BuildDetailedPointsQuery(params, result, groupByResult)
+	require.Contains(t, query, "external_customer_id = ?")
+	require.Equal(t, 1, strings.Count(query, "external_customer_id = ?"))
+	// The empty group value must be bound as the last arg, not dropped.
+	require.Equal(t, "", args[len(args)-1])
+}
+
+// TestBuildDetailedPointsQuery_NoStructuralPredicateWhenNotGrouped proves a
+// dimension that was not grouped adds no per-group predicate, even if the
+// result carries a stray value — the points query relies on the base filters.
+func TestBuildDetailedPointsQuery_NoStructuralPredicateWhenNotGrouped(t *testing.T) {
+	qb := NewMeterUsageQueryBuilder()
+
+	params := &events.MeterUsageDetailedAnalyticsParams{
+		TenantID:      "tenant_1",
+		EnvironmentID: "env_1",
+		WindowSize:    types.WindowSizeDay,
+	}
+	groupByResult, err := qb.BuildDetailedGroupByColumns(&events.MeterUsageDetailedAnalyticsParams{
+		GroupBy: []string{"meter_id"},
+	})
+	require.NoError(t, err)
+
+	result := &events.MeterUsageDetailedResult{MeterID: "meter_1", ExternalCustomerID: "leftover"}
+	query, _ := qb.BuildDetailedPointsQuery(params, result, groupByResult)
+	require.Contains(t, query, "meter_id = ?")
+	require.NotContains(t, query, "external_customer_id = ?")
+}
+
 func TestBuildDetailedGroupByColumns_RejectsUnknownEntry(t *testing.T) {
 	qb := NewMeterUsageQueryBuilder()
 
