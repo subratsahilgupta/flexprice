@@ -201,9 +201,6 @@ func (avu *AnalyticsViewUpdate) sqlSave(ctx context.Context) (n int, err error) 
 	if avu.mutation.UpdatedByCleared() {
 		_spec.ClearField(analyticsview.FieldUpdatedBy, field.TypeString)
 	}
-	if avu.mutation.EnvironmentIDCleared() {
-		_spec.ClearField(analyticsview.FieldEnvironmentID, field.TypeString)
-	}
 	if value, ok := avu.mutation.Name(); ok {
 		_spec.SetField(analyticsview.FieldName, field.TypeString, value)
 	}
@@ -437,9 +434,6 @@ func (avuo *AnalyticsViewUpdateOne) sqlSave(ctx context.Context) (_node *Analyti
 	}
 	if avuo.mutation.UpdatedByCleared() {
 		_spec.ClearField(analyticsview.FieldUpdatedBy, field.TypeString)
-	}
-	if avuo.mutation.EnvironmentIDCleared() {
-		_spec.ClearField(analyticsview.FieldEnvironmentID, field.TypeString)
 	}
 	if value, ok := avuo.mutation.Name(); ok {
 		_spec.SetField(analyticsview.FieldName, field.TypeString, value)

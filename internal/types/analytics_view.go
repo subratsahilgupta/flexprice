@@ -41,7 +41,7 @@ func validateDimension(d string) error {
 // (deprecated) pagination Filter in this package.
 type AnalyticsFilter struct {
 	Field    string             `json:"field"`
-	Op       FilterOperatorType `json:"op"`
+	Op       FilterOperatorType `json:"op" enums:"eq,in"`
 	Value    []string           `json:"value"`
 	Optional bool               `json:"optional,omitempty"`
 }
@@ -53,7 +53,7 @@ type SortSpec struct {
 
 type Variable struct {
 	Name     string       `json:"name"`
-	Type     VariableType `json:"type"`
+	Type     VariableType `json:"type" binding:"required" validate:"required" enums:"date_range,string,string_list,number,enum,boolean"`
 	Required bool         `json:"required,omitempty"`
 	Default  []string     `json:"default,omitempty"`
 }
@@ -76,14 +76,16 @@ type TimeSpec struct {
 
 type ViewDefinition struct {
 	Name       string             `json:"name"`
-	Shape      Shape              `json:"shape"`
-	Metrics    []Metric           `json:"metrics"`
+	Shape      Shape              `json:"shape" binding:"required" validate:"required" enums:"timeseries,breakdown"`
+	Metrics    []Metric           `json:"metrics" binding:"required,min=1" validate:"required,min=1" enums:"usage_quantity,event_count"`
 	Dimensions []string           `json:"dimensions,omitempty"`
 	Filters    []*AnalyticsFilter `json:"filters,omitempty"`
-	Time       TimeSpecRaw        `json:"time"`
-	Sort       []*SortSpec        `json:"sort,omitempty"`
-	Limit      int                `json:"limit,omitempty"`
-	Variables  []*Variable        `json:"variables,omitempty"`
+	// Time is optional: an omitted range defaults to last_7_days (see
+	// resolveTime), so it is intentionally not marked required.
+	Time      TimeSpecRaw `json:"time"`
+	Sort      []*SortSpec `json:"sort,omitempty"`
+	Limit     int         `json:"limit,omitempty"`
+	Variables []*Variable `json:"variables,omitempty"`
 }
 
 // NewViewDefinition builds a ViewDefinition from its constituent parts.

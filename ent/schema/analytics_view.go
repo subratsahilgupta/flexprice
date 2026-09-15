@@ -17,7 +17,6 @@ type AnalyticsView struct {
 func (AnalyticsView) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		mixin.BaseMixin{},
-		mixin.EnvironmentMixin{},
 	}
 }
 
@@ -30,6 +29,17 @@ func (AnalyticsView) Fields() []ent.Field {
 			}).
 			Unique().
 			Immutable(),
+		// environment_id is required (NOT NULL) rather than the optional
+		// EnvironmentMixin field: Get/List filter on environment_id = ctx, so a
+		// NULL/cleared value would orphan the row from every tenant-scoped read
+		// and violate isolation. Non-Optional yields NOT NULL and removes the
+		// ClearEnvironmentID mutation; Default("") keeps inserts that omit it valid.
+		field.String("environment_id").
+			SchemaType(map[string]string{
+				"postgres": "varchar(50)",
+			}).
+			Immutable().
+			Default(""),
 		field.String("name").
 			NotEmpty(),
 		field.Int("version").

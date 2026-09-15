@@ -13880,171 +13880,6 @@ const docTemplate = `{
                 }
             }
         },
-        "analytics.Filter": {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string"
-                },
-                "op": {
-                    "$ref": "#/definitions/types.FilterOperatorType"
-                },
-                "optional": {
-                    "type": "boolean"
-                },
-                "value": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "analytics.Grain": {
-            "type": "string",
-            "enum": [
-                "hour",
-                "day",
-                "week",
-                "month"
-            ],
-            "x-enum-varnames": [
-                "GrainHour",
-                "GrainDay",
-                "GrainWeek",
-                "GrainMonth"
-            ]
-        },
-        "analytics.Metric": {
-            "type": "string",
-            "enum": [
-                "usage_quantity",
-                "event_count"
-            ],
-            "x-enum-varnames": [
-                "MetricUsageQuantity",
-                "MetricEventCount"
-            ]
-        },
-        "analytics.Shape": {
-            "type": "string",
-            "enum": [
-                "timeseries",
-                "breakdown"
-            ],
-            "x-enum-varnames": [
-                "ShapeTimeseries",
-                "ShapeBreakdown"
-            ]
-        },
-        "analytics.SortSpec": {
-            "type": "object",
-            "properties": {
-                "dir": {
-                    "$ref": "#/definitions/types.SortDirection"
-                },
-                "field": {
-                    "type": "string"
-                }
-            }
-        },
-        "analytics.TimeSpecRaw": {
-            "type": "object",
-            "properties": {
-                "grain": {
-                    "$ref": "#/definitions/analytics.Grain"
-                },
-                "range": {
-                    "type": "string"
-                }
-            }
-        },
-        "analytics.Variable": {
-            "type": "object",
-            "properties": {
-                "default": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "required": {
-                    "type": "boolean"
-                },
-                "type": {
-                    "$ref": "#/definitions/analytics.VariableType"
-                }
-            }
-        },
-        "analytics.VariableType": {
-            "type": "string",
-            "enum": [
-                "date_range",
-                "string",
-                "string_list",
-                "number",
-                "enum",
-                "boolean"
-            ],
-            "x-enum-varnames": [
-                "VariableTypeDateRange",
-                "VariableTypeString",
-                "VariableTypeStringList",
-                "VariableTypeNumber",
-                "VariableTypeEnum",
-                "VariableTypeBoolean"
-            ]
-        },
-        "analytics.ViewDefinition": {
-            "type": "object",
-            "properties": {
-                "dimensions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/analytics.Filter"
-                    }
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "metrics": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/analytics.Metric"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "shape": {
-                    "$ref": "#/definitions/analytics.Shape"
-                },
-                "sort": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/analytics.SortSpec"
-                    }
-                },
-                "time": {
-                    "$ref": "#/definitions/analytics.TimeSpecRaw"
-                },
-                "variables": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/analytics.Variable"
-                    }
-                }
-            }
-        },
         "costsheet.Filter": {
             "type": "object",
             "properties": {
@@ -14868,10 +14703,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
-                    "$ref": "#/definitions/ColumnRole"
+                    "$ref": "#/definitions/types.ColumnRole"
                 },
                 "type": {
-                    "$ref": "#/definitions/ColumnType"
+                    "$ref": "#/definitions/types.ColumnType"
                 }
             }
         },
@@ -14890,7 +14725,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "definition": {
-                    "$ref": "#/definitions/analytics.ViewDefinition"
+                    "$ref": "#/definitions/types.ViewDefinition"
                 },
                 "variables": {
                     "type": "object",
@@ -15600,30 +15435,6 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
-        },
-        "ColumnRole": {
-            "type": "string",
-            "enum": [
-                "dimension",
-                "metric"
-            ],
-            "x-enum-varnames": [
-                "ColumnRoleDimension",
-                "ColumnRoleMetric"
-            ]
-        },
-        "ColumnType": {
-            "type": "string",
-            "enum": [
-                "string",
-                "decimal",
-                "datetime"
-            ],
-            "x-enum-varnames": [
-                "ColumnTypeString",
-                "ColumnTypeDecimal",
-                "ColumnTypeDatetime"
-            ]
         },
         "CommitmentBucketRequest": {
             "type": "object",
@@ -17919,7 +17730,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "definition": {
-                    "$ref": "#/definitions/analytics.ViewDefinition"
+                    "$ref": "#/definitions/types.ViewDefinition"
                 },
                 "name": {
                     "type": "string"
@@ -25403,7 +25214,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "definition": {
-                    "$ref": "#/definitions/analytics.ViewDefinition"
+                    "$ref": "#/definitions/types.ViewDefinition"
                 },
                 "id": {
                     "type": "string"
@@ -26111,6 +25922,34 @@ const docTemplate = `{
                 },
                 "updated_by": {
                     "type": "string"
+                }
+            }
+        },
+        "types.AnalyticsFilter": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "op": {
+                    "enum": [
+                        "eq",
+                        "in"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FilterOperatorType"
+                        }
+                    ]
+                },
+                "optional": {
+                    "type": "boolean"
+                },
+                "value": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -27630,6 +27469,30 @@ const docTemplate = `{
                 "CollectionMethodSendInvoice"
             ]
         },
+        "types.ColumnRole": {
+            "type": "string",
+            "enum": [
+                "dimension",
+                "metric"
+            ],
+            "x-enum-varnames": [
+                "ColumnRoleDimension",
+                "ColumnRoleMetric"
+            ]
+        },
+        "types.ColumnType": {
+            "type": "string",
+            "enum": [
+                "string",
+                "decimal",
+                "datetime"
+            ],
+            "x-enum-varnames": [
+                "ColumnTypeString",
+                "ColumnTypeDecimal",
+                "ColumnTypeDatetime"
+            ]
+        },
         "types.CommitmentInfo": {
             "type": "object",
             "properties": {
@@ -28533,6 +28396,21 @@ const docTemplate = `{
                 }
             }
         },
+        "types.Grain": {
+            "type": "string",
+            "enum": [
+                "hour",
+                "day",
+                "week",
+                "month"
+            ],
+            "x-enum-varnames": [
+                "GrainHour",
+                "GrainDay",
+                "GrainWeek",
+                "GrainMonth"
+            ]
+        },
         "types.GroupEntityType": {
             "type": "string",
             "enum": [
@@ -28944,6 +28822,17 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "MetadataCustomFieldSourceCustomer",
                 "MetadataCustomFieldSourceInvoice"
+            ]
+        },
+        "types.Metric": {
+            "type": "string",
+            "enum": [
+                "usage_quantity",
+                "event_count"
+            ],
+            "x-enum-varnames": [
+                "MetricUsageQuantity",
+                "MetricEventCount"
             ]
         },
         "types.ModifySubscriptionLineItem": {
@@ -29798,6 +29687,17 @@ const docTemplate = `{
                 }
             }
         },
+        "types.Shape": {
+            "type": "string",
+            "enum": [
+                "timeseries",
+                "breakdown"
+            ],
+            "x-enum-varnames": [
+                "ShapeTimeseries",
+                "ShapeBreakdown"
+            ]
+        },
         "types.SortCondition": {
             "type": "object",
             "properties": {
@@ -29819,6 +29719,17 @@ const docTemplate = `{
                 "SortDirectionAsc",
                 "SortDirectionDesc"
             ]
+        },
+        "types.SortSpec": {
+            "type": "object",
+            "properties": {
+                "dir": {
+                    "$ref": "#/definitions/types.SortDirection"
+                },
+                "field": {
+                    "type": "string"
+                }
+            }
         },
         "types.Status": {
             "type": "string",
@@ -30424,6 +30335,17 @@ const docTemplate = `{
                 }
             }
         },
+        "types.TimeSpecRaw": {
+            "type": "object",
+            "properties": {
+                "grain": {
+                    "$ref": "#/definitions/types.Grain"
+                },
+                "range": {
+                    "type": "string"
+                }
+            }
+        },
         "types.TransactionReason": {
             "type": "string",
             "enum": [
@@ -30656,6 +30578,129 @@ const docTemplate = `{
                 "UserTypeUser",
                 "UserTypeServiceAccount"
             ]
+        },
+        "types.Variable": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "default": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "enum": [
+                        "date_range",
+                        "string",
+                        "string_list",
+                        "number",
+                        "enum",
+                        "boolean"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.VariableType"
+                        }
+                    ]
+                }
+            }
+        },
+        "types.VariableType": {
+            "type": "string",
+            "enum": [
+                "date_range",
+                "string",
+                "string_list",
+                "number",
+                "enum",
+                "boolean"
+            ],
+            "x-enum-varnames": [
+                "VariableTypeDateRange",
+                "VariableTypeString",
+                "VariableTypeStringList",
+                "VariableTypeNumber",
+                "VariableTypeEnum",
+                "VariableTypeBoolean"
+            ]
+        },
+        "types.ViewDefinition": {
+            "type": "object",
+            "required": [
+                "metrics",
+                "shape"
+            ],
+            "properties": {
+                "dimensions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.AnalyticsFilter"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "metrics": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "enum": [
+                            "usage_quantity",
+                            "event_count"
+                        ],
+                        "$ref": "#/definitions/types.Metric"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "shape": {
+                    "enum": [
+                        "timeseries",
+                        "breakdown"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Shape"
+                        }
+                    ]
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortSpec"
+                    }
+                },
+                "time": {
+                    "description": "Time is optional: an omitted range defaults to last_7_days (see\nresolveTime), so it is intentionally not marked required.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.TimeSpecRaw"
+                        }
+                    ]
+                },
+                "variables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.Variable"
+                    }
+                }
+            }
         },
         "types.WalletConfig": {
             "type": "object",

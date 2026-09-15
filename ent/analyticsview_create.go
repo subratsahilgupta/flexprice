@@ -219,6 +219,9 @@ func (avc *AnalyticsViewCreate) check() error {
 	if _, ok := avc.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "AnalyticsView.updated_at"`)}
 	}
+	if _, ok := avc.mutation.EnvironmentID(); !ok {
+		return &ValidationError{Name: "environment_id", err: errors.New(`ent: missing required field "AnalyticsView.environment_id"`)}
+	}
 	if _, ok := avc.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "AnalyticsView.name"`)}
 	}

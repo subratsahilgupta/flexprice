@@ -5337,22 +5337,9 @@ func (m *AnalyticsViewMutation) OldEnvironmentID(ctx context.Context) (v string,
 	return oldValue.EnvironmentID, nil
 }
 
-// ClearEnvironmentID clears the value of the "environment_id" field.
-func (m *AnalyticsViewMutation) ClearEnvironmentID() {
-	m.environment_id = nil
-	m.clearedFields[analyticsview.FieldEnvironmentID] = struct{}{}
-}
-
-// EnvironmentIDCleared returns if the "environment_id" field was cleared in this mutation.
-func (m *AnalyticsViewMutation) EnvironmentIDCleared() bool {
-	_, ok := m.clearedFields[analyticsview.FieldEnvironmentID]
-	return ok
-}
-
 // ResetEnvironmentID resets all changes to the "environment_id" field.
 func (m *AnalyticsViewMutation) ResetEnvironmentID() {
 	m.environment_id = nil
-	delete(m.clearedFields, analyticsview.FieldEnvironmentID)
 }
 
 // SetName sets the "name" field.
@@ -5735,9 +5722,6 @@ func (m *AnalyticsViewMutation) ClearedFields() []string {
 	if m.FieldCleared(analyticsview.FieldUpdatedBy) {
 		fields = append(fields, analyticsview.FieldUpdatedBy)
 	}
-	if m.FieldCleared(analyticsview.FieldEnvironmentID) {
-		fields = append(fields, analyticsview.FieldEnvironmentID)
-	}
 	return fields
 }
 
@@ -5757,9 +5741,6 @@ func (m *AnalyticsViewMutation) ClearField(name string) error {
 		return nil
 	case analyticsview.FieldUpdatedBy:
 		m.ClearUpdatedBy()
-		return nil
-	case analyticsview.FieldEnvironmentID:
-		m.ClearEnvironmentID()
 		return nil
 	}
 	return fmt.Errorf("unknown AnalyticsView nullable field %s", name)

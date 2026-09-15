@@ -175,7 +175,7 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "created_by", Type: field.TypeString, Nullable: true},
 		{Name: "updated_by", Type: field.TypeString, Nullable: true},
-		{Name: "environment_id", Type: field.TypeString, Nullable: true, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
+		{Name: "environment_id", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "varchar(50)"}},
 		{Name: "name", Type: field.TypeString},
 		{Name: "version", Type: field.TypeInt, Default: 1},
 		{Name: "definition", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},

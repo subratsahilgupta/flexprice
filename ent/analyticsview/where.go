@@ -524,16 +524,6 @@ func EnvironmentIDHasSuffix(v string) predicate.AnalyticsView {
 	return predicate.AnalyticsView(sql.FieldHasSuffix(FieldEnvironmentID, v))
 }
 
-// EnvironmentIDIsNil applies the IsNil predicate on the "environment_id" field.
-func EnvironmentIDIsNil() predicate.AnalyticsView {
-	return predicate.AnalyticsView(sql.FieldIsNull(FieldEnvironmentID))
-}
-
-// EnvironmentIDNotNil applies the NotNil predicate on the "environment_id" field.
-func EnvironmentIDNotNil() predicate.AnalyticsView {
-	return predicate.AnalyticsView(sql.FieldNotNull(FieldEnvironmentID))
-}
-
 // EnvironmentIDEqualFold applies the EqualFold predicate on the "environment_id" field.
 func EnvironmentIDEqualFold(v string) predicate.AnalyticsView {
 	return predicate.AnalyticsView(sql.FieldEqualFold(FieldEnvironmentID, v))
