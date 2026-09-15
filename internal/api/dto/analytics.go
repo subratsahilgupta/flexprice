@@ -2,13 +2,16 @@ package dto
 
 import (
 	"github.com/flexprice/flexprice/internal/domain/analytics"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/validator"
 )
 
 // AnalyticsQueryRequest is the request for POST /v1/analytics/query (ad-hoc, unsaved view).
+// Every variable value is a string list; a scalar variable is a 1-element
+// list, and a date_range variable is a 1-element range-string.
 type AnalyticsQueryRequest struct {
 	Definition analytics.ViewDefinition `json:"definition" validate:"required"`
-	Variables  map[string]any           `json:"variables"`
+	Variables  map[string][]string      `json:"variables"`
 }
 
 func (r *AnalyticsQueryRequest) Validate() error {
@@ -27,7 +30,7 @@ func (r *CreateViewRequest) Validate() error {
 
 // ViewQueryRequest is the request for POST /v1/analytics/views/{id}/query.
 type ViewQueryRequest struct {
-	Variables map[string]any `json:"variables"`
+	Variables map[string][]string `json:"variables"`
 }
 
 func (r *ViewQueryRequest) Validate() error {
@@ -60,12 +63,56 @@ func NewViewResponse(v *analytics.View) *ViewResponse {
 	return resp
 }
 
+// ColumnRole classifies an AnalyticsColumn as a dimension or a metric.
+type ColumnRole string
+
+const (
+	ColumnRoleDimension ColumnRole = "dimension"
+	ColumnRoleMetric    ColumnRole = "metric"
+)
+
+func (r ColumnRole) Validate() error {
+	switch r {
+	case ColumnRoleDimension, ColumnRoleMetric:
+		return nil
+	default:
+		return ierr.NewErrorf("invalid column role %q", r).
+			WithHint("role must be one of: dimension, metric").
+			Mark(ierr.ErrValidation)
+	}
+}
+
+// ColumnType is the rendering type of an AnalyticsColumn's values.
+type ColumnType string
+
+const (
+	ColumnTypeString   ColumnType = "string"
+	ColumnTypeDecimal  ColumnType = "decimal"
+	ColumnTypeDatetime ColumnType = "datetime"
+)
+
+func (t ColumnType) Validate() error {
+	switch t {
+	case ColumnTypeString, ColumnTypeDecimal, ColumnTypeDatetime:
+		return nil
+	default:
+		return ierr.NewErrorf("invalid column type %q", t).
+			WithHint("type must be one of: string, decimal, datetime").
+			Mark(ierr.ErrValidation)
+	}
+}
+
 // AnalyticsColumn describes one column of a shaped AnalyticsQueryResult.
 type AnalyticsColumn struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Role     string `json:"role"` // "dimension" | "metric"
-	Currency string `json:"currency,omitempty"`
+	Name     string     `json:"name"`
+	Type     ColumnType `json:"type"`
+	Role     ColumnRole `json:"role"`
+	Currency string     `json:"currency,omitempty"`
+}
+
+// AnalyticsQueryMeta carries non-tabular metadata about a query result.
+type AnalyticsQueryMeta struct {
+	QuerySource string `json:"query_source"`
 }
 
 // AnalyticsQueryResult is the visualization-agnostic shape every analytics
@@ -73,6 +120,6 @@ type AnalyticsColumn struct {
 // POST /analytics/views/{id}/query.
 type AnalyticsQueryResult struct {
 	Columns []*AnalyticsColumn `json:"columns"`
-	Rows    [][]any            `json:"rows"`
-	Meta    map[string]any     `json:"meta"`
+	Rows    [][]string         `json:"rows"`
+	Meta    AnalyticsQueryMeta `json:"meta"`
 }

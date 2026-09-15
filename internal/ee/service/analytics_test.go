@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/meter"
@@ -12,8 +13,165 @@ import (
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+// ---------------------------------------------------------------------------
+// translateBreakdown / translateTimeseries (formerly analytics_translator_test.go)
+// ---------------------------------------------------------------------------
+
+func TestTranslateBreakdown_InjectsRLSAndGroupBy(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.CtxTenantID, "tenant_1")
+	ctx = context.WithValue(ctx, types.CtxEnvironmentID, "env_1")
+
+	rv := analytics.ResolvedView{
+		Shape:      analytics.ShapeBreakdown,
+		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
+		Dimensions: []string{"properties.region"},
+		Filters:    []*analytics.Filter{{Field: "meter_id", Op: types.EQUAL, Value: []string{"meter_1"}}},
+		Time:       analytics.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: analytics.GrainDay},
+	}
+	p, err := translateBreakdown(ctx, &rv)
+	require.NoError(t, err)
+	assert.Equal(t, "tenant_1", p.TenantID)
+	assert.Equal(t, "env_1", p.EnvironmentID)
+	assert.Contains(t, p.MeterIDs, "meter_1")
+	assert.Contains(t, p.GroupBy, "properties.region")
+}
+
+func TestTranslateBreakdown_RejectsIllegalDimension(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape: analytics.ShapeBreakdown, Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+		Dimensions: []string{"properties.region; DROP TABLE"},
+	}
+	_, err := translateBreakdown(ctx, &rv)
+	require.Error(t, err)
+}
+
+func TestTranslateBreakdown_RejectsNonAllowlistedDimension(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape:      analytics.ShapeBreakdown,
+		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
+		Dimensions: []string{"plan_id"},
+	}
+	_, err := translateBreakdown(ctx, &rv)
+	require.Error(t, err)
+}
+
+func TestTranslateTimeseries_InjectsRLSAndFilters(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.CtxTenantID, "tenant_1")
+	ctx = context.WithValue(ctx, types.CtxEnvironmentID, "env_1")
+
+	rv := analytics.ResolvedView{
+		Shape:   analytics.ShapeTimeseries,
+		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+		Filters: []*analytics.Filter{
+			{Field: "meter_id", Op: types.EQUAL, Value: []string{"meter_1"}},
+			{Field: "customer_id", Op: types.EQUAL, Value: []string{"cust_1"}},
+			{Field: "source", Op: types.EQUAL, Value: []string{"api"}},
+		},
+		Time: analytics.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: analytics.GrainHour},
+	}
+	p, err := translateTimeseries(ctx, &rv)
+	require.NoError(t, err)
+	assert.Equal(t, "tenant_1", p.TenantID)
+	assert.Equal(t, "env_1", p.EnvironmentID)
+	assert.Contains(t, p.MeterIDs, "meter_1")
+	assert.Contains(t, p.ExternalCustomerIDs, "cust_1")
+	assert.Contains(t, p.Sources, "api")
+	assert.Equal(t, types.WindowSizeHour, p.WindowSize)
+	assert.True(t, p.UseFinal)
+}
+
+func TestTranslateTimeseries_RejectsIllegalDimension(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape:      analytics.ShapeTimeseries,
+		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
+		Dimensions: []string{"properties.region; DROP TABLE"},
+	}
+	_, err := translateTimeseries(ctx, &rv)
+	require.Error(t, err)
+}
+
+func TestTranslateBreakdown_PropertyFilterFallsThrough(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape:   analytics.ShapeBreakdown,
+		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+		Filters: []*analytics.Filter{{Field: "model", Op: types.EQUAL, Value: []string{"gpt-4"}}},
+	}
+	p, err := translateBreakdown(ctx, &rv)
+	require.NoError(t, err)
+	assert.Contains(t, p.PropertyFilters["model"], "gpt-4")
+}
+
+// TestTranslateBreakdown_LeavesWindowSizeUnset proves breakdown never sets
+// WindowSize even when the view carries a grain — breakdown is a single
+// aggregate row per group, not a time series (windowing is timeseries-only).
+func TestTranslateBreakdown_LeavesWindowSizeUnset(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape:   analytics.ShapeBreakdown,
+		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+		Time:    analytics.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: analytics.GrainDay},
+	}
+	p, err := translateBreakdown(ctx, &rv)
+	require.NoError(t, err)
+	assert.Equal(t, types.WindowSize(""), p.WindowSize)
+}
+
+// TestTranslateBreakdown_EmptyDimensionsAllowed proves breakdown dimensions
+// are optional — an empty GroupBy is not rejected; the engine defaults to
+// one row per meter.
+func TestTranslateBreakdown_EmptyDimensionsAllowed(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape:   analytics.ShapeBreakdown,
+		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+	}
+	p, err := translateBreakdown(ctx, &rv)
+	require.NoError(t, err)
+	assert.Empty(t, p.GroupBy)
+}
+
+// TestTranslateBreakdown_CustomerIDDimensionAliasesToExternalCustomerID proves
+// a "customer_id" dimension is rewritten onto the real "external_customer_id"
+// group_by token the meter_usage engine understands.
+func TestTranslateBreakdown_CustomerIDDimensionAliasesToExternalCustomerID(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape:      analytics.ShapeBreakdown,
+		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
+		Dimensions: []string{"customer_id"},
+	}
+	p, err := translateBreakdown(ctx, &rv)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"external_customer_id"}, p.GroupBy)
+}
+
+// TestTranslateTimeseries_CustomerIDFilterAliasesToExternalCustomerID proves a
+// "customer_id" filter (not just "external_customer_id") maps onto
+// ExternalCustomerIDs, matching the dimension alias.
+func TestTranslateTimeseries_CustomerIDFilterAliasesToExternalCustomerID(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape:   analytics.ShapeTimeseries,
+		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+		Filters: []*analytics.Filter{{Field: "customer_id", Op: types.EQUAL, Value: []string{"cust_1"}}},
+	}
+	p, err := translateTimeseries(ctx, &rv)
+	require.NoError(t, err)
+	assert.Contains(t, p.ExternalCustomerIDs, "cust_1")
+}
+
+// ---------------------------------------------------------------------------
+// AnalyticsService — ExecuteView / CreateView / QueryView
+// ---------------------------------------------------------------------------
 
 type AnalyticsServiceSuite struct {
 	testutil.BaseServiceTestSuite
@@ -120,25 +278,24 @@ func (s *AnalyticsServiceSuite) insertUsageForCustomer(ctx context.Context, mete
 	}))
 }
 
-func (s *AnalyticsServiceSuite) drVars() map[string]any {
-	return map[string]any{
-		"dr": map[string]any{
-			"from": s.rangeStart.Format("2006-01-02"),
-			"to":   s.rangeEnd.Format("2006-01-02"),
-		},
+// drVars returns the "dr" date_range variable as a single-element
+// "<from>..<to>" range string.
+func (s *AnalyticsServiceSuite) drVars() map[string][]string {
+	return map[string][]string{
+		"dr": {s.rangeStart.Format("2006-01-02") + ".." + s.rangeEnd.Format("2006-01-02")},
 	}
 }
 
 func (s *AnalyticsServiceSuite) breakdownDef() *analytics.ViewDefinition {
 	return &analytics.ViewDefinition{
 		Shape:      analytics.ShapeBreakdown,
-		Metrics:    []string{"usage_quantity"},
+		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
 		Dimensions: []string{"properties.region"},
-		Filters:    []*analytics.Filter{{Field: "meter_id", Op: "eq", Value: "{{meter}}"}},
-		Time:       analytics.TimeSpecRaw{Range: "{{dr}}", Grain: "day"},
+		Filters:    []*analytics.Filter{{Field: "meter_id", Op: types.EQUAL, Value: []string{"{{meter}}"}}},
+		Time:       analytics.TimeSpecRaw{Range: "{{dr}}", Grain: analytics.GrainDay},
 		Variables: []*analytics.Variable{
-			{Name: "meter", Type: "string", Required: true},
-			{Name: "dr", Type: "date_range", Required: true},
+			{Name: "meter", Type: analytics.VariableTypeString, Required: true},
+			{Name: "dr", Type: analytics.VariableTypeDateRange, Required: true},
 		},
 	}
 }
@@ -154,24 +311,22 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownReturnsRows() {
 	s.insertUsage(ctx, s.sumMeter.ID, s.now, 5, map[string]interface{}{"region": "eu"})
 
 	vars := s.drVars()
-	vars["meter"] = s.sumMeter.ID
+	vars["meter"] = []string{s.sumMeter.ID}
 
 	res, err := s.svc.ExecuteView(ctx, s.breakdownDef(), vars)
 	s.NoError(err)
 	s.Require().NotNil(res)
 	s.Require().Len(res.Columns, 2)
 	s.Equal("properties.region", res.Columns[0].Name)
-	s.Equal("dimension", res.Columns[0].Role)
+	s.Equal(dto.ColumnRoleDimension, res.Columns[0].Role)
 	s.Equal("usage_quantity", res.Columns[1].Name)
-	s.Equal("metric", res.Columns[1].Role)
+	s.Equal(dto.ColumnRoleMetric, res.Columns[1].Role)
 
 	s.Require().Len(res.Rows, 2)
 	totals := map[string]string{}
 	for _, row := range res.Rows {
 		s.Require().Len(row, 2)
-		region, _ := row[0].(string)
-		usage, _ := row[1].(string)
-		totals[region] = usage
+		totals[row[0]] = row[1]
 	}
 	s.Equal("7", totals["us"])
 	s.Equal("5", totals["eu"])
@@ -192,7 +347,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownByMeterIDSucceeds() {
 	def.Filters = nil // both meters, no meter_id filter
 
 	vars := s.drVars()
-	vars["meter"] = "unused" // breakdownDef declares "meter" required even though Filters is nil here
+	vars["meter"] = []string{"unused"} // breakdownDef declares "meter" required even though Filters is nil here
 
 	res, err := s.svc.ExecuteView(ctx, def, vars)
 	s.NoError(err)
@@ -201,9 +356,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownByMeterIDSucceeds() {
 
 	totals := map[string]string{}
 	for _, row := range res.Rows {
-		meterID, _ := row[0].(string)
-		usage, _ := row[1].(string)
-		totals[meterID] = usage
+		totals[row[0]] = row[1]
 	}
 	s.Equal("3", totals[s.sumMeter.ID])
 	s.Equal("9", totals[s.maxMeter.ID])
@@ -221,7 +374,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownZeroDimensionsIsMeterLe
 	def.Dimensions = nil
 
 	vars := s.drVars()
-	vars["meter"] = s.sumMeter.ID
+	vars["meter"] = []string{s.sumMeter.ID}
 
 	res, err := s.svc.ExecuteView(ctx, def, vars)
 	s.NoError(err)
@@ -245,7 +398,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownGroupsByExternalCustome
 	def.Dimensions = []string{"customer_id"}
 
 	vars := s.drVars()
-	vars["meter"] = s.sumMeter.ID
+	vars["meter"] = []string{s.sumMeter.ID}
 
 	res, err := s.svc.ExecuteView(ctx, def, vars)
 	s.NoError(err)
@@ -254,9 +407,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownGroupsByExternalCustome
 
 	totals := map[string]string{}
 	for _, row := range res.Rows {
-		cust, _ := row[0].(string)
-		usage, _ := row[1].(string)
-		totals[cust] = usage
+		totals[row[0]] = row[1]
 	}
 	s.Equal("3", totals["cust_a"])
 	s.Equal("5", totals["cust_b"])
@@ -269,11 +420,11 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownGroupsByExternalCustome
 func (s *AnalyticsServiceSuite) timeseriesDef(meterID string) *analytics.ViewDefinition {
 	return &analytics.ViewDefinition{
 		Shape:   analytics.ShapeTimeseries,
-		Metrics: []string{"usage_quantity"},
-		Filters: []*analytics.Filter{{Field: "meter_id", Op: "eq", Value: meterID}},
-		Time:    analytics.TimeSpecRaw{Range: "{{dr}}", Grain: "day"},
+		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+		Filters: []*analytics.Filter{{Field: "meter_id", Op: types.EQUAL, Value: []string{meterID}}},
+		Time:    analytics.TimeSpecRaw{Range: "{{dr}}", Grain: analytics.GrainDay},
 		Variables: []*analytics.Variable{
-			{Name: "dr", Type: "date_range", Required: true},
+			{Name: "dr", Type: analytics.VariableTypeDateRange, Required: true},
 		},
 	}
 }
@@ -322,9 +473,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesWithDimensionBucketsBy
 	totals := map[string]string{}
 	for _, row := range res.Rows {
 		s.Require().Len(row, 3)
-		region, _ := row[1].(string)
-		usage, _ := row[2].(string)
-		totals[region] = usage
+		totals[row[1]] = row[2]
 	}
 	s.Equal("3", totals["us"])
 	s.Equal("5", totals["eu"])
@@ -365,7 +514,7 @@ func (s *AnalyticsServiceSuite) TestCreateView_QueryView_RoundTrip() {
 	s.NotEmpty(view.ID, "CreateView should assign an ID")
 
 	vars := s.drVars()
-	vars["meter"] = s.sumMeter.ID
+	vars["meter"] = []string{s.sumMeter.ID}
 
 	direct, err := s.svc.ExecuteView(ctx, s.breakdownDef(), vars)
 	s.NoError(err)
@@ -416,7 +565,7 @@ func (s *AnalyticsServiceSuite) TestQueryView_CrossTenantDoesNotLeak() {
 	otherTenantCtx := types.SetTenantID(ctx, "other_tenant_xyz")
 
 	vars := s.drVars()
-	vars["meter"] = s.sumMeter.ID
+	vars["meter"] = []string{s.sumMeter.ID}
 
 	_, err := s.svc.QueryView(otherTenantCtx, view.ID, vars)
 	s.Error(err)

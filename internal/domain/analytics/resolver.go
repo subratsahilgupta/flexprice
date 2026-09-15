@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -11,7 +12,7 @@ import (
 
 type ResolvedView struct {
 	Shape      Shape
-	Metrics    []string
+	Metrics    []Metric
 	Dimensions []string
 	Filters    []*Filter // concrete values; optional-with-unsupplied dropped
 	Time       TimeSpec
@@ -19,7 +20,11 @@ type ResolvedView struct {
 	Limit      int
 }
 
-func ResolveVariables(def *ViewDefinition, supplied map[string]any) (*ResolvedView, error) {
+// ResolveVariables resolves a ViewDefinition against supplied variable
+// values. Every variable value is a string list: a scalar is a 1-element
+// list, and a date_range variable is a 1-element range-string (see
+// resolveTime) that this function parses into a concrete window.
+func ResolveVariables(def *ViewDefinition, supplied map[string][]string) (*ResolvedView, error) {
 	if def == nil {
 		return nil, ierr.NewError("view definition is required").Mark(ierr.ErrValidation)
 	}
@@ -40,7 +45,7 @@ func ResolveVariables(def *ViewDefinition, supplied map[string]any) (*ResolvedVi
 		if f == nil {
 			continue
 		}
-		val, present := resolveValue(f.Value, supplied)
+		val, present := resolveFilterValue(f.Value, supplied)
 		if !present {
 			if f.Optional {
 				continue // drop optional filter with no value
@@ -58,59 +63,80 @@ func ResolveVariables(def *ViewDefinition, supplied map[string]any) (*ResolvedVi
 	return rv, nil
 }
 
-// resolveValue returns (value, present). A "{{name}}" looks the var up in supplied.
-func resolveValue(raw any, supplied map[string]any) (any, bool) {
-	s, ok := raw.(string)
-	if ok && len(s) > 4 && s[:2] == "{{" && s[len(s)-2:] == "}}" {
-		name := s[2 : len(s)-2]
-		v, present := supplied[name]
-		return v, present
+// varPlaceholder reports whether s is a "{{name}}" placeholder and, if so,
+// returns name.
+func varPlaceholder(s string) (string, bool) {
+	if len(s) > 4 && strings.HasPrefix(s, "{{") && strings.HasSuffix(s, "}}") {
+		return s[2 : len(s)-2], true
 	}
-	return raw, true // literal
+	return "", false
+}
+
+// resolveFilterValue resolves a filter's value list. A single-element
+// "{{name}}" placeholder is replaced by the supplied variable's value
+// (which may itself be multi-valued); anything else passes through as a
+// literal.
+func resolveFilterValue(raw []string, supplied map[string][]string) ([]string, bool) {
+	if len(raw) == 1 {
+		if name, ok := varPlaceholder(raw[0]); ok {
+			v, present := supplied[name]
+			return v, present
+		}
+	}
+	return raw, true
+}
+
+// resolveRangeString resolves a TimeSpecRaw.Range string. A "{{name}}"
+// placeholder is replaced by the first element of the supplied variable's
+// value; anything else passes through as a literal.
+func resolveRangeString(raw string, supplied map[string][]string) (string, bool) {
+	name, isVar := varPlaceholder(raw)
+	if !isVar {
+		return raw, true
+	}
+	v, present := supplied[name]
+	if !present || len(v) == 0 {
+		return "", false
+	}
+	return v[0], true
 }
 
 // defaultRelativeRangeToken is the window used when the view's time spec is
-// omitted entirely (Range is nil) — time is optional, not a hard requirement.
+// omitted entirely (Range is empty) — time is optional, not a hard requirement.
 const defaultRelativeRangeToken = "last_7_days"
+
+// rangeSeparator splits an absolute "<from>..<to>" range string.
+const rangeSeparator = ".."
 
 // relativeRangePattern matches "last_<N>_day(s)" / "last_<N>_hour(s)" tokens.
 var relativeRangePattern = regexp.MustCompile(`^last_([0-9]+)_(day|days|hour|hours)$`)
 
 // resolveTime resolves a view's time spec into a concrete [From, To) window.
 // Range may be:
-//   - nil (omitted)                → defaults to defaultRelativeRangeToken
-//   - a relative token string      → "last_N_days", "last_N_hours", "today", "yesterday"
-//   - an absolute {from,to} map    → "YYYY-MM-DD" dates, inclusive-from/exclusive-to
-func resolveTime(raw TimeSpecRaw, supplied map[string]any) (TimeSpec, error) {
-	val, present := resolveValue(raw.Range, supplied)
+//   - "" (omitted)                     → defaults to defaultRelativeRangeToken
+//   - a relative token string          → "last_N_days", "last_N_hours", "today", "yesterday"
+//   - an absolute "<from>..<to>" range → "YYYY-MM-DD" dates, inclusive-from/exclusive-to
+func resolveTime(raw TimeSpecRaw, supplied map[string][]string) (TimeSpec, error) {
+	val, present := resolveRangeString(raw.Range, supplied)
 	if !present {
 		return TimeSpec{}, ierr.NewError("time range not supplied").Mark(ierr.ErrValidation)
 	}
-	if val == nil {
-		from, to, err := parseRelativeRange(defaultRelativeRangeToken)
+	if val == "" {
+		val = defaultRelativeRangeToken
+	}
+	if strings.Contains(val, rangeSeparator) {
+		parts := strings.SplitN(val, rangeSeparator, 2)
+		from, err := parseDate(parts[0])
+		if err != nil {
+			return TimeSpec{}, err
+		}
+		to, err := parseDate(parts[1])
 		if err != nil {
 			return TimeSpec{}, err
 		}
 		return TimeSpec{From: from, To: to, Grain: raw.Grain}, nil
 	}
-	if token, ok := val.(string); ok {
-		from, to, err := parseRelativeRange(token)
-		if err != nil {
-			return TimeSpec{}, err
-		}
-		return TimeSpec{From: from, To: to, Grain: raw.Grain}, nil
-	}
-	m, ok := val.(map[string]any)
-	if !ok {
-		return TimeSpec{}, ierr.NewError("time range must be {from,to} or a relative range token").
-			WithHint("supported: last_N_days, last_N_hours, today, yesterday, or an absolute {from,to} range").
-			Mark(ierr.ErrValidation)
-	}
-	from, err := parseDate(m["from"])
-	if err != nil {
-		return TimeSpec{}, err
-	}
-	to, err := parseDate(m["to"])
+	from, to, err := parseRelativeRange(val)
 	if err != nil {
 		return TimeSpec{}, err
 	}
@@ -137,7 +163,7 @@ func parseRelativeRange(token string) (time.Time, time.Time, error) {
 	m := relativeRangePattern.FindStringSubmatch(token)
 	if m == nil {
 		return time.Time{}, time.Time{}, ierr.NewErrorf("unrecognized relative time range %q", token).
-			WithHint("supported: last_N_days, last_N_hours, today, yesterday, or an absolute {from,to} range").
+			WithHint("supported: last_N_days, last_N_hours, today, yesterday, or an absolute <from>..<to> range").
 			Mark(ierr.ErrValidation)
 	}
 	n, err := strconv.Atoi(m[1])
@@ -153,11 +179,7 @@ func parseRelativeRange(token string) (time.Time, time.Time, error) {
 	return now.Add(-window), now, nil
 }
 
-func parseDate(v any) (time.Time, error) {
-	s, ok := v.(string)
-	if !ok {
-		return time.Time{}, ierr.NewError("date must be a string").Mark(ierr.ErrValidation)
-	}
+func parseDate(s string) (time.Time, error) {
 	t, err := time.Parse("2006-01-02", s)
 	if err != nil {
 		return time.Time{}, ierr.NewError("invalid date").WithHint("expected YYYY-MM-DD").Mark(ierr.ErrValidation)

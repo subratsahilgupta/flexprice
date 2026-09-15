@@ -29,7 +29,7 @@ type stubAnalyticsService struct {
 	err    error
 }
 
-func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ *analytics.ViewDefinition, _ map[string]any) (*dto.AnalyticsQueryResult, error) {
+func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ *analytics.ViewDefinition, _ map[string][]string) (*dto.AnalyticsQueryResult, error) {
 	return s.result, s.err
 }
 
@@ -37,7 +37,7 @@ func (s *stubAnalyticsService) CreateView(_ context.Context, _ *analytics.View) 
 	return s.err
 }
 
-func (s *stubAnalyticsService) QueryView(_ context.Context, _ string, _ map[string]any) (*dto.AnalyticsQueryResult, error) {
+func (s *stubAnalyticsService) QueryView(_ context.Context, _ string, _ map[string][]string) (*dto.AnalyticsQueryResult, error) {
 	return s.result, s.err
 }
 
@@ -46,13 +46,13 @@ func (s *stubAnalyticsService) QueryView(_ context.Context, _ string, _ map[stri
 func cannedBreakdownResult() *dto.AnalyticsQueryResult {
 	return &dto.AnalyticsQueryResult{
 		Columns: []*dto.AnalyticsColumn{
-			{Name: "region", Type: "string", Role: "dimension"},
-			{Name: "usage_quantity", Type: "decimal", Role: "metric"},
+			{Name: "region", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
+			{Name: "usage_quantity", Type: dto.ColumnTypeDecimal, Role: dto.ColumnRoleMetric},
 		},
-		Rows: [][]any{
+		Rows: [][]string{
 			{"us-east", "42"},
 		},
-		Meta: map[string]any{"query_source": "meter_usage"},
+		Meta: dto.AnalyticsQueryMeta{QuerySource: "meter_usage"},
 	}
 }
 
@@ -115,9 +115,9 @@ func TestAnalyticsQuery_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result), "response body is not valid JSON: %q", w.Body.String())
 
 	require.Len(t, result.Columns, 2)
-	require.Equal(t, "dimension", result.Columns[0].Role)
-	require.Equal(t, "metric", result.Columns[1].Role)
-	require.Equal(t, [][]any{{"us-east", "42"}}, result.Rows)
+	require.Equal(t, dto.ColumnRoleDimension, result.Columns[0].Role)
+	require.Equal(t, dto.ColumnRoleMetric, result.Columns[1].Role)
+	require.Equal(t, [][]string{{"us-east", "42"}}, result.Rows)
 }
 
 // TestAnalyticsQuery_MalformedBody_ReturnsBadRequest covers the

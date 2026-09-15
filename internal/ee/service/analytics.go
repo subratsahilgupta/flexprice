@@ -5,18 +5,15 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-// AnalyticsService is the integration hub for Phase-1 analytics: it resolves a
-// view definition against variables, translates + executes it through the
-// existing meter_usage query engine, and shapes the result for rendering. It
-// also owns view CRUD.
 type AnalyticsService interface {
-	ExecuteView(ctx context.Context, def *analytics.ViewDefinition, vars map[string]any) (*dto.AnalyticsQueryResult, error)
+	ExecuteView(ctx context.Context, def *analytics.ViewDefinition, vars map[string][]string) (*dto.AnalyticsQueryResult, error)
 	CreateView(ctx context.Context, v *analytics.View) error
-	QueryView(ctx context.Context, id string, vars map[string]any) (*dto.AnalyticsQueryResult, error)
+	QueryView(ctx context.Context, id string, vars map[string][]string) (*dto.AnalyticsQueryResult, error)
 }
 
 type analyticsService struct {
@@ -25,8 +22,6 @@ type analyticsService struct {
 	meterUsage MeterUsageService
 }
 
-// NewAnalyticsService constructs the AnalyticsService. The view repo is
-// threaded through ServiceParams.AnalyticsViewRepo.
 func NewAnalyticsService(params ServiceParams) AnalyticsService {
 	return &analyticsService{
 		ServiceParams: params,
@@ -35,7 +30,7 @@ func NewAnalyticsService(params ServiceParams) AnalyticsService {
 	}
 }
 
-func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewDefinition, vars map[string]any) (*dto.AnalyticsQueryResult, error) {
+func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewDefinition, vars map[string][]string) (*dto.AnalyticsQueryResult, error) {
 	rv, err := analytics.ResolveVariables(def, vars)
 	if err != nil {
 		return nil, err
@@ -117,10 +112,111 @@ func (s *analyticsService) CreateView(ctx context.Context, v *analytics.View) er
 	return nil
 }
 
-func (s *analyticsService) QueryView(ctx context.Context, id string, vars map[string]any) (*dto.AnalyticsQueryResult, error) {
+func (s *analyticsService) QueryView(ctx context.Context, id string, vars map[string][]string) (*dto.AnalyticsQueryResult, error) {
 	v, err := s.views.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	return s.ExecuteView(ctx, v.Definition, vars)
+}
+
+// translateDimension rewrites analytics-facing dimension aliases onto the
+// meter_usage engine's real group_by tokens. "customer_id" is the
+// analytics-facing name for the ClickHouse "external_customer_id" column.
+func translateDimension(d string) string {
+	if d == "customer_id" {
+		return "external_customer_id"
+	}
+	return d
+}
+
+// translateDimensions applies translateDimension to every dim, preserving
+// order and length so the shaper can still render columns using the view's
+// ORIGINAL dimension names (see dimensionValue).
+func translateDimensions(dims []string) []string {
+	if len(dims) == 0 {
+		return nil
+	}
+	out := make([]string, len(dims))
+	for i, d := range dims {
+		out[i] = translateDimension(d)
+	}
+	return out
+}
+
+// applyAnalyticsFilters splits a ResolvedView's filters into the typed slices
+// the meter_usage params expect (meter_id/customer_id/source); anything else
+// is treated as a raw property name and becomes a property filter.
+func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, sources *[]string, props map[string][]string) {
+	for _, f := range filters {
+		if f == nil {
+			continue
+		}
+		switch f.Field {
+		case "meter_id":
+			*meterIDs = append(*meterIDs, f.Value...)
+		case "customer_id", "external_customer_id":
+			*customerIDs = append(*customerIDs, f.Value...)
+		case "source":
+			*sources = append(*sources, f.Value...)
+		default:
+			props[f.Field] = append(props[f.Field], f.Value...)
+		}
+	}
+}
+
+// translateBreakdown maps a resolved analytics view onto the shared detailed
+// meter_usage analytics params and calls MeterUsageService.GetDetailedAnalytics.
+// WindowSize is deliberately left unset — breakdown is a single aggregate row
+// per group, not a time series. Dimensions are optional: when empty, the
+// engine already defaults to one row per meter (see
+// getDetailedAnalyticsWithoutSubscriptionContext), so an empty GroupBy is not
+// rejected here.
+func translateBreakdown(ctx context.Context, rv *analytics.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
+	if rv == nil {
+		return nil, ierr.NewError("resolved view is required").Mark(ierr.ErrValidation)
+	}
+	if err := analytics.ValidateDimensions(rv.Dimensions); err != nil {
+		return nil, err
+	}
+	p := &events.MeterUsageDetailedAnalyticsParams{
+		TenantID:        types.GetTenantID(ctx),
+		EnvironmentID:   types.GetEnvironmentID(ctx),
+		StartTime:       rv.Time.From,
+		EndTime:         rv.Time.To,
+		GroupBy:         translateDimensions(rv.Dimensions),
+		PropertyFilters: map[string][]string{},
+		UseFinal:        true,
+	}
+	applyAnalyticsFilters(rv.Filters, &p.MeterIDs, &p.ExternalCustomerIDs, &p.Sources, p.PropertyFilters)
+	return p, nil
+}
+
+// translateTimeseries maps a resolved analytics view onto the shared detailed
+// meter_usage analytics params and calls MeterUsageService.GetDetailedAnalytics,
+// the same engine as breakdown. WindowSize is derived from the view's
+// time.grain so the response carries per-bucket Points. Dimensions act as a
+// split-by (one series per group combo); multiple meters are allowed — the
+// engine derives each meter's own aggregation type
+// (getDetailedAnalyticsWithoutSubscriptionContext splits by AggType), so the
+// caller never needs to set AggregationTypes.
+func translateTimeseries(ctx context.Context, rv *analytics.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
+	if rv == nil {
+		return nil, ierr.NewError("resolved view is required").Mark(ierr.ErrValidation)
+	}
+	if err := analytics.ValidateDimensions(rv.Dimensions); err != nil {
+		return nil, err
+	}
+	p := &events.MeterUsageDetailedAnalyticsParams{
+		TenantID:        types.GetTenantID(ctx),
+		EnvironmentID:   types.GetEnvironmentID(ctx),
+		StartTime:       rv.Time.From,
+		EndTime:         rv.Time.To,
+		WindowSize:      rv.Time.Grain.ToWindowSize(),
+		GroupBy:         translateDimensions(rv.Dimensions),
+		PropertyFilters: map[string][]string{},
+		UseFinal:        true,
+	}
+	applyAnalyticsFilters(rv.Filters, &p.MeterIDs, &p.ExternalCustomerIDs, &p.Sources, p.PropertyFilters)
+	return p, nil
 }

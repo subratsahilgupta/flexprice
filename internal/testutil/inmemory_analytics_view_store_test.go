@@ -27,7 +27,7 @@ func TestInMemoryAnalyticsViewStore_CreateGet(t *testing.T) {
 		Definition: &domainAnalytics.ViewDefinition{
 			Name:    "My View",
 			Shape:   domainAnalytics.ShapeBreakdown,
-			Metrics: []string{"usage_quantity"},
+			Metrics: []domainAnalytics.Metric{domainAnalytics.MetricUsageQuantity},
 		},
 	}
 
