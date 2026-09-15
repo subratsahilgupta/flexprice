@@ -13880,6 +13880,160 @@ const docTemplate = `{
                 }
             }
         },
+        "analytics.Filter": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "op": {
+                    "enum": [
+                        "eq",
+                        "in"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FilterOperatorType"
+                        }
+                    ]
+                },
+                "optional": {
+                    "type": "boolean"
+                },
+                "value": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "analytics.SortSpec": {
+            "type": "object",
+            "properties": {
+                "dir": {
+                    "$ref": "#/definitions/types.SortDirection"
+                },
+                "field": {
+                    "type": "string"
+                }
+            }
+        },
+        "analytics.TimeSpecRaw": {
+            "type": "object",
+            "properties": {
+                "grain": {
+                    "$ref": "#/definitions/types.Grain"
+                },
+                "range": {
+                    "type": "string"
+                }
+            }
+        },
+        "analytics.Variable": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "default": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "enum": [
+                        "date_range",
+                        "string",
+                        "string_list",
+                        "number",
+                        "enum",
+                        "boolean"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.VariableType"
+                        }
+                    ]
+                }
+            }
+        },
+        "analytics.ViewDefinition": {
+            "type": "object",
+            "required": [
+                "metrics",
+                "shape"
+            ],
+            "properties": {
+                "dimensions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analytics.Filter"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "metrics": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "enum": [
+                            "usage_quantity",
+                            "event_count"
+                        ],
+                        "$ref": "#/definitions/types.Metric"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "shape": {
+                    "enum": [
+                        "timeseries",
+                        "breakdown"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Shape"
+                        }
+                    ]
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analytics.SortSpec"
+                    }
+                },
+                "time": {
+                    "description": "Time is optional: an omitted range defaults to last_7_days (see\nresolveTime), so it is intentionally not marked required.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/analytics.TimeSpecRaw"
+                        }
+                    ]
+                },
+                "variables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analytics.Variable"
+                    }
+                }
+            }
+        },
         "costsheet.Filter": {
             "type": "object",
             "properties": {
@@ -14725,7 +14879,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "definition": {
-                    "$ref": "#/definitions/types.ViewDefinition"
+                    "$ref": "#/definitions/analytics.ViewDefinition"
                 },
                 "variables": {
                     "type": "object",
@@ -17730,7 +17884,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "definition": {
-                    "$ref": "#/definitions/types.ViewDefinition"
+                    "$ref": "#/definitions/analytics.ViewDefinition"
                 },
                 "name": {
                     "type": "string"
@@ -25214,7 +25368,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "definition": {
-                    "$ref": "#/definitions/types.ViewDefinition"
+                    "$ref": "#/definitions/analytics.ViewDefinition"
                 },
                 "id": {
                     "type": "string"
@@ -25922,34 +26076,6 @@ const docTemplate = `{
                 },
                 "updated_by": {
                     "type": "string"
-                }
-            }
-        },
-        "types.AnalyticsFilter": {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string"
-                },
-                "op": {
-                    "enum": [
-                        "eq",
-                        "in"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.FilterOperatorType"
-                        }
-                    ]
-                },
-                "optional": {
-                    "type": "boolean"
-                },
-                "value": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },
@@ -29720,17 +29846,6 @@ const docTemplate = `{
                 "SortDirectionDesc"
             ]
         },
-        "types.SortSpec": {
-            "type": "object",
-            "properties": {
-                "dir": {
-                    "$ref": "#/definitions/types.SortDirection"
-                },
-                "field": {
-                    "type": "string"
-                }
-            }
-        },
         "types.Status": {
             "type": "string",
             "enum": [
@@ -30335,17 +30450,6 @@ const docTemplate = `{
                 }
             }
         },
-        "types.TimeSpecRaw": {
-            "type": "object",
-            "properties": {
-                "grain": {
-                    "$ref": "#/definitions/types.Grain"
-                },
-                "range": {
-                    "type": "string"
-                }
-            }
-        },
         "types.TransactionReason": {
             "type": "string",
             "enum": [
@@ -30579,41 +30683,6 @@ const docTemplate = `{
                 "UserTypeServiceAccount"
             ]
         },
-        "types.Variable": {
-            "type": "object",
-            "required": [
-                "type"
-            ],
-            "properties": {
-                "default": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "required": {
-                    "type": "boolean"
-                },
-                "type": {
-                    "enum": [
-                        "date_range",
-                        "string",
-                        "string_list",
-                        "number",
-                        "enum",
-                        "boolean"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.VariableType"
-                        }
-                    ]
-                }
-            }
-        },
         "types.VariableType": {
             "type": "string",
             "enum": [
@@ -30632,75 +30701,6 @@ const docTemplate = `{
                 "VariableTypeEnum",
                 "VariableTypeBoolean"
             ]
-        },
-        "types.ViewDefinition": {
-            "type": "object",
-            "required": [
-                "metrics",
-                "shape"
-            ],
-            "properties": {
-                "dimensions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.AnalyticsFilter"
-                    }
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "metrics": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "enum": [
-                            "usage_quantity",
-                            "event_count"
-                        ],
-                        "$ref": "#/definitions/types.Metric"
-                    }
-                },
-                "name": {
-                    "type": "string"
-                },
-                "shape": {
-                    "enum": [
-                        "timeseries",
-                        "breakdown"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.Shape"
-                        }
-                    ]
-                },
-                "sort": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.SortSpec"
-                    }
-                },
-                "time": {
-                    "description": "Time is optional: an omitted range defaults to last_7_days (see\nresolveTime), so it is intentionally not marked required.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.TimeSpecRaw"
-                        }
-                    ]
-                },
-                "variables": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/types.Variable"
-                    }
-                }
-            }
         },
         "types.WalletConfig": {
             "type": "object",

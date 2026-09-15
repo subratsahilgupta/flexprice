@@ -10,8 +10,8 @@ import (
 // Every variable value is a string list; a scalar variable is a 1-element
 // list, and a date_range variable is a 1-element range-string.
 type AnalyticsQueryRequest struct {
-	Definition types.ViewDefinition `json:"definition" validate:"required"`
-	Variables  map[string][]string  `json:"variables"`
+	Definition *analytics.ViewDefinition `json:"definition" binding:"required" validate:"required"`
+	Variables  map[string][]string       `json:"variables"`
 }
 
 func (r *AnalyticsQueryRequest) Validate() error {
@@ -20,8 +20,8 @@ func (r *AnalyticsQueryRequest) Validate() error {
 
 // CreateViewRequest is the request for POST /v1/analytics/views.
 type CreateViewRequest struct {
-	Name       string               `json:"name" validate:"required"`
-	Definition types.ViewDefinition `json:"definition" validate:"required"`
+	Name       string                    `json:"name" validate:"required"`
+	Definition *analytics.ViewDefinition `json:"definition" binding:"required" validate:"required"`
 }
 
 func (r *CreateViewRequest) Validate() error {
@@ -41,10 +41,10 @@ func (r *ViewQueryRequest) Validate() error {
 // only the fields a client needs, unlike the domain analytics.View which
 // embeds types.BaseModel (tenant_id, status, created_by, timestamps, ...).
 type ViewResponse struct {
-	ID         string               `json:"id"`
-	Name       string               `json:"name"`
-	Version    int                  `json:"version"`
-	Definition types.ViewDefinition `json:"definition"`
+	ID         string                    `json:"id"`
+	Name       string                    `json:"name"`
+	Version    int                       `json:"version"`
+	Definition *analytics.ViewDefinition `json:"definition"`
 }
 
 // NewViewResponse maps a domain analytics.View onto its response DTO.
@@ -52,15 +52,12 @@ func NewViewResponse(v *analytics.View) *ViewResponse {
 	if v == nil {
 		return nil
 	}
-	resp := &ViewResponse{
-		ID:      v.ID,
-		Name:    v.Name,
-		Version: v.Version,
+	return &ViewResponse{
+		ID:         v.ID,
+		Name:       v.Name,
+		Version:    v.Version,
+		Definition: v.Definition,
 	}
-	if v.Definition != nil {
-		resp.Definition = *v.Definition
-	}
-	return resp
 }
 
 // AnalyticsColumn describes one column of a shaped AnalyticsQueryResult.
@@ -69,6 +66,15 @@ type AnalyticsColumn struct {
 	Type     types.ColumnType `json:"type"`
 	Role     types.ColumnRole `json:"role"`
 	Currency string           `json:"currency,omitempty"`
+}
+
+func NewAnalyticsColumn(name string, columnType types.ColumnType, role types.ColumnRole, currency string) *AnalyticsColumn {
+	return &AnalyticsColumn{
+		Name:     name,
+		Type:     columnType,
+		Role:     role,
+		Currency: currency,
+	}
 }
 
 // AnalyticsQueryMeta carries non-tabular metadata about a query result.

@@ -16269,6 +16269,123 @@
           }
         }
       },
+      "analytics.Filter": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "op": {
+            "$ref": "#/components/schemas/types.FilterOperatorType"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "analytics.SortSpec": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "$ref": "#/components/schemas/types.SortDirection"
+          },
+          "field": {
+            "type": "string"
+          }
+        }
+      },
+      "analytics.TimeSpecRaw": {
+        "type": "object",
+        "properties": {
+          "grain": {
+            "$ref": "#/components/schemas/types.Grain"
+          },
+          "range": {
+            "type": "string"
+          }
+        }
+      },
+      "analytics.Variable": {
+        "required": [
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "default": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "$ref": "#/components/schemas/types.VariableType"
+          }
+        }
+      },
+      "analytics.ViewDefinition": {
+        "required": [
+          "metrics",
+          "shape"
+        ],
+        "type": "object",
+        "properties": {
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/analytics.Filter"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "metrics": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.Metric"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/types.Shape"
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/analytics.SortSpec"
+            }
+          },
+          "time": {
+            "$ref": "#/components/schemas/analytics.TimeSpecRaw"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/analytics.Variable"
+            }
+          }
+        }
+      },
       "costsheet.Filter": {
         "type": "object",
         "properties": {
@@ -17126,7 +17243,7 @@
         "type": "object",
         "properties": {
           "definition": {
-            "$ref": "#/components/schemas/types.ViewDefinition"
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
           },
           "variables": {
             "type": "object",
@@ -19898,7 +20015,7 @@
         "type": "object",
         "properties": {
           "definition": {
-            "$ref": "#/components/schemas/types.ViewDefinition"
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
           },
           "name": {
             "type": "string"
@@ -26992,7 +27109,7 @@
         "type": "object",
         "properties": {
           "definition": {
-            "$ref": "#/components/schemas/types.ViewDefinition"
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
           },
           "id": {
             "type": "string"
@@ -27714,27 +27831,6 @@
             "type": "string"
           }
         }
-      },
-      "types.AnalyticsFilter": {
-        "type": "object",
-        "properties": {
-          "field": {
-            "type": "string"
-          },
-          "op": {
-            "$ref": "#/components/schemas/types.FilterOperatorType"
-          },
-          "optional": {
-            "type": "boolean"
-          },
-          "value": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "x-speakeasy-name-override": "AnalyticsFilter"
       },
       "types.Bucket": {
         "type": "object",
@@ -31595,18 +31691,6 @@
         ],
         "x-speakeasy-name-override": "SortDirection"
       },
-      "types.SortSpec": {
-        "type": "object",
-        "properties": {
-          "dir": {
-            "$ref": "#/components/schemas/types.SortDirection"
-          },
-          "field": {
-            "type": "string"
-          }
-        },
-        "x-speakeasy-name-override": "SortSpec"
-      },
       "types.Status": {
         "type": "string",
         "enum": [
@@ -32197,18 +32281,6 @@
         },
         "x-speakeasy-name-override": "TimeRangeFilter"
       },
-      "types.TimeSpecRaw": {
-        "type": "object",
-        "properties": {
-          "grain": {
-            "$ref": "#/components/schemas/types.Grain"
-          },
-          "range": {
-            "type": "string"
-          }
-        },
-        "x-speakeasy-name-override": "TimeSpecRaw"
-      },
       "types.TransactionReason": {
         "type": "string",
         "enum": [
@@ -32448,30 +32520,6 @@
         ],
         "x-speakeasy-name-override": "UserType"
       },
-      "types.Variable": {
-        "required": [
-          "type"
-        ],
-        "type": "object",
-        "properties": {
-          "default": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "name": {
-            "type": "string"
-          },
-          "required": {
-            "type": "boolean"
-          },
-          "type": {
-            "$ref": "#/components/schemas/types.VariableType"
-          }
-        },
-        "x-speakeasy-name-override": "Variable"
-      },
       "types.VariableType": {
         "type": "string",
         "enum": [
@@ -32491,59 +32539,6 @@
           "VariableTypeBoolean"
         ],
         "x-speakeasy-name-override": "VariableType"
-      },
-      "types.ViewDefinition": {
-        "required": [
-          "metrics",
-          "shape"
-        ],
-        "type": "object",
-        "properties": {
-          "dimensions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "filters": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/types.AnalyticsFilter"
-            }
-          },
-          "limit": {
-            "type": "integer"
-          },
-          "metrics": {
-            "minItems": 1,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/types.Metric"
-            }
-          },
-          "name": {
-            "type": "string"
-          },
-          "shape": {
-            "$ref": "#/components/schemas/types.Shape"
-          },
-          "sort": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/types.SortSpec"
-            }
-          },
-          "time": {
-            "$ref": "#/components/schemas/types.TimeSpecRaw"
-          },
-          "variables": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/types.Variable"
-            }
-          }
-        },
-        "x-speakeasy-name-override": "ViewDefinition"
       },
       "types.WalletConfig": {
         "type": "object",

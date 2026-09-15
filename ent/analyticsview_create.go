@@ -11,7 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/analyticsview"
-	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 )
 
 // AnalyticsViewCreate is the builder for creating a AnalyticsView entity.
@@ -132,8 +132,8 @@ func (avc *AnalyticsViewCreate) SetNillableVersion(i *int) *AnalyticsViewCreate 
 }
 
 // SetDefinition sets the "definition" field.
-func (avc *AnalyticsViewCreate) SetDefinition(td types.ViewDefinition) *AnalyticsViewCreate {
-	avc.mutation.SetDefinition(td)
+func (avc *AnalyticsViewCreate) SetDefinition(ad analytics.ViewDefinition) *AnalyticsViewCreate {
+	avc.mutation.SetDefinition(ad)
 	return avc
 }
 

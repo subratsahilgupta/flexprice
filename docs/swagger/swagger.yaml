@@ -199,6 +199,106 @@ definitions:
       pagination:
         $ref: '#/definitions/types.PaginationResponse'
     type: object
+  analytics.Filter:
+    properties:
+      field:
+        type: string
+      op:
+        allOf:
+        - $ref: '#/definitions/types.FilterOperatorType'
+        enum:
+        - eq
+        - in
+      optional:
+        type: boolean
+      value:
+        items:
+          type: string
+        type: array
+    type: object
+  analytics.SortSpec:
+    properties:
+      dir:
+        $ref: '#/definitions/types.SortDirection'
+      field:
+        type: string
+    type: object
+  analytics.TimeSpecRaw:
+    properties:
+      grain:
+        $ref: '#/definitions/types.Grain'
+      range:
+        type: string
+    type: object
+  analytics.Variable:
+    properties:
+      default:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      required:
+        type: boolean
+      type:
+        allOf:
+        - $ref: '#/definitions/types.VariableType'
+        enum:
+        - date_range
+        - string
+        - string_list
+        - number
+        - enum
+        - boolean
+    required:
+    - type
+    type: object
+  analytics.ViewDefinition:
+    properties:
+      dimensions:
+        items:
+          type: string
+        type: array
+      filters:
+        items:
+          $ref: '#/definitions/analytics.Filter'
+        type: array
+      limit:
+        type: integer
+      metrics:
+        items:
+          $ref: '#/definitions/types.Metric'
+          enum:
+          - usage_quantity
+          - event_count
+        minItems: 1
+        type: array
+      name:
+        type: string
+      shape:
+        allOf:
+        - $ref: '#/definitions/types.Shape'
+        enum:
+        - timeseries
+        - breakdown
+      sort:
+        items:
+          $ref: '#/definitions/analytics.SortSpec'
+        type: array
+      time:
+        allOf:
+        - $ref: '#/definitions/analytics.TimeSpecRaw'
+        description: |-
+          Time is optional: an omitted range defaults to last_7_days (see
+          resolveTime), so it is intentionally not marked required.
+      variables:
+        items:
+          $ref: '#/definitions/analytics.Variable'
+        type: array
+    required:
+    - metrics
+    - shape
+    type: object
   costsheet.Filter:
     properties:
       costsheetIDs:
@@ -767,7 +867,7 @@ definitions:
   AnalyticsQueryRequest:
     properties:
       definition:
-        $ref: '#/definitions/types.ViewDefinition'
+        $ref: '#/definitions/analytics.ViewDefinition'
       variables:
         additionalProperties:
           items:
@@ -2957,7 +3057,7 @@ definitions:
   CreateViewRequest:
     properties:
       definition:
-        $ref: '#/definitions/types.ViewDefinition'
+        $ref: '#/definitions/analytics.ViewDefinition'
       name:
         type: string
     required:
@@ -8385,7 +8485,7 @@ definitions:
   ViewResponse:
     properties:
       definition:
-        $ref: '#/definitions/types.ViewDefinition'
+        $ref: '#/definitions/analytics.ViewDefinition'
       id:
         type: string
       name:
@@ -8898,23 +8998,6 @@ definitions:
         type: string
       updated_by:
         type: string
-    type: object
-  types.AnalyticsFilter:
-    properties:
-      field:
-        type: string
-      op:
-        allOf:
-        - $ref: '#/definitions/types.FilterOperatorType'
-        enum:
-        - eq
-        - in
-      optional:
-        type: boolean
-      value:
-        items:
-          type: string
-        type: array
     type: object
   types.Bucket:
     properties:
@@ -11739,13 +11822,6 @@ definitions:
     x-enum-varnames:
     - SortDirectionAsc
     - SortDirectionDesc
-  types.SortSpec:
-    properties:
-      dir:
-        $ref: '#/definitions/types.SortDirection'
-      field:
-        type: string
-    type: object
   types.Status:
     enum:
     - published
@@ -12191,13 +12267,6 @@ definitions:
       start_time:
         type: string
     type: object
-  types.TimeSpecRaw:
-    properties:
-      grain:
-        $ref: '#/definitions/types.Grain'
-      range:
-        type: string
-    type: object
   types.TransactionReason:
     enum:
     - INVOICE_PAYMENT
@@ -12377,29 +12446,6 @@ definitions:
     x-enum-varnames:
     - UserTypeUser
     - UserTypeServiceAccount
-  types.Variable:
-    properties:
-      default:
-        items:
-          type: string
-        type: array
-      name:
-        type: string
-      required:
-        type: boolean
-      type:
-        allOf:
-        - $ref: '#/definitions/types.VariableType'
-        enum:
-        - date_range
-        - string
-        - string_list
-        - number
-        - enum
-        - boolean
-    required:
-    - type
-    type: object
   types.VariableType:
     enum:
     - date_range
@@ -12416,52 +12462,6 @@ definitions:
     - VariableTypeNumber
     - VariableTypeEnum
     - VariableTypeBoolean
-  types.ViewDefinition:
-    properties:
-      dimensions:
-        items:
-          type: string
-        type: array
-      filters:
-        items:
-          $ref: '#/definitions/types.AnalyticsFilter'
-        type: array
-      limit:
-        type: integer
-      metrics:
-        items:
-          $ref: '#/definitions/types.Metric'
-          enum:
-          - usage_quantity
-          - event_count
-        minItems: 1
-        type: array
-      name:
-        type: string
-      shape:
-        allOf:
-        - $ref: '#/definitions/types.Shape'
-        enum:
-        - timeseries
-        - breakdown
-      sort:
-        items:
-          $ref: '#/definitions/types.SortSpec'
-        type: array
-      time:
-        allOf:
-        - $ref: '#/definitions/types.TimeSpecRaw'
-        description: |-
-          Time is optional: an omitted range defaults to last_7_days (see
-          resolveTime), so it is intentionally not marked required.
-      variables:
-        items:
-          $ref: '#/definitions/types.Variable'
-        type: array
-    required:
-    - metrics
-    - shape
-    type: object
   types.WalletConfig:
     properties:
       allowed_price_types:

@@ -51,7 +51,7 @@ func (h *AnalyticsHandler) Query(c *gin.Context) {
 		return
 	}
 
-	res, err := h.svc.ExecuteView(ctx, &req.Definition, req.Variables)
+	res, err := h.svc.ExecuteView(ctx, req.Definition, req.Variables)
 	if err != nil {
 		h.log.Error(ctx, "failed to execute analytics query", "error", err)
 		c.Error(err)
@@ -92,7 +92,7 @@ func (h *AnalyticsHandler) CreateView(c *gin.Context) {
 
 	v := &analytics.View{
 		Name:       req.Name,
-		Definition: &req.Definition,
+		Definition: req.Definition,
 	}
 
 	if err := h.svc.CreateView(ctx, v); err != nil {

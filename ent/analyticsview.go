@@ -11,7 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/analyticsview"
-	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 )
 
 // AnalyticsView is the model entity for the AnalyticsView schema.
@@ -38,7 +38,7 @@ type AnalyticsView struct {
 	// Version holds the value of the "version" field.
 	Version int `json:"version,omitempty"`
 	// Definition holds the value of the "definition" field.
-	Definition   types.ViewDefinition `json:"definition,omitempty"`
+	Definition   analytics.ViewDefinition `json:"definition,omitempty"`
 	selectValues sql.SelectValues
 }
 

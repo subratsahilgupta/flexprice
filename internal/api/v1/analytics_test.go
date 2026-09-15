@@ -30,7 +30,7 @@ type stubAnalyticsService struct {
 	err    error
 }
 
-func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ *types.ViewDefinition, _ map[string][]string) (*dto.AnalyticsQueryResult, error) {
+func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ *analytics.ViewDefinition, _ map[string][]string) (*dto.AnalyticsQueryResult, error) {
 	return s.result, s.err
 }
 

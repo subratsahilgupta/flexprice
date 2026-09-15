@@ -68,6 +68,7 @@ import (
 	"github.com/flexprice/flexprice/ent/wallet"
 	"github.com/flexprice/flexprice/ent/wallettransaction"
 	"github.com/flexprice/flexprice/ent/workflowexecution"
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -4953,7 +4954,7 @@ type AnalyticsViewMutation struct {
 	name           *string
 	version        *int
 	addversion     *int
-	definition     *types.ViewDefinition
+	definition     *analytics.ViewDefinition
 	clearedFields  map[string]struct{}
 	done           bool
 	oldValue       func(context.Context) (*AnalyticsView, error)
@@ -5435,12 +5436,12 @@ func (m *AnalyticsViewMutation) ResetVersion() {
 }
 
 // SetDefinition sets the "definition" field.
-func (m *AnalyticsViewMutation) SetDefinition(td types.ViewDefinition) {
-	m.definition = &td
+func (m *AnalyticsViewMutation) SetDefinition(ad analytics.ViewDefinition) {
+	m.definition = &ad
 }
 
 // Definition returns the value of the "definition" field in the mutation.
-func (m *AnalyticsViewMutation) Definition() (r types.ViewDefinition, exists bool) {
+func (m *AnalyticsViewMutation) Definition() (r analytics.ViewDefinition, exists bool) {
 	v := m.definition
 	if v == nil {
 		return
@@ -5451,7 +5452,7 @@ func (m *AnalyticsViewMutation) Definition() (r types.ViewDefinition, exists boo
 // OldDefinition returns the old "definition" field's value of the AnalyticsView entity.
 // If the AnalyticsView object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AnalyticsViewMutation) OldDefinition(ctx context.Context) (v types.ViewDefinition, err error) {
+func (m *AnalyticsViewMutation) OldDefinition(ctx context.Context) (v analytics.ViewDefinition, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldDefinition is only allowed on UpdateOne operations")
 	}
@@ -5665,7 +5666,7 @@ func (m *AnalyticsViewMutation) SetField(name string, value ent.Value) error {
 		m.SetVersion(v)
 		return nil
 	case analyticsview.FieldDefinition:
-		v, ok := value.(types.ViewDefinition)
+		v, ok := value.(analytics.ViewDefinition)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

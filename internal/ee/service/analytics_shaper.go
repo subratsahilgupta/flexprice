@@ -33,20 +33,12 @@ func dimensionValue(item dto.UsageAnalyticItem, dim string) string {
 	}
 }
 
-// effectiveMetrics defaults an empty metrics list to usage_quantity — every
-// shaped result carries at least one metric column.
+// effectiveMetrics defaults an empty metrics list to usage_quantity
 func effectiveMetrics(metrics []types.Metric) []types.Metric {
 	if len(metrics) == 0 {
 		return []types.Metric{types.MetricUsageQuantity}
 	}
 	return metrics
-}
-
-// metricColumn maps a requested Metric onto its output column. Both
-// supported metrics (usage_quantity, event_count) are Phase-1 usage-only
-// numbers, so both render as decimal columns.
-func metricColumn(m types.Metric) *dto.AnalyticsColumn {
-	return &dto.AnalyticsColumn{Name: string(m), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric}
 }
 
 // metricValue reads m's value off a breakdown item. item.TotalUsage is
@@ -86,14 +78,14 @@ func shapeBreakdown(items []dto.UsageAnalyticItem, dims []string, metrics []type
 
 	cols := make([]*dto.AnalyticsColumn, 0, len(dims)+len(metrics)+2)
 	for _, d := range dims {
-		cols = append(cols, &dto.AnalyticsColumn{Name: d, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
+		cols = append(cols, dto.NewAnalyticsColumn(d, types.ColumnTypeString, types.ColumnRoleDimension, ""))
 	}
 	for _, m := range metrics {
-		cols = append(cols, metricColumn(m))
+		cols = append(cols, dto.NewAnalyticsColumn(string(m), types.ColumnTypeDecimal, types.ColumnRoleMetric, ""))
 	}
 	cols = append(cols,
-		&dto.AnalyticsColumn{Name: "unit", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
-		&dto.AnalyticsColumn{Name: "unit_plural", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
+		dto.NewAnalyticsColumn("unit", types.ColumnTypeString, types.ColumnRoleDimension, ""),
+		dto.NewAnalyticsColumn("unit_plural", types.ColumnTypeString, types.ColumnRoleDimension, ""),
 	)
 
 	rows := make([][]string, 0, len(items))
@@ -124,16 +116,16 @@ func shapeTimeseries(items []dto.UsageAnalyticItem, dims []string, metrics []typ
 	metrics = effectiveMetrics(metrics)
 
 	cols := make([]*dto.AnalyticsColumn, 0, len(dims)+len(metrics)+3)
-	cols = append(cols, &dto.AnalyticsColumn{Name: "window_start", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
+	cols = append(cols, dto.NewAnalyticsColumn("window_start", types.ColumnTypeDatetime, types.ColumnRoleDimension, ""))
 	for _, d := range dims {
-		cols = append(cols, &dto.AnalyticsColumn{Name: d, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
+		cols = append(cols, dto.NewAnalyticsColumn(d, types.ColumnTypeString, types.ColumnRoleDimension, ""))
 	}
 	for _, m := range metrics {
-		cols = append(cols, metricColumn(m))
+		cols = append(cols, dto.NewAnalyticsColumn(string(m), types.ColumnTypeDecimal, types.ColumnRoleMetric, ""))
 	}
 	cols = append(cols,
-		&dto.AnalyticsColumn{Name: "unit", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
-		&dto.AnalyticsColumn{Name: "unit_plural", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
+		dto.NewAnalyticsColumn("unit", types.ColumnTypeString, types.ColumnRoleDimension, ""),
+		dto.NewAnalyticsColumn("unit_plural", types.ColumnTypeString, types.ColumnRoleDimension, ""),
 	)
 
 	rows := make([][]string, 0)

@@ -22,6 +22,30 @@ func NewAnalyticsViewRepository(client postgres.IClient, log *logger.Logger) dom
 	return &analyticsViewRepository{client: client, log: log}
 }
 
+// viewFromEnt maps an ent AnalyticsView row into the domain View. The ent→domain
+// mapping lives in the repository layer so the domain package stays ent-free;
+// ent owns the jsonb (un)marshal of the typed definition field.
+func viewFromEnt(e *ent.AnalyticsView) *domainAnalytics.View {
+	if e == nil {
+		return nil
+	}
+	return &domainAnalytics.View{
+		ID:            e.ID,
+		Name:          e.Name,
+		Version:       e.Version,
+		Definition:    &e.Definition,
+		EnvironmentID: e.EnvironmentID,
+		BaseModel: types.BaseModel{
+			TenantID:  e.TenantID,
+			Status:    types.Status(e.Status),
+			CreatedAt: e.CreatedAt,
+			UpdatedAt: e.UpdatedAt,
+			CreatedBy: e.CreatedBy,
+			UpdatedBy: e.UpdatedBy,
+		},
+	}
+}
+
 func (r *analyticsViewRepository) Create(ctx context.Context, v *domainAnalytics.View) error {
 	if v.Definition == nil {
 		return ierr.NewError("view definition is required").Mark(ierr.ErrValidation)
@@ -74,7 +98,7 @@ func (r *analyticsViewRepository) Create(ctx context.Context, v *domainAnalytics
 	}
 
 	SetSpanSuccess(span)
-	*v = *domainAnalytics.FromEnt(created)
+	*v = *viewFromEnt(created)
 	return nil
 }
 
@@ -113,7 +137,7 @@ func (r *analyticsViewRepository) Get(ctx context.Context, id string) (*domainAn
 	}
 
 	SetSpanSuccess(span)
-	return domainAnalytics.FromEnt(v), nil
+	return viewFromEnt(v), nil
 }
 
 func (r *analyticsViewRepository) List(ctx context.Context) ([]*domainAnalytics.View, error) {
@@ -146,7 +170,7 @@ func (r *analyticsViewRepository) List(ctx context.Context) ([]*domainAnalytics.
 
 	result := make([]*domainAnalytics.View, 0, len(views))
 	for _, v := range views {
-		result = append(result, domainAnalytics.FromEnt(v))
+		result = append(result, viewFromEnt(v))
 	}
 	SetSpanSuccess(span)
 	return result, nil

@@ -1,4 +1,4 @@
-package types
+package analytics
 
 import (
 	"regexp"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // validPropertyField matches the charset allowed after "properties.".
@@ -36,26 +37,24 @@ func validateDimension(d string) error {
 		Mark(ierr.ErrValidation)
 }
 
-// AnalyticsFilter is a single filter clause of an analytics ViewDefinition.
-// Named "Analytics"-prefixed to avoid colliding with the existing
-// (deprecated) pagination Filter in this package.
-type AnalyticsFilter struct {
-	Field    string             `json:"field"`
-	Op       FilterOperatorType `json:"op" enums:"eq,in"`
-	Value    []string           `json:"value"`
-	Optional bool               `json:"optional,omitempty"`
+// Filter is a single filter clause of a ViewDefinition.
+type Filter struct {
+	Field    string                   `json:"field"`
+	Op       types.FilterOperatorType `json:"op" enums:"eq,in"`
+	Value    []string                 `json:"value"`
+	Optional bool                     `json:"optional,omitempty"`
 }
 
 type SortSpec struct {
-	Field string        `json:"field"`
-	Dir   SortDirection `json:"dir"`
+	Field string              `json:"field"`
+	Dir   types.SortDirection `json:"dir"`
 }
 
 type Variable struct {
-	Name     string       `json:"name"`
-	Type     VariableType `json:"type" binding:"required" validate:"required" enums:"date_range,string,string_list,number,enum,boolean"`
-	Required bool         `json:"required,omitempty"`
-	Default  []string     `json:"default,omitempty"`
+	Name     string             `json:"name"`
+	Type     types.VariableType `json:"type" binding:"required" validate:"required" enums:"date_range,string,string_list,number,enum,boolean"`
+	Required bool               `json:"required,omitempty"`
+	Default  []string           `json:"default,omitempty"`
 }
 
 // TimeSpecRaw is the unresolved time spec. Range is a single string: a
@@ -64,22 +63,22 @@ type Variable struct {
 // "<from>..<to>" range ("YYYY-MM-DD" dates), or omitted entirely (defaults
 // to "last_7_days").
 type TimeSpecRaw struct {
-	Range string `json:"range,omitempty"`
-	Grain Grain  `json:"grain"`
+	Range string      `json:"range,omitempty"`
+	Grain types.Grain `json:"grain"`
 }
 
 type TimeSpec struct {
 	From  time.Time
 	To    time.Time
-	Grain Grain
+	Grain types.Grain
 }
 
 type ViewDefinition struct {
-	Name       string             `json:"name"`
-	Shape      Shape              `json:"shape" binding:"required" validate:"required" enums:"timeseries,breakdown"`
-	Metrics    []Metric           `json:"metrics" binding:"required,min=1" validate:"required,min=1" enums:"usage_quantity,event_count"`
-	Dimensions []string           `json:"dimensions,omitempty"`
-	Filters    []*AnalyticsFilter `json:"filters,omitempty"`
+	Name       string         `json:"name"`
+	Shape      types.Shape    `json:"shape" binding:"required" validate:"required" enums:"timeseries,breakdown"`
+	Metrics    []types.Metric `json:"metrics" binding:"required,min=1" validate:"required,min=1" enums:"usage_quantity,event_count"`
+	Dimensions []string       `json:"dimensions,omitempty"`
+	Filters    []*Filter      `json:"filters,omitempty"`
 	// Time is optional: an omitted range defaults to last_7_days (see
 	// resolveTime), so it is intentionally not marked required.
 	Time      TimeSpecRaw `json:"time"`
@@ -91,10 +90,10 @@ type ViewDefinition struct {
 // NewViewDefinition builds a ViewDefinition from its constituent parts.
 func NewViewDefinition(
 	name string,
-	shape Shape,
-	metrics []Metric,
+	shape types.Shape,
+	metrics []types.Metric,
 	dimensions []string,
-	filters []*AnalyticsFilter,
+	filters []*Filter,
 	timeSpec TimeSpecRaw,
 	sort []*SortSpec,
 	limit int,
@@ -115,7 +114,7 @@ func NewViewDefinition(
 
 func (v ViewDefinition) Validate() error {
 	switch v.Shape {
-	case ShapeTimeseries, ShapeBreakdown:
+	case types.ShapeTimeseries, types.ShapeBreakdown:
 	default:
 		return ierr.NewError("unsupported shape").
 			WithHint("shape must be one of: timeseries, breakdown").
@@ -135,7 +134,7 @@ func (v ViewDefinition) Validate() error {
 	if err := v.Time.Grain.Validate(); err != nil {
 		return err
 	}
-	if v.Shape == ShapeTimeseries && (len(v.Sort) > 0 || v.Limit > 0) {
+	if v.Shape == types.ShapeTimeseries && (len(v.Sort) > 0 || v.Limit > 0) {
 		return ierr.NewError("sort and limit are not supported for timeseries views").
 			WithHint("timeseries rows are time-ordered per bucket; series-level ranking is not yet supported — remove sort/limit or use a breakdown view").
 			Mark(ierr.ErrValidation)
@@ -145,7 +144,7 @@ func (v ViewDefinition) Validate() error {
 			continue
 		}
 		switch s.Dir {
-		case "", SortDirectionAsc, SortDirectionDesc:
+		case "", types.SortDirectionAsc, types.SortDirectionDesc:
 		default:
 			return ierr.NewErrorf("invalid sort direction %q", s.Dir).
 				WithHint("dir must be one of: asc, desc (empty defaults to asc)").
@@ -157,7 +156,7 @@ func (v ViewDefinition) Validate() error {
 			continue
 		}
 		switch f.Op {
-		case EQUAL, IN:
+		case types.EQUAL, types.IN:
 		default:
 			return ierr.NewErrorf("unsupported filter operator %q", f.Op).
 				WithHint("filter operator must be one of: eq, in").
@@ -176,12 +175,12 @@ func (v ViewDefinition) Validate() error {
 }
 
 // ResolvedView is a ViewDefinition with all variables resolved to concrete
-// values — built by domain/analytics.ResolveVariables.
+// values — built by ResolveVariables.
 type ResolvedView struct {
-	Shape      Shape
-	Metrics    []Metric
+	Shape      types.Shape
+	Metrics    []types.Metric
 	Dimensions []string
-	Filters    []*AnalyticsFilter // concrete values; optional-with-unsupplied dropped
+	Filters    []*Filter // concrete values; optional-with-unsupplied dropped
 	Time       TimeSpec
 	Sort       []*SortSpec
 	Limit      int
