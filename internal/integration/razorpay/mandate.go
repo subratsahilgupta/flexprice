@@ -138,13 +138,13 @@ func (a *CheckoutAdapter) CreateAuthorizationLink(
 			"flexprice_payment_id":  req.PaymentID,
 		},
 	}
+	if req.ExpiresAt != nil {
+		data["expire_by"] = req.ExpiresAt.Unix()
+	}
 
 	subReg := map[string]interface{}{"method": method}
 	if req.MaxAmount != nil {
 		subReg["max_amount"] = toPaise(*req.MaxAmount)
-	}
-	if req.ExpiresAt != nil {
-		subReg["expire_at"] = req.ExpiresAt.Unix()
 	}
 	data["subscription_registration"] = subReg
 
