@@ -26,12 +26,12 @@ func TestTranslateBreakdown_InjectsRLSAndGroupBy(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.CtxTenantID, "tenant_1")
 	ctx = context.WithValue(ctx, types.CtxEnvironmentID, "env_1")
 
-	rv := analytics.ResolvedView{
-		Shape:      analytics.ShapeBreakdown,
-		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
+	rv := types.ResolvedView{
+		Shape:      types.ShapeBreakdown,
+		Metrics:    []types.Metric{types.MetricUsageQuantity},
 		Dimensions: []string{"properties.region"},
-		Filters:    []*analytics.Filter{{Field: "meter_id", Op: types.EQUAL, Value: []string{"meter_1"}}},
-		Time:       analytics.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: analytics.GrainDay},
+		Filters:    []*types.AnalyticsFilter{{Field: "meter_id", Op: types.EQUAL, Value: []string{"meter_1"}}},
+		Time:       types.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: types.GrainDay},
 	}
 	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
@@ -43,8 +43,8 @@ func TestTranslateBreakdown_InjectsRLSAndGroupBy(t *testing.T) {
 
 func TestTranslateBreakdown_RejectsIllegalDimension(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape: analytics.ShapeBreakdown, Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+	rv := types.ResolvedView{
+		Shape: types.ShapeBreakdown, Metrics: []types.Metric{types.MetricUsageQuantity},
 		Dimensions: []string{"properties.region; DROP TABLE"},
 	}
 	_, err := translateBreakdown(ctx, &rv)
@@ -53,9 +53,9 @@ func TestTranslateBreakdown_RejectsIllegalDimension(t *testing.T) {
 
 func TestTranslateBreakdown_RejectsNonAllowlistedDimension(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape:      analytics.ShapeBreakdown,
-		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
+	rv := types.ResolvedView{
+		Shape:      types.ShapeBreakdown,
+		Metrics:    []types.Metric{types.MetricUsageQuantity},
 		Dimensions: []string{"plan_id"},
 	}
 	_, err := translateBreakdown(ctx, &rv)
@@ -66,15 +66,15 @@ func TestTranslateTimeseries_InjectsRLSAndFilters(t *testing.T) {
 	ctx := context.WithValue(context.Background(), types.CtxTenantID, "tenant_1")
 	ctx = context.WithValue(ctx, types.CtxEnvironmentID, "env_1")
 
-	rv := analytics.ResolvedView{
-		Shape:   analytics.ShapeTimeseries,
-		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
-		Filters: []*analytics.Filter{
+	rv := types.ResolvedView{
+		Shape:   types.ShapeTimeseries,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Filters: []*types.AnalyticsFilter{
 			{Field: "meter_id", Op: types.EQUAL, Value: []string{"meter_1"}},
 			{Field: "customer_id", Op: types.EQUAL, Value: []string{"cust_1"}},
 			{Field: "source", Op: types.EQUAL, Value: []string{"api"}},
 		},
-		Time: analytics.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: analytics.GrainHour},
+		Time: types.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: types.GrainHour},
 	}
 	p, err := translateTimeseries(ctx, &rv)
 	require.NoError(t, err)
@@ -89,9 +89,9 @@ func TestTranslateTimeseries_InjectsRLSAndFilters(t *testing.T) {
 
 func TestTranslateTimeseries_RejectsIllegalDimension(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape:      analytics.ShapeTimeseries,
-		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
+	rv := types.ResolvedView{
+		Shape:      types.ShapeTimeseries,
+		Metrics:    []types.Metric{types.MetricUsageQuantity},
 		Dimensions: []string{"properties.region; DROP TABLE"},
 	}
 	_, err := translateTimeseries(ctx, &rv)
@@ -100,10 +100,10 @@ func TestTranslateTimeseries_RejectsIllegalDimension(t *testing.T) {
 
 func TestTranslateBreakdown_PropertyFilterFallsThrough(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape:   analytics.ShapeBreakdown,
-		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
-		Filters: []*analytics.Filter{{Field: "model", Op: types.EQUAL, Value: []string{"gpt-4"}}},
+	rv := types.ResolvedView{
+		Shape:   types.ShapeBreakdown,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Filters: []*types.AnalyticsFilter{{Field: "model", Op: types.EQUAL, Value: []string{"gpt-4"}}},
 	}
 	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
@@ -118,10 +118,10 @@ func TestTranslateBreakdown_PropertyFilterFallsThrough(t *testing.T) {
 // prefixed key would never match.
 func TestTranslateBreakdown_PropertyFilterStripsPropertiesPrefix(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape:   analytics.ShapeBreakdown,
-		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
-		Filters: []*analytics.Filter{{Field: "properties.team", Op: types.EQUAL, Value: []string{"eng"}}},
+	rv := types.ResolvedView{
+		Shape:   types.ShapeBreakdown,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Filters: []*types.AnalyticsFilter{{Field: "properties.team", Op: types.EQUAL, Value: []string{"eng"}}},
 	}
 	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
@@ -134,10 +134,10 @@ func TestTranslateBreakdown_PropertyFilterStripsPropertiesPrefix(t *testing.T) {
 // how dimensions are named.
 func TestTranslateBreakdown_BarePropertyFieldStillWorks(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape:   analytics.ShapeBreakdown,
-		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
-		Filters: []*analytics.Filter{{Field: "team", Op: types.EQUAL, Value: []string{"eng"}}},
+	rv := types.ResolvedView{
+		Shape:   types.ShapeBreakdown,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Filters: []*types.AnalyticsFilter{{Field: "team", Op: types.EQUAL, Value: []string{"eng"}}},
 	}
 	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
@@ -153,10 +153,10 @@ func TestTranslateBreakdown_BarePropertyFieldStillWorks(t *testing.T) {
 func TestTranslateBreakdown_AcceptsEqAndInOps(t *testing.T) {
 	for _, op := range []types.FilterOperatorType{types.EQUAL, types.IN} {
 		ctx := context.Background()
-		rv := analytics.ResolvedView{
-			Shape:   analytics.ShapeBreakdown,
-			Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
-			Filters: []*analytics.Filter{{Field: "meter_id", Op: op, Value: []string{"meter_1"}}},
+		rv := types.ResolvedView{
+			Shape:   types.ShapeBreakdown,
+			Metrics: []types.Metric{types.MetricUsageQuantity},
+			Filters: []*types.AnalyticsFilter{{Field: "meter_id", Op: op, Value: []string{"meter_1"}}},
 		}
 		p, err := translateBreakdown(ctx, &rv)
 		require.NoError(t, err, "op %q should be accepted", op)
@@ -170,10 +170,10 @@ func TestTranslateBreakdown_AcceptsEqAndInOps(t *testing.T) {
 func TestTranslateBreakdown_RejectsUnsupportedFilterOp(t *testing.T) {
 	for _, op := range []types.FilterOperatorType{types.GREATER_THAN, types.LESS_THAN, types.CONTAINS, types.NOT_IN} {
 		ctx := context.Background()
-		rv := analytics.ResolvedView{
-			Shape:   analytics.ShapeBreakdown,
-			Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
-			Filters: []*analytics.Filter{{Field: "meter_id", Op: op, Value: []string{"meter_1"}}},
+		rv := types.ResolvedView{
+			Shape:   types.ShapeBreakdown,
+			Metrics: []types.Metric{types.MetricUsageQuantity},
+			Filters: []*types.AnalyticsFilter{{Field: "meter_id", Op: op, Value: []string{"meter_1"}}},
 		}
 		_, err := translateBreakdown(ctx, &rv)
 		require.Error(t, err, "op %q should be rejected", op)
@@ -188,8 +188,8 @@ func TestTranslateBreakdown_RejectsUnsupportedFilterOp(t *testing.T) {
 func TestSortBreakdownRows_NumericDescByMetric(t *testing.T) {
 	res := dto.AnalyticsQueryResult{
 		Columns: []*dto.AnalyticsColumn{
-			{Name: "meter_id", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
-			{Name: "usage_quantity", Type: dto.ColumnTypeDecimal, Role: dto.ColumnRoleMetric},
+			{Name: "meter_id", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
+			{Name: "usage_quantity", Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric},
 		},
 		Rows: [][]string{
 			{"m1", "5"},
@@ -197,7 +197,7 @@ func TestSortBreakdownRows_NumericDescByMetric(t *testing.T) {
 			{"m3", "10"},
 		},
 	}
-	err := sortBreakdownRows(&res, []*analytics.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}})
+	err := sortBreakdownRows(&res, []*types.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}})
 	require.NoError(t, err)
 	assert.Equal(t, [][]string{{"m2", "20"}, {"m3", "10"}, {"m1", "5"}}, res.Rows)
 }
@@ -205,11 +205,11 @@ func TestSortBreakdownRows_NumericDescByMetric(t *testing.T) {
 func TestSortBreakdownRows_EmptyDirDefaultsToAsc(t *testing.T) {
 	res := dto.AnalyticsQueryResult{
 		Columns: []*dto.AnalyticsColumn{
-			{Name: "usage_quantity", Type: dto.ColumnTypeDecimal, Role: dto.ColumnRoleMetric},
+			{Name: "usage_quantity", Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric},
 		},
 		Rows: [][]string{{"20"}, {"5"}, {"10"}},
 	}
-	err := sortBreakdownRows(&res, []*analytics.SortSpec{{Field: "usage_quantity"}})
+	err := sortBreakdownRows(&res, []*types.SortSpec{{Field: "usage_quantity"}})
 	require.NoError(t, err)
 	assert.Equal(t, [][]string{{"5"}, {"10"}, {"20"}}, res.Rows)
 }
@@ -217,11 +217,11 @@ func TestSortBreakdownRows_EmptyDirDefaultsToAsc(t *testing.T) {
 func TestSortBreakdownRows_LexicalByDimension(t *testing.T) {
 	res := dto.AnalyticsQueryResult{
 		Columns: []*dto.AnalyticsColumn{
-			{Name: "region", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
+			{Name: "region", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
 		},
 		Rows: [][]string{{"us"}, {"eu"}, {"apac"}},
 	}
-	err := sortBreakdownRows(&res, []*analytics.SortSpec{{Field: "region", Dir: types.SortDirectionAsc}})
+	err := sortBreakdownRows(&res, []*types.SortSpec{{Field: "region", Dir: types.SortDirectionAsc}})
 	require.NoError(t, err)
 	assert.Equal(t, [][]string{{"apac"}, {"eu"}, {"us"}}, res.Rows)
 }
@@ -230,10 +230,10 @@ func TestSortBreakdownRows_LexicalByDimension(t *testing.T) {
 // doesn't match any output column is rejected rather than silently ignored.
 func TestSortBreakdownRows_UnknownFieldFailsLoud(t *testing.T) {
 	res := dto.AnalyticsQueryResult{
-		Columns: []*dto.AnalyticsColumn{{Name: "usage_quantity", Type: dto.ColumnTypeDecimal, Role: dto.ColumnRoleMetric}},
+		Columns: []*dto.AnalyticsColumn{{Name: "usage_quantity", Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric}},
 		Rows:    [][]string{{"5"}},
 	}
-	err := sortBreakdownRows(&res, []*analytics.SortSpec{{Field: "not_a_column"}})
+	err := sortBreakdownRows(&res, []*types.SortSpec{{Field: "not_a_column"}})
 	require.Error(t, err)
 	assert.True(t, ierr.IsValidation(err))
 }
@@ -263,10 +263,10 @@ func TestTruncateRows_LimitAboveRowCountIsNoOp(t *testing.T) {
 // aggregate row per group, not a time series (windowing is timeseries-only).
 func TestTranslateBreakdown_LeavesWindowSizeUnset(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape:   analytics.ShapeBreakdown,
-		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
-		Time:    analytics.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: analytics.GrainDay},
+	rv := types.ResolvedView{
+		Shape:   types.ShapeBreakdown,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Time:    types.TimeSpec{From: time.Now().Add(-24 * time.Hour), To: time.Now(), Grain: types.GrainDay},
 	}
 	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
@@ -278,9 +278,9 @@ func TestTranslateBreakdown_LeavesWindowSizeUnset(t *testing.T) {
 // one row per meter.
 func TestTranslateBreakdown_EmptyDimensionsAllowed(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape:   analytics.ShapeBreakdown,
-		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+	rv := types.ResolvedView{
+		Shape:   types.ShapeBreakdown,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
 	}
 	p, err := translateBreakdown(ctx, &rv)
 	require.NoError(t, err)
@@ -292,9 +292,9 @@ func TestTranslateBreakdown_EmptyDimensionsAllowed(t *testing.T) {
 // group_by token the meter_usage engine understands.
 func TestTranslateBreakdown_CustomerIDDimensionAliasesToExternalCustomerID(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape:      analytics.ShapeBreakdown,
-		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
+	rv := types.ResolvedView{
+		Shape:      types.ShapeBreakdown,
+		Metrics:    []types.Metric{types.MetricUsageQuantity},
 		Dimensions: []string{"customer_id"},
 	}
 	p, err := translateBreakdown(ctx, &rv)
@@ -307,10 +307,10 @@ func TestTranslateBreakdown_CustomerIDDimensionAliasesToExternalCustomerID(t *te
 // ExternalCustomerIDs, matching the dimension alias.
 func TestTranslateTimeseries_CustomerIDFilterAliasesToExternalCustomerID(t *testing.T) {
 	ctx := context.Background()
-	rv := analytics.ResolvedView{
-		Shape:   analytics.ShapeTimeseries,
-		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
-		Filters: []*analytics.Filter{{Field: "customer_id", Op: types.EQUAL, Value: []string{"cust_1"}}},
+	rv := types.ResolvedView{
+		Shape:   types.ShapeTimeseries,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Filters: []*types.AnalyticsFilter{{Field: "customer_id", Op: types.EQUAL, Value: []string{"cust_1"}}},
 	}
 	p, err := translateTimeseries(ctx, &rv)
 	require.NoError(t, err)
@@ -434,16 +434,16 @@ func (s *AnalyticsServiceSuite) drVars() map[string][]string {
 	}
 }
 
-func (s *AnalyticsServiceSuite) breakdownDef() *analytics.ViewDefinition {
-	return &analytics.ViewDefinition{
-		Shape:      analytics.ShapeBreakdown,
-		Metrics:    []analytics.Metric{analytics.MetricUsageQuantity},
+func (s *AnalyticsServiceSuite) breakdownDef() *types.ViewDefinition {
+	return &types.ViewDefinition{
+		Shape:      types.ShapeBreakdown,
+		Metrics:    []types.Metric{types.MetricUsageQuantity},
 		Dimensions: []string{"properties.region"},
-		Filters:    []*analytics.Filter{{Field: "meter_id", Op: types.EQUAL, Value: []string{"{{meter}}"}}},
-		Time:       analytics.TimeSpecRaw{Range: "{{dr}}", Grain: analytics.GrainDay},
-		Variables: []*analytics.Variable{
-			{Name: "meter", Type: analytics.VariableTypeString, Required: true},
-			{Name: "dr", Type: analytics.VariableTypeDateRange, Required: true},
+		Filters:    []*types.AnalyticsFilter{{Field: "meter_id", Op: types.EQUAL, Value: []string{"{{meter}}"}}},
+		Time:       types.TimeSpecRaw{Range: "{{dr}}", Grain: types.GrainDay},
+		Variables: []*types.Variable{
+			{Name: "meter", Type: types.VariableTypeString, Required: true},
+			{Name: "dr", Type: types.VariableTypeDateRange, Required: true},
 		},
 	}
 }
@@ -466,9 +466,9 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownReturnsRows() {
 	s.Require().NotNil(res)
 	s.Require().Len(res.Columns, 4) // properties.region, usage_quantity, unit, unit_plural
 	s.Equal("properties.region", res.Columns[0].Name)
-	s.Equal(dto.ColumnRoleDimension, res.Columns[0].Role)
+	s.Equal(types.ColumnRoleDimension, res.Columns[0].Role)
 	s.Equal("usage_quantity", res.Columns[1].Name)
-	s.Equal(dto.ColumnRoleMetric, res.Columns[1].Role)
+	s.Equal(types.ColumnRoleMetric, res.Columns[1].Role)
 
 	s.Require().Len(res.Rows, 2)
 	totals := map[string]string{}
@@ -572,7 +572,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownTopNByUsageDesc() {
 
 	def := s.breakdownDef()
 	def.Dimensions = []string{"customer_id"}
-	def.Sort = []*analytics.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}}
+	def.Sort = []*types.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}}
 
 	vars := s.drVars()
 	vars["meter"] = []string{s.sumMeter.ID}
@@ -594,7 +594,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownLimitTruncates() {
 
 	def := s.breakdownDef()
 	def.Dimensions = []string{"customer_id"}
-	def.Sort = []*analytics.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}}
+	def.Sort = []*types.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}}
 	def.Limit = 2
 
 	vars := s.drVars()
@@ -612,14 +612,14 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownLimitTruncates() {
 // ExecuteView — timeseries
 // ---------------------------------------------------------------------------
 
-func (s *AnalyticsServiceSuite) timeseriesDef(meterID string) *analytics.ViewDefinition {
-	return &analytics.ViewDefinition{
-		Shape:   analytics.ShapeTimeseries,
-		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
-		Filters: []*analytics.Filter{{Field: "meter_id", Op: types.EQUAL, Value: []string{meterID}}},
-		Time:    analytics.TimeSpecRaw{Range: "{{dr}}", Grain: analytics.GrainDay},
-		Variables: []*analytics.Variable{
-			{Name: "dr", Type: analytics.VariableTypeDateRange, Required: true},
+func (s *AnalyticsServiceSuite) timeseriesDef(meterID string) *types.ViewDefinition {
+	return &types.ViewDefinition{
+		Shape:   types.ShapeTimeseries,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Filters: []*types.AnalyticsFilter{{Field: "meter_id", Op: types.EQUAL, Value: []string{meterID}}},
+		Time:    types.TimeSpecRaw{Range: "{{dr}}", Grain: types.GrainDay},
+		Variables: []*types.Variable{
+			{Name: "dr", Type: types.VariableTypeDateRange, Required: true},
 		},
 	}
 }
@@ -703,7 +703,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesIgnoresSortAndLimit() 
 	s.insertUsage(ctx, s.sumMeter.ID, s.now.Add(-24*time.Hour), 5, nil)
 
 	def := s.timeseriesDef(s.sumMeter.ID)
-	def.Sort = []*analytics.SortSpec{{Field: "not_a_real_column", Dir: types.SortDirectionDesc}}
+	def.Sort = []*types.SortSpec{{Field: "not_a_real_column", Dir: types.SortDirectionDesc}}
 	def.Limit = 1
 
 	res, err := s.svc.ExecuteView(ctx, def, s.drVars())
@@ -762,7 +762,7 @@ func (s *AnalyticsServiceSuite) TestCreateView_RejectsInvalidDefinition() {
 	ctx := s.GetContext()
 	view := &analytics.View{
 		Name:       "invalid",
-		Definition: &analytics.ViewDefinition{Shape: analytics.ShapeBreakdown}, // no metrics
+		Definition: &types.ViewDefinition{Shape: types.ShapeBreakdown}, // no metrics
 	}
 	err := s.svc.CreateView(ctx, view)
 	s.Error(err)

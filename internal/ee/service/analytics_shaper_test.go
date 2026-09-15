@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -21,11 +20,11 @@ func TestShapeBreakdown_ColumnsAndRows(t *testing.T) {
 	got := shapeBreakdown(items, []string{"properties.region"}, nil)
 	require.Len(t, got.Columns, 4)
 	assert.Equal(t, "properties.region", got.Columns[0].Name)
-	assert.Equal(t, dto.ColumnRoleDimension, got.Columns[0].Role)
+	assert.Equal(t, types.ColumnRoleDimension, got.Columns[0].Role)
 	assert.Equal(t, "usage_quantity", got.Columns[1].Name)
-	assert.Equal(t, dto.ColumnRoleMetric, got.Columns[1].Role)
+	assert.Equal(t, types.ColumnRoleMetric, got.Columns[1].Role)
 	assert.Equal(t, "unit", got.Columns[2].Name)
-	assert.Equal(t, dto.ColumnRoleDimension, got.Columns[2].Role)
+	assert.Equal(t, types.ColumnRoleDimension, got.Columns[2].Role)
 	assert.Equal(t, "unit_plural", got.Columns[3].Name)
 	assert.Len(t, got.Rows, 2)
 	assert.Equal(t, []string{"us", "60000", "call", "calls"}, got.Rows[0])
@@ -72,10 +71,10 @@ func TestShapeBreakdown_MetricsMapToColumns(t *testing.T) {
 	items := []dto.UsageAnalyticItem{
 		{TotalUsage: decimal.NewFromInt(42), EventCount: 7, Unit: "call", UnitPlural: "calls"},
 	}
-	got := shapeBreakdown(items, nil, []analytics.Metric{analytics.MetricUsageQuantity, analytics.MetricEventCount})
+	got := shapeBreakdown(items, nil, []types.Metric{types.MetricUsageQuantity, types.MetricEventCount})
 	assert.Equal(t, []string{"usage_quantity", "event_count", "unit", "unit_plural"}, columnNames(got.Columns))
 	for _, c := range got.Columns[:2] {
-		assert.Equal(t, dto.ColumnRoleMetric, c.Role)
+		assert.Equal(t, types.ColumnRoleMetric, c.Role)
 	}
 	assert.Equal(t, []string{"42", "7", "call", "calls"}, got.Rows[0])
 }
@@ -105,9 +104,9 @@ func TestShapeTimeseries_ColumnsAndRows(t *testing.T) {
 	got := shapeTimeseries(items, nil, nil)
 	require.Len(t, got.Columns, 4) // window_start + usage_quantity + unit + unit_plural
 	assert.Equal(t, "window_start", got.Columns[0].Name)
-	assert.Equal(t, dto.ColumnRoleDimension, got.Columns[0].Role)
+	assert.Equal(t, types.ColumnRoleDimension, got.Columns[0].Role)
 	assert.Equal(t, "usage_quantity", got.Columns[1].Name)
-	assert.Equal(t, dto.ColumnRoleMetric, got.Columns[1].Role)
+	assert.Equal(t, types.ColumnRoleMetric, got.Columns[1].Role)
 	assert.Len(t, got.Rows, 2)
 	assert.Equal(t, t1.Format(time.RFC3339), got.Rows[0][0])
 	assert.Equal(t, "100", got.Rows[0][1])
@@ -152,7 +151,7 @@ func TestShapeTimeseries_MetricsMapToColumns(t *testing.T) {
 			Points:     []dto.UsageAnalyticPoint{{Timestamp: t1, Usage: decimal.NewFromInt(10), EventCount: 3}},
 		},
 	}
-	got := shapeTimeseries(items, nil, []analytics.Metric{analytics.MetricUsageQuantity, analytics.MetricEventCount})
+	got := shapeTimeseries(items, nil, []types.Metric{types.MetricUsageQuantity, types.MetricEventCount})
 	assert.Equal(t, []string{"window_start", "usage_quantity", "event_count", "unit", "unit_plural"}, columnNames(got.Columns))
 	assert.Equal(t, []string{t1.Format(time.RFC3339), "10", "3", "call", "calls"}, got.Rows[0])
 }

@@ -69,7 +69,7 @@ func (r *analyticsViewRepository) Create(ctx context.Context, v *domainAnalytics
 	}
 
 	SetSpanSuccess(span)
-	*v = *viewFromEnt(created)
+	*v = *domainAnalytics.FromEnt(created)
 	return nil
 }
 
@@ -108,7 +108,7 @@ func (r *analyticsViewRepository) Get(ctx context.Context, id string) (*domainAn
 	}
 
 	SetSpanSuccess(span)
-	return viewFromEnt(v), nil
+	return domainAnalytics.FromEnt(v), nil
 }
 
 func (r *analyticsViewRepository) List(ctx context.Context) ([]*domainAnalytics.View, error) {
@@ -141,32 +141,8 @@ func (r *analyticsViewRepository) List(ctx context.Context) ([]*domainAnalytics.
 
 	result := make([]*domainAnalytics.View, 0, len(views))
 	for _, v := range views {
-		result = append(result, viewFromEnt(v))
+		result = append(result, domainAnalytics.FromEnt(v))
 	}
 	SetSpanSuccess(span)
 	return result, nil
-}
-
-// viewFromEnt converts an ent AnalyticsView row into the domain View. Ent owns the
-// jsonb (un)marshal of the typed definition field, so no manual decoding here.
-func viewFromEnt(e *ent.AnalyticsView) *domainAnalytics.View {
-	if e == nil {
-		return nil
-	}
-
-	return &domainAnalytics.View{
-		ID:            e.ID,
-		Name:          e.Name,
-		Version:       e.Version,
-		Definition:    &e.Definition,
-		EnvironmentID: e.EnvironmentID,
-		BaseModel: types.BaseModel{
-			TenantID:  e.TenantID,
-			Status:    types.Status(e.Status),
-			CreatedAt: e.CreatedAt,
-			UpdatedAt: e.UpdatedAt,
-			CreatedBy: e.CreatedBy,
-			UpdatedBy: e.UpdatedBy,
-		},
-	}
 }

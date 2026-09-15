@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/analytics"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // dimensionValue reads dim's value off a detailed usage-analytics item. dim
@@ -35,9 +35,9 @@ func dimensionValue(item dto.UsageAnalyticItem, dim string) string {
 
 // effectiveMetrics defaults an empty metrics list to usage_quantity — every
 // shaped result carries at least one metric column.
-func effectiveMetrics(metrics []analytics.Metric) []analytics.Metric {
+func effectiveMetrics(metrics []types.Metric) []types.Metric {
 	if len(metrics) == 0 {
-		return []analytics.Metric{analytics.MetricUsageQuantity}
+		return []types.Metric{types.MetricUsageQuantity}
 	}
 	return metrics
 }
@@ -45,8 +45,8 @@ func effectiveMetrics(metrics []analytics.Metric) []analytics.Metric {
 // metricColumn maps a requested Metric onto its output column. Both
 // supported metrics (usage_quantity, event_count) are Phase-1 usage-only
 // numbers, so both render as decimal columns.
-func metricColumn(m analytics.Metric) *dto.AnalyticsColumn {
-	return &dto.AnalyticsColumn{Name: string(m), Type: dto.ColumnTypeDecimal, Role: dto.ColumnRoleMetric}
+func metricColumn(m types.Metric) *dto.AnalyticsColumn {
+	return &dto.AnalyticsColumn{Name: string(m), Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric}
 }
 
 // metricValue reads m's value off a breakdown item. item.TotalUsage is
@@ -56,8 +56,8 @@ func metricColumn(m analytics.Metric) *dto.AnalyticsColumn {
 //
 // Money guard: only item.TotalUsage/item.EventCount (usage) are read —
 // never item.Subtotal/TotalCost/TotalDiscount/Currency/CommitmentInfo.
-func metricValue(item dto.UsageAnalyticItem, m analytics.Metric) string {
-	if m == analytics.MetricEventCount {
+func metricValue(item dto.UsageAnalyticItem, m types.Metric) string {
+	if m == types.MetricEventCount {
 		return strconv.FormatUint(item.EventCount, 10)
 	}
 	return item.TotalUsage.String()
@@ -67,8 +67,8 @@ func metricValue(item dto.UsageAnalyticItem, m analytics.Metric) string {
 //
 // Money guard: only p.Usage/p.EventCount are read — never p.Subtotal/
 // Discount/Cost or the commitment-bucket cost fields.
-func pointMetricValue(p dto.UsageAnalyticPoint, m analytics.Metric) string {
-	if m == analytics.MetricEventCount {
+func pointMetricValue(p dto.UsageAnalyticPoint, m types.Metric) string {
+	if m == types.MetricEventCount {
 		return strconv.FormatUint(p.EventCount, 10)
 	}
 	return p.Usage.String()
@@ -81,19 +81,19 @@ func pointMetricValue(p dto.UsageAnalyticPoint, m analytics.Metric) string {
 //
 // Money guard: only usage fields (TotalUsage/EventCount/Unit/UnitPlural) are
 // read — never Subtotal/TotalCost/TotalDiscount/Currency/CommitmentInfo.
-func shapeBreakdown(items []dto.UsageAnalyticItem, dims []string, metrics []analytics.Metric) dto.AnalyticsQueryResult {
+func shapeBreakdown(items []dto.UsageAnalyticItem, dims []string, metrics []types.Metric) dto.AnalyticsQueryResult {
 	metrics = effectiveMetrics(metrics)
 
 	cols := make([]*dto.AnalyticsColumn, 0, len(dims)+len(metrics)+2)
 	for _, d := range dims {
-		cols = append(cols, &dto.AnalyticsColumn{Name: d, Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension})
+		cols = append(cols, &dto.AnalyticsColumn{Name: d, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
 	}
 	for _, m := range metrics {
 		cols = append(cols, metricColumn(m))
 	}
 	cols = append(cols,
-		&dto.AnalyticsColumn{Name: "unit", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
-		&dto.AnalyticsColumn{Name: "unit_plural", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
+		&dto.AnalyticsColumn{Name: "unit", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
+		&dto.AnalyticsColumn{Name: "unit_plural", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
 	)
 
 	rows := make([][]string, 0, len(items))
@@ -120,20 +120,20 @@ func shapeBreakdown(items []dto.UsageAnalyticItem, dims []string, metrics []anal
 // Money guard: only p.Usage/p.EventCount/item.Unit/item.UnitPlural are read
 // off each point/item — never p.Subtotal/Discount/Cost or the
 // commitment-bucket cost fields.
-func shapeTimeseries(items []dto.UsageAnalyticItem, dims []string, metrics []analytics.Metric) dto.AnalyticsQueryResult {
+func shapeTimeseries(items []dto.UsageAnalyticItem, dims []string, metrics []types.Metric) dto.AnalyticsQueryResult {
 	metrics = effectiveMetrics(metrics)
 
 	cols := make([]*dto.AnalyticsColumn, 0, len(dims)+len(metrics)+3)
-	cols = append(cols, &dto.AnalyticsColumn{Name: "window_start", Type: dto.ColumnTypeDatetime, Role: dto.ColumnRoleDimension})
+	cols = append(cols, &dto.AnalyticsColumn{Name: "window_start", Type: types.ColumnTypeDatetime, Role: types.ColumnRoleDimension})
 	for _, d := range dims {
-		cols = append(cols, &dto.AnalyticsColumn{Name: d, Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension})
+		cols = append(cols, &dto.AnalyticsColumn{Name: d, Type: types.ColumnTypeString, Role: types.ColumnRoleDimension})
 	}
 	for _, m := range metrics {
 		cols = append(cols, metricColumn(m))
 	}
 	cols = append(cols,
-		&dto.AnalyticsColumn{Name: "unit", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
-		&dto.AnalyticsColumn{Name: "unit_plural", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
+		&dto.AnalyticsColumn{Name: "unit", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
+		&dto.AnalyticsColumn{Name: "unit_plural", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
 	)
 
 	rows := make([][]string, 0)

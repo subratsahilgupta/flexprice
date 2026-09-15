@@ -1,9 +1,8 @@
-package analytics
+package types
 
 import (
 	"testing"
 
-	"github.com/flexprice/flexprice/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,7 +61,7 @@ func TestValidate_RejectsInvalidSortDirection(t *testing.T) {
 	def := ViewDefinition{
 		Shape:   ShapeBreakdown,
 		Metrics: []Metric{MetricUsageQuantity},
-		Sort:    []*SortSpec{{Field: "usage_quantity", Dir: types.SortDirection("sideways")}},
+		Sort:    []*SortSpec{{Field: "usage_quantity", Dir: SortDirection("sideways")}},
 	}
 	require.Error(t, def.Validate())
 }
@@ -77,8 +76,8 @@ func TestValidate_RejectsInvalidVariableType(t *testing.T) {
 }
 
 func TestNewViewDefinition_SetsAllFields(t *testing.T) {
-	filters := []*Filter{{Field: "meter_id", Op: types.EQUAL, Value: []string{"meter_1"}}}
-	sort := []*SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}}
+	filters := []*AnalyticsFilter{{Field: "meter_id", Op: EQUAL, Value: []string{"meter_1"}}}
+	sort := []*SortSpec{{Field: "usage_quantity", Dir: SortDirectionDesc}}
 	variables := []*Variable{{Name: "meter", Type: VariableTypeString, Required: true}}
 	timeSpec := TimeSpecRaw{Range: "{{date_range}}", Grain: GrainDay}
 
@@ -107,11 +106,11 @@ func TestNewViewDefinition_SetsAllFields(t *testing.T) {
 }
 
 func TestGrain_ToWindowSize(t *testing.T) {
-	assert.Equal(t, types.WindowSizeHour, GrainHour.ToWindowSize())
-	assert.Equal(t, types.WindowSizeDay, GrainDay.ToWindowSize())
-	assert.Equal(t, types.WindowSizeWeek, GrainWeek.ToWindowSize())
-	assert.Equal(t, types.WindowSizeMonth, GrainMonth.ToWindowSize())
-	assert.Equal(t, types.WindowSize(""), Grain("").ToWindowSize())
+	assert.Equal(t, WindowSizeHour, GrainHour.ToWindowSize())
+	assert.Equal(t, WindowSizeDay, GrainDay.ToWindowSize())
+	assert.Equal(t, WindowSizeWeek, GrainWeek.ToWindowSize())
+	assert.Equal(t, WindowSizeMonth, GrainMonth.ToWindowSize())
+	assert.Equal(t, WindowSize(""), Grain("").ToWindowSize())
 }
 
 func TestValidateDimensions_RejectsEmptyPropertyField(t *testing.T) {

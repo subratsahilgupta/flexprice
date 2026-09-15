@@ -13,7 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/analyticsview"
 	"github.com/flexprice/flexprice/ent/predicate"
-	"github.com/flexprice/flexprice/internal/domain/analytics"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // AnalyticsViewUpdate is the builder for updating AnalyticsView entities.
@@ -105,15 +105,15 @@ func (avu *AnalyticsViewUpdate) AddVersion(i int) *AnalyticsViewUpdate {
 }
 
 // SetDefinition sets the "definition" field.
-func (avu *AnalyticsViewUpdate) SetDefinition(ad analytics.ViewDefinition) *AnalyticsViewUpdate {
-	avu.mutation.SetDefinition(ad)
+func (avu *AnalyticsViewUpdate) SetDefinition(td types.ViewDefinition) *AnalyticsViewUpdate {
+	avu.mutation.SetDefinition(td)
 	return avu
 }
 
 // SetNillableDefinition sets the "definition" field if the given value is not nil.
-func (avu *AnalyticsViewUpdate) SetNillableDefinition(ad *analytics.ViewDefinition) *AnalyticsViewUpdate {
-	if ad != nil {
-		avu.SetDefinition(*ad)
+func (avu *AnalyticsViewUpdate) SetNillableDefinition(td *types.ViewDefinition) *AnalyticsViewUpdate {
+	if td != nil {
+		avu.SetDefinition(*td)
 	}
 	return avu
 }
@@ -312,15 +312,15 @@ func (avuo *AnalyticsViewUpdateOne) AddVersion(i int) *AnalyticsViewUpdateOne {
 }
 
 // SetDefinition sets the "definition" field.
-func (avuo *AnalyticsViewUpdateOne) SetDefinition(ad analytics.ViewDefinition) *AnalyticsViewUpdateOne {
-	avuo.mutation.SetDefinition(ad)
+func (avuo *AnalyticsViewUpdateOne) SetDefinition(td types.ViewDefinition) *AnalyticsViewUpdateOne {
+	avuo.mutation.SetDefinition(td)
 	return avuo
 }
 
 // SetNillableDefinition sets the "definition" field if the given value is not nil.
-func (avuo *AnalyticsViewUpdateOne) SetNillableDefinition(ad *analytics.ViewDefinition) *AnalyticsViewUpdateOne {
-	if ad != nil {
-		avuo.SetDefinition(*ad)
+func (avuo *AnalyticsViewUpdateOne) SetNillableDefinition(td *types.ViewDefinition) *AnalyticsViewUpdateOne {
+	if td != nil {
+		avuo.SetDefinition(*td)
 	}
 	return avuo
 }

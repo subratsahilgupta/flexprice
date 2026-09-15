@@ -1,4 +1,4 @@
-package analytics
+package types
 
 import (
 	"regexp"
@@ -6,96 +6,7 @@ import (
 	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
-	"github.com/flexprice/flexprice/internal/types"
 )
-
-type Shape string
-
-const (
-	ShapeTimeseries Shape = "timeseries"
-	ShapeBreakdown  Shape = "breakdown"
-)
-
-// Grain is the timeseries bucketing granularity. It is the wire-facing enum;
-// ToWindowSize maps it onto the engine's internal types.WindowSize.
-type Grain string
-
-const (
-	GrainHour  Grain = "hour"
-	GrainDay   Grain = "day"
-	GrainWeek  Grain = "week"
-	GrainMonth Grain = "month"
-)
-
-func (g Grain) Validate() error {
-	switch g {
-	case "", GrainHour, GrainDay, GrainWeek, GrainMonth:
-		return nil
-	default:
-		return ierr.NewErrorf("invalid grain %q", g).
-			WithHint("grain must be one of: hour, day, week, month").
-			Mark(ierr.ErrValidation)
-	}
-}
-
-// ToWindowSize maps a validated Grain onto the meter_usage engine's
-// types.WindowSize. An empty (unset) grain maps to an empty window size.
-func (g Grain) ToWindowSize() types.WindowSize {
-	switch g {
-	case GrainHour:
-		return types.WindowSizeHour
-	case GrainDay:
-		return types.WindowSizeDay
-	case GrainWeek:
-		return types.WindowSizeWeek
-	case GrainMonth:
-		return types.WindowSizeMonth
-	default:
-		return ""
-	}
-}
-
-// VariableType is the declared type of a view Variable placeholder.
-type VariableType string
-
-const (
-	VariableTypeDateRange  VariableType = "date_range"
-	VariableTypeString     VariableType = "string"
-	VariableTypeStringList VariableType = "string_list"
-	VariableTypeNumber     VariableType = "number"
-	VariableTypeEnum       VariableType = "enum"
-	VariableTypeBoolean    VariableType = "boolean"
-)
-
-func (t VariableType) Validate() error {
-	switch t {
-	case VariableTypeDateRange, VariableTypeString, VariableTypeStringList, VariableTypeNumber, VariableTypeEnum, VariableTypeBoolean:
-		return nil
-	default:
-		return ierr.NewErrorf("invalid variable type %q", t).
-			WithHint("type must be one of: date_range, string, string_list, number, enum, boolean").
-			Mark(ierr.ErrValidation)
-	}
-}
-
-// Metric is a Phase-1 usage-only metric a view can request.
-type Metric string
-
-const (
-	MetricUsageQuantity Metric = "usage_quantity"
-	MetricEventCount    Metric = "event_count"
-)
-
-func (m Metric) Validate() error {
-	switch m {
-	case MetricUsageQuantity, MetricEventCount:
-		return nil
-	default:
-		return ierr.NewErrorf("invalid metric %q", m).
-			WithHint("metric must be one of: usage_quantity, event_count").
-			Mark(ierr.ErrValidation)
-	}
-}
 
 // validPropertyField matches the charset allowed after "properties.".
 var validPropertyField = regexp.MustCompile(`^[A-Za-z0-9_.]+$`)
@@ -125,16 +36,19 @@ func validateDimension(d string) error {
 		Mark(ierr.ErrValidation)
 }
 
-type Filter struct {
-	Field    string                   `json:"field"`
-	Op       types.FilterOperatorType `json:"op"`
-	Value    []string                 `json:"value"`
-	Optional bool                     `json:"optional,omitempty"`
+// AnalyticsFilter is a single filter clause of an analytics ViewDefinition.
+// Named "Analytics"-prefixed to avoid colliding with the existing
+// (deprecated) pagination Filter in this package.
+type AnalyticsFilter struct {
+	Field    string             `json:"field"`
+	Op       FilterOperatorType `json:"op"`
+	Value    []string           `json:"value"`
+	Optional bool               `json:"optional,omitempty"`
 }
 
 type SortSpec struct {
-	Field string              `json:"field"`
-	Dir   types.SortDirection `json:"dir"`
+	Field string        `json:"field"`
+	Dir   SortDirection `json:"dir"`
 }
 
 type Variable struct {
@@ -161,15 +75,15 @@ type TimeSpec struct {
 }
 
 type ViewDefinition struct {
-	Name       string      `json:"name"`
-	Shape      Shape       `json:"shape"`
-	Metrics    []Metric    `json:"metrics"`
-	Dimensions []string    `json:"dimensions,omitempty"`
-	Filters    []*Filter   `json:"filters,omitempty"`
-	Time       TimeSpecRaw `json:"time"`
-	Sort       []*SortSpec `json:"sort,omitempty"`
-	Limit      int         `json:"limit,omitempty"`
-	Variables  []*Variable `json:"variables,omitempty"`
+	Name       string             `json:"name"`
+	Shape      Shape              `json:"shape"`
+	Metrics    []Metric           `json:"metrics"`
+	Dimensions []string           `json:"dimensions,omitempty"`
+	Filters    []*AnalyticsFilter `json:"filters,omitempty"`
+	Time       TimeSpecRaw        `json:"time"`
+	Sort       []*SortSpec        `json:"sort,omitempty"`
+	Limit      int                `json:"limit,omitempty"`
+	Variables  []*Variable        `json:"variables,omitempty"`
 }
 
 // NewViewDefinition builds a ViewDefinition from its constituent parts.
@@ -178,7 +92,7 @@ func NewViewDefinition(
 	shape Shape,
 	metrics []Metric,
 	dimensions []string,
-	filters []*Filter,
+	filters []*AnalyticsFilter,
 	timeSpec TimeSpecRaw,
 	sort []*SortSpec,
 	limit int,
@@ -224,7 +138,7 @@ func (v ViewDefinition) Validate() error {
 			continue
 		}
 		switch s.Dir {
-		case "", types.SortDirectionAsc, types.SortDirectionDesc:
+		case "", SortDirectionAsc, SortDirectionDesc:
 		default:
 			return ierr.NewErrorf("invalid sort direction %q", s.Dir).
 				WithHint("dir must be one of: asc, desc (empty defaults to asc)").
@@ -240,4 +154,16 @@ func (v ViewDefinition) Validate() error {
 		}
 	}
 	return nil
+}
+
+// ResolvedView is a ViewDefinition with all variables resolved to concrete
+// values — built by domain/analytics.ResolveVariables.
+type ResolvedView struct {
+	Shape      Shape
+	Metrics    []Metric
+	Dimensions []string
+	Filters    []*AnalyticsFilter // concrete values; optional-with-unsupplied dropped
+	Time       TimeSpec
+	Sort       []*SortSpec
+	Limit      int
 }

@@ -5,7 +5,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/flexprice/flexprice/ent/schema/mixin"
-	"github.com/flexprice/flexprice/internal/domain/analytics"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 // AnalyticsView holds the schema definition for the AnalyticsView entity.
@@ -34,7 +34,7 @@ func (AnalyticsView) Fields() []ent.Field {
 			NotEmpty(),
 		field.Int("version").
 			Default(1),
-		field.JSON("definition", analytics.ViewDefinition{}).
+		field.JSON("definition", types.ViewDefinition{}).
 			SchemaType(map[string]string{
 				"postgres": "jsonb",
 			}),

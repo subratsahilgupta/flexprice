@@ -24,10 +24,10 @@ func TestInMemoryAnalyticsViewStore_CreateGet(t *testing.T) {
 		ID:      "view_1",
 		Name:    "My View",
 		Version: 1,
-		Definition: &domainAnalytics.ViewDefinition{
+		Definition: &types.ViewDefinition{
 			Name:    "My View",
-			Shape:   domainAnalytics.ShapeBreakdown,
-			Metrics: []domainAnalytics.Metric{domainAnalytics.MetricUsageQuantity},
+			Shape:   types.ShapeBreakdown,
+			Metrics: []types.Metric{types.MetricUsageQuantity},
 		},
 	}
 
@@ -39,7 +39,7 @@ func TestInMemoryAnalyticsViewStore_CreateGet(t *testing.T) {
 	got, err := store.Get(ctx, "view_1")
 	require.NoError(t, err)
 	assert.Equal(t, "My View", got.Name)
-	assert.Equal(t, domainAnalytics.ShapeBreakdown, got.Definition.Shape)
+	assert.Equal(t, types.ShapeBreakdown, got.Definition.Shape)
 }
 
 func TestInMemoryAnalyticsViewStore_CreateDuplicate(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/rest/middleware"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +30,7 @@ type stubAnalyticsService struct {
 	err    error
 }
 
-func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ *analytics.ViewDefinition, _ map[string][]string) (*dto.AnalyticsQueryResult, error) {
+func (s *stubAnalyticsService) ExecuteView(_ context.Context, _ *types.ViewDefinition, _ map[string][]string) (*dto.AnalyticsQueryResult, error) {
 	return s.result, s.err
 }
 
@@ -46,8 +47,8 @@ func (s *stubAnalyticsService) QueryView(_ context.Context, _ string, _ map[stri
 func cannedBreakdownResult() *dto.AnalyticsQueryResult {
 	return &dto.AnalyticsQueryResult{
 		Columns: []*dto.AnalyticsColumn{
-			{Name: "region", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
-			{Name: "usage_quantity", Type: dto.ColumnTypeDecimal, Role: dto.ColumnRoleMetric},
+			{Name: "region", Type: types.ColumnTypeString, Role: types.ColumnRoleDimension},
+			{Name: "usage_quantity", Type: types.ColumnTypeDecimal, Role: types.ColumnRoleMetric},
 		},
 		Rows: [][]string{
 			{"us-east", "42"},
@@ -115,8 +116,8 @@ func TestAnalyticsQuery_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &result), "response body is not valid JSON: %q", w.Body.String())
 
 	require.Len(t, result.Columns, 2)
-	require.Equal(t, dto.ColumnRoleDimension, result.Columns[0].Role)
-	require.Equal(t, dto.ColumnRoleMetric, result.Columns[1].Role)
+	require.Equal(t, types.ColumnRoleDimension, result.Columns[0].Role)
+	require.Equal(t, types.ColumnRoleMetric, result.Columns[1].Role)
 	require.Equal(t, [][]string{{"us-east", "42"}}, result.Rows)
 }
 

@@ -2,7 +2,7 @@ package dto
 
 import (
 	"github.com/flexprice/flexprice/internal/domain/analytics"
-	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/validator"
 )
 
@@ -10,8 +10,8 @@ import (
 // Every variable value is a string list; a scalar variable is a 1-element
 // list, and a date_range variable is a 1-element range-string.
 type AnalyticsQueryRequest struct {
-	Definition analytics.ViewDefinition `json:"definition" validate:"required"`
-	Variables  map[string][]string      `json:"variables"`
+	Definition types.ViewDefinition `json:"definition" validate:"required"`
+	Variables  map[string][]string  `json:"variables"`
 }
 
 func (r *AnalyticsQueryRequest) Validate() error {
@@ -20,8 +20,8 @@ func (r *AnalyticsQueryRequest) Validate() error {
 
 // CreateViewRequest is the request for POST /v1/analytics/views.
 type CreateViewRequest struct {
-	Name       string                   `json:"name" validate:"required"`
-	Definition analytics.ViewDefinition `json:"definition" validate:"required"`
+	Name       string               `json:"name" validate:"required"`
+	Definition types.ViewDefinition `json:"definition" validate:"required"`
 }
 
 func (r *CreateViewRequest) Validate() error {
@@ -41,10 +41,10 @@ func (r *ViewQueryRequest) Validate() error {
 // only the fields a client needs, unlike the domain analytics.View which
 // embeds types.BaseModel (tenant_id, status, created_by, timestamps, ...).
 type ViewResponse struct {
-	ID         string                   `json:"id"`
-	Name       string                   `json:"name"`
-	Version    int                      `json:"version"`
-	Definition analytics.ViewDefinition `json:"definition"`
+	ID         string               `json:"id"`
+	Name       string               `json:"name"`
+	Version    int                  `json:"version"`
+	Definition types.ViewDefinition `json:"definition"`
 }
 
 // NewViewResponse maps a domain analytics.View onto its response DTO.
@@ -63,51 +63,12 @@ func NewViewResponse(v *analytics.View) *ViewResponse {
 	return resp
 }
 
-// ColumnRole classifies an AnalyticsColumn as a dimension or a metric.
-type ColumnRole string
-
-const (
-	ColumnRoleDimension ColumnRole = "dimension"
-	ColumnRoleMetric    ColumnRole = "metric"
-)
-
-func (r ColumnRole) Validate() error {
-	switch r {
-	case ColumnRoleDimension, ColumnRoleMetric:
-		return nil
-	default:
-		return ierr.NewErrorf("invalid column role %q", r).
-			WithHint("role must be one of: dimension, metric").
-			Mark(ierr.ErrValidation)
-	}
-}
-
-// ColumnType is the rendering type of an AnalyticsColumn's values.
-type ColumnType string
-
-const (
-	ColumnTypeString   ColumnType = "string"
-	ColumnTypeDecimal  ColumnType = "decimal"
-	ColumnTypeDatetime ColumnType = "datetime"
-)
-
-func (t ColumnType) Validate() error {
-	switch t {
-	case ColumnTypeString, ColumnTypeDecimal, ColumnTypeDatetime:
-		return nil
-	default:
-		return ierr.NewErrorf("invalid column type %q", t).
-			WithHint("type must be one of: string, decimal, datetime").
-			Mark(ierr.ErrValidation)
-	}
-}
-
 // AnalyticsColumn describes one column of a shaped AnalyticsQueryResult.
 type AnalyticsColumn struct {
-	Name     string     `json:"name"`
-	Type     ColumnType `json:"type"`
-	Role     ColumnRole `json:"role"`
-	Currency string     `json:"currency,omitempty"`
+	Name     string           `json:"name"`
+	Type     types.ColumnType `json:"type"`
+	Role     types.ColumnRole `json:"role"`
+	Currency string           `json:"currency,omitempty"`
 }
 
 // AnalyticsQueryMeta carries non-tabular metadata about a query result.

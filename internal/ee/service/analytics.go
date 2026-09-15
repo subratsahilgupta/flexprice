@@ -14,7 +14,7 @@ import (
 )
 
 type AnalyticsService interface {
-	ExecuteView(ctx context.Context, def *analytics.ViewDefinition, vars map[string][]string) (*dto.AnalyticsQueryResult, error)
+	ExecuteView(ctx context.Context, def *types.ViewDefinition, vars map[string][]string) (*dto.AnalyticsQueryResult, error)
 	CreateView(ctx context.Context, v *analytics.View) error
 	QueryView(ctx context.Context, id string, vars map[string][]string) (*dto.AnalyticsQueryResult, error)
 }
@@ -33,7 +33,7 @@ func NewAnalyticsService(params ServiceParams) AnalyticsService {
 	}
 }
 
-func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewDefinition, vars map[string][]string) (*dto.AnalyticsQueryResult, error) {
+func (s *analyticsService) ExecuteView(ctx context.Context, def *types.ViewDefinition, vars map[string][]string) (*dto.AnalyticsQueryResult, error) {
 	rv, err := analytics.ResolveVariables(def, vars)
 	if err != nil {
 		return nil, err
@@ -44,9 +44,9 @@ func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewD
 	}
 
 	switch rv.Shape {
-	case analytics.ShapeBreakdown:
+	case types.ShapeBreakdown:
 		return s.executeBreakdown(ctx, rv)
-	case analytics.ShapeTimeseries:
+	case types.ShapeTimeseries:
 		return s.executeTimeseries(ctx, rv)
 	default:
 		return nil, ierr.NewErrorf("unsupported shape %q", rv.Shape).Mark(ierr.ErrValidation)
@@ -58,7 +58,7 @@ func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewD
 // no external_customer_id) resolves each meter's own aggregation type via
 // getDetailedAnalyticsWithoutSubscriptionContext. Dimensions are optional —
 // an empty GroupBy yields one row per meter.
-func (s *analyticsService) executeBreakdown(ctx context.Context, rv *analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
+func (s *analyticsService) executeBreakdown(ctx context.Context, rv *types.ResolvedView) (*dto.AnalyticsQueryResult, error) {
 	params, err := translateBreakdown(ctx, rv)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ func (s *analyticsService) executeBreakdown(ctx context.Context, rv *analytics.R
 // required exactly one meter with no dimensions). Dimensions act as a
 // split-by; multiple meters are allowed since the engine derives each
 // meter's real aggregation type on its own.
-func (s *analyticsService) executeTimeseries(ctx context.Context, rv *analytics.ResolvedView) (*dto.AnalyticsQueryResult, error) {
+func (s *analyticsService) executeTimeseries(ctx context.Context, rv *types.ResolvedView) (*dto.AnalyticsQueryResult, error) {
 	params, err := translateTimeseries(ctx, rv)
 	if err != nil {
 		return nil, err
@@ -185,7 +185,7 @@ func validateFilterOp(op types.FilterOperatorType) error {
 // JSONExtractString(properties, <key>) expects (see
 // BuildDetailedWhereClause) — "properties.team" and "team" are accepted as
 // the same filter, consistent with how dimensions are named.
-func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, sources *[]string, propertyFilters map[string][]string) error {
+func applyAnalyticsFilters(filters []*types.AnalyticsFilter, meterIDs, customerIDs, sources *[]string, propertyFilters map[string][]string) error {
 	for _, f := range filters {
 		if f == nil {
 			continue
@@ -214,17 +214,17 @@ func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, s
 // unknown field fails loud instead of silently no-op'ing. Decimal (metric)
 // columns compare numerically; everything else compares lexically. An empty
 // Dir defaults to asc.
-func sortBreakdownRows(res *dto.AnalyticsQueryResult, sortSpecs []*analytics.SortSpec) error {
+func sortBreakdownRows(res *dto.AnalyticsQueryResult, sortSpecs []*types.SortSpec) error {
 	if res == nil || len(sortSpecs) == 0 {
 		return nil
 	}
 	colIdx := make(map[string]int, len(res.Columns))
-	colType := make(map[string]dto.ColumnType, len(res.Columns))
+	colType := make(map[string]types.ColumnType, len(res.Columns))
 	for i, c := range res.Columns {
 		colIdx[c.Name] = i
 		colType[c.Name] = c.Type
 	}
-	specs := make([]*analytics.SortSpec, 0, len(sortSpecs))
+	specs := make([]*types.SortSpec, 0, len(sortSpecs))
 	for _, s := range sortSpecs {
 		if s == nil {
 			continue
@@ -256,8 +256,8 @@ func sortBreakdownRows(res *dto.AnalyticsQueryResult, sortSpecs []*analytics.Sor
 // compareCells compares two row cells for sortBreakdownRows: decimal
 // (metric) columns compare numerically by parsing the cell, everything else
 // compares lexically.
-func compareCells(a, b string, colType dto.ColumnType) int {
-	if colType == dto.ColumnTypeDecimal {
+func compareCells(a, b string, colType types.ColumnType) int {
+	if colType == types.ColumnTypeDecimal {
 		da, errA := decimal.NewFromString(a)
 		db, errB := decimal.NewFromString(b)
 		if errA == nil && errB == nil {
@@ -283,7 +283,7 @@ func truncateRows(res *dto.AnalyticsQueryResult, limit int) {
 // engine already defaults to one row per meter (see
 // getDetailedAnalyticsWithoutSubscriptionContext), so an empty GroupBy is not
 // rejected here.
-func translateBreakdown(ctx context.Context, rv *analytics.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
+func translateBreakdown(ctx context.Context, rv *types.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
 	if rv == nil {
 		return nil, ierr.NewError("resolved view is required").Mark(ierr.ErrValidation)
 	}
@@ -311,7 +311,7 @@ func translateBreakdown(ctx context.Context, rv *analytics.ResolvedView) (*event
 // engine derives each meter's own aggregation type
 // (getDetailedAnalyticsWithoutSubscriptionContext splits by AggType), so the
 // caller never needs to set AggregationTypes.
-func translateTimeseries(ctx context.Context, rv *analytics.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
+func translateTimeseries(ctx context.Context, rv *types.ResolvedView) (*events.MeterUsageDetailedAnalyticsParams, error) {
 	if rv == nil {
 		return nil, ierr.NewError("resolved view is required").Mark(ierr.ErrValidation)
 	}

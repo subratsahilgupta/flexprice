@@ -8,23 +8,21 @@ import (
 	"time"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
-type ResolvedView struct {
-	Shape      Shape
-	Metrics    []Metric
-	Dimensions []string
-	Filters    []*Filter // concrete values; optional-with-unsupplied dropped
-	Time       TimeSpec
-	Sort       []*SortSpec
-	Limit      int
+// ValidateDimensions forwards to types.ValidateDimensions. Kept as a
+// domain-package entry point since callers (e.g. the service layer) reach
+// dimension validation through the analytics package.
+func ValidateDimensions(dims []string) error {
+	return types.ValidateDimensions(dims)
 }
 
 // ResolveVariables resolves a ViewDefinition against supplied variable
 // values. Every variable value is a string list: a scalar is a 1-element
 // list, and a date_range variable is a 1-element range-string (see
 // resolveTime) that this function parses into a concrete window.
-func ResolveVariables(def *ViewDefinition, supplied map[string][]string) (*ResolvedView, error) {
+func ResolveVariables(def *types.ViewDefinition, supplied map[string][]string) (*types.ResolvedView, error) {
 	if def == nil {
 		return nil, ierr.NewError("view definition is required").Mark(ierr.ErrValidation)
 	}
@@ -39,7 +37,7 @@ func ResolveVariables(def *ViewDefinition, supplied map[string][]string) (*Resol
 			return nil, ierr.NewError(fmt.Sprintf("missing required variable %q", va.Name)).Mark(ierr.ErrValidation)
 		}
 	}
-	rv := &ResolvedView{Shape: def.Shape, Metrics: def.Metrics, Dimensions: def.Dimensions, Sort: def.Sort, Limit: def.Limit}
+	rv := &types.ResolvedView{Shape: def.Shape, Metrics: def.Metrics, Dimensions: def.Dimensions, Sort: def.Sort, Limit: def.Limit}
 
 	for _, f := range def.Filters {
 		if f == nil {
@@ -52,7 +50,7 @@ func ResolveVariables(def *ViewDefinition, supplied map[string][]string) (*Resol
 			}
 			return nil, ierr.NewError(fmt.Sprintf("filter %q has no value", f.Field)).Mark(ierr.ErrValidation)
 		}
-		rv.Filters = append(rv.Filters, &Filter{Field: f.Field, Op: f.Op, Value: val})
+		rv.Filters = append(rv.Filters, &types.AnalyticsFilter{Field: f.Field, Op: f.Op, Value: val})
 	}
 
 	ts, err := resolveTime(def.Time, supplied)
@@ -116,10 +114,10 @@ var relativeRangePattern = regexp.MustCompile(`^last_([0-9]+)_(day|days|hour|hou
 //   - "" (omitted)                     → defaults to defaultRelativeRangeToken
 //   - a relative token string          → "last_N_days", "last_N_hours", "today", "yesterday"
 //   - an absolute "<from>..<to>" range → "YYYY-MM-DD" dates, inclusive-from/exclusive-to
-func resolveTime(raw TimeSpecRaw, supplied map[string][]string) (TimeSpec, error) {
+func resolveTime(raw types.TimeSpecRaw, supplied map[string][]string) (types.TimeSpec, error) {
 	val, present := resolveRangeString(raw.Range, supplied)
 	if !present {
-		return TimeSpec{}, ierr.NewError("time range not supplied").Mark(ierr.ErrValidation)
+		return types.TimeSpec{}, ierr.NewError("time range not supplied").Mark(ierr.ErrValidation)
 	}
 	if val == "" {
 		val = defaultRelativeRangeToken
@@ -128,19 +126,19 @@ func resolveTime(raw TimeSpecRaw, supplied map[string][]string) (TimeSpec, error
 		parts := strings.SplitN(val, rangeSeparator, 2)
 		from, err := parseDate(parts[0])
 		if err != nil {
-			return TimeSpec{}, err
+			return types.TimeSpec{}, err
 		}
 		to, err := parseDate(parts[1])
 		if err != nil {
-			return TimeSpec{}, err
+			return types.TimeSpec{}, err
 		}
-		return TimeSpec{From: from, To: to, Grain: raw.Grain}, nil
+		return types.TimeSpec{From: from, To: to, Grain: raw.Grain}, nil
 	}
 	from, to, err := parseRelativeRange(val)
 	if err != nil {
-		return TimeSpec{}, err
+		return types.TimeSpec{}, err
 	}
-	return TimeSpec{From: from, To: to, Grain: raw.Grain}, nil
+	return types.TimeSpec{From: from, To: to, Grain: raw.Grain}, nil
 }
 
 // parseRelativeRange resolves a relative range token into a concrete
