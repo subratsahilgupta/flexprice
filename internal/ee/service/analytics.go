@@ -98,10 +98,9 @@ func (s *analyticsService) executeTimeseries(ctx context.Context, rv *types.Reso
 		return nil, err
 	}
 
-	// Sort/Limit are deliberately not applied here: timeseries rows are
-	// already time-ordered per bucket, and reordering or truncating them
-	// would break that ordering. Ranking whole series by a metric
-	// (top-N-series) is a future enhancement, not row-level sort/limit.
+	// Sort/Limit are rejected upfront for timeseries (ViewDefinition.Validate),
+	// so rows here stay in their per-bucket time order. Series-level ranking
+	// (top-N-series) is a future enhancement.
 	res := shapeTimeseries(resp.Items, rv.Dimensions, rv.Metrics)
 	return &res, nil
 }
@@ -152,7 +151,11 @@ func ensureMeterIdentity(rv *types.ResolvedView) {
 	if rv == nil || isSingleMeter(rv.Filters) || containsString(rv.Dimensions, "meter_id") {
 		return
 	}
-	rv.Dimensions = append(rv.Dimensions, "meter_id")
+	// Build a fresh slice rather than append into rv.Dimensions: it aliases the
+	// request's def.Dimensions backing array, which we must not mutate.
+	dims := make([]string, len(rv.Dimensions), len(rv.Dimensions)+1)
+	copy(dims, rv.Dimensions)
+	rv.Dimensions = append(dims, "meter_id")
 }
 
 // isSingleMeter reports whether the filters pin the query to exactly one meter
