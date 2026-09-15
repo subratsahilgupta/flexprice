@@ -130,7 +130,7 @@ func (s *subscriptionService) addonAttachProrationRequest(
 		return nil, nil
 	}
 
-	entries, err := s.buildAddonProrationEntries(ctx, params.getLineItems(), types.ProrationActionAddItem)
+	entries, err := s.addonProrationEntries(ctx, params.getLineItems(), types.ProrationActionAddItem)
 	if err != nil {
 		return nil, err
 	}
@@ -641,7 +641,7 @@ func (s *subscriptionService) addonDetachProrationRequest(
 		return nil, nil
 	}
 
-	entries, err := s.buildAddonProrationEntries(ctx, params.getLineItems(), types.ProrationActionRemoveItem)
+	entries, err := s.addonProrationEntries(ctx, params.getLineItems(), types.ProrationActionRemoveItem)
 	if err != nil {
 		return nil, err
 	}
