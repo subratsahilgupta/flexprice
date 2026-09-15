@@ -39,6 +39,10 @@ func (s *analyticsService) ExecuteView(ctx context.Context, def *analytics.ViewD
 		return nil, err
 	}
 
+	if err := analytics.ValidateDimensions(rv.Dimensions); err != nil {
+		return nil, err
+	}
+
 	switch rv.Shape {
 	case analytics.ShapeBreakdown:
 		return s.executeBreakdown(ctx, rv)
@@ -126,19 +130,17 @@ func (s *analyticsService) CreateView(ctx context.Context, v *analytics.View) er
 func (s *analyticsService) QueryView(ctx context.Context, id string, vars map[string][]string) (*dto.AnalyticsQueryResult, error) {
 	v, err := s.views.Get(ctx, id)
 	if err != nil {
+		if err == ierr.ErrNotFound {
+			return nil, ierr.NewErrorf("view %q not found", id).Mark(ierr.ErrValidation)
+		}
 		return nil, err
 	}
-	return s.ExecuteView(ctx, v.Definition, vars)
-}
 
-// translateDimension rewrites analytics-facing dimension aliases onto the
-// meter_usage engine's real group_by tokens. "customer_id" is the
-// analytics-facing name for the ClickHouse "external_customer_id" column.
-func translateDimension(d string) string {
-	if d == "customer_id" {
-		return "external_customer_id"
+	if v.Status != types.StatusPublished {
+		return nil, ierr.NewErrorf("view %q is not published", id).Mark(ierr.ErrValidation)
 	}
-	return d
+
+	return s.ExecuteView(ctx, v.Definition, vars)
 }
 
 // translateDimensions applies translateDimension to every dim, preserving
@@ -150,7 +152,12 @@ func translateDimensions(dims []string) []string {
 	}
 	out := make([]string, len(dims))
 	for i, d := range dims {
-		out[i] = translateDimension(d)
+		switch d {
+		case "customer_id":
+			out[i] = "external_customer_id"
+		default:
+			out[i] = d
+		}
 	}
 	return out
 }
@@ -178,7 +185,7 @@ func validateFilterOp(op types.FilterOperatorType) error {
 // JSONExtractString(properties, <key>) expects (see
 // BuildDetailedWhereClause) — "properties.team" and "team" are accepted as
 // the same filter, consistent with how dimensions are named.
-func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, sources *[]string, props map[string][]string) error {
+func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, sources *[]string, propertyFilters map[string][]string) error {
 	for _, f := range filters {
 		if f == nil {
 			continue
@@ -195,7 +202,7 @@ func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, s
 			*sources = append(*sources, f.Value...)
 		default:
 			key := strings.TrimPrefix(f.Field, "properties.")
-			props[key] = append(props[key], f.Value...)
+			propertyFilters[key] = append(propertyFilters[key], f.Value...)
 		}
 	}
 	return nil
@@ -280,9 +287,7 @@ func translateBreakdown(ctx context.Context, rv *analytics.ResolvedView) (*event
 	if rv == nil {
 		return nil, ierr.NewError("resolved view is required").Mark(ierr.ErrValidation)
 	}
-	if err := analytics.ValidateDimensions(rv.Dimensions); err != nil {
-		return nil, err
-	}
+
 	p := &events.MeterUsageDetailedAnalyticsParams{
 		TenantID:        types.GetTenantID(ctx),
 		EnvironmentID:   types.GetEnvironmentID(ctx),
@@ -310,9 +315,7 @@ func translateTimeseries(ctx context.Context, rv *analytics.ResolvedView) (*even
 	if rv == nil {
 		return nil, ierr.NewError("resolved view is required").Mark(ierr.ErrValidation)
 	}
-	if err := analytics.ValidateDimensions(rv.Dimensions); err != nil {
-		return nil, err
-	}
+
 	p := &events.MeterUsageDetailedAnalyticsParams{
 		TenantID:        types.GetTenantID(ctx),
 		EnvironmentID:   types.GetEnvironmentID(ctx),

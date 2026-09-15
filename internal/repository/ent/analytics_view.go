@@ -155,10 +155,11 @@ func viewFromEnt(e *ent.AnalyticsView) *domainAnalytics.View {
 	}
 
 	return &domainAnalytics.View{
-		ID:         e.ID,
-		Name:       e.Name,
-		Version:    e.Version,
-		Definition: &e.Definition,
+		ID:            e.ID,
+		Name:          e.Name,
+		Version:       e.Version,
+		Definition:    &e.Definition,
+		EnvironmentID: e.EnvironmentID,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),

@@ -8,10 +8,11 @@ import (
 
 // View is a persisted, named analytics view definition.
 type View struct {
-	ID         string
-	Name       string
-	Version    int
-	Definition *ViewDefinition
+	ID            string
+	Name          string
+	Version       int
+	Definition    *ViewDefinition
+	EnvironmentID string
 	types.BaseModel
 }
 
