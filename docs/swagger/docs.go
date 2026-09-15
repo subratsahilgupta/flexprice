@@ -13887,13 +13887,44 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "op": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.FilterOperatorType"
                 },
                 "optional": {
                     "type": "boolean"
                 },
-                "value": {}
+                "value": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
             }
+        },
+        "analytics.Grain": {
+            "type": "string",
+            "enum": [
+                "hour",
+                "day",
+                "week",
+                "month"
+            ],
+            "x-enum-varnames": [
+                "GrainHour",
+                "GrainDay",
+                "GrainWeek",
+                "GrainMonth"
+            ]
+        },
+        "analytics.Metric": {
+            "type": "string",
+            "enum": [
+                "usage_quantity",
+                "event_count"
+            ],
+            "x-enum-varnames": [
+                "MetricUsageQuantity",
+                "MetricEventCount"
+            ]
         },
         "analytics.Shape": {
             "type": "string",
@@ -13910,7 +13941,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "dir": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.SortDirection"
                 },
                 "field": {
                     "type": "string"
@@ -13921,15 +13952,22 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "grain": {
-                    "type": "string"
+                    "$ref": "#/definitions/analytics.Grain"
                 },
-                "range": {}
+                "range": {
+                    "type": "string"
+                }
             }
         },
         "analytics.Variable": {
             "type": "object",
             "properties": {
-                "default": {},
+                "default": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "name": {
                     "type": "string"
                 },
@@ -13937,9 +13975,28 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "type": {
-                    "type": "string"
+                    "$ref": "#/definitions/analytics.VariableType"
                 }
             }
+        },
+        "analytics.VariableType": {
+            "type": "string",
+            "enum": [
+                "date_range",
+                "string",
+                "string_list",
+                "number",
+                "enum",
+                "boolean"
+            ],
+            "x-enum-varnames": [
+                "VariableTypeDateRange",
+                "VariableTypeString",
+                "VariableTypeStringList",
+                "VariableTypeNumber",
+                "VariableTypeEnum",
+                "VariableTypeBoolean"
+            ]
         },
         "analytics.ViewDefinition": {
             "type": "object",
@@ -13962,7 +14019,7 @@ const docTemplate = `{
                 "metrics": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "$ref": "#/definitions/analytics.Metric"
                     }
                 },
                 "name": {
@@ -14811,10 +14868,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
-                    "description": "\"dimension\" | \"metric\"",
-                    "type": "string"
+                    "$ref": "#/definitions/ColumnRole"
                 },
                 "type": {
+                    "$ref": "#/definitions/ColumnType"
+                }
+            }
+        },
+        "AnalyticsQueryMeta": {
+            "type": "object",
+            "properties": {
+                "query_source": {
                     "type": "string"
                 }
             }
@@ -14830,7 +14894,12 @@ const docTemplate = `{
                 },
                 "variables": {
                     "type": "object",
-                    "additionalProperties": {}
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
                 }
             }
         },
@@ -14844,14 +14913,15 @@ const docTemplate = `{
                     }
                 },
                 "meta": {
-                    "type": "object",
-                    "additionalProperties": {}
+                    "$ref": "#/definitions/AnalyticsQueryMeta"
                 },
                 "rows": {
                     "type": "array",
                     "items": {
                         "type": "array",
-                        "items": {}
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 }
             }
@@ -15530,6 +15600,30 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "ColumnRole": {
+            "type": "string",
+            "enum": [
+                "dimension",
+                "metric"
+            ],
+            "x-enum-varnames": [
+                "ColumnRoleDimension",
+                "ColumnRoleMetric"
+            ]
+        },
+        "ColumnType": {
+            "type": "string",
+            "enum": [
+                "string",
+                "decimal",
+                "datetime"
+            ],
+            "x-enum-varnames": [
+                "ColumnTypeString",
+                "ColumnTypeDecimal",
+                "ColumnTypeDatetime"
+            ]
         },
         "CommitmentBucketRequest": {
             "type": "object",
@@ -25296,7 +25390,12 @@ const docTemplate = `{
             "properties": {
                 "variables": {
                     "type": "object",
-                    "additionalProperties": {}
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
                 }
             }
         },

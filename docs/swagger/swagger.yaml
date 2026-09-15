@@ -204,11 +204,34 @@ definitions:
       field:
         type: string
       op:
-        type: string
+        $ref: '#/definitions/types.FilterOperatorType'
       optional:
         type: boolean
-      value: {}
+      value:
+        items:
+          type: string
+        type: array
     type: object
+  analytics.Grain:
+    enum:
+    - hour
+    - day
+    - week
+    - month
+    type: string
+    x-enum-varnames:
+    - GrainHour
+    - GrainDay
+    - GrainWeek
+    - GrainMonth
+  analytics.Metric:
+    enum:
+    - usage_quantity
+    - event_count
+    type: string
+    x-enum-varnames:
+    - MetricUsageQuantity
+    - MetricEventCount
   analytics.Shape:
     enum:
     - timeseries
@@ -220,26 +243,46 @@ definitions:
   analytics.SortSpec:
     properties:
       dir:
-        type: string
+        $ref: '#/definitions/types.SortDirection'
       field:
         type: string
     type: object
   analytics.TimeSpecRaw:
     properties:
       grain:
+        $ref: '#/definitions/analytics.Grain'
+      range:
         type: string
-      range: {}
     type: object
   analytics.Variable:
     properties:
-      default: {}
+      default:
+        items:
+          type: string
+        type: array
       name:
         type: string
       required:
         type: boolean
       type:
-        type: string
+        $ref: '#/definitions/analytics.VariableType'
     type: object
+  analytics.VariableType:
+    enum:
+    - date_range
+    - string
+    - string_list
+    - number
+    - enum
+    - boolean
+    type: string
+    x-enum-varnames:
+    - VariableTypeDateRange
+    - VariableTypeString
+    - VariableTypeStringList
+    - VariableTypeNumber
+    - VariableTypeEnum
+    - VariableTypeBoolean
   analytics.ViewDefinition:
     properties:
       dimensions:
@@ -254,7 +297,7 @@ definitions:
         type: integer
       metrics:
         items:
-          type: string
+          $ref: '#/definitions/analytics.Metric'
         type: array
       name:
         type: string
@@ -827,9 +870,13 @@ definitions:
       name:
         type: string
       role:
-        description: '"dimension" | "metric"'
-        type: string
+        $ref: '#/definitions/ColumnRole'
       type:
+        $ref: '#/definitions/ColumnType'
+    type: object
+  AnalyticsQueryMeta:
+    properties:
+      query_source:
         type: string
     type: object
   AnalyticsQueryRequest:
@@ -837,7 +884,10 @@ definitions:
       definition:
         $ref: '#/definitions/analytics.ViewDefinition'
       variables:
-        additionalProperties: {}
+        additionalProperties:
+          items:
+            type: string
+          type: array
         type: object
     required:
     - definition
@@ -849,11 +899,11 @@ definitions:
           $ref: '#/definitions/AnalyticsColumn'
         type: array
       meta:
-        additionalProperties: {}
-        type: object
+        $ref: '#/definitions/AnalyticsQueryMeta'
       rows:
         items:
-          items: {}
+          items:
+            type: string
           type: array
         type: array
     type: object
@@ -1330,6 +1380,24 @@ definitions:
           name
         type: string
     type: object
+  ColumnRole:
+    enum:
+    - dimension
+    - metric
+    type: string
+    x-enum-varnames:
+    - ColumnRoleDimension
+    - ColumnRoleMetric
+  ColumnType:
+    enum:
+    - string
+    - decimal
+    - datetime
+    type: string
+    x-enum-varnames:
+    - ColumnTypeString
+    - ColumnTypeDecimal
+    - ColumnTypeDatetime
   CommitmentBucketRequest:
     properties:
       commitment_type:
@@ -8441,7 +8509,10 @@ definitions:
   ViewQueryRequest:
     properties:
       variables:
-        additionalProperties: {}
+        additionalProperties:
+          items:
+            type: string
+          type: array
         type: object
     type: object
   ViewResponse:

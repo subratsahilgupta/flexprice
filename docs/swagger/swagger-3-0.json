@@ -16276,15 +16276,44 @@
             "type": "string"
           },
           "op": {
-            "type": "string"
+            "$ref": "#/components/schemas/types.FilterOperatorType"
           },
           "optional": {
             "type": "boolean"
           },
           "value": {
-            "type": "object"
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
+      },
+      "analytics.Grain": {
+        "type": "string",
+        "enum": [
+          "hour",
+          "day",
+          "week",
+          "month"
+        ],
+        "x-enum-varnames": [
+          "GrainHour",
+          "GrainDay",
+          "GrainWeek",
+          "GrainMonth"
+        ]
+      },
+      "analytics.Metric": {
+        "type": "string",
+        "enum": [
+          "usage_quantity",
+          "event_count"
+        ],
+        "x-enum-varnames": [
+          "MetricUsageQuantity",
+          "MetricEventCount"
+        ]
       },
       "analytics.Shape": {
         "type": "string",
@@ -16301,7 +16330,7 @@
         "type": "object",
         "properties": {
           "dir": {
-            "type": "string"
+            "$ref": "#/components/schemas/types.SortDirection"
           },
           "field": {
             "type": "string"
@@ -16312,10 +16341,10 @@
         "type": "object",
         "properties": {
           "grain": {
-            "type": "string"
+            "$ref": "#/components/schemas/analytics.Grain"
           },
           "range": {
-            "type": "object"
+            "type": "string"
           }
         }
       },
@@ -16323,7 +16352,10 @@
         "type": "object",
         "properties": {
           "default": {
-            "type": "object"
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "name": {
             "type": "string"
@@ -16332,9 +16364,28 @@
             "type": "boolean"
           },
           "type": {
-            "type": "string"
+            "$ref": "#/components/schemas/analytics.VariableType"
           }
         }
+      },
+      "analytics.VariableType": {
+        "type": "string",
+        "enum": [
+          "date_range",
+          "string",
+          "string_list",
+          "number",
+          "enum",
+          "boolean"
+        ],
+        "x-enum-varnames": [
+          "VariableTypeDateRange",
+          "VariableTypeString",
+          "VariableTypeStringList",
+          "VariableTypeNumber",
+          "VariableTypeEnum",
+          "VariableTypeBoolean"
+        ]
       },
       "analytics.ViewDefinition": {
         "type": "object",
@@ -16357,7 +16408,7 @@
           "metrics": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/analytics.Metric"
             }
           },
           "name": {
@@ -17218,10 +17269,17 @@
             "type": "string"
           },
           "role": {
-            "type": "string",
-            "description": "\"dimension\" | \"metric\""
+            "$ref": "#/components/schemas/ColumnRole"
           },
           "type": {
+            "$ref": "#/components/schemas/ColumnType"
+          }
+        }
+      },
+      "AnalyticsQueryMeta": {
+        "type": "object",
+        "properties": {
+          "query_source": {
             "type": "string"
           }
         }
@@ -17238,7 +17296,10 @@
           "variables": {
             "type": "object",
             "additionalProperties": {
-              "type": "object"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         }
@@ -17253,17 +17314,14 @@
             }
           },
           "meta": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object"
-            }
+            "$ref": "#/components/schemas/AnalyticsQueryMeta"
           },
           "rows": {
             "type": "array",
             "items": {
               "type": "array",
               "items": {
-                "type": "object"
+                "type": "string"
               }
             }
           }
@@ -17858,6 +17916,30 @@
             "description": "Name is required and must be different from the source plan's name"
           }
         }
+      },
+      "ColumnRole": {
+        "type": "string",
+        "enum": [
+          "dimension",
+          "metric"
+        ],
+        "x-enum-varnames": [
+          "ColumnRoleDimension",
+          "ColumnRoleMetric"
+        ]
+      },
+      "ColumnType": {
+        "type": "string",
+        "enum": [
+          "string",
+          "decimal",
+          "datetime"
+        ],
+        "x-enum-varnames": [
+          "ColumnTypeString",
+          "ColumnTypeDecimal",
+          "ColumnTypeDatetime"
+        ]
       },
       "CommitmentBucketRequest": {
         "type": "object",
@@ -27087,7 +27169,10 @@
           "variables": {
             "type": "object",
             "additionalProperties": {
-              "type": "object"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         }
