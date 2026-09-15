@@ -239,10 +239,7 @@ func (r *checkoutSessionRepository) GetByIdempotencyKey(ctx context.Context, key
 			entCheckout.TenantID(types.GetTenantID(ctx)),
 			entCheckout.EnvironmentID(types.GetEnvironmentID(ctx)),
 			entCheckout.StatusEQ(string(types.StatusPublished)),
-			entCheckout.CheckoutStatusIn(
-				types.CheckoutStatusInitiated,
-				types.CheckoutStatusPending,
-			),
+			entCheckout.CheckoutStatusIn(types.ActiveCheckoutStatuses()...),
 		).
 		First(ctx)
 	if err != nil {
@@ -253,6 +250,34 @@ func (r *checkoutSessionRepository) GetByIdempotencyKey(ctx context.Context, key
 				Mark(ierr.ErrNotFound)
 		}
 		return nil, ierr.WithError(err).WithHint("get by idempotency key failed").Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return fromEntCheckout(e), nil
+}
+
+func (r *checkoutSessionRepository) GetByCheckoutInvoiceID(ctx context.Context, invoiceID string) (*domainCheckout.CheckoutSession, error) {
+	span := StartRepositorySpan(ctx, "checkout_session", "get_by_checkout_invoice_id", map[string]interface{}{
+		"invoice_id": invoiceID,
+	})
+	defer FinishSpan(span)
+
+	e, err := r.client.Reader(ctx).CheckoutSession.Query().
+		Where(
+			entCheckout.CheckoutInvoiceIDEQ(invoiceID),
+			entCheckout.TenantID(types.GetTenantID(ctx)),
+			entCheckout.EnvironmentID(types.GetEnvironmentID(ctx)),
+			entCheckout.StatusEQ(string(types.StatusPublished)),
+			entCheckout.CheckoutStatusIn(types.ActiveCheckoutStatuses()...),
+		).
+		First(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			SetSpanSuccess(span)
+			return nil, nil
+		}
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("get checkout session by invoice failed").Mark(ierr.ErrDatabase)
 	}
 
 	SetSpanSuccess(span)
@@ -303,7 +328,7 @@ func (r *checkoutSessionRepository) MarkCompleted(ctx context.Context, sessionID
 			entCheckout.ID(sessionID),
 			entCheckout.TenantID(types.GetTenantID(ctx)),
 			entCheckout.EnvironmentID(types.GetEnvironmentID(ctx)),
-			entCheckout.CheckoutStatusIn(types.CheckoutStatusPending, types.CheckoutStatusInitiated),
+			entCheckout.CheckoutStatusIn(types.ActiveCheckoutStatuses()...),
 		).
 		SetCheckoutStatus(types.CheckoutStatusCompleted).
 		SetCompletedAt(completedAt).
@@ -314,6 +339,45 @@ func (r *checkoutSessionRepository) MarkCompleted(ctx context.Context, sessionID
 	if err != nil {
 		SetSpanError(span, err)
 		return false, ierr.WithError(err).WithHint("failed to mark checkout session completed").Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return n > 0, nil
+}
+
+func (r *checkoutSessionRepository) MarkTerminal(ctx context.Context, sessionID string, status types.CheckoutStatus, failureReason *string) (bool, error) {
+	if status != types.CheckoutStatusExpired && status != types.CheckoutStatusFailed {
+		return false, ierr.NewError("invalid terminal checkout status").
+			WithHint("MarkTerminal accepts expired or failed").
+			Mark(ierr.ErrValidation)
+	}
+
+	r.log.Debug(ctx, "marking checkout session terminal", "id", sessionID, "checkout_status", status)
+
+	span := StartRepositorySpan(ctx, "checkout_session", "mark_terminal", map[string]interface{}{
+		"id":              sessionID,
+		"checkout_status": status,
+	})
+	defer FinishSpan(span)
+
+	q := r.client.Writer(ctx).CheckoutSession.Update().
+		Where(
+			entCheckout.ID(sessionID),
+			entCheckout.TenantID(types.GetTenantID(ctx)),
+			entCheckout.EnvironmentID(types.GetEnvironmentID(ctx)),
+			entCheckout.CheckoutStatusIn(types.ActiveCheckoutStatuses()...),
+		).
+		SetCheckoutStatus(status).
+		SetUpdatedAt(time.Now().UTC()).
+		SetUpdatedBy(types.GetUserID(ctx))
+	if failureReason != nil {
+		q = q.SetFailureReason(*failureReason)
+	}
+
+	n, err := q.Save(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		return false, ierr.WithError(err).WithHint("failed to mark checkout session terminal").Mark(ierr.ErrDatabase)
 	}
 
 	SetSpanSuccess(span)
@@ -333,10 +397,7 @@ func (r *checkoutSessionRepository) ListExpiredCheckoutSessions(ctx context.Cont
 	query := r.client.Reader(ctx).CheckoutSession.Query().
 		Where(
 			entCheckout.StatusNotIn(string(types.StatusDeleted)),
-			entCheckout.CheckoutStatusIn(
-				types.CheckoutStatusInitiated,
-				types.CheckoutStatusPending,
-			),
+			entCheckout.CheckoutStatusIn(types.ActiveCheckoutStatuses()...),
 			entCheckout.ExpiresAtLT(effectiveDate),
 		).
 		Order(ent.Asc(entCheckout.FieldExpiresAt)).

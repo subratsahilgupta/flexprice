@@ -48,7 +48,7 @@ type InvoiceService interface {
 	CreateInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreateEmptyDraftInvoice(ctx context.Context, req dto.CreateDraftInvoiceRequest) (*dto.InvoiceResponse, error)
 	ComputeInvoice(ctx context.Context, invoiceID string, req *dto.InvoiceComputeRequest) (*invoice.Invoice, bool, error)
-	FinalizeInvoice(ctx context.Context, id string) error
+	FinalizeInvoice(ctx context.Context, id string, req dto.FinalizeInvoiceRequest) error
 	GetInvoice(ctx context.Context, id string) (*dto.InvoiceResponse, error)
 	ListInvoices(ctx context.Context, filter *types.InvoiceFilter) (*dto.ListInvoicesResponse, error)
 	UpdateInvoice(ctx context.Context, id string, req dto.UpdateInvoiceRequest) (*dto.InvoiceResponse, error)
@@ -241,8 +241,15 @@ type CreditAdjustmentService interface {
 type CheckoutSessionService interface {
 	Create(ctx context.Context, req dto.CreateCheckoutSessionRequest) (*dto.CheckoutSessionResponse, error)
 	Get(ctx context.Context, id string) (*dto.CheckoutSessionResponse, error)
+	// GetAndReconcile is Get plus reconciliation against the payment provider. It
+	// contacts the gateway and can complete the session, so only callers acting for
+	// the customer should use it; internal readers use Get.
+	GetAndReconcile(ctx context.Context, id string) (*dto.CheckoutSessionResponse, error)
 	List(ctx context.Context, filter *types.CheckoutSessionFilter) (*dto.ListCheckoutSessionsResponse, error)
 	Delete(ctx context.Context, id string) error
+	// Cancel terminates an in-flight session without archiving the row. Completed
+	// sessions are rejected; failed/expired sessions are returned as-is.
+	Cancel(ctx context.Context, id string) (*dto.CheckoutSessionResponse, error)
 	// CleanupCheckoutSession fetches the session by ID, archives all fulfillment entities
 	// (subscription, invoice, payment), and marks the session failed or expired.
 	// Pass reason=nil to mark as expired; pass a non-nil error to mark as failed.

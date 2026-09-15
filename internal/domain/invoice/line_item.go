@@ -57,6 +57,10 @@ type InvoiceLineItem struct {
 	// an existing line item. Forms a linked-list chain across edits; nil for line items that were never edited.
 	ParentLineItemID *string `json:"parent_line_item_id,omitempty"`
 
+	// custom_currency holds this line item's amounts in the tenant's custom currency.
+	// The fields above are fiat projections of it; nil for fiat invoices.
+	CustomCurrency *types.CustomCurrencyLineItem `json:"custom_currency,omitempty"`
+
 	types.BaseModel
 }
 
@@ -96,6 +100,7 @@ func (i *InvoiceLineItem) FromEnt(e *ent.InvoiceLineItem) *InvoiceLineItem {
 		AdjustedEntitlementQuantity: e.AdjustedEntitlementQuantity,
 		SubscriptionLineItemID:      e.SubscriptionLineItemID,
 		ParentLineItemID:            e.ParentLineItemID,
+		CustomCurrency:              e.CustomCurrency,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,
 			Status:    types.Status(e.Status),
@@ -107,12 +112,37 @@ func (i *InvoiceLineItem) FromEnt(e *ent.InvoiceLineItem) *InvoiceLineItem {
 	}
 }
 
-// Validate validates the invoice line item
-func (i *InvoiceLineItem) Validate() error {
-	if i.Amount.IsNegative() {
-		return ierr.NewError("invoice line item validation failed").WithHint("amount must be non negative").Mark(ierr.ErrValidation)
+// Denomination returns the amounts money math operates on: the custom-currency values
+// when present, the fiat fields otherwise. Read-only.
+func (i *InvoiceLineItem) Denomination() types.CustomCurrencyLineItem {
+	if i.CustomCurrency != nil {
+		return *i.CustomCurrency
+	}
+	return types.CustomCurrencyLineItem{
+		Amount:                i.Amount,
+		LineItemDiscount:      i.LineItemDiscount,
+		InvoiceLevelDiscount:  i.InvoiceLevelDiscount,
+		PrepaidCreditsApplied: i.PrepaidCreditsApplied,
+	}
+}
+
+// ProjectCustomCurrency recomputes the fiat amounts from the denomination at the invoice's rate.
+func (i *InvoiceLineItem) ProjectCustomCurrency(cc *types.CustomCurrency, fiatCurrency string) {
+	if i.CustomCurrency == nil || cc == nil {
+		return
 	}
 
+	i.Amount = cc.ToFiat(i.CustomCurrency.Amount, fiatCurrency)
+	i.LineItemDiscount = cc.ToFiat(i.CustomCurrency.LineItemDiscount, fiatCurrency)
+	i.InvoiceLevelDiscount = cc.ToFiat(i.CustomCurrency.InvoiceLevelDiscount, fiatCurrency)
+	i.PrepaidCreditsApplied = cc.ToFiat(i.CustomCurrency.PrepaidCreditsApplied, fiatCurrency)
+	i.Currency = fiatCurrency
+}
+
+// Validate validates the invoice line item.
+// Amount may be negative: a credit line (e.g. unused time on a plan being replaced) sits on the
+// same invoice as the charges it offsets. Non-negativity is enforced on the invoice aggregates.
+func (i *InvoiceLineItem) Validate() error {
 	if i.Quantity.IsNegative() {
 		return ierr.NewError("invoice line item validation failed").WithHint("quantity must be non negative").Mark(ierr.ErrValidation)
 	}

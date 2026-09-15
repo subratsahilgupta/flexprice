@@ -314,6 +314,12 @@ func (ic *InvoiceCreate) SetNillableTotal(d *decimal.Decimal) *InvoiceCreate {
 	return ic
 }
 
+// SetCustomCurrency sets the "custom_currency" field.
+func (ic *InvoiceCreate) SetCustomCurrency(tc *types.CustomCurrency) *InvoiceCreate {
+	ic.mutation.SetCustomCurrency(tc)
+	return ic
+}
+
 // SetDescription sets the "description" field.
 func (ic *InvoiceCreate) SetDescription(s string) *InvoiceCreate {
 	ic.mutation.SetDescription(s)
@@ -572,6 +578,20 @@ func (ic *InvoiceCreate) SetNillableRecalculatedInvoiceID(s *string) *InvoiceCre
 	return ic
 }
 
+// SetSourceType sets the "source_type" field.
+func (ic *InvoiceCreate) SetSourceType(tst types.InvoiceSourceType) *InvoiceCreate {
+	ic.mutation.SetSourceType(tst)
+	return ic
+}
+
+// SetNillableSourceType sets the "source_type" field if the given value is not nil.
+func (ic *InvoiceCreate) SetNillableSourceType(tst *types.InvoiceSourceType) *InvoiceCreate {
+	if tst != nil {
+		ic.SetSourceType(*tst)
+	}
+	return ic
+}
+
 // SetIsManuallyEdited sets the "is_manually_edited" field.
 func (ic *InvoiceCreate) SetIsManuallyEdited(b bool) *InvoiceCreate {
 	ic.mutation.SetIsManuallyEdited(b)
@@ -821,6 +841,11 @@ func (ic *InvoiceCreate) check() error {
 	if _, ok := ic.mutation.Version(); !ok {
 		return &ValidationError{Name: "version", err: errors.New(`ent: missing required field "Invoice.version"`)}
 	}
+	if v, ok := ic.mutation.SourceType(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "source_type", err: fmt.Errorf(`ent: validator failed for field "Invoice.source_type": %w`, err)}
+		}
+	}
 	if _, ok := ic.mutation.IsManuallyEdited(); !ok {
 		return &ValidationError{Name: "is_manually_edited", err: errors.New(`ent: missing required field "Invoice.is_manually_edited"`)}
 	}
@@ -951,6 +976,10 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 		_spec.SetField(invoice.FieldTotal, field.TypeOther, value)
 		_node.Total = value
 	}
+	if value, ok := ic.mutation.CustomCurrency(); ok {
+		_spec.SetField(invoice.FieldCustomCurrency, field.TypeJSON, value)
+		_node.CustomCurrency = value
+	}
 	if value, ok := ic.mutation.Description(); ok {
 		_spec.SetField(invoice.FieldDescription, field.TypeString, value)
 		_node.Description = value
@@ -1026,6 +1055,10 @@ func (ic *InvoiceCreate) createSpec() (*Invoice, *sqlgraph.CreateSpec) {
 	if value, ok := ic.mutation.RecalculatedInvoiceID(); ok {
 		_spec.SetField(invoice.FieldRecalculatedInvoiceID, field.TypeString, value)
 		_node.RecalculatedInvoiceID = &value
+	}
+	if value, ok := ic.mutation.SourceType(); ok {
+		_spec.SetField(invoice.FieldSourceType, field.TypeString, value)
+		_node.SourceType = value
 	}
 	if value, ok := ic.mutation.IsManuallyEdited(); ok {
 		_spec.SetField(invoice.FieldIsManuallyEdited, field.TypeBool, value)

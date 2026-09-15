@@ -94,10 +94,9 @@ func (s *billingService) adjustMeterUsageGrants(
 		return adjustMeterUsageGrantsResult{}, false, nil
 	}
 
-	// A superseded window was replaced by a successor carrying the same usage
-	// forward, so folding it would charge those units twice. Dropped here rather
-	// than in the query: the cycle-overlap filter deliberately ignores status, and
-	// the read paths still want these rows as history.
+	// A replaced window's successor re-measures the same period, so folding both would
+	// charge those units twice. Dropped here, not in the query: the read paths still
+	// want these rows as history.
 	grants = lo.Filter(grants, func(g *entitlementgrant.EntitlementGrant, _ int) bool {
 		return g != nil && g.GrantStatus.IsBillable()
 	})

@@ -204,10 +204,8 @@ func (b EntitlementGrantAllocationBehavior) String() string { return string(b) }
 // status — it is derived from `valid_to <= now`, so closed grants are never
 // written back.
 //
-// `superseded` is the one latched value: an entitlement edit replaced the window
-// with a successor that carries the same usage forward, so billing must not fold
-// it or the same units would be charged twice. The evaluation tick cannot undo it
-// — it only ever moves `active` to `exhausted`.
+// `superseded` is the one latched value: an edit replaced the window, so billing must
+// not fold it. The tick cannot undo it — it only ever moves `active` to `exhausted`.
 type EntitlementGrantStatus string
 
 const (
@@ -216,9 +214,8 @@ const (
 	EntitlementGrantStatusSuperseded EntitlementGrantStatus = "superseded"
 )
 
-// IsBillable reports whether a window's snapshot may contribute to an invoice.
-// Exhausted windows are the ones that produce overage, so the only exclusion is
-// a window that has been replaced.
+// IsBillable reports whether a window may contribute to an invoice. Exhausted windows
+// produce overage, so only a replaced one is excluded.
 func (s EntitlementGrantStatus) IsBillable() bool {
 	return s != EntitlementGrantStatusSuperseded
 }

@@ -804,15 +804,9 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 }
 
 // resettleGrantWindows re-issues a customer's live windows when an edit moved the
-// allowance, so the change applies now instead of at the next window — which on a
-// billing-period cadence could be a month away.
-//
-// Only subscription-scoped rows: the same endpoint edits plan entitlements, and
-// re-cutting there would rewrite the live window of every subscriber on that plan
-// at once. They pick the new config up as their next window opens.
-//
-// Only the amount: a cadence, measure or stacking change reshapes or re-homes
-// windows rather than repricing one, so those take effect at the next window too.
+// allowance. Subscription-scoped rows only — re-cutting on a plan edit would rewrite the
+// live window of every subscriber at once — and only on the amount, since a cadence or
+// stacking change reshapes windows rather than repricing one.
 func (s *entitlementService) resettleGrantWindows(
 	ctx context.Context,
 	e *entitlement.Entitlement,
@@ -837,10 +831,9 @@ func (s *entitlementService) resettleGrantWindows(
 	})
 }
 
-// handOverGrantWindows re-issues whatever is live on `fromConfigID` for the
-// subscription at the allowance in `target`. The successor lands on the same slot
-// for an edit, or on target.EntitlementConfigID when the rule governing the customer
-// changes hands.
+// handOverGrantWindows re-issues whatever is live on fromConfigID at the allowance in
+// target, landing on the same slot for an edit or on target.EntitlementConfigID when the
+// rule changes hands.
 func (s *entitlementService) handOverGrantWindows(
 	ctx context.Context,
 	subscriptionID, fromConfigID string,
@@ -865,11 +858,8 @@ func (s *entitlementService) handOverGrantWindows(
 	return err
 }
 
-// takeOverGrantWindowsFromParent runs when a customer gets their first override on a
-// feature: the plan's rule leaves that customer's resolved set, so the window it owns
-// hands over to the override's slot at the override's allowance. Without this the
-// plan's window runs to its end at the plan's number and the override does nothing
-// until the next one opens.
+// takeOverGrantWindowsFromParent runs on a first override: the plan's rule leaves the
+// customer's resolved set, so the window it owns hands over to the override's slot.
 func (s *entitlementService) takeOverGrantWindowsFromParent(ctx context.Context, e *entitlement.Entitlement) error {
 	if e == nil || e.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION || !e.HasGrantConfig() {
 		return nil
@@ -885,9 +875,7 @@ func (s *entitlementService) takeOverGrantWindowsFromParent(ctx context.Context,
 	})
 }
 
-// handBackGrantWindowsToParent is the mirror, for "reset to default": the override is
-// gone, so the plan's rule applies again and its slot takes the window over at the
-// plan's allowance.
+// handBackGrantWindowsToParent is the mirror, for reset to default.
 func (s *entitlementService) handBackGrantWindowsToParent(ctx context.Context, e *entitlement.Entitlement) error {
 	if e == nil || e.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION || !e.HasGrantConfig() {
 		return nil
@@ -900,8 +888,7 @@ func (s *entitlementService) handBackGrantWindowsToParent(ctx context.Context, e
 	if err != nil {
 		return err
 	}
-	// The plan's rule may not be grant-backed, in which case there is no allowance
-	// to hand the window to; it runs out and the legacy path takes over after it.
+	// A legacy parent has no allowance to hand the window to; it runs out instead.
 	if !parent.HasGrantConfig() {
 		return nil
 	}
@@ -921,8 +908,7 @@ func quotaUnchanged(a, b *decimal.Decimal) bool {
 }
 
 func (s *entitlementService) DeleteEntitlement(ctx context.Context, id string) error {
-	// Read before the delete: the row is what says whose window this was and which
-	// rule takes over.
+	// Read before the delete: the row says whose window this was and which rule takes over.
 	existing, err := s.EntitlementRepo.Get(ctx, id)
 	if err != nil {
 		return err

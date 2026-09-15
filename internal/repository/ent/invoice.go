@@ -66,6 +66,7 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetAmountDue(inv.AmountDue).
 		SetAmountPaid(inv.AmountPaid).
 		SetAmountRemaining(inv.AmountRemaining).
+		SetSourceType(inv.SourceType).
 		SetIdempotencyKey(lo.FromPtr(inv.IdempotencyKey)).
 		SetInvoiceNumber(lo.FromPtr(inv.InvoiceNumber)).
 		SetBillingSequence(lo.FromPtr(inv.BillingSequence)).
@@ -96,6 +97,7 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetRefundedAmount(inv.RefundedAmount).
 		SetTotalPrepaidCreditsApplied(inv.TotalPrepaidCreditsApplied).
 		SetNillableIssueDate(inv.IssueDate).
+		SetCustomCurrency(inv.CustomCurrency).
 		Save(ctx)
 
 	if err != nil {
@@ -175,6 +177,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			SetTotalTax(inv.TotalTax).
 			SetNillableTaxExemptionReasonCode(inv.TaxExemptionReasonCode).
 			SetAmountRemaining(inv.AmountRemaining).
+			SetSourceType(inv.SourceType).
 			SetIdempotencyKey(lo.FromPtr(inv.IdempotencyKey)).
 			SetInvoiceNumber(lo.FromPtr(inv.InvoiceNumber)).
 			SetBillingSequence(lo.FromPtr(inv.BillingSequence)).
@@ -203,6 +206,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			SetEnvironmentID(inv.EnvironmentID).
 			SetTotalPrepaidCreditsApplied(inv.TotalPrepaidCreditsApplied).
 			SetNillableIssueDate(inv.IssueDate).
+			SetCustomCurrency(inv.CustomCurrency).
 			Save(ctx)
 		if err != nil {
 			if ent.IsConstraintError(err) {
@@ -264,12 +268,14 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 					SetQuantity(item.Quantity).
 					SetNillableAdjustedEntitlementQuantity(item.AdjustedEntitlementQuantity).
 					SetNillableSubscriptionLineItemID(item.SubscriptionLineItemID).
+					SetNillableParentLineItemID(item.ParentLineItemID).
 					SetCurrency(item.Currency).
 					SetNillablePeriodStart(item.PeriodStart).
 					SetNillablePeriodEnd(item.PeriodEnd).
 					SetMetadata(item.Metadata).
 					SetEnvironmentID(item.EnvironmentID).
 					SetCommitmentInfo(item.CommitmentInfo).
+					SetCustomCurrency(item.CustomCurrency).
 					SetPrepaidCreditsApplied(item.PrepaidCreditsApplied).
 					SetLineItemDiscount(item.LineItemDiscount).
 					SetInvoiceLevelDiscount(item.InvoiceLevelDiscount).
@@ -348,10 +354,12 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 				SetCurrency(item.Currency).
 				SetNillableAdjustedEntitlementQuantity(item.AdjustedEntitlementQuantity).
 				SetNillableSubscriptionLineItemID(item.SubscriptionLineItemID).
+				SetNillableParentLineItemID(item.ParentLineItemID).
 				SetNillablePeriodStart(item.PeriodStart).
 				SetNillablePeriodEnd(item.PeriodEnd).
 				SetMetadata(item.Metadata).
 				SetCommitmentInfo(item.CommitmentInfo).
+				SetCustomCurrency(item.CustomCurrency).
 				SetPrepaidCreditsApplied(item.PrepaidCreditsApplied).
 				SetLineItemDiscount(item.LineItemDiscount).
 				SetInvoiceLevelDiscount(item.InvoiceLevelDiscount).
@@ -572,6 +580,13 @@ func (r *invoiceRepository) Update(ctx context.Context, inv *domainInvoice.Invoi
 		SetSubtotal(inv.Subtotal).
 		SetTotalDiscount(inv.TotalDiscount).
 		AddVersion(1) // Increment version atomically
+
+	// Never cleared: the denomination is written once at creation and is what every amount on
+	// the row was derived from. An update from a struct that did not load it would
+	// otherwise wipe it and leave the stored amounts unexplainable.
+	if inv.CustomCurrency != nil {
+		query.SetCustomCurrency(inv.CustomCurrency)
+	}
 
 	if inv.TaxExemptionReasonCode != nil {
 		query.SetTaxExemptionReasonCode(*inv.TaxExemptionReasonCode)

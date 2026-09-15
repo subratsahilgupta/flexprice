@@ -513,8 +513,8 @@ meter_usage_tracking_lazy:
 # Usage-driven alert pipeline: meter-usage post-insert schedules a debounced
 # per-customer Temporal workflow (spend + entitlement grants + wallet alerts).
 usage_alerts:
-  enabled: false # meter usage pushes the debounce workflow
-  schedule_delay: "5m30s" # workflow StartDelay AND Redis schedule-throttle lock TTL
+  enabled: true # meter usage pushes the debounce workflow
+  schedule_delay: "30s" # workflow StartDelay AND Redis schedule-throttle lock TTL
   stale_after: "1h" # workflow runs firing later than this yield (ContinueAsNew); also activity ScheduleToStartTimeout
   wallet_alerts_enabled: true
   spend_alerts_enabled: true

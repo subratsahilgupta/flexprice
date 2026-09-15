@@ -145,6 +145,11 @@ func (Invoice) Fields() []ent.Field {
 			}).
 			Optional().
 			Default(decimal.Zero),
+		field.JSON("custom_currency", &types.CustomCurrency{}).
+			SchemaType(map[string]string{
+				"postgres": "jsonb",
+			}).
+			Optional(),
 		field.String("description").
 			Optional(),
 		field.Time("due_date").
@@ -227,6 +232,12 @@ func (Invoice) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("ID of the replacement invoice created when this invoice was recalculated after voiding"),
+
+		field.String("source_type").
+			GoType(types.InvoiceSourceType("")).
+			Optional().
+			Immutable().
+			Comment("How this invoice was created; 'checkout' marks one owned by a hosted checkout session"),
 
 		field.Bool("is_manually_edited").
 			Default(false).

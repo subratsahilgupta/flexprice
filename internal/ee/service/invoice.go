@@ -7,6 +7,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -40,11 +41,11 @@ type InvoiceService interface {
 	CreateOneOffInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreateEmptyDraftInvoice(ctx context.Context, req dto.CreateDraftInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreateComputedDraftInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, bool, error)
-	FinalizeInvoice(ctx context.Context, id string) error
+	FinalizeInvoice(ctx context.Context, id string, req dto.FinalizeInvoiceRequest) error
 	ProcessDraftInvoice(ctx context.Context, id string, paymentParams *dto.PaymentParameters, sub *subscription.Subscription, flowType types.InvoiceFlowType) error
 	UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error
 	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, paymentParams *dto.PaymentParameters, flowType types.InvoiceFlowType, isDraftSubscription bool) (*dto.InvoiceResponse, *subscription.Subscription, error)
-	CreateDraftInvoiceForSubscription(ctx context.Context, subscriptionID string, periodStart, periodEnd time.Time, referencePoint types.InvoiceReferencePoint) (*dto.InvoiceResponse, error)
+	CreateDraftInvoiceForSubscription(ctx context.Context, req dto.CreateSubscriptionDraftInvoiceRequest) (*dto.InvoiceResponse, error)
 	ComputeInvoice(ctx context.Context, invoiceID string, req *dto.InvoiceComputeRequest) (*invoice.Invoice, bool, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetInternalPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
@@ -107,6 +108,11 @@ func NewInvoiceService(params ServiceParams) InvoiceService {
 }
 
 func (s *invoiceService) CreateOneOffInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error) {
+	if req.Checkout != nil {
+		if err := req.ValidateForCheckout(); err != nil {
+			return nil, err
+		}
+	}
 
 	// Validate coupons
 	couponValidationService := NewCouponValidationService(s.ServiceParams)
@@ -119,6 +125,14 @@ func (s *invoiceService) CreateOneOffInvoice(ctx context.Context, req dto.Create
 		}
 		if err := couponValidationService.ValidateCoupon(ctx, *coupon, nil); err != nil {
 			s.Logger.Error(ctx, "failed to validate coupon", "error", err, "coupon_id", couponID)
+			continue
+		}
+		// ValidateCoupon only checks currency when given a subscription, and there is none here.
+		if coupon.Currency != "" && !types.IsMatchingCurrency(coupon.Currency, req.Currency) {
+			s.Logger.Info(ctx, "skipping coupon - currency mismatch",
+				"coupon_id", couponID,
+				"coupon_currency", coupon.Currency,
+				"invoice_currency", req.Currency)
 			continue
 		}
 		validCoupons = append(validCoupons, dto.InvoiceCoupon{
@@ -135,6 +149,10 @@ func (s *invoiceService) CreateOneOffInvoice(ctx context.Context, req dto.Create
 		return nil, err
 	}
 	req.PreparedTaxRates = preparedTaxRates
+
+	if req.Checkout != nil {
+		return s.startCheckoutOnOneOffInvoice(ctx, req)
+	}
 
 	// Delegate to CreateInvoice which handles draft-first flow: create draft, compute, finalize, webhook
 	resp, err := s.CreateInvoice(ctx, req)
@@ -279,6 +297,22 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 		inv.BillingSequence = billingSeq
 		inv.InvoiceStatus = types.InvoiceStatusDraft
 
+		// Entities bill in the custom currency, invoices in fiat. Amounts live in
+		// custom_currency; the fiat columns are projected from it.
+		settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+		ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, txCtx, types.SettingKeyCustomCurrencyConfig)
+		if err != nil {
+			return err
+		}
+		code := strings.ToLower(req.Currency)
+		if ccCfg.IsCustom(code) {
+			inv.Currency = ccCfg.DefaultFiatCurrency
+			inv.CustomCurrency = &types.CustomCurrency{
+				Code: code,
+				Rate: ccCfg.RateFor(code, ccCfg.DefaultFiatCurrency),
+			}
+		}
+
 		// Validate invoice
 		if err := inv.Validate(); err != nil {
 			return err
@@ -310,6 +344,10 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 
 // This wrapper delegates to the draft-first flow. Invoice number is assigned during FinalizeInvoice.
 func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
 	// Delegate to draft-first flow
 	draftReq := req.ToDraftRequest()
 	draft, err := s.CreateEmptyDraftInvoice(ctx, draftReq)
@@ -336,7 +374,7 @@ func (s *invoiceService) CreateInvoice(ctx context.Context, req dto.CreateInvoic
 	}
 
 	if shouldFinalize {
-		if err := s.FinalizeInvoice(ctx, draft.ID); err != nil {
+		if err := s.FinalizeInvoice(ctx, draft.ID, dto.FinalizeInvoiceRequest{}); err != nil {
 			return nil, err
 		}
 	}
@@ -370,28 +408,33 @@ func (s *invoiceService) CreateComputedDraftInvoice(ctx context.Context, req dto
 
 // CreateDraftInvoiceForSubscription creates a zero-dollar draft invoice without line items for a subscription period.
 // No invoice number is assigned. Use ComputeInvoice to populate line items and FinalizeInvoice to assign the number.
-func (s *invoiceService) CreateDraftInvoiceForSubscription(ctx context.Context, subscriptionID string, periodStart, periodEnd time.Time, referencePoint types.InvoiceReferencePoint) (*dto.InvoiceResponse, error) {
-	sub, _, err := s.SubRepo.GetWithLineItems(ctx, subscriptionID)
+func (s *invoiceService) CreateDraftInvoiceForSubscription(ctx context.Context, req dto.CreateSubscriptionDraftInvoiceRequest) (*dto.InvoiceResponse, error) {
+	sub, _, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
 	if err != nil {
 		return nil, err
 	}
 	billingPeriodStr := string(sub.BillingPeriod)
 	invoicingCustomerID := sub.GetInvoicingCustomerID()
-	req := dto.CreateDraftInvoiceRequest{
+	billingReason := types.InvoiceBillingReasonSubscriptionCycle
+	switch req.ReferencePoint {
+	case types.ReferencePointPeriodStart:
+		billingReason = types.InvoiceBillingReasonSubscriptionCreate
+	case types.ReferencePointCancel:
+		billingReason = types.InvoiceBillingReasonProration
+	}
+	draftReq := dto.CreateDraftInvoiceRequest{
 		CustomerID:     invoicingCustomerID,
 		SubscriptionID: lo.ToPtr(sub.ID),
 		InvoiceType:    types.InvoiceTypeSubscription,
 		Currency:       sub.Currency,
 		BillingPeriod:  &billingPeriodStr,
-		PeriodStart:    &periodStart,
-		PeriodEnd:      &periodEnd,
-		BillingReason:  types.InvoiceBillingReasonSubscriptionCycle,
+		PeriodStart:    &req.PeriodStart,
+		PeriodEnd:      &req.PeriodEnd,
+		BillingReason:  billingReason,
+		SourceType:     req.SourceType,
 	}
-	if referencePoint == types.ReferencePointCancel {
-		req.BillingReason = types.InvoiceBillingReasonProration
-	}
-	req.SubscriptionCustomerID = &sub.CustomerID
-	return s.CreateEmptyDraftInvoice(ctx, req)
+	draftReq.SubscriptionCustomerID = &sub.CustomerID
+	return s.CreateEmptyDraftInvoice(ctx, draftReq)
 }
 
 // ComputeInvoice computes a draft (or previously-skipped) invoice: computes line items (subscription),
@@ -498,6 +541,14 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 			return lockErr
 		}
 
+		gatedSession, sessionOwned, lockErr := s.isInvoiceGatedOnCheckout(txCtx, inv, req.SourceID())
+		if lockErr != nil {
+			return lockErr
+		}
+		if gatedSession != nil && !sessionOwned {
+			return errInvoiceCheckoutGated(invoiceID, "recompute")
+		}
+
 		if inv.IsManuallyEdited {
 			return ierr.NewError("invoice has manual line-item edits").
 				WithHint("manual line-item edits are not supported for computed invoices").
@@ -548,20 +599,41 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		// invoices. For subscription invoices, credits and taxes are deferred
 		// to the finalization step so wallet debits only happen when the
 		// invoice is actually sealed.
+		applyTaxes := false
 		if applyReq != nil {
 			if inv.InvoiceType == types.InvoiceTypeOneOff || inv.InvoiceType == types.InvoiceTypeCredit {
-				// One-off / credit: apply coupons + credits + taxes now
+				// One-off / credit: apply coupons + credits now, taxes after the conversion
 				if err := s.applyCreditsAndCouponsToInvoice(txCtx, inv, *applyReq); err != nil {
 					return err
 				}
-				if err := s.applyTaxesToInvoice(txCtx, inv, *applyReq); err != nil {
-					return err
-				}
+				applyTaxes = true
 			} else {
 				// Subscription: coupons only — credits and taxes deferred to finalization
 				if err := s.applyCouponsToInvoice(txCtx, inv, *applyReq); err != nil {
 					return err
 				}
+			}
+		}
+
+		// The pipeline above ran in the subscription's currency. Snapshot it as the
+		// denomination, then write the fiat columns back from it.
+		inv.CaptureCustomCurrencyDenomination()
+		inv.ProjectCustomCurrency()
+
+		// Tax runs after the conversion: it writes tax_applied rows that go to external
+		// integrations, so they have to be fiat.
+		if applyTaxes {
+			if err := s.applyTaxesToInvoice(txCtx, inv, *applyReq); err != nil {
+				return err
+			}
+			// Tax was produced in fiat, so it is divided back into the denomination.
+			inv.MirrorTaxIntoDenomination()
+		}
+
+		inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
+		for _, item := range inv.LineItems {
+			if err := s.InvoiceLineItemRepo.Update(txCtx, item); err != nil {
+				return err
 			}
 		}
 
@@ -950,20 +1022,20 @@ func (s *invoiceService) ListInvoices(ctx context.Context, filter *types.Invoice
 	}, nil
 }
 
-func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string) error {
+func (s *invoiceService) FinalizeInvoice(ctx context.Context, id string, req dto.FinalizeInvoiceRequest) error {
 	inv, err := s.InvoiceRepo.Get(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	if err := s.performFinalizeInvoiceActions(ctx, inv); err != nil {
+	if err := s.performFinalizeInvoiceActions(ctx, inv, req.SourceID()); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv *invoice.Invoice) error {
+func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv *invoice.Invoice, callerSessionID string) error {
 	if inv.InvoiceStatus == types.InvoiceStatusSkipped {
 		// No-op: skipped invoices are not finalized
 		return nil
@@ -978,9 +1050,35 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		if err != nil {
 			return err
 		}
+
+		gatedSession, sessionOwned, err := s.isInvoiceGatedOnCheckout(txCtx, lockedInv, callerSessionID)
+		if err != nil {
+			return err
+		}
+		if gatedSession != nil && !sessionOwned {
+			return errInvoiceCheckoutGated(inv.ID, "finalize")
+		}
+
 		// Re-check status after acquiring lock
 		if lockedInv.InvoiceStatus != types.InvoiceStatusDraft {
 			return ierr.NewError("invoice is not in draft status").WithHint("invoice was finalized concurrently").Mark(ierr.ErrValidation)
+		}
+
+		// Freeze the rate first so every fiat column below uses the sealed rate.
+		if cc := lockedInv.CustomCurrency; cc != nil {
+			settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+			ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, txCtx, types.SettingKeyCustomCurrencyConfig)
+			if err != nil {
+				return err
+			}
+			rate := ccCfg.RateFor(cc.Code, lockedInv.Currency)
+			// No rate means no correct fiat amount; refuse rather than seal a wrong one.
+			if !rate.IsPositive() {
+				return ierr.NewErrorf("no conversion factor from %s to %s", cc.Code, lockedInv.Currency).
+					WithHintf("custom_currency_config must define a %s to %s conversion factor", cc.Code, lockedInv.Currency).
+					Mark(ierr.ErrValidation)
+			}
+			cc.Rate = rate
 		}
 
 		// ====================================================================
@@ -999,14 +1097,17 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 			}
 			lockedInv.LineItems = lineItems
 
+			// Everything below operates in the custom currency; capture and project at
+			// the end convert it exactly once, at the rate frozen above.
+			lockedInv.RestoreFromDenomination()
+
 			if len(lockedInv.LineItems) > 0 {
 				// Apply credits — this debits wallets and updates line items
+				// Writes the applied total into whichever denomination it debited.
 				creditAdjustmentService := NewCreditAdjustmentService(s.ServiceParams)
-				creditResult, err := creditAdjustmentService.ApplyCreditsToInvoice(txCtx, lockedInv)
-				if err != nil {
+				if _, err := creditAdjustmentService.ApplyCreditsToInvoice(txCtx, lockedInv); err != nil {
 					return err
 				}
-				lockedInv.TotalPrepaidCreditsApplied = creditResult.TotalPrepaidCreditsApplied
 
 				// Recalculate total with credits applied
 				newTotal := lockedInv.Subtotal.Sub(lockedInv.TotalDiscount).Sub(lockedInv.TotalPrepaidCreditsApplied)
@@ -1015,7 +1116,16 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 				}
 				lockedInv.Total = newTotal
 				lockedInv.AmountDue = lockedInv.Total
-				lockedInv.AmountRemaining = lockedInv.Total.Sub(lockedInv.AmountPaid)
+
+				// Back to fiat: one conversion, at the frozen rate.
+				lockedInv.CaptureCustomCurrencyDenomination()
+				lockedInv.ProjectCustomCurrency()
+				lockedInv.AmountRemaining = lockedInv.AmountDue.Sub(lockedInv.AmountPaid)
+				for _, item := range lockedInv.LineItems {
+					if err := s.InvoiceLineItemRepo.Update(txCtx, item); err != nil {
+						return err
+					}
+				}
 
 				// Persist credit-adjusted totals before tax recalculation
 				if err := s.InvoiceRepo.Update(txCtx, lockedInv); err != nil {
@@ -1026,6 +1136,9 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 				if _, err := s.RecalculateTaxesOnInvoice(txCtx, lockedInv); err != nil {
 					return err
 				}
+				// Tax was produced in fiat, so it is divided back into the denomination.
+				lockedInv.MirrorTaxIntoDenomination()
+
 			}
 		}
 
@@ -1101,7 +1214,22 @@ func (s *invoiceService) IsFinalizationDue(ctx context.Context, invoiceID string
 		return false, nil
 	}
 
+	// Opening invoices stay draft until payment (checkout) or ProcessDraftInvoice.
+	if inv.BillingReason == string(types.InvoiceBillingReasonSubscriptionCreate) {
+		return false, nil
+	}
+
 	if inv.LastComputedAt != nil && inv.PeriodEnd != nil && inv.LastComputedAt.Before(*inv.PeriodEnd) && inv.BillingReason == string(types.InvoiceBillingReasonSubscriptionCycle) {
+		return false, nil
+	}
+
+	// A draft under an open checkout is the customer's to pay, not the cron's to finalize.
+	// Completion finalizes it; expiry voids it.
+	gatedSession, _, err := s.isInvoiceGatedOnCheckout(ctx, inv, "")
+	if err != nil {
+		return false, err
+	}
+	if gatedSession != nil {
 		return false, nil
 	}
 
@@ -1256,27 +1384,28 @@ func validateInvoiceVoidable(inv *invoice.Invoice) error {
 }
 
 func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.InvoiceVoidRequest) (*invoice.Invoice, error) {
-
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
 
-	inv, err := s.InvoiceRepo.Get(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := validateInvoiceVoidable(inv); err != nil {
-		return nil, err
-	}
-
-	err = s.DB.WithTx(ctx, func(tx context.Context) error {
+	var inv *invoice.Invoice
+	err := s.DB.WithTx(ctx, func(tx context.Context) error {
 		// Re-read under a row lock so a concurrent refund cannot make RefundedAmount
 		// stale between the pre-check and the refund calculation below.
+		var err error
 		inv, err = s.InvoiceRepo.GetForUpdate(tx, id)
 		if err != nil {
 			return err
 		}
+
+		gatedSession, ownedByCaller, err := s.isInvoiceGatedOnCheckout(tx, inv, req.SourceID())
+		if err != nil {
+			return err
+		}
+		if gatedSession != nil && !ownedByCaller {
+			return errInvoiceCheckoutGated(id, "void")
+		}
+
 		if err := validateInvoiceVoidable(inv); err != nil {
 			return err
 		}
@@ -1375,7 +1504,7 @@ func (s *invoiceService) ProcessDraftInvoice(ctx context.Context, id string, pay
 	}
 
 	// try to finalize the invoice
-	if err := s.performFinalizeInvoiceActions(ctx, inv); err != nil {
+	if err := s.performFinalizeInvoiceActions(ctx, inv, ""); err != nil {
 		return err
 	}
 
@@ -1782,81 +1911,97 @@ func (s *invoiceService) SyncInvoiceToMoyasarIfEnabled(ctx context.Context, inv 
 }
 
 func (s *invoiceService) UpdatePaymentStatus(ctx context.Context, id string, status types.PaymentStatus, amount *decimal.Decimal) error {
-	inv, err := s.InvoiceRepo.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	// Validate the invoice status
-	allowedInvoiceStatuses := []types.InvoiceStatus{
-		types.InvoiceStatusDraft,
-		types.InvoiceStatusFinalized,
-	}
-	if !lo.Contains(allowedInvoiceStatuses, inv.InvoiceStatus) {
-		return ierr.NewError("invoice status is not allowed").
-			WithHintf("invoice status - %s is not allowed", inv.InvoiceStatus).
-			WithReportableDetails(map[string]any{
-				"allowed_statuses": allowedInvoiceStatuses,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
-	// Validate that there shouldnt be any payments for this invoice (for manual updates)
-	paymentService := NewPaymentService(s.ServiceParams)
-	filter := types.NewNoLimitPaymentFilter()
-	filter.DestinationID = lo.ToPtr(id)
-	filter.Status = lo.ToPtr(types.StatusPublished)
-	filter.PaymentStatus = lo.ToPtr(string(types.PaymentStatusSucceeded))
-	filter.DestinationType = lo.ToPtr(string(types.PaymentDestinationTypeInvoice))
-	filter.Limit = lo.ToPtr(1)
-	payments, err := paymentService.ListPayments(ctx, filter)
-	if err != nil {
-		return err
-	}
-
-	if len(payments.Items) > 0 {
-		return ierr.NewError("invoice has active payment records").
-			WithHint("Manual payment status updates are disabled for payment-based invoices.").
-			Mark(ierr.ErrInvalidOperation)
-	}
-
-	// Validate the payment status transition
-	if err := s.validatePaymentStatusTransition(inv.PaymentStatus, status); err != nil {
-		return err
-	}
-
-	// Validate the request amount
-	if amount != nil && amount.IsNegative() {
-		return ierr.NewError("amount must be non-negative").
-			WithHint("amount must be non-negative").
-			Mark(ierr.ErrValidation)
-	}
-
-	now := time.Now().UTC()
-	inv.PaymentStatus = status
-
-	switch status {
-	case types.PaymentStatusPending:
-		if amount != nil {
-			inv.AmountPaid = *amount
-			inv.AmountRemaining = inv.AmountDue.Sub(*amount)
+	var inv *invoice.Invoice
+	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		var err error
+		inv, err = s.InvoiceRepo.GetForUpdate(txCtx, id)
+		if err != nil {
+			return err
 		}
-	case types.PaymentStatusSucceeded:
-		inv.AmountPaid = inv.AmountDue
-		inv.AmountRemaining = decimal.Zero
-		inv.PaidAt = &now
-	case types.PaymentStatusFailed:
-		inv.AmountPaid = decimal.Zero
-		inv.AmountRemaining = inv.AmountDue
-		inv.PaidAt = nil
-	}
 
-	// Validate the final state
-	if err := inv.Validate(); err != nil {
-		return err
-	}
+		gatedSession, _, err := s.isInvoiceGatedOnCheckout(txCtx, inv, "")
+		if err != nil {
+			return err
+		}
+		if gatedSession != nil {
+			return errInvoiceCheckoutGated(id, "update the payment status of")
+		}
 
-	if err := s.InvoiceRepo.Update(ctx, inv); err != nil {
+		// Validate the invoice status
+		allowedInvoiceStatuses := []types.InvoiceStatus{
+			types.InvoiceStatusDraft,
+			types.InvoiceStatusFinalized,
+		}
+		if !lo.Contains(allowedInvoiceStatuses, inv.InvoiceStatus) {
+			return ierr.NewError("invoice status is not allowed").
+				WithHintf("invoice status - %s is not allowed", inv.InvoiceStatus).
+				WithReportableDetails(map[string]any{
+					"allowed_statuses": allowedInvoiceStatuses,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		// Validate that there shouldnt be any payments for this invoice (for manual updates)
+		paymentService := NewPaymentService(s.ServiceParams)
+		filter := types.NewNoLimitPaymentFilter()
+		filter.DestinationID = lo.ToPtr(id)
+		filter.Status = lo.ToPtr(types.StatusPublished)
+		filter.PaymentStatus = lo.ToPtr(string(types.PaymentStatusSucceeded))
+		filter.DestinationType = lo.ToPtr(string(types.PaymentDestinationTypeInvoice))
+		filter.Limit = lo.ToPtr(1)
+		payments, err := paymentService.ListPayments(ctx, filter)
+		if err != nil {
+			return err
+		}
+
+		if len(payments.Items) > 0 {
+			return ierr.NewError("invoice has active payment records").
+				WithHint("Manual payment status updates are disabled for payment-based invoices.").
+				Mark(ierr.ErrInvalidOperation)
+		}
+
+		// Validate the payment status transition
+		if err := s.validatePaymentStatusTransition(inv.PaymentStatus, status); err != nil {
+			return err
+		}
+
+		// Validate the request amount
+		if amount != nil && amount.IsNegative() {
+			return ierr.NewError("amount must be non-negative").
+				WithHint("amount must be non-negative").
+				Mark(ierr.ErrValidation)
+		}
+
+		now := time.Now().UTC()
+		inv.PaymentStatus = status
+
+		switch status {
+		case types.PaymentStatusPending:
+			if amount != nil {
+				inv.AmountPaid = *amount
+				inv.AmountRemaining = inv.AmountDue.Sub(*amount)
+			}
+		case types.PaymentStatusSucceeded:
+			inv.AmountPaid = inv.AmountDue
+			inv.AmountRemaining = decimal.Zero
+			inv.PaidAt = &now
+		case types.PaymentStatusFailed:
+			inv.AmountPaid = decimal.Zero
+			inv.AmountRemaining = inv.AmountDue
+			inv.PaidAt = nil
+		}
+
+		// Validate the final state
+		if err := inv.Validate(); err != nil {
+			return err
+		}
+
+		if err := s.InvoiceRepo.Update(txCtx, inv); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 
@@ -2059,7 +2204,7 @@ func (s *invoiceService) CreateSubscriptionInvoice(ctx context.Context, req *dto
 			Mark(ierr.ErrValidation)
 	}
 
-	// Ledger freshness at the money moment: materialize any pending entitlement
+	// Denomination freshness at the money moment: materialize any pending entitlement
 	// grant overage (debounce gap) before charges are calculated. Idempotent;
 	// never blocks invoicing — worst case billing folds the last materialized
 	// values. Dep guard keeps partially-wired test services on the old path.
@@ -2147,10 +2292,18 @@ func (s *invoiceService) CreatePreviewInvoice(ctx context.Context, req dto.Creat
 		return dto.NewInvoiceResponse(inv), nil
 	}
 
+	// Amounts were built in the request's currency; a real invoice is fiat from here on,
+	// so tax is computed on the same amounts finalization would use.
+	if err := s.projectPreviewToFiat(ctx, inv); err != nil {
+		return nil, err
+	}
+
 	// Calculate, never apply: applying writes a tax_applied record per rate, and this
 	// invoice is never created.
 	result := taxSvc.CalculateTaxesOnInvoice(ctx, inv, rates)
 	applyTaxResultToInvoice(inv, result)
+	// Tax was produced in fiat, so it is divided back into the denomination.
+	inv.MirrorTaxIntoDenomination()
 
 	response := dto.NewInvoiceResponse(inv)
 	response.WithTaxes(result.TaxAppliedRecords)
@@ -2235,11 +2388,19 @@ func (s *invoiceService) GetPreviewInvoice(ctx context.Context, req dto.GetPrevi
 		return nil, err
 	}
 
+	// Coupons ran in the subscription's currency; a real invoice is fiat from here on,
+	// so tax is computed on the same amounts finalization would use.
+	if err := s.projectPreviewToFiat(ctx, inv); err != nil {
+		return nil, err
+	}
+
 	// Calculate, never apply: applying writes a tax_applied record per rate, and this
 	// invoice is never created.
 	taxSvc := NewTaxService(s.ServiceParams)
 	result := taxSvc.CalculateTaxesOnInvoice(ctx, inv, invReq.PreparedTaxRates)
 	applyTaxResultToInvoice(inv, result)
+	// Tax was produced in fiat, so it is divided back into the denomination.
+	inv.MirrorTaxIntoDenomination()
 
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
@@ -2306,11 +2467,19 @@ func (s *invoiceService) GetInternalPreviewInvoice(ctx context.Context, req dto.
 		return nil, err
 	}
 
+	// Coupons ran in the subscription's currency; a real invoice is fiat from here on,
+	// so tax is computed on the same amounts finalization would use.
+	if err := s.projectPreviewToFiat(ctx, inv); err != nil {
+		return nil, err
+	}
+
 	// Calculate, never apply: applying writes a tax_applied record per rate, and this
 	// invoice is never created.
 	taxSvc := NewTaxService(s.ServiceParams)
 	result := taxSvc.CalculateTaxesOnInvoice(ctx, inv, invReq.PreparedTaxRates)
 	applyTaxResultToInvoice(inv, result)
+	// Tax was produced in fiat, so it is divided back into the denomination.
+	inv.MirrorTaxIntoDenomination()
 
 	// Create preview response
 	response := dto.NewInvoiceResponse(inv)
@@ -2472,8 +2641,9 @@ func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.
 			continue
 		}
 
-		// filter by currency
-		if !types.IsMatchingCurrency(inv.Currency, req.Currency) {
+		// A custom-currency invoice also matches a wallet in that custom currency.
+		inCustomCurrency := inv.CustomCurrency != nil && types.IsMatchingCurrency(inv.CustomCurrency.Code, req.Currency)
+		if !inCustomCurrency && !types.IsMatchingCurrency(inv.Currency, req.Currency) {
 			continue
 		}
 
@@ -2487,14 +2657,24 @@ func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.
 		}
 
 		unpaidInvoices = append(unpaidInvoices, inv)
-		unpaidAmount = unpaidAmount.Add(inv.AmountRemaining)
-		totalInvoiceAmountPaid = totalInvoiceAmountPaid.Add(inv.AmountPaid)
+
+		remaining, paid := inv.AmountRemaining, inv.AmountPaid
+		if inCustomCurrency {
+			// Restated from the invoice, not read off the denomination: credit notes and
+			// external discounts reduce amount_due and amount_remaining after finalization
+			// without touching the denomination, so its amount_due can be stale.
+			remaining = inv.CustomCurrency.FromFiat(inv.AmountRemaining)
+			paid = inv.CustomCurrency.FromFiat(inv.AmountPaid)
+		}
+		unpaidAmount = unpaidAmount.Add(remaining)
+		totalInvoiceAmountPaid = totalInvoiceAmountPaid.Add(paid)
 
 		for _, item := range inv.LineItems {
+			denomination := item.Denomination()
 			if lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE) {
-				unpaidUsageCharges = unpaidUsageCharges.Add(item.Amount).Sub(item.PrepaidCreditsApplied).Sub(item.LineItemDiscount)
+				unpaidUsageCharges = unpaidUsageCharges.Add(denomination.Amount).Sub(denomination.PrepaidCreditsApplied).Sub(denomination.LineItemDiscount)
 			} else {
-				unpaidFixedCharges = unpaidFixedCharges.Add(item.Amount)
+				unpaidFixedCharges = unpaidFixedCharges.Add(denomination.Amount)
 			}
 		}
 	}
@@ -3655,7 +3835,7 @@ func (s *invoiceService) RecalculateInvoiceV2(ctx context.Context, id string, fi
 
 	// Finalize the invoice if requested
 	if finalize {
-		if err := s.FinalizeInvoice(ctx, id); err != nil {
+		if err := s.FinalizeInvoice(ctx, id, dto.FinalizeInvoiceRequest{}); err != nil {
 			s.Logger.Error(ctx, "failed to finalize invoice after recalculation",
 				"error", err,
 				"invoice_id", id)
@@ -3768,7 +3948,29 @@ func (s *invoiceService) RecalculateInvoice(ctx context.Context, id string) (*dt
 	return s.GetInvoice(ctx, newInv.ID)
 }
 
-// RecalculateTaxesOnInvoice recalculates taxes on an invoice if it's a subscription invoice.
+// projectPreviewToFiat restates a preview invoice the way a real one is stored: fiat
+// currency with the custom-currency denomination alongside.
+func (s *invoiceService) projectPreviewToFiat(ctx context.Context, inv *invoice.Invoice) error {
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+	ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, ctx, types.SettingKeyCustomCurrencyConfig)
+	if err != nil {
+		return err
+	}
+	if !ccCfg.IsCustom(inv.Currency) {
+		return nil
+	}
+
+	code := strings.ToLower(inv.Currency)
+	inv.Currency = ccCfg.DefaultFiatCurrency
+	inv.CustomCurrency = &types.CustomCurrency{
+		Code: code,
+		Rate: ccCfg.RateFor(code, ccCfg.DefaultFiatCurrency),
+	}
+	inv.CaptureCustomCurrencyDenomination()
+	inv.ProjectCustomCurrency()
+	return nil
+}
+
 func (s *invoiceService) RecalculateTaxesOnInvoice(ctx context.Context, inv *invoice.Invoice) (*invoice.Invoice, error) {
 	// Only apply taxes to subscription invoices
 	if inv.InvoiceType != types.InvoiceTypeSubscription || inv.SubscriptionID == nil {
@@ -3882,6 +4084,16 @@ func (s *invoiceService) UpdateInvoice(ctx context.Context, id string, req dto.U
 		}
 		if err := rejectVoidedInvoiceEdit(locked); err != nil {
 			return err
+		}
+		// Only apply_discount moves the amount; metadata-only updates (vendor sync) stay allowed.
+		if req.ApplyDiscount {
+			gatedSession, _, err := s.isInvoiceGatedOnCheckout(txCtx, locked, "")
+			if err != nil {
+				return err
+			}
+			if gatedSession != nil {
+				return errInvoiceCheckoutGated(id, "re-apply discounts on")
+			}
 		}
 		if locked.InvoiceStatus == types.InvoiceStatusFinalized && req.ApplyDiscount {
 			draft, err := s.voidAndRecreateDraftForEdit(txCtx, locked)
@@ -4029,24 +4241,6 @@ func (s *invoiceService) HandleIncompleteSubscriptionPayment(ctx context.Context
 		"subscription_id", *invoice.SubscriptionID)
 
 	return nil
-}
-
-// generateProrationInvoiceDescription creates a description for proration invoices
-func (s *invoiceService) generateProrationInvoiceDescription(cancellationType, cancellationReason string, totalAmount decimal.Decimal) string {
-	if totalAmount.IsNegative() {
-		// Credit invoice
-		switch cancellationType {
-		case "immediate":
-			return fmt.Sprintf("Credit for unused time - immediate cancellation (%s)", cancellationReason)
-		case "specific_date":
-			return fmt.Sprintf("Credit for unused time - scheduled cancellation (%s)", cancellationReason)
-		default:
-			return fmt.Sprintf("Cancellation credit (%s)", cancellationReason)
-		}
-	} else {
-		// Charge invoice (rare for cancellations, but possible)
-		return fmt.Sprintf("Proration charges - cancellation (%s)", cancellationReason)
-	}
 }
 
 // CalculateUsageBreakdown provides flexible usage breakdown with custom grouping
@@ -4432,13 +4626,14 @@ func (s *invoiceService) GetInvoiceWithBreakdown(ctx context.Context, req dto.Ge
 // recalculateInvoiceTotals recalculates invoice subtotal, total, amount_due and amount_remaining
 // based on updated line item amounts after usage breakdown calculation
 func (s *invoiceService) recalculateInvoiceTotals(inv *dto.InvoiceResponse) {
-	// Calculate new subtotal from line item amounts
+	// Work in the denomination currency, then convert once. Summing the fiat line items
+	// would drift from the stored total.
+	inv.RestoreFromDenomination()
+
 	newSubtotal := decimal.Zero
 	for _, lineItem := range inv.LineItems {
 		newSubtotal = newSubtotal.Add(lineItem.Amount)
 	}
-
-	// Update subtotal
 	inv.Subtotal = newSubtotal
 
 	// Calculate new total: subtotal - discount + tax
@@ -4447,12 +4642,13 @@ func (s *invoiceService) recalculateInvoiceTotals(inv *dto.InvoiceResponse) {
 		newTotal = decimal.Zero
 	}
 
-	// Update total and amount_due
 	inv.Total = newTotal
 	inv.AmountDue = newTotal
 
-	// Calculate amount_remaining: total - amount_paid
-	inv.AmountRemaining = newTotal.Sub(inv.AmountPaid)
+	inv.CaptureCustomCurrencyDenomination()
+	inv.ProjectCustomCurrency()
+
+	inv.AmountRemaining = inv.AmountDue.Sub(inv.AmountPaid)
 	if inv.AmountRemaining.IsNegative() {
 		inv.AmountRemaining = decimal.Zero
 	}

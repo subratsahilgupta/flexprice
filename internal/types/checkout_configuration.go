@@ -13,6 +13,7 @@ type CheckoutConfiguration struct {
 	ModifySubscriptionParams *ModifySubscriptionParams `json:"modify_subscription_params,omitempty"`
 	WalletTopupParams        *WalletTopupParams        `json:"wallet_topup_params,omitempty"`
 	AddAddonParams           *AddAddonParams           `json:"add_addon_params,omitempty"`
+	PayInvoiceParams         *PayInvoiceParams         `json:"pay_invoice_params,omitempty"`
 }
 
 // Validate validates that the configuration holds all required fields
@@ -48,6 +49,13 @@ func (c *CheckoutConfiguration) Validate(action CheckoutAction) error {
 				Mark(ierr.ErrValidation)
 		}
 		return c.AddAddonParams.Validate()
+	case CheckoutActionPayInvoice:
+		if c.PayInvoiceParams == nil {
+			return ierr.NewError("pay_invoice_params is required for pay_invoice action").
+				WithHint("Provide pay_invoice_params in configuration").
+				Mark(ierr.ErrValidation)
+		}
+		return c.PayInvoiceParams.Validate()
 	}
 	return nil
 }
@@ -231,6 +239,20 @@ type WalletTopupParams struct {
 	WalletTransactionID string `json:"wallet_transaction_id,omitempty"`
 }
 
+// PayInvoiceParams is persisted on checkout sessions for payment-gated one-off invoices.
+// InvoiceID duplicates session.CheckoutInvoiceID so completion can cross-check the two.
+type PayInvoiceParams struct {
+	InvoiceID string `json:"invoice_id" validate:"required"`
+}
+
+func (p *PayInvoiceParams) Validate() error {
+	if p == nil {
+		return ierr.NewError("pay_invoice_params is required").
+			Mark(ierr.ErrValidation)
+	}
+	return validator.ValidateRequest(p)
+}
+
 func (p *WalletTopupParams) Validate() error {
 	if p == nil {
 		return ierr.NewError("wallet_topup_params is required").
@@ -277,6 +299,74 @@ type CheckoutProviderResult struct {
 
 	// ProviderMetadata holds provider-specific data not needed for business logic.
 	ProviderMetadata map[string]string `json:"provider_metadata,omitempty"`
+}
+
+// CheckoutProviderResultBuilder assembles a CheckoutProviderResult, optionally on top
+// of one already stored.
+//
+// Most callers only learn part of the result — a webhook knows the gateway payment id
+// but not the redirect action recorded at link creation — so the value that gets
+// persisted has to combine what a caller brings with what is already there. Writing a
+// caller's fragment straight to the column would drop the NextAction and
+// ProviderSessionID, leaving no trace back to the provider object.
+type CheckoutProviderResultBuilder struct {
+	result CheckoutProviderResult
+}
+
+// NewCheckoutProviderResultFrom starts from an existing result — typically the one
+// already stored on the session — so an overlay only has to supply what it knows.
+// A nil base starts empty.
+func NewCheckoutProviderResultFrom(base *CheckoutProviderResult) *CheckoutProviderResultBuilder {
+	b := &CheckoutProviderResultBuilder{}
+	if base != nil {
+		b.result = *base
+		// Clone rather than alias: the base belongs to the caller and the built value
+		// gets persisted.
+		if base.ProviderMetadata != nil {
+			b.result.ProviderMetadata = make(map[string]string, len(base.ProviderMetadata))
+			for k, v := range base.ProviderMetadata {
+				b.result.ProviderMetadata[k] = v
+			}
+		}
+	}
+	return b
+}
+
+// Overlay applies the non-empty fields of r, leaving everything else as it was.
+// Emptiness is the signal for "I do not know this", which is why a caller passing a
+// fragment cannot erase what is already recorded.
+func (b *CheckoutProviderResultBuilder) Overlay(r *CheckoutProviderResult) *CheckoutProviderResultBuilder {
+	if b == nil || r == nil {
+		return b
+	}
+	if r.NextAction != nil {
+		b.result.NextAction = r.NextAction
+	}
+	if r.ProviderSessionID != "" {
+		b.result.ProviderSessionID = r.ProviderSessionID
+	}
+	if r.ProviderPaymentIntentID != "" {
+		b.result.ProviderPaymentIntentID = r.ProviderPaymentIntentID
+	}
+	if r.ExpiresAt != nil {
+		b.result.ExpiresAt = r.ExpiresAt
+	}
+	for k, v := range r.ProviderMetadata {
+		if b.result.ProviderMetadata == nil {
+			b.result.ProviderMetadata = make(map[string]string, len(r.ProviderMetadata))
+		}
+		b.result.ProviderMetadata[k] = v
+	}
+	return b
+}
+
+// Build returns the assembled result. Safe on a nil builder.
+func (b *CheckoutProviderResultBuilder) Build() *CheckoutProviderResult {
+	if b == nil {
+		return nil
+	}
+	result := b.result
+	return &result
 }
 
 func (r *CheckoutProviderResult) PaymentAction() *PaymentAction {

@@ -18,11 +18,13 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/utils"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -120,6 +122,7 @@ func (s *WalletServiceSuite) setupService() {
 	s.service = NewWalletService(s.buildServiceParams())
 	stores := s.GetStores()
 	s.subsService = NewSubscriptionService(ServiceParams{
+		CheckoutSessionRepo:      stores.CheckoutSessionRepo,
 		Logger:                   s.GetLogger(),
 		Config:                   s.GetConfig(),
 		DB:                       s.GetDB(),
@@ -132,6 +135,7 @@ func (s *WalletServiceSuite) setupService() {
 		MeterRepo:                stores.MeterRepo,
 		CustomerRepo:             stores.CustomerRepo,
 		InvoiceRepo:              stores.InvoiceRepo,
+		InvoiceLineItemRepo:      stores.InvoiceLineItemRepo,
 		EntitlementRepo:          stores.EntitlementRepo,
 		EntitlementGrantRepo:     stores.EntitlementGrantRepo,
 		FeatureRepo:              stores.FeatureRepo,
@@ -2423,6 +2427,7 @@ func (s *WalletAutoTopupInvoiceSuite) setupService() {
 	stores := s.GetStores()
 	pubsub := testutil.NewInMemoryPubSub()
 	s.service = NewWalletService(ServiceParams{
+		CheckoutSessionRepo:      stores.CheckoutSessionRepo,
 		Logger:                   s.GetLogger(),
 		Config:                   s.GetConfig(),
 		DB:                       s.GetDB(),
@@ -2436,6 +2441,7 @@ func (s *WalletAutoTopupInvoiceSuite) setupService() {
 		MeterRepo:                stores.MeterRepo,
 		CustomerRepo:             stores.CustomerRepo,
 		InvoiceRepo:              stores.InvoiceRepo,
+		InvoiceLineItemRepo:      stores.InvoiceLineItemRepo,
 		EntitlementRepo:          stores.EntitlementRepo,
 		EntitlementGrantRepo:     stores.EntitlementGrantRepo,
 		FeatureRepo:              stores.FeatureRepo,
@@ -2750,6 +2756,7 @@ func (s *WalletAutoTopupDirectSuite) SetupTest() {
 	stores := s.GetStores()
 	pubsub := testutil.NewInMemoryPubSub()
 	s.service = NewWalletService(ServiceParams{
+		CheckoutSessionRepo:      stores.CheckoutSessionRepo,
 		Logger:                   s.GetLogger(),
 		Config:                   s.GetConfig(),
 		DB:                       s.GetDB(),
@@ -2763,6 +2770,7 @@ func (s *WalletAutoTopupDirectSuite) SetupTest() {
 		MeterRepo:                stores.MeterRepo,
 		CustomerRepo:             stores.CustomerRepo,
 		InvoiceRepo:              stores.InvoiceRepo,
+		InvoiceLineItemRepo:      stores.InvoiceLineItemRepo,
 		EntitlementRepo:          stores.EntitlementRepo,
 		FeatureRepo:              stores.FeatureRepo,
 		AddonAssociationRepo:     stores.AddonAssociationRepo,
@@ -2845,9 +2853,10 @@ func (s *WalletAutoTopupDirectSuite) TestDirect_NoCooldown_BurstsUntilAboveThres
 	ctx := s.GetContext()
 	// balance 5, threshold 50, amount 10 → nested re-eval should credit until > 50
 	err := s.svc().EvaluateAlertsForWallet(ctx, s.wallet, NewAlertLogsService(ServiceParams{
-		Logger:        s.GetLogger(),
-		AlertLogsRepo: s.GetStores().AlertLogsRepo,
-		SettingsRepo:  s.GetStores().SettingsRepo,
+		CheckoutSessionRepo: s.GetStores().CheckoutSessionRepo,
+		Logger:              s.GetLogger(),
+		AlertLogsRepo:       s.GetStores().AlertLogsRepo,
+		SettingsRepo:        s.GetStores().SettingsRepo,
 	}), "")
 	s.NoError(err)
 
@@ -2888,9 +2897,10 @@ func (s *WalletAutoTopupDirectSuite) TestDirect_WithCooldown_OneShotPerWindow() 
 	s.NoError(s.GetStores().WalletRepo.UpdateWallet(ctx, s.wallet.ID, s.wallet))
 
 	err := s.svc().EvaluateAlertsForWallet(ctx, s.wallet, NewAlertLogsService(ServiceParams{
-		Logger:        s.GetLogger(),
-		AlertLogsRepo: s.GetStores().AlertLogsRepo,
-		SettingsRepo:  s.GetStores().SettingsRepo,
+		CheckoutSessionRepo: s.GetStores().CheckoutSessionRepo,
+		Logger:              s.GetLogger(),
+		AlertLogsRepo:       s.GetStores().AlertLogsRepo,
+		SettingsRepo:        s.GetStores().SettingsRepo,
 	}), "")
 	s.NoError(err)
 
@@ -2946,6 +2956,7 @@ func (s *CheckWalletBalanceAlertSuite) setupService() {
 	stores := s.GetStores()
 	pubsub := testutil.NewInMemoryPubSub()
 	s.service = NewWalletService(ServiceParams{
+		CheckoutSessionRepo:      stores.CheckoutSessionRepo,
 		Logger:                   s.GetLogger(),
 		Config:                   s.GetConfig(),
 		DB:                       s.GetDB(),
@@ -2959,6 +2970,7 @@ func (s *CheckWalletBalanceAlertSuite) setupService() {
 		MeterRepo:                stores.MeterRepo,
 		CustomerRepo:             stores.CustomerRepo,
 		InvoiceRepo:              stores.InvoiceRepo,
+		InvoiceLineItemRepo:      stores.InvoiceLineItemRepo,
 		EntitlementRepo:          stores.EntitlementRepo,
 		EntitlementGrantRepo:     stores.EntitlementGrantRepo,
 		FeatureRepo:              stores.FeatureRepo,
@@ -4157,4 +4169,55 @@ func (s *WalletServiceSuite) TestCompletePurchasedCreditTransaction_WithLinkedBo
 	// completed from the first (failed) attempt and short-circuit as a false success.
 	err = failingService.completePurchasedCreditTransaction(s.GetContext(), resp.WalletTransaction.ID)
 	s.Error(err, "the injected failure on the bonus half must surface as an error")
+}
+
+// A tenant with custom currencies restricts wallets to those currencies or its
+// default fiat currency. Both are allowed: a fiat wallet pays invoices, a custom
+// one applies prepaid credits before conversion.
+func (s *WalletServiceSuite) TestCreateWallet_CustomCurrencyEnforcement() {
+	cfg := types.CustomCurrencyConfig{
+		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
+			"mac": {
+				Name:                  "MoEngage AI Credits",
+				Symbol:                "MAC",
+				FiatConversionFactors: map[string]decimal.Decimal{"usd": decimal.NewFromFloat(0.1)},
+			},
+		},
+		DefaultFiatCurrency: "usd",
+	}
+	s.NoError(cfg.Validate())
+	value, err := utils.ToMap(cfg)
+	s.NoError(err)
+	s.NoError(s.GetStores().SettingsRepo.Create(s.GetContext(), &settings.Setting{
+		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SETTING),
+		Key:           types.SettingKeyCustomCurrencyConfig,
+		Value:         value,
+		EnvironmentID: types.GetEnvironmentID(s.GetContext()),
+		BaseModel:     types.GetDefaultBaseModel(s.GetContext()),
+	}))
+
+	tests := []struct {
+		name     string
+		currency string
+		wantErr  bool
+	}{
+		{name: "default fiat currency is allowed so wallets can pay invoices", currency: "usd"},
+		{name: "custom currency is allowed so wallets can apply prepaid credits", currency: "mac"},
+		{name: "unconfigured currency is rejected", currency: "eur", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			resp, err := s.service.CreateWallet(s.GetContext(), &dto.CreateWalletRequest{
+				CustomerID: s.GetUUID(),
+				Currency:   tt.currency,
+			})
+			if tt.wantErr {
+				s.Error(err)
+				return
+			}
+			s.NoError(err)
+			s.Equal(tt.currency, resp.Currency)
+		})
+	}
 }

@@ -121,7 +121,7 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 
 		// The change owns the boundary, so a future-dated one hands the successor its quota
 		// when the change is actually live rather than now.
-		boundary := earliestOf(latestOf(closeAt, lastComputed), g.ValidTo)
+		boundary := types.EarliestOf(types.LatestOf(closeAt, lastComputed), g.ValidTo)
 
 		// Leaves usage, grant_status and last_computed_at alone: last_computed_at < valid_to
 		// is what keeps a closed row in the evaluator's unfinalized set for its final
@@ -144,36 +144,12 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 	return closed, nil
 }
 
-// SupersedeEntitlementGrants re-issues each live window at a new allowance, so an
-// entitlement edit takes effect immediately rather than at the next window — which
-// on a billing-period cadence could be a month away.
-//
-// The successor covers the rest of the window at what is LEFT of the new allowance:
-// raising 1,000 to 5,000 with 800 already used opens 4,200 for the remainder, which
-// is the same balance as "5,000 with 800 carried" and is the only form the slot's
-// unique (config, subscription, valid_from) key admits. Usage is measured, never
-// copied — the evaluator recomputes it per window and would overwrite a copied figure.
-//
-// The replaced row is closed at `at` and marked superseded: still readable as history
-// ("1,000 until 2pm"), never folded into an invoice. So usage consumed under the old
-// allowance is neither billed twice nor retroactively charged.
-//
-// Reducing an allowance below what the window has already consumed leaves nothing to
-// grant: a window's quota must be positive, and quota is immutable — a grant is a record
-// of what was given, not a running setting.
-//
-// For an edit in place that cut takes effect at the NEXT window, the same rule a cadence
-// or stacking change follows: allowance already consumed cannot be taken back, and the
-// window keeps running on the figure it was issued with.
-//
-// When the rule itself changes hands the window is retired anyway, with no successor.
-// The rule that issued it no longer governs this customer, so leaving it open would hand
-// them that allowance AND the new one — the tick opens a window for the incoming rule
-// regardless, and both would count.
-// SupersedeTarget is the allowance a replaced window hands over to, and the slot it
-// lands on. EntitlementConfigID is empty for an edit in place; it names the other
-// config when the rule governing a customer changes hands — a first override taking
-// over from the plan's rule, or a reset handing it back.
+// SupersedeEntitlementGrants re-issues each live window at a new allowance so an edit
+// applies now. The replaced row is closed and marked superseded; the successor covers
+// the rest of the window at what is left of the new allowance.
+// SupersedeTarget is the allowance a replaced window hands over to. EntitlementConfigID
+// is empty for an edit in place, and names the other config when the rule governing the
+// customer changes hands.
 type SupersedeTarget struct {
 	EntitlementConfigID string
 	Quota               *decimal.Decimal
@@ -195,9 +171,8 @@ func (s *entitlementGrantService) SupersedeEntitlementGrants(
 
 	successors := make([]*entitlementgrant.EntitlementGrant, 0, len(grants))
 
-	// One transaction for the lot. Opening a successor and retiring the window it
-	// replaces are two halves of one fact: a crash between them leaves the slot
-	// holding two live windows, which is the customer's allowance handed out twice.
+	// One transaction: a crash between opening the successor and retiring the window it
+	// replaces would leave the slot holding two live windows.
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		opened, err := s.supersedeWindows(txCtx, grants, at, target)
 		if err != nil {
@@ -229,14 +204,13 @@ func (s *entitlementGrantService) supersedeWindows(
 			continue
 		}
 
-		// Per window: each one has consumed a different amount, so the balance left
-		// is computed fresh rather than carried between iterations.
+		// Each window consumed a different amount, so the balance is computed per window.
 		windowQuota := quota
 		if !unlimited {
 			remaining := quota.Sub(g.Usage)
 			if !remaining.IsPositive() {
-				// A hand-over still has to retire the window, or the outgoing rule's
-				// allowance keeps running alongside the incoming one.
+				// A hand-over retires the window anyway: the outgoing rule no longer
+				// governs this customer.
 				if target.EntitlementConfigID != "" {
 					if err := s.retireSupersededWindow(ctx, g, at); err != nil {
 						return nil, err
@@ -311,9 +285,8 @@ func (s *entitlementGrantService) openSupersedingWindow(
 	return s.EntitlementGrantRepo.Create(ctx, b.Build())
 }
 
-// retireSupersededWindow closes the replaced row and flags it. Close first: a row
-// closed but not yet flagged bills as it always did, whereas one flagged before its
-// close would stop billing while still holding the slot.
+// retireSupersededWindow closes the replaced row and flags it. Close first, so a partial
+// failure leaves a row that still bills rather than one that holds the slot billing nothing.
 func (s *entitlementGrantService) retireSupersededWindow(
 	ctx context.Context,
 	g *entitlementgrant.EntitlementGrant,
@@ -856,8 +829,8 @@ func (s *entitlementGrantService) computeGrantWindow(
 
 	// A slot whose configs only became live mid-cycle starts there, not at the cycle
 	// start: backdating it would hand the window usage recorded before it existed.
-	coveredUntil := latestOf(latestOf(lastWindowEnd, cycleStart), candidate.startDate)
-	searchUntil := earliestOf(at, cycleEnd)
+	coveredUntil := types.LatestOf(types.LatestOf(lastWindowEnd, cycleStart), candidate.startDate)
+	searchUntil := types.EarliestOf(at, cycleEnd)
 
 	s.Logger.Debug(ctx, "computing grant window",
 		"coveredUntil", coveredUntil,
@@ -923,7 +896,7 @@ func (s *entitlementGrantService) computeGrantWindow(
 				}
 				bucket = next
 			}
-			validFrom = latestOf(bucket, coveredUntil)
+			validFrom = types.LatestOf(bucket, coveredUntil)
 		}
 	}
 
@@ -979,20 +952,6 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 
 	s.Logger.Debug(ctx, "computing grant window: earliest un-covered usage timestamp", "timestamp", timestamp)
 	return timestamp, nil
-}
-
-func latestOf(a, b time.Time) time.Time {
-	if a.After(b) {
-		return a
-	}
-	return b
-}
-
-func earliestOf(a, b time.Time) time.Time {
-	if a.Before(b) {
-		return a
-	}
-	return b
 }
 
 // validateEntitlementGrantShape enforces grant-config rules that need the
@@ -1098,8 +1057,7 @@ func (s *entitlementService) grantMeterEligibility(
 	return nil
 }
 
-// isForeignSubscriptionEC reports whether sib is scoped to a different subscription
-// than e, in which case the two can never resolve together.
+// isForeignSubscriptionEC reports whether sib belongs to a different subscription than e.
 func isForeignSubscriptionEC(sib, e *entitlement.Entitlement) bool {
 	if sib.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION {
 		return false
@@ -1130,15 +1088,12 @@ func (s *entitlementService) validateGrantSiblingCoherence(ctx context.Context, 
 		if sib.ID == e.ID {
 			continue
 		}
-		// An override replaces its parent in the resolved set, so the two never
-		// contribute to the same window. Comparing them blocks the ordinary case of
-		// lifting one customer's bounded plan allowance to unlimited.
+		// An override replaces its parent in the resolved set, so the two never share a
+		// window.
 		if sib.ID == parentID || lo.FromPtr(sib.ParentEntitlementID) == e.ID {
 			continue
 		}
-		// Coherence is about ECs that land in the same resolved set. Two customers'
-		// overrides never do, so one customer going unlimited must not stop another
-		// from keeping a bounded allowance on the same feature.
+		// Two customers' overrides never land in the same resolved set.
 		if isForeignSubscriptionEC(sib, e) {
 			continue
 		}
@@ -1252,10 +1207,8 @@ func (s *entitlementGrantService) GrantStateByFeature(
 			out[featureID] = state
 		}
 
-		// Totals answer "what did this cycle grant and consume", which is what billing
-		// folds — so a window an edit replaced is left out of them. It still appears in
-		// Windows as history; counting it would show a customer whose allowance was
-		// raised twice as having been granted the sum of all three.
+		// Totals mirror what billing folds, so a replaced window is excluded. It stays in
+		// Windows as history.
 		if g.GrantStatus.IsBillable() {
 			state.CycleTotals.Windows++
 			state.CycleTotals.TotalQuota = state.CycleTotals.TotalQuota.Add(g.Quota)

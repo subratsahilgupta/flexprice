@@ -455,6 +455,7 @@ func NewRouter(
 		{
 			checkoutSessions.POST("", write(types.EntityCheckoutSession, types.ActionWrite), handlers.CheckoutSession.Create)
 			checkoutSessions.GET("/:id", handlers.CheckoutSession.Get)
+			checkoutSessions.POST("/:id/cancel", write(types.EntityCheckoutSession, types.ActionWrite), handlers.CheckoutSession.Cancel)
 			checkoutSessions.DELETE("/:id", write("checkout_session", types.ActionWrite), handlers.CheckoutSession.Delete)
 		}
 

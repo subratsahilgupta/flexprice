@@ -77,6 +77,7 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 			PeriodEnd:                   item.PeriodEnd,
 			Metadata:                    item.Metadata,
 			CommitmentInfo:              item.CommitmentInfo,
+			CustomCurrency:              item.CustomCurrency,
 			PrepaidCreditsApplied:       item.PrepaidCreditsApplied,
 			LineItemDiscount:            item.LineItemDiscount,
 			InvoiceLevelDiscount:        item.InvoiceLevelDiscount,
@@ -99,6 +100,7 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 		Currency:                   inv.Currency,
 		AmountDue:                  inv.AmountDue,
 		AmountPaid:                 inv.AmountPaid,
+		CustomCurrency:             inv.CustomCurrency,
 		Subtotal:                   inv.Subtotal,
 		Total:                      inv.Total,
 		TotalTax:                   inv.TotalTax,
@@ -128,6 +130,7 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 		EnvironmentID:              inv.EnvironmentID,
 		RecalculatedInvoiceID:      inv.RecalculatedInvoiceID,
 		LastComputedAt:             inv.LastComputedAt,
+		SourceType:                 inv.SourceType,
 		IsManuallyEdited:           inv.IsManuallyEdited,
 		BaseModel:                  inv.BaseModel,
 	}
@@ -271,7 +274,16 @@ func (s *InMemoryInvoiceStore) Update(ctx context.Context, inv *invoice.Invoice)
 	if inv == nil {
 		return ierr.NewError("invoice cannot be nil").WithHint("invoice cannot be nil").Mark(ierr.ErrValidation)
 	}
-	return s.InMemoryStore.Update(ctx, inv.ID, copyInvoice(inv))
+
+	updated := copyInvoice(inv)
+	// The ent repository never clears custom_currency, so a caller that did not load it
+	// leaves the stored value in place. Match that here or the double hides the bug.
+	if updated.CustomCurrency == nil {
+		if existing, err := s.InMemoryStore.Get(ctx, inv.ID); err == nil {
+			updated.CustomCurrency = existing.CustomCurrency
+		}
+	}
+	return s.InMemoryStore.Update(ctx, inv.ID, updated)
 }
 
 // Delete marks the invoice and its line items deleted, matching the ent repository, which soft
@@ -493,6 +505,11 @@ func invoiceFilterFn(ctx context.Context, inv *invoice.Invoice, filter interface
 		return false
 	}
 
+	// Filter by currency
+	if f.Currency != "" && inv.Currency != f.Currency {
+		return false
+	}
+
 	// Filter by invoice status — mirrors repository default: when no explicit status
 	// filter is set, exclude SKIPPED invoices (zero-dollar drafts with no financial data).
 	if len(f.InvoiceStatus) > 0 {
@@ -545,6 +562,20 @@ func invoiceFilterFn(ctx context.Context, inv *invoice.Invoice, filter interface
 	// Filter by period_start_gte (periodStart >= value)
 	if f.PeriodStartGTE != nil {
 		if inv.PeriodStart == nil || inv.PeriodStart.Before(*f.PeriodStartGTE) {
+			return false
+		}
+	}
+
+	// Filter by period_start_lte (periodStart <= value)
+	if f.PeriodStartLTE != nil {
+		if inv.PeriodStart == nil || inv.PeriodStart.After(*f.PeriodStartLTE) {
+			return false
+		}
+	}
+
+	// Filter by period_end_gte (periodEnd >= value)
+	if f.PeriodEndGTE != nil {
+		if inv.PeriodEnd == nil || inv.PeriodEnd.Before(*f.PeriodEndGTE) {
 			return false
 		}
 	}

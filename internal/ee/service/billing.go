@@ -19,6 +19,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/priceunit"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -138,6 +139,7 @@ func calculateBucketedMeterCost(
 		Quantity: totalQuantity,
 	}
 }
+
 func (s *billingService) CalculateFixedCharges(
 	ctx context.Context,
 	params *dto.CalculateFixedChargesParams,
@@ -256,11 +258,21 @@ func (s *billingService) CalculateFixedCharges(
 
 				windowDuration := w.End.Sub(w.Start)
 				effectiveDuration := effectiveEnd.Sub(effectiveStart)
+				fullPeriod := fullPeriodDuration(ctx, s.Logger, item, w.Start, sub.Timezone, windowDuration)
+				// A line item on a cadence other than the subscription's is priced against its own
+				// period, so a window cut short by a calendar stub bills only the days it covers.
+				// applyProrationToLineItem cannot do this: it works in subscription periods.
+				shortWindowForItem := !sameCadenceAsSubscription(item, sub) &&
+					sub.ProrationBehavior != types.ProrationBehaviorNone &&
+					windowDuration < fullPeriod
+
 				var wLinePeriodStart, wLinePeriodEnd time.Time
-				if effectiveDuration < windowDuration {
-					// Partial-period line item (versioned mid-cycle) inside this sub-window: scale by time ratio, same as today.
+				if effectiveDuration < windowDuration || shortWindowForItem {
+					// Partial-period line item (versioned mid-cycle) inside this sub-window: scale by time ratio.
+					// The divisor is one full period of THIS line item, not the window, so a short window
+					// (e.g. a calendar stub) cannot inflate the fraction charged for a longer-cadence price.
 					ratio := decimal.NewFromFloat(effectiveDuration.Seconds()).
-						Div(decimal.NewFromFloat(windowDuration.Seconds()))
+						Div(decimal.NewFromFloat(fullPeriod.Seconds()))
 					wAmount = wAmount.Mul(ratio)
 					wLinePeriodStart, wLinePeriodEnd = effectiveStart, effectiveEnd
 				} else {
@@ -392,6 +404,123 @@ func applyOpeningInvoiceAdjustmentToLineItems(
 	return adjusted, creditsToAdjust.Sub(remaining)
 }
 
+// lineItemMergeKey identifies invoice line items that are the same charge billed
+// across consecutive sub-windows of one invoice period.
+//
+// SubscriptionLineItemID alone is not enough: one line item can emit several rows
+// within a single window (commitment vs overage), which must not merge together.
+type lineItemMergeKey struct {
+	subscriptionLineItemID string
+	priceID                string
+	meterID                string
+	displayName            string
+	priceUnit              string
+	isOverage              string
+}
+
+func newLineItemMergeKey(item dto.CreateInvoiceLineItemRequest) lineItemMergeKey {
+	return lineItemMergeKey{
+		subscriptionLineItemID: lo.FromPtr(item.SubscriptionLineItemID),
+		priceID:                lo.FromPtr(item.PriceID),
+		meterID:                lo.FromPtr(item.MeterID),
+		displayName:            lo.FromPtr(item.DisplayName),
+		priceUnit:              lo.FromPtr(item.PriceUnit),
+		isOverage:              item.Metadata["is_overage"],
+	}
+}
+
+// mergeLineItemsByBillingPeriod collapses the sub-window rows of each charge into one
+// row spanning them. Member amounts are already rounded, so the total is unchanged.
+// Rows without a subscription line item id (plan-level overage) pass through as-is.
+func mergeLineItemsByBillingPeriod(items []dto.CreateInvoiceLineItemRequest) []dto.CreateInvoiceLineItemRequest {
+	if len(items) < 2 {
+		return items
+	}
+
+	merged := make([]dto.CreateInvoiceLineItemRequest, 0, len(items))
+	indexByKey := make(map[lineItemMergeKey]int, len(items))
+
+	for _, item := range items {
+		if lo.FromPtr(item.SubscriptionLineItemID) == "" {
+			merged = append(merged, item)
+			continue
+		}
+
+		key := newLineItemMergeKey(item)
+		idx, seen := indexByKey[key]
+		if !seen {
+			indexByKey[key] = len(merged)
+			merged = append(merged, item)
+			continue
+		}
+
+		merged[idx] = mergeIntoLineItem(merged[idx], item)
+	}
+
+	return merged
+}
+
+// mergeIntoLineItem folds a later window of the same charge into target.
+func mergeIntoLineItem(target, addition dto.CreateInvoiceLineItemRequest) dto.CreateInvoiceLineItemRequest {
+	target.Amount = target.Amount.Add(addition.Amount)
+
+	// Summed for fixed charges too, so amount / quantity stays the unit price:
+	// 5 seats over 3 months is 15 seat-months at $20, not 5 seats at $60.
+	target.Quantity = target.Quantity.Add(addition.Quantity)
+
+	target.AdjustedEntitlementQuantity = types.AddDecimalPtr(target.AdjustedEntitlementQuantity, addition.AdjustedEntitlementQuantity)
+
+	// PriceUnitAmount is the line's total converted into the price unit currency,
+	// not a per-unit rate, so it tracks Amount.
+	target.PriceUnitAmount = types.AddDecimalPtr(target.PriceUnitAmount, addition.PriceUnitAmount)
+
+	// Every other per-window money field, or the later windows' values are lost.
+	target.PrepaidCreditsApplied = types.AddDecimalPtr(target.PrepaidCreditsApplied, addition.PrepaidCreditsApplied)
+	target.LineItemDiscount = types.AddDecimalPtr(target.LineItemDiscount, addition.LineItemDiscount)
+	target.InvoiceLevelDiscount = types.AddDecimalPtr(target.InvoiceLevelDiscount, addition.InvoiceLevelDiscount)
+	target.CommitmentInfo = mergeCommitmentInfo(target.CommitmentInfo, addition.CommitmentInfo)
+
+	target.PeriodStart = types.EarliestOfPtr(target.PeriodStart, addition.PeriodStart)
+	target.PeriodEnd = types.LatestOfPtr(target.PeriodEnd, addition.PeriodEnd)
+
+	return target
+}
+
+// mergeCommitmentInfo sums the computed amounts across windows. The remaining
+// fields are configuration echoed from the subscription line item — identical on
+// every window — so they carry over from the first. Returns a new value: the
+// inputs belong to the caller's line items.
+func mergeCommitmentInfo(target, addition *types.CommitmentInfo) *types.CommitmentInfo {
+	if target == nil {
+		return addition
+	}
+	if addition == nil {
+		return target
+	}
+
+	merged := *target
+	merged.ComputedCommitmentUtilizedAmount = target.ComputedCommitmentUtilizedAmount.Add(addition.ComputedCommitmentUtilizedAmount)
+	merged.ComputedOverageAmount = target.ComputedOverageAmount.Add(addition.ComputedOverageAmount)
+	merged.ComputedTrueUpAmount = target.ComputedTrueUpAmount.Add(addition.ComputedTrueUpAmount)
+	return &merged
+}
+
+// applyLineItemGrouping merges per-charge-period rows when the subscription opts in.
+// TotalAmount is left alone: the merge only redistributes already-rounded amounts.
+func applyLineItemGrouping(
+	sub *subscription.Subscription,
+	result *dto.BillingCalculationResult,
+) *dto.BillingCalculationResult {
+	if result == nil || sub == nil || !sub.LineItemGrouping.MergesIntoBillingPeriod() {
+		return result
+	}
+
+	merged := *result
+	merged.FixedCharges = mergeLineItemsByBillingPeriod(result.FixedCharges)
+	merged.UsageCharges = mergeLineItemsByBillingPeriod(result.UsageCharges)
+	return &merged
+}
+
 // endDateBoundaryForMatching returns periodEnd + one billing period length so that
 // CalculateBillingPeriods generates enough periods to cover the invoice window without
 // generating an excessive number (e.g. 365 for daily with a 1-year buffer).
@@ -415,6 +544,20 @@ func endDateBoundaryForMatching(periodEnd time.Time, billingPeriod types.Billing
 	default:
 		return periodEnd.AddDate(1, 0, 0) // fallback: 1 year
 	}
+}
+
+// sameCadenceAsSubscription reports whether the line item bills on exactly the subscription's
+// cadence, treating an unset count as 1.
+func sameCadenceAsSubscription(item *subscription.SubscriptionLineItem, sub *subscription.Subscription) bool {
+	itemCount := item.BillingPeriodCount
+	if itemCount <= 0 {
+		itemCount = 1
+	}
+	subCount := sub.BillingPeriodCount
+	if subCount <= 0 {
+		subCount = 1
+	}
+	return item.BillingPeriod == sub.BillingPeriod && itemCount == subCount
 }
 
 // periodWindow is a half-open [Start, End) sub-range of an invoice period.
@@ -455,7 +598,7 @@ func splitInvoicePeriodByLineItemCadence(
 	// Covers month-based AND sub-month periods (DAILY/WEEKLY) uniformly.
 	// The fan-out path below relies on month math that doesn't apply to
 	// sub-month periods, so DAILY×N-on-DAILY×N must take this fast path.
-	if lineItem.BillingPeriod == sub.BillingPeriod && itemCount == subCount {
+	if sameCadenceAsSubscription(lineItem, sub) {
 		return []periodWindow{{Start: invoicePeriodStart, End: invoicePeriodEnd}}, nil
 	}
 
@@ -522,6 +665,43 @@ func splitInvoicePeriodByLineItemCadence(
 		}
 	}
 	return windows, nil
+}
+
+// fullPeriodDuration returns the length of one complete billing period of this line item
+// starting at windowStart. Falls back to fallback when the date math fails, and never returns
+// less than fallback so a malformed cadence cannot push a proration ratio above 1.
+func fullPeriodDuration(
+	ctx context.Context,
+	log *logger.Logger,
+	item *subscription.SubscriptionLineItem,
+	windowStart time.Time,
+	timezone string,
+	fallback time.Duration,
+) time.Duration {
+	count := item.BillingPeriodCount
+	if count <= 0 {
+		count = 1
+	}
+
+	next, err := types.NextBillingDate(&types.NextBillingDateParams{
+		CurrentPeriodStart: windowStart,
+		BillingAnchor:      windowStart,
+		Unit:               count,
+		Period:             item.BillingPeriod,
+		Timezone:           timezone,
+	})
+	if err != nil {
+		log.Info(ctx, "failed to derive line item period length, using invoice window",
+			"error", err,
+			"line_item_id", item.ID,
+			"billing_period", item.BillingPeriod)
+		return fallback
+	}
+
+	if d := next.Sub(windowStart); d > fallback {
+		return d
+	}
+	return fallback
 }
 
 // Used when the line item has a longer cadence than the subscription (e.g. quarterly on monthly).
@@ -2202,6 +2382,10 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 		}
 	}
 
+	// Must run before coupon selection below, which keys off the set of price IDs
+	// on the invoice — a set the merge preserves.
+	result = applyLineItemGrouping(sub, result)
+
 	// Apply Coupons if any - both subscription level and line item level.
 	// Selection mechanics (fetch active associations + split sub/line + price mapping) are shared
 	// with the analytics path via selectSubscriptionCoupons; billing supplies its own validation
@@ -2315,8 +2499,10 @@ func (s *billingService) applyProrationToLineItem(
 		return originalAmount, nil
 	}
 
-	// Mixed billing periods and proration are mutually exclusive.
-	if sub.HasMixedBillingPeriods() {
+	// Proration is expressed against the subscription's own period, so it only applies to
+	// items that share that cadence. Others are already priced per window by the fan-out;
+	// one such item must not switch proration off for the rest of the subscription.
+	if !sameCadenceAsSubscription(item, sub) {
 		return originalAmount, nil
 	}
 

@@ -217,6 +217,15 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	// Convert to domain wallet model
 	w := req.ToWallet(ctx)
 
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+	ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, ctx, types.SettingKeyCustomCurrencyConfig)
+	if err != nil {
+		return nil, err
+	}
+	if err := ccCfg.EnforceCurrency(w.Currency); err != nil {
+		return nil, err
+	}
+
 	for _, existing := range existingWallets {
 		if existing.WalletStatus == types.WalletStatusActive && existing.Currency == w.Currency && existing.WalletType == w.WalletType {
 			return nil, ierr.NewError("customer already has an active wallet with the same currency and wallet type").
@@ -1116,6 +1125,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 		var skipped bool
 		if isPayFirst {
 			// Pay-first: leave DRAFT until checkout complete finalizes + reconciles.
+			invReq.SourceType = types.InvoiceSourceTypeCheckout
 			inv, skipped, err = invoiceService.CreateComputedDraftInvoice(ctx, invReq)
 			if err != nil {
 				return ierr.WithError(err).
@@ -1682,7 +1692,10 @@ func (s *walletService) GetWalletBalance(ctx context.Context, walletID string) (
 		filteredSubscriptions := make([]*subscription.Subscription, 0)
 		for _, sub := range subscriptions {
 			if sub.Currency != w.Currency {
-				s.Logger.Info(ctx, "skipping subscription - currency mismatch")
+				s.Logger.Info(ctx, "skipping subscription - currency mismatch",
+					"subscription_id", sub.ID,
+					"subscription_currency", sub.Currency,
+					"wallet_currency", w.Currency)
 				continue
 			}
 			if sub.SubscriptionType != types.SubscriptionTypeStandalone && sub.SubscriptionType != types.SubscriptionTypeParent {
@@ -2292,7 +2305,6 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			return err
 		}
 
-
 		// Step 3: Validate operation
 		if err := s.validateWalletOperation(w, req); err != nil {
 			return err
@@ -2420,7 +2432,6 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 	// Publish webhook event after transaction commits
 	s.publishInternalTransactionWebhookEvent(ctx, types.WebhookEventWalletTransactionCreated, tx.ID)
 
-
 	// Log credit balance alert after wallet operation
 	if err := s.logCreditBalanceAlert(ctx, w, newCreditBalance); err != nil {
 		// Don't fail the transaction if alert logging fails
@@ -2439,7 +2450,6 @@ func (s *walletService) processWalletOperation(ctx context.Context, req *wallet.
 			"customer_id", w.CustomerID,
 		)
 	}
-
 
 	return nil
 }
@@ -2565,8 +2575,7 @@ func (s *walletService) shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(c
 	invoiceFilter.InvoiceType = types.InvoiceTypeSubscription
 	invoiceFilter.Currency = tx.Currency // wallets are per-currency; an EUR invoice can't be paid by a USD wallet
 	invoiceFilter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusFinalized, types.InvoiceStatusDraft}
-	invoiceFilter.AmountRemainingGt = lo.ToPtr(decimal.Zero)
-	invoiceFilter.Limit = lo.ToPtr(1)
+	invoiceFilter.Limit = lo.ToPtr(1000)         // bounded: a single grant period holds at most a handful of invoices
 	invoiceFilter.PeriodStartLTE = &tx.CreatedAt // period_start <= grant created_at
 	invoiceFilter.PeriodEndGTE = &tx.CreatedAt   // period_end >= grant created_at → grant created in this period
 	invoiceFilter.PeriodEndLTE = tx.ExpiryDate   // period_end <= grant expiry → exclude invoices that ended long after expiry
@@ -2575,12 +2584,23 @@ func (s *walletService) shouldSkipCreditExpiryDueToActiveSubscriptionOrInvoice(c
 	if err != nil {
 		return types.CreditExpirySkipReasonNone, err
 	}
-	if len(invoices) > 0 {
-		s.Logger.Debug(ctx, "there is an invoice for this customer with current_period_end < now and credits available to expire",
-			"transaction_id", tx.ID,
-			"invoice_id", invoices[0].ID,
-		)
-		return types.CreditExpirySkipReasonActiveInvoice, nil
+
+	// Hold the credits while an invoice covering this grant's period still has credits to apply:
+	//   - DRAFT: credits are applied at finalization, which can run hours after expiry.
+	//   - FINALIZED with amount remaining: the balance can still be settled from the wallet.
+	// A finalized, fully-settled invoice releases the hold so leftover credits expire normally.
+	for _, inv := range invoices {
+		holdForDraft := inv.InvoiceStatus == types.InvoiceStatusDraft
+		holdForUnsettled := inv.InvoiceStatus == types.InvoiceStatusFinalized && !inv.AmountRemaining.IsZero()
+		if holdForDraft || holdForUnsettled {
+			s.Logger.Info(ctx, "there is an invoice for this customer with credits still to be applied",
+				"transaction_id", tx.ID,
+				"invoice_id", inv.ID,
+				"invoice_status", inv.InvoiceStatus,
+				"amount_remaining", inv.AmountRemaining,
+			)
+			return types.CreditExpirySkipReasonActiveInvoice, nil
+		}
 	}
 
 	return types.CreditExpirySkipReasonNone, nil
@@ -3280,13 +3300,17 @@ func (s *walletService) computeRealtimeBalanceDefault(ctx context.Context, w *wa
 		filteredSubscriptions := make([]*subscription.Subscription, 0)
 		for _, sub := range subscriptions {
 			if sub.Currency != w.Currency {
-				s.Logger.Info(ctx, "skipping subscription - currency mismatch")
+				s.Logger.Info(ctx, "skipping subscription - currency mismatch",
+					"subscription_id", sub.ID,
+					"subscription_currency", sub.Currency,
+					"wallet_currency", w.Currency)
 				continue
 			}
 			if sub.SubscriptionType != types.SubscriptionTypeStandalone && sub.SubscriptionType != types.SubscriptionTypeParent {
 				s.Logger.Info(ctx, "skipping subscription - not a standalone or parent subscription")
 				continue
 			}
+
 			filteredSubscriptions = append(filteredSubscriptions, sub)
 		}
 

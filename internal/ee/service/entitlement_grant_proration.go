@@ -171,7 +171,7 @@ func (s *subscriptionService) materialiseEntitlementGrants(
 		return nil
 	}
 
-	at := latestOf(effectiveDate, time.Now().UTC())
+	at := types.LatestOf(effectiveDate, time.Now().UTC())
 	liveByFeature, err := s.liveGrantsByFeature(ctx, sub, at)
 	if err != nil {
 		return err
@@ -269,7 +269,7 @@ func (s *subscriptionService) handleGrantsForRemovedECs(
 
 	// See materialiseEntitlementGrants: a removal dated in the past cannot re-cut windows
 	// that have already been measured and succeeded.
-	at := latestOf(effectiveDate, time.Now().UTC())
+	at := types.LatestOf(effectiveDate, time.Now().UTC())
 	liveByFeature, err := s.liveGrantsByFeature(ctx, sub, at)
 	if err != nil {
 		return err

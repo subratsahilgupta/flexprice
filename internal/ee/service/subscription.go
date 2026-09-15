@@ -120,6 +120,14 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 			Mark(ierr.ErrValidation)
 	}
 	sub := req.ToSubscription(ctx)
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
+	ccCfg, err := GetSetting[types.CustomCurrencyConfig](settingsSvc, ctx, types.SettingKeyCustomCurrencyConfig)
+	if err != nil {
+		return nil, err
+	}
+	if err := ccCfg.EnforceCurrency(sub.Currency); err != nil {
+		return nil, err
+	}
 	// Always inherit timezone from the customer record.
 	// The timezone field in the API request is intentionally ignored.
 	sub.Timezone = customer.Timezone
@@ -561,7 +569,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	if req.Checkout != nil && result.Sub.SubscriptionStatus == types.SubscriptionStatusDraft {
 		invResp, skipped, err := buildCheckoutDraftInvoice(ctx, s.ServiceParams, response)
 		if err != nil {
-			s.archiveDraftCheckoutSubscription(ctx, response.ID)
+			if archErr := s.archiveDraftCheckoutSubscription(ctx, response.ID); archErr != nil {
+				s.Logger.Error(ctx, "failed to archive draft checkout subscription", "error", archErr, "subscription_id", response.ID)
+			}
 			return nil, err
 		}
 
@@ -569,8 +579,10 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			if !skipped {
 				invSvc := NewInvoiceService(s.ServiceParams)
 
-				if err := invSvc.FinalizeInvoice(ctx, invResp.ID); err != nil {
-					s.archiveDraftCheckoutSubscription(ctx, response.ID)
+				if err := invSvc.FinalizeInvoice(ctx, invResp.ID, dto.FinalizeInvoiceRequest{}); err != nil {
+					if archErr := s.archiveDraftCheckoutSubscription(ctx, response.ID); archErr != nil {
+						s.Logger.Error(ctx, "failed to archive draft checkout subscription", "error", archErr, "subscription_id", response.ID)
+					}
 					return nil, err
 				}
 				if refreshed, err := invSvc.GetInvoice(ctx, invResp.ID); err == nil {
@@ -580,7 +592,9 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 			}
 
 			if err := s.activateDraftSubscription(ctx, response.Subscription); err != nil {
-				s.archiveDraftCheckoutSubscription(ctx, response.ID)
+				if archErr := s.archiveDraftCheckoutSubscription(ctx, response.ID); archErr != nil {
+					s.Logger.Error(ctx, "failed to archive draft checkout subscription", "error", archErr, "subscription_id", response.ID)
+				}
 				return nil, err
 			}
 		} else {
@@ -2125,6 +2139,12 @@ func (s *subscriptionService) CancelSubscription(
 		return nil, err
 	}
 
+	// Built before the cancellation mutates the subscription. The immediate-cancellation key is
+	// derived from the current period precisely because effectiveDate is time.Now(), and
+	// updateSubscriptionForCancellation now closes CurrentPeriodEnd at that same effectiveDate —
+	// deriving the key afterwards would make it differ on every retry and could double-credit.
+	prorationCreditKey := s.buildCancellationProrationKey(subscription, req, effectiveDate)
+
 	var prorationDetails []dto.ProrationDetail
 	totalCreditAmount := decimal.Zero
 
@@ -2236,8 +2256,7 @@ func (s *subscriptionService) CancelSubscription(
 		// Step 9: Top up wallet for proration credit (only if there's a credit amount)
 		if totalCreditAmount.GreaterThan(decimal.Zero) && !req.SkipProrationWalletCredit {
 			walletService := NewWalletService(s.ServiceParams)
-			cancelKey := s.buildCancellationProrationKey(subscription, req, effectiveDate)
-			_, err = walletService.TopUpWalletForProratedCharge(ctx, subscription.GetInvoicingCustomerID(), totalCreditAmount.Abs(), subscription.Currency, cancelKey)
+			_, err = walletService.TopUpWalletForProratedCharge(ctx, subscription.GetInvoicingCustomerID(), totalCreditAmount.Abs(), subscription.Currency, prorationCreditKey)
 			if err != nil {
 				return err
 			}
@@ -5052,6 +5071,10 @@ func (s *subscriptionService) handleSubscriptionAddons(
 			addonReq.StartDate = &subscription.StartDate
 		}
 
+		// The opening invoice bills these line items for the whole period, so settling a
+		// proration here as well would charge the addon twice.
+		addonReq.ProrationBehavior = types.ProrationBehaviorNone
+
 		if _, err := s.AttachAddon(ctx, subscription, lo.ToPtr(addonReq), nil); err != nil {
 			return err
 		}
@@ -5614,13 +5637,17 @@ func (s *subscriptionService) cancelAddonsForSubscription(ctx context.Context, s
 		"entity_ids_filter", addonIDList,
 		"line_items_found", len(allLineItems))
 
-	deleteReq := dto.DeleteSubscriptionLineItemRequest{EffectiveFrom: &effectiveDate}
 	terminated := 0
 	for _, lineItem := range allLineItems {
 		if !lineItem.EndDate.IsZero() {
 			continue
 		}
 
+		termFrom := effectiveDate
+		if lineItem.StartDate.After(effectiveDate) {
+			termFrom = lineItem.StartDate
+		}
+		deleteReq := dto.DeleteSubscriptionLineItemRequest{EffectiveFrom: &termFrom}
 		if _, err := s.deleteSubscriptionLineItem(ctx, lineItem.ID, deleteReq); err != nil {
 			logger.Error(ctx, "failed to terminate addon line item",
 				"line_item_id", lineItem.ID,
@@ -6281,6 +6308,11 @@ func (s *subscriptionService) determineEffectiveDate(
 		if customDate != nil && customDate.Before(now) {
 			return customDate.UTC(), nil
 		}
+		// A subscription that has not started yet ends at its start, never before it:
+		// an earlier end date would persist a row whose end precedes its own period.
+		if now.Before(subscription.CurrentPeriodStart) {
+			return subscription.CurrentPeriodStart.UTC(), nil
+		}
 		return now, nil
 
 	case types.CancellationTypeEndOfPeriod:
@@ -6405,6 +6437,14 @@ func (s *subscriptionService) updateSubscriptionForCancellation(
 		subscription.CancelAt = &effectiveDate
 		subscription.CancelAtPeriodEnd = false
 		subscription.EndDate = &effectiveDate
+		// Close the open period at the cancellation, as the scheduled_date branch already does.
+		// A cancelled subscription must never report a period running past its end date: should
+		// anything later flip it back to active, the billing cron is otherwise handed a period
+		// it cannot split into valid sub-periods.
+		if !effectiveDate.Before(subscription.CurrentPeriodStart) &&
+			effectiveDate.Before(subscription.CurrentPeriodEnd) {
+			subscription.CurrentPeriodEnd = effectiveDate
+		}
 
 	case types.CancellationTypeEndOfPeriod:
 		// Don't change status immediately — actual cancellation runs when the schedule fires.
@@ -7544,7 +7584,12 @@ func (s *subscriptionService) CalculateBillingPeriods(ctx context.Context, subsc
 // Always returns a draft; ComputeInvoice later assigns number or marks SKIPPED. Delegates to invoice service.
 func (s *subscriptionService) CreateDraftInvoiceForSubscription(ctx context.Context, subscriptionID string, period dto.Period) (*dto.InvoiceResponse, error) {
 	invoiceService := NewInvoiceService(s.ServiceParams)
-	return invoiceService.CreateDraftInvoiceForSubscription(ctx, subscriptionID, period.Start, period.End, types.ReferencePointPeriodEnd)
+	return invoiceService.CreateDraftInvoiceForSubscription(ctx, dto.CreateSubscriptionDraftInvoiceRequest{
+		SubscriptionID: subscriptionID,
+		PeriodStart:    period.Start,
+		PeriodEnd:      period.End,
+		ReferencePoint: types.ReferencePointPeriodEnd,
+	})
 }
 
 // subscriptionOriginalState holds the original subscription state before cancellation

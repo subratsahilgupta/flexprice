@@ -215,7 +215,18 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 	return dto.NewPaymentResponse(p), nil
 }
 
-func (s *paymentService) validateInvoicePaymentEligibility(_ context.Context, invoice *invoice.Invoice, p *dto.CreatePaymentRequest) error {
+func (s *paymentService) validateInvoicePaymentEligibility(ctx context.Context, invoice *invoice.Invoice, p *dto.CreatePaymentRequest) error {
+	// A gated draft already has a live payment link; a second payment here would double-charge
+	// and settle the invoice outside FinalizeInvoice, leaving it finalized with no number.
+	invSvc := NewInvoiceService(s.ServiceParams).(*invoiceService)
+	gatedSession, _, err := invSvc.isInvoiceGatedOnCheckout(ctx, invoice, "")
+	if err != nil {
+		return err
+	}
+	if gatedSession != nil {
+		return errInvoiceCheckoutGated(invoice.ID, "pay")
+	}
+
 	// invoice validations
 	if invoice.PaymentStatus == types.PaymentStatusSucceeded {
 		return ierr.NewError("invoice is already paid").
@@ -420,6 +431,14 @@ func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.U
 	if req.GatewayPaymentID != nil {
 		p.GatewayPaymentID = req.GatewayPaymentID
 		// Confirm the gateway accepted the payment: INITIATED → PENDING
+		if p.PaymentStatus == types.PaymentStatusInitiated {
+			p.PaymentStatus = types.PaymentStatusPending
+		}
+	}
+	if req.GatewayTrackingID != nil {
+		p.GatewayTrackingID = req.GatewayTrackingID
+		// A tracking handle means the gateway has something payable for this record,
+		// even on the paths where no payment id exists until the customer acts.
 		if p.PaymentStatus == types.PaymentStatusInitiated {
 			p.PaymentStatus = types.PaymentStatusPending
 		}

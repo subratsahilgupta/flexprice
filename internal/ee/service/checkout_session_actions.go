@@ -43,6 +43,7 @@ func (s *checkoutSessionService) executeCheckoutAction(ctx context.Context, sess
 		if err != nil {
 			return err
 		}
+		s.recordGatewayHandles(ctx, payResp.ID, providerResult)
 		session.ProviderResult = (*domainCheckout.JSONBCheckoutProviderResult)(providerResult)
 		session.CheckoutStatus = types.CheckoutStatusPending
 
@@ -63,12 +64,18 @@ func (s *checkoutSessionService) callCheckoutProvider(
 	session *domainCheckout.CheckoutSession,
 	payResp *dto.PaymentResponse,
 ) (*types.CheckoutProviderResult, error) {
-	customerSvc := NewCustomerService(s.ServiceParams)
-	invoiceSvc := NewInvoiceService(s.ServiceParams)
-	provider, err := s.IntegrationFactory.GetCheckoutProvider(ctx, session.PaymentProvider, customerSvc, invoiceSvc)
+	provider, err := s.resolveCheckoutProvider(ctx, session.PaymentProvider)
 	if err != nil {
 		return nil, err
 	}
+
+	// The link must close before the session does, so the grace window only covers a
+	// payment already in flight. See SessionGrace.
+	//
+	// Derived from the session's own deadline rather than from now: ExpiresAt was set
+	// when the request was parsed, so starting a fresh LinkExpiry window here would let
+	// the link outlive the session whenever fulfilment took longer than the grace.
+	linkExpiresAt := session.ExpiresAt.Add(-session.PaymentProvider.SessionGrace())
 
 	inv, err := s.InvoiceRepo.Get(ctx, *session.CheckoutInvoiceID)
 	if err != nil {
@@ -85,6 +92,7 @@ func (s *checkoutSessionService) callCheckoutProvider(
 		FailureURL: lo.FromPtr(session.FailureURL),
 		CancelURL:  lo.FromPtr(session.CancelURL),
 		Metadata:   session.Metadata,
+		ExpiresAt:  &linkExpiresAt,
 		LineItems:  checkoutLineItemsFor(inv),
 	}
 
@@ -110,6 +118,7 @@ func (s *checkoutSessionService) callCheckoutProvider(
 			Amount:          req.Amount,
 			Currency:        req.Currency,
 			MaxAmount:       maxAmount,
+			ExpiresAt:       req.ExpiresAt,
 			PreferredMethod: cfg.PaymentMethod,
 			SuccessURL:      req.SuccessURL,
 			CancelURL:       req.CancelURL,
@@ -155,9 +164,12 @@ func (s *checkoutSessionService) callCheckoutProvider(
 		return nil, err
 	}
 
-	// Tighten session expiry if the provider URL expires sooner.
-	if resp.ExpiresAt != nil && resp.ExpiresAt.Before(session.ExpiresAt) {
-		session.ExpiresAt = *resp.ExpiresAt
+	// If the provider closed the link sooner than asked, tighten to match — keeping the
+	// grace on top so the session still outlives it.
+	if resp.ExpiresAt != nil {
+		if tightened := resp.ExpiresAt.Add(session.PaymentProvider.SessionGrace()); tightened.Before(session.ExpiresAt) {
+			session.ExpiresAt = tightened
+		}
 	}
 
 	// Record ProviderSessionID → FlexPrice PaymentID so incoming webhooks can route back.
@@ -181,6 +193,41 @@ func (s *checkoutSessionService) callCheckoutProvider(
 		NextAction:              lo.ToPtr(resp.NextAction),
 	}
 	return result, nil
+}
+
+// recordGatewayHandles writes the provider's identifiers onto the payment. Without it
+// the row carries no gateway ids for the life of a pending checkout —
+// CreatePaymentForCheckout runs before the provider is contacted and nothing backfilled
+// it — so no caller could reconcile it against the gateway.
+// It is best effort. The provider has already been called by this point, and on the
+// auto-charge path the card may already be captured — failing the checkout here would
+// archive the drafts and destroy a subscription the customer has paid for. A missing
+// handle only costs reconciliation, which the webhook still covers.
+func (s *checkoutSessionService) recordGatewayHandles(
+	ctx context.Context,
+	paymentID string,
+	providerResult *types.CheckoutProviderResult,
+) {
+	if providerResult == nil {
+		return
+	}
+
+	updateReq := dto.UpdatePaymentRequest{}
+	if providerResult.ProviderSessionID != "" {
+		updateReq.GatewayTrackingID = lo.ToPtr(providerResult.ProviderSessionID)
+	}
+	if providerResult.ProviderPaymentIntentID != "" {
+		updateReq.GatewayPaymentID = lo.ToPtr(providerResult.ProviderPaymentIntentID)
+	}
+	if updateReq.GatewayTrackingID == nil && updateReq.GatewayPaymentID == nil {
+		return
+	}
+
+	paySvc := NewPaymentService(s.ServiceParams)
+	if _, err := paySvc.UpdatePayment(ctx, paymentID, updateReq); err != nil {
+		s.Logger.Error(ctx, "failed to record gateway handles on checkout payment",
+			"payment_id", paymentID, "error", err)
+	}
 }
 
 // resolveMaxMandateLimit caps MaxMandateLimit against the tenant's
@@ -233,12 +280,34 @@ func (s *checkoutSessionService) completeCheckoutAction(ctx context.Context, ses
 		return s.completeWalletTopupCheckout(ctx, session, providerResult)
 	case types.CheckoutActionAddAddon:
 		return s.completeAddAddonCheckout(ctx, session, providerResult)
+	case types.CheckoutActionPayInvoice:
+		return s.completePayInvoiceCheckout(ctx, session, providerResult)
 	default:
 		return ierr.NewError("unsupported checkout action for completion").
 			WithHint("No completion handler for this action type").
 			WithReportableDetails(map[string]any{"action": session.Action}).
 			Mark(ierr.ErrValidation)
 	}
+}
+
+// completePayInvoiceCheckout finalizes the gated one-off invoice and settles its payment.
+// Nothing to replay — everything was computed at creation.
+func (s *checkoutSessionService) completePayInvoiceCheckout(
+	ctx context.Context,
+	session *domainCheckout.CheckoutSession,
+	providerResult *types.CheckoutProviderResult,
+) error {
+	if err := dto.ValidateCheckoutSessionForCompletion(session); err != nil {
+		return err
+	}
+
+	return s.finalizeCheckoutInvoiceAndPayment(
+		ctx,
+		session.ID,
+		*session.CheckoutInvoiceID,
+		*session.CheckoutPaymentID,
+		providerResult,
+	)
 }
 
 // completeModifySubscriptionCheckout applies the saved quantity-change request (C), then
@@ -267,7 +336,7 @@ func (s *checkoutSessionService) completeModifySubscriptionCheckout(
 		return err
 	}
 
-	if err := s.finalizeCheckoutInvoiceAndPayment(ctx, invoiceID, paymentID, providerResult); err != nil {
+	if err := s.finalizeCheckoutInvoiceAndPayment(ctx, session.ID, invoiceID, paymentID, providerResult); err != nil {
 		return err
 	}
 
@@ -297,7 +366,7 @@ func (s *checkoutSessionService) completeAddAddonCheckout(
 		return err
 	}
 
-	if err := s.finalizeCheckoutInvoiceAndPayment(ctx, invoiceID, paymentID, providerResult); err != nil {
+	if err := s.finalizeCheckoutInvoiceAndPayment(ctx, session.ID, invoiceID, paymentID, providerResult); err != nil {
 		return err
 	}
 
@@ -338,6 +407,7 @@ func (s *checkoutSessionService) completeWalletTopupCheckout(
 
 	return s.finalizeCheckoutInvoiceAndPayment(
 		ctx,
+		session.ID,
 		*session.CheckoutInvoiceID,
 		*session.CheckoutPaymentID,
 		providerResult,
@@ -380,7 +450,7 @@ func (s *checkoutSessionService) completeSubscriptionCheckout(ctx context.Contex
 			Mark(ierr.ErrValidation)
 	}
 
-	if err := s.finalizeCheckoutInvoiceAndPayment(ctx, invoiceId, paymentId, providerResult); err != nil {
+	if err := s.finalizeCheckoutInvoiceAndPayment(ctx, session.ID, invoiceId, paymentId, providerResult); err != nil {
 		return err
 	}
 
@@ -401,6 +471,7 @@ func (s *checkoutSessionService) completeSubscriptionCheckout(ctx context.Contex
 // marks the checkout payment SUCCEEDED, and reconciles invoice payment status.
 func (s *checkoutSessionService) finalizeCheckoutInvoiceAndPayment(
 	ctx context.Context,
+	sessionID string,
 	invoiceID string,
 	paymentID string,
 	providerResult *types.CheckoutProviderResult,
@@ -411,7 +482,9 @@ func (s *checkoutSessionService) finalizeCheckoutInvoiceAndPayment(
 		return err
 	}
 	if invResp.InvoiceStatus != types.InvoiceStatusFinalized {
-		if err := invSvc.FinalizeInvoice(ctx, invoiceID); err != nil {
+		if err := invSvc.FinalizeInvoice(ctx, invoiceID, dto.FinalizeInvoiceRequest{
+			InvoiceStateChangeSource: dto.NewCheckoutSessionSource(sessionID),
+		}); err != nil {
 			return err
 		}
 	}
