@@ -37,12 +37,48 @@ func (s *LineItemProrationServiceSuite) mixedQuote(effectiveDate time.Time) (*Li
 	return quote, &req
 }
 
+// applyViaSettle is what the production callers now do: Compute, then Settle the net as one
+// document. The key convention mirrors theirs — an addition invoices under the hashed key, a
+// removal credits the wallet under the caller's raw key.
+func (s *LineItemProrationServiceSuite) applyViaSettle(
+	req LineItemProrationRequest,
+) ([]dto.ChangedInvoice, error) {
+	if req.Behavior != types.ProrationBehaviorCreateProrations {
+		return nil, nil
+	}
+
+	ctx := s.GetContext()
+	quote, err := s.svc.Compute(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	key := prorationChargeInvoiceKey(req)
+	if quote.NetAmount().IsNegative() {
+		key = req.IdempotencyKey
+	}
+
+	settleReq := NewSettleProrationRequest(
+		req.Subscription, quote, req.EffectiveDate, req.Subscription.CurrentPeriodEnd,
+		"Subscription update", key, SettleModeIssue,
+	)
+	settleReq.Reason = req.Reason
+	settleReq.AttemptPayment = true
+
+	settled, err := s.svc.Settle(ctx, settleReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return settled.Changed, nil
+}
+
 func (s *LineItemProrationServiceSuite) settleReq(
 	quote *LineItemProrationSummary,
 	effectiveDate time.Time,
 	mode SettleMode,
-) SettleProrationRequest {
-	return SettleProrationRequest{
+) *SettleProrationRequest {
+	return &SettleProrationRequest{
 		Subscription:   s.subCopyWithPeriod(s.td.periodStart, s.td.periodEnd),
 		Quote:          quote,
 		PeriodStart:    effectiveDate,

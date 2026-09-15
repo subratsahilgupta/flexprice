@@ -13,7 +13,6 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
-	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
@@ -1235,67 +1234,22 @@ func (s *subscriptionService) settlePlanChange(
 		return changed, nil
 	}
 
-	net := r.settlementQuote.NetAmount()
-	switch {
-	case net.IsPositive():
-		if err := raiseInvoice(planChangeInvoiceRequest(r, r.settlementQuote)); err != nil {
-			return nil, err
-		}
+	settleReq := NewSettleProrationRequest(
+		r.currentSub, r.settlementQuote, r.effectiveAt, r.updatedSub.CurrentPeriodEnd,
+		planChangeCollapsedInvoiceDisplayName(r), planChangeIdempotencyKey(r, ""),
+		lo.Ternary(preview, SettleModePreview, SettleModeIssue),
+	)
+	settleReq.BillingPeriod = r.updatedSub.BillingPeriod
 
-	// A net credit is paid to the wallet, never invoiced.
-	case net.IsNegative() && preview:
-		changed = append(changed, walletCreditChangedInvoice(&dto.WalletTransactionResponse{
-			Transaction: &wallet.Transaction{
-				CustomerID:        r.currentSub.GetInvoicingCustomerID(),
-				Amount:            net.Abs(),
-				Currency:          r.currentSub.Currency,
-				TransactionReason: types.TransactionReasonSubscriptionCredit,
-			},
-		}, dto.ChangedInvoiceStatusPreview))
-
-	case net.IsNegative():
-		txn, err := NewWalletService(s.ServiceParams).TopUpWalletForProratedCharge(
-			ctx, r.currentSub.GetInvoicingCustomerID(), net.Abs(), r.currentSub.Currency,
-			planChangeIdempotencyKey(r, ""),
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		changed = append(changed, walletCreditChangedInvoice(txn, dto.ChangedInvoiceStatusWalletIssued))
+	// Payment is attempted after commit, so the settlement stays inside the transaction.
+	settled, err := NewLineItemProrationService(s.ServiceParams).Settle(ctx, settleReq)
+	if err != nil {
+		return nil, err
 	}
+
+	changed = append(changed, settled.Changed...)
 
 	return changed, nil
-}
-
-// One request, two uses: CreateInvoice raises it on execute, CreatePreviewInvoice
-// quotes it on preview. Anything the quote must reflect belongs here.
-func planChangeInvoiceRequest(r *planChangeRequest, quote *LineItemProrationSummary) dto.CreateInvoiceRequest {
-	lineItems := make([]dto.CreateInvoiceLineItemRequest, 0,
-		len(quote.ChargeLineItems)+len(quote.CreditLineItems))
-	lineItems = append(lineItems, quote.ChargeLineItems...)
-	lineItems = append(lineItems, quote.CreditLineItems...)
-
-	billingPeriod := string(r.updatedSub.BillingPeriod)
-	periodEnd := r.updatedSub.CurrentPeriodEnd
-	idempotencyKey := planChangeIdempotencyKey(r, "")
-
-	return dto.CreateInvoiceRequest{
-		CustomerID:     r.currentSub.GetInvoicingCustomerID(),
-		SubscriptionID: &r.currentSub.ID,
-		InvoiceType:    types.InvoiceTypeOneOff,
-		Currency:       r.currentSub.Currency,
-		BillingReason:  types.InvoiceBillingReasonSubscriptionUpdate,
-		AmountDue:      quote.NetAmount(),
-		Total:          quote.NetAmount(),
-		Subtotal:       quote.NetAmount(),
-		PeriodStart:    &r.effectiveAt,
-		PeriodEnd:      &periodEnd,
-		BillingPeriod:  &billingPeriod,
-		LineItems:      lineItems,
-		IdempotencyKey: &idempotencyKey,
-		Metadata:       types.WithCollapsedInvoiceDisplayName(nil, planChangeCollapsedInvoiceDisplayName(r)),
-	}
 }
 
 func planChangeCollapsedInvoiceDisplayName(r *planChangeRequest) string {

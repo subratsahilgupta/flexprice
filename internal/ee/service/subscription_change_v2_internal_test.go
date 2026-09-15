@@ -186,7 +186,10 @@ func TestPlanChangeInvoiceRequest_SetsCollapsedInvoiceDisplayName(t *testing.T) 
 				changeType:  tt.changeType,
 			}
 
-			req := planChangeInvoiceRequest(r, &LineItemProrationSummary{})
+			req := buildNettedProrationInvoiceRequest(NewSettleProrationRequest(
+				r.currentSub, &LineItemProrationSummary{}, r.effectiveAt, r.updatedSub.CurrentPeriodEnd,
+				planChangeCollapsedInvoiceDisplayName(r), "", SettleModeIssue,
+			))
 			assert.Equal(t, tt.want, types.CollapsedInvoiceDisplayName(req.Metadata))
 		})
 	}
