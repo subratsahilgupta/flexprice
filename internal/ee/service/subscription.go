@@ -7319,6 +7319,13 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 			return err
 		}
 
+		// The meter and price rules too — an override can introduce grant config on
+		// a feature whose meter cannot carry one, and billing would then decline to
+		// fold it and fall through to the legacy path, charging nothing.
+		if err := NewEntitlementService(s.ServiceParams).ValidateGrantShape(ctx, newEnt); err != nil {
+			return err
+		}
+
 		// Create the subscription-scoped entitlement
 		_, err := s.EntitlementRepo.Create(ctx, newEnt)
 		if err != nil {

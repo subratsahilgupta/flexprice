@@ -203,12 +203,25 @@ func (b EntitlementGrantAllocationBehavior) String() string { return string(b) }
 // mid-cycle quota top-up can move a grant back to `active`. Expiry is not a
 // status — it is derived from `valid_to <= now`, so closed grants are never
 // written back.
+//
+// `superseded` is the one latched value: an entitlement edit replaced the window
+// with a successor that carries the same usage forward, so billing must not fold
+// it or the same units would be charged twice. The evaluation tick cannot undo it
+// — it only ever moves `active` to `exhausted`.
 type EntitlementGrantStatus string
 
 const (
-	EntitlementGrantStatusActive    EntitlementGrantStatus = "active"
-	EntitlementGrantStatusExhausted EntitlementGrantStatus = "exhausted"
+	EntitlementGrantStatusActive     EntitlementGrantStatus = "active"
+	EntitlementGrantStatusExhausted  EntitlementGrantStatus = "exhausted"
+	EntitlementGrantStatusSuperseded EntitlementGrantStatus = "superseded"
 )
+
+// IsBillable reports whether a window's snapshot may contribute to an invoice.
+// Exhausted windows are the ones that produce overage, so the only exclusion is
+// a window that has been replaced.
+func (s EntitlementGrantStatus) IsBillable() bool {
+	return s != EntitlementGrantStatusSuperseded
+}
 
 func (s EntitlementGrantStatus) Validate() error {
 	if s == "" {
@@ -217,10 +230,11 @@ func (s EntitlementGrantStatus) Validate() error {
 	allowed := []EntitlementGrantStatus{
 		EntitlementGrantStatusActive,
 		EntitlementGrantStatusExhausted,
+		EntitlementGrantStatusSuperseded,
 	}
 	if !lo.Contains(allowed, s) {
 		return ierr.NewError("invalid entitlement grant status").
-			WithHint("status must be active or exhausted").
+			WithHint("status must be active, exhausted or superseded").
 			WithReportableDetails(map[string]interface{}{"status": s}).
 			Mark(ierr.ErrValidation)
 	}

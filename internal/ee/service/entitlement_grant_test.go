@@ -1980,7 +1980,6 @@ func (s *EntitlementGrantSuite) TestSubscriptionOverride_OverridesGrantQuota() {
 	s.Equal(ec.GrantDurationUnit, rows[0].GrantDurationUnit, "untouched fields still inherit")
 }
 
-
 // M5 · unlimited allowances
 // -----------------------------------------------------------------------------
 
@@ -1990,6 +1989,7 @@ func (s *EntitlementGrantSuite) unlimitedCreateRequest(featureID, planID string)
 	req.GrantDurationValue = nil
 	req.GrantAllocationBehavior = ""
 	req.GrantDurationUnit = types.EntitlementGrantDurationUnitSubscriptionPeriod
+	req.GrantUnlimited = true
 	return req
 }
 
@@ -2052,4 +2052,328 @@ func (s *EntitlementGrantSuite) TestUnlimitedGrant_NeverExhaustsOrBills() {
 	}
 	s.True(bounded.IsExhausted())
 	s.Equal("50", bounded.Overage().String())
+}
+
+// M6 · review findings
+// -----------------------------------------------------------------------------
+
+func (s *EntitlementGrantSuite) TestCreateEntitlement_RejectsImplicitUnlimited() {
+	// An absent quota alongside grant config used to provision a feature that
+	// never bills. A dropped field or a typo'd key should not do that silently.
+	m := s.simpleMeter("meter-implicit-unl")
+	f := s.simpleFeature("feat-implicit-unl", m.ID)
+	p := s.simplePlan("plan-implicit-unl")
+
+	req := s.unlimitedCreateRequest(f.ID, p.ID)
+	req.GrantUnlimited = false
+
+	_, err := s.entService.CreateEntitlement(s.GetContext(), req)
+	s.Error(err)
+	s.Contains(err.Error(), "grant_quota is required")
+}
+
+func (s *EntitlementGrantSuite) TestUpdateEntitlement_UnlimitedFlagClearsTheQuota() {
+	// GrantQuota nil means "leave alone" on update, so removing a ceiling needs
+	// its own signal — without it a bounded allowance could never become
+	// unlimited through the API.
+	m := s.simpleMeter("meter-unl-update")
+	f := s.simpleFeature("feat-unl-update", m.ID)
+	p := s.simplePlan("plan-unl-update")
+
+	created, err := s.entService.CreateEntitlement(s.GetContext(),
+		s.grantCreateRequest(f.ID, p.ID, types.EntitlementGrantMeasureQuantity, 1, decimal.NewFromInt(100)))
+	s.NoError(err)
+	s.NotNil(created.Entitlement.GrantQuota)
+
+	// Moving to the cycle window must also clear the hourly duration value, which
+	// nil cannot express — the service does it when the unit says so.
+	updated, err := s.entService.UpdateEntitlement(s.GetContext(), created.Entitlement.ID, dto.UpdateEntitlementRequest{
+		GrantUnlimited:    lo.ToPtr(true),
+		GrantDurationUnit: lo.ToPtr(types.EntitlementGrantDurationUnitSubscriptionPeriod),
+	})
+	s.NoError(err)
+	s.Nil(updated.Entitlement.GrantQuota)
+	s.True(updated.Entitlement.IsUnlimitedGrant())
+}
+
+func (s *EntitlementGrantSuite) TestGrantWindow_FutureDatedIsNotActive() {
+	at := time.Now().UTC()
+	future := &entitlementgrant.EntitlementGrant{
+		ValidFrom: at.Add(2 * time.Hour),
+		ValidTo:   at.Add(3 * time.Hour),
+	}
+	open := &entitlementgrant.EntitlementGrant{
+		ValidFrom: at.Add(-1 * time.Hour),
+		ValidTo:   at.Add(1 * time.Hour),
+	}
+	// IsActive is "open right now"; a window scheduled to start later carries a
+	// balance the customer cannot spend yet.
+	s.False(!future.ValidFrom.After(at) && future.ValidTo.After(at))
+	s.True(!open.ValidFrom.After(at) && open.ValidTo.After(at))
+}
+
+// -----------------------------------------------------------------------------
+// supersede: an entitlement edit re-issues the live window at the new allowance
+// -----------------------------------------------------------------------------
+
+func (s *EntitlementGrantSuite) seedLiveWindow(
+	fx windowFixture,
+	id string,
+	quota decimal.Decimal,
+	usage decimal.Decimal,
+	crossed *time.Time,
+) *entitlementgrant.EntitlementGrant {
+	return s.seedWindowFrom(fx, id, fx.cycleStart, quota, usage, crossed)
+}
+
+func (s *EntitlementGrantSuite) seedWindowFrom(
+	fx windowFixture,
+	id string,
+	validFrom time.Time,
+	quota decimal.Decimal,
+	usage decimal.Decimal,
+	crossed *time.Time,
+) *entitlementgrant.EntitlementGrant {
+	ctx := s.GetContext()
+	g := &entitlementgrant.EntitlementGrant{
+		ID:                  id,
+		EntitlementConfigID: fx.ec.ID,
+		CustomerID:          fx.sub.CustomerID,
+		SubscriptionID:      fx.sub.ID,
+		ScopeEntityType:     types.EntitlementGrantScopeFeature,
+		ScopeEntityID:       fx.ec.FeatureID,
+		Measure:             types.EntitlementGrantMeasureQuantity,
+		Quota:               quota,
+		Usage:               usage,
+		ValidFrom:           validFrom,
+		ValidTo:             fx.cycleEnd,
+		GrantStatus:         types.EntitlementGrantStatusActive,
+		LastComputedAt:      lo.ToPtr(validFrom.Add(time.Hour)),
+		QuotaCrossedAt:      crossed,
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		BaseModel:           types.GetDefaultBaseModel(ctx),
+	}
+	created, err := s.GetStores().EntitlementGrantRepo.Create(ctx, g)
+	s.Require().NoError(err)
+	return created
+}
+
+func (s *EntitlementGrantSuite) TestSupersedeReissuesWindowAtNewQuota() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("supersede-raise", 5)
+	live := s.seedLiveWindow(fx, "eg-raise", decimal.NewFromInt(1000), decimal.NewFromInt(800), nil)
+	at := fx.cycleStart.Add(6 * time.Hour)
+
+	successors, err := s.grantService.SupersedeEntitlementGrants(
+		ctx, []*entitlementgrant.EntitlementGrant{live}, at, SupersedeTarget{Quota: lo.ToPtr(decimal.NewFromInt(5000))})
+	s.Require().NoError(err)
+	s.Require().Len(successors, 1)
+
+	succ := successors[0]
+	// 5,000 with 800 already used leaves 4,200 for the rest of the window — the
+	// same balance as "5,000 carrying 800", in the only form the slot's unique
+	// (config, subscription, valid_from) key admits.
+	s.Equal("4200", succ.Quota.String())
+	s.False(succ.Unlimited)
+	s.True(succ.ValidFrom.Equal(at), "successor picks up at the edit")
+	s.True(succ.ValidTo.Equal(live.ValidTo))
+	s.True(succ.Usage.IsZero(), "usage is measured, never carried as a number")
+	s.Nil(succ.QuotaCrossedAt, "a raise clears the old crossing")
+	s.Equal(types.EntitlementGrantStatusActive, succ.GrantStatus)
+	s.Equal(live.ID, succ.Metadata["superseded_from"])
+
+	replaced, err := s.GetStores().EntitlementGrantRepo.Get(ctx, live.ID)
+	s.Require().NoError(err)
+	s.Equal(types.EntitlementGrantStatusSuperseded, replaced.GrantStatus)
+	s.False(replaced.GrantStatus.IsBillable(), "a replaced window must not reach an invoice")
+	s.True(replaced.ValidTo.Equal(at), "closed at the edit, readable as history")
+	s.Equal("1000", replaced.Quota.String(), "what was actually granted is preserved")
+	s.Equal("800", replaced.Usage.String())
+}
+
+func (s *EntitlementGrantSuite) TestSupersedeBelowConsumedUsageDefersToNextWindow() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("supersede-cut", 5)
+	crossedEarlier := fx.cycleStart.Add(2 * time.Hour)
+	live := s.seedLiveWindow(fx, "eg-cut", decimal.NewFromInt(1000), decimal.NewFromInt(1200), &crossedEarlier)
+	at := fx.cycleStart.Add(6 * time.Hour)
+
+	successors, err := s.grantService.SupersedeEntitlementGrants(
+		ctx, []*entitlementgrant.EntitlementGrant{live}, at, SupersedeTarget{Quota: lo.ToPtr(decimal.NewFromInt(500))})
+	s.Require().NoError(err)
+	// 1,200 already used against a new 500 leaves nothing to grant, and quota is
+	// immutable — a grant records what was given. The cut applies at the next window.
+	s.Empty(successors)
+
+	kept, err := s.GetStores().EntitlementGrantRepo.Get(ctx, live.ID)
+	s.Require().NoError(err)
+	s.Equal("1000", kept.Quota.String(), "the record of what was granted is never rewritten")
+	s.Equal(types.EntitlementGrantStatusActive, kept.GrantStatus, "the window is left running, not retired")
+	s.True(kept.ValidTo.Equal(fx.cycleEnd), "it keeps the slot, so the tick cannot hand back a fresh allowance")
+	s.Require().NotNil(kept.QuotaCrossedAt, "the original crossing is untouched")
+	s.True(kept.QuotaCrossedAt.Equal(crossedEarlier))
+}
+
+func (s *EntitlementGrantSuite) TestSupersedeToUnlimited() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("supersede-unl", 5)
+	live := s.seedLiveWindow(fx, "eg-unl", decimal.NewFromInt(1000), decimal.NewFromInt(800), nil)
+	at := fx.cycleStart.Add(6 * time.Hour)
+
+	successors, err := s.grantService.SupersedeEntitlementGrants(
+		ctx, []*entitlementgrant.EntitlementGrant{live}, at, SupersedeTarget{Unlimited: true})
+	s.Require().NoError(err)
+	s.Require().Len(successors, 1)
+	s.True(successors[0].Unlimited)
+	s.True(successors[0].ValidFrom.Equal(at))
+	s.False(successors[0].IsExhausted(), "an unlimited window has no ceiling to cross")
+}
+
+func (s *EntitlementGrantSuite) TestSupersedeSkipsClosedAndAlreadySupersededWindows() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("supersede-skip", 5)
+	at := fx.cycleStart.Add(6 * time.Hour)
+
+	live := s.seedLiveWindow(fx, "eg-skip-live", decimal.NewFromInt(1000), decimal.NewFromInt(10), nil)
+	live.ValidTo = at.Add(-time.Hour) // already closed before the edit
+	_, err := s.GetStores().EntitlementGrantRepo.Update(ctx, live)
+	s.Require().NoError(err)
+
+	// A second window in the same slot needs its own start: (config, subscription,
+	// valid_from) is unique.
+	already := s.seedWindowFrom(fx, "eg-skip-superseded", fx.cycleStart.Add(time.Hour),
+		decimal.NewFromInt(1000), decimal.NewFromInt(10), nil)
+	already.GrantStatus = types.EntitlementGrantStatusSuperseded
+	_, err = s.GetStores().EntitlementGrantRepo.Update(ctx, already)
+	s.Require().NoError(err)
+
+	successors, err := s.grantService.SupersedeEntitlementGrants(
+		ctx, []*entitlementgrant.EntitlementGrant{live, already}, at, SupersedeTarget{Quota: lo.ToPtr(decimal.NewFromInt(5000))})
+	s.Require().NoError(err)
+	s.Empty(successors, "a settled window is left alone; the next one opens at the new config")
+}
+
+func (s *EntitlementGrantSuite) TestSupersedeRejectsAmbiguousAllowance() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("supersede-bad", 5)
+	live := s.seedLiveWindow(fx, "eg-bad", decimal.NewFromInt(1000), decimal.Zero, nil)
+	at := fx.cycleStart.Add(6 * time.Hour)
+
+	_, err := s.grantService.SupersedeEntitlementGrants(
+		ctx, []*entitlementgrant.EntitlementGrant{live}, at, SupersedeTarget{Quota: lo.ToPtr(decimal.NewFromInt(5000)), Unlimited: true})
+	s.Error(err, "an allowance either has a ceiling or does not")
+
+	_, err = s.grantService.SupersedeEntitlementGrants(
+		ctx, []*entitlementgrant.EntitlementGrant{live}, at, SupersedeTarget{})
+	s.Error(err)
+}
+
+// A window belongs to the rule that issued it. When the rule governing a customer
+// changes hands — their first override taking over from the plan's, or a reset
+// handing it back — the live window has to move with it, or the edit does nothing
+// until the next window opens.
+func (s *EntitlementGrantSuite) TestSupersedeHandsWindowToAnotherConfig() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("handover", 5)
+	live := s.seedLiveWindow(fx, "eg-handover", decimal.NewFromInt(5000), decimal.NewFromInt(800), nil)
+	at := fx.cycleStart.Add(6 * time.Hour)
+
+	successors, err := s.grantService.SupersedeEntitlementGrants(
+		ctx, []*entitlementgrant.EntitlementGrant{live}, at, SupersedeTarget{
+			EntitlementConfigID: "ec-override",
+			Quota:               lo.ToPtr(decimal.NewFromInt(1000)),
+		})
+	s.Require().NoError(err)
+	s.Require().Len(successors, 1)
+
+	succ := successors[0]
+	s.Equal("ec-override", succ.EntitlementConfigID, "the successor lands on the new rule's slot")
+	s.Equal("200", succ.Quota.String(), "1,000 with 800 already used leaves 200 for the rest of the window")
+	s.True(succ.ValidFrom.Equal(at))
+	s.True(succ.ValidTo.Equal(live.ValidTo))
+
+	replaced, err := s.GetStores().EntitlementGrantRepo.Get(ctx, live.ID)
+	s.Require().NoError(err)
+	s.Equal(fx.ec.ID, replaced.EntitlementConfigID, "the old slot keeps its own history")
+	s.Equal(types.EntitlementGrantStatusSuperseded, replaced.GrantStatus)
+	s.True(replaced.ValidTo.Equal(at))
+}
+
+func (s *EntitlementGrantSuite) TestSupersedeKeepsSlotWhenNoTargetGiven() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("handover-same", 5)
+	live := s.seedLiveWindow(fx, "eg-handover-same", decimal.NewFromInt(1000), decimal.NewFromInt(100), nil)
+	at := fx.cycleStart.Add(6 * time.Hour)
+
+	successors, err := s.grantService.SupersedeEntitlementGrants(
+		ctx, []*entitlementgrant.EntitlementGrant{live}, at,
+		SupersedeTarget{Quota: lo.ToPtr(decimal.NewFromInt(2000))})
+	s.Require().NoError(err)
+	s.Require().Len(successors, 1)
+	s.Equal(fx.ec.ID, successors[0].EntitlementConfigID, "an edit in place stays on its own slot")
+	s.Equal("1900", successors[0].Quota.String())
+}
+
+// The hand-over is wired through CreateEntitlement, not just callable on its own:
+// a first override arriving mid-window has to retire the window the plan's rule owns,
+// or the customer keeps both allowances at once.
+func (s *EntitlementGrantSuite) createOverrideOverLiveWindow(tag string, planQuota, used, overrideQuota int64) (string, *entitlementgrant.EntitlementGrant) {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture(tag, 5)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, fx.sub))
+
+	// A window straddling now, which is what an edit actually lands on.
+	now := time.Now().UTC()
+	live := s.seedWindowFrom(fx, "eg-"+tag, now.Add(-time.Hour), decimal.NewFromInt(planQuota), decimal.NewFromInt(used), nil)
+	live.ValidTo = now.Add(4 * time.Hour)
+	_, err := s.GetStores().EntitlementGrantRepo.Update(ctx, live)
+	s.Require().NoError(err)
+
+	override, err := s.entService.CreateEntitlement(ctx, dto.CreateEntitlementRequest{
+		EntityType:              types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION,
+		EntityID:                fx.sub.ID,
+		FeatureID:               fx.ec.FeatureID,
+		FeatureType:             types.FeatureTypeMetered,
+		IsEnabled:               true,
+		ParentEntitlementID:     lo.ToPtr(fx.ec.ID),
+		GrantMeasure:            types.EntitlementGrantMeasureQuantity,
+		GrantQuota:              lo.ToPtr(decimal.NewFromInt(overrideQuota)),
+		GrantDurationValue:      lo.ToPtr(5),
+		GrantDurationUnit:       types.EntitlementGrantDurationUnitHour,
+		GrantAllocationBehavior: types.EntitlementGrantAllocationBehaviorFirstUsage,
+		AggregationMode:         types.EntitlementAggregationModeAdditive,
+	})
+	s.Require().NoError(err)
+
+	replaced, err := s.GetStores().EntitlementGrantRepo.Get(ctx, live.ID)
+	s.Require().NoError(err)
+	s.Equal(types.EntitlementGrantStatusSuperseded, replaced.GrantStatus,
+		"the outgoing rule's window must be retired, or both allowances stay live")
+
+	all, err := s.GetStores().EntitlementGrantRepo.List(ctx,
+		types.NewNoLimitEntitlementGrantFilter().WithSubscriptionIDs(fx.sub.ID))
+	s.Require().NoError(err)
+	billable := lo.Filter(all, func(g *entitlementgrant.EntitlementGrant, _ int) bool {
+		return g.GrantStatus.IsBillable()
+	})
+	if len(billable) == 0 {
+		return override.ID, nil
+	}
+	s.Require().Len(billable, 1, "at most one window may be live for the feature")
+	return override.ID, billable[0]
+}
+
+func (s *EntitlementGrantSuite) TestCreateOverrideHandsOverLiveWindow() {
+	overrideID, live := s.createOverrideOverLiveWindow("create-handover", 1000, 400, 800)
+	s.Require().NotNil(live, "an allowance still has room, so the successor carries the balance")
+	s.Equal(overrideID, live.EntitlementConfigID, "it belongs to the incoming rule's slot")
+	s.Equal("400", live.Quota.String(), "800 with 400 already used leaves 400")
+}
+
+// The case that shipped wrong: the incoming allowance is below what the outgoing
+// window already consumed. Deferring here left the plan's window running while the
+// tick opened one for the override too, so the customer held 1,000 AND 100 at once.
+func (s *EntitlementGrantSuite) TestCreateOverrideBelowConsumedRetiresWithoutSuccessor() {
+	_, live := s.createOverrideOverLiveWindow("create-handover-below", 1000, 400, 100)
+	s.Nil(live, "nothing is left to grant, so no successor opens; the incoming rule starts its own window")
 }
