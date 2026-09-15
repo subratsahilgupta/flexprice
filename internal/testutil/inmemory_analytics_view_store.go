@@ -24,6 +24,9 @@ func (s *InMemoryAnalyticsViewStore) Create(ctx context.Context, v *domainAnalyt
 	if v.TenantID == "" {
 		v.TenantID = types.GetTenantID(ctx)
 	}
+	if v.EnvironmentID == "" {
+		v.EnvironmentID = types.GetEnvironmentID(ctx)
+	}
 	if v.Status == "" {
 		v.Status = types.StatusPublished
 	}
@@ -36,9 +39,8 @@ func (s *InMemoryAnalyticsViewStore) Get(ctx context.Context, id string) (*domai
 		return nil, err
 	}
 
-	// Mirror the real ent repo's Get: scoped to tenant + status=published.
-	// EnvironmentID isn't on the domain View struct, so it can't be filtered here.
-	if !CheckTenantFilter(ctx, v.TenantID) || v.Status != types.StatusPublished {
+	// Mirror the real ent repo's Get: scoped to tenant + environment + status=published.
+	if !CheckTenantFilter(ctx, v.TenantID) || !CheckEnvironmentFilter(ctx, v.EnvironmentID) || v.Status != types.StatusPublished {
 		return nil, ierr.NewError("item not found").
 			WithHintf("Item with ID %s was not found", id).
 			WithReportableDetails(map[string]any{
@@ -52,6 +54,6 @@ func (s *InMemoryAnalyticsViewStore) Get(ctx context.Context, id string) (*domai
 
 func (s *InMemoryAnalyticsViewStore) List(ctx context.Context) ([]*domainAnalytics.View, error) {
 	return s.InMemoryStore.List(ctx, nil, func(ctx context.Context, v *domainAnalytics.View, _ interface{}) bool {
-		return CheckTenantFilter(ctx, v.TenantID) && v.Status == types.StatusPublished
+		return CheckTenantFilter(ctx, v.TenantID) && CheckEnvironmentFilter(ctx, v.EnvironmentID) && v.Status == types.StatusPublished
 	}, nil)
 }

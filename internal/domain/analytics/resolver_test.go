@@ -192,6 +192,86 @@ func TestResolveVariables_OmittedTimeDefaultsToLast7Days(t *testing.T) {
 	assert.WithinDuration(t, rv.Time.To.Add(-7*24*time.Hour), rv.Time.From, time.Second)
 }
 
+// TestResolveVariables_AppliesDefaultWhenAbsent proves an unsupplied variable
+// falls back to its declared Default rather than resolving empty.
+func TestResolveVariables_AppliesDefaultWhenAbsent(t *testing.T) {
+	def := types.ViewDefinition{
+		Shape:   types.ShapeBreakdown,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Filters: []*types.AnalyticsFilter{
+			{Field: "meter_id", Op: types.EQUAL, Value: []string{"{{meter}}"}},
+		},
+		Time:      types.TimeSpecRaw{Range: "2026-08-01..2026-09-01", Grain: types.GrainDay},
+		Variables: []*types.Variable{{Name: "meter", Type: types.VariableTypeString, Default: []string{"meter_default"}}},
+	}
+	rv, err := ResolveVariables(&def, map[string][]string{})
+	require.NoError(t, err)
+	require.Len(t, rv.Filters, 1)
+	assert.Equal(t, []string{"meter_default"}, rv.Filters[0].Value)
+}
+
+// TestResolveVariables_DefaultSatisfiesRequired proves a required variable with
+// a Default is not treated as missing when the caller omits it.
+func TestResolveVariables_DefaultSatisfiesRequired(t *testing.T) {
+	def := types.ViewDefinition{
+		Shape:     types.ShapeTimeseries,
+		Metrics:   []types.Metric{types.MetricUsageQuantity},
+		Time:      types.TimeSpecRaw{Range: "{{dr}}", Grain: types.GrainDay},
+		Variables: []*types.Variable{{Name: "dr", Type: types.VariableTypeDateRange, Required: true, Default: []string{"last_30_days"}}},
+	}
+	rv, err := ResolveVariables(&def, map[string][]string{})
+	require.NoError(t, err)
+	assert.WithinDuration(t, rv.Time.To.Add(-30*24*time.Hour), rv.Time.From, time.Second)
+}
+
+// TestResolveVariables_SuppliedOverridesDefault proves a supplied value wins
+// over the declared Default.
+func TestResolveVariables_SuppliedOverridesDefault(t *testing.T) {
+	def := types.ViewDefinition{
+		Shape:   types.ShapeBreakdown,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Filters: []*types.AnalyticsFilter{{Field: "meter_id", Op: types.EQUAL, Value: []string{"{{meter}}"}}},
+		Time:    types.TimeSpecRaw{Range: "2026-08-01..2026-09-01", Grain: types.GrainDay},
+		Variables: []*types.Variable{
+			{Name: "meter", Type: types.VariableTypeString, Default: []string{"meter_default"}},
+		},
+	}
+	rv, err := ResolveVariables(&def, map[string][]string{"meter": {"meter_supplied"}})
+	require.NoError(t, err)
+	require.Len(t, rv.Filters, 1)
+	assert.Equal(t, []string{"meter_supplied"}, rv.Filters[0].Value)
+}
+
+// TestResolveVariables_NumberTypeRejectsNonNumeric proves a number variable
+// validates its value shape.
+func TestResolveVariables_NumberTypeRejectsNonNumeric(t *testing.T) {
+	def := types.ViewDefinition{
+		Shape:   types.ShapeBreakdown,
+		Metrics: []types.Metric{types.MetricUsageQuantity},
+		Filters: []*types.AnalyticsFilter{{Field: "threshold", Op: types.EQUAL, Value: []string{"{{n}}"}}},
+		Time:    types.TimeSpecRaw{Range: "2026-08-01..2026-09-01", Grain: types.GrainDay},
+		Variables: []*types.Variable{
+			{Name: "n", Type: types.VariableTypeNumber},
+		},
+	}
+	_, err := ResolveVariables(&def, map[string][]string{"n": {"not_a_number"}})
+	require.Error(t, err)
+}
+
+// TestResolveVariables_BooleanTypeRejectsNonBoolean proves a boolean variable
+// validates its value shape.
+func TestResolveVariables_BooleanTypeRejectsNonBoolean(t *testing.T) {
+	def := types.ViewDefinition{
+		Shape:     types.ShapeBreakdown,
+		Metrics:   []types.Metric{types.MetricUsageQuantity},
+		Filters:   []*types.AnalyticsFilter{{Field: "flag", Op: types.EQUAL, Value: []string{"{{b}}"}}},
+		Time:      types.TimeSpecRaw{Range: "2026-08-01..2026-09-01", Grain: types.GrainDay},
+		Variables: []*types.Variable{{Name: "b", Type: types.VariableTypeBoolean}},
+	}
+	_, err := ResolveVariables(&def, map[string][]string{"b": {"maybe"}})
+	require.Error(t, err)
+}
+
 func TestResolveVariables_PreservesShapeMetricsDimensionsSortLimit(t *testing.T) {
 	def := types.ViewDefinition{
 		Shape:      types.ShapeBreakdown,

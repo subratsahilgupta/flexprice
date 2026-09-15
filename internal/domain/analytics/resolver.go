@@ -29,13 +29,9 @@ func ResolveVariables(def *types.ViewDefinition, supplied map[string][]string) (
 	if err := def.Validate(); err != nil {
 		return nil, err
 	}
-	for _, va := range def.Variables {
-		if va == nil {
-			continue
-		}
-		if _, ok := supplied[va.Name]; !ok && va.Required {
-			return nil, ierr.NewError(fmt.Sprintf("missing required variable %q", va.Name)).Mark(ierr.ErrValidation)
-		}
+	values, err := resolveVariableValues(def.Variables, supplied)
+	if err != nil {
+		return nil, err
 	}
 	rv := &types.ResolvedView{Shape: def.Shape, Metrics: def.Metrics, Dimensions: def.Dimensions, Sort: def.Sort, Limit: def.Limit}
 
@@ -43,7 +39,7 @@ func ResolveVariables(def *types.ViewDefinition, supplied map[string][]string) (
 		if f == nil {
 			continue
 		}
-		val, present := resolveFilterValue(f.Value, supplied)
+		val, present := resolveFilterValue(f.Value, values)
 		if !present {
 			if f.Optional {
 				continue // drop optional filter with no value
@@ -53,12 +49,67 @@ func ResolveVariables(def *types.ViewDefinition, supplied map[string][]string) (
 		rv.Filters = append(rv.Filters, &types.AnalyticsFilter{Field: f.Field, Op: f.Op, Value: val})
 	}
 
-	ts, err := resolveTime(def.Time, supplied)
+	ts, err := resolveTime(def.Time, values)
 	if err != nil {
 		return nil, err
 	}
 	rv.Time = ts
 	return rv, nil
+}
+
+// resolveVariableValues merges supplied variable values with each declared
+// variable's Default (used when a variable is absent or empty), enforces
+// required variables, and validates every effective value against its declared
+// Variable.Type. The returned map is what filter and time resolution read, so a
+// variable left unset falls back to its default rather than resolving as empty.
+func resolveVariableValues(vars []*types.Variable, supplied map[string][]string) (map[string][]string, error) {
+	values := make(map[string][]string, len(supplied))
+	for k, v := range supplied {
+		values[k] = v
+	}
+	for _, va := range vars {
+		if va == nil {
+			continue
+		}
+		vals, ok := values[va.Name]
+		if !ok || len(vals) == 0 {
+			switch {
+			case len(va.Default) > 0:
+				vals = va.Default
+				values[va.Name] = vals
+			case va.Required:
+				return nil, ierr.NewError(fmt.Sprintf("missing required variable %q", va.Name)).Mark(ierr.ErrValidation)
+			default:
+				continue
+			}
+		}
+		if err := validateVariableValues(va, vals); err != nil {
+			return nil, err
+		}
+	}
+	return values, nil
+}
+
+// validateVariableValues coerces/validates a variable's effective values
+// against its declared type. Only number and boolean carry a parseable shape to
+// enforce; string/enum/string_list/date_range pass through (date_range values
+// are validated when resolveTime consumes them).
+func validateVariableValues(va *types.Variable, vals []string) error {
+	switch va.Type {
+	case types.VariableTypeNumber:
+		for _, s := range vals {
+			if _, err := strconv.ParseFloat(s, 64); err != nil {
+				return ierr.NewErrorf("variable %q expects a number, got %q", va.Name, s).Mark(ierr.ErrValidation)
+			}
+		}
+	case types.VariableTypeBoolean:
+		for _, s := range vals {
+			if _, err := strconv.ParseBool(s); err != nil {
+				return ierr.NewErrorf("variable %q expects a boolean, got %q", va.Name, s).Mark(ierr.ErrValidation)
+			}
+		}
+	}
+	return nil
 }
 
 // varPlaceholder reports whether s is a "{{name}}" placeholder and, if so,

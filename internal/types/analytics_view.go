@@ -133,6 +133,11 @@ func (v ViewDefinition) Validate() error {
 	if err := v.Time.Grain.Validate(); err != nil {
 		return err
 	}
+	if v.Shape == ShapeTimeseries && (len(v.Sort) > 0 || v.Limit > 0) {
+		return ierr.NewError("sort and limit are not supported for timeseries views").
+			WithHint("timeseries rows are time-ordered per bucket; series-level ranking is not yet supported — remove sort/limit or use a breakdown view").
+			Mark(ierr.ErrValidation)
+	}
 	for _, s := range v.Sort {
 		if s == nil {
 			continue
@@ -142,6 +147,18 @@ func (v ViewDefinition) Validate() error {
 		default:
 			return ierr.NewErrorf("invalid sort direction %q", s.Dir).
 				WithHint("dir must be one of: asc, desc (empty defaults to asc)").
+				Mark(ierr.ErrValidation)
+		}
+	}
+	for _, f := range v.Filters {
+		if f == nil {
+			continue
+		}
+		switch f.Op {
+		case EQUAL, IN:
+		default:
+			return ierr.NewErrorf("unsupported filter operator %q", f.Op).
+				WithHint("filter operator must be one of: eq, in").
 				Mark(ierr.ErrValidation)
 		}
 	}

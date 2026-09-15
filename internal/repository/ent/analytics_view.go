@@ -42,14 +42,19 @@ func (r *analyticsViewRepository) Create(ctx context.Context, v *domainAnalytics
 		"name", v.Name,
 	)
 
-	// The domain View carries no EnvironmentID field (unlike taxrate.TaxRate), so
-	// it is always sourced from ctx rather than conditionally defaulted.
+	// tenant_id and environment_id are always sourced from ctx (RLS), never the
+	// domain object. Version is normalized to 1 when unset so a view never
+	// persists with version 0 even if a caller bypasses service.CreateView.
+	version := v.Version
+	if version == 0 {
+		version = 1
+	}
 	created, err := client.AnalyticsView.Create().
 		SetID(v.ID).
 		SetTenantID(types.GetTenantID(ctx)).
 		SetEnvironmentID(types.GetEnvironmentID(ctx)).
 		SetName(v.Name).
-		SetVersion(v.Version).
+		SetVersion(version).
 		SetDefinition(*v.Definition).
 		Save(ctx)
 

@@ -41,25 +41,28 @@ func TestTranslateBreakdown_InjectsRLSAndGroupBy(t *testing.T) {
 	assert.Contains(t, p.GroupBy, "properties.region")
 }
 
-func TestTranslateBreakdown_RejectsIllegalDimension(t *testing.T) {
-	ctx := context.Background()
-	rv := types.ResolvedView{
+// Dimension validation is enforced at the view-definition boundary
+// (ViewDefinition.Validate, reached via ExecuteView -> ResolveVariables), not
+// in the translate* param-mappers, so these assert on Validate directly.
+func TestViewDefinition_RejectsIllegalDimension(t *testing.T) {
+	def := types.ViewDefinition{
 		Shape: types.ShapeBreakdown, Metrics: []types.Metric{types.MetricUsageQuantity},
 		Dimensions: []string{"properties.region; DROP TABLE"},
 	}
-	_, err := translateBreakdown(ctx, &rv)
+	err := def.Validate()
 	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
 }
 
-func TestTranslateBreakdown_RejectsNonAllowlistedDimension(t *testing.T) {
-	ctx := context.Background()
-	rv := types.ResolvedView{
+func TestViewDefinition_RejectsNonAllowlistedDimension(t *testing.T) {
+	def := types.ViewDefinition{
 		Shape:      types.ShapeBreakdown,
 		Metrics:    []types.Metric{types.MetricUsageQuantity},
 		Dimensions: []string{"plan_id"},
 	}
-	_, err := translateBreakdown(ctx, &rv)
+	err := def.Validate()
 	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
 }
 
 func TestTranslateTimeseries_InjectsRLSAndFilters(t *testing.T) {
@@ -87,15 +90,15 @@ func TestTranslateTimeseries_InjectsRLSAndFilters(t *testing.T) {
 	assert.True(t, p.UseFinal)
 }
 
-func TestTranslateTimeseries_RejectsIllegalDimension(t *testing.T) {
-	ctx := context.Background()
-	rv := types.ResolvedView{
+func TestViewDefinition_TimeseriesRejectsIllegalDimension(t *testing.T) {
+	def := types.ViewDefinition{
 		Shape:      types.ShapeTimeseries,
 		Metrics:    []types.Metric{types.MetricUsageQuantity},
 		Dimensions: []string{"properties.region; DROP TABLE"},
 	}
-	_, err := translateTimeseries(ctx, &rv)
+	err := def.Validate()
 	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
 }
 
 func TestTranslateBreakdown_PropertyFilterFallsThrough(t *testing.T) {
@@ -533,6 +536,34 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownZeroDimensionsIsMeterLe
 	s.Equal("7", res.Rows[0][0])
 }
 
+// TestExecuteView_BreakdownMultiMeterInjectsMeterIdentity proves a breakdown
+// spanning multiple meters (no single-meter filter, meter_id not already a
+// dimension) gains a meter_id column so its rows stay distinguishable.
+func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownMultiMeterInjectsMeterIdentity() {
+	ctx := s.GetContext()
+	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, nil)
+	s.insertUsage(ctx, s.maxMeter.ID, s.now, 9, nil)
+
+	def := s.breakdownDef()
+	def.Dimensions = nil
+	def.Filters = nil // both meters
+
+	vars := s.drVars()
+	vars["meter"] = []string{"unused"} // breakdownDef declares "meter" required
+
+	res, err := s.svc.ExecuteView(ctx, def, vars)
+	s.NoError(err)
+	s.Require().NotNil(res)
+	s.Equal("meter_id", res.Columns[0].Name, "multi-meter breakdown must label rows by meter_id")
+
+	totals := map[string]string{}
+	for _, row := range res.Rows {
+		totals[row[0]] = row[1]
+	}
+	s.Equal("3", totals[s.sumMeter.ID])
+	s.Equal("9", totals[s.maxMeter.ID])
+}
+
 // TestExecuteView_BreakdownGroupsByExternalCustomerID proves the new
 // "customer_id" dimension alias (-> "external_customer_id" group_by) lets a
 // breakdown view build a per-customer chart — the admin (no-customer-context)
@@ -692,24 +723,24 @@ func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesMultipleMetersAllowed(
 	s.Require().Len(res.Rows, 2) // one point per meter
 }
 
-// TestExecuteView_TimeseriesIgnoresSortAndLimit proves Fix 2's rule for
-// timeseries: Sort/Limit on a timeseries view are ignored rather than
-// erroring or reordering/truncating the time-ordered rows. A Sort field that
-// wouldn't even resolve to an output column, plus a Limit narrower than the
-// point count, must both have zero effect.
-func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesIgnoresSortAndLimit() {
+// TestExecuteView_TimeseriesRejectsSortAndLimit proves timeseries Sort/Limit
+// now fail loud at validation rather than being silently ignored: a request
+// carrying either must be rejected, so a client never believes a Limit was
+// honored when it was not.
+func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesRejectsSortAndLimit() {
 	ctx := s.GetContext()
-	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, nil)
-	s.insertUsage(ctx, s.sumMeter.ID, s.now.Add(-24*time.Hour), 5, nil)
 
 	def := s.timeseriesDef(s.sumMeter.ID)
-	def.Sort = []*types.SortSpec{{Field: "not_a_real_column", Dir: types.SortDirectionDesc}}
 	def.Limit = 1
+	_, err := s.svc.ExecuteView(ctx, def, s.drVars())
+	s.Require().Error(err)
+	s.True(ierr.IsValidation(err))
 
-	res, err := s.svc.ExecuteView(ctx, def, s.drVars())
-	s.NoError(err)
-	s.Require().NotNil(res)
-	s.Require().Len(res.Rows, 2, "Limit must not truncate timeseries rows")
+	def = s.timeseriesDef(s.sumMeter.ID)
+	def.Sort = []*types.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}}
+	_, err = s.svc.ExecuteView(ctx, def, s.drVars())
+	s.Require().Error(err)
+	s.True(ierr.IsValidation(err))
 }
 
 // ---------------------------------------------------------------------------
