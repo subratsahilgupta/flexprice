@@ -86,3 +86,25 @@ func (h *CheckoutSessionHandler) Delete(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
+// Cancel godoc
+// @Summary Cancel checkout session
+// @ID cancelCheckoutSession
+// @Tags Checkout
+// @Produce json
+// @Security ApiKeyAuth
+// @Param id path string true "Checkout session ID"
+// @Success 200 {object} dto.CheckoutSessionResponse
+// @Failure 400 {object} ierr.ErrorResponse
+// @Failure 404 {object} ierr.ErrorResponse
+// @Failure 500 {object} ierr.ErrorResponse
+// @Router /checkout/sessions/{id}/cancel [post]
+func (h *CheckoutSessionHandler) Cancel(c *gin.Context) {
+	id := c.Param("id")
+	resp, err := h.service.Cancel(c.Request.Context(), id)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}

@@ -247,6 +247,9 @@ type CheckoutSessionService interface {
 	GetAndReconcile(ctx context.Context, id string) (*dto.CheckoutSessionResponse, error)
 	List(ctx context.Context, filter *types.CheckoutSessionFilter) (*dto.ListCheckoutSessionsResponse, error)
 	Delete(ctx context.Context, id string) error
+	// Cancel terminates an in-flight session without archiving the row. Completed
+	// sessions are rejected; failed/expired sessions are returned as-is.
+	Cancel(ctx context.Context, id string) (*dto.CheckoutSessionResponse, error)
 	// CleanupCheckoutSession fetches the session by ID, archives all fulfillment entities
 	// (subscription, invoice, payment), and marks the session failed or expired.
 	// Pass reason=nil to mark as expired; pass a non-nil error to mark as failed.

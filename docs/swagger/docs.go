@@ -899,6 +899,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/checkout/sessions/{id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Checkout"
+                ],
+                "summary": "Cancel checkout session",
+                "operationId": "cancelCheckoutSession",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Checkout session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/CheckoutSessionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/costs": {
             "post": {
                 "security": [
@@ -17304,7 +17356,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tax_behavior": {
-                    "description": "TaxBehavior is inclusive or exclusive. Settable at any level. If left empty on a\nsubscription-level association, it resolves from the currency default at creation\ntime (internal/types.DefaultTaxBehaviorForCurrency) — tenant/customer-level templates\nonly need this set explicitly if the tenant wants one; otherwise it stays null and is\nresolved when the template is copied down to a subscription.",
+                    "description": "TaxBehavior is inclusive or exclusive. Settable at any level. If left empty on a\nsubscription-level association, it defaults to exclusive at creation time —\ntenant/customer-level templates only need this set explicitly if the tenant wants\none; otherwise it stays null and is resolved when the template is copied down to\na subscription.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.TaxBehavior"
@@ -19957,6 +20009,9 @@ const docTemplate = `{
                 "refunded_amount": {
                     "description": "refunded_amount is the total sum of credit notes of type \"refund\".\nThese are actual refunds issued to the customer.",
                     "type": "string"
+                },
+                "source_type": {
+                    "$ref": "#/definitions/types.InvoiceSourceType"
                 },
                 "status": {
                     "$ref": "#/definitions/types.Status"
@@ -23023,7 +23078,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "configuration": {
-                    "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)"
+                    "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)",
+                    "type": "object",
+                    "additionalProperties": true
                 },
                 "created_at": {
                     "description": "created_at timestamp",
@@ -23042,7 +23099,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "execution_result": {
-                    "description": "execution_result contains type-specific execution result"
+                    "description": "execution_result contains type-specific execution result",
+                    "type": "object",
+                    "additionalProperties": true
                 },
                 "id": {
                     "description": "id of the schedule",
@@ -23384,7 +23443,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.Status"
                 },
                 "tax_behavior": {
-                    "description": "TaxBehavior is inclusive or exclusive; null on tenant/customer-level rows,\nresolved when copied down to a subscription",
+                    "description": "TaxBehavior is inclusive or exclusive. Absent means exclusive; inclusive is only\never set explicitly.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/types.TaxBehavior"
@@ -28268,6 +28327,15 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "types.InvoiceSourceType": {
+            "type": "string",
+            "enum": [
+                "checkout"
+            ],
+            "x-enum-varnames": [
+                "InvoiceSourceTypeCheckout"
+            ]
         },
         "types.InvoiceStatus": {
             "type": "string",

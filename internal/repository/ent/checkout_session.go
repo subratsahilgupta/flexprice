@@ -345,6 +345,45 @@ func (r *checkoutSessionRepository) MarkCompleted(ctx context.Context, sessionID
 	return n > 0, nil
 }
 
+func (r *checkoutSessionRepository) MarkTerminal(ctx context.Context, sessionID string, status types.CheckoutStatus, failureReason *string) (bool, error) {
+	if status != types.CheckoutStatusExpired && status != types.CheckoutStatusFailed {
+		return false, ierr.NewError("invalid terminal checkout status").
+			WithHint("MarkTerminal accepts expired or failed").
+			Mark(ierr.ErrValidation)
+	}
+
+	r.log.Debug(ctx, "marking checkout session terminal", "id", sessionID, "checkout_status", status)
+
+	span := StartRepositorySpan(ctx, "checkout_session", "mark_terminal", map[string]interface{}{
+		"id":              sessionID,
+		"checkout_status": status,
+	})
+	defer FinishSpan(span)
+
+	q := r.client.Writer(ctx).CheckoutSession.Update().
+		Where(
+			entCheckout.ID(sessionID),
+			entCheckout.TenantID(types.GetTenantID(ctx)),
+			entCheckout.EnvironmentID(types.GetEnvironmentID(ctx)),
+			entCheckout.CheckoutStatusIn(types.ActiveCheckoutStatuses()...),
+		).
+		SetCheckoutStatus(status).
+		SetUpdatedAt(time.Now().UTC()).
+		SetUpdatedBy(types.GetUserID(ctx))
+	if failureReason != nil {
+		q = q.SetFailureReason(*failureReason)
+	}
+
+	n, err := q.Save(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		return false, ierr.WithError(err).WithHint("failed to mark checkout session terminal").Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return n > 0, nil
+}
+
 // ListExpiredCheckoutSessions returns active (initiated|pending) sessions whose ExpiresAt is before
 // effectiveDate within the tenant+environment in ctx, ordered by expires_at asc.
 func (r *checkoutSessionRepository) ListExpiredCheckoutSessions(ctx context.Context, effectiveDate time.Time, limit, offset int) ([]*domainCheckout.CheckoutSession, error) {

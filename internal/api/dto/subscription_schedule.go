@@ -6,6 +6,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/utils"
 )
 
 // SubscriptionScheduleResponse represents a subscription schedule
@@ -27,7 +28,7 @@ type SubscriptionScheduleResponse struct {
 	Status types.ScheduleStatus `json:"status"`
 
 	// configuration contains type-specific configuration (e.g., target_plan_id for plan changes)
-	Configuration interface{} `json:"configuration,omitempty"`
+	Configuration map[string]interface{} `json:"configuration,omitempty"`
 
 	// executed_at is when the schedule was executed
 	ExecutedAt *time.Time `json:"executed_at,omitempty"`
@@ -36,7 +37,7 @@ type SubscriptionScheduleResponse struct {
 	CancelledAt *time.Time `json:"cancelled_at,omitempty"`
 
 	// execution_result contains type-specific execution result
-	ExecutionResult interface{} `json:"execution_result,omitempty"`
+	ExecutionResult map[string]interface{} `json:"execution_result,omitempty"`
 
 	// error_message contains the error if execution failed
 	ErrorMessage *string `json:"error_message,omitempty"`
@@ -131,19 +132,27 @@ func SubscriptionScheduleResponseFromDomain(s *subscription.SubscriptionSchedule
 		v2Config, err := s.GetPlanChangeV2Config()
 		switch {
 		case err == nil && v2Config.IsV2():
-			response.Configuration = v2Config
+			if m, err := utils.ToMap(v2Config); err == nil {
+				response.Configuration = m
+			}
 			if s.ExecutionResult != nil {
 				if result, err := s.GetPlanChangeV2Result(); err == nil {
-					response.ExecutionResult = result
+					if m, err := utils.ToMap(result); err == nil {
+						response.ExecutionResult = m
+					}
 				}
 			}
 		default:
 			if config, err := s.GetPlanChangeConfig(); err == nil {
-				response.Configuration = config
+				if m, err := utils.ToMap(config); err == nil {
+					response.Configuration = m
+				}
 			}
 			if s.ExecutionResult != nil {
 				if result, err := s.GetPlanChangeResult(); err == nil {
-					response.ExecutionResult = result
+					if m, err := utils.ToMap(result); err == nil {
+						response.ExecutionResult = m
+					}
 				}
 			}
 		}
