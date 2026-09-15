@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -14,24 +15,27 @@ import (
 
 func TestShapeBreakdown_ColumnsAndRows(t *testing.T) {
 	items := []dto.UsageAnalyticItem{
-		{Properties: map[string]string{"region": "us"}, TotalUsage: decimal.NewFromInt(60000)},
-		{Properties: map[string]string{"region": "eu"}, TotalUsage: decimal.NewFromInt(30000)},
+		{Properties: map[string]string{"region": "us"}, TotalUsage: decimal.NewFromInt(60000), Unit: "call", UnitPlural: "calls"},
+		{Properties: map[string]string{"region": "eu"}, TotalUsage: decimal.NewFromInt(30000), Unit: "call", UnitPlural: "calls"},
 	}
-	got := shapeBreakdown(items, []string{"properties.region"})
+	got := shapeBreakdown(items, []string{"properties.region"}, nil)
+	require.Len(t, got.Columns, 4)
 	assert.Equal(t, "properties.region", got.Columns[0].Name)
 	assert.Equal(t, dto.ColumnRoleDimension, got.Columns[0].Role)
 	assert.Equal(t, "usage_quantity", got.Columns[1].Name)
 	assert.Equal(t, dto.ColumnRoleMetric, got.Columns[1].Role)
+	assert.Equal(t, "unit", got.Columns[2].Name)
+	assert.Equal(t, dto.ColumnRoleDimension, got.Columns[2].Role)
+	assert.Equal(t, "unit_plural", got.Columns[3].Name)
 	assert.Len(t, got.Rows, 2)
-	assert.Equal(t, "us", got.Rows[0][0])
-	assert.Equal(t, "60000", got.Rows[0][1])
-	assert.Equal(t, "eu", got.Rows[1][0])
+	assert.Equal(t, []string{"us", "60000", "call", "calls"}, got.Rows[0])
+	assert.Equal(t, []string{"eu", "30000", "call", "calls"}, got.Rows[1])
 	assert.Equal(t, "meter_usage", got.Meta.QuerySource)
 }
 
 func TestShapeBreakdown_EmptyItems(t *testing.T) {
-	got := shapeBreakdown(nil, []string{"properties.region"})
-	assert.Len(t, got.Columns, 2)
+	got := shapeBreakdown(nil, []string{"properties.region"}, nil)
+	assert.Len(t, got.Columns, 4) // dim + usage_quantity + unit + unit_plural
 	assert.Len(t, got.Rows, 0)
 }
 
@@ -39,10 +43,10 @@ func TestShapeBreakdown_NoDims(t *testing.T) {
 	items := []dto.UsageAnalyticItem{
 		{TotalUsage: decimal.NewFromInt(100)},
 	}
-	got := shapeBreakdown(items, nil)
-	assert.Len(t, got.Columns, 1)
+	got := shapeBreakdown(items, nil, nil)
+	assert.Len(t, got.Columns, 3) // usage_quantity + unit + unit_plural
 	assert.Equal(t, "usage_quantity", got.Columns[0].Name)
-	assert.Equal(t, []string{"100"}, got.Rows[0])
+	assert.Equal(t, []string{"100", "", ""}, got.Rows[0])
 }
 
 // TestShapeBreakdown_StructuralDimsPopulate proves meter_id/source/
@@ -57,8 +61,33 @@ func TestShapeBreakdown_StructuralDimsPopulate(t *testing.T) {
 			TotalUsage:         decimal.NewFromInt(42),
 		},
 	}
-	got := shapeBreakdown(items, []string{"meter_id", "source", "customer_id"})
-	assert.Equal(t, []string{"meter_1", "api", "cust_1", "42"}, got.Rows[0])
+	got := shapeBreakdown(items, []string{"meter_id", "source", "customer_id"}, nil)
+	assert.Equal(t, []string{"meter_1", "api", "cust_1", "42", "", ""}, got.Rows[0])
+}
+
+// TestShapeBreakdown_MetricsMapToColumns proves the view's requested metrics
+// map onto one column each, in order, and that an event_count metric reads
+// item.EventCount (not TotalUsage).
+func TestShapeBreakdown_MetricsMapToColumns(t *testing.T) {
+	items := []dto.UsageAnalyticItem{
+		{TotalUsage: decimal.NewFromInt(42), EventCount: 7, Unit: "call", UnitPlural: "calls"},
+	}
+	got := shapeBreakdown(items, nil, []analytics.Metric{analytics.MetricUsageQuantity, analytics.MetricEventCount})
+	assert.Equal(t, []string{"usage_quantity", "event_count", "unit", "unit_plural"}, columnNames(got.Columns))
+	for _, c := range got.Columns[:2] {
+		assert.Equal(t, dto.ColumnRoleMetric, c.Role)
+	}
+	assert.Equal(t, []string{"42", "7", "call", "calls"}, got.Rows[0])
+}
+
+// TestShapeBreakdown_EmptyMetricsDefaultsToUsageQuantity proves an empty
+// Metrics list still yields the usage_quantity column, matching the
+// pre-Fix3 default behavior.
+func TestShapeBreakdown_EmptyMetricsDefaultsToUsageQuantity(t *testing.T) {
+	items := []dto.UsageAnalyticItem{{TotalUsage: decimal.NewFromInt(9)}}
+	got := shapeBreakdown(items, nil, nil)
+	assert.Equal(t, "usage_quantity", got.Columns[0].Name)
+	assert.Equal(t, "9", got.Rows[0][0])
 }
 
 func TestShapeTimeseries_ColumnsAndRows(t *testing.T) {
@@ -73,7 +102,8 @@ func TestShapeTimeseries_ColumnsAndRows(t *testing.T) {
 			},
 		},
 	}
-	got := shapeTimeseries(items, nil)
+	got := shapeTimeseries(items, nil, nil)
+	require.Len(t, got.Columns, 4) // window_start + usage_quantity + unit + unit_plural
 	assert.Equal(t, "window_start", got.Columns[0].Name)
 	assert.Equal(t, dto.ColumnRoleDimension, got.Columns[0].Role)
 	assert.Equal(t, "usage_quantity", got.Columns[1].Name)
@@ -85,7 +115,7 @@ func TestShapeTimeseries_ColumnsAndRows(t *testing.T) {
 }
 
 func TestShapeTimeseries_EmptyPoints(t *testing.T) {
-	got := shapeTimeseries(nil, nil)
+	got := shapeTimeseries(nil, nil, nil)
 	assert.Len(t, got.Rows, 0)
 }
 
@@ -104,11 +134,27 @@ func TestShapeTimeseries_WithDimensionAndWindow(t *testing.T) {
 			Points:     []dto.UsageAnalyticPoint{{Timestamp: t1, Usage: decimal.NewFromInt(20)}},
 		},
 	}
-	got := shapeTimeseries(items, []string{"properties.region"})
-	assert.Equal(t, []string{"window_start", "properties.region", "usage_quantity"}, columnNames(got.Columns))
+	got := shapeTimeseries(items, []string{"properties.region"}, nil)
+	assert.Equal(t, []string{"window_start", "properties.region", "usage_quantity", "unit", "unit_plural"}, columnNames(got.Columns))
 	assert.Len(t, got.Rows, 2)
-	assert.Equal(t, []string{t1.Format(time.RFC3339), "us", "10"}, got.Rows[0])
-	assert.Equal(t, []string{t1.Format(time.RFC3339), "eu", "20"}, got.Rows[1])
+	assert.Equal(t, []string{t1.Format(time.RFC3339), "us", "10", "", ""}, got.Rows[0])
+	assert.Equal(t, []string{t1.Format(time.RFC3339), "eu", "20", "", ""}, got.Rows[1])
+}
+
+// TestShapeTimeseries_MetricsMapToColumns mirrors the breakdown metric-column
+// test: a requested event_count metric reads p.EventCount off each point.
+func TestShapeTimeseries_MetricsMapToColumns(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	items := []dto.UsageAnalyticItem{
+		{
+			Unit:       "call",
+			UnitPlural: "calls",
+			Points:     []dto.UsageAnalyticPoint{{Timestamp: t1, Usage: decimal.NewFromInt(10), EventCount: 3}},
+		},
+	}
+	got := shapeTimeseries(items, nil, []analytics.Metric{analytics.MetricUsageQuantity, analytics.MetricEventCount})
+	assert.Equal(t, []string{"window_start", "usage_quantity", "event_count", "unit", "unit_plural"}, columnNames(got.Columns))
+	assert.Equal(t, []string{t1.Format(time.RFC3339), "10", "3", "call", "calls"}, got.Rows[0])
 }
 
 func columnNames(cols []*dto.AnalyticsColumn) []string {
@@ -136,7 +182,7 @@ func TestShapeBreakdown_NeverSurfacesMoney(t *testing.T) {
 			CommitmentInfo: &types.CommitmentInfo{Amount: decimal.NewFromInt(444444)},
 		},
 	}
-	got := shapeBreakdown(items, []string{"meter_id"})
+	got := shapeBreakdown(items, []string{"meter_id"}, nil)
 	assertNoMoneyLeak(t, got)
 }
 
@@ -163,7 +209,7 @@ func TestShapeTimeseries_NeverSurfacesMoney(t *testing.T) {
 			},
 		},
 	}
-	got := shapeTimeseries(items, []string{"meter_id"})
+	got := shapeTimeseries(items, []string{"meter_id"}, nil)
 	assertNoMoneyLeak(t, got)
 }
 

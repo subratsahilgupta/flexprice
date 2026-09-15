@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"sort"
+	"strings"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 )
 
 type AnalyticsService interface {
@@ -63,7 +66,11 @@ func (s *analyticsService) executeBreakdown(ctx context.Context, rv *analytics.R
 		return nil, err
 	}
 
-	res := shapeBreakdown(resp.Items, rv.Dimensions)
+	res := shapeBreakdown(resp.Items, rv.Dimensions, rv.Metrics)
+	if err := sortBreakdownRows(&res, rv.Sort); err != nil {
+		return nil, err
+	}
+	truncateRows(&res, rv.Limit)
 	return &res, nil
 }
 
@@ -85,7 +92,11 @@ func (s *analyticsService) executeTimeseries(ctx context.Context, rv *analytics.
 		return nil, err
 	}
 
-	res := shapeTimeseries(resp.Items, rv.Dimensions)
+	// Sort/Limit are deliberately not applied here: timeseries rows are
+	// already time-ordered per bucket, and reordering or truncating them
+	// would break that ordering. Ranking whole series by a metric
+	// (top-N-series) is a future enhancement, not row-level sort/limit.
+	res := shapeTimeseries(resp.Items, rv.Dimensions, rv.Metrics)
 	return &res, nil
 }
 
@@ -144,13 +155,36 @@ func translateDimensions(dims []string) []string {
 	return out
 }
 
+// validateFilterOp rejects any Filter.Op the engine cannot execute. The
+// property/structural filter handling below only supports equality and
+// set-membership: eq (including multi-valued eq) and in both map onto the
+// same IN-style handling. Anything else (gt/lt/contains/...) fails loud
+// rather than being silently treated as IN.
+func validateFilterOp(op types.FilterOperatorType) error {
+	switch op {
+	case types.EQUAL, types.IN:
+		return nil
+	default:
+		return ierr.NewErrorf("operator %q is not supported in this version", op).
+			WithHint("filter operator must be one of: eq, in").
+			Mark(ierr.ErrValidation)
+	}
+}
+
 // applyAnalyticsFilters splits a ResolvedView's filters into the typed slices
 // the meter_usage params expect (meter_id/customer_id/source); anything else
-// is treated as a raw property name and becomes a property filter.
-func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, sources *[]string, props map[string][]string) {
+// is treated as a property filter. A "properties." prefix is stripped so the
+// map key matches the bare property name the engine's
+// JSONExtractString(properties, <key>) expects (see
+// BuildDetailedWhereClause) — "properties.team" and "team" are accepted as
+// the same filter, consistent with how dimensions are named.
+func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, sources *[]string, props map[string][]string) error {
 	for _, f := range filters {
 		if f == nil {
 			continue
+		}
+		if err := validateFilterOp(f.Op); err != nil {
+			return err
 		}
 		switch f.Field {
 		case "meter_id":
@@ -160,9 +194,79 @@ func applyAnalyticsFilters(filters []*analytics.Filter, meterIDs, customerIDs, s
 		case "source":
 			*sources = append(*sources, f.Value...)
 		default:
-			props[f.Field] = append(props[f.Field], f.Value...)
+			key := strings.TrimPrefix(f.Field, "properties.")
+			props[key] = append(props[key], f.Value...)
 		}
 	}
+	return nil
+}
+
+// sortBreakdownRows sorts a breakdown result's rows in place per the view's
+// sort spec(s), applied in order as successive tie-breakers. Each
+// SortSpec.Field must name an output column (a dimension or a metric); an
+// unknown field fails loud instead of silently no-op'ing. Decimal (metric)
+// columns compare numerically; everything else compares lexically. An empty
+// Dir defaults to asc.
+func sortBreakdownRows(res *dto.AnalyticsQueryResult, sortSpecs []*analytics.SortSpec) error {
+	if res == nil || len(sortSpecs) == 0 {
+		return nil
+	}
+	colIdx := make(map[string]int, len(res.Columns))
+	colType := make(map[string]dto.ColumnType, len(res.Columns))
+	for i, c := range res.Columns {
+		colIdx[c.Name] = i
+		colType[c.Name] = c.Type
+	}
+	specs := make([]*analytics.SortSpec, 0, len(sortSpecs))
+	for _, s := range sortSpecs {
+		if s == nil {
+			continue
+		}
+		if _, ok := colIdx[s.Field]; !ok {
+			return ierr.NewErrorf("sort field %q does not match any output column", s.Field).
+				WithHint("sort field must reference a dimension or metric column of the result").
+				Mark(ierr.ErrValidation)
+		}
+		specs = append(specs, s)
+	}
+	sort.SliceStable(res.Rows, func(i, j int) bool {
+		for _, s := range specs {
+			idx := colIdx[s.Field]
+			cmp := compareCells(res.Rows[i][idx], res.Rows[j][idx], colType[s.Field])
+			if cmp == 0 {
+				continue
+			}
+			if s.Dir == types.SortDirectionDesc {
+				return cmp > 0
+			}
+			return cmp < 0
+		}
+		return false
+	})
+	return nil
+}
+
+// compareCells compares two row cells for sortBreakdownRows: decimal
+// (metric) columns compare numerically by parsing the cell, everything else
+// compares lexically.
+func compareCells(a, b string, colType dto.ColumnType) int {
+	if colType == dto.ColumnTypeDecimal {
+		da, errA := decimal.NewFromString(a)
+		db, errB := decimal.NewFromString(b)
+		if errA == nil && errB == nil {
+			return da.Cmp(db)
+		}
+	}
+	return strings.Compare(a, b)
+}
+
+// truncateRows applies a breakdown view's row limit in place. limit<=0 means
+// unbounded (no-op).
+func truncateRows(res *dto.AnalyticsQueryResult, limit int) {
+	if res == nil || limit <= 0 || limit >= len(res.Rows) {
+		return
+	}
+	res.Rows = res.Rows[:limit]
 }
 
 // translateBreakdown maps a resolved analytics view onto the shared detailed
@@ -188,7 +292,9 @@ func translateBreakdown(ctx context.Context, rv *analytics.ResolvedView) (*event
 		PropertyFilters: map[string][]string{},
 		UseFinal:        true,
 	}
-	applyAnalyticsFilters(rv.Filters, &p.MeterIDs, &p.ExternalCustomerIDs, &p.Sources, p.PropertyFilters)
+	if err := applyAnalyticsFilters(rv.Filters, &p.MeterIDs, &p.ExternalCustomerIDs, &p.Sources, p.PropertyFilters); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -217,6 +323,8 @@ func translateTimeseries(ctx context.Context, rv *analytics.ResolvedView) (*even
 		PropertyFilters: map[string][]string{},
 		UseFinal:        true,
 	}
-	applyAnalyticsFilters(rv.Filters, &p.MeterIDs, &p.ExternalCustomerIDs, &p.Sources, p.PropertyFilters)
+	if err := applyAnalyticsFilters(rv.Filters, &p.MeterIDs, &p.ExternalCustomerIDs, &p.Sources, p.PropertyFilters); err != nil {
+		return nil, err
+	}
 	return p, nil
 }

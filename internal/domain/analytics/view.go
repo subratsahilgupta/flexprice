@@ -224,10 +224,10 @@ func (v ViewDefinition) Validate() error {
 			continue
 		}
 		switch s.Dir {
-		case types.SortDirectionAsc, types.SortDirectionDesc:
+		case "", types.SortDirectionAsc, types.SortDirectionDesc:
 		default:
 			return ierr.NewErrorf("invalid sort direction %q", s.Dir).
-				WithHint("dir must be one of: asc, desc").
+				WithHint("dir must be one of: asc, desc (empty defaults to asc)").
 				Mark(ierr.ErrValidation)
 		}
 	}

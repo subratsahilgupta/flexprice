@@ -110,6 +110,154 @@ func TestTranslateBreakdown_PropertyFilterFallsThrough(t *testing.T) {
 	assert.Contains(t, p.PropertyFilters["model"], "gpt-4")
 }
 
+// TestTranslateBreakdown_PropertyFilterStripsPropertiesPrefix is the Fix 1
+// regression test: a filter whose Field is "properties.team" must be keyed
+// by the bare property name "team" in PropertyFilters, because the engine's
+// BuildDetailedWhereClause consumes PropertyFilters as
+// JSONExtractString(properties, <key>) with the bare name — a "properties."
+// prefixed key would never match.
+func TestTranslateBreakdown_PropertyFilterStripsPropertiesPrefix(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape:   analytics.ShapeBreakdown,
+		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+		Filters: []*analytics.Filter{{Field: "properties.team", Op: types.EQUAL, Value: []string{"eng"}}},
+	}
+	p, err := translateBreakdown(ctx, &rv)
+	require.NoError(t, err)
+	assert.Contains(t, p.PropertyFilters["team"], "eng")
+	assert.NotContains(t, p.PropertyFilters, "properties.team")
+}
+
+// TestTranslateBreakdown_BarePropertyFieldStillWorks proves a bare property
+// name (no "properties." prefix) is accepted the same way, consistent with
+// how dimensions are named.
+func TestTranslateBreakdown_BarePropertyFieldStillWorks(t *testing.T) {
+	ctx := context.Background()
+	rv := analytics.ResolvedView{
+		Shape:   analytics.ShapeBreakdown,
+		Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+		Filters: []*analytics.Filter{{Field: "team", Op: types.EQUAL, Value: []string{"eng"}}},
+	}
+	p, err := translateBreakdown(ctx, &rv)
+	require.NoError(t, err)
+	assert.Contains(t, p.PropertyFilters["team"], "eng")
+}
+
+// ---------------------------------------------------------------------------
+// Filter.Op validation (Fix 4)
+// ---------------------------------------------------------------------------
+
+// TestTranslateBreakdown_AcceptsEqAndInOps proves the two supported filter
+// operators (eq, in) both pass through translation unchanged.
+func TestTranslateBreakdown_AcceptsEqAndInOps(t *testing.T) {
+	for _, op := range []types.FilterOperatorType{types.EQUAL, types.IN} {
+		ctx := context.Background()
+		rv := analytics.ResolvedView{
+			Shape:   analytics.ShapeBreakdown,
+			Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+			Filters: []*analytics.Filter{{Field: "meter_id", Op: op, Value: []string{"meter_1"}}},
+		}
+		p, err := translateBreakdown(ctx, &rv)
+		require.NoError(t, err, "op %q should be accepted", op)
+		assert.Contains(t, p.MeterIDs, "meter_1")
+	}
+}
+
+// TestTranslateBreakdown_RejectsUnsupportedFilterOp proves any operator other
+// than eq/in fails loud with a validation error, rather than silently being
+// treated as an IN-style filter.
+func TestTranslateBreakdown_RejectsUnsupportedFilterOp(t *testing.T) {
+	for _, op := range []types.FilterOperatorType{types.GREATER_THAN, types.LESS_THAN, types.CONTAINS, types.NOT_IN} {
+		ctx := context.Background()
+		rv := analytics.ResolvedView{
+			Shape:   analytics.ShapeBreakdown,
+			Metrics: []analytics.Metric{analytics.MetricUsageQuantity},
+			Filters: []*analytics.Filter{{Field: "meter_id", Op: op, Value: []string{"meter_1"}}},
+		}
+		_, err := translateBreakdown(ctx, &rv)
+		require.Error(t, err, "op %q should be rejected", op)
+		assert.True(t, ierr.IsValidation(err))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// sortBreakdownRows / truncateRows (Fix 2)
+// ---------------------------------------------------------------------------
+
+func TestSortBreakdownRows_NumericDescByMetric(t *testing.T) {
+	res := dto.AnalyticsQueryResult{
+		Columns: []*dto.AnalyticsColumn{
+			{Name: "meter_id", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
+			{Name: "usage_quantity", Type: dto.ColumnTypeDecimal, Role: dto.ColumnRoleMetric},
+		},
+		Rows: [][]string{
+			{"m1", "5"},
+			{"m2", "20"},
+			{"m3", "10"},
+		},
+	}
+	err := sortBreakdownRows(&res, []*analytics.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}})
+	require.NoError(t, err)
+	assert.Equal(t, [][]string{{"m2", "20"}, {"m3", "10"}, {"m1", "5"}}, res.Rows)
+}
+
+func TestSortBreakdownRows_EmptyDirDefaultsToAsc(t *testing.T) {
+	res := dto.AnalyticsQueryResult{
+		Columns: []*dto.AnalyticsColumn{
+			{Name: "usage_quantity", Type: dto.ColumnTypeDecimal, Role: dto.ColumnRoleMetric},
+		},
+		Rows: [][]string{{"20"}, {"5"}, {"10"}},
+	}
+	err := sortBreakdownRows(&res, []*analytics.SortSpec{{Field: "usage_quantity"}})
+	require.NoError(t, err)
+	assert.Equal(t, [][]string{{"5"}, {"10"}, {"20"}}, res.Rows)
+}
+
+func TestSortBreakdownRows_LexicalByDimension(t *testing.T) {
+	res := dto.AnalyticsQueryResult{
+		Columns: []*dto.AnalyticsColumn{
+			{Name: "region", Type: dto.ColumnTypeString, Role: dto.ColumnRoleDimension},
+		},
+		Rows: [][]string{{"us"}, {"eu"}, {"apac"}},
+	}
+	err := sortBreakdownRows(&res, []*analytics.SortSpec{{Field: "region", Dir: types.SortDirectionAsc}})
+	require.NoError(t, err)
+	assert.Equal(t, [][]string{{"apac"}, {"eu"}, {"us"}}, res.Rows)
+}
+
+// TestSortBreakdownRows_UnknownFieldFailsLoud proves a SortSpec.Field that
+// doesn't match any output column is rejected rather than silently ignored.
+func TestSortBreakdownRows_UnknownFieldFailsLoud(t *testing.T) {
+	res := dto.AnalyticsQueryResult{
+		Columns: []*dto.AnalyticsColumn{{Name: "usage_quantity", Type: dto.ColumnTypeDecimal, Role: dto.ColumnRoleMetric}},
+		Rows:    [][]string{{"5"}},
+	}
+	err := sortBreakdownRows(&res, []*analytics.SortSpec{{Field: "not_a_column"}})
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+}
+
+func TestTruncateRows_AppliesLimit(t *testing.T) {
+	res := dto.AnalyticsQueryResult{Rows: [][]string{{"1"}, {"2"}, {"3"}}}
+	truncateRows(&res, 2)
+	assert.Equal(t, [][]string{{"1"}, {"2"}}, res.Rows)
+}
+
+func TestTruncateRows_ZeroOrNegativeIsNoOp(t *testing.T) {
+	res := dto.AnalyticsQueryResult{Rows: [][]string{{"1"}, {"2"}, {"3"}}}
+	truncateRows(&res, 0)
+	assert.Len(t, res.Rows, 3)
+	truncateRows(&res, -1)
+	assert.Len(t, res.Rows, 3)
+}
+
+func TestTruncateRows_LimitAboveRowCountIsNoOp(t *testing.T) {
+	res := dto.AnalyticsQueryResult{Rows: [][]string{{"1"}, {"2"}}}
+	truncateRows(&res, 10)
+	assert.Len(t, res.Rows, 2)
+}
+
 // TestTranslateBreakdown_LeavesWindowSizeUnset proves breakdown never sets
 // WindowSize even when the view carries a grain — breakdown is a single
 // aggregate row per group, not a time series (windowing is timeseries-only).
@@ -316,7 +464,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownReturnsRows() {
 	res, err := s.svc.ExecuteView(ctx, s.breakdownDef(), vars)
 	s.NoError(err)
 	s.Require().NotNil(res)
-	s.Require().Len(res.Columns, 2)
+	s.Require().Len(res.Columns, 4) // properties.region, usage_quantity, unit, unit_plural
 	s.Equal("properties.region", res.Columns[0].Name)
 	s.Equal(dto.ColumnRoleDimension, res.Columns[0].Role)
 	s.Equal("usage_quantity", res.Columns[1].Name)
@@ -325,7 +473,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownReturnsRows() {
 	s.Require().Len(res.Rows, 2)
 	totals := map[string]string{}
 	for _, row := range res.Rows {
-		s.Require().Len(row, 2)
+		s.Require().Len(row, 4)
 		totals[row[0]] = row[1]
 	}
 	s.Equal("7", totals["us"])
@@ -379,7 +527,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownZeroDimensionsIsMeterLe
 	res, err := s.svc.ExecuteView(ctx, def, vars)
 	s.NoError(err)
 	s.Require().NotNil(res)
-	s.Require().Len(res.Columns, 1) // usage_quantity only, no dimension columns
+	s.Require().Len(res.Columns, 3) // usage_quantity, unit, unit_plural; no dimension columns
 	s.Equal("usage_quantity", res.Columns[0].Name)
 	s.Require().Len(res.Rows, 1) // one row for the meter (both events roll up)
 	s.Equal("7", res.Rows[0][0])
@@ -413,6 +561,53 @@ func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownGroupsByExternalCustome
 	s.Equal("5", totals["cust_b"])
 }
 
+// TestExecuteView_BreakdownTopNByUsageDesc proves Fix 2 end-to-end: a
+// breakdown view's Sort spec ranks the shaped rows by the usage_quantity
+// column, descending, through the full ExecuteView pipeline.
+func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownTopNByUsageDesc() {
+	ctx := s.GetContext()
+	s.insertUsageForCustomer(ctx, s.sumMeter.ID, "cust_a", s.now, 3)
+	s.insertUsageForCustomer(ctx, s.sumMeter.ID, "cust_b", s.now, 20)
+	s.insertUsageForCustomer(ctx, s.sumMeter.ID, "cust_c", s.now, 10)
+
+	def := s.breakdownDef()
+	def.Dimensions = []string{"customer_id"}
+	def.Sort = []*analytics.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}}
+
+	vars := s.drVars()
+	vars["meter"] = []string{s.sumMeter.ID}
+
+	res, err := s.svc.ExecuteView(ctx, def, vars)
+	s.NoError(err)
+	s.Require().NotNil(res)
+	s.Require().Len(res.Rows, 3)
+	s.Equal([]string{"cust_b", "cust_c", "cust_a"}, []string{res.Rows[0][0], res.Rows[1][0], res.Rows[2][0]})
+}
+
+// TestExecuteView_BreakdownLimitTruncates proves Fix 2's Limit is applied
+// after sorting, keeping only the top N rows.
+func (s *AnalyticsServiceSuite) TestExecuteView_BreakdownLimitTruncates() {
+	ctx := s.GetContext()
+	s.insertUsageForCustomer(ctx, s.sumMeter.ID, "cust_a", s.now, 3)
+	s.insertUsageForCustomer(ctx, s.sumMeter.ID, "cust_b", s.now, 20)
+	s.insertUsageForCustomer(ctx, s.sumMeter.ID, "cust_c", s.now, 10)
+
+	def := s.breakdownDef()
+	def.Dimensions = []string{"customer_id"}
+	def.Sort = []*analytics.SortSpec{{Field: "usage_quantity", Dir: types.SortDirectionDesc}}
+	def.Limit = 2
+
+	vars := s.drVars()
+	vars["meter"] = []string{s.sumMeter.ID}
+
+	res, err := s.svc.ExecuteView(ctx, def, vars)
+	s.NoError(err)
+	s.Require().NotNil(res)
+	s.Require().Len(res.Rows, 2)
+	s.Equal("cust_b", res.Rows[0][0])
+	s.Equal("cust_c", res.Rows[1][0])
+}
+
 // ---------------------------------------------------------------------------
 // ExecuteView — timeseries
 // ---------------------------------------------------------------------------
@@ -440,7 +635,7 @@ func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesUsesMeterAggregation()
 	res, err := s.svc.ExecuteView(ctx, s.timeseriesDef(s.maxMeter.ID), s.drVars())
 	s.NoError(err)
 	s.Require().NotNil(res)
-	s.Require().Len(res.Columns, 2)
+	s.Require().Len(res.Columns, 4) // window_start, usage_quantity, unit, unit_plural
 	s.Equal("window_start", res.Columns[0].Name)
 	s.Equal("usage_quantity", res.Columns[1].Name)
 
@@ -465,14 +660,14 @@ func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesWithDimensionBucketsBy
 	res, err := s.svc.ExecuteView(ctx, def, s.drVars())
 	s.NoError(err)
 	s.Require().NotNil(res)
-	s.Require().Len(res.Columns, 3)
+	s.Require().Len(res.Columns, 5) // window_start, properties.region, usage_quantity, unit, unit_plural
 	s.Equal("window_start", res.Columns[0].Name)
 	s.Equal("properties.region", res.Columns[1].Name)
 	s.Equal("usage_quantity", res.Columns[2].Name)
 
 	totals := map[string]string{}
 	for _, row := range res.Rows {
-		s.Require().Len(row, 3)
+		s.Require().Len(row, 5)
 		totals[row[1]] = row[2]
 	}
 	s.Equal("3", totals["us"])
@@ -495,6 +690,26 @@ func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesMultipleMetersAllowed(
 	s.NoError(err)
 	s.Require().NotNil(res)
 	s.Require().Len(res.Rows, 2) // one point per meter
+}
+
+// TestExecuteView_TimeseriesIgnoresSortAndLimit proves Fix 2's rule for
+// timeseries: Sort/Limit on a timeseries view are ignored rather than
+// erroring or reordering/truncating the time-ordered rows. A Sort field that
+// wouldn't even resolve to an output column, plus a Limit narrower than the
+// point count, must both have zero effect.
+func (s *AnalyticsServiceSuite) TestExecuteView_TimeseriesIgnoresSortAndLimit() {
+	ctx := s.GetContext()
+	s.insertUsage(ctx, s.sumMeter.ID, s.now, 3, nil)
+	s.insertUsage(ctx, s.sumMeter.ID, s.now.Add(-24*time.Hour), 5, nil)
+
+	def := s.timeseriesDef(s.sumMeter.ID)
+	def.Sort = []*analytics.SortSpec{{Field: "not_a_real_column", Dir: types.SortDirectionDesc}}
+	def.Limit = 1
+
+	res, err := s.svc.ExecuteView(ctx, def, s.drVars())
+	s.NoError(err)
+	s.Require().NotNil(res)
+	s.Require().Len(res.Rows, 2, "Limit must not truncate timeseries rows")
 }
 
 // ---------------------------------------------------------------------------
