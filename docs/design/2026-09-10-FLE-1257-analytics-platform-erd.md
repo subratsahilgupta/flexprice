@@ -555,6 +555,16 @@ The metric decides which **source table** the view reads — all of them served 
 
 So every view — usage, revenue, or ledger — executes against CH (B). The money still originates from `revenue_facts` (authored in Postgres, never recomputed as `usage × rate`); serving just reads the synced copy. A view that mixes a usage metric and a revenue metric is a single-store join in CH (B), not a cross-store hop.
 
+### 9.3 Custom metrics — caller-specified aggregation (fast-follow after Phase 2 slice 1)
+
+The built-in usage metrics (`usage_quantity`, `event_count`) aggregate a meter's **pre-materialized** quantity (`qty_total`), i.e. the aggregation is fixed by the meter's config. A **custom metric** lets a view choose the **aggregation and field at query time** — e.g. `AVG(properties.latency)` — independent of any meter's configured aggregation.
+
+- **Model.** A new `custom` value in the metric enum plus a `customMetrics` list of `{name, aggregation, field}`. A view may **mix** built-in and custom metrics; only the `customMetrics` entries are powered by the ad-hoc path. Existing views are unchanged.
+- **Powered over `meter_usage`, billing-decoupled.** The serving layer runs the already-billing-free admin path (no subscription/commitment/entitlement/cost logic) and emits `AGG(JSONExtract…(properties,'field'))` — the same expression pattern the raw-`events` usage engine already uses — instead of the meter's baked `qty_total`. `meter_usage` retains raw `properties`, so this needs no new stored column.
+- **Supported aggregations:** `SUM`, `COUNT`, `MAX`, `AVG`, `LATEST`, `MIN`. **`count_unique` is excluded** — its dedup hash is materialized at ingestion only for a registered `count_unique` meter, so ad-hoc distinct-count isn't possible without pre-materialization. `weighted_sum` / `sum_with_multiplier` / bucketed carry multi-field or bucket-size semantics and are not single-field ad-hoc.
+- **Bounded to registered-meter usage.** `meter_usage` only stores events that matched a registered meter, so a custom metric aggregates *a meter's rows by a caller-chosen field*, not arbitrary meter-free events. Truly meter-free ad-hoc aggregation over arbitrary events is the raw-`events` engine (`GetUsage`), a separate surface not folded in here.
+- **Phasing.** A Phase-1 serving refinement — additive to the translator + `meter_usage` query builder (the detailed-analytics params already carry an aggregation-type hook). Scheduled as a **fast-follow after** the `revenue_facts` write-path (Phase 2, slice 1), not entangled with it.
+
 ---
 
 ## 10. Warehouse export
