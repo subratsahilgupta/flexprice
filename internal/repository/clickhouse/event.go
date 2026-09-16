@@ -1175,6 +1175,7 @@ func (r *EventRepository) ListEventsByID(ctx context.Context, eventID string, li
 		AND id = ?
 		ORDER BY ingested_at DESC
 		LIMIT ?
+		SETTINGS max_memory_usage = 96636764160
 	`
 	args := []interface{}{
 		types.GetTenantID(ctx),
