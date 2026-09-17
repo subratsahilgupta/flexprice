@@ -779,7 +779,6 @@ postgres:
   maxOpenConns: 10
   maxIdleConns: 5
   connMaxLifetimeMinutes: 60
-  autoMigrate: false
   readerHost: "" # Optional: for read replicas
   readerPort: 5432
   # Internal PostgreSQL configuration (when external.enabled=false)

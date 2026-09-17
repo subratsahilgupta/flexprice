@@ -216,6 +216,10 @@ func (c *commitmentCalculator) applyCommitmentToLineItem(
 // commitment math — amount- and quantity-typed commitments only differ in how
 // the commitment money is derived before calling this.
 func computeCommitmentMath(usageCharge, commitmentCharge, overageFactor decimal.Decimal, trueUp bool) (decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal) {
+	if commitmentCharge.IsZero() {
+		return usageCharge, decimal.Zero, decimal.Zero, decimal.Zero
+	}
+
 	if usageCharge.GreaterThanOrEqual(commitmentCharge) {
 		overage := usageCharge.Sub(commitmentCharge).Mul(overageFactor)
 		return commitmentCharge.Add(overage), commitmentCharge, overage, decimal.Zero
@@ -371,9 +375,6 @@ func (c *commitmentCalculator) chargeWindowAtLineItem(
 	liCommit, err := c.normalizeCommitmentToAmount(ctx, lineItem, lineItemPrice)
 	if err != nil {
 		return commitmentParts{}, err
-	}
-	if liCommit.IsZero() {
-		return commitmentParts{charge: baseCharge, utilized: baseCharge}, nil
 	}
 	of := lo.FromPtr(lineItem.CommitmentOverageFactor)
 	charge, util, ov, tu := computeCommitmentMath(baseCharge, liCommit, of, lineItem.CommitmentTrueUpEnabled)
