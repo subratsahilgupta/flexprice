@@ -12,11 +12,14 @@ import (
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
+	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	_ "github.com/lib/pq"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -182,4 +185,47 @@ func TestRevenueFactRepository_ScopedByTenantAndEnvironment(t *testing.T) {
 	n, err := repo.FlipToFinal(ctxTenant2, "sub_"+runID, "price_"+runID, day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), "inv_x", "inv_li_x")
 	require.NoError(t, err)
 	require.Equal(t, 0, n, "flipping from a different tenant must not affect another tenant's rows")
+}
+
+// TestRevenueFactRepository_UpsertProvisionalRejectsEmptyPriceID runs without
+// a real Postgres: it uses testutil.MockPostgresClient, whose WriterDB(ctx)
+// returns nil, to prove the empty-price_id guard in UpsertProvisional runs
+// BEFORE any DB access. If the guard were missing or placed after the
+// WriterDB(ctx) call, this test would panic on a nil *sql.DB instead of
+// returning a validation error.
+func TestRevenueFactRepository_UpsertProvisionalRejectsEmptyPriceID(t *testing.T) {
+	log, err := logger.NewLogger(&config.Configuration{
+		Logging: config.LoggingConfig{Level: types.LogLevelInfo},
+	})
+	require.NoError(t, err)
+
+	repo := NewRevenueFactRepository(testutil.NewMockPostgresClient(log), log)
+	ctx := revenueFactTestContext("tenant_1", "env_1")
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+
+	f := newTestRevenueFact("sub_1", "price_1", day, types.RevenueSourceUsage)
+	f.PriceID = nil
+
+	err = repo.UpsertProvisional(ctx, []*revenuefact.RevenueFact{f})
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+}
+
+func TestRevenueFactRepository_UpsertProvisionalRejectsBlankPriceID(t *testing.T) {
+	log, err := logger.NewLogger(&config.Configuration{
+		Logging: config.LoggingConfig{Level: types.LogLevelInfo},
+	})
+	require.NoError(t, err)
+
+	repo := NewRevenueFactRepository(testutil.NewMockPostgresClient(log), log)
+	ctx := revenueFactTestContext("tenant_1", "env_1")
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+
+	blank := ""
+	f := newTestRevenueFact("sub_1", "price_1", day, types.RevenueSourceUsage)
+	f.PriceID = &blank
+
+	err = repo.UpsertProvisional(ctx, []*revenuefact.RevenueFact{f})
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
 }

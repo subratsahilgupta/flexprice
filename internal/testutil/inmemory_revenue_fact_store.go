@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -65,6 +66,18 @@ var _ revenuefact.Repository = (*InMemoryRevenueFactStore)(nil)
 // always sourcing tenant/environment from ctx (mirroring the RLS guard the
 // raw-SQL repo must apply manually) and bumping Version on conflict.
 func (s *InMemoryRevenueFactStore) UpsertProvisional(ctx context.Context, facts []*revenuefact.RevenueFact) error {
+	// Mirror the Postgres repo's guard: a NULL/empty price_id defeats the
+	// provisional-grain unique index's dedup (Postgres never treats two NULLs
+	// as equal), so reject it before touching the store rather than silently
+	// diverging from Postgres by deduping on price_id == "".
+	for _, f := range facts {
+		if f.PriceID == nil || *f.PriceID == "" {
+			return ierr.NewError("revenue fact requires a non-empty price_id").
+				WithHint("Provisional revenue facts must carry a non-empty price_id").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 

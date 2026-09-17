@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
@@ -139,6 +140,37 @@ func TestInMemoryRevenueFactStore_FlipToFinal(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, stillProvisional, 1)
 	assert.True(t, stillProvisional[0].Day.Equal(day3))
+}
+
+func TestInMemoryRevenueFactStore_UpsertRejectsEmptyPriceID(t *testing.T) {
+	ctx := revenueFactTestCtx("tenant_1", "env_1")
+	s := NewInMemoryRevenueFactStore()
+	day := revenueFactDay("2026-09-11")
+
+	f := sampleRevenueFact("sub_1", "price_1", day, types.RevenueSourceUsage)
+	f.PriceID = nil
+
+	err := s.UpsertProvisional(ctx, []*revenuefact.RevenueFact{f})
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
+
+	got, listErr := s.ListBySubscriptionPeriod(ctx, "sub_1", day, day, types.FactProvisional)
+	require.NoError(t, listErr)
+	assert.Empty(t, got, "no row should be stored when price_id validation fails")
+}
+
+func TestInMemoryRevenueFactStore_UpsertRejectsBlankPriceID(t *testing.T) {
+	ctx := revenueFactTestCtx("tenant_1", "env_1")
+	s := NewInMemoryRevenueFactStore()
+	day := revenueFactDay("2026-09-11")
+
+	blank := ""
+	f := sampleRevenueFact("sub_1", "price_1", day, types.RevenueSourceUsage)
+	f.PriceID = &blank
+
+	err := s.UpsertProvisional(ctx, []*revenuefact.RevenueFact{f})
+	require.Error(t, err)
+	assert.True(t, ierr.IsValidation(err))
 }
 
 func TestInMemoryRevenueFactStore_FlipToFinalOnlyAffectsProvisional(t *testing.T) {

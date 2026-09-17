@@ -67,6 +67,19 @@ func (r *revenueFactRepository) UpsertProvisional(ctx context.Context, facts []*
 		return nil
 	}
 
+	// The provisional-grain unique index includes price_id, and Postgres never
+	// treats two NULLs as equal in a unique constraint, so a NULL price_id
+	// would silently defeat ON CONFLICT dedup and double-write on re-roll. All
+	// slice-1 revenue sources always sit on a price, so require it up front,
+	// before any DB access.
+	for _, f := range facts {
+		if f.PriceID == nil || *f.PriceID == "" {
+			return ierr.NewError("revenue fact requires a non-empty price_id").
+				WithHint("Provisional revenue facts must carry a non-empty price_id").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	now := time.Now().UTC()
