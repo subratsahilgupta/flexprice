@@ -1212,6 +1212,45 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 	}
 
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateFinalized, inv.ID)
+
+	// Async, non-blocking FINAL flip of the revenue_facts shadow rows for this
+	// invoice (see RevenueRollupService.FinalizeSubscriptionPeriod). A bare
+	// goroutine would lose ctx's cancellation and values once this request
+	// returns, so detach with WithoutCancel (same pattern used to survive a
+	// message's context in internal/pubsub/router/router.go) while still
+	// carrying tenant/environment values, bounded by a fresh timeout so a
+	// stuck downstream write can't leak forever. Any error is logged and
+	// swallowed — this is a shadow write-path and must never affect the
+	// finalization result already returned to the caller.
+	go func() {
+		asyncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+		defer cancel()
+		// Belt-and-suspenders: this runs detached from the request, so a panic
+		// here (e.g. a bug in a future rollup change) must never crash the
+		// process — recover and log instead of propagating.
+		defer func() {
+			if r := recover(); r != nil {
+				s.Logger.Error(asyncCtx, "panic in async revenue facts final flip",
+					"error", fmt.Sprintf("%v", r),
+					"invoice_id", inv.ID,
+				)
+			}
+		}()
+
+		if s.RevenueFactRepo == nil {
+			// Not wired in this deployment/test context — nothing to flip.
+			return
+		}
+
+		rollupSvc := NewRevenueRollupService(s.ServiceParams)
+		if err := rollupSvc.FinalizeSubscriptionPeriod(asyncCtx, inv.ID); err != nil {
+			s.Logger.Error(asyncCtx, "async revenue facts final flip failed",
+				"error", err,
+				"invoice_id", inv.ID,
+			)
+		}
+	}()
+
 	return nil
 }
 

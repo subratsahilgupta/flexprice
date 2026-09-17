@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -38,6 +39,13 @@ type RevenueRollupService interface {
 	// updated_at/period-bounds scan — idempotent upsert makes over-rolling
 	// harmless) and tallies how many were rolled vs skipped.
 	RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error)
+
+	// FinalizeSubscriptionPeriod flips the PROVISIONAL revenue_facts rows backing
+	// invoiceID's line items to FINAL, stamping invoice_id/invoice_line_item_id,
+	// then re-asserts reconciliation over the now-FINAL rows (shadow-only: a
+	// mismatch is logged, the flip is never rolled back). Intended to run
+	// asynchronously after invoice finalization — see performFinalizeInvoiceActions.
+	FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error
 }
 
 type revenueRollupService struct {
@@ -199,23 +207,12 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 			// Ruling 2 (S1): the engine emits a fresh random price_id for these rows
 			// on every compute; forwarding it verbatim would make every recompute
 			// INSERT a new provisional row instead of updating one. Derive a stable
-			// synthetic id instead — the real per-line-item id when there is one
-			// (an overage row shares its real usage row's price_id/day otherwise),
-			// falling back to the subscription id for the subscription-aggregate
-			// true-up, which carries no sub_line_item_id at all.
-			stableID := base.SubLineItemID
-			if stableID == "" {
-				stableID = itemSubscriptionID
-			}
-			prefix := "trueup:"
-			if isOverage {
-				prefix = "overage:"
-			}
-			base.Price = &price.Price{ID: prefix + stableID}
+			// synthetic id instead — see stableTrueupPriceID.
+			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, itemSubscriptionID, isOverage)}
 
 			row := decomposeCommitmentTrueup(base, itemPeriod)
 			allRows = append(allRows, row)
-			groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: stableID})
+			groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: base.Price.ID})
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_FIXED):
 			p, hydrateErr := s.getPrice(ctx, priceCache, lo.FromPtr(item.PriceID))
@@ -355,6 +352,107 @@ func (s *revenueRollupService) RollupDirty(ctx context.Context, since time.Time)
 	}
 
 	return rolled, skipped, nil
+}
+
+// finalizePeriodGroup identifies one (subscription, period) grain touched by
+// FinalizeSubscriptionPeriod, used to re-list the FINAL rows for
+// reconciliation after every line item's flip has been issued.
+type finalizePeriodGroup struct {
+	subscriptionID string
+	periodStart    time.Time
+	periodEnd      time.Time
+}
+
+func (s *revenueRollupService) FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error {
+	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
+	if err != nil {
+		return err
+	}
+
+	groupSeen := make(map[string]finalizePeriodGroup)
+
+	for _, li := range inv.LineItems {
+		// Invariant 11: join on the LINE ITEM's own subscription, never the
+		// invoice's — grouped invoicing can bill several child subscriptions on
+		// one invoice, each carrying its own revenue_facts rows.
+		subscriptionID := lo.FromPtr(li.SubscriptionID)
+		periodStart := lo.FromPtr(li.PeriodStart)
+		periodEndExclusive := lo.FromPtr(li.PeriodEnd)
+		if subscriptionID == "" || periodStart.IsZero() || periodEndExclusive.IsZero() {
+			// Non-subscription line items (one-off charges, credits, etc.) never
+			// produced revenue_facts rows in RollupSubscription — nothing to flip.
+			continue
+		}
+		// Ruling 1 (see rollupSubscription): the invoice line item's period end is
+		// half-open/exclusive, same as the preview engine's — convert to the
+		// inclusive day bound revenue_facts rows are keyed/queried on.
+		periodEnd := periodEndExclusive.AddDate(0, 0, -1)
+
+		priceID := lo.FromPtr(li.PriceID)
+		isTrueup := li.Metadata["is_commitment_trueup"] == "true"
+		isOverage := li.Metadata["is_overage"] == "true"
+		if isTrueup || isOverage {
+			// The finalized line item's own price_id is a fresh random one the
+			// engine assigned at compute time (see stableTrueupPriceID) — it will
+			// never match the provisional rows, which were written keyed on the
+			// re-derived stable synthetic id. Re-derive the same id here.
+			priceID = stableTrueupPriceID(lo.FromPtr(li.SubscriptionLineItemID), subscriptionID, isOverage)
+		}
+
+		if _, err := s.RevenueFactRepo.FlipToFinal(ctx, subscriptionID, priceID, periodStart, periodEnd, invoiceID, li.ID); err != nil {
+			return err
+		}
+
+		key := fmt.Sprintf("%s|%d|%d", subscriptionID, periodStart.UnixNano(), periodEnd.UnixNano())
+		groupSeen[key] = finalizePeriodGroup{subscriptionID: subscriptionID, periodStart: periodStart, periodEnd: periodEnd}
+	}
+
+	if len(groupSeen) == 0 {
+		return nil
+	}
+
+	// Ruling 6 (shadow-only): re-assert reconciliation over every row this
+	// invoice actually flipped (rows from another invoice sharing the same
+	// subscription/period window are excluded by the invoice_id filter below).
+	// A mismatch is logged/metriced — never blocks or reverts the flip.
+	var finalRows []*revenuefact.RevenueFact
+	for _, g := range groupSeen {
+		rows, err := s.RevenueFactRepo.ListBySubscriptionPeriod(ctx, g.subscriptionID, g.periodStart, g.periodEnd, types.FactFinal)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			if r.InvoiceID != nil && *r.InvoiceID == invoiceID {
+				finalRows = append(finalRows, r)
+			}
+		}
+	}
+
+	if residual, ok := reconcileInvoice(finalRows, inv.Subtotal.Sub(inv.TotalDiscount)); !ok {
+		s.Logger.Info(ctx, "revenue_reconciliation_mismatch",
+			"scope", "invoice_final", "invoice_id", invoiceID, "residual", residual.String())
+	}
+
+	return nil
+}
+
+// stableTrueupPriceID derives the stable synthetic price_id used for
+// commitment-trueup/overage revenue_facts rows, standing in for the fresh
+// random price_id the billing engine assigns those line items on every
+// compute (Ruling 2). Both the provisional rollup and the FINAL-flip call this
+// so they always agree on which row to touch: the real per-line-item id when
+// there is one, falling back to the subscription id for the
+// subscription-aggregate true-up, which carries no sub_line_item_id at all.
+func stableTrueupPriceID(subLineItemID, subscriptionID string, isOverage bool) string {
+	stableID := subLineItemID
+	if stableID == "" {
+		stableID = subscriptionID
+	}
+	prefix := "trueup:"
+	if isOverage {
+		prefix = "overage:"
+	}
+	return prefix + stableID
 }
 
 func (s *revenueRollupService) getPrice(ctx context.Context, cache map[string]*price.Price, id string) (*price.Price, error) {
