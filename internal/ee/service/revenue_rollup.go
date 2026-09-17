@@ -20,6 +20,7 @@ import (
 const (
 	revenueRollupSkipDiscountUnsupported   = "discount_unsupported"
 	revenueRollupSkipMultiPeriodCommitment = "multi_period_commitment"
+	revenueRollupSkipOverageUnsupported    = "overage_unsupported"
 )
 
 // RevenueRollupService is the linchpin of the revenue_facts shadow write-path:
@@ -115,6 +116,19 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 	if isMultiPeriodCommitment(probe) {
 		s.Logger.Info(ctx, "revenue_rollup_skipped",
 			"reason", revenueRollupSkipMultiPeriodCommitment,
+			"subscription_id", subscriptionID)
+		return true, nil
+	}
+
+	// Fix 1 (S1 review): a single-period commitment that usage EXCEEDS makes the
+	// engine emit a REDUCED within-commitment usage line plus a separate
+	// is_overage line. Decomposing the reduced line via the full curve (no
+	// commitment knowledge) overstates usage and won't reconcile — skip the
+	// whole subscription rather than write wrong rows. Commitment-aware usage
+	// decomposition is a deliberate later slice.
+	if hasOverageLine(invReq) {
+		s.Logger.Info(ctx, "revenue_rollup_skipped",
+			"reason", revenueRollupSkipOverageUnsupported,
 			"subscription_id", subscriptionID)
 		return true, nil
 	}
@@ -287,7 +301,10 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 				"line_item_id", g.identifier, "residual", residual.String())
 		}
 	}
-	if residual, ok := reconcileInvoice(allRows, invReq.Subtotal); !ok {
+	// Fix 4 (S1 review): subtract discounts so this stays correct if the
+	// discount gate above is ever narrowed. A no-op today since hasDiscount
+	// already skips any subscription carrying a discount signal.
+	if residual, ok := reconcileInvoice(allRows, invReq.Subtotal.Sub(invoiceDiscountTotal(invReq))); !ok {
 		s.Logger.Info(ctx, "revenue_reconciliation_mismatch",
 			"scope", "invoice", "subscription_id", subscriptionID, "residual", residual.String())
 	}
@@ -399,6 +416,35 @@ func (s *revenueRollupService) loadAllowancesByMeterID(ctx context.Context, subs
 		allowances[f.Feature.MeterID] = decimal.NewFromInt(*f.Entitlement.UsageLimit)
 	}
 	return allowances, nil
+}
+
+// hasOverageLine reports whether any of invReq's line items is the engine's
+// synthetic overage charge (metadata-flagged) — see the ruling at the Fix-1
+// call site for why the whole subscription is skipped rather than decomposed.
+func hasOverageLine(invReq *dto.CreateInvoiceRequest) bool {
+	for _, li := range invReq.LineItems {
+		if li.Metadata["is_overage"] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+// invoiceDiscountTotal sums the discount amount fields hasDiscount already
+// treats as a (currently unpopulated at this stage) discount signal — see
+// hasDiscount's own comment. Always zero today since a non-zero value here
+// would already have tripped hasDiscount and skipped the subscription.
+func invoiceDiscountTotal(invReq *dto.CreateInvoiceRequest) decimal.Decimal {
+	total := decimal.Zero
+	for _, li := range invReq.LineItems {
+		if li.LineItemDiscount != nil {
+			total = total.Add(*li.LineItemDiscount)
+		}
+		if li.InvoiceLevelDiscount != nil {
+			total = total.Add(*li.InvoiceLevelDiscount)
+		}
+	}
+	return total
 }
 
 // hasDiscount reports whether invReq's preview carries any discount signal —
