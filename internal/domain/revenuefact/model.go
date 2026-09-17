@@ -12,6 +12,7 @@ import (
 type RevenueFact struct {
 	ID string `db:"id" json:"id"`
 
+	TenantID      string `db:"tenant_id" json:"tenant_id"`
 	EnvironmentID string `db:"environment_id" json:"environment_id"`
 
 	CustomerID     string  `db:"customer_id" json:"customer_id"`
@@ -44,8 +45,6 @@ type RevenueFact struct {
 	DecompositionMode types.DecompositionMode `db:"decomposition_mode" json:"decomposition_mode"`
 	Currency          string                  `db:"currency" json:"currency"`
 
-	// Status is this fact row's lifecycle status. Explicit field — does NOT
-	// reuse the embedded BaseModel.Status, which tracks record soft-delete state.
 	Status types.FactStatus `db:"status" json:"status"`
 
 	IsRevert bool `db:"is_revert" json:"is_revert"`
@@ -57,6 +56,4 @@ type RevenueFact struct {
 
 	ComputedAt time.Time `db:"computed_at" json:"computed_at"`
 	Version    int64     `db:"version" json:"version"`
-
-	types.BaseModel
 }

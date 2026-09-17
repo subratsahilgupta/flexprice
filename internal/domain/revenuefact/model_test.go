@@ -15,6 +15,7 @@ func TestRevenueFact_Fields(t *testing.T) {
 
 	f := &RevenueFact{
 		ID:                "rf_1",
+		TenantID:          "tenant_1",
 		EnvironmentID:     "env_1",
 		CustomerID:        "cust_1",
 		SubscriptionID:    "sub_1",
@@ -36,8 +37,8 @@ func TestRevenueFact_Fields(t *testing.T) {
 	assert.NoError(t, f.Status.Validate())
 	assert.Equal(t, "price_123", *f.PriceID)
 
-	// Status is an explicit FactStatus field distinct from the embedded
-	// BaseModel.Status (which defaults to the zero value here).
+	assert.Equal(t, "tenant_1", f.TenantID)
 	assert.Equal(t, types.FactProvisional, f.Status)
-	assert.Equal(t, types.Status(""), f.BaseModel.Status)
+	assert.Equal(t, now, f.ComputedAt)
+	assert.Equal(t, int64(1), f.Version)
 }
