@@ -1,0 +1,421 @@
+package service
+
+import (
+	"context"
+	"time"
+
+	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
+)
+
+// Skip reasons logged/metriced by RollupSubscription. Slice-1 scope excludes
+// discounted invoices (decomposition doesn't split discounts yet) and
+// multi-period commitments (the true-up can't be attributed to one period).
+const (
+	revenueRollupSkipDiscountUnsupported   = "discount_unsupported"
+	revenueRollupSkipMultiPeriodCommitment = "multi_period_commitment"
+)
+
+// RevenueRollupService is the linchpin of the revenue_facts shadow write-path:
+// preview -> curve -> decompose -> reconcile -> upsert. It never mutates
+// billing state — PrepareSubscriptionInvoiceRequest is non-mutating, and
+// reconciliation mismatches are only logged, never blocking the write.
+type RevenueRollupService interface {
+	// RollupSubscription previews subscription's current open period, decomposes
+	// every line item into revenue_facts rows, and upserts them as PROVISIONAL.
+	// Discounted and multi-period-commitment subscriptions are skipped (logged,
+	// nil error) rather than partially/incorrectly decomposed.
+	RollupSubscription(ctx context.Context, subscriptionID string) error
+
+	// RollupDirty rolls every subscription with activity since `since` (a coarse
+	// updated_at/period-bounds scan — idempotent upsert makes over-rolling
+	// harmless) and tallies how many were rolled vs skipped.
+	RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error)
+}
+
+type revenueRollupService struct {
+	ServiceParams
+}
+
+// NewRevenueRollupService constructs the rollup service from the shared
+// service dependencies (repos, logger) — no dependencies beyond ServiceParams.
+func NewRevenueRollupService(params ServiceParams) RevenueRollupService {
+	return &revenueRollupService{ServiceParams: params}
+}
+
+// lineItemRows is one preview line item's decomposed rows, kept together for
+// reconcileLineItem and for reconciliation logging.
+type lineItemRows struct {
+	rows       []*revenuefact.RevenueFact
+	amount     decimal.Decimal
+	identifier string
+}
+
+func (s *revenueRollupService) RollupSubscription(ctx context.Context, subscriptionID string) error {
+	_, err := s.rollupSubscription(ctx, subscriptionID)
+	return err
+}
+
+// rollupSubscription is the real implementation; it additionally reports
+// whether the subscription was skipped by policy (discount/multi-period),
+// which RollupDirty needs for its rolled/skipped tally but the public
+// RollupSubscription signature (fixed by the interface) cannot carry.
+func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscriptionID string) (skipped bool, err error) {
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return false, err
+	}
+
+	periodStart := sub.CurrentPeriodStart
+	periodEnd := sub.CurrentPeriodEnd
+
+	billingSvc := NewBillingService(s.ServiceParams)
+	invReq, err := billingSvc.PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription:   sub,
+		PeriodStart:    periodStart,
+		PeriodEnd:      periodEnd,
+		ReferencePoint: types.ReferencePointPreview,
+	})
+	if err != nil {
+		return false, err
+	}
+
+	if len(invReq.LineItems) == 0 {
+		return false, nil
+	}
+
+	// Ruling 4: PrepareSubscriptionInvoiceRequest does not resolve coupon discount
+	// amounts onto the DTO line items (that happens later, in the invoice-assembly/
+	// coupon-application path this rollup never invokes) — so the earliest reliable
+	// discount signal here is the coupon reference lists it does populate, plus any
+	// discount amount that IS already set. Treating either as "carries a discount"
+	// is a conservative superset: it may skip a sub whose coupon nets to $0, but it
+	// never lets a genuinely discounted invoice through undecomposed.
+	if hasDiscount(invReq) {
+		s.Logger.Info(ctx, "revenue_rollup_skipped",
+			"reason", revenueRollupSkipDiscountUnsupported,
+			"subscription_id", subscriptionID)
+		return true, nil
+	}
+
+	// Ruling 5: CommitmentAmount/CommitmentDuration/OverageFactor/BillingPeriod are
+	// subscription-wide, so one probe line item covers every real line item.
+	probe := PreviewLineItem{
+		CommitmentAmount:   sub.CommitmentAmount,
+		CommitmentDuration: sub.CommitmentDuration,
+		OverageFactor:      sub.OverageFactor,
+		BillingPeriod:      sub.BillingPeriod,
+	}
+	if isMultiPeriodCommitment(probe) {
+		s.Logger.Info(ctx, "revenue_rollup_skipped",
+			"reason", revenueRollupSkipMultiPeriodCommitment,
+			"subscription_id", subscriptionID)
+		return true, nil
+	}
+
+	priceCache := map[string]*price.Price{}
+	meterCache := map[string]*meter.Meter{}
+	allowanceCache := map[string]decimal.Decimal{}
+	var allowanceErr error
+	var allowanceLoaded bool
+
+	resolveAllowance := func(meterID string) (decimal.Decimal, error) {
+		if !allowanceLoaded {
+			allowanceLoaded = true
+			allowanceCache, allowanceErr = s.loadAllowancesByMeterID(ctx, subscriptionID)
+		}
+		if allowanceErr != nil {
+			return decimal.Zero, allowanceErr
+		}
+		return allowanceCache[meterID], nil
+	}
+
+	var allRows []*revenuefact.RevenueFact
+	var groups []lineItemRows
+
+	for i := range invReq.LineItems {
+		item := &invReq.LineItems[i]
+
+		itemPeriodStart := lo.FromPtr(item.PeriodStart)
+		if itemPeriodStart.IsZero() {
+			itemPeriodStart = periodStart
+		}
+		itemPeriodEndExclusive := lo.FromPtr(item.PeriodEnd)
+		if itemPeriodEndExclusive.IsZero() {
+			itemPeriodEndExclusive = periodEnd
+		}
+		// Ruling 1: the engine's line item period end is half-open/exclusive; every
+		// internal type here (RevenuePeriod, PreviewLineItem.PeriodEnd) is inclusive
+		// of the last calendar day, so convert once at the boundary.
+		itemPeriod := RevenuePeriod{Start: itemPeriodStart, End: itemPeriodEndExclusive.AddDate(0, 0, -1)}
+
+		itemSubscriptionID := sub.ID
+		if item.SubscriptionID != nil && *item.SubscriptionID != "" {
+			itemSubscriptionID = *item.SubscriptionID
+		}
+		itemCustomerID := sub.CustomerID
+		if childID, ok := item.Metadata[string(types.InvoiceLineItemMetadataKeyChildCustomerID)]; ok && childID != "" {
+			itemCustomerID = childID
+		}
+
+		base := PreviewLineItem{
+			TenantID:       sub.TenantID,
+			EnvironmentID:  sub.EnvironmentID,
+			CustomerID:     itemCustomerID,
+			SubscriptionID: itemSubscriptionID,
+			SubLineItemID:  lo.FromPtr(item.SubscriptionLineItemID),
+			Currency:       sub.Currency,
+			Metadata:       item.Metadata,
+			EngineAmount:   item.Amount,
+			PeriodStart:    itemPeriod.Start,
+			PeriodEnd:      itemPeriod.End,
+		}
+
+		isTrueup := item.Metadata["is_commitment_trueup"] == "true"
+		isOverage := item.Metadata["is_overage"] == "true"
+
+		switch {
+		case isTrueup || isOverage:
+			// Ruling 2 (S1): the engine emits a fresh random price_id for these rows
+			// on every compute; forwarding it verbatim would make every recompute
+			// INSERT a new provisional row instead of updating one. Derive a stable
+			// synthetic id instead — the real per-line-item id when there is one
+			// (an overage row shares its real usage row's price_id/day otherwise),
+			// falling back to the subscription id for the subscription-aggregate
+			// true-up, which carries no sub_line_item_id at all.
+			stableID := base.SubLineItemID
+			if stableID == "" {
+				stableID = itemSubscriptionID
+			}
+			prefix := "trueup:"
+			if isOverage {
+				prefix = "overage:"
+			}
+			base.Price = &price.Price{ID: prefix + stableID}
+
+			row := decomposeCommitmentTrueup(base, itemPeriod)
+			allRows = append(allRows, row)
+			groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: stableID})
+
+		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_FIXED):
+			p, hydrateErr := s.getPrice(ctx, priceCache, lo.FromPtr(item.PriceID))
+			if hydrateErr != nil {
+				return false, ierr.WithError(hydrateErr).
+					WithHint("failed to hydrate price for fixed line item").
+					Mark(ierr.ErrSystem)
+			}
+			base.Price = p
+			if row := decomposeFixed(base, itemPeriod); row != nil {
+				allRows = append(allRows, row)
+				groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: lo.FromPtr(item.PriceID)})
+			}
+
+		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE):
+			// Ruling 3 (S2): a usage line item whose price or meter fails to
+			// hydrate is a hard error — never let decompositionMode(nil, nil)
+			// silently default to Marginal.
+			p, hydrateErr := s.getPrice(ctx, priceCache, lo.FromPtr(item.PriceID))
+			if hydrateErr != nil {
+				return false, ierr.WithError(hydrateErr).
+					WithHint("failed to hydrate price for usage line item").
+					WithReportableDetails(map[string]any{"price_id": lo.FromPtr(item.PriceID), "subscription_id": subscriptionID}).
+					Mark(ierr.ErrSystem)
+			}
+			m, hydrateErr := s.getMeter(ctx, meterCache, lo.FromPtr(item.MeterID))
+			if hydrateErr != nil {
+				return false, ierr.WithError(hydrateErr).
+					WithHint("failed to hydrate meter for usage line item").
+					WithReportableDetails(map[string]any{"meter_id": lo.FromPtr(item.MeterID), "subscription_id": subscriptionID}).
+					Mark(ierr.ErrSystem)
+			}
+			base.Price = p
+			base.Meter = m
+
+			var rows []*revenuefact.RevenueFact
+			switch decompositionMode(p, m) {
+			case types.Marginal:
+				allowance, allowErr := resolveAllowance(m.ID)
+				if allowErr != nil {
+					return false, allowErr
+				}
+				curve, curveErr := NewRevenueCurveService(s.ServiceParams).BuildUsageCurve(ctx, LineItemPricingInput{
+					Price:       p,
+					MeterID:     m.ID,
+					PeriodStart: itemPeriod.Start,
+					// Ruling 1, inverse direction: BuildUsageCurve's bound is exclusive.
+					PeriodEnd: itemPeriod.End.AddDate(0, 0, 1),
+					Allowance: allowance,
+					Timezone:  sub.Timezone,
+				})
+				if curveErr != nil {
+					return false, curveErr
+				}
+				rows = decomposeUsageMarginal(base, curve)
+			default:
+				rows = []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
+			}
+			allRows = append(allRows, rows...)
+			groups = append(groups, lineItemRows{rows: rows, amount: item.Amount, identifier: lo.FromPtr(item.PriceID)})
+
+		default:
+			s.Logger.Info(ctx, "revenue_rollup_line_item_skipped",
+				"subscription_id", subscriptionID,
+				"price_type", lo.FromPtr(item.PriceType),
+				"sub_line_item_id", base.SubLineItemID)
+		}
+	}
+
+	// Ruling 6: reconciliation is shadow-only. A mismatch is logged/metriced —
+	// never blocks the write, and billing itself is never touched.
+	for _, g := range groups {
+		for _, row := range g.rows {
+			if residual, ok := reconcileRow(row); !ok {
+				s.Logger.Info(ctx, "revenue_reconciliation_mismatch",
+					"scope", "row", "subscription_id", subscriptionID,
+					"fact_id", row.ID, "day", row.Day, "residual", residual.String())
+			}
+		}
+		if residual, ok := reconcileLineItem(g.rows, g.amount); !ok {
+			s.Logger.Info(ctx, "revenue_reconciliation_mismatch",
+				"scope", "line_item", "subscription_id", subscriptionID,
+				"line_item_id", g.identifier, "residual", residual.String())
+		}
+	}
+	if residual, ok := reconcileInvoice(allRows, invReq.Subtotal); !ok {
+		s.Logger.Info(ctx, "revenue_reconciliation_mismatch",
+			"scope", "invoice", "subscription_id", subscriptionID, "residual", residual.String())
+	}
+
+	if len(allRows) == 0 {
+		return false, nil
+	}
+
+	// Ruling 7: PROVISIONAL status and a non-empty price_id on every row are
+	// enforced by the four decompose* constructors and the S1 stable-id
+	// substitution above; UpsertProvisional bumps version on a repeat call
+	// against the same grain instead of inserting a duplicate.
+	if err := s.RevenueFactRepo.UpsertProvisional(ctx, allRows); err != nil {
+		return false, err
+	}
+
+	return false, nil
+}
+
+func (s *revenueRollupService) RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive}
+	subs, err := s.SubRepo.ListAll(ctx, filter)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	for _, sub := range subs {
+		if sub.UpdatedAt.Before(since) && sub.CurrentPeriodStart.Before(since) && sub.CurrentPeriodEnd.Before(since) {
+			continue
+		}
+
+		wasSkipped, rollErr := s.rollupSubscription(ctx, sub.ID)
+		if rollErr != nil {
+			// Shadow write-path: one subscription's failure must never abort the
+			// batch. Logged loud (never silent), tallied as skipped since it did
+			// not produce rows.
+			s.Logger.Error(ctx, "revenue rollup failed for subscription",
+				"error", rollErr, "subscription_id", sub.ID)
+			skipped++
+			continue
+		}
+		if wasSkipped {
+			skipped++
+			continue
+		}
+		rolled++
+	}
+
+	return rolled, skipped, nil
+}
+
+func (s *revenueRollupService) getPrice(ctx context.Context, cache map[string]*price.Price, id string) (*price.Price, error) {
+	if id == "" {
+		return nil, ierr.NewError("price id is required").
+			WithHint("cannot hydrate a price with an empty id").
+			Mark(ierr.ErrValidation)
+	}
+	if p, ok := cache[id]; ok {
+		return p, nil
+	}
+	p, err := s.PriceRepo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	cache[id] = p
+	return p, nil
+}
+
+func (s *revenueRollupService) getMeter(ctx context.Context, cache map[string]*meter.Meter, id string) (*meter.Meter, error) {
+	if id == "" {
+		return nil, ierr.NewError("meter id is required").
+			WithHint("cannot hydrate a meter with an empty id").
+			Mark(ierr.ErrValidation)
+	}
+	if m, ok := cache[id]; ok {
+		return m, nil
+	}
+	m, err := s.MeterRepo.GetMeter(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	cache[id] = m
+	return m, nil
+}
+
+// loadAllowancesByMeterID resolves every metered entitlement's usage limit for
+// subscriptionID, keyed by meter id — the allowance BuildUsageCurve needs to
+// derive CumulativeEntitlementQty/EntitlementCredit, which the preview engine's
+// own AdjustedEntitlementQuantity (already net of the allowance) can't supply.
+func (s *revenueRollupService) loadAllowancesByMeterID(ctx context.Context, subscriptionID string) (map[string]decimal.Decimal, error) {
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	agg, err := subscriptionService.GetAggregatedSubscriptionEntitlements(ctx, subscriptionID, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	allowances := make(map[string]decimal.Decimal)
+	for _, f := range agg.Features {
+		if f.Feature == nil || f.Entitlement == nil {
+			continue
+		}
+		if types.FeatureType(f.Feature.Type) != types.FeatureTypeMetered || f.Feature.MeterID == "" {
+			continue
+		}
+		if !f.Entitlement.IsEnabled || f.Entitlement.UsageLimit == nil {
+			continue
+		}
+		allowances[f.Feature.MeterID] = decimal.NewFromInt(*f.Entitlement.UsageLimit)
+	}
+	return allowances, nil
+}
+
+// hasDiscount reports whether invReq's preview carries any discount signal —
+// see the ruling-4 comment at its call site for why the coupon reference
+// lists are the reliable signal here, not the (unpopulated at this stage)
+// LineItemDiscount/InvoiceLevelDiscount amounts.
+func hasDiscount(invReq *dto.CreateInvoiceRequest) bool {
+	if len(invReq.InvoiceCoupons) > 0 || len(invReq.LineItemCoupons) > 0 {
+		return true
+	}
+	for _, li := range invReq.LineItems {
+		if li.LineItemDiscount != nil && !li.LineItemDiscount.IsZero() {
+			return true
+		}
+		if li.InvoiceLevelDiscount != nil && !li.InvoiceLevelDiscount.IsZero() {
+			return true
+		}
+	}
+	return false
+}
