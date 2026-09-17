@@ -657,3 +657,37 @@ func (qb *MeterUsageQueryBuilder) BuildDetailedPointsQuery(
 
 	return query, args
 }
+
+// BuildCumulativeDailyUsageQuery builds a per-day SUM(qty_total) query for a
+// single meter over [StartTime, EndTime], tenant/env-scoped. Reuses
+// BuildDetailedWhereClause for RLS and BuildFinalClause for FINAL handling so
+// tenant/env injection and dedup semantics match the rest of the engine.
+// The repo method (GetCumulativeDailyUsage) rolls the per-day sums this query
+// returns into the running cumulative total.
+func (qb *MeterUsageQueryBuilder) BuildCumulativeDailyUsageQuery(params *events.CumulativeDailyUsageParams) (string, []interface{}) {
+	tz := normalizeCHTimezone(params.Timezone)
+	dayExpr := fmt.Sprintf("toStartOfDay(timestamp, '%s')", tz)
+
+	detailedParams := &events.MeterUsageDetailedAnalyticsParams{
+		TenantID:      params.TenantID,
+		EnvironmentID: params.EnvironmentID,
+		MeterIDs:      []string{params.MeterID},
+		StartTime:     params.StartTime,
+		EndTime:       params.EndTime,
+	}
+	where, args := qb.BuildDetailedWhereClause(detailedParams)
+	finalClause, settings := qb.BuildFinalClause(params.UseFinal)
+
+	query := fmt.Sprintf(`
+		SELECT
+			%s AS day,
+			SUM(qty_total) AS day_qty
+		FROM meter_usage %s
+		WHERE %s
+		GROUP BY day
+		ORDER BY day ASC
+		%s
+	`, dayExpr, finalClause, where, settings)
+
+	return query, args
+}

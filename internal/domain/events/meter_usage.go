@@ -147,6 +147,27 @@ type MeterUsageDetailedPoint struct {
 	EventCount       uint64
 }
 
+// DailyUsagePoint is one day's cumulative running quantity through that day,
+// produced by the windowed cumulative-daily-usage read.
+type DailyUsagePoint struct {
+	Day           time.Time
+	CumulativeQty decimal.Decimal
+}
+
+// CumulativeDailyUsageParams defines filters for the windowed cumulative-daily-usage
+// read: per-day SUM(qty_total) over [StartTime, EndTime] for a single meter, rolled
+// into a running total.
+type CumulativeDailyUsageParams struct {
+	TenantID      string
+	EnvironmentID string
+	MeterID       string
+	StartTime     time.Time
+	EndTime       time.Time
+	UseFinal      bool
+	// Timezone is the IANA timezone used to bucket days. Empty falls back to UTC.
+	Timezone string
+}
+
 // MeterUsageRepository defines read/write operations on the meter_usage ClickHouse table
 type MeterUsageRepository interface {
 	// BulkInsertMeterUsage inserts multiple meter usage records in batches
@@ -194,4 +215,9 @@ type MeterUsageRepository interface {
 
 	// GetByEventID returns the meter_usage record for a single event, or nil if not yet processed.
 	GetByEventID(ctx context.Context, tenantID, environmentID, eventID string) (*MeterUsage, error)
+
+	// GetCumulativeDailyUsage returns the running cumulative SUM(qty_total) through
+	// each day in [StartTime, EndTime] for a single meter. Used by the revenue-facts
+	// curve helper to derive per-day cumulative billable usage.
+	GetCumulativeDailyUsage(ctx context.Context, params *CumulativeDailyUsageParams) ([]DailyUsagePoint, error)
 }
