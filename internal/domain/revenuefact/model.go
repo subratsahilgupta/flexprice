@@ -1,0 +1,62 @@
+package revenuefact
+
+import (
+	"time"
+
+	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
+)
+
+// RevenueFact is one row of the revenue_facts table: a day-grain slice of
+// recognized/provisional revenue for a subscription line item.
+type RevenueFact struct {
+	ID string `db:"id" json:"id"`
+
+	EnvironmentID string `db:"environment_id" json:"environment_id"`
+
+	CustomerID     string  `db:"customer_id" json:"customer_id"`
+	SubscriptionID string  `db:"subscription_id" json:"subscription_id"`
+	SubLineItemID  *string `db:"sub_line_item_id" json:"sub_line_item_id,omitempty"`
+	PriceID        *string `db:"price_id" json:"price_id,omitempty"`
+	MeterID        *string `db:"meter_id" json:"meter_id,omitempty"`
+
+	AggregationType *string             `db:"aggregation_type" json:"aggregation_type,omitempty"`
+	RevenueSource   types.RevenueSource `db:"revenue_source" json:"revenue_source"`
+
+	PeriodStart time.Time `db:"period_start" json:"period_start"`
+	PeriodEnd   time.Time `db:"period_end" json:"period_end"`
+	Day         time.Time `db:"day" json:"day"`
+
+	ServiceStart *time.Time `db:"service_start" json:"service_start,omitempty"`
+	ServiceEnd   *time.Time `db:"service_end" json:"service_end,omitempty"`
+
+	RecognitionMethod *string `db:"recognition_method" json:"recognition_method,omitempty"`
+
+	UsageAtListRate   decimal.Decimal `db:"usage_at_list_rate" json:"usage_at_list_rate"`
+	TierDelta         decimal.Decimal `db:"tier_delta" json:"tier_delta"`
+	EntitlementCredit decimal.Decimal `db:"entitlement_credit" json:"entitlement_credit"`
+	LineDiscount      decimal.Decimal `db:"line_discount" json:"line_discount"`
+	InvoiceDiscount   decimal.Decimal `db:"invoice_discount" json:"invoice_discount"`
+	NetAmount         decimal.Decimal `db:"net_amount" json:"net_amount"`
+	BillableQty       decimal.Decimal `db:"billable_qty" json:"billable_qty"`
+	EntitlementQty    decimal.Decimal `db:"entitlement_qty" json:"entitlement_qty"`
+
+	DecompositionMode types.DecompositionMode `db:"decomposition_mode" json:"decomposition_mode"`
+	Currency          string                  `db:"currency" json:"currency"`
+
+	// Status is this fact row's lifecycle status. Explicit field — does NOT
+	// reuse the embedded BaseModel.Status, which tracks record soft-delete state.
+	Status types.FactStatus `db:"status" json:"status"`
+
+	IsRevert bool `db:"is_revert" json:"is_revert"`
+
+	InvoiceID         *string `db:"invoice_id" json:"invoice_id,omitempty"`
+	InvoiceLineItemID *string `db:"invoice_line_item_id" json:"invoice_line_item_id,omitempty"`
+
+	LockAdjustedDay *time.Time `db:"lock_adjusted_day" json:"lock_adjusted_day,omitempty"`
+
+	ComputedAt time.Time `db:"computed_at" json:"computed_at"`
+	Version    int64     `db:"version" json:"version"`
+
+	types.BaseModel
+}
