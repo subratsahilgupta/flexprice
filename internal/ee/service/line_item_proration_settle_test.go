@@ -4,12 +4,13 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
-// Settle is additive in this PR — no caller uses it yet — so these tests are what prove the
-// netted path works before C3/C4/C5 route the four settlement sites onto it.
+// Settle is the single settlement path: every proration document — preview, issued invoice,
+// wallet credit and the pay-first draft — is raised here. These tests pin all four modes.
 
 // mixedQuote is the swap that nets to zero today: 13.33 charged and 13.33 credited.
 func (s *LineItemProrationServiceSuite) mixedQuote(effectiveDate time.Time) (*LineItemProrationSummary, *LineItemProrationRequest) {
@@ -35,6 +36,49 @@ func (s *LineItemProrationServiceSuite) mixedQuote(effectiveDate time.Time) (*Li
 	quote, err := s.svc.Compute(s.GetContext(), req)
 	s.Require().NoError(err)
 	return quote, &req
+}
+
+// secondLineItem gives the suite a second removable line so a single Compute can yield
+// both a charge and a credit — the mixed quote netting turns into one document.
+func (s *LineItemProrationServiceSuite) secondLineItem() *subscription.SubscriptionLineItem {
+	ctx := s.GetContext()
+	item := &subscription.SubscriptionLineItem{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+		SubscriptionID: s.td.sub.ID,
+		CustomerID:     s.td.sub.CustomerID,
+		PriceID:        s.td.fixedPrice.ID,
+		PriceType:      types.PRICE_TYPE_FIXED,
+		DisplayName:    "Outgoing Addon",
+		Quantity:       decimal.NewFromInt(1),
+		Currency:       "usd",
+		BillingPeriod:  types.BILLING_PERIOD_MONTHLY,
+		InvoiceCadence: types.InvoiceCadenceAdvance,
+		StartDate:      s.td.periodStart,
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, item))
+	return item
+}
+
+func (s *LineItemProrationServiceSuite) invoiceCount() int {
+	invoices, err := s.GetStores().InvoiceRepo.List(s.GetContext(), &types.InvoiceFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+	})
+	s.Require().NoError(err)
+	return len(invoices)
+}
+
+func (s *LineItemProrationServiceSuite) walletBalance() decimal.Decimal {
+	wallets, err := s.GetStores().WalletRepo.GetWalletsByFilter(s.GetContext(), &types.WalletFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+	})
+	s.Require().NoError(err)
+
+	total := decimal.Zero
+	for _, w := range wallets {
+		total = total.Add(w.Balance)
+	}
+	return total
 }
 
 // applyViaSettle is what the production callers now do: Compute, then Settle the net as one
@@ -218,15 +262,36 @@ func (s *LineItemProrationServiceSuite) TestSettle_Draft_RejectsNonPositiveNet()
 	s.Require().Error(err)
 }
 
-func (s *LineItemProrationServiceSuite) TestSettle_RejectsMissingDisplayName() {
+// A malformed request must be rejected before anything is written. The mode case matters
+// most: an unrecognised mode used to fall through to Issue and raise a real invoice.
+func (s *LineItemProrationServiceSuite) TestSettle_RejectsInvalidRequest() {
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
-
 	quote, _ := s.mixedQuote(effectiveDate)
-	req := s.settleReq(quote, effectiveDate, SettleModeIssue)
-	req.DisplayName = ""
 
-	_, err := s.svc.Settle(s.GetContext(), req)
-	s.Require().Error(err)
+	cases := map[string]func(*SettleProrationRequest){
+		"missing display name": func(r *SettleProrationRequest) { r.DisplayName = "" },
+		"missing subscription": func(r *SettleProrationRequest) { r.Subscription = nil },
+		"missing quote":        func(r *SettleProrationRequest) { r.Quote = nil },
+		"unknown mode":         func(r *SettleProrationRequest) { r.Mode = SettleMode(99) },
+	}
+
+	for name, mangle := range cases {
+		s.Run(name, func() {
+			invoicesBefore := s.invoiceCount()
+
+			req := s.settleReq(quote, effectiveDate, SettleModeIssue)
+			mangle(req)
+
+			_, err := s.svc.Settle(s.GetContext(), req)
+			s.Require().Error(err)
+			s.Equal(invoicesBefore, s.invoiceCount(), "a rejected request writes nothing")
+		})
+	}
+
+	s.Run("nil request", func() {
+		_, err := s.svc.Settle(s.GetContext(), nil)
+		s.Require().Error(err)
+	})
 }
 
 func (s *LineItemProrationServiceSuite) TestMerge_SumsBucketsAndLines() {

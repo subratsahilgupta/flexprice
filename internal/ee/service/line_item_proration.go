@@ -87,6 +87,8 @@ func (s *LineItemProrationSummary) NetAmount() decimal.Decimal {
 	return s.TotalChargeAmount.Sub(s.TotalCreditAmount)
 }
 
+// SettleMode selects how a settlement is raised. The zero value is SettleModePreview, so an
+// unset mode writes nothing rather than charging.
 type SettleMode int
 
 const (
@@ -95,6 +97,8 @@ const (
 	SettleModeDraft                     // pay-first: a DRAFT invoice to collect against
 )
 
+// SettleProrationRequest is one already-computed quote about to be turned into money.
+// Build it with NewSettleProrationRequest.
 type SettleProrationRequest struct {
 	Subscription *subscription.Subscription
 	Quote        *LineItemProrationSummary
@@ -140,9 +144,45 @@ func NewSettleProrationRequest(
 	}
 }
 
+// SettleProrationResult is what a settlement raised: the changed documents, or the draft a
+// pay-first checkout will collect against.
 type SettleProrationResult struct {
 	Changed []dto.ChangedInvoice
 	Draft   *dto.InvoiceResponse // set only for SettleModeDraft
+}
+
+// validate rejects a request that cannot produce a correct document. An unrecognised mode is
+// an error rather than a default, so a miscast value can never fall through to a real charge.
+func (r *SettleProrationRequest) validate() error {
+	if r == nil {
+		return ierr.NewError("settlement request is required").Mark(ierr.ErrValidation)
+	}
+	if r.Subscription == nil {
+		return ierr.NewError("settlement subscription is required").
+			WithHint("A proration document must belong to a subscription").
+			Mark(ierr.ErrValidation)
+	}
+	if r.Quote == nil {
+		return ierr.NewError("settlement quote is required").
+			WithHint("Compute the proration before settling it").
+			Mark(ierr.ErrValidation)
+	}
+	if r.DisplayName == "" {
+		return ierr.NewError("settlement display name is required").
+			WithHint("Every proration document must be titled by its caller").
+			Mark(ierr.ErrValidation)
+	}
+
+	switch r.Mode {
+	case SettleModePreview, SettleModeIssue, SettleModeDraft:
+	default:
+		return ierr.NewError("unknown settle mode").
+			WithHint("Settle mode must be preview, issue or draft").
+			WithReportableDetails(map[string]any{"mode": int(r.Mode)}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
 }
 
 type LineItemProrationService interface {
@@ -247,17 +287,20 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 }
 
 func (s *lineItemProrationService) Settle(ctx context.Context, req *SettleProrationRequest) (*SettleProrationResult, error) {
-	if req == nil {
-		return nil, ierr.NewError("settlement request is required").Mark(ierr.ErrValidation)
-	}
-	if req.DisplayName == "" {
-		return nil, ierr.NewError("settlement display name is required").
-			WithHint("Every proration document must be titled by its caller").
-			Mark(ierr.ErrValidation)
+	if err := req.validate(); err != nil {
+		return nil, err
 	}
 
 	result := &SettleProrationResult{Changed: make([]dto.ChangedInvoice, 0, 1)}
 	net := req.Quote.NetAmount()
+
+	// Pay-first has nothing to collect unless the batch nets positive; the caller must fall
+	// through and apply immediately rather than open a checkout.
+	if req.Mode == SettleModeDraft && !net.IsPositive() {
+		return nil, ierr.NewError("no proration charge to collect via checkout").
+			WithHint("Expected a positive proration charge").
+			Mark(ierr.ErrValidation)
+	}
 
 	switch {
 	case net.IsPositive():
@@ -289,7 +332,7 @@ func (s *lineItemProrationService) Settle(ctx context.Context, req *SettleProrat
 			}
 			result.Draft = inv
 
-		default:
+		case SettleModeIssue:
 			inv, err := s.issueInvoice(ctx, invoiceReq, req.AttemptPayment)
 			if err != nil {
 				return nil, err
@@ -303,22 +346,11 @@ func (s *lineItemProrationService) Settle(ctx context.Context, req *SettleProrat
 		}
 
 	case net.IsNegative():
-		if req.Mode == SettleModeDraft {
-			return nil, ierr.NewError("no proration charge to collect via checkout").
-				WithHint("Expected a positive proration charge").
-				Mark(ierr.ErrValidation)
-		}
-
 		credit, err := s.creditWallet(ctx, req, net.Abs())
 		if err != nil {
 			return nil, err
 		}
 		result.Changed = append(result.Changed, credit)
-
-	case req.Mode == SettleModeDraft:
-		return nil, ierr.NewError("no proration charge to collect via checkout").
-			WithHint("Expected a positive proration charge").
-			Mark(ierr.ErrValidation)
 	}
 
 	return result, nil

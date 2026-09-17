@@ -5848,7 +5848,7 @@ func addonPeriodEndForStartDate(sub *subscription.Subscription, startDate time.T
 	return p.End, nil
 }
 
-func (s *subscriptionService) addonProrationEntries(
+func (s *subscriptionService) buildAddonProrationEntries(
 	ctx context.Context,
 	lineItems []*subscription.SubscriptionLineItem,
 	action types.ProrationAction,
