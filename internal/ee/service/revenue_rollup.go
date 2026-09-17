@@ -260,7 +260,7 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 					MeterID:     m.ID,
 					PeriodStart: itemPeriod.Start,
 					// Ruling 1, inverse direction: BuildUsageCurve's bound is exclusive.
-					PeriodEnd: itemPeriod.End.AddDate(0, 0, 1),
+					PeriodEnd: itemPeriod.ExclusiveEnd(),
 					Allowance: allowance,
 					Timezone:  sub.Timezone,
 				})

@@ -12,6 +12,11 @@ import (
 // validMeterUsageGroupByPattern matches safe property names (alphanumeric, underscores, dots).
 var validMeterUsageGroupByPattern = regexp.MustCompile(`^[A-Za-z0-9_.]+$`)
 
+// maxMemoryUsageSetting mirrors the inline 90GB bound used by
+// GetEarliestUsageTimestamp/GetMeterUsageForExport/GetByEventID in
+// meter_usage.go (AGENTS.md: every ClickHouse query bounded by 90GB).
+const maxMemoryUsageSetting = "max_memory_usage = 96636764160"
+
 // BucketedGroupByDim describes one group_by dimension supported by the bucketed
 // query: "source" and "properties.X" only. Public so the repo's scan code can
 // read the alias / property name without re-parsing the input.
@@ -676,7 +681,12 @@ func (qb *MeterUsageQueryBuilder) BuildCumulativeDailyUsageQuery(params *events.
 		EndTime:       params.EndTime,
 	}
 	where, args := qb.BuildDetailedWhereClause(detailedParams)
-	finalClause, settings := qb.BuildFinalClause(params.UseFinal)
+	finalClause, finalSettings := qb.BuildFinalClause(params.UseFinal)
+
+	settings := "SETTINGS " + maxMemoryUsageSetting
+	if finalSettings != "" {
+		settings = finalSettings + ", " + maxMemoryUsageSetting
+	}
 
 	query := fmt.Sprintf(`
 		SELECT

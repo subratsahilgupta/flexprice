@@ -80,3 +80,23 @@ func TestBuildCumulativeDailyUsageQuery_SumsQtyTotal(t *testing.T) {
 
 	assert.Contains(t, q, "SUM(qty_total)")
 }
+
+// TestBuildCumulativeDailyUsageQuery_BoundsMaxMemoryUsage proves the query
+// carries the same inline 90GB max_memory_usage bound as its sibling
+// meter_usage.go queries (AGENTS.md: every ClickHouse query bounded by 90GB).
+func TestBuildCumulativeDailyUsageQuery_BoundsMaxMemoryUsage(t *testing.T) {
+	qb := NewMeterUsageQueryBuilder()
+
+	q, _ := qb.BuildCumulativeDailyUsageQuery(&events.CumulativeDailyUsageParams{
+		TenantID:      "t1",
+		EnvironmentID: "e1",
+		MeterID:       "m1",
+		StartTime:     day("2026-09-01"),
+		EndTime:       day("2026-10-01"),
+		UseFinal:      true,
+	})
+
+	assert.Contains(t, q, "SETTINGS")
+	assert.Contains(t, q, "max_memory_usage = 96636764160")
+	assert.Contains(t, q, "do_not_merge_across_partitions_select_final = 1")
+}

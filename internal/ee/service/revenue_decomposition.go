@@ -23,6 +23,12 @@ type RevenuePeriod struct {
 	End   time.Time
 }
 
+// ExclusiveEnd converts End (the inclusive last day) to the half-open upper
+// bound expected by APIs like BuildUsageCurve.
+func (p RevenuePeriod) ExclusiveEnd() time.Time {
+	return p.End.AddDate(0, 0, 1)
+}
+
 // PreviewLineItem is one subscription line item as priced by the billing
 // preview engine — the attached price/meter, the engine's already-computed
 // charge, and the subscription-level commitment config the four decompose*

@@ -180,16 +180,15 @@ func (r *revenueFactRepository) FlipToFinal(ctx context.Context, subscriptionID,
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
-	// price_id is nullable; treat an empty priceID as matching NULL rows
-	// (e.g. fixed-revenue facts that carry no price) via the OR clause below,
-	// since price_id = '' would otherwise never match NULL.
+	// UpsertProvisional rejects empty/NULL price_id up front, so provisional
+	// rows always carry a non-empty price_id; a plain equality match suffices.
 	const query = `
 		UPDATE revenue_facts
 		SET status = 'FINAL', invoice_id = $1, invoice_line_item_id = $2
 		WHERE tenant_id = $3
 		  AND environment_id = $4
 		  AND subscription_id = $5
-		  AND (price_id = $6 OR (price_id IS NULL AND $6 = ''))
+		  AND price_id = $6
 		  AND day BETWEEN $7 AND $8
 		  AND status = 'PROVISIONAL'
 	`
