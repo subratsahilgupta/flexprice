@@ -1076,11 +1076,19 @@ func (s *InMemoryMeterUsageStore) GetByEventID(_ context.Context, tenantID, envi
 
 // GetCumulativeDailyUsage mirrors BuildCumulativeDailyUsageQuery: per-day
 // SUM(qty_total) for a single meter over [StartTime, EndTime), rolled into a
-// running cumulative total. Day bucketing always uses UTC, matching this
-// store's other truncateToWindow-based day handling.
+// running cumulative total. Day bucketing honors params.Timezone (an IANA
+// name), falling back to UTC when empty or unresolvable, mirroring the
+// ClickHouse path's normalizeCHTimezone default.
 func (s *InMemoryMeterUsageStore) GetCumulativeDailyUsage(_ context.Context, params *events.CumulativeDailyUsageParams) ([]events.DailyUsagePoint, error) {
 	if params == nil {
 		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+
+	loc := time.UTC
+	if params.Timezone != "" {
+		if l, err := time.LoadLocation(params.Timezone); err == nil {
+			loc = l
+		}
 	}
 
 	s.mu.RLock()
@@ -1097,7 +1105,8 @@ func (s *InMemoryMeterUsageStore) GetCumulativeDailyUsage(_ context.Context, par
 		if !params.EndTime.IsZero() && !r.Timestamp.Before(params.EndTime) {
 			continue
 		}
-		day := time.Date(r.Timestamp.Year(), r.Timestamp.Month(), r.Timestamp.Day(), 0, 0, 0, 0, time.UTC)
+		local := r.Timestamp.In(loc)
+		day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
 		dayTotals[day] = dayTotals[day].Add(r.QtyTotal)
 	}
 

@@ -155,15 +155,17 @@ type DailyUsagePoint struct {
 }
 
 // CumulativeDailyUsageParams defines filters for the windowed cumulative-daily-usage
-// read: per-day SUM(qty_total) over [StartTime, EndTime] for a single meter, rolled
-// into a running total.
+// read: per-day SUM(qty_total) over the half-open window [StartTime, EndTime) for a
+// single meter, rolled into a running total.
 type CumulativeDailyUsageParams struct {
 	TenantID      string
 	EnvironmentID string
 	MeterID       string
 	StartTime     time.Time
-	EndTime       time.Time
-	UseFinal      bool
+	// EndTime is exclusive: the window is half-open [StartTime, EndTime).
+	// Pass end-of-window+1 day to include the last day.
+	EndTime  time.Time
+	UseFinal bool
 	// Timezone is the IANA timezone used to bucket days. Empty falls back to UTC.
 	Timezone string
 }
