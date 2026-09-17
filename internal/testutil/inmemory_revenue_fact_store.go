@@ -1,0 +1,199 @@
+package testutil
+
+import (
+	"context"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	"github.com/flexprice/flexprice/internal/types"
+)
+
+// provisionalGrainKey identifies the unique-per-row grain enforced by the
+// revenue_facts partial unique index: tenant, environment, subscription,
+// price, day, revenue_source, scoped to status=PROVISIONAL rows only.
+type provisionalGrainKey struct {
+	tenantID       string
+	environmentID  string
+	subscriptionID string
+	priceID        string
+	day            time.Time
+	revenueSource  types.RevenueSource
+}
+
+func grainKeyFor(f *revenuefact.RevenueFact) provisionalGrainKey {
+	var priceID string
+	if f.PriceID != nil {
+		priceID = *f.PriceID
+	}
+	return provisionalGrainKey{
+		tenantID:       f.TenantID,
+		environmentID:  f.EnvironmentID,
+		subscriptionID: f.SubscriptionID,
+		priceID:        priceID,
+		day:            f.Day,
+		revenueSource:  f.RevenueSource,
+	}
+}
+
+// InMemoryRevenueFactStore implements revenuefact.Repository for testing,
+// mirroring InMemoryAnalyticsViewStore's tenant/environment scoping.
+type InMemoryRevenueFactStore struct {
+	mu sync.RWMutex
+
+	// facts is keyed by ID.
+	facts map[string]*revenuefact.RevenueFact
+
+	// provisionalIndex maps the provisional grain tuple to the fact ID
+	// currently holding it, so upserts can find the row to bump instead of
+	// inserting a duplicate. Entries are removed once a row flips to FINAL.
+	provisionalIndex map[provisionalGrainKey]string
+}
+
+// NewInMemoryRevenueFactStore creates a new in-memory revenue fact store.
+func NewInMemoryRevenueFactStore() *InMemoryRevenueFactStore {
+	return &InMemoryRevenueFactStore{
+		facts:            make(map[string]*revenuefact.RevenueFact),
+		provisionalIndex: make(map[provisionalGrainKey]string),
+	}
+}
+
+var _ revenuefact.Repository = (*InMemoryRevenueFactStore)(nil)
+
+// UpsertProvisional inserts or updates facts on the provisional grain,
+// always sourcing tenant/environment from ctx (mirroring the RLS guard the
+// raw-SQL repo must apply manually) and bumping Version on conflict.
+func (s *InMemoryRevenueFactStore) UpsertProvisional(ctx context.Context, facts []*revenuefact.RevenueFact) error {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, f := range facts {
+		f.TenantID = tenantID
+		f.EnvironmentID = environmentID
+		f.Status = types.FactProvisional
+
+		key := grainKeyFor(f)
+		if existingID, ok := s.provisionalIndex[key]; ok {
+			existing := s.facts[existingID]
+
+			// Preserve identity fields; copy over the mutable columns like the
+			// raw-SQL DO UPDATE SET, then bump the version.
+			updated := *f
+			updated.ID = existing.ID
+			updated.Version = existing.Version + 1
+			s.facts[existing.ID] = &updated
+			continue
+		}
+
+		if f.Version == 0 {
+			f.Version = 1
+		}
+		if f.ComputedAt.IsZero() {
+			f.ComputedAt = time.Now().UTC()
+		}
+		if f.ID == "" {
+			f.ID = types.GenerateUUIDWithPrefix("rf")
+		}
+
+		s.facts[f.ID] = f
+		s.provisionalIndex[key] = f.ID
+	}
+
+	return nil
+}
+
+// FlipToFinal converts PROVISIONAL rows for a subscription/price/period to
+// FINAL, stamping the invoice line item, and returns the rows affected.
+func (s *InMemoryRevenueFactStore) FlipToFinal(ctx context.Context, subscriptionID, priceID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error) {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	affected := 0
+	for _, f := range s.facts {
+		if !CheckTenantFilter(ctx, f.TenantID) || !CheckEnvironmentFilter(ctx, f.EnvironmentID) {
+			continue
+		}
+		if f.Status != types.FactProvisional {
+			continue
+		}
+		if f.SubscriptionID != subscriptionID {
+			continue
+		}
+		if !factPriceMatches(f, priceID) {
+			continue
+		}
+		if f.Day.Before(periodStart) || f.Day.After(periodEnd) {
+			continue
+		}
+
+		f.Status = types.FactFinal
+		invID := invoiceID
+		invLineID := invoiceLineItemID
+		f.InvoiceID = &invID
+		f.InvoiceLineItemID = &invLineID
+
+		delete(s.provisionalIndex, provisionalGrainKey{
+			tenantID:       tenantID,
+			environmentID:  environmentID,
+			subscriptionID: f.SubscriptionID,
+			priceID:        priceID,
+			day:            f.Day,
+			revenueSource:  f.RevenueSource,
+		})
+
+		affected++
+	}
+
+	return affected, nil
+}
+
+// ListBySubscriptionPeriod lists facts for a subscription within a period, filtered by status.
+func (s *InMemoryRevenueFactStore) ListBySubscriptionPeriod(ctx context.Context, subscriptionID string, periodStart, periodEnd time.Time, status types.FactStatus) ([]*revenuefact.RevenueFact, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*revenuefact.RevenueFact
+	for _, f := range s.facts {
+		if !CheckTenantFilter(ctx, f.TenantID) || !CheckEnvironmentFilter(ctx, f.EnvironmentID) {
+			continue
+		}
+		if f.SubscriptionID != subscriptionID {
+			continue
+		}
+		if f.Status != status {
+			continue
+		}
+		if f.Day.Before(periodStart) || f.Day.After(periodEnd) {
+			continue
+		}
+		result = append(result, f)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Day.Before(result[j].Day)
+	})
+
+	return result, nil
+}
+
+func factPriceMatches(f *revenuefact.RevenueFact, priceID string) bool {
+	if f.PriceID == nil {
+		return priceID == ""
+	}
+	return *f.PriceID == priceID
+}
+
+// Clear removes all facts from the store.
+func (s *InMemoryRevenueFactStore) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.facts = make(map[string]*revenuefact.RevenueFact)
+	s.provisionalIndex = make(map[provisionalGrainKey]string)
+}
