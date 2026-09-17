@@ -66,7 +66,10 @@ type BillingService interface {
 	CalculateCharges(ctx context.Context, params *dto.CalculateChargesParams) (*dto.BillingCalculationResult, error)
 
 	// CalculateMeterUsageCharges computes usage-based invoice line items from meter_usage.
-	CalculateMeterUsageCharges(ctx context.Context, sub *subscription.Subscription, usage *dto.GetUsageBySubscriptionResponse, periodStart, periodEnd time.Time, source types.UsageSource) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal, error)
+	// asOf is optional (variadic to stay additive for existing callers): pass a resolved
+	// reference instant (see resolveAsOf) to clip line items/windowed commitments against a
+	// day other than now; omit or pass a zero value to keep today's time.Now() behavior.
+	CalculateMeterUsageCharges(ctx context.Context, sub *subscription.Subscription, usage *dto.GetUsageBySubscriptionResponse, periodStart, periodEnd time.Time, source types.UsageSource, asOf ...time.Time) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal, error)
 
 	// SumUsageAmountForSubscription returns the total usage cost for a subscription over
 	// [periodStart, periodEnd) using the same per-cadence-group fan-out as invoice
@@ -1567,6 +1570,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 	periodEnd := params.PeriodEnd
 	referencePoint := params.ReferencePoint
 	excludeInvoiceID := params.ExcludeInvoiceID
+	asOf := resolveAsOf(params)
 	// Validate that the billing period respects subscription end date
 	if err := s.validatePeriodAgainstSubscriptionEndDate(sub, periodStart); err != nil {
 		return nil, err
@@ -1704,6 +1708,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			periodStart,
 			periodEnd,
 			classification.HasUsageCharges, // Include usage for arrear
+			asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -1717,6 +1722,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			nextPeriodStart,
 			nextPeriodEnd,
 			false, // No usage for advance
+			asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -1745,6 +1751,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			periodStart,
 			periodEnd,
 			classification.HasUsageCharges, // Include usage for arrear
+			asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -1758,6 +1765,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			nextPeriodStart,
 			nextPeriodEnd,
 			false, // No usage for advance
+			asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -1834,6 +1842,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			periodStart,
 			periodEnd,
 			true, // Include usage for arrear
+			asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -2256,6 +2265,7 @@ func (s *billingService) calculateMeterUsageCharges(
 	periodStart,
 	periodEnd time.Time,
 	includeUsage bool,
+	asOfOverride ...time.Time,
 ) (*dto.BillingCalculationResult, error) {
 	filteredSub := *sub
 	filteredSub.LineItems = lineItems
@@ -2315,7 +2325,7 @@ func (s *billingService) calculateMeterUsageCharges(
 					return nil, err
 				}
 
-				lines, cost, err := s.CalculateMeterUsageCharges(ctx, &windowSub, usage, w.Start, w.End, types.UsageSourceInvoiceCreation)
+				lines, cost, err := s.CalculateMeterUsageCharges(ctx, &windowSub, usage, w.Start, w.End, types.UsageSourceInvoiceCreation, asOfOverride...)
 				if err != nil {
 					return nil, err
 				}

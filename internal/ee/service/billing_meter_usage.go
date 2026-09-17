@@ -47,15 +47,27 @@ func elapsedLineItemWindow(item *subscription.SubscriptionLineItem, periodStart,
 	return start, end, end.After(start) || start.Equal(asOf)
 }
 
+// resolveAsOf returns params.AsOf when set, else now (UTC) — the reference instant used to
+// clip open-period line items and windowed commitments during invoice preview/rebuild.
+func resolveAsOf(params *dto.PrepareSubscriptionInvoiceRequestParams) time.Time {
+	if !params.AsOf.IsZero() {
+		return params.AsOf
+	}
+	return time.Now().UTC()
+}
+
 // CalculateMeterUsageCharges computes usage-based invoice line items from the meter_usage table.
 // All queries (bucketed meters, windowed entitlements, windowed commitments) read from
-// MeterUsageRepo — never from raw events.
+// MeterUsageRepo — never from raw events. asOf, when passed with a non-zero value, overrides
+// the reference instant used to clip line items and windowed commitments (see resolveAsOf);
+// otherwise defaults to time.Now().UTC(), matching prior behavior.
 func (s *billingService) CalculateMeterUsageCharges(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	usage *dto.GetUsageBySubscriptionResponse,
 	periodStart, periodEnd time.Time,
 	source types.UsageSource,
+	asOfOverride ...time.Time,
 ) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal, error) {
 	if usage == nil {
 		return nil, decimal.Zero, nil
@@ -64,6 +76,9 @@ func (s *billingService) CalculateMeterUsageCharges(
 	querySource := source
 
 	asOf := time.Now().UTC()
+	if len(asOfOverride) > 0 && !asOfOverride[0].IsZero() {
+		asOf = asOfOverride[0]
+	}
 
 	// --- Setup: resolve meters, entitlements, customer IDs ---
 
