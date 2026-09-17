@@ -195,8 +195,6 @@ func (s *subscriptionService) settleAddonAttach(
 	return settled.Changed
 }
 
-// settleAddonProration prices one addon change and settles it as one document spanning
-// effectiveDate → current period end.
 func (s *subscriptionService) settleAddonProration(
 	ctx context.Context,
 	req LineItemProrationRequest,
@@ -268,7 +266,6 @@ func (s *subscriptionService) settleAddAddonPayFirst(
 		return nil, err
 	}
 
-	// The draft locks exactly what pay-later would have billed.
 	drafted, err := NewLineItemProrationService(s.ServiceParams).Settle(ctx, NewSettleProrationRequest(
 		sub, summary, params.getEffectiveDate(), sub.CurrentPeriodEnd,
 		"Subscription update", params.prorationIdempotencyKey(), SettleModeDraft,

@@ -9,10 +9,6 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Settle is the single settlement path: every proration document — preview, issued invoice,
-// wallet credit and the pay-first draft — is raised here. These tests pin all four modes.
-
-// mixedQuote is the swap that nets to zero today: 13.33 charged and 13.33 credited.
 func (s *LineItemProrationServiceSuite) mixedQuote(effectiveDate time.Time) (*LineItemProrationSummary, *LineItemProrationRequest) {
 	outgoing := s.secondLineItem()
 	s.recordBilled(outgoing.ID, decimal.NewFromInt(20))
@@ -38,8 +34,6 @@ func (s *LineItemProrationServiceSuite) mixedQuote(effectiveDate time.Time) (*Li
 	return quote, &req
 }
 
-// secondLineItem gives the suite a second removable line so a single Compute can yield
-// both a charge and a credit — the mixed quote netting turns into one document.
 func (s *LineItemProrationServiceSuite) secondLineItem() *subscription.SubscriptionLineItem {
 	ctx := s.GetContext()
 	item := &subscription.SubscriptionLineItem{
@@ -81,9 +75,6 @@ func (s *LineItemProrationServiceSuite) walletBalance() decimal.Decimal {
 	return total
 }
 
-// applyViaSettle is what the production callers now do: Compute, then Settle the net as one
-// document. The key convention mirrors theirs — an addition invoices under the hashed key, a
-// removal credits the wallet under the caller's raw key.
 func (s *LineItemProrationServiceSuite) applyViaSettle(
 	req LineItemProrationRequest,
 ) ([]dto.ChangedInvoice, error) {
@@ -138,7 +129,6 @@ func (s *LineItemProrationServiceSuite) TestSettle_NetCharge_IssuesOneNettedInvo
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
 
 	quote, _ := s.mixedQuote(effectiveDate)
-	// Charge more than is credited so the batch nets positive.
 	quote.TotalChargeAmount = quote.TotalChargeAmount.Add(decimal.NewFromInt(10))
 	quote.ChargeLineItems[0].Amount = quote.ChargeLineItems[0].Amount.Add(decimal.NewFromInt(10))
 
@@ -250,8 +240,6 @@ func (s *LineItemProrationServiceSuite) TestSettle_Draft_LocksTheNetForCheckout(
 		"the customer is asked for exactly what pay-later would have billed")
 }
 
-// Pay-first has nothing to collect when the batch does not net positive, so the caller must
-// fall through and apply immediately rather than open a checkout.
 func (s *LineItemProrationServiceSuite) TestSettle_Draft_RejectsNonPositiveNet() {
 	ctx := s.GetContext()
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
@@ -262,8 +250,6 @@ func (s *LineItemProrationServiceSuite) TestSettle_Draft_RejectsNonPositiveNet()
 	s.Require().Error(err)
 }
 
-// A malformed request must be rejected before anything is written. The mode case matters
-// most: an unrecognised mode used to fall through to Issue and raise a real invoice.
 func (s *LineItemProrationServiceSuite) TestSettle_RejectsInvalidRequest() {
 	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC)
 	quote, _ := s.mixedQuote(effectiveDate)

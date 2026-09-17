@@ -899,8 +899,6 @@ func (s *subscriptionModificationService) createAggregatedProrationDraftInvoice(
 	return settled.Draft, nil
 }
 
-// aggregatedProrationQuote folds quantity change's own proration items into the shared quote
-// Settle takes, splitting them into charges and credits by sign.
 func aggregatedProrationQuote(
 	sub *subscription.Subscription,
 	items []*quantityChangeProrationItem,

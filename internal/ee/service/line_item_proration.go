@@ -63,8 +63,6 @@ func emptyProrationSummary(sub *subscription.Subscription) *LineItemProrationSum
 	return summary
 }
 
-// Merge folds other summaries into s. Per-entry effective dates force one Compute per
-// distinct date, and the batch settles as one document.
 func (s *LineItemProrationSummary) Merge(others ...*LineItemProrationSummary) *LineItemProrationSummary {
 	for _, other := range others {
 		if other == nil {
@@ -87,8 +85,6 @@ func (s *LineItemProrationSummary) NetAmount() decimal.Decimal {
 	return s.TotalChargeAmount.Sub(s.TotalCreditAmount)
 }
 
-// SettleMode selects how a settlement is raised. The zero value is SettleModePreview, so an
-// unset mode writes nothing rather than charging.
 type SettleMode int
 
 const (
@@ -97,19 +93,13 @@ const (
 	SettleModeDraft                     // pay-first: a DRAFT invoice to collect against
 )
 
-// SettleProrationRequest is one already-computed quote about to be turned into money.
-// Build it with NewSettleProrationRequest.
 type SettleProrationRequest struct {
 	Subscription *subscription.Subscription
 	Quote        *LineItemProrationSummary
 
-	// Invoice-level service window. Must span every line on the document: a batch has no
-	// single effective date to derive it from, and coupon applicability reads it.
 	PeriodStart time.Time
 	PeriodEnd   time.Time
 
-	// DisplayName titles the document and is required. BillingPeriod defaults to the
-	// subscription's own period.
 	DisplayName   string
 	BillingPeriod types.BillingPeriod
 
@@ -117,13 +107,9 @@ type SettleProrationRequest struct {
 	Reason         string
 	Mode           SettleMode
 
-	// AttemptPayment collects the invoice in-line. Callers that settle inside a transaction
-	// leave it false and attempt after commit.
 	AttemptPayment bool
 }
 
-// NewSettleProrationRequest builds a settlement over an already-computed quote. Reason and
-// BillingPeriod are optional; BillingPeriod falls back to the subscription's own.
 func NewSettleProrationRequest(
 	sub *subscription.Subscription,
 	quote *LineItemProrationSummary,
@@ -144,15 +130,11 @@ func NewSettleProrationRequest(
 	}
 }
 
-// SettleProrationResult is what a settlement raised: the changed documents, or the draft a
-// pay-first checkout will collect against.
 type SettleProrationResult struct {
 	Changed []dto.ChangedInvoice
 	Draft   *dto.InvoiceResponse // set only for SettleModeDraft
 }
 
-// validate rejects a request that cannot produce a correct document. An unrecognised mode is
-// an error rather than a default, so a miscast value can never fall through to a real charge.
 func (r *SettleProrationRequest) validate() error {
 	if r == nil {
 		return ierr.NewError("settlement request is required").Mark(ierr.ErrValidation)
@@ -188,9 +170,6 @@ func (r *SettleProrationRequest) validate() error {
 type LineItemProrationService interface {
 	Compute(ctx context.Context, req LineItemProrationRequest) (*LineItemProrationSummary, error)
 
-	// Settle raises the quote's net as ONE document: a netted invoice when net > 0, a wallet
-	// credit when net < 0, nothing at zero. The mode keeps preview, pay-later and pay-first
-	// from drifting.
 	Settle(ctx context.Context, req *SettleProrationRequest) (*SettleProrationResult, error)
 }
 
@@ -294,8 +273,6 @@ func (s *lineItemProrationService) Settle(ctx context.Context, req *SettleProrat
 	result := &SettleProrationResult{Changed: make([]dto.ChangedInvoice, 0, 1)}
 	net := req.Quote.NetAmount()
 
-	// Pay-first has nothing to collect unless the batch nets positive; the caller must fall
-	// through and apply immediately rather than open a checkout.
 	if req.Mode == SettleModeDraft && !net.IsPositive() {
 		return nil, ierr.NewError("no proration charge to collect via checkout").
 			WithHint("Expected a positive proration charge").
@@ -385,8 +362,6 @@ func (s *lineItemProrationService) creditWallet(
 	return walletCreditChangedInvoice(walletTx, dto.ChangedInvoiceStatusWalletIssued), nil
 }
 
-// buildNettedProrationInvoiceRequest puts charge lines AND credit lines on one document.
-// Credit lines already carry negative amounts, so they subtract naturally.
 func buildNettedProrationInvoiceRequest(req *SettleProrationRequest) dto.CreateInvoiceRequest {
 	sub, quote := req.Subscription, req.Quote
 

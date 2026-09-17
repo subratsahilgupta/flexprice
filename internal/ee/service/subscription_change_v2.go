@@ -1241,7 +1241,6 @@ func (s *subscriptionService) settlePlanChange(
 	)
 	settleReq.BillingPeriod = r.updatedSub.BillingPeriod
 
-	// Payment is attempted after commit, so the settlement stays inside the transaction.
 	settled, err := NewLineItemProrationService(s.ServiceParams).Settle(ctx, settleReq)
 	if err != nil {
 		return nil, err

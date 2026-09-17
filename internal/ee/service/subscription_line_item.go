@@ -1423,9 +1423,6 @@ func (s *subscriptionService) resolveLineItemPrice(ctx context.Context, priceID 
 	return p, nil
 }
 
-// settleLineItemProration prices a single line-item change and settles it as one document.
-// The key differs per caller: an addition invoices and a removal credits the wallet, and the
-// two dedupe on different formats today.
 func (s *subscriptionService) settleLineItemProration(
 	ctx context.Context,
 	req LineItemProrationRequest,
