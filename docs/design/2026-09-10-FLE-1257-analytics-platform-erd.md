@@ -269,7 +269,7 @@ CREATE TABLE revenue_facts (
 
     -- decomposition (usage rows), GROSS basis, EXCLUDES tax & prepaid
     usage_at_list_rate   NUMERIC(38,9) NOT NULL DEFAULT 0,  -- (billable_qty + entitlement_qty) x list/effective rate
-    tier_delta           NUMERIC(38,9) NOT NULL DEFAULT 0,  -- graduated only: engine Amount - gross_qty x tier1_rate
+    tier_delta           NUMERIC(38,9) NOT NULL DEFAULT 0,  -- graduated only: engine Amount - billable_qty x tier1_rate (usage_at_list_rate stays gross_qty x list_rate)
     entitlement_credit   NUMERIC(38,9) NOT NULL DEFAULT 0,  -- entitlement_qty x list rate (subtracted)
     line_discount        NUMERIC(38,9) NOT NULL DEFAULT 0,
     invoice_discount     NUMERIC(38,9) NOT NULL DEFAULT 0,
@@ -318,7 +318,7 @@ CREATE INDEX revenue_facts_invoice ON revenue_facts (tenant_id, environment_id, 
 - Per line item/period: `Σ net_amount == that invoice_line_item's billed amount (excl tax)`.
 - Per invoice: `Σ net_amount == invoice.Subtotal − invoice.TotalDiscount` (pre-tax, pre-prepaid revenue). Tax is verified **separately** against `invoice.TotalTax` at invoice grain. Any gap → alert, never plugged.
 
-**Tiers:** graduated → `usage_at_list_rate = gross_qty × tier1_rate`, `tier_delta = engine Amount − gross_qty × tier1_rate` (one delta, no engine refactor). Volume/package/flat → single resolved rate on all units, `tier_delta = 0`.
+**Tiers:** graduated → `usage_at_list_rate = gross_qty × tier1_rate` (unchanged), `tier_delta = engine Amount − billable_qty × tier1_rate` (one delta, no engine refactor). Using `billable_qty` here — not `gross_qty` — is what makes `net_amount = usage_at_list_rate + tier_delta − entitlement_credit` hold exactly once an allowance is present. Volume/package/flat → single resolved rate on all units, `tier_delta = 0`.
 
 ### 6.4 Linking `invoice_id`
 

@@ -236,3 +236,113 @@ func TestBuildUsageCurve_GraduatedPrice(t *testing.T) {
 	// must be non-zero once usage spills into the second, cheaper tier.
 	assert.False(t, got[2].TierDelta.IsZero(), "tier delta should be non-zero past the tier boundary")
 }
+
+// curveReconcileEpsilon is the tight tolerance used for decimal reconciliation
+// checks below (CalculateCost performs no intermediate rounding for flat/SLAB
+// pricing, so any real divergence would show up far above this magnitude).
+var curveReconcileEpsilon = decimal.RequireFromString("0.0000001")
+
+// assertDecimalClose fails unless got and want differ by at most
+// curveReconcileEpsilon.
+func assertDecimalClose(t *testing.T, want, got decimal.Decimal, msgAndArgs ...interface{}) {
+	t.Helper()
+	diff := want.Sub(got).Abs()
+	assert.Truef(t, diff.LessThanOrEqual(curveReconcileEpsilon),
+		"want %s, got %s (diff %s) %v", want, got, diff, msgAndArgs)
+}
+
+// TestBuildUsageCurve_GraduatedWithAllowance is the one input combination
+// where the implemented decomposition (TierDelta on billable_qty,
+// UsageAtListRate on gross_qty) diverges from a gross_qty-only TierDelta
+// formula: a graduated/SLAB price with a non-zero allowance, where cumulative
+// gross usage crosses the tier boundary. Task 8's EntitlementCredit/NetAmount
+// construction depends on this reconciling exactly.
+func TestBuildUsageCurve_GraduatedWithAllowance(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewInMemoryMeterUsageStore()
+	params := ServiceParams{
+		Logger:         logger.NewNoopLogger(),
+		MeterUsageRepo: store,
+		PriceRepo:      testutil.NewInMemoryPriceStore(),
+		MeterRepo:      testutil.NewInMemoryMeterStore(),
+		PlanRepo:       testutil.NewInMemoryPlanStore(),
+		PriceUnitRepo:  testutil.NewInMemoryPriceUnitStore(),
+		AddonRepo:      testutil.NewInMemoryAddonStore(),
+		SubRepo:        testutil.NewInMemorySubscriptionStore(),
+	}
+	svc := NewRevenueCurveService(params)
+	priceSvc := NewPriceService(params)
+
+	tier1 := decimal.RequireFromString("0.01")
+	tier2 := decimal.RequireFromString("0.008")
+	upTo := uint64(1000)
+	graduated := &price.Price{
+		ID:           "price_curve_graduated_allowance_test",
+		Currency:     "usd",
+		Type:         types.PRICE_TYPE_USAGE,
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_SLAB,
+		Tiers: price.JSONBTiers{
+			{UpTo: &upTo, UnitAmount: tier1},
+			{UpTo: nil, UnitAmount: tier2},
+		},
+	}
+
+	const allowance = 500
+	curve := buildTestCurveInput(t, ctx, store,
+		curvePerDay(500),
+		curveAllowance(allowance),
+		curveDays(8),
+		curvePrice(graduated),
+	)
+
+	got, err := svc.BuildUsageCurve(ctx, curve)
+	require.NoError(t, err)
+	require.Len(t, got, 8)
+
+	allowanceDec := decimal.NewFromInt(allowance)
+
+	var prevCharge decimal.Decimal
+	for i, day := range got {
+		grossQty := decimal.NewFromInt(int64((i + 1) * 500))
+		billableQty := grossQty.Sub(allowanceDec)
+		if billableQty.IsNegative() {
+			billableQty = decimal.Zero
+		}
+		entitlementQty := allowanceDec
+		if grossQty.LessThan(allowanceDec) {
+			entitlementQty = grossQty
+		}
+
+		assert.True(t, day.CumulativeGrossQty.Equal(grossQty), "day %d gross qty", i)
+		assert.True(t, day.CumulativeBillableQty.Equal(billableQty), "day %d billable qty", i)
+		assert.True(t, day.CumulativeEntitlementQty.Equal(entitlementQty), "day %d entitlement qty", i)
+
+		// Approach C: the engine charge is CalculateCost run directly on the
+		// day's cumulative billable quantity.
+		wantCharge := priceSvc.CalculateCost(ctx, graduated, billableQty)
+		assertDecimalClose(t, wantCharge, day.CumulativeCharge, "day %d cumulative charge", i)
+
+		// Reconciliation identity the decomposition must satisfy:
+		// UsageAtListRate + TierDelta - CumulativeEntitlementQty*tier1Rate == CumulativeCharge.
+		// This is exactly where a gross_qty-based TierDelta (the ERD's literal,
+		// incorrect prose) would diverge from the implemented billable_qty-based
+		// one, once gross usage crosses the tier boundary post-allowance.
+		reconciled := day.UsageAtListRate.Add(day.TierDelta).Sub(entitlementQty.Mul(tier1))
+		assertDecimalClose(t, day.CumulativeCharge, reconciled, "day %d reconciliation identity", i)
+
+		// Marginal (day-over-day) charge must never be negative.
+		if i > 0 {
+			marginal := day.CumulativeCharge.Sub(prevCharge)
+			assert.False(t, marginal.IsNegative(), "day %d marginal charge must be non-negative, got %s", i, marginal)
+		}
+		prevCharge = day.CumulativeCharge
+	}
+
+	// Sanity: usage does cross the tier boundary on billable_qty (day 3: billable
+	// qty 1000 exactly at the boundary; day 4: billable qty 1500 spills over),
+	// so this test actually exercises tiering, not just a flat/zero-allowance path.
+	assert.True(t, got[2].CumulativeBillableQty.Equal(decimal.NewFromInt(1000)))
+	assert.True(t, got[3].CumulativeBillableQty.Equal(decimal.NewFromInt(1500)))
+	assert.False(t, got[3].TierDelta.IsZero(), "tier delta should be non-zero once billable usage spills into tier 2")
+}
