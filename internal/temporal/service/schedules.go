@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/temporal/models"
@@ -22,7 +23,13 @@ import (
 
 // AllTemporalScheduleConfigs returns the configuration for every Temporal server schedule
 // (not HTTP-only cron entrypoints; keep in sync with types.AllTemporalServerScheduleIDs).
-func AllTemporalScheduleConfigs() []types.ScheduleConfig {
+// cfg may be nil (schedules that don't need it, like this one, still get sane defaults).
+func AllTemporalScheduleConfigs(cfg *config.Configuration) []types.ScheduleConfig {
+	revenueRollupInterval := defaultRevenueRollupScheduleInterval
+	if cfg != nil && cfg.Analytics.RevenueRollup.Interval > 0 {
+		revenueRollupInterval = cfg.Analytics.RevenueRollup.Interval
+	}
+
 	return []types.ScheduleConfig{
 		{
 			ID:        types.ScheduleIDCreditGrantProcessing,
@@ -132,19 +139,48 @@ func AllTemporalScheduleConfigs() []types.ScheduleConfig {
 			Input:     invoiceModels.ScheduleDraftFinalizationWorkflowInput{BatchSize: types.DEFAULT_BATCH_SIZE},
 			TaskQueue: types.TemporalTaskQueueInvoice,
 		},
+		{
+			// Off by default — see analytics.revenue_rollup.enabled and isScheduleEnabled.
+			ID:        types.ScheduleIDRevenueRollup,
+			Interval:  revenueRollupInterval,
+			Workflow:  cronWorkflows.RevenueRollupWorkflow,
+			Input:     models.RevenueRollupInput{Interval: revenueRollupInterval},
+			TaskQueue: types.TemporalTaskQueueCron,
+		},
 	}
 }
 
-// EnsureSchedules idempotently creates or updates every configured Temporal server schedule.
+// defaultRevenueRollupScheduleInterval is used when analytics.revenue_rollup.interval is unset.
+const defaultRevenueRollupScheduleInterval = time.Hour
+
+// EnsureSchedules idempotently creates or updates every configured Temporal server schedule
+// that isScheduleEnabled allows. A disabled schedule is skipped entirely — no Describe/Create/Update
+// call is made for it — so booting with a flag off never touches the Temporal server for that schedule.
 // It returns the first error encountered; per-schedule outcomes are logged only.
-func EnsureSchedules(ctx context.Context, tc client.TemporalClient, log *logger.Logger) error {
-	for _, cfg := range AllTemporalScheduleConfigs() {
-		if err := ensureOneSchedule(ctx, tc, cfg); err != nil {
+func EnsureSchedules(ctx context.Context, tc client.TemporalClient, cfg *config.Configuration, log *logger.Logger) error {
+	for _, sc := range AllTemporalScheduleConfigs(cfg) {
+		if !isScheduleEnabled(sc.ID, cfg) {
+			log.Info(ctx, "schedule disabled by config, skipping", "id", sc.ID)
+			continue
+		}
+		if err := ensureOneSchedule(ctx, tc, sc); err != nil {
 			return err
 		}
-		log.Info(ctx, "schedule ensured", "id", cfg.ID)
+		log.Info(ctx, "schedule ensured", "id", sc.ID)
 	}
 	return nil
+}
+
+// isScheduleEnabled reports whether a schedule config should actually be created/updated
+// against the Temporal server. Every schedule is enabled by default; add a case here only
+// for a schedule that ships flag-gated off (see analytics.revenue_rollup.enabled).
+func isScheduleEnabled(id types.ScheduleID, cfg *config.Configuration) bool {
+	switch id {
+	case types.ScheduleIDRevenueRollup:
+		return cfg != nil && cfg.Analytics.RevenueRollup.Enabled
+	default:
+		return true
+	}
 }
 
 func ensureOneSchedule(ctx context.Context, tc client.TemporalClient, cfg types.ScheduleConfig) error {

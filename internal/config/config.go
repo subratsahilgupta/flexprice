@@ -82,8 +82,16 @@ type Configuration struct {
 
 // AnalyticsConfig gates the fire-and-forget analytics meter_usage feed.
 type AnalyticsConfig struct {
-	Enabled             bool   `mapstructure:"enabled" default:"false"`
-	MeterUsageSinkTopic string `mapstructure:"meter_usage_sink_topic"`
+	Enabled             bool                `mapstructure:"enabled" default:"false"`
+	MeterUsageSinkTopic string              `mapstructure:"meter_usage_sink_topic"`
+	RevenueRollup       RevenueRollupConfig `mapstructure:"revenue_rollup" validate:"omitempty"`
+}
+
+// RevenueRollupConfig gates the periodic Temporal revenue_facts dirty-rollup
+// schedule (RevenueRollupWorkflow). Off by default.
+type RevenueRollupConfig struct {
+	Enabled  bool          `mapstructure:"enabled" default:"false"`
+	Interval time.Duration `mapstructure:"interval" default:"1h"`
 }
 
 type ChatSupportConfig struct {
