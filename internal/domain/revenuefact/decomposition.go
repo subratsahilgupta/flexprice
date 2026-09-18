@@ -1,23 +1,22 @@
-package service
+package revenuefact
 
 import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
-	"github.com/flexprice/flexprice/internal/domain/revenuefact"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
 // RevenuePeriod is the billing window a period_only row is stamped against.
-// Unlike LineItemPricingInput's half-open [PeriodStart, PeriodEnd), End here
-// is the inclusive last calendar day of the period — matching the
-// revenue_facts period_end DATE column and the Day a period_only row lands
-// on for ARREAR cadence. It is separate from PreviewLineItem's own period so
-// a commitment true-up can be dated against a multi-period commitment window
-// rather than the line item's single billing period.
+// Unlike the curve input's half-open [PeriodStart, PeriodEnd), End here is the
+// inclusive last calendar day of the period — matching the revenue_facts
+// period_end DATE column and the Day a period_only row lands on for ARREAR
+// cadence. It is separate from PreviewLineItem's own period so a commitment
+// true-up can be dated against a multi-period commitment window rather than
+// the line item's single billing period.
 type RevenuePeriod struct {
 	Start time.Time
 	End   time.Time
@@ -31,7 +30,7 @@ func (p RevenuePeriod) ExclusiveEnd() time.Time {
 
 // PreviewLineItem is one subscription line item as priced by the billing
 // preview engine — the attached price/meter, the engine's already-computed
-// charge, and the subscription-level commitment config the four decompose*
+// charge, and the subscription-level commitment config the four Decompose*
 // constructors turn into revenue_facts rows.
 type PreviewLineItem struct {
 	TenantID      string
@@ -54,15 +53,14 @@ type PreviewLineItem struct {
 	EngineAmount decimal.Decimal
 
 	// PeriodStart/PeriodEnd are the line item's billing period, stamped onto
-	// every row decomposeUsageMarginal produces. PeriodEnd is the inclusive
+	// every row DecomposeUsageMarginal produces. PeriodEnd is the inclusive
 	// last calendar day (matching RevenuePeriod), not the half-open exclusive
-	// bound BuildUsageCurve's LineItemPricingInput uses — add one day when
-	// building the curve input.
+	// bound the curve input uses — add one day when building the curve input.
 	PeriodStart time.Time
 	PeriodEnd   time.Time
 
 	// Subscription-level commitment config, mirrored from
-	// subscription.Subscription for isMultiPeriodCommitment.
+	// subscription.Subscription for IsMultiPeriodCommitment.
 	CommitmentAmount   *decimal.Decimal
 	CommitmentDuration *types.BillingPeriod
 	OverageFactor      *decimal.Decimal
@@ -99,17 +97,45 @@ func (li PreviewLineItem) subLineItemID() *string {
 
 // isCommitmentTrueupOrOverage reports whether li is the engine's synthetic
 // true-up/overage line item (metadata-flagged, PriceType FIXED) rather than a
-// regular fixed charge — decomposeFixed excludes these.
+// regular fixed charge — DecomposeFixed excludes these.
 func (li PreviewLineItem) isCommitmentTrueupOrOverage() bool {
 	return li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup) || li.Metadata.GetBool(types.MetadataKeyIsOverage)
 }
 
-// decompositionMode classifies a (price, meter) pair: PeriodOnly where a
-// daily marginal split would misrepresent the charge (volume tiering
+// DayCharge is one calendar day's CUMULATIVE-through-that-day revenue
+// decomposition for a single usage line item, produced by the curve service.
+// Every field is a running total through Day, not a per-day marginal value —
+// DecomposeUsageMarginal derives marginal(D) = cur.X - prev.X per field.
+type DayCharge struct {
+	Day time.Time
+
+	// CumulativeCharge is CalculateCost(price, CumulativeBillableQty) — the
+	// actual engine charge through this day, net of the entitlement limit.
+	CumulativeCharge decimal.Decimal
+	// CumulativeGrossQty is the raw cumulative metered quantity through this
+	// day, before the entitlement limit is applied.
+	CumulativeGrossQty decimal.Decimal
+	// CumulativeBillableQty is max(0, CumulativeGrossQty - EntitlementLimit).
+	CumulativeBillableQty decimal.Decimal
+	// CumulativeEntitlementQty is min(CumulativeGrossQty, EntitlementLimit) —
+	// the entitlement consumed earliest-first, purely as a function of gross usage.
+	CumulativeEntitlementQty decimal.Decimal
+	// UsageAtListRate is CumulativeGrossQty x tier1_rate: gross usage priced at
+	// the list rate, before any entitlement giveback.
+	UsageAtListRate decimal.Decimal
+	// TierDelta is CumulativeCharge - (CumulativeBillableQty x tier1_rate) —
+	// the deviation from a flat list-rate charge caused by graduated tiering
+	// on the billed (post-entitlement) quantity. Zero for flat pricing, since
+	// tier1_rate is then the only rate.
+	TierDelta decimal.Decimal
+}
+
+// ClassifyDecompositionMode classifies a (price, meter) pair: PeriodOnly where
+// a daily marginal split would misrepresent the charge (volume tiering
 // re-rates every unit on the final tier reached; LATEST/AVG/WEIGHTED_SUM
 // aggregations are not additive across days; a week/month-bucketed MAX
 // resets on a boundary coarser than a day). Marginal otherwise.
-func decompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
+func ClassifyDecompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
 	if p != nil && p.TierMode == types.BILLING_TIER_VOLUME {
 		return types.PeriodOnly
 	}
@@ -128,12 +154,12 @@ func decompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
 	return types.Marginal
 }
 
-// isMultiPeriodCommitment mirrors CalculateMeterUsageCharges' cumulative
-// commitment detection — a subscription-level commitment whose duration spans
-// more than one billing period (e.g. an ANNUAL commitment on a MONTHLY
-// subscription). The rollup skips such subscriptions: their true-up can't be
-// attributed to a single period.
-func isMultiPeriodCommitment(li PreviewLineItem) bool {
+// IsMultiPeriodCommitment mirrors the billing engine's cumulative commitment
+// detection — a subscription-level commitment whose duration spans more than
+// one billing period (e.g. an ANNUAL commitment on a MONTHLY subscription).
+// The rollup skips such subscriptions: their true-up can't be attributed to a
+// single period.
+func IsMultiPeriodCommitment(li PreviewLineItem) bool {
 	if li.CommitmentAmount == nil || !li.CommitmentAmount.GreaterThan(decimal.Zero) {
 		return false
 	}
@@ -167,8 +193,8 @@ func invoiceCadence(li PreviewLineItem) types.InvoiceCadence {
 
 // newPeriodOnlyFact builds the fields common to every period_only
 // revenue_facts row (fixed, usage period_only, commitment true-up).
-func newPeriodOnlyFact(li PreviewLineItem, period RevenuePeriod, day time.Time, source types.RevenueSource) *revenuefact.RevenueFact {
-	return &revenuefact.RevenueFact{
+func newPeriodOnlyFact(li PreviewLineItem, period RevenuePeriod, day time.Time, source types.RevenueSource) *RevenueFact {
+	return &RevenueFact{
 		ID:                types.GenerateUUIDWithPrefix("revfact"),
 		TenantID:          li.TenantID,
 		EnvironmentID:     li.EnvironmentID,
@@ -189,48 +215,48 @@ func newPeriodOnlyFact(li PreviewLineItem, period RevenuePeriod, day time.Time, 
 	}
 }
 
-// decomposeFixed produces one period_only row for a FIXED-price line item,
+// DecomposeFixed produces one period_only row for a FIXED-price line item,
 // dated on its invoice cadence day. Returns nil for the engine's synthetic
 // commitment true-up/overage line items (also PriceType FIXED) — those belong
-// to decomposeCommitmentTrueup instead.
-func decomposeFixed(li PreviewLineItem, period RevenuePeriod) *revenuefact.RevenueFact {
+// to DecomposeCommitmentTrueup instead.
+func DecomposeFixed(li PreviewLineItem, period RevenuePeriod) *RevenueFact {
 	if li.isCommitmentTrueupOrOverage() {
 		return nil
 	}
 	return newPeriodOnlyFact(li, period, cadenceDay(invoiceCadence(li), period), types.RevenueSourceFixed)
 }
 
-// decomposeUsagePeriodOnly produces one row for a usage line item whose
+// DecomposeUsagePeriodOnly produces one row for a usage line item whose
 // (price, meter) pair classified PeriodOnly: the engine's period charge,
 // un-split, dated on the same cadence rule as a fixed charge.
-func decomposeUsagePeriodOnly(li PreviewLineItem, period RevenuePeriod) *revenuefact.RevenueFact {
+func DecomposeUsagePeriodOnly(li PreviewLineItem, period RevenuePeriod) *RevenueFact {
 	f := newPeriodOnlyFact(li, period, cadenceDay(invoiceCadence(li), period), types.RevenueSourceUsage)
 	f.MeterID = li.meterID()
 	f.AggregationType = li.aggregationType()
 	return f
 }
 
-// decomposeCommitmentTrueup produces one row for the commitment true-up/
+// DecomposeCommitmentTrueup produces one row for the commitment true-up/
 // overage charge, always dated at period end — the true-up amount is only
 // known once the period's usage is final.
-func decomposeCommitmentTrueup(li PreviewLineItem, period RevenuePeriod) *revenuefact.RevenueFact {
+func DecomposeCommitmentTrueup(li PreviewLineItem, period RevenuePeriod) *RevenueFact {
 	return newPeriodOnlyFact(li, period, period.End, types.RevenueSourceCommitmentTrueup)
 }
 
-// decomposeUsageMarginal produces one row per DayCharge in curve. Each day's
+// DecomposeUsageMarginal produces one row per DayCharge in curve. Each day's
 // NetAmount/UsageAtListRate/TierDelta/EntitlementAmount/BillableQty/
 // EntitlementQty is the marginal (day-over-day) delta of the cumulative
 // curve, with curve[-1] treated as the zero DayCharge. By construction this
 // reconciles exactly every day:
 //
 //	NetAmount == UsageAtListRate + TierDelta - EntitlementAmount
-func decomposeUsageMarginal(li PreviewLineItem, curve []DayCharge) []*revenuefact.RevenueFact {
+func DecomposeUsageMarginal(li PreviewLineItem, curve []DayCharge) []*RevenueFact {
 	if len(curve) == 0 {
 		return nil
 	}
 
-	tier1Rate := listRate(li.Price)
-	rows := make([]*revenuefact.RevenueFact, 0, len(curve))
+	tier1Rate := ListRate(li.Price)
+	rows := make([]*RevenueFact, 0, len(curve))
 
 	var prev DayCharge
 	for _, dc := range curve {
@@ -241,7 +267,7 @@ func decomposeUsageMarginal(li PreviewLineItem, curve []DayCharge) []*revenuefac
 		marginalTierDelta := dc.TierDelta.Sub(prev.TierDelta)
 		entitlementAmount := marginalEntitlementQty.Mul(tier1Rate)
 
-		rows = append(rows, &revenuefact.RevenueFact{
+		rows = append(rows, &RevenueFact{
 			ID:                types.GenerateUUIDWithPrefix("revfact"),
 			TenantID:          li.TenantID,
 			EnvironmentID:     li.EnvironmentID,
@@ -271,4 +297,14 @@ func decomposeUsageMarginal(li PreviewLineItem, curve []DayCharge) []*revenuefac
 	}
 
 	return rows
+}
+
+// ListRate is the tier1/list rate used for UsageAtListRate and TierDelta: the
+// first tier's unit amount for tiered pricing, or the flat unit amount
+// otherwise (a flat price has one rate, which doubles as its own tier1).
+func ListRate(p *price.Price) decimal.Decimal {
+	if len(p.Tiers) > 0 {
+		return p.Tiers[0].UnitAmount
+	}
+	return p.Amount
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/revenuefact"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
@@ -17,34 +18,6 @@ import (
 // two time.Time values for the same instant/zone aren't guaranteed to be
 // == comparable (time.Time equality includes the loc pointer).
 const dayKeyLayout = "2006-01-02"
-
-// DayCharge is one calendar day's CUMULATIVE-through-that-day revenue
-// decomposition for a single usage line item, produced by BuildUsageCurve
-// (Approach C). Every field is a running total through Day, not a per-day
-// marginal value — the rollup derives marginal(D) = cur.X - prev.X per field.
-type DayCharge struct {
-	Day time.Time
-
-	// CumulativeCharge is CalculateCost(price, CumulativeBillableQty) — the
-	// actual engine charge through this day, net of the entitlement limit.
-	CumulativeCharge decimal.Decimal
-	// CumulativeGrossQty is the raw cumulative metered quantity through this
-	// day, before the entitlement limit is applied.
-	CumulativeGrossQty decimal.Decimal
-	// CumulativeBillableQty is max(0, CumulativeGrossQty - EntitlementLimit).
-	CumulativeBillableQty decimal.Decimal
-	// CumulativeEntitlementQty is min(CumulativeGrossQty, EntitlementLimit) —
-	// the entitlement consumed earliest-first, purely as a function of gross usage.
-	CumulativeEntitlementQty decimal.Decimal
-	// UsageAtListRate is CumulativeGrossQty x tier1_rate: gross usage priced at
-	// the list rate, before any entitlement giveback.
-	UsageAtListRate decimal.Decimal
-	// TierDelta is CumulativeCharge - (CumulativeBillableQty x tier1_rate) —
-	// the deviation from a flat list-rate charge caused by graduated tiering
-	// on the billed (post-entitlement) quantity. Zero for flat pricing, since
-	// tier1_rate is then the only rate.
-	TierDelta decimal.Decimal
-}
 
 // LineItemPricingInput is what BuildUsageCurve needs to price one usage line
 // item's cumulative usage curve over a billing period. Tenant/environment are
@@ -86,7 +59,7 @@ func NewRevenueCurveService(params ServiceParams) *revenueCurveService {
 // additive over monotonic cumulative prefixes for flat/graduated pricing
 // (proven by the Approach-C seam test in revenue_curve_seam_test.go), so no
 // extra pricing logic or ClickHouse read is needed beyond the single call.
-func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPricingInput) ([]DayCharge, error) {
+func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPricingInput) ([]revenuefact.DayCharge, error) {
 	if li.Price == nil {
 		return nil, ierr.NewError("price is required").
 			WithHint("BuildUsageCurve requires a non-nil price").
@@ -132,13 +105,13 @@ func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPr
 	if entitlementLimit.IsNegative() {
 		entitlementLimit = decimal.Zero
 	}
-	tier1Rate := listRate(li.Price)
+	tier1Rate := revenuefact.ListRate(li.Price)
 	priceSvc := NewPriceService(s.ServiceParams)
 
 	startLocal := li.PeriodStart.In(loc)
 	cur := time.Date(startLocal.Year(), startLocal.Month(), startLocal.Day(), 0, 0, 0, 0, loc)
 
-	curve := make([]DayCharge, 0)
+	curve := make([]revenuefact.DayCharge, 0)
 	runningGross := decimal.Zero
 	for cur.Before(li.PeriodEnd) {
 		// A day with no new usage carries forward the prior running total —
@@ -159,7 +132,7 @@ func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPr
 
 		charge := priceSvc.CalculateCost(ctx, li.Price, billable)
 
-		curve = append(curve, DayCharge{
+		curve = append(curve, revenuefact.DayCharge{
 			Day:                      time.Date(cur.Year(), cur.Month(), cur.Day(), 0, 0, 0, 0, time.UTC),
 			CumulativeCharge:         charge,
 			CumulativeGrossQty:       runningGross,
@@ -173,14 +146,4 @@ func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPr
 	}
 
 	return curve, nil
-}
-
-// listRate is the tier1/list rate used for UsageAtListRate and TierDelta: the
-// first tier's unit amount for tiered pricing, or the flat unit amount
-// otherwise (a flat price has one rate, which doubles as its own tier1).
-func listRate(p *price.Price) decimal.Decimal {
-	if len(p.Tiers) > 0 {
-		return p.Tiers[0].UnitAmount
-	}
-	return p.Amount
 }

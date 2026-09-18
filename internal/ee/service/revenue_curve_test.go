@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/revenuefact"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -110,7 +111,7 @@ func buildTestCurveInput(t *testing.T, ctx context.Context, store *testutil.InMe
 // got[idx-1] (or got[0] alone when idx==0). Note idx is a slice position, not
 // a 1-based day number — index 10 is the 11th day (Day fields are 0-indexed
 // from period start).
-func curveMarginal(got []DayCharge, idx int) decimal.Decimal {
+func curveMarginal(got []revenuefact.DayCharge, idx int) decimal.Decimal {
 	if idx == 0 {
 		return got[0].CumulativeCharge
 	}

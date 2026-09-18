@@ -115,13 +115,13 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 
 	// CommitmentAmount/CommitmentDuration/OverageFactor/BillingPeriod are
 	// subscription-wide, so one probe line item covers every real line item.
-	probe := PreviewLineItem{
+	probe := revenuefact.PreviewLineItem{
 		CommitmentAmount:   sub.CommitmentAmount,
 		CommitmentDuration: sub.CommitmentDuration,
 		OverageFactor:      sub.OverageFactor,
 		BillingPeriod:      sub.BillingPeriod,
 	}
-	if isMultiPeriodCommitment(probe) {
+	if revenuefact.IsMultiPeriodCommitment(probe) {
 		s.Logger.Info(ctx, "revenue_rollup_skipped",
 			"reason", revenueRollupSkipMultiPeriodCommitment,
 			"subscription_id", subscriptionID)
@@ -175,7 +175,7 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 		// The engine's line item period end is half-open/exclusive; every
 		// internal type here (RevenuePeriod, PreviewLineItem.PeriodEnd) is inclusive
 		// of the last calendar day, so convert once at the boundary.
-		itemPeriod := RevenuePeriod{Start: itemPeriodStart, End: itemPeriodEndExclusive.AddDate(0, 0, -1)}
+		itemPeriod := revenuefact.RevenuePeriod{Start: itemPeriodStart, End: itemPeriodEndExclusive.AddDate(0, 0, -1)}
 
 		itemSubscriptionID := sub.ID
 		if item.SubscriptionID != nil && *item.SubscriptionID != "" {
@@ -186,7 +186,7 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 			itemCustomerID = childID
 		}
 
-		base := PreviewLineItem{
+		base := revenuefact.PreviewLineItem{
 			TenantID:       sub.TenantID,
 			EnvironmentID:  sub.EnvironmentID,
 			CustomerID:     itemCustomerID,
@@ -210,7 +210,7 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 			// synthetic id instead — see stableTrueupPriceID.
 			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, itemSubscriptionID, isOverage)}
 
-			row := decomposeCommitmentTrueup(base, itemPeriod)
+			row := revenuefact.DecomposeCommitmentTrueup(base, itemPeriod)
 			allRows = append(allRows, row)
 			groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: base.Price.ID})
 
@@ -222,14 +222,14 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 					Mark(ierr.ErrSystem)
 			}
 			base.Price = p
-			if row := decomposeFixed(base, itemPeriod); row != nil {
+			if row := revenuefact.DecomposeFixed(base, itemPeriod); row != nil {
 				allRows = append(allRows, row)
 				groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: lo.FromPtr(item.PriceID)})
 			}
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE):
 			// A usage line item whose price or meter fails to
-			// hydrate is a hard error — never let decompositionMode(nil, nil)
+			// hydrate is a hard error — never let revenuefact.ClassifyDecompositionMode(nil, nil)
 			// silently default to Marginal.
 			p, hydrateErr := s.getPrice(ctx, priceCache, lo.FromPtr(item.PriceID))
 			if hydrateErr != nil {
@@ -249,7 +249,7 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 			base.Meter = m
 
 			var rows []*revenuefact.RevenueFact
-			switch decompositionMode(p, m) {
+			switch revenuefact.ClassifyDecompositionMode(p, m) {
 			case types.Marginal:
 				entitlementLimit, allowErr := resolveEntitlementLimit(m.ID)
 				if allowErr != nil {
@@ -267,9 +267,9 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 				if curveErr != nil {
 					return false, curveErr
 				}
-				rows = decomposeUsageMarginal(base, curve)
+				rows = revenuefact.DecomposeUsageMarginal(base, curve)
 			default:
-				rows = []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
+				rows = []*revenuefact.RevenueFact{revenuefact.DecomposeUsagePeriodOnly(base, itemPeriod)}
 			}
 			allRows = append(allRows, rows...)
 			groups = append(groups, lineItemRows{rows: rows, amount: item.Amount, identifier: lo.FromPtr(item.PriceID)})
