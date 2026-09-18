@@ -31,55 +31,40 @@ func fetchGatewayWithAutoChargeSupport(
 	}
 
 	for _, gw := range gateways {
-		switch gw {
-		case types.PaymentGatewayTypeRazorpay:
-			rzp, err := params.IntegrationFactory.GetRazorpayIntegration(ctx)
-			if err != nil {
-				return "", ierr.WithError(err).
-					WithHint("The payment provider could not be reached; try again shortly").
-					Mark(ierr.ErrHTTPClient)
-			}
-			_, tokens, err := rzp.CustomerSvc.ListConfirmedCustomerTokens(ctx, customerID)
-			if err != nil {
-				if ierr.IsNotFound(err) {
-					continue
-				}
-				return "", ierr.WithError(err).
-					WithHint("The payment provider could not be reached; try again shortly").
-					Mark(ierr.ErrHTTPClient)
-			}
-			if len(tokens) > 0 {
-				return gw, nil
-			}
-		default:
-			provider, err := params.IntegrationFactory.GetPaymentMethodProvider(ctx, gw, customerSvc)
-			if err != nil {
-				if ierr.IsNotImplemented(err) {
-					continue
-				}
-				return "", ierr.WithError(err).
-					WithHint("The payment provider could not be reached; try again shortly").
-					Mark(ierr.ErrHTTPClient)
-			}
+		if !hasCapability(gatewayCapabilities[gw], types.IntegrationCapabilityAutoCharge) {
+			continue
+		}
 
-			methods, err := provider.ListSavedMethods(ctx, customerID)
-			if err != nil {
-				if ierr.IsNotFound(err) {
-					continue
-				}
-				return "", ierr.WithError(err).
-					WithHint("The payment provider could not be reached; try again shortly").
-					Mark(ierr.ErrHTTPClient)
-			}
+		checkoutProvider, ok := types.CheckoutProviderFromGateway(gw)
+		if !ok {
+			continue
+		}
 
-			// Not IsDefault: the adapters charge the primary method when there is one and
-			// the first valid one otherwise, so requiring a default would refuse customers
-			// they can charge.
-			if lo.ContainsBy(methods, func(m interfaces.ProviderPaymentMethod) bool { return m.Active }) {
-				return gw, nil
+		provider, err := params.IntegrationFactory.GetCheckoutProvider(ctx, checkoutProvider, customerSvc, nil)
+		if err != nil {
+			if ierr.IsValidation(err) || ierr.IsNotImplemented(err) {
+				continue
 			}
+			return "", ierr.WithError(err).
+				WithHint("The payment provider could not be reached; try again shortly").
+				Mark(ierr.ErrHTTPClient)
+		}
+
+		hasMethod, err := provider.HasAutoChargeableMethod(ctx, customerID)
+		if err != nil {
+			return "", ierr.WithError(err).
+				WithHint("The payment provider could not be reached; try again shortly").
+				Mark(ierr.ErrHTTPClient)
+		}
+
+		if hasMethod {
+			return gw, nil
 		}
 	}
 
 	return "", nil
+}
+
+func hasCapability(caps []types.IntegrationCapabilityType, want types.IntegrationCapabilityType) bool {
+	return lo.Contains(caps, want)
 }

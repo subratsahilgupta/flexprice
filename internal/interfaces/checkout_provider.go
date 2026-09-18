@@ -23,6 +23,11 @@ type CheckoutProvider interface {
 	// fall back to CreateAuthorizationLink). A hard provider error is returned as err.
 	TryAutoChargingSavedMethod(ctx context.Context, req AuthorizationLinkRequest) (resp *CheckoutProviderResponse, charged bool, err error)
 
+	// HasAutoChargeableMethod returns true if the customer has an active instrument
+	// (e.g., a confirmed mandate token or an active vaulted payment source)
+	// ready for off-session automatic charges.
+	HasAutoChargeableMethod(ctx context.Context, customerID string) (bool, error)
+
 	// FetchPaymentState asks the provider what happened to a checkout's payment, so a
 	// session can be reconciled when the webhook was late, dropped, or errored.
 	//
