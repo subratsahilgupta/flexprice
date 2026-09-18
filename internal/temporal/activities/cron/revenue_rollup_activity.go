@@ -12,17 +12,17 @@ import (
 
 // RevenueRollupActivities wraps the periodic revenue_facts dirty-rollup entrypoint.
 type RevenueRollupActivities struct {
-	revenueRollupService service.RevenueRollupService
-	logger               *logger.Logger
+	revenueService service.RevenueService
+	logger         *logger.Logger
 }
 
 func NewRevenueRollupActivities(
-	revenueRollupService service.RevenueRollupService,
+	revenueService service.RevenueService,
 	log *logger.Logger,
 ) *RevenueRollupActivities {
 	return &RevenueRollupActivities{
-		revenueRollupService: revenueRollupService,
-		logger:               log,
+		revenueService: revenueService,
+		logger:         log,
 	}
 }
 
@@ -32,7 +32,7 @@ func (a *RevenueRollupActivities) RollupDirtyActivity(ctx context.Context, since
 	log := activity.GetLogger(ctx)
 	log.Info("Starting revenue rollup dirty scan", "since", since)
 
-	rolled, skipped, err := a.revenueRollupService.RollupDirty(ctx, since)
+	rolled, skipped, err := a.revenueService.RollupDirty(ctx, since)
 	if err != nil {
 		a.logger.Error(ctx, "revenue rollup dirty scan failed", "error", err, "since", since)
 		return nil, err

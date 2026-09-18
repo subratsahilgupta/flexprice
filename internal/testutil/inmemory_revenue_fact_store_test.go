@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,6 +36,7 @@ func sampleRevenueFact(subscriptionID, priceID string, day time.Time, source typ
 		ID:                types.GenerateUUIDWithPrefix("rf"),
 		CustomerID:        "cust_1",
 		SubscriptionID:    subscriptionID,
+		SubLineItemID:     lo.ToPtr("sli_" + priceID),
 		PriceID:           &priceID,
 		RevenueSource:     source,
 		PeriodStart:       day,
@@ -190,4 +192,23 @@ func TestInMemoryRevenueFactStore_FlipToFinalOnlyAffectsProvisional(t *testing.T
 	n2, err := s.FlipToFinal(ctx, "sub_1", "price_1", day, day, "inv_2", "inv_li_2")
 	require.NoError(t, err)
 	assert.Equal(t, 0, n2)
+}
+
+// Two line items can share one price on one day (e.g. a mid-period price
+// version change) — sub_line_item_id keeps them on separate grains.
+func TestInMemoryRevenueFactStore_TwoLineItemsSharePriceAndDay(t *testing.T) {
+	s := NewInMemoryRevenueFactStore()
+	ctx := revenueFactTestCtx("tenant_1", "env_1")
+	day := revenueFactDay("2026-01-10")
+
+	a := sampleRevenueFact("sub_1", "price_1", day, types.RevenueSourceFixed)
+	a.SubLineItemID = lo.ToPtr("sli_a")
+	b := sampleRevenueFact("sub_1", "price_1", day, types.RevenueSourceFixed)
+	b.SubLineItemID = lo.ToPtr("sli_b")
+
+	require.NoError(t, s.UpsertProvisional(ctx, []*revenuefact.RevenueFact{a, b}))
+
+	got, err := s.ListBySubscriptionPeriod(ctx, "sub_1", day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), types.FactProvisional)
+	require.NoError(t, err)
+	require.Len(t, got, 2, "distinct line items must keep distinct rows")
 }

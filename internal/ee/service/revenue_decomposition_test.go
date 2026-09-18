@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- classifier fixtures (ERD §6.5 table) ---
+// --- classifier fixtures ---
 
 func flatSum(t *testing.T) *price.Price {
 	t.Helper()
@@ -99,13 +99,14 @@ func bucketedMaxWeekly(t *testing.T) *meter.Meter {
 	}
 }
 
-// TestDecompositionMode is the classifier test per ERD §6.5's table.
+// TestDecompositionMode pins which price/meter combinations must split per
+// day (marginal) vs stay whole-period (period_only).
 func TestDecompositionMode(t *testing.T) {
-	assert.Equal(t, types.Marginal, revenuefact.ClassifyDecompositionMode(flatSum(t), sumMeter(t)))
-	assert.Equal(t, types.PeriodOnly, revenuefact.ClassifyDecompositionMode(volumeTiered(t), sumMeter(t)))
-	assert.Equal(t, types.PeriodOnly, revenuefact.ClassifyDecompositionMode(flat(t), latestMeter(t)))
-	assert.Equal(t, types.PeriodOnly, revenuefact.ClassifyDecompositionMode(flat(t), bucketedMaxWeekly(t)))
-	assert.Equal(t, types.Marginal, revenuefact.ClassifyDecompositionMode(graduated(t), countMeter(t)))
+	assert.Equal(t, types.Marginal, decompositionMode(flatSum(t), sumMeter(t)))
+	assert.Equal(t, types.PeriodOnly, decompositionMode(volumeTiered(t), sumMeter(t)))
+	assert.Equal(t, types.PeriodOnly, decompositionMode(flat(t), latestMeter(t)))
+	assert.Equal(t, types.PeriodOnly, decompositionMode(flat(t), bucketedMaxWeekly(t)))
+	assert.Equal(t, types.Marginal, decompositionMode(graduated(t), countMeter(t)))
 }
 
 // TestIsMultiPeriodCommitment covers the multi-period commitment detection
@@ -118,17 +119,17 @@ func TestIsMultiPeriodCommitment(t *testing.T) {
 
 	tests := []struct {
 		name string
-		li   revenuefact.PreviewLineItem
+		li   previewLineItem
 		want bool
 	}{
 		{
 			name: "no commitment",
-			li:   revenuefact.PreviewLineItem{BillingPeriod: monthly},
+			li:   previewLineItem{BillingPeriod: monthly},
 			want: false,
 		},
 		{
 			name: "single-period commitment (same duration as billing period)",
-			li: revenuefact.PreviewLineItem{
+			li: previewLineItem{
 				BillingPeriod:      monthly,
 				CommitmentAmount:   &amount,
 				CommitmentDuration: &monthly,
@@ -138,7 +139,7 @@ func TestIsMultiPeriodCommitment(t *testing.T) {
 		},
 		{
 			name: "multi-period commitment (annual commitment on monthly sub)",
-			li: revenuefact.PreviewLineItem{
+			li: previewLineItem{
 				BillingPeriod:      monthly,
 				CommitmentAmount:   &amount,
 				CommitmentDuration: &annual,
@@ -148,7 +149,7 @@ func TestIsMultiPeriodCommitment(t *testing.T) {
 		},
 		{
 			name: "overage factor not greater than 1",
-			li: revenuefact.PreviewLineItem{
+			li: previewLineItem{
 				BillingPeriod:      monthly,
 				CommitmentAmount:   &amount,
 				CommitmentDuration: &annual,
@@ -160,12 +161,12 @@ func TestIsMultiPeriodCommitment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, revenuefact.IsMultiPeriodCommitment(tt.li))
+			assert.Equal(t, tt.want, isMultiPeriodCommitment(tt.li))
 		})
 	}
 }
 
-// --- worked example (ERD §6.5): $30 advance fixed + usage(2000/day, 20k
+// --- worked example: $30 advance fixed + usage(2000/day, 20k
 // included, $0.01/call) + $500 commitment, summing to $530 over 30 days ---
 
 const workedExampleTenantID = "tenant_worked_example"
@@ -183,15 +184,15 @@ func day(n int) time.Time {
 func day1() time.Time { return day(1) }
 
 // workedExamplePeriodEnd is the inclusive last calendar day of the 30-day
-// worked-example period (day 30), matching revenuefact.RevenuePeriod's End semantics —
+// worked-example period (day 30), matching revenuePeriod's End semantics —
 // distinct from the half-open exclusive bound BuildUsageCurve's
-// LineItemPricingInput uses.
+// usageCurveInput uses.
 var workedExamplePeriodEnd = day(30)
 
 // workedExampleFixedLineItem is the $30/mo advance fixed charge.
-func workedExampleFixedLineItem(t *testing.T) revenuefact.PreviewLineItem {
+func workedExampleFixedLineItem(t *testing.T) previewLineItem {
 	t.Helper()
-	return revenuefact.PreviewLineItem{
+	return previewLineItem{
 		TenantID:       workedExampleTenantID,
 		EnvironmentID:  workedExampleEnvID,
 		CustomerID:     workedExampleCustomerID,
@@ -213,7 +214,7 @@ func workedExampleFixedLineItem(t *testing.T) revenuefact.PreviewLineItem {
 
 // workedExampleUsageLineItem is the $0.01/call usage charge with a 20000
 // call entitlementLimit, seeded at 2000 calls/day for 30 days into store.
-func workedExampleUsageLineItem(t *testing.T, ctx context.Context, store *testutil.InMemoryMeterUsageStore) (revenuefact.PreviewLineItem, LineItemPricingInput) {
+func workedExampleUsageLineItem(t *testing.T, ctx context.Context, store *testutil.InMemoryMeterUsageStore) (previewLineItem, usageCurveInput) {
 	t.Helper()
 	liInput := buildTestCurveInput(t, ctx, store,
 		curvePerDay(2000),
@@ -224,7 +225,7 @@ func workedExampleUsageLineItem(t *testing.T, ctx context.Context, store *testut
 	liInput.Price.Type = types.PRICE_TYPE_USAGE
 	liInput.Price.InvoiceCadence = types.InvoiceCadenceArrear
 
-	li := revenuefact.PreviewLineItem{
+	li := previewLineItem{
 		TenantID:       workedExampleTenantID,
 		EnvironmentID:  workedExampleEnvID,
 		CustomerID:     workedExampleCustomerID,
@@ -235,7 +236,7 @@ func workedExampleUsageLineItem(t *testing.T, ctx context.Context, store *testut
 		Currency:       "usd",
 		PeriodStart:    liInput.PeriodStart,
 		// liInput.PeriodEnd is BuildUsageCurve's exclusive bound (Jan 31);
-		// revenuefact.PreviewLineItem.PeriodEnd is the inclusive last calendar day (Jan 30).
+		// previewLineItem.PeriodEnd is the inclusive last calendar day (Jan 30).
 		PeriodEnd: liInput.PeriodEnd.AddDate(0, 0, -1),
 	}
 	return li, liInput
@@ -243,9 +244,9 @@ func workedExampleUsageLineItem(t *testing.T, ctx context.Context, store *testut
 
 // workedExampleTrueupLineItem is the $500 commitment true-up: usage billed
 // $400 (20 billed days * $20/day), so the true-up tops up to $500.
-func workedExampleTrueupLineItem(t *testing.T) revenuefact.PreviewLineItem {
+func workedExampleTrueupLineItem(t *testing.T) previewLineItem {
 	t.Helper()
-	return revenuefact.PreviewLineItem{
+	return previewLineItem{
 		TenantID:       workedExampleTenantID,
 		EnvironmentID:  workedExampleEnvID,
 		CustomerID:     workedExampleCustomerID,
@@ -273,19 +274,19 @@ func decomposeAll(t *testing.T, ctx context.Context) []*revenuefact.RevenueFact 
 	t.Helper()
 
 	store := testutil.NewInMemoryMeterUsageStore()
-	period := revenuefact.RevenuePeriod{Start: workedExamplePeriodStart, End: workedExamplePeriodEnd}
+	period := revenuePeriod{Start: workedExamplePeriodStart, End: workedExamplePeriodEnd}
 
 	var rows []*revenuefact.RevenueFact
 
 	fixedLI := workedExampleFixedLineItem(t)
-	if f := revenuefact.DecomposeFixed(fixedLI, period); f != nil {
+	if f := decomposeFixed(fixedLI, period); f != nil {
 		rows = append(rows, f)
 	}
 
 	usageLI, liInput := workedExampleUsageLineItem(t, ctx, store)
-	switch revenuefact.ClassifyDecompositionMode(usageLI.Price, usageLI.Meter) {
+	switch decompositionMode(usageLI.Price, usageLI.Meter) {
 	case types.Marginal:
-		svc := NewRevenueCurveService(ServiceParams{
+		svc := &revenueService{ServiceParams: ServiceParams{
 			Logger:         logger.NewNoopLogger(),
 			MeterUsageRepo: store,
 			PriceRepo:      testutil.NewInMemoryPriceStore(),
@@ -294,16 +295,16 @@ func decomposeAll(t *testing.T, ctx context.Context) []*revenuefact.RevenueFact 
 			PriceUnitRepo:  testutil.NewInMemoryPriceUnitStore(),
 			AddonRepo:      testutil.NewInMemoryAddonStore(),
 			SubRepo:        testutil.NewInMemorySubscriptionStore(),
-		})
-		curve, err := svc.BuildUsageCurve(ctx, liInput)
+		}}
+		curve, err := svc.buildUsageCurve(ctx, liInput)
 		require.NoError(t, err)
-		rows = append(rows, revenuefact.DecomposeUsageMarginal(usageLI, curve)...)
+		rows = append(rows, decomposeUsageMarginal(usageLI, curve)...)
 	default:
-		rows = append(rows, revenuefact.DecomposeUsagePeriodOnly(usageLI, period))
+		rows = append(rows, decomposeUsagePeriodOnly(usageLI, period))
 	}
 
 	trueupLI := workedExampleTrueupLineItem(t)
-	if f := revenuefact.DecomposeCommitmentTrueup(trueupLI, period); f != nil {
+	if f := decomposeCommitmentTrueup(trueupLI, period); f != nil {
 		rows = append(rows, f)
 	}
 
@@ -333,7 +334,7 @@ func sumNet(rows []*revenuefact.RevenueFact) decimal.Decimal {
 	return total
 }
 
-// TestDecompose_WorkedExample_530 is the ERD §6.5 headline test: a $30/mo
+// TestDecompose_WorkedExample_530: a $30/mo
 // advance fixed charge, $0.01/call usage with a 20000-call entitlementLimit at
 // 2000 calls/day, and a $500 minimum commitment, over a 30-day period.
 func TestDecompose_WorkedExample_530(t *testing.T) {
@@ -362,15 +363,15 @@ func TestDecompose_WorkedExample_530(t *testing.T) {
 // TestDecomposeFixed_ExcludesTrueupAndOverage asserts the exclusion rule:
 // decomposeFixed returns nil for metadata-flagged true-up/overage line items.
 func TestDecomposeFixed_ExcludesTrueupAndOverage(t *testing.T) {
-	period := revenuefact.RevenuePeriod{Start: workedExamplePeriodStart, End: workedExamplePeriodEnd}
+	period := revenuePeriod{Start: workedExamplePeriodStart, End: workedExamplePeriodEnd}
 
 	trueupLI := workedExampleTrueupLineItem(t)
-	assert.Nil(t, revenuefact.DecomposeFixed(trueupLI, period))
+	assert.Nil(t, decomposeFixed(trueupLI, period))
 
 	overageLI := workedExampleTrueupLineItem(t)
 	overageLI.Metadata = types.Metadata{"is_overage": "true"}
-	assert.Nil(t, revenuefact.DecomposeFixed(overageLI, period))
+	assert.Nil(t, decomposeFixed(overageLI, period))
 
 	fixedLI := workedExampleFixedLineItem(t)
-	assert.NotNil(t, revenuefact.DecomposeFixed(fixedLI, period))
+	assert.NotNil(t, decomposeFixed(fixedLI, period))
 }

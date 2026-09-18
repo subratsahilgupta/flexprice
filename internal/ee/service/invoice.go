@@ -1214,7 +1214,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateFinalized, inv.ID)
 
 	// Async, non-blocking FINAL flip of the revenue_facts shadow rows for this
-	// invoice (see RevenueRollupService.FinalizeSubscriptionPeriod). A bare
+	// invoice (see RevenueService.FinalizeSubscriptionPeriod). A bare
 	// goroutine would lose ctx's cancellation and values once this request
 	// returns, so detach with WithoutCancel (same pattern used to survive a
 	// message's context in internal/pubsub/router/router.go) while still
@@ -1242,7 +1242,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 			return
 		}
 
-		rollupSvc := NewRevenueRollupService(s.ServiceParams)
+		rollupSvc := NewRevenueService(s.ServiceParams)
 		if err := rollupSvc.FinalizeSubscriptionPeriod(asyncCtx, inv.ID); err != nil {
 			s.Logger.Error(asyncCtx, "async revenue facts final flip failed",
 				"error", err,
@@ -1546,7 +1546,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
 
 	// Async, non-blocking revert of the revenue_facts shadow rows stamped with
-	// this invoice (see RevenueRollupService.RevertInvoiceFacts) — the mirror
+	// this invoice (see RevenueService.RevertInvoiceFacts) — the mirror
 	// image of the FINAL flip on finalization, same detached-context pattern.
 	// Any error is logged and swallowed: shadow write-path, never affects the
 	// void result already returned to the caller.
@@ -1567,7 +1567,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 			return
 		}
 
-		rollupSvc := NewRevenueRollupService(s.ServiceParams)
+		rollupSvc := NewRevenueService(s.ServiceParams)
 		if err := rollupSvc.RevertInvoiceFacts(asyncCtx, inv.ID); err != nil {
 			s.Logger.Error(asyncCtx, "async revenue facts revert failed",
 				"error", err,

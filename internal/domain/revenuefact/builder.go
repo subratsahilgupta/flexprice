@@ -96,10 +96,8 @@ func (b *revenueFactBuilder) Build() *RevenueFact {
 	return &copied
 }
 
-// NewRevert builds the contra-entry for a FINAL fact whose invoice was voided:
-// same grain and invoice stamps, negated amounts, is_revert=true, fresh
-// identity. FINAL rows are immutable — a void posts a reversing row, never an
-// edit — so recognized revenue for a period is always Σ(rows incl. reverts).
+// NewRevert returns the negating twin of a FINAL fact whose invoice was
+// voided: same grain and invoice stamps, negated amounts, is_revert=true.
 func NewRevert(f *RevenueFact, computedAt time.Time) *RevenueFact {
 	return NewRevenueFactBuilder(f).
 		WithID(types.GenerateUUIDWithPrefix("revfact")).

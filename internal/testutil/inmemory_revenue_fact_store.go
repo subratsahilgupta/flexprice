@@ -19,20 +19,25 @@ type provisionalGrainKey struct {
 	environmentID  string
 	subscriptionID string
 	priceID        string
+	subLineItemID  string
 	day            time.Time
 	revenueSource  types.RevenueSource
 }
 
 func grainKeyFor(f *revenuefact.RevenueFact) provisionalGrainKey {
-	var priceID string
+	var priceID, subLineItemID string
 	if f.PriceID != nil {
 		priceID = *f.PriceID
+	}
+	if f.SubLineItemID != nil {
+		subLineItemID = *f.SubLineItemID
 	}
 	return provisionalGrainKey{
 		tenantID:       f.TenantID,
 		environmentID:  f.EnvironmentID,
 		subscriptionID: f.SubscriptionID,
 		priceID:        priceID,
+		subLineItemID:  subLineItemID,
 		day:            f.Day,
 		revenueSource:  f.RevenueSource,
 	}
@@ -66,14 +71,17 @@ var _ revenuefact.Repository = (*InMemoryRevenueFactStore)(nil)
 // always sourcing tenant/environment from ctx (mirroring the RLS guard the
 // raw-SQL repo must apply manually) and bumping Version on conflict.
 func (s *InMemoryRevenueFactStore) UpsertProvisional(ctx context.Context, facts []*revenuefact.RevenueFact) error {
-	// Mirror the Postgres repo's guard: a NULL/empty price_id defeats the
-	// provisional-grain unique index's dedup (Postgres never treats two NULLs
-	// as equal), so reject it before touching the store rather than silently
-	// diverging from Postgres by deduping on price_id == "".
+	// Mirror the Postgres guard: a NULL/empty price_id would dodge the unique
+	// index and duplicate rows, so reject it.
 	for _, f := range facts {
 		if f.PriceID == nil || *f.PriceID == "" {
 			return ierr.NewError("revenue fact requires a non-empty price_id").
 				WithHint("Provisional revenue facts must carry a non-empty price_id").
+				Mark(ierr.ErrValidation)
+		}
+		if f.SubLineItemID == nil || *f.SubLineItemID == "" {
+			return ierr.NewError("revenue fact requires a non-empty sub_line_item_id").
+				WithHint("Provisional revenue facts must carry a non-empty sub_line_item_id").
 				Mark(ierr.ErrValidation)
 		}
 	}
@@ -125,9 +133,6 @@ func (s *InMemoryRevenueFactStore) UpsertProvisional(ctx context.Context, facts 
 // FlipToFinal converts PROVISIONAL rows for a subscription/price/period to
 // FINAL, stamping the invoice line item, and returns the rows affected.
 func (s *InMemoryRevenueFactStore) FlipToFinal(ctx context.Context, subscriptionID, priceID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error) {
-	tenantID := types.GetTenantID(ctx)
-	environmentID := types.GetEnvironmentID(ctx)
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -155,14 +160,7 @@ func (s *InMemoryRevenueFactStore) FlipToFinal(ctx context.Context, subscription
 		f.InvoiceID = &invID
 		f.InvoiceLineItemID = &invLineID
 
-		delete(s.provisionalIndex, provisionalGrainKey{
-			tenantID:       tenantID,
-			environmentID:  environmentID,
-			subscriptionID: f.SubscriptionID,
-			priceID:        priceID,
-			day:            f.Day,
-			revenueSource:  f.RevenueSource,
-		})
+		delete(s.provisionalIndex, grainKeyFor(f))
 
 		affected++
 	}

@@ -26,10 +26,8 @@ var revenueFactInsertColumns = []string{
 	"invoice_id", "invoice_line_item_id", "lock_adjusted_day", "computed_at", "version",
 }
 
-// revenueFactMutableColumns are the columns re-written by UpsertProvisional's
-// DO UPDATE SET clause: every column except the provisional grain
-// (tenant_id, environment_id, subscription_id, price_id, day, revenue_source),
-// the primary key (id), and version (bumped separately).
+// revenueFactMutableColumns are re-written on conflict: every column except
+// the grain columns, the id, and version (bumped separately).
 var revenueFactMutableColumns = []string{
 	"customer_id", "sub_line_item_id", "meter_id", "aggregation_type",
 	"period_start", "period_end", "service_start", "service_end",
@@ -62,26 +60,27 @@ func NewRevenueFactRepository(client postgres.IClient, log *logger.Logger) reven
 	return &revenueFactRepository{client: client, log: log}
 }
 
-// UpsertProvisional inserts/updates facts on the provisional grain (tenant,
-// environment, subscription, price, day, revenue_source), bumping version on
-// conflict. The partial-index ON CONFLICT with a version bump is not
-// expressible through ent, so it runs as raw SQL over the ent writer
-// connection. tenant_id, environment_id and status are always set from
-// ctx/PROVISIONAL — never trusted from the input facts.
+// UpsertProvisional inserts or updates facts on the provisional grain,
+// bumping version on conflict. Raw SQL: ent cannot express a partial-index
+// ON CONFLICT. Tenant, environment and status always come from ctx, never
+// from the input.
 func (r *revenueFactRepository) UpsertProvisional(ctx context.Context, facts []*revenuefact.RevenueFact) error {
 	if len(facts) == 0 {
 		return nil
 	}
 
-	// The provisional-grain unique index includes price_id, and Postgres never
-	// treats two NULLs as equal in a unique constraint, so a NULL price_id
-	// would silently defeat ON CONFLICT dedup and double-write on re-roll. All
-	// slice-1 revenue sources always sit on a price, so require it up front,
-	// before any DB access.
+	// Postgres treats NULLs as unequal in unique indexes, so a NULL price_id
+	// or sub_line_item_id would dodge ON CONFLICT and duplicate rows on
+	// re-roll — require both.
 	for _, f := range facts {
 		if f.PriceID == nil || *f.PriceID == "" {
 			return ierr.NewError("revenue fact requires a non-empty price_id").
 				WithHint("Provisional revenue facts must carry a non-empty price_id").
+				Mark(ierr.ErrValidation)
+		}
+		if f.SubLineItemID == nil || *f.SubLineItemID == "" {
+			return ierr.NewError("revenue fact requires a non-empty sub_line_item_id").
+				WithHint("Provisional revenue facts must carry a non-empty sub_line_item_id").
 				Mark(ierr.ErrValidation)
 		}
 	}
@@ -97,10 +96,8 @@ func (r *revenueFactRepository) UpsertProvisional(ctx context.Context, facts []*
 	})
 	defer FinishSpan(span)
 
-	// Postgres caps a statement at 65535 bind parameters; a full-period rollup
-	// can exceed that with 33 params per row, so upsert in bounded chunks — all
-	// inside one transaction so a mid-batch failure can't leave the period
-	// partially upserted.
+	// Postgres caps a statement at 65535 bind parameters, so upsert in chunks,
+	// all in one transaction.
 	maxRowsPerStmt := 65535 / len(revenueFactInsertColumns)
 	upsertAll := func(ctx context.Context) error {
 		for start := 0; start < len(facts); start += maxRowsPerStmt {
@@ -205,7 +202,7 @@ func (r *revenueFactRepository) upsertProvisionalChunk(ctx context.Context, fact
 
 	query := fmt.Sprintf(
 		`INSERT INTO revenue_facts (%s) VALUES %s
-		ON CONFLICT (tenant_id, environment_id, subscription_id, price_id, day, revenue_source)
+		ON CONFLICT (tenant_id, environment_id, subscription_id, price_id, sub_line_item_id, day, revenue_source)
 		WHERE status = 'PROVISIONAL'
 		DO UPDATE SET %s`,
 		revenueFactInsertColumnList,
@@ -308,10 +305,8 @@ func (r *revenueFactRepository) ListBySubscriptionPeriod(ctx context.Context, su
 	return revenuefact.FromEntList(rows), nil
 }
 
-// RevertByInvoice writes a contra row for every FINAL, non-revert fact stamped
-// with invoiceID — the voided-invoice guardrail: FINAL rows are immutable, a
-// void posts reversing rows instead of editing them. Runs in one transaction;
-// idempotent (an invoice already carrying revert rows is left unchanged).
+// RevertByInvoice writes a negating twin for every FINAL fact of a voided
+// invoice — FINAL rows are never edited. One transaction; idempotent.
 func (r *revenueFactRepository) RevertByInvoice(ctx context.Context, invoiceID string) (int, error) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)

@@ -32,7 +32,7 @@ import (
 
 // RevenueRollupSuite drives RollupSubscription against the REAL billing preview
 // engine (PrepareSubscriptionInvoiceRequest) — not a hand-rolled decomposition —
-// over a worked example in the ERD §6.5 shape: a 30-day monthly subscription
+// over a worked example: a 30-day monthly subscription
 // with a $30 advance fixed charge, $0.01/call usage (1200 calls/day, a
 // same-meter Feature+Entitlement present but non-binding — see
 // seedWorkedExample), and a $500 minimum commitment with a 2x overage factor
@@ -41,7 +41,7 @@ import (
 type RevenueRollupSuite struct {
 	testutil.BaseServiceTestSuite
 	ctx   context.Context
-	svc   RevenueRollupService
+	svc   RevenueService
 	store *testutil.InMemoryRevenueFactStore
 
 	sub         *subscription.Subscription
@@ -60,7 +60,7 @@ func (s *RevenueRollupSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
 	s.ctx = s.GetContext()
 	s.store = s.GetStores().RevenueFactRepo.(*testutil.InMemoryRevenueFactStore)
-	s.svc = NewRevenueRollupService(s.serviceParams())
+	s.svc = NewRevenueService(s.serviceParams())
 }
 
 func (s *RevenueRollupSuite) TearDownTest() {
@@ -120,7 +120,7 @@ func (s *RevenueRollupSuite) serviceParams() ServiceParams {
 	}
 }
 
-// seedWorkedExample builds a worked-example fixture in the ERD §6.5 shape —
+// seedWorkedExample builds a worked-example fixture —
 // plan + fixed/usage prices + meter + feature + entitlement + subscription
 // (with a $500/2x/true-up subscription-level commitment) — and seeds
 // meter_usage at 1200 calls/day for 30 days, the real inputs the billing
@@ -137,8 +137,7 @@ func (s *RevenueRollupSuite) serviceParams() ServiceParams {
 // deducted amount (verified empirically). UsageLimit=0 still exercises the
 // real entitlement-resolution path (FeatureRepo/EntitlementRepo/
 // GetAggregatedSubscriptionEntitlements) that resolveEntitlementLimit depends on,
-// without perturbing the commitment math. See the task report's "concerns"
-// section for the full trace.
+// without perturbing the commitment math.
 func (s *RevenueRollupSuite) seedWorkedExample(ctx context.Context) {
 	s.periodStart = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	periodEndExclusive := s.periodStart.AddDate(0, 0, 30)
@@ -414,9 +413,9 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageSkipped() {
 // TestRollupSubscription_BindingEntitlementLimitReconciles covers review Fix 2: with
 // a REAL binding entitlement entitlementLimit (UsageLimit=20000, unlike
 // seedWorkedExample's degenerate UsageLimit=0) alongside the $500 commitment
-// from ERD §6.5, the total no longer equals $530 — the subscription-level
+// alongside the $500 commitment, the total no longer equals $530 — the subscription-level
 // commitment/true-up split runs on gross pre-entitlement usage, so the
-// entitlementLimit genuinely perturbs the total (see the task report's Concern 4).
+// entitlementLimit genuinely perturbs the total.
 // This asserts RECONCILIATION-BY-CONSTRUCTION instead of a hardcoded number:
 // Σ NetAmount(rows) must equal the same preview's Subtotal minus discounts,
 // and zero revenue_reconciliation_mismatch logs must have fired.
@@ -436,7 +435,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_BindingEntitlementLimitRecon
 	capturingLogger := logger.NewFromSugared(zap.New(core).Sugar())
 	params := s.serviceParams()
 	params.Logger = capturingLogger
-	svc := NewRevenueRollupService(params)
+	svc := NewRevenueService(params)
 
 	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
 
@@ -636,6 +635,7 @@ func (s *RevenueRollupSuite) seedFinalFlipFixture(ctx context.Context) *finalFli
 		ID:             "revfact_final_1",
 		CustomerID:     "cust_final_1",
 		SubscriptionID: fx.subscriptionID,
+		SubLineItemID:  lo.ToPtr("sli_final_1"),
 		PriceID:        lo.ToPtr(fx.priceID),
 		RevenueSource:  types.RevenueSourceFixed,
 		PeriodStart:    fx.periodStart,
@@ -811,7 +811,7 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipErrorIsReturnedT
 
 	params := s.serviceParams()
 	params.RevenueFactRepo = &failingRevenueFactRepo{InMemoryRevenueFactStore: s.store}
-	failingSvc := NewRevenueRollupService(params)
+	failingSvc := NewRevenueService(params)
 
 	s.Error(failingSvc.FinalizeSubscriptionPeriod(s.ctx, fx.invoice.ID))
 }

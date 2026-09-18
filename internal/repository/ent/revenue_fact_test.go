@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,6 +40,7 @@ func newTestRevenueFact(subscriptionID, priceID string, day time.Time, source ty
 		ID:                types.GenerateUUIDWithPrefix("rf"),
 		CustomerID:        "cust_" + subscriptionID,
 		SubscriptionID:    subscriptionID,
+		SubLineItemID:     lo.ToPtr("sli_" + priceID),
 		PriceID:           &priceID,
 		RevenueSource:     source,
 		PeriodStart:       day,
@@ -186,4 +188,24 @@ func TestRevenueFactRepository_UpsertProvisionalChunksLargeBatches(t *testing.T)
 	got, err := repo.ListBySubscriptionPeriod(ctx, "sub_"+runID, day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), types.FactProvisional)
 	require.NoError(t, err)
 	require.Len(t, got, n)
+}
+
+// Two line items can share one price on one day (e.g. a mid-period price
+// version change) — sub_line_item_id keeps them on separate grains.
+func TestRevenueFactRepository_TwoLineItemsSharePriceAndDay(t *testing.T) {
+	repo := newTestRevenueFactRepository(t)
+	runID := types.GenerateUUID()
+	ctx := revenueFactTestContext("tenant_"+runID, "env_"+runID)
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+
+	a := newTestRevenueFact("sub_"+runID, "price_"+runID, day, types.RevenueSourceFixed)
+	a.SubLineItemID = lo.ToPtr("sli_a_" + runID)
+	b := newTestRevenueFact("sub_"+runID, "price_"+runID, day, types.RevenueSourceFixed)
+	b.SubLineItemID = lo.ToPtr("sli_b_" + runID)
+
+	require.NoError(t, repo.UpsertProvisional(ctx, []*revenuefact.RevenueFact{a, b}))
+
+	got, err := repo.ListBySubscriptionPeriod(ctx, "sub_"+runID, day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), types.FactProvisional)
+	require.NoError(t, err)
+	require.Len(t, got, 2, "distinct line items must keep distinct rows")
 }

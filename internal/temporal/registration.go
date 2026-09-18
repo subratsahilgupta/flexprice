@@ -311,7 +311,7 @@ func RegisterWorkflowsAndActivities(
 		marketplaceSnapshot:          marketplaceSnapshotActivities,
 		marketplaceReport:            marketplaceReportActivities,
 		dailyDraftAndCompute:         cronActivities.NewDailyDraftAndComputeActivities(service.NewInvoiceService(params), subscriptionService, params.Logger),
-		revenueRollup:                cronActivities.NewRevenueRollupActivities(service.NewRevenueRollupService(params), params.Logger),
+		revenueRollup:                cronActivities.NewRevenueRollupActivities(service.NewRevenueService(params), params.Logger),
 	}
 
 	// Get all task queues and register workflows/activities for each

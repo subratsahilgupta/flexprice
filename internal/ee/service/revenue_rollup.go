@@ -18,75 +18,63 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Skip reasons logged/metriced by RollupSubscription. Slice-1 scope excludes
-// discounted invoices (decomposition doesn't split discounts yet) and
-// multi-period commitments (the true-up can't be attributed to one period).
+// Skip reasons logged by RollupSubscription. Discounted invoices and
+// multi-period commitments are skipped whole rather than written wrong.
 const (
 	revenueRollupSkipDiscountUnsupported   = "discount_unsupported"
 	revenueRollupSkipMultiPeriodCommitment = "multi_period_commitment"
 	revenueRollupSkipOverageUnsupported    = "overage_unsupported"
 )
 
-// RevenueRollupService is the linchpin of the revenue_facts shadow write-path:
-// preview -> curve -> decompose -> reconcile -> upsert. It never mutates
-// billing state — PrepareSubscriptionInvoiceRequest is non-mutating, and
-// reconciliation mismatches are only logged, never blocking the write.
-type RevenueRollupService interface {
-	// RollupSubscription previews subscription's current open period, decomposes
-	// every line item into revenue_facts rows, and upserts them as PROVISIONAL.
-	// Discounted and multi-period-commitment subscriptions are skipped (logged,
-	// nil error) rather than partially/incorrectly decomposed.
+// RevenueService writes and maintains revenue_facts rows. It is a shadow
+// write-path: it re-runs the billing preview, never mutates billing state,
+// and logs reconciliation mismatches instead of blocking on them.
+type RevenueService interface {
+	// RollupSubscription splits the subscription's current billing period
+	// into PROVISIONAL revenue_facts rows. Subscriptions it cannot split
+	// faithfully (discounts, multi-period commitments) are skipped with a log.
 	RollupSubscription(ctx context.Context, subscriptionID string) error
 
-	// RollupDirty rolls every subscription with activity since `since` (a coarse
-	// updated_at/period-bounds scan — idempotent upsert makes over-rolling
-	// harmless) and tallies how many were rolled vs skipped.
+	// RollupDirty rolls every opted-in subscription with activity since the
+	// given time. Over-rolling is harmless: the upsert is idempotent.
 	RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error)
 
-	// FinalizeSubscriptionPeriod flips the PROVISIONAL revenue_facts rows backing
-	// invoiceID's line items to FINAL, stamping invoice_id/invoice_line_item_id,
-	// then re-asserts reconciliation over the now-FINAL rows (shadow-only: a
-	// mismatch is logged, the flip is never rolled back). When no provisional
-	// rows exist for the period it rolls the period up just-in-time and flips
-	// once more. Intended to run asynchronously after invoice finalization —
-	// see performFinalizeInvoiceActions.
+	// FinalizeSubscriptionPeriod flips the invoice's PROVISIONAL rows to
+	// FINAL and stamps them with the invoice. When no provisional rows exist
+	// it derives rows from the invoice itself first. Runs async after invoice
+	// finalization.
 	FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error
 
-	// RevertInvoiceFacts posts contra rows (negated amounts, is_revert=true)
-	// for every FINAL fact stamped with a now-voided invoice. FINAL rows are
-	// immutable — a void reverses them, never edits. Idempotent; intended to
-	// run asynchronously after VoidInvoice.
+	// RevertInvoiceFacts writes a negating twin for every FINAL row of a
+	// voided invoice — FINAL rows are never edited. Idempotent; runs async
+	// after VoidInvoice.
 	RevertInvoiceFacts(ctx context.Context, invoiceID string) error
 }
 
-type revenueRollupService struct {
+type revenueService struct {
 	ServiceParams
 }
 
-// NewRevenueRollupService constructs the rollup service from the shared
-// service dependencies (repos, logger) — no dependencies beyond ServiceParams.
-func NewRevenueRollupService(params ServiceParams) RevenueRollupService {
-	return &revenueRollupService{ServiceParams: params}
+// NewRevenueService returns the revenue_facts service.
+func NewRevenueService(params ServiceParams) RevenueService {
+	return &revenueService{ServiceParams: params}
 }
 
-// lineItemRows is one preview line item's decomposed rows, kept together for
-// reconcileLineItem and for reconciliation logging.
+// lineItemRows keeps one line item's rows together for reconciliation logging.
 type lineItemRows struct {
 	rows       []*revenuefact.RevenueFact
 	amount     decimal.Decimal
 	identifier string
 }
 
-func (s *revenueRollupService) RollupSubscription(ctx context.Context, subscriptionID string) error {
+func (s *revenueService) RollupSubscription(ctx context.Context, subscriptionID string) error {
 	_, err := s.rollupSubscription(ctx, subscriptionID)
 	return err
 }
 
-// rollupSubscription is the real implementation; it additionally reports
-// whether the subscription was skipped by policy (discount/multi-period),
-// which RollupDirty needs for its rolled/skipped tally but the public
-// RollupSubscription signature (fixed by the interface) cannot carry.
-func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscriptionID string) (skipped bool, err error) {
+// rollupSubscription also reports policy skips, which RollupDirty tallies but
+// the interface method does not expose.
+func (s *revenueService) rollupSubscription(ctx context.Context, subscriptionID string) (skipped bool, err error) {
 	sub, err := s.SubRepo.Get(ctx, subscriptionID)
 	if err != nil {
 		return false, err
@@ -94,11 +82,10 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 	return s.rollupSubscriptionForPeriod(ctx, sub, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
 }
 
-// rollupSubscriptionForPeriod decomposes one explicit billing window
-// (periodEnd exclusive, matching the preview engine). The scheduled rollup
-// targets the current period; the FINAL-flip's JIT pass and manual backfills
-// target past periods.
-func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (skipped bool, err error) {
+// rollupSubscriptionForPeriod rolls one explicit billing window (periodEnd
+// exclusive). The schedule targets the current period; backfills and the
+// finalize fallback target past ones.
+func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (skipped bool, err error) {
 	subscriptionID := sub.ID
 
 	billingSvc := NewBillingService(s.ServiceParams)
@@ -116,13 +103,10 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 		return false, nil
 	}
 
-	// PrepareSubscriptionInvoiceRequest does not resolve coupon discount
-	// amounts onto the DTO line items (that happens later, in the invoice-assembly/
-	// coupon-application path this rollup never invokes) — so the earliest reliable
-	// discount signal here is the coupon reference lists it does populate, plus any
-	// discount amount that IS already set. Treating either as "carries a discount"
-	// is a conservative superset: it may skip a sub whose coupon nets to $0, but it
-	// never lets a genuinely discounted invoice through undecomposed.
+	// The preview does not resolve coupon amounts onto line items, so treat any
+	// coupon reference or already-set discount as "discounted" and skip — a
+	// conservative superset that never lets a discounted invoice through
+	// mis-split.
 	if hasDiscount(invReq) {
 		s.Logger.Info(ctx, "revenue_rollup_skipped",
 			"reason", revenueRollupSkipDiscountUnsupported,
@@ -132,25 +116,22 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 
 	// CommitmentAmount/CommitmentDuration/OverageFactor/BillingPeriod are
 	// subscription-wide, so one probe line item covers every real line item.
-	probe := revenuefact.PreviewLineItem{
+	probe := previewLineItem{
 		CommitmentAmount:   sub.CommitmentAmount,
 		CommitmentDuration: sub.CommitmentDuration,
 		OverageFactor:      sub.OverageFactor,
 		BillingPeriod:      sub.BillingPeriod,
 	}
-	if revenuefact.IsMultiPeriodCommitment(probe) {
+	if isMultiPeriodCommitment(probe) {
 		s.Logger.Info(ctx, "revenue_rollup_skipped",
 			"reason", revenueRollupSkipMultiPeriodCommitment,
 			"subscription_id", subscriptionID)
 		return true, nil
 	}
 
-	// A single-period commitment that usage EXCEEDS makes the
-	// engine emit a REDUCED within-commitment usage line plus a separate
-	// is_overage line. Decomposing the reduced line via the full curve (no
-	// commitment knowledge) overstates usage and won't reconcile — skip the
-	// whole subscription rather than write wrong rows. Commitment-aware usage
-	// decomposition is a deliberate later slice.
+	// When usage exceeds a commitment the engine reduces the usage line and
+	// adds an is_overage line; splitting the reduced line per day would not
+	// reconcile, so skip the whole subscription.
 	if hasOverageLine(invReq) {
 		s.Logger.Info(ctx, "revenue_rollup_skipped",
 			"reason", revenueRollupSkipOverageUnsupported,
@@ -190,9 +171,9 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 			itemPeriodEndExclusive = periodEnd
 		}
 		// The engine's line item period end is half-open/exclusive; every
-		// internal type here (RevenuePeriod, PreviewLineItem.PeriodEnd) is inclusive
+		// internal type here (revenuePeriod, previewLineItem.PeriodEnd) is inclusive
 		// of the last calendar day, so convert once at the boundary.
-		itemPeriod := revenuefact.RevenuePeriod{Start: itemPeriodStart, End: itemPeriodEndExclusive.AddDate(0, 0, -1)}
+		itemPeriod := revenuePeriod{Start: itemPeriodStart, End: itemPeriodEndExclusive.AddDate(0, 0, -1)}
 
 		itemSubscriptionID := sub.ID
 		if item.SubscriptionID != nil && *item.SubscriptionID != "" {
@@ -203,7 +184,7 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 			itemCustomerID = childID
 		}
 
-		base := revenuefact.PreviewLineItem{
+		base := previewLineItem{
 			TenantID:       sub.TenantID,
 			EnvironmentID:  sub.EnvironmentID,
 			CustomerID:     itemCustomerID,
@@ -215,19 +196,23 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 			PeriodStart:    itemPeriod.Start,
 			PeriodEnd:      itemPeriod.End,
 		}
+		if base.SubLineItemID == "" {
+			// Aggregate lines (subscription-level true-up) carry no line-item
+			// id; fall back to the subscription id so the provisional grain
+			// stays non-null.
+			base.SubLineItemID = itemSubscriptionID
+		}
 
 		isTrueup := item.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
 		isOverage := item.Metadata.GetBool(types.MetadataKeyIsOverage)
 
 		switch {
 		case isTrueup || isOverage:
-			// The engine emits a fresh random price_id for these rows
-			// on every compute; forwarding it verbatim would make every recompute
-			// INSERT a new provisional row instead of updating one. Derive a stable
-			// synthetic id instead — see stableTrueupPriceID.
+			// The engine assigns these lines a fresh random price_id every
+			// compute; use a stable synthetic id so recomputes update in place.
 			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, itemSubscriptionID, isOverage)}
 
-			row := revenuefact.DecomposeCommitmentTrueup(base, itemPeriod)
+			row := decomposeCommitmentTrueup(base, itemPeriod)
 			allRows = append(allRows, row)
 			groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: base.Price.ID})
 
@@ -239,14 +224,14 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 					Mark(ierr.ErrSystem)
 			}
 			base.Price = p
-			if row := revenuefact.DecomposeFixed(base, itemPeriod); row != nil {
+			if row := decomposeFixed(base, itemPeriod); row != nil {
 				allRows = append(allRows, row)
 				groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: lo.FromPtr(item.PriceID)})
 			}
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE):
 			// A usage line item whose price or meter fails to
-			// hydrate is a hard error — never let revenuefact.ClassifyDecompositionMode(nil, nil)
+			// hydrate is a hard error — never let decompositionMode(nil, nil)
 			// silently default to Marginal.
 			p, hydrateErr := s.getPrice(ctx, priceCache, lo.FromPtr(item.PriceID))
 			if hydrateErr != nil {
@@ -266,27 +251,27 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 			base.Meter = m
 
 			var rows []*revenuefact.RevenueFact
-			switch revenuefact.ClassifyDecompositionMode(p, m) {
+			switch decompositionMode(p, m) {
 			case types.Marginal:
 				entitlementLimit, allowErr := resolveEntitlementLimit(m.ID)
 				if allowErr != nil {
 					return false, allowErr
 				}
-				curve, curveErr := NewRevenueCurveService(s.ServiceParams).BuildUsageCurve(ctx, LineItemPricingInput{
+				curve, curveErr := s.buildUsageCurve(ctx, usageCurveInput{
 					Price:       p,
 					MeterID:     m.ID,
 					PeriodStart: itemPeriod.Start,
 					// BuildUsageCurve's upper bound is exclusive — convert back from the inclusive day.
-					PeriodEnd:        itemPeriod.ExclusiveEnd(),
+					PeriodEnd:        itemPeriod.exclusiveEnd(),
 					EntitlementLimit: entitlementLimit,
 					Timezone:         sub.Timezone,
 				})
 				if curveErr != nil {
 					return false, curveErr
 				}
-				rows = revenuefact.DecomposeUsageMarginal(base, curve)
+				rows = decomposeUsageMarginal(base, curve)
 			default:
-				rows = []*revenuefact.RevenueFact{revenuefact.DecomposeUsagePeriodOnly(base, itemPeriod)}
+				rows = []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
 			}
 			allRows = append(allRows, rows...)
 			groups = append(groups, lineItemRows{rows: rows, amount: item.Amount, identifier: lo.FromPtr(item.PriceID)})
@@ -327,10 +312,8 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 		return false, nil
 	}
 
-	// PROVISIONAL status and a non-empty price_id on every row are
-	// enforced by the four decompose* constructors and the stable-id
-	// substitution above; UpsertProvisional bumps version on a repeat call
-	// against the same grain instead of inserting a duplicate.
+	// Every row is PROVISIONAL with a non-empty price_id by construction;
+	// re-running upserts in place instead of duplicating.
 	if err := s.RevenueFactRepo.UpsertProvisional(ctx, allRows); err != nil {
 		return false, err
 	}
@@ -338,12 +321,10 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 	return false, nil
 }
 
-func (s *revenueRollupService) RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
-	// There can be millions of subscriptions across tenants — never scan them
-	// all. Only tenants that opted in via revenue_analytics_config are
-	// considered, one (tenant, environment) at a time so the per-env
-	// subscription listing rides the
-	// (tenant_id, environment_id, subscription_status, status) index.
+func (s *revenueService) RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
+	// Never scan all subscriptions: only tenants opted in via
+	// revenue_analytics_config are considered, one (tenant, environment) at a
+	// time so the per-env listing uses the subscriptions index.
 	tenantEnvConfigs, err := s.SettingsRepo.ListAllTenantEnvSettingsByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
 	if err != nil {
 		return 0, 0, err
@@ -383,7 +364,7 @@ func (s *revenueRollupService) RollupDirty(ctx context.Context, since time.Time)
 
 // rollupDirtyForEnvironment scans one (tenant, environment)'s active
 // subscriptions in pages and rolls every one with activity since `since`.
-func (s *revenueRollupService) rollupDirtyForEnvironment(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
+func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
 	const batchSize = 1000
 	offset := 0
 
@@ -439,7 +420,7 @@ type finalizePeriodGroup struct {
 	periodEnd      time.Time
 }
 
-func (s *revenueRollupService) FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error {
+func (s *revenueService) FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error {
 	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
 	if err != nil {
 		return err
@@ -453,14 +434,11 @@ func (s *revenueRollupService) FinalizeSubscriptionPeriod(ctx context.Context, i
 		return nil
 	}
 
-	// JIT rollup: zero flipped rows across the whole invoice means the
-	// provisional rows were never written for this period (an invoice
-	// re-drafted after a void, or a period the schedule hasn't covered).
-	// Decompose the finalized invoice's own line items into period_only rows
-	// and flip once more — still shadow-only, the finalization result already
-	// returned to the caller is unaffected.
+	// Zero flipped rows means no provisional rows existed for this period
+	// (re-drafted after a void, or never scheduled). Derive rows from the
+	// finalized invoice itself, then flip again.
 	if flipped == 0 {
-		if jitErr := s.jitRollupFromInvoice(ctx, inv); jitErr != nil {
+		if jitErr := s.rollupFromInvoice(ctx, inv); jitErr != nil {
 			return jitErr
 		}
 		if flipped, _, err = s.flipInvoiceLineItems(ctx, inv); err != nil {
@@ -473,10 +451,9 @@ func (s *revenueRollupService) FinalizeSubscriptionPeriod(ctx context.Context, i
 		}
 	}
 
-	// Shadow-only: re-assert reconciliation over every row this
-	// invoice actually flipped (rows from another invoice sharing the same
-	// subscription/period window are excluded by the invoice_id filter below).
-	// A mismatch is logged/metriced — never blocks or reverts the flip.
+	// Re-check that the flipped rows sum to the invoice total. A mismatch is
+	// logged, never blocks — and rows from other invoices in the same window
+	// are excluded by the invoice_id filter.
 	var finalRows []*revenuefact.RevenueFact
 	for _, g := range groupSeen {
 		rows, err := s.RevenueFactRepo.ListBySubscriptionPeriod(ctx, g.subscriptionID, g.periodStart, g.periodEnd, types.FactFinal)
@@ -501,7 +478,7 @@ func (s *revenueRollupService) FinalizeSubscriptionPeriod(ctx context.Context, i
 // flipInvoiceLineItems issues one FlipToFinal per flippable line item of inv,
 // returning the total rows flipped and the distinct (subscription, period)
 // grains touched.
-func (s *revenueRollupService) flipInvoiceLineItems(ctx context.Context, inv *invoice.Invoice) (int, map[string]finalizePeriodGroup, error) {
+func (s *revenueService) flipInvoiceLineItems(ctx context.Context, inv *invoice.Invoice) (int, map[string]finalizePeriodGroup, error) {
 	flipped := 0
 	groupSeen := make(map[string]finalizePeriodGroup)
 
@@ -526,10 +503,8 @@ func (s *revenueRollupService) flipInvoiceLineItems(ctx context.Context, inv *in
 		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
 		isOverage := li.Metadata.GetBool(types.MetadataKeyIsOverage)
 		if isTrueup || isOverage {
-			// The finalized line item's own price_id is a fresh random one the
-			// engine assigned at compute time (see stableTrueupPriceID) — it will
-			// never match the provisional rows, which were written keyed on the
-			// re-derived stable synthetic id. Re-derive the same id here.
+			// True-up/overage lines carry a random price_id per compute; match
+			// the provisional rows by re-deriving the same stable synthetic id.
 			priceID = stableTrueupPriceID(lo.FromPtr(li.SubscriptionLineItemID), subscriptionID, isOverage)
 		}
 
@@ -546,12 +521,10 @@ func (s *revenueRollupService) flipInvoiceLineItems(ctx context.Context, inv *in
 	return flipped, groupSeen, nil
 }
 
-// jitRollupFromInvoice writes period_only PROVISIONAL rows derived from the
-// finalized invoice's own line items — the fallback when no provisional rows
-// exist for the period. The finalized invoice is its own source of truth, so
-// these rows reconcile to it by construction; marginal (day-grain) usage
-// decomposition is deliberately not reconstructed here.
-func (s *revenueRollupService) jitRollupFromInvoice(ctx context.Context, inv *invoice.Invoice) error {
+// rollupFromInvoice derives period_only PROVISIONAL rows from a finalized
+// invoice.s own line items — the fallback when none exist for its period.
+// Per-day usage splitting is deliberately not reconstructed here.
+func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Invoice) error {
 	priceCache := map[string]*price.Price{}
 	meterCache := map[string]*meter.Meter{}
 	tenantID := types.GetTenantID(ctx)
@@ -565,9 +538,9 @@ func (s *revenueRollupService) jitRollupFromInvoice(ctx context.Context, inv *in
 		if subscriptionID == "" || periodStart.IsZero() || periodEndExclusive.IsZero() {
 			continue
 		}
-		period := revenuefact.RevenuePeriod{Start: periodStart, End: periodEndExclusive.AddDate(0, 0, -1)}
+		period := revenuePeriod{Start: periodStart, End: periodEndExclusive.AddDate(0, 0, -1)}
 
-		base := revenuefact.PreviewLineItem{
+		base := previewLineItem{
 			TenantID:       tenantID,
 			EnvironmentID:  environmentID,
 			CustomerID:     li.CustomerID,
@@ -579,13 +552,18 @@ func (s *revenueRollupService) jitRollupFromInvoice(ctx context.Context, inv *in
 			PeriodStart:    period.Start,
 			PeriodEnd:      period.End,
 		}
+		if base.SubLineItemID == "" {
+			// Invoice line items may lack a subscription-line-item id; the
+			// invoice line item id is stable for this invoice.
+			base.SubLineItemID = li.ID
+		}
 
 		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
 		isOverage := li.Metadata.GetBool(types.MetadataKeyIsOverage)
 		switch {
 		case isTrueup || isOverage:
 			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, subscriptionID, isOverage)}
-			rows = append(rows, revenuefact.DecomposeCommitmentTrueup(base, period))
+			rows = append(rows, decomposeCommitmentTrueup(base, period))
 
 		case lo.FromPtr(li.PriceType) == string(types.PRICE_TYPE_FIXED):
 			p, err := s.getPrice(ctx, priceCache, lo.FromPtr(li.PriceID))
@@ -593,7 +571,7 @@ func (s *revenueRollupService) jitRollupFromInvoice(ctx context.Context, inv *in
 				return err
 			}
 			base.Price = p
-			if row := revenuefact.DecomposeFixed(base, period); row != nil {
+			if row := decomposeFixed(base, period); row != nil {
 				rows = append(rows, row)
 			}
 
@@ -610,7 +588,7 @@ func (s *revenueRollupService) jitRollupFromInvoice(ctx context.Context, inv *in
 				}
 				base.Meter = m
 			}
-			rows = append(rows, revenuefact.DecomposeUsagePeriodOnly(base, period))
+			rows = append(rows, decomposeUsagePeriodOnly(base, period))
 
 		default:
 			s.Logger.Info(ctx, "revenue_jit_rollup_line_item_skipped",
@@ -629,7 +607,7 @@ func (s *revenueRollupService) jitRollupFromInvoice(ctx context.Context, inv *in
 // RevertInvoiceFacts posts contra rows for every FINAL fact stamped with a
 // now-voided invoice — FINAL rows are immutable, so a void reverses them
 // rather than editing or deleting. Idempotent via the repository.
-func (s *revenueRollupService) RevertInvoiceFacts(ctx context.Context, invoiceID string) error {
+func (s *revenueService) RevertInvoiceFacts(ctx context.Context, invoiceID string) error {
 	n, err := s.RevenueFactRepo.RevertByInvoice(ctx, invoiceID)
 	if err != nil {
 		return err
@@ -641,13 +619,9 @@ func (s *revenueRollupService) RevertInvoiceFacts(ctx context.Context, invoiceID
 	return nil
 }
 
-// stableTrueupPriceID derives the stable synthetic price_id used for
-// commitment-trueup/overage revenue_facts rows, standing in for the fresh
-// random price_id the billing engine assigns those line items on every
-// compute. Both the provisional rollup and the FINAL-flip call this
-// so they always agree on which row to touch: the real per-line-item id when
-// there is one, falling back to the subscription id for the
-// subscription-aggregate true-up, which carries no sub_line_item_id at all.
+// stableTrueupPriceID is the synthetic price_id for true-up/overage rows —
+// stable across recomputes, unlike the engine.s per-compute random id. Falls
+// back to the subscription id when there is no line-item id.
 func stableTrueupPriceID(subLineItemID, subscriptionID string, isOverage bool) string {
 	stableID := subLineItemID
 	if stableID == "" {
@@ -660,7 +634,7 @@ func stableTrueupPriceID(subLineItemID, subscriptionID string, isOverage bool) s
 	return prefix + stableID
 }
 
-func (s *revenueRollupService) getPrice(ctx context.Context, cache map[string]*price.Price, id string) (*price.Price, error) {
+func (s *revenueService) getPrice(ctx context.Context, cache map[string]*price.Price, id string) (*price.Price, error) {
 	if id == "" {
 		return nil, ierr.NewError("price id is required").
 			WithHint("cannot hydrate a price with an empty id").
@@ -677,7 +651,7 @@ func (s *revenueRollupService) getPrice(ctx context.Context, cache map[string]*p
 	return p, nil
 }
 
-func (s *revenueRollupService) getMeter(ctx context.Context, cache map[string]*meter.Meter, id string) (*meter.Meter, error) {
+func (s *revenueService) getMeter(ctx context.Context, cache map[string]*meter.Meter, id string) (*meter.Meter, error) {
 	if id == "" {
 		return nil, ierr.NewError("meter id is required").
 			WithHint("cannot hydrate a meter with an empty id").
@@ -694,11 +668,9 @@ func (s *revenueRollupService) getMeter(ctx context.Context, cache map[string]*m
 	return m, nil
 }
 
-// loadEntitlementsByMeterID resolves every metered entitlement's usage limit
-// for subscriptionID, keyed by meter id — the EntitlementLimit BuildUsageCurve
-// needs to derive CumulativeEntitlementQty/EntitlementAmount, which the preview
-// engine's own AdjustedEntitlementQuantity (already net of the limit) can't supply.
-func (s *revenueRollupService) loadEntitlementsByMeterID(ctx context.Context, subscriptionID string) (map[string]decimal.Decimal, error) {
+// loadEntitlementsByMeterID returns each metered entitlement.s usage limit,
+// keyed by meter id — the free-quantity input buildUsageCurve needs.
+func (s *revenueService) loadEntitlementsByMeterID(ctx context.Context, subscriptionID string) (map[string]decimal.Decimal, error) {
 	subscriptionService := NewSubscriptionService(s.ServiceParams)
 	agg, err := subscriptionService.GetAggregatedSubscriptionEntitlements(ctx, subscriptionID, nil)
 	if err != nil {
@@ -733,10 +705,8 @@ func hasOverageLine(invReq *dto.CreateInvoiceRequest) bool {
 	return false
 }
 
-// invoiceDiscountTotal sums the discount amount fields hasDiscount already
-// treats as a (currently unpopulated at this stage) discount signal — see
-// hasDiscount's own comment. Always zero today since a non-zero value here
-// would already have tripped hasDiscount and skipped the subscription.
+// invoiceDiscountTotal sums line and invoice discounts. Zero today: a
+// non-zero discount already makes hasDiscount skip the subscription.
 func invoiceDiscountTotal(invReq *dto.CreateInvoiceRequest) decimal.Decimal {
 	total := decimal.Zero
 	for _, li := range invReq.LineItems {
@@ -750,10 +720,8 @@ func invoiceDiscountTotal(invReq *dto.CreateInvoiceRequest) decimal.Decimal {
 	return total
 }
 
-// hasDiscount reports whether invReq's preview carries any discount signal —
-// see the ruling-4 comment at its call site for why the coupon reference
-// lists are the reliable signal here, not the (unpopulated at this stage)
-// LineItemDiscount/InvoiceLevelDiscount amounts.
+// hasDiscount reports whether the preview carries any discount signal:
+// coupon references, or an already-set discount amount.
 func hasDiscount(invReq *dto.CreateInvoiceRequest) bool {
 	if len(invReq.InvoiceCoupons) > 0 || len(invReq.LineItemCoupons) > 0 {
 		return true

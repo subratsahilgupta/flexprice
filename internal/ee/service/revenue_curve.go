@@ -6,79 +6,60 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/price"
-	"github.com/flexprice/flexprice/internal/domain/revenuefact"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
-// dayKeyLayout is a location-independent calendar-day key. Map keys can't be
-// raw time.Time here: GetCumulativeDailyUsage implementations (ClickHouse and
-// in-memory) each resolve their own *time.Location for the same IANA name, so
-// two time.Time values for the same instant/zone aren't guaranteed to be
-// == comparable (time.Time equality includes the loc pointer).
+// dayKeyLayout keys days by calendar date, not time.Time: two time.Time
+// values for the same instant can carry different *time.Location pointers
+// (ClickHouse vs in-memory) and would not be == comparable as map keys.
 const dayKeyLayout = "2006-01-02"
 
-// LineItemPricingInput is what BuildUsageCurve needs to price one usage line
-// item's cumulative usage curve over a billing period. Tenant/environment are
-// read from ctx, not carried here.
-type LineItemPricingInput struct {
+// usageCurveInput describes one usage line item to price day by day.
+// Tenant/environment come from ctx.
+type usageCurveInput struct {
 	Price   *price.Price
 	MeterID string
 
 	PeriodStart time.Time
-	// PeriodEnd is exclusive: the period is the half-open window
-	// [PeriodStart, PeriodEnd), matching CumulativeDailyUsageParams.
+	// PeriodEnd is exclusive: the period is [PeriodStart, PeriodEnd).
 	PeriodEnd time.Time
 
-	// EntitlementLimit is the entitlement quantity consumed earliest-first before
-	// billing starts. Negative values are treated as zero.
+	// EntitlementLimit is the free quantity consumed before billing starts.
+	// Negative values are treated as zero.
 	EntitlementLimit decimal.Decimal
 
-	// Timezone is the IANA name used to bucket usage into calendar days.
-	// Empty falls back to UTC.
+	// Timezone is the IANA name used to split usage into calendar days.
+	// Empty means UTC.
 	Timezone string
 }
 
-type revenueCurveService struct {
-	ServiceParams
-}
-
-// NewRevenueCurveService constructs the Approach-C cumulative usage curve
-// helper: per-day cumulative charge derivation for revenue-facts decomposition.
-func NewRevenueCurveService(params ServiceParams) *revenueCurveService {
-	return &revenueCurveService{ServiceParams: params}
-}
-
-// BuildUsageCurve returns one DayCharge per calendar day in li's period, each
-// carrying cumulative-through-that-day charge/quantities (Approach C).
-//
-// Mechanism: read the cumulative gross usage curve once via
-// GetCumulativeDailyUsage, then for each day D re-run CalculateCost on
-// billable(D) = max(0, gross(D) - EntitlementLimit). CalculateCost is exact and
-// additive over monotonic cumulative prefixes for flat/graduated pricing
-// (proven by the Approach-C seam test in revenue_curve_seam_test.go), so no
-// extra pricing logic or ClickHouse read is needed beyond the single call.
-func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPricingInput) ([]revenuefact.DayCharge, error) {
-	if li.Price == nil {
+// buildUsageCurve returns one dayCharge per calendar day of the period: it
+// reads the cumulative daily usage once, then re-prices each day's cumulative
+// billable quantity with CalculateCost. Summing the day-over-day deltas
+// equals the full-period charge for flat and graduated pricing (see
+// TestMarginalPrefixSumEqualsPeriodCharge).
+func (s *revenueService) buildUsageCurve(ctx context.Context, in usageCurveInput) ([]dayCharge, error) {
+	if in.Price == nil {
 		return nil, ierr.NewError("price is required").
-			WithHint("BuildUsageCurve requires a non-nil price").
+			WithHint("buildUsageCurve requires a non-nil price").
 			Mark(ierr.ErrValidation)
 	}
-	if li.MeterID == "" {
+	if in.MeterID == "" {
 		return nil, ierr.NewError("meter id is required").
-			WithHint("BuildUsageCurve requires a meter id").
+			WithHint("buildUsageCurve requires a meter id").
 			Mark(ierr.ErrValidation)
 	}
-	if !li.PeriodStart.Before(li.PeriodEnd) {
+	if !in.PeriodStart.Before(in.PeriodEnd) {
 		return nil, ierr.NewError("invalid period").
 			WithHint("period start must be before period end").
 			Mark(ierr.ErrValidation)
 	}
 
 	loc := time.UTC
-	if li.Timezone != "" {
-		if l, err := time.LoadLocation(li.Timezone); err == nil {
+	if in.Timezone != "" {
+		if l, err := time.LoadLocation(in.Timezone); err == nil {
 			loc = l
 		}
 	}
@@ -86,11 +67,11 @@ func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPr
 	points, err := s.MeterUsageRepo.GetCumulativeDailyUsage(ctx, &events.CumulativeDailyUsageParams{
 		TenantID:      types.GetTenantID(ctx),
 		EnvironmentID: types.GetEnvironmentID(ctx),
-		MeterID:       li.MeterID,
-		StartTime:     li.PeriodStart,
-		EndTime:       li.PeriodEnd,
+		MeterID:       in.MeterID,
+		StartTime:     in.PeriodStart,
+		EndTime:       in.PeriodEnd,
 		UseFinal:      true,
-		Timezone:      li.Timezone,
+		Timezone:      in.Timezone,
 	})
 	if err != nil {
 		return nil, err
@@ -101,38 +82,53 @@ func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPr
 		cumByDay[p.Day.Format(dayKeyLayout)] = p.CumulativeQty
 	}
 
-	entitlementLimit := li.EntitlementLimit
-	if entitlementLimit.IsNegative() {
-		entitlementLimit = decimal.Zero
+	limit := in.EntitlementLimit
+	if limit.IsNegative() {
+		limit = decimal.Zero
 	}
-	tier1Rate := revenuefact.ListRate(li.Price)
+	tier1Rate := listRate(in.Price)
 	priceSvc := NewPriceService(s.ServiceParams)
 
-	startLocal := li.PeriodStart.In(loc)
+	startLocal := in.PeriodStart.In(loc)
 	cur := time.Date(startLocal.Year(), startLocal.Month(), startLocal.Day(), 0, 0, 0, 0, loc)
 
-	curve := make([]revenuefact.DayCharge, 0)
+	// Walk local calendar days up to (not including) the local date of the
+	// exclusive PeriodEnd, so no emitted Day lands past the period's last day
+	// even when period bounds are not local midnights. Usage the store
+	// grouped onto that excluded date (a period ending mid-day) is folded
+	// into the last emitted day below, keeping totals intact.
+	endLocal := in.PeriodEnd.In(loc)
+	endDay := time.Date(endLocal.Year(), endLocal.Month(), endLocal.Day(), 0, 0, 0, 0, loc)
+	if !cur.Before(endDay) {
+		// The whole period sits inside one local day — emit that one day.
+		endDay = cur.AddDate(0, 0, 1)
+	}
+
+	curve := make([]dayCharge, 0)
 	runningGross := decimal.Zero
-	for cur.Before(li.PeriodEnd) {
-		// A day with no new usage carries forward the prior running total —
-		// the cumulative curve is only ever produced for days that have
-		// usage rows, but every calendar day in the period needs a DayCharge.
+	for cur.Before(endDay) {
+		// Days with no new usage carry the prior running total forward.
 		if qty, ok := cumByDay[cur.Format(dayKeyLayout)]; ok {
 			runningGross = qty
 		}
+		if isLast := !cur.AddDate(0, 0, 1).Before(endDay); isLast {
+			if qty, ok := cumByDay[endDay.Format(dayKeyLayout)]; ok && qty.GreaterThan(runningGross) {
+				runningGross = qty
+			}
+		}
 
-		billable := runningGross.Sub(entitlementLimit)
+		billable := runningGross.Sub(limit)
 		if billable.IsNegative() {
 			billable = decimal.Zero
 		}
-		entitlementQty := entitlementLimit
-		if runningGross.LessThan(entitlementLimit) {
+		entitlementQty := limit
+		if runningGross.LessThan(limit) {
 			entitlementQty = runningGross
 		}
 
-		charge := priceSvc.CalculateCost(ctx, li.Price, billable)
+		charge := priceSvc.CalculateCost(ctx, in.Price, billable)
 
-		curve = append(curve, revenuefact.DayCharge{
+		curve = append(curve, dayCharge{
 			Day:                      time.Date(cur.Year(), cur.Month(), cur.Day(), 0, 0, 0, 0, time.UTC),
 			CumulativeCharge:         charge,
 			CumulativeGrossQty:       runningGross,

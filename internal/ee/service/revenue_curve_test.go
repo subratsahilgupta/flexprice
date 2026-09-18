@@ -7,7 +7,6 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/price"
-	"github.com/flexprice/flexprice/internal/domain/revenuefact"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -62,10 +61,10 @@ func curvePrice(p *price.Price) curveTestOpt {
 }
 
 // buildTestCurveInput seeds an in-memory meter-usage store with `days` daily
-// records of `perDay` quantity, and returns the LineItemPricingInput for the
+// records of `perDay` quantity, and returns the usageCurveInput for the
 // resulting period (BuildUsageCurve reads usage back out via
 // GetCumulativeDailyUsage, exactly like the real ClickHouse-backed path).
-func buildTestCurveInput(t *testing.T, ctx context.Context, store *testutil.InMemoryMeterUsageStore, opts ...curveTestOpt) LineItemPricingInput {
+func buildTestCurveInput(t *testing.T, ctx context.Context, store *testutil.InMemoryMeterUsageStore, opts ...curveTestOpt) usageCurveInput {
 	t.Helper()
 
 	cfg := curveTestOpts{days: 1}
@@ -98,7 +97,7 @@ func buildTestCurveInput(t *testing.T, ctx context.Context, store *testutil.InMe
 	}
 	require.NoError(t, store.BulkInsertMeterUsage(ctx, records))
 
-	return LineItemPricingInput{
+	return usageCurveInput{
 		Price:            cfg.price,
 		MeterID:          meterID,
 		PeriodStart:      periodStart,
@@ -111,14 +110,14 @@ func buildTestCurveInput(t *testing.T, ctx context.Context, store *testutil.InMe
 // got[idx-1] (or got[0] alone when idx==0). Note idx is a slice position, not
 // a 1-based day number — index 10 is the 11th day (Day fields are 0-indexed
 // from period start).
-func curveMarginal(got []revenuefact.DayCharge, idx int) decimal.Decimal {
+func curveMarginal(got []dayCharge, idx int) decimal.Decimal {
 	if idx == 0 {
 		return got[0].CumulativeCharge
 	}
 	return got[idx].CumulativeCharge.Sub(got[idx-1].CumulativeCharge)
 }
 
-// TestBuildUsageCurve_EntitlementLimitThenFlatRate is the brief's headline test:
+// TestBuildUsageCurve_EntitlementLimitThenFlatRate covers the primary shape:
 // 2000/day usage, a 20000 entitlementLimit, a flat $0.01/unit price, over 30 days.
 // Days 1-10 stay fully inside the entitlementLimit (charge == 0); day 11 is the
 // first day billed usage crosses the entitlementLimit, so its marginal charge is
@@ -126,7 +125,7 @@ func curveMarginal(got []revenuefact.DayCharge, idx int) decimal.Decimal {
 func TestBuildUsageCurve_EntitlementLimitThenFlatRate(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewInMemoryMeterUsageStore()
-	svc := NewRevenueCurveService(ServiceParams{
+	svc := &revenueService{ServiceParams: ServiceParams{
 		Logger:         logger.NewNoopLogger(),
 		MeterUsageRepo: store,
 		PriceRepo:      testutil.NewInMemoryPriceStore(),
@@ -135,7 +134,7 @@ func TestBuildUsageCurve_EntitlementLimitThenFlatRate(t *testing.T) {
 		PriceUnitRepo:  testutil.NewInMemoryPriceUnitStore(),
 		AddonRepo:      testutil.NewInMemoryAddonStore(),
 		SubRepo:        testutil.NewInMemorySubscriptionStore(),
-	})
+	}}
 
 	curve := buildTestCurveInput(t, ctx, store,
 		curvePerDay(2000),
@@ -144,7 +143,7 @@ func TestBuildUsageCurve_EntitlementLimitThenFlatRate(t *testing.T) {
 		curveDays(30),
 	)
 
-	got, err := svc.BuildUsageCurve(ctx, curve)
+	got, err := svc.buildUsageCurve(ctx, curve)
 	require.NoError(t, err)
 	require.Len(t, got, 30)
 
@@ -173,8 +172,8 @@ func TestBuildUsageCurve_EntitlementLimitThenFlatRate(t *testing.T) {
 	assert.True(t, got[29].TierDelta.IsZero(), "flat pricing has no tier delta")
 }
 
-// TestBuildUsageCurve_GraduatedPrice exercises a SLAB-tiered price (proven
-// additive by the Approach-C seam test) with no entitlementLimit: cumulative charge
+// TestBuildUsageCurve_GraduatedPrice exercises a SLAB-tiered price (proven additive by
+// TestMarginalPrefixSumEqualsPeriodCharge) with no entitlementLimit: cumulative charge
 // on each day must equal CalculateCost run directly on that day's cumulative
 // quantity, and TierDelta must reflect the deviation from a flat tier1 charge.
 func TestBuildUsageCurve_GraduatedPrice(t *testing.T) {
@@ -190,7 +189,7 @@ func TestBuildUsageCurve_GraduatedPrice(t *testing.T) {
 		AddonRepo:      testutil.NewInMemoryAddonStore(),
 		SubRepo:        testutil.NewInMemorySubscriptionStore(),
 	}
-	svc := NewRevenueCurveService(params)
+	svc := &revenueService{ServiceParams: params}
 	priceSvc := NewPriceService(params)
 
 	tier1 := decimal.RequireFromString("0.01")
@@ -214,7 +213,7 @@ func TestBuildUsageCurve_GraduatedPrice(t *testing.T) {
 		curvePrice(graduated),
 	)
 
-	got, err := svc.BuildUsageCurve(ctx, curve)
+	got, err := svc.buildUsageCurve(ctx, curve)
 	require.NoError(t, err)
 	require.Len(t, got, 5)
 
@@ -271,7 +270,7 @@ func TestBuildUsageCurve_GraduatedWithEntitlementLimit(t *testing.T) {
 		AddonRepo:      testutil.NewInMemoryAddonStore(),
 		SubRepo:        testutil.NewInMemorySubscriptionStore(),
 	}
-	svc := NewRevenueCurveService(params)
+	svc := &revenueService{ServiceParams: params}
 	priceSvc := NewPriceService(params)
 
 	tier1 := decimal.RequireFromString("0.01")
@@ -297,7 +296,7 @@ func TestBuildUsageCurve_GraduatedWithEntitlementLimit(t *testing.T) {
 		curvePrice(graduated),
 	)
 
-	got, err := svc.BuildUsageCurve(ctx, curve)
+	got, err := svc.buildUsageCurve(ctx, curve)
 	require.NoError(t, err)
 	require.Len(t, got, 8)
 
@@ -319,15 +318,14 @@ func TestBuildUsageCurve_GraduatedWithEntitlementLimit(t *testing.T) {
 		assert.True(t, day.CumulativeBillableQty.Equal(billableQty), "day %d billable qty", i)
 		assert.True(t, day.CumulativeEntitlementQty.Equal(entitlementQty), "day %d entitlement qty", i)
 
-		// Approach C: the engine charge is CalculateCost run directly on the
+		// The engine charge is CalculateCost run directly on the
 		// day's cumulative billable quantity.
 		wantCharge := priceSvc.CalculateCost(ctx, graduated, billableQty)
 		assertDecimalClose(t, wantCharge, day.CumulativeCharge, "day %d cumulative charge", i)
 
 		// Reconciliation identity the decomposition must satisfy:
 		// UsageAtListRate + TierDelta - CumulativeEntitlementQty*tier1Rate == CumulativeCharge.
-		// This is exactly where a gross_qty-based TierDelta (the ERD's literal,
-		// incorrect prose) would diverge from the implemented billable_qty-based
+		// This is exactly where a gross_qty-based TierDelta would diverge from the implemented billable_qty-based
 		// one, once gross usage crosses the tier boundary post-entitlementLimit.
 		reconciled := day.UsageAtListRate.Add(day.TierDelta).Sub(entitlementQty.Mul(tier1))
 		assertDecimalClose(t, day.CumulativeCharge, reconciled, "day %d reconciliation identity", i)
@@ -348,7 +346,7 @@ func TestBuildUsageCurve_GraduatedWithEntitlementLimit(t *testing.T) {
 	assert.False(t, got[3].TierDelta.IsZero(), "tier delta should be non-zero once billable usage spills into tier 2")
 }
 
-// --- Approach-C seam (formerly revenue_curve_seam_test.go) ---
+// --- marginal-sum characterization (formerly revenue_curve_seam_test.go) ---
 
 // testPriceServiceParams builds the minimal ServiceParams CalculateCost needs
 // (it only touches s.Logger on the priceService receiver).
@@ -407,7 +405,7 @@ func seamGraduatedPrice(t *testing.T, tiers [][2]string) *price.Price {
 	}
 }
 
-// TestApproachC_MarginalPrefixSumEqualsPeriodCharge is the go/no-go
+// TestMarginalPrefixSumEqualsPeriodCharge is the go/no-go
 // characterization test for daily revenue decomposition via CalculateCost
 // deltas on cumulative-through-day quantities: summing the marginal
 // CalculateCost deltas across a monotonically increasing cumulative-quantity
@@ -415,7 +413,7 @@ func seamGraduatedPrice(t *testing.T, tiers [][2]string) *price.Price {
 // flat and a graduated (SLAB) price. If this ever fails (e.g. rounding
 // drift), the marginal decomposition must fall back to looping the full
 // preview with an as-of override per day.
-func TestApproachC_MarginalPrefixSumEqualsPeriodCharge(t *testing.T) {
+func TestMarginalPrefixSumEqualsPeriodCharge(t *testing.T) {
 	ctx := context.Background()
 	ps := NewPriceService(testPriceServiceParams(t))
 
