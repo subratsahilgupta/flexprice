@@ -18,11 +18,11 @@ import (
 // either drive the real path and assert the compensation, or seed the session the way the
 // single-addon suite does and drive completion from there.
 
-func (s *SubscriptionServiceSuite) addonsCheckoutRequest(params *dto.SubModifyAddonsParams) dto.ExecuteSubscriptionModifyRequest {
+func (s *SubscriptionServiceSuite) addonsCheckoutRequest(params *dto.SubModifyBulkAddonParams) dto.ExecuteSubscriptionModifyRequest {
 	return dto.ExecuteSubscriptionModifyRequest{
-		Type:         dto.SubscriptionModifyTypeAddons,
-		AddonsParams: params,
-		Checkout:     s.razorpayCheckoutParams(),
+		Type:            dto.SubscriptionModifyTypeAddon,
+		BulkAddonParams: params,
+		Checkout:        s.razorpayCheckoutParams(),
 	}
 }
 
@@ -296,7 +296,7 @@ func (s *SubscriptionServiceSuite) TestAddonsCheckout_ProviderFailure_ArchivesPe
 
 	at := sub.CurrentPeriodStart.Add(15 * 24 * time.Hour)
 	// No payment provider is configured in this suite, so the session creation fails.
-	_, err := s.modificationService().Execute(ctx, sub.ID, s.addonsCheckoutRequest(&dto.SubModifyAddonsParams{
+	_, err := s.modificationService().Execute(ctx, sub.ID, s.addonsCheckoutRequest(&dto.SubModifyBulkAddonParams{
 		Adds:    []*dto.AddAddonToSubscriptionRequest{s.modifyAdd("addon_pff_in", at)},
 		Removes: []*dto.RemoveAddonRequest{s.modifyRemove(outgoing, at)},
 	}))
@@ -333,7 +333,7 @@ func (s *SubscriptionServiceSuite) TestAddonsCheckout_NetNotPositive_AppliesImme
 	outgoing := s.attachForRemoval("addon_pfz_out", 90)
 
 	at := sub.CurrentPeriodStart.Add(15 * 24 * time.Hour)
-	resp, err := s.modificationService().Execute(ctx, sub.ID, s.addonsCheckoutRequest(&dto.SubModifyAddonsParams{
+	resp, err := s.modificationService().Execute(ctx, sub.ID, s.addonsCheckoutRequest(&dto.SubModifyBulkAddonParams{
 		Adds:    []*dto.AddAddonToSubscriptionRequest{s.modifyAdd("addon_pfz_in", at)},
 		Removes: []*dto.RemoveAddonRequest{s.modifyRemove(outgoing, at)},
 	}))
@@ -358,7 +358,7 @@ func (s *SubscriptionServiceSuite) TestAddonsCheckout_ConcurrentGuard() {
 	at := sub.CurrentPeriodStart.Add(15 * 24 * time.Hour)
 	s.seedPayFirstAddonBatchCheckout("addon_pfq_in", "", at)
 
-	_, err := s.modificationService().Execute(ctx, sub.ID, s.addonsCheckoutRequest(&dto.SubModifyAddonsParams{
+	_, err := s.modificationService().Execute(ctx, sub.ID, s.addonsCheckoutRequest(&dto.SubModifyBulkAddonParams{
 		Adds: []*dto.AddAddonToSubscriptionRequest{s.modifyAdd("addon_pfq_second", at)},
 	}))
 	s.Require().Error(err)

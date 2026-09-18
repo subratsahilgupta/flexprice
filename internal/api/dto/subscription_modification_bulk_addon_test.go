@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func validAddonsAdd() *AddAddonToSubscriptionRequest {
+func validBulkAddonAdd() *AddAddonToSubscriptionRequest {
 	return &AddAddonToSubscriptionRequest{
 		AddonID:           "addon_123",
 		Cadence:           types.AddonCadenceRecurring,
@@ -18,83 +18,83 @@ func validAddonsAdd() *AddAddonToSubscriptionRequest {
 	}
 }
 
-func validAddonsRemove() *RemoveAddonRequest {
+func validBulkAddonRemove() *RemoveAddonRequest {
 	return &RemoveAddonRequest{
 		AddonAssociationID: "addon_assoc_123",
 		ProrationBehavior:  types.ProrationBehaviorCreateProrations,
 	}
 }
 
-func TestSubModifyAddonsParams_Validate(t *testing.T) {
+func TestSubModifyBulkAddonParams_Validate(t *testing.T) {
 	manyAdds := make([]*AddAddonToSubscriptionRequest, maxAddonBatchEntries+1)
 	for i := range manyAdds {
-		manyAdds[i] = validAddonsAdd()
+		manyAdds[i] = validBulkAddonAdd()
 	}
 
-	withAdd := func(mutate func(*AddAddonToSubscriptionRequest)) *SubModifyAddonsParams {
-		add := validAddonsAdd()
+	withAdd := func(mutate func(*AddAddonToSubscriptionRequest)) *SubModifyBulkAddonParams {
+		add := validBulkAddonAdd()
 		mutate(add)
-		return &SubModifyAddonsParams{Adds: []*AddAddonToSubscriptionRequest{add}}
+		return &SubModifyBulkAddonParams{Adds: []*AddAddonToSubscriptionRequest{add}}
 	}
-	withRemove := func(mutate func(*RemoveAddonRequest)) *SubModifyAddonsParams {
-		remove := validAddonsRemove()
+	withRemove := func(mutate func(*RemoveAddonRequest)) *SubModifyBulkAddonParams {
+		remove := validBulkAddonRemove()
 		mutate(remove)
-		return &SubModifyAddonsParams{Removes: []*RemoveAddonRequest{remove}}
+		return &SubModifyBulkAddonParams{Removes: []*RemoveAddonRequest{remove}}
 	}
 
 	tests := []struct {
 		name    string
-		params  *SubModifyAddonsParams
+		params  *SubModifyBulkAddonParams
 		wantErr bool
 	}{
 		{name: "nil params", params: nil, wantErr: true},
-		{name: "no entries", params: &SubModifyAddonsParams{}, wantErr: true},
+		{name: "no entries", params: &SubModifyBulkAddonParams{}, wantErr: true},
 		{
 			name:    "adds only",
-			params:  &SubModifyAddonsParams{Adds: []*AddAddonToSubscriptionRequest{validAddonsAdd()}},
+			params:  &SubModifyBulkAddonParams{Adds: []*AddAddonToSubscriptionRequest{validBulkAddonAdd()}},
 			wantErr: false,
 		},
 		{
 			name:    "removes only",
-			params:  &SubModifyAddonsParams{Removes: []*RemoveAddonRequest{validAddonsRemove()}},
+			params:  &SubModifyBulkAddonParams{Removes: []*RemoveAddonRequest{validBulkAddonRemove()}},
 			wantErr: false,
 		},
 		{
 			name: "mixed swap",
-			params: &SubModifyAddonsParams{
-				Adds:    []*AddAddonToSubscriptionRequest{validAddonsAdd()},
-				Removes: []*RemoveAddonRequest{validAddonsRemove()},
+			params: &SubModifyBulkAddonParams{
+				Adds:    []*AddAddonToSubscriptionRequest{validBulkAddonAdd()},
+				Removes: []*RemoveAddonRequest{validBulkAddonRemove()},
 			},
 			wantErr: false,
 		},
 		{
 			// Two instances of one addon is a legitimate request.
 			name: "same addon added twice",
-			params: &SubModifyAddonsParams{
-				Adds: []*AddAddonToSubscriptionRequest{validAddonsAdd(), validAddonsAdd()},
+			params: &SubModifyBulkAddonParams{
+				Adds: []*AddAddonToSubscriptionRequest{validBulkAddonAdd(), validBulkAddonAdd()},
 			},
 			wantErr: false,
 		},
 		{
 			name:    "over the entry cap",
-			params:  &SubModifyAddonsParams{Adds: manyAdds},
+			params:  &SubModifyBulkAddonParams{Adds: manyAdds},
 			wantErr: true,
 		},
 		{
 			name: "duplicate association in removes",
-			params: &SubModifyAddonsParams{
-				Removes: []*RemoveAddonRequest{validAddonsRemove(), validAddonsRemove()},
+			params: &SubModifyBulkAddonParams{
+				Removes: []*RemoveAddonRequest{validBulkAddonRemove(), validBulkAddonRemove()},
 			},
 			wantErr: true,
 		},
 		{
 			name:    "nil add entry",
-			params:  &SubModifyAddonsParams{Adds: []*AddAddonToSubscriptionRequest{nil}},
+			params:  &SubModifyBulkAddonParams{Adds: []*AddAddonToSubscriptionRequest{nil}},
 			wantErr: true,
 		},
 		{
 			name:    "nil remove entry",
-			params:  &SubModifyAddonsParams{Removes: []*RemoveAddonRequest{nil}},
+			params:  &SubModifyBulkAddonParams{Removes: []*RemoveAddonRequest{nil}},
 			wantErr: true,
 		},
 		{
@@ -177,42 +177,67 @@ func TestSubModifyAddonsParams_Validate(t *testing.T) {
 
 // Entries are the single-addon requests, so their server-only fields must not be settable
 // from the wire.
-func TestSubModifyAddonsParams_ServerOnlyFieldsAreNotClientSettable(t *testing.T) {
-	add := validAddonsAdd()
+func TestSubModifyBulkAddonParams_ServerOnlyFieldsAreNotClientSettable(t *testing.T) {
+	add := validBulkAddonAdd()
 	assert.False(t, add.PreviewOnly)
 	assert.False(t, add.SkipEntityValidation)
-	assert.False(t, validAddonsRemove().PreviewOnly)
+	assert.False(t, validBulkAddonRemove().PreviewOnly)
 }
 
-func TestExecuteSubscriptionModifyRequest_Addons(t *testing.T) {
-	valid := &SubModifyAddonsParams{Adds: []*AddAddonToSubscriptionRequest{validAddonsAdd()}}
+func TestExecuteSubscriptionModifyRequest_BulkAddon(t *testing.T) {
+	valid := &SubModifyBulkAddonParams{Adds: []*AddAddonToSubscriptionRequest{validBulkAddonAdd()}}
 
 	t.Run("params required for type addons", func(t *testing.T) {
-		req := ExecuteSubscriptionModifyRequest{Type: SubscriptionModifyTypeAddons}
+		req := ExecuteSubscriptionModifyRequest{Type: SubscriptionModifyTypeAddon}
 		assert.Error(t, req.Validate())
 	})
 
 	t.Run("valid batch accepted", func(t *testing.T) {
-		req := ExecuteSubscriptionModifyRequest{Type: SubscriptionModifyTypeAddons, AddonsParams: valid}
+		req := ExecuteSubscriptionModifyRequest{Type: SubscriptionModifyTypeAddon, BulkAddonParams: valid}
 		assert.NoError(t, req.Validate())
 	})
 
 	t.Run("checkout accepted when the batch can charge", func(t *testing.T) {
 		req := ExecuteSubscriptionModifyRequest{
-			Type:         SubscriptionModifyTypeAddons,
-			AddonsParams: valid,
-			Checkout:     &CheckoutParams{PaymentParams: PaymentParams{PaymentProvider: types.CheckoutPaymentProviderRazorpay}},
+			Type:            SubscriptionModifyTypeAddon,
+			BulkAddonParams: valid,
+			Checkout:        &CheckoutParams{PaymentParams: PaymentParams{PaymentProvider: types.CheckoutPaymentProviderRazorpay}},
 		}
 		assert.NoError(t, req.Validate())
 	})
 
 	// A removes-only batch can only ever credit: the change service finds nothing to collect
 	// and applies immediately, so checkout is accepted and ignored rather than rejected.
+	// type "addon" carries either shape, so the request has to say which one it means.
+	t.Run("addon_params and addon_bulk_params together are rejected", func(t *testing.T) {
+		req := ExecuteSubscriptionModifyRequest{
+			Type:            SubscriptionModifyTypeAddon,
+			AddonParams:     &SubModifyAddonParams{Action: SubscriptionModificationActionAdd, Add: validBulkAddonAdd()},
+			BulkAddonParams: valid,
+		}
+		err := req.Validate()
+		assert.Error(t, err)
+		assert.True(t, ierr.IsValidation(err))
+	})
+
+	t.Run("neither params block is rejected", func(t *testing.T) {
+		req := ExecuteSubscriptionModifyRequest{Type: SubscriptionModifyTypeAddon}
+		assert.Error(t, req.Validate())
+	})
+
+	t.Run("addon_params alone still works", func(t *testing.T) {
+		req := ExecuteSubscriptionModifyRequest{
+			Type:        SubscriptionModifyTypeAddon,
+			AddonParams: &SubModifyAddonParams{Action: SubscriptionModificationActionAdd, Add: validBulkAddonAdd()},
+		}
+		assert.NoError(t, req.Validate())
+	})
+
 	t.Run("checkout accepted for a removes-only batch", func(t *testing.T) {
 		req := ExecuteSubscriptionModifyRequest{
-			Type:         SubscriptionModifyTypeAddons,
-			AddonsParams: &SubModifyAddonsParams{Removes: []*RemoveAddonRequest{validAddonsRemove()}},
-			Checkout:     &CheckoutParams{PaymentParams: PaymentParams{PaymentProvider: types.CheckoutPaymentProviderRazorpay}},
+			Type:            SubscriptionModifyTypeAddon,
+			BulkAddonParams: &SubModifyBulkAddonParams{Removes: []*RemoveAddonRequest{validBulkAddonRemove()}},
+			Checkout:        &CheckoutParams{PaymentParams: PaymentParams{PaymentProvider: types.CheckoutPaymentProviderRazorpay}},
 		}
 		assert.NoError(t, req.Validate())
 	})

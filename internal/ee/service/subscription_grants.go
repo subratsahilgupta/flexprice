@@ -43,8 +43,6 @@ type GrantSource struct {
 	AddonID string
 }
 
-// GrantChangeRequest describes a subscription change as the sources joining it and the
-// sources leaving it.
 type GrantChangeRequest struct {
 	Sub *subscription.Subscription
 
@@ -92,7 +90,7 @@ func (s *subscriptionGrantService) Resolve(ctx context.Context, req GrantChangeR
 
 	cfg := &GrantChangeConfig{sub: req.Sub}
 
-	creditGrantsToAdd, err := s.resolveCreditGrantToCreate(ctx, req.Sub, req.Incoming)
+	creditGrantsToAdd, err := s.resolveCreditGrantsToAdd(ctx, req.Sub, req.Incoming)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +117,6 @@ func (s *subscriptionGrantService) Resolve(ctx context.Context, req GrantChangeR
 	}
 
 	cfg.entitlementChangeAt = entitlementChangeAt(req)
-
 	return cfg, nil
 }
 
@@ -157,10 +154,10 @@ func entitlementChangeAt(req GrantChangeRequest) time.Time {
 	return at
 }
 
-// resolveCreditGrantToCreate clones each incoming addon's ADDON-scoped credit grant templates
+// resolveCreditGrantsToAdd clones each incoming addon's ADDON-scoped credit grant templates
 // into SUBSCRIPTION-scoped requests, then groups the sources that share an anchoring so the
 // whole batch materializes in as few passes as there are distinct anchorings.
-func (s *subscriptionGrantService) resolveCreditGrantToCreate(
+func (s *subscriptionGrantService) resolveCreditGrantsToAdd(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	incoming []GrantSource,
@@ -175,7 +172,7 @@ func (s *subscriptionGrantService) resolveCreditGrantToCreate(
 		return nil, err
 	}
 
-	groups := make([]dto.CreateSubscriptionGrantsRequest, 0, len(incoming))
+	addRequests := make([]dto.CreateSubscriptionGrantsRequest, 0, len(incoming))
 	index := make(map[string]int, len(incoming))
 	for _, src := range incoming {
 		grants := templates[src.AddonID]
@@ -191,12 +188,12 @@ func (s *subscriptionGrantService) resolveCreditGrantToCreate(
 		proration := s.addonCreditGrantProration(ctx, sub, src.EffectiveDate, src.Behavior)
 		key := creditGrantGroupKey(src, proration)
 		if i, ok := index[key]; ok {
-			groups[i].Grants = append(groups[i].Grants, creditGrantRequestsFromAddon(sub, src.AddonID, grants)...)
+			addRequests[i].Grants = append(addRequests[i].Grants, creditGrantRequestsFromAddon(sub, src.AddonID, grants)...)
 			continue
 		}
 
-		index[key] = len(groups)
-		groups = append(groups, dto.CreateSubscriptionGrantsRequest{
+		index[key] = len(addRequests)
+		addRequests = append(addRequests, dto.CreateSubscriptionGrantsRequest{
 			Subscription:         sub,
 			Grants:               creditGrantRequestsFromAddon(sub, src.AddonID, grants),
 			StartDate:            src.EffectiveDate,
@@ -205,7 +202,7 @@ func (s *subscriptionGrantService) resolveCreditGrantToCreate(
 		})
 	}
 
-	return groups, nil
+	return addRequests, nil
 }
 
 // creditGrantGroupKey identifies the anchoring materializeCreditGrants pins for a source:
@@ -258,18 +255,20 @@ func resolveCreditGrantCancellations(
 	removed []GrantSource,
 ) []dto.CancelFutureSubscriptionGrantsRequest {
 	cancellations := make([]dto.CancelFutureSubscriptionGrantsRequest, 0, len(removed))
-	index := make(map[time.Time]int, len(removed))
+	index := make(map[int64]int, len(removed))
 
 	for _, src := range removed {
 		if src.AddonID == "" {
 			continue
 		}
-		if i, ok := index[src.EffectiveDate]; ok {
+
+		key := src.EffectiveDate.UTC().UnixNano()
+		if i, ok := index[key]; ok {
 			cancellations[i].AddonIDs = append(cancellations[i].AddonIDs, src.AddonID)
 			continue
 		}
 
-		index[src.EffectiveDate] = len(cancellations)
+		index[key] = len(cancellations)
 		cancellations = append(cancellations, dto.CancelFutureSubscriptionGrantsRequest{
 			SubscriptionID: sub.ID,
 			AddonIDs:       []string{src.AddonID},

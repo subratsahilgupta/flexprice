@@ -45,7 +45,7 @@ type AddonChangeRequest struct {
 }
 
 // NewAddonChangeRequest maps a batch modify payload onto the spine's request.
-func NewAddonChangeRequest(sub *subscription.Subscription, params *dto.SubModifyAddonsParams) AddonChangeRequest {
+func NewAddonChangeRequest(sub *subscription.Subscription, params *dto.SubModifyBulkAddonParams) AddonChangeRequest {
 	return AddonChangeRequest{
 		Subscription: sub,
 		Adds: lo.Map(params.Adds, func(add *dto.AddAddonToSubscriptionRequest, _ int) AddonAdd {
@@ -185,35 +185,6 @@ func (c *addonChangeConfig) getReason() string {
 		return ""
 	}
 	return c.reason
-}
-
-func (c *addonChangeConfig) getAssociations() []*addonassociation.AddonAssociation {
-	associations := make([]*addonassociation.AddonAssociation, 0, len(c.getAttaches())+len(c.getDetaches()))
-	for _, attach := range c.getAttaches() {
-		associations = append(associations, attach.getAssociation())
-	}
-	for _, detach := range c.getDetaches() {
-		associations = append(associations, detach.getAssociation())
-	}
-
-	return associations
-}
-
-func (c *addonChangeConfig) getCreatedLineItems() []*subscription.SubscriptionLineItem {
-	lineItems := []*subscription.SubscriptionLineItem{}
-	for _, attach := range c.getAttaches() {
-		lineItems = append(lineItems, attach.getLineItems()...)
-	}
-
-	return lineItems
-}
-
-func (c *addonChangeConfig) getEndedLineItems() []*subscription.SubscriptionLineItem {
-	lineItems := []*subscription.SubscriptionLineItem{}
-	for _, detach := range c.getDetaches() {
-		lineItems = append(lineItems, detach.getLineItems()...)
-	}
-	return lineItems
 }
 
 type addonChangeService struct {
@@ -572,19 +543,15 @@ func (s *addonChangeService) persistAttaches(ctx context.Context, config *addonC
 		return err
 	}
 
+	lineItems := make([]*subscription.SubscriptionLineItem, 0, len(config.getAttaches()))
 	for _, attach := range config.getAttaches() {
 		if err := s.sub.createBucketPricesForLineItems(ctx, sub, attach.getLineItems(), attach.getBucketCfgs()); err != nil {
 			return err
 		}
-
-		for _, lineItem := range attach.getLineItems() {
-			if err := s.SubscriptionLineItemRepo.Create(ctx, lineItem); err != nil {
-				return err
-			}
-		}
+		lineItems = append(lineItems, attach.getLineItems()...)
 	}
 
-	return nil
+	return s.SubscriptionLineItemRepo.CreateBulk(ctx, lineItems)
 }
 
 // Settle raises the one netted document the batch owes: an invoice when the net is a charge,
@@ -692,6 +659,12 @@ func (s *addonChangeService) ExecutePayFirst(
 		}
 		req.Subscription = locked
 
+		// Re-checked against the locked row: the first pass ran before the lock, so a
+		// subscription cancelled in between would otherwise get a checkout opened on it.
+		if err := validateAddonChangeCheckout(req, checkout); err != nil {
+			return err
+		}
+
 		// Taken under the row lock, so two concurrent payment-gated changes cannot both pass.
 		existing, err := anyPendingCheckoutSession(txCtx, s.ServiceParams, locked.CustomerID, locked.ID)
 		if err != nil {
@@ -715,13 +688,6 @@ func (s *addonChangeService) ExecutePayFirst(
 			return nil
 		}
 
-		// Validated before anything is written, so a malformed payload cannot leave pending
-		// associations behind for a session that was never going to be created.
-		checkoutParams = addonChangeCheckoutParams(resolved)
-		if err := checkoutParams.Validate(); err != nil {
-			return err
-		}
-
 		// Attaches only: applying a removal now would end line items before payment, and
 		// cancelling the checkout would strand the customer on the cheaper state.
 		if err := s.PersistPending(txCtx, resolved); err != nil {
@@ -731,6 +697,11 @@ func (s *addonChangeService) ExecutePayFirst(
 		// The draft locks exactly what pay-later would have billed.
 		drafted, err := s.Settle(txCtx, resolved, SettleModeDraft)
 		if err != nil {
+			return err
+		}
+
+		checkoutParams = addonChangeCheckoutParams(resolved)
+		if err := checkoutParams.Validate(); err != nil {
 			return err
 		}
 

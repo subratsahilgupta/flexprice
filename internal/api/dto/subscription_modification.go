@@ -37,7 +37,6 @@ type SubModifyInheritanceRequest struct {
 var checkoutAllowedModifyTypes = []SubscriptionModifyType{
 	SubscriptionModifyTypeQuantityChange,
 	SubscriptionModifyTypeAddon,
-	SubscriptionModifyTypeAddons,
 }
 
 func (r *SubModifyInheritanceRequest) Validate() error {
@@ -147,7 +146,6 @@ const (
 	SubscriptionModifyTypeCoupon           SubscriptionModifyType = "coupon"
 	SubscriptionModifyTypeTax              SubscriptionModifyType = "tax"
 	SubscriptionModifyTypeAddon            SubscriptionModifyType = "addon"
-	SubscriptionModifyTypeAddons           SubscriptionModifyType = "addons"
 )
 
 type SubscriptionModificationAction string
@@ -324,16 +322,17 @@ func (r *SubModifyAddonParams) Validate() error {
 
 const maxAddonBatchEntries = 20
 
-// SubModifyAddonsParams adds and removes several addons as one change, settled as one netted
+// SubModifyBulkAddonParams adds and removes several addons as one change, settled as one netted
 // document. Entries are the single-addon requests verbatim, so every per-entry rule is shared.
-type SubModifyAddonsParams struct {
+// Reached through type "addon" by sending addon_bulk_params instead of addon_params.
+type SubModifyBulkAddonParams struct {
 	Adds    []*AddAddonToSubscriptionRequest `json:"adds,omitempty"`
 	Removes []*RemoveAddonRequest            `json:"removes,omitempty"`
 }
 
-func (p *SubModifyAddonsParams) Validate() error {
+func (p *SubModifyBulkAddonParams) Validate() error {
 	if p == nil {
-		return ierr.NewError("addons_params is required").
+		return ierr.NewError("addon_bulk_params is required").
 			Mark(ierr.ErrValidation)
 	}
 
@@ -409,7 +408,7 @@ type ExecuteSubscriptionModifyRequest struct {
 	CouponParams           *SubModifyCouponParams           `json:"coupon_params,omitempty"`
 	TaxParams              *SubModifyTaxParams              `json:"tax_params,omitempty"`
 	AddonParams            *SubModifyAddonParams            `json:"addon_params,omitempty"`
-	AddonsParams           *SubModifyAddonsParams           `json:"addons_params,omitempty"`
+	BulkAddonParams        *SubModifyBulkAddonParams        `json:"addon_bulk_params,omitempty"`
 	Checkout               *CheckoutParams                  `json:"checkout,omitempty"`
 }
 
@@ -453,22 +452,26 @@ func (r *ExecuteSubscriptionModifyRequest) Validate() error {
 		}
 		err = r.TaxParams.Validate()
 	case SubscriptionModifyTypeAddon:
-		if r.AddonParams == nil {
-			return ierr.NewError("addon_params is required for type 'addon'").
-				WithHint("Provide addon_params with an action of add or remove").
+		// One addon or several: addon_params changes a single addon, addon_bulk_params
+		// changes a set of them as one netted document. Exactly one of the two.
+		switch {
+		case r.AddonParams != nil && r.BulkAddonParams != nil:
+			return ierr.NewError("addon_params and addon_bulk_params are mutually exclusive").
+				WithHint("Send addon_params to change one addon, or addon_bulk_params to change several").
+				Mark(ierr.ErrValidation)
+		case r.BulkAddonParams != nil:
+			err = r.BulkAddonParams.Validate()
+		case r.AddonParams != nil:
+			err = r.AddonParams.Validate()
+		default:
+			return ierr.NewError("addon_params or addon_bulk_params is required for type 'addon'").
+				WithHint("Provide addon_params with an action of add or remove, " +
+					"or addon_bulk_params with at least one add or remove").
 				Mark(ierr.ErrValidation)
 		}
-		err = r.AddonParams.Validate()
-	case SubscriptionModifyTypeAddons:
-		if r.AddonsParams == nil {
-			return ierr.NewError("addons_params is required for type 'addons'").
-				WithHint("Provide addons_params with at least one add or remove").
-				Mark(ierr.ErrValidation)
-		}
-		err = r.AddonsParams.Validate()
 	default:
 		return ierr.NewError("unknown modification type: " + string(r.Type)).
-			WithHint("Valid values: inheritance, quantity_change, grouped_invoicing, trial_end, coupon, tax, addon, addons").
+			WithHint("Valid values: inheritance, quantity_change, grouped_invoicing, trial_end, coupon, tax, addon").
 			Mark(ierr.ErrValidation)
 	}
 	if err != nil {
@@ -491,7 +494,8 @@ func (r *ExecuteSubscriptionModifyRequest) validateCheckout() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.Type == SubscriptionModifyTypeAddon && r.AddonParams.Action == SubscriptionModificationActionRemove {
+	if r.Type == SubscriptionModifyTypeAddon && r.AddonParams != nil &&
+		r.AddonParams.Action == SubscriptionModificationActionRemove {
 		return ierr.NewError("checkout is not supported when removing an addon").
 			WithHint("Removing an addon issues a credit, so there is no payment to collect").
 			Mark(ierr.ErrValidation)

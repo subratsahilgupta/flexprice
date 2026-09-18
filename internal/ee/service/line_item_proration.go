@@ -566,6 +566,19 @@ func prorationChargeInvoiceKey(req LineItemProrationRequest) string {
 	})
 }
 
+// collectableProrationInvoice reports whether an invoice in this payment status still owes
+// money. Settle raises its invoices as PENDING, so the other statuses only arise when a
+// caller hands back an invoice that was already paid, voided or refunded — charging one of
+// those again would take money twice.
+func collectableProrationInvoice(status types.PaymentStatus) bool {
+	switch status {
+	case types.PaymentStatusPending, types.PaymentStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
 // attemptProrationPayments collects settled proration invoices and refreshes what changed. It
 // does outbound I/O — wallet debits and a gateway charge — so it runs only after the caller's
 // transaction has committed.
@@ -575,6 +588,10 @@ func attemptProrationPayments(ctx context.Context, params ServiceParams, changed
 	for i := range changed {
 		inv := changed[i].Invoice
 		if inv == nil || inv.ID == "" {
+			continue
+		}
+
+		if !collectableProrationInvoice(inv.PaymentStatus) {
 			continue
 		}
 

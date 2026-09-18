@@ -7,10 +7,10 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-func (s *subscriptionModificationService) executeAddonsModification(
+func (s *subscriptionModificationService) executeBulkAddonModification(
 	ctx context.Context,
 	subscriptionID string,
-	params *dto.SubModifyAddonsParams,
+	params *dto.SubModifyBulkAddonParams,
 	checkout *dto.CheckoutParams,
 ) (*dto.SubscriptionModifyResponse, error) {
 	sub, err := s.loadSubscriptionWithLineItems(ctx, subscriptionID)
@@ -33,7 +33,7 @@ func (s *subscriptionModificationService) executeAddonsModification(
 			return s.addonModifyResponse(
 				ctx,
 				subscriptionID,
-				addonBatchChangedLineItems(gated.getConfig(), false),
+				bulkAddonChangedLineItems(gated.getConfig(), false),
 				nil,
 				gated.getSession(),
 			)
@@ -52,16 +52,16 @@ func (s *subscriptionModificationService) executeAddonsModification(
 	return s.addonModifyResponse(
 		ctx,
 		subscriptionID,
-		addonBatchChangedLineItems(config, false),
+		bulkAddonChangedLineItems(config, false),
 		settled.GetChanged(),
 		nil,
 	)
 }
 
-func (s *subscriptionModificationService) previewAddonsModification(
+func (s *subscriptionModificationService) previewBulkAddonModification(
 	ctx context.Context,
 	subscriptionID string,
-	params *dto.SubModifyAddonsParams,
+	params *dto.SubModifyBulkAddonParams,
 ) (*dto.SubscriptionModifyResponse, error) {
 	sub, err := s.loadSubscriptionWithLineItems(ctx, subscriptionID)
 	if err != nil {
@@ -75,11 +75,11 @@ func (s *subscriptionModificationService) previewAddonsModification(
 	}
 
 	return s.addonModifyResponse(ctx, subscriptionID,
-		addonBatchChangedLineItems(config, true), settled.GetChanged(), nil)
+		bulkAddonChangedLineItems(config, true), settled.GetChanged(), nil)
 }
 
 // Each ended item carries its own detach date: entries in a batch do not share one.
-func addonBatchChangedLineItems(config *addonChangeConfig, isPreview bool) []dto.ChangedLineItem {
+func bulkAddonChangedLineItems(config *addonChangeConfig, isPreview bool) []dto.ChangedLineItem {
 	items := []dto.ChangedLineItem{}
 
 	for _, attach := range config.getAttaches() {

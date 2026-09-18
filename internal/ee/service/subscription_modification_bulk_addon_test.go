@@ -16,10 +16,10 @@ func (s *SubscriptionServiceSuite) modificationService() SubscriptionModificatio
 	return NewSubscriptionModificationService(s.service.(*subscriptionService).ServiceParams)
 }
 
-func (s *SubscriptionServiceSuite) addonsRequest(params *dto.SubModifyAddonsParams) dto.ExecuteSubscriptionModifyRequest {
+func (s *SubscriptionServiceSuite) bulkAddonRequest(params *dto.SubModifyBulkAddonParams) dto.ExecuteSubscriptionModifyRequest {
 	return dto.ExecuteSubscriptionModifyRequest{
-		Type:         dto.SubscriptionModifyTypeAddons,
-		AddonsParams: params,
+		Type:            dto.SubscriptionModifyTypeAddon,
+		BulkAddonParams: params,
 	}
 }
 
@@ -58,7 +58,7 @@ func (s *SubscriptionServiceSuite) changedLineItemsByAction(
 	})
 }
 
-func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_Swap_OneNettedInvoice() {
+func (s *SubscriptionServiceSuite) TestExecuteBulkAddonModification_Swap_OneNettedInvoice() {
 	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
@@ -67,7 +67,7 @@ func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_Swap_OneNettedI
 	outgoing := s.attachForRemoval("addon_mod_out", 30)
 
 	at := sub.CurrentPeriodStart.Add(15 * 24 * time.Hour)
-	resp, err := s.modificationService().Execute(ctx, sub.ID, s.addonsRequest(&dto.SubModifyAddonsParams{
+	resp, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
 		Adds:    []*dto.AddAddonToSubscriptionRequest{s.modifyAdd("addon_mod_in", at)},
 		Removes: []*dto.RemoveAddonRequest{s.modifyRemove(outgoing, at)},
 	}))
@@ -87,7 +87,7 @@ func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_Swap_OneNettedI
 
 // The single-addon path stamps one date on every ended item, misreporting a batch whose
 // entries land on different days.
-func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_PerEntryDates_EndedItemsCarryTheirOwnDate() {
+func (s *SubscriptionServiceSuite) TestExecuteBulkAddonModification_PerEntryDates_EndedItemsCarryTheirOwnDate() {
 	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
@@ -99,7 +99,7 @@ func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_PerEntryDates_E
 	early := sub.CurrentPeriodStart.Add(5 * 24 * time.Hour)
 	late := sub.CurrentPeriodStart.Add(20 * 24 * time.Hour)
 
-	resp, err := s.modificationService().Execute(ctx, sub.ID, s.addonsRequest(&dto.SubModifyAddonsParams{
+	resp, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
 		Removes: []*dto.RemoveAddonRequest{
 			s.modifyRemove(first, early),
 			s.modifyRemove(second, late),
@@ -115,7 +115,7 @@ func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_PerEntryDates_E
 	s.True(lo.SomeBy(dates, func(d time.Time) bool { return d.Equal(late) }), "the other ends on the late date")
 }
 
-func (s *SubscriptionServiceSuite) TestPreviewAddonsModification_WritesNothingAndQuotesTheExecutedNet() {
+func (s *SubscriptionServiceSuite) TestPreviewBulkAddonModification_WritesNothingAndQuotesTheExecutedNet() {
 	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
@@ -123,7 +123,7 @@ func (s *SubscriptionServiceSuite) TestPreviewAddonsModification_WritesNothingAn
 	s.seedFixedPriceAddon("addon_mod_p2", decimal.NewFromInt(40), types.InvoiceCadenceAdvance)
 
 	at := sub.CurrentPeriodStart.Add(12 * 24 * time.Hour)
-	req := s.addonsRequest(&dto.SubModifyAddonsParams{
+	req := s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
 		Adds: []*dto.AddAddonToSubscriptionRequest{
 			s.modifyAdd("addon_mod_p1", at),
 			s.modifyAdd("addon_mod_p2", at),
@@ -150,14 +150,14 @@ func (s *SubscriptionServiceSuite) TestPreviewAddonsModification_WritesNothingAn
 		"execute bills exactly what preview quoted")
 }
 
-func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_Rollback_LeavesNothingBehind() {
+func (s *SubscriptionServiceSuite) TestExecuteBulkAddonModification_Rollback_LeavesNothingBehind() {
 	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
 	s.seedFixedPriceAddon("addon_mod_ok", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
 
 	at := sub.CurrentPeriodStart.Add(10 * 24 * time.Hour)
-	_, err := s.modificationService().Execute(ctx, sub.ID, s.addonsRequest(&dto.SubModifyAddonsParams{
+	_, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
 		Adds: []*dto.AddAddonToSubscriptionRequest{
 			s.modifyAdd("addon_mod_ok", at),
 			s.modifyAdd("addon_does_not_exist", at),
@@ -168,31 +168,39 @@ func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_Rollback_Leaves
 	s.Empty(s.addonLineItemsFor(sub.ID, "addon_mod_ok"),
 		"the first attach must roll back with the batch, not persist alone")
 	s.Empty(s.oneOffInvoicesFor(sub.ID), "a failed batch raises no invoice")
+
+	// The association is written before the line items, so a batch that rolled back its
+	// line items but left the association behind would still read as attached.
+	assocFilter := types.NewNoLimitAddonAssociationFilter()
+	assocFilter.EntityIDs = []string{sub.ID}
+	associations, listErr := s.GetStores().AddonAssociationRepo.List(ctx, assocFilter)
+	s.Require().NoError(listErr)
+	s.Empty(associations, "a failed batch leaves no addon association behind")
 }
 
-func (s *SubscriptionServiceSuite) TestAddonsModification_InvalidRequestRejected() {
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_InvalidRequestRejected() {
 	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
-	_, err := s.modificationService().Execute(ctx, sub.ID, s.addonsRequest(&dto.SubModifyAddonsParams{}))
+	_, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{}))
 	s.Error(err, "a batch with no entries is rejected")
 
 	_, err = s.modificationService().Execute(ctx, sub.ID, dto.ExecuteSubscriptionModifyRequest{
-		Type: dto.SubscriptionModifyTypeAddons,
+		Type: dto.SubscriptionModifyTypeAddon,
 	})
 	s.Error(err, "type addons without addons_params is rejected")
 }
 
 // change_at is resolved once per batch, so two immediate entries land on the same date and
 // prorate in one pass instead of splitting into two documents.
-func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_ChangeAtImmediate_SharesOneDate() {
+func (s *SubscriptionServiceSuite) TestExecuteBulkAddonModification_ChangeAtImmediate_SharesOneDate() {
 	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
 	s.seedFixedPriceAddon("addon_ca_a", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
 	s.seedFixedPriceAddon("addon_ca_b", decimal.NewFromInt(40), types.InvoiceCadenceAdvance)
 
-	_, err := s.modificationService().Execute(ctx, sub.ID, s.addonsRequest(&dto.SubModifyAddonsParams{
+	_, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
 		Adds: []*dto.AddAddonToSubscriptionRequest{
 			s.modifyAddAt("addon_ca_a", types.ScheduleTypeImmediate),
 			s.modifyAddAt("addon_ca_b", types.ScheduleTypeImmediate),
@@ -207,13 +215,13 @@ func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_ChangeAtImmedia
 
 // end_of_period resolves to the subscription's period end, which is outside the current
 // period, so the entry contributes no proration charge.
-func (s *SubscriptionServiceSuite) TestExecuteAddonsModification_ChangeAtPeriodEnd_ChargesNothingNow() {
+func (s *SubscriptionServiceSuite) TestExecuteBulkAddonModification_ChangeAtPeriodEnd_ChargesNothingNow() {
 	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
 	s.seedFixedPriceAddon("addon_ca_end", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
 
-	resp, err := s.modificationService().Execute(ctx, sub.ID, s.addonsRequest(&dto.SubModifyAddonsParams{
+	resp, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
 		Adds: []*dto.AddAddonToSubscriptionRequest{s.modifyAddAt("addon_ca_end", types.ScheduleTypePeriodEnd)},
 	}))
 	s.Require().NoError(err)
@@ -246,14 +254,14 @@ func (s *SubscriptionServiceSuite) TestAttachAddon_ChangeAtPeriodEnd_StartsAtPer
 }
 
 // The resolved request must not write back into the caller's DTO.
-func (s *SubscriptionServiceSuite) TestAddonsModification_ChangeAt_DoesNotMutateTheRequest() {
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_ChangeAt_DoesNotMutateTheRequest() {
 	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
 	s.seedFixedPriceAddon("addon_ca_pure", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
 
 	add := s.modifyAddAt("addon_ca_pure", types.ScheduleTypeImmediate)
-	_, err := s.modificationService().Execute(ctx, sub.ID, s.addonsRequest(&dto.SubModifyAddonsParams{
+	_, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
 		Adds: []*dto.AddAddonToSubscriptionRequest{add},
 	}))
 	s.Require().NoError(err)

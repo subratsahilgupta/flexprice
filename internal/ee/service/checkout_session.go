@@ -403,15 +403,17 @@ func (s *checkoutSessionService) cleanupCheckoutResources(ctx context.Context, s
 		if err != nil {
 			s.Logger.Error(ctx, "failed to load pending addon associations for checkout cleanup",
 				"association_ids", ids, "error", err)
-		} else {
-			pending := lo.FilterMap(associations, func(a *addonassociation.AddonAssociation, _ int) (string, bool) {
-				return a.ID, a.AddonStatus == types.AddonStatusPending
-			})
-			if len(pending) > 0 {
-				if err := s.AddonAssociationRepo.DeleteBulk(ctx, pending); err != nil {
-					s.Logger.Error(ctx, "failed to archive pending addon associations",
-						"association_ids", pending, "error", err)
-				}
+			return err
+		}
+
+		pending := lo.FilterMap(associations, func(a *addonassociation.AddonAssociation, _ int) (string, bool) {
+			return a.ID, a.AddonStatus == types.AddonStatusPending
+		})
+		if len(pending) > 0 {
+			if err := s.AddonAssociationRepo.DeleteBulk(ctx, pending); err != nil {
+				s.Logger.Error(ctx, "failed to archive pending addon associations",
+					"association_ids", pending, "error", err)
+				return err
 			}
 		}
 	}
