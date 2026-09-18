@@ -26,22 +26,22 @@ type DayCharge struct {
 	Day time.Time
 
 	// CumulativeCharge is CalculateCost(price, CumulativeBillableQty) — the
-	// actual engine charge through this day, post-allowance.
+	// actual engine charge through this day, net of the entitlement limit.
 	CumulativeCharge decimal.Decimal
 	// CumulativeGrossQty is the raw cumulative metered quantity through this
-	// day, before allowance is applied.
+	// day, before the entitlement limit is applied.
 	CumulativeGrossQty decimal.Decimal
-	// CumulativeBillableQty is max(0, CumulativeGrossQty - allowance).
+	// CumulativeBillableQty is max(0, CumulativeGrossQty - EntitlementLimit).
 	CumulativeBillableQty decimal.Decimal
-	// CumulativeEntitlementQty is min(CumulativeGrossQty, allowance) — the
-	// allowance consumed earliest-first, purely as a function of gross usage.
+	// CumulativeEntitlementQty is min(CumulativeGrossQty, EntitlementLimit) —
+	// the entitlement consumed earliest-first, purely as a function of gross usage.
 	CumulativeEntitlementQty decimal.Decimal
-	// UsageAtListRate is CumulativeGrossQty x tier1_rate (ERD §6.3/§6.5):
-	// gross usage priced at the list rate, before any allowance giveback.
+	// UsageAtListRate is CumulativeGrossQty x tier1_rate: gross usage priced at
+	// the list rate, before any entitlement giveback.
 	UsageAtListRate decimal.Decimal
 	// TierDelta is CumulativeCharge - (CumulativeBillableQty x tier1_rate) —
 	// the deviation from a flat list-rate charge caused by graduated tiering
-	// on the billed (post-allowance) quantity. Zero for flat pricing, since
+	// on the billed (post-entitlement) quantity. Zero for flat pricing, since
 	// tier1_rate is then the only rate.
 	TierDelta decimal.Decimal
 }
@@ -58,9 +58,9 @@ type LineItemPricingInput struct {
 	// [PeriodStart, PeriodEnd), matching CumulativeDailyUsageParams.
 	PeriodEnd time.Time
 
-	// Allowance is the entitlement quantity consumed earliest-first before
+	// EntitlementLimit is the entitlement quantity consumed earliest-first before
 	// billing starts. Negative values are treated as zero.
-	Allowance decimal.Decimal
+	EntitlementLimit decimal.Decimal
 
 	// Timezone is the IANA name used to bucket usage into calendar days.
 	// Empty falls back to UTC.
@@ -82,7 +82,7 @@ func NewRevenueCurveService(params ServiceParams) *revenueCurveService {
 //
 // Mechanism: read the cumulative gross usage curve once via
 // GetCumulativeDailyUsage, then for each day D re-run CalculateCost on
-// billable(D) = max(0, gross(D) - allowance). CalculateCost is exact and
+// billable(D) = max(0, gross(D) - EntitlementLimit). CalculateCost is exact and
 // additive over monotonic cumulative prefixes for flat/graduated pricing
 // (proven by the Approach-C seam test in revenue_curve_seam_test.go), so no
 // extra pricing logic or ClickHouse read is needed beyond the single call.
@@ -128,9 +128,9 @@ func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPr
 		cumByDay[p.Day.Format(dayKeyLayout)] = p.CumulativeQty
 	}
 
-	allowance := li.Allowance
-	if allowance.IsNegative() {
-		allowance = decimal.Zero
+	entitlementLimit := li.EntitlementLimit
+	if entitlementLimit.IsNegative() {
+		entitlementLimit = decimal.Zero
 	}
 	tier1Rate := listRate(li.Price)
 	priceSvc := NewPriceService(s.ServiceParams)
@@ -148,12 +148,12 @@ func (s *revenueCurveService) BuildUsageCurve(ctx context.Context, li LineItemPr
 			runningGross = qty
 		}
 
-		billable := runningGross.Sub(allowance)
+		billable := runningGross.Sub(entitlementLimit)
 		if billable.IsNegative() {
 			billable = decimal.Zero
 		}
-		entitlementQty := allowance
-		if runningGross.LessThan(allowance) {
+		entitlementQty := entitlementLimit
+		if runningGross.LessThan(entitlementLimit) {
 			entitlementQty = runningGross
 		}
 

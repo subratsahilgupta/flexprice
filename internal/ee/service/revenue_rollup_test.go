@@ -127,12 +127,12 @@ func (s *RevenueRollupSuite) serviceParams() ServiceParams {
 // from the GROSS pre-entitlement usage amount (buildMeterUsageResponse splits
 // commitment/overage before CalculateMeterUsageCharges applies any per-item
 // entitlement deduction), so usage+trueup nets to exactly commitmentAmount
-// minus whatever the entitlement deducted — not the "billable-after-allowance
+// minus whatever the entitlement deducted — not the "billable-after-entitlementLimit
 // tops up to the commitment" shape the hand-rolled decomposition tests use.
-// A non-zero allowance here would pull the $530 total off by exactly the
+// A non-zero entitlementLimit here would pull the $530 total off by exactly the
 // deducted amount (verified empirically). UsageLimit=0 still exercises the
 // real entitlement-resolution path (FeatureRepo/EntitlementRepo/
-// GetAggregatedSubscriptionEntitlements) that resolveAllowance depends on,
+// GetAggregatedSubscriptionEntitlements) that resolveEntitlementLimit depends on,
 // without perturbing the commitment math. See the task report's "concerns"
 // section for the full trace.
 func (s *RevenueRollupSuite) seedWorkedExample(ctx context.Context) {
@@ -407,16 +407,16 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageSkipped() {
 	s.Empty(rows, "a subscription with an is_overage line must be skipped with zero rows")
 }
 
-// TestRollupSubscription_BindingAllowanceReconciles covers review Fix 2: with
-// a REAL binding entitlement allowance (UsageLimit=20000, unlike
+// TestRollupSubscription_BindingEntitlementLimitReconciles covers review Fix 2: with
+// a REAL binding entitlement entitlementLimit (UsageLimit=20000, unlike
 // seedWorkedExample's degenerate UsageLimit=0) alongside the $500 commitment
 // from ERD §6.5, the total no longer equals $530 — the subscription-level
 // commitment/true-up split runs on gross pre-entitlement usage, so the
-// allowance genuinely perturbs the total (see the task report's Concern 4).
+// entitlementLimit genuinely perturbs the total (see the task report's Concern 4).
 // This asserts RECONCILIATION-BY-CONSTRUCTION instead of a hardcoded number:
 // Σ NetAmount(rows) must equal the same preview's Subtotal minus discounts,
 // and zero revenue_reconciliation_mismatch logs must have fired.
-func (s *RevenueRollupSuite) TestRollupSubscription_BindingAllowanceReconciles() {
+func (s *RevenueRollupSuite) TestRollupSubscription_BindingEntitlementLimitReconciles() {
 	ctx := s.ctx
 	s.seedWorkedExample(ctx)
 
@@ -438,7 +438,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_BindingAllowanceReconciles()
 
 	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
 	s.NoError(err)
-	s.NotEmpty(rows, "binding-allowance worked example must produce rows")
+	s.NotEmpty(rows, "binding-entitlementLimit worked example must produce rows")
 
 	total := decimal.Zero
 	for _, r := range rows {
@@ -457,7 +457,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_BindingAllowanceReconciles()
 	})
 	s.NoError(err)
 	expected := invReq.Subtotal.Sub(invoiceDiscountTotal(invReq))
-	s.False(expected.Equal(decimal.NewFromInt(530)), "sanity: the binding allowance must actually perturb the total away from the zero-allowance $530 case")
+	s.False(expected.Equal(decimal.NewFromInt(530)), "sanity: the binding entitlementLimit must actually perturb the total away from the zero-entitlementLimit $530 case")
 
 	s.True(total.Equal(expected), "Σ net_amount (%s) must reconcile to the preview's subtotal-minus-discount (%s)", total.String(), expected.String())
 

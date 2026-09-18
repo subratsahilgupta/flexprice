@@ -104,8 +104,8 @@ func (li PreviewLineItem) isCommitmentTrueupOrOverage() bool {
 	return li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup) || li.Metadata.GetBool(types.MetadataKeyIsOverage)
 }
 
-// decompositionMode classifies a (price, meter) pair per ERD §6.5: PeriodOnly
-// where a daily marginal split would misrepresent the charge (volume tiering
+// decompositionMode classifies a (price, meter) pair: PeriodOnly where a
+// daily marginal split would misrepresent the charge (volume tiering
 // re-rates every unit on the final tier reached; LATEST/AVG/WEIGHTED_SUM
 // aggregations are not additive across days; a week/month-bucketed MAX
 // resets on a boundary coarser than a day). Marginal otherwise.
@@ -128,11 +128,11 @@ func decompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
 	return types.Marginal
 }
 
-// isMultiPeriodCommitment mirrors the multi-period commitment detection in
-// billing_meter_usage.go:77-92 — a subscription-level commitment whose
-// duration spans more than one billing period (e.g. an ANNUAL commitment on a
-// MONTHLY subscription). Such subscriptions are skipped by the rollup (Task
-// 10): their true-up can't be attributed to a single period.
+// isMultiPeriodCommitment mirrors CalculateMeterUsageCharges' cumulative
+// commitment detection — a subscription-level commitment whose duration spans
+// more than one billing period (e.g. an ANNUAL commitment on a MONTHLY
+// subscription). The rollup skips such subscriptions: their true-up can't be
+// attributed to a single period.
 func isMultiPeriodCommitment(li PreviewLineItem) bool {
 	if li.CommitmentAmount == nil || !li.CommitmentAmount.GreaterThan(decimal.Zero) {
 		return false
@@ -220,8 +220,8 @@ func decomposeCommitmentTrueup(li PreviewLineItem, period RevenuePeriod) *revenu
 // decomposeUsageMarginal produces one row per DayCharge in curve. Each day's
 // NetAmount/UsageAtListRate/TierDelta/EntitlementAmount/BillableQty/
 // EntitlementQty is the marginal (day-over-day) delta of the cumulative
-// curve, with curve[-1] treated as the zero DayCharge. Per the VERIFIED
-// FORMULA ruling this reconciles exactly every day:
+// curve, with curve[-1] treated as the zero DayCharge. By construction this
+// reconciles exactly every day:
 //
 //	NetAmount == UsageAtListRate + TierDelta - EntitlementAmount
 func decomposeUsageMarginal(li PreviewLineItem, curve []DayCharge) []*revenuefact.RevenueFact {

@@ -18,10 +18,10 @@ import (
 // curveTestOpts is the config assembled by the curveXxx functional options
 // below, consumed by buildTestCurveInput.
 type curveTestOpts struct {
-	perDay    decimal.Decimal
-	allowance decimal.Decimal
-	price     *price.Price
-	days      int
+	perDay           decimal.Decimal
+	entitlementLimit decimal.Decimal
+	price            *price.Price
+	days             int
 }
 
 type curveTestOpt func(*curveTestOpts)
@@ -31,9 +31,9 @@ func curvePerDay(qty int64) curveTestOpt {
 	return func(o *curveTestOpts) { o.perDay = decimal.NewFromInt(qty) }
 }
 
-// curveAllowance sets the entitlement quantity consumed earliest-first.
-func curveAllowance(qty int64) curveTestOpt {
-	return func(o *curveTestOpts) { o.allowance = decimal.NewFromInt(qty) }
+// curveEntitlementLimit sets the entitlement quantity consumed earliest-first.
+func curveEntitlementLimit(qty int64) curveTestOpt {
+	return func(o *curveTestOpts) { o.entitlementLimit = decimal.NewFromInt(qty) }
 }
 
 // curveFlatRate builds a USAGE, FLAT_FEE price priced at unitAmount per unit.
@@ -98,11 +98,11 @@ func buildTestCurveInput(t *testing.T, ctx context.Context, store *testutil.InMe
 	require.NoError(t, store.BulkInsertMeterUsage(ctx, records))
 
 	return LineItemPricingInput{
-		Price:       cfg.price,
-		MeterID:     meterID,
-		PeriodStart: periodStart,
-		PeriodEnd:   periodStart.AddDate(0, 0, cfg.days),
-		Allowance:   cfg.allowance,
+		Price:            cfg.price,
+		MeterID:          meterID,
+		PeriodStart:      periodStart,
+		PeriodEnd:        periodStart.AddDate(0, 0, cfg.days),
+		EntitlementLimit: cfg.entitlementLimit,
 	}
 }
 
@@ -117,12 +117,12 @@ func curveMarginal(got []DayCharge, idx int) decimal.Decimal {
 	return got[idx].CumulativeCharge.Sub(got[idx-1].CumulativeCharge)
 }
 
-// TestBuildUsageCurve_AllowanceThenFlatRate is the brief's headline test:
-// 2000/day usage, a 20000 allowance, a flat $0.01/unit price, over 30 days.
-// Days 1-10 stay fully inside the allowance (charge == 0); day 11 is the
-// first day billed usage crosses the allowance, so its marginal charge is
+// TestBuildUsageCurve_EntitlementLimitThenFlatRate is the brief's headline test:
+// 2000/day usage, a 20000 entitlementLimit, a flat $0.01/unit price, over 30 days.
+// Days 1-10 stay fully inside the entitlementLimit (charge == 0); day 11 is the
+// first day billed usage crosses the entitlementLimit, so its marginal charge is
 // 2000 * $0.01 = $20; by day 30, 20 billed days * $20 = $400 cumulative.
-func TestBuildUsageCurve_AllowanceThenFlatRate(t *testing.T) {
+func TestBuildUsageCurve_EntitlementLimitThenFlatRate(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewInMemoryMeterUsageStore()
 	svc := NewRevenueCurveService(ServiceParams{
@@ -138,7 +138,7 @@ func TestBuildUsageCurve_AllowanceThenFlatRate(t *testing.T) {
 
 	curve := buildTestCurveInput(t, ctx, store,
 		curvePerDay(2000),
-		curveAllowance(20000),
+		curveEntitlementLimit(20000),
 		curveFlatRate("0.01"),
 		curveDays(30),
 	)
@@ -147,10 +147,10 @@ func TestBuildUsageCurve_AllowanceThenFlatRate(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got, 30)
 
-	// (a) days fully inside the allowance have zero cumulative charge.
-	assert.True(t, got[9].CumulativeCharge.IsZero(), "day 10 still within allowance")
+	// (a) days fully inside the entitlementLimit have zero cumulative charge.
+	assert.True(t, got[9].CumulativeCharge.IsZero(), "day 10 still within entitlementLimit")
 
-	// (b) after the allowance is exhausted, charge rises at the flat rate.
+	// (b) after the entitlementLimit is exhausted, charge rises at the flat rate.
 	assert.Equal(t, "20", curveMarginal(got, 10).String(), "day 11 marginal charge")
 
 	// (c) marginal deltas sum to the period charge (20 billed days * $20).
@@ -162,8 +162,8 @@ func TestBuildUsageCurve_AllowanceThenFlatRate(t *testing.T) {
 	assert.True(t, marginalSum.Equal(got[29].CumulativeCharge), "marginal sum must equal period charge")
 
 	// (d) entitlement is consumed earliest-first as a function of gross usage.
-	assert.Equal(t, "20000", got[9].CumulativeEntitlementQty.String(), "allowance fully consumed by day 10")
-	assert.Equal(t, "20000", got[29].CumulativeEntitlementQty.String(), "entitlement consumption caps at the allowance")
+	assert.Equal(t, "20000", got[9].CumulativeEntitlementQty.String(), "entitlementLimit fully consumed by day 10")
+	assert.Equal(t, "20000", got[29].CumulativeEntitlementQty.String(), "entitlement consumption caps at the entitlementLimit")
 	assert.Equal(t, "40000", got[29].CumulativeBillableQty.String())
 	assert.Equal(t, "60000", got[29].CumulativeGrossQty.String())
 
@@ -173,7 +173,7 @@ func TestBuildUsageCurve_AllowanceThenFlatRate(t *testing.T) {
 }
 
 // TestBuildUsageCurve_GraduatedPrice exercises a SLAB-tiered price (proven
-// additive by the Approach-C seam test) with no allowance: cumulative charge
+// additive by the Approach-C seam test) with no entitlementLimit: cumulative charge
 // on each day must equal CalculateCost run directly on that day's cumulative
 // quantity, and TierDelta must reflect the deviation from a flat tier1 charge.
 func TestBuildUsageCurve_GraduatedPrice(t *testing.T) {
@@ -223,7 +223,7 @@ func TestBuildUsageCurve_GraduatedPrice(t *testing.T) {
 		assert.True(t, day.CumulativeCharge.Equal(wantCharge),
 			"day %d: got %s want %s", i, day.CumulativeCharge, wantCharge)
 		assert.True(t, day.CumulativeGrossQty.Equal(cumQty))
-		assert.True(t, day.CumulativeBillableQty.Equal(cumQty), "no allowance: billable == gross")
+		assert.True(t, day.CumulativeBillableQty.Equal(cumQty), "no entitlementLimit: billable == gross")
 		assert.True(t, day.CumulativeEntitlementQty.IsZero())
 
 		wantListRate := cumQty.Mul(tier1)
@@ -251,13 +251,13 @@ func assertDecimalClose(t *testing.T, want, got decimal.Decimal, msgAndArgs ...i
 		"want %s, got %s (diff %s) %v", want, got, diff, msgAndArgs)
 }
 
-// TestBuildUsageCurve_GraduatedWithAllowance is the one input combination
+// TestBuildUsageCurve_GraduatedWithEntitlementLimit is the one input combination
 // where the implemented decomposition (TierDelta on billable_qty,
 // UsageAtListRate on gross_qty) diverges from a gross_qty-only TierDelta
-// formula: a graduated/SLAB price with a non-zero allowance, where cumulative
+// formula: a graduated/SLAB price with a non-zero entitlementLimit, where cumulative
 // gross usage crosses the tier boundary. Task 8's EntitlementAmount/NetAmount
 // construction depends on this reconciling exactly.
-func TestBuildUsageCurve_GraduatedWithAllowance(t *testing.T) {
+func TestBuildUsageCurve_GraduatedWithEntitlementLimit(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewInMemoryMeterUsageStore()
 	params := ServiceParams{
@@ -277,7 +277,7 @@ func TestBuildUsageCurve_GraduatedWithAllowance(t *testing.T) {
 	tier2 := decimal.RequireFromString("0.008")
 	upTo := uint64(1000)
 	graduated := &price.Price{
-		ID:           "price_curve_graduated_allowance_test",
+		ID:           "price_curve_graduated_entitlement_test",
 		Currency:     "usd",
 		Type:         types.PRICE_TYPE_USAGE,
 		BillingModel: types.BILLING_MODEL_TIERED,
@@ -288,10 +288,10 @@ func TestBuildUsageCurve_GraduatedWithAllowance(t *testing.T) {
 		},
 	}
 
-	const allowance = 500
+	const entitlementLimit = 500
 	curve := buildTestCurveInput(t, ctx, store,
 		curvePerDay(500),
-		curveAllowance(allowance),
+		curveEntitlementLimit(entitlementLimit),
 		curveDays(8),
 		curvePrice(graduated),
 	)
@@ -300,17 +300,17 @@ func TestBuildUsageCurve_GraduatedWithAllowance(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got, 8)
 
-	allowanceDec := decimal.NewFromInt(allowance)
+	entitlementLimitDec := decimal.NewFromInt(entitlementLimit)
 
 	var prevCharge decimal.Decimal
 	for i, day := range got {
 		grossQty := decimal.NewFromInt(int64((i + 1) * 500))
-		billableQty := grossQty.Sub(allowanceDec)
+		billableQty := grossQty.Sub(entitlementLimitDec)
 		if billableQty.IsNegative() {
 			billableQty = decimal.Zero
 		}
-		entitlementQty := allowanceDec
-		if grossQty.LessThan(allowanceDec) {
+		entitlementQty := entitlementLimitDec
+		if grossQty.LessThan(entitlementLimitDec) {
 			entitlementQty = grossQty
 		}
 
@@ -327,7 +327,7 @@ func TestBuildUsageCurve_GraduatedWithAllowance(t *testing.T) {
 		// UsageAtListRate + TierDelta - CumulativeEntitlementQty*tier1Rate == CumulativeCharge.
 		// This is exactly where a gross_qty-based TierDelta (the ERD's literal,
 		// incorrect prose) would diverge from the implemented billable_qty-based
-		// one, once gross usage crosses the tier boundary post-allowance.
+		// one, once gross usage crosses the tier boundary post-entitlementLimit.
 		reconciled := day.UsageAtListRate.Add(day.TierDelta).Sub(entitlementQty.Mul(tier1))
 		assertDecimalClose(t, day.CumulativeCharge, reconciled, "day %d reconciliation identity", i)
 
@@ -341,7 +341,7 @@ func TestBuildUsageCurve_GraduatedWithAllowance(t *testing.T) {
 
 	// Sanity: usage does cross the tier boundary on billable_qty (day 3: billable
 	// qty 1000 exactly at the boundary; day 4: billable qty 1500 spills over),
-	// so this test actually exercises tiering, not just a flat/zero-allowance path.
+	// so this test actually exercises tiering, not just a flat/zero-entitlementLimit path.
 	assert.True(t, got[2].CumulativeBillableQty.Equal(decimal.NewFromInt(1000)))
 	assert.True(t, got[3].CumulativeBillableQty.Equal(decimal.NewFromInt(1500)))
 	assert.False(t, got[3].TierDelta.IsZero(), "tier delta should be non-zero once billable usage spills into tier 2")

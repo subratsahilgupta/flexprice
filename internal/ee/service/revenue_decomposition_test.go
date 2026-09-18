@@ -212,12 +212,12 @@ func workedExampleFixedLineItem(t *testing.T) PreviewLineItem {
 }
 
 // workedExampleUsageLineItem is the $0.01/call usage charge with a 20000
-// call allowance, seeded at 2000 calls/day for 30 days into store.
+// call entitlementLimit, seeded at 2000 calls/day for 30 days into store.
 func workedExampleUsageLineItem(t *testing.T, ctx context.Context, store *testutil.InMemoryMeterUsageStore) (PreviewLineItem, LineItemPricingInput) {
 	t.Helper()
 	liInput := buildTestCurveInput(t, ctx, store,
 		curvePerDay(2000),
-		curveAllowance(20000),
+		curveEntitlementLimit(20000),
 		curveFlatRate("0.01"),
 		curveDays(30),
 	)
@@ -334,7 +334,7 @@ func sumNet(rows []*revenuefact.RevenueFact) decimal.Decimal {
 }
 
 // TestDecompose_WorkedExample_530 is the ERD §6.5 headline test: a $30/mo
-// advance fixed charge, $0.01/call usage with a 20000-call allowance at
+// advance fixed charge, $0.01/call usage with a 20000-call entitlementLimit at
 // 2000 calls/day, and a $500 minimum commitment, over a 30-day period.
 func TestDecompose_WorkedExample_530(t *testing.T) {
 	ctx := context.Background()
