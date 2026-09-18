@@ -1906,7 +1906,7 @@ var (
 			{
 				Name:    "revenue_facts_provisional_grain",
 				Unique:  true,
-				Columns: []*schema.Column{RevenueFactsColumns[1], RevenueFactsColumns[2], RevenueFactsColumns[4], RevenueFactsColumns[6], RevenueFactsColumns[12], RevenueFactsColumns[9]},
+				Columns: []*schema.Column{RevenueFactsColumns[1], RevenueFactsColumns[2], RevenueFactsColumns[4], RevenueFactsColumns[6], RevenueFactsColumns[5], RevenueFactsColumns[12], RevenueFactsColumns[9]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "status = 'PROVISIONAL'",
 				},

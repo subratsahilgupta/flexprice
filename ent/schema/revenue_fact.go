@@ -11,11 +11,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// RevenueFact is a derived, day-grain slice of billed/recognized revenue for a
-// subscription line item. It is written by the revenue rollup (non-mutating
-// billing re-run) and reconciles to invoices by construction. Non-partitioned
-// in this slice; no BaseMixin — the audit columns are computed_at + version,
-// not created_at/updated_at/created_by/updated_by.
+// RevenueFact is one day-grain slice of a subscription line item.s revenue,
+// written by the revenue rollup. No BaseMixin: its audit columns are
+// computed_at + version.
 type RevenueFact struct {
 	ent.Schema
 }
@@ -65,10 +63,8 @@ func (RevenueFact) Fields() []ent.Field {
 		field.String("invoice_id").SchemaType(text).Optional().Nillable(),
 		field.String("invoice_line_item_id").SchemaType(text).Optional().Nillable(),
 
-		// recognition day given accounting-period lock: equals `day` while the
-		// period is open, shifts to the next open period's first day once the
-		// real period is closed (a catch-up so a closed month is never rewritten).
-		// Reserved for Phase-4 recognition; unused in this slice.
+		// Recognition day once accounting periods can lock: a correction to a
+		// closed month posts on the next open period.s first day. Unused today.
 		field.Time("lock_adjusted_day").SchemaType(date).Optional().Nillable(),
 
 		field.Time("computed_at").
@@ -81,8 +77,10 @@ func (RevenueFact) Fields() []ent.Field {
 
 func (RevenueFact) Indexes() []ent.Index {
 	return []ent.Index{
-		// exactly one LIVE provisional row per grain — drives the ON CONFLICT upsert
-		index.Fields("tenant_id", "environment_id", "subscription_id", "price_id", "day", "revenue_source").
+		// exactly one LIVE provisional row per grain — drives the ON CONFLICT
+		// upsert. sub_line_item_id is part of the grain: two line items can
+		// share one price on one day (e.g. a mid-period price version change).
+		index.Fields("tenant_id", "environment_id", "subscription_id", "price_id", "sub_line_item_id", "day", "revenue_source").
 			Unique().
 			Annotations(entsql.IndexWhere("status = 'PROVISIONAL'")).
 			StorageKey("revenue_facts_provisional_grain"),

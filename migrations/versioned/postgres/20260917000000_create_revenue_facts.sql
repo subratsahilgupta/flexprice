@@ -1,5 +1,5 @@
 -- migrate:up
-CREATE TABLE revenue_facts (
+CREATE TABLE IF NOT EXISTS revenue_facts (
     id                   TEXT NOT NULL,
     tenant_id            TEXT NOT NULL,
     environment_id       TEXT NOT NULL,
@@ -35,11 +35,11 @@ CREATE TABLE revenue_facts (
     version              BIGINT NOT NULL DEFAULT 1,
     PRIMARY KEY (id)
 );
-CREATE UNIQUE INDEX revenue_facts_provisional_grain ON revenue_facts
-    (tenant_id, environment_id, subscription_id, price_id, day, revenue_source)
+CREATE UNIQUE INDEX IF NOT EXISTS revenue_facts_provisional_grain ON revenue_facts
+    (tenant_id, environment_id, subscription_id, price_id, sub_line_item_id, day, revenue_source)
     WHERE status = 'PROVISIONAL';
-CREATE INDEX revenue_facts_read    ON revenue_facts (tenant_id, environment_id, day, revenue_source);
-CREATE INDEX revenue_facts_invoice ON revenue_facts (tenant_id, environment_id, invoice_id);
+CREATE INDEX IF NOT EXISTS revenue_facts_read    ON revenue_facts (tenant_id, environment_id, day, revenue_source);
+CREATE INDEX IF NOT EXISTS revenue_facts_invoice ON revenue_facts (tenant_id, environment_id, invoice_id);
 
 -- migrate:down
-DROP TABLE revenue_facts;
+DROP TABLE IF EXISTS revenue_facts;
