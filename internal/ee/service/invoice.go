@@ -3205,6 +3205,11 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 			data.Notes = notes
 		}
 
+		// PO number for templates that display it (e.g. cost_breakdown)
+		if po, ok := inv.Metadata["po_number"]; ok {
+			data.PONumber = po
+		}
+
 		// Try to extract VAT from metadata
 		if vat, ok := inv.Metadata["vat"]; ok {
 			vatValue, err := strconv.ParseFloat(vat, 64)
