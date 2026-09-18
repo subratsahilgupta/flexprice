@@ -5,13 +5,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
 func autoTopupWallet(cooldown *types.Duration) *wallet.Wallet {
@@ -48,4 +51,87 @@ func TestAutoTopupCheckoutFallsBackToInvoice(t *testing.T) {
 
 	require.Nil(t, s.autoTopupCheckout(ctx, autoTopupWallet(nil), false),
 		"direct credits are not paid for, so there is nothing to charge")
+}
+
+type WalletAutoChargeSuite struct {
+	testutil.BaseServiceTestSuite
+	ctx context.Context
+}
+
+func TestWalletAutoChargeSuite(t *testing.T) {
+	suite.Run(t, new(WalletAutoChargeSuite))
+}
+
+func (s *WalletAutoChargeSuite) SetupTest() {
+	s.BaseServiceTestSuite.SetupTest()
+	s.ClearStores()
+	s.ctx = types.SetCustomerID(s.GetContext(), "cust_1")
+}
+
+func (s *WalletAutoChargeSuite) TearDownTest() {
+	s.BaseServiceTestSuite.TearDownTest()
+}
+
+func (s *WalletAutoChargeSuite) connect(providers ...types.SecretProvider) {
+	for _, p := range providers {
+		conn := &connection.Connection{
+			ID:            "conn_" + string(p),
+			Name:          string(p),
+			ProviderType:  p,
+			EnvironmentID: types.GetEnvironmentID(s.ctx),
+			BaseModel:     types.GetDefaultBaseModel(s.ctx),
+		}
+		conn.Status = types.StatusPublished
+		s.NoError(s.GetStores().ConnectionRepo.Create(s.ctx, conn))
+	}
+}
+
+func (s *WalletAutoChargeSuite) buildParams() ServiceParams {
+	stores := s.GetStores()
+	return ServiceParams{
+		Logger:                       s.GetLogger(),
+		Config:                       s.GetConfig(),
+		DB:                           s.GetDB(),
+		ConnectionRepo:               stores.ConnectionRepo,
+		CustomerRepo:                 stores.CustomerRepo,
+		EntityIntegrationMappingRepo: stores.EntityIntegrationMappingRepo,
+		IntegrationFactory:           s.GetIntegrationFactory(),
+	}
+}
+
+func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_NilFactoryOrConnectionRepo() {
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, ServiceParams{}, nil, "cust_1")
+	s.NoError(err)
+	s.Equal(types.PaymentGatewayType(""), gw)
+}
+
+func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_NoConnections() {
+	params := s.buildParams()
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	s.NoError(err)
+	s.Equal(types.PaymentGatewayType(""), gw)
+}
+
+func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_RazorpayNotSynced() {
+	s.connect(types.SecretProviderRazorpay)
+	params := s.buildParams()
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	s.NoError(err)
+	s.Equal(types.PaymentGatewayType(""), gw)
+}
+
+func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_ChargebeeNotSynced() {
+	s.connect(types.SecretProviderChargebee)
+	params := s.buildParams()
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	s.NoError(err)
+	s.Equal(types.PaymentGatewayType(""), gw)
+}
+
+func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_StripeAndNomodIgnored() {
+	s.connect(types.SecretProviderStripe, types.SecretProviderNomod)
+	params := s.buildParams()
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	s.NoError(err)
+	s.Equal(types.PaymentGatewayType(""), gw)
 }

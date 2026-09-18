@@ -66,6 +66,30 @@ func (s *customerPortalService) TopUpWallet(ctx context.Context, walletID string
 
 		collectionMethod := types.CollectionMethodSendInvoice
 		if req.Checkout.UseSavedMethod {
+			gateway, _ := provider.ToPaymentGateway()
+
+			// Check if the requested provider has an active, auto-chargeable saved method for this customer
+			savedMethods := s.readSavedMethods(ctx, w.CustomerID, gateway)
+			hasChargeableMethod := false
+			if savedMethods != nil {
+				for _, item := range savedMethods.Items {
+					if item != nil && item.CanAutoCharge && item.Status == types.PaymentMethodStatusActive {
+						hasChargeableMethod = true
+						break
+					}
+				}
+			}
+
+			if !hasChargeableMethod {
+				return nil, ierr.NewError("instantaneous charge with saved payment method is not supported for provider").
+					WithHintf("Provider '%s' has no saved payment method that can be charged automatically. Please top up using standard checkout.", gateway).
+					WithReportableDetails(map[string]any{
+						"provider":    gateway,
+						"customer_id": w.CustomerID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+
 			collectionMethod = types.CollectionMethodChargeAutomatically
 		}
 

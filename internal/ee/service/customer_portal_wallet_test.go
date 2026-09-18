@@ -187,6 +187,57 @@ func (s *PortalWalletSuite) TestTopUpReturnsExistingPendingSession() {
 	s.Nil(resp.WalletTransaction, "no new transaction is created when one is in flight")
 }
 
+func (s *PortalWalletSuite) TestTopUpUseSavedMethodValidation() {
+	s.connect(types.SecretProviderRazorpay, types.SecretProviderChargebee)
+
+	tests := []struct {
+		name           string
+		provider       types.PaymentGatewayType
+		useSavedMethod bool
+		wantErr        bool
+		errCheck       func(error) bool
+	}{
+		{
+			name:           "saved method with razorpay fails validation when customer has no saved card",
+			provider:       types.PaymentGatewayTypeRazorpay,
+			useSavedMethod: true,
+			wantErr:        true,
+			errCheck:       ierr.IsValidation,
+		},
+		{
+			name:           "saved method with chargebee fails validation when customer has no saved card",
+			provider:       types.PaymentGatewayTypeChargebee,
+			useSavedMethod: true,
+			wantErr:        true,
+			errCheck:       ierr.IsValidation,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			req := &dto.PortalTopUpWalletRequest{
+				CreditsToAdd: decimal.NewFromInt(5),
+				Checkout: &dto.PortalCheckoutParams{
+					PaymentProvider: lo.ToPtr(tt.provider),
+					UseSavedMethod:  tt.useSavedMethod,
+				},
+			}
+
+			resp, err := s.svc.TopUpWallet(s.ctx, s.walletID, req)
+			if tt.wantErr {
+				s.Error(err)
+				if tt.errCheck != nil {
+					s.True(tt.errCheck(err))
+				}
+				s.Nil(resp)
+			} else {
+				s.NoError(err)
+				s.NotNil(resp)
+			}
+		})
+	}
+}
+
 func (s *PortalWalletSuite) seedPendingSession(id string) {
 	session := &domainCheckout.CheckoutSession{
 		ID:              id,
@@ -226,6 +277,18 @@ func (s *PortalWalletSuite) TestAutoTopupEnableRequiresChargeableMethod() {
 	})
 	s.Error(err)
 	s.False(ierr.IsValidation(err), "a missing card is a state conflict, not a bad request")
+}
+
+func (s *PortalWalletSuite) TestAutoTopupEnableRequiresChargeableMethodRazorpay() {
+	s.connect(types.SecretProviderRazorpay)
+
+	_, err := s.svc.UpdateAutoTopup(s.ctx, s.walletID, &dto.PortalUpdateAutoTopupRequest{
+		Enabled:   true,
+		Threshold: lo.ToPtr(decimal.NewFromInt(5)),
+		Amount:    lo.ToPtr(decimal.NewFromInt(20)),
+	})
+	s.Error(err)
+	s.False(ierr.IsValidation(err), "a missing mandate is a state conflict, not a bad request")
 }
 
 // Disabling must never be gated on a card: a customer with no usable method still

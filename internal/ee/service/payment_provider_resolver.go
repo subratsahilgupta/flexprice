@@ -54,7 +54,7 @@ type ProviderCapabilities struct {
 // ListProviders returns configured gateways with a usable capability, ordered by
 // gateway name.
 func (s *PaymentProviderResolver) ListProviders(ctx context.Context, customerID string) ([]ProviderCapabilities, error) {
-	gateways, err := s.configuredGateways(ctx)
+	gateways, err := s.ConfiguredGateways(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (s *PaymentProviderResolver) ResolveProvider(
 		}
 	}
 
-	gateways, err := s.configuredGateways(ctx)
+	gateways, err := s.ConfiguredGateways(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -140,8 +140,8 @@ func (s *PaymentProviderResolver) ResolveProvider(
 	}
 }
 
-// configuredGateways deduplicates and sorts so listings and error messages are stable.
-func (s *PaymentProviderResolver) configuredGateways(ctx context.Context) ([]types.PaymentGatewayType, error) {
+// ConfiguredGateways deduplicates and sorts so listings and error messages are stable.
+func (s *PaymentProviderResolver) ConfiguredGateways(ctx context.Context) ([]types.PaymentGatewayType, error) {
 	connections, err := s.ConnectionRepo.ListAllPublished(ctx)
 	if err != nil {
 		return nil, err
