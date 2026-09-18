@@ -20,4 +20,10 @@ type Repository interface {
 
 	// ListBySubscriptionPeriod lists facts for a subscription within a period, filtered by status.
 	ListBySubscriptionPeriod(ctx context.Context, subscriptionID string, periodStart, periodEnd time.Time, status types.FactStatus) ([]*RevenueFact, error)
+
+	// RevertByInvoice writes a contra row (NewRevert) for every FINAL,
+	// non-revert fact stamped with invoiceID, atomically. Idempotent: an
+	// invoice that already carries revert rows is left unchanged. Returns the
+	// number of revert rows written.
+	RevertByInvoice(ctx context.Context, invoiceID string) (int, error)
 }

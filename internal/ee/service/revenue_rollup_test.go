@@ -11,10 +11,13 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/revenuefact"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -588,4 +591,301 @@ func (s *RevenueRollupSuite) TestRollupDirty_TallyAndErrorIsolation() {
 	errRows, err := s.store.ListBySubscriptionPeriod(ctx, failing.ID, failing.CurrentPeriodStart, failing.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
 	s.NoError(err)
 	s.Empty(errRows, "the failing subscription must not have written any rows")
+}
+
+// --- FINAL flip / revert / JIT (formerly revenue_rollup_final_test.go) ---
+
+// finalFlipFixture is one PROVISIONAL fixed-revenue fact plus the matching
+// finalized invoice + line item, hand-built (not via the preview engine) so
+// the flip/reconcile/revert behavior is isolated from decomposition.
+type finalFlipFixture struct {
+	subscriptionID string
+	priceID        string
+	periodStart    time.Time
+	periodEnd      time.Time // inclusive last day, matching revenue_facts Day bounds
+	invoice        *invoice.Invoice
+}
+
+func (s *RevenueRollupSuite) seedFinalFlipFixture(ctx context.Context) *finalFlipFixture {
+	periodStart := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	periodEndExclusive := periodStart.AddDate(0, 0, 30)
+	fx := &finalFlipFixture{
+		subscriptionID: "sub_final_1",
+		priceID:        "price_final_1",
+		periodStart:    periodStart,
+		periodEnd:      periodEndExclusive.AddDate(0, 0, -1),
+	}
+
+	fact := &revenuefact.RevenueFact{
+		ID:             "revfact_final_1",
+		CustomerID:     "cust_final_1",
+		SubscriptionID: fx.subscriptionID,
+		PriceID:        lo.ToPtr(fx.priceID),
+		RevenueSource:  types.RevenueSourceFixed,
+		PeriodStart:    fx.periodStart,
+		PeriodEnd:      fx.periodEnd,
+		Day:            fx.periodStart,
+		NetAmount:      decimal.NewFromInt(30),
+		Currency:       "usd",
+		Status:         types.FactProvisional,
+	}
+	s.NoError(s.store.UpsertProvisional(ctx, []*revenuefact.RevenueFact{fact}))
+
+	inv := &invoice.Invoice{
+		ID:              "inv_final_1",
+		CustomerID:      "cust_final_1",
+		SubscriptionID:  lo.ToPtr(fx.subscriptionID),
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusFinalized,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromInt(30),
+		Subtotal:        decimal.NewFromInt(30),
+		TotalDiscount:   decimal.Zero,
+		AmountPaid:      decimal.Zero,
+		AmountRemaining: decimal.NewFromInt(30),
+		Description:     "Final flip test invoice",
+		PeriodStart:     lo.ToPtr(fx.periodStart),
+		PeriodEnd:       lo.ToPtr(periodEndExclusive),
+		BillingReason:   string(types.InvoiceBillingReasonSubscriptionCycle),
+		BaseModel:       types.GetDefaultBaseModel(ctx),
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:             "li_final_1",
+				InvoiceID:      "inv_final_1",
+				CustomerID:     "cust_final_1",
+				SubscriptionID: lo.ToPtr(fx.subscriptionID),
+				PriceID:        lo.ToPtr(fx.priceID),
+				Amount:         decimal.NewFromInt(30),
+				Quantity:       decimal.NewFromInt(1),
+				Currency:       "usd",
+				PeriodStart:    lo.ToPtr(fx.periodStart),
+				PeriodEnd:      lo.ToPtr(periodEndExclusive),
+				BaseModel:      types.GetDefaultBaseModel(ctx),
+			},
+		},
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(ctx, inv))
+	fx.invoice = inv
+	return fx
+}
+
+func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipsAndStamps() {
+	fx := s.seedFinalFlipFixture(s.ctx)
+
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(s.ctx, fx.invoice.ID))
+
+	rows, err := s.store.ListBySubscriptionPeriod(s.ctx, fx.subscriptionID, fx.periodStart, fx.periodEnd, types.FactFinal)
+	s.NoError(err)
+	s.NotEmpty(rows)
+	s.Equal(fx.invoice.ID, lo.FromPtr(rows[0].InvoiceID))
+	s.Equal("li_final_1", lo.FromPtr(rows[0].InvoiceLineItemID))
+	s.Equal(types.FactFinal, rows[0].Status)
+
+	// No more PROVISIONAL rows left for this grain — the flip moved them, it
+	// did not duplicate them.
+	provisional, err := s.store.ListBySubscriptionPeriod(s.ctx, fx.subscriptionID, fx.periodStart, fx.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.Empty(provisional)
+
+	// Sum reconciles against the invoice's Subtotal - TotalDiscount.
+	sum := decimal.Zero
+	for _, r := range rows {
+		sum = sum.Add(r.NetAmount)
+	}
+	s.True(sum.Equal(fx.invoice.Subtotal.Sub(fx.invoice.TotalDiscount)))
+}
+
+// TestFinalizeSubscriptionPeriod_TrueupRowMatchesBySyntheticPriceID verifies a
+// commitment-trueup provisional row written under the stable synthetic
+// price_id ("trueup:"+subLineItemID) is still found and stamped when the
+// finalized line item carries a completely different (fresh random) price_id,
+// exactly as the real billing engine assigns — the flip re-derives the same
+// synthetic id from metadata + sub_line_item_id.
+func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_TrueupRowMatchesBySyntheticPriceID() {
+	subscriptionID := "sub_final_trueup"
+	periodStart := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	periodEndExclusive := periodStart.AddDate(0, 0, 30)
+	periodEnd := periodEndExclusive.AddDate(0, 0, -1)
+	subLineItemID := "sli_final_trueup"
+	syntheticPriceID := stableTrueupPriceID(subLineItemID, subscriptionID, false)
+
+	fact := &revenuefact.RevenueFact{
+		ID:             "revfact_final_trueup",
+		CustomerID:     "cust_final_1",
+		SubscriptionID: subscriptionID,
+		SubLineItemID:  lo.ToPtr(subLineItemID),
+		PriceID:        lo.ToPtr(syntheticPriceID),
+		RevenueSource:  types.RevenueSourceCommitmentTrueup,
+		PeriodStart:    periodStart,
+		PeriodEnd:      periodEnd,
+		Day:            periodEnd,
+		NetAmount:      decimal.NewFromInt(50),
+		Currency:       "usd",
+		Status:         types.FactProvisional,
+	}
+	s.NoError(s.store.UpsertProvisional(s.ctx, []*revenuefact.RevenueFact{fact}))
+
+	inv := &invoice.Invoice{
+		ID:              "inv_final_trueup",
+		CustomerID:      "cust_final_1",
+		SubscriptionID:  lo.ToPtr(subscriptionID),
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusFinalized,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromInt(50),
+		Subtotal:        decimal.NewFromInt(50),
+		TotalDiscount:   decimal.Zero,
+		AmountRemaining: decimal.NewFromInt(50),
+		BillingReason:   string(types.InvoiceBillingReasonSubscriptionCycle),
+		BaseModel:       types.GetDefaultBaseModel(s.ctx),
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:                     "li_final_trueup",
+				InvoiceID:              "inv_final_trueup",
+				CustomerID:             "cust_final_1",
+				SubscriptionID:         lo.ToPtr(subscriptionID),
+				SubscriptionLineItemID: lo.ToPtr(subLineItemID),
+				// The billing engine assigns a fresh random price_id to
+				// trueup/overage lines on every compute — deliberately NOT the
+				// synthetic id the provisional row was written under.
+				PriceID:     lo.ToPtr(types.GenerateUUIDWithPrefix("price")),
+				Amount:      decimal.NewFromInt(50),
+				Quantity:    decimal.NewFromInt(1),
+				Currency:    "usd",
+				PeriodStart: lo.ToPtr(periodStart),
+				PeriodEnd:   lo.ToPtr(periodEndExclusive),
+				Metadata:    types.Metadata{types.MetadataKeyIsCommitmentTrueup: types.MetadataValueTrue},
+				BaseModel:   types.GetDefaultBaseModel(s.ctx),
+			},
+		},
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(s.ctx, inv))
+
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(s.ctx, inv.ID))
+
+	rows, err := s.store.ListBySubscriptionPeriod(s.ctx, subscriptionID, periodStart, periodEnd, types.FactFinal)
+	s.NoError(err)
+	s.NotEmpty(rows)
+	s.Equal(inv.ID, lo.FromPtr(rows[0].InvoiceID))
+	s.Equal("li_final_trueup", lo.FromPtr(rows[0].InvoiceLineItemID))
+}
+
+// failingRevenueFactRepo wraps the in-memory store so FlipToFinal always
+// errors — proving FinalizeSubscriptionPeriod propagates the error to its
+// (async) caller instead of swallowing it.
+type failingRevenueFactRepo struct {
+	*testutil.InMemoryRevenueFactStore
+	Called chan struct{}
+}
+
+func (f *failingRevenueFactRepo) FlipToFinal(ctx context.Context, subscriptionID, priceID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error) {
+	if f.Called != nil {
+		select {
+		case f.Called <- struct{}{}:
+		default:
+		}
+	}
+	return 0, ierr.NewError("forced flip failure").Mark(ierr.ErrDatabase)
+}
+
+func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipErrorIsReturnedToCaller() {
+	fx := s.seedFinalFlipFixture(s.ctx)
+
+	params := s.serviceParams()
+	params.RevenueFactRepo = &failingRevenueFactRepo{InMemoryRevenueFactStore: s.store}
+	failingSvc := NewRevenueRollupService(params)
+
+	s.Error(failingSvc.FinalizeSubscriptionPeriod(s.ctx, fx.invoice.ID))
+}
+
+// TestRevertInvoiceFacts covers the voided-invoice guardrail: FINAL rows are
+// immutable, so a void posts contra rows (negated amounts, is_revert=true)
+// stamped with the same invoice — and the whole period then nets to zero.
+// A second call must be a no-op (the async void hook can retry).
+func (s *RevenueRollupSuite) TestRevertInvoiceFacts() {
+	fx := s.seedFinalFlipFixture(s.ctx)
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(s.ctx, fx.invoice.ID))
+
+	s.NoError(s.svc.RevertInvoiceFacts(s.ctx, fx.invoice.ID))
+
+	rows, err := s.store.ListBySubscriptionPeriod(s.ctx, fx.subscriptionID, fx.periodStart, fx.periodEnd, types.FactFinal)
+	s.NoError(err)
+	s.Len(rows, 2, "one original + one contra row")
+
+	total := decimal.Zero
+	revertSeen := false
+	for _, r := range rows {
+		total = total.Add(r.NetAmount)
+		if r.IsRevert {
+			revertSeen = true
+			s.Equal(fx.invoice.ID, lo.FromPtr(r.InvoiceID), "contra row keeps the voided invoice stamp")
+		}
+	}
+	s.True(revertSeen, "a contra row must exist")
+	s.True(total.IsZero(), "original + revert must net to zero")
+
+	// Idempotent: a retried revert adds nothing.
+	s.NoError(s.svc.RevertInvoiceFacts(s.ctx, fx.invoice.ID))
+	rows2, err := s.store.ListBySubscriptionPeriod(s.ctx, fx.subscriptionID, fx.periodStart, fx.periodEnd, types.FactFinal)
+	s.NoError(err)
+	s.Len(rows2, 2, "revert is idempotent")
+}
+
+// TestFinalizeSubscriptionPeriod_JITRollupWhenNoProvisionalRows covers the
+// re-issued-invoice guardrail: an invoice finalized when NO provisional rows
+// exist for its period (re-drafted after a void, or a period the schedule
+// never covered) must trigger a just-in-time rollup of that period and then
+// flip, so the new invoice still gets FINAL facts.
+func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_JITRollupWhenNoProvisionalRows() {
+	ctx := s.ctx
+	sub := s.seedFixedOnlySubscription(ctx, "jit", nil, "price_dirty_jit", true)
+
+	inv := &invoice.Invoice{
+		ID:              "inv_jit_1",
+		CustomerID:      sub.CustomerID,
+		SubscriptionID:  lo.ToPtr(sub.ID),
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusFinalized,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromInt(30),
+		Subtotal:        decimal.NewFromInt(30),
+		TotalDiscount:   decimal.Zero,
+		AmountRemaining: decimal.NewFromInt(30),
+		PeriodStart:     lo.ToPtr(sub.CurrentPeriodStart),
+		PeriodEnd:       lo.ToPtr(sub.CurrentPeriodEnd),
+		BillingReason:   string(types.InvoiceBillingReasonSubscriptionCycle),
+		BaseModel:       types.GetDefaultBaseModel(ctx),
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:             "li_jit_1",
+				InvoiceID:      "inv_jit_1",
+				CustomerID:     sub.CustomerID,
+				SubscriptionID: lo.ToPtr(sub.ID),
+				PriceType:      lo.ToPtr(string(types.PRICE_TYPE_FIXED)),
+				PriceID:        lo.ToPtr("price_dirty_jit"),
+				Amount:         decimal.NewFromInt(30),
+				Quantity:       decimal.NewFromInt(1),
+				Currency:       "usd",
+				PeriodStart:    lo.ToPtr(sub.CurrentPeriodStart),
+				PeriodEnd:      lo.ToPtr(sub.CurrentPeriodEnd),
+				BaseModel:      types.GetDefaultBaseModel(ctx),
+			},
+		},
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(ctx, inv))
+
+	// Precondition: no provisional rows exist for this period.
+	pre, err := s.store.ListBySubscriptionPeriod(ctx, sub.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.Empty(pre)
+
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(ctx, inv.ID))
+
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, sub.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd.AddDate(0, 0, -1), types.FactFinal)
+	s.NoError(err)
+	s.NotEmpty(rows, "JIT rollup must have produced rows the flip then stamped")
+	s.Equal(inv.ID, lo.FromPtr(rows[0].InvoiceID))
 }

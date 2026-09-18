@@ -307,3 +307,107 @@ func (r *revenueFactRepository) ListBySubscriptionPeriod(ctx context.Context, su
 	SetSpanSuccess(span)
 	return revenuefact.FromEntList(rows), nil
 }
+
+// RevertByInvoice writes a contra row for every FINAL, non-revert fact stamped
+// with invoiceID — the voided-invoice guardrail: FINAL rows are immutable, a
+// void posts reversing rows instead of editing them. Runs in one transaction;
+// idempotent (an invoice already carrying revert rows is left unchanged).
+func (r *revenueFactRepository) RevertByInvoice(ctx context.Context, invoiceID string) (int, error) {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	span := StartRepositorySpan(ctx, "revenue_fact", "revert_by_invoice", map[string]interface{}{
+		"tenant_id":      tenantID,
+		"environment_id": environmentID,
+		"invoice_id":     invoiceID,
+	})
+	defer FinishSpan(span)
+
+	var written int
+	err := r.client.WithTx(ctx, func(ctx context.Context) error {
+		rows, err := r.client.Writer(ctx).RevenueFact.Query().
+			Where(
+				entrevenuefact.TenantID(tenantID),
+				entrevenuefact.EnvironmentID(environmentID),
+				entrevenuefact.InvoiceID(invoiceID),
+				entrevenuefact.StatusEQ(types.FactFinal),
+			).
+			All(ctx)
+		if err != nil {
+			return err
+		}
+
+		originals := make([]*ent.RevenueFact, 0, len(rows))
+		for _, row := range rows {
+			if row.IsRevert {
+				// Already reverted (retried void hook) — nothing to do.
+				return nil
+			}
+			originals = append(originals, row)
+		}
+		if len(originals) == 0 {
+			return nil
+		}
+
+		now := time.Now().UTC()
+		bulk := make([]*ent.RevenueFactCreate, 0, len(originals))
+		for _, row := range originals {
+			rev := revenuefact.NewRevert(revenuefact.FromEnt(row), now)
+			bulk = append(bulk, r.client.Writer(ctx).RevenueFact.Create().
+				SetID(rev.ID).
+				SetTenantID(rev.TenantID).
+				SetEnvironmentID(rev.EnvironmentID).
+				SetCustomerID(rev.CustomerID).
+				SetSubscriptionID(rev.SubscriptionID).
+				SetNillableSubLineItemID(rev.SubLineItemID).
+				SetNillablePriceID(rev.PriceID).
+				SetNillableMeterID(rev.MeterID).
+				SetNillableAggregationType(rev.AggregationType).
+				SetRevenueSource(rev.RevenueSource).
+				SetPeriodStart(rev.PeriodStart).
+				SetPeriodEnd(rev.PeriodEnd).
+				SetDay(rev.Day).
+				SetNillableServiceStart(rev.ServiceStart).
+				SetNillableServiceEnd(rev.ServiceEnd).
+				SetNillableRecognitionMethod(rev.RecognitionMethod).
+				SetUsageAtListRate(rev.UsageAtListRate).
+				SetTierDelta(rev.TierDelta).
+				SetEntitlementAmount(rev.EntitlementAmount).
+				SetLineDiscount(rev.LineDiscount).
+				SetInvoiceDiscount(rev.InvoiceDiscount).
+				SetNetAmount(rev.NetAmount).
+				SetBillableQty(rev.BillableQty).
+				SetEntitlementQty(rev.EntitlementQty).
+				SetDecompositionMode(rev.DecompositionMode).
+				SetCurrency(rev.Currency).
+				SetStatus(rev.Status).
+				SetIsRevert(rev.IsRevert).
+				SetNillableInvoiceID(rev.InvoiceID).
+				SetNillableInvoiceLineItemID(rev.InvoiceLineItemID).
+				SetNillableLockAdjustedDay(rev.LockAdjustedDay).
+				SetComputedAt(rev.ComputedAt).
+				SetVersion(rev.Version))
+		}
+
+		if _, err := r.client.Writer(ctx).RevenueFact.CreateBulk(bulk...).Save(ctx); err != nil {
+			return err
+		}
+		written = len(bulk)
+		return nil
+	})
+	if err != nil {
+		SetSpanError(span, err)
+		r.log.Error(ctx, "revert revenue facts by invoice failed",
+			"error", err,
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+			"invoice_id", invoiceID,
+		)
+		return 0, ierr.WithError(err).
+			WithHint("Failed to revert revenue facts for voided invoice").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return written, nil
+}

@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -43,9 +45,17 @@ type RevenueRollupService interface {
 	// FinalizeSubscriptionPeriod flips the PROVISIONAL revenue_facts rows backing
 	// invoiceID's line items to FINAL, stamping invoice_id/invoice_line_item_id,
 	// then re-asserts reconciliation over the now-FINAL rows (shadow-only: a
-	// mismatch is logged, the flip is never rolled back). Intended to run
-	// asynchronously after invoice finalization — see performFinalizeInvoiceActions.
+	// mismatch is logged, the flip is never rolled back). When no provisional
+	// rows exist for the period it rolls the period up just-in-time and flips
+	// once more. Intended to run asynchronously after invoice finalization —
+	// see performFinalizeInvoiceActions.
 	FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error
+
+	// RevertInvoiceFacts posts contra rows (negated amounts, is_revert=true)
+	// for every FINAL fact stamped with a now-voided invoice. FINAL rows are
+	// immutable — a void reverses them, never edits. Idempotent; intended to
+	// run asynchronously after VoidInvoice.
+	RevertInvoiceFacts(ctx context.Context, invoiceID string) error
 }
 
 type revenueRollupService struct {
@@ -80,9 +90,15 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 	if err != nil {
 		return false, err
 	}
+	return s.rollupSubscriptionForPeriod(ctx, sub, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+}
 
-	periodStart := sub.CurrentPeriodStart
-	periodEnd := sub.CurrentPeriodEnd
+// rollupSubscriptionForPeriod decomposes one explicit billing window
+// (periodEnd exclusive, matching the preview engine). The scheduled rollup
+// targets the current period; the FINAL-flip's JIT pass and manual backfills
+// target past periods.
+func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (skipped bool, err error) {
+	subscriptionID := sub.ID
 
 	billingSvc := NewBillingService(s.ServiceParams)
 	invReq, err := billingSvc.PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
@@ -369,46 +385,32 @@ func (s *revenueRollupService) FinalizeSubscriptionPeriod(ctx context.Context, i
 		return err
 	}
 
-	groupSeen := make(map[string]finalizePeriodGroup)
-
-	for _, li := range inv.LineItems {
-		// Join on the LINE ITEM's own subscription, never the
-		// invoice's — grouped invoicing can bill several child subscriptions on
-		// one invoice, each carrying its own revenue_facts rows.
-		subscriptionID := lo.FromPtr(li.SubscriptionID)
-		periodStart := lo.FromPtr(li.PeriodStart)
-		periodEndExclusive := lo.FromPtr(li.PeriodEnd)
-		if subscriptionID == "" || periodStart.IsZero() || periodEndExclusive.IsZero() {
-			// Non-subscription line items (one-off charges, credits, etc.) never
-			// produced revenue_facts rows in RollupSubscription — nothing to flip.
-			continue
-		}
-		// The invoice line item's period end is
-		// half-open/exclusive, same as the preview engine's — convert to the
-		// inclusive day bound revenue_facts rows are keyed/queried on.
-		periodEnd := periodEndExclusive.AddDate(0, 0, -1)
-
-		priceID := lo.FromPtr(li.PriceID)
-		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
-		isOverage := li.Metadata.GetBool(types.MetadataKeyIsOverage)
-		if isTrueup || isOverage {
-			// The finalized line item's own price_id is a fresh random one the
-			// engine assigned at compute time (see stableTrueupPriceID) — it will
-			// never match the provisional rows, which were written keyed on the
-			// re-derived stable synthetic id. Re-derive the same id here.
-			priceID = stableTrueupPriceID(lo.FromPtr(li.SubscriptionLineItemID), subscriptionID, isOverage)
-		}
-
-		if _, err := s.RevenueFactRepo.FlipToFinal(ctx, subscriptionID, priceID, periodStart, periodEnd, invoiceID, li.ID); err != nil {
-			return err
-		}
-
-		key := fmt.Sprintf("%s|%d|%d", subscriptionID, periodStart.UnixNano(), periodEnd.UnixNano())
-		groupSeen[key] = finalizePeriodGroup{subscriptionID: subscriptionID, periodStart: periodStart, periodEnd: periodEnd}
+	flipped, groupSeen, err := s.flipInvoiceLineItems(ctx, inv)
+	if err != nil {
+		return err
 	}
-
 	if len(groupSeen) == 0 {
 		return nil
+	}
+
+	// JIT rollup: zero flipped rows across the whole invoice means the
+	// provisional rows were never written for this period (an invoice
+	// re-drafted after a void, or a period the schedule hasn't covered).
+	// Decompose the finalized invoice's own line items into period_only rows
+	// and flip once more — still shadow-only, the finalization result already
+	// returned to the caller is unaffected.
+	if flipped == 0 {
+		if jitErr := s.jitRollupFromInvoice(ctx, inv); jitErr != nil {
+			return jitErr
+		}
+		if flipped, _, err = s.flipInvoiceLineItems(ctx, inv); err != nil {
+			return err
+		}
+		if flipped == 0 {
+			// Still nothing to stamp (e.g. only non-subscription line items) —
+			// surface the gap, never block.
+			s.Logger.Info(ctx, "revenue_facts_flip_gap", "invoice_id", invoiceID)
+		}
 	}
 
 	// Shadow-only: re-assert reconciliation over every row this
@@ -433,6 +435,149 @@ func (s *revenueRollupService) FinalizeSubscriptionPeriod(ctx context.Context, i
 			"scope", "invoice_final", "invoice_id", invoiceID, "residual", residual.String())
 	}
 
+	return nil
+}
+
+// flipInvoiceLineItems issues one FlipToFinal per flippable line item of inv,
+// returning the total rows flipped and the distinct (subscription, period)
+// grains touched.
+func (s *revenueRollupService) flipInvoiceLineItems(ctx context.Context, inv *invoice.Invoice) (int, map[string]finalizePeriodGroup, error) {
+	flipped := 0
+	groupSeen := make(map[string]finalizePeriodGroup)
+
+	for _, li := range inv.LineItems {
+		// Join on the LINE ITEM's own subscription, never the invoice's —
+		// grouped invoicing can bill several child subscriptions on one
+		// invoice, each carrying its own revenue_facts rows.
+		subscriptionID := lo.FromPtr(li.SubscriptionID)
+		periodStart := lo.FromPtr(li.PeriodStart)
+		periodEndExclusive := lo.FromPtr(li.PeriodEnd)
+		if subscriptionID == "" || periodStart.IsZero() || periodEndExclusive.IsZero() {
+			// Non-subscription line items (one-off charges, credits, etc.) never
+			// produced revenue_facts rows in RollupSubscription — nothing to flip.
+			continue
+		}
+		// The invoice line item's period end is half-open/exclusive, same as
+		// the preview engine's — convert to the inclusive day bound
+		// revenue_facts rows are keyed/queried on.
+		periodEnd := periodEndExclusive.AddDate(0, 0, -1)
+
+		priceID := lo.FromPtr(li.PriceID)
+		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
+		isOverage := li.Metadata.GetBool(types.MetadataKeyIsOverage)
+		if isTrueup || isOverage {
+			// The finalized line item's own price_id is a fresh random one the
+			// engine assigned at compute time (see stableTrueupPriceID) — it will
+			// never match the provisional rows, which were written keyed on the
+			// re-derived stable synthetic id. Re-derive the same id here.
+			priceID = stableTrueupPriceID(lo.FromPtr(li.SubscriptionLineItemID), subscriptionID, isOverage)
+		}
+
+		n, err := s.RevenueFactRepo.FlipToFinal(ctx, subscriptionID, priceID, periodStart, periodEnd, inv.ID, li.ID)
+		if err != nil {
+			return flipped, groupSeen, err
+		}
+		flipped += n
+
+		key := fmt.Sprintf("%s|%d|%d", subscriptionID, periodStart.UnixNano(), periodEnd.UnixNano())
+		groupSeen[key] = finalizePeriodGroup{subscriptionID: subscriptionID, periodStart: periodStart, periodEnd: periodEnd}
+	}
+
+	return flipped, groupSeen, nil
+}
+
+// jitRollupFromInvoice writes period_only PROVISIONAL rows derived from the
+// finalized invoice's own line items — the fallback when no provisional rows
+// exist for the period. The finalized invoice is its own source of truth, so
+// these rows reconcile to it by construction; marginal (day-grain) usage
+// decomposition is deliberately not reconstructed here.
+func (s *revenueRollupService) jitRollupFromInvoice(ctx context.Context, inv *invoice.Invoice) error {
+	priceCache := map[string]*price.Price{}
+	meterCache := map[string]*meter.Meter{}
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	var rows []*revenuefact.RevenueFact
+	for _, li := range inv.LineItems {
+		subscriptionID := lo.FromPtr(li.SubscriptionID)
+		periodStart := lo.FromPtr(li.PeriodStart)
+		periodEndExclusive := lo.FromPtr(li.PeriodEnd)
+		if subscriptionID == "" || periodStart.IsZero() || periodEndExclusive.IsZero() {
+			continue
+		}
+		period := revenuefact.RevenuePeriod{Start: periodStart, End: periodEndExclusive.AddDate(0, 0, -1)}
+
+		base := revenuefact.PreviewLineItem{
+			TenantID:       tenantID,
+			EnvironmentID:  environmentID,
+			CustomerID:     li.CustomerID,
+			SubscriptionID: subscriptionID,
+			SubLineItemID:  lo.FromPtr(li.SubscriptionLineItemID),
+			Currency:       li.Currency,
+			Metadata:       li.Metadata,
+			EngineAmount:   li.Amount,
+			PeriodStart:    period.Start,
+			PeriodEnd:      period.End,
+		}
+
+		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
+		isOverage := li.Metadata.GetBool(types.MetadataKeyIsOverage)
+		switch {
+		case isTrueup || isOverage:
+			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, subscriptionID, isOverage)}
+			rows = append(rows, revenuefact.DecomposeCommitmentTrueup(base, period))
+
+		case lo.FromPtr(li.PriceType) == string(types.PRICE_TYPE_FIXED):
+			p, err := s.getPrice(ctx, priceCache, lo.FromPtr(li.PriceID))
+			if err != nil {
+				return err
+			}
+			base.Price = p
+			if row := revenuefact.DecomposeFixed(base, period); row != nil {
+				rows = append(rows, row)
+			}
+
+		case lo.FromPtr(li.PriceType) == string(types.PRICE_TYPE_USAGE):
+			p, err := s.getPrice(ctx, priceCache, lo.FromPtr(li.PriceID))
+			if err != nil {
+				return err
+			}
+			base.Price = p
+			if meterID := lo.FromPtr(li.MeterID); meterID != "" {
+				m, err := s.getMeter(ctx, meterCache, meterID)
+				if err != nil {
+					return err
+				}
+				base.Meter = m
+			}
+			rows = append(rows, revenuefact.DecomposeUsagePeriodOnly(base, period))
+
+		default:
+			s.Logger.Info(ctx, "revenue_jit_rollup_line_item_skipped",
+				"invoice_id", inv.ID,
+				"invoice_line_item_id", li.ID,
+				"price_type", lo.FromPtr(li.PriceType))
+		}
+	}
+
+	if len(rows) == 0 {
+		return nil
+	}
+	return s.RevenueFactRepo.UpsertProvisional(ctx, rows)
+}
+
+// RevertInvoiceFacts posts contra rows for every FINAL fact stamped with a
+// now-voided invoice — FINAL rows are immutable, so a void reverses them
+// rather than editing or deleting. Idempotent via the repository.
+func (s *revenueRollupService) RevertInvoiceFacts(ctx context.Context, invoiceID string) error {
+	n, err := s.RevenueFactRepo.RevertByInvoice(ctx, invoiceID)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		s.Logger.Info(ctx, "revenue facts reverted for voided invoice",
+			"invoice_id", invoiceID, "revert_rows", n)
+	}
 	return nil
 }
 

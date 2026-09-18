@@ -1544,6 +1544,38 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 	}
 
 	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
+
+	// Async, non-blocking revert of the revenue_facts shadow rows stamped with
+	// this invoice (see RevenueRollupService.RevertInvoiceFacts) — the mirror
+	// image of the FINAL flip on finalization, same detached-context pattern.
+	// Any error is logged and swallowed: shadow write-path, never affects the
+	// void result already returned to the caller.
+	go func() {
+		asyncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+		defer cancel()
+		defer func() {
+			if r := recover(); r != nil {
+				s.Logger.Error(asyncCtx, "panic in async revenue facts revert",
+					"error", fmt.Sprintf("%v", r),
+					"invoice_id", inv.ID,
+				)
+			}
+		}()
+
+		if s.RevenueFactRepo == nil {
+			// Not wired in this deployment/test context — nothing to revert.
+			return
+		}
+
+		rollupSvc := NewRevenueRollupService(s.ServiceParams)
+		if err := rollupSvc.RevertInvoiceFacts(asyncCtx, inv.ID); err != nil {
+			s.Logger.Error(asyncCtx, "async revenue facts revert failed",
+				"error", err,
+				"invoice_id", inv.ID,
+			)
+		}
+	}()
+
 	return inv, nil
 }
 

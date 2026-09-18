@@ -199,6 +199,35 @@ func (s *InMemoryRevenueFactStore) ListBySubscriptionPeriod(ctx context.Context,
 	return result, nil
 }
 
+// RevertByInvoice writes a contra row for every FINAL, non-revert fact stamped
+// with invoiceID, mirroring the Postgres repo: idempotent, all-or-nothing.
+func (s *InMemoryRevenueFactStore) RevertByInvoice(ctx context.Context, invoiceID string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var originals []*revenuefact.RevenueFact
+	for _, f := range s.facts {
+		if !CheckTenantFilter(ctx, f.TenantID) || !CheckEnvironmentFilter(ctx, f.EnvironmentID) {
+			continue
+		}
+		if f.InvoiceID == nil || *f.InvoiceID != invoiceID || f.Status != types.FactFinal {
+			continue
+		}
+		if f.IsRevert {
+			// Already reverted (retried void hook) — nothing to do.
+			return 0, nil
+		}
+		originals = append(originals, f)
+	}
+
+	now := time.Now().UTC()
+	for _, f := range originals {
+		rev := revenuefact.NewRevert(f, now)
+		s.facts[rev.ID] = rev
+	}
+	return len(originals), nil
+}
+
 func factPriceMatches(f *revenuefact.RevenueFact, priceID string) bool {
 	if f.PriceID == nil {
 		return priceID == ""
