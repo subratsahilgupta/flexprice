@@ -480,6 +480,25 @@ stateDiagram-v2
 
 **`lock_adjusted_day`** is the day a row is *recognized* given lock posture: it equals `day` when the period is open, and shifts to the **first day of the next open period** when the real period is closed — a "catch-up" so a closed month is never rewritten. Reports key on `lock_adjusted_day`; analytics/attribution key on `day`.
 
+### 8.1 Lifecycle hooks & operating guardrails (Phase 2)
+
+The invoice lifecycle drives the fact lifecycle through two async, non-blocking hooks (shadow write-path: an error is logged, the billing result is never affected):
+
+| Invoice event | Fact effect |
+|---|---|
+| **Finalized** | `FinalizeSubscriptionPeriod`: flip `PROVISIONAL → FINAL`, stamp `invoice_id`/`invoice_line_item_id`, re-assert reconciliation. If **zero** rows flip (invoice re-drafted after a void, or a window the schedule never covered), decompose the finalized invoice's own line items into `period_only` provisional rows just-in-time and flip again (`jitRollupFromInvoice`); a persistent gap logs `revenue_facts_flip_gap`. |
+| **Voided** | `RevertInvoiceFacts`: post one contra row per FINAL fact stamped with the invoice — negated amounts, `is_revert=true`, same grain and invoice stamps. Idempotent and transactional. The replacement draft, once finalized, gets fresh facts via the normal flip (or the JIT path above). |
+
+**Backdated changes** (late events, backdated price edits) into a period whose invoice is already FINAL do **not** rewrite FINAL rows. In Phase 2 the recompute-vs-booked divergence surfaces only as a reconciliation log; Phase 4 adds the drift-detection pass (compare re-derived revenue against stamped FINAL facts, flag `revenue_facts_drift` per invoice/grain) and books corrections as revert + fresh FINAL rows on `lock_adjusted_day` once accounting-period locks exist. Auto-correction stays behind an explicit flag — the default posture is flag, don't fix.
+
+**Guidelines for consumers of `revenue_facts`:**
+
+- `FINAL` rows are booked/reportable revenue; `PROVISIONAL` rows are the in-progress preview. Never mix the two in one metric without labeling.
+- **Always sum with reverts included** — never filter `is_revert = false` when computing recognized revenue; the contra rows are what make voided invoices net to zero.
+- Join back to billing through `invoice_id`. A FINAL fact whose invoice is VOIDED is stale only until its revert row lands (async, seconds).
+- Rows change only through the rollup / flip / revert lifecycle — no out-of-band mutation, ever.
+- The rollup only runs for tenants opted in via the `revenue_analytics_config` setting (per tenant+environment), so absence of rows for a tenant means "not enabled", not "zero revenue".
+
 ---
 
 ## 9. Serving layer (a translator, not a compiler)
