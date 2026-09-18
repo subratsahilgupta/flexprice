@@ -88,6 +88,15 @@ func (s *InMemoryRevenueFactStore) UpsertProvisional(ctx context.Context, facts 
 		f.TenantID = tenantID
 		f.EnvironmentID = environmentID
 		f.Status = types.FactProvisional
+		// Normalize before the conflict branch so insert and conflict-update
+		// write the same values the Postgres repo binds (it normalizes both
+		// fields before building the statement).
+		if f.Version == 0 {
+			f.Version = 1
+		}
+		if f.ComputedAt.IsZero() {
+			f.ComputedAt = time.Now().UTC()
+		}
 
 		key := grainKeyFor(f)
 		if existingID, ok := s.provisionalIndex[key]; ok {
@@ -102,12 +111,6 @@ func (s *InMemoryRevenueFactStore) UpsertProvisional(ctx context.Context, facts 
 			continue
 		}
 
-		if f.Version == 0 {
-			f.Version = 1
-		}
-		if f.ComputedAt.IsZero() {
-			f.ComputedAt = time.Now().UTC()
-		}
 		if f.ID == "" {
 			f.ID = types.GenerateUUIDWithPrefix("rf")
 		}

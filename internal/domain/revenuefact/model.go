@@ -3,6 +3,7 @@ package revenuefact
 import (
 	"time"
 
+	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
@@ -59,4 +60,55 @@ type RevenueFact struct {
 
 	ComputedAt time.Time `db:"computed_at" json:"computed_at"`
 	Version    int64     `db:"version" json:"version"`
+}
+
+// FromEnt maps a generated ent.RevenueFact to the domain model.
+func FromEnt(e *ent.RevenueFact) *RevenueFact {
+	if e == nil {
+		return nil
+	}
+	return &RevenueFact{
+		ID:                e.ID,
+		TenantID:          e.TenantID,
+		EnvironmentID:     e.EnvironmentID,
+		CustomerID:        e.CustomerID,
+		SubscriptionID:    e.SubscriptionID,
+		SubLineItemID:     e.SubLineItemID,
+		PriceID:           e.PriceID,
+		MeterID:           e.MeterID,
+		AggregationType:   e.AggregationType,
+		RevenueSource:     e.RevenueSource,
+		PeriodStart:       e.PeriodStart,
+		PeriodEnd:         e.PeriodEnd,
+		Day:               e.Day,
+		ServiceStart:      e.ServiceStart,
+		ServiceEnd:        e.ServiceEnd,
+		RecognitionMethod: e.RecognitionMethod,
+		UsageAtListRate:   e.UsageAtListRate,
+		TierDelta:         e.TierDelta,
+		EntitlementAmount: e.EntitlementAmount,
+		LineDiscount:      e.LineDiscount,
+		InvoiceDiscount:   e.InvoiceDiscount,
+		NetAmount:         e.NetAmount,
+		BillableQty:       e.BillableQty,
+		EntitlementQty:    e.EntitlementQty,
+		DecompositionMode: e.DecompositionMode,
+		Currency:          e.Currency,
+		Status:            e.Status,
+		IsRevert:          e.IsRevert,
+		InvoiceID:         e.InvoiceID,
+		InvoiceLineItemID: e.InvoiceLineItemID,
+		LockAdjustedDay:   e.LockAdjustedDay,
+		ComputedAt:        e.ComputedAt,
+		Version:           e.Version,
+	}
+}
+
+// FromEntList maps a list of generated ent.RevenueFact rows to domain models.
+func FromEntList(rows []*ent.RevenueFact) []*RevenueFact {
+	facts := make([]*RevenueFact, 0, len(rows))
+	for _, row := range rows {
+		facts = append(facts, FromEnt(row))
+	}
+	return facts
 }

@@ -219,7 +219,7 @@ type MeterUsageRepository interface {
 	GetByEventID(ctx context.Context, tenantID, environmentID, eventID string) (*MeterUsage, error)
 
 	// GetCumulativeDailyUsage returns the running cumulative SUM(qty_total) through
-	// each day in [StartTime, EndTime] for a single meter. Used by the revenue-facts
-	// curve helper to derive per-day cumulative billable usage.
+	// each day in the half-open window [StartTime, EndTime) for a single meter.
+	// Used by the revenue-facts curve helper to derive per-day cumulative billable usage.
 	GetCumulativeDailyUsage(ctx context.Context, params *CumulativeDailyUsageParams) ([]DailyUsagePoint, error)
 }

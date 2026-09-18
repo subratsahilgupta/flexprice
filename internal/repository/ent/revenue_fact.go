@@ -97,6 +97,48 @@ func (r *revenueFactRepository) UpsertProvisional(ctx context.Context, facts []*
 	})
 	defer FinishSpan(span)
 
+	// Postgres caps a statement at 65535 bind parameters; a full-period rollup
+	// can exceed that with 33 params per row, so upsert in bounded chunks — all
+	// inside one transaction so a mid-batch failure can't leave the period
+	// partially upserted.
+	maxRowsPerStmt := 65535 / len(revenueFactInsertColumns)
+	upsertAll := func(ctx context.Context) error {
+		for start := 0; start < len(facts); start += maxRowsPerStmt {
+			end := min(start+maxRowsPerStmt, len(facts))
+			if err := r.upsertProvisionalChunk(ctx, facts[start:end], tenantID, environmentID, now); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	var err error
+	if len(facts) <= maxRowsPerStmt {
+		err = upsertAll(ctx)
+	} else {
+		err = r.client.WithTx(ctx, upsertAll)
+	}
+	if err != nil {
+		SetSpanError(span, err)
+		r.log.Error(ctx, "upsert provisional revenue facts failed",
+			"error", err,
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+			"fact_count", len(facts),
+		)
+		return ierr.WithError(err).
+			WithHint("Failed to upsert provisional revenue facts").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return nil
+}
+
+// upsertProvisionalChunk builds and executes the multi-row INSERT ... ON
+// CONFLICT statement for one bounded chunk of facts. Callers guarantee
+// len(facts) * len(revenueFactInsertColumns) stays under the bind-param cap.
+func (r *revenueFactRepository) upsertProvisionalChunk(ctx context.Context, facts []*revenuefact.RevenueFact, tenantID, environmentID string, now time.Time) error {
 	numCols := len(revenueFactInsertColumns)
 	args := make([]interface{}, 0, len(facts)*numCols)
 	valueGroups := make([]string, 0, len(facts))
@@ -171,21 +213,8 @@ func (r *revenueFactRepository) UpsertProvisional(ctx context.Context, facts []*
 		strings.Join(setClauses, ", "),
 	)
 
-	if _, err := r.client.Writer(ctx).ExecContext(ctx, query, args...); err != nil {
-		SetSpanError(span, err)
-		r.log.Error(ctx, "upsert provisional revenue facts failed",
-			"error", err,
-			"tenant_id", tenantID,
-			"environment_id", environmentID,
-			"fact_count", len(facts),
-		)
-		return ierr.WithError(err).
-			WithHint("Failed to upsert provisional revenue facts").
-			Mark(ierr.ErrDatabase)
-	}
-
-	SetSpanSuccess(span)
-	return nil
+	_, err := r.client.Writer(ctx).ExecContext(ctx, query, args...)
+	return err
 }
 
 // FlipToFinal converts PROVISIONAL rows for a subscription/price/period to
@@ -275,50 +304,6 @@ func (r *revenueFactRepository) ListBySubscriptionPeriod(ctx context.Context, su
 			Mark(ierr.ErrDatabase)
 	}
 
-	facts := make([]*revenuefact.RevenueFact, 0, len(rows))
-	for _, row := range rows {
-		facts = append(facts, revenueFactFromEnt(row))
-	}
-
 	SetSpanSuccess(span)
-	return facts, nil
-}
-
-// revenueFactFromEnt maps a generated ent.RevenueFact to the domain model.
-func revenueFactFromEnt(e *ent.RevenueFact) *revenuefact.RevenueFact {
-	return &revenuefact.RevenueFact{
-		ID:                e.ID,
-		TenantID:          e.TenantID,
-		EnvironmentID:     e.EnvironmentID,
-		CustomerID:        e.CustomerID,
-		SubscriptionID:    e.SubscriptionID,
-		SubLineItemID:     e.SubLineItemID,
-		PriceID:           e.PriceID,
-		MeterID:           e.MeterID,
-		AggregationType:   e.AggregationType,
-		RevenueSource:     e.RevenueSource,
-		PeriodStart:       e.PeriodStart,
-		PeriodEnd:         e.PeriodEnd,
-		Day:               e.Day,
-		ServiceStart:      e.ServiceStart,
-		ServiceEnd:        e.ServiceEnd,
-		RecognitionMethod: e.RecognitionMethod,
-		UsageAtListRate:   e.UsageAtListRate,
-		TierDelta:         e.TierDelta,
-		EntitlementAmount: e.EntitlementAmount,
-		LineDiscount:      e.LineDiscount,
-		InvoiceDiscount:   e.InvoiceDiscount,
-		NetAmount:         e.NetAmount,
-		BillableQty:       e.BillableQty,
-		EntitlementQty:    e.EntitlementQty,
-		DecompositionMode: e.DecompositionMode,
-		Currency:          e.Currency,
-		Status:            e.Status,
-		IsRevert:          e.IsRevert,
-		InvoiceID:         e.InvoiceID,
-		InvoiceLineItemID: e.InvoiceLineItemID,
-		LockAdjustedDay:   e.LockAdjustedDay,
-		ComputedAt:        e.ComputedAt,
-		Version:           e.Version,
-	}
+	return revenuefact.FromEntList(rows), nil
 }

@@ -2,6 +2,7 @@ package ent
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -163,4 +164,26 @@ func TestRevenueFactRepository_UpsertProvisionalRejectsBlankPriceID(t *testing.T
 	err = repo.UpsertProvisional(ctx, []*revenuefact.RevenueFact{f})
 	require.Error(t, err)
 	assert.True(t, ierr.IsValidation(err))
+}
+
+// TestRevenueFactRepository_UpsertProvisionalChunksLargeBatches proves a batch
+// whose bind-parameter count exceeds Postgres' 65535-per-statement cap still
+// upserts completely: 2100 facts x 33 columns would be 69300 params unchunked.
+func TestRevenueFactRepository_UpsertProvisionalChunksLargeBatches(t *testing.T) {
+	repo := newTestRevenueFactRepository(t)
+	runID := types.GenerateUUID()
+	ctx := revenueFactTestContext("tenant_"+runID, "env_"+runID)
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+
+	const n = 2100
+	facts := make([]*revenuefact.RevenueFact, 0, n)
+	for i := 0; i < n; i++ {
+		// Distinct price per row keeps every row on its own provisional grain.
+		facts = append(facts, newTestRevenueFact("sub_"+runID, fmt.Sprintf("price_%s_%d", runID, i), day, types.RevenueSourceUsage))
+	}
+	require.NoError(t, repo.UpsertProvisional(ctx, facts))
+
+	got, err := repo.ListBySubscriptionPeriod(ctx, "sub_"+runID, day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), types.FactProvisional)
+	require.NoError(t, err)
+	require.Len(t, got, n)
 }
