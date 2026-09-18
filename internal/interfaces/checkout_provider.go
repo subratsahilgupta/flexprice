@@ -10,6 +10,7 @@ import (
 
 // CheckoutProvider is implemented by each payment gateway that supports hosted checkout.
 type CheckoutProvider interface {
+	// CreatePaymentLink creates a hosted payment link or session for one-time checkout.
 	CreatePaymentLink(ctx context.Context, req CheckoutProviderRequest) (*CheckoutProviderResponse, error)
 
 	// CreateAuthorizationLink registers a payment instrument for future off-session

@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
+	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -69,6 +70,7 @@ func (s *WalletAutoChargeSuite) SetupTest() {
 }
 
 func (s *WalletAutoChargeSuite) TearDownTest() {
+	s.GetIntegrationFactory().SetCheckoutProvider(nil)
 	s.BaseServiceTestSuite.TearDownTest()
 }
 
@@ -135,3 +137,36 @@ func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_StripeAndN
 	s.NoError(err)
 	s.Equal(types.PaymentGatewayType(""), gw)
 }
+
+type stubAutoChargeCheckoutProvider struct {
+	hasMethod bool
+	err       error
+}
+
+func (p *stubAutoChargeCheckoutProvider) CreatePaymentLink(context.Context, interfaces.CheckoutProviderRequest) (*interfaces.CheckoutProviderResponse, error) {
+	return nil, nil
+}
+func (p *stubAutoChargeCheckoutProvider) CreateAuthorizationLink(context.Context, interfaces.AuthorizationLinkRequest) (*interfaces.CheckoutProviderResponse, error) {
+	return nil, nil
+}
+func (p *stubAutoChargeCheckoutProvider) TryAutoChargingSavedMethod(context.Context, interfaces.AuthorizationLinkRequest) (*interfaces.CheckoutProviderResponse, bool, error) {
+	return nil, false, nil
+}
+func (p *stubAutoChargeCheckoutProvider) HasAutoChargeableMethod(context.Context, string) (bool, error) {
+	return p.hasMethod, p.err
+}
+func (p *stubAutoChargeCheckoutProvider) FetchPaymentState(context.Context, interfaces.PaymentStateRequest) (*interfaces.PaymentState, error) {
+	return nil, nil
+}
+
+func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_Success() {
+	s.connect(types.SecretProviderChargebee)
+	provider := &stubAutoChargeCheckoutProvider{hasMethod: true}
+	s.GetIntegrationFactory().SetCheckoutProvider(provider)
+
+	params := s.buildParams()
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	s.NoError(err)
+	s.Equal(types.PaymentGatewayTypeChargebee, gw)
+}
+

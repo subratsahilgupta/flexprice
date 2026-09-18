@@ -228,8 +228,10 @@ func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, customerI
 
 	cbCustomerID, err := a.CustomerSvc.GetChargebeeCustomerID(ctx, customerID)
 	if err != nil {
-		// Not synced to Chargebee means no payment sources saved.
-		return false, nil
+		if ierr.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
 	}
 
 	sources, err := a.Client.ListPaymentSources(ctx, cbCustomerID)

@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
@@ -66,6 +67,8 @@ func (s *PortalWalletSuite) SetupTest() {
 }
 
 func (s *PortalWalletSuite) TearDownTest() {
+	s.GetIntegrationFactory().SetCheckoutProvider(nil)
+	s.GetIntegrationFactory().SetPaymentMethodProvider(nil)
 	s.BaseServiceTestSuite.TearDownTest()
 }
 
@@ -236,6 +239,46 @@ func (s *PortalWalletSuite) TestTopUpUseSavedMethodValidation() {
 			}
 		})
 	}
+}
+
+type stubPaymentMethodProvider struct {
+	methods []interfaces.ProviderPaymentMethod
+	err     error
+}
+
+func (p *stubPaymentMethodProvider) ListSavedMethods(_ context.Context, _ string) ([]interfaces.ProviderPaymentMethod, error) {
+	return p.methods, p.err
+}
+
+func (p *stubPaymentMethodProvider) DeleteSavedMethod(_ context.Context, _ string, _ string) error {
+	return nil
+}
+
+func (p *stubPaymentMethodProvider) SetDefaultSavedMethod(_ context.Context, _ string, _ string) error {
+	return nil
+}
+
+func (p *stubPaymentMethodProvider) CreateSetupLink(_ context.Context, _ interfaces.SetupLinkRequest) (*interfaces.SetupLinkResponse, error) {
+	return nil, nil
+}
+
+func (s *PortalWalletSuite) TestValidateSavedMethodForTopUp_ActiveSavedCard_Success() {
+	s.connect(types.SecretProviderChargebee)
+
+	pmProvider := &stubPaymentMethodProvider{
+		methods: []interfaces.ProviderPaymentMethod{
+			{
+				GatewayMethodID: "pm_chargebee_valid",
+				Method:          types.PaymentMethodTypeCard,
+				Active:          true,
+			},
+		},
+	}
+	s.GetIntegrationFactory().SetPaymentMethodProvider(pmProvider)
+
+	portal := s.svc.(*customerPortalService)
+	err := portal.validateSavedMethodForTopUp(s.ctx, "cust_portal", types.PaymentGatewayTypeChargebee)
+	s.NoError(err, "validateSavedMethodForTopUp should pass when an active saved method exists")
 }
 
 func (s *PortalWalletSuite) seedPendingSession(id string) {
