@@ -16,6 +16,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/plan"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -561,12 +562,27 @@ func (s *RevenueRollupSuite) seedFixedOnlySubscription(
 	return sub
 }
 
-// TestRollupDirty_TallyAndErrorIsolation covers review Fix 3: RollupDirty
+// enableRevenueAnalytics opts the test tenant/environment into the rollup —
+// RollupDirty only scans (tenant, environment)s carrying an enabled
+// revenue_analytics_config setting.
+func (s *RevenueRollupSuite) enableRevenueAnalytics(ctx context.Context) {
+	setting := &settings.Setting{
+		ID:            types.GenerateUUIDWithPrefix("setting"),
+		Key:           types.SettingKeyRevenueAnalyticsConfig,
+		Value:         map[string]interface{}{"enabled": true},
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().SettingsRepo.Create(ctx, setting))
+}
+
+// TestRollupDirty_TallyAndErrorIsolation: RollupDirty
 // must tally a rollable subscription, a policy-skipped one (multi-period
 // commitment), and one whose per-subscription error must NOT abort the
 // batch — all three get scanned in one call.
 func (s *RevenueRollupSuite) TestRollupDirty_TallyAndErrorIsolation() {
 	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
 
 	rollable := s.seedFixedOnlySubscription(ctx, "ok", nil, "price_dirty_ok", true)
 	annual := types.BILLING_PERIOD_ANNUAL
@@ -888,4 +904,21 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_JITRollupWhenNoProvi
 	s.NoError(err)
 	s.NotEmpty(rows, "JIT rollup must have produced rows the flip then stamped")
 	s.Equal(inv.ID, lo.FromPtr(rows[0].InvoiceID))
+}
+
+// TestRollupDirty_SkipsTenantsWithoutSetting proves the tenant gate: with no
+// enabled revenue_analytics_config for the tenant/environment, RollupDirty
+// scans nothing even though rollable subscriptions exist.
+func (s *RevenueRollupSuite) TestRollupDirty_SkipsTenantsWithoutSetting() {
+	ctx := s.ctx
+	sub := s.seedFixedOnlySubscription(ctx, "ungated", nil, "price_dirty_ungated", true)
+
+	rolled, skipped, err := s.svc.RollupDirty(ctx, time.Now().UTC().Add(-time.Hour))
+	s.NoError(err)
+	s.Zero(rolled)
+	s.Zero(skipped)
+
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, sub.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
+	s.NoError(err)
+	s.Empty(rows, "an un-opted-in tenant must produce no rows")
 }

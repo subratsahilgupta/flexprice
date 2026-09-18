@@ -13,6 +13,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/utils"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -338,36 +339,95 @@ func (s *revenueRollupService) rollupSubscriptionForPeriod(ctx context.Context, 
 }
 
 func (s *revenueRollupService) RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
-	filter := types.NewNoLimitSubscriptionFilter()
-	filter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive}
-	subs, err := s.SubRepo.ListAll(ctx, filter)
+	// There can be millions of subscriptions across tenants — never scan them
+	// all. Only tenants that opted in via revenue_analytics_config are
+	// considered, one (tenant, environment) at a time so the per-env
+	// subscription listing rides the
+	// (tenant_id, environment_id, subscription_status, status) index.
+	tenantEnvConfigs, err := s.SettingsRepo.ListAllTenantEnvSettingsByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	for _, sub := range subs {
-		if sub.UpdatedAt.Before(since) && sub.CurrentPeriodStart.Before(since) && sub.CurrentPeriodEnd.Before(since) {
+	for _, tec := range tenantEnvConfigs {
+		cfg, cfgErr := utils.ToStruct[types.RevenueAnalyticsConfig](tec.Config)
+		if cfgErr != nil {
+			s.Logger.Info(ctx, "skipping tenant with malformed revenue_analytics_config",
+				"tenant_id", tec.TenantID,
+				"environment_id", tec.EnvironmentID,
+				"error", cfgErr)
+			continue
+		}
+		if !cfg.Enabled {
 			continue
 		}
 
-		wasSkipped, rollErr := s.rollupSubscription(ctx, sub.ID)
-		if rollErr != nil {
-			// Shadow write-path: one subscription's failure must never abort the
-			// batch. Logged loud (never silent), tallied as skipped since it did
-			// not produce rows.
-			s.Logger.Error(ctx, "revenue rollup failed for subscription",
-				"error", rollErr, "subscription_id", sub.ID)
-			skipped++
+		tenantCtx := types.SetTenantID(ctx, tec.TenantID)
+		tenantCtx = types.SetEnvironmentID(tenantCtx, tec.EnvironmentID)
+
+		envRolled, envSkipped, envErr := s.rollupDirtyForEnvironment(tenantCtx, since)
+		if envErr != nil {
+			// One environment's listing failure must not abort the whole scan.
+			s.Logger.Error(ctx, "revenue rollup dirty scan failed for environment",
+				"error", envErr,
+				"tenant_id", tec.TenantID,
+				"environment_id", tec.EnvironmentID)
 			continue
 		}
-		if wasSkipped {
-			skipped++
-			continue
-		}
-		rolled++
+		rolled += envRolled
+		skipped += envSkipped
 	}
 
 	return rolled, skipped, nil
+}
+
+// rollupDirtyForEnvironment scans one (tenant, environment)'s active
+// subscriptions in pages and rolls every one with activity since `since`.
+func (s *revenueRollupService) rollupDirtyForEnvironment(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
+	const batchSize = 1000
+	offset := 0
+
+	for {
+		filter := types.NewSubscriptionFilter()
+		filter.Limit = lo.ToPtr(batchSize)
+		filter.Offset = lo.ToPtr(offset)
+		filter.Status = lo.ToPtr(types.StatusPublished)
+		filter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive}
+		subs, listErr := s.SubRepo.List(ctx, filter)
+		if listErr != nil {
+			return rolled, skipped, listErr
+		}
+		if len(subs) == 0 {
+			return rolled, skipped, nil
+		}
+
+		for _, sub := range subs {
+			if sub.UpdatedAt.Before(since) && sub.CurrentPeriodStart.Before(since) && sub.CurrentPeriodEnd.Before(since) {
+				continue
+			}
+
+			wasSkipped, rollErr := s.rollupSubscription(ctx, sub.ID)
+			if rollErr != nil {
+				// Shadow write-path: one subscription's failure must never abort the
+				// batch. Logged loud (never silent), tallied as skipped since it did
+				// not produce rows.
+				s.Logger.Error(ctx, "revenue rollup failed for subscription",
+					"error", rollErr, "subscription_id", sub.ID)
+				skipped++
+				continue
+			}
+			if wasSkipped {
+				skipped++
+				continue
+			}
+			rolled++
+		}
+
+		if len(subs) < batchSize {
+			return rolled, skipped, nil
+		}
+		offset += batchSize
+	}
 }
 
 // finalizePeriodGroup identifies one (subscription, period) grain touched by

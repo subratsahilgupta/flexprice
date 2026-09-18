@@ -160,7 +160,11 @@ const defaultRevenueRollupScheduleInterval = time.Hour
 func EnsureSchedules(ctx context.Context, tc client.TemporalClient, cfg *config.Configuration, log *logger.Logger) error {
 	for _, sc := range AllTemporalScheduleConfigs(cfg) {
 		if !isScheduleEnabled(sc.ID, cfg) {
-			log.Info(ctx, "schedule disabled by config, skipping", "id", sc.ID)
+			// A schedule created while the flag was on must not keep firing once
+			// the flag turns off — pause it if it exists (NotFound is success).
+			if err := pauseScheduleIfExists(ctx, tc, sc.ID, log); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := ensureOneSchedule(ctx, tc, sc); err != nil {
@@ -168,6 +172,31 @@ func EnsureSchedules(ctx context.Context, tc client.TemporalClient, cfg *config.
 		}
 		log.Info(ctx, "schedule ensured", "id", sc.ID)
 	}
+	return nil
+}
+
+// pauseScheduleIfExists pauses a config-disabled schedule that still exists on
+// the Temporal server; a schedule that was never created is left alone.
+func pauseScheduleIfExists(ctx context.Context, tc client.TemporalClient, id types.ScheduleID, log *logger.Logger) error {
+	handle := tc.GetScheduleHandle(ctx, string(id))
+
+	desc, err := handle.Describe(ctx)
+	if err != nil {
+		var notFound *serviceerror.NotFound
+		if errors.As(err, &notFound) {
+			log.Info(ctx, "schedule disabled by config, not present on server", "id", id)
+			return nil
+		}
+		return fmt.Errorf("describe schedule %s: %w", id, err)
+	}
+	if desc.Schedule.State != nil && desc.Schedule.State.Paused {
+		return nil
+	}
+
+	if err := handle.Pause(ctx, sdkclient.SchedulePauseOptions{Note: "disabled by config"}); err != nil {
+		return fmt.Errorf("pause schedule %s: %w", id, err)
+	}
+	log.Info(ctx, "schedule paused: disabled by config", "id", id)
 	return nil
 }
 

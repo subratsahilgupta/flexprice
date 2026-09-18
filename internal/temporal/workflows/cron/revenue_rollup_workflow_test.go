@@ -85,3 +85,28 @@ func TestRevenueRollupWorkflow_ActivityError(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.Error(t, env.GetWorkflowError())
 }
+
+// TestRevenueRollupWorkflow_ExplicitSince proves a manual/backfill run: an
+// explicit Since in the input wins over the schedule-derived window.
+func TestRevenueRollupWorkflow_ExplicitSince(t *testing.T) {
+	suite := &testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+
+	want := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	input := cronModels.RevenueRollupInput{Interval: 2 * time.Hour, Since: &want}
+
+	env.RegisterActivityWithOptions(rollupDirtyStub, activity.RegisterOptions{
+		Name: ActivityRollupDirty,
+	})
+
+	var capturedSince time.Time
+	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
+		capturedSince = since
+		return true
+	})).Return(&cronModels.RevenueRollupWorkflowResult{}, nil)
+
+	env.ExecuteWorkflow(RevenueRollupWorkflow, input)
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.True(t, capturedSince.Equal(want), "explicit Since must be passed through verbatim, got %s", capturedSince)
+}

@@ -34,6 +34,10 @@ func RevenueRollupWorkflow(ctx workflow.Context, in cronModels.RevenueRollupInpu
 		referenceTime = workflow.Now(ctx)
 	}
 	since := referenceTime.Add(-interval)
+	// An explicit Since (manual/backfill run) wins over the schedule-derived window.
+	if in.Since != nil && !in.Since.IsZero() {
+		since = *in.Since
+	}
 
 	log.Info("Starting RevenueRollupWorkflow", "since", since, "interval", interval)
 
