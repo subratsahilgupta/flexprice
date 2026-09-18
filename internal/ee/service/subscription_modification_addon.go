@@ -97,8 +97,6 @@ func (s *subscriptionModificationService) loadSubscriptionWithLineItems(
 	return sub, nil
 }
 
-// addonModifyResponse assembles the modify envelope shared by the single-addon and batch paths;
-// only the line-item list differs between them.
 func (s *subscriptionModificationService) addonModifyResponse(
 	ctx context.Context,
 	subscriptionID string,

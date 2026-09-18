@@ -128,9 +128,41 @@ func NewSettleProrationRequest(
 	}
 }
 
+func (r *SettleProrationRequest) validate() error {
+	if r == nil {
+		return ierr.NewError("settlement request is required").Mark(ierr.ErrValidation)
+	}
+	if r.Subscription == nil {
+		return ierr.NewError("settlement subscription is required").
+			WithHint("A proration document must belong to a subscription").
+			Mark(ierr.ErrValidation)
+	}
+	if r.Quote == nil {
+		return ierr.NewError("settlement quote is required").
+			WithHint("Compute the proration before settling it").
+			Mark(ierr.ErrValidation)
+	}
+	if r.DisplayName == "" {
+		return ierr.NewError("settlement display name is required").
+			WithHint("Every proration document must be titled by its caller").
+			Mark(ierr.ErrValidation)
+	}
+
+	switch r.Mode {
+	case SettleModePreview, SettleModeIssue, SettleModeDraft:
+	default:
+		return ierr.NewError("unknown settle mode").
+			WithHint("Settle mode must be preview, issue or draft").
+			WithReportableDetails(map[string]any{"mode": int(r.Mode)}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
 type SettleProrationResult struct {
 	Changed []dto.ChangedInvoice
-	Draft   *dto.InvoiceResponse // set only for SettleModeDraft
+	Draft   *dto.InvoiceResponse
 }
 
 func (r *SettleProrationResult) GetChanged() []dto.ChangedInvoice {

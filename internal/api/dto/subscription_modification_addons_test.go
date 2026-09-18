@@ -206,15 +206,14 @@ func TestExecuteSubscriptionModifyRequest_Addons(t *testing.T) {
 		assert.NoError(t, req.Validate())
 	})
 
-	// A removes-only batch can only ever credit, so there is nothing to collect.
-	t.Run("checkout rejected for a removes-only batch", func(t *testing.T) {
+	// A removes-only batch can only ever credit: the change service finds nothing to collect
+	// and applies immediately, so checkout is accepted and ignored rather than rejected.
+	t.Run("checkout accepted for a removes-only batch", func(t *testing.T) {
 		req := ExecuteSubscriptionModifyRequest{
 			Type:         SubscriptionModifyTypeAddons,
 			AddonsParams: &SubModifyAddonsParams{Removes: []*RemoveAddonRequest{validAddonsRemove()}},
 			Checkout:     &CheckoutParams{PaymentParams: PaymentParams{PaymentProvider: types.CheckoutPaymentProviderRazorpay}},
 		}
-		err := req.Validate()
-		assert.Error(t, err)
-		assert.True(t, ierr.IsValidation(err))
+		assert.NoError(t, req.Validate())
 	})
 }

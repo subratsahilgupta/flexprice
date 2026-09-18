@@ -497,13 +497,6 @@ func (r *ExecuteSubscriptionModifyRequest) validateCheckout() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	// A removes-only batch can only ever credit, so there is nothing to collect.
-	if r.Type == SubscriptionModifyTypeAddons && len(r.AddonsParams.Adds) == 0 {
-		return ierr.NewError("checkout is not supported when only removing addons").
-			WithHint("Removing addons issues a credit, so there is no payment to collect").
-			Mark(ierr.ErrValidation)
-	}
-
 	return r.Checkout.Validate()
 }
 

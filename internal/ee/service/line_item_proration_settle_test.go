@@ -38,6 +38,8 @@ func (s *LineItemProrationServiceSuite) mixedQuote(effectiveDate time.Time) (*Li
 	return quote, &req
 }
 
+// secondLineItem gives the suite a second removable line so a single Compute can yield
+// both a charge and a credit — the mixed quote the netting change turns into one document.
 func (s *LineItemProrationServiceSuite) secondLineItem() *subscription.SubscriptionLineItem {
 	ctx := s.GetContext()
 	item := &subscription.SubscriptionLineItem{
@@ -419,49 +421,6 @@ func TestCharacteriseSettlement_GoldenIdempotencyKeys(t *testing.T) {
 // -----------------------------------------------------------------------------
 // the settlement matrix: Compute + Apply
 // -----------------------------------------------------------------------------
-
-// secondLineItem gives the suite a second removable line so a single Compute can yield
-// both a charge and a credit — the mixed quote the netting change turns into one document.
-func (s *LineItemProrationServiceSuite) secondLineItem() *subscription.SubscriptionLineItem {
-	ctx := s.GetContext()
-	item := &subscription.SubscriptionLineItem{
-		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
-		SubscriptionID: s.td.sub.ID,
-		CustomerID:     s.td.sub.CustomerID,
-		PriceID:        s.td.fixedPrice.ID,
-		PriceType:      types.PRICE_TYPE_FIXED,
-		DisplayName:    "Outgoing Addon",
-		Quantity:       decimal.NewFromInt(1),
-		Currency:       "usd",
-		BillingPeriod:  types.BILLING_PERIOD_MONTHLY,
-		InvoiceCadence: types.InvoiceCadenceAdvance,
-		StartDate:      s.td.periodStart,
-		BaseModel:      types.GetDefaultBaseModel(ctx),
-	}
-	s.NoError(s.GetStores().SubscriptionLineItemRepo.Create(ctx, item))
-	return item
-}
-
-func (s *LineItemProrationServiceSuite) invoiceCount() int {
-	invoices, err := s.GetStores().InvoiceRepo.List(s.GetContext(), &types.InvoiceFilter{
-		QueryFilter: types.NewNoLimitQueryFilter(),
-	})
-	s.Require().NoError(err)
-	return len(invoices)
-}
-
-func (s *LineItemProrationServiceSuite) walletBalance() decimal.Decimal {
-	wallets, err := s.GetStores().WalletRepo.GetWalletsByFilter(s.GetContext(), &types.WalletFilter{
-		QueryFilter: types.NewNoLimitQueryFilter(),
-	})
-	s.Require().NoError(err)
-
-	total := decimal.Zero
-	for _, w := range wallets {
-		total = total.Add(w.Balance)
-	}
-	return total
-}
 
 // A charge-only quote settles as exactly one invoice and never touches the wallet.
 // Netting is a no-op here, so this assertion must survive the refactor unchanged.
