@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"context"
-	"database/sql"
 
 	"github.com/flexprice/flexprice/ent"
 	"github.com/flexprice/flexprice/internal/logger"
@@ -58,18 +57,6 @@ func (c *MockPostgresClient) Reader(ctx context.Context) *ent.Client {
 		return tx.Client()
 	}
 	return c.entClient
-}
-
-// WriterDB has no backing raw connection in the mock; a repository relying on
-// raw SQL (e.g. pg.RevenueFactRepository) cannot be exercised against this
-// mock and must use a real postgres.IClient in tests instead.
-func (c *MockPostgresClient) WriterDB(ctx context.Context) *sql.DB {
-	return nil
-}
-
-// ReaderDB has no backing raw connection in the mock; see WriterDB.
-func (c *MockPostgresClient) ReaderDB(ctx context.Context) *sql.DB {
-	return nil
 }
 
 // LockWithWait is a no-op for mock client

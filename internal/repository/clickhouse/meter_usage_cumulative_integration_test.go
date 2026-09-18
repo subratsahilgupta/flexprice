@@ -18,7 +18,7 @@ import (
 // newRealClickHouseTestStore builds a real *clickhouse.ClickHouseStore backed
 // by an actual ClickHouse instance. Configuration comes from
 // FLEXPRICE_TEST_CLICKHOUSE_* env vars (defaults match the docker-compose dev
-// stack), mirroring internal/repository/pg/revenue_fact_test.go's harness.
+// stack), mirroring internal/repository/ent/revenue_fact_test.go's harness.
 //
 // Skips (instead of failing) when no reachable ClickHouse is configured, so it
 // does not break `make test` / CI runs without a live database.

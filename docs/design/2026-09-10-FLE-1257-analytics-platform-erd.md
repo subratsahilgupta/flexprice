@@ -139,7 +139,7 @@ erDiagram
         string  recognition_method   "recognition-ready ('' in v1)"
         decimal usage_at_list_rate   "usage rows"
         decimal tier_delta           "graduated only"
-        decimal entitlement_credit   "allowance giveaway"
+        decimal entitlement_amount   "allowance giveaway"
         decimal line_discount
         decimal invoice_discount
         decimal net_amount           "billed revenue, excl tax & prepaid"
@@ -270,7 +270,7 @@ CREATE TABLE revenue_facts (
     -- decomposition (usage rows), GROSS basis, EXCLUDES tax & prepaid
     usage_at_list_rate   NUMERIC(38,9) NOT NULL DEFAULT 0,  -- (billable_qty + entitlement_qty) x list/effective rate
     tier_delta           NUMERIC(38,9) NOT NULL DEFAULT 0,  -- graduated only: engine Amount - billable_qty x tier1_rate (usage_at_list_rate stays gross_qty x list_rate)
-    entitlement_credit   NUMERIC(38,9) NOT NULL DEFAULT 0,  -- entitlement_qty x list rate (subtracted)
+    entitlement_amount   NUMERIC(38,9) NOT NULL DEFAULT 0,  -- entitlement_qty x list rate (subtracted)
     line_discount        NUMERIC(38,9) NOT NULL DEFAULT 0,
     invoice_discount     NUMERIC(38,9) NOT NULL DEFAULT 0,
     net_amount           NUMERIC(38,9) NOT NULL,            -- billed revenue for this row (excl tax, excl prepaid)
@@ -306,19 +306,19 @@ CREATE INDEX revenue_facts_invoice ON revenue_facts (tenant_id, environment_id, 
 
 **Decomposition-field rationale (reviewed):**
 - `usage_at_list_rate` + `tier_delta` — kept as two fields because the `list` policy (efficiency comparison) needs list rate and graduated pricing needs the delta. Collapsing them would lose list-vs-effective visibility that finance uses.
-- `entitlement_credit` — contra-revenue (value given away as allowance); finance wants it visible.
+- `entitlement_amount` — contra-revenue (value given away as allowance); finance wants it visible.
 - `line_discount` vs `invoice_discount` — kept separate: different origins, allocated differently (invoice-level is spread across lines). Merging loses "where the discount came from."
 - `fixed_charge` / `commitment_trueup` — **not columns.** They are separate `revenue_source` rows carrying `net_amount`, so a usage row never carries always-zero fixed/trueup columns and non-line-item revenue (breakage) fits the same shape.
 - `tax` — **removed** (invoice-level only in the system; §6.6).
 - `net_amount` — the row's billed revenue, tax- and prepaid-excluded.
 
 **Reconciliation (sanity check, not derivation):**
-- usage rows: `net_amount ≈ usage_at_list_rate + tier_delta − entitlement_credit − line_discount − invoice_discount`.
+- usage rows: `net_amount ≈ usage_at_list_rate + tier_delta − entitlement_amount − line_discount − invoice_discount`.
 - `fixed` / `commitment_trueup` rows: `net_amount` = the engine's amount for that charge.
 - Per line item/period: `Σ net_amount == that invoice_line_item's billed amount (excl tax)`.
 - Per invoice: `Σ net_amount == invoice.Subtotal − invoice.TotalDiscount` (pre-tax, pre-prepaid revenue). Tax is verified **separately** against `invoice.TotalTax` at invoice grain. Any gap → alert, never plugged.
 
-**Tiers:** graduated → `usage_at_list_rate = gross_qty × tier1_rate` (unchanged), `tier_delta = engine Amount − billable_qty × tier1_rate` (one delta, no engine refactor). Using `billable_qty` here — not `gross_qty` — is what makes `net_amount = usage_at_list_rate + tier_delta − entitlement_credit` hold exactly once an allowance is present. Volume/package/flat → single resolved rate on all units, `tier_delta = 0`.
+**Tiers:** graduated → `usage_at_list_rate = gross_qty × tier1_rate` (unchanged), `tier_delta = engine Amount − billable_qty × tier1_rate` (one delta, no engine refactor). Using `billable_qty` here — not `gross_qty` — is what makes `net_amount = usage_at_list_rate + tier_delta − entitlement_amount` hold exactly once an allowance is present. Volume/package/flat → single resolved rate on all units, `tier_delta = 0`.
 
 ### 6.4 Linking `invoice_id`
 
@@ -331,7 +331,7 @@ CREATE INDEX revenue_facts_invoice ON revenue_facts (tenant_id, environment_id, 
 **A row is the revenue *earned on that day*, not "revenue up to that day."** This is the single most important thing to understand about the table. The billing engine gives us a *cumulative* number (the charge for everything through day D), but what we **store** is the **marginal difference** — day D's slice alone:
 
 > for a `usage` row, `component(day D) = charge(cumulative usage through D) − charge(cumulative usage through D−1)`,
-> applied to `usage_at_list_rate`, `tier_delta`, and `entitlement_credit` (allowance consumed earliest-first).
+> applied to `usage_at_list_rate`, `tier_delta`, and `entitlement_amount` (allowance consumed earliest-first).
 
 So `SUM(net_amount)` over days 1..D gives the cumulative-through-D; a single row is one day's incremental revenue. You reconstruct any "as of day X" snapshot by summing rows up to X — you never store cumulative values.
 
@@ -355,8 +355,8 @@ So a usage row's `net_amount(D)` is assembled from the day's marginal usage comp
 
 **Step 1 — usage rows (marginal, daily).** The allowance (20,000) is consumed earliest-first, i.e. over days 1–10 (2,000/day). The engine's cumulative *billable* charge is $0 through day 10, then rises $20/day.
 - Day 11's row = `charge(through 11) − charge(through 10)` = $20 − $0 = **$20**. Every later day is the same.
-- Days 1–10: gross `usage_at_list_rate` = $20, `entitlement_credit` = $20, `net_amount` = **$0** (fully inside the allowance — visible as a giveaway, not hidden).
-- Days 11–30: `usage_at_list_rate` = $20, `entitlement_credit` = $0, `net_amount` = **$20**. That's 20 days × $20 = **$400** of usage revenue.
+- Days 1–10: gross `usage_at_list_rate` = $20, `entitlement_amount` = $20, `net_amount` = **$0** (fully inside the allowance — visible as a giveaway, not hidden).
+- Days 11–30: `usage_at_list_rate` = $20, `entitlement_amount` = $0, `net_amount` = **$20**. That's 20 days × $20 = **$400** of usage revenue.
 
 **Step 2 — fixed row (period_only).** One row on **day 1** (advance cadence): `revenue_source=fixed`, `net_amount=$30`, `decomposition_mode=period_only`. (Not $1/day — that straight-line spread is the *recognized* view, Phase 4.)
 
@@ -364,7 +364,7 @@ So a usage row's `net_amount(D)` is assembled from the day's marginal usage comp
 
 **Resulting rows (representative):**
 
-| day | revenue_source | usage_at_list_rate | entitlement_credit | net_amount | mode |
+| day | revenue_source | usage_at_list_rate | entitlement_amount | net_amount | mode |
 |---|---|---:|---:|---:|---|
 | 1 | fixed | – | – | 30.00 | period_only |
 | 1 | usage | 20.00 | 20.00 | 0.00 | marginal |
@@ -550,7 +550,7 @@ The metric decides which **source table** the view reads — all of them served 
 | Metric kind | Source table (in CH B) | Adjustments |
 |---|---|---|
 | **Usage** (`usage_quantity`, `event_count`, `billable_usage`, `overage_units`) | `meter_usage` | "Adjusted" usage (`billable_usage`, `overage_units`) is computed **at runtime** by applying the *current* entitlement/price config to the raw usage — never stored, so it can't go stale. |
-| **Revenue** (`revenue`, `usage_at_list_rate`, `entitlement_credit`, …) | `revenue_facts` (authored in Postgres, synced to CH B) | Money is **not** derived from `meter_usage` at read time — tiers/allowances/commitments make `usage × rate` wrong. It is read from `revenue_facts`, which the engine already priced. Custom-dimension revenue joins `meter_usage` for the usage share — a single-store join in CH (B). |
+| **Revenue** (`revenue`, `usage_at_list_rate`, `entitlement_amount`, …) | `revenue_facts` (authored in Postgres, synced to CH B) | Money is **not** derived from `meter_usage` at read time — tiers/allowances/commitments make `usage × rate` wrong. It is read from `revenue_facts`, which the engine already priced. Custom-dimension revenue joins `meter_usage` for the usage share — a single-store join in CH (B). |
 | **Ledger** (credit top-ups, balance, price-change history) | `wallet_transactions`, … (synced to CH B) | Simple filters/sums; no pricing. |
 
 So every view — usage, revenue, or ledger — executes against CH (B). The money still originates from `revenue_facts` (authored in Postgres, never recomputed as `usage × rate`); serving just reads the synced copy. A view that mixes a usage metric and a revenue metric is a single-store join in CH (B), not a cross-store hop.

@@ -347,15 +347,15 @@ func TestDecompose_WorkedExample_530(t *testing.T) {
 	assert.Equal(t, "530", sumNet(rows).String())
 
 	// Every usage row must satisfy the VERIFIED FORMULA reconciliation
-	// identity exactly: net == usage_at_list_rate + tier_delta - entitlement_credit.
+	// identity exactly: net == usage_at_list_rate + tier_delta - entitlement_amount.
 	for _, r := range rows {
 		if r.RevenueSource != types.RevenueSourceUsage || r.DecompositionMode != types.Marginal {
 			continue
 		}
-		reconciled := r.UsageAtListRate.Add(r.TierDelta).Sub(r.EntitlementCredit)
+		reconciled := r.UsageAtListRate.Add(r.TierDelta).Sub(r.EntitlementAmount)
 		assert.True(t, r.NetAmount.Equal(reconciled),
-			"day %s: net %s != usage_at_list_rate %s + tier_delta %s - entitlement_credit %s",
-			r.Day, r.NetAmount, r.UsageAtListRate, r.TierDelta, r.EntitlementCredit)
+			"day %s: net %s != usage_at_list_rate %s + tier_delta %s - entitlement_amount %s",
+			r.Day, r.NetAmount, r.UsageAtListRate, r.TierDelta, r.EntitlementAmount)
 	}
 }
 

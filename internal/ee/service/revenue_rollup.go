@@ -491,7 +491,7 @@ func (s *revenueRollupService) getMeter(ctx context.Context, cache map[string]*m
 
 // loadAllowancesByMeterID resolves every metered entitlement's usage limit for
 // subscriptionID, keyed by meter id — the allowance BuildUsageCurve needs to
-// derive CumulativeEntitlementQty/EntitlementCredit, which the preview engine's
+// derive CumulativeEntitlementQty/EntitlementAmount, which the preview engine's
 // own AdjustedEntitlementQuantity (already net of the allowance) can't supply.
 func (s *revenueRollupService) loadAllowancesByMeterID(ctx context.Context, subscriptionID string) (map[string]decimal.Decimal, error) {
 	subscriptionService := NewSubscriptionService(s.ServiceParams)

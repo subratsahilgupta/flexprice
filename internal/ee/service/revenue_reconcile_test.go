@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func usageRow(usageAtListRate, tierDelta, entitlementCredit, lineDiscount, invoiceDiscount, netAmount string) *revenuefact.RevenueFact {
+func usageRow(usageAtListRate, tierDelta, entitlementAmount, lineDiscount, invoiceDiscount, netAmount string) *revenuefact.RevenueFact {
 	return &revenuefact.RevenueFact{
 		RevenueSource:     types.RevenueSourceUsage,
 		UsageAtListRate:   decimal.RequireFromString(usageAtListRate),
 		TierDelta:         decimal.RequireFromString(tierDelta),
-		EntitlementCredit: decimal.RequireFromString(entitlementCredit),
+		EntitlementAmount: decimal.RequireFromString(entitlementAmount),
 		LineDiscount:      decimal.RequireFromString(lineDiscount),
 		InvoiceDiscount:   decimal.RequireFromString(invoiceDiscount),
 		NetAmount:         decimal.RequireFromString(netAmount),

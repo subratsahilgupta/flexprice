@@ -83,11 +83,11 @@ func (li PreviewLineItem) meterID() *string {
 	return lo.ToPtr(li.Meter.ID)
 }
 
-func (li PreviewLineItem) aggregationType() *string {
+func (li PreviewLineItem) aggregationType() *types.AggregationType {
 	if li.Meter == nil {
 		return nil
 	}
-	return lo.ToPtr(string(li.Meter.Aggregation.Type))
+	return lo.ToPtr(li.Meter.Aggregation.Type)
 }
 
 func (li PreviewLineItem) subLineItemID() *string {
@@ -221,12 +221,12 @@ func decomposeCommitmentTrueup(li PreviewLineItem, period RevenuePeriod) *revenu
 }
 
 // decomposeUsageMarginal produces one row per DayCharge in curve. Each day's
-// NetAmount/UsageAtListRate/TierDelta/EntitlementCredit/BillableQty/
+// NetAmount/UsageAtListRate/TierDelta/EntitlementAmount/BillableQty/
 // EntitlementQty is the marginal (day-over-day) delta of the cumulative
 // curve, with curve[-1] treated as the zero DayCharge. Per the VERIFIED
 // FORMULA ruling this reconciles exactly every day:
 //
-//	NetAmount == UsageAtListRate + TierDelta - EntitlementCredit
+//	NetAmount == UsageAtListRate + TierDelta - EntitlementAmount
 func decomposeUsageMarginal(li PreviewLineItem, curve []DayCharge) []*revenuefact.RevenueFact {
 	if len(curve) == 0 {
 		return nil
@@ -242,7 +242,7 @@ func decomposeUsageMarginal(li PreviewLineItem, curve []DayCharge) []*revenuefac
 		marginalCharge := dc.CumulativeCharge.Sub(prev.CumulativeCharge)
 		marginalUsageAtListRate := dc.UsageAtListRate.Sub(prev.UsageAtListRate)
 		marginalTierDelta := dc.TierDelta.Sub(prev.TierDelta)
-		entitlementCredit := marginalEntitlementQty.Mul(tier1Rate)
+		entitlementAmount := marginalEntitlementQty.Mul(tier1Rate)
 
 		rows = append(rows, &revenuefact.RevenueFact{
 			ID:                types.GenerateUUIDWithPrefix("revfact"),
@@ -260,7 +260,7 @@ func decomposeUsageMarginal(li PreviewLineItem, curve []DayCharge) []*revenuefac
 			Day:               dc.Day,
 			UsageAtListRate:   marginalUsageAtListRate,
 			TierDelta:         marginalTierDelta,
-			EntitlementCredit: entitlementCredit,
+			EntitlementAmount: entitlementAmount,
 			NetAmount:         marginalCharge,
 			BillableQty:       marginalBillableQty,
 			EntitlementQty:    marginalEntitlementQty,

@@ -26,7 +26,6 @@ import (
 	"github.com/flexprice/flexprice/internal/pyroscope"
 	"github.com/flexprice/flexprice/internal/rbac"
 	"github.com/flexprice/flexprice/internal/repository"
-	pgrepo "github.com/flexprice/flexprice/internal/repository/pg"
 	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/svix"
 	"github.com/flexprice/flexprice/internal/temporal"
@@ -193,7 +192,7 @@ func main() {
 			repository.NewCheckoutSessionRepository,
 			repository.NewRawEventRepository,
 			repository.NewAnalyticsViewRepository,
-			pgrepo.NewRevenueFactRepository,
+			repository.NewRevenueFactRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,

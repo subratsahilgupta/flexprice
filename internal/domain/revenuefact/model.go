@@ -21,8 +21,8 @@ type RevenueFact struct {
 	PriceID        *string `db:"price_id" json:"price_id,omitempty"`
 	MeterID        *string `db:"meter_id" json:"meter_id,omitempty"`
 
-	AggregationType *string             `db:"aggregation_type" json:"aggregation_type,omitempty"`
-	RevenueSource   types.RevenueSource `db:"revenue_source" json:"revenue_source"`
+	AggregationType *types.AggregationType `db:"aggregation_type" json:"aggregation_type,omitempty"`
+	RevenueSource   types.RevenueSource    `db:"revenue_source" json:"revenue_source"`
 
 	PeriodStart time.Time `db:"period_start" json:"period_start"`
 	PeriodEnd   time.Time `db:"period_end" json:"period_end"`
@@ -31,11 +31,11 @@ type RevenueFact struct {
 	ServiceStart *time.Time `db:"service_start" json:"service_start,omitempty"`
 	ServiceEnd   *time.Time `db:"service_end" json:"service_end,omitempty"`
 
-	RecognitionMethod *string `db:"recognition_method" json:"recognition_method,omitempty"`
+	RecognitionMethod *types.RecognitionMethod `db:"recognition_method" json:"recognition_method,omitempty"`
 
 	UsageAtListRate   decimal.Decimal `db:"usage_at_list_rate" json:"usage_at_list_rate"`
 	TierDelta         decimal.Decimal `db:"tier_delta" json:"tier_delta"`
-	EntitlementCredit decimal.Decimal `db:"entitlement_credit" json:"entitlement_credit"`
+	EntitlementAmount decimal.Decimal `db:"entitlement_amount" json:"entitlement_amount"`
 	LineDiscount      decimal.Decimal `db:"line_discount" json:"line_discount"`
 	InvoiceDiscount   decimal.Decimal `db:"invoice_discount" json:"invoice_discount"`
 	NetAmount         decimal.Decimal `db:"net_amount" json:"net_amount"`
@@ -52,6 +52,9 @@ type RevenueFact struct {
 	InvoiceID         *string `db:"invoice_id" json:"invoice_id,omitempty"`
 	InvoiceLineItemID *string `db:"invoice_line_item_id" json:"invoice_line_item_id,omitempty"`
 
+	// LockAdjustedDay is the Phase-4 recognition-posting day: equals day while
+	// the period is open, and shifts to the next open period's first day once the
+	// period is locked.
 	LockAdjustedDay *time.Time `db:"lock_adjusted_day" json:"lock_adjusted_day,omitempty"`
 
 	ComputedAt time.Time `db:"computed_at" json:"computed_at"`

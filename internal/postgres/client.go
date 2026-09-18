@@ -47,15 +47,6 @@ type IClient interface {
 	// Use for: Get, List, Count, Query operations
 	Reader(ctx context.Context) *ent.Client
 
-	// WriterDB returns the raw *sql.DB backing the writer connection, for
-	// repositories that need to issue hand-written SQL outside ent (e.g. RLS
-	// bypassed by raw SQL must filter tenant/environment manually).
-	WriterDB(ctx context.Context) *sql.DB
-
-	// ReaderDB returns the raw *sql.DB for read operations, falling back to
-	// the writer's *sql.DB when no separate reader is configured.
-	ReaderDB(ctx context.Context) *sql.DB
-
 	// LockWithWait acquires an advisory lock with a default timeout of 30 seconds.
 	// The key should be the entity ID (e.g., wallet ID).
 	// Must be called inside a transaction. Lock is automatically released on commit/rollback.
@@ -69,8 +60,6 @@ type IClient interface {
 type Client struct {
 	writerClient *ent.Client // Primary database connection for writes
 	readerClient *ent.Client // Read replica connection (may be same as writer)
-	writerDB     *sql.DB     // Raw writer connection, for hand-written SQL outside ent
-	readerDB     *sql.DB     // Raw reader connection (may be same as writerDB)
 	logger       *logger.Logger
 	tracing      *tracing.Service
 	hasReader    bool // Whether a separate reader endpoint is configured
@@ -90,8 +79,6 @@ func Module() fx.Option {
 type EntClients struct {
 	Writer    *ent.Client
 	Reader    *ent.Client
-	WriterDB  *sql.DB // Raw writer connection backing Writer, for hand-written SQL outside ent
-	ReaderDB  *sql.DB // Raw reader connection backing Reader (same as WriterDB if no separate reader)
 	HasReader bool
 }
 
@@ -176,15 +163,12 @@ func NewEntClients(config *config.Configuration, logger *logger.Logger) (*EntCli
 	} else {
 		// Use writer client as reader if no separate reader is configured
 		readerClient = writerClient
-		readerDB = writerDB
 		logger.Debug(context.Background(), "no separate reader configured, using writer for reads")
 	}
 
 	return &EntClients{
 		Writer:    writerClient,
 		Reader:    readerClient,
-		WriterDB:  writerDB,
-		ReaderDB:  readerDB,
 		HasReader: hasReader,
 	}, nil
 }
@@ -195,8 +179,6 @@ func NewClient(clients *EntClients, logger *logger.Logger, tracingSvc *tracing.S
 	return &Client{
 		writerClient: clients.Writer,
 		readerClient: clients.Reader,
-		writerDB:     clients.WriterDB,
-		readerDB:     clients.ReaderDB,
 		logger:       logger,
 		tracing:      tracingSvc,
 		hasReader:    clients.HasReader,
@@ -340,25 +322,6 @@ func (c *Client) Reader(ctx context.Context) *ent.Client {
 	}
 
 	return client
-}
-
-// WriterDB returns the raw *sql.DB backing the writer connection.
-//
-// Use for hand-written SQL that bypasses ent (and therefore its automatic
-// tenant/environment interceptors) — callers MUST filter tenant_id and
-// environment_id explicitly.
-func (c *Client) WriterDB(ctx context.Context) *sql.DB {
-	return c.writerDB
-}
-
-// ReaderDB returns the raw *sql.DB for read operations, falling back to the
-// writer's *sql.DB when no separate reader endpoint is configured (mirroring
-// Reader(ctx)'s default-to-writer fallback).
-func (c *Client) ReaderDB(ctx context.Context) *sql.DB {
-	if c.hasReader && c.readerDB != nil {
-		return c.readerDB
-	}
-	return c.writerDB
 }
 
 // Close closes the database connection

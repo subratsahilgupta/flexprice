@@ -255,7 +255,7 @@ func assertDecimalClose(t *testing.T, want, got decimal.Decimal, msgAndArgs ...i
 // where the implemented decomposition (TierDelta on billable_qty,
 // UsageAtListRate on gross_qty) diverges from a gross_qty-only TierDelta
 // formula: a graduated/SLAB price with a non-zero allowance, where cumulative
-// gross usage crosses the tier boundary. Task 8's EntitlementCredit/NetAmount
+// gross usage crosses the tier boundary. Task 8's EntitlementAmount/NetAmount
 // construction depends on this reconciling exactly.
 func TestBuildUsageCurve_GraduatedWithAllowance(t *testing.T) {
 	ctx := context.Background()

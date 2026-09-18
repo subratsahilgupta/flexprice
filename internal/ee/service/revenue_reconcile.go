@@ -20,7 +20,7 @@ func reconcileRow(f *revenuefact.RevenueFact) (residual decimal.Decimal, ok bool
 
 	expected := f.UsageAtListRate.
 		Add(f.TierDelta).
-		Sub(f.EntitlementCredit).
+		Sub(f.EntitlementAmount).
 		Sub(f.LineDiscount).
 		Sub(f.InvoiceDiscount)
 
