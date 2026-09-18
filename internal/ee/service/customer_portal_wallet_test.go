@@ -198,11 +198,11 @@ func (s *PortalWalletSuite) TestTopUpUseSavedMethodValidation() {
 		errCheck       func(error) bool
 	}{
 		{
-			name:           "saved method with razorpay fails validation when customer has no saved card",
+			name:           "saved method with razorpay fails with not implemented as provider lacks capability",
 			provider:       types.PaymentGatewayTypeRazorpay,
 			useSavedMethod: true,
 			wantErr:        true,
-			errCheck:       ierr.IsValidation,
+			errCheck:       ierr.IsNotImplemented,
 		},
 		{
 			name:           "saved method with chargebee fails validation when customer has no saved card",
