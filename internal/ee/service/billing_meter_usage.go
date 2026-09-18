@@ -416,10 +416,10 @@ func (s *billingService) CalculateMeterUsageCharges(
 				PeriodEnd:       &periodEnd,
 				PriceID:         lo.ToPtr(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE)),
 				Metadata: types.Metadata{
-					"is_commitment_trueup": "true",
-					"description":          "Remaining commitment amount for billing period",
-					"commitment_amount":    commitmentAmount.String(),
-					"commitment_utilized":  utilized.String(),
+					types.MetadataKeyIsCommitmentTrueup: types.MetadataValueTrue,
+					types.MetadataKeyDescription:        "Remaining commitment amount for billing period",
+					types.MetadataKeyCommitmentAmount:   commitmentAmount.String(),
+					types.MetadataKeyCommitmentUtilized: utilized.String(),
 				},
 			})
 			totalUsageCost = totalUsageCost.Add(rounded)
@@ -677,21 +677,21 @@ func (s *billingService) buildChargeMetadata(
 	entitlement *dto.AggregatedEntitlement,
 ) types.Metadata {
 	metadata := types.Metadata{
-		"description": fmt.Sprintf("%s (Usage Charge)", item.DisplayName),
+		types.MetadataKeyDescription: fmt.Sprintf("%s (Usage Charge)", item.DisplayName),
 	}
 	if charge.IsOverage {
-		metadata["is_overage"] = "true"
-		metadata["overage_factor"] = fmt.Sprintf("%v", charge.OverageFactor)
-		metadata["description"] = fmt.Sprintf("%s (Overage Charge)", item.DisplayName)
+		metadata[types.MetadataKeyIsOverage] = types.MetadataValueTrue
+		metadata[types.MetadataKeyOverageFactor] = fmt.Sprintf("%v", charge.OverageFactor)
+		metadata[types.MetadataKeyDescription] = fmt.Sprintf("%s (Overage Charge)", item.DisplayName)
 	}
 	if !charge.IsOverage && entitlement != nil && entitlement.IsEnabled {
 		switch entitlement.UsageResetPeriod {
 		case types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY:
-			metadata["usage_reset_period"] = "daily"
+			metadata[types.MetadataKeyUsageResetPeriod] = "daily"
 		case types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY:
-			metadata["usage_reset_period"] = "monthly"
+			metadata[types.MetadataKeyUsageResetPeriod] = "monthly"
 		case types.ENTITLEMENT_USAGE_RESET_PERIOD_NEVER:
-			metadata["usage_reset_period"] = "never"
+			metadata[types.MetadataKeyUsageResetPeriod] = "never"
 		}
 	}
 	return metadata
@@ -797,9 +797,9 @@ func (s *billingService) buildCumulativeCommitmentCharges(
 			PeriodEnd:       &periodEnd,
 			PriceID:         lo.ToPtr(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE)),
 			Metadata: types.Metadata{
-				"is_overage":     "true",
-				"overage_factor": overageFactor.String(),
-				"description":    "Overage charge (cumulative commitment)",
+				types.MetadataKeyIsOverage:     types.MetadataValueTrue,
+				types.MetadataKeyOverageFactor: overageFactor.String(),
+				types.MetadataKeyDescription:   "Overage charge (cumulative commitment)",
 			},
 		})
 		totalCost = totalCost.Add(rounded)
@@ -819,10 +819,10 @@ func (s *billingService) buildCumulativeCommitmentCharges(
 			PeriodEnd:       &periodEnd,
 			PriceID:         lo.ToPtr(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE)),
 			Metadata: types.Metadata{
-				"is_commitment_trueup": "true",
-				"description":          "Remaining commitment amount for commitment period",
-				"commitment_amount":    commitmentAmount.String(),
-				"commitment_utilized":  result.CommitmentUtilized.String(),
+				types.MetadataKeyIsCommitmentTrueup: types.MetadataValueTrue,
+				types.MetadataKeyDescription:        "Remaining commitment amount for commitment period",
+				types.MetadataKeyCommitmentAmount:   commitmentAmount.String(),
+				types.MetadataKeyCommitmentUtilized: result.CommitmentUtilized.String(),
 			},
 		})
 		totalCost = totalCost.Add(rounded)

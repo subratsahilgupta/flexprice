@@ -101,10 +101,7 @@ func (li PreviewLineItem) subLineItemID() *string {
 // true-up/overage line item (metadata-flagged, PriceType FIXED) rather than a
 // regular fixed charge — decomposeFixed excludes these.
 func (li PreviewLineItem) isCommitmentTrueupOrOverage() bool {
-	if li.Metadata == nil {
-		return false
-	}
-	return li.Metadata["is_commitment_trueup"] == "true" || li.Metadata["is_overage"] == "true"
+	return li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup) || li.Metadata.GetBool(types.MetadataKeyIsOverage)
 }
 
 // decompositionMode classifies a (price, meter) pair per ERD §6.5: PeriodOnly

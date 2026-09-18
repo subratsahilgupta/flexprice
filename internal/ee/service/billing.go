@@ -428,7 +428,7 @@ func newLineItemMergeKey(item dto.CreateInvoiceLineItemRequest) lineItemMergeKey
 		meterID:                lo.FromPtr(item.MeterID),
 		displayName:            lo.FromPtr(item.DisplayName),
 		priceUnit:              lo.FromPtr(item.PriceUnit),
-		isOverage:              item.Metadata["is_overage"],
+		isOverage:              item.Metadata[types.MetadataKeyIsOverage],
 	}
 }
 
@@ -1210,8 +1210,8 @@ func (s *billingService) CalculateUsageCharges(
 
 			// Add overage specific information
 			if matchingCharge.IsOverage {
-				metadata["is_overage"] = "true"
-				metadata["overage_factor"] = fmt.Sprintf("%v", matchingCharge.OverageFactor)
+				metadata[types.MetadataKeyIsOverage] = types.MetadataValueTrue
+				metadata[types.MetadataKeyOverageFactor] = fmt.Sprintf("%v", matchingCharge.OverageFactor)
 				metadata["description"] = fmt.Sprintf("%s (Overage Charge)", item.DisplayName)
 				displayName = lo.ToPtr(fmt.Sprintf("%s (Overage)", item.DisplayName))
 			}
@@ -1220,11 +1220,11 @@ func (s *billingService) CalculateUsageCharges(
 			if !matchingCharge.IsOverage && entitlementOk && matchingEntitlement.IsEnabled {
 				switch matchingEntitlement.UsageResetPeriod {
 				case types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY:
-					metadata["usage_reset_period"] = "daily"
+					metadata[types.MetadataKeyUsageResetPeriod] = "daily"
 				case types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY:
-					metadata["usage_reset_period"] = "monthly"
+					metadata[types.MetadataKeyUsageResetPeriod] = "monthly"
 				case types.ENTITLEMENT_USAGE_RESET_PERIOD_NEVER:
-					metadata["usage_reset_period"] = "never"
+					metadata[types.MetadataKeyUsageResetPeriod] = "never"
 				}
 			}
 
@@ -1316,10 +1316,10 @@ func (s *billingService) CalculateUsageCharges(
 					PeriodEnd:       &periodEnd,
 					PriceID:         lo.ToPtr(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE)),
 					Metadata: types.Metadata{
-						"is_commitment_trueup": "true",
-						"description":          "Remaining commitment amount for billing period",
-						"commitment_amount":    commitmentAmount.String(),
-						"commitment_utilized":  commitmentUtilized.String(),
+						types.MetadataKeyIsCommitmentTrueup: types.MetadataValueTrue,
+						"description":                       "Remaining commitment amount for billing period",
+						types.MetadataKeyCommitmentAmount:   commitmentAmount.String(),
+						types.MetadataKeyCommitmentUtilized: commitmentUtilized.String(),
 					},
 				}
 
@@ -1364,13 +1364,13 @@ func (s *billingService) getCumulativePriorBaseFromInvoices(
 				continue
 			}
 			if item.Metadata != nil {
-				if v, ok := item.Metadata["is_commitment_trueup"]; ok && v == "true" {
+				if v, ok := item.Metadata[types.MetadataKeyIsCommitmentTrueup]; ok && v == "true" {
 					continue
 				}
 			}
 			// Overage line: base = amount / overage_factor; else base = amount
 			if item.Metadata != nil {
-				if v, ok := item.Metadata["is_overage"]; ok && v == "true" {
+				if v, ok := item.Metadata[types.MetadataKeyIsOverage]; ok && v == "true" {
 					if overageFactor.GreaterThan(decimal.Zero) {
 						totalPriorBase = totalPriorBase.Add(item.Amount.Div(overageFactor))
 					}
@@ -1780,7 +1780,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		}
 
 		description = fmt.Sprintf("Preview invoice for subscription %s", sub.ID)
-		metadata["is_preview"] = "true"
+		metadata[types.MetadataKeyIsPreview] = types.MetadataValueTrue
 
 	case types.ReferencePointInternalPreview:
 		// Same as ReferencePointPreview but uses CalculateCharges (regular usage path)
@@ -1819,7 +1819,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		}
 
 		description = fmt.Sprintf("Preview invoice for subscription %s", sub.ID)
-		metadata["is_preview"] = "true"
+		metadata[types.MetadataKeyIsPreview] = types.MetadataValueTrue
 
 	case types.ReferencePointCancel:
 		// for cancel, include arrear line items only using meter_usage for cumulative commitment

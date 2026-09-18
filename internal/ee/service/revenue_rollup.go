@@ -199,8 +199,8 @@ func (s *revenueRollupService) rollupSubscription(ctx context.Context, subscript
 			PeriodEnd:      itemPeriod.End,
 		}
 
-		isTrueup := item.Metadata["is_commitment_trueup"] == "true"
-		isOverage := item.Metadata["is_overage"] == "true"
+		isTrueup := item.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
+		isOverage := item.Metadata.GetBool(types.MetadataKeyIsOverage)
 
 		switch {
 		case isTrueup || isOverage:
@@ -389,8 +389,8 @@ func (s *revenueRollupService) FinalizeSubscriptionPeriod(ctx context.Context, i
 		periodEnd := periodEndExclusive.AddDate(0, 0, -1)
 
 		priceID := lo.FromPtr(li.PriceID)
-		isTrueup := li.Metadata["is_commitment_trueup"] == "true"
-		isOverage := li.Metadata["is_overage"] == "true"
+		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
+		isOverage := li.Metadata.GetBool(types.MetadataKeyIsOverage)
 		if isTrueup || isOverage {
 			// The finalized line item's own price_id is a fresh random one the
 			// engine assigned at compute time (see stableTrueupPriceID) — it will
@@ -521,7 +521,7 @@ func (s *revenueRollupService) loadAllowancesByMeterID(ctx context.Context, subs
 // call site for why the whole subscription is skipped rather than decomposed.
 func hasOverageLine(invReq *dto.CreateInvoiceRequest) bool {
 	for _, li := range invReq.LineItems {
-		if li.Metadata["is_overage"] == "true" {
+		if li.Metadata.GetBool(types.MetadataKeyIsOverage) {
 			return true
 		}
 	}
