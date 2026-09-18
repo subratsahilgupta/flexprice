@@ -58,16 +58,16 @@ func resolveAsOf(params *dto.PrepareSubscriptionInvoiceRequestParams) time.Time 
 
 // CalculateMeterUsageCharges computes usage-based invoice line items from the meter_usage table.
 // All queries (bucketed meters, windowed entitlements, windowed commitments) read from
-// MeterUsageRepo — never from raw events. asOf, when passed with a non-zero value, overrides
+// MeterUsageRepo — never from raw events. asOfOverride, when non-nil and non-zero, overrides
 // the reference instant used to clip line items and windowed commitments (see resolveAsOf);
-// otherwise defaults to time.Now().UTC(), matching prior behavior.
+// otherwise defaults to time.Now().UTC(). Callers with no override pass nil.
 func (s *billingService) CalculateMeterUsageCharges(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	usage *dto.GetUsageBySubscriptionResponse,
 	periodStart, periodEnd time.Time,
 	source types.UsageSource,
-	asOfOverride ...time.Time,
+	asOfOverride *time.Time,
 ) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal, error) {
 	if usage == nil {
 		return nil, decimal.Zero, nil
@@ -76,8 +76,8 @@ func (s *billingService) CalculateMeterUsageCharges(
 	querySource := source
 
 	asOf := time.Now().UTC()
-	if len(asOfOverride) > 0 && !asOfOverride[0].IsZero() {
-		asOf = asOfOverride[0]
+	if asOfOverride != nil && !asOfOverride.IsZero() {
+		asOf = *asOfOverride
 	}
 
 	// --- Setup: resolve meters, entitlements, customer IDs ---
@@ -849,7 +849,7 @@ func (s *billingService) calculateAllMeterUsageCharges(
 	}
 
 	usageCharges, usageTotal, err := s.CalculateMeterUsageCharges(ctx, sub, usage, periodStart, periodEnd,
-		types.UsageSourceInvoiceCreation)
+		types.UsageSourceInvoiceCreation, nil)
 	if err != nil {
 		return nil, err
 	}
