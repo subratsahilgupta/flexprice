@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/coupon"
+	"github.com/flexprice/flexprice/internal/domain/coupon_association"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
@@ -368,13 +370,12 @@ func (s *RevenueRollupSuite) TestRollupSubscription_MultiPeriodCommitmentSkipped
 	s.Empty(rows, "multi-period commitment subscriptions must be skipped with zero rows")
 }
 
-// TestRollupSubscription_OverageSkipped covers review Fix 1: a single-period
-// commitment whose usage EXCEEDS the commitment makes the engine emit a
-// REDUCED within-commitment usage line plus a separate is_overage line. The
-// rollup has no commitment knowledge when decomposing a usage line via the
-// full curve, so it must skip the whole subscription rather than write rows
-// that overstate usage.
-func (s *RevenueRollupSuite) TestRollupSubscription_OverageSkipped() {
+// TestRollupSubscription_OverageStaysPeriodOnly: when usage exceeds a
+// single-period commitment the engine emits a reduced usage line plus a
+// separate is_overage line. The rollup keeps usage lines whole (period_only)
+// and books the overage under its own revenue source, reconciling to the
+// preview total.
+func (s *RevenueRollupSuite) TestRollupSubscription_OverageStaysPeriodOnly() {
 	ctx := s.ctx
 	s.seedWorkedExample(ctx)
 
@@ -408,7 +409,29 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageSkipped() {
 
 	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
 	s.NoError(err)
-	s.Empty(rows, "a subscription with an is_overage line must be skipped with zero rows")
+	s.NotEmpty(rows, "an overage subscription must now produce rows")
+
+	total := decimal.Zero
+	overageRows := 0
+	for _, r := range rows {
+		total = total.Add(r.NetAmount)
+		if r.RevenueSource == types.RevenueSourceUsage {
+			s.Equal(types.PeriodOnly, r.DecompositionMode, "commitment-reduced usage must stay whole, not split per day")
+		}
+		if r.RevenueSource == types.RevenueSourceOverage {
+			overageRows++
+		}
+	}
+	s.Equal(1, overageRows, "the engine's is_overage line must book under the overage source")
+
+	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription:   s.sub,
+		PeriodStart:    s.periodStart,
+		PeriodEnd:      s.periodEnd,
+		ReferencePoint: types.ReferencePointRevenueFacts,
+	})
+	s.NoError(err)
+	s.True(total.Equal(invReq.Subtotal), "Σ net_amount (%s) must reconcile to the preview subtotal (%s)", total.String(), invReq.Subtotal.String())
 }
 
 // TestRollupSubscription_BindingEntitlementLimitReconciles covers review Fix 2: with
@@ -460,7 +483,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_BindingEntitlementLimitRecon
 		ReferencePoint: types.ReferencePointRevenueFacts,
 	})
 	s.NoError(err)
-	expected := invReq.Subtotal.Sub(invoiceDiscountTotal(invReq))
+	expected := invReq.Subtotal
 	s.False(expected.Equal(decimal.NewFromInt(530)), "sanity: the binding entitlementLimit must actually perturb the total away from the zero-entitlementLimit $530 case")
 
 	s.True(total.Equal(expected), "Î£ net_amount (%s) must reconcile to the preview's subtotal-minus-discount (%s)", total.String(), expected.String())
@@ -963,4 +986,68 @@ func (s *RevenueRollupSuite) TestRollupSubscription_GrantBilledMeterStaysPeriodO
 		}
 	}
 	s.Equal(1, usageRows, "grant-billed usage must collapse to a single period_only row")
+}
+
+// TestRollupSubscription_CouponDiscountReconciles: a 10% subscription-level
+// coupon no longer skips the rollup — discounts are dry-run, spread onto rows
+// (line_discount/invoice_discount), and Σ net_amount reconciles to
+// Subtotal - discount with zero mismatch logs.
+func (s *RevenueRollupSuite) TestRollupSubscription_CouponDiscountReconciles() {
+	ctx := s.ctx
+	s.seedWorkedExample(ctx)
+
+	c := &coupon.Coupon{
+		ID:            "coupon_rollup_wk",
+		Name:          "10% off",
+		Type:          types.CouponTypePercentage,
+		PercentageOff: lo.ToPtr(decimal.NewFromInt(10)),
+		Cadence:       types.CouponCadenceForever,
+		Currency:      "usd",
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CouponRepo.Create(ctx, c))
+	s.NoError(s.GetStores().CouponAssociationRepo.Create(ctx, &coupon_association.CouponAssociation{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_COUPON_ASSOCIATION),
+		CouponID:       c.ID,
+		SubscriptionID: s.sub.ID,
+		StartDate:      s.periodStart,
+		EnvironmentID:  types.GetEnvironmentID(ctx),
+		Coupon:         c,
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}))
+
+	core, observedLogs := observer.New(zapcore.InfoLevel)
+	params := s.serviceParams()
+	params.Logger = logger.NewFromSugared(zap.New(core).Sugar())
+	svc := NewRevenueService(params)
+
+	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
+
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(rows, "a discounted subscription must now produce rows")
+
+	total := decimal.Zero
+	discountTotal := decimal.Zero
+	for _, r := range rows {
+		total = total.Add(r.NetAmount)
+		discountTotal = discountTotal.Add(r.LineDiscount).Add(r.InvoiceDiscount)
+	}
+	s.True(discountTotal.IsPositive(), "the coupon discount must land on the rows")
+
+	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription:   s.sub,
+		PeriodStart:    s.periodStart,
+		PeriodEnd:      s.periodEnd,
+		ReferencePoint: types.ReferencePointRevenueFacts,
+	})
+	s.NoError(err)
+	expected := invReq.Subtotal.Sub(discountTotal)
+	s.True(total.Equal(expected), "Σ net_amount (%s) must equal subtotal (%s) minus discounts (%s)",
+		total.String(), invReq.Subtotal.String(), discountTotal.String())
+
+	for _, entry := range observedLogs.All() {
+		s.NotEqual("revenue_reconciliation_mismatch", entry.Message, "unexpected mismatch: %+v", entry.ContextMap())
+	}
 }

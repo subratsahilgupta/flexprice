@@ -47,8 +47,19 @@ type previewLineItem struct {
 	Metadata types.Metadata
 
 	// EngineAmount is the charge the billing engine computed for this line
-	// item over its period.
+	// item over its period, before discounts.
 	EngineAmount decimal.Decimal
+
+	// LineDiscount/InvoiceDiscount are this line item's own coupon discount
+	// and its allocated share of invoice-level discounts. Row net amounts are
+	// written net of both.
+	LineDiscount    decimal.Decimal
+	InvoiceDiscount decimal.Decimal
+
+	// EntitlementQty is the free quantity the engine deducted from this line
+	// item (nil-safe zero when no entitlement applied). Used to annotate
+	// period_only usage rows; marginal rows derive it from the curve.
+	EntitlementQty decimal.Decimal
 
 	// PeriodStart/PeriodEnd bound the line item's billing period; PeriodEnd
 	// is the inclusive last calendar day.
@@ -172,6 +183,7 @@ func invoiceCadence(li previewLineItem) types.InvoiceCadence {
 }
 
 // newPeriodOnlyFact builds the fields shared by every period_only row.
+// NetAmount is the engine charge net of the line's discounts.
 func newPeriodOnlyFact(li previewLineItem, period revenuePeriod, day time.Time, source types.RevenueSource) *revenuefact.RevenueFact {
 	return &revenuefact.RevenueFact{
 		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_REVENUE_FACT),
@@ -185,7 +197,9 @@ func newPeriodOnlyFact(li previewLineItem, period revenuePeriod, day time.Time, 
 		PeriodStart:       period.Start,
 		PeriodEnd:         period.End,
 		Day:               day,
-		NetAmount:         li.EngineAmount,
+		LineDiscount:      li.LineDiscount,
+		InvoiceDiscount:   li.InvoiceDiscount,
+		NetAmount:         li.EngineAmount.Sub(li.LineDiscount).Sub(li.InvoiceDiscount),
 		DecompositionMode: types.PeriodOnly,
 		Currency:          li.Currency,
 		Status:            types.FactProvisional,
@@ -205,23 +219,35 @@ func decomposeFixed(li previewLineItem, period revenuePeriod) *revenuefact.Reven
 }
 
 // decomposeUsagePeriodOnly writes one period_only row for a usage line item
-// whose price/meter cannot be split per day (see decompositionMode).
+// whose price/meter cannot be split per day (see decompositionMode). The
+// engine's entitlement deduction is annotated when known.
 func decomposeUsagePeriodOnly(li previewLineItem, period revenuePeriod) *revenuefact.RevenueFact {
 	f := newPeriodOnlyFact(li, period, cadenceDay(invoiceCadence(li), period), types.RevenueSourceUsage)
 	f.MeterID = li.meterID()
 	f.AggregationType = li.aggregationType()
+	f.EntitlementQty = li.EntitlementQty
+	if li.Price != nil && li.EntitlementQty.IsPositive() {
+		f.EntitlementAmount = li.EntitlementQty.Mul(listRate(li.Price))
+	}
 	return f
 }
 
-// decomposeCommitmentTrueup writes one row for the commitment true-up/overage
-// charge, dated at period end — the amount is only known once usage is final.
+// decomposeCommitmentTrueup writes one row for the commitment true-up charge,
+// dated at period end — the amount is only known once usage is final.
 func decomposeCommitmentTrueup(li previewLineItem, period revenuePeriod) *revenuefact.RevenueFact {
 	return newPeriodOnlyFact(li, period, period.End, types.RevenueSourceCommitmentTrueup)
 }
 
+// decomposeOverage writes one row for the commitment overage charge, dated at
+// period end like the true-up.
+func decomposeOverage(li previewLineItem, period revenuePeriod) *revenuefact.RevenueFact {
+	return newPeriodOnlyFact(li, period, period.End, types.RevenueSourceOverage)
+}
+
 // decomposeUsageMarginal writes one row per day, each carrying the day-over-day
-// delta of the cumulative curve. Every row satisfies
-// NetAmount == UsageAtListRate + TierDelta - EntitlementAmount.
+// delta of the cumulative curve, with the line's discounts spread across days
+// in proportion to each day's pre-discount charge. Every row satisfies
+// NetAmount == UsageAtListRate + TierDelta - EntitlementAmount - LineDiscount - InvoiceDiscount.
 func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefact.RevenueFact {
 	if len(curve) == 0 {
 		return nil
@@ -230,11 +256,19 @@ func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefac
 	tier1Rate := listRate(li.Price)
 	rows := make([]*revenuefact.RevenueFact, 0, len(curve))
 
+	marginalCharges := make([]decimal.Decimal, len(curve))
+	prevCharge := decimal.Zero
+	for i, dc := range curve {
+		marginalCharges[i] = dc.CumulativeCharge.Sub(prevCharge)
+		prevCharge = dc.CumulativeCharge
+	}
+	dayLineDiscounts := spreadAmount(li.LineDiscount, marginalCharges)
+	dayInvoiceDiscounts := spreadAmount(li.InvoiceDiscount, marginalCharges)
+
 	var prev dayCharge
-	for _, dc := range curve {
+	for i, dc := range curve {
 		marginalBillableQty := dc.CumulativeBillableQty.Sub(prev.CumulativeBillableQty)
 		marginalEntitlementQty := dc.CumulativeEntitlementQty.Sub(prev.CumulativeEntitlementQty)
-		marginalCharge := dc.CumulativeCharge.Sub(prev.CumulativeCharge)
 		marginalUsageAtListRate := dc.UsageAtListRate.Sub(prev.UsageAtListRate)
 		marginalTierDelta := dc.TierDelta.Sub(prev.TierDelta)
 		entitlementAmount := marginalEntitlementQty.Mul(tier1Rate)
@@ -256,7 +290,9 @@ func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefac
 			UsageAtListRate:   marginalUsageAtListRate,
 			TierDelta:         marginalTierDelta,
 			EntitlementAmount: entitlementAmount,
-			NetAmount:         marginalCharge,
+			LineDiscount:      dayLineDiscounts[i],
+			InvoiceDiscount:   dayInvoiceDiscounts[i],
+			NetAmount:         marginalCharges[i].Sub(dayLineDiscounts[i]).Sub(dayInvoiceDiscounts[i]),
 			BillableQty:       marginalBillableQty,
 			EntitlementQty:    marginalEntitlementQty,
 			DecompositionMode: types.Marginal,
@@ -269,6 +305,40 @@ func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefac
 	}
 
 	return rows
+}
+
+// spreadAmount splits total across parts in proportion to weights, assigning
+// the rounding remainder to the last positive-weight part so the parts always
+// sum exactly to total. All-zero weights put the whole total on the last part.
+func spreadAmount(total decimal.Decimal, weights []decimal.Decimal) []decimal.Decimal {
+	parts := make([]decimal.Decimal, len(weights))
+	if len(weights) == 0 || total.IsZero() {
+		return parts
+	}
+
+	weightSum := decimal.Zero
+	lastPositive := -1
+	for i, w := range weights {
+		if w.IsPositive() {
+			weightSum = weightSum.Add(w)
+			lastPositive = i
+		}
+	}
+	if lastPositive == -1 {
+		parts[len(parts)-1] = total
+		return parts
+	}
+
+	allocated := decimal.Zero
+	for i, w := range weights {
+		if !w.IsPositive() || i == lastPositive {
+			continue
+		}
+		parts[i] = total.Mul(w).Div(weightSum)
+		allocated = allocated.Add(parts[i])
+	}
+	parts[lastPositive] = total.Sub(allocated)
+	return parts
 }
 
 // listRate is the price's first-tier unit rate, or the flat rate when the

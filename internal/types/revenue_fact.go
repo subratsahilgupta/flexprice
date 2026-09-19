@@ -11,15 +11,16 @@ const (
 	RevenueSourceUsage            RevenueSource = "usage"
 	RevenueSourceFixed            RevenueSource = "fixed"
 	RevenueSourceCommitmentTrueup RevenueSource = "commitment_trueup"
+	RevenueSourceOverage          RevenueSource = "overage"
 )
 
 func (s RevenueSource) Validate() error {
 	switch s {
-	case RevenueSourceUsage, RevenueSourceFixed, RevenueSourceCommitmentTrueup:
+	case RevenueSourceUsage, RevenueSourceFixed, RevenueSourceCommitmentTrueup, RevenueSourceOverage:
 		return nil
 	default:
 		return ierr.NewErrorf("invalid revenue source %q", s).
-			WithHint("revenue source must be one of: usage, fixed, commitment_trueup").
+			WithHint("revenue source must be one of: usage, fixed, commitment_trueup, overage").
 			Mark(ierr.ErrValidation)
 	}
 }

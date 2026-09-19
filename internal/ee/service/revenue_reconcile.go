@@ -10,11 +10,11 @@ import (
 // never compare reconciliation amounts with ==.
 var reconcileEpsilon = decimal.RequireFromString("0.000001")
 
-// reconcileRow checks a single USAGE row's NetAmount against its decomposed
-// components. Non-usage rows (fixed/commitment_trueup) carry only NetAmount
-// with nothing to decompose, so they always report ok.
+// reconcileRow checks a marginal USAGE row's NetAmount against its decomposed
+// components. Non-usage and period_only rows carry the engine amount whole,
+// with nothing decomposed to check, so they always report ok.
 func reconcileRow(f *revenuefact.RevenueFact) (residual decimal.Decimal, ok bool) {
-	if f.RevenueSource != types.RevenueSourceUsage {
+	if f.RevenueSource != types.RevenueSourceUsage || f.DecompositionMode == types.PeriodOnly {
 		return decimal.Zero, true
 	}
 

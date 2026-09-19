@@ -18,12 +18,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Skip reasons logged by RollupSubscription. Discounted invoices and
-// multi-period commitments are skipped whole rather than written wrong.
+// Skip reasons logged by RollupSubscription. Multi-period commitments are
+// skipped whole rather than written wrong.
 const (
-	revenueRollupSkipDiscountUnsupported   = "discount_unsupported"
 	revenueRollupSkipMultiPeriodCommitment = "multi_period_commitment"
-	revenueRollupSkipOverageUnsupported    = "overage_unsupported"
 )
 
 // RevenueService writes and maintains revenue_facts rows. It is a shadow
@@ -86,11 +84,18 @@ func (s *revenueService) rollupSubscription(ctx context.Context, subscriptionID 
 func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (skipped bool, err error) {
 	subscriptionID := sub.ID
 
-	// Commitments spanning several billing periods are subscription-level
-	// config only (line-item commitments settle within their own period), so
-	// this check needs no preview or line items — gate before the expensive
-	// preview call.
-	if isMultiPeriodCommitment(sub) {
+	// Commitment durations live on subscription config, so this gate needs no
+	// preview call. Line items also carry a CommitmentDuration field — the
+	// engine ignores it today and no validation rejects it, so skip
+	// defensively if one is ever set to a different period.
+	multiPeriod := isMultiPeriodCommitment(sub)
+	for _, li := range sub.LineItems {
+		if li.CommitmentDuration != nil && *li.CommitmentDuration != sub.BillingPeriod {
+			multiPeriod = true
+			break
+		}
+	}
+	if multiPeriod {
 		s.Logger.Info(ctx, "revenue_rollup_skipped",
 			"reason", revenueRollupSkipMultiPeriodCommitment,
 			"subscription_id", subscriptionID)
@@ -112,26 +117,18 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return false, nil
 	}
 
-	// The preview does not resolve coupon amounts onto line items, so treat any
-	// coupon reference or already-set discount as "discounted" and skip — a
-	// conservative superset that never lets a discounted invoice through
-	// mis-split.
-	if hasDiscount(invReq) {
-		s.Logger.Info(ctx, "revenue_rollup_skipped",
-			"reason", revenueRollupSkipDiscountUnsupported,
-			"subscription_id", subscriptionID)
-		return true, nil
+	// Coupon amounts are not resolved by the preview — dry-run them here so
+	// discounted subscriptions decompose instead of being skipped.
+	lineDiscounts, invoiceDiscounts, err := s.resolveDiscounts(ctx, invReq)
+	if err != nil {
+		return false, err
 	}
 
-	// When usage exceeds a commitment the engine reduces the usage line and
-	// adds an is_overage line; splitting the reduced line per day would not
-	// reconcile, so skip the whole subscription.
-	if hasOverageLine(invReq) {
-		s.Logger.Info(ctx, "revenue_rollup_skipped",
-			"reason", revenueRollupSkipOverageUnsupported,
-			"subscription_id", subscriptionID)
-		return true, nil
-	}
+	// When usage exceeds a commitment, the engine reduces the usage lines and
+	// adds an is_overage line whose split the daily curve cannot reproduce —
+	// keep every usage line whole (period_only) instead of skipping the
+	// subscription.
+	overagePresent := hasOverageLine(invReq)
 
 	inputs, err := s.loadRollupInputs(ctx, sub, periodStart, periodEnd, invReq.LineItems)
 	if err != nil {
@@ -167,16 +164,19 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		}
 
 		base := previewLineItem{
-			TenantID:       sub.TenantID,
-			EnvironmentID:  sub.EnvironmentID,
-			CustomerID:     itemCustomerID,
-			SubscriptionID: itemSubscriptionID,
-			SubLineItemID:  lo.FromPtr(item.SubscriptionLineItemID),
-			Currency:       sub.Currency,
-			Metadata:       item.Metadata,
-			EngineAmount:   item.Amount,
-			PeriodStart:    itemPeriod.Start,
-			PeriodEnd:      itemPeriod.End,
+			TenantID:        sub.TenantID,
+			EnvironmentID:   sub.EnvironmentID,
+			CustomerID:      itemCustomerID,
+			SubscriptionID:  itemSubscriptionID,
+			SubLineItemID:   lo.FromPtr(item.SubscriptionLineItemID),
+			Currency:        sub.Currency,
+			Metadata:        item.Metadata,
+			EngineAmount:    item.Amount,
+			LineDiscount:    lineDiscounts[i],
+			InvoiceDiscount: invoiceDiscounts[i],
+			EntitlementQty:  lo.FromPtr(item.AdjustedEntitlementQuantity),
+			PeriodStart:     itemPeriod.Start,
+			PeriodEnd:       itemPeriod.End,
 		}
 		if base.SubLineItemID == "" {
 			// Engine aggregate lines (subscription true-up and cumulative
@@ -184,6 +184,9 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			// fall back to the subscription id so the grain stays non-null.
 			base.SubLineItemID = itemSubscriptionID
 		}
+		// The line item's net after discounts — every reconciliation below
+		// compares against this, matching invoice Subtotal - TotalDiscount.
+		netAmount := item.Amount.Sub(base.LineDiscount).Sub(base.InvoiceDiscount)
 
 		isTrueup := item.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
 		isOverage := item.Metadata.GetBool(types.MetadataKeyIsOverage)
@@ -195,8 +198,11 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, itemSubscriptionID, isOverage)}
 
 			row := decomposeCommitmentTrueup(base, itemPeriod)
+			if isOverage {
+				row = decomposeOverage(base, itemPeriod)
+			}
 			allRows = append(allRows, row)
-			groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: base.Price.ID})
+			groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: netAmount, identifier: base.Price.ID})
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_FIXED):
 			p, hydrateErr := inputs.price(lo.FromPtr(item.PriceID))
@@ -206,7 +212,7 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			base.Price = p
 			if row := decomposeFixed(base, itemPeriod); row != nil {
 				allRows = append(allRows, row)
-				groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: lo.FromPtr(item.PriceID)})
+				groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: netAmount, identifier: lo.FromPtr(item.PriceID)})
 			}
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE):
@@ -224,9 +230,10 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			base.Meter = m
 
 			mode := decompositionMode(p, m)
-			if inputs.hasGrants(m.ID) {
-				// Grant-billed meters charge through quota-crossed windows the
-				// daily curve cannot reproduce yet — keep the engine total whole.
+			if inputs.hasGrants(m.ID) || overagePresent {
+				// Grant-billed meters and commitment-reduced usage charge through
+				// windows the daily curve cannot reproduce yet — keep the engine
+				// total whole.
 				mode = types.PeriodOnly
 			}
 
@@ -251,7 +258,7 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 				rows = []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
 			}
 			allRows = append(allRows, rows...)
-			groups = append(groups, lineItemRows{rows: rows, amount: item.Amount, identifier: lo.FromPtr(item.PriceID)})
+			groups = append(groups, lineItemRows{rows: rows, amount: netAmount, identifier: lo.FromPtr(item.PriceID)})
 
 		default:
 			s.Logger.Info(ctx, "revenue_rollup_line_item_skipped",
@@ -277,10 +284,11 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 				"line_item_id", g.identifier, "residual", residual.String())
 		}
 	}
-	// Subtract discounts so this stays correct if the
-	// discount gate above is ever narrowed. A no-op today since hasDiscount
-	// already skips any subscription carrying a discount signal.
-	if residual, ok := reconcileInvoice(allRows, invReq.Subtotal.Sub(invoiceDiscountTotal(invReq))); !ok {
+	totalDiscount := decimal.Zero
+	for i := range lineDiscounts {
+		totalDiscount = totalDiscount.Add(lineDiscounts[i]).Add(invoiceDiscounts[i])
+	}
+	if residual, ok := reconcileInvoice(allRows, invReq.Subtotal.Sub(totalDiscount)); !ok {
 		s.Logger.Info(ctx, "revenue_reconciliation_mismatch",
 			"scope", "invoice", "subscription_id", subscriptionID, "residual", residual.String())
 	}
@@ -518,16 +526,19 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 		period := revenuePeriod{Start: periodStart, End: periodEndExclusive.AddDate(0, 0, -1)}
 
 		base := previewLineItem{
-			TenantID:       tenantID,
-			EnvironmentID:  environmentID,
-			CustomerID:     li.CustomerID,
-			SubscriptionID: subscriptionID,
-			SubLineItemID:  lo.FromPtr(li.SubscriptionLineItemID),
-			Currency:       li.Currency,
-			Metadata:       li.Metadata,
-			EngineAmount:   li.Amount,
-			PeriodStart:    period.Start,
-			PeriodEnd:      period.End,
+			TenantID:        tenantID,
+			EnvironmentID:   environmentID,
+			CustomerID:      li.CustomerID,
+			SubscriptionID:  subscriptionID,
+			SubLineItemID:   lo.FromPtr(li.SubscriptionLineItemID),
+			Currency:        li.Currency,
+			Metadata:        li.Metadata,
+			EngineAmount:    li.Amount,
+			LineDiscount:    li.LineItemDiscount,
+			InvoiceDiscount: li.InvoiceLevelDiscount,
+			EntitlementQty:  lo.FromPtr(li.AdjustedEntitlementQuantity),
+			PeriodStart:     period.Start,
+			PeriodEnd:       period.End,
 		}
 		if base.SubLineItemID == "" {
 			// Invoice line items may lack a subscription-line-item id; the
@@ -540,7 +551,11 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 		switch {
 		case isTrueup || isOverage:
 			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, subscriptionID, isOverage)}
-			rows = append(rows, decomposeCommitmentTrueup(base, period))
+			row := decomposeCommitmentTrueup(base, period)
+			if isOverage {
+				row = decomposeOverage(base, period)
+			}
+			rows = append(rows, row)
 
 		case lo.FromPtr(li.PriceType) == string(types.PRICE_TYPE_FIXED):
 			p, err := s.getPrice(ctx, priceCache, lo.FromPtr(li.PriceID))
@@ -690,6 +705,56 @@ func (in *rollupInputs) hasGrants(meterID string) bool {
 	return ok
 }
 
+// resolveDiscounts dry-runs coupon application over the preview (nothing is
+// persisted, no redemption is counted — same calculator the customer preview
+// uses) and returns, per line item: its own coupon discount and its share of
+// invoice-level discounts, allocated in proportion to post-line-discount
+// amounts so the shares sum exactly to the invoice-level total.
+func (s *revenueService) resolveDiscounts(ctx context.Context, invReq *dto.CreateInvoiceRequest) (lineDiscounts, invoiceDiscounts []decimal.Decimal, err error) {
+	n := len(invReq.LineItems)
+	lineDiscounts = make([]decimal.Decimal, n)
+	invoiceDiscounts = make([]decimal.Decimal, n)
+
+	// Discount amounts already present on the preview items count as-is.
+	for i := range invReq.LineItems {
+		li := &invReq.LineItems[i]
+		lineDiscounts[i] = lineDiscounts[i].Add(lo.FromPtr(li.LineItemDiscount))
+		invoiceDiscounts[i] = invoiceDiscounts[i].Add(lo.FromPtr(li.InvoiceLevelDiscount))
+	}
+	if len(invReq.InvoiceCoupons) == 0 && len(invReq.LineItemCoupons) == 0 {
+		return lineDiscounts, invoiceDiscounts, nil
+	}
+
+	inv, err := invReq.ToInvoice(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(inv.LineItems) != n {
+		return nil, nil, ierr.NewError("preview invoice line items diverged from the request").
+			WithHint("cannot map coupon discounts back onto preview line items").
+			Mark(ierr.ErrSystem)
+	}
+
+	result, err := NewCouponApplicationService(s.ServiceParams).CalculateCouponsForInvoice(ctx, dto.ApplyCouponsToInvoiceRequest{
+		Invoice:         inv,
+		InvoiceCoupons:  invReq.InvoiceCoupons,
+		LineItemCoupons: invReq.LineItemCoupons,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	weights := make([]decimal.Decimal, n)
+	for i, li := range inv.LineItems {
+		lineDiscounts[i] = lineDiscounts[i].Add(li.LineItemDiscount)
+		weights[i] = invReq.LineItems[i].Amount.Sub(lineDiscounts[i])
+	}
+	for i, share := range spreadAmount(result.TotalInvoiceLevelDiscount, weights) {
+		invoiceDiscounts[i] = invoiceDiscounts[i].Add(share)
+	}
+	return lineDiscounts, invoiceDiscounts, nil
+}
+
 func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, lineItems []dto.CreateInvoiceLineItemRequest) (*rollupInputs, error) {
 	priceIDs := make([]string, 0, len(lineItems))
 	meterIDs := make([]string, 0, len(lineItems))
@@ -786,44 +851,11 @@ func (s *revenueService) loadGrantMeterIDs(ctx context.Context, sub *subscriptio
 	return out, nil
 }
 
-// hasOverageLine reports whether any of invReq's line items is the engine's
-// synthetic overage charge (metadata-flagged) — see the ruling at the Fix-1
-// call site for why the whole subscription is skipped rather than decomposed.
+// hasOverageLine reports whether any line item is the engine's synthetic
+// overage charge (metadata-flagged).
 func hasOverageLine(invReq *dto.CreateInvoiceRequest) bool {
 	for _, li := range invReq.LineItems {
 		if li.Metadata.GetBool(types.MetadataKeyIsOverage) {
-			return true
-		}
-	}
-	return false
-}
-
-// invoiceDiscountTotal sums line and invoice discounts. Zero today: a
-// non-zero discount already makes hasDiscount skip the subscription.
-func invoiceDiscountTotal(invReq *dto.CreateInvoiceRequest) decimal.Decimal {
-	total := decimal.Zero
-	for _, li := range invReq.LineItems {
-		if li.LineItemDiscount != nil {
-			total = total.Add(*li.LineItemDiscount)
-		}
-		if li.InvoiceLevelDiscount != nil {
-			total = total.Add(*li.InvoiceLevelDiscount)
-		}
-	}
-	return total
-}
-
-// hasDiscount reports whether the preview carries any discount signal:
-// coupon references, or an already-set discount amount.
-func hasDiscount(invReq *dto.CreateInvoiceRequest) bool {
-	if len(invReq.InvoiceCoupons) > 0 || len(invReq.LineItemCoupons) > 0 {
-		return true
-	}
-	for _, li := range invReq.LineItems {
-		if li.LineItemDiscount != nil && !li.LineItemDiscount.IsZero() {
-			return true
-		}
-		if li.InvoiceLevelDiscount != nil && !li.InvoiceLevelDiscount.IsZero() {
 			return true
 		}
 	}
