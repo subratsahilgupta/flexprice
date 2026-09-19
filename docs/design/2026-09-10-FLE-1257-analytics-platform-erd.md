@@ -662,26 +662,25 @@ workstream, and the recognition engine builds on ClickHouse once sync is live.
 
 **Gate unchanged:** no tenant-facing revenue surface (export included) until reconciliation (invariants 1–2) has been green for a full cycle.
 
-### 14.1 Status after Phase-2 slice 1 (PR #2872)
+### 14.1 Status (updated after Phase 2a)
 
-**Shipped — the write path end to end, shadow-only:**
+**Shipped — write path complete, shadow-only (PR #2872):**
 
-- `revenue_facts` table (Postgres) with the provisional-grain partial unique index (now including `sub_line_item_id`), Ent entity, dbmate migration.
-- Rollup: `RevenueService.RollupSubscription` re-runs the billing preview under the dedicated `ReferencePointRevenueFacts`, prices the cumulative daily curve (`buildUsageCurve` — answers Q2: one cumulative `meter_usage` read + pure `CalculateCost` re-pricing, no per-day engine calls), and decomposes `usage`/`fixed`/`commitment_trueup` into marginal or period_only rows. Inputs (prices, entitlement limits) hydrate once per pass.
-- Lifecycle: finalize → FINAL flip with invoice stamps and JIT fallback (rows derived from the invoice when none exist); void → `REVERTED` contra rows; both async best-effort hooks on every production status-transition path (incl. the payment-processor auto-finalize).
-- Scheduling: hourly Temporal schedule (always declared); deployment kill switch read at activity start (`analytics.revenue_rollup.enabled`); per-tenant opt-in via the `revenue_analytics_config` setting; per-environment scan on the subscriptions index; `Since` input for manual backfills.
-- Reconciliation asserts at row / line-item / invoice / FINAL grain — logged (`revenue_reconciliation_mismatch`), never blocking.
-- Deliberate skips, logged: discounted subscriptions, multi-period commitments, single-period overage splits.
+- `revenue_facts` table (Postgres): provisional-grain partial unique index incl. `sub_line_item_id`; Ent entity + dbmate migration.
+- Rollup under `ReferencePointRevenueFacts`: cumulative daily curve (answers Q2 — one customer-scoped `meter_usage` read + pure `CalculateCost` re-pricing), sources `usage`/`fixed`/`commitment_trueup`/`overage`, marginal vs period_only classifier, inputs (prices, meters, entitlements, grants, customer scope) hydrated once per pass.
+- **Discounts decompose** (Phase 2a): coupon amounts dry-run over the preview — nothing persisted, no redemption counted — each line's own discount plus an exact-sum allocated share of invoice-level discounts lands in `line_discount`/`invoice_discount`, spread across marginal days in proportion to each day's charge. Row identity: `net == list + tier − entitlement − line_discount − invoice_discount`.
+- **Overage decomposes** (Phase 2a): commitment-exceeded subscriptions write period_only usage rows plus an `overage`-source row; nothing is skipped.
+- **Grant/value-based entitlements** (Phase 2a): grant-billed meters stay period_only (their quota-window charges can't be curve-split yet) with `entitlement_qty`/`entitlement_amount` annotated from the engine's deduction.
+- Lifecycle: finalize → FINAL flip (+ JIT fallback from the invoice), void → `REVERTED` contras, hooks on every status-transition path incl. payment-processor auto-finalize.
+- Scheduling: hourly Temporal schedule, config kill switch in the activity, per-tenant opt-in setting, per-environment indexed scan, `Since` backfill input.
+- Reconciliation asserts at row (marginal) / line-item / invoice / FINAL grain — logged, never blocking. Only remaining policy skip: multi-period commitments (Q3).
 
-**Not yet built (blocking "usable by tenants"):**
+**In flight as independent PRs:**
 
-1. **Serving:** the `revenue` metric in the view translator + PeerDB sync of `revenue_facts` into CH (B) — nothing reads the table yet (§9).
-2. **Discount decomposition** — today any coupon skips the whole subscription; real tenants have coupons, so coverage is the first gap to close (split line/invoice discounts into `line_discount`/`invoice_discount`).
-3. **Commitment-aware usage decomposition** (single-period overage split) and the **multi-period commitment prior-base** (Q3).
-4. **Drift sweeper** (Phase 4 §8.1): compare re-derived revenue against stamped FINAL facts; today a lost flip or backdated change surfaces only via reconciliation logs.
-5. **Accounting-period locks** + `lock_adjusted_day` posting, recognition engine, warehouse export, breakage (Phase 4).
+1. **Phase 2b — trust**: drift sweeper, accounting-period lock (tenant setting, see Q6) + `lock_adjusted_day` posting, Temporal-durable hooks.
+2. **Phase 2c — export**: snapshot + incremental tenant export with data dictionary — the first tenant-facing surface, while PeerDB → CH (B) lands in parallel (staging sync already near-realtime).
 
-**Current posture:** merged behavior is dual-gated (config kill switch off + tenant setting off) and write-only — safe to ship now and run the §14 Phase-2 silent cycle on internal tenants while (1)–(3) are built.
+**Deferred (picked up later):** multi-period commitment prior-base (Q3); daily-grain splitting for grant-billed and commitment-reduced usage (period_only keeps them correct meanwhile); Phase 3 serving; Phase 4 recognition.
 
 ---
 
@@ -693,17 +692,17 @@ workstream, and the recognition engine builds on ClickHouse once sync is live.
 
 **Q3 — Multi-period commitment prior-base.** For an annual commitment billed monthly, month N needs cumulative consumption from months 1..N-1; the engine reads it only from *finalized* invoices and degrades silently otherwise. *Why it matters:* the rollup produces provisional numbers before finalization, exactly when the engine's source is incomplete. *Resolved by:* fixing the fields of a rollup-maintained cumulative prior-base (sum of usage-line base; overage lines ÷ overage factor; true-up excluded), where it's stored, and the rule gating true-up to the final period.
 
-**Q4 — PeerDB sync coverage/latency into CH (B), and the CH (A) migration path.** All serving reads hit CH (B), fed by PeerDB from Postgres (`revenue_facts`, invoices, entities, wallet) plus `meter_usage` from CH (A). *Why it matters:* provisional revenue freshness and reconciliation timing depend on sync lag; and we've asserted the `revenue_facts` primary can later move Postgres → CH (A) without changing serving. *Resolved by:* confirming which tables PeerDB replicates into CH (B) and the observed lag; and sketching the CH (A) primary-migration (dual-write or cutover) so the "movable primary" claim is real, not aspirational.
+**Q4 — PeerDB sync coverage/latency into CH (B), and the CH (A) migration path.** All serving reads hit CH (B), fed by PeerDB from Postgres (`revenue_facts`, invoices, entities, wallet) plus `meter_usage` from CH (A). *Why it matters:* provisional revenue freshness and reconciliation timing depend on sync lag; and we've asserted the `revenue_facts` primary can later move Postgres → CH (A) without changing serving. *Status:* staging PeerDB sync is running and near-realtime; remaining work is confirming table coverage for serving and the CH (A) primary-migration sketch.
 
 **Q5 — Allocation basis for `period_only` daily shape.** Rendering a daily shape for a non-decomposable item allocates the period total proportionally, proposed as that day's usage share. *Why it matters:* for volume tiers and `LATEST`/`AVG` meters this is defensible but not unique; even-spread may read better for some. *Resolved by:* picking a default and checking it against real volume-tier and `LATEST` examples; decide if it's per-aggregation-type.
 
-**Q6 — Ownership and rules of the accounting-period lock.** `lock_adjusted_day` and catch-up assume someone closes periods. *Why it matters:* it determines whether this is a tenant-facing finance control, the catch-up posting rule for backdated activity, and its interaction with invoice finalization. *Resolved by:* a product decision on period-close ownership and a short spec of catch-up rules.
+**Q6 — Ownership and rules of the accounting-period lock.** `lock_adjusted_day` and catch-up assume someone closes periods. *Why it matters:* it determines whether this is a tenant-facing finance control, the catch-up posting rule for backdated activity, and its interaction with invoice finalization. *Decided:* the lock is a tenant-level setting (like the invoice-finalization delay): the tenant configures the close frequency/dates (e.g. monthly or quarterly on day N), and the system locks revenue_facts for closed periods automatically; backdated corrections then post on `lock_adjusted_day`. Ships with Phase 2b.
 
-**Q7 — Retention at daily grain.** Daily `revenue_facts` grows with `subscriptions × prices × days`. *Why it matters:* replica storage vs. how far back tenants query at daily resolution. *Resolved by:* a retention policy (e.g. daily for N months, then monthly), informed by expected volume.
+**Q7 — Retention at daily grain.** Daily `revenue_facts` grows with `subscriptions × prices × days`. *Why it matters:* replica storage vs. how far back tenants query at daily resolution. *Decided:* retention is forever — daily `revenue_facts` rows are never rolled up or expired; storage is revisited only if volume ever forces it.
 
 **Q8 — Export mechanism.** Destinations, full-snapshot vs. incremental watermark, dedupe semantics. *Why it matters:* it's the interface tenants' BI depends on; wrong choices create duplicate/stale rows. *Resolved by:* a Phase-4 export design following "first full snapshot, then daily incremental."
 
-**Q9 — Breakage timing and reconciliation.** Expired credits (`CREDIT_EXPIRED` debits) become `credit_breakage` revenue, but this is recognition-era and does not tie to an invoice. *Why it matters:* it's revenue with no invoice anchor, so it needs its own correctness story (when recognized, at what amount/cost-basis). *Resolved by:* the Phase-4 recognition spec.
+**Q9 — Breakage timing and reconciliation.** Expired credits (`CREDIT_EXPIRED` debits) become `credit_breakage` revenue, but this is recognition-era and does not tie to an invoice. *Why it matters:* it's revenue with no invoice anchor, so it needs its own correctness story (when recognized, at what amount/cost-basis). *Resolved by:* the Phase-4 recognition spec (breakage is recognition-era revenue with no invoice anchor; it enters `revenue_facts` as its own source with its own reconciliation once the recognition engine exists).
 
 ---
 
