@@ -644,16 +644,23 @@ Concretely, this is the billed-vs-recognized split the fixed-charge example make
 
 ---
 
-## 14. Phasing
+## 14. Phasing (recalibrated after slice 1)
+
+Order of operations changed from the original plan: **make `revenue_facts`
+correct and complete first, share it with tenants through exports, and only
+then build views/query serving** — PeerDB → ClickHouse (B) is a parallel
+workstream, and the recognition engine builds on ClickHouse once sync is live.
 
 | Phase | Ships | Proves | Prerequisites |
 |---|---|---|---|
-| **1** | Saved-view model + serving translator + `/analytics/query` over `meter_usage` (usage only). `timeseries` + `breakdown`. | The view model expresses today's hand-built usage views. | none |
-| **2** | `revenue_facts` (daily, columnar, multi-source) + preview rollup + engine day-checkpoints + cumulative commitment prior-base + append/`REVERTED` + two-lock lifecycle + `usage`/`fixed`/`commitment_trueup` sources + **structural** revenue breakdowns + reconciliation asserts. Run silently one full cycle. | Billed money in-surface, reconciling, at daily grain. | engine cumulative-checkpoint entry point; decomposition-mode classifier |
-| **3** | **Custom-dimension** revenue allocation + `billed`/`amortized` presets + non-usage ledger views. | Flexible revenue slicing that reconciles. | Phase 2 green |
-| **4** | Warehouse export; evidence-driven acceleration; **ASC 606 recognition engine** (recognized/deferred/unbilled, straight-line fixed, usage recognition, `credit_breakage`, period locks). | Tenant BI; recognized revenue. | query-log evidence; recognition spec |
+| **1** *(done)* | Saved-view model + serving translator + `/analytics/query` over `meter_usage` (usage only). | The view model expresses today's hand-built usage views. | none |
+| **2a — coverage** | Close the deliberate skips so real tenants produce rows: **discount decomposition** (line/invoice discounts into `line_discount`/`invoice_discount`), **commitment-aware usage split** (single-period overage), **grant-aware daily split** (today grant-billed meters stay period_only), **multi-period commitment prior-base** (Q3). | Skip-rate ≈ 0 on real tenants; reconciliation green a full cycle. | slice 1 (shipped) |
+| **2b — trust** | **Drift sweeper** (re-derive vs stamped FINAL, flag `revenue_facts_drift`; auto-correct behind a flag), **accounting-period lock** + `lock_adjusted_day` catch-up posting, promote flip/revert hooks to **Temporal** (guaranteed delivery). | Booked data stays correct under backdated changes and crashes. | Q6 (lock ownership) for the lock piece only |
+| **2c — export (first tenant surface)** | Scheduled `revenue_facts` **export** per opted-in tenant: full snapshot then incremental (watermark on `computed_at`/`version`), CSV/Parquet to object storage + signed URL or pull API, with a column dictionary and the §8.1 consumer guardrails in the delivered README. | Tenants get correct, understandable revenue data without waiting for serving. | 2a reconciliation green (2b parallel) |
+| **3 — serving on CH (B)** | PeerDB sync live (parallel workstream) → `revenue` metric in the view translator, structural + custom-dimension breakdowns, `billed`/`amortized` presets, ledger views. | Flexible revenue slicing that reconciles, near-realtime. | PeerDB sync; 2a green |
+| **4 — recognition** | **ASC 606 recognition engine on ClickHouse** (recognized/deferred/unbilled, straight-line fixed, usage recognition, `credit_breakage`), populating `service_start`/`service_end`/`recognition_method`; warehouse-grade export GA. | Recognized revenue for finance. | 2b locks; Phase 3 infra; recognition spec |
 
-**Phase 2 gate:** do not expose revenue breakdowns until reconciliation (invariants 1–2) has been green for a full cycle.
+**Gate unchanged:** no tenant-facing revenue surface (export included) until reconciliation (invariants 1–2) has been green for a full cycle.
 
 ### 14.1 Status after Phase-2 slice 1 (PR #2872)
 
