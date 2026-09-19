@@ -10,9 +10,14 @@ import (
 
 const (
 	ActivityRollupDirty = "RollupDirtyActivity"
+	ActivitySweepDrift  = "SweepDriftActivity"
 
 	// defaultRevenueRollupInterval is used when the schedule doesn't set Interval.
-	defaultRevenueRollupInterval = time.Hour
+	defaultRevenueRollupInterval = 24 * time.Hour
+
+	// driftSweepLookback windows the sweep on invoice created_at; deep
+	// backfills pass an explicit Since instead.
+	driftSweepLookback = 7 * 24 * time.Hour
 )
 
 // RevenueRollupWorkflow drives the periodic revenue_facts dirty-rollup: it asks
@@ -58,6 +63,21 @@ func RevenueRollupWorkflow(ctx workflow.Context, in cronModels.RevenueRollupInpu
 		return err
 	}
 
-	log.Info("RevenueRollupWorkflow completed", "rolled", result.Rolled, "skipped", result.Skipped)
+	// Sweep after the rollup so freshly re-rolled facts are compared. The
+	// sweep windows wider than the rollup: an invoice can finalize days after
+	// its usage last moved.
+	sweepSince := referenceTime.Add(-driftSweepLookback)
+	if in.Since != nil && !in.Since.IsZero() {
+		sweepSince = *in.Since
+	}
+	var sweep cronModels.RevenueSweepResult
+	if err := workflow.ExecuteActivity(ctx, ActivitySweepDrift, sweepSince).Get(ctx, &sweep); err != nil {
+		log.Error("RevenueRollupWorkflow sweep activity failed", "error", err)
+		return err
+	}
+
+	log.Info("RevenueRollupWorkflow completed",
+		"rolled", result.Rolled, "skipped", result.Skipped,
+		"checked", sweep.Checked, "drifted", sweep.Drifted, "corrected", sweep.Corrected)
 	return nil
 }

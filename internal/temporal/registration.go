@@ -568,6 +568,7 @@ func buildWorkerConfig(
 			cron.marketplaceReport.MarketplaceUsageReportActivity,
 			cron.dailyDraftAndCompute.DailyDraftAndComputeActivity,
 			cron.revenueRollup.RollupDirtyActivity,
+			cron.revenueRollup.SweepDriftActivity,
 		)
 
 	case types.TemporalTaskQueueBilling:

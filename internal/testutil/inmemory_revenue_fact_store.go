@@ -240,3 +240,55 @@ func (s *InMemoryRevenueFactStore) Clear() {
 	s.facts = make(map[string]*revenuefact.RevenueFact)
 	s.provisionalIndex = make(map[provisionalGrainKey]string)
 }
+
+// ListByInvoiceID lists every fact stamped with the invoice, reverts included.
+func (s *InMemoryRevenueFactStore) ListByInvoiceID(ctx context.Context, invoiceID string) ([]*revenuefact.RevenueFact, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*revenuefact.RevenueFact
+	for _, f := range s.facts {
+		if !CheckTenantFilter(ctx, f.TenantID) || !CheckEnvironmentFilter(ctx, f.EnvironmentID) {
+			continue
+		}
+		if f.InvoiceID == nil || *f.InvoiceID != invoiceID {
+			continue
+		}
+		result = append(result, f)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Day.Before(result[j].Day) })
+	return result, nil
+}
+
+// ListForExport pages facts recomputed after the watermark, ordered by
+// (computed_at, id) for stable resumption.
+func (s *InMemoryRevenueFactStore) ListForExport(ctx context.Context, computedAfter time.Time, afterID string, limit int) ([]*revenuefact.RevenueFact, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*revenuefact.RevenueFact
+	for _, f := range s.facts {
+		if !CheckTenantFilter(ctx, f.TenantID) || !CheckEnvironmentFilter(ctx, f.EnvironmentID) {
+			continue
+		}
+		switch {
+		case afterID != "" && f.ComputedAt.Equal(computedAfter):
+			if f.ID <= afterID {
+				continue
+			}
+		case !computedAfter.IsZero() && !f.ComputedAt.After(computedAfter):
+			continue
+		}
+		result = append(result, f)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ComputedAt.Equal(result[j].ComputedAt) {
+			return result[i].ID < result[j].ID
+		}
+		return result[i].ComputedAt.Before(result[j].ComputedAt)
+	})
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, nil
+}

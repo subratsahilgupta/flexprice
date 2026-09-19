@@ -144,6 +144,7 @@ func AllTemporalScheduleConfigs(cfg *config.Configuration) []types.ScheduleConfi
 			// switch inside RollupDirtyActivity, and tenants opt in via settings.
 			ID:        types.ScheduleIDRevenueRollup,
 			Interval:  revenueRollupInterval,
+			Offset:    3 * time.Hour, // daily at 03:00 UTC by default
 			Workflow:  cronWorkflows.RevenueRollupWorkflow,
 			Input:     models.RevenueRollupInput{Interval: revenueRollupInterval},
 			TaskQueue: types.TemporalTaskQueueCron,
@@ -152,7 +153,7 @@ func AllTemporalScheduleConfigs(cfg *config.Configuration) []types.ScheduleConfi
 }
 
 // defaultRevenueRollupScheduleInterval is used when analytics.revenue_rollup.interval is unset.
-const defaultRevenueRollupScheduleInterval = time.Hour
+const defaultRevenueRollupScheduleInterval = 24 * time.Hour
 
 // EnsureSchedules idempotently creates or updates every configured Temporal
 // server schedule. It returns the first error encountered.

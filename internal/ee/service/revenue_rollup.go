@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
@@ -47,6 +48,15 @@ type RevenueService interface {
 	// voided invoice — FINAL rows are never edited. Idempotent; runs async
 	// after VoidInvoice.
 	RevertInvoiceFacts(ctx context.Context, invoiceID string) error
+
+	// SweepDrift compares recently finalized/voided invoices against their
+	// booked facts, logging drift and — only when auto_correct is on —
+	// repairing via revert + re-derive + flip.
+	SweepDrift(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error)
+
+	// ExportFacts pages the tenant's facts recomputed after since, ordered by
+	// (computed_at, id). Denied unless the tenant opted in via settings.
+	ExportFacts(ctx context.Context, since time.Time, afterID string, limit int) ([]*revenuefact.RevenueFact, error)
 }
 
 type revenueService struct {
@@ -84,10 +94,11 @@ func (s *revenueService) rollupSubscription(ctx context.Context, subscriptionID 
 func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (skipped bool, err error) {
 	subscriptionID := sub.ID
 
-	// Commitment durations live on subscription config, so this gate needs no
-	// preview call. Line items also carry a CommitmentDuration field — the
-	// engine ignores it today and no validation rejects it, so skip
-	// defensively if one is ever set to a different period.
+	// Multi-period commitments are deliberately OUT OF SCOPE for revenue_facts
+	// for now (their true-up needs a rollup-maintained prior base; see ERD
+	// open question Q3) — such subscriptions are skipped, not decomposed.
+	// Line items also carry a CommitmentDuration field the engine ignores
+	// today; skip defensively if one is ever set to a different period.
 	multiPeriod := isMultiPeriodCommitment(sub)
 	for _, li := range sub.LineItems {
 		if li.CommitmentDuration != nil && *li.CommitmentDuration != sub.BillingPeriod {
@@ -229,17 +240,40 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			base.Price = p
 			base.Meter = m
 
+			grants := inputs.grants(m.ID)
+			grantBilled := grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, grants)
+
 			mode := decompositionMode(p, m)
-			if inputs.hasGrants(m.ID) || overagePresent {
-				// Grant-billed meters and commitment-reduced usage charge through
-				// windows the daily curve cannot reproduce yet — keep the engine
-				// total whole.
+			if overagePresent {
+				// Commitment-reduced usage charges through a split the daily
+				// curve cannot reproduce — keep the engine total whole.
 				mode = types.PeriodOnly
 			}
 
 			var rows []*revenuefact.RevenueFact
-			switch mode {
-			case types.Marginal:
+			switch {
+			case !overagePresent && grantBilled:
+				// Grant-billed lines get their own per-day split: usage inside
+				// the quota-crossed windows is billed, the rest entitled.
+				curve, curveOK, curveErr := s.buildGrantOverageCurve(ctx, grantCurveInput{
+					Price:               p,
+					Meter:               m,
+					PeriodStart:         itemPeriod.Start,
+					PeriodEnd:           itemPeriod.exclusiveEnd(),
+					EngineAmount:        item.Amount,
+					Grants:              grants,
+					ExternalCustomerIDs: inputs.extCustomerIDs,
+					Timezone:            sub.Timezone,
+				})
+				if curveErr != nil {
+					return false, curveErr
+				}
+				if curveOK {
+					rows = decomposeUsageMarginal(base, curve)
+				} else {
+					rows = []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
+				}
+			case mode == types.Marginal:
 				curve, curveErr := s.buildUsageCurve(ctx, usageCurveInput{
 					Price:       p,
 					MeterID:     m.ID,
@@ -307,12 +341,23 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 }
 
 func (s *revenueService) RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
-	// Never scan all subscriptions: only tenants opted in via
-	// revenue_analytics_config are considered, one (tenant, environment) at a
-	// time so the per-env listing uses the subscriptions index.
+	err = s.forEachOptedInEnvironment(ctx, "revenue rollup dirty scan", func(envCtx context.Context) error {
+		envRolled, envSkipped, envErr := s.rollupDirtyForEnvironment(envCtx, since)
+		rolled += envRolled
+		skipped += envSkipped
+		return envErr
+	})
+	return rolled, skipped, err
+}
+
+// forEachOptedInEnvironment runs fn once per (tenant, environment) that opted
+// in via revenue_analytics_config, with tenant/environment set on ctx — never
+// a scan across all tenants. One environment's failure is logged and does not
+// abort the others.
+func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op string, fn func(ctx context.Context) error) error {
 	tenantEnvConfigs, err := s.SettingsRepo.ListAllTenantEnvSettingsByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
 	if err != nil {
-		return 0, 0, err
+		return err
 	}
 
 	for _, tec := range tenantEnvConfigs {
@@ -331,20 +376,14 @@ func (s *revenueService) RollupDirty(ctx context.Context, since time.Time) (roll
 		tenantCtx := types.SetTenantID(ctx, tec.TenantID)
 		tenantCtx = types.SetEnvironmentID(tenantCtx, tec.EnvironmentID)
 
-		envRolled, envSkipped, envErr := s.rollupDirtyForEnvironment(tenantCtx, since)
-		if envErr != nil {
-			// One environment's listing failure must not abort the whole scan.
-			s.Logger.Error(ctx, "revenue rollup dirty scan failed for environment",
+		if envErr := fn(tenantCtx); envErr != nil {
+			s.Logger.Error(ctx, op+" failed for environment",
 				"error", envErr,
 				"tenant_id", tec.TenantID,
 				"environment_id", tec.EnvironmentID)
-			continue
 		}
-		rolled += envRolled
-		skipped += envSkipped
 	}
-
-	return rolled, skipped, nil
+	return nil
 }
 
 // rollupDirtyForEnvironment scans one (tenant, environment)'s active
@@ -550,7 +589,10 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 		isOverage := li.Metadata.GetBool(types.MetadataKeyIsOverage)
 		switch {
 		case isTrueup || isOverage:
-			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, subscriptionID, isOverage)}
+			// Derive the synthetic id from the RAW subscription-line-item id,
+			// exactly like flipInvoiceLineItems does — never from the grain
+			// fallback above, or the flip would miss these rows.
+			base.Price = &price.Price{ID: stableTrueupPriceID(lo.FromPtr(li.SubscriptionLineItemID), subscriptionID, isOverage)}
 			row := decomposeCommitmentTrueup(base, period)
 			if isOverage {
 				row = decomposeOverage(base, period)
@@ -668,10 +710,10 @@ type rollupInputs struct {
 	prices            map[string]*price.Price
 	meters            map[string]*meter.Meter
 	entitlementLimits map[string]decimal.Decimal
-	// grantMeterIDs are meters billed through entitlement grants — their
-	// engine charge follows quota-crossed windows the daily curve cannot
-	// reproduce, so their usage rows stay period_only.
-	grantMeterIDs map[string]struct{}
+	// grantsByMeterID holds the entitlement grants billing each meter — the
+	// daily grant curve derives per-day billed vs entitled usage from their
+	// quota-crossed windows.
+	grantsByMeterID map[string][]*entitlementgrant.EntitlementGrant
 	// extCustomerIDs scope usage reads to this subscription's customers
 	// (parent + inherited children), matching the engine's own scoping.
 	extCustomerIDs []string
@@ -700,9 +742,8 @@ func (in *rollupInputs) meter(id string) (*meter.Meter, error) {
 	return m, nil
 }
 
-func (in *rollupInputs) hasGrants(meterID string) bool {
-	_, ok := in.grantMeterIDs[meterID]
-	return ok
+func (in *rollupInputs) grants(meterID string) []*entitlementgrant.EntitlementGrant {
+	return in.grantsByMeterID[meterID]
 }
 
 // resolveDiscounts dry-runs coupon application over the preview (nothing is
@@ -808,7 +849,7 @@ func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription
 		}
 	}
 
-	grantMeterIDs, err := s.loadGrantMeterIDs(ctx, sub, periodStart, periodEnd, meterByFeatureID)
+	grantsByMeterID, err := s.loadGrantsByMeterID(ctx, sub, periodStart, periodEnd, meterByFeatureID)
 	if err != nil {
 		return nil, err
 	}
@@ -817,7 +858,7 @@ func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription
 		prices:            lo.KeyBy(prices, func(p *price.Price) string { return p.ID }),
 		meters:            lo.KeyBy(meters, func(m *meter.Meter) string { return m.ID }),
 		entitlementLimits: limits,
-		grantMeterIDs:     grantMeterIDs,
+		grantsByMeterID:   grantsByMeterID,
 		extCustomerIDs:    extCustomerIDs,
 	}, nil
 }
@@ -825,7 +866,7 @@ func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription
 // loadGrantMeterIDs returns the meters covered by feature-scoped entitlement
 // grants in this billing cycle — mirroring loadEntitlementGrantsByMeterID's
 // scoping in the billing engine.
-func (s *revenueService) loadGrantMeterIDs(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, meterByFeatureID map[string]string) (map[string]struct{}, error) {
+func (s *revenueService) loadGrantsByMeterID(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, meterByFeatureID map[string]string) (map[string][]*entitlementgrant.EntitlementGrant, error) {
 	if s.EntitlementGrantRepo == nil {
 		return nil, nil
 	}
@@ -839,13 +880,13 @@ func (s *revenueService) loadGrantMeterIDs(ctx context.Context, sub *subscriptio
 		return nil, err
 	}
 
-	out := make(map[string]struct{})
+	out := make(map[string][]*entitlementgrant.EntitlementGrant)
 	for _, g := range grants {
 		if g == nil || !g.IsFeatureScoped() {
 			continue
 		}
 		if meterID := meterByFeatureID[g.ScopeEntityID]; meterID != "" {
-			out[meterID] = struct{}{}
+			out[meterID] = append(out[meterID], g)
 		}
 	}
 	return out, nil

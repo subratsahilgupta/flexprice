@@ -290,6 +290,7 @@ func main() {
 			service.NewWorkflowExecutionService,
 			service.NewWorkflowService,
 			service.NewAnalyticsService,
+			service.NewRevenueService,
 		),
 	)
 
@@ -386,6 +387,7 @@ func provideHandlers(
 	geminiPricingService service.GeminiPricingService,
 	webhookService *webhook.WebhookService,
 	analyticsService service.AnalyticsService,
+	revenueService service.RevenueService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:                   v1.NewEventsHandler(eventService, rawEventsReprocessingService, rawEventConsumptionService, meterUsageService, cfg, logger),
@@ -441,7 +443,7 @@ func provideHandlers(
 		MeterUsage:               v1.NewMeterUsageHandler(meterUsageService, logger),
 		SAML:                     saml.NewHandler(cfg, serviceParams, logger),
 		CheckoutSession:          v1.NewCheckoutSessionHandler(checkoutSessionService, logger),
-		Analytics:                v1.NewAnalyticsHandler(analyticsService, logger),
+		Analytics:                v1.NewAnalyticsHandler(analyticsService, revenueService, logger),
 	}
 }
 

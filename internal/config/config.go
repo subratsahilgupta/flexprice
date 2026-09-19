@@ -87,11 +87,13 @@ type AnalyticsConfig struct {
 	RevenueRollup       RevenueRollupConfig `mapstructure:"revenue_rollup" validate:"omitempty"`
 }
 
-// RevenueRollupConfig gates the periodic Temporal revenue_facts dirty-rollup
-// schedule (RevenueRollupWorkflow). Off by default.
+// RevenueRollupConfig gates the periodic Temporal revenue_facts rollup + drift
+// sweep (RevenueRollupWorkflow). Off by default; AutoCorrect keeps the sweeper
+// flag-only (detect, never repair) unless explicitly enabled.
 type RevenueRollupConfig struct {
-	Enabled  bool          `mapstructure:"enabled" default:"false"`
-	Interval time.Duration `mapstructure:"interval" default:"1h"`
+	Enabled     bool          `mapstructure:"enabled" default:"false"`
+	Interval    time.Duration `mapstructure:"interval" default:"24h"`
+	AutoCorrect bool          `mapstructure:"auto_correct" default:"false"`
 }
 
 type ChatSupportConfig struct {

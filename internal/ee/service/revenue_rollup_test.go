@@ -947,11 +947,11 @@ func (s *RevenueRollupSuite) TestRollupDirty_SkipsTenantsWithoutSetting() {
 	s.Empty(rows, "an un-opted-in tenant must produce no rows")
 }
 
-// TestRollupSubscription_GrantBilledMeterStaysPeriodOnly: a feature-scoped
-// entitlement grant bills through quota-crossed windows the daily curve cannot
-// reproduce, so the usage line item must collapse to one period_only row that
-// carries the engine total verbatim.
-func (s *RevenueRollupSuite) TestRollupSubscription_GrantBilledMeterStaysPeriodOnly() {
+// TestRollupSubscription_GrantEntitledUsageSplitsPerDay: an uncrossed
+// feature-scoped grant zeroes the bill, and the rollup still shows the
+// entitled usage day by day — marginal rows with zero net and the full daily
+// quantity recorded as entitled.
+func (s *RevenueRollupSuite) TestRollupSubscription_GrantEntitledUsageSplitsPerDay() {
 	ctx := s.ctx
 	s.seedWorkedExample(ctx)
 
@@ -963,7 +963,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_GrantBilledMeterStaysPeriodO
 		ScopeEntityType:     types.EntitlementGrantScopeFeature,
 		ScopeEntityID:       "feat_rollup_wk",
 		Measure:             types.EntitlementGrantMeasureQuantity,
-		Quota:               decimal.NewFromInt(1000),
+		Quota:               decimal.NewFromInt(100000),
 		ValidFrom:           s.periodStart,
 		ValidTo:             s.periodEnd,
 		EnvironmentID:       types.GetEnvironmentID(ctx),
@@ -976,16 +976,79 @@ func (s *RevenueRollupSuite) TestRollupSubscription_GrantBilledMeterStaysPeriodO
 
 	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
 	s.NoError(err)
-	s.NotEmpty(rows)
 
 	usageRows := 0
 	for _, r := range rows {
-		if r.RevenueSource == types.RevenueSourceUsage {
-			usageRows++
-			s.Equal(types.PeriodOnly, r.DecompositionMode, "grant-billed meter must not be split per day")
+		if r.RevenueSource != types.RevenueSourceUsage {
+			continue
+		}
+		usageRows++
+		s.Equal(types.Marginal, r.DecompositionMode, "grant-billed usage must split per day")
+		s.True(r.NetAmount.IsZero(), "uncrossed grant bills nothing")
+		s.Equal("1200", r.EntitlementQty.String(), "each day must record its entitled quantity")
+		if residual, identityOK := reconcileRow(r); s.True(identityOK, "row identity must hold") {
+			_ = residual
 		}
 	}
-	s.Equal(1, usageRows, "grant-billed usage must collapse to a single period_only row")
+	s.Equal(30, usageRows, "one marginal row per day of the period")
+}
+
+// TestRollupSubscription_GrantOverageSplitsPerDay: a quota-crossed grant
+// bills usage inside its overage window; days before the crossing stay
+// entitled at zero net, days after carry the billed amount, and the rows sum
+// exactly to the engine charge.
+func (s *RevenueRollupSuite) TestRollupSubscription_GrantOverageSplitsPerDay() {
+	ctx := s.ctx
+	s.seedWorkedExample(ctx)
+
+	// Quota crossed at day 10: the remaining 20 days x 1200 calls fall in the
+	// overage window. Snapshot usage matches (36000 total - 12000 quota).
+	crossedAt := s.periodStart.AddDate(0, 0, 10)
+	grant := &entitlementgrant.EntitlementGrant{
+		ID:                  "eg_rollup_crossed",
+		EntitlementConfigID: "ec_rollup_wk",
+		CustomerID:          "cust_rollup_wk",
+		SubscriptionID:      s.sub.ID,
+		ScopeEntityType:     types.EntitlementGrantScopeFeature,
+		ScopeEntityID:       "feat_rollup_wk",
+		Measure:             types.EntitlementGrantMeasureQuantity,
+		Quota:               decimal.NewFromInt(12000),
+		Usage:               decimal.NewFromInt(36000),
+		QuotaCrossedAt:      &crossedAt,
+		ValidFrom:           s.periodStart,
+		ValidTo:             s.periodEnd,
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		BaseModel:           types.GetDefaultBaseModel(ctx),
+	}
+	_, err := s.GetStores().EntitlementGrantRepo.Create(ctx, grant)
+	s.NoError(err)
+
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+
+	usageTotal := decimal.Zero
+	entitledDays, billedDays := 0, 0
+	for _, r := range rows {
+		if r.RevenueSource != types.RevenueSourceUsage {
+			continue
+		}
+		s.Equal(types.Marginal, r.DecompositionMode)
+		usageTotal = usageTotal.Add(r.NetAmount)
+		if r.NetAmount.IsZero() {
+			entitledDays++
+		} else {
+			billedDays++
+			s.Equal("12", r.NetAmount.String(), "billed days charge 1200 calls at $0.01")
+		}
+		if residual, identityOK := reconcileRow(r); !identityOK {
+			s.Failf("row identity broken", "day %s residual %s", r.Day, residual.String())
+		}
+	}
+	s.Equal(10, entitledDays, "days before the quota crossing stay entitled")
+	s.Equal(20, billedDays, "days after the crossing are billed")
+	s.Equal("240", usageTotal.String(), "usage rows must sum to the engine's overage charge (24000 x $0.01)")
 }
 
 // TestRollupSubscription_CouponDiscountReconciles: a 10% subscription-level

@@ -24,4 +24,12 @@ type Repository interface {
 	// RevertByInvoice writes a negating twin (NewRevert) for every FINAL fact
 	// of the invoice, atomically and idempotently. Returns rows written.
 	RevertByInvoice(ctx context.Context, invoiceID string) (int, error)
+
+	// ListByInvoiceID lists every fact stamped with the invoice, reverts
+	// included — the drift sweeper's view of what is booked for an invoice.
+	ListByInvoiceID(ctx context.Context, invoiceID string) ([]*RevenueFact, error)
+
+	// ListForExport pages facts recomputed after the watermark, ordered by
+	// (computed_at, id) so callers can resume from the last row they saw.
+	ListForExport(ctx context.Context, computedAfter time.Time, afterID string, limit int) ([]*RevenueFact, error)
 }

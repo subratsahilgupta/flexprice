@@ -15,3 +15,10 @@ type RevenueRollupWorkflowResult struct {
 	Rolled  int `json:"rolled"`
 	Skipped int `json:"skipped"`
 }
+
+// RevenueSweepResult mirrors the counts from RevenueService.SweepDrift.
+type RevenueSweepResult struct {
+	Checked   int `json:"checked"`
+	Drifted   int `json:"drifted"`
+	Corrected int `json:"corrected"`
+}

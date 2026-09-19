@@ -406,3 +406,88 @@ func (r *revenueFactRepository) RevertByInvoice(ctx context.Context, invoiceID s
 	SetSpanSuccess(span)
 	return written, nil
 }
+
+// ListByInvoiceID lists every fact stamped with the invoice, reverts included.
+func (r *revenueFactRepository) ListByInvoiceID(ctx context.Context, invoiceID string) ([]*revenuefact.RevenueFact, error) {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	span := StartRepositorySpan(ctx, "revenue_fact", "list_by_invoice", map[string]interface{}{
+		"tenant_id":      tenantID,
+		"environment_id": environmentID,
+		"invoice_id":     invoiceID,
+	})
+	defer FinishSpan(span)
+
+	rows, err := r.client.Reader(ctx).RevenueFact.Query().
+		Where(
+			entrevenuefact.TenantID(tenantID),
+			entrevenuefact.EnvironmentID(environmentID),
+			entrevenuefact.InvoiceID(invoiceID),
+		).
+		Order(ent.Asc(entrevenuefact.FieldDay)).
+		All(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		r.log.Error(ctx, "list revenue facts by invoice failed",
+			"error", err,
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+			"invoice_id", invoiceID,
+		)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list revenue facts by invoice").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return revenuefact.FromEntList(rows), nil
+}
+
+// ListForExport pages facts recomputed after the watermark, ordered by
+// (computed_at, id) for stable resumption.
+func (r *revenueFactRepository) ListForExport(ctx context.Context, computedAfter time.Time, afterID string, limit int) ([]*revenuefact.RevenueFact, error) {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	span := StartRepositorySpan(ctx, "revenue_fact", "list_for_export", map[string]interface{}{
+		"tenant_id":      tenantID,
+		"environment_id": environmentID,
+	})
+	defer FinishSpan(span)
+
+	q := r.client.Reader(ctx).RevenueFact.Query().
+		Where(
+			entrevenuefact.TenantID(tenantID),
+			entrevenuefact.EnvironmentID(environmentID),
+		)
+	if afterID != "" {
+		// Resume mid-instant: rows at the watermark instant with a larger id,
+		// plus everything strictly after it.
+		q = q.Where(entrevenuefact.Or(
+			entrevenuefact.And(entrevenuefact.ComputedAt(computedAfter), entrevenuefact.IDGT(afterID)),
+			entrevenuefact.ComputedAtGT(computedAfter),
+		))
+	} else if !computedAfter.IsZero() {
+		q = q.Where(entrevenuefact.ComputedAtGT(computedAfter))
+	}
+
+	rows, err := q.
+		Order(ent.Asc(entrevenuefact.FieldComputedAt), ent.Asc(entrevenuefact.FieldID)).
+		Limit(limit).
+		All(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		r.log.Error(ctx, "list revenue facts for export failed",
+			"error", err,
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+		)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list revenue facts for export").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return revenuefact.FromEntList(rows), nil
+}

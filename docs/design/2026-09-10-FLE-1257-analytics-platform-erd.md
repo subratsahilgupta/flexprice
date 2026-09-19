@@ -675,12 +675,15 @@ workstream, and the recognition engine builds on ClickHouse once sync is live.
 - Scheduling: hourly Temporal schedule, config kill switch in the activity, per-tenant opt-in setting, per-environment indexed scan, `Since` backfill input.
 - Reconciliation asserts at row (marginal) / line-item / invoice / FINAL grain — logged, never blocking. Only remaining policy skip: multi-period commitments (Q3).
 
-**In flight as independent PRs:**
+**Shipped — Phase 2b (trust) and 2c (export):**
 
-1. **Phase 2b — trust**: drift sweeper, accounting-period lock (tenant setting, see Q6) + `lock_adjusted_day` posting, Temporal-durable hooks.
-2. **Phase 2c — export**: snapshot + incremental tenant export with data dictionary — the first tenant-facing surface, while PeerDB → CH (B) lands in parallel (staging sync already near-realtime).
+- **Drift sweeper** (`SweepDrift`, second activity of the daily rollup workflow): re-checks every invoice finalized or voided in the lookback window against its booked facts; drift kinds `missing_flip` / `amount_mismatch` / `missing_revert` are logged, and repair (revert → re-derive from the invoice → flip) runs only under `analytics.revenue_rollup.auto_correct` (default off — flag, don't fix). An invoice already corrected once flags for manual intervention rather than risk double-booking. The sweep makes the goroutine lifecycle hooks eventually consistent, which is why they deliberately stay goroutines instead of Temporal workflows.
+- **Grant-billed usage splits per day** (best effort): usage inside the grants' merged quota-crossed windows is billed, the rest entitled — marginal rows show "out of X entitled, Y used today" even when nothing is billed. The money shape scales to the engine's charge exactly (snapshot drift lands in `tier_delta`), and lines the engine's own grant guard rejects use the normal curve; an unknowable shape falls back to period_only.
+- **Tenant export** (`GET /v1/analytics/revenue-facts/export`): CSV stream ordered by `(computed_at, id)`; no params = snapshot, `since` = incremental from the caller's last watermark; gated on the tenant's opt-in setting. Column dictionary + consumer guardrails: `docs/export/revenue-facts.md`. This is the tenant-facing surface while PeerDB → CH (B) lands in parallel (staging sync already near-realtime).
+- **Lifecycle covered by unit tests end to end** (`revenue_e2e_test.go`): repeated ingestion incl. backdated events → rollups at different times (versions bump in place) → finalize/flip → void/revert → re-finalize via the invoice fallback → sweep detects and repairs a missing flip → clean second sweep → export snapshot, incremental and denial.
+- Cadence: the rollup + sweep schedule runs daily (03:00 UTC by default; interval configurable).
 
-**Deferred (picked up later):** multi-period commitment prior-base (Q3); daily-grain splitting for grant-billed and commitment-reduced usage (period_only keeps them correct meanwhile); Phase 3 serving; Phase 4 recognition.
+**Deferred (picked up later):** multi-period commitment prior-base (Q3 — decided: out of scope for revenue_facts until a rollup-maintained prior base is designed; such subscriptions are skipped); accounting-period lock + `lock_adjusted_day` posting (Q6 — will be a tenant setting, docs only for now); daily-grain splitting for commitment-reduced (overage) usage; cleanup of stale PROVISIONAL rows on subscriptions that cancel before their period ever invoices (the sweep is invoice-anchored and never sees them — harmless to sums once consumers filter on status, but worth a janitor); invoices finalized more than the sweep lookback after creation need a manual `Since` backfill; Phase 3 serving; Phase 4 recognition.
 
 ---
 

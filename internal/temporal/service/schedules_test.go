@@ -46,7 +46,7 @@ func TestRevenueRollupScheduleInterval(t *testing.T) {
 		return types.ScheduleConfig{}
 	}
 
-	require.Equal(t, time.Hour, find(nil).Interval, "nil cfg falls back to the 1h default")
+	require.Equal(t, 24*time.Hour, find(nil).Interval, "nil cfg falls back to the daily default")
 
 	cfg := &config.Configuration{}
 	cfg.Analytics.RevenueRollup.Interval = 30 * time.Minute

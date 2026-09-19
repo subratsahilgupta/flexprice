@@ -17,6 +17,18 @@ func rollupDirtyStub(_ context.Context, _ time.Time) (*cronModels.RevenueRollupW
 	return nil, nil
 }
 
+func sweepDriftStub(_ context.Context, _ time.Time) (*cronModels.RevenueSweepResult, error) {
+	return nil, nil
+}
+
+// registerSweepOK registers the sweep activity with a permissive expectation —
+// tests that assert on the rollup window don't care about the sweep's own.
+func registerSweepOK(env *testsuite.TestWorkflowEnvironment) {
+	env.RegisterActivityWithOptions(sweepDriftStub, activity.RegisterOptions{Name: ActivitySweepDrift})
+	env.OnActivity(ActivitySweepDrift, mock.Anything, mock.Anything).
+		Return(&cronModels.RevenueSweepResult{}, nil).Maybe()
+}
+
 func TestRevenueRollupWorkflow_Success(t *testing.T) {
 	ts := &testsuite.WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
@@ -27,6 +39,7 @@ func TestRevenueRollupWorkflow_Success(t *testing.T) {
 	env.RegisterActivityWithOptions(rollupDirtyStub, activity.RegisterOptions{
 		Name: ActivityRollupDirty,
 	})
+	registerSweepOK(env)
 
 	var capturedSince time.Time
 	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
@@ -53,6 +66,7 @@ func TestRevenueRollupWorkflow_DefaultInterval(t *testing.T) {
 	env.RegisterActivityWithOptions(rollupDirtyStub, activity.RegisterOptions{
 		Name: ActivityRollupDirty,
 	})
+	registerSweepOK(env)
 
 	var capturedSince time.Time
 	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
@@ -77,6 +91,7 @@ func TestRevenueRollupWorkflow_ActivityError(t *testing.T) {
 	env.RegisterActivityWithOptions(rollupDirtyStub, activity.RegisterOptions{
 		Name: ActivityRollupDirty,
 	})
+	registerSweepOK(env)
 	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.Anything).
 		Return(nil, assert.AnError)
 
@@ -98,6 +113,7 @@ func TestRevenueRollupWorkflow_ExplicitSince(t *testing.T) {
 	env.RegisterActivityWithOptions(rollupDirtyStub, activity.RegisterOptions{
 		Name: ActivityRollupDirty,
 	})
+	registerSweepOK(env)
 
 	var capturedSince time.Time
 	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
@@ -109,4 +125,30 @@ func TestRevenueRollupWorkflow_ExplicitSince(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	require.True(t, capturedSince.Equal(want), "explicit Since must be passed through verbatim, got %s", capturedSince)
+}
+
+// TestRevenueRollupWorkflow_SweepWindow proves the sweep runs after the
+// rollup with the wider lookback window.
+func TestRevenueRollupWorkflow_SweepWindow(t *testing.T) {
+	ts := &testsuite.WorkflowTestSuite{}
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.RegisterActivityWithOptions(rollupDirtyStub, activity.RegisterOptions{Name: ActivityRollupDirty})
+	env.RegisterActivityWithOptions(sweepDriftStub, activity.RegisterOptions{Name: ActivitySweepDrift})
+	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.Anything).
+		Return(&cronModels.RevenueRollupWorkflowResult{}, nil)
+
+	var sweepSince time.Time
+	env.OnActivity(ActivitySweepDrift, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
+		sweepSince = since
+		return true
+	})).Return(&cronModels.RevenueSweepResult{Checked: 2, Drifted: 1}, nil)
+
+	beforeStart := time.Now()
+	env.ExecuteWorkflow(RevenueRollupWorkflow, cronModels.RevenueRollupInput{Interval: time.Hour})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.WithinDuration(t, beforeStart.Add(-driftSweepLookback), sweepSince, 5*time.Second,
+		"the sweep must window on the wider lookback, not the rollup interval")
 }
