@@ -655,6 +655,27 @@ Concretely, this is the billed-vs-recognized split the fixed-charge example make
 
 **Phase 2 gate:** do not expose revenue breakdowns until reconciliation (invariants 1–2) has been green for a full cycle.
 
+### 14.1 Status after Phase-2 slice 1 (PR #2872)
+
+**Shipped — the write path end to end, shadow-only:**
+
+- `revenue_facts` table (Postgres) with the provisional-grain partial unique index (now including `sub_line_item_id`), Ent entity, dbmate migration.
+- Rollup: `RevenueService.RollupSubscription` re-runs the billing preview under the dedicated `ReferencePointRevenueFacts`, prices the cumulative daily curve (`buildUsageCurve` — answers Q2: one cumulative `meter_usage` read + pure `CalculateCost` re-pricing, no per-day engine calls), and decomposes `usage`/`fixed`/`commitment_trueup` into marginal or period_only rows. Inputs (prices, entitlement limits) hydrate once per pass.
+- Lifecycle: finalize → FINAL flip with invoice stamps and JIT fallback (rows derived from the invoice when none exist); void → `REVERTED` contra rows; both async best-effort hooks on every production status-transition path (incl. the payment-processor auto-finalize).
+- Scheduling: hourly Temporal schedule (always declared); deployment kill switch read at activity start (`analytics.revenue_rollup.enabled`); per-tenant opt-in via the `revenue_analytics_config` setting; per-environment scan on the subscriptions index; `Since` input for manual backfills.
+- Reconciliation asserts at row / line-item / invoice / FINAL grain — logged (`revenue_reconciliation_mismatch`), never blocking.
+- Deliberate skips, logged: discounted subscriptions, multi-period commitments, single-period overage splits.
+
+**Not yet built (blocking "usable by tenants"):**
+
+1. **Serving:** the `revenue` metric in the view translator + PeerDB sync of `revenue_facts` into CH (B) — nothing reads the table yet (§9).
+2. **Discount decomposition** — today any coupon skips the whole subscription; real tenants have coupons, so coverage is the first gap to close (split line/invoice discounts into `line_discount`/`invoice_discount`).
+3. **Commitment-aware usage decomposition** (single-period overage split) and the **multi-period commitment prior-base** (Q3).
+4. **Drift sweeper** (Phase 4 §8.1): compare re-derived revenue against stamped FINAL facts; today a lost flip or backdated change surfaces only via reconciliation logs.
+5. **Accounting-period locks** + `lock_adjusted_day` posting, recognition engine, warehouse export, breakage (Phase 4).
+
+**Current posture:** merged behavior is dual-gated (config kill switch off + tenant setting off) and write-only — safe to ship now and run the §14 Phase-2 silent cycle on internal tenants while (1)–(3) are built.
+
 ---
 
 ## 15. Open questions
