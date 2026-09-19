@@ -23,8 +23,9 @@ const entitlementGrantQuotaScale = 15
 type grantProrationSource string
 
 const (
-	grantProrationSourceAddonAttach grantProrationSource = "addon_attach"
-	grantProrationSourceAddonDetach grantProrationSource = "addon_detach"
+	grantProrationSourceAddonAttach     grantProrationSource = "addon_attach"
+	grantProrationSourceAddonDetach     grantProrationSource = "addon_detach"
+	grantProrationSourceEntitlementGone grantProrationSource = "entitlement_deleted"
 )
 
 func (s grantProrationSource) String() string { return string(s) }
@@ -310,7 +311,7 @@ func (s *subscriptionService) handleGrantsForRemovedECs(
 		// Remaining() is also zero for an unlimited window, which is not "spent" —
 		// keeping it open would leave the customer with unlimited, zero-billed usage
 		// on a feature whose allowance was just removed.
-		if !pooled.Unlimited && pooled.Remaining().IsZero() {
+		if remaining, bounded := pooled.Remaining(); bounded && remaining.IsZero() {
 			s.Logger.Info(ctx, "keeping the spent entitlement grant window open; nothing to carry forward",
 				"subscription_id", sub.ID,
 				"grant_id", pooled.ID,

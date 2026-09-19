@@ -83,15 +83,19 @@ func (g *EntitlementGrant) Overage() decimal.Decimal {
 // ran past its quota hands nothing forward, so debt never crosses into a successor.
 // Unlimited windows return zero: there is no balance to hand a successor, and a
 // caller must branch on Unlimited before presenting this as a number.
-func (g *EntitlementGrant) Remaining() decimal.Decimal {
+// Remaining reports what is left of the allowance, and whether there is a ceiling to
+// measure against at all. An unlimited window returns ok=false rather than zero, which
+// would read as exhausted — the caller has to branch.
+func (g *EntitlementGrant) Remaining() (decimal.Decimal, bool) {
 	if g == nil || g.Unlimited {
-		return decimal.Zero
+		return decimal.Zero, false
 	}
 	remaining := g.Quota.Sub(g.Usage)
 	if remaining.IsNegative() {
-		return decimal.Zero
+		// Exhausted, not unbounded: the ceiling exists, it has been passed.
+		return decimal.Zero, true
 	}
-	return remaining
+	return remaining, true
 }
 
 func (g *EntitlementGrant) Validate() error {

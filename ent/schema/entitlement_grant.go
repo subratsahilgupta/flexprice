@@ -98,8 +98,7 @@ func (EntitlementGrant) Fields() []ent.Field {
 
 		field.Time("valid_to"),
 
-		// Distinct from BaseMixin's row-level `status`. Grant lifecycle: active → exhausted →
-		// expired, plus `superseded` for a window an entitlement edit replaced.
+		// Distinct from BaseMixin's row-level `status`. Grant lifecycle: active → exhausted → expired.
 		field.String("grant_status").
 			SchemaType(map[string]string{
 				"postgres": "varchar(20)",

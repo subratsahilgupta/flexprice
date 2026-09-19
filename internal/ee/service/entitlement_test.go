@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
@@ -42,6 +43,7 @@ func (s *EntitlementServiceSuite) setupService() {
 		EntitlementGrantRepo: stores.EntitlementGrantRepo,
 		PlanRepo:             stores.PlanRepo,
 		SubRepo:              stores.SubscriptionRepo,
+		AddonRepo:            stores.AddonRepo,
 		FeatureRepo:          stores.FeatureRepo,
 		MeterRepo:            testutil.NewInMemoryMeterStore(),
 		WebhookPublisher:     s.GetWebhookPublisher(),
@@ -141,7 +143,11 @@ func (s *EntitlementServiceSuite) TestCreateEntitlement() {
 		s.Equal(types.ENTITLEMENT_ENTITY_TYPE_PLAN, resp.Entitlement.EntityType)
 		s.Equal(testPlan.ID, resp.Entitlement.EntityID)
 		s.Equal(req.FeatureID, resp.Entitlement.FeatureID)
-		s.Equal(*req.UsageLimit, *resp.Entitlement.UsageLimit)
+		// A metered entitlement is put on the grant model at creation: the usage_limit
+		// becomes the quota and is cleared, so the row carries one answer.
+		s.True(resp.Entitlement.HasGrantConfig())
+		s.Equal("1000", resp.Entitlement.GrantQuota.String())
+		s.Nil(resp.Entitlement.UsageLimit)
 		s.Equal(req.UsageResetPeriod, resp.Entitlement.UsageResetPeriod)
 	})
 
@@ -1285,4 +1291,154 @@ func (s *EntitlementServiceSuite) TestGrantSiblingCoherenceIgnoresUnrelatedScope
 		s.NoError(err)
 		s.Equal("250", got.GrantQuota.String())
 	})
+}
+
+// A subscription EC with no parent does not replace the plan's — both apply to that
+// subscription and pool into one window — so the two must stay coherent. Skipping
+// every subscription-scoped row let a plan edit contradict one of them.
+func (s *EntitlementServiceSuite) TestGrantCoherenceComparesNetNewSubscriptionECs() {
+	ctx := s.GetContext()
+
+	m := &meter.Meter{
+		ID:          "meter-netnew",
+		Name:        "Net-new Meter",
+		EventName:   "api_calls",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.service.(*entitlementService).MeterRepo.(*testutil.InMemoryMeterStore).CreateMeter(ctx, m))
+
+	f := &feature.Feature{ID: "feat-netnew", Name: "Net-new", Type: types.FeatureTypeMetered, MeterID: m.ID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().FeatureRepo.Create(ctx, f))
+
+	p := &plan.Plan{ID: "plan-netnew", Name: "Net-new Plan", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, p))
+
+	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, &subscription.Subscription{
+		ID: "sub-netnew", PlanID: p.ID, CustomerID: "cust-netnew",
+		SubscriptionStatus: types.SubscriptionStatusActive, Currency: "usd",
+		BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+		StartDate: time.Now().UTC(), BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+
+	grant := func(mode types.EntitlementAggregationMode) dto.CreateEntitlementRequest {
+		return dto.CreateEntitlementRequest{
+			FeatureID: f.ID, FeatureType: types.FeatureTypeMetered, IsEnabled: true,
+			GrantMeasure:            types.EntitlementGrantMeasureQuantity,
+			GrantQuota:              lo.ToPtr(decimal.NewFromInt(1000)),
+			GrantDurationValue:      lo.ToPtr(1),
+			GrantDurationUnit:       types.EntitlementGrantDurationUnitHour,
+			GrantAllocationBehavior: types.EntitlementGrantAllocationBehaviorFirstUsage,
+			AggregationMode:         mode,
+		}
+	}
+
+	planReq := grant(types.EntitlementAggregationModeAdditive)
+	planReq.EntityType, planReq.EntityID = types.ENTITLEMENT_ENTITY_TYPE_PLAN, p.ID
+	planEC, err := s.service.CreateEntitlement(ctx, planReq)
+	s.Require().NoError(err)
+
+	// Net-new: no parent, so it pools with the plan's rather than replacing it.
+	netNew := grant(types.EntitlementAggregationModeAdditive)
+	netNew.EntityType, netNew.EntityID = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION, "sub-netnew"
+	_, err = s.service.CreateEntitlement(ctx, netNew)
+	s.Require().NoError(err)
+
+	// Editing the plan into a conflicting mode is now caught.
+	_, err = s.service.UpdateEntitlement(ctx, planEC.ID, dto.UpdateEntitlementRequest{
+		AggregationMode: lo.ToPtr(types.EntitlementAggregationModeParallel),
+	})
+	s.Error(err, "a plan edit must not contradict an entitlement it pools with")
+}
+
+// An override of one EC still pools with a different EC on the same feature: it
+// replaces only its own parent. Skipping every row that had a parent hid that.
+func (s *EntitlementServiceSuite) TestGrantCoherenceComparesOverrideOfAnotherEC() {
+	ctx := s.GetContext()
+
+	m := &meter.Meter{
+		ID: "meter-otherec", Name: "Other EC", EventName: "api_calls",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.service.(*entitlementService).MeterRepo.(*testutil.InMemoryMeterStore).CreateMeter(ctx, m))
+	f := &feature.Feature{ID: "feat-otherec", Name: "Other EC", Type: types.FeatureTypeMetered, MeterID: m.ID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().FeatureRepo.Create(ctx, f))
+	p := &plan.Plan{ID: "plan-otherec", Name: "Other EC Plan", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, p))
+	a := &addon.Addon{ID: "addon-otherec", Name: "Other EC Addon", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().AddonRepo.Create(ctx, a))
+	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, &subscription.Subscription{
+		ID: "sub-otherec", PlanID: p.ID, CustomerID: "cust-otherec",
+		SubscriptionStatus: types.SubscriptionStatusActive, Currency: "usd",
+		BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+		StartDate: time.Now().UTC(), BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+
+	grant := func(mode types.EntitlementAggregationMode) dto.CreateEntitlementRequest {
+		return dto.CreateEntitlementRequest{
+			FeatureID: f.ID, FeatureType: types.FeatureTypeMetered, IsEnabled: true,
+			GrantMeasure:            types.EntitlementGrantMeasureQuantity,
+			GrantQuota:              lo.ToPtr(decimal.NewFromInt(500)),
+			GrantDurationValue:      lo.ToPtr(1),
+			GrantDurationUnit:       types.EntitlementGrantDurationUnitHour,
+			GrantAllocationBehavior: types.EntitlementGrantAllocationBehaviorFirstUsage,
+			AggregationMode:         mode,
+		}
+	}
+
+	addonReq := grant(types.EntitlementAggregationModeAdditive)
+	addonReq.EntityType, addonReq.EntityID = types.ENTITLEMENT_ENTITY_TYPE_ADDON, a.ID
+	addonEC, err := s.service.CreateEntitlement(ctx, addonReq)
+	s.Require().NoError(err)
+
+	// The addon's EC is overridden for this subscription. It replaces the ADDON's row,
+	// not the plan's.
+	overrideReq := grant(types.EntitlementAggregationModeAdditive)
+	overrideReq.EntityType, overrideReq.EntityID = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION, "sub-otherec"
+	overrideReq.ParentEntitlementID = lo.ToPtr(addonEC.ID)
+	_, err = s.service.CreateEntitlement(ctx, overrideReq)
+	s.Require().NoError(err)
+
+	// A plan EC on the same feature pools with that override, so a conflicting mode
+	// has to be rejected.
+	planReq := grant(types.EntitlementAggregationModeParallel)
+	planReq.EntityType, planReq.EntityID = types.ENTITLEMENT_ENTITY_TYPE_PLAN, p.ID
+	_, err = s.service.CreateEntitlement(ctx, planReq)
+	s.Error(err, "an override of the addon's EC still pools with the plan's")
+}
+
+// A pricing ladder: bounded on one plan, unlimited on another, same feature. Two plans
+// never apply to the same subscription, so their allowances have nothing to agree on.
+func (s *EntitlementServiceSuite) TestGrantCoherenceAllowsDifferentPlansToDiffer() {
+	ctx := s.GetContext()
+	m := &meter.Meter{
+		ID: "meter-ladder", Name: "Ladder", EventName: "api_calls",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.service.(*entitlementService).MeterRepo.(*testutil.InMemoryMeterStore).CreateMeter(ctx, m))
+	f := &feature.Feature{ID: "feat-ladder", Name: "Ladder", Type: types.FeatureTypeMetered, MeterID: m.ID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().FeatureRepo.Create(ctx, f))
+	for _, id := range []string{"plan-pro", "plan-ent"} {
+		s.NoError(s.GetStores().PlanRepo.Create(ctx, &plan.Plan{ID: id, Name: id, BaseModel: types.GetDefaultBaseModel(ctx)}))
+	}
+
+	base := dto.CreateEntitlementRequest{
+		FeatureID: f.ID, FeatureType: types.FeatureTypeMetered, IsEnabled: true,
+		EntityType:        types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+		GrantMeasure:      types.EntitlementGrantMeasureQuantity,
+		GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod,
+		AggregationMode:   types.EntitlementAggregationModeAdditive,
+	}
+
+	pro := base
+	pro.EntityID, pro.GrantQuota = "plan-pro", lo.ToPtr(decimal.NewFromInt(10000))
+	_, err := s.service.CreateEntitlement(ctx, pro)
+	s.NoError(err)
+
+	ent := base
+	ent.EntityID, ent.GrantUnlimited = "plan-ent", true
+	_, err = s.service.CreateEntitlement(ctx, ent)
+	s.NoError(err, "a different plan may grant unlimited where this one is bounded")
 }

@@ -43,9 +43,9 @@ type EntitlementGrantService interface {
 	GrantStateByFeature(ctx context.Context, sub *subscription.Subscription, at time.Time) (map[string]*dto.GrantState, error)
 
 	CloseEntitlementGrants(ctx context.Context, grants []*entitlementgrant.EntitlementGrant, closeAt time.Time) (map[string]*entitlementgrant.EntitlementGrant, error)
-	// SupersedeEntitlementGrants re-issues live windows at a new allowance after an
-	// entitlement edit. The replaced rows stay as history but stop billing.
-	SupersedeEntitlementGrants(ctx context.Context, grants []*entitlementgrant.EntitlementGrant, at time.Time, target SupersedeTarget) ([]*entitlementgrant.EntitlementGrant, error)
+	// ReissueEntitlementGrants closes the live windows and reopens one carrying the
+	// unspent balance plus the change in allowance.
+	ReissueEntitlementGrants(ctx context.Context, req ReissueEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
 	OpenFeatureBasedEntitlementGrants(ctx context.Context, reqs []OpenFeatureBasedEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
 }
 
@@ -144,162 +144,80 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 	return closed, nil
 }
 
-// SupersedeEntitlementGrants re-issues each live window at a new allowance so an edit
-// applies now. The replaced row is closed and marked superseded; the successor covers
-// the rest of the window at what is left of the new allowance.
-// SupersedeTarget is the allowance a replaced window hands over to. EntitlementConfigID
-// is empty for an edit in place, and names the other config when the rule governing the
-// customer changes hands.
-type SupersedeTarget struct {
-	EntitlementConfigID string
-	Quota               *decimal.Decimal
-	Unlimited           bool
+// ReissueEntitlementGrantsRequest re-cuts a feature's live windows after its allowance
+// changed. Delta is the change — incoming quota less outgoing — so a raise adds and a
+// cut subtracts from what the closed window had left.
+type ReissueEntitlementGrantsRequest struct {
+	FeatureID string
+	Grants    []*entitlementgrant.EntitlementGrant
+	ECs       []*entitlement.Entitlement
+	Delta     decimal.Decimal
+	Unlimited bool
+	At        time.Time
+	Source    string
 }
 
-func (s *entitlementGrantService) SupersedeEntitlementGrants(
+// ReissueEntitlementGrants closes what is live and opens a successor for the rest of the
+// window, the same shape an addon attach uses: each row measures and bills its own span,
+// so nothing has to be excluded from the fold and no usage figure is carried.
+func (s *entitlementGrantService) ReissueEntitlementGrants(
 	ctx context.Context,
-	grants []*entitlementgrant.EntitlementGrant,
-	at time.Time,
-	target SupersedeTarget,
+	req ReissueEntitlementGrantsRequest,
 ) ([]*entitlementgrant.EntitlementGrant, error) {
-	quota, unlimited := target.Quota, target.Unlimited
-	if unlimited == (quota != nil) {
-		return nil, ierr.NewError("supersede needs exactly one of quota or unlimited").
-			WithHint("An allowance either has a ceiling or does not").
-			Mark(ierr.ErrValidation)
+	live := lo.Filter(req.Grants, func(g *entitlementgrant.EntitlementGrant, _ int) bool {
+		return g != nil && g.ValidTo.After(req.At) && req.At.After(g.ValidFrom)
+	})
+	if len(live) == 0 {
+		return nil, nil
 	}
 
-	successors := make([]*entitlementgrant.EntitlementGrant, 0, len(grants))
-
-	// One transaction: a crash between opening the successor and retiring the window it
-	// replaces would leave the slot holding two live windows.
+	var opened []*entitlementgrant.EntitlementGrant
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		opened, err := s.supersedeWindows(txCtx, grants, at, target)
+		closedByID, err := s.CloseEntitlementGrants(txCtx, live, req.At)
 		if err != nil {
 			return err
 		}
-		successors = opened
-		return nil
+
+		reqs := make([]OpenFeatureBasedEntitlementGrantsRequest, 0, len(live))
+		for _, g := range live {
+			closed := closedByID[g.ID]
+			if closed == nil {
+				continue
+			}
+			reqs = append(reqs, OpenFeatureBasedEntitlementGrantsRequest{
+				FeatureID: req.FeatureID,
+				Closed:    closed,
+				New: entitlementgrant.NewEntitlementGrantBuilder(g).
+					WithQuota(req.Delta).
+					WithUnlimited(req.Unlimited).
+					WithWindow(closed.ValidTo, g.ValidTo).
+					WithMetadata(types.Metadata{
+						"reissue_source": req.Source,
+						"reissued_from":  g.ID,
+						"reissue_delta":  req.Delta.String(),
+					}).
+					Build(),
+				ExistingECs: req.ECs,
+			})
+		}
+		if len(reqs) == 0 {
+			return nil
+		}
+
+		opened, err = s.OpenFeatureBasedEntitlementGrants(txCtx, reqs)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	return successors, nil
-}
 
-func (s *entitlementGrantService) supersedeWindows(
-	ctx context.Context,
-	grants []*entitlementgrant.EntitlementGrant,
-	at time.Time,
-	target SupersedeTarget,
-) ([]*entitlementgrant.EntitlementGrant, error) {
-	quota, unlimited := target.Quota, target.Unlimited
-	successors := make([]*entitlementgrant.EntitlementGrant, 0, len(grants))
-	for _, g := range grants {
-		if g == nil || g.GrantStatus == types.EntitlementGrantStatusSuperseded {
-			continue
-		}
-		// Settled already: the next window opens at the new config on its own.
-		if !g.ValidTo.After(at) || !at.After(g.ValidFrom) {
-			continue
-		}
-
-		// Each window consumed a different amount, so the balance is computed per window.
-		windowQuota := quota
-		if !unlimited {
-			remaining := quota.Sub(g.Usage)
-			if !remaining.IsPositive() {
-				// A hand-over retires the window anyway: the outgoing rule no longer
-				// governs this customer.
-				if target.EntitlementConfigID != "" {
-					if err := s.retireSupersededWindow(ctx, g, at); err != nil {
-						return nil, err
-					}
-					s.Logger.Info(ctx, "retired the outgoing rule's window with no successor; it had already consumed the incoming allowance",
-						"grant_id", g.ID,
-						"new_quota", quota.String(),
-						"usage", g.Usage.String(),
-						"target_config_id", target.EntitlementConfigID)
-					continue
-				}
-
-				s.Logger.Info(ctx, "entitlement cut below consumed usage; the new allowance applies from the next window",
-					"grant_id", g.ID,
-					"new_quota", quota.String(),
-					"usage", g.Usage.String(),
-					"window_ends", g.ValidTo)
-				continue
-			}
-			windowQuota = lo.ToPtr(remaining)
-		}
-
-		successor, err := s.openSupersedingWindow(ctx, g, at, windowQuota, target)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.retireSupersededWindow(ctx, g, at); err != nil {
-			return nil, err
-		}
-
-		s.Logger.Info(ctx, "superseded entitlement grant window",
-			"grant_id", g.ID,
-			"successor_id", successor.ID,
-			"superseded_at", at,
-			"old_quota", g.Quota.String(),
-			"usage", g.Usage.String(),
-			"unlimited", unlimited,
-			"target_config_id", target.EntitlementConfigID)
-
-		successors = append(successors, successor)
-	}
-
-	return successors, nil
-}
-
-func (s *entitlementGrantService) openSupersedingWindow(
-	ctx context.Context,
-	g *entitlementgrant.EntitlementGrant,
-	at time.Time,
-	quota *decimal.Decimal,
-	target SupersedeTarget,
-) (*entitlementgrant.EntitlementGrant, error) {
-	unlimited := target.Unlimited
-	b := entitlementgrant.NewEntitlementGrantBuilder(g).
-		WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT_GRANT)).
-		WithWindow(at, g.ValidTo).
-		WithUsage(decimal.Zero).
-		WithGrantStatus(types.EntitlementGrantStatusActive).
-		WithLastComputedAt(nil).
-		WithQuotaCrossedAt(nil).
-		WithUnlimited(unlimited).
-		WithMetadata(types.Metadata{"superseded_from": g.ID}).
-		WithBaseModel(types.GetDefaultBaseModel(ctx))
-	if target.EntitlementConfigID != "" {
-		b = b.WithEntitlementConfigID(target.EntitlementConfigID)
-	}
-	if unlimited {
-		b = b.WithQuota(decimal.Zero)
-	} else {
-		b = b.WithQuota(*quota)
-	}
-	return s.EntitlementGrantRepo.Create(ctx, b.Build())
-}
-
-// retireSupersededWindow closes the replaced row and flags it. Close first, so a partial
-// failure leaves a row that still bills rather than one that holds the slot billing nothing.
-func (s *entitlementGrantService) retireSupersededWindow(
-	ctx context.Context,
-	g *entitlementgrant.EntitlementGrant,
-	at time.Time,
-) error {
-	if err := s.EntitlementGrantRepo.CloseWindow(ctx, g.ID, at); err != nil {
-		return err
-	}
-	return s.EntitlementGrantRepo.UpdateSnapshot(ctx,
-		entitlementgrant.NewEntitlementGrantBuilder(g).
-			WithGrantStatus(types.EntitlementGrantStatusSuperseded).
-			Build(),
-	)
+	s.Logger.Info(ctx, "re-issued entitlement grant windows",
+		"feature_id", req.FeatureID,
+		"closed", len(live),
+		"opened", len(opened),
+		"delta", req.Delta.String(),
+		"source", req.Source)
+	return opened, nil
 }
 
 func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
@@ -328,6 +246,7 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 		slotECID := grantCandidatesForFeature(featureECs)[0].ec.ID
 		validFrom := req.New.ValidFrom
 		quota := req.New.Quota
+		unlimited := req.New.Unlimited
 
 		if req.Closed != nil {
 			if !validFrom.IsZero() && !validFrom.Equal(req.Closed.ValidTo) {
@@ -342,7 +261,13 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 					Mark(ierr.ErrValidation)
 			}
 
-			quota = req.Closed.Remaining().Add(req.New.Quota)
+			// An unlimited window carries no balance to add, and a successor built from
+			// one stays unlimited rather than collapsing to the incoming quota.
+			carried, bounded := req.Closed.Remaining()
+			if !bounded {
+				unlimited = true
+			}
+			quota = carried.Add(req.New.Quota)
 		} else {
 			for _, ec := range req.ExistingECs {
 				quota = quota.Add(lo.FromPtr(ec.GrantQuota))
@@ -357,7 +282,7 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 			continue
 		}
 
-		if !quota.IsPositive() {
+		if !unlimited && !quota.IsPositive() {
 			s.Logger.Info(ctx, "skipping entitlement grant open; resulting quota is not positive",
 				"feature_id", req.FeatureID,
 				"quota", quota.String())
@@ -368,6 +293,7 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 			WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT_GRANT)).
 			WithEntitlementConfigID(slotECID).
 			WithQuota(quota).
+			WithUnlimited(unlimited).
 			WithWindow(validFrom, req.New.ValidTo).
 			WithGrantStatus(types.EntitlementGrantStatusActive).
 			WithUsage(decimal.Zero).
@@ -1057,15 +983,19 @@ func (s *entitlementService) grantMeterEligibility(
 	return nil
 }
 
-// isForeignSubscriptionEC reports whether sib belongs to a different subscription than e.
-func isForeignSubscriptionEC(sib, e *entitlement.Entitlement) bool {
-	if sib.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION {
+// sharesNoResolvedSet reports whether sib can never apply alongside e: a subscription
+// has one plan, and another subscription's rows are someone else's. Addons are left in,
+// since several can be attached at once. The replace relationship — e's own parent, or
+// an override of e — is handled by the caller.
+//
+// Approximate on purpose. Whether a given subscription runs the plan sib belongs to is
+// a query per sibling, so that pairing stays in the comparison.
+func sharesNoResolvedSet(sib, e *entitlement.Entitlement) bool {
+	if sib.EntityType != e.EntityType || sib.EntityID == e.EntityID {
 		return false
 	}
-	if e.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION {
-		return true
-	}
-	return sib.EntityID != e.EntityID
+	return sib.EntityType == types.ENTITLEMENT_ENTITY_TYPE_PLAN ||
+		sib.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
 }
 
 // validateGrantSiblingCoherence keeps all grant ECs on a feature mutually
@@ -1093,8 +1023,7 @@ func (s *entitlementService) validateGrantSiblingCoherence(ctx context.Context, 
 		if sib.ID == parentID || lo.FromPtr(sib.ParentEntitlementID) == e.ID {
 			continue
 		}
-		// Two customers' overrides never land in the same resolved set.
-		if isForeignSubscriptionEC(sib, e) {
+		if sharesNoResolvedSet(sib, e) {
 			continue
 		}
 		// Mixing an unlimited contributor with a bounded one would silently void
@@ -1166,6 +1095,16 @@ func defaultedMode(m types.EntitlementAggregationMode) types.EntitlementAggregat
 // feature id. Covers every window overlapping the current billing period —
 // closed ones included — so the overage total matches what billing will fold.
 // A feature with no grant config simply has no entry.
+// remainingOf is the read-side shape: null for an unlimited window, since a number
+// there reads as a balance the customer does not have.
+func remainingOf(g *entitlementgrant.EntitlementGrant) *decimal.Decimal {
+	remaining, bounded := g.Remaining()
+	if !bounded {
+		return nil
+	}
+	return &remaining
+}
+
 func (s *entitlementGrantService) GrantStateByFeature(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -1207,14 +1146,10 @@ func (s *entitlementGrantService) GrantStateByFeature(
 			out[featureID] = state
 		}
 
-		// Totals mirror what billing folds, so a replaced window is excluded. It stays in
-		// Windows as history.
-		if g.GrantStatus.IsBillable() {
-			state.CycleTotals.Windows++
-			state.CycleTotals.TotalQuota = state.CycleTotals.TotalQuota.Add(g.Quota)
-			state.CycleTotals.TotalUsage = state.CycleTotals.TotalUsage.Add(g.Usage)
-			state.CycleTotals.TotalOverage = state.CycleTotals.TotalOverage.Add(g.Overage())
-		}
+		state.CycleTotals.Windows++
+		state.CycleTotals.TotalQuota = state.CycleTotals.TotalQuota.Add(g.Quota)
+		state.CycleTotals.TotalUsage = state.CycleTotals.TotalUsage.Add(g.Usage)
+		state.CycleTotals.TotalOverage = state.CycleTotals.TotalOverage.Add(g.Overage())
 
 		window := &dto.GrantWindowState{
 			GrantID:        g.ID,
@@ -1223,7 +1158,7 @@ func (s *entitlementGrantService) GrantStateByFeature(
 			Unlimited:      g.Unlimited,
 			Quota:          g.Quota,
 			Usage:          g.Usage,
-			Remaining:      g.Remaining(),
+			Remaining:      remainingOf(g),
 			ValidFrom:      g.ValidFrom,
 			ValidTo:        g.ValidTo,
 			Status:         g.GrantStatus,

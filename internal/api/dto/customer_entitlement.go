@@ -69,10 +69,11 @@ type GrantWindowState struct {
 	Measure types.EntitlementGrantMeasure `json:"measure"`
 	// Unlimited windows track usage but have no ceiling: quota and remaining are
 	// meaningless and a client must render "unlimited", not a number.
-	Unlimited bool                         `json:"unlimited"`
-	Quota     decimal.Decimal              `json:"quota" swaggertype:"string"`
-	Usage     decimal.Decimal              `json:"usage" swaggertype:"string"`
-	Remaining decimal.Decimal              `json:"remaining" swaggertype:"string"`
+	Unlimited bool            `json:"unlimited"`
+	Quota     decimal.Decimal `json:"quota" swaggertype:"string"`
+	Usage     decimal.Decimal `json:"usage" swaggertype:"string"`
+	// Remaining is null on an unlimited window: there is no ceiling to measure against.
+	Remaining *decimal.Decimal             `json:"remaining,omitempty" swaggertype:"string"`
 	ValidFrom time.Time                    `json:"valid_from"`
 	ValidTo   time.Time                    `json:"valid_to"`
 	Status    types.EntitlementGrantStatus `json:"status"`
