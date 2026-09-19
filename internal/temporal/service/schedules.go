@@ -140,7 +140,8 @@ func AllTemporalScheduleConfigs(cfg *config.Configuration) []types.ScheduleConfi
 			TaskQueue: types.TemporalTaskQueueInvoice,
 		},
 		{
-			// Off by default — see analytics.revenue_rollup.enabled and isScheduleEnabled.
+			// Always declared; analytics.revenue_rollup.enabled acts as a kill
+			// switch inside RollupDirtyActivity, and tenants opt in via settings.
 			ID:        types.ScheduleIDRevenueRollup,
 			Interval:  revenueRollupInterval,
 			Workflow:  cronWorkflows.RevenueRollupWorkflow,
@@ -153,63 +154,16 @@ func AllTemporalScheduleConfigs(cfg *config.Configuration) []types.ScheduleConfi
 // defaultRevenueRollupScheduleInterval is used when analytics.revenue_rollup.interval is unset.
 const defaultRevenueRollupScheduleInterval = time.Hour
 
-// EnsureSchedules idempotently creates or updates every configured Temporal server schedule
-// that isScheduleEnabled allows. A disabled schedule is skipped entirely — no Describe/Create/Update
-// call is made for it — so booting with a flag off never touches the Temporal server for that schedule.
-// It returns the first error encountered; per-schedule outcomes are logged only.
+// EnsureSchedules idempotently creates or updates every configured Temporal
+// server schedule. It returns the first error encountered.
 func EnsureSchedules(ctx context.Context, tc client.TemporalClient, cfg *config.Configuration, log *logger.Logger) error {
 	for _, sc := range AllTemporalScheduleConfigs(cfg) {
-		if !isScheduleEnabled(sc.ID, cfg) {
-			// A schedule created while the flag was on must not keep firing once
-			// the flag turns off — pause it if it exists (NotFound is success).
-			if err := pauseScheduleIfExists(ctx, tc, sc.ID, log); err != nil {
-				return err
-			}
-			continue
-		}
 		if err := ensureOneSchedule(ctx, tc, sc); err != nil {
 			return err
 		}
 		log.Info(ctx, "schedule ensured", "id", sc.ID)
 	}
 	return nil
-}
-
-// pauseScheduleIfExists pauses a config-disabled schedule that still exists on
-// the Temporal server; a schedule that was never created is left alone.
-func pauseScheduleIfExists(ctx context.Context, tc client.TemporalClient, id types.ScheduleID, log *logger.Logger) error {
-	handle := tc.GetScheduleHandle(ctx, string(id))
-
-	desc, err := handle.Describe(ctx)
-	if err != nil {
-		var notFound *serviceerror.NotFound
-		if errors.As(err, &notFound) {
-			log.Info(ctx, "schedule disabled by config, not present on server", "id", id)
-			return nil
-		}
-		return fmt.Errorf("describe schedule %s: %w", id, err)
-	}
-	if desc.Schedule.State != nil && desc.Schedule.State.Paused {
-		return nil
-	}
-
-	if err := handle.Pause(ctx, sdkclient.SchedulePauseOptions{Note: "disabled by config"}); err != nil {
-		return fmt.Errorf("pause schedule %s: %w", id, err)
-	}
-	log.Info(ctx, "schedule paused: disabled by config", "id", id)
-	return nil
-}
-
-// isScheduleEnabled reports whether a schedule config should actually be created/updated
-// against the Temporal server. Every schedule is enabled by default; add a case here only
-// for a schedule that ships flag-gated off (see analytics.revenue_rollup.enabled).
-func isScheduleEnabled(id types.ScheduleID, cfg *config.Configuration) bool {
-	switch id {
-	case types.ScheduleIDRevenueRollup:
-		return cfg != nil && cfg.Analytics.RevenueRollup.Enabled
-	default:
-		return true
-	}
 }
 
 func ensureOneSchedule(ctx context.Context, tc client.TemporalClient, cfg types.ScheduleConfig) error {

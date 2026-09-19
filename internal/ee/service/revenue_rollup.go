@@ -93,7 +93,7 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		Subscription:   sub,
 		PeriodStart:    periodStart,
 		PeriodEnd:      periodEnd,
-		ReferencePoint: types.ReferencePointPreview,
+		ReferencePoint: types.ReferencePointRevenueFacts,
 	})
 	if err != nil {
 		return false, err
@@ -139,21 +139,10 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return true, nil
 	}
 
-	priceCache := map[string]*price.Price{}
 	meterCache := map[string]*meter.Meter{}
-	entitlementLimitCache := map[string]decimal.Decimal{}
-	var entitlementLimitErr error
-	var entitlementLimitLoaded bool
-
-	resolveEntitlementLimit := func(meterID string) (decimal.Decimal, error) {
-		if !entitlementLimitLoaded {
-			entitlementLimitLoaded = true
-			entitlementLimitCache, entitlementLimitErr = s.loadEntitlementsByMeterID(ctx, subscriptionID)
-		}
-		if entitlementLimitErr != nil {
-			return decimal.Zero, entitlementLimitErr
-		}
-		return entitlementLimitCache[meterID], nil
+	inputs, err := s.loadRollupInputs(ctx, subscriptionID, invReq.LineItems)
+	if err != nil {
+		return false, err
 	}
 
 	var allRows []*revenuefact.RevenueFact
@@ -217,11 +206,9 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: item.Amount, identifier: base.Price.ID})
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_FIXED):
-			p, hydrateErr := s.getPrice(ctx, priceCache, lo.FromPtr(item.PriceID))
+			p, hydrateErr := inputs.price(lo.FromPtr(item.PriceID))
 			if hydrateErr != nil {
-				return false, ierr.WithError(hydrateErr).
-					WithHint("failed to hydrate price for fixed line item").
-					Mark(ierr.ErrSystem)
+				return false, hydrateErr
 			}
 			base.Price = p
 			if row := decomposeFixed(base, itemPeriod); row != nil {
@@ -230,15 +217,11 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			}
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE):
-			// A usage line item whose price or meter fails to
-			// hydrate is a hard error — never let decompositionMode(nil, nil)
-			// silently default to Marginal.
-			p, hydrateErr := s.getPrice(ctx, priceCache, lo.FromPtr(item.PriceID))
+			// A missing price or meter is a hard error — never let
+			// decompositionMode(nil, nil) silently default to Marginal.
+			p, hydrateErr := inputs.price(lo.FromPtr(item.PriceID))
 			if hydrateErr != nil {
-				return false, ierr.WithError(hydrateErr).
-					WithHint("failed to hydrate price for usage line item").
-					WithReportableDetails(map[string]any{"price_id": lo.FromPtr(item.PriceID), "subscription_id": subscriptionID}).
-					Mark(ierr.ErrSystem)
+				return false, hydrateErr
 			}
 			m, hydrateErr := s.getMeter(ctx, meterCache, lo.FromPtr(item.MeterID))
 			if hydrateErr != nil {
@@ -253,17 +236,13 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			var rows []*revenuefact.RevenueFact
 			switch decompositionMode(p, m) {
 			case types.Marginal:
-				entitlementLimit, allowErr := resolveEntitlementLimit(m.ID)
-				if allowErr != nil {
-					return false, allowErr
-				}
 				curve, curveErr := s.buildUsageCurve(ctx, usageCurveInput{
 					Price:       p,
 					MeterID:     m.ID,
 					PeriodStart: itemPeriod.Start,
-					// BuildUsageCurve's upper bound is exclusive — convert back from the inclusive day.
+					// buildUsageCurve's upper bound is exclusive — convert back from the inclusive day.
 					PeriodEnd:        itemPeriod.exclusiveEnd(),
-					EntitlementLimit: entitlementLimit,
+					EntitlementLimit: inputs.entitlementLimits[m.ID],
 					Timezone:         sub.Timezone,
 				})
 				if curveErr != nil {
@@ -668,7 +647,55 @@ func (s *revenueService) getMeter(ctx context.Context, cache map[string]*meter.M
 	return m, nil
 }
 
-// loadEntitlementsByMeterID returns each metered entitlement.s usage limit,
+// rollupInputs is the reference data one rollup pass needs, hydrated once up
+// front: every line-item price in a single query, and the entitlement limits
+// by meter.
+type rollupInputs struct {
+	prices            map[string]*price.Price
+	entitlementLimits map[string]decimal.Decimal
+}
+
+// price returns the hydrated price for id, erroring on ids the bulk load did
+// not find (a dangling line-item reference).
+func (in *rollupInputs) price(id string) (*price.Price, error) {
+	p, ok := in.prices[id]
+	if !ok {
+		return nil, ierr.NewErrorf("price %q not found for revenue rollup", id).
+			WithHint("line item references a price that does not exist").
+			Mark(ierr.ErrNotFound)
+	}
+	return p, nil
+}
+
+func (s *revenueService) loadRollupInputs(ctx context.Context, subscriptionID string, lineItems []dto.CreateInvoiceLineItemRequest) (*rollupInputs, error) {
+	ids := make([]string, 0, len(lineItems))
+	for i := range lineItems {
+		li := &lineItems[i]
+		// True-up/overage lines carry synthetic ids that are never in the DB.
+		if li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup) || li.Metadata.GetBool(types.MetadataKeyIsOverage) {
+			continue
+		}
+		if id := lo.FromPtr(li.PriceID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+
+	prices, err := s.PriceRepo.ListByIDs(ctx, lo.Uniq(ids))
+	if err != nil {
+		return nil, err
+	}
+	limits, err := s.loadEntitlementsByMeterID(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &rollupInputs{
+		prices:            lo.KeyBy(prices, func(p *price.Price) string { return p.ID }),
+		entitlementLimits: limits,
+	}, nil
+}
+
+// loadEntitlementsByMeterID returns each metered entitlement's usage limit,
 // keyed by meter id — the free-quantity input buildUsageCurve needs.
 func (s *revenueService) loadEntitlementsByMeterID(ctx context.Context, subscriptionID string) (map[string]decimal.Decimal, error) {
 	subscriptionService := NewSubscriptionService(s.ServiceParams)

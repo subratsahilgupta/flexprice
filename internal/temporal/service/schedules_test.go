@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/types"
@@ -9,9 +10,7 @@ import (
 )
 
 // TestAllTemporalScheduleConfigsMatchServerScheduleIDs keeps schedule config ids aligned
-// with types.AllTemporalServerScheduleIDs (used for schedule_id validation). A config
-// entry always exists for every managed schedule even when it is flag-gated off — gating
-// happens in EnsureSchedules/isScheduleEnabled, not by omitting the config entry.
+// with types.AllTemporalServerScheduleIDs (used for schedule_id validation).
 func TestAllTemporalScheduleConfigsMatchServerScheduleIDs(t *testing.T) {
 	t.Parallel()
 	configs := AllTemporalScheduleConfigs(nil)
@@ -30,23 +29,26 @@ func TestAllTemporalScheduleConfigsMatchServerScheduleIDs(t *testing.T) {
 	require.Empty(t, expected, "missing schedule config ids")
 }
 
-// TestIsScheduleEnabled_RevenueRollupOffByDefault asserts the revenue-rollup schedule
-// stays disabled unless analytics.revenue_rollup.enabled is explicitly set, and that
-// every other managed schedule remains enabled regardless of cfg.
-func TestIsScheduleEnabled_RevenueRollupOffByDefault(t *testing.T) {
+// TestRevenueRollupScheduleInterval pins the interval plumbing: the config
+// value drives both the schedule spec and the workflow input, with a 1h
+// default. Enable/disable is NOT a schedule concern — the kill switch lives
+// in RollupDirtyActivity.
+func TestRevenueRollupScheduleInterval(t *testing.T) {
 	t.Parallel()
 
-	require.False(t, isScheduleEnabled(types.ScheduleIDRevenueRollup, nil), "nil cfg must not enable revenue rollup")
-	require.False(t, isScheduleEnabled(types.ScheduleIDRevenueRollup, &config.Configuration{}), "zero-value cfg must not enable revenue rollup")
-
-	enabledCfg := &config.Configuration{}
-	enabledCfg.Analytics.RevenueRollup.Enabled = true
-	require.True(t, isScheduleEnabled(types.ScheduleIDRevenueRollup, enabledCfg), "explicit enable must gate the schedule on")
-
-	for _, id := range types.AllTemporalServerScheduleIDs() {
-		if id == types.ScheduleIDRevenueRollup {
-			continue
+	find := func(cfg *config.Configuration) types.ScheduleConfig {
+		for _, sc := range AllTemporalScheduleConfigs(cfg) {
+			if sc.ID == types.ScheduleIDRevenueRollup {
+				return sc
+			}
 		}
-		require.True(t, isScheduleEnabled(id, nil), "schedule %q must stay enabled by default", id)
+		t.Fatal("revenue rollup schedule must always be declared")
+		return types.ScheduleConfig{}
 	}
+
+	require.Equal(t, time.Hour, find(nil).Interval, "nil cfg falls back to the 1h default")
+
+	cfg := &config.Configuration{}
+	cfg.Analytics.RevenueRollup.Interval = 30 * time.Minute
+	require.Equal(t, 30*time.Minute, find(cfg).Interval, "config interval must drive the schedule spec")
 }

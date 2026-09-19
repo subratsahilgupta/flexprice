@@ -31,12 +31,12 @@ import (
 )
 
 // RevenueRollupSuite drives RollupSubscription against the REAL billing preview
-// engine (PrepareSubscriptionInvoiceRequest) — not a hand-rolled decomposition —
+// engine (PrepareSubscriptionInvoiceRequest) â not a hand-rolled decomposition â
 // over a worked example: a 30-day monthly subscription
 // with a $30 advance fixed charge, $0.01/call usage (1200 calls/day, a
-// same-meter Feature+Entitlement present but non-binding — see
+// same-meter Feature+Entitlement present but non-binding â see
 // seedWorkedExample), and a $500 minimum commitment with a 2x overage factor
-// and true-up enabled. Σ net_amount must reconcile to $530, and a second
+// and true-up enabled. Î£ net_amount must reconcile to $530, and a second
 // RollupSubscription call must be idempotent.
 type RevenueRollupSuite struct {
 	testutil.BaseServiceTestSuite
@@ -120,9 +120,9 @@ func (s *RevenueRollupSuite) serviceParams() ServiceParams {
 	}
 }
 
-// seedWorkedExample builds a worked-example fixture —
+// seedWorkedExample builds a worked-example fixture â
 // plan + fixed/usage prices + meter + feature + entitlement + subscription
-// (with a $500/2x/true-up subscription-level commitment) — and seeds
+// (with a $500/2x/true-up subscription-level commitment) â and seeds
 // meter_usage at 1200 calls/day for 30 days, the real inputs the billing
 // preview engine reads.
 //
@@ -131,7 +131,7 @@ func (s *RevenueRollupSuite) serviceParams() ServiceParams {
 // from the GROSS pre-entitlement usage amount (buildMeterUsageResponse splits
 // commitment/overage before CalculateMeterUsageCharges applies any per-item
 // entitlement deduction), so usage+trueup nets to exactly commitmentAmount
-// minus whatever the entitlement deducted — not the "billable-after-entitlementLimit
+// minus whatever the entitlement deducted â not the "billable-after-entitlementLimit
 // tops up to the commitment" shape the hand-rolled decomposition tests use.
 // A non-zero entitlementLimit here would pull the $530 total off by exactly the
 // deducted amount (verified empirically). UsageLimit=0 still exercises the
@@ -141,10 +141,10 @@ func (s *RevenueRollupSuite) serviceParams() ServiceParams {
 func (s *RevenueRollupSuite) seedWorkedExample(ctx context.Context) {
 	s.periodStart = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	periodEndExclusive := s.periodStart.AddDate(0, 0, 30)
-	// ReferencePointPreview returns this period's ARREAR usage/true-up (dated
+	// ReferencePointRevenueFacts returns this period's ARREAR usage/true-up (dated
 	// within [periodStart, periodEndExclusive)) together with NEXT period's
 	// ADVANCE fixed charge (dated at periodEndExclusive, the next period's own
-	// start) — one RollupSubscription call spans both, so the query window
+	// start) â one RollupSubscription call spans both, so the query window
 	// below must reach through periodEndExclusive to catch the fixed row too.
 	s.periodEnd = periodEndExclusive
 
@@ -331,7 +331,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_WorkedExampleReconciles() {
 	for _, r := range rows {
 		total = total.Add(r.NetAmount)
 	}
-	s.Equal("530", total.String(), "Σ net_amount must reconcile to $530")
+	s.Equal("530", total.String(), "Î£ net_amount must reconcile to $530")
 
 	// Idempotent: a second rollup of the same period bumps versions in place,
 	// never duplicating rows.
@@ -353,8 +353,8 @@ func (s *RevenueRollupSuite) TestRollupSubscription_MultiPeriodCommitmentSkipped
 	ctx := s.ctx
 	s.seedWorkedExample(ctx)
 
-	// Turn the subscription's commitment into a multi-period one — an ANNUAL
-	// commitment on a MONTHLY subscription — which the rollup must skip
+	// Turn the subscription's commitment into a multi-period one â an ANNUAL
+	// commitment on a MONTHLY subscription â which the rollup must skip
 	// entirely rather than attribute the true-up to a single period.
 	annual := types.BILLING_PERIOD_ANNUAL
 	s.sub.CommitmentDuration = &annual
@@ -413,11 +413,11 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageSkipped() {
 // TestRollupSubscription_BindingEntitlementLimitReconciles covers review Fix 2: with
 // a REAL binding entitlement entitlementLimit (UsageLimit=20000, unlike
 // seedWorkedExample's degenerate UsageLimit=0) alongside the $500 commitment
-// alongside the $500 commitment, the total no longer equals $530 — the subscription-level
+// alongside the $500 commitment, the total no longer equals $530 â the subscription-level
 // commitment/true-up split runs on gross pre-entitlement usage, so the
 // entitlementLimit genuinely perturbs the total.
 // This asserts RECONCILIATION-BY-CONSTRUCTION instead of a hardcoded number:
-// Σ NetAmount(rows) must equal the same preview's Subtotal minus discounts,
+// Î£ NetAmount(rows) must equal the same preview's Subtotal minus discounts,
 // and zero revenue_reconciliation_mismatch logs must have fired.
 func (s *RevenueRollupSuite) TestRollupSubscription_BindingEntitlementLimitReconciles() {
 	ctx := s.ctx
@@ -450,19 +450,19 @@ func (s *RevenueRollupSuite) TestRollupSubscription_BindingEntitlementLimitRecon
 
 	// Recompute the same preview independently (RollupSubscription doesn't
 	// expose the invReq it used) to get the engine's own Subtotal for this
-	// exact fixture state — the reconciliation target, not a hardcoded number.
+	// exact fixture state â the reconciliation target, not a hardcoded number.
 	billingSvc := NewBillingService(s.serviceParams())
 	invReq, err := billingSvc.PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
 		PeriodStart:    s.periodStart,
 		PeriodEnd:      s.periodEnd,
-		ReferencePoint: types.ReferencePointPreview,
+		ReferencePoint: types.ReferencePointRevenueFacts,
 	})
 	s.NoError(err)
 	expected := invReq.Subtotal.Sub(invoiceDiscountTotal(invReq))
 	s.False(expected.Equal(decimal.NewFromInt(530)), "sanity: the binding entitlementLimit must actually perturb the total away from the zero-entitlementLimit $530 case")
 
-	s.True(total.Equal(expected), "Σ net_amount (%s) must reconcile to the preview's subtotal-minus-discount (%s)", total.String(), expected.String())
+	s.True(total.Equal(expected), "Î£ net_amount (%s) must reconcile to the preview's subtotal-minus-discount (%s)", total.String(), expected.String())
 
 	for _, entry := range observedLogs.All() {
 		s.NotEqual("revenue_reconciliation_mismatch", entry.Message, "unexpected reconciliation mismatch: %+v", entry.ContextMap())
@@ -470,13 +470,13 @@ func (s *RevenueRollupSuite) TestRollupSubscription_BindingEntitlementLimitRecon
 }
 
 // seedFixedOnlySubscription builds a minimal customer/plan/subscription with
-// a single FIXED line item — deliberately simpler than seedWorkedExample
+// a single FIXED line item â deliberately simpler than seedWorkedExample
 // (no usage/meter/entitlement machinery) since TestRollupDirty_* exercises
 // RollupDirty's scan/tally/error-isolation logic, not decomposition itself.
 // When commitmentDuration is non-nil the subscription also carries a $500/2x
 // commitment with that duration, to drive the multi-period-commitment skip.
 // When createPrice is false, priceID is left dangling (never created in
-// PriceRepo) so PrepareSubscriptionInvoiceRequest fails hydrating it — a
+// PriceRepo) so PrepareSubscriptionInvoiceRequest fails hydrating it â a
 // genuine per-subscription error, not a policy skip.
 func (s *RevenueRollupSuite) seedFixedOnlySubscription(
 	ctx context.Context, idSuffix string, commitmentDuration *types.BillingPeriod, priceID string, createPrice bool,
@@ -561,7 +561,7 @@ func (s *RevenueRollupSuite) seedFixedOnlySubscription(
 	return sub
 }
 
-// enableRevenueAnalytics opts the test tenant/environment into the rollup —
+// enableRevenueAnalytics opts the test tenant/environment into the rollup â
 // RollupDirty only scans (tenant, environment)s carrying an enabled
 // revenue_analytics_config setting.
 func (s *RevenueRollupSuite) enableRevenueAnalytics(ctx context.Context) {
@@ -578,7 +578,7 @@ func (s *RevenueRollupSuite) enableRevenueAnalytics(ctx context.Context) {
 // TestRollupDirty_TallyAndErrorIsolation: RollupDirty
 // must tally a rollable subscription, a policy-skipped one (multi-period
 // commitment), and one whose per-subscription error must NOT abort the
-// batch — all three get scanned in one call.
+// batch â all three get scanned in one call.
 func (s *RevenueRollupSuite) TestRollupDirty_TallyAndErrorIsolation() {
 	ctx := s.ctx
 	s.enableRevenueAnalytics(ctx)
@@ -698,7 +698,7 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipsAndStamps() {
 	s.Equal("li_final_1", lo.FromPtr(rows[0].InvoiceLineItemID))
 	s.Equal(types.FactFinal, rows[0].Status)
 
-	// No more PROVISIONAL rows left for this grain — the flip moved them, it
+	// No more PROVISIONAL rows left for this grain â the flip moved them, it
 	// did not duplicate them.
 	provisional, err := s.store.ListBySubscriptionPeriod(s.ctx, fx.subscriptionID, fx.periodStart, fx.periodEnd, types.FactProvisional)
 	s.NoError(err)
@@ -716,7 +716,7 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipsAndStamps() {
 // commitment-trueup provisional row written under the stable synthetic
 // price_id ("trueup:"+subLineItemID) is still found and stamped when the
 // finalized line item carries a completely different (fresh random) price_id,
-// exactly as the real billing engine assigns — the flip re-derives the same
+// exactly as the real billing engine assigns â the flip re-derives the same
 // synthetic id from metadata + sub_line_item_id.
 func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_TrueupRowMatchesBySyntheticPriceID() {
 	subscriptionID := "sub_final_trueup"
@@ -764,7 +764,7 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_TrueupRowMatchesBySy
 				SubscriptionID:         lo.ToPtr(subscriptionID),
 				SubscriptionLineItemID: lo.ToPtr(subLineItemID),
 				// The billing engine assigns a fresh random price_id to
-				// trueup/overage lines on every compute — deliberately NOT the
+				// trueup/overage lines on every compute â deliberately NOT the
 				// synthetic id the provisional row was written under.
 				PriceID:     lo.ToPtr(types.GenerateUUIDWithPrefix("price")),
 				Amount:      decimal.NewFromInt(50),
@@ -789,7 +789,7 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_TrueupRowMatchesBySy
 }
 
 // failingRevenueFactRepo wraps the in-memory store so FlipToFinal always
-// errors — proving FinalizeSubscriptionPeriod propagates the error to its
+// errors â proving FinalizeSubscriptionPeriod propagates the error to its
 // (async) caller instead of swallowing it.
 type failingRevenueFactRepo struct {
 	*testutil.InMemoryRevenueFactStore
@@ -818,7 +818,7 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipErrorIsReturnedT
 
 // TestRevertInvoiceFacts covers the voided-invoice guardrail: FINAL rows are
 // immutable, so a void posts contra rows (negated amounts, is_revert=true)
-// stamped with the same invoice — and the whole period then nets to zero.
+// stamped with the same invoice â and the whole period then nets to zero.
 // A second call must be a no-op (the async void hook can retry).
 func (s *RevenueRollupSuite) TestRevertInvoiceFacts() {
 	fx := s.seedFinalFlipFixture(s.ctx)

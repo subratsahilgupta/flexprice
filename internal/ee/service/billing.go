@@ -1738,10 +1738,11 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 
 		description = fmt.Sprintf("Invoice for subscription %s", sub.ID)
 
-	case types.ReferencePointPreview:
-		// For preview, include both current period arrear and next period advance
-		// but don't filter out already invoiced items. Usage is sourced from the
-		// meter_usage table.
+	case types.ReferencePointPreview, types.ReferencePointRevenueFacts:
+		// Both include current-period arrear and next-period advance without
+		// filtering already-invoiced items; usage reads meter_usage (FINAL).
+		// revenue_facts matches preview today — split this arm when the rollup
+		// needs facts-only behavior (e.g. coupon application without DB writes).
 
 		// For current period arrear charges
 		arrearResult, err := s.calculateMeterUsageCharges(

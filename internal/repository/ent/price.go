@@ -769,6 +769,30 @@ func (r *priceRepository) GetByGroupIDs(ctx context.Context, groupIDs []string) 
 	return domainPrice.FromEntList(prices), nil
 }
 
+// ListByIDs returns the prices whose ids are in ids; missing ids are absent
+// from the result, not an error. Archived prices are included: line items can
+// reference prices that were archived after billing.
+func (r *priceRepository) ListByIDs(ctx context.Context, ids []string) ([]*domainPrice.Price, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	prices, err := r.client.Reader(ctx).Price.Query().
+		Where(
+			price.IDIn(ids...),
+			price.TenantID(types.GetTenantID(ctx)),
+			price.EnvironmentID(types.GetEnvironmentID(ctx)),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list prices by ids").
+			WithReportableDetails(map[string]interface{}{"price_ids": ids}).
+			Mark(ierr.ErrDatabase)
+	}
+	return domainPrice.FromEntList(prices), nil
+}
+
 func (r *priceRepository) ClearByGroupID(ctx context.Context, groupID string) error {
 	client := r.client.Writer(ctx)
 
