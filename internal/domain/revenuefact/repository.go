@@ -14,9 +14,10 @@ type Repository interface {
 	// bumping version on conflict.
 	UpsertProvisional(ctx context.Context, facts []*RevenueFact) error
 
-	// FlipToFinal converts PROVISIONAL rows for a subscription/price/period to
-	// FINAL, stamping the given invoice line item. Returns the rows affected.
-	FlipToFinal(ctx context.Context, subscriptionID, priceID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error)
+	// FlipToFinal converts one line item's PROVISIONAL rows (matched on
+	// subscription, price, sub_line_item and period) to FINAL, stamping the
+	// given invoice line item. Returns the rows affected.
+	FlipToFinal(ctx context.Context, subscriptionID, priceID, subLineItemID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error)
 
 	// ListBySubscriptionPeriod lists facts for a subscription within a period, filtered by status.
 	ListBySubscriptionPeriod(ctx context.Context, subscriptionID string, periodStart, periodEnd time.Time, status types.FactStatus) ([]*RevenueFact, error)

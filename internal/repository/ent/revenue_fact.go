@@ -214,9 +214,9 @@ func (r *revenueFactRepository) upsertProvisionalChunk(ctx context.Context, fact
 	return err
 }
 
-// FlipToFinal converts PROVISIONAL rows for a subscription/price/period to
-// FINAL, stamping the given invoice line item. Returns the rows affected.
-func (r *revenueFactRepository) FlipToFinal(ctx context.Context, subscriptionID, priceID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error) {
+// FlipToFinal converts one line item's PROVISIONAL rows to FINAL, stamping
+// the given invoice line item. Returns the rows affected.
+func (r *revenueFactRepository) FlipToFinal(ctx context.Context, subscriptionID, priceID, subLineItemID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
@@ -237,6 +237,7 @@ func (r *revenueFactRepository) FlipToFinal(ctx context.Context, subscriptionID,
 			entrevenuefact.EnvironmentID(environmentID),
 			entrevenuefact.SubscriptionID(subscriptionID),
 			entrevenuefact.PriceID(priceID),
+			entrevenuefact.SubLineItemID(subLineItemID),
 			entrevenuefact.DayGTE(periodStart),
 			entrevenuefact.DayLTE(periodEnd),
 			entrevenuefact.StatusEQ(types.FactProvisional),

@@ -12,7 +12,10 @@ Requires the revenue analytics setting to be enabled for your tenant.
   identified by `id`, and a re-exported row simply carries a higher `version`
   — keep the latest `version` per `id`.
 - Rows are ordered by `(computed_at, id)`. If a download is interrupted,
-  re-run from your last complete watermark.
+  resume with `?since=<computed_at>&after_id=<id>` of the last complete row
+  you received — `after_id` picks up remaining rows that share that exact
+  instant. (Re-running with `since` alone is also safe, at the cost of
+  possibly skipping same-instant stragglers until the next recompute.)
 
 ## Reading the data
 

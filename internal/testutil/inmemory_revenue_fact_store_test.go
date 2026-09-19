@@ -124,7 +124,7 @@ func TestInMemoryRevenueFactStore_FlipToFinal(t *testing.T) {
 		sampleRevenueFact("sub_1", "price_1", day3, types.RevenueSourceUsage),
 	}))
 
-	n, err := s.FlipToFinal(ctx, "sub_1", "price_1", day1, day2, "inv_1", "inv_li_1")
+	n, err := s.FlipToFinal(ctx, "sub_1", "price_1", "sli_price_1", day1, day2, "inv_1", "inv_li_1")
 	require.NoError(t, err)
 	assert.Equal(t, 2, n)
 
@@ -184,12 +184,12 @@ func TestInMemoryRevenueFactStore_FlipToFinalOnlyAffectsProvisional(t *testing.T
 		sampleRevenueFact("sub_1", "price_1", day, types.RevenueSourceUsage),
 	}))
 
-	n, err := s.FlipToFinal(ctx, "sub_1", "price_1", day, day, "inv_1", "inv_li_1")
+	n, err := s.FlipToFinal(ctx, "sub_1", "price_1", "sli_price_1", day, day, "inv_1", "inv_li_1")
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 
 	// Flipping again over the same period should affect nothing more: the row is FINAL now.
-	n2, err := s.FlipToFinal(ctx, "sub_1", "price_1", day, day, "inv_2", "inv_li_2")
+	n2, err := s.FlipToFinal(ctx, "sub_1", "price_1", "sli_price_1", day, day, "inv_2", "inv_li_2")
 	require.NoError(t, err)
 	assert.Equal(t, 0, n2)
 }
@@ -211,4 +211,33 @@ func TestInMemoryRevenueFactStore_TwoLineItemsSharePriceAndDay(t *testing.T) {
 	got, err := s.ListBySubscriptionPeriod(ctx, "sub_1", day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), types.FactProvisional)
 	require.NoError(t, err)
 	require.Len(t, got, 2, "distinct line items must keep distinct rows")
+}
+
+// A flip for one line item must never stamp a sibling line item's rows, even
+// when both share the same price and day.
+func TestInMemoryRevenueFactStore_FlipStampsOnlyItsOwnLineItem(t *testing.T) {
+	s := NewInMemoryRevenueFactStore()
+	ctx := revenueFactTestCtx("tenant_1", "env_1")
+	day := revenueFactDay("2026-01-10")
+
+	a := sampleRevenueFact("sub_1", "price_1", day, types.RevenueSourceFixed)
+	a.SubLineItemID = lo.ToPtr("sli_a")
+	b := sampleRevenueFact("sub_1", "price_1", day, types.RevenueSourceFixed)
+	b.SubLineItemID = lo.ToPtr("sli_b")
+	require.NoError(t, s.UpsertProvisional(ctx, []*revenuefact.RevenueFact{a, b}))
+
+	n, err := s.FlipToFinal(ctx, "sub_1", "price_1", "sli_a", day, day, "inv_1", "inv_li_a")
+	require.NoError(t, err)
+	require.Equal(t, 1, n, "only line item A's row may flip")
+
+	final, err := s.ListBySubscriptionPeriod(ctx, "sub_1", day, day, types.FactFinal)
+	require.NoError(t, err)
+	require.Len(t, final, 1)
+	require.Equal(t, "sli_a", lo.FromPtr(final[0].SubLineItemID))
+	require.Equal(t, "inv_li_a", lo.FromPtr(final[0].InvoiceLineItemID))
+
+	prov, err := s.ListBySubscriptionPeriod(ctx, "sub_1", day, day, types.FactProvisional)
+	require.NoError(t, err)
+	require.Len(t, prov, 1, "line item B's row must stay provisional")
+	require.Equal(t, "sli_b", lo.FromPtr(prov[0].SubLineItemID))
 }

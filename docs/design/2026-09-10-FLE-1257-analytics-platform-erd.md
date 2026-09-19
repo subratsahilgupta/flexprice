@@ -130,7 +130,7 @@ erDiagram
         string  price_id
         string  meter_id             "'' for non-usage rows"
         string  aggregation_type     "drives decomposability"
-        enum    revenue_source       "usage|fixed|commitment_trueup|credit_breakage|manual_adjustment"
+        enum    revenue_source       "usage|fixed|commitment_trueup|overage (Phase 4: credit_breakage|manual_adjustment)"
         date    period_start
         date    period_end
         date    day                  "grain"
@@ -147,7 +147,7 @@ erDiagram
         decimal entitlement_qty
         enum    decomposition_mode   "marginal|period_only"
         string  currency
-        enum    status               "PROVISIONAL|FINAL|REVERTED"
+        enum    status               "PROVISIONAL|FINAL (contra rows: FINAL + is_revert)"
         uint8   is_revert
         string  invoice_id           "draft id, stable through finalize"
         string  invoice_line_item_id
@@ -256,7 +256,7 @@ CREATE TABLE revenue_facts (
     price_id             TEXT,                        -- versioned; amendments create new ids
     meter_id             TEXT,                        -- NULL for fixed / non-usage rows
     aggregation_type     TEXT,                        -- drives decomposability (§6.5); NULL for non-usage
-    revenue_source       TEXT        NOT NULL,        -- usage|fixed|commitment_trueup|credit_breakage|manual_adjustment
+    revenue_source       TEXT        NOT NULL,        -- usage|fixed|commitment_trueup|overage; Phase 4 adds credit_breakage|manual_adjustment
     -- NOTE: no price_type column — revenue_source subsumes usage/fixed; join price_id to `price` for its nature.
 
     -- time
@@ -281,7 +281,7 @@ CREATE TABLE revenue_facts (
 
     -- lifecycle / audit
     currency             TEXT        NOT NULL,
-    status               TEXT        NOT NULL,        -- 'PROVISIONAL' | 'FINAL' | 'REVERTED'  (§8)
+    status               TEXT        NOT NULL,        -- 'PROVISIONAL' | 'FINAL'; contra rows are FINAL with is_revert=true (§8)
     is_revert            BOOLEAN     NOT NULL DEFAULT false,
     invoice_id           TEXT,                        -- draft id once a draft exists; stable through finalize
     invoice_line_item_id TEXT,                        -- the specific line item, for exact reconciliation
@@ -294,9 +294,9 @@ CREATE TABLE revenue_facts (
 
 -- Exactly one LIVE provisional row per grain -> ON CONFLICT upsert during open-period churn (§8).
 CREATE UNIQUE INDEX revenue_facts_provisional_grain ON revenue_facts
-    (tenant_id, environment_id, subscription_id, price_id, day, revenue_source)
+    (tenant_id, environment_id, subscription_id, price_id, sub_line_item_id, day, revenue_source)
     WHERE status = 'PROVISIONAL';
--- FINAL / REVERTED rows are append-only (no unique constraint) so corrections can be added.
+-- FINAL rows (contra rows included) are append-only (no unique constraint) so corrections can be added.
 
 CREATE INDEX revenue_facts_read    ON revenue_facts (tenant_id, environment_id, day, revenue_source);
 CREATE INDEX revenue_facts_invoice ON revenue_facts (tenant_id, environment_id, invoice_id);
@@ -434,7 +434,7 @@ sequenceDiagram
         alt period still open
             RJ->>RF: INSERT ... ON CONFLICT (provisional grain) DO UPDATE, version++
         else finalized / accounting-locked
-            RJ->>RF: INSERT REVERTED row(s) + fresh FINAL rows
+            RJ->>RF: INSERT contra row(s) (FINAL, is_revert=true) + fresh FINAL rows
         end
     end
 ```
@@ -457,8 +457,7 @@ stateDiagram-v2
     [*] --> PROVISIONAL: period opens
     PROVISIONAL --> PROVISIONAL: rebuild (upsert in place, version++)
     PROVISIONAL --> FINAL: invoice finalized + reconcile assert
-    FINAL --> REVERTED: correction — append REVERTED (negatives)
-    REVERTED --> FINAL: fresh FINAL rows (new version)
+    FINAL --> FINAL: correction — append contra rows<br/>(FINAL, is_revert=true, negated)<br/>then fresh FINAL rows (new version)
     note right of PROVISIONAL
         Lock 1: invoice finalization
         (per subscription-period)
@@ -476,7 +475,7 @@ stateDiagram-v2
 
 **Storage by lock state** (Postgres):
 - **Open / provisional** → **upsert in place.** The partial unique index on the grain (`WHERE status='PROVISIONAL'`, §6.3) makes each rebuild an `INSERT … ON CONFLICT … DO UPDATE` that bumps `version` — one live provisional row per grain, high churn, nobody depends on it yet.
-- **Finalized or accounting-locked** → **append-only, corrected via reverts.** These rows carry no unique constraint, so there is **no `AMENDED` state**: a correction `INSERT`s **`REVERTED`** rows (the exact negatives of what's being corrected, `is_revert=true`) plus fresh `FINAL` rows with a new `version`. Summing all rows is self-correcting (original + its `REVERTED` twin = 0). Closed accounting periods are never mutated in place.
+- **Finalized or accounting-locked** → **append-only, corrected via reverts.** These rows carry no unique constraint, so there is **no `AMENDED` state**: a correction `INSERT`s **contra rows** — the exact negatives of what's being corrected, kept at `status=FINAL` and identified by `is_revert=true` — plus fresh `FINAL` rows with a new `version`. Summing all rows is self-correcting (original + its contra twin = 0). Closed accounting periods are never mutated in place.
 
 **`lock_adjusted_day`** is the day a row is *recognized* given lock posture: it equals `day` when the period is open, and shifts to the **first day of the next open period** when the real period is closed — a "catch-up" so a closed month is never rewritten. Reports key on `lock_adjusted_day`; analytics/attribution key on `day`.
 
@@ -489,7 +488,7 @@ The invoice lifecycle drives the fact lifecycle through two async, non-blocking 
 | **Finalized** | `FinalizeSubscriptionPeriod`: flip `PROVISIONAL → FINAL`, stamp `invoice_id`/`invoice_line_item_id`, re-assert reconciliation. If **zero** rows flip (invoice re-drafted after a void, or a window the schedule never covered), decompose the finalized invoice's own line items into `period_only` provisional rows just-in-time and flip again (`jitRollupFromInvoice`); a persistent gap logs `revenue_facts_flip_gap`. |
 | **Voided** | `RevertInvoiceFacts`: post one contra row per FINAL fact stamped with the invoice — negated amounts, `is_revert=true`, same grain and invoice stamps. Idempotent and transactional. The replacement draft, once finalized, gets fresh facts via the normal flip (or the JIT path above). |
 
-**Backdated changes** (late events, backdated price edits) into a period whose invoice is already FINAL do **not** rewrite FINAL rows. In Phase 2 the recompute-vs-booked divergence surfaces only as a reconciliation log; Phase 4 adds the drift-detection pass (compare re-derived revenue against stamped FINAL facts, flag `revenue_facts_drift` per invoice/grain) and books corrections as revert + fresh FINAL rows on `lock_adjusted_day` once accounting-period locks exist. Auto-correction stays behind an explicit flag — the default posture is flag, don't fix.
+**Backdated changes** (late events, backdated price edits) into a period whose invoice is already FINAL do **not** rewrite FINAL rows. In Phase 2 the recompute-vs-booked divergence surfaces only as a reconciliation log; the drift-detection pass shipped with Phase 2b (`SweepDrift`: compare booked FINAL facts against the invoice, flag `revenue_facts_drift` per invoice, repair behind `auto_correct`); once accounting-period locks exist (deferred, see Q6), corrections post on `lock_adjusted_day`. Auto-correction stays behind an explicit flag — the default posture is flag, don't fix.
 
 **Guidelines for consumers of `revenue_facts`:**
 
@@ -637,7 +636,7 @@ Concretely, this is the billed-vs-recognized split the fixed-charge example make
 5. No query executes without tenant + environment predicates injected by the serving layer.
 6. No cache entry is keyed without tenant + environment.
 7. Analytics tables are never read by the invoicing path.
-8. Finalized / accounting-locked rows are never mutated in place — corrections are append + `REVERTED`.
+8. Finalized / accounting-locked rows are never mutated in place — corrections append contra rows (`FINAL` + `is_revert=true`).
 9. The rollup reads pre-aggregated `meter_usage`, never raw events.
 10. Multi-period commitments use the standard preview path + our cumulative prior-base, never the internal-preview path.
 11. Revenue-facts join to invoices on the **line item's** subscription, never the invoice's (grouped invoicing).
@@ -670,8 +669,8 @@ workstream, and the recognition engine builds on ClickHouse once sync is live.
 - Rollup under `ReferencePointRevenueFacts`: cumulative daily curve (answers Q2 — one customer-scoped `meter_usage` read + pure `CalculateCost` re-pricing), sources `usage`/`fixed`/`commitment_trueup`/`overage`, marginal vs period_only classifier, inputs (prices, meters, entitlements, grants, customer scope) hydrated once per pass.
 - **Discounts decompose** (Phase 2a): coupon amounts dry-run over the preview — nothing persisted, no redemption counted — each line's own discount plus an exact-sum allocated share of invoice-level discounts lands in `line_discount`/`invoice_discount`, spread across marginal days in proportion to each day's charge. Row identity: `net == list + tier − entitlement − line_discount − invoice_discount`.
 - **Overage decomposes** (Phase 2a): commitment-exceeded subscriptions write period_only usage rows plus an `overage`-source row; nothing is skipped.
-- **Grant/value-based entitlements** (Phase 2a): grant-billed meters stay period_only (their quota-window charges can't be curve-split yet) with `entitlement_qty`/`entitlement_amount` annotated from the engine's deduction.
-- Lifecycle: finalize → FINAL flip (+ JIT fallback from the invoice), void → `REVERTED` contras, hooks on every status-transition path incl. payment-processor auto-finalize.
+- **Grant/value-based entitlements** (Phase 2a→2b): grant-billed usage splits per day (`marginal`) from the grants' quota-crossed windows, falling back to `period_only` only when the shape is unknowable; `entitlement_qty`/`entitlement_amount` carry the daily entitled-vs-billed breakdown.
+- Lifecycle: finalize → FINAL flip (+ JIT fallback from the invoice), void → contra rows (`FINAL` + `is_revert=true`), hooks on every status-transition path incl. payment-processor auto-finalize.
 - Scheduling: hourly Temporal schedule, config kill switch in the activity, per-tenant opt-in setting, per-environment indexed scan, `Since` backfill input.
 - Reconciliation asserts at row (marginal) / line-item / invoice / FINAL grain — logged, never blocking. Only remaining policy skip: multi-period commitments (Q3).
 

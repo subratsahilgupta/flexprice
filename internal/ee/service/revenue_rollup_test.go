@@ -691,17 +691,18 @@ func (s *RevenueRollupSuite) seedFinalFlipFixture(ctx context.Context) *finalFli
 		BaseModel:       types.GetDefaultBaseModel(ctx),
 		LineItems: []*invoice.InvoiceLineItem{
 			{
-				ID:             "li_final_1",
-				InvoiceID:      "inv_final_1",
-				CustomerID:     "cust_final_1",
-				SubscriptionID: lo.ToPtr(fx.subscriptionID),
-				PriceID:        lo.ToPtr(fx.priceID),
-				Amount:         decimal.NewFromInt(30),
-				Quantity:       decimal.NewFromInt(1),
-				Currency:       "usd",
-				PeriodStart:    lo.ToPtr(fx.periodStart),
-				PeriodEnd:      lo.ToPtr(periodEndExclusive),
-				BaseModel:      types.GetDefaultBaseModel(ctx),
+				ID:                     "li_final_1",
+				InvoiceID:              "inv_final_1",
+				CustomerID:             "cust_final_1",
+				SubscriptionID:         lo.ToPtr(fx.subscriptionID),
+				SubscriptionLineItemID: lo.ToPtr("sli_final_1"),
+				PriceID:                lo.ToPtr(fx.priceID),
+				Amount:                 decimal.NewFromInt(30),
+				Quantity:               decimal.NewFromInt(1),
+				Currency:               "usd",
+				PeriodStart:            lo.ToPtr(fx.periodStart),
+				PeriodEnd:              lo.ToPtr(periodEndExclusive),
+				BaseModel:              types.GetDefaultBaseModel(ctx),
 			},
 		},
 	}
@@ -820,7 +821,7 @@ type failingRevenueFactRepo struct {
 	Called chan struct{}
 }
 
-func (f *failingRevenueFactRepo) FlipToFinal(ctx context.Context, subscriptionID, priceID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error) {
+func (f *failingRevenueFactRepo) FlipToFinal(ctx context.Context, subscriptionID, priceID, subLineItemID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error) {
 	if f.Called != nil {
 		select {
 		case f.Called <- struct{}{}:

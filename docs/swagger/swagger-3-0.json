@@ -977,6 +977,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "after_id",
+            "in": "query",
+            "description": "Resume tiebreaker: with since, also return rows AT that instant whose id sorts after this value (pass the last received row's computed_at and id)",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

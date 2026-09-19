@@ -531,8 +531,15 @@ func (s *revenueService) flipInvoiceLineItems(ctx context.Context, inv *invoice.
 			// the provisional rows by re-deriving the same stable synthetic id.
 			priceID = stableTrueupPriceID(lo.FromPtr(li.SubscriptionLineItemID), subscriptionID, isOverage)
 		}
+		// Two line items can share one price and period; the sub-line-item id
+		// keeps each flip on its own rows. The fallback must match what the
+		// rollup wrote for id-less (aggregate) lines: the subscription id.
+		subLineItemID := lo.FromPtr(li.SubscriptionLineItemID)
+		if subLineItemID == "" {
+			subLineItemID = subscriptionID
+		}
 
-		n, err := s.RevenueFactRepo.FlipToFinal(ctx, subscriptionID, priceID, periodStart, periodEnd, inv.ID, li.ID)
+		n, err := s.RevenueFactRepo.FlipToFinal(ctx, subscriptionID, priceID, subLineItemID, periodStart, periodEnd, inv.ID, li.ID)
 		if err != nil {
 			return flipped, groupSeen, err
 		}
@@ -580,9 +587,9 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 			PeriodEnd:       period.End,
 		}
 		if base.SubLineItemID == "" {
-			// Invoice line items may lack a subscription-line-item id; the
-			// invoice line item id is stable for this invoice.
-			base.SubLineItemID = li.ID
+			// Same fallback as the preview path AND the flip's matching rule —
+			// all three must derive the identical id or the flip misses rows.
+			base.SubLineItemID = subscriptionID
 		}
 
 		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)

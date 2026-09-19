@@ -130,9 +130,9 @@ func (s *InMemoryRevenueFactStore) UpsertProvisional(ctx context.Context, facts 
 	return nil
 }
 
-// FlipToFinal converts PROVISIONAL rows for a subscription/price/period to
-// FINAL, stamping the invoice line item, and returns the rows affected.
-func (s *InMemoryRevenueFactStore) FlipToFinal(ctx context.Context, subscriptionID, priceID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error) {
+// FlipToFinal converts one line item's PROVISIONAL rows to FINAL, stamping
+// the invoice line item, and returns the rows affected.
+func (s *InMemoryRevenueFactStore) FlipToFinal(ctx context.Context, subscriptionID, priceID, subLineItemID string, periodStart, periodEnd time.Time, invoiceID, invoiceLineItemID string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -148,6 +148,9 @@ func (s *InMemoryRevenueFactStore) FlipToFinal(ctx context.Context, subscription
 			continue
 		}
 		if !factPriceMatches(f, priceID) {
+			continue
+		}
+		if f.SubLineItemID == nil || *f.SubLineItemID != subLineItemID {
 			continue
 		}
 		if f.Day.Before(periodStart) || f.Day.After(periodEnd) {

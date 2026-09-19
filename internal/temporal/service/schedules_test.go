@@ -30,7 +30,7 @@ func TestAllTemporalScheduleConfigsMatchServerScheduleIDs(t *testing.T) {
 }
 
 // TestRevenueRollupScheduleInterval pins the interval plumbing: the config
-// value drives both the schedule spec and the workflow input, with a 1h
+// value drives both the schedule spec and the workflow input, with a 24h
 // default. Enable/disable is NOT a schedule concern — the kill switch lives
 // in RollupDirtyActivity.
 func TestRevenueRollupScheduleInterval(t *testing.T) {

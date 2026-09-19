@@ -178,6 +178,7 @@ var revenueFactsCSVHeader = []string{
 // @Produce text/csv
 // @Security ApiKeyAuth
 // @Param since query string false "Only rows with computed_at strictly after this RFC3339 instant"
+// @Param after_id query string false "Resume tiebreaker: with since, also return rows AT that instant whose id sorts after this value (pass the last received row's computed_at and id)"
 // @Success 200 {string} string "CSV stream"
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 403 {object} ierr.ErrorResponse "Revenue analytics not enabled"
@@ -199,8 +200,10 @@ func (h *AnalyticsHandler) ExportRevenueFacts(c *gin.Context) {
 		since = parsed
 	}
 
+	afterID := c.Query("after_id")
+
 	// Gate before any bytes are written so a denial is a clean error response.
-	firstPage, err := h.revenueSvc.ExportFacts(ctx, since, "", 0)
+	firstPage, err := h.revenueSvc.ExportFacts(ctx, since, afterID, 0)
 	if err != nil {
 		c.Error(err)
 		return
@@ -215,7 +218,7 @@ func (h *AnalyticsHandler) ExportRevenueFacts(c *gin.Context) {
 	}
 
 	page := firstPage
-	watermark, afterID := since, ""
+	watermark := since
 	for {
 		for _, f := range page {
 			if err := w.Write(revenueFactCSVRow(f)); err != nil {

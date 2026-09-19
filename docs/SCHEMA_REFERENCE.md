@@ -50,8 +50,11 @@ those columns are implicit — the per-table column list only shows the entity-s
 fields.
 
 ### About indexes
-Only non-boilerplate indexes are called out per-table. Assume every table also has:
-- `(tenant_id, environment_id)` composite index
+Only non-boilerplate indexes are called out per-table. Assume every table that
+carries both columns also has:
+- `(tenant_id, environment_id)` composite index — the exceptions are the tables
+  without an `environment_id` (`tenants`, `environments`, `users`, `auth`,
+  `invoice_sequences`, `billing_sequences`)
 - GIN index on `metadata` (when the mixin is present)
 - B-tree on `id` (primary key)
 
@@ -931,6 +934,35 @@ period) at the time of invoicing.
 **Notable indexes:**
 - Standard filter indexes on `invoice_id`, `customer_id`, `subscription_id`, `price_id`, `meter_id`
 - `(period_start, period_end)`, `(subscription_id, status)`
+
+### `revenue_facts`
+Derived, day-grain slice of a subscription line item's revenue, written by the
+revenue rollup (a shadow re-run of the billing preview) — never by the invoicing
+path. Rows are `PROVISIONAL` while the billing period is open (recomputed in
+place, `version` bumps) and flip to `FINAL` when their invoice finalizes; a
+voided invoice appends negated contra rows (`is_revert = true`) rather than
+editing anything. Not part of billing correctness; populated only for tenants
+opted in via the `revenue_analytics_config` setting.
+
+**Columns:**
+- `id` (text, PK)
+- `tenant_id`, `environment_id` (text) — RLS scope on every query
+- `customer_id`, `subscription_id` (text) — the LINE ITEM's subscription (child in grouped invoicing)
+- `sub_line_item_id`, `price_id`, `meter_id` (text, nullable; non-null on provisional rows)
+- `aggregation_type` (text, nullable), `revenue_source` (text: `usage` | `fixed` | `commitment_trueup` | `overage`)
+- `period_start`, `period_end`, `day` (date) — `period_end` inclusive; `day` is the grain
+- `service_start`, `service_end` (date, nullable), `recognition_method` (text, nullable) — reserved for recognition
+- `usage_at_list_rate`, `tier_delta`, `entitlement_amount`, `line_discount`, `invoice_discount`, `net_amount`, `billable_qty`, `entitlement_qty` (numeric(38,9))
+- `decomposition_mode` (text: `marginal` | `period_only`), `currency` (text)
+- `status` (text: `PROVISIONAL` | `FINAL`), `is_revert` (bool)
+- `invoice_id`, `invoice_line_item_id` (text, nullable) — stamped on the FINAL flip
+- `lock_adjusted_day` (date, nullable) — reserved for accounting-period locks
+- `computed_at` (timestamptz), `version` (bigint) — audit columns (no BaseMixin)
+
+**Notable indexes:**
+- Partial unique `(tenant_id, environment_id, subscription_id, price_id, sub_line_item_id, day, revenue_source) WHERE status = 'PROVISIONAL'` — one live provisional row per grain; drives the upsert
+- `(tenant_id, environment_id, day, revenue_source)` — read path
+- `(tenant_id, environment_id, invoice_id)` — invoice joins, drift sweep
 
 ### `invoice_sequences`
 Per-`(tenant, environment, YYYYMM)` counter for generating human-readable invoice

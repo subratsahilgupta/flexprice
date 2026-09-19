@@ -75,7 +75,7 @@ func TestRevenueRollupWorkflow_DefaultInterval(t *testing.T) {
 	})).Return(&cronModels.RevenueRollupWorkflowResult{}, nil)
 
 	beforeStart := time.Now()
-	// Zero Interval must fall back to defaultRevenueRollupInterval (1h).
+	// Zero Interval must fall back to defaultRevenueRollupInterval (24h).
 	env.ExecuteWorkflow(RevenueRollupWorkflow, cronModels.RevenueRollupInput{})
 
 	require.True(t, env.IsWorkflowCompleted())

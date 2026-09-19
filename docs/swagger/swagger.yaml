@@ -14210,6 +14210,12 @@ paths:
         in: query
         name: since
         type: string
+      - description: 'Resume tiebreaker: with since, also return rows AT that instant
+          whose id sorts after this value (pass the last received row''s computed_at
+          and id)'
+        in: query
+        name: after_id
+        type: string
       produces:
       - text/csv
       responses:

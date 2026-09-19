@@ -826,6 +826,12 @@
                         "description": "Only rows with computed_at strictly after this RFC3339 instant",
                         "name": "since",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Resume tiebreaker: with since, also return rows AT that instant whose id sorts after this value (pass the last received row's computed_at and id)",
+                        "name": "after_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {

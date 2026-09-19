@@ -82,7 +82,7 @@ func TestRevenueFactRepository_FlipToFinal(t *testing.T) {
 	f := newTestRevenueFact("sub_"+runID, "price_"+runID, day, types.RevenueSourceUsage)
 	require.NoError(t, repo.UpsertProvisional(ctx, []*revenuefact.RevenueFact{f}))
 
-	n, err := repo.FlipToFinal(ctx, "sub_"+runID, "price_"+runID, day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), "inv_"+runID, "inv_li_"+runID)
+	n, err := repo.FlipToFinal(ctx, "sub_"+runID, "price_"+runID, "sli_price_"+runID, day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), "inv_"+runID, "inv_li_"+runID)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
 
@@ -113,7 +113,7 @@ func TestRevenueFactRepository_ScopedByTenantAndEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, got)
 
-	n, err := repo.FlipToFinal(ctxTenant2, "sub_"+runID, "price_"+runID, day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), "inv_x", "inv_li_x")
+	n, err := repo.FlipToFinal(ctxTenant2, "sub_"+runID, "price_"+runID, "sli_price_"+runID, day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), "inv_x", "inv_li_x")
 	require.NoError(t, err)
 	require.Equal(t, 0, n, "flipping from a different tenant must not affect another tenant's rows")
 }
@@ -208,4 +208,29 @@ func TestRevenueFactRepository_TwoLineItemsSharePriceAndDay(t *testing.T) {
 	got, err := repo.ListBySubscriptionPeriod(ctx, "sub_"+runID, day.AddDate(0, 0, -1), day.AddDate(0, 0, 1), types.FactProvisional)
 	require.NoError(t, err)
 	require.Len(t, got, 2, "distinct line items must keep distinct rows")
+}
+
+// A flip for one line item must never stamp a sibling line item's rows, even
+// when both share the same price and day.
+func TestRevenueFactRepository_FlipStampsOnlyItsOwnLineItem(t *testing.T) {
+	repo := newTestRevenueFactRepository(t)
+	runID := types.GenerateUUID()
+	ctx := revenueFactTestContext("tenant_"+runID, "env_"+runID)
+	day := time.Now().UTC().Truncate(24 * time.Hour)
+
+	a := newTestRevenueFact("sub_"+runID, "price_"+runID, day, types.RevenueSourceFixed)
+	a.SubLineItemID = lo.ToPtr("sli_a_" + runID)
+	b := newTestRevenueFact("sub_"+runID, "price_"+runID, day, types.RevenueSourceFixed)
+	b.SubLineItemID = lo.ToPtr("sli_b_" + runID)
+	require.NoError(t, repo.UpsertProvisional(ctx, []*revenuefact.RevenueFact{a, b}))
+
+	n, err := repo.FlipToFinal(ctx, "sub_"+runID, "price_"+runID, "sli_a_"+runID, day, day, "inv_"+runID, "inv_li_a_"+runID)
+	require.NoError(t, err)
+	require.Equal(t, 1, n, "only line item A's row may flip")
+
+	final, err := repo.ListBySubscriptionPeriod(ctx, "sub_"+runID, day, day, types.FactFinal)
+	require.NoError(t, err)
+	require.Len(t, final, 1)
+	require.Equal(t, "sli_a_"+runID, lo.FromPtr(final[0].SubLineItemID))
+	require.Equal(t, "inv_li_a_"+runID, lo.FromPtr(final[0].InvoiceLineItemID))
 }
