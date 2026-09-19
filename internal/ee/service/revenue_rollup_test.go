@@ -9,6 +9,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -921,4 +922,45 @@ func (s *RevenueRollupSuite) TestRollupDirty_SkipsTenantsWithoutSetting() {
 	rows, err := s.store.ListBySubscriptionPeriod(ctx, sub.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
 	s.NoError(err)
 	s.Empty(rows, "an un-opted-in tenant must produce no rows")
+}
+
+// TestRollupSubscription_GrantBilledMeterStaysPeriodOnly: a feature-scoped
+// entitlement grant bills through quota-crossed windows the daily curve cannot
+// reproduce, so the usage line item must collapse to one period_only row that
+// carries the engine total verbatim.
+func (s *RevenueRollupSuite) TestRollupSubscription_GrantBilledMeterStaysPeriodOnly() {
+	ctx := s.ctx
+	s.seedWorkedExample(ctx)
+
+	grant := &entitlementgrant.EntitlementGrant{
+		ID:                  "eg_rollup_wk",
+		EntitlementConfigID: "ec_rollup_wk",
+		CustomerID:          "cust_rollup_wk",
+		SubscriptionID:      s.sub.ID,
+		ScopeEntityType:     types.EntitlementGrantScopeFeature,
+		ScopeEntityID:       "feat_rollup_wk",
+		Measure:             types.EntitlementGrantMeasureQuantity,
+		Quota:               decimal.NewFromInt(1000),
+		ValidFrom:           s.periodStart,
+		ValidTo:             s.periodEnd,
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		BaseModel:           types.GetDefaultBaseModel(ctx),
+	}
+	_, err := s.GetStores().EntitlementGrantRepo.Create(ctx, grant)
+	s.NoError(err)
+
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(rows)
+
+	usageRows := 0
+	for _, r := range rows {
+		if r.RevenueSource == types.RevenueSourceUsage {
+			usageRows++
+			s.Equal(types.PeriodOnly, r.DecompositionMode, "grant-billed meter must not be split per day")
+		}
+	}
+	s.Equal(1, usageRows, "grant-billed usage must collapse to a single period_only row")
 }

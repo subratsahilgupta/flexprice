@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -119,17 +120,17 @@ func TestIsMultiPeriodCommitment(t *testing.T) {
 
 	tests := []struct {
 		name string
-		li   previewLineItem
+		sub  *subscription.Subscription
 		want bool
 	}{
 		{
 			name: "no commitment",
-			li:   previewLineItem{BillingPeriod: monthly},
+			sub:  &subscription.Subscription{BillingPeriod: monthly},
 			want: false,
 		},
 		{
 			name: "single-period commitment (same duration as billing period)",
-			li: previewLineItem{
+			sub: &subscription.Subscription{
 				BillingPeriod:      monthly,
 				CommitmentAmount:   &amount,
 				CommitmentDuration: &monthly,
@@ -139,7 +140,7 @@ func TestIsMultiPeriodCommitment(t *testing.T) {
 		},
 		{
 			name: "multi-period commitment (annual commitment on monthly sub)",
-			li: previewLineItem{
+			sub: &subscription.Subscription{
 				BillingPeriod:      monthly,
 				CommitmentAmount:   &amount,
 				CommitmentDuration: &annual,
@@ -149,7 +150,7 @@ func TestIsMultiPeriodCommitment(t *testing.T) {
 		},
 		{
 			name: "overage factor not greater than 1",
-			li: previewLineItem{
+			sub: &subscription.Subscription{
 				BillingPeriod:      monthly,
 				CommitmentAmount:   &amount,
 				CommitmentDuration: &annual,
@@ -161,7 +162,7 @@ func TestIsMultiPeriodCommitment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isMultiPeriodCommitment(tt.li))
+			assert.Equal(t, tt.want, isMultiPeriodCommitment(tt.sub))
 		})
 	}
 }

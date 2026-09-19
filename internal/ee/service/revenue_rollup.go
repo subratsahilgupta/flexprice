@@ -82,11 +82,20 @@ func (s *revenueService) rollupSubscription(ctx context.Context, subscriptionID 
 	return s.rollupSubscriptionForPeriod(ctx, sub, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
 }
 
-// rollupSubscriptionForPeriod rolls one explicit billing window (periodEnd
-// exclusive). The schedule targets the current period; backfills and the
-// finalize fallback target past ones.
+// rollupSubscriptionForPeriod rolls one explicit billing window (periodEnd exclusive)
 func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (skipped bool, err error) {
 	subscriptionID := sub.ID
+
+	// Commitments spanning several billing periods are subscription-level
+	// config only (line-item commitments settle within their own period), so
+	// this check needs no preview or line items — gate before the expensive
+	// preview call.
+	if isMultiPeriodCommitment(sub) {
+		s.Logger.Info(ctx, "revenue_rollup_skipped",
+			"reason", revenueRollupSkipMultiPeriodCommitment,
+			"subscription_id", subscriptionID)
+		return true, nil
+	}
 
 	billingSvc := NewBillingService(s.ServiceParams)
 	invReq, err := billingSvc.PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
@@ -114,21 +123,6 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return true, nil
 	}
 
-	// CommitmentAmount/CommitmentDuration/OverageFactor/BillingPeriod are
-	// subscription-wide, so one probe line item covers every real line item.
-	probe := previewLineItem{
-		CommitmentAmount:   sub.CommitmentAmount,
-		CommitmentDuration: sub.CommitmentDuration,
-		OverageFactor:      sub.OverageFactor,
-		BillingPeriod:      sub.BillingPeriod,
-	}
-	if isMultiPeriodCommitment(probe) {
-		s.Logger.Info(ctx, "revenue_rollup_skipped",
-			"reason", revenueRollupSkipMultiPeriodCommitment,
-			"subscription_id", subscriptionID)
-		return true, nil
-	}
-
 	// When usage exceeds a commitment the engine reduces the usage line and
 	// adds an is_overage line; splitting the reduced line per day would not
 	// reconcile, so skip the whole subscription.
@@ -139,8 +133,7 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return true, nil
 	}
 
-	meterCache := map[string]*meter.Meter{}
-	inputs, err := s.loadRollupInputs(ctx, subscriptionID, invReq.LineItems)
+	inputs, err := s.loadRollupInputs(ctx, sub, periodStart, periodEnd, invReq.LineItems)
 	if err != nil {
 		return false, err
 	}
@@ -186,9 +179,9 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			PeriodEnd:      itemPeriod.End,
 		}
 		if base.SubLineItemID == "" {
-			// Aggregate lines (subscription-level true-up) carry no line-item
-			// id; fall back to the subscription id so the provisional grain
-			// stays non-null.
+			// Engine aggregate lines (subscription true-up and cumulative
+			// overage/true-up) are built without a SubscriptionLineItemID;
+			// fall back to the subscription id so the grain stays non-null.
 			base.SubLineItemID = itemSubscriptionID
 		}
 
@@ -223,27 +216,32 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			if hydrateErr != nil {
 				return false, hydrateErr
 			}
-			m, hydrateErr := s.getMeter(ctx, meterCache, lo.FromPtr(item.MeterID))
+			m, hydrateErr := inputs.meter(lo.FromPtr(item.MeterID))
 			if hydrateErr != nil {
-				return false, ierr.WithError(hydrateErr).
-					WithHint("failed to hydrate meter for usage line item").
-					WithReportableDetails(map[string]any{"meter_id": lo.FromPtr(item.MeterID), "subscription_id": subscriptionID}).
-					Mark(ierr.ErrSystem)
+				return false, hydrateErr
 			}
 			base.Price = p
 			base.Meter = m
 
+			mode := decompositionMode(p, m)
+			if inputs.hasGrants(m.ID) {
+				// Grant-billed meters charge through quota-crossed windows the
+				// daily curve cannot reproduce yet — keep the engine total whole.
+				mode = types.PeriodOnly
+			}
+
 			var rows []*revenuefact.RevenueFact
-			switch decompositionMode(p, m) {
+			switch mode {
 			case types.Marginal:
 				curve, curveErr := s.buildUsageCurve(ctx, usageCurveInput{
 					Price:       p,
 					MeterID:     m.ID,
 					PeriodStart: itemPeriod.Start,
 					// buildUsageCurve's upper bound is exclusive — convert back from the inclusive day.
-					PeriodEnd:        itemPeriod.exclusiveEnd(),
-					EntitlementLimit: inputs.entitlementLimits[m.ID],
-					Timezone:         sub.Timezone,
+					PeriodEnd:           itemPeriod.exclusiveEnd(),
+					EntitlementLimit:    inputs.entitlementLimits[m.ID],
+					ExternalCustomerIDs: inputs.extCustomerIDs,
+					Timezone:            sub.Timezone,
 				})
 				if curveErr != nil {
 					return false, curveErr
@@ -648,11 +646,20 @@ func (s *revenueService) getMeter(ctx context.Context, cache map[string]*meter.M
 }
 
 // rollupInputs is the reference data one rollup pass needs, hydrated once up
-// front: every line-item price in a single query, and the entitlement limits
-// by meter.
+// front: prices and meters in one bulk query each, entitlement limits and
+// grant-covered meters from one entitlement aggregation, and the customer
+// scope for usage reads.
 type rollupInputs struct {
 	prices            map[string]*price.Price
+	meters            map[string]*meter.Meter
 	entitlementLimits map[string]decimal.Decimal
+	// grantMeterIDs are meters billed through entitlement grants — their
+	// engine charge follows quota-crossed windows the daily curve cannot
+	// reproduce, so their usage rows stay period_only.
+	grantMeterIDs map[string]struct{}
+	// extCustomerIDs scope usage reads to this subscription's customers
+	// (parent + inherited children), matching the engine's own scoping.
+	extCustomerIDs []string
 }
 
 // price returns the hydrated price for id, erroring on ids the bulk load did
@@ -667,57 +674,116 @@ func (in *rollupInputs) price(id string) (*price.Price, error) {
 	return p, nil
 }
 
-func (s *revenueService) loadRollupInputs(ctx context.Context, subscriptionID string, lineItems []dto.CreateInvoiceLineItemRequest) (*rollupInputs, error) {
-	ids := make([]string, 0, len(lineItems))
+// meter returns the hydrated meter for id, erroring like price.
+func (in *rollupInputs) meter(id string) (*meter.Meter, error) {
+	m, ok := in.meters[id]
+	if !ok {
+		return nil, ierr.NewErrorf("meter %q not found for revenue rollup", id).
+			WithHint("line item references a meter that does not exist").
+			Mark(ierr.ErrNotFound)
+	}
+	return m, nil
+}
+
+func (in *rollupInputs) hasGrants(meterID string) bool {
+	_, ok := in.grantMeterIDs[meterID]
+	return ok
+}
+
+func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, lineItems []dto.CreateInvoiceLineItemRequest) (*rollupInputs, error) {
+	priceIDs := make([]string, 0, len(lineItems))
+	meterIDs := make([]string, 0, len(lineItems))
 	for i := range lineItems {
 		li := &lineItems[i]
-		// True-up/overage lines carry synthetic ids that are never in the DB.
+		// True-up/overage price ids are generated fresh by the engine on every
+		// compute and never persisted to the prices table — fetching them
+		// would always miss, and decomposition substitutes a stable synthetic
+		// id for them anyway.
 		if li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup) || li.Metadata.GetBool(types.MetadataKeyIsOverage) {
 			continue
 		}
 		if id := lo.FromPtr(li.PriceID); id != "" {
-			ids = append(ids, id)
+			priceIDs = append(priceIDs, id)
+		}
+		if lo.FromPtr(li.PriceType) == string(types.PRICE_TYPE_USAGE) {
+			if id := lo.FromPtr(li.MeterID); id != "" {
+				meterIDs = append(meterIDs, id)
+			}
 		}
 	}
 
-	prices, err := s.PriceRepo.ListByIDs(ctx, lo.Uniq(ids))
+	prices, err := s.PriceRepo.ListByIDs(ctx, lo.Uniq(priceIDs))
 	if err != nil {
 		return nil, err
 	}
-	limits, err := s.loadEntitlementsByMeterID(ctx, subscriptionID)
+	meters, err := s.MeterRepo.ListByIDs(ctx, lo.Uniq(meterIDs))
+	if err != nil {
+		return nil, err
+	}
+
+	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	agg, err := subscriptionService.GetAggregatedSubscriptionEntitlements(ctx, sub.ID, nil)
+	if err != nil {
+		return nil, err
+	}
+	extCustomerIDs, err := subscriptionService.ExternalCustomerIDsForSubscription(ctx, sub)
+	if err != nil {
+		return nil, err
+	}
+
+	limits := make(map[string]decimal.Decimal)
+	meterByFeatureID := make(map[string]string)
+	for _, f := range agg.Features {
+		if f.Feature == nil || types.FeatureType(f.Feature.Type) != types.FeatureTypeMetered || f.Feature.MeterID == "" {
+			continue
+		}
+		meterByFeatureID[f.Feature.ID] = f.Feature.MeterID
+		if f.Entitlement != nil && f.Entitlement.IsEnabled && f.Entitlement.UsageLimit != nil {
+			limits[f.Feature.MeterID] = decimal.NewFromInt(*f.Entitlement.UsageLimit)
+		}
+	}
+
+	grantMeterIDs, err := s.loadGrantMeterIDs(ctx, sub, periodStart, periodEnd, meterByFeatureID)
 	if err != nil {
 		return nil, err
 	}
 
 	return &rollupInputs{
 		prices:            lo.KeyBy(prices, func(p *price.Price) string { return p.ID }),
+		meters:            lo.KeyBy(meters, func(m *meter.Meter) string { return m.ID }),
 		entitlementLimits: limits,
+		grantMeterIDs:     grantMeterIDs,
+		extCustomerIDs:    extCustomerIDs,
 	}, nil
 }
 
-// loadEntitlementsByMeterID returns each metered entitlement's usage limit,
-// keyed by meter id — the free-quantity input buildUsageCurve needs.
-func (s *revenueService) loadEntitlementsByMeterID(ctx context.Context, subscriptionID string) (map[string]decimal.Decimal, error) {
-	subscriptionService := NewSubscriptionService(s.ServiceParams)
-	agg, err := subscriptionService.GetAggregatedSubscriptionEntitlements(ctx, subscriptionID, nil)
+// loadGrantMeterIDs returns the meters covered by feature-scoped entitlement
+// grants in this billing cycle — mirroring loadEntitlementGrantsByMeterID's
+// scoping in the billing engine.
+func (s *revenueService) loadGrantMeterIDs(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, meterByFeatureID map[string]string) (map[string]struct{}, error) {
+	if s.EntitlementGrantRepo == nil {
+		return nil, nil
+	}
+
+	filter := types.NewNoLimitEntitlementGrantFilter().
+		WithCustomerIDs(sub.CustomerID).
+		WithSubscriptionIDs(sub.ID).
+		WithCycleOverlap(periodStart, periodEnd)
+	grants, err := s.EntitlementGrantRepo.List(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	limits := make(map[string]decimal.Decimal)
-	for _, f := range agg.Features {
-		if f.Feature == nil || f.Entitlement == nil {
+	out := make(map[string]struct{})
+	for _, g := range grants {
+		if g == nil || !g.IsFeatureScoped() {
 			continue
 		}
-		if types.FeatureType(f.Feature.Type) != types.FeatureTypeMetered || f.Feature.MeterID == "" {
-			continue
+		if meterID := meterByFeatureID[g.ScopeEntityID]; meterID != "" {
+			out[meterID] = struct{}{}
 		}
-		if !f.Entitlement.IsEnabled || f.Entitlement.UsageLimit == nil {
-			continue
-		}
-		limits[f.Feature.MeterID] = decimal.NewFromInt(*f.Entitlement.UsageLimit)
 	}
-	return limits, nil
+	return out, nil
 }
 
 // hasOverageLine reports whether any of invReq's line items is the engine's

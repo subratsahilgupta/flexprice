@@ -30,6 +30,10 @@ type usageCurveInput struct {
 	// Negative values are treated as zero.
 	EntitlementLimit decimal.Decimal
 
+	// ExternalCustomerIDs scope the usage read to this subscription's
+	// customers; empty means no customer filter.
+	ExternalCustomerIDs []string
+
 	// Timezone is the IANA name used to split usage into calendar days.
 	// Empty means UTC.
 	Timezone string
@@ -65,13 +69,14 @@ func (s *revenueService) buildUsageCurve(ctx context.Context, in usageCurveInput
 	}
 
 	points, err := s.MeterUsageRepo.GetCumulativeDailyUsage(ctx, &events.CumulativeDailyUsageParams{
-		TenantID:      types.GetTenantID(ctx),
-		EnvironmentID: types.GetEnvironmentID(ctx),
-		MeterID:       in.MeterID,
-		StartTime:     in.PeriodStart,
-		EndTime:       in.PeriodEnd,
-		UseFinal:      true,
-		Timezone:      in.Timezone,
+		TenantID:            types.GetTenantID(ctx),
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		MeterID:             in.MeterID,
+		ExternalCustomerIDs: in.ExternalCustomerIDs,
+		StartTime:           in.PeriodStart,
+		EndTime:             in.PeriodEnd,
+		UseFinal:            true,
+		Timezone:            in.Timezone,
 	})
 	if err != nil {
 		return nil, err

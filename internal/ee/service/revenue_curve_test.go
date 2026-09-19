@@ -447,3 +447,52 @@ func TestMarginalPrefixSumEqualsPeriodCharge(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildUsageCurve_ScopesToExternalCustomers: usage from other customers on
+// the same meter must not leak into a subscription's curve.
+func TestBuildUsageCurve_ScopesToExternalCustomers(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewInMemoryMeterUsageStore()
+	svc := &revenueService{ServiceParams: ServiceParams{
+		Logger:         logger.NewNoopLogger(),
+		MeterUsageRepo: store,
+		PriceRepo:      testutil.NewInMemoryPriceStore(),
+		MeterRepo:      testutil.NewInMemoryMeterStore(),
+		PlanRepo:       testutil.NewInMemoryPlanStore(),
+		PriceUnitRepo:  testutil.NewInMemoryPriceUnitStore(),
+		AddonRepo:      testutil.NewInMemoryAddonStore(),
+		SubRepo:        testutil.NewInMemorySubscriptionStore(),
+	}}
+
+	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	seed := func(id, extCustomer string, qty int64) *events.MeterUsage {
+		return &events.MeterUsage{
+			Event: events.Event{
+				ID:                 id,
+				TenantID:           types.GetTenantID(ctx),
+				EnvironmentID:      types.GetEnvironmentID(ctx),
+				ExternalCustomerID: extCustomer,
+				Timestamp:          periodStart.Add(time.Hour),
+				IngestedAt:         periodStart.Add(time.Hour),
+			},
+			MeterID:    "meter_curve_scope",
+			QtyTotal:   decimal.NewFromInt(qty),
+			UniqueHash: id,
+		}
+	}
+	require.NoError(t, store.BulkInsertMeterUsage(ctx, []*events.MeterUsage{
+		seed("mu_mine", "cust_mine", 100),
+		seed("mu_other", "cust_other", 900),
+	}))
+
+	got, err := svc.buildUsageCurve(ctx, usageCurveInput{
+		Price:               &price.Price{ID: "p_scope", Amount: decimal.RequireFromString("1"), Currency: "usd", Type: types.PRICE_TYPE_USAGE, BillingModel: types.BILLING_MODEL_FLAT_FEE},
+		MeterID:             "meter_curve_scope",
+		PeriodStart:         periodStart,
+		PeriodEnd:           periodStart.AddDate(0, 0, 1),
+		ExternalCustomerIDs: []string{"cust_mine"},
+	})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "100", got[0].CumulativeGrossQty.String(), "other customers' usage must not leak into the curve")
+}

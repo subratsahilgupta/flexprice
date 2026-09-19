@@ -100,7 +100,7 @@ func (b *revenueFactBuilder) Build() *RevenueFact {
 // voided: same grain and invoice stamps, negated amounts, is_revert=true.
 func NewRevert(f *RevenueFact, computedAt time.Time) *RevenueFact {
 	return NewRevenueFactBuilder(f).
-		WithID(types.GenerateUUIDWithPrefix("revfact")).
+		WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_REVENUE_FACT)).
 		WithNegatedAmounts().
 		WithIsRevert(true).
 		WithStatus(types.FactFinal).

@@ -11,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/events"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -1097,6 +1098,9 @@ func (s *InMemoryMeterUsageStore) GetCumulativeDailyUsage(_ context.Context, par
 	dayTotals := make(map[time.Time]decimal.Decimal)
 	for _, r := range s.records {
 		if r.TenantID != params.TenantID || r.EnvironmentID != params.EnvironmentID || r.MeterID != params.MeterID {
+			continue
+		}
+		if len(params.ExternalCustomerIDs) > 0 && !lo.Contains(params.ExternalCustomerIDs, r.ExternalCustomerID) {
 			continue
 		}
 		if !params.StartTime.IsZero() && r.Timestamp.Before(params.StartTime) {

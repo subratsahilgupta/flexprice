@@ -674,11 +674,12 @@ func (qb *MeterUsageQueryBuilder) BuildCumulativeDailyUsageQuery(params *events.
 	dayExpr := fmt.Sprintf("toStartOfDay(timestamp, '%s')", tz)
 
 	detailedParams := &events.MeterUsageDetailedAnalyticsParams{
-		TenantID:      params.TenantID,
-		EnvironmentID: params.EnvironmentID,
-		MeterIDs:      []string{params.MeterID},
-		StartTime:     params.StartTime,
-		EndTime:       params.EndTime,
+		TenantID:            params.TenantID,
+		EnvironmentID:       params.EnvironmentID,
+		ExternalCustomerIDs: params.ExternalCustomerIDs,
+		MeterIDs:            []string{params.MeterID},
+		StartTime:           params.StartTime,
+		EndTime:             params.EndTime,
 	}
 	where, args := qb.BuildDetailedWhereClause(detailedParams)
 	finalClause, finalSettings := qb.BuildFinalClause(params.UseFinal)

@@ -11,6 +11,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -53,12 +54,6 @@ type previewLineItem struct {
 	// is the inclusive last calendar day.
 	PeriodStart time.Time
 	PeriodEnd   time.Time
-
-	// Subscription-level commitment config, used by isMultiPeriodCommitment.
-	CommitmentAmount   *decimal.Decimal
-	CommitmentDuration *types.BillingPeriod
-	OverageFactor      *decimal.Decimal
-	BillingPeriod      types.BillingPeriod
 }
 
 func (li previewLineItem) priceID() *string {
@@ -143,15 +138,17 @@ func decompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
 
 // isMultiPeriodCommitment reports a commitment spanning more than one billing
 // period (e.g. ANNUAL commitment on a MONTHLY subscription). The rollup skips
-// these: their true-up cannot be attributed to a single period.
-func isMultiPeriodCommitment(li previewLineItem) bool {
-	if li.CommitmentAmount == nil || !li.CommitmentAmount.GreaterThan(decimal.Zero) {
+// these: their true-up cannot be attributed to a single period. Only the
+// subscription carries a commitment duration — line-item commitments settle
+// within their own billing period.
+func isMultiPeriodCommitment(sub *subscription.Subscription) bool {
+	if sub.CommitmentAmount == nil || !sub.CommitmentAmount.GreaterThan(decimal.Zero) {
 		return false
 	}
-	if li.OverageFactor == nil || !li.OverageFactor.GreaterThan(decimal.NewFromInt(1)) {
+	if sub.OverageFactor == nil || !sub.OverageFactor.GreaterThan(decimal.NewFromInt(1)) {
 		return false
 	}
-	if li.CommitmentDuration == nil || *li.CommitmentDuration == li.BillingPeriod {
+	if sub.CommitmentDuration == nil || *sub.CommitmentDuration == sub.BillingPeriod {
 		return false
 	}
 	return true
@@ -177,7 +174,7 @@ func invoiceCadence(li previewLineItem) types.InvoiceCadence {
 // newPeriodOnlyFact builds the fields shared by every period_only row.
 func newPeriodOnlyFact(li previewLineItem, period revenuePeriod, day time.Time, source types.RevenueSource) *revenuefact.RevenueFact {
 	return &revenuefact.RevenueFact{
-		ID:                types.GenerateUUIDWithPrefix("revfact"),
+		ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_REVENUE_FACT),
 		TenantID:          li.TenantID,
 		EnvironmentID:     li.EnvironmentID,
 		CustomerID:        li.CustomerID,
@@ -243,7 +240,7 @@ func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefac
 		entitlementAmount := marginalEntitlementQty.Mul(tier1Rate)
 
 		rows = append(rows, &revenuefact.RevenueFact{
-			ID:                types.GenerateUUIDWithPrefix("revfact"),
+			ID:                types.GenerateUUIDWithPrefix(types.UUID_PREFIX_REVENUE_FACT),
 			TenantID:          li.TenantID,
 			EnvironmentID:     li.EnvironmentID,
 			CustomerID:        li.CustomerID,

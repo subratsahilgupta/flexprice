@@ -222,3 +222,7 @@ func TestIncrementRedemptions_UnlimitedCouponAlwaysSucceeds(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 3, got.TotalRedemptions)
 }
+
+func (noopRedisCache) GetBulk(_ context.Context, keys []string) (map[string]interface{}, []string) {
+	return nil, keys
+}

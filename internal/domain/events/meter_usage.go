@@ -161,7 +161,10 @@ type CumulativeDailyUsageParams struct {
 	TenantID      string
 	EnvironmentID string
 	MeterID       string
-	StartTime     time.Time
+	// ExternalCustomerIDs scopes usage to these customers; empty means no
+	// customer filter.
+	ExternalCustomerIDs []string
+	StartTime           time.Time
 	// EndTime is exclusive: the window is half-open [StartTime, EndTime).
 	// Pass end-of-window+1 day to include the last day.
 	EndTime  time.Time
