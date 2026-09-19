@@ -202,8 +202,8 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 	for _, grantToAdd := range cfg.entitlementGrantsToAdd {
 		featureID := grantToAdd.FeatureID()
 
-		// The addition owns this feature's successor: it carries the survivors forward itself,
-		// so the removal must not open a second row for the same slot.
+		// The addition owns this feature's successor: it carries the balance itself, so the
+		// removal must not open a second row for the same slot.
 		delete(carryForward, featureID)
 
 		incoming := incomingByFeature[featureID]
@@ -219,24 +219,16 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 			IncomingECs: incoming,
 		}
 
+		// Stamp the successor onto the window that was actually written, so the segments tile
+		// and the predecessor's unspent balance carries. Whether a config still funds the
+		// feature is irrelevant: quota already granted belongs to the customer for the rest of
+		// the cycle, so it carries even when the config that bought it is the one leaving.
 		predecessorGrant := lo.FirstOrEmpty(liveByFeature[featureID])
 		if closed := closedByID[predecessorGrant.GetID()]; closed != nil {
-			if len(surviving) > 0 {
-				// Stamp the successor onto the window that was actually written, so the
-				// segments tile and the predecessor's unspent balance carries.
-				req.Closed = closed
-				req.New = entitlementgrant.NewEntitlementGrantBuilder(grantToAdd).
-					WithWindow(closed.ValidTo, grantToAdd.ValidTo).
-					Build()
-			} else {
-				// Nothing funds the feature any more, so the balance dies with the configs that
-				// bought it — the successor only tiles. LatestOf, because a never-evaluated
-				// window is deleted rather than closed and its boundary is its own start: the
-				// successor must not be dragged back to span it.
-				req.New = entitlementgrant.NewEntitlementGrantBuilder(grantToAdd).
-					WithWindow(types.LatestOf(grantToAdd.ValidFrom, closed.ValidTo), grantToAdd.ValidTo).
-					Build()
-			}
+			req.Closed = closed
+			req.New = entitlementgrant.NewEntitlementGrantBuilder(grantToAdd).
+				WithWindow(closed.ValidTo, grantToAdd.ValidTo).
+				Build()
 		}
 
 		reqs = append(reqs, req)
@@ -273,8 +265,9 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 
 // removalClosures decides what the leaving configs settle, writing nothing: the windows to end,
 // and per feature the pooled row a successor must carry forward. A parallel EC owns its slot
-// outright, so its row ends with no successor; an additive feature pools with whatever else
-// feeds it, so its row ends and the survivors carry the remaining balance.
+// outright, so its row ends with no successor. An additive feature pools: its row is re-keyed
+// onto the surviving configs, carrying the balance — and when nothing survives, left alone,
+// because granted quota is never taken back.
 func (s *subscriptionGrantService) removalClosures(
 	ctx context.Context,
 	cfg *GrantChangeConfig,
@@ -309,12 +302,12 @@ func (s *subscriptionGrantService) removalClosures(
 
 		pooled := lo.FirstOrEmpty(live)
 
-		// Nothing left to hand forward, and the successor would have to carry a zero
-		// quota — which the grant model rejects. Leaving the spent window open keeps the
-		// slot covered, so the tick cannot re-derive a fresh allowance from the surviving
-		// configs and hand back quota the pool already consumed.
-		if pooled.Remaining().IsZero() {
-			s.Logger.Info(ctx, "keeping the spent entitlement grant window open; nothing to carry forward",
+		// No config still funds the feature, so there is no live EC to re-key the slot onto.
+		// Leave the window to run out: granted quota is never taken back, and the tick only
+		// considers features that still have live configs, so nothing will open beside it.
+		// Basically, do nothing and leave the grant alone.
+		if len(cfg.survivingECsByFeature[featureID]) == 0 {
+			s.Logger.Info(ctx, "leaving the entitlement grant window open; the last config on the feature left",
 				"subscription_id", cfg.sub.ID,
 				"grant_id", pooled.ID,
 				"feature_id", featureID,
@@ -323,11 +316,13 @@ func (s *subscriptionGrantService) removalClosures(
 			continue
 		}
 
+		// Survivors remain, so the row has to be re-keyed onto the lowest-id EC that is still
+		// live — the slot the evaluator will look under. Closing and reopening is what moves
+		// it; leaving the row on the departing EC would strand the slot and let the tick open
+		// a second window beside it. The successor carries the remaining balance, which for a
+		// spent pool is zero — the row still has to exist to hold the slot.
 		toClose = append(toClose, pooled)
-
-		if len(cfg.survivingECsByFeature[featureID]) > 0 {
-			carryForward[featureID] = pooled
-		}
+		carryForward[featureID] = pooled
 	}
 
 	return toClose, carryForward

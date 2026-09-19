@@ -75,7 +75,9 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 		// span the original window, where every event still counts against one pool.
 		// Keyed on last_computed_at rather than the close boundary: a window nothing has
 		// measured cannot be split at any instant, however the caller dates the change.
-		if !lastComputed.After(g.ValidFrom) {
+		// A window already in overage is exempt: it was born crossed, so it carries state no
+		// tick wrote, and replacing it would hand its overage a fresh quota retroactively.
+		if !lastComputed.After(g.ValidFrom) && g.QuotaCrossedAt == nil {
 			if err := s.EntitlementGrantRepo.Delete(ctx, g.ID); err != nil {
 				return nil, err
 			}
@@ -172,11 +174,21 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 			continue
 		}
 
-		if !quota.IsPositive() {
-			s.Logger.Info(ctx, "skipping entitlement grant open; resulting quota is not positive",
+		if quota.IsNegative() {
+			s.Logger.Info(ctx, "skipping entitlement grant open; resulting quota is negative",
 				"feature_id", req.FeatureID,
 				"quota", quota.String())
 			continue
+		}
+
+		// A spent predecessor hands forward nothing. The successor still has to exist —
+		// it is what holds the slot on a live config — so it opens at zero, already
+		// crossed from its first instant, and every unit in it bills.
+		status := types.EntitlementGrantStatusActive
+		var crossedAt *time.Time
+		if quota.IsZero() {
+			status = types.EntitlementGrantStatusExhausted
+			crossedAt = &validFrom
 		}
 
 		grant := entitlementgrant.NewEntitlementGrantBuilder(req.New).
@@ -184,10 +196,10 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 			WithEntitlementConfigID(slotECID).
 			WithQuota(quota).
 			WithWindow(validFrom, req.New.ValidTo).
-			WithGrantStatus(types.EntitlementGrantStatusActive).
+			WithGrantStatus(status).
 			WithUsage(decimal.Zero).
 			WithLastComputedAt(nil).
-			WithQuotaCrossedAt(nil).
+			WithQuotaCrossedAt(crossedAt).
 			WithEnvironmentID(types.GetEnvironmentID(ctx)).
 			WithBaseModel(types.GetDefaultBaseModel(ctx)).
 			Build()

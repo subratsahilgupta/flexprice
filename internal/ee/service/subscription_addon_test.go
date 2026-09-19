@@ -1406,12 +1406,14 @@ func (s *SubscriptionServiceSuite) TestCharacteriseAddon_Detach_FullEntityFootpr
 		}
 	})
 
-	// The attach's window was opened but never evaluated, so the removal DELETEs it rather
-	// than closing it — a live window would otherwise keep granting quota the customer no
-	// longer pays for. This is the behaviour the merged close/open pass has to preserve.
+	// A removal leaves the window alone: the quota it granted is the customer's for the
+	// rest of the cycle, exactly as an already-applied credit grant is. What stops the
+	// addon funding the NEXT cycle is the association's end date, asserted above.
 	s.Run("entitlement_grants", func() {
-		s.Empty(s.sortedGrantsForFeature(featureID),
-			"a never-evaluated window is removed outright, not left open")
+		rows := s.sortedGrantsForFeature(featureID)
+		s.Require().Len(rows, 1, "the removal opens no second segment")
+		s.True(rows[0].ValidTo.Equal(sub.CurrentPeriodEnd),
+			"and leaves the window running to period end, got %s", rows[0].ValidTo)
 	})
 
 	s.Run("money", func() {

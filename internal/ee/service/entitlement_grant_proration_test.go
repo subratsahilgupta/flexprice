@@ -679,8 +679,8 @@ func (s *SubscriptionServiceSuite) TestGrantBatch_Add_ParallelFeature_ClosedForT
 // 2. multiple removals
 // -----------------------------------------------------------------------------
 
-// Two removals on one additive feature share one pooled row: it must be closed once,
-// and one successor carries the remaining balance for the survivors.
+// Two removals on one additive feature share one pooled row: it is closed once and re-keyed
+// onto the surviving config, carrying the whole remaining balance.
 func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_OverlappingAdditiveFeature_ClosesPooledRowOnce() {
 	featureID := s.seedGrantFeature("feat_b_rm_overlap")
 	s.seedGrantEC("ent_b_rm_plan", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID, 1000, "")
@@ -720,7 +720,7 @@ func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_NowPlusPeriodEnd_Period
 		s.source(s.periodEnd(), grantProrationSourceAddonDetach, b),
 	}))
 
-	s.Len(s.sortedGrantsForFeature(f1), 2, "the immediate removal segments its feature")
+	s.Len(s.sortedGrantsForFeature(f1), 2, "the immediate removal re-keys its feature's row")
 
 	later := s.sortedGrantsForFeature(f2)
 	s.Require().Len(later, 1, "the period-end removal must not segment this cycle, got %d rows", len(later))
@@ -751,9 +751,9 @@ func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_ParallelFeature_ClosesO
 	s.assertCutAtChange(byID[addonSlot.ID])
 }
 
-// Nothing survives the removal, so the window closes with no successor: reopening it
-// would hand back quota from configs that no longer feed the feature.
-func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_LastECOnFeature_ClosesWithoutSuccessor() {
+// Even the last EC leaving does not take the quota with it: what was granted is the
+// customer's for the rest of the cycle, and the feature simply goes unfunded next cycle.
+func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_LastECOnFeature_LeavesWindowIntact() {
 	featureID := s.seedGrantFeature("feat_b_rm_last")
 	only := s.seedGrantEC("ent_b_rmlast_addon", featureID, types.ENTITLEMENT_ENTITY_TYPE_ADDON, "addon_b_rmlast", 600, "")
 	s.seedCycleGrant("ent_b_rmlast_addon", featureID, 600)
@@ -763,8 +763,9 @@ func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_LastECOnFeature_ClosesW
 	}))
 
 	rows := s.sortedGrantsForFeature(featureID)
-	s.Require().Len(rows, 1, "no successor when nothing survives, got %d rows", len(rows))
-	s.assertCutAtChange(rows[0])
+	s.Require().Len(rows, 1, "no second segment, got %d rows", len(rows))
+	s.True(rows[0].Quota.Equal(decimal.NewFromInt(600)), "the granted quota survives the removal")
+	s.True(rows[0].ValidTo.Equal(s.periodEnd()), "the window runs to its natural end")
 }
 
 // -----------------------------------------------------------------------------
@@ -845,11 +846,11 @@ func (s *SubscriptionServiceSuite) TestGrantBatch_ColdStart_RemoveAtPeriodEnd_Le
 		"the addon leaves at period end, so it still feeds this cycle, expected %s got %s", want, rows[0].Quota)
 }
 
-// The only EC feeding a feature leaves as another arrives. The successor must start where
-// the closed window ended — two live rows over one instant would double the quota — but must
-// NOT inherit its balance: removing that EC on its own drops the balance, and an unrelated
-// addon sharing the batch cannot be what rescues it.
-func (s *SubscriptionServiceSuite) TestGrantBatch_Swap_LastECOnFeature_TilesWithoutCarryingQuota() {
+// The only EC feeding a feature leaves as another arrives. The successor starts where the
+// closed window ended — two live rows over one instant would double the quota — and carries
+// its balance: a swap must not cost the customer quota that a bare removal would have left
+// them, and whether a config survives says nothing about what was already granted.
+func (s *SubscriptionServiceSuite) TestGrantBatch_Swap_LastECOnFeature_CarriesQuotaForward() {
 	featureID := s.seedGrantFeature("feat_b_lastswap")
 	s.seedGrantAddon("addon_b_lastswap_out", "ent_b_lastswap_out", featureID, 600, "")
 	s.seedActiveAddonAssociation("assoc_b_lastswap", "addon_b_lastswap_out")
@@ -869,9 +870,10 @@ func (s *SubscriptionServiceSuite) TestGrantBatch_Swap_LastECOnFeature_TilesWith
 	s.assertCutAtChange(rows[0])
 	s.assertTiled(featureID)
 
-	want := s.expectedProrated(300)
+	// The predecessor's whole unspent balance plus the incoming addon's prorated slice.
+	want := decimal.NewFromInt(600).Add(s.expectedProrated(300))
 	s.True(rows[1].Quota.Equal(want),
-		"the leaving addon's unspent quota must not carry, expected %s got %s", want, rows[1].Quota)
+		"the leaving addon's granted quota must carry, expected %s got %s", want, rows[1].Quota)
 }
 
 // Add and remove on unrelated features must not leak into each other.
@@ -901,9 +903,11 @@ func (s *SubscriptionServiceSuite) TestGrantBatch_AddAndRemove_DifferentFeatures
 	s.assertTiled(removed)
 }
 
-// A spent pool has nothing to hand forward, and a zero-quota successor is rejected by
-// the model — so the window stays open and keeps its slot covered.
-func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_SpentPool_LeavesWindowOpen() {
+// A spent pool hands nothing forward, but the slot still has to move off the departing
+// config: left there, openIfSlotFree reads the surviving config's slot as empty and opens
+// a second window over the same cycle. So the window closes and a zero-quota successor
+// takes the slot, already crossed, so every further unit bills.
+func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_SpentPool_RekeysWithZeroQuota() {
 	featureID := s.seedGrantFeature("feat_b_rm_spent")
 	s.seedGrantEC("ent_b_spent_plan", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID, 1000, "")
 	out := s.seedGrantEC("ent_b_spent_addon", featureID, types.ENTITLEMENT_ENTITY_TYPE_ADDON, "addon_b_spent", 600, "")
@@ -918,8 +922,20 @@ func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_SpentPool_LeavesWindowO
 	}))
 
 	rows := s.sortedGrantsForFeature(featureID)
-	s.Require().Len(rows, 1, "the spent window is left alone, got %d rows", len(rows))
-	s.True(rows[0].ValidTo.Equal(spent.ValidTo), "it must keep its original window")
+	s.Require().Len(rows, 2, "the spent window is re-keyed, not left alone, got %d rows", len(rows))
+	closed, successor := rows[0], rows[1]
+
+	s.Equal(spent.ID, closed.ID)
+	s.assertCutAtChange(closed)
+	s.assertTiled(featureID)
+
+	s.Equal("ent_b_spent_plan", successor.EntitlementConfigID,
+		"the successor must sit on the surviving config, or the slot strands")
+	s.True(successor.Quota.IsZero(), "a spent pool hands nothing forward, got %s", successor.Quota)
+	s.True(successor.ValidTo.Equal(spent.ValidTo), "it must carry the feature to the period end")
+	s.Require().NotNil(successor.QuotaCrossedAt,
+		"a zero-quota window is in overage from its first instant, or its usage never bills")
+	s.True(successor.QuotaCrossedAt.Equal(successor.ValidFrom))
 }
 
 // What actually stops next cycle's window is the association, not the grant pass: a

@@ -12,6 +12,7 @@ import (
 	priceDomain "github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -62,6 +63,33 @@ func (s *billingService) loadEntitlementGrantsByMeterID(
 		meterByFeatureID[f.Feature.ID] = f.Feature.MeterID
 	}
 
+	// A grant outlives the config that funded it, so a feature whose last live
+	// entitlement is gone is missing from aggregatedFeatures. Resolve those
+	// features directly — the lookup the evaluator already does — or the grant
+	// silently stops discounting while the evaluator keeps maintaining it.
+	missing := make([]string, 0)
+	for _, g := range grants {
+		if g == nil || !g.IsFeatureScoped() {
+			continue
+		}
+		if _, ok := meterByFeatureID[g.ScopeEntityID]; !ok {
+			missing = append(missing, g.ScopeEntityID)
+		}
+	}
+	if len(missing) > 0 {
+		featureFilter := types.NewNoLimitFeatureFilter()
+		featureFilter.FeatureIDs = lo.Uniq(missing)
+		orphanFeatures, err := s.FeatureRepo.List(ctx, featureFilter)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range orphanFeatures {
+			if f != nil && f.MeterID != "" {
+				meterByFeatureID[f.ID] = f.MeterID
+			}
+		}
+	}
+
 	out := make(map[string][]*entitlementgrant.EntitlementGrant)
 	for _, g := range grants {
 		if g == nil || !g.IsFeatureScoped() {
@@ -109,23 +137,23 @@ func (s *billingService) adjustMeterUsageGrants(
 		return adjustMeterUsageGrantsResult{}, false, nil
 	}
 
-	// Per-EC violation totals (usage − quota). ECs share the usage stream, so
-	// these overlap — attribution only, never summed into the bill directly.
+	// Per-EC violation totals (usage − quota). Overlapping windows share the usage
+	// stream, so these can double count — attribution only, never summed blindly.
 	perECOverage := make(map[string]decimal.Decimal)
-	ecIDs := make(map[string]struct{})
 	for _, g := range grants {
 		if g == nil {
 			continue
 		}
-		ecIDs[g.EntitlementConfigID] = struct{}{}
 		if overage := g.Overage(); overage.IsPositive() {
 			perECOverage[g.EntitlementConfigID] = perECOverage[g.EntitlementConfigID].Add(overage)
 		}
 	}
 
 	res := adjustMeterUsageGrantsResult{Measure: measure, PerECOverage: perECOverage}
-	if len(ecIDs) <= 1 {
-		// Single EC: its windows never overlap, so the snapshot sum is exact
+	if !grantWindowsOverlap(grants) {
+		// Disjoint windows: every event falls in exactly one, so the snapshot sum is
+		// exact. Distinct EC ids do not imply overlap — a pooled slot re-keyed by an
+		// addon change tiles the cycle in sequence across two configs.
 		for _, total := range perECOverage {
 			res.Overage = res.Overage.Add(total)
 		}
@@ -221,6 +249,33 @@ func (s *billingService) mergedOverage(
 		}
 	}
 	return total, nil
+}
+
+// grantWindowsOverlap reports whether any two grant windows share an instant. Only
+// then can one event be counted against more than one quota, which is what the
+// merged-window measurement exists to prevent.
+func grantWindowsOverlap(grants []*entitlementgrant.EntitlementGrant) bool {
+	windows := make([]timeInterval, 0, len(grants))
+	for _, g := range grants {
+		if g != nil && g.ValidTo.After(g.ValidFrom) {
+			windows = append(windows, timeInterval{start: g.ValidFrom, end: g.ValidTo})
+		}
+	}
+	if len(windows) < 2 {
+		return false
+	}
+	sort.Slice(windows, func(i, j int) bool { return windows[i].start.Before(windows[j].start) })
+
+	maxEnd := windows[0].end
+	for _, w := range windows[1:] {
+		if w.start.Before(maxEnd) {
+			return true
+		}
+		if w.end.After(maxEnd) {
+			maxEnd = w.end
+		}
+	}
+	return false
 }
 
 // timeInterval is a half-open [start, end) range.
