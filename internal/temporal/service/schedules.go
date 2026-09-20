@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/config"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/temporal/client"
 	"github.com/flexprice/flexprice/internal/temporal/models"
@@ -23,13 +22,7 @@ import (
 
 // AllTemporalScheduleConfigs returns the configuration for every Temporal server schedule
 // (not HTTP-only cron entrypoints; keep in sync with types.AllTemporalServerScheduleIDs).
-// cfg may be nil (schedules that don't need it, like this one, still get sane defaults).
-func AllTemporalScheduleConfigs(cfg *config.Configuration) []types.ScheduleConfig {
-	revenueRollupInterval := defaultRevenueRollupScheduleInterval
-	if cfg != nil && cfg.Analytics.RevenueRollup.Interval > 0 {
-		revenueRollupInterval = cfg.Analytics.RevenueRollup.Interval
-	}
-
+func AllTemporalScheduleConfigs() []types.ScheduleConfig {
 	return []types.ScheduleConfig{
 		{
 			ID:        types.ScheduleIDCreditGrantProcessing,
@@ -143,26 +136,23 @@ func AllTemporalScheduleConfigs(cfg *config.Configuration) []types.ScheduleConfi
 			// Always declared; analytics.revenue_rollup.enabled acts as a kill
 			// switch inside RollupDirtyActivity, and tenants opt in via settings.
 			ID:        types.ScheduleIDRevenueRollup,
-			Interval:  revenueRollupInterval,
+			Interval:  24 * time.Hour,
 			Offset:    3 * time.Hour, // daily at 03:00 UTC by default
 			Workflow:  cronWorkflows.RevenueRollupWorkflow,
-			Input:     models.RevenueRollupInput{Interval: revenueRollupInterval},
+			Input:     models.RevenueRollupInput{Interval: 24 * time.Hour},
 			TaskQueue: types.TemporalTaskQueueCron,
 		},
 	}
 }
 
-// defaultRevenueRollupScheduleInterval is used when analytics.revenue_rollup.interval is unset.
-const defaultRevenueRollupScheduleInterval = 24 * time.Hour
-
-// EnsureSchedules idempotently creates or updates every configured Temporal
-// server schedule. It returns the first error encountered.
-func EnsureSchedules(ctx context.Context, tc client.TemporalClient, cfg *config.Configuration, log *logger.Logger) error {
-	for _, sc := range AllTemporalScheduleConfigs(cfg) {
-		if err := ensureOneSchedule(ctx, tc, sc); err != nil {
+// EnsureSchedules idempotently creates or updates every configured Temporal server schedule.
+// It returns the first error encountered; per-schedule outcomes are logged only.
+func EnsureSchedules(ctx context.Context, tc client.TemporalClient, log *logger.Logger) error {
+	for _, cfg := range AllTemporalScheduleConfigs() {
+		if err := ensureOneSchedule(ctx, tc, cfg); err != nil {
 			return err
 		}
-		log.Info(ctx, "schedule ensured", "id", sc.ID)
+		log.Info(ctx, "schedule ensured", "id", cfg.ID)
 	}
 	return nil
 }

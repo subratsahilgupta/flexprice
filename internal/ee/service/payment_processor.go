@@ -783,14 +783,10 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 		return err
 	}
 
-	// This path finalizes without performFinalizeInvoiceActions, so it needs
-	// its own revenue_facts FINAL flip (async, best-effort — see
-	// asyncRevenueFactsUpdate).
+	// This path finalizes without performFinalizeInvoiceActions, so it emits
+	// the finalized webhook + facts flip itself.
 	if finalizedNow {
-		asyncRevenueFactsUpdate(ctx, p.ServiceParams, "final flip", invoice.ID,
-			func(ctx context.Context, rs RevenueService) error {
-				return rs.FinalizeSubscriptionPeriod(ctx, invoice.ID)
-			})
+		notifyInvoiceFinalized(ctx, p.ServiceParams, invoice.ID)
 	}
 
 	// Check if this invoice is for a purchased credit (has wallet_transaction_id in metadata)

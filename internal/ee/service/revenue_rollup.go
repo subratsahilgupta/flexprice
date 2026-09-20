@@ -49,10 +49,11 @@ type RevenueService interface {
 	// after VoidInvoice.
 	RevertInvoiceFacts(ctx context.Context, invoiceID string) error
 
-	// SweepDrift compares recently finalized/voided invoices against their
-	// booked facts, logging drift and — only when auto_correct is on —
-	// repairing via revert + re-derive + flip.
-	SweepDrift(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error)
+	// ReconcileBookedInvoices re-checks every invoice finalized or voided
+	// since the given time: do its booked revenue_facts rows still sum to
+	// what the invoice says? Mismatches are logged as revenue_facts_drift and
+	// repaired only when analytics.revenue_rollup.auto_correct is on.
+	ReconcileBookedInvoices(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error)
 
 	// ExportFacts pages the tenant's facts recomputed after since, ordered by
 	// (computed_at, id). Denied unless the tenant opted in via settings.
@@ -76,23 +77,28 @@ type lineItemRows struct {
 }
 
 func (s *revenueService) RollupSubscription(ctx context.Context, subscriptionID string) error {
-	_, err := s.rollupSubscription(ctx, subscriptionID)
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		return err
+	}
+	_, err = s.rollupSubscription(ctx, sub)
 	return err
 }
 
 // rollupSubscription also reports policy skips, which RollupDirty tallies but
 // the interface method does not expose.
-func (s *revenueService) rollupSubscription(ctx context.Context, subscriptionID string) (skipped bool, err error) {
-	sub, err := s.SubRepo.Get(ctx, subscriptionID)
-	if err != nil {
-		return false, err
-	}
+func (s *revenueService) rollupSubscription(ctx context.Context, sub *subscription.Subscription) (skipped bool, err error) {
 	return s.rollupSubscriptionForPeriod(ctx, sub, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
 }
 
 // rollupSubscriptionForPeriod rolls one explicit billing window (periodEnd exclusive)
 func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (skipped bool, err error) {
+	lineItems, err := s.SubscriptionLineItemRepo.ListBySubscription(ctx, sub)
+	if err != nil {
+		return false, err
+	}
 	subscriptionID := sub.ID
+	sub.LineItems = lineItems
 
 	// Multi-period commitments are deliberately OUT OF SCOPE for revenue_facts
 	// for now (their true-up needs a rollup-maintained prior base; see ERD
@@ -128,17 +134,9 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return false, nil
 	}
 
-	// Coupon amounts are not resolved by the preview — dry-run them here so
-	// discounted subscriptions decompose instead of being skipped.
-	lineDiscounts, invoiceDiscounts, err := s.resolveDiscounts(ctx, invReq)
-	if err != nil {
-		return false, err
-	}
-
-	// When usage exceeds a commitment, the engine reduces the usage lines and
-	// adds an is_overage line whose split the daily curve cannot reproduce —
-	// keep every usage line whole (period_only) instead of skipping the
-	// subscription.
+	// Did the engine split this period's usage into "within commitment" +
+	// "overage" lines? decomposeUsageRows keeps usage lines whole in that
+	// case — see its doc for why.
 	overagePresent := hasOverageLine(invReq)
 
 	inputs, err := s.loadRollupInputs(ctx, sub, periodStart, periodEnd, invReq.LineItems)
@@ -183,8 +181,8 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			Currency:        sub.Currency,
 			Metadata:        item.Metadata,
 			EngineAmount:    item.Amount,
-			LineDiscount:    lineDiscounts[i],
-			InvoiceDiscount: invoiceDiscounts[i],
+			LineDiscount:    lo.FromPtr(item.LineItemDiscount),
+			InvoiceDiscount: lo.FromPtr(item.InvoiceLevelDiscount),
 			EntitlementQty:  lo.FromPtr(item.AdjustedEntitlementQuantity),
 			PeriodStart:     itemPeriod.Start,
 			PeriodEnd:       itemPeriod.End,
@@ -227,69 +225,9 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			}
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE):
-			// A missing price or meter is a hard error — never let
-			// decompositionMode(nil, nil) silently default to Marginal.
-			p, hydrateErr := inputs.price(lo.FromPtr(item.PriceID))
-			if hydrateErr != nil {
-				return false, hydrateErr
-			}
-			m, hydrateErr := inputs.meter(lo.FromPtr(item.MeterID))
-			if hydrateErr != nil {
-				return false, hydrateErr
-			}
-			base.Price = p
-			base.Meter = m
-
-			grants := inputs.grants(m.ID)
-			grantBilled := grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, grants)
-
-			mode := decompositionMode(p, m)
-			if overagePresent {
-				// Commitment-reduced usage charges through a split the daily
-				// curve cannot reproduce — keep the engine total whole.
-				mode = types.PeriodOnly
-			}
-
-			var rows []*revenuefact.RevenueFact
-			switch {
-			case !overagePresent && grantBilled:
-				// Grant-billed lines get their own per-day split: usage inside
-				// the quota-crossed windows is billed, the rest entitled.
-				curve, curveOK, curveErr := s.buildGrantOverageCurve(ctx, grantCurveInput{
-					Price:               p,
-					Meter:               m,
-					PeriodStart:         itemPeriod.Start,
-					PeriodEnd:           itemPeriod.exclusiveEnd(),
-					EngineAmount:        item.Amount,
-					Grants:              grants,
-					ExternalCustomerIDs: inputs.extCustomerIDs,
-					Timezone:            sub.Timezone,
-				})
-				if curveErr != nil {
-					return false, curveErr
-				}
-				if curveOK {
-					rows = decomposeUsageMarginal(base, curve)
-				} else {
-					rows = []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
-				}
-			case mode == types.Marginal:
-				curve, curveErr := s.buildUsageCurve(ctx, usageCurveInput{
-					Price:       p,
-					MeterID:     m.ID,
-					PeriodStart: itemPeriod.Start,
-					// buildUsageCurve's upper bound is exclusive — convert back from the inclusive day.
-					PeriodEnd:           itemPeriod.exclusiveEnd(),
-					EntitlementLimit:    inputs.entitlementLimits[m.ID],
-					ExternalCustomerIDs: inputs.extCustomerIDs,
-					Timezone:            sub.Timezone,
-				})
-				if curveErr != nil {
-					return false, curveErr
-				}
-				rows = decomposeUsageMarginal(base, curve)
-			default:
-				rows = []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
+			rows, usageErr := s.decomposeUsageRows(ctx, sub, inputs, base, item, itemPeriod, overagePresent)
+			if usageErr != nil {
+				return false, usageErr
 			}
 			allRows = append(allRows, rows...)
 			groups = append(groups, lineItemRows{rows: rows, amount: netAmount, identifier: lo.FromPtr(item.PriceID)})
@@ -319,8 +257,9 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		}
 	}
 	totalDiscount := decimal.Zero
-	for i := range lineDiscounts {
-		totalDiscount = totalDiscount.Add(lineDiscounts[i]).Add(invoiceDiscounts[i])
+	for i := range invReq.LineItems {
+		li := &invReq.LineItems[i]
+		totalDiscount = totalDiscount.Add(lo.FromPtr(li.LineItemDiscount)).Add(lo.FromPtr(li.InvoiceLevelDiscount))
 	}
 	if residual, ok := reconcileInvoice(allRows, invReq.Subtotal.Sub(totalDiscount)); !ok {
 		s.Logger.Info(ctx, "revenue_reconciliation_mismatch",
@@ -338,6 +277,89 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 	}
 
 	return false, nil
+}
+
+// decomposeUsageRows turns one usage line item into revenue_facts rows,
+// picking one of three ways to place its charge on days:
+//
+//  1. Entitlement-grant billing: the engine charged only the usage that fell
+//     inside the grants' quota-crossed windows. Split per day along those
+//     windows — days before any quota was crossed show entitled usage with
+//     zero net. Falls to (3) when the windows carry no usage to shape by.
+//  2. Commitment overage present on this invoice: the engine capped usage
+//     lines at the subscription's commitment and moved the excess to a
+//     separate overage line. We cannot tell how one day's usage divided
+//     between those two lines, so every usage line keeps its period total on
+//     a single row.
+//  3. Otherwise decompositionMode decides: one row per day when daily deltas
+//     are meaningful for this price/meter, one whole-period row when not.
+func (s *revenueService) decomposeUsageRows(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	inputs *rollupInputs,
+	base previewLineItem,
+	item *dto.CreateInvoiceLineItemRequest,
+	itemPeriod revenuePeriod,
+	overagePresent bool,
+) ([]*revenuefact.RevenueFact, error) {
+	// A missing price or meter is a hard error — never let
+	// decompositionMode(nil, nil) silently default to Marginal.
+	p, err := inputs.price(lo.FromPtr(item.PriceID))
+	if err != nil {
+		return nil, err
+	}
+	m, err := inputs.meter(lo.FromPtr(item.MeterID))
+	if err != nil {
+		return nil, err
+	}
+	base.Price = p
+	base.Meter = m
+
+	wholePeriod := func() []*revenuefact.RevenueFact {
+		return []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
+	}
+
+	if overagePresent {
+		return wholePeriod(), nil
+	}
+
+	if grants := inputs.grants(m.ID); grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, grants) {
+		curve, shapeKnown, err := s.buildGrantOverageCurve(ctx, grantCurveInput{
+			Price:               p,
+			Meter:               m,
+			PeriodStart:         itemPeriod.Start,
+			PeriodEnd:           itemPeriod.exclusiveEnd(),
+			EngineAmount:        item.Amount,
+			Grants:              grants,
+			ExternalCustomerIDs: inputs.extCustomerIDs,
+			Timezone:            sub.Timezone,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !shapeKnown {
+			return wholePeriod(), nil
+		}
+		return decomposeUsageMarginal(base, curve), nil
+	}
+
+	if decompositionMode(p, m) != types.Marginal {
+		return wholePeriod(), nil
+	}
+	curve, err := s.buildUsageCurve(ctx, usageCurveInput{
+		Price:       p,
+		MeterID:     m.ID,
+		PeriodStart: itemPeriod.Start,
+		// buildUsageCurve's upper bound is exclusive — convert back from the inclusive day.
+		PeriodEnd:           itemPeriod.exclusiveEnd(),
+		EntitlementLimit:    inputs.entitlementLimits[m.ID],
+		ExternalCustomerIDs: inputs.extCustomerIDs,
+		Timezone:            sub.Timezone,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return decomposeUsageMarginal(base, curve), nil
 }
 
 func (s *revenueService) RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
@@ -411,7 +433,7 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since ti
 				continue
 			}
 
-			wasSkipped, rollErr := s.rollupSubscription(ctx, sub.ID)
+			wasSkipped, rollErr := s.rollupSubscription(ctx, sub)
 			if rollErr != nil {
 				// Shadow write-path: one subscription's failure must never abort the
 				// batch. Logged loud (never silent), tallied as skipped since it did
@@ -751,56 +773,6 @@ func (in *rollupInputs) meter(id string) (*meter.Meter, error) {
 
 func (in *rollupInputs) grants(meterID string) []*entitlementgrant.EntitlementGrant {
 	return in.grantsByMeterID[meterID]
-}
-
-// resolveDiscounts dry-runs coupon application over the preview (nothing is
-// persisted, no redemption is counted — same calculator the customer preview
-// uses) and returns, per line item: its own coupon discount and its share of
-// invoice-level discounts, allocated in proportion to post-line-discount
-// amounts so the shares sum exactly to the invoice-level total.
-func (s *revenueService) resolveDiscounts(ctx context.Context, invReq *dto.CreateInvoiceRequest) (lineDiscounts, invoiceDiscounts []decimal.Decimal, err error) {
-	n := len(invReq.LineItems)
-	lineDiscounts = make([]decimal.Decimal, n)
-	invoiceDiscounts = make([]decimal.Decimal, n)
-
-	// Discount amounts already present on the preview items count as-is.
-	for i := range invReq.LineItems {
-		li := &invReq.LineItems[i]
-		lineDiscounts[i] = lineDiscounts[i].Add(lo.FromPtr(li.LineItemDiscount))
-		invoiceDiscounts[i] = invoiceDiscounts[i].Add(lo.FromPtr(li.InvoiceLevelDiscount))
-	}
-	if len(invReq.InvoiceCoupons) == 0 && len(invReq.LineItemCoupons) == 0 {
-		return lineDiscounts, invoiceDiscounts, nil
-	}
-
-	inv, err := invReq.ToInvoice(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(inv.LineItems) != n {
-		return nil, nil, ierr.NewError("preview invoice line items diverged from the request").
-			WithHint("cannot map coupon discounts back onto preview line items").
-			Mark(ierr.ErrSystem)
-	}
-
-	result, err := NewCouponApplicationService(s.ServiceParams).CalculateCouponsForInvoice(ctx, dto.ApplyCouponsToInvoiceRequest{
-		Invoice:         inv,
-		InvoiceCoupons:  invReq.InvoiceCoupons,
-		LineItemCoupons: invReq.LineItemCoupons,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	weights := make([]decimal.Decimal, n)
-	for i, li := range inv.LineItems {
-		lineDiscounts[i] = lineDiscounts[i].Add(li.LineItemDiscount)
-		weights[i] = invReq.LineItems[i].Amount.Sub(lineDiscounts[i])
-	}
-	for i, share := range spreadAmount(result.TotalInvoiceLevelDiscount, weights) {
-		invoiceDiscounts[i] = invoiceDiscounts[i].Add(share)
-	}
-	return lineDiscounts, invoiceDiscounts, nil
 }
 
 func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, lineItems []dto.CreateInvoiceLineItemRequest) (*rollupInputs, error) {

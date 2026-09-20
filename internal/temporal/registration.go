@@ -136,6 +136,7 @@ func RegisterWorkflowsAndActivities(
 		meterUsageService,
 		params.EventRepo,
 		params.SubscriptionLineItemRepo,
+		params.RevenueFactRepo,
 	)
 
 	// HubSpot activities - clean and simple, delegates to existing services
@@ -568,7 +569,7 @@ func buildWorkerConfig(
 			cron.marketplaceReport.MarketplaceUsageReportActivity,
 			cron.dailyDraftAndCompute.DailyDraftAndComputeActivity,
 			cron.revenueRollup.RollupDirtyActivity,
-			cron.revenueRollup.SweepDriftActivity,
+			cron.revenueRollup.ReconcileBookedInvoicesActivity,
 		)
 
 	case types.TemporalTaskQueueBilling:

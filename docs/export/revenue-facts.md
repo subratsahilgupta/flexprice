@@ -1,7 +1,15 @@
 # Revenue Facts Export
 
-`GET /v1/analytics/revenue-facts/export` streams your revenue facts as CSV.
-Requires the revenue analytics setting to be enabled for your tenant.
+Two routes deliver the same CSV columns; both require the revenue analytics
+setting to be enabled for your tenant:
+
+- **Scheduled S3 export (recommended)** — configure a scheduled task with
+  entity type `revenue_facts` and your S3 connection; each run delivers the
+  rows recomputed inside its window to your bucket. Daily runs a few hours
+  after 03:00 UTC line up with the daily facts computation. Windows pair as
+  (start, end], so boundary rows never gap or duplicate across runs.
+- **Pull API** — `GET /v1/analytics/revenue-facts/export` streams the CSV on
+  demand, as described below.
 
 ## How to use it
 

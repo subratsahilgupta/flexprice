@@ -4,7 +4,31 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/flexprice/flexprice/internal/types"
 )
+
+// notifyInvoiceFinalized emits the invoice.update.finalized webhook and kicks
+// the async revenue-facts FINAL flip. Every finalization path must call this
+// (not the two pieces separately) so the webhook and the facts flip can never
+// drift apart.
+func notifyInvoiceFinalized(ctx context.Context, params ServiceParams, invoiceID string) {
+	publishInvoiceWebhook(ctx, params, types.WebhookEventInvoiceUpdateFinalized, invoiceID)
+	asyncRevenueFactsUpdate(ctx, params, "final flip", invoiceID,
+		func(ctx context.Context, rs RevenueService) error {
+			return rs.FinalizeSubscriptionPeriod(ctx, invoiceID)
+		})
+}
+
+// notifyInvoiceVoided emits the invoice.update.voided webhook and kicks the
+// async revenue-facts revert — the void-side twin of notifyInvoiceFinalized.
+func notifyInvoiceVoided(ctx context.Context, params ServiceParams, invoiceID string) {
+	publishInvoiceWebhook(ctx, params, types.WebhookEventInvoiceUpdateVoided, invoiceID)
+	asyncRevenueFactsUpdate(ctx, params, "revert", invoiceID,
+		func(ctx context.Context, rs RevenueService) error {
+			return rs.RevertInvoiceFacts(ctx, invoiceID)
+		})
+}
 
 // asyncRevenueFactsUpdate runs one revenue_facts update (final flip, revert)
 // detached from the caller's request: revenue_facts is a shadow write-path,

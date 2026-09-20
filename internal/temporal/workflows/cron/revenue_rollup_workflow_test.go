@@ -17,15 +17,15 @@ func rollupDirtyStub(_ context.Context, _ time.Time) (*cronModels.RevenueRollupW
 	return nil, nil
 }
 
-func sweepDriftStub(_ context.Context, _ time.Time) (*cronModels.RevenueSweepResult, error) {
+func reconcileBookedInvoicesStub(_ context.Context, _ time.Time) (*cronModels.RevenueSweepResult, error) {
 	return nil, nil
 }
 
 // registerSweepOK registers the sweep activity with a permissive expectation —
 // tests that assert on the rollup window don't care about the sweep's own.
 func registerSweepOK(env *testsuite.TestWorkflowEnvironment) {
-	env.RegisterActivityWithOptions(sweepDriftStub, activity.RegisterOptions{Name: ActivitySweepDrift})
-	env.OnActivity(ActivitySweepDrift, mock.Anything, mock.Anything).
+	env.RegisterActivityWithOptions(reconcileBookedInvoicesStub, activity.RegisterOptions{Name: ActivityReconcileBookedInvoices})
+	env.OnActivity(ActivityReconcileBookedInvoices, mock.Anything, mock.Anything).
 		Return(&cronModels.RevenueSweepResult{}, nil).Maybe()
 }
 
@@ -134,12 +134,12 @@ func TestRevenueRollupWorkflow_SweepWindow(t *testing.T) {
 	env := ts.NewTestWorkflowEnvironment()
 
 	env.RegisterActivityWithOptions(rollupDirtyStub, activity.RegisterOptions{Name: ActivityRollupDirty})
-	env.RegisterActivityWithOptions(sweepDriftStub, activity.RegisterOptions{Name: ActivitySweepDrift})
+	env.RegisterActivityWithOptions(reconcileBookedInvoicesStub, activity.RegisterOptions{Name: ActivityReconcileBookedInvoices})
 	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.Anything).
 		Return(&cronModels.RevenueRollupWorkflowResult{}, nil)
 
 	var sweepSince time.Time
-	env.OnActivity(ActivitySweepDrift, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
+	env.OnActivity(ActivityReconcileBookedInvoices, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
 		sweepSince = since
 		return true
 	})).Return(&cronModels.RevenueSweepResult{Checked: 2, Drifted: 1}, nil)

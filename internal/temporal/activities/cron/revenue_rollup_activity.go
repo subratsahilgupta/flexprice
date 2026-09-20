@@ -55,9 +55,9 @@ func (a *RevenueRollupActivities) RollupDirtyActivity(ctx context.Context, since
 	return &cronModels.RevenueRollupWorkflowResult{Rolled: rolled, Skipped: skipped}, nil
 }
 
-// SweepDriftActivity compares recently finalized/voided invoices against their
+// ReconcileBookedInvoicesActivity compares recently finalized/voided invoices against their
 // booked revenue facts. Same kill switch as the rollup.
-func (a *RevenueRollupActivities) SweepDriftActivity(ctx context.Context, since time.Time) (*cronModels.RevenueSweepResult, error) {
+func (a *RevenueRollupActivities) ReconcileBookedInvoicesActivity(ctx context.Context, since time.Time) (*cronModels.RevenueSweepResult, error) {
 	log := activity.GetLogger(ctx)
 
 	if a.cfg == nil || !a.cfg.Analytics.RevenueRollup.Enabled {
@@ -67,7 +67,7 @@ func (a *RevenueRollupActivities) SweepDriftActivity(ctx context.Context, since 
 
 	log.Info("Starting revenue drift sweep", "since", since)
 
-	checked, drifted, corrected, err := a.revenueService.SweepDrift(ctx, since)
+	checked, drifted, corrected, err := a.revenueService.ReconcileBookedInvoices(ctx, since)
 	if err != nil {
 		a.logger.Error(ctx, "revenue drift sweep failed", "error", err, "since", since)
 		return nil, err

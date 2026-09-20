@@ -10,22 +10,22 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Drift kinds logged by SweepDrift.
+// Drift kinds logged by ReconcileBookedInvoices.
 const (
 	driftKindMissingFlip    = "missing_flip"    // finalized invoice with no facts booked
 	driftKindAmountMismatch = "amount_mismatch" // booked sum diverged from the invoice
 	driftKindMissingRevert  = "missing_revert"  // voided invoice whose facts do not net to zero
 )
 
-// SweepDrift compares what each recently finalized or voided invoice should
-// have booked against its stamped facts. Drift is always logged
-// (revenue_facts_drift); repair runs only when analytics.revenue_rollup.
-// auto_correct is on, using the same revert / derive-from-invoice / flip
-// primitives as the lifecycle hooks. The scan windows on invoice created_at,
-// so deep backfills use the workflow's explicit Since input.
-func (s *revenueService) SweepDrift(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error) {
+// ReconcileBookedInvoices re-checks every invoice finalized or voided since
+// the given time: a finalized invoice's facts must sum to its total, a voided
+// one's must net to zero. Mismatches log revenue_facts_drift; repair (rebuild
+// the rows from the invoice itself) runs only when
+// analytics.revenue_rollup.auto_correct is on. The scan windows on invoice
+// created_at, so deep backfills pass an explicit Since to the workflow.
+func (s *revenueService) ReconcileBookedInvoices(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error) {
 	err = s.forEachOptedInEnvironment(ctx, "revenue drift sweep", func(envCtx context.Context) error {
-		c, d, cor, envErr := s.sweepDriftForEnvironment(envCtx, since)
+		c, d, cor, envErr := s.reconcileBookedInvoicesForEnvironment(envCtx, since)
 		checked += c
 		drifted += d
 		corrected += cor
@@ -34,7 +34,7 @@ func (s *revenueService) SweepDrift(ctx context.Context, since time.Time) (check
 	return checked, drifted, corrected, err
 }
 
-func (s *revenueService) sweepDriftForEnvironment(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error) {
+func (s *revenueService) reconcileBookedInvoicesForEnvironment(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error) {
 	const batchSize = 500
 	offset := 0
 
@@ -56,7 +56,7 @@ func (s *revenueService) sweepDriftForEnvironment(ctx context.Context, since tim
 
 		for _, inv := range invoices {
 			checked++
-			wasDrifted, wasCorrected := s.sweepInvoice(ctx, inv)
+			wasDrifted, wasCorrected := s.reconcileOneInvoice(ctx, inv)
 			if wasDrifted {
 				drifted++
 			}
@@ -72,9 +72,10 @@ func (s *revenueService) sweepDriftForEnvironment(ctx context.Context, since tim
 	}
 }
 
-// sweepInvoice checks one invoice and, when auto-correct is on, repairs it.
-// Errors are logged, never propagated — one invoice must not abort the sweep.
-func (s *revenueService) sweepInvoice(ctx context.Context, inv *invoice.Invoice) (wasDrifted, wasCorrected bool) {
+// reconcileOneInvoice checks one invoice and, when auto-correct is on,
+// repairs it. Errors are logged, never propagated — one bad invoice must not
+// abort the run.
+func (s *revenueService) reconcileOneInvoice(ctx context.Context, inv *invoice.Invoice) (wasDrifted, wasCorrected bool) {
 	rows, err := s.RevenueFactRepo.ListByInvoiceID(ctx, inv.ID)
 	if err != nil {
 		s.Logger.Error(ctx, "drift sweep failed to list facts for invoice",

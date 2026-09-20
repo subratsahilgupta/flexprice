@@ -180,6 +180,9 @@ type CreateInvoiceRequestForChargesParams struct {
 	Metadata      types.Metadata
 	InvoiceType   types.InvoiceType
 	BillingReason types.InvoiceBillingReason
+	// ReferencePoint of the preparing call; revenue_facts additionally
+	// dry-runs coupon discounts onto the line items.
+	ReferencePoint types.InvoiceReferencePoint
 }
 
 // Validate enforces struct tags.

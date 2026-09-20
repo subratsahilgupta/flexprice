@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	ActivityRollupDirty = "RollupDirtyActivity"
-	ActivitySweepDrift  = "SweepDriftActivity"
+	ActivityRollupDirty             = "RollupDirtyActivity"
+	ActivityReconcileBookedInvoices = "ReconcileBookedInvoicesActivity"
 
 	// defaultRevenueRollupInterval is used when the schedule doesn't set Interval.
 	defaultRevenueRollupInterval = 24 * time.Hour
@@ -71,7 +71,7 @@ func RevenueRollupWorkflow(ctx workflow.Context, in cronModels.RevenueRollupInpu
 		sweepSince = *in.Since
 	}
 	var sweep cronModels.RevenueSweepResult
-	if err := workflow.ExecuteActivity(ctx, ActivitySweepDrift, sweepSince).Get(ctx, &sweep); err != nil {
+	if err := workflow.ExecuteActivity(ctx, ActivityReconcileBookedInvoices, sweepSince).Get(ctx, &sweep); err != nil {
 		log.Error("RevenueRollupWorkflow sweep activity failed", "error", err)
 		return err
 	}

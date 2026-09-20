@@ -1866,12 +1866,13 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 
 	// Create invoice request for the calculated charges
 	invReq, err := s.CreateInvoiceRequestForCharges(ctx, &dto.CreateInvoiceRequestForChargesParams{
-		Subscription: sub,
-		Result:       calculationResult,
-		PeriodStart:  periodStart,
-		PeriodEnd:    periodEnd,
-		Description:  description,
-		Metadata:     metadata,
+		Subscription:   sub,
+		Result:         calculationResult,
+		PeriodStart:    periodStart,
+		PeriodEnd:      periodEnd,
+		Description:    description,
+		Metadata:       metadata,
+		ReferencePoint: referencePoint,
 	})
 	if err != nil {
 		return nil, err
@@ -2488,6 +2489,15 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 	}
 	if params.BillingReason != "" {
 		req.BillingReason = params.BillingReason
+	}
+
+	// The revenue-facts rollup needs discount amounts, which normal previews
+	// resolve later during invoice assembly — dry-run them here so the rollup
+	// gets fully priced line items without owning any coupon logic.
+	if params.ReferencePoint == types.ReferencePointRevenueFacts {
+		if err := s.applyCouponPreview(ctx, req); err != nil {
+			return nil, err
+		}
 	}
 
 	return req, nil
@@ -3407,4 +3417,45 @@ func (s *billingService) calculateNeverResetUsage(
 		"billable_quantity", billableQuantity)
 
 	return billableQuantity, nil
+}
+
+// applyCouponPreview computes coupon discounts for the prepared request
+// without persisting anything or counting redemptions (same calculator the
+// customer preview uses), then writes each line's own discount plus its
+// proportional share of invoice-level discounts onto the line items, summing
+// exactly to the calculated totals.
+func (s *billingService) applyCouponPreview(ctx context.Context, req *dto.CreateInvoiceRequest) error {
+	if len(req.InvoiceCoupons) == 0 && len(req.LineItemCoupons) == 0 {
+		return nil
+	}
+
+	inv, err := req.ToInvoice(ctx)
+	if err != nil {
+		return err
+	}
+	if len(inv.LineItems) != len(req.LineItems) {
+		return ierr.NewError("preview invoice line items diverged from the request").
+			WithHint("cannot map coupon discounts back onto preview line items").
+			Mark(ierr.ErrSystem)
+	}
+
+	result, err := NewCouponApplicationService(s.ServiceParams).CalculateCouponsForInvoice(ctx, dto.ApplyCouponsToInvoiceRequest{
+		Invoice:         inv,
+		InvoiceCoupons:  req.InvoiceCoupons,
+		LineItemCoupons: req.LineItemCoupons,
+	})
+	if err != nil {
+		return err
+	}
+
+	weights := make([]decimal.Decimal, len(req.LineItems))
+	for i, li := range inv.LineItems {
+		lineDiscount := lo.FromPtr(req.LineItems[i].LineItemDiscount).Add(li.LineItemDiscount)
+		req.LineItems[i].LineItemDiscount = lo.ToPtr(lineDiscount)
+		weights[i] = req.LineItems[i].Amount.Sub(lineDiscount)
+	}
+	for i, share := range spreadAmount(result.TotalInvoiceLevelDiscount, weights) {
+		req.LineItems[i].InvoiceLevelDiscount = lo.ToPtr(lo.FromPtr(req.LineItems[i].InvoiceLevelDiscount).Add(share))
+	}
+	return nil
 }

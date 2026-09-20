@@ -131,7 +131,7 @@ func (s *RevenueRollupSuite) TestE2E_RevenueFactsLifecycle() {
 	params.Config = &cfg
 	sweeper := NewRevenueService(params)
 
-	checked, drifted, corrected, err := sweeper.SweepDrift(ctx, s.periodStart)
+	checked, drifted, corrected, err := sweeper.ReconcileBookedInvoices(ctx, s.periodStart)
 	s.NoError(err)
 	s.GreaterOrEqual(checked, 3, "all three invoices sit inside the sweep window")
 	s.GreaterOrEqual(drifted, 1, "the missing flip must be detected")
@@ -142,7 +142,7 @@ func (s *RevenueRollupSuite) TestE2E_RevenueFactsLifecycle() {
 	s.True(sumNet(booked3).Equal(inv3.Subtotal.Sub(inv3.TotalDiscount)), "the corrected invoice must reconcile")
 
 	// A clean second sweep: everything reconciles, nothing drifts.
-	_, drifted, corrected, err = sweeper.SweepDrift(ctx, s.periodStart)
+	_, drifted, corrected, err = sweeper.ReconcileBookedInvoices(ctx, s.periodStart)
 	s.NoError(err)
 	s.Zero(drifted, "a repaired system must sweep clean")
 	s.Zero(corrected)

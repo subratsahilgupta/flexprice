@@ -622,7 +622,7 @@ func startTemporalWorker(
 				}
 			}()
 
-			if err := temporalservice.EnsureSchedules(ctx, temporalClient, params.Config, log); err != nil {
+			if err := temporalservice.EnsureSchedules(ctx, temporalClient, log); err != nil {
 				return fmt.Errorf("ensure temporal server schedules: %w", err)
 			}
 

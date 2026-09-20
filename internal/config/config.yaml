@@ -46,7 +46,7 @@ analytics:
   # default — enable only once revenue_facts is trusted enough to run unattended.
   revenue_rollup:
     enabled: false # FLEXPRICE_ANALYTICS_REVENUE_ROLLUP_ENABLED
-    interval: 1h # FLEXPRICE_ANALYTICS_REVENUE_ROLLUP_INTERVAL
+    auto_correct: false # FLEXPRICE_ANALYTICS_REVENUE_ROLLUP_AUTO_CORRECT
 
 kafka:
   brokers: "localhost:29092" # For local mode
