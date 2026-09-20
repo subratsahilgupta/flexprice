@@ -998,7 +998,7 @@ func (s *entitlementService) assertSingleContributor(ctx context.Context, e *ent
 	}
 
 	return ierr.NewError("this allowance comes from more than one entitlement").
-		WithHint("Several entitlements feed this feature on this subscription, so there is no single allowance to set here. Change it on the plan or addon, or remove one of them from the subscription.").
+		WithHint("Change it on the plan or addon instead.").
 		WithReportableDetails(map[string]interface{}{
 			"subscription_id":       e.EntityID,
 			"feature_id":            e.FeatureID,
