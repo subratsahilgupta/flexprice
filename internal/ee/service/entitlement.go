@@ -181,6 +181,10 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 	e.EntityType = entityType
 	e.EntityID = entityID
 
+	if err := s.assertSingleContributor(ctx, e); err != nil {
+		return nil, err
+	}
+
 	result, err := s.EntitlementRepo.Create(ctx, e)
 	if err != nil {
 		return nil, err
@@ -849,6 +853,10 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		}
 	}
 
+	if err := s.assertSingleContributor(ctx, existing); err != nil {
+		return nil, err
+	}
+
 	result, err := s.EntitlementRepo.Update(ctx, existing)
 	if err != nil {
 		return nil, err
@@ -944,6 +952,59 @@ func (s *entitlementService) reissueGrantWindows(
 		Source:    source,
 	})
 	return err
+}
+
+// assertSingleContributor refuses a subscription-scoped write to a feature that several
+// entitlements already feed. The dashboard offers one allowance field per feature, so with
+// more than one contributor that field has no single entitlement to address: additive pools
+// them into one window, making the resulting allowance larger than the number typed, and
+// parallel gives each its own window with nothing to say which one was meant.
+//
+// Lifting this needs a per-window editing surface, not a change here.
+func (s *entitlementService) assertSingleContributor(ctx context.Context, e *entitlement.Entitlement) error {
+	// Only overrides: they are what the single allowance field writes. A net-new
+	// subscription entitlement is added from its own row in the entitlement drawer,
+	// which names the entitlement it creates.
+	parentID := lo.FromPtr(e.ParentEntitlementID)
+	if e == nil || e.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION || parentID == "" {
+		return nil
+	}
+
+	sub, err := s.SubRepo.Get(ctx, e.EntityID)
+	if err != nil {
+		return err
+	}
+
+	resolved, err := (&subscriptionService{ServiceParams: s.ServiceParams}).
+		GetSubscriptionEntitlementsForSubscription(ctx, sub)
+	if err != nil {
+		return err
+	}
+
+	others := make([]string, 0, len(resolved))
+	for _, other := range resolved {
+		if other == nil || other.Entitlement == nil || other.FeatureID != e.FeatureID {
+			continue
+		}
+		// The row being written and the one it replaces both become this override.
+		if other.ID == e.ID || other.ID == parentID {
+			continue
+		}
+		others = append(others, other.ID)
+	}
+
+	if len(others) == 0 {
+		return nil
+	}
+
+	return ierr.NewError("this allowance comes from more than one entitlement").
+		WithHint("Several entitlements feed this feature on this subscription, so there is no single allowance to set here. Change it on the plan or addon, or remove one of them from the subscription.").
+		WithReportableDetails(map[string]interface{}{
+			"subscription_id":       e.EntityID,
+			"feature_id":            e.FeatureID,
+			"other_entitlement_ids": others,
+		}).
+		Mark(ierr.ErrValidation)
 }
 
 // takeOverGrantWindowsFromParent runs on a first override: the override replaces the

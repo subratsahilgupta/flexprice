@@ -7,6 +7,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addon"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
@@ -44,6 +45,8 @@ func (s *EntitlementServiceSuite) setupService() {
 		PlanRepo:             stores.PlanRepo,
 		SubRepo:              stores.SubscriptionRepo,
 		AddonRepo:            stores.AddonRepo,
+		AddonAssociationRepo: stores.AddonAssociationRepo,
+		PriceRepo:            stores.PriceRepo,
 		FeatureRepo:          stores.FeatureRepo,
 		MeterRepo:            testutil.NewInMemoryMeterStore(),
 		WebhookPublisher:     s.GetWebhookPublisher(),
@@ -1441,4 +1444,75 @@ func (s *EntitlementServiceSuite) TestGrantCoherenceAllowsDifferentPlansToDiffer
 	ent.EntityID, ent.GrantUnlimited = "plan-ent", true
 	_, err = s.service.CreateEntitlement(ctx, ent)
 	s.NoError(err, "a different plan may grant unlimited where this one is bounded")
+}
+
+// An override sets one number for one feature, so it is refused when several
+// entitlements already feed that feature: additive would pool them and land above
+// the number, parallel would leave the field addressing an arbitrary one of them.
+func (s *EntitlementServiceSuite) TestOverrideRefusedWhenSeveralEntitlementsFeedTheFeature() {
+	ctx := s.GetContext()
+	now := time.Now().UTC()
+
+	m := &meter.Meter{
+		ID: "meter-multi", Name: "Multi", EventName: "api_calls",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.service.(*entitlementService).MeterRepo.(*testutil.InMemoryMeterStore).CreateMeter(ctx, m))
+	f := &feature.Feature{ID: "feat-multi", Name: "Multi", Type: types.FeatureTypeMetered, MeterID: m.ID, BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().FeatureRepo.Create(ctx, f))
+	p := &plan.Plan{ID: "plan-multi", Name: "Multi Plan", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, p))
+	a := &addon.Addon{ID: "addon-multi", Name: "Multi Addon", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().AddonRepo.Create(ctx, a))
+	s.NoError(s.GetStores().SubscriptionRepo.Create(ctx, &subscription.Subscription{
+		ID: "sub-multi", PlanID: p.ID, CustomerID: "cust-multi",
+		SubscriptionStatus: types.SubscriptionStatusActive, Currency: "usd",
+		BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+		StartDate: now, CurrentPeriodStart: now, CurrentPeriodEnd: now.AddDate(0, 1, 0),
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+
+	grant := func(quota int64) dto.CreateEntitlementRequest {
+		return dto.CreateEntitlementRequest{
+			FeatureID: f.ID, FeatureType: types.FeatureTypeMetered, IsEnabled: true,
+			GrantMeasure:            types.EntitlementGrantMeasureQuantity,
+			GrantQuota:              lo.ToPtr(decimal.NewFromInt(quota)),
+			GrantDurationValue:      lo.ToPtr(1),
+			GrantDurationUnit:       types.EntitlementGrantDurationUnitHour,
+			GrantAllocationBehavior: types.EntitlementGrantAllocationBehaviorFirstUsage,
+			AggregationMode:         types.EntitlementAggregationModeAdditive,
+		}
+	}
+
+	planReq := grant(1000)
+	planReq.EntityType, planReq.EntityID = types.ENTITLEMENT_ENTITY_TYPE_PLAN, p.ID
+	planEC, err := s.service.CreateEntitlement(ctx, planReq)
+	s.Require().NoError(err)
+
+	// The plan alone feeds the feature, so the override has one thing to replace.
+	override := grant(500)
+	override.EntityType, override.EntityID = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION, "sub-multi"
+	override.ParentEntitlementID = lo.ToPtr(planEC.ID)
+	_, err = s.service.CreateEntitlement(ctx, override)
+	s.Require().NoError(err, "a single contributor leaves no ambiguity")
+
+	// Attaching an addon that feeds the same feature adds a second contributor.
+	addonReq := grant(100)
+	addonReq.EntityType, addonReq.EntityID = types.ENTITLEMENT_ENTITY_TYPE_ADDON, a.ID
+	_, err = s.service.CreateEntitlement(ctx, addonReq)
+	s.Require().NoError(err)
+	s.NoError(s.GetStores().AddonAssociationRepo.Create(ctx, &addonassociation.AddonAssociation{
+		ID: "assoc-multi", EntityID: "sub-multi", EntityType: types.AddonAssociationEntityTypeSubscription,
+		AddonID: a.ID, StartDate: &now, AddonStatus: types.AddonStatusActive,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+
+	// A second override on the same feature now has no single allowance to set.
+	second := grant(800)
+	second.EntityType, second.EntityID = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION, "sub-multi"
+	second.ParentEntitlementID = lo.ToPtr(planEC.ID)
+	_, err = s.service.CreateEntitlement(ctx, second)
+	s.Require().Error(err)
+	s.Contains(err.Error(), "more than one entitlement")
 }
