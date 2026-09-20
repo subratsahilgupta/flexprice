@@ -17035,6 +17035,25 @@
               }
             }
           },
+          "grant_duration_unit": {
+            "$ref": "#/components/schemas/types.EntitlementGrantDurationUnit"
+          },
+          "grant_duration_value": {
+            "type": "integer"
+          },
+          "grant_measure": {
+            "$ref": "#/components/schemas/types.EntitlementGrantMeasure"
+          },
+          "grant_quota": {
+            "type": "string"
+          },
+          "grant_state": {
+            "$ref": "#/components/schemas/GrantState"
+          },
+          "grant_unlimited": {
+            "type": "boolean",
+            "description": "GrantUnlimited distinguishes \"grant-based with no ceiling\" from \"no grant\nconfig at all\"; both leave GrantQuota nil."
+          },
           "is_enabled": {
             "type": "boolean"
           },
@@ -18855,6 +18874,10 @@
           },
           "grant_quota": {
             "type": "string"
+          },
+          "grant_unlimited": {
+            "type": "boolean",
+            "description": "GrantUnlimited asks for an allowance with no ceiling. Explicit rather than\ninferred from an absent grant_quota, so a dropped field or a typo'd key\ncannot silently provision a feature that never bills."
           },
           "is_enabled": {
             "type": "boolean"
@@ -20931,6 +20954,10 @@
           "id": {
             "type": "string"
           },
+          "ingested_at": {
+            "type": "string",
+            "format": "date-time"
+          },
           "properties": {
             "type": "object",
             "additionalProperties": true
@@ -21112,6 +21139,9 @@
           "feature": {
             "$ref": "#/components/schemas/FeatureResponse"
           },
+          "grant_state": {
+            "$ref": "#/components/schemas/GrantState"
+          },
           "is_enabled": {
             "type": "boolean"
           },
@@ -21289,6 +21319,12 @@
           },
           "event": {
             "$ref": "#/components/schemas/Event"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
           },
           "processed_events": {
             "type": "array",
@@ -21780,6 +21816,84 @@
           },
           "value": {
             "type": "number"
+          }
+        }
+      },
+      "GrantCycleTotals": {
+        "type": "object",
+        "properties": {
+          "total_overage": {
+            "type": "string"
+          },
+          "total_quota": {
+            "type": "string"
+          },
+          "total_usage": {
+            "type": "string"
+          },
+          "windows": {
+            "type": "integer"
+          }
+        }
+      },
+      "GrantState": {
+        "type": "object",
+        "properties": {
+          "cycle_totals": {
+            "$ref": "#/components/schemas/GrantCycleTotals"
+          },
+          "windows": {
+            "type": "array",
+            "description": "Windows is every window overlapping the current billing period, closed ones\nincluded, oldest first \u2014 the per-window ledger behind CycleTotals. The\nlive balance is the entry (or entries, for parallel features) with\nIsActive=true; there is at most one per bucket, and none between windows.",
+            "items": {
+              "$ref": "#/components/schemas/GrantWindowState"
+            }
+          }
+        }
+      },
+      "GrantWindowState": {
+        "type": "object",
+        "properties": {
+          "entitlement_id": {
+            "type": "string"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean",
+            "description": "IsActive means the window is open right now \u2014 evaluated against the\nserver's clock so clients need not compare timestamps themselves."
+          },
+          "last_computed_at": {
+            "type": "string",
+            "description": "LastComputedAt is the freshness watermark. Usage is a snapshot refreshed\nby a debounced background pass, so a client must render this rather than\nimplying the number is live.",
+            "format": "date-time"
+          },
+          "measure": {
+            "$ref": "#/components/schemas/types.EntitlementGrantMeasure"
+          },
+          "quota": {
+            "type": "string"
+          },
+          "remaining": {
+            "type": "string",
+            "description": "Remaining is null on an unlimited window: there is no ceiling to measure against."
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.EntitlementGrantStatus"
+          },
+          "unlimited": {
+            "type": "boolean",
+            "description": "Unlimited windows track usage but have no ceiling: quota and remaining are\nmeaningless and a client must render \"unlimited\", not a number."
+          },
+          "usage": {
+            "type": "string"
+          },
+          "valid_from": {
+            "type": "string"
+          },
+          "valid_to": {
+            "type": "string"
           }
         }
       },
@@ -22918,6 +23032,9 @@
         ],
         "type": "object",
         "properties": {
+          "aggregation_mode": {
+            "$ref": "#/components/schemas/types.EntitlementAggregationMode"
+          },
           "config_value": {
             "type": "object",
             "additionalProperties": true,
@@ -22926,6 +23043,21 @@
           "entitlement_id": {
             "type": "string",
             "description": "EntitlementID references the plan/addon entitlement to override"
+          },
+          "grant_allocation_behavior": {
+            "$ref": "#/components/schemas/types.EntitlementGrantAllocationBehavior"
+          },
+          "grant_duration_unit": {
+            "$ref": "#/components/schemas/types.EntitlementGrantDurationUnit"
+          },
+          "grant_duration_value": {
+            "type": "integer"
+          },
+          "grant_measure": {
+            "$ref": "#/components/schemas/types.EntitlementGrantMeasure"
+          },
+          "grant_quota": {
+            "type": "string"
           },
           "is_enabled": {
             "type": "boolean",
@@ -26195,10 +26327,6 @@
           "aggregation_mode": {
             "$ref": "#/components/schemas/types.EntitlementAggregationMode"
           },
-          "clear_grant_config": {
-            "type": "boolean",
-            "description": "Grant config \u2014 nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement)."
-          },
           "config_value": {
             "type": "object",
             "additionalProperties": true
@@ -26217,6 +26345,10 @@
           },
           "grant_quota": {
             "type": "string"
+          },
+          "grant_unlimited": {
+            "type": "boolean",
+            "description": "GrantUnlimited=true clears the ceiling; false restores a bounded allowance\nand requires grant_quota in the same request. Without this an existing quota\ncould never be unset, since a nil GrantQuota means \"leave alone\"."
           },
           "is_enabled": {
             "type": "boolean"
@@ -30014,6 +30146,18 @@
         ],
         "x-speakeasy-name-override": "EntitlementGrantMeasure"
       },
+      "types.EntitlementGrantStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "exhausted"
+        ],
+        "x-enum-varnames": [
+          "EntitlementGrantStatusActive",
+          "EntitlementGrantStatusExhausted"
+        ],
+        "x-speakeasy-name-override": "EntitlementGrantStatus"
+      },
       "types.EntitlementUsageResetPeriod": {
         "type": "string",
         "enum": [
@@ -31737,14 +31881,14 @@
         "type": "string",
         "enum": [
           "plan",
-          "addon",
+          "addon_association",
           "credit_grant",
           "entitlement",
           "entitlement_grant"
         ],
         "x-enum-varnames": [
           "SubscriptionChangeEntityTypePlan",
-          "SubscriptionChangeEntityTypeAddon",
+          "SubscriptionChangeEntityTypeAddonAssociation",
           "SubscriptionChangeEntityTypeCreditGrant",
           "SubscriptionChangeEntityTypeEntitlement",
           "SubscriptionChangeEntityTypeEntitlementGrant"

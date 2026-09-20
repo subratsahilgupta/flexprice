@@ -733,6 +733,32 @@ definitions:
           additionalProperties: {}
           type: object
         type: array
+      grant_duration_unit:
+        $ref: '#/definitions/types.EntitlementGrantDurationUnit'
+      grant_duration_value:
+        type: integer
+      grant_measure:
+        allOf:
+        - $ref: '#/definitions/types.EntitlementGrantMeasure'
+        description: |-
+          Grant config summary, so a client can render the promise ("1,000 calls per
+          day") before any window has opened. UsageLimit stays populated for legacy
+          display but is meaningless on a grant-backed feature.
+      grant_quota:
+        type: string
+      grant_state:
+        allOf:
+        - $ref: '#/definitions/GrantState'
+        description: |-
+          GrantState is the runtime half of the config above: the windows this
+          allowance has materialized. Nil when the feature carries no grant config,
+          and its Windows are empty when none has opened yet — different facts that
+          a client must render differently.
+      grant_unlimited:
+        description: |-
+          GrantUnlimited distinguishes "grant-based with no ceiling" from "no grant
+          config at all"; both leave GrantQuota nil.
+        type: boolean
       is_enabled:
         type: boolean
       is_soft_limit:
@@ -2103,6 +2129,12 @@ definitions:
         description: Grant config — optional. All-or-nothing; see entitlement.validateGrantConfig.
       grant_quota:
         type: string
+      grant_unlimited:
+        description: |-
+          GrantUnlimited asks for an allowance with no ceiling. Explicit rather than
+          inferred from an absent grant_quota, so a dropped field or a typo'd key
+          cannot silently provision a feature that never bills.
+        type: boolean
       is_enabled:
         type: boolean
       is_soft_limit:
@@ -3758,6 +3790,8 @@ definitions:
         type: string
       id:
         type: string
+      ingested_at:
+        type: string
       properties:
         additionalProperties: true
         type: object
@@ -3878,6 +3912,12 @@ definitions:
         type: string
       feature:
         $ref: '#/definitions/FeatureResponse'
+      grant_state:
+        allOf:
+        - $ref: '#/definitions/GrantState'
+        description: |-
+          GrantState carries the per-window ledger for grant-backed features, so a
+          client can break a cycle total down into the windows that produced it.
       is_enabled:
         type: boolean
       is_soft_limit:
@@ -4008,6 +4048,10 @@ definitions:
         $ref: '#/definitions/DebugTracker'
       event:
         $ref: '#/definitions/Event'
+      events:
+        items:
+          $ref: '#/definitions/Event'
+        type: array
       processed_events:
         items:
           $ref: '#/definitions/FeatureUsageInfo'
@@ -4405,6 +4449,78 @@ definitions:
         $ref: '#/definitions/types.AggregationType'
       value:
         type: number
+    type: object
+  GrantCycleTotals:
+    properties:
+      total_overage:
+        type: string
+      total_quota:
+        type: string
+      total_usage:
+        type: string
+      windows:
+        type: integer
+    type: object
+  GrantState:
+    properties:
+      cycle_totals:
+        allOf:
+        - $ref: '#/definitions/GrantCycleTotals'
+        description: |-
+          CycleTotals covers every window overlapping the current billing period,
+          closed ones included, so the overage figure matches what billing will fold.
+      windows:
+        description: |-
+          Windows is every window overlapping the current billing period, closed ones
+          included, oldest first — the per-window ledger behind CycleTotals. The
+          live balance is the entry (or entries, for parallel features) with
+          IsActive=true; there is at most one per bucket, and none between windows.
+        items:
+          $ref: '#/definitions/GrantWindowState'
+        type: array
+    type: object
+  GrantWindowState:
+    properties:
+      entitlement_id:
+        type: string
+      grant_id:
+        type: string
+      is_active:
+        description: |-
+          IsActive means the window is open right now — evaluated against the
+          server's clock so clients need not compare timestamps themselves.
+        type: boolean
+      last_computed_at:
+        description: |-
+          LastComputedAt is the freshness watermark. Usage is a snapshot refreshed
+          by a debounced background pass, so a client must render this rather than
+          implying the number is live.
+        type: string
+      measure:
+        allOf:
+        - $ref: '#/definitions/types.EntitlementGrantMeasure'
+        description: |-
+          Measure is quantity (meter units) or amount (currency) — the unit for
+          every figure below.
+      quota:
+        type: string
+      remaining:
+        description: 'Remaining is null on an unlimited window: there is no ceiling
+          to measure against.'
+        type: string
+      status:
+        $ref: '#/definitions/types.EntitlementGrantStatus'
+      unlimited:
+        description: |-
+          Unlimited windows track usage but have no ceiling: quota and remaining are
+          meaningless and a client must render "unlimited", not a number.
+        type: boolean
+      usage:
+        type: string
+      valid_from:
+        type: string
+      valid_to:
+        type: string
     type: object
   GroupResponse:
     properties:
@@ -5267,12 +5383,29 @@ definitions:
     type: object
   OverrideEntitlementRequest:
     properties:
+      aggregation_mode:
+        $ref: '#/definitions/types.EntitlementAggregationMode'
       config_value:
         additionalProperties: true
         description: ConfigValue is the config value for config features
         type: object
       entitlement_id:
         description: EntitlementID references the plan/addon entitlement to override
+        type: string
+      grant_allocation_behavior:
+        $ref: '#/definitions/types.EntitlementGrantAllocationBehavior'
+      grant_duration_unit:
+        $ref: '#/definitions/types.EntitlementGrantDurationUnit'
+      grant_duration_value:
+        type: integer
+      grant_measure:
+        allOf:
+        - $ref: '#/definitions/types.EntitlementGrantMeasure'
+        description: |-
+          Grant config. Nil fields inherit from the parent entitlement, so an
+          override that does not mention grants keeps the plan's allowance instead
+          of silently downgrading the feature to a legacy entitlement.
+      grant_quota:
         type: string
       is_enabled:
         description: IsEnabled determines if the entitlement is enabled or disabled
@@ -7796,11 +7929,6 @@ definitions:
     properties:
       aggregation_mode:
         $ref: '#/definitions/types.EntitlementAggregationMode'
-      clear_grant_config:
-        description: |-
-          Grant config — nil fields leave the current value alone.
-          ClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).
-        type: boolean
       config_value:
         additionalProperties: true
         type: object
@@ -7814,6 +7942,12 @@ definitions:
         $ref: '#/definitions/types.EntitlementGrantMeasure'
       grant_quota:
         type: string
+      grant_unlimited:
+        description: |-
+          GrantUnlimited=true clears the ceiling; false restores a bounded allowance
+          and requires grant_quota in the same request. Without this an existing quota
+          could never be unset, since a nil GrantQuota means "leave alone".
+        type: boolean
       is_enabled:
         type: boolean
       is_soft_limit:
@@ -10588,6 +10722,14 @@ definitions:
     x-enum-varnames:
     - EntitlementGrantMeasureQuantity
     - EntitlementGrantMeasureAmount
+  types.EntitlementGrantStatus:
+    enum:
+    - active
+    - exhausted
+    type: string
+    x-enum-varnames:
+    - EntitlementGrantStatusActive
+    - EntitlementGrantStatusExhausted
   types.EntitlementUsageResetPeriod:
     enum:
     - MONTHLY
@@ -11860,14 +12002,14 @@ definitions:
   types.SubscriptionChangeEntityType:
     enum:
     - plan
-    - addon
+    - addon_association
     - credit_grant
     - entitlement
     - entitlement_grant
     type: string
     x-enum-varnames:
     - SubscriptionChangeEntityTypePlan
-    - SubscriptionChangeEntityTypeAddon
+    - SubscriptionChangeEntityTypeAddonAssociation
     - SubscriptionChangeEntityTypeCreditGrant
     - SubscriptionChangeEntityTypeEntitlement
     - SubscriptionChangeEntityTypeEntitlementGrant

@@ -14670,6 +14670,35 @@ const docTemplate = `{
                         "additionalProperties": {}
                     }
                 },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "description": "Grant config summary, so a client can render the promise (\"1,000 calls per\nday\") before any window has opened. UsageLimit stays populated for legacy\ndisplay but is meaningless on a grant-backed feature.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                        }
+                    ]
+                },
+                "grant_quota": {
+                    "type": "string"
+                },
+                "grant_state": {
+                    "description": "GrantState is the runtime half of the config above: the windows this\nallowance has materialized. Nil when the feature carries no grant config,\nand its Windows are empty when none has opened yet — different facts that\na client must render differently.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/GrantState"
+                        }
+                    ]
+                },
+                "grant_unlimited": {
+                    "description": "GrantUnlimited distinguishes \"grant-based with no ceiling\" from \"no grant\nconfig at all\"; both leave GrantQuota nil.",
+                    "type": "boolean"
+                },
                 "is_enabled": {
                     "type": "boolean"
                 },
@@ -16626,6 +16655,10 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "description": "GrantUnlimited asks for an allowance with no ceiling. Explicit rather than\ninferred from an absent grant_quota, so a dropped field or a typo'd key\ncannot silently provision a feature that never bills.",
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -18841,6 +18874,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "ingested_at": {
+                    "type": "string"
+                },
                 "properties": {
                     "type": "object",
                     "additionalProperties": true
@@ -19024,6 +19060,14 @@ const docTemplate = `{
                 "feature": {
                     "$ref": "#/definitions/FeatureResponse"
                 },
+                "grant_state": {
+                    "description": "GrantState carries the per-window ledger for grant-backed features, so a\nclient can break a cycle total down into the windows that produced it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/GrantState"
+                        }
+                    ]
+                },
                 "is_enabled": {
                     "type": "boolean"
                 },
@@ -19201,6 +19245,12 @@ const docTemplate = `{
                 },
                 "event": {
                     "$ref": "#/definitions/Event"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/Event"
+                    }
                 },
                 "processed_events": {
                     "type": "array",
@@ -19688,6 +19738,93 @@ const docTemplate = `{
                 },
                 "value": {
                     "type": "number"
+                }
+            }
+        },
+        "GrantCycleTotals": {
+            "type": "object",
+            "properties": {
+                "total_overage": {
+                    "type": "string"
+                },
+                "total_quota": {
+                    "type": "string"
+                },
+                "total_usage": {
+                    "type": "string"
+                },
+                "windows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "GrantState": {
+            "type": "object",
+            "properties": {
+                "cycle_totals": {
+                    "description": "CycleTotals covers every window overlapping the current billing period,\nclosed ones included, so the overage figure matches what billing will fold.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/GrantCycleTotals"
+                        }
+                    ]
+                },
+                "windows": {
+                    "description": "Windows is every window overlapping the current billing period, closed ones\nincluded, oldest first — the per-window ledger behind CycleTotals. The\nlive balance is the entry (or entries, for parallel features) with\nIsActive=true; there is at most one per bucket, and none between windows.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GrantWindowState"
+                    }
+                }
+            }
+        },
+        "GrantWindowState": {
+            "type": "object",
+            "properties": {
+                "entitlement_id": {
+                    "type": "string"
+                },
+                "grant_id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "description": "IsActive means the window is open right now — evaluated against the\nserver's clock so clients need not compare timestamps themselves.",
+                    "type": "boolean"
+                },
+                "last_computed_at": {
+                    "description": "LastComputedAt is the freshness watermark. Usage is a snapshot refreshed\nby a debounced background pass, so a client must render this rather than\nimplying the number is live.",
+                    "type": "string"
+                },
+                "measure": {
+                    "description": "Measure is quantity (meter units) or amount (currency) — the unit for\nevery figure below.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                        }
+                    ]
+                },
+                "quota": {
+                    "type": "string"
+                },
+                "remaining": {
+                    "description": "Remaining is null on an unlimited window: there is no ceiling to measure against.",
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.EntitlementGrantStatus"
+                },
+                "unlimited": {
+                    "description": "Unlimited windows track usage but have no ceiling: quota and remaining are\nmeaningless and a client must render \"unlimited\", not a number.",
+                    "type": "boolean"
+                },
+                "usage": {
+                    "type": "string"
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "valid_to": {
+                    "type": "string"
                 }
             }
         },
@@ -20867,6 +21004,9 @@ const docTemplate = `{
                 "entitlement_id"
             ],
             "properties": {
+                "aggregation_mode": {
+                    "$ref": "#/definitions/types.EntitlementAggregationMode"
+                },
                 "config_value": {
                     "description": "ConfigValue is the config value for config features",
                     "type": "object",
@@ -20874,6 +21014,26 @@ const docTemplate = `{
                 },
                 "entitlement_id": {
                     "description": "EntitlementID references the plan/addon entitlement to override",
+                    "type": "string"
+                },
+                "grant_allocation_behavior": {
+                    "$ref": "#/definitions/types.EntitlementGrantAllocationBehavior"
+                },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "description": "Grant config. Nil fields inherit from the parent entitlement, so an\noverride that does not mention grants keeps the plan's allowance instead\nof silently downgrading the feature to a legacy entitlement.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                        }
+                    ]
+                },
+                "grant_quota": {
                     "type": "string"
                 },
                 "is_enabled": {
@@ -24376,10 +24536,6 @@ const docTemplate = `{
                 "aggregation_mode": {
                     "$ref": "#/definitions/types.EntitlementAggregationMode"
                 },
-                "clear_grant_config": {
-                    "description": "Grant config — nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).",
-                    "type": "boolean"
-                },
                 "config_value": {
                     "type": "object",
                     "additionalProperties": true
@@ -24398,6 +24554,10 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "description": "GrantUnlimited=true clears the ceiling; false restores a bounded allowance\nand requires grant_quota in the same request. Without this an existing quota\ncould never be unset, since a nil GrantQuota means \"leave alone\".",
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -28220,6 +28380,17 @@ const docTemplate = `{
                 "EntitlementGrantMeasureAmount"
             ]
         },
+        "types.EntitlementGrantStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "exhausted"
+            ],
+            "x-enum-varnames": [
+                "EntitlementGrantStatusActive",
+                "EntitlementGrantStatusExhausted"
+            ]
+        },
         "types.EntitlementUsageResetPeriod": {
             "type": "string",
             "enum": [
@@ -29900,14 +30071,14 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "plan",
-                "addon",
+                "addon_association",
                 "credit_grant",
                 "entitlement",
                 "entitlement_grant"
             ],
             "x-enum-varnames": [
                 "SubscriptionChangeEntityTypePlan",
-                "SubscriptionChangeEntityTypeAddon",
+                "SubscriptionChangeEntityTypeAddonAssociation",
                 "SubscriptionChangeEntityTypeCreditGrant",
                 "SubscriptionChangeEntityTypeEntitlement",
                 "SubscriptionChangeEntityTypeEntitlementGrant"
