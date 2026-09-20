@@ -6820,6 +6820,33 @@ func withAssociationWindow(ent *dto.EntitlementResponse, assoc *dto.AddonAssocia
 	return &updatedEntResp
 }
 
+// nameOverridesAfterTheirParent copies the plan or addon of each override's parent onto
+// the override itself, so a suppressed parent does not take the source's name with it.
+func nameOverridesAfterTheirParent(planEnts, addonEnts, subEnts []*dto.EntitlementResponse) {
+	parents := make(map[string]*dto.EntitlementResponse, len(planEnts)+len(addonEnts))
+	for _, ent := range append(append([]*dto.EntitlementResponse{}, planEnts...), addonEnts...) {
+		if ent != nil && ent.Entitlement != nil {
+			parents[ent.ID] = ent
+		}
+	}
+
+	for _, ent := range subEnts {
+		if ent == nil || ent.Entitlement == nil {
+			continue
+		}
+		parent, ok := parents[lo.FromPtr(ent.ParentEntitlementID)]
+		if !ok {
+			continue
+		}
+		if ent.Plan == nil {
+			ent.Plan = parent.Plan
+		}
+		if ent.Addon == nil {
+			ent.Addon = parent.Addon
+		}
+	}
+}
+
 func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription) ([]*dto.EntitlementResponse, error) {
 	if sub == nil {
 		return nil, ierr.NewError("subscription is required").
@@ -6882,7 +6909,10 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 			WithEntityIDs(addonIDs).
 			WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_ADDON).
 			WithStatus(types.StatusPublished).
-			WithExpand(fmt.Sprintf("%s,%s", types.ExpandFeatures, types.ExpandMeters))
+			// Addons expanded too: the aggregated source carries entity_name, and
+			// without the addon the name is empty and every addon-fed feature
+			// renders as a dash.
+			WithExpand(fmt.Sprintf("%s,%s,%s", types.ExpandFeatures, types.ExpandMeters, types.ExpandAddons))
 
 		addonEntResp, err := entitlementService.ListEntitlements(ctx, addonEntFilter)
 		if err != nil {
@@ -6920,6 +6950,12 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 		return nil, err
 	}
 	subscriptionEntitlements := subscriptionEntResp.Items
+
+	// An override stands in for the plan or addon entitlement it replaces, and that
+	// parent is about to be filtered out. Carry the parent's plan/addon across so the
+	// override can still say where the allowance came from; its own entity is the
+	// subscription, which names nothing a customer would recognise.
+	nameOverridesAfterTheirParent(planEntitlements.Items, addonEntitlements, subscriptionEntitlements)
 
 	// Step 6: Filter out overridden entitlements and combine results
 	finalEntitlements := s.filterOverriddenEntitlements(

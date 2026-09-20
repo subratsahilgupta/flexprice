@@ -2762,8 +2762,14 @@ func (s *billingService) AggregateEntitlements(params *dto.AggregateEntitlements
 			}
 		case types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION:
 			entityType = dto.EntitlementSourceEntityTypeSubscription
-			// For subscription entitlements, entity_name can be left empty or set to subscription identifier
-			// The entity_id is the subscription ID itself
+			// entity_id is the subscription, which names nothing a customer recognises.
+			// An override carries the plan or addon it replaced, so name it after that;
+			// a net-new subscription entitlement replaces nothing and stays unnamed.
+			if ent.Plan != nil {
+				entityName = ent.Plan.Name
+			} else if ent.Addon != nil {
+				entityName = ent.Addon.Name
+			}
 		}
 
 		// For subscription ID, use the one from the source if available, otherwise use the provided one
