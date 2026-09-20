@@ -295,3 +295,63 @@ func (s *InMemoryRevenueFactStore) ListForExport(ctx context.Context, computedAf
 	}
 	return result, nil
 }
+
+// ListFacts pages facts matching the filter, ordered by (day, id).
+func (s *InMemoryRevenueFactStore) ListFacts(ctx context.Context, filter revenuefact.FactsFilter) ([]*revenuefact.RevenueFact, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	contains := func(list []string, v string) bool {
+		if len(list) == 0 {
+			return true
+		}
+		for _, item := range list {
+			if item == v {
+				return true
+			}
+		}
+		return false
+	}
+	deref := func(p *string) string {
+		if p == nil {
+			return ""
+		}
+		return *p
+	}
+
+	var result []*revenuefact.RevenueFact
+	for _, f := range s.facts {
+		if !CheckTenantFilter(ctx, f.TenantID) || !CheckEnvironmentFilter(ctx, f.EnvironmentID) {
+			continue
+		}
+		if f.Status != filter.Status || f.Day.Before(filter.DayStart) || f.Day.After(filter.DayEnd) {
+			continue
+		}
+		if !contains(filter.CustomerIDs, f.CustomerID) || !contains(filter.SubscriptionIDs, f.SubscriptionID) {
+			continue
+		}
+		if !contains(filter.PriceIDs, deref(f.PriceID)) || !contains(filter.MeterIDs, deref(f.MeterID)) {
+			continue
+		}
+		if filter.Currency != "" && f.Currency != filter.Currency {
+			continue
+		}
+		result = append(result, f)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Day.Equal(result[j].Day) {
+			return result[i].ID < result[j].ID
+		}
+		return result[i].Day.Before(result[j].Day)
+	})
+	if filter.Offset > 0 {
+		if filter.Offset >= len(result) {
+			return nil, nil
+		}
+		result = result[filter.Offset:]
+	}
+	if filter.Limit > 0 && len(result) > filter.Limit {
+		result = result[:filter.Limit]
+	}
+	return result, nil
+}

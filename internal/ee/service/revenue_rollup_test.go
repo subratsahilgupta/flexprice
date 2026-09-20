@@ -370,19 +370,18 @@ func (s *RevenueRollupSuite) TestRollupSubscription_MultiPeriodCommitmentSkipped
 	s.Empty(rows, "multi-period commitment subscriptions must be skipped with zero rows")
 }
 
-// TestRollupSubscription_OverageStaysPeriodOnly: when usage exceeds a
-// single-period commitment the engine emits a reduced usage line plus a
-// separate is_overage line. The rollup keeps usage lines whole (period_only)
-// and books the overage under its own revenue source, reconciling to the
-// preview total.
-func (s *RevenueRollupSuite) TestRollupSubscription_OverageStaysPeriodOnly() {
+// TestRollupSubscription_OverageSplitsPerDay: when usage exceeds the
+// commitment, the engine pairs each usage line with an overage line. Both
+// halves now split per day around the commitment boundary: days until the
+// within-commitment amount is reached bill as usage, later days as overage,
+// and each half sums exactly to its engine line.
+func (s *RevenueRollupSuite) TestRollupSubscription_OverageSplitsPerDay() {
 	ctx := s.ctx
 	s.seedWorkedExample(ctx)
 
-	// seedWorkedExample already seeds 1200 calls/day (36000 calls = $360,
-	// under the $500 commitment). Push another 1000 calls/day so gross usage
-	// (66000 calls = $660) exceeds the commitment and the engine's per-period
-	// commitment split emits an is_overage line.
+	// seedWorkedExample seeds 1200 calls/day ($360 gross, under the $500
+	// commitment). Add 1000/day so gross usage ($660) exceeds it: the engine
+	// bills $500 within commitment and 16000 calls x $0.01 x 2 = $320 overage.
 	extra := make([]*events.MeterUsage, 0, 30)
 	for d := 0; d < 30; d++ {
 		ts := s.periodStart.AddDate(0, 0, d).Add(18 * time.Hour)
@@ -405,24 +404,42 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageStaysPeriodOnly() {
 	}
 	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, extra))
 
-	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+	core, observedLogs := observer.New(zapcore.InfoLevel)
+	params := s.serviceParams()
+	params.Logger = logger.NewFromSugared(zap.New(core).Sugar())
+	svc := NewRevenueService(params)
+
+	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
 
 	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
 	s.NoError(err)
-	s.NotEmpty(rows, "an overage subscription must now produce rows")
 
-	total := decimal.Zero
-	overageRows := 0
+	usageTotal, overageTotal := decimal.Zero, decimal.Zero
+	usageDays, overageDays, billedOverageDays := 0, 0, 0
 	for _, r := range rows {
-		total = total.Add(r.NetAmount)
-		if r.RevenueSource == types.RevenueSourceUsage {
-			s.Equal(types.PeriodOnly, r.DecompositionMode, "commitment-reduced usage must stay whole, not split per day")
-		}
-		if r.RevenueSource == types.RevenueSourceOverage {
-			overageRows++
+		switch r.RevenueSource {
+		case types.RevenueSourceUsage:
+			s.Equal(types.Marginal, r.DecompositionMode, "usage half must split per day")
+			usageTotal = usageTotal.Add(r.NetAmount)
+			usageDays++
+			if residual, identityOK := reconcileRow(r); !identityOK {
+				s.Failf("row identity broken", "day %s residual %s", r.Day, residual.String())
+			}
+		case types.RevenueSourceOverage:
+			s.Equal(types.Marginal, r.DecompositionMode, "overage half must split per day")
+			overageTotal = overageTotal.Add(r.NetAmount)
+			overageDays++
+			if r.NetAmount.IsPositive() {
+				billedOverageDays++
+			}
 		}
 	}
-	s.Equal(1, overageRows, "the engine's is_overage line must book under the overage source")
+	s.Equal(30, usageDays, "one usage row per day")
+	s.Equal(30, overageDays, "one overage row per day")
+	s.Equal("500", usageTotal.String(), "usage half must sum to the within-commitment amount")
+	s.Equal("320", overageTotal.String(), "overage half must sum to the engine's overage line")
+	s.Greater(billedOverageDays, 0, "overage accrues only after the commitment is crossed")
+	s.Less(billedOverageDays, 30, "days before the crossing carry no overage")
 
 	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
@@ -431,7 +448,15 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageStaysPeriodOnly() {
 		ReferencePoint: types.ReferencePointRevenueFacts,
 	})
 	s.NoError(err)
-	s.True(total.Equal(invReq.Subtotal), "Σ net_amount (%s) must reconcile to the preview subtotal (%s)", total.String(), invReq.Subtotal.String())
+	total := decimal.Zero
+	for _, r := range rows {
+		total = total.Add(r.NetAmount)
+	}
+	s.True(total.Equal(invReq.Subtotal), "all rows must reconcile to the preview subtotal")
+
+	for _, entry := range observedLogs.All() {
+		s.NotEqual("revenue_reconciliation_mismatch", entry.Message, "unexpected mismatch: %+v", entry.ContextMap())
+	}
 }
 
 // TestRollupSubscription_BindingEntitlementLimitReconciles covers review Fix 2: with

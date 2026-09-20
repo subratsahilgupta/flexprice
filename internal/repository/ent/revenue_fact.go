@@ -492,3 +492,62 @@ func (r *revenueFactRepository) ListForExport(ctx context.Context, computedAfter
 	SetSpanSuccess(span)
 	return revenuefact.FromEntList(rows), nil
 }
+
+// ListFacts pages facts matching the filter, ordered by (day, id) — the
+// analytics read path.
+func (r *revenueFactRepository) ListFacts(ctx context.Context, filter revenuefact.FactsFilter) ([]*revenuefact.RevenueFact, error) {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	span := StartRepositorySpan(ctx, "revenue_fact", "list_facts", map[string]interface{}{
+		"tenant_id":      tenantID,
+		"environment_id": environmentID,
+	})
+	defer FinishSpan(span)
+
+	q := r.client.Reader(ctx).RevenueFact.Query().
+		Where(
+			entrevenuefact.TenantID(tenantID),
+			entrevenuefact.EnvironmentID(environmentID),
+			entrevenuefact.DayGTE(filter.DayStart),
+			entrevenuefact.DayLTE(filter.DayEnd),
+			entrevenuefact.StatusEQ(filter.Status),
+		)
+	if len(filter.CustomerIDs) > 0 {
+		q = q.Where(entrevenuefact.CustomerIDIn(filter.CustomerIDs...))
+	}
+	if len(filter.SubscriptionIDs) > 0 {
+		q = q.Where(entrevenuefact.SubscriptionIDIn(filter.SubscriptionIDs...))
+	}
+	if len(filter.PriceIDs) > 0 {
+		q = q.Where(entrevenuefact.PriceIDIn(filter.PriceIDs...))
+	}
+	if len(filter.MeterIDs) > 0 {
+		q = q.Where(entrevenuefact.MeterIDIn(filter.MeterIDs...))
+	}
+	if filter.Currency != "" {
+		q = q.Where(entrevenuefact.Currency(filter.Currency))
+	}
+	if filter.Limit > 0 {
+		q = q.Limit(filter.Limit)
+	}
+	if filter.Offset > 0 {
+		q = q.Offset(filter.Offset)
+	}
+
+	rows, err := q.Order(ent.Asc(entrevenuefact.FieldDay), ent.Asc(entrevenuefact.FieldID)).All(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		r.log.Error(ctx, "list revenue facts failed",
+			"error", err,
+			"tenant_id", tenantID,
+			"environment_id", environmentID,
+		)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list revenue facts").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return revenuefact.FromEntList(rows), nil
+}

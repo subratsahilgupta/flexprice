@@ -5907,6 +5907,121 @@ definitions:
     required:
     - addon_association_id
     type: object
+  RevenueAnalyticsRequest:
+    properties:
+      allocation_policy:
+        allOf:
+        - $ref: '#/definitions/types.RevenueAllocationPolicy'
+        description: |-
+          AllocationPolicy applies to the day granularity: billed keeps
+          whole-period amounts on their booked day; amortized spreads them evenly
+          across their period's days.
+      currency:
+        type: string
+      customer_ids:
+        description: Filters restrict the rows before aggregation.
+        items:
+          type: string
+        type: array
+      end_time:
+        type: string
+      granularity:
+        allOf:
+        - $ref: '#/definitions/types.RevenueGranularity'
+        description: Granularity buckets results by day, by billing period, or into
+          one total.
+      group_by:
+        description: |-
+          GroupBy dimensions: revenue_source, customer_id, subscription_id,
+          price_id, meter_id, currency.
+        items:
+          type: string
+        type: array
+      include_adjustments:
+        description: |-
+          IncludeAdjustments breaks the non-obvious components — commitment
+          true-ups, overage and revert (contra) rows — out as their own rows
+          flagged adjustment=true. Off, they fold into their parent buckets
+          (true-up/overage into usage, reverts into their own source) so visible
+          rows read as plain usage/fixed. Totals are identical either way.
+        type: boolean
+      meter_ids:
+        items:
+          type: string
+        type: array
+      price_ids:
+        items:
+          type: string
+        type: array
+      start_time:
+        description: StartTime/EndTime bound the day range (inclusive days derived
+          in UTC).
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/types.FactStatus'
+        description: |-
+          Status selects booked (FINAL, default) or in-progress (PROVISIONAL)
+          rows — never both in one response.
+      subscription_ids:
+        items:
+          type: string
+        type: array
+    required:
+    - end_time
+    - start_time
+    type: object
+  RevenueAnalyticsResponse:
+    properties:
+      contains_allocated:
+        description: |-
+          ContainsAllocated is true when any bucket includes whole-period amounts
+          spread across days (amortized) or booked on a single day (billed) —
+          i.e. the day view carries period-shaped charges, not only true daily
+          accruals.
+        type: boolean
+      rows:
+        items:
+          $ref: '#/definitions/RevenueAnalyticsRow'
+        type: array
+    type: object
+  RevenueAnalyticsRow:
+    properties:
+      adjustment:
+        description: |-
+          Adjustment marks rows broken out by include_adjustments: commitment
+          true-ups, overage, and revert (contra) amounts.
+        type: boolean
+      billable_qty:
+        type: number
+      day:
+        description: Day is set for day granularity; PeriodStart/PeriodEnd for period.
+        type: string
+      entitlement_amount:
+        type: number
+      entitlement_qty:
+        type: number
+      group:
+        additionalProperties:
+          type: string
+        description: Group holds the requested dimensions and their values for this
+          bucket.
+        type: object
+      invoice_discount:
+        type: number
+      line_discount:
+        type: number
+      net_amount:
+        type: number
+      period_end:
+        type: string
+      period_start:
+        type: string
+      tier_delta:
+        type: number
+      usage_at_list_rate:
+        type: number
+    type: object
   ScheduledTaskResponse:
     properties:
       connection_id:
@@ -10685,6 +10800,14 @@ definitions:
     - entity_type
     - field_key
     type: object
+  types.FactStatus:
+    enum:
+    - PROVISIONAL
+    - FINAL
+    type: string
+    x-enum-varnames:
+    - FactProvisional
+    - FactFinal
   types.FailurePoint:
     properties:
       error:
@@ -11629,6 +11752,24 @@ definitions:
     - ResumeModeImmediate
     - ResumeModeScheduled
     - ResumeModeAuto
+  types.RevenueAllocationPolicy:
+    enum:
+    - billed
+    - amortized
+    type: string
+    x-enum-varnames:
+    - RevenueAllocationBilled
+    - RevenueAllocationAmortized
+  types.RevenueGranularity:
+    enum:
+    - day
+    - period
+    - total
+    type: string
+    x-enum-varnames:
+    - RevenueGranularityDay
+    - RevenueGranularityPeriod
+    - RevenueGranularityTotal
   types.RoundType:
     enum:
     - up
@@ -11721,6 +11862,7 @@ definitions:
     - credit_topups
     - credit_usage
     - usage_analytics
+    - revenue_facts
     type: string
     x-enum-varnames:
     - ScheduledTaskEntityTypeEvents
@@ -11728,6 +11870,7 @@ definitions:
     - ScheduledTaskEntityTypeCreditTopups
     - ScheduledTaskEntityTypeCreditUsage
     - ScheduledTaskEntityTypeUsageAnalytics
+    - ScheduledTaskEntityTypeRevenueFacts
   types.ScheduledTaskInterval:
     enum:
     - 15MIN
@@ -14195,6 +14338,48 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Run an ad-hoc analytics query
+      tags:
+      - Analytics
+      x-scope: read
+  /analytics/revenue:
+    post:
+      consumes:
+      - application/json
+      description: Aggregates revenue_facts by the requested dimensions at day/period/total
+        granularity. allocation_policy places whole-period charges on their booked
+        day (billed) or spreads them across the period (amortized); include_adjustments
+        breaks out true-up/overage/revert amounts as labeled rows. Requires the tenant's
+        revenue analytics setting.
+      operationId: getRevenueAnalytics
+      parameters:
+      - description: Revenue analytics request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/RevenueAnalyticsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/RevenueAnalyticsResponse'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "403":
+          description: Revenue analytics not enabled
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+        "500":
+          description: Server error
+          schema:
+            $ref: '#/definitions/errors.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Query revenue analytics
       tags:
       - Analytics
       x-scope: read

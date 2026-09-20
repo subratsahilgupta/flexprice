@@ -1,0 +1,189 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	"github.com/flexprice/flexprice/internal/domain/settings"
+	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/testutil"
+	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// revenueAnalyticsFixture seeds one month of facts covering every shape the
+// API must aggregate: daily marginal usage, a whole-period fixed fee, a
+// commitment true-up, and a revert pair from a voided invoice.
+func revenueAnalyticsFixture(t *testing.T) (context.Context, RevenueService, revenuePeriod) {
+	t.Helper()
+	ctx := types.SetTenantID(context.Background(), "tenant_ra")
+	ctx = types.SetEnvironmentID(ctx, "env_ra")
+
+	store := testutil.NewInMemoryRevenueFactStore()
+	settingsStore := testutil.NewInMemorySettingsStore()
+	require.NoError(t, settingsStore.Create(ctx, &settings.Setting{
+		ID:            types.GenerateUUIDWithPrefix("setting"),
+		Key:           types.SettingKeyRevenueAnalyticsConfig,
+		Value:         map[string]interface{}{"enabled": true},
+		EnvironmentID: "env_ra",
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}))
+
+	periodStart := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	period := revenuePeriod{Start: periodStart, End: periodStart.AddDate(0, 0, 29)}
+
+	mk := func(id string, source types.RevenueSource, day time.Time, net int64, mode types.DecompositionMode) *revenuefact.RevenueFact {
+		return &revenuefact.RevenueFact{
+			ID: id, CustomerID: "cust_ra", SubscriptionID: "sub_ra",
+			SubLineItemID: lo.ToPtr("sli_" + id), PriceID: lo.ToPtr("price_" + id),
+			RevenueSource: source, PeriodStart: period.Start, PeriodEnd: period.End, Day: day,
+			NetAmount: decimal.NewFromInt(net), DecompositionMode: mode,
+			Currency: "usd", Status: types.FactProvisional,
+		}
+	}
+
+	var facts []*revenuefact.RevenueFact
+	// 30 marginal usage days at $10/day.
+	for d := 0; d < 30; d++ {
+		facts = append(facts, mk(fmt.Sprintf("u%02d", d), types.RevenueSourceUsage, period.Start.AddDate(0, 0, d), 10, types.Marginal))
+	}
+	// $30 fixed fee booked whole on period start; $100 true-up on period end.
+	facts = append(facts,
+		mk("fixed", types.RevenueSourceFixed, period.Start, 30, types.PeriodOnly),
+		mk("trueup", types.RevenueSourceCommitmentTrueup, period.End, 100, types.PeriodOnly),
+	)
+	require.NoError(t, store.UpsertProvisional(ctx, facts))
+
+	svc := NewRevenueService(ServiceParams{
+		Logger:          logger.NewNoopLogger(),
+		RevenueFactRepo: store,
+		SettingsRepo:    settingsStore,
+	})
+	return ctx, svc, period
+}
+
+func revenueAnalyticsRequest(period revenuePeriod) *dto.RevenueAnalyticsRequest {
+	return &dto.RevenueAnalyticsRequest{
+		StartTime: period.Start,
+		EndTime:   period.exclusiveEnd(),
+		Status:    types.FactProvisional,
+	}
+}
+
+// TestGetRevenueAnalytics_SourceGrouping: default folds true-up into usage;
+// include_adjustments breaks it out as a labeled row. Totals identical.
+func TestGetRevenueAnalytics_SourceGrouping(t *testing.T) {
+	ctx, svc, period := revenueAnalyticsFixture(t)
+
+	req := revenueAnalyticsRequest(period)
+	req.Granularity = types.RevenueGranularityTotal
+	req.GroupBy = []string{"revenue_source"}
+
+	res, err := svc.GetRevenueAnalytics(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, res.Rows, 2, "default view shows plain usage/fixed only")
+	bySource := map[string]decimal.Decimal{}
+	for _, r := range res.Rows {
+		assert.False(t, r.Adjustment)
+		bySource[r.Group["revenue_source"]] = r.NetAmount
+	}
+	assert.Equal(t, "400", bySource["usage"].String(), "usage absorbs the true-up by default (300 + 100)")
+	assert.Equal(t, "30", bySource["fixed"].String())
+
+	req.IncludeAdjustments = true
+	res, err = svc.GetRevenueAnalytics(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, res.Rows, 3, "breakout adds the true-up as its own row")
+	total := decimal.Zero
+	adjustments := 0
+	for _, r := range res.Rows {
+		total = total.Add(r.NetAmount)
+		if r.Adjustment {
+			adjustments++
+			assert.Equal(t, "commitment_trueup", r.Group["revenue_source"])
+			assert.Equal(t, "100", r.NetAmount.String())
+		}
+	}
+	assert.Equal(t, 1, adjustments)
+	assert.Equal(t, "430", total.String(), "totals never change with the breakout")
+}
+
+// TestGetRevenueAnalytics_AllocationPolicies: billed keeps the fixed fee as a
+// spike on its booked day; amortized spreads it across the period. Totals equal.
+func TestGetRevenueAnalytics_AllocationPolicies(t *testing.T) {
+	ctx, svc, period := revenueAnalyticsFixture(t)
+
+	req := revenueAnalyticsRequest(period)
+	req.Granularity = types.RevenueGranularityDay
+
+	res, err := svc.GetRevenueAnalytics(ctx, req)
+	require.NoError(t, err)
+	assert.True(t, res.ContainsAllocated, "day view carries period-shaped charges")
+	byDay := map[string]decimal.Decimal{}
+	total := decimal.Zero
+	for _, r := range res.Rows {
+		byDay[r.Day.Format("2006-01-02")] = r.NetAmount
+		total = total.Add(r.NetAmount)
+	}
+	assert.Equal(t, "40", byDay[period.Start.Format("2006-01-02")].String(), "billed: day 1 = $10 usage + $30 fixed spike")
+	assert.Equal(t, "430", total.String())
+
+	req.AllocationPolicy = types.RevenueAllocationAmortized
+	res, err = svc.GetRevenueAnalytics(ctx, req)
+	require.NoError(t, err)
+	amortizedTotal := decimal.Zero
+	for _, r := range res.Rows {
+		amortizedTotal = amortizedTotal.Add(r.NetAmount)
+	}
+	assert.True(t, amortizedTotal.Equal(total), "amortized must preserve the total exactly")
+	firstDay := decimal.Zero
+	for _, r := range res.Rows {
+		if r.Day.Equal(period.Start) {
+			firstDay = firstDay.Add(r.NetAmount)
+		}
+	}
+	// Day 1 = $10 usage + $30/30 fixed + $100/30 true-up = 14.3333…
+	expectedFirstDay := decimal.RequireFromString("14.333333333333333")
+	assert.True(t, firstDay.Sub(expectedFirstDay).Abs().LessThan(decimal.RequireFromString("0.0001")),
+		"amortized day 1 must spread fixed and true-up, got %s", firstDay)
+}
+
+// TestGetRevenueAnalytics_PeriodGranularity: period buckets are exact — every
+// row shape aggregates back to its billing period.
+func TestGetRevenueAnalytics_PeriodGranularity(t *testing.T) {
+	ctx, svc, period := revenueAnalyticsFixture(t)
+
+	req := revenueAnalyticsRequest(period)
+	req.Granularity = types.RevenueGranularityPeriod
+
+	res, err := svc.GetRevenueAnalytics(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, res.Rows, 1)
+	assert.Equal(t, "430", res.Rows[0].NetAmount.String())
+	assert.True(t, res.Rows[0].PeriodStart.Equal(period.Start))
+	assert.False(t, res.ContainsAllocated, "period view allocates nothing")
+}
+
+// TestGetRevenueAnalytics_DeniedWithoutOptIn: the surface is gated on the
+// tenant setting, like the export.
+func TestGetRevenueAnalytics_DeniedWithoutOptIn(t *testing.T) {
+	ctx, _, period := revenueAnalyticsFixture(t)
+	_ = ctx
+
+	deniedCtx := types.SetTenantID(context.Background(), "tenant_other")
+	deniedCtx = types.SetEnvironmentID(deniedCtx, "env_other")
+	svc := NewRevenueService(ServiceParams{
+		Logger:          logger.NewNoopLogger(),
+		RevenueFactRepo: testutil.NewInMemoryRevenueFactStore(),
+		SettingsRepo:    testutil.NewInMemorySettingsStore(),
+	})
+	_, err := svc.GetRevenueAnalytics(deniedCtx, revenueAnalyticsRequest(period))
+	require.Error(t, err)
+}

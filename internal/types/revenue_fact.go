@@ -87,3 +87,43 @@ func (m RecognitionMethod) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 }
+
+// RevenueGranularity buckets revenue analytics by day, billing period, or one total.
+type RevenueGranularity string
+
+const (
+	RevenueGranularityDay    RevenueGranularity = "day"
+	RevenueGranularityPeriod RevenueGranularity = "period"
+	RevenueGranularityTotal  RevenueGranularity = "total"
+)
+
+func (g RevenueGranularity) Validate() error {
+	switch g {
+	case RevenueGranularityDay, RevenueGranularityPeriod, RevenueGranularityTotal:
+		return nil
+	default:
+		return ierr.NewErrorf("invalid revenue granularity %q", g).
+			WithHint("granularity must be one of: day, period, total").
+			Mark(ierr.ErrValidation)
+	}
+}
+
+// RevenueAllocationPolicy controls how whole-period amounts appear in the day
+// view: on their booked day, or spread evenly across their period.
+type RevenueAllocationPolicy string
+
+const (
+	RevenueAllocationBilled    RevenueAllocationPolicy = "billed"
+	RevenueAllocationAmortized RevenueAllocationPolicy = "amortized"
+)
+
+func (p RevenueAllocationPolicy) Validate() error {
+	switch p {
+	case RevenueAllocationBilled, RevenueAllocationAmortized:
+		return nil
+	default:
+		return ierr.NewErrorf("invalid allocation policy %q", p).
+			WithHint("allocation_policy must be one of: billed, amortized").
+			Mark(ierr.ErrValidation)
+	}
+}

@@ -33,4 +33,24 @@ type Repository interface {
 	// ListForExport pages facts recomputed after the watermark, ordered by
 	// (computed_at, id) so callers can resume from the last row they saw.
 	ListForExport(ctx context.Context, computedAfter time.Time, afterID string, limit int) ([]*RevenueFact, error)
+
+	// ListFacts pages facts matching the filter, ordered by (day, id) — the
+	// analytics read path.
+	ListFacts(ctx context.Context, filter FactsFilter) ([]*RevenueFact, error)
+}
+
+// FactsFilter restricts ListFacts. Day bounds are inclusive.
+type FactsFilter struct {
+	DayStart time.Time
+	DayEnd   time.Time
+	Status   types.FactStatus
+
+	CustomerIDs     []string
+	SubscriptionIDs []string
+	PriceIDs        []string
+	MeterIDs        []string
+	Currency        string
+
+	Limit  int
+	Offset int
 }

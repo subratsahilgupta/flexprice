@@ -61,6 +61,10 @@ type previewLineItem struct {
 	// period_only usage rows; marginal rows derive it from the curve.
 	EntitlementQty decimal.Decimal
 
+	// Source overrides the revenue source of marginal rows; empty means
+	// usage. The daily overage split sets it so its rows book as overage.
+	Source types.RevenueSource
+
 	// PeriodStart/PeriodEnd bound the line item's billing period; PeriodEnd
 	// is the inclusive last calendar day.
 	PeriodStart time.Time
@@ -253,6 +257,10 @@ func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefac
 		return nil
 	}
 
+	source := li.Source
+	if source == "" {
+		source = types.RevenueSourceUsage
+	}
 	tier1Rate := listRate(li.Price)
 	rows := make([]*revenuefact.RevenueFact, 0, len(curve))
 
@@ -283,7 +291,7 @@ func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefac
 			PriceID:           li.priceID(),
 			MeterID:           li.meterID(),
 			AggregationType:   li.aggregationType(),
-			RevenueSource:     types.RevenueSourceUsage,
+			RevenueSource:     source,
 			PeriodStart:       li.PeriodStart,
 			PeriodEnd:         li.PeriodEnd,
 			Day:               dc.Day,

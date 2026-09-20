@@ -961,6 +961,76 @@
         "x-codegen-request-body-name": "request"
       }
     },
+    "/analytics/revenue": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Query revenue analytics",
+        "description": "Aggregates revenue_facts by the requested dimensions at day/period/total granularity. allocation_policy places whole-period charges on their booked day (billed) or spreads them across the period (amortized); include_adjustments breaks out true-up/overage/revert amounts as labeled rows. Requires the tenant's revenue analytics setting.",
+        "operationId": "getRevenueAnalytics",
+        "requestBody": {
+          "description": "Revenue analytics request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevenueAnalyticsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevenueAnalyticsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Revenue analytics not enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "request"
+      }
+    },
     "/analytics/revenue-facts/export": {
       "get": {
         "tags": [
@@ -23875,6 +23945,139 @@
           }
         }
       },
+      "RevenueAnalyticsRequest": {
+        "required": [
+          "end_time",
+          "start_time"
+        ],
+        "type": "object",
+        "properties": {
+          "allocation_policy": {
+            "$ref": "#/components/schemas/types.RevenueAllocationPolicy"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customer_ids": {
+            "type": "array",
+            "description": "Filters restrict the rows before aggregation.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "granularity": {
+            "$ref": "#/components/schemas/types.RevenueGranularity"
+          },
+          "group_by": {
+            "type": "array",
+            "description": "GroupBy dimensions: revenue_source, customer_id, subscription_id,\nprice_id, meter_id, currency.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "include_adjustments": {
+            "type": "boolean",
+            "description": "IncludeAdjustments breaks the non-obvious components \u2014 commitment\ntrue-ups, overage and revert (contra) rows \u2014 out as their own rows\nflagged adjustment=true. Off, they fold into their parent buckets\n(true-up/overage into usage, reverts into their own source) so visible\nrows read as plain usage/fixed. Totals are identical either way."
+          },
+          "meter_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "price_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_time": {
+            "type": "string",
+            "description": "StartTime/EndTime bound the day range (inclusive days derived in UTC).",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.FactStatus"
+          },
+          "subscription_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RevenueAnalyticsResponse": {
+        "type": "object",
+        "properties": {
+          "contains_allocated": {
+            "type": "boolean",
+            "description": "ContainsAllocated is true when any bucket includes whole-period amounts\nspread across days (amortized) or booked on a single day (billed) \u2014\ni.e. the day view carries period-shaped charges, not only true daily\naccruals."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RevenueAnalyticsRow"
+            }
+          }
+        }
+      },
+      "RevenueAnalyticsRow": {
+        "type": "object",
+        "properties": {
+          "adjustment": {
+            "type": "boolean",
+            "description": "Adjustment marks rows broken out by include_adjustments: commitment\ntrue-ups, overage, and revert (contra) amounts."
+          },
+          "billable_qty": {
+            "type": "number"
+          },
+          "day": {
+            "type": "string",
+            "description": "Day is set for day granularity; PeriodStart/PeriodEnd for period."
+          },
+          "entitlement_amount": {
+            "type": "number"
+          },
+          "entitlement_qty": {
+            "type": "number"
+          },
+          "group": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Group holds the requested dimensions and their values for this bucket."
+          },
+          "invoice_discount": {
+            "type": "number"
+          },
+          "line_discount": {
+            "type": "number"
+          },
+          "net_amount": {
+            "type": "number"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "tier_delta": {
+            "type": "number"
+          },
+          "usage_at_list_rate": {
+            "type": "number"
+          }
+        }
+      },
       "ScheduledTaskResponse": {
         "type": "object",
         "properties": {
@@ -30225,6 +30428,18 @@
         },
         "x-speakeasy-name-override": "ExportMetadataField"
       },
+      "types.FactStatus": {
+        "type": "string",
+        "enum": [
+          "PROVISIONAL",
+          "FINAL"
+        ],
+        "x-enum-varnames": [
+          "FactProvisional",
+          "FactFinal"
+        ],
+        "x-speakeasy-name-override": "FactStatus"
+      },
       "types.FailurePoint": {
         "type": "object",
         "properties": {
@@ -31518,6 +31733,32 @@
         ],
         "x-speakeasy-name-override": "ResumeMode"
       },
+      "types.RevenueAllocationPolicy": {
+        "type": "string",
+        "enum": [
+          "billed",
+          "amortized"
+        ],
+        "x-enum-varnames": [
+          "RevenueAllocationBilled",
+          "RevenueAllocationAmortized"
+        ],
+        "x-speakeasy-name-override": "RevenueAllocationPolicy"
+      },
+      "types.RevenueGranularity": {
+        "type": "string",
+        "enum": [
+          "day",
+          "period",
+          "total"
+        ],
+        "x-enum-varnames": [
+          "RevenueGranularityDay",
+          "RevenueGranularityPeriod",
+          "RevenueGranularityTotal"
+        ],
+        "x-speakeasy-name-override": "RevenueGranularity"
+      },
       "types.RoundType": {
         "type": "string",
         "enum": [
@@ -31635,14 +31876,16 @@
           "invoice",
           "credit_topups",
           "credit_usage",
-          "usage_analytics"
+          "usage_analytics",
+          "revenue_facts"
         ],
         "x-enum-varnames": [
           "ScheduledTaskEntityTypeEvents",
           "ScheduledTaskEntityTypeInvoice",
           "ScheduledTaskEntityTypeCreditTopups",
           "ScheduledTaskEntityTypeCreditUsage",
-          "ScheduledTaskEntityTypeUsageAnalytics"
+          "ScheduledTaskEntityTypeUsageAnalytics",
+          "ScheduledTaskEntityTypeRevenueFacts"
         ],
         "x-speakeasy-name-override": "ScheduledTaskEntityType"
       },

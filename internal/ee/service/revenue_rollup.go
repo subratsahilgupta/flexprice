@@ -58,6 +58,10 @@ type RevenueService interface {
 	// ExportFacts pages the tenant's facts recomputed after since, ordered by
 	// (computed_at, id). Denied unless the tenant opted in via settings.
 	ExportFacts(ctx context.Context, since time.Time, afterID string, limit int) ([]*revenuefact.RevenueFact, error)
+
+	// GetRevenueAnalytics aggregates facts into grouped, time-bucketed rows —
+	// the read surface for revenue by source/customer/etc. per day or period.
+	GetRevenueAnalytics(ctx context.Context, req *dto.RevenueAnalyticsRequest) (*dto.RevenueAnalyticsResponse, error)
 }
 
 type revenueService struct {
@@ -134,10 +138,22 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return false, nil
 	}
 
-	// Did the engine split this period's usage into "within commitment" +
-	// "overage" lines? decomposeUsageRows keeps usage lines whole in that
-	// case — see its doc for why.
-	overagePresent := hasOverageLine(invReq)
+	// When usage exceeded the commitment, the engine emitted each usage line
+	// as a pair sharing one sub_line_item_id: a "within commitment" line and
+	// an "overage" line. Record each pair's overage amount so both halves can
+	// be split per day around the commitment boundary.
+	overageAmountBySLI := map[string]decimal.Decimal{}
+	for i := range invReq.LineItems {
+		li := &invReq.LineItems[i]
+		if li.Metadata.GetBool(types.MetadataKeyIsOverage) && lo.FromPtr(li.PriceType) == string(types.PRICE_TYPE_USAGE) {
+			if sli := lo.FromPtr(li.SubscriptionLineItemID); sli != "" {
+				overageAmountBySLI[sli] = li.Amount
+			}
+		}
+	}
+	// Daily curves for overage lines, produced while their normal sibling
+	// decomposes; a nil entry means the pair fell back to whole-period rows.
+	overageCurves := map[string][]dayCharge{}
 
 	inputs, err := s.loadRollupInputs(ctx, sub, periodStart, periodEnd, invReq.LineItems)
 	if err != nil {
@@ -201,17 +217,21 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		isOverage := item.Metadata.GetBool(types.MetadataKeyIsOverage)
 
 		switch {
-		case isTrueup || isOverage:
-			// The engine assigns these lines a fresh random price_id every
+		case isTrueup:
+			// The engine assigns true-up lines a fresh random price_id every
 			// compute; use a stable synthetic id so recomputes update in place.
-			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, itemSubscriptionID, isOverage)}
-
+			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, itemSubscriptionID, false)}
 			row := decomposeCommitmentTrueup(base, itemPeriod)
-			if isOverage {
-				row = decomposeOverage(base, itemPeriod)
-			}
 			allRows = append(allRows, row)
 			groups = append(groups, lineItemRows{rows: []*revenuefact.RevenueFact{row}, amount: netAmount, identifier: base.Price.ID})
+
+		case isOverage:
+			// Same stable synthetic id story as true-up lines.
+			base.Price = &price.Price{ID: stableTrueupPriceID(base.SubLineItemID, itemSubscriptionID, true)}
+			base.Source = types.RevenueSourceOverage
+			rows := s.decomposeOverageRows(ctx, sub, inputs, base, item, itemPeriod, overageCurves)
+			allRows = append(allRows, rows...)
+			groups = append(groups, lineItemRows{rows: rows, amount: netAmount, identifier: base.Price.ID})
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_FIXED):
 			p, hydrateErr := inputs.price(lo.FromPtr(item.PriceID))
@@ -225,7 +245,7 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			}
 
 		case lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE):
-			rows, usageErr := s.decomposeUsageRows(ctx, sub, inputs, base, item, itemPeriod, overagePresent)
+			rows, usageErr := s.decomposeUsageRows(ctx, sub, inputs, base, item, itemPeriod, overageAmountBySLI, overageCurves)
 			if usageErr != nil {
 				return false, usageErr
 			}
@@ -286,13 +306,17 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 //     inside the grants' quota-crossed windows. Split per day along those
 //     windows — days before any quota was crossed show entitled usage with
 //     zero net. Falls to (3) when the windows carry no usage to shape by.
-//  2. Commitment overage present on this invoice: the engine capped usage
-//     lines at the subscription's commitment and moved the excess to a
-//     separate overage line. We cannot tell how one day's usage divided
-//     between those two lines, so every usage line keeps its period total on
-//     a single row.
+//  2. This line has an overage sibling (usage exceeded the commitment, so the
+//     engine emitted a second line for the excess): split the daily curve at
+//     the commitment boundary — days until this line's amount is reached are
+//     billed here, the excess accrues on the sibling's curve, which is stashed
+//     in overageCurves for the sibling's own loop iteration.
 //  3. Otherwise decompositionMode decides: one row per day when daily deltas
 //     are meaningful for this price/meter, one whole-period row when not.
+//
+// Whole-period is always the last resort: it also catches (1) and (2) when no
+// daily shape can be derived, marking the pair's stash nil so the sibling
+// falls back the same way.
 func (s *revenueService) decomposeUsageRows(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -300,7 +324,8 @@ func (s *revenueService) decomposeUsageRows(
 	base previewLineItem,
 	item *dto.CreateInvoiceLineItemRequest,
 	itemPeriod revenuePeriod,
-	overagePresent bool,
+	overageAmountBySLI map[string]decimal.Decimal,
+	overageCurves map[string][]dayCharge,
 ) ([]*revenuefact.RevenueFact, error) {
 	// A missing price or meter is a hard error — never let
 	// decompositionMode(nil, nil) silently default to Marginal.
@@ -319,8 +344,28 @@ func (s *revenueService) decomposeUsageRows(
 		return []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
 	}
 
-	if overagePresent {
-		return wholePeriod(), nil
+	if overageAmount, paired := overageAmountBySLI[base.SubLineItemID]; paired {
+		grantBilled := grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, inputs.grants(m.ID))
+		if grantBilled || decompositionMode(p, m) != types.Marginal {
+			// No daily shape for this pair — both halves stay whole-period.
+			overageCurves[base.SubLineItemID] = nil
+			return wholePeriod(), nil
+		}
+		curve, err := s.buildUsageCurve(ctx, usageCurveInput{
+			Price:               p,
+			MeterID:             m.ID,
+			PeriodStart:         itemPeriod.Start,
+			PeriodEnd:           itemPeriod.exclusiveEnd(),
+			EntitlementLimit:    inputs.entitlementLimits[m.ID],
+			ExternalCustomerIDs: inputs.extCustomerIDs,
+			Timezone:            sub.Timezone,
+		})
+		if err != nil {
+			return nil, err
+		}
+		normalCurve, overageCurve := splitCurveAtCommitment(curve, item.Amount, overageAmount, listRate(p))
+		overageCurves[base.SubLineItemID] = overageCurve
+		return decomposeUsageMarginal(base, normalCurve), nil
 	}
 
 	if grants := inputs.grants(m.ID); grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, grants) {
@@ -360,6 +405,56 @@ func (s *revenueService) decomposeUsageRows(
 		return nil, err
 	}
 	return decomposeUsageMarginal(base, curve), nil
+}
+
+// decomposeOverageRows turns one overage line into revenue_facts rows: the
+// daily curve its normal sibling stashed, its own curve when the whole line
+// is overage (commitment already exhausted), or one whole-period row when no
+// daily shape exists.
+func (s *revenueService) decomposeOverageRows(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	inputs *rollupInputs,
+	base previewLineItem,
+	item *dto.CreateInvoiceLineItemRequest,
+	itemPeriod revenuePeriod,
+	overageCurves map[string][]dayCharge,
+) []*revenuefact.RevenueFact {
+	if curve, paired := overageCurves[base.SubLineItemID]; paired {
+		if curve == nil {
+			return []*revenuefact.RevenueFact{decomposeOverage(base, itemPeriod)}
+		}
+		return decomposeUsageMarginal(base, curve)
+	}
+
+	// No normal sibling: the commitment was already exhausted, so this line
+	// carries all of the item's usage as overage. Split its own curve with a
+	// zero within-commitment amount; the line's real price/meter (unlike its
+	// synthetic row id) drives the curve.
+	p, okP := inputs.prices[lo.FromPtr(item.PriceID)]
+	m, okM := inputs.meters[lo.FromPtr(item.MeterID)]
+	if !okP || !okM || decompositionMode(p, m) != types.Marginal ||
+		grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, inputs.grants(m.ID)) {
+		return []*revenuefact.RevenueFact{decomposeOverage(base, itemPeriod)}
+	}
+	curve, err := s.buildUsageCurve(ctx, usageCurveInput{
+		Price:               p,
+		MeterID:             m.ID,
+		PeriodStart:         itemPeriod.Start,
+		PeriodEnd:           itemPeriod.exclusiveEnd(),
+		EntitlementLimit:    inputs.entitlementLimits[m.ID],
+		ExternalCustomerIDs: inputs.extCustomerIDs,
+		Timezone:            sub.Timezone,
+	})
+	if err != nil {
+		// Shadow path: a curve failure downgrades to a whole-period row
+		// rather than failing the line.
+		s.Logger.Error(ctx, "overage curve failed, falling back to whole-period row",
+			"error", err, "subscription_id", sub.ID, "sub_line_item_id", base.SubLineItemID)
+		return []*revenuefact.RevenueFact{decomposeOverage(base, itemPeriod)}
+	}
+	_, overageCurve := splitCurveAtCommitment(curve, decimal.Zero, item.Amount, listRate(p))
+	return decomposeUsageMarginal(base, overageCurve)
 }
 
 func (s *revenueService) RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
@@ -780,11 +875,11 @@ func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription
 	meterIDs := make([]string, 0, len(lineItems))
 	for i := range lineItems {
 		li := &lineItems[i]
-		// True-up/overage price ids are generated fresh by the engine on every
-		// compute and never persisted to the prices table — fetching them
-		// would always miss, and decomposition substitutes a stable synthetic
-		// id for them anyway.
-		if li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup) || li.Metadata.GetBool(types.MetadataKeyIsOverage) {
+		// True-up price ids are generated fresh by the engine on every compute
+		// and never persisted — fetching them would always miss, and their
+		// rows use a stable synthetic id anyway. Overage lines keep their real
+		// price/meter ids on split pairs, which the daily overage curve needs.
+		if li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup) {
 			continue
 		}
 		if id := lo.FromPtr(li.PriceID); id != "" {

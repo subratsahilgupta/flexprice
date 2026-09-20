@@ -258,3 +258,39 @@ func revenueFactCSVRow(f *revenuefact.RevenueFact) []string {
 		strconv.FormatInt(f.Version, 10),
 	}
 }
+
+// GetRevenueAnalytics aggregates revenue facts into grouped, time-bucketed rows.
+// @Summary Query revenue analytics
+// @Description Aggregates revenue_facts by the requested dimensions at day/period/total granularity. allocation_policy places whole-period charges on their booked day (billed) or spreads them across the period (amortized); include_adjustments breaks out true-up/overage/revert amounts as labeled rows. Requires the tenant's revenue analytics setting.
+// @ID getRevenueAnalytics
+// @Tags Analytics
+// @Accept json
+// @Produce json
+// @Security ApiKeyAuth
+// @Param request body dto.RevenueAnalyticsRequest true "Revenue analytics request"
+// @Success 200 {object} dto.RevenueAnalyticsResponse
+// @Failure 400 {object} ierr.ErrorResponse "Invalid request"
+// @Failure 403 {object} ierr.ErrorResponse "Revenue analytics not enabled"
+// @Failure 500 {object} ierr.ErrorResponse "Server error"
+// @x-scope "read"
+// @Router /analytics/revenue [post]
+func (h *AnalyticsHandler) GetRevenueAnalytics(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req dto.RevenueAnalyticsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("Please check the request payload").
+			Mark(ierr.ErrValidation))
+		return
+	}
+
+	res, err := h.revenueSvc.GetRevenueAnalytics(ctx, &req)
+	if err != nil {
+		h.log.Error(ctx, "failed to query revenue analytics", "error", err)
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}

@@ -19,16 +19,8 @@ const (
 // ordered by (computed_at, id) so callers resume from the last row they saw.
 // Denied unless the tenant opted in via revenue_analytics_config.
 func (s *revenueService) ExportFacts(ctx context.Context, since time.Time, afterID string, limit int) ([]*revenuefact.RevenueFact, error) {
-	setting, err := s.SettingsRepo.GetByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
-	if err != nil {
-		if ierr.IsNotFound(err) {
-			return nil, exportNotEnabledError()
-		}
+	if err := s.requireRevenueAnalyticsEnabled(ctx); err != nil {
 		return nil, err
-	}
-	cfg, err := utils.ToStruct[types.RevenueAnalyticsConfig](setting.Value)
-	if err != nil || !cfg.Enabled {
-		return nil, exportNotEnabledError()
 	}
 
 	if limit <= 0 {
@@ -40,8 +32,23 @@ func (s *revenueService) ExportFacts(ctx context.Context, since time.Time, after
 	return s.RevenueFactRepo.ListForExport(ctx, since, afterID, limit)
 }
 
-func exportNotEnabledError() error {
-	return ierr.NewError("revenue analytics is not enabled for this tenant").
-		WithHint("Enable the revenue_analytics_config setting to export revenue facts").
+// requireRevenueAnalyticsEnabled denies the tenant-facing read surfaces
+// (export, analytics) unless the tenant opted in via settings.
+func (s *revenueService) requireRevenueAnalyticsEnabled(ctx context.Context) error {
+	notEnabled := ierr.NewError("revenue analytics is not enabled for this tenant").
+		WithHint("Enable the revenue_analytics_config setting to use revenue analytics").
 		Mark(ierr.ErrPermissionDenied)
+
+	setting, err := s.SettingsRepo.GetByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
+	if err != nil {
+		if ierr.IsNotFound(err) {
+			return notEnabled
+		}
+		return err
+	}
+	cfg, err := utils.ToStruct[types.RevenueAnalyticsConfig](setting.Value)
+	if err != nil || !cfg.Enabled {
+		return notEnabled
+	}
+	return nil
 }
