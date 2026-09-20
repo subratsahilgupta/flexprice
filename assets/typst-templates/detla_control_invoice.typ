@@ -18,8 +18,9 @@
   if s == none or s == "" { "" } else { format-date(parse-date(s)) }
 }
 
-#let meta-row(label, value) = {
-  if value != none and value != "" {
+// force: true renders the row even when the value is empty (label with a blank value).
+#let meta-row(label, value, force: false) = {
+  if force or (value != none and value != "") {
     grid(
       columns: (auto, 1fr),
       column-gutter: 6pt,
@@ -50,7 +51,7 @@
 #if period-start != "" {
   meta-row("Service period", period-start + " - " + period-end)
 }
-#meta-row("PO Number", invoice-data.at("po_number", default: ""))
+#meta-row("PO Number", invoice-data.at("po_number", default: ""), force: true)
 
 #v(10pt)
 #line(length: 100%, stroke: 0.5pt + label-color)
