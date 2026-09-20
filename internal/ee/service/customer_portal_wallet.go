@@ -67,7 +67,13 @@ func (s *customerPortalService) TopUpWallet(ctx context.Context, walletID string
 
 		collectionMethod := types.CollectionMethodSendInvoice
 		if req.Checkout.UseSavedMethod {
-			gateway, _ := provider.ToPaymentGateway()
+			gateway, ok := provider.ToPaymentGateway()
+			if !ok {
+				return nil, ierr.NewError("unsupported payment provider for checkout").
+					WithHint("No gateway mapping exists for this provider").
+					WithReportableDetails(map[string]any{"provider": provider}).
+					Mark(ierr.ErrValidation)
+			}
 
 			if err := s.validateSavedMethodForTopUp(ctx, w.CustomerID, gateway); err != nil {
 				return nil, err

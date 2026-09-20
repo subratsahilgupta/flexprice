@@ -3,6 +3,7 @@ package razorpay
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -95,6 +96,22 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
 		assert.NoError(t, err)
 		assert.True(t, has)
+	})
+
+	t.Run("returns false when all confirmed tokens are expired", func(t *testing.T) {
+		past := time.Now().Add(-24 * time.Hour).UTC()
+		adapter := &CheckoutAdapter{
+			Svc: &PaymentService{
+				customerSvc: &stubRazorpayCustomerSvc{
+					tokens: []*interfaces.ProviderPaymentMethod{
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, ExpiresAt: &past},
+					},
+				},
+			},
+		}
+		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		assert.NoError(t, err)
+		assert.False(t, has)
 	})
 
 	t.Run("returns false when no confirmed tokens exist", func(t *testing.T) {

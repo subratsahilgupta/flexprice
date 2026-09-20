@@ -31,7 +31,7 @@ func fetchGatewayWithAutoChargeSupport(
 	}
 
 	for _, gw := range gateways {
-		if !hasCapability(gatewayCapabilities[gw], types.IntegrationCapabilityAutoCharge) {
+		if !lo.Contains(gatewayCapabilities[gw], types.IntegrationCapabilityAutoCharge) {
 			continue
 		}
 
@@ -63,8 +63,4 @@ func fetchGatewayWithAutoChargeSupport(
 	}
 
 	return "", nil
-}
-
-func hasCapability(caps []types.IntegrationCapabilityType, want types.IntegrationCapabilityType) bool {
-	return lo.Contains(caps, want)
 }
