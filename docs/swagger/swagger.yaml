@@ -5941,10 +5941,11 @@ definitions:
       include_adjustments:
         description: |-
           IncludeAdjustments breaks the non-obvious components — commitment
-          true-ups, overage and revert (contra) rows — out as their own rows
-          flagged adjustment=true. Off, they fold into their parent buckets
-          (true-up/overage into usage, reverts into their own source) so visible
-          rows read as plain usage/fixed. Totals are identical either way.
+          true-ups, overage and revert (contra) rows — out as their own rows,
+          each labeled with its kind in adjustment_type. Off, they fold into
+          their parent buckets (true-up/overage into usage, reverts into their
+          own source) so visible rows read as plain usage/fixed. Totals are
+          identical either way.
         type: boolean
       meter_ids:
         items:
@@ -5988,11 +5989,11 @@ definitions:
     type: object
   RevenueAnalyticsRow:
     properties:
-      adjustment:
+      adjustment_type:
         description: |-
-          Adjustment marks rows broken out by include_adjustments: commitment
-          true-ups, overage, and revert (contra) amounts.
-        type: boolean
+          AdjustmentType labels rows broken out by include_adjustments:
+          "commitment_trueup", "overage" or "revert". Empty for plain rows.
+        type: string
       billable_qty:
         type: number
       day:
@@ -14388,49 +14389,6 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Query revenue analytics
-      tags:
-      - Analytics
-      x-scope: read
-  /analytics/revenue-facts/export:
-    get:
-      description: 'Streams revenue_facts rows as CSV, ordered by (computed_at, id).
-        Pass since (RFC3339) to export only rows recomputed after a prior export''s
-        max computed_at; omit it for a full snapshot. Requires the tenant''s revenue
-        analytics setting to be enabled. Column reference: docs/export/revenue-facts.md.'
-      operationId: exportRevenueFacts
-      parameters:
-      - description: Only rows with computed_at strictly after this RFC3339 instant
-        in: query
-        name: since
-        type: string
-      - description: 'Resume tiebreaker: with since, also return rows AT that instant
-          whose id sorts after this value (pass the last received row''s computed_at
-          and id)'
-        in: query
-        name: after_id
-        type: string
-      produces:
-      - text/csv
-      responses:
-        "200":
-          description: CSV stream
-          schema:
-            type: string
-        "400":
-          description: Invalid request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "403":
-          description: Revenue analytics not enabled
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Export revenue facts
       tags:
       - Analytics
       x-scope: read

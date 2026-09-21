@@ -1,29 +1,18 @@
 # Revenue Facts Export
 
-Two routes deliver the same CSV columns; both require the revenue analytics
-setting to be enabled for your tenant:
-
-- **Scheduled S3 export (recommended)** — configure a scheduled task with
-  entity type `revenue_facts` and your S3 connection; each run delivers the
-  rows recomputed inside its window to your bucket. Daily runs a few hours
-  after 03:00 UTC line up with the daily facts computation. Windows pair as
-  (start, end], so boundary rows never gap or duplicate across runs.
-- **Pull API** — `GET /v1/analytics/revenue-facts/export` streams the CSV on
-  demand, as described below.
+Exports are delivered by **scheduled S3 export**, which requires the revenue
+analytics setting to be enabled for your tenant: configure a scheduled task
+with entity type `revenue_facts` and your S3 connection; each run delivers
+the rows recomputed inside its window to your bucket as CSV. Daily runs a few
+hours after 03:00 UTC line up with the daily facts computation. Windows pair
+as (start, end], so boundary rows never gap or duplicate across runs.
 
 ## How to use it
 
-- **First run (snapshot):** call with no parameters — every row is returned.
-- **Incremental runs:** remember the maximum `computed_at` you received and
-  pass it back as `?since=<RFC3339>`. Only rows recomputed after that instant
-  are returned. Re-running with an older watermark is safe: rows are
-  identified by `id`, and a re-exported row simply carries a higher `version`
-  — keep the latest `version` per `id`.
-- Rows are ordered by `(computed_at, id)`. If a download is interrupted,
-  resume with `?since=<computed_at>&after_id=<id>` of the last complete row
-  you received — `after_id` picks up remaining rows that share that exact
-  instant. (Re-running with `since` alone is also safe, at the cost of
-  possibly skipping same-instant stragglers until the next recompute.)
+- Re-exported rows are safe to ingest repeatedly: rows are identified by
+  `id`, and a recomputed row simply carries a higher `version` — keep the
+  latest `version` per `id`.
+- Within a file, rows are ordered by `(computed_at, id)`.
 
 ## Reading the data
 

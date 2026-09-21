@@ -1,3 +1,8 @@
+// Grant-billed usage: when entitlement grants cover a line item, the engine
+// charges only the usage that fell inside the grants' quota-crossed windows.
+// This file rebuilds that shape per day so marginal revenue_facts rows show
+// "out of X entitled, Y billed today" — buildGrantOverageCurve is the entry
+// point, everything below it is window/day bookkeeping.
 package service
 
 import (
@@ -72,7 +77,7 @@ func (s *revenueService) buildGrantOverageCurve(ctx context.Context, in grantCur
 		addDailyMarginals(billedMarginalByDay, windowCum, w.start, w.end, in.Timezone)
 	}
 
-	loc := exportLocation(in.Timezone)
+	loc := timezoneLocation(in.Timezone)
 	startDay, endDay := localDayWalk(in.PeriodStart, in.PeriodEnd, loc)
 	rate := listRate(in.Price)
 
@@ -184,7 +189,7 @@ func (s *revenueService) cumulativeUsageByDay(ctx context.Context, meterID strin
 // addDailyMarginals converts one window's cumulative curve into per-day
 // deltas and accumulates them into acc.
 func addDailyMarginals(acc map[string]decimal.Decimal, windowCum map[string]decimal.Decimal, start, end time.Time, tz string) {
-	loc := exportLocation(tz)
+	loc := timezoneLocation(tz)
 	dayStart, dayEnd := localDayWalk(start, end, loc)
 	prev := decimal.Zero
 	for cur := dayStart; cur.Before(dayEnd.AddDate(0, 0, 1)); cur = cur.AddDate(0, 0, 1) {
@@ -211,7 +216,8 @@ func localDayWalk(start, end time.Time, loc *time.Location) (time.Time, time.Tim
 	return startDay, endDay
 }
 
-func exportLocation(tz string) *time.Location {
+// timezoneLocation loads tz, falling back to UTC on empty or invalid names.
+func timezoneLocation(tz string) *time.Location {
 	if tz == "" {
 		return time.UTC
 	}

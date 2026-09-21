@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -26,6 +27,26 @@ type eventSourceShares struct {
 // unattributedSource labels the metrics no event source can claim: non-usage
 // facts (fixed, true-up) and usage days with no recorded events.
 const unattributedSource = ""
+
+// maxSourceGroupingSubscriptions caps the per-subscription usage-read fan-out
+// of a group_by "source" request.
+const maxSourceGroupingSubscriptions = 50
+
+// splitFactsBySource returns the per-fact source split for the request: the
+// identity split (everything under one unlabeled source) unless "source" is a
+// group dimension, in which case usage shares are loaded once for the whole
+// fact set and each fact splits across the sources behind it.
+func (s *revenueService) splitFactsBySource(ctx context.Context, req *dto.RevenueAnalyticsRequest, facts []*revenuefact.RevenueFact) (func(*revenuefact.RevenueFact) []sourceShare, error) {
+	whole := []sourceShare{{source: unattributedSource, fraction: decimal.NewFromInt(1)}}
+	if !lo.Contains(req.GroupBy, "source") {
+		return func(*revenuefact.RevenueFact) []sourceShare { return whole }, nil
+	}
+	shares, err := s.buildEventSourceShares(ctx, req, facts)
+	if err != nil {
+		return nil, err
+	}
+	return shares.split, nil
+}
 
 func dayShareKey(subscriptionID, meterID string, day time.Time) string {
 	return subscriptionID + "|" + meterID + "|" + day.UTC().Format("2006-01-02")
@@ -48,6 +69,12 @@ func (s *revenueService) buildEventSourceShares(ctx context.Context, req *dto.Re
 			metersBySub[f.SubscriptionID] = map[string]struct{}{}
 		}
 		metersBySub[f.SubscriptionID][lo.FromPtr(f.MeterID)] = struct{}{}
+	}
+
+	if len(metersBySub) > maxSourceGroupingSubscriptions {
+		return nil, ierr.NewErrorf("group_by source spans %d subscriptions, more than the %d allowed", len(metersBySub), maxSourceGroupingSubscriptions).
+			WithHint("Narrow the customer/subscription filter or time range").
+			Mark(ierr.ErrValidation)
 	}
 
 	shares := &eventSourceShares{

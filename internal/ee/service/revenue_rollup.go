@@ -32,7 +32,7 @@ const (
 type RevenueService interface {
 	// RollupSubscription splits the subscription's current billing period
 	// into PROVISIONAL revenue_facts rows. Subscriptions it cannot split
-	// faithfully (discounts, multi-period commitments) are skipped with a log.
+	// faithfully (multi-period commitments) are skipped with a log.
 	RollupSubscription(ctx context.Context, subscriptionID string) error
 
 	// RollupDirty rolls every opted-in subscription with activity since the
@@ -55,10 +55,6 @@ type RevenueService interface {
 	// what the invoice says? Mismatches are logged as revenue_facts_drift and
 	// repaired only when analytics.revenue_rollup.auto_correct is on.
 	ReconcileBookedInvoices(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error)
-
-	// ExportFacts pages the tenant's facts recomputed after since, ordered by
-	// (computed_at, id). Denied unless the tenant opted in via settings.
-	ExportFacts(ctx context.Context, since time.Time, afterID string, limit int) ([]*revenuefact.RevenueFact, error)
 
 	// GetRevenueAnalytics aggregates facts into grouped, time-bucketed rows —
 	// the read surface for revenue by source/customer/etc. per day or period.
@@ -96,7 +92,17 @@ func (s *revenueService) rollupSubscription(ctx context.Context, sub *subscripti
 	return s.rollupSubscriptionForPeriod(ctx, sub, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
 }
 
-// rollupSubscriptionForPeriod rolls one explicit billing window (periodEnd exclusive)
+// rollupSubscriptionForPeriod rolls one explicit billing window (periodEnd
+// exclusive) into PROVISIONAL revenue_facts rows, in five steps:
+//
+//  1. Guard: multi-period commitments are skipped whole (ERD Q3).
+//  2. Preview: re-run the billing engine for the window under
+//     ReferencePointRevenueFacts (includes the coupon dry-run).
+//  3. Decompose: each preview line item becomes rows by its kind — true-up,
+//     overage (decomposeOverageRows), fixed, or usage (decomposeUsageRows).
+//  4. Reconcile (shadow-only): row/line-item/invoice sums are checked against
+//     the engine's own amounts; mismatches are logged, never block.
+//  5. Upsert: rows land on the provisional grain, idempotently.
 func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time) (skipped bool, err error) {
 	lineItems, err := s.SubscriptionLineItemRepo.ListBySubscription(ctx, sub)
 	if err != nil {
@@ -261,8 +267,26 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		}
 	}
 
-	// Reconciliation is shadow-only. A mismatch is logged/metriced —
-	// never blocks the write, and billing itself is never touched.
+	s.logReconciliationMismatches(ctx, subscriptionID, groups, allRows, invReq)
+
+	if len(allRows) == 0 {
+		return false, nil
+	}
+
+	// Every row is PROVISIONAL with a non-empty price_id by construction;
+	// re-running upserts in place instead of duplicating.
+	if err := s.RevenueFactRepo.UpsertProvisional(ctx, allRows); err != nil {
+		return false, err
+	}
+
+	return false, nil
+}
+
+// logReconciliationMismatches checks the freshly decomposed rows against the
+// engine's own amounts at every grain — per row, per line item, and for the
+// whole preview. Shadow-only: a mismatch is logged/metriced, never blocks the
+// write, and billing itself is never touched.
+func (s *revenueService) logReconciliationMismatches(ctx context.Context, subscriptionID string, groups []lineItemRows, allRows []*revenuefact.RevenueFact, invReq *dto.CreateInvoiceRequest) {
 	for _, g := range groups {
 		for _, row := range g.rows {
 			if residual, ok := reconcileRow(row); !ok {
@@ -277,6 +301,7 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 				"line_item_id", g.identifier, "residual", residual.String())
 		}
 	}
+
 	totalDiscount := decimal.Zero
 	for i := range invReq.LineItems {
 		li := &invReq.LineItems[i]
@@ -286,18 +311,6 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		s.Logger.Info(ctx, "revenue_reconciliation_mismatch",
 			"scope", "invoice", "subscription_id", subscriptionID, "residual", residual.String())
 	}
-
-	if len(allRows) == 0 {
-		return false, nil
-	}
-
-	// Every row is PROVISIONAL with a non-empty price_id by construction;
-	// re-running upserts in place instead of duplicating.
-	if err := s.RevenueFactRepo.UpsertProvisional(ctx, allRows); err != nil {
-		return false, err
-	}
-
-	return false, nil
 }
 
 // decomposeUsageRows turns one usage line item into revenue_facts rows,
@@ -951,9 +964,9 @@ func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription
 	}, nil
 }
 
-// loadGrantMeterIDs returns the meters covered by feature-scoped entitlement
-// grants in this billing cycle — mirroring loadEntitlementGrantsByMeterID's
-// scoping in the billing engine.
+// loadGrantsByMeterID returns the feature-scoped entitlement grants billing
+// each meter this cycle — mirroring loadEntitlementGrantsByMeterID's scoping
+// in the billing engine.
 func (s *revenueService) loadGrantsByMeterID(ctx context.Context, sub *subscription.Subscription, periodStart, periodEnd time.Time, meterByFeatureID map[string]string) (map[string][]*entitlementgrant.EntitlementGrant, error) {
 	if s.EntitlementGrantRepo == nil {
 		return nil, nil
@@ -978,15 +991,4 @@ func (s *revenueService) loadGrantsByMeterID(ctx context.Context, sub *subscript
 		}
 	}
 	return out, nil
-}
-
-// hasOverageLine reports whether any line item is the engine's synthetic
-// overage charge (metadata-flagged).
-func hasOverageLine(invReq *dto.CreateInvoiceRequest) bool {
-	for _, li := range invReq.LineItems {
-		if li.Metadata.GetBool(types.MetadataKeyIsOverage) {
-			return true
-		}
-	}
-	return false
 }

@@ -167,10 +167,12 @@ func (s *RevenueRollupSuite) TestE2E_RevenueFactsLifecycle() {
 	s.NotEmpty(incremental, "re-upserted rows must cross the watermark")
 	s.Less(len(incremental), len(snapshot), "an incremental export must not re-send everything")
 
-	// Export is denied once the tenant's setting is gone.
+	// The read surface is denied once the tenant's setting is gone.
 	s.NoError(s.GetStores().SettingsRepo.DeleteByKey(ctx, types.SettingKeyRevenueAnalyticsConfig))
-	_, err = s.svc.ExportFacts(ctx, time.Time{}, "", 0)
-	s.Error(err, "export must be denied for tenants that have not opted in")
+	_, err = s.svc.GetRevenueAnalytics(ctx, &dto.RevenueAnalyticsRequest{
+		StartTime: s.periodStart, EndTime: s.periodEnd, Status: types.FactProvisional,
+	})
+	s.Error(err, "analytics must be denied for tenants that have not opted in")
 }
 
 // finalizeCurrentPreview persists a finalized invoice built from the current
@@ -193,12 +195,13 @@ func (s *RevenueRollupSuite) finalizeCurrentPreview(ctx context.Context) *invoic
 	return inv
 }
 
-// exportAll drains ExportFacts pages from the given watermark.
+// exportAll drains ListForExport pages from the given watermark — the same
+// paging the scheduled S3 exporter uses.
 func (s *RevenueRollupSuite) exportAll(ctx context.Context, since time.Time) []*revenuefact.RevenueFact {
 	var all []*revenuefact.RevenueFact
 	afterID := ""
 	for {
-		page, err := s.svc.ExportFacts(ctx, since, afterID, 100)
+		page, err := s.store.ListForExport(ctx, since, afterID, 100)
 		s.NoError(err)
 		all = append(all, page...)
 		if len(page) < 100 {

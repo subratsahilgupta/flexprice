@@ -91,7 +91,7 @@ func TestGetRevenueAnalytics_SourceGrouping(t *testing.T) {
 	require.Len(t, res.Rows, 2, "default view shows plain usage/fixed only")
 	bySource := map[string]decimal.Decimal{}
 	for _, r := range res.Rows {
-		assert.False(t, r.Adjustment)
+		assert.Empty(t, r.AdjustmentType)
 		bySource[r.Group["revenue_source"]] = r.NetAmount
 	}
 	assert.Equal(t, "400", bySource["usage"].String(), "usage absorbs the true-up by default (300 + 100)")
@@ -105,8 +105,9 @@ func TestGetRevenueAnalytics_SourceGrouping(t *testing.T) {
 	adjustments := 0
 	for _, r := range res.Rows {
 		total = total.Add(r.NetAmount)
-		if r.Adjustment {
+		if r.AdjustmentType != "" {
 			adjustments++
+			assert.Equal(t, "commitment_trueup", r.AdjustmentType)
 			assert.Equal(t, "commitment_trueup", r.Group["revenue_source"])
 			assert.Equal(t, "100", r.NetAmount.String())
 		}

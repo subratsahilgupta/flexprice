@@ -867,65 +867,6 @@ const docTemplate = `{
                 "x-scope": "read"
             }
         },
-        "/analytics/revenue-facts/export": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Streams revenue_facts rows as CSV, ordered by (computed_at, id). Pass since (RFC3339) to export only rows recomputed after a prior export's max computed_at; omit it for a full snapshot. Requires the tenant's revenue analytics setting to be enabled. Column reference: docs/export/revenue-facts.md.",
-                "produces": [
-                    "text/csv"
-                ],
-                "tags": [
-                    "Analytics"
-                ],
-                "summary": "Export revenue facts",
-                "operationId": "exportRevenueFacts",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Only rows with computed_at strictly after this RFC3339 instant",
-                        "name": "since",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Resume tiebreaker: with since, also return rows AT that instant whose id sorts after this value (pass the last received row's computed_at and id)",
-                        "name": "after_id",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "CSV stream",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Revenue analytics not enabled",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                },
-                "x-scope": "read"
-            }
-        },
         "/analytics/views": {
             "post": {
                 "security": [
@@ -21939,7 +21880,7 @@ const docTemplate = `{
                     }
                 },
                 "include_adjustments": {
-                    "description": "IncludeAdjustments breaks the non-obvious components — commitment\ntrue-ups, overage and revert (contra) rows — out as their own rows\nflagged adjustment=true. Off, they fold into their parent buckets\n(true-up/overage into usage, reverts into their own source) so visible\nrows read as plain usage/fixed. Totals are identical either way.",
+                    "description": "IncludeAdjustments breaks the non-obvious components — commitment\ntrue-ups, overage and revert (contra) rows — out as their own rows,\neach labeled with its kind in adjustment_type. Off, they fold into\ntheir parent buckets (true-up/overage into usage, reverts into their\nown source) so visible rows read as plain usage/fixed. Totals are\nidentical either way.",
                     "type": "boolean"
                 },
                 "meter_ids": {
@@ -21992,9 +21933,9 @@ const docTemplate = `{
         "RevenueAnalyticsRow": {
             "type": "object",
             "properties": {
-                "adjustment": {
-                    "description": "Adjustment marks rows broken out by include_adjustments: commitment\ntrue-ups, overage, and revert (contra) amounts.",
-                    "type": "boolean"
+                "adjustment_type": {
+                    "description": "AdjustmentType labels rows broken out by include_adjustments:\n\"commitment_trueup\", \"overage\" or \"revert\". Empty for plain rows.",
+                    "type": "string"
                 },
                 "billable_qty": {
                     "type": "number"

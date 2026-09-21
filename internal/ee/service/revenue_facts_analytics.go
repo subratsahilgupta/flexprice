@@ -1,5 +1,18 @@
 package service
 
+// GetRevenueAnalytics — the read surface over revenue_facts. The whole request
+// is one pipeline:
+//
+//	1. listFactsInRange   — page every matching fact (bounded by a row budget).
+//	2. splitFactsBySource — only for group_by "source": split each fact's
+//	                        metrics across the event sources behind it
+//	                        (revenue_facts_source.go).
+//	3. revenueAggregation — fold each (fact, fraction) into a bucket keyed by
+//	                        (group values, time bucket, adjustment kind) and
+//	                        sum the metrics; day granularity places
+//	                        whole-period facts per the allocation policy.
+//	4. response           — sorted rows + the contains_allocated flag.
+
 import (
 	"context"
 	"sort"
@@ -10,9 +23,14 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/utils"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
+
+// analyticsRowBudget bounds the total facts one request may scan; a
+// range/filter set that exceeds it must be narrowed, never scanned open-endedly.
+const analyticsRowBudget = 250000
 
 // GetRevenueAnalytics aggregates revenue_facts into the requested buckets:
 // grouped by the given dimensions, at day/period/total granularity, with
@@ -26,17 +44,35 @@ func (s *revenueService) GetRevenueAnalytics(ctx context.Context, req *dto.Reven
 		return nil, err
 	}
 
-	agg := newRevenueAggregation(req)
-	one := decimal.NewFromInt(1)
-	groupBySource := lo.Contains(req.GroupBy, "source")
-	var collected []*revenuefact.RevenueFact
+	facts, err := s.listFactsInRange(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	splits, err := s.splitFactsBySource(ctx, req, facts)
+	if err != nil {
+		return nil, err
+	}
 
-	// rowBudget bounds the total work of one request; a range/filter set that
-	// exceeds it must be narrowed rather than scanned open-endedly.
-	const rowBudget = 250000
+	agg := newRevenueAggregation(req)
+	for _, f := range facts {
+		for _, sh := range splits(f) {
+			agg.add(f, sh.source, sh.fraction)
+		}
+	}
+	return agg.response(), nil
+}
+
+// listFactsInRange pages every fact matching the request's range and filters,
+// stopping with a validation error once the row budget is exceeded.
+func (s *revenueService) listFactsInRange(ctx context.Context, req *dto.RevenueAnalyticsRequest) ([]*revenuefact.RevenueFact, error) {
 	const pageSize = 5000
-	offset := 0
-	for {
+	var all []*revenuefact.RevenueFact
+	for offset := 0; ; offset += pageSize {
+		if offset >= analyticsRowBudget {
+			return nil, ierr.NewErrorf("query matches more than %d revenue fact rows", analyticsRowBudget).
+				WithHint("Narrow the time range or filters").
+				Mark(ierr.ErrValidation)
+		}
 		facts, err := s.RevenueFactRepo.ListFacts(ctx, revenuefact.FactsFilter{
 			DayStart:        req.StartTime,
 			DayEnd:          req.EndTime,
@@ -52,43 +88,40 @@ func (s *revenueService) GetRevenueAnalytics(ctx context.Context, req *dto.Reven
 		if err != nil {
 			return nil, err
 		}
-		if groupBySource {
-			// Source shares need the whole fact set first (one usage read per
-			// distinct subscription); the row budget keeps this bounded.
-			collected = append(collected, facts...)
-		} else {
-			for _, f := range facts {
-				agg.add(f, "", one)
-			}
-		}
+		all = append(all, facts...)
 		if len(facts) < pageSize {
-			break
-		}
-		offset += pageSize
-		if offset >= rowBudget {
-			return nil, ierr.NewErrorf("query matches more than %d revenue fact rows", rowBudget).
-				WithHint("Narrow the time range or filters").
-				Mark(ierr.ErrValidation)
+			return all, nil
 		}
 	}
-
-	if groupBySource {
-		shares, err := s.buildEventSourceShares(ctx, req, collected)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range collected {
-			for _, sh := range shares.split(f) {
-				agg.add(f, sh.source, sh.fraction)
-			}
-		}
-	}
-
-	return agg.response(), nil
 }
 
-// revenueAggregation folds facts into buckets keyed by (time bucket, group
-// values, adjustment).
+// requireRevenueAnalyticsEnabled denies the tenant-facing read surface unless
+// the tenant opted in via settings.
+func (s *revenueService) requireRevenueAnalyticsEnabled(ctx context.Context) error {
+	notEnabled := ierr.NewError("revenue analytics is not enabled for this tenant").
+		WithHint("Enable the revenue_analytics_config setting to use revenue analytics").
+		Mark(ierr.ErrPermissionDenied)
+
+	setting, err := s.SettingsRepo.GetByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
+	if err != nil {
+		if ierr.IsNotFound(err) {
+			return notEnabled
+		}
+		return err
+	}
+	cfg, err := utils.ToStruct[types.RevenueAnalyticsConfig](setting.Value)
+	if err != nil || !cfg.Enabled {
+		return notEnabled
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Aggregation
+// ---------------------------------------------------------------------------
+
+// revenueAggregation folds (fact, fraction) contributions into buckets keyed
+// by (group values, time bucket, adjustment kind) and sums the metrics.
 type revenueAggregation struct {
 	req     *dto.RevenueAnalyticsRequest
 	buckets map[string]*dto.RevenueAnalyticsRow
@@ -100,17 +133,25 @@ func newRevenueAggregation(req *dto.RevenueAnalyticsRequest) *revenueAggregation
 	return &revenueAggregation{req: req, buckets: map[string]*dto.RevenueAnalyticsRow{}}
 }
 
-// adjustmentRow reports whether f is one of the non-obvious components —
-// commitment true-up, overage, or a revert (contra) row.
-func adjustmentRow(f *revenuefact.RevenueFact) bool {
-	return f.IsRevert ||
-		f.RevenueSource == types.RevenueSourceCommitmentTrueup ||
-		f.RevenueSource == types.RevenueSourceOverage
+// adjustmentType labels the non-obvious components broken out by
+// include_adjustments: a revert (contra) row, a commitment true-up, or an
+// overage charge. Empty means a plain row.
+func adjustmentType(f *revenuefact.RevenueFact) string {
+	switch {
+	case f.IsRevert:
+		return "revert"
+	case f.RevenueSource == types.RevenueSourceCommitmentTrueup:
+		return string(types.RevenueSourceCommitmentTrueup)
+	case f.RevenueSource == types.RevenueSourceOverage:
+		return string(types.RevenueSourceOverage)
+	default:
+		return ""
+	}
 }
 
-// displaySource is the source a fact shows under. When adjustments fold
-// (default), true-up and overage count as usage so visible rows read as plain
-// usage/fixed; reverts keep their own (mapped) source.
+// displaySource is the revenue_source a fact shows under. When adjustments
+// fold (default), true-up and overage count as usage so visible rows read as
+// plain usage/fixed; reverts keep their own (mapped) source.
 func (a *revenueAggregation) displaySource(f *revenuefact.RevenueFact) string {
 	src := f.RevenueSource
 	if !a.req.IncludeAdjustments &&
@@ -142,21 +183,24 @@ func (a *revenueAggregation) add(f *revenuefact.RevenueFact, source string, frac
 			group[g] = f.Currency
 		}
 	}
-	adjustment := a.req.IncludeAdjustments && adjustmentRow(f)
+	adjType := ""
+	if a.req.IncludeAdjustments {
+		adjType = adjustmentType(f)
+	}
 
 	switch a.req.Granularity {
 	case types.RevenueGranularityTotal:
-		a.fold(group, adjustment, nil, nil, nil, f, fraction)
+		a.fold(group, adjType, nil, nil, nil, f, fraction)
 	case types.RevenueGranularityPeriod:
 		ps, pe := f.PeriodStart, f.PeriodEnd
-		a.fold(group, adjustment, nil, &ps, &pe, f, fraction)
+		a.fold(group, adjType, nil, &ps, &pe, f, fraction)
 	default: // day
 		if f.DecompositionMode == types.Marginal || a.req.AllocationPolicy == types.RevenueAllocationBilled {
 			if f.DecompositionMode == types.PeriodOnly {
 				a.containsAllocated = true
 			}
 			day := f.Day
-			a.fold(group, adjustment, &day, nil, nil, f, fraction)
+			a.fold(group, adjType, &day, nil, nil, f, fraction)
 			return
 		}
 		// Amortized: spread the whole-period row evenly across its period's
@@ -173,14 +217,14 @@ func (a *revenueAggregation) add(f *revenuefact.RevenueFact, source string, frac
 		shares := spreadAmount(fraction, weights)
 		for i, share := range shares {
 			day := f.PeriodStart.AddDate(0, 0, i)
-			a.fold(group, adjustment, &day, nil, nil, f, share)
+			a.fold(group, adjType, &day, nil, nil, f, share)
 		}
 	}
 }
 
-// fold adds fraction x of f's metrics into the bucket for (group, adjustment,
-// time bucket).
-func (a *revenueAggregation) fold(group map[string]string, adjustment bool, day, periodStart, periodEnd *time.Time, f *revenuefact.RevenueFact, fraction decimal.Decimal) {
+// fold adds fraction x of f's metrics into the bucket for (group, adjustment
+// kind, time bucket).
+func (a *revenueAggregation) fold(group map[string]string, adjType string, day, periodStart, periodEnd *time.Time, f *revenuefact.RevenueFact, fraction decimal.Decimal) {
 	keyParts := make([]string, 0, len(a.req.GroupBy)+3)
 	for _, g := range a.req.GroupBy {
 		keyParts = append(keyParts, group[g])
@@ -191,14 +235,14 @@ func (a *revenueAggregation) fold(group map[string]string, adjustment bool, day,
 	if periodStart != nil {
 		keyParts = append(keyParts, periodStart.Format("2006-01-02"), periodEnd.Format("2006-01-02"))
 	}
-	if adjustment {
-		keyParts = append(keyParts, "adjustment")
+	if adjType != "" {
+		keyParts = append(keyParts, adjType)
 	}
 	key := strings.Join(keyParts, "|")
 
 	row, ok := a.buckets[key]
 	if !ok {
-		row = &dto.RevenueAnalyticsRow{Day: day, PeriodStart: periodStart, PeriodEnd: periodEnd, Adjustment: adjustment}
+		row = &dto.RevenueAnalyticsRow{Day: day, PeriodStart: periodStart, PeriodEnd: periodEnd, AdjustmentType: adjType}
 		if len(group) > 0 {
 			row.Group = group
 		}
@@ -214,6 +258,8 @@ func (a *revenueAggregation) fold(group map[string]string, adjustment bool, day,
 	row.EntitlementQty = row.EntitlementQty.Add(f.EntitlementQty.Mul(fraction))
 }
 
+// response sorts the buckets by time bucket first, then by group values, with
+// adjustment rows after their plain siblings.
 func (a *revenueAggregation) response() *dto.RevenueAnalyticsResponse {
 	rows := make([]*dto.RevenueAnalyticsRow, 0, len(a.buckets))
 	for _, row := range a.buckets {
@@ -249,8 +295,10 @@ func rowSortKey(r *dto.RevenueAnalyticsRow) string {
 	for _, k := range keys {
 		parts = append(parts, r.Group[k])
 	}
-	if r.Adjustment {
-		parts = append(parts, "zz_adjustment")
+	if r.AdjustmentType != "" {
+		// The "~" prefix sorts after every printable group value, keeping
+		// adjustment rows below their plain siblings in the same time bucket.
+		parts = append(parts, "~"+r.AdjustmentType)
 	}
 	return strings.Join(parts, "|")
 }

@@ -1031,82 +1031,6 @@
         "x-codegen-request-body-name": "request"
       }
     },
-    "/analytics/revenue-facts/export": {
-      "get": {
-        "tags": [
-          "Analytics"
-        ],
-        "summary": "Export revenue facts",
-        "description": "Streams revenue_facts rows as CSV, ordered by (computed_at, id). Pass since (RFC3339) to export only rows recomputed after a prior export's max computed_at; omit it for a full snapshot. Requires the tenant's revenue analytics setting to be enabled. Column reference: docs/export/revenue-facts.md.",
-        "operationId": "exportRevenueFacts",
-        "parameters": [
-          {
-            "name": "since",
-            "in": "query",
-            "description": "Only rows with computed_at strictly after this RFC3339 instant",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "after_id",
-            "in": "query",
-            "description": "Resume tiebreaker: with since, also return rows AT that instant whose id sorts after this value (pass the last received row's computed_at and id)",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "CSV stream",
-            "content": {
-              "text/csv": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "text/csv": {
-                "schema": {
-                  "$ref": "#/components/schemas/errors.ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Revenue analytics not enabled",
-            "content": {
-              "text/csv": {
-                "schema": {
-                  "$ref": "#/components/schemas/errors.ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Server error",
-            "content": {
-              "text/csv": {
-                "schema": {
-                  "$ref": "#/components/schemas/errors.ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "x-scope": "read"
-      }
-    },
     "/analytics/views": {
       "post": {
         "tags": [
@@ -23981,7 +23905,7 @@
           },
           "include_adjustments": {
             "type": "boolean",
-            "description": "IncludeAdjustments breaks the non-obvious components \u2014 commitment\ntrue-ups, overage and revert (contra) rows \u2014 out as their own rows\nflagged adjustment=true. Off, they fold into their parent buckets\n(true-up/overage into usage, reverts into their own source) so visible\nrows read as plain usage/fixed. Totals are identical either way."
+            "description": "IncludeAdjustments breaks the non-obvious components \u2014 commitment\ntrue-ups, overage and revert (contra) rows \u2014 out as their own rows,\neach labeled with its kind in adjustment_type. Off, they fold into\ntheir parent buckets (true-up/overage into usage, reverts into their\nown source) so visible rows read as plain usage/fixed. Totals are\nidentical either way."
           },
           "meter_ids": {
             "type": "array",
@@ -24029,9 +23953,9 @@
       "RevenueAnalyticsRow": {
         "type": "object",
         "properties": {
-          "adjustment": {
-            "type": "boolean",
-            "description": "Adjustment marks rows broken out by include_adjustments: commitment\ntrue-ups, overage, and revert (contra) amounts."
+          "adjustment_type": {
+            "type": "string",
+            "description": "AdjustmentType labels rows broken out by include_adjustments:\n\"commitment_trueup\", \"overage\" or \"revert\". Empty for plain rows."
           },
           "billable_qty": {
             "type": "number"
@@ -30834,7 +30758,8 @@
           },
           "finalized_at_gte": {
             "type": "string",
-            "description": "finalized_at_gte filters invoices finalized at or after the given instant"
+            "description": "finalized_at_gte filters invoices finalized at or after the given instant",
+            "format": "date-time"
           },
           "invoice_ids": {
             "type": "array",
@@ -30922,7 +30847,8 @@
           },
           "voided_at_gte": {
             "type": "string",
-            "description": "voided_at_gte filters invoices voided at or after the given instant"
+            "description": "voided_at_gte filters invoices voided at or after the given instant",
+            "format": "date-time"
           }
         },
         "x-speakeasy-name-override": "InvoiceFilter"

@@ -40,10 +40,11 @@ type RevenueAnalyticsRequest struct {
 	Currency        string   `json:"currency"`
 
 	// IncludeAdjustments breaks the non-obvious components — commitment
-	// true-ups, overage and revert (contra) rows — out as their own rows
-	// flagged adjustment=true. Off, they fold into their parent buckets
-	// (true-up/overage into usage, reverts into their own source) so visible
-	// rows read as plain usage/fixed. Totals are identical either way.
+	// true-ups, overage and revert (contra) rows — out as their own rows,
+	// each labeled with its kind in adjustment_type. Off, they fold into
+	// their parent buckets (true-up/overage into usage, reverts into their
+	// own source) so visible rows read as plain usage/fixed. Totals are
+	// identical either way.
 	IncludeAdjustments bool `json:"include_adjustments"`
 }
 
@@ -51,7 +52,7 @@ var revenueAnalyticsGroupBy = []string{"revenue_source", "source", "customer_id"
 
 // revenueAnalyticsMaxRangeDays caps the query window so one request cannot
 // scan unbounded history.
-const revenueAnalyticsMaxRangeDays = 400
+const revenueAnalyticsMaxRangeDays = 90
 
 func (r *RevenueAnalyticsRequest) Validate() error {
 	if r.StartTime.IsZero() || r.EndTime.IsZero() || !r.StartTime.Before(r.EndTime) {
@@ -109,9 +110,9 @@ type RevenueAnalyticsRow struct {
 	PeriodStart *time.Time `json:"period_start,omitempty"`
 	PeriodEnd   *time.Time `json:"period_end,omitempty"`
 
-	// Adjustment marks rows broken out by include_adjustments: commitment
-	// true-ups, overage, and revert (contra) amounts.
-	Adjustment bool `json:"adjustment,omitempty"`
+	// AdjustmentType labels rows broken out by include_adjustments:
+	// "commitment_trueup", "overage" or "revert". Empty for plain rows.
+	AdjustmentType string `json:"adjustment_type,omitempty"`
 
 	NetAmount         decimal.Decimal `json:"net_amount"`
 	UsageAtListRate   decimal.Decimal `json:"usage_at_list_rate"`
