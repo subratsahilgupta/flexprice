@@ -768,7 +768,7 @@ func (s *walletService) TopUpWallet(ctx context.Context, walletID string, req *d
 			if superseded {
 				creationStatus = types.EntityCreationStatusSuperseded
 			}
-			sessionResp.EntityCreationResult = &types.EntityCreationResult{
+			sessionResp.EntityCreationResult = &dto.EntityCreationResult{
 				Status:   creationStatus,
 				EntityId: sessionResp.ID,
 			}
@@ -855,7 +855,7 @@ func (s *walletService) blockedByPendingTopupSession(
 	}
 
 	sessionResp := dto.ToCheckoutSessionResponse(blocking)
-	sessionResp.EntityCreationResult = &types.EntityCreationResult{
+	sessionResp.EntityCreationResult = &dto.EntityCreationResult{
 		Status:   types.EntityCreationStatusFailedAlreadyExists,
 		EntityId: blocking.ID,
 	}

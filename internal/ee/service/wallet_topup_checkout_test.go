@@ -117,8 +117,8 @@ func (s *WalletServiceSuite) TestTopUpWallet_CheckoutExistingSessionSuperseded()
 	existing := s.seedPendingWalletTopupCheckout(s.testData.wallet.ID, nil)
 
 	checkout := s.checkoutParamsRazorpay()
-	checkout.EntityCreationOptions = &types.EntityCreationOptions{
-		EntityCreationConflictPolicies: &types.EntityCreationConflictPolicies{
+	checkout.EntityCreationOptions = &dto.EntityCreationOptions{
+		EntityCreationConflictPolicies: &dto.EntityCreationConflictPolicies{
 			OnExistingEntity: types.OnExistingEntityPolicySupersede,
 		},
 	}

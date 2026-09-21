@@ -198,8 +198,8 @@ func (s *PortalWalletSuite) TestTopUpSupersedesSessionInFlight() {
 		CreditsToAdd:   decimal.NewFromInt(5),
 		IdempotencyKey: lo.ToPtr("idem_1"),
 		Checkout: &dto.PortalCheckoutParams{
-			EntityCreationOptions: &types.EntityCreationOptions{
-				EntityCreationConflictPolicies: &types.EntityCreationConflictPolicies{
+			EntityCreationOptions: &dto.EntityCreationOptions{
+				EntityCreationConflictPolicies: &dto.EntityCreationConflictPolicies{
 					OnExistingEntity: types.OnExistingEntityPolicySupersede,
 				},
 			},
