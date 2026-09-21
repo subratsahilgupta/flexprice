@@ -27,13 +27,15 @@ func fromPaise(paise float64) decimal.Decimal {
 // Returns nil, nil for non-confirmed tokens so callers skip them cleanly.
 func NormalizeRazorpayToken(raw map[string]interface{}) (*interfaces.ProviderPaymentMethod, error) {
 	details, _ := raw["recurring_details"].(map[string]interface{})
-	if status, _ := details["status"].(string); status != "confirmed" {
+	status, _ := details["status"].(string)
+	if status != "confirmed" {
 		return nil, nil
 	}
 
 	pm := &interfaces.ProviderPaymentMethod{
 		GatewayMethodID:  lo.ValueOr(raw, "id", "").(string),
 		ProviderMetadata: map[string]string{},
+		Active:           status == "confirmed",
 	}
 
 	method, _ := raw["method"].(string)
@@ -60,7 +62,7 @@ func NormalizeRazorpayToken(raw map[string]interface{}) (*interfaces.ProviderPay
 }
 
 // SelectUsableToken applies the deterministic selection algorithm: filter for
-// confirmed, non-expired, matching-method, under-ceiling; pick the newest.
+// active, confirmed, non-expired, matching-method, under-ceiling; pick the newest.
 // Exported because both the checkout-time dedup check and the auto-charge path
 // need the exact same logic.
 func SelectUsableToken(
@@ -70,7 +72,8 @@ func SelectUsableToken(
 ) (*interfaces.ProviderPaymentMethod, bool) {
 	now := time.Now().UTC()
 	usable := lo.Filter(methods, func(pm *interfaces.ProviderPaymentMethod, _ int) bool {
-		return pm.Method == preferredMethod &&
+		return pm.Active &&
+			pm.Method == preferredMethod &&
 			(pm.ExpiresAt == nil || !now.After(*pm.ExpiresAt)) &&
 			(pm.MaxAmount == nil || !pm.MaxAmount.LessThan(invoiceTotal))
 	})
@@ -213,3 +216,28 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 		// No NextAction — off-session charge; completion via payment webhook.
 	}, true, nil
 }
+
+// HasAutoChargeableMethod implements interfaces.CheckoutProvider by checking
+// if the customer has any active, non-expired recurring mandate tokens on Razorpay
+// that can cover the requested amount (or any active token if amount is nil).
+func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, req interfaces.HasAutoChargeableMethodRequest) (bool, error) {
+	if a == nil || a.Svc == nil || a.Svc.customerSvc == nil || req.CustomerID == "" {
+		return false, nil
+	}
+
+	_, tokens, err := a.Svc.customerSvc.ListConfirmedCustomerTokens(ctx, req.CustomerID)
+	if err != nil {
+		if ierr.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	amount := decimal.Zero
+	if req.Amount != nil {
+		amount = *req.Amount
+	}
+	_, ok := selectAutoChargeToken(tokens, "", amount)
+	return ok, nil
+}
+

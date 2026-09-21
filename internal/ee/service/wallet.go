@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/wallet"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
+	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
@@ -4176,7 +4177,15 @@ func (s *walletService) autoTopupCheckout(ctx context.Context, w *wallet.Wallet,
 		return nil
 	}
 
-	gateway, err := fetchGatewayWithAutoChargeSupport(ctx, s.ServiceParams, NewCustomerService(s.ServiceParams), w.CustomerID)
+	var topupAmount *decimal.Decimal
+	if w.AutoTopup != nil {
+		topupAmount = w.AutoTopup.Amount
+	}
+
+	gateway, err := fetchGatewayWithAutoChargeSupport(ctx, s.ServiceParams, NewCustomerService(s.ServiceParams), interfaces.HasAutoChargeableMethodRequest{
+		CustomerID: w.CustomerID,
+		Amount:     topupAmount,
+	})
 	if err != nil {
 		s.Logger.Error(ctx, "could not resolve an auto-chargeable method, falling back to an invoice",
 			"error", err, "wallet_id", w.ID, "customer_id", w.CustomerID)

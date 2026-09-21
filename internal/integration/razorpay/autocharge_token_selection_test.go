@@ -12,8 +12,9 @@ import (
 
 func TestSelectAutoChargeToken(t *testing.T) {
 	now := time.Now().UTC()
-	upiToken := &interfaces.ProviderPaymentMethod{GatewayMethodID: "tok_upi", Method: types.PaymentMethodTypeUPI, CreatedAt: now}
-	cardToken := &interfaces.ProviderPaymentMethod{GatewayMethodID: "tok_card", Method: types.PaymentMethodTypeCard, CreatedAt: now}
+	upiToken := &interfaces.ProviderPaymentMethod{GatewayMethodID: "tok_upi", Method: types.PaymentMethodTypeUPI, Active: true, CreatedAt: now}
+	cardToken := &interfaces.ProviderPaymentMethod{GatewayMethodID: "tok_card", Method: types.PaymentMethodTypeCard, Active: true, CreatedAt: now}
+	inactiveToken := &interfaces.ProviderPaymentMethod{GatewayMethodID: "tok_inactive", Method: types.PaymentMethodTypeCard, Active: false, CreatedAt: now}
 
 	tests := []struct {
 		name      string
@@ -24,6 +25,7 @@ func TestSelectAutoChargeToken(t *testing.T) {
 		{name: "UPI only", tokens: []*interfaces.ProviderPaymentMethod{upiToken}, wantID: "tok_upi", wantFound: true},
 		{name: "Card only", tokens: []*interfaces.ProviderPaymentMethod{cardToken}, wantID: "tok_card", wantFound: true},
 		{name: "both present, Card wins", tokens: []*interfaces.ProviderPaymentMethod{upiToken, cardToken}, wantID: "tok_card", wantFound: true},
+		{name: "inactive token excluded", tokens: []*interfaces.ProviderPaymentMethod{inactiveToken}, wantID: "", wantFound: false},
 		{name: "neither present", tokens: nil, wantID: "", wantFound: false},
 	}
 
