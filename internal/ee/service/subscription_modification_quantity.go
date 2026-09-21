@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -779,7 +778,7 @@ func (s *subscriptionModificationService) settlePayFirst(
 		return nil, err
 	}
 
-	existing, err := s.getAnyPendingCheckoutSession(ctx, sub.CustomerID, sub.ID)
+	existing, err := anyPendingCheckoutSession(ctx, sp, sub.CustomerID, sub.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -842,25 +841,6 @@ func (s *subscriptionModificationService) settlePayFirst(
 	}, nil
 }
 
-func (s *subscriptionModificationService) getAnyPendingCheckoutSession(ctx context.Context, customerID string, subscriptionID string) ([]*checkout.CheckoutSession, error) {
-	pendingFilter := &types.CheckoutSessionFilter{
-		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
-		CustomerIDs: []string{customerID},
-		Actions: []types.CheckoutAction{
-			types.CheckoutActionModifySubscription,
-			types.CheckoutActionAddAddon,
-		},
-		CheckoutStatuses: []types.CheckoutStatus{
-			types.CheckoutStatusInitiated,
-			types.CheckoutStatusPending,
-		},
-		Configuration: &types.CheckoutConfigurationFilter{SubscriptionID: subscriptionID},
-	}
-	pendingFilter.Limit = lo.ToPtr(1)
-
-	return s.serviceParams.CheckoutSessionRepo.List(ctx, pendingFilter)
-}
-
 // createAggregatedProrationDraftInvoice locks the batch net (charges − credits) on one DRAFT ONE_OFF.
 // Line items keep per-LI charge/credit amounts; AmountDue is their sum (the net).
 func (s *subscriptionModificationService) createAggregatedProrationDraftInvoice(
@@ -884,40 +864,42 @@ func (s *subscriptionModificationService) createAggregatedProrationDraftInvoice(
 			Mark(ierr.ErrValidation)
 	}
 
-	req := buildAggregatedProrationChargeInvoiceRequest(sub, items)
-	req.SourceType = types.InvoiceSourceTypeCheckout
+	quote, periodStart, idempKey := aggregatedProrationQuote(sub, items)
 
-	invoiceSvc := NewInvoiceService(s.serviceParams)
-	inv, skipped, err := invoiceSvc.CreateComputedDraftInvoice(ctx, req)
+	settleReq := NewSettleProrationRequest(
+		sub, quote, periodStart, sub.CurrentPeriodEnd,
+		"Quantity change", idempKey, SettleModeDraft,
+	)
+
+	settled, err := NewLineItemProrationService(s.serviceParams).Settle(ctx, settleReq)
 	if err != nil {
 		return nil, err
 	}
-	if skipped {
-		return nil, ierr.NewError("draft invoice was skipped").
-			WithHint("Expected a non-zero invoice amount").
-			WithReportableDetails(map[string]any{
-				"invoice_id": inv.GetId(),
-			}).
-			Mark(ierr.ErrValidation)
-	}
-	return inv, nil
+
+	return settled.Draft, nil
 }
 
-func buildAggregatedProrationChargeInvoiceRequest(
+func aggregatedProrationQuote(
 	sub *subscription.Subscription,
 	items []*quantityChangeProrationItem,
-) dto.CreateInvoiceRequest {
-	lineItems := make([]dto.CreateInvoiceLineItemRequest, 0, len(items))
-	total := decimal.Zero
+) (*LineItemProrationSummary, time.Time, string) {
+	quote := emptyProrationSummary(sub)
 	var periodStart *time.Time
-	periodEnd := sub.CurrentPeriodEnd
-	billingPeriod := string(sub.BillingPeriod)
 	keyParts := make([]prorationChargeKeyPart, 0, len(items))
 
 	for _, item := range items {
 		single := buildProrationChargeInvoiceRequest(sub, item)
-		total = total.Add(single.AmountDue)
-		lineItems = append(lineItems, single.LineItems...)
+
+		for _, line := range single.LineItems {
+			if line.Amount.IsNegative() {
+				quote.CreditLineItems = append(quote.CreditLineItems, line)
+				quote.TotalCreditAmount = quote.TotalCreditAmount.Add(line.Amount.Abs())
+				continue
+			}
+			quote.ChargeLineItems = append(quote.ChargeLineItems, line)
+			quote.TotalChargeAmount = quote.TotalChargeAmount.Add(line.Amount)
+		}
+
 		if single.PeriodStart != nil && (periodStart == nil || single.PeriodStart.Before(*periodStart)) {
 			periodStart = single.PeriodStart
 		}
@@ -928,23 +910,7 @@ func buildAggregatedProrationChargeInvoiceRequest(
 		}
 	}
 
-	idempKey := prorationChargeIdempotencyKey(sub.ID, keyParts)
-	return dto.CreateInvoiceRequest{
-		CustomerID:     sub.GetInvoicingCustomerID(),
-		SubscriptionID: &sub.ID,
-		InvoiceType:    types.InvoiceTypeOneOff,
-		Currency:       sub.Currency,
-		BillingReason:  types.InvoiceBillingReasonSubscriptionUpdate,
-		AmountDue:      total,
-		Total:          total,
-		Subtotal:       total,
-		PeriodStart:    periodStart,
-		PeriodEnd:      &periodEnd,
-		BillingPeriod:  &billingPeriod,
-		LineItems:      lineItems,
-		IdempotencyKey: &idempKey,
-		Metadata:       types.WithCollapsedInvoiceDisplayName(nil, "Quantity change"),
-	}
+	return quote, lo.FromPtr(periodStart), prorationChargeIdempotencyKey(sub.ID, keyParts)
 }
 
 // createProrationChargeInvoice creates a ONE_OFF proration charge for one B item.

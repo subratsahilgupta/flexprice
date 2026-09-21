@@ -19,15 +19,14 @@ const (
 )
 
 // AllowedRoles returns the roles assignable to this user type. People hold a
-// broad access level over the whole tenant, while service accounts hold either
-// full access or a single narrow machine scope, so the two sets are disjoint
-// apart from super_admin.
+// broad access level over the whole tenant. Service accounts hold full access,
+// tenant-wide read, or a narrow event scope.
 func (ut UserType) AllowedRoles() []Role {
 	switch ut {
 	case UserTypeUser:
 		return []Role{RoleSuperAdmin, RoleAllReader, RoleAllWriter}
 	case UserTypeServiceAccount:
-		return []Role{RoleSuperAdmin, RoleEventIngestor, RoleEventReader}
+		return []Role{RoleSuperAdmin, RoleAllReader, RoleEventIngestor, RoleEventReader}
 	default:
 		return nil
 	}
@@ -100,4 +99,5 @@ const (
 	EntityOAuth           Entity = "oauth"
 	EntityCheckoutSession Entity = "checkoutsession"
 	EntityWorkflow        Entity = "workflow"
+	EntityAnalytics       Entity = "analytics"
 )

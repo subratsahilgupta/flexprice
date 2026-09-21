@@ -61,10 +61,12 @@ func TestValidate_QuotaAndUsageSigns(t *testing.T) {
 		t.Fatalf("negative quota should be rejected")
 	}
 
+	// Zero is a deliberate state: the successor of a spent pool carries no balance
+	// and exists only to hold the slot on a live config.
 	g = baseGrant()
 	g.Quota = decimal.Zero
-	if err := g.Validate(); err == nil {
-		t.Fatalf("zero quota should be rejected — grants must be positive")
+	if err := g.Validate(); err != nil {
+		t.Fatalf("zero quota must be accepted: %v", err)
 	}
 
 	g = baseGrant()

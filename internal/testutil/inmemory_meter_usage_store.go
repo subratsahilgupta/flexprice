@@ -828,9 +828,10 @@ func (s *InMemoryMeterUsageStore) GetSourcesForBucketedMeter(_ context.Context, 
 // detailedGroupKey is the composite key produced by params.GroupBy for one record.
 // It's used as a map key (so each field is positional and stringly-encoded).
 type detailedGroupKey struct {
-	meterID    string
-	source     string
-	properties string // joined "k=v|k=v" of all property dims, in GroupBy order
+	meterID            string
+	source             string
+	externalCustomerID string
+	properties         string // joined "k=v|k=v" of all property dims, in GroupBy order
 }
 
 // buildDetailedGroupKey extracts the group dims for a record matching params.GroupBy.
@@ -845,6 +846,8 @@ func buildDetailedGroupKey(r *events.MeterUsage, groupBy []string) (detailedGrou
 			k.meterID = r.MeterID
 		case g == "source":
 			k.source = r.Source
+		case g == "external_customer_id":
+			k.externalCustomerID = r.ExternalCustomerID
 		case strings.HasPrefix(g, "properties."):
 			name := strings.TrimPrefix(g, "properties.")
 			v := propertyValue(r.Properties, name)
@@ -870,11 +873,12 @@ func (s *InMemoryMeterUsageStore) GetDetailedAnalytics(_ context.Context, params
 	sourceInGroupBy := containsString(params.GroupBy, "source")
 
 	type group struct {
-		key        detailedGroupKey
-		meterID    string
-		source     string
-		properties map[string]string
-		records    []*events.MeterUsage
+		key                detailedGroupKey
+		meterID            string
+		source             string
+		externalCustomerID string
+		properties         map[string]string
+		records            []*events.MeterUsage
 	}
 	byKey := make(map[detailedGroupKey]*group)
 	for _, r := range matched {
@@ -882,10 +886,11 @@ func (s *InMemoryMeterUsageStore) GetDetailedAnalytics(_ context.Context, params
 		g, ok := byKey[key]
 		if !ok {
 			g = &group{
-				key:        key,
-				meterID:    key.meterID,
-				source:     key.source,
-				properties: props,
+				key:                key,
+				meterID:            key.meterID,
+				source:             key.source,
+				externalCustomerID: key.externalCustomerID,
+				properties:         props,
 			}
 			byKey[key] = g
 		}
@@ -897,14 +902,15 @@ func (s *InMemoryMeterUsageStore) GetDetailedAnalytics(_ context.Context, params
 		eventCount := uint64(distinctIDCount(g.records))          // #nosec G115 -- test store, bounded
 		countUnique := uint64(distinctUniqueHashCount(g.records)) // #nosec G115 -- test store, bounded
 		res := &events.MeterUsageDetailedResult{
-			MeterID:          g.meterID,
-			Source:           g.source,
-			Properties:       g.properties,
-			TotalUsage:       primaryAggregationValue(g.records, params.AggregationTypes, eventCount, countUnique),
-			MaxUsage:         aggregateScalar(g.records, types.AggregationMax),
-			LatestUsage:      aggregateScalar(g.records, types.AggregationLatest),
-			CountUniqueUsage: countUnique,
-			EventCount:       eventCount,
+			MeterID:            g.meterID,
+			Source:             g.source,
+			ExternalCustomerID: g.externalCustomerID,
+			Properties:         g.properties,
+			TotalUsage:         primaryAggregationValue(g.records, params.AggregationTypes, eventCount, countUnique),
+			MaxUsage:           aggregateScalar(g.records, types.AggregationMax),
+			LatestUsage:        aggregateScalar(g.records, types.AggregationLatest),
+			CountUniqueUsage:   countUnique,
+			EventCount:         eventCount,
 		}
 
 		// When source isn't a group dimension, ClickHouse returns groupUniqArray(source)
@@ -936,6 +942,9 @@ func (s *InMemoryMeterUsageStore) GetDetailedAnalytics(_ context.Context, params
 		}
 		if results[i].Source != results[j].Source {
 			return results[i].Source < results[j].Source
+		}
+		if results[i].ExternalCustomerID != results[j].ExternalCustomerID {
+			return results[i].ExternalCustomerID < results[j].ExternalCustomerID
 		}
 		return propertiesString(results[i].Properties) < propertiesString(results[j].Properties)
 	})

@@ -49,6 +49,14 @@ func (g *EntitlementGrant) FeatureID() string {
 	return g.ScopeEntityID
 }
 
+func (g *EntitlementGrant) GetID() string {
+	if g == nil {
+		return ""
+	}
+
+	return g.ID
+}
+
 // Window returns the half-open [valid_from, valid_to) grant window.
 func (g *EntitlementGrant) Window() (time.Time, time.Time) {
 	if g == nil {
@@ -122,8 +130,10 @@ func (g *EntitlementGrant) Validate() error {
 			WithHint("Set measure to quantity or amount").
 			Mark(ierr.ErrValidation)
 	}
-	if !g.Quota.IsPositive() {
-		return ierr.NewError("quota must be positive").
+	// Zero is legal: a successor whose predecessor was spent carries no balance and
+	// exists only to hold the slot on a live config. Negative never is.
+	if g.Quota.IsNegative() {
+		return ierr.NewError("quota cannot be negative").
 			WithReportableDetails(map[string]interface{}{"quota": g.Quota.String()}).
 			Mark(ierr.ErrValidation)
 	}

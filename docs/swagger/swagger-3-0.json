@@ -901,6 +901,206 @@
         ]
       }
     },
+    "/analytics/query": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Run an ad-hoc analytics query",
+        "description": "Resolves the given view definition against the supplied variables and executes it.",
+        "operationId": "queryAnalytics",
+        "requestBody": {
+          "description": "Analytics query request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyticsQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsQueryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "request"
+      }
+    },
+    "/analytics/views": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Create an analytics view",
+        "description": "Persists a named view definition that can later be queried by ID.",
+        "operationId": "createAnalyticsView",
+        "requestBody": {
+          "description": "View request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-codegen-request-body-name": "request"
+      }
+    },
+    "/analytics/views/{id}/query": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Query an analytics view",
+        "description": "Resolves the view's definition against the supplied variables and executes it.",
+        "operationId": "queryAnalyticsView",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "View ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "View query request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsQueryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "View not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "request"
+      }
+    },
     "/checkout/sessions": {
       "post": {
         "tags": [
@@ -10775,7 +10975,7 @@
           "Subscriptions"
         ],
         "summary": "Execute subscription modification",
-        "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove).",
+        "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes settled as one netted document).",
         "operationId": "executeSubscriptionModify",
         "parameters": [
           {
@@ -10856,7 +11056,7 @@
           "Subscriptions"
         ],
         "summary": "Preview subscription modification",
-        "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove) without committing changes.",
+        "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes) without committing changes.",
         "operationId": "previewSubscriptionModify",
         "parameters": [
           {
@@ -16069,6 +16269,123 @@
           }
         }
       },
+      "analytics.Filter": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "op": {
+            "$ref": "#/components/schemas/types.FilterOperatorType"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "analytics.SortSpec": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "$ref": "#/components/schemas/types.SortDirection"
+          },
+          "field": {
+            "type": "string"
+          }
+        }
+      },
+      "analytics.TimeSpecRaw": {
+        "type": "object",
+        "properties": {
+          "grain": {
+            "$ref": "#/components/schemas/types.Grain"
+          },
+          "range": {
+            "type": "string"
+          }
+        }
+      },
+      "analytics.Variable": {
+        "required": [
+          "type"
+        ],
+        "type": "object",
+        "properties": {
+          "default": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "type": {
+            "$ref": "#/components/schemas/types.VariableType"
+          }
+        }
+      },
+      "analytics.ViewDefinition": {
+        "required": [
+          "metrics",
+          "shape"
+        ],
+        "type": "object",
+        "properties": {
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/analytics.Filter"
+            }
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "metrics": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.Metric"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/types.Shape"
+          },
+          "sort": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/analytics.SortSpec"
+            }
+          },
+          "time": {
+            "$ref": "#/components/schemas/analytics.TimeSpecRaw"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/analytics.Variable"
+            }
+          }
+        }
+      },
       "costsheet.Filter": {
         "type": "object",
         "properties": {
@@ -16368,6 +16685,9 @@
           "cadence": {
             "$ref": "#/components/schemas/types.AddonCadence"
           },
+          "change_at": {
+            "$ref": "#/components/schemas/types.ScheduleType"
+          },
           "checkout": {
             "$ref": "#/components/schemas/CheckoutParams"
           },
@@ -16412,6 +16732,9 @@
           },
           "cadence": {
             "$ref": "#/components/schemas/types.AddonCadence"
+          },
+          "change_at": {
+            "$ref": "#/components/schemas/types.ScheduleType"
           },
           "line_item_commitments": {
             "type": "object",
@@ -16891,6 +17214,74 @@
           },
           "updated_by": {
             "type": "string"
+          }
+        }
+      },
+      "AnalyticsColumn": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/types.ColumnRole"
+          },
+          "type": {
+            "$ref": "#/components/schemas/types.ColumnType"
+          }
+        }
+      },
+      "AnalyticsQueryMeta": {
+        "type": "object",
+        "properties": {
+          "query_source": {
+            "type": "string"
+          }
+        }
+      },
+      "AnalyticsQueryRequest": {
+        "required": [
+          "definition"
+        ],
+        "type": "object",
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
+          },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "AnalyticsQueryResult": {
+        "type": "object",
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsColumn"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AnalyticsQueryMeta"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         }
       },
@@ -19622,6 +20013,21 @@
           }
         }
       },
+      "CreateViewRequest": {
+        "required": [
+          "definition",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "CreateWalletRequest": {
         "required": [
           "currency"
@@ -20531,6 +20937,10 @@
           "id": {
             "type": "string"
           },
+          "ingested_at": {
+            "type": "string",
+            "format": "date-time"
+          },
           "properties": {
             "type": "object",
             "additionalProperties": true
@@ -20574,6 +20984,9 @@
         ],
         "type": "object",
         "properties": {
+          "addon_bulk_params": {
+            "$ref": "#/components/schemas/SubModifyBulkAddonParams"
+          },
           "addon_params": {
             "$ref": "#/components/schemas/SubModifyAddonParams"
           },
@@ -20889,6 +21302,12 @@
           },
           "event": {
             "$ref": "#/components/schemas/Event"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
           },
           "processed_events": {
             "type": "array",
@@ -23376,6 +23795,9 @@
           "addon_association_id": {
             "type": "string"
           },
+          "change_at": {
+            "$ref": "#/components/schemas/types.ScheduleType"
+          },
           "effective_date": {
             "type": "string",
             "description": "EffectiveDate defaults to period end when nil; mid-period with create_prorations issues a wallet credit.",
@@ -23534,6 +23956,23 @@
           },
           "remove": {
             "$ref": "#/components/schemas/RemoveAddonRequest"
+          }
+        }
+      },
+      "SubModifyBulkAddonParams": {
+        "type": "object",
+        "properties": {
+          "adds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddAddonToSubscriptionRequest"
+            }
+          },
+          "removes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoveAddonRequest"
+            }
           }
         }
       },
@@ -26407,6 +26846,10 @@
           "event_name": {
             "type": "string"
           },
+          "external_customer_id": {
+            "type": "string",
+            "description": "Populated only when \"external_customer_id\" is a group_by dimension"
+          },
           "feature": {
             "$ref": "#/components/schemas/Feature"
           },
@@ -26684,6 +27127,37 @@
           },
           "type": {
             "$ref": "#/components/schemas/types.UserType"
+          }
+        }
+      },
+      "ViewQueryRequest": {
+        "type": "object",
+        "properties": {
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ViewResponse": {
+        "type": "object",
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/analytics.ViewDefinition"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
           }
         }
       },
@@ -28240,6 +28714,12 @@
               "$ref": "#/components/schemas/types.AddAddonRef"
             }
           },
+          "removes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.RemoveAddonRef"
+            }
+          },
           "subscription_id": {
             "type": "string"
           }
@@ -28917,6 +29397,32 @@
           "CollectionMethodSendInvoice"
         ],
         "x-speakeasy-name-override": "CollectionMethod"
+      },
+      "types.ColumnRole": {
+        "type": "string",
+        "enum": [
+          "dimension",
+          "metric"
+        ],
+        "x-enum-varnames": [
+          "ColumnRoleDimension",
+          "ColumnRoleMetric"
+        ],
+        "x-speakeasy-name-override": "ColumnRole"
+      },
+      "types.ColumnType": {
+        "type": "string",
+        "enum": [
+          "string",
+          "decimal",
+          "datetime"
+        ],
+        "x-enum-varnames": [
+          "ColumnTypeString",
+          "ColumnTypeDecimal",
+          "ColumnTypeDatetime"
+        ],
+        "x-speakeasy-name-override": "ColumnType"
       },
       "types.CommitmentInfo": {
         "type": "object",
@@ -29868,6 +30374,22 @@
         },
         "x-speakeasy-name-override": "GlobalCustomField"
       },
+      "types.Grain": {
+        "type": "string",
+        "enum": [
+          "hour",
+          "day",
+          "week",
+          "month"
+        ],
+        "x-enum-varnames": [
+          "GrainHour",
+          "GrainDay",
+          "GrainWeek",
+          "GrainMonth"
+        ],
+        "x-speakeasy-name-override": "Grain"
+      },
       "types.GroupEntityType": {
         "type": "string",
         "enum": [
@@ -30279,6 +30801,18 @@
           "MetadataCustomFieldSourceInvoice"
         ],
         "x-speakeasy-name-override": "MetadataCustomFieldSource"
+      },
+      "types.Metric": {
+        "type": "string",
+        "enum": [
+          "usage_quantity",
+          "event_count"
+        ],
+        "x-enum-varnames": [
+          "MetricUsageQuantity",
+          "MetricEventCount"
+        ],
+        "x-speakeasy-name-override": "Metric"
       },
       "types.ModifySubscriptionLineItem": {
         "type": "object",
@@ -30899,6 +31433,25 @@
         ],
         "x-speakeasy-name-override": "RejectedEventReason"
       },
+      "types.RemoveAddonRef": {
+        "type": "object",
+        "properties": {
+          "association_id": {
+            "type": "string"
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "proration_behavior": {
+            "$ref": "#/components/schemas/types.ProrationBehavior"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "RemoveAddonRef"
+      },
       "types.ReportingUnit": {
         "type": "object",
         "properties": {
@@ -31166,6 +31719,18 @@
         },
         "x-speakeasy-name-override": "ServicePeriodCustomFields"
       },
+      "types.Shape": {
+        "type": "string",
+        "enum": [
+          "timeseries",
+          "breakdown"
+        ],
+        "x-enum-varnames": [
+          "ShapeTimeseries",
+          "ShapeBreakdown"
+        ],
+        "x-speakeasy-name-override": "Shape"
+      },
       "types.SortCondition": {
         "type": "object",
         "properties": {
@@ -31236,14 +31801,14 @@
         "type": "string",
         "enum": [
           "plan",
-          "addon",
+          "addon_association",
           "credit_grant",
           "entitlement",
           "entitlement_grant"
         ],
         "x-enum-varnames": [
           "SubscriptionChangeEntityTypePlan",
-          "SubscriptionChangeEntityTypeAddon",
+          "SubscriptionChangeEntityTypeAddonAssociation",
           "SubscriptionChangeEntityTypeCreditGrant",
           "SubscriptionChangeEntityTypeEntitlement",
           "SubscriptionChangeEntityTypeEntitlementGrant"
@@ -32018,6 +32583,26 @@
           "UserTypeServiceAccount"
         ],
         "x-speakeasy-name-override": "UserType"
+      },
+      "types.VariableType": {
+        "type": "string",
+        "enum": [
+          "date_range",
+          "string",
+          "string_list",
+          "number",
+          "enum",
+          "boolean"
+        ],
+        "x-enum-varnames": [
+          "VariableTypeDateRange",
+          "VariableTypeString",
+          "VariableTypeStringList",
+          "VariableTypeNumber",
+          "VariableTypeEnum",
+          "VariableTypeBoolean"
+        ],
+        "x-speakeasy-name-override": "VariableType"
       },
       "types.WalletConfig": {
         "type": "object",

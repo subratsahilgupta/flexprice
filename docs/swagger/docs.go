@@ -755,6 +755,177 @@ const docTemplate = `{
                 }
             }
         },
+        "/analytics/query": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Resolves the given view definition against the supplied variables and executes it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Run an ad-hoc analytics query",
+                "operationId": "queryAnalytics",
+                "parameters": [
+                    {
+                        "description": "Analytics query request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/AnalyticsQueryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/AnalyticsQueryResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
+        "/analytics/views": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Persists a named view definition that can later be queried by ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Create an analytics view",
+                "operationId": "createAnalyticsView",
+                "parameters": [
+                    {
+                        "description": "View request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/CreateViewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/ViewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/analytics/views/{id}/query": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Resolves the view's definition against the supplied variables and executes it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Query an analytics view",
+                "operationId": "queryAnalyticsView",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "View ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "View query request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ViewQueryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/AnalyticsQueryResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "View not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
         "/checkout/sessions": {
             "post": {
                 "security": [
@@ -8954,7 +9125,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove).",
+                "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes settled as one netted document).",
                 "consumes": [
                     "application/json"
                 ],
@@ -9020,7 +9191,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove) without committing changes.",
+                "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes) without committing changes.",
                 "consumes": [
                     "application/json"
                 ],
@@ -13709,6 +13880,160 @@ const docTemplate = `{
                 }
             }
         },
+        "analytics.Filter": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "op": {
+                    "enum": [
+                        "eq",
+                        "in"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FilterOperatorType"
+                        }
+                    ]
+                },
+                "optional": {
+                    "type": "boolean"
+                },
+                "value": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "analytics.SortSpec": {
+            "type": "object",
+            "properties": {
+                "dir": {
+                    "$ref": "#/definitions/types.SortDirection"
+                },
+                "field": {
+                    "type": "string"
+                }
+            }
+        },
+        "analytics.TimeSpecRaw": {
+            "type": "object",
+            "properties": {
+                "grain": {
+                    "$ref": "#/definitions/types.Grain"
+                },
+                "range": {
+                    "type": "string"
+                }
+            }
+        },
+        "analytics.Variable": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "default": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "enum": [
+                        "date_range",
+                        "string",
+                        "string_list",
+                        "number",
+                        "enum",
+                        "boolean"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.VariableType"
+                        }
+                    ]
+                }
+            }
+        },
+        "analytics.ViewDefinition": {
+            "type": "object",
+            "required": [
+                "metrics",
+                "shape"
+            ],
+            "properties": {
+                "dimensions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analytics.Filter"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "metrics": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "enum": [
+                            "usage_quantity",
+                            "event_count"
+                        ],
+                        "$ref": "#/definitions/types.Metric"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "shape": {
+                    "enum": [
+                        "timeseries",
+                        "breakdown"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.Shape"
+                        }
+                    ]
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analytics.SortSpec"
+                    }
+                },
+                "time": {
+                    "description": "Time is optional: an omitted range defaults to last_7_days (see\nresolveTime), so it is intentionally not marked required.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/analytics.TimeSpecRaw"
+                        }
+                    ]
+                },
+                "variables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/analytics.Variable"
+                    }
+                }
+            }
+        },
         "costsheet.Filter": {
             "type": "object",
             "properties": {
@@ -14013,6 +14338,14 @@ const docTemplate = `{
                 "cadence": {
                     "$ref": "#/definitions/types.AddonCadence"
                 },
+                "change_at": {
+                    "description": "ChangeAt names when the attach applies without computing a date. Mutually exclusive\nwith StartDate; omit both to attach now.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
+                },
                 "checkout": {
                     "$ref": "#/definitions/CheckoutParams"
                 },
@@ -14056,6 +14389,14 @@ const docTemplate = `{
                 },
                 "cadence": {
                     "$ref": "#/definitions/types.AddonCadence"
+                },
+                "change_at": {
+                    "description": "ChangeAt names when the attach applies without computing a date. Mutually exclusive\nwith StartDate; omit both to attach now.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
                 },
                 "line_item_commitments": {
                     "description": "LineItemCommitments allows setting commitment configuration per addon line item (keyed by price_id)",
@@ -14519,6 +14860,74 @@ const docTemplate = `{
                 },
                 "updated_by": {
                     "type": "string"
+                }
+            }
+        },
+        "AnalyticsColumn": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "role": {
+                    "$ref": "#/definitions/types.ColumnRole"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.ColumnType"
+                }
+            }
+        },
+        "AnalyticsQueryMeta": {
+            "type": "object",
+            "properties": {
+                "query_source": {
+                    "type": "string"
+                }
+            }
+        },
+        "AnalyticsQueryRequest": {
+            "type": "object",
+            "required": [
+                "definition"
+            ],
+            "properties": {
+                "definition": {
+                    "$ref": "#/definitions/analytics.ViewDefinition"
+                },
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "AnalyticsQueryResult": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AnalyticsColumn"
+                    }
+                },
+                "meta": {
+                    "$ref": "#/definitions/AnalyticsQueryMeta"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
                 }
             }
         },
@@ -17483,6 +17892,21 @@ const docTemplate = `{
                 }
             }
         },
+        "CreateViewRequest": {
+            "type": "object",
+            "required": [
+                "definition",
+                "name"
+            ],
+            "properties": {
+                "definition": {
+                    "$ref": "#/definitions/analytics.ViewDefinition"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "CreateWalletRequest": {
             "type": "object",
             "required": [
@@ -18433,6 +18857,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "ingested_at": {
+                    "type": "string"
+                },
                 "properties": {
                     "type": "object",
                     "additionalProperties": true
@@ -18476,6 +18903,9 @@ const docTemplate = `{
                 "type"
             ],
             "properties": {
+                "addon_bulk_params": {
+                    "$ref": "#/definitions/SubModifyBulkAddonParams"
+                },
                 "addon_params": {
                     "$ref": "#/definitions/SubModifyAddonParams"
                 },
@@ -18793,6 +19223,12 @@ const docTemplate = `{
                 },
                 "event": {
                     "$ref": "#/definitions/Event"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/Event"
+                    }
                 },
                 "processed_events": {
                     "type": "array",
@@ -21348,6 +21784,14 @@ const docTemplate = `{
                 "addon_association_id": {
                     "type": "string"
                 },
+                "change_at": {
+                    "description": "ChangeAt names when the removal applies without computing a date. Mutually exclusive\nwith EffectiveDate; omit both to remove at period end.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
+                },
                 "effective_date": {
                     "description": "EffectiveDate defaults to period end when nil; mid-period with create_prorations issues a wallet credit.",
                     "type": "string"
@@ -21513,6 +21957,23 @@ const docTemplate = `{
                 },
                 "remove": {
                     "$ref": "#/definitions/RemoveAddonRequest"
+                }
+            }
+        },
+        "SubModifyBulkAddonParams": {
+            "type": "object",
+            "properties": {
+                "adds": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AddAddonToSubscriptionRequest"
+                    }
+                },
+                "removes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/RemoveAddonRequest"
+                    }
                 }
             }
         },
@@ -24622,6 +25083,10 @@ const docTemplate = `{
                 "event_name": {
                     "type": "string"
                 },
+                "external_customer_id": {
+                    "description": "Populated only when \"external_customer_id\" is a group_by dimension",
+                    "type": "string"
+                },
                 "feature": {
                     "description": "Full feature object (only if expand includes \"feature\")",
                     "allOf": [
@@ -24935,6 +25400,37 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/types.UserType"
+                }
+            }
+        },
+        "ViewQueryRequest": {
+            "type": "object",
+            "properties": {
+                "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "ViewResponse": {
+            "type": "object",
+            "properties": {
+                "definition": {
+                    "$ref": "#/definitions/analytics.ViewDefinition"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -26505,6 +27001,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.AddAddonRef"
                     }
                 },
+                "removes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.RemoveAddonRef"
+                    }
+                },
                 "subscription_id": {
                     "type": "string"
                 }
@@ -27150,6 +27652,30 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "CollectionMethodChargeAutomatically",
                 "CollectionMethodSendInvoice"
+            ]
+        },
+        "types.ColumnRole": {
+            "type": "string",
+            "enum": [
+                "dimension",
+                "metric"
+            ],
+            "x-enum-varnames": [
+                "ColumnRoleDimension",
+                "ColumnRoleMetric"
+            ]
+        },
+        "types.ColumnType": {
+            "type": "string",
+            "enum": [
+                "string",
+                "decimal",
+                "datetime"
+            ],
+            "x-enum-varnames": [
+                "ColumnTypeString",
+                "ColumnTypeDecimal",
+                "ColumnTypeDatetime"
             ]
         },
         "types.CommitmentInfo": {
@@ -28055,6 +28581,21 @@ const docTemplate = `{
                 }
             }
         },
+        "types.Grain": {
+            "type": "string",
+            "enum": [
+                "hour",
+                "day",
+                "week",
+                "month"
+            ],
+            "x-enum-varnames": [
+                "GrainHour",
+                "GrainDay",
+                "GrainWeek",
+                "GrainMonth"
+            ]
+        },
         "types.GroupEntityType": {
             "type": "string",
             "enum": [
@@ -28466,6 +29007,17 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "MetadataCustomFieldSourceCustomer",
                 "MetadataCustomFieldSourceInvoice"
+            ]
+        },
+        "types.Metric": {
+            "type": "string",
+            "enum": [
+                "usage_quantity",
+                "event_count"
+            ],
+            "x-enum-varnames": [
+                "MetricUsageQuantity",
+                "MetricEventCount"
             ]
         },
         "types.ModifySubscriptionLineItem": {
@@ -29052,6 +29604,23 @@ const docTemplate = `{
                 "RejectedEventReasonNoMatchingMeter"
             ]
         },
+        "types.RemoveAddonRef": {
+            "type": "object",
+            "properties": {
+                "association_id": {
+                    "type": "string"
+                },
+                "effective_date": {
+                    "type": "string"
+                },
+                "proration_behavior": {
+                    "$ref": "#/definitions/types.ProrationBehavior"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "types.ReportingUnit": {
             "type": "object",
             "properties": {
@@ -29320,6 +29889,17 @@ const docTemplate = `{
                 }
             }
         },
+        "types.Shape": {
+            "type": "string",
+            "enum": [
+                "timeseries",
+                "breakdown"
+            ],
+            "x-enum-varnames": [
+                "ShapeTimeseries",
+                "ShapeBreakdown"
+            ]
+        },
         "types.SortCondition": {
             "type": "object",
             "properties": {
@@ -29396,14 +29976,14 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "plan",
-                "addon",
+                "addon_association",
                 "credit_grant",
                 "entitlement",
                 "entitlement_grant"
             ],
             "x-enum-varnames": [
                 "SubscriptionChangeEntityTypePlan",
-                "SubscriptionChangeEntityTypeAddon",
+                "SubscriptionChangeEntityTypeAddonAssociation",
                 "SubscriptionChangeEntityTypeCreditGrant",
                 "SubscriptionChangeEntityTypeEntitlement",
                 "SubscriptionChangeEntityTypeEntitlementGrant"
@@ -30177,6 +30757,25 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "UserTypeUser",
                 "UserTypeServiceAccount"
+            ]
+        },
+        "types.VariableType": {
+            "type": "string",
+            "enum": [
+                "date_range",
+                "string",
+                "string_list",
+                "number",
+                "enum",
+                "boolean"
+            ],
+            "x-enum-varnames": [
+                "VariableTypeDateRange",
+                "VariableTypeString",
+                "VariableTypeStringList",
+                "VariableTypeNumber",
+                "VariableTypeEnum",
+                "VariableTypeBoolean"
             ]
         },
         "types.WalletConfig": {
