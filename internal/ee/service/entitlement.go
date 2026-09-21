@@ -177,20 +177,32 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 	if err := s.validateEntitlementGrantShape(ctx, e, meterForGrantCheck); err != nil {
 		return nil, err
 	}
-	// Ensure entity type and ID are set correctly
+
 	e.EntityType = entityType
 	e.EntityID = entityID
 
-	if err := s.assertSingleContributor(ctx, e); err != nil {
-		return nil, err
-	}
+	// The row and the windows it re-cuts move together: a crash between them would
+	// leave an override whose allowance never transferred. The contributor check joins
+	// them so a concurrent insert cannot slip past it either.
+	var result *entitlement.Entitlement
+	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		if err := s.assertSingleContributor(txCtx, e); err != nil {
+			return err
+		}
 
-	result, err := s.EntitlementRepo.Create(ctx, e)
-	if err != nil {
-		return nil, err
-	}
+		created, err := s.EntitlementRepo.Create(txCtx, e)
+		if err != nil {
+			return err
+		}
+		result = created
 
-	if err := s.takeOverGrantWindowsFromParent(ctx, result); err != nil {
+		// Only a grant-backed override has windows to re-cut; a legacy one carries a
+		// usage_limit, which nothing materialises.
+		if isSubscriptionOverride(created) && created.HasGrantConfig() {
+			return s.takeOverGrantWindowsFromParent(txCtx, created)
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
@@ -253,8 +265,7 @@ func (s *entitlementService) deriveGrantConfig(
 	if e.UsageLimit != nil {
 		e.GrantQuota = lo.ToPtr(decimal.NewFromInt(*e.UsageLimit))
 	}
-	// One row, one answer: billing reads the grant config, so leaving usage_limit
-	// behind would let the two drift apart on the next edit.
+
 	e.UsageLimit = nil
 
 	s.Logger.Info(ctx, "derived a grant config for a new metered entitlement",
@@ -853,16 +864,20 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		}
 	}
 
-	if err := s.assertSingleContributor(ctx, existing); err != nil {
-		return nil, err
-	}
+	var result *entitlement.Entitlement
+	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		if err := s.assertSingleContributor(txCtx, existing); err != nil {
+			return err
+		}
 
-	result, err := s.EntitlementRepo.Update(ctx, existing)
-	if err != nil {
-		return nil, err
-	}
+		updated, err := s.EntitlementRepo.Update(txCtx, existing)
+		if err != nil {
+			return err
+		}
+		result = updated
 
-	if err := s.resettleGrantWindows(ctx, result, priorQuota, priorUnlimited); err != nil {
+		return s.resettleGrantWindows(txCtx, updated, priorQuota, priorUnlimited)
+	}); err != nil {
 		return nil, err
 	}
 
@@ -936,7 +951,6 @@ func (s *entitlementService) reissueGrantWindows(
 	if len(live) == 0 {
 		return nil
 	}
-
 	ecsByFeature, err := newSubscriptionGrantService(s.ServiceParams).GetSubscriptionGrantECsByFeature(ctx, sub)
 	if err != nil {
 		return err
@@ -962,27 +976,24 @@ func (s *entitlementService) reissueGrantWindows(
 //
 // Lifting this needs a per-window editing surface, not a change here.
 func (s *entitlementService) assertSingleContributor(ctx context.Context, e *entitlement.Entitlement) error {
-	// Only overrides: they are what the single allowance field writes. A net-new
-	// subscription entitlement is added from its own row in the entitlement drawer,
-	// which names the entitlement it creates.
-	parentID := lo.FromPtr(e.ParentEntitlementID)
-	if e == nil || e.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION || parentID == "" {
+	if !isSubscriptionOverride(e) {
 		return nil
 	}
+	parentID := lo.FromPtr(e.ParentEntitlementID)
 
 	sub, err := s.SubRepo.Get(ctx, e.EntityID)
 	if err != nil {
 		return err
 	}
 
-	resolved, err := (&subscriptionService{ServiceParams: s.ServiceParams}).
-		GetSubscriptionEntitlementsForSubscription(ctx, sub)
+	entitlementsForSubscription, err := NewSubscriptionService(s.ServiceParams).GetSubscriptionEntitlementsForSubscription(ctx, sub)
+
 	if err != nil {
 		return err
 	}
 
-	others := make([]string, 0, len(resolved))
-	for _, other := range resolved {
+	otherEntitlements := make([]string, 0, len(entitlementsForSubscription))
+	for _, other := range entitlementsForSubscription {
 		if other == nil || other.Entitlement == nil || other.FeatureID != e.FeatureID {
 			continue
 		}
@@ -990,10 +1001,10 @@ func (s *entitlementService) assertSingleContributor(ctx context.Context, e *ent
 		if other.ID == e.ID || other.ID == parentID {
 			continue
 		}
-		others = append(others, other.ID)
+		otherEntitlements = append(otherEntitlements, other.ID)
 	}
 
-	if len(others) == 0 {
+	if len(otherEntitlements) == 0 {
 		return nil
 	}
 
@@ -1002,22 +1013,24 @@ func (s *entitlementService) assertSingleContributor(ctx context.Context, e *ent
 		WithReportableDetails(map[string]interface{}{
 			"subscription_id":       e.EntityID,
 			"feature_id":            e.FeatureID,
-			"other_entitlement_ids": others,
+			"other_entitlement_ids": otherEntitlements,
 		}).
 		Mark(ierr.ErrValidation)
+}
+
+// isSubscriptionOverride reports whether the entitlement replaces another one for a
+// single subscription: a plan or addon row is a rule for everyone on it, and a net-new
+// subscription row replaces nothing.
+func isSubscriptionOverride(e *entitlement.Entitlement) bool {
+	return e != nil &&
+		e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION &&
+		lo.FromPtr(e.ParentEntitlementID) != ""
 }
 
 // takeOverGrantWindowsFromParent runs on a first override: the override replaces the
 // plan's rule, so the live window is re-cut by the difference between the two.
 func (s *entitlementService) takeOverGrantWindowsFromParent(ctx context.Context, e *entitlement.Entitlement) error {
-	if e == nil || e.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION || !e.HasGrantConfig() {
-		return nil
-	}
-	parentID := lo.FromPtr(e.ParentEntitlementID)
-	if parentID == "" {
-		return nil
-	}
-	parent, err := s.EntitlementRepo.Get(ctx, parentID)
+	parent, err := s.EntitlementRepo.Get(ctx, lo.FromPtr(e.ParentEntitlementID))
 	if err != nil {
 		return err
 	}
@@ -1085,11 +1098,12 @@ func (s *entitlementService) DeleteEntitlement(ctx context.Context, id string) e
 		return err
 	}
 
-	if err := s.EntitlementRepo.Delete(ctx, id); err != nil {
-		return err
-	}
-
-	if err := s.settleGrantWindowsForDeletedEC(ctx, existing); err != nil {
+	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		if err := s.EntitlementRepo.Delete(txCtx, id); err != nil {
+			return err
+		}
+		return s.settleGrantWindowsForDeletedEC(txCtx, existing)
+	}); err != nil {
 		return err
 	}
 

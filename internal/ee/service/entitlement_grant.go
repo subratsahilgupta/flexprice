@@ -33,14 +33,9 @@ type EntitlementGrantService interface {
 	// The returned meta carries the lookups (features, meters, external ids)
 	// built during the pass so the evaluator can reuse them.
 	EnsureGrantsForSubscriptions(ctx context.Context, cust *customer.Customer, subs []*subscription.Subscription, at time.Time) ([]*entitlementgrant.EntitlementGrant, *grantEvalMeta, error)
-
-	// GrantStateByFeature is the API-facing read: live windows plus cycle totals
-	// for one subscription, keyed by feature id.
 	GrantStateByFeature(ctx context.Context, sub *subscription.Subscription, at time.Time) (map[string]*dto.GrantState, error)
 
 	CloseEntitlementGrants(ctx context.Context, grants []*entitlementgrant.EntitlementGrant, closeAt time.Time) (map[string]*entitlementgrant.EntitlementGrant, error)
-	// ReissueEntitlementGrants closes the live windows and reopens one carrying the
-	// unspent balance plus the change in allowance.
 	ReissueEntitlementGrants(ctx context.Context, req ReissueEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
 	OpenFeatureBasedEntitlementGrants(ctx context.Context, reqs []OpenFeatureBasedEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
 }
@@ -55,19 +50,6 @@ func NewEntitlementGrantService(params ServiceParams) EntitlementGrantService {
 
 func (s *entitlementGrantService) GetGrant(ctx context.Context, id string) (*entitlementgrant.EntitlementGrant, error) {
 	return s.EntitlementGrantRepo.Get(ctx, id)
-}
-
-func (s *entitlementGrantService) ListGrants(ctx context.Context, filter *types.EntitlementGrantFilter) ([]*entitlementgrant.EntitlementGrant, error) {
-	if s.EntitlementGrantRepo == nil {
-		return nil, nil
-	}
-	if filter == nil {
-		filter = types.NewNoLimitEntitlementGrantFilter()
-	}
-	if err := filter.Validate(); err != nil {
-		return nil, err
-	}
-	return s.EntitlementGrantRepo.List(ctx, filter)
 }
 
 type OpenFeatureBasedEntitlementGrantsRequest struct {
@@ -240,13 +222,6 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 			continue
 		}
 
-		// The predecessor holds the slot for the rest of the cycle; only a cycle with no row
-		// re-derives it, and then from the same lowest-id tie-break the tick would use.
-		//
-		// Unlimited comes from the configs the feature will be left with, never from the
-		// predecessor or the request: an addon joining an unlimited pool must not bound it,
-		// and an allowance edited down from unlimited must not stay unbounded. Both are the
-		// same question — is any surviving config unlimited — and the candidate answers it.
 		candidate := grantCandidatesForFeature(featureECs)[0]
 		slotECID := candidate.ec.ID
 		validFrom := req.New.ValidFrom
@@ -266,10 +241,6 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 					Mark(ierr.ErrValidation)
 			}
 
-			// An unlimited predecessor carries no balance: Remaining reports zero, and a
-			// ceiling appearing mid-window leaves nothing for the rest of it — the customer
-			// spent that window without one. The next window opens from the surviving
-			// configs on the normal cadence.
 			carried, _ := req.Closed.Remaining()
 			quota = carried.Add(req.New.Quota)
 		} else {
@@ -639,8 +610,6 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 	total := decimal.Zero
 	unlimited := false
 
-	// Earliest, not latest: the pool opens as soon as any contributor is live, so a
-	// mid-cycle addition never pushes back quota that was already running.
 	earliest := lo.FromPtr(featureECs[0].StartDate)
 
 	for _, ec := range featureECs {
@@ -657,9 +626,8 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 		}
 	}
 
-	// A pool with no ceiling has no quota to speak of. Storing the bounded contributors'
-	// sum beside the flag reads as a limit that is never enforced, and every caller that
-	// took the number at face value got it wrong.
+	// No ceiling, so no quota to record. Keeping the bounded contributors' sum here
+	// reads as a limit that is never enforced.
 	if unlimited {
 		total = decimal.Zero
 	}
