@@ -1,9 +1,11 @@
-package service
+package revenue
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/flexprice/flexprice/internal/ee/service"
+	"github.com/flexprice/flexprice/internal/interfaces"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -26,47 +28,19 @@ const (
 	revenueRollupSkipMultiPeriodCommitment = "multi_period_commitment"
 )
 
-// RevenueService writes and maintains revenue_facts rows. It is a shadow
-// write-path: it re-runs the billing preview, never mutates billing state,
-// and logs reconciliation mismatches instead of blocking on them.
-type RevenueService interface {
-	// RollupSubscription splits the subscription's current billing period
-	// into PROVISIONAL revenue_facts rows. Subscriptions it cannot split
-	// faithfully (multi-period commitments) are skipped with a log.
-	RollupSubscription(ctx context.Context, subscriptionID string) error
-
-	// RollupDirty rolls every opted-in subscription with activity since the
-	// given time. Over-rolling is harmless: the upsert is idempotent.
-	RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error)
-
-	// FinalizeSubscriptionPeriod flips the invoice's PROVISIONAL rows to
-	// FINAL and stamps them with the invoice. When no provisional rows exist
-	// it derives rows from the invoice itself first. Runs async after invoice
-	// finalization.
-	FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error
-
-	// RevertInvoiceFacts writes a negating twin for every FINAL row of a
-	// voided invoice — FINAL rows are never edited. Idempotent; runs async
-	// after VoidInvoice.
-	RevertInvoiceFacts(ctx context.Context, invoiceID string) error
-
-	// ReconcileBookedInvoices re-checks every invoice finalized or voided
-	// since the given time: do its booked revenue_facts rows still sum to
-	// what the invoice says? Mismatches are logged as revenue_facts_drift and
-	// repaired only when analytics.revenue_rollup.auto_correct is on.
-	ReconcileBookedInvoices(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error)
-
-	// GetRevenueAnalytics aggregates facts into grouped, time-bucketed rows —
-	// the read surface for revenue by source/customer/etc. per day or period.
-	GetRevenueAnalytics(ctx context.Context, req *dto.RevenueAnalyticsRequest) (*dto.RevenueAnalyticsResponse, error)
-}
+// Service is the revenue_facts service: a shadow write-path that re-runs the
+// billing preview, never mutates billing state, and logs reconciliation
+// mismatches instead of blocking on them. The interface lives in
+// internal/interfaces so the service layer's invoice hooks can call it
+// without importing this package.
+type Service = interfaces.RevenueService
 
 type revenueService struct {
-	ServiceParams
+	service.ServiceParams
 }
 
-// NewRevenueService returns the revenue_facts service.
-func NewRevenueService(params ServiceParams) RevenueService {
+// New returns the revenue_facts service.
+func New(params service.ServiceParams) Service {
 	return &revenueService{ServiceParams: params}
 }
 
@@ -130,7 +104,7 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return true, nil
 	}
 
-	billingSvc := NewBillingService(s.ServiceParams)
+	billingSvc := service.NewBillingService(s.ServiceParams)
 	invReq, err := billingSvc.PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   sub,
 		PeriodStart:    periodStart,
@@ -388,7 +362,7 @@ func (s *revenueService) decomposeUsageRows(
 			overageCurves[base.SubLineItemID] = nil
 			return wholePeriod(), nil
 		}
-		normalQty := quantityAtCharge(ctx, NewPriceService(s.ServiceParams), p, item.Amount, curve[len(curve)-1].CumulativeBillableQty)
+		normalQty := quantityAtCharge(ctx, service.NewPriceService(s.ServiceParams), p, item.Amount, curve[len(curve)-1].CumulativeBillableQty)
 		normalCurve, overageCurve := splitCurveAtCommitment(curve, item.Amount, overageAmount, listRate(p), normalQty)
 		overageCurves[base.SubLineItemID] = overageCurve
 		return decomposeUsageMarginal(base, normalCurve), nil
@@ -494,7 +468,7 @@ func (s *revenueService) decomposeLineCommitmentRows(
 			// events) — fall through to the whole-period parts, where a
 			// zero within-commitment amount books no usage rows.
 		case overage.IsPositive():
-			normalQty := quantityAtCharge(ctx, NewPriceService(s.ServiceParams), p, within, curve[len(curve)-1].CumulativeBillableQty)
+			normalQty := quantityAtCharge(ctx, service.NewPriceService(s.ServiceParams), p, within, curve[len(curve)-1].CumulativeBillableQty)
 			normalCurve, overageCurve := splitCurveAtCommitment(curve, within, overage, listRate(p), normalQty)
 			ob := partBase
 			ob.EngineAmount = overage
@@ -1035,7 +1009,7 @@ func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription
 		return nil, err
 	}
 
-	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	subscriptionService := service.NewSubscriptionService(s.ServiceParams)
 	agg, err := subscriptionService.GetAggregatedSubscriptionEntitlements(ctx, sub.ID, nil)
 	if err != nil {
 		return nil, err

@@ -1,7 +1,8 @@
-package service
+package revenue
 
 import (
 	"context"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"testing"
 	"time"
 
@@ -46,7 +47,7 @@ func grantCurveFixture(t *testing.T, ctx context.Context, perDay int64, days int
 	}
 	require.NoError(t, store.BulkInsertMeterUsage(ctx, records))
 
-	svc := &revenueService{ServiceParams: ServiceParams{
+	svc := &revenueService{ServiceParams: service.ServiceParams{
 		Logger:         logger.NewNoopLogger(),
 		MeterUsageRepo: store,
 	}}

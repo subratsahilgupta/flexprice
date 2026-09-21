@@ -1,8 +1,9 @@
-package service
+package revenue
 
 import (
 	"context"
 	"fmt"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"testing"
 	"time"
 
@@ -44,7 +45,7 @@ import (
 type RevenueRollupSuite struct {
 	testutil.BaseServiceTestSuite
 	ctx   context.Context
-	svc   RevenueService
+	svc   Service
 	store *testutil.InMemoryRevenueFactStore
 
 	sub         *subscription.Subscription
@@ -63,16 +64,16 @@ func (s *RevenueRollupSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
 	s.ctx = s.GetContext()
 	s.store = s.GetStores().RevenueFactRepo.(*testutil.InMemoryRevenueFactStore)
-	s.svc = NewRevenueService(s.serviceParams())
+	s.svc = New(s.serviceParams())
 }
 
 func (s *RevenueRollupSuite) TearDownTest() {
 	s.BaseServiceTestSuite.TearDownTest()
 }
 
-func (s *RevenueRollupSuite) serviceParams() ServiceParams {
+func (s *RevenueRollupSuite) serviceParams() service.ServiceParams {
 	stores := s.GetStores()
-	return ServiceParams{
+	return service.ServiceParams{
 		Logger:                       s.GetLogger(),
 		Config:                       s.GetConfig(),
 		DB:                           s.GetDB(),
@@ -413,7 +414,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageSplitsPerDay() {
 	core, observedLogs := observer.New(zapcore.InfoLevel)
 	params := s.serviceParams()
 	params.Logger = logger.NewFromSugared(zap.New(core).Sugar())
-	svc := NewRevenueService(params)
+	svc := New(params)
 
 	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
 
@@ -447,7 +448,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageSplitsPerDay() {
 	s.Greater(billedOverageDays, 0, "overage accrues only after the commitment is crossed")
 	s.Less(billedOverageDays, 30, "days before the crossing carry no overage")
 
-	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
 		PeriodStart:    s.periodStart,
 		PeriodEnd:      s.periodEnd,
@@ -490,7 +491,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_BindingEntitlementLimitRecon
 	capturingLogger := logger.NewFromSugared(zap.New(core).Sugar())
 	params := s.serviceParams()
 	params.Logger = capturingLogger
-	svc := NewRevenueService(params)
+	svc := New(params)
 
 	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
 
@@ -506,7 +507,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_BindingEntitlementLimitRecon
 	// Recompute the same preview independently (RollupSubscription doesn't
 	// expose the invReq it used) to get the engine's own Subtotal for this
 	// exact fixture state â the reconciliation target, not a hardcoded number.
-	billingSvc := NewBillingService(s.serviceParams())
+	billingSvc := service.NewBillingService(s.serviceParams())
 	invReq, err := billingSvc.PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
 		PeriodStart:    s.periodStart,
@@ -867,7 +868,7 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipErrorIsReturnedT
 
 	params := s.serviceParams()
 	params.RevenueFactRepo = &failingRevenueFactRepo{InMemoryRevenueFactStore: s.store}
-	failingSvc := NewRevenueService(params)
+	failingSvc := New(params)
 
 	s.Error(failingSvc.FinalizeSubscriptionPeriod(s.ctx, fx.invoice.ID))
 }
@@ -1115,7 +1116,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_CouponDiscountReconciles() {
 	core, observedLogs := observer.New(zapcore.InfoLevel)
 	params := s.serviceParams()
 	params.Logger = logger.NewFromSugared(zap.New(core).Sugar())
-	svc := NewRevenueService(params)
+	svc := New(params)
 
 	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
 
@@ -1131,7 +1132,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_CouponDiscountReconciles() {
 	}
 	s.True(discountTotal.IsPositive(), "the coupon discount must land on the rows")
 
-	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
 		PeriodStart:    s.periodStart,
 		PeriodEnd:      s.periodEnd,
@@ -1373,7 +1374,7 @@ func (s *RevenueRollupSuite) TestE2E_LineItemCommitment() {
 	}
 
 	// The engine preview agrees with the decomposition.
-	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
 		PeriodStart:    s.periodStart,
 		PeriodEnd:      s.periodEnd,

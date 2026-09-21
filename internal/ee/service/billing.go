@@ -3454,7 +3454,7 @@ func (s *billingService) applyCouponPreview(ctx context.Context, req *dto.Create
 		req.LineItems[i].LineItemDiscount = lo.ToPtr(lineDiscount)
 		weights[i] = req.LineItems[i].Amount.Sub(lineDiscount)
 	}
-	for i, share := range spreadAmount(result.TotalInvoiceLevelDiscount, weights) {
+	for i, share := range SpreadAmount(result.TotalInvoiceLevelDiscount, weights) {
 		req.LineItems[i].InvoiceLevelDiscount = lo.ToPtr(lo.FromPtr(req.LineItems[i].InvoiceLevelDiscount).Add(share))
 	}
 	return nil

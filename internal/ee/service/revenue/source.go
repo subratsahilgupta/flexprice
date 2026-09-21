@@ -1,7 +1,8 @@
-package service
+package revenue
 
 import (
 	"context"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"sort"
 	"time"
 
@@ -81,7 +82,7 @@ func (s *revenueService) buildEventSourceShares(ctx context.Context, req *dto.Re
 		day:    map[string]map[string]decimal.Decimal{},
 		window: map[string]map[string]decimal.Decimal{},
 	}
-	subscriptionService := NewSubscriptionService(s.ServiceParams)
+	subscriptionService := service.NewSubscriptionService(s.ServiceParams)
 	for subID, meterSet := range metersBySub {
 		sub, err := s.SubRepo.Get(ctx, subID)
 		if err != nil {
@@ -168,7 +169,7 @@ func (es *eventSourceShares) split(f *revenuefact.RevenueFact) []sourceShare {
 	for i, src := range sources {
 		weights[i] = bySource[src]
 	}
-	fractions := spreadAmount(one, weights)
+	fractions := service.SpreadAmount(one, weights)
 	shares := make([]sourceShare, 0, len(sources))
 	for i, src := range sources {
 		if fractions[i].IsZero() {

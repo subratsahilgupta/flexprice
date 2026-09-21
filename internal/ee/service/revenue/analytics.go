@@ -1,4 +1,4 @@
-package service
+package revenue
 
 // GetRevenueAnalytics — the read surface over revenue_facts. The whole request
 // is one pipeline:
@@ -15,6 +15,7 @@ package service
 
 import (
 	"context"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"sort"
 	"strings"
 	"time"
@@ -214,7 +215,7 @@ func (a *revenueAggregation) add(f *revenuefact.RevenueFact, source string, frac
 		for i := range weights {
 			weights[i] = decimal.NewFromInt(1)
 		}
-		shares := spreadAmount(fraction, weights)
+		shares := service.SpreadAmount(fraction, weights)
 		for i, share := range shares {
 			day := f.PeriodStart.AddDate(0, 0, i)
 			a.fold(group, adjType, &day, nil, nil, f, share)

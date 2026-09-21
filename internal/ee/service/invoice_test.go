@@ -18,6 +18,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/settings"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/domain/taxapplied"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
@@ -650,21 +651,50 @@ func (s *InvoiceServiceSuite) TestFinalizeInvoice() {
 	}
 }
 
+// failingRevenueFacts stubs interfaces.RevenueService with an erroring flip,
+// signaling Called so tests can wait for the detached hook goroutine to
+// actually run instead of guessing with a sleep.
+type failingRevenueFacts struct {
+	Called chan struct{}
+}
+
+func (f *failingRevenueFacts) FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error {
+	select {
+	case f.Called <- struct{}{}:
+	default:
+	}
+	return ierr.NewError("forced flip failure").Mark(ierr.ErrDatabase)
+}
+
+func (f *failingRevenueFacts) RollupSubscription(ctx context.Context, subscriptionID string) error {
+	return nil
+}
+
+func (f *failingRevenueFacts) RollupDirty(ctx context.Context, since time.Time) (int, int, error) {
+	return 0, 0, nil
+}
+
+func (f *failingRevenueFacts) RevertInvoiceFacts(ctx context.Context, invoiceID string) error {
+	return nil
+}
+
+func (f *failingRevenueFacts) ReconcileBookedInvoices(ctx context.Context, since time.Time) (int, int, int, error) {
+	return 0, 0, 0, nil
+}
+
+func (f *failingRevenueFacts) GetRevenueAnalytics(ctx context.Context, req *dto.RevenueAnalyticsRequest) (*dto.RevenueAnalyticsResponse, error) {
+	return nil, nil
+}
+
 // TestFinalizeInvoice_AsyncRevenueFactFlipErrorDoesNotBlockFinalization is the
 // safety-guard test for the async, non-blocking FINAL flip hooked into
-// performFinalizeInvoiceActions: even when RevenueRollupService.
-// FinalizeSubscriptionPeriod's flip errors, finalization must still return
-// success. failingRevenueFactRepo (defined in revenue_rollup_final_test.go)
-// always errors on FlipToFinal and signals Called so the test can wait for
-// the detached goroutine to actually run instead of guessing with a sleep.
+// performFinalizeInvoiceActions: even when the injected revenue service's
+// flip errors, finalization must still return success.
 func (s *InvoiceServiceSuite) TestFinalizeInvoice_AsyncRevenueFactFlipErrorDoesNotBlockFinalization() {
 	ctx := s.GetContext()
 
 	called := make(chan struct{}, 4)
-	s.service.(*invoiceService).RevenueFactRepo = &failingRevenueFactRepo{
-		InMemoryRevenueFactStore: testutil.NewInMemoryRevenueFactStore(),
-		Called:                   called,
-	}
+	s.service.(*invoiceService).RevenueFacts = &failingRevenueFacts{Called: called}
 
 	draftInvoice := &invoice.Invoice{
 		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),

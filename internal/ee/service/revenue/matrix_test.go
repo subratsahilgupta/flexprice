@@ -1,8 +1,9 @@
-package service
+package revenue
 
 import (
 	"context"
 	"fmt"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -359,7 +360,7 @@ func (s *RevenueRollupSuite) TestE2E_PricingMatrixLifecycle() {
 	s.True(entEntitled.Equal(decimal.NewFromInt(1500)), "entitled quantity recorded day by day, got %s", entEntitled)
 
 	// The whole rollup reconciles to the engine preview.
-	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
 		PeriodStart:    s.periodStart,
 		PeriodEnd:      s.periodEnd,
@@ -595,7 +596,7 @@ func (s *RevenueRollupSuite) TestE2E_GrantsAndWalletLifecycle() {
 	s.NoError(err)
 	s.NotEmpty(rows)
 
-	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
 		PeriodStart:    s.periodStart,
 		PeriodEnd:      s.periodEnd,

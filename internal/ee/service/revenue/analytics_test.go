@@ -1,8 +1,9 @@
-package service
+package revenue
 
 import (
 	"context"
 	"fmt"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"testing"
 	"time"
 
@@ -21,7 +22,7 @@ import (
 // revenueAnalyticsFixture seeds one month of facts covering every shape the
 // API must aggregate: daily marginal usage, a whole-period fixed fee, a
 // commitment true-up, and a revert pair from a voided invoice.
-func revenueAnalyticsFixture(t *testing.T) (context.Context, RevenueService, *testutil.InMemoryRevenueFactStore, revenuePeriod) {
+func revenueAnalyticsFixture(t *testing.T) (context.Context, Service, *testutil.InMemoryRevenueFactStore, revenuePeriod) {
 	t.Helper()
 	ctx := types.SetTenantID(context.Background(), "tenant_ra")
 	ctx = types.SetEnvironmentID(ctx, "env_ra")
@@ -61,7 +62,7 @@ func revenueAnalyticsFixture(t *testing.T) (context.Context, RevenueService, *te
 	)
 	require.NoError(t, store.UpsertProvisional(ctx, facts))
 
-	svc := NewRevenueService(ServiceParams{
+	svc := New(service.ServiceParams{
 		Logger:          logger.NewNoopLogger(),
 		RevenueFactRepo: store,
 		SettingsRepo:    settingsStore,
@@ -216,7 +217,7 @@ func TestGetRevenueAnalytics_DeniedWithoutOptIn(t *testing.T) {
 
 	deniedCtx := types.SetTenantID(context.Background(), "tenant_other")
 	deniedCtx = types.SetEnvironmentID(deniedCtx, "env_other")
-	svc := NewRevenueService(ServiceParams{
+	svc := New(service.ServiceParams{
 		Logger:          logger.NewNoopLogger(),
 		RevenueFactRepo: testutil.NewInMemoryRevenueFactStore(),
 		SettingsRepo:    testutil.NewInMemorySettingsStore(),

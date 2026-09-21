@@ -1,7 +1,8 @@
-package service
+package revenue
 
 import (
 	"context"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"testing"
 	"time"
 
@@ -125,7 +126,7 @@ func curveMarginal(got []dayCharge, idx int) decimal.Decimal {
 func TestBuildUsageCurve_EntitlementLimitThenFlatRate(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewInMemoryMeterUsageStore()
-	svc := &revenueService{ServiceParams: ServiceParams{
+	svc := &revenueService{ServiceParams: service.ServiceParams{
 		Logger:         logger.NewNoopLogger(),
 		MeterUsageRepo: store,
 		PriceRepo:      testutil.NewInMemoryPriceStore(),
@@ -179,7 +180,7 @@ func TestBuildUsageCurve_EntitlementLimitThenFlatRate(t *testing.T) {
 func TestBuildUsageCurve_GraduatedPrice(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewInMemoryMeterUsageStore()
-	params := ServiceParams{
+	params := service.ServiceParams{
 		Logger:         logger.NewNoopLogger(),
 		MeterUsageRepo: store,
 		PriceRepo:      testutil.NewInMemoryPriceStore(),
@@ -190,7 +191,7 @@ func TestBuildUsageCurve_GraduatedPrice(t *testing.T) {
 		SubRepo:        testutil.NewInMemorySubscriptionStore(),
 	}
 	svc := &revenueService{ServiceParams: params}
-	priceSvc := NewPriceService(params)
+	priceSvc := service.NewPriceService(params)
 
 	tier1 := decimal.RequireFromString("0.01")
 	tier2 := decimal.RequireFromString("0.008")
@@ -260,7 +261,7 @@ func assertDecimalClose(t *testing.T, want, got decimal.Decimal, msgAndArgs ...i
 func TestBuildUsageCurve_GraduatedWithEntitlementLimit(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewInMemoryMeterUsageStore()
-	params := ServiceParams{
+	params := service.ServiceParams{
 		Logger:         logger.NewNoopLogger(),
 		MeterUsageRepo: store,
 		PriceRepo:      testutil.NewInMemoryPriceStore(),
@@ -271,7 +272,7 @@ func TestBuildUsageCurve_GraduatedWithEntitlementLimit(t *testing.T) {
 		SubRepo:        testutil.NewInMemorySubscriptionStore(),
 	}
 	svc := &revenueService{ServiceParams: params}
-	priceSvc := NewPriceService(params)
+	priceSvc := service.NewPriceService(params)
 
 	tier1 := decimal.RequireFromString("0.01")
 	tier2 := decimal.RequireFromString("0.008")
@@ -348,12 +349,12 @@ func TestBuildUsageCurve_GraduatedWithEntitlementLimit(t *testing.T) {
 
 // --- marginal-sum characterization (formerly revenue_curve_seam_test.go) ---
 
-// testPriceServiceParams builds the minimal ServiceParams CalculateCost needs
+// testPriceServiceParams builds the minimal service.ServiceParams CalculateCost needs
 // (it only touches s.Logger on the priceService receiver).
-func testPriceServiceParams(t *testing.T) ServiceParams {
+func testPriceServiceParams(t *testing.T) service.ServiceParams {
 	t.Helper()
 	log := logger.NewNoopLogger()
-	return ServiceParams{
+	return service.ServiceParams{
 		Logger:        log,
 		DB:            testutil.NewMockPostgresClient(log),
 		PriceRepo:     testutil.NewInMemoryPriceStore(),
@@ -415,7 +416,7 @@ func seamGraduatedPrice(t *testing.T, tiers [][2]string) *price.Price {
 // preview with an as-of override per day.
 func TestMarginalPrefixSumEqualsPeriodCharge(t *testing.T) {
 	ctx := context.Background()
-	ps := NewPriceService(testPriceServiceParams(t))
+	ps := service.NewPriceService(testPriceServiceParams(t))
 
 	cases := []struct {
 		name string
@@ -453,7 +454,7 @@ func TestMarginalPrefixSumEqualsPeriodCharge(t *testing.T) {
 func TestBuildUsageCurve_ScopesToExternalCustomers(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewInMemoryMeterUsageStore()
-	svc := &revenueService{ServiceParams: ServiceParams{
+	svc := &revenueService{ServiceParams: service.ServiceParams{
 		Logger:         logger.NewNoopLogger(),
 		MeterUsageRepo: store,
 		PriceRepo:      testutil.NewInMemoryPriceStore(),
@@ -505,7 +506,7 @@ func TestBuildUsageCurve_ScopesToExternalCustomers(t *testing.T) {
 func TestSplitCurveAtCommitment_GraduatedQuantitySplit(t *testing.T) {
 	ctx := context.Background()
 	store := testutil.NewInMemoryMeterUsageStore()
-	params := ServiceParams{
+	params := service.ServiceParams{
 		Logger:         logger.NewNoopLogger(),
 		MeterUsageRepo: store,
 		PriceRepo:      testutil.NewInMemoryPriceStore(),
@@ -516,7 +517,7 @@ func TestSplitCurveAtCommitment_GraduatedQuantitySplit(t *testing.T) {
 		SubRepo:        testutil.NewInMemorySubscriptionStore(),
 	}
 	svc := &revenueService{ServiceParams: params}
-	priceSvc := NewPriceService(params)
+	priceSvc := service.NewPriceService(params)
 
 	tier1 := decimal.RequireFromString("0.01")
 	upTo := uint64(1000)

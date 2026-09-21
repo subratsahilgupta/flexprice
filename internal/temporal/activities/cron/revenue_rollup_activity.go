@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/config"
-	"github.com/flexprice/flexprice/internal/ee/service"
+	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	cronModels "github.com/flexprice/flexprice/internal/temporal/models"
 	"go.temporal.io/sdk/activity"
@@ -13,13 +13,13 @@ import (
 
 // RevenueRollupActivities wraps the periodic revenue_facts dirty-rollup entrypoint.
 type RevenueRollupActivities struct {
-	revenueService service.RevenueService
+	revenueService interfaces.RevenueService
 	cfg            *config.Configuration
 	logger         *logger.Logger
 }
 
 func NewRevenueRollupActivities(
-	revenueService service.RevenueService,
+	revenueService interfaces.RevenueService,
 	cfg *config.Configuration,
 	log *logger.Logger,
 ) *RevenueRollupActivities {

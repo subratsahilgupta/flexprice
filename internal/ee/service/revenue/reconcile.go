@@ -1,4 +1,4 @@
-package service
+package revenue
 
 import (
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"

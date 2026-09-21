@@ -1,7 +1,8 @@
-package service
+package revenue
 
 import (
 	"context"
+	"github.com/flexprice/flexprice/internal/ee/service"
 
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/shopspring/decimal"
@@ -86,7 +87,7 @@ func splitCurveAtCommitment(curve []dayCharge, normalAmount, overageAmount, rate
 // quantityAtCharge inverts the pricing curve: the largest quantity whose
 // charge does not exceed target. Binary search — CalculateCost is monotonic
 // in quantity for flat and graduated pricing.
-func quantityAtCharge(ctx context.Context, priceSvc PriceService, p *price.Price, target, maxQty decimal.Decimal) decimal.Decimal {
+func quantityAtCharge(ctx context.Context, priceSvc service.PriceService, p *price.Price, target, maxQty decimal.Decimal) decimal.Decimal {
 	if !target.IsPositive() {
 		return decimal.Zero
 	}

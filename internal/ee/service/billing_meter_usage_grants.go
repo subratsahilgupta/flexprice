@@ -99,7 +99,7 @@ func (s *billingService) adjustMeterUsageGrants(
 		return adjustMeterUsageGrantsResult{}, false, nil
 	}
 
-	if guardErr := grantPricingGuard(measure, item, matchingCharge.Price, m); guardErr != nil {
+	if guardErr := GrantPricingGuard(measure, item, matchingCharge.Price, m); guardErr != nil {
 		s.Logger.Error(ctx, "entitlement grant overage: line item rejected, skipping grants",
 			"meter_id", item.MeterID,
 			"line_item_id", item.ID,
@@ -173,10 +173,10 @@ func (s *billingService) mergedOverage(
 	grants []*entitlementgrant.EntitlementGrant,
 	measure types.EntitlementGrantMeasure,
 ) (decimal.Decimal, error) {
-	overageIntervals := make([]timeInterval, 0, len(grants))
+	overageIntervals := make([]TimeInterval, 0, len(grants))
 	for _, g := range grants {
 		if g != nil && g.QuotaCrossedAt != nil {
-			overageIntervals = append(overageIntervals, timeInterval{start: *g.QuotaCrossedAt, end: g.ValidTo})
+			overageIntervals = append(overageIntervals, TimeInterval{Start: *g.QuotaCrossedAt, End: g.ValidTo})
 		}
 	}
 	if len(overageIntervals) == 0 {
@@ -186,10 +186,10 @@ func (s *billingService) mergedOverage(
 		return decimal.Zero, errGrantDepsMissing
 	}
 
-	overageWindows := mergeIntervals(overageIntervals)
+	overageWindows := MergeIntervals(overageIntervals)
 	billableRanges := make([]events.TimeRange, 0, len(overageWindows))
 	for _, w := range overageWindows {
-		billableRanges = append(billableRanges, events.TimeRange{Start: w.start, End: w.end})
+		billableRanges = append(billableRanges, events.TimeRange{Start: w.Start, End: w.End})
 	}
 
 	meterUsageSvc := NewMeterUsageService(s.ServiceParams)
@@ -223,26 +223,26 @@ func (s *billingService) mergedOverage(
 	return total, nil
 }
 
-// timeInterval is a half-open [start, end) range.
-type timeInterval struct {
-	start, end time.Time
+// TimeInterval is a half-open [Start, End) range.
+type TimeInterval struct {
+	Start, End time.Time
 }
 
-// mergeIntervals coalesces overlapping/touching intervals; empty ones drop.
-func mergeIntervals(in []timeInterval) []timeInterval {
-	valid := make([]timeInterval, 0, len(in))
+// MergeIntervals coalesces overlapping/touching intervals; empty ones drop.
+func MergeIntervals(in []TimeInterval) []TimeInterval {
+	valid := make([]TimeInterval, 0, len(in))
 	for _, iv := range in {
-		if iv.end.After(iv.start) {
+		if iv.End.After(iv.Start) {
 			valid = append(valid, iv)
 		}
 	}
-	sort.Slice(valid, func(i, j int) bool { return valid[i].start.Before(valid[j].start) })
+	sort.Slice(valid, func(i, j int) bool { return valid[i].Start.Before(valid[j].Start) })
 
-	out := make([]timeInterval, 0, len(valid))
+	out := make([]TimeInterval, 0, len(valid))
 	for _, iv := range valid {
-		if n := len(out); n > 0 && !iv.start.After(out[n-1].end) {
-			if iv.end.After(out[n-1].end) {
-				out[n-1].end = iv.end
+		if n := len(out); n > 0 && !iv.Start.After(out[n-1].End) {
+			if iv.End.After(out[n-1].End) {
+				out[n-1].End = iv.End
 			}
 			continue
 		}
@@ -251,7 +251,7 @@ func mergeIntervals(in []timeInterval) []timeInterval {
 	return out
 }
 
-// grantPricingGuard returns nil when grants may fold into this line item.
+// GrantPricingGuard returns nil when grants may fold into this line item.
 // The fold assumes usage is additive over disjoint time windows (snapshot sums
 // per window, merged-window measurement) — so non-additive aggregations
 // (MAX, LATEST, AVG, ...) and bucketed meters are rejected outright.
@@ -260,7 +260,7 @@ func mergeIntervals(in []timeInterval) []timeInterval {
 // Commitment/true-up reject only the amount measure — they reconcile the
 // whole cycle, which pre-priced overage bypasses; the quantity measure feeds
 // its qty back into the normal pipeline where they compose correctly.
-func grantPricingGuard(measure types.EntitlementGrantMeasure, item *subscription.SubscriptionLineItem, price *priceDomain.Price, m *meter.Meter) error {
+func GrantPricingGuard(measure types.EntitlementGrantMeasure, item *subscription.SubscriptionLineItem, price *priceDomain.Price, m *meter.Meter) error {
 	if m != nil {
 		switch m.Aggregation.Type {
 		case types.AggregationSum, types.AggregationCount, types.AggregationSumWithMultiplier:

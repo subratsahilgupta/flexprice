@@ -1,8 +1,9 @@
-package service
+package revenue
 
 import (
 	"context"
 	"fmt"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -23,7 +24,7 @@ func (s *RevenueRollupSuite) TestE2E_RevenueFactsLifecycle() {
 	s.enableRevenueAnalytics(ctx)
 
 	previewTotal := func() decimal.Decimal {
-		invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 			Subscription:   s.sub,
 			PeriodStart:    s.periodStart,
 			PeriodEnd:      s.periodEnd,
@@ -129,7 +130,7 @@ func (s *RevenueRollupSuite) TestE2E_RevenueFactsLifecycle() {
 	cfg.Analytics.RevenueRollup.AutoCorrect = true
 	params := s.serviceParams()
 	params.Config = &cfg
-	sweeper := NewRevenueService(params)
+	sweeper := New(params)
 
 	checked, drifted, corrected, err := sweeper.ReconcileBookedInvoices(ctx, s.periodStart)
 	s.NoError(err)
@@ -178,7 +179,7 @@ func (s *RevenueRollupSuite) TestE2E_RevenueFactsLifecycle() {
 // finalizeCurrentPreview persists a finalized invoice built from the current
 // preview — the invoice the billing engine would have issued right now.
 func (s *RevenueRollupSuite) finalizeCurrentPreview(ctx context.Context) *invoice.Invoice {
-	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
 		PeriodStart:    s.periodStart,
 		PeriodEnd:      s.periodEnd,

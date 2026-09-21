@@ -3,10 +3,11 @@
 // This file rebuilds that shape per day so marginal revenue_facts rows show
 // "out of X entitled, Y billed today" — buildGrantOverageCurve is the entry
 // point, everything below it is window/day bookkeeping.
-package service
+package revenue
 
 import (
 	"context"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
@@ -37,7 +38,7 @@ type grantCurveInput struct {
 }
 
 // grantsBillable reports whether the billing engine folded these grants into
-// the line item's charge — the same conditions grantPricingGuard enforces.
+// the line item's charge — the same conditions service.GrantPricingGuard enforces.
 // When it did not, the line was billed on the normal path and the normal
 // daily curve applies.
 func grantsBillable(sli *subscription.SubscriptionLineItem, p *price.Price, m *meter.Meter, grants []*entitlementgrant.EntitlementGrant) bool {
@@ -48,7 +49,7 @@ func grantsBillable(sli *subscription.SubscriptionLineItem, p *price.Price, m *m
 	if measure == "" {
 		return false
 	}
-	return grantPricingGuard(measure, sli, p, m) == nil
+	return service.GrantPricingGuard(measure, sli, p, m) == nil
 }
 
 // buildGrantOverageCurve splits a grant-billed line item per day, best effort:
@@ -70,11 +71,11 @@ func (s *revenueService) buildGrantOverageCurve(ctx context.Context, in grantCur
 	// marginals; windows never overlap after merging, so a unit counts once.
 	billedMarginalByDay := make(map[string]decimal.Decimal)
 	for _, w := range windows {
-		windowCum, wErr := s.cumulativeUsageByDay(ctx, in.Meter.ID, w.start, w.end, in.Timezone, in.ExternalCustomerIDs)
+		windowCum, wErr := s.cumulativeUsageByDay(ctx, in.Meter.ID, w.Start, w.End, in.Timezone, in.ExternalCustomerIDs)
 		if wErr != nil {
 			return nil, false, wErr
 		}
-		addDailyMarginals(billedMarginalByDay, windowCum, w.start, w.end, in.Timezone)
+		addDailyMarginals(billedMarginalByDay, windowCum, w.Start, w.End, in.Timezone)
 	}
 
 	loc := timezoneLocation(in.Timezone)
@@ -141,8 +142,8 @@ func (s *revenueService) buildGrantOverageCurve(ctx context.Context, in grantCur
 
 // grantOverageWindows merges the grants' [quota_crossed_at, valid_to) windows,
 // clipped to the billing period. Uncrossed grants bill nothing.
-func grantOverageWindows(grants []*entitlementgrant.EntitlementGrant, periodStart, periodEnd time.Time) []timeInterval {
-	intervals := make([]timeInterval, 0, len(grants))
+func grantOverageWindows(grants []*entitlementgrant.EntitlementGrant, periodStart, periodEnd time.Time) []service.TimeInterval {
+	intervals := make([]service.TimeInterval, 0, len(grants))
 	for _, g := range grants {
 		if g == nil || g.QuotaCrossedAt == nil {
 			continue
@@ -155,9 +156,9 @@ func grantOverageWindows(grants []*entitlementgrant.EntitlementGrant, periodStar
 		if end.After(periodEnd) {
 			end = periodEnd
 		}
-		intervals = append(intervals, timeInterval{start: start, end: end})
+		intervals = append(intervals, service.TimeInterval{Start: start, End: end})
 	}
-	return mergeIntervals(intervals)
+	return service.MergeIntervals(intervals)
 }
 
 // cumulativeUsageByDay reads the meter's cumulative daily usage over

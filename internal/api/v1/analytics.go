@@ -7,6 +7,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/analytics"
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/gin-gonic/gin"
 )
@@ -14,11 +15,11 @@ import (
 // AnalyticsHandler handles ad-hoc and view analytics query endpoints.
 type AnalyticsHandler struct {
 	svc        service.AnalyticsService
-	revenueSvc service.RevenueService
+	revenueSvc interfaces.RevenueService
 	log        *logger.Logger
 }
 
-func NewAnalyticsHandler(svc service.AnalyticsService, revenueSvc service.RevenueService, log *logger.Logger) *AnalyticsHandler {
+func NewAnalyticsHandler(svc service.AnalyticsService, revenueSvc interfaces.RevenueService, log *logger.Logger) *AnalyticsHandler {
 	return &AnalyticsHandler{svc: svc, revenueSvc: revenueSvc, log: log}
 }
 

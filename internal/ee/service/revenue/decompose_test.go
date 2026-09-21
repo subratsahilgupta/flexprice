@@ -1,7 +1,8 @@
-package service
+package revenue
 
 import (
 	"context"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"testing"
 	"time"
 
@@ -294,7 +295,7 @@ func decomposeAll(t *testing.T, ctx context.Context) []*revenuefact.RevenueFact 
 	usageLI, liInput := workedExampleUsageLineItem(t, ctx, store)
 	switch decompositionMode(usageLI.Price, usageLI.Meter) {
 	case types.Marginal:
-		svc := &revenueService{ServiceParams: ServiceParams{
+		svc := &revenueService{ServiceParams: service.ServiceParams{
 			Logger:         logger.NewNoopLogger(),
 			MeterUsageRepo: store,
 			PriceRepo:      testutil.NewInMemoryPriceStore(),

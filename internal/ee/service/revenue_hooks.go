@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
@@ -15,7 +16,7 @@ import (
 func notifyInvoiceFinalized(ctx context.Context, params ServiceParams, invoiceID string) {
 	publishInvoiceWebhook(ctx, params, types.WebhookEventInvoiceUpdateFinalized, invoiceID)
 	asyncRevenueFactsUpdate(ctx, params, "final flip", invoiceID,
-		func(ctx context.Context, rs RevenueService) error {
+		func(ctx context.Context, rs interfaces.RevenueService) error {
 			return rs.FinalizeSubscriptionPeriod(ctx, invoiceID)
 		})
 }
@@ -25,7 +26,7 @@ func notifyInvoiceFinalized(ctx context.Context, params ServiceParams, invoiceID
 func notifyInvoiceVoided(ctx context.Context, params ServiceParams, invoiceID string) {
 	publishInvoiceWebhook(ctx, params, types.WebhookEventInvoiceUpdateVoided, invoiceID)
 	asyncRevenueFactsUpdate(ctx, params, "revert", invoiceID,
-		func(ctx context.Context, rs RevenueService) error {
+		func(ctx context.Context, rs interfaces.RevenueService) error {
 			return rs.RevertInvoiceFacts(ctx, invoiceID)
 		})
 }
@@ -38,8 +39,8 @@ func notifyInvoiceVoided(ctx context.Context, params ServiceParams, invoiceID st
 // run lost to a crash surfaces as a reconciliation gap the periodic rollup /
 // drift sweep repairs — promote this to a Temporal workflow if facts ever
 // need guaranteed delivery ahead of that sweep.
-func asyncRevenueFactsUpdate(ctx context.Context, params ServiceParams, op, invoiceID string, run func(context.Context, RevenueService) error) {
-	if params.RevenueFactRepo == nil {
+func asyncRevenueFactsUpdate(ctx context.Context, params ServiceParams, op, invoiceID string, run func(context.Context, interfaces.RevenueService) error) {
+	if params.RevenueFacts == nil {
 		// Not wired in this deployment/test context.
 		return
 	}
@@ -58,7 +59,7 @@ func asyncRevenueFactsUpdate(ctx context.Context, params ServiceParams, op, invo
 			}
 		}()
 
-		if err := run(asyncCtx, NewRevenueService(params)); err != nil {
+		if err := run(asyncCtx, params.RevenueFacts); err != nil {
 			params.Logger.Error(asyncCtx, "revenue facts "+op+" failed",
 				"error", err,
 				"invoice_id", invoiceID)

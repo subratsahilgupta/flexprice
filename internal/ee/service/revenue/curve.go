@@ -1,7 +1,8 @@
-package service
+package revenue
 
 import (
 	"context"
+	"github.com/flexprice/flexprice/internal/ee/service"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/events"
@@ -92,7 +93,7 @@ func (s *revenueService) buildUsageCurve(ctx context.Context, in usageCurveInput
 		limit = decimal.Zero
 	}
 	tier1Rate := listRate(in.Price)
-	priceSvc := NewPriceService(s.ServiceParams)
+	priceSvc := service.NewPriceService(s.ServiceParams)
 
 	startLocal := in.PeriodStart.In(loc)
 	cur := time.Date(startLocal.Year(), startLocal.Month(), startLocal.Day(), 0, 0, 0, 0, loc)

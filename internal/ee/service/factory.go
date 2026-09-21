@@ -51,6 +51,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/workflowexecution"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/integration"
+	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/pdf"
 	"github.com/flexprice/flexprice/internal/postgres"
@@ -154,6 +155,12 @@ type ServiceParams struct {
 	// PubSubs
 	WalletBalanceAlertPubSub types.WalletBalanceAlertPubSub
 	WebhookPubSub            pubsub.PubSub
+
+	// RevenueFacts is the revenue_facts service the invoice hooks call after
+	// finalize/void. Implemented by internal/ee/service/revenue and injected
+	// in main — a plain constructor here would import that package back into
+	// this one. Nil skips the hooks (facts not wired in this deployment).
+	RevenueFacts interfaces.RevenueService
 }
 
 // Common service params
