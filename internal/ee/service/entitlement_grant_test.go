@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -2470,10 +2471,10 @@ func (s *EntitlementGrantSuite) TestRemoveUnlimitedEC_SuccessorHoldsSlotAtZero()
 	s.Equal(types.EntitlementGrantStatusExhausted, opened[0].GrantStatus)
 }
 
-// An hourly allowance on a monthly cycle produces hundreds of windows. A read returns
-// the live one and what led to it, per entitlement, so a parallel feature's busiest
-// series cannot crowd out the others.
-func (s *EntitlementGrantSuite) TestGrantState_CapsWindowsPerEntitlement() {
+// An hourly allowance on a monthly cycle produces hundreds of windows. A read returns a
+// fixed budget of them, split across the slots in play and taking the newest of each, so
+// a parallel feature's busiest series cannot crowd the others out of the response.
+func (s *EntitlementGrantSuite) TestGrantState_CapsWindowsAcrossSlots() {
 	ctx := s.GetContext()
 	fx := s.newWindowFixture("cap-windows", 1)
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, fx.sub))
@@ -2514,10 +2515,14 @@ func (s *EntitlementGrantSuite) TestGrantState_CapsWindowsPerEntitlement() {
 	for _, w := range state.Windows {
 		byEC[w.EntitlementID] = append(byEC[w.EntitlementID], w)
 	}
+	s.Len(state.Windows, GrantWindowsPerRead, "the budget bounds the whole response")
 	s.Len(byEC, 2, "both entitlements keep a series")
 	for ecID, windows := range byEC {
-		s.Len(windows, GrantWindowsPerEntitlement, "capped per entitlement: %s", ecID)
-		s.Equal(fx.cycleStart.Add(3*time.Hour), windows[0].ValidFrom, "the most recent are kept")
-		s.True(windows[0].ValidFrom.Before(windows[len(windows)-1].ValidFrom), "still oldest first")
+		s.NotEmpty(windows, "no slot comes back empty: %s", ecID)
+		s.Equal(fx.cycleStart.Add(7*time.Hour), windows[len(windows)-1].ValidFrom,
+			"the most recent window of each slot is kept: %s", ecID)
+		s.True(sort.SliceIsSorted(windows, func(a, b int) bool {
+			return windows[a].ValidFrom.Before(windows[b].ValidFrom)
+		}), "still oldest first: %s", ecID)
 	}
 }

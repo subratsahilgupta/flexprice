@@ -1143,7 +1143,7 @@ func (s *entitlementGrantService) GrantStateByFeature(
 
 	// Capped in the query: an hourly allowance leaves hundreds of rows in a monthly
 	// cycle, and a read wants the live window and what led to it.
-	grants, err := s.EntitlementGrantRepo.ListLatestPerConfig(ctx, filter, GrantWindowsPerEntitlement)
+	grants, err := s.EntitlementGrantRepo.ListLatestWindows(ctx, filter, GrantWindowsPerRead)
 	if err != nil {
 		return nil, err
 	}
@@ -1188,10 +1188,11 @@ func (s *entitlementGrantService) GrantStateByFeature(
 	return out, nil
 }
 
-// GrantWindowsPerEntitlement caps how much of the ledger a read returns, per slot rather
-// than per feature: a parallel feature has one series per entitlement, and a shared cap
-// would let a busy one crowd the others out entirely.
-const GrantWindowsPerEntitlement = 5
+// GrantWindowsPerRead caps how much of the ledger a read returns. An hourly allowance on
+// a monthly cycle produces several hundred windows, and a reader wants the live one and
+// what led to it. Split across the slots in play, never fewer than one each, so a
+// parallel feature's busiest series cannot crowd the rest out of the response.
+const GrantWindowsPerRead = 5
 
 // ValidateGrantShape resolves the entitlement's meter and applies the shared
 // meter/price rules. A no-op for entitlements without a grant config.

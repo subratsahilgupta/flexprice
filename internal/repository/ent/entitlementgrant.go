@@ -2,6 +2,7 @@ package ent
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -407,14 +408,14 @@ func (r *entitlementGrantRepository) List(ctx context.Context, filter *types.Ent
 	return domainGrant.FromEntList(rows), nil
 }
 
-func (r *entitlementGrantRepository) ListLatestPerConfig(
+func (r *entitlementGrantRepository) ListLatestWindows(
 	ctx context.Context,
 	filter *types.EntitlementGrantFilter,
-	perConfig int,
+	total int,
 ) ([]*domainGrant.EntitlementGrant, error) {
-	span := StartRepositorySpan(ctx, "entitlement_grant", "list_latest_per_config", map[string]interface{}{
-		"tenant_id":  types.GetTenantID(ctx),
-		"per_config": perConfig,
+	span := StartRepositorySpan(ctx, "entitlement_grant", "list_latest_windows", map[string]interface{}{
+		"tenant_id": types.GetTenantID(ctx),
+		"total":     total,
 	})
 	defer FinishSpan(span)
 
@@ -424,11 +425,11 @@ func (r *entitlementGrantRepository) ListLatestPerConfig(
 	if err := filter.Validate(); err != nil {
 		return nil, err
 	}
-	if perConfig <= 0 {
+	if total <= 0 {
 		return nil, nil
 	}
 
-	// The slots first, so the per-slot reads below can each be a plain index lookup.
+	// The slots first, so the per-slot reads below are each a plain index lookup.
 	configIDs, err := applyEntitlementGrantFilter(r.scoped(ctx), filter).
 		GroupBy(entitlementgrant.FieldEntitlementConfigID).
 		Strings(ctx)
@@ -438,15 +439,21 @@ func (r *entitlementGrantRepository) ListLatestPerConfig(
 			WithHint("Failed to list entitlement grant slots").
 			Mark(ierr.ErrDatabase)
 	}
+	if len(configIDs) == 0 {
+		return nil, nil
+	}
+	// GROUP BY returns no order of its own, and the split below is uneven, so sort to
+	// keep the same slots favoured between calls.
+	sort.Strings(configIDs)
 
-	out := make([]*domainGrant.EntitlementGrant, 0, len(configIDs)*perConfig)
-	for _, configID := range configIDs {
+	out := make([]*domainGrant.EntitlementGrant, 0, total)
+	for i, configID := range configIDs {
 		// valid_from is the unique index's last column, so this is a backward index
-		// scan: the cost is perConfig rows however much history the slot has.
+		// scan: the cost is the rows asked for, however much history the slot has.
 		rows, err := applyEntitlementGrantFilter(r.scoped(ctx), filter).
 			Where(entitlementgrant.EntitlementConfigID(configID)).
 			Order(ent.Desc(entitlementgrant.FieldValidFrom)).
-			Limit(perConfig).
+			Limit(windowsForSlot(total, len(configIDs), i)).
 			All(ctx)
 		if err != nil {
 			SetSpanError(span, err)
@@ -459,6 +466,24 @@ func (r *entitlementGrantRepository) ListLatestPerConfig(
 	}
 
 	return out, nil
+}
+
+// windowsForSlot splits a budget of total windows across slots slots, giving the
+// remainder to the earliest ones. Every slot gets at least one even when that overruns
+// the budget: a slot returning nothing is indistinguishable from a slot with no history,
+// and the reader cannot tell which it is looking at.
+func windowsForSlot(total, slots, index int) int {
+	if slots <= 0 {
+		return 0
+	}
+	n := total / slots
+	if index < total%slots {
+		n++
+	}
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 func (r *entitlementGrantRepository) Count(ctx context.Context, filter *types.EntitlementGrantFilter) (int, error) {
