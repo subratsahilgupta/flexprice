@@ -1,0 +1,679 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/entitlement"
+	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
+	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/feature"
+	"github.com/flexprice/flexprice/internal/domain/meter"
+	"github.com/flexprice/flexprice/internal/domain/plan"
+	"github.com/flexprice/flexprice/internal/domain/price"
+	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	"github.com/flexprice/flexprice/internal/domain/subscription"
+	"github.com/flexprice/flexprice/internal/domain/wallet"
+	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
+	"github.com/shopspring/decimal"
+)
+
+// matrixLine declares one usage line of the pricing-matrix fixture: its meter
+// aggregation, price shape, per-day events, and the decomposition the rollup
+// must produce for it.
+type matrixLine struct {
+	key         string
+	aggregation types.AggregationType
+	buildPrice  func(ctx context.Context, planID, meterID, priceID string) *price.Price
+	// eventsForDay returns the quantities fired on day d (0-based).
+	eventsForDay func(d int) []decimal.Decimal
+	// usageLimit configures a legacy entitlement with this free quantity.
+	usageLimit *int64
+
+	wantMode   types.DecompositionMode
+	wantAmount string
+}
+
+func matrixFlatPrice(unit string) func(ctx context.Context, planID, meterID, priceID string) *price.Price {
+	return func(ctx context.Context, planID, meterID, priceID string) *price.Price {
+		return &price.Price{
+			ID:                 priceID,
+			Amount:             decimal.RequireFromString(unit),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           planID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear,
+			MeterID:            meterID,
+			BaseModel:          types.GetDefaultBaseModel(ctx),
+		}
+	}
+}
+
+func matrixTieredPrice(mode types.BillingTier) func(ctx context.Context, planID, meterID, priceID string) *price.Price {
+	return func(ctx context.Context, planID, meterID, priceID string) *price.Price {
+		upTo := uint64(1000)
+		return &price.Price{
+			ID:                 priceID,
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           planID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_TIERED,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear,
+			TierMode:           mode,
+			Tiers: price.JSONBTiers{
+				{UpTo: &upTo, UnitAmount: decimal.RequireFromString("0.01")},
+				{UpTo: nil, UnitAmount: decimal.RequireFromString("0.005")},
+			},
+			MeterID:   meterID,
+			BaseModel: types.GetDefaultBaseModel(ctx),
+		}
+	}
+}
+
+func matrixPackagePrice(ctx context.Context, planID, meterID, priceID string) *price.Price {
+	return &price.Price{
+		ID:                 priceID,
+		Amount:             decimal.NewFromInt(1),
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+		EntityID:           planID,
+		Type:               types.PRICE_TYPE_USAGE,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_PACKAGE,
+		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceArrear,
+		TransformQuantity:  price.JSONBTransformQuantity{DivideBy: 250, Round: types.ROUND_UP},
+		MeterID:            meterID,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+}
+
+// oneEvent fires a single event of qty per day.
+func oneEvent(qty int64) func(d int) []decimal.Decimal {
+	return func(int) []decimal.Decimal { return []decimal.Decimal{decimal.NewFromInt(qty)} }
+}
+
+// matrixLines is the pricing/metering matrix: every aggregation and pricing
+// strategy the rollup classifies, each with a hand-computed expected charge
+// over 30 days.
+func matrixLines() []matrixLine {
+	return []matrixLine{
+		{
+			// 100/day × 30 = 3000 × $0.01
+			key: "flat", aggregation: types.AggregationSum,
+			buildPrice: matrixFlatPrice("0.01"), eventsForDay: oneEvent(100),
+			wantMode: types.Marginal, wantAmount: "30",
+		},
+		{
+			// 3000 units: 1000×$0.01 + 2000×$0.005 — graduated tiers stay daily.
+			key: "slab", aggregation: types.AggregationSum,
+			buildPrice: matrixTieredPrice(types.BILLING_TIER_SLAB), eventsForDay: oneEvent(100),
+			wantMode: types.Marginal, wantAmount: "20",
+		},
+		{
+			// 3000 units all re-rated at the final tier: 3000×$0.005.
+			key: "volume", aggregation: types.AggregationSum,
+			buildPrice: matrixTieredPrice(types.BILLING_TIER_VOLUME), eventsForDay: oneEvent(100),
+			wantMode: types.PeriodOnly, wantAmount: "15",
+		},
+		{
+			// ceil(3000/250) = 12 packages × $1 — package steps are day-additive.
+			key: "pkg", aggregation: types.AggregationSum,
+			buildPrice: matrixPackagePrice, eventsForDay: oneEvent(100),
+			wantMode: types.Marginal, wantAmount: "12",
+		},
+		{
+			// Last reading 100+29 = 129 × $0.02 — LATEST is not day-additive.
+			key: "latest", aggregation: types.AggregationLatest,
+			buildPrice: matrixFlatPrice("0.02"),
+			eventsForDay: func(d int) []decimal.Decimal {
+				return []decimal.Decimal{decimal.NewFromInt(int64(100 + d))}
+			},
+			wantMode: types.PeriodOnly, wantAmount: "2.58",
+		},
+		{
+			// Peak 500 on day 15 × $0.02 — MAX is not day-additive either.
+			key: "maxm", aggregation: types.AggregationMax,
+			buildPrice: matrixFlatPrice("0.02"),
+			eventsForDay: func(d int) []decimal.Decimal {
+				if d == 15 {
+					return []decimal.Decimal{decimal.NewFromInt(500)}
+				}
+				return []decimal.Decimal{decimal.NewFromInt(100)}
+			},
+			wantMode: types.PeriodOnly, wantAmount: "10",
+		},
+		{
+			// 2 events/day × 30 = 60 events × $0.05.
+			key: "cnt", aggregation: types.AggregationCount,
+			buildPrice: matrixFlatPrice("0.05"),
+			eventsForDay: func(int) []decimal.Decimal {
+				return []decimal.Decimal{decimal.NewFromInt(1), decimal.NewFromInt(1)}
+			},
+			wantMode: types.Marginal, wantAmount: "3",
+		},
+		{
+			// 3000 used, 1500 entitled free → 1500 billable × $0.01.
+			key: "ent", aggregation: types.AggregationSum,
+			buildPrice: matrixFlatPrice("0.01"), eventsForDay: oneEvent(100),
+			usageLimit: lo.ToPtr(int64(1500)),
+			wantMode:   types.Marginal, wantAmount: "15",
+		},
+	}
+}
+
+// seedMatrixSubscription builds one subscription with one line item per
+// matrixLines entry (meter + price + optional legacy entitlement) and seeds
+// 30 days of events for each.
+func (s *RevenueRollupSuite) seedMatrixSubscription(ctx context.Context, lines []matrixLine) {
+	s.periodStart = time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	periodEndExclusive := s.periodStart.AddDate(0, 0, 30)
+	s.periodEnd = periodEndExclusive
+
+	cust := &customer.Customer{
+		ID:         "cust_matrix",
+		ExternalID: "ext_matrix",
+		Name:       "Pricing Matrix",
+		Email:      "matrix@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+
+	pl := &plan.Plan{ID: "plan_matrix", Name: "Matrix Plan", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, pl))
+
+	s.sub = &subscription.Subscription{
+		ID:                 "sub_matrix",
+		PlanID:             pl.ID,
+		CustomerID:         cust.ID,
+		StartDate:          s.periodStart,
+		BillingAnchor:      periodEndExclusive,
+		CurrentPeriodStart: s.periodStart,
+		CurrentPeriodEnd:   periodEndExclusive,
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+
+	var lineItems []*subscription.SubscriptionLineItem
+	var records []*events.MeterUsage
+	for _, ml := range lines {
+		meterID := "meter_matrix_" + ml.key
+		mtr := &meter.Meter{
+			ID:          meterID,
+			Name:        "Matrix " + ml.key,
+			EventName:   "evt_matrix_" + ml.key,
+			Aggregation: meter.Aggregation{Type: ml.aggregation},
+			BaseModel:   types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, mtr))
+
+		p := ml.buildPrice(ctx, pl.ID, meterID, "price_matrix_"+ml.key)
+		s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+
+		if ml.usageLimit != nil {
+			feat := &feature.Feature{
+				ID:        "feat_matrix_" + ml.key,
+				Name:      "Feature " + ml.key,
+				Type:      types.FeatureTypeMetered,
+				MeterID:   meterID,
+				BaseModel: types.GetDefaultBaseModel(ctx),
+			}
+			s.NoError(s.GetStores().FeatureRepo.Create(ctx, feat))
+			_, err := s.GetStores().EntitlementRepo.Create(ctx, &entitlement.Entitlement{
+				ID:               "ent_matrix_" + ml.key,
+				EntityType:       types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+				EntityID:         pl.ID,
+				FeatureID:        feat.ID,
+				FeatureType:      types.FeatureTypeMetered,
+				IsEnabled:        true,
+				UsageLimit:       ml.usageLimit,
+				UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
+				IsSoftLimit:      false,
+				BaseModel:        types.GetDefaultBaseModel(ctx),
+			})
+			s.NoError(err)
+		}
+
+		lineItems = append(lineItems, &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  s.sub.ID,
+			CustomerID:      s.sub.CustomerID,
+			EntityID:        pl.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: pl.Name,
+			PriceID:         p.ID,
+			PriceType:       p.Type,
+			MeterID:         meterID,
+			DisplayName:     "Matrix " + ml.key,
+			Quantity:        decimal.Zero,
+			Currency:        s.sub.Currency,
+			BillingPeriod:   s.sub.BillingPeriod,
+			InvoiceCadence:  types.InvoiceCadenceArrear,
+			StartDate:       s.sub.StartDate,
+			BaseModel:       types.GetDefaultBaseModel(ctx),
+		})
+
+		for d := 0; d < 30; d++ {
+			ts := s.periodStart.AddDate(0, 0, d).Add(12 * time.Hour)
+			for i, qty := range ml.eventsForDay(d) {
+				id := s.GetUUID()
+				records = append(records, &events.MeterUsage{
+					Event: events.Event{
+						ID:                 id,
+						TenantID:           types.GetTenantID(ctx),
+						EnvironmentID:      types.GetEnvironmentID(ctx),
+						EventName:          mtr.EventName,
+						ExternalCustomerID: cust.ExternalID,
+						CustomerID:         cust.ID,
+						Timestamp:          ts.Add(time.Duration(i) * time.Minute),
+						IngestedAt:         ts,
+					},
+					MeterID:    meterID,
+					QtyTotal:   qty,
+					UniqueHash: fmt.Sprintf("matrix_%s:%s", ml.key, id),
+				})
+			}
+		}
+	}
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, s.sub, lineItems))
+	s.sub.LineItems = lineItems
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, records))
+}
+
+// TestE2E_PricingMatrixLifecycle drives every metering aggregation and
+// pricing strategy through the full pipeline in one pass: rollup (mode and
+// amount per line, row identity), the analytics response, finalize → flip,
+// a clean reconcile sweep, and the export carrying the same rows.
+func (s *RevenueRollupSuite) TestE2E_PricingMatrixLifecycle() {
+	ctx := s.ctx
+	lines := matrixLines()
+	s.seedMatrixSubscription(ctx, lines)
+	s.enableRevenueAnalytics(ctx)
+
+	// --- Rollup: every line decomposes with its expected mode and amount ---
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(rows)
+
+	byPrice := map[string][]*revenuefact.RevenueFact{}
+	total := decimal.Zero
+	for _, r := range rows {
+		byPrice[lo.FromPtr(r.PriceID)] = append(byPrice[lo.FromPtr(r.PriceID)], r)
+		total = total.Add(r.NetAmount)
+		if residual, identityOK := reconcileRow(r); !identityOK {
+			s.Failf("row identity broken", "price %s day %s residual %s", lo.FromPtr(r.PriceID), r.Day, residual.String())
+		}
+	}
+	for _, ml := range lines {
+		priceID := "price_matrix_" + ml.key
+		lineRows := byPrice[priceID]
+		s.NotEmptyf(lineRows, "line %s must produce rows", ml.key)
+		sum := decimal.Zero
+		for _, r := range lineRows {
+			s.Equalf(ml.wantMode, r.DecompositionMode, "line %s decomposition mode", ml.key)
+			s.Equal(types.RevenueSourceUsage, r.RevenueSource)
+			sum = sum.Add(r.NetAmount)
+		}
+		s.Truef(sum.Equal(decimal.RequireFromString(ml.wantAmount)), "line %s must sum to %s, got %s", ml.key, ml.wantAmount, sum)
+		if ml.wantMode == types.PeriodOnly {
+			s.Lenf(lineRows, 1, "line %s books one whole-period row", ml.key)
+		} else {
+			s.Lenf(lineRows, 30, "line %s books one row per day", ml.key)
+		}
+	}
+
+	// The slab line's rows must carry a tier delta once usage crosses the
+	// 1000-unit boundary (cheaper second tier).
+	slabTierDelta := decimal.Zero
+	for _, r := range byPrice["price_matrix_slab"] {
+		slabTierDelta = slabTierDelta.Add(r.TierDelta)
+	}
+	s.True(slabTierDelta.IsNegative(), "graduated tiering must book a negative tier delta, got %s", slabTierDelta)
+
+	// The entitlement line records daily entitled quantity and only bills the
+	// excess: 1500 of 3000 units free.
+	entBilled, entEntitled := decimal.Zero, decimal.Zero
+	for _, r := range byPrice["price_matrix_ent"] {
+		entBilled = entBilled.Add(r.BillableQty)
+		entEntitled = entEntitled.Add(r.EntitlementQty)
+	}
+	s.True(entBilled.Equal(decimal.NewFromInt(1500)), "billable units beyond the limit, got %s", entBilled)
+	s.True(entEntitled.Equal(decimal.NewFromInt(1500)), "entitled quantity recorded day by day, got %s", entEntitled)
+
+	// The whole rollup reconciles to the engine preview.
+	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription:   s.sub,
+		PeriodStart:    s.periodStart,
+		PeriodEnd:      s.periodEnd,
+		ReferencePoint: types.ReferencePointRevenueFacts,
+	})
+	s.NoError(err)
+	s.True(total.Equal(invReq.Subtotal), "facts %s must equal the engine subtotal %s", total, invReq.Subtotal)
+
+	// --- Analytics: the same numbers come back through the read surface ---
+	req := &dto.RevenueAnalyticsRequest{
+		StartTime:   s.periodStart,
+		EndTime:     s.periodEnd,
+		Status:      types.FactProvisional,
+		Granularity: types.RevenueGranularityTotal,
+		GroupBy:     []string{"price_id"},
+	}
+	res, err := s.svc.GetRevenueAnalytics(ctx, req)
+	s.NoError(err)
+	analyticsByPrice := map[string]decimal.Decimal{}
+	for _, row := range res.Rows {
+		analyticsByPrice[row.Group["price_id"]] = analyticsByPrice[row.Group["price_id"]].Add(row.NetAmount)
+	}
+	for _, ml := range lines {
+		got := analyticsByPrice["price_matrix_"+ml.key]
+		s.Truef(got.Equal(decimal.RequireFromString(ml.wantAmount)), "analytics for %s: want %s got %s", ml.key, ml.wantAmount, got)
+	}
+
+	// Amortized day view moves the same money, never changes it.
+	req = &dto.RevenueAnalyticsRequest{
+		StartTime:        s.periodStart,
+		EndTime:          s.periodEnd,
+		Status:           types.FactProvisional,
+		Granularity:      types.RevenueGranularityDay,
+		AllocationPolicy: types.RevenueAllocationAmortized,
+	}
+	res, err = s.svc.GetRevenueAnalytics(ctx, req)
+	s.NoError(err)
+	s.True(res.ContainsAllocated, "period_only lines make the day view allocated")
+	amortized := decimal.Zero
+	for _, row := range res.Rows {
+		amortized = amortized.Add(row.NetAmount)
+	}
+	s.True(amortized.Equal(total), "amortized total %s must equal %s", amortized, total)
+
+	// --- Finalize → flip, sweep clean, export carries the same rows ---
+	inv := s.finalizeCurrentPreview(ctx)
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(ctx, inv.ID))
+	remaining, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.Empty(remaining, "the flip must consume every provisional row")
+
+	booked, err := s.store.ListByInvoiceID(ctx, inv.ID)
+	s.NoError(err)
+	bookedTotal := decimal.Zero
+	bookedByID := map[string]*revenuefact.RevenueFact{}
+	for _, r := range booked {
+		bookedTotal = bookedTotal.Add(r.NetAmount)
+		bookedByID[r.ID] = r
+	}
+	s.True(bookedTotal.Equal(inv.Subtotal.Sub(inv.TotalDiscount)))
+
+	checked, drifted, _, err := s.svc.ReconcileBookedInvoices(ctx, s.periodStart)
+	s.NoError(err)
+	s.GreaterOrEqual(checked, 1)
+	s.Zero(drifted, "a freshly booked matrix must sweep clean")
+
+	exported := s.exportAll(ctx, time.Time{})
+	s.Len(exported, len(booked), "the export carries exactly the booked rows")
+	for _, e := range exported {
+		b, ok := bookedByID[e.ID]
+		s.Truef(ok, "exported row %s must be a booked row", e.ID)
+		s.True(e.NetAmount.Equal(b.NetAmount))
+		s.Equal(b.RevenueSource, e.RevenueSource)
+	}
+}
+
+// TestE2E_GrantsAndWalletLifecycle covers entitlement grants end to end —
+// quantity-measure grants on parallel entitlement configs with disjoint
+// overage windows, and an amount-measure grant — then proves wallet credits
+// paying the invoice never touch revenue facts (revenue ≠ cash).
+func (s *RevenueRollupSuite) TestE2E_GrantsAndWalletLifecycle() {
+	ctx := s.ctx
+	s.periodStart = time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	periodEndExclusive := s.periodStart.AddDate(0, 0, 30)
+	s.periodEnd = periodEndExclusive
+
+	cust := &customer.Customer{
+		ID:         "cust_gw",
+		ExternalID: "ext_gw",
+		Name:       "Grants And Wallet",
+		Email:      "gw@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+	pl := &plan.Plan{ID: "plan_gw", Name: "GW Plan", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, pl))
+
+	s.sub = &subscription.Subscription{
+		ID:                 "sub_gw",
+		PlanID:             pl.ID,
+		CustomerID:         cust.ID,
+		StartDate:          s.periodStart,
+		BillingAnchor:      periodEndExclusive,
+		CurrentPeriodStart: s.periodStart,
+		CurrentPeriodEnd:   periodEndExclusive,
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+
+	// Two SUM meters at $0.01/call, 100 calls/day each: qgrants carries two
+	// quantity grants on separate entitlement configs, agrant one
+	// amount-measure grant.
+	var lineItems []*subscription.SubscriptionLineItem
+	var records []*events.MeterUsage
+	for _, key := range []string{"qgrants", "agrant"} {
+		meterID := "meter_gw_" + key
+		mtr := &meter.Meter{
+			ID:          meterID,
+			Name:        "GW " + key,
+			EventName:   "evt_gw_" + key,
+			Aggregation: meter.Aggregation{Type: types.AggregationSum},
+			BaseModel:   types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, mtr))
+		p := matrixFlatPrice("0.01")(ctx, pl.ID, meterID, "price_gw_"+key)
+		s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+
+		feat := &feature.Feature{
+			ID:        "feat_gw_" + key,
+			Name:      "Feature " + key,
+			Type:      types.FeatureTypeMetered,
+			MeterID:   meterID,
+			BaseModel: types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(s.GetStores().FeatureRepo.Create(ctx, feat))
+		_, err := s.GetStores().EntitlementRepo.Create(ctx, &entitlement.Entitlement{
+			ID:               "ent_gw_" + key,
+			EntityType:       types.ENTITLEMENT_ENTITY_TYPE_PLAN,
+			EntityID:         pl.ID,
+			FeatureID:        feat.ID,
+			FeatureType:      types.FeatureTypeMetered,
+			IsEnabled:        true,
+			UsageLimit:       lo.ToPtr(int64(0)),
+			UsageResetPeriod: types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY,
+			IsSoftLimit:      false,
+			BaseModel:        types.GetDefaultBaseModel(ctx),
+		})
+		s.NoError(err)
+
+		lineItems = append(lineItems, &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  s.sub.ID,
+			CustomerID:      s.sub.CustomerID,
+			EntityID:        pl.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: pl.Name,
+			PriceID:         p.ID,
+			PriceType:       p.Type,
+			MeterID:         meterID,
+			DisplayName:     "GW " + key,
+			Quantity:        decimal.Zero,
+			Currency:        s.sub.Currency,
+			BillingPeriod:   s.sub.BillingPeriod,
+			InvoiceCadence:  types.InvoiceCadenceArrear,
+			StartDate:       s.sub.StartDate,
+			BaseModel:       types.GetDefaultBaseModel(ctx),
+		})
+		for d := 0; d < 30; d++ {
+			ts := s.periodStart.AddDate(0, 0, d).Add(12 * time.Hour)
+			id := s.GetUUID()
+			records = append(records, &events.MeterUsage{
+				Event: events.Event{
+					ID:                 id,
+					TenantID:           types.GetTenantID(ctx),
+					EnvironmentID:      types.GetEnvironmentID(ctx),
+					EventName:          mtr.EventName,
+					ExternalCustomerID: cust.ExternalID,
+					CustomerID:         cust.ID,
+					Timestamp:          ts,
+					IngestedAt:         ts,
+				},
+				MeterID:    meterID,
+				QtyTotal:   decimal.NewFromInt(100),
+				UniqueHash: fmt.Sprintf("gw_%s:%s", key, id),
+			})
+		}
+	}
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, s.sub, lineItems))
+	s.sub.LineItems = lineItems
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, records))
+
+	// Quantity grants on two parallel entitlement configs with DISJOINT
+	// crossed windows: [day5, day15) and [day20, day30) each bill their own
+	// window's usage — 10 days × 100 calls × $0.01 apiece.
+	mkGrant := func(id, ecID, featID string, measure types.EntitlementGrantMeasure, quota, usage decimal.Decimal, crossedAt, from, to time.Time) {
+		g := &entitlementgrant.EntitlementGrant{
+			ID:                  id,
+			EntitlementConfigID: ecID,
+			CustomerID:          cust.ID,
+			SubscriptionID:      s.sub.ID,
+			ScopeEntityType:     types.EntitlementGrantScopeFeature,
+			ScopeEntityID:       featID,
+			Measure:             measure,
+			Quota:               quota,
+			Usage:               usage,
+			QuotaCrossedAt:      &crossedAt,
+			ValidFrom:           from,
+			ValidTo:             to,
+			EnvironmentID:       types.GetEnvironmentID(ctx),
+			BaseModel:           types.GetDefaultBaseModel(ctx),
+		}
+		_, err := s.GetStores().EntitlementGrantRepo.Create(ctx, g)
+		s.NoError(err)
+	}
+	mkGrant("eg_gw_q1", "ec_gw_1", "feat_gw_qgrants", types.EntitlementGrantMeasureQuantity,
+		decimal.NewFromInt(500), decimal.NewFromInt(1500),
+		s.periodStart.AddDate(0, 0, 5), s.periodStart, s.periodStart.AddDate(0, 0, 15))
+	mkGrant("eg_gw_q2", "ec_gw_2", "feat_gw_qgrants", types.EntitlementGrantMeasureQuantity,
+		decimal.NewFromInt(500), decimal.NewFromInt(1500),
+		s.periodStart.AddDate(0, 0, 20), s.periodStart.AddDate(0, 0, 15), s.periodEnd)
+	// Amount-measure grant: $10 quota crossed at day 10 (1000 calls × $0.01),
+	// billing the remaining 20 days' value.
+	mkGrant("eg_gw_a", "ec_gw_3", "feat_gw_agrant", types.EntitlementGrantMeasureAmount,
+		decimal.NewFromInt(10), decimal.NewFromInt(30),
+		s.periodStart.AddDate(0, 0, 10), s.periodStart, s.periodEnd)
+
+	s.enableRevenueAnalytics(ctx)
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(rows)
+
+	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription:   s.sub,
+		PeriodStart:    s.periodStart,
+		PeriodEnd:      s.periodEnd,
+		ReferencePoint: types.ReferencePointRevenueFacts,
+	})
+	s.NoError(err)
+	engineByPrice := map[string]decimal.Decimal{}
+	for i := range invReq.LineItems {
+		li := &invReq.LineItems[i]
+		engineByPrice[lo.FromPtr(li.PriceID)] = engineByPrice[lo.FromPtr(li.PriceID)].Add(li.Amount)
+	}
+
+	total := decimal.Zero
+	factsByPrice := map[string]decimal.Decimal{}
+	var qgrantRows []*revenuefact.RevenueFact
+	for _, r := range rows {
+		total = total.Add(r.NetAmount)
+		factsByPrice[lo.FromPtr(r.PriceID)] = factsByPrice[lo.FromPtr(r.PriceID)].Add(r.NetAmount)
+		if lo.FromPtr(r.PriceID) == "price_gw_qgrants" {
+			qgrantRows = append(qgrantRows, r)
+			s.Equal(types.Marginal, r.DecompositionMode, "grant-billed usage splits per day")
+		}
+		if residual, identityOK := reconcileRow(r); !identityOK {
+			s.Failf("row identity broken", "price %s day %s residual %s", lo.FromPtr(r.PriceID), r.Day, residual.String())
+		}
+	}
+	s.True(total.Equal(invReq.Subtotal), "facts %s must equal the engine subtotal %s", total, invReq.Subtotal)
+	for priceID, engineAmount := range engineByPrice {
+		s.Truef(factsByPrice[priceID].Equal(engineAmount), "price %s: facts %s vs engine %s", priceID, factsByPrice[priceID], engineAmount)
+	}
+	// Both parallel windows bill: 2 × 10 days × 100 calls × $0.01.
+	s.True(factsByPrice["price_gw_qgrants"].Equal(decimal.NewFromInt(20)), "disjoint grant windows must both bill, got %s", factsByPrice["price_gw_qgrants"])
+	// Days before the first crossing stay entitled at zero net.
+	for _, r := range qgrantRows {
+		if r.Day.Before(s.periodStart.AddDate(0, 0, 5)) {
+			s.Truef(r.NetAmount.IsZero(), "day %s precedes every crossed window", r.Day)
+		}
+	}
+
+	// --- Wallet credits pay the invoice; revenue facts never move ---
+	w := &wallet.Wallet{
+		ID:                  "wallet_gw",
+		CustomerID:          cust.ID,
+		Currency:            "usd",
+		WalletType:          types.WalletTypePrePaid,
+		Balance:             decimal.NewFromInt(100),
+		CreditBalance:       decimal.NewFromInt(100),
+		ConversionRate:      decimal.NewFromInt(1),
+		TopupConversionRate: decimal.NewFromInt(1),
+		WalletStatus:        types.WalletStatusActive,
+		BaseModel:           types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().WalletRepo.CreateWallet(ctx, w))
+
+	inv := s.finalizeCurrentPreview(ctx)
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(ctx, inv.ID))
+	booked, err := s.store.ListByInvoiceID(ctx, inv.ID)
+	s.NoError(err)
+	beforePayment := map[string]int64{}
+	for _, r := range booked {
+		beforePayment[r.ID] = r.Version
+	}
+
+	// The wallet settles the invoice — a payment-side operation.
+	inv.AmountPaid = inv.Total
+	inv.AmountRemaining = decimal.Zero
+	inv.PaymentStatus = types.PaymentStatusSucceeded
+	s.NoError(s.GetStores().InvoiceRepo.Update(ctx, inv))
+
+	_, drifted, corrected, err := s.svc.ReconcileBookedInvoices(ctx, s.periodStart)
+	s.NoError(err)
+	s.Zero(drifted, "payment must not look like revenue drift")
+	s.Zero(corrected)
+
+	afterPayment, err := s.store.ListByInvoiceID(ctx, inv.ID)
+	s.NoError(err)
+	s.Len(afterPayment, len(booked), "paying an invoice writes no revenue rows")
+	for _, r := range afterPayment {
+		s.Equalf(beforePayment[r.ID], r.Version, "row %s must not be recomputed by a payment", r.ID)
+	}
+}

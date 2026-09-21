@@ -129,24 +129,23 @@ type dayCharge struct {
 }
 
 // decompositionMode picks period_only where a per-day split would misstate
-// the charge: volume tiering re-rates all units on the final tier, LATEST/AVG/
-// WEIGHTED_SUM aggregations are not additive across days, and week/month
-// MAX buckets reset on boundaries coarser than a day.
+// the charge: volume tiering re-rates all units on the final tier, and
+// LATEST/AVG/WEIGHTED_SUM/MAX aggregations are not additive across days —
+// the daily curve reads a cumulative SUM of quantities, which only prices
+// sum-shaped billing correctly. MAX pricing (plain or bucketed at any size)
+// stays whole-period until the curve can read per-day maxes.
 func decompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
 	if p != nil && p.TierMode == types.BILLING_TIER_VOLUME {
 		return types.PeriodOnly
 	}
 	if m != nil {
 		switch m.Aggregation.Type {
-		case types.AggregationLatest, types.AggregationAvg, types.AggregationWeightedSum:
+		case types.AggregationLatest, types.AggregationAvg, types.AggregationWeightedSum, types.AggregationMax:
 			return types.PeriodOnly
 		}
 	}
 	if price.IsBucketedMax(p, m) {
-		switch price.ResolveBucketSize(p, m) {
-		case types.WindowSizeWeek, types.WindowSizeMonth:
-			return types.PeriodOnly
-		}
+		return types.PeriodOnly
 	}
 	return types.Marginal
 }
