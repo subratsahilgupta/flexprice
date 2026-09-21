@@ -2417,3 +2417,40 @@ func (s *EntitlementGrantSuite) TestReissue_BalanceTravelsAsQuota() {
 	s.Equal("1000", closed.Quota.String())
 	s.True(closed.Overage().IsZero(), "800 against 1,000 owes nothing")
 }
+
+// A ceiling appearing mid-window leaves nothing for the rest of it: the customer spent
+// that window without one, so there is no balance to hand over and no reason to issue a
+// fresh allowance on top. The surviving config funds the next window on its own cadence.
+func (s *EntitlementGrantSuite) TestRemoveUnlimitedEC_SuccessorHoldsSlotAtZero() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("unl-fallback", 5)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, fx.sub))
+
+	// fx.ec is the unlimited one and is about to leave; a bounded 100 survives.
+	fx.ec.GrantQuota = nil
+	survivor := s.newTimeBoxedEC("ec-unl-survivor", fx.ec.FeatureID, 5,
+		types.EntitlementGrantDurationUnitHour, decimal.NewFromInt(100))
+
+	// The live pooled window as grantCandidatesForFeature builds it: unlimited from
+	// fx.ec, and zero quota, since a pool with no ceiling has none to record.
+	closed := s.seedLiveWindow(fx, "eg-unl-fallback", decimal.Zero, decimal.NewFromInt(40), nil)
+	closed.Unlimited = true
+	closed.ValidTo = fx.cycleStart.Add(2 * time.Hour)
+	_, err := s.GetStores().EntitlementGrantRepo.Update(ctx, closed)
+	s.Require().NoError(err)
+
+	opened, err := s.grantService.OpenFeatureBasedEntitlementGrants(ctx, []OpenFeatureBasedEntitlementGrantsRequest{{
+		FeatureID: fx.ec.FeatureID,
+		Closed:    closed,
+		New: entitlementgrant.NewEntitlementGrantBuilder(closed).
+			WithQuota(decimal.Zero).
+			WithWindow(closed.ValidTo, fx.cycleEnd).
+			Build(),
+		ExistingECs: []*entitlement.Entitlement{survivor},
+	}})
+	s.Require().NoError(err)
+	s.Require().Len(opened, 1, "the survivor still funds the feature, so a row must hold the slot")
+	s.False(opened[0].Unlimited, "the unlimited config left")
+	s.Equal("0", opened[0].Quota.String(), "nothing is carried from a window that had no ceiling")
+	s.Equal(types.EntitlementGrantStatusExhausted, opened[0].GrantStatus)
+}

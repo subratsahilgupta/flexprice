@@ -270,8 +270,10 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 					Mark(ierr.ErrValidation)
 			}
 
-			// An unlimited predecessor carries no balance to add; Remaining reports zero
-			// for one, which is the right thing to carry either way.
+			// An unlimited predecessor carries no balance: Remaining reports zero, and a
+			// ceiling appearing mid-window leaves nothing for the rest of it — the customer
+			// spent that window without one. The next window opens from the surviving
+			// configs on the normal cadence.
 			carried, _ := req.Closed.Remaining()
 			quota = carried.Add(req.New.Quota)
 		} else {
@@ -657,6 +659,13 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 		if start := lo.FromPtr(ec.StartDate); start.Before(earliest) {
 			earliest = start
 		}
+	}
+
+	// A pool with no ceiling has no quota to speak of. Storing the bounded contributors'
+	// sum beside the flag reads as a limit that is never enforced, and every caller that
+	// took the number at face value got it wrong.
+	if unlimited {
+		total = decimal.Zero
 	}
 
 	return []grantCandidate{{ec: primary, quota: total, unlimited: unlimited, startDate: earliest}}
