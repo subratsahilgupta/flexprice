@@ -247,6 +247,16 @@ func addonAssociationFilterFn(ctx context.Context, aa *addonassociation.AddonAss
 		}
 	}
 
+	// Mirrors the ent predicate: start_date <= t AND (end_date IS NULL OR end_date > t).
+	if f.ActiveAt != nil {
+		if aa.StartDate == nil || aa.StartDate.After(*f.ActiveAt) {
+			return false
+		}
+		if aa.EndDate != nil && !aa.EndDate.After(*f.ActiveAt) {
+			return false
+		}
+	}
+
 	if f.StartDate != nil || f.EndDate != nil {
 		// Ensure association is published and active for the given time window
 		if aa.Status != types.StatusPublished {

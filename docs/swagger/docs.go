@@ -9125,7 +9125,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove).",
+                "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes settled as one netted document).",
                 "consumes": [
                     "application/json"
                 ],
@@ -9191,7 +9191,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove) without committing changes.",
+                "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes) without committing changes.",
                 "consumes": [
                     "application/json"
                 ],
@@ -14338,6 +14338,14 @@ const docTemplate = `{
                 "cadence": {
                     "$ref": "#/definitions/types.AddonCadence"
                 },
+                "change_at": {
+                    "description": "ChangeAt names when the attach applies without computing a date. Mutually exclusive\nwith StartDate; omit both to attach now.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
+                },
                 "checkout": {
                     "$ref": "#/definitions/CheckoutParams"
                 },
@@ -14381,6 +14389,14 @@ const docTemplate = `{
                 },
                 "cadence": {
                     "$ref": "#/definitions/types.AddonCadence"
+                },
+                "change_at": {
+                    "description": "ChangeAt names when the attach applies without computing a date. Mutually exclusive\nwith StartDate; omit both to attach now.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
                 },
                 "line_item_commitments": {
                     "description": "LineItemCommitments allows setting commitment configuration per addon line item (keyed by price_id)",
@@ -18841,6 +18857,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "ingested_at": {
+                    "type": "string"
+                },
                 "properties": {
                     "type": "object",
                     "additionalProperties": true
@@ -18884,6 +18903,9 @@ const docTemplate = `{
                 "type"
             ],
             "properties": {
+                "addon_bulk_params": {
+                    "$ref": "#/definitions/SubModifyBulkAddonParams"
+                },
                 "addon_params": {
                     "$ref": "#/definitions/SubModifyAddonParams"
                 },
@@ -19201,6 +19223,12 @@ const docTemplate = `{
                 },
                 "event": {
                     "$ref": "#/definitions/Event"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/Event"
+                    }
                 },
                 "processed_events": {
                     "type": "array",
@@ -21756,6 +21784,14 @@ const docTemplate = `{
                 "addon_association_id": {
                     "type": "string"
                 },
+                "change_at": {
+                    "description": "ChangeAt names when the removal applies without computing a date. Mutually exclusive\nwith EffectiveDate; omit both to remove at period end.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
+                },
                 "effective_date": {
                     "description": "EffectiveDate defaults to period end when nil; mid-period with create_prorations issues a wallet credit.",
                     "type": "string"
@@ -21921,6 +21957,23 @@ const docTemplate = `{
                 },
                 "remove": {
                     "$ref": "#/definitions/RemoveAddonRequest"
+                }
+            }
+        },
+        "SubModifyBulkAddonParams": {
+            "type": "object",
+            "properties": {
+                "adds": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AddAddonToSubscriptionRequest"
+                    }
+                },
+                "removes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/RemoveAddonRequest"
+                    }
                 }
             }
         },
@@ -26948,6 +27001,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.AddAddonRef"
                     }
                 },
+                "removes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.RemoveAddonRef"
+                    }
+                },
                 "subscription_id": {
                     "type": "string"
                 }
@@ -29545,6 +29604,23 @@ const docTemplate = `{
                 "RejectedEventReasonNoMatchingMeter"
             ]
         },
+        "types.RemoveAddonRef": {
+            "type": "object",
+            "properties": {
+                "association_id": {
+                    "type": "string"
+                },
+                "effective_date": {
+                    "type": "string"
+                },
+                "proration_behavior": {
+                    "$ref": "#/definitions/types.ProrationBehavior"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "types.ReportingUnit": {
             "type": "object",
             "properties": {
@@ -29900,14 +29976,14 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "plan",
-                "addon",
+                "addon_association",
                 "credit_grant",
                 "entitlement",
                 "entitlement_grant"
             ],
             "x-enum-varnames": [
                 "SubscriptionChangeEntityTypePlan",
-                "SubscriptionChangeEntityTypeAddon",
+                "SubscriptionChangeEntityTypeAddonAssociation",
                 "SubscriptionChangeEntityTypeCreditGrant",
                 "SubscriptionChangeEntityTypeEntitlement",
                 "SubscriptionChangeEntityTypeEntitlementGrant"
