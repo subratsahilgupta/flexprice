@@ -2320,22 +2320,37 @@ func (s *EntitlementGrantSuite) TestOpenGrants_UnlimitedSuccessorStaysUnlimited(
 func (s *EntitlementGrantSuite) TestDeleteEntitlement_ShrinksPooledWindow() {
 	ctx := s.GetContext()
 	fx := s.newWindowFixture("pool-delete", 5)
+
+	// The plan's EC is what survives the deletion. Without a survivor the feature is no
+	// longer funded at all, which is the other case: there the window is left to run out
+	// rather than cut, since granted quota is never taken back.
+	p := s.simplePlan("plan-pool-delete")
+	fx.sub.PlanID = p.ID
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, fx.sub))
 
+	pooledEC := func(quota int64) dto.CreateEntitlementRequest {
+		return dto.CreateEntitlementRequest{
+			FeatureID:               fx.ec.FeatureID,
+			FeatureType:             types.FeatureTypeMetered,
+			IsEnabled:               true,
+			GrantMeasure:            types.EntitlementGrantMeasureQuantity,
+			GrantQuota:              lo.ToPtr(decimal.NewFromInt(quota)),
+			GrantDurationValue:      lo.ToPtr(5),
+			GrantDurationUnit:       types.EntitlementGrantDurationUnitHour,
+			GrantAllocationBehavior: types.EntitlementGrantAllocationBehaviorFirstUsage,
+			AggregationMode:         types.EntitlementAggregationModeAdditive,
+		}
+	}
+
+	planReq := pooledEC(1000)
+	planReq.EntityType, planReq.EntityID = types.ENTITLEMENT_ENTITY_TYPE_PLAN, p.ID
+	_, err := s.entService.CreateEntitlement(ctx, planReq)
+	s.Require().NoError(err)
+
 	// A net-new subscription EC on the same feature: no parent, so it pools.
-	netNew, err := s.entService.CreateEntitlement(ctx, dto.CreateEntitlementRequest{
-		EntityType:              types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION,
-		EntityID:                fx.sub.ID,
-		FeatureID:               fx.ec.FeatureID,
-		FeatureType:             types.FeatureTypeMetered,
-		IsEnabled:               true,
-		GrantMeasure:            types.EntitlementGrantMeasureQuantity,
-		GrantQuota:              lo.ToPtr(decimal.NewFromInt(500)),
-		GrantDurationValue:      lo.ToPtr(5),
-		GrantDurationUnit:       types.EntitlementGrantDurationUnitHour,
-		GrantAllocationBehavior: types.EntitlementGrantAllocationBehaviorFirstUsage,
-		AggregationMode:         types.EntitlementAggregationModeAdditive,
-	})
+	subReq := pooledEC(500)
+	subReq.EntityType, subReq.EntityID = types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION, fx.sub.ID
+	netNew, err := s.entService.CreateEntitlement(ctx, subReq)
 	s.Require().NoError(err)
 
 	now := time.Now().UTC()

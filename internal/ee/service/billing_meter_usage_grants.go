@@ -12,6 +12,7 @@ import (
 	priceDomain "github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -62,6 +63,33 @@ func (s *billingService) loadEntitlementGrantsByMeterID(
 		meterByFeatureID[f.Feature.ID] = f.Feature.MeterID
 	}
 
+	// A grant outlives the config that funded it, so a feature whose last live
+	// entitlement is gone is missing from aggregatedFeatures. Resolve those
+	// features directly — the lookup the evaluator already does — or the grant
+	// silently stops discounting while the evaluator keeps maintaining it.
+	missing := make([]string, 0)
+	for _, g := range grants {
+		if g == nil || !g.IsFeatureScoped() {
+			continue
+		}
+		if _, ok := meterByFeatureID[g.ScopeEntityID]; !ok {
+			missing = append(missing, g.ScopeEntityID)
+		}
+	}
+	if len(missing) > 0 {
+		featureFilter := types.NewNoLimitFeatureFilter()
+		featureFilter.FeatureIDs = lo.Uniq(missing)
+		orphanFeatures, err := s.FeatureRepo.List(ctx, featureFilter)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range orphanFeatures {
+			if f != nil && f.MeterID != "" {
+				meterByFeatureID[f.ID] = f.MeterID
+			}
+		}
+	}
+
 	out := make(map[string][]*entitlementgrant.EntitlementGrant)
 	for _, g := range grants {
 		if g == nil || !g.IsFeatureScoped() {
@@ -110,27 +138,36 @@ func (s *billingService) adjustMeterUsageGrants(
 		return adjustMeterUsageGrantsResult{}, false, nil
 	}
 
-	// Per-EC violation totals (usage − quota). ECs share the usage stream, so
-	// these overlap — attribution only, never summed into the bill directly.
+	// Per-EC violation totals (usage − quota). Overlapping windows share the usage
+	// stream, so these can double count — attribution only, never summed blindly.
 	perECOverage := make(map[string]decimal.Decimal)
-	ecIDs := make(map[string]struct{})
 	for _, g := range grants {
 		if g == nil {
 			continue
 		}
-		ecIDs[g.EntitlementConfigID] = struct{}{}
 		if overage := g.Overage(); overage.IsPositive() {
 			perECOverage[g.EntitlementConfigID] = perECOverage[g.EntitlementConfigID].Add(overage)
 		}
 	}
 
 	res := adjustMeterUsageGrantsResult{Measure: measure, PerECOverage: perECOverage}
-	if len(ecIDs) <= 1 {
-		// Single EC: its windows never overlap, so the snapshot sum is exact
+	if !grantWindowsOverlap(grants) {
+		// Disjoint => an event lands in exactly one window, so the overages just add up.
+		// Two ECs is NOT overlap: a detach re-keys the pooled slot and the cycle tiles.
+		//   EG1 [t0,t1) EC1 Q=1000 U=1200 => over 200
+		//   EG2 [t1,t2) EC2 Q= 800 U= 900 => over 100
+		//   bill 300 — the 1200 and the 900 are different events
 		for _, total := range perECOverage {
 			res.Overage = res.Overage.Add(total)
 		}
 	} else {
+		// Overlapping => parallel ECs meter the SAME events against their own quotas,
+		// so adding the overages bills one unit twice.
+		//   EG1 [t0,t2) EC1 Q=500 U=900 => over 400
+		//   EG2 [t0,t2) EC2 Q=400 U=900 => over 500
+		//   adding gives 900 for 900 units of usage — every unit billed twice.
+		// Measure the merged overage window instead: 900 units, crossing at 600,
+		// bills the 300 spent past it, once.
 		overage, err := s.mergedOverage(ctx, m, sub, extCustomerIDs, grants, measure)
 		if err != nil {
 			return adjustMeterUsageGrantsResult{}, false, err
@@ -222,6 +259,34 @@ func (s *billingService) mergedOverage(
 		}
 	}
 	return total, nil
+}
+
+// grantWindowsOverlap reports whether any two grant windows share an instant — the
+// only case where one event can be counted against two quotas.
+// [t0,t1) + [t1,t2) => false, a re-keyed pool tiling the cycle.
+// [t0,t2) + [t0,t2) => true, parallel ECs on one feature.
+func grantWindowsOverlap(grants []*entitlementgrant.EntitlementGrant) bool {
+	windows := make([]timeInterval, 0, len(grants))
+	for _, g := range grants {
+		if g != nil && g.ValidTo.After(g.ValidFrom) {
+			windows = append(windows, timeInterval{start: g.ValidFrom, end: g.ValidTo})
+		}
+	}
+	if len(windows) < 2 {
+		return false
+	}
+	sort.Slice(windows, func(i, j int) bool { return windows[i].start.Before(windows[j].start) })
+
+	maxEnd := windows[0].end
+	for _, w := range windows[1:] {
+		if w.start.Before(maxEnd) {
+			return true
+		}
+		if w.end.After(maxEnd) {
+			maxEnd = w.end
+		}
+	}
+	return false
 }
 
 // timeInterval is a half-open [start, end) range.

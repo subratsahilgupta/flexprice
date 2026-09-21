@@ -937,7 +937,7 @@ func (s *entitlementService) reissueGrantWindows(
 		return nil
 	}
 
-	ecsByFeature, err := (&subscriptionService{ServiceParams: s.ServiceParams}).GetSubscriptionGrantECsByFeature(ctx, sub)
+	ecsByFeature, err := newSubscriptionGrantService(s.ServiceParams).GetSubscriptionGrantECsByFeature(ctx, sub)
 	if err != nil {
 		return err
 	}
@@ -1053,8 +1053,22 @@ func (s *entitlementService) settleGrantWindowsForDeletedEC(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	return (&subscriptionService{ServiceParams: s.ServiceParams}).handleGrantsForRemovedECs(
-		ctx, sub, []*entitlement.Entitlement{e}, time.Now().UTC(), grantProrationSourceEntitlementGone)
+	// The addon paths reach this through Resolve, which builds the config from addon
+	// sources. A deleted entitlement has no addon behind it, so the config is built
+	// here — one entitlement leaving, nothing arriving.
+	grantSvc := newSubscriptionGrantService(s.ServiceParams)
+	removed := []*entitlement.Entitlement{e}
+	surviving, err := grantSvc.resolveSurvivingGrantECs(ctx, sub, removed)
+	if err != nil {
+		return err
+	}
+
+	return grantSvc.applyEntitlementGrantChange(ctx, &GrantChangeConfig{
+		sub:                   sub,
+		entitlementsToRemove:  removed,
+		survivingECsByFeature: surviving,
+		entitlementChangeAt:   time.Now().UTC(),
+	})
 }
 
 func quotaUnchanged(a, b *decimal.Decimal) bool {

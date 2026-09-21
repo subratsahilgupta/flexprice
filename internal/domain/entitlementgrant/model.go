@@ -22,13 +22,13 @@ type EntitlementGrant struct {
 	Measure             types.EntitlementGrantMeasure         `json:"measure"`
 	// Unlimited windows track usage but can never be exhausted and never bill.
 	// Quota is meaningless when set — read it only through the methods below.
-	Unlimited bool            `json:"unlimited"`
-	Quota     decimal.Decimal `json:"quota"`
-	Usage               decimal.Decimal                       `json:"usage"`
-	ValidFrom           time.Time                             `json:"valid_from"`
-	ValidTo             time.Time                             `json:"valid_to"`
-	GrantStatus         types.EntitlementGrantStatus          `json:"grant_status"`
-	LastComputedAt      *time.Time                            `json:"last_computed_at,omitempty"`
+	Unlimited      bool                         `json:"unlimited"`
+	Quota          decimal.Decimal              `json:"quota"`
+	Usage          decimal.Decimal              `json:"usage"`
+	ValidFrom      time.Time                    `json:"valid_from"`
+	ValidTo        time.Time                    `json:"valid_to"`
+	GrantStatus    types.EntitlementGrantStatus `json:"grant_status"`
+	LastComputedAt *time.Time                   `json:"last_computed_at,omitempty"`
 	// QuotaCrossedAt is set once, when the evaluator first sees usage >= quota
 	// It holds the evaluation time, not the exact event-level crossing.
 	QuotaCrossedAt *time.Time     `json:"quota_crossed_at,omitempty"`
@@ -50,6 +50,14 @@ func (g *EntitlementGrant) FeatureID() string {
 		return ""
 	}
 	return g.ScopeEntityID
+}
+
+func (g *EntitlementGrant) GetID() string {
+	if g == nil {
+		return ""
+	}
+
+	return g.ID
 }
 
 // Window returns the half-open [valid_from, valid_to) grant window.
@@ -131,10 +139,16 @@ func (g *EntitlementGrant) Validate() error {
 			WithHint("Set measure to quantity or amount").
 			Mark(ierr.ErrValidation)
 	}
-	// Unlimited windows carry no meaningful quota, so the positivity rule only
-	// applies to bounded ones.
-	if !g.Unlimited && !g.Quota.IsPositive() {
-		return ierr.NewError("quota must be positive").
+	// An unlimited window has no ceiling, so its quota is never read: Remaining,
+	// Overage and IsExhausted all short-circuit on the flag before reaching it. It is
+	// not always zero either — a pool goes unlimited when any contributor is, while
+	// still summing the bounded ones — so there is nothing here to check.
+	//
+	// For a bounded window zero is legal: a successor whose predecessor was spent
+	// carries no balance and exists only to hold the slot on a live config. Negative
+	// never is.
+	if !g.Unlimited && g.Quota.IsNegative() {
+		return ierr.NewError("quota cannot be negative").
 			WithReportableDetails(map[string]interface{}{"quota": g.Quota.String()}).
 			Mark(ierr.ErrValidation)
 	}
