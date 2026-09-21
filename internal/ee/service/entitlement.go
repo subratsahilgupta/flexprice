@@ -231,13 +231,10 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 	return response, nil
 }
 
-// deriveGrantConfig puts every new metered entitlement on the grant model, so the
-// legacy set stops growing while the backfill deals with what is already there.
-// usage_limit becomes the quota, its absence an unlimited allowance, and the window
-// is the billing period — the cadence that reproduces legacy behaviour exactly.
-//
-// Meters and prices that cannot carry an allowance (MAX, bucketed, tiered) keep the
-// legacy shape: forcing a grant there would leave them with no entitlement at all.
+// deriveGrantConfig puts every new metered entitlement on the grant model so the legacy
+// set stops growing. usage_limit becomes the quota, its absence an unlimited allowance,
+// and the billing period the cadence — which reproduces legacy behaviour exactly.
+// Meters a grant cannot cover keep the legacy shape rather than lose their entitlement.
 func (s *entitlementService) deriveGrantConfig(
 	ctx context.Context,
 	e *entitlement.Entitlement,
@@ -894,10 +891,8 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 	return response, nil
 }
 
-// resettleGrantWindows re-cuts a customer's live windows when an edit moved the
-// allowance. Subscription-scoped rows only — re-cutting on a plan edit would rewrite the
-// live window of every subscriber at once — and only on the amount, since a cadence or
-// stacking change reshapes windows rather than repricing one.
+// resettleGrantWindows re-cuts one customer's live windows after an allowance edit.
+// Subscription rows only: a plan edit would rewrite every subscriber's window at once.
 func (s *entitlementService) resettleGrantWindows(
 	ctx context.Context,
 	e *entitlement.Entitlement,
@@ -939,13 +934,10 @@ func (s *entitlementService) reissueGrantWindows(
 	return err
 }
 
-// assertSingleContributor refuses a subscription-scoped write to a feature that several
-// entitlements already feed. The dashboard offers one allowance field per feature, so with
-// more than one contributor that field has no single entitlement to address: additive pools
-// them into one window, making the resulting allowance larger than the number typed, and
-// parallel gives each its own window with nothing to say which one was meant.
-//
-// Lifting this needs a per-window editing surface, not a change here.
+// assertSingleContributor refuses an override where several entitlements already feed the
+// feature. One allowance field cannot address more than one of them: additive pools them,
+// so the customer lands above the number typed, and parallel leaves it ambiguous which
+// was meant. Lifting this needs per-allowance editing, not a change here.
 func (s *entitlementService) assertSingleContributor(ctx context.Context, e *entitlement.Entitlement) error {
 	if !isSubscriptionOverride(e) {
 		return nil
@@ -989,9 +981,8 @@ func (s *entitlementService) assertSingleContributor(ctx context.Context, e *ent
 		Mark(ierr.ErrValidation)
 }
 
-// isSubscriptionOverride reports whether the entitlement replaces another one for a
-// single subscription: a plan or addon row is a rule for everyone on it, and a net-new
-// subscription row replaces nothing.
+// isSubscriptionOverride: replaces another entitlement for one subscription. A plan or
+// addon row is a rule for everyone on it; a net-new subscription row replaces nothing.
 func isSubscriptionOverride(e *entitlement.Entitlement) bool {
 	return e != nil &&
 		e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION &&
@@ -1009,9 +1000,8 @@ func (s *entitlementService) takeOverGrantWindowsFromParent(ctx context.Context,
 	return s.reissueGrantWindows(ctx, e, delta, e.IsUnlimitedGrant(), "override_created")
 }
 
-// settleGrantWindowsForDeletedEC settles whatever the deleted EC was feeding. An override
-// hands its allowance back to the parent; anything else pooled with the survivors, so the
-// pool is re-cut without it — the same path an addon detach takes.
+// settleGrantWindowsForDeletedEC hands an override's allowance back to its parent;
+// anything else pooled, so the pool re-cuts without it — the addon detach path.
 func (s *entitlementService) settleGrantWindowsForDeletedEC(ctx context.Context, e *entitlement.Entitlement) error {
 	if e == nil || e.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION || !e.HasGrantConfig() {
 		return nil
@@ -1163,10 +1153,8 @@ func (s *entitlementService) publishSystemEvent(ctx context.Context, eventName t
 	}
 }
 
-// validateEntitlementAgainstBucketedPrices is the reverse direction: reject an
-// entitlement when a live price on the feature's meter is already bucketed.
-// grantBased distinguishes the two rules — grants are rejected for any bucketed
-// meter, plain entitlements only for MAX.
+// validateEntitlementAgainstBucketedPrices rejects an entitlement when a live price on
+// the meter is bucketed. Grants are rejected for any of them, legacy only for MAX.
 func (s *entitlementService) validateEntitlementAgainstBucketedPrices(ctx context.Context, m *meter.Meter, grantBased bool) error {
 	if m == nil || m.ID == "" || s.PriceRepo == nil {
 		return nil

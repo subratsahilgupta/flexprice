@@ -275,9 +275,8 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 	return err
 }
 
-// origin is what moved these windows, for the successor's metadata. Addon changes are
-// the common case and the ones that name themselves; a deleted entitlement builds its
-// config by hand and says so.
+// origin labels the successor's metadata. Addon changes are the default; a deleted
+// entitlement builds its config by hand and names itself.
 func (c *GrantChangeConfig) origin() grantProrationSource {
 	if c == nil || c.entitlementChangeOrigin == "" {
 		return grantProrationSourceAddonsModify
@@ -328,9 +327,6 @@ func (s *subscriptionGrantService) removalClosures(
 		// Leave the window to run out: granted quota is never taken back, and the tick only
 		// considers features that still have live configs, so nothing will open beside it.
 		// Basically, do nothing and leave the grant alone.
-		//
-		// A spent pool needs no special case here any more: a zero-quota successor is legal
-		// now, so the slot is held by the row itself rather than by declining to move it.
 		if len(cfg.survivingECsByFeature[featureID]) == 0 {
 			s.Logger.Info(ctx, "leaving the entitlement grant window open; the last config on the feature left",
 				"subscription_id", cfg.sub.ID,

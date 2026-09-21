@@ -123,9 +123,8 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 	return closed, nil
 }
 
-// liveGrantsForFeature is the feature's windows that are open at `at` on one
-// subscription. Read here rather than passed in: a re-cut has to act on the windows as
-// they stand when it runs, not on a list a caller assembled earlier.
+// liveGrantsForFeature reads the windows rather than taking them: a re-cut has to act
+// on what is open when it runs, not on a list a caller assembled earlier.
 func (s *entitlementGrantService) liveGrantsForFeature(
 	ctx context.Context,
 	subscriptionID, featureID string,
@@ -147,8 +146,7 @@ func (s *entitlementGrantService) liveGrantsForFeature(
 }
 
 // ReissueEntitlementGrants closes what is live and opens a successor for the rest of the
-// window, the same shape an addon attach uses: each row measures and bills its own span,
-// so nothing has to be excluded from the fold and no usage figure is carried.
+// window. Each row measures its own span, so no usage figure is ever carried.
 func (s *entitlementGrantService) ReissueEntitlementGrants(
 	ctx context.Context,
 	req *dto.ReissueEntitlementGrantsRequest,
@@ -556,9 +554,8 @@ type grantCandidate struct {
 	startDate time.Time
 }
 
-// openMissingGrants opens missing grants per feature: parallel = one grant per
-// EC; additive = one grant on the primary EC with quota = Σ quotas. Grants are
-// immutable, so config changes take effect when the open window ends.
+// openMissingGrants: parallel = one grant per EC, additive = one on the primary EC with
+// the quotas summed. A config change only lands when the open window ends.
 func (s *entitlementGrantService) openMissingGrants(
 	ctx context.Context,
 	subs []*subscription.Subscription,
@@ -582,9 +579,8 @@ func (s *entitlementGrantService) openMissingGrants(
 	return opened, nil
 }
 
-// eligibleGrantConfigsByFeature returns the sub's grant-config ECs grouped by
-// feature, skipping invalid durations and durations >= cycle length (a
-// cycle-long grant is just the cycle quota — usage_reset_period's job).
+// eligibleGrantConfigsByFeature skips durations >= the cycle: a cycle-long grant is
+// just the cycle quota, which is usage_reset_period's job.
 func (s *entitlementGrantService) eligibleGrantConfigsByFeature(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -659,11 +655,9 @@ func grantCandidatesForFeature(featureECs []*entitlement.Entitlement) []grantCan
 	return []grantCandidate{{ec: primary, quota: total, unlimited: unlimited, startDate: earliest}}
 }
 
-// openIfSlotFree opens grants on the candidate's slot until it is caught up:
-// after a backlog (delayed evaluation, cycle rollover lag) a single tick walks
-// every missed usage-anchored window up to `at` instead of needing one future
-// event per window. Terminates because each window strictly advances the
-// covered range, bounded by cycle_end.
+// openIfSlotFree walks the slot forward until it is caught up, so one tick clears a
+// backlog instead of needing an event per missed window. Each pass advances the covered
+// range, so it terminates at cycle_end.
 func (s *entitlementGrantService) openIfSlotFree(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -755,11 +749,10 @@ func (s *entitlementGrantService) openOneGrant(
 	return s.EntitlementGrantRepo.FindLastBySlot(ctx, ec.ID, sub.CustomerID, sub.ID)
 }
 
-// computeGrantWindow derives [valid_from, valid_to): the window opens at the
-// first usage event past the covered range; no uncovered usage → no window.
-// The 1h minimum is best-effort: the window stretches to cycle_end rather
-// than leave a sub-1h stub behind it, but a forced tail may itself be short —
-// coverage beats window-length aesthetics.
+// computeGrantWindow derives [valid_from, valid_to) from the first usage past the
+// covered range; no uncovered usage means no window. The 1h minimum is best-effort: a
+// window stretches to cycle_end rather than leave a stub, but a forced tail may be
+// short anyway — coverage beats tidy lengths.
 func (s *entitlementGrantService) computeGrantWindow(
 	ctx context.Context,
 	candidate grantCandidate,
@@ -859,9 +852,7 @@ func (s *entitlementGrantService) computeGrantWindow(
 	return validFrom, validTo, true, nil
 }
 
-// earliestUncoveredUsage returns the first event timestamp in
-// [coveredUntil, until) for the EC's meter across the subscription's
-// customers, or nil when none.
+// earliestUncoveredUsage is the first event in [coveredUntil, until), or nil.
 func (s *entitlementGrantService) earliestUncoveredUsage(
 	ctx context.Context,
 	meta *grantEvalMeta,
@@ -900,12 +891,8 @@ func (s *entitlementGrantService) earliestUncoveredUsage(
 	return timestamp, nil
 }
 
-// validateEntitlementGrantShape enforces grant-config rules that need the
-// meter, its prices, and sibling ECs. No-op without a grant config. Rejections:
-//   - MAX meters: a peak can't be decremented against a per-window quota.
-//   - Bucketed meters: a grant window slices buckets ambiguously.
-//   - Tiered prices on amount lane: tiers walk with cumulative cycle qty, not a window.
-//   - Sibling coherence: one mode + one measure per feature; additive shares duration.
+// validateEntitlementGrantShape enforces the rules that need the meter, its prices and
+// the sibling ECs. No-op without a grant config; each rejection explains itself.
 func (s *entitlementService) validateEntitlementGrantShape(
 	ctx context.Context,
 	e *entitlement.Entitlement,
@@ -931,9 +918,8 @@ func (s *entitlementService) validateEntitlementGrantShape(
 	return nil
 }
 
-// grantMeterEligibility reports why this meter cannot carry a grant-based
-// entitlement, or nil when it can. measure is only used to enrich the error
-// details; every rule here applies to both lanes.
+// grantMeterEligibility reports why this meter cannot carry a grant. measure only
+// enriches the error; every rule applies to both lanes.
 func (s *entitlementService) grantMeterEligibility(
 	ctx context.Context,
 	m *meter.Meter,
@@ -1019,9 +1005,8 @@ func sharesNoResolvedSet(sib, e *entitlement.Entitlement) bool {
 		sib.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION
 }
 
-// validateGrantSiblingCoherence keeps all grant ECs on a feature mutually
-// consistent: one aggregation mode, one measure, and for additive groups one
-// duration (their quotas sum into a single window).
+// validateGrantSiblingCoherence: one aggregation mode and measure per feature, and one
+// duration across an additive group, whose quotas share a single window.
 func (s *entitlementService) validateGrantSiblingCoherence(ctx context.Context, e *entitlement.Entitlement) error {
 	filter := types.NewNoLimitEntitlementFilter()
 	filter.FeatureIDs = []string{e.FeatureID}
@@ -1112,12 +1097,8 @@ func defaultedMode(m types.EntitlementAggregationMode) types.EntitlementAggregat
 	return m
 }
 
-// GrantStateByFeature returns the live grant state for a subscription, keyed by
-// feature id. Covers every window overlapping the current billing period —
-// closed ones included — so the overage total matches what billing will fold.
-// A feature with no grant config simply has no entry.
-// remainingOf is the read-side shape: null for an unlimited window, since a number
-// there reads as a balance the customer does not have.
+// remainingOf is null for an unlimited window: a number there reads as a balance the
+// customer does not have.
 func remainingOf(g *entitlementgrant.EntitlementGrant) *decimal.Decimal {
 	remaining, bounded := g.Remaining()
 	if !bounded {
@@ -1126,6 +1107,8 @@ func remainingOf(g *entitlementgrant.EntitlementGrant) *decimal.Decimal {
 	return &remaining
 }
 
+// GrantStateByFeature is the current period's ledger for a subscription, keyed by
+// feature id. Spent allowances included; a feature with no grant config has no entry.
 func (s *entitlementGrantService) GrantStateByFeature(
 	ctx context.Context,
 	sub *subscription.Subscription,
