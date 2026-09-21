@@ -87,22 +87,41 @@ func anyPendingCheckoutSession(
 	customerID string,
 	subscriptionID string,
 ) ([]*domainCheckout.CheckoutSession, error) {
-	filter := &types.CheckoutSessionFilter{
+	filter := pendingCheckoutSessionFilter(customerID, subscriptionID,
+		types.CheckoutActionModifySubscription, types.CheckoutActionAddAddon)
+	filter.Limit = lo.ToPtr(1)
+
+	return sp.CheckoutSessionRepo.List(ctx, filter)
+}
+
+// pendingAddAddonCheckoutSessions returns EVERY open addon checkout on the subscription.
+// A scan for one association has to see all of them, not whichever row came back first.
+func pendingAddAddonCheckoutSessions(
+	ctx context.Context,
+	sp ServiceParams,
+	customerID string,
+	subscriptionID string,
+) ([]*domainCheckout.CheckoutSession, error) {
+	return sp.CheckoutSessionRepo.List(ctx,
+		pendingCheckoutSessionFilter(customerID, subscriptionID, types.CheckoutActionAddAddon))
+}
+
+// pendingCheckoutSessionFilter matches the subscription's checkouts that are still open.
+func pendingCheckoutSessionFilter(
+	customerID string,
+	subscriptionID string,
+	actions ...types.CheckoutAction,
+) *types.CheckoutSessionFilter {
+	return &types.CheckoutSessionFilter{
 		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
 		CustomerIDs: []string{customerID},
-		Actions: []types.CheckoutAction{
-			types.CheckoutActionModifySubscription,
-			types.CheckoutActionAddAddon,
-		},
+		Actions:     actions,
 		CheckoutStatuses: []types.CheckoutStatus{
 			types.CheckoutStatusInitiated,
 			types.CheckoutStatusPending,
 		},
 		Configuration: &types.CheckoutConfigurationFilter{SubscriptionID: subscriptionID},
 	}
-	filter.Limit = lo.ToPtr(1)
-
-	return sp.CheckoutSessionRepo.List(ctx, filter)
 }
 
 // pendingCheckoutSessionForAssociation reports whether an outstanding checkout already gates this
@@ -113,7 +132,7 @@ func (s *subscriptionService) pendingCheckoutSessionForAssociation(
 	sub *subscription.Subscription,
 	associationID string,
 ) (bool, error) {
-	sessions, err := anyPendingCheckoutSession(ctx, s.ServiceParams, sub.CustomerID, sub.ID)
+	sessions, err := pendingAddAddonCheckoutSessions(ctx, s.ServiceParams, sub.CustomerID, sub.ID)
 	if err != nil {
 		return false, err
 	}

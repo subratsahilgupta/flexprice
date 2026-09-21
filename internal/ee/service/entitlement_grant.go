@@ -175,10 +175,16 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 		}
 
 		if quota.IsNegative() {
-			s.Logger.Info(ctx, "skipping entitlement grant open; resulting quota is negative",
-				"feature_id", req.FeatureID,
-				"quota", quota.String())
-			continue
+			// Cold start has no slot to hold, so nothing is lost by skipping. A successor
+			// does: skip it and the closed predecessor leaves the slot unheld, and the tick
+			// reissues a full allowance for the feature. Clamp and hold it instead.
+			if req.Closed == nil {
+				s.Logger.Info(ctx, "skipping entitlement grant open; resulting quota is negative",
+					"feature_id", req.FeatureID,
+					"quota", quota.String())
+				continue
+			}
+			quota = decimal.Zero
 		}
 
 		// A spent predecessor hands forward nothing. The successor still has to exist —

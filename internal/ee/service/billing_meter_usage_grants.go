@@ -151,13 +151,22 @@ func (s *billingService) adjustMeterUsageGrants(
 
 	res := adjustMeterUsageGrantsResult{Measure: measure, PerECOverage: perECOverage}
 	if !grantWindowsOverlap(grants) {
-		// Disjoint windows: every event falls in exactly one, so the snapshot sum is
-		// exact. Distinct EC ids do not imply overlap — a pooled slot re-keyed by an
-		// addon change tiles the cycle in sequence across two configs.
+		// Disjoint => an event lands in exactly one window, so the overages just add up.
+		// Two ECs is NOT overlap: a detach re-keys the pooled slot and the cycle tiles.
+		//   EG1 [t0,t1) EC1 Q=1000 U=1200 => over 200
+		//   EG2 [t1,t2) EC2 Q= 800 U= 900 => over 100
+		//   bill 300 — the 1200 and the 900 are different events
 		for _, total := range perECOverage {
 			res.Overage = res.Overage.Add(total)
 		}
 	} else {
+		// Overlapping => parallel ECs meter the SAME events against their own quotas,
+		// so adding the overages bills one unit twice.
+		//   EG1 [t0,t2) EC1 Q=500 U=900 => over 400
+		//   EG2 [t0,t2) EC2 Q=400 U=900 => over 500
+		//   adding gives 900 for 900 units of usage — every unit billed twice.
+		// Measure the merged overage window instead: 900 units, crossing at 600,
+		// bills the 300 spent past it, once.
 		overage, err := s.mergedOverage(ctx, m, sub, extCustomerIDs, grants, measure)
 		if err != nil {
 			return adjustMeterUsageGrantsResult{}, false, err
@@ -251,9 +260,10 @@ func (s *billingService) mergedOverage(
 	return total, nil
 }
 
-// grantWindowsOverlap reports whether any two grant windows share an instant. Only
-// then can one event be counted against more than one quota, which is what the
-// merged-window measurement exists to prevent.
+// grantWindowsOverlap reports whether any two grant windows share an instant — the
+// only case where one event can be counted against two quotas.
+// [t0,t1) + [t1,t2) => false, a re-keyed pool tiling the cycle.
+// [t0,t2) + [t0,t2) => true, parallel ECs on one feature.
 func grantWindowsOverlap(grants []*entitlementgrant.EntitlementGrant) bool {
 	windows := make([]timeInterval, 0, len(grants))
 	for _, g := range grants {

@@ -938,6 +938,54 @@ func (s *SubscriptionServiceSuite) TestGrantBatch_Remove_SpentPool_RekeysWithZer
 	s.True(successor.QuotaCrossedAt.Equal(successor.ValidFrom))
 }
 
+// A negative resulting quota is unreachable through the change paths today — every delta is
+// positive and Remaining() is clamped — but if one ever goes negative the successor must still
+// be written. Skipping it leaves the closed predecessor's slot unheld, and the tick reissues a
+// full allowance for the feature. Cold start has no slot to hold, so it still skips.
+func (s *SubscriptionServiceSuite) TestOpenGrants_NegativeQuota_ClampedForSuccessorSkippedForColdStart() {
+	featureID := s.seedGrantFeature("feat_neg_quota")
+	planEC := s.seedGrantEC("ent_neg_plan", featureID, types.ENTITLEMENT_ENTITY_TYPE_PLAN, s.testData.plan.ID, 1000, "")
+
+	spent := s.seedCycleGrant("ent_neg_plan", featureID, 1000)
+	spent.Usage = decimal.NewFromInt(1000)
+	_, err := s.GetStores().EntitlementGrantRepo.Update(s.GetContext(), spent)
+	s.Require().NoError(err)
+
+	boundary := s.testData.now
+	closed := entitlementgrant.NewEntitlementGrantBuilder(spent).
+		WithWindow(spent.ValidFrom, boundary).
+		Build()
+	negative := entitlementgrant.NewEntitlementGrantBuilder(spent).
+		WithQuota(decimal.NewFromInt(-5)).
+		WithWindow(boundary, spent.ValidTo).
+		Build()
+
+	grantSvc := NewEntitlementGrantService(s.service.(*subscriptionService).ServiceParams)
+
+	opened, err := grantSvc.OpenFeatureBasedEntitlementGrants(s.GetContext(),
+		[]OpenFeatureBasedEntitlementGrantsRequest{{
+			FeatureID:   featureID,
+			Closed:      closed,
+			New:         negative,
+			ExistingECs: []*entitlement.Entitlement{planEC},
+		}})
+	s.Require().NoError(err)
+	s.Require().Len(opened, 1, "a successor must still hold the slot")
+	s.True(opened[0].Quota.IsZero(), "the negative balance must clamp to zero, got %s", opened[0].Quota)
+	s.Equal("ent_neg_plan", opened[0].EntitlementConfigID)
+	s.Require().NotNil(opened[0].QuotaCrossedAt, "a zero-quota window bills from its first instant")
+
+	// Cold start: no predecessor, so there is no slot to hold and nothing to preserve.
+	coldStart, err := grantSvc.OpenFeatureBasedEntitlementGrants(s.GetContext(),
+		[]OpenFeatureBasedEntitlementGrantsRequest{{
+			FeatureID:   featureID,
+			New:         negative,
+			ExistingECs: []*entitlement.Entitlement{planEC},
+		}})
+	s.Require().NoError(err)
+	s.Empty(coldStart, "a cold start with a negative quota writes nothing")
+}
+
 // What actually stops next cycle's window is the association, not the grant pass: a
 // cancelled association drops out of GetActiveAddonAssociation, so the EC no longer
 // feeds the feature. This pins WHEN that happens for a period-end removal.
