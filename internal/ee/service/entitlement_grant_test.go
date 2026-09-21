@@ -2511,11 +2511,11 @@ func (s *EntitlementGrantSuite) TestGrantState_CapsWindowsAcrossSlots() {
 	state := states[fx.ec.FeatureID]
 	s.Require().NotNil(state)
 
-	byEC := map[string][]*dto.GrantWindowState{}
-	for _, w := range state.Windows {
+	byEC := map[string][]*dto.GrantAllowanceState{}
+	for _, w := range state.Allowances {
 		byEC[w.EntitlementID] = append(byEC[w.EntitlementID], w)
 	}
-	s.Len(state.Windows, GrantWindowsPerRead, "the budget bounds the whole response")
+	s.Len(state.Allowances, GrantWindowsPerRead, "the budget bounds the whole response")
 	s.Len(byEC, 2, "both entitlements keep a series")
 	for ecID, windows := range byEC {
 		s.NotEmpty(windows, "no slot comes back empty: %s", ecID)

@@ -442,14 +442,11 @@ func (r *entitlementGrantRepository) ListLatestWindows(
 	if len(configIDs) == 0 {
 		return nil, nil
 	}
-	// GROUP BY returns no order of its own, and the split below is uneven, so sort to
-	// keep the same slots favoured between calls.
+
 	sort.Strings(configIDs)
 
 	out := make([]*domainGrant.EntitlementGrant, 0, total)
 	for i, configID := range configIDs {
-		// valid_from is the unique index's last column, so this is a backward index
-		// scan: the cost is the rows asked for, however much history the slot has.
 		rows, err := applyEntitlementGrantFilter(r.scoped(ctx), filter).
 			Where(entitlementgrant.EntitlementConfigID(configID)).
 			Order(ent.Desc(entitlementgrant.FieldValidFrom)).
@@ -468,10 +465,6 @@ func (r *entitlementGrantRepository) ListLatestWindows(
 	return out, nil
 }
 
-// windowsForSlot splits a budget of total windows across slots slots, giving the
-// remainder to the earliest ones. Every slot gets at least one even when that overruns
-// the budget: a slot returning nothing is indistinguishable from a slot with no history,
-// and the reader cannot tell which it is looking at.
 func windowsForSlot(total, slots, index int) int {
 	if slots <= 0 {
 		return 0

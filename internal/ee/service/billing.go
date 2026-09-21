@@ -2996,7 +2996,7 @@ func (s *billingService) attachGrantState(
 				byFeature[featureID] = state
 				continue
 			}
-			existing.Windows = append(existing.Windows, state.Windows...)
+			existing.Allowances = append(existing.Allowances, state.Allowances...)
 		}
 	}
 
@@ -3390,7 +3390,7 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 			anyUnlimited := false
 			haveFigures := false
 
-			active := lo.Filter(gs.Windows, func(w *dto.GrantWindowState, _ int) bool { return w != nil && w.IsActive })
+			active := lo.Filter(gs.Allowances, func(w *dto.GrantAllowanceState, _ int) bool { return w != nil && w.IsActive })
 			if len(active) > 0 {
 				// A window is open: report it, so usage and quota describe the same period.
 				for _, w := range active {
@@ -3403,11 +3403,11 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 					grantQuota = grantQuota.Add(w.Quota)
 				}
 				haveFigures = true
-			} else if len(gs.Windows) > 0 {
+			} else if len(gs.Allowances) > 0 {
 				// Between windows there is no live allowance, but the period still has
 				// usage. Fall back to the ledger so both halves of the ratio cover the
 				// same span rather than reporting zero against a per-window quota.
-				for _, w := range gs.Windows {
+				for _, w := range gs.Allowances {
 					if w.Unlimited {
 						anyUnlimited = true
 					}

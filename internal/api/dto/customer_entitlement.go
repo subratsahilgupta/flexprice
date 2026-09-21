@@ -47,19 +47,21 @@ type AggregatedFeature struct {
 	Sources     []*EntitlementSource   `json:"sources"`
 }
 
-// GrantState is the runtime half of a grant-backed entitlement: what the
-// customer has left right now, and what led up to it.
+// GrantState is the runtime half of a grant-backed entitlement: what the customer
+// can spend right now, and what led up to it.
 type GrantState struct {
-	// Windows is the current billing period's ledger, closed windows included and
-	// oldest first, capped at the most recent few per entitlement — an hourly
-	// allowance on a monthly cycle has hundreds. The live balance is the entry (or
+	// Allowances is the current billing period's ledger, spent ones included and
+	// oldest first, capped at a handful — an hourly allowance on a monthly cycle
+	// produces hundreds. What the customer can spend right now is the entry (or
 	// entries, for parallel features) with IsActive=true; there is at most one per
-	// bucket, and none between windows.
-	Windows []*GrantWindowState `json:"windows"`
+	// entitlement, and none in the gap between one allowance ending and the next
+	// starting.
+	Allowances []*GrantAllowanceState `json:"allowances"`
 }
 
-// GrantWindowState is one materialized grant window.
-type GrantWindowState struct {
+// GrantAllowanceState is one span of a grant-backed entitlement: what the customer
+// was given over [ValidFrom, ValidTo) and what they spent against it.
+type GrantAllowanceState struct {
 	GrantID       string                        `json:"grant_id"`
 	EntitlementID string                        `json:"entitlement_id"`
 	Measure       types.EntitlementGrantMeasure `json:"measure"`

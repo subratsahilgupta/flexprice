@@ -1159,11 +1159,11 @@ func (s *entitlementGrantService) GrantStateByFeature(
 		featureID := g.FeatureID()
 		state, ok := out[featureID]
 		if !ok {
-			state = &dto.GrantState{Windows: make([]*dto.GrantWindowState, 0, 4)}
+			state = &dto.GrantState{Allowances: make([]*dto.GrantAllowanceState, 0, 4)}
 			out[featureID] = state
 		}
 
-		window := &dto.GrantWindowState{
+		window := &dto.GrantAllowanceState{
 			GrantID:        g.ID,
 			EntitlementID:  g.EntitlementConfigID,
 			Measure:        g.Measure,
@@ -1177,12 +1177,12 @@ func (s *entitlementGrantService) GrantStateByFeature(
 			LastComputedAt: g.LastComputedAt,
 			IsActive:       !g.ValidFrom.After(at) && g.ValidTo.After(at),
 		}
-		state.Windows = append(state.Windows, window)
+		state.Allowances = append(state.Allowances, window)
 	}
 
 	// Oldest first: the ledger reads as a timeline.
 	for _, state := range out {
-		sort.Slice(state.Windows, func(i, j int) bool { return state.Windows[i].ValidFrom.Before(state.Windows[j].ValidFrom) })
+		sort.Slice(state.Allowances, func(i, j int) bool { return state.Allowances[i].ValidFrom.Before(state.Allowances[j].ValidFrom) })
 	}
 
 	return out, nil
