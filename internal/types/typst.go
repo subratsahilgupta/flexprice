@@ -11,8 +11,8 @@ type TemplateName string
 const (
 	// TemplateInvoiceDefault is the default invoice template
 	TemplateInvoiceDefault TemplateName = "invoice.typ"
-	// TemplateInvoiceDetlaControl is the Delta IBT tenant's cost-breakdown invoice template
-	TemplateInvoiceDetlaControl TemplateName = "detla_control_invoice.typ"
+	// TemplateInvoiceCostBreakdown is a simplified pre-invoice cost-breakdown template
+	TemplateInvoiceCostBreakdown TemplateName = "cost_breakdown.typ"
 )
 
 func (t TemplateName) String() string {
@@ -22,7 +22,7 @@ func (t TemplateName) String() string {
 func (t TemplateName) Validate() error {
 	allowed := []TemplateName{
 		TemplateInvoiceDefault,
-		TemplateInvoiceDetlaControl,
+		TemplateInvoiceCostBreakdown,
 	}
 	if !lo.Contains(allowed, t) {
 		return ierr.NewError("invalid template name").

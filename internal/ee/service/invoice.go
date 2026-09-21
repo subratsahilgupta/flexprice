@@ -3205,7 +3205,7 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 			data.Notes = notes
 		}
 
-		// PO number for templates that display it (e.g. detla_control_invoice)
+		// PO number for templates that display it (e.g. cost_breakdown)
 		if po, ok := inv.Metadata["po_number"]; ok {
 			data.PONumber = po
 		}
