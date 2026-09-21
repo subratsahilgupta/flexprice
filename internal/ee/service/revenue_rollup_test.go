@@ -1182,3 +1182,218 @@ func (s *RevenueRollupSuite) TestGetRevenueAnalytics_EventSourceGrouping() {
 	s.True(bySource["sdk"].Equal(decimal.NewFromInt(180)), "15 sdk days x $12, got %s", bySource["sdk"])
 	s.True(bySource[""].Equal(decimal.NewFromInt(170)), "fixed $30 + true-up $140 unattributed, got %s", bySource[""])
 }
+
+// seedLineCommitmentSubscription builds a subscription exercising LINE-LEVEL
+// commitments (no subscription-level commitment): three $0.01/call usage
+// lines — A plain with $60 of usage; B with a $50 amount commitment,
+// true-up enabled and NO events at all (the engine bills the full commitment
+// as a folded-in true-up); C with a $30 commitment, 2x overage factor and
+// $60 of usage (bills $30 within + $60 factored overage on the same line).
+func (s *RevenueRollupSuite) seedLineCommitmentSubscription(ctx context.Context) {
+	s.periodStart = time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	periodEndExclusive := s.periodStart.AddDate(0, 0, 30)
+	s.periodEnd = periodEndExclusive
+
+	cust := &customer.Customer{
+		ID:         "cust_licom",
+		ExternalID: "ext_licom",
+		Name:       "Line Commitment Example",
+		Email:      "licom@example.com",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+
+	pl := &plan.Plan{
+		ID:        "plan_licom",
+		Name:      "Line Commitment Plan",
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, pl))
+
+	mkMeterAndPrice := func(key string) *price.Price {
+		mtr := &meter.Meter{
+			ID:        "meter_licom_" + key,
+			Name:      "Calls " + key,
+			EventName: "call_licom_" + key,
+			Aggregation: meter.Aggregation{
+				Type: types.AggregationSum,
+			},
+			BaseModel: types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, mtr))
+		p := &price.Price{
+			ID:                 "price_licom_" + key,
+			Amount:             decimal.RequireFromString("0.01"),
+			Currency:           "usd",
+			EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+			EntityID:           pl.ID,
+			Type:               types.PRICE_TYPE_USAGE,
+			BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+			BillingPeriodCount: 1,
+			BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+			BillingCadence:     types.BILLING_CADENCE_RECURRING,
+			InvoiceCadence:     types.InvoiceCadenceArrear,
+			MeterID:            mtr.ID,
+			BaseModel:          types.GetDefaultBaseModel(ctx),
+		}
+		s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+		return p
+	}
+	priceA := mkMeterAndPrice("a")
+	priceB := mkMeterAndPrice("b")
+	priceC := mkMeterAndPrice("c")
+
+	s.sub = &subscription.Subscription{
+		ID:                 "sub_licom",
+		PlanID:             pl.ID,
+		CustomerID:         cust.ID,
+		StartDate:          s.periodStart,
+		BillingAnchor:      periodEndExclusive,
+		CurrentPeriodStart: s.periodStart,
+		CurrentPeriodEnd:   periodEndExclusive,
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+
+	mkLineItem := func(p *price.Price, commitment *decimal.Decimal, overageFactor *decimal.Decimal) *subscription.SubscriptionLineItem {
+		li := &subscription.SubscriptionLineItem{
+			ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+			SubscriptionID:  s.sub.ID,
+			CustomerID:      s.sub.CustomerID,
+			EntityID:        pl.ID,
+			EntityType:      types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: pl.Name,
+			PriceID:         p.ID,
+			PriceType:       p.Type,
+			MeterID:         p.MeterID,
+			DisplayName:     "Line " + p.ID,
+			Quantity:        decimal.Zero,
+			Currency:        s.sub.Currency,
+			BillingPeriod:   s.sub.BillingPeriod,
+			InvoiceCadence:  types.InvoiceCadenceArrear,
+			StartDate:       s.sub.StartDate,
+			BaseModel:       types.GetDefaultBaseModel(ctx),
+		}
+		if commitment != nil {
+			li.CommitmentType = types.COMMITMENT_TYPE_AMOUNT
+			li.CommitmentAmount = commitment
+			li.CommitmentOverageFactor = overageFactor
+			li.CommitmentTrueUpEnabled = true
+		}
+		return li
+	}
+	lineItems := []*subscription.SubscriptionLineItem{
+		mkLineItem(priceA, nil, nil),
+		mkLineItem(priceB, lo.ToPtr(decimal.NewFromInt(50)), lo.ToPtr(decimal.NewFromInt(1))),
+		mkLineItem(priceC, lo.ToPtr(decimal.NewFromInt(30)), lo.ToPtr(decimal.NewFromInt(2))),
+	}
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, s.sub, lineItems))
+	s.sub.LineItems = lineItems
+
+	// 200 calls/day for 30 days on meters A and C ($60 gross each); B stays
+	// silent so its commitment true-up covers the whole line.
+	var records []*events.MeterUsage
+	for _, key := range []string{"a", "c"} {
+		for d := 0; d < 30; d++ {
+			ts := s.periodStart.AddDate(0, 0, d).Add(12 * time.Hour)
+			id := s.GetUUID()
+			records = append(records, &events.MeterUsage{
+				Event: events.Event{
+					ID:                 id,
+					TenantID:           types.GetTenantID(ctx),
+					EnvironmentID:      types.GetEnvironmentID(ctx),
+					EventName:          "call_licom_" + key,
+					ExternalCustomerID: cust.ExternalID,
+					CustomerID:         cust.ID,
+					Timestamp:          ts,
+					IngestedAt:         ts,
+				},
+				MeterID:    "meter_licom_" + key,
+				QtyTotal:   decimal.NewFromInt(200),
+				UniqueHash: fmt.Sprintf("licom_%s:%s", key, id),
+			})
+		}
+	}
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, records))
+}
+
+// TestE2E_LineItemCommitment: line-level commitments fold true-up/overage into
+// the usage line's own amount — the rollup must split the parts back out and
+// the whole lifecycle (rollup → finalize → flip) must reconcile.
+func (s *RevenueRollupSuite) TestE2E_LineItemCommitment() {
+	ctx := s.ctx
+	s.seedLineCommitmentSubscription(ctx)
+	s.enableRevenueAnalytics(ctx)
+
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(rows)
+
+	bySource := map[types.RevenueSource]decimal.Decimal{}
+	total := decimal.Zero
+	var trueupRows, overageRows []*revenuefact.RevenueFact
+	for _, r := range rows {
+		bySource[r.RevenueSource] = bySource[r.RevenueSource].Add(r.NetAmount)
+		total = total.Add(r.NetAmount)
+		switch r.RevenueSource {
+		case types.RevenueSourceCommitmentTrueup:
+			trueupRows = append(trueupRows, r)
+		case types.RevenueSourceOverage:
+			overageRows = append(overageRows, r)
+		}
+	}
+
+	// A $60 usage + C $30 within-commitment = $90 usage;
+	// B $50 true-up (no events); C ($60-$30)×2 = $60 overage. Total $200.
+	s.True(bySource[types.RevenueSourceUsage].Equal(decimal.NewFromInt(90)), "usage = A $60 + C's $30 within commitment, got %s", bySource[types.RevenueSourceUsage])
+	s.True(bySource[types.RevenueSourceCommitmentTrueup].Equal(decimal.NewFromInt(50)), "B bills its full commitment as true-up, got %s", bySource[types.RevenueSourceCommitmentTrueup])
+	s.True(bySource[types.RevenueSourceOverage].Equal(decimal.NewFromInt(60)), "C's factored overage, got %s", bySource[types.RevenueSourceOverage])
+	s.True(total.Equal(decimal.NewFromInt(200)))
+
+	// The true-up row keeps B's REAL price (no synthetic id — the engine
+	// folded it into the line), booked whole on period end with no usage row.
+	s.Len(trueupRows, 1)
+	s.Equal("price_licom_b", lo.FromPtr(trueupRows[0].PriceID))
+	s.Equal(types.PeriodOnly, trueupRows[0].DecompositionMode)
+	for _, r := range rows {
+		if lo.FromPtr(r.PriceID) == "price_licom_b" {
+			s.Equal(types.RevenueSourceCommitmentTrueup, r.RevenueSource, "a silent meter books no usage rows")
+		}
+	}
+
+	// C's overage splits per day at the commitment boundary on its real price.
+	s.Greater(len(overageRows), 1, "overage must split per day, not book whole-period")
+	for _, r := range overageRows {
+		s.Equal("price_licom_c", lo.FromPtr(r.PriceID))
+		s.Equal(types.Marginal, r.DecompositionMode)
+	}
+
+	// The engine preview agrees with the decomposition.
+	invReq, err := NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription:   s.sub,
+		PeriodStart:    s.periodStart,
+		PeriodEnd:      s.periodEnd,
+		ReferencePoint: types.ReferencePointRevenueFacts,
+	})
+	s.NoError(err)
+	s.True(total.Equal(invReq.Subtotal), "rows must reconcile to the engine preview")
+
+	// Finalize: the flip must consume every provisional row — the parts share
+	// their line's real price, so one FlipToFinal per line covers all sources.
+	inv := s.finalizeCurrentPreview(ctx)
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(ctx, inv.ID))
+	remaining, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.Empty(remaining, "the flip must consume every provisional row")
+	booked, err := s.store.ListByInvoiceID(ctx, inv.ID)
+	s.NoError(err)
+	bookedTotal := decimal.Zero
+	for _, r := range booked {
+		bookedTotal = bookedTotal.Add(r.NetAmount)
+	}
+	s.True(bookedTotal.Equal(inv.Subtotal.Sub(inv.TotalDiscount)), "FINAL rows must sum to the invoice")
+}

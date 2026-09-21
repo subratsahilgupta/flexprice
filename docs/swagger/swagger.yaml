@@ -5934,7 +5934,9 @@ definitions:
         description: |-
           GroupBy dimensions: revenue_source, source (the event source recorded in
           meter_usage; requires customer_ids or subscription_ids), customer_id,
-          subscription_id, price_id, meter_id, currency.
+          subscription_id, price_id, meter_id, currency. revenue_source is always
+          applied — every row says what kind of revenue it is — and requested
+          dimensions are added on top.
         items:
           type: string
         type: array

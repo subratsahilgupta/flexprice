@@ -314,21 +314,24 @@ func (s *revenueService) logReconciliationMismatches(ctx context.Context, subscr
 }
 
 // decomposeUsageRows turns one usage line item into revenue_facts rows,
-// picking one of three ways to place its charge on days:
+// picking one of four ways to place its charge on days:
 //
-//  1. Entitlement-grant billing: the engine charged only the usage that fell
+//  1. Line-level commitment: the engine folded the commitment's true-up or
+//     overage INTO this line's own amount (no sibling line) and left the
+//     breakdown on CommitmentInfo — split the parts out first.
+//  2. Entitlement-grant billing: the engine charged only the usage that fell
 //     inside the grants' quota-crossed windows. Split per day along those
 //     windows — days before any quota was crossed show entitled usage with
-//     zero net. Falls to (3) when the windows carry no usage to shape by.
-//  2. This line has an overage sibling (usage exceeded the commitment, so the
-//     engine emitted a second line for the excess): split the daily curve at
-//     the commitment boundary — days until this line's amount is reached are
-//     billed here, the excess accrues on the sibling's curve, which is stashed
-//     in overageCurves for the sibling's own loop iteration.
-//  3. Otherwise decompositionMode decides: one row per day when daily deltas
+//     zero net. Falls to (4) when the windows carry no usage to shape by.
+//  3. This line has an overage sibling (usage exceeded the subscription-level
+//     commitment, so the engine emitted a second line for the excess): split
+//     the daily curve at the commitment boundary — days until this line's
+//     amount is reached are billed here, the excess accrues on the sibling's
+//     curve, which is stashed in overageCurves for its own loop iteration.
+//  4. Otherwise decompositionMode decides: one row per day when daily deltas
 //     are meaningful for this price/meter, one whole-period row when not.
 //
-// Whole-period is always the last resort: it also catches (1) and (2) when no
+// Whole-period is always the last resort: it also catches (2) and (3) when no
 // daily shape can be derived, marking the pair's stash nil so the sibling
 // falls back the same way.
 func (s *revenueService) decomposeUsageRows(
@@ -356,6 +359,10 @@ func (s *revenueService) decomposeUsageRows(
 
 	wholePeriod := func() []*revenuefact.RevenueFact {
 		return []*revenuefact.RevenueFact{decomposeUsagePeriodOnly(base, itemPeriod)}
+	}
+
+	if rows, handled, err := s.decomposeLineCommitmentRows(ctx, sub, inputs, base, item, itemPeriod, p, m); handled || err != nil {
+		return rows, err
 	}
 
 	if overageAmount, paired := overageAmountBySLI[base.SubLineItemID]; paired {
@@ -424,6 +431,106 @@ func (s *revenueService) decomposeUsageRows(
 		return nil, err
 	}
 	return decomposeUsageMarginal(base, curve), nil
+}
+
+// decomposeLineCommitmentRows handles a usage line whose LINE-LEVEL commitment
+// adjusted its amount in place: the engine bills max(usage, commitment) plus a
+// factored overage on the same line and reports the utilized/true-up/overage
+// breakdown on CommitmentInfo. handled=false means the line carries no such
+// adjustment and the caller's normal paths apply.
+//
+// The parts become rows sharing the line's real price but distinct sources —
+// the within-commitment usage (per day when a curve exists), a period_only
+// commitment_trueup row, and per-day overage rows split at the commitment
+// boundary. Discounts stay on the usage part only, so netting once holds:
+// usage + trueup + overage − discounts == the line's net amount.
+func (s *revenueService) decomposeLineCommitmentRows(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	inputs *rollupInputs,
+	base previewLineItem,
+	item *dto.CreateInvoiceLineItemRequest,
+	itemPeriod revenuePeriod,
+	p *price.Price,
+	m *meter.Meter,
+) (rows []*revenuefact.RevenueFact, handled bool, err error) {
+	info := item.CommitmentInfo
+	if info == nil {
+		return nil, false, nil
+	}
+	trueUp, overage := info.ComputedTrueUpAmount, info.ComputedOverageAmount
+	if !trueUp.IsPositive() && !overage.IsPositive() {
+		return nil, false, nil
+	}
+	within := item.Amount.Sub(trueUp).Sub(overage)
+
+	// Only the usage part keeps the line's discounts; the extra rows carry
+	// zero so nothing double-counts against the line's net amount.
+	partBase := base
+	partBase.LineDiscount, partBase.InvoiceDiscount = decimal.Zero, decimal.Zero
+	usageBase := base
+	usageBase.EngineAmount = within
+
+	// Windowed (per-bucket) commitments true-up bucket by bucket — a single
+	// boundary split would misattribute days, so their usage stays whole-period.
+	marginal := !info.IsWindowed && decompositionMode(p, m) == types.Marginal &&
+		!grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, inputs.grants(m.ID))
+	if marginal {
+		curve, curveErr := s.buildUsageCurve(ctx, usageCurveInput{
+			Price:               p,
+			MeterID:             m.ID,
+			PeriodStart:         itemPeriod.Start,
+			PeriodEnd:           itemPeriod.exclusiveEnd(),
+			EntitlementLimit:    inputs.entitlementLimits[m.ID],
+			ExternalCustomerIDs: inputs.extCustomerIDs,
+			Timezone:            sub.Timezone,
+		})
+		if curveErr != nil {
+			return nil, true, curveErr
+		}
+		switch {
+		case len(curve) == 0 || curve[len(curve)-1].CumulativeGrossQty.IsZero():
+			// No usage at all (the curve walks the period even without
+			// events) — fall through to the whole-period parts, where a
+			// zero within-commitment amount books no usage rows.
+		case overage.IsPositive():
+			normalQty := quantityAtCharge(ctx, NewPriceService(s.ServiceParams), p, within, curve[len(curve)-1].CumulativeBillableQty)
+			normalCurve, overageCurve := splitCurveAtCommitment(curve, within, overage, listRate(p), normalQty)
+			ob := partBase
+			ob.EngineAmount = overage
+			ob.Source = types.RevenueSourceOverage
+			rows = append(rows, decomposeUsageMarginal(usageBase, normalCurve)...)
+			rows = append(rows, decomposeUsageMarginal(ob, overageCurve)...)
+		default:
+			rows = append(rows, decomposeUsageMarginal(usageBase, curve)...)
+		}
+	}
+
+	// No daily shape (windowed, non-marginal mode, grants, or no usage at
+	// all): the parts stay whole-period. A zero within-commitment amount
+	// (true-up with no usage) books no usage row at all.
+	if len(rows) == 0 {
+		if !within.IsZero() || overage.IsPositive() {
+			rows = append(rows, decomposeUsagePeriodOnly(usageBase, itemPeriod))
+		}
+		if overage.IsPositive() {
+			ob := partBase
+			ob.EngineAmount = overage
+			rows = append(rows, decomposeOverage(ob, itemPeriod))
+		}
+	}
+
+	if trueUp.IsPositive() {
+		tb := partBase
+		if len(rows) == 0 {
+			// No usage row exists to carry the line's discounts — the
+			// true-up row is the whole line, so it keeps them.
+			tb = base
+		}
+		tb.EngineAmount = trueUp
+		rows = append(rows, decomposeCommitmentTrueup(tb, itemPeriod))
+	}
+	return rows, true, nil
 }
 
 // decomposeOverageRows turns one overage line into revenue_facts rows: the

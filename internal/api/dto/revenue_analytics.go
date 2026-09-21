@@ -29,7 +29,9 @@ type RevenueAnalyticsRequest struct {
 
 	// GroupBy dimensions: revenue_source, source (the event source recorded in
 	// meter_usage; requires customer_ids or subscription_ids), customer_id,
-	// subscription_id, price_id, meter_id, currency.
+	// subscription_id, price_id, meter_id, currency. revenue_source is always
+	// applied — every row says what kind of revenue it is — and requested
+	// dimensions are added on top.
 	GroupBy []string `json:"group_by"`
 
 	// Filters restrict the rows before aggregation.
@@ -96,6 +98,11 @@ func (r *RevenueAnalyticsRequest) Validate() error {
 		return ierr.NewError("group_by source requires a customer or subscription filter").
 			WithHint("Pass customer_ids or subscription_ids when grouping by source").
 			Mark(ierr.ErrValidation)
+	}
+	// revenue_source is always a dimension: a revenue number is ambiguous
+	// without knowing whether it is usage, fixed, or an adjustment.
+	if !lo.Contains(r.GroupBy, "revenue_source") {
+		r.GroupBy = append(r.GroupBy, "revenue_source")
 	}
 	return nil
 }

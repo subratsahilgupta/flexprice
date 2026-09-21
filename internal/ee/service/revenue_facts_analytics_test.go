@@ -127,10 +127,12 @@ func TestGetRevenueAnalytics_AllocationPolicies(t *testing.T) {
 	res, err := svc.GetRevenueAnalytics(ctx, req)
 	require.NoError(t, err)
 	assert.True(t, res.ContainsAllocated, "day view carries period-shaped charges")
+	// revenue_source is always a dimension, so a day can carry several rows.
 	byDay := map[string]decimal.Decimal{}
 	total := decimal.Zero
 	for _, r := range res.Rows {
-		byDay[r.Day.Format("2006-01-02")] = r.NetAmount
+		key := r.Day.Format("2006-01-02")
+		byDay[key] = byDay[key].Add(r.NetAmount)
 		total = total.Add(r.NetAmount)
 	}
 	assert.Equal(t, "40", byDay[period.Start.Format("2006-01-02")].String(), "billed: day 1 = $10 usage + $30 fixed spike")
@@ -189,19 +191,20 @@ func TestGetRevenueAnalytics_PeriodGranularity(t *testing.T) {
 
 	res, err := svc.GetRevenueAnalytics(ctx, req)
 	require.NoError(t, err)
-	require.Len(t, res.Rows, 2, "one bucket per billing period")
-	byStart := map[string]*dto.RevenueAnalyticsRow{}
+	require.Len(t, res.Rows, 4, "each period splits into its usage and fixed rows")
+	byStart := map[string]decimal.Decimal{}
 	for _, r := range res.Rows {
-		byStart[r.PeriodStart.Format("2006-01-02")] = r
+		require.NotNil(t, r.PeriodStart)
+		require.NotNil(t, r.PeriodEnd)
+		byStart[r.PeriodStart.Format("2006-01-02")] = byStart[r.PeriodStart.Format("2006-01-02")].Add(r.NetAmount)
+		if r.PeriodStart.Equal(period.Start) {
+			assert.True(t, r.PeriodEnd.Equal(period.End))
+		} else {
+			assert.True(t, r.PeriodEnd.Equal(next.End))
+		}
 	}
-	first := byStart[period.Start.Format("2006-01-02")]
-	require.NotNil(t, first)
-	assert.Equal(t, "430", first.NetAmount.String())
-	assert.True(t, first.PeriodEnd.Equal(period.End))
-	second := byStart[next.Start.Format("2006-01-02")]
-	require.NotNil(t, second)
-	assert.Equal(t, "75", second.NetAmount.String(), "second period = 10×$5 usage + $25 fixed")
-	assert.True(t, second.PeriodEnd.Equal(next.End))
+	assert.Equal(t, "430", byStart[period.Start.Format("2006-01-02")].String())
+	assert.Equal(t, "75", byStart[next.Start.Format("2006-01-02")].String(), "second period = 10×$5 usage + $25 fixed")
 	assert.False(t, res.ContainsAllocated, "period view allocates nothing")
 }
 
