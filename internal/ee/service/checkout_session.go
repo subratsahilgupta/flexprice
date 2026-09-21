@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -391,18 +392,27 @@ func (s *checkoutSessionService) cleanupCheckoutResources(ctx context.Context, s
 		}
 	}
 
-	if cfg.AddAddonParams != nil {
-		for _, ref := range cfg.AddAddonParams.Addons {
-			association, err := s.AddonAssociationRepo.GetByID(ctx, ref.AssociationID)
-			if err != nil {
-				return err
-			}
-			if association.AddonStatus != types.AddonStatusPending {
-				return ierr.NewError("checkout session already in terminal state").
-					WithHintf("session %s was claimed by another process", session.ID).
-					Mark(ierr.ErrAlreadyExists)
-			}
-			if err := s.AddonAssociationRepo.Delete(ctx, ref.AssociationID); err != nil {
+	// Only the attaches wrote anything: a gated removal leaves its association active and
+	// billable until payment lands, so an abandoned checkout has nothing to undo for it.
+	if cfg.AddAddonParams != nil && len(cfg.AddAddonParams.Addons) > 0 {
+		ids := lo.Map(cfg.AddAddonParams.Addons, func(ref types.AddAddonRef, _ int) string {
+			return ref.AssociationID
+		})
+
+		associations, err := s.AddonAssociationRepo.GetByIDs(ctx, ids)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to load pending addon associations for checkout cleanup",
+				"association_ids", ids, "error", err)
+			return err
+		}
+
+		pending := lo.FilterMap(associations, func(a *addonassociation.AddonAssociation, _ int) (string, bool) {
+			return a.ID, a.AddonStatus == types.AddonStatusPending
+		})
+		if len(pending) > 0 {
+			if err := s.AddonAssociationRepo.DeleteBulk(ctx, pending); err != nil {
+				s.Logger.Error(ctx, "failed to archive pending addon associations",
+					"association_ids", pending, "error", err)
 				return err
 			}
 		}
@@ -675,6 +685,17 @@ func (s *checkoutSessionService) StartPayFirstCheckoutSession(
 				"error", delErr,
 				"original_err", err,
 			)
+		}
+
+		if params := req.Configuration.WalletTopupParams; params != nil && params.WalletTransactionID != "" {
+			walletSvc := NewWalletService(s.ServiceParams)
+			if failErr := walletSvc.FailPurchasedCreditTransaction(ctx, params.WalletTransactionID, err.Error()); failErr != nil {
+				s.Logger.Error(ctx, "failed to fail wallet top-up transaction after checkout session create failure",
+					"wallet_transaction_id", params.WalletTransactionID,
+					"error", failErr,
+					"original_err", err,
+				)
+			}
 		}
 		return nil, err
 	}
