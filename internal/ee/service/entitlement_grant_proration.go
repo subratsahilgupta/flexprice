@@ -101,9 +101,6 @@ func (s *subscriptionGrantService) resolveGrantProration(
 			continue
 		}
 
-		// An unlimited pool has no quota to prorate, and summing nil quotas would
-		// make it look like a zero-delta bounded feature — which then gets its live
-		// window closed with no successor written. Leave those windows alone.
 		if lo.SomeBy(featureECs, func(ec *entitlement.Entitlement) bool { return ec.IsUnlimitedGrant() }) {
 			s.Logger.Info(ctx, "skipping entitlement grant proration; allowance is unlimited",
 				"subscription_id", sub.ID,

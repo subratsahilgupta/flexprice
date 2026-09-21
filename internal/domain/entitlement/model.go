@@ -266,9 +266,6 @@ func (e *Entitlement) validateGrantConfig() error {
 		}
 	}
 
-	// A nil quota means unlimited. It is only representable on a cycle-length
-	// window: an unlimited hourly allowance would open hundreds of rows a month
-	// to track a balance that can never run out.
 	if e.GrantQuota == nil {
 		if e.GrantDurationUnit != types.EntitlementGrantDurationUnitSubscriptionPeriod {
 			return ierr.NewError("unlimited allowances require grant_duration_unit=subscription_period").

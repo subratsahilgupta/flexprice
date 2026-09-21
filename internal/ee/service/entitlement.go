@@ -750,14 +750,9 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 	if req.GrantQuota != nil {
 		existing.GrantQuota = req.GrantQuota
 	}
-	// A nil GrantQuota means "leave alone", so removing a ceiling needs its own
-	// signal; validateGrantConfig still requires subscription_period for it.
+
 	if req.GrantUnlimited != nil {
 		if *req.GrantUnlimited {
-			// An unlimited allowance has nothing to reset, so it only exists on the
-			// billing-period cadence. Say so rather than moving the cadence on the
-			// caller's behalf — they may not want an unlimited allowance at all once
-			// they see that it drops their hourly window.
 			unit := existing.GrantDurationUnit
 			if req.GrantDurationUnit != nil {
 				unit = *req.GrantDurationUnit
@@ -779,9 +774,6 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		existing.AggregationMode = *req.AggregationMode
 	}
 
-	// A cycle-length window has no duration value and no anchor, and neither field
-	// can be nulled by omission (nil means "leave alone"). Clearing them here is
-	// what makes it possible to move an existing hourly allowance onto the cycle.
 	if existing.GrantDurationUnit == types.EntitlementGrantDurationUnitSubscriptionPeriod {
 		existing.GrantDurationValue = nil
 		existing.GrantAllocationBehavior = ""
@@ -791,11 +783,6 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		return nil, err
 	}
 
-	// Re-check the meter and price rules only when the config actually moved. Rows
-	// created before a rule was tightened would otherwise fail every unrelated
-	// update — toggling is_enabled on a pre-existing quantity grant whose meter has
-	// a tiered price would return 400 — and a request that restates the current
-	// config has nothing new to check.
 	if grantConfigMoved(&stored, existing) && existing.HasGrantConfig() && existing.FeatureType == types.FeatureTypeMetered {
 		featureRow, err := s.FeatureRepo.Get(ctx, existing.FeatureID)
 		if err != nil {

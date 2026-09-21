@@ -6944,11 +6944,6 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 		// Get the parent entitlement (already validated above)
 		parentEnt := entitlementMap[override.EntitlementID]
 
-		// Create subscription-scoped entitlement with overrides.
-		// Grant config is inherited: the override REPLACES the parent in the
-		// resolved set, so anything not copied here is lost for this
-		// subscription. Omitting the grant fields used to silently turn a
-		// grant-backed feature into a legacy one.
 		newEnt := &entitlement.Entitlement{
 			ID:                      types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT),
 			EntityType:              types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION,

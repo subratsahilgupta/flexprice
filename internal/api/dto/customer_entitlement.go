@@ -50,32 +50,24 @@ type AggregatedFeature struct {
 // GrantState is the runtime half of a grant-backed entitlement: what the customer
 // can spend right now, and what led up to it.
 type GrantState struct {
-	// Allowances is the current billing period's ledger, spent ones included and
-	// oldest first, capped at a handful — an hourly allowance on a monthly cycle
-	// produces hundreds. What the customer can spend right now is the entry (or
-	// entries, for parallel features) with IsActive=true; there is at most one per
-	// entitlement, and none in the gap between one allowance ending and the next
-	// starting.
 	Allowances []*GrantAllowanceState `json:"allowances"`
 }
 
 // GrantAllowanceState is one span of a grant-backed entitlement: what the customer
 // was given over [ValidFrom, ValidTo) and what they spent against it.
 type GrantAllowanceState struct {
-	GrantID       string                        `json:"grant_id"`
-	EntitlementID string                        `json:"entitlement_id"`
-	Measure       types.EntitlementGrantMeasure `json:"measure"`
-	Unlimited     bool                          `json:"unlimited"`
-	Quota         decimal.Decimal               `json:"quota" swaggertype:"string"`
-	Usage         decimal.Decimal               `json:"usage" swaggertype:"string"`
-	Remaining     *decimal.Decimal              `json:"remaining,omitempty" swaggertype:"string"`
-	ValidFrom     time.Time                     `json:"valid_from"`
-	ValidTo       time.Time                     `json:"valid_to"`
-	Status        types.EntitlementGrantStatus  `json:"status"`
-	// IsActive means the window is open right now — evaluated against the
-	// server's clock so clients need not compare timestamps themselves.
-	IsActive       bool       `json:"is_active"`
-	LastComputedAt *time.Time `json:"last_computed_at,omitempty"`
+	GrantID        string                        `json:"grant_id"`
+	EntitlementID  string                        `json:"entitlement_id"`
+	Measure        types.EntitlementGrantMeasure `json:"measure"`
+	Unlimited      bool                          `json:"unlimited"`
+	Quota          decimal.Decimal               `json:"quota" swaggertype:"string"`
+	Usage          decimal.Decimal               `json:"usage" swaggertype:"string"`
+	Remaining      *decimal.Decimal              `json:"remaining,omitempty" swaggertype:"string"`
+	ValidFrom      time.Time                     `json:"valid_from"`
+	ValidTo        time.Time                     `json:"valid_to"`
+	Status         types.EntitlementGrantStatus  `json:"status"`
+	IsActive       bool                          `json:"is_active"`
+	LastComputedAt *time.Time                    `json:"last_computed_at,omitempty"`
 }
 
 // AggregatedEntitlement contains the final calculated entitlement values.
@@ -83,26 +75,20 @@ type GrantAllowanceState struct {
 // For parallel aggregation, Buckets carries the per-entitlement view — each
 // entry is an independent budget. UsageLimit still reports the sum for legacy display.
 type AggregatedEntitlement struct {
-	IsEnabled        bool                              `json:"is_enabled"`
-	UsageLimit       *int64                            `json:"usage_limit,omitempty"`
-	IsSoftLimit      bool                              `json:"is_soft_limit"`
-	UsageResetPeriod types.EntitlementUsageResetPeriod `json:"usage_reset_period,omitempty"`
-	StaticValues     []string                          `json:"static_values,omitempty"`
-	ConfigValues     []map[string]any                  `json:"config_values,omitempty"`
-	AggregationMode  types.EntitlementAggregationMode  `json:"aggregation_mode,omitempty"`
-	Buckets          []*AggregatedEntitlementBucket    `json:"buckets,omitempty"`
-
-	// Grant config summary, so a client can render the promise ("1,000 calls per
-	// day") before any window has opened. UsageLimit stays populated for legacy
-	// display but is meaningless on a grant-backed feature.
+	IsEnabled          bool                               `json:"is_enabled"`
+	UsageLimit         *int64                             `json:"usage_limit,omitempty"`
+	IsSoftLimit        bool                               `json:"is_soft_limit"`
+	UsageResetPeriod   types.EntitlementUsageResetPeriod  `json:"usage_reset_period,omitempty"`
+	StaticValues       []string                           `json:"static_values,omitempty"`
+	ConfigValues       []map[string]any                   `json:"config_values,omitempty"`
+	AggregationMode    types.EntitlementAggregationMode   `json:"aggregation_mode,omitempty"`
+	Buckets            []*AggregatedEntitlementBucket     `json:"buckets,omitempty"`
 	GrantMeasure       types.EntitlementGrantMeasure      `json:"grant_measure,omitempty"`
 	GrantQuota         *decimal.Decimal                   `json:"grant_quota,omitempty" swaggertype:"string"`
 	GrantDurationValue *int                               `json:"grant_duration_value,omitempty"`
 	GrantDurationUnit  types.EntitlementGrantDurationUnit `json:"grant_duration_unit,omitempty"`
-	// GrantUnlimited distinguishes "grant-based with no ceiling" from "no grant
-	// config at all"; both leave GrantQuota nil.
-	GrantUnlimited bool        `json:"grant_unlimited,omitempty"`
-	GrantState     *GrantState `json:"grant_state,omitempty"`
+	GrantUnlimited     bool                               `json:"grant_unlimited,omitempty"`
+	GrantState         *GrantState                        `json:"grant_state,omitempty"`
 }
 
 // AggregatedEntitlementBucket is one independent budget within a parallel feature.

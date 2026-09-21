@@ -20,20 +20,16 @@ type EntitlementGrant struct {
 	ScopeEntityType     types.EntitlementGrantScopeEntityType `json:"scope_entity_type"`
 	ScopeEntityID       string                                `json:"scope_entity_id"`
 	Measure             types.EntitlementGrantMeasure         `json:"measure"`
-	// Unlimited windows track usage but can never be exhausted and never bill.
-	// Quota is meaningless when set — read it only through the methods below.
-	Unlimited      bool                         `json:"unlimited"`
-	Quota          decimal.Decimal              `json:"quota"`
-	Usage          decimal.Decimal              `json:"usage"`
-	ValidFrom      time.Time                    `json:"valid_from"`
-	ValidTo        time.Time                    `json:"valid_to"`
-	GrantStatus    types.EntitlementGrantStatus `json:"grant_status"`
-	LastComputedAt *time.Time                   `json:"last_computed_at,omitempty"`
-	// QuotaCrossedAt is set once, when the evaluator first sees usage >= quota
-	// It holds the evaluation time, not the exact event-level crossing.
-	QuotaCrossedAt *time.Time     `json:"quota_crossed_at,omitempty"`
-	Metadata       types.Metadata `json:"metadata,omitempty"`
-	EnvironmentID  string         `json:"environment_id"`
+	Unlimited           bool                                  `json:"unlimited"`
+	Quota               decimal.Decimal                       `json:"quota"`
+	Usage               decimal.Decimal                       `json:"usage"`
+	ValidFrom           time.Time                             `json:"valid_from"`
+	ValidTo             time.Time                             `json:"valid_to"`
+	GrantStatus         types.EntitlementGrantStatus          `json:"grant_status"`
+	LastComputedAt      *time.Time                            `json:"last_computed_at,omitempty"`
+	QuotaCrossedAt      *time.Time                            `json:"quota_crossed_at,omitempty"`
+	Metadata            types.Metadata                        `json:"metadata,omitempty"`
+	EnvironmentID       string                                `json:"environment_id"`
 	types.BaseModel
 }
 
@@ -87,13 +83,6 @@ func (g *EntitlementGrant) Overage() decimal.Decimal {
 	return over
 }
 
-// Remaining is the unspent balance, clamped at zero. The mirror of Overage: a window that
-// ran past its quota hands nothing forward, so debt never crosses into a successor.
-// Unlimited windows return zero: there is no balance to hand a successor, and a
-// caller must branch on Unlimited before presenting this as a number.
-// Remaining reports what is left of the allowance, and whether there is a ceiling to
-// measure against at all. An unlimited window returns ok=false rather than zero, which
-// would read as exhausted — the caller has to branch.
 func (g *EntitlementGrant) Remaining() (decimal.Decimal, bool) {
 	if g == nil || g.Unlimited {
 		return decimal.Zero, false
@@ -139,14 +128,7 @@ func (g *EntitlementGrant) Validate() error {
 			WithHint("Set measure to quantity or amount").
 			Mark(ierr.ErrValidation)
 	}
-	// An unlimited window has no ceiling, so its quota is never read: Remaining,
-	// Overage and IsExhausted all short-circuit on the flag before reaching it. It is
-	// not always zero either — a pool goes unlimited when any contributor is, while
-	// still summing the bounded ones — so there is nothing here to check.
-	//
-	// For a bounded window zero is legal: a successor whose predecessor was spent
-	// carries no balance and exists only to hold the slot on a live config. Negative
-	// never is.
+
 	if !g.Unlimited && g.Quota.IsNegative() {
 		return ierr.NewError("quota cannot be negative").
 			WithReportableDetails(map[string]interface{}{"quota": g.Quota.String()}).
