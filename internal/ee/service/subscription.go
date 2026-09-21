@@ -394,7 +394,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	if sub.TrialEnd != nil {
 		creditGrantStart = lo.FromPtr(sub.TrialEnd)
 	}
-	if err = creditGrantService.CreateSubscriptionGrants(ctx, dto.CreateSubscriptionGrantsRequest{
+	if err = creditGrantService.CreateSubscriptionCreditGrants(ctx, dto.CreateSubscriptionCreditGrantsRequest{
 		Subscription: sub,
 		Grants:       creditGrantRequests,
 		StartDate:    creditGrantStart,

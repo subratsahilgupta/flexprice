@@ -59,9 +59,9 @@ type CreditGrantService interface {
 	// Use this to manually trigger processing of a pending/failed application
 	ProcessCreditGrantApplication(ctx context.Context, applicationID string) error
 
-	// CreateSubscriptionGrants materializes the given credit grants onto a subscription,
+	// CreateSubscriptionCreditGrants materializes the given credit grants onto a subscription,
 	// anchoring the grant chain at the request's start date
-	CreateSubscriptionGrants(ctx context.Context, req dto.CreateSubscriptionGrantsRequest) error
+	CreateSubscriptionCreditGrants(ctx context.Context, req dto.CreateSubscriptionCreditGrantsRequest) error
 
 	// CancelFutureSubscriptionGrants cancels all future credit grants for this subscription
 	// Sets the grant end date to the effective cancellation date (defaults to now if not provided), then archives the grants
@@ -1358,7 +1358,7 @@ func (s *creditGrantService) cancelFutureGrantApplications(ctx context.Context, 
 	return nil
 }
 
-func (s *creditGrantService) CreateSubscriptionGrants(ctx context.Context, req dto.CreateSubscriptionGrantsRequest) error {
+func (s *creditGrantService) CreateSubscriptionCreditGrants(ctx context.Context, req dto.CreateSubscriptionCreditGrantsRequest) error {
 	if len(req.Grants) == 0 {
 		return nil
 	}

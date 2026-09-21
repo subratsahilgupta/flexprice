@@ -520,7 +520,7 @@ func (r *CreateCreditGrantApplicationRequest) ToCreditGrantApplication(ctx conte
 	}
 }
 
-type CreateSubscriptionGrantsRequest struct {
+type CreateSubscriptionCreditGrantsRequest struct {
 	Subscription *subscription.Subscription
 	Grants       []CreateCreditGrantRequest
 	StartDate    time.Time
@@ -531,7 +531,7 @@ type CreateSubscriptionGrantsRequest struct {
 	FirstPeriodProration *FirstPeriodProration
 }
 
-func (r *CreateSubscriptionGrantsRequest) Validate() error {
+func (r *CreateSubscriptionCreditGrantsRequest) Validate() error {
 	if r.Subscription == nil {
 		return errors.NewError("subscription is required to materialize credit grants").
 			Mark(errors.ErrValidation)

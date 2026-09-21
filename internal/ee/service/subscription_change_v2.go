@@ -356,7 +356,7 @@ func (s *subscriptionService) migrateCreditGrants(ctx context.Context, r *planCh
 		create = append(create, dto.NewSubscriptionScopedCreditGrantRequest(cg, r.currentSub.ID, r.toPlan.ID))
 	}
 
-	if err := NewCreditGrantService(s.ServiceParams).CreateSubscriptionGrants(ctx, dto.CreateSubscriptionGrantsRequest{
+	if err := NewCreditGrantService(s.ServiceParams).CreateSubscriptionCreditGrants(ctx, dto.CreateSubscriptionCreditGrantsRequest{
 		Subscription: r.updatedSub,
 		Grants:       create,
 		StartDate:    r.effectiveAt,

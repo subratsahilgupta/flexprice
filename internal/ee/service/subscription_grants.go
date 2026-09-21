@@ -55,7 +55,7 @@ type GrantChangeRequest struct {
 type GrantChangeConfig struct {
 	sub *subscription.Subscription
 
-	creditGrantsToAdd    []dto.CreateSubscriptionGrantsRequest
+	creditGrantsToAdd    []dto.CreateSubscriptionCreditGrantsRequest
 	creditGrantsToCancel []dto.CancelFutureSubscriptionGrantsRequest
 
 	// entitlementGrantsToAdd is one prorated segment per feature the incoming sources feed,
@@ -127,7 +127,7 @@ func (s *subscriptionGrantService) Apply(ctx context.Context, cfg *GrantChangeCo
 
 	creditGrantService := NewCreditGrantService(s.ServiceParams)
 	for _, req := range cfg.creditGrantsToAdd {
-		if err := creditGrantService.CreateSubscriptionGrants(ctx, req); err != nil {
+		if err := creditGrantService.CreateSubscriptionCreditGrants(ctx, req); err != nil {
 			return err
 		}
 	}
@@ -161,7 +161,7 @@ func (s *subscriptionGrantService) resolveCreditGrantsToAdd(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	incoming []GrantSource,
-) ([]dto.CreateSubscriptionGrantsRequest, error) {
+) ([]dto.CreateSubscriptionCreditGrantsRequest, error) {
 	addonIDs := lo.Compact(lo.Map(incoming, func(src GrantSource, _ int) string { return src.AddonID }))
 	if len(addonIDs) == 0 {
 		return nil, nil
@@ -172,7 +172,7 @@ func (s *subscriptionGrantService) resolveCreditGrantsToAdd(
 		return nil, err
 	}
 
-	addRequests := make([]dto.CreateSubscriptionGrantsRequest, 0, len(incoming))
+	addRequests := make([]dto.CreateSubscriptionCreditGrantsRequest, 0, len(incoming))
 	index := make(map[string]int, len(incoming))
 	for _, src := range incoming {
 		grants := templates[src.AddonID]
@@ -193,7 +193,7 @@ func (s *subscriptionGrantService) resolveCreditGrantsToAdd(
 		}
 
 		index[key] = len(addRequests)
-		addRequests = append(addRequests, dto.CreateSubscriptionGrantsRequest{
+		addRequests = append(addRequests, dto.CreateSubscriptionCreditGrantsRequest{
 			Subscription:         sub,
 			Grants:               creditGrantRequestsFromAddon(sub, src.AddonID, grants),
 			StartDate:            src.EffectiveDate,
