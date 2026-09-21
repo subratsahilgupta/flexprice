@@ -48,16 +48,14 @@ type AggregatedFeature struct {
 }
 
 // GrantState is the runtime half of a grant-backed entitlement: what the
-// customer has left right now, and what the cycle has accumulated.
+// customer has left right now, and what led up to it.
 type GrantState struct {
-	// Windows is every window overlapping the current billing period, closed ones
-	// included, oldest first — the per-window ledger behind CycleTotals. The
-	// live balance is the entry (or entries, for parallel features) with
-	// IsActive=true; there is at most one per bucket, and none between windows.
+	// Windows is the current billing period's ledger, closed windows included and
+	// oldest first, capped at the most recent few per entitlement — an hourly
+	// allowance on a monthly cycle has hundreds. The live balance is the entry (or
+	// entries, for parallel features) with IsActive=true; there is at most one per
+	// bucket, and none between windows.
 	Windows []*GrantWindowState `json:"windows"`
-	// CycleTotals covers every window overlapping the current billing period,
-	// closed ones included, so the overage figure matches what billing will fold.
-	CycleTotals *GrantCycleTotals `json:"cycle_totals,omitempty"`
 }
 
 // GrantWindowState is one materialized grant window.
@@ -84,14 +82,6 @@ type GrantWindowState struct {
 	// by a debounced background pass, so a client must render this rather than
 	// implying the number is live.
 	LastComputedAt *time.Time `json:"last_computed_at,omitempty"`
-}
-
-// GrantCycleTotals summarises every window in the current billing period.
-type GrantCycleTotals struct {
-	Windows      int             `json:"windows"`
-	TotalQuota   decimal.Decimal `json:"total_quota" swaggertype:"string"`
-	TotalUsage   decimal.Decimal `json:"total_usage" swaggertype:"string"`
-	TotalOverage decimal.Decimal `json:"total_overage" swaggertype:"string"`
 }
 
 // AggregatedEntitlement contains the final calculated entitlement values.

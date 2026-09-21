@@ -1259,6 +1259,8 @@ definitions:
     properties:
       cancel_url:
         type: string
+      entity_creation_options:
+        $ref: '#/definitions/EntityCreationOptions'
       failure_url:
         type: string
       idempotency_key:
@@ -1305,6 +1307,11 @@ definitions:
         type: string
       customer_id:
         type: string
+      entity_creation_result:
+        allOf:
+        - $ref: '#/definitions/EntityCreationResult'
+        description: Describes the call that returned this session, not the session
+          itself; never persisted.
       expires_at:
         type: string
       failure_reason:
@@ -1808,6 +1815,8 @@ definitions:
         $ref: '#/definitions/types.CheckoutConfiguration'
       customer_external_id:
         type: string
+      entity_creation_options:
+        $ref: '#/definitions/EntityCreationOptions'
       failure_url:
         type: string
       idempotency_key:
@@ -3760,6 +3769,23 @@ definitions:
       reference_id:
         type: string
     type: object
+  EntityCreationConflictPolicies:
+    properties:
+      on_existing_entity:
+        $ref: '#/definitions/types.OnExistingEntityPolicy'
+    type: object
+  EntityCreationOptions:
+    properties:
+      entity_creation_conflict_policies:
+        $ref: '#/definitions/EntityCreationConflictPolicies'
+    type: object
+  EntityCreationResult:
+    properties:
+      entity_id:
+        type: string
+      status:
+        $ref: '#/definitions/types.EntityCreationStatus'
+    type: object
   EntityIntegrationMappingResponse:
     properties:
       created_at:
@@ -4464,31 +4490,15 @@ definitions:
       value:
         type: number
     type: object
-  GrantCycleTotals:
-    properties:
-      total_overage:
-        type: string
-      total_quota:
-        type: string
-      total_usage:
-        type: string
-      windows:
-        type: integer
-    type: object
   GrantState:
     properties:
-      cycle_totals:
-        allOf:
-        - $ref: '#/definitions/GrantCycleTotals'
-        description: |-
-          CycleTotals covers every window overlapping the current billing period,
-          closed ones included, so the overage figure matches what billing will fold.
       windows:
         description: |-
-          Windows is every window overlapping the current billing period, closed ones
-          included, oldest first — the per-window ledger behind CycleTotals. The
-          live balance is the entry (or entries, for parallel features) with
-          IsActive=true; there is at most one per bucket, and none between windows.
+          Windows is the current billing period's ledger, closed windows included and
+          oldest first, capped at the most recent few per entitlement — an hourly
+          allowance on a monthly cycle has hundreds. The live balance is the entry (or
+          entries, for parallel features) with IsActive=true; there is at most one per
+          bucket, and none between windows.
         items:
           $ref: '#/definitions/GrantWindowState'
         type: array
@@ -10793,6 +10803,16 @@ definitions:
     - EntityChangeBehaviourCarry
     - EntityChangeBehaviourDrop
     - EntityChangeBehaviourAdd
+  types.EntityCreationStatus:
+    enum:
+    - created
+    - superseded
+    - failed_already_exists
+    type: string
+    x-enum-varnames:
+    - EntityCreationStatusCreated
+    - EntityCreationStatusSuperseded
+    - EntityCreationStatusFailedAlreadyExists
   types.EntitySyncConfig:
     properties:
       inbound:
@@ -11356,6 +11376,14 @@ definitions:
       subscription_id:
         type: string
     type: object
+  types.OnExistingEntityPolicy:
+    enum:
+    - reject
+    - supersede
+    type: string
+    x-enum-varnames:
+    - OnExistingEntityPolicyReject
+    - OnExistingEntityPolicySupersede
   types.OnPendingSchedulePolicy:
     enum:
     - reject

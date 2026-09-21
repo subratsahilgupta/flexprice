@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -32,11 +33,6 @@ type EntitlementGrantService interface {
 	// The returned meta carries the lookups (features, meters, external ids)
 	// built during the pass so the evaluator can reuse them.
 	EnsureGrantsForSubscriptions(ctx context.Context, cust *customer.Customer, subs []*subscription.Subscription, at time.Time) ([]*entitlementgrant.EntitlementGrant, *grantEvalMeta, error)
-
-	// ListGrants is the read surface for API responses; the filter carries the
-	// canonical shapes (WithCycleOverlap for billing-aligned reads, WithLiveOnly
-	// for "open right now").
-	ListGrants(ctx context.Context, filter *types.EntitlementGrantFilter) ([]*entitlementgrant.EntitlementGrant, error)
 
 	// GrantStateByFeature is the API-facing read: live windows plus cycle totals
 	// for one subscription, keyed by feature id.
@@ -1171,17 +1167,9 @@ func (s *entitlementGrantService) GrantStateByFeature(
 		featureID := g.FeatureID()
 		state, ok := out[featureID]
 		if !ok {
-			state = &dto.GrantState{
-				Windows:     make([]*dto.GrantWindowState, 0, 4),
-				CycleTotals: &dto.GrantCycleTotals{},
-			}
+			state = &dto.GrantState{Windows: make([]*dto.GrantWindowState, 0, 4)}
 			out[featureID] = state
 		}
-
-		state.CycleTotals.Windows++
-		state.CycleTotals.TotalQuota = state.CycleTotals.TotalQuota.Add(g.Quota)
-		state.CycleTotals.TotalUsage = state.CycleTotals.TotalUsage.Add(g.Usage)
-		state.CycleTotals.TotalOverage = state.CycleTotals.TotalOverage.Add(g.Overage())
 
 		window := &dto.GrantWindowState{
 			GrantID:        g.ID,
@@ -1205,9 +1193,52 @@ func (s *entitlementGrantService) GrantStateByFeature(
 	// Oldest first: the ledger reads as a timeline.
 	for _, state := range out {
 		sort.Slice(state.Windows, func(i, j int) bool { return state.Windows[i].ValidFrom.Before(state.Windows[j].ValidFrom) })
+		state.Windows = latestWindowsPerEntitlement(state.Windows)
 	}
 
 	return out, nil
+}
+
+// GrantWindowsPerEntitlement caps how much of the ledger a read returns. An hourly
+// allowance on a monthly cycle produces several hundred windows per entitlement, and a
+// reader wants the live one and what led to it, not the whole month.
+const GrantWindowsPerEntitlement = 5
+
+// latestWindowsPerEntitlement keeps the last GrantWindowsPerEntitlement windows of each
+// entitlement, preserving the oldest-first order of the input. Per entitlement rather
+// than per feature: a parallel feature has one series per entitlement, and a shared cap
+// would let a busy one crowd out the others entirely.
+func latestWindowsPerEntitlement(windows []*dto.GrantWindowState) []*dto.GrantWindowState {
+	keep := make(map[string]int, 4)
+	for _, w := range windows {
+		keep[w.EntitlementID]++
+	}
+
+	over := false
+	for _, n := range keep {
+		if n > GrantWindowsPerEntitlement {
+			over = true
+			break
+		}
+	}
+	if !over {
+		return windows
+	}
+
+	// Walk backwards so the ones kept are the most recent, then restore the order.
+	kept := make([]*dto.GrantWindowState, 0, len(keep)*GrantWindowsPerEntitlement)
+	seen := make(map[string]int, len(keep))
+	for i := len(windows) - 1; i >= 0; i-- {
+		w := windows[i]
+		if seen[w.EntitlementID] >= GrantWindowsPerEntitlement {
+			continue
+		}
+		seen[w.EntitlementID]++
+		kept = append(kept, w)
+	}
+	slices.Reverse(kept)
+
+	return kept
 }
 
 // ValidateGrantShape resolves the entitlement's meter and applies the shared

@@ -15441,6 +15441,9 @@ const docTemplate = `{
                 "cancel_url": {
                     "type": "string"
                 },
+                "entity_creation_options": {
+                    "$ref": "#/definitions/EntityCreationOptions"
+                },
                 "failure_url": {
                     "type": "string"
                 },
@@ -15507,6 +15510,14 @@ const docTemplate = `{
                 },
                 "customer_id": {
                     "type": "string"
+                },
+                "entity_creation_result": {
+                    "description": "Describes the call that returned this session, not the session itself; never persisted.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/EntityCreationResult"
+                        }
+                    ]
                 },
                 "expires_at": {
                     "type": "string"
@@ -16239,6 +16250,9 @@ const docTemplate = `{
                 },
                 "customer_external_id": {
                     "type": "string"
+                },
+                "entity_creation_options": {
+                    "$ref": "#/definitions/EntityCreationOptions"
                 },
                 "failure_url": {
                     "type": "string"
@@ -18827,6 +18841,33 @@ const docTemplate = `{
                 }
             }
         },
+        "EntityCreationConflictPolicies": {
+            "type": "object",
+            "properties": {
+                "on_existing_entity": {
+                    "$ref": "#/definitions/types.OnExistingEntityPolicy"
+                }
+            }
+        },
+        "EntityCreationOptions": {
+            "type": "object",
+            "properties": {
+                "entity_creation_conflict_policies": {
+                    "$ref": "#/definitions/EntityCreationConflictPolicies"
+                }
+            }
+        },
+        "EntityCreationResult": {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.EntityCreationStatus"
+                }
+            }
+        },
         "EntityIntegrationMappingResponse": {
             "type": "object",
             "properties": {
@@ -19760,36 +19801,11 @@ const docTemplate = `{
                 }
             }
         },
-        "GrantCycleTotals": {
-            "type": "object",
-            "properties": {
-                "total_overage": {
-                    "type": "string"
-                },
-                "total_quota": {
-                    "type": "string"
-                },
-                "total_usage": {
-                    "type": "string"
-                },
-                "windows": {
-                    "type": "integer"
-                }
-            }
-        },
         "GrantState": {
             "type": "object",
             "properties": {
-                "cycle_totals": {
-                    "description": "CycleTotals covers every window overlapping the current billing period,\nclosed ones included, so the overage figure matches what billing will fold.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/GrantCycleTotals"
-                        }
-                    ]
-                },
                 "windows": {
-                    "description": "Windows is every window overlapping the current billing period, closed ones\nincluded, oldest first — the per-window ledger behind CycleTotals. The\nlive balance is the entry (or entries, for parallel features) with\nIsActive=true; there is at most one per bucket, and none between windows.",
+                    "description": "Windows is the current billing period's ledger, closed windows included and\noldest first, capped at the most recent few per entitlement — an hourly\nallowance on a monthly cycle has hundreds. The live balance is the entry (or\nentries, for parallel features) with IsActive=true; there is at most one per\nbucket, and none between windows.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/GrantWindowState"
@@ -28475,6 +28491,19 @@ const docTemplate = `{
                 "EntityChangeBehaviourAdd"
             ]
         },
+        "types.EntityCreationStatus": {
+            "type": "string",
+            "enum": [
+                "created",
+                "superseded",
+                "failed_already_exists"
+            ],
+            "x-enum-varnames": [
+                "EntityCreationStatusCreated",
+                "EntityCreationStatusSuperseded",
+                "EntityCreationStatusFailedAlreadyExists"
+            ]
+        },
         "types.EntitySyncConfig": {
             "type": "object",
             "properties": {
@@ -29209,6 +29238,17 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "types.OnExistingEntityPolicy": {
+            "type": "string",
+            "enum": [
+                "reject",
+                "supersede"
+            ],
+            "x-enum-varnames": [
+                "OnExistingEntityPolicyReject",
+                "OnExistingEntityPolicySupersede"
+            ]
         },
         "types.OnPendingSchedulePolicy": {
             "type": "string",

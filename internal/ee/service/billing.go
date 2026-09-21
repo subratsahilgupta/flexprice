@@ -2564,25 +2564,22 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 	var grantDurationValue *int
 	var grantDurationUnit types.EntitlementGrantDurationUnit
 	grantQuota := decimal.Zero
-	hasGrantConfig := false
-	grantUnlimited := false
+	hasAdditiveGrantConfigs, grantUnlimited := false, false
 
 	for _, e := range entitlements {
 		if !e.IsEnabled {
 			continue
 		}
 
-		if e.HasGrantConfig() {
-			if !hasGrantConfig {
-				hasGrantConfig = true
-				grantMeasure = e.GrantMeasure
-				grantDurationValue = e.GrantDurationValue
-				grantDurationUnit = e.GrantDurationUnit
-			}
+		if e.HasGrantConfig() && e.AggregationMode == types.EntitlementAggregationModeAdditive {
+			hasAdditiveGrantConfigs = true
+			grantMeasure = e.GrantMeasure
+			grantDurationValue = e.GrantDurationValue
+			grantDurationUnit = e.GrantDurationUnit
+			grantQuota = grantQuota.Add(lo.FromPtr(e.GrantQuota))
 			if e.IsUnlimitedGrant() {
 				grantUnlimited = true
 			}
-			grantQuota = grantQuota.Add(lo.FromPtr(e.GrantQuota))
 		}
 
 		if e.AggregationMode == types.EntitlementAggregationModeParallel {
@@ -2626,12 +2623,11 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 		AggregationMode:  aggregationMode,
 	}
 
-	if hasGrantConfig {
+	if hasAdditiveGrantConfigs {
 		out.GrantMeasure = grantMeasure
 		out.GrantDurationValue = grantDurationValue
 		out.GrantDurationUnit = grantDurationUnit
 		out.GrantUnlimited = grantUnlimited
-		// An unlimited pool has no ceiling to report, however many contributors it has.
 		if !grantUnlimited {
 			out.GrantQuota = &grantQuota
 		}
@@ -3001,15 +2997,6 @@ func (s *billingService) attachGrantState(
 				continue
 			}
 			existing.Windows = append(existing.Windows, state.Windows...)
-			if state.CycleTotals != nil {
-				if existing.CycleTotals == nil {
-					existing.CycleTotals = &dto.GrantCycleTotals{}
-				}
-				existing.CycleTotals.Windows += state.CycleTotals.Windows
-				existing.CycleTotals.TotalQuota = existing.CycleTotals.TotalQuota.Add(state.CycleTotals.TotalQuota)
-				existing.CycleTotals.TotalUsage = existing.CycleTotals.TotalUsage.Add(state.CycleTotals.TotalUsage)
-				existing.CycleTotals.TotalOverage = existing.CycleTotals.TotalOverage.Add(state.CycleTotals.TotalOverage)
-			}
 		}
 	}
 
@@ -3416,12 +3403,17 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 					grantQuota = grantQuota.Add(w.Quota)
 				}
 				haveFigures = true
-			} else if gs.CycleTotals != nil && gs.CycleTotals.Windows > 0 {
-				// Between windows there is no live allowance, but the cycle still has
-				// usage. Fall back to cycle totals so both halves of the ratio cover the
+			} else if len(gs.Windows) > 0 {
+				// Between windows there is no live allowance, but the period still has
+				// usage. Fall back to the ledger so both halves of the ratio cover the
 				// same span rather than reporting zero against a per-window quota.
-				grantUsage = gs.CycleTotals.TotalUsage
-				grantQuota = gs.CycleTotals.TotalQuota
+				for _, w := range gs.Windows {
+					if w.Unlimited {
+						anyUnlimited = true
+					}
+					grantUsage = grantUsage.Add(w.Usage)
+					grantQuota = grantQuota.Add(w.Quota)
+				}
 				haveFigures = true
 			}
 

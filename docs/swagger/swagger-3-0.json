@@ -17715,6 +17715,9 @@
           "cancel_url": {
             "type": "string"
           },
+          "entity_creation_options": {
+            "$ref": "#/components/schemas/EntityCreationOptions"
+          },
           "failure_url": {
             "type": "string"
           },
@@ -17784,6 +17787,9 @@
           },
           "customer_id": {
             "type": "string"
+          },
+          "entity_creation_result": {
+            "$ref": "#/components/schemas/EntityCreationResult"
           },
           "expires_at": {
             "type": "string",
@@ -18492,6 +18498,9 @@
           },
           "customer_external_id": {
             "type": "string"
+          },
+          "entity_creation_options": {
+            "$ref": "#/components/schemas/EntityCreationOptions"
           },
           "failure_url": {
             "type": "string"
@@ -20895,6 +20904,33 @@
           }
         }
       },
+      "EntityCreationConflictPolicies": {
+        "type": "object",
+        "properties": {
+          "on_existing_entity": {
+            "$ref": "#/components/schemas/types.OnExistingEntityPolicy"
+          }
+        }
+      },
+      "EntityCreationOptions": {
+        "type": "object",
+        "properties": {
+          "entity_creation_conflict_policies": {
+            "$ref": "#/components/schemas/EntityCreationConflictPolicies"
+          }
+        }
+      },
+      "EntityCreationResult": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.EntityCreationStatus"
+          }
+        }
+      },
       "EntityIntegrationMappingResponse": {
         "type": "object",
         "properties": {
@@ -21828,32 +21864,12 @@
           }
         }
       },
-      "GrantCycleTotals": {
-        "type": "object",
-        "properties": {
-          "total_overage": {
-            "type": "string"
-          },
-          "total_quota": {
-            "type": "string"
-          },
-          "total_usage": {
-            "type": "string"
-          },
-          "windows": {
-            "type": "integer"
-          }
-        }
-      },
       "GrantState": {
         "type": "object",
         "properties": {
-          "cycle_totals": {
-            "$ref": "#/components/schemas/GrantCycleTotals"
-          },
           "windows": {
             "type": "array",
-            "description": "Windows is every window overlapping the current billing period, closed ones\nincluded, oldest first \u2014 the per-window ledger behind CycleTotals. The\nlive balance is the entry (or entries, for parallel features) with\nIsActive=true; there is at most one per bucket, and none between windows.",
+            "description": "Windows is the current billing period's ledger, closed windows included and\noldest first, capped at the most recent few per entitlement \u2014 an hourly\nallowance on a monthly cycle has hundreds. The live balance is the entry (or\nentries, for parallel features) with IsActive=true; there is at most one per\nbucket, and none between windows.",
             "items": {
               "$ref": "#/components/schemas/GrantWindowState"
             }
@@ -30229,6 +30245,20 @@
         ],
         "x-speakeasy-name-override": "EntityChangeBehaviour"
       },
+      "types.EntityCreationStatus": {
+        "type": "string",
+        "enum": [
+          "created",
+          "superseded",
+          "failed_already_exists"
+        ],
+        "x-enum-varnames": [
+          "EntityCreationStatusCreated",
+          "EntityCreationStatusSuperseded",
+          "EntityCreationStatusFailedAlreadyExists"
+        ],
+        "x-speakeasy-name-override": "EntityCreationStatus"
+      },
       "types.EntitySyncConfig": {
         "type": "object",
         "properties": {
@@ -30978,6 +31008,18 @@
           }
         },
         "x-speakeasy-name-override": "ModifySubscriptionParams"
+      },
+      "types.OnExistingEntityPolicy": {
+        "type": "string",
+        "enum": [
+          "reject",
+          "supersede"
+        ],
+        "x-enum-varnames": [
+          "OnExistingEntityPolicyReject",
+          "OnExistingEntityPolicySupersede"
+        ],
+        "x-speakeasy-name-override": "OnExistingEntityPolicy"
       },
       "types.OnPendingSchedulePolicy": {
         "type": "string",

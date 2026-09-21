@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -2453,4 +2454,56 @@ func (s *EntitlementGrantSuite) TestRemoveUnlimitedEC_SuccessorHoldsSlotAtZero()
 	s.False(opened[0].Unlimited, "the unlimited config left")
 	s.Equal("0", opened[0].Quota.String(), "nothing is carried from a window that had no ceiling")
 	s.Equal(types.EntitlementGrantStatusExhausted, opened[0].GrantStatus)
+}
+
+// An hourly allowance on a monthly cycle produces hundreds of windows. A read returns
+// the live one and what led to it, per entitlement, so a parallel feature's busiest
+// series cannot crowd out the others.
+func (s *EntitlementGrantSuite) TestGrantState_CapsWindowsPerEntitlement() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("cap-windows", 1)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, fx.sub))
+
+	// Two entitlements on one feature, eight windows each, interleaved in time.
+	other := s.newTimeBoxedEC("ec-cap-other", fx.ec.FeatureID, 1,
+		types.EntitlementGrantDurationUnitHour, decimal.NewFromInt(50))
+
+	for i := 0; i < 8; i++ {
+		for _, ecID := range []string{fx.ec.ID, other.ID} {
+			from := fx.cycleStart.Add(time.Duration(i) * time.Hour)
+			_, err := s.GetStores().EntitlementGrantRepo.Create(ctx, &entitlementgrant.EntitlementGrant{
+				ID:                  fmt.Sprintf("eg-cap-%s-%d", ecID, i),
+				EntitlementConfigID: ecID,
+				CustomerID:          fx.sub.CustomerID,
+				SubscriptionID:      fx.sub.ID,
+				ScopeEntityType:     types.EntitlementGrantScopeFeature,
+				ScopeEntityID:       fx.ec.FeatureID,
+				Measure:             types.EntitlementGrantMeasureQuantity,
+				Quota:               decimal.NewFromInt(100),
+				Usage:               decimal.NewFromInt(int64(i)),
+				ValidFrom:           from,
+				ValidTo:             from.Add(time.Hour),
+				GrantStatus:         types.EntitlementGrantStatusActive,
+				EnvironmentID:       types.GetEnvironmentID(ctx),
+				BaseModel:           types.GetDefaultBaseModel(ctx),
+			})
+			s.Require().NoError(err)
+		}
+	}
+
+	states, err := s.grantService.GrantStateByFeature(ctx, fx.sub, fx.cycleStart.Add(9*time.Hour))
+	s.Require().NoError(err)
+	state := states[fx.ec.FeatureID]
+	s.Require().NotNil(state)
+
+	byEC := map[string][]*dto.GrantWindowState{}
+	for _, w := range state.Windows {
+		byEC[w.EntitlementID] = append(byEC[w.EntitlementID], w)
+	}
+	s.Len(byEC, 2, "both entitlements keep a series")
+	for ecID, windows := range byEC {
+		s.Len(windows, GrantWindowsPerEntitlement, "capped per entitlement: %s", ecID)
+		s.Equal(fx.cycleStart.Add(3*time.Hour), windows[0].ValidFrom, "the most recent are kept")
+		s.True(windows[0].ValidFrom.Before(windows[len(windows)-1].ValidFrom), "still oldest first")
+	}
 }
