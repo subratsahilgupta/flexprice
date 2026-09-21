@@ -195,3 +195,48 @@ func TestEntitlement_Validate_SubscriptionPeriodWithBehaviorRejected(t *testing.
 		t.Fatalf("subscription_period with allocation_behavior must be rejected")
 	}
 }
+
+// Empty allocation behaviour has always meant first_usage, but the schema default never
+// applied: the repository writes the column on every create. Stating it keeps the row
+// readable and a query on the value complete.
+func TestApplyGrantDefaults(t *testing.T) {
+	quota := decimal.NewFromInt(100)
+
+	grant := &Entitlement{
+		GrantMeasure:      types.EntitlementGrantMeasureQuantity,
+		GrantQuota:        &quota,
+		GrantDurationUnit: types.EntitlementGrantDurationUnitHour,
+	}
+	grant.ApplyGrantDefaults()
+	if grant.GrantAllocationBehavior != types.EntitlementGrantAllocationBehaviorFirstUsage {
+		t.Fatalf("empty behaviour should be stated as first_usage, got %q", grant.GrantAllocationBehavior)
+	}
+
+	chosen := &Entitlement{
+		GrantMeasure:            types.EntitlementGrantMeasureQuantity,
+		GrantQuota:              &quota,
+		GrantDurationUnit:       types.EntitlementGrantDurationUnitDay,
+		GrantAllocationBehavior: types.EntitlementGrantAllocationBehaviorUnitStart,
+	}
+	chosen.ApplyGrantDefaults()
+	if chosen.GrantAllocationBehavior != types.EntitlementGrantAllocationBehaviorUnitStart {
+		t.Fatalf("an explicit choice must never be overwritten, got %q", chosen.GrantAllocationBehavior)
+	}
+
+	cycle := &Entitlement{
+		GrantMeasure:      types.EntitlementGrantMeasureQuantity,
+		GrantQuota:        &quota,
+		GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod,
+	}
+	cycle.ApplyGrantDefaults()
+	if cycle.GrantAllocationBehavior != "" {
+		t.Fatalf("a cycle-long window has nothing to anchor, got %q", cycle.GrantAllocationBehavior)
+	}
+
+	limit := int64(100)
+	legacy := &Entitlement{UsageLimit: &limit}
+	legacy.ApplyGrantDefaults()
+	if legacy.GrantAllocationBehavior != "" {
+		t.Fatalf("no grant config means nothing to state, got %q", legacy.GrantAllocationBehavior)
+	}
+}

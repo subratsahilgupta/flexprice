@@ -71,6 +71,19 @@ func (e *Entitlement) IsUnlimitedGrant() bool {
 	return e != nil && e.HasGrantConfig() && e.GrantQuota == nil
 }
 
+// ApplyGrantDefaults states the implied allocation behaviour rather than leaving readers
+// to infer it from a blank. Fixed-duration units only: a subscription_period window
+// always spans the cycle, and validateGrantConfig rejects a behaviour on one.
+func (e *Entitlement) ApplyGrantDefaults() {
+	if !e.HasGrantConfig() || e.GrantAllocationBehavior != "" {
+		return
+	}
+	if e.GrantDurationUnit == types.EntitlementGrantDurationUnitSubscriptionPeriod {
+		return
+	}
+	e.GrantAllocationBehavior = types.EntitlementGrantAllocationBehaviorFirstUsage
+}
+
 func (e *Entitlement) GrantDuration() (time.Duration, error) {
 	if e == nil {
 		return 0, ierr.NewError("grant_duration_value is required for grant-based entitlements").

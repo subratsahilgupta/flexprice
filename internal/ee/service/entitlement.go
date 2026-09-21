@@ -167,6 +167,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 	if err := s.deriveGrantConfig(ctx, e, meterForGrantCheck); err != nil {
 		return nil, err
 	}
+	e.ApplyGrantDefaults()
 
 	if err := e.Validate(); err != nil {
 		return nil, err
@@ -778,6 +779,8 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		existing.GrantDurationValue = nil
 		existing.GrantAllocationBehavior = ""
 	}
+
+	existing.ApplyGrantDefaults()
 
 	if err := existing.Validate(); err != nil {
 		return nil, err
