@@ -306,11 +306,8 @@ func EntitlementsToResponse(entitlements []*entitlement.Entitlement) []*Entitlem
 type ReissueEntitlementGrantsRequest struct {
 	SubscriptionID string
 	FeatureID      string
-	// Delta is the change in allowance, not the new allowance: a successor opens at
-	// the closed window's remaining balance plus this.
-	Delta     decimal.Decimal
-	Unlimited bool
-	At        time.Time
-	// Source lands in the successor's metadata, so a window can say what moved it.
-	Source string
+	Delta          decimal.Decimal
+	Unlimited      bool
+	At             time.Time
+	Source         string
 }

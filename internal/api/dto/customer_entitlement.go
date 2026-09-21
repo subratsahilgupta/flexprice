@@ -60,27 +60,19 @@ type GrantState struct {
 
 // GrantWindowState is one materialized grant window.
 type GrantWindowState struct {
-	GrantID       string `json:"grant_id"`
-	EntitlementID string `json:"entitlement_id"`
-	// Measure is quantity (meter units) or amount (currency) — the unit for
-	// every figure below.
-	Measure types.EntitlementGrantMeasure `json:"measure"`
-	// Unlimited windows track usage but have no ceiling: quota and remaining are
-	// meaningless and a client must render "unlimited", not a number.
-	Unlimited bool            `json:"unlimited"`
-	Quota     decimal.Decimal `json:"quota" swaggertype:"string"`
-	Usage     decimal.Decimal `json:"usage" swaggertype:"string"`
-	// Remaining is null on an unlimited window: there is no ceiling to measure against.
-	Remaining *decimal.Decimal             `json:"remaining,omitempty" swaggertype:"string"`
-	ValidFrom time.Time                    `json:"valid_from"`
-	ValidTo   time.Time                    `json:"valid_to"`
-	Status    types.EntitlementGrantStatus `json:"status"`
+	GrantID       string                        `json:"grant_id"`
+	EntitlementID string                        `json:"entitlement_id"`
+	Measure       types.EntitlementGrantMeasure `json:"measure"`
+	Unlimited     bool                          `json:"unlimited"`
+	Quota         decimal.Decimal               `json:"quota" swaggertype:"string"`
+	Usage         decimal.Decimal               `json:"usage" swaggertype:"string"`
+	Remaining     *decimal.Decimal              `json:"remaining,omitempty" swaggertype:"string"`
+	ValidFrom     time.Time                     `json:"valid_from"`
+	ValidTo       time.Time                     `json:"valid_to"`
+	Status        types.EntitlementGrantStatus  `json:"status"`
 	// IsActive means the window is open right now — evaluated against the
 	// server's clock so clients need not compare timestamps themselves.
-	IsActive bool `json:"is_active"`
-	// LastComputedAt is the freshness watermark. Usage is a snapshot refreshed
-	// by a debounced background pass, so a client must render this rather than
-	// implying the number is live.
+	IsActive       bool       `json:"is_active"`
 	LastComputedAt *time.Time `json:"last_computed_at,omitempty"`
 }
 
@@ -107,13 +99,8 @@ type AggregatedEntitlement struct {
 	GrantDurationUnit  types.EntitlementGrantDurationUnit `json:"grant_duration_unit,omitempty"`
 	// GrantUnlimited distinguishes "grant-based with no ceiling" from "no grant
 	// config at all"; both leave GrantQuota nil.
-	GrantUnlimited bool `json:"grant_unlimited,omitempty"`
-
-	// GrantState is the runtime half of the config above: the windows this
-	// allowance has materialized. Nil when the feature carries no grant config,
-	// and its Windows are empty when none has opened yet — different facts that
-	// a client must render differently.
-	GrantState *GrantState `json:"grant_state,omitempty"`
+	GrantUnlimited bool        `json:"grant_unlimited,omitempty"`
+	GrantState     *GrantState `json:"grant_state,omitempty"`
 }
 
 // AggregatedEntitlementBucket is one independent budget within a parallel feature.
