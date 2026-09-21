@@ -9,7 +9,6 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addon"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
-	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
 	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/plan"
@@ -928,42 +927,13 @@ func (s *entitlementService) reissueGrantWindows(
 	unlimited bool,
 	source string,
 ) error {
-	if s.EntitlementGrantRepo == nil {
-		return nil
-	}
-	sub, err := s.SubRepo.Get(ctx, e.EntityID)
-	if err != nil {
-		return err
-	}
-
-	at := time.Now().UTC()
-	filter := types.NewNoLimitEntitlementGrantFilter().
-		WithSubscriptionIDs(e.EntityID).
-		WithScopeEntityType(types.EntitlementGrantScopeFeature)
-	filter.WithLiveOnly(at)
-	live, err := s.EntitlementGrantRepo.List(ctx, filter)
-	if err != nil {
-		return err
-	}
-	live = lo.Filter(live, func(g *entitlementgrant.EntitlementGrant, _ int) bool {
-		return g.FeatureID() == e.FeatureID
-	})
-	if len(live) == 0 {
-		return nil
-	}
-	ecsByFeature, err := newSubscriptionGrantService(s.ServiceParams).GetSubscriptionGrantECsByFeature(ctx, sub)
-	if err != nil {
-		return err
-	}
-
-	_, err = NewEntitlementGrantService(s.ServiceParams).ReissueEntitlementGrants(ctx, ReissueEntitlementGrantsRequest{
-		FeatureID: e.FeatureID,
-		Grants:    live,
-		ECs:       ecsByFeature[e.FeatureID],
-		Delta:     delta,
-		Unlimited: unlimited,
-		At:        at,
-		Source:    source,
+	_, err := NewEntitlementGrantService(s.ServiceParams).ReissueEntitlementGrants(ctx, &dto.ReissueEntitlementGrantsRequest{
+		SubscriptionID: e.EntityID,
+		FeatureID:      e.FeatureID,
+		Delta:          delta,
+		Unlimited:      unlimited,
+		At:             time.Now().UTC(),
+		Source:         source,
 	})
 	return err
 }

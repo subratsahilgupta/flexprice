@@ -2388,18 +2388,32 @@ func (s *EntitlementGrantSuite) TestReissue_BalanceTravelsAsQuota() {
 	fx := s.newWindowFixture("reissue", 5)
 	now := time.Now().UTC()
 
-	live := s.seedWindowFrom(fx, "eg-reissue", now.Add(-time.Hour), decimal.NewFromInt(1000), decimal.NewFromInt(800), nil)
-	live.ValidTo = now.Add(4 * time.Hour)
-	_, err := s.GetStores().EntitlementGrantRepo.Update(ctx, live)
+	// The service resolves the live windows and the entitlements funding them itself,
+	// so both have to be readable for this subscription.
+	p := s.simplePlan("plan-reissue")
+	fx.sub.PlanID = p.ID
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, fx.sub))
+
+	var err error
+	planEC := s.newTimeBoxedEC("ec-reissue-plan", fx.ec.FeatureID, 5,
+		types.EntitlementGrantDurationUnitHour, decimal.NewFromInt(1000))
+	planEC.EntityType, planEC.EntityID = types.ENTITLEMENT_ENTITY_TYPE_PLAN, p.ID
+	planEC.FeatureType = types.FeatureTypeMetered
+	planEC.IsEnabled = true
+	_, err = s.GetStores().EntitlementRepo.Create(ctx, planEC)
 	s.Require().NoError(err)
 
-	opened, err := s.grantService.ReissueEntitlementGrants(ctx, ReissueEntitlementGrantsRequest{
-		FeatureID: fx.ec.FeatureID,
-		Grants:    []*entitlementgrant.EntitlementGrant{live},
-		ECs:       []*entitlement.Entitlement{fx.ec},
-		Delta:     decimal.NewFromInt(4000), // 5,000 − 1,000
-		At:        now,
-		Source:    "entitlement_updated",
+	live := s.seedWindowFrom(fx, "eg-reissue", now.Add(-time.Hour), decimal.NewFromInt(1000), decimal.NewFromInt(800), nil)
+	live.ValidTo = now.Add(4 * time.Hour)
+	_, err = s.GetStores().EntitlementGrantRepo.Update(ctx, live)
+	s.Require().NoError(err)
+
+	opened, err := s.grantService.ReissueEntitlementGrants(ctx, &dto.ReissueEntitlementGrantsRequest{
+		SubscriptionID: fx.sub.ID,
+		FeatureID:      fx.ec.FeatureID,
+		Delta:          decimal.NewFromInt(4000), // 5,000 − 1,000
+		At:             now,
+		Source:         "entitlement_updated",
 	})
 	s.Require().NoError(err)
 	s.Require().Len(opened, 1)

@@ -298,3 +298,19 @@ func EntitlementsToResponse(entitlements []*entitlement.Entitlement) []*Entitlem
 	}
 	return responses
 }
+
+// ReissueEntitlementGrantsRequest re-cuts a feature's live grant windows on one
+// subscription: the open ones close at At, and a successor opens carrying the unspent
+// balance plus Delta. Scalars only — the service resolves the windows and the
+// entitlements funding them, since both have to be read as they stand at At.
+type ReissueEntitlementGrantsRequest struct {
+	SubscriptionID string
+	FeatureID      string
+	// Delta is the change in allowance, not the new allowance: a successor opens at
+	// the closed window's remaining balance plus this.
+	Delta     decimal.Decimal
+	Unlimited bool
+	At        time.Time
+	// Source lands in the successor's metadata, so a window can say what moved it.
+	Source string
+}

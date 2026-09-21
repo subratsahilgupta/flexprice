@@ -36,7 +36,7 @@ type EntitlementGrantService interface {
 	GrantStateByFeature(ctx context.Context, sub *subscription.Subscription, at time.Time) (map[string]*dto.GrantState, error)
 
 	CloseEntitlementGrants(ctx context.Context, grants []*entitlementgrant.EntitlementGrant, closeAt time.Time) (map[string]*entitlementgrant.EntitlementGrant, error)
-	ReissueEntitlementGrants(ctx context.Context, req ReissueEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
+	ReissueEntitlementGrants(ctx context.Context, req *dto.ReissueEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
 	OpenFeatureBasedEntitlementGrants(ctx context.Context, reqs []OpenFeatureBasedEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
 }
 
@@ -124,17 +124,27 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 	return closed, nil
 }
 
-// ReissueEntitlementGrantsRequest re-cuts a feature's live windows after its allowance
-// changed. Delta is the change — incoming quota less outgoing — so a raise adds and a
-// cut subtracts from what the closed window had left.
-type ReissueEntitlementGrantsRequest struct {
-	FeatureID string
-	Grants    []*entitlementgrant.EntitlementGrant
-	ECs       []*entitlement.Entitlement
-	Delta     decimal.Decimal
-	Unlimited bool
-	At        time.Time
-	Source    string
+// liveGrantsForFeature is the feature's windows that are open at `at` on one
+// subscription. Read here rather than passed in: a re-cut has to act on the windows as
+// they stand when it runs, not on a list a caller assembled earlier.
+func (s *entitlementGrantService) liveGrantsForFeature(
+	ctx context.Context,
+	subscriptionID, featureID string,
+	at time.Time,
+) ([]*entitlementgrant.EntitlementGrant, error) {
+	filter := types.NewNoLimitEntitlementGrantFilter().
+		WithSubscriptionIDs(subscriptionID).
+		WithScopeEntityType(types.EntitlementGrantScopeFeature)
+	filter.WithLiveOnly(at)
+
+	grants, err := s.EntitlementGrantRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	return lo.Filter(grants, func(g *entitlementgrant.EntitlementGrant, _ int) bool {
+		return g != nil && g.FeatureID() == featureID && g.ValidTo.After(at) && at.After(g.ValidFrom)
+	}), nil
 }
 
 // ReissueEntitlementGrants closes what is live and opens a successor for the rest of the
@@ -142,17 +152,32 @@ type ReissueEntitlementGrantsRequest struct {
 // so nothing has to be excluded from the fold and no usage figure is carried.
 func (s *entitlementGrantService) ReissueEntitlementGrants(
 	ctx context.Context,
-	req ReissueEntitlementGrantsRequest,
+	req *dto.ReissueEntitlementGrantsRequest,
 ) ([]*entitlementgrant.EntitlementGrant, error) {
-	live := lo.Filter(req.Grants, func(g *entitlementgrant.EntitlementGrant, _ int) bool {
-		return g != nil && g.ValidTo.After(req.At) && req.At.After(g.ValidFrom)
-	})
+	if req == nil || s.EntitlementGrantRepo == nil {
+		return nil, nil
+	}
+
+	live, err := s.liveGrantsForFeature(ctx, req.SubscriptionID, req.FeatureID, req.At)
+	if err != nil {
+		return nil, err
+	}
 	if len(live) == 0 {
 		return nil, nil
 	}
 
+	sub, err := s.SubRepo.Get(ctx, req.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	ecsByFeature, err := newSubscriptionGrantService(s.ServiceParams).GetSubscriptionGrantECsByFeature(ctx, sub)
+	if err != nil {
+		return nil, err
+	}
+	featureECs := ecsByFeature[req.FeatureID]
+
 	var opened []*entitlementgrant.EntitlementGrant
-	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		closedByID, err := s.CloseEntitlementGrants(txCtx, live, req.At)
 		if err != nil {
 			return err
@@ -177,7 +202,7 @@ func (s *entitlementGrantService) ReissueEntitlementGrants(
 						"reissue_delta":  req.Delta.String(),
 					}).
 					Build(),
-				ExistingECs: req.ECs,
+				ExistingECs: featureECs,
 			})
 		}
 		if len(reqs) == 0 {
@@ -1110,9 +1135,6 @@ func (s *entitlementGrantService) GrantStateByFeature(
 		return nil, nil
 	}
 
-	// customer_id is redundant with subscription_id logically, but it is the
-	// leading selective column of the (tenant, env, customer, valid_to, ...)
-	// index — without it the planner scans the whole tenant's grants and filters.
 	filter := types.NewNoLimitEntitlementGrantFilter().
 		WithCustomerIDs(sub.CustomerID).
 		WithSubscriptionIDs(sub.ID).
@@ -1151,9 +1173,7 @@ func (s *entitlementGrantService) GrantStateByFeature(
 			ValidTo:        g.ValidTo,
 			Status:         g.GrantStatus,
 			LastComputedAt: g.LastComputedAt,
-			// Open means started AND not yet ended: an EC scheduled to begin later in
-			// the cycle produces a window whose balance cannot be spent yet.
-			IsActive: !g.ValidFrom.After(at) && g.ValidTo.After(at),
+			IsActive:       !g.ValidFrom.After(at) && g.ValidTo.After(at),
 		}
 		state.Windows = append(state.Windows, window)
 	}

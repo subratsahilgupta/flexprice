@@ -23,10 +23,9 @@ const entitlementGrantQuotaScale = 15
 type grantProrationSource string
 
 const (
-	grantProrationSourceAddonAttach     grantProrationSource = "addon_attach"
-	grantProrationSourceAddonDetach     grantProrationSource = "addon_detach"
-	grantProrationSourceAddonsModify    grantProrationSource = "addons_modify"
-	grantProrationSourceEntitlementGone grantProrationSource = "entitlement_deleted"
+	grantProrationSourceAddonAttach  grantProrationSource = "addon_attach"
+	grantProrationSourceAddonDetach  grantProrationSource = "addon_detach"
+	grantProrationSourceAddonsModify grantProrationSource = "addons_modify"
 )
 
 func (s grantProrationSource) String() string { return string(s) }
