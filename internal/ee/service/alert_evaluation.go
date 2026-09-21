@@ -335,7 +335,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 		// Unlimited windows track usage for display but have no ceiling to cross,
 		// so they never stamp a crossing and never bill overage.
 		cross := g.QuotaCrossedAt
-		if cross == nil && !g.Unlimited && usage.GreaterThanOrEqual(g.Quota) {
+		if cross == nil && isGrantExhausted(g, usage) {
 			cross = &at
 		}
 

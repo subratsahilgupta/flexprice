@@ -2147,20 +2147,64 @@ func (s *EntitlementGrantSuite) TestUpdateEntitlement_UnlimitedFlagClearsTheQuot
 	s.True(updated.Entitlement.IsUnlimitedGrant())
 }
 
-func (s *EntitlementGrantSuite) TestGrantWindow_FutureDatedIsNotActive() {
-	at := time.Now().UTC()
-	future := &entitlementgrant.EntitlementGrant{
-		ValidFrom: at.Add(2 * time.Hour),
-		ValidTo:   at.Add(3 * time.Hour),
+// is_active is "spendable right now": an allowance scheduled to start later in the cycle
+// carries a balance the customer cannot touch yet. Asserted through the read itself, so a
+// change to the predicate there cannot pass by re-implementing it here.
+func (s *EntitlementGrantSuite) TestGrantState_FutureDatedIsNotActive() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("future-active", 1)
+
+	p := s.simplePlan("plan-future-active")
+	fx.sub.PlanID = p.ID
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, fx.sub))
+
+	planEC := s.newTimeBoxedEC("ec-future-active", fx.ec.FeatureID, 1,
+		types.EntitlementGrantDurationUnitHour, decimal.NewFromInt(100))
+	planEC.EntityType, planEC.EntityID = types.ENTITLEMENT_ENTITY_TYPE_PLAN, p.ID
+	planEC.FeatureType = types.FeatureTypeMetered
+	planEC.IsEnabled = true
+	_, err := s.GetStores().EntitlementRepo.Create(ctx, planEC)
+	s.Require().NoError(err)
+
+	at := fx.cycleStart.Add(4 * time.Hour)
+	for _, w := range []struct {
+		id    string
+		from  time.Time
+		hours int
+	}{
+		{"eg-future-open", at.Add(-time.Hour), 2},
+		{"eg-future-later", at.Add(2 * time.Hour), 1},
+	} {
+		_, err := s.GetStores().EntitlementGrantRepo.Create(ctx, &entitlementgrant.EntitlementGrant{
+			ID:                  w.id,
+			EntitlementConfigID: planEC.ID,
+			CustomerID:          fx.sub.CustomerID,
+			SubscriptionID:      fx.sub.ID,
+			ScopeEntityType:     types.EntitlementGrantScopeFeature,
+			ScopeEntityID:       fx.ec.FeatureID,
+			Measure:             types.EntitlementGrantMeasureQuantity,
+			Quota:               decimal.NewFromInt(100),
+			ValidFrom:           w.from,
+			ValidTo:             w.from.Add(time.Duration(w.hours) * time.Hour),
+			GrantStatus:         types.EntitlementGrantStatusActive,
+			EnvironmentID:       types.GetEnvironmentID(ctx),
+			BaseModel:           types.GetDefaultBaseModel(ctx),
+		})
+		s.Require().NoError(err)
 	}
-	open := &entitlementgrant.EntitlementGrant{
-		ValidFrom: at.Add(-1 * time.Hour),
-		ValidTo:   at.Add(1 * time.Hour),
+
+	states, err := s.grantService.GrantStateByFeature(ctx, fx.sub, at)
+	s.Require().NoError(err)
+	state := states[fx.ec.FeatureID]
+	s.Require().NotNil(state)
+
+	byID := map[string]*dto.GrantAllowanceState{}
+	for _, a := range state.Allowances {
+		byID[a.GrantID] = a
 	}
-	// IsActive is "open right now"; a window scheduled to start later carries a
-	// balance the customer cannot spend yet.
-	s.False(!future.ValidFrom.After(at) && future.ValidTo.After(at))
-	s.True(!open.ValidFrom.After(at) && open.ValidTo.After(at))
+	s.Require().Len(byID, 2)
+	s.True(byID["eg-future-open"].IsActive, "started and not yet ended")
+	s.False(byID["eg-future-later"].IsActive, "starts later in the cycle")
 }
 
 // -----------------------------------------------------------------------------
