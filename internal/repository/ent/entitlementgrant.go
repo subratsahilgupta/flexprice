@@ -407,6 +407,60 @@ func (r *entitlementGrantRepository) List(ctx context.Context, filter *types.Ent
 	return domainGrant.FromEntList(rows), nil
 }
 
+func (r *entitlementGrantRepository) ListLatestPerConfig(
+	ctx context.Context,
+	filter *types.EntitlementGrantFilter,
+	perConfig int,
+) ([]*domainGrant.EntitlementGrant, error) {
+	span := StartRepositorySpan(ctx, "entitlement_grant", "list_latest_per_config", map[string]interface{}{
+		"tenant_id":  types.GetTenantID(ctx),
+		"per_config": perConfig,
+	})
+	defer FinishSpan(span)
+
+	if filter == nil {
+		filter = types.NewNoLimitEntitlementGrantFilter()
+	}
+	if err := filter.Validate(); err != nil {
+		return nil, err
+	}
+	if perConfig <= 0 {
+		return nil, nil
+	}
+
+	// The slots first, so the per-slot reads below can each be a plain index lookup.
+	configIDs, err := applyEntitlementGrantFilter(r.scoped(ctx), filter).
+		GroupBy(entitlementgrant.FieldEntitlementConfigID).
+		Strings(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list entitlement grant slots").
+			Mark(ierr.ErrDatabase)
+	}
+
+	out := make([]*domainGrant.EntitlementGrant, 0, len(configIDs)*perConfig)
+	for _, configID := range configIDs {
+		// valid_from is the unique index's last column, so this is a backward index
+		// scan: the cost is perConfig rows however much history the slot has.
+		rows, err := applyEntitlementGrantFilter(r.scoped(ctx), filter).
+			Where(entitlementgrant.EntitlementConfigID(configID)).
+			Order(ent.Desc(entitlementgrant.FieldValidFrom)).
+			Limit(perConfig).
+			All(ctx)
+		if err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Failed to list entitlement grants for slot").
+				WithReportableDetails(map[string]interface{}{"entitlement_config_id": configID}).
+				Mark(ierr.ErrDatabase)
+		}
+		out = append(out, domainGrant.FromEntList(rows)...)
+	}
+
+	return out, nil
+}
+
 func (r *entitlementGrantRepository) Count(ctx context.Context, filter *types.EntitlementGrantFilter) (int, error) {
 	span := StartRepositorySpan(ctx, "entitlement_grant", "count", map[string]interface{}{
 		"tenant_id": types.GetTenantID(ctx),

@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
@@ -161,6 +162,41 @@ func (s *InMemoryEntitlementGrantStore) List(ctx context.Context, filter *types.
 			Mark(errors.ErrDatabase)
 	}
 	return rows, nil
+}
+
+// ListLatestPerConfig mirrors the repository: the newest perConfig windows of each slot
+// the filter matches, in the same order List returns them.
+func (s *InMemoryEntitlementGrantStore) ListLatestPerConfig(
+	ctx context.Context,
+	filter *types.EntitlementGrantFilter,
+	perConfig int,
+) ([]*entitlementgrant.EntitlementGrant, error) {
+	if perConfig <= 0 {
+		return nil, nil
+	}
+
+	rows, err := s.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	byConfig := make(map[string][]*entitlementgrant.EntitlementGrant, 4)
+	for _, g := range rows {
+		if g != nil {
+			byConfig[g.EntitlementConfigID] = append(byConfig[g.EntitlementConfigID], g)
+		}
+	}
+
+	kept := make([]*entitlementgrant.EntitlementGrant, 0, len(byConfig)*perConfig)
+	for _, grants := range byConfig {
+		sort.Slice(grants, func(i, j int) bool { return grants[i].ValidFrom.After(grants[j].ValidFrom) })
+		if len(grants) > perConfig {
+			grants = grants[:perConfig]
+		}
+		kept = append(kept, grants...)
+	}
+
+	return kept, nil
 }
 
 func (s *InMemoryEntitlementGrantStore) Count(ctx context.Context, filter *types.EntitlementGrantFilter) (int, error) {

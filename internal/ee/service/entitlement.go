@@ -148,7 +148,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 				WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
 				WithReportableDetails(map[string]interface{}{
 					"meter_id":     m.ID,
-					"bucket_size":  m.Aggregation.BucketSize,
+					"bucket_size":  m.Aggregation.BucketSize, //nolint:staticcheck // meter-level bucket_size is deprecated but still honoured; reported so the error names the real cause
 					"feature_type": req.FeatureType,
 				}).
 				Mark(ierr.ErrValidation)
@@ -404,7 +404,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 						WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
 						WithReportableDetails(map[string]interface{}{
 							"meter_id":     m.ID,
-							"bucket_size":  m.Aggregation.BucketSize,
+							"bucket_size":  m.Aggregation.BucketSize, //nolint:staticcheck // meter-level bucket_size is deprecated but still honoured; reported so the error names the real cause
 							"feature_type": entReq.FeatureType,
 							"index":        i,
 						}).
@@ -777,6 +777,7 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 	//
 	// Deprecated: ClearGrantConfig is honoured for existing callers but is on its
 	// way out — logged so we can see whether anyone still relies on it.
+	//nolint:staticcheck // deprecated on purpose; this branch is what keeps existing callers working
 	if req.ClearGrantConfig != nil && *req.ClearGrantConfig {
 		s.Logger.Info(ctx, "deprecated clear_grant_config used on entitlement update",
 			"entitlement_id", id,
@@ -1047,10 +1048,11 @@ func (s *entitlementService) settleGrantWindowsForDeletedEC(ctx context.Context,
 	}
 
 	return grantSvc.applyEntitlementGrantChange(ctx, &GrantChangeConfig{
-		sub:                   sub,
-		entitlementsToRemove:  removed,
-		survivingECsByFeature: surviving,
-		entitlementChangeAt:   time.Now().UTC(),
+		sub:                     sub,
+		entitlementsToRemove:    removed,
+		survivingECsByFeature:   surviving,
+		entitlementChangeAt:     time.Now().UTC(),
+		entitlementChangeOrigin: grantProrationSourceEntitlementGone,
 	})
 }
 

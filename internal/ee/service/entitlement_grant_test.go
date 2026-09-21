@@ -337,7 +337,7 @@ func (s *EntitlementGrantSuite) TestEnsureGrants_ReturnsExistingLiveGrantUnchang
 	s.NoError(err)
 	s.Len(first, 1)
 
-	second, meta, err := s.grantService.EnsureGrants(s.GetContext(), cust, at.Add(5*time.Minute))
+	second, _, err := s.grantService.EnsureGrants(s.GetContext(), cust, at.Add(5*time.Minute))
 	s.NoError(err)
 	s.Len(second, 1)
 	s.Equal(first[0].ID, second[0].ID, "second EnsureGrants should return the same live grant")

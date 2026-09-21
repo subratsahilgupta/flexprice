@@ -26,6 +26,8 @@ const (
 	grantProrationSourceAddonAttach  grantProrationSource = "addon_attach"
 	grantProrationSourceAddonDetach  grantProrationSource = "addon_detach"
 	grantProrationSourceAddonsModify grantProrationSource = "addons_modify"
+	// Not an addon change: an entitlement was deleted outright.
+	grantProrationSourceEntitlementGone grantProrationSource = "entitlement_deleted"
 )
 
 func (s grantProrationSource) String() string { return string(s) }
@@ -258,7 +260,7 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 				WithQuota(decimal.Zero).
 				WithWindow(closed.ValidTo, pooled.ValidTo).
 				WithMetadata(types.Metadata{
-					"proration_source":   grantProrationSourceAddonsModify.String(),
+					"proration_source":   cfg.origin().String(),
 					"carry_forward_from": pooled.ID,
 				}).
 				Build(),
@@ -271,6 +273,16 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 
 	_, err = grantSvc.OpenFeatureBasedEntitlementGrants(ctx, reqs)
 	return err
+}
+
+// origin is what moved these windows, for the successor's metadata. Addon changes are
+// the common case and the ones that name themselves; a deleted entitlement builds its
+// config by hand and says so.
+func (c *GrantChangeConfig) origin() grantProrationSource {
+	if c == nil || c.entitlementChangeOrigin == "" {
+		return grantProrationSourceAddonsModify
+	}
+	return c.entitlementChangeOrigin
 }
 
 // removalClosures decides what the leaving configs settle, writing nothing: the windows to end,

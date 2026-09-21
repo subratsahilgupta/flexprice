@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"slices"
 	"sort"
 	"time"
 
@@ -954,6 +953,7 @@ func (s *entitlementService) grantMeterEligibility(
 			}).
 			Mark(ierr.ErrValidation)
 	}
+	//nolint:staticcheck // deprecated but still honoured: a meter carrying one still buckets
 	if m.Aggregation.BucketSize != "" {
 		return ierr.NewError("grant-based entitlements are not supported for bucketed meters").
 			WithHint("This meter already groups usage into its own fixed windows, which an allowance window would cut across. Remove the bucket size from the meter, or remove the allowance.").
@@ -1141,7 +1141,9 @@ func (s *entitlementGrantService) GrantStateByFeature(
 		WithScopeEntityType(types.EntitlementGrantScopeFeature)
 	filter.WithCycleOverlap(sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
 
-	grants, err := s.EntitlementGrantRepo.List(ctx, filter)
+	// Capped in the query: an hourly allowance leaves hundreds of rows in a monthly
+	// cycle, and a read wants the live window and what led to it.
+	grants, err := s.EntitlementGrantRepo.ListLatestPerConfig(ctx, filter, GrantWindowsPerEntitlement)
 	if err != nil {
 		return nil, err
 	}
@@ -1181,53 +1183,15 @@ func (s *entitlementGrantService) GrantStateByFeature(
 	// Oldest first: the ledger reads as a timeline.
 	for _, state := range out {
 		sort.Slice(state.Windows, func(i, j int) bool { return state.Windows[i].ValidFrom.Before(state.Windows[j].ValidFrom) })
-		state.Windows = latestWindowsPerEntitlement(state.Windows)
 	}
 
 	return out, nil
 }
 
-// GrantWindowsPerEntitlement caps how much of the ledger a read returns. An hourly
-// allowance on a monthly cycle produces several hundred windows per entitlement, and a
-// reader wants the live one and what led to it, not the whole month.
-const GrantWindowsPerEntitlement = 5
-
-// latestWindowsPerEntitlement keeps the last GrantWindowsPerEntitlement windows of each
-// entitlement, preserving the oldest-first order of the input. Per entitlement rather
+// GrantWindowsPerEntitlement caps how much of the ledger a read returns, per slot rather
 // than per feature: a parallel feature has one series per entitlement, and a shared cap
-// would let a busy one crowd out the others entirely.
-func latestWindowsPerEntitlement(windows []*dto.GrantWindowState) []*dto.GrantWindowState {
-	keep := make(map[string]int, 4)
-	for _, w := range windows {
-		keep[w.EntitlementID]++
-	}
-
-	over := false
-	for _, n := range keep {
-		if n > GrantWindowsPerEntitlement {
-			over = true
-			break
-		}
-	}
-	if !over {
-		return windows
-	}
-
-	// Walk backwards so the ones kept are the most recent, then restore the order.
-	kept := make([]*dto.GrantWindowState, 0, len(keep)*GrantWindowsPerEntitlement)
-	seen := make(map[string]int, len(keep))
-	for i := len(windows) - 1; i >= 0; i-- {
-		w := windows[i]
-		if seen[w.EntitlementID] >= GrantWindowsPerEntitlement {
-			continue
-		}
-		seen[w.EntitlementID]++
-		kept = append(kept, w)
-	}
-	slices.Reverse(kept)
-
-	return kept
-}
+// would let a busy one crowd the others out entirely.
+const GrantWindowsPerEntitlement = 5
 
 // ValidateGrantShape resolves the entitlement's meter and applies the shared
 // meter/price rules. A no-op for entitlements without a grant config.

@@ -68,6 +68,10 @@ type GrantChangeConfig struct {
 
 	// entitlementChangeAt is the instant every window of this change is cut at.
 	entitlementChangeAt time.Time
+
+	// entitlementChangeOrigin lands in each successor's metadata, so a window can say
+	// what moved it. Defaults to the addon path, which is where most changes come from.
+	entitlementChangeOrigin grantProrationSource
 }
 
 type subscriptionGrantService struct {

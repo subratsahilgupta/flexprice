@@ -6639,10 +6639,6 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 	}
 	subscriptionEntitlements := subscriptionEntResp.Items
 
-	// An override stands in for the plan or addon entitlement it replaces, and that
-	// parent is about to be filtered out. Carry the parent's plan/addon across so the
-	// override can still say where the allowance came from; its own entity is the
-	// subscription, which names nothing a customer would recognise.
 	nameOverridesAfterTheirParent(planEntitlements.Items, addonEntitlements, subscriptionEntitlements)
 
 	// Step 6: Filter out overridden entitlements and combine results

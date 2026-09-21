@@ -274,4 +274,3 @@ func (s *customerPortalService) validateSavedMethodForTopUp(
 
 	return nil
 }
-
