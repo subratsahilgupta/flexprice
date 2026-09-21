@@ -3403,17 +3403,10 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 					grantQuota = grantQuota.Add(w.Quota)
 				}
 				haveFigures = true
-			} else if len(gs.Allowances) > 0 {
-				// Between windows there is no live allowance, but the period still has
-				// usage. Fall back to the ledger so both halves of the ratio cover the
-				// same span rather than reporting zero against a per-window quota.
-				for _, w := range gs.Allowances {
-					if w.Unlimited {
-						anyUnlimited = true
-					}
-					grantUsage = grantUsage.Add(w.Usage)
-					grantQuota = grantQuota.Add(w.Quota)
-				}
+			} else if last := lo.LastOrEmpty(gs.Allowances); last != nil {
+				anyUnlimited = last.Unlimited
+				grantUsage = last.Usage
+				grantQuota = last.Quota
 				haveFigures = true
 			}
 
