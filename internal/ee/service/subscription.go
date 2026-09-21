@@ -6981,8 +6981,38 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 		if override.GrantQuota != nil {
 			newEnt.GrantQuota = override.GrantQuota
 		}
+		// Only this can clear an inherited ceiling: a nil grant_quota means inherit.
+		if override.GrantUnlimited != nil {
+			if *override.GrantUnlimited {
+				if newEnt.GrantDurationUnit != types.EntitlementGrantDurationUnitSubscriptionPeriod {
+					return ierr.NewError("an unlimited allowance must reset once per billing period").
+						WithHint("Send grant_duration_unit=subscription_period alongside grant_unlimited").
+						WithReportableDetails(map[string]interface{}{
+							"entitlement_id":      override.EntitlementID,
+							"grant_duration_unit": newEnt.GrantDurationUnit,
+						}).
+						Mark(ierr.ErrValidation)
+				}
+				newEnt.GrantQuota = nil
+			} else if newEnt.GrantQuota == nil && override.GrantQuota == nil {
+				return ierr.NewError("grant_quota is required to put a ceiling back on an allowance").
+					WithHint("Send grant_quota alongside grant_unlimited: false").
+					WithReportableDetails(map[string]interface{}{
+						"entitlement_id":  override.EntitlementID,
+						"subscription_id": sub.ID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
 		if override.AggregationMode != nil {
 			newEnt.AggregationMode = *override.AggregationMode
+		}
+
+		// A cycle-long window has no stride to size or anchor; the parent's are inherited
+		// above and would not survive validation.
+		if newEnt.GrantDurationUnit == types.EntitlementGrantDurationUnitSubscriptionPeriod {
+			newEnt.GrantDurationValue = nil
+			newEnt.GrantAllocationBehavior = ""
 		}
 
 		// Apply overrides - ONLY these 3 fields can be overridden
@@ -7075,6 +7105,8 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 
 		// Field coherence on the merged row: an override can move a quota or a
 		// duration into an invalid combination even though the parent was valid.
+		newEnt.ApplyGrantDefaults()
+
 		if err := newEnt.Validate(); err != nil {
 			return err
 		}

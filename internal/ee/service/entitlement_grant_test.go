@@ -2570,3 +2570,37 @@ func (s *EntitlementGrantSuite) TestGrantState_CapsWindowsAcrossSlots() {
 		}), "still oldest first: %s", ecID)
 	}
 }
+
+// A create-time override inherits the parent's grant config, so nil means "keep this".
+// That leaves grant_unlimited as the only way to say the customer has no ceiling.
+func (s *EntitlementGrantSuite) TestSubscriptionOverride_GrantUnlimitedClearsInheritedQuota() {
+	sub, ec := s.grantOverrideFixture("quantity")
+	s.Require().NotNil(ec.GrantQuota, "the plan's allowance is bounded")
+
+	subSvc := NewSubscriptionService(s.buildServiceParams()).(*subscriptionService)
+	s.NoError(subSvc.ProcessSubscriptionEntitlementOverrides(s.GetContext(), sub,
+		[]dto.OverrideEntitlementRequest{{
+			EntitlementID:     ec.ID,
+			GrantUnlimited:    lo.ToPtr(true),
+			GrantDurationUnit: lo.ToPtr(types.EntitlementGrantDurationUnitSubscriptionPeriod),
+		}}))
+
+	rows := s.subScopedRows(sub)
+	s.Require().Len(rows, 1)
+	s.True(rows[0].IsUnlimitedGrant(), "the inherited ceiling is gone")
+}
+
+// grant_unlimited: false has nothing to restore unless a quota comes with it — the
+// parent's is what was just being replaced.
+func (s *EntitlementGrantSuite) TestSubscriptionOverride_BoundedNeedsAQuota() {
+	sub, ec := s.grantOverrideFixture("quantity")
+
+	subSvc := NewSubscriptionService(s.buildServiceParams()).(*subscriptionService)
+	err := subSvc.ProcessSubscriptionEntitlementOverrides(s.GetContext(), sub,
+		[]dto.OverrideEntitlementRequest{{
+			EntitlementID:  ec.ID,
+			GrantUnlimited: lo.ToPtr(true),
+			GrantQuota:     lo.ToPtr(decimal.NewFromInt(50)),
+		}})
+	s.Error(err, "a ceiling and no ceiling cannot both be asked for")
+}

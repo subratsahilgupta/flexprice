@@ -1574,6 +1574,11 @@ type OverrideEntitlementRequest struct {
 	GrantAllocationBehavior *types.EntitlementGrantAllocationBehavior `json:"grant_allocation_behavior,omitempty"`
 	GrantQuota              *decimal.Decimal                          `json:"grant_quota,omitempty" swaggertype:"string"`
 	AggregationMode         *types.EntitlementAggregationMode         `json:"aggregation_mode,omitempty"`
+
+	// GrantUnlimited removes the parent's ceiling, or restores one when false. Needed
+	// because nil already means inherit here, so an absent grant_quota cannot also mean
+	// "no ceiling" the way it does on a create.
+	GrantUnlimited *bool `json:"grant_unlimited,omitempty"`
 }
 
 // Validate validates the entitlement override request
@@ -1581,6 +1586,13 @@ func (r *OverrideEntitlementRequest) Validate() error {
 	if r.EntitlementID == "" {
 		return ierr.NewError("entitlement_id is required").
 			WithHint("Please provide the entitlement ID to override").
+			Mark(ierr.ErrValidation)
+	}
+
+	if lo.FromPtr(r.GrantUnlimited) && r.GrantQuota != nil {
+		return ierr.NewError("grant_quota cannot be set on an unlimited allowance").
+			WithHint("Remove grant_quota, or drop grant_unlimited").
+			WithReportableDetails(map[string]interface{}{"entitlement_id": r.EntitlementID}).
 			Mark(ierr.ErrValidation)
 	}
 

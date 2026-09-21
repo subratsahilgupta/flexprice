@@ -14693,12 +14693,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "grant_measure": {
-                    "description": "Grant config summary, so a client can render the promise (\"1,000 calls per\nday\") before any window has opened. UsageLimit stays populated for legacy\ndisplay but is meaningless on a grant-backed feature.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.EntitlementGrantMeasure"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
                 },
                 "grant_quota": {
                     "type": "string"
@@ -14707,7 +14702,6 @@ const docTemplate = `{
                     "$ref": "#/definitions/GrantState"
                 },
                 "grant_unlimited": {
-                    "description": "GrantUnlimited distinguishes \"grant-based with no ceiling\" from \"no grant\nconfig at all\"; both leave GrantQuota nil.",
                     "type": "boolean"
                 },
                 "is_enabled": {
@@ -16682,7 +16676,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "grant_unlimited": {
-                    "description": "GrantUnlimited asks for an allowance with no ceiling. Explicit rather than\ninferred from an absent grant_quota, so a dropped field or a typo'd key\ncannot silently provision a feature that never bills.",
                     "type": "boolean"
                 },
                 "is_enabled": {
@@ -19806,7 +19799,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "is_active": {
-                    "description": "IsActive means the window is open right now — evaluated against the\nserver's clock so clients need not compare timestamps themselves.",
                     "type": "boolean"
                 },
                 "last_computed_at": {
@@ -19842,7 +19834,6 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "allowances": {
-                    "description": "Allowances is the current billing period's ledger, spent ones included and\noldest first, capped at a handful — an hourly allowance on a monthly cycle\nproduces hundreds. What the customer can spend right now is the entry (or\nentries, for parallel features) with IsActive=true; there is at most one per\nentitlement, and none in the gap between one allowance ending and the next\nstarting.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/GrantAllowanceState"
@@ -21057,6 +21048,10 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "description": "GrantUnlimited removes the parent's ceiling, or restores one when false. Needed\nbecause nil already means inherit here, so an absent grant_quota cannot also mean\n\"no ceiling\" the way it does on a create.",
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "description": "IsEnabled determines if the entitlement is enabled or disabled",
@@ -24603,7 +24598,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "grant_unlimited": {
-                    "description": "GrantUnlimited=true clears the ceiling; false restores a bounded allowance\nand requires grant_quota in the same request. Without this an existing quota\ncould never be unset, since a nil GrantQuota means \"leave alone\".",
                     "type": "boolean"
                 },
                 "is_enabled": {
