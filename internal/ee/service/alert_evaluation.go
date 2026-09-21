@@ -345,7 +345,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 			WithUsage(usage).
 			WithLastComputedAt(&at).
 			WithQuotaCrossedAt(cross)
-		if !g.Unlimited && usage.GreaterThanOrEqual(g.Quota) && g.GrantStatus == types.EntitlementGrantStatusActive {
+		if isGrantExhausted(g, usage) && g.GrantStatus == types.EntitlementGrantStatusActive {
 			builder = builder.WithGrantStatus(types.EntitlementGrantStatusExhausted)
 		}
 		if err := s.EntitlementGrantRepo.UpdateSnapshot(ctx, builder.Build()); err != nil {
@@ -414,6 +414,20 @@ func (s *alertService) refreshEntitlementGrantUsage(
 }
 
 // transitionEntitlementGrantAlert emits an alert-log row on state change.
+// isGrantExhausted reports whether usage has consumed the window. Unlimited never is,
+// whatever its quota says — a pool goes unlimited when any contributor is, while still
+// summing the bounded ones. Zero quota always is: such a window holds a slot rather than
+// granting anything.
+func isGrantExhausted(g *entitlementgrant.EntitlementGrant, usage decimal.Decimal) bool {
+	if g == nil || g.Unlimited {
+		return false
+	}
+	if !g.Quota.IsPositive() {
+		return true
+	}
+	return usage.GreaterThanOrEqual(g.Quota)
+}
+
 func (s *alertService) transitionEntitlementGrantAlert(
 	ctx context.Context,
 	alertLogsSvc AlertLogsService,
@@ -422,16 +436,14 @@ func (s *alertService) transitionEntitlementGrantAlert(
 	usage decimal.Decimal,
 	at time.Time,
 ) error {
-	// An unlimited window can still carry a positive quota — a pool goes unlimited when
-	// any contributor is, while still summing the bounded ones — so the flag has to be
-	// checked, not just the number. There is no ceiling to be exhausted against.
-	if g.Unlimited || !g.Quota.IsPositive() {
+	if !isGrantExhausted(g, usage) {
 		return nil
 	}
-	ratio := usage.Div(g.Quota)
-	if ratio.LessThan(decimal.NewFromInt(1)) {
-		// not exhausted yet, AlertStateOk
-		return nil
+
+	// Zero quota is spent by definition, and dividing by it would panic.
+	ratio := decimal.NewFromInt(1)
+	if g.Quota.IsPositive() {
+		ratio = usage.Div(g.Quota)
 	}
 
 	parentEntityType := string(types.AlertEntityTypeSubscription)

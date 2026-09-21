@@ -950,16 +950,12 @@ func (s *entitlementService) grantMeterEligibility(
 			Mark(ierr.ErrValidation)
 	}
 
-	// Same rule for the price-level bucketing source.
 	if err := s.validateEntitlementAgainstBucketedPrices(ctx, m, true); err != nil {
 		return err
 	}
 
-	// Tiered prices are rejected for BOTH measures. grantPricingGuard declines to
-	// fold either lane at invoice time (tier rates depend on cumulative cycle
-	// position, which a standalone window cannot reproduce), and a grant-based
-	// entitlement carries no usage_limit — so the legacy fallback would read nil
-	// as "unlimited" and zero the charge.
+	// Tier rates walk with cumulative cycle position, which a standalone window cannot
+	// reproduce, so both measures are rejected.
 	if s.PriceRepo == nil {
 		return nil
 	}
@@ -990,13 +986,9 @@ func (s *entitlementService) grantMeterEligibility(
 	return nil
 }
 
-// sharesNoResolvedSet reports whether sib can never apply alongside e: a subscription
-// has one plan, and another subscription's rows are someone else's. Addons are left in,
-// since several can be attached at once. The replace relationship — e's own parent, or
-// an override of e — is handled by the caller.
-//
-// Approximate on purpose. Whether a given subscription runs the plan sib belongs to is
-// a query per sibling, so that pairing stays in the comparison.
+// sharesNoResolvedSet reports whether sib can never apply alongside e. Approximate on
+// purpose: proving a subscription runs sib's plan is a query per sibling, so that pairing
+// stays in. Addons stay in too, since several can be attached at once.
 func sharesNoResolvedSet(sib, e *entitlement.Entitlement) bool {
 	if sib.EntityType != e.EntityType || sib.EntityID == e.EntityID {
 		return false
@@ -1032,9 +1024,6 @@ func (s *entitlementService) validateGrantSiblingCoherence(ctx context.Context, 
 		if sharesNoResolvedSet(sib, e) {
 			continue
 		}
-		// Mixing an unlimited contributor with a bounded one would silently void
-		// the cap — the legacy "any nil usage_limit wins" wart this model exists
-		// to remove. Reject it at write time instead.
 		if sib.IsUnlimitedGrant() != e.IsUnlimitedGrant() {
 			return ierr.NewError("cannot mix unlimited and bounded allowances on the same feature").
 				WithHint("Every entitlement on a feature must either set a grant_quota or leave it unset").

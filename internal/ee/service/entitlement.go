@@ -914,8 +914,8 @@ func (s *entitlementService) resettleGrantWindows(
 	return s.reissueGrantWindows(ctx, e, delta, unlimited, "entitlement_updated")
 }
 
-// reissueGrantWindows closes what is live on the feature and reopens it at the changed
-// allowance, resolving the slot from the subscription's ECs as they stand now.
+// reissueGrantWindows hands the change to the grant service, which reads the windows and
+// the configs funding them as they stand when it runs.
 func (s *entitlementService) reissueGrantWindows(
 	ctx context.Context,
 	e *entitlement.Entitlement,

@@ -6508,9 +6508,9 @@ func withAssociationWindow(ent *dto.EntitlementResponse, assoc *dto.AddonAssocia
 	return &updatedEntResp
 }
 
-// nameOverridesAfterTheirParent copies the plan or addon of each override's parent onto
-// the override itself, so a suppressed parent does not take the source's name with it.
-func nameOverridesAfterTheirParent(planEnts, addonEnts, subEnts []*dto.EntitlementResponse) {
+// carryParentSourceToOverrides copies each override's parent plan or addon onto the
+// override, so a suppressed parent does not take the source's name with it.
+func carryParentSourceToOverrides(planEnts, addonEnts, subEnts []*dto.EntitlementResponse) {
 	parents := make(map[string]*dto.EntitlementResponse, len(planEnts)+len(addonEnts))
 	for _, ent := range append(append([]*dto.EntitlementResponse{}, planEnts...), addonEnts...) {
 		if ent != nil && ent.Entitlement != nil {
@@ -6639,7 +6639,7 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 	}
 	subscriptionEntitlements := subscriptionEntResp.Items
 
-	nameOverridesAfterTheirParent(planEntitlements.Items, addonEntitlements, subscriptionEntitlements)
+	carryParentSourceToOverrides(planEntitlements.Items, addonEntitlements, subscriptionEntitlements)
 
 	// Step 6: Filter out overridden entitlements and combine results
 	finalEntitlements := s.filterOverriddenEntitlements(
