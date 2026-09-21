@@ -246,10 +246,16 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 
 		// The predecessor holds the slot for the rest of the cycle; only a cycle with no row
 		// re-derives it, and then from the same lowest-id tie-break the tick would use.
-		slotECID := grantCandidatesForFeature(featureECs)[0].ec.ID
+		//
+		// Unlimited comes from the configs the feature will be left with, never from the
+		// predecessor or the request: an addon joining an unlimited pool must not bound it,
+		// and an allowance edited down from unlimited must not stay unbounded. Both are the
+		// same question — is any surviving config unlimited — and the candidate answers it.
+		candidate := grantCandidatesForFeature(featureECs)[0]
+		slotECID := candidate.ec.ID
 		validFrom := req.New.ValidFrom
 		quota := req.New.Quota
-		unlimited := req.New.Unlimited
+		unlimited := candidate.unlimited
 
 		if req.Closed != nil {
 			if !validFrom.IsZero() && !validFrom.Equal(req.Closed.ValidTo) {
@@ -264,12 +270,9 @@ func (s *entitlementGrantService) OpenFeatureBasedEntitlementGrants(
 					Mark(ierr.ErrValidation)
 			}
 
-			// An unlimited window carries no balance to add, and a successor built from
-			// one stays unlimited rather than collapsing to the incoming quota.
-			carried, bounded := req.Closed.Remaining()
-			if !bounded {
-				unlimited = true
-			}
+			// An unlimited predecessor carries no balance to add; Remaining reports zero
+			// for one, which is the right thing to carry either way.
+			carried, _ := req.Closed.Remaining()
 			quota = carried.Add(req.New.Quota)
 		} else {
 			for _, ec := range req.ExistingECs {

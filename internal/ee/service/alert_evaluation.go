@@ -422,7 +422,10 @@ func (s *alertService) transitionEntitlementGrantAlert(
 	usage decimal.Decimal,
 	at time.Time,
 ) error {
-	if !g.Quota.IsPositive() {
+	// An unlimited window can still carry a positive quota — a pool goes unlimited when
+	// any contributor is, while still summing the bounded ones — so the flag has to be
+	// checked, not just the number. There is no ceiling to be exhausted against.
+	if g.Unlimited || !g.Quota.IsPositive() {
 		return nil
 	}
 	ratio := usage.Div(g.Quota)

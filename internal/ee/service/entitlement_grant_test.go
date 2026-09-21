@@ -2295,6 +2295,11 @@ func (s *EntitlementGrantSuite) TestOpenGrants_UnlimitedSuccessorStaysUnlimited(
 	fx := s.newWindowFixture("carry-unl", 5)
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, fx.sub))
 
+	// The config feeding the feature is what decides: a successor is unlimited because
+	// an unlimited config still funds the feature, not because its predecessor was.
+	fx.ec.GrantQuota = nil
+	s.Require().True(fx.ec.IsUnlimitedGrant())
+
 	closed := s.seedLiveWindow(fx, "eg-carry-unl", decimal.Zero, decimal.NewFromInt(900), nil)
 	closed.Unlimited = true
 	closed.ValidTo = fx.cycleStart.Add(2 * time.Hour)
