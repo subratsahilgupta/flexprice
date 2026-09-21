@@ -26,8 +26,8 @@ type CheckoutProvider interface {
 
 	// HasAutoChargeableMethod returns true if the customer has an active instrument
 	// (e.g., a confirmed mandate token or an active vaulted payment source)
-	// ready for off-session automatic charges.
-	HasAutoChargeableMethod(ctx context.Context, customerID string) (bool, error)
+	// ready for off-session automatic charges, optionally within the specified amount ceiling.
+	HasAutoChargeableMethod(ctx context.Context, req HasAutoChargeableMethodRequest) (bool, error)
 
 	// FetchPaymentState asks the provider what happened to a checkout's payment, so a
 	// session can be reconciled when the webhook was late, dropped, or errored.
@@ -116,6 +116,13 @@ type AuthorizationLinkRequest struct {
 	CancelURL       string
 	Metadata        map[string]string
 	LineItems       []CheckoutLineItem
+}
+
+// HasAutoChargeableMethodRequest is the input for checking if a customer has
+// a usable instrument ready for automatic off-session charges.
+type HasAutoChargeableMethodRequest struct {
+	CustomerID string
+	Amount     *decimal.Decimal // optional: nil = check instrument existence; non-nil = check mandate ceiling
 }
 
 // ProviderPaymentMethod is a normalized view of one active, usable token at the

@@ -13,13 +13,14 @@ import (
 const defaultAutoChargeCooldown = time.Hour
 
 // fetchGatewayWithAutoChargeSupport returns a gateway that can charge this customer
-// off-session, or "" when none can. A provider that cannot be reached is an error,
-// not an empty result: charging is refused on evidence, never on a failed read.
+// off-session for the requested amount, or "" when none can. A provider that cannot
+// be reached is an error, not an empty result: charging is refused on evidence,
+// never on a failed read.
 func fetchGatewayWithAutoChargeSupport(
 	ctx context.Context,
 	params ServiceParams,
 	customerSvc interfaces.CustomerService,
-	customerID string,
+	req interfaces.HasAutoChargeableMethodRequest,
 ) (types.PaymentGatewayType, error) {
 	if params.IntegrationFactory == nil || params.ConnectionRepo == nil {
 		return "", nil
@@ -50,7 +51,7 @@ func fetchGatewayWithAutoChargeSupport(
 				Mark(ierr.ErrHTTPClient)
 		}
 
-		hasMethod, err := provider.HasAutoChargeableMethod(ctx, customerID)
+		hasMethod, err := provider.HasAutoChargeableMethod(ctx, req)
 		if err != nil {
 			return "", ierr.WithError(err).
 				WithHint("The payment provider could not be reached; try again shortly").

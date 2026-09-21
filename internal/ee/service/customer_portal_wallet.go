@@ -156,13 +156,16 @@ func (s *customerPortalService) UpdateAutoTopup(ctx context.Context, walletID st
 		if err := s.validateTopupAmount(ctx, w, *req.Amount); err != nil {
 			return nil, err
 		}
-		gateway, err := fetchGatewayWithAutoChargeSupport(ctx, s.ServiceParams, s.customerService, w.CustomerID)
+		gateway, err := fetchGatewayWithAutoChargeSupport(ctx, s.ServiceParams, s.customerService, interfaces.HasAutoChargeableMethodRequest{
+			CustomerID: w.CustomerID,
+			Amount:     req.Amount,
+		})
 		if err != nil {
 			return nil, err
 		}
 		if gateway == "" {
 			return nil, ierr.NewError("no payment method can be charged automatically").
-				WithHint("Add a payment method that supports automatic charges before enabling auto top-up").
+				WithHint("Add a payment method that supports automatic charges for this amount before enabling auto top-up").
 				Mark(ierr.ErrInvalidOperation)
 		}
 	}

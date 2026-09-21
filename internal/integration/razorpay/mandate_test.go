@@ -9,6 +9,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -68,22 +69,22 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 
 	t.Run("nil adapter or service returns false, nil", func(t *testing.T) {
 		var nilAdapter *CheckoutAdapter
-		has, err := nilAdapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := nilAdapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 
 		adapterWithoutSvc := &CheckoutAdapter{}
-		has, err = adapterWithoutSvc.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err = adapterWithoutSvc.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 
 		adapterWithoutCustomerSvc := &CheckoutAdapter{Svc: &PaymentService{}}
-		has, err = adapterWithoutCustomerSvc.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err = adapterWithoutCustomerSvc.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 	})
 
-	t.Run("returns true when customer has confirmed recurring mandate token", func(t *testing.T) {
+	t.Run("returns true when customer has confirmed recurring mandate token with nil amount", func(t *testing.T) {
 		adapter := &CheckoutAdapter{
 			Svc: &PaymentService{
 				customerSvc: &stubRazorpayCustomerSvc{
@@ -93,9 +94,43 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 				},
 			},
 		}
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.True(t, has)
+	})
+
+	t.Run("returns true when amount is within mandate ceiling", func(t *testing.T) {
+		maxAmount := decimal.NewFromInt(1000)
+		amount := decimal.NewFromInt(500)
+		adapter := &CheckoutAdapter{
+			Svc: &PaymentService{
+				customerSvc: &stubRazorpayCustomerSvc{
+					tokens: []*interfaces.ProviderPaymentMethod{
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, MaxAmount: &maxAmount},
+					},
+				},
+			},
+		}
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1", Amount: &amount})
+		assert.NoError(t, err)
+		assert.True(t, has)
+	})
+
+	t.Run("returns false when amount exceeds mandate ceiling", func(t *testing.T) {
+		maxAmount := decimal.NewFromInt(500)
+		amount := decimal.NewFromInt(1000)
+		adapter := &CheckoutAdapter{
+			Svc: &PaymentService{
+				customerSvc: &stubRazorpayCustomerSvc{
+					tokens: []*interfaces.ProviderPaymentMethod{
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, MaxAmount: &maxAmount},
+					},
+				},
+			},
+		}
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1", Amount: &amount})
+		assert.NoError(t, err)
+		assert.False(t, has)
 	})
 
 	t.Run("returns false when all confirmed tokens are expired", func(t *testing.T) {
@@ -109,7 +144,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 				},
 			},
 		}
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 	})
@@ -122,7 +157,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 				},
 			},
 		}
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 	})
@@ -135,7 +170,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 				},
 			},
 		}
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 	})
@@ -150,7 +185,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 				},
 			},
 		}
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 	})
@@ -163,7 +198,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 				},
 			},
 		}
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.Error(t, err)
 		assert.True(t, ierr.IsHTTPClient(err))
 		assert.False(t, has)

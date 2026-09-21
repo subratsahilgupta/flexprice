@@ -218,20 +218,26 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 }
 
 // HasAutoChargeableMethod implements interfaces.CheckoutProvider by checking
-// if the customer has any active, non-expired recurring mandate tokens on Razorpay.
-func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, customerID string) (bool, error) {
-	if a == nil || a.Svc == nil || a.Svc.customerSvc == nil {
+// if the customer has any active, non-expired recurring mandate tokens on Razorpay
+// that can cover the requested amount (or any active token if amount is nil).
+func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, req interfaces.HasAutoChargeableMethodRequest) (bool, error) {
+	if a == nil || a.Svc == nil || a.Svc.customerSvc == nil || req.CustomerID == "" {
 		return false, nil
 	}
 
-	_, tokens, err := a.Svc.customerSvc.ListConfirmedCustomerTokens(ctx, customerID)
+	_, tokens, err := a.Svc.customerSvc.ListConfirmedCustomerTokens(ctx, req.CustomerID)
 	if err != nil {
 		if ierr.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	_, ok := selectAutoChargeToken(tokens, "", decimal.Zero)
+
+	amount := decimal.Zero
+	if req.Amount != nil {
+		amount = *req.Amount
+	}
+	_, ok := selectAutoChargeToken(tokens, "", amount)
 	return ok, nil
 }
 

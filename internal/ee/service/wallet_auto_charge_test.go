@@ -102,14 +102,14 @@ func (s *WalletAutoChargeSuite) buildParams() ServiceParams {
 }
 
 func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_NilFactoryOrConnectionRepo() {
-	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, ServiceParams{}, nil, "cust_1")
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, ServiceParams{}, nil, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 	s.NoError(err)
 	s.Equal(types.PaymentGatewayType(""), gw)
 }
 
 func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_NoConnections() {
 	params := s.buildParams()
-	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 	s.NoError(err)
 	s.Equal(types.PaymentGatewayType(""), gw)
 }
@@ -117,7 +117,7 @@ func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_NoConnecti
 func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_RazorpayNotSynced() {
 	s.connect(types.SecretProviderRazorpay)
 	params := s.buildParams()
-	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 	s.NoError(err)
 	s.Equal(types.PaymentGatewayType(""), gw)
 }
@@ -125,7 +125,7 @@ func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_RazorpayNo
 func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_ChargebeeNotSynced() {
 	s.connect(types.SecretProviderChargebee)
 	params := s.buildParams()
-	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 	s.NoError(err)
 	s.Equal(types.PaymentGatewayType(""), gw)
 }
@@ -133,7 +133,7 @@ func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_ChargebeeN
 func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_StripeAndNomodIgnored() {
 	s.connect(types.SecretProviderStripe, types.SecretProviderNomod)
 	params := s.buildParams()
-	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 	s.NoError(err)
 	s.Equal(types.PaymentGatewayType(""), gw)
 }
@@ -141,6 +141,7 @@ func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_StripeAndN
 type stubAutoChargeCheckoutProvider struct {
 	hasMethod bool
 	err       error
+	lastReq   interfaces.HasAutoChargeableMethodRequest
 }
 
 func (p *stubAutoChargeCheckoutProvider) CreatePaymentLink(context.Context, interfaces.CheckoutProviderRequest) (*interfaces.CheckoutProviderResponse, error) {
@@ -152,7 +153,8 @@ func (p *stubAutoChargeCheckoutProvider) CreateAuthorizationLink(context.Context
 func (p *stubAutoChargeCheckoutProvider) TryAutoChargingSavedMethod(context.Context, interfaces.AuthorizationLinkRequest) (*interfaces.CheckoutProviderResponse, bool, error) {
 	return nil, false, nil
 }
-func (p *stubAutoChargeCheckoutProvider) HasAutoChargeableMethod(context.Context, string) (bool, error) {
+func (p *stubAutoChargeCheckoutProvider) HasAutoChargeableMethod(_ context.Context, req interfaces.HasAutoChargeableMethodRequest) (bool, error) {
+	p.lastReq = req
 	return p.hasMethod, p.err
 }
 func (p *stubAutoChargeCheckoutProvider) FetchPaymentState(context.Context, interfaces.PaymentStateRequest) (*interfaces.PaymentState, error) {
@@ -165,8 +167,15 @@ func (s *WalletAutoChargeSuite) TestFetchGatewayWithAutoChargeSupport_Success() 
 	s.GetIntegrationFactory().SetCheckoutProvider(provider)
 
 	params := s.buildParams()
-	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, "cust_1")
+	amount := decimal.NewFromInt(200)
+	gw, err := fetchGatewayWithAutoChargeSupport(s.ctx, params, nil, interfaces.HasAutoChargeableMethodRequest{
+		CustomerID: "cust_1",
+		Amount:     &amount,
+	})
 	s.NoError(err)
 	s.Equal(types.PaymentGatewayTypeChargebee, gw)
+	s.Equal("cust_1", provider.lastReq.CustomerID)
+	s.NotNil(provider.lastReq.Amount)
+	s.Equal(amount, *provider.lastReq.Amount)
 }
 

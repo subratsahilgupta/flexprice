@@ -221,12 +221,12 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 
 // HasAutoChargeableMethod implements interfaces.CheckoutProvider by checking
 // if the customer has any valid or expiring payment sources in Chargebee.
-func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, customerID string) (bool, error) {
-	if a == nil || a.Client == nil || a.CustomerSvc == nil {
+func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, req interfaces.HasAutoChargeableMethodRequest) (bool, error) {
+	if a == nil || a.Client == nil || a.CustomerSvc == nil || req.CustomerID == "" {
 		return false, nil
 	}
 
-	cbCustomerID, err := a.CustomerSvc.GetChargebeeCustomerID(ctx, customerID)
+	cbCustomerID, err := a.CustomerSvc.GetChargebeeCustomerID(ctx, req.CustomerID)
 	if err != nil {
 		if ierr.IsNotFound(err) {
 			return false, nil

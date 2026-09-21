@@ -228,12 +228,12 @@ func TestHasAutoChargeableMethod(t *testing.T) {
 
 	t.Run("nil adapter or client returns false, nil", func(t *testing.T) {
 		var nilAdapter *CheckoutAdapter
-		has, err := nilAdapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := nilAdapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 
 		adapterWithoutClient := &CheckoutAdapter{}
-		has, err = adapterWithoutClient.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err = adapterWithoutClient.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 	})
@@ -245,7 +245,7 @@ func TestHasAutoChargeableMethod(t *testing.T) {
 			},
 		}
 		adapter := newTestAdapter(client)
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.True(t, has)
 	})
@@ -257,7 +257,7 @@ func TestHasAutoChargeableMethod(t *testing.T) {
 			},
 		}
 		adapter := newTestAdapter(client)
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.True(t, has)
 	})
@@ -269,7 +269,7 @@ func TestHasAutoChargeableMethod(t *testing.T) {
 			},
 		}
 		adapter := newTestAdapter(client)
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 	})
@@ -282,7 +282,7 @@ func TestHasAutoChargeableMethod(t *testing.T) {
 			InvoiceSvc:  &stubInvoiceSvc{},
 			Logger:      logger.NewNoopLogger(),
 		}
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 	})
@@ -295,7 +295,7 @@ func TestHasAutoChargeableMethod(t *testing.T) {
 			InvoiceSvc:  &stubInvoiceSvc{},
 			Logger:      logger.NewNoopLogger(),
 		}
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.Error(t, err)
 		assert.True(t, ierr.IsDatabase(err))
 		assert.False(t, has)
@@ -306,7 +306,7 @@ func TestHasAutoChargeableMethod(t *testing.T) {
 			listSourcesErr: ierr.NewError("sources not found").Mark(ierr.ErrNotFound),
 		}
 		adapter := newTestAdapter(client)
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.NoError(t, err)
 		assert.False(t, has)
 	})
@@ -316,7 +316,7 @@ func TestHasAutoChargeableMethod(t *testing.T) {
 			listSourcesErr: ierr.NewError("upstream error").Mark(ierr.ErrHTTPClient),
 		}
 		adapter := newTestAdapter(client)
-		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		has, err := adapter.HasAutoChargeableMethod(ctx, interfaces.HasAutoChargeableMethodRequest{CustomerID: "cust_1"})
 		assert.Error(t, err)
 		assert.True(t, ierr.IsHTTPClient(err))
 		assert.False(t, has)
