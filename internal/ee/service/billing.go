@@ -3376,53 +3376,21 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 			isUnlimited = false
 		}
 
-		// Usage for a grant-backed feature is the OPEN WINDOW's usage, not the
-		// cycle's: the quota above is per window, so pairing it with cycle usage
-		// would compare two different periods. The accumulation loop above also
-		// skips these features entirely — it keys off usage_reset_period, which a
-		// grant config does not set — so without this they report zero.
-		//
-		// Across several windows: quotas sum (separate subscriptions each grant
-		// their own), but usage is the max rather than the sum, because every
-		// window meters the same customer's event stream.
-		if gs := feature.Entitlement.GrantState; gs != nil {
-			grantUsage, grantQuota := decimal.Zero, decimal.Zero
-			anyUnlimited := false
-			haveFigures := false
-
-			active := lo.Filter(gs.Allowances, func(w *dto.GrantAllowanceState, _ int) bool { return w != nil && w.IsActive })
-			if len(active) > 0 {
-				// A window is open: report it, so usage and quota describe the same period.
-				for _, w := range active {
-					if w.Unlimited {
-						anyUnlimited = true
-					}
-					if w.Usage.GreaterThan(grantUsage) {
-						grantUsage = w.Usage
-					}
-					grantQuota = grantQuota.Add(w.Quota)
-				}
-				haveFigures = true
-			} else if last := lo.LastOrEmpty(gs.Allowances); last != nil {
-				anyUnlimited = last.Unlimited
-				grantUsage = last.Usage
-				grantQuota = last.Quota
-				haveFigures = true
-			}
-
-			if haveFigures {
-				usage = grantUsage
-				if anyUnlimited {
-					totalLimit = nil
-					isUnlimited = true
-				} else {
-					// Zero included: a spent allowance reopens at zero to hold its slot, and
-					// falling back to the entitlement's ceiling here would tell the customer
-					// they still have the full amount. getUsagePercent reads it as 100%.
-					q := grantQuota.IntPart()
-					totalLimit = &q
-					isUnlimited = false
-				}
+		// The accumulation loop above skips grant-backed features entirely — it keys off
+		// usage_reset_period, which a grant config does not set — so without this they
+		// report zero however much the customer has spent.
+		if figures, ok := grantUsageFigures(feature.Entitlement.GrantState); ok {
+			usage = figures.usage
+			if figures.unlimited {
+				totalLimit = nil
+				isUnlimited = true
+			} else {
+				// Zero included: a spent allowance reopens at zero to hold its slot, and
+				// falling back to the entitlement's ceiling here would tell the customer
+				// they still have the full amount. getUsagePercent reads it as 100%.
+				q := figures.quota.IntPart()
+				totalLimit = &q
+				isUnlimited = false
 			}
 		}
 
@@ -3443,6 +3411,53 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 	}
 
 	return resp, nil
+}
+
+// grantFigures is one span's worth of allowance, as the usage summary reports it.
+type grantFigures struct {
+	usage     decimal.Decimal
+	quota     decimal.Decimal
+	unlimited bool
+}
+
+// grantUsageFigures picks the usage and the ceiling to report for a grant-backed feature,
+// both describing the same span — the quota is per allowance, so pairing it with period
+// usage would compare two different things. ok is false when there is no ledger to read.
+//
+// An open allowance is reported on its own. Between allowances — the hourly one ended at
+// 10:00 and it is 10:30 — the one that just closed is, since the ledger is capped at the
+// most recent few and summing it would describe the cap rather than the customer.
+//
+// Across several open allowances quotas sum, because separate subscriptions each grant
+// their own, but usage takes the max: every allowance meters the same customer's event
+// stream, so adding them would count it twice.
+func grantUsageFigures(gs *dto.GrantState) (grantFigures, bool) {
+	if gs == nil {
+		return grantFigures{}, false
+	}
+
+	active := lo.Filter(gs.Allowances, func(a *dto.GrantAllowanceState, _ int) bool {
+		return a != nil && a.IsActive
+	})
+	if len(active) == 0 {
+		last := lo.LastOrEmpty(gs.Allowances)
+		if last == nil {
+			return grantFigures{}, false
+		}
+		return grantFigures{usage: last.Usage, quota: last.Quota, unlimited: last.Unlimited}, true
+	}
+
+	out := grantFigures{usage: decimal.Zero, quota: decimal.Zero}
+	for _, a := range active {
+		if a.Unlimited {
+			out.unlimited = true
+		}
+		if a.Usage.GreaterThan(out.usage) {
+			out.usage = a.Usage
+		}
+		out.quota = out.quota.Add(a.Quota)
+	}
+	return out, true
 }
 
 func (s *billingService) getUsagePercent(usage decimal.Decimal, limit *int64) decimal.Decimal {
