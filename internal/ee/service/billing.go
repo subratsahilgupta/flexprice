@@ -3415,7 +3415,10 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 				if anyUnlimited {
 					totalLimit = nil
 					isUnlimited = true
-				} else if grantQuota.IsPositive() {
+				} else {
+					// Zero included: a spent allowance reopens at zero to hold its slot, and
+					// falling back to the entitlement's ceiling here would tell the customer
+					// they still have the full amount. getUsagePercent reads it as 100%.
 					q := grantQuota.IntPart()
 					totalLimit = &q
 					isUnlimited = false
