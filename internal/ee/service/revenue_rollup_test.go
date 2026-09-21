@@ -296,11 +296,16 @@ func (s *RevenueRollupSuite) seedWorkedExample(ctx context.Context) {
 	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, s.sub, lineItems))
 	s.sub.LineItems = lineItems
 
-	// Seed meter_usage: 1200 calls/day for 30 days, one bulk row per day.
+	// Seed meter_usage: 1200 calls/day for 30 days, one bulk row per day,
+	// alternating event source per day (source-grouped analytics rely on it).
 	records := make([]*events.MeterUsage, 0, 30)
 	for d := 0; d < 30; d++ {
 		ts := s.periodStart.AddDate(0, 0, d).Add(12 * time.Hour)
 		id := s.GetUUID()
+		source := "api"
+		if d%2 == 1 {
+			source = "sdk"
+		}
 		records = append(records, &events.MeterUsage{
 			Event: events.Event{
 				ID:                 id,
@@ -311,6 +316,7 @@ func (s *RevenueRollupSuite) seedWorkedExample(ctx context.Context) {
 				CustomerID:         cust.ID,
 				Timestamp:          ts,
 				IngestedAt:         ts,
+				Source:             source,
 			},
 			MeterID:    mtr.ID,
 			QtyTotal:   decimal.NewFromInt(1200),
@@ -1139,4 +1145,40 @@ func (s *RevenueRollupSuite) TestRollupSubscription_CouponDiscountReconciles() {
 	for _, entry := range observedLogs.All() {
 		s.NotEqual("revenue_reconciliation_mismatch", entry.Message, "unexpected mismatch: %+v", entry.ContextMap())
 	}
+}
+
+// TestGetRevenueAnalytics_EventSourceGrouping: group_by "source" splits usage
+// facts by the event source recorded in meter_usage (even days fire from
+// "api", odd days from "sdk" — see seedWorkedExample); fixed and true-up
+// amounts have no events behind them and land under the unattributed source.
+func (s *RevenueRollupSuite) TestGetRevenueAnalytics_EventSourceGrouping() {
+	ctx := s.ctx
+	s.seedWorkedExample(ctx)
+	s.enableRevenueAnalytics(ctx)
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+
+	req := &dto.RevenueAnalyticsRequest{
+		StartTime:   s.periodStart,
+		EndTime:     s.periodEnd,
+		Granularity: types.RevenueGranularityTotal,
+		GroupBy:     []string{"source"},
+		Status:      types.FactProvisional,
+	}
+	_, err := s.svc.GetRevenueAnalytics(ctx, req)
+	s.Error(err, "source grouping requires a customer or subscription filter")
+
+	req.SubscriptionIDs = []string{s.sub.ID}
+	res, err := s.svc.GetRevenueAnalytics(ctx, req)
+	s.NoError(err)
+
+	bySource := map[string]decimal.Decimal{}
+	total := decimal.Zero
+	for _, r := range res.Rows {
+		bySource[r.Group["source"]] = bySource[r.Group["source"]].Add(r.NetAmount)
+		total = total.Add(r.NetAmount)
+	}
+	s.True(total.Equal(decimal.NewFromInt(530)), "grouping never changes the total, got %s", total)
+	s.True(bySource["api"].Equal(decimal.NewFromInt(180)), "15 api days x $12, got %s", bySource["api"])
+	s.True(bySource["sdk"].Equal(decimal.NewFromInt(180)), "15 sdk days x $12, got %s", bySource["sdk"])
+	s.True(bySource[""].Equal(decimal.NewFromInt(170)), "fixed $30 + true-up $140 unattributed, got %s", bySource[""])
 }

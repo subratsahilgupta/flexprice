@@ -1,6 +1,9 @@
 package service
 
 import (
+	"context"
+
+	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/shopspring/decimal"
 )
 
@@ -12,7 +15,7 @@ import (
 // engine line. List-rate value moves with the quantity (a unit's value never
 // counts in both halves), and TierDelta absorbs the overage factor and any
 // engine rounding, keeping the row identity exact on every day.
-func splitCurveAtCommitment(curve []dayCharge, normalAmount, overageAmount, rate decimal.Decimal) (normal, overage []dayCharge) {
+func splitCurveAtCommitment(curve []dayCharge, normalAmount, overageAmount, rate, normalQty decimal.Decimal) (normal, overage []dayCharge) {
 	if len(curve) == 0 {
 		return nil, nil
 	}
@@ -36,9 +39,11 @@ func splitCurveAtCommitment(curve []dayCharge, normalAmount, overageAmount, rate
 		if prefactor.IsNegative() {
 			prefactor = decimal.Zero
 		}
-		overQty := decimal.Zero
-		if rate.IsPositive() {
-			overQty = prefactor.Div(rate)
+		// Quantity splits at the tier-curve boundary, not by dividing money at
+		// the list rate — graduated tiers price units at different rates.
+		overQty := dc.CumulativeBillableQty.Sub(normalQty)
+		if overQty.IsNegative() {
+			overQty = decimal.Zero
 		}
 
 		normalCharge := dc.CumulativeCharge
@@ -76,4 +81,26 @@ func splitCurveAtCommitment(curve []dayCharge, normalAmount, overageAmount, rate
 	overage[len(overage)-1].TierDelta = overageAmount.Sub(overage[len(overage)-1].UsageAtListRate)
 
 	return normal, overage
+}
+
+// quantityAtCharge inverts the pricing curve: the largest quantity whose
+// charge does not exceed target. Binary search — CalculateCost is monotonic
+// in quantity for flat and graduated pricing.
+func quantityAtCharge(ctx context.Context, priceSvc PriceService, p *price.Price, target, maxQty decimal.Decimal) decimal.Decimal {
+	if !target.IsPositive() {
+		return decimal.Zero
+	}
+	if !priceSvc.CalculateCost(ctx, p, maxQty).GreaterThan(target) {
+		return maxQty
+	}
+	lo, hi := decimal.Zero, maxQty
+	for i := 0; i < 60; i++ {
+		mid := lo.Add(hi).Div(decimal.NewFromInt(2))
+		if priceSvc.CalculateCost(ctx, p, mid).GreaterThan(target) {
+			hi = mid
+		} else {
+			lo = mid
+		}
+	}
+	return lo
 }

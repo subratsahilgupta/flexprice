@@ -8,6 +8,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -26,6 +27,13 @@ func (s *revenueService) GetRevenueAnalytics(ctx context.Context, req *dto.Reven
 	}
 
 	agg := newRevenueAggregation(req)
+	one := decimal.NewFromInt(1)
+	groupBySource := lo.Contains(req.GroupBy, "source")
+	var collected []*revenuefact.RevenueFact
+
+	// rowBudget bounds the total work of one request; a range/filter set that
+	// exceeds it must be narrowed rather than scanned open-endedly.
+	const rowBudget = 250000
 	const pageSize = 5000
 	offset := 0
 	for {
@@ -44,13 +52,36 @@ func (s *revenueService) GetRevenueAnalytics(ctx context.Context, req *dto.Reven
 		if err != nil {
 			return nil, err
 		}
-		for _, f := range facts {
-			agg.add(f)
+		if groupBySource {
+			// Source shares need the whole fact set first (one usage read per
+			// distinct subscription); the row budget keeps this bounded.
+			collected = append(collected, facts...)
+		} else {
+			for _, f := range facts {
+				agg.add(f, "", one)
+			}
 		}
 		if len(facts) < pageSize {
 			break
 		}
 		offset += pageSize
+		if offset >= rowBudget {
+			return nil, ierr.NewErrorf("query matches more than %d revenue fact rows", rowBudget).
+				WithHint("Narrow the time range or filters").
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	if groupBySource {
+		shares, err := s.buildEventSourceShares(ctx, req, collected)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range collected {
+			for _, sh := range shares.split(f) {
+				agg.add(f, sh.source, sh.fraction)
+			}
+		}
 	}
 
 	return agg.response(), nil
@@ -89,12 +120,16 @@ func (a *revenueAggregation) displaySource(f *revenuefact.RevenueFact) string {
 	return string(src)
 }
 
-func (a *revenueAggregation) add(f *revenuefact.RevenueFact) {
+// add folds fraction of f's metrics into the aggregation. source is f's
+// event-source label, meaningful only when "source" is a group dimension.
+func (a *revenueAggregation) add(f *revenuefact.RevenueFact, source string, fraction decimal.Decimal) {
 	group := map[string]string{}
 	for _, g := range a.req.GroupBy {
 		switch g {
 		case "revenue_source":
 			group[g] = a.displaySource(f)
+		case "source":
+			group[g] = source
 		case "customer_id":
 			group[g] = f.CustomerID
 		case "subscription_id":
@@ -111,17 +146,17 @@ func (a *revenueAggregation) add(f *revenuefact.RevenueFact) {
 
 	switch a.req.Granularity {
 	case types.RevenueGranularityTotal:
-		a.fold(group, adjustment, nil, nil, nil, f, decimal.NewFromInt(1))
+		a.fold(group, adjustment, nil, nil, nil, f, fraction)
 	case types.RevenueGranularityPeriod:
 		ps, pe := f.PeriodStart, f.PeriodEnd
-		a.fold(group, adjustment, nil, &ps, &pe, f, decimal.NewFromInt(1))
+		a.fold(group, adjustment, nil, &ps, &pe, f, fraction)
 	default: // day
 		if f.DecompositionMode == types.Marginal || a.req.AllocationPolicy == types.RevenueAllocationBilled {
 			if f.DecompositionMode == types.PeriodOnly {
 				a.containsAllocated = true
 			}
 			day := f.Day
-			a.fold(group, adjustment, &day, nil, nil, f, decimal.NewFromInt(1))
+			a.fold(group, adjustment, &day, nil, nil, f, fraction)
 			return
 		}
 		// Amortized: spread the whole-period row evenly across its period's
@@ -135,7 +170,7 @@ func (a *revenueAggregation) add(f *revenuefact.RevenueFact) {
 		for i := range weights {
 			weights[i] = decimal.NewFromInt(1)
 		}
-		shares := spreadAmount(decimal.NewFromInt(1), weights)
+		shares := spreadAmount(fraction, weights)
 		for i, share := range shares {
 			day := f.PeriodStart.AddDate(0, 0, i)
 			a.fold(group, adjustment, &day, nil, nil, f, share)

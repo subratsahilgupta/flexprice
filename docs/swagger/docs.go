@@ -21932,7 +21932,7 @@ const docTemplate = `{
                     ]
                 },
                 "group_by": {
-                    "description": "GroupBy dimensions: revenue_source, customer_id, subscription_id,\nprice_id, meter_id, currency.",
+                    "description": "GroupBy dimensions: revenue_source, source (the event source recorded in\nmeter_usage; requires customer_ids or subscription_ids), customer_id,\nsubscription_id, price_id, meter_id, currency.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -29002,6 +29002,10 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.FilterCondition"
                     }
                 },
+                "finalized_at_gte": {
+                    "description": "finalized_at_gte filters invoices finalized at or after the given instant",
+                    "type": "string"
+                },
                 "invoice_ids": {
                     "description": "invoice_ids restricts results to invoices with the specified IDs\nUse this to retrieve specific invoices when you know their exact identifiers",
                     "type": "array",
@@ -29088,6 +29092,10 @@ const docTemplate = `{
                 },
                 "subscription_id": {
                     "description": "subscription_id filters invoices generated for a specific subscription\nOnly returns invoices that were created as part of the specified subscription's billing",
+                    "type": "string"
+                },
+                "voided_at_gte": {
+                    "description": "voided_at_gte filters invoices voided at or after the given instant",
                     "type": "string"
                 }
             }

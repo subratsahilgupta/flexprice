@@ -5932,8 +5932,9 @@ definitions:
           one total.
       group_by:
         description: |-
-          GroupBy dimensions: revenue_source, customer_id, subscription_id,
-          price_id, meter_id, currency.
+          GroupBy dimensions: revenue_source, source (the event source recorded in
+          meter_usage; requires customer_ids or subscription_ids), customer_id,
+          subscription_id, price_id, meter_id, currency.
         items:
           type: string
         type: array
@@ -11100,6 +11101,10 @@ definitions:
         items:
           $ref: '#/definitions/types.FilterCondition'
         type: array
+      finalized_at_gte:
+        description: finalized_at_gte filters invoices finalized at or after the given
+          instant
+        type: string
       invoice_ids:
         description: |-
           invoice_ids restricts results to invoices with the specified IDs
@@ -11172,6 +11177,9 @@ definitions:
         description: |-
           subscription_id filters invoices generated for a specific subscription
           Only returns invoices that were created as part of the specified subscription's billing
+        type: string
+      voided_at_gte:
+        description: voided_at_gte filters invoices voided at or after the given instant
         type: string
     type: object
   types.InvoiceSourceType:

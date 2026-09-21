@@ -21,8 +21,9 @@ const (
 // the given time: a finalized invoice's facts must sum to its total, a voided
 // one's must net to zero. Mismatches log revenue_facts_drift; repair (rebuild
 // the rows from the invoice itself) runs only when
-// analytics.revenue_rollup.auto_correct is on. The scan windows on invoice
-// created_at, so deep backfills pass an explicit Since to the workflow.
+// analytics.revenue_rollup.auto_correct is on. The scan windows on the
+// lifecycle timestamps (finalized_at / voided_at), so an old invoice that
+// only just finalized is still checked.
 func (s *revenueService) ReconcileBookedInvoices(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error) {
 	err = s.forEachOptedInEnvironment(ctx, "revenue drift sweep", func(envCtx context.Context) error {
 		c, d, cor, envErr := s.reconcileBookedInvoicesForEnvironment(envCtx, since)
@@ -35,41 +36,49 @@ func (s *revenueService) ReconcileBookedInvoices(ctx context.Context, since time
 }
 
 func (s *revenueService) reconcileBookedInvoicesForEnvironment(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error) {
-	const batchSize = 500
-	offset := 0
-
-	for {
-		filter := types.NewInvoiceFilter()
-		filter.QueryFilter.Limit = lo.ToPtr(batchSize)
-		filter.QueryFilter.Offset = lo.ToPtr(offset)
-		filter.TimeRangeFilter = &types.TimeRangeFilter{StartTime: &since}
-		filter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusFinalized, types.InvoiceStatusVoided}
-		filter.InvoiceType = types.InvoiceTypeSubscription
-
-		invoices, listErr := s.InvoiceRepo.List(ctx, filter)
-		if listErr != nil {
-			return checked, drifted, corrected, listErr
-		}
-		if len(invoices) == 0 {
-			return checked, drifted, corrected, nil
-		}
-
-		for _, inv := range invoices {
-			checked++
-			wasDrifted, wasCorrected := s.reconcileOneInvoice(ctx, inv)
-			if wasDrifted {
-				drifted++
-			}
-			if wasCorrected {
-				corrected++
-			}
-		}
-
-		if len(invoices) < batchSize {
-			return checked, drifted, corrected, nil
-		}
-		offset += batchSize
+	// Two passes, each windowed on its own lifecycle timestamp.
+	passes := []struct {
+		status types.InvoiceStatus
+		apply  func(*types.InvoiceFilter)
+	}{
+		{types.InvoiceStatusFinalized, func(f *types.InvoiceFilter) { f.FinalizedAtGTE = &since }},
+		{types.InvoiceStatusVoided, func(f *types.InvoiceFilter) { f.VoidedAtGTE = &since }},
 	}
+
+	const batchSize = 500
+	for _, pass := range passes {
+		offset := 0
+		for {
+			filter := types.NewInvoiceFilter()
+			filter.QueryFilter.Limit = lo.ToPtr(batchSize)
+			filter.QueryFilter.Offset = lo.ToPtr(offset)
+			filter.InvoiceStatus = []types.InvoiceStatus{pass.status}
+			filter.InvoiceType = types.InvoiceTypeSubscription
+			pass.apply(filter)
+
+			invoices, listErr := s.InvoiceRepo.List(ctx, filter)
+			if listErr != nil {
+				return checked, drifted, corrected, listErr
+			}
+
+			for _, inv := range invoices {
+				checked++
+				wasDrifted, wasCorrected := s.reconcileOneInvoice(ctx, inv)
+				if wasDrifted {
+					drifted++
+				}
+				if wasCorrected {
+					corrected++
+				}
+			}
+
+			if len(invoices) < batchSize {
+				break
+			}
+			offset += batchSize
+		}
+	}
+	return checked, drifted, corrected, nil
 }
 
 // reconcileOneInvoice checks one invoice and, when auto-correct is on,

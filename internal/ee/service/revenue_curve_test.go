@@ -496,3 +496,74 @@ func TestBuildUsageCurve_ScopesToExternalCustomers(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, "100", got[0].CumulativeGrossQty.String(), "other customers' usage must not leak into the curve")
 }
+
+// TestSplitCurveAtCommitment_GraduatedQuantitySplit: the qty boundary comes
+// from inverting the tier curve, not from dividing money at the first-tier
+// rate. Tiers $0.01 to 1000 units then $0.008; 2500 units cost $22. A $14
+// commitment covers 1500 units (1000×0.01 + 500×0.008) — a money÷rate split
+// would wrongly place only (22−14)/0.01 = 800 units in overage instead of 1000.
+func TestSplitCurveAtCommitment_GraduatedQuantitySplit(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewInMemoryMeterUsageStore()
+	params := ServiceParams{
+		Logger:         logger.NewNoopLogger(),
+		MeterUsageRepo: store,
+		PriceRepo:      testutil.NewInMemoryPriceStore(),
+		MeterRepo:      testutil.NewInMemoryMeterStore(),
+		PlanRepo:       testutil.NewInMemoryPlanStore(),
+		PriceUnitRepo:  testutil.NewInMemoryPriceUnitStore(),
+		AddonRepo:      testutil.NewInMemoryAddonStore(),
+		SubRepo:        testutil.NewInMemorySubscriptionStore(),
+	}
+	svc := &revenueService{ServiceParams: params}
+	priceSvc := NewPriceService(params)
+
+	tier1 := decimal.RequireFromString("0.01")
+	upTo := uint64(1000)
+	graduated := &price.Price{
+		ID:           "price_split_graduated_test",
+		Currency:     "usd",
+		Type:         types.PRICE_TYPE_USAGE,
+		BillingModel: types.BILLING_MODEL_TIERED,
+		TierMode:     types.BILLING_TIER_SLAB,
+		Tiers: price.JSONBTiers{
+			{UpTo: &upTo, UnitAmount: tier1},
+			{UpTo: nil, UnitAmount: decimal.RequireFromString("0.008")},
+		},
+	}
+
+	input := buildTestCurveInput(t, ctx, store,
+		curvePerDay(500),
+		curveDays(5),
+		curvePrice(graduated),
+	)
+	curve, err := svc.buildUsageCurve(ctx, input)
+	require.NoError(t, err)
+	require.Len(t, curve, 5)
+
+	normalAmount := decimal.NewFromInt(14)
+	overageAmount := decimal.NewFromInt(8)
+	totalQty := curve[len(curve)-1].CumulativeBillableQty
+
+	normalQty := quantityAtCharge(ctx, priceSvc, graduated, normalAmount, totalQty)
+	assertDecimalClose(t, decimal.NewFromInt(1500), normalQty, "charge inverse of $14")
+
+	normal, overage := splitCurveAtCommitment(curve, normalAmount, overageAmount, tier1, normalQty)
+	require.Len(t, normal, 5)
+	require.Len(t, overage, 5)
+
+	assert.True(t, normal[4].CumulativeCharge.Equal(normalAmount), "normal half pins to the engine's line amount")
+	assert.True(t, overage[4].CumulativeCharge.Equal(overageAmount), "overage half pins to the engine's line amount")
+	assertDecimalClose(t, decimal.NewFromInt(1000), overage[4].CumulativeBillableQty,
+		"2500 − 1500 units are overage, not (22−14)/0.01 = 800")
+	assertDecimalClose(t, decimal.NewFromInt(1500), normal[4].CumulativeBillableQty)
+
+	// Days fully inside the commitment carry no overage quantity.
+	assert.True(t, overage[0].CumulativeBillableQty.IsZero())
+	assert.True(t, overage[1].CumulativeBillableQty.IsZero())
+	// Quantity never double-counts across the halves.
+	for i := range curve {
+		assertDecimalClose(t, curve[i].CumulativeBillableQty,
+			normal[i].CumulativeBillableQty.Add(overage[i].CumulativeBillableQty), "day", i)
+	}
+}

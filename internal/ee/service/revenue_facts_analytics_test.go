@@ -21,7 +21,7 @@ import (
 // revenueAnalyticsFixture seeds one month of facts covering every shape the
 // API must aggregate: daily marginal usage, a whole-period fixed fee, a
 // commitment true-up, and a revert pair from a voided invoice.
-func revenueAnalyticsFixture(t *testing.T) (context.Context, RevenueService, revenuePeriod) {
+func revenueAnalyticsFixture(t *testing.T) (context.Context, RevenueService, *testutil.InMemoryRevenueFactStore, revenuePeriod) {
 	t.Helper()
 	ctx := types.SetTenantID(context.Background(), "tenant_ra")
 	ctx = types.SetEnvironmentID(ctx, "env_ra")
@@ -66,7 +66,7 @@ func revenueAnalyticsFixture(t *testing.T) (context.Context, RevenueService, rev
 		RevenueFactRepo: store,
 		SettingsRepo:    settingsStore,
 	})
-	return ctx, svc, period
+	return ctx, svc, store, period
 }
 
 func revenueAnalyticsRequest(period revenuePeriod) *dto.RevenueAnalyticsRequest {
@@ -80,7 +80,7 @@ func revenueAnalyticsRequest(period revenuePeriod) *dto.RevenueAnalyticsRequest 
 // TestGetRevenueAnalytics_SourceGrouping: default folds true-up into usage;
 // include_adjustments breaks it out as a labeled row. Totals identical.
 func TestGetRevenueAnalytics_SourceGrouping(t *testing.T) {
-	ctx, svc, period := revenueAnalyticsFixture(t)
+	ctx, svc, _, period := revenueAnalyticsFixture(t)
 
 	req := revenueAnalyticsRequest(period)
 	req.Granularity = types.RevenueGranularityTotal
@@ -118,7 +118,7 @@ func TestGetRevenueAnalytics_SourceGrouping(t *testing.T) {
 // TestGetRevenueAnalytics_AllocationPolicies: billed keeps the fixed fee as a
 // spike on its booked day; amortized spreads it across the period. Totals equal.
 func TestGetRevenueAnalytics_AllocationPolicies(t *testing.T) {
-	ctx, svc, period := revenueAnalyticsFixture(t)
+	ctx, svc, _, period := revenueAnalyticsFixture(t)
 
 	req := revenueAnalyticsRequest(period)
 	req.Granularity = types.RevenueGranularityDay
@@ -156,25 +156,58 @@ func TestGetRevenueAnalytics_AllocationPolicies(t *testing.T) {
 }
 
 // TestGetRevenueAnalytics_PeriodGranularity: period buckets are exact — every
-// row shape aggregates back to its billing period.
+// row shape aggregates back to its own billing period, never a neighbor's.
 func TestGetRevenueAnalytics_PeriodGranularity(t *testing.T) {
-	ctx, svc, period := revenueAnalyticsFixture(t)
+	ctx, svc, store, period := revenueAnalyticsFixture(t)
+
+	// Second billing period right after the first: 10 marginal usage days at
+	// $5/day plus a $25 whole-period fixed fee.
+	next := revenuePeriod{Start: period.exclusiveEnd(), End: period.exclusiveEnd().AddDate(0, 0, 9)}
+	var facts []*revenuefact.RevenueFact
+	for d := 0; d < 10; d++ {
+		facts = append(facts, &revenuefact.RevenueFact{
+			ID: fmt.Sprintf("p2u%02d", d), CustomerID: "cust_ra", SubscriptionID: "sub_ra",
+			SubLineItemID: lo.ToPtr(fmt.Sprintf("sli_p2u%02d", d)), PriceID: lo.ToPtr(fmt.Sprintf("price_p2u%02d", d)),
+			RevenueSource: types.RevenueSourceUsage, PeriodStart: next.Start, PeriodEnd: next.End,
+			Day: next.Start.AddDate(0, 0, d), NetAmount: decimal.NewFromInt(5),
+			DecompositionMode: types.Marginal, Currency: "usd", Status: types.FactProvisional,
+		})
+	}
+	facts = append(facts, &revenuefact.RevenueFact{
+		ID: "p2fixed", CustomerID: "cust_ra", SubscriptionID: "sub_ra",
+		SubLineItemID: lo.ToPtr("sli_p2fixed"), PriceID: lo.ToPtr("price_p2fixed"),
+		RevenueSource: types.RevenueSourceFixed, PeriodStart: next.Start, PeriodEnd: next.End,
+		Day: next.Start, NetAmount: decimal.NewFromInt(25),
+		DecompositionMode: types.PeriodOnly, Currency: "usd", Status: types.FactProvisional,
+	})
+	require.NoError(t, store.UpsertProvisional(ctx, facts))
 
 	req := revenueAnalyticsRequest(period)
+	req.EndTime = next.exclusiveEnd()
 	req.Granularity = types.RevenueGranularityPeriod
 
 	res, err := svc.GetRevenueAnalytics(ctx, req)
 	require.NoError(t, err)
-	require.Len(t, res.Rows, 1)
-	assert.Equal(t, "430", res.Rows[0].NetAmount.String())
-	assert.True(t, res.Rows[0].PeriodStart.Equal(period.Start))
+	require.Len(t, res.Rows, 2, "one bucket per billing period")
+	byStart := map[string]*dto.RevenueAnalyticsRow{}
+	for _, r := range res.Rows {
+		byStart[r.PeriodStart.Format("2006-01-02")] = r
+	}
+	first := byStart[period.Start.Format("2006-01-02")]
+	require.NotNil(t, first)
+	assert.Equal(t, "430", first.NetAmount.String())
+	assert.True(t, first.PeriodEnd.Equal(period.End))
+	second := byStart[next.Start.Format("2006-01-02")]
+	require.NotNil(t, second)
+	assert.Equal(t, "75", second.NetAmount.String(), "second period = 10×$5 usage + $25 fixed")
+	assert.True(t, second.PeriodEnd.Equal(next.End))
 	assert.False(t, res.ContainsAllocated, "period view allocates nothing")
 }
 
 // TestGetRevenueAnalytics_DeniedWithoutOptIn: the surface is gated on the
 // tenant setting, like the export.
 func TestGetRevenueAnalytics_DeniedWithoutOptIn(t *testing.T) {
-	ctx, _, period := revenueAnalyticsFixture(t)
+	ctx, _, _, period := revenueAnalyticsFixture(t)
 	_ = ctx
 
 	deniedCtx := types.SetTenantID(context.Background(), "tenant_other")

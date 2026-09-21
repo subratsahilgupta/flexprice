@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -363,7 +364,12 @@ func (s *revenueService) decomposeUsageRows(
 		if err != nil {
 			return nil, err
 		}
-		normalCurve, overageCurve := splitCurveAtCommitment(curve, item.Amount, overageAmount, listRate(p))
+		if len(curve) == 0 {
+			overageCurves[base.SubLineItemID] = nil
+			return wholePeriod(), nil
+		}
+		normalQty := quantityAtCharge(ctx, NewPriceService(s.ServiceParams), p, item.Amount, curve[len(curve)-1].CumulativeBillableQty)
+		normalCurve, overageCurve := splitCurveAtCommitment(curve, item.Amount, overageAmount, listRate(p), normalQty)
 		overageCurves[base.SubLineItemID] = overageCurve
 		return decomposeUsageMarginal(base, normalCurve), nil
 	}
@@ -420,6 +426,11 @@ func (s *revenueService) decomposeOverageRows(
 	itemPeriod revenuePeriod,
 	overageCurves map[string][]dayCharge,
 ) []*revenuefact.RevenueFact {
+	// The row id is synthetic (stableTrueupPriceID) but the meter is real —
+	// hydrate it so overage rows persist meter_id and aggregation type.
+	if m, ok := inputs.meters[lo.FromPtr(item.MeterID)]; ok {
+		base.Meter = m
+	}
 	if curve, paired := overageCurves[base.SubLineItemID]; paired {
 		if curve == nil {
 			return []*revenuefact.RevenueFact{decomposeOverage(base, itemPeriod)}
@@ -453,7 +464,7 @@ func (s *revenueService) decomposeOverageRows(
 			"error", err, "subscription_id", sub.ID, "sub_line_item_id", base.SubLineItemID)
 		return []*revenuefact.RevenueFact{decomposeOverage(base, itemPeriod)}
 	}
-	_, overageCurve := splitCurveAtCommitment(curve, decimal.Zero, item.Amount, listRate(p))
+	_, overageCurve := splitCurveAtCommitment(curve, decimal.Zero, item.Amount, listRate(p), decimal.Zero)
 	return decomposeUsageMarginal(base, overageCurve)
 }
 
@@ -469,14 +480,16 @@ func (s *revenueService) RollupDirty(ctx context.Context, since time.Time) (roll
 
 // forEachOptedInEnvironment runs fn once per (tenant, environment) that opted
 // in via revenue_analytics_config, with tenant/environment set on ctx — never
-// a scan across all tenants. One environment's failure is logged and does not
-// abort the others.
+// a scan across all tenants. One environment's failure never blocks the
+// others, but the combined error is returned so the Temporal activity fails
+// (and retries) instead of reporting success with partial counters.
 func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op string, fn func(ctx context.Context) error) error {
 	tenantEnvConfigs, err := s.SettingsRepo.ListAllTenantEnvSettingsByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
 	if err != nil {
 		return err
 	}
 
+	var envErrs []error
 	for _, tec := range tenantEnvConfigs {
 		cfg, cfgErr := utils.ToStruct[types.RevenueAnalyticsConfig](tec.Config)
 		if cfgErr != nil {
@@ -498,9 +511,10 @@ func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op strin
 				"error", envErr,
 				"tenant_id", tec.TenantID,
 				"environment_id", tec.EnvironmentID)
+			envErrs = append(envErrs, envErr)
 		}
 	}
-	return nil
+	return errors.Join(envErrs...)
 }
 
 // rollupDirtyForEnvironment scans one (tenant, environment)'s active

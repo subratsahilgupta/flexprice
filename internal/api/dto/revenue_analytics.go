@@ -27,8 +27,9 @@ type RevenueAnalyticsRequest struct {
 	// rows — never both in one response.
 	Status types.FactStatus `json:"status"`
 
-	// GroupBy dimensions: revenue_source, customer_id, subscription_id,
-	// price_id, meter_id, currency.
+	// GroupBy dimensions: revenue_source, source (the event source recorded in
+	// meter_usage; requires customer_ids or subscription_ids), customer_id,
+	// subscription_id, price_id, meter_id, currency.
 	GroupBy []string `json:"group_by"`
 
 	// Filters restrict the rows before aggregation.
@@ -46,12 +47,21 @@ type RevenueAnalyticsRequest struct {
 	IncludeAdjustments bool `json:"include_adjustments"`
 }
 
-var revenueAnalyticsGroupBy = []string{"revenue_source", "customer_id", "subscription_id", "price_id", "meter_id", "currency"}
+var revenueAnalyticsGroupBy = []string{"revenue_source", "source", "customer_id", "subscription_id", "price_id", "meter_id", "currency"}
+
+// revenueAnalyticsMaxRangeDays caps the query window so one request cannot
+// scan unbounded history.
+const revenueAnalyticsMaxRangeDays = 400
 
 func (r *RevenueAnalyticsRequest) Validate() error {
 	if r.StartTime.IsZero() || r.EndTime.IsZero() || !r.StartTime.Before(r.EndTime) {
 		return ierr.NewError("invalid time range").
 			WithHint("start_time must be before end_time").
+			Mark(ierr.ErrValidation)
+	}
+	if r.EndTime.Sub(r.StartTime) > revenueAnalyticsMaxRangeDays*24*time.Hour {
+		return ierr.NewErrorf("time range exceeds %d days", revenueAnalyticsMaxRangeDays).
+			WithHint("Narrow the time range or run multiple requests").
 			Mark(ierr.ErrValidation)
 	}
 	if r.Granularity == "" {
@@ -75,9 +85,16 @@ func (r *RevenueAnalyticsRequest) Validate() error {
 	for _, g := range r.GroupBy {
 		if !lo.Contains(revenueAnalyticsGroupBy, g) {
 			return ierr.NewErrorf("unsupported group_by %q", g).
-				WithHint("group_by must be one of: revenue_source, customer_id, subscription_id, price_id, meter_id, currency").
+				WithHint("group_by must be one of: revenue_source, source, customer_id, subscription_id, price_id, meter_id, currency").
 				Mark(ierr.ErrValidation)
 		}
+	}
+	// Source allocation reads per-subscription usage, so it needs a bounded
+	// customer or subscription scope.
+	if lo.Contains(r.GroupBy, "source") && len(r.CustomerIDs) == 0 && len(r.SubscriptionIDs) == 0 {
+		return ierr.NewError("group_by source requires a customer or subscription filter").
+			WithHint("Pass customer_ids or subscription_ids when grouping by source").
+			Mark(ierr.ErrValidation)
 	}
 	return nil
 }
