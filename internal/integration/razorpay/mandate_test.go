@@ -140,6 +140,21 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 		assert.False(t, has)
 	})
 
+	t.Run("returns false when all confirmed tokens are inactive", func(t *testing.T) {
+		adapter := &CheckoutAdapter{
+			Svc: &PaymentService{
+				customerSvc: &stubRazorpayCustomerSvc{
+					tokens: []*interfaces.ProviderPaymentMethod{
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: false},
+					},
+				},
+			},
+		}
+		has, err := adapter.HasAutoChargeableMethod(ctx, "cust_1")
+		assert.NoError(t, err)
+		assert.False(t, has)
+	})
+
 	t.Run("returns false, err when a real error occurs", func(t *testing.T) {
 		adapter := &CheckoutAdapter{
 			Svc: &PaymentService{
@@ -154,3 +169,39 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 		assert.False(t, has)
 	})
 }
+
+func TestNormalizeRazorpayToken(t *testing.T) {
+	t.Run("confirmed token sets Active to true and maps fields", func(t *testing.T) {
+		raw := map[string]interface{}{
+			"id":     "tok_123",
+			"method": "upi",
+			"recurring_details": map[string]interface{}{
+				"status": "confirmed",
+			},
+			"max_amount": float64(1500000),
+			"created_at": float64(1700000000),
+		}
+		pm, err := NormalizeRazorpayToken(raw)
+		assert.NoError(t, err)
+		assert.NotNil(t, pm)
+		assert.True(t, pm.Active)
+		assert.Equal(t, "tok_123", pm.GatewayMethodID)
+		assert.Equal(t, types.PaymentMethodTypeUPI, pm.Method)
+		assert.NotNil(t, pm.MaxAmount)
+		assert.Equal(t, "15000", pm.MaxAmount.String())
+	})
+
+	t.Run("non-confirmed token returns nil, nil", func(t *testing.T) {
+		raw := map[string]interface{}{
+			"id":     "tok_456",
+			"method": "card",
+			"recurring_details": map[string]interface{}{
+				"status": "rejected",
+			},
+		}
+		pm, err := NormalizeRazorpayToken(raw)
+		assert.NoError(t, err)
+		assert.Nil(t, pm)
+	})
+}
+
