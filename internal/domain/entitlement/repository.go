@@ -11,9 +11,6 @@ type Repository interface {
 	// Core operations
 	Create(ctx context.Context, entitlement *Entitlement) (*Entitlement, error)
 	Get(ctx context.Context, id string) (*Entitlement, error)
-
-	// GetForUpdate row-locks the entitlement so a read-decide-write sequence in the
-	// caller's transaction is serialized against concurrent transactions doing the same.
 	GetForUpdate(ctx context.Context, id string) (*Entitlement, error)
 	List(ctx context.Context, filter *types.EntitlementFilter) ([]*Entitlement, error)
 	Count(ctx context.Context, filter *types.EntitlementFilter) (int, error)

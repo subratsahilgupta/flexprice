@@ -147,7 +147,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 				WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
 				WithReportableDetails(map[string]interface{}{
 					"meter_id":     m.ID,
-					"bucket_size":  m.Aggregation.BucketSize, //nolint:staticcheck // deprecated but still honoured; naming it is what makes the error legible
+					"bucket_size":  m.Aggregation.BucketSize,
 					"feature_type": req.FeatureType,
 				}).
 				Mark(ierr.ErrValidation)
@@ -362,7 +362,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 						WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
 						WithReportableDetails(map[string]interface{}{
 							"meter_id":     m.ID,
-							"bucket_size":  m.Aggregation.BucketSize, //nolint:staticcheck // deprecated but still honoured; naming it is what makes the error legible
+							"bucket_size":  m.Aggregation.BucketSize,
 							"feature_type": entReq.FeatureType,
 							"index":        i,
 						}).
