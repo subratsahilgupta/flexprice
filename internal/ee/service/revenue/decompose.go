@@ -321,5 +321,11 @@ func listRate(p *price.Price) decimal.Decimal {
 	if len(p.Tiers) > 0 {
 		return p.Tiers[0].UnitAmount
 	}
+	// A package price's Amount buys a whole block of units, so the per-unit
+	// list rate is that amount spread over the block. TierDelta then carries
+	// the step-rounding the block pricing applies.
+	if p.BillingModel == types.BILLING_MODEL_PACKAGE && p.TransformQuantity.DivideBy > 0 {
+		return p.Amount.Div(decimal.NewFromInt(int64(p.TransformQuantity.DivideBy)))
+	}
 	return p.Amount
 }

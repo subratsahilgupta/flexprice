@@ -384,3 +384,24 @@ func TestDecomposeFixed_ExcludesTrueupAndOverage(t *testing.T) {
 	fixedLI := workedExampleFixedLineItem(t)
 	assert.NotNil(t, decomposeFixed(fixedLI, period))
 }
+
+// TestListRate_PerUnit: the list rate is per unit, whatever shape the price
+// takes. A package price's Amount buys a block, so charging the whole block
+// amount per unit inflated usage_at_list_rate and entitlement_amount by the
+// block size (seen on dev: 1.8 entitled hours priced at $1.80 instead of $0.18).
+func TestListRate_PerUnit(t *testing.T) {
+	pkg := &price.Price{
+		ID:                "price_pkg",
+		Amount:            decimal.NewFromInt(1),
+		BillingModel:      types.BILLING_MODEL_PACKAGE,
+		TransformQuantity: price.JSONBTransformQuantity{DivideBy: 10, Round: types.ROUND_UP},
+	}
+	assert.Equal(t, "0.1", listRate(pkg).String(), "package: amount spread over the block")
+
+	// A malformed package price must not divide by zero.
+	broken := &price.Price{ID: "price_pkg0", Amount: decimal.NewFromInt(1), BillingModel: types.BILLING_MODEL_PACKAGE}
+	assert.Equal(t, "1", listRate(broken).String())
+
+	assert.Equal(t, "0.01", listRate(flatSum(t)).String(), "flat fee: the amount is already per unit")
+	assert.Equal(t, "0.01", listRate(graduated(t)).String(), "tiered: the first tier's unit amount")
+}

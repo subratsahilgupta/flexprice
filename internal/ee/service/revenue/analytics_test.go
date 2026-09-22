@@ -225,3 +225,44 @@ func TestGetRevenueAnalytics_DeniedWithoutOptIn(t *testing.T) {
 	_, err := svc.GetRevenueAnalytics(deniedCtx, revenueAnalyticsRequest(period))
 	require.Error(t, err)
 }
+
+// TestGetRevenueAnalytics_DropsEmptyBuckets: a line item rolled over a day it
+// saw nothing (before a commitment is crossed, or an idle meter) books a row
+// of zeros — noise in a response. A day of fully entitled usage nets zero too
+// but is NOT empty: its quantity columns say what the entitlement absorbed.
+func TestGetRevenueAnalytics_DropsEmptyBuckets(t *testing.T) {
+	ctx, svc, store, period := revenueAnalyticsFixture(t)
+
+	mk := func(id string, src types.RevenueSource, net, entQty, entAmt int64) *revenuefact.RevenueFact {
+		return &revenuefact.RevenueFact{
+			ID: id, CustomerID: "cust_ra", SubscriptionID: "sub_ra",
+			SubLineItemID: lo.ToPtr("sli_" + id), PriceID: lo.ToPtr("price_" + id),
+			RevenueSource: src, PeriodStart: period.Start, PeriodEnd: period.End,
+			Day: period.Start, NetAmount: decimal.NewFromInt(net),
+			EntitlementQty: decimal.NewFromInt(entQty), EntitlementAmount: decimal.NewFromInt(entAmt),
+			DecompositionMode: types.Marginal, Currency: "usd", Status: types.FactProvisional,
+		}
+	}
+	require.NoError(t, store.UpsertProvisional(ctx, []*revenuefact.RevenueFact{
+		mk("zero_overage", types.RevenueSourceOverage, 0, 0, 0),
+		mk("entitled", types.RevenueSourceUsage, 0, 40, 4),
+	}))
+
+	req := revenueAnalyticsRequest(period)
+	req.Granularity = types.RevenueGranularityTotal
+	req.GroupBy = []string{"price_id"}
+	req.IncludeAdjustments = true
+
+	res, err := svc.GetRevenueAnalytics(ctx, req)
+	require.NoError(t, err)
+
+	byPrice := map[string]*dto.RevenueAnalyticsRow{}
+	for _, r := range res.Rows {
+		byPrice[r.Group["price_id"]] = r
+	}
+	assert.NotContains(t, byPrice, "price_zero_overage", "a bucket with nothing in it is dropped")
+	entitled := byPrice["price_entitled"]
+	require.NotNil(t, entitled, "fully entitled usage must survive: it reports what was absorbed")
+	assert.True(t, entitled.NetAmount.IsZero())
+	assert.Equal(t, "40", entitled.EntitlementQty.String())
+}
