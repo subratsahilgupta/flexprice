@@ -17057,7 +17057,8 @@
             "$ref": "#/components/schemas/GrantState"
           },
           "grant_unlimited": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "GrantUnlimited distinguishes an allowance with no ceiling from one whose quota\nsimply is not set on this response: both leave grant_quota empty."
           },
           "is_enabled": {
             "type": "boolean"
@@ -17096,6 +17097,10 @@
           },
           "grant_quota": {
             "type": "string"
+          },
+          "grant_unlimited": {
+            "type": "boolean",
+            "description": "GrantUnlimited distinguishes an allowance with no ceiling from one whose quota\nsimply is not set on this response: both leave grant_quota empty."
           },
           "source_entity_id": {
             "type": "string"

@@ -2628,8 +2628,8 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 			GrantMeasure:       grantMeasure,
 			GrantDurationValue: grantDurationValue,
 			GrantDurationUnit:  grantDurationUnit,
+			GrantUnlimited:     grantUnlimited,
 		}
-		out.GrantUnlimited = grantUnlimited
 		if !grantUnlimited {
 			out.GrantQuota = &grantQuota
 		}
@@ -2650,6 +2650,9 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 					GrantQuota:         e.GrantQuota,
 					GrantDurationValue: e.GrantDurationValue,
 					GrantDurationUnit:  e.GrantDurationUnit,
+					// The parent's grant fields are additive-only, so for a parallel
+					// feature this is the only place the ceiling's absence is explained.
+					GrantUnlimited: e.IsUnlimitedGrant(),
 				},
 			})
 		}

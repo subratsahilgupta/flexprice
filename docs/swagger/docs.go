@@ -14702,6 +14702,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/GrantState"
                 },
                 "grant_unlimited": {
+                    "description": "GrantUnlimited distinguishes an allowance with no ceiling from one whose quota\nsimply is not set on this response: both leave grant_quota empty.",
                     "type": "boolean"
                 },
                 "is_enabled": {
@@ -14741,6 +14742,10 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "description": "GrantUnlimited distinguishes an allowance with no ceiling from one whose quota\nsimply is not set on this response: both leave grant_quota empty.",
+                    "type": "boolean"
                 },
                 "source_entity_id": {
                     "type": "string"

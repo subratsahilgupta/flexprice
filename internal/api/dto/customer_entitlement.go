@@ -84,8 +84,7 @@ type AggregatedEntitlement struct {
 	AggregationMode  types.EntitlementAggregationMode  `json:"aggregation_mode,omitempty"`
 	Buckets          []*AggregatedEntitlementBucket    `json:"buckets,omitempty"`
 	GrantConfig
-	GrantUnlimited bool        `json:"grant_unlimited,omitempty"`
-	GrantState     *GrantState `json:"grant_state,omitempty"`
+	GrantState *GrantState `json:"grant_state,omitempty"`
 }
 
 // GrantConfig is the allowance an entitlement describes, as read surfaces report it:
@@ -96,6 +95,9 @@ type GrantConfig struct {
 	GrantQuota         *decimal.Decimal                   `json:"grant_quota,omitempty" swaggertype:"string"`
 	GrantDurationValue *int                               `json:"grant_duration_value,omitempty"`
 	GrantDurationUnit  types.EntitlementGrantDurationUnit `json:"grant_duration_unit,omitempty"`
+	// GrantUnlimited distinguishes an allowance with no ceiling from one whose quota
+	// simply is not set on this response: both leave grant_quota empty.
+	GrantUnlimited bool `json:"grant_unlimited,omitempty"`
 }
 
 // AggregatedEntitlementBucket is one independent budget within a parallel feature.

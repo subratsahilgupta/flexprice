@@ -25,3 +25,19 @@ func TestGrantConfigEmbedsFlat(t *testing.T) {
 		t.Fatalf("wire format changed\n got: %s\nwant: %s", b, want)
 	}
 }
+
+// A bucket with no ceiling has no quota either, so without the flag the two are
+// indistinguishable on the wire.
+func TestGrantConfigUnlimitedBucket(t *testing.T) {
+	b, err := json.Marshal(&AggregatedEntitlementBucket{
+		EntitlementID: "ent_1",
+		GrantConfig:   GrantConfig{GrantMeasure: "quantity", GrantUnlimited: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"entitlement_id":"ent_1","source_entity_id":"","grant_measure":"quantity","grant_unlimited":true}`
+	if string(b) != want {
+		t.Fatalf("got: %s\nwant: %s", b, want)
+	}
+}
