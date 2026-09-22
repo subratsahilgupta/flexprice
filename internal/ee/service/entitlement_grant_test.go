@@ -2062,7 +2062,10 @@ func (s *EntitlementGrantSuite) TestCreateEntitlement_UnlimitedAccepted() {
 	s.Nil(resp.Entitlement.GrantQuota)
 }
 
-func (s *EntitlementGrantSuite) TestCreateEntitlement_RejectsMixingUnlimitedAndBounded() {
+// Unlimited and bounded entitlements may sit on one feature. Additive pools them and
+// the pool has no ceiling, because unlimited absorbs any finite addition; parallel gives
+// each its own window, so they never meet.
+func (s *EntitlementGrantSuite) TestCreateEntitlement_AllowsMixingUnlimitedAndBounded() {
 	ctx := s.GetContext()
 	m := s.simpleMeter("meter-unl-mix")
 	f := s.simpleFeature("feat-unl-mix", m.ID)
@@ -2070,17 +2073,31 @@ func (s *EntitlementGrantSuite) TestCreateEntitlement_RejectsMixingUnlimitedAndB
 	a := &addon.Addon{ID: "addon-unl-mix", Name: "Mix", BaseModel: types.GetDefaultBaseModel(ctx)}
 	s.NoError(s.GetStores().AddonRepo.Create(ctx, a))
 
-	_, err := s.entService.CreateEntitlement(ctx, s.unlimitedCreateRequest(f.ID, p.ID))
-	s.NoError(err)
+	unlimited, err := s.entService.CreateEntitlement(ctx, s.unlimitedCreateRequest(f.ID, p.ID))
+	s.Require().NoError(err)
 
-	// An addon attaches to a subscription already on this plan, so the two pool into
-	// one window. A bounded one beside an unlimited one would silently inherit the
-	// unlimited pool at fold time — the legacy wart this model removes.
-	addonReq := s.grantCreateRequest(f.ID, p.ID, types.EntitlementGrantMeasureQuantity, 5, decimal.NewFromInt(100))
-	addonReq.EntityType, addonReq.EntityID = types.ENTITLEMENT_ENTITY_TYPE_ADDON, a.ID
-	_, err = s.entService.CreateEntitlement(ctx, addonReq)
-	s.Error(err)
-	s.Contains(err.Error(), "unlimited")
+	// Additive siblings share a duration, and unlimited requires the cycle-long one, so
+	// the bounded sibling has to be cycle-long too.
+	addonReq := dto.CreateEntitlementRequest{
+		EntityType:        types.ENTITLEMENT_ENTITY_TYPE_ADDON,
+		EntityID:          a.ID,
+		FeatureID:         f.ID,
+		FeatureType:       types.FeatureTypeMetered,
+		IsEnabled:         true,
+		GrantMeasure:      types.EntitlementGrantMeasureQuantity,
+		GrantQuota:        lo.ToPtr(decimal.NewFromInt(100)),
+		GrantDurationUnit: types.EntitlementGrantDurationUnitSubscriptionPeriod,
+		AggregationMode:   types.EntitlementAggregationModeAdditive,
+	}
+	bounded, err := s.entService.CreateEntitlement(ctx, addonReq)
+	s.Require().NoError(err, "a bounded sibling may join an unlimited pool")
+
+	candidates := grantCandidatesForFeature([]*entitlement.Entitlement{
+		unlimited.Entitlement, bounded.Entitlement,
+	})
+	s.Require().Len(candidates, 1, "additive pools into one window")
+	s.True(candidates[0].unlimited, "one unlimited contributor removes the pool's ceiling")
+	s.True(candidates[0].quota.IsZero(), "a pool with no ceiling records no quota")
 }
 
 func (s *EntitlementGrantSuite) TestUnlimitedGrant_NeverExhaustsOrBills() {

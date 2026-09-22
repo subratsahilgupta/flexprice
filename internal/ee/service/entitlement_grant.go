@@ -126,9 +126,6 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 	return closed, nil
 }
 
-// LiveGrantsByFeature returns the subscription's feature-scoped grant rows whose window
-// contains `at`, grouped by feature. Windows already closed before `at` are excluded by the
-// query, so each slot yields the one segment that is actually live.
 func (s *entitlementGrantService) LiveGrantsByFeature(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -1034,17 +1031,6 @@ func (s *entitlementService) validateGrantSiblingCoherence(ctx context.Context, 
 		}
 		if sharesNoResolvedSet(sib, e) {
 			continue
-		}
-		if sib.IsUnlimitedGrant() != e.IsUnlimitedGrant() {
-			return ierr.NewError("cannot mix unlimited and bounded allowances on the same feature").
-				WithHint("Every entitlement on a feature must either set a grant_quota or leave it unset").
-				WithReportableDetails(map[string]interface{}{
-					"feature_id":          e.FeatureID,
-					"entitlement_id":      sib.ID,
-					"existing_unlimited":  sib.IsUnlimitedGrant(),
-					"requested_unlimited": e.IsUnlimitedGrant(),
-				}).
-				Mark(ierr.ErrValidation)
 		}
 		if defaultedMode(sib.AggregationMode) != mode {
 			return ierr.NewError("aggregation_mode must match the other entitlements on this feature").
