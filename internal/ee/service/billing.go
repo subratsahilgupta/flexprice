@@ -2557,9 +2557,26 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 
 	aggregationMode := types.EntitlementAggregationModeAdditive
 
+	var grantMeasure types.EntitlementGrantMeasure
+	var grantDurationValue *int
+	var grantDurationUnit types.EntitlementGrantDurationUnit
+	grantQuota := decimal.Zero
+	hasAdditiveGrantConfigs, grantUnlimited := false, false
+
 	for _, e := range entitlements {
 		if !e.IsEnabled {
 			continue
+		}
+
+		if e.HasGrantConfig() && e.AggregationMode == types.EntitlementAggregationModeAdditive {
+			hasAdditiveGrantConfigs = true
+			grantMeasure = e.GrantMeasure
+			grantDurationValue = e.GrantDurationValue
+			grantDurationUnit = e.GrantDurationUnit
+			grantQuota = grantQuota.Add(lo.FromPtr(e.GrantQuota))
+			if e.IsUnlimitedGrant() {
+				grantUnlimited = true
+			}
 		}
 
 		if e.AggregationMode == types.EntitlementAggregationModeParallel {
@@ -2603,6 +2620,18 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 		AggregationMode:  aggregationMode,
 	}
 
+	if hasAdditiveGrantConfigs {
+		out.GrantConfig = dto.GrantConfig{
+			GrantMeasure:       grantMeasure,
+			GrantDurationValue: grantDurationValue,
+			GrantDurationUnit:  grantDurationUnit,
+			GrantUnlimited:     grantUnlimited,
+		}
+		if !grantUnlimited {
+			out.GrantQuota = &grantQuota
+		}
+	}
+
 	if aggregationMode == types.EntitlementAggregationModeParallel {
 		out.Buckets = make([]*dto.AggregatedEntitlementBucket, 0, len(entitlements))
 		for _, e := range entitlements {
@@ -2610,13 +2639,16 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 				continue
 			}
 			out.Buckets = append(out.Buckets, &dto.AggregatedEntitlementBucket{
-				EntitlementID:      e.ID,
-				SourceEntityID:     e.EntityID,
-				UsageLimit:         e.UsageLimit,
-				GrantMeasure:       e.GrantMeasure,
-				GrantQuota:         e.GrantQuota,
-				GrantDurationValue: e.GrantDurationValue,
-				GrantDurationUnit:  e.GrantDurationUnit,
+				EntitlementID:  e.ID,
+				SourceEntityID: e.EntityID,
+				UsageLimit:     e.UsageLimit,
+				GrantConfig: dto.GrantConfig{
+					GrantMeasure:       e.GrantMeasure,
+					GrantQuota:         e.GrantQuota,
+					GrantDurationValue: e.GrantDurationValue,
+					GrantDurationUnit:  e.GrantDurationUnit,
+					GrantUnlimited:     e.IsUnlimitedGrant(),
+				},
 			})
 		}
 	}
@@ -2728,8 +2760,14 @@ func (s *billingService) AggregateEntitlements(params *dto.AggregateEntitlements
 			}
 		case types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION:
 			entityType = dto.EntitlementSourceEntityTypeSubscription
-			// For subscription entitlements, entity_name can be left empty or set to subscription identifier
-			// The entity_id is the subscription ID itself
+			// entity_id is the subscription, which names nothing a customer recognises.
+			// An override carries the plan or addon it replaced, so name it after that;
+			// a net-new subscription entitlement replaces nothing and stays unnamed.
+			if ent.Plan != nil {
+				entityName = ent.Plan.Name
+			} else if ent.Addon != nil {
+				entityName = ent.Addon.Name
+			}
 		}
 
 		// For subscription ID, use the one from the source if available, otherwise use the provided one
@@ -2918,6 +2956,8 @@ func (s *billingService) GetCustomerEntitlementsForSubscriptions(ctx context.Con
 		SubscriptionID: subscriptions[0].ID,
 	})
 
+	s.attachGrantState(ctx, aggregatedFeatures, subscriptions)
+
 	// Build final response
 	response := &dto.CustomerEntitlementsResponse{
 		CustomerID:    customerID,
@@ -2926,6 +2966,45 @@ func (s *billingService) GetCustomerEntitlementsForSubscriptions(ctx context.Con
 	}
 
 	return response, nil
+}
+
+func (s *billingService) attachGrantState(
+	ctx context.Context,
+	features []*dto.AggregatedFeature,
+	subscriptions []*subscription.Subscription,
+) {
+	grantSvc := NewEntitlementGrantService(s.ServiceParams)
+	at := time.Now().UTC()
+
+	byFeature := make(map[string]*dto.GrantState)
+	for _, sub := range subscriptions {
+		if sub == nil || sub.SubscriptionType == types.SubscriptionTypeInherited {
+			continue
+		}
+		states, err := grantSvc.GrantStateByFeature(ctx, sub, at)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to load entitlement grant state for subscription, skipping",
+				"error", err, "subscription_id", sub.ID)
+			continue
+		}
+		for featureID, state := range states {
+			existing, ok := byFeature[featureID]
+			if !ok {
+				byFeature[featureID] = state
+				continue
+			}
+			existing.Allowances = append(existing.Allowances, state.Allowances...)
+		}
+	}
+
+	for _, f := range features {
+		if f == nil || f.Feature == nil {
+			continue
+		}
+		if state, ok := byFeature[f.Feature.ID]; ok && f.Entitlement != nil {
+			f.Entitlement.GrantState = state
+		}
+	}
 }
 
 func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID string, req *dto.GetCustomerUsageSummaryRequest) (*dto.CustomerUsageSummaryResponse, error) {
@@ -3279,22 +3358,102 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 		usage := usageByFeature[featureID]
 		nextUsageResetAt := featureNextUsageResetAtMap[featureID]
 
+		totalLimit := feature.Entitlement.UsageLimit
+		isUnlimited := feature.Entitlement.UsageLimit == nil
+		if feature.Entitlement.GrantUnlimited {
+			totalLimit = nil
+			isUnlimited = true
+		} else if feature.Entitlement.GrantQuota != nil {
+			quota := feature.Entitlement.GrantQuota.IntPart()
+			totalLimit = &quota
+			isUnlimited = false
+		}
+
+		// The accumulation loop above skips grant-backed features entirely — it keys off
+		// usage_reset_period, which a grant config does not set — so without this they
+		// report zero however much the customer has spent.
+		if figures, ok := grantUsageFigures(feature.Entitlement.GrantState); ok {
+			usage = figures.usage
+			if figures.unlimited {
+				totalLimit = nil
+				isUnlimited = true
+			} else {
+				// Zero included: a spent allowance reopens at zero to hold its slot, and
+				// falling back to the entitlement's ceiling here would tell the customer
+				// they still have the full amount. getUsagePercent reads it as 100%.
+				q := figures.quota.IntPart()
+				totalLimit = &q
+				isUnlimited = false
+			}
+		}
+
 		featureSummary := &dto.FeatureUsageSummary{
 			Feature:          feature.Feature,
-			TotalLimit:       feature.Entitlement.UsageLimit,
-			IsUnlimited:      feature.Entitlement.UsageLimit == nil,
+			TotalLimit:       totalLimit,
+			IsUnlimited:      isUnlimited,
 			CurrentUsage:     usage,
-			UsagePercent:     s.getUsagePercent(usage, feature.Entitlement.UsageLimit),
+			UsagePercent:     s.getUsagePercent(usage, totalLimit),
 			IsEnabled:        feature.Entitlement.IsEnabled,
 			IsSoftLimit:      feature.Entitlement.IsSoftLimit,
 			Sources:          feature.Sources,
 			NextUsageResetAt: nextUsageResetAt,
+			GrantState:       feature.Entitlement.GrantState,
+			// A parallel feature's budgets are independent, so the scalars above cannot
+			// describe them. Passed through so the reader can show each on its own.
+			Buckets: feature.Entitlement.Buckets,
 		}
 
 		resp.Features = append(resp.Features, featureSummary)
 	}
 
 	return resp, nil
+}
+
+// grantFigures is one span's worth of allowance, as the usage summary reports it.
+type grantFigures struct {
+	usage     decimal.Decimal
+	quota     decimal.Decimal
+	unlimited bool
+}
+
+// grantUsageFigures picks the usage and the ceiling to report for a grant-backed feature,
+// both describing the same span — the quota is per allowance, so pairing it with period
+// usage would compare two different things. ok is false when there is no ledger to read.
+//
+// An open allowance is reported on its own. Between allowances — the hourly one ended at
+// 10:00 and it is 10:30 — the one that just closed is, since the ledger is capped at the
+// most recent few and summing it would describe the cap rather than the customer.
+//
+// Across several open allowances quotas sum, because separate subscriptions each grant
+// their own, but usage takes the max: every allowance meters the same customer's event
+// stream, so adding them would count it twice.
+func grantUsageFigures(gs *dto.GrantState) (grantFigures, bool) {
+	if gs == nil {
+		return grantFigures{}, false
+	}
+
+	active := lo.Filter(gs.Allowances, func(a *dto.GrantAllowanceState, _ int) bool {
+		return a != nil && a.IsActive
+	})
+	if len(active) == 0 {
+		last := lo.LastOrEmpty(gs.Allowances)
+		if last == nil {
+			return grantFigures{}, false
+		}
+		return grantFigures{usage: last.Usage, quota: last.Quota, unlimited: last.Unlimited}, true
+	}
+
+	out := grantFigures{usage: decimal.Zero, quota: decimal.Zero}
+	for _, a := range active {
+		if a.Unlimited {
+			out.unlimited = true
+		}
+		if a.Usage.GreaterThan(out.usage) {
+			out.usage = a.Usage
+		}
+		out.quota = out.quota.Add(a.Quota)
+	}
+	return out, true
 }
 
 func (s *billingService) getUsagePercent(usage decimal.Decimal, limit *int64) decimal.Decimal {

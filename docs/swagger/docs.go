@@ -14686,6 +14686,24 @@ const docTemplate = `{
                         "additionalProperties": {}
                     }
                 },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "string"
+                },
+                "grant_state": {
+                    "$ref": "#/definitions/GrantState"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
+                },
                 "is_enabled": {
                     "type": "boolean"
                 },
@@ -14723,6 +14741,9 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "source_entity_id": {
                     "type": "string"
@@ -15412,6 +15433,9 @@ const docTemplate = `{
                 "cancel_url": {
                     "type": "string"
                 },
+                "entity_creation_options": {
+                    "$ref": "#/definitions/EntityCreationOptions"
+                },
                 "failure_url": {
                     "type": "string"
                 },
@@ -15478,6 +15502,14 @@ const docTemplate = `{
                 },
                 "customer_id": {
                     "type": "string"
+                },
+                "entity_creation_result": {
+                    "description": "Describes the call that returned this session, not the session itself; never persisted.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/EntityCreationResult"
+                        }
+                    ]
                 },
                 "expires_at": {
                     "type": "string"
@@ -16211,6 +16243,9 @@ const docTemplate = `{
                 "customer_external_id": {
                     "type": "string"
                 },
+                "entity_creation_options": {
+                    "$ref": "#/definitions/EntityCreationOptions"
+                },
                 "failure_url": {
                     "type": "string"
                 },
@@ -16642,6 +16677,9 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -18794,6 +18832,33 @@ const docTemplate = `{
                 }
             }
         },
+        "EntityCreationConflictPolicies": {
+            "type": "object",
+            "properties": {
+                "on_existing_entity": {
+                    "$ref": "#/definitions/types.OnExistingEntityPolicy"
+                }
+            }
+        },
+        "EntityCreationOptions": {
+            "type": "object",
+            "properties": {
+                "entity_creation_conflict_policies": {
+                    "$ref": "#/definitions/EntityCreationConflictPolicies"
+                }
+            }
+        },
+        "EntityCreationResult": {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.EntityCreationStatus"
+                }
+            }
+        },
         "EntityIntegrationMappingResponse": {
             "type": "object",
             "properties": {
@@ -19040,11 +19105,21 @@ const docTemplate = `{
         "FeatureUsageSummary": {
             "type": "object",
             "properties": {
+                "buckets": {
+                    "description": "Buckets is one entry per independent budget on a parallel feature. The scalar\nfigures above cannot describe several budgets at once — a sum is not spendable\nfrom any one of them — so a client showing a parallel feature reads these instead.\nEmpty for additive features, where the scalars are the whole truth.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AggregatedEntitlementBucket"
+                    }
+                },
                 "current_usage": {
                     "type": "string"
                 },
                 "feature": {
                     "$ref": "#/definitions/FeatureResponse"
+                },
+                "grant_state": {
+                    "$ref": "#/definitions/GrantState"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -19716,6 +19791,58 @@ const docTemplate = `{
                 },
                 "value": {
                     "type": "number"
+                }
+            }
+        },
+        "GrantAllowanceState": {
+            "type": "object",
+            "properties": {
+                "entitlement_id": {
+                    "type": "string"
+                },
+                "grant_id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "last_computed_at": {
+                    "type": "string"
+                },
+                "measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "quota": {
+                    "type": "string"
+                },
+                "remaining": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.EntitlementGrantStatus"
+                },
+                "unlimited": {
+                    "type": "boolean"
+                },
+                "usage": {
+                    "type": "string"
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "valid_to": {
+                    "type": "string"
+                }
+            }
+        },
+        "GrantState": {
+            "type": "object",
+            "properties": {
+                "allowances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GrantAllowanceState"
+                    }
                 }
             }
         },
@@ -20895,6 +21022,9 @@ const docTemplate = `{
                 "entitlement_id"
             ],
             "properties": {
+                "aggregation_mode": {
+                    "$ref": "#/definitions/types.EntitlementAggregationMode"
+                },
                 "config_value": {
                     "description": "ConfigValue is the config value for config features",
                     "type": "object",
@@ -20903,6 +21033,24 @@ const docTemplate = `{
                 "entitlement_id": {
                     "description": "EntitlementID references the plan/addon entitlement to override",
                     "type": "string"
+                },
+                "grant_allocation_behavior": {
+                    "$ref": "#/definitions/types.EntitlementGrantAllocationBehavior"
+                },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "string"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "description": "IsEnabled determines if the entitlement is enabled or disabled",
@@ -24429,10 +24577,6 @@ const docTemplate = `{
                 "aggregation_mode": {
                     "$ref": "#/definitions/types.EntitlementAggregationMode"
                 },
-                "clear_grant_config": {
-                    "description": "Grant config — nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).",
-                    "type": "boolean"
-                },
                 "config_value": {
                     "type": "object",
                     "additionalProperties": true
@@ -24451,6 +24595,9 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -28279,6 +28426,17 @@ const docTemplate = `{
                 "EntitlementGrantMeasureAmount"
             ]
         },
+        "types.EntitlementGrantStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "exhausted"
+            ],
+            "x-enum-varnames": [
+                "EntitlementGrantStatusActive",
+                "EntitlementGrantStatusExhausted"
+            ]
+        },
         "types.EntitlementUsageResetPeriod": {
             "type": "string",
             "enum": [
@@ -28311,6 +28469,19 @@ const docTemplate = `{
                 "EntityChangeBehaviourCarry",
                 "EntityChangeBehaviourDrop",
                 "EntityChangeBehaviourAdd"
+            ]
+        },
+        "types.EntityCreationStatus": {
+            "type": "string",
+            "enum": [
+                "created",
+                "superseded",
+                "failed_already_exists"
+            ],
+            "x-enum-varnames": [
+                "EntityCreationStatusCreated",
+                "EntityCreationStatusSuperseded",
+                "EntityCreationStatusFailedAlreadyExists"
             ]
         },
         "types.EntitySyncConfig": {
@@ -29047,6 +29218,17 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "types.OnExistingEntityPolicy": {
+            "type": "string",
+            "enum": [
+                "reject",
+                "supersede"
+            ],
+            "x-enum-varnames": [
+                "OnExistingEntityPolicyReject",
+                "OnExistingEntityPolicySupersede"
+            ]
         },
         "types.OnPendingSchedulePolicy": {
             "type": "string",

@@ -1596,6 +1596,18 @@ type OverrideEntitlementRequest struct {
 
 	// ConfigValue is the config value for config features
 	ConfigValue map[string]interface{} `json:"config_value,omitempty"`
+
+	GrantConfigPatch
+}
+
+type GrantConfigPatch struct {
+	GrantMeasure            *types.EntitlementGrantMeasure            `json:"grant_measure,omitempty"`
+	GrantDurationValue      *int                                      `json:"grant_duration_value,omitempty"`
+	GrantDurationUnit       *types.EntitlementGrantDurationUnit       `json:"grant_duration_unit,omitempty"`
+	GrantAllocationBehavior *types.EntitlementGrantAllocationBehavior `json:"grant_allocation_behavior,omitempty"`
+	GrantQuota              *decimal.Decimal                          `json:"grant_quota,omitempty" swaggertype:"string"`
+	AggregationMode         *types.EntitlementAggregationMode         `json:"aggregation_mode,omitempty"`
+	GrantUnlimited          *bool                                     `json:"grant_unlimited,omitempty"`
 }
 
 // Validate validates the entitlement override request
@@ -1603,6 +1615,13 @@ func (r *OverrideEntitlementRequest) Validate() error {
 	if r.EntitlementID == "" {
 		return ierr.NewError("entitlement_id is required").
 			WithHint("Please provide the entitlement ID to override").
+			Mark(ierr.ErrValidation)
+	}
+
+	if lo.FromPtr(r.GrantUnlimited) && r.GrantQuota != nil {
+		return ierr.NewError("grant_quota cannot be set on an unlimited allowance").
+			WithHint("Remove grant_quota, or drop grant_unlimited").
+			WithReportableDetails(map[string]interface{}{"entitlement_id": r.EntitlementID}).
 			Mark(ierr.ErrValidation)
 	}
 
