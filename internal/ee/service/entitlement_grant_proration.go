@@ -272,8 +272,6 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 	return err
 }
 
-// origin labels the successor's metadata. Addon changes are the default; a deleted
-// entitlement builds its config by hand and names itself.
 func (c *GrantChangeConfig) origin() grantProrationSource {
 	if c == nil || c.entitlementChangeOrigin == "" {
 		return grantProrationSourceAddonsModify
