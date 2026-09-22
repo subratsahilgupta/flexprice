@@ -81,6 +81,9 @@ func (EntitlementGrant) Fields() []ent.Field {
 			}).
 			Immutable(),
 
+		field.Bool("unlimited").
+			Default(false),
+
 		field.Other("usage", decimal.Decimal{}).
 			SchemaType(map[string]string{
 				"postgres": "numeric(25,15)",

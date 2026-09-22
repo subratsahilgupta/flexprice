@@ -745,6 +745,18 @@ definitions:
           additionalProperties: {}
           type: object
         type: array
+      grant_duration_unit:
+        $ref: '#/definitions/types.EntitlementGrantDurationUnit'
+      grant_duration_value:
+        type: integer
+      grant_measure:
+        $ref: '#/definitions/types.EntitlementGrantMeasure'
+      grant_quota:
+        type: string
+      grant_state:
+        $ref: '#/definitions/GrantState'
+      grant_unlimited:
+        type: boolean
       is_enabled:
         type: boolean
       is_soft_limit:
@@ -770,6 +782,8 @@ definitions:
         $ref: '#/definitions/types.EntitlementGrantMeasure'
       grant_quota:
         type: string
+      grant_unlimited:
+        type: boolean
       source_entity_id:
         type: string
       usage_limit:
@@ -1233,6 +1247,8 @@ definitions:
     properties:
       cancel_url:
         type: string
+      entity_creation_options:
+        $ref: '#/definitions/EntityCreationOptions'
       failure_url:
         type: string
       idempotency_key:
@@ -1279,6 +1295,11 @@ definitions:
         type: string
       customer_id:
         type: string
+      entity_creation_result:
+        allOf:
+        - $ref: '#/definitions/EntityCreationResult'
+        description: Describes the call that returned this session, not the session
+          itself; never persisted.
       expires_at:
         type: string
       failure_reason:
@@ -1782,6 +1803,8 @@ definitions:
         $ref: '#/definitions/types.CheckoutConfiguration'
       customer_external_id:
         type: string
+      entity_creation_options:
+        $ref: '#/definitions/EntityCreationOptions'
       failure_url:
         type: string
       idempotency_key:
@@ -2115,6 +2138,8 @@ definitions:
         description: Grant config — optional. All-or-nothing; see entitlement.validateGrantConfig.
       grant_quota:
         type: string
+      grant_unlimited:
+        type: boolean
       is_enabled:
         type: boolean
       is_soft_limit:
@@ -3728,6 +3753,23 @@ definitions:
       reference_id:
         type: string
     type: object
+  EntityCreationConflictPolicies:
+    properties:
+      on_existing_entity:
+        $ref: '#/definitions/types.OnExistingEntityPolicy'
+    type: object
+  EntityCreationOptions:
+    properties:
+      entity_creation_conflict_policies:
+        $ref: '#/definitions/EntityCreationConflictPolicies'
+    type: object
+  EntityCreationResult:
+    properties:
+      entity_id:
+        type: string
+      status:
+        $ref: '#/definitions/types.EntityCreationStatus'
+    type: object
   EntityIntegrationMappingResponse:
     properties:
       created_at:
@@ -3890,10 +3932,21 @@ definitions:
     type: object
   FeatureUsageSummary:
     properties:
+      buckets:
+        description: |-
+          Buckets is one entry per independent budget on a parallel feature. The scalar
+          figures above cannot describe several budgets at once — a sum is not spendable
+          from any one of them — so a client showing a parallel feature reads these instead.
+          Empty for additive features, where the scalars are the whole truth.
+        items:
+          $ref: '#/definitions/AggregatedEntitlementBucket'
+        type: array
       current_usage:
         type: string
       feature:
         $ref: '#/definitions/FeatureResponse'
+      grant_state:
+        $ref: '#/definitions/GrantState'
       is_enabled:
         type: boolean
       is_soft_limit:
@@ -4425,6 +4478,40 @@ definitions:
         $ref: '#/definitions/types.AggregationType'
       value:
         type: number
+    type: object
+  GrantAllowanceState:
+    properties:
+      entitlement_id:
+        type: string
+      grant_id:
+        type: string
+      is_active:
+        type: boolean
+      last_computed_at:
+        type: string
+      measure:
+        $ref: '#/definitions/types.EntitlementGrantMeasure'
+      quota:
+        type: string
+      remaining:
+        type: string
+      status:
+        $ref: '#/definitions/types.EntitlementGrantStatus'
+      unlimited:
+        type: boolean
+      usage:
+        type: string
+      valid_from:
+        type: string
+      valid_to:
+        type: string
+    type: object
+  GrantState:
+    properties:
+      allowances:
+        items:
+          $ref: '#/definitions/GrantAllowanceState'
+        type: array
     type: object
   GroupResponse:
     properties:
@@ -5287,6 +5374,8 @@ definitions:
     type: object
   OverrideEntitlementRequest:
     properties:
+      aggregation_mode:
+        $ref: '#/definitions/types.EntitlementAggregationMode'
       config_value:
         additionalProperties: true
         description: ConfigValue is the config value for config features
@@ -5294,6 +5383,18 @@ definitions:
       entitlement_id:
         description: EntitlementID references the plan/addon entitlement to override
         type: string
+      grant_allocation_behavior:
+        $ref: '#/definitions/types.EntitlementGrantAllocationBehavior'
+      grant_duration_unit:
+        $ref: '#/definitions/types.EntitlementGrantDurationUnit'
+      grant_duration_value:
+        type: integer
+      grant_measure:
+        $ref: '#/definitions/types.EntitlementGrantMeasure'
+      grant_quota:
+        type: string
+      grant_unlimited:
+        type: boolean
       is_enabled:
         description: IsEnabled determines if the entitlement is enabled or disabled
         type: boolean
@@ -7952,11 +8053,6 @@ definitions:
     properties:
       aggregation_mode:
         $ref: '#/definitions/types.EntitlementAggregationMode'
-      clear_grant_config:
-        description: |-
-          Grant config — nil fields leave the current value alone.
-          ClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).
-        type: boolean
       config_value:
         additionalProperties: true
         type: object
@@ -7970,6 +8066,8 @@ definitions:
         $ref: '#/definitions/types.EntitlementGrantMeasure'
       grant_quota:
         type: string
+      grant_unlimited:
+        type: boolean
       is_enabled:
         type: boolean
       is_soft_limit:
@@ -10748,6 +10846,14 @@ definitions:
     x-enum-varnames:
     - EntitlementGrantMeasureQuantity
     - EntitlementGrantMeasureAmount
+  types.EntitlementGrantStatus:
+    enum:
+    - active
+    - exhausted
+    type: string
+    x-enum-varnames:
+    - EntitlementGrantStatusActive
+    - EntitlementGrantStatusExhausted
   types.EntitlementUsageResetPeriod:
     enum:
     - MONTHLY
@@ -10776,6 +10882,16 @@ definitions:
     - EntityChangeBehaviourCarry
     - EntityChangeBehaviourDrop
     - EntityChangeBehaviourAdd
+  types.EntityCreationStatus:
+    enum:
+    - created
+    - superseded
+    - failed_already_exists
+    type: string
+    x-enum-varnames:
+    - EntityCreationStatusCreated
+    - EntityCreationStatusSuperseded
+    - EntityCreationStatusFailedAlreadyExists
   types.EntitySyncConfig:
     properties:
       inbound:
@@ -11354,6 +11470,14 @@ definitions:
       subscription_id:
         type: string
     type: object
+  types.OnExistingEntityPolicy:
+    enum:
+    - reject
+    - supersede
+    type: string
+    x-enum-varnames:
+    - OnExistingEntityPolicyReject
+    - OnExistingEntityPolicySupersede
   types.OnPendingSchedulePolicy:
     enum:
     - reject

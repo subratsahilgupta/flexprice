@@ -120,6 +120,7 @@ func (s *billingService) adjustMeterUsageGrants(
 	if len(grants) == 0 {
 		return adjustMeterUsageGrantsResult{}, false, nil
 	}
+
 	// Measure is copied from the EC to every grant; EC-write validation keeps
 	// it consistent per feature, so the first row is authoritative.
 	measure := grants[0].Measure
