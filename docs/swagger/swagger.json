@@ -18797,6 +18797,13 @@
         "FeatureUsageSummary": {
             "type": "object",
             "properties": {
+                "buckets": {
+                    "description": "Buckets is one entry per independent budget on a parallel feature. The scalar\nfigures above cannot describe several budgets at once — a sum is not spendable\nfrom any one of them — so a client showing a parallel feature reads these instead.\nEmpty for additive features, where the scalars are the whole truth.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AggregatedEntitlementBucket"
+                    }
+                },
                 "current_usage": {
                     "type": "string"
                 },
