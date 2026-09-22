@@ -335,7 +335,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 		// Unlimited windows track usage for display but have no ceiling to cross,
 		// so they never stamp a crossing and never bill overage.
 		cross := g.QuotaCrossedAt
-		if cross == nil && isGrantExhausted(g, usage) {
+		if cross == nil && g.IsExhaustedAt(usage) {
 			cross = &at
 		}
 
@@ -345,7 +345,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 			WithUsage(usage).
 			WithLastComputedAt(&at).
 			WithQuotaCrossedAt(cross)
-		if isGrantExhausted(g, usage) && g.GrantStatus == types.EntitlementGrantStatusActive {
+		if g.IsExhaustedAt(usage) && g.GrantStatus == types.EntitlementGrantStatusActive {
 			builder = builder.WithGrantStatus(types.EntitlementGrantStatusExhausted)
 		}
 		if err := s.EntitlementGrantRepo.UpdateSnapshot(ctx, builder.Build()); err != nil {
@@ -413,16 +413,6 @@ func (s *alertService) refreshEntitlementGrantUsage(
 	return total, nil
 }
 
-func isGrantExhausted(g *entitlementgrant.EntitlementGrant, usage decimal.Decimal) bool {
-	if g == nil || g.Unlimited {
-		return false
-	}
-	if !g.Quota.IsPositive() {
-		return true
-	}
-	return usage.GreaterThanOrEqual(g.Quota)
-}
-
 // transitionEntitlementGrantAlert emits an alert-log row on state change.
 func (s *alertService) transitionEntitlementGrantAlert(
 	ctx context.Context,
@@ -432,7 +422,7 @@ func (s *alertService) transitionEntitlementGrantAlert(
 	usage decimal.Decimal,
 	at time.Time,
 ) error {
-	if !isGrantExhausted(g, usage) {
+	if !g.IsExhaustedAt(usage) {
 		return nil
 	}
 

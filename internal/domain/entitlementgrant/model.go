@@ -27,9 +27,12 @@ type EntitlementGrant struct {
 	ValidTo             time.Time                             `json:"valid_to"`
 	GrantStatus         types.EntitlementGrantStatus          `json:"grant_status"`
 	LastComputedAt      *time.Time                            `json:"last_computed_at,omitempty"`
-	QuotaCrossedAt      *time.Time                            `json:"quota_crossed_at,omitempty"`
-	Metadata            types.Metadata                        `json:"metadata,omitempty"`
-	EnvironmentID       string                                `json:"environment_id"`
+	// QuotaCrossedAt is set once, when the evaluator first sees usage >= quota. It holds
+	// the evaluation time, not the exact event-level crossing — the interval billing lane
+	// forgives whatever was consumed between the two.
+	QuotaCrossedAt *time.Time     `json:"quota_crossed_at,omitempty"`
+	Metadata       types.Metadata `json:"metadata,omitempty"`
+	EnvironmentID  string         `json:"environment_id"`
 	types.BaseModel
 }
 
@@ -65,10 +68,24 @@ func (g *EntitlementGrant) Window() (time.Time, time.Time) {
 }
 
 func (g *EntitlementGrant) IsExhausted() bool {
+	if g == nil {
+		return false
+	}
+	return g.IsExhaustedAt(g.Usage)
+}
+
+// IsExhaustedAt judges the window against a usage figure the caller has just measured,
+// before it is written back. Unlimited never is, whatever its quota says — a pool goes
+// unlimited when any contributor is, while still summing the bounded ones. Zero quota
+// always is: such a window holds a slot rather than granting anything.
+func (g *EntitlementGrant) IsExhaustedAt(usage decimal.Decimal) bool {
 	if g == nil || g.Unlimited {
 		return false
 	}
-	return g.Usage.GreaterThanOrEqual(g.Quota)
+	if !g.Quota.IsPositive() {
+		return true
+	}
+	return usage.GreaterThanOrEqual(g.Quota)
 }
 
 // Overage is the non-negative excess of usage over quota.
