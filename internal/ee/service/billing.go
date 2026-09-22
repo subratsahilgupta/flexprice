@@ -2624,9 +2624,11 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 	}
 
 	if hasAdditiveGrantConfigs {
-		out.GrantMeasure = grantMeasure
-		out.GrantDurationValue = grantDurationValue
-		out.GrantDurationUnit = grantDurationUnit
+		out.GrantConfig = dto.GrantConfig{
+			GrantMeasure:       grantMeasure,
+			GrantDurationValue: grantDurationValue,
+			GrantDurationUnit:  grantDurationUnit,
+		}
 		out.GrantUnlimited = grantUnlimited
 		if !grantUnlimited {
 			out.GrantQuota = &grantQuota
@@ -2640,13 +2642,15 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 				continue
 			}
 			out.Buckets = append(out.Buckets, &dto.AggregatedEntitlementBucket{
-				EntitlementID:      e.ID,
-				SourceEntityID:     e.EntityID,
-				UsageLimit:         e.UsageLimit,
-				GrantMeasure:       e.GrantMeasure,
-				GrantQuota:         e.GrantQuota,
-				GrantDurationValue: e.GrantDurationValue,
-				GrantDurationUnit:  e.GrantDurationUnit,
+				EntitlementID:  e.ID,
+				SourceEntityID: e.EntityID,
+				UsageLimit:     e.UsageLimit,
+				GrantConfig: dto.GrantConfig{
+					GrantMeasure:       e.GrantMeasure,
+					GrantQuota:         e.GrantQuota,
+					GrantDurationValue: e.GrantDurationValue,
+					GrantDurationUnit:  e.GrantDurationUnit,
+				},
 			})
 		}
 	}
