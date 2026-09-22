@@ -60,7 +60,9 @@ func (s *revenueService) GetRevenueAnalytics(ctx context.Context, req *dto.Reven
 			agg.add(f, sh.source, sh.fraction)
 		}
 	}
-	return agg.response(), nil
+	res := agg.response()
+	res.Query = req
+	return res, nil
 }
 
 // listFactsInRange pages every fact matching the request's range and filters,
@@ -75,8 +77,11 @@ func (s *revenueService) listFactsInRange(ctx context.Context, req *dto.RevenueA
 				Mark(ierr.ErrValidation)
 		}
 		facts, err := s.RevenueFactRepo.ListFacts(ctx, revenuefact.FactsFilter{
-			DayStart:        req.StartTime,
-			DayEnd:          req.EndTime,
+			// Rows are dated at day grain, so the bounds are the requested
+			// range's whole UTC days — a clock time inside a day must not
+			// drop that day's rows.
+			DayStart:        dayFloorUTC(req.StartTime),
+			DayEnd:          dayFloorUTC(req.EndTime),
 			Status:          req.Status,
 			CustomerIDs:     req.CustomerIDs,
 			SubscriptionIDs: req.SubscriptionIDs,

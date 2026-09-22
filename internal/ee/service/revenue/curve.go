@@ -105,6 +105,16 @@ func (s *revenueService) buildUsageCurve(ctx context.Context, in usageCurveInput
 	// into the last emitted day below, keeping totals intact.
 	endLocal := in.PeriodEnd.In(loc)
 	endDay := time.Date(endLocal.Year(), endLocal.Month(), endLocal.Day(), 0, 0, 0, 0, loc)
+
+	// An open period's remaining days have not happened yet: stop after today
+	// rather than writing a zero row per future day. Once the period closes
+	// (and before any finalize/flip) today is past it and the walk is whole.
+	nowLocal := time.Now().In(loc)
+	tomorrow := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
+	if tomorrow.Before(endDay) {
+		endDay = tomorrow
+	}
+
 	if !cur.Before(endDay) {
 		// The whole period sits inside one local day — emit that one day.
 		endDay = cur.AddDate(0, 0, 1)

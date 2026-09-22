@@ -12,8 +12,9 @@ import (
 // RevenueAnalyticsRequest queries revenue_facts as an analytics surface.
 type RevenueAnalyticsRequest struct {
 	// StartTime/EndTime bound the day range (inclusive days derived in UTC).
+	// EndTime is optional and defaults to now.
 	StartTime time.Time `json:"start_time" validate:"required"`
-	EndTime   time.Time `json:"end_time" validate:"required"`
+	EndTime   time.Time `json:"end_time"`
 
 	// Granularity buckets results by day, by billing period, or into one total.
 	Granularity types.RevenueGranularity `json:"granularity"`
@@ -57,7 +58,10 @@ var revenueAnalyticsGroupBy = []string{"revenue_source", "source", "customer_id"
 const revenueAnalyticsMaxRangeDays = 90
 
 func (r *RevenueAnalyticsRequest) Validate() error {
-	if r.StartTime.IsZero() || r.EndTime.IsZero() || !r.StartTime.Before(r.EndTime) {
+	if r.EndTime.IsZero() {
+		r.EndTime = time.Now().UTC()
+	}
+	if r.StartTime.IsZero() || !r.StartTime.Before(r.EndTime) {
 		return ierr.NewError("invalid time range").
 			WithHint("start_time must be before end_time").
 			Mark(ierr.ErrValidation)
@@ -134,6 +138,12 @@ type RevenueAnalyticsRow struct {
 // RevenueAnalyticsResponse is the aggregated result.
 type RevenueAnalyticsResponse struct {
 	Rows []*RevenueAnalyticsRow `json:"rows"`
+
+	// Query echoes the request with defaults resolved. Rows carry only the
+	// requested group dimensions, so this is what says which customers,
+	// subscriptions and window they cover — add customer_id/subscription_id
+	// to group_by for per-entity rows.
+	Query *RevenueAnalyticsRequest `json:"query,omitempty"`
 
 	// ContainsAllocated is true when any bucket includes whole-period amounts
 	// spread across days (amortized) or booked on a single day (billed) —

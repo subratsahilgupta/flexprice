@@ -22014,7 +22014,6 @@ const docTemplate = `{
         "RevenueAnalyticsRequest": {
             "type": "object",
             "required": [
-                "end_time",
                 "start_time"
             ],
             "properties": {
@@ -22071,7 +22070,7 @@ const docTemplate = `{
                     }
                 },
                 "start_time": {
-                    "description": "StartTime/EndTime bound the day range (inclusive days derived in UTC).",
+                    "description": "StartTime/EndTime bound the day range (inclusive days derived in UTC).\nEndTime is optional and defaults to now.",
                     "type": "string"
                 },
                 "status": {
@@ -22096,6 +22095,14 @@ const docTemplate = `{
                 "contains_allocated": {
                     "description": "ContainsAllocated is true when any bucket includes whole-period amounts\nspread across days (amortized) or booked on a single day (billed) —\ni.e. the day view carries period-shaped charges, not only true daily\naccruals.",
                     "type": "boolean"
+                },
+                "query": {
+                    "description": "Query echoes the request with defaults resolved. Rows carry only the\nrequested group dimensions, so this is what says which customers,\nsubscriptions and window they cover — add customer_id/subscription_id\nto group_by for per-entity rows.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/RevenueAnalyticsRequest"
+                        }
+                    ]
                 },
                 "rows": {
                     "type": "array",

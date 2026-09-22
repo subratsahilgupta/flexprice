@@ -49,6 +49,12 @@ func (s *revenueService) splitFactsBySource(ctx context.Context, req *dto.Revenu
 	return shares.split, nil
 }
 
+// dayFloorUTC is the UTC midnight starting t's calendar day.
+func dayFloorUTC(t time.Time) time.Time {
+	u := t.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
+}
+
 func dayShareKey(subscriptionID, meterID string, day time.Time) string {
 	return subscriptionID + "|" + meterID + "|" + day.UTC().Format("2006-01-02")
 }
@@ -78,6 +84,13 @@ func (s *revenueService) buildEventSourceShares(ctx context.Context, req *dto.Re
 			Mark(ierr.ErrValidation)
 	}
 
+	// Facts are day-grained: a fact dated D covers all of D's usage. Reading
+	// the shares over the request's raw bounds would drop the events on either
+	// edge day that fall outside the clock time, leaving those facts
+	// unattributed — so the share window spans whole UTC days.
+	start := dayFloorUTC(req.StartTime)
+	end := dayFloorUTC(req.EndTime).AddDate(0, 0, 1)
+
 	shares := &eventSourceShares{
 		day:    map[string]map[string]decimal.Decimal{},
 		window: map[string]map[string]decimal.Decimal{},
@@ -97,8 +110,8 @@ func (s *revenueService) buildEventSourceShares(ctx context.Context, req *dto.Re
 			EnvironmentID:       types.GetEnvironmentID(ctx),
 			ExternalCustomerIDs: extCustomerIDs,
 			MeterIDs:            lo.Keys(meterSet),
-			StartTime:           req.StartTime,
-			EndTime:             req.EndTime,
+			StartTime:           start,
+			EndTime:             end,
 			GroupBy:             []string{"meter_id", "source"},
 			// Shares weigh by summed event quantity regardless of the meter's
 			// own billing aggregation — the weight is event volume, not money.
