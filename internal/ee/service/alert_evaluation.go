@@ -413,11 +413,6 @@ func (s *alertService) refreshEntitlementGrantUsage(
 	return total, nil
 }
 
-// transitionEntitlementGrantAlert emits an alert-log row on state change.
-// isGrantExhausted reports whether usage has consumed the window. Unlimited never is,
-// whatever its quota says — a pool goes unlimited when any contributor is, while still
-// summing the bounded ones. Zero quota always is: such a window holds a slot rather than
-// granting anything.
 func isGrantExhausted(g *entitlementgrant.EntitlementGrant, usage decimal.Decimal) bool {
 	if g == nil || g.Unlimited {
 		return false
@@ -428,6 +423,7 @@ func isGrantExhausted(g *entitlementgrant.EntitlementGrant, usage decimal.Decima
 	return usage.GreaterThanOrEqual(g.Quota)
 }
 
+// transitionEntitlementGrantAlert emits an alert-log row on state change.
 func (s *alertService) transitionEntitlementGrantAlert(
 	ctx context.Context,
 	alertLogsSvc AlertLogsService,

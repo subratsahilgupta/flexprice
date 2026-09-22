@@ -87,17 +87,12 @@ type AggregatedEntitlement struct {
 	GrantState *GrantState `json:"grant_state,omitempty"`
 }
 
-// GrantConfig is the allowance an entitlement describes, as read surfaces report it:
-// how much, measured how, and over how long. Embedded rather than repeated, so a field
-// added to the allowance lands on every response that carries one.
 type GrantConfig struct {
 	GrantMeasure       types.EntitlementGrantMeasure      `json:"grant_measure,omitempty"`
 	GrantQuota         *decimal.Decimal                   `json:"grant_quota,omitempty" swaggertype:"string"`
 	GrantDurationValue *int                               `json:"grant_duration_value,omitempty"`
 	GrantDurationUnit  types.EntitlementGrantDurationUnit `json:"grant_duration_unit,omitempty"`
-	// GrantUnlimited distinguishes an allowance with no ceiling from one whose quota
-	// simply is not set on this response: both leave grant_quota empty.
-	GrantUnlimited bool `json:"grant_unlimited,omitempty"`
+	GrantUnlimited     bool                               `json:"grant_unlimited,omitempty"`
 }
 
 // AggregatedEntitlementBucket is one independent budget within a parallel feature.
@@ -188,7 +183,5 @@ type FeatureUsageSummary struct {
 	IsSoftLimit      bool                 `json:"is_soft_limit"`
 	NextUsageResetAt *time.Time           `json:"next_usage_reset_at"`
 	Sources          []*EntitlementSource `json:"sources"`
-	// GrantState carries the per-window ledger for grant-backed features, so a
-	// client can break a cycle total down into the windows that produced it.
-	GrantState *GrantState `json:"grant_state,omitempty"`
+	GrantState       *GrantState          `json:"grant_state,omitempty"`
 }

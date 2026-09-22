@@ -6597,9 +6597,6 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 			WithEntityIDs(addonIDs).
 			WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_ADDON).
 			WithStatus(types.StatusPublished).
-			// Addons expanded too: the aggregated source carries entity_name, and
-			// without the addon the name is empty and every addon-fed feature
-			// renders as a dash.
 			WithExpand(fmt.Sprintf("%s,%s,%s", types.ExpandFeatures, types.ExpandMeters, types.ExpandAddons))
 
 		addonEntResp, err := entitlementService.ListEntitlements(ctx, addonEntFilter)
@@ -6807,8 +6804,6 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlementsForSubscripti
 		}
 	}
 
-	// Live allowance state. Read-only and best-effort: a failure here must not
-	// take down the entitlement response, which is still correct without it.
 	grantStates, err := NewEntitlementGrantService(s.ServiceParams).
 		GrantStateByFeature(ctx, sub, time.Now().UTC())
 	if err != nil {
