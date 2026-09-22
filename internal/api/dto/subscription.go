@@ -93,6 +93,23 @@ func (c *LineItemCommitmentConfig) ToDomainBuckets() types.TimeOfDayBuckets {
 	return bucketRequestsToDomain(c.CommitmentTimeBuckets)
 }
 
+func (c *LineItemCommitmentConfig) ApplyDefaults() {
+	if c == nil {
+		return
+	}
+	hasAmountCommitment := c.CommitmentAmount != nil && c.CommitmentAmount.GreaterThan(decimal.Zero)
+	hasQuantityCommitment := c.CommitmentQuantity != nil && c.CommitmentQuantity.GreaterThan(decimal.Zero)
+	if c.OverageFactor == nil && (hasAmountCommitment || hasQuantityCommitment || len(c.CommitmentTimeBuckets) > 0) {
+		c.OverageFactor = types.DefaultOverageFactor()
+	}
+}
+
+func applyLineItemCommitmentDefaults(commitments map[string]*LineItemCommitmentConfig) {
+	for _, c := range commitments {
+		c.ApplyDefaults()
+	}
+}
+
 func validateLineItemCommitments(commitments map[string]*LineItemCommitmentConfig) error {
 	if len(commitments) == 0 {
 		return nil
@@ -151,6 +168,14 @@ func (c *LineItemCommitmentConfig) Validate() error {
 	hasCommitment := hasAmountCommitment || hasQuantityCommitment
 
 	if !hasCommitment {
+		if c.OverageFactor != nil && c.OverageFactor.LessThan(decimal.NewFromInt(1)) {
+			return ierr.NewError("overage_factor must be at least 1.0").
+				WithHint("Overage factor determines the multiplier for usage beyond commitment").
+				WithReportableDetails(map[string]interface{}{
+					"overage_factor": c.OverageFactor,
+				}).
+				Mark(ierr.ErrValidation)
+		}
 		return nil
 	}
 
@@ -201,13 +226,7 @@ func (c *LineItemCommitmentConfig) Validate() error {
 		}
 	}
 
-	// overage_factor is optional; omitting it defaults to 1.0, meaning usage beyond
-	// the commitment bills at the base rate.
-	if c.OverageFactor == nil {
-		c.OverageFactor = types.DefaultOverageFactor()
-	}
-
-	if c.OverageFactor.LessThan(decimal.NewFromInt(1)) {
+	if c.OverageFactor != nil && c.OverageFactor.LessThan(decimal.NewFromInt(1)) {
 		return ierr.NewError("overage_factor must be at least 1.0").
 			WithHint("Overage factor determines the multiplier for usage beyond commitment").
 			WithReportableDetails(map[string]interface{}{
@@ -437,6 +456,19 @@ type SubscriptionCreationConfig struct {
 	// LineItems are extra (non-plan) line items added at creation.
 	LineItems []CreateSubscriptionLineItemRequest `json:"line_items,omitempty" validate:"omitempty,dive"`
 	Phases    []SubscriptionPhaseCreateRequest    `json:"phases,omitempty" validate:"omitempty,dive"`
+}
+
+func (c *SubscriptionCreationConfig) ApplyDefaults() {
+	if c == nil {
+		return
+	}
+	applyLineItemCommitmentDefaults(c.LineItemCommitments)
+	for i := range c.Addons {
+		c.Addons[i].ApplyDefaults()
+	}
+	for i := range c.LineItems {
+		c.LineItems[i].ApplyDefaults()
+	}
 }
 
 func (c *SubscriptionCreationConfig) Validate() error {

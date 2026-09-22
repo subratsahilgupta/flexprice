@@ -121,6 +121,13 @@ func (a *AddAddonToSubscriptionRequest) ToAddonAssociation(ctx context.Context, 
 	}
 }
 
+func (r *AddAddonToSubscriptionRequest) ApplyDefaults() {
+	if r == nil {
+		return
+	}
+	applyLineItemCommitmentDefaults(r.LineItemCommitments)
+}
+
 func (r *AddAddonToSubscriptionRequest) Validate() error {
 	if err := validator.ValidateRequest(r); err != nil {
 		return err

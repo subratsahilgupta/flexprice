@@ -165,6 +165,12 @@ type LineItemParams struct {
 	EntityType   types.SubscriptionLineItemEntityType
 }
 
+func (r *CreateSubscriptionLineItemRequest) ApplyDefaults() {
+	if r.CommitmentOverageFactor == nil && (r.HasCommitment() || len(r.CommitmentTimeBuckets) > 0) {
+		r.CommitmentOverageFactor = types.DefaultOverageFactor()
+	}
+}
+
 // HasCommitment returns true if the request has commitment configured
 func (r *CreateSubscriptionLineItemRequest) HasCommitment() bool {
 	hasAmountCommitment := r.CommitmentAmount != nil && r.CommitmentAmount.GreaterThan(decimal.Zero)
@@ -448,12 +454,6 @@ func (r *CreateSubscriptionLineItemRequest) validateCommitmentFields() error {
 	}
 	if err := validateTimeOfDayBuckets(r.CommitmentTimeBuckets); err != nil {
 		return err
-	}
-
-	// Omitted commitment_overage_factor defaults to 1.0 (base rate for overage);
-	// the field is optional in the API contract.
-	if r.HasCommitment() && r.CommitmentOverageFactor == nil {
-		r.CommitmentOverageFactor = types.DefaultOverageFactor()
 	}
 
 	// Auto-set commitment type if not provided (only for create requests)
