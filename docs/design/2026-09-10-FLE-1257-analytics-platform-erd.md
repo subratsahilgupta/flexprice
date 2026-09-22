@@ -596,19 +596,20 @@ The built-in usage metrics (`usage_quantity`, `event_count`) aggregate a meter's
 | `time.range` | `start_time` / `end_time` (whole UTC days) |
 | `shape: breakdown` | `granularity: total` |
 | `shape: timeseries` + `grain: day` | `granularity: day` |
-| `shape: timeseries` + `grain: month` | `granularity: period` (billing period, *not* calendar month — see below) |
+| `shape: timeseries` + `grain: week`/`month` | `granularity: week`/`month` (calendar, UTC) |
 | `dimensions` | `group_by` |
 | `filters` (`customer_id`, `subscription_id`, `price_id`, `meter_id`, `currency`, `source`) | the matching filter list |
 | `allocation_policy` | `allocation_policy` (default `billed`) |
 | `include_adjustments` | `include_adjustments` |
+| `status` | `status` (default `effective`, below) |
 
 **Dimension validation becomes metric-aware.** Today `ValidateDimensions` enforces the `meter_usage` allowlist (`meter_id`, `source`, `external_customer_id`, `customer_id`, `properties.<field>`). Revenue's allowlist is `revenue_source`, `source`, `customer_id`, `subscription_id`, `price_id`, `meter_id`, `currency` — no `properties.<field>` (facts carry no event properties), and `source` costs a per-subscription usage read, so it keeps its customer/subscription-filter requirement.
 
-**Open calls for 3a**
+**Decisions for 3a**
 
-1. **`grain: month` vs billing period.** Revenue granularity is `period` (the subscription's own billing period), which is not a calendar month for anniversary billing. Either map `month → period` and document the difference, or add a true calendar-month rollup at read time. *Leaning:* map to `period` and name the column `period_start`, since the amounts are only exact at the period grain.
-2. **Which revenue number a view returns by default.** Facts carry eight metrics (`net_amount`, `usage_at_list_rate`, `tier_delta`, `entitlement_amount`, `line_discount`, `invoice_discount`, `billable_qty`, `entitlement_qty`). *Leaning:* `revenue` = `net_amount`, with the decomposition available as additional named metrics (`revenue_list_rate`, `revenue_discount`, …) rather than eight columns by default.
-3. **Status.** `FINAL` vs `PROVISIONAL` is a per-request choice with no sensible blend. *Leaning:* a view field defaulting to `FINAL`, since a saved view is usually a reporting surface.
+1. **Calendar grains, never billing periods.** A view's `grain` maps to a calendar bucket — `day → day`, `week → week`, `month → month` (UTC) — which means adding `week` and `month` to `RevenueGranularity` beside the existing `day`/`period`/`total`. Aliasing `month → period` was rejected: subscriptions are not all monthly, so a "month" view over quarterly or annual subscriptions would silently return quarter- or year-long buckets, and a result mixing subscriptions of different billing periods would carry buckets of different lengths in one series — not plottable and not comparable. Calendar bucketing is exact for marginal rows (each is one day's delta) and composes with the allocation policy for whole-period charges: `billed` lands them in the month containing their booked day, `amortized` spreads them across the period's days, which then roll into calendar months proportionally. `period` granularity stays available on the revenue API for billing-aligned questions, but is not exposed as a view grain.
+2. **`revenue` = `net_amount`.** The decomposition (`usage_at_list_rate`, `tier_delta`, `entitlement_amount`, `line_discount`, `invoice_discount`, `billable_qty`, `entitlement_qty`) is available as additional named metrics rather than eight columns by default.
+3. **Default status is `effective` = FINAL ∪ PROVISIONAL.** Defaulting to either one alone is a trap: `FINAL` hides the period currently accruing, and `PROVISIONAL` hides *all history* (past periods flip to FINAL), so a "last 90 days" view would silently show only the open period. Facts flip in place — a grain is one status or the other — so the union is the natural "revenue as it stands today": booked history plus in-flight current period. Verified on dev over 1176 rows: **zero** `(subscription, period, sub_line_item, price, day, revenue_source)` grains carry both statuses. That is not structurally guaranteed, though — re-rolling a period whose invoice already finalized can recreate a PROVISIONAL row on a flipped grain — so `effective` **prefers FINAL when a grain has both**, deduping at read time over the already-fetched rows. `final` (accounting-grade, booked only) and `provisional` (what is accruing right now) stay available explicitly.
 
 ---
 

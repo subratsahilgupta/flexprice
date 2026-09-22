@@ -143,7 +143,7 @@ type RevenueAnalyticsResponse struct {
 	// requested group dimensions, so this is what says which customers,
 	// subscriptions and window they cover — add customer_id/subscription_id
 	// to group_by for per-entity rows.
-	Query *RevenueAnalyticsRequest `json:"query,omitempty"`
+	Query *RevenueAnalyticsRequest `json:"query"`
 
 	// ContainsAllocated is true when any bucket includes whole-period amounts
 	// spread across days (amortized) or booked on a single day (billed) —
