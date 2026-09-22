@@ -1252,7 +1252,7 @@ func (s *entitlementService) resettleGrantWindows(
 // so the customer lands above the number typed, and parallel leaves it ambiguous which
 // was meant. Lifting this needs per-allowance editing, not a change here.
 func (s *entitlementService) assertSingleContributor(ctx context.Context, e *entitlement.Entitlement) error {
-	if !isSubscriptionOverride(e) {
+	if !e.IsSubscriptionOverride() {
 		return nil
 	}
 	parentID := lo.FromPtr(e.ParentEntitlementID)
@@ -1292,14 +1292,6 @@ func (s *entitlementService) assertSingleContributor(ctx context.Context, e *ent
 			"other_entitlement_ids": otherEntitlements,
 		}).
 		Mark(ierr.ErrValidation)
-}
-
-// isSubscriptionOverride: replaces another entitlement for one subscription. A plan or
-// addon row is a rule for everyone on it; a net-new subscription row replaces nothing.
-func isSubscriptionOverride(e *entitlement.Entitlement) bool {
-	return e != nil &&
-		e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION &&
-		lo.FromPtr(e.ParentEntitlementID) != ""
 }
 
 // takeOverGrantWindowsFromParent runs on a first override: the override replaces the

@@ -197,7 +197,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 
 		// Only a grant-backed override has windows to re-cut; a legacy one carries a
 		// usage_limit, which nothing materialises.
-		if isSubscriptionOverride(created) && created.HasGrantConfig() {
+		if created.IsSubscriptionOverride() && created.HasGrantConfig() {
 			return s.takeOverGrantWindowsFromParent(txCtx, created)
 		}
 		return nil
@@ -786,10 +786,6 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		return nil, err
 	}
 
-	// Re-check the meter and price rules only when the allowance actually moved: a request
-	// restating the current config has nothing new to check, and a row created before a
-	// rule tightened would fail every unrelated update. HasGrantConfig keeps the two
-	// lookups below off the path that cleared one.
 	if !stored.GrantConfigEquals(existing) && existing.HasGrantConfig() {
 		featureRow, err := s.FeatureRepo.Get(ctx, existing.FeatureID)
 		if err != nil {
@@ -835,13 +831,12 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 }
 
 func (s *entitlementService) DeleteEntitlement(ctx context.Context, id string) error {
-	// Read before the delete: the row says whose window this was and which rule takes over.
-	existing, err := s.EntitlementRepo.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		existing, err := s.EntitlementRepo.GetForUpdate(txCtx, id)
+		if err != nil {
+			return err
+		}
+
 		if err := s.EntitlementRepo.Delete(txCtx, id); err != nil {
 			return err
 		}

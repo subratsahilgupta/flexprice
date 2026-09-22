@@ -69,6 +69,12 @@ func (e *Entitlement) IsUnlimitedGrant() bool {
 	return e != nil && e.HasGrantConfig() && e.GrantQuota == nil
 }
 
+func (e *Entitlement) IsSubscriptionOverride() bool {
+	return e != nil &&
+		e.EntityType == types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION &&
+		lo.FromPtr(e.ParentEntitlementID) != ""
+}
+
 // GrantConfigEquals reports whether two entitlements describe the same allowance —
 // the same amount, measured the same way, over the same window, stacking the same way.
 // Everything else about an entitlement can differ.
