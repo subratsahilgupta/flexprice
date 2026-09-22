@@ -2014,7 +2014,7 @@ func (s *EntitlementGrantSuite) TestSubscriptionOverride_OverridesGrantQuota() {
 	subSvc := NewSubscriptionService(s.buildServiceParams()).(*subscriptionService)
 
 	s.NoError(subSvc.ProcessSubscriptionEntitlementOverrides(s.GetContext(), sub, []dto.OverrideEntitlementRequest{
-		{EntitlementID: ec.ID, GrantQuota: lo.ToPtr(decimal.NewFromInt(250))},
+		{EntitlementID: ec.ID, GrantConfigPatch: dto.GrantConfigPatch{GrantQuota: lo.ToPtr(decimal.NewFromInt(250))}},
 	}))
 
 	rows := s.subScopedRows(sub)
@@ -2597,9 +2597,11 @@ func (s *EntitlementGrantSuite) TestSubscriptionOverride_GrantUnlimitedClearsInh
 	subSvc := NewSubscriptionService(s.buildServiceParams()).(*subscriptionService)
 	s.NoError(subSvc.ProcessSubscriptionEntitlementOverrides(s.GetContext(), sub,
 		[]dto.OverrideEntitlementRequest{{
-			EntitlementID:     ec.ID,
-			GrantUnlimited:    lo.ToPtr(true),
-			GrantDurationUnit: lo.ToPtr(types.EntitlementGrantDurationUnitSubscriptionPeriod),
+			EntitlementID: ec.ID,
+			GrantConfigPatch: dto.GrantConfigPatch{
+				GrantUnlimited:    lo.ToPtr(true),
+				GrantDurationUnit: lo.ToPtr(types.EntitlementGrantDurationUnitSubscriptionPeriod),
+			},
 		}}))
 
 	rows := s.subScopedRows(sub)
@@ -2615,9 +2617,11 @@ func (s *EntitlementGrantSuite) TestSubscriptionOverride_BoundedNeedsAQuota() {
 	subSvc := NewSubscriptionService(s.buildServiceParams()).(*subscriptionService)
 	err := subSvc.ProcessSubscriptionEntitlementOverrides(s.GetContext(), sub,
 		[]dto.OverrideEntitlementRequest{{
-			EntitlementID:  ec.ID,
-			GrantUnlimited: lo.ToPtr(true),
-			GrantQuota:     lo.ToPtr(decimal.NewFromInt(50)),
+			EntitlementID: ec.ID,
+			GrantConfigPatch: dto.GrantConfigPatch{
+				GrantUnlimited: lo.ToPtr(true),
+				GrantQuota:     lo.ToPtr(decimal.NewFromInt(50)),
+			},
 		}})
 	s.Error(err, "a ceiling and no ceiling cannot both be asked for")
 }

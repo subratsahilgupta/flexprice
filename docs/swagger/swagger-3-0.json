@@ -17057,8 +17057,7 @@
             "$ref": "#/components/schemas/GrantState"
           },
           "grant_unlimited": {
-            "type": "boolean",
-            "description": "GrantUnlimited distinguishes an allowance with no ceiling from one whose quota\nsimply is not set on this response: both leave grant_quota empty."
+            "type": "boolean"
           },
           "is_enabled": {
             "type": "boolean"
@@ -17099,8 +17098,7 @@
             "type": "string"
           },
           "grant_unlimited": {
-            "type": "boolean",
-            "description": "GrantUnlimited distinguishes an allowance with no ceiling from one whose quota\nsimply is not set on this response: both leave grant_quota empty."
+            "type": "boolean"
           },
           "source_entity_id": {
             "type": "string"
@@ -23083,8 +23081,7 @@
             "type": "string"
           },
           "grant_unlimited": {
-            "type": "boolean",
-            "description": "GrantUnlimited removes the parent's ceiling, or restores one when false. Needed\nbecause nil already means inherit here, so an absent grant_quota cannot also mean\n\"no ceiling\" the way it does on a create."
+            "type": "boolean"
           },
           "is_enabled": {
             "type": "boolean",

@@ -1565,20 +1565,21 @@ type OverrideEntitlementRequest struct {
 	// ConfigValue is the config value for config features
 	ConfigValue map[string]interface{} `json:"config_value,omitempty"`
 
-	// Grant config. Nil fields inherit from the parent entitlement, so an
-	// override that does not mention grants keeps the plan's allowance instead
-	// of silently downgrading the feature to a legacy entitlement.
+	GrantConfigPatch
+}
+
+// GrantConfigPatch is the allowance an override asks for. Nil means keep the parent's,
+// so an override that does not mention grants keeps the plan's allowance rather than
+// silently downgrading the feature to a legacy entitlement. GrantUnlimited exists
+// because that makes an absent quota mean inherit, not "no ceiling".
+type GrantConfigPatch struct {
 	GrantMeasure            *types.EntitlementGrantMeasure            `json:"grant_measure,omitempty"`
 	GrantDurationValue      *int                                      `json:"grant_duration_value,omitempty"`
 	GrantDurationUnit       *types.EntitlementGrantDurationUnit       `json:"grant_duration_unit,omitempty"`
 	GrantAllocationBehavior *types.EntitlementGrantAllocationBehavior `json:"grant_allocation_behavior,omitempty"`
 	GrantQuota              *decimal.Decimal                          `json:"grant_quota,omitempty" swaggertype:"string"`
 	AggregationMode         *types.EntitlementAggregationMode         `json:"aggregation_mode,omitempty"`
-
-	// GrantUnlimited removes the parent's ceiling, or restores one when false. Needed
-	// because nil already means inherit here, so an absent grant_quota cannot also mean
-	// "no ceiling" the way it does on a create.
-	GrantUnlimited *bool `json:"grant_unlimited,omitempty"`
+	GrantUnlimited          *bool                                     `json:"grant_unlimited,omitempty"`
 }
 
 // Validate validates the entitlement override request

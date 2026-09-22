@@ -14702,7 +14702,6 @@ const docTemplate = `{
                     "$ref": "#/definitions/GrantState"
                 },
                 "grant_unlimited": {
-                    "description": "GrantUnlimited distinguishes an allowance with no ceiling from one whose quota\nsimply is not set on this response: both leave grant_quota empty.",
                     "type": "boolean"
                 },
                 "is_enabled": {
@@ -14744,7 +14743,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "grant_unlimited": {
-                    "description": "GrantUnlimited distinguishes an allowance with no ceiling from one whose quota\nsimply is not set on this response: both leave grant_quota empty.",
                     "type": "boolean"
                 },
                 "source_entity_id": {
@@ -19114,12 +19112,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/FeatureResponse"
                 },
                 "grant_state": {
-                    "description": "GrantState carries the per-window ledger for grant-backed features, so a\nclient can break a cycle total down into the windows that produced it.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/GrantState"
-                        }
-                    ]
+                    "$ref": "#/definitions/GrantState"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -21044,18 +21037,12 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "grant_measure": {
-                    "description": "Grant config. Nil fields inherit from the parent entitlement, so an\noverride that does not mention grants keeps the plan's allowance instead\nof silently downgrading the feature to a legacy entitlement.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.EntitlementGrantMeasure"
-                        }
-                    ]
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
                 },
                 "grant_quota": {
                     "type": "string"
                 },
                 "grant_unlimited": {
-                    "description": "GrantUnlimited removes the parent's ceiling, or restores one when false. Needed\nbecause nil already means inherit here, so an absent grant_quota cannot also mean\n\"no ceiling\" the way it does on a create.",
                     "type": "boolean"
                 },
                 "is_enabled": {
