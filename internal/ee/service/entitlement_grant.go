@@ -34,6 +34,9 @@ type EntitlementGrantService interface {
 	EnsureGrantsForSubscriptions(ctx context.Context, cust *customer.Customer, subs []*subscription.Subscription, at time.Time) ([]*entitlementgrant.EntitlementGrant, *grantEvalMeta, error)
 	GrantStateByFeature(ctx context.Context, sub *subscription.Subscription, at time.Time) (map[string]*dto.GrantState, error)
 
+	// LiveGrantsByFeature is the subscription's open windows at `at`, keyed by feature.
+	LiveGrantsByFeature(ctx context.Context, sub *subscription.Subscription, at time.Time) (map[string][]*entitlementgrant.EntitlementGrant, error)
+
 	CloseEntitlementGrants(ctx context.Context, grants []*entitlementgrant.EntitlementGrant, closeAt time.Time) (map[string]*entitlementgrant.EntitlementGrant, error)
 	ReissueEntitlementGrants(ctx context.Context, req *dto.ReissueEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
 	OpenFeatureBasedEntitlementGrants(ctx context.Context, reqs []OpenFeatureBasedEntitlementGrantsRequest) ([]*entitlementgrant.EntitlementGrant, error)
@@ -44,12 +47,6 @@ type entitlementGrantService struct {
 }
 
 func NewEntitlementGrantService(params ServiceParams) EntitlementGrantService {
-	return newEntitlementGrantService(params)
-}
-
-// newEntitlementGrantService is the concrete service, for callers in this package that
-// need the reads the interface does not expose.
-func newEntitlementGrantService(params ServiceParams) *entitlementGrantService {
 	return &entitlementGrantService{ServiceParams: params}
 }
 
@@ -129,10 +126,10 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 	return closed, nil
 }
 
-// liveGrantsByFeature returns the subscription's feature-scoped grant rows whose window
+// LiveGrantsByFeature returns the subscription's feature-scoped grant rows whose window
 // contains `at`, grouped by feature. Windows already closed before `at` are excluded by the
 // query, so each slot yields the one segment that is actually live.
-func (s *entitlementGrantService) liveGrantsByFeature(
+func (s *entitlementGrantService) LiveGrantsByFeature(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	at time.Time,
@@ -172,7 +169,7 @@ func (s *entitlementGrantService) ReissueEntitlementGrants(
 		return nil, err
 	}
 
-	liveByFeature, err := s.liveGrantsByFeature(ctx, sub, req.At)
+	liveByFeature, err := s.LiveGrantsByFeature(ctx, sub, req.At)
 	if err != nil {
 		return nil, err
 	}

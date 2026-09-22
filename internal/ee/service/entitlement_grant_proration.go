@@ -184,7 +184,7 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 	}
 
 	at := cfg.entitlementChangeAt
-	liveByFeature, err := newEntitlementGrantService(s.ServiceParams).liveGrantsByFeature(ctx, cfg.sub, at)
+	liveByFeature, err := NewEntitlementGrantService(s.ServiceParams).LiveGrantsByFeature(ctx, cfg.sub, at)
 	if err != nil {
 		return err
 	}
