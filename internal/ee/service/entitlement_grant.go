@@ -1236,25 +1236,13 @@ func (s *entitlementService) resettleGrantWindows(
 	// difference. Added to what the closed window had left, that is the same number as
 	// recalculating from scratch: (old − usage) + (new − old) = new − usage.
 	delta := lo.FromPtr(e.GrantQuota).Sub(lo.FromPtr(priorQuota))
-	return s.reissueGrantWindows(ctx, e, delta, unlimited, "entitlement_updated")
-}
-
-// reissueGrantWindows hands the change to the grant service, which reads the windows and
-// the configs funding them as they stand when it runs.
-func (s *entitlementService) reissueGrantWindows(
-	ctx context.Context,
-	e *entitlement.Entitlement,
-	delta decimal.Decimal,
-	unlimited bool,
-	source string,
-) error {
 	_, err := NewEntitlementGrantService(s.ServiceParams).ReissueEntitlementGrants(ctx, &dto.ReissueEntitlementGrantsRequest{
 		SubscriptionID: e.EntityID,
 		FeatureID:      e.FeatureID,
 		Delta:          delta,
 		Unlimited:      unlimited,
 		At:             time.Now().UTC(),
-		Source:         source,
+		Source:         "entitlement_updated",
 	})
 	return err
 }
@@ -1322,7 +1310,15 @@ func (s *entitlementService) takeOverGrantWindowsFromParent(ctx context.Context,
 		return err
 	}
 	delta := lo.FromPtr(e.GrantQuota).Sub(lo.FromPtr(parent.GrantQuota))
-	return s.reissueGrantWindows(ctx, e, delta, e.IsUnlimitedGrant(), "override_created")
+	_, err = NewEntitlementGrantService(s.ServiceParams).ReissueEntitlementGrants(ctx, &dto.ReissueEntitlementGrantsRequest{
+		SubscriptionID: e.EntityID,
+		FeatureID:      e.FeatureID,
+		Delta:          delta,
+		Unlimited:      e.IsUnlimitedGrant(),
+		At:             time.Now().UTC(),
+		Source:         "override_created",
+	})
+	return err
 }
 
 // settleGrantWindowsForDeletedEC hands an override's allowance back to its parent;
@@ -1345,7 +1341,15 @@ func (s *entitlementService) settleGrantWindowsForDeletedEC(ctx context.Context,
 			return nil
 		}
 		delta := lo.FromPtr(parent.GrantQuota).Sub(lo.FromPtr(e.GrantQuota))
-		return s.reissueGrantWindows(ctx, e, delta, parent.IsUnlimitedGrant(), "override_removed")
+		_, err = NewEntitlementGrantService(s.ServiceParams).ReissueEntitlementGrants(ctx, &dto.ReissueEntitlementGrantsRequest{
+			SubscriptionID: e.EntityID,
+			FeatureID:      e.FeatureID,
+			Delta:          delta,
+			Unlimited:      parent.IsUnlimitedGrant(),
+			At:             time.Now().UTC(),
+			Source:         "override_removed",
+		})
+		return err
 	}
 
 	sub, err := s.SubRepo.Get(ctx, e.EntityID)
