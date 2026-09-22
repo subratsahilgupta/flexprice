@@ -678,3 +678,124 @@ func (s *RevenueRollupSuite) TestE2E_GrantsAndWalletLifecycle() {
 		s.Equalf(beforePayment[r.ID], r.Version, "row %s must not be recomputed by a payment", r.ID)
 	}
 }
+
+// TestE2E_SameMeterAdjacentLineItems: a mid-period price change leaves two
+// line items on ONE meter with adjacent windows (the shape
+// meter_usage_test.go's TestMultipleLineItemsSameMeterDifferentDates covers on
+// the billing side). Each line must decompose over its own window only — the
+// curve reads usage per meter, so a window that ignored the line item's dates
+// would bill the same day twice.
+func (s *RevenueRollupSuite) TestE2E_SameMeterAdjacentLineItems() {
+	ctx := s.ctx
+	s.periodStart = time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	periodEndExclusive := s.periodStart.AddDate(0, 0, 30)
+	s.periodEnd = periodEndExclusive
+	switchDay := s.periodStart.AddDate(0, 0, 15)
+
+	cust := &customer.Customer{
+		ID: "cust_split", ExternalID: "ext_split", Name: "Adjacent Line Items",
+		Email: "split@example.com", BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+	pl := &plan.Plan{ID: "plan_split", Name: "Split Plan", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, pl))
+
+	mtr := &meter.Meter{
+		ID: "meter_split", Name: "Split Calls", EventName: "call_split",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, mtr))
+
+	// Two prices on the SAME meter: the second is twice the first.
+	mkPrice := func(id, amount string) *price.Price {
+		p := matrixFlatPrice(amount)(ctx, pl.ID, mtr.ID, id)
+		s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+		return p
+	}
+	cheap := mkPrice("price_split_cheap", "0.01")
+	dear := mkPrice("price_split_dear", "0.02")
+
+	s.sub = &subscription.Subscription{
+		ID: "sub_split", PlanID: pl.ID, CustomerID: cust.ID,
+		StartDate: s.periodStart, BillingAnchor: periodEndExclusive,
+		CurrentPeriodStart: s.periodStart, CurrentPeriodEnd: periodEndExclusive,
+		Currency: "usd", BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	mkLine := func(id string, p *price.Price, start, end time.Time) *subscription.SubscriptionLineItem {
+		return &subscription.SubscriptionLineItem{
+			ID: id, SubscriptionID: s.sub.ID, CustomerID: cust.ID,
+			EntityID: pl.ID, EntityType: types.SubscriptionLineItemEntityTypePlan,
+			PlanDisplayName: pl.Name, PriceID: p.ID, PriceType: p.Type, MeterID: mtr.ID,
+			DisplayName: id, Quantity: decimal.Zero, Currency: "usd",
+			BillingPeriod: types.BILLING_PERIOD_MONTHLY, InvoiceCadence: types.InvoiceCadenceArrear,
+			StartDate: start, EndDate: end, BaseModel: types.GetDefaultBaseModel(ctx),
+		}
+	}
+	lineItems := []*subscription.SubscriptionLineItem{
+		mkLine("sli_first_half", cheap, s.periodStart, switchDay),
+		mkLine("sli_second_half", dear, switchDay, periodEndExclusive),
+	}
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, s.sub, lineItems))
+	s.sub.LineItems = lineItems
+
+	// 100 units every day of the period.
+	var records []*events.MeterUsage
+	for d := 0; d < 30; d++ {
+		ts := s.periodStart.AddDate(0, 0, d).Add(12 * time.Hour)
+		id := s.GetUUID()
+		records = append(records, &events.MeterUsage{
+			Event: events.Event{
+				ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+				EventName: mtr.EventName, ExternalCustomerID: cust.ExternalID,
+				CustomerID: cust.ID, Timestamp: ts, IngestedAt: ts,
+			},
+			MeterID: mtr.ID, QtyTotal: decimal.NewFromInt(100),
+			UniqueHash: fmt.Sprintf("split:%s", id),
+		})
+	}
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, records))
+	s.enableRevenueAnalytics(ctx)
+
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+
+	daysByPrice := map[string]map[string]bool{}
+	qtyByPrice := map[string]decimal.Decimal{}
+	total := decimal.Zero
+	for _, r := range rows {
+		pid := lo.FromPtr(r.PriceID)
+		if daysByPrice[pid] == nil {
+			daysByPrice[pid] = map[string]bool{}
+		}
+		daysByPrice[pid][r.Day.Format("2006-01-02")] = true
+		qtyByPrice[pid] = qtyByPrice[pid].Add(r.BillableQty)
+		total = total.Add(r.NetAmount)
+		if residual, ok := reconcileRow(r); !ok {
+			s.Failf("row identity broken", "price %s day %s residual %s", pid, r.Day, residual)
+		}
+	}
+
+	// Neither line may claim a day belonging to the other.
+	for day := range daysByPrice[cheap.ID] {
+		s.False(daysByPrice[dear.ID][day], "day %s is claimed by both line items", day)
+		s.True(day < switchDay.Format("2006-01-02"), "the cheap line stops at the switch, saw %s", day)
+	}
+	for day := range daysByPrice[dear.ID] {
+		s.True(day >= switchDay.Format("2006-01-02"), "the dear line starts at the switch, saw %s", day)
+	}
+
+	// Each half meters its own 15 days of usage, once.
+	s.True(qtyByPrice[cheap.ID].Equal(decimal.NewFromInt(1500)), "first half qty, got %s", qtyByPrice[cheap.ID])
+	s.True(qtyByPrice[dear.ID].Equal(decimal.NewFromInt(1500)), "second half qty, got %s", qtyByPrice[dear.ID])
+
+	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription: s.sub, PeriodStart: s.periodStart, PeriodEnd: s.periodEnd,
+		ReferencePoint: types.ReferencePointRevenueFacts,
+	})
+	s.NoError(err)
+	s.True(total.Equal(invReq.Subtotal), "facts %s must equal the engine subtotal %s", total, invReq.Subtotal)
+}
