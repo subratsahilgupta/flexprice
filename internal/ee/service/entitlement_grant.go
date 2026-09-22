@@ -1083,16 +1083,6 @@ func defaultedMode(m types.EntitlementAggregationMode) types.EntitlementAggregat
 	return m
 }
 
-// remainingOf is null for an unlimited window: a number there reads as a balance the
-// customer does not have.
-func remainingOf(g *entitlementgrant.EntitlementGrant) *decimal.Decimal {
-	remaining, bounded := g.Remaining()
-	if !bounded {
-		return nil
-	}
-	return &remaining
-}
-
 // GrantStateByFeature is the current period's ledger for a subscription, keyed by
 // feature id. Spent allowances included; a feature with no grant config has no entry.
 func (s *entitlementGrantService) GrantStateByFeature(
@@ -1132,6 +1122,13 @@ func (s *entitlementGrantService) GrantStateByFeature(
 			out[featureID] = state
 		}
 
+		// Null for an unlimited window: a number there reads as a balance the customer
+		// does not have.
+		var remaining *decimal.Decimal
+		if left, bounded := g.Remaining(); bounded {
+			remaining = &left
+		}
+
 		window := &dto.GrantAllowanceState{
 			GrantID:        g.ID,
 			EntitlementID:  g.EntitlementConfigID,
@@ -1139,7 +1136,7 @@ func (s *entitlementGrantService) GrantStateByFeature(
 			Unlimited:      g.Unlimited,
 			Quota:          g.Quota,
 			Usage:          g.Usage,
-			Remaining:      remainingOf(g),
+			Remaining:      remaining,
 			ValidFrom:      g.ValidFrom,
 			ValidTo:        g.ValidTo,
 			Status:         g.GrantStatus,
