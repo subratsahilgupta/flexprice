@@ -104,6 +104,12 @@ func (c *LineItemCommitmentConfig) ApplyDefaults() {
 	}
 }
 
+func applyLineItemCommitmentDefaults(commitments map[string]*LineItemCommitmentConfig) {
+	for _, c := range commitments {
+		c.ApplyDefaults()
+	}
+}
+
 func validateLineItemCommitments(commitments map[string]*LineItemCommitmentConfig) error {
 	if len(commitments) == 0 {
 		return nil
@@ -450,6 +456,19 @@ type SubscriptionCreationConfig struct {
 	// LineItems are extra (non-plan) line items added at creation.
 	LineItems []CreateSubscriptionLineItemRequest `json:"line_items,omitempty" validate:"omitempty,dive"`
 	Phases    []SubscriptionPhaseCreateRequest    `json:"phases,omitempty" validate:"omitempty,dive"`
+}
+
+func (c *SubscriptionCreationConfig) ApplyDefaults() {
+	if c == nil {
+		return
+	}
+	applyLineItemCommitmentDefaults(c.LineItemCommitments)
+	for i := range c.Addons {
+		c.Addons[i].ApplyDefaults()
+	}
+	for i := range c.LineItems {
+		c.LineItems[i].ApplyDefaults()
+	}
 }
 
 func (c *SubscriptionCreationConfig) Validate() error {
