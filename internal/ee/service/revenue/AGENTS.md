@@ -63,13 +63,61 @@ Related but deliberately elsewhere: invoice hooks in
 `api/dto/revenue_analytics.go`, repositories in `domain/revenuefact` +
 `repository/ent/revenue_fact.go` + `testutil/inmemory_revenue_fact_store.go`.
 
-## Known limits (see ERD §14.1 / §15)
+## Decomposition decisions
 
-- Multi-period commitments are skipped whole (rollup-maintained prior base not
-  designed yet — Q3).
-- MAX / LATEST / AVG / WEIGHTED_SUM pricing and volume tiers stay whole-period:
-  the curve reads a cumulative SUM, which only prices sum-shaped billing.
-- Windowed (per-bucket) line commitments keep whole-period usage.
+Every line item lands in one of two modes. `marginal` writes a row per day;
+`period_only` writes one row for the period, dated by cadence (advance → period
+start, arrear → period end). Whole-period is a **last resort**, and each case
+below is a decision, not a default — if you add a shape, decide explicitly and
+record it here.
+
+**Split per day (`marginal`)**
+
+| Case | How |
+|---|---|
+| SUM / COUNT / SUM_WITH_MULTIPLIER + flat, graduated (SLAB) or package pricing | `buildUsageCurve` re-prices the cumulative quantity each day; `SUM(qty_total)` reproduces all three (the multiplier is baked in at ingestion) |
+| Any bucketed pair whose window is ≤ a day | `buildBucketedCurve` prices each window as the engine does and groups windows into days |
+| Entitlement-grant billed usage | `buildGrantOverageCurve` splits along the grants' quota-crossed windows |
+| Subscription-level commitment (normal + overage sibling lines) | `splitCurveAtCommitment` cuts the curve at the commitment boundary, quantities at the tier-curve boundary |
+| Line-level **windowed** commitment on a bucketed day-grain line | `decomposeBucketedCommitmentRows` dates committed usage, overage and true-up on the day each window covers |
+
+**Whole-period (`period_only`), and why**
+
+| Case | Why it cannot be daily |
+|---|---|
+| Volume tiering | every unit re-rates at the final tier, so a day's marginal charge is not a day's value |
+| LATEST / AVG / WEIGHTED_SUM | not additive across days |
+| Plain (non-bucketed) MAX | the charge is one peak, not an accrual |
+| COUNT_UNIQUE | a distinct count is not a running sum — the same event across two days must add once |
+| Bucketed with week or month windows | the window spans days, so its charge belongs to no single one |
+| Bucketed **with an entitlement limit** | the limit is consumed across the period, which a per-window shape does not model |
+| Bucketed under a subscription-level commitment split, or a non-windowed line commitment | both walk a cumulative curve, which a bucketed line does not have |
+| Grant-billed usage whose windows carry no usage to shape by | the shape is unknowable |
+| Fixed prices | not usage; dated by cadence |
+| Subscription-level true-up | only knowable once the period's usage is final |
+| Multi-period commitments | skipped entirely — the true-up needs a rollup-maintained prior base (ERD Q3) |
+
+Bucketed lines never take the grant path: `GrantPricingGuard` rejects bucketed
+meters, so the engine does not fold grants there either.
+
+## What reconciliation actually checks
+
+Shadow-only — every mismatch is logged (`revenue_reconciliation_mismatch`,
+`revenue_facts_drift`), never blocking.
+
+| Grain | Check | Applies to |
+|---|---|---|
+| Row | `net == list + tier − entitlement − line_discount − invoice_discount` | every row that carries a decomposition, **whatever its source** — including the overage rows the commitment split produces |
+| Line item | Σ row net == the engine's amount for the line | every line, all sources together |
+| Invoice (provisional) | Σ all rows == `Subtotal − TotalDiscount` | each rollup pass |
+| Invoice (FINAL) | Σ flipped rows == `Subtotal − TotalDiscount` | after the finalize flip |
+| Booked invoices | re-derive vs stamped rows | the daily `ReconcileBookedInvoices` sweep |
+
+A **money-only** row is exempt from the row check by design: a true-up, or an
+overage the engine reports as an amount with no units behind it, carries the
+charge whole and has no list rate to check against. `carriesDecomposition`
+draws that line — do not widen the exemption by source, or rows that do claim
+the identity stop being verified.
 
 ## Testing
 

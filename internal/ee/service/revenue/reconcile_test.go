@@ -122,3 +122,39 @@ func TestReconcileInvoice(t *testing.T) {
 		assert.True(t, residual.Equal(decimal.RequireFromString("50")))
 	})
 }
+
+// TestReconcileRow_ChecksEveryDecomposedRow: the identity is claimed by every
+// decomposed row, not just usage ones — the commitment split maintains it for
+// overage rows too, and leaving them unchecked meant claiming exactness we
+// never verified. Money-only rows (a true-up, or an overage reported as an
+// amount with no units behind it) carry the charge whole and are exempt.
+func TestReconcileRow_ChecksEveryDecomposedRow(t *testing.T) {
+	marginalOverage := func(listRate, tierDelta, net string) *revenuefact.RevenueFact {
+		return &revenuefact.RevenueFact{
+			RevenueSource:     types.RevenueSourceOverage,
+			DecompositionMode: types.Marginal,
+			UsageAtListRate:   decimal.RequireFromString(listRate),
+			TierDelta:         decimal.RequireFromString(tierDelta),
+			BillableQty:       decimal.NewFromInt(10),
+			NetAmount:         decimal.RequireFromString(net),
+		}
+	}
+
+	// 20 list + 20 tier (the 2x overage factor) = 40 billed.
+	_, ok := reconcileRow(marginalOverage("20", "20", "40"))
+	assert.True(t, ok, "a consistent overage row reconciles")
+
+	residual, ok := reconcileRow(marginalOverage("20", "20", "35"))
+	assert.False(t, ok, "a broken overage row must now be caught")
+	assert.Equal(t, "-5", residual.String())
+
+	// A per-bucket true-up is money with no usage behind it: nothing to check.
+	trueUp := &revenuefact.RevenueFact{
+		RevenueSource:     types.RevenueSourceCommitmentTrueup,
+		DecompositionMode: types.Marginal,
+		NetAmount:         decimal.NewFromInt(50),
+	}
+	_, ok = reconcileRow(trueUp)
+	assert.True(t, ok, "money-only rows carry the charge whole")
+	assert.False(t, carriesDecomposition(trueUp))
+}

@@ -91,6 +91,11 @@ func latestMeter(t *testing.T) *meter.Meter {
 	return &meter.Meter{ID: "meter_latest", Aggregation: meter.Aggregation{Type: types.AggregationLatest}}
 }
 
+func countUniqueMeter(t *testing.T) *meter.Meter {
+	t.Helper()
+	return &meter.Meter{ID: "meter_count_unique", Aggregation: meter.Aggregation{Type: types.AggregationCountUnique}}
+}
+
 func maxMeter(t *testing.T) *meter.Meter {
 	t.Helper()
 	return &meter.Meter{ID: "meter_max", Aggregation: meter.Aggregation{Type: types.AggregationMax}}
@@ -116,6 +121,8 @@ func TestDecompositionMode(t *testing.T) {
 	assert.Equal(t, types.PeriodOnly, decompositionMode(flat(t), bucketedMaxWeekly(t)))
 	assert.Equal(t, types.PeriodOnly, decompositionMode(flat(t), maxMeter(t)),
 		"plain MAX is not day-additive; the SUM-based curve cannot price it")
+	assert.Equal(t, types.PeriodOnly, decompositionMode(flat(t), countUniqueMeter(t)),
+		"a distinct count is not a running sum: the same event across two days adds once")
 	assert.Equal(t, types.Marginal, decompositionMode(graduated(t), countMeter(t)))
 
 	// Bucketed pricing is per window: only a flat fee stays day-additive.

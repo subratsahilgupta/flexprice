@@ -154,6 +154,11 @@ func decompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
 		switch m.Aggregation.Type {
 		case types.AggregationLatest, types.AggregationAvg, types.AggregationWeightedSum, types.AggregationMax:
 			return types.PeriodOnly
+		case types.AggregationCountUnique:
+			// The curve reads SUM(qty_total); a distinct count is
+			// COUNT(DISTINCT unique_hash), which no running sum reproduces —
+			// the same event repeating across days must not add twice.
+			return types.PeriodOnly
 		}
 	}
 	return types.Marginal
