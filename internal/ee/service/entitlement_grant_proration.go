@@ -184,7 +184,7 @@ func (s *subscriptionGrantService) applyEntitlementGrantChange(
 	}
 
 	at := cfg.entitlementChangeAt
-	liveByFeature, err := s.liveGrantsByFeature(ctx, cfg.sub, at)
+	liveByFeature, err := newEntitlementGrantService(s.ServiceParams).liveGrantsByFeature(ctx, cfg.sub, at)
 	if err != nil {
 		return err
 	}
@@ -372,32 +372,4 @@ func (s *subscriptionGrantService) GetSubscriptionGrantECsByFeature(
 	return lo.GroupBy(grantECs, func(ec *entitlement.Entitlement) string {
 		return ec.FeatureID
 	}), nil
-}
-
-// liveGrantsByFeature returns the subscription's feature-scoped grant rows whose window
-// contains `at`, grouped by feature. Windows already closed before `at` are excluded by the
-// query, so each slot yields the one segment that is actually live.
-func (s *subscriptionGrantService) liveGrantsByFeature(
-	ctx context.Context,
-	sub *subscription.Subscription,
-	at time.Time,
-) (map[string][]*entitlementgrant.EntitlementGrant, error) {
-	filter := types.NewNoLimitEntitlementGrantFilter().
-		WithCustomerIDs(sub.CustomerID).
-		WithSubscriptionIDs(sub.ID).
-		WithLiveOnly(at)
-
-	rows, err := s.EntitlementGrantRepo.List(ctx, filter)
-	if err != nil {
-		return nil, err
-	}
-
-	byFeature := make(map[string][]*entitlementgrant.EntitlementGrant)
-	for _, g := range rows {
-		if g == nil || !g.IsFeatureScoped() {
-			continue
-		}
-		byFeature[g.FeatureID()] = append(byFeature[g.FeatureID()], g)
-	}
-	return byFeature, nil
 }

@@ -44,6 +44,12 @@ type entitlementGrantService struct {
 }
 
 func NewEntitlementGrantService(params ServiceParams) EntitlementGrantService {
+	return newEntitlementGrantService(params)
+}
+
+// newEntitlementGrantService is the concrete service, for callers in this package that
+// need the reads the interface does not expose.
+func newEntitlementGrantService(params ServiceParams) *entitlementGrantService {
 	return &entitlementGrantService{ServiceParams: params}
 }
 
@@ -123,26 +129,32 @@ func (s *entitlementGrantService) CloseEntitlementGrants(
 	return closed, nil
 }
 
-// liveGrantsForFeature reads the windows rather than taking them: a re-cut has to act
-// on what is open when it runs, not on a list a caller assembled earlier.
-func (s *entitlementGrantService) liveGrantsForFeature(
+// liveGrantsByFeature returns the subscription's feature-scoped grant rows whose window
+// contains `at`, grouped by feature. Windows already closed before `at` are excluded by the
+// query, so each slot yields the one segment that is actually live.
+func (s *entitlementGrantService) liveGrantsByFeature(
 	ctx context.Context,
-	subscriptionID, featureID string,
+	sub *subscription.Subscription,
 	at time.Time,
-) ([]*entitlementgrant.EntitlementGrant, error) {
+) (map[string][]*entitlementgrant.EntitlementGrant, error) {
 	filter := types.NewNoLimitEntitlementGrantFilter().
-		WithSubscriptionIDs(subscriptionID).
-		WithScopeEntityType(types.EntitlementGrantScopeFeature)
-	filter.WithLiveOnly(at)
+		WithCustomerIDs(sub.CustomerID).
+		WithSubscriptionIDs(sub.ID).
+		WithLiveOnly(at)
 
-	grants, err := s.EntitlementGrantRepo.List(ctx, filter)
+	rows, err := s.EntitlementGrantRepo.List(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	return lo.Filter(grants, func(g *entitlementgrant.EntitlementGrant, _ int) bool {
-		return g != nil && g.FeatureID() == featureID && g.ValidTo.After(at) && at.After(g.ValidFrom)
-	}), nil
+	byFeature := make(map[string][]*entitlementgrant.EntitlementGrant)
+	for _, g := range rows {
+		if g == nil || !g.IsFeatureScoped() {
+			continue
+		}
+		byFeature[g.FeatureID()] = append(byFeature[g.FeatureID()], g)
+	}
+	return byFeature, nil
 }
 
 // ReissueEntitlementGrants closes what is live and opens a successor for the rest of the
@@ -155,18 +167,20 @@ func (s *entitlementGrantService) ReissueEntitlementGrants(
 		return nil, nil
 	}
 
-	live, err := s.liveGrantsForFeature(ctx, req.SubscriptionID, req.FeatureID, req.At)
-	if err != nil {
-		return nil, err
-	}
-	if len(live) == 0 {
-		return nil, nil
-	}
-
 	sub, err := s.SubRepo.Get(ctx, req.SubscriptionID)
 	if err != nil {
 		return nil, err
 	}
+
+	liveByFeature, err := s.liveGrantsByFeature(ctx, sub, req.At)
+	if err != nil {
+		return nil, err
+	}
+	live := liveByFeature[req.FeatureID]
+	if len(live) == 0 {
+		return nil, nil
+	}
+
 	ecsByFeature, err := newSubscriptionGrantService(s.ServiceParams).GetSubscriptionGrantECsByFeature(ctx, sub)
 	if err != nil {
 		return nil, err
