@@ -1568,10 +1568,6 @@ type OverrideEntitlementRequest struct {
 	GrantConfigPatch
 }
 
-// GrantConfigPatch is the allowance an override asks for. Nil means keep the parent's,
-// so an override that does not mention grants keeps the plan's allowance rather than
-// silently downgrading the feature to a legacy entitlement. GrantUnlimited exists
-// because that makes an absent quota mean inherit, not "no ceiling".
 type GrantConfigPatch struct {
 	GrantMeasure            *types.EntitlementGrantMeasure            `json:"grant_measure,omitempty"`
 	GrantDurationValue      *int                                      `json:"grant_duration_value,omitempty"`

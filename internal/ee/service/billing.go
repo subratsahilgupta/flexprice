@@ -2557,9 +2557,6 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 
 	aggregationMode := types.EntitlementAggregationModeAdditive
 
-	// Grant config summary. Additive contributors are validated to share measure
-	// and duration, so the first grant EC describes the whole pool; parallel
-	// features expose their per-bucket detail through Buckets.
 	var grantMeasure types.EntitlementGrantMeasure
 	var grantDurationValue *int
 	var grantDurationUnit types.EntitlementGrantDurationUnit
@@ -2650,9 +2647,7 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 					GrantQuota:         e.GrantQuota,
 					GrantDurationValue: e.GrantDurationValue,
 					GrantDurationUnit:  e.GrantDurationUnit,
-					// The parent's grant fields are additive-only, so for a parallel
-					// feature this is the only place the ceiling's absence is explained.
-					GrantUnlimited: e.IsUnlimitedGrant(),
+					GrantUnlimited:     e.IsUnlimitedGrant(),
 				},
 			})
 		}
@@ -3368,10 +3363,6 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 		usage := usageByFeature[featureID]
 		nextUsageResetAt := featureNextUsageResetAtMap[featureID]
 
-		// A grant-backed entitlement carries no usage_limit, so reading it alone
-		// reports every allowance as unlimited. The grant quota is per window
-		// ("1,000 per hour"); the cadence is not expressible in this summary, but a
-		// real ceiling beats a wrong "unlimited".
 		totalLimit := feature.Entitlement.UsageLimit
 		isUnlimited := feature.Entitlement.UsageLimit == nil
 		if feature.Entitlement.GrantUnlimited {
