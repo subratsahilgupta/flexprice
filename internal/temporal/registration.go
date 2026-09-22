@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/flexprice/flexprice/internal/ee/service"
+	"github.com/flexprice/flexprice/internal/ee/service/revenue"
 	"github.com/flexprice/flexprice/internal/integration/awsmarketplace"
 	"github.com/flexprice/flexprice/internal/integration/azuremarketplace"
 	"github.com/flexprice/flexprice/internal/integration/gcpmarketplace"
@@ -61,6 +62,7 @@ type cronActivityBundle struct {
 	marketplaceSnapshot          *marketplaceActivities.SnapshotActivities
 	marketplaceReport            *marketplaceActivities.ReportActivities
 	dailyDraftAndCompute         *cronActivities.DailyDraftAndComputeActivities
+	revenueRollup                *cronActivities.RevenueRollupActivities
 }
 
 // RegisterWorkflowsAndActivities registers all workflows and activities with the temporal service
@@ -135,6 +137,7 @@ func RegisterWorkflowsAndActivities(
 		meterUsageService,
 		params.EventRepo,
 		params.SubscriptionLineItemRepo,
+		params.RevenueFactRepo,
 	)
 
 	// HubSpot activities - clean and simple, delegates to existing services
@@ -310,6 +313,7 @@ func RegisterWorkflowsAndActivities(
 		marketplaceSnapshot:          marketplaceSnapshotActivities,
 		marketplaceReport:            marketplaceReportActivities,
 		dailyDraftAndCompute:         cronActivities.NewDailyDraftAndComputeActivities(service.NewInvoiceService(params), subscriptionService, params.Logger),
+		revenueRollup:                cronActivities.NewRevenueRollupActivities(revenue.New(params), params.Config, params.Logger),
 	}
 
 	// Get all task queues and register workflows/activities for each
@@ -547,6 +551,7 @@ func buildWorkerConfig(
 			cronWorkflows.MarketplaceUsageSnapshotWorkflow,
 			cronWorkflows.MarketplaceUsageReportWorkflow,
 			cronWorkflows.DailyDraftAndComputeWorkflow,
+			cronWorkflows.RevenueRollupWorkflow,
 		)
 		activitiesList = append(activitiesList,
 			cron.creditGrant.ProcessScheduledCreditGrantApplicationsActivity,
@@ -564,6 +569,8 @@ func buildWorkerConfig(
 			cron.marketplaceSnapshot.MarketplaceUsageSnapshotActivity,
 			cron.marketplaceReport.MarketplaceUsageReportActivity,
 			cron.dailyDraftAndCompute.DailyDraftAndComputeActivity,
+			cron.revenueRollup.RollupDirtyActivity,
+			cron.revenueRollup.ReconcileBookedInvoicesActivity,
 		)
 
 	case types.TemporalTaskQueueBilling:

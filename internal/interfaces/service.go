@@ -81,6 +81,35 @@ type EntityIntegrationMappingService interface {
 	DelinkIntegrationMapping(ctx context.Context, req dto.DelinkIntegrationMappingRequest) (*dto.SuccessResponse, error)
 }
 
+// RevenueService writes and maintains revenue_facts rows and serves their
+// analytics reads. Implemented by internal/ee/service/revenue; declared here
+// so the service layer can invoke the invoice-side hooks without importing
+// the implementation package.
+type RevenueService interface {
+	// RollupSubscription splits the subscription's current billing period
+	// into PROVISIONAL revenue_facts rows.
+	RollupSubscription(ctx context.Context, subscriptionID string) error
+
+	// RollupDirty rolls every opted-in subscription with activity since the
+	// given time. Over-rolling is harmless: the upsert is idempotent.
+	RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error)
+
+	// FinalizeSubscriptionPeriod flips the invoice's PROVISIONAL rows to
+	// FINAL and stamps them with the invoice.
+	FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error
+
+	// RevertInvoiceFacts writes a negating twin for every FINAL row of a
+	// voided invoice. Idempotent.
+	RevertInvoiceFacts(ctx context.Context, invoiceID string) error
+
+	// ReconcileBookedInvoices re-checks every invoice finalized or voided
+	// since the given time against its booked rows.
+	ReconcileBookedInvoices(ctx context.Context, since time.Time) (checked, drifted, corrected int, err error)
+
+	// GetRevenueAnalytics aggregates facts into grouped, time-bucketed rows.
+	GetRevenueAnalytics(ctx context.Context, req *dto.RevenueAnalyticsRequest) (*dto.RevenueAnalyticsResponse, error)
+}
+
 // RevenueAnalyticsService defines the interface for revenue analytics operations
 type RevenueAnalyticsService interface {
 	// GetDetailedCostAnalytics retrieves detailed cost analytics with derived metrics

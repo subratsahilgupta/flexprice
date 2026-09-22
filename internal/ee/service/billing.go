@@ -66,7 +66,10 @@ type BillingService interface {
 	CalculateCharges(ctx context.Context, params *dto.CalculateChargesParams) (*dto.BillingCalculationResult, error)
 
 	// CalculateMeterUsageCharges computes usage-based invoice line items from meter_usage.
-	CalculateMeterUsageCharges(ctx context.Context, sub *subscription.Subscription, usage *dto.GetUsageBySubscriptionResponse, periodStart, periodEnd time.Time, source types.UsageSource) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal, error)
+	// asOf is optional (variadic to stay additive for existing callers): pass a resolved
+	// reference instant (see resolveAsOf) to clip line items/windowed commitments against a
+	// day other than now; omit or pass a zero value to keep today's time.Now() behavior.
+	CalculateMeterUsageCharges(ctx context.Context, sub *subscription.Subscription, usage *dto.GetUsageBySubscriptionResponse, periodStart, periodEnd time.Time, source types.UsageSource, asOfOverride *time.Time) ([]dto.CreateInvoiceLineItemRequest, decimal.Decimal, error)
 
 	// SumUsageAmountForSubscription returns the total usage cost for a subscription over
 	// [periodStart, periodEnd) using the same per-cadence-group fan-out as invoice
@@ -425,7 +428,7 @@ func newLineItemMergeKey(item dto.CreateInvoiceLineItemRequest) lineItemMergeKey
 		meterID:                lo.FromPtr(item.MeterID),
 		displayName:            lo.FromPtr(item.DisplayName),
 		priceUnit:              lo.FromPtr(item.PriceUnit),
-		isOverage:              item.Metadata["is_overage"],
+		isOverage:              item.Metadata[types.MetadataKeyIsOverage],
 	}
 }
 
@@ -1207,8 +1210,8 @@ func (s *billingService) CalculateUsageCharges(
 
 			// Add overage specific information
 			if matchingCharge.IsOverage {
-				metadata["is_overage"] = "true"
-				metadata["overage_factor"] = fmt.Sprintf("%v", matchingCharge.OverageFactor)
+				metadata[types.MetadataKeyIsOverage] = types.MetadataValueTrue
+				metadata[types.MetadataKeyOverageFactor] = fmt.Sprintf("%v", matchingCharge.OverageFactor)
 				metadata["description"] = fmt.Sprintf("%s (Overage Charge)", item.DisplayName)
 				displayName = lo.ToPtr(fmt.Sprintf("%s (Overage)", item.DisplayName))
 			}
@@ -1217,11 +1220,11 @@ func (s *billingService) CalculateUsageCharges(
 			if !matchingCharge.IsOverage && entitlementOk && matchingEntitlement.IsEnabled {
 				switch matchingEntitlement.UsageResetPeriod {
 				case types.ENTITLEMENT_USAGE_RESET_PERIOD_DAILY:
-					metadata["usage_reset_period"] = "daily"
+					metadata[types.MetadataKeyUsageResetPeriod] = "daily"
 				case types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY:
-					metadata["usage_reset_period"] = "monthly"
+					metadata[types.MetadataKeyUsageResetPeriod] = "monthly"
 				case types.ENTITLEMENT_USAGE_RESET_PERIOD_NEVER:
-					metadata["usage_reset_period"] = "never"
+					metadata[types.MetadataKeyUsageResetPeriod] = "never"
 				}
 			}
 
@@ -1313,10 +1316,10 @@ func (s *billingService) CalculateUsageCharges(
 					PeriodEnd:       &periodEnd,
 					PriceID:         lo.ToPtr(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE)),
 					Metadata: types.Metadata{
-						"is_commitment_trueup": "true",
-						"description":          "Remaining commitment amount for billing period",
-						"commitment_amount":    commitmentAmount.String(),
-						"commitment_utilized":  commitmentUtilized.String(),
+						types.MetadataKeyIsCommitmentTrueup: types.MetadataValueTrue,
+						"description":                       "Remaining commitment amount for billing period",
+						types.MetadataKeyCommitmentAmount:   commitmentAmount.String(),
+						types.MetadataKeyCommitmentUtilized: commitmentUtilized.String(),
 					},
 				}
 
@@ -1361,13 +1364,13 @@ func (s *billingService) getCumulativePriorBaseFromInvoices(
 				continue
 			}
 			if item.Metadata != nil {
-				if v, ok := item.Metadata["is_commitment_trueup"]; ok && v == "true" {
+				if v, ok := item.Metadata[types.MetadataKeyIsCommitmentTrueup]; ok && v == "true" {
 					continue
 				}
 			}
 			// Overage line: base = amount / overage_factor; else base = amount
 			if item.Metadata != nil {
-				if v, ok := item.Metadata["is_overage"]; ok && v == "true" {
+				if v, ok := item.Metadata[types.MetadataKeyIsOverage]; ok && v == "true" {
 					if overageFactor.GreaterThan(decimal.Zero) {
 						totalPriorBase = totalPriorBase.Add(item.Amount.Div(overageFactor))
 					}
@@ -1567,6 +1570,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 	periodEnd := params.PeriodEnd
 	referencePoint := params.ReferencePoint
 	excludeInvoiceID := params.ExcludeInvoiceID
+	asOf := resolveAsOf(params)
 	// Validate that the billing period respects subscription end date
 	if err := s.validatePeriodAgainstSubscriptionEndDate(sub, periodStart); err != nil {
 		return nil, err
@@ -1704,6 +1708,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			periodStart,
 			periodEnd,
 			classification.HasUsageCharges, // Include usage for arrear
+			&asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -1717,6 +1722,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			nextPeriodStart,
 			nextPeriodEnd,
 			false, // No usage for advance
+			&asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -1732,10 +1738,11 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 
 		description = fmt.Sprintf("Invoice for subscription %s", sub.ID)
 
-	case types.ReferencePointPreview:
-		// For preview, include both current period arrear and next period advance
-		// but don't filter out already invoiced items. Usage is sourced from the
-		// meter_usage table.
+	case types.ReferencePointPreview, types.ReferencePointRevenueFacts:
+		// Both include current-period arrear and next-period advance without
+		// filtering already-invoiced items; usage reads meter_usage (FINAL).
+		// revenue_facts matches preview today — split this arm when the rollup
+		// needs facts-only behavior (e.g. coupon application without DB writes).
 
 		// For current period arrear charges
 		arrearResult, err := s.calculateMeterUsageCharges(
@@ -1745,6 +1752,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			periodStart,
 			periodEnd,
 			classification.HasUsageCharges, // Include usage for arrear
+			&asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -1758,6 +1766,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			nextPeriodStart,
 			nextPeriodEnd,
 			false, // No usage for advance
+			&asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -1772,7 +1781,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		}
 
 		description = fmt.Sprintf("Preview invoice for subscription %s", sub.ID)
-		metadata["is_preview"] = "true"
+		metadata[types.MetadataKeyIsPreview] = types.MetadataValueTrue
 
 	case types.ReferencePointInternalPreview:
 		// Same as ReferencePointPreview but uses CalculateCharges (regular usage path)
@@ -1811,7 +1820,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 		}
 
 		description = fmt.Sprintf("Preview invoice for subscription %s", sub.ID)
-		metadata["is_preview"] = "true"
+		metadata[types.MetadataKeyIsPreview] = types.MetadataValueTrue
 
 	case types.ReferencePointCancel:
 		// for cancel, include arrear line items only using meter_usage for cumulative commitment
@@ -1834,6 +1843,7 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 			periodStart,
 			periodEnd,
 			true, // Include usage for arrear
+			&asOf,
 		)
 		if err != nil {
 			return nil, err
@@ -1856,12 +1866,13 @@ func (s *billingService) PrepareSubscriptionInvoiceRequest(
 
 	// Create invoice request for the calculated charges
 	invReq, err := s.CreateInvoiceRequestForCharges(ctx, &dto.CreateInvoiceRequestForChargesParams{
-		Subscription: sub,
-		Result:       calculationResult,
-		PeriodStart:  periodStart,
-		PeriodEnd:    periodEnd,
-		Description:  description,
-		Metadata:     metadata,
+		Subscription:   sub,
+		Result:         calculationResult,
+		PeriodStart:    periodStart,
+		PeriodEnd:      periodEnd,
+		Description:    description,
+		Metadata:       metadata,
+		ReferencePoint: referencePoint,
 	})
 	if err != nil {
 		return nil, err
@@ -2231,7 +2242,7 @@ func (s *billingService) SumUsageAmountForSubscription(
 	sub *subscription.Subscription,
 	periodStart, periodEnd time.Time,
 ) (decimal.Decimal, error) {
-	result, err := s.calculateMeterUsageCharges(ctx, sub, sub.LineItems, periodStart, periodEnd, true)
+	result, err := s.calculateMeterUsageCharges(ctx, sub, sub.LineItems, periodStart, periodEnd, true, nil)
 	if err != nil {
 		return decimal.Zero, err
 	}
@@ -2256,6 +2267,7 @@ func (s *billingService) calculateMeterUsageCharges(
 	periodStart,
 	periodEnd time.Time,
 	includeUsage bool,
+	asOfOverride *time.Time,
 ) (*dto.BillingCalculationResult, error) {
 	filteredSub := *sub
 	filteredSub.LineItems = lineItems
@@ -2315,7 +2327,7 @@ func (s *billingService) calculateMeterUsageCharges(
 					return nil, err
 				}
 
-				lines, cost, err := s.CalculateMeterUsageCharges(ctx, &windowSub, usage, w.Start, w.End, types.UsageSourceInvoiceCreation)
+				lines, cost, err := s.CalculateMeterUsageCharges(ctx, &windowSub, usage, w.Start, w.End, types.UsageSourceInvoiceCreation, asOfOverride)
 				if err != nil {
 					return nil, err
 				}
@@ -2477,6 +2489,15 @@ func (s *billingService) CreateInvoiceRequestForCharges(
 	}
 	if params.BillingReason != "" {
 		req.BillingReason = params.BillingReason
+	}
+
+	// The revenue-facts rollup needs discount amounts, which normal previews
+	// resolve later during invoice assembly — dry-run them here so the rollup
+	// gets fully priced line items without owning any coupon logic.
+	if params.ReferencePoint == types.ReferencePointRevenueFacts {
+		if err := s.applyCouponPreview(ctx, req); err != nil {
+			return nil, err
+		}
 	}
 
 	return req, nil
@@ -3555,4 +3576,45 @@ func (s *billingService) calculateNeverResetUsage(
 		"billable_quantity", billableQuantity)
 
 	return billableQuantity, nil
+}
+
+// applyCouponPreview computes coupon discounts for the prepared request
+// without persisting anything or counting redemptions (same calculator the
+// customer preview uses), then writes each line's own discount plus its
+// proportional share of invoice-level discounts onto the line items, summing
+// exactly to the calculated totals.
+func (s *billingService) applyCouponPreview(ctx context.Context, req *dto.CreateInvoiceRequest) error {
+	if len(req.InvoiceCoupons) == 0 && len(req.LineItemCoupons) == 0 {
+		return nil
+	}
+
+	inv, err := req.ToInvoice(ctx)
+	if err != nil {
+		return err
+	}
+	if len(inv.LineItems) != len(req.LineItems) {
+		return ierr.NewError("preview invoice line items diverged from the request").
+			WithHint("cannot map coupon discounts back onto preview line items").
+			Mark(ierr.ErrSystem)
+	}
+
+	result, err := NewCouponApplicationService(s.ServiceParams).CalculateCouponsForInvoice(ctx, dto.ApplyCouponsToInvoiceRequest{
+		Invoice:         inv,
+		InvoiceCoupons:  req.InvoiceCoupons,
+		LineItemCoupons: req.LineItemCoupons,
+	})
+	if err != nil {
+		return err
+	}
+
+	weights := make([]decimal.Decimal, len(req.LineItems))
+	for i, li := range inv.LineItems {
+		lineDiscount := lo.FromPtr(req.LineItems[i].LineItemDiscount).Add(li.LineItemDiscount)
+		req.LineItems[i].LineItemDiscount = lo.ToPtr(lineDiscount)
+		weights[i] = req.LineItems[i].Amount.Sub(lineDiscount)
+	}
+	for i, share := range SpreadAmount(result.TotalInvoiceLevelDiscount, weights) {
+		req.LineItems[i].InvoiceLevelDiscount = lo.ToPtr(lo.FromPtr(req.LineItems[i].InvoiceLevelDiscount).Add(share))
+	}
+	return nil
 }

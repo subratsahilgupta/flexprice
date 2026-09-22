@@ -560,6 +560,16 @@ func invoiceFilterFn(ctx context.Context, inv *invoice.Invoice, filter interface
 	}
 
 	// Filter by period_start_gte (periodStart >= value)
+	if f.FinalizedAtGTE != nil {
+		if inv.FinalizedAt == nil || inv.FinalizedAt.Before(*f.FinalizedAtGTE) {
+			return false
+		}
+	}
+	if f.VoidedAtGTE != nil {
+		if inv.VoidedAt == nil || inv.VoidedAt.Before(*f.VoidedAtGTE) {
+			return false
+		}
+	}
 	if f.PeriodStartGTE != nil {
 		if inv.PeriodStart == nil || inv.PeriodStart.Before(*f.PeriodStartGTE) {
 			return false

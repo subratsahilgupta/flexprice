@@ -764,6 +764,7 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 		invoice.AmountRemaining = decimal.Zero
 	}
 
+	finalizedNow := false
 	if invoice.AmountRemaining.IsZero() {
 		invoice.PaymentStatus = types.PaymentStatusSucceeded
 		// Finalize invoice if it's still in draft state
@@ -771,6 +772,7 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 			invoice.InvoiceStatus = types.InvoiceStatusFinalized
 			finalizedAt := time.Now().UTC()
 			invoice.FinalizedAt = &finalizedAt
+			finalizedNow = true
 		}
 	} else if invoice.AmountRemaining.LessThan(invoice.AmountDue) {
 		invoice.PaymentStatus = types.PaymentStatusPending // Partial payment still keeps it pending
@@ -779,6 +781,12 @@ func (p *paymentProcessor) handleInvoicePostProcessing(ctx context.Context, paym
 	// Update the invoice
 	if err := p.InvoiceRepo.Update(ctx, invoice); err != nil {
 		return err
+	}
+
+	// This path finalizes without performFinalizeInvoiceActions, so it emits
+	// the finalized webhook + facts flip itself.
+	if finalizedNow {
+		notifyInvoiceFinalized(ctx, p.ServiceParams, invoice.ID)
 	}
 
 	// Check if this invoice is for a purchased credit (has wallet_transaction_id in metadata)
