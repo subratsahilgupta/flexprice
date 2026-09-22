@@ -2106,7 +2106,7 @@ func (s *EntitlementGrantSuite) TestUnlimitedGrant_NeverExhaustsOrBills() {
 		Quota:     decimal.Zero,
 		Usage:     decimal.NewFromInt(1_000_000),
 	}
-	s.False(g.IsExhausted(), "unlimited window has no ceiling to cross")
+	s.False(g.IsExhausted(g.Usage), "unlimited window has no ceiling to cross")
 	s.True(g.Overage().IsZero(), "unlimited window never contributes overage")
 	// The signature makes the branch unavoidable: an unlimited window reports that it
 	// has no ceiling, rather than a zero balance that reads as exhausted.
@@ -2118,7 +2118,7 @@ func (s *EntitlementGrantSuite) TestUnlimitedGrant_NeverExhaustsOrBills() {
 		Quota: decimal.NewFromInt(100),
 		Usage: decimal.NewFromInt(150),
 	}
-	s.True(bounded.IsExhausted())
+	s.True(bounded.IsExhausted(bounded.Usage))
 	s.Equal("50", bounded.Overage().String())
 }
 

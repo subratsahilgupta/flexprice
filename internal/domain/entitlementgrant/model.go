@@ -59,26 +59,7 @@ func (g *EntitlementGrant) GetID() string {
 	return g.ID
 }
 
-// Window returns the half-open [valid_from, valid_to) grant window.
-func (g *EntitlementGrant) Window() (time.Time, time.Time) {
-	if g == nil {
-		return time.Time{}, time.Time{}
-	}
-	return g.ValidFrom, g.ValidTo
-}
-
-func (g *EntitlementGrant) IsExhausted() bool {
-	if g == nil {
-		return false
-	}
-	return g.IsExhaustedAt(g.Usage)
-}
-
-// IsExhaustedAt judges the window against a usage figure the caller has just measured,
-// before it is written back. Unlimited never is, whatever its quota says — a pool goes
-// unlimited when any contributor is, while still summing the bounded ones. Zero quota
-// always is: such a window holds a slot rather than granting anything.
-func (g *EntitlementGrant) IsExhaustedAt(usage decimal.Decimal) bool {
+func (g *EntitlementGrant) IsExhausted(usage decimal.Decimal) bool {
 	if g == nil || g.Unlimited {
 		return false
 	}

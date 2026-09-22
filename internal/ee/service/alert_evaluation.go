@@ -335,7 +335,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 		// Unlimited windows track usage for display but have no ceiling to cross,
 		// so they never stamp a crossing and never bill overage.
 		cross := g.QuotaCrossedAt
-		if cross == nil && g.IsExhaustedAt(usage) {
+		if cross == nil && g.IsExhausted(usage) {
 			cross = &at
 		}
 
@@ -345,7 +345,7 @@ func (s *alertService) evaluateEntitlementGrantsForCustomer(
 			WithUsage(usage).
 			WithLastComputedAt(&at).
 			WithQuotaCrossedAt(cross)
-		if g.IsExhaustedAt(usage) && g.GrantStatus == types.EntitlementGrantStatusActive {
+		if g.IsExhausted(usage) && g.GrantStatus == types.EntitlementGrantStatusActive {
 			builder = builder.WithGrantStatus(types.EntitlementGrantStatusExhausted)
 		}
 		if err := s.EntitlementGrantRepo.UpdateSnapshot(ctx, builder.Build()); err != nil {
@@ -422,7 +422,7 @@ func (s *alertService) transitionEntitlementGrantAlert(
 	usage decimal.Decimal,
 	at time.Time,
 ) error {
-	if !g.IsExhaustedAt(usage) {
+	if !g.IsExhausted(usage) {
 		return nil
 	}
 

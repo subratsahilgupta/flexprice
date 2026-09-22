@@ -24,10 +24,6 @@ type Repository interface {
 	Get(ctx context.Context, id string) (*EntitlementGrant, error)
 	List(ctx context.Context, filter *types.EntitlementGrantFilter) ([]*EntitlementGrant, error)
 
-	// ListLatestWindows is List capped per slot: the newest perSlot windows of each
-	// entitlement config the filter matches. An hourly allowance leaves hundreds of rows
-	// in a monthly cycle and a read wants the live window and what led to it, so the cap
-	// belongs in the query rather than in the caller.
 	ListLatestWindows(ctx context.Context, filter *types.EntitlementGrantFilter, perSlot int) ([]*EntitlementGrant, error)
 	Count(ctx context.Context, filter *types.EntitlementGrantFilter) (int, error)
 	Update(ctx context.Context, g *EntitlementGrant) (*EntitlementGrant, error)

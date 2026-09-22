@@ -2968,11 +2968,6 @@ func (s *billingService) GetCustomerEntitlementsForSubscriptions(ctx context.Con
 	return response, nil
 }
 
-// attachGrantState folds each subscription's live grant state onto the matching
-// feature. A customer with two subscriptions on one feature genuinely holds two
-// windows, so `current` concatenates rather than merging — summing them would
-// imply a shared pool that does not exist. Best-effort: the entitlement response
-// is still correct without it.
 func (s *billingService) attachGrantState(
 	ctx context.Context,
 	features []*dto.AggregatedFeature,
