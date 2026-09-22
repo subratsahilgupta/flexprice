@@ -2,7 +2,6 @@ package ent
 
 import (
 	"context"
-	"sort"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -411,11 +410,11 @@ func (r *entitlementGrantRepository) List(ctx context.Context, filter *types.Ent
 func (r *entitlementGrantRepository) ListLatestWindows(
 	ctx context.Context,
 	filter *types.EntitlementGrantFilter,
-	total int,
+	perSlot int,
 ) ([]*domainGrant.EntitlementGrant, error) {
 	span := StartRepositorySpan(ctx, "entitlement_grant", "list_latest_windows", map[string]interface{}{
 		"tenant_id": types.GetTenantID(ctx),
-		"total":     total,
+		"per_slot":  perSlot,
 	})
 	defer FinishSpan(span)
 
@@ -425,7 +424,7 @@ func (r *entitlementGrantRepository) ListLatestWindows(
 	if err := filter.Validate(); err != nil {
 		return nil, err
 	}
-	if total <= 0 {
+	if perSlot <= 0 {
 		return nil, nil
 	}
 
@@ -443,14 +442,12 @@ func (r *entitlementGrantRepository) ListLatestWindows(
 		return nil, nil
 	}
 
-	sort.Strings(configIDs)
-
-	out := make([]*domainGrant.EntitlementGrant, 0, total)
-	for i, configID := range configIDs {
+	out := make([]*domainGrant.EntitlementGrant, 0, len(configIDs)*perSlot)
+	for _, configID := range configIDs {
 		rows, err := applyEntitlementGrantFilter(r.scoped(ctx), filter).
 			Where(entitlementgrant.EntitlementConfigID(configID)).
 			Order(ent.Desc(entitlementgrant.FieldValidFrom)).
-			Limit(windowsForSlot(total, len(configIDs), i)).
+			Limit(perSlot).
 			All(ctx)
 		if err != nil {
 			SetSpanError(span, err)
@@ -463,20 +460,6 @@ func (r *entitlementGrantRepository) ListLatestWindows(
 	}
 
 	return out, nil
-}
-
-func windowsForSlot(total, slots, index int) int {
-	if slots <= 0 {
-		return 0
-	}
-	n := total / slots
-	if index < total%slots {
-		n++
-	}
-	if n < 1 {
-		return 1
-	}
-	return n
 }
 
 func (r *entitlementGrantRepository) Count(ctx context.Context, filter *types.EntitlementGrantFilter) (int, error) {

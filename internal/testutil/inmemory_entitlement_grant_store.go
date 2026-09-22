@@ -164,14 +164,14 @@ func (s *InMemoryEntitlementGrantStore) List(ctx context.Context, filter *types.
 	return rows, nil
 }
 
-// ListLatestWindows mirrors the repository: a budget of total windows split across the
-// matching slots, newest first, and never fewer than one from a slot that has any.
+// ListLatestWindows mirrors the repository: the newest perSlot windows of each slot the
+// filter matches.
 func (s *InMemoryEntitlementGrantStore) ListLatestWindows(
 	ctx context.Context,
 	filter *types.EntitlementGrantFilter,
-	total int,
+	perSlot int,
 ) ([]*entitlementgrant.EntitlementGrant, error) {
-	if total <= 0 {
+	if perSlot <= 0 {
 		return nil, nil
 	}
 
@@ -181,47 +181,22 @@ func (s *InMemoryEntitlementGrantStore) ListLatestWindows(
 	}
 
 	byConfig := make(map[string][]*entitlementgrant.EntitlementGrant, 4)
-	configIDs := make([]string, 0, 4)
 	for _, g := range rows {
-		if g == nil {
-			continue
+		if g != nil {
+			byConfig[g.EntitlementConfigID] = append(byConfig[g.EntitlementConfigID], g)
 		}
-		if _, seen := byConfig[g.EntitlementConfigID]; !seen {
-			configIDs = append(configIDs, g.EntitlementConfigID)
-		}
-		byConfig[g.EntitlementConfigID] = append(byConfig[g.EntitlementConfigID], g)
 	}
-	sort.Strings(configIDs)
 
-	kept := make([]*entitlementgrant.EntitlementGrant, 0, total)
-	for i, configID := range configIDs {
-		grants := byConfig[configID]
+	kept := make([]*entitlementgrant.EntitlementGrant, 0, len(byConfig)*perSlot)
+	for _, grants := range byConfig {
 		sort.Slice(grants, func(a, b int) bool { return grants[a].ValidFrom.After(grants[b].ValidFrom) })
-
-		n := windowsForSlot(total, len(configIDs), i)
-		if len(grants) > n {
-			grants = grants[:n]
+		if len(grants) > perSlot {
+			grants = grants[:perSlot]
 		}
 		kept = append(kept, grants...)
 	}
 
 	return kept, nil
-}
-
-// windowsForSlot mirrors the repository's split: the remainder goes to the earliest
-// slots, and every slot keeps at least one.
-func windowsForSlot(total, slots, index int) int {
-	if slots <= 0 {
-		return 0
-	}
-	n := total / slots
-	if index < total%slots {
-		n++
-	}
-	if n < 1 {
-		return 1
-	}
-	return n
 }
 
 func (s *InMemoryEntitlementGrantStore) Count(ctx context.Context, filter *types.EntitlementGrantFilter) (int, error) {

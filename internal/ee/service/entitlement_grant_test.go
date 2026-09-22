@@ -2532,10 +2532,10 @@ func (s *EntitlementGrantSuite) TestRemoveUnlimitedEC_SuccessorHoldsSlotAtZero()
 	s.Equal(types.EntitlementGrantStatusExhausted, opened[0].GrantStatus)
 }
 
-// An hourly allowance on a monthly cycle produces hundreds of windows. A read returns a
-// fixed budget of them, split across the slots in play and taking the newest of each, so
-// a parallel feature's busiest series cannot crowd the others out of the response.
-func (s *EntitlementGrantSuite) TestGrantState_CapsWindowsAcrossSlots() {
+// An hourly allowance on a monthly cycle produces hundreds of windows. A read returns
+// the newest few of each entitlement, so a parallel feature's busiest series cannot
+// crowd the others out of the response.
+func (s *EntitlementGrantSuite) TestGrantState_CapsWindowsPerSlot() {
 	ctx := s.GetContext()
 	fx := s.newWindowFixture("cap-windows", 1)
 	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, fx.sub))
@@ -2576,10 +2576,9 @@ func (s *EntitlementGrantSuite) TestGrantState_CapsWindowsAcrossSlots() {
 	for _, w := range state.Allowances {
 		byEC[w.EntitlementID] = append(byEC[w.EntitlementID], w)
 	}
-	s.Len(state.Allowances, GrantWindowsPerRead, "the budget bounds the whole response")
 	s.Len(byEC, 2, "both entitlements keep a series")
 	for ecID, windows := range byEC {
-		s.NotEmpty(windows, "no slot comes back empty: %s", ecID)
+		s.Len(windows, GrantWindowsPerSlot, "capped per entitlement: %s", ecID)
 		s.Equal(fx.cycleStart.Add(7*time.Hour), windows[len(windows)-1].ValidFrom,
 			"the most recent window of each slot is kept: %s", ecID)
 		s.True(sort.SliceIsSorted(windows, func(a, b int) bool {

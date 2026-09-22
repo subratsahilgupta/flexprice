@@ -1102,7 +1102,7 @@ func (s *entitlementGrantService) GrantStateByFeature(
 
 	// Capped in the query: an hourly allowance leaves hundreds of rows in a monthly
 	// cycle, and a read wants the live window and what led to it.
-	grants, err := s.EntitlementGrantRepo.ListLatestWindows(ctx, filter, GrantWindowsPerRead)
+	grants, err := s.EntitlementGrantRepo.ListLatestWindows(ctx, filter, GrantWindowsPerSlot)
 	if err != nil {
 		return nil, err
 	}
@@ -1157,8 +1157,10 @@ func (s *entitlementGrantService) GrantStateByFeature(
 // GrantWindowsPerRead caps how much of the ledger a read returns. An hourly allowance on
 // a monthly cycle produces several hundred windows, and a reader wants the live one and
 // what led to it. Split across the slots in play, never fewer than one each, so a
-// parallel feature's busiest series cannot crowd the rest out of the response.
-const GrantWindowsPerRead = 5
+// GrantWindowsPerSlot caps how much of the ledger a read returns, per entitlement rather
+// than per feature: a parallel feature has one series per entitlement, and a shared cap
+// would let a busy one crowd the others out entirely.
+const GrantWindowsPerSlot = 3
 
 // ValidateGrantShape resolves the entitlement's meter and applies the shared
 // meter/price rules. A no-op for entitlements without a grant config.
@@ -1175,123 +1177,6 @@ func (s *entitlementService) ValidateGrantShape(ctx context.Context, e *entitlem
 		return err
 	}
 	return s.validateEntitlementGrantShape(ctx, e, m)
-}
-
-// deriveGrantConfig puts every new metered entitlement on the grant model so the legacy
-// set stops growing. usage_limit becomes the quota, its absence an unlimited allowance,
-// and the billing period the cadence — which reproduces legacy behaviour exactly.
-// Meters a grant cannot cover keep the legacy shape rather than lose their entitlement.
-func (s *entitlementService) deriveGrantConfig(
-	ctx context.Context,
-	e *entitlement.Entitlement,
-	m *meter.Meter,
-) error {
-	if e == nil || e.FeatureType != types.FeatureTypeMetered || e.HasGrantConfig() {
-		return nil
-	}
-
-	measure := types.EntitlementGrantMeasureQuantity
-	if err := s.grantMeterEligibility(ctx, m, measure); err != nil {
-		s.Logger.Info(ctx, "feature cannot carry an allowance; entitlement stays on the legacy model",
-			"feature_id", e.FeatureID,
-			"meter_id", lo.FromPtr(m).ID,
-			"reason", err.Error())
-		return nil
-	}
-
-	e.GrantMeasure = measure
-	e.GrantDurationUnit = types.EntitlementGrantDurationUnitSubscriptionPeriod
-	if e.AggregationMode == "" {
-		e.AggregationMode = types.EntitlementAggregationModeAdditive
-	}
-	if e.UsageLimit != nil {
-		e.GrantQuota = lo.ToPtr(decimal.NewFromInt(*e.UsageLimit))
-	}
-
-	e.UsageLimit = nil
-
-	s.Logger.Info(ctx, "derived a grant config for a new metered entitlement",
-		"feature_id", e.FeatureID,
-		"unlimited", e.IsUnlimitedGrant())
-	return nil
-}
-
-// resettleGrantWindows re-cuts one customer's live windows after an allowance edit.
-// Subscription rows only: a plan edit would rewrite every subscriber's window at once.
-func (s *entitlementService) resettleGrantWindows(
-	ctx context.Context,
-	e *entitlement.Entitlement,
-	priorQuota *decimal.Decimal,
-	priorUnlimited bool,
-) error {
-	if e == nil || e.EntityType != types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION || !e.HasGrantConfig() {
-		return nil
-	}
-	unlimited := e.IsUnlimitedGrant()
-	if unlimited == priorUnlimited && entitlement.QuotaEquals(priorQuota, e.GrantQuota) {
-		return nil
-	}
-
-	// The allowance replaced the old one rather than topping it up, so the delta is the
-	// difference. Added to what the closed window had left, that is the same number as
-	// recalculating from scratch: (old − usage) + (new − old) = new − usage.
-	delta := lo.FromPtr(e.GrantQuota).Sub(lo.FromPtr(priorQuota))
-	_, err := NewEntitlementGrantService(s.ServiceParams).ReissueEntitlementGrants(ctx, &dto.ReissueEntitlementGrantsRequest{
-		SubscriptionID: e.EntityID,
-		FeatureID:      e.FeatureID,
-		Delta:          delta,
-		Unlimited:      unlimited,
-		At:             time.Now().UTC(),
-		Source:         "entitlement_updated",
-	})
-	return err
-}
-
-// assertSingleContributor refuses an override where several entitlements already feed the
-// feature. One allowance field cannot address more than one of them: additive pools them,
-// so the customer lands above the number typed, and parallel leaves it ambiguous which
-// was meant. Lifting this needs per-allowance editing, not a change here.
-func (s *entitlementService) assertSingleContributor(ctx context.Context, e *entitlement.Entitlement) error {
-	if !e.IsSubscriptionOverride() {
-		return nil
-	}
-	parentID := lo.FromPtr(e.ParentEntitlementID)
-
-	sub, err := s.SubRepo.Get(ctx, e.EntityID)
-	if err != nil {
-		return err
-	}
-
-	entitlementsForSubscription, err := NewSubscriptionService(s.ServiceParams).GetSubscriptionEntitlementsForSubscription(ctx, sub)
-
-	if err != nil {
-		return err
-	}
-
-	otherEntitlements := make([]string, 0, len(entitlementsForSubscription))
-	for _, other := range entitlementsForSubscription {
-		if other == nil || other.Entitlement == nil || other.FeatureID != e.FeatureID {
-			continue
-		}
-		// The row being written and the one it replaces both become this override.
-		if other.ID == e.ID || other.ID == parentID {
-			continue
-		}
-		otherEntitlements = append(otherEntitlements, other.ID)
-	}
-
-	if len(otherEntitlements) == 0 {
-		return nil
-	}
-
-	return ierr.NewError("this allowance comes from more than one entitlement").
-		WithHint("Change it on the plan or addon instead.").
-		WithReportableDetails(map[string]interface{}{
-			"subscription_id":       e.EntityID,
-			"feature_id":            e.FeatureID,
-			"other_entitlement_ids": otherEntitlements,
-		}).
-		Mark(ierr.ErrValidation)
 }
 
 // takeOverGrantWindowsFromParent runs on a first override: the override replaces the
