@@ -195,6 +195,9 @@ func (c *commitmentCalculator) applyCommitmentToLineItem(
 	}
 
 	overageFactor := lo.FromPtr(lineItem.CommitmentOverageFactor)
+	if overageFactor.IsZero() {
+		overageFactor = lo.FromPtr(types.DefaultOverageFactor())
+	}
 	charge, utilized, overage, trueUp := computeCommitmentMath(usageCost, commitmentAmount, overageFactor, lineItem.CommitmentTrueUpEnabled)
 
 	return charge, &types.CommitmentInfo{
@@ -216,10 +219,6 @@ func (c *commitmentCalculator) applyCommitmentToLineItem(
 // commitment math — amount- and quantity-typed commitments only differ in how
 // the commitment money is derived before calling this.
 func computeCommitmentMath(usageCharge, commitmentCharge, overageFactor decimal.Decimal, trueUp bool) (decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal) {
-	if commitmentCharge.IsZero() {
-		return usageCharge, decimal.Zero, decimal.Zero, decimal.Zero
-	}
-
 	if usageCharge.GreaterThanOrEqual(commitmentCharge) {
 		overage := usageCharge.Sub(commitmentCharge).Mul(overageFactor)
 		return commitmentCharge.Add(overage), commitmentCharge, overage, decimal.Zero
@@ -377,6 +376,9 @@ func (c *commitmentCalculator) chargeWindowAtLineItem(
 		return commitmentParts{}, err
 	}
 	of := lo.FromPtr(lineItem.CommitmentOverageFactor)
+	if of.IsZero() {
+		of = lo.FromPtr(types.DefaultOverageFactor())
+	}
 	charge, util, ov, tu := computeCommitmentMath(baseCharge, liCommit, of, lineItem.CommitmentTrueUpEnabled)
 	return commitmentParts{charge: charge, utilized: util, overage: ov, trueUp: tu}, nil
 }
