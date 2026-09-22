@@ -38,6 +38,10 @@ type usageCurveInput struct {
 	// Timezone is the IANA name used to split usage into calendar days.
 	// Empty means UTC.
 	Timezone string
+
+	// AsOf is the instant the curve is evaluated at: an open period stops
+	// after AsOf's day. Zero means now.
+	AsOf time.Time
 }
 
 // buildUsageCurve returns one dayCharge per calendar day of the period: it
@@ -115,7 +119,11 @@ func (s *revenueService) buildUsageCurve(ctx context.Context, in usageCurveInput
 	// (and before any finalize/flip) today is past it and the walk is whole.
 	// Clamping after the one-day fallback keeps a short period intact, and a
 	// period that has not started yet clamps away to nothing.
-	nowLocal := time.Now().In(loc)
+	asOf := in.AsOf
+	if asOf.IsZero() {
+		asOf = time.Now()
+	}
+	nowLocal := asOf.In(loc)
 	tomorrow := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
 	if tomorrow.Before(endDay) {
 		endDay = tomorrow

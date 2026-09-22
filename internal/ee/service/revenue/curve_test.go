@@ -585,9 +585,12 @@ func TestBuildUsageCurve_ClampsToToday(t *testing.T) {
 		AddonRepo:      testutil.NewInMemoryAddonStore(),
 		SubRepo:        testutil.NewInMemorySubscriptionStore(),
 	}}
-	today := time.Now().UTC().Truncate(24 * time.Hour)
+	// One fixed instant drives both the expectations and the clamp, so the
+	// test cannot straddle a UTC midnight between the two.
+	asOf := time.Date(2026, 5, 15, 13, 0, 0, 0, time.UTC)
+	today := asOf.Truncate(24 * time.Hour)
 	in := func(start, end time.Time) usageCurveInput {
-		return usageCurveInput{Price: flatSum(t), MeterID: "meter_clamp", PeriodStart: start, PeriodEnd: end}
+		return usageCurveInput{Price: flatSum(t), MeterID: "meter_clamp", PeriodStart: start, PeriodEnd: end, AsOf: asOf}
 	}
 
 	open, err := svc.buildUsageCurve(ctx, in(today.AddDate(0, 0, -4), today.AddDate(0, 0, 26)))
