@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -238,5 +239,52 @@ func TestApplyGrantDefaults(t *testing.T) {
 	legacy.ApplyGrantDefaults()
 	if legacy.GrantAllocationBehavior != "" {
 		t.Fatalf("no grant config means nothing to state, got %q", legacy.GrantAllocationBehavior)
+	}
+}
+
+// An update that restates the current allowance must not read as a change: the service
+// re-runs the meter and price rules only when something actually moved.
+func TestGrantConfigEquals(t *testing.T) {
+	base := func() *Entitlement {
+		q := decimal.NewFromInt(1000)
+		v := 1
+		return &Entitlement{
+			GrantMeasure:            types.EntitlementGrantMeasureQuantity,
+			GrantQuota:              &q,
+			GrantDurationValue:      &v,
+			GrantDurationUnit:       types.EntitlementGrantDurationUnitHour,
+			GrantAllocationBehavior: types.EntitlementGrantAllocationBehaviorFirstUsage,
+			AggregationMode:         types.EntitlementAggregationModeAdditive,
+		}
+	}
+
+	same := base()
+	same.IsEnabled = true
+	same.StaticValue = "unrelated"
+	if !base().GrantConfigEquals(same) {
+		t.Error("fields outside the allowance must not count as a change")
+	}
+
+	// A restated quota is a different pointer holding the same number.
+	restated := base()
+	restated.GrantQuota = lo.ToPtr(decimal.NewFromInt(1000))
+	if !base().GrantConfigEquals(restated) {
+		t.Error("an equal quota behind a different pointer is not a change")
+	}
+
+	for name, mutate := range map[string]func(*Entitlement){
+		"quota":     func(e *Entitlement) { e.GrantQuota = lo.ToPtr(decimal.NewFromInt(500)) },
+		"unlimited": func(e *Entitlement) { e.GrantQuota = nil },
+		"unit":      func(e *Entitlement) { e.GrantDurationUnit = types.EntitlementGrantDurationUnitDay },
+		"value":     func(e *Entitlement) { e.GrantDurationValue = lo.ToPtr(2) },
+		"measure":   func(e *Entitlement) { e.GrantMeasure = types.EntitlementGrantMeasureAmount },
+		"behavior":  func(e *Entitlement) { e.GrantAllocationBehavior = types.EntitlementGrantAllocationBehaviorUnitStart },
+		"stacking":  func(e *Entitlement) { e.AggregationMode = types.EntitlementAggregationModeParallel },
+	} {
+		moved := base()
+		mutate(moved)
+		if base().GrantConfigEquals(moved) {
+			t.Errorf("a changed %s must count as a change", name)
+		}
 	}
 }

@@ -147,7 +147,7 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 				WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
 				WithReportableDetails(map[string]interface{}{
 					"meter_id":     m.ID,
-					"bucket_size":  m.Aggregation.BucketSize, //nolint:staticcheck // meter-level bucket_size is deprecated but still honoured; reported so the error names the real cause
+					"bucket_size":  m.Aggregation.BucketSize,
 					"feature_type": req.FeatureType,
 				}).
 				Mark(ierr.ErrValidation)
@@ -362,7 +362,7 @@ func (s *entitlementService) CreateBulkEntitlement(ctx context.Context, req dto.
 						WithHint("Bucketed max meters process each bucket independently and cannot have entitlements").
 						WithReportableDetails(map[string]interface{}{
 							"meter_id":     m.ID,
-							"bucket_size":  m.Aggregation.BucketSize, //nolint:staticcheck // meter-level bucket_size is deprecated but still honoured; reported so the error names the real cause
+							"bucket_size":  m.Aggregation.BucketSize,
 							"feature_type": entReq.FeatureType,
 							"index":        i,
 						}).
@@ -786,7 +786,11 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 		return nil, err
 	}
 
-	if grantConfigMoved(&stored, existing) && existing.HasGrantConfig() && existing.FeatureType == types.FeatureTypeMetered {
+	// Re-check the meter and price rules only when the allowance actually moved: a request
+	// restating the current config has nothing new to check, and a row created before a
+	// rule tightened would fail every unrelated update. HasGrantConfig keeps the two
+	// lookups below off the path that cleared one.
+	if !stored.GrantConfigEquals(existing) && existing.HasGrantConfig() {
 		featureRow, err := s.FeatureRepo.Get(ctx, existing.FeatureID)
 		if err != nil {
 			return nil, err

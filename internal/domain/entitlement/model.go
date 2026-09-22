@@ -65,15 +65,33 @@ func (e *Entitlement) HasGrantConfig() bool {
 	return e.GrantQuota != nil || e.GrantDurationValue != nil || e.GrantMeasure != "" || e.GrantDurationUnit != ""
 }
 
-// IsUnlimitedGrant reports a grant config with no quota ceiling. Distinct from a
-// legacy unlimited entitlement (nil usage_limit, no grant config).
 func (e *Entitlement) IsUnlimitedGrant() bool {
 	return e != nil && e.HasGrantConfig() && e.GrantQuota == nil
 }
 
-// ApplyGrantDefaults states the implied allocation behaviour rather than leaving readers
-// to infer it from a blank. Fixed-duration units only: a subscription_period window
-// always spans the cycle, and validateGrantConfig rejects a behaviour on one.
+// GrantConfigEquals reports whether two entitlements describe the same allowance —
+// the same amount, measured the same way, over the same window, stacking the same way.
+// Everything else about an entitlement can differ.
+func (e *Entitlement) GrantConfigEquals(other *Entitlement) bool {
+	if e == nil || other == nil {
+		return e == other
+	}
+	return e.GrantMeasure == other.GrantMeasure &&
+		e.GrantDurationUnit == other.GrantDurationUnit &&
+		e.GrantAllocationBehavior == other.GrantAllocationBehavior &&
+		e.AggregationMode == other.AggregationMode &&
+		lo.FromPtr(e.GrantDurationValue) == lo.FromPtr(other.GrantDurationValue) &&
+		QuotaEquals(e.GrantQuota, other.GrantQuota)
+}
+
+// QuotaEquals compares two optional quotas. Nil is unlimited, so it equals only nil.
+func QuotaEquals(a, b *decimal.Decimal) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
+}
+
 func (e *Entitlement) ApplyGrantDefaults() {
 	if !e.HasGrantConfig() || e.GrantAllocationBehavior != "" {
 		return

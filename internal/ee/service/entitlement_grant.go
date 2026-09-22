@@ -1216,17 +1216,6 @@ func (s *entitlementService) deriveGrantConfig(
 	return nil
 }
 
-// grantConfigMoved reports whether an update changed the allowance itself, as opposed
-// to restating it or touching an unrelated field.
-func grantConfigMoved(before, after *entitlement.Entitlement) bool {
-	return before.GrantMeasure != after.GrantMeasure ||
-		before.GrantDurationUnit != after.GrantDurationUnit ||
-		before.GrantAllocationBehavior != after.GrantAllocationBehavior ||
-		before.AggregationMode != after.AggregationMode ||
-		lo.FromPtr(before.GrantDurationValue) != lo.FromPtr(after.GrantDurationValue) ||
-		!quotaUnchanged(before.GrantQuota, after.GrantQuota)
-}
-
 // resettleGrantWindows re-cuts one customer's live windows after an allowance edit.
 // Subscription rows only: a plan edit would rewrite every subscriber's window at once.
 func (s *entitlementService) resettleGrantWindows(
@@ -1239,7 +1228,7 @@ func (s *entitlementService) resettleGrantWindows(
 		return nil
 	}
 	unlimited := e.IsUnlimitedGrant()
-	if unlimited == priorUnlimited && quotaUnchanged(priorQuota, e.GrantQuota) {
+	if unlimited == priorUnlimited && entitlement.QuotaEquals(priorQuota, e.GrantQuota) {
 		return nil
 	}
 
@@ -1380,11 +1369,4 @@ func (s *entitlementService) settleGrantWindowsForDeletedEC(ctx context.Context,
 		entitlementChangeAt:     time.Now().UTC(),
 		entitlementChangeOrigin: grantProrationSourceEntitlementGone,
 	})
-}
-
-func quotaUnchanged(a, b *decimal.Decimal) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return a.Equal(*b)
 }
