@@ -145,7 +145,12 @@ func decompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
 			return types.PeriodOnly
 		}
 	}
-	if price.IsBucketedMax(p, m) {
+	// Bucketed pricing charges each window on its own quantity, which the
+	// cumulative curve cannot reproduce: 5 units/day on a $1-per-10 package
+	// with daily buckets bills $1 per day, while re-pricing the running total
+	// bills $1 once. Only a flat fee stays linear across windows, so only it
+	// survives as marginal.
+	if p != nil && price.IsBucketed(p, m) && p.BillingModel != types.BILLING_MODEL_FLAT_FEE {
 		return types.PeriodOnly
 	}
 	return types.Marginal

@@ -16433,9 +16433,6 @@
               "$ref": "#/components/schemas/types.Metric"
             }
           },
-          "name": {
-            "type": "string"
-          },
           "shape": {
             "$ref": "#/components/schemas/types.Shape"
           },

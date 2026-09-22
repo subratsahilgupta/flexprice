@@ -273,8 +273,6 @@ definitions:
           - event_count
         minItems: 1
         type: array
-      name:
-        type: string
       shape:
         allOf:
         - $ref: '#/definitions/types.Shape'
