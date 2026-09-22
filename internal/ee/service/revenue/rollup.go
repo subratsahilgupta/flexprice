@@ -341,7 +341,9 @@ func (s *revenueService) decomposeUsageRows(
 
 	if overageAmount, paired := overageAmountBySLI[base.SubLineItemID]; paired {
 		grantBilled := grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, inputs.grants(m.ID))
-		if grantBilled || decompositionMode(p, m) != types.Marginal {
+		// The commitment split walks a cumulative curve; a bucketed line has
+		// no such curve, so its pair stays whole-period.
+		if grantBilled || price.IsBucketed(p, m) || decompositionMode(p, m) != types.Marginal {
 			// No daily shape for this pair — both halves stay whole-period.
 			overageCurves[base.SubLineItemID] = nil
 			return wholePeriod(), nil
@@ -391,6 +393,33 @@ func (s *revenueService) decomposeUsageRows(
 	if decompositionMode(p, m) != types.Marginal {
 		return wholePeriod(), nil
 	}
+
+	// Bucketed lines are priced window by window rather than off a cumulative
+	// curve. An entitlement limit is consumed across the whole period, which
+	// that per-window shape does not model, so those stay whole-period.
+	if price.IsBucketed(p, m) {
+		if inputs.entitlementLimits[m.ID].IsPositive() {
+			return wholePeriod(), nil
+		}
+		curve, shapeKnown, bErr := s.buildBucketedCurve(ctx, bucketedCurveInput{
+			Price:               p,
+			Meter:               m,
+			Sub:                 sub,
+			PeriodStart:         itemPeriod.Start,
+			PeriodEnd:           itemPeriod.exclusiveEnd(),
+			EngineAmount:        item.Amount,
+			ExternalCustomerIDs: inputs.extCustomerIDs,
+			Timezone:            sub.Timezone,
+		})
+		if bErr != nil {
+			return nil, bErr
+		}
+		if !shapeKnown {
+			return wholePeriod(), nil
+		}
+		return decomposeUsageMarginal(base, curve), nil
+	}
+
 	curve, err := s.buildUsageCurve(ctx, usageCurveInput{
 		Price:       p,
 		MeterID:     m.ID,

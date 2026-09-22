@@ -124,12 +124,19 @@ func TestDecompositionMode(t *testing.T) {
 	pkg := &price.Price{ID: "price_pkg", Amount: decimal.NewFromInt(1),
 		BillingModel:      types.BILLING_MODEL_PACKAGE,
 		TransformQuantity: price.JSONBTransformQuantity{DivideBy: 10, Round: types.ROUND_UP}}
-	assert.Equal(t, types.PeriodOnly, decompositionMode(pkg, bucketedSum),
-		"per-bucket package charges cannot be rebuilt from a cumulative curve")
-	assert.Equal(t, types.PeriodOnly, decompositionMode(graduated(t), bucketedSum),
-		"per-bucket tiering likewise")
-	assert.Equal(t, types.Marginal, decompositionMode(flatSum(t), bucketedSum),
-		"a flat fee is linear across buckets, so daily rows still reconcile")
+	// Windows that nest inside a day are priced per window and grouped into
+	// days, whatever the pricing shape.
+	assert.Equal(t, types.Marginal, decompositionMode(pkg, bucketedSum))
+	assert.Equal(t, types.Marginal, decompositionMode(graduated(t), bucketedSum))
+	assert.Equal(t, types.Marginal, decompositionMode(flatSum(t), bucketedSum))
+
+	// Week and month windows span days, so their charge cannot land on one.
+	weekly := &meter.Meter{ID: "meter_bucketed_week",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum, BucketSize: types.WindowSizeWeek}}
+	monthly := &meter.Meter{ID: "meter_bucketed_month",
+		Aggregation: meter.Aggregation{Type: types.AggregationMax, BucketSize: types.WindowSizeMonth}}
+	assert.Equal(t, types.PeriodOnly, decompositionMode(flatSum(t), weekly))
+	assert.Equal(t, types.PeriodOnly, decompositionMode(flatSum(t), monthly))
 }
 
 // TestIsMultiPeriodCommitment covers the multi-period commitment detection

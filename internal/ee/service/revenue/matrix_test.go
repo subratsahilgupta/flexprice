@@ -799,3 +799,98 @@ func (s *RevenueRollupSuite) TestE2E_SameMeterAdjacentLineItems() {
 	s.NoError(err)
 	s.True(total.Equal(invReq.Subtotal), "facts %s must equal the engine subtotal %s", total, invReq.Subtotal)
 }
+
+// TestE2E_BucketedPackagePerDay: a bucketed price charges each window on its
+// own quantity — 5 units/day on a $1-per-10 package with daily buckets bills
+// $1 EVERY day. Re-pricing the running total would bill $1 once, so this is
+// the shape that forced bucketed lines to whole-period until the curve learned
+// to price per window.
+func (s *RevenueRollupSuite) TestE2E_BucketedPackagePerDay() {
+	ctx := s.ctx
+	const days = 10
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	s.periodStart = today.AddDate(0, 0, -days)
+	periodEndExclusive := s.periodStart.AddDate(0, 1, 0)
+	s.periodEnd = periodEndExclusive
+
+	cust := &customer.Customer{
+		ID: "cust_bkt", ExternalID: "ext_bkt", Name: "Bucketed",
+		Email: "bkt@example.com", BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+	pl := &plan.Plan{ID: "plan_bkt", Name: "Bucketed Plan", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, pl))
+
+	mtr := &meter.Meter{
+		ID: "meter_bkt", Name: "Bucketed Units", EventName: "bkt_event",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum, BucketSize: types.WindowSizeDay},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, mtr))
+
+	p := matrixPackagePrice(ctx, pl.ID, mtr.ID, "price_bkt")
+	p.TransformQuantity = price.JSONBTransformQuantity{DivideBy: 10, Round: types.ROUND_UP}
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+
+	s.sub = &subscription.Subscription{
+		ID: "sub_bkt", PlanID: pl.ID, CustomerID: cust.ID,
+		StartDate: s.periodStart, BillingAnchor: periodEndExclusive,
+		CurrentPeriodStart: s.periodStart, CurrentPeriodEnd: periodEndExclusive,
+		Currency: "usd", BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	lineItems := []*subscription.SubscriptionLineItem{{
+		ID: "sli_bkt", SubscriptionID: s.sub.ID, CustomerID: cust.ID,
+		EntityID: pl.ID, EntityType: types.SubscriptionLineItemEntityTypePlan,
+		PlanDisplayName: pl.Name, PriceID: p.ID, PriceType: p.Type, MeterID: mtr.ID,
+		DisplayName: "Bucketed", Quantity: decimal.Zero, Currency: "usd",
+		BillingPeriod: types.BILLING_PERIOD_MONTHLY, InvoiceCadence: types.InvoiceCadenceArrear,
+		StartDate: s.sub.StartDate, BaseModel: types.GetDefaultBaseModel(ctx),
+	}}
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, s.sub, lineItems))
+	s.sub.LineItems = lineItems
+
+	// 5 units on each elapsed day: under one package, so every day bills $1.
+	var records []*events.MeterUsage
+	for d := 0; d < days; d++ {
+		ts := s.periodStart.AddDate(0, 0, d).Add(12 * time.Hour)
+		id := s.GetUUID()
+		records = append(records, &events.MeterUsage{
+			Event: events.Event{
+				ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+				EventName: mtr.EventName, ExternalCustomerID: cust.ExternalID,
+				CustomerID: cust.ID, Timestamp: ts, IngestedAt: ts,
+			},
+			MeterID: mtr.ID, QtyTotal: decimal.NewFromInt(5),
+			UniqueHash: fmt.Sprintf("bkt:%s", id),
+		})
+	}
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, records))
+	s.enableRevenueAnalytics(ctx)
+
+	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+		Subscription: s.sub, PeriodStart: s.periodStart, PeriodEnd: s.periodEnd,
+		ReferencePoint: types.ReferencePointRevenueFacts,
+	})
+	s.NoError(err)
+	s.True(invReq.Subtotal.Equal(decimal.NewFromInt(days)),
+		"engine bills one package per day, got %s", invReq.Subtotal)
+
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+
+	total := decimal.Zero
+	billed := 0
+	for _, r := range rows {
+		s.Equal(types.Marginal, r.DecompositionMode, "windows nesting in a day split per day")
+		total = total.Add(r.NetAmount)
+		if r.NetAmount.IsPositive() {
+			billed++
+			s.True(r.NetAmount.Equal(decimal.NewFromInt(1)), "each day bills one package, got %s on %s", r.NetAmount, r.Day)
+		}
+	}
+	s.Equal(days, billed, "one billed row per day of usage")
+	s.True(total.Equal(invReq.Subtotal), "facts %s must equal the engine subtotal %s", total, invReq.Subtotal)
+}
