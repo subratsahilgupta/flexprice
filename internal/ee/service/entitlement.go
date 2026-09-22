@@ -180,9 +180,6 @@ func (s *entitlementService) CreateEntitlement(ctx context.Context, req dto.Crea
 	e.EntityType = entityType
 	e.EntityID = entityID
 
-	// The row and the windows it re-cuts move together: a crash between them would
-	// leave an override whose allowance never transferred. The contributor check joins
-	// them so a concurrent insert cannot slip past it either.
 	var result *entitlement.Entitlement
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		if err := s.assertSingleContributor(txCtx, e); err != nil {
@@ -689,9 +686,6 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 
 	priorQuota := existing.GrantQuota
 	priorUnlimited := existing.IsUnlimitedGrant()
-	// Shallow copy taken before the request is applied. Grant fields are values or
-	// pointers that get reassigned rather than written through, so this keeps the
-	// stored config intact to compare against.
 	stored := *existing
 
 	// Update fields if provided
@@ -724,7 +718,6 @@ func (s *entitlementService) UpdateEntitlement(ctx context.Context, id string, r
 	//
 	// Deprecated: ClearGrantConfig is honoured for existing callers but is on its
 	// way out — logged so we can see whether anyone still relies on it.
-	//nolint:staticcheck // deprecated on purpose; this branch is what keeps existing callers working
 	if req.ClearGrantConfig != nil && *req.ClearGrantConfig {
 		s.Logger.Info(ctx, "deprecated clear_grant_config used on entitlement update",
 			"entitlement_id", id,
