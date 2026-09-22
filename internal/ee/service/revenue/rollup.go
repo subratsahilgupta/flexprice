@@ -474,9 +474,26 @@ func (s *revenueService) decomposeLineCommitmentRows(
 	usageBase := base
 	usageBase.EngineAmount = within
 
-	// Windowed (per-bucket) commitments true-up bucket by bucket — a single
-	// boundary split would misattribute days, so their usage stays whole-period.
-	marginal := !info.IsWindowed && decompositionMode(p, m) == types.Marginal &&
+	// A windowed commitment settles each bucket on its own, so when those
+	// buckets nest inside days every part is datable: committed usage, overage
+	// and true-up each land on the day their window covers.
+	if info.IsWindowed && bucketedDayGrain(p, m) &&
+		!grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, inputs.grants(m.ID)) &&
+		!inputs.entitlementLimits[m.ID].IsPositive() {
+		perDay, ok, bErr := s.decomposeBucketedCommitmentRows(ctx, sub, base, item, itemPeriod, p, m, info, inputs.extCustomerIDs)
+		if bErr != nil {
+			return nil, true, bErr
+		}
+		if ok {
+			return perDay, true, nil
+		}
+	}
+
+	// Otherwise the parts stay whole-period: a windowed commitment has no
+	// single boundary to split at, and a bucketed line has no cumulative curve
+	// to walk.
+	marginal := !info.IsWindowed && !price.IsBucketed(p, m) &&
+		decompositionMode(p, m) == types.Marginal &&
 		!grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, inputs.grants(m.ID))
 	if marginal {
 		curve, curveErr := s.buildUsageCurve(ctx, usageCurveInput{
