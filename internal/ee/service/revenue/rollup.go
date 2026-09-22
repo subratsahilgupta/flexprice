@@ -588,6 +588,36 @@ func (s *revenueService) decomposeOverageRows(
 		grantsBillable(subLineItemByID(sub, base.SubLineItemID), p, m, inputs.grants(m.ID)) {
 		return []*revenuefact.RevenueFact{decomposeOverage(base, itemPeriod)}
 	}
+
+	// A bucketed line has no cumulative curve to split: each window is charged
+	// on its own quantity. The whole line is overage here, so the per-window
+	// curve IS the overage curve. An entitlement limit is consumed across the
+	// period, which that per-window shape does not model.
+	if price.IsBucketed(p, m) {
+		if inputs.entitlementLimits[m.ID].IsPositive() {
+			return []*revenuefact.RevenueFact{decomposeOverage(base, itemPeriod)}
+		}
+		curve, shapeKnown, bErr := s.buildBucketedCurve(ctx, bucketedCurveInput{
+			Price:               p,
+			Meter:               m,
+			Sub:                 sub,
+			PeriodStart:         itemPeriod.Start,
+			PeriodEnd:           itemPeriod.exclusiveEnd(),
+			EngineAmount:        item.Amount,
+			ExternalCustomerIDs: inputs.extCustomerIDs,
+			Timezone:            sub.Timezone,
+		})
+		if bErr != nil {
+			s.Logger.Error(ctx, "bucketed overage curve failed, falling back to whole-period row",
+				"error", bErr, "subscription_id", sub.ID, "sub_line_item_id", base.SubLineItemID)
+			return []*revenuefact.RevenueFact{decomposeOverage(base, itemPeriod)}
+		}
+		if !shapeKnown {
+			return []*revenuefact.RevenueFact{decomposeOverage(base, itemPeriod)}
+		}
+		return decomposeUsageMarginal(base, curve)
+	}
+
 	curve, err := s.buildUsageCurve(ctx, usageCurveInput{
 		Price:               p,
 		MeterID:             m.ID,

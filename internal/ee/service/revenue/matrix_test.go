@@ -1020,3 +1020,77 @@ func (s *RevenueRollupSuite) TestE2E_BucketedWindowedCommitmentPerDay() {
 	}
 	s.True(total.Equal(invReq.Subtotal), "facts %s must equal the engine subtotal %s", total, invReq.Subtotal)
 }
+
+// TestDecomposeOverageRows_BucketedUsesPerWindowCurve: an overage line with no
+// normal sibling (the commitment was already exhausted) must not fall back to
+// the cumulative curve when the price is bucketed. With a $1-per-10 package on
+// daily windows and 5 units a day, every day bills one package; re-pricing the
+// running total and splitting it would report $2, $0, $2, $0 instead.
+func (s *RevenueRollupSuite) TestDecomposeOverageRows_BucketedUsesPerWindowCurve() {
+	ctx := s.ctx
+	const days = 4
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	periodStart := today.AddDate(0, 0, -days)
+	itemPeriod := revenuePeriod{Start: periodStart, End: today.AddDate(0, 0, -1)}
+
+	mtr := &meter.Meter{
+		ID: "meter_obkt", Name: "Overage Bucketed", EventName: "obkt_event",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum, BucketSize: types.WindowSizeDay},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, mtr))
+	p := matrixPackagePrice(ctx, "plan_obkt", mtr.ID, "price_obkt")
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+
+	var records []*events.MeterUsage
+	for d := 0; d < days; d++ {
+		ts := periodStart.AddDate(0, 0, d).Add(12 * time.Hour)
+		id := s.GetUUID()
+		records = append(records, &events.MeterUsage{
+			Event: events.Event{
+				ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+				EventName: mtr.EventName, ExternalCustomerID: "ext_obkt",
+				CustomerID: "cust_obkt", Timestamp: ts, IngestedAt: ts,
+			},
+			MeterID: mtr.ID, QtyTotal: decimal.NewFromInt(5),
+			UniqueHash: fmt.Sprintf("obkt:%s", id),
+		})
+	}
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, records))
+
+	sub := &subscription.Subscription{ID: "sub_obkt", BillingAnchor: itemPeriod.exclusiveEnd()}
+	inputs := &rollupInputs{
+		prices:         map[string]*price.Price{p.ID: p},
+		meters:         map[string]*meter.Meter{mtr.ID: mtr},
+		extCustomerIDs: []string{"ext_obkt"},
+	}
+	base := previewLineItem{
+		TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+		CustomerID: "cust_obkt", SubscriptionID: sub.ID, SubLineItemID: "sli_obkt",
+		Price: &price.Price{ID: "overage:sli_obkt"}, Currency: "usd",
+		Source:      types.RevenueSourceOverage,
+		PeriodStart: itemPeriod.Start, PeriodEnd: itemPeriod.End,
+	}
+	item := &dto.CreateInvoiceLineItemRequest{
+		Amount:  decimal.NewFromInt(days),
+		PriceID: lo.ToPtr(p.ID), MeterID: lo.ToPtr(mtr.ID),
+	}
+
+	// No entry in overageCurves: this line has no normal sibling.
+	rows := s.svc.(*revenueService).decomposeOverageRows(ctx, sub, inputs, base, item, itemPeriod, map[string][]dayCharge{})
+
+	total := decimal.Zero
+	billed := 0
+	for _, r := range rows {
+		s.Equal(types.RevenueSourceOverage, r.RevenueSource)
+		s.Equal(types.Marginal, r.DecompositionMode)
+		total = total.Add(r.NetAmount)
+		if r.NetAmount.IsPositive() {
+			billed++
+			s.True(r.NetAmount.Equal(decimal.NewFromInt(1)),
+				"each window bills one package, got %s on %s", r.NetAmount, r.Day)
+		}
+	}
+	s.Equal(days, billed, "one billed row per window, not a re-priced running total")
+	s.True(total.Equal(item.Amount), "rows must still sum to the engine's line amount")
+}
