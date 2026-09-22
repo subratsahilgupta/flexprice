@@ -10,11 +10,23 @@ import (
 // never compare reconciliation amounts with ==.
 var reconcileEpsilon = decimal.RequireFromString("0.000001")
 
-// reconcileRow checks a marginal USAGE row's NetAmount against its decomposed
-// components. Non-usage and period_only rows carry the engine amount whole,
-// with nothing decomposed to check, so they always report ok.
+// carriesDecomposition reports whether a row was split into components worth
+// checking. A period_only row carries the engine amount whole. So does a
+// money-only row — a true-up, or an overage the engine reports as an amount
+// with no units behind it — which has no list rate or quantity to check
+// against. Everything else claims the identity and is held to it, whatever
+// its revenue source: the commitment split maintains it for overage rows too.
+func carriesDecomposition(f *revenuefact.RevenueFact) bool {
+	if f.DecompositionMode == types.PeriodOnly {
+		return false
+	}
+	return !f.UsageAtListRate.IsZero() || !f.TierDelta.IsZero() ||
+		!f.BillableQty.IsZero() || !f.EntitlementQty.IsZero()
+}
+
+// reconcileRow checks a decomposed row's NetAmount against its components.
 func reconcileRow(f *revenuefact.RevenueFact) (residual decimal.Decimal, ok bool) {
-	if f.RevenueSource != types.RevenueSourceUsage || f.DecompositionMode == types.PeriodOnly {
+	if !carriesDecomposition(f) {
 		return decimal.Zero, true
 	}
 

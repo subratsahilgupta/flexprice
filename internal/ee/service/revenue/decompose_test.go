@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/revenuefact"
@@ -90,6 +91,11 @@ func latestMeter(t *testing.T) *meter.Meter {
 	return &meter.Meter{ID: "meter_latest", Aggregation: meter.Aggregation{Type: types.AggregationLatest}}
 }
 
+func countUniqueMeter(t *testing.T) *meter.Meter {
+	t.Helper()
+	return &meter.Meter{ID: "meter_count_unique", Aggregation: meter.Aggregation{Type: types.AggregationCountUnique}}
+}
+
 func maxMeter(t *testing.T) *meter.Meter {
 	t.Helper()
 	return &meter.Meter{ID: "meter_max", Aggregation: meter.Aggregation{Type: types.AggregationMax}}
@@ -115,7 +121,29 @@ func TestDecompositionMode(t *testing.T) {
 	assert.Equal(t, types.PeriodOnly, decompositionMode(flat(t), bucketedMaxWeekly(t)))
 	assert.Equal(t, types.PeriodOnly, decompositionMode(flat(t), maxMeter(t)),
 		"plain MAX is not day-additive; the SUM-based curve cannot price it")
+	assert.Equal(t, types.PeriodOnly, decompositionMode(flat(t), countUniqueMeter(t)),
+		"a distinct count is not a running sum: the same event across two days adds once")
 	assert.Equal(t, types.Marginal, decompositionMode(graduated(t), countMeter(t)))
+
+	// Bucketed pricing is per window: only a flat fee stays day-additive.
+	bucketedSum := &meter.Meter{ID: "meter_bucketed_sum",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum, BucketSize: types.WindowSizeDay}}
+	pkg := &price.Price{ID: "price_pkg", Amount: decimal.NewFromInt(1),
+		BillingModel:      types.BILLING_MODEL_PACKAGE,
+		TransformQuantity: price.JSONBTransformQuantity{DivideBy: 10, Round: types.ROUND_UP}}
+	// Windows that nest inside a day are priced per window and grouped into
+	// days, whatever the pricing shape.
+	assert.Equal(t, types.Marginal, decompositionMode(pkg, bucketedSum))
+	assert.Equal(t, types.Marginal, decompositionMode(graduated(t), bucketedSum))
+	assert.Equal(t, types.Marginal, decompositionMode(flatSum(t), bucketedSum))
+
+	// Week and month windows span days, so their charge cannot land on one.
+	weekly := &meter.Meter{ID: "meter_bucketed_week",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum, BucketSize: types.WindowSizeWeek}}
+	monthly := &meter.Meter{ID: "meter_bucketed_month",
+		Aggregation: meter.Aggregation{Type: types.AggregationMax, BucketSize: types.WindowSizeMonth}}
+	assert.Equal(t, types.PeriodOnly, decompositionMode(flatSum(t), weekly))
+	assert.Equal(t, types.PeriodOnly, decompositionMode(flatSum(t), monthly))
 }
 
 // TestIsMultiPeriodCommitment covers the multi-period commitment detection
@@ -383,4 +411,119 @@ func TestDecomposeFixed_ExcludesTrueupAndOverage(t *testing.T) {
 
 	fixedLI := workedExampleFixedLineItem(t)
 	assert.NotNil(t, decomposeFixed(fixedLI, period))
+}
+
+// TestListRate_PerUnit: the list rate is per unit, whatever shape the price
+// takes. A package price's Amount buys a block, so charging the whole block
+// amount per unit inflated usage_at_list_rate and entitlement_amount by the
+// block size (seen on dev: 1.8 entitled hours priced at $1.80 instead of $0.18).
+func TestListRate_PerUnit(t *testing.T) {
+	pkg := &price.Price{
+		ID:                "price_pkg",
+		Amount:            decimal.NewFromInt(1),
+		BillingModel:      types.BILLING_MODEL_PACKAGE,
+		TransformQuantity: price.JSONBTransformQuantity{DivideBy: 10, Round: types.ROUND_UP},
+	}
+	assert.Equal(t, "0.1", listRate(pkg).String(), "package: amount spread over the block")
+
+	// A malformed package price must not divide by zero.
+	broken := &price.Price{ID: "price_pkg0", Amount: decimal.NewFromInt(1), BillingModel: types.BILLING_MODEL_PACKAGE}
+	assert.Equal(t, "1", listRate(broken).String())
+
+	assert.Equal(t, "0.01", listRate(flatSum(t)).String(), "flat fee: the amount is already per unit")
+	assert.Equal(t, "0.01", listRate(graduated(t)).String(), "tiered: the first tier's unit amount")
+}
+
+// TestDecomposeLineCommitmentRows_TrueUpAndOverageTogether: a per-bucket
+// (windowed) commitment settles each bucket on its own, so one line can carry
+// BOTH an overage (a bucket that ran over) and a true-up (a bucket that fell
+// short) — the engine folds both into the line's amount and reports them on
+// CommitmentInfo. The three parts must split back out, sum to the line, and
+// leave the discounts on the usage part only.
+func TestDecomposeLineCommitmentRows_TrueUpAndOverageTogether(t *testing.T) {
+	ctx := context.Background()
+	svc := &revenueService{ServiceParams: service.ServiceParams{Logger: logger.NewNoopLogger()}}
+
+	p, m := flatSum(t), sumMeter(t)
+	period := revenuePeriod{
+		Start: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC),
+	}
+	base := previewLineItem{
+		TenantID: "t", EnvironmentID: "e", CustomerID: "cust", SubscriptionID: "sub",
+		SubLineItemID: "sli", Price: p, Meter: m, Currency: "usd",
+		EngineAmount: decimal.NewFromInt(200),
+		LineDiscount: decimal.NewFromInt(10),
+		PeriodStart:  period.Start, PeriodEnd: period.End,
+	}
+	item := &dto.CreateInvoiceLineItemRequest{
+		Amount: decimal.NewFromInt(200),
+		CommitmentInfo: &types.CommitmentInfo{
+			IsWindowed:            true,
+			ComputedOverageAmount: decimal.NewFromInt(40),
+			ComputedTrueUpAmount:  decimal.NewFromInt(25),
+		},
+	}
+
+	rows, handled, err := svc.decomposeLineCommitmentRows(ctx, &subscription.Subscription{ID: "sub"},
+		&rollupInputs{}, base, item, period, p, m)
+	require.NoError(t, err)
+	require.True(t, handled, "a line carrying commitment amounts is decomposed here")
+	require.Len(t, rows, 3)
+
+	bySource := map[types.RevenueSource]*revenuefact.RevenueFact{}
+	for _, r := range rows {
+		bySource[r.RevenueSource] = r
+		assert.Equal(t, types.PeriodOnly, r.DecompositionMode, "windowed commitments settle per bucket, not per day")
+	}
+	// within = 200 - 40 overage - 25 true-up = 135, less the $10 line discount.
+	require.NotNil(t, bySource[types.RevenueSourceUsage])
+	assert.Equal(t, "125", bySource[types.RevenueSourceUsage].NetAmount.String())
+	assert.Equal(t, "40", bySource[types.RevenueSourceOverage].NetAmount.String())
+	assert.Equal(t, "25", bySource[types.RevenueSourceCommitmentTrueup].NetAmount.String())
+
+	// Only the usage part carries the discount, so the line still reconciles.
+	assert.Equal(t, "10", bySource[types.RevenueSourceUsage].LineDiscount.String())
+	assert.True(t, bySource[types.RevenueSourceOverage].LineDiscount.IsZero())
+	assert.True(t, bySource[types.RevenueSourceCommitmentTrueup].LineDiscount.IsZero())
+	if residual, ok := reconcileLineItem(rows, item.Amount.Sub(decimal.NewFromInt(10))); !ok {
+		t.Fatalf("line item must reconcile, residual %s", residual)
+	}
+}
+
+// TestDecomposeLineCommitmentRows_TrueUpOnlyKeepsDiscounts: a line whose meter
+// fired nothing bills its whole commitment as true-up. With no usage row to
+// carry them, the line's discounts must ride on the true-up row instead of
+// being dropped.
+func TestDecomposeLineCommitmentRows_TrueUpOnlyKeepsDiscounts(t *testing.T) {
+	ctx := context.Background()
+	svc := &revenueService{ServiceParams: service.ServiceParams{Logger: logger.NewNoopLogger()}}
+	p, m := flatSum(t), sumMeter(t)
+	period := revenuePeriod{
+		Start: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC),
+	}
+	base := previewLineItem{
+		TenantID: "t", EnvironmentID: "e", CustomerID: "cust", SubscriptionID: "sub",
+		SubLineItemID: "sli", Price: p, Meter: m, Currency: "usd",
+		EngineAmount:    decimal.NewFromInt(50),
+		InvoiceDiscount: decimal.NewFromInt(5),
+		PeriodStart:     period.Start, PeriodEnd: period.End,
+	}
+	item := &dto.CreateInvoiceLineItemRequest{
+		Amount: decimal.NewFromInt(50),
+		CommitmentInfo: &types.CommitmentInfo{
+			IsWindowed:           true,
+			ComputedTrueUpAmount: decimal.NewFromInt(50),
+		},
+	}
+
+	rows, handled, err := svc.decomposeLineCommitmentRows(ctx, &subscription.Subscription{ID: "sub"},
+		&rollupInputs{}, base, item, period, p, m)
+	require.NoError(t, err)
+	require.True(t, handled)
+	require.Len(t, rows, 1, "a silent meter books only its true-up")
+	assert.Equal(t, types.RevenueSourceCommitmentTrueup, rows[0].RevenueSource)
+	assert.Equal(t, "45", rows[0].NetAmount.String(), "50 true-up less the 5 invoice discount")
+	assert.Equal(t, "5", rows[0].InvoiceDiscount.String())
 }

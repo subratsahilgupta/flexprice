@@ -14057,9 +14057,6 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.Metric"
                     }
                 },
-                "name": {
-                    "type": "string"
-                },
                 "shape": {
                     "enum": [
                         "timeseries",

@@ -266,9 +266,29 @@ func (a *revenueAggregation) fold(group map[string]string, adjType string, day, 
 
 // response sorts the buckets by time bucket first, then by group values, with
 // adjustment rows after their plain siblings.
+// emptyRow reports whether a bucket carries no value at all. Days a line item
+// was rolled over but saw nothing — before a commitment is crossed, or a meter
+// that was idle — produce such buckets, and they are noise in a response. A
+// day of fully entitled usage is NOT empty: its quantity columns say what the
+// entitlement absorbed.
+func emptyRow(r *dto.RevenueAnalyticsRow) bool {
+	for _, v := range []decimal.Decimal{
+		r.NetAmount, r.UsageAtListRate, r.TierDelta, r.EntitlementAmount,
+		r.LineDiscount, r.InvoiceDiscount, r.BillableQty, r.EntitlementQty,
+	} {
+		if !v.IsZero() {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *revenueAggregation) response() *dto.RevenueAnalyticsResponse {
 	rows := make([]*dto.RevenueAnalyticsRow, 0, len(a.buckets))
 	for _, row := range a.buckets {
+		if emptyRow(row) {
+			continue
+		}
 		rows = append(rows, row)
 	}
 	sort.Slice(rows, func(i, j int) bool {

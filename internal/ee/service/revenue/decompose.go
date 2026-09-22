@@ -136,6 +136,17 @@ type dayCharge struct {
 // sum-shaped billing correctly. MAX pricing (plain or bucketed at any size)
 // stays whole-period until the curve can read per-day maxes.
 func decompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
+	// Bucketed pricing charges each window on its own quantity, so the
+	// cumulative curve cannot reproduce it — buildBucketedCurve prices the
+	// windows instead and groups them into days. That works for any window
+	// that nests inside a day, whatever the aggregation or tier mode; week
+	// and month windows span days and cannot be attributed to one.
+	if price.IsBucketed(p, m) {
+		if bucketedDayGrain(p, m) {
+			return types.Marginal
+		}
+		return types.PeriodOnly
+	}
 	if p != nil && p.TierMode == types.BILLING_TIER_VOLUME {
 		return types.PeriodOnly
 	}
@@ -143,10 +154,12 @@ func decompositionMode(p *price.Price, m *meter.Meter) types.DecompositionMode {
 		switch m.Aggregation.Type {
 		case types.AggregationLatest, types.AggregationAvg, types.AggregationWeightedSum, types.AggregationMax:
 			return types.PeriodOnly
+		case types.AggregationCountUnique:
+			// The curve reads SUM(qty_total); a distinct count is
+			// COUNT(DISTINCT unique_hash), which no running sum reproduces —
+			// the same event repeating across days must not add twice.
+			return types.PeriodOnly
 		}
-	}
-	if price.IsBucketedMax(p, m) {
-		return types.PeriodOnly
 	}
 	return types.Marginal
 }
@@ -320,6 +333,12 @@ func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefac
 func listRate(p *price.Price) decimal.Decimal {
 	if len(p.Tiers) > 0 {
 		return p.Tiers[0].UnitAmount
+	}
+	// A package price's Amount buys a whole block of units, so the per-unit
+	// list rate is that amount spread over the block. TierDelta then carries
+	// the step-rounding the block pricing applies.
+	if p.BillingModel == types.BILLING_MODEL_PACKAGE && p.TransformQuantity.DivideBy > 0 {
+		return p.Amount.Div(decimal.NewFromInt(int64(p.TransformQuantity.DivideBy)))
 	}
 	return p.Amount
 }
