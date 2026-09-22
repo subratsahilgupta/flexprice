@@ -24027,7 +24027,6 @@
       },
       "RevenueAnalyticsRequest": {
         "required": [
-          "end_time",
           "start_time"
         ],
         "type": "object",
@@ -24077,7 +24076,7 @@
           },
           "start_time": {
             "type": "string",
-            "description": "StartTime/EndTime bound the day range (inclusive days derived in UTC).",
+            "description": "StartTime/EndTime bound the day range (inclusive days derived in UTC).\nEndTime is optional and defaults to now.",
             "format": "date-time"
           },
           "status": {
@@ -24097,6 +24096,9 @@
           "contains_allocated": {
             "type": "boolean",
             "description": "ContainsAllocated is true when any bucket includes whole-period amounts\nspread across days (amortized) or booked on a single day (billed) \u2014\ni.e. the day view carries period-shaped charges, not only true daily\naccruals."
+          },
+          "query": {
+            "$ref": "#/components/schemas/RevenueAnalyticsRequest"
           },
           "rows": {
             "type": "array",

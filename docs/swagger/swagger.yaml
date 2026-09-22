@@ -6079,8 +6079,9 @@ definitions:
           type: string
         type: array
       start_time:
-        description: StartTime/EndTime bound the day range (inclusive days derived
-          in UTC).
+        description: |-
+          StartTime/EndTime bound the day range (inclusive days derived in UTC).
+          EndTime is optional and defaults to now.
         type: string
       status:
         allOf:
@@ -6093,7 +6094,6 @@ definitions:
           type: string
         type: array
     required:
-    - end_time
     - start_time
     type: object
   RevenueAnalyticsResponse:
@@ -6105,6 +6105,14 @@ definitions:
           i.e. the day view carries period-shaped charges, not only true daily
           accruals.
         type: boolean
+      query:
+        allOf:
+        - $ref: '#/definitions/RevenueAnalyticsRequest'
+        description: |-
+          Query echoes the request with defaults resolved. Rows carry only the
+          requested group dimensions, so this is what says which customers,
+          subscriptions and window they cover — add customer_id/subscription_id
+          to group_by for per-entity rows.
       rows:
         items:
           $ref: '#/definitions/RevenueAnalyticsRow'

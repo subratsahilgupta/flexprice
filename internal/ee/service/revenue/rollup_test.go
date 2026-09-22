@@ -1398,3 +1398,54 @@ func (s *RevenueRollupSuite) TestE2E_LineItemCommitment() {
 	}
 	s.True(bookedTotal.Equal(inv.Subtotal.Sub(inv.TotalDiscount)), "FINAL rows must sum to the invoice")
 }
+
+// TestGetRevenueAnalytics_EventSourceGroupingSpansWholeDays: a request whose
+// bounds fall inside a day must still attribute that day's usage. Facts are
+// day-grained, so reading the source shares over the raw clock bounds left
+// edge-day facts unattributed (seen in staging: events at 16:22 with a
+// request ending 15:13 returned source "").
+func (s *RevenueRollupSuite) TestGetRevenueAnalytics_EventSourceGroupingSpansWholeDays() {
+	ctx := s.ctx
+	s.seedWorkedExample(ctx)
+	s.enableRevenueAnalytics(ctx)
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+
+	// seedWorkedExample fires every event at 12:00; bound the request at 09:00
+	// on both edges so each edge day's events sit outside the raw window.
+	req := &dto.RevenueAnalyticsRequest{
+		StartTime:          s.periodStart.Add(9 * time.Hour),
+		EndTime:            s.periodEnd.AddDate(0, 0, -1).Add(9 * time.Hour),
+		Granularity:        types.RevenueGranularityTotal,
+		GroupBy:            []string{"source"},
+		Status:             types.FactProvisional,
+		SubscriptionIDs:    []string{s.sub.ID},
+		IncludeAdjustments: true,
+	}
+	res, err := s.svc.GetRevenueAnalytics(ctx, req)
+	s.NoError(err)
+
+	bySource := map[string]decimal.Decimal{}
+	for _, r := range res.Rows {
+		bySource[r.Group["source"]] = bySource[r.Group["source"]].Add(r.NetAmount)
+	}
+	s.True(bySource["api"].Equal(decimal.NewFromInt(180)), "api usage stays attributed, got %s", bySource["api"])
+	s.True(bySource["sdk"].Equal(decimal.NewFromInt(180)), "sdk usage stays attributed, got %s", bySource["sdk"])
+
+	// Only charges with no events behind them (the fixed fee, the true-up)
+	// stay unattributed — never plain usage.
+	for _, r := range res.Rows {
+		if r.Group["source"] == "" {
+			s.NotEqual(string(types.RevenueSourceUsage), r.Group["revenue_source"],
+				"usage revenue must never land unattributed when events exist")
+		}
+	}
+
+	// The response says what it covers, so a row set reads on its own.
+	s.NotNil(res.Query)
+	s.Equal([]string{s.sub.ID}, res.Query.SubscriptionIDs)
+
+	// end_time is optional: it defaults to now instead of failing validation.
+	open := &dto.RevenueAnalyticsRequest{StartTime: time.Now().UTC().AddDate(0, 0, -7)}
+	s.NoError(open.Validate())
+	s.False(open.EndTime.IsZero(), "end_time must default to now")
+}

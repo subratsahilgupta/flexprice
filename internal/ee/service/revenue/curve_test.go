@@ -568,3 +568,42 @@ func TestSplitCurveAtCommitment_GraduatedQuantitySplit(t *testing.T) {
 			normal[i].CumulativeBillableQty.Add(overage[i].CumulativeBillableQty), "day", i)
 	}
 }
+
+// TestBuildUsageCurve_ClampsToToday: an open period books rows only through
+// today (its remaining days have not happened), a period that has not started
+// books nothing at all, and a period shorter than a day still books its one
+// day — the one-day fallback must survive the clamp.
+func TestBuildUsageCurve_ClampsToToday(t *testing.T) {
+	ctx := context.Background()
+	svc := &revenueService{ServiceParams: service.ServiceParams{
+		Logger:         logger.NewNoopLogger(),
+		MeterUsageRepo: testutil.NewInMemoryMeterUsageStore(),
+		PriceRepo:      testutil.NewInMemoryPriceStore(),
+		MeterRepo:      testutil.NewInMemoryMeterStore(),
+		PlanRepo:       testutil.NewInMemoryPlanStore(),
+		PriceUnitRepo:  testutil.NewInMemoryPriceUnitStore(),
+		AddonRepo:      testutil.NewInMemoryAddonStore(),
+		SubRepo:        testutil.NewInMemorySubscriptionStore(),
+	}}
+	// One fixed instant drives both the expectations and the clamp, so the
+	// test cannot straddle a UTC midnight between the two.
+	asOf := time.Date(2026, 5, 15, 13, 0, 0, 0, time.UTC)
+	today := asOf.Truncate(24 * time.Hour)
+	in := func(start, end time.Time) usageCurveInput {
+		return usageCurveInput{Price: flatSum(t), MeterID: "meter_clamp", PeriodStart: start, PeriodEnd: end, AsOf: asOf}
+	}
+
+	open, err := svc.buildUsageCurve(ctx, in(today.AddDate(0, 0, -4), today.AddDate(0, 0, 26)))
+	require.NoError(t, err)
+	require.Len(t, open, 5, "four elapsed days plus today, not the whole 30-day period")
+	assert.True(t, open[len(open)-1].Day.Equal(today), "last row is today, got %s", open[len(open)-1].Day)
+
+	future, err := svc.buildUsageCurve(ctx, in(today.AddDate(0, 0, 3), today.AddDate(0, 1, 3)))
+	require.NoError(t, err)
+	assert.Empty(t, future, "a period that has not started books no rows")
+
+	past := today.AddDate(0, 0, -2)
+	short, err := svc.buildUsageCurve(ctx, in(past, past.Add(6*time.Hour)))
+	require.NoError(t, err)
+	assert.Len(t, short, 1, "a sub-day period still books its single day")
+}
