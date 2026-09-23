@@ -9,10 +9,8 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-// notifyInvoiceFinalized emits the invoice.update.finalized webhook and kicks
-// the async revenue-facts FINAL flip. Every finalization path must call this
-// (not the two pieces separately) so the webhook and the facts flip can never
-// drift apart.
+// notifyInvoiceFinalized emits the finalized webhook and kicks the revenue-facts
+// FINAL flip. Finalization paths call this, never the two pieces separately.
 func notifyInvoiceFinalized(ctx context.Context, params ServiceParams, invoiceID string) {
 	publishInvoiceWebhook(ctx, params, types.WebhookEventInvoiceUpdateFinalized, invoiceID)
 	asyncRevenueFactsUpdate(ctx, params, "final flip", invoiceID,
@@ -21,8 +19,7 @@ func notifyInvoiceFinalized(ctx context.Context, params ServiceParams, invoiceID
 		})
 }
 
-// notifyInvoiceVoided emits the invoice.update.voided webhook and kicks the
-// async revenue-facts revert — the void-side twin of notifyInvoiceFinalized.
+// notifyInvoiceVoided is the void-side twin of notifyInvoiceFinalized.
 func notifyInvoiceVoided(ctx context.Context, params ServiceParams, invoiceID string) {
 	publishInvoiceWebhook(ctx, params, types.WebhookEventInvoiceUpdateVoided, invoiceID)
 	asyncRevenueFactsUpdate(ctx, params, "revert", invoiceID,
@@ -31,38 +28,44 @@ func notifyInvoiceVoided(ctx context.Context, params ServiceParams, invoiceID st
 		})
 }
 
-// asyncRevenueFactsUpdate runs one revenue_facts update (final flip, revert)
-// detached from the caller's request: revenue_facts is a shadow write-path,
-// so an invoice operation must never wait on it or fail because of it.
-//
-// Delivery is deliberately best-effort. Every operation is idempotent, and a
-// run lost to a crash surfaces as a reconciliation gap the periodic rollup /
-// drift sweep repairs — promote this to a Temporal workflow if facts ever
-// need guaranteed delivery ahead of that sweep.
+// asyncRevenueFactsUpdate runs one revenue_facts update detached from the
+// caller: an invoice operation must never wait on the shadow path or fail with
+// it. Delivery is best-effort — every operation is idempotent, and a lost run
+// shows up as a gap the rollup and drift sweep repair.
 func asyncRevenueFactsUpdate(ctx context.Context, params ServiceParams, op, invoiceID string, run func(context.Context, interfaces.RevenueService) error) {
 	if params.RevenueFacts == nil {
 		// Not wired in this deployment/test context.
 		return
 	}
 
-	// WithoutCancel keeps tenant/environment values while surviving the
-	// request; the timeout stops a stuck write from leaking the goroutine.
-	asyncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
-	go func() {
-		defer cancel()
-		// A panic in the shadow path must never crash the process.
-		defer func() {
-			if r := recover(); r != nil {
-				params.Logger.Error(asyncCtx, "panic in revenue facts "+op,
-					"error", fmt.Sprintf("%v", r),
+	// Keep the tenant scope, drop the caller's transaction: sharing its
+	// connection past the commit corrupts that connection for everyone.
+	detached := types.WithoutDBTransaction(context.WithoutCancel(ctx))
+
+	start := func() {
+		asyncCtx, cancel := context.WithTimeout(detached, time.Minute)
+		go func() {
+			defer cancel()
+			// A panic in the shadow path must never crash the process.
+			defer func() {
+				if r := recover(); r != nil {
+					params.Logger.Error(asyncCtx, "panic in revenue facts "+op,
+						"error", fmt.Sprintf("%v", r),
+						"invoice_id", invoiceID)
+				}
+			}()
+
+			if err := run(asyncCtx, params.RevenueFacts); err != nil {
+				params.Logger.Error(asyncCtx, "revenue facts "+op+" failed",
+					"error", err,
 					"invoice_id", invoiceID)
 			}
 		}()
+	}
 
-		if err := run(asyncCtx, params.RevenueFacts); err != nil {
-			params.Logger.Error(asyncCtx, "revenue facts "+op+" failed",
-				"error", err,
-				"invoice_id", invoiceID)
-		}
-	}()
+	// The update reads the invoice this transaction is still writing, so wait
+	// for the commit to publish it rather than racing ahead of it.
+	if !types.RegisterPostCommit(ctx, start) {
+		start()
+	}
 }
