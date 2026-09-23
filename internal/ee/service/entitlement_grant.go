@@ -1141,6 +1141,7 @@ func (s *entitlementGrantService) GrantStateByFeature(
 			ValidTo:        g.ValidTo,
 			Status:         g.GrantStatus,
 			LastComputedAt: g.LastComputedAt,
+			QuotaCrossedAt: g.QuotaCrossedAt,
 			IsActive:       !g.ValidFrom.After(at) && g.ValidTo.After(at),
 		}
 		state.Allowances = append(state.Allowances, window)

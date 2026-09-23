@@ -68,6 +68,7 @@ type GrantAllowanceState struct {
 	Status         types.EntitlementGrantStatus  `json:"status"`
 	IsActive       bool                          `json:"is_active"`
 	LastComputedAt *time.Time                    `json:"last_computed_at,omitempty"`
+	QuotaCrossedAt *time.Time                    `json:"quota_crossed_at,omitempty"`
 }
 
 // AggregatedEntitlement contains the final calculated entitlement values.
@@ -184,6 +185,8 @@ type FeatureUsageSummary struct {
 	NextUsageResetAt *time.Time           `json:"next_usage_reset_at"`
 	Sources          []*EntitlementSource `json:"sources"`
 	GrantState       *GrantState          `json:"grant_state,omitempty"`
+
+	GrantConfig
 
 	// Buckets is one entry per independent budget on a parallel feature. The scalar
 	// figures above cannot describe several budgets at once — a sum is not spendable

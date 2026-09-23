@@ -2624,3 +2624,28 @@ func (s *EntitlementGrantSuite) TestSubscriptionOverride_BoundedNeedsAQuota() {
 		}})
 	s.Error(err, "a ceiling and no ceiling cannot both be asked for")
 }
+
+// A reader asking why a window is exhausted wants the crossing, not ValidTo:
+// overage is billed from the crossing onward.
+func (s *EntitlementGrantSuite) TestGrantState_ReportsQuotaCrossedAt() {
+	ctx := s.GetContext()
+	fx := s.newWindowFixture("state-crossed", 24)
+	crossed := fx.cycleStart.Add(90 * time.Minute)
+
+	s.seedLiveWindow(fx, "eg-crossed", decimal.NewFromInt(100), decimal.NewFromInt(140), &crossed)
+	s.seedWindowFrom(fx, "eg-open", fx.cycleStart.Add(2*time.Hour), decimal.NewFromInt(100), decimal.NewFromInt(10), nil)
+
+	states, err := s.grantService.GrantStateByFeature(ctx, fx.sub, fx.cycleStart.Add(3*time.Hour))
+	s.Require().NoError(err)
+	state := states[fx.ec.FeatureID]
+	s.Require().NotNil(state)
+
+	byID := map[string]*dto.GrantAllowanceState{}
+	for _, a := range state.Allowances {
+		byID[a.GrantID] = a
+	}
+
+	s.Require().NotNil(byID["eg-crossed"].QuotaCrossedAt, "a window over its quota must report when it crossed")
+	s.True(byID["eg-crossed"].QuotaCrossedAt.Equal(crossed))
+	s.Nil(byID["eg-open"].QuotaCrossedAt, "a window with room left has not crossed")
+}
