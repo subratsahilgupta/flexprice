@@ -62,3 +62,69 @@ func TestAsyncRevenueFactsUpdate_DropsCallerTransaction(t *testing.T) {
 		t.Fatal("the detached update never ran")
 	}
 }
+
+// TestAsyncRevenueFactsUpdate_WaitsForCommit: the update reads the invoice the
+// caller's transaction is still writing. Fired immediately it would read from
+// another connection, see nothing, and leave the flip to the drift sweep — so
+// inside a transaction it queues and runs only once the commit publishes the
+// write. A rollback never runs it at all.
+func TestAsyncRevenueFactsUpdate_WaitsForCommit(t *testing.T) {
+	ctx := types.SetTenantID(context.Background(), "tenant_hook")
+	ctx = types.SetEnvironmentID(ctx, "env_hook")
+	ctx = context.WithValue(ctx, types.CtxDBTransaction, &ent.Tx{})
+	ctx = types.WithPostCommitHooks(ctx)
+
+	ran := make(chan struct{}, 1)
+	params := ServiceParams{Logger: logger.NewNoopLogger(), RevenueFacts: noopRevenueFacts{}}
+	fire := func() {
+		asyncRevenueFactsUpdate(ctx, params, "test", "inv_hook",
+			func(context.Context, interfaces.RevenueService) error {
+				ran <- struct{}{}
+				return nil
+			})
+	}
+
+	fire()
+	select {
+	case <-ran:
+		t.Fatal("the update ran while the transaction was still open")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	types.RunPostCommitHooks(ctx)
+	select {
+	case <-ran:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the update never ran after the commit")
+	}
+
+	// Queued work belongs to the transaction that produced it: a rollback
+	// simply never runs the hooks.
+	fire()
+	select {
+	case <-ran:
+		t.Fatal("the update ran without a commit")
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+// TestAsyncRevenueFactsUpdate_RunsImmediatelyOutsideTransaction: the
+// payment-processor path calls this with no transaction open, and must not
+// wait for a commit that will never come.
+func TestAsyncRevenueFactsUpdate_RunsImmediatelyOutsideTransaction(t *testing.T) {
+	ctx := types.SetTenantID(context.Background(), "tenant_hook")
+	ran := make(chan struct{}, 1)
+	params := ServiceParams{Logger: logger.NewNoopLogger(), RevenueFacts: noopRevenueFacts{}}
+
+	asyncRevenueFactsUpdate(ctx, params, "test", "inv_hook",
+		func(context.Context, interfaces.RevenueService) error {
+			ran <- struct{}{}
+			return nil
+		})
+
+	select {
+	case <-ran:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the update never ran")
+	}
+}

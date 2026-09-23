@@ -3,6 +3,7 @@ package types
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 )
 
@@ -18,6 +19,7 @@ const (
 	CtxDBTransaction ContextKey = "ctx_db_transaction"
 	CtxForceWriter   ContextKey = "ctx_force_writer" // Force DB operations to use writer connection
 	CtxWriterPin     ContextKey = "ctx_writer_pin"   // Mutable read-your-writes pin, installed per unit of work
+	CtxPostCommit    ContextKey = "ctx_post_commit"  // Mutable post-commit hook list, installed per transaction
 	CtxRoles         ContextKey = "ctx_roles"        // RBAC roles array for permission checks
 
 	// Default values
@@ -203,6 +205,50 @@ func ValidateTenantContext(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// postCommitHooks collects work deferred until the current transaction
+// commits. The transaction wrapper installs it; callers queue through
+// RegisterPostCommit.
+type postCommitHooks struct {
+	mu    sync.Mutex
+	funcs []func()
+}
+
+// WithPostCommitHooks installs an empty hook list for one transaction.
+func WithPostCommitHooks(ctx context.Context) context.Context {
+	return context.WithValue(ctx, CtxPostCommit, &postCommitHooks{})
+}
+
+// RegisterPostCommit queues fn to run once the current transaction commits,
+// reporting false when there is no transaction to wait for so the caller can
+// run fn itself. Work that reads what the transaction wrote must go through
+// here: uncommitted rows are invisible on any other connection.
+func RegisterPostCommit(ctx context.Context, fn func()) bool {
+	hooks, ok := ctx.Value(CtxPostCommit).(*postCommitHooks)
+	if !ok || hooks == nil {
+		return false
+	}
+	hooks.mu.Lock()
+	defer hooks.mu.Unlock()
+	hooks.funcs = append(hooks.funcs, fn)
+	return true
+}
+
+// RunPostCommitHooks runs the queued hooks and clears them. A rollback simply
+// never calls this, dropping the work with the transaction that produced it.
+func RunPostCommitHooks(ctx context.Context) {
+	hooks, ok := ctx.Value(CtxPostCommit).(*postCommitHooks)
+	if !ok || hooks == nil {
+		return
+	}
+	hooks.mu.Lock()
+	queued := hooks.funcs
+	hooks.funcs = nil
+	hooks.mu.Unlock()
+	for _, fn := range queued {
+		fn()
+	}
 }
 
 // WithoutDBTransaction strips any open transaction from ctx.

@@ -244,6 +244,10 @@ func (c *Client) withTx(ctx context.Context, fn func(ctx context.Context) error)
 	// this is important to prevent issues with read after write consistency
 	txCtx = types.WithForceWriter(txCtx)
 
+	// Work that must observe this transaction's writes queues here and runs
+	// below, once the commit has made those writes visible.
+	txCtx = types.WithPostCommitHooks(txCtx)
+
 	if err := fn(txCtx); err != nil {
 		if rerr := tx.Rollback(); rerr != nil {
 			err = fmt.Errorf("rolling back transaction: %v (original error: %w)", rerr, err)
@@ -262,6 +266,7 @@ func (c *Client) withTx(ctx context.Context, fn func(ctx context.Context) error)
 	}
 
 	c.logger.Debug(ctx, "committed transaction")
+	types.RunPostCommitHooks(txCtx)
 	return nil
 }
 
