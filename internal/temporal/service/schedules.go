@@ -132,6 +132,16 @@ func AllTemporalScheduleConfigs() []types.ScheduleConfig {
 			Input:     invoiceModels.ScheduleDraftFinalizationWorkflowInput{BatchSize: types.DEFAULT_BATCH_SIZE},
 			TaskQueue: types.TemporalTaskQueueInvoice,
 		},
+		{
+			// Always declared; analytics.revenue_rollup.enabled acts as a kill
+			// switch inside RollupDirtyActivity, and tenants opt in via settings.
+			ID:        types.ScheduleIDRevenueRollup,
+			Interval:  24 * time.Hour,
+			Offset:    3 * time.Hour, // daily at 03:00 UTC by default
+			Workflow:  cronWorkflows.RevenueRollupWorkflow,
+			Input:     models.RevenueRollupInput{Interval: 24 * time.Hour},
+			TaskQueue: types.TemporalTaskQueueCron,
+		},
 	}
 }
 

@@ -68,6 +68,8 @@ type GrantChangeConfig struct {
 
 	// entitlementChangeAt is the instant every window of this change is cut at.
 	entitlementChangeAt time.Time
+
+	entitlementChangeOrigin grantProrationSource
 }
 
 type subscriptionGrantService struct {
