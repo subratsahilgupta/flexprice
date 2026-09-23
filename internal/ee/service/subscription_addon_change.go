@@ -265,6 +265,10 @@ func resolveAttachChangeAt(
 		resolved.ChangeAt = nil
 	}
 
+	if resolved.StartDate == nil {
+		resolved.StartDate = lo.ToPtr(now)
+	}
+
 	return resolved
 }
 
@@ -306,6 +310,7 @@ func (s *addonChangeService) grantChangeRequest(config *addonChangeConfig) Grant
 		req.Incoming = append(req.Incoming, GrantSource{
 			ChangeType:    grantChangeTypeFor(sub, attach.getEffectiveDate()),
 			EffectiveDate: attach.getEffectiveDate(),
+			RequestedDate: attach.getRequestedStart(),
 			EndDate:       attach.getAssociation().EndDate,
 			Behavior:      attach.getRequest().ProrationBehavior,
 			Origin:        grantProrationSourceAddonAttach,

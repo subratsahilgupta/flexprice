@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/addonassociation"
@@ -10,10 +11,17 @@ import (
 	"github.com/samber/lo"
 )
 
-// A metered feature measures usage over one reset period, so every config feeding it has to
-// agree on which. validateEntitlementCompatibility checks the set the change LEAVES BEHIND
-// rather than the one it starts from: a swap replacing A with B on a feature is legal even
-// when their periods differ, while two adds that disagree with each other are not.
+// featureHolder is one config measuring a feature, and when the change takes it away.
+type featureHolder struct {
+	reset types.EntitlementUsageResetPeriod
+	// departsAt is set only for a config this change removes; until then it still measures.
+	departsAt *time.Time
+}
+
+// validateEntitlementCompatibility rejects a change whose entries disagree about a feature,
+// on either axis a shared feature has: how it is measured, and when the change reaches it.
+// Both are judged on the set the change LEAVES BEHIND rather than the one it starts from, so
+// a swap replacing A with B is legal where two adds contradicting each other are not.
 //
 // Known limitation: a removal is resolved to its addon's entitlements, so removing one of
 // several live instances of the same addon frees the feature here while another instance is
@@ -22,7 +30,7 @@ func (s *subscriptionGrantService) validateEntitlementCompatibility(
 	ctx context.Context,
 	req GrantChangeRequest,
 ) error {
-	incomingByAddon, err := s.meteredEntitlementsByAddon(ctx, addonIDsOf(req.Incoming))
+	incomingByAddon, err := s.entitlementsByAddon(ctx, addonIDsOf(req.Incoming))
 	if err != nil {
 		return err
 	}
@@ -30,41 +38,117 @@ func (s *subscriptionGrantService) validateEntitlementCompatibility(
 		return nil
 	}
 
-	resetByFeature, err := s.survivingMeteredResetPeriods(ctx, req)
+	if err := s.validateResetPeriods(ctx, req, incomingByAddon); err != nil {
+		return err
+	}
+
+	return validateGrantDates(req, incomingByAddon)
+}
+
+// A metered feature measures usage over one reset period, so every config feeding it has to
+// agree on which.
+func (s *subscriptionGrantService) validateResetPeriods(
+	ctx context.Context,
+	req GrantChangeRequest,
+	incomingByAddon map[string][]*dto.EntitlementResponse,
+) error {
+	holders, err := s.meteredFeatureHolders(ctx, req)
 	if err != nil {
 		return err
 	}
 
-	// Folded one at a time against the accumulating map, so two incoming configs that
+	// Folded one entry at a time into the accumulating map, so two incoming configs that
 	// disagree with each other are caught as well as one disagreeing with a survivor.
-	for _, addonID := range addonIDsOf(req.Incoming) {
-		for _, ent := range incomingByAddon[addonID] {
-			existing, seen := resetByFeature[ent.FeatureID]
-			if seen && existing != ent.UsageResetPeriod {
+	for _, src := range req.Incoming {
+		for _, ent := range incomingByAddon[src.AddonID] {
+			if ent.FeatureType != types.FeatureTypeMetered {
+				continue
+			}
+
+			for _, held := range holders[ent.FeatureID] {
+				if held.reset == ent.UsageResetPeriod {
+					continue
+				}
+				// A config already gone by the time this entry lands cannot conflict with it.
+				if held.departsAt != nil && !held.departsAt.After(src.EffectiveDate) {
+					continue
+				}
+
 				return ierr.NewError("metered feature usage reset period conflict").
 					WithHintf("Feature %s is already measured over %s, but this addon measures it over %s",
-						ent.FeatureID, existing, ent.UsageResetPeriod).
+						ent.FeatureID, held.reset, ent.UsageResetPeriod).
 					WithReportableDetails(map[string]any{
 						"subscription_id": req.Sub.ID,
-						"addon_id":        addonID,
+						"addon_id":        src.AddonID,
 						"feature_id":      ent.FeatureID,
 					}).
 					Mark(ierr.ErrValidation)
 			}
-			resetByFeature[ent.FeatureID] = ent.UsageResetPeriod
+
+			holders[ent.FeatureID] = append(holders[ent.FeatureID],
+				featureHolder{reset: ent.UsageResetPeriod})
 		}
 	}
 
 	return nil
 }
 
-// survivingMeteredResetPeriods is what still measures each metered feature once the change's
-// removals are gone: the subscription's own configs minus the departing addons', plus the
-// addons already attached but awaiting payment.
-func (s *subscriptionGrantService) survivingMeteredResetPeriods(
+// Addons funding one feature pool into a single grant window, and one window carries one
+// coefficient, so entries landing on one feature must have asked for the same date. They are
+// compared on the date requested rather than the date resolved: the resolved one is clamped
+// per price, so two entries that asked to start together can resolve moments apart.
+func validateGrantDates(
+	req GrantChangeRequest,
+	incomingByAddon map[string][]*dto.EntitlementResponse,
+) error {
+	dateByFeature := make(map[string]time.Time)
+	addonByFeature := make(map[string]string)
+
+	for _, src := range req.Incoming {
+		// Mirrors sourceGrantECs: an entry that opens no window this cycle cannot collide.
+		if src.ChangeType == types.ScheduleTypePeriodEnd ||
+			!src.requestedDate().Before(req.Sub.CurrentPeriodEnd) {
+			continue
+		}
+
+		for _, ent := range incomingByAddon[src.AddonID] {
+			if ent.Entitlement == nil || !ent.Entitlement.HasGrantConfig() {
+				continue
+			}
+
+			at, seen := dateByFeature[ent.FeatureID]
+			if !seen {
+				dateByFeature[ent.FeatureID] = src.requestedDate()
+				addonByFeature[ent.FeatureID] = src.AddonID
+				continue
+			}
+			if at.Equal(src.requestedDate()) {
+				continue
+			}
+
+			return ierr.NewError("addons granting the same feature must share an effective date").
+				WithHint("Send them as separate changes, or give both the same date").
+				WithReportableDetails(map[string]any{
+					"subscription_id": req.Sub.ID,
+					"feature_id":      ent.FeatureID,
+					"addon_ids":       []string{addonByFeature[ent.FeatureID], src.AddonID},
+					"dates":           []string{at.String(), src.requestedDate().String()},
+				}).
+				Mark(ierr.ErrValidation)
+		}
+	}
+
+	return nil
+}
+
+// meteredFeatureHolders is everything measuring each metered feature once the change lands:
+// the subscription's own configs, the addons already attached but awaiting payment, and the
+// departing configs with the date they leave — a period-end removal still measures its
+// feature until then.
+func (s *subscriptionGrantService) meteredFeatureHolders(
 	ctx context.Context,
 	req GrantChangeRequest,
-) (map[string]types.EntitlementUsageResetPeriod, error) {
+) (map[string][]featureHolder, error) {
 	subSvc := &subscriptionService{ServiceParams: s.ServiceParams}
 
 	current, err := subSvc.GetSubscriptionEntitlementsForSubscription(ctx, req.Sub)
@@ -72,17 +156,29 @@ func (s *subscriptionGrantService) survivingMeteredResetPeriods(
 		return nil, err
 	}
 
-	leaving := lo.SliceToMap(addonIDsOf(req.Removed), func(id string) (string, bool) { return id, true })
+	departures := make(map[string]time.Time, len(req.Removed))
+	for _, src := range req.Removed {
+		if src.AddonID == "" {
+			continue
+		}
+		if at, seen := departures[src.AddonID]; !seen || src.EffectiveDate.Before(at) {
+			departures[src.AddonID] = src.EffectiveDate
+		}
+	}
 
-	resetByFeature := make(map[string]types.EntitlementUsageResetPeriod)
+	holders := make(map[string][]featureHolder)
 	for _, ent := range current {
 		if ent == nil || ent.Entitlement == nil || ent.FeatureType != types.FeatureTypeMetered {
 			continue
 		}
-		if ent.EntityType == types.ENTITLEMENT_ENTITY_TYPE_ADDON && leaving[ent.EntityID] {
-			continue
+
+		held := featureHolder{reset: ent.UsageResetPeriod}
+		if ent.EntityType == types.ENTITLEMENT_ENTITY_TYPE_ADDON {
+			if at, leaving := departures[ent.EntityID]; leaving {
+				held.departsAt = lo.ToPtr(at)
+			}
 		}
-		resetByFeature[ent.FeatureID] = ent.UsageResetPeriod
+		holders[ent.FeatureID] = append(holders[ent.FeatureID], held)
 	}
 
 	// A pending attach holds its feature too, or a second attach could contradict it while
@@ -97,23 +193,26 @@ func (s *subscriptionGrantService) survivingMeteredResetPeriods(
 	pendingIDs := lo.FilterMap(pending, func(a *addonassociation.AddonAssociation, _ int) (string, bool) {
 		return a.AddonID, a != nil && !arriving[a.AddonID]
 	})
-	pendingByAddon, err := s.meteredEntitlementsByAddon(ctx, lo.Uniq(pendingIDs))
+	pendingByAddon, err := s.entitlementsByAddon(ctx, lo.Uniq(pendingIDs))
 	if err != nil {
 		return nil, err
 	}
 	for _, ents := range pendingByAddon {
 		for _, ent := range ents {
-			if _, seen := resetByFeature[ent.FeatureID]; !seen {
-				resetByFeature[ent.FeatureID] = ent.UsageResetPeriod
+			if ent.FeatureType != types.FeatureTypeMetered {
+				continue
 			}
+			holders[ent.FeatureID] = append(holders[ent.FeatureID],
+				featureHolder{reset: ent.UsageResetPeriod})
 		}
 	}
 
-	return resetByFeature, nil
+	return holders, nil
 }
 
-// meteredEntitlementsByAddon reads each addon's metered entitlements once.
-func (s *subscriptionGrantService) meteredEntitlementsByAddon(
+// entitlementsByAddon reads each addon once and keeps what either check needs: metered
+// entitlements for the reset period, grant-bearing ones for the pooling date.
+func (s *subscriptionGrantService) entitlementsByAddon(
 	ctx context.Context,
 	addonIDs []string,
 ) (map[string][]*dto.EntitlementResponse, error) {
@@ -130,11 +229,12 @@ func (s *subscriptionGrantService) meteredEntitlementsByAddon(
 			return nil, err
 		}
 
-		metered := lo.Filter(ents.Items, func(e *dto.EntitlementResponse, _ int) bool {
-			return e != nil && e.Entitlement != nil && e.FeatureType == types.FeatureTypeMetered
+		relevant := lo.Filter(ents.Items, func(e *dto.EntitlementResponse, _ int) bool {
+			return e != nil && e.Entitlement != nil &&
+				(e.FeatureType == types.FeatureTypeMetered || e.Entitlement.HasGrantConfig())
 		})
-		if len(metered) > 0 {
-			byAddon[addonID] = metered
+		if len(relevant) > 0 {
+			byAddon[addonID] = relevant
 		}
 	}
 

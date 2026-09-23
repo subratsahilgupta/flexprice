@@ -1850,7 +1850,6 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_ManyAddons_AttachWitho
 		s.seedFixedPriceAddon(id, decimal.NewFromInt(20), types.InvoiceCadenceAdvance)
 	}
 
-	before := len(s.oneOffInvoicesFor(s.testData.subscription.ID))
 	resp, err := s.service.CreateSubscription(ctx, dto.CreateSubscriptionRequest{
 		CustomerID:         s.testData.customer.ID,
 		PlanID:             s.testData.plan.ID,
@@ -1881,8 +1880,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_ManyAddons_AttachWitho
 	s.Require().NoError(err)
 	s.Len(items, len(ids), "and its line item")
 
-	s.Len(s.oneOffInvoicesFor(s.testData.subscription.ID), before,
-		"creation raises no proration document")
+	s.Empty(s.oneOffInvoicesFor(resp.ID), "creation raises no proration document")
 	s.Empty(s.prorationCredits(), "and moves no money through the wallet")
 }
 

@@ -34,6 +34,11 @@ type GrantSource struct {
 	// EffectiveDate is when this source joins or leaves: it anchors the source's credit
 	// grant chain and dates its entitlement grant proration.
 	EffectiveDate time.Time
+	// RequestedDate is the date the caller asked for, before the line item and price starts
+	// clamp it into EffectiveDate. Only validateGrantDates reads it: two entries that asked
+	// to start together must not read as two dates because their prices differ in age.
+	// Defaults to EffectiveDate when unset.
+	RequestedDate time.Time
 	// EndDate caps recurring grants at a time-bounded (onetime) addon's boundary.
 	EndDate  *time.Time
 	Behavior types.ProrationBehavior
@@ -41,6 +46,14 @@ type GrantSource struct {
 	// AddonID is the source's identity: credit grant templates and entitlement configs are
 	// both read from it, and removal targets the grants it materialized.
 	AddonID string
+}
+
+// requestedDate is what the caller asked for, falling back to the resolved date.
+func (src GrantSource) requestedDate() time.Time {
+	if src.RequestedDate.IsZero() {
+		return src.EffectiveDate
+	}
+	return src.RequestedDate
 }
 
 type GrantChangeRequest struct {
@@ -431,7 +444,6 @@ func (s *subscriptionGrantService) resolveIncomingGrants(
 	ecs := make([]*entitlement.Entitlement, 0, len(incoming))
 
 	pooled := make(map[string]*entitlementgrant.EntitlementGrant, len(incoming))
-	pooledAt := make(map[string]time.Time, len(incoming))
 	features := make([]string, 0, len(incoming))
 
 	for _, src := range incoming {
@@ -455,25 +467,13 @@ func (s *subscriptionGrantService) resolveIncomingGrants(
 			prior, seen := pooled[featureID]
 			if !seen {
 				pooled[featureID] = grant
-				pooledAt[featureID] = src.EffectiveDate
 				features = append(features, featureID)
 				continue
 			}
 
-			// One pooled row carries one coefficient and one window, so sources sharing a
-			// feature must share an instant; otherwise the later one's quota is priced for a
-			// window it is not granted over.
-			if !pooledAt[featureID].Equal(src.EffectiveDate) {
-				return nil, nil, ierr.NewError("addons granting the same feature must share an effective date").
-					WithHint("Send them as separate changes, or give both the same date").
-					WithReportableDetails(map[string]any{
-						"feature_id": featureID,
-						"dates":      []string{pooledAt[featureID].String(), src.EffectiveDate.String()},
-					}).
-					Mark(ierr.ErrValidation)
-			}
-
-			// The audit metadata stays the first source's; both share one coefficient.
+			// The audit metadata stays the first source's: the pooled row carries one
+			// coefficient, which validateGrantDates guarantees by making the sources agree
+			// on a date before anything reaches here.
 			pooled[featureID] = entitlementgrant.NewEntitlementGrantBuilder(prior).
 				WithQuota(prior.Quota.Add(grant.Quota)).
 				WithWindow(types.EarliestOf(prior.ValidFrom, grant.ValidFrom), prior.ValidTo).

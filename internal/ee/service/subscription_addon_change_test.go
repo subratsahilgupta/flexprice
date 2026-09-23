@@ -50,6 +50,16 @@ func (s *SubscriptionServiceSuite) addEntry(addonID string, at time.Time) AddonA
 	}}
 }
 
+// undatedEntry is what the API sends for an ordinary "attach now": no date at all, resolved
+// by the change itself.
+func (s *SubscriptionServiceSuite) undatedEntry(addonID string) AddonAdd {
+	return AddonAdd{Request: &dto.AddAddonToSubscriptionRequest{
+		AddonID:           addonID,
+		Cadence:           types.AddonCadenceRecurring,
+		ProrationBehavior: types.ProrationBehaviorCreateProrations,
+	}}
+}
+
 func (s *SubscriptionServiceSuite) removeEntry(associationID string, at time.Time) *dto.RemoveAddonRequest {
 	return &dto.RemoveAddonRequest{
 		AddonAssociationID: associationID,
@@ -575,6 +585,45 @@ func (s *SubscriptionServiceSuite) TestAddonBatch_TwoAddsOnOneFeatureDifferentDa
 	s.Require().Error(err, "the later addon's quota would be granted from the earlier one's date")
 }
 
+// Two undated adds are simultaneous by definition: the pooling guard must read them as one
+// date, not as two clocks read moments apart.
+func (s *SubscriptionServiceSuite) TestAddonBatch_TwoUndatedAddsOnOneFeature_Pool() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+
+	featureID := s.seedGrantFeature("feat_pool_undated")
+	s.seedFullFeaturedAddon("addon_undated_a", "ent_undated_a", featureID, 30, 400)
+	s.seedFullFeaturedAddon("addon_undated_b", "ent_undated_b", featureID, 30, 900)
+
+	_, _, err := s.addonChangeService().Execute(ctx, AddonChangeRequest{
+		Subscription: sub,
+		Adds: []AddonAdd{
+			s.undatedEntry("addon_undated_a"),
+			s.undatedEntry("addon_undated_b"),
+		},
+	})
+	s.Require().NoError(err)
+
+	rows := s.sortedGrantsForFeature(featureID)
+	s.Require().Len(rows, 1, "both addons pool into one row")
+}
+
+// The same addon twice is the documented way to buy several of it, and both instances land on
+// the same feature.
+func (s *SubscriptionServiceSuite) TestAddonBatch_SameGrantAddonTwiceUndated_Pools() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+
+	featureID := s.seedGrantFeature("feat_pool_twice")
+	s.seedFullFeaturedAddon("addon_twice", "ent_twice", featureID, 30, 400)
+
+	_, _, err := s.addonChangeService().Execute(ctx, AddonChangeRequest{
+		Subscription: sub,
+		Adds:         []AddonAdd{s.undatedEntry("addon_twice"), s.undatedEntry("addon_twice")},
+	})
+	s.Require().NoError(err)
+}
+
 func (s *SubscriptionServiceSuite) TestAddonBatch_TwoAddsOnOneFeatureSameDate_IsAllowed() {
 	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
@@ -618,10 +667,16 @@ func (s *SubscriptionServiceSuite) compatOf(req AddonChangeRequest) error {
 		validateEntitlementCompatibility(s.GetContext(), GrantChangeRequest{
 			Sub: req.Subscription,
 			Incoming: lo.Map(req.Adds, func(a AddonAdd, _ int) GrantSource {
-				return GrantSource{AddonID: a.Request.AddonID}
+				return GrantSource{
+					AddonID:       a.Request.AddonID,
+					EffectiveDate: lo.FromPtr(a.Request.StartDate),
+				}
 			}),
 			Removed: lo.Map(req.Removes, func(r *dto.RemoveAddonRequest, _ int) GrantSource {
-				return GrantSource{AddonID: s.addonIDOfAssociation(r.AddonAssociationID)}
+				return GrantSource{
+					AddonID:       s.addonIDOfAssociation(r.AddonAssociationID),
+					EffectiveDate: lo.FromPtr(r.EffectiveDate),
+				}
 			}),
 		})
 }
@@ -634,6 +689,42 @@ func (s *SubscriptionServiceSuite) addonIDOfAssociation(associationID string) st
 
 // The case the old above-the-spine guard could not express: A leaves and B arrives on the
 // same feature in one change, so their disagreeing reset periods never coexist.
+// A removal scheduled for the period end still measures its feature until then, so an addon
+// that measures it differently cannot arrive before it leaves.
+func (s *SubscriptionServiceSuite) TestAddonCompat_PeriodEndRemovalStillHoldsItsFeature() {
+	sub := s.testData.subscription
+	featureID := "feat_periodend_reset"
+	s.seedSharedMeteredFeature(featureID)
+	s.seedMeteredAddon("addon_pe_out", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
+	s.seedMeteredAddon("addon_pe_in", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_ANNUAL)
+	outgoing := s.attachForRemoval("addon_pe_out", 0)
+
+	s.Error(s.compatOf(AddonChangeRequest{
+		Subscription: sub,
+		Adds:         []AddonAdd{s.addEntry("addon_pe_in", s.testData.now)},
+		Removes:      []*dto.RemoveAddonRequest{s.removeEntry(outgoing, sub.CurrentPeriodEnd)},
+	}), "the outgoing addon measures the feature until the period end")
+}
+
+// A period-end entry opens no window this cycle, so it cannot collide with an immediate one.
+func (s *SubscriptionServiceSuite) TestAddonBatch_PeriodEndAddBesideImmediateAdd_IsAllowed() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+
+	featureID := s.seedGrantFeature("feat_pool_periodend")
+	s.seedFullFeaturedAddon("addon_pe_now", "ent_pe_now", featureID, 30, 400)
+	s.seedFullFeaturedAddon("addon_pe_later", "ent_pe_later", featureID, 30, 900)
+
+	_, _, err := s.addonChangeService().Execute(ctx, AddonChangeRequest{
+		Subscription: sub,
+		Adds: []AddonAdd{
+			s.undatedEntry("addon_pe_now"),
+			s.addEntry("addon_pe_later", sub.CurrentPeriodEnd),
+		},
+	})
+	s.Require().NoError(err)
+}
+
 func (s *SubscriptionServiceSuite) TestAddonBatch_SwapWithDifferentResetPeriods_IsAllowed() {
 	sub := s.testData.subscription
 	featureID := "feat_swap_reset"
