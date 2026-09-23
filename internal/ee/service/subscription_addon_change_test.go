@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/feature"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -597,4 +598,108 @@ func (s *SubscriptionServiceSuite) TestAddonBatch_TwoAddsOnOneFeatureSameDate_Is
 	rows := s.sortedGrantsForFeature(featureID)
 	s.Require().Len(rows, 1, "both addons pool into one row")
 	s.True(rows[0].ValidFrom.Equal(at))
+}
+
+// -----------------------------------------------------------------------------
+// metered reset-period compatibility
+// -----------------------------------------------------------------------------
+
+// seedSharedMeteredFeature registers one metered feature two addons can both claim.
+func (s *SubscriptionServiceSuite) seedSharedMeteredFeature(featureID string) {
+	s.Require().NoError(s.GetStores().FeatureRepo.Create(s.GetContext(), &feature.Feature{
+		ID:        featureID,
+		Name:      featureID,
+		Type:      types.FeatureTypeMetered,
+		MeterID:   s.testData.meters.apiCalls.ID,
+		BaseModel: types.GetDefaultBaseModel(s.GetContext()),
+	}))
+}
+
+func (s *SubscriptionServiceSuite) compatOf(req AddonChangeRequest) error {
+	return newSubscriptionGrantService(s.service.(*subscriptionService).ServiceParams).
+		validateEntitlementCompatibility(s.GetContext(), GrantChangeRequest{
+			Sub: req.Subscription,
+			Incoming: lo.Map(req.Adds, func(a AddonAdd, _ int) GrantSource {
+				return GrantSource{AddonID: a.Request.AddonID}
+			}),
+			Removed: lo.Map(req.Removes, func(r *dto.RemoveAddonRequest, _ int) GrantSource {
+				return GrantSource{AddonID: s.addonIDOfAssociation(r.AddonAssociationID)}
+			}),
+		})
+}
+
+func (s *SubscriptionServiceSuite) addonIDOfAssociation(associationID string) string {
+	assoc, err := s.GetStores().AddonAssociationRepo.GetByID(s.GetContext(), associationID)
+	s.Require().NoError(err)
+	return assoc.AddonID
+}
+
+// The case the old above-the-spine guard could not express: A leaves and B arrives on the
+// same feature in one change, so their disagreeing reset periods never coexist.
+func (s *SubscriptionServiceSuite) TestAddonBatch_SwapWithDifferentResetPeriods_IsAllowed() {
+	sub := s.testData.subscription
+	featureID := "feat_swap_reset"
+	s.seedSharedMeteredFeature(featureID)
+	s.seedMeteredAddon("addon_reset_out", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
+	s.seedMeteredAddon("addon_reset_in", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_ANNUAL)
+	outgoing := s.attachForRemoval("addon_reset_out", 0)
+
+	s.NoError(s.compatOf(AddonChangeRequest{
+		Subscription: sub,
+		Adds:         []AddonAdd{s.addEntry("addon_reset_in", s.testData.now)},
+		Removes:      []*dto.RemoveAddonRequest{s.removeEntry(outgoing, s.testData.now)},
+	}), "the departing addon's period cannot conflict with the arriving one")
+}
+
+// Adding onto a feature an addon still holds is a genuine conflict.
+func (s *SubscriptionServiceSuite) TestAddonBatch_AddConflictingWithSurvivor_IsRejected() {
+	sub := s.testData.subscription
+	featureID := "feat_survivor_reset"
+	s.seedSharedMeteredFeature(featureID)
+	s.seedMeteredAddon("addon_survivor", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
+	s.seedMeteredAddon("addon_intruder", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_ANNUAL)
+	s.attachForRemoval("addon_survivor", 0)
+
+	err := s.compatOf(AddonChangeRequest{
+		Subscription: sub,
+		Adds:         []AddonAdd{s.addEntry("addon_intruder", s.testData.now)},
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "reset period")
+}
+
+// Two adds can disagree with each other even when nothing on the subscription objects —
+// which only a validator folding them one at a time can see.
+func (s *SubscriptionServiceSuite) TestAddonBatch_TwoAddsDisagreeingWithEachOther_IsRejected() {
+	sub := s.testData.subscription
+	featureID := "feat_mutual_reset"
+	s.seedSharedMeteredFeature(featureID)
+	s.seedMeteredAddon("addon_mutual_monthly", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
+	s.seedMeteredAddon("addon_mutual_annual", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_ANNUAL)
+
+	err := s.compatOf(AddonChangeRequest{
+		Subscription: sub,
+		Adds: []AddonAdd{
+			s.addEntry("addon_mutual_monthly", s.testData.now),
+			s.addEntry("addon_mutual_annual", s.testData.now),
+		},
+	})
+	s.Require().Error(err)
+	s.Contains(err.Error(), "reset period")
+}
+
+func (s *SubscriptionServiceSuite) TestAddonBatch_TwoAddsAgreeingOnOneFeature_IsAllowed() {
+	sub := s.testData.subscription
+	featureID := "feat_mutual_agree"
+	s.seedSharedMeteredFeature(featureID)
+	s.seedMeteredAddon("addon_agree_monthly_a", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
+	s.seedMeteredAddon("addon_agree_monthly_b", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
+
+	s.NoError(s.compatOf(AddonChangeRequest{
+		Subscription: sub,
+		Adds: []AddonAdd{
+			s.addEntry("addon_agree_monthly_a", s.testData.now),
+			s.addEntry("addon_agree_monthly_b", s.testData.now),
+		},
+	}))
 }

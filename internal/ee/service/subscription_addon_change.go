@@ -230,7 +230,6 @@ func (s *addonChangeService) Resolve(ctx context.Context, req AddonChangeRequest
 	originalLineItems := sub.LineItems
 	for _, add := range req.Adds {
 		addReq := resolveAttachChangeAt(add.Request, now, sub.CurrentPeriodEnd)
-		addReq.SkipEntityValidation = true
 
 		params, err := s.sub.createAddonAttachParams(ctx, sub, &addReq, add.Existing)
 		if err != nil {

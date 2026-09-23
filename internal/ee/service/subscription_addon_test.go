@@ -305,14 +305,22 @@ func (s *SubscriptionServiceSuite) TestValidateEntitlementCompatibility_SeesPend
 	s.seedMeteredAddon(pendingAddonID, featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
 	s.seedMeteredAddon(incomingAddonID, featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_ANNUAL)
 
+	addOf := func(addonID string) error {
+		return newSubscriptionGrantService(subService.ServiceParams).
+			validateEntitlementCompatibility(ctx, GrantChangeRequest{
+				Sub:      sub,
+				Incoming: []GrantSource{{AddonID: addonID}},
+			})
+	}
+
 	// Without the pending association the conflicting add is accepted: the pending addon's
 	// entitlements are invisible to GetSubscriptionEntitlements by design.
-	s.NoError(subService.validateEntitlementCompatibility(ctx, sub.ID, incomingAddonID),
+	s.NoError(addOf(incomingAddonID),
 		"baseline: nothing to conflict with before the pending association exists")
 
 	s.seedPendingAddonAssociation("assoc_pending_entitlement", pendingAddonID, sub.ID, nil)
 
-	err := subService.validateEntitlementCompatibility(ctx, sub.ID, incomingAddonID)
+	err := addOf(incomingAddonID)
 	s.Error(err)
 	s.True(ierr.IsValidation(err))
 	s.Contains(err.Error(), "reset period")
@@ -321,7 +329,7 @@ func (s *SubscriptionServiceSuite) TestValidateEntitlementCompatibility_SeesPend
 	// every feature a pending addon happens to touch.
 	matchingAddonID := "addon_incoming_monthly"
 	s.seedMeteredAddon(matchingAddonID, featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_MONTHLY)
-	s.NoError(subService.validateEntitlementCompatibility(ctx, sub.ID, matchingAddonID))
+	s.NoError(addOf(matchingAddonID))
 }
 
 // Baseline for everything the checkout path must not disturb. Attaching at the period start

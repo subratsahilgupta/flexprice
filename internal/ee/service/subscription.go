@@ -4983,13 +4983,6 @@ func (s *subscriptionService) createAddonAttachParams(
 			Mark(ierr.ErrValidation)
 	}
 
-	// Validate entitlement compatibility if check is not skipped
-	if !req.SkipEntityValidation {
-		if err := s.validateEntitlementCompatibility(ctx, sub.ID, req.AddonID); err != nil {
-			return nil, err
-		}
-	}
-
 	// Validate and filter prices for the addon
 	validPrices, err := s.ValidateAndFilterPricesForSubscription(ctx, req.AddonID, types.PRICE_ENTITY_TYPE_ADDON, sub, nil, nil)
 	if err != nil {
@@ -5061,108 +5054,6 @@ func (s *subscriptionService) createAddonAttachParams(
 		effectiveDate:  prorationEffectiveDate,
 		isReplay:       existing != nil,
 	}, nil
-}
-
-// validateEntitlementCompatibility checks if addon entitlements are compatible with existing subscription entitlements
-// It ensures that metered features with the same feature ID have the same usage reset period
-func (s *subscriptionService) validateEntitlementCompatibility(ctx context.Context, subscriptionID, addonID string) error {
-	// Get entitlements for the addon we're trying to add
-	entitlementService := NewEntitlementService(s.ServiceParams)
-	addonEntitlements, err := entitlementService.GetAddonEntitlements(ctx, addonID)
-	if err != nil {
-		return err
-	}
-
-	// Filter to metered features only (only metered features have usage reset periods that matter)
-	meteredAddonEntitlements := make([]*dto.EntitlementResponse, 0)
-	for _, addonEnt := range addonEntitlements.Items {
-		if addonEnt.FeatureType == types.FeatureTypeMetered {
-			meteredAddonEntitlements = append(meteredAddonEntitlements, addonEnt)
-		}
-	}
-
-	// Early return if no metered entitlements to check
-	if len(meteredAddonEntitlements) == 0 {
-		return nil
-	}
-
-	// Fetch subscription entitlements
-	subscriptionEntitlements, err := s.GetSubscriptionEntitlements(ctx, subscriptionID)
-	if err != nil {
-		return err
-	}
-
-	// Build map of feature_id to usage_reset_period for metered features in subscription
-	featureResetMap := make(map[string]types.EntitlementUsageResetPeriod)
-	for _, ent := range subscriptionEntitlements {
-		if ent.FeatureType == types.FeatureTypeMetered {
-			featureResetMap[ent.FeatureID] = ent.UsageResetPeriod
-		}
-	}
-
-	pendingResetPeriods, err := s.pendingAddonFeatureResetPeriods(ctx, subscriptionID)
-	if err != nil {
-		return err
-	}
-	for featureID, resetPeriod := range pendingResetPeriods {
-		if _, exists := featureResetMap[featureID]; !exists {
-			featureResetMap[featureID] = resetPeriod
-		}
-	}
-
-	// Check for conflicts
-	for _, addonEnt := range meteredAddonEntitlements {
-
-		existingResetPeriod, exists := featureResetMap[addonEnt.FeatureID]
-
-		if exists && existingResetPeriod != addonEnt.UsageResetPeriod {
-
-			return ierr.NewError("metered feature usage reset period conflict").
-				WithHint(fmt.Sprintf("Feature '%s' has conflicting reset periods: %s vs %s", addonEnt.FeatureID, existingResetPeriod, addonEnt.UsageResetPeriod)).
-				WithReportableDetails(map[string]interface{}{
-					"subscription_id": subscriptionID,
-					"addon_id":        addonID,
-					"feature_id":      addonEnt.FeatureID,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	return nil
-}
-
-// pendingAddonFeatureResetPeriods returns the usage reset period of every metered feature
-// granted by an addon whose association is still pending payment, keyed by feature id.
-// Compatibility-only: it deliberately does not flow into GetSubscriptionEntitlements, which
-// also drives real feature access where a pending addon must not count.
-func (s *subscriptionService) pendingAddonFeatureResetPeriods(
-	ctx context.Context,
-	subscriptionID string,
-) (map[string]types.EntitlementUsageResetPeriod, error) {
-	pendingAssociations, err := s.listPendingAddonAssociations(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-	if len(pendingAssociations) == 0 {
-		return nil, nil
-	}
-
-	entitlementService := NewEntitlementService(s.ServiceParams)
-	resetPeriods := make(map[string]types.EntitlementUsageResetPeriod)
-
-	for _, association := range pendingAssociations {
-		addonEntitlements, err := entitlementService.GetAddonEntitlements(ctx, association.AddonID)
-		if err != nil {
-			return nil, err
-		}
-		for _, ent := range addonEntitlements.Items {
-			if ent.FeatureType == types.FeatureTypeMetered {
-				resetPeriods[ent.FeatureID] = ent.UsageResetPeriod
-			}
-		}
-	}
-
-	return resetPeriods, nil
 }
 
 // TerminateSubscriptionResources terminates all line items, addon associations, and credit

@@ -21,14 +21,6 @@ func (s *subscriptionService) attachAddon(
 	req *dto.AddAddonToSubscriptionRequest,
 	checkout *dto.CheckoutParams,
 ) (*dto.AddonChangeResult, error) {
-	// Deliberately above the spine: the batch API does not inherit this guard, or the swap it
-	// rejects could never be expressed.
-	if !req.SkipEntityValidation {
-		if err := s.validateEntitlementCompatibility(ctx, sub.ID, req.AddonID); err != nil {
-			return nil, err
-		}
-	}
-
 	changeSvc := NewAddonChangeService(s.ServiceParams)
 	changeReq := AddonChangeRequest{
 		Subscription: sub,
@@ -286,12 +278,11 @@ func (s *subscriptionService) replayAddonChangeRequest(
 
 		req.Adds = append(req.Adds, AddonAdd{
 			Request: &dto.AddAddonToSubscriptionRequest{
-				AddonID:              ref.AddonID,
-				Cadence:              ref.Cadence,
-				StartDate:            lo.ToPtr(ref.StartDate),
-				ProrationBehavior:    ref.ProrationBehavior,
-				Metadata:             association.Metadata,
-				SkipEntityValidation: true,
+				AddonID:           ref.AddonID,
+				Cadence:           ref.Cadence,
+				StartDate:         lo.ToPtr(ref.StartDate),
+				ProrationBehavior: ref.ProrationBehavior,
+				Metadata:          association.Metadata,
 			},
 			Existing: association,
 		})

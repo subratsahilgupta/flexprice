@@ -90,6 +90,10 @@ func (s *subscriptionGrantService) Resolve(ctx context.Context, req GrantChangeR
 			Mark(ierr.ErrValidation)
 	}
 
+	if err := s.validateEntitlementCompatibility(ctx, req); err != nil {
+		return nil, err
+	}
+
 	cfg := &GrantChangeConfig{sub: req.Sub}
 
 	creditGrantsToAdd, err := s.resolveCreditGrantsToAdd(ctx, req.Sub, req.Incoming)
