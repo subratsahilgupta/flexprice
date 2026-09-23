@@ -47,7 +47,12 @@ func asyncRevenueFactsUpdate(ctx context.Context, params ServiceParams, op, invo
 
 	// WithoutCancel keeps tenant/environment values while surviving the
 	// request; the timeout stops a stuck write from leaking the goroutine.
-	asyncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	// WithoutDBTransaction is what makes surviving the request safe: three of
+	// the four call sites run inside an open transaction, and carrying it into
+	// a goroutine that outlives the commit corrupts the connection for
+	// everyone. This work reads its own committed state from the pool.
+	asyncCtx, cancel := context.WithTimeout(
+		types.WithoutDBTransaction(context.WithoutCancel(ctx)), time.Minute)
 	go func() {
 		defer cancel()
 		// A panic in the shadow path must never crash the process.

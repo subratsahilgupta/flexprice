@@ -204,3 +204,18 @@ func ValidateTenantContext(ctx context.Context) error {
 
 	return nil
 }
+
+// WithoutDBTransaction strips any open transaction from ctx.
+//
+// Work that outlives the request — a detached goroutine, anything queued —
+// must never inherit the caller's transaction. The request commits and hands
+// that connection back to the pool while the detached work is still issuing
+// statements on it, which desynchronizes the Postgres wire protocol
+// ("unexpected Parse response") and poisons the connection for whoever picks
+// it up next, so failures surface in unrelated requests.
+func WithoutDBTransaction(ctx context.Context) context.Context {
+	if ctx.Value(CtxDBTransaction) == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, CtxDBTransaction, nil)
+}
