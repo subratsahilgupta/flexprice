@@ -15303,6 +15303,54 @@ const docTemplate = `{
                 }
             }
         },
+        "ChangedAddonAssociation": {
+            "type": "object",
+            "properties": {
+                "addon_id": {
+                    "type": "string"
+                },
+                "change_action": {
+                    "enum": [
+                        "created",
+                        "ended"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ChangedAddonAssociationAction"
+                        }
+                    ]
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status is pending while a pay-first attach is awaiting payment.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.AddonStatus"
+                        }
+                    ]
+                }
+            }
+        },
+        "ChangedAddonAssociationAction": {
+            "description": "created | ended",
+            "type": "string",
+            "enum": [
+                "created",
+                "ended"
+            ],
+            "x-enum-varnames": [
+                "ChangedAddonAssociationActionCreated",
+                "ChangedAddonAssociationActionEnded"
+            ]
+        },
         "ChangedInvoice": {
             "type": "object",
             "properties": {
@@ -15428,6 +15476,12 @@ const docTemplate = `{
         "ChangedResources": {
             "type": "object",
             "properties": {
+                "addon_associations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ChangedAddonAssociation"
+                    }
+                },
                 "invoices": {
                     "type": "array",
                     "items": {
@@ -19174,8 +19228,23 @@ const docTemplate = `{
                 "feature": {
                     "$ref": "#/definitions/FeatureResponse"
                 },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "string"
+                },
                 "grant_state": {
                     "$ref": "#/definitions/GrantState"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -19869,6 +19938,9 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.EntitlementGrantMeasure"
                 },
                 "quota": {
+                    "type": "string"
+                },
+                "quota_crossed_at": {
                     "type": "string"
                 },
                 "remaining": {

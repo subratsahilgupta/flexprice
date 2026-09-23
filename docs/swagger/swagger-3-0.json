@@ -17636,6 +17636,43 @@
           }
         }
       },
+      "ChangedAddonAssociation": {
+        "type": "object",
+        "properties": {
+          "addon_id": {
+            "type": "string"
+          },
+          "change_action": {
+            "$ref": "#/components/schemas/ChangedAddonAssociationAction"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.AddonStatus"
+          }
+        }
+      },
+      "ChangedAddonAssociationAction": {
+        "type": "string",
+        "description": "created | ended",
+        "enum": [
+          "created",
+          "ended"
+        ],
+        "x-enum-varnames": [
+          "ChangedAddonAssociationActionCreated",
+          "ChangedAddonAssociationActionEnded"
+        ]
+      },
       "ChangedInvoice": {
         "type": "object",
         "properties": {
@@ -17721,6 +17758,12 @@
       "ChangedResources": {
         "type": "object",
         "properties": {
+          "addon_associations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangedAddonAssociation"
+            }
+          },
           "invoices": {
             "type": "array",
             "items": {
@@ -21259,8 +21302,23 @@
           "feature": {
             "$ref": "#/components/schemas/FeatureResponse"
           },
+          "grant_duration_unit": {
+            "$ref": "#/components/schemas/types.EntitlementGrantDurationUnit"
+          },
+          "grant_duration_value": {
+            "type": "integer"
+          },
+          "grant_measure": {
+            "$ref": "#/components/schemas/types.EntitlementGrantMeasure"
+          },
+          "grant_quota": {
+            "type": "string"
+          },
           "grant_state": {
             "$ref": "#/components/schemas/GrantState"
+          },
+          "grant_unlimited": {
+            "type": "boolean"
           },
           "is_enabled": {
             "type": "boolean"
@@ -21960,6 +22018,10 @@
           },
           "quota": {
             "type": "string"
+          },
+          "quota_crossed_at": {
+            "type": "string",
+            "format": "date-time"
           },
           "remaining": {
             "type": "string"

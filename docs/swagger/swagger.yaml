@@ -1119,6 +1119,36 @@ definitions:
       total_credit_amount:
         type: string
     type: object
+  ChangedAddonAssociation:
+    properties:
+      addon_id:
+        type: string
+      change_action:
+        allOf:
+        - $ref: '#/definitions/ChangedAddonAssociationAction'
+        enum:
+        - created
+        - ended
+      end_date:
+        type: string
+      id:
+        type: string
+      start_date:
+        type: string
+      status:
+        allOf:
+        - $ref: '#/definitions/types.AddonStatus'
+        description: Status is pending while a pay-first attach is awaiting payment.
+    type: object
+  ChangedAddonAssociationAction:
+    description: created | ended
+    enum:
+    - created
+    - ended
+    type: string
+    x-enum-varnames:
+    - ChangedAddonAssociationActionCreated
+    - ChangedAddonAssociationActionEnded
   ChangedInvoice:
     properties:
       action:
@@ -1206,6 +1236,10 @@ definitions:
     - ChangedLineItemActionEnded
   ChangedResources:
     properties:
+      addon_associations:
+        items:
+          $ref: '#/definitions/ChangedAddonAssociation'
+        type: array
       invoices:
         items:
           $ref: '#/definitions/ChangedInvoice'
@@ -3943,8 +3977,18 @@ definitions:
         type: string
       feature:
         $ref: '#/definitions/FeatureResponse'
+      grant_duration_unit:
+        $ref: '#/definitions/types.EntitlementGrantDurationUnit'
+      grant_duration_value:
+        type: integer
+      grant_measure:
+        $ref: '#/definitions/types.EntitlementGrantMeasure'
+      grant_quota:
+        type: string
       grant_state:
         $ref: '#/definitions/GrantState'
+      grant_unlimited:
+        type: boolean
       is_enabled:
         type: boolean
       is_soft_limit:
@@ -4490,6 +4534,8 @@ definitions:
       measure:
         $ref: '#/definitions/types.EntitlementGrantMeasure'
       quota:
+        type: string
+      quota_crossed_at:
         type: string
       remaining:
         type: string
