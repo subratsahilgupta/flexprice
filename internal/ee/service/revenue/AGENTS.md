@@ -24,6 +24,10 @@ Design doc: [FLE-1257 analytics platform ERD](../../../../docs/design/2026-09-10
   contra rows (`is_revert = true`), never edits.
 - **Tenant scoping.** Every query filters tenant + environment; batch jobs walk
   only environments opted in via the `revenue_analytics_config` setting.
+- **Day-grained bounds.** `period_start`, `period_end` and `day` are DATE
+  columns, so every write and every lookup goes through `periodDays` / `dayOf`.
+  A period shorter than a day still gets `period_start == period_end == its
+  date` — never an inverted range, which is what a raw `end − 1 day` produces.
 
 ## Dependency rules
 

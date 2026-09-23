@@ -30,6 +30,38 @@ func (p revenuePeriod) exclusiveEnd() time.Time {
 	return p.End.AddDate(0, 0, 1)
 }
 
+// dayOf is t's UTC calendar day. period_start, period_end and day are date
+// columns, so every value written to or matched against them is truncated
+// here — a timestamp compares as midnight and would miss its own row.
+func dayOf(t time.Time) time.Time {
+	u := t.UTC()
+	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// inclusiveLastDay converts the engine's exclusive period end into the last
+// day the period actually covers. Only a midnight end excludes its own day;
+// an end part-way through a day still belongs to that day, and subtracting a
+// whole day from it would invert a period that opened and closed the same day
+// — a same-day cancellation, for instance.
+func inclusiveLastDay(exclusiveEnd time.Time) time.Time {
+	day := dayOf(exclusiveEnd)
+	if exclusiveEnd.UTC().Equal(day) {
+		return day.AddDate(0, 0, -1)
+	}
+	return day
+}
+
+// periodDays keys a fact row to the days its billing window covers. Start
+// stays exact because usage reads bound on it; only the stored and matched
+// ends are day-grained.
+func periodDays(start, exclusiveEnd time.Time) revenuePeriod {
+	end := inclusiveLastDay(exclusiveEnd)
+	if end.Before(dayOf(start)) {
+		end = dayOf(start)
+	}
+	return revenuePeriod{Start: start, End: end}
+}
+
 // previewLineItem is one line item as priced by the billing preview, carrying
 // everything needed to turn its charge into revenue_facts rows.
 type previewLineItem struct {
@@ -186,7 +218,7 @@ func isMultiPeriodCommitment(sub *subscription.Subscription) bool {
 // ADVANCE billing, period end for ARREAR.
 func cadenceDay(cadence types.InvoiceCadence, period revenuePeriod) time.Time {
 	if cadence == types.InvoiceCadenceAdvance {
-		return period.Start
+		return dayOf(period.Start)
 	}
 	return period.End
 }
@@ -211,7 +243,7 @@ func newPeriodOnlyFact(li previewLineItem, period revenuePeriod, day time.Time, 
 		SubLineItemID:     li.subLineItemID(),
 		PriceID:           li.priceID(),
 		RevenueSource:     source,
-		PeriodStart:       period.Start,
+		PeriodStart:       dayOf(period.Start),
 		PeriodEnd:         period.End,
 		Day:               day,
 		LineDiscount:      li.LineDiscount,
@@ -305,7 +337,7 @@ func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefac
 			MeterID:           li.meterID(),
 			AggregationType:   li.aggregationType(),
 			RevenueSource:     source,
-			PeriodStart:       li.PeriodStart,
+			PeriodStart:       dayOf(li.PeriodStart),
 			PeriodEnd:         li.PeriodEnd,
 			Day:               dc.Day,
 			UsageAtListRate:   marginalUsageAtListRate,

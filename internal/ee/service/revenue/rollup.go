@@ -155,10 +155,9 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		if itemPeriodEndExclusive.IsZero() {
 			itemPeriodEndExclusive = periodEnd
 		}
-		// The engine's line item period end is half-open/exclusive; every
-		// internal type here (revenuePeriod, previewLineItem.PeriodEnd) is inclusive
-		// of the last calendar day, so convert once at the boundary.
-		itemPeriod := revenuePeriod{Start: itemPeriodStart, End: itemPeriodEndExclusive.AddDate(0, 0, -1)}
+		// The engine's line item period end is half-open/exclusive; rows are
+		// keyed on the inclusive last day it covers.
+		itemPeriod := periodDays(itemPeriodStart, itemPeriodEndExclusive)
 
 		itemSubscriptionID := sub.ID
 		if item.SubscriptionID != nil && *item.SubscriptionID != "" {
@@ -820,9 +819,10 @@ func (s *revenueService) flipInvoiceLineItems(ctx context.Context, inv *invoice.
 			continue
 		}
 		// The invoice line item's period end is half-open/exclusive, same as
-		// the preview engine's — convert to the inclusive day bound
-		// revenue_facts rows are keyed/queried on.
-		periodEnd := periodEndExclusive.AddDate(0, 0, -1)
+		// the preview engine's — match on the same day-grained bounds the
+		// rollup wrote.
+		period := periodDays(periodStart, periodEndExclusive)
+		periodStart, periodEnd := dayOf(period.Start), period.End
 
 		priceID := lo.FromPtr(li.PriceID)
 		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
@@ -870,7 +870,7 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 		if subscriptionID == "" || periodStart.IsZero() || periodEndExclusive.IsZero() {
 			continue
 		}
-		period := revenuePeriod{Start: periodStart, End: periodEndExclusive.AddDate(0, 0, -1)}
+		period := periodDays(periodStart, periodEndExclusive)
 
 		base := previewLineItem{
 			TenantID:        tenantID,

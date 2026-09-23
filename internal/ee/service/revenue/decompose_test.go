@@ -527,3 +527,31 @@ func TestDecomposeLineCommitmentRows_TrueUpOnlyKeepsDiscounts(t *testing.T) {
 	assert.Equal(t, "45", rows[0].NetAmount.String(), "50 true-up less the 5 invoice discount")
 	assert.Equal(t, "5", rows[0].InvoiceDiscount.String())
 }
+
+// TestPeriodDays_IntraDayWindows: the engine's period end is exclusive, but
+// only a midnight end excludes its own day. Subtracting a whole day from a
+// mid-day end inverted any window that opened and closed on the same date —
+// a same-day cancellation wrote period_start 09-23 with period_end 09-22.
+func TestPeriodDays_IntraDayWindows(t *testing.T) {
+	day := func(y int, m time.Month, d, h, min int) time.Time {
+		return time.Date(y, m, d, h, min, 0, 0, time.UTC)
+	}
+
+	// A whole month: the exclusive midnight end belongs to the next period.
+	p := periodDays(day(2026, 9, 1, 0, 0), day(2026, 10, 1, 0, 0))
+	assert.Equal(t, "2026-09-30", p.End.Format("2006-01-02"))
+
+	// Created and cancelled the same afternoon: one day, not an inverted one.
+	p = periodDays(day(2026, 9, 23, 9, 37), day(2026, 9, 23, 13, 7))
+	assert.Equal(t, "2026-09-23", p.End.Format("2006-01-02"))
+	assert.False(t, p.End.Before(dayOf(p.Start)), "a period may never end before it starts")
+
+	// Spanning into the next day, ending part-way through it.
+	p = periodDays(day(2026, 9, 23, 9, 37), day(2026, 9, 25, 13, 7))
+	assert.Equal(t, "2026-09-25", p.End.Format("2006-01-02"))
+
+	// Degenerate zero-length window still keys to its own day.
+	p = periodDays(day(2026, 9, 23, 9, 37), day(2026, 9, 23, 9, 37))
+	assert.Equal(t, "2026-09-23", p.End.Format("2006-01-02"))
+	assert.False(t, p.End.Before(dayOf(p.Start)))
+}

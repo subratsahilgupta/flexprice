@@ -1094,3 +1094,81 @@ func (s *RevenueRollupSuite) TestDecomposeOverageRows_BucketedUsesPerWindowCurve
 	s.Equal(days, billed, "one billed row per window, not a re-priced running total")
 	s.True(total.Equal(item.Amount), "rows must still sum to the engine's line amount")
 }
+
+// TestE2E_SameDayPeriodFlipsToFinal reproduces a subscription created and
+// cancelled the same day: its whole billing period is a few hours on one date.
+// The JIT rollup derives rows from the finalized invoice, and the flip has to
+// match them on the same day-grained bounds — before, it matched on raw
+// timestamps against date columns, so nothing ever flipped and the facts sat
+// PROVISIONAL forever, leaving a later void with nothing to reverse.
+func (s *RevenueRollupSuite) TestE2E_SameDayPeriodFlipsToFinal() {
+	ctx := s.ctx
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	s.periodStart = today.Add(9*time.Hour + 37*time.Minute)
+	periodEndExclusive := today.Add(13*time.Hour + 7*time.Minute)
+	s.periodEnd = periodEndExclusive
+
+	cust := &customer.Customer{
+		ID: "cust_sameday", ExternalID: "ext_sameday", Name: "Same Day",
+		Email: "sameday@example.com", BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+	pl := &plan.Plan{ID: "plan_sameday", Name: "Same Day Plan", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, pl))
+
+	p := &price.Price{
+		ID: "price_sameday", Amount: decimal.NewFromInt(20), Currency: "usd",
+		EntityType: types.PRICE_ENTITY_TYPE_PLAN, EntityID: pl.ID,
+		Type: types.PRICE_TYPE_FIXED, BillingPeriod: types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1, BillingModel: types.BILLING_MODEL_FLAT_FEE,
+		BillingCadence: types.BILLING_CADENCE_RECURRING, InvoiceCadence: types.InvoiceCadenceArrear,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+
+	s.sub = &subscription.Subscription{
+		ID: "sub_sameday", PlanID: pl.ID, CustomerID: cust.ID,
+		StartDate: s.periodStart, BillingAnchor: periodEndExclusive,
+		CurrentPeriodStart: s.periodStart, CurrentPeriodEnd: periodEndExclusive,
+		Currency: "usd", BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	lineItems := []*subscription.SubscriptionLineItem{{
+		ID: "sli_sameday", SubscriptionID: s.sub.ID, CustomerID: cust.ID,
+		EntityID: pl.ID, EntityType: types.SubscriptionLineItemEntityTypePlan,
+		PlanDisplayName: pl.Name, PriceID: p.ID, PriceType: p.Type,
+		DisplayName: "Same Day Fee", Quantity: decimal.NewFromInt(1), Currency: "usd",
+		BillingPeriod: types.BILLING_PERIOD_MONTHLY, InvoiceCadence: types.InvoiceCadenceArrear,
+		StartDate: s.sub.StartDate, BaseModel: types.GetDefaultBaseModel(ctx),
+	}}
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, s.sub, lineItems))
+	s.sub.LineItems = lineItems
+	s.enableRevenueAnalytics(ctx)
+
+	// No provisional rows exist yet — the daily rollup never saw this
+	// subscription — so finalization takes the JIT path.
+	inv := s.finalizeCurrentPreview(ctx)
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(ctx, inv.ID))
+
+	booked, err := s.store.ListByInvoiceID(ctx, inv.ID)
+	s.NoError(err)
+	s.NotEmpty(booked, "a same-day period must still book its facts against the invoice")
+	for _, r := range booked {
+		s.Equal(types.FactFinal, r.Status, "rows must reach FINAL, not sit provisional")
+		s.Equal(inv.ID, lo.FromPtr(r.InvoiceID))
+		s.False(r.PeriodEnd.Before(r.PeriodStart), "period_end %s precedes period_start %s", r.PeriodEnd, r.PeriodStart)
+		s.Equal(today.Format("2006-01-02"), r.PeriodEnd.Format("2006-01-02"))
+	}
+
+	// A void now has FINAL rows to reverse, which is what was missing.
+	s.NoError(s.svc.RevertInvoiceFacts(ctx, inv.ID))
+	afterVoid, err := s.store.ListByInvoiceID(ctx, inv.ID)
+	s.NoError(err)
+	s.Greater(len(afterVoid), len(booked), "the void must append contra rows")
+	total := decimal.Zero
+	for _, r := range afterVoid {
+		total = total.Add(r.NetAmount)
+	}
+	s.True(total.IsZero(), "a voided invoice's facts must net to zero, got %s", total)
+}
