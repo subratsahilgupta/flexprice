@@ -18,6 +18,13 @@ Design doc: [FLE-1257 analytics platform ERD](../../../../docs/design/2026-09-10
   a write or an invoice operation.
 - **Row identity** (marginal usage rows):
   `net == usage_at_list_rate + tier_delta − entitlement_amount − line_discount − invoice_discount`.
+- **`invoice_id` names the source, `status` says whether it counts.** The JIT
+  `rollupFromInvoice` stamps the invoice and line item on the PROVISIONAL rows
+  it derives, so a row that never flips stays traceable to where it came from.
+  Booked revenue is therefore `invoice_id AND status = FINAL`, never
+  `invoice_id` alone — `ListByInvoiceID` enforces that, because counting
+  provisional rows would let an invoice whose rows never flipped look
+  reconciled to the drift sweep.
 - **Idempotency everywhere.** Upserts land on the provisional grain
   (tenant, environment, subscription, price, sub_line_item, day, revenue_source);
   recomputes bump `version` in place. FINAL rows are immutable — a void appends
@@ -30,19 +37,15 @@ Design doc: [FLE-1257 analytics platform ERD](../../../../docs/design/2026-09-10
   the sweep only walks opted-in environments. Every write method on
   `interfaces.RevenueService` checks `revenueAnalyticsEnabled` and returns
   silently; `TestWriteEntryPointsRequireOptIn` holds the whole surface.
-- **Day-grained bounds.** `period_start`, `period_end` and `day` are DATE
-  columns, so every write and every lookup goes through `periodDays` / `dayOf`.
-  `inclusiveLastDay` must agree with the day-walk in `buildUsageCurve`: the
-  last day is the one *before* the exclusive end's own date, because that date
-  opens the next period. A period shorter than a day is clamped to its own
-  date rather than inverting.
-
-  **Known gap:** `dayOf` truncates in UTC, while `buildUsageCurve` walks days
-  in the subscription's timezone. They agree only for UTC subscriptions (all
-  of them today). For a non-UTC subscription whose period bounds are not local
-  midnight, the flip's range is offset by a day and the period's last row will
-  not flip. Fixing it means threading the subscription's location through
-  `periodDays` and loading it in `flipInvoiceLineItems`.
+- **Day-grained bounds, in the subscription's timezone.** `period_start`,
+  `period_end` and `day` are DATE columns, so every write and every lookup goes
+  through `periodDays` / `dayOf` — and both take a `*time.Location`, because
+  `buildUsageCurve` splits usage into **local** days. Truncating in UTC instead
+  puts the bound a day off for any non-UTC subscription, and the flip then
+  misses a row the curve wrote. `inclusiveLastDay` must also agree with that
+  walk: the last day is the one *before* the exclusive end's own local date,
+  because that date opens the next period. A period shorter than a day is
+  clamped to its own date rather than inverting.
 
 ## Dependency rules
 

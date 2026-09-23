@@ -257,6 +257,11 @@ func (s *InMemoryRevenueFactStore) ListByInvoiceID(ctx context.Context, invoiceI
 		if f.InvoiceID == nil || *f.InvoiceID != invoiceID {
 			continue
 		}
+		// Booked rows only — provisional rows carry the invoice id but are
+		// not revenue yet. Mirrors the ent repository.
+		if f.Status != types.FactFinal {
+			continue
+		}
 		result = append(result, f)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Day.Before(result[j].Day) })

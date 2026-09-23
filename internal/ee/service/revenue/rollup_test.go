@@ -1625,3 +1625,74 @@ func (s *RevenueRollupSuite) TestWriteEntryPointsRequireOptIn() {
 	s.NoError(err)
 	s.NotEmpty(rows, "the same call must write once the environment opts in")
 }
+
+// TestJITRollupStampsSourceInvoice: rows derived from a finalized invoice
+// carry that invoice's ids while still PROVISIONAL, so a row that never flips
+// stays traceable to where it came from. The drift sweep must still treat them
+// as unbooked — otherwise an invoice whose rows never flipped would look
+// reconciled and the sweep would go blind to exactly that failure.
+func (s *RevenueRollupSuite) TestJITRollupStampsSourceInvoice() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	sub := s.seedFixedOnlySubscription(ctx, "stamp", nil, "price_dirty_stamp", true)
+
+	inv := &invoice.Invoice{
+		ID:              "inv_stamp",
+		CustomerID:      sub.CustomerID,
+		SubscriptionID:  lo.ToPtr(sub.ID),
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusFinalized,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromInt(30),
+		Subtotal:        decimal.NewFromInt(30),
+		TotalDiscount:   decimal.Zero,
+		AmountRemaining: decimal.NewFromInt(30),
+		PeriodStart:     lo.ToPtr(sub.CurrentPeriodStart),
+		PeriodEnd:       lo.ToPtr(sub.CurrentPeriodEnd),
+		BillingReason:   string(types.InvoiceBillingReasonSubscriptionCycle),
+		BaseModel:       types.GetDefaultBaseModel(ctx),
+		LineItems: []*invoice.InvoiceLineItem{{
+			ID:             "li_stamp",
+			InvoiceID:      "inv_stamp",
+			CustomerID:     sub.CustomerID,
+			SubscriptionID: lo.ToPtr(sub.ID),
+			PriceType:      lo.ToPtr(string(types.PRICE_TYPE_FIXED)),
+			PriceID:        lo.ToPtr("price_dirty_stamp"),
+			Amount:         decimal.NewFromInt(30),
+			Quantity:       decimal.NewFromInt(1),
+			Currency:       "usd",
+			PeriodStart:    lo.ToPtr(sub.CurrentPeriodStart),
+			PeriodEnd:      lo.ToPtr(sub.CurrentPeriodEnd),
+			BaseModel:      types.GetDefaultBaseModel(ctx),
+		}},
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(ctx, inv))
+
+	s.NoError(s.svc.(*revenueService).rollupFromInvoice(ctx, inv))
+
+	provisional, err := s.store.ListBySubscriptionPeriod(ctx, sub.ID,
+		sub.CurrentPeriodStart, sub.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(provisional)
+	for _, r := range provisional {
+		s.Equal(inv.ID, lo.FromPtr(r.InvoiceID), "a JIT row must name its source invoice")
+		s.Equal("li_stamp", lo.FromPtr(r.InvoiceLineItemID))
+	}
+
+	// Stamped but not booked: the sweep's booked-row view must stay empty, or
+	// it would score this invoice as reconciled while nothing has flipped.
+	booked, err := s.store.ListByInvoiceID(ctx, inv.ID)
+	s.NoError(err)
+	s.Empty(booked, "provisional rows must not count as booked revenue")
+
+	// Once they flip they are booked, under the same ids.
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(ctx, inv.ID))
+	booked, err = s.store.ListByInvoiceID(ctx, inv.ID)
+	s.NoError(err)
+	s.NotEmpty(booked)
+	for _, r := range booked {
+		s.Equal(types.FactFinal, r.Status)
+		s.Equal(inv.ID, lo.FromPtr(r.InvoiceID))
+	}
+}

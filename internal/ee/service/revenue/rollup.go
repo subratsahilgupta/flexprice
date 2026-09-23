@@ -956,6 +956,7 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 
 		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
 		isOverage := li.Metadata.GetBool(types.MetadataKeyIsOverage)
+		before := len(rows)
 		switch {
 		case isTrueup || isOverage:
 			// Derive the synthetic id from the RAW subscription-line-item id,
@@ -998,6 +999,14 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 				"invoice_id", inv.ID,
 				"invoice_line_item_id", li.ID,
 				"price_type", lo.FromPtr(li.PriceType))
+		}
+
+		// Stamp the invoice these rows were derived from. The flip sets the
+		// same ids when it promotes them; carrying them from the start keeps a
+		// row that never flips traceable to its source.
+		for _, row := range rows[before:] {
+			row.InvoiceID = lo.ToPtr(inv.ID)
+			row.InvoiceLineItemID = lo.ToPtr(li.ID)
 		}
 	}
 
