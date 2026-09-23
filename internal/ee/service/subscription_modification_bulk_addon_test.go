@@ -270,3 +270,103 @@ func (s *SubscriptionServiceSuite) TestBulkAddonModification_ChangeAt_DoesNotMut
 	s.Require().NotNil(add.ChangeAt)
 	s.Equal(types.ScheduleTypeImmediate, *add.ChangeAt)
 }
+
+// -----------------------------------------------------------------------------
+// changed addon associations
+// -----------------------------------------------------------------------------
+//
+// The association id is the only handle a caller has on what an attach created: removing it
+// later names it. Without it a client has to list the subscription's associations and guess.
+
+func (s *SubscriptionServiceSuite) changedAssociationsByAction(
+	resp *dto.SubscriptionModifyResponse,
+	action dto.ChangedAddonAssociationAction,
+) []dto.ChangedAddonAssociation {
+	return lo.Filter(resp.ChangedResources.AddonAssociations,
+		func(a dto.ChangedAddonAssociation, _ int) bool { return a.ChangeAction == action })
+}
+
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Execute_ReportsTheCreatedAssociation() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+	s.seedFixedPriceAddon("addon_assoc_add", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+
+	at := sub.CurrentPeriodStart.Add(10 * 24 * time.Hour)
+	resp, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
+		Adds: []*dto.AddAddonToSubscriptionRequest{s.modifyAdd("addon_assoc_add", at)},
+	}))
+	s.Require().NoError(err)
+
+	created := s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionCreated)
+	s.Require().Len(created, 1)
+	s.Equal("addon_assoc_add", created[0].AddonID)
+	s.Equal(types.AddonStatusActive, created[0].Status)
+
+	// The reported id must name the row that was actually written, or a caller cannot remove it.
+	stored, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, created[0].ID)
+	s.Require().NoError(err)
+	s.Equal("addon_assoc_add", stored.AddonID)
+	s.Equal(sub.ID, stored.EntityID)
+}
+
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Execute_ReportsTheEndedAssociation() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+	s.seedFixedPriceAddon("addon_assoc_remove", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	outgoing := s.attachForRemoval("addon_assoc_remove", 30)
+
+	at := sub.CurrentPeriodStart.Add(10 * 24 * time.Hour)
+	resp, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
+		Removes: []*dto.RemoveAddonRequest{s.modifyRemove(outgoing, at)},
+	}))
+	s.Require().NoError(err)
+
+	ended := s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionEnded)
+	s.Require().Len(ended, 1)
+	s.Equal(outgoing, ended[0].ID, "a removal names the row it ended")
+	s.Equal(types.AddonStatusCancelled, ended[0].Status)
+	s.Require().NotNil(ended[0].EndDate)
+	s.True(ended[0].EndDate.Equal(at))
+}
+
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Swap_ReportsBothDirections() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+	s.seedFixedPriceAddon("addon_assoc_out", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	s.seedFixedPriceAddon("addon_assoc_in", decimal.NewFromInt(60), types.InvoiceCadenceAdvance)
+	outgoing := s.attachForRemoval("addon_assoc_out", 30)
+
+	at := sub.CurrentPeriodStart.Add(15 * 24 * time.Hour)
+	resp, err := s.modificationService().Execute(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
+		Adds:    []*dto.AddAddonToSubscriptionRequest{s.modifyAdd("addon_assoc_in", at)},
+		Removes: []*dto.RemoveAddonRequest{s.modifyRemove(outgoing, at)},
+	}))
+	s.Require().NoError(err)
+
+	s.Len(s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionCreated), 1)
+	s.Len(s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionEnded), 1)
+}
+
+// A preview writes no association, so the id it reports must not look removable. A preview
+// removal names a row that does exist, and keeps its real id.
+func (s *SubscriptionServiceSuite) TestBulkAddonModification_Preview_MasksTheUnwrittenID() {
+	ctx := s.GetContext()
+	sub := s.monthlyPeriodSubscription()
+	s.seedFixedPriceAddon("addon_assoc_preview", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
+	outgoing := s.attachForRemoval("addon_assoc_preview", 30)
+
+	at := sub.CurrentPeriodStart.Add(10 * 24 * time.Hour)
+	resp, err := s.modificationService().Preview(ctx, sub.ID, s.bulkAddonRequest(&dto.SubModifyBulkAddonParams{
+		Adds:    []*dto.AddAddonToSubscriptionRequest{s.modifyAdd("addon_assoc_preview", at)},
+		Removes: []*dto.RemoveAddonRequest{s.modifyRemove(outgoing, at)},
+	}))
+	s.Require().NoError(err)
+
+	created := s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionCreated)
+	s.Require().Len(created, 1)
+	s.Equal(previewCreatedAssociationID, created[0].ID)
+
+	ended := s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionEnded)
+	s.Require().Len(ended, 1)
+	s.Equal(outgoing, ended[0].ID, "the removed row is real, so its id is real")
+}

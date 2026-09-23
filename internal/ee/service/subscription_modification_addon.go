@@ -5,12 +5,18 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-const previewCreatedLineItemID = "(preview-created)"
+const (
+	previewCreatedLineItemID = "(preview-created)"
+	// A preview attach mints an association id it never writes, so it must not be handed back
+	// as one a caller could remove. A preview removal names a persisted row and keeps its id.
+	previewCreatedAssociationID = "(preview-created)"
+)
 
 func (s *subscriptionModificationService) executeAddonModification(
 	ctx context.Context,
@@ -48,7 +54,8 @@ func (s *subscriptionModificationService) executeAddonModification(
 	}
 
 	return s.addonModifyResponse(ctx, subscriptionID,
-		addonChangedLineItems(result, false), result.GetChangedInvoices(), result.GetCheckoutSession())
+		addonChangedLineItems(result, false), addonChangedAssociations(result, false),
+		result.GetChangedInvoices(), result.GetCheckoutSession())
 }
 
 func (s *subscriptionModificationService) previewAddonModification(
@@ -81,7 +88,8 @@ func (s *subscriptionModificationService) previewAddonModification(
 	}
 
 	return s.addonModifyResponse(ctx, subscriptionID,
-		addonChangedLineItems(result, true), result.GetChangedInvoices(), result.GetCheckoutSession())
+		addonChangedLineItems(result, true), addonChangedAssociations(result, true),
+		result.GetChangedInvoices(), result.GetCheckoutSession())
 }
 
 func (s *subscriptionModificationService) loadSubscriptionWithLineItems(
@@ -101,6 +109,7 @@ func (s *subscriptionModificationService) addonModifyResponse(
 	ctx context.Context,
 	subscriptionID string,
 	lineItems []dto.ChangedLineItem,
+	associations []dto.ChangedAddonAssociation,
 	invoices []dto.ChangedInvoice,
 	checkoutSession *dto.CheckoutSessionResponse,
 ) (*dto.SubscriptionModifyResponse, error) {
@@ -112,11 +121,50 @@ func (s *subscriptionModificationService) addonModifyResponse(
 	return &dto.SubscriptionModifyResponse{
 		Subscription: subResp,
 		ChangedResources: dto.ChangedResources{
-			LineItems: lineItems,
-			Invoices:  invoices,
+			LineItems:         lineItems,
+			AddonAssociations: associations,
+			Invoices:          invoices,
 		},
 		CheckoutSession: checkoutSession,
 	}, nil
+}
+
+func changedCreatedAssociation(
+	association *addonassociation.AddonAssociation,
+	startDate time.Time,
+	isPreview bool,
+) dto.ChangedAddonAssociation {
+	id := association.ID
+	if isPreview {
+		id = previewCreatedAssociationID
+	}
+
+	changed := dto.ChangedAddonAssociation{
+		ID:           id,
+		AddonID:      association.AddonID,
+		Status:       association.AddonStatus,
+		StartDate:    &startDate,
+		ChangeAction: dto.ChangedAddonAssociationActionCreated,
+	}
+	if association.EndDate != nil {
+		changed.EndDate = association.EndDate
+	}
+
+	return changed
+}
+
+func changedEndedAssociation(
+	association *addonassociation.AddonAssociation,
+	endDate time.Time,
+) dto.ChangedAddonAssociation {
+	return dto.ChangedAddonAssociation{
+		ID:           association.ID,
+		AddonID:      association.AddonID,
+		Status:       types.AddonStatusCancelled,
+		StartDate:    association.StartDate,
+		EndDate:      &endDate,
+		ChangeAction: dto.ChangedAddonAssociationActionEnded,
+	}
 }
 
 func changedCreatedLineItem(li *subscription.SubscriptionLineItem, isPreview bool) dto.ChangedLineItem {
@@ -150,6 +198,23 @@ func changedEndedLineItem(li *subscription.SubscriptionLineItem, endDate time.Ti
 		StartDate:    &startDate,
 		EndDate:      &endDate,
 		ChangeAction: dto.ChangedLineItemActionEnded,
+	}
+}
+
+// addonChangedAssociations is the single-addon path's one entry, in the same shape the batch
+// reports. Removed with dto.AddonChangeResult once every caller is on the batch path.
+func addonChangedAssociations(result *dto.AddonChangeResult, isPreview bool) []dto.ChangedAddonAssociation {
+	association := result.GetAssociation()
+	if association == nil {
+		return nil
+	}
+
+	if len(result.GetEndedLineItems()) > 0 {
+		return []dto.ChangedAddonAssociation{changedEndedAssociation(association, result.GetEffectiveDate())}
+	}
+
+	return []dto.ChangedAddonAssociation{
+		changedCreatedAssociation(association, result.GetEffectiveDate(), isPreview),
 	}
 }
 
