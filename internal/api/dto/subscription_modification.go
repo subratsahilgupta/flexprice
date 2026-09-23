@@ -336,7 +336,13 @@ func (p *SubModifyBulkAddonParams) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	total := len(p.Adds) + len(p.Removes)
+	return ValidateAddonBatch(p.Adds, p.Removes)
+}
+
+// ValidateAddonBatch checks a set of addon changes applied as one. Shared with subscription
+// creation, which attaches its addons the same way.
+func ValidateAddonBatch(adds []*AddAddonToSubscriptionRequest, removes []*RemoveAddonRequest) error {
+	total := len(adds) + len(removes)
 	if total == 0 {
 		return ierr.NewError("at least one add or remove is required").
 			WithHint("Provide adds and/or removes with at least one entry").
@@ -349,7 +355,7 @@ func (p *SubModifyBulkAddonParams) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	for i, add := range p.Adds {
+	for i, add := range adds {
 		if add == nil {
 			return ierr.NewError("add entry must not be null").
 				WithReportableDetails(map[string]any{"index": i}).
@@ -366,8 +372,8 @@ func (p *SubModifyBulkAddonParams) Validate() error {
 		}
 	}
 
-	seen := make(map[string]struct{}, len(p.Removes))
-	for i, remove := range p.Removes {
+	seen := make(map[string]struct{}, len(removes))
+	for i, remove := range removes {
 		if remove == nil {
 			return ierr.NewError("remove entry must not be null").
 				WithReportableDetails(map[string]any{"index": i}).

@@ -24,10 +24,9 @@ func (s *SubscriptionServiceSuite) addonChangeService() AddonChangeService {
 // attachForRemoval attaches an addon without raising money and records what it was billed, so a
 // later removal in the batch has a credit basis to refund against.
 func (s *SubscriptionServiceSuite) attachForRemoval(addonID string, billed int64) string {
-	ctx := s.GetContext()
 	sub := s.testData.subscription
 
-	attached, err := s.service.(*subscriptionService).attachAddon(ctx, sub, &dto.AddAddonToSubscriptionRequest{
+	attached, err := s.attachOne(sub, &dto.AddAddonToSubscriptionRequest{
 		AddonID:           addonID,
 		Cadence:           types.AddonCadenceRecurring,
 		StartDate:         lo.ToPtr(sub.CurrentPeriodStart),
@@ -223,7 +222,6 @@ func (s *SubscriptionServiceSuite) TestAddonBatch_PerEntryDates_OneDocumentFromT
 // settled document must reflect the override, not the addon's list price.
 func (s *SubscriptionServiceSuite) TestAddonAttach_PriceOverride_BillsTheOverriddenAmount() {
 	ctx := s.GetContext()
-	subSvc := s.service.(*subscriptionService)
 	sub := s.monthlyPeriodSubscription()
 
 	s.seedFixedPriceAddon("addon_override", decimal.NewFromInt(60), types.InvoiceCadenceAdvance)
@@ -237,7 +235,7 @@ func (s *SubscriptionServiceSuite) TestAddonAttach_PriceOverride_BillsTheOverrid
 	listQuote := listPrice.getQuote().NetAmount()
 	s.Require().True(listQuote.IsPositive())
 
-	_, err = subSvc.attachAddon(ctx, sub, &dto.AddAddonToSubscriptionRequest{
+	_, err = s.attachOne(sub, &dto.AddAddonToSubscriptionRequest{
 		AddonID:           "addon_override",
 		Cadence:           types.AddonCadenceRecurring,
 		StartDate:         lo.ToPtr(at),

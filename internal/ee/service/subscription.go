@@ -4874,7 +4874,11 @@ func (s *subscriptionService) handleSubCoupons(
 	return nil
 }
 
-// handleSubscriptionAddons processes addons for a subscription
+// handleSubscriptionAddons attaches the creation request's addons as one change.
+//
+// Resolve + Persist rather than Execute: creation already holds the transaction and has just
+// inserted the row, so Execute's lock and re-read buy nothing, and its post-transaction
+// payment attempt would run outbound I/O against uncommitted rows.
 func (s *subscriptionService) handleSubscriptionAddons(
 	ctx context.Context,
 	subscription *subscription.Subscription,
@@ -4888,11 +4892,12 @@ func (s *subscriptionService) handleSubscriptionAddons(
 		"subscription_id", subscription.ID,
 		"addons_count", len(addonRequests))
 
-	// Process each addon request
-	for _, addonReq := range addonRequests {
+	adds := make([]AddonAdd, 0, len(addonRequests))
+	for i := range addonRequests {
+		addonReq := addonRequests[i]
 
-		// check if start date is given else mark it as subscription start date
-		if addonReq.StartDate == nil {
+		// Attach at the subscription's own start unless the caller named a date.
+		if addonReq.StartDate == nil && addonReq.ChangeAt == nil {
 			addonReq.StartDate = &subscription.StartDate
 		}
 
@@ -4900,16 +4905,22 @@ func (s *subscriptionService) handleSubscriptionAddons(
 		// proration here as well would charge the addon twice.
 		addonReq.ProrationBehavior = types.ProrationBehaviorNone
 
-		if _, err := s.attachAddon(ctx, subscription, lo.ToPtr(addonReq), nil); err != nil {
-			return err
-		}
+		adds = append(adds, AddonAdd{Request: &addonReq})
 	}
 
-	return nil
+	changeSvc := NewAddonChangeService(s.ServiceParams)
+	config, err := changeSvc.Resolve(ctx, AddonChangeRequest{Subscription: subscription, Adds: adds})
+	if err != nil {
+		return err
+	}
+
+	// Leaves subscription.LineItems as it found it: everything after this in createSubscription
+	// is written against a sub whose line items exclude the addons.
+	return changeSvc.Persist(ctx, config)
 }
 
-// AddAddonToSubscription adds an addon to a subscription
-// This is the public facing method for adding an addon to a subscription
+// AddAddonToSubscription is the deprecated single-addon route, served by the batch path so
+// there is one implementation. The response is rebuilt from what the batch reports.
 func (s *subscriptionService) AddAddonToSubscription(
 	ctx context.Context,
 	req *dto.AddAddonRequest,
@@ -4919,28 +4930,55 @@ func (s *subscriptionService) AddAddonToSubscription(
 		return nil, err
 	}
 
-	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	resp, err := NewSubscriptionModificationService(s.ServiceParams).Execute(ctx, req.SubscriptionID,
+		dto.ExecuteSubscriptionModifyRequest{
+			Type:     dto.SubscriptionModifyTypeAddon,
+			Checkout: req.Checkout,
+			BulkAddonParams: &dto.SubModifyBulkAddonParams{
+				Adds: []*dto.AddAddonToSubscriptionRequest{&req.AddAddonToSubscriptionRequest},
+			},
+		})
 	if err != nil {
 		return nil, err
 	}
-	sub.LineItems = lineItems
 
-	resp, err := s.attachAddon(ctx, sub, &req.AddAddonToSubscriptionRequest, req.Checkout)
+	association, err := s.createdAssociationOf(ctx, resp)
 	if err != nil {
 		return nil, err
-	}
-
-	// A pay-first attach has changed nothing yet — the association is pending and the line
-	// items appear only once payment lands, so there is no subscription update to announce.
-	if !resp.PaymentPending() {
-		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, req.SubscriptionID)
 	}
 
 	return &dto.AddAddonToSubscriptionResponse{
-		AddonAssociation: resp.GetAssociation(),
-		CheckoutSession:  resp.GetCheckoutSession(),
-		Invoice:          resp.GetInvoice(),
+		AddonAssociation: association,
+		CheckoutSession:  resp.CheckoutSession,
+		// Only a payment-gated attach carries an invoice here: pay-later settles onto the
+		// subscription's own documents, which this route has never reported.
+		Invoice: lo.Ternary(resp.CheckoutSession != nil, firstChangedInvoice(resp), nil),
 	}, nil
+}
+
+// createdAssociationOf reads back the row the change reported creating.
+func (s *subscriptionService) createdAssociationOf(
+	ctx context.Context,
+	resp *dto.SubscriptionModifyResponse,
+) (*addonassociation.AddonAssociation, error) {
+	for _, changed := range resp.ChangedResources.AddonAssociations {
+		if changed.ChangeAction == dto.ChangedAddonAssociationActionCreated {
+			return s.AddonAssociationRepo.GetByID(ctx, changed.ID)
+		}
+	}
+
+	return nil, ierr.NewError("addon change reported no created association").
+		Mark(ierr.ErrInternal)
+}
+
+func firstChangedInvoice(resp *dto.SubscriptionModifyResponse) *dto.InvoiceResponse {
+	for _, changed := range resp.ChangedResources.Invoices {
+		if changed.Invoice != nil {
+			return changed.Invoice
+		}
+	}
+
+	return nil
 }
 
 // createAddonAttachParams resolves everything an attach needs — validations, prices, association and
@@ -5251,14 +5289,22 @@ func (s *subscriptionService) cancelAddonsForSubscription(ctx context.Context, s
 }
 
 // RemoveAddonFromSubscription removes an addon from a subscription by addon association ID
+// RemoveAddonFromSubscription is the deprecated single-addon route. The body names only the
+// association, so the subscription is read back off it before delegating to the batch path.
 func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, req *dto.RemoveAddonRequest) error {
-	outcome, err := s.detachAddon(ctx, req, "")
+	association, err := s.AddonAssociationRepo.GetByID(ctx, req.AddonAssociationID)
 	if err != nil {
 		return err
 	}
 
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, outcome.GetAssociation().EntityID)
-	return nil
+	_, err = NewSubscriptionModificationService(s.ServiceParams).Execute(ctx, association.EntityID,
+		dto.ExecuteSubscriptionModifyRequest{
+			Type: dto.SubscriptionModifyTypeAddon,
+			BulkAddonParams: &dto.SubModifyBulkAddonParams{
+				Removes: []*dto.RemoveAddonRequest{req},
+			},
+		})
+	return err
 }
 
 func (s *subscriptionService) buildAddonLineItems(

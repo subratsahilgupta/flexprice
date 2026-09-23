@@ -235,12 +235,11 @@ func (s *SubscriptionServiceSuite) TestExecuteBulkAddonModification_ChangeAtPeri
 
 // change_at works on the single-addon path too: both reach the same Resolve.
 func (s *SubscriptionServiceSuite) TestAttachAddon_ChangeAtPeriodEnd_StartsAtPeriodEnd() {
-	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
 	s.seedFixedPriceAddon("addon_single_ca", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
 
-	result, err := s.service.(*subscriptionService).attachAddon(ctx, sub, &dto.AddAddonToSubscriptionRequest{
+	result, err := s.attachOne(sub, &dto.AddAddonToSubscriptionRequest{
 		AddonID:           "addon_single_ca",
 		Cadence:           types.AddonCadenceRecurring,
 		ProrationBehavior: types.ProrationBehaviorCreateProrations,
@@ -248,8 +247,8 @@ func (s *SubscriptionServiceSuite) TestAttachAddon_ChangeAtPeriodEnd_StartsAtPer
 	}, nil)
 	s.Require().NoError(err)
 
-	s.Require().Len(result.GetCreatedLineItems(), 1)
-	s.True(result.GetCreatedLineItems()[0].StartDate.Equal(sub.CurrentPeriodEnd))
+	s.Require().Len(result.CreatedLineItems, 1)
+	s.True(result.CreatedLineItems[0].StartDate.Equal(sub.CurrentPeriodEnd))
 	s.Empty(s.oneOffInvoicesFor(sub.ID), "a period-end attach bills nothing in the current period")
 }
 

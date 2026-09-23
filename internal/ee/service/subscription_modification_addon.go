@@ -18,78 +18,26 @@ const (
 	previewCreatedAssociationID = "(preview-created)"
 )
 
-func (s *subscriptionModificationService) executeAddonModification(
-	ctx context.Context,
-	subscriptionID string,
-	params *dto.SubModifyAddonParams,
-	checkout *dto.CheckoutParams,
-) (*dto.SubscriptionModifyResponse, error) {
-	subSvc := &subscriptionService{ServiceParams: s.serviceParams}
+// addonBulkParams maps the single-addon payload onto the batch one, so type "addon" has one
+// implementation whichever shape the caller sends.
+func addonBulkParams(req dto.ExecuteSubscriptionModifyRequest) (*dto.SubModifyBulkAddonParams, error) {
+	if req.BulkAddonParams != nil {
+		return req.BulkAddonParams, nil
+	}
 
-	var (
-		result *dto.AddonChangeResult
-		err    error
-	)
-
-	switch params.Action {
+	switch req.AddonParams.Action {
 	case dto.SubscriptionModificationActionAdd:
-		var sub *subscription.Subscription
-		if sub, err = s.loadSubscriptionWithLineItems(ctx, subscriptionID); err == nil {
-			result, err = subSvc.attachAddon(ctx, sub, params.Add, checkout)
-		}
+		return &dto.SubModifyBulkAddonParams{
+			Adds: []*dto.AddAddonToSubscriptionRequest{req.AddonParams.Add},
+		}, nil
 	case dto.SubscriptionModificationActionRemove:
-		result, err = subSvc.detachAddon(ctx, params.Remove, subscriptionID)
+		return &dto.SubModifyBulkAddonParams{
+			Removes: []*dto.RemoveAddonRequest{req.AddonParams.Remove},
+		}, nil
 	default:
-		return nil, ierr.NewError("invalid action, action must be add or remove").Mark(ierr.ErrValidation)
+		return nil, ierr.NewError("invalid action, action must be add or remove").
+			Mark(ierr.ErrValidation)
 	}
-	if err != nil {
-		return nil, err
-	}
-
-	// A pay-first attach has changed nothing yet — the association is pending and the line
-	// items appear only once payment lands, so there is no subscription update to announce.
-	if !result.PaymentPending() {
-		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, subscriptionID)
-		triggerHubSpotDealSync(ctx, s.serviceParams, subscriptionID)
-	}
-
-	return s.addonModifyResponse(ctx, subscriptionID,
-		addonChangedLineItems(result, false), addonChangedAssociations(result, false),
-		result.GetChangedInvoices(), result.GetCheckoutSession())
-}
-
-func (s *subscriptionModificationService) previewAddonModification(
-	ctx context.Context,
-	subscriptionID string,
-	params *dto.SubModifyAddonParams,
-) (*dto.SubscriptionModifyResponse, error) {
-	subSvc := &subscriptionService{ServiceParams: s.serviceParams}
-
-	var (
-		result *dto.AddonChangeResult
-		err    error
-	)
-
-	switch params.Action {
-	case dto.SubscriptionModificationActionAdd:
-		var sub *subscription.Subscription
-		if sub, err = s.loadSubscriptionWithLineItems(ctx, subscriptionID); err == nil {
-			params.Add.PreviewOnly = true
-			result, err = subSvc.attachAddon(ctx, sub, params.Add, nil)
-		}
-	case dto.SubscriptionModificationActionRemove:
-		params.Remove.PreviewOnly = true
-		result, err = subSvc.detachAddon(ctx, params.Remove, subscriptionID)
-	default:
-		return nil, ierr.NewError("invalid action, action must be add or remove").Mark(ierr.ErrValidation)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return s.addonModifyResponse(ctx, subscriptionID,
-		addonChangedLineItems(result, true), addonChangedAssociations(result, true),
-		result.GetChangedInvoices(), result.GetCheckoutSession())
 }
 
 func (s *subscriptionModificationService) loadSubscriptionWithLineItems(
@@ -199,39 +147,4 @@ func changedEndedLineItem(li *subscription.SubscriptionLineItem, endDate time.Ti
 		EndDate:      &endDate,
 		ChangeAction: dto.ChangedLineItemActionEnded,
 	}
-}
-
-// addonChangedAssociations is the single-addon path's one entry, in the same shape the batch
-// reports. Removed with dto.AddonChangeResult once every caller is on the batch path.
-func addonChangedAssociations(result *dto.AddonChangeResult, isPreview bool) []dto.ChangedAddonAssociation {
-	association := result.GetAssociation()
-	if association == nil {
-		return nil
-	}
-
-	if len(result.GetEndedLineItems()) > 0 {
-		return []dto.ChangedAddonAssociation{changedEndedAssociation(association, result.GetEffectiveDate())}
-	}
-
-	return []dto.ChangedAddonAssociation{
-		changedCreatedAssociation(association, result.GetEffectiveDate(), isPreview),
-	}
-}
-
-func addonChangedLineItems(result *dto.AddonChangeResult, isPreview bool) []dto.ChangedLineItem {
-	created := result.GetCreatedLineItems()
-	ended := result.GetEndedLineItems()
-	if len(created)+len(ended) == 0 {
-		return nil
-	}
-
-	items := make([]dto.ChangedLineItem, 0, len(created)+len(ended))
-	for _, li := range created {
-		items = append(items, changedCreatedLineItem(li, isPreview))
-	}
-	for _, li := range ended {
-		items = append(items, changedEndedLineItem(li, result.GetEffectiveDate()))
-	}
-
-	return items
 }

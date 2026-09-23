@@ -251,7 +251,7 @@ func (s *SubscriptionServiceSuite) TestAddonsCheckout_ConcurrentDetachOfGatedRem
 	at := sub.CurrentPeriodStart.Add(15 * 24 * time.Hour)
 	s.seedPayFirstAddonBatchCheckout("addon_pfg_in", outgoing, at)
 
-	_, err := s.service.(*subscriptionService).detachAddon(ctx, &dto.RemoveAddonRequest{
+	_, err := s.detachOne(&dto.RemoveAddonRequest{
 		AddonAssociationID: outgoing,
 		ProrationBehavior:  types.ProrationBehaviorCreateProrations,
 	}, sub.ID)
@@ -265,7 +265,6 @@ func (s *SubscriptionServiceSuite) TestAddonsCheckout_ConcurrentDetachOfGatedRem
 
 // An addon NOT named by the pending session is still detachable — the guard must be specific.
 func (s *SubscriptionServiceSuite) TestAddonsCheckout_DetachOfUngatedAddonStillAllowed() {
-	ctx := s.GetContext()
 	sub := s.monthlyPeriodSubscription()
 
 	s.seedFixedPriceAddon("addon_pfu_gated", decimal.NewFromInt(30), types.InvoiceCadenceAdvance)
@@ -277,7 +276,7 @@ func (s *SubscriptionServiceSuite) TestAddonsCheckout_DetachOfUngatedAddonStillA
 	at := sub.CurrentPeriodStart.Add(15 * 24 * time.Hour)
 	s.seedPayFirstAddonBatchCheckout("addon_pfu_in", gated, at)
 
-	_, err := s.service.(*subscriptionService).detachAddon(ctx, &dto.RemoveAddonRequest{
+	_, err := s.detachOne(&dto.RemoveAddonRequest{
 		AddonAssociationID: free,
 		ProrationBehavior:  types.ProrationBehaviorNone,
 	}, sub.ID)

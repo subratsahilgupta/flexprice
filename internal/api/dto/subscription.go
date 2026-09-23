@@ -472,6 +472,13 @@ func (c *SubscriptionCreationConfig) ApplyDefaults() {
 }
 
 func (c *SubscriptionCreationConfig) Validate() error {
+	// Creation attaches its addons as one batch, so it is bound by the same limits.
+	if len(c.Addons) > 0 {
+		if err := ValidateAddonBatch(lo.ToSlicePtr(c.Addons), nil); err != nil {
+			return err
+		}
+	}
+
 	if c.CommitmentAmount != nil && c.CommitmentAmount.LessThan(decimal.Zero) {
 		return ierr.NewError("commitment_amount must be non-negative").
 			WithHint("Commitment amount must be greater than or equal to 0").
