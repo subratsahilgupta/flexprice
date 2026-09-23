@@ -4875,10 +4875,6 @@ func (s *subscriptionService) handleSubCoupons(
 }
 
 // handleSubscriptionAddons attaches the creation request's addons as one change.
-//
-// Resolve + Persist rather than Execute: creation already holds the transaction and has just
-// inserted the row, so Execute's lock and re-read buy nothing, and its post-transaction
-// payment attempt would run outbound I/O against uncommitted rows.
 func (s *subscriptionService) handleSubscriptionAddons(
 	ctx context.Context,
 	subscription *subscription.Subscription,
@@ -4914,8 +4910,7 @@ func (s *subscriptionService) handleSubscriptionAddons(
 		return err
 	}
 
-	// Leaves subscription.LineItems as it found it: everything after this in createSubscription
-	// is written against a sub whose line items exclude the addons.
+	// Persists the changes but not raise the invoice
 	return changeSvc.Persist(ctx, config)
 }
 
@@ -4942,7 +4937,14 @@ func (s *subscriptionService) AddAddonToSubscription(
 		return nil, err
 	}
 
-	association, err := s.createdAssociationOf(ctx, resp)
+	// An add-only change reports exactly one association, the one it created.
+	changed := resp.ChangedResources.AddonAssociations
+	if len(changed) == 0 {
+		return nil, ierr.NewError("addon change reported no created association").
+			Mark(ierr.ErrInternal)
+	}
+
+	association, err := s.AddonAssociationRepo.GetByID(ctx, changed[0].ID)
 	if err != nil {
 		return nil, err
 	}
@@ -4950,35 +4952,16 @@ func (s *subscriptionService) AddAddonToSubscription(
 	return &dto.AddAddonToSubscriptionResponse{
 		AddonAssociation: association,
 		CheckoutSession:  resp.CheckoutSession,
-		// Only a payment-gated attach carries an invoice here: pay-later settles onto the
-		// subscription's own documents, which this route has never reported.
-		Invoice: lo.Ternary(resp.CheckoutSession != nil, firstChangedInvoice(resp), nil),
+		Invoice: lo.Ternary(resp.CheckoutSession != nil, gatedDraftInvoice(resp), nil),
 	}, nil
 }
 
-// createdAssociationOf reads back the row the change reported creating.
-func (s *subscriptionService) createdAssociationOf(
-	ctx context.Context,
-	resp *dto.SubscriptionModifyResponse,
-) (*addonassociation.AddonAssociation, error) {
-	for _, changed := range resp.ChangedResources.AddonAssociations {
-		if changed.ChangeAction == dto.ChangedAddonAssociationActionCreated {
-			return s.AddonAssociationRepo.GetByID(ctx, changed.ID)
-		}
+func gatedDraftInvoice(resp *dto.SubscriptionModifyResponse) *dto.InvoiceResponse {
+	if len(resp.ChangedResources.Invoices) == 0 {
+		return nil
 	}
 
-	return nil, ierr.NewError("addon change reported no created association").
-		Mark(ierr.ErrInternal)
-}
-
-func firstChangedInvoice(resp *dto.SubscriptionModifyResponse) *dto.InvoiceResponse {
-	for _, changed := range resp.ChangedResources.Invoices {
-		if changed.Invoice != nil {
-			return changed.Invoice
-		}
-	}
-
-	return nil
+	return resp.ChangedResources.Invoices[0].Invoice
 }
 
 // createAddonAttachParams resolves everything an attach needs — validations, prices, association and

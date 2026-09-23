@@ -34,10 +34,9 @@ type GrantSource struct {
 	// EffectiveDate is when this source joins or leaves: it anchors the source's credit
 	// grant chain and dates its entitlement grant proration.
 	EffectiveDate time.Time
-	// RequestedDate is the date the caller asked for, before the line item and price starts
-	// clamp it into EffectiveDate. Only validateGrantDates reads it: two entries that asked
-	// to start together must not read as two dates because their prices differ in age.
-	// Defaults to EffectiveDate when unset.
+	// This is the date used for validations and not for proration because prorations date
+	// is affected by other factors too like price start date which is not the same
+	// as requested date asked by caller
 	RequestedDate time.Time
 	// EndDate caps recurring grants at a time-bounded (onetime) addon's boundary.
 	EndDate  *time.Time
@@ -145,11 +144,8 @@ func (s *subscriptionGrantService) Resolve(ctx context.Context, req GrantChangeR
 	return cfg, nil
 }
 
-// validateChangeBoundary rejects a future-dated change that would cut a live grant window.
-// The successor's quota is fixed when the window closes (Closed.Remaining() + New.Quota) while
-// the predecessor keeps accruing usage until the boundary, so usage in the gap would be spent
-// against the predecessor and carried forward as well. Closing nothing is exactly when that
-// gap cannot exist.
+// closing at future date is not allowed right now because that leads
+// to us opening a grant for which usage is not correct as it's in future
 func (s *subscriptionGrantService) validateChangeBoundary(
 	ctx context.Context,
 	cfg *GrantChangeConfig,
@@ -213,9 +209,6 @@ func (s *subscriptionGrantService) Apply(ctx context.Context, cfg *GrantChangeCo
 	return s.applyEntitlementGrantChange(ctx, cfg)
 }
 
-// entitlementChangeAt is the instant the change cuts this cycle's windows: never in the past,
-// since a window already measured cannot be re-cut. Takes the caller's clock so the boundary
-// guard compares against the same `now` this was floored at.
 func entitlementChangeAt(req GrantChangeRequest, now time.Time) time.Time {
 	at := now
 	for _, src := range append(append([]GrantSource{}, req.Incoming...), req.Removed...) {
@@ -471,9 +464,6 @@ func (s *subscriptionGrantService) resolveIncomingGrants(
 				continue
 			}
 
-			// The audit metadata stays the first source's: the pooled row carries one
-			// coefficient, which validateGrantDates guarantees by making the sources agree
-			// on a date before anything reaches here.
 			pooled[featureID] = entitlementgrant.NewEntitlementGrantBuilder(prior).
 				WithQuota(prior.Quota.Add(grant.Quota)).
 				WithWindow(types.EarliestOf(prior.ValidFrom, grant.ValidFrom), prior.ValidTo).

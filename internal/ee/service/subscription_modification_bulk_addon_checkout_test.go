@@ -385,7 +385,7 @@ func (s *SubscriptionServiceSuite) TestAddonsCheckout_GatedResponse_ReportsPendi
 	reported := bulkAddonChangedAssociations(config, false)
 	s.Require().Len(reported, 1)
 	s.Equal(dto.ChangedAddonAssociationActionCreated, reported[0].ChangeAction)
-	s.Equal(types.AddonStatusPending, reported[0].Status, "nothing is live until payment lands")
+	s.Equal(types.AddonStatusPending, reported[0].AddonStatus, "nothing is live until payment lands")
 
 	stored, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, reported[0].ID)
 	s.Require().NoError(err)

@@ -138,7 +138,7 @@ func (s *SubscriptionServiceSuite) TestPreviewBulkAddonModification_WritesNothin
 	s.Require().Len(previewed.ChangedResources.Invoices, 1)
 	s.Len(s.changedLineItemsByAction(previewed, dto.ChangedLineItemActionCreated), 2)
 	for _, li := range previewed.ChangedResources.LineItems {
-		s.Equal(previewCreatedLineItemID, li.ID, "preview reports no real line item IDs")
+		s.Equal(previewCreatedID, li.ID, "preview reports no real line item IDs")
 	}
 
 	executed, err := s.modificationService().Execute(ctx, sub.ID, req)
@@ -299,7 +299,7 @@ func (s *SubscriptionServiceSuite) TestBulkAddonModification_Execute_ReportsTheC
 	created := s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionCreated)
 	s.Require().Len(created, 1)
 	s.Equal("addon_assoc_add", created[0].AddonID)
-	s.Equal(types.AddonStatusActive, created[0].Status)
+	s.Equal(types.AddonStatusActive, created[0].AddonStatus)
 
 	// The reported id must name the row that was actually written, or a caller cannot remove it.
 	stored, err := s.GetStores().AddonAssociationRepo.GetByID(ctx, created[0].ID)
@@ -323,7 +323,7 @@ func (s *SubscriptionServiceSuite) TestBulkAddonModification_Execute_ReportsTheE
 	ended := s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionEnded)
 	s.Require().Len(ended, 1)
 	s.Equal(outgoing, ended[0].ID, "a removal names the row it ended")
-	s.Equal(types.AddonStatusCancelled, ended[0].Status)
+	s.Equal(types.AddonStatusCancelled, ended[0].AddonStatus)
 	s.Require().NotNil(ended[0].EndDate)
 	s.True(ended[0].EndDate.Equal(at))
 }
@@ -363,7 +363,7 @@ func (s *SubscriptionServiceSuite) TestBulkAddonModification_Preview_MasksTheUnw
 
 	created := s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionCreated)
 	s.Require().Len(created, 1)
-	s.Equal(previewCreatedAssociationID, created[0].ID)
+	s.Equal(previewCreatedID, created[0].ID)
 
 	ended := s.changedAssociationsByAction(resp, dto.ChangedAddonAssociationActionEnded)
 	s.Require().Len(ended, 1)

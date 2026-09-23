@@ -472,7 +472,6 @@ func (c *SubscriptionCreationConfig) ApplyDefaults() {
 }
 
 func (c *SubscriptionCreationConfig) Validate() error {
-	// Creation attaches its addons as one batch, so it is bound by the same limits.
 	if len(c.Addons) > 0 {
 		if err := ValidateAddonBatch(lo.ToSlicePtr(c.Addons), nil); err != nil {
 			return err

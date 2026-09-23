@@ -584,10 +584,9 @@ type ChangedSubscription struct {
 // ChangedAddonAssociation describes an addon attached or ended by a modification. It is the
 // only place an attach's new association id is returned, and a later removal needs it.
 type ChangedAddonAssociation struct {
-	ID      string `json:"id"`
-	AddonID string `json:"addon_id"`
-	// Status is pending while a pay-first attach is awaiting payment.
-	Status       types.AddonStatus             `json:"status"`
+	ID           string                        `json:"id"`
+	AddonID      string                        `json:"addon_id"`
+	AddonStatus  types.AddonStatus             `json:"addon_status"`
 	StartDate    *time.Time                    `json:"start_date,omitempty"`
 	EndDate      *time.Time                    `json:"end_date,omitempty"`
 	ChangeAction ChangedAddonAssociationAction `json:"change_action" enums:"created,ended"`

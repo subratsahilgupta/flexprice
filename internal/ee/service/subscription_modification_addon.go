@@ -11,12 +11,8 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 )
 
-const (
-	previewCreatedLineItemID = "(preview-created)"
-	// A preview attach mints an association id it never writes, so it must not be handed back
-	// as one a caller could remove. A preview removal names a persisted row and keeps its id.
-	previewCreatedAssociationID = "(preview-created)"
-)
+// previewCreatedID stands in for any id preview would have minted but never wrote.
+const previewCreatedID = "(preview-created)"
 
 // addonBulkParams maps the single-addon payload onto the batch one, so type "addon" has one
 // implementation whichever shape the caller sends.
@@ -84,13 +80,13 @@ func changedCreatedAssociation(
 ) dto.ChangedAddonAssociation {
 	id := association.ID
 	if isPreview {
-		id = previewCreatedAssociationID
+		id = previewCreatedID
 	}
 
 	changed := dto.ChangedAddonAssociation{
 		ID:           id,
 		AddonID:      association.AddonID,
-		Status:       association.AddonStatus,
+		AddonStatus:  association.AddonStatus,
 		StartDate:    &startDate,
 		ChangeAction: dto.ChangedAddonAssociationActionCreated,
 	}
@@ -108,7 +104,7 @@ func changedEndedAssociation(
 	return dto.ChangedAddonAssociation{
 		ID:           association.ID,
 		AddonID:      association.AddonID,
-		Status:       types.AddonStatusCancelled,
+		AddonStatus:  types.AddonStatusCancelled,
 		StartDate:    association.StartDate,
 		EndDate:      &endDate,
 		ChangeAction: dto.ChangedAddonAssociationActionEnded,
@@ -118,7 +114,7 @@ func changedEndedAssociation(
 func changedCreatedLineItem(li *subscription.SubscriptionLineItem, isPreview bool) dto.ChangedLineItem {
 	id := li.ID
 	if isPreview {
-		id = previewCreatedLineItemID
+		id = previewCreatedID
 	}
 
 	startDate := li.StartDate
