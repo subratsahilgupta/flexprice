@@ -22,8 +22,14 @@ Design doc: [FLE-1257 analytics platform ERD](../../../../docs/design/2026-09-10
   (tenant, environment, subscription, price, sub_line_item, day, revenue_source);
   recomputes bump `version` in place. FINAL rows are immutable — a void appends
   contra rows (`is_revert = true`), never edits.
-- **Tenant scoping.** Every query filters tenant + environment; batch jobs walk
-  only environments opted in via the `revenue_analytics_config` setting.
+- **Tenant scoping.** Every query filters tenant + environment.
+- **Opt-in gates every write.** No row is written for an environment whose
+  `revenue_analytics_config` is absent or disabled — not by the batch jobs,
+  and not by the invoice finalize/void hooks either. An environment that never
+  opted in would otherwise accumulate rows no sweep ever reconciles, because
+  the sweep only walks opted-in environments. Every write method on
+  `interfaces.RevenueService` checks `revenueAnalyticsEnabled` and returns
+  silently; `TestWriteEntryPointsRequireOptIn` holds the whole surface.
 - **Day-grained bounds.** `period_start`, `period_end` and `day` are DATE
   columns, so every write and every lookup goes through `periodDays` / `dayOf`.
   `inclusiveLastDay` must agree with the day-walk in `buildUsageCurve`: the

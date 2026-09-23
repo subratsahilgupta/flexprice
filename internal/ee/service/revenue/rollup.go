@@ -52,6 +52,14 @@ type lineItemRows struct {
 }
 
 func (s *revenueService) RollupSubscription(ctx context.Context, subscriptionID string) error {
+	enabled, err := s.revenueAnalyticsEnabled(ctx)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+
 	sub, err := s.SubRepo.Get(ctx, subscriptionID)
 	if err != nil {
 		return err
