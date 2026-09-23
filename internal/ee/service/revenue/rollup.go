@@ -672,6 +672,12 @@ func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op strin
 		if !cfg.Enabled {
 			continue
 		}
+		if tec.TenantID == "" || tec.EnvironmentID == "" {
+			s.Logger.Info(ctx, "skipping revenue_analytics_config without tenant or environment",
+				"tenant_id", tec.TenantID,
+				"environment_id", tec.EnvironmentID)
+			continue
+		}
 
 		tenantCtx := types.SetTenantID(ctx, tec.TenantID)
 		tenantCtx = types.SetEnvironmentID(tenantCtx, tec.EnvironmentID)
@@ -690,6 +696,12 @@ func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op strin
 // rollupDirtyForEnvironment scans one (tenant, environment)'s active
 // subscriptions in pages and rolls every one with activity since `since`.
 func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+	if tenantID == "" || environmentID == "" {
+		return 0, 0, nil
+	}
+
 	const batchSize = 1000
 	offset := 0
 
@@ -708,6 +720,13 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since ti
 		}
 
 		for _, sub := range subs {
+			if sub.TenantID != tenantID || sub.EnvironmentID != environmentID {
+				s.Logger.Info(ctx, "skipping subscription outside rollup environment",
+					"subscription_id", sub.ID,
+					"subscription_tenant_id", sub.TenantID,
+					"subscription_environment_id", sub.EnvironmentID)
+				continue
+			}
 			if sub.UpdatedAt.Before(since) && sub.CurrentPeriodStart.Before(since) && sub.CurrentPeriodEnd.Before(since) {
 				continue
 			}
@@ -746,6 +765,14 @@ type finalizePeriodGroup struct {
 }
 
 func (s *revenueService) FinalizeSubscriptionPeriod(ctx context.Context, invoiceID string) error {
+	enabled, err := s.revenueAnalyticsEnabled(ctx)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+
 	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
 	if err != nil {
 		return err
@@ -950,6 +977,14 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 // now-voided invoice — FINAL rows are immutable, so a void reverses them
 // rather than editing or deleting. Idempotent via the repository.
 func (s *revenueService) RevertInvoiceFacts(ctx context.Context, invoiceID string) error {
+	enabled, err := s.revenueAnalyticsEnabled(ctx)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+
 	n, err := s.RevenueFactRepo.RevertByInvoice(ctx, invoiceID)
 	if err != nil {
 		return err
