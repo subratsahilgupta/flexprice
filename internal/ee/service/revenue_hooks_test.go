@@ -98,13 +98,49 @@ func TestAsyncRevenueFactsUpdate_WaitsForCommit(t *testing.T) {
 		t.Fatal("the update never ran after the commit")
 	}
 
-	// Queued work belongs to the transaction that produced it: a rollback
-	// simply never runs the hooks.
+	// Once the transaction has finished, registration is closed: a late
+	// caller must run inline rather than queue onto a list nobody drains.
 	fire()
 	select {
 	case <-ran:
-		t.Fatal("the update ran without a commit")
+	case <-time.After(5 * time.Second):
+		t.Fatal("a registration after the commit was silently dropped")
+	}
+}
+
+// TestAsyncRevenueFactsUpdate_DroppedOnRollback: queued work belongs to the
+// transaction that produced it. A rollback means the invoice it would read was
+// never written, so the work is discarded rather than run.
+func TestAsyncRevenueFactsUpdate_DroppedOnRollback(t *testing.T) {
+	ctx := types.SetTenantID(context.Background(), "tenant_hook")
+	ctx = context.WithValue(ctx, types.CtxDBTransaction, &ent.Tx{})
+	ctx = types.WithPostCommitHooks(ctx)
+
+	ran := make(chan struct{}, 1)
+	params := ServiceParams{Logger: logger.NewNoopLogger(), RevenueFacts: noopRevenueFacts{}}
+	fire := func() {
+		asyncRevenueFactsUpdate(ctx, params, "test", "inv_hook",
+			func(context.Context, interfaces.RevenueService) error {
+				ran <- struct{}{}
+				return nil
+			})
+	}
+
+	fire()
+	types.DiscardPostCommitHooks(ctx)
+	select {
+	case <-ran:
+		t.Fatal("work queued by a rolled-back transaction must not run")
 	case <-time.After(150 * time.Millisecond):
+	}
+
+	// Registration is closed now, so a later caller runs inline instead of
+	// queueing into a list that will never be drained.
+	fire()
+	select {
+	case <-ran:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a registration after the rollback was silently dropped")
 	}
 }
 

@@ -211,8 +211,9 @@ func ValidateTenantContext(ctx context.Context) error {
 // commits. The transaction wrapper installs it; callers queue through
 // RegisterPostCommit.
 type postCommitHooks struct {
-	mu    sync.Mutex
-	funcs []func()
+	mu     sync.Mutex
+	funcs  []func()
+	closed bool
 }
 
 // WithPostCommitHooks installs an empty hook list for one transaction.
@@ -221,9 +222,10 @@ func WithPostCommitHooks(ctx context.Context) context.Context {
 }
 
 // RegisterPostCommit queues fn to run once the current transaction commits,
-// reporting false when there is no transaction to wait for so the caller can
-// run fn itself. Work that reads what the transaction wrote must go through
-// here: uncommitted rows are invisible on any other connection.
+// reporting false when there is nothing to wait for — no transaction, or one
+// that has already finished — so the caller runs fn itself. Work that reads
+// what the transaction wrote must go through here: uncommitted rows are
+// invisible on any other connection.
 func RegisterPostCommit(ctx context.Context, fn func()) bool {
 	hooks, ok := ctx.Value(CtxPostCommit).(*postCommitHooks)
 	if !ok || hooks == nil {
@@ -231,24 +233,40 @@ func RegisterPostCommit(ctx context.Context, fn func()) bool {
 	}
 	hooks.mu.Lock()
 	defer hooks.mu.Unlock()
+	if hooks.closed {
+		return false
+	}
 	hooks.funcs = append(hooks.funcs, fn)
 	return true
 }
 
-// RunPostCommitHooks runs the queued hooks and clears them. A rollback simply
-// never calls this, dropping the work with the transaction that produced it.
+// RunPostCommitHooks closes registration and runs what was queued.
 func RunPostCommitHooks(ctx context.Context) {
-	hooks, ok := ctx.Value(CtxPostCommit).(*postCommitHooks)
-	if !ok || hooks == nil {
-		return
-	}
-	hooks.mu.Lock()
-	queued := hooks.funcs
-	hooks.funcs = nil
-	hooks.mu.Unlock()
-	for _, fn := range queued {
+	for _, fn := range closePostCommitHooks(ctx) {
 		fn()
 	}
+}
+
+// DiscardPostCommitHooks closes registration and drops what was queued — the
+// rollback path, where the writes the work would read never landed.
+func DiscardPostCommitHooks(ctx context.Context) {
+	_ = closePostCommitHooks(ctx)
+}
+
+// closePostCommitHooks takes the queued hooks and closes the list, so a
+// registration arriving afterwards is told to run inline rather than queueing
+// onto a list nobody will drain again.
+func closePostCommitHooks(ctx context.Context) []func() {
+	hooks, ok := ctx.Value(CtxPostCommit).(*postCommitHooks)
+	if !ok || hooks == nil {
+		return nil
+	}
+	hooks.mu.Lock()
+	defer hooks.mu.Unlock()
+	queued := hooks.funcs
+	hooks.funcs = nil
+	hooks.closed = true
+	return queued
 }
 
 // WithoutDBTransaction strips any open transaction from ctx.

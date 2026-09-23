@@ -225,6 +225,10 @@ func (c *Client) withTx(ctx context.Context, fn func(ctx context.Context) error)
 		return fmt.Errorf("starting transaction: %w", err)
 	}
 
+	// Declared before the panic guard below so that guard can close the
+	// post-commit hooks it installs further down.
+	var txCtx context.Context
+
 	// Ensure transaction is rolled back on panic
 	defer func() {
 		if v := recover(); v != nil {
@@ -233,12 +237,13 @@ func (c *Client) withTx(ctx context.Context, fn func(ctx context.Context) error)
 				"panic", v,
 			)
 			_ = tx.Rollback()
+			types.DiscardPostCommitHooks(txCtx)
 			panic(v)
 		}
 	}()
 
 	// Create new context with transaction
-	txCtx := context.WithValue(ctx, types.CtxDBTransaction, tx)
+	txCtx = context.WithValue(ctx, types.CtxDBTransaction, tx)
 
 	// also force writer for all queries in this request
 	// this is important to prevent issues with read after write consistency
@@ -252,6 +257,7 @@ func (c *Client) withTx(ctx context.Context, fn func(ctx context.Context) error)
 		if rerr := tx.Rollback(); rerr != nil {
 			err = fmt.Errorf("rolling back transaction: %v (original error: %w)", rerr, err)
 		}
+		types.DiscardPostCommitHooks(txCtx)
 		c.logger.Error(ctx, "rolling back transaction due to error",
 			"error", err,
 		)
@@ -262,6 +268,7 @@ func (c *Client) withTx(ctx context.Context, fn func(ctx context.Context) error)
 		c.logger.Error(ctx, "committing transaction",
 			"error", err,
 		)
+		types.DiscardPostCommitHooks(txCtx)
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
