@@ -408,7 +408,10 @@ func (r *revenueFactRepository) RevertByInvoice(ctx context.Context, invoiceID s
 	return written, nil
 }
 
-// ListByInvoiceID lists every fact stamped with the invoice, reverts included.
+// ListByInvoiceID lists the facts BOOKED against the invoice — FINAL rows,
+// reverts included. Provisional rows carry the invoice id too (the JIT rollup
+// stamps its source), but they are not booked revenue: counting them would let
+// an invoice whose rows never flipped look reconciled to the drift sweep.
 func (r *revenueFactRepository) ListByInvoiceID(ctx context.Context, invoiceID string) ([]*revenuefact.RevenueFact, error) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
@@ -425,6 +428,7 @@ func (r *revenueFactRepository) ListByInvoiceID(ctx context.Context, invoiceID s
 			entrevenuefact.TenantID(tenantID),
 			entrevenuefact.EnvironmentID(environmentID),
 			entrevenuefact.InvoiceID(invoiceID),
+			entrevenuefact.StatusEQ(types.FactFinal),
 		).
 		Order(ent.Asc(entrevenuefact.FieldDay)).
 		All(ctx)
