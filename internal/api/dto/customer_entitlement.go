@@ -68,6 +68,10 @@ type GrantAllowanceState struct {
 	Status         types.EntitlementGrantStatus  `json:"status"`
 	IsActive       bool                          `json:"is_active"`
 	LastComputedAt *time.Time                    `json:"last_computed_at,omitempty"`
+	// When usage first reached the quota. Nil while the window still has room, and
+	// on an unlimited window. Overage is billed from here, so a reader asking why a
+	// window is exhausted wants this rather than ValidTo.
+	QuotaCrossedAt *time.Time `json:"quota_crossed_at,omitempty"`
 }
 
 // AggregatedEntitlement contains the final calculated entitlement values.
@@ -184,6 +188,11 @@ type FeatureUsageSummary struct {
 	NextUsageResetAt *time.Time           `json:"next_usage_reset_at"`
 	Sources          []*EntitlementSource `json:"sources"`
 	GrantState       *GrantState          `json:"grant_state,omitempty"`
+
+	// The rule the windows are cut from: quota, cadence and measure. Empty for a
+	// legacy entitlement, and for a parallel feature, where Buckets carries one
+	// config per budget instead.
+	GrantConfig
 
 	// Buckets is one entry per independent budget on a parallel feature. The scalar
 	// figures above cannot describe several budgets at once — a sum is not spendable

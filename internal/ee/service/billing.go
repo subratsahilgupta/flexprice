@@ -3422,6 +3422,8 @@ func (s *billingService) GetCustomerUsageSummary(ctx context.Context, customerID
 			// A parallel feature's budgets are independent, so the scalars above cannot
 			// describe them. Passed through so the reader can show each on its own.
 			Buckets: feature.Entitlement.Buckets,
+			// The rule behind the windows: quota, cadence, measure.
+			GrantConfig: feature.Entitlement.GrantConfig,
 		}
 
 		resp.Features = append(resp.Features, featureSummary)
