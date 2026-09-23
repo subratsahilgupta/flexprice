@@ -30,20 +30,38 @@ func (p revenuePeriod) exclusiveEnd() time.Time {
 	return p.End.AddDate(0, 0, 1)
 }
 
-// dayOf is t's UTC calendar day. period_start, period_end and day are date
-// columns, so every value written to or matched against them is truncated
-// here — a timestamp compares as midnight and would miss its own row.
-func dayOf(t time.Time) time.Time {
-	u := t.UTC()
-	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
+// locationOf resolves a subscription's IANA timezone the same way
+// buildUsageCurve does: an empty or unknown name falls back to UTC rather
+// than failing the rollup.
+func locationOf(tz string) *time.Location {
+	if tz == "" {
+		return time.UTC
+	}
+	if l, err := time.LoadLocation(tz); err == nil {
+		return l
+	}
+	return time.UTC
+}
+
+// dayOf is t's calendar day in loc, stamped as UTC midnight — the shape
+// buildUsageCurve writes to the day column. period_start, period_end and day
+// are date columns, so every value written to or matched against them is
+// truncated here; a timestamp compares as midnight and would miss its own row.
+func dayOf(t time.Time, loc *time.Location) time.Time {
+	if loc == nil {
+		loc = time.UTC
+	}
+	l := t.In(loc)
+	return time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 // inclusiveLastDay is the last day a period covers, matching the day-walk in
-// buildUsageCurve: it emits days strictly before the end's own date, folding
-// a mid-day end's usage back into the previous day. Taking the end's own date
-// instead would reach a day into the next period, whose first day it is.
-func inclusiveLastDay(exclusiveEnd time.Time) time.Time {
-	return dayOf(exclusiveEnd).AddDate(0, 0, -1)
+// buildUsageCurve: it emits days strictly before the end's own local date,
+// folding a mid-day end's usage back into the previous day. Taking the end's
+// own date instead would reach a day into the next period, whose first day it
+// is.
+func inclusiveLastDay(exclusiveEnd time.Time, loc *time.Location) time.Time {
+	return dayOf(exclusiveEnd, loc).AddDate(0, 0, -1)
 }
 
 // periodDays keys a fact row to the days its billing window covers. Start
@@ -51,10 +69,10 @@ func inclusiveLastDay(exclusiveEnd time.Time) time.Time {
 // ends are day-grained. A window opening and closing on one date has no
 // preceding day to end on, so it is clamped to that date rather than
 // inverting.
-func periodDays(start, exclusiveEnd time.Time) revenuePeriod {
-	end := inclusiveLastDay(exclusiveEnd)
-	if end.Before(dayOf(start)) {
-		end = dayOf(start)
+func periodDays(start, exclusiveEnd time.Time, loc *time.Location) revenuePeriod {
+	end := inclusiveLastDay(exclusiveEnd, loc)
+	if end.Before(dayOf(start, loc)) {
+		end = dayOf(start, loc)
 	}
 	return revenuePeriod{Start: start, End: end}
 }
@@ -99,6 +117,15 @@ type previewLineItem struct {
 	// is the inclusive last calendar day.
 	PeriodStart time.Time
 	PeriodEnd   time.Time
+
+	// Timezone is the subscription's IANA name. Day bounds are computed in it
+	// so they line up with the curve, which splits usage into local days.
+	Timezone string
+}
+
+// location resolves Timezone, defaulting to UTC.
+func (li previewLineItem) location() *time.Location {
+	return locationOf(li.Timezone)
 }
 
 func (li previewLineItem) priceID() *string {
@@ -213,9 +240,9 @@ func isMultiPeriodCommitment(sub *subscription.Subscription) bool {
 
 // cadenceDay is the day a period_only row is dated on: period start for
 // ADVANCE billing, period end for ARREAR.
-func cadenceDay(cadence types.InvoiceCadence, period revenuePeriod) time.Time {
+func cadenceDay(cadence types.InvoiceCadence, period revenuePeriod, loc *time.Location) time.Time {
 	if cadence == types.InvoiceCadenceAdvance {
-		return dayOf(period.Start)
+		return dayOf(period.Start, loc)
 	}
 	return period.End
 }
@@ -240,7 +267,7 @@ func newPeriodOnlyFact(li previewLineItem, period revenuePeriod, day time.Time, 
 		SubLineItemID:     li.subLineItemID(),
 		PriceID:           li.priceID(),
 		RevenueSource:     source,
-		PeriodStart:       dayOf(period.Start),
+		PeriodStart:       dayOf(period.Start, li.location()),
 		PeriodEnd:         period.End,
 		Day:               day,
 		LineDiscount:      li.LineDiscount,
@@ -261,14 +288,14 @@ func decomposeFixed(li previewLineItem, period revenuePeriod) *revenuefact.Reven
 	if li.isCommitmentTrueupOrOverage() {
 		return nil
 	}
-	return newPeriodOnlyFact(li, period, cadenceDay(invoiceCadence(li), period), types.RevenueSourceFixed)
+	return newPeriodOnlyFact(li, period, cadenceDay(invoiceCadence(li), period, li.location()), types.RevenueSourceFixed)
 }
 
 // decomposeUsagePeriodOnly writes one period_only row for a usage line item
 // whose price/meter cannot be split per day (see decompositionMode). The
 // engine's entitlement deduction is annotated when known.
 func decomposeUsagePeriodOnly(li previewLineItem, period revenuePeriod) *revenuefact.RevenueFact {
-	f := newPeriodOnlyFact(li, period, cadenceDay(invoiceCadence(li), period), types.RevenueSourceUsage)
+	f := newPeriodOnlyFact(li, period, cadenceDay(invoiceCadence(li), period, li.location()), types.RevenueSourceUsage)
 	f.MeterID = li.meterID()
 	f.AggregationType = li.aggregationType()
 	f.EntitlementQty = li.EntitlementQty
@@ -334,7 +361,7 @@ func decomposeUsageMarginal(li previewLineItem, curve []dayCharge) []*revenuefac
 			MeterID:           li.meterID(),
 			AggregationType:   li.aggregationType(),
 			RevenueSource:     source,
-			PeriodStart:       dayOf(li.PeriodStart),
+			PeriodStart:       dayOf(li.PeriodStart, li.location()),
 			PeriodEnd:         li.PeriodEnd,
 			Day:               dc.Day,
 			UsageAtListRate:   marginalUsageAtListRate,

@@ -538,27 +538,69 @@ func TestPeriodDays_IntraDayWindows(t *testing.T) {
 	}
 
 	// A whole month: the exclusive midnight end belongs to the next period.
-	p := periodDays(day(2026, 9, 1, 0, 0), day(2026, 10, 1, 0, 0))
+	p := periodDaysUTC(day(2026, 9, 1, 0, 0), day(2026, 10, 1, 0, 0))
 	assert.Equal(t, "2026-09-30", p.End.Format("2006-01-02"))
 
 	// Created and cancelled the same afternoon: one day, not an inverted one.
-	p = periodDays(day(2026, 9, 23, 9, 37), day(2026, 9, 23, 13, 7))
+	p = periodDaysUTC(day(2026, 9, 23, 9, 37), day(2026, 9, 23, 13, 7))
 	assert.Equal(t, "2026-09-23", p.End.Format("2006-01-02"))
-	assert.False(t, p.End.Before(dayOf(p.Start)), "a period may never end before it starts")
+	assert.False(t, p.End.Before(dayOf(p.Start, time.UTC)), "a period may never end before it starts")
 
 	// Ending part-way through a later day: that day opens the NEXT period, so
 	// it is not this one's last — the curve folds its usage into 09-24.
-	p = periodDays(day(2026, 9, 23, 9, 37), day(2026, 9, 25, 13, 7))
+	p = periodDaysUTC(day(2026, 9, 23, 9, 37), day(2026, 9, 25, 13, 7))
 	assert.Equal(t, "2026-09-24", p.End.Format("2006-01-02"))
 
 	// Back-to-back periods must not both claim the shared boundary date.
-	first := periodDays(day(2026, 3, 31, 18, 30), day(2026, 6, 30, 18, 30))
-	second := periodDays(day(2026, 6, 30, 18, 30), day(2026, 9, 30, 18, 30))
+	first := periodDaysUTC(day(2026, 3, 31, 18, 30), day(2026, 6, 30, 18, 30))
+	second := periodDaysUTC(day(2026, 6, 30, 18, 30), day(2026, 9, 30, 18, 30))
 	assert.Equal(t, "2026-06-29", first.End.Format("2006-01-02"))
-	assert.True(t, first.End.Before(dayOf(second.Start)), "periods overlap on a day")
+	assert.True(t, first.End.Before(dayOf(second.Start, time.UTC)), "periods overlap on a day")
 
 	// Degenerate zero-length window still keys to its own day.
-	p = periodDays(day(2026, 9, 23, 9, 37), day(2026, 9, 23, 9, 37))
+	p = periodDaysUTC(day(2026, 9, 23, 9, 37), day(2026, 9, 23, 9, 37))
 	assert.Equal(t, "2026-09-23", p.End.Format("2006-01-02"))
-	assert.False(t, p.End.Before(dayOf(p.Start)))
+	assert.False(t, p.End.Before(dayOf(p.Start, time.UTC)))
+}
+
+// periodDaysUTC keeps the UTC cases above readable.
+func periodDaysUTC(start, exclusiveEnd time.Time) revenuePeriod {
+	return periodDays(start, exclusiveEnd, time.UTC)
+}
+
+// TestPeriodDays_SubscriptionTimezone: day bounds must be computed in the
+// subscription's zone, because buildUsageCurve splits usage into LOCAL days.
+// A Berlin period ending Jun 30 00:00 local is Jun 29 22:00 UTC; the curve's
+// last local day is Jun 29, so a UTC-truncated bound of Jun 28 would exclude
+// a day the curve wrote and the flip would never reach it.
+func TestPeriodDays_SubscriptionTimezone(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	require.NoError(t, err)
+
+	start := time.Date(2026, 6, 1, 0, 0, 0, 0, berlin)
+	exclusiveEnd := time.Date(2026, 6, 30, 0, 0, 0, 0, berlin)
+
+	p := periodDays(start, exclusiveEnd, berlin)
+	assert.Equal(t, "2026-06-01", p.End.AddDate(0, 0, -28).Format("2006-01-02"))
+	assert.Equal(t, "2026-06-29", p.End.Format("2006-01-02"),
+		"the last local day the curve emits must be inside the bound")
+
+	// The same instants read in UTC land a day earlier — the bug being fixed.
+	assert.Equal(t, "2026-06-28", periodDaysUTC(start, exclusiveEnd).End.Format("2006-01-02"))
+
+	// East of UTC too: Kolkata is +05:30, so a local midnight end is 18:30 UTC
+	// the previous day.
+	kolkata, err := time.LoadLocation("Asia/Kolkata")
+	require.NoError(t, err)
+	kStart := time.Date(2026, 4, 1, 0, 0, 0, 0, kolkata)
+	kEnd := time.Date(2026, 7, 1, 0, 0, 0, 0, kolkata)
+	assert.Equal(t, "2026-06-30", periodDays(kStart, kEnd, kolkata).End.Format("2006-01-02"))
+
+	// Back-to-back local periods must not both claim the boundary date.
+	next := periodDays(exclusiveEnd, time.Date(2026, 7, 30, 0, 0, 0, 0, berlin), berlin)
+	assert.True(t, periodDays(start, exclusiveEnd, berlin).End.Before(dayOf(next.Start, berlin)))
+
+	// An unknown or empty zone falls back to UTC instead of failing.
+	assert.Equal(t, time.UTC, locationOf(""))
+	assert.Equal(t, time.UTC, locationOf("Not/AZone"))
 }
