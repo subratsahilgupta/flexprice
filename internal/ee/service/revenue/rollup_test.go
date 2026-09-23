@@ -330,6 +330,7 @@ func (s *RevenueRollupSuite) seedWorkedExample(ctx context.Context) {
 
 func (s *RevenueRollupSuite) TestRollupSubscription_WorkedExampleReconciles() {
 	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
 	s.seedWorkedExample(ctx)
 
 	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
@@ -385,6 +386,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_MultiPeriodCommitmentSkipped
 // and each half sums exactly to its engine line.
 func (s *RevenueRollupSuite) TestRollupSubscription_OverageSplitsPerDay() {
 	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
 	s.seedWorkedExample(ctx)
 
 	// seedWorkedExample seeds 1200 calls/day ($360 gross, under the $500
@@ -478,6 +480,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageSplitsPerDay() {
 // and zero revenue_reconciliation_mismatch logs must have fired.
 func (s *RevenueRollupSuite) TestRollupSubscription_BindingEntitlementLimitReconciles() {
 	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
 	s.seedWorkedExample(ctx)
 
 	ent, err := s.GetStores().EntitlementRepo.Get(ctx, "ent_rollup_wk")
@@ -1081,6 +1084,7 @@ func (s *RevenueRollupSuite) TestInvoiceHooks_StayInOptedInEnvironment() {
 // quantity recorded as entitled.
 func (s *RevenueRollupSuite) TestRollupSubscription_GrantEntitledUsageSplitsPerDay() {
 	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
 	s.seedWorkedExample(ctx)
 
 	grant := &entitlementgrant.EntitlementGrant{
@@ -1127,6 +1131,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_GrantEntitledUsageSplitsPerD
 // exactly to the engine charge.
 func (s *RevenueRollupSuite) TestRollupSubscription_GrantOverageSplitsPerDay() {
 	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
 	s.seedWorkedExample(ctx)
 
 	// Quota crossed at day 10: the remaining 20 days x 1200 calls fall in the
@@ -1185,6 +1190,7 @@ func (s *RevenueRollupSuite) TestRollupSubscription_GrantOverageSplitsPerDay() {
 // Subtotal - discount with zero mismatch logs.
 func (s *RevenueRollupSuite) TestRollupSubscription_CouponDiscountReconciles() {
 	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
 	s.seedWorkedExample(ctx)
 
 	c := &coupon.Coupon{
@@ -1543,4 +1549,79 @@ func (s *RevenueRollupSuite) TestGetRevenueAnalytics_EventSourceGroupingSpansWho
 	open := &dto.RevenueAnalyticsRequest{StartTime: time.Now().UTC().AddDate(0, 0, -7)}
 	s.NoError(open.Validate())
 	s.False(open.EndTime.IsZero(), "end_time must default to now")
+}
+
+// TestWriteEntryPointsRequireOptIn walks every write method on the service
+// interface against an environment that has not opted in. Each must be a
+// silent no-op: an environment with the setting off is not merely unscanned
+// by the batch jobs, it must never accumulate a row by any route.
+func (s *RevenueRollupSuite) TestWriteEntryPointsRequireOptIn() {
+	ctx := s.ctx
+	sub := s.seedFixedOnlySubscription(ctx, "optin", nil, "price_dirty_optin", true)
+
+	inv := &invoice.Invoice{
+		ID:              "inv_optin",
+		CustomerID:      sub.CustomerID,
+		SubscriptionID:  lo.ToPtr(sub.ID),
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusFinalized,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromInt(30),
+		Subtotal:        decimal.NewFromInt(30),
+		TotalDiscount:   decimal.Zero,
+		AmountRemaining: decimal.NewFromInt(30),
+		PeriodStart:     lo.ToPtr(sub.CurrentPeriodStart),
+		PeriodEnd:       lo.ToPtr(sub.CurrentPeriodEnd),
+		BillingReason:   string(types.InvoiceBillingReasonSubscriptionCycle),
+		BaseModel:       types.GetDefaultBaseModel(ctx),
+		LineItems: []*invoice.InvoiceLineItem{{
+			ID:             "li_optin",
+			InvoiceID:      "inv_optin",
+			CustomerID:     sub.CustomerID,
+			SubscriptionID: lo.ToPtr(sub.ID),
+			PriceType:      lo.ToPtr(string(types.PRICE_TYPE_FIXED)),
+			PriceID:        lo.ToPtr("price_dirty_optin"),
+			Amount:         decimal.NewFromInt(30),
+			Quantity:       decimal.NewFromInt(1),
+			Currency:       "usd",
+			PeriodStart:    lo.ToPtr(sub.CurrentPeriodStart),
+			PeriodEnd:      lo.ToPtr(sub.CurrentPeriodEnd),
+			BaseModel:      types.GetDefaultBaseModel(ctx),
+		}},
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(ctx, inv))
+
+	writes := map[string]func() error{
+		"RollupSubscription":         func() error { return s.svc.RollupSubscription(ctx, sub.ID) },
+		"RollupDirty":                func() error { _, _, err := s.svc.RollupDirty(ctx, time.Now().UTC().Add(-time.Hour)); return err },
+		"FinalizeSubscriptionPeriod": func() error { return s.svc.FinalizeSubscriptionPeriod(ctx, inv.ID) },
+		"RevertInvoiceFacts":         func() error { return s.svc.RevertInvoiceFacts(ctx, inv.ID) },
+		"ReconcileBookedInvoices": func() error {
+			_, _, _, err := s.svc.ReconcileBookedInvoices(ctx, time.Now().UTC().Add(-time.Hour))
+			return err
+		},
+	}
+
+	for name, write := range writes {
+		s.Run(name, func() {
+			s.NoError(write(), "an un-opted-in environment must be a no-op, not an error")
+
+			for _, status := range []types.FactStatus{types.FactProvisional, types.FactFinal} {
+				rows, err := s.store.ListBySubscriptionPeriod(ctx, sub.ID,
+					sub.CurrentPeriodStart, sub.CurrentPeriodEnd.AddDate(0, 0, 1), status)
+				s.NoError(err)
+				s.Empty(rows, "%s wrote %s rows into an un-opted-in environment", name, status)
+			}
+		})
+	}
+
+	// Same calls, now opted in: proves the assertions above are about the
+	// gate and not about a fixture that could never produce rows.
+	s.enableRevenueAnalytics(ctx)
+	s.NoError(s.svc.RollupSubscription(ctx, sub.ID))
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, sub.ID,
+		sub.CurrentPeriodStart, sub.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(rows, "the same call must write once the environment opts in")
 }

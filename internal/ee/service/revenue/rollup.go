@@ -52,6 +52,14 @@ type lineItemRows struct {
 }
 
 func (s *revenueService) RollupSubscription(ctx context.Context, subscriptionID string) error {
+	enabled, err := s.revenueAnalyticsEnabled(ctx)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+
 	sub, err := s.SubRepo.Get(ctx, subscriptionID)
 	if err != nil {
 		return err
@@ -157,7 +165,7 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		}
 		// The engine's line item period end is half-open/exclusive; rows are
 		// keyed on the inclusive last day it covers.
-		itemPeriod := periodDays(itemPeriodStart, itemPeriodEndExclusive)
+		itemPeriod := periodDays(itemPeriodStart, itemPeriodEndExclusive, locationOf(sub.Timezone))
 
 		itemSubscriptionID := sub.ID
 		if item.SubscriptionID != nil && *item.SubscriptionID != "" {
@@ -182,6 +190,7 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 			EntitlementQty:  lo.FromPtr(item.AdjustedEntitlementQuantity),
 			PeriodStart:     itemPeriod.Start,
 			PeriodEnd:       itemPeriod.End,
+			Timezone:        sub.Timezone,
 		}
 		if base.SubLineItemID == "" {
 			// Engine aggregate lines (subscription true-up and cumulative
@@ -832,6 +841,7 @@ func (s *revenueService) FinalizeSubscriptionPeriod(ctx context.Context, invoice
 func (s *revenueService) flipInvoiceLineItems(ctx context.Context, inv *invoice.Invoice) (int, map[string]finalizePeriodGroup, error) {
 	flipped := 0
 	groupSeen := make(map[string]finalizePeriodGroup)
+	subLocations := map[string]*time.Location{}
 
 	for _, li := range inv.LineItems {
 		// Join on the LINE ITEM's own subscription, never the invoice's —
@@ -848,8 +858,9 @@ func (s *revenueService) flipInvoiceLineItems(ctx context.Context, inv *invoice.
 		// The invoice line item's period end is half-open/exclusive, same as
 		// the preview engine's — match on the same day-grained bounds the
 		// rollup wrote.
-		period := periodDays(periodStart, periodEndExclusive)
-		periodStart, periodEnd := dayOf(period.Start), period.End
+		loc := s.subscriptionLocation(ctx, subLocations, subscriptionID)
+		period := periodDays(periodStart, periodEndExclusive, loc)
+		periodStart, periodEnd := dayOf(period.Start, loc), period.End
 
 		priceID := lo.FromPtr(li.PriceID)
 		isTrueup := li.Metadata.GetBool(types.MetadataKeyIsCommitmentTrueup)
@@ -880,12 +891,33 @@ func (s *revenueService) flipInvoiceLineItems(ctx context.Context, inv *invoice.
 	return flipped, groupSeen, nil
 }
 
+// subscriptionLocation resolves the timezone a subscription's days are split
+// in, memoised per invoice. Bounds computed in any other zone will not line up
+// with the rows buildUsageCurve wrote. A subscription that cannot be read
+// falls back to UTC rather than failing the shadow path.
+func (s *revenueService) subscriptionLocation(ctx context.Context, cache map[string]*time.Location, subscriptionID string) *time.Location {
+	if loc, ok := cache[subscriptionID]; ok {
+		return loc
+	}
+	loc := time.UTC
+	sub, err := s.SubRepo.Get(ctx, subscriptionID)
+	if err != nil {
+		s.Logger.Info(ctx, "revenue facts falling back to UTC day bounds",
+			"subscription_id", subscriptionID, "error", err.Error())
+	} else {
+		loc = locationOf(sub.Timezone)
+	}
+	cache[subscriptionID] = loc
+	return loc
+}
+
 // rollupFromInvoice derives period_only PROVISIONAL rows from a finalized
 // invoice.s own line items — the fallback when none exist for its period.
 // Per-day usage splitting is deliberately not reconstructed here.
 func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Invoice) error {
 	priceCache := map[string]*price.Price{}
 	meterCache := map[string]*meter.Meter{}
+	subLocations := map[string]*time.Location{}
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
@@ -897,7 +929,8 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 		if subscriptionID == "" || periodStart.IsZero() || periodEndExclusive.IsZero() {
 			continue
 		}
-		period := periodDays(periodStart, periodEndExclusive)
+		loc := s.subscriptionLocation(ctx, subLocations, subscriptionID)
+		period := periodDays(periodStart, periodEndExclusive, loc)
 
 		base := previewLineItem{
 			TenantID:        tenantID,
@@ -913,6 +946,7 @@ func (s *revenueService) rollupFromInvoice(ctx context.Context, inv *invoice.Inv
 			EntitlementQty:  lo.FromPtr(li.AdjustedEntitlementQuantity),
 			PeriodStart:     period.Start,
 			PeriodEnd:       period.End,
+			Timezone:        loc.String(),
 		}
 		if base.SubLineItemID == "" {
 			// Same fallback as the preview path AND the flip's matching rule —

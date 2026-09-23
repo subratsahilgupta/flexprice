@@ -22,12 +22,27 @@ Design doc: [FLE-1257 analytics platform ERD](../../../../docs/design/2026-09-10
   (tenant, environment, subscription, price, sub_line_item, day, revenue_source);
   recomputes bump `version` in place. FINAL rows are immutable — a void appends
   contra rows (`is_revert = true`), never edits.
-- **Tenant scoping.** Every query filters tenant + environment; batch jobs walk
-  only environments opted in via the `revenue_analytics_config` setting.
+- **Tenant scoping.** Every query filters tenant + environment.
+- **Opt-in gates every write.** No row is written for an environment whose
+  `revenue_analytics_config` is absent or disabled — not by the batch jobs,
+  and not by the invoice finalize/void hooks either. An environment that never
+  opted in would otherwise accumulate rows no sweep ever reconciles, because
+  the sweep only walks opted-in environments. Every write method on
+  `interfaces.RevenueService` checks `revenueAnalyticsEnabled` and returns
+  silently; `TestWriteEntryPointsRequireOptIn` holds the whole surface.
 - **Day-grained bounds.** `period_start`, `period_end` and `day` are DATE
   columns, so every write and every lookup goes through `periodDays` / `dayOf`.
-  A period shorter than a day still gets `period_start == period_end == its
-  date` — never an inverted range, which is what a raw `end − 1 day` produces.
+  `inclusiveLastDay` must agree with the day-walk in `buildUsageCurve`: the
+  last day is the one *before* the exclusive end's own date, because that date
+  opens the next period. A period shorter than a day is clamped to its own
+  date rather than inverting.
+
+  **Known gap:** `dayOf` truncates in UTC, while `buildUsageCurve` walks days
+  in the subscription's timezone. They agree only for UTC subscriptions (all
+  of them today). For a non-UTC subscription whose period bounds are not local
+  midnight, the flip's range is offset by a day and the period's last row will
+  not flip. Fixing it means threading the subscription's location through
+  `periodDays` and loading it in `flipInvoiceLineItems`.
 
 ## Dependency rules
 
