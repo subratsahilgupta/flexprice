@@ -15309,6 +15309,9 @@ const docTemplate = `{
                 "addon_id": {
                     "type": "string"
                 },
+                "addon_status": {
+                    "$ref": "#/definitions/types.AddonStatus"
+                },
                 "change_action": {
                     "enum": [
                         "created",
@@ -15328,14 +15331,6 @@ const docTemplate = `{
                 },
                 "start_date": {
                     "type": "string"
-                },
-                "status": {
-                    "description": "Status is pending while a pay-first attach is awaiting payment.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/types.AddonStatus"
-                        }
-                    ]
                 }
             }
         },

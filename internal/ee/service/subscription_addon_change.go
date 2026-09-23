@@ -312,13 +312,26 @@ func (s *addonChangeService) grantChangeRequest(config *addonChangeConfig) Grant
 			EffectiveDate: attach.getEffectiveDate(),
 			RequestedDate: attach.getRequestedStart(),
 			EndDate:       attach.getAssociation().EndDate,
-			Behavior:      attach.getRequest().ProrationBehavior,
+			Behavior:      grantProrationBehavior(attach.getRequest()),
 			Origin:        grantProrationSourceAddonAttach,
 			AddonID:       attach.getRequest().AddonID,
 		})
 	}
 
 	return req
+}
+
+// grantProrationBehavior prefers the grant-only behavior create-subscription sets,
+// so line-item proration can stay off while the first credit grant is still scaled.
+func grantProrationBehavior(req *dto.AddAddonToSubscriptionRequest) types.ProrationBehavior {
+	if req == nil {
+		return ""
+	}
+	if req.GrantProrationBehavior != "" {
+		return req.GrantProrationBehavior
+	}
+
+	return req.ProrationBehavior
 }
 
 // prorationGroup is the batch's entries sharing one effective date: proration is priced against

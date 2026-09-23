@@ -75,7 +75,6 @@ func (s *subscriptionModificationService) addonModifyResponse(
 
 func changedCreatedAssociation(
 	association *addonassociation.AddonAssociation,
-	startDate time.Time,
 	isPreview bool,
 ) dto.ChangedAddonAssociation {
 	id := association.ID
@@ -87,7 +86,7 @@ func changedCreatedAssociation(
 		ID:           id,
 		AddonID:      association.AddonID,
 		AddonStatus:  association.AddonStatus,
-		StartDate:    &startDate,
+		StartDate:    association.StartDate,
 		ChangeAction: dto.ChangedAddonAssociationActionCreated,
 	}
 	if association.EndDate != nil {

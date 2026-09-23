@@ -667,15 +667,21 @@ func (s *SubscriptionServiceSuite) compatOf(req AddonChangeRequest) error {
 		validateEntitlementCompatibility(s.GetContext(), GrantChangeRequest{
 			Sub: req.Subscription,
 			Incoming: lo.Map(req.Adds, func(a AddonAdd, _ int) GrantSource {
+				at := lo.FromPtr(a.Request.StartDate)
 				return GrantSource{
 					AddonID:       a.Request.AddonID,
-					EffectiveDate: lo.FromPtr(a.Request.StartDate),
+					ChangeType:    grantChangeTypeFor(req.Subscription, at),
+					EffectiveDate: at,
+					RequestedDate: at,
 				}
 			}),
 			Removed: lo.Map(req.Removes, func(r *dto.RemoveAddonRequest, _ int) GrantSource {
+				at := lo.FromPtr(r.EffectiveDate)
 				return GrantSource{
 					AddonID:       s.addonIDOfAssociation(r.AddonAssociationID),
-					EffectiveDate: lo.FromPtr(r.EffectiveDate),
+					ChangeType:    grantChangeTypeFor(req.Subscription, at),
+					EffectiveDate: at,
+					RequestedDate: at,
 				}
 			}),
 		})
@@ -699,11 +705,13 @@ func (s *SubscriptionServiceSuite) TestAddonCompat_PeriodEndRemovalStillHoldsIts
 	s.seedMeteredAddon("addon_pe_in", featureID, types.ENTITLEMENT_USAGE_RESET_PERIOD_ANNUAL)
 	outgoing := s.attachForRemoval("addon_pe_out", 0)
 
-	s.Error(s.compatOf(AddonChangeRequest{
+	err := s.compatOf(AddonChangeRequest{
 		Subscription: sub,
 		Adds:         []AddonAdd{s.addEntry("addon_pe_in", s.testData.now)},
 		Removes:      []*dto.RemoveAddonRequest{s.removeEntry(outgoing, sub.CurrentPeriodEnd)},
-	}), "the outgoing addon measures the feature until the period end")
+	})
+	s.Require().Error(err, "the outgoing addon measures the feature until the period end")
+	s.ErrorContains(err, "reset period")
 }
 
 // A period-end entry opens no window this cycle, so it cannot collide with an immediate one.

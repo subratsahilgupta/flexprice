@@ -17642,6 +17642,9 @@
           "addon_id": {
             "type": "string"
           },
+          "addon_status": {
+            "$ref": "#/components/schemas/types.AddonStatus"
+          },
           "change_action": {
             "$ref": "#/components/schemas/ChangedAddonAssociationAction"
           },
@@ -17655,9 +17658,6 @@
           "start_date": {
             "type": "string",
             "format": "date-time"
-          },
-          "status": {
-            "$ref": "#/components/schemas/types.AddonStatus"
           }
         }
       },

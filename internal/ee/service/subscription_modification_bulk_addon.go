@@ -108,8 +108,7 @@ func bulkAddonChangedAssociations(config *addonChangeConfig, isPreview bool) []d
 	items := []dto.ChangedAddonAssociation{}
 
 	for _, attach := range config.getAttaches() {
-		items = append(items,
-			changedCreatedAssociation(attach.getAssociation(), attach.getEffectiveDate(), isPreview))
+		items = append(items, changedCreatedAssociation(attach.getAssociation(), isPreview))
 	}
 
 	for _, detach := range config.getDetaches() {
