@@ -101,23 +101,39 @@ func (s *revenueService) listFactsInRange(ctx context.Context, req *dto.RevenueA
 	}
 }
 
-// requireRevenueAnalyticsEnabled denies the tenant-facing read surface unless
-// the tenant opted in via settings.
-func (s *revenueService) requireRevenueAnalyticsEnabled(ctx context.Context) error {
-	notEnabled := ierr.NewError("revenue analytics is not enabled for this tenant").
-		WithHint("Enable the revenue_analytics_config setting to use revenue analytics").
-		Mark(ierr.ErrPermissionDenied)
+// revenueAnalyticsEnabled reports whether this context's tenant and environment
+// opted in. A blank tenant or environment is not an opt-in: an empty
+// environment id makes subscription listing match every environment.
+func (s *revenueService) revenueAnalyticsEnabled(ctx context.Context) (bool, error) {
+	if types.GetTenantID(ctx) == "" || types.GetEnvironmentID(ctx) == "" {
+		return false, nil
+	}
 
 	setting, err := s.SettingsRepo.GetByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
 	if err != nil {
 		if ierr.IsNotFound(err) {
-			return notEnabled
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 	cfg, err := utils.ToStruct[types.RevenueAnalyticsConfig](setting.Value)
 	if err != nil || !cfg.Enabled {
-		return notEnabled
+		return false, nil
+	}
+	return true, nil
+}
+
+// requireRevenueAnalyticsEnabled denies the tenant-facing read surface unless
+// the tenant opted in via settings.
+func (s *revenueService) requireRevenueAnalyticsEnabled(ctx context.Context) error {
+	enabled, err := s.revenueAnalyticsEnabled(ctx)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return ierr.NewError("revenue analytics is not enabled for this tenant").
+			WithHint("Enable the revenue_analytics_config setting to use revenue analytics").
+			Mark(ierr.ErrPermissionDenied)
 	}
 	return nil
 }

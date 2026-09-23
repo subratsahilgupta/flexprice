@@ -62,6 +62,7 @@ func TestRevenueRollup(t *testing.T) {
 
 func (s *RevenueRollupSuite) SetupTest() {
 	s.BaseServiceTestSuite.SetupTest()
+	s.WithEnvironment("env_rollup")
 	s.ctx = s.GetContext()
 	s.store = s.GetStores().RevenueFactRepo.(*testutil.InMemoryRevenueFactStore)
 	s.svc = New(s.serviceParams())
@@ -744,6 +745,7 @@ func (s *RevenueRollupSuite) seedFinalFlipFixture(ctx context.Context) *finalFli
 }
 
 func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipsAndStamps() {
+	s.enableRevenueAnalytics(s.ctx)
 	fx := s.seedFinalFlipFixture(s.ctx)
 
 	s.NoError(s.svc.FinalizeSubscriptionPeriod(s.ctx, fx.invoice.ID))
@@ -776,6 +778,7 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipsAndStamps() {
 // exactly as the real billing engine assigns â the flip re-derives the same
 // synthetic id from metadata + sub_line_item_id.
 func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_TrueupRowMatchesBySyntheticPriceID() {
+	s.enableRevenueAnalytics(s.ctx)
 	subscriptionID := "sub_final_trueup"
 	periodStart := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
 	periodEndExclusive := periodStart.AddDate(0, 0, 30)
@@ -864,6 +867,7 @@ func (f *failingRevenueFactRepo) FlipToFinal(ctx context.Context, subscriptionID
 }
 
 func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipErrorIsReturnedToCaller() {
+	s.enableRevenueAnalytics(s.ctx)
 	fx := s.seedFinalFlipFixture(s.ctx)
 
 	params := s.serviceParams()
@@ -878,6 +882,7 @@ func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_FlipErrorIsReturnedT
 // stamped with the same invoice â and the whole period then nets to zero.
 // A second call must be a no-op (the async void hook can retry).
 func (s *RevenueRollupSuite) TestRevertInvoiceFacts() {
+	s.enableRevenueAnalytics(s.ctx)
 	fx := s.seedFinalFlipFixture(s.ctx)
 	s.NoError(s.svc.FinalizeSubscriptionPeriod(s.ctx, fx.invoice.ID))
 
@@ -913,6 +918,7 @@ func (s *RevenueRollupSuite) TestRevertInvoiceFacts() {
 // flip, so the new invoice still gets FINAL facts.
 func (s *RevenueRollupSuite) TestFinalizeSubscriptionPeriod_JITRollupWhenNoProvisionalRows() {
 	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
 	sub := s.seedFixedOnlySubscription(ctx, "jit", nil, "price_dirty_jit", true)
 
 	inv := &invoice.Invoice{
@@ -978,6 +984,95 @@ func (s *RevenueRollupSuite) TestRollupDirty_SkipsTenantsWithoutSetting() {
 	rows, err := s.store.ListBySubscriptionPeriod(ctx, sub.ID, sub.CurrentPeriodStart, sub.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
 	s.NoError(err)
 	s.Empty(rows, "an un-opted-in tenant must produce no rows")
+}
+
+// TestRollupDirty_SkipsBlankEnvironmentSetting: an enabled row with no
+// environment id must not scan every environment. An empty context
+// environment makes the subscription list match all of them.
+func (s *RevenueRollupSuite) TestRollupDirty_SkipsBlankEnvironmentSetting() {
+	ctx := s.ctx
+	sub := s.seedFixedOnlySubscription(ctx, "blankenv", nil, "price_dirty_blankenv", true)
+
+	otherCtx := types.SetEnvironmentID(ctx, "env_other")
+	other := s.seedFixedOnlySubscription(otherCtx, "blankother", nil, "price_dirty_blankother", true)
+
+	setting := &settings.Setting{
+		ID:            types.GenerateUUIDWithPrefix("setting"),
+		Key:           types.SettingKeyRevenueAnalyticsConfig,
+		Value:         map[string]interface{}{"enabled": true},
+		EnvironmentID: "",
+		BaseModel:     types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().SettingsRepo.Create(ctx, setting))
+
+	rolled, skipped, err := s.svc.RollupDirty(ctx, time.Now().UTC().Add(-time.Hour))
+	s.NoError(err)
+	s.Zero(rolled)
+	s.Zero(skipped)
+
+	for _, candidate := range []*subscription.Subscription{sub, other} {
+		rows, listErr := s.store.ListBySubscriptionPeriod(ctx, candidate.ID, candidate.CurrentPeriodStart, candidate.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
+		s.NoError(listErr)
+		s.Empty(rows)
+		rows, listErr = s.store.ListBySubscriptionPeriod(otherCtx, candidate.ID, candidate.CurrentPeriodStart, candidate.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
+		s.NoError(listErr)
+		s.Empty(rows)
+	}
+}
+
+// TestInvoiceHooks_StayInOptedInEnvironment: finalizing an invoice in an
+// environment that has not opted in must not write revenue_facts, even when
+// another environment of the same tenant has the setting on.
+func (s *RevenueRollupSuite) TestInvoiceHooks_StayInOptedInEnvironment() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+
+	otherCtx := types.SetEnvironmentID(ctx, "env_other")
+	other := s.seedFixedOnlySubscription(otherCtx, "hookother", nil, "price_dirty_hookother", true)
+	inv := &invoice.Invoice{
+		ID:              "inv_hook_other",
+		CustomerID:      other.CustomerID,
+		SubscriptionID:  lo.ToPtr(other.ID),
+		InvoiceType:     types.InvoiceTypeSubscription,
+		InvoiceStatus:   types.InvoiceStatusFinalized,
+		PaymentStatus:   types.PaymentStatusPending,
+		Currency:        "usd",
+		AmountDue:       decimal.NewFromInt(30),
+		Subtotal:        decimal.NewFromInt(30),
+		TotalDiscount:   decimal.Zero,
+		AmountRemaining: decimal.NewFromInt(30),
+		PeriodStart:     lo.ToPtr(other.CurrentPeriodStart),
+		PeriodEnd:       lo.ToPtr(other.CurrentPeriodEnd),
+		BillingReason:   string(types.InvoiceBillingReasonSubscriptionCycle),
+		BaseModel:       types.GetDefaultBaseModel(otherCtx),
+		LineItems: []*invoice.InvoiceLineItem{
+			{
+				ID:             "li_hook_other",
+				InvoiceID:      "inv_hook_other",
+				CustomerID:     other.CustomerID,
+				SubscriptionID: lo.ToPtr(other.ID),
+				PriceType:      lo.ToPtr(string(types.PRICE_TYPE_FIXED)),
+				PriceID:        lo.ToPtr("price_dirty_hookother"),
+				Amount:         decimal.NewFromInt(30),
+				Quantity:       decimal.NewFromInt(1),
+				Currency:       "usd",
+				PeriodStart:    lo.ToPtr(other.CurrentPeriodStart),
+				PeriodEnd:      lo.ToPtr(other.CurrentPeriodEnd),
+				BaseModel:      types.GetDefaultBaseModel(otherCtx),
+			},
+		},
+	}
+	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(otherCtx, inv))
+
+	s.NoError(s.svc.FinalizeSubscriptionPeriod(otherCtx, inv.ID))
+	s.NoError(s.svc.RevertInvoiceFacts(otherCtx, inv.ID))
+
+	rows, err := s.store.ListBySubscriptionPeriod(otherCtx, other.ID, other.CurrentPeriodStart, other.CurrentPeriodEnd, types.FactFinal)
+	s.NoError(err)
+	s.Empty(rows)
+	provisional, err := s.store.ListBySubscriptionPeriod(otherCtx, other.ID, other.CurrentPeriodStart, other.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
+	s.NoError(err)
+	s.Empty(provisional)
 }
 
 // TestRollupSubscription_GrantEntitledUsageSplitsPerDay: an uncrossed
