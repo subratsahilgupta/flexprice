@@ -1906,9 +1906,19 @@ func TestScanScope_Triggers(t *testing.T) {
 		}
 	}
 
-	scope := scanScope{since: since, customers: map[string]struct{}{"cust_busy": {}}}
+	scope := scanScope{
+		since:         since,
+		customers:     map[string]struct{}{"cust_busy": {}},
+		alreadyRolled: map[string]struct{}{"sub_quiet": {}},
+	}
 
 	assert.False(t, scope.includes(quiet()), "a subscription with nothing to recompute is skipped")
+
+	// The trigger usage, edits and period bounds all miss: a subscription that
+	// has never been rolled looks identical to one that is up to date.
+	fresh := quiet()
+	fresh.ID = "sub_never_rolled"
+	assert.True(t, scope.includes(fresh), "a never-rolled subscription must be rolled")
 
 	busy := quiet()
 	busy.CustomerID = "cust_busy"
@@ -1935,12 +1945,7 @@ func (s *RevenueRollupSuite) TestScanScopeFor_FailsOpen() {
 	svc := New(s.serviceParams()).(*revenueService)
 	req := types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Hour)}
 
-	// Incremental off is the deployed default: always a full pass.
-	svc.Config.Analytics.RevenueRollup.Incremental = false
-	s.True(svc.scanScopeFor(ctx, req).full, "incremental off must scan everything")
-
-	svc.Config.Analytics.RevenueRollup.Incremental = true
-	s.False(svc.scanScopeFor(ctx, req).full, "incremental on narrows the scan")
+	s.False(svc.scanScopeFor(ctx, req).full, "the scan narrows by default")
 
 	s.True(svc.scanScopeFor(ctx, types.RollupDirtyRequest{Since: req.Since, ForceFull: true}).full,
 		"the periodic rebuild overrides the narrowing")
@@ -1959,16 +1964,15 @@ func (s *RevenueRollupSuite) TestScanScopeFor_FailsOpen() {
 	s.True(svc.scanScopeFor(ctx, req).full, "usage with no customer id must widen the scan")
 }
 
-// TestRollupDirty_SkipsQuietSubscriptionsWhenIncremental: the point of the
-// whole exercise — a subscription with no usage and no changes must cost
-// nothing. Its already-written facts must survive untouched.
-func (s *RevenueRollupSuite) TestRollupDirty_SkipsQuietSubscriptionsWhenIncremental() {
+// TestRollupDirty_SkipsQuietSubscriptions: the point of the whole exercise — a
+// subscription with no usage and no changes must cost nothing. Its
+// already-written facts must survive untouched.
+func (s *RevenueRollupSuite) TestRollupDirty_SkipsQuietSubscriptions() {
 	ctx := s.ctx
 	s.enableRevenueAnalytics(ctx)
 	s.seedWorkedExample(ctx)
 
 	params := s.serviceParams()
-	params.Config.Analytics.RevenueRollup.Incremental = true
 	counter := &countingMeterUsageRepo{MeterUsageRepository: s.GetStores().MeterUsageRepo}
 	params.MeterUsageRepo = counter
 	svc := New(params)
@@ -2002,7 +2006,6 @@ func (s *RevenueRollupSuite) TestScanScopeFor_PriceEditWidensScan() {
 	s.seedWorkedExample(ctx)
 
 	svc := New(s.serviceParams()).(*revenueService)
-	svc.Config.Analytics.RevenueRollup.Incremental = true
 
 	// A window opening after everything was created narrows the scan.
 	future := time.Now().UTC().Add(time.Hour)
@@ -2040,9 +2043,7 @@ func (s *RevenueRollupSuite) TestIncrementalMatchesFullRebuild() {
 		return out
 	}
 
-	incremental := s.serviceParams()
-	incremental.Config.Analytics.RevenueRollup.Incremental = true
-	incSvc := New(incremental)
+	incSvc := New(s.serviceParams())
 
 	// Roll incrementally, then add usage and roll again — the second pass is
 	// scoped, because only this subscription's customer saw activity.

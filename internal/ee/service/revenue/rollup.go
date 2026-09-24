@@ -741,7 +741,9 @@ type scanScope struct {
 	full bool
 	// customers with usage ingested since the window opened
 	customers map[string]struct{}
-	since     time.Time
+	// subscriptions that already hold provisional facts for a current period
+	alreadyRolled map[string]struct{}
+	since         time.Time
 }
 
 // includes reports whether this subscription has to be rolled. Usage is only
@@ -760,7 +762,12 @@ func (sc scanScope) includes(sub *subscription.Subscription) bool {
 	}
 	// A period that opened inside the window needs its opening rows even
 	// though nothing has been metered against it yet.
-	return !sub.CurrentPeriodStart.Before(sc.since)
+	if !sub.CurrentPeriodStart.Before(sc.since) {
+		return true
+	}
+	// Never rolled: indistinguishable from up-to-date on every other signal.
+	_, rolled := sc.alreadyRolled[sub.ID]
+	return !rolled
 }
 
 // catalogChangedSince reports whether any price in this environment was edited
@@ -797,9 +804,6 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 	if req.ForceFull {
 		return full
 	}
-	if s.Config == nil || !s.Config.Analytics.RevenueRollup.Incremental {
-		return full
-	}
 
 	// A price edit changes the amount on every subscription using it, but bumps
 	// nothing on the subscription itself, so usage and updated_at both miss it.
@@ -828,7 +832,22 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 	for _, id := range activity.CustomerIDs {
 		customers[id] = struct{}{}
 	}
-	return scanScope{customers: customers, since: req.Since}
+
+	// A subscription that has never been rolled looks exactly like a quiet one:
+	// no usage, no edits, a period that opened before the window. Without this
+	// it would be skipped forever and only the weekly rebuild would notice.
+	rolled, err := s.RevenueFactRepo.SubscriptionsWithProvisionalFacts(ctx)
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"error", err.Error(), "reason", "rolled-subscription probe failed")
+		return full
+	}
+	alreadyRolled := make(map[string]struct{}, len(rolled))
+	for _, id := range rolled {
+		alreadyRolled[id] = struct{}{}
+	}
+
+	return scanScope{customers: customers, alreadyRolled: alreadyRolled, since: req.Since}
 }
 
 // rollupDirtyForEnvironment scans one (tenant, environment)'s active

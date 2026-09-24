@@ -499,6 +499,39 @@ func (r *revenueFactRepository) ListForExport(ctx context.Context, computedAfter
 
 // ListFacts pages facts matching the filter, ordered by (day, id) — the
 // analytics read path.
+// SubscriptionsWithProvisionalFacts returns the subscriptions holding any
+// provisional facts. One query answers "which subscriptions have ever been
+// rolled" for a whole environment; asking per subscription would undo the point
+// of skipping quiet ones.
+func (r *revenueFactRepository) SubscriptionsWithProvisionalFacts(ctx context.Context) ([]string, error) {
+	tenantID := types.GetTenantID(ctx)
+	environmentID := types.GetEnvironmentID(ctx)
+
+	span := StartRepositorySpan(ctx, "revenue_fact", "subscriptions_with_provisional_facts", map[string]interface{}{
+		"tenant_id":      tenantID,
+		"environment_id": environmentID,
+	})
+	defer FinishSpan(span)
+
+	ids, err := r.client.Reader(ctx).RevenueFact.Query().
+		Where(
+			entrevenuefact.TenantID(tenantID),
+			entrevenuefact.EnvironmentID(environmentID),
+			entrevenuefact.StatusEQ(types.FactProvisional),
+		).
+		GroupBy(entrevenuefact.FieldSubscriptionID).
+		Strings(ctx)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to list subscriptions with provisional revenue facts").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return ids, nil
+}
+
 func (r *revenueFactRepository) ListFacts(ctx context.Context, filter revenuefact.FactsFilter) ([]*revenuefact.RevenueFact, error) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)

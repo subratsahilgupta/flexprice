@@ -33,6 +33,9 @@ Design doc: [FLE-1257 analytics platform ERD](../../../../docs/design/2026-09-10
   unnecessarily costs one batched read and a diff that writes nothing; one
   wrongly skipped goes silently stale. Every uncertain answer in `scanScopeFor`
   widens to a full pass, and a scheduled full rebuild is the net underneath.
+  There is no flag to turn the scan off: at production scale a full pass per
+  run does not finish, so correctness has to come from the triggers being
+  right, not from being able to disable them.
 - **Usage is not the only trigger.** A subscription with no usage at all still
   owes fixed charges, commitment true-ups and — for bucketed windowed
   commitments — one true-up row per empty window. Those are written when the
