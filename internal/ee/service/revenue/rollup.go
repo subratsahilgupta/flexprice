@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
@@ -255,9 +257,21 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return false, nil
 	}
 
+	// Reconciliation above ran on every row. Only the write is narrowed: a
+	// nightly pass recomputes days that are already stored and identical, and
+	// rewriting them is most of the write volume.
+	stored, err := s.RevenueFactRepo.ListBySubscriptionPeriod(ctx, subscriptionID, periodStart, periodEnd, types.FactProvisional)
+	if err != nil {
+		return false, err
+	}
+	toWrite := changedRows(allRows, stored)
+	if len(toWrite) == 0 {
+		return false, nil
+	}
+
 	// Every row is PROVISIONAL with a non-empty price_id by construction;
 	// re-running upserts in place instead of duplicating.
-	if err := s.RevenueFactRepo.UpsertProvisional(ctx, allRows); err != nil {
+	if err := s.RevenueFactRepo.UpsertProvisional(ctx, toWrite); err != nil {
 		return false, err
 	}
 
@@ -364,6 +378,7 @@ func (s *revenueService) decomposeUsageRows(
 			EntitlementLimit:    inputs.entitlementLimits[m.ID],
 			ExternalCustomerIDs: inputs.extCustomerIDs,
 			Timezone:            sub.Timezone,
+			Usage:               inputs.usage(m.ID),
 		})
 		if err != nil {
 			return nil, err
@@ -388,6 +403,7 @@ func (s *revenueService) decomposeUsageRows(
 			Grants:              grants,
 			ExternalCustomerIDs: inputs.extCustomerIDs,
 			Timezone:            sub.Timezone,
+			Usage:               inputs.usage(m.ID),
 		})
 		if err != nil {
 			return nil, err
@@ -437,6 +453,7 @@ func (s *revenueService) decomposeUsageRows(
 		EntitlementLimit:    inputs.entitlementLimits[m.ID],
 		ExternalCustomerIDs: inputs.extCustomerIDs,
 		Timezone:            sub.Timezone,
+		Usage:               inputs.usage(m.ID),
 	})
 	if err != nil {
 		return nil, err
@@ -512,6 +529,7 @@ func (s *revenueService) decomposeLineCommitmentRows(
 			EntitlementLimit:    inputs.entitlementLimits[m.ID],
 			ExternalCustomerIDs: inputs.extCustomerIDs,
 			Timezone:            sub.Timezone,
+			Usage:               inputs.usage(m.ID),
 		})
 		if curveErr != nil {
 			return nil, true, curveErr
@@ -634,6 +652,7 @@ func (s *revenueService) decomposeOverageRows(
 		EntitlementLimit:    inputs.entitlementLimits[m.ID],
 		ExternalCustomerIDs: inputs.extCustomerIDs,
 		Timezone:            sub.Timezone,
+		Usage:               inputs.usage(m.ID),
 	})
 	if err != nil {
 		// Shadow path: a curve failure downgrades to a whole-period row
@@ -646,14 +665,77 @@ func (s *revenueService) decomposeOverageRows(
 	return decomposeUsageMarginal(base, overageCurve)
 }
 
-func (s *revenueService) RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
-	err = s.forEachOptedInEnvironment(ctx, "revenue rollup dirty scan", func(envCtx context.Context) error {
-		envRolled, envSkipped, envErr := s.rollupDirtyForEnvironment(envCtx, since)
-		rolled += envRolled
-		skipped += envSkipped
+func (s *revenueService) RollupDirty(ctx context.Context, req types.RollupDirtyRequest) (types.RollupDirtyResult, error) {
+	var result types.RollupDirtyResult
+
+	// Environments are walked in a stable order, so a cursor naming one of them
+	// means "this one, partially, then the rest". A cursor whose environment is
+	// gone -- disabled, deleted, or its setting removed -- is ignored rather
+	// than obeyed: skipping until a match that never comes would walk the whole
+	// list, roll nothing, and report success.
+	resuming := req.Cursor != nil && s.environmentIsOptedIn(ctx, req.Cursor.EnvironmentID)
+	if req.Cursor != nil && !resuming {
+		s.Logger.Info(ctx, "revenue rollup ignoring a stale cursor",
+			"environment_id", req.Cursor.EnvironmentID)
+	}
+
+	// Once an environment fails, the cursor stops advancing. Letting a later
+	// environment record its progress would make the retry skip the failed one.
+	cursorFrozen := false
+	setCursor := func(c types.RollupCursor) {
+		if cursorFrozen {
+			return
+		}
+		result.Cursor = &c
+		if req.OnProgress != nil {
+			req.OnProgress(c)
+		}
+	}
+
+	err := s.forEachOptedInEnvironment(ctx, "revenue rollup dirty scan", func(envCtx context.Context) error {
+		envID := types.GetEnvironmentID(envCtx)
+		var after string
+		if resuming {
+			if req.Cursor.EnvironmentID != envID {
+				// Environments before the cursor's are already done.
+				return nil
+			}
+			after = req.Cursor.LastSubscriptionID
+			resuming = false
+		}
+
+		envRolled, envSkipped, envErr := s.rollupDirtyForEnvironment(envCtx, req, after, setCursor)
+		result.Rolled += envRolled
+		result.Skipped += envSkipped
+		if envErr != nil {
+			cursorFrozen = true
+		}
 		return envErr
 	})
-	return rolled, skipped, err
+	return result, err
+}
+
+// environmentIsOptedIn reports whether a cursor's environment is still one the
+// rollup walks. Anything it cannot confirm is treated as gone, so the scan
+// restarts from the top rather than skipping every environment.
+func (s *revenueService) environmentIsOptedIn(ctx context.Context, environmentID string) bool {
+	if environmentID == "" {
+		return false
+	}
+	configs, err := s.SettingsRepo.ListAllTenantEnvSettingsByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
+	if err != nil {
+		return false
+	}
+	for _, tec := range configs {
+		if tec.EnvironmentID != environmentID {
+			continue
+		}
+		cfg, cfgErr := utils.ToStruct[types.RevenueAnalyticsConfig](tec.Config)
+		if cfgErr == nil && cfg.Enabled {
+			return true
+		}
+	}
+	return false
 }
 
 // forEachOptedInEnvironment runs fn once per (tenant, environment) that opted
@@ -666,6 +748,14 @@ func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op strin
 	if err != nil {
 		return err
 	}
+
+	// Stable order, so an environment cursor means the same thing on a retry.
+	sort.Slice(tenantEnvConfigs, func(i, j int) bool {
+		if tenantEnvConfigs[i].TenantID != tenantEnvConfigs[j].TenantID {
+			return tenantEnvConfigs[i].TenantID < tenantEnvConfigs[j].TenantID
+		}
+		return tenantEnvConfigs[i].EnvironmentID < tenantEnvConfigs[j].EnvironmentID
+	})
 
 	var envErrs []error
 	for _, tec := range tenantEnvConfigs {
@@ -701,31 +791,256 @@ func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op strin
 	return errors.Join(envErrs...)
 }
 
+// scanScope decides which subscriptions a pass must roll. Over-scoping costs a
+// read and a diff that writes nothing; under-scoping leaves facts silently
+// stale, so every uncertain answer widens the scope rather than narrowing it.
+type scanScope struct {
+	full bool
+	// customers with usage ingested since the window opened
+	customers map[string]struct{}
+	// parent subscriptions whose inherited children saw usage
+	activeParents map[string]struct{}
+	// subscriptions whose committed minimum accrues without usage
+	accruing map[string]struct{}
+	since    time.Time
+	// now anchors the period-open grace window
+	now time.Time
+}
+
+// periodOpenGrace keeps a freshly opened period in scope until the next
+// scheduled full rebuild. The opening roll is what writes the fixed charges and
+// commitment true-ups a subscription owes before anything is metered, and if it
+// fails the period-start trigger has already passed by the next run — the
+// window would close on a subscription that never got its rows.
+//
+// Deliberately a clock window rather than a per-subscription probe of what is
+// already written. That probe is a group-by over every provisional fact, and
+// revenue_facts holds a row per line item per day: at production shape that is
+// millions of rows scanned on every run, growing with the table. Spanning the
+// rebuild interval instead means a failed opening roll is retried on every run
+// until the rebuild would have caught it anyway, so the two never leave a gap
+// between them.
+const periodOpenGrace = 7 * 24 * time.Hour
+
+// backdateLookback bounds how far back a late-arriving event is looked for.
+// meter_usage is partitioned on the event timestamp, so an unbounded probe
+// reads every partition the tenant has ever written. Events backdated further
+// than this are picked up by the scheduled full rebuild.
+const backdateLookback = 90 * 24 * time.Hour
+
+// includes reports whether this subscription has to be rolled. Usage is only
+// one of the triggers: a subscription with no usage at all still owes fixed
+// charges, commitment true-ups and per-window bucketed true-ups, and those are
+// written when its period opens.
+func (sc scanScope) includes(sub *subscription.Subscription) bool {
+	if sc.full {
+		return true
+	}
+	if _, ok := sc.customers[sub.CustomerID]; ok {
+		return true
+	}
+	// Usage on an inherited child bills the parent, and the child's usage rows
+	// carry the child's customer id — the parent would otherwise look quiet.
+	if _, ok := sc.activeParents[sub.ID]; ok {
+		return true
+	}
+	// A windowed commitment's true-up fills empty windows, and the bucketed
+	// curve is clamped to today, so one more window becomes billable every day
+	// with no usage at all. Every other trigger reads such a subscription as
+	// quiet, and its accrual would stop after the period's opening roll.
+	if _, ok := sc.accruing[sub.ID]; ok {
+		return true
+	}
+	if !sub.UpdatedAt.Before(sc.since) {
+		return true
+	}
+	// A period that opened inside the window needs its opening rows even
+	// though nothing has been metered against it yet.
+	// It stays in scope for a few runs, so a failed opening roll gets another
+	// chance: by the next run the period start is already outside the window.
+	return !sub.CurrentPeriodStart.Before(sc.now.Add(-periodOpenGrace))
+}
+
+// catalogChangedSince reports whether any price in this environment was edited
+// since the window opened. It is deliberately coarse — one edited price widens
+// the whole environment to a full pass — because the alternative is resolving
+// which subscriptions reference it, and a full pass is now cheap enough that
+// the precision is not worth the query.
+//
+// Coupon and entitlement edits are not covered here and are repaired by the
+// scheduled full rebuild instead.
+func (s *revenueService) catalogChangedSince(ctx context.Context, since time.Time) bool {
+	filter := types.NewNoLimitPriceFilter()
+	filter.UpdatedAfter = lo.ToPtr(since)
+	filter.AllowExpiredPrices = true
+	filter.Limit = lo.ToPtr(1)
+
+	prices, err := s.PriceRepo.List(ctx, filter)
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup treating the catalog as changed",
+			"error", err.Error(), "reason", "price change probe failed")
+		return true
+	}
+	if len(prices) > 0 {
+		s.Logger.Info(ctx, "revenue rollup widening to a full scan", "reason", "price edited")
+		return true
+	}
+	return false
+}
+
+// scanScopeFor resolves the scope for one environment. Anything it cannot
+// answer confidently resolves to a full pass.
+func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirtyRequest) scanScope {
+	full := scanScope{full: true, since: req.Since}
+	if req.ForceFull {
+		return full
+	}
+
+	// A price edit changes the amount on every subscription using it, but bumps
+	// nothing on the subscription itself, so usage and updated_at both miss it.
+	if s.catalogChangedSince(ctx, req.Since) {
+		return full
+	}
+
+	activity, err := s.MeterUsageRepo.GetUsageActivitySince(ctx, &events.UsageActivityParams{
+		TenantID:      types.GetTenantID(ctx),
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		IngestedAfter: req.Since,
+		// Backdating beyond this is repaired by the scheduled full rebuild;
+		// without the bound the read scans every partition ever written.
+		TimestampAfter: req.Since.Add(-backdateLookback),
+	})
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"error", err.Error(), "reason", "usage activity read failed")
+		return full
+	}
+	if activity.Unattributed {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"reason", "usage with no customer id")
+		return full
+	}
+
+	customers := make(map[string]struct{}, len(activity.CustomerIDs))
+	for _, id := range activity.CustomerIDs {
+		customers[id] = struct{}{}
+	}
+
+	activeParents, err := s.parentsOfActiveChildren(ctx, customers)
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"error", err.Error(), "reason", "inherited-child lookup failed")
+		return full
+	}
+
+	accruing, err := s.subscriptionsWithAccruingCommitments(ctx)
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"error", err.Error(), "reason", "commitment true-up lookup failed")
+		return full
+	}
+
+	return scanScope{
+		customers:     customers,
+		activeParents: activeParents,
+		accruing:      accruing,
+		since:         req.Since,
+		now:           time.Now().UTC(),
+	}
+}
+
+// subscriptionsWithAccruingCommitments returns the subscriptions whose
+// committed minimum is billable without usage: a windowed commitment's true-up
+// fills empty windows, and the bucketed curve is clamped to today, so one more
+// window becomes billable each day. They must be rolled every pass rather than
+// once when the period opens.
+//
+// Keyed on subscription rather than customer so a customer's other
+// subscriptions are not dragged in, and predicated on a plain boolean so the
+// scan does not evaluate jsonb per row -- this table runs to millions of rows
+// per environment.
+func (s *revenueService) subscriptionsWithAccruingCommitments(ctx context.Context) (map[string]struct{}, error) {
+	if s.SubscriptionLineItemRepo == nil {
+		return nil, nil
+	}
+	ids, err := s.SubscriptionLineItemRepo.SubscriptionIDsWithWindowedCommitment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		out[id] = struct{}{}
+	}
+	return out, nil
+}
+
+// parentsOfActiveChildren maps the parent subscriptions of inherited children
+// whose customers saw usage. A parent subscription bills its children's usage,
+// but those usage rows carry the child's customer id, so matching on the
+// parent's own customer alone would leave it looking quiet.
+func (s *revenueService) parentsOfActiveChildren(ctx context.Context, customers map[string]struct{}) (map[string]struct{}, error) {
+	if len(customers) == 0 {
+		return nil, nil
+	}
+
+	// Scoped to the customers that actually saw usage: listing every inherited
+	// subscription in the environment would be unbounded, and all but a handful
+	// of them could not qualify anyway.
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeInherited}
+	filter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive}
+	filter.CustomerIDs = lo.Keys(customers)
+	children, err := s.SubRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	parents := map[string]struct{}{}
+	for _, child := range children {
+		parentID := lo.FromPtr(child.ParentSubscriptionID)
+		if parentID == "" {
+			continue
+		}
+		parents[parentID] = struct{}{}
+	}
+	return parents, nil
+}
+
 // rollupDirtyForEnvironment scans one (tenant, environment)'s active
 // subscriptions in pages and rolls every one with activity since `since`.
-func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
+func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req types.RollupDirtyRequest, after string, setCursor func(types.RollupCursor)) (rolled, skipped int, err error) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	if tenantID == "" || environmentID == "" {
 		return 0, 0, nil
 	}
 
+	scope := s.scanScopeFor(ctx, req)
+
 	const batchSize = 1000
 	offset := 0
+	maxSeen := after
 
 	for {
+		// Listing pages by offset under a stable id sort; the cursor is a
+		// resume filter applied to what comes back, not a pagination key. That
+		// keeps a retry from redoing completed subscriptions without needing
+		// the repository to support keyset paging.
 		filter := types.NewSubscriptionFilter()
 		filter.Limit = lo.ToPtr(batchSize)
 		filter.Offset = lo.ToPtr(offset)
 		filter.Status = lo.ToPtr(types.StatusPublished)
 		filter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive}
-		subs, listErr := s.SubRepo.List(ctx, filter)
+		filter.Sort = []*types.SortCondition{{Field: "id", Direction: types.SortDirectionAsc}}
+		page, listErr := s.SubRepo.List(ctx, filter)
 		if listErr != nil {
 			return rolled, skipped, listErr
 		}
-		if len(subs) == 0 {
+		if len(page) == 0 {
 			return rolled, skipped, nil
 		}
+		pageSize := len(page)
+		subs := subscriptionsAfter(page, after)
 
 		for _, sub := range subs {
 			if sub.TenantID != tenantID || sub.EnvironmentID != environmentID {
@@ -735,8 +1050,20 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since ti
 					"subscription_environment_id", sub.EnvironmentID)
 				continue
 			}
-			if sub.UpdatedAt.Before(since) && sub.CurrentPeriodStart.Before(since) && sub.CurrentPeriodEnd.Before(since) {
+			if !scope.includes(sub) {
 				continue
+			}
+
+			// Checkpoint per subscription, not per page. A page is 1000
+			// subscriptions; at a few hundred milliseconds each that outruns the
+			// activity's heartbeat timeout, and the attempt would be killed
+			// before it ever reported progress -- the exact failure the cursor
+			// exists to prevent.
+			if sub.ID > maxSeen {
+				maxSeen = sub.ID
+			}
+			checkpoint := func() {
+				setCursor(types.RollupCursor{EnvironmentID: environmentID, LastSubscriptionID: maxSeen})
 			}
 
 			wasSkipped, rollErr := s.rollupSubscription(ctx, sub)
@@ -747,20 +1074,41 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since ti
 				s.Logger.Error(ctx, "revenue rollup failed for subscription",
 					"error", rollErr, "subscription_id", sub.ID)
 				skipped++
+				checkpoint()
 				continue
 			}
 			if wasSkipped {
 				skipped++
+				checkpoint()
 				continue
 			}
 			rolled++
+			checkpoint()
 		}
 
-		if len(subs) < batchSize {
+		if pageSize < batchSize {
 			return rolled, skipped, nil
 		}
 		offset += batchSize
 	}
+}
+
+// subscriptionsAfter keeps only the subscriptions ordered after `after`, so a
+// resumed pass does not redo completed work. It filters rather than slices, so
+// it is correct whatever order the repository returned — and a cursor naming a
+// subscription that has since been deleted still resumes in the right place,
+// because the cursor is an ordering, not a row reference.
+func subscriptionsAfter(subs []*subscription.Subscription, after string) []*subscription.Subscription {
+	if after == "" {
+		return subs
+	}
+	kept := make([]*subscription.Subscription, 0, len(subs))
+	for _, sub := range subs {
+		if sub.ID > after {
+			kept = append(kept, sub)
+		}
+	}
+	return kept
 }
 
 // finalizePeriodGroup identifies one (subscription, period) grain touched by
@@ -1103,6 +1451,21 @@ type rollupInputs struct {
 	// extCustomerIDs scope usage reads to this subscription's customers
 	// (parent + inherited children), matching the engine's own scoping.
 	extCustomerIDs []string
+	// usageByMeter is every meter's per-day usage for this subscription, read
+	// once. Reading per line item instead is what made a full pass take hours:
+	// a subscription here carries hundreds of line items over a handful of
+	// meters.
+	usageByMeter map[string][]events.DailyUsagePoint
+}
+
+// usage returns the meter's pre-read per-day quantities. A meter with no usage
+// is absent from the map and yields nil, which the curve reads as no usage —
+// distinct from "not pre-read", which only happens outside the rollup.
+func (in *rollupInputs) usage(meterID string) []events.DailyUsagePoint {
+	if in == nil || in.usageByMeter == nil {
+		return nil
+	}
+	return in.usageByMeter[meterID]
 }
 
 // price returns the hydrated price for id, erroring on ids the bulk load did
@@ -1190,12 +1553,38 @@ func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription
 		return nil, err
 	}
 
+	// One read for every meter on the subscription, over the widest window any
+	// of its line items can ask for. Per-day (not cumulative) quantities come
+	// back, so a line item starting mid-period accumulates from its own start.
+	usageByMeter, err := s.MeterUsageRepo.GetDailyUsageByMeter(ctx, &events.DailyUsageParams{
+		TenantID:            types.GetTenantID(ctx),
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		MeterIDs:            lo.Uniq(meterIDs),
+		ExternalCustomerIDs: extCustomerIDs,
+		StartTime:           periodStart,
+		EndTime:             periodEnd,
+		UseFinal:            true,
+		Timezone:            sub.Timezone,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// A meter with no usage must still be present, as an empty slice: nil would
+	// be read as "not pre-read" and fall back to a single-meter query, which is
+	// the per-line-item behaviour this replaces.
+	for _, id := range lo.Uniq(meterIDs) {
+		if _, ok := usageByMeter[id]; !ok {
+			usageByMeter[id] = []events.DailyUsagePoint{}
+		}
+	}
+
 	return &rollupInputs{
 		prices:            lo.KeyBy(prices, func(p *price.Price) string { return p.ID }),
 		meters:            lo.KeyBy(meters, func(m *meter.Meter) string { return m.ID }),
 		entitlementLimits: limits,
 		grantsByMeterID:   grantsByMeterID,
 		extCustomerIDs:    extCustomerIDs,
+		usageByMeter:      usageByMeter,
 	}, nil
 }
 

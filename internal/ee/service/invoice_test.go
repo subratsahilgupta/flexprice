@@ -670,8 +670,8 @@ func (f *failingRevenueFacts) RollupSubscription(ctx context.Context, subscripti
 	return nil
 }
 
-func (f *failingRevenueFacts) RollupDirty(ctx context.Context, since time.Time) (int, int, error) {
-	return 0, 0, nil
+func (f *failingRevenueFacts) RollupDirty(ctx context.Context, req types.RollupDirtyRequest) (types.RollupDirtyResult, error) {
+	return types.RollupDirtyResult{}, nil
 }
 
 func (f *failingRevenueFacts) RevertInvoiceFacts(ctx context.Context, invoiceID string) error {

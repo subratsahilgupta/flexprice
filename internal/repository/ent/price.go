@@ -652,6 +652,10 @@ func (o PriceQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.P
 		}
 	}
 
+	if f.UpdatedAfter != nil {
+		query = query.Where(price.UpdatedAtGTE(*f.UpdatedAfter))
+	}
+
 	if !f.AllowExpiredPrices {
 		now := time.Now().UTC()
 

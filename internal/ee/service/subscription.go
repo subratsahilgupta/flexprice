@@ -4874,7 +4874,7 @@ func (s *subscriptionService) handleSubCoupons(
 	return nil
 }
 
-// handleSubscriptionAddons processes addons for a subscription
+// handleSubscriptionAddons attaches the creation request's addons as one change.
 func (s *subscriptionService) handleSubscriptionAddons(
 	ctx context.Context,
 	subscription *subscription.Subscription,
@@ -4888,11 +4888,12 @@ func (s *subscriptionService) handleSubscriptionAddons(
 		"subscription_id", subscription.ID,
 		"addons_count", len(addonRequests))
 
-	// Process each addon request
-	for _, addonReq := range addonRequests {
+	adds := make([]AddonAdd, 0, len(addonRequests))
+	for i := range addonRequests {
+		addonReq := addonRequests[i]
 
-		// check if start date is given else mark it as subscription start date
-		if addonReq.StartDate == nil {
+		// Attach at the subscription's own start unless the caller named a date.
+		if addonReq.StartDate == nil && addonReq.ChangeAt == nil {
 			addonReq.StartDate = &subscription.StartDate
 		}
 
@@ -4900,16 +4901,21 @@ func (s *subscriptionService) handleSubscriptionAddons(
 		// proration here as well would charge the addon twice.
 		addonReq.ProrationBehavior = types.ProrationBehaviorNone
 
-		if _, err := s.attachAddon(ctx, subscription, lo.ToPtr(addonReq), nil); err != nil {
-			return err
-		}
+		adds = append(adds, AddonAdd{Request: &addonReq})
 	}
 
-	return nil
+	changeSvc := NewAddonChangeService(s.ServiceParams)
+	config, err := changeSvc.Resolve(ctx, AddonChangeRequest{Subscription: subscription, Adds: adds})
+	if err != nil {
+		return err
+	}
+
+	// Persists the changes but not raise the invoice
+	return changeSvc.Persist(ctx, config)
 }
 
-// AddAddonToSubscription adds an addon to a subscription
-// This is the public facing method for adding an addon to a subscription
+// AddAddonToSubscription is the deprecated single-addon route, served by the batch path so
+// there is one implementation. The response is rebuilt from what the batch reports.
 func (s *subscriptionService) AddAddonToSubscription(
 	ctx context.Context,
 	req *dto.AddAddonRequest,
@@ -4919,28 +4925,43 @@ func (s *subscriptionService) AddAddonToSubscription(
 		return nil, err
 	}
 
-	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	resp, err := NewSubscriptionModificationService(s.ServiceParams).Execute(ctx, req.SubscriptionID,
+		dto.ExecuteSubscriptionModifyRequest{
+			Type:     dto.SubscriptionModifyTypeAddon,
+			Checkout: req.Checkout,
+			BulkAddonParams: &dto.SubModifyBulkAddonParams{
+				Adds: []*dto.AddAddonToSubscriptionRequest{&req.AddAddonToSubscriptionRequest},
+			},
+		})
 	if err != nil {
 		return nil, err
 	}
-	sub.LineItems = lineItems
 
-	resp, err := s.attachAddon(ctx, sub, &req.AddAddonToSubscriptionRequest, req.Checkout)
-	if err != nil {
-		return nil, err
+	// An add-only change reports exactly one association, the one it created.
+	changed := resp.ChangedResources.AddonAssociations
+	if len(changed) == 0 {
+		return nil, ierr.NewError("addon change reported no created association").
+			Mark(ierr.ErrInternal)
 	}
 
-	// A pay-first attach has changed nothing yet — the association is pending and the line
-	// items appear only once payment lands, so there is no subscription update to announce.
-	if !resp.PaymentPending() {
-		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, req.SubscriptionID)
+	association, err := s.AddonAssociationRepo.GetByID(ctx, changed[0].ID)
+	if err != nil {
+		return nil, err
 	}
 
 	return &dto.AddAddonToSubscriptionResponse{
-		AddonAssociation: resp.GetAssociation(),
-		CheckoutSession:  resp.GetCheckoutSession(),
-		Invoice:          resp.GetInvoice(),
+		AddonAssociation: association,
+		CheckoutSession:  resp.CheckoutSession,
+		Invoice:          lo.Ternary(resp.CheckoutSession != nil, gatedDraftInvoice(resp), nil),
 	}, nil
+}
+
+func gatedDraftInvoice(resp *dto.SubscriptionModifyResponse) *dto.InvoiceResponse {
+	if len(resp.ChangedResources.Invoices) == 0 {
+		return nil
+	}
+
+	return resp.ChangedResources.Invoices[0].Invoice
 }
 
 // createAddonAttachParams resolves everything an attach needs — validations, prices, association and
@@ -4981,13 +5002,6 @@ func (s *subscriptionService) createAddonAttachParams(
 		return nil, ierr.NewError("subscription status does not allow addon attachment").
 			WithHint("Addon can only be added to active or draft subscriptions").
 			Mark(ierr.ErrValidation)
-	}
-
-	// Validate entitlement compatibility if check is not skipped
-	if !req.SkipEntityValidation {
-		if err := s.validateEntitlementCompatibility(ctx, sub.ID, req.AddonID); err != nil {
-			return nil, err
-		}
 	}
 
 	// Validate and filter prices for the addon
@@ -5061,108 +5075,6 @@ func (s *subscriptionService) createAddonAttachParams(
 		effectiveDate:  prorationEffectiveDate,
 		isReplay:       existing != nil,
 	}, nil
-}
-
-// validateEntitlementCompatibility checks if addon entitlements are compatible with existing subscription entitlements
-// It ensures that metered features with the same feature ID have the same usage reset period
-func (s *subscriptionService) validateEntitlementCompatibility(ctx context.Context, subscriptionID, addonID string) error {
-	// Get entitlements for the addon we're trying to add
-	entitlementService := NewEntitlementService(s.ServiceParams)
-	addonEntitlements, err := entitlementService.GetAddonEntitlements(ctx, addonID)
-	if err != nil {
-		return err
-	}
-
-	// Filter to metered features only (only metered features have usage reset periods that matter)
-	meteredAddonEntitlements := make([]*dto.EntitlementResponse, 0)
-	for _, addonEnt := range addonEntitlements.Items {
-		if addonEnt.FeatureType == types.FeatureTypeMetered {
-			meteredAddonEntitlements = append(meteredAddonEntitlements, addonEnt)
-		}
-	}
-
-	// Early return if no metered entitlements to check
-	if len(meteredAddonEntitlements) == 0 {
-		return nil
-	}
-
-	// Fetch subscription entitlements
-	subscriptionEntitlements, err := s.GetSubscriptionEntitlements(ctx, subscriptionID)
-	if err != nil {
-		return err
-	}
-
-	// Build map of feature_id to usage_reset_period for metered features in subscription
-	featureResetMap := make(map[string]types.EntitlementUsageResetPeriod)
-	for _, ent := range subscriptionEntitlements {
-		if ent.FeatureType == types.FeatureTypeMetered {
-			featureResetMap[ent.FeatureID] = ent.UsageResetPeriod
-		}
-	}
-
-	pendingResetPeriods, err := s.pendingAddonFeatureResetPeriods(ctx, subscriptionID)
-	if err != nil {
-		return err
-	}
-	for featureID, resetPeriod := range pendingResetPeriods {
-		if _, exists := featureResetMap[featureID]; !exists {
-			featureResetMap[featureID] = resetPeriod
-		}
-	}
-
-	// Check for conflicts
-	for _, addonEnt := range meteredAddonEntitlements {
-
-		existingResetPeriod, exists := featureResetMap[addonEnt.FeatureID]
-
-		if exists && existingResetPeriod != addonEnt.UsageResetPeriod {
-
-			return ierr.NewError("metered feature usage reset period conflict").
-				WithHint(fmt.Sprintf("Feature '%s' has conflicting reset periods: %s vs %s", addonEnt.FeatureID, existingResetPeriod, addonEnt.UsageResetPeriod)).
-				WithReportableDetails(map[string]interface{}{
-					"subscription_id": subscriptionID,
-					"addon_id":        addonID,
-					"feature_id":      addonEnt.FeatureID,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	return nil
-}
-
-// pendingAddonFeatureResetPeriods returns the usage reset period of every metered feature
-// granted by an addon whose association is still pending payment, keyed by feature id.
-// Compatibility-only: it deliberately does not flow into GetSubscriptionEntitlements, which
-// also drives real feature access where a pending addon must not count.
-func (s *subscriptionService) pendingAddonFeatureResetPeriods(
-	ctx context.Context,
-	subscriptionID string,
-) (map[string]types.EntitlementUsageResetPeriod, error) {
-	pendingAssociations, err := s.listPendingAddonAssociations(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-	if len(pendingAssociations) == 0 {
-		return nil, nil
-	}
-
-	entitlementService := NewEntitlementService(s.ServiceParams)
-	resetPeriods := make(map[string]types.EntitlementUsageResetPeriod)
-
-	for _, association := range pendingAssociations {
-		addonEntitlements, err := entitlementService.GetAddonEntitlements(ctx, association.AddonID)
-		if err != nil {
-			return nil, err
-		}
-		for _, ent := range addonEntitlements.Items {
-			if ent.FeatureType == types.FeatureTypeMetered {
-				resetPeriods[ent.FeatureID] = ent.UsageResetPeriod
-			}
-		}
-	}
-
-	return resetPeriods, nil
 }
 
 // TerminateSubscriptionResources terminates all line items, addon associations, and credit
@@ -5360,14 +5272,22 @@ func (s *subscriptionService) cancelAddonsForSubscription(ctx context.Context, s
 }
 
 // RemoveAddonFromSubscription removes an addon from a subscription by addon association ID
+// RemoveAddonFromSubscription is the deprecated single-addon route. The body names only the
+// association, so the subscription is read back off it before delegating to the batch path.
 func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, req *dto.RemoveAddonRequest) error {
-	outcome, err := s.detachAddon(ctx, req, "")
+	association, err := s.AddonAssociationRepo.GetByID(ctx, req.AddonAssociationID)
 	if err != nil {
 		return err
 	}
 
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, outcome.GetAssociation().EntityID)
-	return nil
+	_, err = NewSubscriptionModificationService(s.ServiceParams).Execute(ctx, association.EntityID,
+		dto.ExecuteSubscriptionModifyRequest{
+			Type: dto.SubscriptionModifyTypeAddon,
+			BulkAddonParams: &dto.SubModifyBulkAddonParams{
+				Removes: []*dto.RemoveAddonRequest{req},
+			},
+		})
+	return err
 }
 
 func (s *subscriptionService) buildAddonLineItems(

@@ -84,6 +84,11 @@ func priceFilterFn(ctx context.Context, p *price.Price, filter interface{}) bool
 		}
 	}
 
+	// UpdatedAfter matches edits, which the created_at range above cannot see.
+	if f.UpdatedAfter != nil && p.UpdatedAt.Before(*f.UpdatedAfter) {
+		return false
+	}
+
 	return true
 }
 

@@ -18,17 +18,17 @@ func day(s string) time.Time {
 	return t
 }
 
-// TestBuildCumulativeDailyUsageQuery_GroupsByDayWithRLS proves the new,
-// additive builder method groups by day, scopes by tenant/environment/meter,
+// TestBuildDailyUsageQuery_GroupsByDayWithRLS proves the builder groups by
+// meter and day, scopes by tenant/environment/meter,
 // and honors UseFinal — mirroring BuildDetailedWhereClause / BuildFinalClause
 // used elsewhere in this file, without touching any existing method.
-func TestBuildCumulativeDailyUsageQuery_GroupsByDayWithRLS(t *testing.T) {
+func TestBuildDailyUsageQuery_GroupsByDayWithRLS(t *testing.T) {
 	qb := NewMeterUsageQueryBuilder()
 
-	q, args := qb.BuildCumulativeDailyUsageQuery(&events.CumulativeDailyUsageParams{
+	q, args := qb.BuildDailyUsageQuery(&events.DailyUsageParams{
 		TenantID:      "t1",
 		EnvironmentID: "e1",
-		MeterID:       "m1",
+		MeterIDs:      []string{"m1"},
 		StartTime:     day("2026-09-01"),
 		EndTime:       day("2026-10-01"),
 		UseFinal:      true,
@@ -37,8 +37,8 @@ func TestBuildCumulativeDailyUsageQuery_GroupsByDayWithRLS(t *testing.T) {
 	assert.Contains(t, q, "toStartOfDay(timestamp")
 	assert.Contains(t, q, "tenant_id = ?")
 	assert.Contains(t, q, "environment_id = ?")
-	assert.Contains(t, q, "GROUP BY day")
-	assert.Contains(t, q, "ORDER BY day ASC")
+	assert.Contains(t, q, "GROUP BY meter_id, day")
+	assert.Contains(t, q, "ORDER BY meter_id ASC, day ASC")
 	assert.Contains(t, q, "FINAL")
 
 	assert.Contains(t, args, "t1")
@@ -46,15 +46,15 @@ func TestBuildCumulativeDailyUsageQuery_GroupsByDayWithRLS(t *testing.T) {
 	assert.Contains(t, args, "m1")
 }
 
-// TestBuildCumulativeDailyUsageQuery_NoFinalWhenNotRequested proves UseFinal=false
+// TestBuildDailyUsageQuery_NoFinalWhenNotRequested proves UseFinal=false
 // omits the FINAL clause, matching BuildFinalClause's existing behavior.
-func TestBuildCumulativeDailyUsageQuery_NoFinalWhenNotRequested(t *testing.T) {
+func TestBuildDailyUsageQuery_NoFinalWhenNotRequested(t *testing.T) {
 	qb := NewMeterUsageQueryBuilder()
 
-	q, args := qb.BuildCumulativeDailyUsageQuery(&events.CumulativeDailyUsageParams{
+	q, args := qb.BuildDailyUsageQuery(&events.DailyUsageParams{
 		TenantID:      "t1",
 		EnvironmentID: "e1",
-		MeterID:       "m1",
+		MeterIDs:      []string{"m1"},
 		StartTime:     day("2026-09-01"),
 		EndTime:       day("2026-10-01"),
 		UseFinal:      false,
@@ -64,16 +64,16 @@ func TestBuildCumulativeDailyUsageQuery_NoFinalWhenNotRequested(t *testing.T) {
 	require.NotEmpty(t, args)
 }
 
-// TestBuildCumulativeDailyUsageQuery_SumsQtyTotal proves the aggregation
+// TestBuildDailyUsageQuery_SumsQtyTotal proves the aggregation
 // expression is SUM(qty_total) — the billable pre-materialized quantity —
 // not a JSONExtract over properties.
-func TestBuildCumulativeDailyUsageQuery_SumsQtyTotal(t *testing.T) {
+func TestBuildDailyUsageQuery_SumsQtyTotal(t *testing.T) {
 	qb := NewMeterUsageQueryBuilder()
 
-	q, _ := qb.BuildCumulativeDailyUsageQuery(&events.CumulativeDailyUsageParams{
+	q, _ := qb.BuildDailyUsageQuery(&events.DailyUsageParams{
 		TenantID:      "t1",
 		EnvironmentID: "e1",
-		MeterID:       "m1",
+		MeterIDs:      []string{"m1"},
 		StartTime:     day("2026-09-01"),
 		EndTime:       day("2026-10-01"),
 	})
@@ -81,16 +81,16 @@ func TestBuildCumulativeDailyUsageQuery_SumsQtyTotal(t *testing.T) {
 	assert.Contains(t, q, "SUM(qty_total)")
 }
 
-// TestBuildCumulativeDailyUsageQuery_BoundsMaxMemoryUsage proves the query
+// TestBuildDailyUsageQuery_BoundsMaxMemoryUsage proves the query
 // carries the same inline 90GB max_memory_usage bound as its sibling
 // meter_usage.go queries (AGENTS.md: every ClickHouse query bounded by 90GB).
-func TestBuildCumulativeDailyUsageQuery_BoundsMaxMemoryUsage(t *testing.T) {
+func TestBuildDailyUsageQuery_BoundsMaxMemoryUsage(t *testing.T) {
 	qb := NewMeterUsageQueryBuilder()
 
-	q, _ := qb.BuildCumulativeDailyUsageQuery(&events.CumulativeDailyUsageParams{
+	q, _ := qb.BuildDailyUsageQuery(&events.DailyUsageParams{
 		TenantID:      "t1",
 		EnvironmentID: "e1",
-		MeterID:       "m1",
+		MeterIDs:      []string{"m1"},
 		StartTime:     day("2026-09-01"),
 		EndTime:       day("2026-10-01"),
 		UseFinal:      true,
@@ -99,4 +99,25 @@ func TestBuildCumulativeDailyUsageQuery_BoundsMaxMemoryUsage(t *testing.T) {
 	assert.Contains(t, q, "SETTINGS")
 	assert.Contains(t, q, "max_memory_usage = 96636764160")
 	assert.Contains(t, q, "do_not_merge_across_partitions_select_final = 1")
+}
+
+// TestBuildDailyUsageQuery_BatchesMeters proves several meters go out in one
+// query, keyed by meter in the projection. One query per line item is what made
+// a full rollup pass take hours.
+func TestBuildDailyUsageQuery_BatchesMeters(t *testing.T) {
+	qb := NewMeterUsageQueryBuilder()
+
+	q, args := qb.BuildDailyUsageQuery(&events.DailyUsageParams{
+		TenantID:      "t1",
+		EnvironmentID: "e1",
+		MeterIDs:      []string{"m1", "m2", "m3"},
+		StartTime:     day("2026-09-01"),
+		EndTime:       day("2026-10-01"),
+	})
+
+	assert.Contains(t, q, "meter_id,")
+	assert.Contains(t, q, "GROUP BY meter_id, day")
+	for _, m := range []string{"m1", "m2", "m3"} {
+		assert.Contains(t, args, m, "every meter must reach the query")
+	}
 }

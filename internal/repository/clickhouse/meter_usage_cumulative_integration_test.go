@@ -67,12 +67,12 @@ func chEnvOrDefault(key, def string) string {
 	return def
 }
 
-// TestGetCumulativeDailyUsage_Integration proves GetCumulativeDailyUsage runs
-// against a real ClickHouse instance and returns a monotonically
-// non-decreasing running total. Skips automatically when ClickHouse isn't
-// reachable (see newRealClickHouseTestStore) — this test's job is to compile
-// and exercise real wiring, not to assert on seeded data.
-func TestGetCumulativeDailyUsage_Integration(t *testing.T) {
+// TestGetDailyUsageByMeter_Integration proves GetDailyUsageByMeter runs against
+// a real ClickHouse instance and keys its per-day rows by meter. Skips
+// automatically when ClickHouse isn't reachable (see
+// newRealClickHouseTestStore) — this test's job is to compile and exercise real
+// wiring, not to assert on seeded data.
+func TestGetDailyUsageByMeter_Integration(t *testing.T) {
 	store := newRealClickHouseTestStore(t)
 
 	log, err := logger.NewLogger(&config.Configuration{
@@ -82,22 +82,33 @@ func TestGetCumulativeDailyUsage_Integration(t *testing.T) {
 
 	repo := NewMeterUsageRepository(store, log)
 
-	params := &events.CumulativeDailyUsageParams{
+	meterA := "test_meter_" + uuid.NewString()
+	meterB := "test_meter_" + uuid.NewString()
+	params := &events.DailyUsageParams{
 		TenantID:      "test_tenant_" + uuid.NewString(),
 		EnvironmentID: "test_env_" + uuid.NewString(),
-		MeterID:       "test_meter_" + uuid.NewString(),
+		MeterIDs:      []string{meterA, meterB},
 		StartTime:     time.Now().UTC().AddDate(0, 0, -30),
 		EndTime:       time.Now().UTC(),
 		UseFinal:      true,
 	}
 
-	points, err := repo.GetCumulativeDailyUsage(context.Background(), params)
+	byMeter, err := repo.GetDailyUsageByMeter(context.Background(), params)
 	require.NoError(t, err)
 
-	var running float64
-	for _, p := range points {
-		v, _ := p.CumulativeQty.Float64()
-		require.GreaterOrEqual(t, v, running-1e-9, "cumulative quantity must not decrease day over day")
-		running = v
+	// Whatever comes back must be attributed to a meter we asked for, and the
+	// days within a meter must be ordered — the caller accumulates in order.
+	for meterID, points := range byMeter {
+		require.Contains(t, params.MeterIDs, meterID, "a meter we did not ask for came back")
+		for i := 1; i < len(points); i++ {
+			require.False(t, points[i].Day.Before(points[i-1].Day), "days must be ordered within a meter")
+		}
 	}
+
+	// An empty meter list must not issue a query at all.
+	empty, err := repo.GetDailyUsageByMeter(context.Background(), &events.DailyUsageParams{
+		TenantID: params.TenantID, EnvironmentID: params.EnvironmentID,
+	})
+	require.NoError(t, err)
+	require.Empty(t, empty)
 }

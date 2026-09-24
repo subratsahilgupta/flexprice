@@ -93,6 +93,10 @@ type AnalyticsConfig struct {
 type RevenueRollupConfig struct {
 	Enabled     bool `mapstructure:"enabled" default:"false"`
 	AutoCorrect bool `mapstructure:"auto_correct" default:"false"`
+	// FullRebuildWeekday forces a full pass on that weekday (0=Sunday), so
+	// anything the scan's triggers miss is repaired within a week rather than
+	// persisting. This is the net under the scan, not a switch for it.
+	FullRebuildWeekday int `mapstructure:"full_rebuild_weekday" default:"0"`
 }
 
 type ChatSupportConfig struct {

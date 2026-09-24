@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/flexprice/flexprice/internal/ee/service"
+	"sort"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -345,8 +347,9 @@ func (s *RevenueRollupSuite) TestRollupSubscription_WorkedExampleReconciles() {
 	}
 	s.Equal("530", total.String(), "Î£ net_amount must reconcile to $530")
 
-	// Idempotent: a second rollup of the same period bumps versions in place,
-	// never duplicating rows.
+	// Idempotent, and now also inert: a recompute that produces the same values
+	// writes nothing at all. Re-upserting identical rows every night was the
+	// bulk of the write volume on subscriptions with many line items.
 	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
 	rows2, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
 	s.NoError(err)
@@ -357,8 +360,34 @@ func (s *RevenueRollupSuite) TestRollupSubscription_WorkedExampleReconciles() {
 		versionByID[r.ID] = r.Version
 	}
 	for _, r := range rows2 {
-		s.Equal(versionByID[r.ID]+1, r.Version, "recompute must bump version in place, not insert a duplicate")
+		s.Equal(versionByID[r.ID], r.Version, "an unchanged recompute must not rewrite the row")
 	}
+
+	// A real change still lands: more usage on the last day moves that row and
+	// bumps its version, while the untouched days stay put.
+	lastDay := s.periodStart.AddDate(0, 0, 29).Add(6 * time.Hour)
+	id := s.GetUUID()
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{{
+		Event: events.Event{
+			ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+			EventName: "call_rollup_wk", ExternalCustomerID: "ext_rollup_wk",
+			Timestamp: lastDay, IngestedAt: lastDay,
+		},
+		MeterID: "meter_rollup_wk", QtyTotal: decimal.NewFromInt(5000), UniqueHash: "wk_extra:" + id,
+	}}))
+
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+	rows3, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+
+	bumped := 0
+	for _, r := range rows3 {
+		if prior, ok := versionByID[r.ID]; ok && r.Version > prior {
+			bumped++
+		}
+	}
+	s.NotZero(bumped, "a day whose usage changed must be rewritten")
+	s.Less(bumped, len(rows), "days whose usage did not change must be left alone")
 }
 
 func (s *RevenueRollupSuite) TestRollupSubscription_MultiPeriodCommitmentSkipped() {
@@ -650,7 +679,8 @@ func (s *RevenueRollupSuite) TestRollupDirty_TallyAndErrorIsolation() {
 
 	since := time.Now().UTC().Add(-time.Hour)
 
-	rolled, skipped, err := s.svc.RollupDirty(ctx, since)
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: since})
+	rolled, skipped := res.Rolled, res.Skipped
 	s.NoError(err, "a per-subscription error must never abort the batch")
 	s.Equal(1, rolled, "only the plain fixed-charge subscription should roll")
 	s.Equal(2, skipped, "multi-period-commitment skip + per-subscription error both tally as skipped")
@@ -979,7 +1009,8 @@ func (s *RevenueRollupSuite) TestRollupDirty_SkipsTenantsWithoutSetting() {
 	ctx := s.ctx
 	sub := s.seedFixedOnlySubscription(ctx, "ungated", nil, "price_dirty_ungated", true)
 
-	rolled, skipped, err := s.svc.RollupDirty(ctx, time.Now().UTC().Add(-time.Hour))
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Hour)})
+	rolled, skipped := res.Rolled, res.Skipped
 	s.NoError(err)
 	s.Zero(rolled)
 	s.Zero(skipped)
@@ -1008,7 +1039,8 @@ func (s *RevenueRollupSuite) TestRollupDirty_SkipsBlankEnvironmentSetting() {
 	}
 	s.NoError(s.GetStores().SettingsRepo.Create(ctx, setting))
 
-	rolled, skipped, err := s.svc.RollupDirty(ctx, time.Now().UTC().Add(-time.Hour))
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Hour)})
+	rolled, skipped := res.Rolled, res.Skipped
 	s.NoError(err)
 	s.Zero(rolled)
 	s.Zero(skipped)
@@ -1593,8 +1625,11 @@ func (s *RevenueRollupSuite) TestWriteEntryPointsRequireOptIn() {
 	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(ctx, inv))
 
 	writes := map[string]func() error{
-		"RollupSubscription":         func() error { return s.svc.RollupSubscription(ctx, sub.ID) },
-		"RollupDirty":                func() error { _, _, err := s.svc.RollupDirty(ctx, time.Now().UTC().Add(-time.Hour)); return err },
+		"RollupSubscription": func() error { return s.svc.RollupSubscription(ctx, sub.ID) },
+		"RollupDirty": func() error {
+			_, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Hour)})
+			return err
+		},
 		"FinalizeSubscriptionPeriod": func() error { return s.svc.FinalizeSubscriptionPeriod(ctx, inv.ID) },
 		"RevertInvoiceFacts":         func() error { return s.svc.RevertInvoiceFacts(ctx, inv.ID) },
 		"ReconcileBookedInvoices": func() error {
@@ -1695,4 +1730,490 @@ func (s *RevenueRollupSuite) TestJITRollupStampsSourceInvoice() {
 		s.Equal(types.FactFinal, r.Status)
 		s.Equal(inv.ID, lo.FromPtr(r.InvoiceID))
 	}
+}
+
+// countingMeterUsageRepo records how many usage reads a rollup issues.
+type countingMeterUsageRepo struct {
+	events.MeterUsageRepository
+	calls      int
+	metersSeen []int
+}
+
+func (c *countingMeterUsageRepo) GetDailyUsageByMeter(ctx context.Context, params *events.DailyUsageParams) (map[string][]events.DailyUsagePoint, error) {
+	c.calls++
+	c.metersSeen = append(c.metersSeen, len(params.MeterIDs))
+	return c.MeterUsageRepository.GetDailyUsageByMeter(ctx, params)
+}
+
+// TestRollupSubscription_ReadsUsageOncePerSubscription: the rollup must read
+// usage once for the whole subscription, not once per line item. Production
+// subscriptions carry hundreds of line items over a handful of meters, and the
+// per-line-item read was ~1.23M serial ClickHouse round-trips per pass — the
+// reason a full run took hours and never finished inside the activity timeout.
+func (s *RevenueRollupSuite) TestRollupSubscription_ReadsUsageOncePerSubscription() {
+	ctx := s.ctx
+	s.seedLineCommitmentSubscription(ctx)
+	s.enableRevenueAnalytics(ctx)
+
+	counter := &countingMeterUsageRepo{MeterUsageRepository: s.GetStores().MeterUsageRepo}
+	params := s.serviceParams()
+	params.MeterUsageRepo = counter
+	svc := New(params)
+
+	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
+
+	s.Equal(1, counter.calls, "one read for the whole subscription, not one per line item")
+	s.Equal([]int{3}, counter.metersSeen, "all three meters must go out in that single read")
+
+	// The batching must not change what gets written: same rows as the
+	// per-line-item path produced.
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(rows)
+	total := decimal.Zero
+	for _, r := range rows {
+		total = total.Add(r.NetAmount)
+	}
+	s.True(total.IsPositive(), "batched reads must still produce priced rows, got %s", total)
+}
+
+// TestBuildUsageCurve_AccumulatesFromItsOwnPeriodStart: the shared read returns
+// per-day quantities, so a line item that starts mid-period must count only its
+// own days. Accumulating in the repository instead pinned every caller to one
+// window start, which is what forced a read per line item.
+func (s *RevenueRollupSuite) TestBuildUsageCurve_AccumulatesFromItsOwnPeriodStart() {
+	ctx := s.ctx
+	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	usage := []events.DailyUsagePoint{
+		{Day: start, Qty: decimal.NewFromInt(100)},
+		{Day: start.AddDate(0, 0, 1), Qty: decimal.NewFromInt(200)},
+		{Day: start.AddDate(0, 0, 2), Qty: decimal.NewFromInt(300)},
+	}
+
+	svc := New(s.serviceParams()).(*revenueService)
+	late, err := svc.buildUsageCurve(ctx, usageCurveInput{
+		Price:       flatSum(s.T()),
+		MeterID:     "meter_shared",
+		PeriodStart: start.AddDate(0, 0, 1),
+		PeriodEnd:   start.AddDate(0, 0, 3),
+		Usage:       usage,
+		AsOf:        start.AddDate(0, 0, 3),
+	})
+	s.NoError(err)
+	s.Len(late, 2, "a line item starting on day 2 covers two days")
+	s.True(late[len(late)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(500)),
+		"day 1's 100 belongs to an earlier window, got %s", late[len(late)-1].CumulativeGrossQty)
+
+	full, err := svc.buildUsageCurve(ctx, usageCurveInput{
+		Price:       flatSum(s.T()),
+		MeterID:     "meter_shared",
+		PeriodStart: start,
+		PeriodEnd:   start.AddDate(0, 0, 3),
+		Usage:       usage,
+		AsOf:        start.AddDate(0, 0, 3),
+	})
+	s.NoError(err)
+	s.True(full[len(full)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(600)),
+		"the same read serves the full window too, got %s", full[len(full)-1].CumulativeGrossQty)
+}
+
+// TestRollupDirty_ResumesFromCursor: a retried pass must continue after the
+// last completed subscription, not restart at the head. Before this, all three
+// activity attempts rewrote the same first slice of the list and the tail was
+// never rolled at all.
+func (s *RevenueRollupSuite) TestRollupDirty_ResumesFromCursor() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+
+	// Ids are keyset-ordered, so "a" < "b" < "c".
+	for _, key := range []string{"a", "b", "c"} {
+		s.seedFixedOnlySubscription(ctx, "cursor_"+key, nil, "price_cursor_"+key, true)
+	}
+
+	var seen []types.RollupCursor
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since:      time.Now().UTC().Add(-time.Hour),
+		OnProgress: func(c types.RollupCursor) { seen = append(seen, c) },
+	})
+	s.NoError(err)
+	s.Equal(3, res.Rolled)
+	s.NotEmpty(seen, "progress must be reported so the activity can heartbeat")
+	s.NotNil(res.Cursor)
+
+	// Resuming from the final cursor has nothing left to do.
+	done, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since:  time.Now().UTC().Add(-time.Hour),
+		Cursor: res.Cursor,
+	})
+	s.NoError(err)
+	s.Zero(done.Rolled, "a completed pass must not re-roll from the cursor")
+
+	// Resuming from the first subscription rolls only what follows it.
+	subs, err := s.GetStores().SubscriptionRepo.List(ctx, &types.SubscriptionFilter{
+		QueryFilter:        types.NewNoLimitQueryFilter(),
+		SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive},
+	})
+	s.NoError(err)
+	ids := lo.Map(subs, func(sub *subscription.Subscription, _ int) string { return sub.ID })
+	sort.Strings(ids)
+
+	partial, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since: time.Now().UTC().Add(-time.Hour),
+		Cursor: &types.RollupCursor{
+			EnvironmentID:      types.GetEnvironmentID(ctx),
+			LastSubscriptionID: ids[0],
+		},
+	})
+	s.NoError(err)
+	s.Equal(len(ids)-1, partial.Rolled, "resume must skip exactly the subscriptions at or before the cursor")
+}
+
+// TestSubscriptionsAfter covers the keyset itself: an offset would shift when
+// rows change under a long pass and silently skip subscriptions, which is worse
+// than the restart it replaces.
+func TestSubscriptionsAfter(t *testing.T) {
+	subs := []*subscription.Subscription{{ID: "sub_a"}, {ID: "sub_b"}, {ID: "sub_c"}}
+
+	assert.Len(t, subscriptionsAfter(subs, ""), 3, "no cursor starts from the top")
+	assert.Len(t, subscriptionsAfter(subs, "sub_a"), 2)
+	assert.Equal(t, "sub_c", subscriptionsAfter(subs, "sub_b")[0].ID)
+	assert.Empty(t, subscriptionsAfter(subs, "sub_c"), "past the end has nothing left")
+
+	// A cursor naming a subscription that no longer exists still resumes in the
+	// right place — the cursor is an ordering, not a row reference.
+	assert.Equal(t, "sub_c", subscriptionsAfter(subs, "sub_bb")[0].ID)
+
+	// Filtering, not slicing: an unordered page must still be handled.
+	shuffled := []*subscription.Subscription{{ID: "sub_c"}, {ID: "sub_a"}, {ID: "sub_b"}}
+	assert.Len(t, subscriptionsAfter(shuffled, "sub_a"), 2, "order of the page must not matter")
+}
+
+// TestScanScope_Triggers walks every reason a subscription must be rolled.
+// Usage is only one of them: getting this set wrong does not fail loudly, it
+// leaves facts silently stale, which is why each trigger is pinned here rather
+// than tested through a single happy path.
+func TestScanScope_Triggers(t *testing.T) {
+	since := time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC)
+	// Well past the period-open grace, so only the trigger under test can fire.
+	before := since.Add(-30 * 24 * time.Hour)
+	after := since.Add(time.Hour)
+
+	// Quiet: no usage, untouched, period opened long ago.
+	quiet := func() *subscription.Subscription {
+		return &subscription.Subscription{
+			ID: "sub_quiet", CustomerID: "cust_quiet",
+			CurrentPeriodStart: before, CurrentPeriodEnd: after.AddDate(0, 1, 0),
+			BaseModel: types.BaseModel{UpdatedAt: before},
+		}
+	}
+
+	scope := scanScope{
+		since:     since,
+		now:       since,
+		customers: map[string]struct{}{"cust_busy": {}},
+	}
+
+	assert.False(t, scope.includes(quiet()), "a subscription with nothing to recompute is skipped")
+
+	busy := quiet()
+	busy.CustomerID = "cust_busy"
+	assert.True(t, scope.includes(busy), "new usage must roll the subscription")
+
+	edited := quiet()
+	edited.UpdatedAt = after
+	assert.True(t, scope.includes(edited), "a plan, quantity or line-item change must roll it")
+
+	// The case usage alone would miss: a period that just opened owes its
+	// fixed charges and commitment true-ups before anything is metered.
+	rolled := quiet()
+	rolled.CurrentPeriodStart = after
+	assert.True(t, scope.includes(rolled), "a newly opened period must be rolled with no usage at all")
+
+	// And it stays in scope for a few runs, so a failed opening roll gets
+	// another chance — by the next run the period start is already behind the
+	// window and no other trigger fires.
+	retry := quiet()
+	retry.CurrentPeriodStart = since.Add(-36 * time.Hour)
+	assert.True(t, scope.includes(retry), "a recently opened period must stay in scope")
+
+	stale := quiet()
+	stale.CurrentPeriodStart = since.Add(-periodOpenGrace - time.Hour)
+	assert.False(t, stale.CurrentPeriodStart.After(since), "sanity")
+	assert.False(t, scope.includes(stale), "an old period with nothing to do is skipped")
+
+	assert.True(t, scanScope{full: true}.includes(quiet()), "a full pass rolls everything")
+}
+
+// TestScanScopeFor_FailsOpen: every answer the scope cannot trust must widen to
+// a full pass. A subscription wrongly included costs a read that writes
+// nothing; one wrongly excluded goes stale until the next rebuild.
+func (s *RevenueRollupSuite) TestScanScopeFor_FailsOpen() {
+	ctx := s.ctx
+	svc := New(s.serviceParams()).(*revenueService)
+	req := types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Hour)}
+
+	s.False(svc.scanScopeFor(ctx, req).full, "the scan narrows by default")
+
+	s.True(svc.scanScopeFor(ctx, types.RollupDirtyRequest{Since: req.Since, ForceFull: true}).full,
+		"the periodic rebuild overrides the narrowing")
+
+	// Usage that cannot be attributed to a customer makes the answer
+	// incomplete, so it must not be used to narrow anything.
+	ts := time.Now().UTC()
+	id := s.GetUUID()
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{{
+		Event: events.Event{
+			ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+			EventName: "orphan", Timestamp: ts, IngestedAt: ts,
+		},
+		MeterID: "meter_orphan", QtyTotal: decimal.NewFromInt(1), UniqueHash: "orphan:" + id,
+	}}))
+	s.True(svc.scanScopeFor(ctx, req).full, "usage with no customer id must widen the scan")
+}
+
+// TestRollupDirty_SkipsQuietSubscriptions: the point of the whole exercise — a
+// subscription with no usage and no changes must cost nothing. Its
+// already-written facts must survive untouched.
+func (s *RevenueRollupSuite) TestRollupDirty_SkipsQuietSubscriptions() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	s.seedWorkedExample(ctx)
+
+	params := s.serviceParams()
+	counter := &countingMeterUsageRepo{MeterUsageRepository: s.GetStores().MeterUsageRepo}
+	params.MeterUsageRepo = counter
+	svc := New(params)
+
+	// A first pass with a window that predates the seeded usage rolls it.
+	res, err := svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: s.periodStart.Add(-time.Hour)})
+	s.NoError(err)
+	s.Equal(1, res.Rolled)
+	before, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(before)
+
+	// A second pass whose window starts after all usage was ingested has
+	// nothing to do: no rollup, and no usage read for that subscription.
+	readsBefore := counter.calls
+	quiet, err := svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(time.Hour)})
+	s.NoError(err)
+	s.Zero(quiet.Rolled, "a quiet subscription must not be re-rolled")
+	s.Equal(readsBefore, counter.calls, "a skipped subscription must cost no usage read at all")
+
+	after, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.Equal(len(before), len(after), "skipping must not disturb rows already written")
+}
+
+// TestScanScopeFor_PriceEditWidensScan: a price edit changes the amount on
+// every subscription using it but bumps nothing on the subscription, so neither
+// usage nor updated_at sees it.
+func (s *RevenueRollupSuite) TestScanScopeFor_PriceEditWidensScan() {
+	ctx := s.ctx
+	s.seedWorkedExample(ctx)
+
+	svc := New(s.serviceParams()).(*revenueService)
+
+	// A window opening after everything was created narrows the scan.
+	future := time.Now().UTC().Add(time.Hour)
+	s.False(svc.scanScopeFor(ctx, types.RollupDirtyRequest{Since: future}).full)
+
+	// Editing a price must widen it again.
+	p, err := s.GetStores().PriceRepo.Get(ctx, "price_rollup_usage")
+	s.NoError(err)
+	p.UpdatedAt = future.Add(time.Minute)
+	s.NoError(s.GetStores().PriceRepo.Update(ctx, p, false))
+
+	s.True(svc.scanScopeFor(ctx, types.RollupDirtyRequest{Since: future}).full,
+		"a price edit must widen the scan; nothing else would notice it")
+}
+
+// TestIncrementalMatchesFullRebuild is the test that guards the whole scoping
+// design: whatever the triggers do, an incremental pass and a full rebuild must
+// leave the same rows. A missed trigger shows up here as a difference rather
+// than as silently stale production data.
+func (s *RevenueRollupSuite) TestIncrementalMatchesFullRebuild() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	s.seedWorkedExample(ctx)
+
+	snapshot := func() map[string]string {
+		rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+		s.NoError(err)
+		out := make(map[string]string, len(rows))
+		for _, r := range rows {
+			key := fmt.Sprintf("%s|%s|%s|%s",
+				lo.FromPtr(r.PriceID), lo.FromPtr(r.SubLineItemID),
+				r.Day.Format("2006-01-02"), r.RevenueSource)
+			out[key] = r.NetAmount.String()
+		}
+		return out
+	}
+
+	incSvc := New(s.serviceParams())
+
+	// Roll incrementally, then add usage and roll again — the second pass is
+	// scoped, because only this subscription's customer saw activity.
+	_, err := incSvc.RollupDirty(ctx, types.RollupDirtyRequest{Since: s.periodStart.Add(-time.Hour)})
+	s.NoError(err)
+
+	ts := s.periodStart.AddDate(0, 0, 5).Add(9 * time.Hour)
+	id := s.GetUUID()
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{{
+		Event: events.Event{
+			ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+			EventName: "call_rollup_wk", ExternalCustomerID: "ext_rollup_wk", CustomerID: "cust_rollup_wk",
+			Timestamp: ts, IngestedAt: time.Now().UTC(),
+		},
+		MeterID: "meter_rollup_wk", QtyTotal: decimal.NewFromInt(3000), UniqueHash: "inc_extra:" + id,
+	}}))
+
+	_, err = incSvc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Minute)})
+	s.NoError(err)
+	incrementalState := snapshot()
+
+	// Now force a full rebuild over the same data. It must agree exactly.
+	_, err = incSvc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since:     s.periodStart.Add(-time.Hour),
+		ForceFull: true,
+	})
+	s.NoError(err)
+	fullState := snapshot()
+
+	s.Equal(fullState, incrementalState,
+		"an incremental pass must leave exactly what a full rebuild would")
+}
+
+// TestScanScope_ChildUsageRollsTheParent: a parent subscription bills its
+// inherited children's usage, but the usage rows carry the CHILD's customer id.
+// Matching only the parent's own customer leaves it looking quiet while its
+// facts go stale — the under-scope case the package invariant forbids.
+func TestScanScope_ChildUsageRollsTheParent(t *testing.T) {
+	since := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	parent := &subscription.Subscription{
+		ID: "sub_parent", CustomerID: "cust_parent",
+		CurrentPeriodStart: since.Add(-30 * 24 * time.Hour), CurrentPeriodEnd: since.AddDate(0, 1, 0),
+		BaseModel: types.BaseModel{UpdatedAt: since.Add(-30 * 24 * time.Hour)},
+	}
+
+	// Only the child's customer shows activity.
+	quiet := scanScope{
+		since:     since,
+		now:       since,
+		customers: map[string]struct{}{"cust_child": {}},
+	}
+	assert.False(t, quiet.includes(parent), "sanity: the parent's own customer is not active")
+
+	withParents := quiet
+	withParents.activeParents = map[string]struct{}{"sub_parent": {}}
+	assert.True(t, withParents.includes(parent), "child usage must roll the parent")
+}
+
+// TestRollupDirty_StaleCursorDoesNotSkipEverything: a cursor naming an
+// environment that is gone must be ignored, not obeyed. Skipping until a match
+// that never arrives walks the whole list, rolls nothing, and reports success.
+func (s *RevenueRollupSuite) TestRollupDirty_StaleCursorDoesNotSkipEverything() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	s.seedFixedOnlySubscription(ctx, "stalecursor", nil, "price_stalecursor", true)
+
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since:  time.Now().UTC().Add(-time.Hour),
+		Cursor: &types.RollupCursor{EnvironmentID: "env_that_no_longer_exists", LastSubscriptionID: "sub_zzz"},
+	})
+	s.NoError(err)
+	s.NotZero(res.Rolled, "a cursor for a vanished environment must not silence the whole run")
+}
+
+// TestScanScope_CommitmentAccruesWithoutUsage: a windowed commitment's true-up
+// fills empty windows, and the bucketed curve is clamped to today, so one more
+// window becomes billable every day with no usage at all. Every other trigger
+// reads that subscription as quiet — usage never arrives, nothing is edited,
+// the period opened long ago, and its opening roll already wrote facts covering
+// the current period. Without this trigger its accrual stops after day one.
+func TestScanScope_CommitmentAccruesWithoutUsage(t *testing.T) {
+	since := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
+	committed := &subscription.Subscription{
+		ID: "sub_committed", CustomerID: "cust_committed",
+		CurrentPeriodStart: since.Add(-240 * time.Hour),
+		CurrentPeriodEnd:   since.AddDate(0, 1, 0),
+		BaseModel:          types.BaseModel{UpdatedAt: since.Add(-240 * time.Hour)},
+	}
+
+	// Every other signal says "nothing to do".
+	quiet := scanScope{
+		since:     since,
+		now:       since,
+		customers: map[string]struct{}{},
+	}
+	assert.False(t, quiet.includes(committed), "sanity: no other trigger fires for this subscription")
+
+	accruing := quiet
+	accruing.accruing = map[string]struct{}{"sub_committed": {}}
+	assert.True(t, accruing.includes(committed),
+		"a commitment billable without usage must be rolled every pass")
+}
+
+// TestScanScopeFor_IncludesWindowedCommitments wires the probe end to end, and
+// pins its precision: only a WINDOWED commitment accrues without usage. A
+// non-windowed line commitment settles period_only — one row whose amount is
+// fixed once usage is — so pulling it into every pass would be waste.
+func (s *RevenueRollupSuite) TestScanScopeFor_IncludesWindowedCommitments() {
+	ctx := s.ctx
+	s.seedLineCommitmentSubscription(ctx)
+	svc := New(s.serviceParams()).(*revenueService)
+	req := types.RollupDirtyRequest{Since: time.Now().UTC().Add(time.Hour)}
+
+	// The fixture's commitments are non-windowed.
+	s.Empty(svc.scanScopeFor(ctx, req).accruing,
+		"a non-windowed commitment does not accrue and must not be pulled in every pass")
+
+	// Make one of them windowed.
+	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(ctx, s.sub)
+	s.NoError(err)
+	s.NotEmpty(items)
+	items[0].CommitmentWindowed = true
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, items[0]))
+
+	scope := svc.scanScopeFor(ctx, req)
+	s.False(scope.full, "sanity: nothing else should widen this scan")
+	s.Contains(scope.accruing, s.sub.ID, "a windowed commitment must mark its subscription as accruing")
+	s.True(scope.includes(s.sub), "it must be rolled despite no new usage")
+}
+
+// TestRollupSubscription_GrantWindowsReadNothingExtra: grant-billed usage is
+// shaped from the grants' quota-crossed windows. Reading each window separately
+// was one round-trip per window per line item on top of the per-line-item read
+// -- the same N+1 as the main curve, one level down. Every window is now sliced
+// out of the subscription's single read.
+func (s *RevenueRollupSuite) TestRollupSubscription_GrantWindowsReadNothingExtra() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	s.seedWorkedExample(ctx)
+
+	grant := &entitlementgrant.EntitlementGrant{
+		ID:                  "eg_grant_reads",
+		EntitlementConfigID: "ec_grant_reads",
+		CustomerID:          "cust_rollup_wk",
+		SubscriptionID:      s.sub.ID,
+		ScopeEntityType:     types.EntitlementGrantScopeFeature,
+		ScopeEntityID:       "feat_rollup_wk",
+		Measure:             types.EntitlementGrantMeasureQuantity,
+		Quota:               decimal.NewFromInt(100000),
+		ValidFrom:           s.periodStart,
+		ValidTo:             s.periodEnd,
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		BaseModel:           types.GetDefaultBaseModel(ctx),
+	}
+	_, err := s.GetStores().EntitlementGrantRepo.Create(ctx, grant)
+	s.NoError(err)
+
+	counter := &countingMeterUsageRepo{MeterUsageRepository: s.GetStores().MeterUsageRepo}
+	params := s.serviceParams()
+	params.MeterUsageRepo = counter
+	svc := New(params)
+
+	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
+	s.Equal(1, counter.calls,
+		"grant windows must be sliced from the subscription's single read, not queried per window")
 }
