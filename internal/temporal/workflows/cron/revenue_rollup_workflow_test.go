@@ -13,7 +13,7 @@ import (
 	"go.temporal.io/sdk/testsuite"
 )
 
-func rollupDirtyStub(_ context.Context, _ time.Time) (*cronModels.RevenueRollupWorkflowResult, error) {
+func rollupDirtyStub(_ context.Context, _ cronModels.RollupDirtyActivityInput) (*cronModels.RevenueRollupWorkflowResult, error) {
 	return nil, nil
 }
 
@@ -42,7 +42,8 @@ func TestRevenueRollupWorkflow_Success(t *testing.T) {
 	registerSweepOK(env)
 
 	var capturedSince time.Time
-	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
+	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(in cronModels.RollupDirtyActivityInput) bool {
+		since := in.Since
 		capturedSince = since
 		return true
 	})).Return(expected, nil)
@@ -69,7 +70,8 @@ func TestRevenueRollupWorkflow_DefaultInterval(t *testing.T) {
 	registerSweepOK(env)
 
 	var capturedSince time.Time
-	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
+	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(in cronModels.RollupDirtyActivityInput) bool {
+		since := in.Since
 		capturedSince = since
 		return true
 	})).Return(&cronModels.RevenueRollupWorkflowResult{}, nil)
@@ -116,7 +118,8 @@ func TestRevenueRollupWorkflow_ExplicitSince(t *testing.T) {
 	registerSweepOK(env)
 
 	var capturedSince time.Time
-	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
+	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(in cronModels.RollupDirtyActivityInput) bool {
+		since := in.Since
 		capturedSince = since
 		return true
 	})).Return(&cronModels.RevenueRollupWorkflowResult{}, nil)
@@ -151,4 +154,25 @@ func TestRevenueRollupWorkflow_SweepWindow(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	require.WithinDuration(t, beforeStart.Add(-driftSweepLookback), sweepSince, 5*time.Second,
 		"the sweep must window on the wider lookback, not the rollup interval")
+}
+
+// TestRevenueRollupWorkflow_ResumeRequiresItsWindow: a cursor resumes a run
+// whose scan window was its own. Deriving `since` from the new run's schedule
+// would check the not-yet-processed subscriptions against a different window,
+// and usage ingested between the two would be missed for exactly those.
+func TestRevenueRollupWorkflow_ResumeRequiresItsWindow(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(rollupDirtyStub, activity.RegisterOptions{Name: ActivityRollupDirty})
+	env.RegisterActivityWithOptions(reconcileBookedInvoicesStub, activity.RegisterOptions{Name: ActivityReconcileBookedInvoices})
+
+	env.ExecuteWorkflow(RevenueRollupWorkflow, cronModels.RevenueRollupInput{
+		ResumeEnvironmentID:       "env_1",
+		ResumeAfterSubscriptionID: "sub_abc",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	require.Error(t, err, "resuming without the original window must fail rather than silently rescan")
+	assert.Contains(t, err.Error(), "resuming requires the original scan window")
 }

@@ -473,12 +473,18 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageSplitsPerDay() {
 			}
 		}
 	}
-	s.Equal(30, usageDays, "one usage row per day")
-	s.Equal(30, overageDays, "one overage row per day")
+	// Rows exist for the days that carry something, not for every day of the
+	// period: a day whose half of the split is zero records nothing, and
+	// writing one per line item per day is what made the table 99.99% empty.
+	// The overage half therefore starts at the crossing rather than opening
+	// with a run of zero days.
+	s.Positive(usageDays, "the usage half must still split per day")
+	s.LessOrEqual(usageDays, 30)
+	s.Positive(overageDays, "the overage half must still split per day")
+	s.Less(overageDays, usageDays, "overage begins only once the commitment is crossed")
 	s.Equal("500", usageTotal.String(), "usage half must sum to the within-commitment amount")
 	s.Equal("320", overageTotal.String(), "overage half must sum to the engine's overage line")
-	s.Greater(billedOverageDays, 0, "overage accrues only after the commitment is crossed")
-	s.Less(billedOverageDays, 30, "days before the crossing carry no overage")
+	s.Equal(overageDays, billedOverageDays, "every overage row written must carry overage")
 
 	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
@@ -2216,4 +2222,83 @@ func (s *RevenueRollupSuite) TestRollupSubscription_GrantWindowsReadNothingExtra
 	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
 	s.Equal(1, counter.calls,
 		"grant windows must be sliced from the subscription's single read, not queried per window")
+}
+
+// TestRollupSubscription_ZeroRevenuePeriodStillRecords: the export contract
+// says absence of rows means analytics is off or not yet computed, never that
+// revenue was zero. A period whose every row carries nothing must therefore
+// leave a record that it WAS computed, rather than vanishing and reading as
+// uncomputed downstream.
+func (s *RevenueRollupSuite) TestRollupSubscription_ZeroRevenuePeriodStillRecords() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	// A usage-only subscription with no usage at all: every row it produces
+	// carries nothing.
+	sub := s.seedZeroRevenueSubscription(ctx)
+
+	s.NoError(s.svc.RollupSubscription(ctx, sub.ID))
+
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, sub.ID,
+		sub.CurrentPeriodStart, sub.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
+	s.NoError(err)
+	s.Len(rows, 1, "a zero-revenue period records exactly one row, not none and not one per day")
+	s.True(rows[0].NetAmount.IsZero())
+
+	// Re-rolling keeps it at one: the stored row makes the period computed, so
+	// the remaining empty rows still have nothing to correct.
+	s.NoError(s.svc.RollupSubscription(ctx, sub.ID))
+	rows, err = s.store.ListBySubscriptionPeriod(ctx, sub.ID,
+		sub.CurrentPeriodStart, sub.CurrentPeriodEnd.AddDate(0, 0, 1), types.FactProvisional)
+	s.NoError(err)
+	s.Len(rows, 1, "the marker must not multiply across runs")
+}
+
+// seedZeroRevenueSubscription builds a usage-only subscription with no usage at
+// all: every row it can produce carries nothing.
+func (s *RevenueRollupSuite) seedZeroRevenueSubscription(ctx context.Context) *subscription.Subscription {
+	cust := &customer.Customer{
+		ID: "cust_zero", ExternalID: "ext_zero", Name: "Zero",
+		Email: "zero@example.com", BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+	pl := &plan.Plan{ID: "plan_zero", Name: "Zero Plan", BaseModel: types.GetDefaultBaseModel(ctx)}
+	s.NoError(s.GetStores().PlanRepo.Create(ctx, pl))
+
+	mtr := &meter.Meter{
+		ID: "meter_zero", Name: "Zero", EventName: "zero.event",
+		Aggregation: meter.Aggregation{Type: types.AggregationSum, Field: "qty"},
+		BaseModel:   types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().MeterRepo.CreateMeter(ctx, mtr))
+
+	p := &price.Price{
+		ID: "price_zero", Amount: decimal.RequireFromString("0.01"), Currency: "usd",
+		EntityType: types.PRICE_ENTITY_TYPE_PLAN, EntityID: pl.ID, MeterID: mtr.ID,
+		Type: types.PRICE_TYPE_USAGE, BillingPeriod: types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1, BillingModel: types.BILLING_MODEL_FLAT_FEE,
+		BillingCadence: types.BILLING_CADENCE_RECURRING, InvoiceCadence: types.InvoiceCadenceArrear,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, p))
+
+	periodStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	sub := &subscription.Subscription{
+		ID: "sub_zero", PlanID: pl.ID, CustomerID: cust.ID,
+		StartDate: periodStart, BillingAnchor: periodStart.AddDate(0, 0, 30),
+		CurrentPeriodStart: periodStart, CurrentPeriodEnd: periodStart.AddDate(0, 0, 30),
+		Currency: "usd", BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1,
+		SubscriptionStatus: types.SubscriptionStatusActive,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}
+	lineItems := []*subscription.SubscriptionLineItem{{
+		ID: "sli_zero", SubscriptionID: sub.ID, CustomerID: cust.ID,
+		EntityID: pl.ID, EntityType: types.SubscriptionLineItemEntityTypePlan,
+		PlanDisplayName: pl.Name, PriceID: p.ID, PriceType: p.Type, MeterID: mtr.ID,
+		DisplayName: "Zero usage", Quantity: decimal.Zero, Currency: "usd",
+		BillingPeriod: types.BILLING_PERIOD_MONTHLY, InvoiceCadence: types.InvoiceCadenceArrear,
+		StartDate: sub.StartDate, BaseModel: types.GetDefaultBaseModel(ctx),
+	}}
+	s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, sub, lineItems))
+	sub.LineItems = lineItems
+	return sub
 }

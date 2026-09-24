@@ -44,6 +44,17 @@ func RevenueRollupWorkflow(ctx workflow.Context, in cronModels.RevenueRollupInpu
 		since = *in.Since
 	}
 
+	// A cursor resumes a run whose window was its own. Deriving `since` from
+	// this run's schedule instead would check the not-yet-processed
+	// subscriptions against a different usage window, and usage ingested
+	// between the two windows would be missed for exactly those subscriptions.
+	if in.ResumeAfterSubscriptionID != "" && (in.Since == nil || in.Since.IsZero()) {
+		return temporal.NewNonRetryableApplicationError(
+			"resuming requires the original scan window",
+			"InvalidRollupResume", nil,
+			"pass the failed run's Since alongside resume_after_subscription_id")
+	}
+
 	log.Info("Starting RevenueRollupWorkflow", "since", since, "interval", interval)
 
 	ao := workflow.ActivityOptions{
@@ -52,7 +63,12 @@ func RevenueRollupWorkflow(ctx workflow.Context, in cronModels.RevenueRollupInpu
 		// StartToClose covers a legitimately large first pass; a retry resumes
 		// from the heartbeat cursor instead of restarting.
 		StartToCloseTimeout: 2 * time.Hour,
-		HeartbeatTimeout:    5 * time.Minute,
+		// Generous relative to the per-subscription heartbeat: one subscription
+		// can carry hundreds of line items across an elapsed period, and a
+		// single slow one must not kill an attempt that is otherwise making
+		// progress. A worker that has genuinely stopped is still caught well
+		// inside StartToClose.
+		HeartbeatTimeout: 20 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    10 * time.Second,
 			BackoffCoefficient: 2.0,
@@ -63,7 +79,12 @@ func RevenueRollupWorkflow(ctx workflow.Context, in cronModels.RevenueRollupInpu
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	var result cronModels.RevenueRollupWorkflowResult
-	if err := workflow.ExecuteActivity(ctx, ActivityRollupDirty, since).Get(ctx, &result); err != nil {
+	rollupIn := cronModels.RollupDirtyActivityInput{
+		Since:                     since,
+		ResumeEnvironmentID:       in.ResumeEnvironmentID,
+		ResumeAfterSubscriptionID: in.ResumeAfterSubscriptionID,
+	}
+	if err := workflow.ExecuteActivity(ctx, ActivityRollupDirty, rollupIn).Get(ctx, &result); err != nil {
 		log.Error("RevenueRollupWorkflow activity failed", "error", err)
 		return err
 	}
