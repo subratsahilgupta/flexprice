@@ -801,10 +801,21 @@ type scanScope struct {
 	activeParents map[string]struct{}
 	// customers whose committed minimum accrues without usage
 	accruing map[string]struct{}
-	// latest provisional period_end already written per subscription
-	rolledThrough map[string]time.Time
-	since         time.Time
+	since    time.Time
+	// now anchors the period-open grace window
+	now time.Time
 }
+
+// periodOpenGrace keeps a freshly opened period in scope for a few runs. The
+// opening roll is what writes the fixed charges and commitment true-ups a
+// subscription owes before anything is metered, and if it fails the
+// period-start trigger has already passed by the next run — the window would
+// close on a subscription that never got its rows. Deliberately a clock window
+// rather than a per-subscription probe of what is already written: that probe
+// is a group-by over every provisional fact, which is the whole current-period
+// working set and grows without bound. Anything still missing after this is
+// repaired by the scheduled full rebuild.
+const periodOpenGrace = 72 * time.Hour
 
 // includes reports whether this subscription has to be rolled. Usage is only
 // one of the triggers: a subscription with no usage at all still owes fixed
@@ -834,18 +845,9 @@ func (sc scanScope) includes(sub *subscription.Subscription) bool {
 	}
 	// A period that opened inside the window needs its opening rows even
 	// though nothing has been metered against it yet.
-	if !sub.CurrentPeriodStart.Before(sc.since) {
-		return true
-	}
-	// Never rolled, or rolled only for a period that has since closed: both are
-	// indistinguishable from up-to-date on every other signal. The second
-	// happens when a period opens and its first rollup never lands — the next
-	// run's window starts after the period did, so no other trigger fires.
-	covered, rolled := sc.rolledThrough[sub.ID]
-	if !rolled {
-		return true
-	}
-	return covered.Before(dayOf(sub.CurrentPeriodStart, time.UTC))
+	// It stays in scope for a few runs, so a failed opening roll gets another
+	// chance: by the next run the period start is already outside the window.
+	return !sub.CurrentPeriodStart.Before(sc.now.Add(-periodOpenGrace))
 }
 
 // catalogChangedSince reports whether any price in this environment was edited
@@ -893,7 +895,6 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 		TenantID:      types.GetTenantID(ctx),
 		EnvironmentID: types.GetEnvironmentID(ctx),
 		IngestedAfter: req.Since,
-		UseFinal:      true,
 	})
 	if err != nil {
 		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
@@ -909,16 +910,6 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 	customers := make(map[string]struct{}, len(activity.CustomerIDs))
 	for _, id := range activity.CustomerIDs {
 		customers[id] = struct{}{}
-	}
-
-	// A subscription that has never been rolled looks exactly like a quiet one:
-	// no usage, no edits, a period that opened before the window. Without this
-	// it would be skipped forever and only the weekly rebuild would notice.
-	rolledThrough, err := s.RevenueFactRepo.ProvisionalCoverage(ctx)
-	if err != nil {
-		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
-			"error", err.Error(), "reason", "provisional coverage probe failed")
-		return full
 	}
 
 	activeParents, err := s.parentsOfActiveChildren(ctx, customers)
@@ -939,8 +930,8 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 		customers:     customers,
 		activeParents: activeParents,
 		accruing:      accruing,
-		rolledThrough: rolledThrough,
 		since:         req.Since,
+		now:           time.Now().UTC(),
 	}
 }
 

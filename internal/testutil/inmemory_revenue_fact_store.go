@@ -302,27 +302,6 @@ func (s *InMemoryRevenueFactStore) ListForExport(ctx context.Context, computedAf
 }
 
 // ListFacts pages facts matching the filter, ordered by (day, id).
-// ProvisionalCoverage mirrors the ent repository: the latest provisional
-// period_end per subscription.
-func (s *InMemoryRevenueFactStore) ProvisionalCoverage(ctx context.Context) (map[string]time.Time, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	coverage := map[string]time.Time{}
-	for _, f := range s.facts {
-		if !CheckTenantFilter(ctx, f.TenantID) || !CheckEnvironmentFilter(ctx, f.EnvironmentID) {
-			continue
-		}
-		if f.Status != types.FactProvisional {
-			continue
-		}
-		if cur, ok := coverage[f.SubscriptionID]; !ok || f.PeriodEnd.After(cur) {
-			coverage[f.SubscriptionID] = f.PeriodEnd
-		}
-	}
-	return coverage, nil
-}
-
 func (s *InMemoryRevenueFactStore) ListFacts(ctx context.Context, filter revenuefact.FactsFilter) ([]*revenuefact.RevenueFact, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

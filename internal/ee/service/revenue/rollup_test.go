@@ -1894,7 +1894,8 @@ func TestSubscriptionsAfter(t *testing.T) {
 // than tested through a single happy path.
 func TestScanScope_Triggers(t *testing.T) {
 	since := time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC)
-	before := since.Add(-48 * time.Hour)
+	// Well past the period-open grace, so only the trigger under test can fire.
+	before := since.Add(-30 * 24 * time.Hour)
 	after := since.Add(time.Hour)
 
 	// Quiet: no usage, untouched, period opened long ago.
@@ -1907,18 +1908,12 @@ func TestScanScope_Triggers(t *testing.T) {
 	}
 
 	scope := scanScope{
-		since:         since,
-		customers:     map[string]struct{}{"cust_busy": {}},
-		rolledThrough: map[string]time.Time{"sub_quiet": before.AddDate(0, 1, 0)},
+		since:     since,
+		now:       since,
+		customers: map[string]struct{}{"cust_busy": {}},
 	}
 
 	assert.False(t, scope.includes(quiet()), "a subscription with nothing to recompute is skipped")
-
-	// The trigger usage, edits and period bounds all miss: a subscription that
-	// has never been rolled looks identical to one that is up to date.
-	fresh := quiet()
-	fresh.ID = "sub_never_rolled"
-	assert.True(t, scope.includes(fresh), "a never-rolled subscription must be rolled")
 
 	busy := quiet()
 	busy.CustomerID = "cust_busy"
@@ -1933,6 +1928,18 @@ func TestScanScope_Triggers(t *testing.T) {
 	rolled := quiet()
 	rolled.CurrentPeriodStart = after
 	assert.True(t, scope.includes(rolled), "a newly opened period must be rolled with no usage at all")
+
+	// And it stays in scope for a few runs, so a failed opening roll gets
+	// another chance — by the next run the period start is already behind the
+	// window and no other trigger fires.
+	retry := quiet()
+	retry.CurrentPeriodStart = since.Add(-36 * time.Hour)
+	assert.True(t, scope.includes(retry), "a recently opened period must stay in scope")
+
+	stale := quiet()
+	stale.CurrentPeriodStart = since.Add(-periodOpenGrace - time.Hour)
+	assert.False(t, stale.CurrentPeriodStart.After(since), "sanity")
+	assert.False(t, scope.includes(stale), "an old period with nothing to do is skipped")
 
 	assert.True(t, scanScope{full: true}.includes(quiet()), "a full pass rolls everything")
 }
@@ -2085,49 +2092,21 @@ func TestScanScope_ChildUsageRollsTheParent(t *testing.T) {
 	since := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	parent := &subscription.Subscription{
 		ID: "sub_parent", CustomerID: "cust_parent",
-		CurrentPeriodStart: since.Add(-48 * time.Hour), CurrentPeriodEnd: since.AddDate(0, 1, 0),
-		BaseModel: types.BaseModel{UpdatedAt: since.Add(-48 * time.Hour)},
+		CurrentPeriodStart: since.Add(-30 * 24 * time.Hour), CurrentPeriodEnd: since.AddDate(0, 1, 0),
+		BaseModel: types.BaseModel{UpdatedAt: since.Add(-30 * 24 * time.Hour)},
 	}
 
 	// Only the child's customer shows activity.
 	quiet := scanScope{
-		since:         since,
-		customers:     map[string]struct{}{"cust_child": {}},
-		rolledThrough: map[string]time.Time{"sub_parent": since.AddDate(0, 1, 0)},
+		since:     since,
+		now:       since,
+		customers: map[string]struct{}{"cust_child": {}},
 	}
 	assert.False(t, quiet.includes(parent), "sanity: the parent's own customer is not active")
 
 	withParents := quiet
 	withParents.activeParents = map[string]struct{}{"sub_parent": {}}
 	assert.True(t, withParents.includes(parent), "child usage must roll the parent")
-}
-
-// TestScanScope_StaleCoverageRollsTheSubscription: facts that only reach a
-// closed period are as good as none. This happens when a period opens and its
-// first rollup never lands — the next run's window starts after the period did,
-// so no usage, edit or period-start trigger fires.
-func TestScanScope_StaleCoverageRollsTheSubscription(t *testing.T) {
-	since := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
-	sub := &subscription.Subscription{
-		ID: "sub_rolled_over", CustomerID: "cust_quiet",
-		// The period opened before the window, so period-start does not trigger.
-		CurrentPeriodStart: since.Add(-72 * time.Hour),
-		CurrentPeriodEnd:   since.AddDate(0, 1, 0),
-		BaseModel:          types.BaseModel{UpdatedAt: since.Add(-72 * time.Hour)},
-	}
-
-	stale := scanScope{
-		since: since,
-		// Facts only reach the previous period.
-		rolledThrough: map[string]time.Time{"sub_rolled_over": since.Add(-96 * time.Hour)},
-	}
-	assert.True(t, stale.includes(sub), "facts predating the current period must not count as rolled")
-
-	current := scanScope{
-		since:         since,
-		rolledThrough: map[string]time.Time{"sub_rolled_over": since.AddDate(0, 1, 0)},
-	}
-	assert.False(t, current.includes(sub), "facts covering the current period mean there is nothing to do")
 }
 
 // TestRollupDirty_StaleCursorDoesNotSkipEverything: a cursor naming an
@@ -2163,9 +2142,9 @@ func TestScanScope_CommitmentAccruesWithoutUsage(t *testing.T) {
 
 	// Every other signal says "nothing to do".
 	quiet := scanScope{
-		since:         since,
-		customers:     map[string]struct{}{},
-		rolledThrough: map[string]time.Time{"sub_committed": since.AddDate(0, 1, 0)},
+		since:     since,
+		now:       since,
+		customers: map[string]struct{}{},
 	}
 	assert.False(t, quiet.includes(committed), "sanity: no other trigger fires for this subscription")
 

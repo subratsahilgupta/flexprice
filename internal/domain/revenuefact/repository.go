@@ -37,13 +37,6 @@ type Repository interface {
 	// ListFacts pages facts matching the filter, ordered by (day, id) — the
 	// analytics read path.
 	ListFacts(ctx context.Context, filter FactsFilter) ([]*RevenueFact, error)
-
-	// ProvisionalCoverage returns, per subscription, the latest period_end its
-	// provisional facts reach. The rollup scan uses it to find subscriptions it
-	// has never rolled, and ones whose facts predate their current period: on
-	// every other signal both are indistinguishable from a subscription that is
-	// simply up to date.
-	ProvisionalCoverage(ctx context.Context) (map[string]time.Time, error)
 }
 
 // FactsFilter restricts ListFacts. Day bounds are inclusive.
