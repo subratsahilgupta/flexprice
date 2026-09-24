@@ -485,8 +485,13 @@ func grantChangeTypeFor(sub *subscription.Subscription, effectiveDate time.Time)
 	return types.ScheduleTypePeriodEnd
 }
 
-// addonCreditGrantProration scales the first application when a grant covers only part of
-// a billing period: a mid-cycle attach, or a short first period such as a calendar start.
+// addonCreditGrantProration resolves the billing period containing effectiveDate so a
+// mid-cycle grant can be scaled to the part of that period it actually covers.
+// Returns nil when proration does not apply, in which case the grant keeps its full
+// credits and its natural anchoring.
+//
+// Never returns an error: proration is an enhancement to the attach, so an
+// unresolvable period downgrades to today's behaviour instead of rejecting the addon.
 func (s *subscriptionGrantService) addonCreditGrantProration(
 	ctx context.Context,
 	sub *subscription.Subscription,
@@ -497,7 +502,7 @@ func (s *subscriptionGrantService) addonCreditGrantProration(
 		return nil
 	}
 
-	foundPeriod, err := types.FindPeriodForDate(&types.FindPeriodForDateParams{
+	p, err := types.FindPeriodForDate(&types.FindPeriodForDateParams{
 		Target:           effectiveDate,
 		KnownPeriodStart: sub.CurrentPeriodStart,
 		KnownPeriodEnd:   sub.CurrentPeriodEnd,
@@ -517,72 +522,19 @@ func (s *subscriptionGrantService) addonCreditGrantProration(
 		return nil
 	}
 
-	if !effectiveDate.After(foundPeriod.Start) {
-		return s.firstPeriodCreditGrantProration(ctx, sub, effectiveDate, foundPeriod)
-	}
-
-	// A grant anchored past the subscription end fails CreateCreditGrant validation,
-	// and the grant would be capped to that end anyway.
-	if sub.EndDate != nil && foundPeriod.End.After(lo.FromPtr(sub.EndDate)) {
-		return nil
-	}
-
-	return &dto.FirstPeriodProration{
-		PeriodStart:   foundPeriod.Start,
-		PeriodEnd:     foundPeriod.End,
-		ProrationDate: effectiveDate,
-		Strategy:      types.StrategySecondBased,
-		Source:        grantProrationSourceAddonAttach.String(),
-	}
-}
-
-// firstPeriodCreditGrantProration scales a grant that opens with a short first period — a
-// calendar subscription started mid-month covers only the rest of that month, so its first
-// credits are worth only that much of a full period.
-func (s *subscriptionGrantService) firstPeriodCreditGrantProration(
-	ctx context.Context,
-	sub *subscription.Subscription,
-	effectiveDate time.Time,
-	foundPeriod types.Period,
-) *dto.FirstPeriodProration {
-	// A change dated into a later cycle resolves to that period, and only the current one
-	// can be the short first cycle.
-	if !foundPeriod.Start.Equal(sub.CurrentPeriodStart) {
-		return nil
-	}
-
-	// Only a subscription's own first cycle can be short. A later cycle starting on its
-	// boundary covers a whole period and grants in full.
-	if sub.CurrentPeriodStart.After(sub.StartDate) {
-		return nil
-	}
-
-	// Assuming the period end as billing anchor, move one period back to get the full start date
-	fullStart, err := types.PreviousBillingDate(&types.PreviousBillingDateParams{
-		BillingAnchor: sub.CurrentPeriodEnd,
-		Unit:          sub.BillingPeriodCount,
-		Period:        sub.BillingPeriod,
-	})
-	if err != nil {
-		s.Logger.Info(ctx, "skipping credit grant proration; could not resolve the full billing period",
-			"subscription_id", sub.ID,
-			"effective_date", effectiveDate,
-			"error", err.Error())
-		return nil
-	}
-	if !effectiveDate.After(fullStart) {
+	if !effectiveDate.After(p.Start) {
 		return nil
 	}
 
 	// A grant anchored past the subscription end fails CreateCreditGrant validation,
 	// and the grant would be capped to that end anyway.
-	if sub.EndDate != nil && foundPeriod.End.After(lo.FromPtr(sub.EndDate)) {
+	if sub.EndDate != nil && p.End.After(lo.FromPtr(sub.EndDate)) {
 		return nil
 	}
 
 	return &dto.FirstPeriodProration{
-		PeriodStart:   fullStart,
-		PeriodEnd:     foundPeriod.End,
+		PeriodStart:   p.Start,
+		PeriodEnd:     p.End,
 		ProrationDate: effectiveDate,
 		Strategy:      types.StrategySecondBased,
 		Source:        grantProrationSourceAddonAttach.String(),

@@ -4897,10 +4897,9 @@ func (s *subscriptionService) handleSubscriptionAddons(
 			addonReq.StartDate = &subscription.StartDate
 		}
 
-		// The opening invoice already prices these line items, so settling a second
-		// proration would charge the addon twice. Credit grants still follow the subscription.
+		// The opening invoice bills these line items for the whole period, so settling a
+		// proration here as well would charge the addon twice.
 		addonReq.ProrationBehavior = types.ProrationBehaviorNone
-		addonReq.GrantProrationBehavior = subscription.ProrationBehavior
 
 		adds = append(adds, AddonAdd{Request: &addonReq})
 	}
