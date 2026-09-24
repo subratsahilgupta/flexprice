@@ -1082,58 +1082,58 @@ func (r *MeterUsageRepository) GetMeterUsageForExport(ctx context.Context, start
 	return results, nil
 }
 
-// GetCumulativeDailyUsage returns the running cumulative SUM(qty_total)
-// through each day in [StartTime, EndTime] for a single meter. Per-day sums
-// come from BuildCumulativeDailyUsageQuery; the running total is rolled up
-// here since ClickHouse's per-day GROUP BY only gives point sums.
-func (r *MeterUsageRepository) GetCumulativeDailyUsage(ctx context.Context, params *events.CumulativeDailyUsageParams) ([]events.DailyUsagePoint, error) {
+// GetDailyUsageByMeter returns per-day SUM(qty_total) over
+// [StartTime, EndTime) for every meter in MeterIDs, keyed by meter id. The
+// running total is deliberately left to the caller: accumulating here would
+// pin the result to one window start, which is what forced a query per line
+// item.
+func (r *MeterUsageRepository) GetDailyUsageByMeter(ctx context.Context, params *events.DailyUsageParams) (map[string][]events.DailyUsagePoint, error) {
 	if params == nil {
 		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
 	}
+	if len(params.MeterIDs) == 0 {
+		return map[string][]events.DailyUsagePoint{}, nil
+	}
 
-	span := StartRepositorySpan(ctx, "meter_usage", "get_cumulative_daily_usage", map[string]interface{}{
-		"meter_id": params.MeterID,
+	span := StartRepositorySpan(ctx, "meter_usage", "get_daily_usage_by_meter", map[string]interface{}{
+		"meter_count": len(params.MeterIDs),
 	})
 	defer FinishSpan(span)
 
-	query, args := r.qb.BuildCumulativeDailyUsageQuery(params)
+	query, args := r.qb.BuildDailyUsageQuery(params)
 
 	rows, err := r.store.GetConn().Query(ctx, query, args...)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
-			WithHint("Failed to query cumulative daily usage").
-			WithReportableDetails(map[string]interface{}{"meter_id": params.MeterID}).
+			WithHint("Failed to query daily usage").
+			WithReportableDetails(map[string]interface{}{"meter_count": len(params.MeterIDs)}).
 			Mark(ierr.ErrDatabase)
 	}
 	defer rows.Close()
 
-	points := make([]events.DailyUsagePoint, 0)
-	running := decimal.Zero
+	byMeter := make(map[string][]events.DailyUsagePoint, len(params.MeterIDs))
 	for rows.Next() {
+		var meterID string
 		var d time.Time
 		var dayQty decimal.Decimal
-		if err := rows.Scan(&d, &dayQty); err != nil {
+		if err := rows.Scan(&meterID, &d, &dayQty); err != nil {
 			SetSpanError(span, err)
 			return nil, ierr.WithError(err).
-				WithHint("Failed to scan cumulative daily usage row").
+				WithHint("Failed to scan daily usage row").
 				Mark(ierr.ErrDatabase)
 		}
-		running = running.Add(dayQty)
-		points = append(points, events.DailyUsagePoint{
-			Day:           d,
-			CumulativeQty: running,
-		})
+		byMeter[meterID] = append(byMeter[meterID], events.DailyUsagePoint{Day: d, Qty: dayQty})
 	}
 	if err := rows.Err(); err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
-			WithHint("Error iterating cumulative daily usage rows").
+			WithHint("Error iterating daily usage rows").
 			Mark(ierr.ErrDatabase)
 	}
 
 	SetSpanSuccess(span)
-	return points, nil
+	return byMeter, nil
 }
 
 // GetByEventID returns the meter_usage record for a single event, or nil if not yet processed.

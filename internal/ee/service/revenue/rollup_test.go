@@ -1696,3 +1696,88 @@ func (s *RevenueRollupSuite) TestJITRollupStampsSourceInvoice() {
 		s.Equal(inv.ID, lo.FromPtr(r.InvoiceID))
 	}
 }
+
+// countingMeterUsageRepo records how many usage reads a rollup issues.
+type countingMeterUsageRepo struct {
+	events.MeterUsageRepository
+	calls      int
+	metersSeen []int
+}
+
+func (c *countingMeterUsageRepo) GetDailyUsageByMeter(ctx context.Context, params *events.DailyUsageParams) (map[string][]events.DailyUsagePoint, error) {
+	c.calls++
+	c.metersSeen = append(c.metersSeen, len(params.MeterIDs))
+	return c.MeterUsageRepository.GetDailyUsageByMeter(ctx, params)
+}
+
+// TestRollupSubscription_ReadsUsageOncePerSubscription: the rollup must read
+// usage once for the whole subscription, not once per line item. Production
+// subscriptions carry hundreds of line items over a handful of meters, and the
+// per-line-item read was ~1.23M serial ClickHouse round-trips per pass — the
+// reason a full run took hours and never finished inside the activity timeout.
+func (s *RevenueRollupSuite) TestRollupSubscription_ReadsUsageOncePerSubscription() {
+	ctx := s.ctx
+	s.seedLineCommitmentSubscription(ctx)
+	s.enableRevenueAnalytics(ctx)
+
+	counter := &countingMeterUsageRepo{MeterUsageRepository: s.GetStores().MeterUsageRepo}
+	params := s.serviceParams()
+	params.MeterUsageRepo = counter
+	svc := New(params)
+
+	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
+
+	s.Equal(1, counter.calls, "one read for the whole subscription, not one per line item")
+	s.Equal([]int{3}, counter.metersSeen, "all three meters must go out in that single read")
+
+	// The batching must not change what gets written: same rows as the
+	// per-line-item path produced.
+	rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(rows)
+	total := decimal.Zero
+	for _, r := range rows {
+		total = total.Add(r.NetAmount)
+	}
+	s.True(total.IsPositive(), "batched reads must still produce priced rows, got %s", total)
+}
+
+// TestBuildUsageCurve_AccumulatesFromItsOwnPeriodStart: the shared read returns
+// per-day quantities, so a line item that starts mid-period must count only its
+// own days. Accumulating in the repository instead pinned every caller to one
+// window start, which is what forced a read per line item.
+func (s *RevenueRollupSuite) TestBuildUsageCurve_AccumulatesFromItsOwnPeriodStart() {
+	ctx := s.ctx
+	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	usage := []events.DailyUsagePoint{
+		{Day: start, Qty: decimal.NewFromInt(100)},
+		{Day: start.AddDate(0, 0, 1), Qty: decimal.NewFromInt(200)},
+		{Day: start.AddDate(0, 0, 2), Qty: decimal.NewFromInt(300)},
+	}
+
+	svc := New(s.serviceParams()).(*revenueService)
+	late, err := svc.buildUsageCurve(ctx, usageCurveInput{
+		Price:       flatSum(s.T()),
+		MeterID:     "meter_shared",
+		PeriodStart: start.AddDate(0, 0, 1),
+		PeriodEnd:   start.AddDate(0, 0, 3),
+		Usage:       usage,
+		AsOf:        start.AddDate(0, 0, 3),
+	})
+	s.NoError(err)
+	s.Len(late, 2, "a line item starting on day 2 covers two days")
+	s.True(late[len(late)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(500)),
+		"day 1's 100 belongs to an earlier window, got %s", late[len(late)-1].CumulativeGrossQty)
+
+	full, err := svc.buildUsageCurve(ctx, usageCurveInput{
+		Price:       flatSum(s.T()),
+		MeterID:     "meter_shared",
+		PeriodStart: start,
+		PeriodEnd:   start.AddDate(0, 0, 3),
+		Usage:       usage,
+		AsOf:        start.AddDate(0, 0, 3),
+	})
+	s.NoError(err)
+	s.True(full[len(full)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(600)),
+		"the same read serves the full window too, got %s", full[len(full)-1].CumulativeGrossQty)
+}

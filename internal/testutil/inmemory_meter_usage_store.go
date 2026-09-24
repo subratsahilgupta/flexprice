@@ -1075,14 +1075,17 @@ func (s *InMemoryMeterUsageStore) GetByEventID(_ context.Context, tenantID, envi
 	return nil, nil
 }
 
-// GetCumulativeDailyUsage mirrors BuildCumulativeDailyUsageQuery: per-day
-// SUM(qty_total) for a single meter over [StartTime, EndTime), rolled into a
-// running cumulative total. Day bucketing honors params.Timezone (an IANA
-// name), falling back to UTC when empty or unresolvable, mirroring the
-// ClickHouse path's normalizeCHTimezone default.
-func (s *InMemoryMeterUsageStore) GetCumulativeDailyUsage(_ context.Context, params *events.CumulativeDailyUsageParams) ([]events.DailyUsagePoint, error) {
+// GetDailyUsageByMeter mirrors BuildDailyUsageQuery: per-day SUM(qty_total)
+// over [StartTime, EndTime) for every meter in MeterIDs, keyed by meter id.
+// Day bucketing honors params.Timezone (an IANA name), falling back to UTC
+// when empty or unresolvable, mirroring the ClickHouse path's
+// normalizeCHTimezone default.
+func (s *InMemoryMeterUsageStore) GetDailyUsageByMeter(_ context.Context, params *events.DailyUsageParams) (map[string][]events.DailyUsagePoint, error) {
 	if params == nil {
 		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+	if len(params.MeterIDs) == 0 {
+		return map[string][]events.DailyUsagePoint{}, nil
 	}
 
 	loc := time.UTC
@@ -1095,9 +1098,16 @@ func (s *InMemoryMeterUsageStore) GetCumulativeDailyUsage(_ context.Context, par
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	dayTotals := make(map[time.Time]decimal.Decimal)
+	type meterDay struct {
+		meterID string
+		day     time.Time
+	}
+	dayTotals := make(map[meterDay]decimal.Decimal)
 	for _, r := range s.records {
-		if r.TenantID != params.TenantID || r.EnvironmentID != params.EnvironmentID || r.MeterID != params.MeterID {
+		if r.TenantID != params.TenantID || r.EnvironmentID != params.EnvironmentID {
+			continue
+		}
+		if !lo.Contains(params.MeterIDs, r.MeterID) {
 			continue
 		}
 		if len(params.ExternalCustomerIDs) > 0 && !lo.Contains(params.ExternalCustomerIDs, r.ExternalCustomerID) {
@@ -1111,25 +1121,26 @@ func (s *InMemoryMeterUsageStore) GetCumulativeDailyUsage(_ context.Context, par
 		}
 		local := r.Timestamp.In(loc)
 		day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
-		dayTotals[day] = dayTotals[day].Add(r.QtyTotal)
+		key := meterDay{meterID: r.MeterID, day: day}
+		dayTotals[key] = dayTotals[key].Add(r.QtyTotal)
 	}
 
-	days := make([]time.Time, 0, len(dayTotals))
-	for d := range dayTotals {
-		days = append(days, d)
+	keys := make([]meterDay, 0, len(dayTotals))
+	for k := range dayTotals {
+		keys = append(keys, k)
 	}
-	sort.Slice(days, func(i, j int) bool { return days[i].Before(days[j]) })
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].meterID != keys[j].meterID {
+			return keys[i].meterID < keys[j].meterID
+		}
+		return keys[i].day.Before(keys[j].day)
+	})
 
-	points := make([]events.DailyUsagePoint, 0, len(days))
-	running := decimal.Zero
-	for _, d := range days {
-		running = running.Add(dayTotals[d])
-		points = append(points, events.DailyUsagePoint{
-			Day:           d,
-			CumulativeQty: running,
-		})
+	byMeter := make(map[string][]events.DailyUsagePoint, len(params.MeterIDs))
+	for _, k := range keys {
+		byMeter[k.meterID] = append(byMeter[k.meterID], events.DailyUsagePoint{Day: k.day, Qty: dayTotals[k]})
 	}
-	return points, nil
+	return byMeter, nil
 }
 
 // Ensure interface compliance

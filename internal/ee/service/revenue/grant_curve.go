@@ -167,10 +167,10 @@ func (s *revenueService) cumulativeUsageByDay(ctx context.Context, meterID strin
 	if !start.Before(end) {
 		return map[string]decimal.Decimal{}, nil
 	}
-	points, err := s.MeterUsageRepo.GetCumulativeDailyUsage(ctx, &events.CumulativeDailyUsageParams{
+	byMeter, err := s.MeterUsageRepo.GetDailyUsageByMeter(ctx, &events.DailyUsageParams{
 		TenantID:            types.GetTenantID(ctx),
 		EnvironmentID:       types.GetEnvironmentID(ctx),
-		MeterID:             meterID,
+		MeterIDs:            []string{meterID},
 		ExternalCustomerIDs: extCustomerIDs,
 		StartTime:           start,
 		EndTime:             end,
@@ -180,9 +180,12 @@ func (s *revenueService) cumulativeUsageByDay(ctx context.Context, meterID strin
 	if err != nil {
 		return nil, err
 	}
+	points := byMeter[meterID]
 	byDay := make(map[string]decimal.Decimal, len(points))
+	running := decimal.Zero
 	for _, p := range points {
-		byDay[p.Day.Format(dayKeyLayout)] = p.CumulativeQty
+		running = running.Add(p.Qty)
+		byDay[p.Day.Format(dayKeyLayout)] = running
 	}
 	return byDay, nil
 }

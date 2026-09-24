@@ -23,6 +23,12 @@ type usageCurveInput struct {
 	Price   *price.Price
 	MeterID string
 
+	// Usage is this meter's per-day quantities, pre-read for the whole
+	// subscription. An empty (non-nil) slice means "pre-read, no usage"; nil
+	// means "not pre-read" and falls back to reading just this meter, which the
+	// rollup must never do — that is one round-trip per line item.
+	Usage []events.DailyUsagePoint
+
 	PeriodStart time.Time
 	// PeriodEnd is exclusive: the period is [PeriodStart, PeriodEnd).
 	PeriodEnd time.Time
@@ -49,6 +55,30 @@ type usageCurveInput struct {
 // billable quantity with CalculateCost. Summing the day-over-day deltas
 // equals the full-period charge for flat and graduated pricing (see
 // TestMarginalPrefixSumEqualsPeriodCharge).
+// dailyUsage returns the meter's per-day quantities, preferring the
+// subscription-wide read the rollup already performed. Falling back to a
+// single-meter read keeps one-off callers working; the rollup must not take
+// that path, or it is back to one round-trip per line item.
+func (s *revenueService) dailyUsage(ctx context.Context, in usageCurveInput) ([]events.DailyUsagePoint, error) {
+	if in.Usage != nil {
+		return in.Usage, nil
+	}
+	byMeter, err := s.MeterUsageRepo.GetDailyUsageByMeter(ctx, &events.DailyUsageParams{
+		TenantID:            types.GetTenantID(ctx),
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		MeterIDs:            []string{in.MeterID},
+		ExternalCustomerIDs: in.ExternalCustomerIDs,
+		StartTime:           in.PeriodStart,
+		EndTime:             in.PeriodEnd,
+		UseFinal:            true,
+		Timezone:            in.Timezone,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return byMeter[in.MeterID], nil
+}
+
 func (s *revenueService) buildUsageCurve(ctx context.Context, in usageCurveInput) ([]dayCharge, error) {
 	if in.Price == nil {
 		return nil, ierr.NewError("price is required").
@@ -73,23 +103,22 @@ func (s *revenueService) buildUsageCurve(ctx context.Context, in usageCurveInput
 		}
 	}
 
-	points, err := s.MeterUsageRepo.GetCumulativeDailyUsage(ctx, &events.CumulativeDailyUsageParams{
-		TenantID:            types.GetTenantID(ctx),
-		EnvironmentID:       types.GetEnvironmentID(ctx),
-		MeterID:             in.MeterID,
-		ExternalCustomerIDs: in.ExternalCustomerIDs,
-		StartTime:           in.PeriodStart,
-		EndTime:             in.PeriodEnd,
-		UseFinal:            true,
-		Timezone:            in.Timezone,
-	})
+	points, err := s.dailyUsage(ctx, in)
 	if err != nil {
 		return nil, err
 	}
 
+	// Accumulate here rather than in the repository: the read is shared across
+	// every line item of the subscription, and each one runs its total from its
+	// own period start.
 	cumByDay := make(map[string]decimal.Decimal, len(points))
+	running := decimal.Zero
 	for _, p := range points {
-		cumByDay[p.Day.Format(dayKeyLayout)] = p.CumulativeQty
+		if p.Day.Before(in.PeriodStart) || !p.Day.Before(in.PeriodEnd) {
+			continue
+		}
+		running = running.Add(p.Qty)
+		cumByDay[p.Day.Format(dayKeyLayout)] = running
 	}
 
 	limit := in.EntitlementLimit

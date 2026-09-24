@@ -8,6 +8,7 @@ import (
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
+	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
@@ -364,6 +365,7 @@ func (s *revenueService) decomposeUsageRows(
 			EntitlementLimit:    inputs.entitlementLimits[m.ID],
 			ExternalCustomerIDs: inputs.extCustomerIDs,
 			Timezone:            sub.Timezone,
+			Usage:               inputs.usage(m.ID),
 		})
 		if err != nil {
 			return nil, err
@@ -437,6 +439,7 @@ func (s *revenueService) decomposeUsageRows(
 		EntitlementLimit:    inputs.entitlementLimits[m.ID],
 		ExternalCustomerIDs: inputs.extCustomerIDs,
 		Timezone:            sub.Timezone,
+		Usage:               inputs.usage(m.ID),
 	})
 	if err != nil {
 		return nil, err
@@ -512,6 +515,7 @@ func (s *revenueService) decomposeLineCommitmentRows(
 			EntitlementLimit:    inputs.entitlementLimits[m.ID],
 			ExternalCustomerIDs: inputs.extCustomerIDs,
 			Timezone:            sub.Timezone,
+			Usage:               inputs.usage(m.ID),
 		})
 		if curveErr != nil {
 			return nil, true, curveErr
@@ -634,6 +638,7 @@ func (s *revenueService) decomposeOverageRows(
 		EntitlementLimit:    inputs.entitlementLimits[m.ID],
 		ExternalCustomerIDs: inputs.extCustomerIDs,
 		Timezone:            sub.Timezone,
+		Usage:               inputs.usage(m.ID),
 	})
 	if err != nil {
 		// Shadow path: a curve failure downgrades to a whole-period row
@@ -1103,6 +1108,21 @@ type rollupInputs struct {
 	// extCustomerIDs scope usage reads to this subscription's customers
 	// (parent + inherited children), matching the engine's own scoping.
 	extCustomerIDs []string
+	// usageByMeter is every meter's per-day usage for this subscription, read
+	// once. Reading per line item instead is what made a full pass take hours:
+	// a subscription here carries hundreds of line items over a handful of
+	// meters.
+	usageByMeter map[string][]events.DailyUsagePoint
+}
+
+// usage returns the meter's pre-read per-day quantities. A meter with no usage
+// is absent from the map and yields nil, which the curve reads as no usage —
+// distinct from "not pre-read", which only happens outside the rollup.
+func (in *rollupInputs) usage(meterID string) []events.DailyUsagePoint {
+	if in == nil || in.usageByMeter == nil {
+		return nil
+	}
+	return in.usageByMeter[meterID]
 }
 
 // price returns the hydrated price for id, erroring on ids the bulk load did
@@ -1190,12 +1210,38 @@ func (s *revenueService) loadRollupInputs(ctx context.Context, sub *subscription
 		return nil, err
 	}
 
+	// One read for every meter on the subscription, over the widest window any
+	// of its line items can ask for. Per-day (not cumulative) quantities come
+	// back, so a line item starting mid-period accumulates from its own start.
+	usageByMeter, err := s.MeterUsageRepo.GetDailyUsageByMeter(ctx, &events.DailyUsageParams{
+		TenantID:            types.GetTenantID(ctx),
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		MeterIDs:            lo.Uniq(meterIDs),
+		ExternalCustomerIDs: extCustomerIDs,
+		StartTime:           periodStart,
+		EndTime:             periodEnd,
+		UseFinal:            true,
+		Timezone:            sub.Timezone,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// A meter with no usage must still be present, as an empty slice: nil would
+	// be read as "not pre-read" and fall back to a single-meter query, which is
+	// the per-line-item behaviour this replaces.
+	for _, id := range lo.Uniq(meterIDs) {
+		if _, ok := usageByMeter[id]; !ok {
+			usageByMeter[id] = []events.DailyUsagePoint{}
+		}
+	}
+
 	return &rollupInputs{
 		prices:            lo.KeyBy(prices, func(p *price.Price) string { return p.ID }),
 		meters:            lo.KeyBy(meters, func(m *meter.Meter) string { return m.ID }),
 		entitlementLimits: limits,
 		grantsByMeterID:   grantsByMeterID,
 		extCustomerIDs:    extCustomerIDs,
+		usageByMeter:      usageByMeter,
 	}, nil
 }
 

@@ -147,20 +147,22 @@ type MeterUsageDetailedPoint struct {
 	EventCount       uint64
 }
 
-// DailyUsagePoint is one day's cumulative running quantity through that day,
-// produced by the windowed cumulative-daily-usage read.
+// DailyUsagePoint is one day's metered quantity. It is deliberately NOT a
+// running total: callers accumulate from their own window start, so a single
+// read can serve line items whose periods begin on different days.
 type DailyUsagePoint struct {
-	Day           time.Time
-	CumulativeQty decimal.Decimal
+	Day time.Time
+	Qty decimal.Decimal
 }
 
-// CumulativeDailyUsageParams defines filters for the windowed cumulative-daily-usage
-// read: per-day SUM(qty_total) over the half-open window [StartTime, EndTime) for a
-// single meter, rolled into a running total.
-type CumulativeDailyUsageParams struct {
+// DailyUsageParams defines filters for the windowed daily-usage read: per-day
+// SUM(qty_total) over the half-open window [StartTime, EndTime), for every
+// meter in MeterIDs at once. Batching the meters is what keeps a subscription
+// with hundreds of line items to a single round-trip.
+type DailyUsageParams struct {
 	TenantID      string
 	EnvironmentID string
-	MeterID       string
+	MeterIDs      []string
 	// ExternalCustomerIDs scopes usage to these customers; empty means no
 	// customer filter.
 	ExternalCustomerIDs []string
@@ -221,8 +223,8 @@ type MeterUsageRepository interface {
 	// GetByEventID returns the meter_usage record for a single event, or nil if not yet processed.
 	GetByEventID(ctx context.Context, tenantID, environmentID, eventID string) (*MeterUsage, error)
 
-	// GetCumulativeDailyUsage returns the running cumulative SUM(qty_total) through
-	// each day in the half-open window [StartTime, EndTime) for a single meter.
-	// Used by the revenue-facts curve helper to derive per-day cumulative billable usage.
-	GetCumulativeDailyUsage(ctx context.Context, params *CumulativeDailyUsageParams) ([]DailyUsagePoint, error)
+	// GetDailyUsageByMeter returns per-day SUM(qty_total) over the half-open
+	// window [StartTime, EndTime), keyed by meter id — one round-trip for every
+	// meter in MeterIDs. Days with no usage are absent rather than zero.
+	GetDailyUsageByMeter(ctx context.Context, params *DailyUsageParams) (map[string][]DailyUsagePoint, error)
 }
