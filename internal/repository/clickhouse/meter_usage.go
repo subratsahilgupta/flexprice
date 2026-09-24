@@ -1150,23 +1150,9 @@ func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params
 	})
 	defer FinishSpan(span)
 
-	finalClause, finalSettings := r.qb.BuildFinalClause(params.UseFinal)
-	settings := "SETTINGS " + maxMemoryUsageSetting
-	if finalSettings != "" {
-		settings = finalSettings + ", " + maxMemoryUsageSetting
-	}
+	query, args := r.qb.BuildUsageActivityQuery(params)
 
-	query := fmt.Sprintf(`
-		SELECT DISTINCT external_customer_id
-		FROM meter_usage %s
-		WHERE tenant_id = ? AND environment_id = ?
-			AND timestamp >= ?
-			AND ingested_at >= ?
-		%s
-	`, finalClause, settings)
-
-	rows, err := r.store.GetConn().Query(ctx, query,
-		params.TenantID, params.EnvironmentID, params.TimestampAfter, params.IngestedAfter)
+	rows, err := r.store.GetConn().Query(ctx, query, args...)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).

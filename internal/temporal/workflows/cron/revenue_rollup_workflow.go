@@ -44,6 +44,17 @@ func RevenueRollupWorkflow(ctx workflow.Context, in cronModels.RevenueRollupInpu
 		since = *in.Since
 	}
 
+	// A cursor resumes a run whose window was its own. Deriving `since` from
+	// this run's schedule instead would check the not-yet-processed
+	// subscriptions against a different usage window, and usage ingested
+	// between the two windows would be missed for exactly those subscriptions.
+	if in.ResumeAfterSubscriptionID != "" && (in.Since == nil || in.Since.IsZero()) {
+		return temporal.NewNonRetryableApplicationError(
+			"resuming requires the original scan window",
+			"InvalidRollupResume", nil,
+			"pass the failed run's Since alongside resume_after_subscription_id")
+	}
+
 	log.Info("Starting RevenueRollupWorkflow", "since", since, "interval", interval)
 
 	ao := workflow.ActivityOptions{

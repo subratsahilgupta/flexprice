@@ -155,3 +155,24 @@ func TestRevenueRollupWorkflow_SweepWindow(t *testing.T) {
 	require.WithinDuration(t, beforeStart.Add(-driftSweepLookback), sweepSince, 5*time.Second,
 		"the sweep must window on the wider lookback, not the rollup interval")
 }
+
+// TestRevenueRollupWorkflow_ResumeRequiresItsWindow: a cursor resumes a run
+// whose scan window was its own. Deriving `since` from the new run's schedule
+// would check the not-yet-processed subscriptions against a different window,
+// and usage ingested between the two would be missed for exactly those.
+func TestRevenueRollupWorkflow_ResumeRequiresItsWindow(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(rollupDirtyStub, activity.RegisterOptions{Name: ActivityRollupDirty})
+	env.RegisterActivityWithOptions(reconcileBookedInvoicesStub, activity.RegisterOptions{Name: ActivityReconcileBookedInvoices})
+
+	env.ExecuteWorkflow(RevenueRollupWorkflow, cronModels.RevenueRollupInput{
+		ResumeEnvironmentID:       "env_1",
+		ResumeAfterSubscriptionID: "sub_abc",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	require.Error(t, err, "resuming without the original window must fail rather than silently rescan")
+	assert.Contains(t, err.Error(), "resuming requires the original scan window")
+}

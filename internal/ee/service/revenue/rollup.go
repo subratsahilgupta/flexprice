@@ -265,6 +265,15 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return false, err
 	}
 	toWrite := changedRows(allRows, stored)
+
+	// The export contract says absence of rows means "not enabled or not yet
+	// computed — never that revenue was zero". A period whose every row
+	// carries nothing would otherwise vanish entirely and read as uncomputed,
+	// so keep one row as the record that it was. One row per subscription per
+	// period, only when nothing is stored for it yet.
+	if len(toWrite) == 0 && len(stored) == 0 && len(allRows) > 0 {
+		toWrite = allRows[:1]
+	}
 	if len(toWrite) == 0 {
 		return false, nil
 	}
