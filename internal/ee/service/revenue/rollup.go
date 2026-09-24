@@ -651,14 +651,30 @@ func (s *revenueService) decomposeOverageRows(
 	return decomposeUsageMarginal(base, overageCurve)
 }
 
-func (s *revenueService) RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
-	err = s.forEachOptedInEnvironment(ctx, "revenue rollup dirty scan", func(envCtx context.Context) error {
-		envRolled, envSkipped, envErr := s.rollupDirtyForEnvironment(envCtx, since)
-		rolled += envRolled
-		skipped += envSkipped
+func (s *revenueService) RollupDirty(ctx context.Context, req types.RollupDirtyRequest) (types.RollupDirtyResult, error) {
+	var result types.RollupDirtyResult
+
+	// Environments are walked in a stable order, so a cursor naming one of them
+	// means "this one, partially, then the rest".
+	resuming := req.Cursor != nil
+	err := s.forEachOptedInEnvironment(ctx, "revenue rollup dirty scan", func(envCtx context.Context) error {
+		envID := types.GetEnvironmentID(envCtx)
+		var after string
+		if resuming {
+			if req.Cursor.EnvironmentID != envID {
+				// Environments before the cursor's are already done.
+				return nil
+			}
+			after = req.Cursor.LastSubscriptionID
+			resuming = false
+		}
+
+		envRolled, envSkipped, envErr := s.rollupDirtyForEnvironment(envCtx, req, after, &result)
+		result.Rolled += envRolled
+		result.Skipped += envSkipped
 		return envErr
 	})
-	return rolled, skipped, err
+	return result, err
 }
 
 // forEachOptedInEnvironment runs fn once per (tenant, environment) that opted
@@ -708,7 +724,7 @@ func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op strin
 
 // rollupDirtyForEnvironment scans one (tenant, environment)'s active
 // subscriptions in pages and rolls every one with activity since `since`.
-func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since time.Time) (rolled, skipped int, err error) {
+func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req types.RollupDirtyRequest, after string, result *types.RollupDirtyResult) (rolled, skipped int, err error) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	if tenantID == "" || environmentID == "" {
@@ -717,20 +733,28 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since ti
 
 	const batchSize = 1000
 	offset := 0
+	maxSeen := after
 
 	for {
+		// Listing pages by offset under a stable id sort; the cursor is a
+		// resume filter applied to what comes back, not a pagination key. That
+		// keeps a retry from redoing completed subscriptions without needing
+		// the repository to support keyset paging.
 		filter := types.NewSubscriptionFilter()
 		filter.Limit = lo.ToPtr(batchSize)
 		filter.Offset = lo.ToPtr(offset)
 		filter.Status = lo.ToPtr(types.StatusPublished)
 		filter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive}
-		subs, listErr := s.SubRepo.List(ctx, filter)
+		filter.Sort = []*types.SortCondition{{Field: "id", Direction: types.SortDirectionAsc}}
+		page, listErr := s.SubRepo.List(ctx, filter)
 		if listErr != nil {
 			return rolled, skipped, listErr
 		}
-		if len(subs) == 0 {
+		if len(page) == 0 {
 			return rolled, skipped, nil
 		}
+		pageSize := len(page)
+		subs := subscriptionsAfter(page, after)
 
 		for _, sub := range subs {
 			if sub.TenantID != tenantID || sub.EnvironmentID != environmentID {
@@ -740,7 +764,7 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since ti
 					"subscription_environment_id", sub.EnvironmentID)
 				continue
 			}
-			if sub.UpdatedAt.Before(since) && sub.CurrentPeriodStart.Before(since) && sub.CurrentPeriodEnd.Before(since) {
+			if sub.UpdatedAt.Before(req.Since) && sub.CurrentPeriodStart.Before(req.Since) && sub.CurrentPeriodEnd.Before(req.Since) {
 				continue
 			}
 
@@ -761,11 +785,46 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, since ti
 			rolled++
 		}
 
-		if len(subs) < batchSize {
+		// Checkpoint on the highest id completed so far: a retry resumes after
+		// it instead of starting over.
+		for _, sub := range subs {
+			if sub.ID > maxSeen {
+				maxSeen = sub.ID
+			}
+		}
+		if maxSeen != "" {
+			cursor := types.RollupCursor{EnvironmentID: environmentID, LastSubscriptionID: maxSeen}
+			if result != nil {
+				result.Cursor = &cursor
+			}
+			if req.OnProgress != nil {
+				req.OnProgress(cursor)
+			}
+		}
+
+		if pageSize < batchSize {
 			return rolled, skipped, nil
 		}
 		offset += batchSize
 	}
+}
+
+// subscriptionsAfter keeps only the subscriptions ordered after `after`, so a
+// resumed pass does not redo completed work. It filters rather than slices, so
+// it is correct whatever order the repository returned — and a cursor naming a
+// subscription that has since been deleted still resumes in the right place,
+// because the cursor is an ordering, not a row reference.
+func subscriptionsAfter(subs []*subscription.Subscription, after string) []*subscription.Subscription {
+	if after == "" {
+		return subs
+	}
+	kept := make([]*subscription.Subscription, 0, len(subs))
+	for _, sub := range subs {
+		if sub.ID > after {
+			kept = append(kept, sub)
+		}
+	}
+	return kept
 }
 
 // finalizePeriodGroup identifies one (subscription, period) grain touched by

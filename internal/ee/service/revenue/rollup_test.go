@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/flexprice/flexprice/internal/ee/service"
+	"sort"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -650,7 +652,8 @@ func (s *RevenueRollupSuite) TestRollupDirty_TallyAndErrorIsolation() {
 
 	since := time.Now().UTC().Add(-time.Hour)
 
-	rolled, skipped, err := s.svc.RollupDirty(ctx, since)
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: since})
+	rolled, skipped := res.Rolled, res.Skipped
 	s.NoError(err, "a per-subscription error must never abort the batch")
 	s.Equal(1, rolled, "only the plain fixed-charge subscription should roll")
 	s.Equal(2, skipped, "multi-period-commitment skip + per-subscription error both tally as skipped")
@@ -979,7 +982,8 @@ func (s *RevenueRollupSuite) TestRollupDirty_SkipsTenantsWithoutSetting() {
 	ctx := s.ctx
 	sub := s.seedFixedOnlySubscription(ctx, "ungated", nil, "price_dirty_ungated", true)
 
-	rolled, skipped, err := s.svc.RollupDirty(ctx, time.Now().UTC().Add(-time.Hour))
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Hour)})
+	rolled, skipped := res.Rolled, res.Skipped
 	s.NoError(err)
 	s.Zero(rolled)
 	s.Zero(skipped)
@@ -1008,7 +1012,8 @@ func (s *RevenueRollupSuite) TestRollupDirty_SkipsBlankEnvironmentSetting() {
 	}
 	s.NoError(s.GetStores().SettingsRepo.Create(ctx, setting))
 
-	rolled, skipped, err := s.svc.RollupDirty(ctx, time.Now().UTC().Add(-time.Hour))
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Hour)})
+	rolled, skipped := res.Rolled, res.Skipped
 	s.NoError(err)
 	s.Zero(rolled)
 	s.Zero(skipped)
@@ -1593,8 +1598,11 @@ func (s *RevenueRollupSuite) TestWriteEntryPointsRequireOptIn() {
 	s.NoError(s.GetStores().InvoiceRepo.CreateWithLineItems(ctx, inv))
 
 	writes := map[string]func() error{
-		"RollupSubscription":         func() error { return s.svc.RollupSubscription(ctx, sub.ID) },
-		"RollupDirty":                func() error { _, _, err := s.svc.RollupDirty(ctx, time.Now().UTC().Add(-time.Hour)); return err },
+		"RollupSubscription": func() error { return s.svc.RollupSubscription(ctx, sub.ID) },
+		"RollupDirty": func() error {
+			_, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Hour)})
+			return err
+		},
 		"FinalizeSubscriptionPeriod": func() error { return s.svc.FinalizeSubscriptionPeriod(ctx, inv.ID) },
 		"RevertInvoiceFacts":         func() error { return s.svc.RevertInvoiceFacts(ctx, inv.ID) },
 		"ReconcileBookedInvoices": func() error {
@@ -1780,4 +1788,75 @@ func (s *RevenueRollupSuite) TestBuildUsageCurve_AccumulatesFromItsOwnPeriodStar
 	s.NoError(err)
 	s.True(full[len(full)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(600)),
 		"the same read serves the full window too, got %s", full[len(full)-1].CumulativeGrossQty)
+}
+
+// TestRollupDirty_ResumesFromCursor: a retried pass must continue after the
+// last completed subscription, not restart at the head. Before this, all three
+// activity attempts rewrote the same first slice of the list and the tail was
+// never rolled at all.
+func (s *RevenueRollupSuite) TestRollupDirty_ResumesFromCursor() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+
+	// Ids are keyset-ordered, so "a" < "b" < "c".
+	for _, key := range []string{"a", "b", "c"} {
+		s.seedFixedOnlySubscription(ctx, "cursor_"+key, nil, "price_cursor_"+key, true)
+	}
+
+	var seen []types.RollupCursor
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since:      time.Now().UTC().Add(-time.Hour),
+		OnProgress: func(c types.RollupCursor) { seen = append(seen, c) },
+	})
+	s.NoError(err)
+	s.Equal(3, res.Rolled)
+	s.NotEmpty(seen, "progress must be reported so the activity can heartbeat")
+	s.NotNil(res.Cursor)
+
+	// Resuming from the final cursor has nothing left to do.
+	done, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since:  time.Now().UTC().Add(-time.Hour),
+		Cursor: res.Cursor,
+	})
+	s.NoError(err)
+	s.Zero(done.Rolled, "a completed pass must not re-roll from the cursor")
+
+	// Resuming from the first subscription rolls only what follows it.
+	subs, err := s.GetStores().SubscriptionRepo.List(ctx, &types.SubscriptionFilter{
+		QueryFilter:        types.NewNoLimitQueryFilter(),
+		SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive},
+	})
+	s.NoError(err)
+	ids := lo.Map(subs, func(sub *subscription.Subscription, _ int) string { return sub.ID })
+	sort.Strings(ids)
+
+	partial, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since: time.Now().UTC().Add(-time.Hour),
+		Cursor: &types.RollupCursor{
+			EnvironmentID:      types.GetEnvironmentID(ctx),
+			LastSubscriptionID: ids[0],
+		},
+	})
+	s.NoError(err)
+	s.Equal(len(ids)-1, partial.Rolled, "resume must skip exactly the subscriptions at or before the cursor")
+}
+
+// TestSubscriptionsAfter covers the keyset itself: an offset would shift when
+// rows change under a long pass and silently skip subscriptions, which is worse
+// than the restart it replaces.
+func TestSubscriptionsAfter(t *testing.T) {
+	subs := []*subscription.Subscription{{ID: "sub_a"}, {ID: "sub_b"}, {ID: "sub_c"}}
+
+	assert.Len(t, subscriptionsAfter(subs, ""), 3, "no cursor starts from the top")
+	assert.Len(t, subscriptionsAfter(subs, "sub_a"), 2)
+	assert.Equal(t, "sub_c", subscriptionsAfter(subs, "sub_b")[0].ID)
+	assert.Empty(t, subscriptionsAfter(subs, "sub_c"), "past the end has nothing left")
+
+	// A cursor naming a subscription that no longer exists still resumes in the
+	// right place — the cursor is an ordering, not a row reference.
+	assert.Equal(t, "sub_c", subscriptionsAfter(subs, "sub_bb")[0].ID)
+
+	// Filtering, not slicing: an unordered page must still be handled.
+	shuffled := []*subscription.Subscription{{ID: "sub_c"}, {ID: "sub_a"}, {ID: "sub_b"}}
+	assert.Len(t, subscriptionsAfter(shuffled, "sub_a"), 2, "order of the page must not matter")
 }

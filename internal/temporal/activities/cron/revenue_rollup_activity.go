@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	cronModels "github.com/flexprice/flexprice/internal/temporal/models"
+	"github.com/flexprice/flexprice/internal/types"
 	"go.temporal.io/sdk/activity"
 )
 
@@ -42,17 +43,37 @@ func (a *RevenueRollupActivities) RollupDirtyActivity(ctx context.Context, since
 		return &cronModels.RevenueRollupWorkflowResult{}, nil
 	}
 
+	// Resume where a previous attempt stopped. Without this every retry starts
+	// at the first subscription and rewrites the same head of the list, so the
+	// tail is never reached.
+	var cursor *types.RollupCursor
+	if activity.HasHeartbeatDetails(ctx) {
+		var recorded types.RollupCursor
+		if err := activity.GetHeartbeatDetails(ctx, &recorded); err == nil {
+			cursor = &recorded
+			log.Info("Resuming revenue rollup dirty scan",
+				"environment_id", recorded.EnvironmentID,
+				"after_subscription_id", recorded.LastSubscriptionID)
+		}
+	}
+
 	log.Info("Starting revenue rollup dirty scan", "since", since)
 
-	rolled, skipped, err := a.revenueService.RollupDirty(ctx, since)
+	result, err := a.revenueService.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since:  since,
+		Cursor: cursor,
+		OnProgress: func(c types.RollupCursor) {
+			activity.RecordHeartbeat(ctx, c)
+		},
+	})
 	if err != nil {
 		a.logger.Error(ctx, "revenue rollup dirty scan failed", "error", err, "since", since)
 		return nil, err
 	}
 
-	a.logger.Info(ctx, "revenue rollup dirty scan completed", "rolled", rolled, "skipped", skipped, "since", since)
-	log.Info("Completed revenue rollup dirty scan", "rolled", rolled, "skipped", skipped)
-	return &cronModels.RevenueRollupWorkflowResult{Rolled: rolled, Skipped: skipped}, nil
+	a.logger.Info(ctx, "revenue rollup dirty scan completed", "rolled", result.Rolled, "skipped", result.Skipped, "since", since)
+	log.Info("Completed revenue rollup dirty scan", "rolled", result.Rolled, "skipped", result.Skipped)
+	return &cronModels.RevenueRollupWorkflowResult{Rolled: result.Rolled, Skipped: result.Skipped}, nil
 }
 
 // ReconcileBookedInvoicesActivity compares recently finalized/voided invoices against their
