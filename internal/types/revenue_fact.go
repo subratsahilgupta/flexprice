@@ -148,6 +148,9 @@ type RollupDirtyRequest struct {
 	// OnProgress is called after each subscription so the caller can checkpoint.
 	// Optional.
 	OnProgress func(RollupCursor)
+	// ForceFull rolls every subscription regardless of what changed — the
+	// periodic rebuild, and any manual backfill.
+	ForceFull bool
 }
 
 // RollupDirtyResult reports what one pass did and where it stopped.

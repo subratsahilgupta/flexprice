@@ -1887,3 +1887,191 @@ func TestSubscriptionsAfter(t *testing.T) {
 	shuffled := []*subscription.Subscription{{ID: "sub_c"}, {ID: "sub_a"}, {ID: "sub_b"}}
 	assert.Len(t, subscriptionsAfter(shuffled, "sub_a"), 2, "order of the page must not matter")
 }
+
+// TestScanScope_Triggers walks every reason a subscription must be rolled.
+// Usage is only one of them: getting this set wrong does not fail loudly, it
+// leaves facts silently stale, which is why each trigger is pinned here rather
+// than tested through a single happy path.
+func TestScanScope_Triggers(t *testing.T) {
+	since := time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC)
+	before := since.Add(-48 * time.Hour)
+	after := since.Add(time.Hour)
+
+	// Quiet: no usage, untouched, period opened long ago.
+	quiet := func() *subscription.Subscription {
+		return &subscription.Subscription{
+			ID: "sub_quiet", CustomerID: "cust_quiet",
+			CurrentPeriodStart: before, CurrentPeriodEnd: after.AddDate(0, 1, 0),
+			BaseModel: types.BaseModel{UpdatedAt: before},
+		}
+	}
+
+	scope := scanScope{since: since, customers: map[string]struct{}{"cust_busy": {}}}
+
+	assert.False(t, scope.includes(quiet()), "a subscription with nothing to recompute is skipped")
+
+	busy := quiet()
+	busy.CustomerID = "cust_busy"
+	assert.True(t, scope.includes(busy), "new usage must roll the subscription")
+
+	edited := quiet()
+	edited.UpdatedAt = after
+	assert.True(t, scope.includes(edited), "a plan, quantity or line-item change must roll it")
+
+	// The case usage alone would miss: a period that just opened owes its
+	// fixed charges and commitment true-ups before anything is metered.
+	rolled := quiet()
+	rolled.CurrentPeriodStart = after
+	assert.True(t, scope.includes(rolled), "a newly opened period must be rolled with no usage at all")
+
+	assert.True(t, scanScope{full: true}.includes(quiet()), "a full pass rolls everything")
+}
+
+// TestScanScopeFor_FailsOpen: every answer the scope cannot trust must widen to
+// a full pass. A subscription wrongly included costs a read that writes
+// nothing; one wrongly excluded goes stale until the next rebuild.
+func (s *RevenueRollupSuite) TestScanScopeFor_FailsOpen() {
+	ctx := s.ctx
+	svc := New(s.serviceParams()).(*revenueService)
+	req := types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Hour)}
+
+	// Incremental off is the deployed default: always a full pass.
+	svc.Config.Analytics.RevenueRollup.Incremental = false
+	s.True(svc.scanScopeFor(ctx, req).full, "incremental off must scan everything")
+
+	svc.Config.Analytics.RevenueRollup.Incremental = true
+	s.False(svc.scanScopeFor(ctx, req).full, "incremental on narrows the scan")
+
+	s.True(svc.scanScopeFor(ctx, types.RollupDirtyRequest{Since: req.Since, ForceFull: true}).full,
+		"the periodic rebuild overrides the narrowing")
+
+	// Usage that cannot be attributed to a customer makes the answer
+	// incomplete, so it must not be used to narrow anything.
+	ts := time.Now().UTC()
+	id := s.GetUUID()
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{{
+		Event: events.Event{
+			ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+			EventName: "orphan", Timestamp: ts, IngestedAt: ts,
+		},
+		MeterID: "meter_orphan", QtyTotal: decimal.NewFromInt(1), UniqueHash: "orphan:" + id,
+	}}))
+	s.True(svc.scanScopeFor(ctx, req).full, "usage with no customer id must widen the scan")
+}
+
+// TestRollupDirty_SkipsQuietSubscriptionsWhenIncremental: the point of the
+// whole exercise — a subscription with no usage and no changes must cost
+// nothing. Its already-written facts must survive untouched.
+func (s *RevenueRollupSuite) TestRollupDirty_SkipsQuietSubscriptionsWhenIncremental() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	s.seedWorkedExample(ctx)
+
+	params := s.serviceParams()
+	params.Config.Analytics.RevenueRollup.Incremental = true
+	counter := &countingMeterUsageRepo{MeterUsageRepository: s.GetStores().MeterUsageRepo}
+	params.MeterUsageRepo = counter
+	svc := New(params)
+
+	// A first pass with a window that predates the seeded usage rolls it.
+	res, err := svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: s.periodStart.Add(-time.Hour)})
+	s.NoError(err)
+	s.Equal(1, res.Rolled)
+	before, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.NotEmpty(before)
+
+	// A second pass whose window starts after all usage was ingested has
+	// nothing to do: no rollup, and no usage read for that subscription.
+	readsBefore := counter.calls
+	quiet, err := svc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(time.Hour)})
+	s.NoError(err)
+	s.Zero(quiet.Rolled, "a quiet subscription must not be re-rolled")
+	s.Equal(readsBefore, counter.calls, "a skipped subscription must cost no usage read at all")
+
+	after, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+	s.Equal(len(before), len(after), "skipping must not disturb rows already written")
+}
+
+// TestScanScopeFor_PriceEditWidensScan: a price edit changes the amount on
+// every subscription using it but bumps nothing on the subscription, so neither
+// usage nor updated_at sees it.
+func (s *RevenueRollupSuite) TestScanScopeFor_PriceEditWidensScan() {
+	ctx := s.ctx
+	s.seedWorkedExample(ctx)
+
+	svc := New(s.serviceParams()).(*revenueService)
+	svc.Config.Analytics.RevenueRollup.Incremental = true
+
+	// A window opening after everything was created narrows the scan.
+	future := time.Now().UTC().Add(time.Hour)
+	s.False(svc.scanScopeFor(ctx, types.RollupDirtyRequest{Since: future}).full)
+
+	// Editing a price must widen it again.
+	p, err := s.GetStores().PriceRepo.Get(ctx, "price_rollup_usage")
+	s.NoError(err)
+	p.UpdatedAt = future.Add(time.Minute)
+	s.NoError(s.GetStores().PriceRepo.Update(ctx, p, false))
+
+	s.True(svc.scanScopeFor(ctx, types.RollupDirtyRequest{Since: future}).full,
+		"a price edit must widen the scan; nothing else would notice it")
+}
+
+// TestIncrementalMatchesFullRebuild is the test that guards the whole scoping
+// design: whatever the triggers do, an incremental pass and a full rebuild must
+// leave the same rows. A missed trigger shows up here as a difference rather
+// than as silently stale production data.
+func (s *RevenueRollupSuite) TestIncrementalMatchesFullRebuild() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	s.seedWorkedExample(ctx)
+
+	snapshot := func() map[string]string {
+		rows, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+		s.NoError(err)
+		out := make(map[string]string, len(rows))
+		for _, r := range rows {
+			key := fmt.Sprintf("%s|%s|%s|%s",
+				lo.FromPtr(r.PriceID), lo.FromPtr(r.SubLineItemID),
+				r.Day.Format("2006-01-02"), r.RevenueSource)
+			out[key] = r.NetAmount.String()
+		}
+		return out
+	}
+
+	incremental := s.serviceParams()
+	incremental.Config.Analytics.RevenueRollup.Incremental = true
+	incSvc := New(incremental)
+
+	// Roll incrementally, then add usage and roll again — the second pass is
+	// scoped, because only this subscription's customer saw activity.
+	_, err := incSvc.RollupDirty(ctx, types.RollupDirtyRequest{Since: s.periodStart.Add(-time.Hour)})
+	s.NoError(err)
+
+	ts := s.periodStart.AddDate(0, 0, 5).Add(9 * time.Hour)
+	id := s.GetUUID()
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{{
+		Event: events.Event{
+			ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+			EventName: "call_rollup_wk", ExternalCustomerID: "ext_rollup_wk", CustomerID: "cust_rollup_wk",
+			Timestamp: ts, IngestedAt: time.Now().UTC(),
+		},
+		MeterID: "meter_rollup_wk", QtyTotal: decimal.NewFromInt(3000), UniqueHash: "inc_extra:" + id,
+	}}))
+
+	_, err = incSvc.RollupDirty(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(-time.Minute)})
+	s.NoError(err)
+	incrementalState := snapshot()
+
+	// Now force a full rebuild over the same data. It must agree exactly.
+	_, err = incSvc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since:     s.periodStart.Add(-time.Hour),
+		ForceFull: true,
+	})
+	s.NoError(err)
+	fullState := snapshot()
+
+	s.Equal(fullState, incrementalState,
+		"an incremental pass must leave exactly what a full rebuild would")
+}

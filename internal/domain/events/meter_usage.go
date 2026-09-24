@@ -175,6 +175,26 @@ type DailyUsageParams struct {
 	Timezone string
 }
 
+// UsageActivityParams asks which customers received usage recently. It filters
+// on ingested_at, not timestamp, so backdated events count as activity for the
+// run that receives them.
+type UsageActivityParams struct {
+	TenantID      string
+	EnvironmentID string
+	IngestedAfter time.Time
+	UseFinal      bool
+}
+
+// UsageActivity names the customers with recent usage.
+type UsageActivity struct {
+	CustomerIDs []string
+	// Unattributed is true when some usage carried no customer id. The caller
+	// must not narrow its scan on an incomplete answer: a subscription wrongly
+	// left out goes stale silently, where one wrongly included only costs a
+	// read that writes nothing.
+	Unattributed bool
+}
+
 // MeterUsageRepository defines read/write operations on the meter_usage ClickHouse table
 type MeterUsageRepository interface {
 	// BulkInsertMeterUsage inserts multiple meter usage records in batches
@@ -227,4 +247,8 @@ type MeterUsageRepository interface {
 	// window [StartTime, EndTime), keyed by meter id — one round-trip for every
 	// meter in MeterIDs. Days with no usage are absent rather than zero.
 	GetDailyUsageByMeter(ctx context.Context, params *DailyUsageParams) (map[string][]DailyUsagePoint, error)
+
+	// GetUsageActivitySince returns the customers with any usage ingested after
+	// the given time, so a rollup can scan what changed instead of everything.
+	GetUsageActivitySince(ctx context.Context, params *UsageActivityParams) (*UsageActivity, error)
 }

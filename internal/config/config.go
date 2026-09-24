@@ -93,6 +93,14 @@ type AnalyticsConfig struct {
 type RevenueRollupConfig struct {
 	Enabled     bool `mapstructure:"enabled" default:"false"`
 	AutoCorrect bool `mapstructure:"auto_correct" default:"false"`
+	// Incremental scans only subscriptions that changed since the last run.
+	// Off, every pass is a full rebuild — the behaviour before scoping existed,
+	// kept as the fallback while incremental is proven per environment.
+	Incremental bool `mapstructure:"incremental" default:"false"`
+	// FullRebuildWeekday forces a full pass on that weekday (0=Sunday) even
+	// when Incremental is on, so anything the scoping rules miss is repaired
+	// within a week rather than persisting.
+	FullRebuildWeekday int `mapstructure:"full_rebuild_weekday" default:"0"`
 }
 
 type ChatSupportConfig struct {

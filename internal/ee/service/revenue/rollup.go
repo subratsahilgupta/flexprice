@@ -734,6 +734,103 @@ func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op strin
 	return errors.Join(envErrs...)
 }
 
+// scanScope decides which subscriptions a pass must roll. Over-scoping costs a
+// read and a diff that writes nothing; under-scoping leaves facts silently
+// stale, so every uncertain answer widens the scope rather than narrowing it.
+type scanScope struct {
+	full bool
+	// customers with usage ingested since the window opened
+	customers map[string]struct{}
+	since     time.Time
+}
+
+// includes reports whether this subscription has to be rolled. Usage is only
+// one of the triggers: a subscription with no usage at all still owes fixed
+// charges, commitment true-ups and per-window bucketed true-ups, and those are
+// written when its period opens.
+func (sc scanScope) includes(sub *subscription.Subscription) bool {
+	if sc.full {
+		return true
+	}
+	if _, ok := sc.customers[sub.CustomerID]; ok {
+		return true
+	}
+	if !sub.UpdatedAt.Before(sc.since) {
+		return true
+	}
+	// A period that opened inside the window needs its opening rows even
+	// though nothing has been metered against it yet.
+	return !sub.CurrentPeriodStart.Before(sc.since)
+}
+
+// catalogChangedSince reports whether any price in this environment was edited
+// since the window opened. It is deliberately coarse — one edited price widens
+// the whole environment to a full pass — because the alternative is resolving
+// which subscriptions reference it, and a full pass is now cheap enough that
+// the precision is not worth the query.
+//
+// Coupon and entitlement edits are not covered here and are repaired by the
+// scheduled full rebuild instead.
+func (s *revenueService) catalogChangedSince(ctx context.Context, since time.Time) bool {
+	filter := types.NewNoLimitPriceFilter()
+	filter.UpdatedAfter = lo.ToPtr(since)
+	filter.AllowExpiredPrices = true
+	filter.Limit = lo.ToPtr(1)
+
+	prices, err := s.PriceRepo.List(ctx, filter)
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup treating the catalog as changed",
+			"error", err.Error(), "reason", "price change probe failed")
+		return true
+	}
+	if len(prices) > 0 {
+		s.Logger.Info(ctx, "revenue rollup widening to a full scan", "reason", "price edited")
+		return true
+	}
+	return false
+}
+
+// scanScopeFor resolves the scope for one environment. Anything it cannot
+// answer confidently resolves to a full pass.
+func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirtyRequest) scanScope {
+	full := scanScope{full: true, since: req.Since}
+	if req.ForceFull {
+		return full
+	}
+	if s.Config == nil || !s.Config.Analytics.RevenueRollup.Incremental {
+		return full
+	}
+
+	// A price edit changes the amount on every subscription using it, but bumps
+	// nothing on the subscription itself, so usage and updated_at both miss it.
+	if s.catalogChangedSince(ctx, req.Since) {
+		return full
+	}
+
+	activity, err := s.MeterUsageRepo.GetUsageActivitySince(ctx, &events.UsageActivityParams{
+		TenantID:      types.GetTenantID(ctx),
+		EnvironmentID: types.GetEnvironmentID(ctx),
+		IngestedAfter: req.Since,
+		UseFinal:      true,
+	})
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"error", err.Error(), "reason", "usage activity read failed")
+		return full
+	}
+	if activity.Unattributed {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"reason", "usage with no customer id")
+		return full
+	}
+
+	customers := make(map[string]struct{}, len(activity.CustomerIDs))
+	for _, id := range activity.CustomerIDs {
+		customers[id] = struct{}{}
+	}
+	return scanScope{customers: customers, since: req.Since}
+}
+
 // rollupDirtyForEnvironment scans one (tenant, environment)'s active
 // subscriptions in pages and rolls every one with activity since `since`.
 func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req types.RollupDirtyRequest, after string, result *types.RollupDirtyResult) (rolled, skipped int, err error) {
@@ -742,6 +839,8 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req type
 	if tenantID == "" || environmentID == "" {
 		return 0, 0, nil
 	}
+
+	scope := s.scanScopeFor(ctx, req)
 
 	const batchSize = 1000
 	offset := 0
@@ -776,7 +875,7 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req type
 					"subscription_environment_id", sub.EnvironmentID)
 				continue
 			}
-			if sub.UpdatedAt.Before(req.Since) && sub.CurrentPeriodStart.Before(req.Since) && sub.CurrentPeriodEnd.Before(req.Since) {
+			if !scope.includes(sub) {
 				continue
 			}
 

@@ -1075,6 +1075,39 @@ func (s *InMemoryMeterUsageStore) GetByEventID(_ context.Context, tenantID, envi
 	return nil, nil
 }
 
+// GetUsageActivitySince mirrors the ClickHouse activity query: distinct
+// customers with usage ingested after the given time.
+func (s *InMemoryMeterUsageStore) GetUsageActivitySince(_ context.Context, params *events.UsageActivityParams) (*events.UsageActivity, error) {
+	if params == nil {
+		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := map[string]struct{}{}
+	activity := &events.UsageActivity{}
+	for _, r := range s.records {
+		if r.TenantID != params.TenantID || r.EnvironmentID != params.EnvironmentID {
+			continue
+		}
+		if r.IngestedAt.Before(params.IngestedAfter) {
+			continue
+		}
+		if r.CustomerID == "" {
+			activity.Unattributed = true
+			continue
+		}
+		if _, ok := seen[r.CustomerID]; ok {
+			continue
+		}
+		seen[r.CustomerID] = struct{}{}
+		activity.CustomerIDs = append(activity.CustomerIDs, r.CustomerID)
+	}
+	sort.Strings(activity.CustomerIDs)
+	return activity, nil
+}
+
 // GetDailyUsageByMeter mirrors BuildDailyUsageQuery: per-day SUM(qty_total)
 // over [StartTime, EndTime) for every meter in MeterIDs, keyed by meter id.
 // Day bucketing honors params.Timezone (an IANA name), falling back to UTC

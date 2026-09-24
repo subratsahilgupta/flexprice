@@ -1136,6 +1136,68 @@ func (r *MeterUsageRepository) GetDailyUsageByMeter(ctx context.Context, params 
 	return byMeter, nil
 }
 
+// GetUsageActivitySince returns the distinct customers with usage ingested
+// after params.IngestedAfter. Filtering on ingested_at rather than timestamp is
+// what makes backdated events count as activity for the run that receives them.
+func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params *events.UsageActivityParams) (*events.UsageActivity, error) {
+	if params == nil {
+		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+
+	span := StartRepositorySpan(ctx, "meter_usage", "get_usage_activity_since", map[string]interface{}{
+		"tenant_id":      params.TenantID,
+		"environment_id": params.EnvironmentID,
+	})
+	defer FinishSpan(span)
+
+	finalClause, finalSettings := r.qb.BuildFinalClause(params.UseFinal)
+	settings := "SETTINGS " + maxMemoryUsageSetting
+	if finalSettings != "" {
+		settings = finalSettings + ", " + maxMemoryUsageSetting
+	}
+
+	query := fmt.Sprintf(`
+		SELECT DISTINCT customer_id
+		FROM meter_usage %s
+		WHERE tenant_id = ? AND environment_id = ? AND ingested_at >= ?
+		%s
+	`, finalClause, settings)
+
+	rows, err := r.store.GetConn().Query(ctx, query, params.TenantID, params.EnvironmentID, params.IngestedAfter)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to query usage activity").
+			Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	activity := &events.UsageActivity{}
+	for rows.Next() {
+		var customerID string
+		if err := rows.Scan(&customerID); err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Failed to scan usage activity row").
+				Mark(ierr.ErrDatabase)
+		}
+		if customerID == "" {
+			activity.Unattributed = true
+			continue
+		}
+		activity.CustomerIDs = append(activity.CustomerIDs, customerID)
+	}
+	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Error iterating usage activity rows").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return activity, nil
+}
+
 // GetByEventID returns the meter_usage record for a single event, or nil if not yet processed.
 func (r *MeterUsageRepository) GetByEventID(ctx context.Context, tenantID, environmentID, eventID string) (*events.MeterUsage, error) {
 	span := StartRepositorySpan(ctx, "meter_usage", "get_by_event_id", map[string]interface{}{

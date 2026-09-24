@@ -59,9 +59,17 @@ func (a *RevenueRollupActivities) RollupDirtyActivity(ctx context.Context, since
 
 	log.Info("Starting revenue rollup dirty scan", "since", since)
 
+	// A scheduled full rebuild repairs anything the incremental triggers miss,
+	// so a gap lasts at most a week instead of persisting.
+	forceFull := a.cfg.Analytics.RevenueRollup.FullRebuildWeekday == int(since.UTC().Weekday())
+	if forceFull {
+		log.Info("Revenue rollup running a full rebuild", "weekday", since.UTC().Weekday().String())
+	}
+
 	result, err := a.revenueService.RollupDirty(ctx, types.RollupDirtyRequest{
-		Since:  since,
-		Cursor: cursor,
+		Since:     since,
+		Cursor:    cursor,
+		ForceFull: forceFull,
 		OnProgress: func(c types.RollupCursor) {
 			activity.RecordHeartbeat(ctx, c)
 		},

@@ -29,6 +29,19 @@ Design doc: [FLE-1257 analytics platform ERD](../../../../docs/design/2026-09-10
   (tenant, environment, subscription, price, sub_line_item, day, revenue_source);
   recomputes bump `version` in place. FINAL rows are immutable — a void appends
   contra rows (`is_revert = true`), never edits.
+- **The scan may over-scope, never under-scope.** A subscription rolled
+  unnecessarily costs one batched read and a diff that writes nothing; one
+  wrongly skipped goes silently stale. Every uncertain answer in `scanScopeFor`
+  widens to a full pass, and a scheduled full rebuild is the net underneath.
+- **Usage is not the only trigger.** A subscription with no usage at all still
+  owes fixed charges, commitment true-ups and — for bucketed windowed
+  commitments — one true-up row per empty window. Those are written when the
+  period opens, so `current_period_start` and `updated_at` are triggers in their
+  own right, not conveniences.
+- **Reads are batched per subscription, writes are diffed.** `buildUsageCurve`
+  must read from the pre-fetched `rollupInputs.usage(meterID)`; falling back to
+  its own query is one round-trip per line item, which is what made a full pass
+  take hours. Reconciliation runs on the full row set, before the diff.
 - **Tenant scoping.** Every query filters tenant + environment.
 - **Opt-in gates every write.** No row is written for an environment whose
   `revenue_analytics_config` is absent or disabled — not by the batch jobs,
