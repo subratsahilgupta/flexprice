@@ -604,3 +604,46 @@ func TestPeriodDays_SubscriptionTimezone(t *testing.T) {
 	assert.Equal(t, time.UTC, locationOf(""))
 	assert.Equal(t, time.UTC, locationOf("Not/AZone"))
 }
+
+// TestChangedRows: the diff narrows the write, and the only thing that matters
+// is that it never withholds a write that carries a change.
+func TestChangedRows(t *testing.T) {
+	row := func(day string, net string) *revenuefact.RevenueFact {
+		d, err := time.Parse("2006-01-02", day)
+		require.NoError(t, err)
+		return &revenuefact.RevenueFact{
+			PriceID:       lo.ToPtr("price_1"),
+			SubLineItemID: lo.ToPtr("sli_1"),
+			Day:           d,
+			RevenueSource: types.RevenueSourceUsage,
+			NetAmount:     decimal.RequireFromString(net),
+		}
+	}
+
+	stored := []*revenuefact.RevenueFact{row("2026-05-01", "10"), row("2026-05-02", "20")}
+
+	assert.Empty(t, changedRows([]*revenuefact.RevenueFact{row("2026-05-01", "10"), row("2026-05-02", "20")}, stored),
+		"an identical recompute must write nothing")
+
+	changed := changedRows([]*revenuefact.RevenueFact{row("2026-05-01", "10"), row("2026-05-02", "25")}, stored)
+	require.Len(t, changed, 1)
+	assert.Equal(t, "25", changed[0].NetAmount.String(), "only the day that moved is written")
+
+	// A value falling back to zero MUST be written: the upsert never deletes,
+	// so withholding it would leave the old non-zero row standing as revenue
+	// that no reconciliation catches.
+	zeroed := changedRows([]*revenuefact.RevenueFact{row("2026-05-01", "0")}, stored)
+	require.Len(t, zeroed, 1, "a value returning to zero is a change, not a no-op")
+
+	// A new day has no stored counterpart.
+	assert.Len(t, changedRows([]*revenuefact.RevenueFact{row("2026-05-03", "5")}, stored), 1)
+
+	// Nothing stored yet: everything is new.
+	assert.Len(t, changedRows([]*revenuefact.RevenueFact{row("2026-05-01", "10")}, nil), 1)
+
+	// Same grain, different non-money field still counts as a change.
+	entitled := row("2026-05-01", "10")
+	entitled.EntitlementQty = decimal.NewFromInt(50)
+	assert.Len(t, changedRows([]*revenuefact.RevenueFact{entitled}, stored), 1,
+		"entitlement movement is a change even when net is identical")
+}

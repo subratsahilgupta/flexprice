@@ -347,8 +347,9 @@ func (s *RevenueRollupSuite) TestRollupSubscription_WorkedExampleReconciles() {
 	}
 	s.Equal("530", total.String(), "Î£ net_amount must reconcile to $530")
 
-	// Idempotent: a second rollup of the same period bumps versions in place,
-	// never duplicating rows.
+	// Idempotent, and now also inert: a recompute that produces the same values
+	// writes nothing at all. Re-upserting identical rows every night was the
+	// bulk of the write volume on subscriptions with many line items.
 	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
 	rows2, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
 	s.NoError(err)
@@ -359,8 +360,34 @@ func (s *RevenueRollupSuite) TestRollupSubscription_WorkedExampleReconciles() {
 		versionByID[r.ID] = r.Version
 	}
 	for _, r := range rows2 {
-		s.Equal(versionByID[r.ID]+1, r.Version, "recompute must bump version in place, not insert a duplicate")
+		s.Equal(versionByID[r.ID], r.Version, "an unchanged recompute must not rewrite the row")
 	}
+
+	// A real change still lands: more usage on the last day moves that row and
+	// bumps its version, while the untouched days stay put.
+	lastDay := s.periodStart.AddDate(0, 0, 29).Add(6 * time.Hour)
+	id := s.GetUUID()
+	s.NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{{
+		Event: events.Event{
+			ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+			EventName: "call_rollup_wk", ExternalCustomerID: "ext_rollup_wk",
+			Timestamp: lastDay, IngestedAt: lastDay,
+		},
+		MeterID: "meter_rollup_wk", QtyTotal: decimal.NewFromInt(5000), UniqueHash: "wk_extra:" + id,
+	}}))
+
+	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
+	rows3, err := s.store.ListBySubscriptionPeriod(ctx, s.sub.ID, s.periodStart, s.periodEnd, types.FactProvisional)
+	s.NoError(err)
+
+	bumped := 0
+	for _, r := range rows3 {
+		if prior, ok := versionByID[r.ID]; ok && r.Version > prior {
+			bumped++
+		}
+	}
+	s.NotZero(bumped, "a day whose usage changed must be rewritten")
+	s.Less(bumped, len(rows), "days whose usage did not change must be left alone")
 }
 
 func (s *RevenueRollupSuite) TestRollupSubscription_MultiPeriodCommitmentSkipped() {

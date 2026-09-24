@@ -185,6 +185,78 @@ type dayCharge struct {
 	TierDelta decimal.Decimal
 }
 
+// factGrain is the provisional upsert key: two rows with the same grain are the
+// same row, so a recompute updates in place rather than inserting.
+type factGrain struct {
+	priceID       string
+	subLineItemID string
+	day           string
+	revenueSource types.RevenueSource
+}
+
+func grainOf(f *revenuefact.RevenueFact) factGrain {
+	return factGrain{
+		priceID:       lo.FromPtr(f.PriceID),
+		subLineItemID: lo.FromPtr(f.SubLineItemID),
+		day:           f.Day.Format(dayKeyLayout),
+		revenueSource: f.RevenueSource,
+	}
+}
+
+// sameValues reports whether a recomputed row would write nothing new. It
+// compares every field the upsert would set; id, computed_at and version are
+// excluded because they differ on every recompute by construction, and status
+// because both sides are provisional here.
+//
+// A value returning to zero counts as a change: the upsert never deletes, so
+// skipping that write would leave the old non-zero row standing as stale
+// revenue that no reconciliation catches.
+func sameValues(a, b *revenuefact.RevenueFact) bool {
+	return a.CustomerID == b.CustomerID &&
+		lo.FromPtr(a.MeterID) == lo.FromPtr(b.MeterID) &&
+		a.PeriodStart.Equal(b.PeriodStart) &&
+		a.PeriodEnd.Equal(b.PeriodEnd) &&
+		a.UsageAtListRate.Equal(b.UsageAtListRate) &&
+		a.TierDelta.Equal(b.TierDelta) &&
+		a.EntitlementAmount.Equal(b.EntitlementAmount) &&
+		a.LineDiscount.Equal(b.LineDiscount) &&
+		a.InvoiceDiscount.Equal(b.InvoiceDiscount) &&
+		a.NetAmount.Equal(b.NetAmount) &&
+		a.BillableQty.Equal(b.BillableQty) &&
+		a.EntitlementQty.Equal(b.EntitlementQty) &&
+		a.DecompositionMode == b.DecompositionMode &&
+		a.Currency == b.Currency &&
+		a.IsRevert == b.IsRevert &&
+		lo.FromPtr(a.InvoiceID) == lo.FromPtr(b.InvoiceID) &&
+		lo.FromPtr(a.InvoiceLineItemID) == lo.FromPtr(b.InvoiceLineItemID)
+}
+
+// changedRows keeps only the rows that would actually change something. Most of
+// a nightly pass recomputes days that are already stored and identical: on a
+// subscription with hundreds of line items, that was the bulk of the writes.
+//
+// This narrows the WRITE only. Reconciliation must still run on the full set,
+// or an invoice whose rows are mostly unchanged would look like it had lost
+// them.
+func changedRows(computed []*revenuefact.RevenueFact, stored []*revenuefact.RevenueFact) []*revenuefact.RevenueFact {
+	if len(stored) == 0 {
+		return computed
+	}
+	byGrain := make(map[factGrain]*revenuefact.RevenueFact, len(stored))
+	for _, row := range stored {
+		byGrain[grainOf(row)] = row
+	}
+
+	changed := make([]*revenuefact.RevenueFact, 0, len(computed))
+	for _, row := range computed {
+		if prior, ok := byGrain[grainOf(row)]; ok && sameValues(row, prior) {
+			continue
+		}
+		changed = append(changed, row)
+	}
+	return changed
+}
+
 // decompositionMode picks period_only where a per-day split would misstate
 // the charge: volume tiering re-rates all units on the final tier, and
 // LATEST/AVG/WEIGHTED_SUM/MAX aggregations are not additive across days —

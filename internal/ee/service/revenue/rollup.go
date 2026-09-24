@@ -256,9 +256,21 @@ func (s *revenueService) rollupSubscriptionForPeriod(ctx context.Context, sub *s
 		return false, nil
 	}
 
+	// Reconciliation above ran on every row. Only the write is narrowed: a
+	// nightly pass recomputes days that are already stored and identical, and
+	// rewriting them is most of the write volume.
+	stored, err := s.RevenueFactRepo.ListBySubscriptionPeriod(ctx, subscriptionID, periodStart, periodEnd, types.FactProvisional)
+	if err != nil {
+		return false, err
+	}
+	toWrite := changedRows(allRows, stored)
+	if len(toWrite) == 0 {
+		return false, nil
+	}
+
 	// Every row is PROVISIONAL with a non-empty price_id by construction;
 	// re-running upserts in place instead of duplicating.
-	if err := s.RevenueFactRepo.UpsertProvisional(ctx, allRows); err != nil {
+	if err := s.RevenueFactRepo.UpsertProvisional(ctx, toWrite); err != nil {
 		return false, err
 	}
 

@@ -86,9 +86,20 @@ func (s *RevenueRollupSuite) TestE2E_RevenueFactsLifecycle() {
 	s.NoError(s.svc.RollupSubscription(ctx, s.sub.ID))
 	secondRows := provisionalRows()
 	s.Equal(len(firstRows), len(secondRows), "recompute must update rows in place, never duplicate")
+
+	// Only the days the new usage touched are rewritten. Adding usage on a day
+	// raises the cumulative for that day and every later one equally, so the
+	// later days' marginals are unchanged and must not be rewritten.
+	bumped := 0
 	for _, r := range secondRows {
-		s.Equal(versionByID[r.ID]+1, r.Version, "every row must bump its version on recompute")
+		prior, ok := versionByID[r.ID]
+		s.True(ok, "recompute must not replace a row's identity")
+		if r.Version > prior {
+			bumped++
+		}
 	}
+	s.NotZero(bumped, "the days that received usage must be rewritten")
+	s.Less(bumped, len(secondRows), "untouched days must be left alone")
 	s.True(sumNet(secondRows).Equal(previewTotal()), "backdated + new usage must be absorbed and still reconcile")
 
 	// --- Stage 3: the invoice finalizes; provisional rows flip to FINAL ---
