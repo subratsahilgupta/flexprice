@@ -182,7 +182,14 @@ type UsageActivityParams struct {
 	TenantID      string
 	EnvironmentID string
 	IngestedAfter time.Time
-	UseFinal      bool
+	// TimestampAfter prunes partitions. meter_usage is partitioned by
+	// toYYYYMMDD(timestamp) and ordered by (tenant, environment,
+	// external_customer_id, meter_id, timestamp), so ingested_at alone is in
+	// neither the partition key nor the sort key and would scan the tenant's
+	// entire history every run. Backdating further than this is picked up by
+	// the scheduled full rebuild instead.
+	TimestampAfter time.Time
+	UseFinal       bool
 }
 
 // UsageActivity names the customers with recent usage.

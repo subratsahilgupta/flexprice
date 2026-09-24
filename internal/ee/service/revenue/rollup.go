@@ -403,6 +403,7 @@ func (s *revenueService) decomposeUsageRows(
 			Grants:              grants,
 			ExternalCustomerIDs: inputs.extCustomerIDs,
 			Timezone:            sub.Timezone,
+			Usage:               inputs.usage(m.ID),
 		})
 		if err != nil {
 			return nil, err
@@ -799,7 +800,7 @@ type scanScope struct {
 	customers map[string]struct{}
 	// parent subscriptions whose inherited children saw usage
 	activeParents map[string]struct{}
-	// customers whose committed minimum accrues without usage
+	// subscriptions whose committed minimum accrues without usage
 	accruing map[string]struct{}
 	since    time.Time
 	// now anchors the period-open grace window
@@ -816,6 +817,12 @@ type scanScope struct {
 // working set and grows without bound. Anything still missing after this is
 // repaired by the scheduled full rebuild.
 const periodOpenGrace = 72 * time.Hour
+
+// backdateLookback bounds how far back a late-arriving event is looked for.
+// meter_usage is partitioned on the event timestamp, so an unbounded probe
+// reads every partition the tenant has ever written. Events backdated further
+// than this are picked up by the scheduled full rebuild.
+const backdateLookback = 90 * 24 * time.Hour
 
 // includes reports whether this subscription has to be rolled. Usage is only
 // one of the triggers: a subscription with no usage at all still owes fixed
@@ -837,7 +844,7 @@ func (sc scanScope) includes(sub *subscription.Subscription) bool {
 	// curve is clamped to today, so one more window becomes billable every day
 	// with no usage at all. Every other trigger reads such a subscription as
 	// quiet, and its accrual would stop after the period's opening roll.
-	if _, ok := sc.accruing[sub.CustomerID]; ok {
+	if _, ok := sc.accruing[sub.ID]; ok {
 		return true
 	}
 	if !sub.UpdatedAt.Before(sc.since) {
@@ -895,6 +902,9 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 		TenantID:      types.GetTenantID(ctx),
 		EnvironmentID: types.GetEnvironmentID(ctx),
 		IngestedAfter: req.Since,
+		// Backdating beyond this is repaired by the scheduled full rebuild;
+		// without the bound the read scans every partition ever written.
+		TimestampAfter: req.Since.Add(-backdateLookback),
 	})
 	if err != nil {
 		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
@@ -919,7 +929,7 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 		return full
 	}
 
-	accruing, err := s.customersWithAccruingCommitments(ctx)
+	accruing, err := s.subscriptionsWithAccruingCommitments(ctx)
 	if err != nil {
 		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
 			"error", err.Error(), "reason", "commitment true-up lookup failed")
@@ -935,15 +945,21 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 	}
 }
 
-// customersWithAccruingCommitments returns the customers whose committed
-// minimum is billable without usage. Their per-window true-up grows as the
-// bucketed curve's clamp advances, so they must be rolled every pass rather
-// than once when the period opens.
-func (s *revenueService) customersWithAccruingCommitments(ctx context.Context) (map[string]struct{}, error) {
+// subscriptionsWithAccruingCommitments returns the subscriptions whose
+// committed minimum is billable without usage: a windowed commitment's true-up
+// fills empty windows, and the bucketed curve is clamped to today, so one more
+// window becomes billable each day. They must be rolled every pass rather than
+// once when the period opens.
+//
+// Keyed on subscription rather than customer so a customer's other
+// subscriptions are not dragged in, and predicated on a plain boolean so the
+// scan does not evaluate jsonb per row -- this table runs to millions of rows
+// per environment.
+func (s *revenueService) subscriptionsWithAccruingCommitments(ctx context.Context) (map[string]struct{}, error) {
 	if s.SubscriptionLineItemRepo == nil {
 		return nil, nil
 	}
-	ids, err := s.SubscriptionLineItemRepo.GetDistinctCustomerIDsWithCommitmentTrueUp(ctx)
+	ids, err := s.SubscriptionLineItemRepo.SubscriptionIDsWithWindowedCommitment(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -963,9 +979,13 @@ func (s *revenueService) parentsOfActiveChildren(ctx context.Context, customers 
 		return nil, nil
 	}
 
+	// Scoped to the customers that actually saw usage: listing every inherited
+	// subscription in the environment would be unbounded, and all but a handful
+	// of them could not qualify anyway.
 	filter := types.NewNoLimitSubscriptionFilter()
 	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeInherited}
 	filter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive}
+	filter.CustomerIDs = lo.Keys(customers)
 	children, err := s.SubRepo.List(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -977,9 +997,7 @@ func (s *revenueService) parentsOfActiveChildren(ctx context.Context, customers 
 		if parentID == "" {
 			continue
 		}
-		if _, ok := customers[child.CustomerID]; ok {
-			parents[parentID] = struct{}{}
-		}
+		parents[parentID] = struct{}{}
 	}
 	return parents, nil
 }

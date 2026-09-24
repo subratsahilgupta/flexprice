@@ -2149,21 +2149,71 @@ func TestScanScope_CommitmentAccruesWithoutUsage(t *testing.T) {
 	assert.False(t, quiet.includes(committed), "sanity: no other trigger fires for this subscription")
 
 	accruing := quiet
-	accruing.accruing = map[string]struct{}{"cust_committed": {}}
+	accruing.accruing = map[string]struct{}{"sub_committed": {}}
 	assert.True(t, accruing.includes(committed),
 		"a commitment billable without usage must be rolled every pass")
 }
 
-// TestScanScopeFor_IncludesCommitmentCustomers wires the probe end to end: a
-// line item with commitment true-up must put its customer in the accruing set.
-func (s *RevenueRollupSuite) TestScanScopeFor_IncludesCommitmentCustomers() {
+// TestScanScopeFor_IncludesWindowedCommitments wires the probe end to end, and
+// pins its precision: only a WINDOWED commitment accrues without usage. A
+// non-windowed line commitment settles period_only — one row whose amount is
+// fixed once usage is — so pulling it into every pass would be waste.
+func (s *RevenueRollupSuite) TestScanScopeFor_IncludesWindowedCommitments() {
 	ctx := s.ctx
 	s.seedLineCommitmentSubscription(ctx)
-
 	svc := New(s.serviceParams()).(*revenueService)
-	scope := svc.scanScopeFor(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(time.Hour)})
+	req := types.RollupDirtyRequest{Since: time.Now().UTC().Add(time.Hour)}
 
+	// The fixture's commitments are non-windowed.
+	s.Empty(svc.scanScopeFor(ctx, req).accruing,
+		"a non-windowed commitment does not accrue and must not be pulled in every pass")
+
+	// Make one of them windowed.
+	items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(ctx, s.sub)
+	s.NoError(err)
+	s.NotEmpty(items)
+	items[0].CommitmentWindowed = true
+	s.NoError(s.GetStores().SubscriptionLineItemRepo.Update(ctx, items[0]))
+
+	scope := svc.scanScopeFor(ctx, req)
 	s.False(scope.full, "sanity: nothing else should widen this scan")
-	s.NotEmpty(scope.accruing, "a commitment true-up line item must mark its customer as accruing")
-	s.True(scope.includes(s.sub), "the committed subscription must be rolled despite no new usage")
+	s.Contains(scope.accruing, s.sub.ID, "a windowed commitment must mark its subscription as accruing")
+	s.True(scope.includes(s.sub), "it must be rolled despite no new usage")
+}
+
+// TestRollupSubscription_GrantWindowsReadNothingExtra: grant-billed usage is
+// shaped from the grants' quota-crossed windows. Reading each window separately
+// was one round-trip per window per line item on top of the per-line-item read
+// -- the same N+1 as the main curve, one level down. Every window is now sliced
+// out of the subscription's single read.
+func (s *RevenueRollupSuite) TestRollupSubscription_GrantWindowsReadNothingExtra() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	s.seedWorkedExample(ctx)
+
+	grant := &entitlementgrant.EntitlementGrant{
+		ID:                  "eg_grant_reads",
+		EntitlementConfigID: "ec_grant_reads",
+		CustomerID:          "cust_rollup_wk",
+		SubscriptionID:      s.sub.ID,
+		ScopeEntityType:     types.EntitlementGrantScopeFeature,
+		ScopeEntityID:       "feat_rollup_wk",
+		Measure:             types.EntitlementGrantMeasureQuantity,
+		Quota:               decimal.NewFromInt(100000),
+		ValidFrom:           s.periodStart,
+		ValidTo:             s.periodEnd,
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		BaseModel:           types.GetDefaultBaseModel(ctx),
+	}
+	_, err := s.GetStores().EntitlementGrantRepo.Create(ctx, grant)
+	s.NoError(err)
+
+	counter := &countingMeterUsageRepo{MeterUsageRepository: s.GetStores().MeterUsageRepo}
+	params := s.serviceParams()
+	params.MeterUsageRepo = counter
+	svc := New(params)
+
+	s.NoError(svc.RollupSubscription(ctx, s.sub.ID))
+	s.Equal(1, counter.calls,
+		"grant windows must be sliced from the subscription's single read, not queried per window")
 }

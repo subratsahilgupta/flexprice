@@ -1094,6 +1094,9 @@ func (s *InMemoryMeterUsageStore) GetUsageActivitySince(_ context.Context, param
 		if r.IngestedAt.Before(params.IngestedAfter) {
 			continue
 		}
+		if !params.TimestampAfter.IsZero() && r.Timestamp.Before(params.TimestampAfter) {
+			continue
+		}
 		if r.CustomerID == "" {
 			activity.Unattributed = true
 			continue

@@ -1159,11 +1159,14 @@ func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params
 	query := fmt.Sprintf(`
 		SELECT DISTINCT customer_id
 		FROM meter_usage %s
-		WHERE tenant_id = ? AND environment_id = ? AND ingested_at >= ?
+		WHERE tenant_id = ? AND environment_id = ?
+			AND timestamp >= ?
+			AND ingested_at >= ?
 		%s
 	`, finalClause, settings)
 
-	rows, err := r.store.GetConn().Query(ctx, query, params.TenantID, params.EnvironmentID, params.IngestedAfter)
+	rows, err := r.store.GetConn().Query(ctx, query,
+		params.TenantID, params.EnvironmentID, params.TimestampAfter, params.IngestedAfter)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).

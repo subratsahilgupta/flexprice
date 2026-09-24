@@ -35,6 +35,11 @@ type grantCurveInput struct {
 	Grants              []*entitlementgrant.EntitlementGrant
 	ExternalCustomerIDs []string
 	Timezone            string
+
+	// Usage is the meter's per-day quantities, pre-read for the whole
+	// subscription. Every window below is derived from it in memory: reading
+	// per window instead is one round-trip per grant window per line item.
+	Usage []events.DailyUsagePoint
 }
 
 // grantsBillable reports whether the billing engine folded these grants into
@@ -62,7 +67,7 @@ func grantsBillable(sli *subscription.SubscriptionLineItem, p *price.Price, m *m
 func (s *revenueService) buildGrantOverageCurve(ctx context.Context, in grantCurveInput) (curve []dayCharge, ok bool, err error) {
 	windows := grantOverageWindows(in.Grants, in.PeriodStart, in.PeriodEnd)
 
-	grossByDay, err := s.cumulativeUsageByDay(ctx, in.Meter.ID, in.PeriodStart, in.PeriodEnd, in.Timezone, in.ExternalCustomerIDs)
+	grossByDay, err := s.cumulativeUsageByDay(ctx, in, in.PeriodStart, in.PeriodEnd)
 	if err != nil {
 		return nil, false, err
 	}
@@ -71,7 +76,7 @@ func (s *revenueService) buildGrantOverageCurve(ctx context.Context, in grantCur
 	// marginals; windows never overlap after merging, so a unit counts once.
 	billedMarginalByDay := make(map[string]decimal.Decimal)
 	for _, w := range windows {
-		windowCum, wErr := s.cumulativeUsageByDay(ctx, in.Meter.ID, w.Start, w.End, in.Timezone, in.ExternalCustomerIDs)
+		windowCum, wErr := s.cumulativeUsageByDay(ctx, in, w.Start, w.End)
 		if wErr != nil {
 			return nil, false, wErr
 		}
@@ -163,29 +168,45 @@ func grantOverageWindows(grants []*entitlementgrant.EntitlementGrant, periodStar
 
 // cumulativeUsageByDay reads the meter's cumulative daily usage over
 // [start, end), keyed by local calendar date.
-func (s *revenueService) cumulativeUsageByDay(ctx context.Context, meterID string, start, end time.Time, tz string, extCustomerIDs []string) (map[string]decimal.Decimal, error) {
+func (s *revenueService) cumulativeUsageByDay(ctx context.Context, in grantCurveInput, start, end time.Time) (map[string]decimal.Decimal, error) {
 	if !start.Before(end) {
 		return map[string]decimal.Decimal{}, nil
 	}
-	byMeter, err := s.MeterUsageRepo.GetDailyUsageByMeter(ctx, &events.DailyUsageParams{
-		TenantID:            types.GetTenantID(ctx),
-		EnvironmentID:       types.GetEnvironmentID(ctx),
-		MeterIDs:            []string{meterID},
-		ExternalCustomerIDs: extCustomerIDs,
-		StartTime:           start,
-		EndTime:             end,
-		UseFinal:            true,
-		Timezone:            tz,
-	})
-	if err != nil {
-		return nil, err
+
+	points := in.Usage
+	if points == nil {
+		byMeter, err := s.MeterUsageRepo.GetDailyUsageByMeter(ctx, &events.DailyUsageParams{
+			TenantID:            types.GetTenantID(ctx),
+			EnvironmentID:       types.GetEnvironmentID(ctx),
+			MeterIDs:            []string{in.Meter.ID},
+			ExternalCustomerIDs: in.ExternalCustomerIDs,
+			StartTime:           in.PeriodStart,
+			EndTime:             in.PeriodEnd,
+			UseFinal:            true,
+			Timezone:            in.Timezone,
+		})
+		if err != nil {
+			return nil, err
+		}
+		points = byMeter[in.Meter.ID]
 	}
-	points := byMeter[meterID]
+
+	// Slice the shared per-day points to this window and accumulate. The
+	// windows are the grants' quota-crossed spans, so there can be several per
+	// line item — querying each one separately is the read pattern this whole
+	// path exists to avoid.
+	loc := timezoneLocation(in.Timezone)
+	startKey := start.In(loc).Format(dayKeyLayout)
+	endKey := end.In(loc).Format(dayKeyLayout)
 	byDay := make(map[string]decimal.Decimal, len(points))
 	running := decimal.Zero
 	for _, p := range points {
+		key := p.Day.Format(dayKeyLayout)
+		if key < startKey || key >= endKey {
+			continue
+		}
 		running = running.Add(p.Qty)
-		byDay[p.Day.Format(dayKeyLayout)] = running
+		byDay[key] = running
 	}
 	return byDay, nil
 }
