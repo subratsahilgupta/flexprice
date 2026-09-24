@@ -38,9 +38,14 @@ Design doc: [FLE-1257 analytics platform ERD](../../../../docs/design/2026-09-10
   right, not from being able to disable them.
 - **Usage is not the only trigger.** A subscription with no usage at all still
   owes fixed charges, commitment true-ups and — for bucketed windowed
-  commitments — one true-up row per empty window. Those are written when the
-  period opens, so `current_period_start` and `updated_at` are triggers in their
-  own right, not conveniences.
+  commitments — one true-up row per empty window. Most of those are written when
+  the period opens, so `current_period_start`, never-rolled and stale-coverage
+  are triggers in their own right, not conveniences.
+- **A commitment accrues without usage.** The bucketed curve is clamped to
+  today, so a windowed commitment's true-up gains a window every day even when
+  nothing is metered. Those customers are rolled every pass
+  (`customersWithAccruingCommitments`); every other trigger reads them as quiet,
+  and their accrual would stop after the period's opening roll.
 - **Reads are batched per subscription, writes are diffed.** `buildUsageCurve`
   must read from the pre-fetched `rollupInputs.usage(meterID)`; falling back to
   its own query is one round-trip per line item, which is what made a full pass

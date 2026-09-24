@@ -2145,3 +2145,46 @@ func (s *RevenueRollupSuite) TestRollupDirty_StaleCursorDoesNotSkipEverything() 
 	s.NoError(err)
 	s.NotZero(res.Rolled, "a cursor for a vanished environment must not silence the whole run")
 }
+
+// TestScanScope_CommitmentAccruesWithoutUsage: a windowed commitment's true-up
+// fills empty windows, and the bucketed curve is clamped to today, so one more
+// window becomes billable every day with no usage at all. Every other trigger
+// reads that subscription as quiet — usage never arrives, nothing is edited,
+// the period opened long ago, and its opening roll already wrote facts covering
+// the current period. Without this trigger its accrual stops after day one.
+func TestScanScope_CommitmentAccruesWithoutUsage(t *testing.T) {
+	since := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
+	committed := &subscription.Subscription{
+		ID: "sub_committed", CustomerID: "cust_committed",
+		CurrentPeriodStart: since.Add(-240 * time.Hour),
+		CurrentPeriodEnd:   since.AddDate(0, 1, 0),
+		BaseModel:          types.BaseModel{UpdatedAt: since.Add(-240 * time.Hour)},
+	}
+
+	// Every other signal says "nothing to do".
+	quiet := scanScope{
+		since:         since,
+		customers:     map[string]struct{}{},
+		rolledThrough: map[string]time.Time{"sub_committed": since.AddDate(0, 1, 0)},
+	}
+	assert.False(t, quiet.includes(committed), "sanity: no other trigger fires for this subscription")
+
+	accruing := quiet
+	accruing.accruing = map[string]struct{}{"cust_committed": {}}
+	assert.True(t, accruing.includes(committed),
+		"a commitment billable without usage must be rolled every pass")
+}
+
+// TestScanScopeFor_IncludesCommitmentCustomers wires the probe end to end: a
+// line item with commitment true-up must put its customer in the accruing set.
+func (s *RevenueRollupSuite) TestScanScopeFor_IncludesCommitmentCustomers() {
+	ctx := s.ctx
+	s.seedLineCommitmentSubscription(ctx)
+
+	svc := New(s.serviceParams()).(*revenueService)
+	scope := svc.scanScopeFor(ctx, types.RollupDirtyRequest{Since: time.Now().UTC().Add(time.Hour)})
+
+	s.False(scope.full, "sanity: nothing else should widen this scan")
+	s.NotEmpty(scope.accruing, "a commitment true-up line item must mark its customer as accruing")
+	s.True(scope.includes(s.sub), "the committed subscription must be rolled despite no new usage")
+}

@@ -799,6 +799,8 @@ type scanScope struct {
 	customers map[string]struct{}
 	// parent subscriptions whose inherited children saw usage
 	activeParents map[string]struct{}
+	// customers whose committed minimum accrues without usage
+	accruing map[string]struct{}
 	// latest provisional period_end already written per subscription
 	rolledThrough map[string]time.Time
 	since         time.Time
@@ -818,6 +820,13 @@ func (sc scanScope) includes(sub *subscription.Subscription) bool {
 	// Usage on an inherited child bills the parent, and the child's usage rows
 	// carry the child's customer id — the parent would otherwise look quiet.
 	if _, ok := sc.activeParents[sub.ID]; ok {
+		return true
+	}
+	// A windowed commitment's true-up fills empty windows, and the bucketed
+	// curve is clamped to today, so one more window becomes billable every day
+	// with no usage at all. Every other trigger reads such a subscription as
+	// quiet, and its accrual would stop after the period's opening roll.
+	if _, ok := sc.accruing[sub.CustomerID]; ok {
 		return true
 	}
 	if !sub.UpdatedAt.Before(sc.since) {
@@ -919,12 +928,39 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 		return full
 	}
 
+	accruing, err := s.customersWithAccruingCommitments(ctx)
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"error", err.Error(), "reason", "commitment true-up lookup failed")
+		return full
+	}
+
 	return scanScope{
 		customers:     customers,
 		activeParents: activeParents,
+		accruing:      accruing,
 		rolledThrough: rolledThrough,
 		since:         req.Since,
 	}
+}
+
+// customersWithAccruingCommitments returns the customers whose committed
+// minimum is billable without usage. Their per-window true-up grows as the
+// bucketed curve's clamp advances, so they must be rolled every pass rather
+// than once when the period opens.
+func (s *revenueService) customersWithAccruingCommitments(ctx context.Context) (map[string]struct{}, error) {
+	if s.SubscriptionLineItemRepo == nil {
+		return nil, nil
+	}
+	ids, err := s.SubscriptionLineItemRepo.GetDistinctCustomerIDsWithCommitmentTrueUp(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		out[id] = struct{}{}
+	}
+	return out, nil
 }
 
 // parentsOfActiveChildren maps the parent subscriptions of inherited children
