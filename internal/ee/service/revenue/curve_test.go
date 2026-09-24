@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/events"
+	"github.com/flexprice/flexprice/internal/domain/meter"
 	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/testutil"
@@ -606,4 +607,126 @@ func TestBuildUsageCurve_ClampsToToday(t *testing.T) {
 	short, err := svc.buildUsageCurve(ctx, in(past, past.Add(6*time.Hour)))
 	require.NoError(t, err)
 	assert.Len(t, short, 1, "a sub-day period still books its single day")
+}
+
+// TestBuildUsageCurve_BoundsByLocalDate: usage is bucketed to local midnight,
+// so bounding the shared read by exact instants drops the period's own first
+// day — a period starting 09:37 would discard everything metered before 09:37
+// that day. The end day is the mirror case: it belongs to this period only when
+// the period ends part-way through it.
+func TestBuildUsageCurve_BoundsByLocalDate(t *testing.T) {
+	ctx := context.Background()
+	svc := &revenueService{ServiceParams: service.ServiceParams{
+		Logger:         logger.NewNoopLogger(),
+		MeterUsageRepo: testutil.NewInMemoryMeterUsageStore(),
+		PriceRepo:      testutil.NewInMemoryPriceStore(),
+		MeterRepo:      testutil.NewInMemoryMeterStore(),
+		PlanRepo:       testutil.NewInMemoryPlanStore(),
+		PriceUnitRepo:  testutil.NewInMemoryPriceUnitStore(),
+		AddonRepo:      testutil.NewInMemoryAddonStore(),
+		SubRepo:        testutil.NewInMemorySubscriptionStore(),
+	}}
+
+	day1 := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	usage := []events.DailyUsagePoint{
+		{Day: day1, Qty: decimal.NewFromInt(100)},
+		{Day: day1.AddDate(0, 0, 1), Qty: decimal.NewFromInt(200)},
+		{Day: day1.AddDate(0, 0, 2), Qty: decimal.NewFromInt(400)},
+	}
+	build := func(start, end time.Time) []dayCharge {
+		got, err := svc.buildUsageCurve(ctx, usageCurveInput{
+			Price: flatSum(t), MeterID: "meter_bounds",
+			PeriodStart: start, PeriodEnd: end, Usage: usage,
+			AsOf: day1.AddDate(0, 0, 3),
+		})
+		require.NoError(t, err)
+		return got
+	}
+
+	// Starts mid-day 1: that whole day's usage still belongs to this period.
+	mid := build(day1.Add(9*time.Hour+37*time.Minute), day1.AddDate(0, 0, 2))
+	require.NotEmpty(t, mid)
+	assert.True(t, mid[len(mid)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(300)),
+		"day 1's usage must not be dropped by a mid-day start, got %s", mid[len(mid)-1].CumulativeGrossQty)
+
+	// Ends at midnight on day 3: day 3 opens the next period and must not fold
+	// in, or one line item is charged for the next one's usage.
+	midnight := build(day1, day1.AddDate(0, 0, 2))
+	assert.True(t, midnight[len(midnight)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(300)),
+		"a midnight end must not absorb its own day, got %s", midnight[len(midnight)-1].CumulativeGrossQty)
+
+	// Ends mid-day 3: that day's usage up to the end instant does belong here,
+	// and the walk folds it into the last emitted day.
+	partial := build(day1, day1.AddDate(0, 0, 2).Add(13*time.Hour))
+	assert.True(t, partial[len(partial)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(700)),
+		"a mid-day end must fold its own day back in, got %s", partial[len(partial)-1].CumulativeGrossQty)
+}
+
+// TestCumulativeUsageByDay_PartialBoundaryDays: a grant window opens at
+// QuotaCrossedAt, an event instant, so a mid-day boundary is the norm. Slicing
+// whole-day quantities by date would put that day's pre-crossing usage on the
+// billed side of the boundary and drop a mid-day end's usage entirely. Only a
+// boundary that is not local midnight costs an exact read.
+func TestCumulativeUsageByDay_PartialBoundaryDays(t *testing.T) {
+	ctx := context.Background()
+	store := testutil.NewInMemoryMeterUsageStore()
+	svc := &revenueService{ServiceParams: service.ServiceParams{
+		Logger:         logger.NewNoopLogger(),
+		MeterUsageRepo: store,
+		PriceRepo:      testutil.NewInMemoryPriceStore(),
+		MeterRepo:      testutil.NewInMemoryMeterStore(),
+		PlanRepo:       testutil.NewInMemoryPlanStore(),
+		PriceUnitRepo:  testutil.NewInMemoryPriceUnitStore(),
+		AddonRepo:      testutil.NewInMemoryAddonStore(),
+		SubRepo:        testutil.NewInMemorySubscriptionStore(),
+	}}
+
+	day1 := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	// 10 units at 06:00 and 90 at 18:00 on day 1; 50 on day 2.
+	var records []*events.MeterUsage
+	for _, seed := range []struct {
+		at  time.Time
+		qty int64
+	}{{day1.Add(6 * time.Hour), 10}, {day1.Add(18 * time.Hour), 90}, {day1.AddDate(0, 0, 1).Add(9 * time.Hour), 50}} {
+		id := types.GenerateUUIDWithPrefix("mu_bnd")
+		records = append(records, &events.MeterUsage{
+			Event: events.Event{
+				ID: id, TenantID: types.GetTenantID(ctx), EnvironmentID: types.GetEnvironmentID(ctx),
+				EventName: "bnd", Timestamp: seed.at, IngestedAt: seed.at,
+				Properties: map[string]interface{}{},
+			},
+			MeterID: "meter_bnd", QtyTotal: decimal.NewFromInt(seed.qty), UniqueHash: id,
+		})
+	}
+	require.NoError(t, store.BulkInsertMeterUsage(ctx, records))
+
+	in := grantCurveInput{
+		Meter: &meter.Meter{ID: "meter_bnd"},
+		Usage: []events.DailyUsagePoint{
+			{Day: day1, Qty: decimal.NewFromInt(100)},
+			{Day: day1.AddDate(0, 0, 1), Qty: decimal.NewFromInt(50)},
+		},
+		PeriodStart: day1,
+		PeriodEnd:   day1.AddDate(0, 0, 2),
+	}
+
+	// Window opens at noon on day 1: only the 90 units after noon belong to it.
+	got, err := svc.cumulativeUsageByDay(ctx, in, day1.Add(12*time.Hour), day1.AddDate(0, 0, 2))
+	require.NoError(t, err)
+	assert.Equal(t, "90", got[day1.Format(dayKeyLayout)].String(),
+		"the pre-crossing part of the opening day must not count as billed")
+	assert.Equal(t, "140", got[day1.AddDate(0, 0, 1).Format(dayKeyLayout)].String())
+
+	// Window ends at noon on day 2: that day's morning usage still belongs to it.
+	got, err = svc.cumulativeUsageByDay(ctx, in, day1, day1.AddDate(0, 0, 1).Add(12*time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, "150", got[day1.AddDate(0, 0, 1).Format(dayKeyLayout)].String(),
+		"a mid-day end must keep that morning's usage, not drop the day")
+
+	// Midnight-aligned window: served entirely from the pre-read.
+	got, err = svc.cumulativeUsageByDay(ctx, in, day1, day1.AddDate(0, 0, 1))
+	require.NoError(t, err)
+	assert.Equal(t, "100", got[day1.Format(dayKeyLayout)].String())
+	assert.NotContains(t, got, day1.AddDate(0, 0, 1).Format(dayKeyLayout),
+		"a midnight end owns none of its own day")
 }

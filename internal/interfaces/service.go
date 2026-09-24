@@ -92,7 +92,7 @@ type RevenueService interface {
 
 	// RollupDirty rolls every opted-in subscription with activity since the
 	// given time. Over-rolling is harmless: the upsert is idempotent.
-	RollupDirty(ctx context.Context, since time.Time) (rolled, skipped int, err error)
+	RollupDirty(ctx context.Context, req types.RollupDirtyRequest) (types.RollupDirtyResult, error)
 
 	// FinalizeSubscriptionPeriod flips the invoice's PROVISIONAL rows to
 	// FINAL and stamps them with the invoice.

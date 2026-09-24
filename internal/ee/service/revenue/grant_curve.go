@@ -8,6 +8,7 @@ package revenue
 import (
 	"context"
 	"github.com/flexprice/flexprice/internal/ee/service"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
@@ -35,6 +36,11 @@ type grantCurveInput struct {
 	Grants              []*entitlementgrant.EntitlementGrant
 	ExternalCustomerIDs []string
 	Timezone            string
+
+	// Usage is the meter's per-day quantities, pre-read for the whole
+	// subscription. Every window below is derived from it in memory: reading
+	// per window instead is one round-trip per grant window per line item.
+	Usage []events.DailyUsagePoint
 }
 
 // grantsBillable reports whether the billing engine folded these grants into
@@ -62,7 +68,7 @@ func grantsBillable(sli *subscription.SubscriptionLineItem, p *price.Price, m *m
 func (s *revenueService) buildGrantOverageCurve(ctx context.Context, in grantCurveInput) (curve []dayCharge, ok bool, err error) {
 	windows := grantOverageWindows(in.Grants, in.PeriodStart, in.PeriodEnd)
 
-	grossByDay, err := s.cumulativeUsageByDay(ctx, in.Meter.ID, in.PeriodStart, in.PeriodEnd, in.Timezone, in.ExternalCustomerIDs)
+	grossByDay, err := s.cumulativeUsageByDay(ctx, in, in.PeriodStart, in.PeriodEnd)
 	if err != nil {
 		return nil, false, err
 	}
@@ -71,7 +77,7 @@ func (s *revenueService) buildGrantOverageCurve(ctx context.Context, in grantCur
 	// marginals; windows never overlap after merging, so a unit counts once.
 	billedMarginalByDay := make(map[string]decimal.Decimal)
 	for _, w := range windows {
-		windowCum, wErr := s.cumulativeUsageByDay(ctx, in.Meter.ID, w.Start, w.End, in.Timezone, in.ExternalCustomerIDs)
+		windowCum, wErr := s.cumulativeUsageByDay(ctx, in, w.Start, w.End)
 		if wErr != nil {
 			return nil, false, wErr
 		}
@@ -163,26 +169,91 @@ func grantOverageWindows(grants []*entitlementgrant.EntitlementGrant, periodStar
 
 // cumulativeUsageByDay reads the meter's cumulative daily usage over
 // [start, end), keyed by local calendar date.
-func (s *revenueService) cumulativeUsageByDay(ctx context.Context, meterID string, start, end time.Time, tz string, extCustomerIDs []string) (map[string]decimal.Decimal, error) {
+func (s *revenueService) cumulativeUsageByDay(ctx context.Context, in grantCurveInput, start, end time.Time) (map[string]decimal.Decimal, error) {
 	if !start.Before(end) {
 		return map[string]decimal.Decimal{}, nil
 	}
-	points, err := s.MeterUsageRepo.GetCumulativeDailyUsage(ctx, &events.CumulativeDailyUsageParams{
-		TenantID:            types.GetTenantID(ctx),
-		EnvironmentID:       types.GetEnvironmentID(ctx),
-		MeterID:             meterID,
-		ExternalCustomerIDs: extCustomerIDs,
-		StartTime:           start,
-		EndTime:             end,
-		UseFinal:            true,
-		Timezone:            tz,
-	})
-	if err != nil {
-		return nil, err
+
+	points := in.Usage
+	if points == nil {
+		byMeter, err := s.MeterUsageRepo.GetDailyUsageByMeter(ctx, &events.DailyUsageParams{
+			TenantID:            types.GetTenantID(ctx),
+			EnvironmentID:       types.GetEnvironmentID(ctx),
+			MeterIDs:            []string{in.Meter.ID},
+			ExternalCustomerIDs: in.ExternalCustomerIDs,
+			StartTime:           in.PeriodStart,
+			EndTime:             in.PeriodEnd,
+			UseFinal:            true,
+			Timezone:            in.Timezone,
+		})
+		if err != nil {
+			return nil, err
+		}
+		points = byMeter[in.Meter.ID]
 	}
-	byDay := make(map[string]decimal.Decimal, len(points))
+
+	// Slice the shared per-day points to this window. Grant windows open at
+	// QuotaCrossedAt -- an event instant, so a mid-day boundary is the norm --
+	// and a whole-day quantity would put that day's pre-crossing usage on the
+	// wrong side of the boundary. Only a boundary that is not local midnight
+	// needs an exact read, so an aligned window still costs nothing.
+	loc := timezoneLocation(in.Timezone)
+	startKey := start.In(loc).Format(dayKeyLayout)
+	endKey := end.In(loc).Format(dayKeyLayout)
+
+	qtyByDay := make(map[string]decimal.Decimal, len(points))
 	for _, p := range points {
-		byDay[p.Day.Format(dayKeyLayout)] = p.CumulativeQty
+		key := p.Day.Format(dayKeyLayout)
+		if key < startKey || key > endKey {
+			continue
+		}
+		qtyByDay[key] = p.Qty
+	}
+
+	startAligned := isLocalMidnight(start, loc)
+	endAligned := isLocalMidnight(end, loc)
+
+	switch {
+	case startKey == endKey:
+		// The whole window sits inside one local day.
+		if !startAligned || !endAligned {
+			qty, err := s.exactUsage(ctx, in, start, end)
+			if err != nil {
+				return nil, err
+			}
+			qtyByDay[startKey] = qty
+		}
+	default:
+		if !startAligned {
+			qty, err := s.exactUsage(ctx, in, start, nextLocalMidnight(start, loc))
+			if err != nil {
+				return nil, err
+			}
+			qtyByDay[startKey] = qty
+		}
+		if endAligned {
+			// A midnight end owns none of its own day.
+			delete(qtyByDay, endKey)
+		} else {
+			qty, err := s.exactUsage(ctx, in, localMidnight(end, loc), end)
+			if err != nil {
+				return nil, err
+			}
+			qtyByDay[endKey] = qty
+		}
+	}
+
+	days := make([]string, 0, len(qtyByDay))
+	for key := range qtyByDay {
+		days = append(days, key)
+	}
+	sort.Strings(days)
+
+	byDay := make(map[string]decimal.Decimal, len(days))
+	running := decimal.Zero
+	for _, key := range days {
+		running = running.Add(qtyByDay[key])
+		byDay[key] = running
 	}
 	return byDay, nil
 }
@@ -237,4 +308,45 @@ func subLineItemByID(sub *subscription.Subscription, id string) *subscription.Su
 		}
 	}
 	return nil
+}
+
+// localMidnight is the start of t's day in loc.
+func localMidnight(t time.Time, loc *time.Location) time.Time {
+	l := t.In(loc)
+	return time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, loc)
+}
+
+func nextLocalMidnight(t time.Time, loc *time.Location) time.Time {
+	return localMidnight(t, loc).AddDate(0, 0, 1)
+}
+
+func isLocalMidnight(t time.Time, loc *time.Location) bool {
+	return t.In(loc).Equal(localMidnight(t, loc))
+}
+
+// exactUsage reads the metered quantity in [from, to) at timestamp resolution,
+// for a grant-window boundary that falls part-way through a day. Everything
+// else is served from the subscription's single pre-read.
+func (s *revenueService) exactUsage(ctx context.Context, in grantCurveInput, from, to time.Time) (decimal.Decimal, error) {
+	if !from.Before(to) {
+		return decimal.Zero, nil
+	}
+	byMeter, err := s.MeterUsageRepo.GetDailyUsageByMeter(ctx, &events.DailyUsageParams{
+		TenantID:            types.GetTenantID(ctx),
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		MeterIDs:            []string{in.Meter.ID},
+		ExternalCustomerIDs: in.ExternalCustomerIDs,
+		StartTime:           from,
+		EndTime:             to,
+		UseFinal:            true,
+		Timezone:            in.Timezone,
+	})
+	if err != nil {
+		return decimal.Zero, err
+	}
+	total := decimal.Zero
+	for _, p := range byMeter[in.Meter.ID] {
+		total = total.Add(p.Qty)
+	}
+	return total, nil
 }

@@ -47,7 +47,12 @@ func RevenueRollupWorkflow(ctx workflow.Context, in cronModels.RevenueRollupInpu
 	log.Info("Starting RevenueRollupWorkflow", "since", since, "interval", interval)
 
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 30 * time.Minute,
+		// The scan heartbeats per batch, so a stall is caught by
+		// HeartbeatTimeout rather than by waiting out StartToClose. The longer
+		// StartToClose covers a legitimately large first pass; a retry resumes
+		// from the heartbeat cursor instead of restarting.
+		StartToCloseTimeout: 2 * time.Hour,
+		HeartbeatTimeout:    5 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    10 * time.Second,
 			BackoffCoefficient: 2.0,

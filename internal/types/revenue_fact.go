@@ -1,6 +1,8 @@
 package types
 
 import (
+	"time"
+
 	ierr "github.com/flexprice/flexprice/internal/errors"
 )
 
@@ -126,4 +128,35 @@ func (p RevenueAllocationPolicy) Validate() error {
 			WithHint("allocation_policy must be one of: billed, amortized").
 			Mark(ierr.ErrValidation)
 	}
+}
+
+// RollupCursor marks how far a dirty scan reached, so a retried activity
+// resumes instead of rewriting the head of the list. It is a keyset, not an
+// offset: offsets shift when rows change underneath and can silently skip
+// subscriptions, which is worse than the restart it would be fixing.
+type RollupCursor struct {
+	EnvironmentID      string `json:"environment_id"`
+	LastSubscriptionID string `json:"last_subscription_id"`
+}
+
+// RollupDirtyRequest parameterises one dirty-scan pass.
+type RollupDirtyRequest struct {
+	// Since bounds what counts as changed.
+	Since time.Time
+	// Cursor resumes a pass that was interrupted; nil starts from the top.
+	Cursor *RollupCursor
+	// OnProgress is called after each subscription so the caller can checkpoint.
+	// Optional.
+	OnProgress func(RollupCursor)
+	// ForceFull rolls every subscription regardless of what changed — the
+	// periodic rebuild, and any manual backfill.
+	ForceFull bool
+}
+
+// RollupDirtyResult reports what one pass did and where it stopped.
+type RollupDirtyResult struct {
+	Rolled  int
+	Skipped int
+	// Cursor is the last subscription completed, for resuming after a failure.
+	Cursor *RollupCursor
 }

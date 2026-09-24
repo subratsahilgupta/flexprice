@@ -18,8 +18,8 @@ import (
 type noopRevenueFacts struct{}
 
 func (noopRevenueFacts) RollupSubscription(context.Context, string) error { return nil }
-func (noopRevenueFacts) RollupDirty(context.Context, time.Time) (int, int, error) {
-	return 0, 0, nil
+func (noopRevenueFacts) RollupDirty(context.Context, types.RollupDirtyRequest) (types.RollupDirtyResult, error) {
+	return types.RollupDirtyResult{}, nil
 }
 func (noopRevenueFacts) FinalizeSubscriptionPeriod(context.Context, string) error { return nil }
 func (noopRevenueFacts) RevertInvoiceFacts(context.Context, string) error         { return nil }

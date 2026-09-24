@@ -147,20 +147,22 @@ type MeterUsageDetailedPoint struct {
 	EventCount       uint64
 }
 
-// DailyUsagePoint is one day's cumulative running quantity through that day,
-// produced by the windowed cumulative-daily-usage read.
+// DailyUsagePoint is one day's metered quantity. It is deliberately NOT a
+// running total: callers accumulate from their own window start, so a single
+// read can serve line items whose periods begin on different days.
 type DailyUsagePoint struct {
-	Day           time.Time
-	CumulativeQty decimal.Decimal
+	Day time.Time
+	Qty decimal.Decimal
 }
 
-// CumulativeDailyUsageParams defines filters for the windowed cumulative-daily-usage
-// read: per-day SUM(qty_total) over the half-open window [StartTime, EndTime) for a
-// single meter, rolled into a running total.
-type CumulativeDailyUsageParams struct {
+// DailyUsageParams defines filters for the windowed daily-usage read: per-day
+// SUM(qty_total) over the half-open window [StartTime, EndTime), for every
+// meter in MeterIDs at once. Batching the meters is what keeps a subscription
+// with hundreds of line items to a single round-trip.
+type DailyUsageParams struct {
 	TenantID      string
 	EnvironmentID string
-	MeterID       string
+	MeterIDs      []string
 	// ExternalCustomerIDs scopes usage to these customers; empty means no
 	// customer filter.
 	ExternalCustomerIDs []string
@@ -171,6 +173,33 @@ type CumulativeDailyUsageParams struct {
 	UseFinal bool
 	// Timezone is the IANA timezone used to bucket days. Empty falls back to UTC.
 	Timezone string
+}
+
+// UsageActivityParams asks which customers received usage recently. It filters
+// on ingested_at, not timestamp, so backdated events count as activity for the
+// run that receives them.
+type UsageActivityParams struct {
+	TenantID      string
+	EnvironmentID string
+	IngestedAfter time.Time
+	// TimestampAfter prunes partitions. meter_usage is partitioned by
+	// toYYYYMMDD(timestamp) and ordered by (tenant, environment,
+	// external_customer_id, meter_id, timestamp), so ingested_at alone is in
+	// neither the partition key nor the sort key and would scan the tenant's
+	// entire history every run. Backdating further than this is picked up by
+	// the scheduled full rebuild instead.
+	TimestampAfter time.Time
+	UseFinal       bool
+}
+
+// UsageActivity names the customers with recent usage.
+type UsageActivity struct {
+	CustomerIDs []string
+	// Unattributed is true when some usage carried no customer id. The caller
+	// must not narrow its scan on an incomplete answer: a subscription wrongly
+	// left out goes stale silently, where one wrongly included only costs a
+	// read that writes nothing.
+	Unattributed bool
 }
 
 // MeterUsageRepository defines read/write operations on the meter_usage ClickHouse table
@@ -221,8 +250,12 @@ type MeterUsageRepository interface {
 	// GetByEventID returns the meter_usage record for a single event, or nil if not yet processed.
 	GetByEventID(ctx context.Context, tenantID, environmentID, eventID string) (*MeterUsage, error)
 
-	// GetCumulativeDailyUsage returns the running cumulative SUM(qty_total) through
-	// each day in the half-open window [StartTime, EndTime) for a single meter.
-	// Used by the revenue-facts curve helper to derive per-day cumulative billable usage.
-	GetCumulativeDailyUsage(ctx context.Context, params *CumulativeDailyUsageParams) ([]DailyUsagePoint, error)
+	// GetDailyUsageByMeter returns per-day SUM(qty_total) over the half-open
+	// window [StartTime, EndTime), keyed by meter id — one round-trip for every
+	// meter in MeterIDs. Days with no usage are absent rather than zero.
+	GetDailyUsageByMeter(ctx context.Context, params *DailyUsageParams) (map[string][]DailyUsagePoint, error)
+
+	// GetUsageActivitySince returns the customers with any usage ingested after
+	// the given time, so a rollup can scan what changed instead of everything.
+	GetUsageActivitySince(ctx context.Context, params *UsageActivityParams) (*UsageActivity, error)
 }

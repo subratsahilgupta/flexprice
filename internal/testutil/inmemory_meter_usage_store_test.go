@@ -97,10 +97,10 @@ func TestGetCumulativeDailyUsage_HonorsTimezone(t *testing.T) {
 		t.Fatalf("seed failed: %v", err)
 	}
 
-	baseParams := events.CumulativeDailyUsageParams{
+	baseParams := events.DailyUsageParams{
 		TenantID:      "tenant_a",
 		EnvironmentID: "env_1",
-		MeterID:       "meter_1",
+		MeterIDs:      []string{"meter_1"},
 		StartTime:     time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
 		EndTime:       time.Date(2026, 7, 3, 0, 0, 0, 0, time.UTC),
 	}
@@ -109,10 +109,11 @@ func TestGetCumulativeDailyUsage_HonorsTimezone(t *testing.T) {
 		params := baseParams
 		params.Timezone = "Asia/Kolkata"
 
-		points, err := store.GetCumulativeDailyUsage(ctx, &params)
+		byMeter, err := store.GetDailyUsageByMeter(ctx, &params)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		points := byMeter["meter_1"]
 		if len(points) != 1 {
 			t.Fatalf("expected 1 day bucket in Asia/Kolkata, got %d: %+v", len(points), points)
 		}
@@ -125,8 +126,8 @@ func TestGetCumulativeDailyUsage_HonorsTimezone(t *testing.T) {
 		if !points[0].Day.Equal(wantDay) {
 			t.Fatalf("expected day %v, got %v", wantDay, points[0].Day)
 		}
-		if !points[0].CumulativeQty.Equal(decimal.NewFromInt(15)) {
-			t.Fatalf("expected cumulative qty 15, got %v", points[0].CumulativeQty)
+		if !points[0].Qty.Equal(decimal.NewFromInt(15)) {
+			t.Fatalf("expected merged day qty 15, got %v", points[0].Qty)
 		}
 	})
 
@@ -134,18 +135,21 @@ func TestGetCumulativeDailyUsage_HonorsTimezone(t *testing.T) {
 		params := baseParams
 		params.Timezone = ""
 
-		points, err := store.GetCumulativeDailyUsage(ctx, &params)
+		byMeter, err := store.GetDailyUsageByMeter(ctx, &params)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		points := byMeter["meter_1"]
 		if len(points) != 2 {
 			t.Fatalf("expected 2 day buckets in UTC, got %d: %+v", len(points), points)
 		}
-		if !points[0].CumulativeQty.Equal(decimal.NewFromInt(10)) {
-			t.Fatalf("expected first-day cumulative qty 10, got %v", points[0].CumulativeQty)
+		// Per-day, not cumulative: the caller accumulates from its own window
+		// start, which is what lets one read serve every line item.
+		if !points[0].Qty.Equal(decimal.NewFromInt(10)) {
+			t.Fatalf("expected first-day qty 10, got %v", points[0].Qty)
 		}
-		if !points[1].CumulativeQty.Equal(decimal.NewFromInt(15)) {
-			t.Fatalf("expected running total 15 by second day, got %v", points[1].CumulativeQty)
+		if !points[1].Qty.Equal(decimal.NewFromInt(5)) {
+			t.Fatalf("expected second-day qty 5 (not a running total), got %v", points[1].Qty)
 		}
 	})
 
@@ -153,10 +157,11 @@ func TestGetCumulativeDailyUsage_HonorsTimezone(t *testing.T) {
 		params := baseParams
 		params.Timezone = "Not/A_Real_Zone"
 
-		points, err := store.GetCumulativeDailyUsage(ctx, &params)
+		byMeter, err := store.GetDailyUsageByMeter(ctx, &params)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		points := byMeter["meter_1"]
 		if len(points) != 2 {
 			t.Fatalf("expected UTC fallback to split into 2 day buckets, got %d: %+v", len(points), points)
 		}
