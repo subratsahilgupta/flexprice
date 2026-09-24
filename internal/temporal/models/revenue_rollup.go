@@ -8,6 +8,12 @@ import "time"
 type RevenueRollupInput struct {
 	Interval time.Duration `json:"interval"`
 	Since    *time.Time    `json:"since,omitempty"`
+	// ResumeAfterSubscriptionID restarts a scan after a given subscription,
+	// within ResumeEnvironmentID. Heartbeat details only survive within one
+	// activity execution, so a run whose attempts are exhausted cannot resume
+	// itself -- this carries the cursor from its last heartbeat into a new run.
+	ResumeEnvironmentID       string `json:"resume_environment_id,omitempty"`
+	ResumeAfterSubscriptionID string `json:"resume_after_subscription_id,omitempty"`
 }
 
 // RevenueRollupWorkflowResult mirrors the counts from RevenueRollupService.RollupDirty.
@@ -21,4 +27,11 @@ type RevenueSweepResult struct {
 	Checked   int `json:"checked"`
 	Drifted   int `json:"drifted"`
 	Corrected int `json:"corrected"`
+}
+
+// RollupDirtyActivityInput carries the scan window and any manual resume point.
+type RollupDirtyActivityInput struct {
+	Since                     time.Time `json:"since"`
+	ResumeEnvironmentID       string    `json:"resume_environment_id,omitempty"`
+	ResumeAfterSubscriptionID string    `json:"resume_after_subscription_id,omitempty"`
 }

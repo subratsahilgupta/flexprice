@@ -35,7 +35,8 @@ func NewRevenueRollupActivities(
 // activity since `since`. The schedule always fires; this early exit is the
 // deployment-wide kill switch, and the tenant-level settings flag gates the
 // actual scan.
-func (a *RevenueRollupActivities) RollupDirtyActivity(ctx context.Context, since time.Time) (*cronModels.RevenueRollupWorkflowResult, error) {
+func (a *RevenueRollupActivities) RollupDirtyActivity(ctx context.Context, in cronModels.RollupDirtyActivityInput) (*cronModels.RevenueRollupWorkflowResult, error) {
+	since := in.Since
 	log := activity.GetLogger(ctx)
 
 	if a.cfg == nil || !a.cfg.Analytics.RevenueRollup.Enabled {
@@ -47,7 +48,18 @@ func (a *RevenueRollupActivities) RollupDirtyActivity(ctx context.Context, since
 	// at the first subscription and rewrites the same head of the list, so the
 	// tail is never reached.
 	var cursor *types.RollupCursor
-	if activity.HasHeartbeatDetails(ctx) {
+	// An explicit cursor (a manual resume) wins: the previous run's attempts
+	// are spent, so its heartbeat details are gone with it.
+	if in.ResumeAfterSubscriptionID != "" && in.ResumeEnvironmentID != "" {
+		cursor = &types.RollupCursor{
+			EnvironmentID:      in.ResumeEnvironmentID,
+			LastSubscriptionID: in.ResumeAfterSubscriptionID,
+		}
+		log.Info("Resuming revenue rollup dirty scan from an explicit cursor",
+			"environment_id", cursor.EnvironmentID,
+			"after_subscription_id", cursor.LastSubscriptionID)
+	}
+	if cursor == nil && activity.HasHeartbeatDetails(ctx) {
 		var recorded types.RollupCursor
 		if err := activity.GetHeartbeatDetails(ctx, &recorded); err == nil {
 			cursor = &recorded

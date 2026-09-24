@@ -1150,23 +1150,9 @@ func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params
 	})
 	defer FinishSpan(span)
 
-	finalClause, finalSettings := r.qb.BuildFinalClause(params.UseFinal)
-	settings := "SETTINGS " + maxMemoryUsageSetting
-	if finalSettings != "" {
-		settings = finalSettings + ", " + maxMemoryUsageSetting
-	}
+	query, args := r.qb.BuildUsageActivityQuery(params)
 
-	query := fmt.Sprintf(`
-		SELECT DISTINCT customer_id
-		FROM meter_usage %s
-		WHERE tenant_id = ? AND environment_id = ?
-			AND timestamp >= ?
-			AND ingested_at >= ?
-		%s
-	`, finalClause, settings)
-
-	rows, err := r.store.GetConn().Query(ctx, query,
-		params.TenantID, params.EnvironmentID, params.TimestampAfter, params.IngestedAfter)
+	rows, err := r.store.GetConn().Query(ctx, query, args...)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
@@ -1177,18 +1163,18 @@ func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params
 
 	activity := &events.UsageActivity{}
 	for rows.Next() {
-		var customerID string
-		if err := rows.Scan(&customerID); err != nil {
+		var externalCustomerID string
+		if err := rows.Scan(&externalCustomerID); err != nil {
 			SetSpanError(span, err)
 			return nil, ierr.WithError(err).
 				WithHint("Failed to scan usage activity row").
 				Mark(ierr.ErrDatabase)
 		}
-		if customerID == "" {
+		if externalCustomerID == "" {
 			activity.Unattributed = true
 			continue
 		}
-		activity.CustomerIDs = append(activity.CustomerIDs, customerID)
+		activity.ExternalCustomerIDs = append(activity.ExternalCustomerIDs, externalCustomerID)
 	}
 	if err := rows.Err(); err != nil {
 		SetSpanError(span, err)

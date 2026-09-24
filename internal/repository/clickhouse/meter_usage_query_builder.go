@@ -663,6 +663,35 @@ func (qb *MeterUsageQueryBuilder) BuildDetailedPointsQuery(
 	return query, args
 }
 
+// BuildUsageActivityQuery builds the distinct-customer probe the rollup scan
+// uses to find which customers received usage. It selects external_customer_id
+// because that is the column meter_usage has: there is no internal customer_id
+// on this table, and naming one compiles and fails only at runtime.
+//
+// It bounds `timestamp` as well as `ingested_at`: meter_usage is partitioned by
+// toYYYYMMDD(timestamp), so filtering on ingested_at alone reads every
+// partition the tenant has ever written.
+func (qb *MeterUsageQueryBuilder) BuildUsageActivityQuery(params *events.UsageActivityParams) (string, []interface{}) {
+	finalClause, finalSettings := qb.BuildFinalClause(params.UseFinal)
+	settings := "SETTINGS " + maxMemoryUsageSetting
+	if finalSettings != "" {
+		settings = finalSettings + ", " + maxMemoryUsageSetting
+	}
+
+	query := fmt.Sprintf(`
+		SELECT DISTINCT external_customer_id
+		FROM meter_usage %s
+		WHERE tenant_id = ? AND environment_id = ?
+			AND timestamp >= ?
+			AND ingested_at >= ?
+		%s
+	`, finalClause, settings)
+
+	return query, []interface{}{
+		params.TenantID, params.EnvironmentID, params.TimestampAfter, params.IngestedAfter,
+	}
+}
+
 // BuildDailyUsageQuery builds a per-day SUM(qty_total) query over
 // [StartTime, EndTime] for every meter in MeterIDs at once, tenant/env-scoped.
 // Reuses BuildDetailedWhereClause for RLS and BuildFinalClause for FINAL

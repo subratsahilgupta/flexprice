@@ -1,6 +1,10 @@
 package clickhouse
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -120,4 +124,60 @@ func TestBuildDailyUsageQuery_BatchesMeters(t *testing.T) {
 	for _, m := range []string{"m1", "m2", "m3"} {
 		assert.Contains(t, args, m, "every meter must reach the query")
 	}
+}
+
+// meterUsageColumns is the meter_usage column list, parsed from the migration
+// itself rather than transcribed — a transcribed list drifts silently.
+func meterUsageColumns(t *testing.T) map[string]bool {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join("..", "..", "..",
+		"migrations", "clickhouse", "000007_create_meter_usage.sql"))
+	require.NoError(t, err)
+
+	cols := map[string]bool{}
+	for _, line := range strings.Split(string(body), "\n") {
+		m := regexp.MustCompile(`^\s{4}([a-z_]+)\s+\S`).FindStringSubmatch(line)
+		if m != nil {
+			cols[m[1]] = true
+		}
+	}
+	require.NotEmpty(t, cols, "failed to parse columns from the migration")
+	return cols
+}
+
+// TestBuildUsageActivityQuery_SelectsRealColumns runs the actual generated SQL
+// against the migration's columns. MeterUsage embeds an Event struct carrying
+// fields with no column behind them — CustomerID among them — so a query naming
+// one compiles, passes against an in-memory store, and fails only in production
+// with "Unknown expression identifier". That is exactly what shipped once.
+func TestBuildUsageActivityQuery_SelectsRealColumns(t *testing.T) {
+	cols := meterUsageColumns(t)
+	require.False(t, cols["customer_id"],
+		"guard: meter_usage must not have an internal customer_id column")
+
+	qb := NewMeterUsageQueryBuilder()
+	q, args := qb.BuildUsageActivityQuery(&events.UsageActivityParams{
+		TenantID: "t1", EnvironmentID: "e1",
+		IngestedAfter:  day("2026-09-23"),
+		TimestampAfter: day("2026-06-25"),
+	})
+
+	// Every bare identifier the query names must be a real column.
+	for _, ident := range regexp.MustCompile(`\b[a-z_]{3,}\b`).FindAllString(q, -1) {
+		if cols[ident] {
+			continue
+		}
+		switch ident {
+		case "select", "distinct", "from", "where", "and", "settings",
+			"meter_usage", "final", "max_memory_usage":
+			continue
+		}
+		t.Fatalf("query names %q, which is not a meter_usage column", ident)
+	}
+
+	assert.Contains(t, q, "external_customer_id")
+	assert.NotContains(t, q, "DISTINCT customer_id")
+	// timestamp is bounded too, or the probe scans every partition ever written.
+	assert.Contains(t, q, "timestamp >= ?")
+	assert.Len(t, args, 4)
 }

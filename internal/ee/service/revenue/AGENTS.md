@@ -46,6 +46,14 @@ Design doc: [FLE-1257 analytics platform ERD](../../../../docs/design/2026-09-10
   nothing is metered. Those customers are rolled every pass
   (`customersWithAccruingCommitments`); every other trigger reads them as quiet,
   and their accrual would stop after the period's opening roll.
+- **A row must carry something.** A row with no money and no quantity behind it
+  records that a line item existed and delivered nothing, which no query asks
+  for — and at hundreds of line items per subscription it is the whole table
+  (measured on production: 13,464,148 of 13,465,791 rows). Such a row is
+  written only when one already exists for its grain, because the upsert never
+  deletes and that write is what stops a stale non-zero row standing as
+  revenue. Zero net with a consumed entitlement is NOT nothing: it is how free
+  usage stays visible.
 - **Reads are batched per subscription, writes are diffed.** `buildUsageCurve`
   must read from the pre-fetched `rollupInputs.usage(meterID)`; falling back to
   its own query is one round-trip per line item, which is what made a full pass
