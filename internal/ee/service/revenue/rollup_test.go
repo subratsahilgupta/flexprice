@@ -473,12 +473,18 @@ func (s *RevenueRollupSuite) TestRollupSubscription_OverageSplitsPerDay() {
 			}
 		}
 	}
-	s.Equal(30, usageDays, "one usage row per day")
-	s.Equal(30, overageDays, "one overage row per day")
+	// Rows exist for the days that carry something, not for every day of the
+	// period: a day whose half of the split is zero records nothing, and
+	// writing one per line item per day is what made the table 99.99% empty.
+	// The overage half therefore starts at the crossing rather than opening
+	// with a run of zero days.
+	s.Positive(usageDays, "the usage half must still split per day")
+	s.LessOrEqual(usageDays, 30)
+	s.Positive(overageDays, "the overage half must still split per day")
+	s.Less(overageDays, usageDays, "overage begins only once the commitment is crossed")
 	s.Equal("500", usageTotal.String(), "usage half must sum to the within-commitment amount")
 	s.Equal("320", overageTotal.String(), "overage half must sum to the engine's overage line")
-	s.Greater(billedOverageDays, 0, "overage accrues only after the commitment is crossed")
-	s.Less(billedOverageDays, 30, "days before the crossing carry no overage")
+	s.Equal(overageDays, billedOverageDays, "every overage row written must carry overage")
 
 	invReq, err := service.NewBillingService(s.serviceParams()).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   s.sub,
