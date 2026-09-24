@@ -228,7 +228,23 @@ func sameValues(a, b *revenuefact.RevenueFact) bool {
 		a.Currency == b.Currency &&
 		a.IsRevert == b.IsRevert &&
 		lo.FromPtr(a.InvoiceID) == lo.FromPtr(b.InvoiceID) &&
-		lo.FromPtr(a.InvoiceLineItemID) == lo.FromPtr(b.InvoiceLineItemID)
+		lo.FromPtr(a.InvoiceLineItemID) == lo.FromPtr(b.InvoiceLineItemID) &&
+		// The remaining mutable columns. They are unwritten today, but the
+		// upsert updates them on conflict, so leaving them out of the
+		// comparison would strand stale metadata the moment anything sets them.
+		lo.FromPtr(a.AggregationType) == lo.FromPtr(b.AggregationType) &&
+		lo.FromPtr(a.RecognitionMethod) == lo.FromPtr(b.RecognitionMethod) &&
+		sameTime(a.ServiceStart, b.ServiceStart) &&
+		sameTime(a.ServiceEnd, b.ServiceEnd) &&
+		sameTime(a.LockAdjustedDay, b.LockAdjustedDay)
+}
+
+// sameTime compares two nullable instants.
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
 }
 
 // changedRows keeps only the rows that would actually change something. Most of

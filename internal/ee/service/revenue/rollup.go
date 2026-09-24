@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -667,8 +668,29 @@ func (s *revenueService) RollupDirty(ctx context.Context, req types.RollupDirtyR
 	var result types.RollupDirtyResult
 
 	// Environments are walked in a stable order, so a cursor naming one of them
-	// means "this one, partially, then the rest".
-	resuming := req.Cursor != nil
+	// means "this one, partially, then the rest". A cursor whose environment is
+	// gone -- disabled, deleted, or its setting removed -- is ignored rather
+	// than obeyed: skipping until a match that never comes would walk the whole
+	// list, roll nothing, and report success.
+	resuming := req.Cursor != nil && s.environmentIsOptedIn(ctx, req.Cursor.EnvironmentID)
+	if req.Cursor != nil && !resuming {
+		s.Logger.Info(ctx, "revenue rollup ignoring a stale cursor",
+			"environment_id", req.Cursor.EnvironmentID)
+	}
+
+	// Once an environment fails, the cursor stops advancing. Letting a later
+	// environment record its progress would make the retry skip the failed one.
+	cursorFrozen := false
+	setCursor := func(c types.RollupCursor) {
+		if cursorFrozen {
+			return
+		}
+		result.Cursor = &c
+		if req.OnProgress != nil {
+			req.OnProgress(c)
+		}
+	}
+
 	err := s.forEachOptedInEnvironment(ctx, "revenue rollup dirty scan", func(envCtx context.Context) error {
 		envID := types.GetEnvironmentID(envCtx)
 		var after string
@@ -681,12 +703,38 @@ func (s *revenueService) RollupDirty(ctx context.Context, req types.RollupDirtyR
 			resuming = false
 		}
 
-		envRolled, envSkipped, envErr := s.rollupDirtyForEnvironment(envCtx, req, after, &result)
+		envRolled, envSkipped, envErr := s.rollupDirtyForEnvironment(envCtx, req, after, setCursor)
 		result.Rolled += envRolled
 		result.Skipped += envSkipped
+		if envErr != nil {
+			cursorFrozen = true
+		}
 		return envErr
 	})
 	return result, err
+}
+
+// environmentIsOptedIn reports whether a cursor's environment is still one the
+// rollup walks. Anything it cannot confirm is treated as gone, so the scan
+// restarts from the top rather than skipping every environment.
+func (s *revenueService) environmentIsOptedIn(ctx context.Context, environmentID string) bool {
+	if environmentID == "" {
+		return false
+	}
+	configs, err := s.SettingsRepo.ListAllTenantEnvSettingsByKey(ctx, types.SettingKeyRevenueAnalyticsConfig)
+	if err != nil {
+		return false
+	}
+	for _, tec := range configs {
+		if tec.EnvironmentID != environmentID {
+			continue
+		}
+		cfg, cfgErr := utils.ToStruct[types.RevenueAnalyticsConfig](tec.Config)
+		if cfgErr == nil && cfg.Enabled {
+			return true
+		}
+	}
+	return false
 }
 
 // forEachOptedInEnvironment runs fn once per (tenant, environment) that opted
@@ -699,6 +747,14 @@ func (s *revenueService) forEachOptedInEnvironment(ctx context.Context, op strin
 	if err != nil {
 		return err
 	}
+
+	// Stable order, so an environment cursor means the same thing on a retry.
+	sort.Slice(tenantEnvConfigs, func(i, j int) bool {
+		if tenantEnvConfigs[i].TenantID != tenantEnvConfigs[j].TenantID {
+			return tenantEnvConfigs[i].TenantID < tenantEnvConfigs[j].TenantID
+		}
+		return tenantEnvConfigs[i].EnvironmentID < tenantEnvConfigs[j].EnvironmentID
+	})
 
 	var envErrs []error
 	for _, tec := range tenantEnvConfigs {
@@ -741,8 +797,10 @@ type scanScope struct {
 	full bool
 	// customers with usage ingested since the window opened
 	customers map[string]struct{}
-	// subscriptions that already hold provisional facts for a current period
-	alreadyRolled map[string]struct{}
+	// parent subscriptions whose inherited children saw usage
+	activeParents map[string]struct{}
+	// latest provisional period_end already written per subscription
+	rolledThrough map[string]time.Time
 	since         time.Time
 }
 
@@ -757,6 +815,11 @@ func (sc scanScope) includes(sub *subscription.Subscription) bool {
 	if _, ok := sc.customers[sub.CustomerID]; ok {
 		return true
 	}
+	// Usage on an inherited child bills the parent, and the child's usage rows
+	// carry the child's customer id — the parent would otherwise look quiet.
+	if _, ok := sc.activeParents[sub.ID]; ok {
+		return true
+	}
 	if !sub.UpdatedAt.Before(sc.since) {
 		return true
 	}
@@ -765,9 +828,15 @@ func (sc scanScope) includes(sub *subscription.Subscription) bool {
 	if !sub.CurrentPeriodStart.Before(sc.since) {
 		return true
 	}
-	// Never rolled: indistinguishable from up-to-date on every other signal.
-	_, rolled := sc.alreadyRolled[sub.ID]
-	return !rolled
+	// Never rolled, or rolled only for a period that has since closed: both are
+	// indistinguishable from up-to-date on every other signal. The second
+	// happens when a period opens and its first rollup never lands — the next
+	// run's window starts after the period did, so no other trigger fires.
+	covered, rolled := sc.rolledThrough[sub.ID]
+	if !rolled {
+		return true
+	}
+	return covered.Before(dayOf(sub.CurrentPeriodStart, time.UTC))
 }
 
 // catalogChangedSince reports whether any price in this environment was edited
@@ -836,23 +905,61 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 	// A subscription that has never been rolled looks exactly like a quiet one:
 	// no usage, no edits, a period that opened before the window. Without this
 	// it would be skipped forever and only the weekly rebuild would notice.
-	rolled, err := s.RevenueFactRepo.SubscriptionsWithProvisionalFacts(ctx)
+	rolledThrough, err := s.RevenueFactRepo.ProvisionalCoverage(ctx)
 	if err != nil {
 		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
-			"error", err.Error(), "reason", "rolled-subscription probe failed")
+			"error", err.Error(), "reason", "provisional coverage probe failed")
 		return full
 	}
-	alreadyRolled := make(map[string]struct{}, len(rolled))
-	for _, id := range rolled {
-		alreadyRolled[id] = struct{}{}
+
+	activeParents, err := s.parentsOfActiveChildren(ctx, customers)
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"error", err.Error(), "reason", "inherited-child lookup failed")
+		return full
 	}
 
-	return scanScope{customers: customers, alreadyRolled: alreadyRolled, since: req.Since}
+	return scanScope{
+		customers:     customers,
+		activeParents: activeParents,
+		rolledThrough: rolledThrough,
+		since:         req.Since,
+	}
+}
+
+// parentsOfActiveChildren maps the parent subscriptions of inherited children
+// whose customers saw usage. A parent subscription bills its children's usage,
+// but those usage rows carry the child's customer id, so matching on the
+// parent's own customer alone would leave it looking quiet.
+func (s *revenueService) parentsOfActiveChildren(ctx context.Context, customers map[string]struct{}) (map[string]struct{}, error) {
+	if len(customers) == 0 {
+		return nil, nil
+	}
+
+	filter := types.NewNoLimitSubscriptionFilter()
+	filter.SubscriptionTypes = []types.SubscriptionType{types.SubscriptionTypeInherited}
+	filter.SubscriptionStatus = []types.SubscriptionStatus{types.SubscriptionStatusActive}
+	children, err := s.SubRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	parents := map[string]struct{}{}
+	for _, child := range children {
+		parentID := lo.FromPtr(child.ParentSubscriptionID)
+		if parentID == "" {
+			continue
+		}
+		if _, ok := customers[child.CustomerID]; ok {
+			parents[parentID] = struct{}{}
+		}
+	}
+	return parents, nil
 }
 
 // rollupDirtyForEnvironment scans one (tenant, environment)'s active
 // subscriptions in pages and rolls every one with activity since `since`.
-func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req types.RollupDirtyRequest, after string, result *types.RollupDirtyResult) (rolled, skipped int, err error) {
+func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req types.RollupDirtyRequest, after string, setCursor func(types.RollupCursor)) (rolled, skipped int, err error) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 	if tenantID == "" || environmentID == "" {
@@ -898,6 +1005,18 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req type
 				continue
 			}
 
+			// Checkpoint per subscription, not per page. A page is 1000
+			// subscriptions; at a few hundred milliseconds each that outruns the
+			// activity's heartbeat timeout, and the attempt would be killed
+			// before it ever reported progress -- the exact failure the cursor
+			// exists to prevent.
+			if sub.ID > maxSeen {
+				maxSeen = sub.ID
+			}
+			checkpoint := func() {
+				setCursor(types.RollupCursor{EnvironmentID: environmentID, LastSubscriptionID: maxSeen})
+			}
+
 			wasSkipped, rollErr := s.rollupSubscription(ctx, sub)
 			if rollErr != nil {
 				// Shadow write-path: one subscription's failure must never abort the
@@ -906,30 +1025,16 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req type
 				s.Logger.Error(ctx, "revenue rollup failed for subscription",
 					"error", rollErr, "subscription_id", sub.ID)
 				skipped++
+				checkpoint()
 				continue
 			}
 			if wasSkipped {
 				skipped++
+				checkpoint()
 				continue
 			}
 			rolled++
-		}
-
-		// Checkpoint on the highest id completed so far: a retry resumes after
-		// it instead of starting over.
-		for _, sub := range subs {
-			if sub.ID > maxSeen {
-				maxSeen = sub.ID
-			}
-		}
-		if maxSeen != "" {
-			cursor := types.RollupCursor{EnvironmentID: environmentID, LastSubscriptionID: maxSeen}
-			if result != nil {
-				result.Cursor = &cursor
-			}
-			if req.OnProgress != nil {
-				req.OnProgress(cursor)
-			}
+			checkpoint()
 		}
 
 		if pageSize < batchSize {

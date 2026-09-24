@@ -499,11 +499,11 @@ func (r *revenueFactRepository) ListForExport(ctx context.Context, computedAfter
 
 // ListFacts pages facts matching the filter, ordered by (day, id) — the
 // analytics read path.
-// SubscriptionsWithProvisionalFacts returns the subscriptions holding any
-// provisional facts. One query answers "which subscriptions have ever been
-// rolled" for a whole environment; asking per subscription would undo the point
-// of skipping quiet ones.
-func (r *revenueFactRepository) SubscriptionsWithProvisionalFacts(ctx context.Context) ([]string, error) {
+// ProvisionalCoverage returns the latest provisional period_end per
+// subscription. One query answers "how far is each subscription rolled" for a
+// whole environment; asking per subscription would undo the point of skipping
+// quiet ones.
+func (r *revenueFactRepository) ProvisionalCoverage(ctx context.Context) (map[string]time.Time, error) {
 	tenantID := types.GetTenantID(ctx)
 	environmentID := types.GetEnvironmentID(ctx)
 
@@ -513,23 +513,33 @@ func (r *revenueFactRepository) SubscriptionsWithProvisionalFacts(ctx context.Co
 	})
 	defer FinishSpan(span)
 
-	ids, err := r.client.Reader(ctx).RevenueFact.Query().
+	var rows []struct {
+		SubscriptionID string    `json:"subscription_id"`
+		Max            time.Time `json:"max"`
+	}
+	err := r.client.Reader(ctx).RevenueFact.Query().
 		Where(
 			entrevenuefact.TenantID(tenantID),
 			entrevenuefact.EnvironmentID(environmentID),
 			entrevenuefact.StatusEQ(types.FactProvisional),
 		).
 		GroupBy(entrevenuefact.FieldSubscriptionID).
-		Strings(ctx)
+		Aggregate(ent.Max(entrevenuefact.FieldPeriodEnd)).
+		Scan(ctx, &rows)
 	if err != nil {
 		SetSpanError(span, err)
 		return nil, ierr.WithError(err).
-			WithHint("Failed to list subscriptions with provisional revenue facts").
+			WithHint("Failed to summarise provisional revenue facts").
 			Mark(ierr.ErrDatabase)
 	}
 
+	coverage := make(map[string]time.Time, len(rows))
+	for _, row := range rows {
+		coverage[row.SubscriptionID] = row.Max
+	}
+
 	SetSpanSuccess(span)
-	return ids, nil
+	return coverage, nil
 }
 
 func (r *revenueFactRepository) ListFacts(ctx context.Context, filter revenuefact.FactsFilter) ([]*revenuefact.RevenueFact, error) {

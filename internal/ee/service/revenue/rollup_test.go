@@ -1909,7 +1909,7 @@ func TestScanScope_Triggers(t *testing.T) {
 	scope := scanScope{
 		since:         since,
 		customers:     map[string]struct{}{"cust_busy": {}},
-		alreadyRolled: map[string]struct{}{"sub_quiet": {}},
+		rolledThrough: map[string]time.Time{"sub_quiet": before.AddDate(0, 1, 0)},
 	}
 
 	assert.False(t, scope.includes(quiet()), "a subscription with nothing to recompute is skipped")
@@ -2075,4 +2075,73 @@ func (s *RevenueRollupSuite) TestIncrementalMatchesFullRebuild() {
 
 	s.Equal(fullState, incrementalState,
 		"an incremental pass must leave exactly what a full rebuild would")
+}
+
+// TestScanScope_ChildUsageRollsTheParent: a parent subscription bills its
+// inherited children's usage, but the usage rows carry the CHILD's customer id.
+// Matching only the parent's own customer leaves it looking quiet while its
+// facts go stale — the under-scope case the package invariant forbids.
+func TestScanScope_ChildUsageRollsTheParent(t *testing.T) {
+	since := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	parent := &subscription.Subscription{
+		ID: "sub_parent", CustomerID: "cust_parent",
+		CurrentPeriodStart: since.Add(-48 * time.Hour), CurrentPeriodEnd: since.AddDate(0, 1, 0),
+		BaseModel: types.BaseModel{UpdatedAt: since.Add(-48 * time.Hour)},
+	}
+
+	// Only the child's customer shows activity.
+	quiet := scanScope{
+		since:         since,
+		customers:     map[string]struct{}{"cust_child": {}},
+		rolledThrough: map[string]time.Time{"sub_parent": since.AddDate(0, 1, 0)},
+	}
+	assert.False(t, quiet.includes(parent), "sanity: the parent's own customer is not active")
+
+	withParents := quiet
+	withParents.activeParents = map[string]struct{}{"sub_parent": {}}
+	assert.True(t, withParents.includes(parent), "child usage must roll the parent")
+}
+
+// TestScanScope_StaleCoverageRollsTheSubscription: facts that only reach a
+// closed period are as good as none. This happens when a period opens and its
+// first rollup never lands — the next run's window starts after the period did,
+// so no usage, edit or period-start trigger fires.
+func TestScanScope_StaleCoverageRollsTheSubscription(t *testing.T) {
+	since := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	sub := &subscription.Subscription{
+		ID: "sub_rolled_over", CustomerID: "cust_quiet",
+		// The period opened before the window, so period-start does not trigger.
+		CurrentPeriodStart: since.Add(-72 * time.Hour),
+		CurrentPeriodEnd:   since.AddDate(0, 1, 0),
+		BaseModel:          types.BaseModel{UpdatedAt: since.Add(-72 * time.Hour)},
+	}
+
+	stale := scanScope{
+		since: since,
+		// Facts only reach the previous period.
+		rolledThrough: map[string]time.Time{"sub_rolled_over": since.Add(-96 * time.Hour)},
+	}
+	assert.True(t, stale.includes(sub), "facts predating the current period must not count as rolled")
+
+	current := scanScope{
+		since:         since,
+		rolledThrough: map[string]time.Time{"sub_rolled_over": since.AddDate(0, 1, 0)},
+	}
+	assert.False(t, current.includes(sub), "facts covering the current period mean there is nothing to do")
+}
+
+// TestRollupDirty_StaleCursorDoesNotSkipEverything: a cursor naming an
+// environment that is gone must be ignored, not obeyed. Skipping until a match
+// that never arrives walks the whole list, rolls nothing, and reports success.
+func (s *RevenueRollupSuite) TestRollupDirty_StaleCursorDoesNotSkipEverything() {
+	ctx := s.ctx
+	s.enableRevenueAnalytics(ctx)
+	s.seedFixedOnlySubscription(ctx, "stalecursor", nil, "price_stalecursor", true)
+
+	res, err := s.svc.RollupDirty(ctx, types.RollupDirtyRequest{
+		Since:  time.Now().UTC().Add(-time.Hour),
+		Cursor: &types.RollupCursor{EnvironmentID: "env_that_no_longer_exists", LastSubscriptionID: "sub_zzz"},
+	})
+	s.NoError(err)
+	s.NotZero(res.Rolled, "a cursor for a vanished environment must not silence the whole run")
 }

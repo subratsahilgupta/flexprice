@@ -111,14 +111,32 @@ func (s *revenueService) buildUsageCurve(ctx context.Context, in usageCurveInput
 	// Accumulate here rather than in the repository: the read is shared across
 	// every line item of the subscription, and each one runs its total from its
 	// own period start.
+	// Bound by local calendar date, not by instant. A point's Day is the local
+	// midnight its usage was bucketed into, so comparing it against an exact
+	// PeriodStart (09:37, say) would drop the period's own first day.
+	//
+	// The end day is kept only when the period ends part-way through it: that
+	// day's usage up to the end instant belongs here, and the walk below folds
+	// it back into the last emitted day. A midnight end owns none of its day —
+	// that day opens the next period, and folding it in would charge one line
+	// item for the next one's usage.
+	startKey := in.PeriodStart.In(loc).Format(dayKeyLayout)
+	endLocal := in.PeriodEnd.In(loc)
+	endKey := endLocal.Format(dayKeyLayout)
+	endOwnsItsDay := !endLocal.Equal(time.Date(endLocal.Year(), endLocal.Month(), endLocal.Day(), 0, 0, 0, 0, loc))
+
 	cumByDay := make(map[string]decimal.Decimal, len(points))
 	running := decimal.Zero
 	for _, p := range points {
-		if p.Day.Before(in.PeriodStart) || !p.Day.Before(in.PeriodEnd) {
+		key := p.Day.Format(dayKeyLayout)
+		if key < startKey {
+			continue
+		}
+		if key > endKey || (key == endKey && !endOwnsItsDay) {
 			continue
 		}
 		running = running.Add(p.Qty)
-		cumByDay[p.Day.Format(dayKeyLayout)] = running
+		cumByDay[key] = running
 	}
 
 	limit := in.EntitlementLimit
@@ -136,7 +154,6 @@ func (s *revenueService) buildUsageCurve(ctx context.Context, in usageCurveInput
 	// even when period bounds are not local midnights. Usage the store
 	// grouped onto that excluded date (a period ending mid-day) is folded
 	// into the last emitted day below, keeping totals intact.
-	endLocal := in.PeriodEnd.In(loc)
 	endDay := time.Date(endLocal.Year(), endLocal.Month(), endLocal.Day(), 0, 0, 0, 0, loc)
 	if !cur.Before(endDay) {
 		// The whole period sits inside one local day — emit that one day.

@@ -607,3 +607,56 @@ func TestBuildUsageCurve_ClampsToToday(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, short, 1, "a sub-day period still books its single day")
 }
+
+// TestBuildUsageCurve_BoundsByLocalDate: usage is bucketed to local midnight,
+// so bounding the shared read by exact instants drops the period's own first
+// day — a period starting 09:37 would discard everything metered before 09:37
+// that day. The end day is the mirror case: it belongs to this period only when
+// the period ends part-way through it.
+func TestBuildUsageCurve_BoundsByLocalDate(t *testing.T) {
+	ctx := context.Background()
+	svc := &revenueService{ServiceParams: service.ServiceParams{
+		Logger:         logger.NewNoopLogger(),
+		MeterUsageRepo: testutil.NewInMemoryMeterUsageStore(),
+		PriceRepo:      testutil.NewInMemoryPriceStore(),
+		MeterRepo:      testutil.NewInMemoryMeterStore(),
+		PlanRepo:       testutil.NewInMemoryPlanStore(),
+		PriceUnitRepo:  testutil.NewInMemoryPriceUnitStore(),
+		AddonRepo:      testutil.NewInMemoryAddonStore(),
+		SubRepo:        testutil.NewInMemorySubscriptionStore(),
+	}}
+
+	day1 := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	usage := []events.DailyUsagePoint{
+		{Day: day1, Qty: decimal.NewFromInt(100)},
+		{Day: day1.AddDate(0, 0, 1), Qty: decimal.NewFromInt(200)},
+		{Day: day1.AddDate(0, 0, 2), Qty: decimal.NewFromInt(400)},
+	}
+	build := func(start, end time.Time) []dayCharge {
+		got, err := svc.buildUsageCurve(ctx, usageCurveInput{
+			Price: flatSum(t), MeterID: "meter_bounds",
+			PeriodStart: start, PeriodEnd: end, Usage: usage,
+			AsOf: day1.AddDate(0, 0, 3),
+		})
+		require.NoError(t, err)
+		return got
+	}
+
+	// Starts mid-day 1: that whole day's usage still belongs to this period.
+	mid := build(day1.Add(9*time.Hour+37*time.Minute), day1.AddDate(0, 0, 2))
+	require.NotEmpty(t, mid)
+	assert.True(t, mid[len(mid)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(300)),
+		"day 1's usage must not be dropped by a mid-day start, got %s", mid[len(mid)-1].CumulativeGrossQty)
+
+	// Ends at midnight on day 3: day 3 opens the next period and must not fold
+	// in, or one line item is charged for the next one's usage.
+	midnight := build(day1, day1.AddDate(0, 0, 2))
+	assert.True(t, midnight[len(midnight)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(300)),
+		"a midnight end must not absorb its own day, got %s", midnight[len(midnight)-1].CumulativeGrossQty)
+
+	// Ends mid-day 3: that day's usage up to the end instant does belong here,
+	// and the walk folds it into the last emitted day.
+	partial := build(day1, day1.AddDate(0, 0, 2).Add(13*time.Hour))
+	assert.True(t, partial[len(partial)-1].CumulativeGrossQty.Equal(decimal.NewFromInt(700)),
+		"a mid-day end must fold its own day back in, got %s", partial[len(partial)-1].CumulativeGrossQty)
+}
