@@ -1082,6 +1082,111 @@ func (r *MeterUsageRepository) GetMeterUsageForExport(ctx context.Context, start
 	return results, nil
 }
 
+// GetDailyUsageByMeter returns per-day SUM(qty_total) over
+// [StartTime, EndTime) for every meter in MeterIDs, keyed by meter id. The
+// running total is deliberately left to the caller: accumulating here would
+// pin the result to one window start, which is what forced a query per line
+// item.
+func (r *MeterUsageRepository) GetDailyUsageByMeter(ctx context.Context, params *events.DailyUsageParams) (map[string][]events.DailyUsagePoint, error) {
+	if params == nil {
+		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+	if len(params.MeterIDs) == 0 {
+		return map[string][]events.DailyUsagePoint{}, nil
+	}
+
+	span := StartRepositorySpan(ctx, "meter_usage", "get_daily_usage_by_meter", map[string]interface{}{
+		"meter_count": len(params.MeterIDs),
+	})
+	defer FinishSpan(span)
+
+	query, args := r.qb.BuildDailyUsageQuery(params)
+
+	rows, err := r.store.GetConn().Query(ctx, query, args...)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to query daily usage").
+			WithReportableDetails(map[string]interface{}{"meter_count": len(params.MeterIDs)}).
+			Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	byMeter := make(map[string][]events.DailyUsagePoint, len(params.MeterIDs))
+	for rows.Next() {
+		var meterID string
+		var d time.Time
+		var dayQty decimal.Decimal
+		if err := rows.Scan(&meterID, &d, &dayQty); err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Failed to scan daily usage row").
+				Mark(ierr.ErrDatabase)
+		}
+		byMeter[meterID] = append(byMeter[meterID], events.DailyUsagePoint{Day: d, Qty: dayQty})
+	}
+	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Error iterating daily usage rows").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return byMeter, nil
+}
+
+// GetUsageActivitySince returns the distinct customers with usage ingested
+// after params.IngestedAfter. Filtering on ingested_at rather than timestamp is
+// what makes backdated events count as activity for the run that receives them.
+func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params *events.UsageActivityParams) (*events.UsageActivity, error) {
+	if params == nil {
+		return nil, ierr.NewError("params are required").Mark(ierr.ErrValidation)
+	}
+
+	span := StartRepositorySpan(ctx, "meter_usage", "get_usage_activity_since", map[string]interface{}{
+		"tenant_id":      params.TenantID,
+		"environment_id": params.EnvironmentID,
+	})
+	defer FinishSpan(span)
+
+	query, args := r.qb.BuildUsageActivityQuery(params)
+
+	rows, err := r.store.GetConn().Query(ctx, query, args...)
+	if err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Failed to query usage activity").
+			Mark(ierr.ErrDatabase)
+	}
+	defer rows.Close()
+
+	activity := &events.UsageActivity{}
+	for rows.Next() {
+		var externalCustomerID string
+		if err := rows.Scan(&externalCustomerID); err != nil {
+			SetSpanError(span, err)
+			return nil, ierr.WithError(err).
+				WithHint("Failed to scan usage activity row").
+				Mark(ierr.ErrDatabase)
+		}
+		if externalCustomerID == "" {
+			activity.Unattributed = true
+			continue
+		}
+		activity.ExternalCustomerIDs = append(activity.ExternalCustomerIDs, externalCustomerID)
+	}
+	if err := rows.Err(); err != nil {
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).
+			WithHint("Error iterating usage activity rows").
+			Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return activity, nil
+}
+
 // GetByEventID returns the meter_usage record for a single event, or nil if not yet processed.
 func (r *MeterUsageRepository) GetByEventID(ctx context.Context, tenantID, environmentID, eventID string) (*events.MeterUsage, error) {
 	span := StartRepositorySpan(ctx, "meter_usage", "get_by_event_id", map[string]interface{}{

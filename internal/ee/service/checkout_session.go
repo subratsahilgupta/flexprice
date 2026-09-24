@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"github.com/flexprice/flexprice/internal/domain/addonassociation"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
@@ -23,6 +24,63 @@ type checkoutSessionService struct {
 
 func NewCheckoutSessionService(params ServiceParams) interfaces.CheckoutSessionService {
 	return &checkoutSessionService{ServiceParams: params}
+}
+
+// anyPendingCheckoutSession returns the outstanding payment-gated change on a subscription, if
+// any. At most one can exist: starting a second is rejected against this very lookup.
+func anyPendingCheckoutSession(
+	ctx context.Context,
+	sp ServiceParams,
+	customerID string,
+	subscriptionID string,
+) ([]*domainCheckout.CheckoutSession, error) {
+	filter := pendingCheckoutSessionFilter(customerID, subscriptionID,
+		types.CheckoutActionModifySubscription, types.CheckoutActionAddAddon)
+	filter.Limit = lo.ToPtr(1)
+
+	return sp.CheckoutSessionRepo.List(ctx, filter)
+}
+
+// ensureNoPendingCheckoutSession rejects a second payment-gated change while one is still open.
+func ensureNoPendingCheckoutSession(
+	ctx context.Context,
+	sp ServiceParams,
+	customerID string,
+	subscriptionID string,
+) error {
+	existing, err := anyPendingCheckoutSession(ctx, sp, customerID, subscriptionID)
+	if err != nil {
+		return err
+	}
+	if len(existing) == 0 {
+		return nil
+	}
+
+	return ierr.NewError("a pending checkout session already exists for this subscription").
+		WithHint("Complete or cancel the existing checkout before starting another payment-gated change").
+		WithReportableDetails(map[string]any{
+			"subscription_id":     subscriptionID,
+			"checkout_session_id": existing[0].ID,
+		}).
+		Mark(ierr.ErrAlreadyExists)
+}
+
+// pendingCheckoutSessionFilter matches the subscription's checkouts that are still open.
+func pendingCheckoutSessionFilter(
+	customerID string,
+	subscriptionID string,
+	actions ...types.CheckoutAction,
+) *types.CheckoutSessionFilter {
+	return &types.CheckoutSessionFilter{
+		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
+		CustomerIDs: []string{customerID},
+		Actions:     actions,
+		CheckoutStatuses: []types.CheckoutStatus{
+			types.CheckoutStatusInitiated,
+			types.CheckoutStatusPending,
+		},
+		Configuration: &types.CheckoutConfigurationFilter{SubscriptionID: subscriptionID},
+	}
 }
 
 func (s *checkoutSessionService) Create(ctx context.Context, req dto.CreateCheckoutSessionRequest) (*dto.CheckoutSessionResponse, error) {
@@ -391,18 +449,27 @@ func (s *checkoutSessionService) cleanupCheckoutResources(ctx context.Context, s
 		}
 	}
 
-	if cfg.AddAddonParams != nil {
-		for _, ref := range cfg.AddAddonParams.Addons {
-			association, err := s.AddonAssociationRepo.GetByID(ctx, ref.AssociationID)
-			if err != nil {
-				return err
-			}
-			if association.AddonStatus != types.AddonStatusPending {
-				return ierr.NewError("checkout session already in terminal state").
-					WithHintf("session %s was claimed by another process", session.ID).
-					Mark(ierr.ErrAlreadyExists)
-			}
-			if err := s.AddonAssociationRepo.Delete(ctx, ref.AssociationID); err != nil {
+	// Only the attaches wrote anything: a gated removal leaves its association active and
+	// billable until payment lands, so an abandoned checkout has nothing to undo for it.
+	if cfg.AddAddonParams != nil && len(cfg.AddAddonParams.Addons) > 0 {
+		ids := lo.Map(cfg.AddAddonParams.Addons, func(ref types.AddAddonRef, _ int) string {
+			return ref.AssociationID
+		})
+
+		associations, err := s.AddonAssociationRepo.GetByIDs(ctx, ids)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to load pending addon associations for checkout cleanup",
+				"association_ids", ids, "error", err)
+			return err
+		}
+
+		pending := lo.FilterMap(associations, func(a *addonassociation.AddonAssociation, _ int) (string, bool) {
+			return a.ID, a.AddonStatus == types.AddonStatusPending
+		})
+		if len(pending) > 0 {
+			if err := s.AddonAssociationRepo.DeleteBulk(ctx, pending); err != nil {
+				s.Logger.Error(ctx, "failed to archive pending addon associations",
+					"association_ids", pending, "error", err)
 				return err
 			}
 		}

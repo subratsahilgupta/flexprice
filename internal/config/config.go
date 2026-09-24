@@ -82,8 +82,21 @@ type Configuration struct {
 
 // AnalyticsConfig gates the fire-and-forget analytics meter_usage feed.
 type AnalyticsConfig struct {
-	Enabled             bool   `mapstructure:"enabled" default:"false"`
-	MeterUsageSinkTopic string `mapstructure:"meter_usage_sink_topic"`
+	Enabled             bool                `mapstructure:"enabled" default:"false"`
+	MeterUsageSinkTopic string              `mapstructure:"meter_usage_sink_topic"`
+	RevenueRollup       RevenueRollupConfig `mapstructure:"revenue_rollup" validate:"omitempty"`
+}
+
+// RevenueRollupConfig gates the daily Temporal revenue_facts rollup + drift
+// sweep (RevenueRollupWorkflow). Off by default; AutoCorrect keeps the sweeper
+// flag-only (detect, never repair) unless explicitly enabled.
+type RevenueRollupConfig struct {
+	Enabled     bool `mapstructure:"enabled" default:"false"`
+	AutoCorrect bool `mapstructure:"auto_correct" default:"false"`
+	// FullRebuildWeekday forces a full pass on that weekday (0=Sunday), so
+	// anything the scan's triggers miss is repaired within a week rather than
+	// persisting. This is the net under the scan, not a switch for it.
+	FullRebuildWeekday int `mapstructure:"full_rebuild_weekday" default:"0"`
 }
 
 type ChatSupportConfig struct {

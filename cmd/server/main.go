@@ -14,6 +14,7 @@ import (
 	"github.com/flexprice/flexprice/internal/ee/analytics"
 	"github.com/flexprice/flexprice/internal/ee/auth/saml"
 	"github.com/flexprice/flexprice/internal/ee/service"
+	"github.com/flexprice/flexprice/internal/ee/service/revenue"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	integrationevents "github.com/flexprice/flexprice/internal/integration/events"
 	"github.com/flexprice/flexprice/internal/kafka"
@@ -192,6 +193,7 @@ func main() {
 			repository.NewCheckoutSessionRepository,
 			repository.NewRawEventRepository,
 			repository.NewAnalyticsViewRepository,
+			repository.NewRevenueFactRepository,
 
 			// PubSub
 			pubsubRouter.NewRouter,
@@ -225,7 +227,13 @@ func main() {
 			// service can reach it via ServiceParams.StorageResolver.
 			provideStorageResolver,
 			syncExport.NewExportService,
-			service.NewServiceParams,
+			fx.Annotate(service.NewServiceParams, fx.ResultTags(`name:"base"`)),
+			// revenue.New builds from the BASE params (it never calls the
+			// invoice hooks itself); enrichServiceParams then hands every
+			// other service a copy carrying it, closing the hook loop
+			// without importing the revenue package from the service layer.
+			fx.Annotate(revenue.New, fx.ParamTags(`name:"base"`)),
+			fx.Annotate(enrichServiceParams, fx.ParamTags(`name:"base"`, ``)),
 			service.NewOAuthService,
 			service.NewTenantService,
 			service.NewAuthService,
@@ -385,6 +393,7 @@ func provideHandlers(
 	geminiPricingService service.GeminiPricingService,
 	webhookService *webhook.WebhookService,
 	analyticsService service.AnalyticsService,
+	revenueService interfaces.RevenueService,
 ) api.Handlers {
 	return api.Handlers{
 		Events:                   v1.NewEventsHandler(eventService, rawEventsReprocessingService, rawEventConsumptionService, meterUsageService, cfg, logger),
@@ -440,7 +449,7 @@ func provideHandlers(
 		MeterUsage:               v1.NewMeterUsageHandler(meterUsageService, logger),
 		SAML:                     saml.NewHandler(cfg, serviceParams, logger),
 		CheckoutSession:          v1.NewCheckoutSessionHandler(checkoutSessionService, logger),
-		Analytics:                v1.NewAnalyticsHandler(analyticsService, logger),
+		Analytics:                v1.NewAnalyticsHandler(analyticsService, revenueService, logger),
 	}
 }
 
@@ -733,4 +742,11 @@ func provideWalletBalanceAlertPubSub(
 		return types.WalletBalanceAlertPubSub{}
 	}
 	return types.WalletBalanceAlertPubSub{PubSub: pubSub}
+}
+
+// enrichServiceParams returns the ServiceParams the rest of the app consumes:
+// the base params plus the revenue-facts service the invoice hooks call.
+func enrichServiceParams(base service.ServiceParams, revenueFacts interfaces.RevenueService) service.ServiceParams {
+	base.RevenueFacts = revenueFacts
+	return base
 }

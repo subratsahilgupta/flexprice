@@ -83,6 +83,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		}
 		req.CollectionMethod = lo.ToPtr(method)
 	}
+	req.ApplyDefaults()
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -372,11 +373,11 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	}
 
 	// Prepare credit grants
+	creditGrantService := NewCreditGrantService(s.ServiceParams)
 	var creditGrantRequests []dto.CreateCreditGrantRequest
 	if req.CreditGrants != nil {
 		creditGrantRequests = req.CreditGrants
 	} else {
-		creditGrantService := NewCreditGrantService(s.ServiceParams)
 		planCreditGrants, err := creditGrantService.GetCreditGrantsByPlan(ctx, plan.ID)
 		if err != nil {
 			return nil, err
@@ -389,7 +390,16 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 			}
 		}
 	}
-	if err = s.handleCreditGrants(ctx, sub, creditGrantRequests); err != nil {
+	// Plan/subscription grants anchor at the subscription start (or trial end).
+	creditGrantStart := sub.StartDate
+	if sub.TrialEnd != nil {
+		creditGrantStart = lo.FromPtr(sub.TrialEnd)
+	}
+	if err = creditGrantService.CreateSubscriptionCreditGrants(ctx, dto.CreateSubscriptionCreditGrantsRequest{
+		Subscription: sub,
+		Grants:       creditGrantRequests,
+		StartDate:    creditGrantStart,
+	}); err != nil {
 		return nil, err
 	}
 	if err = s.handleTaxRateLinking(ctx, sub, req); err != nil {
@@ -1360,117 +1370,13 @@ func (s *subscriptionService) ProcessSubscriptionPriceOverrides(
 		originalPrice := priceMap[override.PriceID]
 		lineItem := lineItemsByPriceID[override.PriceID]
 
-		// Determine target billing model (use override if provided, otherwise original)
-		targetBillingModel := originalPrice.BillingModel
-		if override.BillingModel != "" {
-			targetBillingModel = override.BillingModel
-		}
-
-		// Create subscription-scoped price using price service
-		// Always preserve the original price's display name and price unit type
-		createPriceReq := dto.CreatePriceRequest{
-			Currency:             originalPrice.Currency,
-			EntityType:           types.PRICE_ENTITY_TYPE_SUBSCRIPTION,
-			EntityID:             sub.ID,
-			Type:                 originalPrice.Type,
-			BillingPeriod:        originalPrice.BillingPeriod,
-			BillingPeriodCount:   originalPrice.BillingPeriodCount,
-			BillingModel:         targetBillingModel,
-			InvoiceCadence:       originalPrice.InvoiceCadence,
-			TrialPeriodDays:      originalPrice.TrialPeriodDays,
-			TierMode:             originalPrice.TierMode,
-			BucketSize:           lo.Ternary(override.BucketSize != "", override.BucketSize, originalPrice.BucketSize),
-			MeterID:              originalPrice.MeterID,
-			Description:          originalPrice.Description,
-			Metadata:             originalPrice.Metadata,
-			ParentPriceID:        originalPrice.GetRootPriceID(), // Always point to the root price ID
-			DisplayName:          originalPrice.DisplayName,      // Preserve original price display name
-			PriceUnitType:        originalPrice.PriceUnitType,    // Always copy from original (cannot be changed)
-			SkipEntityValidation: true,
-		}
-
-		// Handle PriceUnitConfig construction for CUSTOM price unit type
-		var priceUnitConfig *dto.PriceUnitConfig
-		if originalPrice.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
-			priceUnitConfig = &dto.PriceUnitConfig{
-				PriceUnit: lo.FromPtr(originalPrice.PriceUnit), // Always use original price unit (cannot be changed)
-			}
-		}
-
-		// Handle billing model-specific fields based on target billing model and price unit type
-		switch targetBillingModel {
-		case types.BILLING_MODEL_FLAT_FEE, types.BILLING_MODEL_PACKAGE:
-			// Handle amount based on price unit type
-			if originalPrice.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
-				// For CUSTOM price unit, amount is handled via PriceUnitConfig
-				if override.PriceUnitAmount != nil {
-					priceUnitConfig.Amount = override.PriceUnitAmount
-				} else if originalPrice.PriceUnitAmount != nil {
-					priceUnitConfig.Amount = originalPrice.PriceUnitAmount
-				}
-				createPriceReq.PriceUnitConfig = priceUnitConfig
-			} else {
-				// For FIAT price unit, use Amount
-				if override.Amount != nil {
-					createPriceReq.Amount = override.Amount
-				} else {
-					createPriceReq.Amount = lo.ToPtr(originalPrice.Amount)
-				}
-			}
-
-			// Handle TransformQuantity for PACKAGE (applies to both FIAT and CUSTOM)
-			if targetBillingModel == types.BILLING_MODEL_PACKAGE {
-				if override.TransformQuantity != nil {
-					createPriceReq.TransformQuantity = override.TransformQuantity
-				} else if originalPrice.TransformQuantity != (price.JSONBTransformQuantity{}) {
-					transformQuantity := price.TransformQuantity(originalPrice.TransformQuantity)
-					createPriceReq.TransformQuantity = &transformQuantity
-				}
-			}
-
-		case types.BILLING_MODEL_TIERED:
-			// Handle tiers based on price unit type
-			if originalPrice.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
-				// For CUSTOM price unit, tiers are handled via PriceUnitConfig
-				if len(override.PriceUnitTiers) > 0 {
-					priceUnitConfig.PriceUnitTiers = override.PriceUnitTiers
-				} else if len(originalPrice.PriceUnitTiers) > 0 {
-					priceUnitConfig.PriceUnitTiers = make([]dto.CreatePriceTier, len(originalPrice.PriceUnitTiers))
-					for i, tier := range originalPrice.PriceUnitTiers {
-						priceUnitConfig.PriceUnitTiers[i] = dto.CreatePriceTier{
-							UpTo:       tier.UpTo,
-							UnitAmount: tier.UnitAmount,
-						}
-						priceUnitConfig.PriceUnitTiers[i].FlatAmount = tier.FlatAmount
-					}
-				}
-				createPriceReq.PriceUnitConfig = priceUnitConfig
-			} else {
-				// For FIAT price unit, use Tiers
-				if len(override.Tiers) > 0 {
-					createPriceReq.Tiers = override.Tiers
-				} else if len(originalPrice.Tiers) > 0 {
-					createPriceReq.Tiers = make([]dto.CreatePriceTier, len(originalPrice.Tiers))
-					for i, tier := range originalPrice.Tiers {
-						createPriceReq.Tiers[i] = dto.CreatePriceTier{
-							UpTo:       tier.UpTo,
-							UnitAmount: tier.UnitAmount,
-						}
-						createPriceReq.Tiers[i].FlatAmount = tier.FlatAmount
-					}
-				}
-			}
-
-			// Handle TierMode for both types
-			if override.TierMode != "" {
-				createPriceReq.TierMode = override.TierMode
-			} else {
-				createPriceReq.TierMode = originalPrice.TierMode
-			}
+		createPriceReq, err := buildOverridePriceRequest(originalPrice, override, sub.ID)
+		if err != nil {
+			return err
 		}
 
 		// Create the subscription-scoped price using price service
-		overriddenPriceResp, err := priceService.CreatePrice(ctx, createPriceReq)
+		overriddenPriceResp, err := priceService.CreatePrice(ctx, *createPriceReq)
 		if err != nil {
 			return err
 		}
@@ -1488,6 +1394,119 @@ func (s *subscriptionService) ProcessSubscriptionPriceOverrides(
 	}
 
 	return nil
+}
+
+func buildOverridePriceRequest(originalPrice *dto.PriceResponse, override dto.OverrideLineItemRequest, subID string) (*dto.CreatePriceRequest, error) {
+	// Determine target billing model (use override if provided, otherwise original)
+	targetBillingModel := originalPrice.BillingModel
+	if override.BillingModel != "" {
+		targetBillingModel = override.BillingModel
+	}
+
+	// Create subscription-scoped price using price service
+	// Always preserve the original price's display name and price unit type
+	createPriceReq := dto.CreatePriceRequest{
+		Currency:             originalPrice.Currency,
+		EntityType:           types.PRICE_ENTITY_TYPE_SUBSCRIPTION,
+		EntityID:             subID,
+		Type:                 originalPrice.Type,
+		BillingPeriod:        originalPrice.BillingPeriod,
+		BillingPeriodCount:   originalPrice.BillingPeriodCount,
+		BillingModel:         targetBillingModel,
+		InvoiceCadence:       originalPrice.InvoiceCadence,
+		TrialPeriodDays:      originalPrice.TrialPeriodDays,
+		TierMode:             originalPrice.TierMode,
+		BucketSize:           lo.Ternary(override.BucketSize != "", override.BucketSize, originalPrice.BucketSize),
+		MeterID:              originalPrice.MeterID,
+		Description:          originalPrice.Description,
+		Metadata:             originalPrice.Metadata,
+		ParentPriceID:        originalPrice.GetRootPriceID(), // Always point to the root price ID
+		DisplayName:          originalPrice.DisplayName,      // Preserve original price display name
+		PriceUnitType:        originalPrice.PriceUnitType,    // Always copy from original (cannot be changed)
+		SkipEntityValidation: true,
+	}
+
+	// Handle PriceUnitConfig construction for CUSTOM price unit type
+	var priceUnitConfig *dto.PriceUnitConfig
+	if originalPrice.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
+		priceUnitConfig = &dto.PriceUnitConfig{
+			PriceUnit: lo.FromPtr(originalPrice.PriceUnit), // Always use original price unit (cannot be changed)
+		}
+	}
+
+	// Handle billing model-specific fields based on target billing model and price unit type
+	switch targetBillingModel {
+	case types.BILLING_MODEL_FLAT_FEE, types.BILLING_MODEL_PACKAGE:
+		// Handle amount based on price unit type
+		if originalPrice.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
+			// For CUSTOM price unit, amount is handled via PriceUnitConfig
+			if override.PriceUnitAmount != nil {
+				priceUnitConfig.Amount = override.PriceUnitAmount
+			} else if originalPrice.PriceUnitAmount != nil {
+				priceUnitConfig.Amount = originalPrice.PriceUnitAmount
+			}
+			createPriceReq.PriceUnitConfig = priceUnitConfig
+		} else {
+			// For FIAT price unit, use Amount
+			if override.Amount != nil {
+				createPriceReq.Amount = override.Amount
+			} else {
+				createPriceReq.Amount = lo.ToPtr(originalPrice.Amount)
+			}
+		}
+
+		// Handle TransformQuantity for PACKAGE (applies to both FIAT and CUSTOM)
+		if targetBillingModel == types.BILLING_MODEL_PACKAGE {
+			if override.TransformQuantity != nil {
+				createPriceReq.TransformQuantity = override.TransformQuantity
+			} else if originalPrice.TransformQuantity != (price.JSONBTransformQuantity{}) {
+				transformQuantity := price.TransformQuantity(originalPrice.TransformQuantity)
+				createPriceReq.TransformQuantity = &transformQuantity
+			}
+		}
+
+	case types.BILLING_MODEL_TIERED:
+		// Handle tiers based on price unit type
+		if originalPrice.PriceUnitType == types.PRICE_UNIT_TYPE_CUSTOM {
+			// For CUSTOM price unit, tiers are handled via PriceUnitConfig
+			if len(override.PriceUnitTiers) > 0 {
+				priceUnitConfig.PriceUnitTiers = override.PriceUnitTiers
+			} else if len(originalPrice.PriceUnitTiers) > 0 {
+				priceUnitConfig.PriceUnitTiers = make([]dto.CreatePriceTier, len(originalPrice.PriceUnitTiers))
+				for i, tier := range originalPrice.PriceUnitTiers {
+					priceUnitConfig.PriceUnitTiers[i] = dto.CreatePriceTier{
+						UpTo:       tier.UpTo,
+						UnitAmount: tier.UnitAmount,
+					}
+					priceUnitConfig.PriceUnitTiers[i].FlatAmount = tier.FlatAmount
+				}
+			}
+			createPriceReq.PriceUnitConfig = priceUnitConfig
+		} else {
+			// For FIAT price unit, use Tiers
+			if len(override.Tiers) > 0 {
+				createPriceReq.Tiers = override.Tiers
+			} else if len(originalPrice.Tiers) > 0 {
+				createPriceReq.Tiers = make([]dto.CreatePriceTier, len(originalPrice.Tiers))
+				for i, tier := range originalPrice.Tiers {
+					createPriceReq.Tiers[i] = dto.CreatePriceTier{
+						UpTo:       tier.UpTo,
+						UnitAmount: tier.UnitAmount,
+					}
+					createPriceReq.Tiers[i].FlatAmount = tier.FlatAmount
+				}
+			}
+		}
+
+		// Handle TierMode for both types
+		if override.TierMode != "" {
+			createPriceReq.TierMode = override.TierMode
+		} else {
+			createPriceReq.TierMode = originalPrice.TierMode
+		}
+	}
+
+	return &createPriceReq, nil
 }
 
 // handleEntitlementProration calculates and creates prorated entitlements for calendar billing
@@ -1540,189 +1559,24 @@ func (s *subscriptionService) handleEntitlementProration(
 	return nil
 }
 
-// handleCreditGrants handles creating and applying credit grants for a subscription
-func (s *subscriptionService) handleCreditGrants(
-	ctx context.Context,
-	subscription *subscription.Subscription,
-	creditGrantRequests []dto.CreateCreditGrantRequest,
-) error {
-	// Plan/subscription grants anchor at the subscription start (or trial end).
-	startDate := subscription.StartDate
-	if subscription.TrialEnd != nil {
-		startDate = lo.FromPtr(subscription.TrialEnd)
-	}
-	return s.handleCreditGrantsWithStart(ctx, subscription, creditGrantRequests, startDate, nil, nil)
-}
-
-// addonCreditGrantProration resolves the billing period containing startDate so a
-// mid-cycle grant can be scaled to the part of that period it actually covers.
-// Returns nil when proration does not apply, in which case the grant keeps its full
-// credits and its natural anchoring.
-//
-// Never returns an error: proration is an enhancement to the attach, so an
-// unresolvable period downgrades to today's behaviour instead of rejecting the addon.
-func (s *subscriptionService) addonCreditGrantProration(
-	ctx context.Context,
-	sub *subscription.Subscription,
-	startDate time.Time,
-	behavior types.ProrationBehavior,
-) *dto.FirstPeriodProration {
-	if behavior != types.ProrationBehaviorCreateProrations {
-		return nil
-	}
-
-	p, err := types.FindPeriodForDate(&types.FindPeriodForDateParams{
-		Target:           startDate,
-		KnownPeriodStart: sub.CurrentPeriodStart,
-		KnownPeriodEnd:   sub.CurrentPeriodEnd,
-		Anchor:           sub.BillingAnchor,
-		PeriodCount:      sub.BillingPeriodCount,
-		BillingPeriod:    sub.BillingPeriod,
-		Timezone:         sub.Timezone,
-	})
+// loadActiveSubscription loads a subscription with its line items and rejects it
+// unless it is active.
+func loadActiveSubscription(ctx context.Context, sp ServiceParams, subscriptionID string) (*subscription.Subscription, error) {
+	sub, lineItems, err := sp.SubRepo.GetWithLineItems(ctx, subscriptionID)
 	if err != nil {
-		// FindPeriodForDate only walks forward, so a start date in an already-closed
-		// period cannot be resolved. Grant in full rather than blocking the attach.
-		s.Logger.Info(ctx, "skipping credit grant proration; could not resolve billing period for addon start",
-			"subscription_id", sub.ID,
-			"start_date", startDate,
-			"current_period_start", sub.CurrentPeriodStart,
-			"error", err.Error())
-		return nil
+		return nil, err
 	}
-
-	if !startDate.After(p.Start) {
-		return nil
-	}
-
-	// A grant anchored past the subscription end fails CreateCreditGrant validation,
-	// and the grant would be capped to that end anyway.
-	if sub.EndDate != nil && p.End.After(lo.FromPtr(sub.EndDate)) {
-		return nil
-	}
-
-	return &dto.FirstPeriodProration{
-		PeriodStart:   p.Start,
-		PeriodEnd:     p.End,
-		ProrationDate: startDate,
-		Strategy:      types.StrategySecondBased,
-		Source:        grantProrationSourceAddonAttach.String(),
-	}
-}
-
-// handleCreditGrantsWithStart materializes the given credit grant requests onto the
-// subscription, anchoring the grant chain at startDate. Callers that attach grants
-// mid-cycle (e.g. addon application) pass the attach date so the first grant applies
-// immediately and recurs from there, instead of the subscription start.
-func (s *subscriptionService) handleCreditGrantsWithStart(
-	ctx context.Context,
-	subscription *subscription.Subscription,
-	creditGrantRequests []dto.CreateCreditGrantRequest,
-	startDate time.Time,
-	endDateOverride *time.Time,
-	prorationCfg *dto.FirstPeriodProration,
-) error {
-	if len(creditGrantRequests) == 0 {
-		return nil
-	}
-
-	creditGrantService := NewCreditGrantService(s.ServiceParams)
-
-	s.Logger.Info(ctx, "processing credit grants for subscription",
-		"subscription_id", subscription.ID,
-		"credit_grants_count", len(creditGrantRequests))
-
-	// Validate that all credit grants have the same conversion rates
-	if len(creditGrantRequests) > 1 {
-		conversionRate := creditGrantRequests[0].ConversionRate
-		topupConversionRate := creditGrantRequests[0].TopupConversionRate
-
-		validationError := ierr.NewError("all credit grants must have the same conversion_rate and topup_conversion_rate").
-			WithHint("All credit grants must have the same conversion rates").
+	if sub.SubscriptionStatus != types.SubscriptionStatusActive {
+		return nil, ierr.NewError("subscription is not active").
+			WithHint("Only active subscriptions can be modified").
+			WithReportableDetails(map[string]interface{}{
+				"subscription_id": subscriptionID,
+				"status":          sub.SubscriptionStatus,
+			}).
 			Mark(ierr.ErrValidation)
-
-		for i := 1; i < len(creditGrantRequests); i++ {
-			grantReq := creditGrantRequests[i]
-
-			// If first is nil, all must be nil. If first is not nil, all must match that value.
-			if conversionRate == nil {
-				if grantReq.ConversionRate != nil {
-					return validationError
-				}
-			} else {
-				if grantReq.ConversionRate == nil || !conversionRate.Equal(lo.FromPtr(grantReq.ConversionRate)) {
-					return validationError
-				}
-			}
-
-			if topupConversionRate == nil {
-				if grantReq.TopupConversionRate != nil {
-					return validationError
-				}
-			} else {
-				if grantReq.TopupConversionRate == nil || !topupConversionRate.Equal(lo.FromPtr(grantReq.TopupConversionRate)) {
-					return validationError
-				}
-			}
-		}
 	}
-
-	// Cap the grant end at the addon's end date when materializing addon-sourced
-	// grants: min(addonEnd, subscriptionEnd). Plan/subscription grants pass a nil
-	// override and keep the subscription end. This stops recurring grants from a
-	// time-bounded (onetime) addon from continuing to apply after the addon ends.
-	effectiveEnd := subscription.EndDate
-	if endDateOverride != nil && (effectiveEnd == nil || endDateOverride.Before(lo.FromPtr(effectiveEnd))) {
-		effectiveEnd = endDateOverride
-	}
-
-	// Create and apply credit grants anchored at startDate
-	for _, grantReq := range creditGrantRequests {
-		// Ensure subscription ID is set and scope is SUBSCRIPTION
-		grantReq.SubscriptionID = lo.ToPtr(subscription.ID)
-		grantReq.Scope = types.CreditGrantScopeSubscription
-		grantReq.StartDate = lo.ToPtr(startDate)
-		grantReq.EndDate = effectiveEnd
-
-		// Use subscription start date as the anchor for the credit grant chain
-		grantReq.CreditGrantAnchor = lo.ToPtr(startDate)
-
-		// Prorating a mid-cycle grant only makes sense for a recurring allowance that
-		// shares the subscription's billing rhythm; a onetime grant is a fixed lump,
-		// and a monthly grant on an annual subscription should keep recurring monthly
-		// rather than stretch to the billing period.
-		grantPeriod := types.BillingPeriod("")
-		if grantReq.Period != nil {
-			period, err := types.GetBillingPeriodFromCreditGrantPeriod(lo.FromPtr(grantReq.Period))
-			if err != nil {
-				s.Logger.Error(ctx, "failed to get billing period from credit grant period",
-					"subscription_id", subscription.ID,
-					"credit_grant_period", grantReq.Period,
-					"error", err)
-			}
-			grantPeriod = period
-		}
-
-		if prorationCfg != nil &&
-			grantReq.Cadence == types.CreditGrantCadenceRecurring &&
-			grantPeriod == subscription.BillingPeriod {
-			// Anchor on the subscription's period boundary rather than the attach date, so
-			// every period after the short first one lands on an invoicing boundary instead
-			// of drifting. Chaining stays correct because createNextPeriodApplication feeds
-			// each period end back in as the next period start, matching this anchor.
-			grantReq.CreditGrantAnchor = lo.ToPtr(prorationCfg.PeriodEnd)
-			grantReq.FirstPeriodProration = prorationCfg
-		}
-
-		// Create credit grant: this now triggers initializeCreditGrantWorkflow
-		// which handles creation, anchor calculation, and eager application
-		_, err := creditGrantService.CreateCreditGrant(ctx, grantReq)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	sub.LineItems = lineItems
+	return sub, nil
 }
 
 func (s *subscriptionService) GetSubscription(ctx context.Context, id string) (*dto.SubscriptionResponse, error) {
@@ -5049,7 +4903,7 @@ func (s *subscriptionService) handleSubCoupons(
 	return nil
 }
 
-// handleSubscriptionAddons processes addons for a subscription
+// handleSubscriptionAddons attaches the creation request's addons as one change.
 func (s *subscriptionService) handleSubscriptionAddons(
 	ctx context.Context,
 	subscription *subscription.Subscription,
@@ -5063,11 +4917,12 @@ func (s *subscriptionService) handleSubscriptionAddons(
 		"subscription_id", subscription.ID,
 		"addons_count", len(addonRequests))
 
-	// Process each addon request
-	for _, addonReq := range addonRequests {
+	adds := make([]AddonAdd, 0, len(addonRequests))
+	for i := range addonRequests {
+		addonReq := addonRequests[i]
 
-		// check if start date is given else mark it as subscription start date
-		if addonReq.StartDate == nil {
+		// Attach at the subscription's own start unless the caller named a date.
+		if addonReq.StartDate == nil && addonReq.ChangeAt == nil {
 			addonReq.StartDate = &subscription.StartDate
 		}
 
@@ -5075,46 +4930,67 @@ func (s *subscriptionService) handleSubscriptionAddons(
 		// proration here as well would charge the addon twice.
 		addonReq.ProrationBehavior = types.ProrationBehaviorNone
 
-		if _, err := s.AttachAddon(ctx, subscription, lo.ToPtr(addonReq), nil); err != nil {
-			return err
-		}
+		adds = append(adds, AddonAdd{Request: &addonReq})
 	}
 
-	return nil
+	changeSvc := NewAddonChangeService(s.ServiceParams)
+	config, err := changeSvc.Resolve(ctx, AddonChangeRequest{Subscription: subscription, Adds: adds})
+	if err != nil {
+		return err
+	}
+
+	// Persists the changes but not raise the invoice
+	return changeSvc.Persist(ctx, config)
 }
 
-// AddAddonToSubscription adds an addon to a subscription
-// This is the public facing method for adding an addon to a subscription
+// AddAddonToSubscription is the deprecated single-addon route, served by the batch path so
+// there is one implementation. The response is rebuilt from what the batch reports.
 func (s *subscriptionService) AddAddonToSubscription(
 	ctx context.Context,
 	req *dto.AddAddonRequest,
 ) (*dto.AddAddonToSubscriptionResponse, error) {
+	req.ApplyDefaults()
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
 
-	sub, lineItems, err := s.SubRepo.GetWithLineItems(ctx, req.SubscriptionID)
+	resp, err := NewSubscriptionModificationService(s.ServiceParams).Execute(ctx, req.SubscriptionID,
+		dto.ExecuteSubscriptionModifyRequest{
+			Type:     dto.SubscriptionModifyTypeAddon,
+			Checkout: req.Checkout,
+			BulkAddonParams: &dto.SubModifyBulkAddonParams{
+				Adds: []*dto.AddAddonToSubscriptionRequest{&req.AddAddonToSubscriptionRequest},
+			},
+		})
 	if err != nil {
 		return nil, err
 	}
-	sub.LineItems = lineItems
 
-	resp, err := s.AttachAddon(ctx, sub, &req.AddAddonToSubscriptionRequest, req.Checkout)
-	if err != nil {
-		return nil, err
+	// An add-only change reports exactly one association, the one it created.
+	changed := resp.ChangedResources.AddonAssociations
+	if len(changed) == 0 {
+		return nil, ierr.NewError("addon change reported no created association").
+			Mark(ierr.ErrInternal)
 	}
 
-	// A pay-first attach has changed nothing yet — the association is pending and the line
-	// items appear only once payment lands, so there is no subscription update to announce.
-	if !resp.PaymentPending() {
-		s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, req.SubscriptionID)
+	association, err := s.AddonAssociationRepo.GetByID(ctx, changed[0].ID)
+	if err != nil {
+		return nil, err
 	}
 
 	return &dto.AddAddonToSubscriptionResponse{
-		AddonAssociation: resp.GetAssociation(),
-		CheckoutSession:  resp.GetCheckoutSession(),
-		Invoice:          resp.GetInvoice(),
+		AddonAssociation: association,
+		CheckoutSession:  resp.CheckoutSession,
+		Invoice:          lo.Ternary(resp.CheckoutSession != nil, gatedDraftInvoice(resp), nil),
 	}, nil
+}
+
+func gatedDraftInvoice(resp *dto.SubscriptionModifyResponse) *dto.InvoiceResponse {
+	if len(resp.ChangedResources.Invoices) == 0 {
+		return nil
+	}
+
+	return resp.ChangedResources.Invoices[0].Invoice
 }
 
 // createAddonAttachParams resolves everything an attach needs — validations, prices, association and
@@ -5125,6 +5001,7 @@ func (s *subscriptionService) createAddonAttachParams(
 	req *dto.AddAddonToSubscriptionRequest,
 	existing *addonassociation.AddonAssociation,
 ) (*addonAttachParams, error) {
+	req.ApplyDefaults()
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
@@ -5154,13 +5031,6 @@ func (s *subscriptionService) createAddonAttachParams(
 		return nil, ierr.NewError("subscription status does not allow addon attachment").
 			WithHint("Addon can only be added to active or draft subscriptions").
 			Mark(ierr.ErrValidation)
-	}
-
-	// Validate entitlement compatibility if check is not skipped
-	if !req.SkipEntityValidation {
-		if err := s.validateEntitlementCompatibility(ctx, sub.ID, req.AddonID); err != nil {
-			return nil, err
-		}
 	}
 
 	// Validate and filter prices for the addon
@@ -5234,244 +5104,6 @@ func (s *subscriptionService) createAddonAttachParams(
 		effectiveDate:  prorationEffectiveDate,
 		isReplay:       existing != nil,
 	}, nil
-}
-
-// persistAddonAttach writes the params — association, line items, bucket prices and credit
-// grants — in one transaction and raises NO charge. Settling is the caller's job, so the
-// pay-later path and the payment-gated completion replay share exactly this mutation.
-func (s *subscriptionService) persistAddonAttach(ctx context.Context, params *addonAttachParams) error {
-	if params == nil {
-		return ierr.NewError("addon attach params are required").
-			Mark(ierr.ErrValidation)
-	}
-
-	sub := params.getSubscription()
-	req := params.getRequest()
-	addonAssociation := params.getAssociation()
-	lineItems := params.getLineItems()
-	lineItemBucketCfgs := params.getBucketCfgs()
-	priceMap := params.getPriceMap()
-	addonRequestedStart := params.getRequestedStart()
-	existing := params.isReplayAttach()
-
-	creditGrantProration := s.addonCreditGrantProration(ctx, sub, addonRequestedStart, req.ProrationBehavior)
-	addonEnts, err := NewEntitlementService(s.ServiceParams).GetAddonEntitlements(ctx, req.AddonID)
-	if err != nil {
-		return err
-	}
-	addonGrantECs := dto.ToEntitlements(addonEnts)
-
-	existingGrantECs, err := s.GetSubscriptionGrantECsByFeature(ctx, sub)
-	if err != nil {
-		return err
-	}
-
-	proratedGrants, err := s.resolveGrantProration(
-		ctx, sub, addonGrantECs, existingGrantECs, params.getEffectiveDate(), req.ProrationBehavior, grantProrationSourceAddonAttach)
-	if err != nil {
-		return err
-	}
-
-	err = s.DB.WithTx(ctx, func(ctx context.Context) error {
-		if len(req.OverrideLineItems) > 0 {
-			if err := s.ProcessSubscriptionPriceOverrides(ctx, sub, req.OverrideLineItems, lineItems, priceMap); err != nil {
-				return err
-			}
-		}
-
-		// Create the association, or flip the pending one to active on a completion replay.
-		if existing {
-			addonAssociation.AddonStatus = types.AddonStatusActive
-			if err := s.AddonAssociationRepo.Update(ctx, addonAssociation); err != nil {
-				return err
-			}
-		} else if err := s.AddonAssociationRepo.Create(ctx, addonAssociation); err != nil {
-			return err
-		}
-
-		// Create bucket price rows for line items carrying commitment time
-		// buckets, inside this transaction so they roll back with the line items.
-		if err := s.createBucketPricesForLineItems(ctx, sub, lineItems, lineItemBucketCfgs); err != nil {
-			return err
-		}
-
-		// Create line items
-		for _, lineItem := range lineItems {
-			if err := s.SubscriptionLineItemRepo.Create(ctx, lineItem); err != nil {
-				return err
-			}
-		}
-
-		// Materialize the addon's credit grants (if any) onto the subscription,
-		// anchored at the addon attach date so mid-cycle grants apply immediately.
-		// Kept in-transaction so grant application is atomic with the addon attach.
-		if err := s.materializeAddonCreditGrants(ctx, sub, req.AddonID, addonRequestedStart, addonAssociation.EndDate, creditGrantProration); err != nil {
-			return err
-		}
-
-		// Close this cycle's grant windows and open their prorated successors. The
-		// evaluator opens grants lazily from a usage-driven tick with no request in scope,
-		// so the attach has to write the segment itself for the proration to exist at all.
-		if err := s.materialiseEntitlementGrants(ctx, sub, proratedGrants, addonGrantECs, existingGrantECs, params.getEffectiveDate()); err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	return err
-}
-
-// materializeAddonCreditGrants clones the addon's ADDON-scoped credit grant templates
-// into SUBSCRIPTION-scoped grants on the subscription and applies them, anchored at
-// startDate (the addon attach date). AddonID is carried through as provenance so
-// removal can target these grants specifically. No-op when the addon has no grants.
-func (s *subscriptionService) materializeAddonCreditGrants(
-	ctx context.Context,
-	sub *subscription.Subscription,
-	addonID string,
-	startDate time.Time,
-	addonEndDate *time.Time,
-	prorationCfg *dto.FirstPeriodProration,
-) error {
-	creditGrantService := NewCreditGrantService(s.ServiceParams)
-	addonGrants, err := creditGrantService.GetCreditGrantsByAddon(ctx, addonID)
-	if err != nil {
-		return err
-	}
-	if len(addonGrants.Items) == 0 {
-		return nil
-	}
-
-	s.Logger.Info(ctx, "addon has credit grants",
-		"addon_id", addonID,
-		"subscription_id", sub.ID,
-		"credit_grants_count", len(addonGrants.Items))
-
-	requests := make([]dto.CreateCreditGrantRequest, 0, len(addonGrants.Items))
-	for _, cg := range addonGrants.Items {
-		requests = append(requests, dto.CreateCreditGrantRequest{
-			Name:                   cg.Name,
-			Scope:                  types.CreditGrantScopeSubscription,
-			Credits:                cg.Credits,
-			Cadence:                cg.Cadence,
-			ExpirationType:         cg.ExpirationType,
-			Priority:               cg.Priority,
-			SubscriptionID:         lo.ToPtr(sub.ID),
-			AddonID:                lo.ToPtr(addonID), // provenance for targeted removal
-			Period:                 cg.Period,
-			ExpirationDuration:     cg.ExpirationDuration,
-			ExpirationDurationUnit: cg.ExpirationDurationUnit,
-			Metadata:               cg.Metadata,
-			PeriodCount:            cg.PeriodCount,
-			ConversionRate:         cg.ConversionRate,
-			TopupConversionRate:    cg.TopupConversionRate,
-		})
-	}
-
-	return s.handleCreditGrantsWithStart(ctx, sub, requests, startDate, addonEndDate, prorationCfg)
-}
-
-// validateEntitlementCompatibility checks if addon entitlements are compatible with existing subscription entitlements
-// It ensures that metered features with the same feature ID have the same usage reset period
-func (s *subscriptionService) validateEntitlementCompatibility(ctx context.Context, subscriptionID, addonID string) error {
-	// Get entitlements for the addon we're trying to add
-	entitlementService := NewEntitlementService(s.ServiceParams)
-	addonEntitlements, err := entitlementService.GetAddonEntitlements(ctx, addonID)
-	if err != nil {
-		return err
-	}
-
-	// Filter to metered features only (only metered features have usage reset periods that matter)
-	meteredAddonEntitlements := make([]*dto.EntitlementResponse, 0)
-	for _, addonEnt := range addonEntitlements.Items {
-		if addonEnt.FeatureType == types.FeatureTypeMetered {
-			meteredAddonEntitlements = append(meteredAddonEntitlements, addonEnt)
-		}
-	}
-
-	// Early return if no metered entitlements to check
-	if len(meteredAddonEntitlements) == 0 {
-		return nil
-	}
-
-	// Fetch subscription entitlements
-	subscriptionEntitlements, err := s.GetSubscriptionEntitlements(ctx, subscriptionID)
-	if err != nil {
-		return err
-	}
-
-	// Build map of feature_id to usage_reset_period for metered features in subscription
-	featureResetMap := make(map[string]types.EntitlementUsageResetPeriod)
-	for _, ent := range subscriptionEntitlements {
-		if ent.FeatureType == types.FeatureTypeMetered {
-			featureResetMap[ent.FeatureID] = ent.UsageResetPeriod
-		}
-	}
-
-	pendingResetPeriods, err := s.pendingAddonFeatureResetPeriods(ctx, subscriptionID)
-	if err != nil {
-		return err
-	}
-	for featureID, resetPeriod := range pendingResetPeriods {
-		if _, exists := featureResetMap[featureID]; !exists {
-			featureResetMap[featureID] = resetPeriod
-		}
-	}
-
-	// Check for conflicts
-	for _, addonEnt := range meteredAddonEntitlements {
-
-		existingResetPeriod, exists := featureResetMap[addonEnt.FeatureID]
-
-		if exists && existingResetPeriod != addonEnt.UsageResetPeriod {
-
-			return ierr.NewError("metered feature usage reset period conflict").
-				WithHint(fmt.Sprintf("Feature '%s' has conflicting reset periods: %s vs %s", addonEnt.FeatureID, existingResetPeriod, addonEnt.UsageResetPeriod)).
-				WithReportableDetails(map[string]interface{}{
-					"subscription_id": subscriptionID,
-					"addon_id":        addonID,
-					"feature_id":      addonEnt.FeatureID,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	return nil
-}
-
-// pendingAddonFeatureResetPeriods returns the usage reset period of every metered feature
-// granted by an addon whose association is still pending payment, keyed by feature id.
-// Compatibility-only: it deliberately does not flow into GetSubscriptionEntitlements, which
-// also drives real feature access where a pending addon must not count.
-func (s *subscriptionService) pendingAddonFeatureResetPeriods(
-	ctx context.Context,
-	subscriptionID string,
-) (map[string]types.EntitlementUsageResetPeriod, error) {
-	pendingAssociations, err := s.listPendingAddonAssociations(ctx, subscriptionID)
-	if err != nil {
-		return nil, err
-	}
-	if len(pendingAssociations) == 0 {
-		return nil, nil
-	}
-
-	entitlementService := NewEntitlementService(s.ServiceParams)
-	resetPeriods := make(map[string]types.EntitlementUsageResetPeriod)
-
-	for _, association := range pendingAssociations {
-		addonEntitlements, err := entitlementService.GetAddonEntitlements(ctx, association.AddonID)
-		if err != nil {
-			return nil, err
-		}
-		for _, ent := range addonEntitlements.Items {
-			if ent.FeatureType == types.FeatureTypeMetered {
-				resetPeriods[ent.FeatureID] = ent.UsageResetPeriod
-			}
-		}
-	}
-
-	return resetPeriods, nil
 }
 
 // TerminateSubscriptionResources terminates all line items, addon associations, and credit
@@ -5669,14 +5301,22 @@ func (s *subscriptionService) cancelAddonsForSubscription(ctx context.Context, s
 }
 
 // RemoveAddonFromSubscription removes an addon from a subscription by addon association ID
+// RemoveAddonFromSubscription is the deprecated single-addon route. The body names only the
+// association, so the subscription is read back off it before delegating to the batch path.
 func (s *subscriptionService) RemoveAddonFromSubscription(ctx context.Context, req *dto.RemoveAddonRequest) error {
-	outcome, err := s.DetachAddon(ctx, req, "")
+	association, err := s.AddonAssociationRepo.GetByID(ctx, req.AddonAssociationID)
 	if err != nil {
 		return err
 	}
 
-	s.publishSystemEvent(ctx, types.WebhookEventSubscriptionUpdated, outcome.GetAssociation().EntityID)
-	return nil
+	_, err = NewSubscriptionModificationService(s.ServiceParams).Execute(ctx, association.EntityID,
+		dto.ExecuteSubscriptionModifyRequest{
+			Type: dto.SubscriptionModifyTypeAddon,
+			BulkAddonParams: &dto.SubModifyBulkAddonParams{
+				Removes: []*dto.RemoveAddonRequest{req},
+			},
+		})
+	return err
 }
 
 func (s *subscriptionService) buildAddonLineItems(
@@ -5870,11 +5510,12 @@ func (s *subscriptionService) buildAddonProrationEntries(
 
 		entry := LineItemProrationEntry{
 			LineItem: lineItem,
-			Price:    priceResp.Price,
 			Action:   action,
 		}
 		if action == types.ProrationActionAddItem {
-			entry.NewQuantity = lineItem.Quantity
+			entry.NewPrice, entry.NewQuantity = priceResp.Price, lineItem.Quantity
+		} else {
+			entry.CurrentPrice, entry.CurrentQuantity = priceResp.Price, lineItem.Quantity
 		}
 		entries = append(entries, entry)
 	}
@@ -6820,6 +6461,33 @@ func withAssociationWindow(ent *dto.EntitlementResponse, assoc *dto.AddonAssocia
 	return &updatedEntResp
 }
 
+// carryParentSourceToOverrides copies each override's parent plan or addon onto the
+// override, so a suppressed parent does not take the source's name with it.
+func carryParentSourceToOverrides(planEnts, addonEnts, subEnts []*dto.EntitlementResponse) {
+	parents := make(map[string]*dto.EntitlementResponse, len(planEnts)+len(addonEnts))
+	for _, ent := range append(append([]*dto.EntitlementResponse{}, planEnts...), addonEnts...) {
+		if ent != nil && ent.Entitlement != nil {
+			parents[ent.ID] = ent
+		}
+	}
+
+	for _, ent := range subEnts {
+		if ent == nil || ent.Entitlement == nil {
+			continue
+		}
+		parent, ok := parents[lo.FromPtr(ent.ParentEntitlementID)]
+		if !ok {
+			continue
+		}
+		if ent.Plan == nil {
+			ent.Plan = parent.Plan
+		}
+		if ent.Addon == nil {
+			ent.Addon = parent.Addon
+		}
+	}
+}
+
 func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx context.Context, sub *subscription.Subscription) ([]*dto.EntitlementResponse, error) {
 	if sub == nil {
 		return nil, ierr.NewError("subscription is required").
@@ -6882,7 +6550,7 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 			WithEntityIDs(addonIDs).
 			WithEntityType(types.ENTITLEMENT_ENTITY_TYPE_ADDON).
 			WithStatus(types.StatusPublished).
-			WithExpand(fmt.Sprintf("%s,%s", types.ExpandFeatures, types.ExpandMeters))
+			WithExpand(fmt.Sprintf("%s,%s,%s", types.ExpandFeatures, types.ExpandMeters, types.ExpandAddons))
 
 		addonEntResp, err := entitlementService.ListEntitlements(ctx, addonEntFilter)
 		if err != nil {
@@ -6920,6 +6588,8 @@ func (s *subscriptionService) GetSubscriptionEntitlementsForSubscription(ctx con
 		return nil, err
 	}
 	subscriptionEntitlements := subscriptionEntResp.Items
+
+	carryParentSourceToOverrides(planEntitlements.Items, addonEntitlements, subscriptionEntitlements)
 
 	// Step 6: Filter out overridden entitlements and combine results
 	finalEntitlements := s.filterOverriddenEntitlements(
@@ -7087,6 +6757,22 @@ func (s *subscriptionService) GetAggregatedSubscriptionEntitlementsForSubscripti
 		}
 	}
 
+	grantStates, err := NewEntitlementGrantService(s.ServiceParams).
+		GrantStateByFeature(ctx, sub, time.Now().UTC())
+	if err != nil {
+		s.Logger.Error(ctx, "failed to load entitlement grant state, returning entitlements without it",
+			"error", err, "subscription_id", sub.ID)
+	} else {
+		for _, f := range aggregatedFeatures {
+			if f.Feature == nil {
+				continue
+			}
+			if state, ok := grantStates[f.Feature.ID]; ok && f.Entitlement != nil {
+				f.Entitlement.GrantState = state
+			}
+		}
+	}
+
 	// Build final response
 	response := &dto.SubscriptionEntitlementsResponse{
 		SubscriptionID: sub.ID,
@@ -7206,21 +6892,75 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 		// Get the parent entitlement (already validated above)
 		parentEnt := entitlementMap[override.EntitlementID]
 
-		// Create subscription-scoped entitlement with overrides
 		newEnt := &entitlement.Entitlement{
-			ID:                  types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT),
-			EntityType:          types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION,
-			EntityID:            sub.ID,
-			FeatureID:           parentEnt.FeatureID,
-			FeatureType:         parentEnt.FeatureType,
-			UsageResetPeriod:    parentEnt.UsageResetPeriod,
-			IsSoftLimit:         parentEnt.IsSoftLimit,
-			DisplayOrder:        parentEnt.DisplayOrder,
-			ParentEntitlementID: &parentEnt.ID,
-			StartDate:           &sub.StartDate, // Set start date to subscription start
-			EndDate:             nil,            // No end date - persists across billing periods
-			EnvironmentID:       parentEnt.EnvironmentID,
-			BaseModel:           types.GetDefaultBaseModel(ctx),
+			ID:                      types.GenerateUUIDWithPrefix(types.UUID_PREFIX_ENTITLEMENT),
+			EntityType:              types.ENTITLEMENT_ENTITY_TYPE_SUBSCRIPTION,
+			EntityID:                sub.ID,
+			FeatureID:               parentEnt.FeatureID,
+			FeatureType:             parentEnt.FeatureType,
+			UsageResetPeriod:        parentEnt.UsageResetPeriod,
+			IsSoftLimit:             parentEnt.IsSoftLimit,
+			DisplayOrder:            parentEnt.DisplayOrder,
+			ParentEntitlementID:     &parentEnt.ID,
+			StartDate:               &sub.StartDate, // Set start date to subscription start
+			EndDate:                 nil,            // No end date - persists across billing periods
+			EnvironmentID:           parentEnt.EnvironmentID,
+			GrantMeasure:            parentEnt.GrantMeasure,
+			GrantDurationValue:      parentEnt.GrantDurationValue,
+			GrantDurationUnit:       parentEnt.GrantDurationUnit,
+			GrantAllocationBehavior: parentEnt.GrantAllocationBehavior,
+			GrantQuota:              parentEnt.GrantQuota,
+			AggregationMode:         parentEnt.AggregationMode,
+			BaseModel:               types.GetDefaultBaseModel(ctx),
+		}
+
+		if override.GrantMeasure != nil {
+			newEnt.GrantMeasure = *override.GrantMeasure
+		}
+		if override.GrantDurationValue != nil {
+			newEnt.GrantDurationValue = override.GrantDurationValue
+		}
+		if override.GrantDurationUnit != nil {
+			newEnt.GrantDurationUnit = *override.GrantDurationUnit
+		}
+		if override.GrantAllocationBehavior != nil {
+			newEnt.GrantAllocationBehavior = *override.GrantAllocationBehavior
+		}
+		if override.GrantQuota != nil {
+			newEnt.GrantQuota = override.GrantQuota
+		}
+		// Only this can clear an inherited ceiling: a nil grant_quota means inherit.
+		if override.GrantUnlimited != nil {
+			if *override.GrantUnlimited {
+				if newEnt.GrantDurationUnit != types.EntitlementGrantDurationUnitSubscriptionPeriod {
+					return ierr.NewError("an unlimited allowance must reset once per billing period").
+						WithHint("Send grant_duration_unit=subscription_period alongside grant_unlimited").
+						WithReportableDetails(map[string]interface{}{
+							"entitlement_id":      override.EntitlementID,
+							"grant_duration_unit": newEnt.GrantDurationUnit,
+						}).
+						Mark(ierr.ErrValidation)
+				}
+				newEnt.GrantQuota = nil
+			} else if newEnt.GrantQuota == nil && override.GrantQuota == nil {
+				return ierr.NewError("grant_quota is required to put a ceiling back on an allowance").
+					WithHint("Send grant_quota alongside grant_unlimited: false").
+					WithReportableDetails(map[string]interface{}{
+						"entitlement_id":  override.EntitlementID,
+						"subscription_id": sub.ID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+		if override.AggregationMode != nil {
+			newEnt.AggregationMode = *override.AggregationMode
+		}
+
+		// A cycle-long window has no stride to size or anchor; the parent's are inherited
+		// above and would not survive validation.
+		if newEnt.GrantDurationUnit == types.EntitlementGrantDurationUnitSubscriptionPeriod {
+			newEnt.GrantDurationValue = nil
+			newEnt.GrantAllocationBehavior = ""
 		}
 
 		// Apply overrides - ONLY these 3 fields can be overridden
@@ -7311,6 +7051,21 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 			}
 		}
 
+		// Field coherence on the merged row: an override can move a quota or a
+		// duration into an invalid combination even though the parent was valid.
+		newEnt.ApplyGrantDefaults()
+
+		if err := newEnt.Validate(); err != nil {
+			return err
+		}
+
+		// The meter and price rules too — an override can introduce grant config on
+		// a feature whose meter cannot carry one, and billing would then decline to
+		// fold it and fall through to the legacy path, charging nothing.
+		if err := NewEntitlementService(s.ServiceParams).ValidateGrantShape(ctx, newEnt); err != nil {
+			return err
+		}
+
 		// Create the subscription-scoped entitlement
 		_, err := s.EntitlementRepo.Create(ctx, newEnt)
 		if err != nil {
@@ -7331,7 +7086,8 @@ func (s *subscriptionService) ProcessSubscriptionEntitlementOverrides(
 			"feature_id", parentEnt.FeatureID,
 			"usage_limit_override", override.UsageLimit != nil,
 			"is_enabled_override", override.IsEnabled != nil,
-			"static_value_override", override.StaticValue != nil)
+			"static_value_override", override.StaticValue != nil,
+			"grant_config_inherited", newEnt.HasGrantConfig())
 	}
 
 	return nil

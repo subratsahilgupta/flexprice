@@ -961,6 +961,76 @@
         "x-codegen-request-body-name": "request"
       }
     },
+    "/analytics/revenue": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Query revenue analytics",
+        "description": "Aggregates revenue_facts by the requested dimensions at day/period/total granularity. allocation_policy places whole-period charges on their booked day (billed) or spreads them across the period (amortized); include_adjustments breaks out true-up/overage/revert amounts as labeled rows. Requires the tenant's revenue analytics setting.",
+        "operationId": "getRevenueAnalytics",
+        "requestBody": {
+          "description": "Revenue analytics request",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevenueAnalyticsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevenueAnalyticsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Revenue analytics not enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read",
+        "x-codegen-request-body-name": "request"
+      }
+    },
     "/analytics/views": {
       "post": {
         "tags": [
@@ -10975,7 +11045,7 @@
           "Subscriptions"
         ],
         "summary": "Execute subscription modification",
-        "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove).",
+        "description": "Execute a mid-cycle subscription modification (inheritance, line item change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes settled as one netted document).\nType \"quantity_change\" is deprecated: use \"line_item_change\", which changes a fixed charge's quantity, price, or both, with the same proration and checkout behaviour.",
         "operationId": "executeSubscriptionModify",
         "parameters": [
           {
@@ -11056,7 +11126,7 @@
           "Subscriptions"
         ],
         "summary": "Preview subscription modification",
-        "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove) without committing changes.",
+        "description": "Preview the impact of a mid-cycle subscription modification (inheritance, line item change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes) without committing changes.\nType \"quantity_change\" is deprecated: use \"line_item_change\".",
         "operationId": "previewSubscriptionModify",
         "parameters": [
           {
@@ -16363,9 +16433,6 @@
               "$ref": "#/components/schemas/types.Metric"
             }
           },
-          "name": {
-            "type": "string"
-          },
           "shape": {
             "$ref": "#/components/schemas/types.Shape"
           },
@@ -16685,6 +16752,9 @@
           "cadence": {
             "$ref": "#/components/schemas/types.AddonCadence"
           },
+          "change_at": {
+            "$ref": "#/components/schemas/types.ScheduleType"
+          },
           "checkout": {
             "$ref": "#/components/schemas/CheckoutParams"
           },
@@ -16729,6 +16799,9 @@
           },
           "cadence": {
             "$ref": "#/components/schemas/types.AddonCadence"
+          },
+          "change_at": {
+            "$ref": "#/components/schemas/types.ScheduleType"
           },
           "line_item_commitments": {
             "type": "object",
@@ -17035,6 +17108,24 @@
               }
             }
           },
+          "grant_duration_unit": {
+            "$ref": "#/components/schemas/types.EntitlementGrantDurationUnit"
+          },
+          "grant_duration_value": {
+            "type": "integer"
+          },
+          "grant_measure": {
+            "$ref": "#/components/schemas/types.EntitlementGrantMeasure"
+          },
+          "grant_quota": {
+            "type": "string"
+          },
+          "grant_state": {
+            "$ref": "#/components/schemas/GrantState"
+          },
+          "grant_unlimited": {
+            "type": "boolean"
+          },
           "is_enabled": {
             "type": "boolean"
           },
@@ -17072,6 +17163,9 @@
           },
           "grant_quota": {
             "type": "string"
+          },
+          "grant_unlimited": {
+            "type": "boolean"
           },
           "source_entity_id": {
             "type": "string"
@@ -17542,6 +17636,43 @@
           }
         }
       },
+      "ChangedAddonAssociation": {
+        "type": "object",
+        "properties": {
+          "addon_id": {
+            "type": "string"
+          },
+          "addon_status": {
+            "$ref": "#/components/schemas/types.AddonStatus"
+          },
+          "change_action": {
+            "$ref": "#/components/schemas/ChangedAddonAssociationAction"
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ChangedAddonAssociationAction": {
+        "type": "string",
+        "description": "created | ended",
+        "enum": [
+          "created",
+          "ended"
+        ],
+        "x-enum-varnames": [
+          "ChangedAddonAssociationActionCreated",
+          "ChangedAddonAssociationActionEnded"
+        ]
+      },
       "ChangedInvoice": {
         "type": "object",
         "properties": {
@@ -17627,6 +17758,12 @@
       "ChangedResources": {
         "type": "object",
         "properties": {
+          "addon_associations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangedAddonAssociation"
+            }
+          },
           "invoices": {
             "type": "array",
             "items": {
@@ -17689,6 +17826,9 @@
         "properties": {
           "cancel_url": {
             "type": "string"
+          },
+          "entity_creation_options": {
+            "$ref": "#/components/schemas/EntityCreationOptions"
           },
           "failure_url": {
             "type": "string"
@@ -17759,6 +17899,9 @@
           },
           "customer_id": {
             "type": "string"
+          },
+          "entity_creation_result": {
+            "$ref": "#/components/schemas/EntityCreationResult"
           },
           "expires_at": {
             "type": "string",
@@ -18468,6 +18611,9 @@
           "customer_external_id": {
             "type": "string"
           },
+          "entity_creation_options": {
+            "$ref": "#/components/schemas/EntityCreationOptions"
+          },
           "failure_url": {
             "type": "string"
           },
@@ -18855,6 +19001,9 @@
           },
           "grant_quota": {
             "type": "string"
+          },
+          "grant_unlimited": {
+            "type": "boolean"
           },
           "is_enabled": {
             "type": "boolean"
@@ -20866,6 +21015,33 @@
           }
         }
       },
+      "EntityCreationConflictPolicies": {
+        "type": "object",
+        "properties": {
+          "on_existing_entity": {
+            "$ref": "#/components/schemas/types.OnExistingEntityPolicy"
+          }
+        }
+      },
+      "EntityCreationOptions": {
+        "type": "object",
+        "properties": {
+          "entity_creation_conflict_policies": {
+            "$ref": "#/components/schemas/EntityCreationConflictPolicies"
+          }
+        }
+      },
+      "EntityCreationResult": {
+        "type": "object",
+        "properties": {
+          "entity_id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.EntityCreationStatus"
+          }
+        }
+      },
       "EntityIntegrationMappingResponse": {
         "type": "object",
         "properties": {
@@ -20931,6 +21107,10 @@
           "id": {
             "type": "string"
           },
+          "ingested_at": {
+            "type": "string",
+            "format": "date-time"
+          },
           "properties": {
             "type": "object",
             "additionalProperties": true
@@ -20974,6 +21154,9 @@
         ],
         "type": "object",
         "properties": {
+          "addon_bulk_params": {
+            "$ref": "#/components/schemas/SubModifyBulkAddonParams"
+          },
           "addon_params": {
             "$ref": "#/components/schemas/SubModifyAddonParams"
           },
@@ -20988,6 +21171,9 @@
           },
           "inheritance_params": {
             "$ref": "#/components/schemas/SubModifyInheritanceRequest"
+          },
+          "line_item_change_params": {
+            "$ref": "#/components/schemas/SubModifyLineItemChangeRequest"
           },
           "quantity_change_params": {
             "$ref": "#/components/schemas/SubModifyQuantityChangeRequest"
@@ -21106,11 +21292,36 @@
       "FeatureUsageSummary": {
         "type": "object",
         "properties": {
+          "buckets": {
+            "type": "array",
+            "description": "Buckets is one entry per independent budget on a parallel feature. The scalar\nfigures above cannot describe several budgets at once \u2014 a sum is not spendable\nfrom any one of them \u2014 so a client showing a parallel feature reads these instead.\nEmpty for additive features, where the scalars are the whole truth.",
+            "items": {
+              "$ref": "#/components/schemas/AggregatedEntitlementBucket"
+            }
+          },
           "current_usage": {
             "type": "string"
           },
           "feature": {
             "$ref": "#/components/schemas/FeatureResponse"
+          },
+          "grant_duration_unit": {
+            "$ref": "#/components/schemas/types.EntitlementGrantDurationUnit"
+          },
+          "grant_duration_value": {
+            "type": "integer"
+          },
+          "grant_measure": {
+            "$ref": "#/components/schemas/types.EntitlementGrantMeasure"
+          },
+          "grant_quota": {
+            "type": "string"
+          },
+          "grant_state": {
+            "$ref": "#/components/schemas/GrantState"
+          },
+          "grant_unlimited": {
+            "type": "boolean"
           },
           "is_enabled": {
             "type": "boolean"
@@ -21289,6 +21500,12 @@
           },
           "event": {
             "$ref": "#/components/schemas/Event"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
           },
           "processed_events": {
             "type": "array",
@@ -21780,6 +21997,63 @@
           },
           "value": {
             "type": "number"
+          }
+        }
+      },
+      "GrantAllowanceState": {
+        "type": "object",
+        "properties": {
+          "entitlement_id": {
+            "type": "string"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "last_computed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "measure": {
+            "$ref": "#/components/schemas/types.EntitlementGrantMeasure"
+          },
+          "quota": {
+            "type": "string"
+          },
+          "quota_crossed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remaining": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.EntitlementGrantStatus"
+          },
+          "unlimited": {
+            "type": "boolean"
+          },
+          "usage": {
+            "type": "string"
+          },
+          "valid_from": {
+            "type": "string"
+          },
+          "valid_to": {
+            "type": "string"
+          }
+        }
+      },
+      "GrantState": {
+        "type": "object",
+        "properties": {
+          "allowances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GrantAllowanceState"
+            }
           }
         }
       },
@@ -22553,6 +22827,28 @@
           }
         }
       },
+      "LineItemChange": {
+        "required": [
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "Amount reprices the charge. Flat fee only for now."
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string"
+          }
+        }
+      },
       "LineItemCommitmentConfig": {
         "type": "object",
         "properties": {
@@ -22918,6 +23214,9 @@
         ],
         "type": "object",
         "properties": {
+          "aggregation_mode": {
+            "$ref": "#/components/schemas/types.EntitlementAggregationMode"
+          },
           "config_value": {
             "type": "object",
             "additionalProperties": true,
@@ -22926,6 +23225,24 @@
           "entitlement_id": {
             "type": "string",
             "description": "EntitlementID references the plan/addon entitlement to override"
+          },
+          "grant_allocation_behavior": {
+            "$ref": "#/components/schemas/types.EntitlementGrantAllocationBehavior"
+          },
+          "grant_duration_unit": {
+            "$ref": "#/components/schemas/types.EntitlementGrantDurationUnit"
+          },
+          "grant_duration_value": {
+            "type": "integer"
+          },
+          "grant_measure": {
+            "$ref": "#/components/schemas/types.EntitlementGrantMeasure"
+          },
+          "grant_quota": {
+            "type": "string"
+          },
+          "grant_unlimited": {
+            "type": "boolean"
           },
           "is_enabled": {
             "type": "boolean",
@@ -23776,6 +24093,9 @@
           "addon_association_id": {
             "type": "string"
           },
+          "change_at": {
+            "$ref": "#/components/schemas/types.ScheduleType"
+          },
           "effective_date": {
             "type": "string",
             "description": "EffectiveDate defaults to period end when nil; mid-period with create_prorations issues a wallet credit.",
@@ -23786,6 +24106,144 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "RevenueAnalyticsRequest": {
+        "required": [
+          "start_time"
+        ],
+        "type": "object",
+        "properties": {
+          "allocation_policy": {
+            "$ref": "#/components/schemas/types.RevenueAllocationPolicy"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customer_ids": {
+            "type": "array",
+            "description": "Filters restrict the rows before aggregation.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "granularity": {
+            "$ref": "#/components/schemas/types.RevenueGranularity"
+          },
+          "group_by": {
+            "type": "array",
+            "description": "GroupBy dimensions: revenue_source, source (the event source recorded in\nmeter_usage; requires customer_ids or subscription_ids), customer_id,\nsubscription_id, price_id, meter_id, currency. revenue_source is always\napplied \u2014 every row says what kind of revenue it is \u2014 and requested\ndimensions are added on top.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "include_adjustments": {
+            "type": "boolean",
+            "description": "IncludeAdjustments breaks the non-obvious components \u2014 commitment\ntrue-ups, overage and revert (contra) rows \u2014 out as their own rows,\neach labeled with its kind in adjustment_type. Off, they fold into\ntheir parent buckets (true-up/overage into usage, reverts into their\nown source) so visible rows read as plain usage/fixed. Totals are\nidentical either way."
+          },
+          "meter_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "price_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "start_time": {
+            "type": "string",
+            "description": "StartTime/EndTime bound the day range (inclusive days derived in UTC).\nEndTime is optional and defaults to now.",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.FactStatus"
+          },
+          "subscription_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RevenueAnalyticsResponse": {
+        "type": "object",
+        "properties": {
+          "contains_allocated": {
+            "type": "boolean",
+            "description": "ContainsAllocated is true when any bucket includes whole-period amounts\nspread across days (amortized) or booked on a single day (billed) \u2014\ni.e. the day view carries period-shaped charges, not only true daily\naccruals."
+          },
+          "query": {
+            "$ref": "#/components/schemas/RevenueAnalyticsRequest"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RevenueAnalyticsRow"
+            }
+          }
+        }
+      },
+      "RevenueAnalyticsRow": {
+        "type": "object",
+        "properties": {
+          "adjustment_type": {
+            "type": "string",
+            "description": "AdjustmentType labels rows broken out by include_adjustments:\n\"commitment_trueup\", \"overage\" or \"revert\". Empty for plain rows."
+          },
+          "billable_qty": {
+            "type": "number"
+          },
+          "day": {
+            "type": "string",
+            "description": "Day is set for day granularity; PeriodStart/PeriodEnd for period."
+          },
+          "entitlement_amount": {
+            "type": "number"
+          },
+          "entitlement_qty": {
+            "type": "number"
+          },
+          "group": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Group holds the requested dimensions and their values for this bucket."
+          },
+          "invoice_discount": {
+            "type": "number"
+          },
+          "line_discount": {
+            "type": "number"
+          },
+          "net_amount": {
+            "type": "number"
+          },
+          "period_end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "period_start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.FactStatus"
+          },
+          "tier_delta": {
+            "type": "number"
+          },
+          "usage_at_list_rate": {
+            "type": "number"
           }
         }
       },
@@ -23937,6 +24395,23 @@
           }
         }
       },
+      "SubModifyBulkAddonParams": {
+        "type": "object",
+        "properties": {
+          "adds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AddAddonToSubscriptionRequest"
+            }
+          },
+          "removes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoveAddonRequest"
+            }
+          }
+        }
+      },
       "SubModifyCouponAction": {
         "type": "string",
         "enum": [
@@ -24024,6 +24499,21 @@
             "description": "ExternalCustomerIDsToRemove is used for action=\"remove\".",
             "items": {
               "type": "string"
+            }
+          }
+        }
+      },
+      "SubModifyLineItemChangeRequest": {
+        "required": [
+          "line_items"
+        ],
+        "type": "object",
+        "properties": {
+          "line_items": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineItemChange"
             }
           }
         }
@@ -24635,7 +25125,8 @@
           "trial_end",
           "coupon",
           "tax",
-          "addon"
+          "addon",
+          "line_item_change"
         ],
         "x-enum-varnames": [
           "SubscriptionModifyTypeInheritance",
@@ -24644,7 +25135,8 @@
           "SubscriptionModifyTypeTrialEnd",
           "SubscriptionModifyTypeCoupon",
           "SubscriptionModifyTypeTax",
-          "SubscriptionModifyTypeAddon"
+          "SubscriptionModifyTypeAddon",
+          "SubscriptionModifyTypeLineItemChange"
         ]
       },
       "SubscriptionPhaseCreateRequest": {
@@ -26195,10 +26687,6 @@
           "aggregation_mode": {
             "$ref": "#/components/schemas/types.EntitlementAggregationMode"
           },
-          "clear_grant_config": {
-            "type": "boolean",
-            "description": "Grant config \u2014 nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement)."
-          },
           "config_value": {
             "type": "object",
             "additionalProperties": true
@@ -26217,6 +26705,9 @@
           },
           "grant_quota": {
             "type": "string"
+          },
+          "grant_unlimited": {
+            "type": "boolean"
           },
           "is_enabled": {
             "type": "boolean"
@@ -28675,6 +29166,12 @@
               "$ref": "#/components/schemas/types.AddAddonRef"
             }
           },
+          "removes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/types.RemoveAddonRef"
+            }
+          },
           "subscription_id": {
             "type": "string"
           }
@@ -30014,6 +30511,18 @@
         ],
         "x-speakeasy-name-override": "EntitlementGrantMeasure"
       },
+      "types.EntitlementGrantStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "exhausted"
+        ],
+        "x-enum-varnames": [
+          "EntitlementGrantStatusActive",
+          "EntitlementGrantStatusExhausted"
+        ],
+        "x-speakeasy-name-override": "EntitlementGrantStatus"
+      },
       "types.EntitlementUsageResetPeriod": {
         "type": "string",
         "enum": [
@@ -30049,6 +30558,20 @@
           "EntityChangeBehaviourAdd"
         ],
         "x-speakeasy-name-override": "EntityChangeBehaviour"
+      },
+      "types.EntityCreationStatus": {
+        "type": "string",
+        "enum": [
+          "created",
+          "superseded",
+          "failed_already_exists"
+        ],
+        "x-enum-varnames": [
+          "EntityCreationStatusCreated",
+          "EntityCreationStatusSuperseded",
+          "EntityCreationStatusFailedAlreadyExists"
+        ],
+        "x-speakeasy-name-override": "EntityCreationStatus"
       },
       "types.EntitySyncConfig": {
         "type": "object",
@@ -30138,6 +30661,18 @@
           }
         },
         "x-speakeasy-name-override": "ExportMetadataField"
+      },
+      "types.FactStatus": {
+        "type": "string",
+        "enum": [
+          "PROVISIONAL",
+          "FINAL"
+        ],
+        "x-enum-varnames": [
+          "FactProvisional",
+          "FactFinal"
+        ],
+        "x-speakeasy-name-override": "FactStatus"
       },
       "types.FailurePoint": {
         "type": "object",
@@ -30531,6 +31066,11 @@
               "$ref": "#/components/schemas/types.FilterCondition"
             }
           },
+          "finalized_at_gte": {
+            "type": "string",
+            "description": "finalized_at_gte filters invoices finalized at or after the given instant",
+            "format": "date-time"
+          },
           "invoice_ids": {
             "type": "array",
             "description": "invoice_ids restricts results to invoices with the specified IDs\nUse this to retrieve specific invoices when you know their exact identifiers",
@@ -30614,6 +31154,11 @@
           "subscription_id": {
             "type": "string",
             "description": "subscription_id filters invoices generated for a specific subscription\nOnly returns invoices that were created as part of the specified subscription's billing"
+          },
+          "voided_at_gte": {
+            "type": "string",
+            "description": "voided_at_gte filters invoices voided at or after the given instant",
+            "format": "date-time"
           }
         },
         "x-speakeasy-name-override": "InvoiceFilter"
@@ -30772,6 +31317,9 @@
       "types.ModifySubscriptionLineItem": {
         "type": "object",
         "properties": {
+          "amount": {
+            "type": "string"
+          },
           "effective_date": {
             "type": "string",
             "format": "date-time"
@@ -30794,11 +31342,38 @@
               "$ref": "#/components/schemas/types.ModifySubscriptionLineItem"
             }
           },
+          "modify_type": {
+            "$ref": "#/components/schemas/types.ModifySubscriptionType"
+          },
           "subscription_id": {
             "type": "string"
           }
         },
         "x-speakeasy-name-override": "ModifySubscriptionParams"
+      },
+      "types.ModifySubscriptionType": {
+        "type": "string",
+        "enum": [
+          "quantity_change",
+          "line_item_change"
+        ],
+        "x-enum-varnames": [
+          "ModifySubscriptionTypeQuantityChange",
+          "ModifySubscriptionTypeLineItemChange"
+        ],
+        "x-speakeasy-name-override": "ModifySubscriptionType"
+      },
+      "types.OnExistingEntityPolicy": {
+        "type": "string",
+        "enum": [
+          "reject",
+          "supersede"
+        ],
+        "x-enum-varnames": [
+          "OnExistingEntityPolicyReject",
+          "OnExistingEntityPolicySupersede"
+        ],
+        "x-speakeasy-name-override": "OnExistingEntityPolicy"
       },
       "types.OnPendingSchedulePolicy": {
         "type": "string",
@@ -31182,6 +31757,10 @@
           },
           "subscription_id": {
             "type": "string"
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "UpdatedAfter matches prices edited since the given time. TimeRangeFilter\nabove filters on created_at, so it cannot see an edit to an existing\nprice."
           }
         },
         "x-speakeasy-name-override": "PriceFilter"
@@ -31388,6 +31967,25 @@
         ],
         "x-speakeasy-name-override": "RejectedEventReason"
       },
+      "types.RemoveAddonRef": {
+        "type": "object",
+        "properties": {
+          "association_id": {
+            "type": "string"
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "proration_behavior": {
+            "$ref": "#/components/schemas/types.ProrationBehavior"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "x-speakeasy-name-override": "RemoveAddonRef"
+      },
       "types.ReportingUnit": {
         "type": "object",
         "properties": {
@@ -31431,6 +32029,32 @@
           "ResumeModeAuto"
         ],
         "x-speakeasy-name-override": "ResumeMode"
+      },
+      "types.RevenueAllocationPolicy": {
+        "type": "string",
+        "enum": [
+          "billed",
+          "amortized"
+        ],
+        "x-enum-varnames": [
+          "RevenueAllocationBilled",
+          "RevenueAllocationAmortized"
+        ],
+        "x-speakeasy-name-override": "RevenueAllocationPolicy"
+      },
+      "types.RevenueGranularity": {
+        "type": "string",
+        "enum": [
+          "day",
+          "period",
+          "total"
+        ],
+        "x-enum-varnames": [
+          "RevenueGranularityDay",
+          "RevenueGranularityPeriod",
+          "RevenueGranularityTotal"
+        ],
+        "x-speakeasy-name-override": "RevenueGranularity"
       },
       "types.RoundType": {
         "type": "string",
@@ -31549,14 +32173,16 @@
           "invoice",
           "credit_topups",
           "credit_usage",
-          "usage_analytics"
+          "usage_analytics",
+          "revenue_facts"
         ],
         "x-enum-varnames": [
           "ScheduledTaskEntityTypeEvents",
           "ScheduledTaskEntityTypeInvoice",
           "ScheduledTaskEntityTypeCreditTopups",
           "ScheduledTaskEntityTypeCreditUsage",
-          "ScheduledTaskEntityTypeUsageAnalytics"
+          "ScheduledTaskEntityTypeUsageAnalytics",
+          "ScheduledTaskEntityTypeRevenueFacts"
         ],
         "x-speakeasy-name-override": "ScheduledTaskEntityType"
       },
@@ -31737,14 +32363,14 @@
         "type": "string",
         "enum": [
           "plan",
-          "addon",
+          "addon_association",
           "credit_grant",
           "entitlement",
           "entitlement_grant"
         ],
         "x-enum-varnames": [
           "SubscriptionChangeEntityTypePlan",
-          "SubscriptionChangeEntityTypeAddon",
+          "SubscriptionChangeEntityTypeAddonAssociation",
           "SubscriptionChangeEntityTypeCreditGrant",
           "SubscriptionChangeEntityTypeEntitlement",
           "SubscriptionChangeEntityTypeEntitlementGrant"

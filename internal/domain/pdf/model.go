@@ -15,6 +15,7 @@ type InvoiceData struct {
 	ID                         string     `json:"id"`
 	InvoiceStatus              string     `json:"invoice_status"`
 	InvoiceNumber              string     `json:"invoice_number"`
+	PONumber                   string     `json:"po_number,omitempty"`
 	IssuingDate                CustomTime `json:"issuing_date"`
 	DueDate                    CustomTime `json:"due_date"`
 	AmountDue                  float64    `json:"amount_due"`                    // Total amount (subtotal - discount + tax)

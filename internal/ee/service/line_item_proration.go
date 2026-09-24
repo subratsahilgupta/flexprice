@@ -19,12 +19,16 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// The credited side (Current*) is set by every action that credits, the charged side (New*)
+// by every action that charges. An action that only does one carries nil on the other.
 type LineItemProrationEntry struct {
-	LineItem    *subscription.SubscriptionLineItem
-	Price       *price.Price
-	Action      types.ProrationAction
-	OldQuantity decimal.Decimal // non-zero only for quantity changes
-	NewQuantity decimal.Decimal // zero for remove; equals line item qty for add
+	LineItem *subscription.SubscriptionLineItem
+	Action   types.ProrationAction
+
+	CurrentPrice    *price.Price
+	CurrentQuantity decimal.Decimal
+	NewPrice        *price.Price
+	NewQuantity     decimal.Decimal
 }
 
 type LineItemProrationRequest struct {
@@ -106,8 +110,6 @@ type SettleProrationRequest struct {
 	IdempotencyKey string
 	Reason         string
 	Mode           SettleMode
-
-	AttemptPayment bool
 }
 
 func NewSettleProrationRequest(
@@ -128,11 +130,6 @@ func NewSettleProrationRequest(
 		IdempotencyKey: idempotencyKey,
 		Mode:           mode,
 	}
-}
-
-type SettleProrationResult struct {
-	Changed []dto.ChangedInvoice
-	Draft   *dto.InvoiceResponse // set only for SettleModeDraft
 }
 
 func (r *SettleProrationRequest) validate() error {
@@ -165,6 +162,25 @@ func (r *SettleProrationRequest) validate() error {
 	}
 
 	return nil
+}
+
+type SettleProrationResult struct {
+	Changed []dto.ChangedInvoice
+	Draft   *dto.InvoiceResponse
+}
+
+func (r *SettleProrationResult) GetChanged() []dto.ChangedInvoice {
+	if r == nil {
+		return nil
+	}
+	return r.Changed
+}
+
+func (r *SettleProrationResult) GetDraft() *dto.InvoiceResponse {
+	if r == nil {
+		return nil
+	}
+	return r.Draft
 }
 
 type LineItemProrationService interface {
@@ -201,7 +217,6 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 
 	for _, entry := range req.Entries {
 		item := entry.LineItem
-		p := entry.Price
 
 		if item.PriceType == types.PRICE_TYPE_USAGE {
 			continue
@@ -215,7 +230,7 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 		// Arrear items are billed by the regular invoice at the end of each period. Charging
 		// for them here would bill the same period twice, since the period-end invoice only
 		// deduplicates against other subscription invoices, not against this one-off.
-		if entry.Action == types.ProrationActionAddItem && p.InvoiceCadence == types.InvoiceCadenceArrear {
+		if entry.Action == types.ProrationActionAddItem && entry.NewPrice.InvoiceCadence == types.InvoiceCadenceArrear {
 			continue
 		}
 
@@ -228,7 +243,7 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 			return nil, err
 		}
 
-		originalPaid, creditsIssued := creditBasis(item, p, billed)
+		originalPaid, creditsIssued := creditBasis(item, entry.CurrentPrice, billed)
 
 		for _, w := range windows {
 			if !w.End.After(req.EffectiveDate) {
@@ -249,11 +264,31 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 			}
 
 			if result.NetAmount.GreaterThan(decimal.Zero) {
-				lineItem := s.buildChargeLineItem(sub, entry, result.NetAmount, params.ProrationDate, w.End, p)
+				lineItem := buildProrationLineItem(
+					sub,
+					entry.LineItem,
+					entry.NewPrice,
+					entry.NewQuantity,
+					result.NetAmount,
+					"Proration charge",
+					params.ProrationDate,
+					w.End,
+				)
+
 				summary.ChargeLineItems = append(summary.ChargeLineItems, lineItem)
 				summary.TotalChargeAmount = summary.TotalChargeAmount.Add(result.NetAmount)
 			} else if result.NetAmount.LessThan(decimal.Zero) {
-				lineItem := s.buildChargeLineItem(sub, entry, result.NetAmount, params.ProrationDate, w.End, p)
+				lineItem := buildProrationLineItem(
+					sub,
+					entry.LineItem,
+					entry.CurrentPrice,
+					entry.CurrentQuantity,
+					result.NetAmount,
+					"Proration credit",
+					params.ProrationDate,
+					w.End,
+				)
+
 				summary.CreditLineItems = append(summary.CreditLineItems, lineItem)
 				summary.TotalCreditAmount = summary.TotalCreditAmount.Add(result.NetAmount.Abs())
 				// Later windows may only credit what this line item has not been credited yet.
@@ -290,6 +325,7 @@ func (s *lineItemProrationService) Settle(ctx context.Context, req *SettleProrat
 				return nil, err
 			}
 			result.Changed = append(result.Changed, dto.ChangedInvoice{
+				ID:      previewInvoiceID,
 				Action:  dto.ChangedInvoiceActionCreated,
 				Status:  dto.ChangedInvoiceStatusPreview,
 				Invoice: inv,
@@ -309,9 +345,10 @@ func (s *lineItemProrationService) Settle(ctx context.Context, req *SettleProrat
 			}
 			result.Draft = inv
 
-		case SettleModeIssue:
-			inv, err := s.issueInvoice(ctx, invoiceReq, req.AttemptPayment)
+		default:
+			inv, err := NewInvoiceService(s.params).CreateInvoice(ctx, invoiceReq)
 			if err != nil {
+				s.params.Logger.Error(ctx, "failed to create proration charge invoice", "error", err)
 				return nil, err
 			}
 			result.Changed = append(result.Changed, dto.ChangedInvoice{
@@ -341,14 +378,16 @@ func (s *lineItemProrationService) creditWallet(
 	sub := req.Subscription
 
 	if req.Mode == SettleModePreview {
-		return walletCreditChangedInvoice(&dto.WalletTransactionResponse{
+		credit := walletCreditChangedInvoice(&dto.WalletTransactionResponse{
 			Transaction: &wallet.Transaction{
 				CustomerID:        sub.GetInvoicingCustomerID(),
 				Amount:            amount,
 				Currency:          sub.Currency,
 				TransactionReason: types.TransactionReasonSubscriptionCredit,
 			},
-		}, dto.ChangedInvoiceStatusPreview), nil
+		}, dto.ChangedInvoiceStatusPreview)
+		credit.ID = previewWalletCreditID
+		return credit, nil
 	}
 
 	walletTx, err := NewWalletService(s.params).TopUpWalletForProratedCharge(
@@ -402,7 +441,11 @@ func (s *lineItemProrationService) creditBasisForInvoiceLineItems(
 ) map[string]*invoice.BilledAmounts {
 	lineItemIDs := make([]string, 0, len(req.Entries))
 	for _, entry := range req.Entries {
-		if entry.Action == types.ProrationActionRemoveItem && entry.LineItem != nil {
+		if entry.LineItem == nil {
+			continue
+		}
+		switch entry.Action {
+		case types.ProrationActionRemoveItem, types.ProrationActionPriceChange:
 			lineItemIDs = append(lineItemIDs, entry.LineItem.ID)
 		}
 	}
@@ -434,7 +477,6 @@ func (s *lineItemProrationService) buildProrationParams(
 	creditsIssued decimal.Decimal,
 ) (proration.ProrationParams, bool) {
 	item := entry.LineItem
-	p := entry.Price
 	periodEnd := window.End.Add(-time.Second)
 
 	// Windows that start after the change are charged or credited in full.
@@ -454,7 +496,6 @@ func (s *lineItemProrationService) buildProrationParams(
 	base := proration.ProrationParams{
 		SubscriptionID:     sub.ID,
 		LineItemID:         item.ID,
-		PlanPayInAdvance:   p.InvoiceCadence == types.InvoiceCadenceAdvance,
 		CurrentPeriodStart: periodStart,
 		CurrentPeriodEnd:   periodEnd,
 		ProrationDate:      prorationDate,
@@ -468,18 +509,34 @@ func (s *lineItemProrationService) buildProrationParams(
 	switch entry.Action {
 	case types.ProrationActionAddItem:
 		base.Action = types.ProrationActionAddItem
+		base.PlanPayInAdvance = entry.NewPrice.InvoiceCadence == types.InvoiceCadenceAdvance
 		base.NewPriceID = item.PriceID
-		base.NewQuantity = item.Quantity
-		base.NewPricePerUnit = p.Amount
+		base.NewQuantity = entry.NewQuantity
+		base.NewPricePerUnit = entry.NewPrice.Amount
 
 	case types.ProrationActionRemoveItem:
 		base.Action = types.ProrationActionRemoveItem
+		base.PlanPayInAdvance = entry.CurrentPrice.InvoiceCadence == types.InvoiceCadenceAdvance
 		base.OldPriceID = item.PriceID
-		base.OldQuantity = item.Quantity
-		base.OldPricePerUnit = p.Amount
+		base.OldQuantity = entry.CurrentQuantity
+		base.OldPricePerUnit = entry.CurrentPrice.Amount
 		base.CancellationType = types.CancellationTypeImmediate
 		base.CancellationReason = req.Reason
 		base.RefundEligible = true
+		base.OriginalAmountPaid, base.PreviousCreditsIssued = originalPaid, creditsIssued
+
+	case types.ProrationActionQuantityChange, types.ProrationActionPriceChange:
+		if entry.CurrentPrice.InvoiceCadence != types.InvoiceCadenceAdvance {
+			return proration.ProrationParams{}, true
+		}
+		base.Action = entry.Action
+		base.PlanPayInAdvance = true
+		base.OldPriceID = item.PriceID
+		base.NewPriceID = item.PriceID
+		base.OldQuantity = entry.CurrentQuantity
+		base.NewQuantity = entry.NewQuantity
+		base.OldPricePerUnit = entry.CurrentPrice.Amount
+		base.NewPricePerUnit = entry.NewPrice.Amount
 		base.OriginalAmountPaid, base.PreviousCreditsIssued = originalPaid, creditsIssued
 
 	default:
@@ -489,44 +546,41 @@ func (s *lineItemProrationService) buildProrationParams(
 	return base, false
 }
 
-func (s *lineItemProrationService) buildChargeLineItem(
+func buildProrationLineItem(
 	sub *subscription.Subscription,
-	entry LineItemProrationEntry,
+	item *subscription.SubscriptionLineItem,
+	p *price.Price,
+	quantity decimal.Decimal,
 	amount decimal.Decimal,
+	label string,
 	effectiveDate time.Time,
 	periodEnd time.Time,
-	p *price.Price,
 ) dto.CreateInvoiceLineItemRequest {
-	item := entry.LineItem
 	priceID := item.PriceID
 	priceType := string(p.Type)
-	displayName := item.DisplayName
 	subscriptionLineItemID := item.ID
+	planDisplayName := item.PlanDisplayName
 
-	qty := item.Quantity
-	if entry.Action == types.ProrationActionAddItem && !entry.NewQuantity.IsZero() {
-		qty = entry.NewQuantity
-	}
+	displayName := fmt.Sprintf("%s — %s (%s – %s)",
+		item.DisplayName,
+		label,
+		effectiveDate.Format("2 Jan 2006"), periodEnd.Format("2 Jan 2006"))
 
-	var description string
-	if entry.Action == types.ProrationActionAddItem {
-		description = fmt.Sprintf("Proration charge: %s × %s %s %s/unit (%s – %s)",
-			qty.String(), displayName,
-			strings.ToUpper(sub.Currency), p.Amount.String(),
-			effectiveDate.Format("2 Jan 2006"), periodEnd.Format("2 Jan 2006"))
-	} else {
-		description = fmt.Sprintf("Proration credit: %s × %s %s %s/unit (%s – %s)",
-			qty.String(), displayName,
-			strings.ToUpper(sub.Currency), p.Amount.String(),
-			effectiveDate.Format("2 Jan 2006"), periodEnd.Format("2 Jan 2006"))
-	}
+	description := fmt.Sprintf("%s: %s × %s %s %s/unit (%s – %s)",
+		label,
+		quantity.String(),
+		item.DisplayName,
+		strings.ToUpper(sub.Currency),
+		p.Amount.String(),
+		effectiveDate.Format("2 Jan 2006"), periodEnd.Format("2 Jan 2006"))
 
 	return dto.CreateInvoiceLineItemRequest{
 		PriceID:                &priceID,
 		PriceType:              &priceType,
+		PlanDisplayName:        &planDisplayName,
 		DisplayName:            &displayName,
 		Amount:                 amount,
-		Quantity:               qty,
+		Quantity:               quantity,
 		PeriodStart:            &effectiveDate,
 		PeriodEnd:              &periodEnd,
 		SubscriptionLineItemID: &subscriptionLineItemID,
@@ -553,33 +607,49 @@ func prorationChargeInvoiceKey(req LineItemProrationRequest) string {
 	})
 }
 
-func (s *lineItemProrationService) issueInvoice(
-	ctx context.Context,
-	req dto.CreateInvoiceRequest,
-	attemptPayment bool,
-) (*dto.InvoiceResponse, error) {
-	invoiceSvc := NewInvoiceService(s.params)
-
-	inv, err := invoiceSvc.CreateInvoice(ctx, req)
-	if err != nil {
-		s.params.Logger.Error(ctx, "failed to create proration charge invoice", "error", err)
-		return nil, err
+// collectableProrationInvoice reports whether an invoice in this payment status still owes
+// money. Settle raises its invoices as PENDING, so the other statuses only arise when a
+// caller hands back an invoice that was already paid, voided or refunded — charging one of
+// those again would take money twice.
+func collectableProrationInvoice(status types.PaymentStatus) bool {
+	switch status {
+	case types.PaymentStatusPending, types.PaymentStatusFailed:
+		return true
+	default:
+		return false
 	}
-	if !attemptPayment {
-		return inv, nil
-	}
+}
 
-	if err := invoiceSvc.AttemptPayment(ctx, inv.ID); err != nil {
-		s.params.Logger.Info(ctx, "failed to attempt payment for proration charge invoice",
-			"error", err, "invoice_id", inv.ID)
-	}
+// attemptProrationPayments collects settled proration invoices and refreshes what changed. It
+// does outbound I/O — wallet debits and a gateway charge — so it runs only after the caller's
+// transaction has committed.
+func attemptProrationPayments(ctx context.Context, params ServiceParams, changed []dto.ChangedInvoice) {
+	invoiceSvc := NewInvoiceService(params)
 
-	if latest, err := s.params.InvoiceRepo.Get(ctx, inv.ID); err == nil && latest != nil {
+	for i := range changed {
+		inv := changed[i].Invoice
+		if inv == nil || inv.ID == "" {
+			continue
+		}
+
+		if !collectableProrationInvoice(inv.PaymentStatus) {
+			continue
+		}
+
+		if err := invoiceSvc.AttemptPayment(ctx, inv.ID); err != nil {
+			params.Logger.Info(ctx, "proration invoice created but payment attempt failed; invoice remains collectable",
+				"error", err, "invoice_id", inv.ID)
+		}
+
+		latest, err := params.InvoiceRepo.Get(ctx, inv.ID)
+		if err != nil || latest == nil {
+			continue
+		}
+
 		inv.InvoiceStatus = latest.InvoiceStatus
 		inv.PaymentStatus = latest.PaymentStatus
 		inv.AmountPaid = latest.AmountPaid
 		inv.AmountRemaining = latest.AmountRemaining
+		changed[i].Status = dto.ChangedInvoiceStatusFromPaymentStatus(latest.PaymentStatus)
 	}
-
-	return inv, nil
 }

@@ -336,7 +336,7 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 	}
 
 	if resp.InvoiceStatus == types.InvoiceStatusFinalized {
-		s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateFinalized, resp.ID)
+		notifyInvoiceFinalized(ctx, s.ServiceParams, resp.ID)
 	}
 
 	return resp, nil
@@ -1229,7 +1229,8 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		return err
 	}
 
-	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateFinalized, inv.ID)
+	notifyInvoiceFinalized(ctx, s.ServiceParams, inv.ID)
+
 	return nil
 }
 
@@ -1540,7 +1541,8 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 			"invoice_number", lo.FromPtr(inv.InvoiceNumber))
 	}
 
-	s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdateVoided, inv.ID)
+	notifyInvoiceVoided(ctx, s.ServiceParams, inv.ID)
+
 	return inv, nil
 }
 
@@ -3247,6 +3249,11 @@ func (s *invoiceService) getInvoiceDataForPDFGen(
 			data.Notes = notes
 		}
 
+		// PO number for templates that display it (e.g. cost_breakdown)
+		if po, ok := inv.Metadata["po_number"]; ok {
+			data.PONumber = po
+		}
+
 		// Try to extract VAT from metadata
 		if vat, ok := inv.Metadata["vat"]; ok {
 			vatValue, err := strconv.ParseFloat(vat, 64)
@@ -3576,6 +3583,13 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 }
 
 func (s *invoiceService) publishSystemEvent(ctx context.Context, eventName types.WebhookEventName, invoiceID string) {
+	publishInvoiceWebhook(ctx, s.ServiceParams, eventName, invoiceID)
+}
+
+// publishInvoiceWebhook publishes an invoice-payload system event. Package
+// level so non-invoice services (e.g. the payment processor's auto-finalize)
+// emit the identical event shape.
+func publishInvoiceWebhook(ctx context.Context, params ServiceParams, eventName types.WebhookEventName, invoiceID string) {
 	webhookPayload, err := json.Marshal(struct {
 		InvoiceID string `json:"invoice_id"`
 		TenantID  string `json:"tenant_id"`
@@ -3585,7 +3599,7 @@ func (s *invoiceService) publishSystemEvent(ctx context.Context, eventName types
 	})
 
 	if err != nil {
-		s.Logger.Error(ctx, "failed to marshal webhook payload", "error", err)
+		params.Logger.Error(ctx, "failed to marshal webhook payload", "error", err)
 		return
 	}
 
@@ -3600,7 +3614,7 @@ func (s *invoiceService) publishSystemEvent(ctx context.Context, eventName types
 		EntityType:    types.SystemEntityTypeInvoice,
 		EntityID:      invoiceID,
 	}
-	s.Logger.Info(ctx, "attempting to publish webhook event",
+	params.Logger.Info(ctx, "attempting to publish webhook event",
 		"webhook_id", webhookEvent.ID,
 		"event_name", eventName,
 		"invoice_id", invoiceID,
@@ -3608,8 +3622,8 @@ func (s *invoiceService) publishSystemEvent(ctx context.Context, eventName types
 		"environment_id", webhookEvent.EnvironmentID,
 	)
 
-	if err := s.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
-		s.Logger.Error(ctx, "failed to publish webhook event",
+	if err := params.WebhookPublisher.PublishWebhook(ctx, webhookEvent); err != nil {
+		params.Logger.Error(ctx, "failed to publish webhook event",
 			"error", err,
 			"webhook_id", webhookEvent.ID,
 			"event_name", eventName,
@@ -3618,7 +3632,7 @@ func (s *invoiceService) publishSystemEvent(ctx context.Context, eventName types
 		return
 	}
 
-	s.Logger.Info(ctx, "webhook event published successfully",
+	params.Logger.Info(ctx, "webhook event published successfully",
 		"webhook_id", webhookEvent.ID,
 		"event_name", eventName,
 		"invoice_id", invoiceID,

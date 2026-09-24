@@ -16,8 +16,9 @@ import (
 
 type LineItemProrationServiceSuite struct {
 	testutil.BaseServiceTestSuite
-	svc LineItemProrationService
-	td  lineItemProrationTestData
+	svc    LineItemProrationService
+	params ServiceParams
+	td     lineItemProrationTestData
 }
 
 type lineItemProrationTestData struct {
@@ -44,7 +45,7 @@ func (s *LineItemProrationServiceSuite) TearDownTest() {
 }
 
 func (s *LineItemProrationServiceSuite) setupService() {
-	s.svc = NewLineItemProrationService(ServiceParams{
+	s.params = ServiceParams{
 		CheckoutSessionRepo:        s.GetStores().CheckoutSessionRepo,
 		Logger:                     s.GetLogger(),
 		Config:                     s.GetConfig(),
@@ -86,7 +87,8 @@ func (s *LineItemProrationServiceSuite) setupService() {
 		WebhookPublisher:           s.GetWebhookPublisher(),
 		ProrationCalculator:        s.GetCalculator(),
 		IntegrationFactory:         s.GetIntegrationFactory(),
-	})
+	}
+	s.svc = NewLineItemProrationService(s.params)
 }
 
 func (s *LineItemProrationServiceSuite) setupTestData() {
@@ -200,7 +202,7 @@ func (s *LineItemProrationServiceSuite) TestCompute_AddItem_FullPeriod() {
 		IdempotencyKey: "test_add_full",
 		Entries: []LineItemProrationEntry{{
 			LineItem:    s.td.lineItem,
-			Price:       s.td.fixedPrice,
+			NewPrice:    s.td.fixedPrice,
 			Action:      types.ProrationActionAddItem,
 			NewQuantity: s.td.lineItem.Quantity,
 		}},
@@ -229,7 +231,7 @@ func (s *LineItemProrationServiceSuite) TestCompute_AddItem_MidPeriod() {
 		IdempotencyKey: "test_add_mid",
 		Entries: []LineItemProrationEntry{{
 			LineItem:    s.td.lineItem,
-			Price:       s.td.fixedPrice,
+			NewPrice:    s.td.fixedPrice,
 			Action:      types.ProrationActionAddItem,
 			NewQuantity: s.td.lineItem.Quantity,
 		}},
@@ -258,7 +260,7 @@ func (s *LineItemProrationServiceSuite) TestCompute_AddItem_LastSecond() {
 		IdempotencyKey: "test_add_last",
 		Entries: []LineItemProrationEntry{{
 			LineItem:    s.td.lineItem,
-			Price:       s.td.fixedPrice,
+			NewPrice:    s.td.fixedPrice,
 			Action:      types.ProrationActionAddItem,
 			NewQuantity: s.td.lineItem.Quantity,
 		}},
@@ -284,9 +286,9 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_MidPeriod() {
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "test_rem_mid",
 		Entries: []LineItemProrationEntry{{
-			LineItem: s.td.lineItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     s.td.lineItem,
+			CurrentPrice: s.td.fixedPrice, CurrentQuantity: s.td.lineItem.Quantity,
+			Action: types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -312,9 +314,9 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_CreditCappedAtBil
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "test_rem_capped",
 		Entries: []LineItemProrationEntry{{
-			LineItem: s.td.lineItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     s.td.lineItem,
+			CurrentPrice: s.td.fixedPrice, CurrentQuantity: s.td.lineItem.Quantity,
+			Action: types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -340,9 +342,9 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_CreditNetsPreviou
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "test_rem_netted",
 		Entries: []LineItemProrationEntry{{
-			LineItem: s.td.lineItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     s.td.lineItem,
+			CurrentPrice: s.td.fixedPrice, CurrentQuantity: s.td.lineItem.Quantity,
+			Action: types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -369,9 +371,9 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_NoBilledRow_Falls
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "test_rem_unbilled",
 		Entries: []LineItemProrationEntry{{
-			LineItem: s.td.lineItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     s.td.lineItem,
+			CurrentPrice: s.td.fixedPrice, CurrentQuantity: s.td.lineItem.Quantity,
+			Action: types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -412,9 +414,9 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_IgnoresOtherPerio
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "test_rem_other_period",
 		Entries: []LineItemProrationEntry{{
-			LineItem: s.td.lineItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     s.td.lineItem,
+			CurrentPrice: s.td.fixedPrice, CurrentQuantity: s.td.lineItem.Quantity,
+			Action: types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -455,9 +457,9 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_LongerCadenceChar
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "test_rem_quarterly",
 		Entries: []LineItemProrationEntry{{
-			LineItem: s.td.lineItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     s.td.lineItem,
+			CurrentPrice: s.td.fixedPrice, CurrentQuantity: s.td.lineItem.Quantity,
+			Action: types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -481,7 +483,7 @@ func (s *LineItemProrationServiceSuite) TestCompute_ProrationChargeLinksToLineIt
 		IdempotencyKey: "test_add_fk",
 		Entries: []LineItemProrationEntry{{
 			LineItem:    s.td.lineItem,
-			Price:       s.td.fixedPrice,
+			NewPrice:    s.td.fixedPrice,
 			Action:      types.ProrationActionAddItem,
 			NewQuantity: s.td.lineItem.Quantity,
 		}},
@@ -508,9 +510,9 @@ func (s *LineItemProrationServiceSuite) TestCompute_RemoveItem_OnetimeAddon() {
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "test_rem_onetime",
 		Entries: []LineItemProrationEntry{{
-			LineItem: &onetimeItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     &onetimeItem,
+			CurrentPrice: s.td.fixedPrice,
+			Action:       types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -537,7 +539,7 @@ func (s *LineItemProrationServiceSuite) TestCompute_SkipsUsagePrice() {
 		Behavior:      types.ProrationBehaviorCreateProrations,
 		Entries: []LineItemProrationEntry{{
 			LineItem:    &usageItem,
-			Price:       s.td.usagePrice,
+			NewPrice:    s.td.usagePrice,
 			Action:      types.ProrationActionAddItem,
 			NewQuantity: decimal.NewFromInt(1),
 		}},
@@ -560,7 +562,7 @@ func (s *LineItemProrationServiceSuite) TestCompute_NoneProrationBehavior() {
 		Behavior:      types.ProrationBehaviorNone,
 		Entries: []LineItemProrationEntry{{
 			LineItem:    s.td.lineItem,
-			Price:       s.td.fixedPrice,
+			NewPrice:    s.td.fixedPrice,
 			Action:      types.ProrationActionAddItem,
 			NewQuantity: s.td.lineItem.Quantity,
 		}},
@@ -589,13 +591,14 @@ func (s *LineItemProrationServiceSuite) TestCompute_MultipleEntries_AddAndRemove
 		Behavior:      types.ProrationBehaviorCreateProrations,
 		Entries: []LineItemProrationEntry{
 			{
-				LineItem: s.td.lineItem,
-				Price:    s.td.fixedPrice,
-				Action:   types.ProrationActionRemoveItem,
+				LineItem:        s.td.lineItem,
+				Action:          types.ProrationActionRemoveItem,
+				CurrentPrice:    s.td.fixedPrice,
+				CurrentQuantity: s.td.lineItem.Quantity,
 			},
 			{
 				LineItem:    &addItem,
-				Price:       s.td.fixedPrice,
+				NewPrice:    s.td.fixedPrice,
 				Action:      types.ProrationActionAddItem,
 				NewQuantity: addItem.Quantity,
 			},
@@ -623,7 +626,7 @@ func (s *LineItemProrationServiceSuite) TestApply_AddItem_CreatesOneOffInvoice()
 		IdempotencyKey: "test_apply_add",
 		Entries: []LineItemProrationEntry{{
 			LineItem:    s.td.lineItem,
-			Price:       s.td.fixedPrice,
+			NewPrice:    s.td.fixedPrice,
 			Action:      types.ProrationActionAddItem,
 			NewQuantity: s.td.lineItem.Quantity,
 		}},
@@ -684,7 +687,7 @@ func (s *LineItemProrationServiceSuite) TestApply_TwoChangesSameEffectiveDate_Bi
 			IdempotencyKey: key,
 			Entries: []LineItemProrationEntry{{
 				LineItem:    lineItem,
-				Price:       p,
+				NewPrice:    p,
 				Action:      types.ProrationActionAddItem,
 				NewQuantity: lineItem.Quantity,
 			}},
@@ -728,7 +731,7 @@ func (s *LineItemProrationServiceSuite) TestApply_SameChangeTwice_IsIdempotent()
 		IdempotencyKey: "addon_add_assoc_replayed",
 		Entries: []LineItemProrationEntry{{
 			LineItem:    s.td.lineItem,
-			Price:       s.td.fixedPrice,
+			NewPrice:    s.td.fixedPrice,
 			Action:      types.ProrationActionAddItem,
 			NewQuantity: s.td.lineItem.Quantity,
 		}},
@@ -757,9 +760,9 @@ func (s *LineItemProrationServiceSuite) TestApply_RemoveItem_CreatesWalletCredit
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "test_apply_remove",
 		Entries: []LineItemProrationEntry{{
-			LineItem: s.td.lineItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     s.td.lineItem,
+			CurrentPrice: s.td.fixedPrice, CurrentQuantity: s.td.lineItem.Quantity,
+			Action: types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -788,7 +791,7 @@ func (s *LineItemProrationServiceSuite) TestApply_NoneProrationBehavior_IsNoOp()
 		Behavior:      types.ProrationBehaviorNone,
 		Entries: []LineItemProrationEntry{{
 			LineItem:    s.td.lineItem,
-			Price:       s.td.fixedPrice,
+			NewPrice:    s.td.fixedPrice,
 			Action:      types.ProrationActionAddItem,
 			NewQuantity: s.td.lineItem.Quantity,
 		}},
@@ -821,9 +824,9 @@ func (s *LineItemProrationServiceSuite) TestApply_OnetimeRemove_IsNoOp() {
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "test_apply_onetime",
 		Entries: []LineItemProrationEntry{{
-			LineItem: &onetimeItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     &onetimeItem,
+			CurrentPrice: s.td.fixedPrice,
+			Action:       types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -847,9 +850,9 @@ func (s *LineItemProrationServiceSuite) TestApply_RemoveItem_IdempotencyKeyUsed(
 		Behavior:       types.ProrationBehaviorCreateProrations,
 		IdempotencyKey: "idempotency_test_key",
 		Entries: []LineItemProrationEntry{{
-			LineItem: s.td.lineItem,
-			Price:    s.td.fixedPrice,
-			Action:   types.ProrationActionRemoveItem,
+			LineItem:     s.td.lineItem,
+			CurrentPrice: s.td.fixedPrice, CurrentQuantity: s.td.lineItem.Quantity,
+			Action: types.ProrationActionRemoveItem,
 		}},
 	}
 
@@ -904,7 +907,7 @@ func (s *LineItemProrationServiceSuite) TestCompute_AddItem_TableDriven() {
 				Behavior:      types.ProrationBehaviorCreateProrations,
 				Entries: []LineItemProrationEntry{{
 					LineItem:    s.td.lineItem,
-					Price:       s.td.fixedPrice,
+					NewPrice:    s.td.fixedPrice,
 					Action:      types.ProrationActionAddItem,
 					NewQuantity: s.td.lineItem.Quantity,
 				}},

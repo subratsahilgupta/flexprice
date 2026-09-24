@@ -240,4 +240,3 @@ func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, req inter
 	_, ok := selectAutoChargeToken(tokens, "", amount)
 	return ok, nil
 }
-

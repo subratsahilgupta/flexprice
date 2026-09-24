@@ -808,6 +808,65 @@ const docTemplate = `{
                 "x-scope": "read"
             }
         },
+        "/analytics/revenue": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Aggregates revenue_facts by the requested dimensions at day/period/total granularity. allocation_policy places whole-period charges on their booked day (billed) or spreads them across the period (amortized); include_adjustments breaks out true-up/overage/revert amounts as labeled rows. Requires the tenant's revenue analytics setting.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Query revenue analytics",
+                "operationId": "getRevenueAnalytics",
+                "parameters": [
+                    {
+                        "description": "Revenue analytics request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/RevenueAnalyticsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/RevenueAnalyticsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Revenue analytics not enabled",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
         "/analytics/views": {
             "post": {
                 "security": [
@@ -9125,7 +9184,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Execute a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove).",
+                "description": "Execute a mid-cycle subscription modification (inheritance, line item change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes settled as one netted document).\nType \"quantity_change\" is deprecated: use \"line_item_change\", which changes a fixed charge's quantity, price, or both, with the same proration and checkout behaviour.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9191,7 +9250,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Preview the impact of a mid-cycle subscription modification (inheritance, quantity change, grouped invoicing, trial end, coupon, tax, or addon add/remove) without committing changes.",
+                "description": "Preview the impact of a mid-cycle subscription modification (inheritance, line item change, grouped invoicing, trial end, coupon, tax, a single addon add/remove, or a batch of addon adds and removes) without committing changes.\nType \"quantity_change\" is deprecated: use \"line_item_change\".",
                 "consumes": [
                     "application/json"
                 ],
@@ -13998,9 +14057,6 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.Metric"
                     }
                 },
-                "name": {
-                    "type": "string"
-                },
                 "shape": {
                     "enum": [
                         "timeseries",
@@ -14338,6 +14394,14 @@ const docTemplate = `{
                 "cadence": {
                     "$ref": "#/definitions/types.AddonCadence"
                 },
+                "change_at": {
+                    "description": "ChangeAt names when the attach applies without computing a date. Mutually exclusive\nwith StartDate; omit both to attach now.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
+                },
                 "checkout": {
                     "$ref": "#/definitions/CheckoutParams"
                 },
@@ -14381,6 +14445,14 @@ const docTemplate = `{
                 },
                 "cadence": {
                     "$ref": "#/definitions/types.AddonCadence"
+                },
+                "change_at": {
+                    "description": "ChangeAt names when the attach applies without computing a date. Mutually exclusive\nwith StartDate; omit both to attach now.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
                 },
                 "line_item_commitments": {
                     "description": "LineItemCommitments allows setting commitment configuration per addon line item (keyed by price_id)",
@@ -14670,6 +14742,24 @@ const docTemplate = `{
                         "additionalProperties": {}
                     }
                 },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "string"
+                },
+                "grant_state": {
+                    "$ref": "#/definitions/GrantState"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
+                },
                 "is_enabled": {
                     "type": "boolean"
                 },
@@ -14707,6 +14797,9 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "source_entity_id": {
                     "type": "string"
@@ -15210,6 +15303,49 @@ const docTemplate = `{
                 }
             }
         },
+        "ChangedAddonAssociation": {
+            "type": "object",
+            "properties": {
+                "addon_id": {
+                    "type": "string"
+                },
+                "addon_status": {
+                    "$ref": "#/definitions/types.AddonStatus"
+                },
+                "change_action": {
+                    "enum": [
+                        "created",
+                        "ended"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ChangedAddonAssociationAction"
+                        }
+                    ]
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "ChangedAddonAssociationAction": {
+            "description": "created | ended",
+            "type": "string",
+            "enum": [
+                "created",
+                "ended"
+            ],
+            "x-enum-varnames": [
+                "ChangedAddonAssociationActionCreated",
+                "ChangedAddonAssociationActionEnded"
+            ]
+        },
         "ChangedInvoice": {
             "type": "object",
             "properties": {
@@ -15335,6 +15471,12 @@ const docTemplate = `{
         "ChangedResources": {
             "type": "object",
             "properties": {
+                "addon_associations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ChangedAddonAssociation"
+                    }
+                },
                 "invoices": {
                     "type": "array",
                     "items": {
@@ -15395,6 +15537,9 @@ const docTemplate = `{
             "properties": {
                 "cancel_url": {
                     "type": "string"
+                },
+                "entity_creation_options": {
+                    "$ref": "#/definitions/EntityCreationOptions"
                 },
                 "failure_url": {
                     "type": "string"
@@ -15462,6 +15607,14 @@ const docTemplate = `{
                 },
                 "customer_id": {
                     "type": "string"
+                },
+                "entity_creation_result": {
+                    "description": "Describes the call that returned this session, not the session itself; never persisted.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/EntityCreationResult"
+                        }
+                    ]
                 },
                 "expires_at": {
                     "type": "string"
@@ -16195,6 +16348,9 @@ const docTemplate = `{
                 "customer_external_id": {
                     "type": "string"
                 },
+                "entity_creation_options": {
+                    "$ref": "#/definitions/EntityCreationOptions"
+                },
                 "failure_url": {
                     "type": "string"
                 },
@@ -16626,6 +16782,9 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -18778,6 +18937,33 @@ const docTemplate = `{
                 }
             }
         },
+        "EntityCreationConflictPolicies": {
+            "type": "object",
+            "properties": {
+                "on_existing_entity": {
+                    "$ref": "#/definitions/types.OnExistingEntityPolicy"
+                }
+            }
+        },
+        "EntityCreationOptions": {
+            "type": "object",
+            "properties": {
+                "entity_creation_conflict_policies": {
+                    "$ref": "#/definitions/EntityCreationConflictPolicies"
+                }
+            }
+        },
+        "EntityCreationResult": {
+            "type": "object",
+            "properties": {
+                "entity_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.EntityCreationStatus"
+                }
+            }
+        },
         "EntityIntegrationMappingResponse": {
             "type": "object",
             "properties": {
@@ -18841,6 +19027,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "ingested_at": {
+                    "type": "string"
+                },
                 "properties": {
                     "type": "object",
                     "additionalProperties": true
@@ -18884,6 +19073,9 @@ const docTemplate = `{
                 "type"
             ],
             "properties": {
+                "addon_bulk_params": {
+                    "$ref": "#/definitions/SubModifyBulkAddonParams"
+                },
                 "addon_params": {
                     "$ref": "#/definitions/SubModifyAddonParams"
                 },
@@ -18898,6 +19090,9 @@ const docTemplate = `{
                 },
                 "inheritance_params": {
                     "$ref": "#/definitions/SubModifyInheritanceRequest"
+                },
+                "line_item_change_params": {
+                    "$ref": "#/definitions/SubModifyLineItemChangeRequest"
                 },
                 "quantity_change_params": {
                     "$ref": "#/definitions/SubModifyQuantityChangeRequest"
@@ -19018,11 +19213,36 @@ const docTemplate = `{
         "FeatureUsageSummary": {
             "type": "object",
             "properties": {
+                "buckets": {
+                    "description": "Buckets is one entry per independent budget on a parallel feature. The scalar\nfigures above cannot describe several budgets at once — a sum is not spendable\nfrom any one of them — so a client showing a parallel feature reads these instead.\nEmpty for additive features, where the scalars are the whole truth.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AggregatedEntitlementBucket"
+                    }
+                },
                 "current_usage": {
                     "type": "string"
                 },
                 "feature": {
                     "$ref": "#/definitions/FeatureResponse"
+                },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "string"
+                },
+                "grant_state": {
+                    "$ref": "#/definitions/GrantState"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -19201,6 +19421,12 @@ const docTemplate = `{
                 },
                 "event": {
                     "$ref": "#/definitions/Event"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/Event"
+                    }
                 },
                 "processed_events": {
                     "type": "array",
@@ -19688,6 +19914,61 @@ const docTemplate = `{
                 },
                 "value": {
                     "type": "number"
+                }
+            }
+        },
+        "GrantAllowanceState": {
+            "type": "object",
+            "properties": {
+                "entitlement_id": {
+                    "type": "string"
+                },
+                "grant_id": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "last_computed_at": {
+                    "type": "string"
+                },
+                "measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "quota": {
+                    "type": "string"
+                },
+                "quota_crossed_at": {
+                    "type": "string"
+                },
+                "remaining": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.EntitlementGrantStatus"
+                },
+                "unlimited": {
+                    "type": "boolean"
+                },
+                "usage": {
+                    "type": "string"
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "valid_to": {
+                    "type": "string"
+                }
+            }
+        },
+        "GrantState": {
+            "type": "object",
+            "properties": {
+                "allowances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GrantAllowanceState"
+                    }
                 }
             }
         },
@@ -20502,6 +20783,27 @@ const docTemplate = `{
                 }
             }
         },
+        "LineItemChange": {
+            "type": "object",
+            "required": [
+                "id"
+            ],
+            "properties": {
+                "amount": {
+                    "description": "Amount reprices the charge. Flat fee only for now.",
+                    "type": "string"
+                },
+                "effective_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "string"
+                }
+            }
+        },
         "LineItemCommitmentConfig": {
             "type": "object",
             "properties": {
@@ -20867,6 +21169,9 @@ const docTemplate = `{
                 "entitlement_id"
             ],
             "properties": {
+                "aggregation_mode": {
+                    "$ref": "#/definitions/types.EntitlementAggregationMode"
+                },
                 "config_value": {
                     "description": "ConfigValue is the config value for config features",
                     "type": "object",
@@ -20875,6 +21180,24 @@ const docTemplate = `{
                 "entitlement_id": {
                     "description": "EntitlementID references the plan/addon entitlement to override",
                     "type": "string"
+                },
+                "grant_allocation_behavior": {
+                    "$ref": "#/definitions/types.EntitlementGrantAllocationBehavior"
+                },
+                "grant_duration_unit": {
+                    "$ref": "#/definitions/types.EntitlementGrantDurationUnit"
+                },
+                "grant_duration_value": {
+                    "type": "integer"
+                },
+                "grant_measure": {
+                    "$ref": "#/definitions/types.EntitlementGrantMeasure"
+                },
+                "grant_quota": {
+                    "type": "string"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "description": "IsEnabled determines if the entitlement is enabled or disabled",
@@ -21756,6 +22079,14 @@ const docTemplate = `{
                 "addon_association_id": {
                     "type": "string"
                 },
+                "change_at": {
+                    "description": "ChangeAt names when the removal applies without computing a date. Mutually exclusive\nwith EffectiveDate; omit both to remove at period end.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.ScheduleType"
+                        }
+                    ]
+                },
                 "effective_date": {
                     "description": "EffectiveDate defaults to period end when nil; mid-period with create_prorations issues a wallet credit.",
                     "type": "string"
@@ -21765,6 +22096,165 @@ const docTemplate = `{
                 },
                 "reason": {
                     "type": "string"
+                }
+            }
+        },
+        "RevenueAnalyticsRequest": {
+            "type": "object",
+            "required": [
+                "start_time"
+            ],
+            "properties": {
+                "allocation_policy": {
+                    "description": "AllocationPolicy applies to the day granularity: billed keeps\nwhole-period amounts on their booked day; amortized spreads them evenly\nacross their period's days.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.RevenueAllocationPolicy"
+                        }
+                    ]
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "customer_ids": {
+                    "description": "Filters restrict the rows before aggregation.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "end_time": {
+                    "type": "string"
+                },
+                "granularity": {
+                    "description": "Granularity buckets results by day, by billing period, or into one total.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.RevenueGranularity"
+                        }
+                    ]
+                },
+                "group_by": {
+                    "description": "GroupBy dimensions: revenue_source, source (the event source recorded in\nmeter_usage; requires customer_ids or subscription_ids), customer_id,\nsubscription_id, price_id, meter_id, currency. revenue_source is always\napplied — every row says what kind of revenue it is — and requested\ndimensions are added on top.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "include_adjustments": {
+                    "description": "IncludeAdjustments breaks the non-obvious components — commitment\ntrue-ups, overage and revert (contra) rows — out as their own rows,\neach labeled with its kind in adjustment_type. Off, they fold into\ntheir parent buckets (true-up/overage into usage, reverts into their\nown source) so visible rows read as plain usage/fixed. Totals are\nidentical either way.",
+                    "type": "boolean"
+                },
+                "meter_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "price_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "start_time": {
+                    "description": "StartTime/EndTime bound the day range (inclusive days derived in UTC).\nEndTime is optional and defaults to now.",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status restricts the response to booked (FINAL) or in-progress\n(PROVISIONAL) rows. Optional: left empty, both are returned and each\nrow says which it is, so the two are never silently summed together.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FactStatus"
+                        }
+                    ]
+                },
+                "subscription_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "RevenueAnalyticsResponse": {
+            "type": "object",
+            "properties": {
+                "contains_allocated": {
+                    "description": "ContainsAllocated is true when any bucket includes whole-period amounts\nspread across days (amortized) or booked on a single day (billed) —\ni.e. the day view carries period-shaped charges, not only true daily\naccruals.",
+                    "type": "boolean"
+                },
+                "query": {
+                    "description": "Query echoes the request with defaults resolved. Rows carry only the\nrequested group dimensions, so this is what says which customers,\nsubscriptions and window they cover — add customer_id/subscription_id\nto group_by for per-entity rows.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/RevenueAnalyticsRequest"
+                        }
+                    ]
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/RevenueAnalyticsRow"
+                    }
+                }
+            }
+        },
+        "RevenueAnalyticsRow": {
+            "type": "object",
+            "properties": {
+                "adjustment_type": {
+                    "description": "AdjustmentType labels rows broken out by include_adjustments:\n\"commitment_trueup\", \"overage\" or \"revert\". Empty for plain rows.",
+                    "type": "string"
+                },
+                "billable_qty": {
+                    "type": "number"
+                },
+                "day": {
+                    "description": "Day is set for day granularity; PeriodStart/PeriodEnd for period.",
+                    "type": "string"
+                },
+                "entitlement_amount": {
+                    "type": "number"
+                },
+                "entitlement_qty": {
+                    "type": "number"
+                },
+                "group": {
+                    "description": "Group holds the requested dimensions and their values for this bucket.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "invoice_discount": {
+                    "type": "number"
+                },
+                "line_discount": {
+                    "type": "number"
+                },
+                "net_amount": {
+                    "type": "number"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status is the row's fact status. It is part of the row's identity, so a\nFINAL and a PROVISIONAL row for the same bucket stay separate.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FactStatus"
+                        }
+                    ]
+                },
+                "tier_delta": {
+                    "type": "number"
+                },
+                "usage_at_list_rate": {
+                    "type": "number"
                 }
             }
         },
@@ -21924,6 +22414,23 @@ const docTemplate = `{
                 }
             }
         },
+        "SubModifyBulkAddonParams": {
+            "type": "object",
+            "properties": {
+                "adds": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/AddAddonToSubscriptionRequest"
+                    }
+                },
+                "removes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/RemoveAddonRequest"
+                    }
+                }
+            }
+        },
         "SubModifyCouponAction": {
             "type": "string",
             "enum": [
@@ -22024,6 +22531,21 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "SubModifyLineItemChangeRequest": {
+            "type": "object",
+            "required": [
+                "line_items"
+            ],
+            "properties": {
+                "line_items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/LineItemChange"
                     }
                 }
             }
@@ -22745,7 +23267,8 @@ const docTemplate = `{
                 "trial_end",
                 "coupon",
                 "tax",
-                "addon"
+                "addon",
+                "line_item_change"
             ],
             "x-enum-varnames": [
                 "SubscriptionModifyTypeInheritance",
@@ -22754,7 +23277,8 @@ const docTemplate = `{
                 "SubscriptionModifyTypeTrialEnd",
                 "SubscriptionModifyTypeCoupon",
                 "SubscriptionModifyTypeTax",
-                "SubscriptionModifyTypeAddon"
+                "SubscriptionModifyTypeAddon",
+                "SubscriptionModifyTypeLineItemChange"
             ]
         },
         "SubscriptionPhaseCreateRequest": {
@@ -24376,10 +24900,6 @@ const docTemplate = `{
                 "aggregation_mode": {
                     "$ref": "#/definitions/types.EntitlementAggregationMode"
                 },
-                "clear_grant_config": {
-                    "description": "Grant config — nil fields leave the current value alone.\nClearGrantConfig=true wipes the whole grant config (back to a legacy entitlement).",
-                    "type": "boolean"
-                },
                 "config_value": {
                     "type": "object",
                     "additionalProperties": true
@@ -24398,6 +24918,9 @@ const docTemplate = `{
                 },
                 "grant_quota": {
                     "type": "string"
+                },
+                "grant_unlimited": {
+                    "type": "boolean"
                 },
                 "is_enabled": {
                     "type": "boolean"
@@ -26948,6 +27471,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.AddAddonRef"
                     }
                 },
+                "removes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.RemoveAddonRef"
+                    }
+                },
                 "subscription_id": {
                     "type": "string"
                 }
@@ -28220,6 +28749,17 @@ const docTemplate = `{
                 "EntitlementGrantMeasureAmount"
             ]
         },
+        "types.EntitlementGrantStatus": {
+            "type": "string",
+            "enum": [
+                "active",
+                "exhausted"
+            ],
+            "x-enum-varnames": [
+                "EntitlementGrantStatusActive",
+                "EntitlementGrantStatusExhausted"
+            ]
+        },
         "types.EntitlementUsageResetPeriod": {
             "type": "string",
             "enum": [
@@ -28252,6 +28792,19 @@ const docTemplate = `{
                 "EntityChangeBehaviourCarry",
                 "EntityChangeBehaviourDrop",
                 "EntityChangeBehaviourAdd"
+            ]
+        },
+        "types.EntityCreationStatus": {
+            "type": "string",
+            "enum": [
+                "created",
+                "superseded",
+                "failed_already_exists"
+            ],
+            "x-enum-varnames": [
+                "EntityCreationStatusCreated",
+                "EntityCreationStatusSuperseded",
+                "EntityCreationStatusFailedAlreadyExists"
             ]
         },
         "types.EntitySyncConfig": {
@@ -28341,6 +28894,17 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "types.FactStatus": {
+            "type": "string",
+            "enum": [
+                "PROVISIONAL",
+                "FINAL"
+            ],
+            "x-enum-varnames": [
+                "FactProvisional",
+                "FactFinal"
+            ]
         },
         "types.FailurePoint": {
             "type": "object",
@@ -28720,6 +29284,10 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.FilterCondition"
                     }
                 },
+                "finalized_at_gte": {
+                    "description": "finalized_at_gte filters invoices finalized at or after the given instant",
+                    "type": "string"
+                },
                 "invoice_ids": {
                     "description": "invoice_ids restricts results to invoices with the specified IDs\nUse this to retrieve specific invoices when you know their exact identifiers",
                     "type": "array",
@@ -28806,6 +29374,10 @@ const docTemplate = `{
                 },
                 "subscription_id": {
                     "description": "subscription_id filters invoices generated for a specific subscription\nOnly returns invoices that were created as part of the specified subscription's billing",
+                    "type": "string"
+                },
+                "voided_at_gte": {
+                    "description": "voided_at_gte filters invoices voided at or after the given instant",
                     "type": "string"
                 }
             }
@@ -28964,6 +29536,9 @@ const docTemplate = `{
         "types.ModifySubscriptionLineItem": {
             "type": "object",
             "properties": {
+                "amount": {
+                    "type": "string"
+                },
                 "effective_date": {
                     "type": "string"
                 },
@@ -28984,10 +29559,35 @@ const docTemplate = `{
                         "$ref": "#/definitions/types.ModifySubscriptionLineItem"
                     }
                 },
+                "modify_type": {
+                    "$ref": "#/definitions/types.ModifySubscriptionType"
+                },
                 "subscription_id": {
                     "type": "string"
                 }
             }
+        },
+        "types.ModifySubscriptionType": {
+            "type": "string",
+            "enum": [
+                "quantity_change",
+                "line_item_change"
+            ],
+            "x-enum-varnames": [
+                "ModifySubscriptionTypeQuantityChange",
+                "ModifySubscriptionTypeLineItemChange"
+            ]
+        },
+        "types.OnExistingEntityPolicy": {
+            "type": "string",
+            "enum": [
+                "reject",
+                "supersede"
+            ],
+            "x-enum-varnames": [
+                "OnExistingEntityPolicyReject",
+                "OnExistingEntityPolicySupersede"
+            ]
         },
         "types.OnPendingSchedulePolicy": {
             "type": "string",
@@ -29352,6 +29952,10 @@ const docTemplate = `{
                 },
                 "subscription_id": {
                     "type": "string"
+                },
+                "updated_after": {
+                    "description": "UpdatedAfter matches prices edited since the given time. TimeRangeFilter\nabove filters on created_at, so it cannot see an edit to an existing\nprice.",
+                    "type": "string"
                 }
             }
         },
@@ -29545,6 +30149,23 @@ const docTemplate = `{
                 "RejectedEventReasonNoMatchingMeter"
             ]
         },
+        "types.RemoveAddonRef": {
+            "type": "object",
+            "properties": {
+                "association_id": {
+                    "type": "string"
+                },
+                "effective_date": {
+                    "type": "string"
+                },
+                "proration_behavior": {
+                    "$ref": "#/definitions/types.ProrationBehavior"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            }
+        },
         "types.ReportingUnit": {
             "type": "object",
             "properties": {
@@ -29584,6 +30205,30 @@ const docTemplate = `{
                 "ResumeModeImmediate",
                 "ResumeModeScheduled",
                 "ResumeModeAuto"
+            ]
+        },
+        "types.RevenueAllocationPolicy": {
+            "type": "string",
+            "enum": [
+                "billed",
+                "amortized"
+            ],
+            "x-enum-varnames": [
+                "RevenueAllocationBilled",
+                "RevenueAllocationAmortized"
+            ]
+        },
+        "types.RevenueGranularity": {
+            "type": "string",
+            "enum": [
+                "day",
+                "period",
+                "total"
+            ],
+            "x-enum-varnames": [
+                "RevenueGranularityDay",
+                "RevenueGranularityPeriod",
+                "RevenueGranularityTotal"
             ]
         },
         "types.RoundType": {
@@ -29712,14 +30357,16 @@ const docTemplate = `{
                 "invoice",
                 "credit_topups",
                 "credit_usage",
-                "usage_analytics"
+                "usage_analytics",
+                "revenue_facts"
             ],
             "x-enum-varnames": [
                 "ScheduledTaskEntityTypeEvents",
                 "ScheduledTaskEntityTypeInvoice",
                 "ScheduledTaskEntityTypeCreditTopups",
                 "ScheduledTaskEntityTypeCreditUsage",
-                "ScheduledTaskEntityTypeUsageAnalytics"
+                "ScheduledTaskEntityTypeUsageAnalytics",
+                "ScheduledTaskEntityTypeRevenueFacts"
             ]
         },
         "types.ScheduledTaskInterval": {
@@ -29900,14 +30547,14 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "plan",
-                "addon",
+                "addon_association",
                 "credit_grant",
                 "entitlement",
                 "entitlement_grant"
             ],
             "x-enum-varnames": [
                 "SubscriptionChangeEntityTypePlan",
-                "SubscriptionChangeEntityTypeAddon",
+                "SubscriptionChangeEntityTypeAddonAssociation",
                 "SubscriptionChangeEntityTypeCreditGrant",
                 "SubscriptionChangeEntityTypeEntitlement",
                 "SubscriptionChangeEntityTypeEntitlementGrant"

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
-	"github.com/flexprice/flexprice/internal/domain/checkout"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -125,7 +124,7 @@ func (s *subscriptionModificationService) requestFromModifySubscriptionParams(
 
 		alreadyApplied := !lineItem.EndDate.IsZero() && lineItem.EndDate.Equal(effectiveDate)
 		if !alreadyApplied {
-			if err := validateQuantityChangeEffectiveDateWithinLineItemWindow(
+			if err := validateChangeEffectiveDateWithinLineItemWindow(
 				effectiveDate, sub, lineItem, m.LineItemID,
 			); err != nil {
 				return nil, err
@@ -137,9 +136,14 @@ func (s *subscriptionModificationService) requestFromModifySubscriptionParams(
 			newEndDate = lineItem.EndDate
 		}
 
+		quantity := lineItem.Quantity
+		if m.Quantity != nil {
+			quantity = *m.Quantity
+		}
+
 		mods = append(mods, newQuantityChangeLineItemMod(
 			m.LineItemID,
-			m.Quantity,
+			quantity,
 			effectiveDate,
 			lineItem,
 			newEndDate,
@@ -165,12 +169,13 @@ func (r *quantityChangeRequest) toModifySubscriptionParams() *types.ModifySubscr
 		ed := effectiveDate
 		lineMods = append(lineMods, types.ModifySubscriptionLineItem{
 			LineItemID:    m.getLineItemID(),
-			Quantity:      m.getQuantity(),
+			Quantity:      lo.ToPtr(m.getQuantity()),
 			EffectiveDate: &ed,
 		})
 	}
 	return &types.ModifySubscriptionParams{
 		SubscriptionID:        r.GetSubscriptionID(),
+		ModifyType:            types.ModifySubscriptionTypeQuantityChange,
 		LineItemModifications: lineMods,
 	}
 }
@@ -198,7 +203,7 @@ func (r *quantityChangeRequest) previewChangedLineItems() []dto.ChangedLineItem 
 		newEndDate := m.getNewEndDate()
 		out = append(out,
 			dto.ChangedLineItem{
-				ID:           "(preview-ended)",
+				ID:           previewEndedLineItemID,
 				PriceID:      old.PriceID,
 				Quantity:     old.Quantity,
 				StartDate:    &oldStart,
@@ -206,7 +211,7 @@ func (r *quantityChangeRequest) previewChangedLineItems() []dto.ChangedLineItem 
 				ChangeAction: dto.ChangedLineItemActionEnded,
 			},
 			dto.ChangedLineItem{
-				ID:           "(preview-created)",
+				ID:           previewCreatedID,
 				PriceID:      old.PriceID,
 				Quantity:     m.getQuantity(),
 				StartDate:    &startDate,
@@ -357,7 +362,7 @@ func (s *subscriptionModificationService) buildQuantityChangeRequest(
 				Mark(ierr.ErrValidation)
 		}
 
-		if err := validateQuantityChangeEffectiveDateWithinLineItemWindow(effectiveDate, sub, lineItem, change.ID); err != nil {
+		if err := validateChangeEffectiveDateWithinLineItemWindow(effectiveDate, sub, lineItem, change.ID); err != nil {
 			return nil, err
 		}
 
@@ -779,7 +784,7 @@ func (s *subscriptionModificationService) settlePayFirst(
 		return nil, err
 	}
 
-	existing, err := s.getAnyPendingCheckoutSession(ctx, sub.CustomerID, sub.ID)
+	existing, err := anyPendingCheckoutSession(ctx, sp, sub.CustomerID, sub.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -840,25 +845,6 @@ func (s *subscriptionModificationService) settlePayFirst(
 		},
 		CheckoutSession: sessionResp,
 	}, nil
-}
-
-func (s *subscriptionModificationService) getAnyPendingCheckoutSession(ctx context.Context, customerID string, subscriptionID string) ([]*checkout.CheckoutSession, error) {
-	pendingFilter := &types.CheckoutSessionFilter{
-		QueryFilter: types.NewNoLimitPublishedQueryFilter(),
-		CustomerIDs: []string{customerID},
-		Actions: []types.CheckoutAction{
-			types.CheckoutActionModifySubscription,
-			types.CheckoutActionAddAddon,
-		},
-		CheckoutStatuses: []types.CheckoutStatus{
-			types.CheckoutStatusInitiated,
-			types.CheckoutStatusPending,
-		},
-		Configuration: &types.CheckoutConfigurationFilter{SubscriptionID: subscriptionID},
-	}
-	pendingFilter.Limit = lo.ToPtr(1)
-
-	return s.serviceParams.CheckoutSessionRepo.List(ctx, pendingFilter)
 }
 
 // createAggregatedProrationDraftInvoice locks the batch net (charges − credits) on one DRAFT ONE_OFF.
@@ -1139,10 +1125,10 @@ func prorationChargeIdempotencyKey(subID string, parts []prorationChargeKeyPart)
 	})
 }
 
-// validateQuantityChangeEffectiveDateWithinLineItemWindow ensures effectiveDate lies in
+// validateChangeEffectiveDateWithinLineItemWindow ensures effectiveDate lies in
 // [lineItem.StartDate, lineEnd), where lineEnd is lineItem.EndDate when set, otherwise
 // sub.CurrentPeriodEnd (open-ended line item). Subscription period bounds are validated separately.
-func validateQuantityChangeEffectiveDateWithinLineItemWindow(
+func validateChangeEffectiveDateWithinLineItemWindow(
 	effectiveDate time.Time,
 	sub *subscription.Subscription,
 	lineItem *subscription.SubscriptionLineItem,
