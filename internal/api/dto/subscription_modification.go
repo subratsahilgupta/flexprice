@@ -336,7 +336,13 @@ func (p *SubModifyBulkAddonParams) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	total := len(p.Adds) + len(p.Removes)
+	return ValidateAddonBatch(p.Adds, p.Removes)
+}
+
+// ValidateAddonBatch checks a set of addon changes applied as one. Shared with subscription
+// creation, which attaches its addons the same way.
+func ValidateAddonBatch(adds []*AddAddonToSubscriptionRequest, removes []*RemoveAddonRequest) error {
+	total := len(adds) + len(removes)
 	if total == 0 {
 		return ierr.NewError("at least one add or remove is required").
 			WithHint("Provide adds and/or removes with at least one entry").
@@ -349,7 +355,7 @@ func (p *SubModifyBulkAddonParams) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	for i, add := range p.Adds {
+	for i, add := range adds {
 		if add == nil {
 			return ierr.NewError("add entry must not be null").
 				WithReportableDetails(map[string]any{"index": i}).
@@ -366,8 +372,8 @@ func (p *SubModifyBulkAddonParams) Validate() error {
 		}
 	}
 
-	seen := make(map[string]struct{}, len(p.Removes))
-	for i, remove := range p.Removes {
+	seen := make(map[string]struct{}, len(removes))
+	for i, remove := range removes {
 		if remove == nil {
 			return ierr.NewError("remove entry must not be null").
 				WithReportableDetails(map[string]any{"index": i}).
@@ -523,6 +529,15 @@ const (
 	ChangedSubscriptionActionUpdated ChangedSubscriptionAction = "updated"
 )
 
+// ChangedAddonAssociationAction describes how an addon association changed.
+// @Description created | ended
+type ChangedAddonAssociationAction string
+
+const (
+	ChangedAddonAssociationActionCreated ChangedAddonAssociationAction = "created"
+	ChangedAddonAssociationActionEnded   ChangedAddonAssociationAction = "ended"
+)
+
 // ChangedInvoiceAction classifies invoice-side effects from a modification.
 // @Description created (proration invoice) | wallet_credit (downgrade credit)
 type ChangedInvoiceAction string
@@ -566,6 +581,17 @@ type ChangedSubscription struct {
 	CurrentPeriodEnd *time.Time                `json:"current_period_end,omitempty"`
 }
 
+// ChangedAddonAssociation describes an addon attached or ended by a modification. It is the
+// only place an attach's new association id is returned, and a later removal needs it.
+type ChangedAddonAssociation struct {
+	ID           string                        `json:"id"`
+	AddonID      string                        `json:"addon_id"`
+	AddonStatus  types.AddonStatus             `json:"addon_status"`
+	StartDate    *time.Time                    `json:"start_date,omitempty"`
+	EndDate      *time.Time                    `json:"end_date,omitempty"`
+	ChangeAction ChangedAddonAssociationAction `json:"change_action" enums:"created,ended"`
+}
+
 // ChangedInvoice describes a proration invoice or wallet credit from a modification.
 type ChangedInvoice struct {
 	ID string `json:"id"`
@@ -581,9 +607,10 @@ type ChangedInvoice struct {
 
 // ChangedResources is the Orb-inspired envelope for all mutation side-effects.
 type ChangedResources struct {
-	LineItems     []ChangedLineItem     `json:"line_items,omitempty"`
-	Subscriptions []ChangedSubscription `json:"subscriptions,omitempty"`
-	Invoices      []ChangedInvoice      `json:"invoices,omitempty"`
+	LineItems         []ChangedLineItem         `json:"line_items,omitempty"`
+	AddonAssociations []ChangedAddonAssociation `json:"addon_associations,omitempty"`
+	Subscriptions     []ChangedSubscription     `json:"subscriptions,omitempty"`
+	Invoices          []ChangedInvoice          `json:"invoices,omitempty"`
 }
 
 // SubscriptionModifyResponse is the response from execute and preview endpoints.

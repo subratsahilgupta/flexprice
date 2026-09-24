@@ -59,10 +59,11 @@ func (s *subscriptionModificationService) Execute(ctx context.Context, subscript
 	case dto.SubscriptionModifyTypeTax:
 		return s.executeTaxModification(ctx, subscriptionID, req.TaxParams)
 	case dto.SubscriptionModifyTypeAddon:
-		if req.BulkAddonParams != nil {
-			return s.executeBulkAddonModification(ctx, subscriptionID, req.BulkAddonParams, req.Checkout)
+		params, err := addonBulkParams(req)
+		if err != nil {
+			return nil, err
 		}
-		return s.executeAddonModification(ctx, subscriptionID, req.AddonParams, req.Checkout)
+		return s.executeBulkAddonModification(ctx, subscriptionID, params, req.Checkout)
 	default:
 		return nil, ierr.NewError("unknown modification type: " + string(req.Type)).
 			WithHint("Valid values: inheritance, quantity_change, grouped_invoicing, trial_end, coupon, tax, addon").
@@ -90,10 +91,11 @@ func (s *subscriptionModificationService) Preview(ctx context.Context, subscript
 	case dto.SubscriptionModifyTypeTax:
 		return s.previewTaxModification(ctx, subscriptionID, req.TaxParams)
 	case dto.SubscriptionModifyTypeAddon:
-		if req.BulkAddonParams != nil {
-			return s.previewBulkAddonModification(ctx, subscriptionID, req.BulkAddonParams)
+		params, err := addonBulkParams(req)
+		if err != nil {
+			return nil, err
 		}
-		return s.previewAddonModification(ctx, subscriptionID, req.AddonParams)
+		return s.previewBulkAddonModification(ctx, subscriptionID, params)
 	default:
 		return nil, ierr.NewError("unknown modification type: " + string(req.Type)).
 			WithHint("Valid values: inheritance, quantity_change, grouped_invoicing, trial_end, coupon, tax, addon").
