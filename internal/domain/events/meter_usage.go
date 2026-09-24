@@ -192,9 +192,11 @@ type UsageActivityParams struct {
 	UseFinal       bool
 }
 
-// UsageActivity names the customers with recent usage.
+// UsageActivity names the customers with recent usage. These are EXTERNAL
+// customer ids: meter_usage carries external_customer_id and has no internal
+// customer_id column, so the caller resolves them.
 type UsageActivity struct {
-	CustomerIDs []string
+	ExternalCustomerIDs []string
 	// Unattributed is true when some usage carried no customer id. The caller
 	// must not narrow its scan on an incomplete answer: a subscription wrongly
 	// left out goes stale silently, where one wrongly included only costs a

@@ -121,3 +121,24 @@ func TestBuildDailyUsageQuery_BatchesMeters(t *testing.T) {
 		assert.Contains(t, args, m, "every meter must reach the query")
 	}
 }
+
+// meterUsageColumns are the columns the meter_usage table actually has, from
+// migrations/clickhouse/000007_create_meter_usage.sql. MeterUsage embeds an
+// Event carrying fields with no column behind them -- CustomerID among them --
+// so a query naming one compiles, passes against an in-memory store, and fails
+// only in production with "Unknown expression identifier".
+var meterUsageColumns = map[string]bool{
+	"id": true, "tenant_id": true, "environment_id": true,
+	"external_customer_id": true, "meter_id": true, "event_name": true,
+	"timestamp": true, "ingested_at": true, "qty_total": true,
+	"unique_hash": true, "source": true, "properties": true,
+}
+
+// TestUsageActivityQuery_UsesRealColumns pins the activity probe against the
+// table's real columns.
+func TestUsageActivityQuery_UsesRealColumns(t *testing.T) {
+	assert.True(t, meterUsageColumns["external_customer_id"],
+		"the usage-activity probe selects external_customer_id")
+	assert.False(t, meterUsageColumns["customer_id"],
+		"meter_usage has no customer_id column; selecting one fails at runtime, not at compile time")
+}

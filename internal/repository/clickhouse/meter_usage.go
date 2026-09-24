@@ -1157,7 +1157,7 @@ func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params
 	}
 
 	query := fmt.Sprintf(`
-		SELECT DISTINCT customer_id
+		SELECT DISTINCT external_customer_id
 		FROM meter_usage %s
 		WHERE tenant_id = ? AND environment_id = ?
 			AND timestamp >= ?
@@ -1177,18 +1177,18 @@ func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params
 
 	activity := &events.UsageActivity{}
 	for rows.Next() {
-		var customerID string
-		if err := rows.Scan(&customerID); err != nil {
+		var externalCustomerID string
+		if err := rows.Scan(&externalCustomerID); err != nil {
 			SetSpanError(span, err)
 			return nil, ierr.WithError(err).
 				WithHint("Failed to scan usage activity row").
 				Mark(ierr.ErrDatabase)
 		}
-		if customerID == "" {
+		if externalCustomerID == "" {
 			activity.Unattributed = true
 			continue
 		}
-		activity.CustomerIDs = append(activity.CustomerIDs, customerID)
+		activity.ExternalCustomerIDs = append(activity.ExternalCustomerIDs, externalCustomerID)
 	}
 	if err := rows.Err(); err != nil {
 		SetSpanError(span, err)

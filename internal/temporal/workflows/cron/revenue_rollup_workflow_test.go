@@ -13,7 +13,7 @@ import (
 	"go.temporal.io/sdk/testsuite"
 )
 
-func rollupDirtyStub(_ context.Context, _ time.Time) (*cronModels.RevenueRollupWorkflowResult, error) {
+func rollupDirtyStub(_ context.Context, _ cronModels.RollupDirtyActivityInput) (*cronModels.RevenueRollupWorkflowResult, error) {
 	return nil, nil
 }
 
@@ -42,7 +42,8 @@ func TestRevenueRollupWorkflow_Success(t *testing.T) {
 	registerSweepOK(env)
 
 	var capturedSince time.Time
-	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
+	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(in cronModels.RollupDirtyActivityInput) bool {
+		since := in.Since
 		capturedSince = since
 		return true
 	})).Return(expected, nil)
@@ -69,7 +70,8 @@ func TestRevenueRollupWorkflow_DefaultInterval(t *testing.T) {
 	registerSweepOK(env)
 
 	var capturedSince time.Time
-	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
+	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(in cronModels.RollupDirtyActivityInput) bool {
+		since := in.Since
 		capturedSince = since
 		return true
 	})).Return(&cronModels.RevenueRollupWorkflowResult{}, nil)
@@ -116,7 +118,8 @@ func TestRevenueRollupWorkflow_ExplicitSince(t *testing.T) {
 	registerSweepOK(env)
 
 	var capturedSince time.Time
-	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(since time.Time) bool {
+	env.OnActivity(ActivityRollupDirty, mock.Anything, mock.MatchedBy(func(in cronModels.RollupDirtyActivityInput) bool {
+		since := in.Since
 		capturedSince = since
 		return true
 	})).Return(&cronModels.RevenueRollupWorkflowResult{}, nil)

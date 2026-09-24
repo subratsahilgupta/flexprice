@@ -1097,17 +1097,20 @@ func (s *InMemoryMeterUsageStore) GetUsageActivitySince(_ context.Context, param
 		if !params.TimestampAfter.IsZero() && r.Timestamp.Before(params.TimestampAfter) {
 			continue
 		}
-		if r.CustomerID == "" {
+		// external_customer_id, mirroring the ClickHouse column. MeterUsage
+		// embeds an Event with a CustomerID field that the table does not have,
+		// so keying on it here would pass in tests and fail in production.
+		if r.ExternalCustomerID == "" {
 			activity.Unattributed = true
 			continue
 		}
-		if _, ok := seen[r.CustomerID]; ok {
+		if _, ok := seen[r.ExternalCustomerID]; ok {
 			continue
 		}
-		seen[r.CustomerID] = struct{}{}
-		activity.CustomerIDs = append(activity.CustomerIDs, r.CustomerID)
+		seen[r.ExternalCustomerID] = struct{}{}
+		activity.ExternalCustomerIDs = append(activity.ExternalCustomerIDs, r.ExternalCustomerID)
 	}
-	sort.Strings(activity.CustomerIDs)
+	sort.Strings(activity.ExternalCustomerIDs)
 	return activity, nil
 }
 

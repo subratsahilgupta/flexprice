@@ -921,9 +921,14 @@ func (s *revenueService) scanScopeFor(ctx context.Context, req types.RollupDirty
 		return full
 	}
 
-	customers := make(map[string]struct{}, len(activity.CustomerIDs))
-	for _, id := range activity.CustomerIDs {
-		customers[id] = struct{}{}
+	// meter_usage keys on the external customer id; subscriptions key on the
+	// internal one, so resolve. Bounded by the customers that actually saw
+	// usage, not by the customer table.
+	customers, err := s.internalCustomerIDs(ctx, activity.ExternalCustomerIDs)
+	if err != nil {
+		s.Logger.Info(ctx, "revenue rollup falling back to a full scan",
+			"error", err.Error(), "reason", "customer id resolution failed")
+		return full
 	}
 
 	activeParents, err := s.parentsOfActiveChildren(ctx, customers)
@@ -970,6 +975,29 @@ func (s *revenueService) subscriptionsWithAccruingCommitments(ctx context.Contex
 	out := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
 		out[id] = struct{}{}
+	}
+	return out, nil
+}
+
+// internalCustomerIDs resolves external customer ids to internal ones.
+// meter_usage stores external_customer_id and has no internal customer_id
+// column, so the scan cannot compare its result against subscriptions without
+// this step.
+func (s *revenueService) internalCustomerIDs(ctx context.Context, externalIDs []string) (map[string]struct{}, error) {
+	if len(externalIDs) == 0 {
+		return map[string]struct{}{}, nil
+	}
+
+	filter := types.NewNoLimitCustomerFilter()
+	filter.ExternalIDs = externalIDs
+	customers, err := s.CustomerRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]struct{}, len(customers))
+	for _, c := range customers {
+		out[c.ID] = struct{}{}
 	}
 	return out, nil
 }
@@ -1059,11 +1087,19 @@ func (s *revenueService) rollupDirtyForEnvironment(ctx context.Context, req type
 			// activity's heartbeat timeout, and the attempt would be killed
 			// before it ever reported progress -- the exact failure the cursor
 			// exists to prevent.
-			if sub.ID > maxSeen {
-				maxSeen = sub.ID
-			}
 			checkpoint := func() {
 				setCursor(types.RollupCursor{EnvironmentID: environmentID, LastSubscriptionID: maxSeen})
+			}
+
+			// Report progress BEFORE the roll as well. One subscription here can
+			// carry hundreds of line items over an elapsed period, and a single
+			// slow one outlasting the heartbeat timeout kills the attempt
+			// mid-subscription -- checkpointing only on completion means the
+			// heartbeat gap is however long the slowest subscription takes.
+			checkpoint()
+
+			if sub.ID > maxSeen {
+				maxSeen = sub.ID
 			}
 
 			wasSkipped, rollErr := s.rollupSubscription(ctx, sub)
