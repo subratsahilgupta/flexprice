@@ -92,6 +92,7 @@ func (s *SubscriptionChangeV2Suite) serviceParams() ServiceParams {
 		SettingsRepo:               st.SettingsRepo,
 		TaxAssociationRepo:         st.TaxAssociationRepo,
 		TaxRateRepo:                st.TaxRateRepo,
+		TaxAppliedRepo:             st.TaxAppliedRepo,
 		AlertLogsRepo:              st.AlertLogsRepo,
 		PlanPriceSyncRepo:          st.PlanPriceSyncRepo,
 		EventPublisher:             s.GetPublisher(),
