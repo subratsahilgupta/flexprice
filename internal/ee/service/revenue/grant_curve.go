@@ -8,6 +8,7 @@ package revenue
 import (
 	"context"
 	"github.com/flexprice/flexprice/internal/ee/service"
+	"sort"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/domain/entitlementgrant"
@@ -191,21 +192,67 @@ func (s *revenueService) cumulativeUsageByDay(ctx context.Context, in grantCurve
 		points = byMeter[in.Meter.ID]
 	}
 
-	// Slice the shared per-day points to this window and accumulate. The
-	// windows are the grants' quota-crossed spans, so there can be several per
-	// line item — querying each one separately is the read pattern this whole
-	// path exists to avoid.
+	// Slice the shared per-day points to this window. Grant windows open at
+	// QuotaCrossedAt -- an event instant, so a mid-day boundary is the norm --
+	// and a whole-day quantity would put that day's pre-crossing usage on the
+	// wrong side of the boundary. Only a boundary that is not local midnight
+	// needs an exact read, so an aligned window still costs nothing.
 	loc := timezoneLocation(in.Timezone)
 	startKey := start.In(loc).Format(dayKeyLayout)
 	endKey := end.In(loc).Format(dayKeyLayout)
-	byDay := make(map[string]decimal.Decimal, len(points))
-	running := decimal.Zero
+
+	qtyByDay := make(map[string]decimal.Decimal, len(points))
 	for _, p := range points {
 		key := p.Day.Format(dayKeyLayout)
-		if key < startKey || key >= endKey {
+		if key < startKey || key > endKey {
 			continue
 		}
-		running = running.Add(p.Qty)
+		qtyByDay[key] = p.Qty
+	}
+
+	startAligned := isLocalMidnight(start, loc)
+	endAligned := isLocalMidnight(end, loc)
+
+	switch {
+	case startKey == endKey:
+		// The whole window sits inside one local day.
+		if !startAligned || !endAligned {
+			qty, err := s.exactUsage(ctx, in, start, end)
+			if err != nil {
+				return nil, err
+			}
+			qtyByDay[startKey] = qty
+		}
+	default:
+		if !startAligned {
+			qty, err := s.exactUsage(ctx, in, start, nextLocalMidnight(start, loc))
+			if err != nil {
+				return nil, err
+			}
+			qtyByDay[startKey] = qty
+		}
+		if endAligned {
+			// A midnight end owns none of its own day.
+			delete(qtyByDay, endKey)
+		} else {
+			qty, err := s.exactUsage(ctx, in, localMidnight(end, loc), end)
+			if err != nil {
+				return nil, err
+			}
+			qtyByDay[endKey] = qty
+		}
+	}
+
+	days := make([]string, 0, len(qtyByDay))
+	for key := range qtyByDay {
+		days = append(days, key)
+	}
+	sort.Strings(days)
+
+	byDay := make(map[string]decimal.Decimal, len(days))
+	running := decimal.Zero
+	for _, key := range days {
+		running = running.Add(qtyByDay[key])
 		byDay[key] = running
 	}
 	return byDay, nil
@@ -261,4 +308,45 @@ func subLineItemByID(sub *subscription.Subscription, id string) *subscription.Su
 		}
 	}
 	return nil
+}
+
+// localMidnight is the start of t's day in loc.
+func localMidnight(t time.Time, loc *time.Location) time.Time {
+	l := t.In(loc)
+	return time.Date(l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, loc)
+}
+
+func nextLocalMidnight(t time.Time, loc *time.Location) time.Time {
+	return localMidnight(t, loc).AddDate(0, 0, 1)
+}
+
+func isLocalMidnight(t time.Time, loc *time.Location) bool {
+	return t.In(loc).Equal(localMidnight(t, loc))
+}
+
+// exactUsage reads the metered quantity in [from, to) at timestamp resolution,
+// for a grant-window boundary that falls part-way through a day. Everything
+// else is served from the subscription's single pre-read.
+func (s *revenueService) exactUsage(ctx context.Context, in grantCurveInput, from, to time.Time) (decimal.Decimal, error) {
+	if !from.Before(to) {
+		return decimal.Zero, nil
+	}
+	byMeter, err := s.MeterUsageRepo.GetDailyUsageByMeter(ctx, &events.DailyUsageParams{
+		TenantID:            types.GetTenantID(ctx),
+		EnvironmentID:       types.GetEnvironmentID(ctx),
+		MeterIDs:            []string{in.Meter.ID},
+		ExternalCustomerIDs: in.ExternalCustomerIDs,
+		StartTime:           from,
+		EndTime:             to,
+		UseFinal:            true,
+		Timezone:            in.Timezone,
+	})
+	if err != nil {
+		return decimal.Zero, err
+	}
+	total := decimal.Zero
+	for _, p := range byMeter[in.Meter.ID] {
+		total = total.Add(p.Qty)
+	}
+	return total, nil
 }

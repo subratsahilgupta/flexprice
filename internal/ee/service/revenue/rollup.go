@@ -807,16 +807,20 @@ type scanScope struct {
 	now time.Time
 }
 
-// periodOpenGrace keeps a freshly opened period in scope for a few runs. The
-// opening roll is what writes the fixed charges and commitment true-ups a
-// subscription owes before anything is metered, and if it fails the
-// period-start trigger has already passed by the next run — the window would
-// close on a subscription that never got its rows. Deliberately a clock window
-// rather than a per-subscription probe of what is already written: that probe
-// is a group-by over every provisional fact, which is the whole current-period
-// working set and grows without bound. Anything still missing after this is
-// repaired by the scheduled full rebuild.
-const periodOpenGrace = 72 * time.Hour
+// periodOpenGrace keeps a freshly opened period in scope until the next
+// scheduled full rebuild. The opening roll is what writes the fixed charges and
+// commitment true-ups a subscription owes before anything is metered, and if it
+// fails the period-start trigger has already passed by the next run — the
+// window would close on a subscription that never got its rows.
+//
+// Deliberately a clock window rather than a per-subscription probe of what is
+// already written. That probe is a group-by over every provisional fact, and
+// revenue_facts holds a row per line item per day: at production shape that is
+// millions of rows scanned on every run, growing with the table. Spanning the
+// rebuild interval instead means a failed opening roll is retried on every run
+// until the rebuild would have caught it anyway, so the two never leave a gap
+// between them.
+const periodOpenGrace = 7 * 24 * time.Hour
 
 // backdateLookback bounds how far back a late-arriving event is looked for.
 // meter_usage is partitioned on the event timestamp, so an unbounded probe
