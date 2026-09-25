@@ -2,8 +2,10 @@ package types
 
 import (
 	"slices"
+	"strings"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/samber/lo"
 )
 
 // TaxBehavior describes whether a tax rate is already baked into the price it applies to
@@ -123,15 +125,55 @@ func (p TaxProvider) IsExternal() bool {
 	return p != "" && p != TaxProviderFlexprice
 }
 
+// TaxProviders are the engines a tenant may name. Empty is accepted too and means the native
+// engine, but it is not offered as a choice, so an engine added here is offered everywhere a
+// provider is validated or reported.
+var TaxProviders = []TaxProvider{TaxProviderFlexprice, TaxProviderStripe}
+
+// ExternalTaxProviders are the engines that calculate tax outside Flexprice.
+func ExternalTaxProviders() []TaxProvider {
+	return lo.Filter(TaxProviders, func(p TaxProvider, _ int) bool { return p.IsExternal() })
+}
+
 func (p TaxProvider) Validate() error {
-	allowedValues := []string{"", string(TaxProviderFlexprice), string(TaxProviderStripe)}
-	if !slices.Contains(allowedValues, string(p)) {
-		return ierr.NewError("invalid tax provider").
-			WithHint("Tax provider must be either flexprice or stripe").
-			Mark(ierr.ErrValidation)
+	if p == "" || slices.Contains(TaxProviders, p) {
+		return nil
 	}
 
-	return nil
+	return ierr.NewErrorf("invalid tax provider %q", p).
+		WithHintf("Tax provider must be one of: %s", JoinTaxProviders(TaxProviders)).
+		WithReportableDetails(map[string]any{
+			"tax_provider": p,
+			"allowed":      TaxProviders,
+		}).
+		Mark(ierr.ErrValidation)
+}
+
+// JoinTaxProviders renders a provider list for an error a person reads.
+func JoinTaxProviders(providers []TaxProvider) string {
+	return strings.Join(lo.Map(providers, func(p TaxProvider, _ int) string { return string(p) }), ", ")
+}
+
+// TaxConfig names the external tax engine a tenant and environment use, if any. Its zero value
+// is the native engine, so an absent setting behaves exactly as it did before the setting
+// existed.
+//
+// Enabled is separate from Provider so an engine can be switched off without losing which one
+// was configured. It gates the external engine only: native tax is what a disabled config falls
+// back to, never an absence of tax.
+type TaxConfig struct {
+	Enabled  bool        `json:"enabled,omitempty"`
+	Provider TaxProvider `json:"provider,omitempty"`
+}
+
+// UsesExternalTaxEngine reports whether an engine outside Flexprice calculates this tenant's tax.
+// Every decision that turns on the setting reads this and nothing else.
+func (c TaxConfig) UsesExternalTaxEngine() bool {
+	return c.Enabled && c.Provider.IsExternal()
+}
+
+func (c TaxConfig) Validate() error {
+	return c.Provider.Validate()
 }
 
 // TaxBehaviorSource records how a subscription-level association's tax_behavior was decided.

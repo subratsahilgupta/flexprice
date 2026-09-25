@@ -554,6 +554,8 @@ func (s *TaxCalculationSuite) SetupTest() {
 		InvoiceRepo:        st.InvoiceRepo,
 		CustomerRepo:       st.CustomerRepo,
 		SubRepo:            st.SubscriptionRepo,
+		SettingsRepo:       st.SettingsRepo,
+		ConnectionRepo:     st.ConnectionRepo,
 	})
 }
 

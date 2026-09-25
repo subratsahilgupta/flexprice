@@ -552,6 +552,24 @@ func (s *taxService) CreateTaxAssociation(ctx context.Context, req *dto.CreateTa
 		return nil, err
 	}
 
+	// An association is what makes a Flexprice rate apply, and an external engine resolves tax
+	// from its own configuration instead, so one created now would silently do nothing. Linking
+	// returns once Flexprice rates are synced to the provider.
+	cfg, err := taxConfig(ctx, s.ServiceParams)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.UsesExternalTaxEngine() {
+		return nil, ierr.NewErrorf("tax rates cannot be linked while the %s tax engine is in use", cfg.Provider).
+			WithHintf("Tax for this environment is calculated by %s. Configure tax rates and registrations in %s instead.", cfg.Provider, cfg.Provider).
+			WithReportableDetails(map[string]any{
+				"tax_provider": cfg.Provider,
+				"entity_type":  req.EntityType,
+				"entity_id":    req.EntityID,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
 	// Resolve external_customer_id if provided
 	if req.ExternalCustomerID != "" {
 		customer, err := s.CustomerRepo.GetByLookupKey(ctx, req.ExternalCustomerID)
@@ -905,6 +923,33 @@ func (s *taxService) LinkTaxRatesToEntity(ctx context.Context, req dto.LinkTaxRa
 
 	entityType := req.EntityType
 	entityID := req.EntityID
+
+	// Overrides are a caller asking for these rates; the rest is Flexprice cascading what an
+	// entity inherits. So an external engine refuses the first, because dropping a request
+	// silently is how a tenant comes to believe it configured tax, and skips the second,
+	// because failing a customer over inherited rows it never asked for helps nobody.
+	cfg, err := taxConfig(ctx, s.ServiceParams)
+	if err != nil {
+		return err
+	}
+	if cfg.UsesExternalTaxEngine() {
+		if len(req.TaxRateOverrides) > 0 {
+			return ierr.NewErrorf("tax rates cannot be linked while the %s tax engine is in use", cfg.Provider).
+				WithHintf("Tax for this environment is calculated by %s. Remove the tax rate overrides and configure tax rates in %s instead.", cfg.Provider, cfg.Provider).
+				WithReportableDetails(map[string]any{
+					"tax_provider": cfg.Provider,
+					"entity_type":  entityType,
+					"entity_id":    entityID,
+				}).
+				Mark(ierr.ErrValidation)
+		}
+
+		s.Logger.Info(ctx, "external tax engine in use, no inherited tax associations linked",
+			"tax_provider", cfg.Provider,
+			"entity_type", entityType,
+			"entity_id", entityID)
+		return nil
+	}
 
 	return s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		if len(req.TaxRateOverrides) > 0 {

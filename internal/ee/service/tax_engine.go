@@ -38,20 +38,21 @@ type TaxEngine interface {
 // NewTaxEngine returns the engine the tenant's setting names for this environment. This is
 // the only place in the system that names a provider.
 //
-// Unset, empty and flexprice all resolve to native, so no existing tenant needs a
-// migration. A named engine that cannot be built is an error and never a quiet fallback,
+// An absent setting, a disabled one and flexprice all resolve to native, so no existing tenant
+// needs a migration. A named engine that cannot be built is an error and never a quiet fallback,
 // because billing native rates under an external configuration produces a wrong invoice
 // that looks right.
 func NewTaxEngine(ctx context.Context, params ServiceParams) (TaxEngine, error) {
-	settingsSvc := NewSettingsService(params).(*settingsService)
-	cfg, err := GetSetting[types.InvoiceConfig](settingsSvc, ctx, types.SettingKeyInvoiceConfig)
+	cfg, err := taxConfig(ctx, params)
 	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to load invoice configuration to resolve the tax engine").
-			Mark(ierr.ErrDatabase)
+		return nil, err
 	}
 
-	switch cfg.TaxProvider {
+	if !cfg.UsesExternalTaxEngine() {
+		return &nativeTaxEngine{ServiceParams: params}, nil
+	}
+
+	switch cfg.Provider {
 	case types.TaxProviderStripe:
 		if _, err := params.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe); err != nil {
 			if ierr.IsNotFound(err) {
@@ -63,13 +64,29 @@ func NewTaxEngine(ctx context.Context, params ServiceParams) (TaxEngine, error) 
 		}
 		return &stripeTaxEngine{ServiceParams: params}, nil
 
-	case types.TaxProviderFlexprice, "":
-		return &nativeTaxEngine{ServiceParams: params}, nil
-
 	default:
 		// A typo in the setting must not silently change how a tenant is taxed.
-		return nil, ierr.NewErrorf("unknown tax provider %q", cfg.TaxProvider).
-			WithHint("Tax provider must be either flexprice or stripe").
+		return nil, ierr.NewErrorf("unknown tax provider %q", cfg.Provider).
+			WithHintf("An external tax engine must be one of: %s", types.JoinTaxProviders(types.ExternalTaxProviders())).
+			WithReportableDetails(map[string]any{
+				"tax_provider": cfg.Provider,
+				"allowed":      types.ExternalTaxProviders(),
+			}).
 			Mark(ierr.ErrValidation)
 	}
+}
+
+// taxConfig reads the tenant and environment's tax setting. Its zero value is the native
+// engine, so a tenant that has never held the setting reads as native rather than failing.
+func taxConfig(ctx context.Context, params ServiceParams) (types.TaxConfig, error) {
+	settingsSvc := NewSettingsService(params).(*settingsService)
+
+	cfg, err := GetSetting[types.TaxConfig](settingsSvc, ctx, types.SettingKeyTaxConfig)
+	if err != nil {
+		return types.TaxConfig{}, ierr.WithError(err).
+			WithHint("Failed to load the tax configuration").
+			Mark(ierr.ErrDatabase)
+	}
+
+	return cfg, nil
 }

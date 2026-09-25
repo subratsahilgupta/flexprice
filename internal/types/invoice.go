@@ -416,7 +416,6 @@ type InvoiceConfig struct {
 	DueDateDays                            *int                `json:"due_date_days,omitempty" validate:"omitempty,min=0"` // Number of days after period end when payment is due
 	AutoCompletePurchasedCreditTransaction bool                `json:"auto_complete_purchased_credit_transaction,omitempty"`
 	FinalizationDelaySeconds               int                 `json:"finalization_delay_seconds,omitempty" validate:"omitempty,min=0"` // Seconds to wait after invoice creation before finalization. 0 = immediate.
-	TaxProvider                            TaxProvider         `json:"tax_provider,omitempty"`                                          // Which engine calculates tax. Empty means the native engine.
 }
 
 // Validate implements SettingConfig interface
@@ -452,10 +451,6 @@ func (c InvoiceConfig) Validate() error {
 		return ierr.WithError(err).
 			WithHintf("Invalid timezone: %s", c.InvoiceNumberTimezone).
 			Mark(ierr.ErrValidation)
-	}
-
-	if err := c.TaxProvider.Validate(); err != nil {
-		return err
 	}
 
 	return nil
