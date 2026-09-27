@@ -306,7 +306,7 @@ func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, req inter
 		return false, nil
 	}
 
-	_, tokens, err := a.Svc.customerSvc.ListConfirmedCustomerTokens(ctx, req.CustomerID)
+	_, tokens, err := a.Svc.customerSvc.ListCustomerTokens(ctx, req.CustomerID)
 	if err != nil {
 		if ierr.IsNotFound(err) {
 			return false, nil
@@ -327,7 +327,7 @@ type PaymentMethodAdapter struct {
 }
 
 func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, customerID string) ([]interfaces.ProviderPaymentMethod, error) {
-	_, tokens, err := a.CustomerSvc.ListConfirmedCustomerTokens(ctx, customerID)
+	_, tokens, err := a.CustomerSvc.ListCustomerTokens(ctx, customerID)
 	if err != nil {
 		if ierr.IsNotFound(err) {
 			return nil, nil

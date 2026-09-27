@@ -834,7 +834,7 @@ func (s *PaymentService) ChargeSavedToken(
 		return nil, false, nil
 	}
 
-	razorpayCustomerID, tokens, err := s.customerSvc.ListConfirmedCustomerTokens(ctx, req.Customer.ID)
+	razorpayCustomerID, tokens, err := s.customerSvc.ListCustomerTokens(ctx, req.Customer.ID)
 	if err != nil {
 		s.logger.Info(ctx, "charge saved token: list tokens failed",
 			"customer_id", req.Customer.ID, "invoice_id", req.InvoiceID, "error", err)
@@ -868,6 +868,15 @@ func (s *PaymentService) ChargeSavedToken(
 		Email:              req.Customer.Email,
 	})
 	if err != nil {
+		if ierr.IsInvalidOperation(err) {
+			s.logger.Info(ctx, "charge saved token: razorpay rejected the token, treating as no usable token",
+				"customer_id", req.Customer.ID,
+				"invoice_id", req.InvoiceID,
+				"token_id", token.GatewayMethodID,
+				"error", err)
+			return nil, false, nil
+		}
+
 		return nil, false, err
 	}
 
@@ -1008,6 +1017,13 @@ func (s *PaymentService) submitRecurringPayment(ctx context.Context, req AutoCha
 				"order_id", orderID)
 			return &AutoChargeResult{AlreadySubmitted: true}, nil
 		}
+
+		if s.orderUnattempted(ctx, orderID) {
+			return nil, ierr.WithError(err).
+				WithHint("Razorpay rejected the saved token before any payment was attempted").
+				Mark(ierr.ErrInvalidOperation)
+		}
+
 		return nil, err
 	}
 
@@ -1020,6 +1036,21 @@ func (s *PaymentService) submitRecurringPayment(ctx context.Context, req AutoCha
 		RazorpayPaymentID: razorpayPaymentID,
 		RazorpayOrderID:   orderID,
 	}, nil
+}
+
+// orderUnattempted reports whether the order is confirmed to have no payment
+// attempt; any doubt (lookup failure, other status) returns false.
+func (s *PaymentService) orderUnattempted(ctx context.Context, orderID string) bool {
+	order, err := s.client.FetchOrder(ctx, orderID)
+	if err != nil {
+		s.logger.Info(ctx, "could not verify razorpay order state after failed recurring charge",
+			"order_id", orderID, "error", err)
+		return false
+	}
+
+	status, _ := order["status"].(string)
+	attempts, _ := order["attempts"].(float64)
+	return status == "created" && attempts == 0
 }
 
 // isOrderAlreadyProcessingError reports whether the Razorpay error indicates the order

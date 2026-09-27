@@ -59,7 +59,7 @@ func (s *stubRazorpayCustomerSvc) GetRazorpayCustomerID(ctx context.Context, cus
 func (s *stubRazorpayCustomerSvc) UpdateRazorpayCustomerNotes(ctx context.Context, razorpayCustomerID string, notes map[string]interface{}) error {
 	return nil
 }
-func (s *stubRazorpayCustomerSvc) ListConfirmedCustomerTokens(ctx context.Context, customerID string) (string, []*interfaces.ProviderPaymentMethod, error) {
+func (s *stubRazorpayCustomerSvc) ListCustomerTokens(ctx context.Context, customerID string) (string, []*interfaces.ProviderPaymentMethod, error) {
 	if s.err != nil {
 		return "", nil, s.err
 	}
