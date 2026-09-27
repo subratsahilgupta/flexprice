@@ -935,7 +935,6 @@ func (s *paymentService) CreatePaymentForCheckout(ctx context.Context, req *dto.
 	return dto.NewPaymentResponse(p), nil
 }
 
-// ListPaymentMethods lists saved methods across every connected gateway that can list them.
 func (s *paymentService) ListPaymentMethods(ctx context.Context, customerID string, req *dto.ListSavedPaymentMethodsRequest) (*dto.SavedPaymentMethodsResponse, error) {
 	if customerID == "" {
 		return nil, ierr.NewError("customer_id is required").
@@ -974,7 +973,7 @@ func (s *paymentService) methodManagementProviders(
 	if len(requested) > 0 {
 		out := make([]types.PaymentGatewayType, 0, len(requested))
 		for _, gw := range lo.Uniq(requested) {
-			resolved, err := resolver.ResolveProvider(ctx, customerID, types.IntegrationCapabilityPaymentMethodManagement, gw)
+			resolved, err := resolver.ResolveProvider(ctx, customerID, types.IntegrationCapabilityListPaymentMethods, gw)
 			if err != nil {
 				return nil, err
 			}
@@ -989,7 +988,7 @@ func (s *paymentService) methodManagementProviders(
 	}
 	capable := lo.Filter(providers, func(p ProviderCapabilities, _ int) bool {
 		return lo.ContainsBy(p.Capabilities, func(c types.IntegrationCapability) bool {
-			return c.Type == types.IntegrationCapabilityPaymentMethodManagement
+			return c.Type == types.IntegrationCapabilityListPaymentMethods
 		})
 	})
 	return lo.Map(capable, func(p ProviderCapabilities, _ int) types.PaymentGatewayType {
@@ -1041,12 +1040,13 @@ func toSavedPaymentMethod(
 	}
 
 	out := &dto.SavedPaymentMethod{
-		ID:            m.GatewayMethodID,
-		Provider:      gw,
-		Type:          m.Method,
-		Status:        status,
-		IsDefault:     m.IsDefault,
-		CanAutoCharge: m.Active && providerAutoCharges,
+		ID:                  m.GatewayMethodID,
+		Provider:            gw,
+		Type:                m.Method,
+		Status:              status,
+		IsDefault:           m.IsDefault,
+		CanAutoCharge:       m.Active && providerAutoCharges && (m.Recurring == nil || m.Recurring.Status == types.RecurringPaymentStatusActive),
+		InstantlyChargeable: m.Active && m.InstantlyChargeable,
 	}
 
 	if m.Card != nil {
@@ -1064,10 +1064,9 @@ func toSavedPaymentMethod(
 
 	if m.Recurring != nil {
 		out.Recurring = &dto.SavedRecurringPaymentDetails{
-			Status:              m.Recurring.Status,
-			InstantlyChargeable: m.Recurring.InstantlyChargeable,
-			AutoChargeableTill:  m.Recurring.AutoChargeableTill,
-			MaxAmount:           m.Recurring.MaxAmount,
+			Status:             m.Recurring.Status,
+			AutoChargeableTill: m.Recurring.AutoChargeableTill,
+			MaxAmount:          m.Recurring.MaxAmount,
 		}
 	}
 	return out

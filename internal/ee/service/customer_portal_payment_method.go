@@ -29,7 +29,7 @@ func (s *customerPortalService) AddPaymentMethod(ctx context.Context, req *dto.P
 	}
 
 	provider, gw, err := s.methodProviderFor(ctx, customerID,
-		types.IntegrationCapabilityPaymentMethodManagement, req.PaymentProvider)
+		types.IntegrationCapabilityAddPaymentMethod, req.PaymentProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func (s *customerPortalService) DeletePaymentMethod(ctx context.Context, req *dt
 		return nil, ierr.NewError("request is required").Mark(ierr.ErrValidation)
 	}
 
-	return s.mutateSavedMethod(ctx, types.IntegrationCapabilityPaymentMethodManagement,
+	return s.mutateSavedMethod(ctx, types.IntegrationCapabilityDeletePaymentMethod,
 		req.PaymentProvider, req.PaymentMethodID,
 		func(ctx context.Context, provider interfaces.PaymentMethodProvider, customerID, methodID string) error {
 			return provider.DeleteSavedMethod(ctx, customerID, methodID)

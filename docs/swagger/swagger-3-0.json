@@ -24325,13 +24325,16 @@
         "properties": {
           "can_auto_charge": {
             "type": "boolean",
-            "description": "Capability, not permission: could this be charged with nobody present.\nTrue for any active Chargebee or Stripe card (both vault off-session by\nconstruction); for Razorpay, true only while the token's mandate is live."
+            "description": "Capability, not permission: could this be charged with nobody present.\nTrue for any active Chargebee or Stripe card (both vault off-session by\nconstruction); false for a Razorpay token without a mandate."
           },
           "card": {
             "$ref": "#/components/schemas/SavedCardDetails"
           },
           "id": {
             "type": "string"
+          },
+          "instantly_chargeable": {
+            "type": "boolean"
           },
           "is_default": {
             "type": "boolean",
@@ -24370,10 +24373,6 @@
         "properties": {
           "auto_chargeable_till": {
             "type": "string"
-          },
-          "instantly_chargeable": {
-            "type": "boolean",
-            "description": "False when a debit needs advance notice, e.g. Razorpay's 24h pre-debit notification."
           },
           "max_amount": {
             "type": "string"

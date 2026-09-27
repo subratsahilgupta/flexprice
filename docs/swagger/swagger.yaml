@@ -6229,12 +6229,14 @@ definitions:
         description: |-
           Capability, not permission: could this be charged with nobody present.
           True for any active Chargebee or Stripe card (both vault off-session by
-          construction); for Razorpay, true only while the token's mandate is live.
+          construction); false for a Razorpay token without a mandate.
         type: boolean
       card:
         $ref: '#/definitions/SavedCardDetails'
       id:
         type: string
+      instantly_chargeable:
+        type: boolean
       is_default:
         description: |-
           Which method to use when several are saved at this provider.
@@ -6262,10 +6264,6 @@ definitions:
     properties:
       auto_chargeable_till:
         type: string
-      instantly_chargeable:
-        description: False when a debit needs advance notice, e.g. Razorpay's 24h
-          pre-debit notification.
-        type: boolean
       max_amount:
         type: string
       status:

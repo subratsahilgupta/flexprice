@@ -134,9 +134,10 @@ type ProviderPaymentMethod struct {
 	ProviderMetadata map[string]string
 
 	// Card is set only for card methods; nil for UPI, ACH and the rest.
-	Card      *ProviderCardDetails
-	UPI       *ProviderUPIDetails
-	Recurring *ProviderRecurringPaymentDetails
+	Card                *ProviderCardDetails
+	UPI                 *ProviderUPIDetails
+	Recurring           *ProviderRecurringPaymentDetails
+	InstantlyChargeable bool
 	// IsDefault is the gateway's own default/primary flag, which is what decides
 	// the card charged when no method is named. Scoped per provider.
 	IsDefault bool
@@ -164,19 +165,17 @@ type ProviderUPIDetails struct {
 	VPA string
 }
 
-// ProviderRecurringPaymentDetails is how a saved method can be charged off-session
-// (for Razorpay, the mandate on the token).
 type ProviderRecurringPaymentDetails struct {
-	Status types.RecurringPaymentStatus
-	// False when a debit needs advance notice, e.g. Razorpay's 24h pre-debit notification.
-	InstantlyChargeable bool
-	// Mandate validity; independent of card expiry.
+	Status             types.RecurringPaymentStatus
 	AutoChargeableTill *time.Time
 	MaxAmount          *decimal.Decimal
 }
 
-func (m *ProviderPaymentMethod) IsInstantlyChargeable() bool {
-	return m != nil && m.Recurring != nil && m.Recurring.InstantlyChargeable
+func (m *ProviderPaymentMethod) RecurringStatus() types.RecurringPaymentStatus {
+	if m == nil || m.Recurring == nil {
+		return ""
+	}
+	return m.Recurring.Status
 }
 
 func (m *ProviderPaymentMethod) RecurringAutoChargeableTill() *time.Time {

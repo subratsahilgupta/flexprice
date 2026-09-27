@@ -268,7 +268,7 @@ func (s *CustomerService) GetRazorpayCustomerID(ctx context.Context, customerID 
 }
 
 // ListConfirmedCustomerTokens resolves the Razorpay customer ID and returns
-// confirmed tokens normalized to ProviderPaymentMethod.
+// tokens normalized to ProviderPaymentMethod.
 func (s *CustomerService) ListConfirmedCustomerTokens(
 	ctx context.Context,
 	customerID string,

@@ -97,6 +97,9 @@ func (s *PortalPaymentMethodSuite) TestGetIntegrationsReportsCapabilities() {
 		{Type: types.IntegrationCapabilityAutoCharge},
 		{Type: types.IntegrationCapabilityPaymentMethodManagement},
 		{Type: types.IntegrationCapabilitySetDefaultMethod},
+		{Type: types.IntegrationCapabilityListPaymentMethods},
+		{Type: types.IntegrationCapabilityAddPaymentMethod},
+		{Type: types.IntegrationCapabilityDeletePaymentMethod},
 	}, byProvider[types.PaymentGatewayTypeChargebee])
 }
 
@@ -133,9 +136,9 @@ func (s *PortalPaymentMethodSuite) TestListPaymentMethodsUnsyncedCustomerIsNotAn
 // The failure branch: a gateway the factory cannot build a provider for reports
 // ProviderError instead of blanking the group or failing the whole response.
 func (s *PortalPaymentMethodSuite) TestReadSavedMethodsReportsProviderFailure() {
-	group := s.paymentSvc.(*paymentService).readSavedMethods(s.ctx, "cust_portal", types.PaymentGatewayTypeRazorpay)
+	group := s.paymentSvc.(*paymentService).readSavedMethods(s.ctx, "cust_portal", types.PaymentGatewayTypeStripe)
 
-	s.Equal(types.PaymentGatewayTypeRazorpay, group.Provider)
+	s.Equal(types.PaymentGatewayTypeStripe, group.Provider)
 	s.Require().NotNil(group.Error, "an unavailable provider must report an error, not an empty list")
 	s.NotEmpty(group.Error.Message)
 	s.Empty(group.Items)
@@ -219,7 +222,7 @@ func TestToSavedPaymentMethodRecurring(t *testing.T) {
 		assert.Equal(t, "gaurav.kumar@upi", got.UPI.VPA)
 		require.NotNil(t, got.Recurring)
 		assert.Equal(t, types.RecurringPaymentStatusActive, got.Recurring.Status)
-		assert.False(t, got.Recurring.InstantlyChargeable)
+		assert.False(t, got.InstantlyChargeable)
 		assert.Equal(t, &future, got.Recurring.AutoChargeableTill)
 		assert.True(t, ceiling.Equal(*got.Recurring.MaxAmount))
 		assert.Equal(t, types.PaymentMethodStatusActive, got.Status)
@@ -417,5 +420,32 @@ func (s *PortalPaymentMethodSuite) TestMutateRejectsIncapableProvider() {
 		PaymentMethodID: "pm_x",
 	})
 	s.Error(err)
+	s.True(ierr.IsValidation(err))
+}
+
+func (s *PortalPaymentMethodSuite) TestRazorpayIsListOnly() {
+	s.connect(types.SecretProviderRazorpay)
+
+	resp, err := s.svc.ListPaymentMethods(s.ctx, &dto.ListSavedPaymentMethodsRequest{})
+	s.NoError(err)
+	s.Require().Len(resp.Providers, 1)
+	s.Equal(types.PaymentGatewayTypeRazorpay, resp.Providers[0].Provider)
+	s.Nil(resp.Providers[0].Error)
+
+	_, err = s.svc.AddPaymentMethod(s.ctx, &dto.PortalAddPaymentMethodRequest{
+		PaymentProvider: types.PaymentGatewayTypeRazorpay,
+	})
+	s.True(ierr.IsValidation(err))
+
+	_, err = s.svc.DeletePaymentMethod(s.ctx, &dto.PortalDeletePaymentMethodRequest{
+		PaymentProvider: types.PaymentGatewayTypeRazorpay,
+		PaymentMethodID: "token_x",
+	})
+	s.True(ierr.IsValidation(err))
+
+	_, err = s.svc.SetDefaultPaymentMethod(s.ctx, &dto.PortalSetDefaultPaymentMethodRequest{
+		PaymentProvider: types.PaymentGatewayTypeRazorpay,
+		PaymentMethodID: "token_x",
+	})
 	s.True(ierr.IsValidation(err))
 }

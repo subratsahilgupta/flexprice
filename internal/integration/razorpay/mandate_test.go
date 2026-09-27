@@ -91,7 +91,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 			Svc: &PaymentService{
 				customerSvc: &stubRazorpayCustomerSvc{
 					tokens: []*interfaces.ProviderPaymentMethod{
-						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true},
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{Status: types.RecurringPaymentStatusActive}},
 					},
 				},
 			},
@@ -108,7 +108,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 			Svc: &PaymentService{
 				customerSvc: &stubRazorpayCustomerSvc{
 					tokens: []*interfaces.ProviderPaymentMethod{
-						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{MaxAmount: &maxAmount}},
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{Status: types.RecurringPaymentStatusActive, MaxAmount: &maxAmount}},
 					},
 				},
 			},
@@ -125,7 +125,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 			Svc: &PaymentService{
 				customerSvc: &stubRazorpayCustomerSvc{
 					tokens: []*interfaces.ProviderPaymentMethod{
-						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{MaxAmount: &maxAmount}},
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{Status: types.RecurringPaymentStatusActive, MaxAmount: &maxAmount}},
 					},
 				},
 			},
@@ -141,7 +141,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 			Svc: &PaymentService{
 				customerSvc: &stubRazorpayCustomerSvc{
 					tokens: []*interfaces.ProviderPaymentMethod{
-						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{AutoChargeableTill: &past}},
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{Status: types.RecurringPaymentStatusActive, AutoChargeableTill: &past}},
 					},
 				},
 			},
@@ -182,7 +182,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 			Svc: &PaymentService{
 				customerSvc: &stubRazorpayCustomerSvc{
 					tokens: []*interfaces.ProviderPaymentMethod{
-						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: false},
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: false, Recurring: &interfaces.ProviderRecurringPaymentDetails{Status: types.RecurringPaymentStatusActive}},
 					},
 				},
 			},
@@ -208,64 +208,116 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 }
 
 func TestNormalizeRazorpayToken(t *testing.T) {
-	t.Run("confirmed token sets Active to true and maps fields", func(t *testing.T) {
-		raw := map[string]interface{}{
-			"id":     "tok_123",
-			"method": "upi",
-			"recurring_details": map[string]interface{}{
-				"status": "confirmed",
+	future := float64(time.Now().Add(24 * time.Hour).Unix())
+	past := float64(time.Now().Add(-time.Hour).Unix())
+	confirmed := map[string]interface{}{"status": "confirmed"}
+
+	tests := []struct {
+		name          string
+		raw           map[string]interface{}
+		wantNil       bool
+		wantActive    bool
+		wantRecurring types.RecurringPaymentStatus
+		check         func(t *testing.T, pm *interfaces.ProviderPaymentMethod)
+	}{
+		{
+			name: "confirmed card maps card and mandate details",
+			raw: map[string]interface{}{
+				"id": "tok_card", "method": "card", "recurring": true, "recurring_details": confirmed,
+				"card":       map[string]interface{}{"last4": "8950", "network": "Visa", "expiry_month": float64(12), "expiry_year": "2030"},
+				"expired_at": future, "max_amount": float64(1500000),
 			},
-			"max_amount": float64(1500000),
-			"created_at": float64(1700000000),
-		}
-		pm, err := NormalizeRazorpayToken(raw)
-		assert.NoError(t, err)
-		assert.NotNil(t, pm)
-		assert.True(t, pm.Active)
-		assert.Equal(t, "tok_123", pm.GatewayMethodID)
-		assert.Equal(t, types.PaymentMethodTypeUPI, pm.Method)
-		assert.NotNil(t, pm.RecurringMaxAmount())
-		assert.Equal(t, "15000", pm.RecurringMaxAmount().String())
-	})
-
-	t.Run("lapsed mandate reports expired recurring status", func(t *testing.T) {
-		raw := map[string]interface{}{
-			"id":                "tok_old",
-			"method":            "card",
-			"recurring_details": map[string]interface{}{"status": "confirmed"},
-			"expired_at":        float64(time.Now().Add(-time.Hour).Unix()),
-		}
-		pm, err := NormalizeRazorpayToken(raw)
-		require.NoError(t, err)
-		require.NotNil(t, pm)
-		assert.Equal(t, types.RecurringPaymentStatusExpired, pm.Recurring.Status)
-	})
-
-	t.Run("live mandate keeps active recurring status", func(t *testing.T) {
-		raw := map[string]interface{}{
-			"id":                "tok_live",
-			"method":            "card",
-			"recurring_details": map[string]interface{}{"status": "confirmed"},
-			"expired_at":        float64(time.Now().Add(time.Hour).Unix()),
-		}
-		pm, err := NormalizeRazorpayToken(raw)
-		require.NoError(t, err)
-		require.NotNil(t, pm)
-		assert.Equal(t, types.RecurringPaymentStatusActive, pm.Recurring.Status)
-	})
-
-	t.Run("non-confirmed token returns nil, nil", func(t *testing.T) {
-		raw := map[string]interface{}{
-			"id":     "tok_456",
-			"method": "card",
-			"recurring_details": map[string]interface{}{
-				"status": "rejected",
+			wantActive:    true,
+			wantRecurring: types.RecurringPaymentStatusActive,
+			check: func(t *testing.T, pm *interfaces.ProviderPaymentMethod) {
+				require.NotNil(t, pm.Card)
+				assert.Equal(t, "8950", pm.Card.Last4)
+				assert.Equal(t, "Visa", pm.Card.Brand)
+				assert.Equal(t, 12, pm.Card.ExpMonth)
+				assert.Equal(t, 2030, pm.Card.ExpYear)
+				assert.Equal(t, "15000", pm.RecurringMaxAmount().String())
+				assert.False(t, pm.InstantlyChargeable)
 			},
-		}
-		pm, err := NormalizeRazorpayToken(raw)
-		assert.NoError(t, err)
-		assert.Nil(t, pm)
-	})
+		},
+		{
+			name: "confirmed UPI maps VPA",
+			raw: map[string]interface{}{
+				"id": "tok_upi", "method": "upi", "recurring": true, "recurring_details": confirmed,
+				"vpa": map[string]interface{}{"username": "gaurav.kumar", "handle": "upi"},
+			},
+			wantActive:    true,
+			wantRecurring: types.RecurringPaymentStatusActive,
+			check: func(t *testing.T, pm *interfaces.ProviderPaymentMethod) {
+				require.NotNil(t, pm.UPI)
+				assert.Equal(t, "gaurav.kumar@upi", pm.UPI.VPA)
+			},
+		},
+		{
+			name: "initiated mandate maps to pending",
+			raw: map[string]interface{}{
+				"id": "tok_init", "method": "upi", "recurring": true,
+				"recurring_details": map[string]interface{}{"status": "initiated"},
+			},
+			wantActive:    true,
+			wantRecurring: types.RecurringPaymentStatusPending,
+		},
+		{
+			name: "lapsed mandate reports expired",
+			raw: map[string]interface{}{
+				"id": "tok_old", "method": "card", "recurring": true, "recurring_details": confirmed, "expired_at": past,
+			},
+			wantActive:    true,
+			wantRecurring: types.RecurringPaymentStatusExpired,
+		},
+		{
+			name: "non-recurring token has no mandate",
+			raw: map[string]interface{}{
+				"id": "tok_saved", "method": "card", "recurring": false, "recurring_details": confirmed,
+			},
+			wantActive: true,
+		},
+		{
+			name: "token status from razorpay decides active",
+			raw: map[string]interface{}{
+				"id": "tok_deact", "method": "card", "status": "deactivated", "recurring": true, "recurring_details": confirmed,
+			},
+			wantActive:    false,
+			wantRecurring: types.RecurringPaymentStatusActive,
+		},
+		{
+			name:    "emandate is skipped",
+			raw:     map[string]interface{}{"id": "tok_em", "method": "emandate", "recurring": true, "recurring_details": confirmed},
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pm, err := NormalizeRazorpayToken(tt.raw)
+			require.NoError(t, err)
+			if tt.wantNil {
+				assert.Nil(t, pm)
+				return
+			}
+			require.NotNil(t, pm)
+			assert.Equal(t, tt.wantActive, pm.Active)
+			assert.Equal(t, tt.wantRecurring, pm.RecurringStatus())
+			if tt.check != nil {
+				tt.check(t, pm)
+			}
+		})
+	}
+}
+
+func TestSelectUsableTokenRequiresLiveMandate(t *testing.T) {
+	pending := &interfaces.ProviderPaymentMethod{
+		GatewayMethodID: "tok_pending", Method: types.PaymentMethodTypeCard, Active: true,
+		Recurring: &interfaces.ProviderRecurringPaymentDetails{Status: types.RecurringPaymentStatusPending},
+	}
+	vaulted := &interfaces.ProviderPaymentMethod{GatewayMethodID: "tok_vaulted", Method: types.PaymentMethodTypeCard, Active: true}
+
+	_, ok := SelectUsableToken([]*interfaces.ProviderPaymentMethod{pending, vaulted}, types.PaymentMethodTypeCard, decimal.Zero)
+	assert.False(t, ok)
 }
 
 func TestPaymentMethodAdapterListSavedMethods(t *testing.T) {
@@ -273,7 +325,7 @@ func TestPaymentMethodAdapterListSavedMethods(t *testing.T) {
 
 	t.Run("returns tokens", func(t *testing.T) {
 		a := &PaymentMethodAdapter{CustomerSvc: &stubRazorpayCustomerSvc{tokens: []*interfaces.ProviderPaymentMethod{
-			{GatewayMethodID: "token_1", Method: types.PaymentMethodTypeCard, Active: true},
+			{GatewayMethodID: "token_1", Method: types.PaymentMethodTypeCard, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{Status: types.RecurringPaymentStatusActive}},
 		}}}
 		got, err := a.ListSavedMethods(ctx, "cust_1")
 		require.NoError(t, err)

@@ -318,8 +318,6 @@ const (
 	PaymentMethodProviderStripe PaymentMethodProvider = "stripe"
 )
 
-// RecurringPaymentStatus is the gateway-neutral state of a saved method's
-// off-session authorization (e.g. a Razorpay mandate).
 type RecurringPaymentStatus string
 
 const (

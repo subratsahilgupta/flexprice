@@ -133,6 +133,9 @@ func (s *PaymentProviderResolverSuite) TestListProvidersSkipsUnusableAndNonPayme
 		{Type: types.IntegrationCapabilityAutoCharge},
 		{Type: types.IntegrationCapabilityPaymentMethodManagement},
 		{Type: types.IntegrationCapabilitySetDefaultMethod},
+		{Type: types.IntegrationCapabilityListPaymentMethods},
+		{Type: types.IntegrationCapabilityAddPaymentMethod},
+		{Type: types.IntegrationCapabilityDeletePaymentMethod},
 	}, got[0].Capabilities)
 }
 
@@ -164,10 +167,10 @@ func (s *PaymentProviderResolverSuite) TestGatewayCapabilitiesMatchFactory() {
 	factory := s.GetIntegrationFactory()
 
 	for gw := range gatewayCapabilities {
-		wantSaved := lo.Contains(gatewayCapabilities[gw], types.IntegrationCapabilityPaymentMethodManagement)
+		wantSaved := lo.Contains(gatewayCapabilities[gw], types.IntegrationCapabilityListPaymentMethods)
 		_, err := factory.GetPaymentMethodProvider(ctx, gw, nil)
 		s.Equal(wantSaved, !ierr.IsNotImplemented(err),
-			"payment_method_management for %s disagrees with Factory.GetPaymentMethodProvider", gw)
+			"list_payment_methods for %s disagrees with Factory.GetPaymentMethodProvider", gw)
 
 		wantCheckout := lo.Contains(gatewayCapabilities[gw], types.IntegrationCapabilityCheckout)
 		provider, ok := checkoutProviderFor(gw)

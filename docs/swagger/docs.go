@@ -22310,7 +22310,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "can_auto_charge": {
-                    "description": "Capability, not permission: could this be charged with nobody present.\nTrue for any active Chargebee or Stripe card (both vault off-session by\nconstruction); for Razorpay, true only while the token's mandate is live.",
+                    "description": "Capability, not permission: could this be charged with nobody present.\nTrue for any active Chargebee or Stripe card (both vault off-session by\nconstruction); false for a Razorpay token without a mandate.",
                     "type": "boolean"
                 },
                 "card": {
@@ -22318,6 +22318,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "instantly_chargeable": {
+                    "type": "boolean"
                 },
                 "is_default": {
                     "description": "Which method to use when several are saved at this provider.\nScoped to the provider: two providers means two defaults.",
@@ -22356,10 +22359,6 @@ const docTemplate = `{
             "properties": {
                 "auto_chargeable_till": {
                     "type": "string"
-                },
-                "instantly_chargeable": {
-                    "description": "False when a debit needs advance notice, e.g. Razorpay's 24h pre-debit notification.",
-                    "type": "boolean"
                 },
                 "max_amount": {
                     "type": "string"
