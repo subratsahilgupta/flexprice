@@ -404,7 +404,7 @@ func provideHandlers(
 		Health:                   v1.NewHealthHandler(logger),
 		Price:                    v1.NewPriceHandler(priceService, logger),
 		PriceUnit:                v1.NewPriceUnitHandler(priceUnitService, logger),
-		Customer:                 v1.NewCustomerHandler(customerService, billingService, entityIntegrationMappingService, logger),
+		Customer:                 v1.NewCustomerHandler(customerService, billingService, paymentService, entityIntegrationMappingService, logger),
 		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, temporalService, locker, cfg, logger),
 		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
 		SubscriptionChange:       v1.NewSubscriptionChangeHandler(subscriptionChangeService, logger),

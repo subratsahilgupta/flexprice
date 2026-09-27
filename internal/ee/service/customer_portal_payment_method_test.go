@@ -3,20 +3,26 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/connection"
+	"github.com/flexprice/flexprice/internal/domain/customer"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/shopspring/decimal"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
 type PortalPaymentMethodSuite struct {
 	testutil.BaseServiceTestSuite
-	svc CustomerPortalService
-	ctx context.Context
+	svc        CustomerPortalService
+	paymentSvc PaymentService
+	ctx        context.Context
 }
 
 func TestPortalPaymentMethodSuite(t *testing.T) {
@@ -35,8 +41,15 @@ func (s *PortalPaymentMethodSuite) SetupTest() {
 		CustomerRepo:       s.GetStores().CustomerRepo,
 		IntegrationFactory: s.GetIntegrationFactory(),
 	}
+	s.paymentSvc = NewPaymentService(params)
 	s.svc = NewCustomerPortalService(params, NewCustomerService(params), nil)
 	s.ctx = types.SetCustomerID(s.GetContext(), "cust_portal")
+	s.NoError(s.GetStores().CustomerRepo.Create(s.ctx, &customer.Customer{
+		ID:         "cust_portal",
+		ExternalID: "ext_cust_portal",
+		Name:       "Portal Customer",
+		BaseModel:  types.GetDefaultBaseModel(s.ctx),
+	}))
 }
 
 func (s *PortalPaymentMethodSuite) TearDownTest() {
@@ -120,9 +133,7 @@ func (s *PortalPaymentMethodSuite) TestListPaymentMethodsUnsyncedCustomerIsNotAn
 // The failure branch: a gateway the factory cannot build a provider for reports
 // ProviderError instead of blanking the group or failing the whole response.
 func (s *PortalPaymentMethodSuite) TestReadSavedMethodsReportsProviderFailure() {
-	portal := s.svc.(*customerPortalService)
-
-	group := portal.readSavedMethods(s.ctx, "cust_portal", types.PaymentGatewayTypeRazorpay)
+	group := s.paymentSvc.(*paymentService).readSavedMethods(s.ctx, "cust_portal", types.PaymentGatewayTypeRazorpay)
 
 	s.Equal(types.PaymentGatewayTypeRazorpay, group.Provider)
 	s.Require().NotNil(group.Error, "an unavailable provider must report an error, not an empty list")
@@ -166,6 +177,77 @@ func (s *PortalPaymentMethodSuite) TestListPaymentMethodsRequiresPortalCustomer(
 	_, err := s.svc.ListPaymentMethods(s.GetContext(), &dto.ListSavedPaymentMethodsRequest{})
 	s.Error(err)
 	s.True(ierr.IsPermissionDenied(err))
+}
+
+func (s *PortalPaymentMethodSuite) TestPaymentListPaymentMethodsUnknownCustomer() {
+	s.connect(types.SecretProviderChargebee)
+
+	_, err := s.paymentSvc.ListPaymentMethods(s.GetContext(), "cust_missing", &dto.ListSavedPaymentMethodsRequest{})
+	s.Error(err)
+	s.True(ierr.IsNotFound(err))
+}
+
+func (s *PortalPaymentMethodSuite) TestPaymentListPaymentMethodsFansOut() {
+	s.connect(types.SecretProviderChargebee, types.SecretProviderStripe)
+
+	resp, err := s.paymentSvc.ListPaymentMethods(s.GetContext(), "cust_portal", &dto.ListSavedPaymentMethodsRequest{})
+	s.NoError(err)
+	s.Require().Len(resp.Providers, 1)
+	s.Equal(types.PaymentGatewayTypeChargebee, resp.Providers[0].Provider)
+	s.Nil(resp.Providers[0].Error)
+}
+
+func TestToSavedPaymentMethodRecurring(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+	future := time.Now().UTC().Add(24 * time.Hour)
+	ceiling := decimal.NewFromInt(15000)
+
+	t.Run("mandate details and UPI are mapped", func(t *testing.T) {
+		got := toSavedPaymentMethod(interfaces.ProviderPaymentMethod{
+			GatewayMethodID: "token_upi",
+			Method:          types.PaymentMethodTypeUPI,
+			Active:          true,
+			UPI:             &interfaces.ProviderUPIDetails{VPA: "gaurav.kumar@upi"},
+			Recurring: &interfaces.ProviderRecurringPaymentDetails{
+				Status:             types.RecurringPaymentStatusActive,
+				AutoChargeableTill: &future,
+				MaxAmount:          &ceiling,
+			},
+		}, types.PaymentGatewayTypeRazorpay, true)
+
+		require.NotNil(t, got.UPI)
+		assert.Equal(t, "gaurav.kumar@upi", got.UPI.VPA)
+		require.NotNil(t, got.Recurring)
+		assert.Equal(t, types.RecurringPaymentStatusActive, got.Recurring.Status)
+		assert.False(t, got.Recurring.InstantlyChargeable)
+		assert.Equal(t, &future, got.Recurring.AutoChargeableTill)
+		assert.True(t, ceiling.Equal(*got.Recurring.MaxAmount))
+		assert.Equal(t, types.PaymentMethodStatusActive, got.Status)
+		assert.True(t, got.CanAutoCharge)
+	})
+
+	t.Run("lapsed mandate does not change method status", func(t *testing.T) {
+		got := toSavedPaymentMethod(interfaces.ProviderPaymentMethod{
+			GatewayMethodID: "token_old",
+			Method:          types.PaymentMethodTypeCard,
+			Active:          true,
+			Recurring: &interfaces.ProviderRecurringPaymentDetails{
+				Status:             types.RecurringPaymentStatusExpired,
+				AutoChargeableTill: &past,
+			},
+		}, types.PaymentGatewayTypeRazorpay, true)
+
+		assert.Equal(t, types.PaymentMethodStatusActive, got.Status)
+		require.NotNil(t, got.Recurring)
+		assert.Equal(t, types.RecurringPaymentStatusExpired, got.Recurring.Status)
+	})
+
+	t.Run("no recurring facet leaves it nil", func(t *testing.T) {
+		got := toSavedPaymentMethod(interfaces.ProviderPaymentMethod{GatewayMethodID: "pm_1", Active: true},
+			types.PaymentGatewayTypeChargebee, true)
+		assert.Nil(t, got.Recurring)
+		assert.Nil(t, got.UPI)
+	})
 }
 
 func TestToSavedPaymentMethod(t *testing.T) {

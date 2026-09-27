@@ -287,6 +287,7 @@ func (s *CustomerService) ListConfirmedCustomerTokens(
 		pm, normErr := NormalizeRazorpayToken(raw)
 		return pm, normErr == nil && pm != nil
 	})
+
 	return razorpayCustomerID, tokens, nil
 }
 

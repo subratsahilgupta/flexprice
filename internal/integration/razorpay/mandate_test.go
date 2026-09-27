@@ -2,6 +2,7 @@ package razorpay
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRazorpaySubscriptionMethod(t *testing.T) {
@@ -106,7 +108,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 			Svc: &PaymentService{
 				customerSvc: &stubRazorpayCustomerSvc{
 					tokens: []*interfaces.ProviderPaymentMethod{
-						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, MaxAmount: &maxAmount},
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{MaxAmount: &maxAmount}},
 					},
 				},
 			},
@@ -123,7 +125,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 			Svc: &PaymentService{
 				customerSvc: &stubRazorpayCustomerSvc{
 					tokens: []*interfaces.ProviderPaymentMethod{
-						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, MaxAmount: &maxAmount},
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{MaxAmount: &maxAmount}},
 					},
 				},
 			},
@@ -139,7 +141,7 @@ func TestRazorpayHasAutoChargeableMethod(t *testing.T) {
 			Svc: &PaymentService{
 				customerSvc: &stubRazorpayCustomerSvc{
 					tokens: []*interfaces.ProviderPaymentMethod{
-						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, ExpiresAt: &past},
+						{GatewayMethodID: "token_123", Method: types.PaymentMethodTypeUPI, Active: true, Recurring: &interfaces.ProviderRecurringPaymentDetails{AutoChargeableTill: &past}},
 					},
 				},
 			},
@@ -222,8 +224,34 @@ func TestNormalizeRazorpayToken(t *testing.T) {
 		assert.True(t, pm.Active)
 		assert.Equal(t, "tok_123", pm.GatewayMethodID)
 		assert.Equal(t, types.PaymentMethodTypeUPI, pm.Method)
-		assert.NotNil(t, pm.MaxAmount)
-		assert.Equal(t, "15000", pm.MaxAmount.String())
+		assert.NotNil(t, pm.RecurringMaxAmount())
+		assert.Equal(t, "15000", pm.RecurringMaxAmount().String())
+	})
+
+	t.Run("lapsed mandate reports expired recurring status", func(t *testing.T) {
+		raw := map[string]interface{}{
+			"id":                "tok_old",
+			"method":            "card",
+			"recurring_details": map[string]interface{}{"status": "confirmed"},
+			"expired_at":        float64(time.Now().Add(-time.Hour).Unix()),
+		}
+		pm, err := NormalizeRazorpayToken(raw)
+		require.NoError(t, err)
+		require.NotNil(t, pm)
+		assert.Equal(t, types.RecurringPaymentStatusExpired, pm.Recurring.Status)
+	})
+
+	t.Run("live mandate keeps active recurring status", func(t *testing.T) {
+		raw := map[string]interface{}{
+			"id":                "tok_live",
+			"method":            "card",
+			"recurring_details": map[string]interface{}{"status": "confirmed"},
+			"expired_at":        float64(time.Now().Add(time.Hour).Unix()),
+		}
+		pm, err := NormalizeRazorpayToken(raw)
+		require.NoError(t, err)
+		require.NotNil(t, pm)
+		assert.Equal(t, types.RecurringPaymentStatusActive, pm.Recurring.Status)
 	})
 
 	t.Run("non-confirmed token returns nil, nil", func(t *testing.T) {
@@ -238,4 +266,41 @@ func TestNormalizeRazorpayToken(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Nil(t, pm)
 	})
+}
+
+func TestPaymentMethodAdapterListSavedMethods(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("returns tokens", func(t *testing.T) {
+		a := &PaymentMethodAdapter{CustomerSvc: &stubRazorpayCustomerSvc{tokens: []*interfaces.ProviderPaymentMethod{
+			{GatewayMethodID: "token_1", Method: types.PaymentMethodTypeCard, Active: true},
+		}}}
+		got, err := a.ListSavedMethods(ctx, "cust_1")
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		assert.Equal(t, "token_1", got[0].GatewayMethodID)
+	})
+
+	t.Run("unsynced customer has nothing saved", func(t *testing.T) {
+		a := &PaymentMethodAdapter{CustomerSvc: &stubRazorpayCustomerSvc{err: ierr.NewError("not synced").Mark(ierr.ErrNotFound)}}
+		got, err := a.ListSavedMethods(ctx, "cust_1")
+		require.NoError(t, err)
+		assert.Empty(t, got)
+	})
+
+	t.Run("gateway failure propagates", func(t *testing.T) {
+		a := &PaymentMethodAdapter{CustomerSvc: &stubRazorpayCustomerSvc{err: errors.New("boom")}}
+		_, err := a.ListSavedMethods(ctx, "cust_1")
+		assert.Error(t, err)
+	})
+}
+
+func TestPaymentMethodAdapterRejectsManagement(t *testing.T) {
+	ctx := context.Background()
+	a := &PaymentMethodAdapter{CustomerSvc: &stubRazorpayCustomerSvc{}}
+
+	assert.True(t, ierr.IsValidation(a.DeleteSavedMethod(ctx, "cust_1", "token_1")))
+	assert.True(t, ierr.IsValidation(a.SetDefaultSavedMethod(ctx, "cust_1", "token_1")))
+	_, err := a.CreateSetupLink(ctx, interfaces.SetupLinkRequest{CustomerID: "cust_1"})
+	assert.True(t, ierr.IsValidation(err))
 }

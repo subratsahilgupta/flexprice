@@ -36,6 +36,7 @@ func NormalizeRazorpayToken(raw map[string]interface{}) (*interfaces.ProviderPay
 		GatewayMethodID:  lo.ValueOr(raw, "id", "").(string),
 		ProviderMetadata: map[string]string{},
 		Active:           status == "confirmed",
+		Recurring:        &interfaces.ProviderRecurringPaymentDetails{Status: toRecurringPaymentStatus(status)},
 	}
 
 	method, _ := raw["method"].(string)
@@ -48,17 +49,42 @@ func NormalizeRazorpayToken(raw map[string]interface{}) (*interfaces.ProviderPay
 
 	if paise, ok := raw["max_amount"].(float64); ok && paise > 0 {
 		major := fromPaise(paise)
-		pm.MaxAmount = &major
+		pm.Recurring.MaxAmount = &major
 	}
+
 	if expiredAtUnix, ok := raw["expired_at"].(float64); ok && expiredAtUnix > 0 {
 		t := time.Unix(int64(expiredAtUnix), 0).UTC()
-		pm.ExpiresAt = &t
+		pm.Recurring.AutoChargeableTill = &t
+
+		if time.Now().UTC().After(t) && !lo.Contains([]types.RecurringPaymentStatus{
+			types.RecurringPaymentStatusRejected, types.RecurringPaymentStatusCancelled,
+		}, pm.Recurring.Status) {
+			pm.Recurring.Status = types.RecurringPaymentStatusExpired
+		}
 	}
+
 	if createdAtUnix, ok := raw["created_at"].(float64); ok {
 		pm.CreatedAt = time.Unix(int64(createdAtUnix), 0).UTC()
 	}
 
 	return pm, nil
+}
+
+func toRecurringPaymentStatus(status string) types.RecurringPaymentStatus {
+	switch status {
+	case "initiated":
+		return types.RecurringPaymentStatusPending
+	case "confirmed":
+		return types.RecurringPaymentStatusActive
+	case "paused":
+		return types.RecurringPaymentStatusPaused
+	case "rejected":
+		return types.RecurringPaymentStatusRejected
+	case "cancelled":
+		return types.RecurringPaymentStatusCancelled
+	default:
+		return types.RecurringPaymentStatusUnknown
+	}
 }
 
 // SelectUsableToken applies the deterministic selection algorithm: filter for
@@ -72,14 +98,17 @@ func SelectUsableToken(
 ) (*interfaces.ProviderPaymentMethod, bool) {
 	now := time.Now().UTC()
 	usable := lo.Filter(methods, func(pm *interfaces.ProviderPaymentMethod, _ int) bool {
+		expiresAt, maxAmount := pm.RecurringAutoChargeableTill(), pm.RecurringMaxAmount()
+
 		return pm.Active &&
 			pm.Method == preferredMethod &&
-			(pm.ExpiresAt == nil || !now.After(*pm.ExpiresAt)) &&
-			(pm.MaxAmount == nil || !pm.MaxAmount.LessThan(invoiceTotal))
+			(expiresAt == nil || !now.After(*expiresAt)) &&
+			(maxAmount == nil || !maxAmount.LessThan(invoiceTotal))
 	})
 	if len(usable) == 0 {
 		return nil, false
 	}
+
 	return lo.MaxBy(usable, func(a, b *interfaces.ProviderPaymentMethod) bool {
 		return a.CreatedAt.After(b.CreatedAt)
 	}), true
@@ -239,4 +268,45 @@ func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, req inter
 	}
 	_, ok := selectAutoChargeToken(tokens, "", amount)
 	return ok, nil
+}
+
+// PaymentMethodAdapter lists Razorpay tokens; Razorpay has no setup flow or default.
+type PaymentMethodAdapter struct {
+	CustomerSvc RazorpayCustomerService
+}
+
+func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, customerID string) ([]interfaces.ProviderPaymentMethod, error) {
+	_, tokens, err := a.CustomerSvc.ListConfirmedCustomerTokens(ctx, customerID)
+	if err != nil {
+		if ierr.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return lo.FilterMap(tokens, func(t *interfaces.ProviderPaymentMethod, _ int) (interfaces.ProviderPaymentMethod, bool) {
+		if t == nil {
+			return interfaces.ProviderPaymentMethod{}, false
+		}
+
+		return *t, true
+	}), nil
+}
+
+func (a *PaymentMethodAdapter) DeleteSavedMethod(ctx context.Context, customerID, methodID string) error {
+	return errMandateManagedAtCheckout()
+}
+
+func (a *PaymentMethodAdapter) SetDefaultSavedMethod(ctx context.Context, customerID, methodID string) error {
+	return errMandateManagedAtCheckout()
+}
+
+func (a *PaymentMethodAdapter) CreateSetupLink(ctx context.Context, req interfaces.SetupLinkRequest) (*interfaces.SetupLinkResponse, error) {
+	return nil, errMandateManagedAtCheckout()
+}
+
+func errMandateManagedAtCheckout() error {
+	return ierr.NewError("razorpay saved payment methods cannot be managed here").
+		WithHint("Razorpay mandates are set up at checkout").
+		Mark(ierr.ErrValidation)
 }

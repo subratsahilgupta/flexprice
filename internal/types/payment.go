@@ -318,6 +318,24 @@ const (
 	PaymentMethodProviderStripe PaymentMethodProvider = "stripe"
 )
 
+// RecurringPaymentStatus is the gateway-neutral state of a saved method's
+// off-session authorization (e.g. a Razorpay mandate).
+type RecurringPaymentStatus string
+
+const (
+	RecurringPaymentStatusPending   RecurringPaymentStatus = "PENDING"
+	RecurringPaymentStatusActive    RecurringPaymentStatus = "ACTIVE"
+	RecurringPaymentStatusPaused    RecurringPaymentStatus = "PAUSED"
+	RecurringPaymentStatusRejected  RecurringPaymentStatus = "REJECTED"
+	RecurringPaymentStatusCancelled RecurringPaymentStatus = "CANCELLED"
+	RecurringPaymentStatusExpired   RecurringPaymentStatus = "EXPIRED"
+	RecurringPaymentStatusUnknown   RecurringPaymentStatus = "UNKNOWN"
+)
+
+func (s RecurringPaymentStatus) String() string {
+	return string(s)
+}
+
 // PaymentMethodStatus represents the lifecycle status of a saved payment method
 type PaymentMethodStatus string
 

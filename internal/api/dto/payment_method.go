@@ -373,8 +373,22 @@ type SavedPaymentMethod struct {
 	IsDefault bool `json:"is_default"`
 	// Capability, not permission: could this be charged with nobody present.
 	// True for any active Chargebee or Stripe card (both vault off-session by
-	// construction); false for a Razorpay token without a mandate.
-	CanAutoCharge bool `json:"can_auto_charge"`
+	// construction); for Razorpay, true only while the token's mandate is live.
+	CanAutoCharge bool                          `json:"can_auto_charge"`
+	UPI           *SavedUPIDetails              `json:"upi,omitempty"`
+	Recurring     *SavedRecurringPaymentDetails `json:"recurring,omitempty"`
+}
+
+type SavedUPIDetails struct {
+	VPA string `json:"vpa,omitempty"`
+}
+
+type SavedRecurringPaymentDetails struct {
+	Status types.RecurringPaymentStatus `json:"status,omitempty"`
+	// False when a debit needs advance notice, e.g. Razorpay's 24h pre-debit notification.
+	InstantlyChargeable bool             `json:"instantly_chargeable"`
+	AutoChargeableTill  *time.Time       `json:"auto_chargeable_till,omitempty"`
+	MaxAmount           *decimal.Decimal `json:"max_amount,omitempty" swaggertype:"string"`
 }
 
 type SavedCardDetails struct {
