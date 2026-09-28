@@ -290,9 +290,7 @@ func (r *checkoutSessionRepository) GetByCheckoutPaymentID(ctx context.Context, 
 	})
 	defer FinishSpan(span)
 
-	// Any checkout status: the caller decides what a payment against an expired or
-	// failed session means. Only the row status is pinned, so an archived session
-	// cannot claim a live payment.
+	// No CheckoutStatus filter here — only the row status (soft-delete) is pinned.
 	e, err := r.client.Reader(ctx).CheckoutSession.Query().
 		Where(
 			entCheckout.CheckoutPaymentIDEQ(paymentID),

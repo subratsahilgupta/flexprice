@@ -2022,10 +2022,8 @@ func (s *PaymentService) AttachPaymentToStripeInvoiceAndReconcile(
 }
 
 // RefundLateCapturedPayment refunds a payment that settled after its checkout session
-// reached a terminal state. Stripe Checkout Sessions have a minimum 30-minute expiry,
-// which outlives the FlexPrice session TTL — so the customer can pay after we have
-// given up. By then the invoice and payment have been archived and nothing can be
-// delivered for the money — give it back.
+// expired — Stripe's 30-minute minimum session expiry outlives FlexPrice's own TTL, so
+// the invoice/payment are already archived and there's nothing to deliver the money to.
 func (s *PaymentService) RefundLateCapturedPayment(
 	ctx context.Context,
 	flexpricePaymentID string,

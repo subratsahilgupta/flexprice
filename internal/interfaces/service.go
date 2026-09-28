@@ -238,9 +238,7 @@ type CreditAdjustmentService interface {
 type CheckoutSessionService interface {
 	Create(ctx context.Context, req dto.CreateCheckoutSessionRequest) (*dto.CheckoutSessionResponse, error)
 	Get(ctx context.Context, id string) (*dto.CheckoutSessionResponse, error)
-	// GetByPaymentID returns the session that owns a checkout payment, in any checkout
-	// status, or (nil, nil) when the payment did not come from a checkout session.
-	// Gateway webhook handlers route a settled payment back to its session with it.
+	// GetByPaymentID returns the session owning a checkout payment, or (nil, nil) if none.
 	GetByPaymentID(ctx context.Context, paymentID string) (*dto.CheckoutSessionResponse, error)
 	// GetAndReconcile is Get plus reconciliation against the payment provider. It
 	// contacts the gateway and can complete the session, so only callers acting for

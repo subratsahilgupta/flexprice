@@ -65,8 +65,8 @@ func (a *CheckoutAdapter) CreatePaymentLink(
 	}, nil
 }
 
-// CreateAuthorizationLink creates a Stripe checkout session that vaults the card for
-// future off-session charges; whether it also becomes the default comes from the request.
+// CreateAuthorizationLink creates a Stripe checkout session that vaults the card as the
+// customer's default for future off-session charges.
 func (a *CheckoutAdapter) CreateAuthorizationLink(
 	ctx context.Context,
 	req interfaces.AuthorizationLinkRequest,
@@ -103,8 +103,8 @@ func (a *CheckoutAdapter) CreateAuthorizationLink(
 	}, nil
 }
 
-// TryAutoChargingSavedMethod attempts an off-session charge against a customer's stored card.
-// Returns charged=false if the customer has no usable payment method on file.
+// TryAutoChargingSavedMethod attempts an off-session charge; charged=false if the
+// customer has no usable saved payment method.
 func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 	ctx context.Context,
 	req interfaces.AuthorizationLinkRequest,
@@ -160,12 +160,9 @@ func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, req inter
 	return a.PaymentSvc.HasSavedPaymentMethods(ctx, req.CustomerID, a.CustomerSvc)
 }
 
-// FetchPaymentState reads payment state from Stripe given gateway tracking/payment handles.
-//
-// A hosted checkout records its session (cs_) as the tracking id and, once Stripe has
-// created it, the intent (pi_) as the payment id; a saved-method charge has only the
-// intent, recorded as both. The session is read first when there is one: its intent sits
-// in requires_payment_method until the customer pays, which read alone means "declined".
+// FetchPaymentState reads payment state given gateway tracking/payment handles. The
+// session (cs_) is read first when present: read alone, its intent looks declined
+// (requires_payment_method) until the customer actually pays.
 func (a *CheckoutAdapter) FetchPaymentState(
 	ctx context.Context,
 	req interfaces.PaymentStateRequest,

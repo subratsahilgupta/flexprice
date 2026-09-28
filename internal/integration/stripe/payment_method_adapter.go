@@ -49,9 +49,8 @@ func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustome
 		defaultPMID = defaultPaymentMethodID(stripeCust)
 	}
 
-	// Cards only: CreateSetupLink vaults nothing else, SavedPaymentMethod describes nothing
-	// else, and CanAutoCharge assumes a method Stripe can charge off-session, which bank
-	// debits are not.
+	// Cards only: the rest of this adapter assumes off-session chargeable methods, which
+	// bank debits are not.
 	params := &stripeapi.PaymentMethodListParams{
 		Customer: stripeapi.String(stripeCustomerID),
 		Type:     stripeapi.String(string(stripeapi.PaymentMethodTypeCard)),
@@ -183,8 +182,8 @@ func (a *PaymentMethodAdapter) CreateSetupLink(ctx context.Context, req interfac
 	return resp, nil
 }
 
-// validateIfMethodBelongsToCustomer confirms the method is vaulted under the customer's
-// Stripe account and returns that account's id.
+// validateIfMethodBelongsToCustomer returns the customer's Stripe account id after
+// confirming the method is vaulted under it.
 func (a *PaymentMethodAdapter) validateIfMethodBelongsToCustomer(ctx context.Context, flexCustomerID, gatewayMethodID string) (string, error) {
 	if gatewayMethodID == "" {
 		return "", ierr.NewError("payment method id is required").

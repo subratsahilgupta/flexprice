@@ -34,10 +34,8 @@ type Repository interface {
 	// invoice, or nil when none is.
 	GetByCheckoutInvoiceID(ctx context.Context, invoiceID string) (*CheckoutSession, error)
 
-	// GetByCheckoutPaymentID returns the session that owns the payment, in any checkout
-	// status, or nil when the payment did not come from a checkout session. Gateway
-	// webhooks route on it, so unlike GetByCheckoutInvoiceID it must also see expired
-	// and failed sessions: a payment landing on one of those needs a refund, not silence.
+	// GetByCheckoutPaymentID returns the session owning the payment in any checkout status
+	// (unlike GetByCheckoutInvoiceID) — a payment against an expired/failed one needs a refund.
 	GetByCheckoutPaymentID(ctx context.Context, paymentID string) (*CheckoutSession, error)
 
 	// Delete soft-deletes a checkout session by setting status to archived.

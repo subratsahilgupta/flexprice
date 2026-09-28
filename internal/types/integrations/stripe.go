@@ -18,14 +18,8 @@ const (
 	StripePaymentStatusCanceled              StripePaymentStatus = "canceled"
 )
 
-// ToFlexpricePaymentStatus maps a Stripe PaymentIntent status to a FlexPrice PaymentStatus.
-// The states between confirmation and settlement (requires_confirmation, requires_action,
-// requires_capture, processing) are in flight rather than outcomes, so they return an
-// empty status with a nil error to signal "still pending, no transition" — the same
-// contract as the Razorpay mappers. requires_payment_method is not one of them: Stripe
-// parks a declined intent there, so an intent read by id after a charge attempt has
-// failed. Anything unrecognised is an error, so a status Stripe adds later cannot be
-// silently read as pending.
+// ToFlexpricePaymentStatus maps a PaymentIntent status. In-flight states return empty+nil
+// (pending); requires_payment_method means declined; anything unrecognised is an error.
 func (s StripePaymentStatus) ToFlexpricePaymentStatus() (types.PaymentStatus, error) {
 	switch s {
 	case StripePaymentStatusSucceeded:
@@ -64,13 +58,9 @@ const (
 	StripeCheckoutPaymentStatusNoPaymentRequired StripeCheckoutPaymentStatus = "no_payment_required"
 )
 
-// ToFlexpricePaymentStatus maps a Checkout Session onto a FlexPrice PaymentStatus. The
-// session is the hosted page, not the money: status says whether the customer finished
-// the page and payment_status whether the funds arrived, and only the pair answers "is
-// this paid?". A complete session that is still unpaid is a delayed method (bank debit)
-// in flight — pending, and the webhook settles it. Expired is the one terminal failure a
-// session can report. Anything unrecognised is an error rather than pending, so the
-// caller logs the status Stripe sent instead of quietly waiting on it.
+// ToFlexpricePaymentStatus needs both status and payment_status to answer "is this paid?":
+// complete+unpaid is a delayed method (bank debit) still pending, and anything
+// unrecognised is an error rather than a silent pending.
 func (s StripeCheckoutSessionStatus) ToFlexpricePaymentStatus(paymentStatus StripeCheckoutPaymentStatus) (types.PaymentStatus, error) {
 	switch s {
 	case StripeCheckoutSessionStatusExpired:

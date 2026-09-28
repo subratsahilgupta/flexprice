@@ -18,7 +18,6 @@ import (
 )
 
 const (
-	// Metadata key used to store the Stripe customer ID on the FlexPrice customer entity.
 	stripeCustomerIDMetadataKey = "stripe_customer_id"
 
 	// customerSyncLockTTL bounds the lock held while creating a Stripe customer.
@@ -96,10 +95,8 @@ func (s *CustomerService) EnsureCustomerSyncedToStripe(ctx context.Context, cust
 	return updatedCustomerResp, nil
 }
 
-// GetStripeCustomerID resolves the Stripe customer behind a FlexPrice customer
-// without creating one. An empty id with a nil error means the customer exists but was
-// never synced to Stripe; each caller decides whether that is "nothing saved yet" or an
-// error, which is why this does not decide for them.
+// GetStripeCustomerID resolves the Stripe customer without creating one. An empty id
+// with a nil error means the customer was never synced — callers decide if that's an error.
 func (s *CustomerService) GetStripeCustomerID(ctx context.Context, customerID string, customerService interfaces.CustomerService) (string, error) {
 	if customerService == nil {
 		return "", ierr.NewError("customer service is not configured").
@@ -116,7 +113,6 @@ func (s *CustomerService) GetStripeCustomerID(ctx context.Context, customerID st
 			Mark(ierr.ErrNotFound)
 	}
 
-	// Reuses existingStripeLink: checks metadata and integration mapping (with automatic backfill)
 	if s != nil {
 		if linked := s.existingStripeLink(ctx, ourCustomerResp, customerService); linked != nil && linked.Customer != nil {
 			return linked.Customer.Metadata[stripeCustomerIDMetadataKey], nil
@@ -129,8 +125,7 @@ func (s *CustomerService) GetStripeCustomerID(ctx context.Context, customerID st
 }
 
 // EnsureStripeCustomerID is GetStripeCustomerID for paths allowed to create the
-// Stripe customer: it syncs first, and an empty id afterwards is a failure rather than
-// a state to interpret.
+// customer: it syncs first, so an empty id afterward is a failure, not a state to interpret.
 func (s *CustomerService) EnsureStripeCustomerID(ctx context.Context, customerID string, customerService interfaces.CustomerService) (string, error) {
 	if s == nil {
 		return "", ierr.NewError("stripe customer service is not configured").
@@ -156,8 +151,7 @@ func (s *CustomerService) EnsureStripeCustomerID(ctx context.Context, customerID
 	return stripeCustomerID, nil
 }
 
-// RetrieveStripeCustomer fetches the Stripe customer object behind a FlexPrice customer.
-// ErrNotFound when the customer was never synced.
+// RetrieveStripeCustomer fetches the Stripe customer, or ErrNotFound if never synced.
 func (s *CustomerService) RetrieveStripeCustomer(ctx context.Context, customerID string, customerService interfaces.CustomerService) (*stripe.Customer, error) {
 	if s == nil || s.client == nil {
 		return nil, ierr.NewError("stripe client is not configured").
@@ -687,10 +681,8 @@ func (s *CustomerService) HasCustomerStripeMapping(ctx context.Context, customer
 	return err == nil && stripeID != ""
 }
 
-// defaultPaymentMethodID is the nil-safe read of a Stripe customer's default payment
-// method. Stripe nests it three pointers deep (customer → invoice_settings →
-// default_payment_method) and every level is nil until something set it, so callers
-// chain through this instead of repeating the checks.
+// defaultPaymentMethodID is a nil-safe read of a Stripe customer's default payment
+// method; every level of the nesting can be nil until something sets it.
 func defaultPaymentMethodID(cust *stripe.Customer) string {
 	if cust == nil || cust.InvoiceSettings == nil || cust.InvoiceSettings.DefaultPaymentMethod == nil {
 		return ""
@@ -698,12 +690,8 @@ func defaultPaymentMethodID(cust *stripe.Customer) string {
 	return cust.InvoiceSettings.DefaultPaymentMethod.ID
 }
 
-// paymentMethodUsable reports whether Stripe would take a charge on this method today,
-// which is what "active" means for a saved method. Stripe keeps no status on a
-// PaymentMethod: a detached one simply stops being listed, and one that is listed is
-// attached and chargeable, so the only inactive state visible here is a card past its
-// expiry month. A card is good through the last day of that month. Non-card methods
-// carry no expiry and are usable for as long as they are attached.
+// paymentMethodUsable reports "active": Stripe has no status field, so this just checks
+// a card isn't past its expiry month. Non-card methods have no expiry and are always usable.
 func paymentMethodUsable(pm *stripe.PaymentMethod, now time.Time) bool {
 	if pm == nil {
 		return false
@@ -719,4 +707,3 @@ func paymentMethodUsable(pm *stripe.PaymentMethod, now time.Time) bool {
 	}
 	return pm.Card.ExpMonth >= month
 }
-
