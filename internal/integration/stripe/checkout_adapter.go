@@ -84,7 +84,7 @@ func (a *CheckoutAdapter) CreateAuthorizationLink(
 		SuccessURL:             req.SuccessURL,
 		CancelURL:              req.CancelURL,
 		Metadata:               req.Metadata,
-		SaveCardAndMakeDefault: req.SaveMethodAsDefault,
+		SaveCardAndMakeDefault: true,
 		PaymentID:              req.PaymentID,
 		ExpiresAt:              req.ExpiresAt,
 	}, a.CustomerSvc, a.InvoiceSvc)

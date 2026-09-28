@@ -104,12 +104,7 @@ type AuthorizationLinkRequest struct {
 	// CustomerPresent declares an off-session charge as customer-initiated. Providers
 	// that cannot express CIT/MIT ignore it.
 	CustomerPresent bool
-	// SaveMethodAsDefault asks the provider to vault the instrument used on the hosted
-	// page and make it the customer's default for later off-session charges. Set by the
-	// caller rather than assumed by the adapter, so the adapter carries no policy.
-	// Providers whose hosted page always vaults (Chargebee) ignore it.
-	SaveMethodAsDefault bool
-	InvoiceID           string
+	InvoiceID       string
 	CustomerID          string
 	PaymentID           string
 	Amount              decimal.Decimal
