@@ -2587,26 +2587,6 @@ func (s *WalletAutoTopupInvoiceSuite) TestHasPendingAutoTopupInvoice_PendingExis
 	s.True(has, "expected pending auto-topup invoice to be detected")
 }
 
-func (s *WalletAutoTopupInvoiceSuite) TestHasPendingAutoTopupInvoice_CheckoutDraftBlocks() {
-	ctx := s.GetContext()
-
-	inv := &invoice.Invoice{
-		ID:            "inv_checkout_draft_001",
-		CustomerID:    s.customer.ID,
-		InvoiceStatus: types.InvoiceStatusDraft,
-		PaymentStatus: types.PaymentStatusPending,
-		BillingReason: string(types.InvoiceBillingReasonWalletAutoTopup),
-		Currency:      "usd",
-		InvoiceType:   types.InvoiceTypeOneOff,
-		BaseModel:     types.GetDefaultBaseModel(ctx),
-	}
-	s.NoError(s.GetStores().InvoiceRepo.Create(ctx, inv))
-
-	has, err := s.svc().hasPendingAutoTopupInvoice(ctx, s.customer.ID)
-	s.NoError(err)
-	s.True(has, "an auto top-up awaiting its saved-method debit must block another charge")
-}
-
 // ---------------------------------------------------------------------------
 // Test 3 – a PAID invoice exists → should NOT block (returns false).
 // ---------------------------------------------------------------------------

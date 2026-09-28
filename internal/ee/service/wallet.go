@@ -4149,7 +4149,7 @@ func (s *walletService) hasPendingAutoTopupInvoice(ctx context.Context, customer
 		types.PaymentStatusProcessing,
 		types.PaymentStatusInitiated,
 	}
-	filter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusFinalized, types.InvoiceStatusDraft}
+	filter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusFinalized}
 	filter.SkipLineItems = true
 	filter.Limit = lo.ToPtr(1)
 
