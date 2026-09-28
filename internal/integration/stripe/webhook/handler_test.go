@@ -147,3 +147,23 @@ func TestHandler_HandleCheckoutSessionForPayment_TerminalStatusIgnored(t *testin
 	assert.True(t, found)
 	assert.Empty(t, fakeCheckout.completeCalls)
 }
+
+func TestHandler_HandleCheckoutSessionForPayment_TerminalSessionIsHandled(t *testing.T) {
+	for _, status := range []types.CheckoutStatus{types.CheckoutStatusExpired, types.CheckoutStatusFailed} {
+		t.Run(string(status), func(t *testing.T) {
+			handler := &Handler{logger: logger.NewNoopLogger()}
+			fakeCheckout := &fakeCheckoutSessionServiceForStripe{
+				session: &dto.CheckoutSessionResponse{ID: "cs_test_session_1", CheckoutStatus: status},
+			}
+
+			// No payment intent, so nothing reaches Stripe; the payment must still be
+			// reported as handled so the standalone settlement path never runs.
+			found, err := handler.handleCheckoutSessionForPayment(context.Background(), "pay_001", "",
+				&ServiceDependencies{CheckoutSessionService: fakeCheckout})
+
+			require.NoError(t, err)
+			assert.True(t, found)
+			assert.Empty(t, fakeCheckout.completeCalls)
+		})
+	}
+}

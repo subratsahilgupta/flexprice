@@ -808,6 +808,18 @@ func (h *Handler) handleCheckoutSessionCompleted(ctx context.Context, event *str
 		return nil
 	}
 
+	piID := ""
+	if checkoutSession.PaymentIntent != nil {
+		piID = checkoutSession.PaymentIntent.ID
+	}
+
+	// A checkout session owns settlement for its own payment, so route to exactly one of
+	// it or the standalone path below — running both books the invoice twice.
+	handled, err := h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, piID, services)
+	if err != nil || handled {
+		return err
+	}
+
 	// get payment from database
 	payment, err := services.PaymentService.GetPayment(ctx, flexpricePaymentID)
 	if err != nil {
@@ -815,30 +827,28 @@ func (h *Handler) handleCheckoutSessionCompleted(ctx context.Context, event *str
 		return nil
 	}
 
+	// check if payment is already succeeded
+	if payment.PaymentStatus == types.PaymentStatusSucceeded {
+		h.logger.Info(ctx, "payment already succeeded, skipping event", "event_id", event.ID)
+		return nil
+	}
+
 	// Get payment intent if it exists
 	var paymentIntent *stripeapi.PaymentIntent
-	piID := ""
-	if checkoutSession.PaymentIntent != nil {
-		paymentIntentID := checkoutSession.PaymentIntent.ID
-		piID = paymentIntentID
-		paymentIntent, err = h.paymentSvc.GetPaymentIntent(ctx, paymentIntentID, environmentID)
+	if piID != "" {
+		paymentIntent, err = h.paymentSvc.GetPaymentIntent(ctx, piID, environmentID)
 		if err != nil {
 			h.logger.Error(ctx, "failed to fetch payment intent, continuing without it",
 				"error", err,
-				"payment_intent_id", paymentIntentID,
+				"payment_intent_id", piID,
 				"event_id", event.ID)
 			paymentIntent = nil
 		}
 	}
 
-	// HandleFlexPriceCheckoutPayment is not idempotent: ReconcilePaymentWithInvoice adds
-	// the amount to the invoice again and the promotion discount is re-applied, so it runs
-	// once. Completing the checkout session below is idempotent and runs on every delivery.
-	if payment.PaymentStatus == types.PaymentStatusSucceeded {
-		h.logger.Info(ctx, "payment already succeeded, verifying checkout session completion",
-			"event_id", event.ID,
-			"flexprice_payment_id", flexpricePaymentID)
-	} else if err := h.paymentSvc.HandleFlexPriceCheckoutPayment(ctx, &checkoutSession, paymentIntent, payment, services.CustomerService, services.InvoiceService, services.PaymentService); err != nil {
+	// Call HandleFlexPriceCheckoutPayment with optional payment intent
+	err = h.paymentSvc.HandleFlexPriceCheckoutPayment(ctx, &checkoutSession, paymentIntent, payment, services.CustomerService, services.InvoiceService, services.PaymentService)
+	if err != nil {
 		h.logger.Error(ctx, "failed to handle FlexPrice checkout payment, skipping event",
 			"error", err,
 			"flexprice_payment_id", flexpricePaymentID,
@@ -846,12 +856,39 @@ func (h *Handler) handleCheckoutSessionCompleted(ctx context.Context, event *str
 		return nil
 	}
 
-	_, err = h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, piID, services)
-	return err
+	return nil
 }
 
-// handleCheckoutSessionForPayment completes the checkout session that owns this payment.
-// Returns false when the payment has no checkout session.
+// refundLateCapturedPayment gives back a payment that landed after its checkout session
+// ended — the Stripe Checkout Session outlives the FlexPrice one.
+func (h *Handler) refundLateCapturedPayment(
+	ctx context.Context,
+	session *dto.CheckoutSessionResponse,
+	flexpricePaymentID string,
+	stripePaymentIntentID string,
+	services *ServiceDependencies,
+) {
+	if stripePaymentIntentID == "" {
+		h.logger.Error(ctx, "late-captured payment has no stripe payment intent to refund — manual reconciliation required",
+			"error", "missing stripe payment intent id",
+			"session_id", session.ID,
+			"session_status", session.CheckoutStatus,
+			"flexprice_payment_id", flexpricePaymentID)
+		return
+	}
+
+	if err := h.paymentSvc.RefundLateCapturedPayment(ctx, flexpricePaymentID, stripePaymentIntentID, services.PaymentService); err != nil {
+		h.logger.Error(ctx, "failed to refund late-captured payment — manual reconciliation required",
+			"error", err,
+			"session_id", session.ID,
+			"session_status", session.CheckoutStatus,
+			"flexprice_payment_id", flexpricePaymentID,
+			"stripe_payment_intent_id", stripePaymentIntentID)
+	}
+}
+
+// handleCheckoutSessionForPayment completes pending checkout sessions and refunds
+// expired/failed ones. Returns false when the payment has no checkout session.
 func (h *Handler) handleCheckoutSessionForPayment(
 	ctx context.Context,
 	flexpricePaymentID string,
@@ -907,12 +944,7 @@ func (h *Handler) handleCheckoutSessionForPayment(
 				"stripe_payment_intent_id", stripePaymentIntentID)
 		}
 	case types.CheckoutStatusExpired, types.CheckoutStatusFailed:
-		h.logger.Error(ctx, "received stripe payment for expired/failed checkout session",
-			"error", "checkout session status does not accept a completed payment",
-			"session_id", session.ID,
-			"status", session.CheckoutStatus,
-			"flexprice_payment_id", flexpricePaymentID,
-		)
+		h.refundLateCapturedPayment(ctx, session, flexpricePaymentID, stripePaymentIntentID, services)
 	default:
 		h.logger.Info(ctx, "checkout session in non-actionable status, ignoring webhook",
 			"session_id", session.ID,
