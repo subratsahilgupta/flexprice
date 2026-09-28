@@ -443,6 +443,29 @@ func (h *EventsHandler) GetUsageAnalytics(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// eventLookupDefaultLookback bounds the event lookup's events-table read when no window is given.
+const eventLookupDefaultLookback = 14 * 24 * time.Hour
+
+func parseEventLookupWindow(startTimeStr, endTimeStr string) (domainevents.TimeRange, error) {
+	window := domainevents.TimeRange{End: time.Now().UTC()}
+	var err error
+	if endTimeStr != "" {
+		if window.End, err = time.Parse(time.RFC3339, endTimeStr); err != nil {
+			return domainevents.TimeRange{}, err
+		}
+	}
+	window.Start = window.End.Add(-eventLookupDefaultLookback)
+	if startTimeStr != "" {
+		if window.Start, err = time.Parse(time.RFC3339, startTimeStr); err != nil {
+			return domainevents.TimeRange{}, err
+		}
+	}
+	if !window.End.After(window.Start) {
+		return domainevents.TimeRange{}, errors.New("end time must be after start time")
+	}
+	return window, nil
+}
+
 func parseStartAndEndTime(startTimeStr, endTimeStr string) (time.Time, time.Time, error) {
 	var startTime time.Time
 	var endTime time.Time
@@ -493,6 +516,8 @@ func validateStartAndEndTime(startTime, endTime time.Time) (time.Time, time.Time
 // @Security ApiKeyAuth
 // @Param id query string true "Event ID"
 // @Param external_customer_id query string true "External customer ID the event was ingested with"
+// @Param start_time query string false "Start of the event timestamp window (RFC3339); defaults to 14 days before end_time"
+// @Param end_time query string false "End of the event timestamp window (RFC3339); defaults to now"
 // @Success 200 {object} dto.GetEventByIDResponse
 // @Failure 400 {object} ierr.ErrorResponse "Missing event ID or external customer ID"
 // @Failure 404 {object} ierr.ErrorResponse
@@ -518,7 +543,14 @@ func (h *EventsHandler) GetEventByID(c *gin.Context) {
 			Mark(ierr.ErrValidation))
 		return
 	}
-	response, err := h.meterUsageService.DebugEvent(ctx, externalCustomerID, eventID)
+	window, err := parseEventLookupWindow(c.Query("start_time"), c.Query("end_time"))
+	if err != nil {
+		c.Error(ierr.WithError(err).
+			WithHint("start_time and end_time must be RFC3339 with end_time after start_time").
+			Mark(ierr.ErrValidation))
+		return
+	}
+	response, err := h.meterUsageService.DebugEvent(ctx, externalCustomerID, eventID, window)
 	if err != nil {
 		h.log.Error(ctx, "Failed to debug event", "error", err, "event_id", eventID, "external_customer_id", externalCustomerID)
 		c.Error(err)

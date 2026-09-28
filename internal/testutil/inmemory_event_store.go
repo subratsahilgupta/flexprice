@@ -82,7 +82,7 @@ func (s *InMemoryEventStore) GetEventByID(ctx context.Context, eventID string) (
 	return event, nil
 }
 
-func (s *InMemoryEventStore) ListEventsByID(ctx context.Context, externalCustomerID, eventID string, limit int) ([]*events.Event, error) {
+func (s *InMemoryEventStore) ListEventsByID(ctx context.Context, externalCustomerID, eventID string, window events.TimeRange, limit int) ([]*events.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -92,6 +92,9 @@ func (s *InMemoryEventStore) ListEventsByID(ctx context.Context, externalCustome
 	matched := make([]*events.Event, 0)
 	for _, event := range s.versions {
 		if event.ID != eventID || event.ExternalCustomerID != externalCustomerID {
+			continue
+		}
+		if event.Timestamp.Before(window.Start) || !event.Timestamp.Before(window.End) {
 			continue
 		}
 		if event.TenantID != tenantID {

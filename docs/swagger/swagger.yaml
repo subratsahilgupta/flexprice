@@ -10409,10 +10409,12 @@ definitions:
     enum:
     - razorpay
     - chargebee
+    - stripe
     type: string
     x-enum-varnames:
     - CheckoutPaymentProviderRazorpay
     - CheckoutPaymentProviderChargebee
+    - CheckoutPaymentProviderStripe
   types.CheckoutPaymentProviderConfig:
     properties:
       collection_method:
@@ -16653,6 +16655,15 @@ paths:
         in: query
         name: external_customer_id
         required: true
+        type: string
+      - description: Start of the event timestamp window (RFC3339); defaults to 14
+          days before end_time
+        in: query
+        name: start_time
+        type: string
+      - description: End of the event timestamp window (RFC3339); defaults to now
+        in: query
+        name: end_time
         type: string
       produces:
       - application/json

@@ -66,7 +66,7 @@ type MeterUsageService interface {
 
 	// DebugEvent powers GET /events/:id — reports processing status and
 	// per-lookup diagnostics for a single event under the meter-usage pipeline.
-	DebugEvent(ctx context.Context, externalCustomerID, eventID string) (*dto.GetEventByIDResponse, error)
+	DebugEvent(ctx context.Context, externalCustomerID, eventID string, window events.TimeRange) (*dto.GetEventByIDResponse, error)
 }
 
 type meterUsageService struct {
