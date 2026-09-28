@@ -175,45 +175,6 @@ func (p CheckoutPaymentProvider) SessionExpiry() time.Duration {
 	return p.LinkExpiry() + p.SessionGrace()
 }
 
-// MinLinkExpiry is the shortest lifetime the provider accepts for its hosted payment
-// object; a link asked to close sooner is refused by the gateway. LinkExpiry is sized
-// above this on purpose so the deadline still clears the floor after fulfilment has
-// eaten into it. Zero means the provider takes no expiry (the adapter ignores it).
-func (p CheckoutPaymentProvider) MinLinkExpiry() time.Duration {
-	switch p {
-	case CheckoutPaymentProviderRazorpay:
-		return 15 * time.Minute
-	case CheckoutPaymentProviderStripe:
-		return 30 * time.Minute
-	default:
-		return 0
-	}
-}
-
-// ValidateLinkExpiry decides whether the deadline a session wants for its link is one
-// this provider will accept. It combines the requested expiry with the provider's own
-// floor in one place, so no adapter carries a private copy of its gateway's rule and
-// the caller gets a FlexPrice error instead of a gateway rejection.
-func (p CheckoutPaymentProvider) ValidateLinkExpiry(expiresAt, now time.Time) error {
-	floor := p.MinLinkExpiry()
-	if floor == 0 {
-		return nil
-	}
-	remaining := expiresAt.Sub(now)
-	if remaining < floor {
-		return ierr.NewError("checkout link expiry is below the provider minimum").
-			WithHintf("%s requires a payment link to stay open for at least %s", p, floor).
-			WithReportableDetails(map[string]any{
-				"provider":   p,
-				"expires_at": expiresAt.UTC(),
-				"remaining":  remaining.String(),
-				"minimum":    floor.String(),
-			}).
-			Mark(ierr.ErrInvalidOperation)
-	}
-	return nil
-}
-
 type PaymentActionType string
 
 const (

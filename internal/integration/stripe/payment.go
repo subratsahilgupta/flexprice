@@ -431,7 +431,6 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *CreateStrip
 		}
 	}
 
-	// Validated against Stripe's floor by the checkout service (ValidateLinkExpiry).
 	if req.ExpiresAt != nil {
 		params.ExpiresAt = stripe.Int64(req.ExpiresAt.Unix())
 	}

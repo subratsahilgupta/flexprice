@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
@@ -347,38 +346,4 @@ func TestHandleFlexPriceCheckoutPayment_DiscountAppliedAfterSuccessfulClaim(t *t
 	require.Equal(t, 1, invoiceSvc.applyDiscountCalls)
 	require.NotNil(t, paymentSvc.updatePaymentReq.Amount)
 	require.True(t, decimal.NewFromInt(80).Equal(*paymentSvc.updatePaymentReq.Amount))
-}
-
-// Stripe refuses an expires_at under 30m; the floor lives on the provider type so the
-// checkout service refuses a deadline before calling Stripe.
-func TestStripeLinkExpiryValidation(t *testing.T) {
-	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	provider := types.CheckoutPaymentProviderStripe
-
-	tests := []struct {
-		name      string
-		requested time.Time
-		wantErr   bool
-	}{
-		{name: "comfortably above the floor", requested: now.Add(35 * time.Minute)},
-		{name: "exactly on the floor", requested: now.Add(30 * time.Minute)},
-		{name: "just under the floor", requested: now.Add(30*time.Minute - time.Second), wantErr: true},
-		{name: "already past", requested: now.Add(-time.Minute), wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := provider.ValidateLinkExpiry(tt.requested, now)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-		})
-	}
-
-	// LinkExpiry is what the checkout service sends, so it must clear the floor, and the
-	// session must outlive the link.
-	require.NoError(t, provider.ValidateLinkExpiry(now.Add(provider.LinkExpiry()), now))
-	require.Greater(t, provider.SessionExpiry(), provider.LinkExpiry())
 }
