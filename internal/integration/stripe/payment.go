@@ -464,7 +464,9 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *CreateStrip
 		Status:    string(session.Status),
 		CreatedAt: session.Created,
 		PaymentID: "", // Payment ID will be set by the calling code
-		ExpiresAt: unixToTime(session.ExpiresAt),
+	}
+	if session.ExpiresAt > 0 {
+		response.ExpiresAt = lo.ToPtr(time.Unix(session.ExpiresAt, 0).UTC())
 	}
 
 	s.logger.Info(ctx, "successfully created stripe payment link",

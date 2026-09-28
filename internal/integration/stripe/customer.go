@@ -720,13 +720,3 @@ func paymentMethodUsable(pm *stripe.PaymentMethod, now time.Time) bool {
 	return pm.Card.ExpMonth >= month
 }
 
-// unixToTime converts a Stripe epoch-seconds field to UTC, where Stripe's zero means
-// the field was never set.
-func unixToTime(sec int64) *time.Time {
-	if sec <= 0 {
-		return nil
-	}
-	t := time.Unix(sec, 0).UTC()
-	return &t
-}
-

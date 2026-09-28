@@ -172,11 +172,15 @@ func (a *PaymentMethodAdapter) CreateSetupLink(ctx context.Context, req interfac
 			Mark(ierr.ErrSystem)
 	}
 
-	return &interfaces.SetupLinkResponse{
+	resp := &interfaces.SetupLinkResponse{
 		URL:               session.URL,
 		ProviderSessionID: session.ID,
-		ExpiresAt:         unixToTime(session.ExpiresAt),
-	}, nil
+	}
+	if session.ExpiresAt > 0 {
+		expiresAt := time.Unix(session.ExpiresAt, 0).UTC()
+		resp.ExpiresAt = &expiresAt
+	}
+	return resp, nil
 }
 
 // validateIfMethodBelongsToCustomer confirms the method is vaulted under the customer's

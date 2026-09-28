@@ -231,14 +231,3 @@ func TestPaymentMethodUsable(t *testing.T) {
 	assert.False(t, paymentMethodUsable(card(2025, 12), now))
 }
 
-func TestUnixToTime(t *testing.T) {
-	assert.Nil(t, unixToTime(0))
-	assert.Nil(t, unixToTime(-1))
-
-	got := unixToTime(1_767_225_600)
-	if assert.NotNil(t, got) {
-		assert.Equal(t, time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC), *got)
-		assert.Equal(t, time.UTC, got.Location())
-	}
-}
-
