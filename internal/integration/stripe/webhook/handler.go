@@ -14,7 +14,6 @@ import (
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/samber/lo"
 	stripeapi "github.com/stripe/stripe-go/v82"
 )
 
@@ -832,18 +831,14 @@ func (h *Handler) handleCheckoutSessionCompleted(ctx context.Context, event *str
 		}
 	}
 
-	// check if payment is already succeeded
+	// HandleFlexPriceCheckoutPayment is not idempotent: ReconcilePaymentWithInvoice adds
+	// the amount to the invoice again and the promotion discount is re-applied, so it runs
+	// once. Completing the checkout session below is idempotent and runs on every delivery.
 	if payment.PaymentStatus == types.PaymentStatusSucceeded {
-		h.logger.Info(ctx, "payment already succeeded, verifying checkout session completion", "event_id", event.ID)
-		if _, err := h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, piID, services); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	// Call HandleFlexPriceCheckoutPayment with optional payment intent
-	err = h.paymentSvc.HandleFlexPriceCheckoutPayment(ctx, &checkoutSession, paymentIntent, payment, services.CustomerService, services.InvoiceService, services.PaymentService)
-	if err != nil {
+		h.logger.Info(ctx, "payment already succeeded, verifying checkout session completion",
+			"event_id", event.ID,
+			"flexprice_payment_id", flexpricePaymentID)
+	} else if err := h.paymentSvc.HandleFlexPriceCheckoutPayment(ctx, &checkoutSession, paymentIntent, payment, services.CustomerService, services.InvoiceService, services.PaymentService); err != nil {
 		h.logger.Error(ctx, "failed to handle FlexPrice checkout payment, skipping event",
 			"error", err,
 			"flexprice_payment_id", flexpricePaymentID,
@@ -851,20 +846,23 @@ func (h *Handler) handleCheckoutSessionCompleted(ctx context.Context, event *str
 		return nil
 	}
 
-	if _, err := h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, piID, services); err != nil {
-		return err
-	}
-	return nil
+	_, err = h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, piID, services)
+	return err
 }
 
-// handleCheckoutSessionForPayment completes the checkout session that owns this payment if any.
+// handleCheckoutSessionForPayment completes the checkout session that owns this payment.
+// Returns false when the payment has no checkout session.
 func (h *Handler) handleCheckoutSessionForPayment(
 	ctx context.Context,
 	flexpricePaymentID string,
 	stripePaymentIntentID string,
 	services *ServiceDependencies,
 ) (bool, error) {
-	session, err := h.findCheckoutSessionForPayment(ctx, flexpricePaymentID, services)
+	if services == nil || services.CheckoutSessionService == nil {
+		return false, nil
+	}
+
+	session, err := services.CheckoutSessionService.GetByPaymentID(ctx, flexpricePaymentID)
 	if err != nil {
 		h.logger.Error(ctx, "failed to look up checkout session for payment",
 			"error", err,
@@ -899,8 +897,7 @@ func (h *Handler) handleCheckoutSessionForPayment(
 					"flexprice_payment_id", flexpricePaymentID,
 					"stripe_payment_intent_id", stripePaymentIntentID,
 				)
-				// Unlike the already-exists case, the session is still pending here, so
-				// the caller must fail the webhook and let Stripe redeliver it.
+				// The session is still pending, so fail the webhook and let Stripe redeliver.
 				return false, err
 			}
 		} else {
@@ -925,28 +922,4 @@ func (h *Handler) handleCheckoutSessionForPayment(
 	}
 
 	return true, nil
-}
-
-func (h *Handler) findCheckoutSessionForPayment(
-	ctx context.Context,
-	flexpricePaymentID string,
-	services *ServiceDependencies,
-) (*dto.CheckoutSessionResponse, error) {
-	if flexpricePaymentID == "" || services == nil || services.CheckoutSessionService == nil {
-		return nil, nil
-	}
-
-	filter := types.NewDefaultCheckoutSessionFilter()
-	filter.CheckoutPaymentIDs = []string{flexpricePaymentID}
-	filter.Limit = lo.ToPtr(1)
-	filter.Status = lo.ToPtr(types.StatusPublished)
-
-	sessions, err := services.CheckoutSessionService.List(ctx, filter)
-	if err != nil {
-		return nil, err
-	}
-	if sessions == nil || len(sessions.Items) == 0 {
-		return nil, nil
-	}
-	return sessions.Items[0], nil
 }

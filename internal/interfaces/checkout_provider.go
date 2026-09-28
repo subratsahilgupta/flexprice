@@ -104,18 +104,23 @@ type AuthorizationLinkRequest struct {
 	// CustomerPresent declares an off-session charge as customer-initiated. Providers
 	// that cannot express CIT/MIT ignore it.
 	CustomerPresent bool
-	InvoiceID       string
-	CustomerID      string
-	PaymentID       string
-	Amount          decimal.Decimal
-	Currency        string
-	MaxAmount       *decimal.Decimal // nil = no ceiling (e.g. plain saved card); set = mandate-style cap (e.g. UPI)
-	ExpiresAt       *time.Time
-	PreferredMethod types.PaymentMethodType
-	SuccessURL      string
-	CancelURL       string
-	Metadata        map[string]string
-	LineItems       []CheckoutLineItem
+	// SaveMethodAsDefault asks the provider to vault the instrument used on the hosted
+	// page and make it the customer's default for later off-session charges. Set by the
+	// caller rather than assumed by the adapter, so the adapter carries no policy.
+	// Providers whose hosted page always vaults (Chargebee) ignore it.
+	SaveMethodAsDefault bool
+	InvoiceID           string
+	CustomerID          string
+	PaymentID           string
+	Amount              decimal.Decimal
+	Currency            string
+	MaxAmount           *decimal.Decimal // nil = no ceiling (e.g. plain saved card); set = mandate-style cap (e.g. UPI)
+	ExpiresAt           *time.Time
+	PreferredMethod     types.PaymentMethodType
+	SuccessURL          string
+	CancelURL           string
+	Metadata            map[string]string
+	LineItems           []CheckoutLineItem
 }
 
 // HasAutoChargeableMethodRequest is the input for checking if a customer has

@@ -284,6 +284,37 @@ func (r *checkoutSessionRepository) GetByCheckoutInvoiceID(ctx context.Context, 
 	return fromEntCheckout(e), nil
 }
 
+func (r *checkoutSessionRepository) GetByCheckoutPaymentID(ctx context.Context, paymentID string) (*domainCheckout.CheckoutSession, error) {
+	span := StartRepositorySpan(ctx, "checkout_session", "get_by_checkout_payment_id", map[string]interface{}{
+		"payment_id": paymentID,
+	})
+	defer FinishSpan(span)
+
+	// Any checkout status: the caller decides what a payment against an expired or
+	// failed session means. Only the row status is pinned, so an archived session
+	// cannot claim a live payment.
+	e, err := r.client.Reader(ctx).CheckoutSession.Query().
+		Where(
+			entCheckout.CheckoutPaymentIDEQ(paymentID),
+			entCheckout.TenantID(types.GetTenantID(ctx)),
+			entCheckout.EnvironmentID(types.GetEnvironmentID(ctx)),
+			entCheckout.StatusEQ(string(types.StatusPublished)),
+		).
+		Order(ent.Desc(entCheckout.FieldCreatedAt)).
+		First(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			SetSpanSuccess(span)
+			return nil, nil
+		}
+		SetSpanError(span, err)
+		return nil, ierr.WithError(err).WithHint("get checkout session by payment failed").Mark(ierr.ErrDatabase)
+	}
+
+	SetSpanSuccess(span)
+	return fromEntCheckout(e), nil
+}
+
 func (r *checkoutSessionRepository) Delete(ctx context.Context, id string) error {
 	r.log.Debug(ctx, "deleting checkout session", "id", id)
 

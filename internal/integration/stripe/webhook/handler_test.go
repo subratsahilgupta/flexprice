@@ -20,11 +20,11 @@ type fakeCheckoutSessionServiceForStripe struct {
 	completeErr   error
 }
 
-func (s *fakeCheckoutSessionServiceForStripe) List(_ context.Context, filter *types.CheckoutSessionFilter) (*dto.ListCheckoutSessionsResponse, error) {
-	if s.session == nil || len(filter.CheckoutPaymentIDs) == 0 || filter.CheckoutPaymentIDs[0] != "pay_001" {
-		return &dto.ListCheckoutSessionsResponse{}, nil
+func (s *fakeCheckoutSessionServiceForStripe) GetByPaymentID(_ context.Context, paymentID string) (*dto.CheckoutSessionResponse, error) {
+	if s.session == nil || paymentID != "pay_001" {
+		return nil, nil
 	}
-	return &dto.ListCheckoutSessionsResponse{Items: []*dto.CheckoutSessionResponse{s.session}}, nil
+	return s.session, nil
 }
 
 func (s *fakeCheckoutSessionServiceForStripe) CompleteCheckoutSession(_ context.Context, sessionID string, _ *types.CheckoutProviderResult) error {

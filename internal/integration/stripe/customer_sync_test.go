@@ -17,7 +17,9 @@ import (
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	stripeapi "github.com/stripe/stripe-go/v82"
 )
 
 // ── fake interfaces.CustomerService ──────────────────────────────────────────
@@ -198,3 +200,45 @@ func TestCustomerCreateIdempotencyKeyIsStablePerCustomer(t *testing.T) {
 		customerCreateIdempotencyKey(otherEnv, "cust_test001"),
 	)
 }
+
+func TestDefaultPaymentMethodID(t *testing.T) {
+	assert.Equal(t, "", defaultPaymentMethodID(nil))
+	assert.Equal(t, "", defaultPaymentMethodID(&stripeapi.Customer{}))
+	assert.Equal(t, "", defaultPaymentMethodID(&stripeapi.Customer{
+		InvoiceSettings: &stripeapi.CustomerInvoiceSettings{},
+	}))
+	assert.Equal(t, "pm_default", defaultPaymentMethodID(&stripeapi.Customer{
+		InvoiceSettings: &stripeapi.CustomerInvoiceSettings{
+			DefaultPaymentMethod: &stripeapi.PaymentMethod{ID: "pm_default"},
+		},
+	}))
+}
+
+// A card is chargeable through the last day of its expiry month, and Stripe reports
+// nothing else that would make an attached method unusable.
+func TestPaymentMethodUsable(t *testing.T) {
+	now := time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC)
+	card := func(year, month int64) *stripeapi.PaymentMethod {
+		return &stripeapi.PaymentMethod{Card: &stripeapi.PaymentMethodCard{ExpYear: year, ExpMonth: month}}
+	}
+
+	assert.False(t, paymentMethodUsable(nil, now))
+	assert.True(t, paymentMethodUsable(&stripeapi.PaymentMethod{}, now), "non-card methods carry no expiry")
+	assert.True(t, paymentMethodUsable(card(2027, 1), now))
+	assert.True(t, paymentMethodUsable(card(2026, 6), now), "valid through the end of the expiry month")
+	assert.True(t, paymentMethodUsable(card(2026, 12), now))
+	assert.False(t, paymentMethodUsable(card(2026, 5), now))
+	assert.False(t, paymentMethodUsable(card(2025, 12), now))
+}
+
+func TestUnixToTime(t *testing.T) {
+	assert.Nil(t, unixToTime(0))
+	assert.Nil(t, unixToTime(-1))
+
+	got := unixToTime(1_767_225_600)
+	if assert.NotNil(t, got) {
+		assert.Equal(t, time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC), *got)
+		assert.Equal(t, time.UTC, got.Location())
+	}
+}
+

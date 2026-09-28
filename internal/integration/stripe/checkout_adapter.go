@@ -9,7 +9,14 @@ import (
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/flexprice/flexprice/internal/types/integrations"
 	stripeapi "github.com/stripe/stripe-go/v82"
+)
+
+// Stripe id prefixes: the prefix is what says which endpoint can read a stored handle.
+const (
+	paymentIntentIDPrefix   = "pi_"
+	checkoutSessionIDPrefix = "cs_"
 )
 
 // CheckoutAdapter wraps Stripe payment services to implement interfaces.CheckoutProvider.
@@ -21,8 +28,6 @@ type CheckoutAdapter struct {
 	Logger      *logger.Logger
 }
 
-var _ interfaces.CheckoutProvider = (*CheckoutAdapter)(nil)
-
 // CreatePaymentLink creates a hosted Stripe checkout session for one-time payment.
 func (a *CheckoutAdapter) CreatePaymentLink(
 	ctx context.Context,
@@ -33,7 +38,7 @@ func (a *CheckoutAdapter) CreatePaymentLink(
 			Mark(ierr.ErrInternal)
 	}
 
-	linkResp, err := a.PaymentSvc.CreatePaymentLink(ctx, &dto.CreateStripePaymentLinkRequest{
+	linkResp, err := a.PaymentSvc.CreatePaymentLink(ctx, &CreateStripePaymentLinkRequest{
 		InvoiceID:              req.InvoiceID,
 		CustomerID:             req.CustomerID,
 		Amount:                 req.Amount,
@@ -60,8 +65,8 @@ func (a *CheckoutAdapter) CreatePaymentLink(
 	}, nil
 }
 
-// CreateAuthorizationLink creates a Stripe checkout session configured to save the card
-// and make it the default payment method for future off-session charges.
+// CreateAuthorizationLink creates a Stripe checkout session that vaults the card for
+// future off-session charges; whether it also becomes the default comes from the request.
 func (a *CheckoutAdapter) CreateAuthorizationLink(
 	ctx context.Context,
 	req interfaces.AuthorizationLinkRequest,
@@ -71,7 +76,7 @@ func (a *CheckoutAdapter) CreateAuthorizationLink(
 			Mark(ierr.ErrInternal)
 	}
 
-	linkResp, err := a.PaymentSvc.CreatePaymentLink(ctx, &dto.CreateStripePaymentLinkRequest{
+	linkResp, err := a.PaymentSvc.CreatePaymentLink(ctx, &CreateStripePaymentLinkRequest{
 		InvoiceID:              req.InvoiceID,
 		CustomerID:             req.CustomerID,
 		Amount:                 req.Amount,
@@ -79,7 +84,7 @@ func (a *CheckoutAdapter) CreateAuthorizationLink(
 		SuccessURL:             req.SuccessURL,
 		CancelURL:              req.CancelURL,
 		Metadata:               req.Metadata,
-		SaveCardAndMakeDefault: true,
+		SaveCardAndMakeDefault: req.SaveMethodAsDefault,
 		PaymentID:              req.PaymentID,
 		ExpiresAt:              req.ExpiresAt,
 	}, a.CustomerSvc, a.InvoiceSvc)
@@ -121,16 +126,15 @@ func (a *CheckoutAdapter) TryAutoChargingSavedMethod(
 		return nil, false, nil
 	}
 
+	// The customer's default in Stripe wins over list order; without one, the first card.
 	pmID := methods[0].ID
-	if stripeCust, err := a.getStripeCustomer(ctx, req.CustomerID); err == nil &&
-		stripeCust != nil &&
-		stripeCust.InvoiceSettings != nil &&
-		stripeCust.InvoiceSettings.DefaultPaymentMethod != nil &&
-		stripeCust.InvoiceSettings.DefaultPaymentMethod.ID != "" {
-		pmID = stripeCust.InvoiceSettings.DefaultPaymentMethod.ID
+	if stripeCust, err := a.PaymentSvc.customerSvc.RetrieveStripeCustomer(ctx, req.CustomerID, a.CustomerSvc); err == nil {
+		if defaultID := defaultPaymentMethodID(stripeCust); defaultID != "" {
+			pmID = defaultID
+		}
 	}
 
-	chargeResp, err := a.PaymentSvc.ChargeSavedPaymentMethod(ctx, &dto.ChargeSavedPaymentMethodRequest{
+	chargeResp, err := a.PaymentSvc.ChargeSavedPaymentMethod(ctx, &ChargeSavedPaymentMethodRequest{
 		CustomerID:      req.CustomerID,
 		InvoiceID:       req.InvoiceID,
 		PaymentMethodID: pmID,
@@ -157,6 +161,11 @@ func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, req inter
 }
 
 // FetchPaymentState reads payment state from Stripe given gateway tracking/payment handles.
+//
+// A hosted checkout records its session (cs_) as the tracking id and, once Stripe has
+// created it, the intent (pi_) as the payment id; a saved-method charge has only the
+// intent, recorded as both. The session is read first when there is one: its intent sits
+// in requires_payment_method until the customer pays, which read alone means "declined".
 func (a *CheckoutAdapter) FetchPaymentState(
 	ctx context.Context,
 	req interfaces.PaymentStateRequest,
@@ -166,7 +175,9 @@ func (a *CheckoutAdapter) FetchPaymentState(
 			Mark(ierr.ErrNotImplemented)
 	}
 
-	if req.GatewayPaymentID == "" && req.GatewayTrackingID == "" {
+	paymentID := req.GatewayPaymentID
+	trackingID := req.GatewayTrackingID
+	if paymentID == "" && trackingID == "" {
 		return nil, nil
 	}
 
@@ -175,77 +186,61 @@ func (a *CheckoutAdapter) FetchPaymentState(
 		return nil, err
 	}
 
-	// 1. GatewayPaymentID preferred (e.g. pi_...)
-	paymentID := req.GatewayPaymentID
-	if paymentID != "" && strings.HasPrefix(paymentID, "pi_") {
-		pi, err := stripeClient.V1PaymentIntents.Retrieve(ctx, paymentID, nil)
-		if err != nil {
-			return nil, err
-		}
-		var status types.PaymentStatus
-		switch pi.Status {
-		case stripeapi.PaymentIntentStatusSucceeded:
-			status = types.PaymentStatusSucceeded
-		case stripeapi.PaymentIntentStatusCanceled:
-			status = types.PaymentStatusFailed
-		default:
-			status = ""
-		}
-		return &interfaces.PaymentState{
-			Status:           status,
-			GatewayPaymentID: pi.ID,
-		}, nil
-	}
-
-	// 2. GatewayTrackingID (cs_... or pi_...)
-	handle := req.GatewayTrackingID
 	switch {
-	case strings.HasPrefix(handle, "pi_"):
-		return a.FetchPaymentState(ctx, interfaces.PaymentStateRequest{GatewayPaymentID: handle})
-
-	case strings.HasPrefix(handle, "cs_"):
-		session, err := stripeClient.V1CheckoutSessions.Retrieve(ctx, handle, nil)
-		if err != nil {
-			return nil, err
-		}
-		var status types.PaymentStatus
-		piID := ""
-		if session.PaymentIntent != nil {
-			piID = session.PaymentIntent.ID
-		}
-		switch session.Status {
-		case stripeapi.CheckoutSessionStatusComplete:
-			status = types.PaymentStatusSucceeded
-		case stripeapi.CheckoutSessionStatusExpired:
-			status = types.PaymentStatusFailed
-		default:
-			status = ""
-		}
-		return &interfaces.PaymentState{
-			Status:           status,
-			GatewayPaymentID: piID,
-		}, nil
-
+	case strings.HasPrefix(trackingID, checkoutSessionIDPrefix):
+		return a.checkoutSessionPaymentState(ctx, stripeClient, trackingID)
+	case strings.HasPrefix(paymentID, paymentIntentIDPrefix):
+		return a.paymentIntentPaymentState(ctx, stripeClient, paymentID)
+	case strings.HasPrefix(trackingID, paymentIntentIDPrefix):
+		return a.paymentIntentPaymentState(ctx, stripeClient, trackingID)
 	default:
-		return nil, nil
+		// Never guess an endpoint from an id we do not recognise.
+		return nil, ierr.NewError("unrecognised stripe checkout handle").
+			WithHint("The stored gateway ids do not match any Stripe object this adapter can read").
+			WithReportableDetails(map[string]interface{}{
+				"gateway_payment_id":  paymentID,
+				"gateway_tracking_id": trackingID,
+			}).
+			Mark(ierr.ErrValidation)
 	}
 }
 
-func (a *CheckoutAdapter) getStripeCustomer(ctx context.Context, flexCustomerID string) (*stripeapi.Customer, error) {
-	ourCustResp, err := a.CustomerSvc.GetCustomer(ctx, flexCustomerID)
-	if err != nil || ourCustResp == nil || ourCustResp.Customer == nil {
-		return nil, err
-	}
-
-	stripeCustomerID := ourCustResp.Customer.Metadata["stripe_customer_id"]
-	if stripeCustomerID == "" {
-		return nil, ierr.NewError("customer not synced to Stripe").Mark(ierr.ErrNotFound)
-	}
-
-	stripeClient, _, err := a.Client.GetStripeClient(ctx)
+func (a *CheckoutAdapter) paymentIntentPaymentState(ctx context.Context, stripeClient *stripeapi.Client, paymentIntentID string) (*interfaces.PaymentState, error) {
+	pi, err := stripeClient.V1PaymentIntents.Retrieve(ctx, paymentIntentID, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return stripeClient.V1Customers.Retrieve(ctx, stripeCustomerID, nil)
+	status, err := integrations.StripePaymentStatus(pi.Status).ToFlexpricePaymentStatus()
+	if err != nil {
+		return nil, err
+	}
+
+	return &interfaces.PaymentState{
+		Status:           status,
+		GatewayPaymentID: pi.ID,
+	}, nil
+}
+
+func (a *CheckoutAdapter) checkoutSessionPaymentState(ctx context.Context, stripeClient *stripeapi.Client, sessionID string) (*interfaces.PaymentState, error) {
+	session, err := stripeClient.V1CheckoutSessions.Retrieve(ctx, sessionID, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	status, err := integrations.StripeCheckoutSessionStatus(session.Status).
+		ToFlexpricePaymentStatus(integrations.StripeCheckoutPaymentStatus(session.PaymentStatus))
+	if err != nil {
+		return nil, err
+	}
+
+	piID := ""
+	if session.PaymentIntent != nil {
+		piID = session.PaymentIntent.ID
+	}
+
+	return &interfaces.PaymentState{
+		Status:           status,
+		GatewayPaymentID: piID,
+	}, nil
 }

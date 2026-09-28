@@ -19,7 +19,12 @@ type PaymentMethodAdapter struct {
 	Logger      *logger.Logger
 }
 
-var _ interfaces.PaymentMethodProvider = (*PaymentMethodAdapter)(nil)
+func (a *PaymentMethodAdapter) stripeCustomerSvc() *CustomerService {
+	if a != nil && a.PaymentSvc != nil {
+		return a.PaymentSvc.customerSvc
+	}
+	return nil
+}
 
 // ListSavedMethods returns the customer's usable payment methods from Stripe.
 func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustomerID string) ([]interfaces.ProviderPaymentMethod, error) {
@@ -28,17 +33,12 @@ func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustome
 			Mark(ierr.ErrInternal)
 	}
 
-	ourCustResp, err := a.CustomerSvc.GetCustomer(ctx, flexCustomerID)
+	stripeCustomerID, err := a.stripeCustomerSvc().GetStripeCustomerID(ctx, flexCustomerID, a.CustomerSvc)
 	if err != nil {
 		a.Logger.Error(ctx, "failed to get customer for saved payment methods",
 			"customer_id", flexCustomerID, "error", err)
 		return nil, err
 	}
-	if ourCustResp == nil || ourCustResp.Customer == nil {
-		return nil, nil
-	}
-
-	stripeCustomerID := ourCustResp.Customer.Metadata["stripe_customer_id"]
 	if stripeCustomerID == "" {
 		a.Logger.Info(ctx, "customer has no stripe_customer_id, returning empty saved methods",
 			"customer_id", flexCustomerID)
@@ -50,21 +50,23 @@ func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustome
 		return nil, err
 	}
 
+	// The default lives on the customer, not the method; a failed read only costs is_default.
 	defaultPMID := ""
-	if stripeCust, err := stripeClient.V1Customers.Retrieve(ctx, stripeCustomerID, nil); err == nil &&
-		stripeCust.InvoiceSettings != nil &&
-		stripeCust.InvoiceSettings.DefaultPaymentMethod != nil {
-		defaultPMID = stripeCust.InvoiceSettings.DefaultPaymentMethod.ID
+	if stripeCust, err := stripeClient.V1Customers.Retrieve(ctx, stripeCustomerID, nil); err == nil {
+		defaultPMID = defaultPaymentMethodID(stripeCust)
 	}
 
+	// Cards only: CreateSetupLink vaults nothing else, SavedPaymentMethod describes nothing
+	// else, and CanAutoCharge assumes a method Stripe can charge off-session, which bank
+	// debits are not.
 	params := &stripeapi.PaymentMethodListParams{
 		Customer: stripeapi.String(stripeCustomerID),
-		Type:     stripeapi.String("card"),
+		Type:     stripeapi.String(string(stripeapi.PaymentMethodTypeCard)),
 	}
 
+	now := time.Now()
 	out := make([]interfaces.ProviderPaymentMethod, 0)
-	paymentMethods := stripeClient.V1PaymentMethods.List(ctx, params)
-	for pm, err := range paymentMethods {
+	for pm, err := range stripeClient.V1PaymentMethods.List(ctx, params) {
 		if err != nil {
 			a.Logger.Error(ctx, "failed listing stripe payment methods",
 				"customer_id", flexCustomerID, "error", err)
@@ -74,7 +76,6 @@ func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustome
 			continue
 		}
 
-		isDefault := defaultPMID != "" && pm.ID == defaultPMID
 		var card *interfaces.ProviderCardDetails
 		if pm.Card != nil {
 			card = &interfaces.ProviderCardDetails{
@@ -89,8 +90,8 @@ func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustome
 			GatewayMethodID:  pm.ID,
 			Method:           types.PaymentMethodTypeCard,
 			CreatedAt:        time.Unix(pm.Created, 0).UTC(),
-			IsDefault:        isDefault,
-			Active:           true,
+			IsDefault:        defaultPMID != "" && pm.ID == defaultPMID,
+			Active:           paymentMethodUsable(pm, now),
 			Card:             card,
 			GatewayAccountID: stripeCustomerID,
 		})
@@ -101,7 +102,7 @@ func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustome
 
 // DeleteSavedMethod detaches a vaulted payment method after verifying customer ownership.
 func (a *PaymentMethodAdapter) DeleteSavedMethod(ctx context.Context, flexCustomerID, gatewayMethodID string) error {
-	if _, err := a.ownedPaymentMethodCustomer(ctx, flexCustomerID, gatewayMethodID); err != nil {
+	if _, err := a.validateIfMethodBelongsToCustomer(ctx, flexCustomerID, gatewayMethodID); err != nil {
 		return err
 	}
 
@@ -116,7 +117,7 @@ func (a *PaymentMethodAdapter) DeleteSavedMethod(ctx context.Context, flexCustom
 
 // SetDefaultSavedMethod sets the customer's default payment method in Stripe.
 func (a *PaymentMethodAdapter) SetDefaultSavedMethod(ctx context.Context, flexCustomerID, gatewayMethodID string) error {
-	stripeCustomerID, err := a.ownedPaymentMethodCustomer(ctx, flexCustomerID, gatewayMethodID)
+	stripeCustomerID, err := a.validateIfMethodBelongsToCustomer(ctx, flexCustomerID, gatewayMethodID)
 	if err != nil {
 		return err
 	}
@@ -137,20 +138,14 @@ func (a *PaymentMethodAdapter) SetDefaultSavedMethod(ctx context.Context, flexCu
 
 // CreateSetupLink creates a hosted Stripe Checkout session in setup mode for adding a card.
 func (a *PaymentMethodAdapter) CreateSetupLink(ctx context.Context, req interfaces.SetupLinkRequest) (*interfaces.SetupLinkResponse, error) {
-	if a == nil || a.PaymentSvc == nil || a.PaymentSvc.customerSvc == nil {
+	if a == nil || a.Client == nil || a.PaymentSvc == nil {
 		return nil, ierr.NewError("stripe payment method adapter is not configured").
 			Mark(ierr.ErrInternal)
 	}
 
-	custResp, err := a.PaymentSvc.customerSvc.EnsureCustomerSyncedToStripe(ctx, req.CustomerID, a.CustomerSvc)
+	stripeCustomerID, err := a.stripeCustomerSvc().EnsureStripeCustomerID(ctx, req.CustomerID, a.CustomerSvc)
 	if err != nil {
 		return nil, err
-	}
-
-	stripeCustomerID := custResp.Customer.Metadata["stripe_customer_id"]
-	if stripeCustomerID == "" {
-		return nil, ierr.NewError("customer has no stripe_customer_id after sync").
-			Mark(ierr.ErrValidation)
 	}
 
 	stripeClient, _, err := a.Client.GetStripeClient(ctx)
@@ -164,10 +159,11 @@ func (a *PaymentMethodAdapter) CreateSetupLink(ctx context.Context, req interfac
 		"set_default":           "true",
 	}
 
+	// Cards only, matching what ListSavedMethods reports back.
 	params := &stripeapi.CheckoutSessionCreateParams{
 		Customer:           stripeapi.String(stripeCustomerID),
 		Mode:               stripeapi.String(string(stripeapi.CheckoutSessionModeSetup)),
-		PaymentMethodTypes: stripeapi.StringSlice([]string{"card"}),
+		PaymentMethodTypes: stripeapi.StringSlice([]string{string(stripeapi.PaymentMethodTypeCard)}),
 		SuccessURL:         stripeapi.String(req.ReturnURL),
 		CancelURL:          stripeapi.String(req.ReturnURL),
 		Metadata:           metadata,
@@ -183,19 +179,16 @@ func (a *PaymentMethodAdapter) CreateSetupLink(ctx context.Context, req interfac
 			Mark(ierr.ErrSystem)
 	}
 
-	resp := &interfaces.SetupLinkResponse{
+	return &interfaces.SetupLinkResponse{
 		URL:               session.URL,
 		ProviderSessionID: session.ID,
-	}
-	if session.ExpiresAt > 0 {
-		exp := time.Unix(session.ExpiresAt, 0).UTC()
-		resp.ExpiresAt = &exp
-	}
-
-	return resp, nil
+		ExpiresAt:         unixToTime(session.ExpiresAt),
+	}, nil
 }
 
-func (a *PaymentMethodAdapter) ownedPaymentMethodCustomer(ctx context.Context, flexCustomerID, gatewayMethodID string) (string, error) {
+// validateIfMethodBelongsToCustomer confirms the method is vaulted under the customer's
+// Stripe account and returns that account's id.
+func (a *PaymentMethodAdapter) validateIfMethodBelongsToCustomer(ctx context.Context, flexCustomerID, gatewayMethodID string) (string, error) {
 	if gatewayMethodID == "" {
 		return "", ierr.NewError("payment method id is required").
 			WithHint("Specify which saved payment method to act on").
@@ -207,15 +200,10 @@ func (a *PaymentMethodAdapter) ownedPaymentMethodCustomer(ctx context.Context, f
 			Mark(ierr.ErrInternal)
 	}
 
-	ourCustResp, err := a.CustomerSvc.GetCustomer(ctx, flexCustomerID)
+	stripeCustomerID, err := a.stripeCustomerSvc().GetStripeCustomerID(ctx, flexCustomerID, a.CustomerSvc)
 	if err != nil {
 		return "", err
 	}
-	if ourCustResp == nil || ourCustResp.Customer == nil {
-		return "", ierr.NewError("customer not found").Mark(ierr.ErrNotFound)
-	}
-
-	stripeCustomerID := ourCustResp.Customer.Metadata["stripe_customer_id"]
 	if stripeCustomerID == "" {
 		return "", ierr.NewError("customer not synced to Stripe").Mark(ierr.ErrNotFound)
 	}

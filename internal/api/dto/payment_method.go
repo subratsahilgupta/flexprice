@@ -22,7 +22,11 @@ type CreateStripePaymentLinkRequest struct {
 	SaveCardAndMakeDefault bool            `json:"save_card_and_make_default" default:"false"`
 	PaymentID              string          `json:"payment_id" binding:"required"`
 	TaxIDCollectionEnabled bool            `json:"tax_id_collection_enabled" default:"false"`
-	ExpiresAt              *time.Time      `json:"expires_at,omitempty"`
+	// ExpiresAt closes the Stripe Checkout Session at a fixed time. The checkout
+	// adapter sets it to the session's link deadline, already checked against Stripe's
+	// floor by CheckoutPaymentProvider.ValidateLinkExpiry, so the link dies before the
+	// checkout session that owns it. Nil leaves Stripe's own 24h default in place.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // StripePaymentLinkResponse represents a response from creating a Stripe payment link
@@ -385,7 +389,7 @@ type SavedCardDetails struct {
 type ProviderSavedPaymentMethods struct {
 	Provider types.PaymentGatewayType `json:"provider"`
 	Items    []*SavedPaymentMethod    `json:"items"`
-	Error *ProviderError `json:"error,omitempty"`
+	Error    *ProviderError           `json:"error,omitempty"`
 }
 
 type ProviderError struct {
