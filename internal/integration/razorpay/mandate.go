@@ -63,7 +63,7 @@ func razorpayRecurringDetails(raw map[string]interface{}) *interfaces.ProviderRe
 
 	// Razorpay declines charges on a card whose issuer no longer supports recurring,
 	// even while the mandate still reads confirmed.
-	if cardRecurringUnsupported(raw) && out.Status != types.RecurringPaymentStatusCancelled {
+	if cardRecurringUnsupported(raw) && out.Status == types.RecurringPaymentStatusActive {
 		out.Status = types.RecurringPaymentStatusRejected
 	}
 

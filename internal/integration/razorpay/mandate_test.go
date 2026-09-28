@@ -317,6 +317,16 @@ func TestNormalizeRazorpayToken(t *testing.T) {
 			wantRecurring: types.RecurringPaymentStatusCancelled,
 		},
 		{
+			name: "paused mandate stays paused on a card without recurring support",
+			raw: map[string]interface{}{
+				"id": "tok_paused", "method": "card", "recurring": true,
+				"recurring_details": map[string]interface{}{"status": "paused"},
+				"card":              map[string]interface{}{"flows": map[string]interface{}{"recurring": false}},
+			},
+			wantActive:    true,
+			wantRecurring: types.RecurringPaymentStatusPaused,
+		},
+		{
 			name:    "emandate is skipped",
 			raw:     map[string]interface{}{"id": "tok_em", "method": "emandate", "recurring": true, "recurring_details": confirmed},
 			wantNil: true,

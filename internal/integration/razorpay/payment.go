@@ -1084,6 +1084,23 @@ func (s *PaymentService) RefundLateCapturedPayment(
 			Mark(ierr.ErrInternal)
 	}
 
+	if existingPayment.PaymentStatus != types.PaymentStatusSucceeded && existingPayment.PaymentStatus != types.PaymentStatusOverpaid {
+		if _, err := paymentService.UpdatePayment(ctx, flexpricePaymentID, dto.UpdatePaymentRequest{
+			PaymentStatus:    lo.ToPtr(string(types.PaymentStatusSucceeded)),
+			SucceededAt:      lo.ToPtr(time.Now()),
+			GatewayPaymentID: lo.ToPtr(razorpayPaymentID),
+		}); err != nil {
+			return ierr.WithError(err).
+				WithMessage("refund confirmed at Razorpay but failed to record the capture on the FlexPrice payment").
+				WithReportableDetails(map[string]interface{}{
+					"payment_id":          flexpricePaymentID,
+					"razorpay_payment_id": razorpayPaymentID,
+					"razorpay_refund_id":  refundID,
+				}).
+				Mark(ierr.ErrInternal)
+		}
+	}
+
 	updateReq := dto.UpdatePaymentRequest{
 		PaymentStatus:    lo.ToPtr(string(types.PaymentStatusRefunded)),
 		RefundedAt:       lo.ToPtr(time.Now()),
