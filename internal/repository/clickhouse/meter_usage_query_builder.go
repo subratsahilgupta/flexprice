@@ -642,10 +642,8 @@ func (qb *MeterUsageQueryBuilder) BuildDetailedPointsQuery(
 		args = append(args, result.ExternalCustomerID)
 	}
 	for propName, propValue := range result.Properties {
-		if propValue != "" {
-			where += " AND JSONExtractString(properties, ?) = ?"
-			args = append(args, propName, propValue)
-		}
+		where += " AND JSONExtractString(properties, ?) = ?"
+		args = append(args, propName, propValue)
 	}
 
 	selectCols := append([]string{fmt.Sprintf("%s AS window_start", windowExpr)}, aggColumns...)
