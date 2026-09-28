@@ -169,6 +169,17 @@ func (p CheckoutPaymentProvider) SessionGrace() time.Duration {
 	return 5 * time.Minute
 }
 
+// SavedMethodSettlement is how long a charge on a saved method can take to settle.
+// Razorpay debits a mandate 24-36h after the pre-debit notice; zero means it settles at once.
+func (p CheckoutPaymentProvider) SavedMethodSettlement() time.Duration {
+	switch p {
+	case CheckoutPaymentProviderRazorpay:
+		return 72 * time.Hour
+	default:
+		return 0
+	}
+}
+
 // SessionExpiry is the link's lifetime plus the grace window, derived from LinkExpiry
 // so the two cannot drift apart.
 func (p CheckoutPaymentProvider) SessionExpiry() time.Duration {
