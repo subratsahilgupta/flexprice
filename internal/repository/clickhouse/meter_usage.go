@@ -1187,9 +1187,9 @@ func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params
 	return activity, nil
 }
 
-// GetEventsByCustomerIDEventID returns the customer's meter_usage record for a single event, or nil if not yet processed.
-func (r *MeterUsageRepository) GetEventsByCustomerIDEventID(ctx context.Context, tenantID, environmentID, externalCustomerID, eventID string) (*events.MeterUsage, error) {
-	span := StartRepositorySpan(ctx, "meter_usage", "get_events_by_customer_id_event_id", map[string]interface{}{
+// GetEventsByEventIDAndExternalCustomerID returns the customer's meter_usage record for a single event, or nil if not yet processed.
+func (r *MeterUsageRepository) GetEventsByEventIDAndExternalCustomerID(ctx context.Context, tenantID, environmentID, externalCustomerID, eventID string) (*events.MeterUsage, error) {
+	span := StartRepositorySpan(ctx, "meter_usage", "get_events_by_event_id_and_external_customer_id", map[string]interface{}{
 		"tenant_id":            tenantID,
 		"environment_id":       environmentID,
 		"external_customer_id": externalCustomerID,
