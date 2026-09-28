@@ -2,6 +2,7 @@ package stripe
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -116,4 +117,16 @@ func TestRecordLateCaptureRefund_FinalStatusRecordsReferenceOnly(t *testing.T) {
 	require.Len(t, paymentSvc.updateReqs, 1)
 	require.Nil(t, paymentSvc.updateReqs[0].PaymentStatus)
 	require.Equal(t, "re_001", (*paymentSvc.updateReqs[0].Metadata)["stripe_refund_id"])
+}
+
+func TestRefundIdempotencyKeyIsStable(t *testing.T) {
+	ctx := testContext()
+	k1 := refundIdempotencyKey(ctx, "pay_001")
+	k2 := refundIdempotencyKey(ctx, "pay_001")
+	require.NotEmpty(t, k1)
+	require.Equal(t, k1, k2)
+	require.True(t, strings.HasPrefix(k1, "refund-"))
+
+	k3 := refundIdempotencyKey(ctx, "pay_002")
+	require.NotEqual(t, k1, k3)
 }

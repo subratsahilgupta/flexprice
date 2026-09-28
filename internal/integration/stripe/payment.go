@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
@@ -2160,12 +2161,19 @@ func (s *PaymentService) ensureRefunded(ctx context.Context, paymentIntentID str
 	refundParams := &stripe.RefundCreateParams{
 		PaymentIntent: stripe.String(paymentIntentID),
 	}
-	refundParams.SetIdempotencyKey(fmt.Sprintf("stripe:refund:%s:%s:%s",
-		types.GetTenantID(ctx), types.GetEnvironmentID(ctx), flexpricePaymentID))
+	refundParams.SetIdempotencyKey(refundIdempotencyKey(ctx, flexpricePaymentID))
 
 	refund, err := stripeClient.V1Refunds.Create(ctx, refundParams)
 	if err != nil {
 		return "", err
 	}
 	return refund.ID, nil
+}
+
+func refundIdempotencyKey(ctx context.Context, paymentID string) string {
+	return idempotency.NewGenerator().GenerateKey(idempotency.ScopeRefund, map[string]interface{}{
+		"payment_id":     paymentID,
+		"tenant_id":      types.GetTenantID(ctx),
+		"environment_id": types.GetEnvironmentID(ctx),
+	})
 }
