@@ -812,9 +812,7 @@ func (r *MeterUsageRepository) GetDetailedAnalytics(ctx context.Context, params 
 				if strings.HasPrefix(col, "JSONExtractString(properties, '") {
 					start := len("JSONExtractString(properties, '")
 					end := strings.Index(col[start:], "'")
-					if end > 0 && value != "" {
-						// Skip missing-key dims so the response doesn't carry
-						// stray empty entries — matches feature-side parity.
+					if end > 0 {
 						propName := col[start : start+end]
 						result.Properties[propName] = value
 					}
@@ -822,7 +820,6 @@ func (r *MeterUsageRepository) GetDetailedAnalytics(ctx context.Context, params 
 			}
 		}
 
-		// Fetch time-series points if window_size is specified
 		if params.WindowSize != "" {
 			points, err := r.getDetailedAnalyticsPoints(ctx, params, result, groupByResult)
 			if err != nil {
