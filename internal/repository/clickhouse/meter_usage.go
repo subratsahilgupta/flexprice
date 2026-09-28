@@ -1184,12 +1184,13 @@ func (r *MeterUsageRepository) GetUsageActivitySince(ctx context.Context, params
 	return activity, nil
 }
 
-// GetByEventID returns the meter_usage record for a single event, or nil if not yet processed.
-func (r *MeterUsageRepository) GetByEventID(ctx context.Context, tenantID, environmentID, eventID string) (*events.MeterUsage, error) {
-	span := StartRepositorySpan(ctx, "meter_usage", "get_by_event_id", map[string]interface{}{
-		"tenant_id":      tenantID,
-		"environment_id": environmentID,
-		"event_id":       eventID,
+// GetEventsByEventIDAndExternalCustomerID returns the customer's meter_usage record for a single event, or nil if not yet processed.
+func (r *MeterUsageRepository) GetEventsByEventIDAndExternalCustomerID(ctx context.Context, tenantID, environmentID, externalCustomerID, eventID string) (*events.MeterUsage, error) {
+	span := StartRepositorySpan(ctx, "meter_usage", "get_events_by_event_id_and_external_customer_id", map[string]interface{}{
+		"tenant_id":            tenantID,
+		"environment_id":       environmentID,
+		"external_customer_id": externalCustomerID,
+		"event_id":             eventID,
 	})
 	defer FinishSpan(span)
 
@@ -1210,6 +1211,7 @@ func (r *MeterUsageRepository) GetByEventID(ctx context.Context, tenantID, envir
 		FROM meter_usage
 		WHERE tenant_id = ?
 		  AND environment_id = ?
+		  AND external_customer_id = ?
 		  AND id = ?
 		LIMIT 1
 		SETTINGS max_memory_usage = 96636764160
@@ -1218,7 +1220,7 @@ func (r *MeterUsageRepository) GetByEventID(ctx context.Context, tenantID, envir
 	var usage events.MeterUsage
 	var propertiesJSON string
 
-	err := r.store.GetConn().QueryRow(ctx, query, tenantID, environmentID, eventID).Scan(
+	err := r.store.GetConn().QueryRow(ctx, query, tenantID, environmentID, externalCustomerID, eventID).Scan(
 		&usage.ID,
 		&usage.TenantID,
 		&usage.EnvironmentID,
