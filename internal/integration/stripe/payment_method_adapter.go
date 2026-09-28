@@ -13,27 +13,20 @@ import (
 
 // PaymentMethodAdapter wraps Stripe to implement interfaces.PaymentMethodProvider.
 type PaymentMethodAdapter struct {
-	Client      *Client
-	PaymentSvc  *PaymentService
-	CustomerSvc interfaces.CustomerService
-	Logger      *logger.Logger
-}
-
-func (a *PaymentMethodAdapter) stripeCustomerSvc() *CustomerService {
-	if a != nil && a.PaymentSvc != nil {
-		return a.PaymentSvc.customerSvc
-	}
-	return nil
+	Client            *Client
+	StripeCustomerSvc *CustomerService
+	CustomerSvc       interfaces.CustomerService
+	Logger            *logger.Logger
 }
 
 // ListSavedMethods returns the customer's usable payment methods from Stripe.
 func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustomerID string) ([]interfaces.ProviderPaymentMethod, error) {
-	if a == nil || a.Client == nil || a.CustomerSvc == nil {
+	if a == nil || a.Client == nil || a.CustomerSvc == nil || a.StripeCustomerSvc == nil {
 		return nil, ierr.NewError("stripe payment method adapter is not configured").
 			Mark(ierr.ErrInternal)
 	}
 
-	stripeCustomerID, err := a.stripeCustomerSvc().GetStripeCustomerID(ctx, flexCustomerID, a.CustomerSvc)
+	stripeCustomerID, err := a.StripeCustomerSvc.GetStripeCustomerID(ctx, flexCustomerID, a.CustomerSvc)
 	if err != nil {
 		a.Logger.Error(ctx, "failed to get customer for saved payment methods",
 			"customer_id", flexCustomerID, "error", err)
@@ -138,12 +131,12 @@ func (a *PaymentMethodAdapter) SetDefaultSavedMethod(ctx context.Context, flexCu
 
 // CreateSetupLink creates a hosted Stripe Checkout session in setup mode for adding a card.
 func (a *PaymentMethodAdapter) CreateSetupLink(ctx context.Context, req interfaces.SetupLinkRequest) (*interfaces.SetupLinkResponse, error) {
-	if a == nil || a.Client == nil || a.PaymentSvc == nil {
+	if a == nil || a.Client == nil || a.StripeCustomerSvc == nil {
 		return nil, ierr.NewError("stripe payment method adapter is not configured").
 			Mark(ierr.ErrInternal)
 	}
 
-	stripeCustomerID, err := a.stripeCustomerSvc().EnsureStripeCustomerID(ctx, req.CustomerID, a.CustomerSvc)
+	stripeCustomerID, err := a.StripeCustomerSvc.EnsureStripeCustomerID(ctx, req.CustomerID, a.CustomerSvc)
 	if err != nil {
 		return nil, err
 	}
@@ -195,12 +188,12 @@ func (a *PaymentMethodAdapter) validateIfMethodBelongsToCustomer(ctx context.Con
 			Mark(ierr.ErrValidation)
 	}
 
-	if a == nil || a.Client == nil || a.CustomerSvc == nil {
+	if a == nil || a.Client == nil || a.StripeCustomerSvc == nil || a.CustomerSvc == nil {
 		return "", ierr.NewError("stripe payment method adapter is not configured").
 			Mark(ierr.ErrInternal)
 	}
 
-	stripeCustomerID, err := a.stripeCustomerSvc().GetStripeCustomerID(ctx, flexCustomerID, a.CustomerSvc)
+	stripeCustomerID, err := a.StripeCustomerSvc.GetStripeCustomerID(ctx, flexCustomerID, a.CustomerSvc)
 	if err != nil {
 		return "", err
 	}

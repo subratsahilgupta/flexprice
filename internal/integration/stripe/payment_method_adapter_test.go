@@ -56,9 +56,10 @@ func TestPaymentMethodAdapter_ListSavedMethods_CustomerNotSynced(t *testing.T) {
 		},
 	}
 	adapter := &PaymentMethodAdapter{
-		Client:      &Client{},
-		CustomerSvc: mockCust,
-		Logger:      log,
+		Client:            &Client{},
+		StripeCustomerSvc: &CustomerService{},
+		CustomerSvc:       mockCust,
+		Logger:            log,
 	}
 
 	methods, err := adapter.ListSavedMethods(ctx, "cust_123")
@@ -73,9 +74,10 @@ func TestPaymentMethodAdapter_ListSavedMethods_CustomerLookupFailurePropagates(t
 		err: ierr.NewError("database unavailable").Mark(ierr.ErrSystem),
 	}
 	adapter := &PaymentMethodAdapter{
-		Client:      &Client{},
-		CustomerSvc: mockCust,
-		Logger:      log,
+		Client:            &Client{},
+		StripeCustomerSvc: &CustomerService{},
+		CustomerSvc:       mockCust,
+		Logger:            log,
 	}
 
 	// A genuine lookup failure must not be reported as "no saved methods" - the

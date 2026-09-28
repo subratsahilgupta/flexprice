@@ -1597,10 +1597,10 @@ func (f *Factory) GetPaymentMethodProvider(ctx context.Context, gateway types.Pa
 			return nil, err
 		}
 		return &stripe.PaymentMethodAdapter{
-			Client:      i.Client,
-			PaymentSvc:  i.PaymentSvc,
-			CustomerSvc: customerSvc,
-			Logger:      f.logger,
+			Client:            i.Client,
+			StripeCustomerSvc: i.CustomerSvc,
+			CustomerSvc:       customerSvc,
+			Logger:            f.logger,
 		}, nil
 	default:
 		return nil, ierr.NewError("saved payment methods are not supported for this provider").
