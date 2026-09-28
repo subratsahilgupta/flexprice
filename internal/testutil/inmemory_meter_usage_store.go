@@ -1051,30 +1051,6 @@ func (s *InMemoryMeterUsageStore) GetMeterUsageForExport(ctx context.Context, st
 	return filtered[offset:end], nil
 }
 
-// GetByEventID returns the meter_usage record for a single event, or nil if not found.
-func (s *InMemoryMeterUsageStore) GetByEventID(_ context.Context, tenantID, environmentID, eventID string) (*events.MeterUsage, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, r := range s.records {
-		if r.TenantID == tenantID && r.EnvironmentID == environmentID && r.ID == eventID {
-			// Return minimal copy with only the fields needed for debug response
-			return &events.MeterUsage{
-				Event: events.Event{
-					ID:                 eventID,
-					ExternalCustomerID: r.ExternalCustomerID,
-					IngestedAt:         r.IngestedAt,
-					Properties:         r.Properties,
-					Timestamp:          r.Timestamp,
-				},
-				MeterID:  r.MeterID,
-				QtyTotal: r.QtyTotal,
-			}, nil
-		}
-	}
-	return nil, nil
-}
-
 // GetEventsByCustomerIDEventID returns the customer's meter_usage record for a single event, or nil if not found.
 func (s *InMemoryMeterUsageStore) GetEventsByCustomerIDEventID(_ context.Context, tenantID, environmentID, externalCustomerID, eventID string) (*events.MeterUsage, error) {
 	s.mu.RLock()

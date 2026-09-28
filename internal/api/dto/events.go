@@ -528,19 +528,6 @@ type GetMonitoringDataResponse struct {
 	Points            []EventCountPoint `json:"points,omitempty"`
 }
 
-type GetHuggingFaceBillingDataRequest struct {
-	EventIDs []string `json:"requestIds" binding:"required,min=1"`
-}
-
-type EventCostInfo struct {
-	EventID       string          `json:"requestId"`
-	CostInNanoUSD decimal.Decimal `json:"costNanoUsd" swaggertype:"string"`
-}
-
-type GetHuggingFaceBillingDataResponse struct {
-	Data []EventCostInfo `json:"requests"`
-}
-
 type GetEventByIDResponse struct {
 	Event           *Event                          `json:"event"`
 	Events          []*Event                        `json:"events,omitempty"`

@@ -3897,52 +3897,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/events/huggingface-inference": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Use when fetching Hugging Face inference usage or billing data (e.g. for HF-specific reporting or reconciliation). Reads the meter-usage pipeline.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Events"
-                ],
-                "summary": "Get Hugging Face inference data",
-                "operationId": "getHuggingfaceInferenceData",
-                "parameters": [
-                    {
-                        "description": "Request body",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/GetHuggingFaceBillingDataRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/GetHuggingFaceBillingDataResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/events/lookup": {
             "get": {
                 "security": [
@@ -19055,17 +19009,6 @@ const docTemplate = `{
                 }
             }
         },
-        "EventCostInfo": {
-            "type": "object",
-            "properties": {
-                "costNanoUsd": {
-                    "type": "string"
-                },
-                "requestId": {
-                    "type": "string"
-                }
-            }
-        },
         "ExecuteInvoiceModifyRequest": {
             "type": "object",
             "required": [
@@ -19542,32 +19485,6 @@ const docTemplate = `{
                 },
                 "total_count": {
                     "type": "integer"
-                }
-            }
-        },
-        "GetHuggingFaceBillingDataRequest": {
-            "type": "object",
-            "required": [
-                "requestIds"
-            ],
-            "properties": {
-                "requestIds": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "GetHuggingFaceBillingDataResponse": {
-            "type": "object",
-            "properties": {
-                "requests": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/EventCostInfo"
-                    }
                 }
             }
         },

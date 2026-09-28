@@ -3852,13 +3852,6 @@ definitions:
       timestamp:
         type: string
     type: object
-  EventCostInfo:
-    properties:
-      costNanoUsd:
-        type: string
-      requestId:
-        type: string
-    type: object
   ExecuteInvoiceModifyRequest:
     properties:
       line_item_params:
@@ -4203,23 +4196,6 @@ definitions:
         type: integer
       total_count:
         type: integer
-    type: object
-  GetHuggingFaceBillingDataRequest:
-    properties:
-      requestIds:
-        items:
-          type: string
-        minItems: 1
-        type: array
-    required:
-    - requestIds
-    type: object
-  GetHuggingFaceBillingDataResponse:
-    properties:
-      requests:
-        items:
-          $ref: '#/definitions/EventCostInfo'
-        type: array
     type: object
   GetPendingSchedulesResponse:
     description: List of pending schedules for a subscription
@@ -16658,37 +16634,6 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Bulk ingest events
-      tags:
-      - Events
-  /events/huggingface-inference:
-    post:
-      consumes:
-      - application/json
-      description: Use when fetching Hugging Face inference usage or billing data
-        (e.g. for HF-specific reporting or reconciliation). Reads the meter-usage
-        pipeline.
-      operationId: getHuggingfaceInferenceData
-      parameters:
-      - description: Request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/GetHuggingFaceBillingDataRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/GetHuggingFaceBillingDataResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Get Hugging Face inference data
       tags:
       - Events
   /events/lookup:
