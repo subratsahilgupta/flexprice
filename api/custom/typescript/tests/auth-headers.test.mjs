@@ -37,6 +37,15 @@ function counter(prefix) {
   return () => `${prefix}-${++calls}`;
 }
 
+// Per-call options that retry a 503 once, with near-zero backoff.
+const retryOn503 = {
+  retries: {
+    strategy: "backoff",
+    backoff: { initialInterval: 1, maxInterval: 5, exponent: 1, maxElapsedTime: 5000 },
+  },
+  retryCodes: ["503"],
+};
+
 test("bearerAuth and environmentId send Authorization and X-Environment-ID", async () => {
   const { sdk, requests } = client({ bearerAuth: "jwt", environmentId: "env_1" });
   await sdk.customers.getCustomer("cust_1");
@@ -90,17 +99,22 @@ test("a token function is called for each request", async () => {
 test("a retried attempt sends a freshly resolved token", async () => {
   const nextToken = counter("jwt");
   const { sdk, requests } = client({ bearerAuth: async () => nextToken() }, [503, 200]);
-  await sdk.customers.getCustomer("cust_1", {
-    retries: {
-      strategy: "backoff",
-      backoff: { initialInterval: 1, maxInterval: 5, exponent: 1, maxElapsedTime: 5000 },
-    },
-    retryCodes: ["503"],
-  });
+  await sdk.customers.getCustomer("cust_1", retryOn503);
 
   assert.equal(requests.length, 2);
   assert.equal(requests[0].headers.get("authorization"), "Bearer jwt-1");
   assert.equal(requests[1].headers.get("authorization"), "Bearer jwt-2");
+});
+
+test("a retried call keeps its environment, and the next call resolves it again", async () => {
+  const { sdk, requests } = client({ bearerAuth: "jwt", environmentId: counter("env") }, [503, 200]);
+  await sdk.customers.getCustomer("cust_1", retryOn503);
+  await sdk.customers.getCustomer("cust_1");
+
+  assert.equal(requests.length, 3);
+  assert.equal(requests[0].headers.get("x-environment-id"), "env-1");
+  assert.equal(requests[1].headers.get("x-environment-id"), "env-1");
+  assert.equal(requests[2].headers.get("x-environment-id"), "env-2");
 });
 
 test("an empty token or environment omits that header", async () => {
