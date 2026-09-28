@@ -112,7 +112,7 @@ func (s *checkoutSessionService) GetByPaymentID(ctx context.Context, paymentID s
 		return nil, nil
 	}
 
-	session, err := s.CheckoutSessionRepo.GetByCheckoutPaymentID(ctx, paymentID)
+	session, err := s.CheckoutSessionRepo.GetSessionByPaymentID(ctx, paymentID)
 	if err != nil {
 		return nil, err
 	}

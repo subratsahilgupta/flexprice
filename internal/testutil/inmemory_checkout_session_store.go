@@ -90,7 +90,7 @@ func (s *InMemoryCheckoutSessionStore) GetByCheckoutInvoiceID(ctx context.Contex
 	return sessions[0], nil
 }
 
-func (s *InMemoryCheckoutSessionStore) GetByCheckoutPaymentID(ctx context.Context, paymentID string) (*domainCheckout.CheckoutSession, error) {
+func (s *InMemoryCheckoutSessionStore) GetSessionByPaymentID(ctx context.Context, paymentID string) (*domainCheckout.CheckoutSession, error) {
 	sessions, err := s.List(ctx, &types.CheckoutSessionFilter{
 		QueryFilter:        types.NewNoLimitQueryFilter(),
 		CheckoutPaymentIDs: []string{paymentID},

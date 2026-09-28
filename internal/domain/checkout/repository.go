@@ -34,9 +34,9 @@ type Repository interface {
 	// invoice, or nil when none is.
 	GetByCheckoutInvoiceID(ctx context.Context, invoiceID string) (*CheckoutSession, error)
 
-	// GetByCheckoutPaymentID returns the session owning the payment in any checkout status
+	// GetSessionByPaymentID returns the session owning the payment in any checkout status
 	// (unlike GetByCheckoutInvoiceID) — a payment against an expired/failed one needs a refund.
-	GetByCheckoutPaymentID(ctx context.Context, paymentID string) (*CheckoutSession, error)
+	GetSessionByPaymentID(ctx context.Context, paymentID string) (*CheckoutSession, error)
 
 	// Delete soft-deletes a checkout session by setting status to archived.
 	Delete(ctx context.Context, id string) error

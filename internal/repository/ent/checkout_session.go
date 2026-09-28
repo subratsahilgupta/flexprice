@@ -284,8 +284,8 @@ func (r *checkoutSessionRepository) GetByCheckoutInvoiceID(ctx context.Context, 
 	return fromEntCheckout(e), nil
 }
 
-func (r *checkoutSessionRepository) GetByCheckoutPaymentID(ctx context.Context, paymentID string) (*domainCheckout.CheckoutSession, error) {
-	span := StartRepositorySpan(ctx, "checkout_session", "get_by_checkout_payment_id", map[string]interface{}{
+func (r *checkoutSessionRepository) GetSessionByPaymentID(ctx context.Context, paymentID string) (*domainCheckout.CheckoutSession, error) {
+	span := StartRepositorySpan(ctx, "checkout_session", "get_session_by_payment_id", map[string]interface{}{
 		"payment_id": paymentID,
 	})
 	defer FinishSpan(span)
