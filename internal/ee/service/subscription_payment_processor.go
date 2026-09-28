@@ -733,11 +733,12 @@ func (s *subscriptionPaymentProcessor) processPaymentMethodCharge(
 	// Use invoicing customer ID for Stripe operations - payment should use invoicing customer's payment methods
 	invoicingCustomerID := sub.GetInvoicingCustomerID()
 	customerService := NewCustomerService(*s.ServiceParams)
-	if !stripeIntegration.CustomerSvc.HasCustomerStripeMapping(ctx, invoicingCustomerID, customerService) {
+	if _, err := stripeIntegration.CustomerSvc.GetStripeCustomerID(ctx, invoicingCustomerID, customerService); err != nil {
 		s.Logger.Info(context.Background(), "no Stripe entity mapping found for invoicing customer",
 			"subscription_id", sub.ID,
 			"subscription_customer_id", sub.CustomerID,
 			"invoicing_customer_id", invoicingCustomerID,
+			"error", err,
 		)
 		return decimal.Zero
 	}

@@ -647,12 +647,6 @@ func (s *CustomerService) UpdateStripeCustomerMetadata(ctx context.Context, stri
 	return nil
 }
 
-// HasCustomerStripeMapping checks if a customer has a Stripe mapping
-func (s *CustomerService) HasCustomerStripeMapping(ctx context.Context, customerID string, customerService interfaces.CustomerService) bool {
-	_, err := s.GetStripeCustomerID(ctx, customerID, customerService)
-	return err == nil
-}
-
 // defaultPaymentMethodID is a nil-safe read of a Stripe customer's default payment
 // method; every level of the nesting can be nil until something sets it.
 func defaultPaymentMethodID(cust *stripe.Customer) string {
