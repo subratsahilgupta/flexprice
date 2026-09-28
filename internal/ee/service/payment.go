@@ -1045,7 +1045,7 @@ func toSavedPaymentMethod(
 		Type:                m.Method,
 		Status:              status,
 		IsDefault:           m.IsDefault,
-		CanAutoCharge:       m.Active && providerAutoCharges && (m.Recurring == nil || m.Recurring.Status == types.RecurringPaymentStatusActive),
+		CanAutoCharge:       m.Active && providerAutoCharges && hasLiveMandate(m, gw),
 		InstantlyChargeable: m.Active && m.InstantlyChargeable,
 	}
 
@@ -1070,4 +1070,13 @@ func toSavedPaymentMethod(
 		}
 	}
 	return out
+}
+
+// hasLiveMandate reports whether the method's recurring mandate permits an
+// off-session charge. Razorpay can only auto-charge through a mandate.
+func hasLiveMandate(m interfaces.ProviderPaymentMethod, gw types.PaymentGatewayType) bool {
+	if m.Recurring == nil {
+		return gw != types.PaymentGatewayTypeRazorpay
+	}
+	return m.Recurring.Status == types.RecurringPaymentStatusActive
 }

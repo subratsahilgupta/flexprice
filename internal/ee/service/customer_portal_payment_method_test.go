@@ -245,6 +245,17 @@ func TestToSavedPaymentMethodRecurring(t *testing.T) {
 		assert.Equal(t, types.RecurringPaymentStatusExpired, got.Recurring.Status)
 	})
 
+	t.Run("razorpay token without a mandate cannot auto-charge", func(t *testing.T) {
+		got := toSavedPaymentMethod(interfaces.ProviderPaymentMethod{
+			GatewayMethodID: "token_vaulted",
+			Method:          types.PaymentMethodTypeCard,
+			Active:          true,
+		}, types.PaymentGatewayTypeRazorpay, true)
+
+		assert.Nil(t, got.Recurring)
+		assert.False(t, got.CanAutoCharge)
+	})
+
 	t.Run("no recurring facet leaves it nil", func(t *testing.T) {
 		got := toSavedPaymentMethod(interfaces.ProviderPaymentMethod{GatewayMethodID: "pm_1", Active: true},
 			types.PaymentGatewayTypeChargebee, true)
