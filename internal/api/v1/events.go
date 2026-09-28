@@ -492,7 +492,9 @@ func validateStartAndEndTime(startTime, endTime time.Time) (time.Time, time.Time
 // @Produce json
 // @Security ApiKeyAuth
 // @Param id query string true "Event ID"
+// @Param external_customer_id query string true "External customer ID the event was ingested with"
 // @Success 200 {object} dto.GetEventByIDResponse
+// @Failure 400 {object} ierr.ErrorResponse "Missing event ID or external customer ID"
 // @Failure 404 {object} ierr.ErrorResponse
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
 // @Router /events/lookup [get]
@@ -509,37 +511,16 @@ func (h *EventsHandler) GetEventByID(c *gin.Context) {
 			Mark(ierr.ErrValidation))
 		return
 	}
-	response, err := h.meterUsageService.DebugEvent(ctx, eventID)
-	if err != nil {
-		h.log.Error(ctx, "Failed to debug event", "error", err, "event_id", eventID)
-		c.Error(err)
-		return
-	}
-	c.JSON(http.StatusOK, response)
-}
-
-// @Summary Get Hugging Face inference data
-// @ID getHuggingfaceInferenceData
-// @Description Use when fetching Hugging Face inference usage or billing data (e.g. for HF-specific reporting or reconciliation). Reads the meter-usage pipeline.
-// @Tags Events
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body dto.GetHuggingFaceBillingDataRequest true "Request body"
-// @Success 200 {object} dto.GetHuggingFaceBillingDataResponse
-// @Failure 500 {object} ierr.ErrorResponse "Server error"
-// @Router /events/huggingface-inference [post]
-func (h *EventsHandler) GetHuggingFaceBillingData(c *gin.Context) {
-	ctx := c.Request.Context()
-	var req dto.GetHuggingFaceBillingDataRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(ierr.WithError(err).
-			WithHint("Please check the request payload").
+	externalCustomerID := c.Query("external_customer_id")
+	if externalCustomerID == "" {
+		c.Error(ierr.NewError("external_customer_id is required").
+			WithHint("Please provide the external customer ID the event was ingested with").
 			Mark(ierr.ErrValidation))
 		return
 	}
-	response, err := h.meterUsageService.GetHuggingFaceBillingData(ctx, &req)
+	response, err := h.meterUsageService.DebugEvent(ctx, externalCustomerID, eventID)
 	if err != nil {
+		h.log.Error(ctx, "Failed to debug event", "error", err, "event_id", eventID, "external_customer_id", externalCustomerID)
 		c.Error(err)
 		return
 	}

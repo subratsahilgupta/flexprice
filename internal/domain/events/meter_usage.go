@@ -249,8 +249,8 @@ type MeterUsageRepository interface {
 	// GetMeterUsageForExport retrieves meter usage data for export in batches
 	GetMeterUsageForExport(ctx context.Context, startTime, endTime time.Time, batchSize int, offset int) ([]*MeterUsage, error)
 
-	// GetByEventID returns the meter_usage record for a single event, or nil if not yet processed.
-	GetByEventID(ctx context.Context, tenantID, environmentID, eventID string) (*MeterUsage, error)
+	// GetEventsByEventIDAndExternalCustomerID returns the customer's meter_usage record for a single event, or nil if not yet processed.
+	GetEventsByEventIDAndExternalCustomerID(ctx context.Context, tenantID, environmentID, externalCustomerID, eventID string) (*MeterUsage, error)
 
 	// GetDailyUsageByMeter returns per-day SUM(qty_total) over the half-open
 	// window [StartTime, EndTime), keyed by meter id — one round-trip for every

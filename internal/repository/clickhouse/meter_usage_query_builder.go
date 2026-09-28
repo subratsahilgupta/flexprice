@@ -13,7 +13,7 @@ import (
 var validMeterUsageGroupByPattern = regexp.MustCompile(`^[A-Za-z0-9_.]+$`)
 
 // maxMemoryUsageSetting mirrors the inline 90GB bound used by
-// GetEarliestUsageTimestamp/GetMeterUsageForExport/GetByEventID in
+// GetEarliestUsageTimestamp/GetMeterUsageForExport/GetEventsByEventIDAndExternalCustomerID in
 // meter_usage.go (AGENTS.md: every ClickHouse query bounded by 90GB).
 const maxMemoryUsageSetting = "max_memory_usage = 96636764160"
 
@@ -642,10 +642,8 @@ func (qb *MeterUsageQueryBuilder) BuildDetailedPointsQuery(
 		args = append(args, result.ExternalCustomerID)
 	}
 	for propName, propValue := range result.Properties {
-		if propValue != "" {
-			where += " AND JSONExtractString(properties, ?) = ?"
-			args = append(args, propName, propValue)
-		}
+		where += " AND JSONExtractString(properties, ?) = ?"
+		args = append(args, propName, propValue)
 	}
 
 	selectCols := append([]string{fmt.Sprintf("%s AS window_start", windowExpr)}, aggColumns...)
