@@ -158,7 +158,7 @@ Nothing else changes. No new table, no column on `usage_records`, no new cron, n
 **Tenant-side prerequisites**, done once in the Salla Partners Portal:
 
 - Publish the app. **Easy Mode is mandatory for published apps**; tokens arrive by webhook and the
-tenant does not run an OAuth callback. ([authorization](https://docs.salla.dev/37396517e0.md))
+tenant does not run an OAuth callback. ([authorization](https://docs.salla.dev/421118m0))
 - Create the PAYG plan. `plan_type: on_demand`, `on_demand_type` restricted to
 `emails` **|** `messages` **|** `per-transaction`, max 4 PAYG plans per app. **The per-unit rate lives
 in Salla's dashboard with no API**, so the rate exists in two places and the tenant's Flexprice
@@ -194,7 +194,7 @@ sequenceDiagram
 
 **The agreement call is an idempotent upsert, not create-only.** `app.store.authorize` re-fires on
 every app update with new tokens — *"you are required to update the access token and refresh token in
-your database"* ([authorization](https://docs.salla.dev/37396517e0.md)). Arrival order against
+your database"* ([authorization](https://docs.salla.dev/421118m0)). Arrival order against
 `app.installed` is not guaranteed.
 
 Two relay filters the tenant applies:
@@ -291,7 +291,7 @@ recognise the write already landed. Audit field, not a computation input.
 same idempotent upsert.
 
 Salla refresh tokens are **single-use and rotating**. Reuse revokes the chain and **forces the merchant
-to reinstall the app** — there is no API path back ([authorization](https://docs.salla.dev/37396517e0.md)).
+to reinstall the app** — there is no API path back ([authorization](https://docs.salla.dev/421118m0)).
 The tenant's own app needs the same token for every other Salla call, so we cannot forbid them from
 refreshing. Two refreshers on one chain guarantees the failure; one owner removes it by construction.
 
@@ -612,7 +612,7 @@ exists today. It is the one enhancement that gates onboarding a tenant with mixe
 | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | App Events catalogue (`app.store.authorize`, `app.subscription.*`, `app.uninstalled`)                | [https://docs.salla.dev/421413m0](https://docs.salla.dev/421413m0)                                                   |
 | Subscription details, PAYG example, `subscription_balance`                                           | [https://docs.salla.dev/partner-apis/subscription-details](https://docs.salla.dev/partner-apis/subscription-details) |
-| Authorization / Easy Mode, token rotation                                                            | [https://docs.salla.dev/37396517e0.md](https://docs.salla.dev/37396517e0.md)                                         |
+| Authorization / Easy Mode, token rotation                                                            | [https://docs.salla.dev/421118m0](https://docs.salla.dev/421118m0)                                         |
 | Add-on subscriptions                                                                                 | [https://docs.salla.dev/2213496m0](https://docs.salla.dev/2213496m0)                                                 |
 | Rate limiting                                                                                        | [https://docs.salla.dev/rate-limiting](https://docs.salla.dev/rate-limiting)                                         |
 | Recurring Payments — `charge.succeeded` / `charge.failed`, **merchant-to-shopper, not partner apps** | [https://docs.salla.dev/1650531m0](https://docs.salla.dev/1650531m0)                                                 |
