@@ -22,6 +22,9 @@ type CreateStripePaymentLinkRequest struct {
 	SaveCardAndMakeDefault bool            `json:"save_card_and_make_default" default:"false"`
 	PaymentID              string          `json:"payment_id" binding:"required"`
 	TaxIDCollectionEnabled bool            `json:"tax_id_collection_enabled" default:"false"`
+	// ExpiresAt closes the Stripe Checkout Session at a fixed time. Nil leaves Stripe's
+	// own 24h default in place.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // StripePaymentLinkResponse represents a response from creating a Stripe payment link
@@ -34,6 +37,7 @@ type StripePaymentLinkResponse struct {
 	Status          string          `json:"status"`
 	CreatedAt       int64           `json:"created_at"`
 	PaymentID       string          `json:"payment_id,omitempty"`
+	ExpiresAt       *time.Time      `json:"expires_at,omitempty"`
 }
 
 // Validate validates the create Stripe payment link request

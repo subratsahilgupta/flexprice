@@ -13,6 +13,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/integration/nomod"
 	"github.com/flexprice/flexprice/internal/integration/razorpay"
+	"github.com/flexprice/flexprice/internal/integration/stripe"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	temporalmodels "github.com/flexprice/flexprice/internal/temporal/models"
 	temporalservice "github.com/flexprice/flexprice/internal/temporal/service"
@@ -259,7 +260,7 @@ func (p *paymentProcessor) handleStripePaymentLinkCreation(ctx context.Context, 
 	linkMetadata["flexprice_payment_id"] = paymentObj.ID
 
 	// Convert to Stripe payment link request
-	paymentLinkReq := &dto.CreateStripePaymentLinkRequest{
+	paymentLinkReq := &stripe.CreateStripePaymentLinkRequest{
 		InvoiceID:  paymentObj.DestinationID,
 		CustomerID: invoice.CustomerID,
 		Amount:     paymentObj.Amount,
@@ -999,7 +1000,7 @@ func (p *paymentProcessor) handleCardPayment(ctx context.Context, paymentObj *pa
 	}
 
 	// Charge the saved payment method
-	chargeReq := &dto.ChargeSavedPaymentMethodRequest{
+	chargeReq := &stripe.ChargeSavedPaymentMethodRequest{
 		CustomerID:      customerID,
 		PaymentMethodID: paymentObj.PaymentMethodID,
 		Amount:          paymentObj.Amount,

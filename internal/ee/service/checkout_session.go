@@ -162,6 +162,24 @@ func (s *checkoutSessionService) Get(ctx context.Context, id string) (*dto.Check
 // Separate from Get because reconciliation contacts the gateway and can complete a
 // session: only a caller acting for the customer should trigger it. Internal readers
 // — the outbound webhook payload builder, for one — must use Get.
+func (s *checkoutSessionService) GetByPaymentID(ctx context.Context, paymentID string) (*dto.CheckoutSessionResponse, error) {
+	// An empty id is "not a checkout payment", not a bad request: webhook handlers
+	// pass whatever the gateway sent back and expect nil for anything unrelated.
+	if paymentID == "" {
+		return nil, nil
+	}
+
+	session, err := s.CheckoutSessionRepo.GetSessionByPaymentID(ctx, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	if session == nil {
+		return nil, nil
+	}
+
+	return dto.ToCheckoutSessionResponse(session), nil
+}
+
 func (s *checkoutSessionService) GetAndReconcile(ctx context.Context, id string) (*dto.CheckoutSessionResponse, error) {
 	if id == "" {
 		return nil, ierr.NewError("id is required").

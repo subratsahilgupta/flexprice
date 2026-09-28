@@ -175,6 +175,7 @@ func (f *Factory) GetStripeIntegration(ctx context.Context) (*StripeIntegration,
 		priceSyncSvc,
 		f.invoiceRepo,
 		f.paymentRepo,
+		f.locker,
 		f.logger,
 	)
 
@@ -1591,6 +1592,17 @@ func (f *Factory) GetPaymentMethodProvider(ctx context.Context, gateway types.Pa
 			CustomerSvc: i.CustomerSvc.(*chargebee.CustomerService),
 			Logger:      f.logger,
 		}, nil
+	case types.PaymentGatewayTypeStripe:
+		i, err := f.GetStripeIntegration(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &stripe.PaymentMethodAdapter{
+			Client:            i.Client,
+			StripeCustomerSvc: i.CustomerSvc,
+			CustomerSvc:       customerSvc,
+			Logger:            f.logger,
+		}, nil
 	default:
 		return nil, ierr.NewError("saved payment methods are not supported for this provider").
 			WithHintf("%s cannot manage saved payment methods", gateway).
@@ -1656,6 +1668,18 @@ func (f *Factory) GetCheckoutProvider(ctx context.Context, provider types.Checko
 			Client:      i.Client,
 			CustomerSvc: i.CustomerSvc,
 			InvoiceSvc:  i.InvoiceSvc,
+			Logger:      f.logger,
+		}, nil
+	case types.CheckoutPaymentProviderStripe:
+		i, err := f.GetStripeIntegration(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &stripe.CheckoutAdapter{
+			Client:      i.Client,
+			PaymentSvc:  i.PaymentSvc,
+			CustomerSvc: customerSvc,
+			InvoiceSvc:  invoiceSvc,
 			Logger:      f.logger,
 		}, nil
 	default:
