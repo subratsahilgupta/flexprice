@@ -188,8 +188,6 @@ func (a *CheckoutAdapter) FetchPaymentState(
 		return a.checkoutSessionPaymentState(ctx, stripeClient, trackingID)
 	case strings.HasPrefix(paymentID, paymentIntentIDPrefix):
 		return a.paymentIntentPaymentState(ctx, stripeClient, paymentID)
-	case strings.HasPrefix(trackingID, paymentIntentIDPrefix):
-		return a.paymentIntentPaymentState(ctx, stripeClient, trackingID)
 	default:
 		// Never guess an endpoint from an id we do not recognise.
 		return nil, ierr.NewError("unrecognised stripe checkout handle").
