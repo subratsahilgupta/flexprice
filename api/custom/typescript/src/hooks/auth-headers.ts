@@ -28,14 +28,18 @@ export const authHeadersHook: BeforeRequestHook = {
       throw new Error("set either apiKeyAuth or bearerAuth, not both.");
     }
 
-    const token = await resolveCredential(bearerAuth);
-    if (token && !request.headers.has("Authorization")) {
-      request.headers.set("Authorization", `Bearer ${token}`);
+    if (!request.headers.has("Authorization")) {
+      const token = await resolveCredential(bearerAuth);
+      if (token) {
+        request.headers.set("Authorization", `Bearer ${token}`);
+      }
     }
 
-    const envId = await environmentFor(hookCtx, environmentId);
-    if (envId && !request.headers.has("X-Environment-ID")) {
-      request.headers.set("X-Environment-ID", envId);
+    if (!request.headers.has("X-Environment-ID")) {
+      const envId = await environmentFor(hookCtx, environmentId);
+      if (envId) {
+        request.headers.set("X-Environment-ID", envId);
+      }
     }
 
     return request;

@@ -156,7 +156,7 @@ const flexprice = new Flexprice({
 - Both options take a string or a function, so a refreshed token or a switched environment applies without creating a new client. The SDK does not refresh tokens itself.
 - A `bearerAuth` function is called before every attempt, retries included. An `environmentId` function is called once per API call, so a retry never switches environments.
 - If the value or the function result is empty, that header is not sent.
-- Headers passed on a single call (`{ headers: { ... } }`) take precedence over these options.
+- Headers passed on a single call (`{ headers: { ... } }`) take precedence over these options, and the matching option's function is not called.
 - `environmentId` also works with `apiKeyAuth`. The API ignores it for keys bound to an environment.
 - Setting both `apiKeyAuth` and `bearerAuth` fails every call with an `UnexpectedClientError` before anything is sent.
 

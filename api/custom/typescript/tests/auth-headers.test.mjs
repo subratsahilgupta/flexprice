@@ -87,6 +87,20 @@ test("per-call headers win over the options", async () => {
   assert.equal(requests[0].headers.get("x-environment-id"), "env_call");
 });
 
+test("per-call headers skip the option functions, even ones that reject", async () => {
+  const reject = async () => {
+    throw new Error("not logged in");
+  };
+  const { sdk, requests } = client({ bearerAuth: reject, environmentId: reject });
+  await sdk.customers.getCustomer("cust_1", {
+    headers: { Authorization: "Bearer call-jwt", "X-Environment-ID": "env_call" },
+  });
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].headers.get("authorization"), "Bearer call-jwt");
+  assert.equal(requests[0].headers.get("x-environment-id"), "env_call");
+});
+
 test("a token function is called for each request", async () => {
   const { sdk, requests } = client({ bearerAuth: counter("jwt") });
   await sdk.customers.getCustomer("cust_1");
