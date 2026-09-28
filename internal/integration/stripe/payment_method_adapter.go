@@ -28,14 +28,15 @@ func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustome
 
 	stripeCustomerID, err := a.StripeCustomerSvc.GetStripeCustomerID(ctx, flexCustomerID, a.CustomerSvc)
 	if err != nil {
+		if ierr.IsNotFound(err) {
+			// Not yet synced to Stripe simply means nothing is saved.
+			a.Logger.Info(ctx, "customer not synced to Stripe, returning empty saved methods",
+				"customer_id", flexCustomerID)
+			return nil, nil
+		}
 		a.Logger.Error(ctx, "failed to get customer for saved payment methods",
 			"customer_id", flexCustomerID, "error", err)
 		return nil, err
-	}
-	if stripeCustomerID == "" {
-		a.Logger.Info(ctx, "customer has no stripe_customer_id, returning empty saved methods",
-			"customer_id", flexCustomerID)
-		return nil, nil
 	}
 
 	stripeClient, _, err := a.Client.GetStripeClient(ctx)
@@ -130,15 +131,16 @@ func (a *PaymentMethodAdapter) SetDefaultSavedMethod(ctx context.Context, flexCu
 
 // CreateSetupLink creates a hosted Stripe Checkout session in setup mode for adding a card.
 func (a *PaymentMethodAdapter) CreateSetupLink(ctx context.Context, req interfaces.SetupLinkRequest) (*interfaces.SetupLinkResponse, error) {
-	if a == nil || a.Client == nil || a.StripeCustomerSvc == nil {
+	if a == nil || a.Client == nil || a.StripeCustomerSvc == nil || a.CustomerSvc == nil {
 		return nil, ierr.NewError("stripe payment method adapter is not configured").
 			Mark(ierr.ErrInternal)
 	}
 
-	stripeCustomerID, err := a.StripeCustomerSvc.EnsureStripeCustomerID(ctx, req.CustomerID, a.CustomerSvc)
+	custResp, err := a.StripeCustomerSvc.EnsureCustomerSyncedToStripe(ctx, req.CustomerID, a.CustomerSvc)
 	if err != nil {
 		return nil, err
 	}
+	stripeCustomerID := custResp.Customer.Metadata[stripeCustomerIDMetadataKey]
 
 	stripeClient, _, err := a.Client.GetStripeClient(ctx)
 	if err != nil {
@@ -200,9 +202,6 @@ func (a *PaymentMethodAdapter) validateIfMethodBelongsToCustomer(ctx context.Con
 	if err != nil {
 		return "", err
 	}
-	if stripeCustomerID == "" {
-		return "", ierr.NewError("customer not synced to Stripe").Mark(ierr.ErrNotFound)
-	}
 
 	stripeClient, _, err := a.Client.GetStripeClient(ctx)
 	if err != nil {
@@ -226,4 +225,22 @@ func (a *PaymentMethodAdapter) validateIfMethodBelongsToCustomer(ctx context.Con
 	}
 
 	return stripeCustomerID, nil
+}
+
+// paymentMethodUsable reports "active": Stripe has no status field, so this just checks
+// a card isn't past its expiry month. Non-card methods have no expiry and are always usable.
+func paymentMethodUsable(pm *stripeapi.PaymentMethod, now time.Time) bool {
+	if pm == nil {
+		return false
+	}
+	if pm.Card == nil || pm.Card.ExpYear == 0 || pm.Card.ExpMonth == 0 {
+		return true
+	}
+
+	now = now.UTC()
+	year, month := int64(now.Year()), int64(now.Month())
+	if pm.Card.ExpYear != year {
+		return pm.Card.ExpYear > year
+	}
+	return pm.Card.ExpMonth >= month
 }

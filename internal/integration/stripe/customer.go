@@ -76,7 +76,7 @@ func (s *CustomerService) EnsureCustomerSyncedToStripe(ctx context.Context, cust
 
 		if refreshed, refreshErr := customerService.GetCustomer(ctx, customerID); refreshErr == nil &&
 			refreshed != nil && refreshed.Customer != nil {
-			if stripeID := refreshed.Customer.Metadata["stripe_customer_id"]; stripeID != "" {
+			if stripeID := refreshed.Customer.Metadata[stripeCustomerIDMetadataKey]; stripeID != "" {
 				s.logger.Info(ctx, "customer was synced to Stripe by a concurrent caller",
 					"customer_id", customerID,
 					"stripe_customer_id", stripeID)
@@ -95,11 +95,11 @@ func (s *CustomerService) EnsureCustomerSyncedToStripe(ctx context.Context, cust
 	return updatedCustomerResp, nil
 }
 
-// GetStripeCustomerID resolves the Stripe customer without creating one. An empty id
-// with a nil error means the customer was never synced — callers decide if that's an error.
+// GetStripeCustomerID resolves the Stripe customer without creating one; ErrNotFound if
+// the customer was never synced.
 func (s *CustomerService) GetStripeCustomerID(ctx context.Context, customerID string, customerService interfaces.CustomerService) (string, error) {
-	if customerService == nil {
-		return "", ierr.NewError("customer service is not configured").
+	if s == nil || customerService == nil {
+		return "", ierr.NewError("stripe customer service is not configured").
 			Mark(ierr.ErrInternal)
 	}
 
@@ -113,42 +113,18 @@ func (s *CustomerService) GetStripeCustomerID(ctx context.Context, customerID st
 			Mark(ierr.ErrNotFound)
 	}
 
-	if s != nil {
-		if linked := s.existingStripeLink(ctx, ourCustomerResp, customerService); linked != nil && linked.Customer != nil {
-			return linked.Customer.Metadata[stripeCustomerIDMetadataKey], nil
+	if linked := s.existingStripeLink(ctx, ourCustomerResp, customerService); linked != nil && linked.Customer != nil {
+		if stripeID := linked.Customer.Metadata[stripeCustomerIDMetadataKey]; stripeID != "" {
+			return stripeID, nil
 		}
-	} else if stripeID, ok := ourCustomerResp.Customer.Metadata[stripeCustomerIDMetadataKey]; ok && stripeID != "" {
-		return stripeID, nil
 	}
 
-	return "", nil
-}
-
-// EnsureStripeCustomerID is GetStripeCustomerID for paths allowed to create the
-// customer: it syncs first, so an empty id afterward is a failure, not a state to interpret.
-func (s *CustomerService) EnsureStripeCustomerID(ctx context.Context, customerID string, customerService interfaces.CustomerService) (string, error) {
-	if s == nil {
-		return "", ierr.NewError("stripe customer service is not configured").
-			Mark(ierr.ErrInternal)
-	}
-
-	custResp, err := s.EnsureCustomerSyncedToStripe(ctx, customerID, customerService)
-	if err != nil {
-		return "", err
-	}
-
-	stripeCustomerID := ""
-	if custResp != nil && custResp.Customer != nil {
-		stripeCustomerID = custResp.Customer.Metadata[stripeCustomerIDMetadataKey]
-	}
-	if stripeCustomerID == "" {
-		return "", ierr.NewError("customer has no stripe_customer_id after sync").
-			WithHint("Failed to sync customer to Stripe").
-			WithReportableDetails(map[string]interface{}{"customer_id": customerID}).
-			Mark(ierr.ErrValidation)
-	}
-
-	return stripeCustomerID, nil
+	return "", ierr.NewError("customer not synced to Stripe").
+		WithHint("Please sync customer to Stripe first").
+		WithReportableDetails(map[string]interface{}{
+			"flexprice_customer_id": customerID,
+		}).
+		Mark(ierr.ErrNotFound)
 }
 
 // RetrieveStripeCustomer fetches the Stripe customer, or ErrNotFound if never synced.
@@ -161,11 +137,6 @@ func (s *CustomerService) RetrieveStripeCustomer(ctx context.Context, customerID
 	stripeCustomerID, err := s.GetStripeCustomerID(ctx, customerID, customerService)
 	if err != nil {
 		return nil, err
-	}
-	if stripeCustomerID == "" {
-		return nil, ierr.NewError("customer not synced to Stripe").
-			WithReportableDetails(map[string]interface{}{"customer_id": customerID}).
-			Mark(ierr.ErrNotFound)
 	}
 
 	stripeClient, _, err := s.client.GetStripeClient(ctx)
@@ -232,7 +203,8 @@ func (s *CustomerService) existingStripeLink(
 		s.logger.Info(ctx, "failed to update customer metadata with Stripe ID",
 			"customer_id", ourCustomer.ID,
 			"error", err)
-		// Return original customer info if update fails
+		// The mapping still proves the link; carry the id in memory so callers see it.
+		ourCustomer.Metadata = updateReq.Metadata
 		return ourCustomerResp
 	}
 
@@ -677,8 +649,8 @@ func (s *CustomerService) UpdateStripeCustomerMetadata(ctx context.Context, stri
 
 // HasCustomerStripeMapping checks if a customer has a Stripe mapping
 func (s *CustomerService) HasCustomerStripeMapping(ctx context.Context, customerID string, customerService interfaces.CustomerService) bool {
-	stripeID, err := s.GetStripeCustomerID(ctx, customerID, customerService)
-	return err == nil && stripeID != ""
+	_, err := s.GetStripeCustomerID(ctx, customerID, customerService)
+	return err == nil
 }
 
 // defaultPaymentMethodID is a nil-safe read of a Stripe customer's default payment
@@ -688,22 +660,4 @@ func defaultPaymentMethodID(cust *stripe.Customer) string {
 		return ""
 	}
 	return cust.InvoiceSettings.DefaultPaymentMethod.ID
-}
-
-// paymentMethodUsable reports "active": Stripe has no status field, so this just checks
-// a card isn't past its expiry month. Non-card methods have no expiry and are always usable.
-func paymentMethodUsable(pm *stripe.PaymentMethod, now time.Time) bool {
-	if pm == nil {
-		return false
-	}
-	if pm.Card == nil || pm.Card.ExpYear == 0 || pm.Card.ExpMonth == 0 {
-		return true
-	}
-
-	now = now.UTC()
-	year, month := int64(now.Year()), int64(now.Month())
-	if pm.Card.ExpYear != year {
-		return pm.Card.ExpYear > year
-	}
-	return pm.Card.ExpMonth >= month
 }

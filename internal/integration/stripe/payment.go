@@ -268,21 +268,17 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *CreateStrip
 	}
 
 	// Ensure customer is synced to Stripe before creating payment link
-	stripeCustomerID, err := s.customerSvc.EnsureStripeCustomerID(ctx, req.CustomerID, customerService)
+	customerResp, err := s.customerSvc.EnsureCustomerSyncedToStripe(ctx, req.CustomerID, customerService)
 	if err != nil {
 		return nil, err
 	}
-
-	custResp, err := customerService.GetCustomer(ctx, req.CustomerID)
-	if err != nil {
-		return nil, err
-	}
+	stripeCustomerID := customerResp.Customer.Metadata[stripeCustomerIDMetadataKey]
 
 	// Not always cents — e.g. JPY has no decimal places.
 	amountSmallestUnit := types.ToSmallestUnit(req.Amount, req.Currency)
 
 	// Build comprehensive product name with all information
-	productName := fmt.Sprintf("%s", custResp.Customer.Name)
+	productName := fmt.Sprintf("%s", customerResp.Customer.Name)
 
 	// Build detailed description with all invoice information
 	var descriptionParts []string
@@ -497,10 +493,11 @@ func (s *PaymentService) ChargeSavedPaymentMethod(ctx context.Context, req *Char
 	}
 
 	// Ensure customer is synced to Stripe before charging saved payment method
-	stripeCustomerID, err := s.customerSvc.EnsureStripeCustomerID(ctx, req.CustomerID, customerService)
+	customerResp, err := s.customerSvc.EnsureCustomerSyncedToStripe(ctx, req.CustomerID, customerService)
 	if err != nil {
 		return nil, err
 	}
+	stripeCustomerID := customerResp.Customer.Metadata[stripeCustomerIDMetadataKey]
 
 	// Get invoice to validate payment amount
 	invoiceResp, err := invoiceService.GetInvoice(ctx, req.InvoiceID)
@@ -932,14 +929,14 @@ func (s *PaymentService) GetCustomerPaymentMethods(ctx context.Context, req *dto
 	// Get our customer to find Stripe customer ID
 	stripeCustomerID, err := s.customerSvc.GetStripeCustomerID(ctx, req.CustomerID, customerService)
 	if err != nil {
+		if ierr.IsNotFound(err) {
+			// No Stripe customer means no saved payment methods
+			s.logger.Info(ctx, "customer not synced to Stripe, no saved payment methods",
+				"customer_id", req.CustomerID,
+			)
+			return []*dto.PaymentMethodResponse{}, nil
+		}
 		return nil, err
-	}
-	if stripeCustomerID == "" {
-		// No Stripe customer ID means no saved payment methods
-		s.logger.Info(ctx, "customer has no stripe_customer_id in metadata",
-			"customer_id", req.CustomerID,
-		)
-		return []*dto.PaymentMethodResponse{}, nil
 	}
 
 	s.logger.Info(ctx, "retrieving payment methods for stripe customer",
@@ -1019,11 +1016,6 @@ func (s *PaymentService) SetDefaultPaymentMethod(ctx context.Context, customerID
 	stripeCustomerID, err := s.customerSvc.GetStripeCustomerID(ctx, customerID, customerService)
 	if err != nil {
 		return err
-	}
-	if stripeCustomerID == "" {
-		return ierr.NewError("customer not found in Stripe").
-			WithHint("Customer must have a Stripe account").
-			Mark(ierr.ErrNotFound)
 	}
 
 	s.logger.Info(ctx, "setting default payment method in Stripe",
@@ -1268,10 +1260,11 @@ func (s *PaymentService) SetupIntent(ctx context.Context, customerID string, req
 	}
 
 	// Ensure customer is synced to Stripe before creating setup intent
-	stripeCustomerID, err := s.customerSvc.EnsureStripeCustomerID(ctx, customerID, customerService)
+	customerResp, err := s.customerSvc.EnsureCustomerSyncedToStripe(ctx, customerID, customerService)
 	if err != nil {
 		return nil, err
 	}
+	stripeCustomerID := customerResp.Customer.Metadata[stripeCustomerIDMetadataKey]
 
 	// Set default values
 	usage := req.Usage
@@ -1431,10 +1424,11 @@ func (s *PaymentService) listStripeCustomerPaymentMethods(ctx context.Context, c
 	}
 
 	// Ensure customer is synced to Stripe
-	stripeCustomerID, err := s.customerSvc.EnsureStripeCustomerID(ctx, customerID, customerService)
+	customerResp, err := s.customerSvc.EnsureCustomerSyncedToStripe(ctx, customerID, customerService)
 	if err != nil {
 		return nil, err
 	}
+	stripeCustomerID := customerResp.Customer.Metadata[stripeCustomerIDMetadataKey]
 
 	// Get customer's default payment method ID
 	var defaultPaymentMethodID string

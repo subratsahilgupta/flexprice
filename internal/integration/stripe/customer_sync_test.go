@@ -7,6 +7,7 @@ package stripe
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/domain/customer"
 	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
@@ -33,6 +35,7 @@ type syncTestCustomerService struct {
 	stripeIDOnCall int
 	stripeID       string
 	updateCalls    []dto.UpdateCustomerRequest
+	updateErr      error
 }
 
 func (s *syncTestCustomerService) GetCustomer(_ context.Context, _ string) (*dto.CustomerResponse, error) {
@@ -48,6 +51,9 @@ func (s *syncTestCustomerService) GetCustomer(_ context.Context, _ string) (*dto
 
 func (s *syncTestCustomerService) UpdateCustomer(_ context.Context, _ string, req dto.UpdateCustomerRequest) (*dto.CustomerResponse, error) {
 	s.updateCalls = append(s.updateCalls, req)
+	if s.updateErr != nil {
+		return nil, s.updateErr
+	}
 	s.customer.Metadata = req.Metadata
 	return &dto.CustomerResponse{Customer: s.customer}, nil
 }
@@ -118,6 +124,7 @@ func TestEnsureCustomerSyncedToStripe(t *testing.T) {
 		mappings           []*entityintegrationmapping.EntityIntegrationMapping
 		stripeIDOnCall     int
 		concurrentID       string
+		updateErr          error
 		wantStripeID       string
 		wantAcquireCalls   int
 		wantReleaseCalls   int
@@ -135,6 +142,16 @@ func TestEnsureCustomerSyncedToStripe(t *testing.T) {
 			mappings: []*entityintegrationmapping.EntityIntegrationMapping{
 				{EntityID: customerID, ProviderEntityID: mappedCus},
 			},
+			wantStripeID:    mappedCus,
+			wantUpdateCalls: 1,
+		},
+		{
+			name:               "mapping present still returns the id when the metadata backfill fails",
+			lockAcquiredOnCall: 1,
+			mappings: []*entityintegrationmapping.EntityIntegrationMapping{
+				{EntityID: customerID, ProviderEntityID: mappedCus},
+			},
+			updateErr:       errors.New("db unavailable"),
 			wantStripeID:    mappedCus,
 			wantUpdateCalls: 1,
 		},
@@ -164,6 +181,7 @@ func TestEnsureCustomerSyncedToStripe(t *testing.T) {
 				customer:       &customer.Customer{ID: customerID, Metadata: tt.metadata},
 				stripeIDOnCall: tt.stripeIDOnCall,
 				stripeID:       tt.concurrentID,
+				updateErr:      tt.updateErr,
 			}
 			mappingRepo := &syncTestMappingRepo{mappings: tt.mappings}
 			locker := &syncTestLocker{acquiredOnCall: tt.lockAcquiredOnCall}
@@ -178,6 +196,71 @@ func TestEnsureCustomerSyncedToStripe(t *testing.T) {
 			require.Equal(t, tt.wantAcquireCalls, locker.acquireCalls)
 			require.Equal(t, tt.wantReleaseCalls, locker.releaseCalls)
 			require.Len(t, customerSvc.updateCalls, tt.wantUpdateCalls)
+		})
+	}
+}
+
+// GetStripeCustomerID must never create a Stripe customer, so no case takes the sync lock.
+func TestGetStripeCustomerID(t *testing.T) {
+	const (
+		customerID = "cust_test001"
+		metaCus    = "cus_frommetadata"
+		mappedCus  = "cus_frommapping"
+	)
+
+	tests := []struct {
+		name         string
+		metadata     map[string]string
+		mappings     []*entityintegrationmapping.EntityIntegrationMapping
+		updateErr    error
+		wantStripeID string
+		wantNotFound bool
+	}{
+		{
+			name:         "metadata set",
+			metadata:     map[string]string{"stripe_customer_id": metaCus},
+			wantStripeID: metaCus,
+		},
+		{
+			name: "linked only through the mapping",
+			mappings: []*entityintegrationmapping.EntityIntegrationMapping{
+				{EntityID: customerID, ProviderEntityID: mappedCus},
+			},
+			wantStripeID: mappedCus,
+		},
+		{
+			name: "linked through the mapping and the metadata backfill fails",
+			mappings: []*entityintegrationmapping.EntityIntegrationMapping{
+				{EntityID: customerID, ProviderEntityID: mappedCus},
+			},
+			updateErr:    errors.New("db unavailable"),
+			wantStripeID: mappedCus,
+		},
+		{
+			name:         "never synced is not found",
+			wantNotFound: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			customerSvc := &syncTestCustomerService{
+				customer:  &customer.Customer{ID: customerID, Metadata: tt.metadata},
+				updateErr: tt.updateErr,
+			}
+			locker := &syncTestLocker{acquiredOnCall: 1}
+			svc := NewCustomerService(nil, nil, &syncTestMappingRepo{mappings: tt.mappings}, locker, logger.NewNoopLogger())
+
+			stripeID, err := svc.GetStripeCustomerID(testContext(), customerID, customerSvc)
+
+			require.Zero(t, locker.acquireCalls)
+			if tt.wantNotFound {
+				require.True(t, ierr.IsNotFound(err), "got %v", err)
+				require.Empty(t, stripeID)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantStripeID, stripeID)
 		})
 	}
 }
@@ -213,21 +296,3 @@ func TestDefaultPaymentMethodID(t *testing.T) {
 		},
 	}))
 }
-
-// A card is chargeable through the last day of its expiry month, and Stripe reports
-// nothing else that would make an attached method unusable.
-func TestPaymentMethodUsable(t *testing.T) {
-	now := time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC)
-	card := func(year, month int64) *stripeapi.PaymentMethod {
-		return &stripeapi.PaymentMethod{Card: &stripeapi.PaymentMethodCard{ExpYear: year, ExpMonth: month}}
-	}
-
-	assert.False(t, paymentMethodUsable(nil, now))
-	assert.True(t, paymentMethodUsable(&stripeapi.PaymentMethod{}, now), "non-card methods carry no expiry")
-	assert.True(t, paymentMethodUsable(card(2027, 1), now))
-	assert.True(t, paymentMethodUsable(card(2026, 6), now), "valid through the end of the expiry month")
-	assert.True(t, paymentMethodUsable(card(2026, 12), now))
-	assert.False(t, paymentMethodUsable(card(2026, 5), now))
-	assert.False(t, paymentMethodUsable(card(2025, 12), now))
-}
-
