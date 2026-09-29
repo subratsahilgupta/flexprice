@@ -41,6 +41,7 @@ type PaymentService interface {
 	// session without triggering payment lifecycle processing.
 	// TODO: migrate to full payment lifecycle method when payment lifecycle service is released
 	CreatePaymentForCheckout(ctx context.Context, req *dto.CreateCheckoutPaymentRequest) (*dto.PaymentResponse, error)
+	ListPaymentMethods(ctx context.Context, customerID string, req *dto.ListSavedPaymentMethodsRequest) (*dto.SavedPaymentMethodsResponse, error)
 }
 
 // InvoiceService defines the interface for invoice operations

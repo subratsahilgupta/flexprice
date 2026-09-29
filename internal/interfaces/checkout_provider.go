@@ -130,13 +130,14 @@ type HasAutoChargeableMethodRequest struct {
 type ProviderPaymentMethod struct {
 	GatewayMethodID  string                  // opaque id at the gateway
 	Method           types.PaymentMethodType // e.g. PaymentMethodTypeUPI
-	MaxAmount        *decimal.Decimal
-	ExpiresAt        *time.Time
 	CreatedAt        time.Time
 	ProviderMetadata map[string]string
 
 	// Card is set only for card methods; nil for UPI, ACH and the rest.
-	Card *ProviderCardDetails
+	Card                *ProviderCardDetails
+	UPI                 *ProviderUPIDetails
+	Recurring           *ProviderRecurringPaymentDetails
+	InstantlyChargeable bool
 	// IsDefault is the gateway's own default/primary flag, which is what decides
 	// the card charged when no method is named. Scoped per provider.
 	IsDefault bool
@@ -158,4 +159,35 @@ type ProviderCardDetails struct {
 	Last4    string
 	ExpMonth int
 	ExpYear  int
+}
+
+type ProviderUPIDetails struct {
+	VPA string
+}
+
+type ProviderRecurringPaymentDetails struct {
+	Status             types.RecurringPaymentStatus
+	AutoChargeableTill *time.Time
+	MaxAmount          *decimal.Decimal
+}
+
+func (m *ProviderPaymentMethod) RecurringStatus() types.RecurringPaymentStatus {
+	if m == nil || m.Recurring == nil {
+		return ""
+	}
+	return m.Recurring.Status
+}
+
+func (m *ProviderPaymentMethod) RecurringAutoChargeableTill() *time.Time {
+	if m == nil || m.Recurring == nil {
+		return nil
+	}
+	return m.Recurring.AutoChargeableTill
+}
+
+func (m *ProviderPaymentMethod) RecurringMaxAmount() *decimal.Decimal {
+	if m == nil || m.Recurring == nil {
+		return nil
+	}
+	return m.Recurring.MaxAmount
 }

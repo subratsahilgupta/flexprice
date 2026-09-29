@@ -1575,8 +1575,7 @@ func (f *Factory) buildGCSStorage(ctx context.Context, conn *connection.Connecti
 
 // GetPaymentMethodProvider returns the PaymentMethodProvider adapter for the given
 // gateway. ErrNotImplemented means the provider cannot manage saved methods at all
-// — the permanent answer for Razorpay, whose tokens need a mandate — and callers
-// must treat it as a capability answer rather than a failure.
+// and callers must treat it as a capability answer rather than a failure.
 func (f *Factory) GetPaymentMethodProvider(ctx context.Context, gateway types.PaymentGatewayType, customerSvc interfaces.CustomerService) (interfaces.PaymentMethodProvider, error) {
 	if f.paymentMethodProvider != nil {
 		return f.paymentMethodProvider, nil
@@ -1603,6 +1602,12 @@ func (f *Factory) GetPaymentMethodProvider(ctx context.Context, gateway types.Pa
 			CustomerSvc:       customerSvc,
 			Logger:            f.logger,
 		}, nil
+	case types.PaymentGatewayTypeRazorpay:
+		i, err := f.GetRazorpayIntegration(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return &razorpay.PaymentMethodAdapter{CustomerSvc: i.CustomerSvc}, nil
 	default:
 		return nil, ierr.NewError("saved payment methods are not supported for this provider").
 			WithHintf("%s cannot manage saved payment methods", gateway).

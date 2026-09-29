@@ -63,7 +63,7 @@ func (s *customerPortalService) PayInvoice(ctx context.Context, invoiceID string
 		ProcessPayment:    true,
 	}
 
-	payResp, err := NewPaymentService(s.ServiceParams).CreatePayment(ctx, payReq)
+	payResp, err := s.paymentService.CreatePayment(ctx, payReq)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (s *customerPortalService) livePaymentLink(
 	filter.PaymentGateway = lo.ToPtr(string(gateway))
 	filter.Limit = lo.ToPtr(1)
 
-	payments, err := NewPaymentService(s.ServiceParams).ListPayments(ctx, filter)
+	payments, err := s.paymentService.ListPayments(ctx, filter)
 	if err != nil {
 		return nil, err
 	}

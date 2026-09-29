@@ -3308,6 +3308,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/customers/{id}/payment-methods": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when you need a customer's saved payment methods across every connected gateway, including whether each can be auto-charged. Only gateways that can list saved methods are included.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "List customer payment methods",
+                "operationId": "listCustomerPaymentMethods",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Limit to these payment gateways",
+                        "name": "providers",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/SavedPaymentMethodsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Customer not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
         "/customers/{id}/wallets": {
             "get": {
                 "security": [
@@ -21844,6 +21908,31 @@ const docTemplate = `{
                 }
             }
         },
+        "ProviderError": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "ProviderSavedPaymentMethods": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "$ref": "#/definitions/ProviderError"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SavedPaymentMethod"
+                    }
+                },
+                "provider": {
+                    "$ref": "#/definitions/types.PaymentGatewayType"
+                }
+            }
+        },
         "RefundResponse": {
             "type": "object",
             "properties": {
@@ -22197,6 +22286,93 @@ const docTemplate = `{
                 },
                 "usage_at_list_rate": {
                     "type": "number"
+                }
+            }
+        },
+        "SavedCardDetails": {
+            "type": "object",
+            "properties": {
+                "brand": {
+                    "type": "string"
+                },
+                "exp_month": {
+                    "type": "integer"
+                },
+                "exp_year": {
+                    "type": "integer"
+                },
+                "last4": {
+                    "type": "string"
+                }
+            }
+        },
+        "SavedPaymentMethod": {
+            "type": "object",
+            "properties": {
+                "can_auto_charge": {
+                    "description": "Capability, not permission: could this be charged with nobody present.\nTrue for any active Chargebee or Stripe card (both vault off-session by\nconstruction); false for a Razorpay token without a mandate.",
+                    "type": "boolean"
+                },
+                "card": {
+                    "$ref": "#/definitions/SavedCardDetails"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "instantly_chargeable": {
+                    "type": "boolean"
+                },
+                "is_default": {
+                    "description": "Which method to use when several are saved at this provider.\nScoped to the provider: two providers means two defaults.",
+                    "type": "boolean"
+                },
+                "provider": {
+                    "$ref": "#/definitions/types.PaymentGatewayType"
+                },
+                "recurring": {
+                    "$ref": "#/definitions/SavedRecurringPaymentDetails"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.PaymentMethodStatus"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.PaymentMethodType"
+                },
+                "upi": {
+                    "$ref": "#/definitions/SavedUPIDetails"
+                }
+            }
+        },
+        "SavedPaymentMethodsResponse": {
+            "type": "object",
+            "properties": {
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ProviderSavedPaymentMethods"
+                    }
+                }
+            }
+        },
+        "SavedRecurringPaymentDetails": {
+            "type": "object",
+            "properties": {
+                "auto_chargeable_till": {
+                    "type": "string"
+                },
+                "max_amount": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.RecurringPaymentStatus"
+                }
+            }
+        },
+        "SavedUPIDetails": {
+            "type": "object",
+            "properties": {
+                "vpa": {
+                    "type": "string"
                 }
             }
         },
@@ -29668,6 +29844,19 @@ const docTemplate = `{
                 "PaymentGatewayTypeChargebee"
             ]
         },
+        "types.PaymentMethodStatus": {
+            "type": "string",
+            "enum": [
+                "ACTIVE",
+                "INACTIVE",
+                "EXPIRED"
+            ],
+            "x-enum-varnames": [
+                "PaymentMethodStatusActive",
+                "PaymentMethodStatusInactive",
+                "PaymentMethodStatusExpired"
+            ]
+        },
         "types.PaymentMethodType": {
             "type": "string",
             "enum": [
@@ -30021,6 +30210,27 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.Status"
                 }
             }
+        },
+        "types.RecurringPaymentStatus": {
+            "type": "string",
+            "enum": [
+                "PENDING",
+                "ACTIVE",
+                "PAUSED",
+                "REJECTED",
+                "CANCELLED",
+                "EXPIRED",
+                "UNKNOWN"
+            ],
+            "x-enum-varnames": [
+                "RecurringPaymentStatusPending",
+                "RecurringPaymentStatusActive",
+                "RecurringPaymentStatusPaused",
+                "RecurringPaymentStatusRejected",
+                "RecurringPaymentStatusCancelled",
+                "RecurringPaymentStatusExpired",
+                "RecurringPaymentStatusUnknown"
+            ]
         },
         "types.RefundDestination": {
             "type": "string",

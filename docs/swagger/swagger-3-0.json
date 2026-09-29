@@ -4038,6 +4038,88 @@
         ]
       }
     },
+    "/customers/{id}/payment-methods": {
+      "get": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "List customer payment methods",
+        "description": "Use when you need a customer's saved payment methods across every connected gateway, including whether each can be auto-charged. Only gateways that can list saved methods are included.",
+        "operationId": "listCustomerPaymentMethods",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Customer ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "providers",
+            "in": "query",
+            "description": "Limit to these payment gateways",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedPaymentMethodsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Customer not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors.ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-scope": "read"
+      }
+    },
     "/customers/{id}/wallets": {
       "get": {
         "tags": [
@@ -23879,6 +23961,31 @@
           }
         }
       },
+      "ProviderError": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ProviderSavedPaymentMethods": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ProviderError"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedPaymentMethod"
+            }
+          },
+          "provider": {
+            "$ref": "#/components/schemas/types.PaymentGatewayType"
+          }
+        }
+      },
       "RefundResponse": {
         "type": "object",
         "properties": {
@@ -24193,6 +24300,93 @@
           },
           "usage_at_list_rate": {
             "type": "number"
+          }
+        }
+      },
+      "SavedCardDetails": {
+        "type": "object",
+        "properties": {
+          "brand": {
+            "type": "string"
+          },
+          "exp_month": {
+            "type": "integer"
+          },
+          "exp_year": {
+            "type": "integer"
+          },
+          "last4": {
+            "type": "string"
+          }
+        }
+      },
+      "SavedPaymentMethod": {
+        "type": "object",
+        "properties": {
+          "can_auto_charge": {
+            "type": "boolean",
+            "description": "Capability, not permission: could this be charged with nobody present.\nTrue for any active Chargebee or Stripe card (both vault off-session by\nconstruction); false for a Razorpay token without a mandate."
+          },
+          "card": {
+            "$ref": "#/components/schemas/SavedCardDetails"
+          },
+          "id": {
+            "type": "string"
+          },
+          "instantly_chargeable": {
+            "type": "boolean"
+          },
+          "is_default": {
+            "type": "boolean",
+            "description": "Which method to use when several are saved at this provider.\nScoped to the provider: two providers means two defaults."
+          },
+          "provider": {
+            "$ref": "#/components/schemas/types.PaymentGatewayType"
+          },
+          "recurring": {
+            "$ref": "#/components/schemas/SavedRecurringPaymentDetails"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.PaymentMethodStatus"
+          },
+          "type": {
+            "$ref": "#/components/schemas/types.PaymentMethodType"
+          },
+          "upi": {
+            "$ref": "#/components/schemas/SavedUPIDetails"
+          }
+        }
+      },
+      "SavedPaymentMethodsResponse": {
+        "type": "object",
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProviderSavedPaymentMethods"
+            }
+          }
+        }
+      },
+      "SavedRecurringPaymentDetails": {
+        "type": "object",
+        "properties": {
+          "auto_chargeable_till": {
+            "type": "string"
+          },
+          "max_amount": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/types.RecurringPaymentStatus"
+          }
+        }
+      },
+      "SavedUPIDetails": {
+        "type": "object",
+        "properties": {
+          "vpa": {
+            "type": "string"
           }
         }
       },
@@ -31471,6 +31665,20 @@
         ],
         "x-speakeasy-name-override": "PaymentGatewayType"
       },
+      "types.PaymentMethodStatus": {
+        "type": "string",
+        "enum": [
+          "ACTIVE",
+          "INACTIVE",
+          "EXPIRED"
+        ],
+        "x-enum-varnames": [
+          "PaymentMethodStatusActive",
+          "PaymentMethodStatusInactive",
+          "PaymentMethodStatusExpired"
+        ],
+        "x-speakeasy-name-override": "PaymentMethodStatus"
+      },
       "types.PaymentMethodType": {
         "type": "string",
         "enum": [
@@ -31841,6 +32049,28 @@
           }
         },
         "x-speakeasy-name-override": "QueryFilter"
+      },
+      "types.RecurringPaymentStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "ACTIVE",
+          "PAUSED",
+          "REJECTED",
+          "CANCELLED",
+          "EXPIRED",
+          "UNKNOWN"
+        ],
+        "x-enum-varnames": [
+          "RecurringPaymentStatusPending",
+          "RecurringPaymentStatusActive",
+          "RecurringPaymentStatusPaused",
+          "RecurringPaymentStatusRejected",
+          "RecurringPaymentStatusCancelled",
+          "RecurringPaymentStatusExpired",
+          "RecurringPaymentStatusUnknown"
+        ],
+        "x-speakeasy-name-override": "RecurringPaymentStatus"
       },
       "types.RefundDestination": {
         "type": "string",
