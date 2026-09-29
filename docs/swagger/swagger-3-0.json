@@ -4748,6 +4748,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "start_time",
+            "in": "query",
+            "description": "Start of the event timestamp window (RFC3339); defaults to 14 days before end_time",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_time",
+            "in": "query",
+            "description": "End of the event timestamp window (RFC3339); defaults to now",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -29726,11 +29742,13 @@
         "type": "string",
         "enum": [
           "razorpay",
-          "chargebee"
+          "chargebee",
+          "stripe"
         ],
         "x-enum-varnames": [
           "CheckoutPaymentProviderRazorpay",
-          "CheckoutPaymentProviderChargebee"
+          "CheckoutPaymentProviderChargebee",
+          "CheckoutPaymentProviderStripe"
         ],
         "x-speakeasy-name-override": "CheckoutPaymentProvider"
       },

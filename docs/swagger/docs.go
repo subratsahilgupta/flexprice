@@ -3927,6 +3927,18 @@ const docTemplate = `{
                         "name": "external_customer_id",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start of the event timestamp window (RFC3339); defaults to 14 days before end_time",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End of the event timestamp window (RFC3339); defaults to now",
+                        "name": "end_time",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -28001,11 +28013,13 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "razorpay",
-                "chargebee"
+                "chargebee",
+                "stripe"
             ],
             "x-enum-varnames": [
                 "CheckoutPaymentProviderRazorpay",
-                "CheckoutPaymentProviderChargebee"
+                "CheckoutPaymentProviderChargebee",
+                "CheckoutPaymentProviderStripe"
             ]
         },
         "types.CheckoutPaymentProviderConfig": {

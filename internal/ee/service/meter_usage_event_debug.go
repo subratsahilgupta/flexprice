@@ -16,8 +16,8 @@ const eventLookupMaxVersions = 50
 
 // DebugEvent powers GET /events/:id (event debugger UI).
 // Reads meter_usage instead of the removed feature_usage table.
-func (s *meterUsageService) DebugEvent(ctx context.Context, externalCustomerID, eventID string) (*dto.GetEventByIDResponse, error) {
-	rawEvents, err := s.EventRepo.ListEventsByID(ctx, externalCustomerID, eventID, eventLookupMaxVersions)
+func (s *meterUsageService) DebugEvent(ctx context.Context, externalCustomerID, eventID string, window events.TimeRange) (*dto.GetEventByIDResponse, error) {
+	rawEvents, err := s.EventRepo.ListEventsByID(ctx, externalCustomerID, eventID, window, eventLookupMaxVersions)
 	if err != nil {
 		return nil, ierr.WithError(err).
 			WithHint("Failed to get event from events table").
@@ -25,10 +25,12 @@ func (s *meterUsageService) DebugEvent(ctx context.Context, externalCustomerID, 
 	}
 	if len(rawEvents) == 0 {
 		return nil, ierr.NewError("event not found").
-			WithHint("Event not found in events table").
+			WithHint("Event not found in events table for this time range; pass start_time and end_time to search a different window").
 			WithReportableDetails(map[string]interface{}{
 				"event_id":             eventID,
 				"external_customer_id": externalCustomerID,
+				"start_time":           window.Start,
+				"end_time":             window.End,
 			}).
 			Mark(ierr.ErrNotFound)
 	}
