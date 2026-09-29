@@ -558,6 +558,12 @@ func (s *PaymentService) ChargeSavedPaymentMethod(ctx context.Context, req *Char
 		params.Metadata["stripe_invoice_id"] = stripeInvoiceID
 	}
 
+	// A failed charge leaves the payment FAILED, which is terminal, so a key per payment
+	// only ever dedupes a repeat of the same attempt, never a genuine retry.
+	if req.PaymentID != "" {
+		params.SetIdempotencyKey(chargeIdempotencyKey(ctx, req.PaymentID))
+	}
+
 	paymentIntent, err := stripeClient.V1PaymentIntents.Create(ctx, params)
 	if err != nil {
 		// Handle specific error cases
@@ -2162,6 +2168,14 @@ func (s *PaymentService) ensureRefunded(ctx context.Context, paymentIntentID str
 		return "", err
 	}
 	return refund.ID, nil
+}
+
+func chargeIdempotencyKey(ctx context.Context, paymentID string) string {
+	return idempotency.NewGenerator().GenerateKey(idempotency.ScopePayment, map[string]interface{}{
+		"payment_id":     paymentID,
+		"tenant_id":      types.GetTenantID(ctx),
+		"environment_id": types.GetEnvironmentID(ctx),
+	})
 }
 
 func refundIdempotencyKey(ctx context.Context, paymentID string) string {

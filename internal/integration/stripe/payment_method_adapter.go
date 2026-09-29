@@ -80,13 +80,14 @@ func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, flexCustome
 		}
 
 		out = append(out, interfaces.ProviderPaymentMethod{
-			GatewayMethodID:  pm.ID,
-			Method:           types.PaymentMethodTypeCard,
-			CreatedAt:        time.Unix(pm.Created, 0).UTC(),
-			IsDefault:        defaultPMID != "" && pm.ID == defaultPMID,
-			Active:           paymentMethodUsable(pm, now),
-			Card:             card,
-			GatewayAccountID: stripeCustomerID,
+			GatewayMethodID:     pm.ID,
+			Method:              types.PaymentMethodTypeCard,
+			CreatedAt:           time.Unix(pm.Created, 0).UTC(),
+			IsDefault:           defaultPMID != "" && pm.ID == defaultPMID,
+			Active:              paymentMethodUsable(pm, now),
+			InstantlyChargeable: true,
+			Card:                card,
+			GatewayAccountID:    stripeCustomerID,
 		})
 	}
 
