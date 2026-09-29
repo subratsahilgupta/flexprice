@@ -181,6 +181,13 @@ func (h *Handler) handlePaymentIntentSucceeded(ctx context.Context, event *strip
 			"payment_intent_id", paymentIntent.ID,
 			"flexprice_payment_id", flexpricePaymentID)
 
+		// Off-session charges never raise checkout.session.completed, so this is the only
+		// webhook that completes their session, or refunds them if it already ended.
+		handled, err := h.handleCheckoutSessionForPayment(ctx, flexpricePaymentID, paymentIntent.ID, services)
+		if err != nil || handled {
+			return err
+		}
+
 		payment, err := services.PaymentService.GetPayment(ctx, flexpricePaymentID)
 		if err != nil {
 			h.logger.Error(ctx, "failed to get FlexPrice payment, skipping event",
