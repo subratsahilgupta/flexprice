@@ -126,7 +126,7 @@ func (s *checkoutSessionService) Create(ctx context.Context, req dto.CreateCheck
 	if err := s.executeCheckoutAction(ctx, session); err != nil {
 		// Best-effort cleanup: archive entities + mark session failed.
 		// Log cleanup errors but return the original fulfillment error.
-		if cleanupErr := s.cleanupCheckoutSession(ctx, session, err); cleanupErr != nil {
+		if _, cleanupErr := s.terminateCheckoutSession(ctx, session, err); cleanupErr != nil {
 			s.Logger.Error(ctx, "checkout cleanup failed after fulfillment error",
 				"session_id", session.ID,
 				"error", cleanupErr,
@@ -162,6 +162,24 @@ func (s *checkoutSessionService) Get(ctx context.Context, id string) (*dto.Check
 // Separate from Get because reconciliation contacts the gateway and can complete a
 // session: only a caller acting for the customer should trigger it. Internal readers
 // — the outbound webhook payload builder, for one — must use Get.
+func (s *checkoutSessionService) GetByPaymentID(ctx context.Context, paymentID string) (*dto.CheckoutSessionResponse, error) {
+	// An empty id is "not a checkout payment", not a bad request: webhook handlers
+	// pass whatever the gateway sent back and expect nil for anything unrelated.
+	if paymentID == "" {
+		return nil, nil
+	}
+
+	session, err := s.CheckoutSessionRepo.GetSessionByPaymentID(ctx, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	if session == nil {
+		return nil, nil
+	}
+
+	return dto.ToCheckoutSessionResponse(session), nil
+}
+
 func (s *checkoutSessionService) GetAndReconcile(ctx context.Context, id string) (*dto.CheckoutSessionResponse, error) {
 	if id == "" {
 		return nil, ierr.NewError("id is required").
@@ -358,9 +376,27 @@ func (s *checkoutSessionService) voidCheckoutInvoiceIfPartiallyPaid(ctx context.
 	return err
 }
 
+// cleanupCheckoutSession terminates the session and publishes checkout.session.failed
+// (reason set) or checkout.session.expired (no reason).
 func (s *checkoutSessionService) cleanupCheckoutSession(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) error {
+	terminated, err := s.terminateCheckoutSession(ctx, session, reason)
+	if err != nil || !terminated {
+		return err
+	}
+
+	resp := dto.ToCheckoutSessionResponse(session)
+	if reason != nil {
+		s.publishCheckoutEvent(ctx, resp, types.WebhookEventCheckoutSessionFailed)
+	} else {
+		s.publishCheckoutEvent(ctx, resp, types.WebhookEventCheckoutSessionExpired)
+	}
+	return nil
+}
+
+// terminate cleans up a checkout session without webhook publishing.
+func (s *checkoutSessionService) terminateCheckoutSession(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) (bool, error) {
 	if session.CheckoutStatus.IsTerminal() {
-		return nil
+		return false, nil
 	}
 
 	status := types.CheckoutStatusExpired
@@ -389,20 +425,14 @@ func (s *checkoutSessionService) cleanupCheckoutSession(ctx context.Context, ses
 	})
 	if err != nil {
 		if ierr.IsAlreadyExists(err) {
-			return nil
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 
 	session.CheckoutStatus = status
 	session.FailureReason = failureReason
-	resp := dto.ToCheckoutSessionResponse(session)
-	if reason != nil {
-		s.publishCheckoutEvent(ctx, resp, types.WebhookEventCheckoutSessionFailed)
-	} else {
-		s.publishCheckoutEvent(ctx, resp, types.WebhookEventCheckoutSessionExpired)
-	}
-	return nil
+	return true, nil
 }
 
 func (s *checkoutSessionService) cleanupCheckoutResources(ctx context.Context, session *domainCheckout.CheckoutSession, reason error) error {
@@ -758,7 +788,7 @@ func (s *checkoutSessionService) StartPayFirstCheckoutSession(
 	}
 
 	if err := s.fulfillCheckoutSession(ctx, session, req.DraftInvoice); err != nil {
-		if cleanupErr := s.cleanupCheckoutSession(ctx, session, err); cleanupErr != nil {
+		if _, cleanupErr := s.terminateCheckoutSession(ctx, session, err); cleanupErr != nil {
 			s.Logger.Error(ctx, "checkout cleanup failed after pay-first fulfillment error",
 				"session_id", session.ID,
 				"error", cleanupErr,

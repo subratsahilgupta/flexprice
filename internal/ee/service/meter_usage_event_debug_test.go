@@ -55,7 +55,7 @@ func (s *MeterUsageServiceSuite) TestDebugEvent_ListsAllRawEventsNewestFirst() {
 		},
 	}))
 
-	resp, err := s.svc.DebugEvent(ctx, s.customer.ExternalID, eventID)
+	resp, err := s.svc.DebugEvent(ctx, s.customer.ExternalID, eventID, windowAround(ts))
 	s.Require().NoError(err)
 	s.Require().NotNil(resp)
 	s.Require().NotNil(resp.Event)
@@ -73,6 +73,7 @@ func (s *MeterUsageServiceSuite) TestDebugEvent_ListsAllRawEventsNewestFirst() {
 func (s *MeterUsageServiceSuite) TestDebugEvent_OtherCustomerIsNotFound() {
 	ctx := s.GetContext()
 	eventID := "evt_scoped_to_customer"
+	ts := time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC)
 
 	s.NoError(s.GetStores().EventRepo.InsertEvent(ctx, &events.Event{
 		ID:                 eventID,
@@ -80,13 +81,43 @@ func (s *MeterUsageServiceSuite) TestDebugEvent_OtherCustomerIsNotFound() {
 		EnvironmentID:      types.GetEnvironmentID(ctx),
 		ExternalCustomerID: s.customer.ExternalID,
 		EventName:          "pageviews",
-		Timestamp:          time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC),
-		IngestedAt:         time.Date(2026, 8, 31, 1, 0, 0, 0, time.UTC),
+		Timestamp:          ts,
+		IngestedAt:         ts.Add(time.Hour),
 		Properties:         map[string]interface{}{"value": float64(1)},
 		Source:             "public-api",
 	}))
 
-	_, err := s.svc.DebugEvent(ctx, "some-other-customer", eventID)
+	_, err := s.svc.DebugEvent(ctx, "some-other-customer", eventID, windowAround(ts))
 	s.Require().Error(err)
 	s.True(ierr.IsNotFound(err))
+}
+
+func (s *MeterUsageServiceSuite) TestDebugEvent_OutsideWindowIsNotFound() {
+	ctx := s.GetContext()
+	eventID := "evt_outside_window"
+	ts := time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC)
+
+	s.NoError(s.GetStores().EventRepo.InsertEvent(ctx, &events.Event{
+		ID:                 eventID,
+		TenantID:           types.GetTenantID(ctx),
+		EnvironmentID:      types.GetEnvironmentID(ctx),
+		ExternalCustomerID: s.customer.ExternalID,
+		EventName:          "pageviews",
+		Timestamp:          ts,
+		IngestedAt:         ts.Add(time.Hour),
+		Properties:         map[string]interface{}{"value": float64(1)},
+		Source:             "public-api",
+	}))
+
+	_, err := s.svc.DebugEvent(ctx, s.customer.ExternalID, eventID, windowAround(ts.AddDate(0, 0, 30)))
+	s.Require().Error(err)
+	s.True(ierr.IsNotFound(err))
+
+	resp, err := s.svc.DebugEvent(ctx, s.customer.ExternalID, eventID, windowAround(ts))
+	s.Require().NoError(err)
+	s.Equal(eventID, resp.Event.ID)
+}
+
+func windowAround(ts time.Time) events.TimeRange {
+	return events.TimeRange{Start: ts.Add(-time.Hour), End: ts.Add(time.Hour)}
 }

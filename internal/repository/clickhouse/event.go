@@ -1146,10 +1146,12 @@ func (r *EventRepository) GetEventByID(ctx context.Context, eventID string) (*ev
 	return &event, nil
 }
 
-func (r *EventRepository) ListEventsByID(ctx context.Context, externalCustomerID, eventID string, limit int) ([]*events.Event, error) {
+func (r *EventRepository) ListEventsByID(ctx context.Context, externalCustomerID, eventID string, window events.TimeRange, limit int) ([]*events.Event, error) {
 	span := StartRepositorySpan(ctx, "event", "list_events_by_id", map[string]interface{}{
 		"external_customer_id": externalCustomerID,
 		"event_id":             eventID,
+		"start_time":           window.Start,
+		"end_time":             window.End,
 		"limit":                limit,
 	})
 	defer FinishSpan(span)
@@ -1174,6 +1176,8 @@ func (r *EventRepository) ListEventsByID(ctx context.Context, externalCustomerID
 		WHERE tenant_id = ?
 		AND environment_id = ?
 		AND external_customer_id = ?
+		AND timestamp >= ?
+		AND timestamp < ?
 		AND id = ?
 		ORDER BY ingested_at DESC
 		LIMIT ?
@@ -1183,6 +1187,8 @@ func (r *EventRepository) ListEventsByID(ctx context.Context, externalCustomerID
 		types.GetTenantID(ctx),
 		types.GetEnvironmentID(ctx),
 		externalCustomerID,
+		window.Start,
+		window.End,
 		eventID,
 		limit,
 	}

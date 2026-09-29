@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/payment"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/interfaces"
 	"github.com/flexprice/flexprice/internal/logger"
 	"github.com/flexprice/flexprice/internal/types"
@@ -20,6 +22,8 @@ import (
 	"github.com/stripe/stripe-go/v82/webhook"
 )
 
+const refundLockTTL = 15 * time.Minute
+
 // PaymentService handles Stripe payment operations
 type PaymentService struct {
 	client         *Client
@@ -28,6 +32,7 @@ type PaymentService struct {
 	priceSyncSvc   *stripePriceSyncService
 	invoiceRepo    invoice.Repository
 	paymentRepo    payment.Repository
+	locker         cache.Locker
 	logger         *logger.Logger
 }
 
@@ -128,6 +133,7 @@ func NewPaymentService(
 	priceSyncSvc *stripePriceSyncService,
 	invoiceRepo invoice.Repository,
 	paymentRepo payment.Repository,
+	locker cache.Locker,
 	logger *logger.Logger,
 ) *PaymentService {
 	return &PaymentService{
@@ -137,6 +143,7 @@ func NewPaymentService(
 		priceSyncSvc:   priceSyncSvc,
 		invoiceRepo:    invoiceRepo,
 		paymentRepo:    paymentRepo,
+		locker:         locker,
 		logger:         logger,
 	}
 }
@@ -185,7 +192,7 @@ func mergeCallerMetadata(trusted map[string]string, caller types.Metadata) map[s
 }
 
 // CreatePaymentLink creates a Stripe checkout session for payment
-func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateStripePaymentLinkRequest, customerService interfaces.CustomerService, invoiceService interfaces.InvoiceService) (*dto.StripePaymentLinkResponse, error) {
+func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *CreateStripePaymentLinkRequest, customerService interfaces.CustomerService, invoiceService interfaces.InvoiceService) (*StripePaymentLinkResponse, error) {
 	s.logger.Info(ctx, "creating stripe payment link",
 		"invoice_id", req.InvoiceID,
 		"customer_id", req.CustomerID,
@@ -263,24 +270,9 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 	// Ensure customer is synced to Stripe before creating payment link
 	customerResp, err := s.customerSvc.EnsureCustomerSyncedToStripe(ctx, req.CustomerID, customerService)
 	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to sync customer to Stripe").
-			WithReportableDetails(map[string]interface{}{
-				"customer_id": req.CustomerID,
-			}).
-			Mark(ierr.ErrValidation)
+		return nil, err
 	}
-
-	// Get Stripe customer ID (should exist after sync)
-	stripeCustomerID, exists := customerResp.Customer.Metadata["stripe_customer_id"]
-	if !exists || stripeCustomerID == "" {
-		return nil, ierr.NewError("customer does not have Stripe customer ID after sync").
-			WithHint("Failed to sync customer to Stripe").
-			WithReportableDetails(map[string]interface{}{
-				"customer_id": req.CustomerID,
-			}).
-			Mark(ierr.ErrValidation)
-	}
+	stripeCustomerID := customerResp.Customer.Metadata[stripeCustomerIDMetadataKey]
 
 	// Not always cents — e.g. JPY has no decimal places.
 	amountSmallestUnit := types.ToSmallestUnit(req.Amount, req.Currency)
@@ -442,6 +434,10 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 		}
 	}
 
+	if req.ExpiresAt != nil {
+		params.ExpiresAt = stripe.Int64(req.ExpiresAt.Unix())
+	}
+
 	// Create the checkout session
 	session, err := stripeClient.V1CheckoutSessions.Create(ctx, params)
 	if err != nil {
@@ -457,7 +453,7 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 			Mark(ierr.ErrSystem)
 	}
 
-	response := &dto.StripePaymentLinkResponse{
+	response := &StripePaymentLinkResponse{
 		ID:         session.ID,
 		PaymentURL: session.URL,
 		PaymentIntentID: func() string {
@@ -471,6 +467,9 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 		Status:    string(session.Status),
 		CreatedAt: session.Created,
 		PaymentID: "", // Payment ID will be set by the calling code
+	}
+	if session.ExpiresAt > 0 {
+		response.ExpiresAt = lo.ToPtr(time.Unix(session.ExpiresAt, 0).UTC())
 	}
 
 	s.logger.Info(ctx, "successfully created stripe payment link",
@@ -486,7 +485,7 @@ func (s *PaymentService) CreatePaymentLink(ctx context.Context, req *dto.CreateS
 }
 
 // ChargeSavedPaymentMethod charges a customer using their saved payment method
-func (s *PaymentService) ChargeSavedPaymentMethod(ctx context.Context, req *dto.ChargeSavedPaymentMethodRequest, customerService interfaces.CustomerService, invoiceService interfaces.InvoiceService) (*dto.PaymentIntentResponse, error) {
+func (s *PaymentService) ChargeSavedPaymentMethod(ctx context.Context, req *ChargeSavedPaymentMethodRequest, customerService interfaces.CustomerService, invoiceService interfaces.InvoiceService) (*PaymentIntentResponse, error) {
 	// Get Stripe client
 	stripeClient, _, err := s.client.GetStripeClient(ctx)
 	if err != nil {
@@ -494,26 +493,11 @@ func (s *PaymentService) ChargeSavedPaymentMethod(ctx context.Context, req *dto.
 	}
 
 	// Ensure customer is synced to Stripe before charging saved payment method
-	ourCustomerResp, err := s.customerSvc.EnsureCustomerSyncedToStripe(ctx, req.CustomerID, customerService)
+	customerResp, err := s.customerSvc.EnsureCustomerSyncedToStripe(ctx, req.CustomerID, customerService)
 	if err != nil {
-		return nil, ierr.WithError(err).
-			WithHint("Failed to sync customer to Stripe").
-			WithReportableDetails(map[string]interface{}{
-				"customer_id": req.CustomerID,
-			}).
-			Mark(ierr.ErrValidation)
+		return nil, err
 	}
-	ourCustomer := ourCustomerResp.Customer
-
-	stripeCustomerID, exists := ourCustomer.Metadata["stripe_customer_id"]
-	if !exists || stripeCustomerID == "" {
-		return nil, ierr.NewError("customer not found in Stripe after sync").
-			WithHint("Failed to sync customer to Stripe").
-			WithReportableDetails(map[string]interface{}{
-				"customer_id": req.CustomerID,
-			}).
-			Mark(ierr.ErrValidation)
-	}
+	stripeCustomerID := customerResp.Customer.Metadata[stripeCustomerIDMetadataKey]
 
 	// Get invoice to validate payment amount
 	invoiceResp, err := invoiceService.GetInvoice(ctx, req.InvoiceID)
@@ -631,7 +615,7 @@ func (s *PaymentService) ChargeSavedPaymentMethod(ctx context.Context, req *dto.
 		}
 	}
 
-	response := &dto.PaymentIntentResponse{
+	response := &PaymentIntentResponse{
 		ID:            paymentIntent.ID,
 		Status:        string(paymentIntent.Status),
 		Amount:        req.Amount,
@@ -943,20 +927,16 @@ func (s *PaymentService) GetCustomerPaymentMethods(ctx context.Context, req *dto
 	}
 
 	// Get our customer to find Stripe customer ID
-	ourCustomerResp, err := customerService.GetCustomer(ctx, req.CustomerID)
+	stripeCustomerID, err := s.customerSvc.GetStripeCustomerID(ctx, req.CustomerID, customerService)
 	if err != nil {
+		if ierr.IsNotFound(err) {
+			// No Stripe customer means no saved payment methods
+			s.logger.Info(ctx, "customer not synced to Stripe, no saved payment methods",
+				"customer_id", req.CustomerID,
+			)
+			return []*dto.PaymentMethodResponse{}, nil
+		}
 		return nil, err
-	}
-	ourCustomer := ourCustomerResp.Customer
-
-	stripeCustomerID, exists := ourCustomer.Metadata["stripe_customer_id"]
-	if !exists || stripeCustomerID == "" {
-		// No Stripe customer ID means no saved payment methods
-		s.logger.Info(ctx, "customer has no stripe_customer_id in metadata",
-			"customer_id", req.CustomerID,
-			"customer_metadata", ourCustomer.Metadata,
-		)
-		return []*dto.PaymentMethodResponse{}, nil
 	}
 
 	s.logger.Info(ctx, "retrieving payment methods for stripe customer",
@@ -1033,17 +1013,9 @@ func (s *PaymentService) SetDefaultPaymentMethod(ctx context.Context, customerID
 	}
 
 	// Get our customer to find Stripe customer ID
-	ourCustomerResp, err := customerService.GetCustomer(ctx, customerID)
+	stripeCustomerID, err := s.customerSvc.GetStripeCustomerID(ctx, customerID, customerService)
 	if err != nil {
 		return err
-	}
-	ourCustomer := ourCustomerResp.Customer
-
-	stripeCustomerID, exists := ourCustomer.Metadata["stripe_customer_id"]
-	if !exists || stripeCustomerID == "" {
-		return ierr.NewError("customer not found in Stripe").
-			WithHint("Customer must have a Stripe account").
-			Mark(ierr.ErrNotFound)
 	}
 
 	s.logger.Info(ctx, "setting default payment method in Stripe",
@@ -1290,27 +1262,9 @@ func (s *PaymentService) SetupIntent(ctx context.Context, customerID string, req
 	// Ensure customer is synced to Stripe before creating setup intent
 	customerResp, err := s.customerSvc.EnsureCustomerSyncedToStripe(ctx, customerID, customerService)
 	if err != nil {
-		s.logger.Error(ctx, "failed to sync customer to Stripe",
-			"error", err,
-			"customer_id", customerID)
-		return nil, ierr.WithError(err).
-			WithHint("Failed to sync customer to Stripe").
-			WithReportableDetails(map[string]interface{}{
-				"customer_id": customerID,
-			}).
-			Mark(ierr.ErrValidation)
+		return nil, err
 	}
-
-	// Get Stripe customer ID (should exist after sync)
-	stripeCustomerID, exists := customerResp.Customer.Metadata["stripe_customer_id"]
-	if !exists || stripeCustomerID == "" {
-		return nil, ierr.NewError("customer does not have Stripe customer ID after sync").
-			WithHint("Failed to sync customer to Stripe").
-			WithReportableDetails(map[string]interface{}{
-				"customer_id": customerID,
-			}).
-			Mark(ierr.ErrValidation)
-	}
+	stripeCustomerID := customerResp.Customer.Metadata[stripeCustomerIDMetadataKey]
 
 	// Set default values
 	usage := req.Usage
@@ -1472,28 +1426,9 @@ func (s *PaymentService) listStripeCustomerPaymentMethods(ctx context.Context, c
 	// Ensure customer is synced to Stripe
 	customerResp, err := s.customerSvc.EnsureCustomerSyncedToStripe(ctx, customerID, customerService)
 	if err != nil {
-		s.logger.Error(ctx, "failed to sync customer to Stripe",
-			"error", err,
-			"customer_id", customerID,
-		)
-		return nil, ierr.WithError(err).
-			WithHint("Failed to sync customer to Stripe").
-			WithReportableDetails(map[string]interface{}{
-				"customer_id": customerID,
-			}).
-			Mark(ierr.ErrValidation)
+		return nil, err
 	}
-
-	// Get Stripe customer ID
-	stripeCustomerID, exists := customerResp.Customer.Metadata["stripe_customer_id"]
-	if !exists || stripeCustomerID == "" {
-		return nil, ierr.NewError("customer does not have Stripe customer ID after sync").
-			WithHint("Failed to sync customer to Stripe").
-			WithReportableDetails(map[string]interface{}{
-				"customer_id": customerID,
-			}).
-			Mark(ierr.ErrValidation)
-	}
+	stripeCustomerID := customerResp.Customer.Metadata[stripeCustomerIDMetadataKey]
 
 	// Get customer's default payment method ID
 	var defaultPaymentMethodID string
@@ -2079,4 +2014,160 @@ func (s *PaymentService) AttachPaymentToStripeInvoiceAndReconcile(
 			"payment_intent_id", paymentIntent.ID,
 			"stripe_invoice_id", stripeInvoiceID)
 	}
+}
+
+// RefundLateCapturedPayment refunds a payment that settled after its checkout session
+// expired — Stripe's 30-minute minimum session expiry outlives FlexPrice's own TTL, so
+// the invoice/payment are already archived and there's nothing to deliver the money to.
+func (s *PaymentService) RefundLateCapturedPayment(
+	ctx context.Context,
+	flexpricePaymentID string,
+	stripePaymentIntentID string,
+	paymentService interfaces.PaymentService,
+) error {
+	lockKey := cache.GenerateKey(ctx, cache.PrefixStripeWebhookRefundLock, flexpricePaymentID)
+	lock, err := s.locker.AcquireLock(ctx, lockKey, refundLockTTL)
+	if err != nil {
+		return ierr.WithError(err).
+			WithMessage("failed to acquire refund lock").
+			WithReportableDetails(map[string]interface{}{"payment_id": flexpricePaymentID}).
+			Mark(ierr.ErrInternal)
+	}
+	if !lock.AcquiredSuccessfully() {
+		s.logger.Info(ctx, "refund already in progress for this payment, skipping", "payment_id", flexpricePaymentID)
+		return nil
+	}
+	defer func() {
+		if releaseErr := lock.Release(ctx); releaseErr != nil {
+			s.logger.Error(ctx, "failed to release refund lock", "error", releaseErr, "payment_id", flexpricePaymentID)
+		}
+	}()
+
+	existingPayment, err := paymentService.GetPayment(ctx, flexpricePaymentID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithMessage("failed to get payment record for refund").
+			WithReportableDetails(map[string]interface{}{"payment_id": flexpricePaymentID}).
+			Mark(ierr.ErrInternal)
+	}
+	if existingPayment.PaymentStatus == types.PaymentStatusRefunded ||
+		existingPayment.PaymentStatus == types.PaymentStatusPartiallyRefunded {
+		s.logger.Info(ctx, "payment already refunded, skipping",
+			"payment_id", flexpricePaymentID, "status", existingPayment.PaymentStatus)
+		return nil
+	}
+
+	refundID, err := s.ensureRefunded(ctx, stripePaymentIntentID, flexpricePaymentID)
+	if err != nil {
+		return ierr.WithError(err).
+			WithMessage("failed to refund late-captured payment at Stripe").
+			WithReportableDetails(map[string]interface{}{
+				"payment_id":               flexpricePaymentID,
+				"stripe_payment_intent_id": stripePaymentIntentID,
+			}).
+			Mark(ierr.ErrInternal)
+	}
+
+	if err := s.recordLateCaptureRefund(ctx, existingPayment, stripePaymentIntentID, refundID, paymentService); err != nil {
+		return ierr.WithError(err).
+			WithMessage("refund confirmed at Stripe but failed to update FlexPrice payment status").
+			WithReportableDetails(map[string]interface{}{
+				"payment_id":       flexpricePaymentID,
+				"stripe_refund_id": refundID,
+			}).
+			Mark(ierr.ErrInternal)
+	}
+
+	s.logger.Info(ctx, "refunded late-captured stripe payment",
+		"payment_id", flexpricePaymentID,
+		"stripe_payment_intent_id", stripePaymentIntentID,
+		"stripe_refund_id", refundID)
+	return nil
+}
+
+// recordLateCaptureRefund marks the payment REFUNDED, settling it first when still unsettled
+// (the lifecycle only refunds from a settled status). FAILED/VOIDED only get the refund reference.
+func (s *PaymentService) recordLateCaptureRefund(
+	ctx context.Context,
+	existingPayment *dto.PaymentResponse,
+	stripePaymentIntentID string,
+	refundID string,
+	paymentService interfaces.PaymentService,
+) error {
+	now := time.Now().UTC()
+	metadata := existingPayment.Metadata
+	if refundID != "" {
+		metadata = lo.Assign(existingPayment.Metadata, types.Metadata{"stripe_refund_id": refundID})
+	}
+
+	switch existingPayment.PaymentStatus {
+	case types.PaymentStatusInitiated, types.PaymentStatusPending, types.PaymentStatusProcessing:
+		if _, err := paymentService.UpdatePayment(ctx, existingPayment.ID, dto.UpdatePaymentRequest{
+			PaymentStatus:    lo.ToPtr(string(types.PaymentStatusSucceeded)),
+			SucceededAt:      lo.ToPtr(now),
+			GatewayPaymentID: lo.ToPtr(stripePaymentIntentID),
+		}); err != nil {
+			return err
+		}
+	case types.PaymentStatusFailed, types.PaymentStatusVoided:
+		s.logger.Info(ctx, "late-captured payment is in a final status, recording refund reference only",
+			"payment_id", existingPayment.ID, "status", existingPayment.PaymentStatus)
+		_, err := paymentService.UpdatePayment(ctx, existingPayment.ID, dto.UpdatePaymentRequest{
+			GatewayPaymentID: lo.ToPtr(stripePaymentIntentID),
+			Metadata:         &metadata,
+		})
+		return err
+	}
+
+	_, err := paymentService.UpdatePayment(ctx, existingPayment.ID, dto.UpdatePaymentRequest{
+		PaymentStatus:    lo.ToPtr(string(types.PaymentStatusRefunded)),
+		RefundedAt:       lo.ToPtr(now),
+		GatewayPaymentID: lo.ToPtr(stripePaymentIntentID),
+		Metadata:         &metadata,
+	})
+	return err
+}
+
+// ensureRefunded submits a full refund to Stripe unless the PaymentIntent is already
+// fully refunded. Returns the Stripe refund ID, empty when already refunded.
+func (s *PaymentService) ensureRefunded(ctx context.Context, paymentIntentID string, flexpricePaymentID string) (string, error) {
+	stripeClient, _, err := s.client.GetStripeClient(ctx)
+	if err != nil {
+		return "", ierr.WithError(err).
+			WithMessage("failed to get Stripe client for refund").
+			Mark(ierr.ErrInternal)
+	}
+
+	// The idempotency key only lasts 24h, so this check covers later redeliveries.
+	// latest_charge must be expanded — unexpanded it carries only the ID.
+	params := &stripe.PaymentIntentRetrieveParams{
+		Expand: []*string{stripe.String("latest_charge")},
+	}
+	if pi, err := stripeClient.V1PaymentIntents.Retrieve(ctx, paymentIntentID, params); err != nil {
+		s.logger.Info(ctx, "failed to read stripe payment intent before refunding, proceeding anyway",
+			"stripe_payment_intent_id", paymentIntentID, "error", err)
+	} else if pi.LatestCharge != nil && pi.LatestCharge.Refunded {
+		s.logger.Info(ctx, "stripe payment intent is already fully refunded, skipping duplicate submission",
+			"stripe_payment_intent_id", paymentIntentID)
+		return "", nil
+	}
+
+	refundParams := &stripe.RefundCreateParams{
+		PaymentIntent: stripe.String(paymentIntentID),
+	}
+	refundParams.SetIdempotencyKey(refundIdempotencyKey(ctx, flexpricePaymentID))
+
+	refund, err := stripeClient.V1Refunds.Create(ctx, refundParams)
+	if err != nil {
+		return "", err
+	}
+	return refund.ID, nil
+}
+
+func refundIdempotencyKey(ctx context.Context, paymentID string) string {
+	return idempotency.NewGenerator().GenerateKey(idempotency.ScopeRefund, map[string]interface{}{
+		"payment_id":     paymentID,
+		"tenant_id":      types.GetTenantID(ctx),
+		"environment_id": types.GetEnvironmentID(ctx),
+	})
 }
