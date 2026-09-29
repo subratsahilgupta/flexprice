@@ -2,7 +2,7 @@ package razorpay
 
 import (
 	"context"
-	"strconv"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -24,59 +24,66 @@ func fromPaise(paise float64) decimal.Decimal {
 }
 
 func NormalizeRazorpayToken(raw map[string]interface{}) (*interfaces.ProviderPaymentMethod, error) {
-	pm := &interfaces.ProviderPaymentMethod{
-		GatewayMethodID:  lo.ValueOr(raw, "id", "").(string),
-		ProviderMetadata: map[string]string{},
-		Active:           true,
+	body, err := json.Marshal(raw)
+	if err != nil {
+		return nil, ierr.WithError(err).WithHint("Failed to read Razorpay token").Mark(ierr.ErrInternal)
 	}
 
-	method, _ := raw["method"].(string)
-	switch method {
+	var token Token
+	if err := json.Unmarshal(body, &token); err != nil {
+		return nil, ierr.WithError(err).WithHint("Failed to parse Razorpay token").Mark(ierr.ErrInternal)
+	}
+
+	pm := &interfaces.ProviderPaymentMethod{
+		GatewayMethodID:  token.ID,
+		ProviderMetadata: map[string]string{},
+		Active:           token.Status == "" || token.Status == "active",
+	}
+
+	switch token.Method {
 	case "upi":
 		pm.Method = types.PaymentMethodTypeUPI
-		pm.UPI = razorpayUPIDetails(raw)
+		pm.UPI = token.upiDetails()
 	case "card":
 		pm.Method = types.PaymentMethodTypeCard
-		pm.Card = razorpayCardDetails(raw)
+		pm.Card = token.cardDetails()
 	default:
 		return nil, nil
 	}
 
-	if status, ok := raw["status"].(string); ok && status != "" {
-		pm.Active = status == "active"
+	if token.CreatedAt > 0 {
+		pm.CreatedAt = time.Unix(token.CreatedAt, 0).UTC()
 	}
-	if createdAtUnix, ok := raw["created_at"].(float64); ok {
-		pm.CreatedAt = time.Unix(int64(createdAtUnix), 0).UTC()
-	}
-
-	if recurring, _ := raw["recurring"].(bool); recurring {
-		pm.Recurring = razorpayRecurringDetails(raw)
+	if token.Recurring {
+		pm.Recurring = token.recurringDetails()
 	}
 
 	return pm, nil
 }
 
-func razorpayRecurringDetails(raw map[string]interface{}) *interfaces.ProviderRecurringPaymentDetails {
-	details, _ := raw["recurring_details"].(map[string]interface{})
-	status, _ := details["status"].(string)
+func (t Token) recurringDetails() *interfaces.ProviderRecurringPaymentDetails {
+	status := ""
+	if t.RecurringDetails != nil {
+		status = t.RecurringDetails.Status
+	}
 	out := &interfaces.ProviderRecurringPaymentDetails{Status: toRecurringPaymentStatus(status)}
 
 	// Razorpay declines charges on a card whose issuer no longer supports recurring,
 	// even while the mandate still reads confirmed.
-	if cardRecurringUnsupported(raw) && out.Status == types.RecurringPaymentStatusActive {
+	if t.cardRecurringUnsupported() && out.Status == types.RecurringPaymentStatusActive {
 		out.Status = types.RecurringPaymentStatusRejected
 	}
 
-	if paise, ok := raw["max_amount"].(float64); ok && paise > 0 {
-		major := fromPaise(paise)
+	if t.MaxAmount > 0 {
+		major := fromPaise(t.MaxAmount)
 		out.MaxAmount = &major
 	}
 
-	if expiredAtUnix, ok := raw["expired_at"].(float64); ok && expiredAtUnix > 0 {
-		t := time.Unix(int64(expiredAtUnix), 0).UTC()
-		out.AutoChargeableTill = &t
+	if t.ExpiredAt > 0 {
+		expiresAt := time.Unix(t.ExpiredAt, 0).UTC()
+		out.AutoChargeableTill = &expiresAt
 
-		if time.Now().UTC().After(t) && !lo.Contains([]types.RecurringPaymentStatus{
+		if time.Now().UTC().After(expiresAt) && !lo.Contains([]types.RecurringPaymentStatus{
 			types.RecurringPaymentStatusRejected, types.RecurringPaymentStatusCancelled,
 		}, out.Status) {
 			out.Status = types.RecurringPaymentStatusExpired
@@ -86,53 +93,28 @@ func razorpayRecurringDetails(raw map[string]interface{}) *interfaces.ProviderRe
 	return out
 }
 
-// cardRecurringUnsupported reports whether the card explicitly flags recurring as unsupported.
-func cardRecurringUnsupported(raw map[string]interface{}) bool {
-	card, _ := raw["card"].(map[string]interface{})
-	flows, _ := card["flows"].(map[string]interface{})
-	supported, ok := flows["recurring"].(bool)
-	return ok && !supported
+func (t Token) cardRecurringUnsupported() bool {
+	return t.Card != nil && t.Card.Flows != nil && t.Card.Flows.Recurring != nil && !*t.Card.Flows.Recurring
 }
 
-func razorpayCardDetails(raw map[string]interface{}) *interfaces.ProviderCardDetails {
-	card, ok := raw["card"].(map[string]interface{})
-	if !ok {
+func (t Token) cardDetails() *interfaces.ProviderCardDetails {
+	if t.Card == nil {
 		return nil
 	}
 
-	last4, _ := card["last4"].(string)
-	network, _ := card["network"].(string)
 	return &interfaces.ProviderCardDetails{
-		Brand:    network,
-		Last4:    last4,
-		ExpMonth: intFromAny(card["expiry_month"]),
-		ExpYear:  intFromAny(card["expiry_year"]),
+		Brand:    t.Card.Network,
+		Last4:    t.Card.Last4,
+		ExpMonth: int(t.Card.ExpiryMonth),
+		ExpYear:  int(t.Card.ExpiryYear),
 	}
 }
 
-func razorpayUPIDetails(raw map[string]interface{}) *interfaces.ProviderUPIDetails {
-	vpa, ok := raw["vpa"].(map[string]interface{})
-	if !ok {
+func (t Token) upiDetails() *interfaces.ProviderUPIDetails {
+	if t.VPA == nil || t.VPA.Username == "" || t.VPA.Handle == "" {
 		return nil
 	}
-
-	username, _ := vpa["username"].(string)
-	handle, _ := vpa["handle"].(string)
-	if username == "" || handle == "" {
-		return nil
-	}
-	return &interfaces.ProviderUPIDetails{VPA: username + "@" + handle}
-}
-
-func intFromAny(v interface{}) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case string:
-		i, _ := strconv.Atoi(n)
-		return i
-	}
-	return 0
+	return &interfaces.ProviderUPIDetails{VPA: t.VPA.Username + "@" + t.VPA.Handle}
 }
 
 func toRecurringPaymentStatus(status string) types.RecurringPaymentStatus {
@@ -334,44 +316,4 @@ func (a *CheckoutAdapter) HasAutoChargeableMethod(ctx context.Context, req inter
 	}
 	_, ok := selectAutoChargeToken(tokens, "", amount)
 	return ok, nil
-}
-
-type PaymentMethodAdapter struct {
-	CustomerSvc RazorpayCustomerService
-}
-
-func (a *PaymentMethodAdapter) ListSavedMethods(ctx context.Context, customerID string) ([]interfaces.ProviderPaymentMethod, error) {
-	_, tokens, err := a.CustomerSvc.ListCustomerTokens(ctx, customerID)
-	if err != nil {
-		if ierr.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	return lo.FilterMap(tokens, func(t *interfaces.ProviderPaymentMethod, _ int) (interfaces.ProviderPaymentMethod, bool) {
-		if t == nil {
-			return interfaces.ProviderPaymentMethod{}, false
-		}
-
-		return *t, true
-	}), nil
-}
-
-func (a *PaymentMethodAdapter) DeleteSavedMethod(ctx context.Context, customerID, methodID string) error {
-	return errMandateManagedAtCheckout()
-}
-
-func (a *PaymentMethodAdapter) SetDefaultSavedMethod(ctx context.Context, customerID, methodID string) error {
-	return errMandateManagedAtCheckout()
-}
-
-func (a *PaymentMethodAdapter) CreateSetupLink(ctx context.Context, req interfaces.SetupLinkRequest) (*interfaces.SetupLinkResponse, error) {
-	return nil, errMandateManagedAtCheckout()
-}
-
-func errMandateManagedAtCheckout() error {
-	return ierr.NewError("razorpay saved payment methods cannot be managed here").
-		WithHint("Razorpay mandates are set up at checkout").
-		Mark(ierr.ErrValidation)
 }

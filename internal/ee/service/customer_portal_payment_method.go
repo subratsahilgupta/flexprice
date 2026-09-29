@@ -15,7 +15,7 @@ func (s *customerPortalService) ListPaymentMethods(ctx context.Context, req *dto
 		return nil, err
 	}
 
-	return NewPaymentService(s.ServiceParams).ListPaymentMethods(ctx, customerID, req)
+	return s.paymentService.ListPaymentMethods(ctx, customerID, req)
 }
 
 func (s *customerPortalService) AddPaymentMethod(ctx context.Context, req *dto.PortalAddPaymentMethodRequest) (*dto.AddPaymentMethodResponse, error) {
@@ -112,7 +112,7 @@ func (s *customerPortalService) mutateSavedMethod(
 		return nil, err
 	}
 
-	resp, err := NewPaymentService(s.ServiceParams).ListPaymentMethods(ctx, customerID, &dto.ListSavedPaymentMethodsRequest{
+	resp, err := s.paymentService.ListPaymentMethods(ctx, customerID, &dto.ListSavedPaymentMethodsRequest{
 		Providers: []types.PaymentGatewayType{resolvedGateway},
 	})
 	if err != nil {
