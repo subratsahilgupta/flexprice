@@ -3565,15 +3565,6 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 		s.PublishCancellationEvents(ctx, sub)
 	}
 
-	// Outside the rollover txn so a grant failure can't roll back the renewal; the CGA cron retries it.
-	if sub.SubscriptionStatus == types.SubscriptionStatusActive && types.PaymentBehavior(sub.PaymentBehavior).IsIncompleteType() {
-		if err := s.processPendingCreditGrantsForSubscription(ctx, sub); err != nil {
-			s.Logger.Error(ctx, "failed to process pending credit grants after period rollover",
-				"error", err,
-				"subscription_id", sub.ID)
-		}
-	}
-
 	return nil
 }
 
@@ -5724,6 +5715,18 @@ func (s *subscriptionService) ProcessOverdueSubscriptionInvoices(ctx context.Con
 	return nil
 }
 
+// voidOverdueInvoices voids overdue invoices in Flexprice; failures are retried on the next auto-cancel run.
+func (s *subscriptionService) voidOverdueInvoices(ctx context.Context, invoiceService InvoiceService, invoices []*invoice.Invoice, subscriptionID string) {
+	for _, inv := range invoices {
+		if _, err := invoiceService.VoidInvoice(ctx, inv.ID, dto.InvoiceVoidRequest{}); err != nil {
+			s.Logger.Error(ctx, "failed to void overdue invoice after auto-cancellation",
+				"error", err,
+				"invoice_id", inv.ID,
+				"subscription_id", subscriptionID)
+		}
+	}
+}
+
 // completeTrialConversionToActive activates a subscription after its trial-end invoice is paid or
 // skipped (zero-amount). By the time this is called, processSubscriptionTrialEnd has already
 // advanced CurrentPeriodStart/End to the first real billing window, so only the status changes.
@@ -5985,7 +5988,7 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 
 		filter := &types.SubscriptionFilter{
 			SubscriptionIDs:    subscriptionIDs,
-			SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive, types.SubscriptionStatusIncomplete},
+			SubscriptionStatus: []types.SubscriptionStatus{types.SubscriptionStatusActive, types.SubscriptionStatusIncomplete, types.SubscriptionStatusCancelled},
 		}
 
 		subscriptions, err := s.SubRepo.List(tenantCtx, filter)
@@ -6022,6 +6025,12 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 				continue
 			}
 
+			// Cancelled subs are only revisited to finish our own voids; tenants may still collect on theirs.
+			alreadyCancelled := sub.SubscriptionStatus == types.SubscriptionStatusCancelled
+			if alreadyCancelled && sub.Metadata["cancellation_reason"] != types.CancellationReasonPaymentOverdue {
+				continue
+			}
+
 			voidedInStripe := true
 			for _, inv := range overdueInvoices {
 				ok, err := stripeIntegration.InvoiceSyncSvc.VoidInvoiceInStripe(tenantCtx, inv.ID)
@@ -6041,6 +6050,11 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 				}
 			}
 			if !voidedInStripe {
+				continue
+			}
+
+			if alreadyCancelled {
+				s.voidOverdueInvoices(tenantCtx, invoiceService, overdueInvoices, sub.ID)
 				continue
 			}
 
@@ -6069,14 +6083,7 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 
 			canceledCount++
 
-			for _, inv := range overdueInvoices {
-				if _, err := invoiceService.VoidInvoice(tenantCtx, inv.ID, dto.InvoiceVoidRequest{}); err != nil {
-					s.Logger.Error(ctx, "failed to void overdue invoice after auto-cancellation",
-						"error", err,
-						"invoice_id", inv.ID,
-						"subscription_id", sub.ID)
-				}
-			}
+			s.voidOverdueInvoices(tenantCtx, invoiceService, overdueInvoices, sub.ID)
 
 			// Log audit trail
 			s.Logger.Info(ctx, "successfully auto-canceled subscription",

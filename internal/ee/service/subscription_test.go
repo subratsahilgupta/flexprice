@@ -10747,13 +10747,20 @@ func (s *SubscriptionServiceSuite) TestProcessAutoCancellationSubscriptions() {
 		wantStatus    types.SubscriptionStatus
 		wantReason    string
 		wantInvoice   types.InvoiceStatus
+		metadata      types.Metadata
 	}{
 		{"renewal past grace", types.SubscriptionStatusActive, types.InvoiceBillingReasonSubscriptionCycle, now.AddDate(0, 0, -10),
-			types.SubscriptionStatusCancelled, types.CancellationReasonPaymentOverdue, types.InvoiceStatusVoided},
+			types.SubscriptionStatusCancelled, types.CancellationReasonPaymentOverdue, types.InvoiceStatusVoided, nil},
 		{"incomplete create past grace", types.SubscriptionStatusIncomplete, types.InvoiceBillingReasonSubscriptionCreate, now.AddDate(0, 0, -10),
-			types.SubscriptionStatusCancelled, types.CancellationReasonPaymentOverdue, types.InvoiceStatusVoided},
+			types.SubscriptionStatusCancelled, types.CancellationReasonPaymentOverdue, types.InvoiceStatusVoided, nil},
 		{"renewal within grace", types.SubscriptionStatusIncomplete, types.InvoiceBillingReasonSubscriptionCycle, now.AddDate(0, 0, -1),
-			types.SubscriptionStatusIncomplete, "", types.InvoiceStatusFinalized},
+			types.SubscriptionStatusIncomplete, "", types.InvoiceStatusFinalized, nil},
+		{"auto-cancelled with void pending", types.SubscriptionStatusCancelled, types.InvoiceBillingReasonSubscriptionCycle, now.AddDate(0, 0, -10),
+			types.SubscriptionStatusCancelled, types.CancellationReasonPaymentOverdue, types.InvoiceStatusVoided,
+			types.Metadata{"cancellation_reason": types.CancellationReasonPaymentOverdue}},
+		{"cancelled by tenant", types.SubscriptionStatusCancelled, types.InvoiceBillingReasonSubscriptionCycle, now.AddDate(0, 0, -10),
+			types.SubscriptionStatusCancelled, "customer churned", types.InvoiceStatusFinalized,
+			types.Metadata{"cancellation_reason": "customer churned"}},
 	}
 
 	subIDs := make(map[string]string, len(tests))
@@ -10775,6 +10782,7 @@ func (s *SubscriptionServiceSuite) TestProcessAutoCancellationSubscriptions() {
 			CurrentPeriodEnd:   now.AddDate(0, 0, 25),
 			CollectionMethod:   string(types.CollectionMethodChargeAutomatically),
 			PaymentBehavior:    string(types.PaymentBehaviorAllowIncomplete),
+			Metadata:           tt.metadata,
 			BaseModel:          types.GetDefaultBaseModel(ctx),
 		}
 		s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, sub))
