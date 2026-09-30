@@ -176,12 +176,12 @@ Today a renewal can become incomplete (stop it's benefits and access) from **thr
 - Parent / child gating: grouped and delegated subscriptions follow the parent's invoice (separate PR).
 - `action_required` webhook for a payment on a cancelled subscription.
 - Retry the Flexprice void when it fails after auto-cancel.
-- Delete, rather than void, a Stripe invoice left in draft.
+- Drop the grant pass at period rollover for gated subscriptions: the renewal invoice is almost always unpaid then, so it only defers and bumps the grant's retry backoff. The paid hook and the grants cron already cover it; payment-gated deferrals should re-check on a fixed interval instead of growing the backoff.
 
 
 
 ### Decisions
 
 - **Never-paid new subscriptions** and **stuck incomplete subscriptions** are auto-cancelled after due + grace with `payment_overdue`; there is no `incomplete_expired` status.
-- **Stripe invoice** is voided before cancelling, so the hosted page can't collect afterwards.
+- **Stripe invoice** is voided before cancelling (a draft is deleted), so the hosted page can't collect afterwards. Only a paid Stripe invoice or a transient Stripe error holds the cancellation; a missing connection or a missing Stripe invoice cancels as before.
 - **Payment on a cancelled subscription** is recorded, never refunded, and the subscription stays cancelled.

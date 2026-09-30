@@ -9,7 +9,6 @@ import (
 	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	domainCreditGrantApplication "github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
-	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -1629,7 +1628,10 @@ func (s *creditGrantService) ShouldGateApplicationOnPayment(
 		return true, nil
 	}
 
-	filter := types.NewNoLimitInvoiceFilter()
+	// Only the latest renewal invoice decides, so fetch just that one rather than the whole history.
+	filter := types.NewInvoiceFilter()
+	filter.Limit = lo.ToPtr(1)
+	filter.Sort = []*types.SortCondition{{Field: "period_end", Direction: types.SortDirectionDesc}}
 	filter.SubscriptionID = sub.ID
 	filter.BillingReason = types.InvoiceBillingReasonSubscriptionCycle
 	filter.PeriodEndLTE = lo.ToPtr(cga.PeriodStart)
@@ -1649,9 +1651,7 @@ func (s *creditGrantService) ShouldGateApplicationOnPayment(
 		return false, nil
 	}
 
-	latest := lo.MaxBy(invoices, func(a, b *invoice.Invoice) bool {
-		return lo.FromPtr(a.PeriodEnd).After(lo.FromPtr(b.PeriodEnd))
-	})
+	latest := invoices[0]
 	paid := latest.InvoiceStatus == types.InvoiceStatusSkipped ||
 		latest.PaymentStatus == types.PaymentStatusSucceeded ||
 		latest.PaymentStatus == types.PaymentStatusOverpaid

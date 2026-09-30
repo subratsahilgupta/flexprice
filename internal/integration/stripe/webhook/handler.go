@@ -597,18 +597,6 @@ func (h *Handler) handleInvoicePaid(ctx context.Context, event *stripeapi.Event,
 		return nil
 	}
 
-	settled, err := h.paymentSvc.HasSettledInvoicePaymentIntent(ctx, stripeInvoice.ID)
-	if err != nil {
-		h.logger.Error(ctx, "failed to check Stripe invoice payment intents",
-			"error", err,
-			"stripe_invoice_id", stripeInvoice.ID,
-			"event_id", event.ID)
-		return err
-	}
-	if settled {
-		return nil
-	}
-
 	if err := h.paymentSvc.ReconcileStripeInvoicePaidWithoutPaymentIntent(ctx, stripeInvoice.ID, services.InvoiceService); err != nil {
 		h.logger.Error(ctx, "failed to reconcile Stripe invoice paid without payment intent",
 			"error", err,

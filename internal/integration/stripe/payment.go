@@ -1670,21 +1670,36 @@ func (s *PaymentService) ProcessExternalStripePayment(ctx context.Context, payme
 }
 
 // ReconcileStripeInvoicePaidWithoutPaymentIntent marks the invoice paid when Stripe settled it without a payment intent.
+// It checks the FlexPrice invoice before calling Stripe, so the common already-paid case costs no API calls.
 func (s *PaymentService) ReconcileStripeInvoicePaidWithoutPaymentIntent(ctx context.Context, stripeInvoiceID string, invoiceService interfaces.InvoiceService) error {
 	flexpriceInvoiceID, err := s.invoiceSyncSvc.GetFlexPriceInvoiceID(ctx, stripeInvoiceID)
+	if ierr.IsNotFound(err) {
+		s.logger.Info(ctx, "no FlexPrice invoice for paid Stripe invoice, skipping",
+			"stripe_invoice_id", stripeInvoiceID)
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 
-	invoiceResp, err := invoiceService.GetInvoice(ctx, flexpriceInvoiceID)
+	inv, err := s.invoiceRepo.Get(ctx, flexpriceInvoiceID)
 	if err != nil {
 		return err
 	}
-	if invoiceResp.PaymentStatus == types.PaymentStatusSucceeded || invoiceResp.PaymentStatus == types.PaymentStatusOverpaid {
+	if inv.PaymentStatus == types.PaymentStatusSucceeded || inv.PaymentStatus == types.PaymentStatusOverpaid {
 		return nil
 	}
 
-	return s.reconcileInvoiceWithExternalPayment(ctx, flexpriceInvoiceID, invoiceResp.AmountRemaining, invoiceService)
+	// A payment intent is reconciled by invoice_payment.paid, so only settle here when none exists.
+	settled, err := s.hasSettledInvoicePaymentIntent(ctx, stripeInvoiceID)
+	if err != nil {
+		return err
+	}
+	if settled {
+		return nil
+	}
+
+	return s.reconcileInvoiceWithExternalPayment(ctx, flexpriceInvoiceID, inv.AmountRemaining, invoiceService)
 }
 
 // GetStripeInvoicePaymentIntentID returns the invoice's payment intent in the given status, or "".
@@ -1708,8 +1723,8 @@ func (s *PaymentService) GetStripeInvoicePaymentIntentID(ctx context.Context, st
 	return "", nil
 }
 
-// HasSettledInvoicePaymentIntent reports whether any payment intent on the Stripe invoice succeeded or is processing.
-func (s *PaymentService) HasSettledInvoicePaymentIntent(ctx context.Context, stripeInvoiceID string) (bool, error) {
+// hasSettledInvoicePaymentIntent reports whether any payment intent on the Stripe invoice succeeded or is processing.
+func (s *PaymentService) hasSettledInvoicePaymentIntent(ctx context.Context, stripeInvoiceID string) (bool, error) {
 	stripeClient, _, err := s.client.GetStripeClient(ctx)
 	if err != nil {
 		return false, err

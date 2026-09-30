@@ -2795,6 +2795,17 @@ func (s *CreditGrantServiceTestSuite) TestShouldGateApplicationOnPayment() {
 			want: true,
 		},
 		{
+			name:            "latest period decides even when created before an older one",
+			paymentBehavior: types.PaymentBehaviorAllowIncomplete,
+			reason:          types.ApplicationReasonRecurringCreditGrant,
+			cgaPeriodStart:  periodStart,
+			invoices: []inv{
+				cycle(prevStart, periodStart, types.InvoiceStatusFinalized, types.PaymentStatusFailed),
+				cycle(olderStart, prevStart, types.InvoiceStatusFinalized, types.PaymentStatusSucceeded),
+			},
+			want: true,
+		},
+		{
 			name:            "voided invoice is ignored",
 			paymentBehavior: types.PaymentBehaviorAllowIncomplete,
 			reason:          types.ApplicationReasonRecurringCreditGrant,

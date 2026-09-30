@@ -5603,6 +5603,11 @@ func (s *subscriptionService) HandleSubscriptionActivatingInvoicePaid(ctx contex
 		return err
 	}
 
+	// Renewals only gate payment-gated subscriptions; the grants cron applies everyone else's.
+	if reason == types.InvoiceBillingReasonSubscriptionCycle && !types.PaymentBehavior(sub.PaymentBehavior).IsIncompleteType() {
+		return nil
+	}
+
 	if reason == types.InvoiceBillingReasonSubscriptionTrialEnd {
 		return s.completeTrialConversionToActive(ctx, sub)
 	}
