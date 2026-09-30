@@ -120,6 +120,12 @@ func (c TenantConfig) Validate() error {
 	return validator.ValidateRequest(c)
 }
 
+// TenantEnvironment identifies one tenant and environment pair.
+type TenantEnvironment struct {
+	TenantID      string `json:"tenant_id"`
+	EnvironmentID string `json:"environment_id"`
+}
+
 // TenantEnvConfig represents a generic configuration for a specific tenant and environment
 type TenantEnvConfig struct {
 	TenantID      string                 `json:"tenant_id"`

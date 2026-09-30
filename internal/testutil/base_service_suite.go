@@ -219,6 +219,7 @@ func (s *BaseServiceTestSuite) setupStores() {
 	invLineItemStore := NewInMemoryInvoiceLineItemStore()
 	invoiceStore := NewInMemoryInvoiceStore()
 	invoiceStore.SetLineItemStore(invLineItemStore)
+	subStore.SetInvoiceStore(invoiceStore)
 	priceStore := NewInMemoryPriceStore()
 	planPriceSyncStore := NewInMemoryPlanPriceSyncStore(priceStore, subStore, lineItemStore)
 	couponStore := NewInMemoryCouponStore()

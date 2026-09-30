@@ -540,6 +540,7 @@ func buildWorkerConfig(
 		workflowsList = append(workflowsList,
 			cronWorkflows.CreditGrantProcessingWorkflow,
 			cronWorkflows.SubscriptionAutoCancellationWorkflow,
+			cronWorkflows.SubscriptionOverdueInvoicesWorkflow,
 			cronWorkflows.WalletCreditExpiryWorkflow,
 			cronWorkflows.SubscriptionBillingPeriodsWorkflow,
 			cronWorkflows.SubscriptionRenewalDueAlertsWorkflow,

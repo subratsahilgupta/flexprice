@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -27,7 +28,6 @@ import (
 	temporalservice "github.com/flexprice/flexprice/internal/temporal/service"
 
 	"github.com/flexprice/flexprice/internal/types"
-	"github.com/flexprice/flexprice/internal/utils"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -5652,67 +5652,59 @@ func (s *subscriptionService) MarkSubscriptionIncomplete(ctx context.Context, in
 }
 
 func (s *subscriptionService) ProcessOverdueSubscriptionInvoices(ctx context.Context) error {
-	defaultConfig, err := getDefaultValue[types.SubscriptionConfig](types.SettingKeySubscriptionConfig)
+	envs, err := s.SubRepo.ListEnvironmentsWithGatedActiveSubscriptions(ctx)
 	if err != nil {
+		s.Logger.Error(ctx, "failed to list environments with payment-gated subscriptions", "error", err)
 		return err
 	}
-	configs, err := s.SettingsRepo.ListAllTenantEnvSettingsByKey(ctx, types.SettingKeySubscriptionConfig)
-	if err != nil {
-		s.Logger.Error(ctx, "failed to list subscription configs for overdue processing", "error", err)
-		return err
+	if len(envs) == 0 {
+		return nil
 	}
 
-	graceDays := make(map[string]int, len(configs))
-	maxGraceDays := defaultConfig.GracePeriodDays
-	for _, c := range configs {
-		config, err := utils.ToStruct[types.SubscriptionConfig](c.Config)
-		if err != nil || config.GracePeriodDays <= 0 {
-			continue
-		}
-		graceDays[c.TenantID+"/"+c.EnvironmentID] = config.GracePeriodDays
-		maxGraceDays = max(maxGraceDays, config.GracePeriodDays)
-	}
-
+	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
 	now := time.Now().UTC()
-	invoices, err := s.InvoiceRepo.ListAllTenant(ctx, &types.InvoiceFilter{
-		InvoiceType:       types.InvoiceTypeSubscription,
-		InvoiceStatus:     []types.InvoiceStatus{types.InvoiceStatusFinalized},
-		PaymentStatus:     []types.PaymentStatus{types.PaymentStatusFailed, types.PaymentStatusPending},
-		BillingReason:     types.InvoiceBillingReasonSubscriptionCycle,
-		AmountRemainingGt: lo.ToPtr(decimal.Zero),
-		SkipLineItems:     true,
-		QueryFilter:       types.NewNoLimitQueryFilter(),
-		Filters: []*types.FilterCondition{{
-			Field:    lo.ToPtr("due_date"),
-			Operator: lo.ToPtr(types.AFTER),
-			DataType: lo.ToPtr(types.DataTypeDate),
-			Value:    &types.Value{Date: lo.ToPtr(now.AddDate(0, 0, -maxGraceDays))},
-		}},
-	})
-	if err != nil {
-		s.Logger.Error(ctx, "failed to list unpaid renewal invoices for overdue processing", "error", err)
-		return err
-	}
+	var failures []error
+	for _, env := range envs {
+		tenantCtx := context.WithValue(ctx, types.CtxTenantID, env.TenantID)
+		tenantCtx = context.WithValue(tenantCtx, types.CtxEnvironmentID, env.EnvironmentID)
 
-	// Past grace is left to auto-cancellation; the upper bound also keeps old unpaid invoices from flipping subscriptions.
-	for _, inv := range invoices {
-		grace := lo.ValueOr(graceDays, inv.TenantID+"/"+inv.EnvironmentID, defaultConfig.GracePeriodDays)
-		if inv.DueDate == nil || now.Before(*inv.DueDate) || now.After(inv.DueDate.AddDate(0, 0, grace)) {
+		config, err := GetSetting[types.SubscriptionConfig](settingsSvc, tenantCtx, types.SettingKeySubscriptionConfig)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to get subscription config for overdue processing",
+				"error", err,
+				"tenant_id", env.TenantID,
+				"environment_id", env.EnvironmentID)
+			failures = append(failures, err)
+			continue
+		}
+		grace := config.GracePeriodDays
+
+		// Past grace is left to auto-cancellation, so older unpaid invoices never flip a subscription here.
+		ids, err := s.SubRepo.MarkOverdueGatedSubscriptionsIncomplete(tenantCtx, now, grace)
+		if err != nil {
+			s.Logger.Error(ctx, "failed to mark overdue subscriptions incomplete",
+				"error", err,
+				"tenant_id", env.TenantID,
+				"environment_id", env.EnvironmentID)
+			failures = append(failures, err)
+			continue
+		}
+		if len(ids) == 0 {
 			continue
 		}
 
-		tenantCtx := context.WithValue(ctx, types.CtxTenantID, inv.TenantID)
-		tenantCtx = context.WithValue(tenantCtx, types.CtxEnvironmentID, inv.EnvironmentID)
-		if err := s.MarkSubscriptionIncomplete(tenantCtx, inv.ID); err != nil {
-			s.Logger.Error(ctx, "failed to mark subscription incomplete for overdue invoice",
-				"error", err,
-				"invoice_id", inv.ID,
-				"tenant_id", inv.TenantID,
-				"environment_id", inv.EnvironmentID)
+		s.Logger.Info(ctx, "marked subscriptions incomplete for overdue renewal invoices",
+			"tenant_id", env.TenantID,
+			"environment_id", env.EnvironmentID,
+			"grace_period_days", grace,
+			"subscription_ids", ids)
+		for _, id := range ids {
+			s.publishSystemEvent(tenantCtx, types.WebhookEventSubscriptionUpdated, id)
 		}
 	}
 
-	return nil
+	// The update is idempotent, so failing the run just lets Temporal retry the failed environments.
+	return errors.Join(failures...)
 }
 
 // voidOverdueInvoices voids overdue invoices in Flexprice; failures are retried on the next auto-cancel run.
