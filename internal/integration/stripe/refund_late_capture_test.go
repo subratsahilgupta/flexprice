@@ -130,3 +130,14 @@ func TestRefundIdempotencyKeyIsStable(t *testing.T) {
 	k3 := refundIdempotencyKey(ctx, "pay_002")
 	require.NotEqual(t, k1, k3)
 }
+
+func TestChargeIdempotencyKeyIsStablePerPayment(t *testing.T) {
+	ctx := testContext()
+	k1 := chargeIdempotencyKey(ctx, "pay_001")
+	require.NotEmpty(t, k1)
+	require.Equal(t, k1, chargeIdempotencyKey(ctx, "pay_001"))
+	require.True(t, strings.HasPrefix(k1, "payment-"))
+
+	require.NotEqual(t, k1, chargeIdempotencyKey(ctx, "pay_002"))
+	require.NotEqual(t, k1, refundIdempotencyKey(ctx, "pay_001"), "a charge and its refund must not share a key")
+}
