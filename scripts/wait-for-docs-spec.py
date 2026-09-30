@@ -53,10 +53,19 @@ def sample_counts(spec):
     return counts
 
 
+def fetch_json(url):
+    opener = urllib.request.OpenerDirector()
+    opener.add_handler(urllib.request.HTTPSHandler())
+    opener.add_handler(urllib.request.UnknownHandler())
+    with opener.open(url, timeout=60) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"HTTP {resp.status} from {url}")
+        return json.load(resp)
+
+
 def check(url, expected):
     """Returns (why the hosted spec is stale or None, operations with samples per language)."""
-    with urllib.request.urlopen(url, timeout=60) as resp:
-        hosted = json.load(resp)
+    hosted = fetch_json(url)
     if strip_added(hosted) != expected:
         return "base spec does not match this release yet", None
     missing = operations_missing_samples(hosted)
