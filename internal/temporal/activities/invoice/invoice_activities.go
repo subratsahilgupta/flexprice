@@ -362,6 +362,7 @@ func (s *InvoiceActivities) FinalizeDueDraftsActivity(
 			result.FinalizedCount++
 		}
 
+		activity.RecordHeartbeat(ctx, offset+len(drafts))
 		if len(drafts) < batchSize {
 			break
 		}
