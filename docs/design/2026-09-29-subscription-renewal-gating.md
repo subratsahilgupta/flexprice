@@ -69,7 +69,7 @@ flowchart LR
     S["Unpaid invoice"] --> T{"now vs due date"}
     T -- "now < due" --> A1["active<br/>CGs held, EGs on"]
     T -- "due ≤ now ≤ due + grace" --> A2["incomplete (incomplete-type behaviours)<br/>CGs held, EGs off"]
-    T -- "now > due + grace" --> A3["Void invoice on Stripe (open question)<br/>void in Flexprice<br/>cancel subscription and CGAs"]
+    T -- "now > due + grace" --> A3["Void invoice on Stripe<br/>cancel subscription and CGAs<br/>void in Flexprice"]
     A1 -- paid --> P["active<br/>CGs applied, EGs on"]
     A2 -- paid --> P
 ```
@@ -115,16 +115,16 @@ flowchart LR
   - If stripe tries to auto charge or invoice is paid manually
     - Success
       - On webhook we update the invoice payment
-      - Create a payment record (idempotent on charge ID)
-      - **(new)** Handle `invoice.paid` without a payment intent or charge (customer balance, out of band, fully credited): still mark the invoice paid.
+      - Create a payment record (deduped on the payment intent)
+      - **(new)** Handle `invoice.paid` without a payment intent or charge (customer balance, out of band, fully credited): still mark the invoice paid. Skipped when a payment intent on the invoice has succeeded, since that payment is recorded separately.
       - **(new)** From one shared invoice-paid handler, called by the Stripe/gateway reconcile, the payment processor and the manual mark-paid API:
         - If subscription is incomplete, move it to active.
         - Process pending CGAs for the subscription immediately.
-        - If subscription is cancelled, don't reactivate. Record the payment and alert for refund or manual handling.
+        - If subscription is cancelled, don't reactivate. Record the payment; alerting for manual handling is a follow-up.
     - Failure
       - On webhook keep the invoice payment to pending
-      - **(new)** Create a failed payment record (via `invoice.payment_failed`, looked up by the Stripe invoice ID mapping).
-      - **(new)** If behaviour is `allow_incomplete` / `error_if_incomplete` with `charge_automatically`, move subscription to incomplete on the first failure.
+      - **(new)** Create a failed payment record per attempt (via `invoice.payment_failed`, keyed on the event ID).
+      - **(new)** If behaviour is `allow_incomplete` / `error_if_incomplete` with `charge_automatically`, move subscription to incomplete on the first failure. This path isn't capped by the grace window.
       - Stripe keeps retrying; a successful retry goes through the success path and reactivates.
 - Overdue handling (15 min auto-cancellation workflow)
   - `now < due date`: active, CGs held until paid, EGs on.
@@ -142,7 +142,7 @@ flowchart LR
 
 Today a renewal can become incomplete (stop it's benefits and access) from **three places**:
 
-1. `HandlePaymentBehavior` after a failed auto-charge (without Stripe);
+1. `HandlePaymentBehavior` after a failed Flexprice renewal charge (Stripe outbound off);
 2. the Stripe `invoice.payment_failed` webhook;
 3. the overdue cron at the due date.
 
@@ -151,7 +151,7 @@ Today a renewal can become incomplete (stop it's benefits and access) from **thr
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Creation         | `HandlePaymentBehavior`, unchanged: incomplete-type behaviours start incomplete until paid                                                                                  |
 | Trial end        | incomplete until the trial-end invoice is paid, unchanged                                                                                                                   |
-| **Renewal**      | the subscription stays active and next period's grants are held (P1). **Only the overdue cron** moves it to incomplete, when the renewal invoice is unpaid at its due date. |
+| **Renewal**      | stays active with next period's grants held. `charge_automatically` moves to incomplete on the first failed charge (Stripe webhook or Flexprice charge); otherwise the overdue cron does it at the due date. |
 | Paid             | the paid handler: activate if incomplete, release held grants                                                                                                               |
 | Due date + grace | auto-cancel: void and cancel with `payment_overdue`                                                                                                                         |
 
@@ -166,21 +166,22 @@ Today a renewal can become incomplete (stop it's benefits and access) from **thr
 
 
 
-## 3. Follow ups and open questions
+## 3. Follow ups and decisions
 
 
 
 ### Follow ups
 
 - Supporting this flow for other payment providers too like razorpay, chargebee, etc.
+- Parent / child gating: grouped and delegated subscriptions follow the parent's invoice (separate PR).
+- `action_required` webhook for a payment on a cancelled subscription.
+- Retry the Flexprice void when it fails after auto-cancel.
+- Delete, rather than void, a Stripe invoice left in draft.
 
 
 
-### Open questions
+### Decisions
 
-- **Never-paid new subscriptions.** Should they be cancelled after due + grace like renewals (similar to Stripe's `incomplete_expired`), or stay frozen?
-- **Auto-cancel for gated subscriptions whose status is stuck in incomplete?**
-- Should we void stripe invoice when we are trying to cancel our subscription and voiding it's invoice? If not, then the hosted invoice page url doesn't expire on stripe side.
-- **Payment on a cancelled subscription.** Refund automatically, or leave it to the tenant via an alert or webhook?
-- **Parent / child subscriptions.** For grouped invoicing, where the parent's invoice covers the children, should the children's CGs and status be gated on the parent's invoice?
-
+- **Never-paid new subscriptions** and **stuck incomplete subscriptions** are auto-cancelled after due + grace with `payment_overdue`; there is no `incomplete_expired` status.
+- **Stripe invoice** is voided before cancelling, so the hosted page can't collect afterwards.
+- **Payment on a cancelled subscription** is recorded, never refunded, and the subscription stays cancelled.
