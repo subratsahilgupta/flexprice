@@ -69,6 +69,8 @@ type subscriptionCoreResult struct {
 	Plan        *plan.Plan
 	ValidPrices []*dto.PriceResponse
 	Customer    *customer.Customer
+	// ActivatedOnCreate is set when a gated subscription was activated because nothing was owed.
+	ActivatedOnCreate bool
 }
 
 // createSubscription creates the subscription through invoice generation. Caller must be in a transaction.
@@ -326,6 +328,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 
 	// Process subscription creation in transaction
 	var invoice *dto.InvoiceResponse
+	var activatedOnCreate bool
 	var updatedSub *subscription.Subscription
 	invoiceService := NewInvoiceService(s.ServiceParams)
 
@@ -501,12 +504,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 			if err = s.SubRepo.Update(ctx, sub); err != nil {
 				return nil, err
 			}
-			// Grants were deferred while the subscription was incomplete.
-			if cgErr := s.processPendingCreditGrantsForSubscription(ctx, sub); cgErr != nil {
-				s.Logger.Error(ctx, "failed to process pending credit grants after activation",
-					"error", cgErr,
-					"subscription_id", sub.ID)
-			}
+			activatedOnCreate = true
 		}
 	} else if sub.SubscriptionStatus == types.SubscriptionStatusTrialing {
 		// Create a $0 preview invoice at trial start so downstream integrations (Stripe,
@@ -544,12 +542,13 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	}
 
 	return &subscriptionCoreResult{
-		Sub:         sub,
-		Invoice:     invoice,
-		Phases:      phases,
-		Plan:        plan,
-		ValidPrices: validPrices,
-		Customer:    customer,
+		Sub:               sub,
+		Invoice:           invoice,
+		Phases:            phases,
+		Plan:              plan,
+		ValidPrices:       validPrices,
+		Customer:          customer,
+		ActivatedOnCreate: activatedOnCreate,
 	}, nil
 }
 
@@ -563,6 +562,15 @@ func (s *subscriptionService) CreateSubscription(ctx context.Context, req dto.Cr
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Grants were deferred while the subscription was incomplete; apply them after commit.
+	if result.ActivatedOnCreate {
+		if cgErr := s.processPendingCreditGrantsForSubscription(ctx, result.Sub); cgErr != nil {
+			s.Logger.Error(ctx, "failed to process pending credit grants after activation",
+				"error", cgErr,
+				"subscription_id", result.Sub.ID)
+		}
 	}
 
 	if req.SubscriptionStatus != types.SubscriptionStatusDraft && len(result.Phases) > 0 {
@@ -3533,15 +3541,6 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			}
 		}
 
-		// Skipped or already-paid renewals release the new period's held grants now instead of on CGA backoff.
-		if sub.SubscriptionStatus == types.SubscriptionStatusActive && types.PaymentBehavior(sub.PaymentBehavior).IsIncompleteType() {
-			if err := s.processPendingCreditGrantsForSubscription(ctx, sub); err != nil {
-				s.Logger.Error(ctx, "failed to process pending credit grants after period rollover",
-					"error", err,
-					"subscription_id", sub.ID)
-			}
-		}
-
 		s.Logger.Info(ctx, "completed subscription period processing",
 			"subscription_id", sub.ID,
 			"original_period_start", periods[0].start,
@@ -3564,6 +3563,15 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 
 	if isSubscriptionCancelled {
 		s.PublishCancellationEvents(ctx, sub)
+	}
+
+	// Outside the rollover txn so a grant failure can't roll back the renewal; the CGA cron retries it.
+	if sub.SubscriptionStatus == types.SubscriptionStatusActive && types.PaymentBehavior(sub.PaymentBehavior).IsIncompleteType() {
+		if err := s.processPendingCreditGrantsForSubscription(ctx, sub); err != nil {
+			s.Logger.Error(ctx, "failed to process pending credit grants after period rollover",
+				"error", err,
+				"subscription_id", sub.ID)
+		}
 	}
 
 	return nil

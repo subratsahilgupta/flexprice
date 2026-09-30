@@ -545,17 +545,25 @@ func (h *Handler) handleInvoicePaymentFailed(ctx context.Context, event *stripea
 		return err
 	}
 
+	// Both steps are idempotent, so errors are returned for Stripe to retry the event.
 	if err := services.SubscriptionService.MarkSubscriptionIncomplete(ctx, flexpriceInvoiceID); err != nil {
 		h.logger.Error(ctx, "failed to mark subscription incomplete for failed Stripe invoice",
 			"error", err,
 			"invoice_id", flexpriceInvoiceID,
 			"event_id", event.ID)
+		return err
 	}
 
 	paymentIntentID, err := h.paymentSvc.GetStripeInvoicePaymentIntentID(ctx, stripeInvoice.ID, "open")
-	if err != nil || paymentIntentID == "" {
-		h.logger.Info(ctx, "no open payment intent for failed Stripe invoice, skipping event",
+	if err != nil {
+		h.logger.Error(ctx, "failed to list Stripe invoice payments",
 			"error", err,
+			"stripe_invoice_id", stripeInvoice.ID,
+			"event_id", event.ID)
+		return err
+	}
+	if paymentIntentID == "" {
+		h.logger.Info(ctx, "no open payment intent for failed Stripe invoice, skipping payment record",
 			"stripe_invoice_id", stripeInvoice.ID,
 			"event_id", event.ID)
 		return nil
@@ -563,11 +571,11 @@ func (h *Handler) handleInvoicePaymentFailed(ctx context.Context, event *stripea
 
 	paymentIntent, err := h.paymentSvc.GetPaymentIntent(ctx, paymentIntentID)
 	if err != nil {
-		h.logger.Error(ctx, "failed to get payment intent from Stripe, skipping event",
+		h.logger.Error(ctx, "failed to get payment intent from Stripe",
 			"error", err,
 			"payment_intent_id", paymentIntentID,
 			"event_id", event.ID)
-		return nil
+		return err
 	}
 
 	if err := h.paymentSvc.CreateExternalPaymentRecord(ctx, paymentIntent, flexpriceInvoiceID, types.PaymentStatusFailed, event.ID, services.PaymentService); err != nil {
@@ -576,6 +584,7 @@ func (h *Handler) handleInvoicePaymentFailed(ctx context.Context, event *stripea
 			"payment_intent_id", paymentIntentID,
 			"stripe_invoice_id", stripeInvoice.ID,
 			"event_id", event.ID)
+		return err
 	}
 
 	return nil
@@ -590,21 +599,22 @@ func (h *Handler) handleInvoicePaid(ctx context.Context, event *stripeapi.Event,
 
 	settled, err := h.paymentSvc.HasSettledInvoicePaymentIntent(ctx, stripeInvoice.ID)
 	if err != nil {
-		h.logger.Error(ctx, "failed to check Stripe invoice payment intents, skipping event",
+		h.logger.Error(ctx, "failed to check Stripe invoice payment intents",
 			"error", err,
 			"stripe_invoice_id", stripeInvoice.ID,
 			"event_id", event.ID)
-		return nil
+		return err
 	}
 	if settled {
 		return nil
 	}
 
 	if err := h.paymentSvc.ReconcileStripeInvoicePaidWithoutPaymentIntent(ctx, stripeInvoice.ID, services.InvoiceService); err != nil {
-		h.logger.Error(ctx, "failed to reconcile Stripe invoice paid without payment intent, skipping event",
+		h.logger.Error(ctx, "failed to reconcile Stripe invoice paid without payment intent",
 			"error", err,
 			"stripe_invoice_id", stripeInvoice.ID,
 			"event_id", event.ID)
+		return err
 	}
 	return nil
 }
