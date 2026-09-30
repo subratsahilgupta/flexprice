@@ -4312,8 +4312,7 @@ func (s *invoiceService) TriggerWebhook(ctx context.Context, invoiceID string, e
 	return nil
 }
 
-// HandleIncompleteSubscriptionPayment runs subscription activation / trial conversion / renewal gating
-// when a subscription invoice is fully paid.
+// HandleIncompleteSubscriptionPayment runs the paid handler once a subscription invoice is fully paid.
 func (s *invoiceService) HandleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error {
 	// Only process subscription invoices that are fully paid
 	if invoice.SubscriptionID == nil || !invoice.AmountRemaining.IsZero() {

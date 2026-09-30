@@ -10811,3 +10811,66 @@ func (s *SubscriptionServiceSuite) TestProcessAutoCancellationSubscriptions() {
 		s.Equal(tt.wantInvoice, inv.InvoiceStatus, tt.name)
 	}
 }
+
+func (s *SubscriptionServiceSuite) TestCreateSubscription_ZeroOpeningInvoice_AppliesFirstGrant() {
+	ctx := s.GetContext()
+
+	freePlan := &plan.Plan{
+		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PLAN),
+		Name:      "Free Plan",
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().PlanRepo.Create(ctx, freePlan))
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &price.Price{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+		Amount:             decimal.Zero,
+		Currency:           "usd",
+		EntityType:         types.PRICE_ENTITY_TYPE_PLAN,
+		EntityID:           freePlan.ID,
+		Type:               types.PRICE_TYPE_FIXED,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+		BillingCadence:     types.BILLING_CADENCE_RECURRING,
+		InvoiceCadence:     types.InvoiceCadenceAdvance,
+		BaseModel:          types.GetDefaultBaseModel(ctx),
+	}))
+
+	cust := &customer.Customer{
+		ID:         types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		ExternalID: "ext_zero_opening",
+		Name:       "Zero Opening",
+		BaseModel:  types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+
+	resp, err := s.service.CreateSubscription(ctx, dto.CreateSubscriptionRequest{
+		CustomerID:         cust.ID,
+		PlanID:             freePlan.ID,
+		StartDate:          lo.ToPtr(s.testData.now),
+		Currency:           "usd",
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingCycle:       types.BillingCycleAnniversary,
+		CollectionMethod:   lo.ToPtr(types.CollectionMethodChargeAutomatically),
+		PaymentBehavior:    lo.ToPtr(types.PaymentBehaviorAllowIncomplete),
+		SubscriptionCreationConfig: dto.SubscriptionCreationConfig{
+			CreditGrants: []dto.CreateCreditGrantRequest{{
+				Name:           "Monthly Credits",
+				Scope:          types.CreditGrantScopeSubscription,
+				Credits:        decimal.NewFromInt(100),
+				Cadence:        types.CreditGrantCadenceRecurring,
+				Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
+				PeriodCount:    lo.ToPtr(1),
+				ExpirationType: types.CreditGrantExpiryTypeNever,
+			}},
+		},
+	})
+	s.Require().NoError(err)
+	s.Equal(types.SubscriptionStatusActive, resp.SubscriptionStatus)
+
+	wallets, err := s.GetStores().WalletRepo.GetWalletsByCustomerID(ctx, cust.ID)
+	s.Require().NoError(err)
+	s.Require().Len(wallets, 1)
+	s.True(decimal.NewFromInt(100).Equal(wallets[0].Balance), "expected first grant applied at creation, got %s", wallets[0].Balance)
+}

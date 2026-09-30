@@ -1079,8 +1079,7 @@ func (p *paymentProcessor) handleCardPayment(ctx context.Context, paymentObj *pa
 	return nil
 }
 
-// handleIncompleteSubscriptionPayment runs subscription activation / trial conversion / renewal gating
-// when a subscription invoice is fully paid.
+// handleIncompleteSubscriptionPayment runs the paid handler once a subscription invoice is fully paid.
 func (p *paymentProcessor) handleIncompleteSubscriptionPayment(ctx context.Context, invoice *invoice.Invoice) error {
 	// Only process subscription invoices that are fully paid
 	if invoice.SubscriptionID == nil || !invoice.AmountRemaining.IsZero() {

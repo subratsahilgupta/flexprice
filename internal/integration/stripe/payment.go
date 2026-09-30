@@ -1669,8 +1669,7 @@ func (s *PaymentService) ProcessExternalStripePayment(ctx context.Context, payme
 	return nil
 }
 
-// ReconcileStripeInvoicePaidWithoutPaymentIntent marks the FlexPrice invoice paid when Stripe settled it without a
-// payment intent (customer balance, credit notes, out of band). No-op if the invoice is already paid.
+// ReconcileStripeInvoicePaidWithoutPaymentIntent marks the invoice paid when Stripe settled it without a payment intent.
 func (s *PaymentService) ReconcileStripeInvoicePaidWithoutPaymentIntent(ctx context.Context, stripeInvoiceID string, invoiceService interfaces.InvoiceService) error {
 	flexpriceInvoiceID, err := s.invoiceSyncSvc.GetFlexPriceInvoiceID(ctx, stripeInvoiceID)
 	if err != nil {
@@ -1688,8 +1687,7 @@ func (s *PaymentService) ReconcileStripeInvoicePaidWithoutPaymentIntent(ctx cont
 	return s.reconcileInvoiceWithExternalPayment(ctx, flexpriceInvoiceID, invoiceResp.AmountRemaining, invoiceService)
 }
 
-// GetStripeInvoicePaymentIntentID returns the payment intent of the Stripe invoice's payment in the given status
-// ("open" or "paid"), or "" if there is none.
+// GetStripeInvoicePaymentIntentID returns the invoice's payment intent in the given status, or "".
 func (s *PaymentService) GetStripeInvoicePaymentIntentID(ctx context.Context, stripeInvoiceID, status string) (string, error) {
 	stripeClient, _, err := s.client.GetStripeClient(ctx)
 	if err != nil {
@@ -1708,6 +1706,34 @@ func (s *PaymentService) GetStripeInvoicePaymentIntentID(ctx context.Context, st
 		}
 	}
 	return "", nil
+}
+
+// HasSettledInvoicePaymentIntent reports whether any payment intent on the Stripe invoice succeeded or is processing.
+func (s *PaymentService) HasSettledInvoicePaymentIntent(ctx context.Context, stripeInvoiceID string) (bool, error) {
+	stripeClient, _, err := s.client.GetStripeClient(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	params := &stripe.InvoicePaymentListParams{Invoice: stripe.String(stripeInvoiceID)}
+	for invoicePayment, err := range stripeClient.V1InvoicePayments.List(ctx, params) {
+		if err != nil {
+			return false, ierr.WithError(err).
+				WithHint("Unable to list invoice payments from Stripe").
+				Mark(ierr.ErrSystem)
+		}
+		if invoicePayment.Payment == nil || invoicePayment.Payment.PaymentIntent == nil {
+			continue
+		}
+		paymentIntent, err := s.GetPaymentIntent(ctx, invoicePayment.Payment.PaymentIntent.ID)
+		if err != nil {
+			return false, err
+		}
+		if paymentIntent.Status == stripe.PaymentIntentStatusSucceeded || paymentIntent.Status == stripe.PaymentIntentStatusProcessing {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // CreateExternalPaymentRecord creates a payment record in the given status for an external Stripe payment

@@ -395,3 +395,72 @@ func (s *SubscriptionTrialPaymentMatrixSuite) TestFullPayAfterBehavior_Activates
 	s.True(updated.CurrentPeriodStart.Equal(trialEnd), "period start remains at trial end")
 	s.True(updated.CurrentPeriodEnd.Equal(firstPeriodEnd), "period end remains at first period end")
 }
+
+func (s *SubscriptionTrialPaymentMatrixSuite) TestManualFlow_FailedCharge() {
+	ctx := s.GetContext()
+	now := time.Now().UTC()
+
+	cust := &customer.Customer{
+		ID:        types.GenerateUUIDWithPrefix(types.UUID_PREFIX_CUSTOMER),
+		Name:      "Manual Flow Customer",
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.Require().NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+
+	tests := []struct {
+		name             string
+		collectionMethod types.CollectionMethod
+		paymentBehavior  types.PaymentBehavior
+		billingReason    types.InvoiceBillingReason
+		wantStatus       types.SubscriptionStatus
+	}{
+		{"renewal_allow_incomplete", types.CollectionMethodChargeAutomatically, types.PaymentBehaviorAllowIncomplete, types.InvoiceBillingReasonSubscriptionCycle, types.SubscriptionStatusIncomplete},
+		{"renewal_error_if_incomplete", types.CollectionMethodChargeAutomatically, types.PaymentBehaviorErrorIfIncomplete, types.InvoiceBillingReasonSubscriptionCycle, types.SubscriptionStatusIncomplete},
+		{"renewal_default_active", types.CollectionMethodChargeAutomatically, types.PaymentBehaviorDefaultActive, types.InvoiceBillingReasonSubscriptionCycle, types.SubscriptionStatusActive},
+		{"renewal_send_invoice_not_due", types.CollectionMethodSendInvoice, types.PaymentBehaviorDefaultIncomplete, types.InvoiceBillingReasonSubscriptionCycle, types.SubscriptionStatusActive},
+		{"non_renewal_invoice", types.CollectionMethodChargeAutomatically, types.PaymentBehaviorAllowIncomplete, types.InvoiceBillingReasonSubscriptionUpdate, types.SubscriptionStatusActive},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			sub := &subscription.Subscription{
+				ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
+				CustomerID:         cust.ID,
+				SubscriptionStatus: types.SubscriptionStatusActive,
+				Currency:           "usd",
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				StartDate:          now.AddDate(0, -1, 0),
+				CurrentPeriodStart: now,
+				CurrentPeriodEnd:   now.AddDate(0, 1, 0),
+				CollectionMethod:   string(tt.collectionMethod),
+				PaymentBehavior:    string(tt.paymentBehavior),
+				BaseModel:          types.GetDefaultBaseModel(ctx),
+			}
+			s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, sub))
+
+			inv := &invoice.Invoice{
+				ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
+				CustomerID:      cust.ID,
+				SubscriptionID:  &sub.ID,
+				InvoiceType:     types.InvoiceTypeSubscription,
+				InvoiceStatus:   types.InvoiceStatusFinalized,
+				PaymentStatus:   types.PaymentStatusPending,
+				Currency:        "usd",
+				AmountDue:       decimal.NewFromInt(10),
+				AmountRemaining: decimal.NewFromInt(10),
+				Total:           decimal.NewFromInt(10),
+				DueDate:         lo.ToPtr(now.AddDate(0, 0, 1)),
+				BillingReason:   string(tt.billingReason),
+				BaseModel:       types.GetDefaultBaseModel(ctx),
+			}
+			s.Require().NoError(s.GetStores().InvoiceRepo.Create(ctx, inv))
+
+			s.Require().NoError(s.proc.HandlePaymentBehavior(ctx, sub, dto.NewInvoiceResponse(inv), tt.paymentBehavior, types.InvoiceFlowManual))
+
+			updated, err := s.GetStores().SubscriptionRepo.Get(ctx, sub.ID)
+			s.Require().NoError(err)
+			s.Equal(tt.wantStatus, updated.SubscriptionStatus)
+		})
+	}
+}

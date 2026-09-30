@@ -88,6 +88,11 @@ func (s *subscriptionPaymentProcessor) HandlePaymentBehavior(
 			return s.SubRepo.Update(ctx, sub)
 		}
 
+		// A failed renewal charge marks the subscription incomplete.
+		if !result.Success && types.InvoiceBillingReason(inv.BillingReason) == types.InvoiceBillingReasonSubscriptionCycle {
+			return NewSubscriptionService(*s.ServiceParams).MarkSubscriptionIncomplete(ctx, inv.ID)
+		}
+
 		// If payment failed or partial, keep subscription status unchanged
 		s.Logger.Info(ctx, "manual flow payment failed or partial - keeping subscription status unchanged",
 			"subscription_id", sub.ID,

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
+	"github.com/flexprice/flexprice/internal/cache"
 	"github.com/flexprice/flexprice/internal/domain/creditgrant"
 	domainCreditGrantApplication "github.com/flexprice/flexprice/internal/domain/creditgrantapplication"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
@@ -15,6 +16,12 @@ import (
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
+)
+
+const (
+	creditGrantApplyLockTTL           = 30 * time.Second
+	creditGrantApplyLockAttempts      = 40
+	creditGrantApplyLockRetryInterval = 250 * time.Millisecond
 )
 
 // CreditGrantService defines the interface for credit grant service
@@ -71,8 +78,7 @@ type CreditGrantService interface {
 	// ListCreditGrantApplications retrieves credit grant applications based on filter
 	ListCreditGrantApplications(ctx context.Context, filter *types.CreditGrantApplicationFilter) (*dto.ListCreditGrantApplicationsResponse, error)
 
-	// ShouldGateApplicationOnPayment reports whether a recurring CGA must wait for the renewal invoice
-	// that precedes its period to be paid.
+	// ShouldGateApplicationOnPayment reports whether a recurring CGA waits for its renewal invoice to be paid.
 	ShouldGateApplicationOnPayment(ctx context.Context, sub *subscription.Subscription, cga *domainCreditGrantApplication.CreditGrantApplication) (bool, error)
 }
 
@@ -638,6 +644,28 @@ func (s *creditGrantService) ProcessCreditGrantApplication(ctx context.Context, 
 	return nil
 }
 
+// acquireCreditGrantApplyLock serializes grant application per customer; nil means proceed unlocked.
+func (s *creditGrantService) acquireCreditGrantApplyLock(ctx context.Context, customerID string) cache.Lock {
+	lockKey := cache.GenerateKey(ctx, cache.PrefixCreditGrantApplyLock, customerID)
+	lock, err := cache.AcquireLockWithRetry(ctx, s.Locker, lockKey,
+		creditGrantApplyLockTTL, creditGrantApplyLockAttempts, creditGrantApplyLockRetryInterval)
+
+	switch {
+	case err != nil:
+		s.Logger.Error(ctx, "failed to acquire credit grant apply lock, proceeding without it",
+			"error", err,
+			"customer_id", customerID)
+		return nil
+	case lock == nil:
+		return nil
+	case !lock.AcquiredSuccessfully():
+		s.Logger.Info(ctx, "timed out waiting for credit grant apply lock, proceeding",
+			"customer_id", customerID)
+		return nil
+	}
+	return lock
+}
+
 // applyCreditGrantToWallet applies credit grant in a complete transaction
 // This function performs 3 main tasks atomically:
 // 1. Apply credits to wallet
@@ -646,6 +674,25 @@ func (s *creditGrantService) ProcessCreditGrantApplication(ctx context.Context, 
 // If any task fails, all changes are rolled back and CGA is marked as failed
 func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant *creditgrant.CreditGrant, subscription *subscription.Subscription, cga *domainCreditGrantApplication.CreditGrantApplication) (*domainCreditGrantApplication.CreditGrantApplication, error) {
 	walletService := NewWalletService(s.ServiceParams)
+
+	if lock := s.acquireCreditGrantApplyLock(ctx, subscription.CustomerID); lock != nil {
+		defer func() {
+			if err := lock.Release(ctx); err != nil {
+				s.Logger.Error(ctx, "failed to release credit grant apply lock",
+					"error", err,
+					"customer_id", subscription.CustomerID)
+			}
+		}()
+	}
+
+	// A concurrent run may have applied it already.
+	latest, err := s.CreditGrantApplicationRepo.Get(ctx, cga.ID)
+	if err != nil {
+		return nil, s.handleCreditGrantFailure(ctx, cga, err, "Failed to reload credit grant application")
+	}
+	if latest.ApplicationStatus == types.ApplicationStatusApplied {
+		return nil, nil
+	}
 
 	// Find or create wallet outside of transaction for better error handling
 	wallets, err := walletService.GetWalletsByCustomerID(ctx, subscription.CustomerID)
@@ -837,8 +884,11 @@ func (s *creditGrantService) applyCreditGrantToWallet(ctx context.Context, grant
 			}
 		}
 
-		// Task 1: Apply credit to wallet
-		_, err := walletService.TopUpWallet(txCtx, selectedWallet.ID, topupReq)
+		// Task 1: Apply credit to wallet, unless an earlier run already did
+		_, err := s.WalletRepo.GetTransactionByIdempotencyKey(txCtx, cga.ID)
+		if ierr.IsNotFound(err) {
+			_, err = walletService.TopUpWallet(txCtx, selectedWallet.ID, topupReq)
+		}
 		if err != nil {
 			return err
 		}
@@ -1147,6 +1197,15 @@ func (s *creditGrantService) createNextPeriodApplication(ctx context.Context, gr
 	}
 
 	if err := nextPeriodCGAAReq.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Reuse the next period a retried application already created.
+	existing, err := s.CreditGrantApplicationRepo.FindByIdempotencyKey(ctx, nextPeriodCGAAReq.IdempotencyKey)
+	if err == nil {
+		return existing, nil
+	}
+	if !ierr.IsNotFound(err) {
 		return nil, err
 	}
 

@@ -348,8 +348,7 @@ func (r InvoiceBillingReason) IsFirstSubscriptionOpenInvoiceReason() bool {
 	}
 }
 
-// IsPaymentGatingAllowedInvoiceReason reports whether paying or failing to pay an invoice with this reason
-// may change the subscription's status or release its held credit grants.
+// IsPaymentGatingAllowedInvoiceReason reports whether this invoice's payment can change subscription status or grants.
 func (r InvoiceBillingReason) IsPaymentGatingAllowedInvoiceReason() bool {
 	return lo.Contains([]InvoiceBillingReason{
 		InvoiceBillingReasonSubscriptionCreate,

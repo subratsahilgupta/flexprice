@@ -501,6 +501,12 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 			if err = s.SubRepo.Update(ctx, sub); err != nil {
 				return nil, err
 			}
+			// Grants were deferred while the subscription was incomplete.
+			if cgErr := s.processPendingCreditGrantsForSubscription(ctx, sub); cgErr != nil {
+				s.Logger.Error(ctx, "failed to process pending credit grants after activation",
+					"error", cgErr,
+					"subscription_id", sub.ID)
+			}
 		}
 	} else if sub.SubscriptionStatus == types.SubscriptionStatusTrialing {
 		// Create a $0 preview invoice at trial start so downstream integrations (Stripe,
@@ -5533,8 +5539,7 @@ func (s *subscriptionService) buildAddonProrationEntries(
 	return entries, nil
 }
 
-// activateIncompleteSubscription activates a subscription that is in incomplete status
-// after its invoice has been successfully paid
+// activateIncompleteSubscription activates an incomplete subscription after its invoice is paid.
 func (s *subscriptionService) activateIncompleteSubscription(ctx context.Context, sub *subscription.Subscription) error {
 	subscriptionID := sub.ID
 	s.Logger.Info(ctx, "activating incomplete subscription", "subscription_id", subscriptionID)
@@ -5611,8 +5616,7 @@ func (s *subscriptionService) HandleSubscriptionActivatingInvoicePaid(ctx contex
 	return s.processPendingCreditGrantsForSubscription(ctx, sub)
 }
 
-// MarkSubscriptionIncomplete moves an active subscription with an incomplete-type payment behaviour to incomplete
-// when its renewal invoice is unpaid after a failed automatic charge or past its due date.
+// MarkSubscriptionIncomplete moves a gated subscription to incomplete when its renewal invoice goes unpaid.
 func (s *subscriptionService) MarkSubscriptionIncomplete(ctx context.Context, invoiceID string) error {
 	inv, err := s.InvoiceRepo.Get(ctx, invoiceID)
 	if err != nil {
@@ -6003,8 +6007,7 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 		}
 		invoiceService := NewInvoiceService(s.ServiceParams)
 
-		// Void on Stripe first so nothing can be collected after cancel; Flexprice voids after cancel
-		// so a failed cancel is retried next tick while the invoice is still unpaid.
+		// Void on Stripe, cancel, then void in Flexprice so a failed cancel retries next tick.
 		for _, sub := range subscriptions {
 			overdueInvoices := overdueInvoicesBySub[sub.ID]
 			if len(overdueInvoices) == 0 {

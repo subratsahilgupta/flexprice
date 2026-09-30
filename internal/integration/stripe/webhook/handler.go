@@ -527,8 +527,7 @@ func (h *Handler) handleInvoicePaymentPaid(ctx context.Context, event *stripeapi
 	return nil
 }
 
-// handleInvoicePaymentFailed records a FAILED payment for a failed attempt on a synced Stripe invoice
-// and moves a payment-gated subscription to incomplete
+// handleInvoicePaymentFailed records a FAILED payment and marks a gated subscription incomplete.
 func (h *Handler) handleInvoicePaymentFailed(ctx context.Context, event *stripeapi.Event, environmentID string, services *ServiceDependencies) error {
 	stripeInvoice := h.parseOutboundInvoiceEvent(ctx, event, environmentID)
 	if stripeInvoice == nil {
@@ -589,15 +588,15 @@ func (h *Handler) handleInvoicePaid(ctx context.Context, event *stripeapi.Event,
 		return nil
 	}
 
-	paymentIntentID, err := h.paymentSvc.GetStripeInvoicePaymentIntentID(ctx, stripeInvoice.ID, "paid")
+	settled, err := h.paymentSvc.HasSettledInvoicePaymentIntent(ctx, stripeInvoice.ID)
 	if err != nil {
-		h.logger.Error(ctx, "failed to list Stripe invoice payments, skipping event",
+		h.logger.Error(ctx, "failed to check Stripe invoice payment intents, skipping event",
 			"error", err,
 			"stripe_invoice_id", stripeInvoice.ID,
 			"event_id", event.ID)
 		return nil
 	}
-	if paymentIntentID != "" {
+	if settled {
 		return nil
 	}
 

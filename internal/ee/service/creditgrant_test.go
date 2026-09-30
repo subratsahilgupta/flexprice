@@ -2860,3 +2860,96 @@ func (s *CreditGrantServiceTestSuite) TestShouldGateApplicationOnPayment() {
 		})
 	}
 }
+
+// createAppliedRecurringGrant returns the applied first application and the pending next one.
+func (s *CreditGrantServiceTestSuite) createAppliedRecurringGrant() (*creditgrant.CreditGrant, *creditgrantapplication.CreditGrantApplication, *creditgrantapplication.CreditGrantApplication) {
+	resp, err := s.creditGrantService.CreateCreditGrant(s.GetContext(), dto.CreateCreditGrantRequest{
+		Name:           "Recurring Grant",
+		Scope:          types.CreditGrantScopeSubscription,
+		SubscriptionID: &s.testData.subscription.ID,
+		PlanID:         &s.testData.plan.ID,
+		Credits:        decimal.NewFromInt(50),
+		Cadence:        types.CreditGrantCadenceRecurring,
+		Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
+		PeriodCount:    lo.ToPtr(1),
+		ExpirationType: types.CreditGrantExpiryTypeNever,
+		StartDate:      &s.testData.now,
+	})
+	s.Require().NoError(err)
+
+	apps, err := s.GetStores().CreditGrantApplicationRepo.List(s.GetContext(), &types.CreditGrantApplicationFilter{
+		CreditGrantIDs: []string{resp.CreditGrant.ID},
+		QueryFilter:    types.NewDefaultQueryFilter(),
+	})
+	s.Require().NoError(err)
+	s.Require().Len(apps, 2)
+
+	applied, _ := lo.Find(apps, func(a *creditgrantapplication.CreditGrantApplication) bool {
+		return a.ApplicationStatus == types.ApplicationStatusApplied
+	})
+	next, _ := lo.Find(apps, func(a *creditgrantapplication.CreditGrantApplication) bool {
+		return a.ApplicationStatus == types.ApplicationStatusPending
+	})
+	s.Require().NotNil(applied)
+	s.Require().NotNil(next)
+	return resp.CreditGrant, applied, next
+}
+
+func (s *CreditGrantServiceTestSuite) countWalletTransactionsForApplication(cgaID string) int {
+	wallets, err := s.walletService.GetWalletsByCustomerID(s.GetContext(), s.testData.customer.ID)
+	s.Require().NoError(err)
+
+	count := 0
+	for _, w := range wallets {
+		txs, err := s.walletService.GetWalletTransactions(s.GetContext(), w.ID, &types.WalletTransactionFilter{
+			WalletID:    &w.ID,
+			QueryFilter: types.NewNoLimitQueryFilter(),
+		})
+		s.Require().NoError(err)
+		count += len(lo.Filter(txs.Items, func(tx *dto.WalletTransactionResponse, _ int) bool {
+			return tx.Metadata["cga_id"] == cgaID
+		}))
+	}
+	return count
+}
+
+func (s *CreditGrantServiceTestSuite) TestFailedApplicationAlreadyCreditedHeals() {
+	_, applied, _ := s.createAppliedRecurringGrant()
+
+	// A lost race left the credited application marked failed.
+	applied.ApplicationStatus = types.ApplicationStatusFailed
+	applied.FailureReason = lo.ToPtr("duplicate key")
+	s.Require().NoError(s.GetStores().CreditGrantApplicationRepo.Update(s.GetContext(), applied))
+
+	s.Require().NoError(s.creditGrantService.ProcessCreditGrantApplication(s.GetContext(), applied.ID))
+
+	healed, err := s.GetStores().CreditGrantApplicationRepo.Get(s.GetContext(), applied.ID)
+	s.Require().NoError(err)
+	s.Equal(types.ApplicationStatusApplied, healed.ApplicationStatus)
+	s.Equal(1, s.countWalletTransactionsForApplication(applied.ID))
+
+	apps, err := s.GetStores().CreditGrantApplicationRepo.List(s.GetContext(), &types.CreditGrantApplicationFilter{
+		CreditGrantIDs: []string{applied.CreditGrantID},
+		QueryFilter:    types.NewDefaultQueryFilter(),
+	})
+	s.Require().NoError(err)
+	s.Len(apps, 2)
+}
+
+func (s *CreditGrantServiceTestSuite) TestStaleConcurrentApplicationDoesNotMarkFailed() {
+	grant, _, next := s.createAppliedRecurringGrant()
+	svc := s.creditGrantService.(*creditGrantService)
+
+	stale := *next
+	_, err := svc.applyCreditGrantToWallet(s.GetContext(), grant, s.testData.subscription, next)
+	s.Require().NoError(err)
+
+	nextCGA, err := svc.applyCreditGrantToWallet(s.GetContext(), grant, s.testData.subscription, &stale)
+	s.Require().NoError(err)
+	s.Nil(nextCGA)
+
+	got, err := s.GetStores().CreditGrantApplicationRepo.Get(s.GetContext(), next.ID)
+	s.Require().NoError(err)
+	s.Equal(types.ApplicationStatusApplied, got.ApplicationStatus)
+	s.Equal(1, s.countWalletTransactionsForApplication(next.ID))
+}

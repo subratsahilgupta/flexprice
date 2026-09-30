@@ -686,8 +686,7 @@ func (s *InvoiceSyncService) IsStripeInvoiceSettled(ctx context.Context, flexpri
 	return stripeInvoice.Status == stripe.InvoiceStatusPaid || stripeInvoice.Status == stripe.InvoiceStatusVoid, nil
 }
 
-// VoidInvoiceInStripe voids the Stripe invoice synced for a FlexPrice invoice, which also stops Stripe's retries,
-// and reports whether the caller may proceed. It returns false without voiding when Stripe has it paid.
+// VoidInvoiceInStripe voids the synced Stripe invoice; false means Stripe already has it paid.
 func (s *InvoiceSyncService) VoidInvoiceInStripe(ctx context.Context, flexpriceInvoiceID string) (bool, error) {
 	mapping, err := s.getExistingStripeMapping(ctx, flexpriceInvoiceID)
 	if ierr.IsNotFound(err) {
