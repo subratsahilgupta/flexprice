@@ -146,16 +146,9 @@ func RegisterWorkflowsAndActivities(
 		params.Logger,
 	)
 
-	invoiceActivities := invoiceActivities.NewInvoiceActivities(
-		params,
-		params.Logger,
-	)
-	invoiceService := service.NewInvoiceService(params)
-
 	hubspotInvoiceSyncActivities := hubspotActivities.NewInvoiceSyncActivities(
 		params.IntegrationFactory,
 		params.Logger,
-		invoiceService,
 	)
 
 	subscriptionService := service.NewSubscriptionService(params)
@@ -163,6 +156,11 @@ func RegisterWorkflowsAndActivities(
 	scheduleBillingActivities := subscriptionActivities.NewSubscriptionActivities(subscriptionService)
 	billingActivities := subscriptionActivities.NewBillingActivities(
 		subscriptionService,
+		params,
+		params.Logger,
+	)
+
+	invoiceActs := invoiceActivities.NewInvoiceActivities(
 		params,
 		params.Logger,
 	)
@@ -178,7 +176,6 @@ func RegisterWorkflowsAndActivities(
 		params.IntegrationFactory,
 		customerService,
 		params.Logger,
-		invoiceService,
 	)
 	nomodCustomerSyncActivities := nomodActivities.NewCustomerSyncActivities(
 		params.IntegrationFactory,
@@ -191,14 +188,14 @@ func RegisterWorkflowsAndActivities(
 		params.IntegrationFactory,
 		customerService,
 		params.Logger,
-		invoiceService,
 	)
 
 	// Moyasar activities
+	moyasarInvoiceService := service.NewInvoiceService(params)
 	moyasarInvoiceSyncActivities := moyasarActivities.NewInvoiceSyncActivities(
 		params.IntegrationFactory,
 		customerService,
-		invoiceService,
+		moyasarInvoiceService,
 		params.Logger,
 	)
 
@@ -207,7 +204,6 @@ func RegisterWorkflowsAndActivities(
 		params.IntegrationFactory,
 		customerService,
 		params.Logger,
-		invoiceService,
 	)
 	paddleCustomerSyncActivities := paddleActivities.NewCustomerSyncActivities(
 		params.IntegrationFactory,
@@ -259,12 +255,10 @@ func RegisterWorkflowsAndActivities(
 	zohoInvoiceSyncActivities := zohoActivities.NewInvoiceSyncActivities(
 		params.IntegrationFactory,
 		params.Logger,
-		invoiceService,
 	)
 	tabsInvoiceSyncActivities := tabsActivities.NewInvoiceSyncActivities(
 		params.IntegrationFactory,
 		params.Logger,
-		invoiceService,
 	)
 
 	// Customer activities
@@ -324,7 +318,7 @@ func RegisterWorkflowsAndActivities(
 
 	// Get all task queues and register workflows/activities for each
 	for _, taskQueue := range types.GetAllTaskQueues() {
-		config := buildWorkerConfig(taskQueue, workflowTrackingActivities, planActivities, prepareEventsActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, hubspotQuoteSyncActivities, qbPriceSyncActivities, nomodInvoiceSyncActivities, nomodCustomerSyncActivities, whopInvoiceSyncActivities, moyasarInvoiceSyncActivities, paddleInvoiceSyncActivities, paddleCustomerSyncActivities, paddleSubscriptionSyncActivities, stripeInvoiceSyncActivities, stripeCustomerSyncActivities, razorpayInvoiceSyncActivities, razorpayCustomerSyncActivities, chargebeeInvoiceSyncActivities, chargebeeCustomerSyncActivities, qbInvoiceSyncActivities, qbCustomerSyncActivities, zohoInvoiceSyncActivities, tabsInvoiceSyncActivities, customerActivities, scheduleBillingActivities, billingActivities, invoiceActivities, reprocessRawEventsActivities, envActivities, cronBundle, alertActs, marketplaceFlushActivities)
+		config := buildWorkerConfig(taskQueue, workflowTrackingActivities, planActivities, prepareEventsActivities, taskActivities, taskActivity, scheduledTaskActivity, exportActivity, hubspotDealSyncActivities, hubspotInvoiceSyncActivities, hubspotQuoteSyncActivities, qbPriceSyncActivities, nomodInvoiceSyncActivities, nomodCustomerSyncActivities, whopInvoiceSyncActivities, moyasarInvoiceSyncActivities, paddleInvoiceSyncActivities, paddleCustomerSyncActivities, paddleSubscriptionSyncActivities, stripeInvoiceSyncActivities, stripeCustomerSyncActivities, razorpayInvoiceSyncActivities, razorpayCustomerSyncActivities, chargebeeInvoiceSyncActivities, chargebeeCustomerSyncActivities, qbInvoiceSyncActivities, qbCustomerSyncActivities, zohoInvoiceSyncActivities, tabsInvoiceSyncActivities, customerActivities, scheduleBillingActivities, billingActivities, invoiceActs, reprocessRawEventsActivities, envActivities, cronBundle, alertActs, marketplaceFlushActivities)
 		if err := registerWorker(temporalService, config); err != nil {
 			return fmt.Errorf("failed to register worker for task queue %s: %w", taskQueue, err)
 		}
@@ -429,6 +423,7 @@ func buildWorkerConfig(
 			zohoInvoiceSyncActivities.SyncInvoiceToZoho,
 			zohoInvoiceSyncActivities.MarkZohoBooksInvoicePaid,
 			tabsInvoiceSyncActivities.SyncInvoiceToTabs,
+			invoiceActs.PublishInvoiceSyncWebhookActivity,
 			stripeCustomerSyncActivities.SyncCustomerToStripe,
 			razorpayCustomerSyncActivities.SyncCustomerToRazorpay,
 			chargebeeCustomerSyncActivities.SyncCustomerToChargebee,

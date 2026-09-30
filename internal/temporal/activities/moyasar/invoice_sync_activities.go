@@ -3,7 +3,6 @@ package moyasar
 import (
 	"context"
 
-	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/integration"
 	moyasarintegration "github.com/flexprice/flexprice/internal/integration/moyasar"
@@ -18,7 +17,7 @@ import (
 type InvoiceSyncActivities struct {
 	integrationFactory *integration.Factory
 	customerService    interfaces.CustomerService
-	invoiceService     service.InvoiceService
+	invoiceService     interfaces.InvoiceService
 	logger             *logger.Logger
 }
 
@@ -26,7 +25,7 @@ type InvoiceSyncActivities struct {
 func NewInvoiceSyncActivities(
 	integrationFactory *integration.Factory,
 	customerService interfaces.CustomerService,
-	invoiceService service.InvoiceService,
+	invoiceService interfaces.InvoiceService,
 	logger *logger.Logger,
 ) *InvoiceSyncActivities {
 	return &InvoiceSyncActivities{
@@ -47,7 +46,7 @@ func NewInvoiceSyncActivities(
 func (a *InvoiceSyncActivities) SyncInvoiceToMoyasar(
 	ctx context.Context,
 	input models.MoyasarInvoiceSyncWorkflowInput,
-) (err error) {
+) error {
 	a.logger.Info(ctx, "syncing invoice to Moyasar",
 		"invoice_id", input.InvoiceID,
 		"customer_id", input.CustomerID,
@@ -56,9 +55,6 @@ func (a *InvoiceSyncActivities) SyncInvoiceToMoyasar(
 
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
-	defer func() {
-		a.invoiceService.PublishInvoiceSyncWebhook(ctx, input.InvoiceID, types.SecretProviderMoyasar, err)
-	}()
 
 	moyasarIntegration, err := a.integrationFactory.GetMoyasarIntegration(ctx)
 	if err != nil {

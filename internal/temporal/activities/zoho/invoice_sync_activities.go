@@ -3,7 +3,6 @@ package zoho
 import (
 	"context"
 
-	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/integration"
 	"github.com/flexprice/flexprice/internal/integration/zoho"
@@ -16,23 +15,18 @@ import (
 type InvoiceSyncActivities struct {
 	integrationFactory *integration.Factory
 	logger             *logger.Logger
-	invoiceService     service.InvoiceService
 }
 
-func NewInvoiceSyncActivities(integrationFactory *integration.Factory, logger *logger.Logger, invoiceService service.InvoiceService) *InvoiceSyncActivities {
+func NewInvoiceSyncActivities(integrationFactory *integration.Factory, logger *logger.Logger) *InvoiceSyncActivities {
 	return &InvoiceSyncActivities{
 		integrationFactory: integrationFactory,
 		logger:             logger,
-		invoiceService:     invoiceService,
 	}
 }
 
-func (a *InvoiceSyncActivities) SyncInvoiceToZoho(ctx context.Context, input models.ZohoBooksInvoiceSyncWorkflowInput) (err error) {
+func (a *InvoiceSyncActivities) SyncInvoiceToZoho(ctx context.Context, input models.ZohoBooksInvoiceSyncWorkflowInput) error {
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
-	defer func() {
-		a.invoiceService.PublishInvoiceSyncWebhook(ctx, input.InvoiceID, types.SecretProviderZohoBooks, err)
-	}()
 
 	zohoIntegration, err := a.integrationFactory.GetZohoBooksIntegration(ctx)
 	if err != nil {

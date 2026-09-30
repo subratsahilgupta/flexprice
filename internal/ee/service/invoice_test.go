@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -29,12 +28,7 @@ import (
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/temporal"
-	"go.temporal.io/sdk/testsuite"
 )
 
 // recordingWebhookPublisher captures WebhookEvent publishes while delegating to inner.
@@ -3325,14 +3319,14 @@ func (s *InvoiceServiceSuite) TestPublishInvoiceSyncWebhook() {
 		name        string
 		invoiceID   string
 		withMapping bool
-		syncErr     error
+		syncErr     string
 		wantEvent   types.WebhookEventName
 		wantError   string
 	}{
 		{name: "success with mapping", invoiceID: "inv_sync_ok", withMapping: true, wantEvent: types.WebhookEventInvoiceSyncSuccess},
 		{name: "success without mapping is a skip", invoiceID: "inv_sync_skip"},
-		{name: "failure without mapping", invoiceID: "inv_sync_fail", syncErr: errors.New("stripe down"), wantEvent: types.WebhookEventInvoiceSyncFailed, wantError: "stripe down"},
-		{name: "failure after mapping was created", invoiceID: "inv_sync_fail_mapped", withMapping: true, syncErr: errors.New("finalize failed"), wantEvent: types.WebhookEventInvoiceSyncFailed, wantError: "finalize failed"},
+		{name: "failure without mapping", invoiceID: "inv_sync_fail", syncErr: "stripe down", wantEvent: types.WebhookEventInvoiceSyncFailed, wantError: "stripe down"},
+		{name: "failure after mapping was created", invoiceID: "inv_sync_fail_mapped", withMapping: true, syncErr: "finalize failed", wantEvent: types.WebhookEventInvoiceSyncFailed, wantError: "finalize failed"},
 	}
 
 	for _, tt := range tests {
@@ -3384,57 +3378,9 @@ func (s *InvoiceServiceSuite) TestPublishInvoiceSyncWebhook_IgnoresOtherProvider
 		BaseModel:        types.GetDefaultBaseModel(ctx),
 	}))
 
-	s.service.PublishInvoiceSyncWebhook(ctx, "inv_razorpay_only", types.SecretProviderStripe, nil)
+	s.service.PublishInvoiceSyncWebhook(ctx, "inv_razorpay_only", types.SecretProviderStripe, "")
 
 	s.Empty(lo.Filter(s.GetPublishedWebhooks(), func(e *types.WebhookEvent, _ int) bool {
 		return e.EntityID == "inv_razorpay_only"
 	}))
-}
-
-// Outside an activity every call counts as the last attempt.
-func TestShouldPublishInvoiceSync_LastAttempt(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"success", nil, true},
-		{"retryable failure", errors.New("provider timeout"), true},
-		{"non-retryable failure", temporal.NewNonRetryableApplicationError("bad address", "InvoiceValidationError", nil), true},
-		{"missing connection is never published", temporal.NewNonRetryableApplicationError("not configured", ierr.ErrConnectionNotFound, nil), false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, shouldPublishInvoiceSync(context.Background(), tt.err))
-		})
-	}
-}
-
-// The test activity env runs attempt 1, so only retryable failures are held back.
-func TestShouldPublishInvoiceSync_FirstAttempt(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"success", nil, true},
-		{"retryable failure", errors.New("provider timeout"), false},
-		{"non-retryable failure", temporal.NewNonRetryableApplicationError("bad address", "InvoiceValidationError", nil), true},
-		{"missing connection is never published", temporal.NewNonRetryableApplicationError("not configured", ierr.ErrConnectionNotFound, nil), false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var ts testsuite.WorkflowTestSuite
-			env := ts.NewTestActivityEnvironment()
-			env.RegisterActivityWithOptions(func(ctx context.Context) (bool, error) {
-				return shouldPublishInvoiceSync(ctx, tt.err), nil
-			}, activity.RegisterOptions{Name: "publish"})
-
-			val, err := env.ExecuteActivity("publish")
-			require.NoError(t, err)
-			var got bool
-			require.NoError(t, val.Get(&got))
-			assert.Equal(t, tt.want, got)
-		})
-	}
 }

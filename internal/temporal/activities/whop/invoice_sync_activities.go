@@ -3,7 +3,6 @@ package whop
 import (
 	"context"
 
-	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/integration"
 	integrationwhop "github.com/flexprice/flexprice/internal/integration/whop"
@@ -19,7 +18,6 @@ type InvoiceSyncActivities struct {
 	integrationFactory *integration.Factory
 	customerService    interfaces.CustomerService
 	logger             *logger.Logger
-	invoiceService     service.InvoiceService
 }
 
 // NewInvoiceSyncActivities creates a new Whop invoice sync activities handler
@@ -27,13 +25,11 @@ func NewInvoiceSyncActivities(
 	integrationFactory *integration.Factory,
 	customerService interfaces.CustomerService,
 	logger *logger.Logger,
-	invoiceService service.InvoiceService,
 ) *InvoiceSyncActivities {
 	return &InvoiceSyncActivities{
 		integrationFactory: integrationFactory,
 		customerService:    customerService,
 		logger:             logger,
-		invoiceService:     invoiceService,
 	}
 }
 
@@ -82,7 +78,7 @@ func (a *InvoiceSyncActivities) MarkWhopInvoicePaid(
 func (a *InvoiceSyncActivities) SyncInvoiceToWhop(
 	ctx context.Context,
 	input models.WhopInvoiceSyncWorkflowInput,
-) (err error) {
+) error {
 	a.logger.Info(ctx, "syncing invoice to Whop",
 		"invoice_id", input.InvoiceID,
 		"tenant_id", input.TenantID,
@@ -90,9 +86,6 @@ func (a *InvoiceSyncActivities) SyncInvoiceToWhop(
 
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
-	defer func() {
-		a.invoiceService.PublishInvoiceSyncWebhook(ctx, input.InvoiceID, types.SecretProviderWhop, err)
-	}()
 
 	whopIntegration, err := a.integrationFactory.GetWhopIntegration(ctx)
 	if err != nil {

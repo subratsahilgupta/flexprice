@@ -3,7 +3,6 @@ package paddle
 import (
 	"context"
 
-	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/integration"
 	"github.com/flexprice/flexprice/internal/integration/paddle"
@@ -19,7 +18,6 @@ type InvoiceSyncActivities struct {
 	integrationFactory *integration.Factory
 	customerService    interfaces.CustomerService
 	logger             *logger.Logger
-	invoiceService     service.InvoiceService
 }
 
 // NewInvoiceSyncActivities creates a new Paddle invoice sync activities handler
@@ -27,13 +25,11 @@ func NewInvoiceSyncActivities(
 	integrationFactory *integration.Factory,
 	customerService interfaces.CustomerService,
 	logger *logger.Logger,
-	invoiceService service.InvoiceService,
 ) *InvoiceSyncActivities {
 	return &InvoiceSyncActivities{
 		integrationFactory: integrationFactory,
 		customerService:    customerService,
 		logger:             logger,
-		invoiceService:     invoiceService,
 	}
 }
 
@@ -45,7 +41,7 @@ func NewInvoiceSyncActivities(
 func (a *InvoiceSyncActivities) SyncInvoiceToPaddle(
 	ctx context.Context,
 	input models.PaddleInvoiceSyncWorkflowInput,
-) (err error) {
+) error {
 	a.logger.Info(ctx, "syncing invoice to Paddle",
 		"invoice_id", input.InvoiceID,
 		"customer_id", input.CustomerID,
@@ -55,9 +51,6 @@ func (a *InvoiceSyncActivities) SyncInvoiceToPaddle(
 	// Set context values for tenant and environment
 	ctx = types.SetTenantID(ctx, input.TenantID)
 	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
-	defer func() {
-		a.invoiceService.PublishInvoiceSyncWebhook(ctx, input.InvoiceID, types.SecretProviderPaddle, err)
-	}()
 
 	// Get Paddle integration with runtime context
 	paddleIntegration, err := a.integrationFactory.GetPaddleIntegration(ctx)
