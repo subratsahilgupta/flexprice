@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	ierr "github.com/flexprice/flexprice/internal/errors"
@@ -24,6 +25,7 @@ func TestStripeInvoiceSyncWorkflow_PublishesFinalOutcomeOnce(t *testing.T) {
 	}{
 		{name: "success", wantAttempts: 1, wantPublish: true},
 		{name: "retryable failure publishes after last attempt", syncErr: errors.New("stripe down"), wantAttempts: 3, wantPublish: true, wantError: "stripe down"},
+		{name: "wrapped failure keeps a clean message", syncErr: fmt.Errorf("create stripe invoice: %w", errors.New("no such customer")), wantAttempts: 3, wantPublish: true, wantError: "create stripe invoice: no such customer"},
 		{name: "non-retryable failure", syncErr: temporal.NewNonRetryableApplicationError("bad address", "InvoiceValidationError", nil), wantAttempts: 1, wantPublish: true, wantError: "bad address"},
 		{name: "missing connection is not published", syncErr: temporal.NewNonRetryableApplicationError("not configured", ierr.ErrConnectionNotFound, nil), wantAttempts: 1},
 	}

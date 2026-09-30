@@ -43,13 +43,8 @@ func publishInvoiceSyncOutcome(ctx workflow.Context, provider types.SecretProvid
 // invoiceSyncErrorMessage drops Temporal's activity wrapping so the webhook carries the provider's message.
 func invoiceSyncErrorMessage(err error) string {
 	var appErr *temporal.ApplicationError
-	if !errors.As(err, &appErr) {
-		return err.Error()
+	if errors.As(err, &appErr) {
+		return appErr.Message()
 	}
-
-	if cause := errors.Unwrap(appErr); cause != nil {
-		return appErr.Message() + ": " + cause.Error()
-	}
-	
-	return appErr.Message()
+	return err.Error()
 }
