@@ -57,6 +57,7 @@ func (r *fxRateRepository) Create(ctx context.Context, fr *domainFXRate.FXRate) 
 		SetFromCurrency(strings.ToLower(fr.FromCurrency)).
 		SetToCurrency(strings.ToLower(fr.ToCurrency)).
 		SetRate(fr.Rate).
+		SetSource(string(fr.Source)).
 		SetNillableValidFrom(fr.ValidFrom).
 		SetNillableValidTo(fr.ValidTo).
 		SetMetadata(fr.Metadata).

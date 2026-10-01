@@ -30,6 +30,29 @@ func TestFXRateScope_Validate(t *testing.T) {
 	}
 }
 
+func TestFXRateSource_Validate(t *testing.T) {
+	cases := []struct {
+		name    string
+		source  FXRateSource
+		wantErr bool
+	}{
+		{"fixed", FXRateSourceFixed, false},
+		{"market", FXRateSourceMarket, false},
+		{"empty", FXRateSource(""), true},
+		{"garbage", FXRateSource("live"), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := c.source.Validate()
+			if c.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestNewFXRateFilter_Defaults(t *testing.T) {
 	f := NewFXRateFilter()
 	assert.NotNil(t, f.QueryFilter)

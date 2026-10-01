@@ -1096,6 +1096,12 @@ func init() {
 	fxrateDescToCurrency := fxrateFields[4].Descriptor()
 	// fxrate.ToCurrencyValidator is a validator for the "to_currency" field. It is called by the builders before save.
 	fxrate.ToCurrencyValidator = fxrateDescToCurrency.Validators[0].(func(string) error)
+	// fxrateDescSource is the schema descriptor for source field.
+	fxrateDescSource := fxrateFields[6].Descriptor()
+	// fxrate.DefaultSource holds the default value on creation for the source field.
+	fxrate.DefaultSource = fxrateDescSource.Default.(string)
+	// fxrate.SourceValidator is a validator for the "source" field. It is called by the builders before save.
+	fxrate.SourceValidator = fxrateDescSource.Validators[0].(func(string) error)
 	featureMixin := schema.Feature{}.Mixin()
 	featureMixinFields0 := featureMixin[0].Fields()
 	_ = featureMixinFields0

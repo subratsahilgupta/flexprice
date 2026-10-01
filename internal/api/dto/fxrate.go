@@ -18,10 +18,13 @@ type CreateFXRateRequest struct {
 	ScopeID      string            `json:"scope_id,omitempty"`
 	FromCurrency string            `json:"from_currency" validate:"required"`
 	ToCurrency   string            `json:"to_currency" validate:"required"`
-	Rate         string            `json:"rate" validate:"required"`
-	ValidFrom    *time.Time        `json:"valid_from,omitempty"`
-	ValidTo      *time.Time        `json:"valid_to,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	// Source defaults to "fixed". A fixed rate requires `rate`; a market rate ignores it
+	// (the value comes from the market-rate integration at conversion time).
+	Source    types.FXRateSource `json:"source,omitempty"`
+	Rate      string             `json:"rate,omitempty"`
+	ValidFrom *time.Time         `json:"valid_from,omitempty"`
+	ValidTo   *time.Time         `json:"valid_to,omitempty"`
+	Metadata  map[string]string  `json:"metadata,omitempty"`
 }
 
 func (r *CreateFXRateRequest) Validate() error {
@@ -31,17 +34,39 @@ func (r *CreateFXRateRequest) Validate() error {
 	if err := r.Scope.Validate(); err != nil {
 		return err
 	}
+	if r.Source == "" {
+		r.Source = types.FXRateSourceFixed
+	}
+	if err := r.Source.Validate(); err != nil {
+		return err
+	}
+	if r.Source == types.FXRateSourceFixed && strings.TrimSpace(r.Rate) == "" {
+		return ierr.NewError("rate is required for a fixed fx rate").
+			WithHint("Provide a rate value, or set source to \"market\".").
+			Mark(ierr.ErrValidation)
+	}
 	return nil
 }
 
 // ToFXRate parses the request into a domain FXRate. Currencies are stored lowercase.
 func (r *CreateFXRateRequest) ToFXRate(ctx context.Context) (*fxrate.FXRate, error) {
-	rate, err := decimal.NewFromString(r.Rate)
-	if err != nil {
-		return nil, ierr.NewError("invalid rate").
-			WithHint("Rate must be a valid decimal number").
-			WithReportableDetails(map[string]any{"rate": r.Rate}).
-			Mark(ierr.ErrValidation)
+	source := r.Source
+	if source == "" {
+		source = types.FXRateSourceFixed
+	}
+
+	// A market rate carries no fixed value (it is resolved from the integration), so an
+	// empty rate is stored as zero rather than rejected.
+	rate := decimal.Zero
+	if strings.TrimSpace(r.Rate) != "" {
+		parsed, err := decimal.NewFromString(r.Rate)
+		if err != nil {
+			return nil, ierr.NewError("invalid rate").
+				WithHint("Rate must be a valid decimal number").
+				WithReportableDetails(map[string]any{"rate": r.Rate}).
+				Mark(ierr.ErrValidation)
+		}
+		rate = parsed
 	}
 
 	scopeID := r.ScopeID
@@ -56,6 +81,7 @@ func (r *CreateFXRateRequest) ToFXRate(ctx context.Context) (*fxrate.FXRate, err
 		FromCurrency:  strings.ToLower(r.FromCurrency),
 		ToCurrency:    strings.ToLower(r.ToCurrency),
 		Rate:          rate,
+		Source:        source,
 		ValidFrom:     r.ValidFrom,
 		ValidTo:       r.ValidTo,
 		Metadata:      r.Metadata,

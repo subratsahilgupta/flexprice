@@ -30096,6 +30096,7 @@ type FXRateMutation struct {
 	from_currency  *string
 	to_currency    *string
 	rate           *decimal.Decimal
+	source         *string
 	valid_from     *time.Time
 	valid_to       *time.Time
 	metadata       *map[string]string
@@ -30680,6 +30681,42 @@ func (m *FXRateMutation) ResetRate() {
 	m.rate = nil
 }
 
+// SetSource sets the "source" field.
+func (m *FXRateMutation) SetSource(s string) {
+	m.source = &s
+}
+
+// Source returns the value of the "source" field in the mutation.
+func (m *FXRateMutation) Source() (r string, exists bool) {
+	v := m.source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSource returns the old "source" field's value of the FXRate entity.
+// If the FXRate object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *FXRateMutation) OldSource(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSource: %w", err)
+	}
+	return oldValue.Source, nil
+}
+
+// ResetSource resets all changes to the "source" field.
+func (m *FXRateMutation) ResetSource() {
+	m.source = nil
+}
+
 // SetValidFrom sets the "valid_from" field.
 func (m *FXRateMutation) SetValidFrom(t time.Time) {
 	m.valid_from = &t
@@ -30861,7 +30898,7 @@ func (m *FXRateMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *FXRateMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 16)
 	if m.tenant_id != nil {
 		fields = append(fields, fxrate.FieldTenantID)
 	}
@@ -30897,6 +30934,9 @@ func (m *FXRateMutation) Fields() []string {
 	}
 	if m.rate != nil {
 		fields = append(fields, fxrate.FieldRate)
+	}
+	if m.source != nil {
+		fields = append(fields, fxrate.FieldSource)
 	}
 	if m.valid_from != nil {
 		fields = append(fields, fxrate.FieldValidFrom)
@@ -30939,6 +30979,8 @@ func (m *FXRateMutation) Field(name string) (ent.Value, bool) {
 		return m.ToCurrency()
 	case fxrate.FieldRate:
 		return m.Rate()
+	case fxrate.FieldSource:
+		return m.Source()
 	case fxrate.FieldValidFrom:
 		return m.ValidFrom()
 	case fxrate.FieldValidTo:
@@ -30978,6 +31020,8 @@ func (m *FXRateMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldToCurrency(ctx)
 	case fxrate.FieldRate:
 		return m.OldRate(ctx)
+	case fxrate.FieldSource:
+		return m.OldSource(ctx)
 	case fxrate.FieldValidFrom:
 		return m.OldValidFrom(ctx)
 	case fxrate.FieldValidTo:
@@ -31076,6 +31120,13 @@ func (m *FXRateMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRate(v)
+		return nil
+	case fxrate.FieldSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSource(v)
 		return nil
 	case fxrate.FieldValidFrom:
 		v, ok := value.(time.Time)
@@ -31221,6 +31272,9 @@ func (m *FXRateMutation) ResetField(name string) error {
 		return nil
 	case fxrate.FieldRate:
 		m.ResetRate()
+		return nil
+	case fxrate.FieldSource:
+		m.ResetSource()
 		return nil
 	case fxrate.FieldValidFrom:
 		m.ResetValidFrom()

@@ -37,6 +37,8 @@ const (
 	FieldToCurrency = "to_currency"
 	// FieldRate holds the string denoting the rate field in the database.
 	FieldRate = "rate"
+	// FieldSource holds the string denoting the source field in the database.
+	FieldSource = "source"
 	// FieldValidFrom holds the string denoting the valid_from field in the database.
 	FieldValidFrom = "valid_from"
 	// FieldValidTo holds the string denoting the valid_to field in the database.
@@ -62,6 +64,7 @@ var Columns = []string{
 	FieldFromCurrency,
 	FieldToCurrency,
 	FieldRate,
+	FieldSource,
 	FieldValidFrom,
 	FieldValidTo,
 	FieldMetadata,
@@ -98,6 +101,10 @@ var (
 	FromCurrencyValidator func(string) error
 	// ToCurrencyValidator is a validator for the "to_currency" field. It is called by the builders before save.
 	ToCurrencyValidator func(string) error
+	// DefaultSource holds the default value on creation for the "source" field.
+	DefaultSource string
+	// SourceValidator is a validator for the "source" field. It is called by the builders before save.
+	SourceValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the FXRate queries.
@@ -166,6 +173,11 @@ func ByToCurrency(opts ...sql.OrderTermOption) OrderOption {
 // ByRate orders the results by the rate field.
 func ByRate(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRate, opts...).ToFunc()
+}
+
+// BySource orders the results by the source field.
+func BySource(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSource, opts...).ToFunc()
 }
 
 // ByValidFrom orders the results by the valid_from field.

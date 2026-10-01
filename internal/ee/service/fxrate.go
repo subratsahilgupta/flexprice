@@ -360,10 +360,15 @@ func (s *fxRateService) publishSystemEvent(ctx context.Context, eventName types.
 
 // validateForCreate enforces the §8.1 guardrails on a new rate.
 func (s *fxRateService) validateForCreate(ctx context.Context, r *fxrate.FXRate) error {
+	if err := r.Source.Validate(); err != nil {
+		return err
+	}
 	if err := s.validateCurrencies(ctx, r.FromCurrency, r.ToCurrency); err != nil {
 		return err
 	}
-	if !r.Rate.IsPositive() {
+	// A fixed rate carries its own value; a market rate is resolved from the market-rate
+	// integration at conversion time, so its stored rate is not required to be positive.
+	if r.Source == types.FXRateSourceFixed && !r.Rate.IsPositive() {
 		return ierr.NewError("rate must be greater than zero").
 			WithHint("FX rate must be a positive number").
 			Mark(ierr.ErrValidation)

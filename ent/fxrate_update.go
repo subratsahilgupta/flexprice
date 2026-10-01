@@ -139,6 +139,20 @@ func (_u *FXRateUpdate) SetNillableRate(v *decimal.Decimal) *FXRateUpdate {
 	return _u
 }
 
+// SetSource sets the "source" field.
+func (_u *FXRateUpdate) SetSource(v string) *FXRateUpdate {
+	_u.mutation.SetSource(v)
+	return _u
+}
+
+// SetNillableSource sets the "source" field if the given value is not nil.
+func (_u *FXRateUpdate) SetNillableSource(v *string) *FXRateUpdate {
+	if v != nil {
+		_u.SetSource(*v)
+	}
+	return _u
+}
+
 // SetValidFrom sets the "valid_from" field.
 func (_u *FXRateUpdate) SetValidFrom(v time.Time) *FXRateUpdate {
 	_u.mutation.SetValidFrom(v)
@@ -254,6 +268,11 @@ func (_u *FXRateUpdate) check() error {
 			return &ValidationError{Name: "to_currency", err: fmt.Errorf(`ent: validator failed for field "FXRate.to_currency": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Source(); ok {
+		if err := fxrate.SourceValidator(v); err != nil {
+			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "FXRate.source": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -301,6 +320,9 @@ func (_u *FXRateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Rate(); ok {
 		_spec.SetField(fxrate.FieldRate, field.TypeOther, value)
+	}
+	if value, ok := _u.mutation.Source(); ok {
+		_spec.SetField(fxrate.FieldSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ValidFrom(); ok {
 		_spec.SetField(fxrate.FieldValidFrom, field.TypeTime, value)
@@ -450,6 +472,20 @@ func (_u *FXRateUpdateOne) SetNillableRate(v *decimal.Decimal) *FXRateUpdateOne 
 	return _u
 }
 
+// SetSource sets the "source" field.
+func (_u *FXRateUpdateOne) SetSource(v string) *FXRateUpdateOne {
+	_u.mutation.SetSource(v)
+	return _u
+}
+
+// SetNillableSource sets the "source" field if the given value is not nil.
+func (_u *FXRateUpdateOne) SetNillableSource(v *string) *FXRateUpdateOne {
+	if v != nil {
+		_u.SetSource(*v)
+	}
+	return _u
+}
+
 // SetValidFrom sets the "valid_from" field.
 func (_u *FXRateUpdateOne) SetValidFrom(v time.Time) *FXRateUpdateOne {
 	_u.mutation.SetValidFrom(v)
@@ -578,6 +614,11 @@ func (_u *FXRateUpdateOne) check() error {
 			return &ValidationError{Name: "to_currency", err: fmt.Errorf(`ent: validator failed for field "FXRate.to_currency": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Source(); ok {
+		if err := fxrate.SourceValidator(v); err != nil {
+			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "FXRate.source": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -642,6 +683,9 @@ func (_u *FXRateUpdateOne) sqlSave(ctx context.Context) (_node *FXRate, err erro
 	}
 	if value, ok := _u.mutation.Rate(); ok {
 		_spec.SetField(fxrate.FieldRate, field.TypeOther, value)
+	}
+	if value, ok := _u.mutation.Source(); ok {
+		_spec.SetField(fxrate.FieldSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ValidFrom(); ok {
 		_spec.SetField(fxrate.FieldValidFrom, field.TypeTime, value)

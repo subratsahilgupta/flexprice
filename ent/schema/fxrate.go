@@ -50,6 +50,10 @@ func (FXRate) Fields() []ent.Field {
 			NotEmpty(),
 		field.Other("rate", decimal.Decimal{}).
 			SchemaType(map[string]string{"postgres": "numeric(24,12)"}),
+		field.String("source").
+			SchemaType(map[string]string{"postgres": "varchar(20)"}).
+			Default("fixed").
+			NotEmpty(),
 		field.Time("valid_from").
 			SchemaType(map[string]string{"postgres": "timestamptz"}).
 			Optional().

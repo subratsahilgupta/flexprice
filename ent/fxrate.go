@@ -43,6 +43,8 @@ type FXRate struct {
 	ToCurrency string `json:"to_currency,omitempty"`
 	// Rate holds the value of the "rate" field.
 	Rate decimal.Decimal `json:"rate,omitempty"`
+	// Source holds the value of the "source" field.
+	Source string `json:"source,omitempty"`
 	// ValidFrom holds the value of the "valid_from" field.
 	ValidFrom *time.Time `json:"valid_from,omitempty"`
 	// ValidTo holds the value of the "valid_to" field.
@@ -61,7 +63,7 @@ func (*FXRate) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case fxrate.FieldRate:
 			values[i] = new(decimal.Decimal)
-		case fxrate.FieldID, fxrate.FieldTenantID, fxrate.FieldStatus, fxrate.FieldCreatedBy, fxrate.FieldUpdatedBy, fxrate.FieldEnvironmentID, fxrate.FieldScope, fxrate.FieldScopeID, fxrate.FieldFromCurrency, fxrate.FieldToCurrency:
+		case fxrate.FieldID, fxrate.FieldTenantID, fxrate.FieldStatus, fxrate.FieldCreatedBy, fxrate.FieldUpdatedBy, fxrate.FieldEnvironmentID, fxrate.FieldScope, fxrate.FieldScopeID, fxrate.FieldFromCurrency, fxrate.FieldToCurrency, fxrate.FieldSource:
 			values[i] = new(sql.NullString)
 		case fxrate.FieldCreatedAt, fxrate.FieldUpdatedAt, fxrate.FieldValidFrom, fxrate.FieldValidTo:
 			values[i] = new(sql.NullTime)
@@ -158,6 +160,12 @@ func (_m *FXRate) assignValues(columns []string, values []any) error {
 			} else if value != nil {
 				_m.Rate = *value
 			}
+		case fxrate.FieldSource:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field source", values[i])
+			} else if value.Valid {
+				_m.Source = value.String
+			}
 		case fxrate.FieldValidFrom:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field valid_from", values[i])
@@ -251,6 +259,9 @@ func (_m *FXRate) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("rate=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Rate))
+	builder.WriteString(", ")
+	builder.WriteString("source=")
+	builder.WriteString(_m.Source)
 	builder.WriteString(", ")
 	if v := _m.ValidFrom; v != nil {
 		builder.WriteString("valid_from=")

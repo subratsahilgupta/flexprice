@@ -11,16 +11,17 @@ import (
 
 // FXRate is a tenant-configured fixed exchange rate. to = from × rate.
 type FXRate struct {
-	ID            string            `json:"id,omitempty"`
-	EnvironmentID string            `json:"environment_id,omitempty"`
-	Scope         types.FXRateScope `json:"scope,omitempty"`
-	ScopeID       string            `json:"scope_id,omitempty"`
-	FromCurrency  string            `json:"from_currency,omitempty"`
-	ToCurrency    string            `json:"to_currency,omitempty"`
-	Rate          decimal.Decimal   `json:"rate" swaggertype:"string"`
-	ValidFrom     *time.Time        `json:"valid_from,omitempty"`
-	ValidTo       *time.Time        `json:"valid_to,omitempty"`
-	Metadata      map[string]string `json:"metadata,omitempty"`
+	ID            string             `json:"id,omitempty"`
+	EnvironmentID string             `json:"environment_id,omitempty"`
+	Scope         types.FXRateScope  `json:"scope,omitempty"`
+	ScopeID       string             `json:"scope_id,omitempty"`
+	FromCurrency  string             `json:"from_currency,omitempty"`
+	ToCurrency    string             `json:"to_currency,omitempty"`
+	Rate          decimal.Decimal    `json:"rate" swaggertype:"string"`
+	Source        types.FXRateSource `json:"source,omitempty"`
+	ValidFrom     *time.Time         `json:"valid_from,omitempty"`
+	ValidTo       *time.Time         `json:"valid_to,omitempty"`
+	Metadata      map[string]string  `json:"metadata,omitempty"`
 	types.BaseModel
 }
 
@@ -37,6 +38,7 @@ func FromEnt(e *ent.FXRate) *FXRate {
 		FromCurrency:  e.FromCurrency,
 		ToCurrency:    e.ToCurrency,
 		Rate:          e.Rate,
+		Source:        types.FXRateSource(e.Source),
 		ValidFrom:     e.ValidFrom,
 		ValidTo:       e.ValidTo,
 		Metadata:      e.Metadata,

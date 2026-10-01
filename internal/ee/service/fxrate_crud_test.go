@@ -219,6 +219,30 @@ func (s *FXRateCRUDSuite) TestCreateFXRate() {
 				s.Equal(types.FXRateScopeSubscription, resp.Scope)
 			},
 		},
+		{
+			name: "source defaults to fixed",
+			req:  dto.CreateFXRateRequest{Scope: types.FXRateScopeTenant, FromCurrency: "usd", ToCurrency: "inr", Rate: "83"},
+			check: func(resp *dto.FXRateResponse) {
+				s.Equal(types.FXRateSourceFixed, resp.Source)
+			},
+		},
+		{
+			name: "market rate needs no rate value",
+			req:  dto.CreateFXRateRequest{Scope: types.FXRateScopeTenant, Source: types.FXRateSourceMarket, FromCurrency: "usd", ToCurrency: "inr"},
+			check: func(resp *dto.FXRateResponse) {
+				s.Equal(types.FXRateSourceMarket, resp.Source)
+			},
+		},
+		{
+			name:    "fixed rate requires a rate value",
+			req:     dto.CreateFXRateRequest{Scope: types.FXRateScopeTenant, FromCurrency: "usd", ToCurrency: "inr"},
+			wantErr: true,
+		},
+		{
+			name:    "rejects invalid source",
+			req:     dto.CreateFXRateRequest{Scope: types.FXRateScopeTenant, Source: types.FXRateSource("live"), FromCurrency: "usd", ToCurrency: "inr", Rate: "83"},
+			wantErr: true,
+		},
 	}
 
 	for _, c := range cases {

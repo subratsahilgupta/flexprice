@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS "fx_rates" (
   "from_currency"  varchar(10)    NOT NULL,
   "to_currency"    varchar(10)    NOT NULL,
   "rate"           numeric(24,12) NOT NULL,
+  "source"         varchar(20)    NOT NULL DEFAULT 'fixed',
   "valid_from"     timestamptz    NULL,
   "valid_to"       timestamptz    NULL,
   "metadata"       jsonb          NULL,

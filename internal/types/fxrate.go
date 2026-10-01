@@ -19,6 +19,34 @@ const (
 // FXRateScopeIDTenant is the scope_id stored for a tenant-scoped rate.
 const FXRateScopeIDTenant = "tenant"
 
+// FXRateSource records how a rate's value is obtained. A fixed rate uses the stored
+// `rate` value; a market rate ignores it and is resolved from a market-rate integration
+// at conversion time. The integration is not wired yet — the column stores the intent so
+// a pair can be switched to market (at any scope) later without a schema change.
+type FXRateSource string
+
+const (
+	FXRateSourceFixed  FXRateSource = "fixed"
+	FXRateSourceMarket FXRateSource = "market"
+)
+
+func (s FXRateSource) String() string {
+	return string(s)
+}
+
+func (s FXRateSource) Validate() error {
+	allowedValues := []string{
+		FXRateSourceFixed.String(),
+		FXRateSourceMarket.String(),
+	}
+	if !slices.Contains(allowedValues, string(s)) {
+		return ierr.NewError("invalid fx rate source").
+			WithHint("Source must be one of fixed or market").
+			Mark(ierr.ErrValidation)
+	}
+	return nil
+}
+
 func (s FXRateScope) String() string {
 	return string(s)
 }

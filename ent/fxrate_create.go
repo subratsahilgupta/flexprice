@@ -141,6 +141,20 @@ func (_c *FXRateCreate) SetRate(v decimal.Decimal) *FXRateCreate {
 	return _c
 }
 
+// SetSource sets the "source" field.
+func (_c *FXRateCreate) SetSource(v string) *FXRateCreate {
+	_c.mutation.SetSource(v)
+	return _c
+}
+
+// SetNillableSource sets the "source" field if the given value is not nil.
+func (_c *FXRateCreate) SetNillableSource(v *string) *FXRateCreate {
+	if v != nil {
+		_c.SetSource(*v)
+	}
+	return _c
+}
+
 // SetValidFrom sets the "valid_from" field.
 func (_c *FXRateCreate) SetValidFrom(v time.Time) *FXRateCreate {
 	_c.mutation.SetValidFrom(v)
@@ -232,6 +246,10 @@ func (_c *FXRateCreate) defaults() {
 		v := fxrate.DefaultEnvironmentID
 		_c.mutation.SetEnvironmentID(v)
 	}
+	if _, ok := _c.mutation.Source(); !ok {
+		v := fxrate.DefaultSource
+		_c.mutation.SetSource(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -287,6 +305,14 @@ func (_c *FXRateCreate) check() error {
 	}
 	if _, ok := _c.mutation.Rate(); !ok {
 		return &ValidationError{Name: "rate", err: errors.New(`ent: missing required field "FXRate.rate"`)}
+	}
+	if _, ok := _c.mutation.Source(); !ok {
+		return &ValidationError{Name: "source", err: errors.New(`ent: missing required field "FXRate.source"`)}
+	}
+	if v, ok := _c.mutation.Source(); ok {
+		if err := fxrate.SourceValidator(v); err != nil {
+			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "FXRate.source": %w`, err)}
+		}
 	}
 	return nil
 }
@@ -370,6 +396,10 @@ func (_c *FXRateCreate) createSpec() (*FXRate, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Rate(); ok {
 		_spec.SetField(fxrate.FieldRate, field.TypeOther, value)
 		_node.Rate = value
+	}
+	if value, ok := _c.mutation.Source(); ok {
+		_spec.SetField(fxrate.FieldSource, field.TypeString, value)
+		_node.Source = value
 	}
 	if value, ok := _c.mutation.ValidFrom(); ok {
 		_spec.SetField(fxrate.FieldValidFrom, field.TypeTime, value)
