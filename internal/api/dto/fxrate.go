@@ -24,8 +24,8 @@ type CreateFXRateRequest struct {
 	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
-func (r CreateFXRateRequest) Validate() error {
-	if err := validator.ValidateRequest(&r); err != nil {
+func (r *CreateFXRateRequest) Validate() error {
+	if err := validator.ValidateRequest(r); err != nil {
 		return err
 	}
 	if err := r.Scope.Validate(); err != nil {
@@ -35,7 +35,7 @@ func (r CreateFXRateRequest) Validate() error {
 }
 
 // ToFXRate parses the request into a domain FXRate. Currencies are stored lowercase.
-func (r CreateFXRateRequest) ToFXRate(ctx context.Context) (*fxrate.FXRate, error) {
+func (r *CreateFXRateRequest) ToFXRate(ctx context.Context) (*fxrate.FXRate, error) {
 	rate, err := decimal.NewFromString(r.Rate)
 	if err != nil {
 		return nil, ierr.NewError("invalid rate").
@@ -72,8 +72,8 @@ type UpdateFXRateRequest struct {
 	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 
-func (r UpdateFXRateRequest) Validate() error {
-	return validator.ValidateRequest(&r)
+func (r *UpdateFXRateRequest) Validate() error {
+	return validator.ValidateRequest(r)
 }
 
 type FXRateResponse struct {
