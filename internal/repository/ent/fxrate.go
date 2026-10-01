@@ -147,25 +147,6 @@ func (r *fxRateRepository) List(ctx context.Context, filter *types.FXRateFilter)
 	return domainFXRate.FromEntList(rates), nil
 }
 
-func (r *fxRateRepository) ListAll(ctx context.Context, filter *types.FXRateFilter) ([]*domainFXRate.FXRate, error) {
-	span := StartRepositorySpan(ctx, "fxrate", "list_all", map[string]interface{}{"filter": filter})
-	defer FinishSpan(span)
-
-	client := r.client.Reader(ctx)
-	rates, err := client.FXRate.Query().
-		Where(
-			fxrate.TenantID(types.GetTenantID(ctx)),
-			fxrate.EnvironmentID(types.GetEnvironmentID(ctx)),
-		).
-		All(ctx)
-	if err != nil {
-		SetSpanError(span, err)
-		return nil, ierr.WithError(err).WithHint("Failed to list all fx rates").Mark(ierr.ErrDatabase)
-	}
-	SetSpanSuccess(span)
-	return domainFXRate.FromEntList(rates), nil
-}
-
 func (r *fxRateRepository) Count(ctx context.Context, filter *types.FXRateFilter) (int, error) {
 	span := StartRepositorySpan(ctx, "fxrate", "count", map[string]interface{}{"filter": filter})
 	defer FinishSpan(span)

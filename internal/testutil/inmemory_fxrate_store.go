@@ -137,19 +137,6 @@ func (s *InMemoryFXRateStore) List(ctx context.Context, filter *types.FXRateFilt
 	return rates, nil
 }
 
-func (s *InMemoryFXRateStore) ListAll(ctx context.Context, filter *types.FXRateFilter) ([]*fxrate.FXRate, error) {
-	unlimited := &types.FXRateFilter{
-		QueryFilter:     types.NewNoLimitQueryFilter(),
-		TimeRangeFilter: filter.TimeRangeFilter,
-		FXRateIDs:       filter.FXRateIDs,
-		Scope:           filter.Scope,
-		ScopeID:         filter.ScopeID,
-		FromCurrency:    filter.FromCurrency,
-		ToCurrency:      filter.ToCurrency,
-	}
-	return s.List(ctx, unlimited)
-}
-
 func (s *InMemoryFXRateStore) Count(ctx context.Context, filter *types.FXRateFilter) (int, error) {
 	count, err := s.InMemoryStore.Count(ctx, filter, fxRateFilterFn)
 	if err != nil {

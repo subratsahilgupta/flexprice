@@ -12,7 +12,6 @@ type Repository interface {
 	Create(ctx context.Context, r *FXRate) error
 	Get(ctx context.Context, id string) (*FXRate, error)
 	List(ctx context.Context, filter *types.FXRateFilter) ([]*FXRate, error)
-	ListAll(ctx context.Context, filter *types.FXRateFilter) ([]*FXRate, error)
 	Count(ctx context.Context, filter *types.FXRateFilter) (int, error)
 	Update(ctx context.Context, r *FXRate) error
 	Delete(ctx context.Context, r *FXRate) error // soft-archive: sets status = archived
