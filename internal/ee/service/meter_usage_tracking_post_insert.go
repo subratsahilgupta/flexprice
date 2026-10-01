@@ -114,7 +114,9 @@ func (s *meterUsageTrackingService) scheduleUsageAlertWorkflow(ctx context.Conte
 		return
 	}
 
-	delay := usageAlertConfig.ScheduleDelay
+	tenantID := types.GetTenantID(ctx)
+	envID := types.GetEnvironmentID(ctx)
+	delay, staleAfter := usageAlertConfig.ForScope(tenantID, envID)
 
 	var throttleLock cache.Lock
 	if s.Locker != nil {
@@ -142,8 +144,6 @@ func (s *meterUsageTrackingService) scheduleUsageAlertWorkflow(ctx context.Conte
 		return
 	}
 
-	tenantID := types.GetTenantID(ctx)
-	envID := types.GetEnvironmentID(ctx)
 	workflowID := fmt.Sprintf("%s_%s_%s_%s_%s",
 		types.UUID_PREFIX_WORKFLOW,
 		types.TemporalUsageAlertWorkflow,
@@ -162,7 +162,7 @@ func (s *meterUsageTrackingService) scheduleUsageAlertWorkflow(ctx context.Conte
 		EnvironmentID:            envID,
 		CustomerID:               cust.ID,
 		ScheduledFor:             time.Now().UTC().Add(delay),
-		StaleAfter:               usageAlertConfig.StaleAfter,
+		StaleAfter:               staleAfter,
 		WalletAlertsEnabled:      walletEnabled,
 		SpendAlertsEnabled:       spendEnabled,
 		EntitlementAlertsEnabled: entitlementEnabled,
