@@ -207,6 +207,7 @@ func (h *FXRateHandler) ResolveFXRate(c *gin.Context) {
 		Rate:         res.Rate.String(),
 		RateID:       res.RateID,
 		Scope:        res.Scope,
+		Source:       string(res.Source),
 		FromCurrency: res.From,
 		ToCurrency:   res.To,
 	})

@@ -43,6 +43,7 @@ type FXRateResolution struct {
 	Rate   decimal.Decimal
 	RateID string
 	Scope  string
+	Source types.FXRateSource
 	From   string
 	To     string
 }
@@ -63,7 +64,7 @@ func (s *fxRateService) ResolveRate(ctx context.Context, req ResolveFXRateReques
 func (s *fxRateService) resolveRateAt(ctx context.Context, req ResolveFXRateRequest, now time.Time) (*FXRateResolution, error) {
 	// Same currency needs no rate and no query.
 	if types.IsMatchingCurrency(req.From, req.To) {
-		return &FXRateResolution{Rate: decimal.NewFromInt(1), Scope: "identity", From: req.From, To: req.To}, nil
+		return &FXRateResolution{Rate: decimal.NewFromInt(1), Scope: "identity", Source: types.FXRateSourceFixed, From: req.From, To: req.To}, nil
 	}
 
 	scopesChecked := make([]string, 0, 3)
@@ -75,7 +76,7 @@ func (s *fxRateService) resolveRateAt(ctx context.Context, req ResolveFXRateRequ
 			return nil, err
 		}
 		if rate != nil {
-			return toResolution(rate), nil
+			return resolveFixed(rate)
 		}
 	}
 
@@ -86,7 +87,7 @@ func (s *fxRateService) resolveRateAt(ctx context.Context, req ResolveFXRateRequ
 			return nil, err
 		}
 		if rate != nil {
-			return toResolution(rate), nil
+			return resolveFixed(rate)
 		}
 	}
 
@@ -98,7 +99,7 @@ func (s *fxRateService) resolveRateAt(ctx context.Context, req ResolveFXRateRequ
 		}
 		return nil, err
 	}
-	return toResolution(tenantRate), nil
+	return resolveFixed(tenantRate)
 }
 
 // findOverride returns the published override for (scope, scopeID, pair) whose
@@ -135,11 +136,23 @@ func windowCoversNow(validFrom, validTo *time.Time, now time.Time) bool {
 	return true
 }
 
+// resolveFixed turns a matched rate into a resolution. Only fixed rates resolve to a value
+// today; a market rate is rejected until the market-rate integration is wired.
+func resolveFixed(r *fxrate.FXRate) (*FXRateResolution, error) {
+	if r.Source == types.FXRateSourceMarket {
+		return nil, ierr.NewErrorf("market FX rate resolution is not supported yet for %s → %s", r.FromCurrency, r.ToCurrency).
+			WithHint("This pair is configured to use market rates, which are not yet available.").
+			Mark(ierr.ErrInvalidOperation)
+	}
+	return toResolution(r), nil
+}
+
 func toResolution(r *fxrate.FXRate) *FXRateResolution {
 	return &FXRateResolution{
 		Rate:   r.Rate,
 		RateID: r.ID,
 		Scope:  string(r.Scope),
+		Source: r.Source,
 		From:   r.FromCurrency,
 		To:     r.ToCurrency,
 	}

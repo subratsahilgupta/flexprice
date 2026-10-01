@@ -113,6 +113,7 @@ type ResolveFXRateResponse struct {
 	Rate         string `json:"rate"`
 	RateID       string `json:"rate_id,omitempty"`
 	Scope        string `json:"scope"`
+	Source       string `json:"source"`
 	FromCurrency string `json:"from_currency"`
 	ToCurrency   string `json:"to_currency"`
 }

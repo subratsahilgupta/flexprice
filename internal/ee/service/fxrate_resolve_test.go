@@ -48,6 +48,7 @@ func (s *FXRateResolveSuite) seed() {
 		return &fxrate.FXRate{
 			ID: id, Scope: scope, ScopeID: scopeID,
 			FromCurrency: "usd", ToCurrency: "inr", Rate: decimal.RequireFromString(rate),
+			Source:        types.FXRateSourceFixed,
 			EnvironmentID: types.GetEnvironmentID(ctx), BaseModel: types.GetDefaultBaseModel(ctx),
 		}
 	}
@@ -105,4 +106,26 @@ func (s *FXRateResolveSuite) TestResolveRate_IdentityNeedsNoRates() {
 	s.NoError(err)
 	s.True(decimal.NewFromInt(1).Equal(res.Rate))
 	s.Equal("identity", res.Scope)
+	s.Equal(types.FXRateSourceFixed, res.Source)
+}
+
+func (s *FXRateResolveSuite) TestResolveRate_ReturnsSource() {
+	res, err := s.svc.ResolveRate(s.GetContext(), ResolveFXRateRequest{From: "usd", To: "inr"})
+	s.NoError(err)
+	s.Equal(types.FXRateSourceFixed, res.Source)
+}
+
+func (s *FXRateResolveSuite) TestResolveRate_MarketRateNotSupportedYet() {
+	ctx := s.GetContext()
+	market := &fxrate.FXRate{
+		ID: "fxr_mkt", Scope: types.FXRateScopeTenant, ScopeID: types.FXRateScopeIDTenant,
+		FromCurrency: "eur", ToCurrency: "jpy", Rate: decimal.Zero,
+		Source:        types.FXRateSourceMarket,
+		EnvironmentID: types.GetEnvironmentID(ctx), BaseModel: types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().FXRateRepo.Create(ctx, market))
+
+	_, err := s.svc.ResolveRate(ctx, ResolveFXRateRequest{From: "eur", To: "jpy"})
+	s.Error(err)
+	s.True(ierr.IsInvalidOperation(err), "market rate resolution should be rejected until the integration lands")
 }
