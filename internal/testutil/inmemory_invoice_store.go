@@ -304,7 +304,18 @@ func (s *InMemoryInvoiceStore) Delete(ctx context.Context, id string) error {
 }
 
 func (s *InMemoryInvoiceStore) List(ctx context.Context, filter *types.InvoiceFilter) ([]*invoice.Invoice, error) {
-	return s.InMemoryStore.List(ctx, filter, invoiceFilterFn, invoiceSortFn)
+	sortFn := invoiceSortFn
+	if filter != nil && len(filter.Sort) > 0 && filter.Sort[0].Field == "period_end" {
+		desc := filter.Sort[0].Direction == types.SortDirectionDesc
+		sortFn = func(i, j *invoice.Invoice) bool {
+			a, b := lo.FromPtr(i.PeriodEnd), lo.FromPtr(j.PeriodEnd)
+			if desc {
+				return a.After(b)
+			}
+			return a.Before(b)
+		}
+	}
+	return s.InMemoryStore.List(ctx, filter, invoiceFilterFn, sortFn)
 }
 
 func (s *InMemoryInvoiceStore) ListAllTenant(ctx context.Context, filter *types.InvoiceFilter) ([]*invoice.Invoice, error) {
