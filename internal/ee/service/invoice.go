@@ -29,6 +29,7 @@ import (
 	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
+	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
@@ -74,6 +75,7 @@ type InvoiceService interface {
 	SyncInvoiceToQuickBooksIfEnabled(ctx context.Context, invoiceID string) error
 	SyncInvoiceToZohoBooksIfEnabled(ctx context.Context, invoiceID string) error
 	SyncInvoiceToMoyasarIfEnabled(ctx context.Context, inv *invoice.Invoice) error
+	PublishInvoiceSyncWebhook(ctx context.Context, invoiceID string, provider types.SecretProvider, syncErr string)
 	IsFinalizationDue(ctx context.Context, invoiceID string) (bool, error)
 	ListAllTenantDraftInvoices(ctx context.Context, batchSize, offset int) ([]*invoice.Invoice, error)
 
@@ -3522,6 +3524,62 @@ func (s *invoiceService) RecalculateInvoiceAmounts(ctx context.Context, invoiceI
 
 func (s *invoiceService) publishSystemEvent(ctx context.Context, eventName types.WebhookEventName, invoiceID string) {
 	publishInvoiceWebhook(ctx, s.ServiceParams, eventName, invoiceID)
+}
+
+// PublishInvoiceSyncWebhook reports a sync's final outcome; a success without a mapping was a skip.
+func (s *invoiceService) PublishInvoiceSyncWebhook(ctx context.Context, invoiceID string, provider types.SecretProvider, syncErr string) {
+	eventName := types.WebhookEventInvoiceSyncSuccess
+	internal := &webhookDto.InternalInvoiceSyncEvent{
+		InvoiceID: invoiceID,
+		TenantID:  types.GetTenantID(ctx),
+		Provider:  provider,
+	}
+	if syncErr != "" {
+		eventName = types.WebhookEventInvoiceSyncFailed
+		internal.Error = syncErr
+	} else if !s.hasInvoiceMapping(ctx, invoiceID, provider) {
+		return
+	}
+
+	event, err := types.NewWebhookEvent(eventName).
+		WithIdentityFromContext(ctx).
+		WithEntity(types.SystemEntityTypeInvoice, invoiceID).
+		WithPayload(internal).
+		Build()
+	if err != nil {
+		s.Logger.Error(ctx, "failed to build invoice sync webhook",
+			"error", err,
+			"invoice_id", invoiceID,
+			"provider", provider)
+		return
+	}
+
+	if err := s.WebhookPublisher.PublishWebhook(ctx, event); err != nil {
+		s.Logger.Error(ctx, "failed to publish invoice sync webhook",
+			"error", err,
+			"event_name", eventName,
+			"invoice_id", invoiceID,
+			"provider", provider)
+	}
+}
+
+// hasInvoiceMapping tells a real sync from a skipped one; a lookup error counts as skipped.
+func (s *invoiceService) hasInvoiceMapping(ctx context.Context, invoiceID string, provider types.SecretProvider) bool {
+	filter := &types.EntityIntegrationMappingFilter{
+		EntityID:      invoiceID,
+		EntityType:    types.IntegrationEntityTypeInvoice,
+		ProviderTypes: []string{string(provider)},
+		QueryFilter:   types.NewDefaultQueryFilter(),
+	}
+	count, err := s.EntityIntegrationMappingRepo.Count(ctx, filter)
+	if err != nil {
+		s.Logger.Error(ctx, "failed to check invoice mapping for sync webhook",
+			"error", err,
+			"invoice_id", invoiceID,
+			"provider", provider)
+		return false
+	}
+	return count > 0
 }
 
 // publishInvoiceWebhook publishes an invoice-payload system event. Package

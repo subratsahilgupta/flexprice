@@ -8,6 +8,7 @@ import (
 	"github.com/flexprice/flexprice/internal/ee/service"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/temporal/models"
 	invoiceModels "github.com/flexprice/flexprice/internal/temporal/models/invoice"
 	temporalService "github.com/flexprice/flexprice/internal/temporal/service"
 	"github.com/flexprice/flexprice/internal/types"
@@ -375,4 +376,12 @@ func (s *InvoiceActivities) FinalizeDueDraftsActivity(
 		"failed", result.FailedCount)
 
 	return result, nil
+}
+
+// PublishInvoiceSyncWebhookActivity publishes an invoice sync's final outcome as a webhook.
+func (s *InvoiceActivities) PublishInvoiceSyncWebhookActivity(ctx context.Context, input models.InvoiceSyncWebhookInput) error {
+	ctx = types.SetTenantID(ctx, input.TenantID)
+	ctx = types.SetEnvironmentID(ctx, input.EnvironmentID)
+	service.NewInvoiceService(s.serviceParams).PublishInvoiceSyncWebhook(ctx, input.InvoiceID, input.Provider, input.Error)
+	return nil
 }

@@ -423,6 +423,7 @@ func buildWorkerConfig(
 			zohoInvoiceSyncActivities.SyncInvoiceToZoho,
 			zohoInvoiceSyncActivities.MarkZohoBooksInvoicePaid,
 			tabsInvoiceSyncActivities.SyncInvoiceToTabs,
+			invoiceActs.PublishInvoiceSyncWebhookActivity,
 			stripeCustomerSyncActivities.SyncCustomerToStripe,
 			razorpayCustomerSyncActivities.SyncCustomerToRazorpay,
 			chargebeeCustomerSyncActivities.SyncCustomerToChargebee,
