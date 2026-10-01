@@ -22,6 +22,7 @@ type FXRate struct {
 	FromCurrency  string            `json:"from_currency"`
 	ToCurrency    string            `json:"to_currency"`
 	Rate          string            `json:"rate"`
+	Source        string            `json:"source"`
 	ValidFrom     *time.Time        `json:"valid_from,omitempty"`
 	ValidTo       *time.Time        `json:"valid_to,omitempty"`
 	Status        string            `json:"status"`
@@ -40,6 +41,7 @@ func NewFXRate(resp *dto.FXRateResponse) *FXRate {
 		FromCurrency:  resp.FromCurrency,
 		ToCurrency:    resp.ToCurrency,
 		Rate:          resp.Rate.String(),
+		Source:        string(resp.Source),
 		ValidFrom:     resp.ValidFrom,
 		ValidTo:       resp.ValidTo,
 		Status:        string(resp.Status),
