@@ -4,10 +4,18 @@
 -- transactional migration — CONCURRENTLY is unnecessary (it only matters for an index
 -- on an already-populated table) and would require a single-statement transaction:false
 -- file. Timeouts come from the connection (scripts/migrations/apply.sh), not the file.
+-- Base-mixin columns match ent/migrate/schema.go exactly (BaseMixin + EnvironmentMixin):
+-- created_*/updated_* have no DB default (Ent sets them in Go); created_by/updated_by are
+-- unbounded varchar; environment_id is nullable with a '' default, like every other table.
 CREATE TABLE IF NOT EXISTS "fx_rates" (
   "id"             varchar(50)    NOT NULL,
   "tenant_id"      varchar(50)    NOT NULL,
-  "environment_id" varchar(50)    NOT NULL DEFAULT '',
+  "status"         varchar(20)    NOT NULL DEFAULT 'published',
+  "created_at"     timestamptz    NOT NULL,
+  "updated_at"     timestamptz    NOT NULL,
+  "created_by"     varchar        NULL,
+  "updated_by"     varchar        NULL,
+  "environment_id" varchar(50)    NULL DEFAULT '',
   "scope"          varchar(20)    NOT NULL,
   "scope_id"       varchar(50)    NOT NULL,
   "from_currency"  varchar(10)    NOT NULL,
@@ -15,12 +23,7 @@ CREATE TABLE IF NOT EXISTS "fx_rates" (
   "rate"           numeric(24,12) NOT NULL,
   "valid_from"     timestamptz    NULL,
   "valid_to"       timestamptz    NULL,
-  "status"         varchar(20)    NOT NULL DEFAULT 'published',
   "metadata"       jsonb          NULL,
-  "created_at"     timestamptz    NOT NULL DEFAULT now(),
-  "updated_at"     timestamptz    NOT NULL DEFAULT now(),
-  "created_by"     varchar(50)    NULL,
-  "updated_by"     varchar(50)    NULL,
   PRIMARY KEY ("id")
 );
 
