@@ -4681,7 +4681,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Show which rate a customer or subscription gets now for a currency pair. Uses the same resolution as invoice finalization.",
+                "description": "Show which rate a customer or subscription gets now for a currency pair, resolved by scope precedence (subscription, then customer, then tenant).",
                 "consumes": [
                     "application/json"
                 ],

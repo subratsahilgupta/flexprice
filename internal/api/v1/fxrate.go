@@ -151,6 +151,7 @@ func (h *FXRateHandler) UpdateFXRate(c *gin.Context) {
 // @ID deleteFXRate
 // @Description Archive a customer or subscription override. Tenant rates cannot be deleted.
 // @Tags FX Rates
+// @x-scope "delete"
 // @Accept json
 // @Produce json
 // @Security ApiKeyAuth
@@ -169,7 +170,7 @@ func (h *FXRateHandler) DeleteFXRate(c *gin.Context) {
 
 // @Summary Resolve an FX rate
 // @ID resolveFXRate
-// @Description Show which rate a customer or subscription gets now for a currency pair. Uses the same resolution as invoice finalization.
+// @Description Show which rate a customer or subscription gets now for a currency pair, resolved by scope precedence (subscription, then customer, then tenant).
 // @Tags FX Rates
 // @x-scope "read"
 // @Accept json

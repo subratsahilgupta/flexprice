@@ -282,6 +282,22 @@ func (s *FXRateCRUDSuite) TestUpdateFXRate() {
 			req:     dto.UpdateFXRateRequest{Rate: lo.ToPtr("-5")},
 			wantErr: true,
 		},
+		{
+			name: "rejects updating an archived override",
+			setup: func() string {
+				s.seedCustomer("cust_a")
+				s.createTenantRate("usd", "inr", "83")
+				resp, err := s.svc.CreateFXRate(s.GetContext(), dto.CreateFXRateRequest{
+					Scope: types.FXRateScopeCustomer, ScopeID: "cust_a",
+					FromCurrency: "usd", ToCurrency: "inr", Rate: "84",
+				})
+				s.Require().NoError(err)
+				s.Require().NoError(s.svc.DeleteFXRate(s.GetContext(), resp.ID))
+				return resp.ID
+			},
+			req:     dto.UpdateFXRateRequest{Rate: lo.ToPtr("85")},
+			wantErr: true,
+		},
 	}
 
 	for _, c := range cases {

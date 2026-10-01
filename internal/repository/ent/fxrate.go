@@ -214,17 +214,18 @@ func (r *fxRateRepository) Update(ctx context.Context, fr *domainFXRate.FXRate) 
 		update.ClearValidTo()
 	}
 
-	_, err := update.Save(ctx)
+	n, err := update.Save(ctx)
 	if err != nil {
 		SetSpanError(span, err)
 		r.log.Error(ctx, "error updating fx rate", "error", err, "fx_rate_id", fr.ID)
-		if ent.IsNotFound(err) {
-			return ierr.WithError(err).
-				WithHintf("FX rate with ID %s was not found", fr.ID).
-				WithReportableDetails(map[string]any{"fx_rate_id": fr.ID}).
-				Mark(ierr.ErrNotFound)
-		}
 		return ierr.WithError(err).WithHint("Failed to update fx rate").Mark(ierr.ErrDatabase)
+	}
+	// A conditional UPDATE returns an affected-row count, never NotFound, so a miss on
+	// (id, tenant, environment) would look like success. Report it as ErrNotFound.
+	if n == 0 {
+		return ierr.NewErrorf("FX rate with ID %s was not found", fr.ID).
+			WithReportableDetails(map[string]any{"fx_rate_id": fr.ID}).
+			Mark(ierr.ErrNotFound)
 	}
 	SetSpanSuccess(span)
 	return nil
@@ -236,7 +237,7 @@ func (r *fxRateRepository) Delete(ctx context.Context, fr *domainFXRate.FXRate) 
 	defer FinishSpan(span)
 
 	client := r.client.Writer(ctx)
-	_, err := client.FXRate.Update().
+	n, err := client.FXRate.Update().
 		Where(
 			fxrate.ID(fr.ID),
 			fxrate.TenantID(types.GetTenantID(ctx)),
@@ -250,6 +251,13 @@ func (r *fxRateRepository) Delete(ctx context.Context, fr *domainFXRate.FXRate) 
 	if err != nil {
 		SetSpanError(span, err)
 		return ierr.WithError(err).WithHint("Failed to delete fx rate").Mark(ierr.ErrDatabase)
+	}
+	// A conditional UPDATE reports an affected-row count, not NotFound, so a miss (wrong id,
+	// tenant, or environment) looks like success. Surface it as ErrNotFound to match the contract.
+	if n == 0 {
+		return ierr.NewErrorf("FX rate with ID %s was not found", fr.ID).
+			WithReportableDetails(map[string]any{"fx_rate_id": fr.ID}).
+			Mark(ierr.ErrNotFound)
 	}
 	SetSpanSuccess(span)
 	return nil

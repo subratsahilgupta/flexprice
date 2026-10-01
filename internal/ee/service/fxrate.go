@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	fxrate "github.com/flexprice/flexprice/internal/domain/fxrate"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	"github.com/samber/lo"
@@ -162,14 +164,31 @@ func (s *fxRateService) CreateFXRate(ctx context.Context, req dto.CreateFXRateRe
 	if err != nil {
 		return nil, err
 	}
-	if err := s.validateForCreate(ctx, rate); err != nil {
-		return nil, err
-	}
-	if err := s.FXRateRepo.Create(ctx, rate); err != nil {
+	// Serialize the overlap check and the write under one advisory lock + transaction, so two
+	// concurrent creates for the same scope/pair cannot both pass the check and persist
+	// overlapping overrides. The overlap read runs on the writer (via the tx), avoiding replica lag.
+	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		if err := s.lockFXRateScope(txCtx, rate.Scope, rate.ScopeID, rate.FromCurrency, rate.ToCurrency); err != nil {
+			return err
+		}
+		if err := s.validateForCreate(txCtx, rate); err != nil {
+			return err
+		}
+		return s.FXRateRepo.Create(txCtx, rate)
+	}); err != nil {
 		return nil, err
 	}
 	s.publishSystemEvent(ctx, types.WebhookEventFXRateCreated, rate.ID)
 	return &dto.FXRateResponse{FXRate: rate}, nil
+}
+
+// lockFXRateScope takes a transaction-scoped advisory lock on a (tenant, env, scope, scope_id, pair)
+// key, serializing concurrent writers so the no-overlapping-window check and the write are atomic.
+func (s *fxRateService) lockFXRateScope(ctx context.Context, scope types.FXRateScope, scopeID, from, to string) error {
+	key := fmt.Sprintf("fxrate:%s:%s:%s:%s:%s:%s",
+		types.GetTenantID(ctx), types.GetEnvironmentID(ctx), scope, scopeID,
+		strings.ToLower(from), strings.ToLower(to))
+	return s.DB.LockWithWait(ctx, postgres.LockRequest{Key: key})
 }
 
 func (s *fxRateService) GetFXRate(ctx context.Context, id string) (*dto.FXRateResponse, error) {
@@ -214,6 +233,14 @@ func (s *fxRateService) UpdateFXRate(ctx context.Context, id string, req dto.Upd
 		return nil, err
 	}
 
+	// Only a published rate can be updated. Get does not filter by status, so without this an
+	// archived override could be revived and have its window edited to overlap a live one.
+	if existing.Status != types.StatusPublished {
+		return nil, ierr.NewError("cannot update an archived fx rate").
+			WithHint("This FX rate is archived; create a new override instead of updating it.").
+			Mark(ierr.ErrValidation)
+	}
+
 	if existing.Scope == types.FXRateScopeTenant && (req.ValidFrom != nil || req.ValidTo != nil) {
 		return nil, ierr.NewError("tenant rates have no validity window").
 			WithHint("A tenant FX rate applies at all times; validity windows are only for customer or subscription overrides.").
@@ -233,9 +260,9 @@ func (s *fxRateService) UpdateFXRate(ctx context.Context, id string, req dto.Upd
 		builder.WithRate(rate)
 	}
 
+	newFrom := existing.ValidFrom
+	newTo := existing.ValidTo
 	if existing.Scope != types.FXRateScopeTenant {
-		newFrom := existing.ValidFrom
-		newTo := existing.ValidTo
 		if req.ValidFrom != nil {
 			newFrom = req.ValidFrom
 		}
@@ -247,15 +274,6 @@ func (s *fxRateService) UpdateFXRate(ctx context.Context, id string, req dto.Upd
 				WithHint("The start of a validity window must be before its end.").
 				Mark(ierr.ErrValidation)
 		}
-		overlaps, oerr := s.FXRateRepo.FindOverlapping(ctx, existing.Scope, existing.ScopeID, existing.FromCurrency, existing.ToCurrency, newFrom, newTo, existing.ID)
-		if oerr != nil {
-			return nil, oerr
-		}
-		if len(overlaps) > 0 {
-			return nil, ierr.NewErrorf("overlapping FX rate window for %s → %s", existing.FromCurrency, existing.ToCurrency).
-				WithHint("Another override for this scope and currency pair covers an overlapping period.").
-				Mark(ierr.ErrValidation)
-		}
 		builder.WithValidFrom(newFrom).WithValidTo(newTo)
 	}
 
@@ -264,7 +282,26 @@ func (s *fxRateService) UpdateFXRate(ctx context.Context, id string, req dto.Upd
 	}
 
 	updated := builder.Build()
-	if err := s.FXRateRepo.Update(ctx, updated); err != nil {
+
+	// Serialize the overlap check and the write under one advisory lock + transaction, reading on
+	// the writer, so concurrent updates cannot create overlapping windows for the same scope/pair.
+	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		if err := s.lockFXRateScope(txCtx, existing.Scope, existing.ScopeID, existing.FromCurrency, existing.ToCurrency); err != nil {
+			return err
+		}
+		if existing.Scope != types.FXRateScopeTenant {
+			overlaps, oerr := s.FXRateRepo.FindOverlapping(txCtx, existing.Scope, existing.ScopeID, existing.FromCurrency, existing.ToCurrency, newFrom, newTo, existing.ID)
+			if oerr != nil {
+				return oerr
+			}
+			if len(overlaps) > 0 {
+				return ierr.NewErrorf("overlapping FX rate window for %s → %s", existing.FromCurrency, existing.ToCurrency).
+					WithHint("Another override for this scope and currency pair covers an overlapping period.").
+					Mark(ierr.ErrValidation)
+			}
+		}
+		return s.FXRateRepo.Update(txCtx, updated)
+	}); err != nil {
 		return nil, err
 	}
 	s.publishSystemEvent(ctx, types.WebhookEventFXRateUpdated, updated.ID)
