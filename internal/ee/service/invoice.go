@@ -48,6 +48,12 @@ type InvoiceService interface {
 	CreateSubscriptionInvoice(ctx context.Context, req *dto.CreateSubscriptionInvoiceRequest, paymentParams *dto.PaymentParameters, flowType types.InvoiceFlowType, isDraftSubscription bool) (*dto.InvoiceResponse, *subscription.Subscription, error)
 	CreateDraftInvoiceForSubscription(ctx context.Context, req dto.CreateSubscriptionDraftInvoiceRequest) (*dto.InvoiceResponse, error)
 	ComputeInvoice(ctx context.Context, invoiceID string, req *dto.InvoiceComputeRequest) (*invoice.Invoice, bool, error)
+	// GetOrComputeCurrentPeriodDraft gets or creates the subscription's cycle draft for its current
+	// period and computes it. skipped is true when the period is already invoiced or has no charges.
+	GetOrComputeCurrentPeriodDraft(ctx context.Context, sub *subscription.Subscription) (inv *invoice.Invoice, skipped bool, err error)
+	// ListOpenCycleDrafts returns the subscription's unfinalized cycle drafts for periods starting
+	// before startedBefore, oldest first, with their line items.
+	ListOpenCycleDrafts(ctx context.Context, subscriptionID string, startedBefore time.Time) ([]*invoice.Invoice, error)
 	GetPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	GetInternalPreviewInvoice(ctx context.Context, req dto.GetPreviewInvoiceRequest) (*dto.InvoiceResponse, error)
 	CreatePreviewInvoice(ctx context.Context, req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error)
@@ -439,6 +445,41 @@ func (s *invoiceService) CreateDraftInvoiceForSubscription(ctx context.Context, 
 	return s.CreateEmptyDraftInvoice(ctx, draftReq)
 }
 
+func (s *invoiceService) GetOrComputeCurrentPeriodDraft(ctx context.Context, sub *subscription.Subscription) (*invoice.Invoice, bool, error) {
+	// Same key as the period-end billing run, which reuses this draft.
+	draft, err := s.CreateDraftInvoiceForSubscription(ctx, dto.CreateSubscriptionDraftInvoiceRequest{
+		SubscriptionID: sub.ID,
+		PeriodStart:    sub.CurrentPeriodStart,
+		PeriodEnd:      sub.CurrentPeriodEnd,
+		ReferencePoint: types.ReferencePointPeriodEnd,
+	})
+	if err != nil {
+		if ierr.IsAlreadyExists(err) {
+			return nil, true, nil
+		}
+		return nil, false, err
+	}
+	return s.ComputeInvoice(ctx, draft.ID, nil)
+}
+
+func (s *invoiceService) ListOpenCycleDrafts(ctx context.Context, subscriptionID string, startedBefore time.Time) ([]*invoice.Invoice, error) {
+	filter := types.NewNoLimitInvoiceFilter()
+	filter.SubscriptionID = subscriptionID
+	filter.InvoiceType = types.InvoiceTypeSubscription
+	filter.InvoiceStatus = []types.InvoiceStatus{types.InvoiceStatusDraft}
+	filter.BillingReason = types.InvoiceBillingReasonSubscriptionCycle
+	invoices, err := s.InvoiceRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	// Strictly before startedBefore: the filter's period-start bound is inclusive.
+	drafts := lo.Filter(invoices, func(inv *invoice.Invoice, _ int) bool {
+		return inv.PeriodStart != nil && inv.PeriodEnd != nil && inv.PeriodStart.Before(startedBefore)
+	})
+	sort.SliceStable(drafts, func(i, j int) bool { return drafts[i].PeriodStart.Before(*drafts[j].PeriodStart) })
+	return drafts, nil
+}
+
 // ComputeInvoice computes a draft (or previously-skipped) invoice: computes line items (subscription),
 // applies credits/coupons/taxes, or marks SKIPPED if zero-dollar. Re-runnable on draft and skipped invoices.
 // Invoice number is NOT assigned here — it is assigned during FinalizeInvoice.
@@ -567,6 +608,10 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		}
 		computed = true
 
+		// The math below runs in the denomination; credits applied at expiry must survive recompute.
+		inv.RestoreFromDenomination()
+		creditsAppliedToDraft := inv.TotalPrepaidCreditsApplied
+
 		// Populate invoice from the computed request (uniform for all invoice types)
 		if applyReq != nil {
 			reconciledItems, err := s.reconcileLineItems(txCtx, inv, applyReq.LineItems)
@@ -584,7 +629,7 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		}
 
 		isTrialStart := types.InvoiceBillingReason(inv.BillingReason) == types.InvoiceBillingReasonSubscriptionTrialStart
-		if inv.InvoiceType == types.InvoiceTypeSubscription && inv.Subtotal.IsZero() && !isTrialStart {
+		if inv.InvoiceType == types.InvoiceTypeSubscription && inv.Subtotal.IsZero() && !isTrialStart && !creditsAppliedToDraft.IsPositive() {
 			now := time.Now().UTC()
 			inv.LastComputedAt = &now
 			inv.InvoiceStatus = types.InvoiceStatusSkipped
@@ -613,6 +658,11 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 				// Subscription: coupons only — credits and taxes deferred to finalization
 				if err := s.applyCouponsToInvoice(txCtx, inv, *applyReq); err != nil {
 					return err
+				}
+				inv.TotalPrepaidCreditsApplied = creditsAppliedToDraft
+				if creditsAppliedToDraft.IsPositive() {
+					inv.Total = decimal.Max(decimal.Zero, inv.Subtotal.Sub(inv.TotalDiscount).Sub(creditsAppliedToDraft))
+					inv.AmountDue = inv.Total
 				}
 			}
 		}
@@ -1272,6 +1322,14 @@ func (s *invoiceService) IsFinalizationDue(ctx context.Context, invoiceID string
 		return false, nil
 	}
 
+	pending, err := s.hasPendingExpiringCredit(ctx, inv)
+	if err != nil {
+		return false, err
+	}
+	if pending {
+		return false, nil
+	}
+
 	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
 	invoiceConfig, err := GetSetting[types.InvoiceConfig](settingsSvc, ctx, types.SettingKeyInvoiceConfig)
 	if err != nil {
@@ -1285,6 +1343,26 @@ func (s *invoiceService) IsFinalizationDue(ctx context.Context, invoiceID string
 
 	dueAt := inv.LastComputedAt.Add(time.Duration(invoiceConfig.FinalizationDelaySeconds) * time.Second)
 	return time.Now().UTC().After(dueAt), nil
+}
+
+// hasPendingExpiringCredit reports whether a credit that expired inside this subscription draft's
+// period is still waiting for the expiry job to settle it against this draft.
+func (s *invoiceService) hasPendingExpiringCredit(ctx context.Context, inv *invoice.Invoice) (bool, error) {
+	if inv.InvoiceType != types.InvoiceTypeSubscription || inv.PeriodStart == nil || inv.PeriodEnd == nil {
+		return false, nil
+	}
+	enabled, err := creditExpirySettlementEnabled(ctx, s.ServiceParams)
+	if err != nil || !enabled {
+		return false, err
+	}
+	pending, err := NewWalletService(s.ServiceParams).HasPendingExpiringCredit(ctx, inv.CustomerID, inv.DenominationCurrency(), *inv.PeriodStart, *inv.PeriodEnd)
+	if err != nil {
+		return false, err
+	}
+	if pending {
+		s.Logger.Info(ctx, "holding finalization until the expiry job applies an expiring credit", "invoice_id", inv.ID)
+	}
+	return pending, nil
 }
 
 // ListAllTenantDraftInvoices returns draft invoices across all tenants with LastComputedAt set.
@@ -2646,6 +2724,7 @@ func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.
 	}
 
 	unpaidInvoices := make([]*dto.InvoiceResponse, 0)
+	currentPeriodCredits := make(map[string]decimal.Decimal)
 	unpaidAmount := decimal.Zero
 	unpaidUsageCharges := decimal.Zero
 	unpaidFixedCharges := decimal.Zero
@@ -2680,15 +2759,30 @@ func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.
 			inv = dto.NewInvoiceResponse(computedInv)
 		}
 
+		// A custom-currency invoice also matches a wallet in that custom currency.
+		inCustomCurrency := inv.CustomCurrency != nil && types.IsMatchingCurrency(inv.CustomCurrency.Code, req.Currency)
+		matchesCurrency := inCustomCurrency || types.IsMatchingCurrency(inv.Currency, req.Currency)
+
+		// The caller counts this period's usage live, so skip its draft (also between period end and
+		// rollover) and report the credits applied to it for netting.
+		if isCurrentPeriodDraft(inv, req.CurrentPeriodStarts) {
+			if matchesCurrency && inv.TotalPrepaidCreditsApplied.IsPositive() {
+				applied := inv.TotalPrepaidCreditsApplied
+				if inCustomCurrency {
+					applied = inv.CustomCurrency.TotalPrepaidCreditsApplied
+				}
+				currentPeriodCredits[*inv.SubscriptionID] = currentPeriodCredits[*inv.SubscriptionID].Add(applied)
+			}
+			continue
+		}
+
 		// Skip draft invoices whose billing period hasn't ended yet —
 		// their charges are not yet due and should not reduce wallet balance.
 		if inv.InvoiceStatus == types.InvoiceStatusDraft && inv.PeriodEnd != nil && inv.PeriodEnd.After(time.Now().UTC()) {
 			continue
 		}
 
-		// A custom-currency invoice also matches a wallet in that custom currency.
-		inCustomCurrency := inv.CustomCurrency != nil && types.IsMatchingCurrency(inv.CustomCurrency.Code, req.Currency)
-		if !inCustomCurrency && !types.IsMatchingCurrency(inv.Currency, req.Currency) {
+		if !matchesCurrency {
 			continue
 		}
 
@@ -2714,23 +2808,46 @@ func (s *invoiceService) GetUnpaidInvoicesToBePaid(ctx context.Context, req dto.
 		unpaidAmount = unpaidAmount.Add(remaining)
 		totalInvoiceAmountPaid = totalInvoiceAmountPaid.Add(paid)
 
+		creditsOnLines := decimal.Zero
 		for _, item := range inv.LineItems {
 			denomination := item.Denomination()
 			if lo.FromPtr(item.PriceType) == string(types.PRICE_TYPE_USAGE) {
 				unpaidUsageCharges = unpaidUsageCharges.Add(denomination.Amount).Sub(denomination.PrepaidCreditsApplied).Sub(denomination.LineItemDiscount)
+				creditsOnLines = creditsOnLines.Add(denomination.PrepaidCreditsApplied)
 			} else {
 				unpaidFixedCharges = unpaidFixedCharges.Add(denomination.Amount)
 			}
 		}
+		// A draft carries credits applied at expiry only at invoice level until finalization places
+		// them on the lines; subtract the part not on the lines yet.
+		appliedCredits := inv.TotalPrepaidCreditsApplied
+		if inCustomCurrency {
+			appliedCredits = inv.CustomCurrency.TotalPrepaidCreditsApplied
+		}
+		if notOnLines := appliedCredits.Sub(creditsOnLines); notOnLines.IsPositive() {
+			unpaidUsageCharges = unpaidUsageCharges.Sub(notOnLines)
+		}
 	}
 
 	return &dto.GetUnpaidInvoicesToBePaidResponse{
-		Invoices:                unpaidInvoices,
-		TotalUnpaidAmount:       unpaidAmount,
-		TotalUnpaidUsageCharges: unpaidUsageCharges,
-		TotalUnpaidFixedCharges: unpaidFixedCharges,
-		TotalPaidInvoiceAmount:  totalInvoiceAmountPaid,
+		Invoices:                    unpaidInvoices,
+		TotalUnpaidAmount:           unpaidAmount,
+		TotalUnpaidUsageCharges:     unpaidUsageCharges,
+		TotalUnpaidFixedCharges:     unpaidFixedCharges,
+		TotalPaidInvoiceAmount:      totalInvoiceAmountPaid,
+		CurrentPeriodCreditsApplied: currentPeriodCredits,
 	}, nil
+}
+
+// isCurrentPeriodDraft reports whether inv is the draft for the period starting at its
+// subscription's entry in currentPeriodStarts.
+func isCurrentPeriodDraft(inv *dto.InvoiceResponse, currentPeriodStarts map[string]time.Time) bool {
+	if inv.InvoiceStatus != types.InvoiceStatusDraft || inv.SubscriptionID == nil || inv.PeriodStart == nil ||
+		inv.BillingReason != string(types.InvoiceBillingReasonSubscriptionCycle) {
+		return false
+	}
+	start, ok := currentPeriodStarts[*inv.SubscriptionID]
+	return ok && inv.PeriodStart.Equal(start)
 }
 
 func (s *invoiceService) GetCustomerMultiCurrencyInvoiceSummary(ctx context.Context, customerID string) (*dto.CustomerMultiCurrencyInvoiceSummary, error) {
