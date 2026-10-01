@@ -191,11 +191,15 @@ func (r *fxRateRepository) Update(ctx context.Context, fr *domainFXRate.FXRate) 
 	defer FinishSpan(span)
 
 	client := r.client.Writer(ctx)
+	// Only a published row is updatable. Scoping the UPDATE to status='published' makes the
+	// check-and-write atomic: a row archived concurrently matches zero rows (ErrNotFound) instead
+	// of being revived, closing the race with DeleteFXRate.
 	update := client.FXRate.Update().
 		Where(
 			fxrate.ID(fr.ID),
 			fxrate.TenantID(types.GetTenantID(ctx)),
 			fxrate.EnvironmentID(types.GetEnvironmentID(ctx)),
+			fxrate.Status(string(types.StatusPublished)),
 		).
 		SetRate(fr.Rate).
 		SetMetadata(fr.Metadata).

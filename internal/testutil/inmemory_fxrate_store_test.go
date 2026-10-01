@@ -64,6 +64,21 @@ func TestFXRateStore_SoftArchiveOnDelete(t *testing.T) {
 	assert.Equal(t, types.StatusArchived, got.Status)
 }
 
+func TestFXRateStore_UpdateRejectsArchivedRow(t *testing.T) {
+	ctx := fxRateCtx()
+	s := NewInMemoryFXRateStore()
+	r := newTestFXRate(ctx, "fxr_1", types.FXRateScopeCustomer, "cust_1", "usd", "inr", "83")
+	require.NoError(t, s.Create(ctx, r))
+	require.NoError(t, s.Delete(ctx, r)) // archive it
+
+	// A stale, still-"published" copy must not revive the archived row: Update only
+	// touches published rows, so a concurrent archive makes it a not-found miss.
+	stale := newTestFXRate(ctx, "fxr_1", types.FXRateScopeCustomer, "cust_1", "usd", "inr", "90")
+	stale.Status = types.StatusPublished
+	err := s.Update(ctx, stale)
+	assert.True(t, ierr.IsNotFound(err), "updating an archived row must be rejected as not found")
+}
+
 func TestFXRateStore_TenantEnvIsolation(t *testing.T) {
 	ctxA := fxRateCtx()
 	s := NewInMemoryFXRateStore()

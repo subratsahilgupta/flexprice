@@ -162,6 +162,13 @@ func (s *InMemoryFXRateStore) Update(ctx context.Context, fr *fxrate.FXRate) err
 	if fr == nil {
 		return ierr.NewError("fx rate cannot be nil").WithHint("FX rate data is required").Mark(ierr.ErrValidation)
 	}
+	// Mirror the ent repo: only a published row is updatable, so a row archived concurrently
+	// surfaces as not-found instead of being revived.
+	if existing, gerr := s.InMemoryStore.Get(ctx, fr.ID); gerr == nil && existing.Status != types.StatusPublished {
+		return ierr.NewErrorf("FX rate with ID %s was not found", fr.ID).
+			WithReportableDetails(map[string]any{"fx_rate_id": fr.ID}).
+			Mark(ierr.ErrNotFound)
+	}
 	err := s.InMemoryStore.Update(ctx, fr.ID, fr)
 	if err != nil {
 		if ierr.IsNotFound(err) {
