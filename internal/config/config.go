@@ -908,10 +908,35 @@ type UsageAlertsConfig struct {
 	// than this past its intended time yields once (ContinueAsNew) to the back
 	// of the queue so fresher customers evaluate first, and each activity's
 	// ScheduleToStartTimeout is set to the same value.
-	StaleAfter               time.Duration `mapstructure:"stale_after" default:"1h"`
-	WalletAlertsEnabled      bool          `mapstructure:"wallet_alerts_enabled" default:"true"`
-	SpendAlertsEnabled       bool          `mapstructure:"spend_alerts_enabled" default:"true"`
-	EntitlementAlertsEnabled bool          `mapstructure:"entitlement_alerts_enabled" default:"true"`
+	StaleAfter               time.Duration         `mapstructure:"stale_after" default:"1h"`
+	WalletAlertsEnabled      bool                  `mapstructure:"wallet_alerts_enabled" default:"true"`
+	SpendAlertsEnabled       bool                  `mapstructure:"spend_alerts_enabled" default:"true"`
+	EntitlementAlertsEnabled bool                  `mapstructure:"entitlement_alerts_enabled" default:"true"`
+	Overrides                []UsageAlertsOverride `mapstructure:"overrides"`
+}
+
+type UsageAlertsOverride struct {
+	TenantID      string        `mapstructure:"tenant_id"`
+	EnvironmentID string        `mapstructure:"environment_id"`
+	ScheduleDelay time.Duration `mapstructure:"schedule_delay"`
+	StaleAfter    time.Duration `mapstructure:"stale_after"`
+}
+
+func (c UsageAlertsConfig) ForScope(tenantID, environmentID string) (scheduleDelay, staleAfter time.Duration) {
+	scheduleDelay, staleAfter = c.ScheduleDelay, c.StaleAfter
+	for _, o := range c.Overrides {
+		if !strings.EqualFold(o.TenantID, tenantID) || !strings.EqualFold(o.EnvironmentID, environmentID) {
+			continue
+		}
+		if o.ScheduleDelay > 0 {
+			scheduleDelay = o.ScheduleDelay
+		}
+		if o.StaleAfter > 0 {
+			staleAfter = o.StaleAfter
+		}
+		break
+	}
+	return scheduleDelay, staleAfter
 }
 
 // MeterUsageTrackingLazyConfig configures the lazy consumer for tenants that
