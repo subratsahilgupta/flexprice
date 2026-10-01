@@ -52,7 +52,7 @@ RUN go mod init flexprice.local/dbmate-build && \
       -o /out/dbmate github.com/amacneil/dbmate/v2
 
 # Typst stage
-FROM ghcr.io/typst/typst:v0.15.1 AS typst
+FROM ghcr.io/typst/typst:0.15.1 AS typst
 
 # Final stage
 FROM alpine:3.24
