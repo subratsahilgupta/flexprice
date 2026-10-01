@@ -940,3 +940,46 @@ Independent of the secret name so an out-of-band certificate can be adopted.
 {{ include "flexprice.gceIngressName" . }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+flexprice.ingressType — the effective ingress flavor: "nginx" or "gce".
+
+type is the current key; provider is the deprecated fallback. type is unset by
+default, so an existing values file keeps its behaviour when a release reaches
+it without a matching values change.
+*/}}
+{{- define "flexprice.ingressType" -}}
+{{- if .Values.ingress.type -}}
+{{ .Values.ingress.type }}
+{{- else -}}
+{{ .Values.ingress.provider | default "nginx" }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+flexprice.legacyGceEnabled — whether templates/ingress-gcp renders.
+
+Only ingress.provider selects it. type: gce routes to the gceIngress templates
+instead, so setting type never starts rendering the legacy set, and never stops
+it either while provider still says gce.
+*/}}
+{{- define "flexprice.legacyGceEnabled" -}}
+{{- if and .Values.ingress.enabled (eq (.Values.ingress.provider | default "nginx") "gce") -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+flexprice.gceParallelEnabled — whether the parallel GCE objects render.
+
+True for gceIngress.enabled, or for ingress.type=gce once a values file opts in
+by setting type rather than provider. ingress.provider=gce keeps rendering the
+older templates/ingress-gcp set instead.
+*/}}
+{{- define "flexprice.gceParallelEnabled" -}}
+{{- if .Values.gceIngress.enabled -}}
+true
+{{- else if eq (.Values.ingress.type | default "") "gce" -}}
+true
+{{- end -}}
+{{- end -}}
