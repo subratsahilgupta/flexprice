@@ -1,4 +1,4 @@
-{{- if and .Values.ingress.enabled (eq .Values.ingress.provider "gce") }}
+{{- if include "flexprice.legacyGceEnabled" . }}
 # BackendConfig for the api Service behind the GCE ingress.
 #
 # GCE's load balancer health-checks the backend directly rather than relying on
@@ -29,5 +29,14 @@ spec:
   {{- with .Values.ingress.gce.backendConfig.cloudArmor.securityPolicyName }}
   securityPolicy:
     name: {{ . | quote }}
+  {{- end }}
+  # Unset omits the block, keeping the LB default.
+  # Explicit false asserts logging off.
+  {{- if kindIs "bool" .Values.ingress.gce.backendConfig.logging.enable }}
+  logging:
+    enable: {{ .Values.ingress.gce.backendConfig.logging.enable }}
+    {{- if .Values.ingress.gce.backendConfig.logging.enable }}
+    sampleRate: {{ .Values.ingress.gce.backendConfig.logging.sampleRate }}
+    {{- end }}
   {{- end }}
 {{- end }}

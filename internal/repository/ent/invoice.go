@@ -286,9 +286,16 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 					SetUpdatedAt(item.UpdatedAt)
 			}
 
-			if err := r.client.Writer(ctx).InvoiceLineItem.CreateBulk(builders...).Exec(ctx); err != nil {
-				r.logger.Error(ctx, "failed to create line items", "error", err)
-				return ierr.WithError(err).WithHint("line item creation failed").Mark(ierr.ErrDatabase)
+			// Insert in batches to stay within PostgreSQL's 65535 parameter limit.
+			for i := 0; i < len(builders); i += invoiceLineItemBatchSize {
+				end := i + invoiceLineItemBatchSize
+				if end > len(builders) {
+					end = len(builders)
+				}
+				if err := r.client.Writer(ctx).InvoiceLineItem.CreateBulk(builders[i:end]...).Exec(ctx); err != nil {
+					r.logger.Error(ctx, "failed to create line items", "error", err)
+					return ierr.WithError(err).WithHint("line item creation failed").Mark(ierr.ErrDatabase)
+				}
 			}
 		}
 
@@ -370,9 +377,16 @@ func (r *invoiceRepository) AddLineItems(ctx context.Context, invoiceID string, 
 				SetUpdatedAt(item.UpdatedAt)
 		}
 
-		if err := r.client.Writer(ctx).InvoiceLineItem.CreateBulk(builders...).Exec(ctx); err != nil {
-			r.logger.Error(ctx, "failed to add line items", "error", err)
-			return ierr.WithError(err).WithHint("line item addition failed").Mark(ierr.ErrDatabase)
+		// Insert in batches to stay within PostgreSQL's 65535 parameter limit.
+		for i := 0; i < len(builders); i += invoiceLineItemBatchSize {
+			end := i + invoiceLineItemBatchSize
+			if end > len(builders) {
+				end = len(builders)
+			}
+			if err := r.client.Writer(ctx).InvoiceLineItem.CreateBulk(builders[i:end]...).Exec(ctx); err != nil {
+				r.logger.Error(ctx, "failed to add line items", "error", err)
+				return ierr.WithError(err).WithHint("line item addition failed").Mark(ierr.ErrDatabase)
+			}
 		}
 
 		return nil

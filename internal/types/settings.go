@@ -38,6 +38,7 @@ const (
 	SettingKeyWalletTopupConfig           SettingKey = "wallet_topup_config"
 	SettingKeyCustomCurrencyConfig        SettingKey = "custom_currency_config"
 	SettingKeyRevenueAnalyticsConfig      SettingKey = "revenue_analytics_config"
+	SettingKeyCreditExpirySettlement      SettingKey = "credit_expiry_settlement_config"
 )
 
 func (s *SettingKey) Validate() error {
@@ -62,6 +63,7 @@ func (s *SettingKey) Validate() error {
 		SettingKeyWalletTopupConfig,
 		SettingKeyCustomCurrencyConfig,
 		SettingKeyRevenueAnalyticsConfig,
+		SettingKeyCreditExpirySettlement,
 	}
 
 	if !lo.Contains(allowedKeys, *s) {
@@ -118,6 +120,12 @@ type TenantConfig struct {
 // Validate implements SettingConfig interface
 func (c TenantConfig) Validate() error {
 	return validator.ValidateRequest(c)
+}
+
+// TenantEnvironment identifies one tenant and environment pair.
+type TenantEnvironment struct {
+	TenantID      string `json:"tenant_id"`
+	EnvironmentID string `json:"environment_id"`
 }
 
 // TenantEnvConfig represents a generic configuration for a specific tenant and environment
@@ -531,6 +539,17 @@ func (c RevenueAnalyticsConfig) Validate() error {
 	return nil
 }
 
+// CreditExpirySettlementConfig gates applying expiring wallet credits to the current
+// period's draft invoice before the unused remainder is expired.
+type CreditExpirySettlementConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+// Validate implements SettingConfig.
+func (c CreditExpirySettlementConfig) Validate() error {
+	return nil
+}
+
 // WalletTopupConfig holds guard rails for wallet top-up operations.
 type WalletTopupConfig struct {
 	// FreeCreditLimitPerTransaction is the maximum currency amount allowed for a single
@@ -778,6 +797,11 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 		return nil, err
 	}
 
+	defaultCreditExpirySettlementMap, err := utils.ToMap(CreditExpirySettlementConfig{Enabled: false})
+	if err != nil {
+		return nil, err
+	}
+
 	defaultWalletTopupConfig := WalletTopupConfig{
 		FreeCreditLimitPerTransaction: decimal.Zero,
 		MinTopupAmountPerCurrency: map[string]decimal.Decimal{
@@ -885,6 +909,11 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 			Key:          SettingKeyRevenueAnalyticsConfig,
 			DefaultValue: defaultRevenueAnalyticsConfigMap,
 			Description:  "Gates the revenue_facts rollup for this tenant/environment: when enabled, the scheduled dirty-scan decomposes its active subscriptions into provisional revenue facts",
+		},
+		SettingKeyCreditExpirySettlement: {
+			Key:          SettingKeyCreditExpirySettlement,
+			DefaultValue: defaultCreditExpirySettlementMap,
+			Description:  "When enabled, an expiring wallet credit first pays the usage before expiry on the current period's draft invoice; only the unused remainder expires",
 		},
 		SettingKeyWalletTopupConfig: {
 			Key:          SettingKeyWalletTopupConfig,
@@ -1035,6 +1064,13 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 
 	case SettingKeyRevenueAnalyticsConfig:
 		config, err := utils.ToStruct[RevenueAnalyticsConfig](value)
+		if err != nil {
+			return err
+		}
+		return config.Validate()
+
+	case SettingKeyCreditExpirySettlement:
+		config, err := utils.ToStruct[CreditExpirySettlementConfig](value)
 		if err != nil {
 			return err
 		}

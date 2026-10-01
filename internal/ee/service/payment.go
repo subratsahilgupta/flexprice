@@ -488,6 +488,9 @@ func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.U
 	}
 
 	s.publishSystemEvent(ctx, types.WebhookEventPaymentUpdated, p.ID)
+	if observedStatus != types.PaymentStatusFailed && p.PaymentStatus == types.PaymentStatusFailed {
+		s.publishSystemEvent(ctx, types.WebhookEventPaymentFailed, p.ID)
+	}
 
 	return dto.NewPaymentResponse(p), nil
 }
