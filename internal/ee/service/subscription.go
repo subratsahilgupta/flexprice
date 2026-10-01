@@ -6023,8 +6023,7 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 			}
 
 			// Cancelled subs are only revisited to finish our own voids; tenants may still collect on theirs.
-			alreadyCancelled := sub.SubscriptionStatus == types.SubscriptionStatusCancelled
-			if alreadyCancelled && sub.Metadata["cancellation_reason"] != types.CancellationReasonPaymentOverdue {
+			if sub.SubscriptionStatus == types.SubscriptionStatusCancelled && sub.Metadata["cancellation_reason"] != types.CancellationReasonPaymentOverdue {
 				continue
 			}
 
@@ -6050,46 +6049,46 @@ func (s *subscriptionService) ProcessAutoCancellationSubscriptions(ctx context.C
 				continue
 			}
 
-			if alreadyCancelled {
-				s.voidOverdueInvoices(tenantCtx, invoiceService, overdueInvoices, sub.ID)
-				continue
-			}
+			switch {
+			case sub.SubscriptionStatus != types.SubscriptionStatusCancelled:
+				reason := types.CancellationReasonPaymentOverdue
 
-			reason := types.CancellationReasonPaymentOverdue
-
-			s.Logger.Info(ctx, "auto-cancelling subscription",
-				"subscription_id", sub.ID,
-				"tenant_id", tenantConfig.TenantID,
-				"environment_id", tenantConfig.EnvironmentID,
-				"grace_period_days", tenantConfig.GracePeriodDays,
-				"reason", reason,
-			)
-
-			if _, err := s.CancelSubscription(tenantCtx, sub.ID, &dto.CancelSubscriptionRequest{
-				CancellationType: types.CancellationTypeImmediate,
-				Reason:           reason,
-			}); err != nil {
-				s.Logger.Error(ctx, "failed to auto-cancel subscription",
+				s.Logger.Info(ctx, "auto-cancelling subscription",
 					"subscription_id", sub.ID,
 					"tenant_id", tenantConfig.TenantID,
 					"environment_id", tenantConfig.EnvironmentID,
-					"error", err)
-				failedCount++
-				continue
+					"grace_period_days", tenantConfig.GracePeriodDays,
+					"reason", reason,
+				)
+
+				if _, err := s.CancelSubscription(tenantCtx, sub.ID, &dto.CancelSubscriptionRequest{
+					CancellationType: types.CancellationTypeImmediate,
+					Reason:           reason,
+				}); err != nil {
+					s.Logger.Error(ctx, "failed to auto-cancel subscription",
+						"subscription_id", sub.ID,
+						"tenant_id", tenantConfig.TenantID,
+						"environment_id", tenantConfig.EnvironmentID,
+						"error", err)
+					failedCount++
+					continue
+				}
+
+				canceledCount++
+
+				s.voidOverdueInvoices(tenantCtx, invoiceService, overdueInvoices, sub.ID)
+
+				// Log audit trail
+				s.Logger.Info(ctx, "successfully auto-canceled subscription",
+					"subscription_id", sub.ID,
+					"reason", reason,
+					"grace_period_days", tenantConfig.GracePeriodDays,
+					"canceled_by", "auto_cancellation_system",
+					"tenant_id", tenantConfig.TenantID,
+					"environment_id", tenantConfig.EnvironmentID)
+			case sub.Metadata["cancellation_reason"] == types.CancellationReasonPaymentOverdue:
+				s.voidOverdueInvoices(tenantCtx, invoiceService, overdueInvoices, sub.ID)
 			}
-
-			canceledCount++
-
-			s.voidOverdueInvoices(tenantCtx, invoiceService, overdueInvoices, sub.ID)
-
-			// Log audit trail
-			s.Logger.Info(ctx, "successfully auto-canceled subscription",
-				"subscription_id", sub.ID,
-				"reason", reason,
-				"grace_period_days", tenantConfig.GracePeriodDays,
-				"canceled_by", "auto_cancellation_system",
-				"tenant_id", tenantConfig.TenantID,
-				"environment_id", tenantConfig.EnvironmentID)
 		}
 
 		s.Logger.Info(ctx, "completed processing for tenant",
