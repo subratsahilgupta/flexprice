@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/fxrate"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -34,7 +35,7 @@ type FXRate struct {
 	// EnvironmentID holds the value of the "environment_id" field.
 	EnvironmentID string `json:"environment_id,omitempty"`
 	// Scope holds the value of the "scope" field.
-	Scope string `json:"scope,omitempty"`
+	Scope types.FXRateScope `json:"scope,omitempty"`
 	// ScopeID holds the value of the "scope_id" field.
 	ScopeID string `json:"scope_id,omitempty"`
 	// FromCurrency holds the value of the "from_currency" field.
@@ -44,7 +45,7 @@ type FXRate struct {
 	// Rate holds the value of the "rate" field.
 	Rate decimal.Decimal `json:"rate,omitempty"`
 	// Source holds the value of the "source" field.
-	Source string `json:"source,omitempty"`
+	Source types.FXRateSource `json:"source,omitempty"`
 	// StartDate holds the value of the "start_date" field.
 	StartDate *time.Time `json:"start_date,omitempty"`
 	// EndDate holds the value of the "end_date" field.
@@ -134,7 +135,7 @@ func (_m *FXRate) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field scope", values[i])
 			} else if value.Valid {
-				_m.Scope = value.String
+				_m.Scope = types.FXRateScope(value.String)
 			}
 		case fxrate.FieldScopeID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -164,7 +165,7 @@ func (_m *FXRate) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field source", values[i])
 			} else if value.Valid {
-				_m.Source = value.String
+				_m.Source = types.FXRateSource(value.String)
 			}
 		case fxrate.FieldStartDate:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -246,7 +247,7 @@ func (_m *FXRate) String() string {
 	builder.WriteString(_m.EnvironmentID)
 	builder.WriteString(", ")
 	builder.WriteString("scope=")
-	builder.WriteString(_m.Scope)
+	builder.WriteString(fmt.Sprintf("%v", _m.Scope))
 	builder.WriteString(", ")
 	builder.WriteString("scope_id=")
 	builder.WriteString(_m.ScopeID)
@@ -261,7 +262,7 @@ func (_m *FXRate) String() string {
 	builder.WriteString(fmt.Sprintf("%v", _m.Rate))
 	builder.WriteString(", ")
 	builder.WriteString("source=")
-	builder.WriteString(_m.Source)
+	builder.WriteString(fmt.Sprintf("%v", _m.Source))
 	builder.WriteString(", ")
 	if v := _m.StartDate; v != nil {
 		builder.WriteString("start_date=")

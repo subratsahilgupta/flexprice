@@ -52,12 +52,12 @@ func (r *fxRateRepository) Create(ctx context.Context, fr *domainFXRate.FXRate) 
 
 	_, err := client.FXRate.Create().
 		SetID(fr.ID).
-		SetScope(string(fr.Scope)).
+		SetScope(fr.Scope).
 		SetScopeID(fr.ScopeID).
 		SetFromCurrency(strings.ToLower(fr.FromCurrency)).
 		SetToCurrency(strings.ToLower(fr.ToCurrency)).
 		SetRate(fr.Rate).
-		SetSource(string(fr.Source)).
+		SetSource(fr.Source).
 		SetNillableStartDate(fr.StartDate).
 		SetNillableEndDate(fr.EndDate).
 		SetMetadata(fr.Metadata).
@@ -255,7 +255,7 @@ func (r *fxRateRepository) GetTenantRate(ctx context.Context, from, to string) (
 
 	entRate, err := r.client.Reader(ctx).FXRate.Query().
 		Where(
-			fxrate.Scope(string(types.FXRateScopeTenant)),
+			fxrate.Scope(types.FXRateScopeTenant),
 			fxrate.ScopeID(types.FXRateScopeIDTenant),
 			fxrate.FromCurrency(strings.ToLower(from)),
 			fxrate.ToCurrency(strings.ToLower(to)),
@@ -282,7 +282,7 @@ func (r *fxRateRepository) FindOverlapping(ctx context.Context, scope types.FXRa
 	defer FinishSpan(span)
 
 	preds := []predicate.FXRate{
-		fxrate.Scope(string(scope)),
+		fxrate.Scope(scope),
 		fxrate.ScopeID(scopeID),
 		fxrate.FromCurrency(strings.ToLower(from)),
 		fxrate.ToCurrency(strings.ToLower(to)),
@@ -392,7 +392,7 @@ func (o FXRateQueryOptions) applyEntityQueryOptions(_ context.Context, f *types.
 		query = query.Where(fxrate.IDIn(f.FXRateIDs...))
 	}
 	if f.Scope != nil {
-		query = query.Where(fxrate.Scope(string(*f.Scope)))
+		query = query.Where(fxrate.Scope(*f.Scope))
 	}
 	if f.ScopeID != nil {
 		query = query.Where(fxrate.ScopeID(*f.ScopeID))

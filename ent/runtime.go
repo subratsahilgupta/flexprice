@@ -1099,7 +1099,7 @@ func init() {
 	// fxrateDescSource is the schema descriptor for source field.
 	fxrateDescSource := fxrateFields[6].Descriptor()
 	// fxrate.DefaultSource holds the default value on creation for the source field.
-	fxrate.DefaultSource = fxrateDescSource.Default.(string)
+	fxrate.DefaultSource = types.FXRateSource(fxrateDescSource.Default.(string))
 	// fxrate.SourceValidator is a validator for the "source" field. It is called by the builders before save.
 	fxrate.SourceValidator = fxrateDescSource.Validators[0].(func(string) error)
 	featureMixin := schema.Feature{}.Mixin()

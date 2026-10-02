@@ -30091,12 +30091,12 @@ type FXRateMutation struct {
 	created_by     *string
 	updated_by     *string
 	environment_id *string
-	scope          *string
+	scope          *types.FXRateScope
 	scope_id       *string
 	from_currency  *string
 	to_currency    *string
 	rate           *decimal.Decimal
-	source         *string
+	source         *types.FXRateSource
 	start_date     *time.Time
 	end_date       *time.Time
 	metadata       *map[string]string
@@ -30502,12 +30502,12 @@ func (m *FXRateMutation) ResetEnvironmentID() {
 }
 
 // SetScope sets the "scope" field.
-func (m *FXRateMutation) SetScope(s string) {
-	m.scope = &s
+func (m *FXRateMutation) SetScope(trs types.FXRateScope) {
+	m.scope = &trs
 }
 
 // Scope returns the value of the "scope" field in the mutation.
-func (m *FXRateMutation) Scope() (r string, exists bool) {
+func (m *FXRateMutation) Scope() (r types.FXRateScope, exists bool) {
 	v := m.scope
 	if v == nil {
 		return
@@ -30518,7 +30518,7 @@ func (m *FXRateMutation) Scope() (r string, exists bool) {
 // OldScope returns the old "scope" field's value of the FXRate entity.
 // If the FXRate object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *FXRateMutation) OldScope(ctx context.Context) (v string, err error) {
+func (m *FXRateMutation) OldScope(ctx context.Context) (v types.FXRateScope, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldScope is only allowed on UpdateOne operations")
 	}
@@ -30682,12 +30682,12 @@ func (m *FXRateMutation) ResetRate() {
 }
 
 // SetSource sets the "source" field.
-func (m *FXRateMutation) SetSource(s string) {
-	m.source = &s
+func (m *FXRateMutation) SetSource(trs types.FXRateSource) {
+	m.source = &trs
 }
 
 // Source returns the value of the "source" field in the mutation.
-func (m *FXRateMutation) Source() (r string, exists bool) {
+func (m *FXRateMutation) Source() (r types.FXRateSource, exists bool) {
 	v := m.source
 	if v == nil {
 		return
@@ -30698,7 +30698,7 @@ func (m *FXRateMutation) Source() (r string, exists bool) {
 // OldSource returns the old "source" field's value of the FXRate entity.
 // If the FXRate object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *FXRateMutation) OldSource(ctx context.Context) (v string, err error) {
+func (m *FXRateMutation) OldSource(ctx context.Context) (v types.FXRateSource, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldSource is only allowed on UpdateOne operations")
 	}
@@ -31087,7 +31087,7 @@ func (m *FXRateMutation) SetField(name string, value ent.Value) error {
 		m.SetEnvironmentID(v)
 		return nil
 	case fxrate.FieldScope:
-		v, ok := value.(string)
+		v, ok := value.(types.FXRateScope)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -31122,7 +31122,7 @@ func (m *FXRateMutation) SetField(name string, value ent.Value) error {
 		m.SetRate(v)
 		return nil
 	case fxrate.FieldSource:
-		v, ok := value.(string)
+		v, ok := value.(types.FXRateSource)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

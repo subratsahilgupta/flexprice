@@ -6,6 +6,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	baseMixin "github.com/flexprice/flexprice/ent/schema/mixin"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -38,7 +39,8 @@ func (FXRate) Fields() []ent.Field {
 			Immutable(),
 		field.String("scope").
 			SchemaType(map[string]string{"postgres": "varchar(20)"}).
-			NotEmpty(),
+			NotEmpty().
+			GoType(types.FXRateScope("")),
 		field.String("scope_id").
 			SchemaType(map[string]string{"postgres": "varchar(50)"}).
 			NotEmpty(),
@@ -52,8 +54,9 @@ func (FXRate) Fields() []ent.Field {
 			SchemaType(map[string]string{"postgres": "numeric(24,12)"}),
 		field.String("source").
 			SchemaType(map[string]string{"postgres": "varchar(20)"}).
-			Default("fixed").
-			NotEmpty(),
+			Default(string(types.FXRateSourceFixed)).
+			NotEmpty().
+			GoType(types.FXRateSource("")),
 		field.Time("start_date").
 			SchemaType(map[string]string{"postgres": "timestamptz"}).
 			Optional().

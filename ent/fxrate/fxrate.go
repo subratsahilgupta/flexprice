@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"github.com/flexprice/flexprice/internal/types"
 )
 
 const (
@@ -102,7 +103,7 @@ var (
 	// ToCurrencyValidator is a validator for the "to_currency" field. It is called by the builders before save.
 	ToCurrencyValidator func(string) error
 	// DefaultSource holds the default value on creation for the "source" field.
-	DefaultSource string
+	DefaultSource types.FXRateSource
 	// SourceValidator is a validator for the "source" field. It is called by the builders before save.
 	SourceValidator func(string) error
 )

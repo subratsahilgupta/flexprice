@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/fxrate"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -70,13 +71,13 @@ func (_u *FXRateUpdate) ClearUpdatedBy() *FXRateUpdate {
 }
 
 // SetScope sets the "scope" field.
-func (_u *FXRateUpdate) SetScope(v string) *FXRateUpdate {
+func (_u *FXRateUpdate) SetScope(v types.FXRateScope) *FXRateUpdate {
 	_u.mutation.SetScope(v)
 	return _u
 }
 
 // SetNillableScope sets the "scope" field if the given value is not nil.
-func (_u *FXRateUpdate) SetNillableScope(v *string) *FXRateUpdate {
+func (_u *FXRateUpdate) SetNillableScope(v *types.FXRateScope) *FXRateUpdate {
 	if v != nil {
 		_u.SetScope(*v)
 	}
@@ -140,13 +141,13 @@ func (_u *FXRateUpdate) SetNillableRate(v *decimal.Decimal) *FXRateUpdate {
 }
 
 // SetSource sets the "source" field.
-func (_u *FXRateUpdate) SetSource(v string) *FXRateUpdate {
+func (_u *FXRateUpdate) SetSource(v types.FXRateSource) *FXRateUpdate {
 	_u.mutation.SetSource(v)
 	return _u
 }
 
 // SetNillableSource sets the "source" field if the given value is not nil.
-func (_u *FXRateUpdate) SetNillableSource(v *string) *FXRateUpdate {
+func (_u *FXRateUpdate) SetNillableSource(v *types.FXRateSource) *FXRateUpdate {
 	if v != nil {
 		_u.SetSource(*v)
 	}
@@ -249,7 +250,7 @@ func (_u *FXRateUpdate) defaults() {
 // check runs all checks and user-defined validators on the builder.
 func (_u *FXRateUpdate) check() error {
 	if v, ok := _u.mutation.Scope(); ok {
-		if err := fxrate.ScopeValidator(v); err != nil {
+		if err := fxrate.ScopeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "scope", err: fmt.Errorf(`ent: validator failed for field "FXRate.scope": %w`, err)}
 		}
 	}
@@ -269,7 +270,7 @@ func (_u *FXRateUpdate) check() error {
 		}
 	}
 	if v, ok := _u.mutation.Source(); ok {
-		if err := fxrate.SourceValidator(v); err != nil {
+		if err := fxrate.SourceValidator(string(v)); err != nil {
 			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "FXRate.source": %w`, err)}
 		}
 	}
@@ -403,13 +404,13 @@ func (_u *FXRateUpdateOne) ClearUpdatedBy() *FXRateUpdateOne {
 }
 
 // SetScope sets the "scope" field.
-func (_u *FXRateUpdateOne) SetScope(v string) *FXRateUpdateOne {
+func (_u *FXRateUpdateOne) SetScope(v types.FXRateScope) *FXRateUpdateOne {
 	_u.mutation.SetScope(v)
 	return _u
 }
 
 // SetNillableScope sets the "scope" field if the given value is not nil.
-func (_u *FXRateUpdateOne) SetNillableScope(v *string) *FXRateUpdateOne {
+func (_u *FXRateUpdateOne) SetNillableScope(v *types.FXRateScope) *FXRateUpdateOne {
 	if v != nil {
 		_u.SetScope(*v)
 	}
@@ -473,13 +474,13 @@ func (_u *FXRateUpdateOne) SetNillableRate(v *decimal.Decimal) *FXRateUpdateOne 
 }
 
 // SetSource sets the "source" field.
-func (_u *FXRateUpdateOne) SetSource(v string) *FXRateUpdateOne {
+func (_u *FXRateUpdateOne) SetSource(v types.FXRateSource) *FXRateUpdateOne {
 	_u.mutation.SetSource(v)
 	return _u
 }
 
 // SetNillableSource sets the "source" field if the given value is not nil.
-func (_u *FXRateUpdateOne) SetNillableSource(v *string) *FXRateUpdateOne {
+func (_u *FXRateUpdateOne) SetNillableSource(v *types.FXRateSource) *FXRateUpdateOne {
 	if v != nil {
 		_u.SetSource(*v)
 	}
@@ -595,7 +596,7 @@ func (_u *FXRateUpdateOne) defaults() {
 // check runs all checks and user-defined validators on the builder.
 func (_u *FXRateUpdateOne) check() error {
 	if v, ok := _u.mutation.Scope(); ok {
-		if err := fxrate.ScopeValidator(v); err != nil {
+		if err := fxrate.ScopeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "scope", err: fmt.Errorf(`ent: validator failed for field "FXRate.scope": %w`, err)}
 		}
 	}
@@ -615,7 +616,7 @@ func (_u *FXRateUpdateOne) check() error {
 		}
 	}
 	if v, ok := _u.mutation.Source(); ok {
-		if err := fxrate.SourceValidator(v); err != nil {
+		if err := fxrate.SourceValidator(string(v)); err != nil {
 			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "FXRate.source": %w`, err)}
 		}
 	}

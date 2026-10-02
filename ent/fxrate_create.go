@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/flexprice/flexprice/ent/fxrate"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -112,7 +113,7 @@ func (_c *FXRateCreate) SetNillableEnvironmentID(v *string) *FXRateCreate {
 }
 
 // SetScope sets the "scope" field.
-func (_c *FXRateCreate) SetScope(v string) *FXRateCreate {
+func (_c *FXRateCreate) SetScope(v types.FXRateScope) *FXRateCreate {
 	_c.mutation.SetScope(v)
 	return _c
 }
@@ -142,13 +143,13 @@ func (_c *FXRateCreate) SetRate(v decimal.Decimal) *FXRateCreate {
 }
 
 // SetSource sets the "source" field.
-func (_c *FXRateCreate) SetSource(v string) *FXRateCreate {
+func (_c *FXRateCreate) SetSource(v types.FXRateSource) *FXRateCreate {
 	_c.mutation.SetSource(v)
 	return _c
 }
 
 // SetNillableSource sets the "source" field if the given value is not nil.
-func (_c *FXRateCreate) SetNillableSource(v *string) *FXRateCreate {
+func (_c *FXRateCreate) SetNillableSource(v *types.FXRateSource) *FXRateCreate {
 	if v != nil {
 		_c.SetSource(*v)
 	}
@@ -275,7 +276,7 @@ func (_c *FXRateCreate) check() error {
 		return &ValidationError{Name: "scope", err: errors.New(`ent: missing required field "FXRate.scope"`)}
 	}
 	if v, ok := _c.mutation.Scope(); ok {
-		if err := fxrate.ScopeValidator(v); err != nil {
+		if err := fxrate.ScopeValidator(string(v)); err != nil {
 			return &ValidationError{Name: "scope", err: fmt.Errorf(`ent: validator failed for field "FXRate.scope": %w`, err)}
 		}
 	}
@@ -310,7 +311,7 @@ func (_c *FXRateCreate) check() error {
 		return &ValidationError{Name: "source", err: errors.New(`ent: missing required field "FXRate.source"`)}
 	}
 	if v, ok := _c.mutation.Source(); ok {
-		if err := fxrate.SourceValidator(v); err != nil {
+		if err := fxrate.SourceValidator(string(v)); err != nil {
 			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "FXRate.source": %w`, err)}
 		}
 	}

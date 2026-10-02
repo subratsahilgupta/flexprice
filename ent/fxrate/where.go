@@ -7,6 +7,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/flexprice/flexprice/ent/predicate"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/shopspring/decimal"
 )
 
@@ -101,8 +102,9 @@ func EnvironmentID(v string) predicate.FXRate {
 }
 
 // Scope applies equality check predicate on the "scope" field. It's identical to ScopeEQ.
-func Scope(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEQ(FieldScope, v))
+func Scope(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldEQ(FieldScope, vc))
 }
 
 // ScopeID applies equality check predicate on the "scope_id" field. It's identical to ScopeIDEQ.
@@ -126,8 +128,9 @@ func Rate(v decimal.Decimal) predicate.FXRate {
 }
 
 // Source applies equality check predicate on the "source" field. It's identical to SourceEQ.
-func Source(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEQ(FieldSource, v))
+func Source(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldEQ(FieldSource, vc))
 }
 
 // StartDate applies equality check predicate on the "start_date" field. It's identical to StartDateEQ.
@@ -576,68 +579,87 @@ func EnvironmentIDContainsFold(v string) predicate.FXRate {
 }
 
 // ScopeEQ applies the EQ predicate on the "scope" field.
-func ScopeEQ(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEQ(FieldScope, v))
+func ScopeEQ(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldEQ(FieldScope, vc))
 }
 
 // ScopeNEQ applies the NEQ predicate on the "scope" field.
-func ScopeNEQ(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldNEQ(FieldScope, v))
+func ScopeNEQ(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldNEQ(FieldScope, vc))
 }
 
 // ScopeIn applies the In predicate on the "scope" field.
-func ScopeIn(vs ...string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldIn(FieldScope, vs...))
+func ScopeIn(vs ...types.FXRateScope) predicate.FXRate {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.FXRate(sql.FieldIn(FieldScope, v...))
 }
 
 // ScopeNotIn applies the NotIn predicate on the "scope" field.
-func ScopeNotIn(vs ...string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldNotIn(FieldScope, vs...))
+func ScopeNotIn(vs ...types.FXRateScope) predicate.FXRate {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.FXRate(sql.FieldNotIn(FieldScope, v...))
 }
 
 // ScopeGT applies the GT predicate on the "scope" field.
-func ScopeGT(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldGT(FieldScope, v))
+func ScopeGT(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldGT(FieldScope, vc))
 }
 
 // ScopeGTE applies the GTE predicate on the "scope" field.
-func ScopeGTE(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldGTE(FieldScope, v))
+func ScopeGTE(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldGTE(FieldScope, vc))
 }
 
 // ScopeLT applies the LT predicate on the "scope" field.
-func ScopeLT(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldLT(FieldScope, v))
+func ScopeLT(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldLT(FieldScope, vc))
 }
 
 // ScopeLTE applies the LTE predicate on the "scope" field.
-func ScopeLTE(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldLTE(FieldScope, v))
+func ScopeLTE(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldLTE(FieldScope, vc))
 }
 
 // ScopeContains applies the Contains predicate on the "scope" field.
-func ScopeContains(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldContains(FieldScope, v))
+func ScopeContains(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldContains(FieldScope, vc))
 }
 
 // ScopeHasPrefix applies the HasPrefix predicate on the "scope" field.
-func ScopeHasPrefix(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldHasPrefix(FieldScope, v))
+func ScopeHasPrefix(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldHasPrefix(FieldScope, vc))
 }
 
 // ScopeHasSuffix applies the HasSuffix predicate on the "scope" field.
-func ScopeHasSuffix(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldHasSuffix(FieldScope, v))
+func ScopeHasSuffix(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldHasSuffix(FieldScope, vc))
 }
 
 // ScopeEqualFold applies the EqualFold predicate on the "scope" field.
-func ScopeEqualFold(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEqualFold(FieldScope, v))
+func ScopeEqualFold(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldEqualFold(FieldScope, vc))
 }
 
 // ScopeContainsFold applies the ContainsFold predicate on the "scope" field.
-func ScopeContainsFold(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldContainsFold(FieldScope, v))
+func ScopeContainsFold(v types.FXRateScope) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldContainsFold(FieldScope, vc))
 }
 
 // ScopeIDEQ applies the EQ predicate on the "scope_id" field.
@@ -876,68 +898,87 @@ func RateLTE(v decimal.Decimal) predicate.FXRate {
 }
 
 // SourceEQ applies the EQ predicate on the "source" field.
-func SourceEQ(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEQ(FieldSource, v))
+func SourceEQ(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldEQ(FieldSource, vc))
 }
 
 // SourceNEQ applies the NEQ predicate on the "source" field.
-func SourceNEQ(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldNEQ(FieldSource, v))
+func SourceNEQ(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldNEQ(FieldSource, vc))
 }
 
 // SourceIn applies the In predicate on the "source" field.
-func SourceIn(vs ...string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldIn(FieldSource, vs...))
+func SourceIn(vs ...types.FXRateSource) predicate.FXRate {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.FXRate(sql.FieldIn(FieldSource, v...))
 }
 
 // SourceNotIn applies the NotIn predicate on the "source" field.
-func SourceNotIn(vs ...string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldNotIn(FieldSource, vs...))
+func SourceNotIn(vs ...types.FXRateSource) predicate.FXRate {
+	v := make([]any, len(vs))
+	for i := range v {
+		v[i] = string(vs[i])
+	}
+	return predicate.FXRate(sql.FieldNotIn(FieldSource, v...))
 }
 
 // SourceGT applies the GT predicate on the "source" field.
-func SourceGT(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldGT(FieldSource, v))
+func SourceGT(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldGT(FieldSource, vc))
 }
 
 // SourceGTE applies the GTE predicate on the "source" field.
-func SourceGTE(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldGTE(FieldSource, v))
+func SourceGTE(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldGTE(FieldSource, vc))
 }
 
 // SourceLT applies the LT predicate on the "source" field.
-func SourceLT(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldLT(FieldSource, v))
+func SourceLT(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldLT(FieldSource, vc))
 }
 
 // SourceLTE applies the LTE predicate on the "source" field.
-func SourceLTE(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldLTE(FieldSource, v))
+func SourceLTE(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldLTE(FieldSource, vc))
 }
 
 // SourceContains applies the Contains predicate on the "source" field.
-func SourceContains(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldContains(FieldSource, v))
+func SourceContains(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldContains(FieldSource, vc))
 }
 
 // SourceHasPrefix applies the HasPrefix predicate on the "source" field.
-func SourceHasPrefix(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldHasPrefix(FieldSource, v))
+func SourceHasPrefix(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldHasPrefix(FieldSource, vc))
 }
 
 // SourceHasSuffix applies the HasSuffix predicate on the "source" field.
-func SourceHasSuffix(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldHasSuffix(FieldSource, v))
+func SourceHasSuffix(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldHasSuffix(FieldSource, vc))
 }
 
 // SourceEqualFold applies the EqualFold predicate on the "source" field.
-func SourceEqualFold(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEqualFold(FieldSource, v))
+func SourceEqualFold(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldEqualFold(FieldSource, vc))
 }
 
 // SourceContainsFold applies the ContainsFold predicate on the "source" field.
-func SourceContainsFold(v string) predicate.FXRate {
-	return predicate.FXRate(sql.FieldContainsFold(FieldSource, v))
+func SourceContainsFold(v types.FXRateSource) predicate.FXRate {
+	vc := string(v)
+	return predicate.FXRate(sql.FieldContainsFold(FieldSource, vc))
 }
 
 // StartDateEQ applies the EQ predicate on the "start_date" field.
