@@ -277,7 +277,7 @@ func (r *fxRateRepository) GetTenantRate(ctx context.Context, from, to string) (
 	return domainFXRate.FromEnt(entRate), nil
 }
 
-func (r *fxRateRepository) FindOverlapping(ctx context.Context, scope types.FXRateScope, scopeID, from, to string, validFrom, validTo *time.Time, excludeID string) ([]*domainFXRate.FXRate, error) {
+func (r *fxRateRepository) FindOverlapping(ctx context.Context, scope types.FXRateScope, scopeID, from, to string, startDate, endDate *time.Time, excludeID string) ([]*domainFXRate.FXRate, error) {
 	span := StartRepositorySpan(ctx, "fxrate", "find_overlapping", map[string]interface{}{"scope": scope, "scope_id": scopeID})
 	defer FinishSpan(span)
 
@@ -302,7 +302,7 @@ func (r *fxRateRepository) FindOverlapping(ctx context.Context, scope types.FXRa
 
 	overlapping := make([]*domainFXRate.FXRate, 0)
 	for _, e := range rates {
-		if windowsOverlap(e.StartDate, e.EndDate, validFrom, validTo) {
+		if windowsOverlap(e.StartDate, e.EndDate, startDate, endDate) {
 			overlapping = append(overlapping, domainFXRate.FromEnt(e))
 		}
 	}

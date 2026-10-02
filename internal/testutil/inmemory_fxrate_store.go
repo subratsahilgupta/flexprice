@@ -210,7 +210,7 @@ func (s *InMemoryFXRateStore) GetTenantRate(ctx context.Context, from, to string
 	return rates[0], nil
 }
 
-func (s *InMemoryFXRateStore) FindOverlapping(ctx context.Context, scope types.FXRateScope, scopeID, from, to string, validFrom, validTo *time.Time, excludeID string) ([]*fxrate.FXRate, error) {
+func (s *InMemoryFXRateStore) FindOverlapping(ctx context.Context, scope types.FXRateScope, scopeID, from, to string, startDate, endDate *time.Time, excludeID string) ([]*fxrate.FXRate, error) {
 	filter := &types.FXRateFilter{
 		QueryFilter:  types.NewNoLimitQueryFilter(),
 		Scope:        &scope,
@@ -227,7 +227,7 @@ func (s *InMemoryFXRateStore) FindOverlapping(ctx context.Context, scope types.F
 		if r.ID == excludeID {
 			continue
 		}
-		if fxWindowsOverlap(r.StartDate, r.EndDate, validFrom, validTo) {
+		if fxWindowsOverlap(r.StartDate, r.EndDate, startDate, endDate) {
 			overlapping = append(overlapping, r)
 		}
 	}

@@ -63,9 +63,9 @@ func (s *FXRateCRUDSuite) createTenantRate(from, to, rate string) {
 	s.NoError(err)
 }
 
-func (s *FXRateCRUDSuite) createOverride(scope types.FXRateScope, scopeID, from, to, rate string, validFrom *time.Time) *dto.FXRateResponse {
+func (s *FXRateCRUDSuite) createOverride(scope types.FXRateScope, scopeID, from, to, rate string, startDate *time.Time) *dto.FXRateResponse {
 	resp, err := s.svc.CreateFXRate(s.GetContext(), dto.CreateFXRateRequest{
-		Scope: scope, ScopeID: scopeID, FromCurrency: from, ToCurrency: to, Rate: rate, StartDate: validFrom,
+		Scope: scope, ScopeID: scopeID, FromCurrency: from, ToCurrency: to, Rate: rate, StartDate: startDate,
 	})
 	s.NoError(err)
 	return resp
