@@ -50,23 +50,6 @@ func (s *FXRateCRUDSuite) TestCreate_CustomerScopeRequiresExistingCustomer() {
 	s.True(ierr.IsValidation(err) || ierr.IsNotFound(err))
 }
 
-func (s *FXRateCRUDSuite) TestCreateFXRate_PublishesWebhook() {
-	s.ClearStores()
-	_, err := s.svc.CreateFXRate(s.GetContext(), dto.CreateFXRateRequest{
-		Scope: types.FXRateScopeTenant, FromCurrency: "usd", ToCurrency: "inr", Rate: "83",
-	})
-	s.NoError(err)
-
-	events := s.GetPublishedWebhooks()
-	found := false
-	for _, e := range events {
-		if e.EventName == types.WebhookEventFXRateCreated && e.EntityType == types.SystemEntityTypeFXRate {
-			found = true
-		}
-	}
-	s.True(found, "CreateFXRate must publish an fx_rate.created webhook")
-}
-
 func (s *FXRateCRUDSuite) TearDownTest() {
 	s.BaseServiceTestSuite.TearDownTest()
 }

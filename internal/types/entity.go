@@ -21,7 +21,6 @@ const (
 	SystemEntityTypeEntitlement     SystemEntityType = "entitlement"
 	SystemEntityTypeCheckoutSession SystemEntityType = "checkout_session"
 	SystemEntityTypeEvent           SystemEntityType = "event"
-	SystemEntityTypeFXRate          SystemEntityType = "fx_rate"
 )
 
 type EntityCreationStatus string

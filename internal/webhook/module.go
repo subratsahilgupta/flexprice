@@ -67,7 +67,6 @@ func providePayloadBuilderFactory(
 	groupService service.GroupService,
 	entitlementGrantService service.EntitlementGrantService,
 	entityIntegrationMappingService service.EntityIntegrationMappingService,
-	fxRateService service.FXRateService,
 ) payload.PayloadBuilderFactory {
 	services := payload.NewServices(
 		invoiceService,
@@ -87,7 +86,6 @@ func providePayloadBuilderFactory(
 		groupService,
 		entitlementGrantService,
 		entityIntegrationMappingService,
-		fxRateService,
 	)
 	return payload.NewPayloadBuilderFactory(services)
 }

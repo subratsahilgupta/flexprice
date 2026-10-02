@@ -2,50 +2,25 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	fxrate "github.com/flexprice/flexprice/internal/domain/fxrate"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/postgres"
 	"github.com/flexprice/flexprice/internal/types"
-	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
-// FXRateService configures and resolves tenant FX rates.
+// FXRateService configures tenant FX rates.
 type FXRateService interface {
-	// ResolveRate returns the rate for from→to using the most specific scope
-	// (subscription → customer → tenant) whose validity window covers now.
-	ResolveRate(ctx context.Context, req ResolveFXRateRequest) (*FXRateResolution, error)
-
 	CreateFXRate(ctx context.Context, req dto.CreateFXRateRequest) (*dto.FXRateResponse, error)
 	GetFXRate(ctx context.Context, id string) (*dto.FXRateResponse, error)
 	ListFXRates(ctx context.Context, filter *types.FXRateFilter) (*dto.ListFXRatesResponse, error)
 	UpdateFXRate(ctx context.Context, id string, req dto.UpdateFXRateRequest) (*dto.FXRateResponse, error)
 	DeleteFXRate(ctx context.Context, id string) error
-}
-
-// ResolveFXRateRequest asks for the rate from→to for an optional customer/subscription.
-type ResolveFXRateRequest struct {
-	From           string
-	To             string
-	CustomerID     string
-	SubscriptionID string
-}
-
-// FXRateResolution is the rate a resolution produced. Scope is "identity" when from == to.
-type FXRateResolution struct {
-	Rate   decimal.Decimal
-	RateID string
-	Scope  string
-	Source types.FXRateSource
-	From   string
-	To     string
 }
 
 type fxRateService struct {
@@ -54,119 +29,6 @@ type fxRateService struct {
 
 func NewFXRateService(params ServiceParams) FXRateService {
 	return &fxRateService{ServiceParams: params}
-}
-
-func (s *fxRateService) ResolveRate(ctx context.Context, req ResolveFXRateRequest) (*FXRateResolution, error) {
-	return s.resolveRateAt(ctx, req, time.Now().UTC())
-}
-
-// resolveRateAt is ResolveRate with an injected clock, so validity windows are testable.
-func (s *fxRateService) resolveRateAt(ctx context.Context, req ResolveFXRateRequest, now time.Time) (*FXRateResolution, error) {
-	// Same currency needs no rate and no query.
-	if types.IsMatchingCurrency(req.From, req.To) {
-		return &FXRateResolution{Rate: decimal.NewFromInt(1), Scope: "identity", Source: types.FXRateSourceFixed, From: req.From, To: req.To}, nil
-	}
-
-	scopesChecked := make([]string, 0, 3)
-
-	if req.SubscriptionID != "" {
-		scopesChecked = append(scopesChecked, "subscription:"+req.SubscriptionID)
-		rate, err := s.findOverride(ctx, types.FXRateScopeSubscription, req.SubscriptionID, req.From, req.To, now)
-		if err != nil {
-			return nil, err
-		}
-		if rate != nil {
-			return resolveFixed(rate)
-		}
-	}
-
-	if req.CustomerID != "" {
-		scopesChecked = append(scopesChecked, "customer:"+req.CustomerID)
-		rate, err := s.findOverride(ctx, types.FXRateScopeCustomer, req.CustomerID, req.From, req.To, now)
-		if err != nil {
-			return nil, err
-		}
-		if rate != nil {
-			return resolveFixed(rate)
-		}
-	}
-
-	scopesChecked = append(scopesChecked, "tenant")
-	tenantRate, err := s.FXRateRepo.GetTenantRate(ctx, req.From, req.To)
-	if err != nil {
-		if ierr.IsNotFound(err) {
-			return nil, fxRateNotFound(req.From, req.To, scopesChecked)
-		}
-		return nil, err
-	}
-	return resolveFixed(tenantRate)
-}
-
-// findOverride returns the published override for (scope, scopeID, pair) whose
-// window covers now, or nil when none applies.
-func (s *fxRateService) findOverride(ctx context.Context, scope types.FXRateScope, scopeID, from, to string, now time.Time) (*fxrate.FXRate, error) {
-	scopeCopy := scope
-	filter := &types.FXRateFilter{
-		QueryFilter:  types.NewNoLimitQueryFilter(),
-		Scope:        &scopeCopy,
-		ScopeID:      &scopeID,
-		FromCurrency: &from,
-		ToCurrency:   &to,
-	}
-	rates, err := s.FXRateRepo.List(ctx, filter)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range rates {
-		if windowCoversNow(r.StartDate, r.EndDate, now) {
-			return r, nil
-		}
-	}
-	return nil, nil
-}
-
-// windowCoversNow treats a nil start_date as −∞ and a nil end_date as +∞. end_date is exclusive.
-func windowCoversNow(validFrom, validTo *time.Time, now time.Time) bool {
-	if validFrom != nil && validFrom.After(now) {
-		return false
-	}
-	if validTo != nil && !validTo.After(now) {
-		return false
-	}
-	return true
-}
-
-// resolveFixed turns a matched rate into a resolution. Only fixed rates resolve to a value
-// today; a market rate is rejected until the market-rate integration is wired.
-func resolveFixed(r *fxrate.FXRate) (*FXRateResolution, error) {
-	if r.Source == types.FXRateSourceMarket {
-		return nil, ierr.NewErrorf("market FX rate resolution is not supported yet for %s → %s", r.FromCurrency, r.ToCurrency).
-			WithHint("This pair is configured to use market rates, which are not yet available.").
-			Mark(ierr.ErrInvalidOperation)
-	}
-	return toResolution(r), nil
-}
-
-func toResolution(r *fxrate.FXRate) *FXRateResolution {
-	return &FXRateResolution{
-		Rate:   r.Rate,
-		RateID: r.ID,
-		Scope:  string(r.Scope),
-		Source: r.Source,
-		From:   r.FromCurrency,
-		To:     r.ToCurrency,
-	}
-}
-
-func fxRateNotFound(from, to string, scopesChecked []string) error {
-	return ierr.NewErrorf("no FX rate configured for %s → %s", from, to).
-		WithHintf("No exchange rate configured for %s → %s. Set a tenant rate first.", from, to).
-		WithReportableDetails(map[string]any{
-			"from_currency":  from,
-			"to_currency":    to,
-			"scopes_checked": scopesChecked,
-		}).
-		Mark(ierr.ErrNotFound)
 }
 
 func (s *fxRateService) CreateFXRate(ctx context.Context, req dto.CreateFXRateRequest) (*dto.FXRateResponse, error) {
@@ -191,7 +53,6 @@ func (s *fxRateService) CreateFXRate(ctx context.Context, req dto.CreateFXRateRe
 	}); err != nil {
 		return nil, err
 	}
-	s.publishSystemEvent(ctx, types.WebhookEventFXRateCreated, rate.ID)
 	return &dto.FXRateResponse{FXRate: rate}, nil
 }
 
@@ -273,21 +134,21 @@ func (s *fxRateService) UpdateFXRate(ctx context.Context, id string, req dto.Upd
 		builder.WithRate(rate)
 	}
 
-	newFrom := existing.StartDate
-	newTo := existing.EndDate
+	newStart := existing.StartDate
+	newEnd := existing.EndDate
 	if existing.Scope != types.FXRateScopeTenant {
 		if req.StartDate != nil {
-			newFrom = req.StartDate
+			newStart = req.StartDate
 		}
 		if req.EndDate != nil {
-			newTo = req.EndDate
+			newEnd = req.EndDate
 		}
-		if newFrom != nil && newTo != nil && !newFrom.Before(*newTo) {
+		if newStart != nil && newEnd != nil && !newStart.Before(*newEnd) {
 			return nil, ierr.NewError("start_date must be before end_date").
 				WithHint("The start of a validity window must be before its end.").
 				Mark(ierr.ErrValidation)
 		}
-		builder.WithStartDate(newFrom).WithEndDate(newTo)
+		builder.WithStartDate(newStart).WithEndDate(newEnd)
 	}
 
 	if req.Metadata != nil {
@@ -303,7 +164,7 @@ func (s *fxRateService) UpdateFXRate(ctx context.Context, id string, req dto.Upd
 			return err
 		}
 		if existing.Scope != types.FXRateScopeTenant {
-			overlaps, oerr := s.FXRateRepo.FindOverlapping(txCtx, existing.Scope, existing.ScopeID, existing.FromCurrency, existing.ToCurrency, newFrom, newTo, existing.ID)
+			overlaps, oerr := s.FXRateRepo.FindOverlapping(txCtx, existing.Scope, existing.ScopeID, existing.FromCurrency, existing.ToCurrency, newStart, newEnd, existing.ID)
 			if oerr != nil {
 				return oerr
 			}
@@ -317,7 +178,6 @@ func (s *fxRateService) UpdateFXRate(ctx context.Context, id string, req dto.Upd
 	}); err != nil {
 		return nil, err
 	}
-	s.publishSystemEvent(ctx, types.WebhookEventFXRateUpdated, updated.ID)
 	return &dto.FXRateResponse{FXRate: updated}, nil
 }
 
@@ -335,40 +195,7 @@ func (s *fxRateService) DeleteFXRate(ctx context.Context, id string) error {
 			WithReportableDetails(map[string]any{"fx_rate_id": id}).
 			Mark(ierr.ErrValidation)
 	}
-	if err := s.FXRateRepo.Delete(ctx, existing); err != nil {
-		return err
-	}
-	s.publishSystemEvent(ctx, types.WebhookEventFXRateDeleted, existing.ID)
-	return nil
-}
-
-// publishSystemEvent emits an fx_rate.* system event; failures are logged, not fatal.
-func (s *fxRateService) publishSystemEvent(ctx context.Context, eventName types.WebhookEventName, fxRateID string) {
-	if s.WebhookPublisher == nil {
-		return
-	}
-	payload, err := json.Marshal(webhookDto.InternalFXRateEvent{
-		FXRateID: fxRateID,
-		TenantID: types.GetTenantID(ctx),
-	})
-	if err != nil {
-		s.Logger.Error(ctx, "failed to marshal fx rate webhook payload", "error", err, "fx_rate_id", fxRateID)
-		return
-	}
-	event := &types.WebhookEvent{
-		ID:            types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SYSTEM_EVENT),
-		EventName:     eventName,
-		TenantID:      types.GetTenantID(ctx),
-		EnvironmentID: types.GetEnvironmentID(ctx),
-		UserID:        types.GetUserID(ctx),
-		Timestamp:     time.Now().UTC(),
-		Payload:       json.RawMessage(payload),
-		EntityType:    types.SystemEntityTypeFXRate,
-		EntityID:      fxRateID,
-	}
-	if err := s.WebhookPublisher.PublishWebhook(ctx, event); err != nil {
-		s.Logger.Error(ctx, "failed to publish fx rate webhook", "error", err, "event_name", string(event.EventName), "fx_rate_id", fxRateID)
-	}
+	return s.FXRateRepo.Delete(ctx, existing)
 }
 
 // validateForCreate enforces the §8.1 guardrails on a new rate.

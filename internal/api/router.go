@@ -542,9 +542,7 @@ func NewRouter(
 		fxRates := v1Private.Group("/forex")
 		{
 			fxRates.POST("", write(types.EntityFXRate, types.ActionWrite), handlers.FXRate.CreateFXRate)
-			fxRates.GET("", handlers.FXRate.ListFXRates)
 			fxRates.POST("/query", handlers.FXRate.QueryFXRates)
-			fxRates.GET("/resolve", handlers.FXRate.ResolveFXRate)
 			fxRates.GET("/:id", handlers.FXRate.GetFXRate)
 			fxRates.PUT("/:id", write(types.EntityFXRate, types.ActionWrite), handlers.FXRate.UpdateFXRate)
 			fxRates.DELETE("/:id", write(types.EntityFXRate, types.ActionWrite), handlers.FXRate.DeleteFXRate)
