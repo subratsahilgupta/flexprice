@@ -20,7 +20,7 @@ type Repository interface {
 	GetTenantRate(ctx context.Context, from, to string) (*FXRate, error)
 
 	// FindOverlapping returns published rows for (scope, scopeID, pair) whose
-	// [valid_from, valid_to) window overlaps [validFrom, validTo), excluding excludeID.
+	// [start_date, end_date) window overlaps [validFrom, validTo), excluding excludeID.
 	// A nil validFrom means −∞, a nil validTo means +∞.
 	FindOverlapping(ctx context.Context, scope types.FXRateScope, scopeID, from, to string, validFrom, validTo *time.Time, excludeID string) ([]*FXRate, error)
 }

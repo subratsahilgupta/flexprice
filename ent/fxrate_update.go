@@ -153,43 +153,43 @@ func (_u *FXRateUpdate) SetNillableSource(v *string) *FXRateUpdate {
 	return _u
 }
 
-// SetValidFrom sets the "valid_from" field.
-func (_u *FXRateUpdate) SetValidFrom(v time.Time) *FXRateUpdate {
-	_u.mutation.SetValidFrom(v)
+// SetStartDate sets the "start_date" field.
+func (_u *FXRateUpdate) SetStartDate(v time.Time) *FXRateUpdate {
+	_u.mutation.SetStartDate(v)
 	return _u
 }
 
-// SetNillableValidFrom sets the "valid_from" field if the given value is not nil.
-func (_u *FXRateUpdate) SetNillableValidFrom(v *time.Time) *FXRateUpdate {
+// SetNillableStartDate sets the "start_date" field if the given value is not nil.
+func (_u *FXRateUpdate) SetNillableStartDate(v *time.Time) *FXRateUpdate {
 	if v != nil {
-		_u.SetValidFrom(*v)
+		_u.SetStartDate(*v)
 	}
 	return _u
 }
 
-// ClearValidFrom clears the value of the "valid_from" field.
-func (_u *FXRateUpdate) ClearValidFrom() *FXRateUpdate {
-	_u.mutation.ClearValidFrom()
+// ClearStartDate clears the value of the "start_date" field.
+func (_u *FXRateUpdate) ClearStartDate() *FXRateUpdate {
+	_u.mutation.ClearStartDate()
 	return _u
 }
 
-// SetValidTo sets the "valid_to" field.
-func (_u *FXRateUpdate) SetValidTo(v time.Time) *FXRateUpdate {
-	_u.mutation.SetValidTo(v)
+// SetEndDate sets the "end_date" field.
+func (_u *FXRateUpdate) SetEndDate(v time.Time) *FXRateUpdate {
+	_u.mutation.SetEndDate(v)
 	return _u
 }
 
-// SetNillableValidTo sets the "valid_to" field if the given value is not nil.
-func (_u *FXRateUpdate) SetNillableValidTo(v *time.Time) *FXRateUpdate {
+// SetNillableEndDate sets the "end_date" field if the given value is not nil.
+func (_u *FXRateUpdate) SetNillableEndDate(v *time.Time) *FXRateUpdate {
 	if v != nil {
-		_u.SetValidTo(*v)
+		_u.SetEndDate(*v)
 	}
 	return _u
 }
 
-// ClearValidTo clears the value of the "valid_to" field.
-func (_u *FXRateUpdate) ClearValidTo() *FXRateUpdate {
-	_u.mutation.ClearValidTo()
+// ClearEndDate clears the value of the "end_date" field.
+func (_u *FXRateUpdate) ClearEndDate() *FXRateUpdate {
+	_u.mutation.ClearEndDate()
 	return _u
 }
 
@@ -324,17 +324,17 @@ func (_u *FXRateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Source(); ok {
 		_spec.SetField(fxrate.FieldSource, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.ValidFrom(); ok {
-		_spec.SetField(fxrate.FieldValidFrom, field.TypeTime, value)
+	if value, ok := _u.mutation.StartDate(); ok {
+		_spec.SetField(fxrate.FieldStartDate, field.TypeTime, value)
 	}
-	if _u.mutation.ValidFromCleared() {
-		_spec.ClearField(fxrate.FieldValidFrom, field.TypeTime)
+	if _u.mutation.StartDateCleared() {
+		_spec.ClearField(fxrate.FieldStartDate, field.TypeTime)
 	}
-	if value, ok := _u.mutation.ValidTo(); ok {
-		_spec.SetField(fxrate.FieldValidTo, field.TypeTime, value)
+	if value, ok := _u.mutation.EndDate(); ok {
+		_spec.SetField(fxrate.FieldEndDate, field.TypeTime, value)
 	}
-	if _u.mutation.ValidToCleared() {
-		_spec.ClearField(fxrate.FieldValidTo, field.TypeTime)
+	if _u.mutation.EndDateCleared() {
+		_spec.ClearField(fxrate.FieldEndDate, field.TypeTime)
 	}
 	if value, ok := _u.mutation.Metadata(); ok {
 		_spec.SetField(fxrate.FieldMetadata, field.TypeJSON, value)
@@ -486,43 +486,43 @@ func (_u *FXRateUpdateOne) SetNillableSource(v *string) *FXRateUpdateOne {
 	return _u
 }
 
-// SetValidFrom sets the "valid_from" field.
-func (_u *FXRateUpdateOne) SetValidFrom(v time.Time) *FXRateUpdateOne {
-	_u.mutation.SetValidFrom(v)
+// SetStartDate sets the "start_date" field.
+func (_u *FXRateUpdateOne) SetStartDate(v time.Time) *FXRateUpdateOne {
+	_u.mutation.SetStartDate(v)
 	return _u
 }
 
-// SetNillableValidFrom sets the "valid_from" field if the given value is not nil.
-func (_u *FXRateUpdateOne) SetNillableValidFrom(v *time.Time) *FXRateUpdateOne {
+// SetNillableStartDate sets the "start_date" field if the given value is not nil.
+func (_u *FXRateUpdateOne) SetNillableStartDate(v *time.Time) *FXRateUpdateOne {
 	if v != nil {
-		_u.SetValidFrom(*v)
+		_u.SetStartDate(*v)
 	}
 	return _u
 }
 
-// ClearValidFrom clears the value of the "valid_from" field.
-func (_u *FXRateUpdateOne) ClearValidFrom() *FXRateUpdateOne {
-	_u.mutation.ClearValidFrom()
+// ClearStartDate clears the value of the "start_date" field.
+func (_u *FXRateUpdateOne) ClearStartDate() *FXRateUpdateOne {
+	_u.mutation.ClearStartDate()
 	return _u
 }
 
-// SetValidTo sets the "valid_to" field.
-func (_u *FXRateUpdateOne) SetValidTo(v time.Time) *FXRateUpdateOne {
-	_u.mutation.SetValidTo(v)
+// SetEndDate sets the "end_date" field.
+func (_u *FXRateUpdateOne) SetEndDate(v time.Time) *FXRateUpdateOne {
+	_u.mutation.SetEndDate(v)
 	return _u
 }
 
-// SetNillableValidTo sets the "valid_to" field if the given value is not nil.
-func (_u *FXRateUpdateOne) SetNillableValidTo(v *time.Time) *FXRateUpdateOne {
+// SetNillableEndDate sets the "end_date" field if the given value is not nil.
+func (_u *FXRateUpdateOne) SetNillableEndDate(v *time.Time) *FXRateUpdateOne {
 	if v != nil {
-		_u.SetValidTo(*v)
+		_u.SetEndDate(*v)
 	}
 	return _u
 }
 
-// ClearValidTo clears the value of the "valid_to" field.
-func (_u *FXRateUpdateOne) ClearValidTo() *FXRateUpdateOne {
-	_u.mutation.ClearValidTo()
+// ClearEndDate clears the value of the "end_date" field.
+func (_u *FXRateUpdateOne) ClearEndDate() *FXRateUpdateOne {
+	_u.mutation.ClearEndDate()
 	return _u
 }
 
@@ -687,17 +687,17 @@ func (_u *FXRateUpdateOne) sqlSave(ctx context.Context) (_node *FXRate, err erro
 	if value, ok := _u.mutation.Source(); ok {
 		_spec.SetField(fxrate.FieldSource, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.ValidFrom(); ok {
-		_spec.SetField(fxrate.FieldValidFrom, field.TypeTime, value)
+	if value, ok := _u.mutation.StartDate(); ok {
+		_spec.SetField(fxrate.FieldStartDate, field.TypeTime, value)
 	}
-	if _u.mutation.ValidFromCleared() {
-		_spec.ClearField(fxrate.FieldValidFrom, field.TypeTime)
+	if _u.mutation.StartDateCleared() {
+		_spec.ClearField(fxrate.FieldStartDate, field.TypeTime)
 	}
-	if value, ok := _u.mutation.ValidTo(); ok {
-		_spec.SetField(fxrate.FieldValidTo, field.TypeTime, value)
+	if value, ok := _u.mutation.EndDate(); ok {
+		_spec.SetField(fxrate.FieldEndDate, field.TypeTime, value)
 	}
-	if _u.mutation.ValidToCleared() {
-		_spec.ClearField(fxrate.FieldValidTo, field.TypeTime)
+	if _u.mutation.EndDateCleared() {
+		_spec.ClearField(fxrate.FieldEndDate, field.TypeTime)
 	}
 	if value, ok := _u.mutation.Metadata(); ok {
 		_spec.SetField(fxrate.FieldMetadata, field.TypeJSON, value)

@@ -54,11 +54,11 @@ func (FXRate) Fields() []ent.Field {
 			SchemaType(map[string]string{"postgres": "varchar(20)"}).
 			Default("fixed").
 			NotEmpty(),
-		field.Time("valid_from").
+		field.Time("start_date").
 			SchemaType(map[string]string{"postgres": "timestamptz"}).
 			Optional().
 			Nillable(),
-		field.Time("valid_to").
+		field.Time("end_date").
 			SchemaType(map[string]string{"postgres": "timestamptz"}).
 			Optional().
 			Nillable(),
@@ -77,7 +77,7 @@ func (FXRate) Indexes() []ent.Index {
 			StorageKey(Idx_fx_rate_tenant_live).
 			Annotations(entsql.IndexWhere("((status)::text = 'published'::text) AND ((scope)::text = 'tenant'::text)")),
 		// serves customer/subscription override lookups
-		index.Fields("tenant_id", "environment_id", "scope", "scope_id", "from_currency", "to_currency", "valid_from").
+		index.Fields("tenant_id", "environment_id", "scope", "scope_id", "from_currency", "to_currency", "start_date").
 			StorageKey(Idx_fx_rate_override),
 	}
 }

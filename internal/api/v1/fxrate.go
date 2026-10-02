@@ -31,7 +31,7 @@ func NewFXRateHandler(service service.FXRateService, logger *logger.Logger) *FXR
 // @Success 201 {object} dto.FXRateResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
-// @Router /fx-rates [post]
+// @Router /forex [post]
 func (h *FXRateHandler) CreateFXRate(c *gin.Context) {
 	var req dto.CreateFXRateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -57,7 +57,7 @@ func (h *FXRateHandler) CreateFXRate(c *gin.Context) {
 // @Success 200 {object} dto.FXRateResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
-// @Router /fx-rates/{id} [get]
+// @Router /forex/{id} [get]
 func (h *FXRateHandler) GetFXRate(c *gin.Context) {
 	resp, err := h.service.GetFXRate(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -78,7 +78,7 @@ func (h *FXRateHandler) GetFXRate(c *gin.Context) {
 // @Success 200 {object} dto.ListFXRatesResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
-// @Router /fx-rates [get]
+// @Router /forex [get]
 func (h *FXRateHandler) ListFXRates(c *gin.Context) {
 	var filter types.FXRateFilter
 	if err := c.ShouldBindQuery(&filter); err != nil {
@@ -105,7 +105,7 @@ func (h *FXRateHandler) ListFXRates(c *gin.Context) {
 // @Success 200 {object} dto.ListFXRatesResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
-// @Router /fx-rates/search [post]
+// @Router /forex/query [post]
 func (h *FXRateHandler) QueryFXRates(c *gin.Context) {
 	var filter types.FXRateFilter
 	if err := c.ShouldBindJSON(&filter); err != nil {
@@ -132,7 +132,7 @@ func (h *FXRateHandler) QueryFXRates(c *gin.Context) {
 // @Success 200 {object} dto.FXRateResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
-// @Router /fx-rates/{id} [put]
+// @Router /forex/{id} [put]
 func (h *FXRateHandler) UpdateFXRate(c *gin.Context) {
 	var req dto.UpdateFXRateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -159,7 +159,7 @@ func (h *FXRateHandler) UpdateFXRate(c *gin.Context) {
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 500 {object} ierr.ErrorResponse "Server error"
-// @Router /fx-rates/{id} [delete]
+// @Router /forex/{id} [delete]
 func (h *FXRateHandler) DeleteFXRate(c *gin.Context) {
 	if err := h.service.DeleteFXRate(c.Request.Context(), c.Param("id")); err != nil {
 		c.Error(err)
@@ -183,7 +183,7 @@ func (h *FXRateHandler) DeleteFXRate(c *gin.Context) {
 // @Success 200 {object} dto.ResolveFXRateResponse
 // @Failure 400 {object} ierr.ErrorResponse "Invalid request"
 // @Failure 404 {object} ierr.ErrorResponse "No rate configured"
-// @Router /fx-rates/resolve [get]
+// @Router /forex/resolve [get]
 func (h *FXRateHandler) ResolveFXRate(c *gin.Context) {
 	from := c.Query("from")
 	to := c.Query("to")

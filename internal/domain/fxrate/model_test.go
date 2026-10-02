@@ -41,7 +41,7 @@ func TestFromEnt_MapsFields(t *testing.T) {
 		FromCurrency:  "usd",
 		ToCurrency:    "inr",
 		Rate:          decimal.RequireFromString("84.50"),
-		ValidFrom:     &vf,
+		StartDate:     &vf,
 		Status:        "published",
 		Metadata:      map[string]string{"contract": "ACME-2026"},
 	}
@@ -52,6 +52,6 @@ func TestFromEnt_MapsFields(t *testing.T) {
 	assert.Equal(t, "cust_a", got.ScopeID)
 	assert.True(t, decimal.RequireFromString("84.50").Equal(got.Rate))
 	assert.Equal(t, "tenant_1", got.TenantID)
-	assert.Equal(t, &vf, got.ValidFrom)
+	assert.Equal(t, &vf, got.StartDate)
 	assert.Equal(t, "ACME-2026", got.Metadata["contract"])
 }

@@ -23,8 +23,8 @@ type FXRate struct {
 	ToCurrency    string            `json:"to_currency"`
 	Rate          string            `json:"rate"`
 	Source        string            `json:"source"`
-	ValidFrom     *time.Time        `json:"valid_from,omitempty"`
-	ValidTo       *time.Time        `json:"valid_to,omitempty"`
+	StartDate     *time.Time        `json:"start_date,omitempty"`
+	EndDate       *time.Time        `json:"end_date,omitempty"`
 	Status        string            `json:"status"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
 }
@@ -42,8 +42,8 @@ func NewFXRate(resp *dto.FXRateResponse) *FXRate {
 		ToCurrency:    resp.ToCurrency,
 		Rate:          resp.Rate.String(),
 		Source:        string(resp.Source),
-		ValidFrom:     resp.ValidFrom,
-		ValidTo:       resp.ValidTo,
+		StartDate:     resp.StartDate,
+		EndDate:       resp.EndDate,
 		Status:        string(resp.Status),
 		Metadata:      resp.Metadata,
 	}

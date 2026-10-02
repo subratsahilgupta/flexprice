@@ -82,7 +82,7 @@ func (s *FXRateCRUDSuite) createTenantRate(from, to, rate string) {
 
 func (s *FXRateCRUDSuite) createOverride(scope types.FXRateScope, scopeID, from, to, rate string, validFrom *time.Time) *dto.FXRateResponse {
 	resp, err := s.svc.CreateFXRate(s.GetContext(), dto.CreateFXRateRequest{
-		Scope: scope, ScopeID: scopeID, FromCurrency: from, ToCurrency: to, Rate: rate, ValidFrom: validFrom,
+		Scope: scope, ScopeID: scopeID, FromCurrency: from, ToCurrency: to, Rate: rate, StartDate: validFrom,
 	})
 	s.NoError(err)
 	return resp
@@ -190,7 +190,7 @@ func (s *FXRateCRUDSuite) TestCreateFXRate() {
 				s.createTenantRate("usd", "inr", "83")
 				s.createOverride(types.FXRateScopeCustomer, "cust_a", "usd", "inr", "84", nil) // open-ended
 			},
-			req:     dto.CreateFXRateRequest{Scope: types.FXRateScopeCustomer, ScopeID: "cust_a", FromCurrency: "usd", ToCurrency: "inr", Rate: "85", ValidFrom: &nov},
+			req:     dto.CreateFXRateRequest{Scope: types.FXRateScopeCustomer, ScopeID: "cust_a", FromCurrency: "usd", ToCurrency: "inr", Rate: "85", StartDate: &nov},
 			wantErr: true,
 		},
 		{
@@ -281,7 +281,7 @@ func (s *FXRateCRUDSuite) TestUpdateFXRate() {
 				s.createTenantRate("usd", "inr", "83")
 				return s.onlyRateID()
 			},
-			req:     dto.UpdateFXRateRequest{ValidTo: &nov},
+			req:     dto.UpdateFXRateRequest{EndDate: &nov},
 			wantErr: true,
 		},
 		{

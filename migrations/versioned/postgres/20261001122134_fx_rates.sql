@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS "fx_rates" (
   "to_currency"    varchar(10)    NOT NULL,
   "rate"           numeric(24,12) NOT NULL,
   "source"         varchar(20)    NOT NULL DEFAULT 'fixed',
-  "valid_from"     timestamptz    NULL,
-  "valid_to"       timestamptz    NULL,
+  "start_date"     timestamptz    NULL,
+  "end_date"       timestamptz    NULL,
   "metadata"       jsonb          NULL,
   PRIMARY KEY ("id")
 );
@@ -33,7 +33,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "idx_fx_rate_tenant_live"
   WHERE ((status)::text = 'published'::text) AND ((scope)::text = 'tenant'::text);
 
 CREATE INDEX IF NOT EXISTS "idx_fx_rate_override"
-  ON "fx_rates" ("tenant_id","environment_id","scope","scope_id","from_currency","to_currency","valid_from");
+  ON "fx_rates" ("tenant_id","environment_id","scope","scope_id","from_currency","to_currency","start_date");
 
 -- migrate:down
 DROP TABLE IF EXISTS "fx_rates";

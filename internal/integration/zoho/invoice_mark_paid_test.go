@@ -186,16 +186,16 @@ func TestMarkInvoicePaidInZoho_PositiveBalance_RecordsFullBalance(t *testing.T) 
 
 func markPaidFixtures() (*fakeZohoClient, *fakeMappingRepo) {
 	return &fakeZohoClient{
-			getInvoiceResp: &InvoiceResponse{
-				InvoiceID:  "zoho_inv_1",
-				CustomerID: "zoho_cust_1",
-				Balance:    decimal.NewFromInt(160),
-			},
-		}, &fakeMappingRepo{
-			mappings: []*entityintegrationmapping.EntityIntegrationMapping{
-				{EntityID: "inv_1", ProviderEntityID: "zoho_inv_1"},
-			},
-		}
+		getInvoiceResp: &InvoiceResponse{
+			InvoiceID:  "zoho_inv_1",
+			CustomerID: "zoho_cust_1",
+			Balance:    decimal.NewFromInt(160),
+		},
+	}, &fakeMappingRepo{
+		mappings: []*entityintegrationmapping.EntityIntegrationMapping{
+			{EntityID: "inv_1", ProviderEntityID: "zoho_inv_1"},
+		},
+	}
 }
 
 func succeededPayment(id, gatewayID string, succeededAt time.Time) *payment.Payment {

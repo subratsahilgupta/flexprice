@@ -227,7 +227,7 @@ func (s *InMemoryFXRateStore) FindOverlapping(ctx context.Context, scope types.F
 		if r.ID == excludeID {
 			continue
 		}
-		if fxWindowsOverlap(r.ValidFrom, r.ValidTo, validFrom, validTo) {
+		if fxWindowsOverlap(r.StartDate, r.EndDate, validFrom, validTo) {
 			overlapping = append(overlapping, r)
 		}
 	}

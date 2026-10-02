@@ -17,8 +17,8 @@ func NewFXRateBuilder(r *FXRate) *fxRateBuilder {
 		return &fxRateBuilder{rate: &FXRate{}}
 	}
 	copied := *r
-	copied.ValidFrom = copyTime(r.ValidFrom)
-	copied.ValidTo = copyTime(r.ValidTo)
+	copied.StartDate = copyTime(r.StartDate)
+	copied.EndDate = copyTime(r.EndDate)
 	if r.Metadata != nil {
 		m := make(map[string]string, len(r.Metadata))
 		for k, v := range r.Metadata {
@@ -42,13 +42,13 @@ func (b *fxRateBuilder) WithRate(rate decimal.Decimal) *fxRateBuilder {
 	return b
 }
 
-func (b *fxRateBuilder) WithValidFrom(t *time.Time) *fxRateBuilder {
-	b.rate.ValidFrom = copyTime(t)
+func (b *fxRateBuilder) WithStartDate(t *time.Time) *fxRateBuilder {
+	b.rate.StartDate = copyTime(t)
 	return b
 }
 
-func (b *fxRateBuilder) WithValidTo(t *time.Time) *fxRateBuilder {
-	b.rate.ValidTo = copyTime(t)
+func (b *fxRateBuilder) WithEndDate(t *time.Time) *fxRateBuilder {
+	b.rate.EndDate = copyTime(t)
 	return b
 }
 

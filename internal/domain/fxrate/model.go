@@ -19,8 +19,8 @@ type FXRate struct {
 	ToCurrency    string             `json:"to_currency,omitempty"`
 	Rate          decimal.Decimal    `json:"rate" swaggertype:"string"`
 	Source        types.FXRateSource `json:"source,omitempty"`
-	ValidFrom     *time.Time         `json:"valid_from,omitempty"`
-	ValidTo       *time.Time         `json:"valid_to,omitempty"`
+	StartDate     *time.Time         `json:"start_date,omitempty"`
+	EndDate       *time.Time         `json:"end_date,omitempty"`
 	Metadata      map[string]string  `json:"metadata,omitempty"`
 	types.BaseModel
 }
@@ -39,8 +39,8 @@ func FromEnt(e *ent.FXRate) *FXRate {
 		ToCurrency:    e.ToCurrency,
 		Rate:          e.Rate,
 		Source:        types.FXRateSource(e.Source),
-		ValidFrom:     e.ValidFrom,
-		ValidTo:       e.ValidTo,
+		StartDate:     e.StartDate,
+		EndDate:       e.EndDate,
 		Metadata:      e.Metadata,
 		BaseModel: types.BaseModel{
 			TenantID:  e.TenantID,

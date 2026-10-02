@@ -22,8 +22,8 @@ type CreateFXRateRequest struct {
 	// (the value comes from the market-rate integration at conversion time).
 	Source    types.FXRateSource `json:"source,omitempty"`
 	Rate      string             `json:"rate,omitempty"`
-	ValidFrom *time.Time         `json:"valid_from,omitempty"`
-	ValidTo   *time.Time         `json:"valid_to,omitempty"`
+	StartDate *time.Time         `json:"start_date,omitempty"`
+	EndDate   *time.Time         `json:"end_date,omitempty"`
 	Metadata  map[string]string  `json:"metadata,omitempty"`
 }
 
@@ -82,8 +82,8 @@ func (r *CreateFXRateRequest) ToFXRate(ctx context.Context) (*fxrate.FXRate, err
 		ToCurrency:    strings.ToLower(r.ToCurrency),
 		Rate:          rate,
 		Source:        source,
-		ValidFrom:     r.ValidFrom,
-		ValidTo:       r.ValidTo,
+		StartDate:     r.StartDate,
+		EndDate:       r.EndDate,
 		Metadata:      r.Metadata,
 		EnvironmentID: types.GetEnvironmentID(ctx),
 		BaseModel:     types.GetDefaultBaseModel(ctx),
@@ -93,8 +93,8 @@ func (r *CreateFXRateRequest) ToFXRate(ctx context.Context) (*fxrate.FXRate, err
 // UpdateFXRateRequest updates a rate. scope, scope_id and the currency pair are immutable.
 type UpdateFXRateRequest struct {
 	Rate      *string           `json:"rate,omitempty"`
-	ValidFrom *time.Time        `json:"valid_from,omitempty"`
-	ValidTo   *time.Time        `json:"valid_to,omitempty"`
+	StartDate *time.Time        `json:"start_date,omitempty"`
+	EndDate   *time.Time        `json:"end_date,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 

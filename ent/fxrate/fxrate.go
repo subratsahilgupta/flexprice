@@ -39,10 +39,10 @@ const (
 	FieldRate = "rate"
 	// FieldSource holds the string denoting the source field in the database.
 	FieldSource = "source"
-	// FieldValidFrom holds the string denoting the valid_from field in the database.
-	FieldValidFrom = "valid_from"
-	// FieldValidTo holds the string denoting the valid_to field in the database.
-	FieldValidTo = "valid_to"
+	// FieldStartDate holds the string denoting the start_date field in the database.
+	FieldStartDate = "start_date"
+	// FieldEndDate holds the string denoting the end_date field in the database.
+	FieldEndDate = "end_date"
 	// FieldMetadata holds the string denoting the metadata field in the database.
 	FieldMetadata = "metadata"
 	// Table holds the table name of the fxrate in the database.
@@ -65,8 +65,8 @@ var Columns = []string{
 	FieldToCurrency,
 	FieldRate,
 	FieldSource,
-	FieldValidFrom,
-	FieldValidTo,
+	FieldStartDate,
+	FieldEndDate,
 	FieldMetadata,
 }
 
@@ -180,12 +180,12 @@ func BySource(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSource, opts...).ToFunc()
 }
 
-// ByValidFrom orders the results by the valid_from field.
-func ByValidFrom(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldValidFrom, opts...).ToFunc()
+// ByStartDate orders the results by the start_date field.
+func ByStartDate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStartDate, opts...).ToFunc()
 }
 
-// ByValidTo orders the results by the valid_to field.
-func ByValidTo(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldValidTo, opts...).ToFunc()
+// ByEndDate orders the results by the end_date field.
+func ByEndDate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEndDate, opts...).ToFunc()
 }

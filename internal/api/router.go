@@ -539,11 +539,11 @@ func NewRouter(
 
 		// FX rate routes. /resolve and /search are registered before /:id so the
 		// param route does not capture them.
-		fxRates := v1Private.Group("/fx-rates")
+		fxRates := v1Private.Group("/forex")
 		{
 			fxRates.POST("", write(types.EntityFXRate, types.ActionWrite), handlers.FXRate.CreateFXRate)
 			fxRates.GET("", handlers.FXRate.ListFXRates)
-			fxRates.POST("/search", handlers.FXRate.QueryFXRates)
+			fxRates.POST("/query", handlers.FXRate.QueryFXRates)
 			fxRates.GET("/resolve", handlers.FXRate.ResolveFXRate)
 			fxRates.GET("/:id", handlers.FXRate.GetFXRate)
 			fxRates.PUT("/:id", write(types.EntityFXRate, types.ActionWrite), handlers.FXRate.UpdateFXRate)

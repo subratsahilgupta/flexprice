@@ -58,8 +58,8 @@ func (r *fxRateRepository) Create(ctx context.Context, fr *domainFXRate.FXRate) 
 		SetToCurrency(strings.ToLower(fr.ToCurrency)).
 		SetRate(fr.Rate).
 		SetSource(string(fr.Source)).
-		SetNillableValidFrom(fr.ValidFrom).
-		SetNillableValidTo(fr.ValidTo).
+		SetNillableStartDate(fr.StartDate).
+		SetNillableEndDate(fr.EndDate).
 		SetMetadata(fr.Metadata).
 		SetStatus(string(fr.Status)).
 		SetTenantID(fr.TenantID).
@@ -189,15 +189,15 @@ func (r *fxRateRepository) Update(ctx context.Context, fr *domainFXRate.FXRate) 
 		SetUpdatedAt(time.Now().UTC()).
 		SetUpdatedBy(types.GetUserID(ctx))
 
-	if fr.ValidFrom != nil {
-		update.SetValidFrom(*fr.ValidFrom)
+	if fr.StartDate != nil {
+		update.SetStartDate(*fr.StartDate)
 	} else {
-		update.ClearValidFrom()
+		update.ClearStartDate()
 	}
-	if fr.ValidTo != nil {
-		update.SetValidTo(*fr.ValidTo)
+	if fr.EndDate != nil {
+		update.SetEndDate(*fr.EndDate)
 	} else {
-		update.ClearValidTo()
+		update.ClearEndDate()
 	}
 
 	n, err := update.Save(ctx)
@@ -302,7 +302,7 @@ func (r *fxRateRepository) FindOverlapping(ctx context.Context, scope types.FXRa
 
 	overlapping := make([]*domainFXRate.FXRate, 0)
 	for _, e := range rates {
-		if windowsOverlap(e.ValidFrom, e.ValidTo, validFrom, validTo) {
+		if windowsOverlap(e.StartDate, e.EndDate, validFrom, validTo) {
 			overlapping = append(overlapping, domainFXRate.FromEnt(e))
 		}
 	}

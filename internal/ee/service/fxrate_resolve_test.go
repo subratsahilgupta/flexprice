@@ -55,8 +55,8 @@ func (s *FXRateResolveSuite) seed() {
 	s.NoError(repo.Create(ctx, mk("fxr_t", types.FXRateScopeTenant, types.FXRateScopeIDTenant, "83")))
 	s.NoError(repo.Create(ctx, mk("fxr_c", types.FXRateScopeCustomer, "cust_a", "84.5")))
 	sub := mk("fxr_s", types.FXRateScopeSubscription, "subs_p", "82")
-	sub.ValidFrom = &octFirst
-	sub.ValidTo = &novFirst
+	sub.StartDate = &octFirst
+	sub.EndDate = &novFirst
 	s.NoError(repo.Create(ctx, sub))
 }
 
@@ -91,12 +91,12 @@ func (s *FXRateResolveSuite) TestResolveRate() {
 	}
 }
 
-func (s *FXRateResolveSuite) TestResolveRate_ValidToIsExclusive() {
-	// exactly at valid_to (Nov 1) the subscription override no longer applies → customer 84.5
+func (s *FXRateResolveSuite) TestResolveRate_EndDateIsExclusive() {
+	// exactly at end_date (Nov 1) the subscription override no longer applies → customer 84.5
 	res, err := s.svc.(*fxRateService).resolveRateAt(s.GetContext(),
 		ResolveFXRateRequest{From: "usd", To: "inr", CustomerID: "cust_a", SubscriptionID: "subs_p"}, novFirst)
 	s.NoError(err)
-	s.Equal("customer", res.Scope, "valid_to is exclusive; subscription window ends at Nov 1")
+	s.Equal("customer", res.Scope, "end_date is exclusive; subscription window ends at Nov 1")
 	s.True(decimal.RequireFromString("84.5").Equal(res.Rate))
 }
 

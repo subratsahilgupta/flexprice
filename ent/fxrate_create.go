@@ -155,30 +155,30 @@ func (_c *FXRateCreate) SetNillableSource(v *string) *FXRateCreate {
 	return _c
 }
 
-// SetValidFrom sets the "valid_from" field.
-func (_c *FXRateCreate) SetValidFrom(v time.Time) *FXRateCreate {
-	_c.mutation.SetValidFrom(v)
+// SetStartDate sets the "start_date" field.
+func (_c *FXRateCreate) SetStartDate(v time.Time) *FXRateCreate {
+	_c.mutation.SetStartDate(v)
 	return _c
 }
 
-// SetNillableValidFrom sets the "valid_from" field if the given value is not nil.
-func (_c *FXRateCreate) SetNillableValidFrom(v *time.Time) *FXRateCreate {
+// SetNillableStartDate sets the "start_date" field if the given value is not nil.
+func (_c *FXRateCreate) SetNillableStartDate(v *time.Time) *FXRateCreate {
 	if v != nil {
-		_c.SetValidFrom(*v)
+		_c.SetStartDate(*v)
 	}
 	return _c
 }
 
-// SetValidTo sets the "valid_to" field.
-func (_c *FXRateCreate) SetValidTo(v time.Time) *FXRateCreate {
-	_c.mutation.SetValidTo(v)
+// SetEndDate sets the "end_date" field.
+func (_c *FXRateCreate) SetEndDate(v time.Time) *FXRateCreate {
+	_c.mutation.SetEndDate(v)
 	return _c
 }
 
-// SetNillableValidTo sets the "valid_to" field if the given value is not nil.
-func (_c *FXRateCreate) SetNillableValidTo(v *time.Time) *FXRateCreate {
+// SetNillableEndDate sets the "end_date" field if the given value is not nil.
+func (_c *FXRateCreate) SetNillableEndDate(v *time.Time) *FXRateCreate {
 	if v != nil {
-		_c.SetValidTo(*v)
+		_c.SetEndDate(*v)
 	}
 	return _c
 }
@@ -401,13 +401,13 @@ func (_c *FXRateCreate) createSpec() (*FXRate, *sqlgraph.CreateSpec) {
 		_spec.SetField(fxrate.FieldSource, field.TypeString, value)
 		_node.Source = value
 	}
-	if value, ok := _c.mutation.ValidFrom(); ok {
-		_spec.SetField(fxrate.FieldValidFrom, field.TypeTime, value)
-		_node.ValidFrom = &value
+	if value, ok := _c.mutation.StartDate(); ok {
+		_spec.SetField(fxrate.FieldStartDate, field.TypeTime, value)
+		_node.StartDate = &value
 	}
-	if value, ok := _c.mutation.ValidTo(); ok {
-		_spec.SetField(fxrate.FieldValidTo, field.TypeTime, value)
-		_node.ValidTo = &value
+	if value, ok := _c.mutation.EndDate(); ok {
+		_spec.SetField(fxrate.FieldEndDate, field.TypeTime, value)
+		_node.EndDate = &value
 	}
 	if value, ok := _c.mutation.Metadata(); ok {
 		_spec.SetField(fxrate.FieldMetadata, field.TypeJSON, value)

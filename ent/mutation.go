@@ -30097,8 +30097,8 @@ type FXRateMutation struct {
 	to_currency    *string
 	rate           *decimal.Decimal
 	source         *string
-	valid_from     *time.Time
-	valid_to       *time.Time
+	start_date     *time.Time
+	end_date       *time.Time
 	metadata       *map[string]string
 	clearedFields  map[string]struct{}
 	done           bool
@@ -30717,102 +30717,102 @@ func (m *FXRateMutation) ResetSource() {
 	m.source = nil
 }
 
-// SetValidFrom sets the "valid_from" field.
-func (m *FXRateMutation) SetValidFrom(t time.Time) {
-	m.valid_from = &t
+// SetStartDate sets the "start_date" field.
+func (m *FXRateMutation) SetStartDate(t time.Time) {
+	m.start_date = &t
 }
 
-// ValidFrom returns the value of the "valid_from" field in the mutation.
-func (m *FXRateMutation) ValidFrom() (r time.Time, exists bool) {
-	v := m.valid_from
+// StartDate returns the value of the "start_date" field in the mutation.
+func (m *FXRateMutation) StartDate() (r time.Time, exists bool) {
+	v := m.start_date
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldValidFrom returns the old "valid_from" field's value of the FXRate entity.
+// OldStartDate returns the old "start_date" field's value of the FXRate entity.
 // If the FXRate object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *FXRateMutation) OldValidFrom(ctx context.Context) (v *time.Time, err error) {
+func (m *FXRateMutation) OldStartDate(ctx context.Context) (v *time.Time, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldValidFrom is only allowed on UpdateOne operations")
+		return v, errors.New("OldStartDate is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldValidFrom requires an ID field in the mutation")
+		return v, errors.New("OldStartDate requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldValidFrom: %w", err)
+		return v, fmt.Errorf("querying old value for OldStartDate: %w", err)
 	}
-	return oldValue.ValidFrom, nil
+	return oldValue.StartDate, nil
 }
 
-// ClearValidFrom clears the value of the "valid_from" field.
-func (m *FXRateMutation) ClearValidFrom() {
-	m.valid_from = nil
-	m.clearedFields[fxrate.FieldValidFrom] = struct{}{}
+// ClearStartDate clears the value of the "start_date" field.
+func (m *FXRateMutation) ClearStartDate() {
+	m.start_date = nil
+	m.clearedFields[fxrate.FieldStartDate] = struct{}{}
 }
 
-// ValidFromCleared returns if the "valid_from" field was cleared in this mutation.
-func (m *FXRateMutation) ValidFromCleared() bool {
-	_, ok := m.clearedFields[fxrate.FieldValidFrom]
+// StartDateCleared returns if the "start_date" field was cleared in this mutation.
+func (m *FXRateMutation) StartDateCleared() bool {
+	_, ok := m.clearedFields[fxrate.FieldStartDate]
 	return ok
 }
 
-// ResetValidFrom resets all changes to the "valid_from" field.
-func (m *FXRateMutation) ResetValidFrom() {
-	m.valid_from = nil
-	delete(m.clearedFields, fxrate.FieldValidFrom)
+// ResetStartDate resets all changes to the "start_date" field.
+func (m *FXRateMutation) ResetStartDate() {
+	m.start_date = nil
+	delete(m.clearedFields, fxrate.FieldStartDate)
 }
 
-// SetValidTo sets the "valid_to" field.
-func (m *FXRateMutation) SetValidTo(t time.Time) {
-	m.valid_to = &t
+// SetEndDate sets the "end_date" field.
+func (m *FXRateMutation) SetEndDate(t time.Time) {
+	m.end_date = &t
 }
 
-// ValidTo returns the value of the "valid_to" field in the mutation.
-func (m *FXRateMutation) ValidTo() (r time.Time, exists bool) {
-	v := m.valid_to
+// EndDate returns the value of the "end_date" field in the mutation.
+func (m *FXRateMutation) EndDate() (r time.Time, exists bool) {
+	v := m.end_date
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldValidTo returns the old "valid_to" field's value of the FXRate entity.
+// OldEndDate returns the old "end_date" field's value of the FXRate entity.
 // If the FXRate object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *FXRateMutation) OldValidTo(ctx context.Context) (v *time.Time, err error) {
+func (m *FXRateMutation) OldEndDate(ctx context.Context) (v *time.Time, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldValidTo is only allowed on UpdateOne operations")
+		return v, errors.New("OldEndDate is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldValidTo requires an ID field in the mutation")
+		return v, errors.New("OldEndDate requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldValidTo: %w", err)
+		return v, fmt.Errorf("querying old value for OldEndDate: %w", err)
 	}
-	return oldValue.ValidTo, nil
+	return oldValue.EndDate, nil
 }
 
-// ClearValidTo clears the value of the "valid_to" field.
-func (m *FXRateMutation) ClearValidTo() {
-	m.valid_to = nil
-	m.clearedFields[fxrate.FieldValidTo] = struct{}{}
+// ClearEndDate clears the value of the "end_date" field.
+func (m *FXRateMutation) ClearEndDate() {
+	m.end_date = nil
+	m.clearedFields[fxrate.FieldEndDate] = struct{}{}
 }
 
-// ValidToCleared returns if the "valid_to" field was cleared in this mutation.
-func (m *FXRateMutation) ValidToCleared() bool {
-	_, ok := m.clearedFields[fxrate.FieldValidTo]
+// EndDateCleared returns if the "end_date" field was cleared in this mutation.
+func (m *FXRateMutation) EndDateCleared() bool {
+	_, ok := m.clearedFields[fxrate.FieldEndDate]
 	return ok
 }
 
-// ResetValidTo resets all changes to the "valid_to" field.
-func (m *FXRateMutation) ResetValidTo() {
-	m.valid_to = nil
-	delete(m.clearedFields, fxrate.FieldValidTo)
+// ResetEndDate resets all changes to the "end_date" field.
+func (m *FXRateMutation) ResetEndDate() {
+	m.end_date = nil
+	delete(m.clearedFields, fxrate.FieldEndDate)
 }
 
 // SetMetadata sets the "metadata" field.
@@ -30938,11 +30938,11 @@ func (m *FXRateMutation) Fields() []string {
 	if m.source != nil {
 		fields = append(fields, fxrate.FieldSource)
 	}
-	if m.valid_from != nil {
-		fields = append(fields, fxrate.FieldValidFrom)
+	if m.start_date != nil {
+		fields = append(fields, fxrate.FieldStartDate)
 	}
-	if m.valid_to != nil {
-		fields = append(fields, fxrate.FieldValidTo)
+	if m.end_date != nil {
+		fields = append(fields, fxrate.FieldEndDate)
 	}
 	if m.metadata != nil {
 		fields = append(fields, fxrate.FieldMetadata)
@@ -30981,10 +30981,10 @@ func (m *FXRateMutation) Field(name string) (ent.Value, bool) {
 		return m.Rate()
 	case fxrate.FieldSource:
 		return m.Source()
-	case fxrate.FieldValidFrom:
-		return m.ValidFrom()
-	case fxrate.FieldValidTo:
-		return m.ValidTo()
+	case fxrate.FieldStartDate:
+		return m.StartDate()
+	case fxrate.FieldEndDate:
+		return m.EndDate()
 	case fxrate.FieldMetadata:
 		return m.Metadata()
 	}
@@ -31022,10 +31022,10 @@ func (m *FXRateMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldRate(ctx)
 	case fxrate.FieldSource:
 		return m.OldSource(ctx)
-	case fxrate.FieldValidFrom:
-		return m.OldValidFrom(ctx)
-	case fxrate.FieldValidTo:
-		return m.OldValidTo(ctx)
+	case fxrate.FieldStartDate:
+		return m.OldStartDate(ctx)
+	case fxrate.FieldEndDate:
+		return m.OldEndDate(ctx)
 	case fxrate.FieldMetadata:
 		return m.OldMetadata(ctx)
 	}
@@ -31128,19 +31128,19 @@ func (m *FXRateMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSource(v)
 		return nil
-	case fxrate.FieldValidFrom:
+	case fxrate.FieldStartDate:
 		v, ok := value.(time.Time)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetValidFrom(v)
+		m.SetStartDate(v)
 		return nil
-	case fxrate.FieldValidTo:
+	case fxrate.FieldEndDate:
 		v, ok := value.(time.Time)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetValidTo(v)
+		m.SetEndDate(v)
 		return nil
 	case fxrate.FieldMetadata:
 		v, ok := value.(map[string]string)
@@ -31188,11 +31188,11 @@ func (m *FXRateMutation) ClearedFields() []string {
 	if m.FieldCleared(fxrate.FieldEnvironmentID) {
 		fields = append(fields, fxrate.FieldEnvironmentID)
 	}
-	if m.FieldCleared(fxrate.FieldValidFrom) {
-		fields = append(fields, fxrate.FieldValidFrom)
+	if m.FieldCleared(fxrate.FieldStartDate) {
+		fields = append(fields, fxrate.FieldStartDate)
 	}
-	if m.FieldCleared(fxrate.FieldValidTo) {
-		fields = append(fields, fxrate.FieldValidTo)
+	if m.FieldCleared(fxrate.FieldEndDate) {
+		fields = append(fields, fxrate.FieldEndDate)
 	}
 	if m.FieldCleared(fxrate.FieldMetadata) {
 		fields = append(fields, fxrate.FieldMetadata)
@@ -31220,11 +31220,11 @@ func (m *FXRateMutation) ClearField(name string) error {
 	case fxrate.FieldEnvironmentID:
 		m.ClearEnvironmentID()
 		return nil
-	case fxrate.FieldValidFrom:
-		m.ClearValidFrom()
+	case fxrate.FieldStartDate:
+		m.ClearStartDate()
 		return nil
-	case fxrate.FieldValidTo:
-		m.ClearValidTo()
+	case fxrate.FieldEndDate:
+		m.ClearEndDate()
 		return nil
 	case fxrate.FieldMetadata:
 		m.ClearMetadata()
@@ -31276,11 +31276,11 @@ func (m *FXRateMutation) ResetField(name string) error {
 	case fxrate.FieldSource:
 		m.ResetSource()
 		return nil
-	case fxrate.FieldValidFrom:
-		m.ResetValidFrom()
+	case fxrate.FieldStartDate:
+		m.ResetStartDate()
 		return nil
-	case fxrate.FieldValidTo:
-		m.ResetValidTo()
+	case fxrate.FieldEndDate:
+		m.ResetEndDate()
 		return nil
 	case fxrate.FieldMetadata:
 		m.ResetMetadata()

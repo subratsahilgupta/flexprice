@@ -118,14 +118,14 @@ func (s *fxRateService) findOverride(ctx context.Context, scope types.FXRateScop
 		return nil, err
 	}
 	for _, r := range rates {
-		if windowCoversNow(r.ValidFrom, r.ValidTo, now) {
+		if windowCoversNow(r.StartDate, r.EndDate, now) {
 			return r, nil
 		}
 	}
 	return nil, nil
 }
 
-// windowCoversNow treats a nil valid_from as −∞ and a nil valid_to as +∞. valid_to is exclusive.
+// windowCoversNow treats a nil start_date as −∞ and a nil end_date as +∞. end_date is exclusive.
 func windowCoversNow(validFrom, validTo *time.Time, now time.Time) bool {
 	if validFrom != nil && validFrom.After(now) {
 		return false
@@ -254,7 +254,7 @@ func (s *fxRateService) UpdateFXRate(ctx context.Context, id string, req dto.Upd
 			Mark(ierr.ErrValidation)
 	}
 
-	if existing.Scope == types.FXRateScopeTenant && (req.ValidFrom != nil || req.ValidTo != nil) {
+	if existing.Scope == types.FXRateScopeTenant && (req.StartDate != nil || req.EndDate != nil) {
 		return nil, ierr.NewError("tenant rates have no validity window").
 			WithHint("A tenant FX rate applies at all times; validity windows are only for customer or subscription overrides.").
 			Mark(ierr.ErrValidation)
@@ -273,21 +273,21 @@ func (s *fxRateService) UpdateFXRate(ctx context.Context, id string, req dto.Upd
 		builder.WithRate(rate)
 	}
 
-	newFrom := existing.ValidFrom
-	newTo := existing.ValidTo
+	newFrom := existing.StartDate
+	newTo := existing.EndDate
 	if existing.Scope != types.FXRateScopeTenant {
-		if req.ValidFrom != nil {
-			newFrom = req.ValidFrom
+		if req.StartDate != nil {
+			newFrom = req.StartDate
 		}
-		if req.ValidTo != nil {
-			newTo = req.ValidTo
+		if req.EndDate != nil {
+			newTo = req.EndDate
 		}
 		if newFrom != nil && newTo != nil && !newFrom.Before(*newTo) {
-			return nil, ierr.NewError("valid_from must be before valid_to").
+			return nil, ierr.NewError("start_date must be before end_date").
 				WithHint("The start of a validity window must be before its end.").
 				Mark(ierr.ErrValidation)
 		}
-		builder.WithValidFrom(newFrom).WithValidTo(newTo)
+		builder.WithStartDate(newFrom).WithEndDate(newTo)
 	}
 
 	if req.Metadata != nil {
@@ -389,7 +389,7 @@ func (s *fxRateService) validateForCreate(ctx context.Context, r *fxrate.FXRate)
 
 	switch r.Scope {
 	case types.FXRateScopeTenant:
-		if r.ValidFrom != nil || r.ValidTo != nil {
+		if r.StartDate != nil || r.EndDate != nil {
 			return ierr.NewError("tenant rates have no validity window").
 				WithHint("Validity windows are only for customer or subscription overrides.").
 				Mark(ierr.ErrValidation)
@@ -420,8 +420,8 @@ func (s *fxRateService) validateForCreate(ctx context.Context, r *fxrate.FXRate)
 		}
 	}
 
-	if r.ValidFrom != nil && r.ValidTo != nil && !r.ValidFrom.Before(*r.ValidTo) {
-		return ierr.NewError("valid_from must be before valid_to").
+	if r.StartDate != nil && r.EndDate != nil && !r.StartDate.Before(*r.EndDate) {
+		return ierr.NewError("start_date must be before end_date").
 			WithHint("The start of a validity window must be before its end.").
 			Mark(ierr.ErrValidation)
 	}
@@ -449,7 +449,7 @@ func (s *fxRateService) validateForCreate(ctx context.Context, r *fxrate.FXRate)
 	}
 
 	// overrides must not overlap an existing window for the same scope/pair
-	overlaps, err := s.FXRateRepo.FindOverlapping(ctx, r.Scope, r.ScopeID, r.FromCurrency, r.ToCurrency, r.ValidFrom, r.ValidTo, "")
+	overlaps, err := s.FXRateRepo.FindOverlapping(ctx, r.Scope, r.ScopeID, r.FromCurrency, r.ToCurrency, r.StartDate, r.EndDate, "")
 	if err != nil {
 		return err
 	}

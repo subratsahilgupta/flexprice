@@ -1094,8 +1094,8 @@ var (
 		{Name: "to_currency", Type: field.TypeString, SchemaType: map[string]string{"postgres": "varchar(10)"}},
 		{Name: "rate", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(24,12)"}},
 		{Name: "source", Type: field.TypeString, Default: "fixed", SchemaType: map[string]string{"postgres": "varchar(20)"}},
-		{Name: "valid_from", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "valid_to", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "start_date", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "end_date", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 	}
 	// FxRatesTable holds the schema information for the "fx_rates" table.

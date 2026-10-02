@@ -45,10 +45,10 @@ type FXRate struct {
 	Rate decimal.Decimal `json:"rate,omitempty"`
 	// Source holds the value of the "source" field.
 	Source string `json:"source,omitempty"`
-	// ValidFrom holds the value of the "valid_from" field.
-	ValidFrom *time.Time `json:"valid_from,omitempty"`
-	// ValidTo holds the value of the "valid_to" field.
-	ValidTo *time.Time `json:"valid_to,omitempty"`
+	// StartDate holds the value of the "start_date" field.
+	StartDate *time.Time `json:"start_date,omitempty"`
+	// EndDate holds the value of the "end_date" field.
+	EndDate *time.Time `json:"end_date,omitempty"`
 	// Metadata holds the value of the "metadata" field.
 	Metadata     map[string]string `json:"metadata,omitempty"`
 	selectValues sql.SelectValues
@@ -65,7 +65,7 @@ func (*FXRate) scanValues(columns []string) ([]any, error) {
 			values[i] = new(decimal.Decimal)
 		case fxrate.FieldID, fxrate.FieldTenantID, fxrate.FieldStatus, fxrate.FieldCreatedBy, fxrate.FieldUpdatedBy, fxrate.FieldEnvironmentID, fxrate.FieldScope, fxrate.FieldScopeID, fxrate.FieldFromCurrency, fxrate.FieldToCurrency, fxrate.FieldSource:
 			values[i] = new(sql.NullString)
-		case fxrate.FieldCreatedAt, fxrate.FieldUpdatedAt, fxrate.FieldValidFrom, fxrate.FieldValidTo:
+		case fxrate.FieldCreatedAt, fxrate.FieldUpdatedAt, fxrate.FieldStartDate, fxrate.FieldEndDate:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -166,19 +166,19 @@ func (_m *FXRate) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Source = value.String
 			}
-		case fxrate.FieldValidFrom:
+		case fxrate.FieldStartDate:
 			if value, ok := values[i].(*sql.NullTime); !ok {
-				return fmt.Errorf("unexpected type %T for field valid_from", values[i])
+				return fmt.Errorf("unexpected type %T for field start_date", values[i])
 			} else if value.Valid {
-				_m.ValidFrom = new(time.Time)
-				*_m.ValidFrom = value.Time
+				_m.StartDate = new(time.Time)
+				*_m.StartDate = value.Time
 			}
-		case fxrate.FieldValidTo:
+		case fxrate.FieldEndDate:
 			if value, ok := values[i].(*sql.NullTime); !ok {
-				return fmt.Errorf("unexpected type %T for field valid_to", values[i])
+				return fmt.Errorf("unexpected type %T for field end_date", values[i])
 			} else if value.Valid {
-				_m.ValidTo = new(time.Time)
-				*_m.ValidTo = value.Time
+				_m.EndDate = new(time.Time)
+				*_m.EndDate = value.Time
 			}
 		case fxrate.FieldMetadata:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -263,13 +263,13 @@ func (_m *FXRate) String() string {
 	builder.WriteString("source=")
 	builder.WriteString(_m.Source)
 	builder.WriteString(", ")
-	if v := _m.ValidFrom; v != nil {
-		builder.WriteString("valid_from=")
+	if v := _m.StartDate; v != nil {
+		builder.WriteString("start_date=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
-	if v := _m.ValidTo; v != nil {
-		builder.WriteString("valid_to=")
+	if v := _m.EndDate; v != nil {
+		builder.WriteString("end_date=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")

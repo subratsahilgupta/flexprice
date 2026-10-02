@@ -130,14 +130,14 @@ func Source(v string) predicate.FXRate {
 	return predicate.FXRate(sql.FieldEQ(FieldSource, v))
 }
 
-// ValidFrom applies equality check predicate on the "valid_from" field. It's identical to ValidFromEQ.
-func ValidFrom(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEQ(FieldValidFrom, v))
+// StartDate applies equality check predicate on the "start_date" field. It's identical to StartDateEQ.
+func StartDate(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldEQ(FieldStartDate, v))
 }
 
-// ValidTo applies equality check predicate on the "valid_to" field. It's identical to ValidToEQ.
-func ValidTo(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEQ(FieldValidTo, v))
+// EndDate applies equality check predicate on the "end_date" field. It's identical to EndDateEQ.
+func EndDate(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldEQ(FieldEndDate, v))
 }
 
 // TenantIDEQ applies the EQ predicate on the "tenant_id" field.
@@ -940,104 +940,104 @@ func SourceContainsFold(v string) predicate.FXRate {
 	return predicate.FXRate(sql.FieldContainsFold(FieldSource, v))
 }
 
-// ValidFromEQ applies the EQ predicate on the "valid_from" field.
-func ValidFromEQ(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEQ(FieldValidFrom, v))
+// StartDateEQ applies the EQ predicate on the "start_date" field.
+func StartDateEQ(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldEQ(FieldStartDate, v))
 }
 
-// ValidFromNEQ applies the NEQ predicate on the "valid_from" field.
-func ValidFromNEQ(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldNEQ(FieldValidFrom, v))
+// StartDateNEQ applies the NEQ predicate on the "start_date" field.
+func StartDateNEQ(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldNEQ(FieldStartDate, v))
 }
 
-// ValidFromIn applies the In predicate on the "valid_from" field.
-func ValidFromIn(vs ...time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldIn(FieldValidFrom, vs...))
+// StartDateIn applies the In predicate on the "start_date" field.
+func StartDateIn(vs ...time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldIn(FieldStartDate, vs...))
 }
 
-// ValidFromNotIn applies the NotIn predicate on the "valid_from" field.
-func ValidFromNotIn(vs ...time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldNotIn(FieldValidFrom, vs...))
+// StartDateNotIn applies the NotIn predicate on the "start_date" field.
+func StartDateNotIn(vs ...time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldNotIn(FieldStartDate, vs...))
 }
 
-// ValidFromGT applies the GT predicate on the "valid_from" field.
-func ValidFromGT(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldGT(FieldValidFrom, v))
+// StartDateGT applies the GT predicate on the "start_date" field.
+func StartDateGT(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldGT(FieldStartDate, v))
 }
 
-// ValidFromGTE applies the GTE predicate on the "valid_from" field.
-func ValidFromGTE(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldGTE(FieldValidFrom, v))
+// StartDateGTE applies the GTE predicate on the "start_date" field.
+func StartDateGTE(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldGTE(FieldStartDate, v))
 }
 
-// ValidFromLT applies the LT predicate on the "valid_from" field.
-func ValidFromLT(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldLT(FieldValidFrom, v))
+// StartDateLT applies the LT predicate on the "start_date" field.
+func StartDateLT(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldLT(FieldStartDate, v))
 }
 
-// ValidFromLTE applies the LTE predicate on the "valid_from" field.
-func ValidFromLTE(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldLTE(FieldValidFrom, v))
+// StartDateLTE applies the LTE predicate on the "start_date" field.
+func StartDateLTE(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldLTE(FieldStartDate, v))
 }
 
-// ValidFromIsNil applies the IsNil predicate on the "valid_from" field.
-func ValidFromIsNil() predicate.FXRate {
-	return predicate.FXRate(sql.FieldIsNull(FieldValidFrom))
+// StartDateIsNil applies the IsNil predicate on the "start_date" field.
+func StartDateIsNil() predicate.FXRate {
+	return predicate.FXRate(sql.FieldIsNull(FieldStartDate))
 }
 
-// ValidFromNotNil applies the NotNil predicate on the "valid_from" field.
-func ValidFromNotNil() predicate.FXRate {
-	return predicate.FXRate(sql.FieldNotNull(FieldValidFrom))
+// StartDateNotNil applies the NotNil predicate on the "start_date" field.
+func StartDateNotNil() predicate.FXRate {
+	return predicate.FXRate(sql.FieldNotNull(FieldStartDate))
 }
 
-// ValidToEQ applies the EQ predicate on the "valid_to" field.
-func ValidToEQ(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldEQ(FieldValidTo, v))
+// EndDateEQ applies the EQ predicate on the "end_date" field.
+func EndDateEQ(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldEQ(FieldEndDate, v))
 }
 
-// ValidToNEQ applies the NEQ predicate on the "valid_to" field.
-func ValidToNEQ(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldNEQ(FieldValidTo, v))
+// EndDateNEQ applies the NEQ predicate on the "end_date" field.
+func EndDateNEQ(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldNEQ(FieldEndDate, v))
 }
 
-// ValidToIn applies the In predicate on the "valid_to" field.
-func ValidToIn(vs ...time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldIn(FieldValidTo, vs...))
+// EndDateIn applies the In predicate on the "end_date" field.
+func EndDateIn(vs ...time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldIn(FieldEndDate, vs...))
 }
 
-// ValidToNotIn applies the NotIn predicate on the "valid_to" field.
-func ValidToNotIn(vs ...time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldNotIn(FieldValidTo, vs...))
+// EndDateNotIn applies the NotIn predicate on the "end_date" field.
+func EndDateNotIn(vs ...time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldNotIn(FieldEndDate, vs...))
 }
 
-// ValidToGT applies the GT predicate on the "valid_to" field.
-func ValidToGT(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldGT(FieldValidTo, v))
+// EndDateGT applies the GT predicate on the "end_date" field.
+func EndDateGT(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldGT(FieldEndDate, v))
 }
 
-// ValidToGTE applies the GTE predicate on the "valid_to" field.
-func ValidToGTE(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldGTE(FieldValidTo, v))
+// EndDateGTE applies the GTE predicate on the "end_date" field.
+func EndDateGTE(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldGTE(FieldEndDate, v))
 }
 
-// ValidToLT applies the LT predicate on the "valid_to" field.
-func ValidToLT(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldLT(FieldValidTo, v))
+// EndDateLT applies the LT predicate on the "end_date" field.
+func EndDateLT(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldLT(FieldEndDate, v))
 }
 
-// ValidToLTE applies the LTE predicate on the "valid_to" field.
-func ValidToLTE(v time.Time) predicate.FXRate {
-	return predicate.FXRate(sql.FieldLTE(FieldValidTo, v))
+// EndDateLTE applies the LTE predicate on the "end_date" field.
+func EndDateLTE(v time.Time) predicate.FXRate {
+	return predicate.FXRate(sql.FieldLTE(FieldEndDate, v))
 }
 
-// ValidToIsNil applies the IsNil predicate on the "valid_to" field.
-func ValidToIsNil() predicate.FXRate {
-	return predicate.FXRate(sql.FieldIsNull(FieldValidTo))
+// EndDateIsNil applies the IsNil predicate on the "end_date" field.
+func EndDateIsNil() predicate.FXRate {
+	return predicate.FXRate(sql.FieldIsNull(FieldEndDate))
 }
 
-// ValidToNotNil applies the NotNil predicate on the "valid_to" field.
-func ValidToNotNil() predicate.FXRate {
-	return predicate.FXRate(sql.FieldNotNull(FieldValidTo))
+// EndDateNotNil applies the NotNil predicate on the "end_date" field.
+func EndDateNotNil() predicate.FXRate {
+	return predicate.FXRate(sql.FieldNotNull(FieldEndDate))
 }
 
 // MetadataIsNil applies the IsNil predicate on the "metadata" field.
