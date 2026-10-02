@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	fxrate "github.com/flexprice/flexprice/internal/domain/fxrate"
@@ -14,13 +15,36 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// FXRateService configures tenant FX rates.
+// FXRateService configures and resolves tenant FX rates.
 type FXRateService interface {
+	// ResolveRate returns the rate for from→to using the most specific scope
+	// (subscription → customer → tenant) whose validity window covers now. No HTTP
+	// endpoint is exposed yet; this backs the invoice-conversion path.
+	ResolveRate(ctx context.Context, req ResolveFXRateRequest) (*FXRateResolution, error)
+
 	CreateFXRate(ctx context.Context, req dto.CreateFXRateRequest) (*dto.FXRateResponse, error)
 	GetFXRate(ctx context.Context, id string) (*dto.FXRateResponse, error)
 	ListFXRates(ctx context.Context, filter *types.FXRateFilter) (*dto.ListFXRatesResponse, error)
 	UpdateFXRate(ctx context.Context, id string, req dto.UpdateFXRateRequest) (*dto.FXRateResponse, error)
 	DeleteFXRate(ctx context.Context, id string) error
+}
+
+// ResolveFXRateRequest asks for the rate from→to for an optional customer/subscription.
+type ResolveFXRateRequest struct {
+	From           string
+	To             string
+	CustomerID     string
+	SubscriptionID string
+}
+
+// FXRateResolution is the rate a resolution produced. Scope is "identity" when from == to.
+type FXRateResolution struct {
+	Rate   decimal.Decimal
+	RateID string
+	Scope  string
+	Source types.FXRateSource
+	From   string
+	To     string
 }
 
 type fxRateService struct {
@@ -29,6 +53,118 @@ type fxRateService struct {
 
 func NewFXRateService(params ServiceParams) FXRateService {
 	return &fxRateService{ServiceParams: params}
+}
+
+func (s *fxRateService) ResolveRate(ctx context.Context, req ResolveFXRateRequest) (*FXRateResolution, error) {
+	return s.resolveRateAt(ctx, req, time.Now().UTC())
+}
+
+// resolveRateAt is ResolveRate with an injected clock, so validity windows are testable.
+func (s *fxRateService) resolveRateAt(ctx context.Context, req ResolveFXRateRequest, now time.Time) (*FXRateResolution, error) {
+	// Same currency needs no rate and no query.
+	if types.IsMatchingCurrency(req.From, req.To) {
+		return &FXRateResolution{Rate: decimal.NewFromInt(1), Scope: "identity", Source: types.FXRateSourceFixed, From: req.From, To: req.To}, nil
+	}
+
+	scopesChecked := make([]string, 0, 3)
+
+	if req.SubscriptionID != "" {
+		scopesChecked = append(scopesChecked, "subscription:"+req.SubscriptionID)
+		rate, err := s.findOverride(ctx, types.FXRateScopeSubscription, req.SubscriptionID, req.From, req.To, now)
+		if err != nil {
+			return nil, err
+		}
+		if rate != nil {
+			return resolveFixed(rate)
+		}
+	}
+
+	if req.CustomerID != "" {
+		scopesChecked = append(scopesChecked, "customer:"+req.CustomerID)
+		rate, err := s.findOverride(ctx, types.FXRateScopeCustomer, req.CustomerID, req.From, req.To, now)
+		if err != nil {
+			return nil, err
+		}
+		if rate != nil {
+			return resolveFixed(rate)
+		}
+	}
+
+	scopesChecked = append(scopesChecked, "tenant")
+	tenantRate, err := s.FXRateRepo.GetTenantRate(ctx, req.From, req.To)
+	if err != nil {
+		if ierr.IsNotFound(err) {
+			return nil, fxRateNotFound(req.From, req.To, scopesChecked)
+		}
+		return nil, err
+	}
+	return resolveFixed(tenantRate)
+}
+
+// findOverride returns the published override for (scope, scopeID, pair) whose window covers now.
+func (s *fxRateService) findOverride(ctx context.Context, scope types.FXRateScope, scopeID, from, to string, now time.Time) (*fxrate.FXRate, error) {
+	scopeCopy := scope
+	filter := &types.FXRateFilter{
+		QueryFilter:  types.NewNoLimitQueryFilter(),
+		Scope:        &scopeCopy,
+		ScopeID:      &scopeID,
+		FromCurrency: &from,
+		ToCurrency:   &to,
+	}
+	rates, err := s.FXRateRepo.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rates {
+		if windowCoversNow(r.StartDate, r.EndDate, now) {
+			return r, nil
+		}
+	}
+	return nil, nil
+}
+
+// windowCoversNow treats a nil start_date as −∞ and a nil end_date as +∞. end_date is exclusive.
+func windowCoversNow(startDate, endDate *time.Time, now time.Time) bool {
+	if startDate != nil && startDate.After(now) {
+		return false
+	}
+	if endDate != nil && !endDate.After(now) {
+		return false
+	}
+	return true
+}
+
+// resolveFixed turns a matched rate into a resolution. Only fixed rates resolve to a value
+// today; a market rate is rejected until the market-rate integration is wired.
+func resolveFixed(r *fxrate.FXRate) (*FXRateResolution, error) {
+	if r.Source == types.FXRateSourceMarket {
+		return nil, ierr.NewErrorf("market FX rate resolution is not supported yet for %s → %s", r.FromCurrency, r.ToCurrency).
+			WithHint("This pair is configured to use market rates, which are not yet available.").
+			Mark(ierr.ErrInvalidOperation)
+	}
+	return toResolution(r), nil
+}
+
+func toResolution(r *fxrate.FXRate) *FXRateResolution {
+	return &FXRateResolution{
+		Rate:   r.Rate,
+		RateID: r.ID,
+		Scope:  string(r.Scope),
+		Source: r.Source,
+		From:   r.FromCurrency,
+		To:     r.ToCurrency,
+	}
+}
+
+func fxRateNotFound(from, to string, scopesChecked []string) error {
+	return ierr.NewErrorf("no FX rate configured for %s → %s", from, to).
+		WithHintf("No exchange rate configured for %s → %s. Set a tenant rate first.", from, to).
+		WithReportableDetails(map[string]any{
+			"from_currency":  from,
+			"to_currency":    to,
+			"scopes_checked": scopesChecked,
+		}).
+		Mark(ierr.ErrNotFound)
 }
 
 func (s *fxRateService) CreateFXRate(ctx context.Context, req dto.CreateFXRateRequest) (*dto.FXRateResponse, error) {
