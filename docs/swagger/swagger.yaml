@@ -2214,6 +2214,8 @@ definitions:
     type: object
   CreateFXRateRequest:
     properties:
+      end_date:
+        type: string
       from_currency:
         type: string
       metadata:
@@ -2226,15 +2228,18 @@ definitions:
         $ref: '#/definitions/types.FXRateScope'
       scope_id:
         type: string
+      source:
+        allOf:
+        - $ref: '#/definitions/types.FXRateSource'
+        description: |-
+          Source defaults to "fixed". A fixed rate requires `rate`; a market rate ignores it
+          (the value comes from the market-rate integration at conversion time).
+      start_date:
+        type: string
       to_currency:
-        type: string
-      valid_from:
-        type: string
-      valid_to:
         type: string
     required:
     - from_currency
-    - rate
     - scope
     - to_currency
     type: object
@@ -3920,6 +3925,8 @@ definitions:
         type: string
       created_by:
         type: string
+      end_date:
+        type: string
       environment_id:
         type: string
       from_currency:
@@ -3936,6 +3943,10 @@ definitions:
         $ref: '#/definitions/types.FXRateScope'
       scope_id:
         type: string
+      source:
+        $ref: '#/definitions/types.FXRateSource'
+      start_date:
+        type: string
       status:
         $ref: '#/definitions/types.Status'
       tenant_id:
@@ -3945,10 +3956,6 @@ definitions:
       updated_at:
         type: string
       updated_by:
-        type: string
-      valid_from:
-        type: string
-      valid_to:
         type: string
     type: object
   FeatureResponse:
@@ -6150,19 +6157,6 @@ definitions:
     required:
     - addon_association_id
     type: object
-  ResolveFXRateResponse:
-    properties:
-      from_currency:
-        type: string
-      rate:
-        type: string
-      rate_id:
-        type: string
-      scope:
-        type: string
-      to_currency:
-        type: string
-    type: object
   RevenueAnalyticsRequest:
     properties:
       allocation_policy:
@@ -8305,15 +8299,15 @@ definitions:
     type: object
   UpdateFXRateRequest:
     properties:
+      end_date:
+        type: string
       metadata:
         additionalProperties:
           type: string
         type: object
       rate:
         type: string
-      valid_from:
-        type: string
-      valid_to:
+      start_date:
         type: string
     type: object
   UpdateFeatureRequest:
@@ -11247,6 +11241,14 @@ definitions:
     - FXRateScopeTenant
     - FXRateScopeCustomer
     - FXRateScopeSubscription
+  types.FXRateSource:
+    enum:
+    - fixed
+    - market
+    type: string
+    x-enum-varnames:
+    - FXRateSourceFixed
+    - FXRateSourceMarket
   types.FactStatus:
     enum:
     - PROVISIONAL
@@ -17291,95 +17293,7 @@ paths:
       summary: Query features
       tags:
       - Features
-  /fx-rates:
-    get:
-      consumes:
-      - application/json
-      description: List FX rates with optional filters by scope, scope_id, currency
-        pair and status.
-      operationId: listFXRates
-      parameters:
-      - in: query
-        name: end_time
-        type: string
-      - in: query
-        name: expand
-        type: string
-      - in: query
-        name: from_currency
-        type: string
-      - collectionFormat: csv
-        in: query
-        items:
-          type: string
-        name: fx_rate_ids
-        type: array
-      - in: query
-        maximum: 1000
-        minimum: 1
-        name: limit
-        type: integer
-      - in: query
-        minimum: 0
-        name: offset
-        type: integer
-      - enum:
-        - asc
-        - desc
-        in: query
-        name: order
-        type: string
-      - enum:
-        - tenant
-        - customer
-        - subscription
-        in: query
-        name: scope
-        type: string
-        x-enum-varnames:
-        - FXRateScopeTenant
-        - FXRateScopeCustomer
-        - FXRateScopeSubscription
-      - in: query
-        name: scope_id
-        type: string
-      - in: query
-        name: start_time
-        type: string
-      - enum:
-        - published
-        - deleted
-        - archived
-        in: query
-        name: status
-        type: string
-        x-enum-varnames:
-        - StatusPublished
-        - StatusDeleted
-        - StatusArchived
-      - in: query
-        name: to_currency
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/ListFXRatesResponse'
-        "400":
-          description: Invalid request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "500":
-          description: Server error
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: List FX rates
-      tags:
-      - FX Rates
+  /forex:
     post:
       consumes:
       - application/json
@@ -17413,7 +17327,7 @@ paths:
       summary: Create an FX rate
       tags:
       - FX Rates
-  /fx-rates/{id}:
+  /forex/{id}:
     delete:
       consumes:
       - application/json
@@ -17517,54 +17431,7 @@ paths:
       summary: Update an FX rate
       tags:
       - FX Rates
-  /fx-rates/resolve:
-    get:
-      consumes:
-      - application/json
-      description: Show which rate a customer or subscription gets now for a currency
-        pair, resolved by scope precedence (subscription, then customer, then tenant).
-      operationId: resolveFXRate
-      parameters:
-      - description: From (charge) currency
-        in: query
-        name: from
-        required: true
-        type: string
-      - description: To (billing) currency
-        in: query
-        name: to
-        required: true
-        type: string
-      - description: Customer ID
-        in: query
-        name: customer_id
-        type: string
-      - description: Subscription ID
-        in: query
-        name: subscription_id
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/ResolveFXRateResponse'
-        "400":
-          description: Invalid request
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-        "404":
-          description: No rate configured
-          schema:
-            $ref: '#/definitions/errors.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Resolve an FX rate
-      tags:
-      - FX Rates
-      x-scope: read
-  /fx-rates/search:
+  /forex/query:
     post:
       consumes:
       - application/json

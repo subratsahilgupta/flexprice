@@ -4490,139 +4490,7 @@ const docTemplate = `{
                 "x-scope": "write"
             }
         },
-        "/fx-rates": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "List FX rates with optional filters by scope, scope_id, currency pair and status.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "FX Rates"
-                ],
-                "summary": "List FX rates",
-                "operationId": "listFXRates",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "name": "end_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "expand",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "from_currency",
-                        "in": "query"
-                    },
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "collectionFormat": "csv",
-                        "name": "fx_rate_ids",
-                        "in": "query"
-                    },
-                    {
-                        "maximum": 1000,
-                        "minimum": 1,
-                        "type": "integer",
-                        "name": "limit",
-                        "in": "query"
-                    },
-                    {
-                        "minimum": 0,
-                        "type": "integer",
-                        "name": "offset",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "asc",
-                            "desc"
-                        ],
-                        "type": "string",
-                        "name": "order",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "tenant",
-                            "customer",
-                            "subscription"
-                        ],
-                        "type": "string",
-                        "x-enum-varnames": [
-                            "FXRateScopeTenant",
-                            "FXRateScopeCustomer",
-                            "FXRateScopeSubscription"
-                        ],
-                        "name": "scope",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "scope_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "enum": [
-                            "published",
-                            "deleted",
-                            "archived"
-                        ],
-                        "type": "string",
-                        "x-enum-varnames": [
-                            "StatusPublished",
-                            "StatusDeleted",
-                            "StatusArchived"
-                        ],
-                        "name": "status",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "name": "to_currency",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/ListFXRatesResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            },
+        "/forex": {
             "post": {
                 "security": [
                     {
@@ -4674,77 +4542,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/fx-rates/resolve": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Show which rate a customer or subscription gets now for a currency pair, resolved by scope precedence (subscription, then customer, then tenant).",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "FX Rates"
-                ],
-                "summary": "Resolve an FX rate",
-                "operationId": "resolveFXRate",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "From (charge) currency",
-                        "name": "from",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "To (billing) currency",
-                        "name": "to",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Customer ID",
-                        "name": "customer_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Subscription ID",
-                        "name": "subscription_id",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/ResolveFXRateResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "No rate configured",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                },
-                "x-scope": "read"
-            }
-        },
-        "/fx-rates/search": {
+        "/forex/query": {
             "post": {
                 "security": [
                     {
@@ -4797,7 +4595,7 @@ const docTemplate = `{
                 "x-scope": "read"
             }
         },
-        "/fx-rates/{id}": {
+        "/forex/{id}": {
             "get": {
                 "security": [
                     {
@@ -17354,11 +17152,13 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "from_currency",
-                "rate",
                 "scope",
                 "to_currency"
             ],
             "properties": {
+                "end_date": {
+                    "type": "string"
+                },
                 "from_currency": {
                     "type": "string"
                 },
@@ -17377,13 +17177,18 @@ const docTemplate = `{
                 "scope_id": {
                     "type": "string"
                 },
+                "source": {
+                    "description": "Source defaults to \"fixed\". A fixed rate requires ` + "`" + `rate` + "`" + `; a market rate ignores it\n(the value comes from the market-rate integration at conversion time).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FXRateSource"
+                        }
+                    ]
+                },
+                "start_date": {
+                    "type": "string"
+                },
                 "to_currency": {
-                    "type": "string"
-                },
-                "valid_from": {
-                    "type": "string"
-                },
-                "valid_to": {
                     "type": "string"
                 }
             }
@@ -19652,6 +19457,9 @@ const docTemplate = `{
                 "created_by": {
                     "type": "string"
                 },
+                "end_date": {
+                    "type": "string"
+                },
                 "environment_id": {
                     "type": "string"
                 },
@@ -19676,6 +19484,12 @@ const docTemplate = `{
                 "scope_id": {
                     "type": "string"
                 },
+                "source": {
+                    "$ref": "#/definitions/types.FXRateSource"
+                },
+                "start_date": {
+                    "type": "string"
+                },
                 "status": {
                     "$ref": "#/definitions/types.Status"
                 },
@@ -19689,12 +19503,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_by": {
-                    "type": "string"
-                },
-                "valid_from": {
-                    "type": "string"
-                },
-                "valid_to": {
                     "type": "string"
                 }
             }
@@ -22703,26 +22511,6 @@ const docTemplate = `{
                 }
             }
         },
-        "ResolveFXRateResponse": {
-            "type": "object",
-            "properties": {
-                "from_currency": {
-                    "type": "string"
-                },
-                "rate": {
-                    "type": "string"
-                },
-                "rate_id": {
-                    "type": "string"
-                },
-                "scope": {
-                    "type": "string"
-                },
-                "to_currency": {
-                    "type": "string"
-                }
-            }
-        },
         "RevenueAnalyticsRequest": {
             "type": "object",
             "required": [
@@ -25653,6 +25441,9 @@ const docTemplate = `{
         "UpdateFXRateRequest": {
             "type": "object",
             "properties": {
+                "end_date": {
+                    "type": "string"
+                },
                 "metadata": {
                     "type": "object",
                     "additionalProperties": {
@@ -25662,10 +25453,7 @@ const docTemplate = `{
                 "rate": {
                     "type": "string"
                 },
-                "valid_from": {
-                    "type": "string"
-                },
-                "valid_to": {
+                "start_date": {
                     "type": "string"
                 }
             }
@@ -29702,6 +29490,17 @@ const docTemplate = `{
                 "FXRateScopeTenant",
                 "FXRateScopeCustomer",
                 "FXRateScopeSubscription"
+            ]
+        },
+        "types.FXRateSource": {
+            "type": "string",
+            "enum": [
+                "fixed",
+                "market"
+            ],
+            "x-enum-varnames": [
+                "FXRateSourceFixed",
+                "FXRateSourceMarket"
             ]
         },
         "types.FactStatus": {
