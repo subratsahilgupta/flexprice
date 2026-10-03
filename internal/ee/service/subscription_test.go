@@ -9848,7 +9848,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_GroupedInvoicingChildr
 	}
 	s.NoError(s.GetStores().CustomerRepo.Create(ctx, seat))
 
-	anchor := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
+	anchor := s.testData.now.AddDate(0, 0, 10)
 	req := dto.CreateSubscriptionRequest{
 		CustomerID:         s.testData.customer.ID,
 		PlanID:             seatPlan.ID,

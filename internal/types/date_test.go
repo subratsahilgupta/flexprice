@@ -166,7 +166,7 @@ func TestNextBillingDate_Monthly_Calendar(t *testing.T) {
 			currentPeriod: time.Date(2023, time.January, 15, 0, 0, 0, 0, time.UTC),
 			billingAnchor: CalculateCalendarBillingAnchor(time.Date(2023, time.January, 15, 0, 0, 0, 0, time.UTC), BILLING_PERIOD_MONTHLY, ""),
 			unit:          2,
-			want:          time.Date(2023, time.March, 1, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2023, time.February, 1, 0, 0, 0, 0, time.UTC),
 			wantErr:       false,
 			errMsg:        "",
 		},
@@ -184,7 +184,7 @@ func TestNextBillingDate_Monthly_Calendar(t *testing.T) {
 			currentPeriod: time.Date(2024, time.December, 30, 10, 37, 0, 0, time.UTC),
 			billingAnchor: CalculateCalendarBillingAnchor(time.Date(2024, time.December, 30, 10, 37, 0, 0, time.UTC), BILLING_PERIOD_MONTHLY, ""),
 			unit:          2,
-			want:          time.Date(2025, time.February, 1, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC),
 			wantErr:       false,
 			errMsg:        "",
 		},
@@ -210,7 +210,7 @@ func TestNextBillingDate_Monthly_Calendar(t *testing.T) {
 			currentPeriod: time.Date(2024, time.January, 31, 23, 59, 59, 0, jst),
 			billingAnchor: CalculateCalendarBillingAnchor(time.Date(2024, time.January, 31, 23, 59, 59, 0, jst), BILLING_PERIOD_MONTHLY, ""),
 			unit:          2,
-			want:          time.Date(2024, time.March, 1, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2024, time.February, 1, 0, 0, 0, 0, time.UTC),
 		},
 	}
 
@@ -321,7 +321,7 @@ func TestNextBillingDate_Annual_Anniversary(t *testing.T) {
 			currentPeriod: time.Date(2024, time.January, 15, 0, 0, 0, 0, time.UTC),
 			billingAnchor: time.Date(2024, time.February, 29, 0, 0, 0, 0, time.UTC),
 			unit:          1,
-			want:          time.Date(2025, time.February, 28, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2024, time.February, 29, 0, 0, 0, 0, time.UTC),
 		},
 		{
 			name:          "preserve billing anchor across years",
@@ -440,7 +440,7 @@ func TestNextBillingDate_Annual_Calendar(t *testing.T) {
 			currentPeriod: time.Date(2023, time.December, 31, 0, 0, 0, 0, jst),
 			billingAnchor: CalculateCalendarBillingAnchor(time.Date(2023, time.December, 31, 0, 0, 0, 0, jst), BILLING_PERIOD_ANNUAL, ""),
 			unit:          2,
-			want:          time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC),
 			wantErr:       false,
 			errMsg:        "",
 		},
@@ -949,18 +949,14 @@ func TestNextBillingDate_Quarterly_Calendar(t *testing.T) {
 
 // TestNextBillingDate_Quarterly_Calendar_BackwardCompat verifies that existing subscriptions
 // whose first period was calculated with the OLD behavior (e.g. March 22 → June 1 instead of
-// March 22 → April 1) continue to advance consistently and are NOT realigned.
-// We must not break existing subscriptions — only new ones get the corrected calendar alignment.
+// March 22 → April 1) keep their stored period and snap back to the anchor's schedule after it.
 func TestNextBillingDate_Quarterly_Calendar_BackwardCompat(t *testing.T) {
 	// Simulate an existing subscription:
 	//   subscriptionStart = March 22 (created before the fix)
 	//   billingAnchor     = April 1  (correctly stored on creation)
 	//   OLD first period  : March 22 → June 1  (was the wrong end date)
 	//
-	// After June 1 the cron advances currentPeriodStart to June 1 and calls
-	// NextBillingDate(June 1, April 1, ...). Since June 1 > April 1 the new
-	// guard does NOT fire; we simply add 3 months → September 1, keeping the
-	// existing cadence intact.
+	// After June 1 the next billing date is the next quarter on the anchor's schedule: July 1.
 	tests := []struct {
 		name          string
 		currentPeriod time.Time
@@ -969,25 +965,25 @@ func TestNextBillingDate_Quarterly_Calendar_BackwardCompat(t *testing.T) {
 		want          time.Time
 	}{
 		{
-			name:          "2nd period of old sub: Jun 1 (old wrong end) → Sep 1",
+			name:          "2nd period of old sub: Jun 1 (old wrong end) → Jul 1",
 			currentPeriod: time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC),
 			billingAnchor: time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC),
 			unit:          1,
-			want:          time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			name:          "3rd period of old sub: Sep 1 → Dec 1",
-			currentPeriod: time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC),
+			name:          "3rd period of old sub: Jul 1 → Oct 1",
+			currentPeriod: time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
 			billingAnchor: time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC),
 			unit:          1,
-			want:          time.Date(2026, time.December, 1, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			name:          "4th period of old sub: Dec 1 → Mar 1 2027",
-			currentPeriod: time.Date(2026, time.December, 1, 0, 0, 0, 0, time.UTC),
+			name:          "4th period of old sub: Oct 1 → Jan 1 2027",
+			currentPeriod: time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC),
 			billingAnchor: time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC),
 			unit:          1,
-			want:          time.Date(2027, time.March, 1, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC),
 		},
 	}
 
@@ -1015,9 +1011,7 @@ func TestNextBillingDate_HalfYearly_Calendar_BackwardCompat(t *testing.T) {
 	// Old sub: started March 15, anchor = July 1 (day=1).
 	// OLD first period: March 15 → September 1
 	//   (targetD = billingAnchor.Day() = 1, targetM = March+6 = September)
-	// OLD second period: September 1 → March 1 2027
-	// Since all these currentPeriodStarts are > billingAnchor, the new guard
-	// does NOT fire and the cadence is preserved as-is.
+	// After September 1 the next billing date is on the anchor's schedule: January 1 2027.
 	tests := []struct {
 		name          string
 		currentPeriod time.Time
@@ -1026,18 +1020,18 @@ func TestNextBillingDate_HalfYearly_Calendar_BackwardCompat(t *testing.T) {
 		want          time.Time
 	}{
 		{
-			name:          "2nd period of old half-yearly sub: Sep 1 → Mar 1 2027",
+			name:          "2nd period of old half-yearly sub: Sep 1 → Jan 1 2027",
 			currentPeriod: time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC),
 			billingAnchor: time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
 			unit:          1,
-			want:          time.Date(2027, time.March, 1, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
-			name:          "3rd period of old half-yearly sub: Mar 1 2027 → Sep 1 2027",
-			currentPeriod: time.Date(2027, time.March, 1, 0, 0, 0, 0, time.UTC),
+			name:          "3rd period of old half-yearly sub: Jan 1 2027 → Jul 1 2027",
+			currentPeriod: time.Date(2027, time.January, 1, 0, 0, 0, 0, time.UTC),
 			billingAnchor: time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
 			unit:          1,
-			want:          time.Date(2027, time.September, 1, 0, 0, 0, 0, time.UTC),
+			want:          time.Date(2027, time.July, 1, 0, 0, 0, 0, time.UTC),
 		},
 	}
 
@@ -2881,6 +2875,165 @@ func TestAdvanceDays(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := AdvanceDays(tc.in, tc.n, tc.tz)
 			require.Equal(t, tc.want.UTC(), got.UTC())
+		})
+	}
+}
+
+// legacyNextBillingDate is the month-based NextBillingDate rule before the anchor-schedule rewrite,
+// kept to diff old and new behaviour.
+func legacyNextBillingDate(start, anchor time.Time, unit int, period BillingPeriod, tz string) time.Time {
+	loc := loadTimezone(tz)
+	currentPeriodStart, billingAnchor := start.In(loc), anchor.In(loc)
+
+	var years, months int
+	switch period {
+	case BILLING_PERIOD_MONTHLY:
+		months = unit
+	case BILLING_PERIOD_ANNUAL:
+		years = unit
+	case BILLING_PERIOD_QUARTER:
+		months = unit * 3
+	case BILLING_PERIOD_HALF_YEAR:
+		months = unit * 6
+	}
+	if (period == BILLING_PERIOD_QUARTER || period == BILLING_PERIOD_HALF_YEAR) && currentPeriodStart.Before(billingAnchor) {
+		return billingAnchor.UTC()
+	}
+	if period == BILLING_PERIOD_MONTHLY {
+		y, m, d := currentPeriodStart.Date()
+		h, mi, sec := billingAnchor.Clock()
+		lastDayThisMonth := time.Date(y, m+1, 0, 0, 0, 0, 0, loc).Day()
+		if d < min(billingAnchor.Day(), lastDayThisMonth) {
+			return time.Date(y, m, min(billingAnchor.Day(), lastDayThisMonth), h, mi, sec, 0, loc).UTC()
+		}
+	}
+	y, m, _ := currentPeriodStart.Date()
+	h, mi, sec := billingAnchor.Clock()
+	targetY, targetM := y+years, time.Month(int(m)+months)
+	for targetM > 12 {
+		targetM -= 12
+		targetY++
+	}
+	if period == BILLING_PERIOD_ANNUAL {
+		targetM = billingAnchor.Month()
+	}
+	targetD := min(billingAnchor.Day(), time.Date(targetY, targetM+1, 0, 0, 0, 0, 0, loc).Day())
+	if period == BILLING_PERIOD_ANNUAL && billingAnchor.Month() == time.February && billingAnchor.Day() == 29 &&
+		!(targetY%4 == 0 && (targetY%100 != 0 || targetY%400 == 0)) {
+		targetD = 28
+	}
+	return time.Date(targetY, targetM, targetD, h, mi, sec, 0, loc).UTC()
+}
+
+// TestNextBillingDate_DiffAgainstLegacy compares the anchor-schedule rule with the legacy rule. They must
+// agree on every renewal from an on-schedule date and on every monthly unit-1 call. Elsewhere the first
+// period may change, but it never runs past the anchor or past one period.
+func TestNextBillingDate_DiffAgainstLegacy(t *testing.T) {
+	periods := []BillingPeriod{BILLING_PERIOD_MONTHLY, BILLING_PERIOD_QUARTER, BILLING_PERIOD_HALF_YEAR, BILLING_PERIOD_ANNUAL}
+	zones := []string{"UTC", "Asia/Kolkata", "America/New_York"}
+	anchorOffsetsDays := []int{0, 5, 17, 40, 100, 200, 300}
+	diffs := map[string]int{}
+
+	next := func(start, anchor time.Time, unit int, period BillingPeriod, tz string) time.Time {
+		got, err := NextBillingDate(&NextBillingDateParams{CurrentPeriodStart: start, BillingAnchor: anchor, Unit: unit, Period: period, Timezone: tz})
+		require.NoError(t, err)
+		return got
+	}
+
+	for _, tz := range zones {
+		loc := loadTimezone(tz)
+		for _, period := range periods {
+			for unit := 1; unit <= 3; unit++ {
+				for day := 0; day < 730; day += 5 {
+					start := time.Date(2024, 1, 1, 10, 37, 0, 0, loc).AddDate(0, 0, day).UTC()
+					onePeriodLater := addMonthsClamped(start.In(loc), unit*monthsPerPeriod(period))
+					anchors := []time.Time{CalculateCalendarBillingAnchor(start, period, tz)}
+					for _, offset := range anchorOffsetsDays {
+						if anchor := AdvanceDays(start, offset, tz); !anchor.After(onePeriodLater) {
+							anchors = append(anchors, anchor)
+						}
+					}
+
+					for _, anchor := range anchors {
+						got := next(start, anchor, unit, period, tz)
+						old := legacyNextBillingDate(start, anchor, unit, period, tz)
+						require.True(t, got.After(start), "next %v must be after start %v", got, start)
+						require.False(t, got.After(onePeriodLater), "first period longer than one period: start=%v anchor=%v %s x%d tz=%s got=%v",
+							start, anchor, period, unit, tz, got)
+						require.False(t, anchor.After(start) && got.After(anchor), "first period runs past the anchor: start=%v anchor=%v %s x%d tz=%s got=%v",
+							start, anchor, period, unit, tz, got)
+						if !got.Equal(old) {
+							require.False(t, period == BILLING_PERIOD_MONTHLY && unit == 1,
+								"monthly unit 1 must not change: start=%v anchor=%v tz=%s new=%v old=%v", start, anchor, tz, got, old)
+							diffs[string(period)]++
+						}
+
+						// Renewals from an on-schedule date at or after the anchor are unchanged.
+						for cur, i := got, 0; i < 3; i++ {
+							if cur.Before(anchor) {
+								cur = next(cur, anchor, unit, period, tz)
+								continue
+							}
+							renewal := next(cur, anchor, unit, period, tz)
+							require.Equal(t, legacyNextBillingDate(cur, anchor, unit, period, tz), renewal,
+								"renewal from %v anchor=%v %s x%d tz=%s", cur, anchor, period, unit, tz)
+							cur = renewal
+						}
+					}
+				}
+			}
+		}
+	}
+	t.Logf("first-period differences by period: %v", diffs)
+}
+
+func TestPreviousBillingDate_Timezone(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+	tests := []struct {
+		name   string
+		anchor time.Time
+		tz     string
+		want   time.Time
+	}{
+		{"IST Mar 1 to Feb 1", time.Date(2026, 3, 1, 0, 0, 0, 0, ist), "Asia/Kolkata", time.Date(2026, 2, 1, 0, 0, 0, 0, ist)},
+		{"New York Apr 1 across DST to Mar 1", time.Date(2026, 4, 1, 0, 0, 0, 0, ny), "America/New_York", time.Date(2026, 3, 1, 0, 0, 0, 0, ny)},
+		{"UTC month end clamps", time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC), "UTC", time.Date(2026, 2, 28, 0, 0, 0, 0, time.UTC)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := PreviousBillingDate(&PreviousBillingDateParams{BillingAnchor: tt.anchor.UTC(), Unit: 1, Period: BILLING_PERIOD_MONTHLY, Timezone: tt.tz})
+			require.NoError(t, err)
+			require.True(t, got.Equal(tt.want), "got %v, want %v", got, tt.want)
+		})
+	}
+}
+
+func TestFullBillingPeriod(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+	utc := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+	tests := []struct {
+		name       string
+		t, anchor  time.Time
+		period     BillingPeriod
+		tz         string
+		start, end time.Time
+	}{
+		{"calendar stub Jan 31", utc(2026, 1, 31), utc(2026, 2, 1), BILLING_PERIOD_MONTHLY, "UTC", utc(2026, 1, 1), utc(2026, 2, 1)},
+		{"anchor ahead of start", utc(2026, 1, 10), utc(2026, 1, 20), BILLING_PERIOD_MONTHLY, "UTC", utc(2025, 12, 20), utc(2026, 1, 20)},
+		{"on a billing date", utc(2026, 2, 1), utc(2026, 2, 1), BILLING_PERIOD_MONTHLY, "UTC", utc(2026, 2, 1), utc(2026, 3, 1)},
+		{"month end anchor", utc(2026, 3, 5), utc(2026, 1, 31), BILLING_PERIOD_MONTHLY, "UTC", utc(2026, 2, 28), utc(2026, 3, 31)},
+		{"quarter on annual stub", utc(2026, 3, 15), utc(2027, 1, 1), BILLING_PERIOD_QUARTER, "UTC", utc(2026, 1, 1), utc(2026, 4, 1)},
+		{"weekly", utc(2026, 1, 15), utc(2026, 1, 5), BILLING_PERIOD_WEEKLY, "UTC", utc(2026, 1, 12), utc(2026, 1, 19)},
+		{"New York across DST", time.Date(2026, 3, 17, 0, 0, 0, 0, ny), time.Date(2026, 4, 1, 0, 0, 0, 0, ny), BILLING_PERIOD_MONTHLY,
+			"America/New_York", time.Date(2026, 3, 1, 0, 0, 0, 0, ny), time.Date(2026, 4, 1, 0, 0, 0, 0, ny)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FullBillingPeriod(tt.t, tt.anchor, tt.period, 1, tt.tz)
+			require.NoError(t, err)
+			require.True(t, got.Start.Equal(tt.start) && got.End.Equal(tt.end), "got [%v, %v), want [%v, %v)", got.Start, got.End, tt.start, tt.end)
 		})
 	}
 }

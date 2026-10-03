@@ -510,6 +510,7 @@ func (s *prorationService) CreateProrationParamsForLineItem(
 			BillingAnchor: subscription.BillingAnchor,
 			Unit:          subscription.BillingPeriodCount,
 			Period:        subscription.BillingPeriod,
+			Timezone:      subscription.Timezone,
 		})
 		if err != nil {
 			// Fallback to current period start if calculation fails

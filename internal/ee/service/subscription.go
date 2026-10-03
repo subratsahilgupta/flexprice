@@ -73,6 +73,29 @@ type subscriptionCoreResult struct {
 	ActivatedOnCreate bool
 }
 
+// validateBillingAnchor rejects an anchor outside [start, start + 1 period], compared on local dates.
+func validateBillingAnchor(sub *subscription.Subscription) error {
+	// The first full period on a schedule anchored at the start is [start, start + 1 period).
+	firstPeriod, err := types.FullBillingPeriod(sub.StartDate, sub.StartDate, sub.BillingPeriod, sub.BillingPeriodCount, sub.Timezone)
+	if err != nil {
+		return err
+	}
+
+	anchorDay := types.FloorToStartOfDay(sub.BillingAnchor, sub.Timezone)
+	if anchorDay.Before(types.FloorToStartOfDay(firstPeriod.Start, sub.Timezone)) || anchorDay.After(types.FloorToStartOfDay(firstPeriod.End, sub.Timezone)) {
+		return ierr.NewError("billing_anchor must be within one billing period of the start date").
+			WithHint("Set billing_anchor between the start date and one billing period after it, or backdate the start date instead").
+			WithReportableDetails(map[string]any{
+				"billing_anchor":        sub.BillingAnchor,
+				"start_date":            sub.StartDate,
+				"latest_billing_anchor": firstPeriod.End,
+			}).
+			Mark(ierr.ErrValidation)
+	}
+
+	return nil
+}
+
 // createSubscription creates the subscription through invoice generation. Caller must be in a transaction.
 func (s *subscriptionService) createSubscription(ctx context.Context, req dto.CreateSubscriptionRequest) (*subscriptionCoreResult, error) {
 	if req.BillingCycle == "" {
@@ -172,15 +195,22 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	} else {
 		sub.StartDate = sub.StartDate.UTC().Truncate(time.Millisecond)
 	}
+	if sub.BillingPeriodCount == 0 {
+		sub.BillingPeriodCount = 1
+	}
+
 	if req.BillingAnchor != nil {
-		sub.BillingAnchor = lo.FromPtr(req.BillingAnchor)
+		sub.BillingAnchor = lo.FromPtr(req.BillingAnchor).UTC().Truncate(time.Millisecond)
+		// Stripe imports keep Stripe's anchor so the schedule matches Stripe's.
+		if lo.FromPtr(req.Workflow) != types.TemporalStripeIntegrationWorkflow {
+			if err := validateBillingAnchor(sub); err != nil {
+				return nil, err
+			}
+		}
 	} else if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod, sub.Timezone)
 	} else {
 		sub.BillingAnchor = sub.StartDate
-	}
-	if sub.BillingPeriodCount == 0 {
-		sub.BillingPeriodCount = 1
 	}
 	nextBillingDate, err := types.NextBillingDate(&types.NextBillingDateParams{
 		CurrentPeriodStart:  sub.StartDate,
@@ -680,11 +710,16 @@ func (s *subscriptionService) ActivateDraftSubscription(ctx context.Context, sub
 
 	// Recalculate all dates with new start date
 	newStartDate := req.StartDate.UTC()
+	hasCustomAnchor := sub.BillingCycle == types.BillingCycleAnniversary && !sub.BillingAnchor.Equal(sub.StartDate)
 	sub.StartDate = newStartDate
 
-	// Calculate billing anchor
+	// Calculate billing anchor; a custom anniversary anchor is kept when still valid for the new start
 	if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod, sub.Timezone)
+	} else if hasCustomAnchor {
+		if err := validateBillingAnchor(sub); err != nil {
+			return nil, err
+		}
 	} else {
 		// default to start date for anniversary billing
 		sub.BillingAnchor = sub.StartDate

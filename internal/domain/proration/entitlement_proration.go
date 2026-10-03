@@ -196,6 +196,7 @@ func (c *EntitlementProrationCalculator) calculateProrationCoefficient(
 			BillingAnchor: params.BillingAnchor,
 			Unit:          params.BillingPeriodCount,
 			Period:        params.BillingPeriod,
+			Timezone:      params.Timezone,
 		})
 		if err != nil {
 			// Fallback to subscription period start if calculation fails
