@@ -234,6 +234,20 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 			continue
 		}
 
+		// One-time prices are never prorated: an advance one is charged in full when added.
+		if item.BillingPeriod == types.BILLING_PERIOD_ONETIME {
+			if entry.Action == types.ProrationActionAddItem {
+				amount := NewPriceService(s.params).CalculateCost(ctx, entry.NewPrice, entry.NewQuantity)
+				if amount.IsPositive() {
+					summary.ChargeLineItems = append(summary.ChargeLineItems, buildProrationLineItem(
+						sub, item, entry.NewPrice, entry.NewQuantity, amount, "One-time charge", req.EffectiveDate, req.EffectiveDate,
+					))
+					summary.TotalChargeAmount = summary.TotalChargeAmount.Add(amount)
+				}
+			}
+			continue
+		}
+
 		// A line item is priced against its own cadence, so a monthly addon on a quarterly
 		// subscription is quoted as one partial month plus the whole months that follow —
 		// the same lines the opening invoice would have raised. Same-cadence items yield a

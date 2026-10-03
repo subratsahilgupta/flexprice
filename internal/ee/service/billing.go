@@ -2038,8 +2038,8 @@ func (s *billingService) ClassifyLineItems(
 					result.NextPeriodAdvance = append(result.NextPeriodAdvance, item)
 				}
 			} else {
-				// Arrear: billing date in (currentPeriodStart, currentPeriodEnd]
-				if billingDate.After(currentPeriodStart) && !billingDate.After(currentPeriodEnd) {
+				// Arrear: billing date in (currentPeriodStart, currentPeriodEnd]; the first period also owns the sub start
+				if (billingDate.After(currentPeriodStart) || billingDate.Equal(sub.StartDate)) && !billingDate.After(currentPeriodEnd) {
 					result.CurrentPeriodArrear = append(result.CurrentPeriodArrear, item)
 				}
 			}
