@@ -354,7 +354,7 @@ func (g billingPeriodGrid) billingDateAtIndex(k int) time.Time {
 		return g.anchor.AddDate(0, 0, k*g.unit*7)
 	}
 
-	// adding months on another month can lead to a date 
+	// adding months on another month can lead to a date
 	// that is not a an actual date hence Date package rolling it over
 	// Eg: Jan 31 + 1 month => Feb 31 => Mar 3 but we want Feb 28
 	// So we clamp the day to the last day of the target month

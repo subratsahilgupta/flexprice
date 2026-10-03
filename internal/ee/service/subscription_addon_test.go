@@ -1888,6 +1888,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_ManyAddons_AttachWitho
 // so the attach must leave the caller's slice as it found it.
 func (s *SubscriptionServiceSuite) TestCreateSubscription_Addons_LeaveCallerLineItemsAlone() {
 	sub := s.monthlyPeriodSubscription()
+	sub.CurrentPeriodStart = sub.StartDate // at creation the first period starts at the subscription start
 	s.seedFixedPriceAddon("addon_create_untouched", decimal.NewFromInt(20), types.InvoiceCadenceAdvance)
 
 	before := len(sub.LineItems)

@@ -1358,7 +1358,7 @@ func (r *CreateSubscriptionRequest) validateShouldAllowProrationOnStartDate(requ
 	// If the start date is before the current date and proration mode is active, return an error
 	// This prevents creating subscriptions with backdated start dates that would trigger proration
 
-	if request.Workflow == lo.ToPtr(types.TemporalSubscriptionCreationWorkflow) {
+	if lo.FromPtr(request.Workflow) == types.TemporalSubscriptionCreationWorkflow {
 		return nil
 	}
 

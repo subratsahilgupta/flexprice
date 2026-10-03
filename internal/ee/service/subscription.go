@@ -5105,6 +5105,20 @@ func (s *subscriptionService) createAddonAttachParams(
 	}
 
 	addonRequestedStart := lo.Ternary(req.StartDate != nil, lo.FromPtr(req.StartDate), time.Now())
+	if req.StartDate == nil && sub.CurrentPeriodStart.After(addonRequestedStart) {
+		addonRequestedStart = sub.CurrentPeriodStart
+	}
+
+	// A change starts no earlier than the current period; at creation that is the sub's start.
+	if existing == nil && addonRequestedStart.Before(sub.CurrentPeriodStart) {
+		return nil, ierr.NewError("addon start date is before the current billing period").
+			WithHint("Addon start date must be on or after the subscription's current period start").
+			WithReportableDetails(map[string]any{
+				"start_date":           addonRequestedStart,
+				"current_period_start": sub.CurrentPeriodStart,
+			}).
+			Mark(ierr.ErrValidation)
+	}
 
 	// A onetime addon ends on the boundary of the period containing its start date; any
 	// other cadence renews each period and keeps the zero time.
@@ -5127,9 +5141,8 @@ func (s *subscriptionService) createAddonAttachParams(
 		return nil, err
 	}
 
-	// createLineItemFromPrice clamps every line item's start to
-	// max(requestedStart, sub.StartDate, price.StartDate), so anchoring the proration at
-	// requestedStart alone would price a window the addon is not live for.
+	// createLineItemFromPrice clamps every line item's start to max(requestedStart, price.StartDate),
+	// so anchoring the proration at requestedStart alone would price a window the addon is not live for.
 	prorationEffectiveDate := lo.Reduce(lineItems, func(acc time.Time, li *subscription.SubscriptionLineItem, _ int) time.Time {
 		return lo.Ternary(li.StartDate.After(acc), li.StartDate, acc)
 	}, addonRequestedStart)
@@ -5413,9 +5426,6 @@ func (s *subscriptionService) createLineItemFromPrice(ctx context.Context, price
 	price := priceResponse.Price
 
 	lineItemStart := addonRequestedStart
-	if sub.StartDate.After(lineItemStart) {
-		lineItemStart = sub.StartDate
-	}
 	if price.StartDate != nil && price.StartDate.After(lineItemStart) {
 		lineItemStart = *price.StartDate
 	}

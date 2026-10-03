@@ -602,10 +602,8 @@ func (s *SubscriptionServiceSuite) TestAddAddonToSubscription_AnnualCycleFirstPe
 		"first period must end at the subscription boundary, not a year later")
 }
 
-// FindPeriodForDate only walks forward, so an attach dated into an already-closed
-// period cannot be resolved. Proration must degrade to full credits rather than
-// rejecting the attach outright.
-func (s *SubscriptionServiceSuite) TestAddAddonToSubscription_BackdatedAttachStillSucceeds() {
+// An attach dated before the current period start is rejected rather than reaching into closed periods.
+func (s *SubscriptionServiceSuite) TestAddAddonToSubscription_BackdatedAttachIsRejected() {
 	ctx := s.GetContext()
 	sub := s.testData.subscription
 	now := s.testData.now
@@ -630,15 +628,8 @@ func (s *SubscriptionServiceSuite) TestAddAddonToSubscription_BackdatedAttachSti
 			ProrationBehavior: types.ProrationBehaviorCreateProrations,
 		},
 	})
-	s.NoError(err, "an unresolvable period must not fail the addon attach")
-
-	grant := s.materializedAddonGrant(addonID)
-	s.Require().NotNil(grant)
-
-	app := s.firstApplicationFor(grant.ID)
-	s.Require().NotNil(app)
-	s.Equal("100", app.Credits.String())
-	s.Empty(app.Metadata["proration_applied"])
+	s.ErrorContains(err, "before the current billing period")
+	s.Nil(s.materializedAddonGrant(addonID), "a rejected attach materializes no grant")
 }
 
 func (s *SubscriptionServiceSuite) TestAddAddonToSubscriptionLineItemCommitments() {
