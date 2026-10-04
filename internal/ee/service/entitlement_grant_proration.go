@@ -92,8 +92,9 @@ func (s *subscriptionGrantService) resolveGrantProration(
 
 		coefficient, full := decimal.NewFromInt(1), p
 		if behavior == types.ProrationBehaviorCreateProrations {
+			serviceablePeriod := types.Period{Start: prorationDate, End: p.End}
 			coefficient, full, err = proration.CalculateProrationCoefficient(sub, sub.BillingPeriod, sub.BillingPeriodCount,
-				types.Period{Start: prorationDate, End: p.End}, types.StrategySecondBased)
+				serviceablePeriod, types.StrategySecondBased)
 		}
 		if err != nil {
 			s.Logger.Info(ctx, "skipping entitlement grant proration; coefficient could not be computed",

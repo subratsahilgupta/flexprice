@@ -721,14 +721,18 @@ func (s *subscriptionService) ActivateDraftSubscription(ctx context.Context, sub
 	// Recalculate all dates with new start date
 	newStartDate := req.StartDate.UTC()
 	hasCustomAnchor := sub.BillingCycle == types.BillingCycleAnniversary && !sub.BillingAnchor.Equal(sub.StartDate)
+	startShift := newStartDate.Sub(sub.StartDate)
 	sub.StartDate = newStartDate
 
-	// Calculate billing anchor; a custom anniversary anchor is kept when still valid for the new start
+	// A custom anniversary anchor is kept if still valid, else moved with the start, else reset to the start.
 	if sub.BillingCycle == types.BillingCycleCalendar {
 		sub.BillingAnchor = types.CalculateCalendarBillingAnchor(sub.StartDate, sub.BillingPeriod, sub.Timezone)
 	} else if hasCustomAnchor {
-		if err := validateBillingAnchor(sub); err != nil {
-			return nil, err
+		if validateBillingAnchor(sub) != nil {
+			sub.BillingAnchor = sub.BillingAnchor.Add(startShift)
+		}
+		if validateBillingAnchor(sub) != nil {
+			sub.BillingAnchor = sub.StartDate
 		}
 	} else {
 		// default to start date for anniversary billing

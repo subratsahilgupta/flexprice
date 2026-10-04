@@ -375,6 +375,22 @@ func (s *BillingOnetimeSuite) TestClassify_OneTimeArrear_BillingDateAtSubscripti
 	s.Len(result.CurrentPeriodArrear, 1, "the first period owns an arrear charge dated on the subscription start")
 }
 
+// ONETIME ARREAR — StartDate == subscription start: later periods do not pick it up again.
+func (s *BillingOnetimeSuite) TestClassify_OneTimeArrear_SubscriptionStartNotInLaterPeriod() {
+	item := s.makeOnetimeLineItem("price_onetime_arrear", types.InvoiceCadenceArrear, s.jan1)
+	s.sub.LineItems = []*subscription.SubscriptionLineItem{item}
+
+	result := s.billingService().ClassifyLineItems(&dto.ClassifyLineItemsParams{
+		Subscription:       s.sub,
+		CurrentPeriodStart: s.feb1,
+		CurrentPeriodEnd:   s.mar1,
+		NextPeriodStart:    s.mar1,
+		NextPeriodEnd:      s.mar1.AddDate(0, 1, 0),
+	})
+
+	s.Empty(result.CurrentPeriodArrear, "only the first period owns an arrear charge dated on the subscription start")
+}
+
 // Test 8: ONETIME ARREAR — StartDate == period end (inclusive upper bound for ARREAR)
 func (s *BillingOnetimeSuite) TestClassify_OneTimeArrear_BillingDateAtPeriodEnd() {
 	item := s.makeOnetimeLineItem("price_onetime_arrear", types.InvoiceCadenceArrear, s.feb1)

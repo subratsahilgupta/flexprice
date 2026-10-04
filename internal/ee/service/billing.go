@@ -263,11 +263,12 @@ func (s *billingService) CalculateFixedCharges(
 				}
 
 				wAmount := priceService.CalculateCost(ctx, price.Price, item.Quantity)
+				serviceablePeriod := types.Period{Start: effectiveStart, End: effectiveEnd}
 				fraction, _, err := proration.CalculateProrationCoefficient(
 					sub,
 					item.BillingPeriod,
 					item.BillingPeriodCount,
-					types.Period{Start: effectiveStart, End: effectiveEnd},
+					serviceablePeriod,
 					types.StrategySecondBased,
 				)
 				if err != nil {
@@ -1987,7 +1988,8 @@ func (s *billingService) ClassifyLineItems(
 				}
 			} else {
 				// Arrear: billing date in (currentPeriodStart, currentPeriodEnd]; the first period also owns the sub start
-				if (billingDate.After(currentPeriodStart) || billingDate.Equal(sub.StartDate)) && !billingDate.After(currentPeriodEnd) {
+				firstPeriodStart := currentPeriodStart.Equal(sub.StartDate) && billingDate.Equal(sub.StartDate)
+				if (billingDate.After(currentPeriodStart) || firstPeriodStart) && !billingDate.After(currentPeriodEnd) {
 					result.CurrentPeriodArrear = append(result.CurrentPeriodArrear, item)
 				}
 			}

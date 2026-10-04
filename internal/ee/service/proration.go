@@ -137,6 +137,11 @@ func (s *prorationService) CalculateSubscriptionCancellationProration(
 			continue
 		}
 
+		// One-time charges are never prorated or refunded.
+		if lineItem.BillingPeriod == types.BILLING_PERIOD_ONETIME {
+			continue
+		}
+
 		// Create proration parameters for cancellation
 		params, err := s.CreateProrationParamsForLineItemCancellation(
 			ctx,

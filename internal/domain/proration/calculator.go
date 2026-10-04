@@ -45,8 +45,9 @@ func (c *calculatorImpl) Calculate(ctx context.Context, params ProrationParams) 
 			Mark(ierr.ErrValidation)
 	}
 
+	serviceablePeriod := types.Period{Start: params.ProrationDate, End: params.CurrentPeriodEnd}
 	coefficient, _, err := CalculateProrationCoefficient(params.Subscription, params.BillingPeriod, params.BillingPeriodCount,
-		types.Period{Start: params.ProrationDate, End: params.CurrentPeriodEnd}, types.StrategySecondBased)
+		serviceablePeriod, types.StrategySecondBased)
 	if err != nil {
 		return nil, err
 	}

@@ -514,7 +514,8 @@ func (s *subscriptionModificationService) calculateProration(
 		if oldItem == nil {
 			continue
 		}
-		if oldItem.InvoiceCadence != types.InvoiceCadenceAdvance {
+		// Only recurring advance items are prorated; one-time charges never are.
+		if oldItem.InvoiceCadence != types.InvoiceCadenceAdvance || oldItem.BillingPeriod == types.BILLING_PERIOD_ONETIME {
 			continue
 		}
 

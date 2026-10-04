@@ -370,11 +370,12 @@ func (s *creditGrantService) InitializeCreditGrantWorkflow(
 	credits := cg.Credits
 	var prorationMetadata types.Metadata
 	if prorationCfg != nil && prorationCfg.Prorate {
+		serviceablePeriod := types.Period{Start: prorationCfg.ProrationDate, End: prorationCfg.PeriodEnd}
 		coefficient, full, err := proration.CalculateProrationCoefficient(
 			subscription,
 			subscription.BillingPeriod,
 			subscription.BillingPeriodCount,
-			types.Period{Start: prorationCfg.ProrationDate, End: prorationCfg.PeriodEnd},
+			serviceablePeriod,
 			types.StrategySecondBased,
 		)
 		if err != nil {

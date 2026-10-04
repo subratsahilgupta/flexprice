@@ -181,8 +181,9 @@ func (c *EntitlementProrationCalculator) calculateProrationCoefficient(
 		Timezone:           params.Timezone,
 	}
 
+	serviceablePeriod := types.Period{Start: params.ProrationDate, End: params.PeriodEnd}
 	coefficient, _, err := CalculateProrationCoefficient(schedule, params.BillingPeriod, params.BillingPeriodCount,
-		types.Period{Start: params.ProrationDate, End: params.PeriodEnd}, params.Strategy)
+		serviceablePeriod, params.Strategy)
 
 	return coefficient, err
 }
