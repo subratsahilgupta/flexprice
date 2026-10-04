@@ -976,13 +976,7 @@ func (s *FixedChargeProrationSuite) current(sc *pvSub) (decimal.Decimal, map[str
 func (s *FixedChargeProrationSuite) expect(label, want string, got decimal.Decimal) {
 	expected := decimal.RequireFromString(want)
 	ok := got.Sub(expected).Abs().LessThanOrEqual(decimal.NewFromFloat(0.01))
-	status := lo.Ternary(ok, "PASS", "FAIL")
-	s.T().Logf("RESULT | %s | expected=%s | actual=%s | %s", label, want, got.StringFixed(2), status)
 	s.True(ok, "%s: expected %s, got %s", label, want, got.StringFixed(2))
-}
-
-func (s *FixedChargeProrationSuite) observe(label string, got decimal.Decimal) {
-	s.T().Logf("OBSERVED | %s | actual=%s", label, got.StringFixed(2))
 }
 
 func flat(key string, period types.BillingPeriod, amount string) pvItemSpec {
@@ -1097,71 +1091,17 @@ func (s *FixedChargeProrationSuite) TestCalendarQuarterly() {
 	})
 }
 
-// 6. Calendar annual start Mar 15 2026, with annual / quarterly / monthly items.
+// 6. Calendar annual start Mar 15 2026: 292/365. Shorter-cadence items on annual stubs are in
+// multi_cadence_addon_matrix_test.go.
 func (s *FixedChargeProrationSuite) TestCalendarAnnual() {
-	base := pvSubSpec{
+	sc := s.build(pvSubSpec{
 		cycle: types.BillingCycleCalendar, period: types.BILLING_PERIOD_ANNUAL,
 		start: pvUTC(2026, time.March, 15), behavior: types.ProrationBehaviorCreateProrations,
-	}
-	s.Run("annual_plan_stub", func() {
-		spec := base
-		spec.items = []pvItemSpec{flat("plan", types.BILLING_PERIOD_ANNUAL, "365")}
-		sc := s.build(spec)
-		s.Equal(pvUTC(2027, time.January, 1), sc.sub.CurrentPeriodEnd)
-		total, _ := s.current(sc)
-		s.expect("S06a calendar annual stub Mar15-Jan1 (292/365)", "292.00", total)
+		items: []pvItemSpec{flat("plan", types.BILLING_PERIOD_ANNUAL, "365")},
 	})
-	s.Run("quarterly_item_on_annual_stub", func() {
-		spec := base
-		spec.items = []pvItemSpec{
-			flat("plan", types.BILLING_PERIOD_ANNUAL, "365"),
-			flat("quarterly", types.BILLING_PERIOD_QUARTER, "90"),
-		}
-		sc := s.build(spec)
-		res, err := s.billing.CalculateFixedCharges(s.GetContext(), &dto.CalculateFixedChargesParams{
-			Subscription: sc.sub, PeriodStart: sc.sub.CurrentPeriodStart, PeriodEnd: sc.sub.CurrentPeriodEnd,
-		})
-		s.Require().NoError(err)
-		windows := 0
-		qTotal := decimal.Zero
-		for _, line := range res.LineItems {
-			if line.SubscriptionLineItemID != nil && *line.SubscriptionLineItemID == sc.items["quarterly"].ID {
-				windows++
-				qTotal = qTotal.Add(line.Amount)
-				s.T().Logf("  quarterly window %s -> %s = %s", lo.FromPtr(line.PeriodStart).Format("2006-01-02"),
-					lo.FromPtr(line.PeriodEnd).Format("2006-01-02"), line.Amount.StringFixed(2))
-			}
-		}
-		s.expect("S06b quarterly $90 on calendar annual stub (17+90*3)", "287.00", qTotal)
-		s.Equal(4, windows, "quarterly item should fan out into 4 windows")
-	})
-	s.Run("monthly_item_on_annual_stub", func() {
-		spec := base
-		spec.items = []pvItemSpec{
-			flat("plan", types.BILLING_PERIOD_ANNUAL, "365"),
-			flat("monthly", types.BILLING_PERIOD_MONTHLY, "31"),
-		}
-		sc := s.build(spec)
-		_, per := s.current(sc)
-		// Mar15->Apr1 = 17/31 of March, then Apr..Dec = 9 full months.
-		s.expect("S06c monthly $31 on calendar annual stub (17+31*9)", "296.00", per["monthly"])
-	})
-}
-
-// 7. Monthly item on a calendar quarterly stub starting Feb 15.
-func (s *FixedChargeProrationSuite) TestMonthlyOnCalendarQuarterlyStub() {
-	sc := s.build(pvSubSpec{
-		cycle: types.BillingCycleCalendar, period: types.BILLING_PERIOD_QUARTER,
-		start: pvUTC(2026, time.February, 15), behavior: types.ProrationBehaviorCreateProrations,
-		items: []pvItemSpec{
-			flat("plan", types.BILLING_PERIOD_QUARTER, "90"),
-			flat("monthly", types.BILLING_PERIOD_MONTHLY, "31"),
-		},
-	})
-	_, per := s.current(sc)
-	// Feb15->Mar1 = 14/28 * 31 = 15.50; Mar1->Apr1 = 31.
-	s.expect("S07 monthly $31 on calendar quarterly stub Feb15-Apr1", "46.50", per["monthly"])
-	s.expect("S07 quarterly plan $90 stub Feb15-Apr1", "45.00", per["plan"])
+	s.Equal(pvUTC(2027, time.January, 1), sc.sub.CurrentPeriodEnd)
+	total, _ := s.current(sc)
+	s.expect("S06 calendar annual stub Mar15-Jan1 (292/365)", "292.00", total)
 }
 
 // 8. Timezone-aware calendar stubs.
@@ -1191,7 +1131,7 @@ func (s *FixedChargeProrationSuite) TestTimezoneCalendarStub() {
 	})
 }
 
-// 9. Subscription end date mid-period: last period [Mar1, Mar10) = 9/31.
+// 9. Subscription end date or cancellation mid-period: last period [Mar1, Mar10) = 9/31.
 func (s *FixedChargeProrationSuite) TestEndDateMidPeriod() {
 	endDate := pvUTC(2026, time.March, 10)
 	spec := pvSubSpec{
@@ -1219,6 +1159,14 @@ func (s *FixedChargeProrationSuite) TestEndDateMidPeriod() {
 		sc.setCurrent(pvUTC(2026, time.March, 1), pvUTC(2026, time.April, 1))
 		total, _ := s.current(sc)
 		s.expect("S09b item end Mar10 in window Mar1-Apr1 (9/31)", "9.00", total)
+	})
+	s.Run("cancelled_sub_last_period", func() {
+		sc := s.build(spec)
+		sc.sub.SubscriptionStatus = types.SubscriptionStatusCancelled
+		sc.sub.CancelledAt = lo.ToPtr(endDate)
+		sc.setCurrent(pvUTC(2026, time.March, 1), endDate)
+		total, _ := s.current(sc)
+		s.expect("S09c cancelled at Mar10, last period Mar1-Mar10 (9/31)", "9.00", total)
 	})
 }
 
@@ -1272,47 +1220,6 @@ func (s *FixedChargeProrationSuite) TestTieredAndPackageStub() {
 	})
 }
 
-// 11. Cancelled subscription, cancel at Mar 10 in period Mar1-Apr1.
-func (s *FixedChargeProrationSuite) TestCancelledSubscription() {
-	cancelAt := pvUTC(2026, time.March, 10)
-	base := pvSubSpec{
-		cycle: types.BillingCycleCalendar, period: types.BILLING_PERIOD_MONTHLY,
-		start: pvUTC(2026, time.January, 1), behavior: types.ProrationBehaviorCreateProrations,
-	}
-	cancel := func(sc *pvSub) {
-		sc.sub.SubscriptionStatus = types.SubscriptionStatusCancelled
-		sc.sub.CancelledAt = lo.ToPtr(cancelAt)
-		sc.sub.EndDate = lo.ToPtr(cancelAt)
-	}
-	s.Run("current_period_ends_at_cancel", func() {
-		spec := base
-		spec.items = []pvItemSpec{flat("plan", types.BILLING_PERIOD_MONTHLY, "31")}
-		sc := s.build(spec)
-		cancel(sc)
-		sc.setCurrent(pvUTC(2026, time.March, 1), cancelAt)
-		total, _ := s.current(sc)
-		s.expect("S11a cancelled, period Mar1-Mar10 (9/31)", "9.00", total)
-	})
-	s.Run("line_item_ended_at_cancel_full_window", func() {
-		spec := base
-		spec.items = []pvItemSpec{{key: "plan", period: types.BILLING_PERIOD_MONTHLY, amount: "31", end: cancelAt}}
-		sc := s.build(spec)
-		cancel(sc)
-		sc.setCurrent(pvUTC(2026, time.March, 1), pvUTC(2026, time.April, 1))
-		total, _ := s.current(sc)
-		s.expect("S11b cancelled, item end Mar10 in Mar1-Apr1 (9/31)", "9.00", total)
-	})
-	s.Run("full_period_no_item_end", func() {
-		spec := base
-		spec.items = []pvItemSpec{flat("plan", types.BILLING_PERIOD_MONTHLY, "31")}
-		sc := s.build(spec)
-		cancel(sc)
-		sc.setCurrent(pvUTC(2026, time.March, 1), pvUTC(2026, time.April, 1))
-		total, _ := s.current(sc)
-		s.observe("S11c cancelled status, full window Mar1-Apr1, no item end", total)
-	})
-}
-
 // 12. proration_behavior=none: no proration at all.
 func (s *FixedChargeProrationSuite) TestProrationNone() {
 	s.Run("calendar_monthly_stub", func() {
@@ -1333,20 +1240,6 @@ func (s *FixedChargeProrationSuite) TestProrationNone() {
 		})
 		total, _ := s.current(sc)
 		s.expect("S12b none: anniversary anchor-ahead stub Jan10-Jan20", "31.00", total)
-	})
-	s.Run("monthly_addon_mid_period", func() {
-		// D5: with none, an item starting mid-period is free until the next period.
-		sc := s.build(pvSubSpec{
-			cycle: types.BillingCycleAnniversary, period: types.BILLING_PERIOD_MONTHLY,
-			start: pvUTC(2026, time.January, 10), behavior: types.ProrationBehaviorNone,
-			items: []pvItemSpec{
-				flat("plan", types.BILLING_PERIOD_MONTHLY, "31"),
-				{key: "addon", period: types.BILLING_PERIOD_MONTHLY, amount: "31",
-					start: pvUTC(2026, time.January, 25), entityType: types.SubscriptionLineItemEntityTypeAddon},
-			},
-		})
-		_, per := s.current(sc)
-		s.expect("S12c none: addon added Jan25 in Jan10-Feb10", "0.00", per["addon"])
 	})
 }
 

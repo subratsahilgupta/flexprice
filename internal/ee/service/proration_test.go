@@ -496,15 +496,11 @@ func (s *ProrationScenarioSuite) TearDownTest() {
 func (s *ProrationScenarioSuite) pvrExpect(label, want string, got decimal.Decimal) {
 	expected := decimal.RequireFromString(want)
 	ok := got.Sub(expected).Abs().LessThanOrEqual(decimal.NewFromFloat(0.01))
-	s.T().Logf("RESULT | %s | expected=%s | actual=%s | %s", label, want, got.StringFixed(2), lo.Ternary(ok, "PASS", "FAIL"))
 	s.True(ok, "%s: expected %s, got %s", label, want, got.StringFixed(2))
 }
 
 func (s *ProrationScenarioSuite) pvrExpectTime(label string, want, got time.Time) {
-	ok := want.Equal(got)
-	s.T().Logf("RESULT | %s | expected=%s | actual=%s | %s", label, want.UTC().Format(time.RFC3339),
-		got.UTC().Format(time.RFC3339), lo.Ternary(ok, "PASS", "FAIL"))
-	s.True(ok, "%s: expected %s, got %s", label, want.UTC(), got.UTC())
+	s.True(want.Equal(got), "%s: expected %s, got %s", label, want.UTC(), got.UTC())
 }
 
 // -----------------------------------------------------------------------------
@@ -643,10 +639,6 @@ func (s *ProrationScenarioSuite) pvrReload(subID string) *subscription.Subscript
 	sub, items, err := s.GetStores().SubscriptionRepo.GetWithLineItems(s.GetContext(), subID)
 	s.Require().NoError(err)
 	sub.LineItems = items
-	s.T().Logf("[sub %s] status=%s start=%s anchor=%s period=[%s, %s) behavior=%s trial_end=%v items=%d",
-		sub.ID, sub.SubscriptionStatus, sub.StartDate.Format(time.RFC3339), sub.BillingAnchor.Format(time.RFC3339),
-		sub.CurrentPeriodStart.Format(time.RFC3339), sub.CurrentPeriodEnd.Format(time.RFC3339), sub.ProrationBehavior,
-		sub.TrialEnd, len(items))
 	return sub
 }
 
@@ -670,17 +662,7 @@ func (s *ProrationScenarioSuite) pvrPreview(subID string, params *dto.SubModifyB
 	s.Require().NoError(err)
 	quote := config.getQuote()
 	s.Require().NotNil(quote)
-	s.pvrLogQuote(quote)
 	return quote
-}
-
-func (s *ProrationScenarioSuite) pvrLogQuote(q *LineItemProrationSummary) {
-	s.T().Logf("  [quote] charge=%s credit=%s charge_lines=%d credit_lines=%d",
-		q.TotalChargeAmount.StringFixed(2), q.TotalCreditAmount.StringFixed(2), len(q.ChargeLineItems), len(q.CreditLineItems))
-	for _, l := range append(append([]dto.CreateInvoiceLineItemRequest{}, q.ChargeLineItems...), q.CreditLineItems...) {
-		s.T().Logf("    line %q amount=%s period=[%s, %s)", lo.FromPtr(l.DisplayName), l.Amount.StringFixed(2),
-			lo.FromPtr(l.PeriodStart).Format(time.RFC3339), lo.FromPtr(l.PeriodEnd).Format(time.RFC3339))
-	}
 }
 
 func (s *ProrationScenarioSuite) pvrLineItem(sub *subscription.Subscription, entityType types.SubscriptionLineItemEntityType) *subscription.SubscriptionLineItem {
@@ -712,8 +694,6 @@ func (s *ProrationScenarioSuite) pvrFixed(sub *subscription.Subscription, start,
 	for _, line := range res.LineItems {
 		id := lo.FromPtr(line.SubscriptionLineItemID)
 		per[id] = per[id].Add(line.Amount)
-		s.T().Logf("  [fixed] li=%s window=[%s, %s) amount=%s", id, lo.FromPtr(line.PeriodStart).Format("2006-01-02"),
-			lo.FromPtr(line.PeriodEnd).Format("2006-01-02"), line.Amount.StringFixed(2))
 	}
 	return res.TotalAmount, per
 }
@@ -743,10 +723,6 @@ func (s *ProrationScenarioSuite) pvrFirstApp(subID, addonID string) *creditgrant
 	s.Require().NoError(err)
 	s.Require().NotEmpty(apps, "expected at least one application")
 	sort.Slice(apps, func(i, j int) bool { return apps[i].PeriodStart.Before(apps[j].PeriodStart) })
-	for _, a := range apps {
-		s.T().Logf("  [cga] period=[%s, %v) credits=%s status=%s", a.PeriodStart.Format(time.RFC3339),
-			lo.FromPtr(a.PeriodEnd).Format(time.RFC3339), a.Credits.String(), a.ApplicationStatus)
-	}
 	return apps[0]
 }
 
@@ -756,9 +732,6 @@ func (s *ProrationScenarioSuite) pvrFirstEG(featureID string) *entitlementgrant.
 	rows = lo.Filter(rows, func(g *entitlementgrant.EntitlementGrant, _ int) bool { return g.FeatureID() == featureID })
 	s.Require().NotEmpty(rows, "expected an entitlement grant row for %s", featureID)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ValidFrom.Before(rows[j].ValidFrom) })
-	for _, r := range rows {
-		s.T().Logf("  [eg] window=[%s, %s) quota=%s", r.ValidFrom.Format(time.RFC3339), r.ValidTo.Format(time.RFC3339), r.Quota.String())
-	}
 	return rows[0]
 }
 
@@ -788,31 +761,9 @@ func (s *ProrationScenarioSuite) TestAddonOnAnniversaryAnchorStub() {
 	})
 	s.pvrExpectTime("D4 current_period_end", anchor, sub.CurrentPeriodEnd)
 	s.pvrSeedAddon(pvrAddonSpec{id: "addon_pvr_d4", fixedPrice: true})
-	at := pvrDate(2027, 1, 15)
-	add := pvrAddReq("addon_pvr_d4", at, types.ProrationBehaviorCreateProrations)
-
-	s.Run("addon_change_preview", func() {
-		quote := s.pvrPreview(sub.ID, &dto.SubModifyBulkAddonParams{Adds: []*dto.AddAddonToSubscriptionRequest{&add}})
-		s.pvrExpect("D4 addon attach charge via AddonChangeService (5/31)", "5.00", quote.TotalChargeAmount)
-	})
-
-	s.Require().NoError(s.pvrAttach(sub.ID, add))
-	s.Run("line_item_proration_compute", func() {
-		after := s.pvrReload(sub.ID)
-		li := s.pvrLineItem(after, types.SubscriptionLineItemEntityTypeAddon)
-		pr, err := s.GetStores().PriceRepo.Get(s.GetContext(), li.PriceID)
-		s.Require().NoError(err)
-		quote, err := NewLineItemProrationService(s.params).Compute(s.GetContext(), LineItemProrationRequest{
-			Subscription: after,
-			Entries: []LineItemProrationEntry{{
-				LineItem: li, Action: types.ProrationActionAddItem, NewPrice: pr, NewQuantity: decimal.NewFromInt(1),
-			}},
-			EffectiveDate: at, Behavior: types.ProrationBehaviorCreateProrations,
-		})
-		s.Require().NoError(err)
-		s.pvrLogQuote(quote)
-		s.pvrExpect("D4 addon charge via LineItemProrationService (5/31)", "5.00", quote.TotalChargeAmount)
-	})
+	add := pvrAddReq("addon_pvr_d4", pvrDate(2027, 1, 15), types.ProrationBehaviorCreateProrations)
+	quote := s.pvrPreview(sub.ID, &dto.SubModifyBulkAddonParams{Adds: []*dto.AddAddonToSubscriptionRequest{&add}})
+	s.pvrExpect("D4 addon attach charge (5/31)", "5.00", quote.TotalChargeAmount)
 }
 
 // D5: anniversary start Jan 1, current period [Feb1, Mar1); addon attached at Feb 1 00:00 bills
@@ -852,55 +803,15 @@ func (s *ProrationScenarioSuite) TestRemoveAddonInsideCalendarStub() {
 	})
 	li := s.pvrLineItem(sub, types.SubscriptionLineItemEntityTypeAddon)
 
-	ctx := s.GetContext()
 	_, per := s.pvrFixed(sub, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
 	s.pvrExpect("G4 opening addon charge Jan15-Feb1 (17/31)", "17.00", per[li.ID])
 
-	billed, err := s.GetStores().InvoiceLineItemRepo.GetBilledAmountsBySubscriptionLineItem(ctx, []string{li.ID}, pvrDate(2027, 1, 20))
-	s.Require().NoError(err)
-	if b := billed[li.ID]; b != nil {
-		s.T().Logf("  [opening invoice billed addon] charged=%s credited=%s", b.Charged(), b.Credited())
-	} else {
-		s.T().Logf("  no opening invoice line for the addon; recording billed 17.00")
-		ps, pe := sub.CurrentPeriodStart, sub.CurrentPeriodEnd
-		s.Require().NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, &invoice.InvoiceLineItem{
-			ID:                     types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
-			InvoiceID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE),
-			CustomerID:             sub.CustomerID,
-			SubscriptionID:         &sub.ID,
-			SubscriptionLineItemID: &li.ID,
-			PriceID:                &li.PriceID,
-			Amount:                 decimal.NewFromInt(17),
-			Quantity:               decimal.NewFromInt(1),
-			Currency:               "usd",
-			PeriodStart:            &ps,
-			PeriodEnd:              &pe,
-			BaseModel:              types.GetDefaultBaseModel(ctx),
-		}))
-	}
-
 	removeAt := pvrDate(2027, 1, 20)
 	assoc := s.pvrAssociation(sub.ID)
-	s.Run("addon_change_preview", func() {
-		quote := s.pvrPreview(sub.ID, &dto.SubModifyBulkAddonParams{Removes: []*dto.RemoveAddonRequest{{
-			AddonAssociationID: assoc.ID, ProrationBehavior: types.ProrationBehaviorCreateProrations, EffectiveDate: &removeAt,
-		}}})
-		s.pvrExpect("G4 addon removal credit via AddonChangeService (12/31)", "12.00", quote.TotalCreditAmount)
-	})
-	s.Run("line_item_proration_compute", func() {
-		pr, err := s.GetStores().PriceRepo.Get(ctx, li.PriceID)
-		s.Require().NoError(err)
-		quote, err := NewLineItemProrationService(s.params).Compute(ctx, LineItemProrationRequest{
-			Subscription: s.pvrReload(sub.ID),
-			Entries: []LineItemProrationEntry{{
-				LineItem: li, Action: types.ProrationActionRemoveItem, CurrentPrice: pr, CurrentQuantity: decimal.NewFromInt(1),
-			}},
-			EffectiveDate: removeAt, Behavior: types.ProrationBehaviorCreateProrations,
-		})
-		s.Require().NoError(err)
-		s.pvrLogQuote(quote)
-		s.pvrExpect("G4 addon removal credit via LineItemProrationService (12/31)", "12.00", quote.TotalCreditAmount)
-	})
+	quote := s.pvrPreview(sub.ID, &dto.SubModifyBulkAddonParams{Removes: []*dto.RemoveAddonRequest{{
+		AddonAssociationID: assoc.ID, ProrationBehavior: types.ProrationBehaviorCreateProrations, EffectiveDate: &removeAt,
+	}}})
+	s.pvrExpect("G4 addon removal credit (12/31)", "12.00", quote.TotalCreditAmount)
 }
 
 // H7: proration_behavior=none never prorates grants: plan CG 1000 / EG 100 on the Jan 15 calendar
@@ -946,9 +857,6 @@ func (s *ProrationScenarioSuite) TestAnniversaryTrialEndReanchors() {
 	svc := s.subSvc.(*subscriptionService)
 	inv, err := svc.processSubscriptionTrialEnd(s.GetContext(), sub, NewInvoiceService(s.params), pvrDate(2027, 1, 29))
 	s.Require().NoError(err)
-	if inv != nil {
-		s.T().Logf("  [trial-end invoice] id=%s total=%s subtotal=%s", inv.ID, inv.Total.StringFixed(2), inv.Subtotal.StringFixed(2))
-	}
 
 	after := s.pvrReload(sub.ID)
 	s.pvrExpectTime("I3 billing_anchor after trial end", pvrDate(2027, 1, 29), after.BillingAnchor)

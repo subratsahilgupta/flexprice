@@ -716,9 +716,6 @@ func (s *MultiCadenceAddonMatrixSuite) TestShorterCadence_CalendarStub_FixedChar
 			fx := s.pvmBuild(tc.sub, tc.item)
 			res, err := s.pvmFixed(fx.sub, tc.sub.periodStart, tc.sub.periodEnd)
 			s.Require().NoError(err)
-			for _, li := range res.LineItems {
-				s.T().Logf("  row %s .. %s = %s", li.PeriodStart.Format("2006-01-02"), li.PeriodEnd.Format("2006-01-02"), li.Amount.StringFixed(2))
-			}
 			s.Equal(tc.wantRows, len(res.LineItems), "invoice rows (one per item-cadence window)")
 			s.pvmMoney(tc.want, res.TotalAmount, "fixed total")
 		})

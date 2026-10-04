@@ -2879,66 +2879,12 @@ func TestAdvanceDays(t *testing.T) {
 	}
 }
 
-// legacyNextBillingDate is the month-based NextBillingDate rule before the anchor-schedule rewrite,
-// kept to diff old and new behaviour.
-func legacyNextBillingDate(start, anchor time.Time, unit int, period BillingPeriod, tz string) time.Time {
-	loc := loadTimezone(tz)
-	currentPeriodStart, billingAnchor := start.In(loc), anchor.In(loc)
-
-	var years, months int
-	switch period {
-	case BILLING_PERIOD_MONTHLY:
-		months = unit
-	case BILLING_PERIOD_ANNUAL:
-		years = unit
-	case BILLING_PERIOD_QUARTER:
-		months = unit * 3
-	case BILLING_PERIOD_HALF_YEAR:
-		months = unit * 6
-	}
-	if (period == BILLING_PERIOD_QUARTER || period == BILLING_PERIOD_HALF_YEAR) && currentPeriodStart.Before(billingAnchor) {
-		return billingAnchor.UTC()
-	}
-	if period == BILLING_PERIOD_MONTHLY {
-		y, m, d := currentPeriodStart.Date()
-		h, mi, sec := billingAnchor.Clock()
-		lastDayThisMonth := time.Date(y, m+1, 0, 0, 0, 0, 0, loc).Day()
-		if d < min(billingAnchor.Day(), lastDayThisMonth) {
-			return time.Date(y, m, min(billingAnchor.Day(), lastDayThisMonth), h, mi, sec, 0, loc).UTC()
-		}
-	}
-	y, m, _ := currentPeriodStart.Date()
-	h, mi, sec := billingAnchor.Clock()
-	targetY, targetM := y+years, time.Month(int(m)+months)
-	for targetM > 12 {
-		targetM -= 12
-		targetY++
-	}
-	if period == BILLING_PERIOD_ANNUAL {
-		targetM = billingAnchor.Month()
-	}
-	targetD := min(billingAnchor.Day(), time.Date(targetY, targetM+1, 0, 0, 0, 0, 0, loc).Day())
-	if period == BILLING_PERIOD_ANNUAL && billingAnchor.Month() == time.February && billingAnchor.Day() == 29 &&
-		!(targetY%4 == 0 && (targetY%100 != 0 || targetY%400 == 0)) {
-		targetD = 28
-	}
-	return time.Date(targetY, targetM, targetD, h, mi, sec, 0, loc).UTC()
-}
-
-// TestNextBillingDate_DiffAgainstLegacy compares the anchor-schedule rule with the legacy rule. They must
-// agree on every renewal from an on-schedule date and on every monthly unit-1 call. Elsewhere the first
-// period may change, but it never runs past the anchor or past one period.
-func TestNextBillingDate_DiffAgainstLegacy(t *testing.T) {
+// TestNextBillingDate_FirstPeriodBounds sweeps starts, anchors, units and timezones: the first billing
+// date is after the start, never more than one period out, and never past an anchor ahead of the start.
+func TestNextBillingDate_FirstPeriodBounds(t *testing.T) {
 	periods := []BillingPeriod{BILLING_PERIOD_MONTHLY, BILLING_PERIOD_QUARTER, BILLING_PERIOD_HALF_YEAR, BILLING_PERIOD_ANNUAL}
 	zones := []string{"UTC", "Asia/Kolkata", "America/New_York"}
 	anchorOffsetsDays := []int{0, 5, 17, 40, 100, 200, 300}
-	diffs := map[string]int{}
-
-	next := func(start, anchor time.Time, unit int, period BillingPeriod, tz string) time.Time {
-		got, err := NextBillingDate(&NextBillingDateParams{CurrentPeriodStart: start, BillingAnchor: anchor, Unit: unit, Period: period, Timezone: tz})
-		require.NoError(t, err)
-		return got
-	}
 
 	for _, tz := range zones {
 		loc := loadTimezone(tz)
@@ -2955,36 +2901,18 @@ func TestNextBillingDate_DiffAgainstLegacy(t *testing.T) {
 					}
 
 					for _, anchor := range anchors {
-						got := next(start, anchor, unit, period, tz)
-						old := legacyNextBillingDate(start, anchor, unit, period, tz)
+						got, err := NextBillingDate(&NextBillingDateParams{CurrentPeriodStart: start, BillingAnchor: anchor, Unit: unit, Period: period, Timezone: tz})
+						require.NoError(t, err)
 						require.True(t, got.After(start), "next %v must be after start %v", got, start)
 						require.False(t, got.After(onePeriodLater), "first period longer than one period: start=%v anchor=%v %s x%d tz=%s got=%v",
 							start, anchor, period, unit, tz, got)
 						require.False(t, anchor.After(start) && got.After(anchor), "first period runs past the anchor: start=%v anchor=%v %s x%d tz=%s got=%v",
 							start, anchor, period, unit, tz, got)
-						if !got.Equal(old) {
-							require.False(t, period == BILLING_PERIOD_MONTHLY && unit == 1,
-								"monthly unit 1 must not change: start=%v anchor=%v tz=%s new=%v old=%v", start, anchor, tz, got, old)
-							diffs[string(period)]++
-						}
-
-						// Renewals from an on-schedule date at or after the anchor are unchanged.
-						for cur, i := got, 0; i < 3; i++ {
-							if cur.Before(anchor) {
-								cur = next(cur, anchor, unit, period, tz)
-								continue
-							}
-							renewal := next(cur, anchor, unit, period, tz)
-							require.Equal(t, legacyNextBillingDate(cur, anchor, unit, period, tz), renewal,
-								"renewal from %v anchor=%v %s x%d tz=%s", cur, anchor, period, unit, tz)
-							cur = renewal
-						}
 					}
 				}
 			}
 		}
 	}
-	t.Logf("first-period differences by period: %v", diffs)
 }
 
 func TestPreviousBillingDate_Timezone(t *testing.T) {

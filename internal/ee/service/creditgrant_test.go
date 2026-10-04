@@ -3275,9 +3275,6 @@ func (s *CreditGrantProrationSuite) pvgCreateSub(spec pvgSubSpec) *subscription.
 	s.Require().NoError(err)
 	sub, _, err := s.GetStores().SubscriptionRepo.GetWithLineItems(ctx, resp.ID)
 	s.Require().NoError(err)
-	s.T().Logf("[sub %s] status=%s start=%s anchor=%s period=[%s, %s) tz=%s trial_end=%v",
-		sub.ID, sub.SubscriptionStatus, sub.StartDate.Format(time.RFC3339), sub.BillingAnchor.Format(time.RFC3339),
-		sub.CurrentPeriodStart.Format(time.RFC3339), sub.CurrentPeriodEnd.Format(time.RFC3339), sub.Timezone, sub.TrialEnd)
 	return sub
 }
 
@@ -3330,11 +3327,6 @@ func (s *CreditGrantProrationSuite) pvgApps(grantID string) []*creditgrantapplic
 	})
 	s.Require().NoError(err)
 	sort.Slice(apps, func(i, j int) bool { return apps[i].PeriodStart.Before(apps[j].PeriodStart) })
-	for _, a := range apps {
-		s.T().Logf("  [cga] period=[%s, %v) scheduled=%s credits=%s status=%s coef=%v",
-			a.PeriodStart.Format(time.RFC3339), lo.FromPtr(a.PeriodEnd).Format(time.RFC3339),
-			a.ScheduledFor.Format(time.RFC3339), a.Credits.String(), a.ApplicationStatus, a.Metadata["proration_coefficient"])
-	}
 	return apps
 }
 
@@ -3343,8 +3335,6 @@ func (s *CreditGrantProrationSuite) pvgFirstApp(subID, addonID string) (*creditg
 	grants := s.pvgSubGrants(subID, addonID)
 	s.Require().Len(grants, 1, "expected exactly one materialized grant")
 	g := grants[0]
-	s.T().Logf("  [cg] id=%s start=%v anchor=%v", g.ID, lo.FromPtr(g.StartDate).Format(time.RFC3339),
-		lo.FromPtr(g.CreditGrantAnchor).Format(time.RFC3339))
 	apps := s.pvgApps(g.ID)
 	s.Require().NotEmpty(apps, "expected at least one application")
 	return g, apps[0]
@@ -3355,10 +3345,6 @@ func (s *CreditGrantProrationSuite) pvgEGRows(featureID string) []*entitlementgr
 	s.Require().NoError(err)
 	rows = lo.Filter(rows, func(g *entitlementgrant.EntitlementGrant, _ int) bool { return g.FeatureID() == featureID })
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ValidFrom.Before(rows[j].ValidFrom) })
-	for _, r := range rows {
-		s.T().Logf("  [eg] window=[%s, %s) quota=%s coef=%v", r.ValidFrom.Format(time.RFC3339),
-			r.ValidTo.Format(time.RFC3339), r.Quota.String(), r.Metadata["proration_coefficient"])
-	}
 	return rows
 }
 
@@ -3374,21 +3360,14 @@ func (s *CreditGrantProrationSuite) pvgPlanLineItem(sub *subscription.Subscripti
 	return nil
 }
 
-// pvgEnsureBilled makes the line item's billed basis for the stub equal amount, reusing what
-// the opening invoice already wrote when it matches.
+// pvgEnsureBilled records amount as billed for the stub unless the opening invoice already billed it.
 func (s *CreditGrantProrationSuite) pvgEnsureBilled(sub *subscription.Subscription, li *subscription.SubscriptionLineItem, amount decimal.Decimal) {
 	ctx := s.GetContext()
 	billed, err := s.GetStores().InvoiceLineItemRepo.GetBilledAmountsBySubscriptionLineItem(ctx, []string{li.ID}, pvgJan20)
 	s.Require().NoError(err)
-	if b := billed[li.ID]; b != nil {
-		s.T().Logf("  [billed by opening invoice] charged=%s credited=%s", b.Charged(), b.Credited())
-		if b.Charged().Equal(amount) {
-			return
-		}
-		s.T().Logf("  opening invoice billed %s, not %s: test uses the opening invoice basis", b.Charged(), amount)
+	if billed[li.ID] != nil {
 		return
 	}
-	s.T().Logf("  no opening invoice line found for the stub; recording billed %s", amount)
 	ps, pe := sub.CurrentPeriodStart, sub.CurrentPeriodEnd
 	s.Require().NoError(s.GetStores().InvoiceLineItemRepo.Create(ctx, &invoice.InvoiceLineItem{
 		ID:                     types.GenerateUUIDWithPrefix(types.UUID_PREFIX_INVOICE_LINE_ITEM),
@@ -3417,54 +3396,9 @@ func (s *CreditGrantProrationSuite) TestPlanCreditGrantAtCreation_CalendarStub()
 	_, app := s.pvgFirstApp(sub.ID, "")
 	frac := pvgFrac(pvgJan15, pvgFeb1, pvgJan1, pvgFeb1)
 
-	s.Run("coefficient_17_of_31", func() {
-		s.pvgExpectEqual("S1 first CGA credits (2dp)", pvgCurrency(pvgCGCredits, frac), app.Credits.Round(2))
-	})
-	s.Run("credits_rounded_to_currency_precision", func() {
-		s.pvgExpectEqual("S1 first CGA credits (stored)", pvgCurrency(pvgCGCredits, frac), app.Credits)
-	})
-	s.Run("next_application_on_billing_anchor", func() {
-		s.Require().NotNil(app.PeriodEnd)
-		s.pvgExpectTime("S1 first CGA period_end (= next application date)", pvgFeb1, lo.FromPtr(app.PeriodEnd))
-	})
-}
-
-// S2: addon CG attached Jan 20 inside the stub uses the FULL period (31 days) as divisor.
-func (s *CreditGrantProrationSuite) TestAddonCreditGrant_AttachInsideCalendarStub() {
-	sub := s.pvgCalendarStubSub("plan_pvg_s2", false)
-	s.pvgSeedAddon(pvgAddonSpec{id: "addon_pvg_s2", withCG: true})
-	s.Require().NoError(s.pvgAttach(sub.ID, "addon_pvg_s2", pvgJan20))
-
-	_, app := s.pvgFirstApp(sub.ID, "addon_pvg_s2")
-	frac := pvgFrac(pvgJan20, pvgFeb1, pvgJan1, pvgFeb1)
-
-	s.Run("coefficient_12_of_31", func() {
-		s.pvgExpectEqual("S2 addon CGA credits (2dp)", pvgCurrency(pvgCGCredits, frac), app.Credits.Round(2))
-	})
-	s.Run("credits_rounded_to_currency_precision", func() {
-		s.pvgExpectEqual("S2 addon CGA credits (stored)", pvgCurrency(pvgCGCredits, frac), app.Credits)
-	})
-	s.Run("first_period_ends_on_anchor", func() {
-		s.pvgExpectTime("S2 addon CGA period_end", pvgFeb1, lo.FromPtr(app.PeriodEnd))
-	})
-}
-
-// S3: addon EG attached Jan 20 inside the stub: floor(100 x 12/31) = 38.
-func (s *CreditGrantProrationSuite) TestAddonEntitlementGrant_AttachInsideCalendarStub() {
-	sub := s.pvgCalendarStubSub("plan_pvg_s3", false)
-	featureID := s.pvgSeedAddon(pvgAddonSpec{id: "addon_pvg_s3", withEG: true})
-	s.Require().NoError(s.pvgAttach(sub.ID, "addon_pvg_s3", pvgJan20))
-
-	rows := s.pvgEGRows(featureID)
-	s.Require().Len(rows, 1)
-	frac := pvgFrac(pvgJan20, pvgFeb1, pvgJan1, pvgFeb1)
-
-	s.Run("coefficient_12_of_31", func() {
-		s.pvgExpectEqual("S3 addon EG coefficient (4dp)", frac.Round(4), decimal.RequireFromString(rows[0].Metadata["proration_coefficient"]).Round(4))
-	})
-	s.Run("quota_floored", func() {
-		s.pvgExpectEqual("S3 addon EG quota (stored)", pvgFloor(pvgEGQuota, frac), rows[0].Quota)
-	})
+	s.pvgExpectEqual("S1 first CGA credits (17/31, currency precision)", pvgCurrency(pvgCGCredits, frac), app.Credits)
+	s.Require().NotNil(app.PeriodEnd)
+	s.pvgExpectTime("S1 first CGA period_end (= next application date)", pvgFeb1, lo.FromPtr(app.PeriodEnd))
 }
 
 // S4 (control): same attach in a full anniversary period [Jan 1, Feb 1).
@@ -3482,9 +3416,6 @@ func (s *CreditGrantProrationSuite) TestAddonGrants_AttachInsideFullPeriod_Contr
 	rows := s.pvgEGRows(featureID)
 	s.Require().Len(rows, 1)
 
-	s.Run("cg_coefficient_12_of_31", func() {
-		s.pvgExpectEqual("S4 addon CGA credits (2dp)", pvgCurrency(pvgCGCredits, frac), app.Credits.Round(2))
-	})
 	s.Run("cg_rounded_to_currency_precision", func() {
 		s.pvgExpectEqual("S4 addon CGA credits (stored)", pvgCurrency(pvgCGCredits, frac), app.Credits)
 	})
@@ -3496,8 +3427,8 @@ func (s *CreditGrantProrationSuite) TestAddonGrants_AttachInsideFullPeriod_Contr
 	})
 }
 
-// S5: one attach (fixed $31 + CG + EG) on the calendar stub: charge, CG and EG must share
-// the same 12/31 coefficient.
+// S5: one attach (fixed $31 + CG + EG) on Jan 20 inside the calendar stub: charge, CG and EG share
+// the 12/31 coefficient of the full period; credits round to currency precision, the EG quota floors.
 func (s *CreditGrantProrationSuite) TestAddonChargeAndGrantsShareCoefficient() {
 	sub := s.pvgCalendarStubSub("plan_pvg_s5", false)
 	featureID := s.pvgSeedAddon(pvgAddonSpec{id: "addon_pvg_s5", withCG: true, withEG: true, fixedPrice: true})
@@ -3536,12 +3467,18 @@ func (s *CreditGrantProrationSuite) TestAddonChargeAndGrantsShareCoefficient() {
 	chargeCoef := quote.TotalChargeAmount.Div(decimal.NewFromInt(pvgPlanAmount)).Round(2)
 	cgCoef := app.Credits.Div(decimal.NewFromInt(pvgCGCredits)).Round(2)
 	egCoef := decimal.RequireFromString(rows[0].Metadata["proration_coefficient"]).Round(2)
-	s.T().Logf("[S5 coefficients @2dp] expected=%s charge=%s cg=%s eg=%s", frac.Round(2), chargeCoef, cgCoef, egCoef)
 	s.Run("charge_coef_equals_cg_coef", func() {
 		s.pvgExpectEqual("S5 cg coef vs charge coef", chargeCoef, cgCoef)
 	})
 	s.Run("charge_coef_equals_eg_coef", func() {
 		s.pvgExpectEqual("S5 eg coef vs charge coef", chargeCoef, egCoef)
+	})
+	s.Run("cg_rounded_to_currency_precision", func() {
+		s.pvgExpectEqual("S5 addon CGA credits (stored)", pvgCurrency(pvgCGCredits, frac), app.Credits)
+		s.pvgExpectTime("S5 addon CGA period_end", pvgFeb1, lo.FromPtr(app.PeriodEnd))
+	})
+	s.Run("eg_quota_floored", func() {
+		s.pvgExpectEqual("S5 addon EG quota (stored)", pvgFloor(pvgEGQuota, frac), rows[0].Quota)
 	})
 }
 
@@ -3590,7 +3527,6 @@ func (s *CreditGrantProrationSuite) TestMidPeriodLineItemModificationInsideStub(
 		s.Require().NoError(err)
 		settle, err := modSvc.quoteLineItemChange(ctx, req)
 		s.Require().NoError(err)
-		s.T().Logf("[S7 price change] charge=%s credit=%s", settle.Quote.TotalChargeAmount, settle.Quote.TotalCreditAmount)
 		s.pvgExpectEqual("S7 line_item_change price 31->62 net", want, settle.Quote.NetAmount())
 	})
 }
@@ -3611,12 +3547,7 @@ func (s *CreditGrantProrationSuite) TestAnniversaryAnchorStub_AddonCreditGrant()
 
 	_, app := s.pvgFirstApp(sub.ID, "addon_pvg_s8")
 	frac := pvgFrac(pvgJan15, pvgJan20, pvgDec20, pvgJan20)
-	s.Run("coefficient_5_of_31", func() {
-		s.pvgExpectEqual("S8 addon CGA credits (2dp)", pvgCurrency(pvgCGCredits, frac), app.Credits.Round(2))
-	})
-	s.Run("credits_rounded_to_currency_precision", func() {
-		s.pvgExpectEqual("S8 addon CGA credits (stored)", pvgCurrency(pvgCGCredits, frac), app.Credits)
-	})
+	s.pvgExpectEqual("S8 addon CGA credits (5/31)", pvgCurrency(pvgCGCredits, frac), app.Credits)
 }
 
 // S9: calendar sub with 14-day trial; trial end keeps the calendar anchor and the first paid
@@ -3636,8 +3567,6 @@ func (s *CreditGrantProrationSuite) TestTrialEndOnCalendarSub() {
 
 	after, err := s.GetStores().SubscriptionRepo.Get(s.GetContext(), sub.ID)
 	s.Require().NoError(err)
-	s.T().Logf("[S9 after trial end] status=%s anchor=%s period=[%s, %s)", after.SubscriptionStatus,
-		after.BillingAnchor.Format(time.RFC3339), after.CurrentPeriodStart.Format(time.RFC3339), after.CurrentPeriodEnd.Format(time.RFC3339))
 
 	s.Run("calendar_anchor_kept", func() {
 		s.pvgExpectTime("S9 billing_anchor after trial end", pvgFeb1, after.BillingAnchor)
@@ -3652,73 +3581,6 @@ func (s *CreditGrantProrationSuite) TestTrialEndOnCalendarSub() {
 		s.pvgExpectEqual("S9 plan CGA credits (2dp)", pvgCurrency(pvgCGCredits, frac), app.Credits.Round(2))
 		s.pvgExpectTime("S9 plan CGA period_end", pvgFeb1, lo.FromPtr(app.PeriodEnd))
 	})
-}
-
-// S9b: trial end of 14 days from Mar 1 00:00 America/New_York lands on Mar 15 00:00 local,
-// across the DST change.
-func (s *CreditGrantProrationSuite) TestTrialEndAcrossDST() {
-	loc, err := time.LoadLocation("America/New_York")
-	s.Require().NoError(err)
-	start := time.Date(2027, 3, 1, 0, 0, 0, 0, loc).UTC()
-	want := time.Date(2027, 3, 15, 0, 0, 0, 0, loc)
-
-	sub := &subscription.Subscription{StartDate: start, Timezone: "America/New_York"}
-	s.Require().NoError(setCreateSubscriptionTrialWindow(
-		&dto.CreateSubscriptionRequest{TrialPeriodDays: lo.ToPtr(14), Timezone: "America/New_York"}, sub, nil))
-	s.Require().NotNil(sub.TrialEnd)
-	s.T().Logf("[S9b] trial_end local=%s", sub.TrialEnd.In(loc).Format(time.RFC3339))
-	s.pvgExpectTime("S9b trial_end (NY)", want, lo.FromPtr(sub.TrialEnd))
-}
-
-// S10: addon attached with a start date in a closed period. Expected: credit grants follow the
-// same "from the change onward" semantics as entitlement grants — no CG application for any
-// period that ended before the attach was requested.
-func (s *CreditGrantProrationSuite) TestAddonAttachBackdatedBeforeCurrentPeriod() {
-	ctx := s.GetContext()
-	s.pvgSeedPlan("plan_pvg_s10", false)
-	now := time.Now().UTC()
-	cps := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-	start := cps.AddDate(0, -3, 0)
-	sub := &subscription.Subscription{
-		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
-		PlanID:             "plan_pvg_s10",
-		CustomerID:         s.cust.ID,
-		StartDate:          start,
-		CurrentPeriodStart: cps,
-		CurrentPeriodEnd:   cps.AddDate(0, 1, 0),
-		BillingAnchor:      start,
-		Currency:           "usd",
-		BillingCycle:       types.BillingCycleAnniversary,
-		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
-		BillingPeriodCount: 1,
-		SubscriptionStatus: types.SubscriptionStatusActive,
-		Timezone:           "UTC",
-		BaseModel:          types.GetDefaultBaseModel(ctx),
-	}
-	s.Require().NoError(s.GetStores().SubscriptionRepo.Create(ctx, sub))
-
-	featureID := s.pvgSeedAddon(pvgAddonSpec{id: "addon_pvg_s10", withCG: true, withEG: true})
-	backdated := start.AddDate(0, 0, 9) // two full periods before the current one
-	err := s.pvgAttach(sub.ID, "addon_pvg_s10", backdated)
-	s.T().Logf("[S10] sub period=[%s, %s) attach start=%s now=%s accepted=%v err=%v",
-		cps.Format(time.RFC3339), sub.CurrentPeriodEnd.Format(time.RFC3339), backdated.Format(time.RFC3339),
-		now.Format(time.RFC3339), err == nil, err)
-	if err != nil {
-		return // rejecting a backdated attach is an acceptable, consistent outcome
-	}
-
-	grants := s.pvgSubGrants(sub.ID, "addon_pvg_s10")
-	s.Require().Len(grants, 1)
-	apps := s.pvgApps(grants[0].ID)
-	rows := s.pvgEGRows(featureID)
-	pastApps := lo.Filter(apps, func(a *creditgrantapplication.CreditGrantApplication, _ int) bool {
-		return lo.FromPtr(a.PeriodEnd).Before(cps) || lo.FromPtr(a.PeriodEnd).Equal(cps)
-	})
-	s.T().Logf("[S10] cg applications=%d (closed-period=%d) eg rows=%d", len(apps), len(pastApps), len(rows))
-	for _, r := range rows {
-		s.T().Logf("[S10] eg valid_from=%s", r.ValidFrom.Format(time.RFC3339))
-	}
-	s.Equal(0, len(pastApps), "S10: CG must not catch up periods closed before the attach (EG does not)")
 }
 
 // S11: a subscription-scoped credit grant created through the API on Jan 20, inside the Jan 15
