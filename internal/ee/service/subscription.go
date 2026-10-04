@@ -430,11 +430,19 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	if sub.TrialEnd != nil {
 		creditGrantStart = lo.FromPtr(sub.TrialEnd)
 	}
+	
+	// Anniversary billing re-anchors at trial end, so its first paid period is whole and the
+	// grant's own anchor (trial end) already matches billing.
+	var firstPeriod *dto.FirstPeriodProration
+	if sub.TrialEnd == nil || sub.BillingCycle == types.BillingCycleCalendar {
+		firstPeriod = newSubscriptionGrantService(s.ServiceParams).creditGrantProration(
+			ctx, sub, creditGrantStart, sub.ProrationBehavior, grantProrationSourceSubscriptionCreate)
+	}
 	if err = creditGrantService.CreateSubscriptionCreditGrants(ctx, dto.CreateSubscriptionCreditGrantsRequest{
 		Subscription:         sub,
 		Grants:               creditGrantRequests,
 		StartDate:            creditGrantStart,
-		FirstPeriodProration: planCreditGrantProration(sub),
+		FirstPeriodProration: firstPeriod,
 	}); err != nil {
 		return nil, err
 	}

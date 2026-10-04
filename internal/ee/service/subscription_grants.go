@@ -251,7 +251,7 @@ func (s *subscriptionGrantService) resolveCreditGrantsToAdd(
 			"subscription_id", sub.ID,
 			"credit_grants_count", len(grants))
 
-		proration := s.addonCreditGrantProration(ctx, sub, src.EffectiveDate, src.ProrationSettings.CreditGrantBehavior)
+		proration := s.creditGrantProration(ctx, sub, src.EffectiveDate, src.ProrationSettings.CreditGrantBehavior, grantProrationSourceAddonAttach)
 		key := creditGrantGroupKey(src, proration)
 		if i, ok := index[key]; ok {
 			addRequests[i].Grants = append(addRequests[i].Grants, creditGrantRequestsFromAddon(sub, src.AddonID, grants)...)
@@ -280,7 +280,7 @@ func creditGrantGroupKey(src GrantSource, proration *dto.FirstPeriodProration) s
 	}
 	prorationKey := ""
 	if proration != nil {
-		prorationKey = fmt.Sprintf("%v|%v|%s", proration.PeriodEnd, proration.ProrationDate, proration.Source)
+		prorationKey = fmt.Sprintf("%v|%v|%s|%t", proration.PeriodEnd, proration.ProrationDate, proration.Source, proration.Prorate)
 	}
 
 	return fmt.Sprintf("%v|%s|%s", src.EffectiveDate.UTC(), end, prorationKey)
@@ -483,50 +483,20 @@ func grantChangeTypeFor(sub *subscription.Subscription, effectiveDate time.Time)
 	return types.ScheduleTypePeriodEnd
 }
 
-// planCreditGrantProration prorates the plan's first credit grant over the first paid billing period.
-// Anniversary subscriptions re-anchor at trial end, so their first paid period is always whole.
-func planCreditGrantProration(sub *subscription.Subscription) *dto.FirstPeriodProration {
-	if sub.ProrationBehavior != types.ProrationBehaviorCreateProrations {
-		return nil
-	}
-
-	start, end := sub.StartDate, sub.CurrentPeriodEnd
-	if sub.TrialEnd != nil {
-		if sub.BillingCycle != types.BillingCycleCalendar {
-			return nil
-		}
-		start = lo.FromPtr(sub.TrialEnd)
-		end = types.CalculateCalendarBillingAnchor(start, sub.BillingPeriod, sub.Timezone)
-	}
-
-	if sub.EndDate != nil && end.After(lo.FromPtr(sub.EndDate)) {
-		return nil
-	}
-
-	return &dto.FirstPeriodProration{
-		PeriodEnd:     end,
-		ProrationDate: start,
-		Source:        grantProrationSourceSubscriptionCreate.String(),
-	}
-}
-
-// addonCreditGrantProration resolves the billing period containing effectiveDate so a
-// mid-cycle grant can be scaled to the part of that period it actually covers.
-// Returns nil when proration does not apply, in which case the grant keeps its full
-// credits and its natural anchoring.
+// creditGrantProration resolves the billing period containing effectiveDate: the grant's first
+// application ends at that period's end, and is scaled to [effectiveDate, end) over the full
+// period when behavior is create_prorations. Returns nil when the period cannot be resolved,
+// in which case the grant keeps its full credits and its natural anchoring.
 //
-// Never returns an error: proration is an enhancement to the attach, so an
-// unresolvable period downgrades to today's behaviour instead of rejecting the addon.
-func (s *subscriptionGrantService) addonCreditGrantProration(
+// Never returns an error: proration is an enhancement, so an unresolvable period downgrades
+// to a full grant instead of rejecting the change.
+func (s *subscriptionGrantService) creditGrantProration(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	effectiveDate time.Time,
 	behavior types.ProrationBehavior,
+	source grantProrationSource,
 ) *dto.FirstPeriodProration {
-	if behavior != types.ProrationBehaviorCreateProrations {
-		return nil
-	}
-
 	p, err := types.FindPeriodForDate(&types.FindPeriodForDateParams{
 		Target:           effectiveDate,
 		KnownPeriodStart: sub.CurrentPeriodStart,
@@ -539,7 +509,7 @@ func (s *subscriptionGrantService) addonCreditGrantProration(
 	if err != nil {
 		// FindPeriodForDate only walks forward, so a start date in an already-closed
 		// period cannot be resolved. Grant in full rather than blocking the attach.
-		s.Logger.Info(ctx, "skipping credit grant proration; could not resolve billing period for addon start",
+		s.Logger.Info(ctx, "skipping credit grant proration; could not resolve billing period",
 			"subscription_id", sub.ID,
 			"effective_date", effectiveDate,
 			"current_period_start", sub.CurrentPeriodStart,
@@ -556,6 +526,7 @@ func (s *subscriptionGrantService) addonCreditGrantProration(
 	return &dto.FirstPeriodProration{
 		PeriodEnd:     p.End,
 		ProrationDate: lo.Latest(effectiveDate, p.Start),
-		Source:        grantProrationSourceAddonAttach.String(),
+		Source:        source.String(),
+		Prorate:       behavior == types.ProrationBehaviorCreateProrations,
 	}
 }

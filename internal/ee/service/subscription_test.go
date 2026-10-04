@@ -454,8 +454,8 @@ func (s *SubscriptionServiceSuite) TestAddAddonToSubscription_ProrationBehaviorN
 
 	grant := s.materializedAddonGrant(addonID)
 	s.Require().NotNil(grant)
-	s.WithinDuration(now, lo.FromPtr(grant.CreditGrantAnchor), time.Second,
-		"opting out of proration must leave the attach-date anchoring untouched")
+	s.WithinDuration(s.testData.subscription.CurrentPeriodEnd, lo.FromPtr(grant.CreditGrantAnchor), time.Second,
+		"opting out of proration still anchors later grants on the billing boundary")
 
 	app := s.firstApplicationFor(grant.ID)
 	s.Require().NotNil(app)

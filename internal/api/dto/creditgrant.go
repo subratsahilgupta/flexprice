@@ -34,6 +34,11 @@ type CreateCreditGrantRequest struct {
 	StartDate              *time.Time                           `json:"start_date,omitempty"`
 	EndDate                *time.Time                           `json:"end_date,omitempty"`
 
+	// ProrationBehavior applies to SUBSCRIPTION scope only. create_prorations scales the first
+	// application to the rest of the current billing period and puts later ones on the
+	// subscription's billing dates, when the grant recurs on the subscription's billing period.
+	ProrationBehavior types.ProrationBehavior `json:"proration_behavior,omitempty"`
+
 	// amount in the currency =  number of credits * conversion_rate
 	// ex if conversion_rate is 1, then 1 USD = 1 credit
 	// ex if conversion_rate is 2, then 1 USD = 0.5 credits
@@ -91,6 +96,10 @@ type FirstPeriodProration struct {
 
 	// Source labels the trigger in audit metadata, e.g. "addon_attach".
 	Source string
+
+	// Prorate scales the first application to [ProrationDate, PeriodEnd). Without it the first
+	// application grants in full and only the alignment to billing dates applies.
+	Prorate bool
 }
 
 // UpdateCreditGrantRequest represents the request to update an existing credit grant

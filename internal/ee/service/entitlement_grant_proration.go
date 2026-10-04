@@ -21,6 +21,7 @@ type grantProrationSource string
 
 const (
 	grantProrationSourceSubscriptionCreate grantProrationSource = "subscription_create"
+	grantProrationSourceCreditGrantCreate  grantProrationSource = "credit_grant_create"
 	grantProrationSourceAddonAttach        grantProrationSource = "addon_attach"
 	grantProrationSourceAddonDetach        grantProrationSource = "addon_detach"
 	grantProrationSourceAddonsModify       grantProrationSource = "addons_modify"
