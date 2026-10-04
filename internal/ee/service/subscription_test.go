@@ -396,12 +396,11 @@ func (s *SubscriptionServiceSuite) TestAddAddonToSubscription_ProratesFirstCredi
 	s.Require().NotNil(firstApp.PeriodEnd)
 	s.WithinDuration(sub.CurrentPeriodEnd, lo.FromPtr(firstApp.PeriodEnd), time.Second)
 
-	// The fixture's period is [now-24h, now+6d) and the addon attaches at `now`,
-	// leaving 6 of 7 days.
-	coefficient, err := proration.Coefficient(
-		sub.CurrentPeriodStart, sub.CurrentPeriodEnd, now, types.StrategySecondBased)
+	// The addon attaches at `now`, 6 days before the period ends; the divisor is the full billing period.
+	coefficient, _, err := proration.CalculateProrationCoefficient(sub, sub.BillingPeriod, sub.BillingPeriodCount,
+		types.Period{Start: now, End: sub.CurrentPeriodEnd}, types.StrategySecondBased)
 	s.NoError(err)
-	expectedCredits := decimal.NewFromInt(100).Mul(coefficient).Round(creditGrantCreditsScale)
+	expectedCredits := decimal.NewFromInt(100).Mul(coefficient).Round(types.GetCurrencyPrecision(sub.Currency))
 	s.True(expectedCredits.LessThan(decimal.NewFromInt(100)),
 		"sanity: a mid-period attach must yield less than the full grant")
 
@@ -1355,8 +1354,8 @@ func (s *SubscriptionServiceSuite) setupTestData() {
 		CustomerID:         s.testData.customer.ID,
 		StartDate:          s.testData.now.Add(-30 * 24 * time.Hour),
 		CurrentPeriodStart: s.testData.now.Add(-24 * time.Hour),
-		CurrentPeriodEnd:   s.testData.now.Add(6 * 24 * time.Hour),
-		BillingAnchor:      s.testData.now.Add(-30 * 24 * time.Hour),
+		CurrentPeriodEnd:   s.testData.now.Add(-24*time.Hour).AddDate(0, 1, 0),
+		BillingAnchor:      s.testData.now.Add(-24 * time.Hour),
 		Currency:           "usd",
 		BillingCycle:       types.BillingCycleAnniversary,
 		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,

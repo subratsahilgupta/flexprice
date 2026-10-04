@@ -14,18 +14,16 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// entitlementGrantQuotaScale matches the numeric(25,15) precision of entitlement_grants.quota.
-const entitlementGrantQuotaScale = 15
-
 // grantProrationSource names the subscription change that wrote a grant segment.
 // It lands in the segment's metadata as proration_source, so a window can always
 // be traced back to what cut it.
 type grantProrationSource string
 
 const (
-	grantProrationSourceAddonAttach  grantProrationSource = "addon_attach"
-	grantProrationSourceAddonDetach  grantProrationSource = "addon_detach"
-	grantProrationSourceAddonsModify grantProrationSource = "addons_modify"
+	grantProrationSourceSubscriptionCreate grantProrationSource = "subscription_create"
+	grantProrationSourceAddonAttach        grantProrationSource = "addon_attach"
+	grantProrationSourceAddonDetach        grantProrationSource = "addon_detach"
+	grantProrationSourceAddonsModify       grantProrationSource = "addons_modify"
 	// Not an addon change: an entitlement was deleted outright.
 	grantProrationSourceEntitlementGone grantProrationSource = "entitlement_deleted"
 )
@@ -91,7 +89,11 @@ func (s *subscriptionGrantService) resolveGrantProration(
 			prorationDate = effectiveDate
 		}
 
-		coefficient, err := proration.Coefficient(p.Start, p.End, prorationDate, types.StrategySecondBased)
+		coefficient, full := decimal.NewFromInt(1), p
+		if behavior == types.ProrationBehaviorCreateProrations {
+			coefficient, full, err = proration.CalculateProrationCoefficient(sub, sub.BillingPeriod, sub.BillingPeriodCount,
+				types.Period{Start: prorationDate, End: p.End}, types.StrategySecondBased)
+		}
 		if err != nil {
 			s.Logger.Info(ctx, "skipping entitlement grant proration; coefficient could not be computed",
 				"subscription_id", sub.ID,
@@ -113,7 +115,7 @@ func (s *subscriptionGrantService) resolveGrantProration(
 			originalQuota = originalQuota.Add(lo.FromPtr(ec.GrantQuota))
 		}
 
-		delta := originalQuota.Mul(coefficient).Round(entitlementGrantQuotaScale)
+		delta := originalQuota.Mul(coefficient).Floor()
 		if !delta.IsPositive() {
 			s.Logger.Info(ctx, "skipping entitlement grant proration; quota is not positive",
 				"subscription_id", sub.ID,
@@ -139,8 +141,8 @@ func (s *subscriptionGrantService) resolveGrantProration(
 				Coefficient:   coefficient,
 				OriginalKey:   "proration_original_quota",
 				OriginalValue: originalQuota,
-				PeriodStart:   p.Start,
-				PeriodEnd:     p.End,
+				PeriodStart:   full.Start,
+				PeriodEnd:     full.End,
 				ProrationDate: prorationDate,
 				Strategy:      types.StrategySecondBased,
 			})).

@@ -16,15 +16,6 @@ type Service interface {
 	// It does not persist anything or modify the subscription/invoice directly.
 	CalculateProration(ctx context.Context, params ProrationParams) (*ProrationResult, error)
 
-	// CreateProrationParamsForLineItem creates the proration parameters for a given line item.
-	CreateProrationParamsForLineItem(
-		subscription *subscription.Subscription,
-		item *subscription.SubscriptionLineItem,
-		price *price.Price,
-		action types.ProrationAction,
-		behavior types.ProrationBehavior,
-	) (ProrationParams, error)
-
 	// CreateProrationParamsForLineItemCancellation creates proration parameters for cancellation scenarios
 	CreateProrationParamsForLineItemCancellation(
 		ctx context.Context,
@@ -36,12 +27,6 @@ type Service interface {
 		cancellationReason string,
 		behavior types.ProrationBehavior,
 	) (ProrationParams, error)
-
-	// CalculateSubscriptionProration handles proration for an entire subscription.
-	// This is used when creating or modifying a subscription that needs proration
-	// (e.g., calendar billing with proration enabled).
-	// It will calculate and apply proration for all applicable line items in a single transaction.
-	CalculateSubscriptionProration(ctx context.Context, params SubscriptionProrationParams) (*SubscriptionProrationResult, error)
 
 	// CalculateSubscriptionCancellationProration handles proration calculation for subscription cancellation.
 	// This provides a single, unified function for calculating all proration changes during cancellation.

@@ -270,8 +270,8 @@ func (s *BillingServiceSuite) setupTestData() {
 	s.testData.now = time.Now().UTC()
 	// Use CurrentPeriodEnd as BillingAnchor so the next period is a full month (same day-of-month),
 	// ensuring next-period advance charges (e.g. fixed price) are included when billing at period end.
-	currentPeriodStart := s.testData.now.Add(-48 * time.Hour)
 	currentPeriodEnd := s.testData.now.Add(6 * 24 * time.Hour)
+	currentPeriodStart := currentPeriodEnd.AddDate(0, -1, 0)
 	s.testData.subscription = &subscription.Subscription{
 		ID:                 "sub_123",
 		PlanID:             s.testData.plan.ID,
@@ -3926,7 +3926,7 @@ func (s *BillingServiceSuite) TestCalculateNeverResetUsage() {
 
 // TestApplyProrationToLineItem_RuntimeSafetyNet_MixedBillingPeriods implements PRD E.3.4.
 // When subscription has mixed billing periods and ProrationBehavior=create_prorations,
-// applyProrationToLineItem (invoked via CalculateFixedCharges) must return original amount (safety net).
+// CalculateFixedCharges must bill each full window at its original amount.
 func (s *BillingServiceSuite) TestApplyProrationToLineItem_RuntimeSafetyNet_MixedBillingPeriods() {
 	ctx := s.GetContext()
 	jan1 := time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)

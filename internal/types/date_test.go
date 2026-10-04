@@ -3031,8 +3031,9 @@ func TestFullBillingPeriod(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := FullBillingPeriod(tt.t, tt.anchor, tt.period, 1, tt.tz)
+			grid, err := NewBillingPeriodGrid(tt.anchor, tt.period, 1, tt.tz)
 			require.NoError(t, err)
+			got := FullBillingPeriod(tt.t, grid)
 			require.True(t, got.Start.Equal(tt.start) && got.End.Equal(tt.end), "got [%v, %v), want [%v, %v)", got.Start, got.End, tt.start, tt.end)
 		})
 	}

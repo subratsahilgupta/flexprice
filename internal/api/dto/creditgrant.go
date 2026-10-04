@@ -83,14 +83,11 @@ func NewSubscriptionScopedCreditGrantRequest(
 // deliberately never persisted on the grant: every later period is a whole period
 // and must grant the full amount.
 type FirstPeriodProration struct {
-	// PeriodStart/PeriodEnd bound the subscription billing period containing the grant.
-	PeriodStart time.Time
-	PeriodEnd   time.Time
+	// PeriodEnd is the end of the subscription billing period containing the grant.
+	PeriodEnd time.Time
 
 	// ProrationDate is when coverage begins, e.g. the addon attach date.
 	ProrationDate time.Time
-
-	Strategy types.ProrationStrategy
 
 	// Source labels the trigger in audit metadata, e.g. "addon_attach".
 	Source string

@@ -233,7 +233,7 @@ func (s *MultiCadenceAddonMatrixSuite) TestMultiCadence_AnniversaryQuarter_Parit
 	sc := s.build(scenarioSpec{
 		cycle: types.BillingCycleAnniversary, subPeriod: types.BILLING_PERIOD_QUARTER,
 		periodStart: d(2025, time.January, 1), periodEnd: d(2025, time.April, 1),
-		anchor: d(2025, time.January, 1), prorationBehavior: types.ProrationBehaviorNone,
+		anchor: d(2025, time.January, 1), prorationBehavior: types.ProrationBehaviorCreateProrations,
 		planAmount: 300, addonPeriod: types.BILLING_PERIOD_MONTHLY, addonAmount: 100,
 		addonStart: d(2025, time.February, 15),
 	})
@@ -248,7 +248,7 @@ func (s *MultiCadenceAddonMatrixSuite) TestSameCadence_Monthly_Parity() {
 	sc := s.build(scenarioSpec{
 		cycle: types.BillingCycleAnniversary, subPeriod: types.BILLING_PERIOD_MONTHLY,
 		periodStart: d(2025, time.January, 1), periodEnd: d(2025, time.February, 1),
-		anchor: d(2025, time.January, 1), prorationBehavior: types.ProrationBehaviorNone,
+		anchor: d(2025, time.January, 1), prorationBehavior: types.ProrationBehaviorCreateProrations,
 		planAmount: 100, addonPeriod: types.BILLING_PERIOD_MONTHLY, addonAmount: 100,
 		addonStart: d(2025, time.January, 15),
 	})
@@ -261,7 +261,7 @@ func (s *MultiCadenceAddonMatrixSuite) TestSameCadence_Quarterly_Parity() {
 	sc := s.build(scenarioSpec{
 		cycle: types.BillingCycleAnniversary, subPeriod: types.BILLING_PERIOD_QUARTER,
 		periodStart: d(2025, time.January, 1), periodEnd: d(2025, time.April, 1),
-		anchor: d(2025, time.January, 1), prorationBehavior: types.ProrationBehaviorNone,
+		anchor: d(2025, time.January, 1), prorationBehavior: types.ProrationBehaviorCreateProrations,
 		planAmount: 300, addonPeriod: types.BILLING_PERIOD_QUARTER, addonAmount: 300,
 		addonStart: d(2025, time.February, 15),
 	})
@@ -293,7 +293,7 @@ func (s *MultiCadenceAddonMatrixSuite) TestCalendarStub_AddonRatioUsesItsOwnPeri
 	sc := s.build(scenarioSpec{
 		cycle: types.BillingCycleCalendar, subPeriod: types.BILLING_PERIOD_QUARTER,
 		periodStart: d(2025, time.February, 15), periodEnd: d(2025, time.April, 1),
-		anchor: d(2025, time.April, 1), prorationBehavior: types.ProrationBehaviorNone,
+		anchor: d(2025, time.April, 1), prorationBehavior: types.ProrationBehaviorCreateProrations,
 		planAmount: 300, addonPeriod: types.BILLING_PERIOD_MONTHLY, addonAmount: 100,
 		addonStart: d(2025, time.February, 20),
 	})
@@ -364,7 +364,7 @@ func (s *MultiCadenceAddonMatrixSuite) TestRatioDenominator_WindowVsItemPeriod()
 
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
-			tc.spec.prorationBehavior = types.ProrationBehaviorNone
+			tc.spec.prorationBehavior = types.ProrationBehaviorCreateProrations
 			sc := s.build(tc.spec)
 			s.equalMoney(tc.want, s.atCreateAddonTotal(sc), tc.why)
 		})
@@ -377,7 +377,7 @@ func (s *MultiCadenceAddonMatrixSuite) TestCalendarStub_Parity() {
 	sc := s.build(scenarioSpec{
 		cycle: types.BillingCycleCalendar, subPeriod: types.BILLING_PERIOD_QUARTER,
 		periodStart: d(2025, time.September, 8), periodEnd: d(2025, time.October, 1),
-		anchor: d(2025, time.October, 1), prorationBehavior: types.ProrationBehaviorNone,
+		anchor: d(2025, time.October, 1), prorationBehavior: types.ProrationBehaviorCreateProrations,
 		planAmount: 300, addonPeriod: types.BILLING_PERIOD_MONTHLY, addonAmount: 100,
 		addonStart: d(2025, time.September, 21),
 	})

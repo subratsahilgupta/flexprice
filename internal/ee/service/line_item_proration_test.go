@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/suite"
 )
@@ -211,12 +212,60 @@ func (s *LineItemProrationServiceSuite) TestCompute_AddItem_FullPeriod() {
 	s.NoError(err)
 	s.NotNil(summary)
 
-	// Coefficient = (May1-1s - Apr1) / (May1-1s - Apr1) = 1.0 → $20.00
+	// Coefficient = [Apr1, May1) / [Apr1, May1) = 1.0 → $20.00
 	s.True(summary.TotalChargeAmount.Equal(decimal.NewFromInt(20)),
 		"full-period add should charge the full price; got %s", summary.TotalChargeAmount)
 	s.True(summary.TotalCreditAmount.IsZero(), "no credit expected for AddItem")
 	s.Len(summary.ChargeLineItems, 1)
 	s.False(summary.IsPreview)
+}
+
+// A volume-tiered price is prorated on what it bills (12 × $8 = $96), not on Amount × quantity.
+func (s *LineItemProrationServiceSuite) TestCompute_TieredPrice_ProratesCalculatedCost() {
+	ctx := s.GetContext()
+	tiered := &price.Price{
+		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+		Currency:           "usd",
+		Type:               types.PRICE_TYPE_FIXED,
+		BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+		BillingPeriodCount: 1,
+		BillingModel:       types.BILLING_MODEL_TIERED,
+		TierMode:           types.BILLING_TIER_VOLUME,
+		Tiers: []price.PriceTier{
+			{UpTo: lo.ToPtr(uint64(10)), UnitAmount: decimal.NewFromInt(10)},
+			{UnitAmount: decimal.NewFromInt(8)},
+		},
+		InvoiceCadence: types.InvoiceCadenceAdvance,
+		BaseModel:      types.GetDefaultBaseModel(ctx),
+	}
+	s.NoError(s.GetStores().PriceRepo.Create(ctx, tiered))
+	item := *s.td.lineItem
+	item.PriceID = tiered.ID
+	item.Quantity = decimal.NewFromInt(12)
+	sub := s.subCopyWithPeriod(s.td.periodStart, s.td.periodEnd)
+	effectiveDate := time.Date(2026, 4, 11, 0, 0, 0, 0, time.UTC) // 20 of 30 days left
+
+	added, err := s.svc.Compute(ctx, LineItemProrationRequest{
+		Subscription:  sub,
+		EffectiveDate: effectiveDate,
+		Behavior:      types.ProrationBehaviorCreateProrations,
+		Entries: []LineItemProrationEntry{{
+			LineItem: &item, NewPrice: tiered, NewQuantity: item.Quantity, Action: types.ProrationActionAddItem,
+		}},
+	})
+	s.NoError(err)
+	s.True(added.TotalChargeAmount.Equal(decimal.NewFromInt(64)), "attach: got %s", added.TotalChargeAmount)
+
+	removed, err := s.svc.Compute(ctx, LineItemProrationRequest{
+		Subscription:  sub,
+		EffectiveDate: effectiveDate,
+		Behavior:      types.ProrationBehaviorCreateProrations,
+		Entries: []LineItemProrationEntry{{
+			LineItem: &item, CurrentPrice: tiered, CurrentQuantity: item.Quantity, Action: types.ProrationActionRemoveItem,
+		}},
+	})
+	s.NoError(err)
+	s.True(removed.TotalCreditAmount.Equal(decimal.NewFromInt(64)), "remove: got %s", removed.TotalCreditAmount)
 }
 
 func (s *LineItemProrationServiceSuite) TestCompute_AddItem_MidPeriod() {

@@ -18,6 +18,7 @@ import (
 type prorationService struct {
 	serviceParams  ServiceParams
 	invoiceService InvoiceService
+	priceService   PriceService
 }
 
 // NewProrationService creates a new proration service.
@@ -27,6 +28,7 @@ func NewProrationService(
 	return &prorationService{
 		serviceParams:  serviceParams,
 		invoiceService: NewInvoiceService(serviceParams),
+		priceService:   NewPriceService(serviceParams),
 	}
 }
 
@@ -60,180 +62,6 @@ func (s *prorationService) CalculateProration(ctx context.Context, params prorat
 		"line_item_id", params.LineItemID,
 		"net_amount", result.NetAmount.String(),
 	)
-
-	return result, nil
-}
-
-// validateSubscriptionProrationParams validates the parameters for subscription proration calculation
-func (s *prorationService) validateSubscriptionProrationParams(params proration.SubscriptionProrationParams) error {
-	if params.Subscription == nil {
-		return ierr.NewError("subscription is required").
-			WithHint("Provide a valid subscription object").
-			Mark(ierr.ErrValidation)
-	}
-	if params.Subscription.ID == "" {
-		return ierr.NewError("subscription ID is required").
-			WithHint("Provide a valid subscription ID").
-			Mark(ierr.ErrValidation)
-	}
-	if params.Subscription.StartDate.IsZero() {
-		return ierr.NewError("subscription start date is required").
-			WithHint("Set a valid start date for the subscription").
-			Mark(ierr.ErrValidation)
-	}
-	if params.Subscription.BillingAnchor.IsZero() {
-		return ierr.NewError("subscription billing anchor is required").
-			WithHint("Set a valid billing anchor date").
-			Mark(ierr.ErrValidation)
-	}
-	if len(params.Subscription.LineItems) == 0 {
-		return ierr.NewError("subscription must have at least one line item").
-			WithHint("Add at least one line item to the subscription").
-			Mark(ierr.ErrValidation)
-	}
-	if params.Prices == nil {
-		return ierr.NewError("prices map is required").
-			WithHint("Provide a valid prices map").
-			Mark(ierr.ErrValidation)
-	}
-
-	// Validate each line item has a corresponding price
-	for _, item := range params.Subscription.LineItems {
-		if item.ID == "" {
-			return ierr.NewError("line item ID is required").
-				WithHint("Provide a valid ID for each line item").
-				Mark(ierr.ErrValidation)
-		}
-		if item.PriceID == "" {
-			return ierr.NewErrorf("price ID is required for line item %s", item.ID).
-				WithHint("Set a valid price ID for each line item").
-				Mark(ierr.ErrValidation)
-		}
-		if _, exists := params.Prices[item.PriceID]; !exists {
-			return ierr.NewErrorf("price not found for line item %s with price ID %s", item.ID, item.PriceID).
-				WithHint("Ensure all referenced prices exist").
-				Mark(ierr.ErrNotFound)
-		}
-		if item.Quantity.IsNegative() {
-			return ierr.NewErrorf("quantity must be positive for line item %s", item.ID).
-				WithHint("Set a positive quantity for each line item").
-				Mark(ierr.ErrValidation)
-		}
-	}
-
-	return nil
-}
-
-// CalculateAndApplySubscriptionProration handles proration for an entire subscription.
-func (s *prorationService) CalculateSubscriptionProration(
-	ctx context.Context,
-	params proration.SubscriptionProrationParams,
-) (*proration.SubscriptionProrationResult, error) {
-	if err := s.validateSubscriptionProrationParams(params); err != nil {
-		return nil, ierr.NewErrorf("invalid subscription proration parameters: %v", err).
-			WithHint("Check all required subscription parameters").
-			Mark(ierr.ErrValidation)
-	}
-
-	logger := s.serviceParams.Logger
-	logger.Info(ctx, "starting subscription proration calculation",
-		"subscription_id", params.Subscription.ID,
-		"billing_cycle", params.BillingCycle,
-		"proration_behavior", params.ProrationBehavior,
-		"line_items_count", len(params.Subscription.LineItems))
-
-	result := &proration.SubscriptionProrationResult{
-		LineItemResults: make(map[string]*proration.ProrationResult),
-		Currency:        params.Subscription.Currency,
-	}
-
-	// Only proceed if proration is needed
-	if params.BillingCycle != types.BillingCycleCalendar ||
-		params.ProrationBehavior == types.ProrationBehaviorNone {
-		logger.Info(ctx, "skipping proration - not needed",
-			"subscription_id", params.Subscription.ID,
-			"billing_cycle", params.BillingCycle,
-			"proration_behavior", params.ProrationBehavior)
-		return result, nil
-	}
-
-	// Calculate proration for each line item
-	var errors []error
-	for _, item := range params.Subscription.LineItems {
-		price, ok := params.Prices[item.PriceID]
-		if !ok {
-			logger.Debug(ctx, "price not found for line item - skipping",
-				"subscription_id", params.Subscription.ID,
-				"line_item_id", item.ID,
-				"price_id", item.PriceID)
-			continue
-		}
-
-		if price == nil {
-			logger.Debug(ctx, "price not found for line item - skipping",
-				"subscription_id", params.Subscription.ID,
-				"line_item_id", item.ID,
-				"price_id", item.PriceID)
-			continue
-		}
-
-		prorationParams, err := s.CreateProrationParamsForLineItem(
-			params.Subscription,
-			item,
-			price,
-			types.ProrationActionAddItem,
-			params.ProrationBehavior,
-		)
-		if err != nil {
-			logger.Error(ctx, "failed to create proration parameters for line item",
-				"error", err,
-				"subscription_id", params.Subscription.ID,
-				"line_item_id", item.ID)
-			errors = append(errors, ierr.NewErrorf("line item %s: %v", item.ID, err).
-				WithHint("Check line item configuration").
-				Mark(ierr.ErrSystem))
-			continue // Skip this item but continue with others
-		}
-
-		prorationResult, err := s.CalculateProration(ctx, prorationParams)
-		if err != nil {
-			logger.Error(ctx, "failed to calculate proration for line item",
-				"error", err,
-				"subscription_id", params.Subscription.ID,
-				"line_item_id", item.ID)
-			errors = append(errors, ierr.NewErrorf("line item %s: %v", item.ID, err).
-				WithHint("Check line item configuration").
-				Mark(ierr.ErrSystem))
-			continue // Skip this item but continue with others
-		}
-
-		// Set currency from the first valid price
-		if result.Currency == "" && price.Currency != "" {
-			result.Currency = price.Currency
-		}
-
-		prorationResult.BillingPeriod = params.Subscription.BillingPeriod
-		result.LineItemResults[item.ID] = prorationResult
-		result.TotalProrationAmount = result.TotalProrationAmount.Add(prorationResult.NetAmount)
-
-		logger.Debug(ctx, "proration calculated for line item",
-			"subscription_id", params.Subscription.ID,
-			"line_item_id", item.ID,
-			"net_amount", prorationResult.NetAmount.String(),
-			"credit_items", len(prorationResult.CreditItems),
-			"charge_items", len(prorationResult.ChargeItems))
-	}
-
-	if len(errors) > 0 {
-		return nil, ierr.NewErrorf("failed to calculate proration for some line items: %v", errors).
-			WithHint("Review errors for each failed line item").
-			Mark(ierr.ErrSystem)
-	}
-
-	logger.Info(ctx, "proration calculation completed",
-		"subscription_id", params.Subscription.ID,
-		"total_amount", result.TotalProrationAmount.String(),
-		"line_items_processed", len(result.LineItemResults))
 
 	return result, nil
 }
@@ -446,25 +274,26 @@ func (s *prorationService) CreateProrationParamsForLineItemCancellation(
 		"refund_eligible", refundEligible)
 
 	return proration.ProrationParams{
+		Subscription:       subscription,
+		BillingPeriod:      item.BillingPeriod,
+		BillingPeriodCount: item.BillingPeriodCount,
 		SubscriptionID:     subscription.ID,
 		LineItemID:         item.ID,
 		PlanPayInAdvance:   price.InvoiceCadence == types.InvoiceCadenceAdvance,
 		CurrentPeriodStart: periodStart,
-		CurrentPeriodEnd:   periodEnd.Add(time.Second * -1), // Subtract 1 second to avoid overlap
+		CurrentPeriodEnd:   periodEnd,
 		Action:             types.ProrationActionCancellation,
 
 		// For cancellation, we only have "old" values (what's being cancelled)
 		OldPriceID:      item.PriceID,
 		OldQuantity:     item.Quantity,
-		OldPricePerUnit: price.Amount,
+		OldPricePerUnit: s.priceService.CalculateUnitCost(ctx, price, item.Quantity),
 		NewPriceID:      "", // Nothing new for cancellation
 		NewQuantity:     decimal.Zero,
 		NewPricePerUnit: decimal.Zero,
 
 		ProrationDate:     effectiveDate,
 		ProrationBehavior: behavior,
-		Timezone:          subscription.Timezone,
-		ProrationStrategy: types.StrategySecondBased,
 		Currency:          price.Currency,
 		PlanDisplayName:   item.PlanDisplayName,
 		TerminationReason: types.TerminationReasonCancellation,
@@ -480,76 +309,12 @@ func (s *prorationService) CreateProrationParamsForLineItemCancellation(
 	}, nil
 }
 
-// Helper method to create proration parameters for a line item (internal use)
-func (s *prorationService) CreateProrationParamsForLineItem(
-	subscription *subscription.Subscription,
-	item *subscription.SubscriptionLineItem,
-	price *price.Price,
-	action types.ProrationAction,
-	behavior types.ProrationBehavior,
-) (proration.ProrationParams, error) {
-
-	/*
-		Why are we calculating the previous billing date?
-		We need it to determine the start of the current billing period
-		so we can calculate the total number of days in that period.
-
-		Example:
-		- Subscription created on 15 Aug 2025
-		- Billing period: monthly
-		- Billing anchor: 1st of the month
-
-		In this case, the period start is 1 Aug 2025,
-		which defines the full billing duration of 31 days.
-	*/
-	var periodStart time.Time
-	if subscription.BillingCycle == types.BillingCycleAnniversary {
-		periodStart = subscription.BillingAnchor
-	} else {
-		previousBillingDate, err := types.PreviousBillingDate(&types.PreviousBillingDateParams{
-			BillingAnchor: subscription.BillingAnchor,
-			Unit:          subscription.BillingPeriodCount,
-			Period:        subscription.BillingPeriod,
-			Timezone:      subscription.Timezone,
-		})
-		if err != nil {
-			// Fallback to current period start if calculation fails
-			s.serviceParams.Logger.Info(context.Background(), "failed to calculate period start for proration, using fallback",
-				"error", err,
-				"subscription_id", subscription.ID,
-				"billing_anchor", subscription.BillingAnchor,
-				"billing_period", subscription.BillingPeriod,
-				"billing_period_count", subscription.BillingPeriodCount)
-			periodStart = subscription.CurrentPeriodStart
-		} else {
-			periodStart = previousBillingDate
-		}
-	}
-	return proration.ProrationParams{
-		SubscriptionID:        subscription.ID,
-		LineItemID:            item.ID,
-		PlanPayInAdvance:      price.InvoiceCadence == types.InvoiceCadenceAdvance,
-		CurrentPeriodStart:    periodStart,
-		CurrentPeriodEnd:      subscription.CurrentPeriodEnd.Add(time.Second * -1),
-		Action:                action,
-		NewPriceID:            item.PriceID,
-		NewQuantity:           item.Quantity,
-		NewPricePerUnit:       price.Amount,
-		ProrationDate:         item.GetPeriodStart(periodStart),
-		ProrationBehavior:     behavior,
-		Timezone:              subscription.Timezone,
-		OriginalAmountPaid:    decimal.Zero,
-		PreviousCreditsIssued: decimal.Zero,
-		ProrationStrategy:     types.StrategySecondBased,
-		Currency:              price.Currency,
-		PlanDisplayName:       item.PlanDisplayName,
-	}, nil
-}
-
+// creditBasis is what a line item was billed and already credited, falling back to its list
+// total when no invoice has billed it yet.
 func creditBasis(
 	item *subscription.SubscriptionLineItem,
-	p *price.Price,
 	billed map[string]*invoice.BilledAmounts,
+	listTotal decimal.Decimal,
 ) (originalAmountPaid, previousCredits decimal.Decimal) {
 	if item == nil {
 		return decimal.Zero, decimal.Zero
@@ -559,15 +324,7 @@ func creditBasis(
 		return amounts.Charged(), amounts.Credited()
 	}
 
-	return listPriceTotal(item, p), decimal.Zero
-}
-
-func listPriceTotal(item *subscription.SubscriptionLineItem, p *price.Price) decimal.Decimal {
-	if item == nil || p == nil {
-		return decimal.Zero
-	}
-
-	return p.Amount.Mul(item.Quantity)
+	return listTotal, decimal.Zero
 }
 
 func (s *prorationService) creditBasisForLineItem(
@@ -585,10 +342,10 @@ func (s *prorationService) creditBasisForLineItem(
 			"error", err,
 			"line_item_id", item.ID,
 			"subscription_id", item.SubscriptionID)
-		return creditBasis(item, price, nil)
+		return creditBasis(item, nil, s.priceService.CalculateCost(ctx, price, item.Quantity))
 	}
 
-	return creditBasis(item, price, billed)
+	return creditBasis(item, billed, s.priceService.CalculateCost(ctx, price, item.Quantity))
 }
 
 // isRefundEligible determines if a customer is eligible for refund/credit based on cancellation scenario

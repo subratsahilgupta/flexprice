@@ -190,21 +190,17 @@ type LineItemProrationService interface {
 }
 
 type lineItemProrationService struct {
-	params ServiceParams
+	params       ServiceParams
+	priceService PriceService
 }
 
 func NewLineItemProrationService(params ServiceParams) LineItemProrationService {
-	return &lineItemProrationService{params: params}
+	return &lineItemProrationService{params: params, priceService: NewPriceService(params)}
 }
 
 func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemProrationRequest) (*LineItemProrationSummary, error) {
 	sub := req.Subscription
 	prorationSvc := NewProrationService(s.params)
-
-	customerTimezone := sub.Timezone
-	if customerTimezone == "" {
-		customerTimezone = types.DefaultTimezone
-	}
 
 	summary := &LineItemProrationSummary{
 		Currency:          sub.Currency,
@@ -237,7 +233,7 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 		// One-time prices are never prorated: an advance one is charged in full when added.
 		if item.BillingPeriod == types.BILLING_PERIOD_ONETIME {
 			if entry.Action == types.ProrationActionAddItem {
-				amount := NewPriceService(s.params).CalculateCost(ctx, entry.NewPrice, entry.NewQuantity)
+				amount := s.priceService.CalculateCost(ctx, entry.NewPrice, entry.NewQuantity)
 				if amount.IsPositive() {
 					summary.ChargeLineItems = append(summary.ChargeLineItems, buildProrationLineItem(
 						sub, item, entry.NewPrice, entry.NewQuantity, amount, "One-time charge", req.EffectiveDate, req.EffectiveDate,
@@ -257,14 +253,14 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 			return nil, err
 		}
 
-		originalPaid, creditsIssued := creditBasis(item, entry.CurrentPrice, billed)
+		originalPaid, creditsIssued := creditBasis(item, billed, s.priceService.CalculateCost(ctx, entry.CurrentPrice, item.Quantity))
 
 		for _, w := range windows {
 			if !w.End.After(req.EffectiveDate) {
 				continue
 			}
 
-			params, skip := s.buildProrationParams(ctx, sub, entry, req, customerTimezone, w, originalPaid, creditsIssued)
+			params, skip := s.buildProrationParams(ctx, sub, entry, req, w, originalPaid, creditsIssued)
 			if skip {
 				continue
 			}
@@ -485,13 +481,11 @@ func (s *lineItemProrationService) buildProrationParams(
 	sub *subscription.Subscription,
 	entry LineItemProrationEntry,
 	req LineItemProrationRequest,
-	customerTimezone string,
 	window periodWindow,
 	originalPaid decimal.Decimal,
 	creditsIssued decimal.Decimal,
 ) (proration.ProrationParams, bool) {
 	item := entry.LineItem
-	periodEnd := window.End.Add(-time.Second)
 
 	// Windows that start after the change are charged or credited in full.
 	prorationDate := req.EffectiveDate
@@ -499,25 +493,18 @@ func (s *lineItemProrationService) buildProrationParams(
 		prorationDate = window.Start
 	}
 
-	// The fraction is of one whole period of this line item. A window clipped short by a
-	// calendar stub keeps the full period as its divisor, so the quote matches what the
-	// invoice would charge for the same days.
-	windowDuration := window.End.Sub(window.Start)
-	periodStart := window.End.Add(-fullPeriodDuration(
-		ctx, s.params.Logger, item, window.Start, customerTimezone, windowDuration,
-	))
-
 	base := proration.ProrationParams{
+		Subscription:       sub,
+		BillingPeriod:      item.BillingPeriod,
+		BillingPeriodCount: item.BillingPeriodCount,
 		SubscriptionID:     sub.ID,
 		LineItemID:         item.ID,
-		CurrentPeriodStart: periodStart,
-		CurrentPeriodEnd:   periodEnd,
+		CurrentPeriodStart: window.Start,
+		CurrentPeriodEnd:   window.End,
 		ProrationDate:      prorationDate,
 		ProrationBehavior:  req.Behavior,
-		ProrationStrategy:  types.StrategySecondBased,
 		Currency:           sub.Currency,
 		PlanDisplayName:    item.DisplayName,
-		Timezone:           customerTimezone,
 	}
 
 	switch entry.Action {
@@ -526,14 +513,14 @@ func (s *lineItemProrationService) buildProrationParams(
 		base.PlanPayInAdvance = entry.NewPrice.InvoiceCadence == types.InvoiceCadenceAdvance
 		base.NewPriceID = item.PriceID
 		base.NewQuantity = entry.NewQuantity
-		base.NewPricePerUnit = entry.NewPrice.Amount
+		base.NewPricePerUnit = s.priceService.CalculateUnitCost(ctx, entry.NewPrice, entry.NewQuantity)
 
 	case types.ProrationActionRemoveItem:
 		base.Action = types.ProrationActionRemoveItem
 		base.PlanPayInAdvance = entry.CurrentPrice.InvoiceCadence == types.InvoiceCadenceAdvance
 		base.OldPriceID = item.PriceID
 		base.OldQuantity = entry.CurrentQuantity
-		base.OldPricePerUnit = entry.CurrentPrice.Amount
+		base.OldPricePerUnit = s.priceService.CalculateUnitCost(ctx, entry.CurrentPrice, entry.CurrentQuantity)
 		base.CancellationType = types.CancellationTypeImmediate
 		base.CancellationReason = req.Reason
 		base.RefundEligible = true
@@ -549,8 +536,8 @@ func (s *lineItemProrationService) buildProrationParams(
 		base.NewPriceID = item.PriceID
 		base.OldQuantity = entry.CurrentQuantity
 		base.NewQuantity = entry.NewQuantity
-		base.OldPricePerUnit = entry.CurrentPrice.Amount
-		base.NewPricePerUnit = entry.NewPrice.Amount
+		base.OldPricePerUnit = s.priceService.CalculateUnitCost(ctx, entry.CurrentPrice, entry.CurrentQuantity)
+		base.NewPricePerUnit = s.priceService.CalculateUnitCost(ctx, entry.NewPrice, entry.NewQuantity)
 		base.OriginalAmountPaid, base.PreviousCreditsIssued = originalPaid, creditsIssued
 
 	default:

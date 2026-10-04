@@ -105,7 +105,7 @@ func NextBillingDate(p *NextBillingDateParams) (time.Time, error) {
 	localStart := p.CurrentPeriodStart.In(loc)
 	localAnchor := p.BillingAnchor.In(loc)
 
-	result, err := nextBillingDateCore(localStart, localAnchor, p.Unit, p.Period, p.SubscriptionEndDate)
+	result, err := nextBillingDateCore(localStart, localAnchor, p.Unit, p.Period, p.SubscriptionEndDate, p.Timezone)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -114,8 +114,8 @@ func NextBillingDate(p *NextBillingDateParams) (time.Time, error) {
 
 // nextBillingDateCore is the internal positional-arg implementation used by NextBillingDate
 // and other helpers in this file. Callers must pass times already in the desired location.
-func nextBillingDateCore(currentPeriodStart, billingAnchor time.Time, unit int, period BillingPeriod, subscriptionEndDate *time.Time) (time.Time, error) {
-	grid, err := newBillingPeriodGrid(billingAnchor, period, unit, billingAnchor.Location())
+func nextBillingDateCore(currentPeriodStart, billingAnchor time.Time, unit int, period BillingPeriod, subscriptionEndDate *time.Time, tz string) (time.Time, error) {
+	grid, err := NewBillingPeriodGrid(billingAnchor, period, unit, tz)
 	if err != nil {
 		return currentPeriodStart, err
 	}
@@ -282,7 +282,7 @@ type PreviousBillingDateParams struct {
 // by the specified period duration. This is useful for proration calculations where we need to determine
 // the start of a full billing period that ends at the billing anchor.
 func PreviousBillingDate(p *PreviousBillingDateParams) (time.Time, error) {
-	grid, err := newBillingPeriodGrid(p.BillingAnchor, p.Period, p.Unit, loadTimezone(p.Timezone))
+	grid, err := NewBillingPeriodGrid(p.BillingAnchor, p.Period, p.Unit, p.Timezone)
 	if err != nil {
 		return p.BillingAnchor, err
 	}
@@ -292,21 +292,19 @@ func PreviousBillingDate(p *PreviousBillingDateParams) (time.Time, error) {
 	return grid.billingDateAtIndex(-1).UTC(), nil
 }
 
-// FullBillingPeriod returns the regular billing period on the anchor's schedule that contains t.
+// FullBillingPeriod returns the regular billing period on the grid's schedule that contains t.
 // Pk-1 ... t ... Pk, where k = periodIndexAfter(t)
-func FullBillingPeriod(t, anchor time.Time, period BillingPeriod, count int, tz string) (Period, error) {
-	loc := loadTimezone(tz)
-	grid, err := newBillingPeriodGrid(anchor, period, count, loc)
-	if err != nil {
-		return Period{}, err
+func FullBillingPeriod(t time.Time, grid *billingPeriodGrid) Period {
+	if grid == nil {
+		return Period{}
 	}
 
-	k := grid.periodIndexAfter(t.In(loc))
+	k := grid.periodIndexAfter(t.In(grid.anchor.Location()))
 
 	return Period{
 		Start: grid.billingDateAtIndex(k - 1).UTC(),
 		End:   grid.billingDateAtIndex(k).UTC(),
-	}, nil
+	}
 }
 
 // billingPeriodGrid is a billing schedule: the dates anchor + k periods, for any integer k.
@@ -319,10 +317,10 @@ type billingPeriodGrid struct {
 	unit   int
 }
 
-// newBillingPeriodGrid validates the period and unit and builds the schedule in loc.
-func newBillingPeriodGrid(anchor time.Time, period BillingPeriod, unit int, loc *time.Location) (billingPeriodGrid, error) {
+// NewBillingPeriodGrid validates the period and unit and builds the schedule in the timezone tz.
+func NewBillingPeriodGrid(anchor time.Time, period BillingPeriod, unit int, tz string) (*billingPeriodGrid, error) {
 	if unit <= 0 {
-		return billingPeriodGrid{}, ierr.NewError("billing period unit must be a positive integer").
+		return nil, ierr.NewError("billing period unit must be a positive integer").
 			WithHint("Billing period unit must be a positive integer").
 			WithReportableDetails(
 				map[string]any{
@@ -332,7 +330,7 @@ func newBillingPeriodGrid(anchor time.Time, period BillingPeriod, unit int, loc 
 			Mark(ierr.ErrValidation)
 	}
 	if period != BILLING_PERIOD_DAILY && period != BILLING_PERIOD_WEEKLY && monthsPerPeriod(period) == 0 {
-		return billingPeriodGrid{}, ierr.NewError("invalid billing period type").
+		return nil, ierr.NewError("invalid billing period type").
 			WithHint("Invalid billing period type").
 			WithReportableDetails(
 				map[string]any{
@@ -342,7 +340,7 @@ func newBillingPeriodGrid(anchor time.Time, period BillingPeriod, unit int, loc 
 			Mark(ierr.ErrValidation)
 	}
 
-	return billingPeriodGrid{anchor: anchor.In(loc), period: period, unit: unit}, nil
+	return &billingPeriodGrid{anchor: anchor.In(loadTimezone(tz)), period: period, unit: unit}, nil
 }
 
 // billingDateAtIndex returns the k-th billing date; k = 0 is the anchor and k may be negative.

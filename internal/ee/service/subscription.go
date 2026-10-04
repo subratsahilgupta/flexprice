@@ -76,10 +76,11 @@ type subscriptionCoreResult struct {
 // validateBillingAnchor rejects an anchor outside [start, start + 1 period], compared on local dates.
 func validateBillingAnchor(sub *subscription.Subscription) error {
 	// The first full period on a schedule anchored at the start is [start, start + 1 period).
-	firstPeriod, err := types.FullBillingPeriod(sub.StartDate, sub.StartDate, sub.BillingPeriod, sub.BillingPeriodCount, sub.Timezone)
+	grid, err := types.NewBillingPeriodGrid(sub.StartDate, sub.BillingPeriod, sub.BillingPeriodCount, sub.Timezone)
 	if err != nil {
 		return err
 	}
+	firstPeriod := types.FullBillingPeriod(sub.StartDate, grid)
 
 	anchorDay := types.FloorToStartOfDay(sub.BillingAnchor, sub.Timezone)
 	if anchorDay.Before(types.FloorToStartOfDay(firstPeriod.Start, sub.Timezone)) || anchorDay.After(types.FloorToStartOfDay(firstPeriod.End, sub.Timezone)) {
@@ -430,9 +431,10 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		creditGrantStart = lo.FromPtr(sub.TrialEnd)
 	}
 	if err = creditGrantService.CreateSubscriptionCreditGrants(ctx, dto.CreateSubscriptionCreditGrantsRequest{
-		Subscription: sub,
-		Grants:       creditGrantRequests,
-		StartDate:    creditGrantStart,
+		Subscription:         sub,
+		Grants:               creditGrantRequests,
+		StartDate:            creditGrantStart,
+		FirstPeriodProration: planCreditGrantProration(sub),
 	}); err != nil {
 		return nil, err
 	}
@@ -4976,9 +4978,10 @@ func (s *subscriptionService) handleSubscriptionAddons(
 			addonReq.StartDate = &subscription.StartDate
 		}
 
-		// The opening invoice bills these line items for the whole period, so settling a
-		// proration here as well would charge the addon twice.
+		// The opening invoice already prices these line items, so settling a second
+		// proration would charge the addon twice. Grants still follow the subscription.
 		addonReq.ProrationBehavior = types.ProrationBehaviorNone
+		addonReq.ProrationSettings = dto.NewProrationSettings(subscription.ProrationBehavior)
 
 		adds = append(adds, AddonAdd{Request: &addonReq})
 	}
