@@ -210,11 +210,9 @@ func (c *Client) GetRazorpaySDKClient(ctx context.Context) (*razorpay.Client, *R
 	// Initialize Razorpay SDK client
 	razorpayClient := razorpay.NewClient(config.KeyID, config.SecretKey)
 
-	// Instrument the SDK's HTTP client so outbound Razorpay calls surface in
-	// SigNoz External API Monitoring. We wrap the existing transport in place to
-	// preserve the SDK's configured timeout.
+	// Wrap the SDK's transport in place to keep its timeout.
 	if razorpayClient.Request != nil && razorpayClient.Request.HTTPClient != nil {
-		razorpayClient.Request.HTTPClient.Transport = httpclient.OtelTransport(razorpayClient.Request.HTTPClient.Transport)
+		razorpayClient.Request.HTTPClient.Transport = httpclient.ProviderTransport(razorpayClient.Request.HTTPClient.Transport, c.logger, string(types.SecretProviderRazorpay))
 	}
 
 	return razorpayClient, config, nil
