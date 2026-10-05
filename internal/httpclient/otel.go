@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -33,6 +34,26 @@ func OtelTransport(base http.RoundTripper) http.RoundTripper {
 			return r.Method
 		}),
 	)
+}
+
+// ContextTransport runs requests built without a context (http.NewRequest) under ctx, so
+// SDKs that drop the caller's context still get trace parentage, tenant-tagged logs and
+// cancellation. Wrap it outermost, around ProviderTransport.
+func ContextTransport(ctx context.Context, base http.RoundTripper) http.RoundTripper {
+	return &contextTransport{ctx: ctx, base: base}
+}
+
+type contextTransport struct {
+	ctx  context.Context
+	base http.RoundTripper
+}
+
+func (t *contextTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Context() == context.Background() {
+		req = req.WithContext(t.ctx)
+	}
+
+	return t.base.RoundTrip(req)
 }
 
 // NewOtelHTTPClient returns an *http.Client whose Transport is wrapped with
