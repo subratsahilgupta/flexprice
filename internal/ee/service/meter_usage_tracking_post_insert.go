@@ -114,13 +114,6 @@ func (s *meterUsageTrackingService) scheduleUsageAlertWorkflow(ctx context.Conte
 		return
 	}
 
-	// Per-tenant gate: settings can turn any alert type off independently of the deployment-level config.
-	walletEnabled, spendEnabled, entitlementEnabled := s.effectiveUsageAlertFlags(ctx)
-	if !walletEnabled && !spendEnabled && !entitlementEnabled {
-		s.Logger.Debug(ctx, "usage alerts disabled for tenant, skipping workflow", "customer_id", cust.ID)
-		return
-	}
-
 	delay, staleAfter := s.effectiveUsageAlertTiming(ctx)
 
 	var throttleLock cache.Lock
@@ -135,6 +128,18 @@ func (s *meterUsageTrackingService) scheduleUsageAlertWorkflow(ctx context.Conte
 		} else {
 			throttleLock = lock
 		}
+	}
+
+	// Per-tenant gate: settings can turn any alert type off independently of the deployment-level config.
+	walletEnabled, spendEnabled, entitlementEnabled := s.effectiveUsageAlertFlags(ctx)
+	if !walletEnabled && !spendEnabled && !entitlementEnabled {
+		if throttleLock != nil {
+			if releaseErr := throttleLock.Release(ctx); releaseErr != nil {
+				s.Logger.Error(ctx, "failed to release usage alert schedule lock", "error", releaseErr, "customer_id", cust.ID)
+			}
+		}
+		s.Logger.Debug(ctx, "usage alerts disabled for tenant, skipping workflow", "customer_id", cust.ID)
+		return
 	}
 
 	tenantID := types.GetTenantID(ctx)
