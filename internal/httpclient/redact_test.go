@@ -28,7 +28,7 @@ func TestRedactor_Body(t *testing.T) {
 			name:        "nested card fields",
 			body:        `{"source":{"type":"creditcard","number":"4111111111111111","cvc":"123","month":12,"name":"Jane Doe"}}`,
 			contentType: jsonType,
-			want:        `{"source":{"cvc":"[redacted]","month":12,"name":"[redacted]","number":"[redacted]","type":"creditcard"}}`,
+			want:        `{"source":{"cvc":"[redacted]","month":"[redacted]","name":"[redacted]","number":"[redacted]","type":"creditcard"}}`,
 		},
 		{
 			name:        "camelCase keys",
@@ -104,9 +104,9 @@ func TestRedactor_Body(t *testing.T) {
 		},
 		{
 			name:        "form body with bracketed keys",
-			body:        "customer[billing_address][line1]=1+Main+St&customer[id]=cus_1&card[expiry_month]=12",
+			body:        "customer[billing_address][line1]=1+Main+St&customer[id]=cus_1&card[expiry_month]=12&card[brand]=visa",
 			contentType: formType,
-			want:        "card%5Bexpiry_month%5D=12&customer%5Bbilling_address%5D%5Bline1%5D=%5Bredacted%5D&customer%5Bid%5D=cus_1",
+			want:        "card%5Bbrand%5D=visa&card%5Bexpiry_month%5D=%5Bredacted%5D&customer%5Bbilling_address%5D%5Bline1%5D=%5Bredacted%5D&customer%5Bid%5D=cus_1",
 		},
 		{
 			name:        "OAuth code in a form body",
@@ -162,7 +162,7 @@ func TestRedactor_ProviderCorpus(t *testing.T) {
 		"Jane", "Doe", "jane@acme.com", "+15551234567", "9876543210", "1 Main St", "Springfield", "94107",
 		"4111111111111111", "000123456789", "110000000", "DE89370400440532013000", "HDFC0001234",
 		"jane@okicici", "GB123456789", "27AAPFU0939F1ZV", "203.0.113.7", "invoice.stripe.com", "rzp.io",
-		"1000.authcode", fakeWebhookSecret, "Acme Widgets",
+		"1000.authcode", fakeWebhookSecret, "Acme Widgets", "2028",
 	}
 
 	tests := []struct {
@@ -191,7 +191,7 @@ func TestRedactor_ProviderCorpus(t *testing.T) {
 			name:        "stripe card error with payment method",
 			contentType: "application/json",
 			body: `{"error":{"type":"card_error","code":"card_declined","decline_code":"insufficient_funds","request_log_url":"https://dashboard.stripe.com/x",
-				"payment_method":{"id":"pm_1","billing_details":{"email":"jane@acme.com","name":"Jane Doe"},"card":{"last4":"4242","exp_month":12}}}}`,
+				"payment_method":{"id":"pm_1","billing_details":{"email":"jane@acme.com","name":"Jane Doe"},"card":{"last4":"4242","exp_month":12,"exp_year":2028}}}}`,
 			mustKeep: []string{"card_declined", "insufficient_funds", "pm_1"},
 		},
 		{

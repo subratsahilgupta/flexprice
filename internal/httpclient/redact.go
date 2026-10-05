@@ -19,7 +19,7 @@ const (
 var sensitiveKeyParts = []string{
 	"secret", "password", "passwd", "passphrase", "token", "apikey", "authorization",
 	"privatekey", "credential", "cookie", "signature",
-	"cvc", "cvv", "securitycode", "cardnumber", "cardholder", "nameoncard", "accountnumber",
+	"cvc", "cvv", "securitycode", "expiry", "cardnumber", "cardholder", "nameoncard", "accountnumber",
 	"routingnumber", "iban", "sortcode", "bsb", "ifsc", "vpa", "upi", "bankaccount",
 	"email", "phone", "mobile", "firstname", "lastname", "birth", "passport", "aadhaar", "ssn",
 	"ipaddress", "beneficiary", "purchaser",
@@ -30,12 +30,13 @@ var sensitiveKeyParts = []string{
 	"url", "pdf", "link",
 }
 
-// sensitiveKeys match exactly: "number" is a card PAN, "contact" a Razorpay phone, "value"
-// a custom field's value.
+// sensitiveKeys match exactly: "number" is a card PAN, "month"/"year" its expiry, "contact"
+// a Razorpay phone, "value" a custom field's value.
 var sensitiveKeys = map[string]bool{
 	"number": true, "pin": true, "otp": true, "contact": true, "company": true, "value": true,
 	"ip": true, "pan": true, "dob": true, "city": true, "zip": true, "line1": true,
 	"line2": true, "line3": true, "objectid": true, "gst": true,
+	"month": true, "year": true, "expmonth": true, "expyear": true,
 }
 
 var (
