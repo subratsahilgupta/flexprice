@@ -37,16 +37,16 @@ func TestProviderTransport_LogsOneLinePerCall(t *testing.T) {
 		wantReqBody  string
 	}{
 		{
-			name:         "success logs status, request id and bodies",
+			name:         "success logs status, request id and redacted bodies",
 			status:       http.StatusOK,
-			respBody:     `{"id":"cus_1"}`,
+			respBody:     `{"id":"cus_1","email":"a@b.com","status":"active"}`,
 			respHeaders:  map[string]string{"Request-Id": "req_123", "Content-Type": "application/json"},
-			reqBody:      `{"email":"a@b.com"}`,
+			reqBody:      `{"email":"a@b.com","currency":"usd"}`,
 			reqType:      "application/json",
 			wantLevel:    zapcore.InfoLevel,
 			wantMessage:  "provider_call.completed",
-			wantRespBody: `{"id":"cus_1"}`,
-			wantReqBody:  `{"email":"a@b.com"}`,
+			wantRespBody: `{"email":"[redacted]","id":"cus_1","status":"active"}`,
+			wantReqBody:  `{"currency":"usd","email":"[redacted]"}`,
 		},
 		{
 			name:         "4xx logs redacted bodies at info",
@@ -58,7 +58,7 @@ func TestProviderTransport_LogsOneLinePerCall(t *testing.T) {
 			wantLevel:    zapcore.InfoLevel,
 			wantMessage:  "provider_call.rejected",
 			wantRespBody: `{"error":{"code":"card_declined","decline_code":"insufficient_funds"}}`,
-			wantReqBody:  "amount=100&card%5Bnumber%5D=[redacted]&card%5Bcvc%5D=[redacted]",
+			wantReqBody:  "amount=100&card%5Bcvc%5D=%5Bredacted%5D&card%5Bnumber%5D=%5Bredacted%5D",
 		},
 		{
 			name:         "5xx logs at error",
@@ -70,7 +70,7 @@ func TestProviderTransport_LogsOneLinePerCall(t *testing.T) {
 			wantLevel:    zapcore.ErrorLevel,
 			wantMessage:  "provider_call.failed",
 			wantRespBody: `{"message":"upstream down"}`,
-			wantReqBody:  `{"client_secret":"[redacted]","amount":5}`,
+			wantReqBody:  `{"amount":5,"client_secret":"[redacted]"}`,
 		},
 	}
 
@@ -115,6 +115,38 @@ func TestProviderTransport_LogsOneLinePerCall(t *testing.T) {
 	}
 }
 
+func TestProviderTransport_KillSwitch(t *testing.T) {
+	tests := []struct {
+		name         string
+		log          *logger.Logger
+		wantBodyRead bool
+	}{
+		{name: "nil logger", log: nil},
+		{name: "provider_calls_enabled off", log: logger.NewNoopLogger()},
+		{name: "provider_calls_enabled on", log: logger.NewFromSugared(zap.NewNop().Sugar()), wantBodyRead: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+			defer srv.Close()
+
+			req, err := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"a":1}`))
+			require.NoError(t, err)
+			bodyReads := 0
+			getBody := req.GetBody
+			req.GetBody = func() (io.ReadCloser, error) {
+				bodyReads++
+				return getBody()
+			}
+
+			resp, err := NewProviderHTTPClient(0, tt.log, "stripe").Do(req)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			assert.Equal(t, tt.wantBodyRead, bodyReads > 0, "the logging layer is the only reader of GetBody")
+		})
+	}
+}
+
 type failingTransport struct{ err error }
 
 func (f failingTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, f.err }
@@ -147,10 +179,51 @@ func TestProviderTransport_LogsTransportErrors(t *testing.T) {
 	}
 }
 
-func TestProviderTransport_TruncatesLargeBodies(t *testing.T) {
-	large := strings.Repeat("x", maxLoggedBodyBytes*2)
+// Stripe's SDK builds requests with http.NewRequest(nil), then sets Body and GetBody,
+// leaving ContentLength at 0.
+func TestProviderTransport_LogsBodyOfUnknownLength(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/customers", nil)
+	require.NoError(t, err)
+	const body = "email=a%40b.com&currency=usd"
+	req.Body = io.NopCloser(strings.NewReader(body))
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(body)), nil }
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	log, logs := newObservedLogger()
+	resp, err := NewProviderHTTPClient(0, log, "stripe").Do(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	assert.Equal(t, "currency=usd&email=%5Bredacted%5D", logs.All()[0].ContextMap()["request_body"])
+}
+
+func TestProviderTransport_ReportsDetectedPII(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"inv_1","footer":"Questions? Write to jane@acme.com"}`)
+	}))
+	defer srv.Close()
+
+	log, logs := newObservedLogger()
+	resp, err := NewProviderHTTPClient(0, log, "chargebee").Get(srv.URL + "/api/v2/invoices/inv_1")
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+
+	require.Equal(t, 2, logs.Len())
+	completed, detected := logs.All()[0], logs.All()[1]
+	assert.Equal(t, `{"footer":"Questions? Write to [email]","id":"inv_1"}`, completed.ContextMap()["response_body"])
+	assert.Equal(t, "provider_call.pii_detected", detected.Message)
+	assert.Equal(t, []any{"response.footer"}, detected.ContextMap()["pii_paths"])
+	assert.NotContains(t, fmt.Sprint(detected.ContextMap()), "jane@acme.com", "the alert line must not carry values")
+}
+
+func TestProviderTransport_OmitsOversizedBodies(t *testing.T) {
+	large := `{"pad":"` + strings.Repeat("x", maxParsedBodyBytes) + `"}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = io.WriteString(w, large)
 	}))
@@ -163,82 +236,6 @@ func TestProviderTransport_TruncatesLargeBodies(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 
-	assert.Len(t, got, len(large))
-	logged := logs.All()[0].ContextMap()["response_body"].(string)
-	assert.True(t, strings.HasSuffix(logged, "…[truncated]"))
-	assert.Len(t, strings.TrimSuffix(logged, "…[truncated]"), maxLoggedBodyBytes)
-}
-
-func TestProviderTransport_NilLoggerOnlyTraces(t *testing.T) {
-	base := failingTransport{err: errors.New("boom")}
-	_, isLogging := ProviderTransport(base, nil, "stripe").(*loggingTransport)
-	assert.False(t, isLogging)
-}
-
-func TestRedactJSON(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{
-			name: "nested card fields",
-			in:   `{"source":{"type":"creditcard","number":"4111111111111111","cvc":"123","month":12}}`,
-			want: `{"source":{"type":"creditcard","number":"[redacted]","cvc":"[redacted]","month":12}}`,
-		},
-		{
-			name: "token-like keys",
-			in:   `{"access_token":"abc","refresh_token":"def","api_key":"k","name":"Acme"}`,
-			want: `{"access_token":"[redacted]","refresh_token":"[redacted]","api_key":"[redacted]","name":"Acme"}`,
-		},
-		{
-			name: "truncated document still redacted",
-			in:   `{"error":"bad","client_secret":"pi_123_secret_456","items":[{"na`,
-			want: `{"error":"bad","client_secret":"[redacted]","items":[{"na`,
-		},
-		{
-			name: "error codes are kept",
-			in:   `{"code":"card_declined","message":"Your card was declined."}`,
-			want: `{"code":"card_declined","message":"Your card was declined."}`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, redactJSON(tt.in))
-		})
-	}
-}
-
-type ctxKey struct{}
-
-type recordingTransport struct{ got context.Context }
-
-func (r *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	r.got = req.Context()
-	return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
-}
-
-func TestContextTransport(t *testing.T) {
-	bound := context.WithValue(context.Background(), ctxKey{}, "bound")
-	own := context.WithValue(context.Background(), ctxKey{}, "own")
-
-	tests := []struct {
-		name   string
-		reqCtx context.Context
-		want   string
-	}{
-		{name: "request without context gets the bound one", reqCtx: context.Background(), want: "bound"},
-		{name: "request with its own context keeps it", reqCtx: own, want: "own"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := &recordingTransport{}
-			req, err := http.NewRequestWithContext(tt.reqCtx, http.MethodGet, "https://api.razorpay.com/v1/orders", nil)
-			require.NoError(t, err)
-
-			_, err = ContextTransport(bound, rec).RoundTrip(req)
-			require.NoError(t, err)
-			assert.Equal(t, tt.want, rec.got.Value(ctxKey{}))
-		})
-	}
+	assert.Equal(t, large, string(got))
+	assert.Equal(t, "[body omitted: larger than 64 KB]", logs.All()[0].ContextMap()["response_body"])
 }

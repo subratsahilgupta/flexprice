@@ -210,11 +210,9 @@ func (c *Client) GetRazorpaySDKClient(ctx context.Context) (*razorpay.Client, *R
 	// Initialize Razorpay SDK client
 	razorpayClient := razorpay.NewClient(config.KeyID, config.SecretKey)
 
-	// Wrap the SDK's transport in place to keep its timeout. The SDK builds requests
-	// without a context, and this client lives for one operation, so bind its ctx.
+	// Wrap the SDK's transport in place to keep its timeout.
 	if razorpayClient.Request != nil && razorpayClient.Request.HTTPClient != nil {
-		instrumented := httpclient.ProviderTransport(razorpayClient.Request.HTTPClient.Transport, c.logger, string(types.SecretProviderRazorpay))
-		razorpayClient.Request.HTTPClient.Transport = httpclient.ContextTransport(ctx, instrumented)
+		razorpayClient.Request.HTTPClient.Transport = httpclient.ProviderTransport(razorpayClient.Request.HTTPClient.Transport, c.logger, string(types.SecretProviderRazorpay))
 	}
 
 	return razorpayClient, config, nil

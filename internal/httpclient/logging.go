@@ -7,61 +7,40 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/logger"
 )
 
-// maxLoggedBodyBytes caps each request/response body written to a log line. (4 KB)
-const maxLoggedBodyBytes = 4 << 10
-const redactedValue = "[redacted]"
-
-// providerRequestIDHeaders are the response headers providers use to identify a request
-// in their own logs, in lookup order.
+// providerRequestIDHeaders identify a call in the provider's own logs, in lookup order.
 var providerRequestIDHeaders = []string{
-	"Request-Id",               // Stripe
-	"X-Request-Id",             // generic
-	"Intuit_tid",               // QuickBooks
-	"X-Hubspot-Correlation-Id", // HubSpot
+	"Request-Id",
+	"X-Request-Id",
+	"Intuit_tid",
+	"X-Hubspot-Correlation-Id",
 }
 
-// sensitiveKeyParts redact any body field whose lowercased key contains one of them.
-var sensitiveKeyParts = []string{
-	"secret", "password", "token", "api_key", "apikey", "authorization",
-	"private_key", "card_number", "cvc", "cvv",
-}
-
-// sensitiveKeys redact body fields whose lowercased key is exactly one of them. "number"
-// is the card PAN in Moyasar and Stripe card params.
-var sensitiveKeys = map[string]bool{"number": true, "pin": true}
-
-var jsonStringOrNumberField = regexp.MustCompile(`"([^"\\]{1,64})"\s*:\s*("(?:[^"\\]|\\.)*"|-?\d[\d.eE+-]*)`)
-
-// loggingTransport writes one structured log line per outbound call to a third-party
-// provider, with the request and response bodies redacted and truncated.
 type loggingTransport struct {
 	base     http.RoundTripper
 	logger   *logger.Logger
 	provider string
 }
 
-// ProviderTransport instruments base for calls to a third-party provider: an OTel
-// CLIENT span plus one log line per call. A nil log skips the logging layer.
+// ProviderTransport adds an OTel span and, unless logging.provider_calls_enabled is off,
+// one redacted log line per provider call.
 func ProviderTransport(base http.RoundTripper, log *logger.Logger, provider string) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	if log == nil {
+
+	if !log.ProviderCallsEnabled() {
 		return OtelTransport(base)
 	}
-	// Logging sits inside the OTel transport so its lines carry the CLIENT span id.
+
 	return OtelTransport(&loggingTransport{base: base, logger: log, provider: provider})
 }
 
-// NewProviderHTTPClient is NewOtelHTTPClient with per-call provider logging.
+// NewProviderHTTPClient is NewOtelHTTPClient with provider call logging.
 func NewProviderHTTPClient(timeout time.Duration, log *logger.Logger, provider string) *http.Client {
 	return &http.Client{
 		Timeout:       timeout,
@@ -70,7 +49,7 @@ func NewProviderHTTPClient(timeout time.Duration, log *logger.Logger, provider s
 	}
 }
 
-// NewProviderClient is NewDefaultClient with per-call provider logging.
+// NewProviderClient is NewDefaultClient with provider call logging.
 func NewProviderClient(log *logger.Logger, provider string) Client {
 	return &DefaultClient{client: NewProviderHTTPClient(30*time.Second, log, provider)}
 }
@@ -80,6 +59,7 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	resp, err := t.base.RoundTrip(req)
 	ctx := req.Context()
 	durationMS := time.Since(start).Milliseconds()
+	redact := &redactor{}
 
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -99,14 +79,17 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			"http_host", req.URL.Host,
 			"http_path", req.URL.Path,
 			"duration_ms", durationMS,
-			"request_body", requestBody(req),
+			"request_body", requestBody(req, redact),
 		)
+		t.logDetected(ctx, req, redact)
 		return resp, err
 	}
 
 	requestID := providerRequestID(resp.Header)
-	reqBody := requestBody(req)
-	respBody := peekResponseBody(resp)
+	reqBody := requestBody(req, redact)
+	respBody := peekResponseBody(resp, redact)
+	defer t.logDetected(ctx, req, redact)
+
 	if resp.StatusCode < http.StatusBadRequest {
 		t.logger.Info(ctx, "provider_call.completed",
 			"provider", t.provider,
@@ -138,8 +121,7 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		return resp, nil
 	}
 
-	// 4xx is logged at Info: many are expected outcomes (not found, declined) that the
-	// caller handles, and Error would mark the span as an exception.
+	// Info, not Error: most 4xx are expected outcomes, and Error marks the span as failed.
 	t.logger.Info(ctx, "provider_call.rejected",
 		"provider", t.provider,
 		"http_method", req.Method,
@@ -155,6 +137,20 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return resp, nil
 }
 
+// logDetected reports fields where a pattern caught PII the key list missed.
+func (t *loggingTransport) logDetected(ctx context.Context, req *http.Request, redact *redactor) {
+	if len(redact.detected) == 0 {
+		return
+	}
+
+	t.logger.Info(ctx, "provider_call.pii_detected",
+		"provider", t.provider,
+		"http_method", req.Method,
+		"http_path", req.URL.Path,
+		"pii_paths", redact.detected,
+	)
+}
+
 func providerRequestID(h http.Header) string {
 	for _, name := range providerRequestIDHeaders {
 		if v := h.Get(name); v != "" {
@@ -164,37 +160,37 @@ func providerRequestID(h http.Header) string {
 	return ""
 }
 
-// requestBody re-reads the request body through GetBody, which net/http sets for
-// in-memory bodies; streamed bodies are not logged.
-func requestBody(req *http.Request) string {
-	if req.GetBody == nil || req.ContentLength == 0 {
+func requestBody(req *http.Request, redact *redactor) string {
+	// Not ContentLength: Stripe's SDK leaves it 0 on requests with a body.
+	if req.GetBody == nil || req.Body == nil || req.Body == http.NoBody {
 		return ""
 	}
-	if !isLoggableContent(req.Header) {
-		return "[non-text body omitted]"
+	if !isUncompressed(req.Header) {
+		return "[compressed body omitted]"
 	}
+
 	body, err := req.GetBody()
 	if err != nil {
 		return ""
 	}
 	defer body.Close()
-	data, truncated := readCapped(body)
-	return formatBody(data, truncated, req.Header.Get("Content-Type"))
+	data, _ := io.ReadAll(io.LimitReader(body, maxParsedBodyBytes+1))
+
+	return redact.body(data, req.Header.Get("Content-Type"), "request")
 }
 
-// peekResponseBody reads the head of resp.Body for logging and puts it back so the
-// caller still sees the complete body.
-func peekResponseBody(resp *http.Response) string {
+// peekResponseBody reads the body for logging and puts it back for the caller.
+func peekResponseBody(resp *http.Response, redact *redactor) string {
 	if resp.Body == nil || resp.Body == http.NoBody {
 		return ""
 	}
-	if !isLoggableContent(resp.Header) {
-		return "[non-text body omitted]"
+	if !isUncompressed(resp.Header) {
+		return "[compressed body omitted]"
 	}
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxLoggedBodyBytes+1))
+
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxParsedBodyBytes+1))
 	resp.Body = &replayedBody{Reader: io.MultiReader(bytes.NewReader(data), resp.Body), Closer: resp.Body}
-	logged, truncated := capBody(data)
-	return formatBody(logged, truncated, resp.Header.Get("Content-Type"))
+	return redact.body(data, resp.Header.Get("Content-Type"), "response")
 }
 
 type replayedBody struct {
@@ -202,90 +198,7 @@ type replayedBody struct {
 	io.Closer
 }
 
-func readCapped(r io.Reader) ([]byte, bool) {
-	data, _ := io.ReadAll(io.LimitReader(r, maxLoggedBodyBytes+1))
-	return capBody(data)
-}
-
-func capBody(data []byte) ([]byte, bool) {
-	if len(data) > maxLoggedBodyBytes {
-		return data[:maxLoggedBodyBytes], true
-	}
-	return data, false
-}
-
-func isLoggableContent(h http.Header) bool {
-	if enc := h.Get("Content-Encoding"); enc != "" && enc != "identity" {
-		return false
-	}
-	ct := strings.ToLower(h.Get("Content-Type"))
-	if ct == "" {
-		return true
-	}
-	for _, textual := range []string{"json", "xml", "text/", "x-www-form-urlencoded"} {
-		if strings.Contains(ct, textual) {
-			return true
-		}
-	}
-	return false
-}
-
-func formatBody(data []byte, truncated bool, contentType string) string {
-	var body string
-	if strings.Contains(strings.ToLower(contentType), "x-www-form-urlencoded") {
-		body = redactForm(string(data))
-	} else {
-		body = redactJSON(string(data))
-	}
-	if truncated {
-		body += "…[truncated]"
-	}
-	return body
-}
-
-// redactJSON replaces string and number values of sensitive keys. It works on
-// truncated documents, which a JSON decoder would reject.
-func redactJSON(body string) string {
-	return jsonStringOrNumberField.ReplaceAllStringFunc(body, func(field string) string {
-		key := jsonStringOrNumberField.FindStringSubmatch(field)[1]
-		if !isSensitiveKey(key) {
-			return field
-		}
-		return fmt.Sprintf("%q:%q", key, redactedValue)
-	})
-}
-
-// redactForm handles form bodies, including bracketed keys such as card[number].
-func redactForm(body string) string {
-	pairs := strings.Split(body, "&")
-	for i, pair := range pairs {
-		rawKey, _, found := strings.Cut(pair, "=")
-		if !found {
-			continue
-		}
-		key, err := url.QueryUnescape(rawKey)
-		if err != nil {
-			key = rawKey
-		}
-		if open := strings.LastIndex(key, "["); open >= 0 {
-			key = strings.TrimSuffix(key[open+1:], "]")
-		}
-		if isSensitiveKey(key) {
-			pairs[i] = rawKey + "=" + redactedValue
-		}
-	}
-	return strings.Join(pairs, "&")
-}
-
-func isSensitiveKey(key string) bool {
-	key = strings.ToLower(key)
-	if sensitiveKeys[key] {
-		return true
-	}
-	for _, part := range sensitiveKeyParts {
-		if strings.Contains(key, part) {
-			return true
-		}
-	}
-	return false
+func isUncompressed(h http.Header) bool {
+	enc := h.Get("Content-Encoding")
+	return enc == "" || enc == "identity"
 }
