@@ -112,6 +112,9 @@ func (r *redactor) value(value any, path string) any {
 		for key, child := range v {
 			if isSensitiveKey(key) {
 				v[key] = redactedValue
+				if normalizeKey(key) == "metadata" {
+					v[key] = r.keepOwnKeys(child, path+"."+key)
+				}
 				continue
 			}
 			v[key] = r.value(child, path+"."+key)
@@ -127,17 +130,51 @@ func (r *redactor) value(value any, path string) any {
 }
 
 // form treats customer[billing_address][line1] as sensitive if any segment is.
+// It renders the body as a JSON object so it reads like the JSON bodies.
 func (r *redactor) form(values url.Values, side string) string {
+	fields := make(map[string]any, len(values))
 	for key, list := range values {
 		if isSensitiveFormKey(key) {
-			values[key] = []string{redactedValue}
+			fields[key] = redactedValue
 			continue
 		}
 		for i, item := range list {
 			list[i] = r.text(item, side+"."+key)
 		}
+		fields[key] = list
+		if len(list) == 1 {
+			fields[key] = list[0]
+		}
 	}
-	return values.Encode()
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return "[omitted: invalid form body]"
+	}
+	return string(out)
+}
+
+// ownMetadataKeys are the metadata ids our code sets on provider objects. Exact match only:
+// callers can add their own metadata keys, so a prefix would be spoofable.
+var ownMetadataKeys = map[string]bool{
+	"flexprice_payment_id": true, "flexprice_invoice_id": true, "flexprice_customer_id": true,
+	"flexprice_subscription_id": true, "flexprice_price_id": true, "flexprice_line_item_id": true,
+	"flexprice_invoice_number": true, "flexprice_environment_id": true,
+}
+
+// keepOwnKeys redacts a metadata object except our own ids, whose values are still scanned.
+func (r *redactor) keepOwnKeys(value any, path string) any {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return redactedValue
+	}
+	for key, child := range object {
+		if !ownMetadataKeys[key] {
+			object[key] = redactedValue
+			continue
+		}
+		object[key] = r.value(child, path+"."+key)
+	}
+	return object
 }
 
 // text masks emails, card numbers and API keys, recording the field for the pii_detected
@@ -171,7 +208,13 @@ func (r *redactor) text(value, path string) string {
 
 func isSensitiveFormKey(key string) bool {
 	segments := strings.FieldsFunc(key, func(c rune) bool { return c == '[' || c == ']' })
-	for _, segment := range segments {
+	n := len(segments)
+	own := n >= 2 && normalizeKey(segments[n-2]) == "metadata" && ownMetadataKeys[segments[n-1]]
+	for i, segment := range segments {
+		// metadata[<own id>] itself is ours; every segment above it is still checked.
+		if own && i >= n-2 {
+			break
+		}
 		// OAuth authorization code; JSON keeps "code" for provider error codes.
 		if isSensitiveKey(segment) || normalizeKey(segment) == "code" {
 			return true

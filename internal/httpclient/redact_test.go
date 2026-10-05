@@ -63,9 +63,21 @@ func TestRedactor_Body(t *testing.T) {
 		},
 		{
 			name:        "free-text and link fields are redacted",
-			body:        `{"description":"Invoice for Jane","metadata":{"k":"v"},"hosted_invoice_url":"https://x","invoice_pdf":"https://y"}`,
+			body:        `{"description":"Invoice for Jane","hosted_invoice_url":"https://x","invoice_pdf":"https://y"}`,
 			contentType: jsonType,
-			want:        `{"description":"[redacted]","hosted_invoice_url":"[redacted]","invoice_pdf":"[redacted]","metadata":"[redacted]"}`,
+			want:        `{"description":"[redacted]","hosted_invoice_url":"[redacted]","invoice_pdf":"[redacted]"}`,
+		},
+		{
+			name:        "metadata keeps only our exact flexprice_ ids, and still scans them",
+			body:        `{"metadata":{"flexprice_customer_id":"jane@acme.com","flexprice_customer_phone":"+15551234567"}}`,
+			contentType: jsonType,
+			want:        `{"metadata":{"flexprice_customer_id":"[email]","flexprice_customer_phone":"[redacted]"}}`,
+		},
+		{
+			name:        "metadata keeps only our flexprice_ ids",
+			body:        `{"metadata":{"flexprice_invoice_id":"inv_1","owner":"Jane"},"meta_data":"{\"x\":1}"}`,
+			contentType: jsonType,
+			want:        `{"meta_data":"[redacted]","metadata":{"flexprice_invoice_id":"inv_1","owner":"[redacted]"}}`,
 		},
 		{
 			name:        "an email under an unlisted key is masked",
@@ -107,13 +119,25 @@ func TestRedactor_Body(t *testing.T) {
 			name:        "form body with bracketed keys",
 			body:        "customer[billing_address][line1]=1+Main+St&customer[id]=cus_1&card[expiry_month]=12&card[brand]=visa",
 			contentType: formType,
-			want:        "card%5Bbrand%5D=visa&card%5Bexpiry_month%5D=%5Bredacted%5D&customer%5Bbilling_address%5D%5Bline1%5D=%5Bredacted%5D&customer%5Bid%5D=cus_1",
+			want:        `{"card[brand]":"visa","card[expiry_month]":"[redacted]","customer[billing_address][line1]":"[redacted]","customer[id]":"cus_1"}`,
+		},
+		{
+			name:        "form metadata exemption needs a metadata parent and an exact id",
+			body:        "client_secret[flexprice_invoice_id]=hunter2&metadata[flexprice_phone]=%2B15551234567&subscription_data[metadata][flexprice_customer_id]=cust_1",
+			contentType: formType,
+			want:        `{"client_secret[flexprice_invoice_id]":"[redacted]","metadata[flexprice_phone]":"[redacted]","subscription_data[metadata][flexprice_customer_id]":"cust_1"}`,
+		},
+		{
+			name:        "form metadata keeps only our flexprice_ ids",
+			body:        "metadata[flexprice_invoice_id]=inv_1&metadata[sync_source]=flexprice",
+			contentType: formType,
+			want:        `{"metadata[flexprice_invoice_id]":"inv_1","metadata[sync_source]":"[redacted]"}`,
 		},
 		{
 			name:        "OAuth code in a form body",
 			body:        "code=1000.abcdef&client_id=x&client_secret=y&grant_type=authorization_code",
 			contentType: formType,
-			want:        "client_id=x&client_secret=%5Bredacted%5D&code=%5Bredacted%5D&grant_type=authorization_code",
+			want:        `{"client_id":"x","client_secret":"[redacted]","code":"[redacted]","grant_type":"authorization_code"}`,
 		},
 	}
 	for _, tt := range tests {
