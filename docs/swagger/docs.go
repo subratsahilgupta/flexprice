@@ -8563,6 +8563,47 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Filter by subscription IDs",
+                        "name": "subscription_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "enum": [
+                                "plan_change",
+                                "cancellation"
+                            ],
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Filter by schedule type",
+                        "name": "schedule_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "enum": [
+                                "pending",
+                                "executing",
+                                "executed",
+                                "cancelled",
+                                "failed"
+                            ],
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Filter by schedule status",
+                        "name": "schedule_status",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "Limit results",
                         "name": "limit",
@@ -16078,6 +16119,14 @@ const docTemplate = `{
                 }
             }
         },
+        "ConfigurationDetails": {
+            "type": "object",
+            "properties": {
+                "plan_change": {
+                    "$ref": "#/definitions/PlanChangeScheduleDetails"
+                }
+            }
+        },
         "CostAnalyticItem": {
             "type": "object",
             "properties": {
@@ -19448,6 +19497,14 @@ const docTemplate = `{
                 }
             }
         },
+        "ExecutionDetails": {
+            "type": "object",
+            "properties": {
+                "plan_change": {
+                    "$ref": "#/definitions/PlanChangeScheduleResult"
+                }
+            }
+        },
         "FXRateResponse": {
             "type": "object",
             "properties": {
@@ -21802,6 +21859,44 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "voided_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "PlanChangeScheduleDetails": {
+            "type": "object",
+            "properties": {
+                "billing_period_behaviour": {
+                    "$ref": "#/definitions/types.BillingPeriodBehaviour"
+                },
+                "entity_policies": {
+                    "$ref": "#/definitions/SubscriptionChangeEntityPolicies"
+                },
+                "target_plan_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "PlanChangeScheduleResult": {
+            "type": "object",
+            "properties": {
+                "change_type": {
+                    "type": "string"
+                },
+                "effective_date": {
+                    "type": "string"
+                },
+                "from_plan_id": {
+                    "type": "string"
+                },
+                "previous_subscription_id": {
+                    "description": "previous_subscription_id is set when the change replaced the subscription with a new one",
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "to_plan_id": {
                     "type": "string"
                 }
             }
@@ -24509,9 +24604,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "configuration": {
-                    "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)",
+                    "description": "configuration is the raw type-specific configuration. Deprecated: use configuration_details.",
                     "type": "object",
                     "additionalProperties": true
+                },
+                "configuration_details": {
+                    "description": "configuration_details is the typed counterpart of configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ConfigurationDetails"
+                        }
+                    ]
                 },
                 "created_at": {
                     "description": "created_at timestamp",
@@ -24529,8 +24632,16 @@ const docTemplate = `{
                     "description": "executed_at is when the schedule was executed",
                     "type": "string"
                 },
+                "execution_details": {
+                    "description": "execution_details is the typed counterpart of execution_result",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ExecutionDetails"
+                        }
+                    ]
+                },
                 "execution_result": {
-                    "description": "execution_result contains type-specific execution result",
+                    "description": "execution_result is the raw type-specific execution result. Deprecated: use execution_details.",
                     "type": "object",
                     "additionalProperties": true
                 },

@@ -1447,6 +1447,11 @@ definitions:
       true_up_enabled:
         type: boolean
     type: object
+  ConfigurationDetails:
+    properties:
+      plan_change:
+        $ref: '#/definitions/PlanChangeScheduleDetails'
+    type: object
   CostAnalyticItem:
     properties:
       cost_by_period:
@@ -3919,6 +3924,11 @@ definitions:
     required:
     - type
     type: object
+  ExecutionDetails:
+    properties:
+      plan_change:
+        $ref: '#/definitions/PlanChangeScheduleResult'
+    type: object
   FXRateResponse:
     properties:
       created_at:
@@ -5660,6 +5670,32 @@ definitions:
       updated_by:
         type: string
       voided_at:
+        type: string
+    type: object
+  PlanChangeScheduleDetails:
+    properties:
+      billing_period_behaviour:
+        $ref: '#/definitions/types.BillingPeriodBehaviour'
+      entity_policies:
+        $ref: '#/definitions/SubscriptionChangeEntityPolicies'
+      target_plan_id:
+        type: string
+    type: object
+  PlanChangeScheduleResult:
+    properties:
+      change_type:
+        type: string
+      effective_date:
+        type: string
+      from_plan_id:
+        type: string
+      previous_subscription_id:
+        description: previous_subscription_id is set when the change replaced the
+          subscription with a new one
+        type: string
+      subscription_id:
+        type: string
+      to_plan_id:
         type: string
     type: object
   PlanPriceSyncStatusResponse:
@@ -7638,9 +7674,13 @@ definitions:
         type: string
       configuration:
         additionalProperties: true
-        description: configuration contains type-specific configuration (e.g., target_plan_id
-          for plan changes)
+        description: 'configuration is the raw type-specific configuration. Deprecated:
+          use configuration_details.'
         type: object
+      configuration_details:
+        allOf:
+        - $ref: '#/definitions/ConfigurationDetails'
+        description: configuration_details is the typed counterpart of configuration
       created_at:
         description: created_at timestamp
         type: string
@@ -7653,9 +7693,14 @@ definitions:
       executed_at:
         description: executed_at is when the schedule was executed
         type: string
+      execution_details:
+        allOf:
+        - $ref: '#/definitions/ExecutionDetails'
+        description: execution_details is the typed counterpart of execution_result
       execution_result:
         additionalProperties: true
-        description: execution_result contains type-specific execution result
+        description: 'execution_result is the raw type-specific execution result.
+          Deprecated: use execution_details.'
         type: object
       id:
         description: id of the schedule
@@ -20651,6 +20696,36 @@ paths:
         in: query
         name: subscription_id
         type: string
+      - collectionFormat: multi
+        description: Filter by subscription IDs
+        in: query
+        items:
+          type: string
+        name: subscription_ids
+        type: array
+      - collectionFormat: multi
+        description: Filter by schedule type
+        in: query
+        items:
+          enum:
+          - plan_change
+          - cancellation
+          type: string
+        name: schedule_type
+        type: array
+      - collectionFormat: multi
+        description: Filter by schedule status
+        in: query
+        items:
+          enum:
+          - pending
+          - executing
+          - executed
+          - cancelled
+          - failed
+          type: string
+        name: schedule_status
+        type: array
       - description: Limit results
         in: query
         name: limit

@@ -10300,6 +10300,56 @@
             }
           },
           {
+            "name": "subscription_ids",
+            "in": "query",
+            "description": "Filter by subscription IDs",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "schedule_type",
+            "in": "query",
+            "description": "Filter by schedule type",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "plan_change",
+                  "cancellation"
+                ]
+              }
+            }
+          },
+          {
+            "name": "schedule_status",
+            "in": "query",
+            "description": "Filter by schedule status",
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "executing",
+                  "executed",
+                  "cancelled",
+                  "failed"
+                ]
+              }
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "description": "Limit results",
@@ -18413,6 +18463,14 @@
           }
         }
       },
+      "ConfigurationDetails": {
+        "type": "object",
+        "properties": {
+          "plan_change": {
+            "$ref": "#/components/schemas/PlanChangeScheduleDetails"
+          }
+        }
+      },
       "CostAnalyticItem": {
         "type": "object",
         "properties": {
@@ -21592,6 +21650,14 @@
           }
         }
       },
+      "ExecutionDetails": {
+        "type": "object",
+        "properties": {
+          "plan_change": {
+            "$ref": "#/components/schemas/PlanChangeScheduleResult"
+          }
+        }
+      },
       "FXRateResponse": {
         "type": "object",
         "properties": {
@@ -23908,6 +23974,45 @@
           "voided_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "PlanChangeScheduleDetails": {
+        "type": "object",
+        "properties": {
+          "billing_period_behaviour": {
+            "$ref": "#/components/schemas/types.BillingPeriodBehaviour"
+          },
+          "entity_policies": {
+            "$ref": "#/components/schemas/SubscriptionChangeEntityPolicies"
+          },
+          "target_plan_id": {
+            "type": "string"
+          }
+        }
+      },
+      "PlanChangeScheduleResult": {
+        "type": "object",
+        "properties": {
+          "change_type": {
+            "type": "string"
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "from_plan_id": {
+            "type": "string"
+          },
+          "previous_subscription_id": {
+            "type": "string",
+            "description": "previous_subscription_id is set when the change replaced the subscription with a new one"
+          },
+          "subscription_id": {
+            "type": "string"
+          },
+          "to_plan_id": {
+            "type": "string"
           }
         }
       },
@@ -26389,7 +26494,10 @@
           "configuration": {
             "type": "object",
             "additionalProperties": true,
-            "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)"
+            "description": "configuration is the raw type-specific configuration. Deprecated: use configuration_details."
+          },
+          "configuration_details": {
+            "$ref": "#/components/schemas/ConfigurationDetails"
           },
           "created_at": {
             "type": "string",
@@ -26409,10 +26517,13 @@
             "description": "executed_at is when the schedule was executed",
             "format": "date-time"
           },
+          "execution_details": {
+            "$ref": "#/components/schemas/ExecutionDetails"
+          },
           "execution_result": {
             "type": "object",
             "additionalProperties": true,
-            "description": "execution_result contains type-specific execution result"
+            "description": "execution_result is the raw type-specific execution result. Deprecated: use execution_details."
           },
           "id": {
             "type": "string",
