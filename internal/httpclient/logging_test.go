@@ -132,6 +132,7 @@ func TestProviderTransport_KillSwitch(t *testing.T) {
 
 			req, err := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"a":1}`))
 			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
 			bodyReads := 0
 			getBody := req.GetBody
 			req.GetBody = func() (io.ReadCloser, error) {
@@ -237,5 +238,5 @@ func TestProviderTransport_OmitsOversizedBodies(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 
 	assert.Equal(t, large, string(got))
-	assert.Equal(t, "[body omitted: larger than 64 KB]", logs.All()[0].ContextMap()["response_body"])
+	assert.Equal(t, "[omitted: body over 64 KB]", logs.All()[0].ContextMap()["response_body"])
 }

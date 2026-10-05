@@ -165,8 +165,8 @@ func requestBody(req *http.Request, redact *redactor) string {
 	if req.GetBody == nil || req.Body == nil || req.Body == http.NoBody {
 		return ""
 	}
-	if !isUncompressed(req.Header) {
-		return "[compressed body omitted]"
+	if reason := skipReason(req.Header); reason != "" {
+		return reason
 	}
 
 	body, err := req.GetBody()
@@ -184,8 +184,8 @@ func peekResponseBody(resp *http.Response, redact *redactor) string {
 	if resp.Body == nil || resp.Body == http.NoBody {
 		return ""
 	}
-	if !isUncompressed(resp.Header) {
-		return "[compressed body omitted]"
+	if reason := skipReason(resp.Header); reason != "" {
+		return reason
 	}
 
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxParsedBodyBytes+1))
@@ -196,9 +196,4 @@ func peekResponseBody(resp *http.Response, redact *redactor) string {
 type replayedBody struct {
 	io.Reader
 	io.Closer
-}
-
-func isUncompressed(h http.Header) bool {
-	enc := h.Get("Content-Encoding")
-	return enc == "" || enc == "identity"
 }

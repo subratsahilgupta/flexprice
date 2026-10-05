@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
@@ -100,7 +101,7 @@ func TestRedactor_Body(t *testing.T) {
 			name:        "unparseable or truncated JSON is omitted",
 			body:        `{"password":"hunter2hunter2`,
 			contentType: jsonType,
-			want:        "[unparseable JSON body omitted]",
+			want:        "[omitted: invalid JSON]",
 		},
 		{
 			name:        "form body with bracketed keys",
@@ -114,17 +115,6 @@ func TestRedactor_Body(t *testing.T) {
 			contentType: formType,
 			want:        "client_id=x&client_secret=%5Bredacted%5D&code=%5Bredacted%5D&grant_type=authorization_code",
 		},
-		{
-			name: "body without a content type is omitted",
-			body: "card[number]=4242424242424242",
-			want: "[non-JSON body omitted]",
-		},
-		{
-			name:        "XML is omitted",
-			body:        `<Customer><Password>hunter2</Password></Customer>`,
-			contentType: "application/xml",
-			want:        "[non-JSON body omitted]",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -133,11 +123,36 @@ func TestRedactor_Body(t *testing.T) {
 	}
 }
 
+func TestSkipReason(t *testing.T) {
+	tests := []struct {
+		name     string
+		headers  map[string]string
+		wantSkip string
+	}{
+		{name: "json", headers: map[string]string{"Content-Type": "application/json; charset=utf-8"}},
+		{name: "json suffix type", headers: map[string]string{"Content-Type": "application/problem+json"}},
+		{name: "form", headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"}},
+		{name: "xml", headers: map[string]string{"Content-Type": "application/xml"}, wantSkip: "[omitted: application/xml body]"},
+		{name: "html", headers: map[string]string{"Content-Type": "text/html; charset=utf-8"}, wantSkip: "[omitted: text/html body]"},
+		{name: "no content type", headers: map[string]string{}, wantSkip: "[omitted: no content type]"},
+		{name: "compressed", headers: map[string]string{"Content-Type": "application/json", "Content-Encoding": "gzip"}, wantSkip: "[omitted: gzip-encoded body]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := http.Header{}
+			for k, v := range tt.headers {
+				h.Set(k, v)
+			}
+			assert.Equal(t, tt.wantSkip, skipReason(h))
+		})
+	}
+}
+
 func TestRedactor_TruncatesAfterRedacting(t *testing.T) {
 	body := `{"pad":"` + strings.Repeat("x", maxLoggedBodyBytes-20) + `","password":"hunter2hunter2hunter2"}`
 	got := (&redactor{}).body([]byte(body), "application/json", "request")
 
-	assert.True(t, strings.HasSuffix(got, "…[truncated]"))
+	assert.True(t, strings.HasSuffix(got, "…[truncated at 4 KB]"))
 	assert.NotContains(t, got, "hunter2")
 }
 

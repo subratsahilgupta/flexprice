@@ -3,13 +3,16 @@ package httpclient
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 )
 
 const (
+	// maxLoggedBodyBytes caps a body in the log line.
 	maxLoggedBodyBytes = 4 << 10
+	// maxParsedBodyBytes caps how much is buffered to parse; larger bodies are omitted.
 	maxParsedBodyBytes = 64 << 10
 
 	redactedValue = "[redacted]"
@@ -50,44 +53,56 @@ type redactor struct {
 	detected []string
 }
 
-// body logs only JSON and form bodies, redacting before truncating so a cut never leaks.
+// skipReason says why a body with these headers is not logged, or "" for JSON and form
+// bodies. It runs before the body is read, so skipped bodies cost nothing.
+func skipReason(h http.Header) string {
+	if enc := h.Get("Content-Encoding"); enc != "" && enc != "identity" {
+		return "[omitted: " + enc + "-encoded body]"
+	}
+	mediaType, _, _ := strings.Cut(strings.ToLower(h.Get("Content-Type")), ";")
+	mediaType = strings.TrimSpace(mediaType)
+	switch {
+	case strings.Contains(mediaType, "json"), mediaType == "application/x-www-form-urlencoded":
+		return ""
+	case mediaType == "":
+		return "[omitted: no content type]"
+	}
+	return "[omitted: " + mediaType + " body]"
+}
+
+// body redacts a JSON or form body, then truncates it so a cut never exposes a value.
 func (r *redactor) body(data []byte, contentType, side string) string {
 	if len(data) > maxParsedBodyBytes {
-		return "[body omitted: larger than 64 KB]"
+		return "[omitted: body over 64 KB]"
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return ""
 	}
 
 	var rendered string
-	ct := strings.ToLower(contentType)
-	switch {
-	case strings.Contains(ct, "json"):
+	if strings.Contains(strings.ToLower(contentType), "json") {
 		var doc any
 		dec := json.NewDecoder(bytes.NewReader(data))
 		dec.UseNumber()
 		if err := dec.Decode(&doc); err != nil {
-			return "[unparseable JSON body omitted]"
+			return "[omitted: invalid JSON]"
 		}
 		out, err := json.Marshal(r.value(doc, side))
 		if err != nil {
-			return "[body omitted: failed to encode]"
+			return "[omitted: invalid JSON]"
 		}
 		rendered = string(out)
-	case strings.Contains(ct, "x-www-form-urlencoded"):
+	} else {
 		values, err := url.ParseQuery(string(data))
 		if err != nil {
-			return "[unparseable form body omitted]"
+			return "[omitted: invalid form body]"
 		}
 		rendered = r.form(values, side)
-	default:
-		return "[non-JSON body omitted]"
 	}
 
 	if len(rendered) > maxLoggedBodyBytes {
-		rendered = strings.ToValidUTF8(rendered[:maxLoggedBodyBytes], "") + "…[truncated]"
+		rendered = strings.ToValidUTF8(rendered[:maxLoggedBodyBytes], "") + "…[truncated at 4 KB]"
 	}
-
 	return rendered
 }
 
@@ -132,14 +147,22 @@ func (r *redactor) text(value, path string) string {
 		return redactedValue
 	}
 
-	masked := secretPattern.ReplaceAllString(value, "[secret]")
-	masked = emailPattern.ReplaceAllString(masked, "[email]")
-	masked = cardPattern.ReplaceAllStringFunc(masked, func(match string) string {
-		if isLuhnValid(match) {
-			return "[card]"
-		}
-		return match
-	})
+	// Cheap pre-checks skip the regexes for the IDs, statuses and amounts most values are.
+	masked := value
+	if strings.Contains(masked, "_") || strings.Contains(masked, "Bearer") || strings.Contains(masked, "Basic") {
+		masked = secretPattern.ReplaceAllString(masked, "[secret]")
+	}
+	if strings.Contains(masked, "@") {
+		masked = emailPattern.ReplaceAllString(masked, "[email]")
+	}
+	if countDigits(masked) >= 13 {
+		masked = cardPattern.ReplaceAllStringFunc(masked, func(match string) string {
+			if isLuhnValid(match) {
+				return "[card]"
+			}
+			return match
+		})
+	}
 	if masked != value && len(r.detected) < 20 {
 		r.detected = append(r.detected, strings.TrimPrefix(path, "."))
 	}
@@ -178,6 +201,16 @@ func normalizeKey(key string) string {
 		}
 		return -1
 	}, strings.ToLower(key))
+}
+
+func countDigits(value string) int {
+	n := 0
+	for i := 0; i < len(value); i++ {
+		if value[i] >= '0' && value[i] <= '9' {
+			n++
+		}
+	}
+	return n
 }
 
 func isLuhnValid(candidate string) bool {
