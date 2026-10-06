@@ -63,6 +63,7 @@ func (s *CreditExpiryInvoiceRaceSuite) SetupTest() {
 		RedisCache:                   s.GetRedisCache(),
 		WalletRepo:                   stores.WalletRepo,
 		SubRepo:                      stores.SubscriptionRepo,
+		SubScheduleRepo:              stores.SubscriptionScheduleRepo,
 		SubscriptionLineItemRepo:     stores.SubscriptionLineItemRepo,
 		PlanRepo:                     stores.PlanRepo,
 		PriceRepo:                    stores.PriceRepo,

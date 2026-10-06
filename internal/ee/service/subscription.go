@@ -2049,8 +2049,21 @@ func (s *subscriptionService) CancelSubscription(
 			req.CancellationType == types.CancellationTypeScheduledDate
 		shouldCreateInvoice := !isScheduled &&
 			invoicePolicy == types.CancelImmediatelyInvoicePolicyGenerateInvoice
+		invoiceService := NewInvoiceService(s.ServiceParams)
+		// The period ends early, so its open draft would be left behind: it becomes the cancel
+		// invoice, is voided (refunding credits applied to it), or ends at the scheduled date.
+		switch {
+		case req.CancellationType == types.CancellationTypeImmediate && shouldCreateInvoice:
+			err = invoiceService.MoveCycleDraft(ctx, subscription, effectiveDate, types.InvoiceBillingReasonProration)
+		case req.CancellationType == types.CancellationTypeImmediate:
+			err = invoiceService.VoidCycleDraft(ctx, subscription)
+		case req.CancellationType == types.CancellationTypeScheduledDate && effectiveDate.Before(subscription.CurrentPeriodEnd):
+			err = invoiceService.MoveCycleDraft(ctx, subscription, effectiveDate, types.InvoiceBillingReasonSubscriptionCycle)
+		}
+		if err != nil {
+			return err
+		}
 		if shouldCreateInvoice {
-			invoiceService := NewInvoiceService(s.ServiceParams)
 			paymentParams := dto.NewPaymentParametersFromSubscription(subscription.CollectionMethod, subscription.PaymentBehavior, subscription.GatewayPaymentMethodID)
 			paymentParams = paymentParams.NormalizePaymentParameters()
 			inv, _, err := invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
@@ -8269,6 +8282,11 @@ func (s *subscriptionService) processAutoInvoiceThresholdSubscription(
 	if usageAmount.LessThan(lo.FromPtr(sub.AutoInvoiceThreshold)) {
 		return nil
 	}
+	// The threshold invoice finalizes at once, so it waits for an expiring credit the job hasn't applied.
+	pending, err := NewWalletService(s.ServiceParams).HasPendingExpiringCredit(ctx, sub.GetInvoicingCustomerID(), sub.Currency, sub.CurrentPeriodStart, effectiveTime)
+	if err != nil || pending {
+		return err
+	}
 
 	invoiceService := NewInvoiceService(s.ServiceParams)
 
@@ -8277,6 +8295,10 @@ func (s *subscriptionService) processAutoInvoiceThresholdSubscription(
 
 	var inv *dto.InvoiceResponse
 	if err := s.DB.WithTx(ctx, func(ctx context.Context) error {
+		// The period restarts at effectiveTime, so the open draft becomes the threshold invoice.
+		if err := invoiceService.MoveCycleDraft(ctx, sub, effectiveTime, types.InvoiceBillingReasonAutoInvoiceThreshold); err != nil {
+			return err
+		}
 
 		inv, _, err = invoiceService.CreateSubscriptionInvoice(ctx, &dto.CreateSubscriptionInvoiceRequest{
 			SubscriptionID: sub.ID,

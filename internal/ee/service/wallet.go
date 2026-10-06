@@ -84,8 +84,8 @@ type WalletService interface {
 	// grace after expiry depends on whether credit expiry settlement is on for the tenant.
 	CreditExpiryCutoff(ctx context.Context) (time.Time, error)
 
-	// HasPendingExpiringCredit reports whether a prepaid credit that expired inside
-	// (periodStart, periodEnd) may still be applied to that period's draft by the expiry job.
+	// HasPendingExpiringCredit reports whether, with credit expiry settlement on, a prepaid credit that
+	// expired inside (periodStart, periodEnd) may still be applied to that period's draft by the expiry job.
 	HasPendingExpiringCredit(ctx context.Context, customerID, currency string, periodStart, periodEnd time.Time) (bool, error)
 
 	// EligibleCreditsAmount returns, in the wallet's currency, the credits an invoice for a period

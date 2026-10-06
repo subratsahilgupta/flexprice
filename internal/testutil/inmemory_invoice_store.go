@@ -286,6 +286,21 @@ func (s *InMemoryInvoiceStore) Update(ctx context.Context, inv *invoice.Invoice)
 	return s.InMemoryStore.Update(ctx, inv.ID, updated)
 }
 
+func (s *InMemoryInvoiceStore) UpdateDraftInvoicePeriod(ctx context.Context, id string, periodEnd time.Time, billingReason string, idempotencyKey string) error {
+	inv, err := s.InMemoryStore.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if inv.InvoiceStatus != types.InvoiceStatusDraft {
+		return ierr.NewError("draft invoice not found").WithHint("Only a draft invoice can have its period moved").Mark(ierr.ErrNotFound)
+	}
+	updated := copyInvoice(inv)
+	updated.PeriodEnd = &periodEnd
+	updated.BillingReason = billingReason
+	updated.IdempotencyKey = &idempotencyKey
+	return s.InMemoryStore.Update(ctx, id, updated)
+}
+
 // Delete marks the invoice and its line items deleted, matching the ent repository, which soft
 // deletes both and leaves the rows readable. This double used to hard-delete, so any assertion that
 // an orphaned draft had been cleaned up passed whether or not the code did anything.

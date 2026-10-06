@@ -553,14 +553,9 @@ func (s *CreditExpiryInvoiceRaceSuite) TestExpirySettlement_SkipsIneligibleSubsc
 	eur.Currency = "eur"
 	s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), eur))
 
-	threshold := s.usageSubscription("subs_threshold", periodStart, periodStart, periodEnd)
-	limit := decimal.NewFromInt(100)
-	threshold.AutoInvoiceThreshold = &limit
-	s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), threshold))
-
 	rolled := s.usageSubscription("subs_rolled", periodStart, time.Now().UTC().Add(-time.Hour), periodEnd)
 
-	for _, sub := range []*subscription.Subscription{eur, threshold, rolled} {
+	for _, sub := range []*subscription.Subscription{eur, rolled} {
 		s.usage(sub, beforeExpiry, 20)
 	}
 
@@ -568,7 +563,7 @@ func (s *CreditExpiryInvoiceRaceSuite) TestExpirySettlement_SkipsIneligibleSubsc
 	s.Require().NoError(err)
 	s.True(result.Applied.IsZero(), "no eligible subscription, got %s applied", result.Applied)
 	s.True(result.Expired)
-	for _, sub := range []*subscription.Subscription{eur, threshold, rolled} {
+	for _, sub := range []*subscription.Subscription{eur, rolled} {
 		s.Empty(s.openDrafts(sub.ID), sub.ID)
 	}
 }

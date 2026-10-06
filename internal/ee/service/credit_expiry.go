@@ -176,9 +176,7 @@ func (s *walletService) settlementSubscriptions(ctx context.Context, tx *wallet.
 	eligible := lo.Filter(subs, func(sub *subscription.Subscription, _ int) bool {
 		return sub.SubscriptionStatus == types.SubscriptionStatusActive &&
 			(sub.SubscriptionType == types.SubscriptionTypeStandalone || sub.SubscriptionType == types.SubscriptionTypeParent) &&
-			types.IsMatchingCurrency(sub.Currency, tx.Currency) &&
-			// Threshold invoices move current_period_start and would orphan the draft.
-			!sub.HasPositiveAutoInvoiceThreshold()
+			types.IsMatchingCurrency(sub.Currency, tx.Currency)
 	})
 
 	sort.SliceStable(eligible, func(i, j int) bool {
@@ -275,6 +273,10 @@ func (s *walletService) earlierDraftUsageBeforeExpiry(ctx context.Context, sub *
 }
 
 func (s *walletService) HasPendingExpiringCredit(ctx context.Context, customerID, currency string, periodStart, periodEnd time.Time) (bool, error) {
+	enabled, err := creditExpirySettlementEnabled(ctx, s.ServiceParams)
+	if err != nil || !enabled {
+		return false, err
+	}
 	wallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, customerID)
 	if err != nil {
 		return false, err
@@ -303,6 +305,8 @@ func (s *walletService) HasPendingExpiringCredit(ctx context.Context, customerID
 				continue
 			}
 			if now.Before(expiry.Add(settlementFinalizationHold)) {
+				s.Logger.Info(ctx, "waiting for the expiry job to apply an expiring credit",
+					"customer_id", customerID, "credit_transaction_id", c.ID, "expiry_date", expiry)
 				return true, nil
 			}
 			s.Logger.Error(ctx, "expiring credit still unprocessed past the finalization hold",
