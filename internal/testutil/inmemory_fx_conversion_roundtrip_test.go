@@ -185,3 +185,50 @@ func TestInMemoryCustomerStore_BillingCurrencyRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// TestInMemoryStores_FxFieldsNotAliased proves a caller cannot change a stored fx_conversion, line
+// originals or billing currency by mutating a value it got back, without calling Update.
+func TestInMemoryStores_FxFieldsNotAliased(t *testing.T) {
+	ctx := fxTestCtx()
+	base := types.GetDefaultBaseModel(ctx)
+
+	store := NewInMemoryInvoiceStore()
+	store.SetLineItemStore(NewInMemoryInvoiceLineItemStore())
+	origAmount := decimal.RequireFromString("100")
+	require.NoError(t, store.CreateWithLineItems(ctx, &invoice.Invoice{
+		ID: "inv_alias", CustomerID: "cust_1", InvoiceType: types.InvoiceTypeOneOff,
+		InvoiceStatus: types.InvoiceStatusDraft, Currency: "inr",
+		FxConversion:  &types.FxConversion{ChargeCurrency: "usd", BillingCurrency: "inr", Rate: decimal.NewFromInt(83), Scope: "tenant"},
+		EnvironmentID: "env_test", BaseModel: base,
+		LineItems: []*invoice.InvoiceLineItem{{
+			ID: "il_alias", InvoiceID: "inv_alias", CustomerID: "cust_1", Currency: "inr",
+			Amount: decimal.NewFromInt(8300), Quantity: decimal.NewFromInt(1),
+			OriginalCurrency: lo.ToPtr("usd"), OriginalAmount: &origAmount,
+			EnvironmentID: "env_test", BaseModel: base,
+		}},
+	}))
+
+	got, err := store.Get(ctx, "inv_alias")
+	require.NoError(t, err)
+	got.FxConversion.Scope = "mutated"
+	*got.LineItems[0].OriginalCurrency = "eur"
+	*got.LineItems[0].OriginalAmount = decimal.NewFromInt(1)
+
+	again, err := store.Get(ctx, "inv_alias")
+	require.NoError(t, err)
+	require.Equal(t, "tenant", again.FxConversion.Scope, "fx_conversion must not alias the stored record")
+	require.Equal(t, "usd", *again.LineItems[0].OriginalCurrency, "original_currency must not alias")
+	require.True(t, decimal.NewFromInt(100).Equal(*again.LineItems[0].OriginalAmount), "original_amount must not alias")
+
+	custStore := NewInMemoryCustomerStore()
+	require.NoError(t, custStore.Create(ctx, &customer.Customer{
+		ID: "cust_alias", ExternalID: "cust_alias", Name: "Acme",
+		BillingCurrency: lo.ToPtr("inr"), EnvironmentID: "env_test", BaseModel: base,
+	}))
+	c, err := custStore.Get(ctx, "cust_alias")
+	require.NoError(t, err)
+	*c.BillingCurrency = "eur"
+	c2, err := custStore.Get(ctx, "cust_alias")
+	require.NoError(t, err)
+	require.Equal(t, "inr", *c2.BillingCurrency, "billing_currency must not alias the stored record")
+}

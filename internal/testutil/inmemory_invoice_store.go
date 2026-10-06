@@ -43,6 +43,15 @@ func (s *InMemoryInvoiceStore) SetLineItemStore(lineItemStore *InMemoryInvoiceLi
 }
 
 // Helper to copy invoice
+// clonePtr returns a pointer to a copy of *p, or nil, so stored records are not aliased.
+func clonePtr[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
 func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 	if inv == nil {
 		return nil
@@ -78,8 +87,8 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 			Metadata:                    item.Metadata,
 			CommitmentInfo:              item.CommitmentInfo,
 			CustomCurrency:              item.CustomCurrency,
-			OriginalCurrency:            item.OriginalCurrency,
-			OriginalAmount:              item.OriginalAmount,
+			OriginalCurrency:            clonePtr(item.OriginalCurrency),
+			OriginalAmount:              clonePtr(item.OriginalAmount),
 			PrepaidCreditsApplied:       item.PrepaidCreditsApplied,
 			LineItemDiscount:            item.LineItemDiscount,
 			InvoiceLevelDiscount:        item.InvoiceLevelDiscount,
@@ -103,7 +112,7 @@ func copyInvoice(inv *invoice.Invoice) *invoice.Invoice {
 		AmountDue:                  inv.AmountDue,
 		AmountPaid:                 inv.AmountPaid,
 		CustomCurrency:             inv.CustomCurrency,
-		FxConversion:               inv.FxConversion,
+		FxConversion:               clonePtr(inv.FxConversion),
 		Subtotal:                   inv.Subtotal,
 		Total:                      inv.Total,
 		TotalTax:                   inv.TotalTax,
