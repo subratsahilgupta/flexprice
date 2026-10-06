@@ -45,6 +45,22 @@ func (s *invoiceService) rejectPrepaidCrossCurrencyOneOff(ctx context.Context, r
 		Mark(ierr.ErrValidation)
 }
 
+// conversionTarget returns the billing currency an unconverted invoice must be converted to, or "".
+func (s *invoiceService) conversionTarget(ctx context.Context, inv *invoice.Invoice) (string, error) {
+	if inv.FxConversion != nil || inv.CustomCurrency != nil {
+		return "", nil
+	}
+	cust, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	if err != nil {
+		return "", err
+	}
+	billing := lo.FromPtr(cust.BillingCurrency)
+	if billing == "" || types.IsMatchingCurrency(billing, inv.Currency) {
+		return "", nil
+	}
+	return billing, nil
+}
+
 // convertAndRetaxInvoice runs the shared conversion step (§5.2/§5.6) for any invoice whose customer
 // has a billing currency that differs from the charge currency. It converts the invoice once at a
 // frozen rate and recomputes tax on the converted amounts. It runs both at finalize and at checkout-
@@ -53,10 +69,7 @@ func (s *invoiceService) rejectPrepaidCrossCurrencyOneOff(ctx context.Context, r
 // PR), or a non-zero amount_paid (already-paid invoice). A missing rate returns an invalid-operation
 // error naming the pair, so finalize leaves the invoice DRAFT and checkout session creation fails.
 func (s *invoiceService) convertAndRetaxInvoice(ctx context.Context, inv *invoice.Invoice) error {
-	if inv.FxConversion != nil {
-		return nil
-	}
-	if inv.CustomCurrency != nil {
+	if inv.FxConversion != nil || inv.CustomCurrency != nil {
 		return nil
 	}
 	if !inv.AmountPaid.IsZero() {
@@ -65,16 +78,9 @@ func (s *invoiceService) convertAndRetaxInvoice(ctx context.Context, inv *invoic
 		return nil
 	}
 
-	cust, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
-	if err != nil {
+	billing, err := s.conversionTarget(ctx, inv)
+	if err != nil || billing == "" {
 		return err
-	}
-	if cust.BillingCurrency == nil || *cust.BillingCurrency == "" {
-		return nil
-	}
-	billing := *cust.BillingCurrency
-	if types.IsMatchingCurrency(billing, inv.Currency) {
-		return nil
 	}
 
 	fxSvc := NewFXRateService(s.ServiceParams)

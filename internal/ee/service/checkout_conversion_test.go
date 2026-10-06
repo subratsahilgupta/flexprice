@@ -117,3 +117,29 @@ func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentMissingRateFails() {
 	s.Require().Error(err, "a checkout payment with no rate must fail before minting")
 	s.Equal("usd", inv.Currency, "invoice must stay in the charge currency")
 }
+
+// A partly paid draft that needs conversion is rejected, not linked in the charge currency.
+func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentPartlyPaidCrossCurrencyRejected() {
+	s.seedCustomer("cust_co_part", lo.ToPtr("inr"))
+	s.seedTenantRate("usd", "inr", "83")
+	inv := s.seedDraftInvoice("inv_co_part", "cust_co_part", "usd", types.InvoiceTypeOneOff, nil,
+		[]*invoice.InvoiceLineItem{line("il_co_part", "100")})
+	inv.AmountPaid = decimal.NewFromInt(10)
+
+	_, err := s.checkoutSvcForConversion().createCheckoutPayment(s.ctx(), inv, types.CheckoutPaymentProviderRazorpay)
+	s.Require().Error(err)
+	s.True(ierr.IsValidation(err), "want validation error, got %v", err)
+	s.Equal("usd", inv.Currency)
+	s.Nil(inv.FxConversion)
+}
+
+// The same partly paid draft for a customer without conversion still gets its payment.
+func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentPartlyPaidSameCurrencyAllowed() {
+	s.seedCustomer("cust_co_part_bau", nil)
+	inv := s.seedDraftInvoice("inv_co_part_bau", "cust_co_part_bau", "usd", types.InvoiceTypeOneOff, nil,
+		[]*invoice.InvoiceLineItem{line("il_co_part_bau", "100")})
+	inv.AmountPaid = decimal.NewFromInt(10)
+
+	_, err := s.checkoutSvcForConversion().createCheckoutPayment(s.ctx(), inv, types.CheckoutPaymentProviderRazorpay)
+	s.Require().NoError(err)
+}

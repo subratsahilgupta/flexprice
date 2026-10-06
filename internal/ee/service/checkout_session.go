@@ -736,8 +736,21 @@ func (s *checkoutSessionService) createCheckoutPayment(ctx context.Context, inv 
 	// Wrapped in a transaction so the line-item, header (currency+fx_conversion) and tax writes commit
 	// together. No row lock is taken here, unlike finalize: the draft belongs to the session being
 	// created and nothing else references it yet.
+	invSvc := NewInvoiceService(s.ServiceParams).(*invoiceService)
+	if !inv.AmountPaid.IsZero() {
+		billing, err := invSvc.conversionTarget(ctx, inv)
+		if err != nil {
+			return nil, err
+		}
+		if billing != "" {
+			return nil, ierr.NewError("partly paid invoice cannot be converted for checkout").
+				WithHintf("This invoice is already partly paid in %s and the customer is billed in %s.", inv.Currency, billing).
+				WithReportableDetails(map[string]any{"invoice_id": inv.ID, "amount_paid": inv.AmountPaid.String()}).
+				Mark(ierr.ErrValidation)
+		}
+	}
 	if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-		return NewInvoiceService(s.ServiceParams).(*invoiceService).convertAndRetaxInvoice(txCtx, inv)
+		return invSvc.convertAndRetaxInvoice(txCtx, inv)
 	}); err != nil {
 		return nil, err
 	}
