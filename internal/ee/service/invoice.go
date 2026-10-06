@@ -1170,10 +1170,8 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		// One-off and credit invoices already have credits and taxes applied
 		// during ComputeInvoice, so we skip them here.
 		// For subscription invoices, credits and taxes are deferred to this
-		// step so wallet debits only happen when the invoice is sealed. Tax
-		// runs after the conversion step below, so it is computed only once.
-		// A draft already converted at checkout is skipped: it is in the billing
-		// currency and the customer has paid the link amount, so nothing may move.
+		// step so wallet debits only happen when the invoice is sealed. Drafts
+		// converted at checkout are skipped; their paid amount is final.
 		// ====================================================================
 
 		taxSubscriptionInvoice := false
@@ -1224,10 +1222,8 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		}
 
 		// ====================================================================
-		// Convert to the customer's billing currency and recompute tax on the
-		// converted amounts (§5.2 steps 4–6). Runs for any invoice type; a no-op
-		// when the customer has no billing currency or it matches the charge
-		// currency. A missing rate stops finalize and leaves the invoice DRAFT.
+		// Convert to the billing currency and re-tax. A missing rate leaves the
+		// invoice DRAFT.
 		// ====================================================================
 		if err := s.convertAndRetaxInvoice(txCtx, lockedInv); err != nil {
 			return err

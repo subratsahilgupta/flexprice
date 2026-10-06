@@ -13,10 +13,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// rejectPrepaidCrossCurrencyOneOff blocks creating a one-off invoice pre-paid (payment_status or
-// amount_paid set) for a customer billed in a different currency: the invoice is issued in the
-// billing currency only at finalize, so a payment recorded at create would settle the wrong amount.
-// Today those fields are silently dropped; this makes it a loud error instead (§8.4).
+// rejectPrepaidCrossCurrencyOneOff rejects a pre-paid one-off for a customer billed in another
+// currency: the amount is only known in that currency after finalize.
 func (s *invoiceService) rejectPrepaidCrossCurrencyOneOff(ctx context.Context, req dto.CreateInvoiceRequest) error {
 	hasPayment := (req.AmountPaid != nil && !req.AmountPaid.IsZero()) ||
 		(req.PaymentStatus != nil && *req.PaymentStatus != types.PaymentStatusPending)
@@ -61,13 +59,8 @@ func (s *invoiceService) conversionTarget(ctx context.Context, inv *invoice.Invo
 	return billing, nil
 }
 
-// convertAndRetaxInvoice runs the shared conversion step (§5.2/§5.6) for any invoice whose customer
-// has a billing currency that differs from the charge currency. It converts the invoice once at a
-// frozen rate and recomputes tax on the converted amounts. It runs both at finalize and at checkout-
-// session creation (before the payment record is minted). It is a no-op for invoices with no billing
-// currency, a matching currency, an already-set fx_conversion, a custom currency (handled in a later
-// PR), or a non-zero amount_paid (already-paid invoice). A missing rate returns an invalid-operation
-// error naming the pair, so finalize leaves the invoice DRAFT and checkout session creation fails.
+// convertAndRetaxInvoice converts an invoice to its customer's billing currency once and re-taxes it.
+// No-op when nothing needs converting or the invoice is already paid; a missing rate errors.
 func (s *invoiceService) convertAndRetaxInvoice(ctx context.Context, inv *invoice.Invoice) error {
 	if inv.FxConversion != nil || inv.CustomCurrency != nil {
 		return nil
@@ -125,10 +118,8 @@ func (s *invoiceService) convertAndRetaxInvoice(ctx context.Context, inv *invoic
 	return s.recomputeTaxOnConvertedInvoice(ctx, inv)
 }
 
-// recomputeTaxOnConvertedInvoice recomputes tax on a just-converted invoice's billing-currency
-// amounts. Subscription invoices re-derive their rates from the subscription's associations; other
-// invoice types re-apply the rates already recorded against the invoice (one-off invoices tax at
-// compute, not at finalize, so their rates only exist as applied records by now).
+// recomputeTaxOnConvertedInvoice re-taxes a converted invoice: subscription invoices from their
+// tax associations, others from the rates recorded on their tax_applied rows.
 func (s *invoiceService) recomputeTaxOnConvertedInvoice(ctx context.Context, inv *invoice.Invoice) error {
 	if inv.InvoiceType == types.InvoiceTypeSubscription && inv.SubscriptionID != nil {
 		_, err := s.RecalculateTaxesOnInvoice(ctx, inv)

@@ -574,9 +574,8 @@ type CreateSubscriptionRequest struct {
 	Currency  string `json:"currency" validate:"required,len=3"`
 	LookupKey string `json:"lookup_key"`
 
-	// FxRate optionally creates a subscription-scope FX rate for this subscription's currency to the
-	// invoicing customer's billing currency, in the same transaction. Rejected when there is nothing
-	// to convert or no tenant rate exists for the pair (§8.3).
+	// FxRate sets a subscription-scope rate to the invoicing customer's billing currency.
+	// Rejected when nothing needs converting or the pair has no tenant rate.
 	FxRate    *InlineFXRate `json:"fx_rate,omitempty"`
 	StartDate *time.Time    `json:"start_date,omitempty"`
 	EndDate   *time.Time    `json:"end_date,omitempty"`

@@ -99,8 +99,7 @@ func (r *invoiceRepository) Create(ctx context.Context, inv *domainInvoice.Invoi
 		SetNillableIssueDate(inv.IssueDate).
 		SetCustomCurrency(inv.CustomCurrency)
 
-	// fx_conversion stays SQL NULL until conversion; §3.5 readers rely on NULL meaning
-	// "never converted", so a nil value must not be written as a jsonb null.
+	// Keep fx_conversion SQL NULL ("never converted"); never write a jsonb null.
 	if inv.FxConversion != nil {
 		builder = builder.SetFxConversion(inv.FxConversion)
 	}
@@ -215,7 +214,7 @@ func (r *invoiceRepository) CreateWithLineItems(ctx context.Context, inv *domain
 			SetNillableIssueDate(inv.IssueDate).
 			SetCustomCurrency(inv.CustomCurrency)
 
-		// fx_conversion stays SQL NULL until conversion (§3.5).
+		// fx_conversion stays SQL NULL until conversion.
 		if inv.FxConversion != nil {
 			invBuilder = invBuilder.SetFxConversion(inv.FxConversion)
 		}

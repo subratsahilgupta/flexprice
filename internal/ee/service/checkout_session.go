@@ -729,13 +729,8 @@ func (s *checkoutSessionService) createCheckoutPayment(ctx context.Context, inv 
 			Mark(ierr.ErrValidation)
 	}
 
-	// Pay-first (§5.6): convert to the customer's billing currency and recompute tax before the
-	// payment is minted, so the payment and the link it drives are in the billing currency. This is
-	// the single choke point every checkout flow passes through. A no-op when no conversion applies;
-	// a missing rate fails here, before anything is charged. Finalize later skips it (fx_conversion set).
-	// Wrapped in a transaction so the line-item, header (currency+fx_conversion) and tax writes commit
-	// together. No row lock is taken here, unlike finalize: the draft belongs to the session being
-	// created and nothing else references it yet.
+	// Every checkout passes here: convert and re-tax before minting the payment, so the link is in
+	// the billing currency. A missing rate fails before anything is charged.
 	invSvc := NewInvoiceService(s.ServiceParams).(*invoiceService)
 	if !inv.AmountPaid.IsZero() {
 		billing, err := invSvc.conversionTarget(ctx, inv)

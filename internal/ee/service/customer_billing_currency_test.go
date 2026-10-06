@@ -106,7 +106,7 @@ func (s *CustomerServiceSuite) seedCustomCurrency(code, fiat string, factor stri
 	}))
 }
 
-// TestSetBillingCurrency_Guardrails exercises §8.2 on UpdateCustomer.
+// TestSetBillingCurrency_Guardrails covers the billing-currency checks on UpdateCustomer.
 func (s *CustomerServiceSuite) TestSetBillingCurrency_Guardrails() {
 	const custID = "cust_bc_main"
 

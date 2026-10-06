@@ -40,8 +40,7 @@ func TestConvertInvoice_NonZeroNetToZeroRejected(t *testing.T) {
 	require.Nil(t, inv.FxConversion)
 }
 
-// TestConvertInvoice covers §5.3 conversion + rounding: net converted once, each line converted
-// and rounded, residual to the largest positive line, originals stamped, fx_conversion recorded.
+// TestConvertInvoice covers conversion, rounding, residual placement and the recorded originals.
 func TestConvertInvoice(t *testing.T) {
 	convertedAt := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 
@@ -122,9 +121,7 @@ func TestConvertInvoice(t *testing.T) {
 				convLine("il_pos", "usd", "100"),
 				convLine("il_neg", "usd", "-33.34"),
 			},
-			// net = 66.66 * 149.37 = 9956.808 -> 9957
-			// line pos 100*149.37=14937; line neg -33.34*149.37=-4980.0... -> -4980
-			// sum = 14937 - 4980 = 9957 -> residual 0, but assert it never lands on il_neg
+			// 14937 + (-4980) = 9957 = net, so residual 0; it must never land on il_neg.
 			wantSubtotal:   "9957",
 			wantTotal:      "9957",
 			wantAmountDue:  "9957",

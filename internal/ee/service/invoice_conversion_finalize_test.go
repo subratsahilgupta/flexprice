@@ -395,7 +395,7 @@ func (s *InvoiceConversionFinalizeSuite) TestFinalizeTaxesSubscriptionInvoiceOnc
 	}
 }
 
-// TestRejectPrepaidCrossCurrencyOneOff covers the §8.4 create-time guard.
+// TestRejectPrepaidCrossCurrencyOneOff covers the create-time pre-paid guard.
 func (s *InvoiceConversionFinalizeSuite) TestRejectPrepaidCrossCurrencyOneOff() {
 	s.seedCustomer("cust_pp_inr", lo.ToPtr("inr"))
 	s.seedCustomer("cust_pp_usd", lo.ToPtr("usd"))
@@ -446,7 +446,7 @@ func (s *InvoiceConversionFinalizeSuite) TestRejectPrepaidCrossCurrencyOneOff() 
 	}
 }
 
-// TestPaymentBeforeConversionRejected covers the §8.4 payment-eligibility guard.
+// TestPaymentBeforeConversionRejected covers the no-payment-before-conversion guard.
 func (s *InvoiceConversionFinalizeSuite) TestPaymentBeforeConversionRejected() {
 	paySvc := NewPaymentService(ServiceParams{
 		Logger:              s.GetLogger(),
@@ -489,8 +489,7 @@ func (s *InvoiceConversionFinalizeSuite) TestPaymentBeforeConversionRejected() {
 	s.NoError(err, "a converted invoice can be paid in the billing currency")
 }
 
-// countingFXRateRepo wraps an fxrate.Repository and counts every read so a test can prove that
-// finalizing an unaffected invoice never touches fx_rates (§1.5).
+// countingFXRateRepo counts fx_rates reads.
 type countingFXRateRepo struct {
 	fxrate.Repository
 	reads int
@@ -528,9 +527,7 @@ func (s *InvoiceConversionFinalizeSuite) newServiceWithFXSpy() (*invoiceService,
 	return NewInvoiceService(params).(*invoiceService), spy
 }
 
-// TestExistingCustomersUnaffected proves §1.5: finalizing an invoice for a customer with no billing
-// currency, or one equal to the charge currency, issues no fx_rates query and leaves the invoice
-// byte-for-byte unchanged — even when a tenant rate exists.
+// Customers with no billing currency, or the charge currency, never read fx_rates and are unchanged.
 func (s *InvoiceConversionFinalizeSuite) TestExistingCustomersUnaffected() {
 	cases := []struct {
 		name    string

@@ -10,11 +10,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ConvertInvoice rewrites a draft invoice's charge-currency amounts into the billing currency at a
-// frozen rate (§5.3). It converts the net once, converts and rounds each line, drops the rounding
-// residual on the largest positive line so the lines still sum to the net, stamps each line's
-// original amount, and records the fx_conversion snapshot. Tax is not touched here — it is recomputed
-// on the converted amounts in the finalize step that follows. inv is mutated in place.
+// ConvertInvoice converts a draft's amounts to the billing currency at a frozen rate, putting the
+// rounding residual on one line so lines sum to the net. Tax is left to the caller.
 func ConvertInvoice(inv *invoice.Invoice, resolution *FXRateResolution, convertedAt time.Time) error {
 	if inv == nil {
 		return ierr.NewError("invoice cannot be nil").WithHint("invoice cannot be nil").Mark(ierr.ErrValidation)
@@ -99,7 +96,7 @@ func ConvertInvoice(inv *invoice.Invoice, resolution *FXRateResolution, converte
 	// Pre-tax total; tax is added on the converted amounts in the finalize step that follows.
 	inv.Total = inv.Subtotal.Sub(inv.TotalDiscount).Sub(inv.TotalPrepaidCreditsApplied)
 	inv.AmountDue = inv.Total
-	inv.AmountRemaining = inv.Total // amount_paid is 0 when converting (§8.4)
+	inv.AmountRemaining = inv.Total // nothing is paid before conversion
 	inv.Currency = billingCurrency
 
 	inv.FxConversion = &types.FxConversion{
@@ -123,7 +120,7 @@ func ConvertInvoice(inv *invoice.Invoice, resolution *FXRateResolution, converte
 }
 
 // residualLine picks the line that absorbs the rounding residual: the largest positive amount,
-// falling back to the largest by absolute value; ties break on the lowest line id (§5.3).
+// else the largest absolute amount; ties go to the lowest line id.
 func residualLine(lines []*invoice.InvoiceLineItem) *invoice.InvoiceLineItem {
 	var best *invoice.InvoiceLineItem
 	for _, li := range lines {

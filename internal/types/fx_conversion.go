@@ -6,9 +6,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// FxConversion is the frozen record of a fiat→fiat conversion applied to an invoice at
-// finalization. Nil on invoices that were never converted. Written once, in the same
-// transaction as the converted amounts, and never changed afterwards.
+// FxConversion is the frozen record of an invoice's currency conversion; nil if never converted.
 type FxConversion struct {
 	// ChargeCurrency is the invoice's original (draft) currency.
 	ChargeCurrency string `json:"charge_currency"`

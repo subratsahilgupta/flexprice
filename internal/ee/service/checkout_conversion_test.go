@@ -16,9 +16,7 @@ func (s *InvoiceConversionFinalizeSuite) checkoutSvcForConversion() *checkoutSes
 	return &checkoutSessionService{ServiceParams: sp}
 }
 
-// TestCheckoutPaymentConvertsBeforeMinting proves §5.6: a checkout payment for a cross-currency
-// customer converts the draft to the billing currency before the payment record is minted, so the
-// payment (and the link it drives) inherits the billing currency.
+// The draft converts before the checkout payment is minted, so the payment is in the billing currency.
 func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentConvertsBeforeMinting() {
 	s.seedCustomer("cust_co", lo.ToPtr("inr"))
 	s.seedTenantRate("usd", "inr", "83")
@@ -59,9 +57,7 @@ func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentNoBillingCurrencyUna
 	s.Nil(got.FxConversion)
 }
 
-// TestFinalizeAfterCheckoutDoesNotReconvert proves the pay-first E2E invariant: after conversion at
-// session creation, the invoice carries fx_conversion (and amount_paid once paid), so the finalize
-// convert step is a no-op — no double conversion, amounts unchanged.
+// Finalizing a draft converted at checkout does not convert it again.
 func (s *InvoiceConversionFinalizeSuite) TestFinalizeAfterCheckoutDoesNotReconvert() {
 	s.seedCustomer("cust_pf", lo.ToPtr("inr"))
 	s.seedTenantRate("usd", "inr", "83")

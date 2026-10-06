@@ -18,9 +18,8 @@ func fxTestCtx() context.Context {
 	return types.SetEnvironmentID(types.SetTenantID(context.Background(), types.DefaultTenantID), "env_test")
 }
 
-// TestInMemoryInvoiceStore_FxConversionRoundTrip proves the new adaptive-currency columns
-// (invoice fx_conversion, line item original_currency/original_amount) survive create → get,
-// and that fx_conversion is never cleared by an update that did not load it.
+// fx_conversion and line originals survive create → get, and an update that never loaded
+// fx_conversion does not clear it.
 func TestInMemoryInvoiceStore_FxConversionRoundTrip(t *testing.T) {
 	ctx := fxTestCtx()
 	base := types.GetDefaultBaseModel(ctx)

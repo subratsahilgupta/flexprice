@@ -247,9 +247,7 @@ func (s *paymentService) validateInvoicePaymentEligibility(ctx context.Context, 
 			Mark(ierr.ErrValidation)
 	}
 
-	// No payment before conversion: a cross-currency customer's draft is issued in the billing
-	// currency only at finalize. Paying it while still in the charge currency would settle the
-	// wrong amount, so require finalize first.
+	// A cross-currency draft is only payable after it converts at finalize.
 	if invoice.InvoiceStatus == types.InvoiceStatusDraft && invoice.FxConversion == nil {
 		cust, err := s.CustomerRepo.Get(ctx, invoice.CustomerID)
 		if err != nil {

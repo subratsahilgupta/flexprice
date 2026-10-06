@@ -143,9 +143,7 @@ func (s *SubscriptionServiceSuite) TestCreateSubscription_WithoutCheckoutIsUncha
 	s.Empty(sessions)
 }
 
-// §8.3 is about the customer who gets the invoice. A delegated subscription is billed to the
-// invoicing customer, so that customer's billing currency — not the subscriber's — decides whether
-// a rate is needed. With no usd→inr tenant rate the create must be rejected.
+// A delegated subscription checks the invoicing customer's billing currency, not the subscriber's.
 func (s *SubscriptionServiceSuite) TestCreateSubscription_DelegatedInvoicingCustomerBillingCurrencyIsChecked() {
 	ctx := s.GetContext()
 	s.seedFixedPricePlan("plan_delegated_fx", decimal.NewFromInt(50), 0)
@@ -412,10 +410,7 @@ func (s *SubscriptionServiceSuite) seedPayFirstSubscriptionCheckout(
 	return session, subResp.Subscription, draft
 }
 
-// A cross-currency pay-first checkout through the real path: the draft is converted and the payment
-// minted in the billing currency at session creation; completion finalizes without reconverting and
-// without applying billing-currency wallet credits after the fact, so the customer pays exactly the
-// link amount.
+// Cross-currency checkout end to end: completion finalizes without reconverting or applying credits.
 func (s *SubscriptionServiceSuite) TestCompleteSubscriptionCheckout_CrossCurrency_LinkAmountIsFinal() {
 	ctx := s.GetContext()
 	subService := s.service.(*subscriptionService)

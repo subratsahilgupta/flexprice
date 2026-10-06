@@ -12,11 +12,8 @@ import (
 	"github.com/samber/lo"
 )
 
-// validateBillingCurrency enforces the §8.2 guardrails for setting or clearing a customer's billing
-// currency. A change (set or clear) is blocked while a checkout session is open. Setting one requires
-// a valid fiat currency and a rate or custom factor for every active/trialing/paused subscription and
-// every wallet held in a different currency. billingCurrency is the already-normalized target (nil or
-// empty clears it).
+// validateBillingCurrency blocks a change while a checkout is open, and a new value without a rate
+// for every live subscription and wallet in another currency. nil or "" clears it.
 func (s *customerService) validateBillingCurrency(ctx context.Context, customerID string, billingCurrency *string) error {
 	openSessions, err := s.openCheckoutSessionIDs(ctx, customerID)
 	if err != nil {
@@ -135,9 +132,8 @@ func (s *customerService) openCheckoutSessionIDs(ctx context.Context, customerID
 	return ids, nil
 }
 
-// activeConvertibleSubscriptions returns the customer's active, trialing or paused subscriptions,
-// counting it as either the subscriber or the invoicing customer. The Go-side ownership check keeps
-// this correct whether or not the underlying store filters by invoicing customer.
+// activeConvertibleSubscriptions returns active, trialing or paused subscriptions the customer
+// subscribes to or is invoiced for.
 func (s *customerService) activeConvertibleSubscriptions(ctx context.Context, customerID string) ([]*subscription.Subscription, error) {
 	statuses := []types.SubscriptionStatus{
 		types.SubscriptionStatusActive,
