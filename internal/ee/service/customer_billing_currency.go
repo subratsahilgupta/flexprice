@@ -60,7 +60,11 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 		if types.IsMatchingCurrency(sub.Currency, target) {
 			continue
 		}
-		if !conversionAvailable(ctx, s.FXRateRepo, ccCfg, sub.Currency, target) {
+		ok, err := conversionAvailable(ctx, s.FXRateRepo, ccCfg, sub.Currency, target)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			missingSubs = append(missingSubs, fmt.Sprintf("%s->%s", sub.Currency, target))
 		}
 	}
@@ -80,7 +84,11 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 		if types.IsMatchingCurrency(w.Currency, target) {
 			continue
 		}
-		if !conversionAvailable(ctx, s.FXRateRepo, ccCfg, w.Currency, target) {
+		ok, err := conversionAvailable(ctx, s.FXRateRepo, ccCfg, w.Currency, target)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			missingWallets = append(missingWallets, fmt.Sprintf("%s->%s", w.Currency, target))
 		}
 	}
@@ -95,15 +103,19 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 }
 
 // conversionAvailable reports whether from can be converted to the billing currency: a custom
-// currency needs a configured factor; a fiat currency needs a published tenant rate.
-func conversionAvailable(ctx context.Context, fxRates fxrate.Repository, ccCfg types.CustomCurrencyConfig, from, to string) bool {
+// currency needs a configured factor; a fiat currency needs a published tenant rate. Only a missing
+// rate means "not available"; any other lookup failure is returned so it is not reported as one.
+func conversionAvailable(ctx context.Context, fxRates fxrate.Repository, ccCfg types.CustomCurrencyConfig, from, to string) (bool, error) {
 	if ccCfg.IsCustom(from) {
-		return !ccCfg.RateFor(from, to).IsZero()
+		return !ccCfg.RateFor(from, to).IsZero(), nil
 	}
 	if _, err := fxRates.GetTenantRate(ctx, from, to); err != nil {
-		return false
+		if ierr.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
 	}
-	return true
+	return true, nil
 }
 
 // openCheckoutSessionIDs returns the customer's active checkout sessions so the error can name them.

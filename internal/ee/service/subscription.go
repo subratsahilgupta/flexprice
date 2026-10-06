@@ -7880,7 +7880,11 @@ func (s *subscriptionService) validateSubscriptionBillingCurrency(
 		return "", nil
 	}
 
-	if !conversionAvailable(ctx, s.FXRateRepo, ccCfg, sub.Currency, billing) {
+	ok, err := conversionAvailable(ctx, s.FXRateRepo, ccCfg, sub.Currency, billing)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
 		return "", ierr.NewErrorf("no conversion configured from %s to %s", sub.Currency, billing).
 			WithHintf("Configure a rate or custom factor for %s to %s before creating this subscription.", sub.Currency, billing).
 			WithReportableDetails(map[string]any{"from": sub.Currency, "to": billing}).

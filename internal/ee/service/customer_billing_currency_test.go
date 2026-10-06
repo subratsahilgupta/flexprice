@@ -1,6 +1,9 @@
 package service
 
 import (
+	"context"
+	"testing"
+
 	"github.com/flexprice/flexprice/internal/api/dto"
 	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
 	domainCustomer "github.com/flexprice/flexprice/internal/domain/customer"
@@ -279,4 +282,50 @@ func (s *CustomerServiceSuite) TestCreateCustomer_InvalidBillingCurrencyRejected
 	})
 	s.Error(err)
 	s.True(ierr.IsValidation(err))
+}
+
+// failingFXRateRepo fails every tenant-rate read the way an outage would.
+type failingFXRateRepo struct{ fxrate.Repository }
+
+func (failingFXRateRepo) GetTenantRate(_ context.Context, _, _ string) (*fxrate.FXRate, error) {
+	return nil, ierr.NewError("connection refused").Mark(ierr.ErrDatabase)
+}
+
+// TestSetBillingCurrency_RateLookupErrorSurfaces: an infrastructure failure reading rates is returned
+// as such, not reported to the caller as a missing exchange rate.
+func (s *CustomerServiceSuite) TestSetBillingCurrency_RateLookupErrorSurfaces() {
+	const custID = "cust_bc_dberr"
+	s.seedCustomerRow(custID)
+	s.seedSubscriptionRow("sub_bc_dberr", custID, "usd", types.SubscriptionStatusActive)
+
+	params := s.service.(*customerService).ServiceParams
+	params.FXRateRepo = failingFXRateRepo{}
+	svc := NewCustomerService(params)
+
+	_, err := svc.UpdateCustomer(s.ctx, custID, dto.UpdateCustomerRequest{BillingCurrency: lo.ToPtr("inr")})
+	s.Require().Error(err)
+	s.True(ierr.IsDatabase(err), "want the database error, got %v", err)
+	s.False(ierr.IsValidation(err), "must not be reported as a missing rate: %v", err)
+}
+
+func TestConversionAvailable(t *testing.T) {
+	ctx := context.Background()
+	cfg := types.CustomCurrencyConfig{}
+
+	ok, err := conversionAvailable(ctx, failingFXRateRepo{}, cfg, "usd", "inr")
+	if err == nil || !ierr.IsDatabase(err) || ok {
+		t.Fatalf("db error: want (false, database error), got (%v, %v)", ok, err)
+	}
+
+	notFound := notFoundFXRateRepo{}
+	ok, err = conversionAvailable(ctx, notFound, cfg, "usd", "inr")
+	if err != nil || ok {
+		t.Fatalf("missing rate: want (false, nil), got (%v, %v)", ok, err)
+	}
+}
+
+type notFoundFXRateRepo struct{ fxrate.Repository }
+
+func (notFoundFXRateRepo) GetTenantRate(_ context.Context, _, _ string) (*fxrate.FXRate, error) {
+	return nil, ierr.NewError("fx rate not found").Mark(ierr.ErrNotFound)
 }
