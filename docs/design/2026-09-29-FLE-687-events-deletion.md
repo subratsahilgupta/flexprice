@@ -8,7 +8,7 @@ Ticket: FLE-687
 
 ## 1. Overview
 
-A tenant-facing bulk API that hard-deletes ingested events and the meter usage they produced. The tenant names the customers and the period, and optionally narrows by feature or by exact event id. The request is refused outright if anything in scope has already been invoiced or belongs to a marketplace customer. What is about to be destroyed is recorded in a new S3-backed ClickHouse table before the deletes run.
+A tenant-facing bulk API that hard-deletes ingested events and the meter usage they produced. The tenant names the customers and the period, and optionally narrows by feature or by exact event id. The request is refused outright if anything in scope has already been invoiced or belongs to a marketplace customer. What is about to be destroyed is recorded in a new ClickHouse table before the deletes run.
 
 Deletion is all-or-nothing. There is no partial outcome.
 
@@ -80,15 +80,13 @@ Tenant might repeatedly asks us to delete a set of events so they can re-send th
 
 **R2.** Every deleted event is recorded in `event_deletion_data` before either delete runs, stamped with who deleted it, when, and under which request id.
 
-**R3.** The record lives in an S3-backed ClickHouse table and is never exported anywhere else.
+**R3.** The record lives in ClickHouse and is kept permanently. There is no TTL and no export step.
 
 **R4.** The request fails as a whole on the first guard that trips. Nothing is deleted on a failed request.
 
 **R5.** A failure returns a single reason from a fixed enum plus the identifiers available at that point.
 
-**R6.** `POST /v1/events/delete/preview` runs the same guards and the same id resolution, deletes nothing, and returns the usage as it would stand once the matched events are gone.
-
-**R7.** Every step logs at info level on success and error level on failure, carrying the identifiers involved.
+**R6.** Every step logs at info level on success and error level on failure, carrying the identifiers involved.
 
 ### Business Rules
 
@@ -98,7 +96,7 @@ Tenant might repeatedly asks us to delete a set of events so they can re-send th
 
 **BR3.** Refused if any customer in scope has a mapping in `entity_integration_mapping` with `entity_type = CUSTOMER` and a marketplace `provider_type`.
 
-**BR4.** Refused if any matched event also carries `meter_usage` on a meter the request did not name. The request did not ask for that usage to go, so nothing is deleted and the request fails instead.
+**BR4.** Refused if any matched event also carries `meter_usage` on a meter **outside** the named set. The request did not ask for that usage to go, so nothing is deleted and the request fails instead. An event whose every meter is named is fine, since all of its usage is going.
 
 **BR5.** The delete clause is built against `meter_usage` only. It is the one table carrying every filter dimension, and `events` has no meter column at all.
 
@@ -217,16 +215,12 @@ if event_ids_to_delete empty:
 
 // ---------- multi-meter guard, case 2 only ----------
 if meter_ids not empty:
-    offending = SELECT count() AS event_count,
-                       groupUniqArrayArray(meters) AS meters_involved
-                FROM (
-                    SELECT id, groupUniqArray(meter_id) AS meters
-                    FROM meter_usage FINAL
-                    WHERE tenant_id = ? AND environment_id = ?
-                      AND id IN event_ids_to_delete
-                    GROUP BY id
-                    HAVING length(meters) > 1
-                )
+    offending = SELECT count(DISTINCT id) AS event_count,
+                       groupUniqArray(meter_id) AS meters_involved
+                FROM meter_usage FINAL
+                WHERE tenant_id = ? AND environment_id = ?
+                  AND id IN event_ids_to_delete
+                  AND meter_id NOT IN meter_ids
     if offending.event_count > 0:
         log error
         return error MULTIPLE_METERS_PER_EVENT with event_count, meters_involved
@@ -326,13 +320,11 @@ sequenceDiagram
 
 `Delete` validates, resolves the meter set, runs the two guards, resolves the id set, runs the multi-meter guard, then calls `Persist(event_ids_to_delete)` which writes the record and performs the two deletes.
 
-`Preview` runs the same guards and the same id resolution, then calls the supported read paths with `exclude_event_ids` set to that id set. It never calls `Persist`.
-
 ---
 
 ## 7. Data Model
 
-### `event_deletion_data` — new ClickHouse table, S3-backed
+### `event_deletion_data` — new ClickHouse table
 
 ```sql
 CREATE TABLE IF NOT EXISTS flexprice.event_deletion_data
@@ -356,7 +348,7 @@ CREATE TABLE IF NOT EXISTS flexprice.event_deletion_data
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(deleted_at)
 ORDER BY (tenant_id, environment_id, external_customer_id, deleted_at, event_id)
-SETTINGS storage_policy = '<s3_backed_policy>', index_granularity = 8192;
+SETTINGS index_granularity = 8192;
 ```
 
 | Column | Source |
@@ -368,7 +360,7 @@ SETTINGS storage_policy = '<s3_backed_policy>', index_granularity = 8192;
 | `event_timestamp`, `event_ingested_at` | `events` |
 | `deleted_at`, `deleted_by`, `request_id` | stamped by the `INSERT ... SELECT` |
 
-- **No TTL.** The record is permanent, and the S3 storage policy is what makes that cheap.
+- **No TTL.** The record is kept permanently. Where the data physically sits is a storage concern, out of scope here.
 - **No `customer_id`.** `meter_usage` has no such column and `events.customer_id` is nullable and frequently empty, since ingestion requires only one of the two and `processEvent` never resolves it before writing. `external_customer_id` is `NOT NULL` on `meter_usage`.
 - **No `export_url`.** There is no export step.
 - **`MergeTree`, not `ReplacingMergeTree`.** One write per deleted event.
@@ -413,14 +405,6 @@ Success:
 
 The deleted set is never enumerated in the response. It lives in `event_deletion_data`, queryable by `request_id`.
 
-### `POST /v1/events/delete/preview`
-
-`@x-scope "read"`
-
-Request identical. Runs the same guards and id resolution, deletes nothing, and returns whatever the supported read paths return with `exclude_event_ids` set to the resolved id set. Today that is the detailed usage analytics response. Not the Delete response.
-
-A separate route rather than a flag, so the preview is `read`-scoped while Delete is `delete`-scoped.
-
 ### Failure reasons
 
 A single reason per failure, returned through `ierr.WithReportableDetails` with whatever identifiers are in hand.
@@ -429,7 +413,7 @@ A single reason per failure, returned through `ierr.WithReportableDetails` with 
 |---|---|
 | `MARKETPLACE_CUSTOMER` | `external_customer_id`, `provider_type` |
 | `FINALIZED_INVOICE_EXISTS` | `external_customer_id`, `subscription_id` (case 2 only), `invoice_id`, invoice period |
-| `MULTIPLE_METERS_PER_EVENT` | `event_count`, `meters_involved` |
+| `MULTIPLE_METERS_PER_EVENT` | `event_count`, `meters_involved` (the unnamed meters) |
 
 ```go
 return ierr.NewError("finalized invoice exists in the requested period").
@@ -454,12 +438,6 @@ Every response path is bounded. Counts on success, identifiers on refusal, a cou
 | 403 | `ErrPermissionDenied` | Caller lacks the capability, or is a service account |
 | 500 | `ErrDatabase` | The record insert or either delete failed |
 
-### Preview exclusion
-
-`exclude_event_ids []string` on `MeterUsageQueryParams` and `MeterUsageDetailedAnalyticsParams`, applied as a `NOT IN` predicate in `BuildWhereClause` and `BuildDetailedWhereClause`. Those two builders are what every meter-usage read funnels through.
-
-The totals must be recomputed with the rows excluded rather than derived by subtraction. The aggregators are `MAX(qty_total)`, `AVG(qty_total)`, `argMax(qty_total, timestamp)` and `COUNT(DISTINCT unique_hash)`, so for MAX, LATEST, AVG and COUNT_UNIQUE the deleted quantity is not the delta.
-
 ### UI
 
 _[To be filled in.]_
@@ -470,7 +448,8 @@ _[To be filled in.]_
 
 | Scenario | Expected Behavior |
 |---|---|
-| Matched event also carries usage on a meter not named by `feature_ids` | Request fails with `MULTIPLE_METERS_PER_EVENT`. Nothing deleted. |
+| Matched event also carries usage on a meter outside the named set | Request fails with `MULTIPLE_METERS_PER_EVENT`. Nothing deleted. |
+| Matched event feeds several meters, all of them named | Deleted. All of its usage is going, so nothing is stranded. |
 | `feature_ids` not given | No meter filter, so every meter row for every matched event is in scope and the multi-meter guard is unnecessary. |
 | `event_ids` with more than one `external_customer_id`, or alongside `feature_ids` | `400 ErrValidation`. |
 | Customer has five subscriptions, only one carries a meter in scope | Only that one is checked. The other four's invoices are irrelevant. |
@@ -504,7 +483,7 @@ _[To be filled in.]_
 
 **AC5.** A request with no `feature_ids` is blocked by a finalized invoice on any subscription of any customer in scope.
 
-**AC6.** A request whose `feature_ids` name only one of an event's two meters fails with `MULTIPLE_METERS_PER_EVENT`, returning the count and the meters involved. Nothing is deleted.
+**AC6.** A request whose `feature_ids` name only one of an event's two meters fails with `MULTIPLE_METERS_PER_EVENT`, returning the count and the unnamed meters. A request naming **both** of that event's meters succeeds and deletes it.
 
 **AC7.** An event billed on the parent of an `inherited` child blocks the request.
 
@@ -522,8 +501,6 @@ _[To be filled in.]_
 
 **AC14.** The delete endpoint returns `403` for a service-account caller regardless of assigned roles.
 
-**AC15.** Preview writes nothing, returns the same failure reason as Delete for the same request, and its usage figures match a fresh analytics query taken after the deletion has run, for SUM, COUNT, MAX, LATEST, AVG and COUNT_UNIQUE meters.
-
 ---
 
 ## 11. Open Questions & Decisions
@@ -538,25 +515,19 @@ _[To be filled in.]_
 
 Until this is settled, every failure is logged at error level with the request id, the event ids and the table involved.
 
-**Q2 — Multi-meter guard strictness.** The guard as written refuses when an event feeds **more than one meter at all**. The narrower form refuses only when it feeds a meter **outside** the named set (`meter_id NOT IN (meter_ids)`), which allows a tenant who names every feature an event touches. Both are one query. The written form never under-blocks but falsely refuses that case.
+**Q2 — RBAC role.** `write` on `event` is disqualified, since `event_ingestor` grants `{"event": ["write"]}` and every ingestion key could then destroy billing data. `super_admin` needs no change but grants this to everyone who holds it. A new user-only role plus an `ActionDelete` value is explicit and grantable independently, and `ValidateRoles` already enforces the user-type restriction. `super_admin` holds `{"*": ["*"]}` and will match `delete` regardless, so whether the route should additionally require the explicit role is part of this.
 
-**Q3 — S3 storage policy provisioning.** `storage_policy` is server configuration, not DDL. It must exist in `config.d` with an `<s3>` disk on every deployment that runs the migration, and local docker-compose has none. Open: whether the policy name is configurable per deployment, and what the local fallback is.
+**Q3 — Concurrency between the guard and the delete.** Nothing prevents an invoice finalizing between the invoice guard and the mutation. `AutoInvoiceThresholdBillingWorkflow` finalizes mid-period invoices every five minutes. `pg_advisory_xact_lock` is transaction-scoped and cannot span an asynchronous mutation, and the Redis `Locker` fails open when Redis is down.
 
-**Q4 — What the preview reports.** The detailed usage analytics response today. Each addition means adding `exclude_event_ids` to another read path. Open: whether cost analytics, the affected subscriptions, or the draft invoices that would be recomputed should be included.
+**Q4 — Redis dedup lock on re-ingestion.** `eventDeduplicationLockTTL` is 24 hours, so re-sending a corrected event under the same id within that window is silently dropped where dedup is enabled. Since delete-then-reingest is the point of the feature, deletion probably needs to release those locks.
 
-**Q5 — RBAC role.** `write` on `event` is disqualified, since `event_ingestor` grants `{"event": ["write"]}` and every ingestion key could then destroy billing data. `super_admin` needs no change but grants this to everyone who holds it. A new user-only role plus an `ActionDelete` value is explicit and grantable independently, and `ValidateRoles` already enforces the user-type restriction. `super_admin` holds `{"*": ["*"]}` and will match `delete` regardless, so whether the route should additionally require the explicit role is part of this.
+**Q5 — `raw_events` and reprocessing.** Out of scope for deletion, but `POST /v1/events/raw/reprocess/pending` defines unprocessed as present in `raw_events` and absent from `events`, so a deleted event reads as unprocessed and returns with the identical id. Options: delete from `raw_events` too, or teach the reprocess path to skip deleted ids.
 
-**Q6 — Concurrency between the guard and the delete.** Nothing prevents an invoice finalizing between the invoice guard and the mutation. `AutoInvoiceThresholdBillingWorkflow` finalizes mid-period invoices every five minutes. `pg_advisory_xact_lock` is transaction-scoped and cannot span an asynchronous mutation, and the Redis `Locker` fails open when Redis is down.
+**Q6 — Revenue facts rollup trigger.** Deletion changes no `ingested_at`, and `scanScopeFor` narrows the rollup using `GetUsageActivitySince` which filters on it, so an affected subscription reads as quiet and is skipped until the weekly full rebuild. `FINAL` rows are out of scope by construction. Open: whether deletion enqueues a rollup. Owner: revenue-facts.
 
-**Q7 — Redis dedup lock on re-ingestion.** `eventDeduplicationLockTTL` is 24 hours, so re-sending a corrected event under the same id within that window is silently dropped where dedup is enabled. Since delete-then-reingest is the point of the feature, deletion probably needs to release those locks.
+**Q7 — Coupon application drift.** Pre-existing. On a draft recompute, invoice totals and line items stay correct, but the persisted `coupon_applications` rows are skipped by the `(invoice_id, coupon_id)` idempotency check and keep their pre-deletion amounts. `recalculateDiscountOnInvoice` wipes and reapplies, but `wipeCouponApplications` does not decrement `total_redemptions`, so reusing it double-counts redemptions on one-off coupons.
 
-**Q8 — `raw_events` and reprocessing.** Out of scope for deletion, but `POST /v1/events/raw/reprocess/pending` defines unprocessed as present in `raw_events` and absent from `events`, so a deleted event reads as unprocessed and returns with the identical id. Options: delete from `raw_events` too, or teach the reprocess path to skip deleted ids.
-
-**Q9 — Revenue facts rollup trigger.** Deletion changes no `ingested_at`, and `scanScopeFor` narrows the rollup using `GetUsageActivitySince` which filters on it, so an affected subscription reads as quiet and is skipped until the weekly full rebuild. `FINAL` rows are out of scope by construction. Open: whether deletion enqueues a rollup. Owner: revenue-facts.
-
-**Q10 — Coupon application drift.** Pre-existing. On a draft recompute, invoice totals and line items stay correct, but the persisted `coupon_applications` rows are skipped by the `(invoice_id, coupon_id)` idempotency check and keep their pre-deletion amounts. `recalculateDiscountOnInvoice` wipes and reapplies, but `wipeCouponApplications` does not decrement `total_redemptions`, so reusing it double-counts redemptions on one-off coupons.
-
-**Q11 — Request caps.** Caps on `external_customer_ids`, `feature_ids`, `event_ids` and the period width. `BulkIngestEventRequest` uses `max=1000` and ingestion carries a 32 MiB body cap as precedent.
+**Q8 — Request caps.** Caps on `external_customer_ids`, `feature_ids`, `event_ids` and the period width. `BulkIngestEventRequest` uses `max=1000` and ingestion carries a 32 MiB body cap as precedent.
 
 ### Decisions
 
@@ -570,7 +541,8 @@ Until this is settled, every failure is logged at error level with the request i
 | Clause built against `meter_usage` only | It is the one table carrying every filter dimension. `events` has no meter column. |
 | Event id set resolved first, both deletes keyed on it | One delete shape, and the id set and record share a source so nothing is deleted unrecorded. |
 | Unprocessed events out of scope | They have no `meter_usage` row, so they are in neither the id set nor the record, and they are about to be processed anyway. |
-| Multi-meter guard refuses rather than widening the deletion | The request did not ask for that usage to go. |
+| Multi-meter guard refuses on a meter outside the named set, not on multi-meter events generally | Refusing any multi-meter event would reject the most correct request a tenant can send, one naming every feature the event feeds. |
+| The guard refuses rather than widening the deletion | The request did not ask for the unnamed meter's usage to go. |
 | Invoice overlap via `PeriodStartLTE: period_end` and `PeriodEndGTE: period_start` | Returns every finalized invoice whose period touches the requested one, in either direction. Any result refuses. |
 | Guard is subscription-level with `feature_ids`, customer-level without | A finalized invoice on a subscription the deletion cannot touch is not a reason to refuse. Without a meter set there is nothing to narrow with. |
 | Parent subscriptions pulled in before the meter match | An `inherited` child has no line items, so the meter lives on the parent. |
@@ -582,11 +554,29 @@ Until this is settled, every failure is logged at error level with the request i
 | Record written by `INSERT ... SELECT` before the deletes | No row reaches Go, so a lakh of events costs nothing in memory, and nothing is destroyed before it is recorded. |
 | Record driven from `meter_usage`, left-joined to `events` | Every log column but two is on `meter_usage`. The join supplies `event_timestamp` and `event_ingested_at`, since `meter_usage.timestamp` is second-precision and its `ingested_at` is when the meter row landed. |
 | `FINAL` on every `meter_usage` read | It is a `ReplacingMergeTree` and the same event legitimately lands two or three times. |
-| S3-backed, no TTL, no export step | The record is permanent and the storage policy is what makes that cheap. |
+| No TTL, no export step | The record is kept permanently. |
 | No `customer_id` on the record | `meter_usage` has no such column and `events.customer_id` is nullable and frequently empty. |
 | `request_id` on every row | The handle for reading back everything one request deleted. |
 | Marketplace customers refused entirely | `usage_records` are reported to AWS, GCP and Azure every three hours. Once reported the marketplace has billed the customer, and there is no Flexprice invoice to point at. |
-| Preview and Delete as separate routes | Preview is `read`-scoped, Delete is `delete`-scoped. |
 | Two-level logging throughout | Info on every completed step, error on every failure, both carrying the identifiers involved. |
 | `events` projection and monthly partitioning out of MVP scope | Handled alongside the replica work. `meter_usage` has no projection and daily partitions. |
 | `raw_events` out of scope | Written by the upstream Bento pipeline, not by this repository. |
+
+---
+
+## 12. Enhancements
+
+### Preview
+
+A `POST /v1/events/delete/preview` route that runs the same validation and the same event-id resolution as Delete, deletes nothing, and reports the usage as it would stand once the matched events are gone. Not in the MVP.
+
+How it works:
+
+- It is a separate route rather than a flag on Delete, so it can be `@x-scope "read"` while Delete stays `@x-scope "delete"`. The impact can then be inspected by someone who does not hold the capability to destroy.
+- It reuses `Delete`'s path up to and including `event_ids_to_delete`, then stops. Nothing is recorded and nothing is deleted.
+- That id set is passed to the existing read paths as an exclusion list. The preview response is whatever those paths return, not a Delete-shaped response.
+- The exclusion is one new field, `exclude_event_ids []string`, on `MeterUsageQueryParams` and `MeterUsageDetailedAnalyticsParams`, applied as a `NOT IN` predicate in `BuildWhereClause` and `BuildDetailedWhereClause`. Those two builders are what every meter-usage read funnels through, so one field on each covers usage, analytics, detailed analytics and cost analytics.
+- The totals must be recomputed with the rows excluded rather than derived by subtraction. The aggregators are `MAX(qty_total)`, `AVG(qty_total)`, `argMax(qty_total, timestamp)` and `COUNT(DISTINCT unique_hash)`, so for MAX, LATEST, AVG and COUNT_UNIQUE the deleted quantity is not the delta.
+- Preview reads force `FINAL`. `UsageSource.UseFinal()` is true only for `invoice_creation`, and `meter_usage` is a `ReplacingMergeTree` where the same event legitimately lands two or three times.
+
+What it reports is open, and grows by wiring `exclude_event_ids` into another read path and surfacing its response. The first cut is the detailed usage analytics response.
