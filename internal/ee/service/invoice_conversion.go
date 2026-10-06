@@ -29,12 +29,6 @@ func ConvertInvoice(inv *invoice.Invoice, resolution *FXRateResolution, converte
 	}
 
 	rate := resolution.Rate
-	if rate.LessThanOrEqual(decimal.Zero) {
-		return ierr.NewError("fx rate must be positive").
-			WithHint("Cannot convert an invoice with a non-positive rate").
-			WithReportableDetails(map[string]any{"rate": rate.String()}).
-			Mark(ierr.ErrValidation)
-	}
 
 	srcSubtotal := inv.Subtotal
 	srcDiscount := inv.TotalDiscount
