@@ -11,9 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// seedCustomCurrencyConfigMultiFiat configures "mac" with factors for both the tenant default
-// (usd, 1 mac = $0.10) and inr (1 mac = ₹8.30), so a custom-currency draft can be billed in a
-// customer's non-default billing currency.
+// seedCustomCurrencyConfigMultiFiat gives "mac" factors for usd (1 mac = $0.10) and inr (1 mac = ₹8.30).
 func (s *InvoiceServiceSuite) seedCustomCurrencyConfigMultiFiat() {
 	cfg := types.CustomCurrencyConfig{
 		CustomCurrencies: map[string]types.CustomCurrencyDefinition{
@@ -53,8 +51,7 @@ func (s *InvoiceServiceSuite) seedCustomerWithBillingCurrency(id, billing string
 	return cust
 }
 
-// A custom-currency draft for a customer with a billing currency is denominated directly in that
-// billing currency via the custom factor — not the tenant default — so it needs no later FX (§5.5).
+// A custom-currency draft is billed directly in the customer's billing currency via its factor.
 func (s *InvoiceServiceSuite) TestCreateDraftInvoice_CustomCurrencyUsesCustomerBillingCurrency() {
 	s.seedCustomCurrencyConfigMultiFiat()
 	cust := s.seedCustomerWithBillingCurrency("cust_cc_inr", "inr")
@@ -73,10 +70,7 @@ func (s *InvoiceServiceSuite) TestCreateDraftInvoice_CustomCurrencyUsesCustomerB
 	s.Nil(resp.FxConversion, "a custom-currency invoice converts once (custom->fiat); FX never applies")
 }
 
-// A custom-currency invoice for a customer whose billing currency has no factor for the custom code
-// is rejected — never silently issued in the tenant default fiat (§5.5: "not allowed"). This is the
-// one-off safety net beyond the §8.2/§8.3 subscription/wallet guardrails; convertAndRetaxInvoice is a
-// no-op for custom-currency invoices, so there is no finalize-time guard to fall back on.
+// A billing currency with no factor for the custom code is rejected, not issued in the tenant default.
 func (s *InvoiceServiceSuite) TestCreateDraftInvoice_CustomCurrencyNoFactorRejected() {
 	s.seedCustomCurrencyConfig() // mac -> usd only
 	cust := s.seedCustomerWithBillingCurrency("cust_cc_nofactor", "inr")

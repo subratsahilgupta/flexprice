@@ -27,10 +27,8 @@ func (s *WalletServiceSuite) setCustomerBillingCurrency(billing string) {
 	s.NoError(s.GetStores().CustomerRepo.Update(s.GetContext(), s.testData.customer))
 }
 
-// A cross-currency purchased top-up runs the invoice conversion inside the same transaction that
-// mints the pending wallet credit, so a missing rate aborts the whole operation instead of leaving
-// a stranded pending credit (§6.2). (The DB rollback itself is a Postgres guarantee — the in-memory
-// test WithTx is a passthrough, so this asserts the operation errors, not the row's absence.)
+// A missing rate fails the top-up instead of leaving a pending credit (the in-memory WithTx doesn't
+// roll back, so this asserts the error).
 func (s *WalletServiceSuite) TestTopUpWallet_CrossCurrency_MissingRate_Errors() {
 	s.seedAutoComplete(false)
 	s.setCustomerBillingCurrency("inr") // wallet is usd; no usd->inr rate seeded
@@ -43,8 +41,7 @@ func (s *WalletServiceSuite) TestTopUpWallet_CrossCurrency_MissingRate_Errors() 
 	s.Require().Error(err, "a cross-currency top-up with no rate must fail inside the tx")
 }
 
-// With a rate present, the top-up invoice is converted to the customer's billing currency inside the
-// top-up transaction; the pending wallet credit stays in the wallet's own currency (§6.2).
+// With a rate, the top-up invoice converts in the top-up tx; the wallet credit keeps its own currency.
 func (s *WalletServiceSuite) TestTopUpWallet_CrossCurrency_ConvertsInvoiceInsideTx() {
 	s.seedAutoComplete(false)
 	s.setCustomerBillingCurrency("inr")
@@ -72,10 +69,7 @@ func (s *WalletServiceSuite) TestTopUpWallet_CrossCurrency_ConvertsInvoiceInside
 	s.True(decimal.NewFromInt(100).Equal(resp.WalletTransaction.CreditAmount), "credits got %s", resp.WalletTransaction.CreditAmount)
 }
 
-// A pay-first top-up leaves the invoice DRAFT (checkout finalizes it later), so the draft is not
-// converted at finalize. This proves §6.2's real gap: the conversion must run inside the top-up tx
-// itself. handlePurchasedCreditInvoicedTransaction is called directly to observe the draft right
-// after the tx, before the (separate) checkout-session step.
+// A pay-first top-up draft is converted inside the top-up tx, since finalize won't see it.
 func (s *WalletServiceSuite) TestTopUpWallet_PayFirstCrossCurrency_ConvertsDraftInsideTx() {
 	s.setCustomerBillingCurrency("inr")
 	s.seedTenantRate("usd", "inr", "83")
@@ -99,9 +93,7 @@ func (s *WalletServiceSuite) TestTopUpWallet_PayFirstCrossCurrency_ConvertsDraft
 	s.Equal("usd", inv.FxConversion.ChargeCurrency)
 }
 
-// A pay-first cross-currency top-up with no rate fails inside the top-up tx, so in real Postgres the
-// pending wallet credit rolls back instead of stranding (§6.2). Without the in-tx conversion the
-// draft would be created unconverted and the failure would only surface later at checkout.
+// A pay-first top-up with no rate fails inside the top-up tx rather than later at checkout.
 func (s *WalletServiceSuite) TestTopUpWallet_PayFirstCrossCurrency_MissingRate_Errors() {
 	s.setCustomerBillingCurrency("inr") // no usd->inr rate
 

@@ -4246,10 +4246,8 @@ func (s *invoiceService) projectPreviewToFiat(ctx context.Context, inv *invoice.
 	return nil
 }
 
-// customCurrencyFiatTarget picks the fiat currency a custom-currency draft is denominated in, and
-// the factor to it. It prefers the customer's billing currency when set and a factor exists, so a
-// converted custom-currency invoice is born in the billing currency with no later FX (§5.5);
-// otherwise it uses the tenant default fiat.
+// customCurrencyFiatTarget picks the fiat a custom-currency draft is billed in, and its factor:
+// the customer's billing currency when it has a factor, else the tenant default.
 func (s *invoiceService) customCurrencyFiatTarget(ctx context.Context, ccCfg types.CustomCurrencyConfig, code, customerID string) (string, decimal.Decimal, error) {
 	fiat := ccCfg.DefaultFiatCurrency
 	if customerID == "" {
@@ -4269,10 +4267,8 @@ func (s *invoiceService) customCurrencyFiatTarget(ctx context.Context, ccCfg typ
 		return fiat, ccCfg.RateFor(code, fiat), nil
 	}
 
-	// The customer is billed in a currency other than the tenant default, so the custom code must
-	// have a factor for it — otherwise the invoice cannot be issued in the billing currency (§5.5).
-	// Rejecting here is the one-off safety net: convertAndRetaxInvoice is a no-op for a custom-currency
-	// invoice, so there is no finalize-time guard.
+	// A billing currency with no factor for the custom code can't be issued; reject it here, since
+	// finalize never converts custom-currency invoices.
 	rate := ccCfg.RateFor(code, billing)
 	if rate.IsZero() {
 		return "", decimal.Zero, ierr.NewErrorf("no conversion factor from %s to %s", code, billing).

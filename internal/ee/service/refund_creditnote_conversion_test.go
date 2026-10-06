@@ -44,8 +44,7 @@ func (s *RefundServiceSuite) creditNoteFor(inv *invoice.Invoice, amount decimal.
 	return cn
 }
 
-// A PREPAID_WALLET refund on a converted invoice targets the charge-currency wallet at the frozen
-// rate: ₹8,300 ÷ 83 = $100 (§7).
+// A PREPAID_WALLET refund goes to the charge-currency wallet at the frozen rate: ₹8,300 ÷ 83 = $100.
 func (s *RefundServiceSuite) TestPrepareRefundsForCreditNote_ConvertedPrepaidWallet_ChargeCurrency() {
 	inv := s.convertedInvoice(decimal.NewFromInt(83))
 
@@ -72,8 +71,7 @@ func (s *RefundServiceSuite) TestPrepareRefundsForCreditNote_ConvertedUnsetTarge
 	s.True(decimal.NewFromInt(100).Equal(rows[0].Amount), "amount got %s", rows[0].Amount)
 }
 
-// BACK_TO_SOURCE on a converted invoice is never rate-converted: it refunds the billing-currency
-// amount (gateway, or an inr wallet on fallback) (§7).
+// BACK_TO_SOURCE refunds the billing-currency amount unconverted (gateway, or an inr wallet on fallback).
 func (s *RefundServiceSuite) TestPrepareRefundsForCreditNote_ConvertedBackToSource_StaysBillingCurrency() {
 	inv := s.convertedInvoice(decimal.NewFromInt(83))
 

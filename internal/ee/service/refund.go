@@ -68,9 +68,8 @@ func (s *refundService) PrepareRefundsForCreditNote(ctx context.Context, cn *cre
 		}
 	}
 
-	// On a converted invoice a non-gateway (prepaid-wallet) refund lands in the charge-currency
-	// prepaid wallet at the frozen rate (§7). BACK_TO_SOURCE still refunds the billing-currency
-	// amount to the gateway, with no conversion.
+	// On a converted invoice a prepaid-wallet refund goes to the charge-currency wallet at the frozen
+	// rate; BACK_TO_SOURCE refunds the billing-currency amount unconverted.
 	if inv.FxConversion != nil && !target.AllowsBackToSource() {
 		return s.prepareChargeCurrencyCreditNoteRefund(ctx, cn, inv)
 	}
@@ -88,9 +87,8 @@ func (s *refundService) PrepareRefundsForCreditNote(ctx context.Context, cn *cre
 	return s.persist(ctx, rows)
 }
 
-// prepareChargeCurrencyCreditNoteRefund converts a credit note's billing-currency refund back to the
-// invoice's charge currency at the frozen rate and settles it to the charge-currency prepaid wallet
-// (§7). Credit notes never return prepaid credits, only the cash the customer paid.
+// prepareChargeCurrencyCreditNoteRefund refunds a credit note's cash to the charge-currency prepaid
+// wallet at the frozen rate. Prepaid credits are not returned.
 func (s *refundService) prepareChargeCurrencyCreditNoteRefund(ctx context.Context, cn *creditnote.CreditNote, inv *invoice.Invoice) ([]*refund.Refund, error) {
 	chargeAmount := frozenChargeAmount(inv, cn.TotalAmount)
 	if !chargeAmount.IsPositive() {
@@ -112,8 +110,7 @@ func (s *refundService) PrepareRefundsForVoidedInvoice(ctx context.Context, inv 
 			Mark(ierr.ErrValidation)
 	}
 
-	// A converted invoice returns its full funded value to the charge-currency prepaid wallet at the
-	// frozen rate (§6.3), never the billing-currency amount split across payments.
+	// A converted invoice returns its funded value to the charge-currency wallet at the frozen rate.
 	if inv.FxConversion != nil {
 		return s.prepareChargeCurrencyVoidRefund(ctx, inv)
 	}
@@ -130,10 +127,8 @@ func (s *refundService) PrepareRefundsForVoidedInvoice(ctx context.Context, inv 
 	return s.persist(ctx, rows)
 }
 
-// prepareChargeCurrencyVoidRefund returns the full funded value of a converted invoice to the
-// customer's charge-currency prepaid wallet at the frozen rate: the credits leg is the exact charge
-// amount recorded in fx_conversion.source; the cash leg is the remaining cash
-// (amount_paid − refunded_amount) divided by the frozen rate (§6.3).
+// prepareChargeCurrencyVoidRefund returns a converted invoice's funded value to the charge-currency
+// wallet: credits from fx_conversion.source, cash as (amount_paid − refunded_amount) ÷ frozen rate.
 func (s *refundService) prepareChargeCurrencyVoidRefund(ctx context.Context, inv *invoice.Invoice) ([]*refund.Refund, error) {
 	creditsCharge := inv.FxConversion.Source.TotalPrepaidCreditsApplied
 	cashCharge := decimal.Zero
@@ -154,9 +149,8 @@ func (s *refundService) prepareChargeCurrencyVoidRefund(ctx context.Context, inv
 	return s.persist(ctx, []*refund.Refund{row})
 }
 
-// frozenChargeAmount reverses a billing-currency amount to the invoice's charge currency at the
-// invoice's own frozen rate, rounded to charge-currency precision (§6.3). Shared by void and the
-// credit-note prepaid-wallet refund.
+// frozenChargeAmount converts a billing-currency amount back to the charge currency at the invoice's
+// frozen rate, rounded to charge-currency precision.
 func frozenChargeAmount(inv *invoice.Invoice, billing decimal.Decimal) decimal.Decimal {
 	if inv.FxConversion == nil || !inv.FxConversion.Rate.IsPositive() {
 		return decimal.Zero
@@ -395,7 +389,7 @@ func (s *refundService) settleToWallet(ctx context.Context, row *refund.Refund) 
 			reason = types.TransactionReasonCreditNote
 			metadata["credit_note_id"] = *row.CreditNoteID
 		}
-		// Record the frozen-rate conversion that produced this charge-currency credit (§6.3).
+		// Record the frozen-rate conversion behind this charge-currency credit.
 		if fx := inv.FxConversion; fx != nil {
 			metadata["fx_rate"] = fx.Rate.String()
 			metadata["fx_charge_currency"] = fx.ChargeCurrency

@@ -1211,10 +1211,8 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 					Mark(ierr.ErrValidation)
 			}
 
-			// A pay-first draft stays DRAFT (checkout finalizes it later), so finalize never converts
-			// it. Convert inside this same tx so a missing rate rolls back the pending wallet credit
-			// rather than stranding it (§6.2). The credits stay in the wallet's own currency; only the
-			// invoice converts.
+			// A pay-first draft never reaches finalize here, so convert in this tx; a missing rate then
+			// rolls back the pending credit. Credits stay in the wallet's currency.
 			domainInv, err := s.InvoiceRepo.Get(ctx, inv.ID)
 			if err != nil {
 				return err
@@ -1229,8 +1227,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 					WithHint("Failed to create invoice for purchased credits").
 					Mark(ierr.ErrInternal)
 			}
-			// A non-pay-first top-up auto-finalizes, which already converts the invoice inside this
-			// tx, so no explicit conversion call is needed here (§6.2).
+			// Other top-ups auto-finalize, which already converts inside this tx.
 		}
 
 		invoiceID = inv.ID

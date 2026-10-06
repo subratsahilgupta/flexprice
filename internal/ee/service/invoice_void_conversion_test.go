@@ -8,10 +8,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// buildConvertedFinalizedInvoice builds a FINALIZED invoice already converted to the billing
-// currency (inr), carrying the frozen fx_conversion whose source records the charge-currency (usd)
-// prepaid credits. amountPaidInr/prepaidInr are billing-currency amounts; prepaidCharge is the exact
-// usd credits from the source snapshot. priorRefundInr seeds a prior refund (e.g. a refund credit note).
+// buildConvertedFinalizedInvoice builds a FINALIZED usd→inr invoice; amounts ending in Inr are billing
+// currency, prepaidCharge is the usd credits in fx_conversion.source.
 func (s *InvoiceVoidRecalculateSuite) buildConvertedFinalizedInvoice(
 	id string,
 	amountPaidInr, prepaidInr, prepaidCharge, rate, priorRefundInr decimal.Decimal,
@@ -66,9 +64,8 @@ func (s *InvoiceVoidRecalculateSuite) walletBalance(walletID string) decimal.Dec
 	return w.Balance
 }
 
-// Voiding a converted invoice returns the full funded value to the CHARGE-currency prepaid wallet at
-// the frozen rate: cash leg ÷rate, credits leg from fx_conversion.source (§6.3). refunded_amount
-// stays the billing-currency field.
+// Void returns the funded value to the charge-currency wallet at the frozen rate; refunded_amount
+// stays in the billing currency.
 func (s *InvoiceVoidRecalculateSuite) TestVoidConverted_Mixed_RefundsChargeCurrencyWallet() {
 	usdWallet := s.buildPrepaidWallet("wallet_usd_mixed", decimal.Zero)
 	// ₹8,000 cash + ₹2,000 credits ($20 charge) at rate 100 → $80 cash + $20 credits = $100 back.
@@ -137,8 +134,7 @@ func (s *InvoiceVoidRecalculateSuite) TestVoidConverted_PartialPriorRefund_CashN
 		"usd wallet must receive $50 (cash net of prior refund), got %s", s.walletBalance(usdWallet.ID))
 }
 
-// Voiding a converted invoice records the frozen-rate conversion on the wallet transaction (§6.3):
-// the rate, the charge and billing currencies, and the billing-currency amount reversed.
+// Void records the frozen-rate conversion on the wallet transaction.
 func (s *InvoiceVoidRecalculateSuite) TestVoidConverted_RecordsConversionOnWalletTransaction() {
 	usdWallet := s.buildPrepaidWallet("wallet_usd_meta", decimal.Zero)
 	// ₹8,000 cash + ₹2,000 credits ($20) at rate 100 → $100 back; billing equivalent ₹10,000.
