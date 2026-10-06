@@ -329,3 +329,24 @@ type notFoundFXRateRepo struct{ fxrate.Repository }
 func (notFoundFXRateRepo) GetTenantRate(_ context.Context, _, _ string) (*fxrate.FXRate, error) {
 	return nil, ierr.NewError("fx rate not found").Mark(ierr.ErrNotFound)
 }
+
+// TestSetBillingCurrency_UnchangedValueNotBlockedByCheckout: a client that resends the full customer
+// object (billing currency unchanged, even differently cased) is not blocked by an open checkout.
+func (s *CustomerServiceSuite) TestSetBillingCurrency_UnchangedValueNotBlockedByCheckout() {
+	const custID = "cust_bc_same"
+	s.seedCustomerRow(custID)
+	_, err := s.service.UpdateCustomer(s.ctx, custID, dto.UpdateCustomerRequest{BillingCurrency: lo.ToPtr("inr")})
+	s.Require().NoError(err)
+	s.seedOpenCheckout(custID)
+
+	_, err = s.service.UpdateCustomer(s.ctx, custID, dto.UpdateCustomerRequest{
+		Name:            lo.ToPtr("Renamed During Checkout"),
+		BillingCurrency: lo.ToPtr(" INR "),
+	})
+	s.NoError(err, "resending the same billing currency must not be blocked by an open checkout")
+
+	// A real change is still blocked.
+	_, err = s.service.UpdateCustomer(s.ctx, custID, dto.UpdateCustomerRequest{BillingCurrency: lo.ToPtr("usd")})
+	s.Error(err)
+	s.True(ierr.IsValidation(err), "changing the value during checkout stays blocked, got %v", err)
+}

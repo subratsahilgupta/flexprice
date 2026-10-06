@@ -247,8 +247,11 @@ func (s *customerService) UpdateCustomer(ctx context.Context, id string, req dto
 	}
 	if req.BillingCurrency != nil {
 		normalized := dto.NormalizeBillingCurrency(req.BillingCurrency)
-		if err := s.validateBillingCurrency(ctx, cust.ID, normalized); err != nil {
-			return nil, err
+		// Clients that resend the whole customer must not trip the guardrails when nothing changes.
+		if lo.FromPtr(normalized) != lo.FromPtr(cust.BillingCurrency) {
+			if err := s.validateBillingCurrency(ctx, cust.ID, normalized); err != nil {
+				return nil, err
+			}
 		}
 		cust.BillingCurrency = normalized
 	}
