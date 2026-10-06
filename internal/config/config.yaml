@@ -275,6 +275,8 @@ otel:
     # route). Off here — SigNoz derives it from traces; turn it on where the
     # backend cannot store traces.
     http_server_enabled: false
+    disabled_metrics: [] # internal/metrics names to drop; ["*"] drops all.
+    tenant_allowlist: [] # "tenant_id:environment_id" or "tenant_id"; empty = all.
 
 pyroscope:
   enabled: false # Set to true to enable continuous profiling

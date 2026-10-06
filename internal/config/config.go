@@ -743,6 +743,9 @@ type OtelMetricsConfig struct {
 	// and SigNoz already derives it); turn it on where the backend cannot store
 	// traces and this is the only source of API latency.
 	HTTPServerEnabled bool `mapstructure:"http_server_enabled" default:"false"`
+	// DisabledMetrics and TenantAllowlist control internal/metrics only.
+	DisabledMetrics []string `mapstructure:"disabled_metrics"`
+	TenantAllowlist []string `mapstructure:"tenant_allowlist"`
 }
 
 // MergedHeaders — see OtelTracesConfig.MergedHeaders.
