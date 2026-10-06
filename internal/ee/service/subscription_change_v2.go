@@ -1164,6 +1164,7 @@ func (s *subscriptionService) outgoingPeriodInvoiceRequest(
 	if !req.Total.IsPositive() {
 		return nil, nil
 	}
+	req.BillingReason = types.InvoiceBillingReasonProration
 	return req, nil
 }
 
