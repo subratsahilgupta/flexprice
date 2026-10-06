@@ -102,9 +102,8 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 	return nil
 }
 
-// conversionAvailable reports whether from can be converted to the billing currency: a custom
-// currency needs a configured factor; a fiat currency needs a published tenant rate. Only a missing
-// rate means "not available"; any other lookup failure is returned so it is not reported as one.
+// conversionAvailable reports whether from converts to the billing currency (custom factor or
+// published tenant rate). Only a missing rate is "unavailable"; other lookup errors are returned.
 func conversionAvailable(ctx context.Context, fxRates fxrate.Repository, ccCfg types.CustomCurrencyConfig, from, to string) (bool, error) {
 	if ccCfg.IsCustom(from) {
 		return !ccCfg.RateFor(from, to).IsZero(), nil
