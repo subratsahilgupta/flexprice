@@ -171,39 +171,8 @@ func (s *InvoiceConversionFinalizeSuite) TestOneOffRetaxRewritesTaxAppliedInBill
 	inv := s.seedDraftInvoice("inv_tax", "cust_tax", "usd", types.InvoiceTypeOneOff, nil,
 		[]*invoice.InvoiceLineItem{line("il_t1", "100")})
 
-	pct := decimal.RequireFromString("18")
-	tr := &taxrate.TaxRate{
-		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TAX_RATE),
-		Name:            "GST",
-		Code:            "gst_" + types.GenerateUUIDWithPrefix("code"),
-		TaxRateStatus:   types.TaxRateStatusActive,
-		TaxRateType:     types.TaxRateTypePercentage,
-		PercentageValue: &pct,
-		EnvironmentID:   types.GetEnvironmentID(s.ctx()),
-		BaseModel:       types.GetDefaultBaseModel(s.ctx()),
-	}
-	s.Require().NoError(s.GetStores().TaxRateRepo.Create(s.ctx(), tr))
-
-	// The row compute wrote, keyed exactly as processTaxApplication will look it up.
-	key := idempotency.NewGenerator().GenerateKey(idempotency.ScopeTaxApplication, map[string]interface{}{
-		"tax_rate_id": tr.ID,
-		"entity_id":   inv.ID,
-		"entity_type": string(types.TaxRateEntityTypeInvoice),
-	})
-	s.Require().NoError(s.GetStores().TaxAppliedRepo.Create(s.ctx(), &taxapplied.TaxApplied{
-		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TAX_APPLIED),
-		TaxRateID:      tr.ID,
-		EntityType:     types.TaxRateEntityTypeInvoice,
-		EntityID:       inv.ID,
-		TaxableAmount:  decimal.RequireFromString("100"),
-		TaxAmount:      decimal.RequireFromString("18"),
-		TaxBehavior:    types.TaxBehaviorExclusive,
-		Currency:       "usd",
-		AppliedAt:      time.Now().UTC(),
-		IdempotencyKey: lo.ToPtr(key),
-		EnvironmentID:  types.GetEnvironmentID(s.ctx()),
-		BaseModel:      types.GetDefaultBaseModel(s.ctx()),
-	}))
+	tr := s.seedPercentRate("gst", "18")
+	s.seedTaxRow(inv.ID, tr, "100", "18", "usd")
 
 	s.Require().NoError(s.svc.convertAndRetaxInvoice(s.ctx(), inv))
 
@@ -219,6 +188,98 @@ func (s *InvoiceConversionFinalizeSuite) TestOneOffRetaxRewritesTaxAppliedInBill
 	s.Equal("inr", rows[0].Currency, "tax_applied must be rewritten in the billing currency")
 	s.True(decimal.RequireFromString("1494").Equal(rows[0].TaxAmount), "tax_amount got %s", rows[0].TaxAmount)
 	s.True(decimal.RequireFromString("8300").Equal(rows[0].TaxableAmount), "taxable_amount got %s", rows[0].TaxableAmount)
+}
+
+// seedPercentRate creates a published percentage tax rate.
+func (s *InvoiceConversionFinalizeSuite) seedPercentRate(name, pct string) *taxrate.TaxRate {
+	p := decimal.RequireFromString(pct)
+	tr := &taxrate.TaxRate{
+		ID:              types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TAX_RATE),
+		Name:            name,
+		Code:            name + "_" + types.GenerateUUIDWithPrefix("code"),
+		TaxRateStatus:   types.TaxRateStatusActive,
+		TaxRateType:     types.TaxRateTypePercentage,
+		PercentageValue: &p,
+		EnvironmentID:   types.GetEnvironmentID(s.ctx()),
+		BaseModel:       types.GetDefaultBaseModel(s.ctx()),
+	}
+	s.Require().NoError(s.GetStores().TaxRateRepo.Create(s.ctx(), tr))
+	return tr
+}
+
+// seedTaxRow records the tax_applied row compute writes, keyed exactly as processTaxApplication
+// looks it up.
+func (s *InvoiceConversionFinalizeSuite) seedTaxRow(invID string, tr *taxrate.TaxRate, taxable, tax, currency string) {
+	key := idempotency.NewGenerator().GenerateKey(idempotency.ScopeTaxApplication, map[string]interface{}{
+		"tax_rate_id": tr.ID,
+		"entity_id":   invID,
+		"entity_type": string(types.TaxRateEntityTypeInvoice),
+	})
+	s.Require().NoError(s.GetStores().TaxAppliedRepo.Create(s.ctx(), &taxapplied.TaxApplied{
+		ID:             types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TAX_APPLIED),
+		TaxRateID:      tr.ID,
+		EntityType:     types.TaxRateEntityTypeInvoice,
+		EntityID:       invID,
+		TaxableAmount:  decimal.RequireFromString(taxable),
+		TaxAmount:      decimal.RequireFromString(tax),
+		TaxBehavior:    types.TaxBehaviorExclusive,
+		Currency:       currency,
+		AppliedAt:      time.Now().UTC(),
+		IdempotencyKey: lo.ToPtr(key),
+		EnvironmentID:  types.GetEnvironmentID(s.ctx()),
+		BaseModel:      types.GetDefaultBaseModel(s.ctx()),
+	}))
+}
+
+// A rate archived between compute and finalize still applies: the draft was taxed with it, and
+// conversion changes the currency, not the taxes. Two rates also prove each row is re-taxed.
+func (s *InvoiceConversionFinalizeSuite) TestOneOffRetaxKeepsArchivedRate() {
+	s.seedCustomer("cust_arch", lo.ToPtr("inr"))
+	s.seedTenantRate("usd", "inr", "83")
+	inv := s.seedDraftInvoice("inv_arch", "cust_arch", "usd", types.InvoiceTypeOneOff, nil,
+		[]*invoice.InvoiceLineItem{line("il_a1", "100")})
+
+	cgst := s.seedPercentRate("cgst", "9")
+	sgst := s.seedPercentRate("sgst", "9")
+	s.seedTaxRow(inv.ID, cgst, "100", "9", "usd")
+	s.seedTaxRow(inv.ID, sgst, "100", "9", "usd")
+
+	// Archive SGST the way DeleteTaxRate does (status archived, row kept).
+	sgst.Status = types.StatusArchived
+	s.Require().NoError(s.GetStores().TaxRateRepo.Update(s.ctx(), sgst))
+
+	s.Require().NoError(s.svc.convertAndRetaxInvoice(s.ctx(), inv))
+
+	s.Equal("inr", inv.Currency)
+	s.True(decimal.RequireFromString("1494").Equal(inv.TotalTax), "9%% + 9%% of 8300, got %s", inv.TotalTax)
+	s.True(decimal.RequireFromString("9794").Equal(inv.Total), "total got %s", inv.Total)
+
+	filter := types.NewNoLimitTaxAppliedFilter()
+	filter.EntityType = types.TaxRateEntityTypeInvoice
+	filter.EntityID = inv.ID
+	rows, err := s.GetStores().TaxAppliedRepo.List(s.ctx(), filter)
+	s.Require().NoError(err)
+	s.Require().Len(rows, 2)
+	for _, r := range rows {
+		s.Equal("inr", r.Currency, "row for rate %s", r.TaxRateID)
+		s.True(decimal.RequireFromString("747").Equal(r.TaxAmount), "rate %s tax_amount got %s", r.TaxRateID, r.TaxAmount)
+		s.True(decimal.RequireFromString("8300").Equal(r.TaxableAmount), "rate %s taxable got %s", r.TaxRateID, r.TaxableAmount)
+	}
+}
+
+// A rate that no longer exists at all fails the conversion instead of under-taxing.
+func (s *InvoiceConversionFinalizeSuite) TestOneOffRetaxMissingRateFails() {
+	s.seedCustomer("cust_gone", lo.ToPtr("inr"))
+	s.seedTenantRate("usd", "inr", "83")
+	inv := s.seedDraftInvoice("inv_gone", "cust_gone", "usd", types.InvoiceTypeOneOff, nil,
+		[]*invoice.InvoiceLineItem{line("il_g1", "100")})
+
+	ghost := &taxrate.TaxRate{ID: "taxrate_ghost"} // never stored
+	s.seedTaxRow(inv.ID, ghost, "100", "18", "usd")
+
+	err := s.svc.convertAndRetaxInvoice(s.ctx(), inv)
+	s.Require().Error(err)
+	s.True(ierr.IsNotFound(err), "want not-found, got %v", err)
 }
 
 func (s *InvoiceConversionFinalizeSuite) TestConvertOnceRetrySkips() {

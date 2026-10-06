@@ -162,15 +162,15 @@ func (s *invoiceService) recomputeTaxOnConvertedInvoice(ctx context.Context, inv
 		rateIDs = append(rateIDs, a.TaxRateID)
 	}
 
-	rateFilter := types.NewNoLimitTaxRateFilter()
-	rateFilter.TaxRateIDs = rateIDs
-	rates, err := taxService.ListTaxRates(ctx, rateFilter)
-	if err != nil {
-		return err
-	}
-	resolved := make([]*dto.TaxRateWithBehavior, 0, len(rates.Items))
-	for _, r := range rates.Items {
-		resolved = append(resolved, &dto.TaxRateWithBehavior{TaxRateResponse: r, TaxBehavior: behaviorByRateID[r.ID]})
+	// Fetch each recorded rate by id, archived or not: the draft was taxed with it, and conversion
+	// changes the currency, not the taxes. A rate that no longer exists fails rather than under-taxing.
+	resolved := make([]*dto.TaxRateWithBehavior, 0, len(rateIDs))
+	for _, id := range rateIDs {
+		r, err := taxService.GetTaxRate(ctx, id)
+		if err != nil {
+			return err
+		}
+		resolved = append(resolved, &dto.TaxRateWithBehavior{TaxRateResponse: r, TaxBehavior: behaviorByRateID[id]})
 	}
 
 	result, err := taxService.ApplyTaxesOnInvoice(ctx, inv, dto.NewInvoiceTaxRates(resolved, cust))
