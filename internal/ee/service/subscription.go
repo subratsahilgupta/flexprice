@@ -3262,8 +3262,13 @@ func (s *subscriptionService) processSubscriptionPeriod(ctx context.Context, sub
 			sub.PauseStatus = types.PauseStatusNone
 			sub.ActivePauseID = nil
 
-			// Adjust the billing period by the pause duration
-			sub.CurrentPeriodEnd = sub.CurrentPeriodEnd.Add(pauseDuration)
+			// Adjust the billing period by the pause duration; the open draft's end moves with it.
+			newPeriodEnd := sub.CurrentPeriodEnd.Add(pauseDuration)
+			if err := NewInvoiceService(s.ServiceParams).MoveCycleDraft(ctx, sub, newPeriodEnd,
+				types.InvoiceBillingReasonSubscriptionCycle); err != nil {
+				return err
+			}
+			sub.CurrentPeriodEnd = newPeriodEnd
 
 			// Update the subscription and pause
 			if err := s.SubRepo.Update(ctx, sub); err != nil {
@@ -4373,11 +4378,16 @@ func (s *subscriptionService) executeResume(
 		sub.SubscriptionStatus = types.SubscriptionStatusActive
 	}
 
-	// Adjust the billing period by the pause duration
-	sub.CurrentPeriodEnd = sub.CurrentPeriodEnd.Add(pauseDuration)
-
 	// Execute the transaction
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
+		// Adjust the billing period by the pause duration; the open draft's end moves with it.
+		newPeriodEnd := sub.CurrentPeriodEnd.Add(pauseDuration)
+		if err := NewInvoiceService(s.ServiceParams).MoveCycleDraft(txCtx, sub, newPeriodEnd,
+			types.InvoiceBillingReasonSubscriptionCycle); err != nil {
+			return err
+		}
+		sub.CurrentPeriodEnd = newPeriodEnd
+
 		// Update the pause record
 		if err := s.SubRepo.UpdatePause(txCtx, activePause); err != nil {
 			return err

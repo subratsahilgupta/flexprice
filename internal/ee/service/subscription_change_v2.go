@@ -40,9 +40,9 @@ type planChangeRequest struct {
 
 	anchorAtEffect bool
 
-	// outgoingUsage bills the outgoing plan's usage and is set only under a reset; settlementQuote is
-	// the net of credits against charges, nil when the change settles no money.
-	outgoingUsage   *dto.CreateInvoiceRequest
+	// outgoingPeriod bills the period a reset cuts short and is set only under a reset; settlementQuote
+	// is the net of credits against charges, nil when the change settles no money.
+	outgoingPeriod  *dto.CreateInvoiceRequest
 	settlementQuote *LineItemProrationSummary
 
 	changes  []*dto.EntityChangeResult
@@ -145,7 +145,7 @@ func (s *subscriptionService) resolvePlanChange(
 	// The settlement is resolved here, before any write, so preview and execute quote the
 	// same documents and settling them is order-independent.
 	if r.anchorAtEffect {
-		if r.outgoingUsage, err = s.outgoingUsageInvoiceRequest(ctx, r); err != nil {
+		if r.outgoingPeriod, err = s.outgoingPeriodInvoiceRequest(ctx, r); err != nil {
 			return nil, err
 		}
 		if r.settlementQuote, err = s.resetQuote(ctx, r); err != nil {
@@ -1145,16 +1145,14 @@ func (s *subscriptionService) resetQuote(
 	return emptyProrationSummary(r.currentSub).Merge(credit, charge), nil
 }
 
-// outgoingUsageInvoiceRequest bills the usage consumed on the outgoing plan before the
-// reset cut its period short. Without it that usage is never invoiced: the period never
-// reaches its boundary, and the next roll's window starts at effectiveAt.
-func (s *subscriptionService) outgoingUsageInvoiceRequest(
+// outgoingPeriodInvoiceRequest bills the period the reset cuts short, as an immediate cancel would:
+// arrear charges up to the change. Without it that period is never invoiced: it never reaches its
+// boundary, and the next roll's window starts at effectiveAt.
+func (s *subscriptionService) outgoingPeriodInvoiceRequest(
 	ctx context.Context,
 	r *planChangeRequest,
 ) (*dto.CreateInvoiceRequest, error) {
-	billingSvc := NewBillingService(s.ServiceParams)
-
-	prepared, err := billingSvc.PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
+	req, err := NewBillingService(s.ServiceParams).PrepareSubscriptionInvoiceRequest(ctx, &dto.PrepareSubscriptionInvoiceRequestParams{
 		Subscription:   r.currentSub,
 		PeriodStart:    r.currentSub.CurrentPeriodStart,
 		PeriodEnd:      r.effectiveAt,
@@ -1163,38 +1161,40 @@ func (s *subscriptionService) outgoingUsageInvoiceRequest(
 	if err != nil {
 		return nil, err
 	}
-
-	usageCharges := lo.Filter(prepared.LineItems, func(line dto.CreateInvoiceLineItemRequest, _ int) bool {
-		return lo.FromPtr(line.PriceType) == string(types.PRICE_TYPE_USAGE)
-	})
-	if len(usageCharges) == 0 {
+	if !req.Total.IsPositive() {
 		return nil, nil
 	}
+	return req, nil
+}
 
-	usageChargesTotal := decimal.Zero
-	for _, charge := range usageCharges {
-		usageChargesTotal = usageChargesTotal.Add(charge.Amount)
+// billOutgoingPeriod raises the cut-short period's invoice the way an immediate cancel does: its open
+// draft, which may hold credits applied at expiry, becomes that invoice. It is finalized here and
+// paid after commit with the change's other invoices.
+func (s *subscriptionService) billOutgoingPeriod(ctx context.Context, r *planChangeRequest) (*dto.InvoiceResponse, error) {
+	invoiceSvc := NewInvoiceService(s.ServiceParams)
+	if err := invoiceSvc.MoveCycleDraft(ctx, r.currentSub, r.effectiveAt, types.InvoiceBillingReasonProration); err != nil {
+		return nil, err
 	}
-
-	req, err := billingSvc.CreateInvoiceRequestForCharges(ctx, &dto.CreateInvoiceRequestForChargesParams{
-		Subscription:  r.currentSub,
-		Result:        &dto.BillingCalculationResult{UsageCharges: usageCharges, TotalAmount: usageChargesTotal, Currency: r.currentSub.Currency},
-		PeriodStart:   r.currentSub.CurrentPeriodStart,
-		PeriodEnd:     r.effectiveAt,
-		Description:   "Usage on the previous plan up to the change",
-		Metadata:      types.Metadata{},
-		InvoiceType:   types.InvoiceTypeOneOff,
-		BillingReason: types.InvoiceBillingReasonSubscriptionUpdate,
+	draft, err := invoiceSvc.CreateDraftInvoiceForSubscription(ctx, dto.CreateSubscriptionDraftInvoiceRequest{
+		SubscriptionID: r.currentSub.ID,
+		PeriodStart:    r.currentSub.CurrentPeriodStart,
+		PeriodEnd:      r.effectiveAt,
+		ReferencePoint: types.ReferencePointCancel,
 	})
 	if err != nil {
 		return nil, err
 	}
-	if !req.Total.IsPositive() {
-		return nil, nil
+	if _, skipped, err := invoiceSvc.ComputeInvoice(ctx, draft.ID, nil); err != nil || skipped {
+		return nil, err
 	}
-
-	req.IdempotencyKey = lo.ToPtr(planChangeIdempotencyKey(r, "outgoing_usage"))
-	return req, nil
+	if err := invoiceSvc.FinalizeInvoice(ctx, draft.ID, dto.FinalizeInvoiceRequest{}); err != nil {
+		return nil, err
+	}
+	finalized, err := s.InvoiceRepo.Get(ctx, draft.ID)
+	if err != nil {
+		return nil, err
+	}
+	return dto.NewInvoiceResponse(finalized), nil
 }
 
 // settlePlanChange raises the settlement resolved for this change: the outgoing plan's
@@ -1238,9 +1238,24 @@ func (s *subscriptionService) settlePlanChange(
 		return nil
 	}
 
-	if r.outgoingUsage != nil {
-		if err := raiseInvoice(*r.outgoingUsage); err != nil {
-			return nil, err
+	if r.outgoingPeriod != nil {
+		if preview {
+			if err := raiseInvoice(*r.outgoingPeriod); err != nil {
+				return nil, err
+			}
+		} else {
+			inv, err := s.billOutgoingPeriod(ctx, r)
+			if err != nil {
+				return nil, err
+			}
+			if inv != nil {
+				changed = append(changed, dto.ChangedInvoice{
+					ID:      inv.ID,
+					Action:  dto.ChangedInvoiceActionCreated,
+					Status:  dto.ChangedInvoiceStatusFromPaymentStatus(inv.PaymentStatus),
+					Invoice: inv,
+				})
+			}
 		}
 	}
 

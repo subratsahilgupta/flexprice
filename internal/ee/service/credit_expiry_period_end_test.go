@@ -162,3 +162,34 @@ func (s *CreditExpiryInvoiceRaceSuite) TestPeriodEnd_ThresholdWaitsForPendingExp
 	s.False(item.Invoiced)
 	s.Empty(s.subscriptionInvoices(sub.ID))
 }
+
+// Resume after a pause pushes the period end out by the pause; the draft's end follows, so the
+// period-end run still finds it.
+func (s *CreditExpiryInvoiceRaceSuite) TestPeriodEnd_ResumeMovesTheDraft() {
+	sub, draft := s.settledSubscription("subs_resume")
+	pause := &subscription.SubscriptionPause{
+		ID:             "pause_subs_resume",
+		SubscriptionID: sub.ID,
+		PauseStatus:    types.PauseStatusActive,
+		PauseMode:      types.PauseModeImmediate,
+		PauseStart:     time.Now().UTC().Add(-48 * time.Hour),
+		BaseModel:      types.GetDefaultBaseModel(s.GetContext()),
+	}
+	s.NoError(s.GetStores().SubscriptionRepo.CreatePause(s.GetContext(), pause))
+	sub.SubscriptionStatus = types.SubscriptionStatusPaused
+	sub.PauseStatus = types.PauseStatusActive
+	sub.ActivePauseID = &pause.ID
+	s.NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), sub))
+
+	resumed, _, err := s.subscriptionService().executeResume(s.GetContext(), sub, pause, &dto.ResumeSubscriptionRequest{
+		ResumeMode: types.ResumeModeImmediate,
+	})
+	s.Require().NoError(err)
+
+	s.True(resumed.CurrentPeriodEnd.After(*draft.PeriodEnd), "period end moved out by the pause")
+	s.True(s.invoice(draft.ID).PeriodEnd.Equal(resumed.CurrentPeriodEnd), "draft end follows the period")
+	reused, _, err := s.invoiceService.GetOrComputeCurrentPeriodDraft(s.GetContext(), resumed)
+	s.Require().NoError(err)
+	s.Equal(draft.ID, reused.ID, "the period-end run finds the moved draft")
+	s.True(decimal.NewFromInt(20).Equal(reused.TotalPrepaidCreditsApplied))
+}
