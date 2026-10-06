@@ -26,7 +26,8 @@ There is no deletion path for either table.
 
 ### Problem
 
-Tenants ingest events with wrong data and cannot fix it themselves. Ola Krutrim and Simplismart both hit this repeatedly, and the only route is a support thread ending in manual work on our side: locate the events, delete the `meter_usage` rows, delete the events, then reprocess the corrected events. The threads do not close because the mistake recurs.
+Tenants sometimes ingest events with incorrect data and have no way to fix them themselves. This often leads to long support threads where we have to help correct the already-ingested events.
+Currently, the only way to resolve this is through support ending in manual work on our side: locate the events, delete the `meter_usage` rows, delete the events, then reprocess the corrected events. The threads do not close because the mistake recurs.
 
 The task is simple and the tenant knows exactly which events are wrong. They are blocked only because there is no API.
 
@@ -59,15 +60,15 @@ The tenant deletes their own wrong events and re-ingests the corrected ones, whi
 
 ## 4. Use Cases
 
-### UC1 — Ola Krutrim: wrong property value across many events
+### UC1 — Wrong property value across many events
 
-Ola ingests voice events whose `duration` property is wrong and needs them gone so they can re-send with the corrected value.
+Tenant ingests voice events whose `duration` property is wrong and needs them gone so they can re-send with the corrected value.
 
-Expected: Ola names the customer, the period, and either the feature or the exact event ids. If nothing in scope has been invoiced, the events and their meter usage are deleted and Ola re-ingests. If the period has been invoiced, the request fails naming the blocking invoice.
+Expected: Tenant names the customer, the period, and either the feature or the exact event ids. If nothing in scope has been invoiced, the events and their meter usage are deleted and tenant re-ingests. If the period has been invoiced, the request fails naming the blocking invoice.
 
-### UC2 — Simplismart: delete and reprocess
+### UC2 — Delete and reprocess
 
-Simplismart repeatedly asks us to delete a set of events so they can re-send them. Same endpoint, same flow, no involvement from us.
+Tenant might repeatedly asks us to delete a set of events so they can re-send them. Same endpoint, same flow, no involvement from us.
 
 ---
 
