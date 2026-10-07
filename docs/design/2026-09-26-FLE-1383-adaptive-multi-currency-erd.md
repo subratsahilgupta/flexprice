@@ -516,15 +516,14 @@ changes.
 The credits come from the pending wallet transaction, never from the invoice total, so the
 conversion cannot change them.
 
-**Convert inside the top-up transaction.** The pending wallet credit and the top-up invoice are created
-together in one DB transaction, and the credit is confirmed only when the invoice is paid. The
-conversion must run **inside that same transaction**, so a missing rate rolls the pending credit back
-with the invoice — nothing is left half-created. If conversion were deferred to a later step, a failure
-after commit would strand the pending credit, which permanently blocks the wallet's auto-top-up. A
-missing fiat rate is unlikely here (tenant rates cannot be deleted, and §8.2 checks every wallet pair
-when a billing currency is set), but the atomic placement is the safe design. Independently, a
-scheduled sweep should void stale finalized-but-unpaid top-up invoices and release their pending
-credits — a gap that already exists today, before FX.
+**A rate always exists for a top-up.** A wallet in a currency other than the customer's billing
+currency can only exist when a rate (or custom factor) exists for that pair: setting a billing currency
+checks every existing wallet (§8.2), and creating a wallet checks its own currency (§8.2). Tenant rates
+cannot be deleted, so a top-up invoice can always be converted and a pending credit is never stranded
+by a missing rate. A pay-later top-up invoice converts when it is finalized, inside the top-up
+transaction; a pay-first top-up draft converts at checkout, like every pay-first flow (§5.6).
+Independently, a scheduled sweep should void stale finalized-but-unpaid top-up invoices and release
+their pending credits — a gap that already exists today, before FX.
 
 ### 6.3 Void
 
@@ -665,7 +664,9 @@ flowchart TD
 
 - Enforced in `CustomerService.Create` and `CustomerService.Update`.
 - Subscriptions are checked where the customer is the subscriber or the invoicing customer.
-- Wallets are checked because their top-ups convert into the billing currency (§6.2).
+- Wallets are checked because their top-ups convert into the billing currency (§6.2). The same check
+  runs when a wallet is created for a customer that already has a billing currency: a wallet in another
+  currency needs a rate or custom factor to it (`WalletService.CreateWallet`).
 - For a custom-currency subscription or wallet, the check is that the custom currency has a factor
   for X, not an FX rate (§5.5).
 - A change is rejected while the customer has an open checkout session: "Complete or cancel the open
