@@ -328,8 +328,13 @@ func (s *walletService) validateWalletConvertible(ctx context.Context, ccCfg typ
 	}
 	if !ok {
 		return ierr.NewErrorf("no exchange rate from %s to %s", currency, billing).
-			WithHintf("Configure a %s to %s rate before creating a %s wallet for this customer.", currency, billing, currency).
-			WithReportableDetails(map[string]any{"customer_id": customerID, "wallet_currency": currency, "billing_currency": billing}).
+			WithHintf("No exchange rate for %s. Add a global rate before creating a %s wallet for this customer.", fxPairLabel(currency, billing), strings.ToUpper(currency)).
+			WithReportableDetails(map[string]any{
+				"customer_id":      customerID,
+				"wallet_currency":  currency,
+				"billing_currency": billing,
+				"missing_pairs":    []string{fxPairKey(currency, billing)},
+			}).
 			Mark(ierr.ErrValidation)
 	}
 	return nil
