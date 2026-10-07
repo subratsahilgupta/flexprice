@@ -132,8 +132,8 @@ func (s *customerService) openCheckoutSessionIDs(ctx context.Context, customerID
 	return ids, nil
 }
 
-// activeConvertibleSubscriptions returns active, trialing or paused subscriptions the customer
-// subscribes to or is invoiced for.
+// activeConvertibleSubscriptions returns active, trialing or paused subscriptions invoiced to the
+// customer: its own subscriptions without another payer, and ones it pays for on another's behalf.
 func (s *customerService) activeConvertibleSubscriptions(ctx context.Context, customerID string) ([]*subscription.Subscription, error) {
 	statuses := []types.SubscriptionStatus{
 		types.SubscriptionStatusActive,
@@ -144,7 +144,7 @@ func (s *customerService) activeConvertibleSubscriptions(ctx context.Context, cu
 	seen := make(map[string]*subscription.Subscription)
 	collect := func(subs []*subscription.Subscription) {
 		for _, sub := range subs {
-			if sub.CustomerID == customerID || sub.GetInvoicingCustomerID() == customerID {
+			if sub.GetInvoicingCustomerID() == customerID {
 				seen[sub.ID] = sub
 			}
 		}

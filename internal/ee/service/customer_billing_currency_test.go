@@ -350,3 +350,23 @@ func (s *CustomerServiceSuite) TestSetBillingCurrency_UnchangedValueNotBlockedBy
 	s.Error(err)
 	s.True(ierr.IsValidation(err), "changing the value during checkout stays blocked, got %v", err)
 }
+
+// A subscription the customer holds but another customer pays for is invoiced to the payer, so it
+// does not need a rate to the customer's billing currency; one it pays for on another's behalf does.
+func (s *CustomerServiceSuite) TestSetBillingCurrency_OnlyChecksSubscriptionsInvoicedToCustomer() {
+	const childID, parentID = "cust_bc_child", "cust_bc_parent"
+	s.seedCustomerRow(childID)
+	s.seedCustomerRow(parentID)
+	s.seedSubscriptionRow("sub_bc_child", childID, "usd", types.SubscriptionStatusActive)
+	sub, err := s.GetStores().SubscriptionRepo.Get(s.ctx, "sub_bc_child")
+	s.Require().NoError(err)
+	sub.InvoicingCustomerID = lo.ToPtr(parentID)
+	s.Require().NoError(s.GetStores().SubscriptionRepo.Update(s.ctx, sub))
+
+	_, err = s.service.UpdateCustomer(s.ctx, childID, dto.UpdateCustomerRequest{BillingCurrency: lo.ToPtr("inr")})
+	s.NoError(err, "the child's sub is invoiced to the parent; no usd->inr rate is needed for the child")
+
+	_, err = s.service.UpdateCustomer(s.ctx, parentID, dto.UpdateCustomerRequest{BillingCurrency: lo.ToPtr("inr")})
+	s.Require().Error(err, "the parent pays for the usd sub, so it needs a usd->inr rate")
+	s.True(ierr.IsValidation(err), "got %v", err)
+}
