@@ -576,6 +576,20 @@ from today: any invoice that is `DRAFT`, `FINALIZED` or `SKIPPED`, with a paymen
 - Prior refunds (from refund credit notes, §7) are cash in INR; they lower `amount_paid − refunded_amount`
   before the division. The credits leg always returns in full from `fx_conversion.source`.
 
+**Refund rows.** The void is split across the invoice's payments exactly as today, oldest first, so every
+row stays in INR and keeps the `payment_id` it reverses; what no payment covers (the credits) is one more
+row. Each row is converted when it settles, as a step in a running total over everything the invoice has
+returned to the wallet: `round((prior + row) ÷ rate) − round(prior ÷ rate)`, where `prior` is the INR
+already settled to the wallet for this invoice. So all of an invoice's wallet refunds — void and credit
+notes together — add up to one rounding of their INR total. A row worth less than one cent settles with
+no wallet credit.
+
+| Row | Payment | INR | Running INR | USD credited |
+| --- | --- | --- | --- | --- |
+| 1 | Card | ₹4,980 | ₹4,980 | $60 |
+| 2 | Offline | ₹3,320 | ₹8,300 | $100 − $60 = $40 |
+| 3 | — (credits) | ₹1,660 | ₹9,960 | $120 − $100 = $20 |
+
 ---
 
 ## 7. Credit notes and refunds
@@ -585,28 +599,34 @@ today's amounts and limits apply in INR. The refundable amount is the cash the c
 (`amount_paid`); the prepaid credits applied before conversion are returned only by void (§6.3), not by a
 credit note. No new columns on `credit_notes`, `credit_note_line_items` or `refunds`.
 
-On a REFUND credit note the user picks the destination, exactly as today. Only the prepaid-wallet target
-touches a rate:
+On a REFUND credit note the user picks the destination, exactly as today. A rate applies only where money
+lands in a wallet:
 
 ```mermaid
 flowchart TD
     CN["Credit note on a converted invoice<br/>currency = INR"] --> T{"type"}
     T -- ADJUSTMENT --> ADJ["amount_due reduced in INR"]
     T -- REFUND --> RT{"refund target"}
-    RT -- BACK_TO_SOURCE --> GW["Gateway refunds the INR to the card.<br/>No conversion. On failure, an INR wallet, as today"]
+    RT -- BACK_TO_SOURCE --> GW["Card payments: gateway refunds the INR.<br/>Other payments, and a failed gateway refund:<br/>charge-currency wallet at the frozen rate"]
     RT -- PREPAID_WALLET --> WAL["Charge-currency wallet,<br/>at the invoice's frozen rate"]
 ```
 
 | Target | Where the money goes | Rate |
 | --- | --- | --- |
-| `BACK_TO_SOURCE` | Gateway refunds the INR payment to the card. A failed gateway refund falls back to an INR wallet, as today | None |
+| `BACK_TO_SOURCE` | Gateway-refundable payments (card, payment link, UPI) are refunded to the card in INR. Any other slice (offline, postpaid wallet) and a failed gateway refund go to the charge-currency prepaid wallet | None for the card; the invoice's frozen rate for the wallet |
 | `PREPAID_WALLET` | The customer's charge-currency prepaid wallet, so the credit is usable on their charge-currency drafts | The invoice's frozen rate |
 
-`BACK_TO_SOURCE` returns the exact INR the gateway took, so no rate is involved. `PREPAID_WALLET` mirrors
-void: the refunded INR is converted back at the invoice's frozen rate and credited to the
-charge-currency wallet, never a live rate. This is the one change to the credit-note path — today a
-wallet refund tops up an invoice-currency wallet; on a converted invoice it now targets the
-charge-currency wallet at the frozen rate.
+Refund rows are planned exactly as today: split across the invoice's payments oldest first, each row in
+INR with the `payment_id` it reverses, so later refunds see how much of each payment is left. The card
+part of `BACK_TO_SOURCE` returns the exact INR the gateway took, so no rate is involved. **Every row that
+lands in a wallet goes to the charge-currency wallet at the frozen rate**, never an INR wallet: the
+customer has only charge-currency drafts, so INR credit would be stranded (§6.3). Each wallet row,
+including a failed gateway refund's fallback, converts when it settles, through the same running total as
+void (§6.3). This is the one change to the credit-note path — today a wallet refund tops up an
+invoice-currency wallet; on a converted invoice it now targets the charge-currency wallet.
+
+Example (rate 83): paid ₹4,980 by card, then ₹3,320 offline; a `BACK_TO_SOURCE` credit note for ₹6,000
+refunds ₹4,980 to the card and puts ₹1,020 ÷ 83 = **$12.29** in the USD wallet.
 
 ---
 
