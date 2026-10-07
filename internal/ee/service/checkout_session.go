@@ -744,7 +744,7 @@ func (s *checkoutSessionService) createCheckoutPayment(ctx context.Context, inv 
 				Mark(ierr.ErrValidation)
 		}
 		if err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
-			return invSvc.convertAndRetaxInvoice(txCtx, inv)
+			return invSvc.convertToBillingCurrency(txCtx, inv)
 		}); err != nil {
 			return nil, err
 		}

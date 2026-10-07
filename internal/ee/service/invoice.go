@@ -122,7 +122,7 @@ func (s *invoiceService) CreateOneOffInvoice(ctx context.Context, req dto.Create
 		}
 	}
 
-	if err := s.rejectPrepaidCrossCurrencyOneOff(ctx, req); err != nil {
+	if err := s.validateInvoiceBillingCurrency(ctx, req); err != nil {
 		return nil, err
 	}
 
@@ -1225,7 +1225,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 		// Convert to the billing currency and re-tax. A missing rate leaves the
 		// invoice DRAFT.
 		// ====================================================================
-		if err := s.convertAndRetaxInvoice(txCtx, lockedInv); err != nil {
+		if err := s.convertToBillingCurrency(txCtx, lockedInv); err != nil {
 			return err
 		}
 

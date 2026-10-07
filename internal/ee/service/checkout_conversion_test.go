@@ -8,16 +8,16 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// checkoutSvcForConversion builds a checkout service sharing the finalize suite's wired repos,
+// checkoutSvcForConversion builds a checkout service sharing the conversion suite's wired repos,
 // plus the PaymentRepo that createCheckoutPayment needs.
-func (s *InvoiceConversionFinalizeSuite) checkoutSvcForConversion() *checkoutSessionService {
+func (s *InvoiceConversionSuite) checkoutSvcForConversion() *checkoutSessionService {
 	sp := s.svc.ServiceParams
 	sp.PaymentRepo = s.GetStores().PaymentRepo
 	return &checkoutSessionService{ServiceParams: sp}
 }
 
 // The draft converts before the checkout payment is minted, so the payment is in the billing currency.
-func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentConvertsBeforeMinting() {
+func (s *InvoiceConversionSuite) TestCheckoutPaymentConvertsBeforeMinting() {
 	s.seedCustomer("cust_co", lo.ToPtr("inr"))
 	s.seedTenantRate("usd", "inr", "83")
 	inv := s.seedDraftInvoice("inv_co", "cust_co", "usd", types.InvoiceTypeOneOff, nil,
@@ -40,7 +40,7 @@ func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentConvertsBeforeMintin
 
 // TestCheckoutPaymentNoBillingCurrencyUnaffected: a normal customer's checkout payment is minted in
 // the charge currency, unconverted.
-func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentNoBillingCurrencyUnaffected() {
+func (s *InvoiceConversionSuite) TestCheckoutPaymentNoBillingCurrencyUnaffected() {
 	s.seedCustomer("cust_co_bau", nil)
 	s.seedTenantRate("usd", "inr", "83")
 	inv := s.seedDraftInvoice("inv_co_bau", "cust_co_bau", "usd", types.InvoiceTypeOneOff, nil,
@@ -58,7 +58,7 @@ func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentNoBillingCurrencyUna
 }
 
 // Finalizing a draft converted at checkout does not convert it again.
-func (s *InvoiceConversionFinalizeSuite) TestFinalizeAfterCheckoutDoesNotReconvert() {
+func (s *InvoiceConversionSuite) TestFinalizeAfterCheckoutDoesNotReconvert() {
 	s.seedCustomer("cust_pf", lo.ToPtr("inr"))
 	s.seedTenantRate("usd", "inr", "83")
 	inv := s.seedDraftInvoice("inv_pf", "cust_pf", "usd", types.InvoiceTypeOneOff, nil,
@@ -75,7 +75,7 @@ func (s *InvoiceConversionFinalizeSuite) TestFinalizeAfterCheckoutDoesNotReconve
 	inv.AmountPaid = inv.AmountDue
 
 	// The finalize convert step must be a no-op (fx_conversion already set — first gate, before amount_paid).
-	s.Require().NoError(s.svc.convertAndRetaxInvoice(s.ctx(), inv))
+	s.Require().NoError(s.svc.convertToBillingCurrency(s.ctx(), inv))
 	s.Equal("inr", inv.Currency)
 	s.True(rateBefore.Equal(inv.FxConversion.Rate), "rate must not change on the finalize pass")
 	s.True(dueBefore.Equal(inv.AmountDue), "amount_due must not change: want %s got %s", dueBefore, inv.AmountDue)
@@ -83,7 +83,7 @@ func (s *InvoiceConversionFinalizeSuite) TestFinalizeAfterCheckoutDoesNotReconve
 
 // TestRecalculateV2RejectsConvertedDraft: a draft converted at checkout is frozen. Recalculating it
 // would rate the subscription in USD onto an INR invoice, and finalize would then skip conversion.
-func (s *InvoiceConversionFinalizeSuite) TestRecalculateV2RejectsConvertedDraft() {
+func (s *InvoiceConversionSuite) TestRecalculateV2RejectsConvertedDraft() {
 	s.seedCustomer("cust_frozen", lo.ToPtr("inr"))
 	s.seedTenantRate("usd", "inr", "83")
 	inv := s.seedDraftInvoice("inv_frozen", "cust_frozen", "usd", types.InvoiceTypeSubscription, lo.ToPtr("sub_frozen"),
@@ -103,7 +103,7 @@ func (s *InvoiceConversionFinalizeSuite) TestRecalculateV2RejectsConvertedDraft(
 }
 
 // TestCheckoutPaymentMissingRateFails: no rate ⇒ session/payment cannot proceed, nothing minted.
-func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentMissingRateFails() {
+func (s *InvoiceConversionSuite) TestCheckoutPaymentMissingRateFails() {
 	s.seedCustomer("cust_co_norate", lo.ToPtr("inr"))
 	// no tenant rate seeded
 	inv := s.seedDraftInvoice("inv_co_norate", "cust_co_norate", "usd", types.InvoiceTypeOneOff, nil,
@@ -115,7 +115,7 @@ func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentMissingRateFails() {
 }
 
 // A partly paid draft that needs conversion is rejected, not linked in the charge currency.
-func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentPartlyPaidCrossCurrencyRejected() {
+func (s *InvoiceConversionSuite) TestCheckoutPaymentPartlyPaidCrossCurrencyRejected() {
 	s.seedCustomer("cust_co_part", lo.ToPtr("inr"))
 	s.seedTenantRate("usd", "inr", "83")
 	inv := s.seedDraftInvoice("inv_co_part", "cust_co_part", "usd", types.InvoiceTypeOneOff, nil,
@@ -130,7 +130,7 @@ func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentPartlyPaidCrossCurre
 }
 
 // The same partly paid draft for a customer without conversion still gets its payment.
-func (s *InvoiceConversionFinalizeSuite) TestCheckoutPaymentPartlyPaidSameCurrencyAllowed() {
+func (s *InvoiceConversionSuite) TestCheckoutPaymentPartlyPaidSameCurrencyAllowed() {
 	s.seedCustomer("cust_co_part_bau", nil)
 	inv := s.seedDraftInvoice("inv_co_part_bau", "cust_co_part_bau", "usd", types.InvoiceTypeOneOff, nil,
 		[]*invoice.InvoiceLineItem{line("il_co_part_bau", "100")})
