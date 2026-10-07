@@ -339,7 +339,7 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	}
 
 	// Runs after inheritance so the invoicing customer, whose billing currency applies, is known.
-	inlineFXTarget, err := s.validateSubscriptionBillingCurrency(ctx, sub, customer, ccCfg, req.FxRate)
+	inlineFXTarget, err := s.validateSubscriptionBillingCurrency(ctx, sub, customer, ccCfg, req.FxRates)
 	if err != nil {
 		return nil, err
 	}
@@ -358,8 +358,8 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 		return nil, err
 	}
 
-	// Inline fx_rate: create the subscription-scope rate now that the subscription id exists.
-	if err := s.handleFxOverride(ctx, sub, inlineFXTarget, req.FxRate); err != nil {
+	// Inline fx_rates: create the subscription-scope rates now that the subscription id exists.
+	if err := s.handleFxOverride(ctx, sub, inlineFXTarget, req.FxRates); err != nil {
 		return nil, err
 	}
 
@@ -7842,13 +7842,13 @@ func (s *subscriptionService) resolveExternalCustomersForInheritance(ctx context
 }
 
 // validateSubscriptionBillingCurrency checks the subscription can be converted to its invoicing
-// customer's billing currency. It returns that currency when an inline fx_rate should be created for it.
+// customer's billing currency. It returns that currency when inline fx_rates should be created for it.
 func (s *subscriptionService) validateSubscriptionBillingCurrency(
 	ctx context.Context,
 	sub *subscription.Subscription,
 	subscriber *customer.Customer,
 	ccCfg types.CustomCurrencyConfig,
-	fxRate *dto.InlineFXRate,
+	fxRates []dto.InlineFXRate,
 ) (string, error) {
 	invoicingCust := subscriber
 	if id := sub.GetInvoicingCustomerID(); id != subscriber.ID {
@@ -7862,9 +7862,9 @@ func (s *subscriptionService) validateSubscriptionBillingCurrency(
 	billing := lo.FromPtr(invoicingCust.BillingCurrency)
 	needsConversion := billing != "" && !types.IsMatchingCurrency(billing, sub.Currency)
 
-	if fxRate != nil && (!needsConversion || ccCfg.IsCustom(sub.Currency)) {
-		return "", ierr.NewError("fx_rate is not applicable").
-			WithHint("An fx_rate can only be set on a fiat subscription billed in another currency.").
+	if len(fxRates) > 0 && (!needsConversion || ccCfg.IsCustom(sub.Currency)) {
+		return "", ierr.NewError("fx_rates is not applicable").
+			WithHint("fx_rates can only be set on a fiat subscription billed in another currency.").
 			Mark(ierr.ErrValidation)
 	}
 	if !needsConversion {
@@ -7882,25 +7882,32 @@ func (s *subscriptionService) validateSubscriptionBillingCurrency(
 			Mark(ierr.ErrValidation)
 	}
 
-	if fxRate == nil {
+	if len(fxRates) == 0 {
 		return "", nil
 	}
 	return billing, nil
 }
 
-// handleFxOverride creates the subscription-scope rate from an inline fx_rate; no-op without a target.
-func (s *subscriptionService) handleFxOverride(ctx context.Context, sub *subscription.Subscription, target string, fxRate *dto.InlineFXRate) error {
-	if target == "" || fxRate == nil {
+// handleFxOverride creates one subscription-scope rate per inline fx_rates entry; no-op without a target.
+func (s *subscriptionService) handleFxOverride(ctx context.Context, sub *subscription.Subscription, target string, fxRates []dto.InlineFXRate) error {
+	if target == "" {
 		return nil
 	}
-	_, err := NewFXRateService(s.ServiceParams).CreateFXRate(ctx, dto.CreateFXRateRequest{
-		Scope:        types.FXRateScopeSubscription,
-		ScopeID:      sub.ID,
-		FromCurrency: sub.Currency,
-		ToCurrency:   target,
-		Rate:         &fxRate.Rate,
-	})
-	return err
+	fxRateService := NewFXRateService(s.ServiceParams)
+	for _, r := range fxRates {
+		if _, err := fxRateService.CreateFXRate(ctx, dto.CreateFXRateRequest{
+			Scope:        types.FXRateScopeSubscription,
+			ScopeID:      sub.ID,
+			FromCurrency: sub.Currency,
+			ToCurrency:   target,
+			Rate:         lo.ToPtr(r.Rate),
+			StartDate:    r.StartDate,
+			EndDate:      r.EndDate,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateAutoInvoiceThresholdForCreate enforces auto_invoice_threshold before create: the effective

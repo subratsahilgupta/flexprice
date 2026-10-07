@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	domainCustomer "github.com/flexprice/flexprice/internal/domain/customer"
@@ -82,29 +83,29 @@ func customCfg(code, fiat, factor string) types.CustomCurrencyConfig {
 }
 
 func (s *SubscriptionBillingCurrencySuite) TestValidateSubscriptionBillingCurrency() {
-	fxRate := &dto.InlineFXRate{Rate: decimal.RequireFromString("83")}
+	fxRates := []dto.InlineFXRate{{Rate: decimal.RequireFromString("83")}}
 
 	cases := []struct {
 		name       string
 		billing    *string
 		subCurr    string
 		cfg        types.CustomCurrencyConfig
-		fxRate     *dto.InlineFXRate
+		fxRates    []dto.InlineFXRate
 		setup      func()
 		wantTarget string
 		wantErr    bool
 	}{
 		{name: "no billing currency", billing: nil, subCurr: "usd", wantTarget: ""},
 		{name: "billing matches subscription", billing: lo.ToPtr("usd"), subCurr: "usd", wantTarget: ""},
-		{name: "no billing currency but fx_rate given is rejected", billing: nil, subCurr: "usd", fxRate: fxRate, wantErr: true},
+		{name: "no billing currency but fx_rates given is rejected", billing: nil, subCurr: "usd", fxRates: fxRates, wantErr: true},
 		{name: "fiat cross-currency without tenant rate rejected", billing: lo.ToPtr("inr"), subCurr: "usd", wantErr: true},
 		{
-			name: "fiat cross-currency with tenant rate, no fx_rate", billing: lo.ToPtr("inr"), subCurr: "usd",
+			name: "fiat cross-currency with tenant rate, no fx_rates", billing: lo.ToPtr("inr"), subCurr: "usd",
 			setup: func() { s.seedTenantRate("usd", "inr", "83") }, wantTarget: "",
 		},
 		{
-			name: "fiat cross-currency with tenant rate and fx_rate creates override target", billing: lo.ToPtr("inr"), subCurr: "usd",
-			setup: func() { s.seedTenantRate("usd", "inr", "83") }, fxRate: fxRate, wantTarget: "inr",
+			name: "fiat cross-currency with tenant rate and fx_rates creates override target", billing: lo.ToPtr("inr"), subCurr: "usd",
+			setup: func() { s.seedTenantRate("usd", "inr", "83") }, fxRates: fxRates, wantTarget: "inr",
 		},
 		{
 			name: "custom-currency with factor allowed", billing: lo.ToPtr("usd"), subCurr: "mac",
@@ -115,8 +116,8 @@ func (s *SubscriptionBillingCurrencySuite) TestValidateSubscriptionBillingCurren
 			cfg: customCfg("mac", "usd", "0.1"), wantErr: true,
 		},
 		{
-			name: "custom-currency with fx_rate rejected", billing: lo.ToPtr("usd"), subCurr: "mac",
-			cfg: customCfg("mac", "usd", "0.1"), fxRate: fxRate, wantErr: true,
+			name: "custom-currency with fx_rates rejected", billing: lo.ToPtr("usd"), subCurr: "mac",
+			cfg: customCfg("mac", "usd", "0.1"), fxRates: fxRates, wantErr: true,
 		},
 	}
 
@@ -135,7 +136,7 @@ func (s *SubscriptionBillingCurrencySuite) TestValidateSubscriptionBillingCurren
 			}
 			subscriber := &domainCustomer.Customer{ID: custID, BillingCurrency: tc.billing}
 
-			target, err := s.svc.validateSubscriptionBillingCurrency(s.ctx(), sub, subscriber, tc.cfg, tc.fxRate)
+			target, err := s.svc.validateSubscriptionBillingCurrency(s.ctx(), sub, subscriber, tc.cfg, tc.fxRates)
 			if tc.wantErr {
 				s.Error(err, "case %d", i)
 				s.True(ierr.IsValidation(err), "case %d: want validation error, got %v", i, err)
@@ -145,4 +146,47 @@ func (s *SubscriptionBillingCurrencySuite) TestValidateSubscriptionBillingCurren
 			}
 		})
 	}
+}
+
+func (s *SubscriptionBillingCurrencySuite) TestHandleFxOverrideCreatesEveryWindow() {
+	s.seedCustomer("cust_win", lo.ToPtr("inr"))
+	s.seedTenantRate("usd", "inr", "83")
+	sub := &subscription.Subscription{ID: "sub_win", CustomerID: "cust_win", Currency: "usd"}
+	s.NoError(s.GetStores().SubscriptionRepo.Create(s.ctx(), sub))
+
+	cut := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	rates := []dto.InlineFXRate{
+		{Rate: decimal.RequireFromString("83.5"), EndDate: &cut},
+		{Rate: decimal.RequireFromString("84"), StartDate: &cut},
+	}
+	s.NoError(s.svc.handleFxOverride(s.ctx(), sub, "inr", rates))
+
+	scope := types.FXRateScopeSubscription
+	scopeID := sub.ID
+	got, err := s.GetStores().FXRateRepo.List(s.ctx(), &types.FXRateFilter{
+		QueryFilter: types.NewNoLimitQueryFilter(),
+		Scope:       &scope,
+		ScopeID:     &scopeID,
+	})
+	s.NoError(err)
+	s.Len(got, 2)
+	byRate := lo.KeyBy(got, func(r *fxrate.FXRate) string { return r.Rate.String() })
+	s.Require().Contains(byRate, "83.5")
+	s.Require().Contains(byRate, "84")
+	s.Nil(byRate["83.5"].StartDate)
+	s.True(byRate["83.5"].EndDate.Equal(cut))
+	s.True(byRate["84"].StartDate.Equal(cut))
+	s.Nil(byRate["84"].EndDate)
+	for _, r := range got {
+		s.Equal("usd", r.FromCurrency)
+		s.Equal("inr", r.ToCurrency)
+	}
+}
+
+func (s *SubscriptionBillingCurrencySuite) TestHandleFxOverrideNoTargetIsNoop() {
+	sub := &subscription.Subscription{ID: "sub_noop", CustomerID: "cust_noop", Currency: "usd"}
+	s.NoError(s.svc.handleFxOverride(s.ctx(), sub, "", []dto.InlineFXRate{{Rate: decimal.RequireFromString("83")}}))
+	got, err := s.GetStores().FXRateRepo.List(s.ctx(), &types.FXRateFilter{QueryFilter: types.NewNoLimitQueryFilter()})
+	s.NoError(err)
+	s.Empty(got)
 }

@@ -555,10 +555,37 @@ func (c *SubscriptionCreationConfig) Validate() error {
 	return nil
 }
 
-// InlineFXRate is the optional fx_rate block on subscription create — just the rate; the pair and
-// scope are derived from the subscription's currency and the customer's billing currency.
+// InlineFXRate is one subscription-scope rate created with the subscription. The pair is the
+// subscription currency to the invoicing customer's billing currency; the window is [start_date, end_date).
 type InlineFXRate struct {
-	Rate decimal.Decimal `json:"rate" swaggertype:"string"`
+	Rate      decimal.Decimal `json:"rate" swaggertype:"string"`
+	StartDate *time.Time      `json:"start_date,omitempty"`
+	EndDate   *time.Time      `json:"end_date,omitempty"`
+}
+
+// validateInlineFXRates checks each rate and window, and that no two windows overlap.
+func validateInlineFXRates(rates []InlineFXRate) error {
+	for i, r := range rates {
+		if !r.Rate.IsPositive() {
+			return ierr.NewErrorf("fx_rates[%d].rate must be greater than zero", i).
+				WithHint("Provide a positive exchange rate for every fx_rates entry.").
+				Mark(ierr.ErrValidation)
+		}
+		if r.StartDate != nil && r.EndDate != nil && !r.StartDate.Before(*r.EndDate) {
+			return ierr.NewErrorf("fx_rates[%d].start_date must be before end_date", i).
+				WithHint("The start of a validity window must be before its end.").
+				Mark(ierr.ErrValidation)
+		}
+		for j := 0; j < i; j++ {
+			if types.FXRateWindowsOverlap(rates[j].StartDate, rates[j].EndDate, r.StartDate, r.EndDate) {
+				return ierr.NewErrorf("fx_rates[%d] and fx_rates[%d] overlap", j, i).
+					WithHint("Each fx_rates entry must cover a separate period.").
+					WithReportableDetails(map[string]any{"first_index": j, "second_index": i}).
+					Mark(ierr.ErrValidation)
+			}
+		}
+	}
+	return nil
 }
 
 type CreateSubscriptionRequest struct {
@@ -574,11 +601,11 @@ type CreateSubscriptionRequest struct {
 	Currency  string `json:"currency" validate:"required,len=3"`
 	LookupKey string `json:"lookup_key"`
 
-	// FxRate sets a subscription-scope rate to the invoicing customer's billing currency.
-	// Rejected when nothing needs converting or the pair has no tenant rate.
-	FxRate    *InlineFXRate `json:"fx_rate,omitempty"`
-	StartDate *time.Time    `json:"start_date,omitempty"`
-	EndDate   *time.Time    `json:"end_date,omitempty"`
+	// FxRates sets subscription-scope rates to the invoicing customer's billing currency, one per
+	// non-overlapping window. Rejected when nothing needs converting or the pair has no tenant rate.
+	FxRates   []InlineFXRate `json:"fx_rates,omitempty"`
+	StartDate *time.Time     `json:"start_date,omitempty"`
+	EndDate   *time.Time     `json:"end_date,omitempty"`
 
 	// TrialStart/TrialEnd are for internal integrations (e.g. Stripe sync); not accepted from public JSON.
 	TrialStart *time.Time `json:"-"`
@@ -997,10 +1024,8 @@ func (r *CreateSubscriptionRequest) Validate() error {
 			Mark(ierr.ErrValidation)
 	}
 
-	if r.FxRate != nil && !r.FxRate.Rate.IsPositive() {
-		return ierr.NewError("fx_rate.rate must be greater than zero").
-			WithHint("Provide a positive exchange rate, or omit fx_rate.").
-			Mark(ierr.ErrValidation)
+	if err := validateInlineFXRates(r.FxRates); err != nil {
+		return err
 	}
 
 	if err := r.LineItemGrouping.Validate(); err != nil {
