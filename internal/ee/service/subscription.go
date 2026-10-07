@@ -359,17 +359,8 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 	}
 
 	// Inline fx_rate: create the subscription-scope rate now that the subscription id exists.
-	if inlineFXTarget != "" {
-		fxSvc := NewFXRateService(s.ServiceParams)
-		if _, err := fxSvc.CreateFXRate(ctx, dto.CreateFXRateRequest{
-			Scope:        types.FXRateScopeSubscription,
-			ScopeID:      sub.ID,
-			FromCurrency: sub.Currency,
-			ToCurrency:   inlineFXTarget,
-			Rate:         &req.FxRate.Rate,
-		}); err != nil {
-			return nil, err
-		}
+	if err := s.handleFxOverride(ctx, sub, inlineFXTarget, req.FxRate); err != nil {
+		return nil, err
 	}
 
 	if req.Inheritance != nil && len(req.Inheritance.GroupedInvoicingChildrenToCreate) > 0 {
@@ -7895,6 +7886,21 @@ func (s *subscriptionService) validateSubscriptionBillingCurrency(
 		return "", nil
 	}
 	return billing, nil
+}
+
+// handleFxOverride creates the subscription-scope rate from an inline fx_rate; no-op without a target.
+func (s *subscriptionService) handleFxOverride(ctx context.Context, sub *subscription.Subscription, target string, fxRate *dto.InlineFXRate) error {
+	if target == "" || fxRate == nil {
+		return nil
+	}
+	_, err := NewFXRateService(s.ServiceParams).CreateFXRate(ctx, dto.CreateFXRateRequest{
+		Scope:        types.FXRateScopeSubscription,
+		ScopeID:      sub.ID,
+		FromCurrency: sub.Currency,
+		ToCurrency:   target,
+		Rate:         &fxRate.Rate,
+	})
+	return err
 }
 
 // validateAutoInvoiceThresholdForCreate enforces auto_invoice_threshold before create: the effective
