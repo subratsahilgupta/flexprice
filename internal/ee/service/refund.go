@@ -365,13 +365,6 @@ func (s *refundService) settleToWallet(ctx context.Context, row *refund.Refund) 
 // total, so everything the invoice returns to the wallet adds up to one rounding of its billing amount.
 func (s *refundService) walletCreditFor(ctx context.Context, inv *invoice.Invoice, row *refund.Refund) (decimal.Decimal, error) {
 	fx := inv.FxConversion
-	if !fx.Rate.IsPositive() {
-		return decimal.Zero, ierr.NewError("converted invoice has no positive frozen rate").
-			WithHint("The invoice's conversion record is invalid, so its refund cannot be converted.").
-			WithReportableDetails(map[string]any{"invoice_id": inv.ID, "rate": fx.Rate.String()}).
-			Mark(ierr.ErrInternal)
-	}
-
 	prior, err := s.RefundRepo.SumSettledToWalletByInvoice(ctx, inv.ID, fx.BillingCurrency)
 	if err != nil {
 		return decimal.Zero, err

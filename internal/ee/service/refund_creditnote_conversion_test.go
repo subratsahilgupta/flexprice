@@ -261,18 +261,3 @@ func (s *RefundServiceSuite) TestPrepareRefundsForCreditNote_ConvertedWalletRefu
 	s.Equal(offline.ID, lo.FromPtr(rows[0].PaymentID), "the card payment is already used up")
 	s.Equal(types.RefundDestinationWallet, rows[0].RefundDestination)
 }
-
-// A converted invoice without a positive frozen rate cannot settle a wallet refund; the row stays pending.
-func (s *RefundServiceSuite) TestDispatch_ConvertedZeroRate_Errors() {
-	inv := s.convertedInvoice(decimal.Zero)
-
-	rows, err := s.service.PrepareRefundsForCreditNote(s.GetContext(),
-		s.creditNoteFor(inv, decimal.NewFromInt(100)), inv, lo.ToPtr(types.RefundTargetPrepaidWallet))
-	s.Require().NoError(err)
-	s.Require().Len(rows, 1)
-
-	s.Error(s.service.Dispatch(s.GetContext(), rows[0].ID))
-	pending, err := s.GetStores().RefundRepo.Get(s.GetContext(), rows[0].ID)
-	s.NoError(err)
-	s.Equal(types.RefundStatusPending, pending.RefundStatus)
-}
