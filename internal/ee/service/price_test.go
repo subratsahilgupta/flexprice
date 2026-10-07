@@ -3208,6 +3208,7 @@ func TestBillingModelChange_Rejects(t *testing.T) {
 		// The payload the line item edit dialog sent for "Slab Tiered" on a flat price.
 		{"tiers on a flat price", flat, dto.OverrideLineItemRequest{Tiers: testTiers}, "tiers can only be set on a TIERED price"},
 		{"tiered without tier mode", flat, dto.OverrideLineItemRequest{BillingModel: types.BILLING_MODEL_TIERED, Tiers: testTiers}, "tier_mode is required"},
+		{"amount only on a tiered price", shapedPrice(pricingShapes["slab"], types.PRICE_UNIT_TYPE_FIAT), dto.OverrideLineItemRequest{Amount: lo.ToPtr(decimal.NewFromInt(4))}, "amount cannot be set on a TIERED price"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

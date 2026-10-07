@@ -605,6 +605,11 @@ func validateBillingModelChange(existing *price.Price, targetModel types.Billing
 
 	switch target {
 	case types.BILLING_MODEL_TIERED:
+		if hasAmount && !hasTiers {
+			return ierr.NewError("amount cannot be set on a TIERED price").
+				WithHint("Tiered prices are priced by their tiers; send tiers, or set billing_model to FLAT_FEE or PACKAGE").
+				Mark(ierr.ErrValidation)
+		}
 		if switching && targetTierMode == "" {
 			return ierr.NewError("tier_mode is required for a TIERED price").
 				WithHint("Set tier_mode to SLAB or VOLUME").
