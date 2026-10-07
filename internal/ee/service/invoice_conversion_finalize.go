@@ -127,21 +127,13 @@ func (s *invoiceService) recomputeTaxOnConvertedInvoice(ctx context.Context, inv
 	}
 
 	taxService := NewTaxService(s.ServiceParams)
-	filter := types.NewNoLimitTaxAppliedFilter()
-	filter.EntityType = types.TaxRateEntityTypeInvoice
-	filter.EntityID = inv.ID
-	applied, err := taxService.ListTaxApplied(ctx, filter)
-	if err != nil {
-		return err
-	}
-
-	cust, err := s.CustomerRepo.Get(ctx, inv.CustomerID)
+	taxRates, err := taxService.PrepareTaxRatesFromApplied(ctx, inv)
 	if err != nil {
 		return err
 	}
 
 	// No tax rows: zero the tax and recompute totals in the billing currency.
-	if len(applied.Items) == 0 {
+	if len(taxRates.GetRates()) == 0 {
 		applyTaxResultToInvoice(inv, &TaxCalculationResult{
 			TotalTaxAmount:    decimal.Zero,
 			TaxAppliedRecords: []*dto.TaxAppliedResponse{},
@@ -149,28 +141,7 @@ func (s *invoiceService) recomputeTaxOnConvertedInvoice(ctx context.Context, inv
 		return s.InvoiceRepo.Update(ctx, inv)
 	}
 
-	behaviorByRateID := make(map[string]types.TaxBehavior, len(applied.Items))
-	rateIDs := make([]string, 0, len(applied.Items))
-	for _, a := range applied.Items {
-		if _, seen := behaviorByRateID[a.TaxRateID]; seen {
-			continue
-		}
-		behaviorByRateID[a.TaxRateID] = a.TaxBehavior
-		rateIDs = append(rateIDs, a.TaxRateID)
-	}
-
-	// Fetch each recorded rate by id, archived or not: the draft was taxed with it, and conversion
-	// changes the currency, not the taxes. A rate that no longer exists fails rather than under-taxing.
-	resolved := make([]*dto.TaxRateWithBehavior, 0, len(rateIDs))
-	for _, id := range rateIDs {
-		r, err := taxService.GetTaxRate(ctx, id)
-		if err != nil {
-			return err
-		}
-		resolved = append(resolved, &dto.TaxRateWithBehavior{TaxRateResponse: r, TaxBehavior: behaviorByRateID[id]})
-	}
-
-	result, err := taxService.ApplyTaxesOnInvoice(ctx, inv, dto.NewInvoiceTaxRates(resolved, cust))
+	result, err := taxService.ApplyTaxesOnInvoice(ctx, inv, taxRates)
 	if err != nil {
 		return err
 	}
