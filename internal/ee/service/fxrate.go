@@ -450,3 +450,18 @@ func (s *fxRateService) customCurrencyConfig(ctx context.Context) (types.CustomC
 	settingsSvc := NewSettingsService(s.ServiceParams).(*settingsService)
 	return GetSetting[types.CustomCurrencyConfig](settingsSvc, ctx, types.SettingKeyCustomCurrencyConfig)
 }
+
+// conversionAvailable reports whether from converts to the billing currency (custom factor or
+// published tenant rate). Only a missing rate is "unavailable"; other lookup errors are returned.
+func conversionAvailable(ctx context.Context, params ServiceParams, ccCfg types.CustomCurrencyConfig, from, to string) (bool, error) {
+	if ccCfg.IsCustom(from) {
+		return !ccCfg.RateFor(from, to).IsZero(), nil
+	}
+	if _, err := params.FXRateRepo.GetTenantRate(ctx, from, to); err != nil {
+		if ierr.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}

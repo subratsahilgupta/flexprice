@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -128,4 +129,25 @@ func (s *FXRateResolveSuite) TestResolveRate_MarketRateNotSupportedYet() {
 	_, err := s.svc.ResolveRate(ctx, ResolveFXRateRequest{From: "eur", To: "jpy"})
 	s.Error(err)
 	s.True(ierr.IsInvalidOperation(err), "market rate resolution should be rejected until the integration lands")
+}
+
+func TestConversionAvailable(t *testing.T) {
+	ctx := context.Background()
+	cfg := types.CustomCurrencyConfig{}
+
+	ok, err := conversionAvailable(ctx, ServiceParams{FXRateRepo: failingFXRateRepo{}}, cfg, "usd", "inr")
+	if err == nil || !ierr.IsDatabase(err) || ok {
+		t.Fatalf("db error: want (false, database error), got (%v, %v)", ok, err)
+	}
+
+	ok, err = conversionAvailable(ctx, ServiceParams{FXRateRepo: notFoundFXRateRepo{}}, cfg, "usd", "inr")
+	if err != nil || ok {
+		t.Fatalf("missing rate: want (false, nil), got (%v, %v)", ok, err)
+	}
+}
+
+type notFoundFXRateRepo struct{ fxrate.Repository }
+
+func (notFoundFXRateRepo) GetTenantRate(_ context.Context, _, _ string) (*fxrate.FXRate, error) {
+	return nil, ierr.NewError("fx rate not found").Mark(ierr.ErrNotFound)
 }

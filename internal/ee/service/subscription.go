@@ -7880,7 +7880,7 @@ func (s *subscriptionService) validateSubscriptionBillingCurrency(
 		return "", nil
 	}
 
-	ok, err := conversionAvailable(ctx, s.FXRateRepo, ccCfg, sub.Currency, billing)
+	ok, err := conversionAvailable(ctx, s.ServiceParams, ccCfg, sub.Currency, billing)
 	if err != nil {
 		return "", err
 	}

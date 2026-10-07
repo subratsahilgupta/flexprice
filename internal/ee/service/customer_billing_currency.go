@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/flexprice/flexprice/internal/domain/fxrate"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
@@ -57,7 +56,7 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 		if types.IsMatchingCurrency(sub.Currency, target) {
 			continue
 		}
-		ok, err := conversionAvailable(ctx, s.FXRateRepo, ccCfg, sub.Currency, target)
+		ok, err := conversionAvailable(ctx, s.ServiceParams, ccCfg, sub.Currency, target)
 		if err != nil {
 			return err
 		}
@@ -81,7 +80,7 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 		if types.IsMatchingCurrency(w.Currency, target) {
 			continue
 		}
-		ok, err := conversionAvailable(ctx, s.FXRateRepo, ccCfg, w.Currency, target)
+		ok, err := conversionAvailable(ctx, s.ServiceParams, ccCfg, w.Currency, target)
 		if err != nil {
 			return err
 		}
@@ -97,21 +96,6 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 	}
 
 	return nil
-}
-
-// conversionAvailable reports whether from converts to the billing currency (custom factor or
-// published tenant rate). Only a missing rate is "unavailable"; other lookup errors are returned.
-func conversionAvailable(ctx context.Context, fxRates fxrate.Repository, ccCfg types.CustomCurrencyConfig, from, to string) (bool, error) {
-	if ccCfg.IsCustom(from) {
-		return !ccCfg.RateFor(from, to).IsZero(), nil
-	}
-	if _, err := fxRates.GetTenantRate(ctx, from, to); err != nil {
-		if ierr.IsNotFound(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
 }
 
 // openCheckoutSessionIDs returns the customer's active checkout sessions so the error can name them.

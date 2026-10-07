@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"testing"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	domainCheckout "github.com/flexprice/flexprice/internal/domain/checkout"
@@ -306,28 +305,6 @@ func (s *CustomerServiceSuite) TestSetBillingCurrency_RateLookupErrorSurfaces() 
 	s.Require().Error(err)
 	s.True(ierr.IsDatabase(err), "want the database error, got %v", err)
 	s.False(ierr.IsValidation(err), "must not be reported as a missing rate: %v", err)
-}
-
-func TestConversionAvailable(t *testing.T) {
-	ctx := context.Background()
-	cfg := types.CustomCurrencyConfig{}
-
-	ok, err := conversionAvailable(ctx, failingFXRateRepo{}, cfg, "usd", "inr")
-	if err == nil || !ierr.IsDatabase(err) || ok {
-		t.Fatalf("db error: want (false, database error), got (%v, %v)", ok, err)
-	}
-
-	notFound := notFoundFXRateRepo{}
-	ok, err = conversionAvailable(ctx, notFound, cfg, "usd", "inr")
-	if err != nil || ok {
-		t.Fatalf("missing rate: want (false, nil), got (%v, %v)", ok, err)
-	}
-}
-
-type notFoundFXRateRepo struct{ fxrate.Repository }
-
-func (notFoundFXRateRepo) GetTenantRate(_ context.Context, _, _ string) (*fxrate.FXRate, error) {
-	return nil, ierr.NewError("fx rate not found").Mark(ierr.ErrNotFound)
 }
 
 // TestSetBillingCurrency_UnchangedValueNotBlockedByCheckout: a client that resends the full customer
