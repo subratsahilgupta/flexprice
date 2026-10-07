@@ -153,7 +153,8 @@ func (r *fxRateRepository) Count(ctx context.Context, filter *types.FXRateFilter
 	defer FinishSpan(span)
 
 	query := r.client.Reader(ctx).FXRate.Query()
-	query = ApplyQueryOptions(ctx, query, filter, r.queryOpts)
+	// Filters only: a COUNT with the page's OFFSET returns no row and fails.
+	query = ApplyBaseFilters(ctx, query, filter, r.queryOpts)
 	query, err := r.queryOpts.applyEntityQueryOptions(ctx, filter, query)
 	if err != nil {
 		SetSpanError(span, err)
