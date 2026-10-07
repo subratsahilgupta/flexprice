@@ -94,7 +94,7 @@ func (s *refundService) prepareChargeCurrencyCreditNoteRefund(ctx context.Contex
 	if !chargeAmount.IsPositive() {
 		return nil, nil
 	}
-	row := s.newWalletRow(ctx, inv, inv.FxConversion.ChargeCurrency, chargeAmount, allocationContext{
+	row := s.newRow(ctx, inv, inv.FxConversion.ChargeCurrency, chargeAmount, allocationContext{
 		creditNoteID:   lo.ToPtr(cn.ID),
 		reason:         refundReasonFromCreditNote(cn.Reason),
 		idempotencyKey: cn.ID,
@@ -141,7 +141,7 @@ func (s *refundService) prepareChargeCurrencyVoidRefund(ctx context.Context, inv
 		return nil, nil
 	}
 
-	row := s.newWalletRow(ctx, inv, inv.FxConversion.ChargeCurrency, total, allocationContext{
+	row := s.newRow(ctx, inv, inv.FxConversion.ChargeCurrency, total, allocationContext{
 		reason:         types.RefundReasonOrderChange,
 		idempotencyKey: fmt.Sprintf("%s-void", inv.ID),
 		allowGateway:   false,
@@ -156,26 +156,6 @@ func frozenChargeAmount(inv *invoice.Invoice, billing decimal.Decimal) decimal.D
 		return decimal.Zero
 	}
 	return types.RoundToCurrencyPrecision(billing.Div(inv.FxConversion.Rate), inv.FxConversion.ChargeCurrency)
-}
-
-// newWalletRow builds a PENDING wallet-destination refund row in an explicit currency, for a refund
-// that settles to a charge-currency wallet on a converted invoice.
-func (s *refundService) newWalletRow(ctx context.Context, inv *invoice.Invoice, currency string, amount decimal.Decimal, alloc allocationContext, index int) *refund.Refund {
-	return refund.NewRefundBuilder(nil).
-		WithID(types.GenerateUUIDWithPrefix(types.UUID_PREFIX_REFUND)).
-		WithInvoiceID(inv.ID).
-		WithCreditNoteID(alloc.creditNoteID).
-		WithAmount(amount).
-		WithSettledAmount(decimal.Zero).
-		WithCurrency(currency).
-		WithStatus(types.RefundStatusPending).
-		WithRefundReason(alloc.reason).
-		WithDestination(types.RefundDestinationWallet).
-		WithAttempt(1).
-		WithIdempotencyKey(fmt.Sprintf("%s-%d", alloc.idempotencyKey, index)).
-		WithEnvironmentID(types.GetEnvironmentID(ctx)).
-		WithBaseModel(types.GetDefaultBaseModel(ctx)).
-		Build()
 }
 
 func (s *refundService) persist(ctx context.Context, rows []*refund.Refund) ([]*refund.Refund, error) {
@@ -252,7 +232,7 @@ func (s *refundService) allocateAcrossPayments(
 		refundForThisPayment := decimal.Min(remainingPaymentRefundCapacity, remainingAmountToRefund)
 		remainingAmountToRefund = remainingAmountToRefund.Sub(refundForThisPayment)
 
-		row := s.newRow(ctx, inv, refundForThisPayment, alloc, len(rows))
+		row := s.newRow(ctx, inv, inv.Currency, refundForThisPayment, alloc, len(rows))
 		row.PaymentID = lo.ToPtr(p.ID)
 
 		if alloc.allowGateway && isGatewayRefundable(p) {
@@ -267,7 +247,7 @@ func (s *refundService) allocateAcrossPayments(
 	}
 
 	if remainingAmountToRefund.IsPositive() {
-		rows = append(rows, s.newRow(ctx, inv, remainingAmountToRefund, alloc, len(rows)))
+		rows = append(rows, s.newRow(ctx, inv, inv.Currency, remainingAmountToRefund, alloc, len(rows)))
 	}
 
 	return rows, nil
@@ -299,6 +279,7 @@ func (s *refundService) succeededPayments(ctx context.Context, invoiceID string)
 func (s *refundService) newRow(
 	ctx context.Context,
 	inv *invoice.Invoice,
+	currency string,
 	amount decimal.Decimal,
 	alloc allocationContext,
 	index int,
@@ -309,7 +290,7 @@ func (s *refundService) newRow(
 		WithCreditNoteID(alloc.creditNoteID).
 		WithAmount(amount).
 		WithSettledAmount(decimal.Zero).
-		WithCurrency(inv.Currency).
+		WithCurrency(currency).
 		WithStatus(types.RefundStatusPending).
 		WithRefundReason(alloc.reason).
 		WithDestination(types.RefundDestinationWallet). // default to wallet, 100% success rate
