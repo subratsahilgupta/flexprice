@@ -313,7 +313,7 @@ func (s *refundService) settleToWallet(ctx context.Context, row *refund.Refund) 
 		// A converted invoice's refund credits the charge-currency wallet, at the frozen rate.
 		if fx := inv.FxConversion; fx != nil && types.IsMatchingCurrency(row.Currency, fx.BillingCurrency) {
 			walletCurrency = fx.ChargeCurrency
-			credit, err = s.walletCreditFor(tx, inv, row)
+			credit, err = s.chargeCurrencyCreditFor(tx, inv, row)
 			if err != nil {
 				return err
 			}
@@ -361,9 +361,9 @@ func (s *refundService) settleToWallet(ctx context.Context, row *refund.Refund) 
 	})
 }
 
-// walletCreditFor converts a converted invoice's wallet refund at the frozen rate as the step in a running
-// total, so everything the invoice returns to the wallet adds up to one rounding of its billing amount.
-func (s *refundService) walletCreditFor(ctx context.Context, inv *invoice.Invoice, row *refund.Refund) (decimal.Decimal, error) {
+// chargeCurrencyCreditFor converts a converted invoice's wallet refund at the frozen rate, as a step in
+// a running total, so everything the invoice returns to the wallet adds up to one rounding.
+func (s *refundService) chargeCurrencyCreditFor(ctx context.Context, inv *invoice.Invoice, row *refund.Refund) (decimal.Decimal, error) {
 	fx := inv.FxConversion
 	prior, err := s.RefundRepo.SumSettledToWalletByInvoice(ctx, inv.ID, fx.BillingCurrency)
 	if err != nil {
