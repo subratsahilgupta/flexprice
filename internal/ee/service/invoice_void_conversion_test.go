@@ -1,8 +1,12 @@
 package service
 
 import (
+	"time"
+
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
+	"github.com/flexprice/flexprice/internal/domain/payment"
+	"github.com/flexprice/flexprice/internal/domain/refund"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -161,18 +165,50 @@ func (s *InvoiceVoidRecalculateSuite) TestVoidConverted_RecordsConversionOnWalle
 		"billing-currency amount reversed must be ₹10,000, got %s", md["fx_billing_amount"])
 }
 
-// The credits leg comes from fx_conversion.source exactly, not prepaid_inr ÷ rate — proving no
-// rounding drift is reintroduced on the way back.
-func (s *InvoiceVoidRecalculateSuite) TestVoidConverted_CreditsLegExactFromSource() {
-	usdWallet := s.buildPrepaidWallet("wallet_usd_exact", decimal.Zero)
-	// prepaid_inr ₹2,005 would divide to $20.05, but the source recorded exactly $20.
-	inv := s.buildConvertedFinalizedInvoice("inv_conv_exact",
-		decimal.Zero, decimal.NewFromInt(2005), decimal.NewFromInt(20), decimal.NewFromInt(100), decimal.Zero,
-		types.PaymentStatusPending)
+// Void keeps each cash slice in inr against its payment and returns everything to the usd wallet:
+// P1 ₹4,980 → $60, P2 ₹3,320 → $40, credits ₹1,660 → $20.
+func (s *InvoiceVoidRecalculateSuite) TestVoidConverted_RowsTraceToPayments() {
+	usdWallet := s.buildPrepaidWallet("wallet_usd_trace", decimal.Zero)
+	inv := s.buildConvertedFinalizedInvoice("inv_conv_trace",
+		decimal.NewFromInt(8300), decimal.NewFromInt(1660), decimal.NewFromInt(20), decimal.NewFromInt(83), decimal.Zero,
+		types.PaymentStatusSucceeded)
+	for i, p := range []struct {
+		id     string
+		amount int64
+		method types.PaymentMethodType
+	}{
+		{"pay_void_card", 4980, types.PaymentMethodTypeCard},
+		{"pay_void_offline", 3320, types.PaymentMethodTypeOffline},
+	} {
+		base := types.GetDefaultBaseModel(s.GetContext())
+		base.CreatedAt = s.testData.now.Add(time.Duration(i-2) * time.Hour)
+		s.NoError(s.GetStores().PaymentRepo.Create(s.GetContext(), &payment.Payment{
+			ID:                p.id,
+			IdempotencyKey:    p.id,
+			DestinationType:   types.PaymentDestinationTypeInvoice,
+			DestinationID:     inv.ID,
+			PaymentMethodType: p.method,
+			Amount:            decimal.NewFromInt(p.amount),
+			Currency:          "inr",
+			PaymentStatus:     types.PaymentStatusSucceeded,
+			BaseModel:         base,
+		}))
+	}
 
 	_, err := s.service.VoidInvoice(s.GetContext(), inv.ID, dto.InvoiceVoidRequest{})
-	s.NoError(err)
+	s.Require().NoError(err)
 
-	s.True(decimal.NewFromInt(20).Equal(s.walletBalance(usdWallet.ID)),
-		"credits leg must be the source's exact $20, got %s", s.walletBalance(usdWallet.ID))
+	rows := s.refundRows(inv.ID)
+	s.Require().Len(rows, 3)
+	byPayment := lo.KeyBy(rows, func(r *refund.Refund) string { return lo.FromPtr(r.PaymentID) })
+	for paymentID, inr := range map[string]int64{"pay_void_card": 4980, "pay_void_offline": 3320, "": 1660} {
+		row, ok := byPayment[paymentID]
+		s.Require().True(ok, "no refund row for payment %q", paymentID)
+		s.Equal("inr", row.Currency)
+		s.True(decimal.NewFromInt(inr).Equal(row.Amount), "payment %q row got %s", paymentID, row.Amount)
+		s.Equal(types.RefundStatusSucceeded, row.RefundStatus)
+	}
+
+	s.True(decimal.NewFromInt(120).Equal(s.walletBalance(usdWallet.ID)),
+		"usd wallet must receive $120, got %s", s.walletBalance(usdWallet.ID))
 }
