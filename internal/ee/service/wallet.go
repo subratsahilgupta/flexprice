@@ -937,7 +937,7 @@ func resolveBonusCredits(slab *types.BonusCreditsSlab, creditsToAdd decimal.Deci
 
 func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Context, walletID string, idempotencyKey *string, req *dto.TopUpWalletRequest) (string, string, error) {
 	// Initialize required services
-	invoiceSvc := NewInvoiceService(s.ServiceParams)
+	invoiceService := NewInvoiceService(s.ServiceParams).(*invoiceService)
 	taxService := NewTaxService(s.ServiceParams)
 	isPayFirst := req.Checkout != nil
 
@@ -1196,7 +1196,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 		if isPayFirst {
 			// Pay-first: leave DRAFT until checkout complete finalizes + reconciles.
 			invReq.SourceType = types.InvoiceSourceTypeCheckout
-			inv, skipped, err = invoiceSvc.CreateComputedDraftInvoice(ctx, invReq)
+			inv, skipped, err = invoiceService.CreateComputedDraftInvoice(ctx, invReq)
 			if err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to create draft invoice for purchased credits").
@@ -1213,15 +1213,11 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 
 			// A pay-first draft never reaches finalize here, so convert in this tx; a missing rate then
 			// rolls back the pending credit. Credits stay in the wallet's currency.
-			domainInv, err := s.InvoiceRepo.Get(ctx, inv.ID)
-			if err != nil {
-				return err
-			}
-			if err := invoiceSvc.(*invoiceService).convertToBillingCurrency(ctx, domainInv); err != nil {
+			if err := invoiceService.convertToBillingCurrency(ctx, &inv.Invoice); err != nil {
 				return err
 			}
 		} else {
-			inv, err = invoiceSvc.CreateOneOffInvoice(ctx, invReq)
+			inv, err = invoiceService.CreateOneOffInvoice(ctx, invReq)
 			if err != nil {
 				return ierr.WithError(err).
 					WithHint("Failed to create invoice for purchased credits").
