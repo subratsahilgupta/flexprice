@@ -7877,8 +7877,8 @@ func (s *subscriptionService) validateSubscriptionBillingCurrency(
 	}
 	if !ok {
 		return "", ierr.NewErrorf("no conversion configured from %s to %s", sub.Currency, billing).
-			WithHintf("Configure a rate or custom factor for %s to %s before creating this subscription.", sub.Currency, billing).
-			WithReportableDetails(map[string]any{"from": sub.Currency, "to": billing}).
+			WithHintf("No exchange rate for %s. Add a global rate or custom factor before creating this subscription.", fxPairLabel(sub.Currency, billing)).
+			WithReportableDetails(map[string]any{"from": sub.Currency, "to": billing, "missing_pairs": []string{fxPairKey(sub.Currency, billing)}}).
 			Mark(ierr.ErrValidation)
 	}
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/flexprice/flexprice/internal/domain/subscription"
@@ -65,10 +66,7 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 		}
 	}
 	if len(missingSubs) > 0 {
-		return ierr.NewError("missing exchange rates for subscriptions").
-			WithHint("Configure a rate or custom factor for each pair before setting this billing currency.").
-			WithReportableDetails(map[string]any{"missing_pairs": lo.Uniq(missingSubs)}).
-			Mark(ierr.ErrValidation)
+		return missingExchangeRatesError("missing exchange rates for subscriptions", missingSubs)
 	}
 
 	wallets, err := s.WalletRepo.GetWalletsByCustomerID(ctx, customerID)
@@ -89,10 +87,7 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 		}
 	}
 	if len(missingWallets) > 0 {
-		return ierr.NewError("missing exchange rates for wallets").
-			WithHint("Configure a rate or custom factor for each wallet pair before setting this billing currency.").
-			WithReportableDetails(map[string]any{"missing_pairs": lo.Uniq(missingWallets)}).
-			Mark(ierr.ErrValidation)
+		return missingExchangeRatesError("missing exchange rates for wallets", missingWallets)
 	}
 
 	return nil
@@ -153,4 +148,14 @@ func (s *customerService) activeConvertibleSubscriptions(ctx context.Context, cu
 	collect(subs)
 
 	return lo.Values(seen), nil
+}
+
+// missingExchangeRatesError lists, sorted, every pair that needs a rate before the billing currency can change.
+func missingExchangeRatesError(reason string, pairs []string) error {
+	pairs = lo.Uniq(pairs)
+	slices.Sort(pairs)
+	return ierr.NewError(reason).
+		WithHintf("No exchange rate for %s. Add these rates before setting this billing currency.", fxPairKeysLabel(pairs)).
+		WithReportableDetails(map[string]any{"missing_pairs": pairs}).
+		Mark(ierr.ErrValidation)
 }
