@@ -16,6 +16,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/httpclient"
 	"github.com/flexprice/flexprice/internal/logger"
+	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
 )
 
@@ -83,7 +84,7 @@ type client struct {
 
 // NewClient builds a stateless Azure Marketplace client.
 func NewClient(log *logger.Logger) Client {
-	return &client{httpClient: httpclient.NewDefaultClient(), logger: log}
+	return &client{httpClient: httpclient.NewProviderClient(log, string(types.SecretProviderAzureMarketplace)), logger: log}
 }
 
 // sendFailureReason turns a failed httpClient.Send into a diagnosable message with the tenant's own

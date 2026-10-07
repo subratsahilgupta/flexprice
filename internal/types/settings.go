@@ -38,6 +38,8 @@ const (
 	SettingKeyWalletTopupConfig           SettingKey = "wallet_topup_config"
 	SettingKeyCustomCurrencyConfig        SettingKey = "custom_currency_config"
 	SettingKeyRevenueAnalyticsConfig      SettingKey = "revenue_analytics_config"
+	SettingKeyCreditExpirySettlement      SettingKey = "credit_expiry_settlement_config"
+	SettingKeyUsageAlertConfig            SettingKey = "usage_alert_config"
 	SettingKeyTaxConfig                   SettingKey = "tax_config"
 )
 
@@ -63,6 +65,8 @@ func (s *SettingKey) Validate() error {
 		SettingKeyWalletTopupConfig,
 		SettingKeyCustomCurrencyConfig,
 		SettingKeyRevenueAnalyticsConfig,
+		SettingKeyCreditExpirySettlement,
+		SettingKeyUsageAlertConfig,
 		SettingKeyTaxConfig,
 	}
 
@@ -120,6 +124,12 @@ type TenantConfig struct {
 // Validate implements SettingConfig interface
 func (c TenantConfig) Validate() error {
 	return validator.ValidateRequest(c)
+}
+
+// TenantEnvironment identifies one tenant and environment pair.
+type TenantEnvironment struct {
+	TenantID      string `json:"tenant_id"`
+	EnvironmentID string `json:"environment_id"`
 }
 
 // TenantEnvConfig represents a generic configuration for a specific tenant and environment
@@ -513,6 +523,22 @@ func (c PaymentMandateLimits) Validate() error {
 	return nil
 }
 
+const (
+	UsageAlertConfigFieldScheduleDelaySeconds = "schedule_delay_seconds"
+	UsageAlertConfigFieldStaleAfterSeconds    = "stale_after_seconds"
+)
+
+// UsageAlertConfig overrides the usage alert workflow timing per environment; 0 keeps the deployment default.
+type UsageAlertConfig struct {
+	ScheduleDelaySeconds int `json:"schedule_delay_seconds" validate:"omitempty,min=30,max=3600"`
+	StaleAfterSeconds    int `json:"stale_after_seconds" validate:"omitempty,min=60,max=86400"`
+}
+
+// Validate implements SettingConfig.
+func (c UsageAlertConfig) Validate() error {
+	return validator.ValidateRequest(c)
+}
+
 // DraftInvoiceRecomputeConfig enables daily draft invoice recomputation.
 type DraftInvoiceRecomputeConfig struct {
 	Enabled bool `json:"enabled"`
@@ -530,6 +556,17 @@ type RevenueAnalyticsConfig struct {
 
 // Validate implements SettingConfig.
 func (c RevenueAnalyticsConfig) Validate() error {
+	return nil
+}
+
+// CreditExpirySettlementConfig gates applying expiring wallet credits to the current
+// period's draft invoice before the unused remainder is expired.
+type CreditExpirySettlementConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+// Validate implements SettingConfig.
+func (c CreditExpirySettlementConfig) Validate() error {
 	return nil
 }
 
@@ -780,6 +817,16 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 		return nil, err
 	}
 
+	defaultCreditExpirySettlementMap, err := utils.ToMap(CreditExpirySettlementConfig{Enabled: false})
+	if err != nil {
+		return nil, err
+	}
+
+	defaultUsageAlertConfigMap, err := utils.ToMap(UsageAlertConfig{})
+	if err != nil {
+		return nil, err
+	}
+
 	defaultWalletTopupConfig := WalletTopupConfig{
 		FreeCreditLimitPerTransaction: decimal.Zero,
 		MinTopupAmountPerCurrency: map[string]decimal.Decimal{
@@ -887,6 +934,16 @@ func GetDefaultSettings() (map[SettingKey]DefaultSettingValue, error) {
 			Key:          SettingKeyRevenueAnalyticsConfig,
 			DefaultValue: defaultRevenueAnalyticsConfigMap,
 			Description:  "Gates the revenue_facts rollup for this tenant/environment: when enabled, the scheduled dirty-scan decomposes its active subscriptions into provisional revenue facts",
+		},
+		SettingKeyCreditExpirySettlement: {
+			Key:          SettingKeyCreditExpirySettlement,
+			DefaultValue: defaultCreditExpirySettlementMap,
+			Description:  "When enabled, an expiring wallet credit first pays the usage before expiry on the current period's draft invoice; only the unused remainder expires",
+		},
+		SettingKeyUsageAlertConfig: {
+			Key:          SettingKeyUsageAlertConfig,
+			DefaultValue: defaultUsageAlertConfigMap,
+			Description:  "Flexprice-managed tuning of the usage alert workflow (debounce delay, staleness bound); zero uses the deployment default",
 		},
 		SettingKeyWalletTopupConfig: {
 			Key:          SettingKeyWalletTopupConfig,
@@ -1044,6 +1101,20 @@ func ValidateSettingValue(key SettingKey, value map[string]interface{}) error {
 
 	case SettingKeyRevenueAnalyticsConfig:
 		config, err := utils.ToStruct[RevenueAnalyticsConfig](value)
+		if err != nil {
+			return err
+		}
+		return config.Validate()
+
+	case SettingKeyCreditExpirySettlement:
+		config, err := utils.ToStruct[CreditExpirySettlementConfig](value)
+		if err != nil {
+			return err
+		}
+		return config.Validate()
+
+	case SettingKeyUsageAlertConfig:
+		config, err := utils.ToStruct[UsageAlertConfig](value)
 		if err != nil {
 			return err
 		}

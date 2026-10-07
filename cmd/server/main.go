@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/flexprice/flexprice/internal/api"
@@ -171,6 +173,7 @@ func main() {
 			repository.NewEntityIntegrationMappingRepository,
 			repository.NewUsageRecordRepository,
 			repository.NewTaxRateRepository,
+			repository.NewFXRateRepository,
 			repository.NewTaxAssociationRepository,
 			repository.NewCouponRepository,
 			repository.NewCouponAssociationRepository,
@@ -279,6 +282,7 @@ func main() {
 			service.NewEntityIntegrationMappingService,
 			service.NewIntegrationSyncService,
 			service.NewTaxService,
+			service.NewFXRateService,
 			service.NewCouponService,
 			service.NewCouponAssociationService,
 			service.NewAddonService,
@@ -322,7 +326,7 @@ func main() {
 			startServer,
 		),
 	)
-	opts = append(opts, fx.StartTimeout(3*time.Minute))
+	opts = append(opts, fx.StartTimeout(3*time.Minute), fx.StopTimeout(config.ServerStopTimeout))
 	app := fx.New(opts...)
 	app.Run()
 }
@@ -367,6 +371,7 @@ func provideHandlers(
 	integrationSyncService service.IntegrationSyncService,
 	svixClient *svix.Client,
 	taxService service.TaxService,
+	fxRateService service.FXRateService,
 	couponService service.CouponService,
 	couponAssociationService service.CouponAssociationService,
 	addonService service.AddonService,
@@ -404,7 +409,7 @@ func provideHandlers(
 		Health:                   v1.NewHealthHandler(logger),
 		Price:                    v1.NewPriceHandler(priceService, logger),
 		PriceUnit:                v1.NewPriceUnitHandler(priceUnitService, logger),
-		Customer:                 v1.NewCustomerHandler(customerService, billingService, entityIntegrationMappingService, logger),
+		Customer:                 v1.NewCustomerHandler(customerService, billingService, paymentService, entityIntegrationMappingService, logger),
 		Plan:                     v1.NewPlanHandler(planService, entitlementService, creditGrantService, temporalService, locker, cfg, logger),
 		Subscription:             v1.NewSubscriptionHandler(subscriptionService, logger),
 		SubscriptionChange:       v1.NewSubscriptionChangeHandler(subscriptionChangeService, logger),
@@ -420,6 +425,7 @@ func provideHandlers(
 		Task:                     v1.NewTaskHandler(taskService, temporalService, logger),
 		Secret:                   v1.NewSecretHandler(secretService, logger),
 		Tax:                      v1.NewTaxHandler(taxService, logger),
+		FXRate:                   v1.NewFXRateHandler(fxRateService, logger),
 		Onboarding:               v1.NewOnboardingHandler(onboardingService, logger),
 		AIPricing:                v1.NewAIPricingHandler(geminiPricingService, logger),
 		CreditGrant:              v1.NewCreditGrantHandler(creditGrantService, logger),
@@ -573,18 +579,20 @@ func startServer(
 		if consumer == nil {
 			log.Fatal(context.Background(), "Kafka consumer required for local mode")
 		}
-		startAPIServer(lc, r, cfg, log)
-
 		// Register all handlers and start router once
 		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, true)
 		startRouter(lc, router, log)
 		startTemporalWorker(lc, log, temporalClient, temporalService, params, webhookService)
-	case types.ModeAPI:
-		startAPIServer(lc, r, cfg, log)
 
+		// Registered last so fx's reverse-order stop drains HTTP before deps close.
+		startAPIServer(lc, r, cfg, log)
+	case types.ModeAPI:
 		// Register all handlers and start router once (no event consumption)
 		registerRouterHandlers(router, webhookService, integrationEventService, onboardingService, eventConsumptionSvc, costSheetUsageSvc, walletBalanceAlertSvc, rawEventConsumptionSvc, meterUsageTrackingSvc, cfg, false)
 		startRouter(lc, router, log)
+
+		// Registered last so fx's reverse-order stop drains HTTP before deps close.
+		startAPIServer(lc, r, cfg, log)
 
 	case types.ModeTemporalWorker:
 		// Register webhook handler and start router so that webhook events
@@ -659,20 +667,41 @@ func startAPIServer(
 	log *logger.Logger,
 ) {
 	log.Info(context.Background(), "Registering API server start hook")
+	srv := &http.Server{
+		Addr:    cfg.Server.Address,
+		Handler: r,
+	}
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			log.Info(ctx, "Starting API server...")
 			go func() {
-				if err := r.Run(cfg.Server.Address); err != nil {
+				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					log.Fatalf("Failed to start server: %v", err)
 				}
 			}()
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			log.Info(ctx, "Shutting down server...")
+			timeout := cfg.Server.GetShutdownTimeout()
+			log.Info(ctx, "Shutting down server, draining in-flight requests", "timeout", timeout.String())
+
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+			defer cancel()
+
+			err := srv.Shutdown(shutdownCtx)
+			if err != nil {
+				// Shutdown leaves connections past the deadline running; sever them
+				// so later stop hooks do not tear down deps under live handlers.
+				log.Error(ctx, "server drain timed out, closing active connections", "error", err)
+				if closeErr := srv.Close(); closeErr != nil {
+					log.Error(ctx, "failed to close listener after drain timeout", "error", closeErr)
+				}
+			} else {
+				log.Info(ctx, "server drained, all in-flight requests completed")
+			}
+
 			log.Shutdown(ctx)
-			return nil
+			return err
 		},
 	})
 }

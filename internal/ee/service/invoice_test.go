@@ -10,6 +10,7 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/connection"
 	"github.com/flexprice/flexprice/internal/domain/customer"
+	"github.com/flexprice/flexprice/internal/domain/entityintegrationmapping"
 	"github.com/flexprice/flexprice/internal/domain/events"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/meter"
@@ -23,6 +24,7 @@ import (
 	"github.com/flexprice/flexprice/internal/testutil"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
+	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
 	webhookPublisher "github.com/flexprice/flexprice/internal/webhook/publisher"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -3310,4 +3312,75 @@ func (s *InvoiceServiceSuite) TestListInvoicesTaxSummaryIsPerInvoice() {
 		s.True(decimal.NewFromInt(int64(i+1)).Equal(inv.TaxSummary.TotalExclusiveTax),
 			"invoice %s: want exclusive %d, got %s", id, i+1, inv.TaxSummary.TotalExclusiveTax)
 	}
+}
+
+func (s *InvoiceServiceSuite) TestPublishInvoiceSyncWebhook() {
+	tests := []struct {
+		name        string
+		invoiceID   string
+		withMapping bool
+		syncErr     string
+		wantEvent   types.WebhookEventName
+		wantError   string
+	}{
+		{name: "success with mapping", invoiceID: "inv_sync_ok", withMapping: true, wantEvent: types.WebhookEventInvoiceSyncSuccess},
+		{name: "success without mapping is a skip", invoiceID: "inv_sync_skip"},
+		{name: "failure without mapping", invoiceID: "inv_sync_fail", syncErr: "stripe down", wantEvent: types.WebhookEventInvoiceSyncFailed, wantError: "stripe down"},
+		{name: "failure after mapping was created", invoiceID: "inv_sync_fail_mapped", withMapping: true, syncErr: "finalize failed", wantEvent: types.WebhookEventInvoiceSyncFailed, wantError: "finalize failed"},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			if tt.withMapping {
+				s.NoError(s.GetStores().EntityIntegrationMappingRepo.Create(ctx, &entityintegrationmapping.EntityIntegrationMapping{
+					ID:               "eim_" + tt.invoiceID,
+					EntityID:         tt.invoiceID,
+					EntityType:       types.IntegrationEntityTypeInvoice,
+					ProviderType:     string(types.SecretProviderStripe),
+					ProviderEntityID: "in_" + tt.invoiceID,
+					EnvironmentID:    types.GetEnvironmentID(ctx),
+					BaseModel:        types.GetDefaultBaseModel(ctx),
+				}))
+			}
+
+			s.service.PublishInvoiceSyncWebhook(ctx, tt.invoiceID, types.SecretProviderStripe, tt.syncErr)
+
+			events := lo.Filter(s.GetPublishedWebhooks(), func(e *types.WebhookEvent, _ int) bool {
+				return e.EntityID == tt.invoiceID
+			})
+			if tt.wantEvent == "" {
+				s.Empty(events)
+				return
+			}
+			s.Require().Len(events, 1)
+			s.Equal(tt.wantEvent, events[0].EventName)
+			s.Equal(types.SystemEntityTypeInvoice, events[0].EntityType)
+
+			var internal webhookDto.InternalInvoiceSyncEvent
+			s.Require().NoError(json.Unmarshal(events[0].Payload, &internal))
+			s.Equal(tt.invoiceID, internal.InvoiceID)
+			s.Equal(types.SecretProviderStripe, internal.Provider)
+			s.Equal(tt.wantError, internal.Error)
+		})
+	}
+}
+
+func (s *InvoiceServiceSuite) TestPublishInvoiceSyncWebhook_IgnoresOtherProviderMapping() {
+	ctx := s.GetContext()
+	s.NoError(s.GetStores().EntityIntegrationMappingRepo.Create(ctx, &entityintegrationmapping.EntityIntegrationMapping{
+		ID:               "eim_razorpay_only",
+		EntityID:         "inv_razorpay_only",
+		EntityType:       types.IntegrationEntityTypeInvoice,
+		ProviderType:     string(types.SecretProviderRazorpay),
+		ProviderEntityID: "rzp_inv",
+		EnvironmentID:    types.GetEnvironmentID(ctx),
+		BaseModel:        types.GetDefaultBaseModel(ctx),
+	}))
+
+	s.service.PublishInvoiceSyncWebhook(ctx, "inv_razorpay_only", types.SecretProviderStripe, "")
+
+	s.Empty(lo.Filter(s.GetPublishedWebhooks(), func(e *types.WebhookEvent, _ int) bool {
+		return e.EntityID == "inv_razorpay_only"
+	}))
 }

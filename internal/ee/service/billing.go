@@ -43,6 +43,10 @@ type FindMatchingLineItemPeriodResult struct {
 
 // BillingService handles all billing calculations
 type BillingService interface {
+	// UsageNetForWindow returns sub's usage charges for [periodStart, until) after coupon
+	// discounts, priced as an invoice for that window would be.
+	UsageNetForWindow(ctx context.Context, sub *subscription.Subscription, periodStart, until time.Time) (decimal.Decimal, error)
+
 	// CalculateFixedCharges calculates all fixed charges for a subscription.
 	CalculateFixedCharges(ctx context.Context, params *dto.CalculateFixedChargesParams) (*dto.CalculateFixedChargesResult, error)
 
@@ -2604,9 +2608,19 @@ func aggregateMeteredEntitlementsForBilling(entitlements []*entitlement.Entitlem
 			aggregationMode = types.EntitlementAggregationModeParallel
 		}
 
-		if e.UsageLimit == nil {
+		// A grant-backed entitlement carries its ceiling in GrantQuota: deriveGrantConfig
+		// moves usage_limit there and clears it. Reading UsageLimit alone would report
+		// every grant as unlimited, including a capped one.
+		switch {
+		case e.HasGrantConfig():
+			if e.IsUnlimitedGrant() {
+				hasUnlimitedEntitlement = true
+			} else {
+				totalLimit += e.GrantQuota.IntPart()
+			}
+		case e.UsageLimit == nil:
 			hasUnlimitedEntitlement = true
-		} else {
+		default:
 			totalLimit += *e.UsageLimit
 		}
 

@@ -36,6 +36,7 @@ const (
 	// InvoiceMetadataKeyCollapsedInvoiceDisplayName is the customer-facing label to use when a
 	// collector clubs the invoice lines into a single amount due item.
 	InvoiceMetadataKeyCollapsedInvoiceDisplayName InvoiceMetadataKey = "collapsed_invoice_display_name"
+	InvoiceMetadataKeyStripeHostedInvoiceURL      InvoiceMetadataKey = "stripe_hosted_invoice_url"
 )
 
 func CollapsedInvoiceDisplayName(md Metadata) string {
@@ -345,6 +346,16 @@ func (r InvoiceBillingReason) IsFirstSubscriptionOpenInvoiceReason() bool {
 	default:
 		return false
 	}
+}
+
+// IsPaymentGatingAllowedInvoiceReason reports whether this invoice's payment can change subscription status or grants.
+func (r InvoiceBillingReason) IsPaymentGatingAllowedInvoiceReason() bool {
+	return lo.Contains([]InvoiceBillingReason{
+		InvoiceBillingReasonSubscriptionCreate,
+		InvoiceBillingReasonSubscriptionTrialEnd,
+		InvoiceBillingReasonSubscriptionUpdate,
+		InvoiceBillingReasonSubscriptionCycle,
+	}, r)
 }
 
 const (

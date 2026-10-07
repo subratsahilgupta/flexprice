@@ -15,6 +15,7 @@ type ScheduleID string
 const (
 	ScheduleIDCreditGrantProcessing                   ScheduleID = "credit-grants-processing"
 	ScheduleIDSubscriptionAutoCancellation            ScheduleID = "subscription-auto-cancellation"
+	ScheduleIDSubscriptionOverdueInvoices             ScheduleID = "subscription-overdue-invoices"
 	ScheduleIDWalletCreditExpiry                      ScheduleID = "wallet-credit-expiry"
 	ScheduleIDSubscriptionBilling                     ScheduleID = "subscription-billing"
 	ScheduleIDSubscriptionRenewalAlerts               ScheduleID = "subscription-renewal-due-alerts"
@@ -42,6 +43,7 @@ func AllTemporalServerScheduleIDs() []ScheduleID {
 	return []ScheduleID{
 		ScheduleIDCreditGrantProcessing,
 		ScheduleIDSubscriptionAutoCancellation,
+		ScheduleIDSubscriptionOverdueInvoices,
 		ScheduleIDWalletCreditExpiry,
 		ScheduleIDSubscriptionBilling,
 		ScheduleIDSubscriptionRenewalAlerts,

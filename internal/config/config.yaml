@@ -3,6 +3,8 @@ deployment:
 
 server:
   address: ":8080"
+  # Grace period for in-flight requests after SIGTERM. Clamped to 45s.
+  shutdown_timeout: 25s
 
 auth:
   provider: "flexprice" # "flexprice" or "supabase"
@@ -310,6 +312,8 @@ logging:
   # otel_auth_header: ""
   # otel_auth_value: ""
   otel_debug: false # synchronous SimpleProcessor for log export; use to confirm delivery
+  # Kill switch for provider call logs: FLEXPRICE_LOGGING_PROVIDER_CALLS_ENABLED=false
+  provider_calls_enabled: true
 
 webhook:
   enabled: true

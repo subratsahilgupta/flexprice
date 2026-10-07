@@ -3308,6 +3308,70 @@ const docTemplate = `{
                 }
             }
         },
+        "/customers/{id}/payment-methods": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Use when you need a customer's saved payment methods across every connected gateway, including whether each can be auto-charged. Only gateways that can list saved methods are included.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "List customer payment methods",
+                "operationId": "listCustomerPaymentMethods",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Customer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Limit to these payment gateways",
+                        "name": "providers",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/SavedPaymentMethodsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Customer not found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
         "/customers/{id}/wallets": {
             "get": {
                 "security": [
@@ -3897,52 +3961,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/events/huggingface-inference": {
-            "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Use when fetching Hugging Face inference usage or billing data (e.g. for HF-specific reporting or reconciliation). Reads the meter-usage pipeline.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Events"
-                ],
-                "summary": "Get Hugging Face inference data",
-                "operationId": "getHuggingfaceInferenceData",
-                "parameters": [
-                    {
-                        "description": "Request body",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/GetHuggingFaceBillingDataRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/GetHuggingFaceBillingDataResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Server error",
-                        "schema": {
-                            "$ref": "#/definitions/errors.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/events/lookup": {
             "get": {
                 "security": [
@@ -3966,6 +3984,25 @@ const docTemplate = `{
                         "name": "id",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "External customer ID the event was ingested with",
+                        "name": "external_customer_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start of the event timestamp window (RFC3339); defaults to 14 days before end_time",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End of the event timestamp window (RFC3339); defaults to now",
+                        "name": "end_time",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3973,6 +4010,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/GetEventByIDResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Missing event ID or external customer ID",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
                         }
                     },
                     "404": {
@@ -4445,6 +4488,269 @@ const docTemplate = `{
                     }
                 },
                 "x-scope": "write"
+            }
+        },
+        "/forex": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Configure a fixed exchange rate at tenant, customer or subscription scope. Overrides need a tenant rate for the same pair.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Create an FX rate",
+                "operationId": "createFXRate",
+                "parameters": [
+                    {
+                        "description": "FX rate to create",
+                        "name": "fx_rate",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/CreateFXRateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/FXRateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/forex/query": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Filter FX rates via a request body (POST used for a complex query, but read-only).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Query FX rates",
+                "operationId": "queryFXRates",
+                "parameters": [
+                    {
+                        "description": "Filter",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/types.FXRateFilter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ListFXRatesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                },
+                "x-scope": "read"
+            }
+        },
+        "/forex/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Load a single FX rate by ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Get an FX rate",
+                "operationId": "getFXRate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "FX rate ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/FXRateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update a rate's value, validity window (overrides only) or metadata. Scope, scope_id and the currency pair are immutable.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Update an FX rate",
+                "operationId": "updateFXRate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "FX rate ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "FX rate fields to update",
+                        "name": "fx_rate",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/UpdateFXRateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/FXRateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Archive a customer or subscription override. Tenant rates cannot be deleted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "FX Rates"
+                ],
+                "summary": "Delete an FX rate",
+                "operationId": "deleteFXRate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "FX rate ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Server error",
+                        "schema": {
+                            "$ref": "#/definitions/errors.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/groups": {
@@ -8254,6 +8560,47 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by subscription ID",
                         "name": "subscription_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Filter by subscription IDs",
+                        "name": "subscription_ids",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "enum": [
+                                "plan_change",
+                                "cancellation"
+                            ],
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Filter by schedule type",
+                        "name": "schedule_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "enum": [
+                                "pending",
+                                "executing",
+                                "executed",
+                                "cancelled",
+                                "failed"
+                            ],
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Filter by schedule status",
+                        "name": "schedule_status",
                         "in": "query"
                     },
                     {
@@ -15772,6 +16119,14 @@ const docTemplate = `{
                 }
             }
         },
+        "ConfigurationDetails": {
+            "type": "object",
+            "properties": {
+                "plan_change": {
+                    "$ref": "#/definitions/PlanChangeScheduleDetails"
+                }
+            }
+        },
         "CostAnalyticItem": {
             "type": "object",
             "properties": {
@@ -16839,6 +17194,51 @@ const docTemplate = `{
                 "provider_type": {
                     "type": "string",
                     "maxLength": 50
+                }
+            }
+        },
+        "CreateFXRateRequest": {
+            "type": "object",
+            "required": [
+                "from_currency",
+                "scope",
+                "to_currency"
+            ],
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "from_currency": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "rate": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/types.FXRateScope"
+                },
+                "scope_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "Source defaults to \"fixed\". A fixed rate requires ` + "`" + `rate` + "`" + `; a market rate ignores it\n(the value comes from the market-rate integration at conversion time).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/types.FXRateSource"
+                        }
+                    ]
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "to_currency": {
+                    "type": "string"
                 }
             }
         },
@@ -19042,17 +19442,6 @@ const docTemplate = `{
                 }
             }
         },
-        "EventCostInfo": {
-            "type": "object",
-            "properties": {
-                "costNanoUsd": {
-                    "type": "string"
-                },
-                "requestId": {
-                    "type": "string"
-                }
-            }
-        },
         "ExecuteInvoiceModifyRequest": {
             "type": "object",
             "required": [
@@ -19105,6 +19494,73 @@ const docTemplate = `{
                 },
                 "type": {
                     "$ref": "#/definitions/SubscriptionModifyType"
+                }
+            }
+        },
+        "ExecutionDetails": {
+            "type": "object",
+            "properties": {
+                "plan_change": {
+                    "$ref": "#/definitions/PlanChangeScheduleResult"
+                }
+            }
+        },
+        "FXRateResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string"
+                },
+                "end_date": {
+                    "type": "string"
+                },
+                "environment_id": {
+                    "type": "string"
+                },
+                "from_currency": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "rate": {
+                    "type": "string"
+                },
+                "scope": {
+                    "$ref": "#/definitions/types.FXRateScope"
+                },
+                "scope_id": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/types.FXRateSource"
+                },
+                "start_date": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "tenant_id": {
+                    "type": "string"
+                },
+                "to_currency": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string"
                 }
             }
         },
@@ -19529,32 +19985,6 @@ const docTemplate = `{
                 },
                 "total_count": {
                     "type": "integer"
-                }
-            }
-        },
-        "GetHuggingFaceBillingDataRequest": {
-            "type": "object",
-            "required": [
-                "requestIds"
-            ],
-            "properties": {
-                "requestIds": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "GetHuggingFaceBillingDataResponse": {
-            "type": "object",
-            "properties": {
-                "requests": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/EventCostInfo"
-                    }
                 }
             }
         },
@@ -20957,6 +21387,20 @@ const docTemplate = `{
                 }
             }
         },
+        "ListFXRatesResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/FXRateResponse"
+                    }
+                },
+                "pagination": {
+                    "$ref": "#/definitions/types.PaginationResponse"
+                }
+            }
+        },
         "ListPaymentsResponse": {
             "type": "object",
             "properties": {
@@ -21415,6 +21859,44 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "voided_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "PlanChangeScheduleDetails": {
+            "type": "object",
+            "properties": {
+                "billing_period_behaviour": {
+                    "$ref": "#/definitions/types.BillingPeriodBehaviour"
+                },
+                "entity_policies": {
+                    "$ref": "#/definitions/SubscriptionChangeEntityPolicies"
+                },
+                "target_plan_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "PlanChangeScheduleResult": {
+            "type": "object",
+            "properties": {
+                "change_type": {
+                    "type": "string"
+                },
+                "effective_date": {
+                    "type": "string"
+                },
+                "from_plan_id": {
+                    "type": "string"
+                },
+                "previous_subscription_id": {
+                    "description": "previous_subscription_id is set when the change replaced the subscription with a new one",
+                    "type": "string"
+                },
+                "subscription_id": {
+                    "type": "string"
+                },
+                "to_plan_id": {
                     "type": "string"
                 }
             }
@@ -21902,6 +22384,31 @@ const docTemplate = `{
                 }
             }
         },
+        "ProviderError": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "ProviderSavedPaymentMethods": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "$ref": "#/definitions/ProviderError"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SavedPaymentMethod"
+                    }
+                },
+                "provider": {
+                    "$ref": "#/definitions/types.PaymentGatewayType"
+                }
+            }
+        },
         "RefundResponse": {
             "type": "object",
             "properties": {
@@ -22255,6 +22762,93 @@ const docTemplate = `{
                 },
                 "usage_at_list_rate": {
                     "type": "number"
+                }
+            }
+        },
+        "SavedCardDetails": {
+            "type": "object",
+            "properties": {
+                "brand": {
+                    "type": "string"
+                },
+                "exp_month": {
+                    "type": "integer"
+                },
+                "exp_year": {
+                    "type": "integer"
+                },
+                "last4": {
+                    "type": "string"
+                }
+            }
+        },
+        "SavedPaymentMethod": {
+            "type": "object",
+            "properties": {
+                "can_auto_charge": {
+                    "description": "Capability, not permission: could this be charged with nobody present.\nTrue for any active Chargebee or Stripe card (both vault off-session by\nconstruction); false for a Razorpay token without a mandate.",
+                    "type": "boolean"
+                },
+                "card": {
+                    "$ref": "#/definitions/SavedCardDetails"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "instantly_chargeable": {
+                    "type": "boolean"
+                },
+                "is_default": {
+                    "description": "Which method to use when several are saved at this provider.\nScoped to the provider: two providers means two defaults.",
+                    "type": "boolean"
+                },
+                "provider": {
+                    "$ref": "#/definitions/types.PaymentGatewayType"
+                },
+                "recurring": {
+                    "$ref": "#/definitions/SavedRecurringPaymentDetails"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.PaymentMethodStatus"
+                },
+                "type": {
+                    "$ref": "#/definitions/types.PaymentMethodType"
+                },
+                "upi": {
+                    "$ref": "#/definitions/SavedUPIDetails"
+                }
+            }
+        },
+        "SavedPaymentMethodsResponse": {
+            "type": "object",
+            "properties": {
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/ProviderSavedPaymentMethods"
+                    }
+                }
+            }
+        },
+        "SavedRecurringPaymentDetails": {
+            "type": "object",
+            "properties": {
+                "auto_chargeable_till": {
+                    "type": "string"
+                },
+                "max_amount": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.RecurringPaymentStatus"
+                }
+            }
+        },
+        "SavedUPIDetails": {
+            "type": "object",
+            "properties": {
+                "vpa": {
+                    "type": "string"
                 }
             }
         },
@@ -24010,9 +24604,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "configuration": {
-                    "description": "configuration contains type-specific configuration (e.g., target_plan_id for plan changes)",
+                    "description": "configuration is the raw type-specific configuration. Deprecated: use configuration_details.",
                     "type": "object",
                     "additionalProperties": true
+                },
+                "configuration_details": {
+                    "description": "configuration_details is the typed counterpart of configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ConfigurationDetails"
+                        }
+                    ]
                 },
                 "created_at": {
                     "description": "created_at timestamp",
@@ -24030,8 +24632,16 @@ const docTemplate = `{
                     "description": "executed_at is when the schedule was executed",
                     "type": "string"
                 },
+                "execution_details": {
+                    "description": "execution_details is the typed counterpart of execution_result",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ExecutionDetails"
+                        }
+                    ]
+                },
                 "execution_result": {
-                    "description": "execution_result contains type-specific execution result",
+                    "description": "execution_result is the raw type-specific execution result. Deprecated: use execution_details.",
                     "type": "object",
                     "additionalProperties": true
                 },
@@ -24936,6 +25546,26 @@ const docTemplate = `{
                 },
                 "usage_reset_period": {
                     "$ref": "#/definitions/types.EntitlementUsageResetPeriod"
+                }
+            }
+        },
+        "UpdateFXRateRequest": {
+            "type": "object",
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "rate": {
+                    "type": "string"
+                },
+                "start_date": {
+                    "type": "string"
                 }
             }
         },
@@ -28071,11 +28701,13 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "razorpay",
-                "chargebee"
+                "chargebee",
+                "stripe"
             ],
             "x-enum-varnames": [
                 "CheckoutPaymentProviderRazorpay",
-                "CheckoutPaymentProviderChargebee"
+                "CheckoutPaymentProviderChargebee",
+                "CheckoutPaymentProviderStripe"
             ]
         },
         "types.CheckoutPaymentProviderConfig": {
@@ -28894,6 +29526,93 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "types.FXRateFilter": {
+            "type": "object",
+            "properties": {
+                "end_time": {
+                    "type": "string"
+                },
+                "expand": {
+                    "type": "string"
+                },
+                "filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.FilterCondition"
+                    }
+                },
+                "from_currency": {
+                    "type": "string"
+                },
+                "fx_rate_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "order": {
+                    "type": "string",
+                    "enum": [
+                        "asc",
+                        "desc"
+                    ]
+                },
+                "scope": {
+                    "$ref": "#/definitions/types.FXRateScope"
+                },
+                "scope_id": {
+                    "type": "string"
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.SortCondition"
+                    }
+                },
+                "start_time": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/types.Status"
+                },
+                "to_currency": {
+                    "type": "string"
+                }
+            }
+        },
+        "types.FXRateScope": {
+            "type": "string",
+            "enum": [
+                "tenant",
+                "customer",
+                "subscription"
+            ],
+            "x-enum-varnames": [
+                "FXRateScopeTenant",
+                "FXRateScopeCustomer",
+                "FXRateScopeSubscription"
+            ]
+        },
+        "types.FXRateSource": {
+            "type": "string",
+            "enum": [
+                "fixed",
+                "market"
+            ],
+            "x-enum-varnames": [
+                "FXRateSourceFixed",
+                "FXRateSourceMarket"
+            ]
         },
         "types.FactStatus": {
             "type": "string",
@@ -29724,6 +30443,19 @@ const docTemplate = `{
                 "PaymentGatewayTypeChargebee"
             ]
         },
+        "types.PaymentMethodStatus": {
+            "type": "string",
+            "enum": [
+                "ACTIVE",
+                "INACTIVE",
+                "EXPIRED"
+            ],
+            "x-enum-varnames": [
+                "PaymentMethodStatusActive",
+                "PaymentMethodStatusInactive",
+                "PaymentMethodStatusExpired"
+            ]
+        },
         "types.PaymentMethodType": {
             "type": "string",
             "enum": [
@@ -30077,6 +30809,27 @@ const docTemplate = `{
                     "$ref": "#/definitions/types.Status"
                 }
             }
+        },
+        "types.RecurringPaymentStatus": {
+            "type": "string",
+            "enum": [
+                "PENDING",
+                "ACTIVE",
+                "PAUSED",
+                "REJECTED",
+                "CANCELLED",
+                "EXPIRED",
+                "UNKNOWN"
+            ],
+            "x-enum-varnames": [
+                "RecurringPaymentStatusPending",
+                "RecurringPaymentStatusActive",
+                "RecurringPaymentStatusPaused",
+                "RecurringPaymentStatusRejected",
+                "RecurringPaymentStatusCancelled",
+                "RecurringPaymentStatusExpired",
+                "RecurringPaymentStatusUnknown"
+            ]
         },
         "types.RefundDestination": {
             "type": "string",
