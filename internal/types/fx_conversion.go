@@ -22,10 +22,6 @@ type FxConversion struct {
 	ConvertedAt time.Time `json:"converted_at"`
 	// Source holds the original charge-currency amounts, before tax.
 	Source FxConversionSource `json:"source"`
-	// RoundingAdjustment is the residual added to the largest line so lines sum to the net.
-	RoundingAdjustment decimal.Decimal `json:"rounding_adjustment" swaggertype:"string"`
-	// RoundingLineItemID is the line that absorbed the rounding residual.
-	RoundingLineItemID string `json:"rounding_line_item_id,omitempty"`
 }
 
 // FxConversionSource is the pre-conversion charge-currency snapshot used by void and refunds.

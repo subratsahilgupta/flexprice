@@ -40,8 +40,6 @@ func TestInMemoryInvoiceStore_FxConversionRoundTrip(t *testing.T) {
 			TotalPrepaidCreditsApplied: decimal.RequireFromString("0"),
 			Net:                        decimal.RequireFromString("100"),
 		},
-		RoundingAdjustment: decimal.RequireFromString("0.50"),
-		RoundingLineItemID: "il_1",
 	}
 
 	origAmount := decimal.RequireFromString("100")
@@ -103,7 +101,6 @@ func TestInMemoryInvoiceStore_FxConversionRoundTrip(t *testing.T) {
 			require.Equal(t, "inr", got.FxConversion.BillingCurrency)
 			require.True(t, rate.Equal(got.FxConversion.Rate))
 			require.Equal(t, "fxr_1", got.FxConversion.RateID)
-			require.True(t, got.FxConversion.RoundingAdjustment.Equal(decimal.RequireFromString("0.50")))
 			require.True(t, fx.Source.Net.Equal(got.FxConversion.Source.Net))
 
 			// Line-item originals survived the copy (via copyInvoice and the line-item store).

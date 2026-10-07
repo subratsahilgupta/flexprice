@@ -254,7 +254,6 @@ means the invoice was never converted, and every reader checks that first.
 | `scope` | string | Where the rate was found: `subscription`, `customer` or `tenant` |
 | `converted_at` | ISO 8601 timestamp | When the conversion ran |
 | `source.subtotal`, `source.total_discount`, `source.total_prepaid_credits_applied`, `source.net` | decimal strings | Original amounts in the charge currency, before tax |
-| `rounding_adjustment`, `rounding_line_item_id` | decimal string, string | The rounding difference and the line that absorbed it (§5.3) |
 
 `invoice.currency` holds the charge currency while the invoice is a draft and the billing currency
 after conversion.
@@ -366,8 +365,7 @@ when set, so a retried finalize never converts twice.
 3. If the lines do not add up to `net_billing`, add the difference to the line with the largest
    **positive** amount — so the penny lands on a real charge, never on a proration credit or discount
    line. If no line is positive, use the largest by absolute value; break ties on the lowest line id
-   for determinism. A single-line invoice takes the whole difference on that line. Record it in
-   `rounding_adjustment` and `rounding_line_item_id`.
+   for determinism. A single-line invoice takes the whole difference on that line.
 4. Stamp each line's `original_currency` and `original_amount` before overwriting its amount.
 
 This keeps the lines equal to the total, so the PDF, portal and ERPs, which all add up lines, match
@@ -382,7 +380,7 @@ the saved invoice.
 | Line C | $33.34 | 4979.99 | ¥4,980 | ¥4,979 |
 | **Total** | $100.00 | 14937.00 | ¥14,938 | **¥14,937** |
 
-The invoice records `rounding_adjustment: -1` on line C. For two-decimal currencies the difference is
+Line C absorbs the -1. For two-decimal currencies the difference is
 usually zero and at most ±0.01.
 
 | Field | Converted? |
@@ -844,8 +842,7 @@ Wallet APIs are unchanged. Top-up, balance and transaction endpoints keep their 
       "total_discount": "0.00",
       "total_prepaid_credits_applied": "0.00",
       "net": "5.00"
-    },
-    "rounding_adjustment": "0.00"
+    }
   },
 
   // Line items: converted values, with the original values kept

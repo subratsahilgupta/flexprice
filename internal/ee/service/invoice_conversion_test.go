@@ -52,35 +52,31 @@ func TestConvertInvoice(t *testing.T) {
 	}
 
 	cases := []struct {
-		name           string
-		charge         string
-		billing        string
-		rate           string
-		subtotal       string
-		totalDiscount  string
-		totalPrepaid   string
-		lines          []*invoice.InvoiceLineItem
-		wantSubtotal   string
-		wantTotal      string
-		wantAmountDue  string
-		wantRounding   string
-		wantRoundingID string
-		wantLines      []lineExp
+		name          string
+		charge        string
+		billing       string
+		rate          string
+		subtotal      string
+		totalDiscount string
+		totalPrepaid  string
+		lines         []*invoice.InvoiceLineItem
+		wantSubtotal  string
+		wantTotal     string
+		wantAmountDue string
+		wantLines     []lineExp
 	}{
 		{
-			name:           "single line 2dp exact",
-			charge:         "usd",
-			billing:        "inr",
-			rate:           "83.50",
-			subtotal:       "100",
-			totalDiscount:  "0",
-			totalPrepaid:   "0",
-			lines:          []*invoice.InvoiceLineItem{convLine("il_1", "usd", "100")},
-			wantSubtotal:   "8350",
-			wantTotal:      "8350",
-			wantAmountDue:  "8350",
-			wantRounding:   "0",
-			wantRoundingID: "il_1",
+			name:          "single line 2dp exact",
+			charge:        "usd",
+			billing:       "inr",
+			rate:          "83.50",
+			subtotal:      "100",
+			totalDiscount: "0",
+			totalPrepaid:  "0",
+			lines:         []*invoice.InvoiceLineItem{convLine("il_1", "usd", "100")},
+			wantSubtotal:  "8350",
+			wantTotal:     "8350",
+			wantAmountDue: "8350",
 			wantLines: []lineExp{
 				{id: "il_1", amount: "8350", origCy: "usd", origAmt: "100"},
 			},
@@ -98,11 +94,9 @@ func TestConvertInvoice(t *testing.T) {
 				convLine("il_b", "usd", "33.33"),
 				convLine("il_c", "usd", "33.34"),
 			},
-			wantSubtotal:   "14937",
-			wantTotal:      "14937",
-			wantAmountDue:  "14937",
-			wantRounding:   "-1",
-			wantRoundingID: "il_c",
+			wantSubtotal:  "14937",
+			wantTotal:     "14937",
+			wantAmountDue: "14937",
 			wantLines: []lineExp{
 				{id: "il_a", amount: "4979", origCy: "usd", origAmt: "33.33"},
 				{id: "il_b", amount: "4979", origCy: "usd", origAmt: "33.33"},
@@ -122,11 +116,9 @@ func TestConvertInvoice(t *testing.T) {
 				convLine("il_neg", "usd", "-33.34"),
 			},
 			// 14937 + (-4980) = 9957 = net, so residual 0; it must never land on il_neg.
-			wantSubtotal:   "9957",
-			wantTotal:      "9957",
-			wantAmountDue:  "9957",
-			wantRounding:   "0",
-			wantRoundingID: "il_pos",
+			wantSubtotal:  "9957",
+			wantTotal:     "9957",
+			wantAmountDue: "9957",
 			wantLines: []lineExp{
 				{id: "il_pos", amount: "14937", origCy: "usd", origAmt: "100"},
 				{id: "il_neg", amount: "-4980", origCy: "usd", origAmt: "-33.34"},
@@ -149,11 +141,9 @@ func TestConvertInvoice(t *testing.T) {
 				}(),
 			},
 			// net = (100-10-20)=70 *80 = 5600
-			wantSubtotal:   "8000",
-			wantTotal:      "5600",
-			wantAmountDue:  "5600",
-			wantRounding:   "0",
-			wantRoundingID: "il_1",
+			wantSubtotal:  "8000",
+			wantTotal:     "5600",
+			wantAmountDue: "5600",
 			wantLines: []lineExp{
 				{id: "il_1", amount: "8000", origCy: "usd", origAmt: "100"},
 			},
@@ -192,8 +182,6 @@ func TestConvertInvoice(t *testing.T) {
 			require.True(t, dec(c.rate).Equal(fx.Rate))
 			require.Equal(t, "fxr_x", fx.RateID)
 			require.Equal(t, convertedAt, fx.ConvertedAt)
-			require.True(t, dec(c.wantRounding).Equal(fx.RoundingAdjustment), "rounding: want %s got %s", c.wantRounding, fx.RoundingAdjustment)
-			require.Equal(t, c.wantRoundingID, fx.RoundingLineItemID)
 
 			// Source snapshot is the pre-conversion charge amounts.
 			require.True(t, dec(c.subtotal).Equal(fx.Source.Subtotal))
@@ -244,8 +232,6 @@ func TestConvertInvoice_TieBreakLowestID(t *testing.T) {
 	require.NoError(t, ConvertInvoice(inv, res, time.Now()))
 
 	// net = 2 * 149.37 = 298.74 -> 299; each line 1*149.37=149.37->149; sum 298; residual +1 to lowest id (il_a)
-	require.Equal(t, "il_a", inv.FxConversion.RoundingLineItemID)
-	require.True(t, dec("1").Equal(inv.FxConversion.RoundingAdjustment))
 	byID := lo.SliceToMap(inv.LineItems, func(li *invoice.InvoiceLineItem) (string, *invoice.InvoiceLineItem) { return li.ID, li })
 	require.True(t, dec("150").Equal(byID["il_a"].Amount))
 	require.True(t, dec("149").Equal(byID["il_b"].Amount))
@@ -264,8 +250,6 @@ func TestConvertInvoice_NoLineItems(t *testing.T) {
 	require.NoError(t, ConvertInvoice(inv, res, time.Now()))
 	require.True(t, dec("8350").Equal(inv.Subtotal))
 	require.True(t, dec("8350").Equal(inv.Total))
-	require.Equal(t, "", inv.FxConversion.RoundingLineItemID)
-	require.True(t, decimal.Zero.Equal(inv.FxConversion.RoundingAdjustment))
 }
 
 // TestConvertInvoice_IdentityNoOp: a same-currency resolution leaves the invoice untouched.

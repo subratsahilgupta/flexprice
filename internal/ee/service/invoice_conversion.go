@@ -48,9 +48,6 @@ func ConvertInvoice(inv *invoice.Invoice, resolution *FXRateResolution, converte
 		return types.RoundToCurrencyPrecision(v.Mul(rate), billingCurrency)
 	}
 
-	var roundingAdjustment decimal.Decimal
-	roundingLineItemID := ""
-
 	if len(inv.LineItems) > 0 {
 		for _, li := range inv.LineItems {
 			li.OriginalCurrency = lo.ToPtr(li.Currency)
@@ -69,9 +66,7 @@ func ConvertInvoice(inv *invoice.Invoice, resolution *FXRateResolution, converte
 		}
 
 		target := residualLine(inv.LineItems)
-		roundingAdjustment = netBilling.Sub(netFromLines)
-		target.Amount = target.Amount.Add(roundingAdjustment)
-		roundingLineItemID = target.ID
+		target.Amount = target.Amount.Add(netBilling.Sub(netFromLines))
 
 		inv.Subtotal = decimal.Zero
 		inv.TotalDiscount = decimal.Zero
@@ -106,8 +101,6 @@ func ConvertInvoice(inv *invoice.Invoice, resolution *FXRateResolution, converte
 			TotalPrepaidCreditsApplied: srcPrepaid,
 			Net:                        netCharge,
 		},
-		RoundingAdjustment: roundingAdjustment,
-		RoundingLineItemID: roundingLineItemID,
 	}
 
 	return nil
