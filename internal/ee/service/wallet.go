@@ -1217,7 +1217,7 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 			if err != nil {
 				return err
 			}
-			if err := invoiceSvc.(*invoiceService).convertAndRetaxInvoice(ctx, domainInv); err != nil {
+			if err := invoiceSvc.(*invoiceService).convertToBillingCurrency(ctx, domainInv); err != nil {
 				return err
 			}
 		} else {
