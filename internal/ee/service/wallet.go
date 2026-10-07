@@ -238,6 +238,9 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	if err := ccCfg.EnforceCurrency(w.Currency); err != nil {
 		return nil, err
 	}
+	if err := s.validateWalletConvertible(ctx, ccCfg, req.CustomerID, w.Currency); err != nil {
+		return nil, err
+	}
 
 	for _, existing := range existingWallets {
 		if existing.WalletStatus == types.WalletStatusActive && existing.Currency == w.Currency && existing.WalletType == w.WalletType {
@@ -302,6 +305,34 @@ func (s *walletService) CreateWallet(ctx context.Context, req *dto.CreateWalletR
 	s.publishInternalWalletWebhookEvent(ctx, types.WebhookEventWalletCreated, w.ID)
 
 	return response, nil
+}
+
+// validateWalletConvertible rejects a wallet whose currency has no rate (or custom factor) to the
+// customer's billing currency, since its top-up invoices could never be converted.
+func (s *walletService) validateWalletConvertible(ctx context.Context, ccCfg types.CustomCurrencyConfig, customerID, currency string) error {
+	cust, err := s.CustomerRepo.Get(ctx, customerID)
+	if ierr.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if cust.BillingCurrency == nil || *cust.BillingCurrency == "" || types.IsMatchingCurrency(currency, *cust.BillingCurrency) {
+		return nil
+	}
+
+	billing := strings.ToLower(*cust.BillingCurrency)
+	ok, err := conversionAvailable(ctx, s.ServiceParams, ccCfg, currency, billing)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ierr.NewErrorf("no exchange rate from %s to %s", currency, billing).
+			WithHintf("Configure a %s to %s rate before creating a %s wallet for this customer.", currency, billing, currency).
+			WithReportableDetails(map[string]any{"customer_id": customerID, "wallet_currency": currency, "billing_currency": billing}).
+			Mark(ierr.ErrValidation)
+	}
+	return nil
 }
 
 func (s *walletService) EnsurePrepaidWallet(ctx context.Context, customerID, currency string) (*dto.WalletResponse, error) {
@@ -937,7 +968,7 @@ func resolveBonusCredits(slab *types.BonusCreditsSlab, creditsToAdd decimal.Deci
 
 func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Context, walletID string, idempotencyKey *string, req *dto.TopUpWalletRequest) (string, string, error) {
 	// Initialize required services
-	invoiceService := NewInvoiceService(s.ServiceParams).(*invoiceService)
+	invoiceService := NewInvoiceService(s.ServiceParams)
 	taxService := NewTaxService(s.ServiceParams)
 	isPayFirst := req.Checkout != nil
 
@@ -1210,12 +1241,6 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 					}).
 					Mark(ierr.ErrValidation)
 			}
-
-			// A pay-first draft never reaches finalize here, so convert in this tx; a missing rate then
-			// rolls back the pending credit. Credits stay in the wallet's currency.
-			if err := invoiceService.convertToBillingCurrency(ctx, &inv.Invoice); err != nil {
-				return err
-			}
 		} else {
 			inv, err = invoiceService.CreateOneOffInvoice(ctx, invReq)
 			if err != nil {
@@ -1223,7 +1248,6 @@ func (s *walletService) handlePurchasedCreditInvoicedTransaction(ctx context.Con
 					WithHint("Failed to create invoice for purchased credits").
 					Mark(ierr.ErrInternal)
 			}
-			// Other top-ups auto-finalize, which already converts inside this tx.
 		}
 
 		invoiceID = inv.ID

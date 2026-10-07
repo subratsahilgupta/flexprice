@@ -3,6 +3,7 @@ package service
 import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/fxrate"
+	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
@@ -69,8 +70,8 @@ func (s *WalletServiceSuite) TestTopUpWallet_CrossCurrency_ConvertsInvoiceInside
 	s.True(decimal.NewFromInt(100).Equal(resp.WalletTransaction.CreditAmount), "credits got %s", resp.WalletTransaction.CreditAmount)
 }
 
-// A pay-first top-up draft is converted inside the top-up tx, since finalize won't see it.
-func (s *WalletServiceSuite) TestTopUpWallet_PayFirstCrossCurrency_ConvertsDraftInsideTx() {
+// A pay-first top-up draft stays in the charge currency; the checkout converts it before the link.
+func (s *WalletServiceSuite) TestTopUpWallet_PayFirstCrossCurrency_DraftLeftForCheckout() {
 	s.setCustomerBillingCurrency("inr")
 	s.seedTenantRate("usd", "inr", "83")
 
@@ -88,23 +89,41 @@ func (s *WalletServiceSuite) TestTopUpWallet_PayFirstCrossCurrency_ConvertsDraft
 	inv, err := s.GetStores().InvoiceRepo.Get(s.GetContext(), invoiceID)
 	s.Require().NoError(err)
 	s.Equal(types.InvoiceStatusDraft, inv.InvoiceStatus, "pay-first invoice stays DRAFT until checkout completes")
-	s.Equal("inr", inv.Currency, "pay-first draft must be converted inside the top-up tx (before checkout)")
-	s.Require().NotNil(inv.FxConversion, "draft must carry fx_conversion after the in-tx conversion")
-	s.Equal("usd", inv.FxConversion.ChargeCurrency)
+	s.Equal("usd", inv.Currency, "the checkout, not the top-up, converts a pay-first draft")
+	s.Nil(inv.FxConversion)
 }
 
-// A pay-first top-up with no rate fails inside the top-up tx rather than later at checkout.
-func (s *WalletServiceSuite) TestTopUpWallet_PayFirstCrossCurrency_MissingRate_Errors() {
-	s.setCustomerBillingCurrency("inr") // no usd->inr rate
+// A wallet in another currency than the customer's billing currency needs a rate for that pair,
+// so its top-up invoices can always be converted.
+func (s *WalletServiceSuite) TestCreateWallet_BillingCurrencyNeedsRate() {
+	s.setCustomerBillingCurrency("inr")
 
-	ws := s.service.(*walletService)
-	_, _, err := ws.handlePurchasedCreditInvoicedTransaction(
-		s.GetContext(), s.testData.wallet.ID, lo.ToPtr("topup-payfirst-norate"),
-		&dto.TopUpWalletRequest{
-			CreditsToAdd:      decimal.NewFromInt(100),
-			TransactionReason: types.TransactionReasonPurchasedCreditInvoiced,
-			Checkout:          s.checkoutParamsRazorpay(),
-			IdempotencyKey:    lo.ToPtr("topup-payfirst-norate"),
+	tests := []struct {
+		name     string
+		currency string
+		seedRate bool
+		wantErr  bool
+	}{
+		{name: "no rate for the wallet currency is rejected", currency: "eur", wantErr: true},
+		{name: "a tenant rate for the pair is accepted", currency: "eur", seedRate: true},
+		{name: "a wallet in the billing currency needs no rate", currency: "inr"},
+	}
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			if tt.seedRate {
+				s.seedTenantRate(tt.currency, "inr", "90")
+			}
+			_, err := s.service.CreateWallet(s.GetContext(), &dto.CreateWalletRequest{
+				CustomerID: s.testData.customer.ID,
+				Currency:   tt.currency,
+				WalletType: types.WalletTypePrePaid,
+			})
+			if tt.wantErr {
+				s.Require().Error(err)
+				s.True(ierr.IsValidation(err), "missing rate must be a validation error, got %v", err)
+				return
+			}
+			s.Require().NoError(err)
 		})
-	s.Require().Error(err, "a pay-first cross-currency top-up with no rate must fail inside the top-up tx")
+	}
 }
