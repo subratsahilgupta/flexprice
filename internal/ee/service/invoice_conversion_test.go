@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -246,6 +247,40 @@ func TestConvertInvoiceAmounts_TieBreakLowestID(t *testing.T) {
 	byID := lo.SliceToMap(inv.LineItems, func(li *invoice.InvoiceLineItem) (string, *invoice.InvoiceLineItem) { return li.ID, li })
 	require.True(t, dec("150").Equal(byID["il_a"].Amount))
 	require.True(t, dec("149").Equal(byID["il_b"].Amount))
+}
+
+// A residual larger than the preferred charge line is spread over further charge lines instead of
+// turning that line negative.
+func TestConvertInvoiceAmounts_ResidualNeverFlipsChargeLine(t *testing.T) {
+	lines := make([]*invoice.InvoiceLineItem, 0, 11)
+	for i := 0; i < 10; i++ {
+		lines = append(lines, convLine(fmt.Sprintf("il_%02d", i), "usd", "0.01"))
+	}
+	lines = append(lines, convLine("il_proration", "usd", "-0.09"))
+	inv := &invoice.Invoice{
+		ID:                         "inv_spread",
+		Currency:                   "usd",
+		Subtotal:                   dec("0.01"),
+		TotalDiscount:              decimal.Zero,
+		TotalPrepaidCreditsApplied: decimal.Zero,
+		LineItems:                  lines,
+	}
+	res := &FXRateResolution{Rate: dec("51"), RateID: "r", Scope: "tenant", From: "usd", To: "jpy"}
+	require.NoError(t, convertInvoiceAmounts(inv, res, time.Now()))
+
+	// Lines round to 10 x 1 and -5 (sum 5); net 0.51 rounds to 1, so -4 goes to il_00..il_03.
+	byID := lo.SliceToMap(inv.LineItems, func(li *invoice.InvoiceLineItem) (string, *invoice.InvoiceLineItem) { return li.ID, li })
+	for i := 0; i < 10; i++ {
+		want := "1"
+		if i < 4 {
+			want = "0"
+		}
+		id := fmt.Sprintf("il_%02d", i)
+		require.True(t, dec(want).Equal(byID[id].Amount), "%s: want %s got %s", id, want, byID[id].Amount)
+	}
+	require.True(t, dec("-5").Equal(byID["il_proration"].Amount))
+	require.True(t, dec("1").Equal(inv.Total))
+	require.True(t, dec("1").Equal(inv.Subtotal))
 }
 
 // TestConvertInvoiceAmounts_NoLineItems converts invoice-level totals directly with no rounding line.

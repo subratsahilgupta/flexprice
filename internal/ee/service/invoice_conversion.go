@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,8 +14,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// convertInvoiceAmounts converts a draft's amounts to the billing currency at a frozen rate, putting the
-// rounding residual on one line so lines sum to the net. Tax is left to the caller.
+// convertInvoiceAmounts converts a draft's amounts to the billing currency at a frozen rate, spreading
+// the rounding residual over lines so they sum to the net. Tax is left to the caller.
 func convertInvoiceAmounts(inv *invoice.Invoice, resolution *FXRateResolution, convertedAt time.Time) error {
 	if inv == nil {
 		return ierr.NewError("invoice cannot be nil").WithHint("invoice cannot be nil").Mark(ierr.ErrValidation)
@@ -68,8 +69,7 @@ func convertInvoiceAmounts(inv *invoice.Invoice, resolution *FXRateResolution, c
 				Sub(li.LineItemDiscount).Sub(li.InvoiceLevelDiscount).Sub(li.PrepaidCreditsApplied)
 		}
 
-		target := residualLine(inv.LineItems)
-		target.Amount = target.Amount.Add(netBilling.Sub(netFromLines))
+		allocateResidual(inv.LineItems, netBilling.Sub(netFromLines))
 
 		inv.Subtotal = decimal.Zero
 		inv.TotalDiscount = decimal.Zero
@@ -109,22 +109,44 @@ func convertInvoiceAmounts(inv *invoice.Invoice, resolution *FXRateResolution, c
 	return nil
 }
 
-// residualLine picks the line that absorbs the rounding residual: the largest positive amount,
-// else the largest absolute amount; ties go to the lowest line id.
-func residualLine(lines []*invoice.InvoiceLineItem) *invoice.InvoiceLineItem {
-	var best *invoice.InvoiceLineItem
-	for _, li := range lines {
-		if best == nil {
-			best = li
-			continue
+// allocateResidual spreads the rounding residual over lines, largest positive first. A line takes all
+// of it when that moves its net away from zero, otherwise only enough to bring its net to zero.
+func allocateResidual(lines []*invoice.InvoiceLineItem, residual decimal.Decimal) {
+	if residual.IsZero() || len(lines) == 0 {
+		return
+	}
+
+	ordered := slices.Clone(lines)
+	slices.SortStableFunc(ordered, func(a, b *invoice.InvoiceLineItem) int {
+		switch {
+		case betterResidualCandidate(a, b):
+			return -1
+		case betterResidualCandidate(b, a):
+			return 1
 		}
-		if betterResidualCandidate(li, best) {
-			best = li
+		return 0
+	})
+
+	remaining := residual
+	for _, li := range ordered {
+		net := li.Amount.Sub(li.LineItemDiscount).Sub(li.InvoiceLevelDiscount).Sub(li.PrepaidCreditsApplied)
+		take := remaining
+		if net.Sign() != remaining.Sign() && net.Abs().LessThan(remaining.Abs()) {
+			take = net.Neg()
+		}
+		li.Amount = li.Amount.Add(take)
+		remaining = remaining.Sub(take)
+		if remaining.IsZero() {
+			return
 		}
 	}
-	return best
+
+	// Every line is at zero net; keep the invoice balanced on the preferred line.
+	ordered[0].Amount = ordered[0].Amount.Add(remaining)
 }
 
+// betterResidualCandidate orders lines for the residual: positive before non-positive, then larger
+// absolute amount, then lower id.
 func betterResidualCandidate(candidate, best *invoice.InvoiceLineItem) bool {
 	cPos := candidate.Amount.IsPositive()
 	bPos := best.Amount.IsPositive()
