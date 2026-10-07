@@ -262,7 +262,19 @@ func (s *creditNoteService) PreviewCreditNote(ctx context.Context, req *dto.Crea
 func (s *creditNoteService) buildCreditNoteWithTax(ctx context.Context, req *dto.CreateCreditNoteRequest, inv *invoice.Invoice) (*creditnote.CreditNote, *dto.TaxCalculationResult, error) {
 	cn := req.ToCreditNote(ctx, inv)
 
-	engine, err := NewTaxEngine(ctx, s.ServiceParams)
+	// A credit note returns what the customer paid, so its tax is decided by the tax the
+	// invoice actually carries rather than by whatever engine the tenant uses now. An invoice
+	// taxed natively, or taxed by an engine the tenant has since switched away from, would
+	// otherwise be credited at today's engine's rates and refund tax that was never charged.
+	provider, err := s.invoiceTaxProvider(ctx, inv.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !provider.IsExternal() {
+		return cn, &dto.TaxCalculationResult{AmountTotal: cn.TotalAmount}, nil
+	}
+
+	engine, err := newTaxEngineForProvider(ctx, s.ServiceParams, provider)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -295,6 +307,30 @@ func (s *creditNoteService) buildCreditNoteWithTax(ctx context.Context, req *dto
 	}
 
 	return cn, taxResult, nil
+}
+
+// invoiceTaxProvider reports which engine produced the tax an invoice carries. Empty when the
+// invoice was taxed natively or carries no tax, which is what says a credit note against it
+// adds none of its own.
+func (s *creditNoteService) invoiceTaxProvider(ctx context.Context, invoiceID string) (types.TaxProvider, error) {
+	filter := types.NewNoLimitTaxAppliedFilter()
+	filter.EntityType = types.TaxRateEntityTypeInvoice
+	filter.EntityID = invoiceID
+
+	rows, err := s.TaxAppliedRepo.List(ctx, filter)
+	if err != nil {
+		return "", err
+	}
+
+	// A reversal row records tax being undone rather than tax the invoice carries.
+	row, found := lo.Find(rows, func(applied *taxapplied.TaxApplied) bool {
+		return !applied.IsReversal() && applied.Provider.IsExternal()
+	})
+	if !found {
+		return "", nil
+	}
+
+	return row.Provider, nil
 }
 
 // creditNoteTaxReference is what the engine files a credit note's reversal under. The credit
@@ -567,33 +603,6 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 			Mark(ierr.ErrValidation)
 	}
 
-	// Tax already returned to the authority cannot be un-returned: the provider offers no way
-	// to reverse a reversal, and filing a second correction would credit the tax twice.
-	if cn.CreditNoteStatus == types.CreditNoteStatusFinalized {
-		filter := types.NewNoLimitTaxAppliedFilter()
-		filter.EntityType = types.TaxRateEntityTypeCreditNote
-		filter.EntityID = cn.ID
-
-		rows, err := s.TaxAppliedRepo.List(ctx, filter)
-		if err != nil {
-			return err
-		}
-
-		// A reversal row carrying a provider transaction is what says the reversal landed.
-		reversed := lo.ContainsBy(rows, func(applied *taxapplied.TaxApplied) bool {
-			return applied.IsReversal() && lo.FromPtr(applied.TaxTransactionID) != ""
-		})
-		if reversed {
-			return ierr.NewError("cannot void a credit note whose tax was reversed").
-				WithHint("The tax on this credit note has already been returned with the tax provider, and that cannot be undone. Issue a new invoice instead.").
-				WithReportableDetails(map[string]any{
-					"credit_note_id": cn.ID,
-					"invoice_id":     cn.InvoiceID,
-				}).
-				Mark(ierr.ErrValidation)
-		}
-	}
-
 	var originalStatus types.CreditNoteStatus
 
 	err = s.DB.WithTx(ctx, func(tx context.Context) error {
@@ -630,6 +639,36 @@ func (s *creditNoteService) VoidCreditNote(ctx context.Context, id string) error
 					"credit_note_type":   cn.CreditNoteType,
 				}).
 				Mark(ierr.ErrValidation)
+		}
+
+		// Tax already returned to the authority cannot be un-returned: the provider offers no
+		// way to reverse a reversal, and filing a second correction would credit the tax twice.
+		// Only a finalized credit note can carry one, because that is where it is filed. Read
+		// on the locked record, because a concurrent finalize may have filed it since this
+		// call read the credit note.
+		if cn.CreditNoteStatus == types.CreditNoteStatusFinalized {
+			taxFilter := types.NewNoLimitTaxAppliedFilter()
+			taxFilter.EntityType = types.TaxRateEntityTypeCreditNote
+			taxFilter.EntityID = cn.ID
+
+			taxRows, err := s.TaxAppliedRepo.List(tx, taxFilter)
+			if err != nil {
+				return err
+			}
+
+			// A reversal row carrying a provider transaction is what says the reversal landed.
+			reversed := lo.ContainsBy(taxRows, func(applied *taxapplied.TaxApplied) bool {
+				return applied.IsReversal() && lo.FromPtr(applied.TaxTransactionID) != ""
+			})
+			if reversed {
+				return ierr.NewError("cannot void a credit note whose tax was reversed").
+					WithHint("The tax on this credit note has already been returned with the tax provider, and that cannot be undone. Issue a new invoice instead.").
+					WithReportableDetails(map[string]any{
+						"credit_note_id": cn.ID,
+						"invoice_id":     cn.InvoiceID,
+					}).
+					Mark(ierr.ErrValidation)
+			}
 		}
 
 		// Derived from the locked record, not the pre-transaction snapshot.

@@ -1611,6 +1611,25 @@ func (s *taxService) CommitTaxToProvider(ctx context.Context, inv *invoice.Invoi
 		return
 	}
 
+	// Read back rather than trusting the caller's snapshot: finalization is a no-op for a
+	// skipped invoice, and filing tax for a document Flexprice never issued puts the tenant's
+	// books out of step with what it billed.
+	sealed, err := s.InvoiceRepo.Get(ctx, inv.ID)
+	if err != nil {
+		s.Logger.Error(ctx, "invoice could not be read, nothing was filed",
+			"error", err,
+			"invoice_id", inv.ID,
+			"provider", provider)
+		return
+	}
+	if sealed.InvoiceStatus != types.InvoiceStatusFinalized {
+		s.Logger.Info(ctx, "invoice is not finalized, nothing was filed",
+			"invoice_id", inv.ID,
+			"invoice_status", sealed.InvoiceStatus,
+			"provider", provider)
+		return
+	}
+
 	appliedTaxes, err := s.publishedAppliedTaxes(ctx, types.TaxRateEntityTypeInvoice, inv.ID)
 	if err != nil {
 		s.Logger.Error(ctx, "applied taxes could not be read, nothing was filed",
@@ -1701,30 +1720,6 @@ func (s *taxService) CommitTaxToProvider(ctx context.Context, inv *invoice.Invoi
 // invoice is already void; a credit note rolls back on it, because one issued with its tax
 // still filed is worse than one not issued.
 func (s *taxService) ReverseTaxOnProvider(ctx context.Context, req dto.TaxReversalRequest) error {
-	engine, err := NewTaxEngine(ctx, s.ServiceParams)
-	if err != nil {
-		return err
-	}
-
-	provider := engine.GetProvider()
-	if !provider.IsExternal() {
-		return nil
-	}
-
-	reversed, err := s.taxIsReversed(ctx, req.EntityType, req.EntityID)
-	if err != nil {
-		return err
-	}
-	// A second reversal of the same transaction would be filed as a second correction, and the
-	// provider does not link the original back to what reversed it, so the guard is ours.
-	if reversed {
-		s.Logger.Info(ctx, "tax is already reversed, leaving it alone",
-			"entity_type", req.EntityType,
-			"entity_id", req.EntityID,
-			"provider", provider)
-		return nil
-	}
-
 	// The invoice's own transaction is what is being undone, in whole or in part. A void is
 	// its own invoice, so it names none.
 	invoiceID := req.InvoiceID
@@ -1746,7 +1741,32 @@ func (s *taxService) ReverseTaxOnProvider(ctx context.Context, req dto.TaxRevers
 		s.Logger.Info(ctx, "invoice carries no filed tax, nothing to reverse",
 			"entity_type", req.EntityType,
 			"entity_id", req.EntityID,
-			"invoice_id", invoiceID,
+			"invoice_id", invoiceID)
+		return nil
+	}
+
+	// The engine that filed it is the only one holding that transaction, so the row decides
+	// which one is asked to undo it rather than whatever the tenant is configured for now.
+	provider := filed[0].Provider
+	if !provider.IsExternal() {
+		return nil
+	}
+
+	engine, err := newTaxEngineForProvider(ctx, s.ServiceParams, provider)
+	if err != nil {
+		return err
+	}
+
+	reversed, err := s.taxIsReversed(ctx, req.EntityType, req.EntityID)
+	if err != nil {
+		return err
+	}
+	// A second reversal of the same transaction would be filed as a second correction, and the
+	// provider does not link the original back to what reversed it, so the guard is ours.
+	if reversed {
+		s.Logger.Info(ctx, "tax is already reversed, leaving it alone",
+			"entity_type", req.EntityType,
+			"entity_id", req.EntityID,
 			"provider", provider)
 		return nil
 	}

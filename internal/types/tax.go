@@ -172,7 +172,14 @@ func (c TaxConfig) UsesExternalTaxEngine() bool {
 	return c.Enabled && c.Provider.IsExternal()
 }
 
+// Validate checks the provider only while it is in force. A disabled config resolves to the
+// native engine whatever it names, so validating it would block the very update that turns an
+// unsupported provider off.
 func (c TaxConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+
 	return c.Provider.Validate()
 }
 

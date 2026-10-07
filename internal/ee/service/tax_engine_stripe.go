@@ -12,6 +12,7 @@ import (
 	"github.com/flexprice/flexprice/internal/domain/invoice"
 	"github.com/flexprice/flexprice/internal/domain/taxapplied"
 	ierr "github.com/flexprice/flexprice/internal/errors"
+	"github.com/flexprice/flexprice/internal/idempotency"
 	stripeintegration "github.com/flexprice/flexprice/internal/integration/stripe"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/samber/lo"
@@ -22,6 +23,18 @@ import (
 // the invoice. A stall fails the transaction, which rolls back and is retried, rather than
 // holding the invoice row lock for the SDK's own eighty second default.
 const calculationTimeout = 5 * time.Second
+
+// taxProviderIdempotencyKey is stable for one logical filing, so a retry of a call whose
+// response was lost replays the original rather than colliding on the reference.
+func taxProviderIdempotencyKey(ctx context.Context, operation, entityID, handle string) string {
+	return idempotency.NewGenerator().GenerateKey(idempotency.ScopeTaxProvider, map[string]interface{}{
+		"operation":      operation,
+		"entity_id":      entityID,
+		"handle":         handle,
+		"tenant_id":      types.GetTenantID(ctx),
+		"environment_id": types.GetEnvironmentID(ctx),
+	})
+}
 
 // stripeTaxEngine delegates calculation to Stripe Tax and records the result as a Stripe
 // tax transaction at commit.
@@ -112,12 +125,18 @@ func (e *stripeTaxEngine) Commit(ctx context.Context, inv *invoice.Invoice, appl
 	}
 
 	// The reference must be unique across every transaction the account holds, reversals
-	// included, so a retried commit is rejected by Stripe rather than filed twice.
-	transaction, err := stripeClient.V1TaxTransactions.CreateFromCalculation(ctx,
-		&stripe.TaxTransactionCreateFromCalculationParams{
-			Calculation: stripe.String(calculationID),
-			Reference:   stripe.String(inv.ID),
-		})
+	// included, so a filing that already landed is rejected rather than filed twice. On its own
+	// that turns a lost response into a permanent failure: the retry sends the same reference,
+	// Stripe refuses the duplicate, and the invoice is left unstamped while Stripe holds the
+	// filing. The idempotency key makes the retry replay the original response instead, so the
+	// transaction id still comes back.
+	params := &stripe.TaxTransactionCreateFromCalculationParams{
+		Calculation: stripe.String(calculationID),
+		Reference:   stripe.String(inv.ID),
+	}
+	params.SetIdempotencyKey(taxProviderIdempotencyKey(ctx, "commit", inv.ID, calculationID))
+
+	transaction, err := stripeClient.V1TaxTransactions.CreateFromCalculation(ctx, params)
 	if err != nil {
 		details := map[string]any{"invoice_id": inv.ID, "calculation_id": calculationID}
 		mark := stripeFailureMark(err, details)
@@ -154,6 +173,9 @@ func (e *stripeTaxEngine) Reverse(ctx context.Context, req dto.TaxReversalReques
 		OriginalTransaction: stripe.String(req.OriginalTransactionID),
 		Reference:           stripe.String(req.Reference),
 	}
+	// A lost response would otherwise retry onto the same reference and be refused, leaving the
+	// reversal filed with nothing recording it.
+	params.SetIdempotencyKey(taxProviderIdempotencyKey(ctx, "reverse", req.OriginalTransactionID, req.Reference))
 
 	// Stripe wants the refund as a negative, and ToSmallestUnit floors at zero, so the sign
 	// goes on after the conversion rather than before it.

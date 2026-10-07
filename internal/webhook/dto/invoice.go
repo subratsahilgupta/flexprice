@@ -144,6 +144,19 @@ type TaxApplied struct {
 	AppliedAt     time.Time         `json:"applied_at"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
 	TaxRate       *TaxRate          `json:"tax_rate,omitempty"`
+
+	// Provider names the engine that produced this row. Empty means the native engine, which
+	// is what tells a subscriber an empty tax_rate_id is external rather than missing data.
+	Provider types.TaxProvider `json:"provider,omitempty"`
+
+	// TaxTransactionType is empty for a filing and reversal for tax being un-filed. A reversal
+	// is not a tax the invoice carries, so a subscriber totalling tax must skip it.
+	TaxTransactionType types.TaxTransactionType `json:"tax_transaction_type,omitempty"`
+
+	// ExternalTaxDetails carries the name, code, rate and jurisdiction an external engine
+	// resolved. An external row points at no Flexprice rate, so this is the only description
+	// of what was charged.
+	ExternalTaxDetails *types.ExternalTaxDetails `json:"external_tax_details,omitempty"`
 }
 
 type TaxRate struct {
@@ -390,14 +403,17 @@ func newTaxes(taxes []*dto.TaxAppliedResponse) []*TaxApplied {
 			continue
 		}
 		t := &TaxApplied{
-			ID:            tax.ID,
-			TaxRateID:     tax.GetTaxRateID(),
-			TaxableAmount: tax.TaxableAmount,
-			TaxAmount:     tax.TaxAmount,
-			TaxBehavior:   tax.TaxBehavior,
-			Currency:      tax.Currency,
-			AppliedAt:     tax.AppliedAt,
-			Metadata:      tax.Metadata,
+			ID:                 tax.ID,
+			TaxRateID:          tax.GetTaxRateID(),
+			TaxableAmount:      tax.TaxableAmount,
+			TaxAmount:          tax.TaxAmount,
+			TaxBehavior:        tax.TaxBehavior,
+			Currency:           tax.Currency,
+			AppliedAt:          tax.AppliedAt,
+			Metadata:           tax.Metadata,
+			Provider:           tax.Provider,
+			TaxTransactionType: tax.TaxTransactionType,
+			ExternalTaxDetails: tax.ExternalTaxDetails,
 		}
 		if tax.TaxRate != nil && tax.TaxRate.TaxRate != nil {
 			t.TaxRate = &TaxRate{

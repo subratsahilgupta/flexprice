@@ -52,7 +52,19 @@ func NewTaxEngine(ctx context.Context, params ServiceParams) (TaxEngine, error) 
 		return &nativeTaxEngine{ServiceParams: params}, nil
 	}
 
-	switch cfg.Provider {
+	return newTaxEngineForProvider(ctx, params, cfg.Provider)
+}
+
+// newTaxEngineForProvider builds the engine a provider names, without consulting the tenant's
+// current setting. Undoing tax, and crediting an invoice that carries it, both have to use the
+// engine that filed it: that engine holds the transaction, and the setting may have moved on
+// since. The provider is read off the invoice's own tax_applied rows.
+func newTaxEngineForProvider(ctx context.Context, params ServiceParams, provider types.TaxProvider) (TaxEngine, error) {
+	if !provider.IsExternal() {
+		return &nativeTaxEngine{ServiceParams: params}, nil
+	}
+
+	switch provider {
 	case types.TaxProviderStripe:
 		if _, err := params.ConnectionRepo.GetByProvider(ctx, types.SecretProviderStripe); err != nil {
 			if ierr.IsNotFound(err) {
@@ -66,10 +78,10 @@ func NewTaxEngine(ctx context.Context, params ServiceParams) (TaxEngine, error) 
 
 	default:
 		// A typo in the setting must not silently change how a tenant is taxed.
-		return nil, ierr.NewErrorf("unknown tax provider %q", cfg.Provider).
+		return nil, ierr.NewErrorf("unknown tax provider %q", provider).
 			WithHintf("An external tax engine must be one of: %s", types.JoinTaxProviders(types.ExternalTaxProviders())).
 			WithReportableDetails(map[string]any{
-				"tax_provider": cfg.Provider,
+				"tax_provider": provider,
 				"allowed":      types.ExternalTaxProviders(),
 			}).
 			Mark(ierr.ErrValidation)

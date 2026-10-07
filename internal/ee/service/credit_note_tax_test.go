@@ -1,7 +1,10 @@
 package service
 
 import (
+	"strings"
 	"testing"
+
+	cockroachdberrors "github.com/cockroachdb/errors"
 
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/customer"
@@ -182,6 +185,10 @@ func (s *CreditNoteTaxSuite) invoice() *invoice.Invoice {
 // filedInvoiceTax writes the row a finalized invoice carries once its tax has been recorded with
 // the provider, which is what a reversal is undoing.
 func (s *CreditNoteTaxSuite) filedInvoiceTax(inv *invoice.Invoice, transactionID string) *taxapplied.TaxApplied {
+	return s.filedInvoiceTaxBy(inv, transactionID, types.TaxProviderStripe)
+}
+
+func (s *CreditNoteTaxSuite) filedInvoiceTaxBy(inv *invoice.Invoice, transactionID string, provider types.TaxProvider) *taxapplied.TaxApplied {
 	row := &taxapplied.TaxApplied{
 		ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_TAX_APPLIED),
 		EntityType:         types.TaxRateEntityTypeInvoice,
@@ -189,7 +196,7 @@ func (s *CreditNoteTaxSuite) filedInvoiceTax(inv *invoice.Invoice, transactionID
 		TaxableAmount:      decimal.NewFromInt(100),
 		TaxAmount:          decimal.NewFromInt(18),
 		Currency:           inv.Currency,
-		Provider:           types.TaxProviderStripe,
+		Provider:           provider,
 		TaxTransactionID:   lo.ToPtr(transactionID),
 		TaxTransactionType: types.TaxTransactionTypeFiling,
 		ExternalTaxDetails: &types.ExternalTaxDetails{
@@ -389,7 +396,7 @@ func (s *CreditNoteTaxSuite) TestTaxIsReversedOnlyCountsAFiledReversal() {
 // written. The invoice's own rows are left alone.
 func (s *CreditNoteTaxSuite) TestReverseTaxOnProviderIsANoOpForNative() {
 	inv := s.invoice()
-	s.filedInvoiceTax(inv, "tax_original")
+	s.filedInvoiceTaxBy(inv, "tax_original", types.TaxProviderFlexprice)
 
 	s.Require().NoError(s.svc.ReverseTaxOnProvider(s.GetContext(), dto.TaxReversalRequest{
 		EntityType: types.TaxRateEntityTypeInvoice,
@@ -401,4 +408,92 @@ func (s *CreditNoteTaxSuite) TestReverseTaxOnProviderIsANoOpForNative() {
 
 	rows := s.rowsFor(types.TaxRateEntityTypeInvoice, inv.ID)
 	s.Len(rows, 1, "native reverses nothing and records nothing")
+}
+
+// The engine that filed the tax is the one asked to undo it. The tenant here is on the native
+// engine, so resolving from the setting would silently skip the reversal and leave the filing
+// standing at the provider.
+func (s *CreditNoteTaxSuite) TestReverseTaxOnProviderUsesTheEngineThatFiledIt() {
+	inv := s.invoice()
+	s.filedInvoiceTaxBy(inv, "tax_original", types.TaxProviderStripe)
+
+	err := s.svc.ReverseTaxOnProvider(s.GetContext(), dto.TaxReversalRequest{
+		EntityType: types.TaxRateEntityTypeInvoice,
+		EntityID:   inv.ID,
+		Mode:       types.TaxReversalModeFull,
+		Reference:  types.TaxReferenceVoidPrefix + inv.ID,
+		Currency:   inv.Currency,
+	})
+
+	// Stripe filed it and Stripe is not connected here, so the attempt surfaces rather than
+	// resolving to native and reporting nothing to do. The hint is what a caller is shown.
+	s.Require().Error(err)
+	s.Contains(strings.Join(cockroachdberrors.GetAllHints(err), " "), "Stripe",
+		"the reversal follows the provider on the filed row")
+}
+
+// A credit note returns what the customer paid. An invoice taxed natively carries no external
+// tax, so crediting it after the tenant moves to an external engine must not add tax the
+// customer was never charged and that no reversal would offset.
+func (s *CreditNoteTaxSuite) TestInvoiceTaxProviderIsEmptyForANativelyTaxedInvoice() {
+	inv := s.invoice()
+	s.filedInvoiceTaxBy(inv, "", types.TaxProviderFlexprice)
+
+	creditNoteSvc := NewCreditNoteService(ServiceParams{
+		Logger:         s.GetLogger(),
+		Config:         s.GetConfig(),
+		DB:             s.GetDB(),
+		TaxAppliedRepo: s.GetStores().TaxAppliedRepo,
+		SettingsRepo:   s.GetStores().SettingsRepo,
+		ConnectionRepo: s.GetStores().ConnectionRepo,
+	}).(*creditNoteService)
+
+	provider, err := creditNoteSvc.invoiceTaxProvider(s.GetContext(), inv.ID)
+
+	s.Require().NoError(err)
+	s.False(provider.IsExternal(), "a natively taxed invoice adds no external tax to its credit note")
+}
+
+// An invoice the engine taxed is credited by that same engine, so the credit note's gross
+// matches what was charged even after the tenant's setting moves on.
+func (s *CreditNoteTaxSuite) TestInvoiceTaxProviderIsTheEngineThatTaxedTheInvoice() {
+	inv := s.invoice()
+	s.filedInvoiceTaxBy(inv, "tax_original", types.TaxProviderStripe)
+
+	creditNoteSvc := NewCreditNoteService(ServiceParams{
+		Logger:         s.GetLogger(),
+		Config:         s.GetConfig(),
+		DB:             s.GetDB(),
+		TaxAppliedRepo: s.GetStores().TaxAppliedRepo,
+		SettingsRepo:   s.GetStores().SettingsRepo,
+		ConnectionRepo: s.GetStores().ConnectionRepo,
+	}).(*creditNoteService)
+
+	provider, err := creditNoteSvc.invoiceTaxProvider(s.GetContext(), inv.ID)
+
+	s.Require().NoError(err)
+	s.Equal(types.TaxProviderStripe, provider)
+}
+
+// A reversal row records tax being undone, not tax the invoice carries, so it must not decide
+// which engine credits the invoice.
+func (s *CreditNoteTaxSuite) TestInvoiceTaxProviderIgnoresReversalRows() {
+	inv := s.invoice()
+	reversal := s.filedInvoiceTaxBy(inv, "tax_reversal", types.TaxProviderStripe)
+	reversal.TaxTransactionType = types.TaxTransactionTypeReversal
+	s.Require().NoError(s.GetStores().TaxAppliedRepo.Update(s.GetContext(), reversal))
+
+	creditNoteSvc := NewCreditNoteService(ServiceParams{
+		Logger:         s.GetLogger(),
+		Config:         s.GetConfig(),
+		DB:             s.GetDB(),
+		TaxAppliedRepo: s.GetStores().TaxAppliedRepo,
+		SettingsRepo:   s.GetStores().SettingsRepo,
+		ConnectionRepo: s.GetStores().ConnectionRepo,
+	}).(*creditNoteService)
+
+	provider, err := creditNoteSvc.invoiceTaxProvider(s.GetContext(), inv.ID)
+
+	s.Require().NoError(err)
+	s.False(provider.IsExternal(), "only a filing says what the invoice was taxed with")
 }

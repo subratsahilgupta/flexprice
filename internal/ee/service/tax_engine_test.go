@@ -340,3 +340,75 @@ func TestTaxProviderValidate_MessageNamesEveryAllowedProvider(t *testing.T) {
 func TestTaxProviderValidate_EmptyIsNativeAndAccepted(t *testing.T) {
 	assert.NoError(t, types.TaxProvider("").Validate(), "empty means the native engine")
 }
+
+// A provider that is switched off is not in force, so validating it would block the very update
+// that turns an unsupported one off.
+func TestTaxConfigValidate_DisabledProviderIsNotValidated(t *testing.T) {
+	assert.NoError(t, types.TaxConfig{Enabled: false, Provider: "avalara"}.Validate(),
+		"a disabled config resolves to native whatever it names")
+	assert.NoError(t, types.TaxConfig{Enabled: false}.Validate())
+}
+
+func TestTaxConfigValidate_EnabledProviderIsValidated(t *testing.T) {
+	require.Error(t, types.TaxConfig{Enabled: true, Provider: "avalara"}.Validate(),
+		"an engine in force has to be one that can be built")
+	assert.NoError(t, types.TaxConfig{Enabled: true, Provider: types.TaxProviderStripe}.Validate())
+}
+
+// The idempotency key is what makes a retry replay the original filing instead of colliding on
+// the reference, so it has to be stable for one filing and different across filings.
+func TestTaxProviderIdempotencyKey_StablePerFiling(t *testing.T) {
+	ctx := types.SetEnvironmentID(types.SetTenantID(context.Background(), "tenant_1"), "env_1")
+
+	first := taxProviderIdempotencyKey(ctx, "commit", "inv_1", "taxcalc_1")
+	again := taxProviderIdempotencyKey(ctx, "commit", "inv_1", "taxcalc_1")
+	assert.Equal(t, first, again, "a retry of the same filing must send the same key")
+
+	assert.NotEqual(t, first, taxProviderIdempotencyKey(ctx, "commit", "inv_2", "taxcalc_1"),
+		"a different invoice is a different filing")
+	assert.NotEqual(t, first, taxProviderIdempotencyKey(ctx, "commit", "inv_1", "taxcalc_2"),
+		"a recalculation is a different filing")
+	assert.NotEqual(t, first, taxProviderIdempotencyKey(ctx, "reverse", "inv_1", "taxcalc_1"),
+		"undoing a filing is not the filing")
+
+	other := types.SetEnvironmentID(types.SetTenantID(context.Background(), "tenant_2"), "env_1")
+	assert.NotEqual(t, first, taxProviderIdempotencyKey(other, "commit", "inv_1", "taxcalc_1"),
+		"keys are scoped to the tenant that owns the filing")
+}
+
+// The scenario that matters after a tenant switches engines: the invoice was taxed and filed
+// under Stripe, the tenant then moved to native (or the setting was deleted). Undoing that tax
+// has to go back to Stripe, because Stripe holds the transaction. Reading the setting instead
+// would resolve to native, report nothing to reverse, and leave the filing standing forever.
+func (s *TaxEngineSelectionSuite) TestEngineForAFiledProviderIgnoresTheTenantSetting() {
+	ctx := s.GetContext()
+	s.seedStripeConnection(ctx)
+
+	// The tenant is on native now: no tax_config row at all, which is the deleted-setting case.
+	configured, err := NewTaxEngine(ctx, s.params)
+	s.Require().NoError(err)
+	s.Equal(types.TaxProviderFlexprice, configured.GetProvider(),
+		"the tenant's current engine is native")
+
+	// The invoice's own rows still say stripe, and that is what decides.
+	filed, err := newTaxEngineForProvider(ctx, s.params, types.TaxProviderStripe)
+	s.Require().NoError(err)
+	s.Equal(types.TaxProviderStripe, filed.GetProvider(),
+		"undoing tax goes back to the engine that filed it, not the one configured now")
+}
+
+// Same check with the setting explicitly disabled rather than absent, which is how a tenant
+// turns an engine off.
+func (s *TaxEngineSelectionSuite) TestEngineForAFiledProviderIgnoresADisabledSetting() {
+	ctx := s.GetContext()
+	s.seedStripeConnection(ctx)
+	s.seedTaxConfig(ctx, map[string]interface{}{"enabled": false, "provider": string(types.TaxProviderStripe)})
+
+	configured, err := NewTaxEngine(ctx, s.params)
+	s.Require().NoError(err)
+	s.Equal(types.TaxProviderFlexprice, configured.GetProvider(), "disabled means native for new work")
+
+	filed, err := newTaxEngineForProvider(ctx, s.params, types.TaxProviderStripe)
+	s.Require().NoError(err)
+	s.Equal(types.TaxProviderStripe, filed.GetProvider(), "old work is still undone with Stripe")
+}
