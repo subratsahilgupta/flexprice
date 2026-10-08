@@ -203,8 +203,9 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 
 	if req.BillingAnchor != nil {
 		sub.BillingAnchor = lo.FromPtr(req.BillingAnchor).UTC().Truncate(time.Millisecond)
-		// Stripe imports keep Stripe's anchor so the schedule matches Stripe's.
-		if lo.FromPtr(req.Workflow) != types.TemporalStripeIntegrationWorkflow {
+		// Stripe imports keep Stripe's anchor so the schedule matches Stripe's; an anchor before the start
+		// only sets the schedule (start Nov 16, anchor Nov 1 → first bill Dec 1).
+		if lo.FromPtr(req.Workflow) != types.TemporalStripeIntegrationWorkflow && sub.BillingAnchor.After(sub.StartDate) {
 			if err := validateBillingAnchor(sub); err != nil {
 				return nil, err
 			}

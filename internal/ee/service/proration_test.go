@@ -937,8 +937,8 @@ func (s *ProrationScenarioSuite) TestBackdatedSubPastPeriods() {
 	}
 }
 
-// A7: a billing anchor must fall in [start, start + 1 period] on local dates; Stripe imports keep
-// their anchor, and draft activation keeps a custom anchor that is still in range.
+// A7: a billing anchor may be at most one period after the start; an earlier anchor only sets the
+// schedule. Stripe imports keep their anchor, and draft activation keeps a custom anchor that is still in range.
 func (s *ProrationScenarioSuite) TestBillingAnchorRange() {
 	s.pvrSeedPlan(pvrPlanSpec{id: "plan_pvr_a7"})
 	start := pvrDate(2027, 1, 10)
@@ -960,7 +960,8 @@ func (s *ProrationScenarioSuite) TestBillingAnchorRange() {
 		{"anchor inside first period", pvrDate(2027, 1, 20), true},
 		{"anchor one period after start", pvrDate(2027, 2, 10), true},
 		{"anchor more than one period ahead", pvrDate(2027, 3, 5), false},
-		{"anchor before start", pvrDate(2026, 12, 20), false},
+		{"anchor before start", pvrDate(2026, 12, 20), true},
+		{"anchor months before start", pvrDate(2026, 3, 1), true},
 	}
 	for _, tc := range cases {
 		s.Run(tc.name, func() {

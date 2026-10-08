@@ -3046,6 +3046,41 @@ func TestNextBillingDate_ReturnsToAnchorDay(t *testing.T) {
 	}
 }
 
+// An anchor before the start only sets the schedule; quarterly and half-yearly stay on the anchor's grid.
+func TestNextBillingDate_AnchorBeforeStart(t *testing.T) {
+	ist := loadTimezone("Asia/Kolkata")
+	utc := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+	start := utc(2026, 11, 16)
+	tests := []struct {
+		name   string
+		start  time.Time
+		anchor time.Time
+		period BillingPeriod
+		tz     string
+		ends   []time.Time
+	}{
+		{"monthly days earlier", start, utc(2026, 11, 1), BILLING_PERIOD_MONTHLY, "UTC", []time.Time{utc(2026, 12, 1), utc(2027, 1, 1)}},
+		{"monthly 31st a year earlier", start, utc(2025, 1, 31), BILLING_PERIOD_MONTHLY, "UTC", []time.Time{utc(2026, 11, 30), utc(2026, 12, 31), utc(2027, 1, 31)}},
+		{"quarterly months earlier", start, utc(2026, 3, 1), BILLING_PERIOD_QUARTER, "UTC", []time.Time{utc(2026, 12, 1), utc(2027, 3, 1)}},
+		{"quarterly 31st", start, utc(2025, 8, 31), BILLING_PERIOD_QUARTER, "UTC", []time.Time{utc(2026, 11, 30), utc(2027, 2, 28), utc(2027, 5, 31)}},
+		{"half-yearly 31st years earlier", start, utc(2024, 5, 31), BILLING_PERIOD_HALF_YEAR, "UTC", []time.Time{utc(2026, 11, 30), utc(2027, 5, 31)}},
+		{"annual Feb 29", start, utc(2024, 2, 29), BILLING_PERIOD_ANNUAL, "UTC", []time.Time{utc(2027, 2, 28), utc(2028, 2, 29)}},
+		{"IST quarterly 31st", time.Date(2026, 11, 16, 9, 0, 0, 0, ist).UTC(), time.Date(2026, 1, 31, 0, 0, 0, 0, ist).UTC(), BILLING_PERIOD_QUARTER, "Asia/Kolkata",
+			[]time.Time{time.Date(2027, 1, 31, 0, 0, 0, 0, ist), time.Date(2027, 4, 30, 0, 0, 0, 0, ist)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cur := tt.start
+			for i, want := range tt.ends {
+				next, err := NextBillingDate(&NextBillingDateParams{CurrentPeriodStart: cur, BillingAnchor: tt.anchor, Unit: 1, Period: tt.period, Timezone: tt.tz})
+				require.NoError(t, err)
+				require.True(t, next.Equal(want), "period %d: got %v, want %v", i+1, next, want)
+				cur = next
+			}
+		})
+	}
+}
+
 // A5/K: calendar boundaries are local midnights, also across DST and at +5:45; full periods are
 // measured in real seconds (a DST month is 743h or 721h long instead of 744h or 720h).
 func TestNextBillingDate_CalendarLocalMidnights(t *testing.T) {

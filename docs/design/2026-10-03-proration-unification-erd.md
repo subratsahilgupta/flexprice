@@ -153,7 +153,7 @@ Starting a sub on day X costs the same as adding an addon on day X, and the part
 
 *Example:* with `none`, a sub from Jan 15 pays $31 and gets 1000 credits and 100 units. An addon dated Jan 20 costs $0 until Feb 1.
 
-**D6. The anchor must fall in** `[start, start + 1 period]`**, compared on local dates.** No backdated anchors: backdate the start instead. Stripe imports keep Stripe's anchor as-is; the date rule (D7) works from any anchor.
+**D6. The anchor can be at most one period after the start.** An anchor before the start is accepted and only sets the schedule: start Nov 16 with anchor Nov 1 bills on Dec 1. Stripe imports keep Stripe's anchor as-is; the date rule (D7) works from any anchor.
 *Example:* monthly sub from Jan 10. Jan 20 and Feb 10 are allowed; Mar 5 and Dec 20 are rejected.
 
 **D7. One date rule.** Billing dates are `anchor + k × period`, clamped to month end and then returning to the anchor day: Jan 31 → Feb 28 → Mar 31. Stripe, Chargebee, Recurly, Zuora and Orb work the same way. Calendar billing is this rule with the anchor at the 1st, 00:00 local. The first billing date is the anchor.
