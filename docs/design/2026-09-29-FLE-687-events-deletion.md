@@ -115,9 +115,9 @@ Tenant repeatedly asks us to delete a set of events so they can re-send them. Sa
 
 **BR4.** Refused if any matched event also carries `meter_usage` on a meter the request did not name. The narrow form is used: `meter_id NOT IN meter_ids`. A tenant who names every feature an event feeds is allowed.
 
-**BR5.** The resolve clause is built against `meter_usage` only. It is the one table carrying every filter dimension, and `events` has no meter column at all.
+**BR5.** The meter-narrowed clause is built against `meter_usage` only. It is the one table carrying every filter dimension, and `events` has no meter column at all. The unnarrowed clause also runs against `events`, to pick up events that never produced meter usage.
 
-**BR6.** The audit record and both deletes use the same clause. Nothing is deleted that was not recorded, and nothing is recorded that is not deleted.
+**BR6.** Both deletes are keyed on the resolved id set, which is exactly the set the audit record was written from. Nothing is deleted that was not recorded, and nothing is recorded that is not deleted.
 
 **BR7.** `meter_usage` is deleted before `events`. A surviving `events` row has no reader. A surviving `meter_usage` row keeps billing.
 
@@ -126,6 +126,8 @@ Tenant repeatedly asks us to delete a set of events so they can re-send them. Sa
 **BR9.** Each table receives exactly one mutation per request. Mutations are never issued per batch, because a mutation rewrites every part it touches and repeating that over the same parts is what degrades the shared tables.
 
 **BR10.** Deletion is a user-only capability, not assignable to a service account.
+
+**BR11.** An event that produced no `meter_usage` row is deleted and recorded in cases 1 and 3, with `meter_id = ''` and `qty_total = 0`. It cannot appear in case 2, because an event with no meter row cannot match a feature.
 
 ### Validations / Constraints
 
@@ -137,9 +139,10 @@ Tenant repeatedly asks us to delete a set of events so they can re-send them. Sa
 
 **V4.** `period_end - period_start` must not exceed **1 month**. This bounds the partitions one mutation touches, which is what keeps the shared tables safe.
 
-**V5.** Caps: `external_customer_ids` at most **100**, `feature_ids` at most **100**, `event_ids` at most **1000**, and a body limit on the route. The ingestion body cap is attached to three ingestion routes only and does not cover this one.
+**V5.** Request caps: `external_customer_ids` at most **100**, `feature_ids` at most **100**, `event_ids` at most **1000**, and a body limit on the route. The ingestion body cap is attached to three ingestion routes only and does not cover this one.
 
-**V6.** At most **N** deletions may be in progress across all tenants, checked by counting `DELETING` rows. `N` is configuration. Exceeding it returns `429`.
+**V6.** The resolved event set must not exceed **`MAX_EVENTS_PER_REQUEST`**. This is checked after the id set is resolved and before anything is written to ClickHouse. Exceeding it fails the request with `TOO_MANY_EVENTS`, carrying the count and the limit, and the remedy is to narrow the period. This is the only cap the tenant cannot predict from their own request, which is why the error returns the actual count.
+
 
 ---
 
@@ -180,7 +183,7 @@ The row is inserted as `DELETING` inside the guard transaction and reaches a ter
 ```
 POST /v1/events/delete
       ↓
-validate (V1 to V6)                          ──► 400 / 429
+validate (V1 to V6)                          ──► 400
       ↓
 resolve customers, subscriptions, parents
       ↓
@@ -192,15 +195,15 @@ BEGIN TX
   INSERT event_deletion_requests (DELETING)
 COMMIT                        ◄── invoicing hold and ingestion suppression are live
       ↓
-resolve meter_ids, resolve event id set
+resolve meter_ids, resolve event id set       ──► 400 TOO_MANY_EVENTS, mark FAILED
       ↓
 multi-meter guard (case 2 only)               ──► 400, mark FAILED
       ↓
 INSERT INTO deleted_events_logs, batched at 1000
       ↓
-ALTER TABLE meter_usage DELETE, poll to zero
+ALTER TABLE meter_usage DELETE, wait         ──► MUTATION_TIMEOUT, mark FAILED
       ↓
-ALTER TABLE events DELETE, poll to zero
+ALTER TABLE events DELETE, wait               ──► MUTATION_TIMEOUT, mark FAILED
       ↓
 release Redis dedup locks for the deleted ids
       ↓
@@ -235,7 +238,6 @@ validation:
     if event_ids not empty:
         len(external_customer_ids) == 1
         feature_ids must be empty
-    count(DELETING rows across all tenants) < N      else 429
 
 // ---------- resolve meters, case 2 only ----------
 meter_ids = []
@@ -310,17 +312,31 @@ BEGIN TX
 COMMIT      // the invoicing hold and the ingestion suppression window are now live
 
 // ---------- build the clause, against meter_usage ----------
-clause = tenant_id = ? AND environment_id = ?
+base   = tenant_id = ? AND environment_id = ?
        AND external_customer_id IN external_customer_ids
        AND timestamp >= period_start AND timestamp < period_end
+if event_ids not empty: base += AND id IN event_ids
+
+clause = base
 if meter_ids not empty: clause += AND meter_id IN meter_ids
-if event_ids not empty: clause += AND id IN event_ids
 
 // ---------- resolve the event id set ----------
-event_ids_to_delete = SELECT DISTINCT id FROM meter_usage WHERE clause
+metered   = SELECT DISTINCT id FROM meter_usage WHERE clause
+
+// cases 1 and 3 also take events that produced no meter usage at all
+unmetered = []
+if meter_ids empty:
+    unmetered = (SELECT DISTINCT id FROM events WHERE base) - metered
+
+event_ids_to_delete = metered + unmetered
+
 if event_ids_to_delete empty:
     mark COMPLETED
     return success { deleted_events: 0 }
+
+if len(event_ids_to_delete) > MAX_EVENTS_PER_REQUEST:
+    mark FAILED
+    return error TOO_MANY_EVENTS with event_count, limit
 
 // ---------- multi-meter guard, case 2 only, narrow form ----------
 if meter_ids not empty:
@@ -337,13 +353,15 @@ if meter_ids not empty:
         return error MULTIPLE_METERS_PER_EVENT with event_count, meters_involved
 
 // ---------- record, batched at 1000 ids per insert ----------
-for each batch of 1000 in event_ids_to_delete:
+deleted_at = now()                      // one value for the whole request
+
+for each batch of 1000 in metered:
     INSERT INTO deleted_events_logs
     SELECT m.id, m.meter_id, m.tenant_id, m.environment_id, m.external_customer_id,
            m.event_name, m.source, e.timestamp, e.ingested_at,
            m.qty_total, m.unique_hash,
            {skip_payload ? '' : m.properties},
-           now64(3), {deleted_by}, {request_id}, {reason}
+           deleted_at, {deleted_by}, {request_id}
     FROM meter_usage FINAL AS m
     LEFT JOIN (
         SELECT id, timestamp, ingested_at
@@ -351,21 +369,31 @@ for each batch of 1000 in event_ids_to_delete:
         WHERE tenant_id = ? AND environment_id = ?
           AND timestamp >= period_start AND timestamp < period_end
           AND id IN batch
+        ORDER BY ingested_at DESC
+        LIMIT 1 BY id                   // one partner per id
     ) AS e ON m.id = e.id
     WHERE <clause> AND m.id IN batch
 
+for each batch of 1000 in unmetered:
+    INSERT INTO deleted_events_logs
+    SELECT e.id, '', e.tenant_id, e.environment_id, e.external_customer_id,
+           e.event_name, e.source, e.timestamp, e.ingested_at,
+           0, '',
+           {skip_payload ? '' : e.properties},
+           deleted_at, {deleted_by}, {request_id}
+    FROM events FINAL AS e
+    WHERE <base> AND e.id IN batch
+
 // ---------- delete, one mutation per table ----------
 ALTER TABLE meter_usage DELETE
-  WHERE <clause>
+  WHERE <clause> AND id IN event_ids_to_delete
   SETTINGS mutations_sync = 0
-poll SELECT count() FROM meter_usage WHERE <clause> until 0
+wait for the mutation to finish
 
 ALTER TABLE events DELETE
-  WHERE tenant_id = ? AND environment_id = ?
-    AND timestamp >= period_start AND timestamp < period_end
-    [AND id IN event_ids_to_delete]        // case 2 and 3
+  WHERE <base> AND id IN event_ids_to_delete
   SETTINGS mutations_sync = 0
-poll SELECT count() FROM events WHERE <same> until 0
+wait for the mutation to finish
 
 // ---------- aftermath ----------
 release Redis dedup locks for every id in event_ids_to_delete
@@ -376,6 +404,8 @@ return success { request_id, deleted_events, deleted_meter_usage_rows }
 ```
 
 ### Notes on the resolution
+
+**The two id sets.** An event is matched against the meters registered for its `event_name` at ingestion. If a meter matches, a `meter_usage` row is written. If none matches, the event sits in `events` with no `meter_usage` row at all. `metered` are the first kind, `unmetered` the second. Cases 1 and 3 delete and record both. Case 2 only ever sees the first kind, because an event with no meter row cannot match a feature.
 
 **Parent subscriptions are pulled in before the meter match.** An `inherited` subscription carries no line items, so the meter lives on the parent. `ExternalCustomerIDsForSubscription` cannot be used for this: it walks a `parent` subscription **down** to its inherited children and returns only the child's own customer when called on a child.
 
@@ -399,7 +429,22 @@ return success { request_id, deleted_events, deleted_meter_usage_rows }
 
 **Mutation predicates carry no subqueries.** A mutation is a stored command applied to each part later by background threads. ClickHouse refuses a subquery in the predicate as nondeterministic, and raising `allow_nondeterministic_mutations` does not lift it. So the clause is literal, and case 2's id list goes inline.
 
-**Waiting is done by polling rows, not by `mutations_sync`.** The ClickHouse client read deadline is 30 seconds and is absolute, so a blocking mutation would time out while succeeding server side. Submitting with `mutations_sync = 0` and polling `count()` against the same clause keeps every individual query short while still waiting for the real outcome.
+**"Wait for it to finish" means polling `system.mutations`.** `mutations_sync` would block the client, and the ClickHouse read deadline is 30 seconds, so a long mutation would time out while still succeeding on the server. Each delete is submitted with `mutations_sync = 0` and then polled:
+
+```sql
+SELECT is_done, latest_fail_reason
+FROM system.mutations
+WHERE database = ? AND table = ? AND create_time >= {submitted_at}
+ORDER BY create_time DESC LIMIT 1
+```
+
+`is_done` ends the wait. A non-empty `latest_fail_reason` fails the request with `MUTATION_FAILED`. Reaching `MUTATION_DEADLINE` fails it with `MUTATION_TIMEOUT`. Polling the mutation rather than re-counting rows matters because a row count would have to carry the whole id list on every tick.
+
+**`LIMIT 1 BY id` on the join's right side.** `FINAL` alone is not enough. The `events` sort key is `(tenant_id, environment_id, timestamp, id)`, so the same id re-ingested at a corrected timestamp is two distinct rows that never collapse, and the join would then write two audit rows for one `meter_usage` row.
+
+**Both inserts name their target columns.** `INSERT INTO deleted_events_logs (event_id, meter_id, tenant_id, environment_id, external_customer_id, event_name, source, event_timestamp, event_ingested_at, qty_total, unique_hash, properties, deleted_at, deleted_by, request_id) SELECT ...`. Without the column list the statement is positional, and a later `ADD COLUMN ... AFTER` would silently shift every value one place into a column of a compatible type.
+
+**The response counts.** `deleted_events` is the size of the resolved id set. `deleted_meter_usage_rows` is `SELECT count() FROM deleted_events_logs WHERE tenant_id = ? AND environment_id = ? AND request_id = ? AND meter_id != ''`, which excludes the rows written for events that produced no meter usage.
 
 ### Ingestion suppression
 
@@ -538,7 +583,7 @@ UNIQUE (tenant_id, environment_id, external_customer_id)
 (tenant_id, environment_id, deletion_status)
 ```
 
-The unique partial index serves both the fence lookup and BR8. The second serves the suppression cache load. The third serves V6 and operator listing.
+The unique partial index serves both the fence lookup and BR8. The second serves the suppression cache load. The third serves operator listing.
 
 ### `deleted_events_logs` — new ClickHouse table
 
@@ -583,7 +628,7 @@ SETTINGS index_granularity = 8192;
 - **`ORDER BY` leads with `request_id`.** The documented read path is by `request_id`, and it is not in the key in any other ordering. `event_id` and `meter_id` complete the natural key.
 - **`MergeTree`, not `ReplacingMergeTree`.** One write per deleted event. Phase 1 has no retries, so there is never a duplicate insert to collapse.
 - **Monthly partitions.** The table is written only when a deletion runs, so daily partitions would produce a long tail of tiny partitions with no query benefit.
-- **One row per `(event_id, meter_id)`.** An event matching three meters produces three rows.
+- **One row per `(event_id, meter_id)`.** An event matching three meters produces three rows. An event that produced no meter usage gets one row with `meter_id = ''` and `qty_total = 0`.
 - **`properties` is stored by default.** When `skip_payload` is set on the request it is written as `''`, and the flag is recorded on `event_deletion_requests` rather than repeated on every audit row.
 - **No `customer_id`.** `meter_usage` has no such column and `events.customer_id` is nullable and frequently empty. `external_customer_id` is `NOT NULL` on `meter_usage`.
 - `qty_total` is `Decimal(25, 15)` in the versioned migration and `Decimal(18, 8)` in the prod baseline. Both carry ten integer digits, so `Decimal(18,8)` into `Decimal(25,15)` is lossless while the reverse truncates. The wider type is used so the record works against either deployment.
@@ -639,6 +684,9 @@ A single reason per failure, returned through `ierr.WithReportableDetails` with 
 | `MARKETPLACE_CUSTOMER` | `external_customer_id`, `provider_type` | no, guaranteed |
 | `FINALIZED_INVOICE_EXISTS` | `external_customer_id`, `subscription_id` (case 2 only), `invoice_id`, invoice period | no, guaranteed |
 | `MULTIPLE_METERS_PER_EVENT` | `event_count`, `meters_involved` | no, guaranteed |
+| `TOO_MANY_EVENTS` | `event_count`, `limit` | no, guaranteed. The check runs before the first write |
+| `MUTATION_FAILED` | `request_id`, the table, the ClickHouse reason | **unknown.** The mutation reported an error partway. Read `deleted_events_logs` by `request_id` for what was recorded |
+| `MUTATION_TIMEOUT` | `request_id`, the table | **unknown.** The mutation was submitted and is still running. Read `deleted_events_logs` by `request_id` for what was recorded |
 | `DELETION_IN_PROGRESS` | `external_customer_id`, `request_id` of the live deletion | no, guaranteed |
 | `CONNECTION_LOST` | `request_id` | **unknown.** The mutations were submitted and most likely completed. Read `deleted_events_logs` by `request_id` for what was recorded |
 
@@ -661,10 +709,9 @@ Every response path is bounded. Counts on success, identifiers on refusal.
 | HTTP | `ierr` mark | Condition |
 |---|---|---|
 | 400 | `ErrValidation` | Required field missing, period inverted, period wider than 1 month, a cap exceeded, `event_ids` with more than one customer or with `feature_ids`, unknown customer or feature |
-| 400 | `ErrInvalidOperation` | Marketplace, finalized invoice, or multi-meter guard trips |
+| 400 | `ErrInvalidOperation` | Marketplace, finalized invoice, or multi-meter guard trips, or the resolved set exceeds `MAX_EVENTS_PER_REQUEST` |
 | 403 | `ErrPermissionDenied` | Caller lacks the capability, or is a service account |
 | 409 | `ErrAlreadyExists` | A deletion is already in progress for a customer in the request |
-| 429 | `ErrTooManyRequests` | The global in-flight cap is reached |
 | 500 | `ErrDatabase` | A ClickHouse step failed. The state row is marked `FAILED` with the reason |
 
 ### Invoice finalization gate
@@ -724,7 +771,12 @@ No billing cycle is lost. Threshold billing re-evaluates usage against the thres
 | Tenant re-ingests a corrected event under the same id after the deletion | Written normally. The window is down and the dedup lock was released. |
 | Tenant re-ingests under the same id but a different timestamp | Written. The old `events` row is already gone, so no orphan. Had the deletion not run, `ReplacingMergeTree` would not have collapsed them, because `timestamp` is in the sort key. |
 | `POST /v1/events/raw/reprocess/*` run after a deletion | Deleted ids are skipped against `deleted_events_logs` and reported in a skip count. |
-| Event present in `events` with no `meter_usage` row | Case 1 deletes it, because the clause covers it. Cases 2 and 3 do not, because they key on ids resolved from `meter_usage`. |
+| Event present in `events` with no `meter_usage` row | Cases 1 and 3 delete **and record** it, with `meter_id = ''` and `qty_total = 0`. Case 2 never matches it, since an event with no meter row cannot match a feature. |
+| `events` row whose `external_customer_id` is NULL | Not matched, so not deleted and not recorded. The column is `Nullable(String)` in production and `IN` against NULL does not match. It survives as an inert orphan. |
+| Resolved set exceeds `MAX_EVENTS_PER_REQUEST` | `400 TOO_MANY_EVENTS` with the count and the limit. Nothing is written, the state row is marked `FAILED`, and invoicing is released. The tenant narrows the period and retries. |
+| A mutation stalls and never finishes | The wait gives up at `MUTATION_DEADLINE`, the row is marked `FAILED` with `MUTATION_TIMEOUT`, and invoicing is released. The mutation keeps running on the server, so what was deleted is read back from `deleted_events_logs`. |
+| A mutation reports an error in `system.mutations` | The wait stops, the row is marked `FAILED` with `MUTATION_FAILED` and the ClickHouse reason. |
+| The same event id appears twice in `events` with different timestamps | One audit row, not two. `events` is deduplicated by id on the way into the record, newest `ingested_at` winning. `FINAL` alone does not do this, because `timestamp` is part of the sort key. |
 | `meter_usage` row present with no `events` row | Recorded with the two `events`-sourced timestamp columns at their zero value, then deleted. A left-join miss writes the type default, not an empty value. |
 | Clause matches nothing | `200` with `deleted_events: 0`. No record, no deletes, row marked `COMPLETED`. |
 | Client connection dropped mid-request | The row is marked `FAILED` with `CONNECTION_LOST` on an uncancelled context, so invoicing is released. The mutations continue server side and most likely complete. |
@@ -764,6 +816,14 @@ No billing cycle is lost. Threshold billing re-evaluates usage against the thres
 
 **AC14.** With `skip_payload: true`, every audit row carries `properties = ''` and all other columns are populated as normal, and the flag is recorded on `event_deletion_requests`.
 
+**AC14b.** An event present in `events` with no `meter_usage` row, inside a case 1 request, is deleted and appears in `deleted_events_logs` with `meter_id = ''` and `qty_total = 0`.
+
+**AC14c.** A request whose resolved set exceeds `MAX_EVENTS_PER_REQUEST` fails with `TOO_MANY_EVENTS` carrying the count and the limit. No row is written to `deleted_events_logs`, no mutation is issued, and the state row ends `FAILED`.
+
+**AC14d.** One `meter_usage` row joined to an `events` table holding two rows for that id with different timestamps produces exactly **one** audit row, not two. The same holds for a meter-less event present twice.
+
+**AC14e.** Every audit row written by one request carries the same `deleted_at`, including rows written by different batches.
+
 **AC15.** Exactly one mutation is issued per table per request, regardless of how many events are deleted or how many partitions the period spans. Asserted by counting entries in `system.mutations` for the request.
 
 **AC16.** With a `DELETING` row in scope, `performFinalizeInvoiceActions` refuses, `FinalizeInvoiceActivity` returns `Skipped: true` without finalizing and without burning retries, and the invoice is still `DRAFT` with no invoice number allocated.
@@ -790,11 +850,9 @@ No billing cycle is lost. Threshold billing re-evaluates usage against the thres
 
 **AC27.** Two concurrent deletions for the same customer produce exactly one `DELETING` row, and the loser receives `409 DELETION_IN_PROGRESS`.
 
-**AC28.** With the global in-flight cap reached, a new request returns `429`.
+**AC28.** Cancelling the client connection mid-request leaves the row `FAILED` with `CONNECTION_LOST`, and invoice finalization for that customer resumes.
 
-**AC29.** Cancelling the client connection mid-request leaves the row `FAILED` with `CONNECTION_LOST`, and invoice finalization for that customer resumes.
-
-**AC30.** The delete endpoint returns `403` for a service-account caller regardless of assigned roles.
+**AC29.** The delete endpoint returns `403` for a service-account caller regardless of assigned roles.
 
 ---
 
@@ -834,7 +892,11 @@ No billing cycle is lost. Threshold billing re-evaluates usage against the thres
 | Case 2's id list inline in one statement with `max_query_size` raised | The alternative is many mutations, which is worse for the shared tables than one large parse. |
 | `mutations_sync = 0` plus polling `count()` to zero | The client read deadline is 30 seconds and absolute, so a blocking mutation times out while succeeding. Polling keeps each query short while still waiting for the real outcome. |
 | Clause built against `meter_usage` only | It is the one table carrying every filter dimension. `events` has no meter column. |
-| Case 1 deletes by clause with no id list | The clause fully describes the set, so the unbounded case needs no ids at all. |
+| All three cases key both deletes on the resolved id set | It is the only thing that makes BR6 true. Keying case 1 on the clause alone would delete rows that landed between the resolve and the mutation, and an earlier draft of this doc dropped the customer predicate from the `events` delete on that path, which would have deleted every customer's events for the tenant across the period. |
+| Events with no meter usage are recorded, not silently deleted | Case 1's scope is the customer and the period, not the meter. Deleting them without a record would contradict BR6. |
+| `MAX_EVENTS_PER_REQUEST` checked after resolution | The fence has to be up before the id set is resolved, so the check cannot run earlier. Nothing has been written to ClickHouse at that point, so failing there is clean. |
+| The suppression cache interval is waited out before resolving | Otherwise a consumer with a stale cache can write an in-period event after the state row commits but before the id set is resolved, and no later step removes it. |
+| The wait has a deadline | Without one a stalled mutation holds `DELETING` forever, blocks that customer's invoicing and consumes a global slot. |
 | Multi-meter guard uses the narrow form, `meter_id NOT IN meter_ids` | The strict form refuses the most correct request a tenant can send, one naming every feature the event feeds. |
 | Multi-meter guard refuses rather than widening the deletion | The request did not ask for that usage to go. |
 | Invoice overlap via `PeriodStartLTE: period_end` and `PeriodEndGTE: period_start` | Returns every finalized invoice whose period touches the requested one, in either direction. Any result refuses. |
@@ -862,7 +924,7 @@ No billing cycle is lost. Threshold billing re-evaluates usage against the thres
 | Dedup locks released after the mutations | Releasing them before would remove the incidental protection against a redelivery landing mid-deletion. |
 | Deletion triggers the existing draft-and-compute workflow | A stale draft invoice is a wrong number the tenant can see. The workflow already exists and is already called per subscription by the daily cron. |
 | Revenue facts deferred | Not live yet. It will handle this when it ships. |
-| One deletion per customer, plus a global in-flight cap | This is the first route where a tenant can trigger mutations on tables every tenant shares. |
+| One deletion per customer at a time | This is the first route where a tenant can trigger mutations on tables every tenant shares. A cap across all tenants waits for Phase 2, where the workflow queue can enforce it without a race. ClickHouse already runs mutations one at a time per table. |
 | Marketplace customers refused entirely | `usage_records` are reported to AWS, GCP and Azure every three hours. Once reported the marketplace has billed the customer, and there is no Flexprice invoice to point at. |
 | `raw_events` out of scope | Written by the upstream Bento pipeline, not by this repository. The reprocess route is gated instead. |
 | Sequential execution in Phase 1 | Everything the asynchronous version needs, the state row and the status field, is built in Phase 1, so moving execution into a workflow is additive rather than a rewrite. |
@@ -879,7 +941,7 @@ Everything in this document. Deletion runs inside the request. No Temporal workf
 |---|---|
 | Execution | sequential, inside the request. Mutations submitted asynchronously and polled to zero |
 | State | `event_deletion_requests`, three statuses |
-| Concurrency | shared advisory lock, one deletion per customer, global in-flight cap |
+| Concurrency | shared advisory lock, one deletion per customer |
 | Invoicing | held for an affected customer over an overlapping period |
 | Ingestion | suppression window plus reprocess skip plus dedup lock release |
 | Period | at most 1 month |
@@ -897,3 +959,4 @@ Everything in this document. Deletion runs inside the request. No Temporal workf
 | Recovery of a row left `DELETING` by a hard-killed process | Needs a sweeper, which belongs with the workflow |
 | `POST /v1/events/delete/preview` | Needs `exclude_event_ids` on `BuildWhereClause` and `BuildDetailedWhereClause`. Totals must be recomputed with the rows excluded, not derived by subtraction, because the aggregators are `MAX`, `AVG`, `argMax` and `COUNT(DISTINCT unique_hash)` and the deleted quantity is not the delta for any of them. A separate route rather than a flag, so it can be `read`-scoped while Delete stays `delete`-scoped |
 | `ReplacingMergeTree` on `deleted_events_logs` | Only matters once retries exist and a step can be replayed |
+| A cap on deletions in flight across all tenants | Needs the workflow queue to enforce it without a race |
