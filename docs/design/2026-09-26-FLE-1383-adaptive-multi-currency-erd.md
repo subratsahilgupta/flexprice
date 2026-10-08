@@ -163,8 +163,7 @@ erDiagram
         varchar(50)  id PK
         varchar(10)  currency "= invoice.currency"
         numeric      amount "converted amount"
-        varchar(10)  original_currency "NEW nullable"
-        numeric      original_amount "NEW nullable"
+        jsonb        fx_conversion "NEW nullable — charge currency and original amounts"
     }
     WALLETS {
         varchar(50)  id PK
@@ -180,7 +179,7 @@ erDiagram
 | `customers` | Add `billing_currency`, nullable | The currency the customer is invoiced in. NULL keeps today's behaviour |
 | `fx_rates` | New table | Rates the tenant configures, at tenant, customer or subscription scope |
 | `invoices` | Add `fx_conversion`, nullable jsonb | The frozen rate and the original amounts. NULL means never converted |
-| `invoice_line_items` | Add `original_currency`, `original_amount`, nullable | Each line's pre-conversion amount, shown exactly on the PDF and API |
+| `invoice_line_items` | Add `fx_conversion`, nullable jsonb | Each line's charge currency and pre-conversion amounts, shown exactly on the PDF and API. NULL means never converted |
 
 Wallets and wallet transactions are not changed. No backfill anywhere.
 
@@ -263,12 +262,21 @@ the in-memory test store copies fields one by one. `custom_currency` was lost on
 of this. Add `fx_conversion` to all of them with a round-trip test, and make `Update` keep the value,
 never clear it.
 
-### 3.6 `invoice_line_items` original amounts
+### 3.6 `invoice_line_items.fx_conversion`
 
-| Column | Type | Notes |
-| --- | --- | --- |
-| `original_currency` | `varchar(10)`, nullable | The line's currency before conversion. NULL on invoices that were never converted |
-| `original_amount` | `numeric(20,8)`, nullable | The line's gross amount before conversion |
+The same shape as the invoice's `fx_conversion`, but a line sets only the charge currency and its own
+pre-conversion amounts. The rate, scope and conversion time stay on the invoice. NULL on lines that
+were never converted.
+
+```json
+{
+  "charge_currency": "usd",
+  "source": { "subtotal": "5.00", "total_discount": "0", "total_prepaid_credits_applied": "3.00", "net": "2.00" }
+}
+```
+
+`source.subtotal` is the line's gross amount before conversion, and `total_discount` is its line and
+invoice-level discounts together.
 
 The PDF, portal and API read these directly, so the original amount per line is exact. No screen
 divides by the rate.
@@ -366,7 +374,8 @@ when set, so a retried finalize never converts twice.
    **positive** amount — so the penny lands on a real charge, never on a proration credit or discount
    line. If no line is positive, use the largest by absolute value; break ties on the lowest line id
    for determinism. A single-line invoice takes the whole difference on that line.
-4. Stamp each line's `original_currency` and `original_amount` before overwriting its amount.
+4. Record each line's `fx_conversion` (charge currency, and its subtotal, discounts, credits and net)
+   before overwriting its amounts.
 
 This keeps the lines equal to the total, so the PDF, portal and ERPs, which all add up lines, match
 the saved invoice.
@@ -833,7 +842,7 @@ Wallet APIs are unchanged. Top-up, balance and transaction endpoints keep their 
 | Field | Where | Notes |
 | --- | --- | --- |
 | `fx_conversion` | Invoice | The snapshot in §3.5. Null on invoices never converted |
-| `original_currency`, `original_amount` | Line item | Null on invoices never converted |
+| `fx_conversion` | Line item | `charge_currency` and `source` only (§3.6). Null on invoices never converted |
 | `billing_currency_estimate` | Draft invoice and previews | `{ currency, rate, total, resolvable }`. Calculated on read. Shown only when the billing currency differs from the draft's. `resolvable: false` tells the dashboard the draft will fail to finalize |
 | `charge_currency` | Invoice list filter | New filter on the original currency. The existing `currency` filter matches the billing currency |
 
@@ -880,8 +889,10 @@ Wallet APIs are unchanged. Top-up, balance and transaction endpoints keep their 
       "amount": "415.00",
 
       // NEW: original charge amounts, for the PDF and UI
-      "original_currency": "usd",
-      "original_amount": "5.00"
+      "fx_conversion": {
+        "charge_currency": "usd",
+        "source": { "subtotal": "5.00", "total_discount": "0", "total_prepaid_credits_applied": "0", "net": "5.00" }
+      }
     }
   ],
 
