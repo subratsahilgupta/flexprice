@@ -619,6 +619,16 @@ func subPeriodStartAt(sub *subscription.Subscription, t time.Time) (time.Time, e
 	return types.LatestOf(types.FullBillingPeriod(t, grid).Start, sub.StartDate), nil
 }
 
+// usageWindows is where a usage item is metered: its own cadence windows, or the whole invoice period
+// when its cadence is longer than the sub's, so its usage is billed on every sub invoice.
+// e.g. annual usage price on a monthly sub → one window per monthly invoice.
+func usageWindows(periodStart, periodEnd time.Time, item *subscription.SubscriptionLineItem, sub *subscription.Subscription) ([]periodWindow, error) {
+	if types.IsLongerCadence(item.BillingPeriod, item.BillingPeriodCount, sub.BillingPeriod, sub.BillingPeriodCount) {
+		return []periodWindow{{Start: periodStart, End: periodEnd}}, nil
+	}
+	return splitInvoicePeriodByLineItemCadence(periodStart, periodEnd, item, sub)
+}
+
 // sameCadenceAsSubscription reports whether the line item bills on exactly the subscription's
 // cadence, treating an unset count as 1.
 func sameCadenceAsSubscription(item *subscription.SubscriptionLineItem, sub *subscription.Subscription) bool {
@@ -2351,7 +2361,7 @@ func (s *billingService) calculateMeterUsageCharges(
 		}
 
 		for _, groupItems := range groups {
-			windows, err := splitInvoicePeriodByLineItemCadence(periodStart, periodEnd, groupItems[0], sub)
+			windows, err := usageWindows(periodStart, periodEnd, groupItems[0], sub)
 			if err != nil {
 				return nil, err
 			}

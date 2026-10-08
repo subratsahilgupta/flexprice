@@ -743,8 +743,8 @@ func (s *MultiCadenceAddonMatrixSuite) TestShorterCadence_CalendarAnnualStub_Att
 	s.pvmMoney("1003.33", summary.TotalChargeAmount, "attach-later quarterly item on calendar annual stub")
 }
 
-// Usage items are grouped through the same splitter, so usage on a calendar stub is metered
-// in one window per item-cadence period.
+// Usage on a calendar stub is metered in one window per item-cadence period; a longer usage cadence
+// is metered over each sub invoice period.
 func (s *MultiCadenceAddonMatrixSuite) TestUsageWindows_FollowItemCadence() {
 	cases := []struct {
 		name string
@@ -767,11 +767,25 @@ func (s *MultiCadenceAddonMatrixSuite) TestUsageWindows_FollowItemCadence() {
 			item: pvmItemSpec{period: types.BILLING_PERIOD_MONTHLY, priceType: types.PRICE_TYPE_USAGE, arrear: true, start: pvmLocalDate("Asia/Kolkata", 2026, 2, 15)},
 			want: []time.Time{pvmLocalDate("Asia/Kolkata", 2026, 2, 15), pvmLocalDate("Asia/Kolkata", 2026, 3, 1)},
 		},
+		{
+			name: "annual usage on calendar monthly sub",
+			sub: pvmSubSpec{cycle: types.BillingCycleCalendar, period: types.BILLING_PERIOD_MONTHLY,
+				periodStart: pvmDate(2026, 3, 1), periodEnd: pvmDate(2026, 4, 1), anchor: pvmDate(2026, 2, 1)},
+			item: pvmItemSpec{period: types.BILLING_PERIOD_ANNUAL, priceType: types.PRICE_TYPE_USAGE, arrear: true, start: pvmDate(2026, 1, 15)},
+			want: []time.Time{pvmDate(2026, 3, 1)},
+		},
+		{
+			name: "3-month usage on anniversary monthly sub",
+			sub: pvmSubSpec{cycle: types.BillingCycleAnniversary, period: types.BILLING_PERIOD_MONTHLY,
+				periodStart: pvmDate(2026, 3, 10), periodEnd: pvmDate(2026, 4, 10), anchor: pvmDate(2026, 1, 10)},
+			item: pvmItemSpec{period: types.BILLING_PERIOD_MONTHLY, count: 3, priceType: types.PRICE_TYPE_USAGE, arrear: true, start: pvmDate(2026, 1, 10)},
+			want: []time.Time{pvmDate(2026, 3, 10)},
+		},
 	}
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			fx := s.pvmBuild(tc.sub, tc.item)
-			windows, err := splitInvoicePeriodByLineItemCadence(tc.sub.periodStart, tc.sub.periodEnd, fx.items[0], fx.sub)
+			windows, err := usageWindows(tc.sub.periodStart, tc.sub.periodEnd, fx.items[0], fx.sub)
 			s.Require().NoError(err)
 			got := make([]time.Time, 0, len(windows))
 			for _, w := range windows {
