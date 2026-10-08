@@ -83,6 +83,19 @@ func pendingCheckoutSessionFilter(
 	}
 }
 
+// openCheckoutSessionIDs returns the ids of the customer's checkout sessions that are still open.
+func openCheckoutSessionIDs(ctx context.Context, sp ServiceParams, customerID string) ([]string, error) {
+	sessions, err := sp.CheckoutSessionRepo.List(ctx, &types.CheckoutSessionFilter{
+		QueryFilter:      types.NewNoLimitQueryFilter(),
+		CustomerIDs:      []string{customerID},
+		CheckoutStatuses: types.ActiveCheckoutStatuses(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return lo.Map(sessions, func(sess *domainCheckout.CheckoutSession, _ int) string { return sess.ID }), nil
+}
+
 func (s *checkoutSessionService) Create(ctx context.Context, req dto.CreateCheckoutSessionRequest) (*dto.CheckoutSessionResponse, error) {
 	if err := req.Validate(); err != nil {
 		return nil, err

@@ -15,7 +15,7 @@ import (
 // validateBillingCurrency blocks a change while a checkout is open, and a new value without a rate
 // for every live subscription and wallet in another currency. nil or "" clears it.
 func (s *customerService) validateBillingCurrency(ctx context.Context, customerID string, billingCurrency *string) error {
-	openSessions, err := s.openCheckoutSessionIDs(ctx, customerID)
+	openSessions, err := openCheckoutSessionIDs(ctx, s.ServiceParams, customerID)
 	if err != nil {
 		return err
 	}
@@ -91,24 +91,6 @@ func (s *customerService) validateBillingCurrency(ctx context.Context, customerI
 	}
 
 	return nil
-}
-
-// openCheckoutSessionIDs returns the customer's active checkout sessions so the error can name them.
-func (s *customerService) openCheckoutSessionIDs(ctx context.Context, customerID string) ([]string, error) {
-	filter := &types.CheckoutSessionFilter{
-		QueryFilter:      types.NewNoLimitQueryFilter(),
-		CustomerIDs:      []string{customerID},
-		CheckoutStatuses: types.ActiveCheckoutStatuses(),
-	}
-	sessions, err := s.CheckoutSessionRepo.List(ctx, filter)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]string, 0, len(sessions))
-	for _, sess := range sessions {
-		ids = append(ids, sess.ID)
-	}
-	return ids, nil
 }
 
 // activeConvertibleSubscriptions returns active, trialing or paused subscriptions invoiced to the
