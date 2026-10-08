@@ -10,11 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Declared before Install runs, as in production, to exercise OTel's global delegation.
-var (
-	testCounter  = metrics.NewCounter("test.requests", "test", "{request}")
-	testNoTenant = metrics.NewCounter("test.pretenant", "test", "{request}").WithoutTenant()
-)
+const testName = metrics.CheckoutSessions
 
 func ctxFor(tenantID, environmentID string) context.Context {
 	ctx := context.Background()
@@ -27,16 +23,21 @@ func ctxFor(tenantID, environmentID string) context.Context {
 	return ctx
 }
 
-func TestLabels(t *testing.T) {
+func TestUnknownNameIgnored(t *testing.T) {
+	r := metricstest.Install(t)
+	metrics.RecordCounter(context.Background(), "not.in.catalog", 1)
+	assert.Empty(t, r.Series("not.in.catalog"))
+}
+
+func TestAddLabels(t *testing.T) {
 	r := metricstest.Install(t)
 	provider := metrics.L(metrics.KeyProvider, "labels-test")
 
-	testCounter.Add(ctxFor("t1", "e1"), 2, provider)
-	testCounter.Add(context.Background(), 1, provider)
-	testNoTenant.Add(ctxFor("t1", "e1"), 1, provider)
+	metrics.RecordCounter(ctxFor("t1", "e1"), testName, 2, provider)
+	metrics.RecordCounter(context.Background(), testName, 1, provider)
 
-	assert.Equal(t, int64(2), r.Sum("test.requests", map[string]string{"provider": "labels-test", "tenant_id": "t1", "environment_id": "e1"}))
-	assert.ElementsMatch(t, []metricstest.Series{{Labels: map[string]string{"provider": "labels-test"}, Value: 1}}, r.Series("test.pretenant"))
+	assert.Equal(t, int64(2), r.Sum(string(testName), map[string]string{"provider": "labels-test", "tenant_id": "t1", "environment_id": "e1"}))
+	assert.Equal(t, int64(3), r.Sum(string(testName), map[string]string{"provider": "labels-test"}))
 }
 
 func TestTenantAllowlist(t *testing.T) {
@@ -57,9 +58,8 @@ func TestTenantAllowlist(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			label := metrics.L(metrics.KeyProvider, "allowlist-"+tt.name)
-			testCounter.Add(tt.ctx, 1, label)
-			assert.Equal(t, tt.want, r.Sum("test.requests", map[string]string{"provider": "allowlist-" + tt.name}))
+			metrics.RecordCounter(tt.ctx, testName, 1, metrics.L(metrics.KeyProvider, "allowlist-"+tt.name))
+			assert.Equal(t, tt.want, r.Sum(string(testName), map[string]string{"provider": "allowlist-" + tt.name}))
 		})
 	}
 }

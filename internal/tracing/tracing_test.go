@@ -400,9 +400,9 @@ func TestAppMetricViews(t *testing.T) {
 		cfg  config.OtelMetricsConfig
 		want []string
 	}{
-		{"none disabled", config.OtelMetricsConfig{}, []string{"app.kept", "app.disabled", "db.client.duration"}},
-		{"disabled by name", config.OtelMetricsConfig{DisabledMetrics: []string{"app.disabled"}}, []string{"app.kept", "db.client.duration"}},
-		{"wildcard drops app scope only", config.OtelMetricsConfig{DisabledMetrics: []string{"*"}}, []string{"db.client.duration"}},
+		{"kill switch drops app scope only", config.OtelMetricsConfig{}, []string{"db.client.duration"}},
+		{"enabled keeps all", config.OtelMetricsConfig{AppEnabled: true}, []string{"app.kept", "app.disabled", "db.client.duration"}},
+		{"disabled by name", config.OtelMetricsConfig{AppEnabled: true, DisabledMetrics: []string{"app.disabled"}}, []string{"app.kept", "db.client.duration"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

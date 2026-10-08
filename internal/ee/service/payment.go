@@ -12,6 +12,7 @@ import (
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/idempotency"
 	"github.com/flexprice/flexprice/internal/interfaces"
+	"github.com/flexprice/flexprice/internal/metrics"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/types/integrations"
 	webhookDto "github.com/flexprice/flexprice/internal/webhook/dto"
@@ -19,6 +20,9 @@ import (
 )
 
 // PaymentService defines the interface for payment operations
+// paymentCheckoutMarker is the GatewayMetadata key set on payments created for a checkout.
+const paymentCheckoutMarker = "checkout"
+
 type PaymentService = interfaces.PaymentService
 
 type paymentService struct {
@@ -196,6 +200,7 @@ func (s *paymentService) CreatePayment(ctx context.Context, req *dto.CreatePayme
 		return nil, err
 	}
 
+	recordPaymentTransition(ctx, p, "")
 	s.publishSystemEvent(ctx, types.WebhookEventPaymentCreated, p.ID)
 
 	if req.ProcessPayment {
@@ -398,6 +403,19 @@ func (s *paymentService) GetPayment(ctx context.Context, id string) (*dto.Paymen
 	return response, nil
 }
 
+// recordPaymentTransition counts a persisted status change; from is "" for a new payment.
+func recordPaymentTransition(ctx context.Context, p *payment.Payment, from types.PaymentStatus) {
+	if p.PaymentStatus == from {
+		return
+	}
+	metrics.RecordCounter(ctx, metrics.PaymentTransitions, 1,
+		metrics.L(metrics.KeyProvider, lo.FromPtrOr(p.PaymentGateway, "none")),
+		metrics.L(metrics.KeyMethodType, string(p.PaymentMethodType)),
+		metrics.L(metrics.KeyStatus, string(p.PaymentStatus)),
+		metrics.L(metrics.KeyCheckout, lo.Ternary(p.GatewayMetadata[paymentCheckoutMarker] == "true", "true", "false")),
+	)
+}
+
 // UpdatePayment updates a payment
 func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.UpdatePaymentRequest) (*dto.PaymentResponse, error) {
 	if id == "" {
@@ -486,6 +504,7 @@ func (s *paymentService) UpdatePayment(ctx context.Context, id string, req dto.U
 	if err := s.PaymentRepo.UpdateWithExpectedStatus(ctx, p, observedStatus); err != nil {
 		return nil, err // Repository already using ierr
 	}
+	recordPaymentTransition(ctx, p, observedStatus)
 
 	s.publishSystemEvent(ctx, types.WebhookEventPaymentUpdated, p.ID)
 	if observedStatus != types.PaymentStatusFailed && p.PaymentStatus == types.PaymentStatusFailed {
@@ -547,6 +566,7 @@ func (s *paymentService) RecordAttempt(ctx context.Context, paymentID string, re
 	if err := s.PaymentRepo.CreateAttempt(ctx, attempt); err != nil {
 		return err
 	}
+	metrics.RecordCounter(ctx, metrics.PaymentAttempts, 1, metrics.L(metrics.KeyProvider, lo.FromPtrOr(p.PaymentGateway, "none")), metrics.L(metrics.KeyStatus, string(req.PaymentStatus)))
 
 	s.Logger.Info(ctx, "recorded payment attempt",
 		"payment_id", paymentID,
@@ -917,6 +937,7 @@ func (s *paymentService) CreatePaymentForCheckout(ctx context.Context, req *dto.
 		Currency:          req.Invoice.Currency,
 		PaymentStatus:     types.PaymentStatusInitiated,
 		TrackAttempts:     true, // gateway declines are recorded as attempts, leaving the payment open for a retry
+		GatewayMetadata:   types.Metadata{paymentCheckoutMarker: "true"},
 		EnvironmentID:     types.GetEnvironmentID(ctx),
 		BaseModel:         types.GetDefaultBaseModel(ctx),
 	}
@@ -933,6 +954,7 @@ func (s *paymentService) CreatePaymentForCheckout(ctx context.Context, req *dto.
 	if err := s.PaymentRepo.Create(ctx, p); err != nil {
 		return nil, err
 	}
+	recordPaymentTransition(ctx, p, "")
 
 	// Webhook event intentionally omitted — the gateway webhook will drive payment lifecycle updates.
 	return dto.NewPaymentResponse(p), nil

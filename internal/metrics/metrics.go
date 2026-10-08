@@ -17,8 +17,33 @@ const MeterName = "github.com/flexprice/flexprice/internal/metrics"
 
 var meter = otel.Meter(MeterName)
 
-// Name is a metric name, e.g. "checkout.sessions".
+// Name is a metric name; every name needs an entry in catalog.
 type Name string
+
+const (
+	CheckoutSessions   Name = "checkout.sessions"
+	PaymentTransitions Name = "payment.transitions"
+	PaymentAttempts    Name = "payment.attempts"
+	WebhookDeliveries  Name = "webhook.outbound.deliveries"
+	APIErrors          Name = "api.errors"
+	InvoiceTransitions Name = "invoice.transitions"
+)
+
+// catalog maps every metric to its description.
+var catalog = map[Name]string{
+	CheckoutSessions:   "Checkout sessions by status reached",
+	PaymentTransitions: "Payment status changes by new status, including creation",
+	PaymentAttempts:    "Gateway charge attempts by status",
+	WebhookDeliveries:  "Outbound deliveries of subscribed webhook events by outcome",
+	APIErrors:          "API error responses by error code",
+	InvoiceTransitions: "Invoice status changes by new status, including draft creation",
+}
+
+// counters is built once at init and only read afterwards, so concurrent lookups are safe.
+var counters = lo.MapValues(catalog, func(description string, name Name) metric.Int64Counter {
+	c, _ := meter.Int64Counter(string(name), metric.WithDescription(description))
+	return c
+})
 
 type LabelKey string
 
@@ -31,6 +56,12 @@ const (
 	KeyMethodType    LabelKey = "method_type"
 	KeyEventType     LabelKey = "event_type"
 	KeyTransport     LabelKey = "transport"
+	KeyErrorCode     LabelKey = "error_code"
+	KeyAction        LabelKey = "action"
+	KeyChargeMode    LabelKey = "charge_mode"
+	KeyCheckout      LabelKey = "checkout"
+	KeyInvoiceType   LabelKey = "invoice_type"
+	KeyBillingReason LabelKey = "billing_reason"
 )
 
 type Label struct {
@@ -39,6 +70,30 @@ type Label struct {
 }
 
 func L(key LabelKey, value string) Label { return Label{key: key, value: value} }
+
+// RecordCounter increments the counter name by n; names missing from catalog are ignored.
+func RecordCounter(ctx context.Context, name Name, n int64, labels ...Label) {
+	c, ok := counters[name]
+	if !ok {
+		return
+	}
+
+	attrs := make([]attribute.KeyValue, 0, len(labels)+2)
+	if tenantID := types.GetTenantID(ctx); tenantID != "" {
+		environmentID := types.GetEnvironmentID(ctx)
+		if !tenantAllowed(tenantID, environmentID) {
+			return
+		}
+
+		attrs = append(attrs, attribute.String(string(KeyTenantID), tenantID), attribute.String(string(KeyEnvironmentID), environmentID))
+	}
+
+	for _, l := range labels {
+		attrs = append(attrs, attribute.String(string(l.key), l.value))
+	}
+
+	c.Add(ctx, n, metric.WithAttributes(attrs...))
+}
 
 var allowedTenants atomic.Pointer[map[string]struct{}]
 
@@ -52,41 +107,6 @@ func SetTenantAllowlist(entries []string) {
 		return entry, entry != ":*"
 	}))
 	allowedTenants.Store(&allowed)
-}
-
-type Counter struct {
-	instrument    metric.Int64Counter
-	withoutTenant bool
-}
-
-// NewCounter declares a counter; unit is UCUM, e.g. "{request}".
-func NewCounter(name Name, description, unit string) *Counter {
-	instrument, _ := meter.Int64Counter(string(name), metric.WithDescription(description), metric.WithUnit(unit))
-	return &Counter{instrument: instrument}
-}
-
-// WithoutTenant skips tenant labels and the allow-list, for paths where the tenant is untrusted.
-func (c *Counter) WithoutTenant() *Counter {
-	c.withoutTenant = true
-	return c
-}
-
-func (c *Counter) Add(ctx context.Context, n int64, labels ...Label) {
-	attrs := make([]attribute.KeyValue, 0, len(labels)+2)
-	if tenantID := types.GetTenantID(ctx); tenantID != "" && !c.withoutTenant {
-		environmentID := types.GetEnvironmentID(ctx)
-		if !tenantAllowed(tenantID, environmentID) {
-			return
-		}
-
-		attrs = append(attrs, attribute.String(string(KeyTenantID), tenantID), attribute.String(string(KeyEnvironmentID), environmentID))
-	}
-
-	for _, l := range labels {
-		attrs = append(attrs, attribute.String(string(l.key), l.value))
-	}
-
-	c.instrument.Add(ctx, n, metric.WithAttributes(attrs...))
 }
 
 func tenantAllowed(tenantID, environmentID string) bool {

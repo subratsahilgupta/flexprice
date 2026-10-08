@@ -381,7 +381,10 @@ func (s *Service) httpMetricViews() []sdkmetric.Option {
 // appMetricViews drops internal/metrics instruments named in disabled_metrics; "*" drops all.
 func (s *Service) appMetricViews() []sdkmetric.Option {
 	scope := instrumentation.Scope{Name: metrics.MeterName}
-	
+	if !s.cfg.Otel.Metrics.AppEnabled {
+		return []sdkmetric.Option{dropView(sdkmetric.Instrument{Scope: scope})}
+	}
+
 	return lo.FilterMap(s.cfg.Otel.Metrics.DisabledMetrics, func(name string, _ int) (sdkmetric.Option, bool) {
 		name = strings.TrimSpace(name)
 		return dropView(sdkmetric.Instrument{Name: name, Scope: scope}), name != ""
