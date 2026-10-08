@@ -288,6 +288,24 @@ func TestCreateSubscriptionLineItemRequest_ToSubscriptionLineItem_QuantityDefaul
 	}
 }
 
+// The line item keeps the price's period count; billing reads it to find the item's cadence.
+func TestCreateSubscriptionLineItemRequest_ToSubscriptionLineItem_KeepsPeriodCount(t *testing.T) {
+	params := LineItemParams{
+		Subscription: &SubscriptionResponse{Subscription: &subscription.Subscription{ID: "sub_test", Currency: "usd"}},
+		Price: &PriceResponse{Price: &price.Price{
+			Type: types.PRICE_TYPE_FIXED, BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 6,
+			InvoiceCadence: types.InvoiceCadenceAdvance,
+		}},
+		EntityType: types.SubscriptionLineItemEntityTypeSubscription,
+	}
+
+	lineItem := (&CreateSubscriptionLineItemRequest{PriceID: "price_test", Quantity: decimal.NewFromInt(1)}).ToSubscriptionLineItem(context.Background(), params)
+	assert.Equal(t, 6, lineItem.BillingPeriodCount)
+
+	updated := (&UpdateSubscriptionLineItemRequest{}).ToSubscriptionLineItem(context.Background(), lineItem, "price_new")
+	assert.Equal(t, 6, updated.BillingPeriodCount)
+}
+
 func TestValidateCommitmentFieldsCommon_OverageFactor(t *testing.T) {
 	amount := decimal.NewFromInt(100)
 
