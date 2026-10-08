@@ -85,6 +85,11 @@ func RecordCounter(ctx context.Context, name Name, n int64, labels ...Label) {
 	}
 
 	attrs := make([]attribute.KeyValue, 0, len(labels)+2)
+	for _, l := range labels {
+		attrs = append(attrs, attribute.String(string(l.key), l.value))
+	}
+
+	// Identity labels go last: OTel keeps the last value for a repeated key, so callers cannot override them.
 	if tenantID := types.GetTenantID(ctx); tenantID != "" {
 		environmentID := types.GetEnvironmentID(ctx)
 		if !tenantAllowed(tenantID, environmentID) {
@@ -94,11 +99,11 @@ func RecordCounter(ctx context.Context, name Name, n int64, labels ...Label) {
 		attrs = append(attrs, attribute.String(string(KeyTenantID), tenantID), attribute.String(string(KeyEnvironmentID), environmentID))
 	}
 
-	for _, l := range labels {
-		attrs = append(attrs, attribute.String(string(l.key), l.value))
+	// Inside a DB transaction, record only once it commits.
+	add := func() { c.Add(ctx, n, metric.WithAttributes(attrs...)) }
+	if !types.RegisterPostCommit(ctx, add) {
+		add()
 	}
-
-	c.Add(ctx, n, metric.WithAttributes(attrs...))
 }
 
 var allowedTenants atomic.Pointer[map[string]struct{}]

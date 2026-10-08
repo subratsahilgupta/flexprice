@@ -63,3 +63,26 @@ func TestTenantAllowlist(t *testing.T) {
 		})
 	}
 }
+
+func TestCallerCannotOverrideTenantLabels(t *testing.T) {
+	r := metricstest.Install(t)
+	metrics.RecordCounter(ctxFor("real_tenant", "real_env"), testName, 1,
+		metrics.L(metrics.KeyTenantID, "spoofed"), metrics.L(metrics.KeyEnvironmentID, "spoofed"), metrics.L(metrics.KeyProvider, "override-test"))
+
+	assert.Equal(t, int64(1), r.Sum(string(testName), map[string]string{"provider": "override-test", "tenant_id": "real_tenant", "environment_id": "real_env"}))
+}
+
+func TestRecordedOnlyAfterCommit(t *testing.T) {
+	r := metricstest.Install(t)
+	committed := types.WithPostCommitHooks(context.Background())
+	rolledBack := types.WithPostCommitHooks(context.Background())
+
+	metrics.RecordCounter(committed, testName, 1, metrics.L(metrics.KeyProvider, "tx-commit"))
+	metrics.RecordCounter(rolledBack, testName, 1, metrics.L(metrics.KeyProvider, "tx-rollback"))
+	assert.Equal(t, int64(0), r.Sum(string(testName), map[string]string{"provider": "tx-commit"}), "not recorded before commit")
+
+	types.RunPostCommitHooks(committed)
+	types.DiscardPostCommitHooks(rolledBack)
+	assert.Equal(t, int64(1), r.Sum(string(testName), map[string]string{"provider": "tx-commit"}))
+	assert.Equal(t, int64(0), r.Sum(string(testName), map[string]string{"provider": "tx-rollback"}))
+}

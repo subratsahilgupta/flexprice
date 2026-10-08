@@ -712,16 +712,17 @@ func (s *PaymentServiceSuite) newMetricsPayment(id, gateway string, method types
 func (s *PaymentServiceSuite) TestPaymentOutcomeCountedOncePerTransition() {
 	r := metricstest.Install(s.T())
 	ctx := s.GetContext()
-	p := s.newMetricsPayment("pay_metrics_outcome", "metrics_outcome_gw", types.PaymentMethodTypePaymentLink, types.PaymentStatusPending)
-	succeeded := map[string]string{"provider": "metrics_outcome_gw", "status": string(types.PaymentStatusSucceeded)}
+	p := s.newMetricsPayment("pay_metrics_outcome", string(types.PaymentGatewayTypeMoyasar), types.PaymentMethodTypePaymentLink, types.PaymentStatusPending)
+	succeeded := map[string]string{"provider": string(types.PaymentGatewayTypeMoyasar), "status": string(types.PaymentStatusSucceeded)}
+	before := r.Sum("payment.transitions", succeeded)
 
 	_, err := s.service.UpdatePayment(ctx, p.ID, dto.UpdatePaymentRequest{PaymentStatus: lo.ToPtr(string(types.PaymentStatusSucceeded))})
 	s.NoError(err)
-	s.Equal(int64(1), r.Sum("payment.transitions", succeeded))
+	s.Equal(before+1, r.Sum("payment.transitions", succeeded))
 
 	_, err = s.service.UpdatePayment(ctx, p.ID, dto.UpdatePaymentRequest{Metadata: &types.Metadata{"note": "resync"}})
 	s.NoError(err)
-	s.Equal(int64(1), r.Sum("payment.transitions", succeeded))
+	s.Equal(before+1, r.Sum("payment.transitions", succeeded))
 }
 
 func (s *PaymentServiceSuite) TestProcessPaymentCountsOutcome() {
@@ -771,10 +772,24 @@ func (s *PaymentServiceSuite) TestPaymentCreationCountedWithCheckoutLabel() {
 	s.Equal(directBefore+1, count("false", types.PaymentStatusInitiated))
 }
 
+// Gateway and method type are not validated on create, so unknown values are labelled other.
+func (s *PaymentServiceSuite) TestPaymentLabelsBoundUnknownValues() {
+	r := metricstest.Install(s.T())
+	p := s.newMetricsPayment("pay_metrics_unknown", "made_up_gateway", types.PaymentMethodType("MADE_UP"), types.PaymentStatusPending)
+	match := map[string]string{"provider": "other", "method_type": "other", "status": string(types.PaymentStatusSucceeded)}
+	before := r.Sum("payment.transitions", match)
+
+	_, err := s.service.UpdatePayment(s.GetContext(), p.ID, dto.UpdatePaymentRequest{PaymentStatus: lo.ToPtr(string(types.PaymentStatusSucceeded))})
+	s.NoError(err)
+	s.Equal(before+1, r.Sum("payment.transitions", match))
+}
+
 func (s *PaymentServiceSuite) TestRecordAttemptCountsByStatus() {
 	r := metricstest.Install(s.T())
-	p := s.newMetricsPayment("pay_metrics_attempt", "metrics_attempt_gw", types.PaymentMethodTypeCard, types.PaymentStatusPending)
+	p := s.newMetricsPayment("pay_metrics_attempt", string(types.PaymentGatewayTypePaddle), types.PaymentMethodTypeCard, types.PaymentStatusPending)
+	failed := map[string]string{"provider": string(types.PaymentGatewayTypePaddle), "status": string(types.PaymentStatusFailed)}
+	before := r.Sum("payment.attempts", failed)
 
 	s.NoError(s.service.RecordAttempt(s.GetContext(), p.ID, dto.RecordAttemptRequest{PaymentStatus: types.PaymentStatusFailed}))
-	s.Equal(int64(1), r.Sum("payment.attempts", map[string]string{"provider": "metrics_attempt_gw", "status": string(types.PaymentStatusFailed)}))
+	s.Equal(before+1, r.Sum("payment.attempts", failed))
 }

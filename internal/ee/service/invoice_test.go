@@ -833,6 +833,27 @@ func (s *InvoiceServiceSuite) TestInvoiceSkipCountedOnce() {
 	s.Equal(before+1, r.Sum("invoice.transitions", match))
 }
 
+// A skipped invoice that recompute brings back to draft counts the draft transition.
+func (s *InvoiceServiceSuite) TestInvoiceUnskipCounted() {
+	r := metricstest.Install(s.T())
+	s.invoiceRepo.Clear()
+	match := map[string]string{
+		"invoice_type":   string(types.InvoiceTypeSubscription),
+		"billing_reason": string(types.InvoiceBillingReasonSubscriptionCycle),
+		"status":         string(types.InvoiceStatusDraft),
+	}
+
+	inv := s.computedCycleDraft("sub_metrics_unskip", "usd", decimal.Zero)
+	s.Require().Equal(types.InvoiceStatusSkipped, inv.InvoiceStatus)
+	s.applyToDraft(inv, decimal.NewFromInt(20))
+	before := r.Sum("invoice.transitions", match)
+
+	_, skipped, err := s.service.ComputeInvoice(s.GetContext(), inv.ID, nil)
+	s.Require().NoError(err)
+	s.Require().False(skipped)
+	s.Equal(before+1, r.Sum("invoice.transitions", match))
+}
+
 func (s *InvoiceServiceSuite) TestSyncInvoiceToMoyasarIfEnabled_NoConnection_NoOp() {
 	ctx := s.GetContext()
 

@@ -719,7 +719,7 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 	if computed && !skipped {
 		s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, invoiceID)
 	}
-	if skipped && !wasSkipped {
+	if computed && skipped != wasSkipped {
 		recordInvoiceTransition(ctx, inv)
 	}
 

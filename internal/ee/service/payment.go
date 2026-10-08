@@ -409,11 +409,23 @@ func recordPaymentTransition(ctx context.Context, p *payment.Payment, from types
 		return
 	}
 	metrics.RecordCounter(ctx, metrics.PaymentTransitions, 1,
-		metrics.L(metrics.KeyProvider, lo.FromPtrOr(p.PaymentGateway, "none")),
-		metrics.L(metrics.KeyMethodType, string(p.PaymentMethodType)),
+		metrics.L(metrics.KeyProvider, paymentProviderLabel(p)),
+		metrics.L(metrics.KeyMethodType, lo.Ternary(p.PaymentMethodType.Validate() == nil, string(p.PaymentMethodType), "other")),
 		metrics.L(metrics.KeyStatus, string(p.PaymentStatus)),
 		metrics.L(metrics.KeyCheckout, lo.Ternary(p.GatewayMetadata[paymentCheckoutMarker] == "true", "true", "false")),
 	)
+}
+
+// paymentProviderLabel bounds the gateway label: payment requests do not validate the gateway, so unknown values become "other".
+func paymentProviderLabel(p *payment.Payment) string {
+	switch {
+	case p.PaymentGateway == nil:
+		return "none"
+	case types.PaymentGatewayType(*p.PaymentGateway).Validate() != nil:
+		return "other"
+	default:
+		return *p.PaymentGateway
+	}
 }
 
 // UpdatePayment updates a payment
@@ -566,7 +578,7 @@ func (s *paymentService) RecordAttempt(ctx context.Context, paymentID string, re
 	if err := s.PaymentRepo.CreateAttempt(ctx, attempt); err != nil {
 		return err
 	}
-	metrics.RecordCounter(ctx, metrics.PaymentAttempts, 1, metrics.L(metrics.KeyProvider, lo.FromPtrOr(p.PaymentGateway, "none")), metrics.L(metrics.KeyStatus, string(req.PaymentStatus)))
+	metrics.RecordCounter(ctx, metrics.PaymentAttempts, 1, metrics.L(metrics.KeyProvider, paymentProviderLabel(p)), metrics.L(metrics.KeyStatus, string(req.PaymentStatus)))
 
 	s.Logger.Info(ctx, "recorded payment attempt",
 		"payment_id", paymentID,
