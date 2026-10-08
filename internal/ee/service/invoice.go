@@ -26,6 +26,7 @@ import (
 	"github.com/flexprice/flexprice/internal/integration/stripe"
 	"github.com/flexprice/flexprice/internal/integration/zoho"
 	"github.com/flexprice/flexprice/internal/interfaces"
+	"github.com/flexprice/flexprice/internal/metrics"
 	"github.com/flexprice/flexprice/internal/storage"
 	"github.com/flexprice/flexprice/internal/types"
 	"github.com/flexprice/flexprice/internal/utils"
@@ -200,6 +201,7 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 	}
 
 	var resp *dto.InvoiceResponse
+	var created *invoice.Invoice
 
 	err := s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		// 1. Generate idempotency key if not provided
@@ -334,6 +336,7 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 		if err := s.InvoiceRepo.Create(txCtx, inv); err != nil {
 			return err
 		}
+		created = inv
 
 		resp = dto.NewInvoiceResponse(inv)
 		return nil
@@ -346,12 +349,23 @@ func (s *invoiceService) CreateEmptyDraftInvoice(ctx context.Context, req dto.Cr
 			"subscription_id", req.SubscriptionID)
 		return nil, err
 	}
+	if created != nil {
+		recordInvoiceTransition(ctx, created)
+	}
 
 	if resp.InvoiceStatus == types.InvoiceStatusFinalized {
 		notifyInvoiceFinalized(ctx, s.ServiceParams, resp.ID)
 	}
 
 	return resp, nil
+}
+
+func recordInvoiceTransition(ctx context.Context, inv *invoice.Invoice) {
+	metrics.RecordCounter(ctx, metrics.InvoiceTransitions, 1,
+		metrics.L(metrics.KeyInvoiceType, string(inv.InvoiceType)),
+		metrics.L(metrics.KeyBillingReason, inv.BillingReason),
+		metrics.L(metrics.KeyStatus, string(inv.InvoiceStatus)),
+	)
 }
 
 // This wrapper delegates to the draft-first flow. Invoice number is assigned during FinalizeInvoice.
@@ -589,7 +603,7 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 
 	// 3. Take the lock — only for DB writes (line items, credits, coupons, taxes, status update).
 	var computed bool
-	var skipped bool
+	var skipped, wasSkipped bool
 	err = s.DB.WithTx(ctx, func(txCtx context.Context) error {
 		var lockErr error
 		inv, lockErr = s.InvoiceRepo.GetForUpdate(txCtx, invoiceID)
@@ -614,6 +628,7 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 		// Re-check status under lock: allow SKIPPED invoices to be re-computed
 		// (usage may have accumulated since the invoice was first marked SKIPPED).
 		if inv.InvoiceStatus == types.InvoiceStatusSkipped {
+			wasSkipped = true
 			inv.InvoiceStatus = types.InvoiceStatusDraft
 		} else if inv.InvoiceStatus != types.InvoiceStatusDraft {
 			// Finalized/voided between our initial read and the lock — nothing to do.
@@ -716,6 +731,9 @@ func (s *invoiceService) ComputeInvoice(ctx context.Context, invoiceID string, r
 	// SKIPPED — zero-amount invoices are never synced downstream, so there's nothing to notify.
 	if computed && !skipped {
 		s.publishSystemEvent(ctx, types.WebhookEventInvoiceUpdate, invoiceID)
+	}
+	if computed && skipped != wasSkipped {
+		recordInvoiceTransition(ctx, inv)
 	}
 
 	// A skipped renewal owes nothing, so release the new period's held grants now.
@@ -1296,6 +1314,7 @@ func (s *invoiceService) performFinalizeInvoiceActions(ctx context.Context, inv 
 	if err != nil {
 		return err
 	}
+	recordInvoiceTransition(ctx, inv)
 
 	notifyInvoiceFinalized(ctx, s.ServiceParams, inv.ID)
 
@@ -1600,6 +1619,7 @@ func (s *invoiceService) VoidInvoice(ctx context.Context, id string, req dto.Inv
 	if err != nil {
 		return nil, err
 	}
+	recordInvoiceTransition(ctx, inv)
 
 	// A voided invoice will never be paid, so a purchased-credit transaction still
 	// waiting on it must not stay pending: it blocks the wallet's auto-topup guard
