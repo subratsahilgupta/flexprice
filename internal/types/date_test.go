@@ -2879,8 +2879,7 @@ func TestAdvanceDays(t *testing.T) {
 	}
 }
 
-// TestNextBillingDate_FirstPeriodBounds sweeps starts, anchors, units and timezones: the first billing
-// date is after the start, never more than one period out, and never past an anchor ahead of the start.
+// The first billing date is after the start, within one period, and never past an anchor ahead of the start.
 func TestNextBillingDate_FirstPeriodBounds(t *testing.T) {
 	periods := []BillingPeriod{BILLING_PERIOD_MONTHLY, BILLING_PERIOD_QUARTER, BILLING_PERIOD_HALF_YEAR, BILLING_PERIOD_ANNUAL}
 	zones := []string{"UTC", "Asia/Kolkata", "America/New_York"}

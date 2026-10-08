@@ -3106,8 +3106,8 @@ func pvgCurrency(amount int64, frac decimal.Decimal) decimal.Decimal {
 	return decimal.NewFromInt(amount).Mul(frac).Round(2)
 }
 
-func pvgFloor(amount int64, frac decimal.Decimal) decimal.Decimal {
-	return decimal.NewFromInt(amount).Mul(frac).Floor()
+func pvgQuota(amount int64, frac decimal.Decimal) decimal.Decimal {
+	return decimal.NewFromInt(amount).Mul(frac).Round(15)
 }
 
 func (s *CreditGrantProrationSuite) pvgExpectEqual(label string, want, got decimal.Decimal) {
@@ -3422,13 +3422,12 @@ func (s *CreditGrantProrationSuite) TestAddonGrants_AttachInsideFullPeriod_Contr
 	s.Run("eg_coefficient_12_of_31", func() {
 		s.pvgExpectEqual("S4 addon EG coefficient (4dp)", frac.Round(4), decimal.RequireFromString(rows[0].Metadata["proration_coefficient"]).Round(4))
 	})
-	s.Run("eg_quota_floored", func() {
-		s.pvgExpectEqual("S4 addon EG quota (stored)", pvgFloor(pvgEGQuota, frac), rows[0].Quota)
+	s.Run("eg_quota_full_precision", func() {
+		s.pvgExpectEqual("S4 addon EG quota (stored)", pvgQuota(pvgEGQuota, frac), rows[0].Quota)
 	})
 }
 
-// S5: one attach (fixed $31 + CG + EG) on Jan 20 inside the calendar stub: charge, CG and EG share
-// the 12/31 coefficient of the full period; credits round to currency precision, the EG quota floors.
+// S5: one attach on Jan 20 inside the stub: charge, CG and EG share the 12/31 coefficient.
 func (s *CreditGrantProrationSuite) TestAddonChargeAndGrantsShareCoefficient() {
 	sub := s.pvgCalendarStubSub("plan_pvg_s5", false)
 	featureID := s.pvgSeedAddon(pvgAddonSpec{id: "addon_pvg_s5", withCG: true, withEG: true, fixedPrice: true})
@@ -3477,8 +3476,8 @@ func (s *CreditGrantProrationSuite) TestAddonChargeAndGrantsShareCoefficient() {
 		s.pvgExpectEqual("S5 addon CGA credits (stored)", pvgCurrency(pvgCGCredits, frac), app.Credits)
 		s.pvgExpectTime("S5 addon CGA period_end", pvgFeb1, lo.FromPtr(app.PeriodEnd))
 	})
-	s.Run("eg_quota_floored", func() {
-		s.pvgExpectEqual("S5 addon EG quota (stored)", pvgFloor(pvgEGQuota, frac), rows[0].Quota)
+	s.Run("eg_quota_full_precision", func() {
+		s.pvgExpectEqual("S5 addon EG quota (stored)", pvgQuota(pvgEGQuota, frac), rows[0].Quota)
 	})
 }
 

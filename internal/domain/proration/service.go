@@ -5,7 +5,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	"github.com/flexprice/flexprice/internal/types"
 )
@@ -16,20 +15,7 @@ type Service interface {
 	// It does not persist anything or modify the subscription/invoice directly.
 	CalculateProration(ctx context.Context, params ProrationParams) (*ProrationResult, error)
 
-	// CreateProrationParamsForLineItemCancellation creates proration parameters for cancellation scenarios
-	CreateProrationParamsForLineItemCancellation(
-		ctx context.Context,
-		subscription *subscription.Subscription,
-		item *subscription.SubscriptionLineItem,
-		price *price.Price,
-		cancellationDate time.Time,
-		cancellationType types.CancellationType,
-		cancellationReason string,
-		behavior types.ProrationBehavior,
-	) (ProrationParams, error)
-
-	// CalculateSubscriptionCancellationProration handles proration calculation for subscription cancellation.
-	// This provides a single, unified function for calculating all proration changes during cancellation.
+	// CalculateSubscriptionCancellationProration credits each item's unused time on its own windows.
 	CalculateSubscriptionCancellationProration(
 		ctx context.Context,
 		subscription *subscription.Subscription,

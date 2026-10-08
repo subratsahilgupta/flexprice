@@ -925,6 +925,121 @@ func (s *BillingServiceSuite) TestCalculateFixedCharges_MixedCadence() {
 	s.True(marAprTotal.LessThanOrEqual(decimal.NewFromInt(310)), "total should be at most 310 (full monthly + quarterly)")
 }
 
+// A longer-cadence item renews on its own grid (calendar boundary, or the sub's anchor) and its first period is prorated.
+func (s *BillingServiceSuite) TestCalculateFixedCharges_LongerCadenceAnchoredToSubGrid() {
+	date := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+
+	tests := []struct {
+		name                     string
+		cycle                    types.BillingCycle
+		anchor, itemStart        time.Time
+		behavior                 types.ProrationBehavior
+		invoiceStart, invoiceEnd time.Time
+		wantStart, wantEnd       time.Time
+		wantAmount               int64 // 0 means no annual line
+	}{
+		{
+			name: "calendar first period ends on Jan 1", cycle: types.BillingCycleCalendar,
+			anchor: date(2026, 2, 1), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 1, 15), invoiceEnd: date(2026, 2, 1),
+			wantStart: date(2026, 1, 15), wantEnd: date(2027, 1, 1), wantAmount: 351,
+		},
+		{
+			name: "none bills an item starting with the sub in full", cycle: types.BillingCycleCalendar,
+			anchor: date(2026, 2, 1), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorNone,
+			invoiceStart: date(2026, 1, 15), invoiceEnd: date(2026, 2, 1),
+			wantStart: date(2026, 1, 15), wantEnd: date(2027, 1, 1), wantAmount: 365,
+		},
+		{
+			name: "calendar renews in full on Jan 1", cycle: types.BillingCycleCalendar,
+			anchor: date(2026, 2, 1), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2027, 1, 1), invoiceEnd: date(2027, 2, 1),
+			wantStart: date(2027, 1, 1), wantEnd: date(2028, 1, 1), wantAmount: 365,
+		},
+		{
+			name: "anniversary attach mid-life ends on the sub anchor", cycle: types.BillingCycleAnniversary,
+			anchor: date(2026, 1, 15), itemStart: date(2026, 3, 20), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 3, 15), invoiceEnd: date(2026, 4, 15),
+			wantStart: date(2026, 3, 20), wantEnd: date(2027, 1, 15), wantAmount: 301,
+		},
+		{
+			name: "none leaves an item attached mid-period free", cycle: types.BillingCycleAnniversary,
+			anchor: date(2026, 1, 15), itemStart: date(2026, 3, 20), behavior: types.ProrationBehaviorNone,
+			invoiceStart: date(2026, 3, 15), invoiceEnd: date(2026, 4, 15),
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.BaseServiceTestSuite.ClearStores()
+			ctx := s.GetContext()
+
+			annual := &price.Price{
+				ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE),
+				Amount:             decimal.NewFromInt(365),
+				Currency:           "usd",
+				Type:               types.PRICE_TYPE_FIXED,
+				BillingPeriod:      types.BILLING_PERIOD_ANNUAL,
+				BillingPeriodCount: 1,
+				BillingModel:       types.BILLING_MODEL_FLAT_FEE,
+				BillingCadence:     types.BILLING_CADENCE_RECURRING,
+				InvoiceCadence:     types.InvoiceCadenceAdvance,
+				BaseModel:          types.GetDefaultBaseModel(ctx),
+			}
+			s.NoError(s.GetStores().PriceRepo.Create(ctx, annual))
+
+			sub := &subscription.Subscription{
+				ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION),
+				CustomerID:         "cust_longer_grid",
+				StartDate:          types.EarliestOf(tt.anchor, tt.itemStart),
+				BillingAnchor:      tt.anchor,
+				BillingCycle:       tt.cycle,
+				CurrentPeriodStart: tt.invoiceStart,
+				CurrentPeriodEnd:   tt.invoiceEnd,
+				Currency:           "usd",
+				BillingPeriod:      types.BILLING_PERIOD_MONTHLY,
+				BillingPeriodCount: 1,
+				ProrationBehavior:  tt.behavior,
+				SubscriptionStatus: types.SubscriptionStatusActive,
+				Timezone:           "UTC",
+				BaseModel:          types.GetDefaultBaseModel(ctx),
+			}
+			item := &subscription.SubscriptionLineItem{
+				ID:                 types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM),
+				SubscriptionID:     sub.ID,
+				CustomerID:         sub.CustomerID,
+				PriceID:            annual.ID,
+				PriceType:          types.PRICE_TYPE_FIXED,
+				DisplayName:        "Annual Fee",
+				Quantity:           decimal.NewFromInt(1),
+				Currency:           "usd",
+				BillingPeriod:      types.BILLING_PERIOD_ANNUAL,
+				BillingPeriodCount: 1,
+				InvoiceCadence:     types.InvoiceCadenceAdvance,
+				StartDate:          tt.itemStart,
+				BaseModel:          types.GetDefaultBaseModel(ctx),
+			}
+			s.NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, sub, []*subscription.SubscriptionLineItem{item}))
+			sub.LineItems = []*subscription.SubscriptionLineItem{item}
+
+			result, err := s.service.CalculateFixedCharges(ctx, &dto.CalculateFixedChargesParams{
+				Subscription: sub, PeriodStart: tt.invoiceStart, PeriodEnd: tt.invoiceEnd,
+			})
+			s.NoError(err)
+
+			if tt.wantAmount == 0 {
+				s.Empty(result.LineItems)
+				return
+			}
+			s.Require().Len(result.LineItems, 1)
+			line := result.LineItems[0]
+			s.True(line.Amount.Equal(decimal.NewFromInt(tt.wantAmount)), "amount: got %s", line.Amount)
+			s.True(line.PeriodStart.Equal(tt.wantStart), "start: got %s", line.PeriodStart)
+			s.True(line.PeriodEnd.Equal(tt.wantEnd), "end: got %s", line.PeriodEnd)
+		})
+	}
+}
+
 // scenario1DailyExpectedTotals is the expected fixed charge total for each of 12 daily invoices
 // (advance [start, end), arrear (start, end]; ProrationBehavior=None). Invoice i uses period [Jan i, Jan i+1).
 // Invoice 1: advance 1500 + arrear 200 (daily arrear end Jan 2 in (Jan 1, Jan 2]) = 1700.
@@ -2011,6 +2126,7 @@ func (s *BillingServiceSuite) TestFindMatchingLineItemPeriodForInvoice() {
 		s.Run(tt.name, func() {
 			res, err := FindMatchingLineItemPeriodForInvoice(FindMatchingLineItemPeriodInput{
 				Item:           tt.item,
+				Anchor:         tt.item.StartDate,
 				PeriodStart:    tt.periodStart,
 				PeriodEnd:      tt.periodEnd,
 				InvoiceCadence: tt.invoiceCadence,
@@ -4107,6 +4223,7 @@ func (s *BillingServiceSuite) TestFindMatchingLineItemPeriodForInvoice_MultiCade
 		s.Run(tt.name, func() {
 			res, err := FindMatchingLineItemPeriodForInvoice(FindMatchingLineItemPeriodInput{
 				Item:           tt.item,
+				Anchor:         tt.item.StartDate,
 				PeriodStart:    tt.periodStart,
 				PeriodEnd:      tt.periodEnd,
 				InvoiceCadence: tt.invoiceCadence,

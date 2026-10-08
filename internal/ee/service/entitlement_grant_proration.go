@@ -14,6 +14,9 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// entitlementGrantQuotaScale matches the numeric(25,15) precision of entitlement_grants.quota.
+const entitlementGrantQuotaScale = 15
+
 // grantProrationSource names the subscription change that wrote a grant segment.
 // It lands in the segment's metadata as proration_source, so a window can always
 // be traced back to what cut it.
@@ -117,7 +120,7 @@ func (s *subscriptionGrantService) resolveGrantProration(
 			originalQuota = originalQuota.Add(lo.FromPtr(ec.GrantQuota))
 		}
 
-		delta := originalQuota.Mul(coefficient).Floor()
+		delta := originalQuota.Mul(coefficient).Round(entitlementGrantQuotaScale)
 		if !delta.IsPositive() {
 			s.Logger.Info(ctx, "skipping entitlement grant proration; quota is not positive",
 				"subscription_id", sub.ID,

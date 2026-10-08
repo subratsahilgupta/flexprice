@@ -474,13 +474,6 @@ func (s *subscriptionService) checkPlanChangePreconditions(
 			map[string]any{"subscription_id": sub.ID, "billing_cycle": sub.BillingCycle})
 	}
 
-	// TODO: Handle mixed billing periods correctly.
-	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations && sub.HasMixedBillingPeriods() {
-		return fail("proration is not supported for subscriptions with mixed billing periods",
-			"Set proration_behavior to 'none' to change this subscription's plan",
-			map[string]any{"subscription_id": sub.ID})
-	}
-
 	for _, item := range sub.LineItems {
 		if item.SubscriptionPhaseID != nil {
 			return fail("subscription has phases",

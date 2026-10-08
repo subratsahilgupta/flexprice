@@ -145,7 +145,7 @@ func (s *SubscriptionServiceSuite) expectedProrated(quota int64) decimal.Decimal
 	remaining := sub.CurrentPeriodEnd.Sub(s.testData.now).Seconds()
 	return decimal.NewFromInt(quota).
 		Mul(decimal.NewFromFloat(remaining).Div(decimal.NewFromFloat(total))).
-		Floor()
+		Round(15)
 }
 
 // -----------------------------------------------------------------------------
@@ -516,7 +516,7 @@ func (s *SubscriptionServiceSuite) expectedProratedAt(quota int64, at time.Time)
 	remaining := sub.CurrentPeriodEnd.Sub(at).Seconds()
 	return decimal.NewFromInt(quota).
 		Mul(decimal.NewFromFloat(remaining).Div(decimal.NewFromFloat(total))).
-		Floor()
+		Round(15)
 }
 
 func (s *SubscriptionServiceSuite) liveRow(featureID string) *entitlementgrant.EntitlementGrant {

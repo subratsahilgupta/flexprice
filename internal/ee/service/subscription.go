@@ -321,11 +321,6 @@ func (s *subscriptionService) createSubscription(ctx context.Context, req dto.Cr
 
 	sub.LineItems = lineItems
 
-	// Multi-cadence validations: interval alignment and proration mutual exclusion
-	if err := s.validateMultiCadence(sub); err != nil {
-		return nil, err
-	}
-
 	// Ensure subscription-level and line-item-level commitments don't conflict
 	if err := s.validateSubscriptionLevelCommitment(sub); err != nil {
 		return nil, err
@@ -2022,17 +2017,6 @@ func (s *subscriptionService) CancelSubscription(
 				}).
 				Mark(ierr.ErrValidation)
 		}
-	}
-
-	// Reject proration for subscriptions with mixed billing periods
-	if req.ProrationBehavior == types.ProrationBehaviorCreateProrations && subscription.HasMixedBillingPeriods() {
-		return nil, ierr.NewError("proration is not supported for subscriptions with mixed billing periods").
-			WithHint("Set proration_behavior to 'none' when cancelling a subscription with different billing periods").
-			WithReportableDetails(map[string]interface{}{
-				"subscription_id":    subscriptionID,
-				"proration_behavior": req.ProrationBehavior,
-			}).
-			Mark(ierr.ErrValidation)
 	}
 
 	// Step 3b: Guard against double-scheduling

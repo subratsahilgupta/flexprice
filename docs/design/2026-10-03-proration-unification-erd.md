@@ -58,15 +58,15 @@ Unless stated otherwise, examples use $31/month (1 day = $1 in a 31-day month), 
 | 2.5 | Tiered and package prices                                           | volume **$0.00**, package $76.77              | $54.84 / $21.94           | ✅      |
 | 2.6 | Addon window measured one month forward                             | Jan 31 → 1/28; New York DST $28.77 **(live)** | 1/31; $28.81              | ✅      |
 | 2.7 | `none` still prorates addons dated mid-period at creation           | $19 **(live)**                                | $0 until next period      | ✅      |
-| 2.8 | Grant rounding                                                      | credits stored to 8 dp, EG quota not floored  | currency precision; floor | ✅      |
-| 2.9 | Plan EG at creation ignores the short first period                  | 100                                           | 54                        | ⏸      |
+| 2.8 | Grant rounding                                                      | credits stored to 8 dp                        | currency precision        | ✅      |
+| 2.9 | Plan EG at creation ignores the short first period                  | 100                                           | 54.84                     | ⏸      |
 
 
 
 
 ### 3. Multiple cadences
 
-Scope: the item cadence is at most the sub cadence and divides it evenly.
+Scope: the item cadence divides the sub cadence or is a whole multiple of it (D12).
 
 
 | #   | Issue                                                      | Today                                                                                                                                                                | Correct                                                                                        | Status |
@@ -74,7 +74,7 @@ Scope: the item cadence is at most the sub cadence and divides it evenly.
 | 3.1 | Quarterly item on an annual calendar stub (Mar 15 → Jan 1) | one $90 line **(live)**                                                                                                                                              | 4 windows: $17 + 3 × $90                                                                       | ✅      |
 | 3.2 | Removing a monthly addon mid-quarter on a quarterly sub    | credit $100                                                                                                                                                          | $150                                                                                           | ⏳      |
 | 3.3 | Cancel prorates every item against the sub's period        | monthly item on a quarterly sub: $50                                                                                                                                 | $150                                                                                           | ⏳      |
-| 3.4 | Cadence checks are inconsistent                            | Mixed cadences are rejected at creation with `create_prorations` but accepted when added later. The line item API accepts longer cadences, which then break invoices | Allowed only if the item cadence is at most the sub cadence and divides it; otherwise rejected | ⏳      |
+| 3.4 | Cadence checks are inconsistent                            | Mixed cadences are rejected at creation with `create_prorations` but accepted when added later. Longer cadences are accepted by the line item API but dropped by the addon price filter | Allowed if the item cadence divides the sub cadence or is a whole multiple of it; otherwise rejected | ⏳      |
 
 
 ---
@@ -137,14 +137,19 @@ Starting a sub on day X costs the same as adding an addon on day X, and the part
 
 **D3. Real seconds, with boundaries in the customer's timezone.** This is what Stripe, Recurly and Chargebee do. The DST effect is accepted: New York `[Mar 17, Apr 1)` = 0.4845, against 0.4839 counted in days.
 
-**D4. Grants follow the charge.** A CG or EG uses the charge's fraction when `create_prorations` is set and its cadence equals the sub's. In a short first period, the grant cycle is anchored to the billing anchor. Credits round to currency precision; EG quotas round down.
+**D4. Grants follow the charge.** A CG or EG uses the charge's fraction when `create_prorations` is set and its cadence equals the sub's. In a short first period, the grant cycle is anchored to the billing anchor. Credits round to currency precision; EG quotas keep full precision (`amount` grants are money budgets, and flooring would drop small quotas to 0).
 *Examples:*
 
 - 548.39 credits, with the next grant on Feb 1.
-- EG quota floor(54.8) = 54.
+- EG quota 54.84 (17/31 × 100).
 - An annual CG on a monthly sub gets the full grant.
 
-**D5. One flag,** `proration_behavior`**.** `none` means no partial amounts anywhere. An item that starts mid-period is free until the next period, then billed in full. This holds whether the addon is dated mid-period at creation or attached later.
+**D5. Proration behavior per charge, CG and EG.** The API takes one `proration_behavior` per request (subscription, addon attach, line item change, subscription credit grant). Internally a change carries `ProrationSettings{CreditGrantBehavior, EntitlementGrantBehavior}`, each defaulting to the request's `proration_behavior`; the charge uses the request's value.
+
+- They differ today in one place: addons sent at creation. Their charge is settled by the opening invoice (attach-time behavior `none`), while their CG and EG follow the sub's `proration_behavior`.
+- `none` for the charge: an item that starts mid-period is free until the next period, then billed in full. An item that ends mid-period is billed in full.
+- `none` for a grant: the grant is given in full.
+
 *Example:* with `none`, a sub from Jan 15 pays $31 and gets 1000 credits and 100 units. An addon dated Jan 20 costs $0 until Feb 1.
 
 **D6. The anchor must fall in** `[start, start + 1 period]`**, compared on local dates.** No backdated anchors: backdate the start instead. Stripe imports keep Stripe's anchor as-is; the date rule (D7) works from any anchor.
@@ -152,12 +157,19 @@ Starting a sub on day X costs the same as adding an addon on day X, and the part
 
 **D7. One date rule.** Billing dates are `anchor + k × period`, clamped to month end and then returning to the anchor day: Jan 31 → Feb 28 → Mar 31. Stripe, Chargebee, Recurly, Zuora and Orb work the same way. Calendar billing is this rule with the anchor at the 1st, 00:00 local. The first billing date is the anchor.
 
-**D8. Change dates.**
+**D8. Change dates.** Anything earlier is rejected, not moved.
 
-- At creation: on or after the sub start.
-- After creation: on or after `CurrentPeriodStart`, as in Stripe and Chargebee.
+| Entity / call | Rule |
+|---|---|
+| Addon association, at creation (`addons` on `POST /subscriptions`) | start on or after the sub start |
+| Addon association, after creation (`POST /subscriptions/addon`, modify `addon`) | start on or after `CurrentPeriodStart` (as in Stripe and Chargebee); checkout replays skip it |
+| Line item change (modify `line_item_change`, incl. checkout replay) | effective date in `[CurrentPeriodStart, CurrentPeriodEnd)` |
 
-Anything earlier is rejected, not moved. The line item API is not checked yet: system rollouts (`prepare_processed_events`) backdate through it.
+Not checked:
+
+- The line item API (`POST /subscriptions/:id/lineitems`): system rollouts (`prepare_processed_events`) backdate through it.
+- Addon removal end dates: `change_at=period_end` resolves to `CurrentPeriodEnd`.
+- The sub start date: unlimited backdating (D9), except `create_prorations` with a past start, which is still rejected.
 
 **D9. Backdated subs.** Backdating is unlimited, with one invoice per elapsed period (as today). Grants cover the current period only.
 *Example* (`create_prorations`): an addon starts on day 10 of period 2 of 3.
@@ -178,13 +190,20 @@ Anything earlier is rejected, not moved. The line item API is not checked yet: s
 
 **D11. Never prorated:**
 
-- usage charges
 - commitments and minimums
 - one-time items (billed once, in full)
 - grants whose cadence differs from the sub's
 
-**D12. Item cadence must be at most the sub cadence and divide it.** Anything else is rejected everywhere, e.g. an annual item on a monthly sub. Mixed cadences are allowed with `create_prorations`; each item is prorated on its own windows.
-*Example:* a monthly $31 item on a calendar quarterly sub from Feb 15 bills $15.50 (14/28), then $31 per month.
+**D12. Item cadence must divide the sub cadence or be a whole multiple of it** (Stripe's rule). Anything else is rejected everywhere, e.g. 2 months with 3 months, or weeks with months.
+
+- Shorter items: each item is prorated on its own windows (mixed cadences allowed with `create_prorations`).
+- Longer items (e.g. annual on a monthly sub): billed in full once per item period, on the sub invoice where that period starts (advance) or ends (arrear), as today. Stripe, Orb, Zuora and Chargebee (multi-frequency) work the same way.
+- Follow-up (Phase 3): anchor longer item periods to the sub's billing dates and prorate a mid-period attach against the item's full period.
+
+*Examples:*
+
+- A monthly $31 item on a calendar quarterly sub from Feb 15 bills $15.50 (14/28), then $31 per month.
+- A $365 annual item on a monthly sub bills $365 on the invoice where its year starts, and nothing on the other monthly invoices.
 
 **D13. Existing subscriptions keep their stored periods.** Fixes apply to new subscriptions and to future period computation.
 

@@ -1091,8 +1091,7 @@ func (s *FixedChargeProrationSuite) TestCalendarQuarterly() {
 	})
 }
 
-// 6. Calendar annual start Mar 15 2026: 292/365. Shorter-cadence items on annual stubs are in
-// multi_cadence_addon_matrix_test.go.
+// 6. Calendar annual start Mar 15 2026: 292/365.
 func (s *FixedChargeProrationSuite) TestCalendarAnnual() {
 	sc := s.build(pvSubSpec{
 		cycle: types.BillingCycleCalendar, period: types.BILLING_PERIOD_ANNUAL,

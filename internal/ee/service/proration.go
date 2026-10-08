@@ -7,11 +7,11 @@ import (
 	"github.com/flexprice/flexprice/internal/api/dto"
 	"github.com/flexprice/flexprice/internal/domain/entitlement"
 	"github.com/flexprice/flexprice/internal/domain/invoice"
-	"github.com/flexprice/flexprice/internal/domain/price"
 	"github.com/flexprice/flexprice/internal/domain/proration"
 	"github.com/flexprice/flexprice/internal/domain/subscription"
 	ierr "github.com/flexprice/flexprice/internal/errors"
 	"github.com/flexprice/flexprice/internal/types"
+	"github.com/samber/lo"
 	"github.com/shopspring/decimal"
 )
 
@@ -66,252 +66,104 @@ func (s *prorationService) CalculateProration(ctx context.Context, params prorat
 	return result, nil
 }
 
-// CalculateSubscriptionCancellationProration handles proration calculation for subscription cancellation.
-// This provides a single, unified function for calculating all proration changes during cancellation.
+// CalculateSubscriptionCancellationProration credits each item's unused time on its own windows.
 func (s *prorationService) CalculateSubscriptionCancellationProration(
 	ctx context.Context,
-	subscription *subscription.Subscription,
+	sub *subscription.Subscription,
 	lineItems []*subscription.SubscriptionLineItem,
 	cancellationType types.CancellationType,
 	effectiveDate time.Time,
 	reason string,
 	behavior types.ProrationBehavior,
 ) (*proration.SubscriptionProrationResult, error) {
-	logger := s.serviceParams.Logger.With(
-		"subscription_id", subscription.ID,
-		"cancellation_type", string(cancellationType),
-		"reason", reason,
-		"line_items_count", len(lineItems),
-	)
-
-	logger.Info(ctx, "starting subscription cancellation proration calculation")
-
-	// Initialize result
 	result := &proration.SubscriptionProrationResult{
 		LineItemResults:      make(map[string]*proration.ProrationResult),
 		TotalProrationAmount: decimal.Zero,
-		Currency:             subscription.Currency,
+		Currency:             sub.Currency,
 	}
 
-	// Skip proration if behavior is none
-	if behavior == types.ProrationBehaviorNone {
-		logger.Info(ctx, "skipping proration calculation - behavior is none")
+	if behavior == types.ProrationBehaviorNone || cancellationType != types.CancellationTypeImmediate {
 		return result, nil
 	}
 
-	// Skip proration for end_of_period cancellations (typically no credits issued)
-	if cancellationType == types.CancellationTypeEndOfPeriod {
-		logger.Info(ctx, "skipping proration calculation - end of period cancellation")
-		return result, nil
+	if effectiveDate.Before(sub.CurrentPeriodStart) {
+		effectiveDate = sub.CurrentPeriodStart
 	}
-
-	var processingErrors []error
-	processedCount := 0
-
-	// Process each active line item
-	for _, lineItem := range lineItems {
-		if lineItem.Status != types.StatusPublished {
-			logger.Debug(ctx, "skipping inactive line item",
-				"line_item_id", lineItem.ID,
-				"status", lineItem.Status)
-			continue
-		}
-
-		// Get price for line item
-		price, err := s.serviceParams.PriceRepo.Get(ctx, lineItem.PriceID)
-		if err != nil {
-			logger.Error(ctx, "failed to get price for line item",
-				"line_item_id", lineItem.ID,
-				"price_id", lineItem.PriceID,
-				"error", err)
-			processingErrors = append(processingErrors,
-				ierr.NewErrorf("line item %s: failed to get price: %v", lineItem.ID, err).
-					Mark(ierr.ErrDatabase))
-			continue
-		}
-
-		if price == nil {
-			logger.Info(context.Background(), "price not found for line item - skipping",
-				"line_item_id", lineItem.ID,
-				"price_id", lineItem.PriceID)
-			continue
-		}
-
-		// One-time charges are never prorated or refunded.
-		if lineItem.BillingPeriod == types.BILLING_PERIOD_ONETIME {
-			continue
-		}
-
-		// Create proration parameters for cancellation
-		params, err := s.CreateProrationParamsForLineItemCancellation(
-			ctx,
-			subscription,
-			lineItem,
-			price,
-			effectiveDate,
-			cancellationType,
-			reason,
-			behavior,
-		)
-		if err != nil {
-			logger.Error(ctx, "failed to create proration params",
-				"line_item_id", lineItem.ID,
-				"error", err)
-			processingErrors = append(processingErrors,
-				ierr.NewErrorf("line item %s: failed to create proration params: %v", lineItem.ID, err).
-					Mark(ierr.ErrSystem))
-			continue
-		}
-
-		// Calculate proration for this line item
-		prorationResult, err := s.CalculateProration(ctx, params)
-		if err != nil {
-			logger.Error(ctx, "failed to calculate proration",
-				"line_item_id", lineItem.ID,
-				"error", err)
-			processingErrors = append(processingErrors,
-				ierr.NewErrorf("line item %s: failed to calculate proration: %v", lineItem.ID, err).
-					Mark(ierr.ErrSystem))
-			continue
-		}
-
-		// Set billing period from subscription
-		prorationResult.BillingPeriod = subscription.BillingPeriod
-
-		// Store result
-		result.LineItemResults[lineItem.ID] = prorationResult
-		result.TotalProrationAmount = result.TotalProrationAmount.Add(prorationResult.NetAmount)
-
-		processedCount++
-
-		logger.Debug(ctx, "proration calculated for line item",
-			"line_item_id", lineItem.ID,
-			"net_amount", prorationResult.NetAmount.String(),
-			"credit_items", len(prorationResult.CreditItems),
-			"charge_items", len(prorationResult.ChargeItems))
-	}
-
-	// Handle processing errors
-	if len(processingErrors) > 0 {
-		if processedCount == 0 {
-			// All line items failed - return error
-			return nil, ierr.NewErrorf("failed to calculate proration for all line items: %v", processingErrors).
-				WithHint("Review line item configurations and price data").
-				Mark(ierr.ErrSystem)
-		} else {
-			// Some succeeded, some failed - log warnings but continue
-			logger.Info(context.Background(), "some line items failed proration calculation",
-				"failed_count", len(processingErrors),
-				"succeeded_count", processedCount,
-				"errors", processingErrors)
-		}
-	}
-
-	logger.Info(ctx, "subscription cancellation proration calculation completed",
-		"subscription_id", subscription.ID,
-		"total_proration_amount", result.TotalProrationAmount.String(),
-		"line_items_processed", processedCount,
-		"line_items_failed", len(processingErrors))
-
-	return result, nil
-}
-
-// CreateProrationParamsForLineItemCancellation creates proration parameters for cancellation scenarios
-func (s *prorationService) CreateProrationParamsForLineItemCancellation(
-	ctx context.Context,
-	subscription *subscription.Subscription,
-	item *subscription.SubscriptionLineItem,
-	price *price.Price,
-	cancellationDate time.Time,
-	cancellationType types.CancellationType,
-	cancellationReason string,
-	behavior types.ProrationBehavior,
-) (proration.ProrationParams, error) {
-	logger := s.serviceParams.Logger.With(
-		"subscription_id", subscription.ID,
-		"line_item_id", item.ID,
-		"cancellation_type", string(cancellationType),
-	)
-
-	logger.Info(ctx, "creating proration parameters for cancellation")
-
-	// Get billing period boundaries
-	periodStart := subscription.CurrentPeriodStart
-
-	periodEnd := subscription.CurrentPeriodEnd
-
-	// Determine effective cancellation date based on type
-	effectiveDate := cancellationDate
-	switch cancellationType {
-	case types.CancellationTypeEndOfPeriod:
-		effectiveDate = periodEnd
-		logger.Debug(ctx, "using end of period for cancellation", "effective_date", effectiveDate)
-	case types.CancellationTypeImmediate:
-		// Use provided cancellation date, but ensure it's not before period start
-		if cancellationDate.Before(periodStart) {
-			effectiveDate = periodStart
-			logger.Info(context.Background(), "cancellation date before period start, using period start",
-				"requested_date", cancellationDate,
-				"period_start", periodStart)
-		}
-	}
-
-	// Validate effective date is within current period for immediate cancellations
-	if cancellationType == types.CancellationTypeImmediate &&
-		(effectiveDate.Before(periodStart) || effectiveDate.After(periodEnd)) {
-		return proration.ProrationParams{}, ierr.NewError("cancellation date must be within current billing period").
+	if effectiveDate.After(sub.CurrentPeriodEnd) {
+		return nil, ierr.NewError("cancellation date must be within current billing period").
 			WithHintf("Period: %s to %s, Cancellation: %s",
-				periodStart.Format("2006-01-02"),
-				periodEnd.Format("2006-01-02"),
+				sub.CurrentPeriodStart.Format("2006-01-02"),
+				sub.CurrentPeriodEnd.Format("2006-01-02"),
 				effectiveDate.Format("2006-01-02")).
 			Mark(ierr.ErrValidation)
 	}
 
-	originalAmountPaid, previousCredits := s.creditBasisForLineItem(ctx, item, price, effectiveDate)
+	entries := make([]LineItemProrationEntry, 0, len(lineItems))
+	for _, item := range lineItems {
+		if item.Status != types.StatusPublished {
+			continue
+		}
 
-	// Determine if customer is eligible for refund/credit
-	refundEligible := s.isRefundEligible(subscription, item, price, cancellationType, effectiveDate)
+		p, err := s.serviceParams.PriceRepo.Get(ctx, item.PriceID)
+		if err != nil {
+			return nil, err
+		}
 
-	logger.Debug(ctx, "cancellation proration parameters calculated",
-		"effective_date", effectiveDate,
-		"original_amount_paid", originalAmountPaid.String(),
-		"previous_credits", previousCredits.String(),
-		"refund_eligible", refundEligible)
+		entries = append(entries, LineItemProrationEntry{
+			LineItem:        item,
+			Action:          types.ProrationActionCancellation,
+			CurrentPrice:    p,
+			CurrentQuantity: item.Quantity,
+		})
+	}
 
-	return proration.ProrationParams{
-		Subscription:       subscription,
-		BillingPeriod:      item.BillingPeriod,
-		BillingPeriodCount: item.BillingPeriodCount,
-		SubscriptionID:     subscription.ID,
-		LineItemID:         item.ID,
-		PlanPayInAdvance:   price.InvoiceCadence == types.InvoiceCadenceAdvance,
-		CurrentPeriodStart: periodStart,
-		CurrentPeriodEnd:   periodEnd,
-		Action:             types.ProrationActionCancellation,
+	summary, err := NewLineItemProrationService(s.serviceParams).Compute(ctx, LineItemProrationRequest{
+		Subscription:  sub,
+		Entries:       entries,
+		EffectiveDate: effectiveDate,
+		Behavior:      behavior,
+		Reason:        reason,
+	})
+	if err != nil {
+		return nil, err
+	}
 
-		// For cancellation, we only have "old" values (what's being cancelled)
-		OldPriceID:      item.PriceID,
-		OldQuantity:     item.Quantity,
-		OldPricePerUnit: s.priceService.CalculateUnitCost(ctx, price, item.Quantity),
-		NewPriceID:      "", // Nothing new for cancellation
-		NewQuantity:     decimal.Zero,
-		NewPricePerUnit: decimal.Zero,
+	// Window credits are merged into one credit item per line item.
+	creditItems := make(map[string]proration.ProrationLineItem)
+	for _, credit := range summary.CreditLineItems {
+		lineItemID := lo.FromPtr(credit.SubscriptionLineItemID)
+		creditItem, ok := creditItems[lineItemID]
+		if !ok {
+			creditItem = proration.ProrationLineItem{
+				Description: lo.FromPtr(credit.DisplayName),
+				Amount:      decimal.Zero,
+				StartDate:   effectiveDate,
+				Quantity:    credit.Quantity,
+				PriceID:     lo.FromPtr(credit.PriceID),
+				IsCredit:    true,
+			}
+		}
+		creditItem.Amount = creditItem.Amount.Add(credit.Amount)
+		creditItem.EndDate = lo.FromPtr(credit.PeriodEnd)
+		creditItems[lineItemID] = creditItem
+	}
 
-		ProrationDate:     effectiveDate,
-		ProrationBehavior: behavior,
-		Currency:          price.Currency,
-		PlanDisplayName:   item.PlanDisplayName,
-		TerminationReason: types.TerminationReasonCancellation,
+	for lineItemID, creditItem := range creditItems {
+		result.LineItemResults[lineItemID] = &proration.ProrationResult{
+			CreditItems:        []proration.ProrationLineItem{creditItem},
+			NetAmount:          creditItem.Amount,
+			Currency:           sub.Currency,
+			Action:             types.ProrationActionCancellation,
+			ProrationDate:      effectiveDate,
+			LineItemID:         lineItemID,
+			CurrentPeriodStart: sub.CurrentPeriodStart,
+			CurrentPeriodEnd:   sub.CurrentPeriodEnd,
+			BillingPeriod:      sub.BillingPeriod,
+		}
+		result.TotalProrationAmount = result.TotalProrationAmount.Add(creditItem.Amount)
+	}
 
-		// Critical for credit capping
-		OriginalAmountPaid:    originalAmountPaid,
-		PreviousCreditsIssued: previousCredits,
-
-		// Cancellation-specific fields
-		CancellationType:   cancellationType,
-		CancellationReason: cancellationReason,
-		RefundEligible:     refundEligible,
-	}, nil
+	return result, nil
 }
 
 // creditBasis is what a line item was billed and already credited, falling back to its list
@@ -330,72 +182,6 @@ func creditBasis(
 	}
 
 	return listTotal, decimal.Zero
-}
-
-func (s *prorationService) creditBasisForLineItem(
-	ctx context.Context,
-	item *subscription.SubscriptionLineItem,
-	price *price.Price,
-	asOf time.Time,
-) (originalAmountPaid, previousCredits decimal.Decimal) {
-	billed, err := s.serviceParams.InvoiceLineItemRepo.GetBilledAmountsBySubscriptionLineItem(
-		ctx, []string{item.ID}, asOf,
-	)
-
-	if err != nil {
-		s.serviceParams.Logger.Info(ctx, "failed to read billed amounts for credit basis, falling back to list price",
-			"error", err,
-			"line_item_id", item.ID,
-			"subscription_id", item.SubscriptionID)
-		return creditBasis(item, nil, s.priceService.CalculateCost(ctx, price, item.Quantity))
-	}
-
-	return creditBasis(item, billed, s.priceService.CalculateCost(ctx, price, item.Quantity))
-}
-
-// isRefundEligible determines if a customer is eligible for refund/credit based on cancellation scenario
-func (s *prorationService) isRefundEligible(
-	subscription *subscription.Subscription,
-	item *subscription.SubscriptionLineItem,
-	price *price.Price,
-	cancellationType types.CancellationType,
-	effectiveDate time.Time,
-) bool {
-	logger := s.serviceParams.Logger.With(
-		"subscription_id", subscription.ID,
-		"line_item_id", item.ID,
-		"cancellation_type", string(cancellationType),
-	)
-
-	// Basic eligibility rules
-	switch cancellationType {
-	case types.CancellationTypeEndOfPeriod:
-		// End of period cancellations typically don't get credits
-		// since customer uses service for full period
-		logger.Debug(context.Background(), "end of period cancellation - not eligible for refund")
-		return false
-
-	case types.CancellationTypeImmediate:
-		// Immediate cancellations are eligible if they paid in advance
-		// and there's unused time remaining
-		if price.InvoiceCadence == types.InvoiceCadenceAdvance {
-			remainingTime := subscription.CurrentPeriodEnd.Sub(effectiveDate)
-			eligible := remainingTime > 0
-			logger.Debug(context.Background(), "immediate cancellation eligibility check",
-				"pay_in_advance", true,
-				"remaining_time", remainingTime.String(),
-				"eligible", eligible)
-			return eligible
-		}
-
-		// For arrears billing, no refund needed (they pay for what they used)
-		logger.Debug(context.Background(), "arrears billing cancellation - no refund needed")
-		return false
-
-	default:
-		logger.Info(context.Background(), "unknown cancellation type", "type", cancellationType)
-		return false
-	}
 }
 
 // CalculateEntitlementProration calculates prorated entitlement limits for a subscription

@@ -333,9 +333,6 @@ func (s *subscriptionModificationService) requestFromLineItemChangeParams(
 		if m.EffectiveDate != nil {
 			effectiveDate = m.EffectiveDate.UTC()
 		}
-		if err := validateEffectiveDateWithinCurrentPeriod(effectiveDate, sub); err != nil {
-			return nil, err
-		}
 
 		change := dto.LineItemChange{ID: m.LineItemID, Quantity: m.Quantity, Amount: m.Amount}
 
