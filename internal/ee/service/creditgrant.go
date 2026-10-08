@@ -103,7 +103,7 @@ func creditGrantFollowsBilling(req dto.CreateCreditGrantRequest, sub *subscripti
 	}
 
 	period, err := types.GetBillingPeriodFromCreditGrantPeriod(lo.FromPtr(req.Period))
-	return err == nil && period == sub.BillingPeriod
+	return err == nil && period == sub.BillingPeriod && lo.FromPtrOr(req.PeriodCount, 1) == max(sub.BillingPeriodCount, 1)
 }
 
 func (s *creditGrantService) CreateCreditGrant(ctx context.Context, req dto.CreateCreditGrantRequest) (*dto.CreditGrantResponse, error) {

@@ -3165,7 +3165,8 @@ type pvgAddonSpec struct {
 	id         string
 	withCG     bool
 	withEG     bool
-	fixedPrice bool // $31 fixed advance monthly instead of a zero usage price
+	fixedPrice bool                    // $31 fixed advance monthly instead of a zero usage price
+	cgPeriod   types.CreditGrantPeriod // default MONTHLY
 }
 
 // pvgSeedAddon registers an addon and returns the feature id its EG feeds (empty if none).
@@ -3207,7 +3208,7 @@ func (s *CreditGrantProrationSuite) pvgSeedAddon(spec pvgAddonSpec) string {
 			AddonID:        &addonID,
 			Credits:        decimal.NewFromInt(pvgCGCredits),
 			Cadence:        types.CreditGrantCadenceRecurring,
-			Period:         lo.ToPtr(types.CREDIT_GRANT_PERIOD_MONTHLY),
+			Period:         lo.ToPtr(lo.CoalesceOrEmpty(spec.cgPeriod, types.CREDIT_GRANT_PERIOD_MONTHLY)),
 			PeriodCount:    lo.ToPtr(1),
 			ExpirationType: types.CreditGrantExpiryTypeNever,
 			Priority:       lo.ToPtr(1),
@@ -3653,4 +3654,48 @@ func (s *CreditGrantProrationSuite) TestPlanCreditGrantFirstPeriodEdges() {
 		s.pvgExpectTime("S12b plan CG first period end", pvgFeb1, lo.FromPtr(app.PeriodEnd))
 		s.pvgExpectTime("S12b plan CG anchor", pvgFeb1, lo.FromPtr(grant.CreditGrantAnchor))
 	})
+}
+
+// H6: an annual addon CG attached Jan 20 to a monthly sub is a different cadence, so it is granted in full.
+func (s *CreditGrantProrationSuite) TestAddonAnnualCreditGrantOnMonthlySub_GrantedInFull() {
+	s.pvgSeedPlan("plan_pvg_h6", false)
+	sub := s.pvgCreateSub(pvgSubSpec{
+		planID: "plan_pvg_h6", start: pvgJan1, cycle: types.BillingCycleAnniversary,
+		behavior: types.ProrationBehaviorCreateProrations,
+	})
+	s.pvgSeedAddon(pvgAddonSpec{id: "addon_pvg_h6", withCG: true, cgPeriod: types.CREDIT_GRANT_PERIOD_ANNUAL})
+	s.Require().NoError(s.pvgAttach(sub.ID, "addon_pvg_h6", pvgJan20))
+
+	_, app := s.pvgFirstApp(sub.ID, "addon_pvg_h6")
+	s.pvgExpectEqual("H6 annual addon CG credits (full)", decimal.NewFromInt(pvgCGCredits), app.Credits)
+}
+
+// A grant follows billing (and is prorated) only when its period and count both equal the sub's.
+func TestCreditGrantFollowsBilling(t *testing.T) {
+	grant := func(period types.CreditGrantPeriod, count int) dto.CreateCreditGrantRequest {
+		return dto.CreateCreditGrantRequest{Cadence: types.CreditGrantCadenceRecurring, Period: lo.ToPtr(period), PeriodCount: lo.ToPtr(count)}
+	}
+	sub := func(period types.BillingPeriod, count int) *subscription.Subscription {
+		return &subscription.Subscription{BillingPeriod: period, BillingPeriodCount: count}
+	}
+
+	tests := []struct {
+		name  string
+		grant dto.CreateCreditGrantRequest
+		sub   *subscription.Subscription
+		want  bool
+	}{
+		{name: "monthly grant on monthly sub", grant: grant(types.CREDIT_GRANT_PERIOD_MONTHLY, 1), sub: sub(types.BILLING_PERIOD_MONTHLY, 1), want: true},
+		{name: "annual grant on monthly sub", grant: grant(types.CREDIT_GRANT_PERIOD_ANNUAL, 1), sub: sub(types.BILLING_PERIOD_MONTHLY, 1), want: false},
+		{name: "onetime grant", grant: dto.CreateCreditGrantRequest{Cadence: types.CreditGrantCadenceOneTime}, sub: sub(types.BILLING_PERIOD_MONTHLY, 1), want: false},
+		{name: "monthly grant on a 3-month sub", grant: grant(types.CREDIT_GRANT_PERIOD_MONTHLY, 1), sub: sub(types.BILLING_PERIOD_MONTHLY, 3), want: false},
+		{name: "2-month grant on monthly sub", grant: grant(types.CREDIT_GRANT_PERIOD_MONTHLY, 2), sub: sub(types.BILLING_PERIOD_MONTHLY, 1), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := creditGrantFollowsBilling(tt.grant, tt.sub); got != tt.want {
+				t.Errorf("creditGrantFollowsBilling = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

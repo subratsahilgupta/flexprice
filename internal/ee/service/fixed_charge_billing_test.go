@@ -1107,6 +1107,18 @@ func (s *FixedChargeProrationSuite) TestCalendarAnnual() {
 	s.Equal(pvUTC(2027, time.January, 1), sc.sub.CurrentPeriodEnd)
 	total, _ := s.current(sc)
 	s.expect("S06 calendar annual stub Mar15-Jan1 (292/365)", "292.00", total)
+
+	s.Run("leap_year_feb29_start", func() {
+		// [Feb 29 2028, Jan 1 2029) is 307 of 2028's 366 days.
+		sc := s.build(pvSubSpec{
+			cycle: types.BillingCycleCalendar, period: types.BILLING_PERIOD_ANNUAL,
+			start: pvUTC(2028, time.February, 29), behavior: types.ProrationBehaviorCreateProrations,
+			items: []pvItemSpec{flat("plan", types.BILLING_PERIOD_ANNUAL, "365")},
+		})
+		s.Equal(pvUTC(2029, time.January, 1), sc.sub.CurrentPeriodEnd)
+		total, _ := s.current(sc)
+		s.expect("S06b calendar annual stub Feb29-Jan1 (307/366)", "306.16", total)
+	})
 }
 
 // 8. Timezone-aware calendar stubs.
@@ -1134,6 +1146,34 @@ func (s *FixedChargeProrationSuite) TestTimezoneCalendarStub() {
 		// Seconds-based: 15 days / (31 days - 1h DST) = 360/743 -> 31*360/743 = 15.02.
 		s.expect("S08b America/New_York calendar monthly stub Mar17-Apr1 (360h/743h)", "15.02", total)
 	})
+
+	// want is $31 x used/full in real seconds, with the full month taken from local midnights.
+	cases := []struct {
+		name, tz   string
+		start, end time.Time
+		want       string
+	}{
+		// +5:45, no DST: 14 of February's 28 days.
+		{"asia_kathmandu", "Asia/Kathmandu", pvAt(2026, time.February, 15, "Asia/Kathmandu"), pvAt(2026, time.March, 1, "Asia/Kathmandu"), "15.50"},
+		// DST starts Oct 4: 408h used of a 743h October.
+		{"australia_sydney_dst_start", "Australia/Sydney", pvAt(2026, time.October, 15, "Australia/Sydney"), pvAt(2026, time.November, 1, "Australia/Sydney"), "17.02"},
+		// K2: DST ends Nov 1 at 02:00, so October is a plain 744h month: 29/31.
+		{"america_new_york_october", "America/New_York", pvAt(2026, time.October, 3, "America/New_York"), pvAt(2026, time.November, 1, "America/New_York"), "29.00"},
+		// DST ended Nov 1: 384h used of a 721h November.
+		{"america_new_york_dst_end", "America/New_York", pvAt(2026, time.November, 15, "America/New_York"), pvAt(2026, time.December, 1, "America/New_York"), "16.51"},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			sc := s.build(pvSubSpec{
+				cycle: types.BillingCycleCalendar, period: types.BILLING_PERIOD_MONTHLY, tz: tc.tz,
+				start: tc.start, behavior: types.ProrationBehaviorCreateProrations,
+				items: []pvItemSpec{flat("plan", types.BILLING_PERIOD_MONTHLY, "31")},
+			})
+			s.Equal(tc.end, sc.sub.CurrentPeriodEnd)
+			total, _ := s.current(sc)
+			s.expect("S08 "+tc.name, tc.want, total)
+		})
+	}
 }
 
 // 9. Subscription end date or cancellation mid-period: last period [Mar1, Mar10) = 9/31.
@@ -1233,6 +1273,21 @@ func (s *FixedChargeProrationSuite) TestTieredAndPackageStub() {
 		// CalculateCost = ceil(7/5)=2 packages x $20 = $40; x 17/31 = 21.94.
 		s.expect("S10c package 5/unit $20 qty7 ($40) on 17/31 stub", "21.94", total)
 	})
+	s.Run("slab_tiers", func() {
+		spec := base
+		spec.items = []pvItemSpec{{
+			key: "plan", period: types.BILLING_PERIOD_MONTHLY, qty: 20,
+			model: types.BILLING_MODEL_TIERED, tierMode: types.BILLING_TIER_SLAB,
+			tiers: []price.PriceTier{
+				{UpTo: lo.ToPtr(uint64(10)), UnitAmount: decimal.NewFromInt(5)},
+				{UpTo: nil, UnitAmount: decimal.NewFromInt(3)},
+			},
+		}}
+		sc := s.build(spec)
+		total, _ := s.current(sc)
+		// CalculateCost = 10 x $5 + 10 x $3 = $80; x 17/31 = 43.87.
+		s.expect("S10d slab tiers qty20 ($80) on 17/31 stub", "43.87", total)
+	})
 }
 
 // 12. proration_behavior=none: no proration at all.
@@ -1290,6 +1345,163 @@ func (s *FixedChargeProrationSuite) TestAttachBeforeDSTChangeUsesFullPeriod() {
 
 	_, per := s.current(sc)
 	s.expect("S13b New York addon on the opening invoice (29/31)", "29.00", per["addon"])
+}
+
+// D1–D7: a $31 monthly addon attached mid-period is charged used/full of the sub's period, and
+// (D3) the same as a sub starting that day on the same schedule.
+func (s *FixedChargeProrationSuite) TestAttachMidPeriod() {
+	ctx := s.GetContext()
+	jan31Last := pvUTC(2026, time.January, 31).Add(24*time.Hour - time.Second)
+	cases := []struct {
+		name          string
+		cycle         types.BillingCycle
+		tz            string
+		start         time.Time
+		current       *types.Period
+		attach        time.Time
+		want          string
+		wantLineStart time.Time
+	}{
+		{name: "D1 calendar stub Jan 20 (12/31)", cycle: types.BillingCycleCalendar, start: pvUTC(2026, time.January, 15),
+			attach: pvUTC(2026, time.January, 20), want: "12.00"},
+		{name: "D2 anniversary Jan 20 (12/31)", cycle: types.BillingCycleAnniversary, start: pvUTC(2026, time.January, 1),
+			attach: pvUTC(2026, time.January, 20), want: "12.00"},
+		{name: "D6 last day Jan 31 (1/31)", cycle: types.BillingCycleCalendar, start: pvUTC(2026, time.January, 15),
+			attach: pvUTC(2026, time.January, 31), want: "1.00"},
+		{name: "one second before the period end", cycle: types.BillingCycleCalendar, start: pvUTC(2026, time.January, 15),
+			attach: jan31Last, want: "0.00"},
+		{name: "D5 on the boundary (full)", cycle: types.BillingCycleAnniversary, start: pvUTC(2026, time.January, 1),
+			current: &types.Period{Start: pvUTC(2026, time.February, 1), End: pvUTC(2026, time.March, 1)},
+			attach:  pvUTC(2026, time.February, 1), want: "31.00"},
+		// DST starts Mar 8: 528h used of a 743h March.
+		{name: "D7 New York DST start Mar 10", cycle: types.BillingCycleCalendar, tz: "America/New_York",
+			start: pvAt(2026, time.March, 1, "America/New_York"), attach: pvAt(2026, time.March, 10, "America/New_York"), want: "22.03"},
+		{name: "Kathmandu Feb 15 (14/28)", cycle: types.BillingCycleCalendar, tz: "Asia/Kathmandu",
+			start: pvAt(2026, time.February, 1, "Asia/Kathmandu"), attach: pvAt(2026, time.February, 15, "Asia/Kathmandu"), want: "15.50"},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			sc := s.build(pvSubSpec{
+				cycle: tc.cycle, period: types.BILLING_PERIOD_MONTHLY, tz: tc.tz, start: tc.start,
+				behavior: types.ProrationBehaviorCreateProrations,
+				items: []pvItemSpec{
+					flat("plan", types.BILLING_PERIOD_MONTHLY, "31"),
+					{key: "addon", period: types.BILLING_PERIOD_MONTHLY, amount: "31", start: tc.attach,
+						entityType: types.SubscriptionLineItemEntityTypeAddon},
+				},
+			})
+			if tc.current != nil {
+				sc.setCurrent(tc.current.Start, tc.current.End)
+			}
+			addonPrice, err := s.GetStores().PriceRepo.Get(ctx, sc.items["addon"].PriceID)
+			s.Require().NoError(err)
+			quote, err := NewLineItemProrationService(s.params).Compute(ctx, LineItemProrationRequest{
+				Subscription: sc.sub,
+				Entries: []LineItemProrationEntry{{
+					LineItem: sc.items["addon"], NewPrice: addonPrice, NewQuantity: decimal.NewFromInt(1),
+					Action: types.ProrationActionAddItem,
+				}},
+				EffectiveDate: tc.attach,
+				Behavior:      types.ProrationBehaviorCreateProrations,
+			})
+			s.Require().NoError(err)
+			s.expect(tc.name+" attach charge", tc.want, quote.TotalChargeAmount)
+
+			// D3: a sub starting at the attach on the same schedule (anchor = this period's end).
+			parity := s.build(pvSubSpec{
+				cycle: types.BillingCycleAnniversary, period: types.BILLING_PERIOD_MONTHLY, tz: tc.tz,
+				start: tc.attach, anchor: sc.sub.CurrentPeriodEnd, behavior: types.ProrationBehaviorCreateProrations,
+				items: []pvItemSpec{flat("plan", types.BILLING_PERIOD_MONTHLY, "31")},
+			})
+			s.Equal(sc.sub.CurrentPeriodEnd, parity.sub.CurrentPeriodEnd)
+			total, _ := s.current(parity)
+			s.expect(tc.name+" parity with a sub starting at the attach", tc.want, total)
+		})
+	}
+}
+
+// D9 with create_prorations: a backdated calendar sub from Jul 15 with an addon from Aug 10 bills
+// the plan stub, then the addon's 22/31, then both in full.
+func (s *FixedChargeProrationSuite) TestBackdatedAddonPeriodsCreateProrations() {
+	sc := s.build(pvSubSpec{
+		cycle: types.BillingCycleCalendar, period: types.BILLING_PERIOD_MONTHLY,
+		start: pvUTC(2026, time.July, 15), behavior: types.ProrationBehaviorCreateProrations,
+		items: []pvItemSpec{
+			flat("plan", types.BILLING_PERIOD_MONTHLY, "31"),
+			{key: "addon", period: types.BILLING_PERIOD_MONTHLY, amount: "31", start: pvUTC(2026, time.August, 10),
+				entityType: types.SubscriptionLineItemEntityTypeAddon},
+		},
+	})
+	periods := []struct {
+		name        string
+		start, end  time.Time
+		plan, addon string
+	}{
+		{"P1 Jul15-Aug1", pvUTC(2026, time.July, 15), pvUTC(2026, time.August, 1), "17.00", "0.00"},
+		{"P2 Aug1-Sep1", pvUTC(2026, time.August, 1), pvUTC(2026, time.September, 1), "31.00", "22.00"},
+		{"P3 Sep1-Oct1", pvUTC(2026, time.September, 1), pvUTC(2026, time.October, 1), "31.00", "31.00"},
+	}
+	for _, p := range periods {
+		s.Run(p.name, func() {
+			sc.setCurrent(p.start, p.end)
+			_, per := s.current(sc)
+			s.expect("J3 "+p.name+" plan", p.plan, per["plan"])
+			s.expect("J3 "+p.name+" addon", p.addon, per["addon"])
+		})
+	}
+}
+
+// Anchor later on the start day: the first period ends at the anchor.
+// e.g. start Jan 31 00:00, anchor Jan 31 12:00 → [Jan 31 00:00, Jan 31 12:00) of [Dec 31 12:00, Jan 31 12:00) = $0.50.
+func (s *FixedChargeProrationSuite) TestAnchorLaterInTheDayFirstPeriod() {
+	start := pvUTC(2026, time.January, 31)
+	sc := s.build(pvSubSpec{
+		cycle: types.BillingCycleAnniversary, period: types.BILLING_PERIOD_MONTHLY,
+		start: start, anchor: start.Add(12 * time.Hour), behavior: types.ProrationBehaviorCreateProrations,
+		items: []pvItemSpec{flat("plan", types.BILLING_PERIOD_MONTHLY, "31")},
+	})
+	s.Equal(time.Date(2026, time.January, 31, 12, 0, 0, 0, time.UTC), sc.sub.CurrentPeriodEnd)
+	total, _ := s.current(sc)
+	s.expect("stub up to the anchor", "0.50", total)
+}
+
+// A longer item on an anniversary sub whose anchor is later in the day than the start: the item's
+// sub-day stub and its first full period both start in the opening period; both must be billed.
+// e.g. start Jan 10 00:00, anchor Jan 10 12:00 → annual item [Jan 10 00:00, Jan 10 12:00) then
+// [Jan 10 12:00 2026, Jan 10 12:00 2027).
+func (s *FixedChargeProrationSuite) TestLongerItemWithAnchorLaterInTheDay() {
+	start := pvUTC(2026, time.January, 10)
+	anchor := start.Add(12 * time.Hour)
+	cases := []struct {
+		name          string
+		period        types.BillingPeriod
+		amount        string
+		firstFullEnds time.Time
+	}{
+		{"annual", types.BILLING_PERIOD_ANNUAL, "365", time.Date(2027, time.January, 10, 12, 0, 0, 0, time.UTC)},
+		{"quarterly", types.BILLING_PERIOD_QUARTER, "90", time.Date(2026, time.April, 10, 12, 0, 0, 0, time.UTC)},
+	}
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			sc := s.build(pvSubSpec{
+				cycle: types.BillingCycleAnniversary, period: types.BILLING_PERIOD_MONTHLY,
+				start: start, anchor: anchor, behavior: types.ProrationBehaviorCreateProrations,
+				items: []pvItemSpec{flat("item", tc.period, tc.amount)},
+			})
+			billed := false
+			cur, end := sc.sub.CurrentPeriodStart, sc.sub.CurrentPeriodEnd
+			for i := 0; i < 13 && !billed; i++ {
+				res, err := s.billing.CalculateFixedCharges(s.GetContext(), &dto.CalculateFixedChargesParams{Subscription: sc.sub, PeriodStart: cur, PeriodEnd: end})
+				s.Require().NoError(err)
+				billed = lo.ContainsBy(res.LineItems, func(l dto.CreateInvoiceLineItemRequest) bool {
+					return lo.FromPtr(l.PeriodEnd).Equal(tc.firstFullEnds)
+				})
+				cur = end
+				end = time.Date(2026, time.March+time.Month(i), 10, 12, 0, 0, 0, time.UTC)
+			}
+			s.True(billed, "item period ending %s was never billed", tc.firstFullEnds)
+		})
+	}
 }
 
 // Randomized end-to-end proration checks: every allowed sub/item cadence pair is billed through the
@@ -1450,6 +1662,35 @@ func propCalendarAnchor(t time.Time, p types.BillingPeriod, loc *time.Location) 
 
 func propSecs(a, b time.Time) int64 { return int64(b.Sub(a).Round(time.Second) / time.Second) }
 
+func propSameLocalDay(a, b time.Time, loc *time.Location) bool {
+	ay, am, ad := a.In(loc).Date()
+	by, bm, bd := b.In(loc).Date()
+	return ay == by && am == bm && ad == bd
+}
+
+// checkSubPeriods: the first sub period ends on the first grid date after the start; every later
+// period is one grid step.
+func (s *PropSuite) checkSubPeriods(sc propScenario, seed int64, res *propResult, start, anchor time.Time, periods []types.Period, loc *time.Location) bool {
+	st, a := start.In(loc), anchor.In(loc)
+	from := st
+	if sc.subCad.months() == 0 {
+		// DAILY/WEEKLY still compare on the anchor's clock.
+		from = time.Date(st.Year(), st.Month(), st.Day(), a.Hour(), a.Minute(), a.Second(), 0, loc)
+	}
+	if want := propNextBoundary(anchor, sc.subCad, from.Add(time.Second), loc); !periods[0].End.Equal(want) {
+		res.failf(sc, seed, "first sub period [%s, %s) should end %s (anchor %s)", start, periods[0].End, want, anchor)
+		return false
+	}
+	for i, p := range periods[1:] {
+		k, ok := propGridIndex(anchor, sc.subCad, p.Start, loc)
+		if want := propGridDate(anchor, sc.subCad, k+1, loc); !ok || !p.End.Equal(want) {
+			res.failf(sc, seed, "sub period %d [%s, %s) is not one grid step (anchor %s)", i+1, p.Start, p.End, anchor)
+			return false
+		}
+	}
+	return true
+}
+
 // ---------- scenario building ----------
 
 var (
@@ -1575,6 +1816,14 @@ func (s *PropSuite) runScenario(sc propScenario, seed int64, res *propResult) {
 				anchor = start.In(loc).AddDate(0, 0, 1+r.Intn(days-1)).UTC()
 			}
 		}
+		switch r.Intn(4) {
+		case 0: // same anchor day, another time of day (before or after the start's)
+			a := anchor.In(loc)
+			anchor = time.Date(a.Year(), a.Month(), a.Day(), r.Intn(24), r.Intn(60), r.Intn(60), 0, loc).UTC()
+		case 1: // Stripe import: an anchor before the start, kept as-is
+			a := start.In(loc).AddDate(0, 0, -1-r.Intn(400))
+			anchor = time.Date(a.Year(), a.Month(), a.Day(), r.Intn(24), r.Intn(60), r.Intn(60), 0, loc).UTC()
+		}
 	}
 
 	n := propHorizon(sc.subCad)
@@ -1588,6 +1837,9 @@ func (s *PropSuite) runScenario(sc propScenario, seed int64, res *propResult) {
 		}
 		periods = append(periods, types.Period{Start: cur, End: end})
 		cur = end
+	}
+	if !s.checkSubPeriods(sc, seed, res, start, anchor, periods, loc) {
+		return
 	}
 
 	amount := decimal.RequireFromString(propAmounts[r.Intn(len(propAmounts))])
@@ -1831,7 +2083,8 @@ func (s *PropSuite) checkLines(sc propScenario, seed int64, res *propResult, sub
 			res.failf(sc, seed, "%s line end %s is not on the item grid (anchor %s)", l.src, l.end, anchor)
 			continue
 		}
-		if l.start.Before(prevBoundary) {
+		// DAILY/WEEKLY first periods still absorb a sliver earlier on the anchor's day.
+		if l.start.Before(prevBoundary) && !(sc.subCad.months() == 0 && propSameLocalDay(l.start, prevBoundary, loc)) {
 			res.failf(sc, seed, "%s line [%s, %s) spans more than one item period (boundary %s)", l.src, l.start, l.end, prevBoundary)
 		}
 		if !l.amount.Equal(want) {

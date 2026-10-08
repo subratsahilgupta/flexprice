@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"sort"
 	"testing"
 	"time"
@@ -568,6 +569,8 @@ type pvrAddonSpec struct {
 	fixedPrice bool
 	withCG     bool
 	withEG     bool
+	period     types.BillingPeriod // fixed price cadence; default MONTHLY
+	amount     int64               // fixed price amount; default 31
 }
 
 // pvrSeedAddon registers an addon ($31 fixed advance monthly, or a zero usage price) with optional
@@ -584,7 +587,8 @@ func (s *ProrationScenarioSuite) pvrSeedAddon(spec pvrAddonSpec) string {
 		BillingPeriodCount: 1, BillingModel: types.BILLING_MODEL_FLAT_FEE, BaseModel: types.GetDefaultBaseModel(ctx),
 	}
 	if spec.fixedPrice {
-		pr.Amount = decimal.NewFromInt(pvrAmount)
+		pr.Amount = decimal.NewFromInt(lo.CoalesceOrEmpty(spec.amount, pvrAmount))
+		pr.BillingPeriod = lo.CoalesceOrEmpty(spec.period, types.BILLING_PERIOD_MONTHLY)
 		pr.Type = types.PRICE_TYPE_FIXED
 		pr.InvoiceCadence = types.InvoiceCadenceAdvance
 	} else {
@@ -618,6 +622,8 @@ type pvrSubSpec struct {
 	anchor    *time.Time
 	trialDays *int
 	addons    []dto.AddAddonToSubscriptionRequest
+	period    types.BillingPeriod // default MONTHLY
+	include   *[]string           // include_price_ids
 }
 
 func (s *ProrationScenarioSuite) pvrCreateSub(spec pvrSubSpec) *subscription.Subscription {
@@ -625,9 +631,10 @@ func (s *ProrationScenarioSuite) pvrCreateSub(spec pvrSubSpec) *subscription.Sub
 	start := spec.start
 	req := dto.CreateSubscriptionRequest{
 		CustomerID: s.cust.ID, PlanID: spec.planID, Currency: "usd", StartDate: &start,
-		BillingCadence: types.BILLING_CADENCE_RECURRING, BillingPeriod: types.BILLING_PERIOD_MONTHLY,
+		BillingCadence: types.BILLING_CADENCE_RECURRING, BillingPeriod: lo.CoalesceOrEmpty(spec.period, types.BILLING_PERIOD_MONTHLY),
 		BillingPeriodCount: 1, BillingCycle: spec.cycle, ProrationBehavior: spec.behavior,
 		Timezone: "UTC", BillingAnchor: spec.anchor, TrialPeriodDays: spec.trialDays,
+		IncludePriceIDs: spec.include,
 	}
 	req.Addons = spec.addons
 	resp, err := s.subSvc.CreateSubscription(ctx, req)
@@ -1031,7 +1038,7 @@ func (s *ProrationScenarioSuite) TestCancelWithOnlyOnetimeItems() {
 	s.True(res.TotalProrationAmount.IsZero(), "one-time charges are never credited")
 }
 
-// J4: an addon dated before the subscription start is rejected at creation, not moved.
+// J4: an addon dated before the subscription start is accepted at creation, as before.
 func (s *ProrationScenarioSuite) TestAddonBeforeSubscriptionStart() {
 	s.pvrSeedPlan(pvrPlanSpec{id: "plan_pvr_j4"})
 	s.pvrSeedAddon(pvrAddonSpec{id: "addon_pvr_j4", fixedPrice: true})
@@ -1045,7 +1052,7 @@ func (s *ProrationScenarioSuite) TestAddonBeforeSubscriptionStart() {
 			Addons: []dto.AddAddonToSubscriptionRequest{pvrAddReq("addon_pvr_j4", pvrDate(2027, 1, 10), types.ProrationBehaviorCreateProrations)},
 		},
 	})
-	s.ErrorContains(err, "before the current billing period")
+	s.NoError(err)
 }
 
 // J5: system rollouts (e.g. prepare_processed_events) may still backdate a line item.
@@ -1063,4 +1070,178 @@ func (s *ProrationScenarioSuite) TestSystemRolloutMayBackdateLineItem() {
 		PriceID: "price_plan_pvr_j5s", StartDate: &at, SkipEntitlementCheck: true,
 	})
 	s.NoError(err)
+}
+
+// pvrPlanPrice adds a fixed advance price to a plan.
+func (s *ProrationScenarioSuite) pvrPlanPrice(planID string, period types.BillingPeriod, count int, amount int64) string {
+	ctx := s.GetContext()
+	id := types.GenerateUUIDWithPrefix(types.UUID_PREFIX_PRICE)
+	s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, &price.Price{
+		ID: id, Amount: decimal.NewFromInt(amount), Currency: "usd",
+		EntityType: types.PRICE_ENTITY_TYPE_PLAN, EntityID: planID, Type: types.PRICE_TYPE_FIXED,
+		BillingCadence: types.BILLING_CADENCE_RECURRING, BillingPeriod: period, BillingPeriodCount: count,
+		BillingModel: types.BILLING_MODEL_FLAT_FEE, InvoiceCadence: types.InvoiceCadenceAdvance,
+		BaseModel: types.GetDefaultBaseModel(ctx),
+	}))
+	return id
+}
+
+// E18/E19: a $365 annual addon on a calendar monthly sub from Jan 15 2027 runs on the Jan 1 grid, so
+// attach and removal charge or credit against its own year, e.g. attach Mar 10 → [Mar 10, Jan 1) = 297/365.
+func (s *ProrationScenarioSuite) TestLongerCadenceAddon_AttachAndRemove() {
+	start := pvrDate(2027, 1, 15)
+	removeJan20 := pvrDate(2027, 1, 20)
+
+	tests := []struct {
+		name                   string
+		atCreation             bool
+		periodStart, periodEnd time.Time // current period before the change; zero keeps [Jan 15, Feb 1)
+		attachAt               time.Time
+		removeAt               *time.Time // nil removes with no change_at (current period end)
+		remove                 bool
+		wantCharge, wantCredit string
+	}{
+		{name: "attach mid-period charges the rest of the item year", periodStart: pvrDate(2027, 3, 1), periodEnd: pvrDate(2027, 4, 1),
+			attachAt: pvrDate(2027, 3, 10), wantCharge: "297.00", wantCredit: "0"},
+		{name: "remove immediately credits the rest of the item year", atCreation: true, remove: true, removeAt: &removeJan20,
+			wantCharge: "0", wantCredit: "346.00"},
+		{name: "remove at period end credits the item year after Feb 1", atCreation: true, remove: true,
+			wantCharge: "0", wantCredit: "334.00"},
+		// The period ends with the item year: nothing billed is left, and the next year was never billed.
+		{name: "remove at period end on the item boundary credits nothing", atCreation: true, remove: true,
+			periodStart: pvrDate(2027, 12, 1), periodEnd: pvrDate(2028, 1, 1), wantCharge: "0", wantCredit: "0"},
+	}
+
+	for i, tt := range tests {
+		s.Run(tt.name, func() {
+			planID := fmt.Sprintf("plan_pvr_e18_%d", i)
+			addonID := fmt.Sprintf("addon_pvr_e18_%d", i)
+			s.pvrSeedPlan(pvrPlanSpec{id: planID})
+			s.pvrSeedAddon(pvrAddonSpec{id: addonID, fixedPrice: true, period: types.BILLING_PERIOD_ANNUAL, amount: 365})
+			spec := pvrSubSpec{planID: planID, start: start, cycle: types.BillingCycleCalendar, behavior: types.ProrationBehaviorCreateProrations}
+			if tt.atCreation {
+				spec.addons = []dto.AddAddonToSubscriptionRequest{pvrAddReq(addonID, start, types.ProrationBehaviorCreateProrations)}
+			}
+			sub := s.pvrCreateSub(spec)
+			if tt.atCreation {
+				_, per := s.pvrFixed(sub, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+				s.pvrExpect("opening addon charge [Jan 15, Jan 1) = 351/365", "351.00", per[s.pvrLineItem(sub, types.SubscriptionLineItemEntityTypeAddon).ID])
+			}
+			if !tt.periodStart.IsZero() {
+				sub.CurrentPeriodStart, sub.CurrentPeriodEnd = tt.periodStart, tt.periodEnd
+				s.Require().NoError(s.GetStores().SubscriptionRepo.Update(s.GetContext(), sub))
+			}
+
+			params := &dto.SubModifyBulkAddonParams{}
+			if !tt.attachAt.IsZero() {
+				add := pvrAddReq(addonID, tt.attachAt, types.ProrationBehaviorCreateProrations)
+				params.Adds = []*dto.AddAddonToSubscriptionRequest{&add}
+			}
+			if tt.remove {
+				params.Removes = []*dto.RemoveAddonRequest{{
+					AddonAssociationID: s.pvrAssociation(sub.ID).ID, ProrationBehavior: types.ProrationBehaviorCreateProrations,
+					EffectiveDate: tt.removeAt,
+				}}
+			}
+			quote := s.pvrPreview(sub.ID, params)
+			s.pvrExpect("charge", tt.wantCharge, quote.TotalChargeAmount)
+			s.pvrExpect("credit", tt.wantCredit, quote.TotalCreditAmount)
+		})
+	}
+}
+
+// E18 via include_price_ids at creation and via the line item API: an annual plan price on a calendar
+// monthly sub from Jan 15 2027 bills its own stub, [Jan 15, Jan 1) = 351 or [Mar 10, Jan 1) = 297.
+func (s *ProrationScenarioSuite) TestLongerCadencePlanPrice_EntryPoints() {
+	ctx := s.GetContext()
+	s.pvrSeedPlan(pvrPlanSpec{id: "plan_pvr_e18p"})
+	annualID := s.pvrPlanPrice("plan_pvr_e18p", types.BILLING_PERIOD_ANNUAL, 1, 365)
+
+	s.Run("include_price_ids at creation", func() {
+		sub := s.pvrCreateSub(pvrSubSpec{planID: "plan_pvr_e18p", start: pvrDate(2027, 1, 15), cycle: types.BillingCycleCalendar,
+			behavior: types.ProrationBehaviorCreateProrations, include: &[]string{"price_plan_pvr_e18p", annualID}})
+		items, err := s.GetStores().SubscriptionLineItemRepo.ListBySubscription(ctx, sub)
+		s.Require().NoError(err)
+		annual, found := lo.Find(items, func(li *subscription.SubscriptionLineItem) bool { return li.PriceID == annualID })
+		s.Require().True(found)
+		_, per := s.pvrFixed(sub, sub.CurrentPeriodStart, sub.CurrentPeriodEnd)
+		s.pvrExpect("annual plan line on the opening invoice", "351.00", per[annual.ID])
+	})
+
+	s.Run("line item API mid-period", func() {
+		sub := s.pvrCreateSub(pvrSubSpec{planID: "plan_pvr_e18p", start: pvrDate(2027, 1, 15), cycle: types.BillingCycleCalendar,
+			behavior: types.ProrationBehaviorCreateProrations, include: &[]string{"price_plan_pvr_e18p"}})
+		sub.CurrentPeriodStart, sub.CurrentPeriodEnd = pvrDate(2027, 3, 1), pvrDate(2027, 4, 1)
+		s.Require().NoError(s.GetStores().SubscriptionRepo.Update(ctx, sub))
+
+		at := pvrDate(2027, 3, 10)
+		resp, err := s.subSvc.AddSubscriptionLineItem(ctx, sub.ID, dto.CreateSubscriptionLineItemRequest{
+			PriceID: annualID, Quantity: decimal.NewFromInt(1), StartDate: &at, SkipEntitlementCheck: true,
+			ProrationBehavior: types.ProrationBehaviorCreateProrations,
+		})
+		s.Require().NoError(err)
+		s.Equal(types.BILLING_PERIOD_ANNUAL, resp.SubscriptionLineItem.BillingPeriod)
+
+		invoices, err := s.GetStores().InvoiceRepo.List(ctx, &types.InvoiceFilter{QueryFilter: types.NewNoLimitQueryFilter(), SubscriptionID: sub.ID})
+		s.Require().NoError(err)
+		oneOff, found := lo.Find(invoices, func(inv *invoice.Invoice) bool { return inv.InvoiceType == types.InvoiceTypeOneOff })
+		s.Require().True(found, "expected a ONE_OFF attach invoice")
+		s.pvrExpect("line item API attach charge", "297.00", oneOff.AmountDue)
+	})
+}
+
+// E13/G30: plan change v2 on Jan 20 credits each outgoing item and charges each incoming one on its own
+// cadence. Monthly sub: 12/31 x 31 + 71/90 x 90 out, 12/31 x 62 + 71/90 x 180 in (3-month price).
+// Quarterly sub: 71/90 x 90 + (12/31 x 31 + 31 + 31) out, 71/90 x 180 in.
+func (s *ProrationScenarioSuite) TestPlanChangeV2_MixedCadences() {
+	type pvrPrice struct {
+		period types.BillingPeriod
+		count  int
+		amount int64
+	}
+	tests := []struct {
+		name                   string
+		subPeriod              types.BillingPeriod
+		from, to               []pvrPrice
+		wantCredit, wantCharge string
+	}{
+		{name: "longer items on a monthly sub", subPeriod: types.BILLING_PERIOD_MONTHLY,
+			from:       []pvrPrice{{types.BILLING_PERIOD_MONTHLY, 1, 31}, {types.BILLING_PERIOD_QUARTER, 1, 90}},
+			to:         []pvrPrice{{types.BILLING_PERIOD_MONTHLY, 1, 62}, {types.BILLING_PERIOD_MONTHLY, 3, 180}},
+			wantCredit: "83.00", wantCharge: "166.00"},
+		{name: "shorter item on a quarterly sub", subPeriod: types.BILLING_PERIOD_QUARTER,
+			from:       []pvrPrice{{types.BILLING_PERIOD_QUARTER, 1, 90}, {types.BILLING_PERIOD_MONTHLY, 1, 31}},
+			to:         []pvrPrice{{types.BILLING_PERIOD_QUARTER, 1, 180}},
+			wantCredit: "145.00", wantCharge: "142.00"},
+	}
+
+	for i, tt := range tests {
+		s.Run(tt.name, func() {
+			ctx := s.GetContext()
+			fromID, toID := fmt.Sprintf("plan_pvr_v2_from_%d", i), fmt.Sprintf("plan_pvr_v2_to_%d", i)
+			include := []string{}
+			for _, id := range []string{fromID, toID} {
+				s.Require().NoError(s.GetStores().PlanRepo.Create(ctx, &plan.Plan{ID: id, Name: id, BaseModel: types.GetDefaultBaseModel(ctx)}))
+			}
+			for _, p := range tt.from {
+				include = append(include, s.pvrPlanPrice(fromID, p.period, p.count, p.amount))
+			}
+			for _, p := range tt.to {
+				s.pvrPlanPrice(toID, p.period, p.count, p.amount)
+			}
+			created := s.pvrCreateSub(pvrSubSpec{planID: fromID, start: pvrDate(2027, 1, 1), cycle: types.BillingCycleAnniversary,
+				behavior: types.ProrationBehaviorCreateProrations, period: tt.subPeriod, include: &include})
+
+			svc := s.subSvc.(*subscriptionService)
+			sub, err := svc.loadSubscriptionForChange(ctx, created.ID, false)
+			s.Require().NoError(err)
+			r, err := svc.resolvePlanChange(ctx, sub, dto.SubscriptionChangeV2Request{
+				TargetPlanID: toID, ProrationBehavior: types.ProrationBehaviorCreateProrations,
+			}, pvrDate(2027, 1, 20))
+			s.Require().NoError(err)
+			s.Require().NotNil(r.settlementQuote)
+			s.pvrExpect("plan change credit", tt.wantCredit, r.settlementQuote.TotalCreditAmount)
+			s.pvrExpect("plan change charge", tt.wantCharge, r.settlementQuote.TotalChargeAmount)
+		})
+	}
 }

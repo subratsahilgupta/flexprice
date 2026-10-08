@@ -250,7 +250,12 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 		gridSub := sub
 		var windows []periodWindow
 		if types.IsLongerCadence(item.BillingPeriod, item.BillingPeriodCount, sub.BillingPeriod, sub.BillingPeriodCount) {
-			itemPeriod, err := longerItemPeriod(sub, item, req.EffectiveDate)
+			// A removal on an item boundary closes the period ending there, not the next unbilled one.
+			at := req.EffectiveDate
+			if entry.Action == types.ProrationActionRemoveItem || entry.Action == types.ProrationActionCancellation {
+				at = at.Add(-time.Nanosecond)
+			}
+			itemPeriod, err := longerItemPeriod(sub, item, at)
 			if err != nil {
 				return nil, err
 			}
@@ -270,6 +275,15 @@ func (s *lineItemProrationService) Compute(ctx context.Context, req LineItemPror
 		for _, w := range windows {
 			if !w.End.After(req.EffectiveDate) {
 				continue
+			}
+			// Skip items ended before the cancel; stop at a period-end removal.
+			if entry.Action == types.ProrationActionCancellation && !item.EndDate.IsZero() {
+				if !item.EndDate.After(req.EffectiveDate) {
+					continue
+				}
+				if !item.EndDate.Before(sub.CurrentPeriodEnd) && item.EndDate.Before(w.End) {
+					w.End = item.EndDate
+				}
 			}
 
 			originalPaid, creditsIssued := s.creditBasisForWindow(ctx, req, entry, w)

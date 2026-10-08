@@ -73,8 +73,8 @@ type subscriptionCoreResult struct {
 	ActivatedOnCreate bool
 }
 
-// validateBillingAnchor rejects an anchor outside [start, start + 1 period], compared on local dates.
-// e.g. monthly from Jan 10: Jan 20 and Feb 10 are allowed; Mar 5 and Dec 20 are rejected.
+// validateBillingAnchor rejects an anchor before the start's local date or after start + 1 period.
+// e.g. monthly from Jan 10 09:00: Jan 20 and Feb 10 09:00 are allowed; Feb 10 17:00 and Dec 20 are rejected.
 func validateBillingAnchor(sub *subscription.Subscription) error {
 	// The first full period on a schedule anchored at the start is [start, start + 1 period).
 	grid, err := types.NewBillingPeriodGrid(sub.StartDate, sub.BillingPeriod, sub.BillingPeriodCount, sub.Timezone)
@@ -84,7 +84,7 @@ func validateBillingAnchor(sub *subscription.Subscription) error {
 	firstPeriod := types.FullBillingPeriod(sub.StartDate, grid)
 
 	anchorDay := types.FloorToStartOfDay(sub.BillingAnchor, sub.Timezone)
-	if anchorDay.Before(types.FloorToStartOfDay(firstPeriod.Start, sub.Timezone)) || anchorDay.After(types.FloorToStartOfDay(firstPeriod.End, sub.Timezone)) {
+	if anchorDay.Before(types.FloorToStartOfDay(firstPeriod.Start, sub.Timezone)) || sub.BillingAnchor.After(firstPeriod.End) {
 		return ierr.NewError("billing_anchor must be within one billing period of the start date").
 			WithHint("Set billing_anchor between the start date and one billing period after it, or backdate the start date instead").
 			WithReportableDetails(map[string]any{
@@ -5111,17 +5111,6 @@ func (s *subscriptionService) createAddonAttachParams(
 		addonRequestedStart = sub.CurrentPeriodStart
 	}
 
-	// A change starts no earlier than the current period; at creation that is the sub's start.
-	if existing == nil && addonRequestedStart.Before(sub.CurrentPeriodStart) {
-		return nil, ierr.NewError("addon start date is before the current billing period").
-			WithHint("Addon start date must be on or after the subscription's current period start").
-			WithReportableDetails(map[string]any{
-				"start_date":           addonRequestedStart,
-				"current_period_start": sub.CurrentPeriodStart,
-			}).
-			Mark(ierr.ErrValidation)
-	}
-
 	// A onetime addon ends on the boundary of the period containing its start date; any
 	// other cadence renews each period and keeps the zero time.
 	var onetimePeriodEnd time.Time
@@ -5146,9 +5135,10 @@ func (s *subscriptionService) createAddonAttachParams(
 	// createLineItemFromPrice clamps every line item's start to max(requestedStart, price.StartDate),
 	// so anchoring the proration at requestedStart alone would price a window the addon is not live for.
 	// e.g. attach Jan 10 with a price starting Jan 15 → prorate from Jan 15.
+	// A backdated start is charged from the current period start: closed periods are never billed.
 	prorationEffectiveDate := lo.Reduce(lineItems, func(acc time.Time, li *subscription.SubscriptionLineItem, _ int) time.Time {
 		return lo.Ternary(li.StartDate.After(acc), li.StartDate, acc)
-	}, addonRequestedStart)
+	}, types.LatestOf(addonRequestedStart, sub.CurrentPeriodStart))
 
 	// Ensure subscription-level and line-item-level commitments don't conflict
 	originalLineItems := sub.LineItems

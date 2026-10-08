@@ -27,8 +27,6 @@ Unless stated otherwise, examples use $31/month (1 day = $1 in a 31-day month), 
 | 1.2 | `PreviousBillingDate` ignores the timezone             | Anchor Mar 1 IST gives Jan 29 IST, not Feb 1. In New York it is 1 hour off around DST                                                                           | ✅                                |
 | 1.3 | Trial end is computed in UTC                           | New York: Mar 1 + 14 days = Mar 15 **01:00** local                                                                                                              | ✅                                |
 | 1.4 | Calendar subs become anniversary after a trial         | Sub from Jan 15 with a 14-day trial bills Jan 29 → Feb 28, not Jan 29 → Feb 1                                                                                   | ✅                                |
-| 1.5 | An addon dated before the sub start is silently moved  | —                                                                                                                                                               | ✅ rejected                       |
-| 1.6 | Addon attach accepts any past date                     | Credit grants are created for every past period; no entitlement grant is created **(live)**                                                                     | ✅ addons · ⏸ line item API       |
 | 1.7 | Backdating with `create_prorations` is always rejected | `dto/subscription.go:1361` compares two pointers                                                                                                                | ⏸ pointer fixed, still rejected  |
 | 1.8 | A one-time item added mid-period is never billed       | With `create_prorations` the attach fails instead                                                                                                               | ✅ `create_prorations` · ⏸ `none` |
 
@@ -160,16 +158,15 @@ Starting a sub on day X costs the same as adding an addon on day X, and the part
 
 **D7. One date rule.** Billing dates are `anchor + k × period`, clamped to month end and then returning to the anchor day: Jan 31 → Feb 28 → Mar 31. Stripe, Chargebee, Recurly, Zuora and Orb work the same way. Calendar billing is this rule with the anchor at the 1st, 00:00 local. The first billing date is the anchor.
 
-**D8. Change dates.** Anything earlier is rejected, not moved.
+**D8. Change dates.** A line item change dated before the current period is rejected.
 
 | Entity / call | Rule |
 |---|---|
-| Addon association, at creation (`addons` on `POST /subscriptions`) | start on or after the sub start |
-| Addon association, after creation (`POST /subscriptions/addon`, modify `addon`) | start on or after `CurrentPeriodStart` (as in Stripe and Chargebee); checkout replays skip it |
 | Line item change (modify `line_item_change`, incl. checkout replay) | effective date in `[CurrentPeriodStart, CurrentPeriodEnd)` |
 
 Not checked:
 
+- Addon start dates: any date is accepted and stored as sent, as before. Billing starts at the current period start.
 - The line item API (`POST /subscriptions/:id/lineitems`): system rollouts (`prepare_processed_events`) backdate through it.
 - Addon removal end dates: `change_at=period_end` resolves to `CurrentPeriodEnd`.
 - The sub start date: unlimited backdating (D9), except `create_prorations` with a past start, which is still rejected.
@@ -235,7 +232,7 @@ Not checked:
 7. Deferred from this work:
   - Plan EG at creation (2.9): open it through the subscription grants service, as addons do.
   - Backdating with `create_prorations` (1.7, D9).
-  - Change-date check on the line item API (1.6, D8), which needs a separate path for system callers.
+  - Change-date check on the line item API (D8), which needs a separate path for system callers.
   - One-time advance item attached with `none` is never billed (1.8).
 8. Backfill `subscription_line_items.billing_period_count` from the price for existing rows (3.6).
 9. `none` with a mid-period attach (3.7): charge the item periods that start at or after the attach, as invoices do, or keep "free until the next invoice".

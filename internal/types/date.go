@@ -160,15 +160,8 @@ func nextBillingDateCore(currentPeriodStart, billingAnchor time.Time, unit int, 
 		return nextDate, nil
 	}
 
-	// Billing dates are anchor + k periods. The start is moved onto the anchor's clock so
-	// the comparison is by local date.
-	// e.g. anchor Jan 15 17:00, start Mar 15 09:00 → compared as Mar 15 17:00 → next date Apr 15 17:00.
-	y, m, d := currentPeriodStart.Date()
-	h, min, sec := billingAnchor.Clock()
-	start := time.Date(y, m, d, h, min, sec, 0, currentPeriodStart.Location())
-
 	// index of the first billing date after start
-	periodIndexNextToStartDatePeriod := grid.periodIndexAfter(start)
+	periodIndexNextToStartDatePeriod := grid.periodIndexAfter(currentPeriodStart)
 
 	// resolve the date of that period index
 	nextDate := grid.billingDateAtIndex(periodIndexNextToStartDatePeriod)

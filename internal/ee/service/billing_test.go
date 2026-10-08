@@ -992,6 +992,63 @@ func (s *BillingServiceSuite) TestCalculateFixedCharges_LongerCadenceAnchoredToS
 			invoiceStart: at(2027, 1, 15, 17), invoiceEnd: at(2027, 2, 15, 17),
 			wantStart: at(2027, 1, 15, 17), wantEnd: at(2028, 1, 15, 17), wantAmount: 365,
 		},
+		{
+			name: "anniversary item starting with the sub bills a full year from the anchor", cycle: types.BillingCycleAnniversary,
+			anchor: date(2026, 1, 15), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 1, 15), invoiceEnd: date(2026, 2, 15),
+			wantStart: date(2026, 1, 15), wantEnd: date(2027, 1, 15), wantAmount: 365,
+		},
+		{
+			name: "anniversary annual item bills nothing mid-year", cycle: types.BillingCycleAnniversary,
+			anchor: date(2026, 1, 15), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 6, 15), invoiceEnd: date(2026, 7, 15),
+		},
+		{
+			// [Jan 15, Feb 1) of the 3-month period [Nov 1, Feb 1) = 17/92 x 365.
+			name: "3-month item on a calendar monthly sub stubs to the next month start", cycle: types.BillingCycleCalendar,
+			itemPeriod: types.BILLING_PERIOD_MONTHLY, itemCount: 3,
+			anchor: date(2026, 2, 1), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 1, 15), invoiceEnd: date(2026, 2, 1),
+			wantStart: date(2026, 1, 15), wantEnd: date(2026, 2, 1), wantAmountText: "67.45",
+		},
+		{
+			name: "3-month item on a calendar monthly sub renews every third month", cycle: types.BillingCycleCalendar,
+			itemPeriod: types.BILLING_PERIOD_MONTHLY, itemCount: 3,
+			anchor: date(2026, 2, 1), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 2, 1), invoiceEnd: date(2026, 3, 1),
+			wantStart: date(2026, 2, 1), wantEnd: date(2026, 5, 1), wantAmount: 365,
+		},
+		{
+			name: "3-month item bills nothing between renewals", cycle: types.BillingCycleCalendar,
+			itemPeriod: types.BILLING_PERIOD_MONTHLY, itemCount: 3,
+			anchor: date(2026, 2, 1), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 3, 1), invoiceEnd: date(2026, 4, 1),
+		},
+		{
+			// [Mar 20, Apr 15) of [Jan 15, Apr 15) = 26/90 x 365.
+			name: "3-month item attached mid-life on an anniversary monthly sub", cycle: types.BillingCycleAnniversary,
+			itemPeriod: types.BILLING_PERIOD_MONTHLY, itemCount: 3,
+			anchor: date(2026, 1, 15), itemStart: date(2026, 3, 20), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 3, 15), invoiceEnd: date(2026, 4, 15),
+			wantStart: date(2026, 3, 20), wantEnd: date(2026, 4, 15), wantAmountText: "105.44",
+		},
+		{
+			name: "2-year item on an anniversary monthly sub bills two years from the anchor", cycle: types.BillingCycleAnniversary,
+			itemCount: 2, anchor: date(2026, 1, 15), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2026, 1, 15), invoiceEnd: date(2026, 2, 15),
+			wantStart: date(2026, 1, 15), wantEnd: date(2028, 1, 15), wantAmount: 365,
+		},
+		{
+			name: "2-year item skips the middle anniversary", cycle: types.BillingCycleAnniversary,
+			itemCount: 2, anchor: date(2026, 1, 15), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2027, 1, 15), invoiceEnd: date(2027, 2, 15),
+		},
+		{
+			name: "2-year item renews after two years", cycle: types.BillingCycleAnniversary,
+			itemCount: 2, anchor: date(2026, 1, 15), itemStart: date(2026, 1, 15), behavior: types.ProrationBehaviorCreateProrations,
+			invoiceStart: date(2028, 1, 15), invoiceEnd: date(2028, 2, 15),
+			wantStart: date(2028, 1, 15), wantEnd: date(2030, 1, 15), wantAmount: 365,
+		},
 	}
 
 	for _, tt := range tests {
@@ -5806,6 +5863,75 @@ func (s *BillingServiceSuite) TestCalculateMeterUsageCharges_MonthlyMeterOnQuart
 	// Total usage cost: $1 + $2 + $3 = $6.00
 	s.True(decimal.NewFromFloat(6.00).Equal(result.TotalAmount),
 		"total: $1+$2+$3 = $6.00, got %s", result.TotalAmount)
+}
+
+// A usage price longer than the sub (annual, 3-month on monthly) is metered over each sub invoice
+// period: the Feb invoice bills only February's 200 units at $0.01.
+func (s *BillingServiceSuite) TestCalculateMeterUsageCharges_LongerCadenceUsage_MetersEachSubInvoice() {
+	jan1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	feb1 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	mar1 := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name   string
+		period types.BillingPeriod
+		count  int
+	}{
+		{name: "annual usage on monthly sub", period: types.BILLING_PERIOD_ANNUAL, count: 1},
+		{name: "3-month usage on monthly sub", period: types.BILLING_PERIOD_MONTHLY, count: 3},
+		{name: "2-year usage on monthly sub", period: types.BILLING_PERIOD_ANNUAL, count: 2},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.BaseServiceTestSuite.ClearStores()
+			ctx := s.GetContext()
+			cust := &customer.Customer{ID: "cust_longer_usage", ExternalID: "ext_longer_usage", Name: "Longer Usage", BaseModel: types.GetDefaultBaseModel(ctx)}
+			s.Require().NoError(s.GetStores().CustomerRepo.Create(ctx, cust))
+			m := &meter.Meter{ID: "meter_longer_usage", Name: "Calls", EventName: "longer_usage_call",
+				Aggregation: meter.Aggregation{Type: types.AggregationSum}, BaseModel: types.GetDefaultBaseModel(ctx)}
+			s.Require().NoError(s.GetStores().MeterRepo.CreateMeter(ctx, m))
+			pr := &price.Price{
+				ID: "price_longer_usage", Amount: decimal.NewFromFloat(0.01), Currency: "usd",
+				Type: types.PRICE_TYPE_USAGE, BillingPeriod: tt.period, BillingPeriodCount: tt.count,
+				BillingModel: types.BILLING_MODEL_FLAT_FEE, BillingCadence: types.BILLING_CADENCE_RECURRING,
+				InvoiceCadence: types.InvoiceCadenceArrear, MeterID: m.ID, BaseModel: types.GetDefaultBaseModel(ctx),
+			}
+			s.Require().NoError(s.GetStores().PriceRepo.Create(ctx, pr))
+			sub := &subscription.Subscription{
+				ID: "sub_longer_usage", CustomerID: cust.ID, StartDate: jan1, BillingAnchor: jan1,
+				CurrentPeriodStart: feb1, CurrentPeriodEnd: mar1, Currency: "usd",
+				BillingPeriod: types.BILLING_PERIOD_MONTHLY, BillingPeriodCount: 1, BillingCycle: types.BillingCycleAnniversary,
+				SubscriptionStatus: types.SubscriptionStatusActive, Timezone: "UTC", BaseModel: types.GetDefaultBaseModel(ctx),
+			}
+			li := &subscription.SubscriptionLineItem{
+				ID: types.GenerateUUIDWithPrefix(types.UUID_PREFIX_SUBSCRIPTION_LINE_ITEM), SubscriptionID: sub.ID,
+				CustomerID: cust.ID, PriceID: pr.ID, PriceType: types.PRICE_TYPE_USAGE, MeterID: m.ID,
+				DisplayName: "Calls", Quantity: decimal.Zero, Currency: "usd",
+				BillingPeriod: tt.period, BillingPeriodCount: tt.count, InvoiceCadence: types.InvoiceCadenceArrear,
+				StartDate: jan1, BaseModel: types.GetDefaultBaseModel(ctx),
+			}
+			s.Require().NoError(s.GetStores().SubscriptionRepo.CreateWithLineItems(ctx, sub, []*subscription.SubscriptionLineItem{li}))
+			sub.LineItems = []*subscription.SubscriptionLineItem{li}
+
+			for i, qty := range []int64{100, 200, 300} {
+				id := s.GetUUID()
+				ts := time.Date(2026, time.Month(i+1), 15, 12, 0, 0, 0, time.UTC)
+				s.Require().NoError(s.GetStores().MeterUsageRepo.BulkInsertMeterUsage(ctx, []*events.MeterUsage{{
+					Event: events.Event{ID: id, TenantID: sub.TenantID, EnvironmentID: sub.EnvironmentID, EventName: m.EventName,
+						ExternalCustomerID: cust.ExternalID, CustomerID: cust.ID, Timestamp: ts, IngestedAt: ts},
+					MeterID: m.ID, QtyTotal: decimal.NewFromInt(qty), UniqueHash: id,
+				}}))
+			}
+
+			result, err := s.service.(*billingService).calculateMeterUsageCharges(ctx, sub, sub.LineItems, feb1, mar1, true, nil)
+			s.Require().NoError(err, "a longer usage item must not fail the invoice")
+			s.Require().Len(result.UsageCharges, 1)
+			s.Equal(feb1, *result.UsageCharges[0].PeriodStart)
+			s.Equal(mar1, *result.UsageCharges[0].PeriodEnd)
+			s.True(decimal.NewFromFloat(2).Equal(result.TotalAmount), "February usage only: got %s", result.TotalAmount)
+		})
+	}
 }
 
 var (
