@@ -312,6 +312,8 @@ logging:
   # otel_auth_header: ""
   # otel_auth_value: ""
   otel_debug: false # synchronous SimpleProcessor for log export; use to confirm delivery
+  # Kill switch for provider call logs: FLEXPRICE_LOGGING_PROVIDER_CALLS_ENABLED=false
+  provider_calls_enabled: true
 
 webhook:
   enabled: true
@@ -526,7 +528,6 @@ usage_alerts:
   wallet_alerts_enabled: true
   spend_alerts_enabled: true
   entitlement_alerts_enabled: true
-  overrides: [] # [{tenant_id, environment_id, schedule_delay, stale_after}]
 
 wallet_balance_alert:
   enabled: true

@@ -621,6 +621,9 @@ type LoggingConfig struct {
 	OtelAuthHeader string `mapstructure:"otel_auth_header" validate:"omitempty"` // header name
 	OtelAuthValue  string `mapstructure:"otel_auth_value" validate:"omitempty"`  // header value / token
 	OtelDebug      bool   `mapstructure:"otel_debug" default:"false"`            // use synchronous SimpleProcessor and verbose stderr output
+
+	// ProviderCallsEnabled is the kill switch for provider call log lines.
+	ProviderCallsEnabled bool `mapstructure:"provider_calls_enabled" default:"true"`
 }
 
 type PostgresConfig struct {
@@ -903,40 +906,16 @@ type UsageAlertsConfig struct {
 	Enabled bool `mapstructure:"enabled" default:"false"`
 	// ScheduleDelay is the debounce window: the workflow's StartDelay AND the
 	// TTL of the Redis lock that throttles schedule attempts to one per customer per window.
+	// ScheduleDelay and StaleAfter are deployment defaults; the usage_alert_config setting overrides them per environment.
 	ScheduleDelay time.Duration `mapstructure:"schedule_delay" default:"5m30s"`
 	// StaleAfter bounds staleness on both queues: a workflow run firing more
 	// than this past its intended time yields once (ContinueAsNew) to the back
 	// of the queue so fresher customers evaluate first, and each activity's
 	// ScheduleToStartTimeout is set to the same value.
-	StaleAfter               time.Duration         `mapstructure:"stale_after" default:"1h"`
-	WalletAlertsEnabled      bool                  `mapstructure:"wallet_alerts_enabled" default:"true"`
-	SpendAlertsEnabled       bool                  `mapstructure:"spend_alerts_enabled" default:"true"`
-	EntitlementAlertsEnabled bool                  `mapstructure:"entitlement_alerts_enabled" default:"true"`
-	Overrides                []UsageAlertsOverride `mapstructure:"overrides"`
-}
-
-type UsageAlertsOverride struct {
-	TenantID      string        `mapstructure:"tenant_id"`
-	EnvironmentID string        `mapstructure:"environment_id"`
-	ScheduleDelay time.Duration `mapstructure:"schedule_delay"`
-	StaleAfter    time.Duration `mapstructure:"stale_after"`
-}
-
-func (c UsageAlertsConfig) ForScope(tenantID, environmentID string) (scheduleDelay, staleAfter time.Duration) {
-	scheduleDelay, staleAfter = c.ScheduleDelay, c.StaleAfter
-	for _, o := range c.Overrides {
-		if !strings.EqualFold(o.TenantID, tenantID) || !strings.EqualFold(o.EnvironmentID, environmentID) {
-			continue
-		}
-		if o.ScheduleDelay > 0 {
-			scheduleDelay = o.ScheduleDelay
-		}
-		if o.StaleAfter > 0 {
-			staleAfter = o.StaleAfter
-		}
-		break
-	}
-	return scheduleDelay, staleAfter
+	StaleAfter               time.Duration `mapstructure:"stale_after" default:"1h"`
+	WalletAlertsEnabled      bool          `mapstructure:"wallet_alerts_enabled" default:"true"`
+	SpendAlertsEnabled       bool          `mapstructure:"spend_alerts_enabled" default:"true"`
+	EntitlementAlertsEnabled bool          `mapstructure:"entitlement_alerts_enabled" default:"true"`
 }
 
 // MeterUsageTrackingLazyConfig configures the lazy consumer for tenants that
@@ -1145,6 +1124,7 @@ func NewConfig() (*Configuration, error) {
 	// here (defaults live in config.yaml), so guarantee default-on for deploys whose
 	// config.yaml predates this key. Env/yaml still override.
 	v.SetDefault("otel.traces.capture_exceptions", true)
+	v.SetDefault("logging.provider_calls_enabled", true)
 
 	// Step 5: Read the YAML file
 	if err := v.ReadInConfig(); err != nil {
